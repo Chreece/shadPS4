@@ -435,7 +435,7 @@ void BufferCache::SubmitPendingArenaBinds(Vulkan::SubmitInfo& info) {
         .pSignalSemaphores = &signal_sema,
     };
 
-    info.AddWait(signal_sema, signal_tick);
+    info.AddWait(signal_sema, signal_tick, vk::PipelineStageFlagBits::eAllCommands);
     auto submit_result = instance.GetGraphicsQueue().bindSparse(sparse_info);
     ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
 
