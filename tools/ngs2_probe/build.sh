@@ -1,36 +1,109 @@
 #!/usr/bin/env bash
 # Run as a child bash, not by sourcing into an SSH login shell.
 main() {
-    local src="/home/chreece/src/shadps4-waitstage-fix"
+    # Never switch branches or clean the user's working source tree.
+    local seed="/home/chreece/src/shadps4-waitstage-fix"
+    local src="/home/chreece/src/shadps4-ngs2-probe-source"
+    local remote="https://github.com/Chreece/shadPS4.git"
     local state="/home/chreece/.local/state/shadps4-ngs2-probe"
     local dest="/home/chreece/Applications/shadps4/releases/ngs2-probe"
     local vol="shadps4-clang19-build"
     local image="shadps4-local-clang19-gcc14:ngs2-v1"
-    local log expected base rc
+    local log expected base rc status
     base="0a7790aaa11c5ec0009cc66976bb90a8ce7078e5"
     expected="${1:-}"
     if [[ ! "$expected" =~ ^[0-9a-f]{40}$ ]]; then echo 'EXPECTED_COMMIT_REQUIRED'; return 1; fi
-    command -v python3 >/dev/null && command -v docker >/dev/null || return 1
+    command -v git >/dev/null && command -v python3 >/dev/null &&
+        command -v docker >/dev/null || return 1
     docker info >/dev/null 2>&1 || { echo 'DOCKER_ACCESS=FAIL'; return 1; }
-    [[ -z "$(git -C "$src" status --porcelain 2>/dev/null)" ]] || {
-        echo 'SOURCE_HAS_LOCAL_CHANGES: nothing was reset'; return 1;
-    }
     if [[ -n "$(docker ps -q --filter "volume=$vol")" ]]; then
         echo 'BUILD_VOLUME_BUSY: allow the other build to finish'; return 1;
     fi
-    git -C "$src" cat-file -e "$expected^{commit}" || return 1
-    git -C "$src" merge-base --is-ancestor "$base" "$expected" || return 1
-    git -C "$src" checkout --detach "$expected" || return 1
-    git -C "$src" submodule update --init --recursive || return 1
-    mkdir -p "$state" "$dest" || return 1
-    log="$state/build-$(date +%Y%m%d-%H%M%S).log"
+    mkdir -p "$state" "$dest" "$(dirname "$src")" || return 1
+    log="$(mktemp "$state/build-$(date +%Y%m%d-%H%M%S)-XXXXXX.log")" || return 1
     echo "BUILD_LOG=$log"
+    echo "ORIGINAL_SOURCE_PRESERVED=$seed"
+    echo "ISOLATED_SOURCE=$src"
+
+    if [[ ! -e "$src" && ! -L "$src" ]]; then
+        echo 'Preparing an independent checkout; borrowing committed objects only during clone.'
+        if ! git -c submodule.alternateLocation=superproject \
+            -c submodule.alternateErrorStrategy=info clone \
+            --reference-if-able "$seed" --dissociate --recurse-submodules --jobs 4 \
+            --branch diagnostics/ngs2-bounded-trace "$remote" "$src" >>"$log" 2>&1; then
+            echo 'ISOLATED_CLONE=FAIL; partial checkout retained'
+            tail -70 "$log"; return 1
+        fi
+    fi
+    if [[ -L "$src" || ! -d "$src/.git" || -L "$src/.git" ]]; then
+        echo 'ISOLATED_SOURCE_INVALID: expected a separate regular clone'; return 1;
+    fi
+    status="$(git -C "$src" status --porcelain --untracked-files=normal)" || return 1
+    if [[ -n "$status" ]]; then
+        echo "ISOLATED_SOURCE_HAS_LOCAL_CHANGES=$src"
+        printf '%s\n' "$status" | head -30
+        echo 'Nothing was reset, stashed, or removed.'; return 1
+    fi
+    if ! git -C "$src" cat-file -e "$expected^{commit}" 2>/dev/null; then
+        git -C "$src" fetch --no-recurse-submodules "$remote" "$expected" >>"$log" 2>&1 || {
+            tail -70 "$log"; return 1;
+        }
+    fi
+    git -C "$src" merge-base --is-ancestor "$base" "$expected" || return 1
+    git -C "$src" checkout --detach "$expected" >>"$log" 2>&1 || {
+        tail -70 "$log"; return 1;
+    }
+    git -C "$src" submodule update --init --recursive --jobs 4 >>"$log" 2>&1 || {
+        tail -70 "$log"; return 1;
+    }
+    echo "SOURCE_COMMIT=$(git -C "$src" rev-parse HEAD)"
+
+    # Preserve timestamps only for byte-identical tracked source files. The same
+    # /src container path and /work volume allow Ninja to reuse unaffected objects.
+    # Differing files retain their new timestamps and will be rebuilt.
+    python3 -B - "$seed" "$src" <<'PY'
+from pathlib import Path
+import filecmp
+import os
+import subprocess
+import sys
+
+seed, src = map(Path, sys.argv[1:])
+paths = subprocess.check_output([
+    'git', '-C', str(src), 'ls-files', '--recurse-submodules', '-z'
+]).split(b'\0')
+matched = 0
+for raw in paths:
+    if not raw:
+        continue
+    rel = Path(os.fsdecode(raw))
+    old, new = seed / rel, src / rel
+    try:
+        if old.is_symlink() or new.is_symlink() or not old.is_file() or not new.is_file():
+            continue
+        before = old.stat()
+        if before.st_size != new.stat().st_size or not filecmp.cmp(old, new, shallow=False):
+            continue
+        after = old.stat()
+        if (before.st_mtime_ns, before.st_ctime_ns, before.st_size) != (
+            after.st_mtime_ns, after.st_ctime_ns, after.st_size
+        ):
+            continue
+        os.utime(new, ns=(new.stat().st_atime_ns, before.st_mtime_ns))
+        matched += 1
+    except OSError:
+        # Failure to reuse a timestamp only costs a rebuild, not source correctness.
+        continue
+print(f'UNCHANGED_SOURCE_TIMESTAMPS_REUSED={matched}')
+PY
+    rc=$?
+    if [[ "$rc" -ne 0 ]]; then return "$rc"; fi
     python3 -B "$src/tools/ngs2_probe/test_instrument.py" || return 1
     python3 -B "$src/tools/ngs2_probe/instrument.py" \
         "$src/src/core/libraries/ngs2/ngs2.cpp" "$state/ngs2.cpp" || return 1
     if ! docker image inspect "$image" >/dev/null 2>&1; then
         echo 'Preparing reusable compiler image...'
-        if ! docker build -t "$image" "$src/tools/ngs2_probe" >"$log" 2>&1; then
+        if ! docker build -t "$image" "$src/tools/ngs2_probe" >>"$log" 2>&1; then
             tail -70 "$log"; return 1;
         fi
     fi
@@ -82,4 +155,5 @@ if main "$@"; then
     printf '\nREADY: no game launched by this installer.\n'
 else
     printf '\nNGS2_PROBE_SETUP=FAIL; existing sparse-queue binary unchanged.\n'
+    false
 fi
