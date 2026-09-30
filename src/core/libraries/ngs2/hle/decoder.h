@@ -14,6 +14,10 @@ namespace Libraries::Ngs2::Hle {
 class AudioDecoder {
 public:
     static WaveResult<std::unique_ptr<AudioDecoder>> Create(std::span<const std::uint8_t> riff);
+    // Raw, bounded encoded storage (e.g. an NGS2 waveform block). Metadata is
+    // validated before copying; data_offset must be zero for this overload.
+    static WaveResult<std::unique_ptr<AudioDecoder>> CreateRaw(
+        const Waveform& waveform, std::span<const std::uint8_t> payload);
     ~AudioDecoder();
     AudioDecoder(const AudioDecoder&) = delete;
     AudioDecoder& operator=(const AudioDecoder&) = delete;

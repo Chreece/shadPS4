@@ -476,6 +476,10 @@ set(SYSTEM_LIBS src/core/libraries/system/commondialog.cpp
                 src/core/libraries/ngs2/hle/decoder.h
                 src/core/libraries/ngs2/hle/playback.cpp
                 src/core/libraries/ngs2/hle/playback.h
+                src/core/libraries/ngs2/hle/runtime.h
+                src/core/libraries/ngs2/hle/voice.cpp
+                src/core/libraries/ngs2/hle/waveform_abi.h
+                src/core/libraries/ngs2/hle/waveform_abi.cpp
                 src/core/libraries/ngs2/ngs2_custom.cpp
                 src/core/libraries/ngs2/ngs2_custom.h
                 src/core/libraries/ngs2/ngs2_reverb.cpp

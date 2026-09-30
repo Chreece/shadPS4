@@ -6,8 +6,8 @@ SPDX-License-Identifier: GPL-2.0-or-later
 # Host decoder and playback engine
 
 `hle/decoder.*` and `hle/playback.*` are built into the emulator and exercised by
-the standalone tests. They are not yet connected to guest voice controls or
-`sceNgs2SystemRender`; they do not make the current game produce audio.
+the standalone tests. The public bridge in [BRIDGE.md](BRIDGE.md) connects them to guest voice controls
+and `sceNgs2SystemRender`. In-game compatibility is still unverified.
 
 ## Decoding
 
@@ -30,7 +30,7 @@ Encoder delay is discarded across as many frames as necessary, and output stops
 at the audible sample count from `fact`. Seeking resets the codec and decodes from
 the beginning to recover transform overlap history. This is deliberately exact
 but linear-time; long assets and repeated late loops will need validated decoder
-checkpoints before integration into a real-time render path.
+checkpoints for predictable real-time render cost.
 
 The submodule is pinned at `946e05a9212976626a9f5e52f29c0a7202871f29`.
 Its initializer writes shared transform/Huffman tables on every call. AJM and
@@ -56,15 +56,15 @@ resampler before claiming production audio fidelity.
 
 Start rewinds, Stop clears playback state, Pause preserves fractional position,
 and Resume only resumes a paused stream. A completed stream enters Finished based
-on its duration; decode errors enter Failed. These are internal states, not guest
-state flags or completion callbacks. Render reports the number of produced frames
+on its duration; decode errors enter Failed. The bridge translates these internal states to guest flags; voice completion
+callbacks are not implemented. Render reports the number of produced frames
 and zeroes any unused tail. A span containing a partial channel frame is rejected
 without modification or advancement.
 
 PlaybackLoop uses exclusive, delay-trimmed source positions. Its explicit repeat
 count means **extra traversals**, with nullopt for unlimited repeats. Finite loops
-continue through the source tail afterward. RIFF play_count and guest numRepeats
-are not automatically assigned this policy: their ABI mapping still needs evidence.
+continue through the source tail afterward. The bridge maps RIFF play_count and guest numRepeats to this policy as described
+in BRIDGE.md; native repeat semantics still need validation.
 The caller must explicitly supply a loop; parsed `smpl` metadata alone does not
 start looping.
 
@@ -79,6 +79,8 @@ replay after seek, chunk-independent rate conversion, loop interpolation, pause,
 EOF, malformed packets and concurrent initialization/decoding.
 
 These are focused deterministic tests, not a codec corpus, native NGS2 comparison,
-speaker-layout validation or an in-game audio test. The remaining bridge needs
-verified waveform/control IDs and block semantics, guest buffer validation,
-voice ownership/budgets, routing matrices, mixing, callbacks and system render.
+speaker-layout validation or an in-game audio test. The bridge implements guest block validation, ownership budgets, matrices, mixing,
+UserFx and system rendering. Completion callbacks, general DSP and seamless rate
+conversion across separate queued blocks remain unfinished. Pitch uses a Q16 ratio;
+rate changes preserve fractional position. ExitLoop cancels unplayed prefetched
+wraps, including at a render-grain boundary.

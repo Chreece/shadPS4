@@ -5,6 +5,34 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # NGS2 validation — 2026-09-30
 
+## Public audio bridge
+
+Base: `c6f958582075e042d007b27f9d5d3f2d71e56fd9`.
+
+| Check | Result |
+| --- | --- |
+| GCC 13.3 Debug, warnings as errors | 109/109 cases passed in seven executables |
+| GCC 13.3 Release / NDEBUG | 109/109 cases passed |
+| GCC 13.3 ASan + UBSan, including LibAtrac9 | 109/109 cases passed; local leak detection disabled as explained below |
+| Public export registration/lifecycle/voice/waveform C++23 production syntax | Passed |
+| clang-format 19 and `git diff --check` | Passed |
+| Exact-revision full emulator build | Remote CI gate; see branch Actions |
+| In-game audio and physical speaker mapping | Not tested in this environment |
+
+The new 14 public audio cases cover nonzero eight-channel PCM and ATRAC9 through
+parse/control/routing/render, sample duration and delay, source counters, pitch,
+matrix fanout, two-source mixing, PCM16 saturation, transactional control rollback,
+invalid buffers without advancement, stale/cyclic patches and UserFx callbacks.
+Three further playback cases cover exit-loop lookahead and pitch/rate changes.
+See [BRIDGE.md](BRIDGE.md) for ABI assumptions and unsupported features.
+
+The previous revision's focused run
+[36785878847](https://github.com/Chreece/shadPS4/actions/runs/36785878847) passed all
+three configurations, including Clang sanitizer/leak checks. Its full run
+[36785878916](https://github.com/Chreece/shadPS4/actions/runs/36785878916) passed
+all three platform C++ test jobs and the macOS emulator build. Those results do
+not substitute for building this newly connected public renderer.
+
 ## Decoding and playback milestone
 
 Base: `9c4ecf9d268bb719674cfcb87adc7bd4cdd629af`.

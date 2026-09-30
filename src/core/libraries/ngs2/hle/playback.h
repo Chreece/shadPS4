@@ -25,11 +25,17 @@ public:
     static WaveResult<std::unique_ptr<Playback>> Create(
         std::span<const std::uint8_t> riff, std::uint32_t output_rate,
         std::optional<PlaybackLoop> loop = std::nullopt);
+    static WaveResult<std::unique_ptr<Playback>> Create(
+        std::unique_ptr<AudioDecoder> decoder, std::uint32_t output_rate,
+        std::optional<PlaybackLoop> loop = std::nullopt);
 
     WaveError Start(); // restart from the beginning
     void Stop();
     void Pause();
     void Resume();
+    void ExitLoop();
+    WaveError SetOutputRate(std::uint32_t rate);
+    WaveError SetPitch(float ratio);
     // Writes whole interleaved frames at the configured output rate. Clears the
     // unwritten tail (including paused/stopped output). A bad span is untouched.
     WaveResult<std::size_t> Render(std::span<float> output);
@@ -42,6 +48,9 @@ public:
     const Waveform& Format() const {
         return decoder->Format();
     }
+    std::uint64_t SourcePosition() const {
+        return source_frames;
+    }
 
 private:
     Playback(std::unique_ptr<AudioDecoder> decoder, std::uint32_t output_rate,
@@ -51,15 +60,20 @@ private:
     WaveError Advance();
 
     std::unique_ptr<AudioDecoder> decoder;
-    const std::uint32_t output_rate;
+    std::uint32_t output_rate;
     const std::optional<PlaybackLoop> loop;
     std::optional<std::uint32_t> repeats_left;
     std::array<float, 8> current{};
     std::array<float, 8> next{};
     bool primed{};
     bool next_valid{};
+    bool next_wrapped{};
+    bool current_wrapped{};
+    bool current_unplayed{};
+    std::uint64_t source_frames{};
     // Integer phase avoids grain-dependent rounding and cumulative clock drift.
     std::uint64_t phase{};
+    std::uint32_t pitch{65536}; // Q16 ratio; exactly 1.0 by default.
     std::uint64_t output_frames{};
     PlaybackState state{PlaybackState::Stopped};
     WaveError failure{WaveError::None};

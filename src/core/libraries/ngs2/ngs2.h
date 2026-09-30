@@ -330,6 +330,34 @@ s32 PS4_SYSV_ABI sceNgs2SystemSetUserData(OrbisNgs2Handle systemHandle, uintptr_
 s32 PS4_SYSV_ABI sceNgs2VoiceGetOwner(OrbisNgs2Handle voiceHandle, OrbisNgs2Handle* outRackHandle,
                                       u32* outVoiceId);
 
+s32 PS4_SYSV_ABI sceNgs2CalcWaveformBlock(const OrbisNgs2WaveformFormat* format, u32 samplePos,
+                                          u32 numSamples, OrbisNgs2WaveformBlock* outBlock);
+
+s32 PS4_SYSV_ABI sceNgs2GetWaveformFrameInfo(const OrbisNgs2WaveformFormat* format,
+                                             u32* outFrameSize, u32* outNumFrameSamples,
+                                             u32* outUnitsPerFrame, u32* outNumDelaySamples);
+
+s32 PS4_SYSV_ABI sceNgs2ParseWaveformData(const void* data, size_t dataSize,
+                                          OrbisNgs2WaveformInfo* outInfo);
+
+s32 PS4_SYSV_ABI sceNgs2SystemRender(OrbisNgs2Handle systemHandle,
+                                     const OrbisNgs2RenderBufferInfo* aBufferInfo,
+                                     u32 numBufferInfo);
+
+s32 PS4_SYSV_ABI sceNgs2VoiceControl(OrbisNgs2Handle voiceHandle,
+                                     const OrbisNgs2VoiceParamHeader* paramList);
+
+s32 PS4_SYSV_ABI sceNgs2VoiceGetMatrixInfo(OrbisNgs2Handle voiceHandle, u32 matrixId,
+                                           OrbisNgs2VoiceMatrixInfo* outInfo, size_t outInfoSize);
+
+s32 PS4_SYSV_ABI sceNgs2VoiceGetPortInfo(OrbisNgs2Handle voiceHandle, u32 port,
+                                         OrbisNgs2VoicePortInfo* outInfo, size_t outInfoSize);
+
+s32 PS4_SYSV_ABI sceNgs2VoiceGetState(OrbisNgs2Handle voiceHandle, OrbisNgs2VoiceState* outState,
+                                      size_t stateSize);
+
+s32 PS4_SYSV_ABI sceNgs2VoiceGetStateFlags(OrbisNgs2Handle voiceHandle, u32* outStateFlags);
+
 void RegisterLib(Core::Loader::SymbolsResolver* sym);
 
 } // namespace Libraries::Ngs2

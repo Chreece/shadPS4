@@ -3,6 +3,7 @@
 
 #include "hle/guest_memory.h"
 #include "hle/handles.h"
+#include "hle/runtime.h"
 #include "ngs2.h"
 #include "ngs2_error.h"
 #include "ngs2_mastering.h"
@@ -18,37 +19,21 @@
 #include <new>
 
 namespace Libraries::Ngs2 {
+namespace Runtime {
+std::mutex runtime_mutex;
+Hle::HandleRegistry registry;
+std::map<OrbisNgs2Handle, Context> systems;
+std::map<OrbisNgs2Handle, Context> racks;
+} // namespace Runtime
 namespace {
 using namespace Hle;
+using namespace Runtime;
 
 // The HLE objects live on the host. The caller's context contains only an opaque
 // token, not a reconstruction of the proprietary implementation's work area.
 constexpr size_t ContextBytes = sizeof(OrbisNgs2Handle);
 constexpr OrbisNgs2SystemOption DefaultSystem{
     sizeof(OrbisNgs2SystemOption), "", 0, 512, 256, 48000, {}};
-struct RackOptions {
-    OrbisNgs2RackOption base{sizeof(OrbisNgs2RackOption), "", 0, 512, 1, 0, 0, 0, {}};
-    u32 channels{8};
-    OrbisNgs2SamplerRackOption sampler{};
-    OrbisNgs2SubmixerRackOption submixer{};
-    OrbisNgs2MasteringRackOption mastering{};
-};
-struct Context {
-    OrbisNgs2ContextBufferInfo buffer{};
-    OrbisNgs2BufferFreeHandler free{};
-    OrbisNgs2Handle parent{};
-    uintptr_t user_data{};
-    OrbisNgs2SystemOption system{};
-    RackOptions rack{};
-    u32 rack_id{};
-};
-
-// All metadata/registry transactions use this lock. Guest callbacks always run
-// outside it, including rollback and recursive destruction.
-std::mutex runtime_mutex;
-HandleRegistry registry;
-std::map<OrbisNgs2Handle, Context> systems;
-std::map<OrbisNgs2Handle, Context> racks;
 
 bool ValidGrain(u32 count) {
     return count >= 64 && count <= 1024 && count % 64 == 0;
@@ -254,6 +239,7 @@ s32 Destroy(OrbisNgs2Handle handle, bool is_system, OrbisNgs2ContextBufferInfo* 
         if (out && !WritableGuest(out))
             return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
         removed = it->second;
+        RemoveVoices(handle, is_system);
         if (is_system) {
             (void)registry.DestroySystem(handle);
             for (auto child = racks.begin(); child != racks.end();) {
@@ -399,6 +385,7 @@ s32 PS4_SYSV_ABI sceNgs2SystemGetInfo(OrbisNgs2Handle handle, OrbisNgs2SystemInf
     const auto& context = it->second;
     std::memcpy(info.name, context.system.name, sizeof(info.name));
     info.systemHandle = handle;
+    info.renderCount = static_cast<s64>(context.render_count);
     info.bufferInfo = context.buffer;
     info.uid = static_cast<u32>(handle);
     info.minGrainSamples = 64;
@@ -424,6 +411,7 @@ s32 PS4_SYSV_ABI sceNgs2RackGetInfo(OrbisNgs2Handle handle, OrbisNgs2RackInfo* o
     OrbisNgs2RackInfo info{};
     std::memcpy(info.name, option.base.name, sizeof(info.name));
     info.rackHandle = handle;
+    info.renderCount = context.render_count;
     info.bufferInfo = context.buffer;
     info.ownerSystemHandle = context.parent;
     info.type = context.rack_id;

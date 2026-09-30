@@ -16,25 +16,6 @@ namespace Libraries::Ngs2 {
 
 // Ngs2
 
-s32 PS4_SYSV_ABI sceNgs2CalcWaveformBlock(const OrbisNgs2WaveformFormat* format, u32 samplePos,
-                                          u32 numSamples, OrbisNgs2WaveformBlock* outBlock) {
-    LOG_ERROR(Lib_Ngs2, "samplePos = {}, numSamples = {}", samplePos, numSamples);
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2GetWaveformFrameInfo(const OrbisNgs2WaveformFormat* format,
-                                             u32* outFrameSize, u32* outNumFrameSamples,
-                                             u32* outUnitsPerFrame, u32* outNumDelaySamples) {
-    LOG_ERROR(Lib_Ngs2, "called");
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2ParseWaveformData(const void* data, size_t dataSize,
-                                          OrbisNgs2WaveformInfo* outInfo) {
-    LOG_ERROR(Lib_Ngs2, "dataSize = {}", dataSize);
-    return ORBIS_OK;
-}
-
 s32 PS4_SYSV_ABI sceNgs2ParseWaveformFile(const char* path, u64 offset,
                                           OrbisNgs2WaveformInfo* outInfo) {
     LOG_ERROR(Lib_Ngs2, "path = {}, offset = {}", path, offset);
@@ -66,51 +47,11 @@ s32 PS4_SYSV_ABI sceNgs2SystemLock(OrbisNgs2Handle systemHandle) {
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceNgs2SystemRender(OrbisNgs2Handle systemHandle,
-                                     const OrbisNgs2RenderBufferInfo* aBufferInfo,
-                                     u32 numBufferInfo) {
-    LOG_DEBUG(Lib_Ngs2, "(STUBBED) numBufferInfo = {}", numBufferInfo);
-    if (!systemHandle) {
-        LOG_ERROR(Lib_Ngs2, "systemHandle is nullptr");
-        return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
-    }
-    return ORBIS_OK;
-}
-
 s32 PS4_SYSV_ABI sceNgs2SystemUnlock(OrbisNgs2Handle systemHandle) {
     if (!systemHandle) {
         LOG_ERROR(Lib_Ngs2, "systemHandle is nullptr");
         return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
     }
-    LOG_ERROR(Lib_Ngs2, "called");
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2VoiceControl(OrbisNgs2Handle voiceHandle,
-                                     const OrbisNgs2VoiceParamHeader* paramList) {
-    LOG_ERROR(Lib_Ngs2, "called");
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2VoiceGetMatrixInfo(OrbisNgs2Handle voiceHandle, u32 matrixId,
-                                           OrbisNgs2VoiceMatrixInfo* outInfo, size_t outInfoSize) {
-    LOG_ERROR(Lib_Ngs2, "matrixId = {}, outInfoSize = {}", matrixId, outInfoSize);
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2VoiceGetPortInfo(OrbisNgs2Handle voiceHandle, u32 port,
-                                         OrbisNgs2VoicePortInfo* outInfo, size_t outInfoSize) {
-    LOG_ERROR(Lib_Ngs2, "port = {}, outInfoSize = {}", port, outInfoSize);
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2VoiceGetState(OrbisNgs2Handle voiceHandle, OrbisNgs2VoiceState* outState,
-                                      size_t stateSize) {
-    LOG_ERROR(Lib_Ngs2, "stateSize = {}", stateSize);
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2VoiceGetStateFlags(OrbisNgs2Handle voiceHandle, u32* outStateFlags) {
     LOG_ERROR(Lib_Ngs2, "called");
     return ORBIS_OK;
 }

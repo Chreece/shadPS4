@@ -3,6 +3,7 @@
 #include "core/libraries/ngs2/hle/playback.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace Libraries::Ngs2::Hle {
 
@@ -18,19 +19,65 @@ WaveResult<std::unique_ptr<Playback>> Playback::Create(std::span<const std::uint
     auto decoded = AudioDecoder::Create(riff);
     if (!decoded)
         return {decoded.error, {}};
-    if (decoded.value->Format().sample_rate < 8000 || decoded.value->Format().sample_rate > 192000)
+    return Create(std::move(decoded.value), output_rate, loop);
+}
+
+WaveResult<std::unique_ptr<Playback>> Playback::Create(std::unique_ptr<AudioDecoder> decoded,
+                                                       std::uint32_t output_rate,
+                                                       std::optional<PlaybackLoop> loop) {
+    if (!decoded || output_rate < 8000 || output_rate > 192000 ||
+        decoded->Format().sample_rate < 8000 || decoded->Format().sample_rate > 192000)
         return {WaveError::InvalidFormat, {}};
-    if (loop && (loop->begin >= loop->end || loop->end > decoded.value->Format().num_samples))
+    if (loop && (loop->begin >= loop->end || loop->end > decoded->Format().num_samples))
         return {WaveError::InvalidLoop, {}};
     return {WaveError::None,
-            std::unique_ptr<Playback>{new Playback{std::move(decoded.value), output_rate, loop}}};
+            std::unique_ptr<Playback>{new Playback{std::move(decoded), output_rate, loop}}};
+}
+
+WaveError Playback::SetOutputRate(std::uint32_t rate) {
+    if (rate < 8000 || rate > 192000)
+        return WaveError::InvalidFormat;
+    phase = phase * rate / output_rate;
+    output_rate = rate;
+    return WaveError::None;
+}
+
+WaveError Playback::SetPitch(float ratio) {
+    if (!std::isfinite(ratio) || ratio < 0.01f || ratio > 16.0f)
+        return WaveError::OutOfRange;
+    pitch = static_cast<std::uint32_t>(std::lround(ratio * 65536.0f));
+    return WaveError::None;
+}
+
+void Playback::ExitLoop() {
+    repeats_left = 0;
+    // Lookahead must not commit another traversal before its first sample is
+    // heard. Cancel a prefetched wrap when the guest exits at a grain boundary.
+    if (!loop || !primed || (!next_wrapped && !(current_wrapped && current_unplayed)))
+        return;
+    failure = decoder->Seek(loop->end);
+    if (failure == WaveError::None && current_wrapped && current_unplayed) {
+        const auto first = ReadNext(std::span{current}.first(Format().channels));
+        failure = first.error;
+        current_wrapped = false;
+        if (!first.value && failure == WaveError::None)
+            state = PlaybackState::Finished;
+    }
+    if (failure == WaveError::None && state != PlaybackState::Finished) {
+        const auto second = ReadNext(std::span{next}.first(Format().channels));
+        next_valid = second.value;
+        failure = second.error;
+    }
+    if (failure != WaveError::None)
+        state = PlaybackState::Failed;
 }
 
 void Playback::Stop() {
     state = PlaybackState::Stopped;
     failure = WaveError::None;
     primed = false;
-    next_valid = false;
+    next_valid = next_wrapped = current_wrapped = current_unplayed = false;
+    source_frames = 0;
     phase = 0;
     output_frames = 0;
     repeats_left = loop ? loop->repeats : std::optional<std::uint32_t>{0};
@@ -54,9 +101,11 @@ void Playback::Resume() {
 }
 
 WaveResult<bool> Playback::ReadNext(std::span<float> target) {
+    next_wrapped = false;
     if (loop && decoder->Position() == loop->end && (!repeats_left || *repeats_left != 0)) {
         if (const auto error = decoder->Seek(loop->begin); error != WaveError::None)
             return {error, false};
+        next_wrapped = true;
         if (repeats_left)
             --*repeats_left;
     }
@@ -70,6 +119,8 @@ WaveError Playback::Prime() {
     if (!first)
         return first.error;
     primed = true;
+    current_unplayed = true;
+    current_wrapped = next_wrapped;
     if (!first.value) {
         state = PlaybackState::Finished;
         return WaveError::None;
@@ -80,11 +131,14 @@ WaveError Playback::Prime() {
 }
 
 WaveError Playback::Advance() {
+    ++source_frames;
     if (!next_valid) {
         state = PlaybackState::Finished;
         return WaveError::None;
     }
     current = next;
+    current_wrapped = next_wrapped;
+    current_unplayed = true;
     const auto result = ReadNext(std::span{next}.first(Format().channels));
     next_valid = result.value;
     return result.error;
@@ -103,18 +157,20 @@ WaveResult<std::size_t> Playback::Render(std::span<float> output) {
     std::size_t produced = 0;
     while (produced < output.size() / channels && state == PlaybackState::Playing &&
            failure == WaveError::None) {
-        const float fraction = static_cast<float>(phase) / static_cast<float>(output_rate);
+        const std::uint64_t denominator = std::uint64_t{output_rate} * 65536;
+        const float fraction = static_cast<float>(phase) / static_cast<float>(denominator);
         for (std::uint32_t channel = 0; channel < channels; ++channel) {
             // Hold the last source sample for its remaining fractional duration.
             const float right = next_valid ? next[channel] : current[channel];
             output[produced * channels + channel] =
                 current[channel] + (right - current[channel]) * fraction;
         }
+        current_unplayed = false;
         ++produced;
         ++output_frames;
-        phase += Format().sample_rate;
-        while (phase >= output_rate && state == PlaybackState::Playing) {
-            phase -= output_rate;
+        phase += std::uint64_t{Format().sample_rate} * pitch;
+        while (phase >= denominator && state == PlaybackState::Playing) {
+            phase -= denominator;
             failure = Advance();
             if (failure != WaveError::None)
                 break;

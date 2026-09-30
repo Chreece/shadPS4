@@ -190,6 +190,45 @@ TEST(DecoderFailureIsNotReportedAsPlaybackCompletion) {
     CHECK(playback.value->Render(output).error == WaveError::DecoderFailure);
 }
 
+TEST(ExitLoopCancelsPrefetchAtGrainBoundaryAndCountsSourceFrames) {
+    const auto riff = PcmSamples(std::array<std::int16_t, 4>{100, 200, 300, 400});
+    auto playback = Playback::Create(riff, 48000, PlaybackLoop{0, 2, std::nullopt});
+    CHECK(playback && playback.value->Start() == WaveError::None);
+    std::array<float, 2> grain;
+    CHECK(playback.value->Render(grain).value == 2);
+    CHECK(playback.value->SourcePosition() == 2);
+    playback.value->ExitLoop();
+    CHECK(playback.value->Render(grain).value == 2);
+    CHECK(grain[0] == 300 / 32768.0f && grain[1] == 400 / 32768.0f);
+    CHECK(playback.value->State() == PlaybackState::Finished);
+    CHECK(playback.value->SourcePosition() == 4);
+}
+TEST(ExitLoopAtFractionalBoundaryUsesTheTailForInterpolation) {
+    const auto riff = PcmSamples(std::array<std::int16_t, 3>{0, 16384, 32767}, 1, 24000);
+    auto playback = Playback::Create(riff, 48000, PlaybackLoop{0, 2, std::nullopt});
+    CHECK(playback && playback.value->Start() == WaveError::None);
+    std::array<float, 3> output;
+    CHECK(playback.value->Render(output).value == 3);
+    playback.value->ExitLoop();
+    CHECK(playback.value->Render(output).value == 3);
+    CHECK(output[0] == (16384 + 32767) / 65536.0f);
+    CHECK(output[1] == 32767 / 32768.0f && output[2] == output[1]);
+}
+TEST(PitchAndOutputRateChangesKeepFractionalPosition) {
+    const auto riff =
+        PcmSamples(std::array<std::int16_t, 5>{0, 4000, 8000, 12000, 16000}, 1, 24000);
+    auto playback = Playback::Create(riff, 48000);
+    CHECK(playback && playback.value->Start() == WaveError::None);
+    std::array<float, 1> output;
+    CHECK(playback.value->Render(output).value == 1 && output[0] == 0);
+    CHECK(playback.value->SetOutputRate(96000) == WaveError::None);
+    CHECK(playback.value->Render(output).value == 1 && output[0] == 2000 / 32768.0f);
+    CHECK(playback.value->SetPitch(2) == WaveError::None);
+    CHECK(playback.value->Render(output).value == 1 && output[0] == 3000 / 32768.0f);
+    CHECK(playback.value->Render(output).value == 1 && output[0] == 5000 / 32768.0f);
+    CHECK(playback.value->SetPitch(0) == WaveError::OutOfRange);
+    CHECK(playback.value->SetOutputRate(0) == WaveError::InvalidFormat);
+}
 int main() {
     return Test::Run();
 }

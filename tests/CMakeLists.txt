@@ -44,6 +44,11 @@ set(NGS2_TEST_SOURCES
     # Under test
     ${CMAKE_SOURCE_DIR}/src/core/libraries/ngs2/ngs2_impl.cpp
     ${CMAKE_SOURCE_DIR}/src/core/libraries/ngs2/hle/handles.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/libraries/ngs2/hle/waveform.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/libraries/ngs2/hle/decoder.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/libraries/ngs2/hle/playback.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/libraries/ngs2/hle/waveform_abi.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/libraries/ngs2/hle/voice.cpp
     stubs/ngs2_memory_stub.cpp
 
     # Minimal common and kernel support
@@ -187,6 +192,7 @@ target_link_libraries(shadps4_settings_test PRIVATE
     spdlog::spdlog
 )
 target_link_libraries(shadps4_ngs2_test PRIVATE
+    LibAtrac9
     GTest::gtest_main
     fmt::fmt
     nlohmann_json::nlohmann_json

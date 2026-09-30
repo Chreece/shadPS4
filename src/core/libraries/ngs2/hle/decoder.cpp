@@ -34,6 +34,24 @@ WaveResult<std::unique_ptr<AudioDecoder>> AudioDecoder::Create(std::span<const s
     return {WaveError::None, std::move(decoder)};
 }
 
+WaveResult<std::unique_ptr<AudioDecoder>> AudioDecoder::CreateRaw(
+    const Waveform& waveform, std::span<const std::uint8_t> payload) {
+    if (waveform.data_offset != 0 || waveform.data_size != payload.size() ||
+        !LocateEncodedWindow(waveform, 0, waveform.num_samples))
+        return {WaveError::InvalidFormat, {}};
+    if (waveform.codec == Codec::Atrac9) {
+        const auto config = ParseAtrac9Config(waveform.atrac9.bytes);
+        if (!config || config->frame_samples != waveform.atrac9.frame_samples ||
+            config->frames_per_superframe != waveform.atrac9.frames_per_superframe)
+            return {WaveError::InvalidAtrac9Config, {}};
+    }
+    std::unique_ptr<AudioDecoder> decoder{new AudioDecoder{waveform, payload}};
+    const auto error = decoder->Reset();
+    if (error != WaveError::None)
+        return {error, {}};
+    return {WaveError::None, std::move(decoder)};
+}
+
 WaveError AudioDecoder::Reset() {
     position = 0;
     byte_position = 0;
@@ -112,7 +130,7 @@ WaveResult<std::size_t> AudioDecoder::Read(std::span<float> output) {
     const auto count = static_cast<std::size_t>(
         std::min<std::uint64_t>(output.size() / channels, waveform.num_samples - position));
     if (waveform.codec == Codec::Pcm16) {
-        auto offset = static_cast<std::size_t>(position * channels * 2);
+        auto offset = static_cast<std::size_t>((position + waveform.encoder_delay) * channels * 2);
         for (std::size_t i = 0; i < count * channels; ++i, offset += 2) {
             const int raw = data[offset] | (static_cast<int>(data[offset + 1]) << 8);
             output[i] = static_cast<float>(raw >= 32768 ? raw - 65536 : raw) / 32768.0f;

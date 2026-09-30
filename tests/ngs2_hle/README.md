@@ -3,20 +3,26 @@ SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 SPDX-License-Identifier: GPL-2.0-or-later
 -->
 
-# NGS2 audio foundation — decoding and playback milestone 3
+# NGS2 public audio path
 
-This branch now connects system/rack lifecycle and voice identity entry points to
-real host objects and adds a tested host-side decoder/playback engine. It is **not
-a working game-audio fix**: public waveform entry points, voice control, routing
-and system rendering are still unfinished. GPU code, audio
-device settings and ES-DE launchers are unchanged. Passing these tests does not
-establish working in-game audio, speaker mapping or cutscene timing.
+The branch now connects PCM16/ATRAC9 waveform parsing, sampler controls, routing,
+submixing and mastering to `sceNgs2SystemRender`. It produces real interleaved
+PCM16 or float output with up to eight independent channels. It is an experimental
+HLE implementation awaiting in-game validation, not a confirmed RDR audio fix.
 
-See [RUNTIME.md](RUNTIME.md) for the implemented API surface, ownership rules,
-compatibility assumptions and next integration steps.
-See [PLAYBACK.md](PLAYBACK.md) for decoding, rate conversion and loop semantics.
+See [BRIDGE.md](BRIDGE.md) for supported controls, ABI evidence and limitations,
+[RUNTIME.md](RUNTIME.md) for ownership, and [PLAYBACK.md](PLAYBACK.md) for decoding.
+The game still submits these buffers to AudioOut; NGS2 opens no host audio device.
 
 ## Implemented
+
+- Public waveform metadata/frame/block queries, transactional linked voice controls,
+  owned sampler blocks, source-rate playback, finite/infinite loops and pitch.
+- Acyclic sampler → submixer → mastering graphs, source-major matrices, port volume,
+  multiple sources/outputs, mastering gain and PCM16 clipping. Eight-channel float
+  processing is retained throughout; channel expansion requires an explicit matrix.
+- Guest UserFx callbacks with planar channel buffers, reentrant queries and lifetime
+  checks after callbacks. Invalid output descriptions fail before playback advances.
 
 - Owned PCM16 and ATRAC9 streams decoded to interleaved float samples through the
   repository's pinned LibAtrac9, with delay trimming, audible duration, bounded
@@ -32,7 +38,7 @@ See [PLAYBACK.md](PLAYBACK.md) for decoding, rate conversion and loop semantics.
   from inclusive file positions to exclusive, delay-trimmed sample positions.
 - Checked calculation of the enclosing PCM frames / ATRAC9 superframes for an
   audible sample-frame range. This **does not** define decoder seeking/preroll or
-  the public `OrbisNgs2WaveformBlock` contract.
+  the public `OrbisNgs2WaveformBlock` contract; that bridge is documented separately.
 - A synchronized, typed system/rack/voice registry. Successful rack creation
   publishes all its voices together; invalid handles and wrong handle types are
   rejected; destroying a parent invalidates descendants. Tokens are not pointers
@@ -81,8 +87,7 @@ These are not references for every NGS2 ABI behavior. The parser rejects unsuppo
 codecs, other ATRAC9 `fact` layouts, multiple/alternating/backward/fractional loops
 rather than silently guessing. Additional variants require separate evidence/tests.
 Input pointers must designate a readable span; arbitrary guest pointer validation
-belongs to the guest-memory adapter, not this parser. The waveform entry points
-are not connected to that adapter yet.
+belongs to the guest-memory adapter, not this parser. The public waveform entry points use that adapter.
 
 ## Run the focused tests
 
@@ -107,9 +112,9 @@ ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
   ctest --test-dir build-ngs2-hle-asan --output-on-failure
 ```
 
-The six test executables contain 92 named cases: 23 parser/range tests, 14
+The seven test executables contain 109 named cases: 23 parser/range tests, 14
 registry tests, 26 public lifecycle API tests, four memory-access tests, 13 decoder
-tests and 12 playback tests. They include all 13,224 shorter prefixes of the observed-format
+tests, 15 playback tests and 14 public audio tests. They include all 13,224 shorter prefixes of the observed-format
 fixture, 10,000 deterministic metadata mutations, published ATRAC9 rate/channel
 indices, eight-channel layouts, resource limits, stale handles and concurrent
 creation/lookup/destruction. The runtime suite also exercises callback re-entry,
@@ -122,17 +127,11 @@ Only the guest memory provider is replaced with a strict mapped-range permission
 model. The memory-access suite tests the exact production range-check algorithm.
 The full emulator build and guest execution are separate validation gates.
 
-## Still required before a game-audio build
+## Test-build gate
 
-1. Validate lifecycle compatibility against guest execution, especially default
-   rack options, info fields and enumeration/error precedence. Implement the
-   remaining external lock/unlock and command APIs.
-2. Validate the public waveform/block fields, codec seeking and loop/preroll rules.
-3. Decode ATRAC9 with per-voice state; implement streaming/resampling and real
-   playback positions, completion state and callbacks.
-4. Implement the supplied sampler/submixer/master routing and render valid samples
-   into the requested eight-channel buffers, then check channel mapping end-to-end.
-
-Do not deploy this lifecycle-only milestone to claim the missing sound is fixed.
-Do not replace the noise with silence or fabricate completion flags as a substitute
-for implementing those remaining stages. Preserve the working sparse-queue build.
+The focused tests exercise the actual public exports with synthetic nonzero audio
+and strict guest mappings. Full emulator compilation/linking is a separate CI gate.
+A successful build is suitable for an isolated first game test; it does not establish
+native ABI equivalence, correct physical speaker order or game compatibility.
+[VALIDATION.md](VALIDATION.md) records the completed checks. Preserve the existing
+working sparse-queue installation when trying an experimental build.
