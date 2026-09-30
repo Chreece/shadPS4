@@ -56,7 +56,8 @@ struct Waveform {
     std::optional<WaveLoop> loop;
 };
 
-template <typename T> struct WaveResult {
+template <typename T>
+struct WaveResult {
     WaveError error{WaveError::None};
     T value{};
     explicit operator bool() const noexcept {
@@ -80,7 +81,8 @@ struct EncodedWindow {
 // Locate enclosing storage units. ATRAC9 units are whole superframes. This is
 // NOT a stateless seeking/decoder-preroll policy or the public NGS2 block ABI.
 // A zero-length request returns an empty window at data_offset.
-[[nodiscard]] WaveResult<EncodedWindow>
-LocateEncodedWindow(const Waveform &waveform, std::uint64_t position, std::uint64_t count);
+[[nodiscard]] WaveResult<EncodedWindow> LocateEncodedWindow(const Waveform& waveform,
+                                                            std::uint64_t position,
+                                                            std::uint64_t count);
 
 } // namespace Libraries::Ngs2::Hle

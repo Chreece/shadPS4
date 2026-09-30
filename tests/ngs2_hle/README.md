@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+SPDX-License-Identifier: GPL-2.0-or-later
+-->
+
 # NGS2 audio foundation — lifecycle integration milestone 2
 
 This branch now connects system/rack lifecycle and voice identity entry points to

@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "handles.h"
 #include <algorithm>
 #include <array>
 #include <limits>
 #include <new>
+#include "handles.h"
 
 namespace Libraries::Ngs2::Hle {
 namespace {
@@ -37,7 +37,7 @@ HandleResult HandleRegistry::CreateSystem(SystemSpec spec) {
     record.system_spec = spec;
     try {
         records.emplace(next, std::move(record));
-    } catch (const std::bad_alloc &) {
+    } catch (const std::bad_alloc&) {
         return {HandleError::OutOfMemory};
     }
     ++system_count;
@@ -75,7 +75,7 @@ HandleResult HandleRegistry::CreateRack(Handle system, RackSpec spec) {
             rack.voices.push_back(token);
         }
         pending.emplace(next, std::move(rack));
-    } catch (const std::bad_alloc &) {
+    } catch (const std::bad_alloc&) {
         return {HandleError::OutOfMemory};
     }
     const Handle token = next;

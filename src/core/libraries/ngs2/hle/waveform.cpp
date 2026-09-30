@@ -25,7 +25,7 @@ constexpr std::array<std::uint8_t, 16> Atrac9Guid{0xd2, 0x42, 0xe1, 0x47, 0xba, 
 constexpr std::array<std::uint8_t, 16> PcmGuid{1,    0, 0, 0,    0, 0,    0x10, 0,
                                                0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71};
 
-WaveError ParseFormat(Bytes fmt, Waveform &wave) {
+WaveError ParseFormat(Bytes fmt, Waveform& wave) {
     if (fmt.size() < 16)
         return WaveError::Truncated;
     auto tag = U16(fmt, 0);
@@ -75,7 +75,7 @@ WaveError ParseFormat(Bytes fmt, Waveform &wave) {
     return WaveError::None;
 }
 
-WaveError ParseLoop(Bytes smpl, Waveform &wave) {
+WaveError ParseLoop(Bytes smpl, Waveform& wave) {
     if (smpl.size() < 36)
         return WaveError::Truncated;
     const auto count = U32(smpl, 28);
@@ -138,7 +138,7 @@ WaveResult<Waveform> ParseWaveform(Bytes data) {
         const std::size_t body = p + 8;
         if (size > end - body)
             return {WaveError::Truncated};
-        std::optional<Bytes> *target = nullptr;
+        std::optional<Bytes>* target = nullptr;
         if (Id(data, p, "fmt "))
             target = &fmt;
         else if (Id(data, p, "fact"))
@@ -196,7 +196,7 @@ WaveResult<Waveform> ParseWaveform(Bytes data) {
     return {WaveError::None, wave};
 }
 
-WaveResult<EncodedWindow> LocateEncodedWindow(const Waveform &w, std::uint64_t position,
+WaveResult<EncodedWindow> LocateEncodedWindow(const Waveform& w, std::uint64_t position,
                                               std::uint64_t count) {
     constexpr auto max = std::numeric_limits<std::uint64_t>::max();
     if (w.channels == 0 || w.channels > 8 || w.data_offset > max - w.data_size)

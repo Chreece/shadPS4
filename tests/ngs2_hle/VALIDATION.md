@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+SPDX-License-Identifier: GPL-2.0-or-later
+-->
+
 # Lifecycle milestone validation — 2026-09-30
 
 Base: `fad0b3223c2117f53dc5a1119890fe91d55f1ecd`.
@@ -7,6 +12,7 @@ Base: `fad0b3223c2117f53dc5a1119890fe91d55f1ecd`.
 | GCC 13.3 Debug, warnings as errors | 67/67 cases passed in four executables |
 | GCC 13.3 Release / NDEBUG | 67/67 cases passed |
 | GCC 13.3 ASan + UBSan | 67/67 cases passed, leak detection disabled |
+| GitHub Actions: GCC Debug/Release, Clang ASan/UBSan with leak checking | All three jobs passed |
 | Existing six `tests/test_ngs2.cpp` GoogleTest cases | 6/6 passed |
 | Production `ngs2.cpp`, `ngs2_impl.cpp`, `hle/guest_memory.cpp` C++23 syntax | Passed |
 | Exact new MemoryManager method compiled with real production headers/types | Passed |
@@ -37,3 +43,14 @@ translation-unit or emulator build.
 No deployable emulator binary was produced, no host speaker settings were changed,
 and no working sparse-queue installation was replaced. Remaining functionality
 and compatibility assumptions are listed in [RUNTIME.md](RUNTIME.md).
+
+## Remote CI
+
+[Focused run 36783128151](https://github.com/Chreece/shadPS4/actions/runs/36783128151)
+passed all three configurations for implementation commit
+`918c1768523515a589748472ba8446eefda6d043`. Unlike the local container, the Clang
+sanitizer runner completed with leak detection enabled. The full Build and Release
+workflow was still running when this update was recorded; it is not counted as a
+full-build pass. Repository lint identified missing SPDX tags in the milestone
+Markdown notes and formatting in the earlier foundation/notification include;
+this follow-up corrects those without changing runtime behavior.

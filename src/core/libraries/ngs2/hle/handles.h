@@ -47,7 +47,7 @@ struct HandleLimits {
 // are not reused during that registry's lifetime. All returned data are copies.
 // Guest buffer allocators and playback state are deliberately outside this layer.
 class HandleRegistry {
-  public:
+public:
     explicit HandleRegistry(HandleLimits limits = {}) : limits{limits} {}
     [[nodiscard]] HandleResult CreateSystem(SystemSpec spec = {});
     [[nodiscard]] HandleResult CreateRack(Handle system, RackSpec spec);
@@ -61,7 +61,7 @@ class HandleRegistry {
     [[nodiscard]] HandleError DestroySystem(Handle system);
     [[nodiscard]] std::size_t Size() const;
 
-  private:
+private:
     enum class Kind { System, Rack, Voice };
     struct Record {
         Kind kind{};
