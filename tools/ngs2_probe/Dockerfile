@@ -12,3 +12,13 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
  && apt-get update -qq && apt-get install -y --no-install-recommends clang-19 mold \
  && rm -rf /var/lib/apt/lists/* /tmp/llvm.key
 RUN git config --global --add safe.directory '*'
+
+# clang-19 alone with --no-install-recommends omits the archive tools used by IPO.
+# Keep this a separate layer so the previous compiler-image layers can be reused.
+RUN apt-get update -qq \
+ && apt-get install -y --no-install-recommends llvm-19 \
+ && test -x /usr/bin/llvm-ar-19 \
+ && test -x /usr/bin/llvm-ranlib-19 \
+ && rm -rf /var/lib/apt/lists/*
+COPY toolchain_preflight.sh /usr/local/libexec/shadps4-toolchain-preflight.sh
+RUN bash /usr/local/libexec/shadps4-toolchain-preflight.sh
