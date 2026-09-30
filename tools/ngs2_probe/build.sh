@@ -8,7 +8,7 @@ main() {
     local state="/home/chreece/.local/state/shadps4-ngs2-probe"
     local dest="/home/chreece/Applications/shadps4/releases/ngs2-probe"
     local vol="shadps4-clang19-build"
-    local image="shadps4-local-clang19-gcc14:ngs2-v1"
+    local image="shadps4-local-clang19-gcc14:ngs2-v2"
     local log expected base rc status
     base="0a7790aaa11c5ec0009cc66976bb90a8ce7078e5"
     expected="${1:-}"
@@ -98,6 +98,7 @@ print(f'UNCHANGED_SOURCE_TIMESTAMPS_REUSED={matched}')
 PY
     rc=$?
     if [[ "$rc" -ne 0 ]]; then return "$rc"; fi
+    python3 -B "$src/tools/ngs2_probe/test_toolchain.py" || return 1
     python3 -B "$src/tools/ngs2_probe/test_instrument.py" || return 1
     python3 -B "$src/tools/ngs2_probe/instrument.py" \
         "$src/src/core/libraries/ngs2/ngs2.cpp" "$state/ngs2.cpp" || return 1
@@ -115,6 +116,7 @@ PY
         -v "$state/ngs2.cpp:/src/src/core/libraries/ngs2/ngs2.cpp:ro" \
         -v "$vol:/work" -v "$dest:/out" "$image" bash -c '
             set -e
+            bash /src/tools/ngs2_probe/toolchain_preflight.sh
             clang++-19 --version
             g++-14 --version
             clang++-19 -std=c++23 -Wall -Wextra -Werror -pthread \
@@ -137,6 +139,7 @@ PY
     if [[ "$rc" -ne 0 ]]; then
         echo "NGS2_PROBE_BUILD=FAIL rc=$rc"; tail -90 "$log"; return 1;
     fi
+    grep -F 'TOOLCHAIN_PREFLIGHT=PASS' "$log" | tail -1 || true
     "$dest/probe-test" || return 1
     SHADPS4_NGS2_TRACE=1 "$dest/probe-test" >>"$log" 2>&1 || return 1
     timeout 10s "$dest/shadps4.new" --help >>"$log" 2>&1 || return 1
