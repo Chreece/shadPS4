@@ -99,8 +99,11 @@ It does not validate the entire ABI.
 1. Connect waveform parser results to the public waveform/block APIs after
    validating their field semantics, zero-sample request behavior and ATRAC9
    preroll/loop rules. The internal encoded-window helper is not that ABI.
-2. Decode with per-voice ATRAC9 state; add source buffering, resampling, playback
-   advancement, loop exit and completion callbacks.
+2. Connect the host decoder/playback engine described in [PLAYBACK.md](PLAYBACK.md)
+   to voice ownership and resource budgets. PCM/ATRAC9 decoding, delay trimming,
+   rate conversion and explicit forward looping are implemented internally;
+   guest block/repeat semantics and completion callbacks remain to be connected.
+   Improve resampling quality and bound seek/loop preroll cost for real-time use.
 3. Implement voice controls and sampler/submixer/master routing, then render into
    the game's supplied eight-channel buffers. Preserve channel distinctions and
    check the speaker mapping end to end. NGS2 rendering should not open a second

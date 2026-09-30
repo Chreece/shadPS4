@@ -6,12 +6,20 @@ on:
     paths:
       - 'src/core/libraries/ngs2/**'
       - 'src/core/memory*'
+      - 'src/common/atrac9_lock.h'
+      - 'src/core/libraries/ajm/ajm_at9.cpp'
+      - 'externals/LibAtrac9'
+      - 'cmake/LibAtrac9.cmake'
       - 'tests/ngs2_hle/**'
       - '.github/workflows/ngs2-hle.yml'
   pull_request:
     paths:
       - 'src/core/libraries/ngs2/**'
       - 'src/core/memory*'
+      - 'src/common/atrac9_lock.h'
+      - 'src/core/libraries/ajm/ajm_at9.cpp'
+      - 'externals/LibAtrac9'
+      - 'cmake/LibAtrac9.cmake'
       - 'tests/ngs2_hle/**'
       - '.github/workflows/ngs2-hle.yml'
   workflow_dispatch:
@@ -25,18 +33,23 @@ jobs:
       matrix:
         include:
           - compiler: g++
+            c_compiler: gcc
             mode: Debug
             sanitizers: 'OFF'
           - compiler: g++
+            c_compiler: gcc
             mode: Release
             sanitizers: 'OFF'
           - compiler: clang++
+            c_compiler: clang
             mode: Debug
             sanitizers: 'ON'
     steps:
       - uses: actions/checkout@v6
+      - name: Initialize pinned ATRAC9 decoder
+        run: git submodule update --init externals/LibAtrac9
       - name: Configure
-        run: cmake -S tests/ngs2_hle -B build-ngs2 -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} -DCMAKE_BUILD_TYPE=${{ matrix.mode }} -DNGS2_SANITIZERS=${{ matrix.sanitizers }}
+        run: cmake -S tests/ngs2_hle -B build-ngs2 -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} -DCMAKE_BUILD_TYPE=${{ matrix.mode }} -DNGS2_SANITIZERS=${{ matrix.sanitizers }}
       - name: Build
         run: cmake --build build-ngs2 --parallel 4
       - name: Test

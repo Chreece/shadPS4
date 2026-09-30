@@ -470,6 +470,12 @@ set(SYSTEM_LIBS src/core/libraries/system/commondialog.cpp
                 src/core/libraries/ngs2/hle/handles.h
                 src/core/libraries/ngs2/hle/guest_memory.cpp
                 src/core/libraries/ngs2/hle/guest_memory.h
+                src/core/libraries/ngs2/hle/waveform.cpp
+                src/core/libraries/ngs2/hle/waveform.h
+                src/core/libraries/ngs2/hle/decoder.cpp
+                src/core/libraries/ngs2/hle/decoder.h
+                src/core/libraries/ngs2/hle/playback.cpp
+                src/core/libraries/ngs2/hle/playback.h
                 src/core/libraries/ngs2/ngs2_custom.cpp
                 src/core/libraries/ngs2/ngs2_custom.h
                 src/core/libraries/ngs2/ngs2_reverb.cpp
@@ -788,6 +794,7 @@ set(COMMON src/common/logging/classes.cpp
            src/common/arch.h
            src/common/assert.cpp
            src/common/assert.h
+           src/common/atrac9_lock.h
            src/common/bit_field.h
            src/common/bounded_threadsafe_queue.h
            src/common/concepts.h

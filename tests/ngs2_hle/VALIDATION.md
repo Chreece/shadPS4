@@ -3,7 +3,40 @@ SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 SPDX-License-Identifier: GPL-2.0-or-later
 -->
 
-# Lifecycle milestone validation — 2026-09-30
+# NGS2 validation — 2026-09-30
+
+## Decoding and playback milestone
+
+Base: `9c4ecf9d268bb719674cfcb87adc7bd4cdd629af`.
+
+| Check | Result |
+| --- | --- |
+| GCC 13.3 Debug, warnings as errors for HLE/tests | 92/92 cases passed in six executables |
+| GCC 13.3 Release / NDEBUG | 92/92 cases passed |
+| GCC 13.3 ASan + UBSan, including the LibAtrac9 C sources | 92/92 cases passed, local leak detection disabled as explained below |
+| Production AJM and all nine affected NGS2 stub translation units, C++23 syntax | Passed; existing AJM multi-character constant warnings remain |
+| clang-format 19 on changed/new C++ sources, `git diff --check` | Passed |
+| Full emulator build for this milestone | Remote CI required; no local full-build claim |
+| Guest voice controls, routing and system render | Not connected; no in-game audio validation |
+
+The added cases comprise 13 decoder and 12 playback tests using original nonzero
+ATRAC9 packets and PCM samples, including eight distinct channels. The independent
+single-coefficient transform check, seek/delay/loop tests and grain-independent
+rate conversion tests are described in [PLAYBACK.md](PLAYBACK.md).
+
+Enabling UBSan on the pinned codec exposed a shift by 32 in its initialization.
+The shared CMake helper corrects that and signed-left-shift sign extension in a
+generated copy of utility.c. Tests now include negative spectral coefficients;
+ASan/UBSan remain enabled for the entire codec. The submodule revision is unchanged.
+
+The preceding full workflow [36783382595](https://github.com/Chreece/shadPS4/actions/runs/36783382595)
+passed all three platform test jobs, formatting and REUSE, but full compilation
+found obsolete `using namespace Libraries::Kernel` directives in NGS2 stubs after
+the lifecycle header cleanup. This update removes those unused directives and
+syntax-checks all affected translation units. A new full-build result is still
+required before claiming a deployable binary.
+
+## Earlier lifecycle milestone
 
 Base: `fad0b3223c2117f53dc5a1119890fe91d55f1ecd`.
 

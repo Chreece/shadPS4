@@ -22,6 +22,7 @@ enum class WaveError {
     UnsupportedLoop,
     InvalidLoop,
     OutOfRange,
+    DecoderFailure,
 };
 enum class Codec { Unknown, Pcm16, Atrac9 };
 

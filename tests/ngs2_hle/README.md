@@ -3,19 +3,27 @@ SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 SPDX-License-Identifier: GPL-2.0-or-later
 -->
 
-# NGS2 audio foundation — lifecycle integration milestone 2
+# NGS2 audio foundation — decoding and playback milestone 3
 
 This branch now connects system/rack lifecycle and voice identity entry points to
-real host objects. It is **not a working game-audio fix**: waveform entry points,
-voice control, ATRAC9 decoding and rendering are still unfinished. GPU code, audio
+real host objects and adds a tested host-side decoder/playback engine. It is **not
+a working game-audio fix**: public waveform entry points, voice control, routing
+and system rendering are still unfinished. GPU code, audio
 device settings and ES-DE launchers are unchanged. Passing these tests does not
 establish working in-game audio, speaker mapping or cutscene timing.
 
 See [RUNTIME.md](RUNTIME.md) for the implemented API surface, ownership rules,
 compatibility assumptions and next integration steps.
+See [PLAYBACK.md](PLAYBACK.md) for decoding, rate conversion and loop semantics.
 
 ## Implemented
 
+- Owned PCM16 and ATRAC9 streams decoded to interleaved float samples through the
+  repository's pinned LibAtrac9, with delay trimming, audible duration, bounded
+  superframe reads, sticky decode errors and history-preserving seeks.
+- Host playback with rational rate conversion, linear interpolation, explicit
+  finite/infinite forward loops, pause/resume/restart and duration-based EOF.
+  Mono through eight-channel streams retain their individual channel samples.
 - Bounds-checked RIFF/WAVE metadata parsing for PCM16 (including extensible PCM)
   and the observed ATRAC9 extensible-WAVE layout. Parsing never reads payload
   samples or changes the input; results contain values, not borrowed pointers.
@@ -52,9 +60,13 @@ frames. The first traced file has 34,534 audible sample frames, data offset 168,
 13,056 encoded bytes and a loop covering the audible range. The output request is
 separate: 256 frames × 8 channels × 2 bytes = 4,096 bytes, at 48 kHz.
 
-The tests construct synthetic containers from these metadata values with **zero
+The metadata tests construct synthetic containers from these values with **zero
 placeholder payloads**. No game audio, game dump or firmware is included. These
 fixtures validate parsing and byte ranges, not ATRAC9 decoding or audible output.
+Separate decoder/playback fixtures now encode original nonzero ATRAC9 spectra,
+including eight channels. Their first-frame samples are compared with an
+independent DCT-IV/window formula; subsequent tests check overlap history, delay,
+padding, negative coefficients, loops and rate conversion.
 
 Public implementation references consulted for container/config layout:
 
@@ -74,10 +86,11 @@ are not connected to that adapter yet.
 
 ## Run the focused tests
 
-No third-party downloads, host package changes, game or GPU are required by this
-standalone CMake project. Run from the repository root:
+The standalone project needs a C/C++ compiler and the pinned LibAtrac9 submodule;
+it does not require a game or GPU. Run from the repository root:
 
 ```sh
+git submodule update --init externals/LibAtrac9
 cmake -S tests/ngs2_hle -B build-ngs2-hle -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-ngs2-hle --parallel 4
 ctest --test-dir build-ngs2-hle --output-on-failure
@@ -87,14 +100,16 @@ For address and undefined-behavior sanitizers (Clang/GCC):
 
 ```sh
 cmake -S tests/ngs2_hle -B build-ngs2-hle-asan \
-  -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Debug -DNGS2_SANITIZERS=ON
+  -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_BUILD_TYPE=Debug -DNGS2_SANITIZERS=ON
 cmake --build build-ngs2-hle-asan --parallel 4
 ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
   ctest --test-dir build-ngs2-hle-asan --output-on-failure
 ```
 
-The four test executables contain 67 named cases: 23 parser/range tests, 14
-registry tests, 26 public lifecycle API tests and four memory-access tests. They include all 13,224 shorter prefixes of the observed-format
+The six test executables contain 92 named cases: 23 parser/range tests, 14
+registry tests, 26 public lifecycle API tests, four memory-access tests, 13 decoder
+tests and 12 playback tests. They include all 13,224 shorter prefixes of the observed-format
 fixture, 10,000 deterministic metadata mutations, published ATRAC9 rate/channel
 indices, eight-channel layouts, resource limits, stale handles and concurrent
 creation/lookup/destruction. The runtime suite also exercises callback re-entry,
