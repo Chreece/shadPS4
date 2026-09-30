@@ -56,6 +56,7 @@ class HandleRegistry {
     [[nodiscard]] std::optional<RackSpec> GetRack(Handle rack) const;
     [[nodiscard]] std::optional<VoiceIdentity> GetVoiceIdentity(Handle voice) const;
     [[nodiscard]] HandleError SetGrainSamples(Handle system, std::uint32_t samples);
+    [[nodiscard]] HandleError SetSampleRate(Handle system, std::uint32_t rate);
     [[nodiscard]] HandleError DestroyRack(Handle rack);
     [[nodiscard]] HandleError DestroySystem(Handle system);
     [[nodiscard]] std::size_t Size() const;

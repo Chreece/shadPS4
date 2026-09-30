@@ -1,9 +1,13 @@
-# NGS2 audio foundation — implementation milestone 1
+# NGS2 audio foundation — lifecycle integration milestone 2
 
-This is **internal implementation code, not an enabled game-audio fix**. The existing
-`sceNgs2*` entry points, decoder, renderer, GPU code, audio device settings and ES-DE
-launchers are unchanged. In particular, passing these tests does not establish
-working in-game audio, correct speaker mapping or cutscene timing.
+This branch now connects system/rack lifecycle and voice identity entry points to
+real host objects. It is **not a working game-audio fix**: waveform entry points,
+voice control, ATRAC9 decoding and rendering are still unfinished. GPU code, audio
+device settings and ES-DE launchers are unchanged. Passing these tests does not
+establish working in-game audio, speaker mapping or cutscene timing.
+
+See [RUNTIME.md](RUNTIME.md) for the implemented API surface, ownership rules,
+compatibility assumptions and next integration steps.
 
 ## Implemented
 
@@ -20,6 +24,12 @@ working in-game audio, correct speaker mapping or cutscene timing.
   publishes all its voices together; invalid handles and wrong handle types are
   rejected; destroying a parent invalidates descendants. Tokens are not pointers
   and are not reused during a registry lifetime. Queries return copies.
+- Public system/rack creation, allocator creation, destruction, info, user data,
+  enumeration, rate/grain updates, voice handles and voice ownership now use the
+  same tested registry. Allocator user data is initialized and retained, failed
+  creation rolls back, and child handles are invalidated before cleanup callbacks.
+- A guest-memory adapter checks full mapped ranges and CPU read/write/execute
+  permissions. Metadata is copied before use; callback re-entry is supported.
 - Source channel counts and masks are retained, with 1–8 channels supported.
   No stereo coercion, mono duplication, output downmix or speaker permutation is
   performed. An internal rack's channel capacity is not an audio routing matrix.
@@ -27,7 +37,7 @@ working in-game audio, correct speaker mapping or cutscene timing.
 The default registry quotas are configurable **host resource budgets**, not
 purported console limits. The supported system rates and grain granularity follow
 `ngs2_impl.cpp`; requiring the active grain not to exceed its maximum is an internal
-invariant to check again when the guest adapter is added.
+invariant now also checked against live rack capacities in the guest adapter.
 
 ## Evidence and boundaries
 
@@ -54,7 +64,8 @@ These are not references for every NGS2 ABI behavior. The parser rejects unsuppo
 codecs, other ATRAC9 `fact` layouts, multiple/alternating/backward/fractional loops
 rather than silently guessing. Additional variants require separate evidence/tests.
 Input pointers must designate a readable span; arbitrary guest pointer validation
-belongs to the future guest-memory adapter, not this parser.
+belongs to the guest-memory adapter, not this parser. The waveform entry points
+are not connected to that adapter yet.
 
 ## Run the focused tests
 
@@ -77,22 +88,31 @@ ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
   ctest --test-dir build-ngs2-hle-asan --output-on-failure
 ```
 
-The two test executables contain 37 named cases: 23 parser/range tests and 14
-registry tests. They include all 13,224 shorter prefixes of the observed-format
+The four test executables contain 67 named cases: 23 parser/range tests, 14
+registry tests, 26 public lifecycle API tests and four memory-access tests. They include all 13,224 shorter prefixes of the observed-format
 fixture, 10,000 deterministic metadata mutations, published ATRAC9 rate/channel
 indices, eight-channel layouts, resource limits, stale handles and concurrent
-creation/lookup/destruction. Checks remain enabled in Release/NDEBUG builds.
+creation/lookup/destruction. The runtime suite also exercises callback re-entry,
+allocator failure and rollback, parent removal/grain changes during allocation,
+output permissions, extended rack options, bounded info writes and real public
+handle invalidation. Checks remain enabled in Release/NDEBUG builds.
+
+The standalone runtime suite links the actual `ngs2_impl.cpp` export implementations.
+Only the guest memory provider is replaced with a strict mapped-range permission
+model. The memory-access suite tests the exact production range-check algorithm.
+The full emulator build and guest execution are separate validation gates.
 
 ## Still required before a game-audio build
 
-1. Map these values and lifetimes into the existing guest ABI, including caller
-   allocators, callback context, exact error codes, option extensions and rollback.
+1. Validate lifecycle compatibility against guest execution, especially default
+   rack options, info fields and enumeration/error precedence. Implement the
+   remaining external lock/unlock and command APIs.
 2. Validate the public waveform/block fields, codec seeking and loop/preroll rules.
 3. Decode ATRAC9 with per-voice state; implement streaming/resampling and real
    playback positions, completion state and callbacks.
 4. Implement the supplied sampler/submixer/master routing and render valid samples
    into the requested eight-channel buffers, then check channel mapping end-to-end.
 
-Do not deploy this helper-only milestone to claim the missing sound is fixed.
+Do not deploy this lifecycle-only milestone to claim the missing sound is fixed.
 Do not replace the noise with silence or fabricate completion flags as a substitute
 for implementing those remaining stages. Preserve the working sparse-queue build.

@@ -127,6 +127,18 @@ HandleError HandleRegistry::SetGrainSamples(Handle system, std::uint32_t samples
     it->second.system_spec.grain_samples = samples;
     return HandleError::None;
 }
+HandleError HandleRegistry::SetSampleRate(Handle system, std::uint32_t rate) {
+    const std::lock_guard lock{mutex};
+    const auto it = records.find(system);
+    if (it == records.end() || it->second.kind != Kind::System)
+        return HandleError::InvalidHandle;
+    auto spec = it->second.system_spec;
+    spec.sample_rate = rate;
+    if (!ValidSystem(spec))
+        return HandleError::InvalidOption;
+    it->second.system_spec = spec;
+    return HandleError::None;
+}
 HandleError HandleRegistry::DestroyRack(Handle rack) {
     const std::lock_guard lock{mutex};
     const auto it = records.find(rack);

@@ -466,6 +466,10 @@ set(SYSTEM_LIBS src/core/libraries/system/commondialog.cpp
                 src/core/libraries/ngs2/ngs2_error.h
                 src/core/libraries/ngs2/ngs2_impl.cpp
                 src/core/libraries/ngs2/ngs2_impl.h
+                src/core/libraries/ngs2/hle/handles.cpp
+                src/core/libraries/ngs2/hle/handles.h
+                src/core/libraries/ngs2/hle/guest_memory.cpp
+                src/core/libraries/ngs2/hle/guest_memory.h
                 src/core/libraries/ngs2/ngs2_custom.cpp
                 src/core/libraries/ngs2/ngs2_custom.h
                 src/core/libraries/ngs2/ngs2_reverb.cpp
@@ -947,6 +951,7 @@ set(CORE src/core/aerolib/stubs.cpp
          src/core/linker.h
          src/core/memory.cpp
          src/core/memory.h
+         src/core/memory_access.h
          src/core/module.cpp
          src/core/module.h
          src/core/platform.h
