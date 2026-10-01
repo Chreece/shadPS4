@@ -11,6 +11,7 @@
 #include "core/emulator_settings.h"
 #include "core/memory.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/page_manager.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -557,6 +558,14 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
             // Cannot reuse this image as we need the exact requested format.
             image_id = {};
         } else if (!image_resolved.info.resources.CanContain(info.resources)) {
+            GraphicsDiagnostics::Emit(
+                GraphicsDiagnostics::Event::Containment,
+                "address=%llx available-mips=%u requested-mips=%u available-layers=%u "
+                "requested-layers=%u binding=%u",
+                static_cast<unsigned long long>(info.guest_address),
+                image_resolved.info.resources.levels, info.resources.levels,
+                image_resolved.info.resources.layers, info.resources.layers,
+                static_cast<unsigned>(desc.type));
             // The image was clearly picked up wrong.
             FreeImage(image_id);
             image_id = {};
