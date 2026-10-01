@@ -21,6 +21,7 @@ enum class Event {
     ConditionalExec,
     QueryControl,
     QueryResult,
+    QueryCountState,
     Count
 };
 inline std::array<std::atomic<unsigned long long>, static_cast<size_t>(Event::Count)> g_counts{};
@@ -51,7 +52,7 @@ void Emit(Event event, const char* format, Args... args) {
     }
     static constexpr std::array names{"enabled",       "pixel-pipe",       "predication",
                                       "copy-layers",   "containment-miss", "conditional-exec",
-                                      "query-control", "query-result"};
+                                      "query-control", "query-result",     "query-count-state"};
     const auto index = static_cast<size_t>(event);
     const auto count = g_counts[index].fetch_add(1, std::memory_order_relaxed) + 1;
     if (!ShouldSample(count)) {

@@ -29,7 +29,8 @@ struct OcclusionQuery::State {
     std::condition_variable pending_cv;
     u32 pending{};
     // Accessed only by the scheduler's FIFO priority callback thread.
-    u64 total{};
+    Counter::Totals totals{};
+    u64 unsupported_total{};
 };
 
 OcclusionQuery::OcclusionQuery(const Instance& instance_, Scheduler& scheduler_)
@@ -51,11 +52,13 @@ OcclusionQuery::~OcclusionQuery() {
     Drain();
 }
 
-void OcclusionQuery::Control() {
-    seen_control = true;
-    control_enabled = !control_enabled;
-    Diagnostics::Emit(Diagnostics::Event::QueryControl, "counting=%u",
-                      static_cast<unsigned>(control_enabled));
+void OcclusionQuery::Control(u32 control, u32 high, u32 count_control) {
+    // PIXEL_PIPE_STAT_CONTROL selects the counter to dump/reset. Repeated
+    // selections must not toggle counting; DB_COUNT_CONTROL controls each draw.
+    selected_counter = Counter::SelectedCounter(control);
+    Diagnostics::Emit(Diagnostics::Event::QueryControl,
+                      "control=%08x high=%08x counter=%u count-control=%08x", control, high,
+                      selected_counter, count_control);
 }
 
 void OcclusionQuery::Reset() {
@@ -63,8 +66,17 @@ void OcclusionQuery::Reset() {
     Queue(0, 0, true);
 }
 
-std::optional<u32> OcclusionQuery::PrepareDraw() {
-    if (!(seen_control ? control_enabled : seen_dump)) {
+std::optional<OcclusionQuery::DrawQuery> OcclusionQuery::PrepareDraw(u32 count_control) {
+    const unsigned counters = Counter::MeasuredCounters(count_control);
+    const unsigned unmeasured = Counter::ActiveCounters(count_control) & ~counters;
+    incomplete |= unmeasured;
+    if (last_count_control != count_control) {
+        last_count_control = count_control;
+        Diagnostics::Emit(Diagnostics::Event::QueryCountState,
+                          "count-control=%08x measured-mask=%x unmeasured-mask=%x", count_control,
+                          counters, unmeasured);
+    }
+    if (!counters) {
         return std::nullopt;
     }
     for (u32 attempt = 0; attempt < PoolSize; ++attempt) {
@@ -79,39 +91,39 @@ std::optional<u32> OcclusionQuery::PrepareDraw() {
             scheduler.EndRendering();
             scheduler.CommandBuffer().resetQueryPool(*state->pool, slot, 1);
         }
-        return slot;
+        return DrawQuery{slot, counters};
     }
     // Bounded exhaustion must not turn an unknown result into invisible geometry.
-    incomplete = true;
+    incomplete |= counters;
     return std::nullopt;
 }
 
-void OcclusionQuery::BeginDraw(vk::CommandBuffer command, std::optional<u32> query) {
+void OcclusionQuery::BeginDraw(vk::CommandBuffer command, std::optional<DrawQuery> query) {
     if (query) {
         const vk::QueryControlFlags flags = instance.IsPreciseOcclusionSupported()
                                                 ? vk::QueryControlFlagBits::ePrecise
                                                 : vk::QueryControlFlags{};
-        command.beginQuery(*state->pool, *query, flags);
+        command.beginQuery(*state->pool, query->slot, flags);
     }
 }
 
-void OcclusionQuery::EndDraw(vk::CommandBuffer command, std::optional<u32> query) {
+void OcclusionQuery::EndDraw(vk::CommandBuffer command, std::optional<DrawQuery> query) {
     if (query) {
-        command.endQuery(*state->pool, *query);
+        command.endQuery(*state->pool, query->slot);
         active_queries.push_back(*query);
     }
 }
 
 void OcclusionQuery::Dump(VAddr address, u32 pipes) {
-    seen_dump = true;
     Queue(address, pipes, false);
 }
 
 void OcclusionQuery::Queue(VAddr address, u32 pipes, bool reset) {
     auto slots = std::move(active_queries);
     active_queries.clear();
-    const bool lost_samples = incomplete;
-    incomplete = false;
+    const unsigned lost_samples = incomplete;
+    const unsigned counter = selected_counter;
+    incomplete = 0;
     last_pending_tick = scheduler.CurrentTick();
     {
         std::scoped_lock lock{state->pending_mutex};
@@ -120,55 +132,63 @@ void OcclusionQuery::Queue(VAddr address, u32 pipes, bool reset) {
     // Unlike DeferOperation, priority callbacks run outside the pending-op lock
     // and make progress even if the guest is polling a result without new draws.
     scheduler.DeferPriorityOperation([state = state, slots = std::move(slots), address, pipes,
-                                      reset, lost_samples] {
-        u64 samples{};
-        bool exact = !lost_samples;
+                                      reset, lost_samples, counter] {
+        Counter::Totals samples{};
+        unsigned missing = lost_samples;
         {
             std::scoped_lock lock{state->host_query_mutex};
-            for (const auto slot : slots) {
+            for (const auto query : slots) {
                 u64 value{};
-                const auto result =
-                    state->device.getQueryPoolResults(*state->pool, slot, 1, sizeof(value), &value,
-                                                      sizeof(value), vk::QueryResultFlagBits::e64);
+                const auto result = state->device.getQueryPoolResults(
+                    *state->pool, query.slot, 1, sizeof(value), &value, sizeof(value),
+                    vk::QueryResultFlagBits::e64);
                 if (result == vk::Result::eSuccess) {
-                    samples += value;
+                    Counter::Accumulate(samples, value, query.counters);
                 } else {
-                    exact = false;
+                    missing |= query.counters;
                     LOG_WARNING(Render_Vulkan, "Completed occlusion query unavailable: {}",
                                 vk::to_string(result));
                 }
             }
         }
+        for (unsigned bank = 0; bank < samples.size(); ++bank) {
+            Counter::Accumulate(state->totals, samples[bank] + ((missing >> bank) & 1), 1u << bank);
+        }
         if (reset) {
-            state->total = 0;
-        } else {
-            state->total = (state->total + samples + (exact ? 0 : 1)) & Counter::Mask;
+            Counter::Reset(state->totals, counter);
         }
         if (address && pipes && pipes <= 16) {
+            const bool supported = counter < state->totals.size();
+            const bool exact = supported && !(missing & (1u << counter));
+            // Non-occlusion counter IDs are not implemented; never report them
+            // as a successful zero-sample occlusion measurement.
+            const u64 total = supported ? state->totals[counter] : ++state->unsupported_total;
             auto* memory = Core::Memory::Instance();
             if (memory->IsAccessibleRange(address, Counter::WriteSpan(pipes),
                                           Core::MemoryProt::CpuWrite)) {
                 for (u32 pipe = 0; pipe < pipes; ++pipe) {
-                    const u64 value = Counter::Value(state->total, pipe, pipes);
+                    const u64 value = Counter::Value(total, pipe, pipes);
                     auto* destination = reinterpret_cast<void*>(address + pipe * 16);
                     if (!memory->TryWriteBacking(destination, &value, sizeof(value))) {
                         std::memcpy(destination, &value, sizeof(value));
                     }
                 }
-                Diagnostics::Emit(
-                    Diagnostics::Event::QueryResult,
-                    "address=%llx queries=%u samples=%llu total=%llu complete=%u",
-                    static_cast<unsigned long long>(address), static_cast<unsigned>(slots.size()),
-                    static_cast<unsigned long long>(samples),
-                    static_cast<unsigned long long>(state->total), static_cast<unsigned>(exact));
+                Diagnostics::Emit(Diagnostics::Event::QueryResult,
+                                  "address=%llx counter=%u queries=%u samples=%llu total=%llu "
+                                  "complete=%u missing-mask=%x",
+                                  static_cast<unsigned long long>(address), counter,
+                                  static_cast<unsigned>(slots.size()),
+                                  static_cast<unsigned long long>(supported ? samples[counter] : 0),
+                                  static_cast<unsigned long long>(total),
+                                  static_cast<unsigned>(exact), missing);
             } else {
                 LOG_WARNING(Render_Vulkan, "Invalid occlusion result address: {:#x}", address);
             }
         }
         // No nested scheduler callback: query reads are complete, and no GPU
         // predicate-buffer copies use these slots in this implementation.
-        for (const auto slot : slots) {
-            state->busy[slot].store(false, std::memory_order_release);
+        for (const auto query : slots) {
+            state->busy[query.slot].store(false, std::memory_order_release);
         }
         {
             std::scoped_lock lock{state->pending_mutex};

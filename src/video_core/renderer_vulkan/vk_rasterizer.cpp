@@ -225,7 +225,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     pipeline->BindResources(set_writes, push_data);
     UpdateDynamicState(pipeline, is_indexed);
-    const auto query = occlusion ? occlusion->PrepareDraw() : std::nullopt;
+    const auto query = occlusion ? occlusion->PrepareDraw(liverpool->regs.depth_count_control)
+                                  : std::nullopt;
     scheduler.BeginRendering(state);
 
     const auto& vs_info = pipeline->GetStage(Shader::SwStage::Vertex);
@@ -301,7 +302,8 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
     pipeline->BindResources(set_writes, push_data);
     UpdateDynamicState(pipeline, is_indexed);
-    const auto query = occlusion ? occlusion->PrepareDraw() : std::nullopt;
+    const auto query = occlusion ? occlusion->PrepareDraw(liverpool->regs.depth_count_control)
+                                  : std::nullopt;
     scheduler.BeginRendering(state);
 
     const auto cmdbuf = scheduler.CommandBuffer();
