@@ -70,3 +70,23 @@ the CI readiness gate. Probe tests exercise CRLF token dispatch in a real shell,
 ordinary-entry argument forwarding, exact rollback and unknown-logic rejection.
 No test switches a real user installation. The actual
 download and binary startup remain checked by the installer on the target host.
+
+## Recovery after a local diagnostic startup crash
+
+Run `python3 recover_crash.py` as the desktop user before launching another game.
+It saves the existing emulator logs, diagnostic trace, local build tail,
+deployment records and available recent core-dump metadata to the printed
+`CRASH_ARCHIVE` path. Collection does not run the emulator or upload anything.
+Each log is limited to its last 2 MiB; the archive is readable only by its owner.
+
+After collection, recovery checks the saved deployment hashes and follows only
+the ac36a0ed/ca67919d launcher backup chain back to the working f00bef80 selection.
+It verifies the earlier executable against its deployment record and atomically
+restores the launcher. Unrecognized launcher edits, corrupt backups or a missing
+earlier executable stop rollback; the crash archive remains available. Settings,
+saves, game files and release binaries are not changed. Recovery is not a fix
+for the diagnostic core's startup failure or the earlier build's audio limits.
+
+Run `python3 documents/ngs2/test_recover_crash.py -v` for temporary-home recovery
+checks covering log preservation, direct and two-stage rollback, edited launchers,
+corrupt backups/binaries and repeated recovery.
