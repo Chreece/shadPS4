@@ -11,7 +11,7 @@ import sys
 import zipfile
 import deploy_test as deploy
 
-REVISION = "ac36a0edd40409c3c9ed67dc68c630b7d2dcba7e"
+REVISION = "59566b916c3ff680616081c9bcde642e70f874a7"
 PREVIOUS = deploy.COMMIT
 
 
@@ -19,14 +19,15 @@ def selection(original, binary):
     text = original.decode()
     home = binary.parents[4]
     candidates = []
-    for previous in (PREVIOUS, "ca67919dacf2917140fb957142dcd993737d9dd6"):
+    for previous in (PREVIOUS, "ca67919dacf2917140fb957142dcd993737d9dd6",
+                     "ac36a0edd40409c3c9ed67dc68c630b7d2dcba7e"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
         candidates.append("# NGS2 isolated core selection: " + previous + "\n        " + command)
     found = [block for block in candidates if text.count(block) == 1]
     if len(found) != 1:
-        raise RuntimeError("Expected the f00bef80 or ca67919d test selection; launcher left unchanged.")
+        raise RuntimeError("Expected a known earlier NGS2 test selection; launcher left unchanged.")
     old_block = found[0]
     probe_command = f'python3 {home}/Applications/shadps4/releases/ngs2-probe/run_probe.py "$@"'
     restored = text.replace(old_block, probe_command, 1)
@@ -38,8 +39,10 @@ def selection(original, binary):
 
 def runner(binary, trace):
     return ('''#!/usr/bin/env python3
+from collections import deque
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 binary = BINARY
@@ -50,21 +53,29 @@ with trace.open("wb") as report:
     report.write(b"NGS2 diagnostic revision REVISION\\n")
     report.flush()
     process = subprocess.Popen([binary, "--game", "CUSA36843", "--fullscreen", "true"],
-                               env=env, stderr=subprocess.PIPE)
+                               env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     saved = 0
-    # Drain stderr even after the output cap; never block the game on a full pipe.
+    console_tail = deque(maxlen=512)
+    # Drain both streams after the caps, retaining the final crash output too.
     while True:
-        line = process.stderr.readline(4096)
+        line = process.stdout.readline(4096)
         if not line:
             break
-        if line.startswith(b"NGS2_DIAG ") and saved < 2048:
-            report.write(line[:1024])
-            report.flush()
-            saved += 1
-    process.stderr.close()
+        if line.startswith(b"NGS2_DIAG "):
+            if saved < 2048:
+                report.write(line[:1024])
+                report.flush()
+                saved += 1
+        else:
+            console_tail.append(line)
+    process.stdout.close()
     code = process.wait()
+    report.write(b"\\nEMULATOR_CONSOLE_TAIL (stdout and stderr, at most 2 MiB)\\n")
+    report.writelines(console_tail)
     report.write(("exit_code=%s\\n" % code).encode())
-sys.exit(code)
+    if code < 0:
+        report.write(("signal=%s\\n" % signal.Signals(-code).name).encode())
+sys.exit(128 - code if code < 0 else code)
 '''.replace('BINARY', repr(str(binary))).replace('TRACE', 'Path(' + repr(str(trace)) + ')')
         .replace('REVISION', REVISION)).encode()
 
@@ -173,6 +184,11 @@ def main():
         run(['cmake', '-S', source / 'tests/ngs2_hle', '-B', focused, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
         run(['cmake', '--build', focused, '--parallel', jobs])
         run(['ctest', '--test-dir', focused, '--output-on-failure'])
+        startup = work / 'userservice-test'
+        run(['cmake', '-S', source / 'tests/userservice', '-B', startup, '-G', 'Ninja',
+             '-DCMAKE_BUILD_TYPE=Release', *compiler])
+        run(['cmake', '--build', startup, '--parallel', jobs])
+        run(['ctest', '--test-dir', startup, '--output-on-failure'])
         build = work / 'build'
         options = ['-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF']
         if use_docker or shutil.which('ccache'):
@@ -189,7 +205,7 @@ def main():
     deploy.download = lambda artifact, destination: shutil.copyfile(archive, destination)
     deploy.selected_wrapper = selection
     binary.parent.mkdir(parents=True, exist_ok=True)
-    trace = home / 'ngs2-diagnostic-ca67919d.log'
+    trace = home / ('ngs2-diagnostic-' + REVISION[:8] + '.log')
     helper = binary.parent / 'run_diagnostic.py'
     content = runner(binary, trace)
     if helper.is_symlink() or (helper.exists() and helper.read_bytes() != content):

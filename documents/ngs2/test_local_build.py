@@ -86,6 +86,33 @@ class LocalDeploymentTests(DeploymentTests):
         with self.assertRaises(RuntimeError):
             local.selection(self.original, self.home / 'Applications/shadps4/releases/ngs2-ca67919d/shadps4')
 
+    def test_runner_preserves_crash_output_after_diagnostic_and_console_caps(self):
+        binary = self.home / 'crashing-core'
+        binary.write_text('#!' + sys.executable + '\n' + '''
+import os, resource, signal, sys
+resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+for n in range(2500):
+    print("NGS2_DIAG number=%s" % n, file=sys.stderr)
+for n in range(600):
+    print("startup-line-" + str(n) + "x" * 4000)
+print("critical startup error on stdout", flush=True)
+print("critical startup error on stderr", file=sys.stderr, flush=True)
+os.kill(os.getpid(), signal.SIGTRAP)
+''')
+        binary.chmod(0o700)
+        trace = self.home / 'crash.log'
+        helper = self.home / 'runner.py'
+        helper.write_bytes(local.runner(binary, trace))
+        result = subprocess.run([sys.executable, str(helper)], timeout=20)
+        self.assertEqual(result.returncode, 133)
+        data = trace.read_text()
+        self.assertEqual(sum(line.startswith('NGS2_DIAG ') for line in data.splitlines()), 2048)
+        self.assertIn('critical startup error on stdout', data)
+        self.assertIn('critical startup error on stderr', data)
+        self.assertIn('exit_code=-5', data)
+        self.assertIn('signal=SIGTRAP', data)
+        self.assertLess(trace.stat().st_size, 3 * 1024 * 1024)
+
 
 if __name__ == '__main__':
     unittest.main()

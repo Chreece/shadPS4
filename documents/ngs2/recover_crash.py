@@ -17,7 +17,8 @@ import tempfile
 
 WORKING = "f00bef80a74e6df0835ea0e9818c71c9d4ddf578"
 DIAGNOSTIC = {"ac36a0edd40409c3c9ed67dc68c630b7d2dcba7e",
-              "ca67919dacf2917140fb957142dcd993737d9dd6"}
+              "ca67919dacf2917140fb957142dcd993737d9dd6",
+              "59566b916c3ff680616081c9bcde642e70f874a7"}
 
 
 def digest(data):
@@ -72,6 +73,10 @@ def collect(home, states, wrapper):
                 for path in files[:12]:
                     copy(path, "logs/%s/%s" % (index, path.name))
             copy(home / "ngs2-diagnostic-ca67919d.log", "diagnostic.log")
+            for revision in sorted(DIAGNOSTIC):
+                if not revision.startswith("ca67919d"):
+                    copy(home / ("ngs2-diagnostic-" + revision[:8] + ".log"),
+                         "diagnostic-" + revision[:8] + ".log")
             copy(wrapper, "launcher.before-recovery")
             for state_file, _ in states:
                 copy(state_file, "deployments/" + state_file.parent.name + ".json")
@@ -80,9 +85,15 @@ def collect(home, states, wrapper):
             copy(work / "build/CMakeCache.txt", "CMakeCache.txt")
             if shutil.which("coredumpctl"):
                 try:
+                    current_hash = digest(wrapper.read_bytes())
+                    current_state = next((state for _, state in states
+                                          if state.get("installed_wrapper_sha256") == current_hash
+                                          and state.get("commit") in DIAGNOSTIC), None)
+                    current_binary = (current_state["binary"] if current_state else
+                                      str(home / "Applications/shadps4/releases/ngs2-ac36a0ed/shadps4"))
                     result = subprocess.run(
                         ["coredumpctl", "--no-pager", "--since=-2h", "info",
-                         str(home / "Applications/shadps4/releases/ngs2-ac36a0ed/shadps4")],
+                         current_binary],
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
                     add("coredump-info.txt", result.stdout[-256 * 1024:])
                 except (OSError, subprocess.TimeoutExpired) as error:

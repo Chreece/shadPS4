@@ -80,7 +80,7 @@ deployment records and available recent core-dump metadata to the printed
 Each log is limited to its last 2 MiB; the archive is readable only by its owner.
 
 After collection, recovery checks the saved deployment hashes and follows only
-the ac36a0ed/ca67919d launcher backup chain back to the working f00bef80 selection.
+the known diagnostic launcher backup chain back to the working f00bef80 selection.
 It verifies the earlier executable against its deployment record and atomically
 restores the launcher. Unrecognized launcher edits, corrupt backups or a missing
 earlier executable stop rollback; the crash archive remains available. Settings,
@@ -90,3 +90,20 @@ for the diagnostic core's startup failure or the earlier build's audio limits.
 Run `python3 documents/ngs2/test_recover_crash.py -v` for temporary-home recovery
 checks covering log preservation, direct and two-stage rollback, edited launchers,
 corrupt backups/binaries and repeated recovery.
+
+## Local startup-fix test
+
+`local_build.py --docker` pins runtime 59566b916c3ff680616081c9bcde642e70f874a7.
+It checks that the game is closed, reuses the existing ca67919d-docker build
+workspace and runs the focused NGS2 and user-colour regression checks before
+building the emulator. The user-colour change fixes an unchecked null lookup
+matching the reported startup fault; target-host startup is still unverified.
+GPU changes and the controller Home/PS quit confirmation remain present.
+
+The new runner combines stdout/stderr, preserves up to 2048 NGS2 diagnostic lines
+and the last 2 MiB of ordinary emulator output, and records the terminating signal.
+Its output path includes the runtime revision and is printed as `TRACE_FILE`.
+Tests verify that a trap after both logging caps still retains the final stdout
+and stderr errors. This update does not claim a fix for silent cutscenes or
+dialogue crackles. Close the test normally after trying those scenes and upload
+the new trace. Audio/channel and GPU settings are not edited by deployment.
