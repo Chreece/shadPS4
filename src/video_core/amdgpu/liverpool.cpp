@@ -15,6 +15,7 @@
 #include "core/platform.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/pm4_cmds.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
@@ -67,6 +68,8 @@ static std::span<const u32> NextPacket(std::span<const u32> span, size_t offset)
 
 Liverpool::Liverpool() : guest_markers_enabled{EmulatorSettings.IsVkGuestMarkersEnabled()} {
     num_counter_pairs = Libraries::Kernel::sceKernelIsNeoMode() ? 16 : 8;
+    VideoCore::GraphicsDiagnostics::Emit(VideoCore::GraphicsDiagnostics::Event::Startup,
+                                        "counter-pairs=%u", num_counter_pairs);
     process_thread = std::jthread{std::bind_front(&Liverpool::Process, this)};
 }
 
@@ -410,6 +413,8 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break;
             }
             case PM4ItOpcode::SetPredication: {
+                VideoCore::GraphicsDiagnostics::Emit(
+                    VideoCore::GraphicsDiagnostics::Event::Predication, "packet-count=%u", count);
                 LOG_WARNING(Render, "Unimplemented IT_SET_PREDICATION");
                 break;
             }
@@ -645,6 +650,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         static constexpr u64 OcclusionCounterValidMask = 0x8000000000000000ULL;
                         static constexpr u64 OcclusionCounterStep = 0x2FFFFFFULL;
                         u64* results = event->Address<u64*>();
+                        VideoCore::GraphicsDiagnostics::Emit(
+                            VideoCore::GraphicsDiagnostics::Event::PixelPipe,
+                            "address=%llx counter=%llu pairs=%u",
+                            static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(results)),
+                            static_cast<unsigned long long>(pixel_counter), num_counter_pairs);
                         for (s32 i = 0; i < num_counter_pairs; ++i, results += 2) {
                             *results = pixel_counter | OcclusionCounterValidMask;
                         }
@@ -836,6 +846,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     LOG_WARNING(Render, "IT_COND_EXEC used a reserved command");
                 }
                 const auto skip = *cond_exec->Address() == false;
+                VideoCore::GraphicsDiagnostics::Emit(
+                    VideoCore::GraphicsDiagnostics::Event::ConditionalExec,
+                    "skip=%u exec-count=%u", static_cast<unsigned>(skip),
+                    cond_exec->exec_count.Value());
                 if (skip) {
                     dcb = NextPacket(dcb,
                                      header->type3.NumWords() + 1 + cond_exec->exec_count.Value());

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "video_core/buffer_cache/buffer.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -37,6 +38,22 @@ static std::pair<u32, u32> SanitizeCopyLayers(const VideoCore::ImageInfo& src_in
 
     u32 src_layers = src_info.resources.layers;
     u32 dst_layers = dst_info.resources.layers;
+
+    if (src_layers != dst_layers || vk_src_type != vk_dst_type) {
+        VideoCore::GraphicsDiagnostics::Emit(
+            VideoCore::GraphicsDiagnostics::Event::CopyLayers,
+            "src-address=%llx dst-address=%llx src-type=%u dst-type=%u src-format=%u dst-format=%u "
+            "src-mips=%u dst-mips=%u src-layers=%u dst-layers=%u src-depth=%u dst-depth=%u "
+            "copy-depth=%u src-is-depth=%u dst-is-depth=%u",
+            static_cast<unsigned long long>(src_info.guest_address),
+            static_cast<unsigned long long>(dst_info.guest_address),
+            static_cast<unsigned>(src_info.type), static_cast<unsigned>(dst_info.type),
+            static_cast<unsigned>(src_info.pixel_format), static_cast<unsigned>(dst_info.pixel_format),
+            src_info.resources.levels, dst_info.resources.levels, src_layers, dst_layers,
+            src_info.size.depth, dst_info.size.depth, depth,
+            static_cast<unsigned>(src_info.props.is_depth),
+            static_cast<unsigned>(dst_info.props.is_depth));
+    }
 
     // 3D images can only use 1 layer.
     if (vk_src_type == vk::ImageType::e3D && src_layers != 1) {
