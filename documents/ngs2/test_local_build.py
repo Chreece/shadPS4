@@ -62,7 +62,8 @@ class LocalDeploymentTests(DeploymentTests):
         original = deploy.selected_probe_wrapper(deploy.probe_wrapper(self.home, backup), old)
         new = self.home / 'Applications/shadps4/releases' / ('ngs2-' + local.REVISION[:8]) / 'shadps4'
         for revision in ('59566b916c3ff680616081c9bcde642e70f874a7',
-                         '66a2ef4d25e2029628dad50f5ec9a308ef072c47'):
+                         '66a2ef4d25e2029628dad50f5ec9a308ef072c47',
+                         '9e95c1727d287514d0e85aef9f863e0b293f6e5b'):
             with self.subTest(previous=revision):
                 previous = self.home / 'Applications/shadps4/releases' / ('ngs2-' + revision[:8]) / 'shadps4'
                 with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + revision):

@@ -11,7 +11,7 @@ import sys
 import zipfile
 import deploy_test as deploy
 
-REVISION = "9e95c1727d287514d0e85aef9f863e0b293f6e5b"
+REVISION = "c827aa1d5b052c70f938d6d34a4d704f5d21e088"
 PREVIOUS = deploy.COMMIT
 
 
@@ -22,7 +22,8 @@ def selection(original, binary):
     for previous in (PREVIOUS, "ca67919dacf2917140fb957142dcd993737d9dd6",
                      "ac36a0edd40409c3c9ed67dc68c630b7d2dcba7e",
                      "59566b916c3ff680616081c9bcde642e70f874a7",
-                     "66a2ef4d25e2029628dad50f5ec9a308ef072c47"):
+                     "66a2ef4d25e2029628dad50f5ec9a308ef072c47",
+                     "9e95c1727d287514d0e85aef9f863e0b293f6e5b"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -222,7 +223,9 @@ def main():
     # Reuses checked ELF/startup, atomic switch, backup, and verified rollback.
     deploy.install(home, 0)
     print('TRACE_FILE=' + str(trace))
-    print('Test the NGS2 probe entry, then close the game and upload TRACE_FILE.')
+    print('DIAGNOSTIC_ONLY: cutscene/audio behavior is unchanged and still experimental.')
+    print('Test the NGS2 probe entry; leave the first stalled cutscene for 15 seconds,')
+    print('then close the emulator normally and upload TRACE_FILE.')
 
 
 if __name__ == '__main__':
