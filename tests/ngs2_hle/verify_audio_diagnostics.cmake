@@ -6,8 +6,8 @@ if(NOT result EQUAL 0)
     message(FATAL_ERROR "Audio diagnostic test failed: ${result}\n${output}\n${trace}")
 endif()
 foreach(pattern
-    "blocks-request [^\n]*flags=1 count=1 null-data=1 readable=1 [^\n]*offset=37 bytes=768 skip=9 samples=384"
-    "blocks-request [^\n]*flags=1 [^\n]*readable=0"
+    "blocks-request [^\n]*flags=2 count=1 null-data=1 readable=1 [^\n]*offset=37 bytes=768 skip=9 samples=384"
+    "blocks-request [^\n]*flags=2 [^\n]*readable=0"
     "state-query [^\n]*query=flags [^\n]*flags=3 queued=1 samples=256"
     "state-query [^\n]*flags=20 queued=0 samples=768 completed-bytes=1536"
     "voice-commit [^\n]*event=4 reset=0 flags=5"

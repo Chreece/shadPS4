@@ -5,6 +5,44 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # NGS2 validation — 2026-09-30
 
+## Initial waveform block replacement — 2026-10-01
+
+Base: `c827aa1d5b052c70f938d6d34a4d704f5d21e088`.
+
+The completed user trace has 1,431 bounded records and `exit_code=0`. It shows
+flag-1 submissions containing finite initial segments, followed by flag-0
+submissions containing infinite loops. One observed initial segment skips 75,408
+samples and plays 20,064; the appended loop covers all 95,472 samples. Rejecting
+flag 1 loses that initial segment. Other queried voices remain playing/empty
+(`0x23`) with zero sample progress, while many accepted finite blocks complete
+normally. These observations do not identify the exact guest cutscene wait.
+
+This change interprets flag 1 as replacement of the queued blocks and flag 0 as
+append. It preserves skipped initial segments and following loop blocks, validates
+all payloads and limits, and rolls back an invalid replacement together with the
+rest of its control batch. A replacement drops pending exit-loop requests for the
+discarded queue. Current run state and cumulative counters are preserved. The
+replacement semantics are an explicit HLE inference; no public native definition
+of the flag was established by the preceding source/PR audit.
+
+Six synthetic cases cover flag-1 mono ATRAC9 at 24 kHz through eight-channel
+48 kHz output, finite skipped prefixes followed by infinite loops and loop exit,
+invalid replacement rollback, replacement of a full queue, callback replacement
+without discarding a grain, and pending exit-loop isolation. The first five cases
+failed on the parent implementation before the change. Original synthetic audio
+is used; game payloads are not copied into tests or repository documentation.
+
+- GCC 13.3 Release: 128 unique cases; all nine CTest invocations passed.
+- GCC 13.3 ASan/UBSan: all 30 public audio cases passed with and without
+  diagnostics. Leak checking remains disabled in this environment.
+
+The unknown-flag diagnostic fixtures now use flag 2. Non-identity filters remain
+unsupported (the trace supplies direct type 0x20, location 0, channel mask 0).
+Playback completion callbacks, filter DSP and continuous resampling between
+separate blocks are still unfinished. No in-game cutscene, dialogue crackle or
+physical speaker-layout fix is claimed. Local Docker compilation and the isolated
+game test remain the deployment path; cross-platform CI is not requested.
+
 ## Cutscene wait diagnostic — 2026-10-01
 
 Base: `9e95c1727d287514d0e85aef9f863e0b293f6e5b`.

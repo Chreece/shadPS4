@@ -220,8 +220,18 @@ s32 AddBlocks(Voice& voice, const RackOptions& rack,
               const OrbisNgs2SamplerVoiceWaveformBlocksParam& param) {
     if (!voice.channels)
         return ORBIS_NGS2_ERROR_UNINIT_VOICE;
-    if (param.flags != 0)
+    // Observed callers install the finite initial segment with bit 0, then
+    // append a separate repeating segment with flags=0. Treat bit 0 as queue
+    // replacement; other bits still need evidence. VoiceControl owns a staged
+    // progress copy, so even partial decoder/metadata failure rolls back this
+    // replacement without touching the live queue or decoder positions.
+    constexpr u32 ReplaceQueuedBlocks = 1;
+    if (param.flags & ~ReplaceQueuedBlocks)
         return ORBIS_NGS2_ERROR_INVALID_OPERATION;
+    if (param.flags & ReplaceQueuedBlocks) {
+        voice.progress->blocks.clear();
+        voice.progress->exit_loop = false;
+    }
     const size_t limit =
         rack.sampler.maxWaveformBlocks ? rack.sampler.maxWaveformBlocks : MaxBlocks;
     if (param.numBlocks > MaxBlocks || voice.progress->blocks.size() + param.numBlocks > limit)
@@ -392,7 +402,10 @@ s32 ApplyParameter(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack
         if (const auto e = Parameter(address, header, p); e < 0)
             return e;
         DiagnoseBlocks(handle, p);
-        return AddBlocks(voice, rack, p);
+        const auto result = AddBlocks(voice, rack, p);
+        if (result == 0 && (p.flags & 1))
+            exit_loop = false; // An earlier exit-loop command targeted the replaced queue.
+        return result;
     }
     case 0x10000004: {
         OrbisNgs2SamplerVoiceExitLoopParam p{};

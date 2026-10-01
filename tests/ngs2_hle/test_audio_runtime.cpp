@@ -519,7 +519,7 @@ TEST(RejectedBlockDiagnosticReadsOnlyAccessibleMetadataAndPreservesPlayback) {
     g.Load(PcmSamples(std::vector<s16>(768, 8192)));
     Guest<OrbisNgs2WaveformBlock> block;
     block.value = {37, 768, 0, 9, 384, 0, 0};
-    OrbisNgs2SamplerVoiceWaveformBlocksParam param{{}, nullptr, 1, 1, block.ptr()};
+    OrbisNgs2SamplerVoiceWaveformBlocksParam param{{}, nullptr, 2, 1, block.ptr()};
     CHECK(Control(g.source, 0x10000001, param) == ORBIS_NGS2_ERROR_INVALID_OPERATION);
     param.aBlock = reinterpret_cast<const OrbisNgs2WaveformBlock*>(1);
     CHECK(Control(g.source, 0x10000001, param) == ORBIS_NGS2_ERROR_INVALID_OPERATION);
@@ -542,7 +542,7 @@ TEST(RejectedBatchDoesNotCommitStagedPauseOrAdvanceStateQueries) {
         OrbisNgs2SamplerVoiceWaveformBlocksParam append{
             {sizeof(OrbisNgs2SamplerVoiceWaveformBlocksParam), 0, 0x10000001},
             nullptr,
-            1,
+            2,
             1,
             reinterpret_cast<const OrbisNgs2WaveformBlock*>(1)};
     };
@@ -557,6 +557,164 @@ TEST(RejectedBatchDoesNotCommitStagedPauseOrAdvanceStateQueries) {
     }
     CHECK(g.Render() == 0 && g.State().numDecodedSamples == 256);
     CHECK(g.output.value[0] == 0.125f);
+}
+TEST(ReplaceFlagOneShotAtrac9AdvancesAndCompletes) {
+    Graph g;
+    const auto riff = At9Audio();
+    const auto parsed = ParseWaveform(riff);
+    CHECK(parsed);
+    Mapping mapping{riff.data(), riff.size(), 1};
+    CHECK(Control(g.source, 0x10000000,
+                  OrbisNgs2SamplerVoiceSetupParam{
+                      {}, {Atrac9, 1, 24000, 0xfe4005f0, 0, 0}, 0, 0}) == 0);
+    Guest<OrbisNgs2WaveformBlock> block;
+    block.value = {static_cast<u32>(parsed.value.data_offset),
+                   static_cast<u32>(parsed.value.data_size),
+                   0,
+                   0,
+                   1536,
+                   0,
+                   123};
+    CHECK(Control(g.source, 0x10000001,
+                  OrbisNgs2SamplerVoiceWaveformBlocksParam{{}, riff.data(), 1, 1, block.ptr()}) ==
+          0);
+    Event(g.source, 0);
+    auto reference = AudioDecoder::Create(riff);
+    CHECK(reference);
+    std::vector<float> decoded(1536);
+    CHECK(reference.value->Read(decoded).value == decoded.size());
+    bool nonzero = false;
+    for (unsigned grain = 0; grain < 12; ++grain) {
+        CHECK(g.Render() == 0);
+        for (unsigned frame = 0; frame < 256; ++frame) {
+            const auto at = grain * 256 + frame;
+            const auto a = decoded[at / 2];
+            const auto b = decoded[std::min(at / 2 + 1, 1535u)];
+            const auto expected = at % 2 ? a + (b - a) * 0.5f : a;
+            CHECK(std::abs(g.output.value[frame * 8] - expected) < 1e-6f);
+            nonzero |= expected != 0;
+            for (unsigned channel = 1; channel < 8; ++channel)
+                CHECK(g.output.value[frame * 8 + channel] == 0);
+        }
+    }
+    CHECK(nonzero && g.State().numDecodedSamples == 1536);
+    CHECK(g.State().voiceState.stateFlags == 32 && g.State().userData == 123);
+}
+TEST(ReplaceSkippedPrefixThenAppendInfiniteLoopKeepsBothSegments) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(1024, 8192)));
+    CHECK(g.Render() == 0);
+    Guest<std::array<s16, 4>> data;
+    data.value = {1000, 2000, 3000, 4000};
+    Guest<OrbisNgs2WaveformBlock> block;
+    block.value = {0, 8, 0, 2, 2, 0, 11};
+    CHECK(Control(g.source, 0x10000001,
+                  OrbisNgs2SamplerVoiceWaveformBlocksParam{
+                      {}, data.value.data(), 1, 1, block.ptr()}) == 0);
+    block.value = {0, 8, UINT32_MAX, 0, 4, 0, 22};
+    CHECK(Control(g.source, 0x10000001,
+                  OrbisNgs2SamplerVoiceWaveformBlocksParam{
+                      {}, data.value.data(), 0, 1, block.ptr()}) == 0);
+    CHECK(g.Render() == 0);
+    for (unsigned frame = 0; frame < 256; ++frame) {
+        const auto sample = frame < 2 ? data.value[frame + 2] : data.value[(frame - 2) % 4];
+        CHECK(g.output.value[frame * 8] == sample / 32768.0f);
+    }
+    CHECK(g.State().numDecodedSamples == 512 && g.State().decodedDataSize == 8);
+    CHECK(g.State().voiceState.stateFlags == 3 && g.State().userData == 22);
+    CHECK(Control(g.source, 0x10000004, OrbisNgs2SamplerVoiceExitLoopParam{}) == 0);
+    CHECK(g.Render() == 0 && g.State().voiceState.stateFlags == 32);
+    CHECK(g.State().numDecodedSamples == 514 && g.State().decodedDataSize == 16);
+}
+TEST(InvalidReplacementRollsBackQueueAndPendingPause) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(768, 8192)));
+    CHECK(g.Render() == 0);
+    Guest<std::array<s16, 4>> data;
+    Guest<std::array<OrbisNgs2WaveformBlock, 2>> blocks;
+    blocks.value = {{{0, 8, 0, 0, 4, 0, 1}, {0, 8, 0, 0, 4, 1, 2}}};
+    struct Batch {
+        OrbisNgs2VoiceEventParam pause;
+        OrbisNgs2SamplerVoiceWaveformBlocksParam replace;
+    };
+    Guest<Batch> batch;
+    batch.value.pause = {{sizeof(batch.value.pause), offsetof(Batch, replace), 6}, 4};
+    batch.value.replace = {
+        {sizeof(batch.value.replace), 0, 0x10000001}, data.value.data(), 1, 2, blocks.value.data()};
+    CHECK(sceNgs2VoiceControl(g.source, &batch.value.pause.header) ==
+          ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA);
+    CHECK(g.State().voiceState.stateFlags == 3 && g.State().numDecodedSamples == 256);
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.25f);
+    CHECK(g.State().numDecodedSamples == 512 && g.State().decodedDataSize == 0);
+}
+TEST(ReplacementCapacityCountsNewQueueOnly) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(512, 8192)));
+    Guest<s16> sample;
+    sample.value = 4096;
+    Guest<std::array<OrbisNgs2WaveformBlock, 256>> blocks;
+    blocks.value.fill({0, 2, 0, 0, 1, 0, 0});
+    OrbisNgs2SamplerVoiceWaveformBlocksParam replace{{}, sample.ptr(), 1, 256, blocks.value.data()};
+    CHECK(Control(g.source, 0x10000001, replace) == 0);
+    replace.numBlocks = 257;
+    CHECK(Control(g.source, 0x10000001, replace) == ORBIS_NGS2_ERROR_INVALID_NUM_WAVEFORM_BLOCKS);
+    replace.flags = 0;
+    replace.numBlocks = 1;
+    CHECK(Control(g.source, 0x10000001, replace) == ORBIS_NGS2_ERROR_INVALID_NUM_WAVEFORM_BLOCKS);
+    replace.flags = 1;
+    CHECK(Control(g.source, 0x10000001, replace) == 0);
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.125f && g.output.value[8] == 0);
+    CHECK(g.State().numDecodedSamples == 1 && g.State().voiceState.stateFlags == 32);
+}
+TEST(CallbackReplacementDoesNotDiscardCurrentGrainOrRestartNextBlock) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(1024, 8192)));
+    Guest<std::array<s16, 256>> data;
+    data.value.fill(12288);
+    Guest<OrbisNgs2WaveformBlock> block;
+    block.value = {0, sizeof(data.value), 0, 0, 256, 0, 99};
+    Mapping code{reinterpret_cast<void*>(ProcessFx), 1, 4};
+    FxState fx;
+    fx.reenter = [&] {
+        if (fx.calls == 1)
+            CHECK(Control(g.source, 0x10000001,
+                          OrbisNgs2SamplerVoiceWaveformBlocksParam{
+                              {}, data.value.data(), 1, 1, block.ptr()}) == 0);
+    };
+    InstallFx(g, fx);
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.25f);
+    CHECK(g.State().numDecodedSamples == 256);
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.375f);
+    CHECK(g.State().numDecodedSamples == 512 && g.State().userData == 99);
+    CHECK(g.State().voiceState.stateFlags == 32);
+}
+TEST(ReplacementDoesNotInheritExitLoopFromDiscardedQueue) {
+    for (bool linked : {false, true}) {
+        Graph g;
+        g.Load(PcmSamples(std::vector<s16>(512, 8192)));
+        Guest<std::array<s16, 2>> data;
+        data.value = {1024, 2048};
+        Guest<OrbisNgs2WaveformBlock> block;
+        block.value = {0, 4, UINT32_MAX, 0, 2, 0, 1};
+        struct Batch {
+            OrbisNgs2SamplerVoiceExitLoopParam exit;
+            OrbisNgs2SamplerVoiceWaveformBlocksParam replace;
+        };
+        Guest<Batch> batch;
+        batch.value.exit = {{sizeof(batch.value.exit), offsetof(Batch, replace), 0x10000004}};
+        batch.value.replace = {
+            {sizeof(batch.value.replace), 0, 0x10000001}, data.value.data(), 1, 1, block.ptr()};
+        if (linked) {
+            CHECK(sceNgs2VoiceControl(g.source, &batch.value.exit.header) == 0);
+        } else {
+            CHECK(Control(g.source, 0x10000004, OrbisNgs2SamplerVoiceExitLoopParam{}) == 0);
+            CHECK(sceNgs2VoiceControl(g.source, &batch.value.replace.header) == 0);
+        }
+        CHECK(g.Render() == 0 && g.State().voiceState.stateFlags == 3);
+        CHECK(g.State().numDecodedSamples == 256);
+        CHECK(g.output.value[254 * 8] == 1024 / 32768.0f);
+        CHECK(g.output.value[255 * 8] == 2048 / 32768.0f);
+    }
 }
 int main() {
     return Test::Run();

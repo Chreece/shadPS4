@@ -29,7 +29,7 @@ Headers are bounded and cycles rejected. Supported controls are:
 | Control group | IDs implemented |
 | --- | --- |
 | Generic | 1 matrix levels, 2 port volume, 3 port matrix, 4 zero delay, 5 patch, 6 event |
-| Sampler `0x10000000` | 0 setup, 1 append blocks, 4 exit loop, 5 pitch, 8 UserFx, 9 peak enable, 10 identity direct filter |
+| Sampler `0x10000000` | 0 setup, 1 append/replace blocks, 4 exit loop, 5 pitch, 8 UserFx, 9 peak enable, 10 identity direct filter |
 | Submixer `0x20000000` | 0 setup, 4 UserFx, 5 peak enable, 6 identity direct filter |
 | Mastering `0x30000000` | 0 setup, 4 gain, 5 output ID |
 
@@ -44,6 +44,14 @@ Sampler payloads are copied into decoder-owned storage at append time. Guest
 mutation/unmapping after append cannot change the decoded audio. Limits are host
 budgets: 64 MiB per voice, 256 MiB per system, 256 blocks, 64 ports/matrices and
 16 million graph scratch samples. Explicit rack block/port/matrix limits also apply.
+
+Waveform-block flags 0 append; flag 1 replaces the queued blocks before adding the
+new descriptions. Replacement is transactional, including capacity checks against
+the new queue and decoder creation. A pending exit-loop request belongs to the old
+queue and is discarded. Replacement preserves the current run state and cumulative
+sample/byte counters; setup and play retain their existing reset behavior. Unknown
+flag bits remain errors. This flag interpretation is an HLE inference from the
+captured initial-segment/loop submission sequence, not verified console behavior.
 
 Render validates all output buffers and active routing dimensions before advancing
 voices. An idle or paused voice may have incomplete routing during reconfiguration;
@@ -74,13 +82,16 @@ or nonfinite samples mark the voice failed and return an error.
 
 These choices have synthetic tests but are not claimed as verified console ABI:
 
-- Block offsets are relative to the encoded payload (`data + info.dataOffset`).
+- Block offsets are added to the control's `data` pointer. For parser-produced
+  blocks, supply the payload base (`data + info.dataOffset`). The captured caller
+  also supplies a container base with the payload offset included in each block.
   CalcWaveformBlock sample positions include delay; parsing adds the file's delay.
   Zero requested samples yields a zero-size block. ATRAC9 blocks retain the prefix
   from the first superframe and skip decoded samples, preserving transform history.
 - `numRepeats` means extra traversals; `UINT32_MAX` means unlimited. RIFF play_count
   zero maps to unlimited, positive counts to count minus one. Loop ends are exclusive.
-- FrameOffset/FrameMargin, nonzero setup/append flags and nonzero port delay are
+- FrameOffset/FrameMargin, nonzero setup flags, block flag bits other than 1,
+  and nonzero port delay are
   unsupported. Matrix arrays are either packed source × destination or fixed 8 × 8.
   A mastering voice defaults to output 0 until explicitly assigned an output ID.
 - Grain/rate settings and voice configuration are snapshotted for each render.
