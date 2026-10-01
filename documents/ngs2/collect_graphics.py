@@ -10,6 +10,96 @@ import tarfile
 import time
 
 
+def memory_bytes(value):
+    parts = value.split()
+    if not parts or len(parts) > 2:
+        return None
+    units = {'B': 1, 'KiB': 1024, 'MiB': 1024 ** 2, 'GiB': 1024 ** 3}
+    unit = parts[1] if len(parts) == 2 else 'B'
+    if not parts[0].isdigit() or unit not in units:
+        return None
+    return int(parts[0]) * units[unit]
+
+
+def collect_gpu_clients(proc_root=Path('/proc')):
+    # A duplicated/shared DRM fd is one client, even across processes. See
+    # https://docs.kernel.org/gpu/drm-usage-stats.html for accounting semantics.
+    clients = {}
+    denied = set()
+    scanned = 0
+    incomplete = False
+    deadline = time.monotonic() + 8
+    for process in sorted(proc_root.iterdir()):
+        if not process.name.isdigit():
+            continue
+        if scanned >= 32768 or time.monotonic() >= deadline:
+            incomplete = True
+            break
+        try:
+            owner = {'pid': int(process.name), 'uid': process.stat().st_uid,
+                     'name': (process / 'comm').read_text(errors='replace').strip()}
+            with os.scandir(process / 'fdinfo') as entries:
+                for entry in entries:
+                    if scanned >= 32768 or time.monotonic() >= deadline:
+                        incomplete = True
+                        break
+                    if not entry.name.isdigit():
+                        continue
+                    scanned += 1
+                    try:
+                        with open(entry.path, encoding='utf-8', errors='replace') as source:
+                            lines = source.read(16384).splitlines()
+                    except PermissionError:
+                        denied.add(int(process.name))
+                        continue
+                    except OSError:
+                        continue  # Processes and descriptors may exit during capture.
+                    fields = {}
+                    for line in lines:
+                        key, separator, value = line.partition(':')
+                        if separator and key.startswith('drm-'):
+                            fields[key] = value.strip()
+                    if 'drm-driver' not in fields:
+                        continue
+                    client_id = fields.get('drm-client-id')
+                    device = fields.get('drm-pdev')
+                    key = ((fields['drm-driver'], device, client_id) if client_id else
+                           ('fd', process.name, entry.name))
+                    if key not in clients:
+                        # drm-memory-* is AMD's alias of drm-resident-*. Never add
+                        # both, or treat drm-total-* (requested buffers) as residency.
+                        resident = {}
+                        for prefix in ('drm-memory-', 'drm-resident-'):
+                            for field, value in fields.items():
+                                if field.startswith(prefix):
+                                    parsed = memory_bytes(value)
+                                    if parsed is not None:
+                                        resident[field[len(prefix):]] = parsed
+                        clients[key] = {
+                            'driver': fields['drm-driver'], 'pci_device': device,
+                            'client_id': client_id, 'deduplicated': client_id is not None,
+                            'processes': [], 'fd_count': 0, 'fields': fields,
+                            'resident_bytes': resident,
+                        }
+                    client = clients[key]
+                    client['fd_count'] += 1
+                    if owner not in client['processes']:
+                        client['processes'].append(owner)
+        except PermissionError:
+            denied.add(int(process.name))
+        except OSError:
+            continue
+    return {
+        'clients': list(clients.values()), 'fdinfo_scanned': scanned,
+        'permission_denied_processes': len(denied), 'scan_limit_reached': incomplete,
+        'notes': [
+            'Read-only snapshot of accessible DRM clients; other users or containers may be hidden.',
+            'One record per device/client ID. Missing client IDs cannot be deduplicated.',
+            'Shared buffers can occur in multiple clients; do not sum clients as device usage.',
+        ],
+    }
+
+
 def main():
     home = Path.home()
     now = time.time()
@@ -20,7 +110,7 @@ def main():
     if data_home:
         roots.add(Path(data_home) / 'shadPS4')
     candidates = set()
-    report = {'captured_unix': now, 'processes': [], 'gpu': [], 'logs': [],
+    report = {'collector_version': 2, 'captured_unix': now, 'processes': [], 'gpu': [], 'logs': [],
               'log_settings': [], 'warnings': []}
     for process in Path('/proc').iterdir():
         if not process.name.isdigit():
@@ -68,15 +158,27 @@ def main():
             except (OSError, ValueError) as error:
                 report['warnings'].append(f'{path}: {error}')
 
-    for device in sorted(Path('/sys/class/drm').glob('card[0-9]*/device')):
-        values = {'device': str(device)}
+    for card in sorted(Path('/sys/class/drm').glob('card*')):
+        if not card.name[4:].isdigit():
+            continue
+        device = card / 'device'
+        values = {'card': card.name, 'sysfs_path': str(device),
+                  'pci_device': device.resolve().name}
         for key in ('vendor', 'device', 'mem_info_vram_total', 'mem_info_vram_used',
                     'mem_info_gtt_total', 'mem_info_gtt_used', 'gpu_busy_percent'):
             try:
-                values[key] = (device / key).read_text().strip()
+                values['device_id' if key == 'device' else key] = (device / key).read_text().strip()
             except OSError:
                 pass
         report['gpu'].append(values)
+
+    report['gpu_clients'] = collect_gpu_clients()
+    if report['gpu_clients']['permission_denied_processes']:
+        report['warnings'].append('Some processes deny fdinfo access; GPU ownership is partial.')
+    if report['gpu_clients']['scan_limit_reached']:
+        report['warnings'].append('GPU client scan reached its time/file limit; ownership is partial.')
+    if not report['gpu_clients']['clients']:
+        report['warnings'].append('No accessible DRM client statistics found.')
 
     def add_bytes(archive, name, content):
         info = tarfile.TarInfo(name)
@@ -124,6 +226,15 @@ def main():
             add_bytes(archive, 'capture-info.json', json.dumps(report, indent=2).encode())
     print('GRAPHICS_REPORT=' + str(output))
     print('Renderer logs collected:', min(len(available), 6))
+    print('Accessible GPU clients (resident memory; shared buffers can overlap):')
+    clients = sorted(report['gpu_clients']['clients'], reverse=True,
+                     key=lambda item: item['resident_bytes'].get('vram', 0))
+    for client in clients[:12]:
+        owners = ', '.join(f"{owner['pid']} {owner['name']!r}" for owner in client['processes'])
+        memory = client['resident_bytes']
+        values = ' '.join(f'{region}={memory[region] / 1024 ** 2:.1f} MiB'
+                          for region in ('vram', 'gtt') if region in memory)
+        print(f"  {client['driver']} {client['pci_device']} {owners}: {values or 'no memory counters'}")
     for warning in report['warnings']:
         print('NOTE:', warning)
     print('Upload the GRAPHICS_REPORT file. No emulator settings or installation were changed.')
