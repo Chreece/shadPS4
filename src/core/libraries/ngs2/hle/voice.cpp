@@ -9,6 +9,7 @@
 #include <set>
 #include <vector>
 #include "core/libraries/ngs2/ngs2_error.h"
+#include "diagnostics.h"
 #include "guest_memory.h"
 #include "playback.h"
 #include "waveform_abi.h"
@@ -437,14 +438,22 @@ s32 RenderSource(Voice& voice, std::span<float> output, u32 rate) {
         position += result.value * voice.channels;
         voice.rendered_samples += playback.SourcePosition() - source_before;
         if (!result) {
+            Diagnostics::Record(0x300000001ULL, 0,
+                                "decode-error code=%u channels=%u rate=%u queued=%zu produced=%zu",
+                                static_cast<unsigned>(result.error), voice.channels, rate,
+                                voice.blocks.size(), result.value);
             voice.state = RunState::Failed;
             return ORBIS_NGS2_ERROR_CODEC_DECODE_FAIL;
         }
         if (playback.State() == PlaybackState::Finished) {
             voice.completed_bytes += block.info.dataSize;
             voice.blocks.pop_front();
-            if (voice.blocks.empty())
+            if (voice.blocks.empty()) {
+                Diagnostics::Record(0x300000002ULL, 0,
+                                    "queue-ended channels=%u rate=%u filled=%zu requested=%zu",
+                                    voice.channels, rate, position, output.size());
                 voice.state = RunState::Idle;
+            }
         } else {
             break;
         }
@@ -458,8 +467,7 @@ namespace Libraries::Ngs2 {
 using namespace Hle;
 using namespace Runtime;
 
-s32 PS4_SYSV_ABI sceNgs2VoiceControl(OrbisNgs2Handle handle,
-                                     const OrbisNgs2VoiceParamHeader* param_list) {
+static s32 VoiceControlImpl(OrbisNgs2Handle handle, const OrbisNgs2VoiceParamHeader* param_list) {
     const std::lock_guard lock{runtime_mutex};
     const auto identity = registry.GetVoiceIdentity(handle);
     if (!identity)
@@ -485,9 +493,15 @@ s32 PS4_SYSV_ABI sceNgs2VoiceControl(OrbisNgs2Handle handle,
                 return ORBIS_NGS2_ERROR_INVALID_VOICE_CONTROL_ADDRESS;
             if (header.size < sizeof(header) || header.size > 4096)
                 return ORBIS_NGS2_ERROR_INVALID_VOICE_CONTROL_SIZE;
-            if (const auto result =
-                    ApplyParameter(handle, *staged, rack.rack, address, header, exit_loop);
-                result < 0)
+            const auto result =
+                ApplyParameter(handle, *staged, rack.rack, address, header, exit_loop);
+            Diagnostics::Record(
+                (result < 0 ? 0x100000000ULL : 0x200000000ULL) | header.id, 0,
+                "control voice=%llu rack=%x command=%x size=%u result=%x blocks=%zu channels=%u",
+                static_cast<unsigned long long>(handle), staged->kind, header.id,
+                static_cast<unsigned>(header.size), static_cast<unsigned>(result),
+                staged->blocks.size(), staged->channels);
+            if (result < 0)
                 return result;
             if (!header.next)
                 break;
@@ -622,8 +636,8 @@ s32 PS4_SYSV_ABI sceNgs2VoiceGetMatrixInfo(OrbisNgs2Handle handle, u32 matrix,
     return 0;
 }
 
-s32 PS4_SYSV_ABI sceNgs2SystemRender(OrbisNgs2Handle handle,
-                                     const OrbisNgs2RenderBufferInfo* descriptors, u32 count) {
+static s32 SystemRenderImpl(OrbisNgs2Handle handle, const OrbisNgs2RenderBufferInfo* descriptors,
+                            u32 count) {
     std::unique_lock lock{runtime_mutex};
     const auto system = systems.find(handle);
     if (system == systems.end())
@@ -832,6 +846,36 @@ s32 PS4_SYSV_ABI sceNgs2SystemRender(OrbisNgs2Handle handle,
                 }
             }
         }
+        if (Diagnostics::Enabled()) {
+            for (u32 index = 0; index < count; ++index) {
+                float peak = 0;
+                size_t clipped = 0;
+                size_t nonfinite = 0;
+                std::array<float, 8> channel_peaks{};
+                for (size_t i = 0; i < outputs[index].size(); ++i) {
+                    const float value = outputs[index][i];
+                    if (!std::isfinite(value)) {
+                        ++nonfinite;
+                        continue;
+                    }
+                    const float magnitude = std::abs(value);
+                    peak = std::max(peak, magnitude);
+                    auto& channel_peak = channel_peaks[i % buffers[index].numChannels];
+                    channel_peak = std::max(channel_peak, magnitude);
+                    clipped += magnitude > 1;
+                }
+                Diagnostics::Record(
+                    0x400000000ULL | index, 256,
+                    "render system=%llu output=%u grain=%u rate=%u voices=%zu channels=%u "
+                    "peak=%.5f clipped=%zu nonfinite=%zu "
+                    "channel-peaks=%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f result=%x",
+                    static_cast<unsigned long long>(handle), index, frames, rate, graph.size(),
+                    buffers[index].numChannels, static_cast<double>(peak), clipped, nonfinite,
+                    channel_peaks[0], channel_peaks[1], channel_peaks[2], channel_peaks[3],
+                    channel_peaks[4], channel_peaks[5], channel_peaks[6], channel_peaks[7],
+                    static_cast<unsigned>(error));
+            }
+        }
         ++systems.at(handle).render_count;
         for (auto& [id, rack] : racks)
             if (rack.parent == handle)
@@ -840,6 +884,36 @@ s32 PS4_SYSV_ABI sceNgs2SystemRender(OrbisNgs2Handle handle,
     } catch (const std::bad_alloc&) {
         return ORBIS_NGS2_ERROR_EMPTY_BUFFER;
     }
+}
+
+s32 PS4_SYSV_ABI sceNgs2VoiceControl(OrbisNgs2Handle handle,
+                                     const OrbisNgs2VoiceParamHeader* params) {
+    const auto result = VoiceControlImpl(handle, params);
+    if (result < 0)
+        Diagnostics::Record(0x500000000ULL | static_cast<u32>(result), 0,
+                            "control-error voice=%llu result=%x",
+                            static_cast<unsigned long long>(handle), static_cast<unsigned>(result));
+    return result;
+}
+
+s32 PS4_SYSV_ABI sceNgs2SystemRender(OrbisNgs2Handle handle,
+                                     const OrbisNgs2RenderBufferInfo* buffers, u32 count) {
+    if (!Diagnostics::Enabled())
+        return SystemRenderImpl(handle, buffers, count);
+    const auto start = std::chrono::steady_clock::now();
+    const auto result = SystemRenderImpl(handle, buffers, count);
+    const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+                             std::chrono::steady_clock::now() - start)
+                             .count();
+    Diagnostics::Record(0x600000001ULL, 256, "render-time system=%llu us=%lld result=%x",
+                        static_cast<unsigned long long>(handle), static_cast<long long>(elapsed),
+                        static_cast<unsigned>(result));
+    if (result < 0)
+        Diagnostics::Record(0x600000000ULL | static_cast<u32>(result), 0,
+                            "render-error system=%llu count=%u result=%x",
+                            static_cast<unsigned long long>(handle), count,
+                            static_cast<unsigned>(result));
+    return result;
 }
 
 } // namespace Libraries::Ngs2

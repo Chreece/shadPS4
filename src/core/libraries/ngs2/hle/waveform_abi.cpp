@@ -7,6 +7,7 @@
 #include <limits>
 #include <new>
 #include "core/libraries/ngs2/ngs2_error.h"
+#include "diagnostics.h"
 #include "guest_memory.h"
 
 namespace Libraries::Ngs2::Hle {
@@ -128,12 +129,19 @@ s32 PS4_SYSV_ABI sceNgs2ParseWaveformData(const void* data, size_t size,
     if (!Hle::GuestAccessible(data, size, Hle::GuestAccess::Read))
         return ORBIS_NGS2_ERROR_INVALID_WAVEFORM_ADDRESS;
     const auto parsed = Hle::ParseWaveform({static_cast<const u8*>(data), size});
-    if (!parsed)
+    if (!parsed) {
+        Diagnostics::Record(0x700000001ULL, 0, "waveform-parse-error bytes=%zu code=%u", size,
+                            static_cast<unsigned>(parsed.error));
         return ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA;
+    }
     OrbisNgs2WaveformInfo info{};
     if (const auto result = Hle::WaveformInfo(parsed.value, info); result < 0)
         return result;
     Hle::WriteGuest(out, info);
+    Diagnostics::Record(0x700000000ULL | info.format.waveformType, 0,
+                        "waveform type=%x channels=%u rate=%u samples=%u data-bytes=%u",
+                        info.format.waveformType, info.format.numChannels, info.format.sampleRate,
+                        info.numSamples, info.dataSize);
     return 0;
 }
 
