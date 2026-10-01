@@ -56,18 +56,21 @@ class LocalDeploymentTests(DeploymentTests):
         self.assertIn(str(new.parent / 'run_diagnostic.py').encode(), patched)
         self.assertIn(('bash ' + str(backup) + ' "$@"').encode(), patched)
 
-    def test_upgrade_from_59566_preserves_normal_fallback(self):
+    def test_upgrade_from_recent_diagnostics_preserves_normal_fallback(self):
         backup = self.wrapper.with_name('shadps4-esde.before-ngs2-probe.20260930-223701')
         old = self.home / 'Applications/shadps4/releases/ngs2-f00bef80/shadps4'
         original = deploy.selected_probe_wrapper(deploy.probe_wrapper(self.home, backup), old)
-        previous = self.home / 'Applications/shadps4/releases/ngs2-59566b91/shadps4'
-        with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: 59566b916c3ff680616081c9bcde642e70f874a7'):
-            installed = local.selection(original, previous)
         new = self.home / 'Applications/shadps4/releases' / ('ngs2-' + local.REVISION[:8]) / 'shadps4'
-        with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + local.REVISION):
-            patched = local.selection(installed, new)
-        self.assertIn(str(new.parent / 'run_diagnostic.py').encode(), patched)
-        self.assertIn(('bash ' + str(backup) + ' "$@"').encode(), patched)
+        for revision in ('59566b916c3ff680616081c9bcde642e70f874a7',
+                         '66a2ef4d25e2029628dad50f5ec9a308ef072c47'):
+            with self.subTest(previous=revision):
+                previous = self.home / 'Applications/shadps4/releases' / ('ngs2-' + revision[:8]) / 'shadps4'
+                with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + revision):
+                    installed = local.selection(original, previous)
+                with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + local.REVISION):
+                    patched = local.selection(installed, new)
+                self.assertIn(str(new.parent / 'run_diagnostic.py').encode(), patched)
+                self.assertIn(('bash ' + str(backup) + ' "$@"').encode(), patched)
 
     def test_docker_builder_mounts_only_workspace_as_current_user(self):
         args = local.container_command(self.home, 'builder:test', ['cmake', '--version'])

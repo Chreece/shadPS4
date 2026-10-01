@@ -19,7 +19,8 @@ WORKING = "f00bef80a74e6df0835ea0e9818c71c9d4ddf578"
 DIAGNOSTIC = {"ac36a0edd40409c3c9ed67dc68c630b7d2dcba7e",
               "ca67919dacf2917140fb957142dcd993737d9dd6",
               "59566b916c3ff680616081c9bcde642e70f874a7",
-              "66a2ef4d25e2029628dad50f5ec9a308ef072c47"}
+              "66a2ef4d25e2029628dad50f5ec9a308ef072c47",
+              "9e95c1727d287514d0e85aef9f863e0b293f6e5b"}
 
 
 def digest(data):

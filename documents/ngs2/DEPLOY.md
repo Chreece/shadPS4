@@ -111,7 +111,7 @@ the new trace. Audio/channel and GPU settings are not edited by deployment.
 
 ## Local callback/control test
 
-`local_build.py --docker` now pins runtime
+The callback/control local test pinned runtime
 `66a2ef4d25e2029628dad50f5ec9a308ef072c47`. It accepts the known 59566b91 test
 dispatcher as well as earlier recorded test versions, keeps normal ES-DE fallback,
 and reuses the existing Docker build cache. It installs only after the focused
@@ -129,3 +129,21 @@ an isolated test candidate, not confirmation that cutscenes or dialogue are fixe
 The new trace is `~/ngs2-diagnostic-66a2ef4d.log`. Exit after testing the affected
 cutscene and dialogue, then upload that completed trace. Deployment preserves
 7.1/eight-channel configuration, saves, the working installation and GPU settings.
+
+## Local ATRAC9 config test
+
+`local_build.py --docker` now pins
+`9e95c1727d287514d0e85aef9f863e0b293f6e5b`, accepting the recorded 66a2ef4d
+launcher alongside older test selections. It keeps the same isolated Docker
+cache, pre-install checks, normal ES-DE fallback and verified rollback.
+
+The new user trace had no recorded render/matrix errors but rejected valid
+`0xfe4005f0` ATRAC9 setup. This revision corrects scalar-to-codec byte order in
+both directions. Three new regression cases reproduce the boundary mistake;
+focused Release and targeted audio sanitizer checks pass. This remains an
+experimental in-game test; unsupported block flags and filters still need work.
+
+Close the game before building. After installation, test the same NGS2 entry,
+then exit and upload `~/ngs2-diagnostic-9e95c172.log`. No host audio/channel
+settings or normal emulator deployment are changed. Cross-platform CI stays
+skipped until local testing justifies it.
