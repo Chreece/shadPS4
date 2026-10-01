@@ -291,6 +291,53 @@ TEST(TwoSamplersAccumulateIntoTheSameBus) {
     Event(source, 0);
     CHECK(g.Render() == 0 && g.output.value[0] == 0.125f && g.output.value[1] == 0);
 }
+TEST(SixChannelBusRoutesEachSpeakerToEightChannelsWithIndependentLfeGain) {
+    constexpr std::array<unsigned, 6> outputs{0, 1, 2, 3, 6, 7};
+    for (unsigned input = 0; input < 6; ++input) {
+        Graph g;
+        Bus(g.bus, 0x2000, 6);
+        std::vector<s16> samples(256 * 6);
+        for (unsigned frame = 0; frame < 256; ++frame)
+            samples[frame * 6 + input] = 8192;
+        g.Load(PcmSamples(samples, 6));
+        Guest<std::array<float, 48>> levels;
+        for (unsigned ch = 0; ch < 6; ++ch)
+            levels.value[outputs[ch] * 6 + ch] = 1;
+        CHECK(Control(g.bus, 1, OrbisNgs2VoiceMatrixLevelsParam{{}, 0, 48, levels.value.data()}) ==
+              0);
+        CHECK(Control(g.bus, 3, OrbisNgs2VoicePortMatrixParam{{}, 0, 0}) == 0);
+        CHECK(Control(g.master, 0x30000004, OrbisNgs2MasteringVoiceGainParam{{}, 0.5f, 0.25f}) ==
+              0);
+        CHECK(g.Render() == 0);
+        for (unsigned frame = 0; frame < 256; ++frame)
+            for (unsigned ch = 0; ch < 8; ++ch) {
+                const float expected = ch == outputs[input] ? (ch == 3 ? 0.0625f : 0.125f) : 0;
+                CHECK(g.output.value[frame * 8 + ch] == expected);
+            }
+    }
+}
+TEST(AsymmetricEightChannelMatrixDoesNotTransposeSpeakerRoutes) {
+    Graph g;
+    std::vector<s16> samples(256 * 8);
+    for (unsigned frame = 0; frame < 256; ++frame) {
+        samples[frame * 8 + 2] = 8192;
+        samples[frame * 8 + 4] = 16384;
+        samples[frame * 8 + 5] = 4096;
+    }
+    g.Load(PcmSamples(samples, 8));
+    Guest<std::array<float, 64>> levels;
+    levels.value[0 * 8 + 4] = -0.5f;
+    levels.value[1 * 8 + 5] = 0.5f;
+    levels.value[3 * 8 + 2] = 0.25f;
+    CHECK(Control(g.source, 1, OrbisNgs2VoiceMatrixLevelsParam{{}, 0, 64, levels.value.data()}) ==
+          0);
+    CHECK(Control(g.source, 3, OrbisNgs2VoicePortMatrixParam{{}, 0, 0}) == 0);
+    CHECK(g.Render() == 0);
+    constexpr std::array<float, 8> expected{-0.25f, 0.0625f, 0, 0.0625f, 0, 0, 0, 0};
+    for (unsigned frame = 0; frame < 256; ++frame)
+        for (unsigned ch = 0; ch < 8; ++ch)
+            CHECK(g.output.value[frame * 8 + ch] == expected[ch]);
+}
 TEST(LinkedControlFailureRollsBackAndDetectsCycles) {
     Graph g;
     g.Load(PcmSamples(std::vector<s16>(512, 8192)));

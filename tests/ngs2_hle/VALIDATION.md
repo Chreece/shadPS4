@@ -5,6 +5,30 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # NGS2 validation — 2026-09-30
 
+## Matrix speaker routing correction — 2026-10-01
+
+The user reports missing low frequencies. The integration capture has two
+eight-channel AudioOut ports but persistently silent front-right and centre
+samples, with matching peaks on other channels. LFE samples are not wholly zero;
+this capture alone cannot establish the host or receiver's bass behavior.
+
+The renderer indexed matrices as source rows and destination columns. The public
+[KytyPS5 reference](https://github.com/KytyPS5/KytyPS5/blob/b7a1fac898be93bfe0c282752a7a386fd5202486/src/libs/ngs2.cpp)
+uses destination rows and source columns. Correcting that orientation and the
+packed source-channel stride prevents asymmetric mixes from reaching the wrong
+speakers. Fixed 8 × 8 storage remains supported. This reference is another
+emulator, not verified console documentation.
+
+Two new regressions fail before the correction and pass afterward: isolated
+six-channel inputs routed into an eight-channel master with independent LFE gain,
+and an asymmetric eight-channel matrix. GCC 13.3 Release passes all nine focused
+CTest invocations, including 38 audio runtime cases. No full emulator build,
+host speaker test or game test has been performed for this correction.
+
+The change is based on the independent audio branch `c3421308`; sparse and GPU
+changes are not ancestors. No bass boost, crossover or host channel setting is
+added. In-game audio remains experimental.
+
 ## Independent upstream branch and user test report — 2026-10-01
 
 `feat/ngs2-audio-upstream` is based directly on upstream

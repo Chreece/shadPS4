@@ -105,7 +105,8 @@ These choices have synthetic tests but are not claimed as verified console ABI:
   zero maps to unlimited, positive counts to count minus one. Loop ends are exclusive.
 - FrameOffset/FrameMargin, nonzero setup flags, block flag bits outside 0x7,
   and nonzero port delay are
-  unsupported. Matrix arrays are either packed source × destination or fixed 8 × 8.
+  unsupported. Matrix arrays contain destination rows and source columns, either
+  packed with a source-channel stride or fixed 8 × 8.
   A mastering voice defaults to output 0 until explicitly assigned an output ID.
 - Grain/rate settings and voice configuration are snapshotted for each render.
   Newly created or previously inactive voices join the following grain. Stop/pause
@@ -135,7 +136,7 @@ SDK or psOff implementation code was copied:
 - [psOff types](https://github.com/SysRay/psOff_public/blob/a36de91aa9c87fcadc28e22a0468b4e535380446/modules/libSceNgs2/types.h): waveform numbers, control/event IDs, state masks and structure layouts.
 - [Kyty Audio.cpp](https://github.com/InoriRus/Kyty/blob/4733b7e1c91b10554a52007903d74dc76c39a230/source/emulator/src/Audio.cpp): signed linked headers and ordinal voice events. Its dummy rendering behavior is not used as a DSP reference.
 - [Public PS4 application](https://github.com/PhilNCL/PS4/blob/57379b0f4c73bd5f822cdc264444ccd705690779/GraphicsSkeleton/PS4AudioSystem.cpp): allocator creation, 7.1 mastering and game-owned output buffers.
-- [KytyPS5 NGS2 streaming](https://github.com/KytyPS5/KytyPS5/blob/b7a1fac898be93bfe0c282752a7a386fd5202486/src/libs/ngs2.cpp): open-queue, encoded-continuation and queue-clear flag interpretation. This is an emulator reference, not console documentation; its implementation code was not copied.
+- [KytyPS5 NGS2 streaming and mixing](https://github.com/KytyPS5/KytyPS5/blob/b7a1fac898be93bfe0c282752a7a386fd5202486/src/libs/ngs2.cpp): open-queue, encoded-continuation and queue-clear flag interpretation, and destination-row matrix orientation. This is an emulator reference, not console documentation; its implementation code was not copied.
 
 ## Remaining limitations and test scope
 

@@ -1098,12 +1098,12 @@ static s32 SystemRenderImpl(OrbisNgs2Handle handle, const OrbisNgs2RenderBufferI
                                 audio[frame * voice.channels + ch] * port.volume;
                 } else {
                     const auto& matrix = voice.matrices.at(port.matrix);
-                    const u32 stride = matrix.size() == 64 ? 8 : channels;
+                    const u32 stride = matrix.size() == 64 ? 8 : voice.channels;
                     for (u32 frame = 0; frame < frames; ++frame)
                         for (u32 in = 0; in < voice.channels; ++in)
                             for (u32 out = 0; out < channels; ++out)
                                 target[frame * channels + out] +=
-                                    audio[frame * voice.channels + in] * matrix[in * stride + out] *
+                                    audio[frame * voice.channels + in] * matrix[out * stride + in] *
                                     port.volume;
                 }
             }
