@@ -13,7 +13,7 @@ import zipfile
 
 import local_build
 
-REVISION = 'd5c5acc0787ab64939685010cd5878b57479caa7'
+REVISION = '2b82d291daa57d23052594051dacc64e6bdf9e9f'
 FAILED = '2abd0fb0f807e84713517e6a25e982043897353f'
 WORKING = 'f1c1c79073b811ada98b963d6a87c066b66e2bc8'
 
@@ -80,6 +80,7 @@ if __name__ == '__main__':
     local_build.SOURCE_BRANCH = 'main'
     local_build.GRAPHICS_TEST = True
     local_build.GRAPHICS_TRACE = True
+    local_build.OCCLUSION_TEST = True
     local_build.STARTUP_TEST = True
     try:
         if os.geteuid() == 0:

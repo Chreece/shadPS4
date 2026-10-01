@@ -15,6 +15,7 @@ REVISION = "f1c1c79073b811ada98b963d6a87c066b66e2bc8"
 PREVIOUS = deploy.COMMIT
 GRAPHICS_TEST = False
 GRAPHICS_TRACE = False
+OCCLUSION_TEST = False
 STARTUP_TEST = False
 SOURCE_BRANCH = None
 
@@ -34,7 +35,8 @@ def selection(original, binary):
                      "7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e",
                      "f1c1c79073b811ada98b963d6a87c066b66e2bc8",
                      "2abd0fb0f807e84713517e6a25e982043897353f",
-                     "038bb3d83e751e50328abb98f04fcb2c3ee7897e"):
+                     "038bb3d83e751e50328abb98f04fcb2c3ee7897e",
+                     "d5c5acc0787ab64939685010cd5878b57479caa7"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -250,6 +252,12 @@ def main():
                  '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
             run(['cmake', '--build', diagnostics, '--parallel', jobs])
             run(['ctest', '--test-dir', diagnostics, '--no-tests=error', '--output-on-failure'])
+        if OCCLUSION_TEST:
+            occlusion = work / 'occlusion-query-test'
+            run(['cmake', '-S', source / 'tests/occlusion_query', '-B', occlusion,
+                 '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
+            run(['cmake', '--build', occlusion, '--parallel', jobs])
+            run(['ctest', '--test-dir', occlusion, '--no-tests=error', '--output-on-failure'])
         build = work / 'build'
         options = ['-DCMAKE_BUILD_TYPE=Release', '-DENABLE_TESTS=OFF',
                    '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF']
@@ -280,7 +288,10 @@ def main():
         print('GRAPHICS_LOCAL_RESULT=PASS')
         if SOURCE_BRANCH == 'main':
             print('MAIN_LOCAL_RESULT=PASS; combined main revision ' + REVISION)
-        if GRAPHICS_TRACE:
+        if OCCLUSION_TEST:
+            print('EXPERIMENTAL: measured occlusion-query writeback; indoor light fix unconfirmed.')
+            print('GRAPHICS_TRACE=ENABLED; compare indoor light and frame pacing with the previous build.')
+        elif GRAPHICS_TRACE:
             print('GRAPHICS_TRACE=ENABLED; observation only, no new rendering fix.')
         else:
             print('EXPERIMENTAL: upstream PR #4818 texture containment; in-game graphics unconfirmed.')

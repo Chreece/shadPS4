@@ -26,13 +26,21 @@ same scene can distinguish a sun flare from missing building geometry.
 
 The supplied 14:25 capture confirms main 038bb3d8, one running emulator,
 eight-channel/48 kHz output, and 16 layer-copy warnings (15 in the earlier
-capture). No renderer error or device loss is recorded. The next combined-main
+capture). No renderer error or device loss is recorded. The diagnostic combined-main
 revision d5c5acc0 merges `diagnostics/graphics-visibility` (c2f872a7), an optional
 bounded trace of pixel-pipe queries, predication/conditional execution, image
 copies and containment failures. Existing rendering decisions are unchanged.
 This is an evidence build, not a new graphics fix. The local runner enables it
 and saves up to 512 graphics records independently of the audio trace limit.
 Disabled/enabled trace checks and live runner capture-limit checks pass.
+
+The supplied d5c5acc0 trace subsequently confirms active pixel-pipe dumps:
+at least 16,384 in 104 seconds, with every dump advancing the fake counter by
+0x2ffffff. No predication or containment-miss record was observed. Sampled
+copy-layer warnings describe same-address R32_SFLOAT colour-array growth, not
+depth copies. This gives a concrete occlusion candidate, not proof of the
+indoor-light cause. That trace has no exit footer, so it does not establish a
+clean game exit.
 
 ## Single-instance ES-DE launch guard
 
@@ -83,27 +91,31 @@ and build the resulting combined main revision locally. Remote platform builds
 follow successful local testing when requested.
 
 `python3 main_build.py --docker` pins main revision
-`d5c5acc0787ab64939685010cd5878b57479caa7`. It fetches `main` and refuses to build
+`2b82d291daa57d23052594051dacc64e6bdf9e9f`. It fetches `main` and refuses to build
 if that branch no longer matches the pinned revision. Main contains the clean
 NGS2 audio integration, tested sparse queue/BDA fixes, the new graphics fix, and
 the restored user-colour startup guard from `fix/userservice-missing-user`
 (`e2251423f46f0bc20e07f5d9e127af141adb7e26`).
-The graphics change was developed on `fix/texture-subresource-containment`
+The previous graphics change was developed on `fix/texture-subresource-containment`
 (`fc8945dfdd08dfa51fd2537e16b639240123b4f4`) and merged with its branch ancestry
 preserved. The four-file delta from previous main applies upstream
 [PR #4818](https://github.com/shadps4-emu/shadPS4/pull/4818), by jute-ado:
 texture containment must check both mip levels and array layers. The old
 lexicographical comparison could accept an image with too few layers.
 
-The two renderer captures contained image-copy layer mismatch warnings. Those
-warnings do not prove this bug causes the reported disappearing detail; this
-build is a local test of combined main. Sun visibility through walls remains a
-separate occlusion suspect. No predication, tiling, readback, or additional
-graphics PR is included. The clean audio branch remains independent.
+The current graphics candidate is `fix/occlusion-query-writeback`, commit
+`66db3a63949890267b2c2e32ba49dcf92ea30df2`. It adapts the query/readback subset
+of cuesta4's draft [PR #4610](https://github.com/shadps4-emu/shadPS4/pull/4610),
+replacing the active fake counters with GPU measurements. The aggregate sample
+count is preserved across 8/16 guest pipes. Ordered callbacks avoid the draft's
+nested scheduler-lock issue; guest fences wait for preceding counter writes.
+This conservative synchronization may affect frame pacing. Conditional rendering
+and unrelated graphics changes are excluded. Indoor-light improvement still
+requires the local game test. The clean audio branch remains independent.
 
 The helper reuses the existing `ca67919d-docker` workspace and compiler cache.
 It runs the four texture-containment tests, the user-colour regression, the
-bounded graphics-trace checks, and the full Linux emulator
+bounded graphics-trace checks, the occlusion counter/layout regression, and the full Linux emulator
 build for this graphics change, then checks executable startup before switching
 the existing NGS2 probe entry. Audio and sparse code are unchanged from the
 previous main integration; their previous focused suites are not repeated for
@@ -117,15 +129,18 @@ backs up the complete current wrapper, and prints a checked `RESTORE` command.
 Configuration, the working binary, saves, AI services, and 7.1 audio stay intact.
 The game must be closed before starting the build and before the final switch.
 
-Validation performed before publication: all four upstream C++ containment
-tests passed with the repository's vendored Google Test; all 30 local deployment
-checks passed, including a real guarded fallback launch and exact rollback.
-Full Linux integration compilation runs in Docker on the user's homeserver.
+The prior integration passed the four upstream C++ containment tests and its
+deployment checks. This candidate passes the counter/layout and enabled/disabled
+trace tests, plus GCC syntax checks for its query manager, rasterizer and command
+processor. Deployment validation checks the upgrade from d5c5acc0, guarded normal
+fallback, trace capture and exact rollback. Full Linux integration compilation
+runs in Docker on the user's homeserver; no GPU game validation is claimed here.
 
 After `MAIN_LOCAL_RESULT=PASS`, launch the existing NGS2 probe/test entry.
 Move the camera near the affected trees, walk through the same area, and enter
 the building where the sun remained visible. Report missing/flickering detail
-and sun visibility separately. The trace is `~/ngs2-diagnostic-d5c5acc0.log`;
+and sun visibility separately, including any new frame-pacing regression.
+The trace is `~/ngs2-diagnostic-2b82d291.log`;
 the renderer log remains `~/.local/share/shadPS4/log/shad_log.txt`.
 
 The earlier `graphics_build.py` and `test/rdr-texture-containment` revision are
