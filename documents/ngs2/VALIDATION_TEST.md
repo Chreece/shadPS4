@@ -8,7 +8,7 @@ unlikely to explain the remaining issue. The video does not establish which
 renderer path fails, nor does it confirm that the preceding Precise readbacks
 comparison actually used mode 2; that requires a current runtime log.
 
-This session uses the existing main `10ff9e19` emulator. It enables only the RDR
+This session now uses the existing main `77c6bd3a` emulator. It enables only the RDR
 per-game Vulkan core and synchronization validation flags and disables GPU-assisted
 shader instrumentation for this short run. It preserves the current readbacks
 mode, audio and every other setting. No emulator code or launcher is changed.
@@ -42,3 +42,22 @@ has not been established as the cause of these dropouts.
 Host checks: `python3 -m unittest test_readbacks_test -v`. Tests cover preservation
 and rollback, missing-layer refusal, collector integrity, and rollback even when
 collection fails. These checks do not run the game or prove a graphics fix.
+
+## Follow-up after the depth-image patch
+
+The 18:10 upload `ngs2-diagnostic-77c6bd3a.log` confirms the new revision and
+`exit_code=0`. The user still sees glitches. All 22 sampled query-result records
+show `complete=1` and `missing-mask=0`, with both zero and positive results; this
+confirms query availability, not correct coverage or culling. The trace contains
+bounded diagnostic output plus error and console tails. Startup configuration
+lines and validation layer activation are not retained. No VUID/synchronization
+messages appear, but the preceding deployment restored temporary validation, so
+that absence cannot establish that the previous depth errors are fixed.
+
+Run a short validation session on the already-installed 77c6bd3a core. Do not
+rebuild or add another renderer patch for this comparison. Enter the affected
+scene, reproduce for 20–30 seconds, close normally and run FINISH. The resulting
+full renderer log should establish whether the earlier D32/D32S8 copy error and
+depth attachment READ_AFTER_WRITE/WRITE_AFTER_WRITE hazards remain. This separates
+patch verification from other still-open rendering causes. FINISH restores the
+exact pre-session profile, preserving Precise readbacks and audio configuration.

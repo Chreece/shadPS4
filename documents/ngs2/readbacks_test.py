@@ -17,7 +17,7 @@ import sys
 import tempfile
 import time
 
-REVISION = '10ff9e19a7d94340aaedd1e333f1a11abeeb9e75'
+REVISION = '77c6bd3a1f116c605370e765464423a668f25ba1'
 COLLECTOR_SHA256 = '13ca1e6004bfaed5e0a916282d27a1f46109a0ac29b9b13e975aa7c86a24150a'
 VALIDATION_SETTINGS = {'vkvalidation_enabled': True, 'vkvalidation_core_enabled': True,
                        'vkvalidation_sync_enabled': True, 'vkvalidation_gpu_enabled': False}
@@ -99,7 +99,7 @@ def apply(home, validation=False, collector=None):
         raise RuntimeError('XDG_DATA_HOME differs from the captured installation; nothing changed.')
     wrapper = home / '.local/bin/shadps4-esde'
     if '# NGS2 isolated core selection: ' + REVISION not in wrapper.read_text():
-        raise RuntimeError('The selected test build is not 10ff9e19; nothing changed.')
+        raise RuntimeError(f'The selected test build is not {REVISION[:8]}; nothing changed.')
     global_config = json.loads((root / 'config.json').read_text())
     existed = profile.exists()
     original = profile.read_bytes() if existed else b''

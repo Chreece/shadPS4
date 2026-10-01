@@ -86,7 +86,7 @@ class ReadbackComparisonTests(unittest.TestCase):
         self.assertEqual(self.global_path.read_bytes(), self.global_bytes)
         self.profile.unlink()
         self.wrapper.write_text('# other build\n')
-        with self.assertRaisesRegex(RuntimeError, 'not 10ff9e19'):
+        with self.assertRaisesRegex(RuntimeError, 'not ' + test.REVISION[:8]):
             test.apply(self.home)
         self.assertFalse(self.profile.exists())
 
