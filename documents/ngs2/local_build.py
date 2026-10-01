@@ -39,7 +39,8 @@ def selection(original, binary):
                      "038bb3d83e751e50328abb98f04fcb2c3ee7897e",
                      "d5c5acc0787ab64939685010cd5878b57479caa7",
                      "2b82d291daa57d23052594051dacc64e6bdf9e9f",
-                     "10ff9e19a7d94340aaedd1e333f1a11abeeb9e75"):
+                     "10ff9e19a7d94340aaedd1e333f1a11abeeb9e75",
+                     "77c6bd3a1f116c605370e765464423a668f25ba1"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))

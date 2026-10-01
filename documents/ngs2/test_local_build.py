@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
 import importlib.util
+import base64
 import contextlib
 import io
 import json
@@ -33,8 +34,8 @@ class LocalDeploymentTests(DeploymentTests):
 
     def test_graphics_switch_preserves_installed_guard_fallback_and_exact_rollback(self):
         self.mock_install_inputs()
-        previous = '10ff9e19a7d94340aaedd1e333f1a11abeeb9e75'
-        binary = self.home / 'Applications/shadps4/releases/ngs2-10ff9e19/shadps4'
+        previous = '77c6bd3a1f116c605370e765464423a668f25ba1'
+        binary = self.home / 'Applications/shadps4/releases/ngs2-77c6bd3a/shadps4'
         original_audio = self.working_audio_dispatcher()
         with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + previous):
             self.wrapper.write_bytes(local.selection(original_audio, binary))
@@ -69,23 +70,67 @@ class LocalDeploymentTests(DeploymentTests):
         with self.assertRaisesRegex(RuntimeError, 'single-instance guard'):
             local.selection(modified, new)
 
-    def test_known_validation_session_is_restored_before_visual_test(self):
+    def validation_backup(self, name='one', original=None):
         profile = self.home / '.local/share/shadPS4/custom_configs/CUSA36843.json'
-        profile.parent.mkdir(parents=True)
-        current = b'{"GPU":{"readbacks_mode":2},"Vulkan":{"vkvalidation_enabled":true}}'
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        current = b'{"GPU":{"readbacks_mode":2},"Audio":{"channels":8},"Vulkan":{"vkvalidation_enabled":true}}'
+        if original is None:
+            original = b'{"GPU":{"readbacks_mode":2},"Audio":{"channels":8}}'
         profile.write_bytes(current)
-        record = self.home / '.local/state/shadps4-graphics-readbacks/test-one/state.json'
+        record = self.home / ('.local/state/shadps4-graphics-readbacks/test-' + name + '/state.json')
         record.parent.mkdir(parents=True)
         record.write_text(json.dumps({'purpose': 'validation', 'profile': str(profile),
-                                      'installed_sha256': deploy.digest(current)}))
+                                      'revision': '77c6bd3a1f116c605370e765464423a668f25ba1',
+                                      'installed_sha256': deploy.digest(current),
+                                      'existed': True, 'original_mode': 0o600,
+                                      'original_base64': base64.b64encode(original).decode(),
+                                      'original_sha256': deploy.digest(original)}))
         helper = record.parent / 'readbacks_test.py'
         helper.write_bytes(b'validated restore helper')
-        with mock.patch.object(main_build, 'VALIDATION_HELPER_SHA256',
-                               deploy.digest(helper.read_bytes())), mock.patch.object(
-                deploy, 'no_running_core'), mock.patch.object(main_build.subprocess, 'run') as run:
+        self.patches.enter_context(mock.patch.dict(main_build.VALIDATION_HELPERS, {
+            '77c6bd3a1f116c605370e765464423a668f25ba1': deploy.digest(helper.read_bytes())}))
+        return profile, record, helper, original
+
+    def test_known_validation_session_is_restored_before_visual_test(self):
+        profile, record, helper, original = self.validation_backup()
+        with mock.patch.object(main_build.subprocess, 'run',
+                               side_effect=lambda *a, **kw: profile.write_bytes(original)) as run:
             main_build.restore_validation_session(self.home)
             run.assert_called_once_with([sys.executable, str(helper), '--restore', str(record)],
                                         check=True)
+        self.assertEqual(profile.read_bytes(), original)
+
+    def test_repeated_validation_uses_original_without_validation(self):
+        profile, _, _, original = self.validation_backup()
+        self.validation_backup('duplicate', original)
+        self.validation_backup('nested', profile.read_bytes())
+        def restore(command, **kwargs):
+            state = json.loads(Path(command[-1]).read_text())
+            profile.write_bytes(base64.b64decode(state['original_base64']))
+        with mock.patch.object(main_build.subprocess, 'run', side_effect=restore) as run:
+            main_build.restore_validation_session(self.home)
+            run.assert_called_once()
+        self.assertEqual(profile.read_bytes(), original)
+
+    def test_ambiguous_validation_backups_do_not_change_settings(self):
+        profile, _, _, _ = self.validation_backup()
+        self.validation_backup('different', b'{"GPU":{"readbacks_mode":0}}')
+        current = profile.read_bytes()
+        with mock.patch.object(main_build.subprocess, 'run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'matching test backup'):
+                main_build.restore_validation_session(self.home)
+            run.assert_not_called()
+        self.assertEqual(profile.read_bytes(), current)
+
+    def test_modified_validation_helper_does_not_change_settings(self):
+        profile, _, helper, _ = self.validation_backup()
+        current = profile.read_bytes()
+        helper.write_bytes(b'changed restore helper')
+        with mock.patch.object(main_build.subprocess, 'run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'matching test backup'):
+                main_build.restore_validation_session(self.home)
+            run.assert_not_called()
+        self.assertEqual(profile.read_bytes(), current)
 
     def test_unrecognized_validation_settings_are_preserved(self):
         profile = self.home / '.local/share/shadPS4/custom_configs/CUSA36843.json'

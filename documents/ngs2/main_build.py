@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Recover the failed main deployment, then build combined main locally."""
 
+import base64
 import json
 import os
 from pathlib import Path
@@ -13,10 +14,15 @@ import zipfile
 
 import local_build
 
-REVISION = '77c6bd3a1f116c605370e765464423a668f25ba1'
+REVISION = 'f9f2aa508c90a98e800ee398a824acd57b68fdbb'
 FAILED = '2abd0fb0f807e84713517e6a25e982043897353f'
 WORKING = 'f1c1c79073b811ada98b963d6a87c066b66e2bc8'
-VALIDATION_HELPER_SHA256 = '4b5ffcb3389ecabcda7e6a8ab68cf85fd37194376e21d68fc85ecfd4573a4ebd'
+VALIDATION_HELPERS = {
+    '10ff9e19a7d94340aaedd1e333f1a11abeeb9e75':
+        '4b5ffcb3389ecabcda7e6a8ab68cf85fd37194376e21d68fc85ecfd4573a4ebd',
+    '77c6bd3a1f116c605370e765464423a668f25ba1':
+        '38deba4f5f8ead4149c5b50048d0227c79fe0b84ec9bf119a8fded72066b0e5e',
+}
 
 
 def restore_validation_session(home):
@@ -28,26 +34,41 @@ def restore_validation_session(home):
     current = profile.read_bytes()
     if not json.loads(current).get('Vulkan', {}).get('vkvalidation_enabled', False):
         return
-    matches = []
-    for record in (home / '.local/state/shadps4-graphics-readbacks').glob('test-*/state.json'):
+    matches = {}
+    for record in sorted((home / '.local/state/shadps4-graphics-readbacks').glob('test-*/state.json')):
         if record.is_symlink():
             continue
         try:
             state = json.loads(record.read_text())
         except (OSError, ValueError):
             continue
-        if (state.get('purpose') == 'validation' and state.get('profile') == str(profile) and
-                state.get('installed_sha256') == local_build.deploy.digest(current)):
-            matches.append(record)
+        if (state.get('purpose') != 'validation' or state.get('profile') != str(profile) or
+                state.get('installed_sha256') != local_build.deploy.digest(current)):
+            continue
+        helper = record.parent / 'readbacks_test.py'
+        expected = VALIDATION_HELPERS.get(state.get('revision'))
+        try:
+            if (not expected or helper.is_symlink() or
+                    local_build.deploy.digest(helper.read_bytes()) != expected):
+                continue
+            original = base64.b64decode(state['original_base64'], validate=True)
+            if local_build.deploy.digest(original) != state['original_sha256']:
+                continue
+            config = json.loads(original) if state['existed'] else {}
+            if config.get('Vulkan', {}).get('vkvalidation_enabled', False):
+                continue
+            key = (state['existed'], original, state['original_mode'])
+            matches[key] = (helper, record)
+        except (OSError, ValueError, KeyError):
+            continue
     if len(matches) != 1:
         raise RuntimeError('Validation is enabled without one matching test backup. Run the '
                            'original RESTORE command before this normal-speed visual test.')
-    helper = matches[0].parent / 'readbacks_test.py'
-    if (helper.is_symlink() or
-            local_build.deploy.digest(helper.read_bytes()) != VALIDATION_HELPER_SHA256):
-        raise RuntimeError('Validation restore helper checksum mismatch; settings preserved.')
+    (existed, original, _), (helper, record) = next(iter(matches.items()))
     local_build.deploy.no_running_core()
-    subprocess.run([sys.executable, str(helper), '--restore', str(matches[0])], check=True)
+    subprocess.run([sys.executable, str(helper), '--restore', str(record)], check=True)
+    if profile.exists() != existed or (existed and profile.read_bytes() != original):
+        raise RuntimeError('Validation restore did not produce the verified original configuration.')
     print('VALIDATION=RESTORED: temporary core/synchronization checks removed.', flush=True)
 
 
