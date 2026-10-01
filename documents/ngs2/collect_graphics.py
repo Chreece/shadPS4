@@ -7,8 +7,73 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
+import sys
 import tarfile
 import time
+
+
+def rearm_audio(home, proc_root=Path('/proc')):
+    matches = []
+    for process in proc_root.iterdir():
+        if not process.name.isdigit():
+            continue
+        try:
+            if process.stat().st_uid != os.getuid():
+                continue
+            exe = (process / 'exe').resolve(strict=True)
+            if exe.name.lower() != 'shadps4':
+                continue
+            matches.append((process, exe))
+        except OSError:
+            continue
+    if len(matches) != 1:
+        raise RuntimeError('Keep exactly one test emulator running before capturing the stall.')
+    process, exe = matches[0]
+    release = exe.parent
+    name = re.fullmatch(r'ngs2-([0-9a-f]{8})', release.name)
+    if not name or release.parent != home / 'Applications/shadps4/releases':
+        raise RuntimeError('The running executable is not an isolated NGS2 test build.')
+    environment = dict(item.split(b'=', 1) for item in (process / 'environ').read_bytes().split(b'\0')
+                       if b'=' in item)
+    trace = home / ('ngs2-diagnostic-' + name[1] + '.log')
+    trigger = trace.with_suffix('.capture')
+    if environment.get(b'SHADPS4_NGS2_DIAGNOSTICS_TRIGGER') != os.fsencode(trigger):
+        raise RuntimeError('This running build does not advertise on-demand audio capture.')
+    if trigger.is_symlink() or (trigger.exists() and not trigger.is_file()) or trace.is_symlink():
+        raise RuntimeError('Unexpected capture path; nothing changed.')
+    requested = not trigger.exists()
+    if requested:
+        fd = os.open(trigger, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'w') as target:
+            target.write('capture\n')
+        print('Capturing 12 seconds of audio state; leave the game running.', flush=True)
+        time.sleep(12)
+    acknowledged = trace.is_file() and b'capture-rearmed window=2' in trace.read_bytes()
+    return {'pid': int(process.name), 'requested': requested, 'acknowledged': acknowledged,
+            'note': 'One extra bounded capture per launch. No audio or graphics settings changed.'}
+
+
+def audio_routing():
+    report = {}
+    for kind in ('sinks', 'sink-inputs', 'source-outputs'):
+        try:
+            result = subprocess.run(['pactl', '-f', 'json', 'list', kind], check=True,
+                                    capture_output=True, text=True, timeout=3)
+            entries = json.loads(result.stdout)
+            report[kind] = []
+            for entry in entries:
+                data = {key: entry[key] for key in
+                        ('index', 'name', 'sink', 'source', 'sample_specification', 'channel_map',
+                         'volume', 'mute', 'corked') if key in entry}
+                properties = entry.get('properties', {})
+                data['application'] = {key: properties[key] for key in
+                                       ('application.name', 'application.process.id',
+                                        'application.process.binary', 'media.role') if key in properties}
+                report[kind].append(data)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            report[kind] = {'unavailable': type(error).__name__}
+    return report
 
 
 def diagnostic_paths(home, processes):
@@ -123,6 +188,7 @@ def collect_gpu_clients(proc_root=Path('/proc')):
 
 def main():
     home = Path.home()
+    capture = rearm_audio(home) if '--rearm-audio' in sys.argv[1:] else None
     now = time.time()
     stamp = time.strftime('%Y%m%d-%H%M%S', time.localtime(now))
     output = home / f'shadps4-graphics-{stamp}-{os.getpid()}.tar.gz'
@@ -131,8 +197,12 @@ def main():
     if data_home:
         roots.add(Path(data_home) / 'shadPS4')
     candidates = set()
-    report = {'collector_version': 3, 'captured_unix': now, 'processes': [], 'gpu': [], 'logs': [],
+    report = {'collector_version': 4, 'captured_unix': now, 'processes': [], 'gpu': [], 'logs': [],
               'log_settings': [], 'renderer_settings': [], 'warnings': []}
+    report['audio_capture'] = capture
+    report['audio_routing'] = audio_routing()
+    if capture and not capture['acknowledged']:
+        report['warnings'].append('Audio capture was not acknowledged; no audio activity is inferred.')
     for process in Path('/proc').iterdir():
         if not process.name.isdigit():
             continue
@@ -272,4 +342,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except (RuntimeError, OSError) as error:
+        print('GRAPHICS_CAPTURE_RESULT=FAIL:', error, file=sys.stderr)
+        sys.exit(1)

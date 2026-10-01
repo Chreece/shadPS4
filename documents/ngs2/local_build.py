@@ -18,6 +18,7 @@ GRAPHICS_TRACE = False
 OCCLUSION_TEST = False
 IMAGE_TRANSFER_TEST = False
 STARTUP_TEST = False
+LATE_AUDIO_TRACE = False
 SOURCE_BRANCH = None
 
 
@@ -40,7 +41,8 @@ def selection(original, binary):
                      "d5c5acc0787ab64939685010cd5878b57479caa7",
                      "2b82d291daa57d23052594051dacc64e6bdf9e9f",
                      "10ff9e19a7d94340aaedd1e333f1a11abeeb9e75",
-                     "77c6bd3a1f116c605370e765464423a668f25ba1"):
+                     "77c6bd3a1f116c605370e765464423a668f25ba1",
+                     "f9f2aa508c90a98e800ee398a824acd57b68fdbb"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -78,6 +80,12 @@ if trace.exists():
     trace.replace(previous_trace)
 env = dict(os.environ, SHADPS4_NGS2_DIAGNOSTICS="1",
            SHADPS4_GRAPHICS_DIAGNOSTICS=GRAPHICS_ENABLED)
+if LATE_CAPTURE:
+    trigger = trace.with_suffix(".capture")
+    if trigger.is_symlink() or (trigger.exists() and not trigger.is_file()):
+        raise RuntimeError("Unexpected audio capture marker; preserved.")
+    trigger.unlink(missing_ok=True)
+    env['SHADPS4_NGS2_DIAGNOSTICS_TRIGGER'] = str(trigger)
 with trace.open("wb") as report:
     report.write(b"NGS2 diagnostic revision REVISION\\n")
     if previous_trace is not None:
@@ -95,7 +103,7 @@ with trace.open("wb") as report:
         if not line:
             break
         if line.startswith(b"NGS2_DIAG "):
-            if saved < 2048:
+            if saved < (4097 if LATE_CAPTURE else 2048):
                 report.write(line[:1024])
                 report.flush()
                 saved += 1
@@ -121,7 +129,8 @@ with trace.open("wb") as report:
 sys.exit(128 - code if code < 0 else code)
 '''.replace('BINARY', repr(str(binary))).replace('TRACE', 'Path(' + repr(str(trace)) + ')')
         .replace('REVISION', REVISION)
-        .replace('GRAPHICS_ENABLED', repr('1' if GRAPHICS_TRACE else '0'))).encode()
+        .replace('GRAPHICS_ENABLED', repr('1' if GRAPHICS_TRACE else '0'))
+        .replace('LATE_CAPTURE', repr(LATE_AUDIO_TRACE))).encode()
 
 
 DOCKERFILE = """FROM debian:trixie-slim
@@ -239,7 +248,7 @@ def main():
                  '--parallel', jobs])
             run(['ctest', '--test-dir', focused, '-R', '^SubresourceExtent\\.',
                  '--no-tests=error', '--output-on-failure'])
-        else:
+        if not GRAPHICS_TEST or LATE_AUDIO_TRACE:
             focused = work / 'focused'
             run(['cmake', '-S', source / 'tests/ngs2_hle', '-B', focused, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
             run(['cmake', '--build', focused, '--parallel', jobs])
@@ -291,6 +300,11 @@ def main():
     if helper.is_symlink() or (helper.exists() and helper.read_bytes() != content):
         raise RuntimeError('Diagnostic helper already exists with different contents.')
     deploy.atomic_write(helper, content, 0o700)
+    if LATE_AUDIO_TRACE:
+        collector = binary.parent / 'collect_graphics.py'
+        if collector.is_symlink():
+            raise RuntimeError('Unexpected capture helper symlink.')
+        deploy.atomic_write(collector, Path(__file__).with_name('collect_graphics.py').read_bytes(), 0o700)
     # Reuses checked ELF/startup, atomic switch, backup, and verified rollback.
     deploy.install(home, 0)
     print('TRACE_FILE=' + str(trace))
@@ -298,7 +312,10 @@ def main():
         print('GRAPHICS_LOCAL_RESULT=PASS')
         if SOURCE_BRANCH == 'main':
             print('MAIN_LOCAL_RESULT=PASS; combined main revision ' + REVISION)
-        if IMAGE_TRANSFER_TEST:
+        if LATE_AUDIO_TRACE:
+            print('EXPERIMENTAL: corrected audio matrix routing; game result unverified.')
+            print('CAPTURE_STALL=python3 ' + shlex.quote(str(collector)) + ' --rearm-audio')
+        elif IMAGE_TRANSFER_TEST:
             print('EXPERIMENTAL: depth copy and image transition correction; game fix unconfirmed.')
             print('GRAPHICS_TRACE=ENABLED; compare character/building surfaces and the cutscene.')
         elif OCCLUSION_TEST:
@@ -308,8 +325,12 @@ def main():
             print('GRAPHICS_TRACE=ENABLED; observation only, no new rendering fix.')
         else:
             print('EXPERIMENTAL: upstream PR #4818 texture containment; in-game graphics unconfirmed.')
-        print('Use the existing NGS2 probe entry. Check moving past trees and entering the same building.')
-        print('Compare missing detail and sun visibility separately, then close the game normally.')
+        if LATE_AUDIO_TRACE:
+            print('Use the existing NGS2 probe entry. Compare dialogue and bass with the same 7.1 settings.')
+            print('Run CAPTURE_STALL just before the problem cutscene or while stalled; keep the game running.')
+        else:
+            print('Use the existing NGS2 probe entry. Check moving past trees and entering the same building.')
+            print('Compare missing detail and sun visibility separately, then close the game normally.')
     else:
         print('EXPERIMENTAL: ATRAC9 streaming correction; in-game fix unconfirmed.')
         print('Test the first cutscene from the NGS2 probe entry. If it stalls, wait 15 seconds.')

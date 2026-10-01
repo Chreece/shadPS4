@@ -14,7 +14,7 @@ import zipfile
 
 import local_build
 
-REVISION = 'f9f2aa508c90a98e800ee398a824acd57b68fdbb'
+REVISION = 'f96686b8b5f0d813723d29e7de581efc1d2fb0a8'
 FAILED = '2abd0fb0f807e84713517e6a25e982043897353f'
 WORKING = 'f1c1c79073b811ada98b963d6a87c066b66e2bc8'
 VALIDATION_HELPERS = {
@@ -137,6 +137,7 @@ if __name__ == '__main__':
     local_build.OCCLUSION_TEST = True
     local_build.IMAGE_TRANSFER_TEST = True
     local_build.STARTUP_TEST = True
+    local_build.LATE_AUDIO_TRACE = True
     try:
         if os.geteuid() == 0:
             raise RuntimeError('Run as your normal user, without sudo.')

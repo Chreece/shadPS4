@@ -18,6 +18,7 @@ from test_deploy import DeploymentTests
 import test_deploy
 import session_guard
 import main_build
+import collect_graphics
 test_deploy.deploy = deploy
 
 
@@ -34,8 +35,8 @@ class LocalDeploymentTests(DeploymentTests):
 
     def test_graphics_switch_preserves_installed_guard_fallback_and_exact_rollback(self):
         self.mock_install_inputs()
-        previous = '77c6bd3a1f116c605370e765464423a668f25ba1'
-        binary = self.home / 'Applications/shadps4/releases/ngs2-77c6bd3a/shadps4'
+        previous = 'f9f2aa508c90a98e800ee398a824acd57b68fdbb'
+        binary = self.home / 'Applications/shadps4/releases/ngs2-f9f2aa50/shadps4'
         original_audio = self.working_audio_dispatcher()
         with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + previous):
             self.wrapper.write_bytes(local.selection(original_audio, binary))
@@ -349,6 +350,84 @@ os.kill(os.getpid(), signal.SIGTRAP)
         self.assertIn('exit_code=-5', data)
         self.assertIn('signal=SIGTRAP', data)
         self.assertLess(trace.stat().st_size, 3 * 1024 * 1024)
+
+    def test_runner_keeps_late_window_and_resets_only_regular_capture_marker(self):
+        binary = self.home / 'fake-core'
+        binary.write_text('#!' + sys.executable + '\n' + '''
+import os
+from pathlib import Path
+trigger = Path(os.environ['SHADPS4_NGS2_DIAGNOSTICS_TRIGGER'])
+assert not trigger.exists()
+for i in range(4097):
+    print('NGS2_DIAG captured=%s' % i)
+print('NGS2_DIAG should-be-bounded')
+''')
+        binary.chmod(0o700)
+        trace = self.home / 'late.log'
+        trigger = trace.with_suffix('.capture')
+        trigger.write_text('old launch')
+        helper = self.home / 'runner.py'
+        with mock.patch.object(local, 'LATE_AUDIO_TRACE', True):
+            helper.write_bytes(local.runner(binary, trace))
+        subprocess.run([sys.executable, str(helper)], check=True, timeout=20)
+        output = trace.read_text()
+        self.assertIn('NGS2_DIAG captured=4096', output)
+        self.assertNotIn('should-be-bounded', output)
+        target = self.home / 'preserve.txt'
+        target.write_text('preserve')
+        trigger.symlink_to(target)
+        result = subprocess.run([sys.executable, str(helper)], capture_output=True, timeout=20)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(target.read_text(), 'preserve')
+
+    def test_audio_routing_reports_channel_maps_without_changing_settings(self):
+        entry = {'index': 3, 'channel_map': 'front-left,front-right,front-center,lfe,rear-left,rear-right,side-left,side-right',
+                 'sample_specification': 's16le 8ch 48000Hz', 'mute': False,
+                 'properties': {'application.name': 'shadps4', 'private.extra': 'not needed'}}
+        result = subprocess.CompletedProcess([], 0, stdout=json.dumps([entry]))
+        with mock.patch.object(collect_graphics.subprocess, 'run', return_value=result) as run:
+            report = collect_graphics.audio_routing()
+        self.assertEqual(run.call_count, 3)
+        for kind, call in zip(('sinks', 'sink-inputs', 'source-outputs'), run.call_args_list):
+            self.assertEqual(call.args[0], ['pactl', '-f', 'json', 'list', kind])
+            self.assertEqual(report[kind][0]['channel_map'], entry['channel_map'])
+            self.assertEqual(report[kind][0]['application'], {'application.name': 'shadps4'})
+
+    def capture_process(self):
+        process = self.home / 'proc/123'
+        process.mkdir(parents=True)
+        binary = self.home / 'Applications/shadps4/releases/ngs2-f9f2aa50/shadps4'
+        binary.parent.mkdir(parents=True)
+        binary.write_text('synthetic executable')
+        (process / 'exe').symlink_to(binary)
+        trigger = self.home / 'ngs2-diagnostic-f9f2aa50.capture'
+        (process / 'environ').write_bytes(b'SHADPS4_NGS2_DIAGNOSTICS_TRIGGER=' + os.fsencode(trigger) + b'\0')
+        return process.parent, trigger
+
+    def test_capture_requests_one_window_and_detects_acknowledgement(self):
+        proc, trigger = self.capture_process()
+        def acknowledge(_):
+            self.assertEqual(trigger.stat().st_mode & 0o777, 0o600)
+            trigger.with_suffix('.log').write_text('NGS2_DIAG ms=400000 capture-rearmed window=2\n')
+        with mock.patch.object(collect_graphics.time, 'sleep', side_effect=acknowledge) as wait:
+            result = collect_graphics.rearm_audio(self.home, proc)
+            self.assertTrue(result['acknowledged'])
+            self.assertTrue(result['requested'])
+            again = collect_graphics.rearm_audio(self.home, proc)
+            self.assertFalse(again['requested'])
+            wait.assert_called_once_with(12)
+
+    def test_capture_rejects_unadvertised_trigger_and_duplicate_instances(self):
+        proc, trigger = self.capture_process()
+        (proc / '123/environ').write_bytes(b'OTHER=value\0')
+        with self.assertRaisesRegex(RuntimeError, 'does not advertise'):
+            collect_graphics.rearm_audio(self.home, proc)
+        self.assertFalse(trigger.exists())
+        (proc / '124').mkdir()
+        (proc / '124/exe').symlink_to((proc / '123/exe').resolve())
+        with self.assertRaisesRegex(RuntimeError, 'exactly one'):
+            collect_graphics.rearm_audio(self.home, proc)
+        self.assertFalse(trigger.exists())
 
 
 if __name__ == '__main__':
