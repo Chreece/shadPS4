@@ -65,6 +65,23 @@ class LocalDeploymentTests(DeploymentTests):
         self.assertNotIn('/var/run/docker.sock', ' '.join(args))
         self.assertEqual(args[-3:], ['builder:test', 'cmake', '--version'])
 
+    def test_missing_scanner_cache_repair_preserves_compiled_objects(self):
+        compiler = self.home / 'build/CMakeFiles/3.31.6/CMakeCXXCompiler.cmake'
+        compiler.parent.mkdir(parents=True)
+        original = 'set(CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-NOTFOUND")\n'
+        compiler.write_text(original)
+        cache = self.home / 'build/CMakeCache.txt'
+        cache.write_text('OTHER:STRING=unchanged\n')
+        obj = compiler.parent / 'already-built.o'
+        obj.write_bytes(b'compiled object')
+        local.repair_scan_deps_cache(self.home / 'build')
+        self.assertIn('/usr/bin/clang-scan-deps-19', compiler.read_text())
+        self.assertNotIn('NOTFOUND', compiler.read_text())
+        self.assertEqual(cache.read_text(), 'OTHER:STRING=unchanged\n')
+        self.assertEqual(obj.read_bytes(), b'compiled object')
+        local.repair_scan_deps_cache(self.home / 'build')
+        self.assertIn('/usr/bin/clang-scan-deps-19', compiler.read_text())
+
     def test_local_upgrade_rejects_unexpected_wrapper(self):
         with self.assertRaises(RuntimeError):
             local.selection(self.original, self.home / 'Applications/shadps4/releases/ngs2-ca67919d/shadps4')

@@ -71,7 +71,7 @@ sys.exit(code)
 
 DOCKERFILE = """FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates git cmake ninja-build build-essential clang-19 llvm-19-dev \
+    ca-certificates git cmake ninja-build build-essential clang-19 clang-tools-19 llvm-19-dev \
     llvm-19-tools lld-19 ccache pkg-config python3 nasm \
     libasound2-dev libpulse-dev libopenal-dev libssl-dev zlib1g-dev libedit-dev \
     libudev-dev libevdev-dev libjack-jackd2-dev libsndio-dev libvulkan-dev \
@@ -79,6 +79,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxkbcommon-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
     libxrandr-dev libxfixes-dev libxinerama-dev libegl1-mesa-dev \
     libgl1-mesa-dev libgles2-mesa-dev uuid-dev libdbus-1-dev \
+    && test -x /usr/bin/clang-scan-deps-19 \
     && rm -rf /var/lib/apt/lists/*
 """
 
@@ -90,6 +91,21 @@ def container_command(work, image, args):
             '--mount', f'type=bind,src={work},dst={work}',
             '--workdir', str(work), '--env', 'HOME=' + str(work / 'container-home'),
             '--env', 'CCACHE_DIR=' + str(work / 'ccache'), image, *args]
+
+
+
+def repair_scan_deps_cache(directory):
+    # CMake persists a missing scanner in its compiler-description file, not
+    # only CMakeCache.txt. Repair that exact sentinel without deleting objects.
+    files = [directory / 'CMakeCache.txt']
+    files.extend(directory.glob('CMakeFiles/*/CMakeCXXCompiler.cmake'))
+    for path in files:
+        if path.is_file() and not path.is_symlink():
+            text = path.read_text()
+            fixed = text.replace('CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS-NOTFOUND',
+                                 '/usr/bin/clang-scan-deps-19')
+            if fixed != text:
+                path.write_text(fixed)
 
 
 def main():
@@ -138,6 +154,9 @@ def main():
             (work / 'container-home').mkdir(exist_ok=True)
             (work / 'ccache').mkdir(exist_ok=True)
             run(['docker', 'build', '--tag', image, str(context)])
+            run(container_command(work, image, ['/usr/bin/clang-scan-deps-19', '--version']))
+            repair_scan_deps_cache(work / 'build')
+            repair_scan_deps_cache(work / 'focused')
         if not source.exists():
             run(['git', 'clone', '--no-checkout', 'https://github.com/Chreece/shadPS4.git', source])
         run(['git', '-C', source, 'fetch', 'origin', REVISION])
@@ -148,6 +167,8 @@ def main():
         run(['git', '-C', source, 'checkout', '--detach', REVISION])
         run(['git', '-C', source, 'submodule', 'update', '--init', '--recursive', '--jobs', jobs])
         compiler = ['-DCMAKE_C_COMPILER=clang-19', '-DCMAKE_CXX_COMPILER=clang++-19']
+        if use_docker:
+            compiler += ['-DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS=/usr/bin/clang-scan-deps-19']
         focused = work / 'focused'
         run(['cmake', '-S', source / 'tests/ngs2_hle', '-B', focused, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
         run(['cmake', '--build', focused, '--parallel', jobs])
