@@ -93,11 +93,12 @@ corrupt backups/binaries and repeated recovery.
 
 ## Local startup-fix test
 
-`local_build.py --docker` pins runtime 59566b916c3ff680616081c9bcde642e70f874a7.
+The previous local build pinned runtime 59566b916c3ff680616081c9bcde642e70f874a7.
 It checks that the game is closed, reuses the existing ca67919d-docker build
 workspace and runs the focused NGS2 and user-colour regression checks before
 building the emulator. The user-colour change fixes an unchecked null lookup
-matching the reported startup fault; target-host startup is still unverified.
+matching the reported startup fault. The subsequent user log reached rendering
+and exited cleanly, although the cutscene stalled with working pause controls.
 GPU changes and the controller Home/PS quit confirmation remain present.
 
 The new runner combines stdout/stderr, preserves up to 2048 NGS2 diagnostic lines
@@ -107,3 +108,24 @@ Tests verify that a trap after both logging caps still retains the final stdout
 and stderr errors. This update does not claim a fix for silent cutscenes or
 dialogue crackles. Close the test normally after trying those scenes and upload
 the new trace. Audio/channel and GPU settings are not edited by deployment.
+
+## Local callback/control test
+
+`local_build.py --docker` now pins runtime
+`66a2ef4d25e2029628dad50f5ec9a308ef072c47`. It accepts the known 59566b91 test
+dispatcher as well as earlier recorded test versions, keeps normal ES-DE fallback,
+and reuses the existing Docker build cache. It installs only after the focused
+NGS2/user-colour checks and full local Linux build succeed. Rollback recognizes
+this revision and continues to verify the launcher and prior binary hashes.
+
+This revision preserves grains across ordinary UserFx-time voice updates and
+prevents idle incomplete routing from blocking other voices. The audio trace adds
+bounded rejected-waveform/filter details. The runner also retains a separate
+bounded error tail so later GPU info messages cannot evict the latest errors.
+It still records exit status and the ordinary console tail after the game closes.
+
+No full GitHub build is requested. In-game audio remains experimental: this is
+an isolated test candidate, not confirmation that cutscenes or dialogue are fixed.
+The new trace is `~/ngs2-diagnostic-66a2ef4d.log`. Exit after testing the affected
+cutscene and dialogue, then upload that completed trace. Deployment preserves
+7.1/eight-channel configuration, saves, the working installation and GPU settings.

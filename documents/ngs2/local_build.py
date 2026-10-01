@@ -11,7 +11,7 @@ import sys
 import zipfile
 import deploy_test as deploy
 
-REVISION = "59566b916c3ff680616081c9bcde642e70f874a7"
+REVISION = "66a2ef4d25e2029628dad50f5ec9a308ef072c47"
 PREVIOUS = deploy.COMMIT
 
 
@@ -20,7 +20,8 @@ def selection(original, binary):
     home = binary.parents[4]
     candidates = []
     for previous in (PREVIOUS, "ca67919dacf2917140fb957142dcd993737d9dd6",
-                     "ac36a0edd40409c3c9ed67dc68c630b7d2dcba7e"):
+                     "ac36a0edd40409c3c9ed67dc68c630b7d2dcba7e",
+                     "59566b916c3ff680616081c9bcde642e70f874a7"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -56,6 +57,7 @@ with trace.open("wb") as report:
                                env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     saved = 0
     console_tail = deque(maxlen=512)
+    errors = deque(maxlen=128)
     # Drain both streams after the caps, retaining the final crash output too.
     while True:
         line = process.stdout.readline(4096)
@@ -68,8 +70,13 @@ with trace.open("wb") as report:
                 saved += 1
         else:
             console_tail.append(line)
+            if any(marker in line.lower() for marker in
+                   (b"<error>", b"<critical>", b"unhandled", b"assertion", b"fatal")):
+                errors.append(line)
     process.stdout.close()
     code = process.wait()
+    report.write(b"\\nEMULATOR_ERROR_TAIL (at most 512 KiB)\\n")
+    report.writelines(errors)
     report.write(b"\\nEMULATOR_CONSOLE_TAIL (stdout and stderr, at most 2 MiB)\\n")
     report.writelines(console_tail)
     report.write(("exit_code=%s\\n" % code).encode())
