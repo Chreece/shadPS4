@@ -102,6 +102,46 @@ size_t Storage(const Voice& voice) {
         result += block.info.dataSize;
     return result;
 }
+void DiagnoseState(OrbisNgs2Handle handle, const Voice* voice, u32 kind, const char* query) {
+    if (!Diagnostics::Enabled() || kind != 0x1000)
+        return;
+    const auto* progress = voice ? voice->progress.get() : nullptr;
+    const auto* block = progress && !progress->blocks.empty() ? &progress->blocks.front() : nullptr;
+    Diagnostics::Record(
+        0x800000000ULL | handle, 0,
+        "state-query voice=%llu query=%s configured=%u flags=%x queued=%zu samples=%llu "
+        "completed-bytes=%llu front-samples=%u front-position=%llu front-started=%u",
+        static_cast<unsigned long long>(handle), query, voice && voice->channels ? 1u : 0u,
+        voice ? Flags(*voice) : 32u, progress ? progress->blocks.size() : size_t{0},
+        static_cast<unsigned long long>(progress ? progress->rendered_samples : 0),
+        static_cast<unsigned long long>(progress ? progress->completed_bytes : 0),
+        block ? block->info.numSamples : 0,
+        static_cast<unsigned long long>(block ? block->playback->SourcePosition() : 0),
+        block && block->started ? 1u : 0u);
+}
+void DiagnoseBlocks(OrbisNgs2Handle handle, const OrbisNgs2SamplerVoiceWaveformBlocksParam& param) {
+    if (!Diagnostics::Enabled())
+        return;
+    // Metadata only; never read the audio payload or print guest addresses.
+    // Malformed requests must remain safe even when ordinary validation rejects
+    // flags before looking at the block array.
+    const bool readable =
+        param.numBlocks && param.numBlocks <= MaxBlocks &&
+        GuestAccessible(param.aBlock, param.numBlocks * sizeof(*param.aBlock), GuestAccess::Read);
+    const auto count = readable ? std::min(param.numBlocks, 4u) : 1u;
+    for (u32 index = 0; index < count; ++index) {
+        OrbisNgs2WaveformBlock block{};
+        if (readable)
+            std::memcpy(&block, param.aBlock + index, sizeof(block));
+        Diagnostics::Record(
+            0x900000000ULL | (static_cast<u64>(param.flags != 0) << 8) | index, 0,
+            "blocks-request voice=%llu flags=%x count=%u null-data=%u readable=%u index=%u "
+            "offset=%u bytes=%u skip=%u samples=%u repeats=%u reserved=%x",
+            static_cast<unsigned long long>(handle), param.flags, param.numBlocks,
+            param.data ? 0u : 1u, readable ? 1u : 0u, index, block.dataOffset, block.dataSize,
+            block.numSkipSamples, block.numSamples, block.numRepeats, block.reserved);
+    }
+}
 template <typename T>
 s32 Parameter(const OrbisNgs2VoiceParamHeader* address, const OrbisNgs2VoiceParamHeader& header,
               T& out) {
@@ -144,10 +184,11 @@ void DiagnoseRejectedParameter(OrbisNgs2Handle handle, const OrbisNgs2VoiceParam
         if (Parameter(address, header, p) < 0)
             break;
         Diagnostics::Record(key, 0,
-                            "filter-rejected voice=%llu index=%u type=%x location=%u "
+                            "filter-rejected voice=%llu index=%u type=%x location=%u mask=%x "
                             "coefficients=%.8g,%.8g,%.8g,%.8g,%.8g reserved=%x",
-                            id, p.index, p.type, p.location, p.param.direct.i0, p.param.direct.i1,
-                            p.param.direct.i2, p.param.direct.o1, p.param.direct.o2, p.reserved3);
+                            id, p.index, p.type, p.location, p.channelMask, p.param.direct.i0,
+                            p.param.direct.i1, p.param.direct.i2, p.param.direct.o1,
+                            p.param.direct.o2, p.reserved3);
         break;
     }
     default:
@@ -237,7 +278,8 @@ s32 AddBlocks(Voice& voice, const RackOptions& rack,
 void Event(Voice& voice, u32 event);
 s32 ApplyParameter(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack,
                    const OrbisNgs2VoiceParamHeader* address,
-                   const OrbisNgs2VoiceParamHeader& header, bool& exit_loop, bool& reset_progress) {
+                   const OrbisNgs2VoiceParamHeader& header, bool& exit_loop, bool& reset_progress,
+                   u32& last_event) {
     const auto group = header.id >> 16;
     if (group && group != voice.kind)
         return ORBIS_NGS2_ERROR_INVALID_VOICE_CONTROL_ID;
@@ -323,6 +365,7 @@ s32 ApplyParameter(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack
         if (!voice.channels)
             return ORBIS_NGS2_ERROR_UNINIT_VOICE;
         Event(voice, p.eventId);
+        last_event = p.eventId;
         return 0;
     }
     case 0x10000000: {
@@ -348,6 +391,7 @@ s32 ApplyParameter(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack
         OrbisNgs2SamplerVoiceWaveformBlocksParam p{};
         if (const auto e = Parameter(address, header, p); e < 0)
             return e;
+        DiagnoseBlocks(handle, p);
         return AddBlocks(voice, rack, p);
     }
     case 0x10000004: {
@@ -464,7 +508,7 @@ void Event(Voice& voice, u32 event) {
         break;
     }
 }
-s32 RenderSource(Voice& voice, std::span<float> output, u32 rate) {
+s32 RenderSource(OrbisNgs2Handle handle, Voice& voice, std::span<float> output, u32 rate) {
     size_t position = 0;
     while (position < output.size() && !voice.progress->blocks.empty()) {
         auto& block = voice.progress->blocks.front();
@@ -498,11 +542,21 @@ s32 RenderSource(Voice& voice, std::span<float> output, u32 rate) {
         }
         if (playback.State() == PlaybackState::Finished) {
             voice.progress->completed_bytes += block.info.dataSize;
+            Diagnostics::Record(
+                0xb00000000ULL | handle, 0,
+                "block-ended voice=%llu block-samples=%u block-bytes=%u samples=%llu "
+                "completed-bytes=%llu remaining=%zu",
+                static_cast<unsigned long long>(handle), block.info.numSamples, block.info.dataSize,
+                static_cast<unsigned long long>(voice.progress->rendered_samples),
+                static_cast<unsigned long long>(voice.progress->completed_bytes),
+                voice.progress->blocks.size() - 1);
             voice.progress->blocks.pop_front();
             if (voice.progress->blocks.empty()) {
-                Diagnostics::Record(0x300000002ULL, 0,
-                                    "queue-ended channels=%u rate=%u filled=%zu requested=%zu",
-                                    voice.channels, rate, position, output.size());
+                Diagnostics::Record(
+                    0x300000002ULL, 0,
+                    "queue-ended voice=%llu channels=%u rate=%u filled=%zu requested=%zu",
+                    static_cast<unsigned long long>(handle), voice.channels, rate, position,
+                    output.size());
                 voice.progress->state = RunState::Idle;
             }
         } else {
@@ -536,6 +590,7 @@ static s32 VoiceControlImpl(OrbisNgs2Handle handle, const OrbisNgs2VoiceParamHea
         std::set<uintptr_t> visited;
         bool exit_loop = false;
         bool reset_progress = false;
+        u32 last_event = UINT32_MAX;
         auto pointer = reinterpret_cast<uintptr_t>(param_list);
         for (;;) {
             if (!visited.insert(pointer).second || visited.size() > 1024)
@@ -547,13 +602,13 @@ static s32 VoiceControlImpl(OrbisNgs2Handle handle, const OrbisNgs2VoiceParamHea
             if (header.size < sizeof(header) || header.size > 4096)
                 return ORBIS_NGS2_ERROR_INVALID_VOICE_CONTROL_SIZE;
             const auto result = ApplyParameter(handle, *staged, rack.rack, address, header,
-                                               exit_loop, reset_progress);
-            Diagnostics::Record(
-                (result < 0 ? 0x100000000ULL : 0x200000000ULL) | header.id, 0,
-                "control voice=%llu rack=%x command=%x size=%u result=%x blocks=%zu channels=%u",
-                static_cast<unsigned long long>(handle), staged->kind, header.id,
-                static_cast<unsigned>(header.size), static_cast<unsigned>(result),
-                staged->progress->blocks.size(), staged->channels);
+                                               exit_loop, reset_progress, last_event);
+            Diagnostics::Record((result < 0 ? 0x100000000ULL : 0x200000000ULL) | header.id, 0,
+                                "control-stage voice=%llu rack=%x command=%x size=%u result=%x "
+                                "blocks=%zu channels=%u",
+                                static_cast<unsigned long long>(handle), staged->kind, header.id,
+                                static_cast<unsigned>(header.size), static_cast<unsigned>(result),
+                                staged->progress->blocks.size(), staged->channels);
             if (result < 0) {
                 DiagnoseRejectedParameter(handle, address, header);
                 return result;
@@ -585,6 +640,16 @@ static s32 VoiceControlImpl(OrbisNgs2Handle handle, const OrbisNgs2VoiceParamHea
             staged->progress = found->second->progress;
         }
         voices[handle] = std::move(staged);
+        if (last_event != UINT32_MAX || reset_progress) {
+            const auto& committed = *voices.at(handle);
+            Diagnostics::Record(
+                0xa00000000ULL | (static_cast<u64>(last_event != UINT32_MAX ? last_event : 6)), 0,
+                "voice-commit voice=%llu parameters=%zu event=%u reset=%u flags=%x queued=%zu "
+                "samples=%llu",
+                static_cast<unsigned long long>(handle), visited.size(), last_event,
+                reset_progress ? 1u : 0u, Flags(committed), committed.progress->blocks.size(),
+                static_cast<unsigned long long>(committed.progress->rendered_samples));
+        }
         return 0;
     } catch (const std::bad_alloc&) {
         return ORBIS_NGS2_ERROR_EMPTY_BUFFER;
@@ -593,12 +658,15 @@ static s32 VoiceControlImpl(OrbisNgs2Handle handle, const OrbisNgs2VoiceParamHea
 
 s32 PS4_SYSV_ABI sceNgs2VoiceGetStateFlags(OrbisNgs2Handle handle, u32* out) {
     const std::lock_guard lock{runtime_mutex};
-    if (!registry.GetVoiceIdentity(handle))
+    const auto identity = registry.GetVoiceIdentity(handle);
+    if (!identity)
         return ORBIS_NGS2_ERROR_INVALID_VOICE_HANDLE;
     if (!WritableGuest(out))
         return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
     const auto voice = voices.find(handle);
     WriteGuest(out, voice == voices.end() ? 32u : Flags(*voice->second));
+    DiagnoseState(handle, voice == voices.end() ? nullptr : voice->second.get(),
+                  racks.at(identity->rack).rack_id, "flags");
     return 0;
 }
 
@@ -620,6 +688,7 @@ s32 PS4_SYSV_ABI sceNgs2VoiceGetState(OrbisNgs2Handle handle, OrbisNgs2VoiceStat
     const auto found = voices.find(handle);
     const Voice* voice = found == voices.end() ? nullptr : found->second.get();
     const u32 flags = voice ? Flags(*voice) : 32u;
+    DiagnoseState(handle, voice, kind, "state");
     if (written == sizeof(OrbisNgs2VoiceState)) {
         WriteGuest(out, OrbisNgs2VoiceState{flags});
     } else if (kind == 0x1000) {
@@ -816,7 +885,7 @@ static s32 SystemRenderImpl(OrbisNgs2Handle handle, const OrbisNgs2RenderBufferI
             if (!active.contains(key) || voice.progress->state != RunState::Playing)
                 continue;
             if (voice.kind == 0x1000) {
-                const auto result = RenderSource(voice, audio, rate);
+                const auto result = RenderSource(key, voice, audio, rate);
                 if (result < 0 && !error)
                     error = result;
             }

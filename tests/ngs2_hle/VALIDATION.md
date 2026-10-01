@@ -5,6 +5,49 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # NGS2 validation — 2026-09-30
 
+## Cutscene wait diagnostic — 2026-10-01
+
+Base: `9e95c1727d287514d0e85aef9f863e0b293f6e5b`.
+
+Both new user traces have no recorded ATRAC9 setup or render errors, but the user
+still observes stalled cutscenes with moving elements. Nonzero block flags and
+non-identity direct filters are rejected. Some flag-1 requests are immediately
+followed by successful block submissions; rejection alone does not establish the
+cause of the cutscene wait. One capture ends with `exit_code=0`; the other has no
+exit footer. No crash, complete audio fix, or cutscene success is inferred.
+
+The upstream PR audit found no applicable open NGS2 fix among 63 open PRs.
+[NGS2 #3891](https://github.com/shadps4-emu/shadPS4/pull/3891) was closed without
+merging and does not implement ATRAC9 or filters. Audio/video sync #4761, audio
+stop deadlock #4859 and ATRAC9 overread #4733 are already in this branch's ancestry;
+the fixed LibAtrac9 submodule is in use. The public implementations inspected do
+not establish the semantics of the nonzero waveform-block flag.
+
+This revision changes diagnostics only, leaving unsupported controls rejected.
+It records bounded block metadata (including null data, skip/repeat counts),
+filter channel masks, per-voice completion counters and state-query results.
+`control-stage` is explicitly provisional; `voice-commit` follows successful
+publication of a batch and includes its last event or UINT32_MAX if none.
+No audio payloads, guest addresses or user-data pointer values are logged.
+State queries and block completions are throttled per voice, using fixed storage
+for up to 64 keys per diagnostic bucket and the existing 2,048-line process cap.
+Absence of a sampled event is not proof that the event did not occur.
+
+Two new cases exercise invalid/unmapped/oversized block descriptions with tracing
+enabled, preservation of a playing voice, failed-batch pause rollback and repeated
+queries without advancement. The diagnostic CTest also verifies emitted block,
+event, completion and state records rather than merely checking exit status.
+
+- GCC 13.3 Release: all nine CTest invocations passed (122 unique cases).
+- GCC 13.3 ASan/UBSan: all 24 public audio cases passed with and without
+  diagnostics; leak detection remains disabled for the environment limitation
+  documented below.
+
+The next isolated test should leave the first stalled cutscene running for about
+15 seconds, then close the emulator and collect the finished diagnostic. This is
+an evidence-gathering build, not a claimed cutscene fix. Full Linux compilation is
+performed by the local Docker helper; no cross-platform CI is requested.
+
 ## Local ATRAC9 config correction — 2026-10-01
 
 Base: `66a2ef4d25e2029628dad50f5ec9a308ef072c47`.

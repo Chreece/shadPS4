@@ -514,6 +514,50 @@ TEST(PcmBlockSkipAndRepeatsAndQueuedTailHaveExactValues) {
         CHECK(g.output.value[i * 8] == expected[i] / 32768.0f);
     CHECK(g.State().numDecodedSamples == 7 && g.State().userData == 29);
 }
+TEST(RejectedBlockDiagnosticReadsOnlyAccessibleMetadataAndPreservesPlayback) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(768, 8192)));
+    Guest<OrbisNgs2WaveformBlock> block;
+    block.value = {37, 768, 0, 9, 384, 0, 0};
+    OrbisNgs2SamplerVoiceWaveformBlocksParam param{{}, nullptr, 1, 1, block.ptr()};
+    CHECK(Control(g.source, 0x10000001, param) == ORBIS_NGS2_ERROR_INVALID_OPERATION);
+    param.aBlock = reinterpret_cast<const OrbisNgs2WaveformBlock*>(1);
+    CHECK(Control(g.source, 0x10000001, param) == ORBIS_NGS2_ERROR_INVALID_OPERATION);
+    param.aBlock = block.ptr();
+    param.numBlocks = UINT32_MAX;
+    CHECK(Control(g.source, 0x10000001, param) == ORBIS_NGS2_ERROR_INVALID_OPERATION);
+    CHECK(g.Render() == 0 && g.State().numDecodedSamples == 256);
+    CHECK(g.output.value[0] == 0.25f);
+    Guest<u32> flags;
+    CHECK(sceNgs2VoiceGetStateFlags(g.source, flags.ptr()) == 0 && flags.value == 3);
+    CHECK(g.Render() == 0 && g.Render() == 0);
+    CHECK(sceNgs2VoiceGetStateFlags(g.source, flags.ptr()) == 0 && flags.value == 32);
+    CHECK(g.State().numDecodedSamples == 768 && g.State().decodedDataSize == 1536);
+}
+TEST(RejectedBatchDoesNotCommitStagedPauseOrAdvanceStateQueries) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(512, 4096)));
+    struct Batch {
+        OrbisNgs2VoiceEventParam pause{{sizeof(OrbisNgs2VoiceEventParam), 0, 6}, 4};
+        OrbisNgs2SamplerVoiceWaveformBlocksParam append{
+            {sizeof(OrbisNgs2SamplerVoiceWaveformBlocksParam), 0, 0x10000001},
+            nullptr,
+            1,
+            1,
+            reinterpret_cast<const OrbisNgs2WaveformBlock*>(1)};
+    };
+    Guest<Batch> batch;
+    batch.value.pause.header.next = offsetof(Batch, append);
+    CHECK(sceNgs2VoiceControl(g.source, &batch.value.pause.header) ==
+          ORBIS_NGS2_ERROR_INVALID_OPERATION);
+    Guest<u32> flags;
+    for (unsigned query = 0; query < 100; ++query) {
+        CHECK(sceNgs2VoiceGetStateFlags(g.source, flags.ptr()) == 0 && flags.value == 3);
+        CHECK(g.State().voiceState.stateFlags == 3 && g.State().numDecodedSamples == 0);
+    }
+    CHECK(g.Render() == 0 && g.State().numDecodedSamples == 256);
+    CHECK(g.output.value[0] == 0.125f);
+}
 int main() {
     return Test::Run();
 }
