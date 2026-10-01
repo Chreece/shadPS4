@@ -35,8 +35,8 @@ class LocalDeploymentTests(DeploymentTests):
 
     def test_graphics_switch_preserves_installed_guard_fallback_and_exact_rollback(self):
         self.mock_install_inputs()
-        previous = 'f9f2aa508c90a98e800ee398a824acd57b68fdbb'
-        binary = self.home / 'Applications/shadps4/releases/ngs2-f9f2aa50/shadps4'
+        previous = 'f96686b8b5f0d813723d29e7de581efc1d2fb0a8'
+        binary = self.home / 'Applications/shadps4/releases/ngs2-f96686b8/shadps4'
         original_audio = self.working_audio_dispatcher()
         with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + previous):
             self.wrapper.write_bytes(local.selection(original_audio, binary))

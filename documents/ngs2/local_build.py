@@ -19,6 +19,7 @@ OCCLUSION_TEST = False
 IMAGE_TRANSFER_TEST = False
 STARTUP_TEST = False
 LATE_AUDIO_TRACE = False
+RAW_BUFFER_SYNC_TEST = False
 SOURCE_BRANCH = None
 
 
@@ -42,7 +43,8 @@ def selection(original, binary):
                      "2b82d291daa57d23052594051dacc64e6bdf9e9f",
                      "10ff9e19a7d94340aaedd1e333f1a11abeeb9e75",
                      "77c6bd3a1f116c605370e765464423a668f25ba1",
-                     "f9f2aa508c90a98e800ee398a824acd57b68fdbb"):
+                     "f9f2aa508c90a98e800ee398a824acd57b68fdbb",
+                     "f96686b8b5f0d813723d29e7de581efc1d2fb0a8"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -300,7 +302,7 @@ def main():
     if helper.is_symlink() or (helper.exists() and helper.read_bytes() != content):
         raise RuntimeError('Diagnostic helper already exists with different contents.')
     deploy.atomic_write(helper, content, 0o700)
-    if LATE_AUDIO_TRACE:
+    if LATE_AUDIO_TRACE or RAW_BUFFER_SYNC_TEST:
         collector = binary.parent / 'collect_graphics.py'
         if collector.is_symlink():
             raise RuntimeError('Unexpected capture helper symlink.')
@@ -312,7 +314,10 @@ def main():
         print('GRAPHICS_LOCAL_RESULT=PASS')
         if SOURCE_BRANCH == 'main':
             print('MAIN_LOCAL_RESULT=PASS; combined main revision ' + REVISION)
-        if LATE_AUDIO_TRACE:
+        if RAW_BUFFER_SYNC_TEST:
+            print('EXPERIMENTAL: raw buffer/image read synchronization; game result unverified.')
+            print('CAPTURE_GRAPHICS=python3 ' + shlex.quote(str(collector)))
+        elif LATE_AUDIO_TRACE:
             print('EXPERIMENTAL: corrected audio matrix routing; game result unverified.')
             print('CAPTURE_STALL=python3 ' + shlex.quote(str(collector)) + ' --rearm-audio')
         elif IMAGE_TRANSFER_TEST:
@@ -325,7 +330,10 @@ def main():
             print('GRAPHICS_TRACE=ENABLED; observation only, no new rendering fix.')
         else:
             print('EXPERIMENTAL: upstream PR #4818 texture containment; in-game graphics unconfirmed.')
-        if LATE_AUDIO_TRACE:
+        if RAW_BUFFER_SYNC_TEST:
+            print('Use the existing NGS2 probe entry. Revisit the same area and compare missing geometry.')
+            print('Run CAPTURE_GRAPHICS while the game is running and the problem is visible.')
+        elif LATE_AUDIO_TRACE:
             print('Use the existing NGS2 probe entry. Compare dialogue and bass with the same 7.1 settings.')
             print('Run CAPTURE_STALL just before the problem cutscene or while stalled; keep the game running.')
         else:
