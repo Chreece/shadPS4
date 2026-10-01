@@ -216,10 +216,56 @@ bool CircularPatch(OrbisNgs2Handle source, const Voice& candidate) {
     }
     return false;
 }
-s32 AddBlocks(Voice& voice, const RackOptions& rack,
+s32 AddBlocks(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack,
               const OrbisNgs2SamplerVoiceWaveformBlocksParam& param) {
+    const auto reject = [&](s32 error, const char* reason,
+                            const OrbisNgs2WaveformBlock* failed = nullptr, u32 index = 0,
+                            WaveError decoder_error = WaveError::None) {
+        if (!Diagnostics::Enabled())
+            return error;
+        // Use the validated copy for the exact failing block, including indices
+        // beyond the ordinary request trace's four-block sample. For failures
+        // before array validation, read at most one accessible descriptor.
+        OrbisNgs2WaveformBlock block{};
+        bool have_block = false;
+        if (failed) {
+            block = *failed;
+            have_block = true;
+        } else if (param.numBlocks && param.numBlocks <= MaxBlocks) {
+            have_block = ReadGuest(param.aBlock, block);
+        }
+        Waveform waveform;
+        const auto format_error = DecodeFormat(voice.format, waveform);
+        waveform.data_size = block.dataSize;
+        waveform.num_samples = block.numSamples;
+        waveform.encoder_delay = block.numSkipSamples;
+        const auto window_error = LocateEncodedWindow(waveform, 0, waveform.num_samples).error;
+        const u32 unit_bytes = waveform.codec == Codec::Pcm16 ? waveform.channels * 2
+                                                              : waveform.atrac9.superframe_bytes;
+        const u32 unit_samples =
+            waveform.codec == Codec::Pcm16 ? 1 : waveform.atrac9.superframe_samples;
+        const u64 capacity = unit_bytes ? (u64{block.dataSize} / unit_bytes) * unit_samples : 0;
+        // Separate failure keys and quota: successful submissions of the same
+        // flag must never suppress this voice's first rejection.
+        Diagnostics::RecordFailure(
+            (static_cast<u64>(static_cast<u32>(error)) << 32) ^ handle,
+            "block-rejected voice=%llu reason=%s result=%x flags=%x count=%u block=%u index=%u "
+            "null-data=%u offset=%u bytes=%u skip=%u samples=%u repeats=%u reserved=%x "
+            "type=%x channels=%u rate=%u config=%x frame-offset=%u frame-margin=%u "
+            "format-error=%x window-error=%u decoder-error=%u unit-bytes=%u unit-samples=%u "
+            "capacity=%llu",
+            static_cast<unsigned long long>(handle), reason, static_cast<unsigned>(error),
+            param.flags, param.numBlocks, have_block ? 1u : 0u, index, param.data ? 0u : 1u,
+            block.dataOffset, block.dataSize, block.numSkipSamples, block.numSamples,
+            block.numRepeats, block.reserved, voice.format.waveformType, voice.format.numChannels,
+            voice.format.sampleRate, voice.format.configData, voice.format.frameOffset,
+            voice.format.frameMargin, static_cast<unsigned>(format_error),
+            static_cast<unsigned>(window_error), static_cast<unsigned>(decoder_error), unit_bytes,
+            unit_samples, static_cast<unsigned long long>(capacity));
+        return error;
+    };
     if (!voice.channels)
-        return ORBIS_NGS2_ERROR_UNINIT_VOICE;
+        return reject(ORBIS_NGS2_ERROR_UNINIT_VOICE, "unconfigured");
     // Observed callers install the finite initial segment with bit 0, then
     // append a separate repeating segment with flags=0. Treat bit 0 as queue
     // replacement; other bits still need evidence. VoiceControl owns a staged
@@ -227,7 +273,7 @@ s32 AddBlocks(Voice& voice, const RackOptions& rack,
     // replacement without touching the live queue or decoder positions.
     constexpr u32 ReplaceQueuedBlocks = 1;
     if (param.flags & ~ReplaceQueuedBlocks)
-        return ORBIS_NGS2_ERROR_INVALID_OPERATION;
+        return reject(ORBIS_NGS2_ERROR_INVALID_OPERATION, "flags");
     if (param.flags & ReplaceQueuedBlocks) {
         voice.progress->blocks.clear();
         voice.progress->exit_loop = false;
@@ -235,42 +281,47 @@ s32 AddBlocks(Voice& voice, const RackOptions& rack,
     const size_t limit =
         rack.sampler.maxWaveformBlocks ? rack.sampler.maxWaveformBlocks : MaxBlocks;
     if (param.numBlocks > MaxBlocks || voice.progress->blocks.size() + param.numBlocks > limit)
-        return ORBIS_NGS2_ERROR_INVALID_NUM_WAVEFORM_BLOCKS;
+        return reject(ORBIS_NGS2_ERROR_INVALID_NUM_WAVEFORM_BLOCKS, "block-limit");
     if (param.numBlocks &&
         !GuestAccessible(param.aBlock, param.numBlocks * sizeof(*param.aBlock), GuestAccess::Read))
-        return ORBIS_NGS2_ERROR_INVALID_WAVEFORM_BLOCK_ADDRESS;
+        return reject(ORBIS_NGS2_ERROR_INVALID_WAVEFORM_BLOCK_ADDRESS, "block-array");
     std::vector<OrbisNgs2WaveformBlock> descriptions(param.numBlocks);
     if (param.numBlocks)
         std::memcpy(descriptions.data(), param.aBlock, descriptions.size() * sizeof(*param.aBlock));
     size_t owned = Storage(voice);
-    for (const auto& block : descriptions) {
+    for (u32 index = 0; index < descriptions.size(); ++index) {
+        const auto& block = descriptions[index];
         if (block.dataSize > MaxVoiceBytes - owned)
-            return ORBIS_NGS2_ERROR_EMPTY_BUFFER;
+            return reject(ORBIS_NGS2_ERROR_EMPTY_BUFFER, "storage-limit", &block, index);
         owned += block.dataSize;
         if (block.reserved)
-            return ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA;
+            return reject(ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA, "reserved", &block, index);
         if (!block.numSamples) {
             if (block.numRepeats)
-                return ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA;
+                return reject(ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA, "empty-repeat", &block,
+                              index);
             continue;
         }
         const auto base = reinterpret_cast<uintptr_t>(param.data);
         if (base > UINTPTR_MAX - block.dataOffset)
-            return ORBIS_NGS2_ERROR_INVALID_WAVEFORM_ADDRESS;
+            return reject(ORBIS_NGS2_ERROR_INVALID_WAVEFORM_ADDRESS, "address-overflow", &block,
+                          index);
         const auto address = base + block.dataOffset;
         if (!GuestAccessible(reinterpret_cast<const void*>(address), block.dataSize,
                              GuestAccess::Read))
-            return ORBIS_NGS2_ERROR_INVALID_WAVEFORM_ADDRESS;
+            return reject(ORBIS_NGS2_ERROR_INVALID_WAVEFORM_ADDRESS, "payload-address", &block,
+                          index);
         Waveform waveform;
         if (const auto error = DecodeFormat(voice.format, waveform); error < 0)
-            return error;
+            return reject(error, "format", &block, index);
         waveform.data_size = block.dataSize;
         waveform.num_samples = block.numSamples;
         waveform.encoder_delay = block.numSkipSamples;
         auto decoder = AudioDecoder::CreateRaw(
             waveform, {reinterpret_cast<const u8*>(address), block.dataSize});
         if (!decoder)
-            return ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA;
+            return reject(ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA, "decoder", &block, index,
+                          decoder.error);
         std::optional<PlaybackLoop> loop;
         if (block.numRepeats)
             loop =
@@ -280,7 +331,8 @@ s32 AddBlocks(Voice& voice, const RackOptions& rack,
         const auto rate = systems.at(voice.identity.system).system.sampleRate;
         auto playback = Playback::Create(std::move(decoder.value), rate, loop);
         if (!playback)
-            return ORBIS_NGS2_ERROR_CODEC_SETUP_FAIL;
+            return reject(ORBIS_NGS2_ERROR_CODEC_SETUP_FAIL, "playback", &block, index,
+                          playback.error);
         voice.progress->blocks.push_back({block, address, std::move(playback.value), false});
     }
     return 0;
@@ -402,7 +454,7 @@ s32 ApplyParameter(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack
         if (const auto e = Parameter(address, header, p); e < 0)
             return e;
         DiagnoseBlocks(handle, p);
-        const auto result = AddBlocks(voice, rack, p);
+        const auto result = AddBlocks(handle, voice, rack, p);
         if (result == 0 && (p.flags & 1))
             exit_loop = false; // An earlier exit-loop command targeted the replaced queue.
         return result;

@@ -5,6 +5,59 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # NGS2 validation — 2026-09-30
 
+## Waveform rejection evidence — 2026-10-01
+
+Base: `87c0112389d82055570ee6e54a66210625010f51`.
+
+The user reports no improvement in cutscene progression. The completed trace has
+1,631 diagnostic records and `exit_code=0`. Ordinary flag-1 initial segments now
+queue and complete, but voices 69 and 70 return `0x804a0408`
+(INVALID_WAVEFORM_DATA) at 31,042 ms. Their sampled state remains playing/empty
+(`0x23`), with zero decoded samples through 51,475 ms. Four other voices return
+the same error later. This is a concrete rejected-waveform path, not proof of the
+guest's exact cutscene wait. Eight-channel 48 kHz rendering continues; no sampled
+setup, decode or render failure establishes another cause.
+
+The prior request trace shared a throttle across successful and failed requests
+with the same flag. It omitted the block metadata for these failures. This revision
+captures `block-rejected` at the actual rejection point, including the failed
+descriptor index, reason, public result, format/configuration, byte and sample
+counts, skip/repeat values, encoded unit size, capacity, and internal window/decoder
+errors. Blocks beyond the ordinary four-descriptor sample are included when they
+fail. No payload bytes, guest addresses or user-data values are logged.
+
+Failure keys are independent of normal request keys and distinguish voice/result
+pairs. Fixed storage holds up to 64 such keys; the existing exponential throttle
+still applies. The process limit stays 2,048 lines, with normal records limited to
+1,792 so 256 lines remain available for failures after ordinary trace saturation.
+Diagnostics remain opt-in. No playback, flag, filter, callback or state semantics
+are changed, and the cutscene issue is still unresolved.
+
+For `reason=decoder`, interpret `window-error` using `WaveError` in `waveform.h`:
+0 means the encoded window passed; 6 means invalid format (including incomplete
+encoded units); 8 means the requested skip/duration exceeds encoded capacity;
+12 is decoder failure. `decoder-error` is the raw creation result, which currently
+collapses window-validation errors to 6. `format-error` is a public NGS2 result.
+Capacity counts complete encoded units only. For failures before array validation,
+`block=1,index=0` describes the first readable descriptor, not proof that it caused
+the failure; `block=0` means no descriptor could safely be captured.
+
+Regression coverage submits 100 successful replacements before four failing
+six-block requests. It checks the exact sixth-block metadata for excessive skip,
+incomplete ATRAC9 superframes, reserved fields and a zero-length repeating block,
+while confirming the prior playing queue and linked-pause rollback remain intact.
+Budget checks exercise normal-trace saturation and independent failure storage.
+
+- GCC 13.3 Release: 130 unique cases; all nine CTest invocations passed.
+- GCC 13.3 ASan/UBSan: the 31 public audio cases passed with and without tracing,
+  plus four diagnostic-budget cases. Leak checking remains disabled here.
+- Full Linux compilation and installation use the isolated local Docker helper;
+  no cross-platform CI or new in-game success is claimed.
+
+The next local capture should run only to the first stalled cutscene, leave it for
+about 15 seconds, then exit normally and collect the completed diagnostic. This
+build gathers the missing failure evidence; it is not an audio/cutscene fix.
+
 ## Initial waveform block replacement — 2026-10-01
 
 Base: `c827aa1d5b052c70f938d6d34a4d704f5d21e088`.

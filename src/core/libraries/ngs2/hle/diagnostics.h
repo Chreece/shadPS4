@@ -16,10 +16,13 @@ namespace Libraries::Ngs2::Diagnostics {
 // Callers serialize Budget access; Record supplies that lock.
 class Budget {
 public:
-    bool Take(std::uint64_t key, std::uint32_t interval = 0) {
-        if (emitted >= 2048)
+    bool Take(std::uint64_t key, std::uint32_t interval = 0, bool failure = false) {
+        // Reserve the last 256 lines for failures. Ordinary request/state churn
+        // must not hide the first bad waveform, even late in a session.
+        if (emitted >= 2048 || (!failure && ordinary_emitted >= 1792))
             return false;
-        for (auto& entry : entries[(key >> 32) % entries.size()]) {
+        auto& bucket = failure ? failures : entries[(key >> 32) % entries.size()];
+        for (auto& entry : bucket) {
             if (!entry.used || entry.key == key) {
                 entry.used = true;
                 entry.key = key;
@@ -28,6 +31,7 @@ public:
                 const auto n = ++entry.count;
                 if (n <= 4 || (interval ? n % interval == 0 : (n & (n - 1)) == 0)) {
                     ++emitted;
+                    ordinary_emitted += !failure;
                     return true;
                 }
                 return false;
@@ -43,7 +47,9 @@ private:
         bool used{};
     };
     std::array<std::array<Entry, 64>, 8> entries{};
+    std::array<Entry, 64> failures{};
     unsigned emitted{};
+    unsigned ordinary_emitted{};
 };
 
 inline bool Enabled() {
@@ -54,23 +60,33 @@ inline bool Enabled() {
     return enabled;
 }
 
-inline void Record(std::uint64_t key, std::uint32_t interval, const char* format, ...) {
+inline void RecordV(bool failure, std::uint64_t key, std::uint32_t interval, const char* format,
+                    va_list arguments) {
     if (!Enabled())
         return;
     static std::mutex mutex;
     static Budget budget;
     static const auto start = std::chrono::steady_clock::now();
     const std::lock_guard lock{mutex};
-    if (!budget.Take(key, interval))
+    if (!budget.Take(key, interval, failure))
         return;
     std::array<char, 480> message{};
-    va_list arguments;
-    va_start(arguments, format);
     std::vsnprintf(message.data(), message.size(), format, arguments);
-    va_end(arguments);
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                              std::chrono::steady_clock::now() - start)
                              .count();
     std::fprintf(stderr, "NGS2_DIAG ms=%lld %s\n", static_cast<long long>(elapsed), message.data());
+}
+inline void Record(std::uint64_t key, std::uint32_t interval, const char* format, ...) {
+    va_list arguments;
+    va_start(arguments, format);
+    RecordV(false, key, interval, format, arguments);
+    va_end(arguments);
+}
+inline void RecordFailure(std::uint64_t key, const char* format, ...) {
+    va_list arguments;
+    va_start(arguments, format);
+    RecordV(true, key, 0, format, arguments);
+    va_end(arguments);
 }
 } // namespace Libraries::Ngs2::Diagnostics

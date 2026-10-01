@@ -558,6 +558,59 @@ TEST(RejectedBatchDoesNotCommitStagedPauseOrAdvanceStateQueries) {
     CHECK(g.Render() == 0 && g.State().numDecodedSamples == 256);
     CHECK(g.output.value[0] == 0.125f);
 }
+TEST(FailedAtrac9ReplacementReportsExactBlockAfterSuccessfulRequestChurn) {
+    Graph g;
+    const auto riff = At9Audio();
+    const auto info = g.Load(riff);
+    Mapping mapping{riff.data(), riff.size(), 1};
+    Guest<std::array<OrbisNgs2WaveformBlock, 6>> blocks;
+    const OrbisNgs2WaveformBlock valid{
+        static_cast<u32>(info.dataOffset), static_cast<u32>(info.dataSize), 0, 0, 1536, 0, 0};
+    blocks.value[0] = valid;
+    // A successful request must not consume the failure's throttle counter.
+    for (unsigned i = 0; i < 100; ++i)
+        CHECK(Control(g.source, 0x10000001,
+                      OrbisNgs2SamplerVoiceWaveformBlocksParam{
+                          {}, riff.data(), 1, 1, blocks.value.data()}) == 0);
+    CHECK(g.Render() == 0 && g.State().numDecodedSamples == 128);
+    blocks.value[0] = {};
+    struct Batch {
+        OrbisNgs2VoiceEventParam pause{{sizeof(OrbisNgs2VoiceEventParam), 0, 6}, 4};
+        OrbisNgs2SamplerVoiceWaveformBlocksParam replace{
+            {sizeof(OrbisNgs2SamplerVoiceWaveformBlocksParam), 0, 0x10000001},
+            nullptr,
+            0,
+            0,
+            nullptr};
+    };
+    Guest<Batch> batch;
+    batch.value.pause.header.next = offsetof(Batch, replace);
+    batch.value.replace.data = riff.data();
+    batch.value.replace.flags = 1;
+    batch.value.replace.numBlocks = 6;
+    batch.value.replace.aBlock = blocks.value.data();
+    for (unsigned failure = 0; failure < 4; ++failure) {
+        auto& bad = blocks.value[5]; // Beyond the ordinary request sample.
+        bad = valid;
+        if (failure == 0)
+            bad.numSkipSamples = 1; // Skip + duration exceeds capacity.
+        else if (failure == 1) {
+            --bad.dataSize; // Incomplete superframe, independent of sample count.
+            bad.numSamples = 100;
+        } else if (failure == 2)
+            bad.reserved = 0x42;
+        else {
+            bad.numSamples = 0;
+            bad.numRepeats = 1;
+        }
+        CHECK(sceNgs2VoiceControl(g.source, &batch.value.pause.header) ==
+              ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA);
+        CHECK(g.State().voiceState.stateFlags == 3 && g.State().numDecodedSamples == 128);
+    }
+    CHECK(g.Render() == 0 && g.State().numDecodedSamples == 256);
+    CHECK(std::any_of(g.output.value.begin(), g.output.value.end(),
+                      [](float sample) { return sample != 0; }));
+}
 TEST(ReplaceFlagOneShotAtrac9AdvancesAndCompletes) {
     Graph g;
     const auto riff = At9Audio();

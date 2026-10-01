@@ -110,6 +110,12 @@ the ATRAC9 container metadata recorded in README.md. The original parser was a s
 during that capture, so its zero sample counts do not establish native semantics.
 No game payload or raw pointer log is included in the repository.
 
+Opt-in diagnostics (`SHADPS4_NGS2_DIAGNOSTICS=1`) include failure-specific block
+metadata and validation reasons. These have independent bounded sampling and a
+256-line reservation within the 2,048-line process limit, so ordinary request/state
+traffic cannot consume the entire failure allowance. Capture limitations and the
+latest unresolved cutscene evidence are recorded in [VALIDATION.md](VALIDATION.md).
+
 Public ABI facts were cross-checked against these source snapshots; no proprietary
 SDK or psOff implementation code was copied:
 

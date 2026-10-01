@@ -19,8 +19,13 @@ TEST(RenderSamplingAndProcessLimit) {
     unsigned emitted = 0;
     for (unsigned i = 1; i <= 1000000; ++i)
         emitted += budget.Take(1, 256);
-    CHECK(emitted == 2048);
+    CHECK(emitted == 1792);
     CHECK(!budget.Take(2));
+    // Failure records can still be captured after normal tracing is full.
+    for (unsigned i = 1; i <= 1000000; ++i)
+        emitted += budget.Take(1, 256, true);
+    CHECK(emitted == 2048);
+    CHECK(!budget.Take(2, 0, true));
 }
 TEST(DistinctCommandsHaveBoundedStorage) {
     Budget budget;
@@ -29,6 +34,16 @@ TEST(DistinctCommandsHaveBoundedStorage) {
     CHECK(!budget.Take(64));
     CHECK(budget.Take(0x400000000ULL)); // Command churn cannot evict render reporting.
     CHECK(budget.Take(0));
+}
+TEST(RequestKeysCannotThrottleOrEvictFailureKeys) {
+    Budget budget;
+    for (unsigned i = 0; i < 64; ++i)
+        for (unsigned repeat = 0; repeat < 127; ++repeat)
+            budget.Take(i);
+    CHECK(!budget.Take(64));
+    for (unsigned i = 0; i < 64; ++i)
+        CHECK(budget.Take(i, 0, true));
+    CHECK(!budget.Take(64, 0, true));
 }
 int main() {
     return Test::Run();
