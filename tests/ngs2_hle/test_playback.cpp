@@ -229,6 +229,24 @@ TEST(PitchAndOutputRateChangesKeepFractionalPosition) {
     CHECK(playback.value->SetPitch(0) == WaveError::OutOfRange);
     CHECK(playback.value->SetOutputRate(0) == WaveError::InvalidFormat);
 }
+TEST(AdjacentPcmBlocksPreserveDownsamplingPhaseAndDuration) {
+    for (unsigned rate : {44100u, 96000u}) {
+        const std::array<std::int16_t, 4> samples{1000, 2000, 4000, 8000};
+        auto first = Playback::Create(PcmSamples(std::span{samples}.first(1), 1, rate), 48000);
+        auto second = Playback::Create(PcmSamples(std::span{samples}.subspan(1), 1, rate), 48000);
+        CHECK(first && second && first.value->Start() == WaveError::None);
+        std::array<float, 16> buffer;
+        const auto before = first.value->Render(buffer);
+        CHECK(before && first.value->State() == PlaybackState::Finished);
+        CHECK(second.value->StartAfter(*first.value, false) == WaveError::None);
+        const auto after = second.value->Render(buffer);
+        CHECK(after && second.value->State() == PlaybackState::Finished);
+        const auto reference = Render(PcmSamples(samples, 1, rate), 48000, 16);
+        CHECK(before.value + after.value == reference.size());
+        CHECK(std::equal(buffer.begin(), buffer.begin() + after.value,
+                         reference.begin() + before.value));
+    }
+}
 int main() {
     return Test::Run();
 }

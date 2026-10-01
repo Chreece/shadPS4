@@ -30,6 +30,8 @@ public:
         std::optional<PlaybackLoop> loop = std::nullopt);
 
     WaveError Start(); // restart from the beginning
+    bool CanContinueAfter(const Playback& previous) const;
+    WaveError StartAfter(Playback& previous, bool continue_decoder);
     void Stop();
     void Pause();
     void Resume();

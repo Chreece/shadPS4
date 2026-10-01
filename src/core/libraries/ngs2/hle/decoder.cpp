@@ -52,6 +52,29 @@ WaveResult<std::unique_ptr<AudioDecoder>> AudioDecoder::CreateRaw(
     return {WaveError::None, std::move(decoder)};
 }
 
+bool AudioDecoder::CanContinueAfter(const AudioDecoder& previous) const {
+    const auto& before = previous.waveform;
+    return this != &previous && waveform.codec == Codec::Atrac9 && before.codec == Codec::Atrac9 &&
+           waveform.atrac9.bytes == before.atrac9.bytes && waveform.channels == before.channels &&
+           waveform.sample_rate == before.sample_rate && waveform.encoder_delay == 0 &&
+           before.num_samples + before.encoder_delay ==
+               (before.data_size / before.atrac9.superframe_bytes) *
+                   before.atrac9.superframe_samples;
+}
+
+WaveError AudioDecoder::ContinueAfter(AudioDecoder& previous) {
+    if (!CanContinueAfter(previous) || position != 0 || byte_position != 0 ||
+        failure != WaveError::None || previous.failure != WaveError::None || !previous.handle ||
+        previous.position != previous.waveform.num_samples ||
+        previous.byte_position != previous.data.size() || previous.frame_in_superframe != 0 ||
+        previous.frame_position != previous.frame_available || previous.skip_remaining != 0)
+        return WaveError::InvalidFormat;
+    // Keep the codec's overlap/transform state. The previous decoder receives our
+    // unused fresh handle and releases it when its retired block is destroyed.
+    std::swap(handle, previous.handle);
+    return WaveError::None;
+}
+
 WaveError AudioDecoder::Reset() {
     position = 0;
     byte_position = 0;

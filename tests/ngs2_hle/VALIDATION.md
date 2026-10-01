@@ -5,6 +5,63 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # NGS2 validation — 2026-09-30
 
+## Unspecified-length ATRAC9 streaming correction — 2026-10-01
+
+Base: `7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e`.
+
+The user reports a loading-cutscene freeze on the first launch and the previous
+cutscene stall on the second. The attached completed capture has 1,495 records,
+80 block rejections and `exit_code=0`; it does not diagnose the separate first-
+launch loading freeze. Every captured rejected block has `numSamples=UINT32_MAX`.
+At 30,952 ms, voices 69 and 70 submit 47,424 aligned ATRAC9 bytes (126,464 source
+samples) with flag 1. The literal 4,294,967,295 sample request is rejected; their
+sampled state stays playing/empty with zero progress. Later requests use flag 3,
+also rejected, on other aligned buffers. These are actionable streaming failures,
+not evidence of confirmed game progress after the correction.
+
+The public [KytyPS5 implementation](https://github.com/KytyPS5/KytyPS5/blob/b7a1fac898be93bfe0c282752a7a386fd5202486/src/libs/ngs2.cpp)
+and its streaming tests interpret bit 0 as accepting more blocks, bit 1 as encoded
+continuation, and bit 2 as queue clear. This fits the observed submissions and
+supersedes our earlier bit-0 replacement inference. No proprietary SDK or reference
+implementation code was copied. This remains an HLE interpretation, not a claim
+of native-console verification.
+
+Changes:
+
+- Resolve the raw unspecified sample count against bounded encoded capacity,
+  retaining alignment, skip, guest-access, allocation and overflow checks.
+- Keep flag-1 queues open through starvation; append subsequent blocks instead
+  of discarding earlier audio. A final submission without bit 0 closes the queue.
+- Accept the observed flag-3 ATRAC9 continuation metadata and flag 2 for a final
+  continuation. Transfer codec overlap state only at a fully consumed superframe
+  boundary during rendering. Setup, kill and bit-2 clear discard prior history.
+- Carry fractional rate-conversion phase, including pending downsampling steps,
+  between queued buffers and through a gap. Count retained payloads in memory limits.
+- Preserve all-or-nothing controls: an invalid continuation cannot pause, close,
+  clear or mutate the live decoder history. Emit bounded resolved-length records.
+
+Two new public streaming cases fail on the parent: successive flag-1 PCM appends,
+and UINT32_MAX ATRAC9 followed by flag-3/final flag-2 continuations across gaps.
+Existing queue-clear tests now use bit 2, preserving their previous rollback,
+capacity, callback and exit-loop coverage. Further cases check decoder history
+against whole-stream mono/eight-channel decoding, reject unfinished/trimmed or
+mismatched history, preserve clock phase, retain guest-payload ownership, roll back
+failed continuation batches, validate malformed lengths, and clear retired history
+on setup/kill. Fixtures are original synthetic audio.
+
+- GCC 13.3 Release: 138 unique cases; all nine CTest invocations passed.
+- GCC 13.3 ASan/UBSan: decoder, playback and public audio cases passed (67 unique
+  cases, with public audio also repeated under diagnostics). Local leak checking
+  remains disabled because of the existing environment limitation.
+- Full Linux compilation is performed by the pinned local Docker helper before
+  installation. No cross-platform CI or game-success claim is made.
+
+Partial-superframe continuations and finite-duration continuation metadata remain
+unsupported. Interpolation still holds a sample at a buffer boundary instead of
+looking into the next buffer. General filter DSP and completion callbacks are
+unchanged. In-game cutscene progression and dialogue crackles require the isolated
+game test; the separate loading-freeze report remains unresolved.
+
 ## Waveform rejection evidence — 2026-10-01
 
 Base: `87c0112389d82055570ee6e54a66210625010f51`.
@@ -59,6 +116,8 @@ about 15 seconds, then exit normally and collect the completed diagnostic. This
 build gathers the missing failure evidence; it is not an audio/cutscene fix.
 
 ## Initial waveform block replacement — 2026-10-01
+
+Historical inference, superseded by the streaming correction above.
 
 Base: `c827aa1d5b052c70f938d6d34a4d704f5d21e088`.
 

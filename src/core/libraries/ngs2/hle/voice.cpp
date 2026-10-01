@@ -34,6 +34,7 @@ struct Block {
     uintptr_t address{}; // guest metadata only; the decoder owns its payload
     std::shared_ptr<Playback> playback;
     bool started{};
+    bool continuation{};
 };
 } // namespace
 
@@ -49,6 +50,10 @@ struct VoiceProgress {
     uintptr_t user_data{};
     uintptr_t waveform_data{};
     bool exit_loop{};
+    bool accepts_blocks{};
+    // Retain codec history and rate phase through a temporary streaming gap.
+    // Its owned payload remains part of the voice/system storage budgets.
+    std::shared_ptr<Playback> tail;
 };
 struct Voice {
     VoiceIdentity identity;
@@ -97,7 +102,7 @@ u32 Flags(const Voice& voice) {
     }
 }
 size_t Storage(const Voice& voice) {
-    size_t result{};
+    size_t result = voice.progress->tail ? voice.progress->tail->Format().data_size : 0;
     for (const auto& block : voice.progress->blocks)
         result += block.info.dataSize;
     return result;
@@ -266,18 +271,19 @@ s32 AddBlocks(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack,
     };
     if (!voice.channels)
         return reject(ORBIS_NGS2_ERROR_UNINIT_VOICE, "unconfigured");
-    // Observed callers install the finite initial segment with bit 0, then
-    // append a separate repeating segment with flags=0. Treat bit 0 as queue
-    // replacement; other bits still need evidence. VoiceControl owns a staged
-    // progress copy, so even partial decoder/metadata failure rolls back this
-    // replacement without touching the live queue or decoder positions.
-    constexpr u32 ReplaceQueuedBlocks = 1;
-    if (param.flags & ~ReplaceQueuedBlocks)
+    // Public streaming reference and captured flag-1/flag-3 submissions:
+    // bit 0 keeps the queue open, bit 1 continues encoded data, bit 2 clears it.
+    // All mutations are staged; codec history is transferred only during render.
+    constexpr u32 MoreBlocks = 1, ContinueData = 2, ClearQueue = 4;
+    if (param.flags & ~(MoreBlocks | ContinueData | ClearQueue))
         return reject(ORBIS_NGS2_ERROR_INVALID_OPERATION, "flags");
-    if (param.flags & ReplaceQueuedBlocks) {
+    if (param.flags & ClearQueue) {
         voice.progress->blocks.clear();
+        voice.progress->tail.reset();
         voice.progress->exit_loop = false;
     }
+    voice.progress->accepts_blocks = (param.flags & MoreBlocks) != 0;
+    const bool continuation = (param.flags & ContinueData) != 0;
     const size_t limit =
         rack.sampler.maxWaveformBlocks ? rack.sampler.maxWaveformBlocks : MaxBlocks;
     if (param.numBlocks > MaxBlocks || voice.progress->blocks.size() + param.numBlocks > limit)
@@ -296,7 +302,7 @@ s32 AddBlocks(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack,
         owned += block.dataSize;
         if (block.reserved)
             return reject(ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA, "reserved", &block, index);
-        if (!block.numSamples) {
+        if (!block.numSamples && !continuation) {
             if (block.numRepeats)
                 return reject(ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA, "empty-repeat", &block,
                               index);
@@ -314,9 +320,35 @@ s32 AddBlocks(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack,
         Waveform waveform;
         if (const auto error = DecodeFormat(voice.format, waveform); error < 0)
             return reject(error, "format", &block, index);
+        if (continuation &&
+            (waveform.codec != Codec::Atrac9 || block.numSkipSamples || block.numRepeats ||
+             (block.numSamples != 0 && block.numSamples != UINT32_MAX)))
+            return reject(ORBIS_NGS2_ERROR_INVALID_OPERATION, "continuation-metadata", &block,
+                          index);
         waveform.data_size = block.dataSize;
         waveform.num_samples = block.numSamples;
         waveform.encoder_delay = block.numSkipSamples;
+        if (block.numSamples == UINT32_MAX || continuation) {
+            // UINT32_MAX is an unspecified duration on the observed raw streams,
+            // not a request to decode beyond this block's owned encoded storage.
+            // Validate alignment and skip before resolving the finite capacity.
+            waveform.num_samples = 0;
+            const auto window = LocateEncodedWindow(waveform, 0, 0);
+            if (!window)
+                return reject(ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA, "stream-window", &block,
+                              index, window.error);
+            const u32 bytes = waveform.codec == Codec::Atrac9 ? waveform.atrac9.superframe_bytes
+                                                              : waveform.channels * 2;
+            const u32 samples =
+                waveform.codec == Codec::Atrac9 ? waveform.atrac9.superframe_samples : 1;
+            waveform.num_samples = (waveform.data_size / bytes) * samples - block.numSkipSamples;
+            if (waveform.num_samples >= UINT32_MAX)
+                return reject(ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA, "stream-sample-limit", &block,
+                              index);
+            if (!waveform.num_samples && block.numRepeats)
+                return reject(ORBIS_NGS2_ERROR_INVALID_WAVEFORM_DATA, "empty-repeat", &block,
+                              index);
+        }
         auto decoder = AudioDecoder::CreateRaw(
             waveform, {reinterpret_cast<const u8*>(address), block.dataSize});
         if (!decoder)
@@ -325,7 +357,7 @@ s32 AddBlocks(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack,
         std::optional<PlaybackLoop> loop;
         if (block.numRepeats)
             loop =
-                PlaybackLoop{0, block.numSamples,
+                PlaybackLoop{0, waveform.num_samples,
                              block.numRepeats == UINT32_MAX ? std::nullopt
                                                             : std::optional<u32>{block.numRepeats}};
         const auto rate = systems.at(voice.identity.system).system.sampleRate;
@@ -333,7 +365,26 @@ s32 AddBlocks(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack,
         if (!playback)
             return reject(ORBIS_NGS2_ERROR_CODEC_SETUP_FAIL, "playback", &block, index,
                           playback.error);
-        voice.progress->blocks.push_back({block, address, std::move(playback.value), false});
+        if (continuation) {
+            const auto& before = voice.progress->blocks.empty()
+                                     ? voice.progress->tail
+                                     : voice.progress->blocks.back().playback;
+            if (!before || !playback.value->CanContinueAfter(*before))
+                return reject(ORBIS_NGS2_ERROR_INVALID_OPERATION, "continuation-context", &block,
+                              index);
+        }
+        auto resolved = block;
+        resolved.numSamples = static_cast<u32>(waveform.num_samples);
+        voice.progress->blocks.push_back(
+            {resolved, address, std::move(playback.value), false, continuation});
+        if (block.numSamples == UINT32_MAX || continuation)
+            Diagnostics::Record(
+                0xc00000000ULL | handle, 0,
+                "stream-block voice=%llu flags=%x bytes=%u requested=%u resolved=%u "
+                "continuation=%u open=%u queued=%zu",
+                static_cast<unsigned long long>(handle), param.flags, block.dataSize,
+                block.numSamples, resolved.numSamples, continuation ? 1u : 0u,
+                voice.progress->accepts_blocks ? 1u : 0u, voice.progress->blocks.size());
     }
     return 0;
 }
@@ -444,6 +495,8 @@ s32 ApplyParameter(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack
         voice.channels = p.format.numChannels;
         voice.progress->blocks.clear();
         voice.progress->state = RunState::Idle;
+        voice.progress->tail.reset();
+        voice.progress->accepts_blocks = false;
         voice.progress->rendered_samples = voice.progress->completed_bytes = 0;
         voice.progress->waveform_data = voice.progress->user_data = 0;
         voice.progress->exit_loop = exit_loop = false;
@@ -455,7 +508,7 @@ s32 ApplyParameter(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack
             return e;
         DiagnoseBlocks(handle, p);
         const auto result = AddBlocks(handle, voice, rack, p);
-        if (result == 0 && (p.flags & 1))
+        if (result == 0 && (p.flags & 4))
             exit_loop = false; // An earlier exit-loop command targeted the replaced queue.
         return result;
     }
@@ -562,6 +615,8 @@ void Event(Voice& voice, u32 event) {
     case 3:
         voice.progress->state = RunState::Idle;
         voice.progress->blocks.clear();
+        voice.progress->tail.reset();
+        voice.progress->accepts_blocks = false;
         break;
     case 4:
         if (voice.progress->state == RunState::Playing)
@@ -579,10 +634,14 @@ s32 RenderSource(OrbisNgs2Handle handle, Voice& voice, std::span<float> output, 
         auto& block = voice.progress->blocks.front();
         auto& playback = *block.playback;
         if (!block.started) {
-            if (playback.Start() != WaveError::None) {
+            const auto& tail = voice.progress->tail;
+            const auto start =
+                tail ? playback.StartAfter(*tail, block.continuation) : playback.Start();
+            if (start != WaveError::None) {
                 voice.progress->state = RunState::Failed;
                 return ORBIS_NGS2_ERROR_CODEC_RESET_FAIL;
             }
+            voice.progress->tail.reset();
             block.started = true;
         }
         (void)playback.SetOutputRate(rate);
@@ -615,6 +674,7 @@ s32 RenderSource(OrbisNgs2Handle handle, Voice& voice, std::span<float> output, 
                 static_cast<unsigned long long>(voice.progress->rendered_samples),
                 static_cast<unsigned long long>(voice.progress->completed_bytes),
                 voice.progress->blocks.size() - 1);
+            voice.progress->tail = block.playback;
             voice.progress->blocks.pop_front();
             if (voice.progress->blocks.empty()) {
                 Diagnostics::Record(
@@ -622,11 +682,18 @@ s32 RenderSource(OrbisNgs2Handle handle, Voice& voice, std::span<float> output, 
                     "queue-ended voice=%llu channels=%u rate=%u filled=%zu requested=%zu",
                     static_cast<unsigned long long>(handle), voice.channels, rate, position,
                     output.size());
-                voice.progress->state = RunState::Idle;
+                if (!voice.progress->accepts_blocks) {
+                    voice.progress->state = RunState::Idle;
+                    voice.progress->tail.reset();
+                }
             }
         } else {
             break;
         }
+    }
+    if (voice.progress->blocks.empty() && !voice.progress->accepts_blocks) {
+        voice.progress->state = RunState::Idle;
+        voice.progress->tail.reset();
     }
     return 0;
 }

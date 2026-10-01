@@ -35,6 +35,10 @@ public:
     // ATRAC9 reconstructs overlap history by decoding from the beginning. This is
     // exact but linear-time; an enclosing encoded window is not enough for a seek.
     WaveError Seek(std::uint64_t sample);
+    // Whole-superframe streaming only. Transfer transform history after the
+    // previous block is fully consumed; never modify a decoder from controls.
+    bool CanContinueAfter(const AudioDecoder& previous) const;
+    WaveError ContinueAfter(AudioDecoder& previous);
 
 private:
     AudioDecoder(Waveform waveform, std::span<const std::uint8_t> data);

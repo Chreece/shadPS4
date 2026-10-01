@@ -29,7 +29,7 @@ Headers are bounded and cycles rejected. Supported controls are:
 | Control group | IDs implemented |
 | --- | --- |
 | Generic | 1 matrix levels, 2 port volume, 3 port matrix, 4 zero delay, 5 patch, 6 event |
-| Sampler `0x10000000` | 0 setup, 1 append/replace blocks, 4 exit loop, 5 pitch, 8 UserFx, 9 peak enable, 10 identity direct filter |
+| Sampler `0x10000000` | 0 setup, 1 queue/continue/clear blocks, 4 exit loop, 5 pitch, 8 UserFx, 9 peak enable, 10 identity direct filter |
 | Submixer `0x20000000` | 0 setup, 4 UserFx, 5 peak enable, 6 identity direct filter |
 | Mastering `0x30000000` | 0 setup, 4 gain, 5 output ID |
 
@@ -45,13 +45,26 @@ mutation/unmapping after append cannot change the decoded audio. Limits are host
 budgets: 64 MiB per voice, 256 MiB per system, 256 blocks, 64 ports/matrices and
 16 million graph scratch samples. Explicit rack block/port/matrix limits also apply.
 
-Waveform-block flags 0 append; flag 1 replaces the queued blocks before adding the
-new descriptions. Replacement is transactional, including capacity checks against
-the new queue and decoder creation. A pending exit-loop request belongs to the old
-queue and is discarded. Replacement preserves the current run state and cumulative
-sample/byte counters; setup and play retain their existing reset behavior. Unknown
-flag bits remain errors. This flag interpretation is an HLE inference from the
-captured initial-segment/loop submission sequence, not verified console behavior.
+Waveform-block flag bit 0 keeps the queue open for further submissions; it does
+not discard queued audio. When that queue empties, the voice stays playing/empty
+until more data arrives or a submission without bit 0 closes it. Bit 1 continues
+ATRAC9 encoded data with the prior decoder's transform history. Bit 2 clears the
+queued data, retained history and pending exit-loop request before adding the new
+descriptions. Clear preserves run state and cumulative sample/byte counters;
+setup and play retain their existing reset behavior. All controls are staged, so
+a malformed later block or control also rolls back open/close and clear changes.
+The earlier flag-1-as-replacement inference was incorrect for streaming. The new
+interpretation follows the public reference below and matches the observed
+flag-1/flag-3 sequence; native-console equivalence is still unverified.
+
+Raw `numSamples=UINT32_MAX` resolves to this block's encoded capacity minus skip,
+after checking alignment, skip and storage bounds. It never authorizes reading
+beyond the copied payload. Ordinary oversized counts remain errors. Continuations
+currently require complete ATRAC9 superframes, matching configuration, zero skip
+and repeats, and an unspecified count (0 or UINT32_MAX). The preceding block must
+reach its full encoded extent without looping. History is transferred only when
+rendering consumes that prior block, never while a control transaction is staged.
+Retained history also retains one bounded payload, counted in storage limits.
 
 Render validates all output buffers and active routing dimensions before advancing
 voices. An idle or paused voice may have incomplete routing during reconfiguration;
@@ -90,7 +103,7 @@ These choices have synthetic tests but are not claimed as verified console ABI:
   from the first superframe and skip decoded samples, preserving transform history.
 - `numRepeats` means extra traversals; `UINT32_MAX` means unlimited. RIFF play_count
   zero maps to unlimited, positive counts to count minus one. Loop ends are exclusive.
-- FrameOffset/FrameMargin, nonzero setup flags, block flag bits other than 1,
+- FrameOffset/FrameMargin, nonzero setup flags, block flag bits outside 0x7,
   and nonzero port delay are
   unsupported. Matrix arrays are either packed source × destination or fixed 8 × 8.
   A mastering voice defaults to output 0 until explicitly assigned an output ID.
@@ -122,6 +135,7 @@ SDK or psOff implementation code was copied:
 - [psOff types](https://github.com/SysRay/psOff_public/blob/a36de91aa9c87fcadc28e22a0468b4e535380446/modules/libSceNgs2/types.h): waveform numbers, control/event IDs, state masks and structure layouts.
 - [Kyty Audio.cpp](https://github.com/InoriRus/Kyty/blob/4733b7e1c91b10554a52007903d74dc76c39a230/source/emulator/src/Audio.cpp): signed linked headers and ordinal voice events. Its dummy rendering behavior is not used as a DSP reference.
 - [Public PS4 application](https://github.com/PhilNCL/PS4/blob/57379b0f4c73bd5f822cdc264444ccd705690779/GraphicsSkeleton/PS4AudioSystem.cpp): allocator creation, 7.1 mastering and game-owned output buffers.
+- [KytyPS5 NGS2 streaming](https://github.com/KytyPS5/KytyPS5/blob/b7a1fac898be93bfe0c282752a7a386fd5202486/src/libs/ngs2.cpp): open-queue, encoded-continuation and queue-clear flag interpretation. This is an emulator reference, not console documentation; its implementation code was not copied.
 
 ## Remaining limitations and test scope
 
@@ -132,9 +146,10 @@ unmodified exports outside this bridge may still be stubs. Identity filter setup
 is accepted because it has no sample effect; other filter parameters fail explicitly.
 Peak-enable controls are accepted, with peak measurement always available.
 
-Each queued block currently has independent rate-conversion phase/lookahead. A
-transition between separate blocks at unequal rates can add a held boundary sample;
-it is not yet a seamless streaming resampler. Internal loops retain phase. ATRAC9
+Queued blocks now carry rate-conversion phase across transitions and starvation.
+Their interpolation lookahead is still separate, so a transition at unequal rates
+can hold a boundary sample instead of interpolating into the next block; this is
+not yet a seamless streaming resampler. Internal loops retain phase. ATRAC9
 seeks decode from the beginning, so late loop points may cost too much render time.
 Linear interpolation has no anti-aliasing filter for downsampling.
 

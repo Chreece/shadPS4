@@ -221,6 +221,56 @@ TEST(ConcurrentAtrac9InitializationAndDecoding) {
     CHECK(ok);
 }
 
+TEST(Atrac9ContinuationMatchesWholeStreamForMonoAndEightChannels) {
+    for (bool surround : {false, true}) {
+        const auto riff = At9Audio(surround);
+        const auto parsed = ParseWaveform(riff);
+        CHECK(parsed);
+        const auto expected = Decode(riff);
+        auto format = parsed.value;
+        format.data_offset = 0;
+        format.data_size = format.atrac9.superframe_bytes;
+        format.num_samples = format.atrac9.superframe_samples;
+        std::unique_ptr<AudioDecoder> previous;
+        for (unsigned i = 0; i < 3; ++i) {
+            const auto payload = std::span{riff}.subspan(
+                parsed.value.data_offset + i * format.data_size, format.data_size);
+            auto next = AudioDecoder::CreateRaw(format, payload);
+            CHECK(next);
+            if (previous) {
+                CHECK(next.value->CanContinueAfter(*previous));
+                CHECK(next.value->ContinueAfter(*previous) == WaveError::None);
+            }
+            std::vector<float> decoded(format.num_samples * format.channels);
+            CHECK(next.value->Read(decoded).value == format.num_samples);
+            CHECK(
+                std::equal(decoded.begin(), decoded.end(), expected.begin() + i * decoded.size()));
+            previous = std::move(next.value);
+        }
+    }
+}
+TEST(Atrac9ContinuationRejectsUnfinishedTrimmedAndMismatchedHistory) {
+    const auto riff = At9Audio();
+    const auto parsed = ParseWaveform(riff);
+    CHECK(parsed);
+    auto format = parsed.value;
+    format.data_offset = 0;
+    format.data_size = 192;
+    format.num_samples = 512;
+    auto previous =
+        AudioDecoder::CreateRaw(format, std::span{riff}.subspan(parsed.value.data_offset, 192));
+    auto next = AudioDecoder::CreateRaw(
+        format, std::span{riff}.subspan(parsed.value.data_offset + 192, 192));
+    CHECK(previous && next);
+    CHECK(next.value->ContinueAfter(*previous.value) == WaveError::InvalidFormat);
+    CHECK(previous.value->Position() == 0 && next.value->Position() == 0);
+    format.num_samples = 511;
+    auto trimmed =
+        AudioDecoder::CreateRaw(format, std::span{riff}.subspan(parsed.value.data_offset, 192));
+    CHECK(trimmed && !next.value->CanContinueAfter(*trimmed.value));
+    auto surround = AudioDecoder::Create(At9Audio(true));
+    CHECK(surround && !next.value->CanContinueAfter(*surround.value));
+}
 int main() {
     return Test::Run();
 }

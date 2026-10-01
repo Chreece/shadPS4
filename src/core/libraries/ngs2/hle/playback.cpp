@@ -95,6 +95,21 @@ void Playback::Pause() {
         state = PlaybackState::Paused;
 }
 
+bool Playback::CanContinueAfter(const Playback& previous) const {
+    return !loop && !previous.loop && decoder->CanContinueAfter(*previous.decoder);
+}
+
+WaveError Playback::StartAfter(Playback& previous, bool continue_decoder) {
+    if (&previous == this || previous.state != PlaybackState::Finished ||
+        (continue_decoder && !CanContinueAfter(previous)))
+        return WaveError::InvalidFormat;
+    Stop();
+    failure = continue_decoder ? decoder->ContinueAfter(*previous.decoder) : decoder->Seek(0);
+    state = failure == WaveError::None ? PlaybackState::Playing : PlaybackState::Failed;
+    phase = previous.phase * output_rate / previous.output_rate;
+    return failure;
+}
+
 void Playback::Resume() {
     if (state == PlaybackState::Paused)
         state = PlaybackState::Playing;
@@ -154,10 +169,17 @@ WaveResult<std::size_t> Playback::Render(std::span<float> output) {
     if (!primed)
         failure = Prime();
 
+    // A previous block may end during a multi-sample downsampling step. Carry
+    // that step across the boundary instead of restarting the output clock.
+    const std::uint64_t denominator = std::uint64_t{output_rate} * 65536;
+    while (phase >= denominator && state == PlaybackState::Playing && failure == WaveError::None) {
+        phase -= denominator;
+        failure = Advance();
+    }
+
     std::size_t produced = 0;
     while (produced < output.size() / channels && state == PlaybackState::Playing &&
            failure == WaveError::None) {
-        const std::uint64_t denominator = std::uint64_t{output_rate} * 65536;
         const float fraction = static_cast<float>(phase) / static_cast<float>(denominator);
         for (std::uint32_t channel = 0; channel < channels; ++channel) {
             // Hold the last source sample for its remaining fractional duration.
