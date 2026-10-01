@@ -16,6 +16,7 @@ PREVIOUS = deploy.COMMIT
 GRAPHICS_TEST = False
 GRAPHICS_TRACE = False
 OCCLUSION_TEST = False
+IMAGE_TRANSFER_TEST = False
 STARTUP_TEST = False
 SOURCE_BRANCH = None
 
@@ -37,7 +38,8 @@ def selection(original, binary):
                      "2abd0fb0f807e84713517e6a25e982043897353f",
                      "038bb3d83e751e50328abb98f04fcb2c3ee7897e",
                      "d5c5acc0787ab64939685010cd5878b57479caa7",
-                     "2b82d291daa57d23052594051dacc64e6bdf9e9f"):
+                     "2b82d291daa57d23052594051dacc64e6bdf9e9f",
+                     "10ff9e19a7d94340aaedd1e333f1a11abeeb9e75"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -259,6 +261,12 @@ def main():
                  '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
             run(['cmake', '--build', occlusion, '--parallel', jobs])
             run(['ctest', '--test-dir', occlusion, '--no-tests=error', '--output-on-failure'])
+        if IMAGE_TRANSFER_TEST:
+            transfer = work / 'image-transfer-test'
+            run(['cmake', '-S', source / 'tests/image_transfer', '-B', transfer,
+                 '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
+            run(['cmake', '--build', transfer, '--parallel', jobs])
+            run(['ctest', '--test-dir', transfer, '--no-tests=error', '--output-on-failure'])
         build = work / 'build'
         options = ['-DCMAKE_BUILD_TYPE=Release', '-DENABLE_TESTS=OFF',
                    '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF']
@@ -289,7 +297,10 @@ def main():
         print('GRAPHICS_LOCAL_RESULT=PASS')
         if SOURCE_BRANCH == 'main':
             print('MAIN_LOCAL_RESULT=PASS; combined main revision ' + REVISION)
-        if OCCLUSION_TEST:
+        if IMAGE_TRANSFER_TEST:
+            print('EXPERIMENTAL: depth copy and image transition correction; game fix unconfirmed.')
+            print('GRAPHICS_TRACE=ENABLED; compare character/building surfaces and the cutscene.')
+        elif OCCLUSION_TEST:
             print('EXPERIMENTAL: corrected guest occlusion count control; geometry fix unconfirmed.')
             print('GRAPHICS_TRACE=ENABLED; check disappearing geometry, indoor light and frame pacing.')
         elif GRAPHICS_TRACE:

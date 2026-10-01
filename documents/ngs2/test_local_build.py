@@ -33,8 +33,8 @@ class LocalDeploymentTests(DeploymentTests):
 
     def test_graphics_switch_preserves_installed_guard_fallback_and_exact_rollback(self):
         self.mock_install_inputs()
-        previous = '2b82d291daa57d23052594051dacc64e6bdf9e9f'
-        binary = self.home / 'Applications/shadps4/releases/ngs2-2b82d291/shadps4'
+        previous = '10ff9e19a7d94340aaedd1e333f1a11abeeb9e75'
+        binary = self.home / 'Applications/shadps4/releases/ngs2-10ff9e19/shadps4'
         original_audio = self.working_audio_dispatcher()
         with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + previous):
             self.wrapper.write_bytes(local.selection(original_audio, binary))
@@ -68,6 +68,41 @@ class LocalDeploymentTests(DeploymentTests):
         new = self.home / 'Applications/shadps4/releases' / ('ngs2-' + main_build.REVISION[:8]) / 'shadps4'
         with self.assertRaisesRegex(RuntimeError, 'single-instance guard'):
             local.selection(modified, new)
+
+    def test_known_validation_session_is_restored_before_visual_test(self):
+        profile = self.home / '.local/share/shadPS4/custom_configs/CUSA36843.json'
+        profile.parent.mkdir(parents=True)
+        current = b'{"GPU":{"readbacks_mode":2},"Vulkan":{"vkvalidation_enabled":true}}'
+        profile.write_bytes(current)
+        record = self.home / '.local/state/shadps4-graphics-readbacks/test-one/state.json'
+        record.parent.mkdir(parents=True)
+        record.write_text(json.dumps({'purpose': 'validation', 'profile': str(profile),
+                                      'installed_sha256': deploy.digest(current)}))
+        helper = record.parent / 'readbacks_test.py'
+        helper.write_bytes(b'validated restore helper')
+        with mock.patch.object(main_build, 'VALIDATION_HELPER_SHA256',
+                               deploy.digest(helper.read_bytes())), mock.patch.object(
+                deploy, 'no_running_core'), mock.patch.object(main_build.subprocess, 'run') as run:
+            main_build.restore_validation_session(self.home)
+            run.assert_called_once_with([sys.executable, str(helper), '--restore', str(record)],
+                                        check=True)
+
+    def test_unrecognized_validation_settings_are_preserved(self):
+        profile = self.home / '.local/share/shadPS4/custom_configs/CUSA36843.json'
+        profile.parent.mkdir(parents=True)
+        original = b'{"Vulkan":{"vkvalidation_enabled":true},"Audio":{"channels":8}}'
+        profile.write_bytes(original)
+        with self.assertRaisesRegex(RuntimeError, 'matching test backup'):
+            main_build.restore_validation_session(self.home)
+        self.assertEqual(profile.read_bytes(), original)
+
+    def test_finished_validation_does_not_change_readbacks_or_audio(self):
+        profile = self.home / '.local/share/shadPS4/custom_configs/CUSA36843.json'
+        profile.parent.mkdir(parents=True)
+        original = b'{"GPU":{"readbacks_mode":2},"Audio":{"channels":8}}'
+        profile.write_bytes(original)
+        main_build.restore_validation_session(self.home)
+        self.assertEqual(profile.read_bytes(), original)
 
     def prepare_failed_main(self):
         self.mock_install_inputs()

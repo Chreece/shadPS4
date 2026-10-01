@@ -325,3 +325,34 @@ Close the game before building. After installation, test the same NGS2 entry,
 then exit and upload `~/ngs2-diagnostic-9e95c172.log`. No host audio/channel
 settings or normal emulator deployment are changed. Cross-platform CI stays
 skipped until local testing justifies it.
+
+## Local depth-image correction test
+
+`main_build.py --docker` pins combined main
+`77c6bd3a1f116c605370e765464423a668f25ba1`. The graphics change lives separately on
+`fix/depth-image-copy-sync` at `bc479ce3207347c1c0ed72df49755c9cf7121205`.
+It fixes the D32/D32S8 depth copy path and orders consecutive image transitions,
+following the user's 17:21 Vulkan validation report. That report confirms Precise
+readbacks and active validation; it does not establish a successful graphics fix.
+The existing audio, sparse-queue, startup and earlier graphics changes remain.
+
+The helper accepts the current 10ff9e19 dispatcher and preserves the normal
+launcher fallback, single-instance guard, saves and audio settings. If the known
+temporary validation session is still enabled, its checksum-verified restore
+helper restores the exact pre-test per-game profile before building. Unknown or
+subsequently edited validation profiles are preserved and stop the deployment.
+Readbacks mode remains unchanged. No global setting is edited.
+
+The build reuses the existing Docker workspace, adds the three image-transfer
+checks, runs the existing focused graphics/occlusion/startup checks, and switches
+only after the full local Linux build and executable smoke check succeed. GitHub
+CI is skipped. Local host checks also exercise the upgrade from 10ff9e19, normal
+fallback, exact rollback and validation-session restoration.
+
+After `MAIN_LOCAL_RESULT=PASS`, launch the existing NGS2 trace entry. Compare the
+same street, character/building surfaces, unusual colours, indoor light and the
+cutscene. Exit normally and upload `~/ngs2-diagnostic-77c6bd3a.log`. The earlier
+core is retained and the installer prints a verified rollback command.
+In-game graphics and audio remain experimental. Other validation findings
+(swapchain presentation, arena buffer size and mapped-memory flush alignment)
+are not fixed by this depth-image change.

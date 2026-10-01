@@ -13,9 +13,42 @@ import zipfile
 
 import local_build
 
-REVISION = '10ff9e19a7d94340aaedd1e333f1a11abeeb9e75'
+REVISION = '77c6bd3a1f116c605370e765464423a668f25ba1'
 FAILED = '2abd0fb0f807e84713517e6a25e982043897353f'
 WORKING = 'f1c1c79073b811ada98b963d6a87c066b66e2bc8'
+VALIDATION_HELPER_SHA256 = '4b5ffcb3389ecabcda7e6a8ab68cf85fd37194376e21d68fc85ecfd4573a4ebd'
+
+
+def restore_validation_session(home):
+    profile = home / '.local/share/shadPS4/custom_configs/CUSA36843.json'
+    if profile.is_symlink():
+        raise RuntimeError('Unexpected per-game configuration symlink.')
+    if not profile.exists():
+        return
+    current = profile.read_bytes()
+    if not json.loads(current).get('Vulkan', {}).get('vkvalidation_enabled', False):
+        return
+    matches = []
+    for record in (home / '.local/state/shadps4-graphics-readbacks').glob('test-*/state.json'):
+        if record.is_symlink():
+            continue
+        try:
+            state = json.loads(record.read_text())
+        except (OSError, ValueError):
+            continue
+        if (state.get('purpose') == 'validation' and state.get('profile') == str(profile) and
+                state.get('installed_sha256') == local_build.deploy.digest(current)):
+            matches.append(record)
+    if len(matches) != 1:
+        raise RuntimeError('Validation is enabled without one matching test backup. Run the '
+                           'original RESTORE command before this normal-speed visual test.')
+    helper = matches[0].parent / 'readbacks_test.py'
+    if (helper.is_symlink() or
+            local_build.deploy.digest(helper.read_bytes()) != VALIDATION_HELPER_SHA256):
+        raise RuntimeError('Validation restore helper checksum mismatch; settings preserved.')
+    local_build.deploy.no_running_core()
+    subprocess.run([sys.executable, str(helper), '--restore', str(matches[0])], check=True)
+    print('VALIDATION=RESTORED: temporary core/synchronization checks removed.', flush=True)
 
 
 def recover_failed_main(home):
@@ -81,11 +114,13 @@ if __name__ == '__main__':
     local_build.GRAPHICS_TEST = True
     local_build.GRAPHICS_TRACE = True
     local_build.OCCLUSION_TEST = True
+    local_build.IMAGE_TRANSFER_TEST = True
     local_build.STARTUP_TEST = True
     try:
         if os.geteuid() == 0:
             raise RuntimeError('Run as your normal user, without sudo.')
         recover_failed_main(Path.home())
+        restore_validation_session(Path.home())
         local_build.main()
     except (RuntimeError, OSError, ValueError, subprocess.SubprocessError,
             zipfile.BadZipFile) as error:
