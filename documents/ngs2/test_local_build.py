@@ -43,6 +43,15 @@ class LocalDeploymentTests(DeploymentTests):
         deploy.restore(state)
         self.assertEqual(self.wrapper.read_bytes(), original)
 
+    def test_docker_builder_mounts_only_workspace_as_current_user(self):
+        args = local.container_command(self.home, 'builder:test', ['cmake', '--version'])
+        self.assertEqual(args.count('--mount'), 1)
+        self.assertIn('type=bind,src=' + str(self.home) + ',dst=' + str(self.home), args)
+        self.assertIn('--user', args)
+        self.assertNotIn('--privileged', args)
+        self.assertNotIn('/var/run/docker.sock', ' '.join(args))
+        self.assertEqual(args[-3:], ['builder:test', 'cmake', '--version'])
+
     def test_local_upgrade_rejects_unexpected_wrapper(self):
         with self.assertRaises(RuntimeError):
             local.selection(self.original, self.home / 'Applications/shadps4/releases/ngs2-ca67919d/shadps4')

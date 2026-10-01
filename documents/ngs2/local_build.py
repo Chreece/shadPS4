@@ -65,18 +65,42 @@ sys.exit(code)
         .replace('REVISION', REVISION)).encode()
 
 
+DOCKERFILE = """FROM debian:trixie-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git cmake ninja-build build-essential clang-19 llvm-19-dev \
+    llvm-19-tools lld-19 ccache pkg-config python3 nasm \
+    libasound2-dev libpulse-dev libopenal-dev libssl-dev zlib1g-dev libedit-dev \
+    libudev-dev libevdev-dev libjack-jackd2-dev libsndio-dev libvulkan-dev \
+    libpng-dev libx11-dev libxext-dev libwayland-dev libdecor-0-dev \
+    libxkbcommon-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
+    libxrandr-dev libxfixes-dev libxinerama-dev libegl1-mesa-dev \
+    libgl1-mesa-dev libgles2-mesa-dev uuid-dev libdbus-1-dev \
+    && rm -rf /var/lib/apt/lists/*
+"""
+
+
+def container_command(work, image, args):
+    # Only the build workspace is mounted, under the host UID/GID. No GPU,
+    # game directories, desktop sockets or Docker socket enter the builder.
+    return ['docker', 'run', '--rm', '--user', f'{os.getuid()}:{os.getgid()}',
+            '--mount', f'type=bind,src={work},dst={work}',
+            '--workdir', str(work), '--env', 'HOME=' + str(work / 'container-home'),
+            '--env', 'CCACHE_DIR=' + str(work / 'ccache'), image, *args]
+
+
 def main():
     if os.geteuid() == 0:
         raise RuntimeError("Run as your normal user, without sudo.")
     if sys.platform != "linux" or os.uname().machine != "x86_64":
         raise RuntimeError("This local build targets Linux x86-64.")
     os.environ['PATH'] = str(Path.home() / '.local/bin') + os.pathsep + os.environ['PATH']
-    required = ('git', 'cmake', 'ctest', 'ninja', 'clang-19', 'clang++-19', 'pkg-config')
+    use_docker = '--docker' in sys.argv[1:]
+    required = ('git', 'docker') if use_docker else ('git', 'cmake', 'ctest', 'ninja', 'clang-19', 'clang++-19', 'pkg-config')
     missing = [tool for tool in required if not shutil.which(tool)]
     if missing:
         raise RuntimeError("Missing build tools: " + ', '.join(missing))
     home = Path.home()
-    work = home / '.cache/shadps4-ngs2-local' / REVISION[:8]
+    work = home / '.cache/shadps4-ngs2-local' / (REVISION[:8] + ('-docker' if use_docker else ''))
     work.mkdir(parents=True, exist_ok=True)
     logfile = work / 'build.log'
     print('BUILD_LOG=' + str(logfile), flush=True)
@@ -91,14 +115,25 @@ def main():
     deploy.no_running_core()
     source = work / 'source'
     jobs = str(min(8, os.cpu_count() or 2))
+    image = 'shadps4-ngs2-builder:trixie-clang19-v1'
     with logfile.open('ab') as log:
         def run(args):
+            if use_docker and args[0] in ('cmake', 'ctest'):
+                args = container_command(work, image, args)
             print('STEP=' + shlex.join([str(x) for x in args]), flush=True)
             result = subprocess.run(args, stdout=log, stderr=subprocess.STDOUT)
             if result.returncode:
                 log.flush()
                 print(logfile.read_text(errors='replace')[-6000:])
                 raise RuntimeError('Build step failed; upload ' + str(logfile))
+        if use_docker:
+            run(['docker', 'info', '--format', '{{.ServerVersion}}'])
+            context = work / 'docker-context'
+            context.mkdir(exist_ok=True)
+            (context / 'Dockerfile').write_text(DOCKERFILE)
+            (work / 'container-home').mkdir(exist_ok=True)
+            (work / 'ccache').mkdir(exist_ok=True)
+            run(['docker', 'build', '--tag', image, str(context)])
         if not source.exists():
             run(['git', 'clone', '--no-checkout', 'https://github.com/Chreece/shadPS4.git', source])
         run(['git', '-C', source, 'fetch', 'origin', REVISION])
@@ -115,7 +150,7 @@ def main():
         run(['ctest', '--test-dir', focused, '--output-on-failure'])
         build = work / 'build'
         options = ['-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF']
-        if shutil.which('ccache'):
+        if use_docker or shutil.which('ccache'):
             options += ['-DCMAKE_C_COMPILER_LAUNCHER=ccache', '-DCMAKE_CXX_COMPILER_LAUNCHER=ccache']
         run(['cmake', '-S', source, '-B', build, '-G', 'Ninja', *compiler, *options])
         run(['cmake', '--build', build, '--target', 'shadps4', '--parallel', jobs])
