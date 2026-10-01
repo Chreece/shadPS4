@@ -65,7 +65,8 @@ class LocalDeploymentTests(DeploymentTests):
                          '66a2ef4d25e2029628dad50f5ec9a308ef072c47',
                          '9e95c1727d287514d0e85aef9f863e0b293f6e5b',
                          'c827aa1d5b052c70f938d6d34a4d704f5d21e088',
-                         '87c0112389d82055570ee6e54a66210625010f51'):
+                         '87c0112389d82055570ee6e54a66210625010f51',
+                         '7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e'):
             with self.subTest(previous=revision):
                 previous = self.home / 'Applications/shadps4/releases' / ('ngs2-' + revision[:8]) / 'shadps4'
                 with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + revision):
@@ -104,6 +105,28 @@ class LocalDeploymentTests(DeploymentTests):
     def test_local_upgrade_rejects_unexpected_wrapper(self):
         with self.assertRaises(RuntimeError):
             local.selection(self.original, self.home / 'Applications/shadps4/releases/ngs2-ca67919d/shadps4')
+
+    def test_second_launch_preserves_complete_or_interrupted_first_trace(self):
+        binary = self.home / 'fake-core'
+        binary.write_text('#!' + sys.executable + '\nprint("NGS2_DIAG second-launch")\n')
+        binary.chmod(0o700)
+        trace = self.home / 'diagnostic.log'
+        first = b'NGS2 diagnostic first-launch\nNGS2_DIAG loading-stall\n'
+        trace.write_bytes(first)  # No exit footer: preserve interrupted captures too.
+        helper = self.home / 'runner.py'
+        helper.write_bytes(local.runner(binary, trace))
+        subprocess.run([sys.executable, str(helper)], check=True, timeout=20)
+        archives = list(self.home.glob('diagnostic-previous-*.log'))
+        self.assertEqual(len(archives), 1)
+        self.assertEqual(archives[0].read_bytes(), first)
+        second = trace.read_bytes()
+        self.assertIn(('previous_trace=' + str(archives[0])).encode(), second)
+        self.assertIn(b'NGS2_DIAG second-launch', second)
+        self.assertIn(b'exit_code=0', second)
+        subprocess.run([sys.executable, str(helper)], check=True, timeout=20)
+        archives = list(self.home.glob('diagnostic-previous-*.log'))
+        self.assertEqual(len(archives), 2)
+        self.assertEqual({p.read_bytes() for p in archives}, {first, second})
 
     def test_runner_preserves_crash_output_after_diagnostic_and_console_caps(self):
         binary = self.home / 'crashing-core'

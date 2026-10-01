@@ -11,7 +11,7 @@ import sys
 import zipfile
 import deploy_test as deploy
 
-REVISION = "7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e"
+REVISION = "f1c1c79073b811ada98b963d6a87c066b66e2bc8"
 PREVIOUS = deploy.COMMIT
 
 
@@ -25,7 +25,8 @@ def selection(original, binary):
                      "66a2ef4d25e2029628dad50f5ec9a308ef072c47",
                      "9e95c1727d287514d0e85aef9f863e0b293f6e5b",
                      "c827aa1d5b052c70f938d6d34a4d704f5d21e088",
-                     "87c0112389d82055570ee6e54a66210625010f51"):
+                     "87c0112389d82055570ee6e54a66210625010f51",
+                     "7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -45,6 +46,7 @@ def selection(original, binary):
 def runner(binary, trace):
     return ('''#!/usr/bin/env python3
 from collections import deque
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import signal
@@ -53,9 +55,17 @@ import sys
 binary = BINARY
 trace = TRACE
 trace.parent.mkdir(parents=True, exist_ok=True)
+previous_trace = None
+if trace.exists():
+    previous_trace = trace.with_name(trace.stem + "-previous-" +
+                                    datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") +
+                                    "-" + str(os.getpid()) + trace.suffix)
+    trace.replace(previous_trace)
 env = dict(os.environ, SHADPS4_NGS2_DIAGNOSTICS="1")
 with trace.open("wb") as report:
     report.write(b"NGS2 diagnostic revision REVISION\\n")
+    if previous_trace is not None:
+        report.write(("previous_trace=" + str(previous_trace) + "\\n").encode())
     report.flush()
     process = subprocess.Popen([binary, "--game", "CUSA36843", "--fullscreen", "true"],
                                env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -225,7 +235,7 @@ def main():
     # Reuses checked ELF/startup, atomic switch, backup, and verified rollback.
     deploy.install(home, 0)
     print('TRACE_FILE=' + str(trace))
-    print('EXPERIMENTAL: waveform queue replacement candidate; in-game fix unconfirmed.')
+    print('EXPERIMENTAL: ATRAC9 streaming correction; in-game fix unconfirmed.')
     print('Test the first cutscene from the NGS2 probe entry. If it stalls, wait 15 seconds.')
     print('Then close the emulator normally and upload TRACE_FILE.')
 
