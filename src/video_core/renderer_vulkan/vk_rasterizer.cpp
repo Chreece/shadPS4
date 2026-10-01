@@ -9,6 +9,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_occlusion_query.h"
@@ -814,8 +815,17 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                     LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
                               vsharp.GetSize(), size, stage.pgm_hash);
                 }
+                bool image_synchronized{};
                 const auto [buffer, offset] = buffer_cache.ObtainBuffer(
-                    vsharp.base_address, size, desc.is_written, desc.is_formatted);
+                    vsharp.base_address, size, desc.is_written, true, &image_synchronized);
+                if (!desc.is_formatted && image_synchronized) {
+                    VideoCore::GraphicsDiagnostics::Emit(
+                        VideoCore::GraphicsDiagnostics::Event::RawBufferImageSync,
+                        "shader=%llx address=%llx bytes=%llu",
+                        static_cast<unsigned long long>(stage.pgm_hash),
+                        static_cast<unsigned long long>(vsharp.base_address),
+                        static_cast<unsigned long long>(size));
+                }
                 const u64 offset_aligned = Common::AlignDown(offset, alignment);
                 const u64 adjust = offset - offset_aligned;
                 if (adjust % 4 != 0) {

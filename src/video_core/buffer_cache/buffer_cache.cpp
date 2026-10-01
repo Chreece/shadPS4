@@ -12,6 +12,7 @@
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/memory_tracker.h"
 #include "video_core/buffer_cache/region_definitions.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -168,7 +169,11 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
 }
 
 std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
-                                                        bool is_written, bool is_texel_buffer) {
+                                                        bool is_written, bool synchronize_image,
+                                                        bool* image_synchronized) {
+    if (image_synchronized) {
+        *image_synchronized = false;
+    }
     // For read-only buffers use device local stream buffer to reduce renderpass breaks.
     if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size)) {
         const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
@@ -180,9 +185,10 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     const u64 last_block = (device_addr + size - 1) >> block_shift;
     const auto* arena = GetArena(first_block, last_block);
     EnsureResident(arena, first_block, last_block);
-    SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);
-    if (is_texel_buffer && !is_written) {
-        SynchronizeMemoryFromImage(arena, device_addr, size);
+    const bool synchronized =
+        SynchronizeMemory(arena, device_addr, size, is_written, synchronize_image);
+    if (image_synchronized) {
+        *image_synchronized = synchronized;
     }
     if (is_written) {
         gpu_modified_ranges.Add(device_addr, size);
@@ -336,7 +342,7 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
 }
 
 bool BufferCache::SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 size,
-                                    bool is_written, bool is_texel_buffer) {
+                                    bool is_written, bool synchronize_image) {
     boost::container::small_vector<vk::BufferCopy, 4> copies;
     size_t total_size_bytes{};
     memory_tracker->ForEachUploadRange(device_addr, size, is_written, [&](u64 addr, u64 size) {
@@ -353,7 +359,7 @@ bool BufferCache::SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 
         staging.Flush();
         runtime.CopyBuffer(staging.buffer, arena, copies);
     }
-    if (is_texel_buffer && !is_written) {
+    if (synchronize_image && !is_written) {
         return SynchronizeMemoryFromImage(arena, device_addr, size);
     }
     return false;
@@ -406,6 +412,12 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
     }
     auto& tile_manager = texture_cache.GetTileManager();
     tile_manager.TileImage(image, buffer_copies, arena, arena_offset);
+    GraphicsDiagnostics::Emit(
+        GraphicsDiagnostics::Event::BufferImageSync,
+        "address=%llx requested=%u image-bytes=%u mips=%zu width=%u height=%u tiled=%u",
+        static_cast<unsigned long long>(device_addr), size, image.info.guest_size,
+        buffer_copies.size(), image.info.size.width, image.info.size.height,
+        static_cast<unsigned>(image.info.props.is_tiled));
     return true;
 }
 
