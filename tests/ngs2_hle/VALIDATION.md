@@ -5,6 +5,33 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # NGS2 validation — 2026-09-30
 
+## Local callback/control correction — 2026-10-01
+
+Base: `59566b916c3ff680616081c9bcde642e70f874a7`.
+
+The completed user diagnostic reports a clean exit (`exit_code=0`), continued
+48 kHz/eight-channel rendering, repeated INVALID_OPERATION render failures,
+INVALID_NUM_MATRIX_LEVELS, and rejected waveform/filter requests. The user reports
+a stalled cutscene with working pause controls. This is evidence of incomplete
+in-game behavior, not a confirmed crash or an established cause of the stall.
+
+Five regression scenarios fail against the base and pass after this correction:
+callback pause, concurrent volume/gain changes, append before a source is rendered,
+setup during a callback, and inactive incomplete routing. The added rack-destruction
+case and existing system-destruction/permission checks retain safe abort behavior.
+Queues and counters stay synchronized with controls; a fresh setup has independent
+progress. Rejected setup/append/filter and active matrix requests now include bounded
+numeric diagnostics without guest payloads or raw guest pointers.
+
+- GCC 13.3 Release: all nine CTest invocations passed (19 public audio cases,
+  also repeated with diagnostics enabled).
+- GCC 13.3 ASan/UBSan: all nine CTest invocations passed. Leak detection remains
+  disabled due to the execution environment limitation documented below.
+- No new cross-platform CI or full emulator build is claimed. The pinned local
+  Docker helper runs focused checks and builds Linux before installing the test core.
+- Cutscene progression, dialogue crackles and physical speaker mapping still need
+  the user's isolated game test. Unsupported formats/filter modes remain errors.
+
 ## Public audio bridge
 
 Base: `c6f958582075e042d007b27f9d5d3f2d71e56fd9`.

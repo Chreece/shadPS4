@@ -39,7 +39,9 @@ mutation/unmapping after append cannot change the decoded audio. Limits are host
 budgets: 64 MiB per voice, 256 MiB per system, 256 blocks, 64 ports/matrices and
 16 million graph scratch samples. Explicit rack block/port/matrix limits also apply.
 
-Render validates all output buffers and graph dimensions before advancing voices.
+Render validates all output buffers and active routing dimensions before advancing
+voices. An idle or paused voice may have incomplete routing during reconfiguration;
+its unused matrix does not block the rest of the graph.
 It processes an acyclic graph in dependency order, mixes every incoming patch,
 applies source-major matrices and port levels, then writes exactly one grain into
 each supplied PCM16 or float output. PCM16 saturates; float retains headroom.
@@ -50,9 +52,16 @@ six channels; physical layout needs guest/device verification.
 
 UserFx gets a planar copy of the grain and its three user-data values. It executes
 outside the runtime mutex. Queries can reenter; a nested render on the same system
-returns an error. Destroying/replacing a snapshotted voice aborts that render before
-output writes. Decoder state already advanced before the callback is not rolled
-back. Output permissions are rechecked after callbacks. Negative callback results
+returns an error. Configuration (including channels, matrices and routing) is
+snapshotted for the grain. Concurrent or reentrant controls no longer discard a
+grain just because they replace a live voice entry. Queue progress and counters
+remain shared under the runtime mutex; appended blocks and events update that
+progress. A setup instead owns independent progress so the old grain cannot
+advance a newly configured waveform. Failed control batches still publish nothing.
+
+Destroying a snapshotted voice aborts that render before output writes. Decoder
+state already advanced before a lifecycle abort is not rolled back. Output
+permissions are rechecked after callbacks. Negative callback results
 or nonfinite samples mark the voice failed and return an error.
 
 ## Explicit HLE assumptions
@@ -68,8 +77,11 @@ These choices have synthetic tests but are not claimed as verified console ABI:
 - FrameOffset/FrameMargin, nonzero setup/append flags and nonzero port delay are
   unsupported. Matrix arrays are either packed source × destination or fixed 8 × 8.
   A mastering voice defaults to output 0 until explicitly assigned an output ID.
-- Grain/rate settings are snapshotted for each render. Newly created voices during
-  a callback join the following grain. Graph replacements abort the current grain.
+- Grain/rate settings and voice configuration are snapshotted for each render.
+  Newly created or previously inactive voices join the following grain. Stop/pause
+  can suppress a voice not yet processed in the current grain. Setup changes take
+  effect on the following grain; the prior configuration can finish the current one.
+  These callback/control timing choices remain HLE assumptions.
 
 ## Evidence
 

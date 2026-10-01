@@ -276,13 +276,120 @@ TEST(UserFxMayDestroySystemWithoutDanglingGraphAccess) {
     CHECK(g.Render() == ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE && fx.calls == 1);
     CHECK(g.output.value[0] == 42);
 }
-TEST(UserFxGraphReplacementAbortsAndClearsRenderGuard) {
+TEST(UserFxPauseDoesNotAbortTheGrain) {
     Graph g;
     Mapping code{reinterpret_cast<void*>(ProcessFx), 1, 4};
     FxState fx;
     fx.reenter = [&] { Event(g.master, 4); };
     InstallFx(g, fx);
-    CHECK(g.Render() == ORBIS_NGS2_ERROR_INVALID_OPERATION);
+    CHECK(g.Render() == 0);
+    fx.reenter = {};
+    CHECK(g.Render() == 0 && fx.calls == 2);
+}
+TEST(UserFxConcurrentControlsPreserveAudioAndApplyRoutingNextGrain) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(1024, 8192)));
+    Mapping code{reinterpret_cast<void*>(ProcessFx), 1, 4};
+    FxState fx;
+    fx.reenter = [&] {
+        s32 result = -1;
+        std::thread update{
+            [&] { result = Control(g.source, 2, OrbisNgs2VoicePortVolumeParam{{}, 0, 0.5f}); }};
+        update.join();
+        CHECK(result == 0);
+        CHECK(Control(g.master, 0x30000004, OrbisNgs2MasteringVoiceGainParam{{}, 0.5f, 0.5f}) == 0);
+    };
+    InstallFx(g, fx);
+    CHECK(g.Render() == 0 && g.State().numDecodedSamples == 256);
+    CHECK(g.output.value[0] == 0.25f);
+    fx.reenter = {};
+    CHECK(g.Render() == 0 && g.State().numDecodedSamples == 512);
+    CHECK(g.output.value[0] == 0.0625f);
+}
+TEST(UserFxAppendToUnprocessedVoicePreservesQueueAndCounters) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(512 * 8, 0), 8));
+    Rack second{g.system.handle.value};
+    const auto source = VoiceHandle(second);
+    Patch(source, g.bus);
+    CHECK(Control(source, 0x10000000,
+                  OrbisNgs2SamplerVoiceSetupParam{{}, {PcmS16LE, 1, 48000, 0, 0, 0}, 0, 0}) == 0);
+    Guest<std::array<s16, 256>> samples;
+    samples.value.fill(4096);
+    Guest<OrbisNgs2WaveformBlock> block;
+    block.value = {0, sizeof(samples.value), 0, 0, 256, 0, 123};
+    const auto append = [&] {
+        CHECK(Control(source, 0x10000001,
+                      OrbisNgs2SamplerVoiceWaveformBlocksParam{
+                          {}, samples.value.data(), 0, 1, block.ptr()}) == 0);
+    };
+    append();
+    Event(source, 0);
+    Mapping code{reinterpret_cast<void*>(ProcessFx), 1, 4};
+    FxState fx;
+    fx.reenter = append;
+    CHECK(Control(g.source, 0x10000008,
+                  OrbisNgs2SamplerVoiceUserFxParam{
+                      {}, ProcessFx, reinterpret_cast<uintptr_t>(&fx), 42, 99}) == 0);
+    for (unsigned grain = 1; grain <= 2; ++grain) {
+        CHECK(g.Render() == 0);
+        fx.reenter = {};
+        Guest<OrbisNgs2SamplerVoiceState> state;
+        CHECK(sceNgs2VoiceGetState(source, &state.value.voiceState, sizeof(state.value)) == 0);
+        CHECK(state.value.numDecodedSamples == grain * 256);
+        CHECK(state.value.decodedDataSize == grain * sizeof(samples.value));
+        CHECK(g.output.value[0] == 0.125f && g.output.value[1] == 0);
+        CHECK(state.value.voiceState.stateFlags == (grain == 1 ? 3u : 32u));
+    }
+}
+TEST(UserFxSetupKeepsCurrentGrainDimensionsAndNewPlaybackIndependent) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(512 * 8, 1024), 8));
+    Mapping code{reinterpret_cast<void*>(ProcessFx), 1, 4};
+    FxState fx;
+    fx.reenter = [&] {
+        g.Load(PcmSamples(std::vector<s16>(512, 8192)));
+        Bus(g.master, 0x3000, 1);
+    };
+    InstallFx(g, fx);
+    CHECK(g.Render() == 0 && g.State().numDecodedSamples == 0);
+    for (unsigned ch = 0; ch < 8; ++ch)
+        CHECK(g.output.value[ch] == float(ch + 1) / 32);
+    fx.reenter = {};
+    CHECK(g.Render() == 0 && g.State().numDecodedSamples == 256);
+    CHECK(g.output.value[0] == 0.25f && g.output.value[1] == 0);
+}
+TEST(InactiveIncompleteRoutingDoesNotBlockOtherVoices) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(1024, 8192)));
+    Rack second{g.system.handle.value};
+    const auto source = VoiceHandle(second);
+    CHECK(Control(source, 0x10000000,
+                  OrbisNgs2SamplerVoiceSetupParam{{}, {PcmS16LE, 1, 48000, 0, 0, 0}, 0, 0}) == 0);
+    Patch(source, g.bus);
+    CHECK(Control(source, 3, OrbisNgs2VoicePortMatrixParam{{}, 0, 0}) == 0);
+    CHECK(g.Render() == 0 && g.State().numDecodedSamples == 256);
+    CHECK(g.output.value[0] == 0.25f);
+    Mapping code{reinterpret_cast<void*>(ProcessFx), 1, 4};
+    FxState fx;
+    fx.reenter = [&] { Event(source, 0); };
+    InstallFx(g, fx);
+    CHECK(g.Render() == 0 && g.State().numDecodedSamples == 512);
+    CHECK(g.output.value[0] == 0.25f);
+    CHECK(g.Render() == ORBIS_NGS2_ERROR_INVALID_NUM_MATRIX_LEVELS);
+    CHECK(g.State().numDecodedSamples == 512);
+    Event(source, 4);
+    fx.reenter = {};
+    CHECK(g.Render() == 0 && g.State().numDecodedSamples == 768);
+}
+TEST(UserFxRackDestructionStillAbortsBeforeOutputWrites) {
+    Graph g;
+    Mapping code{reinterpret_cast<void*>(ProcessFx), 1, 4};
+    FxState fx;
+    fx.reenter = [&] { CHECK(sceNgs2RackDestroy(g.mastering.handle.value, nullptr) == 0); };
+    InstallFx(g, fx);
+    g.output.value.fill(42);
+    CHECK(g.Render() == ORBIS_NGS2_ERROR_INVALID_OPERATION && g.output.value[0] == 42);
     fx.reenter = {};
     CHECK(g.Render() == 0 && fx.calls == 2);
 }
