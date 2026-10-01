@@ -23,6 +23,7 @@ namespace Vulkan {
 
 class GraphicsPipeline;
 class Runtime;
+class OcclusionQuery;
 
 class Rasterizer {
 public:
@@ -83,6 +84,8 @@ public:
     void Finish();
     void OnSubmit();
     void OnFence();
+    OcclusionQuery& GetOcclusionQuery();
+    void SubmitPendingQueries();
 
     PipelineCache& GetPipelineCache() {
         return pipeline_cache;
@@ -148,6 +151,7 @@ private:
     PipelineCache pipeline_cache;
     const bool host_markers_enabled;
     const bool guest_markers_enabled;
+    std::unique_ptr<OcclusionQuery> occlusion;
 
     using RenderTargetInfo = std::pair<VideoCore::ImageId, VideoCore::TextureCache::ImageDesc>;
     std::array<RenderTargetInfo, AmdGpu::NUM_COLOR_BUFFERS> cb_descs;
