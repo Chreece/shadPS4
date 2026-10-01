@@ -33,8 +33,8 @@ class LocalDeploymentTests(DeploymentTests):
 
     def test_graphics_switch_preserves_installed_guard_fallback_and_exact_rollback(self):
         self.mock_install_inputs()
-        previous = 'd5c5acc0787ab64939685010cd5878b57479caa7'
-        binary = self.home / 'Applications/shadps4/releases/ngs2-d5c5acc0/shadps4'
+        previous = '2b82d291daa57d23052594051dacc64e6bdf9e9f'
+        binary = self.home / 'Applications/shadps4/releases/ngs2-2b82d291/shadps4'
         original_audio = self.working_audio_dispatcher()
         with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + previous):
             self.wrapper.write_bytes(local.selection(original_audio, binary))
@@ -171,7 +171,8 @@ class LocalDeploymentTests(DeploymentTests):
                          '7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e',
                          '2abd0fb0f807e84713517e6a25e982043897353f',
                          '038bb3d83e751e50328abb98f04fcb2c3ee7897e',
-                         'd5c5acc0787ab64939685010cd5878b57479caa7'):
+                         'd5c5acc0787ab64939685010cd5878b57479caa7',
+                         '2b82d291daa57d23052594051dacc64e6bdf9e9f'):
             with self.subTest(previous=revision):
                 previous = self.home / 'Applications/shadps4/releases' / ('ngs2-' + revision[:8]) / 'shadps4'
                 with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + revision):

@@ -42,6 +42,14 @@ depth copies. This gives a concrete occlusion candidate, not proof of the
 indoor-light cause. That trace has no exit footer, so it does not establish a
 clean game exit.
 
+The user then tested 2b82d291: outside light no longer appeared indoors, but
+geometry disappeared/reappeared more often. The supplied trace has exit_code=0
+and successful sampled zero/positive query results. Review found the initial
+occlusion adaptation incorrectly toggled counting on PIXEL_PIPE_STAT_CONTROL;
+AMD specifies counter selection there, with counting controlled separately by
+DB_COUNT_CONTROL. The next candidate corrects that distinction. This is a known
+code error, while its responsibility for all visible flicker remains unconfirmed.
+
 ## Single-instance ES-DE launch guard
 
 `python3 session_guard.py install` adds a reversible prefix to the existing
@@ -91,7 +99,7 @@ and build the resulting combined main revision locally. Remote platform builds
 follow successful local testing when requested.
 
 `python3 main_build.py --docker` pins main revision
-`2b82d291daa57d23052594051dacc64e6bdf9e9f`. It fetches `main` and refuses to build
+`10ff9e19a7d94340aaedd1e333f1a11abeeb9e75`. It fetches `main` and refuses to build
 if that branch no longer matches the pinned revision. Main contains the clean
 NGS2 audio integration, tested sparse queue/BDA fixes, the new graphics fix, and
 the restored user-colour startup guard from `fix/userservice-missing-user`
@@ -103,7 +111,7 @@ preserved. The four-file delta from previous main applies upstream
 texture containment must check both mip levels and array layers. The old
 lexicographical comparison could accept an image with too few layers.
 
-The current graphics candidate is `fix/occlusion-query-writeback`, commit
+The initial measured-query candidate is `fix/occlusion-query-writeback`, commit
 `66db3a63949890267b2c2e32ba49dcf92ea30df2`. It adapts the query/readback subset
 of cuesta4's draft [PR #4610](https://github.com/shadps4-emu/shadPS4/pull/4610),
 replacing the active fake counters with GPU measurements. The aggregate sample
@@ -111,11 +119,20 @@ count is preserved across 8/16 guest pipes. Ordered callbacks avoid the draft's
 nested scheduler-lock issue; guest fences wait for preceding counter writes.
 This conservative synchronization may affect frame pacing. Conditional rendering
 and unrelated graphics changes are excluded. Indoor-light improvement still
-requires the local game test. The clean audio branch remains independent.
+requires local testing after each change. The clean audio branch remains independent.
+
+The follow-up is `fix/occlusion-count-control`, commit
+`77155ef62cf2e83b91c40e8557930931c5bd57f6`, merged into the main revision above.
+Repeated counter selection no longer toggles measurement. Each draw reads the
+guest count register, and four counter banks retain independent totals and
+resets. Unsupported count modes are marked incomplete and conservatively visible.
+The paired-qword output and GPU completion ordering are retained. The trace now
+includes raw control payloads, selected counter, register values and bank masks.
+Check geometry stability and that outside light remains blocked indoors.
 
 The helper reuses the existing `ca67919d-docker` workspace and compiler cache.
 It runs the four texture-containment tests, the user-colour regression, the
-bounded graphics-trace checks, the occlusion counter/layout regression, and the full Linux emulator
+bounded graphics-trace checks, both occlusion counter regressions, and the full Linux emulator
 build for this graphics change, then checks executable startup before switching
 the existing NGS2 probe entry. Audio and sparse code are unchanged from the
 previous main integration; their previous focused suites are not repeated for
@@ -131,8 +148,9 @@ The game must be closed before starting the build and before the final switch.
 
 The prior integration passed the four upstream C++ containment tests and its
 deployment checks. This candidate passes the counter/layout and enabled/disabled
-trace tests, plus GCC syntax checks for its query manager, rasterizer and command
-processor. Deployment validation checks the upgrade from d5c5acc0, guarded normal
+trace tests, plus the register/control regression and GCC syntax checks for its
+query manager, rasterizer, command processor and register layout. Deployment
+validation checks the upgrade from 2b82d291, guarded normal
 fallback, trace capture and exact rollback. Full Linux integration compilation
 runs in Docker on the user's homeserver; no GPU game validation is claimed here.
 
@@ -140,7 +158,7 @@ After `MAIN_LOCAL_RESULT=PASS`, launch the existing NGS2 probe/test entry.
 Move the camera near the affected trees, walk through the same area, and enter
 the building where the sun remained visible. Report missing/flickering detail
 and sun visibility separately, including any new frame-pacing regression.
-The trace is `~/ngs2-diagnostic-2b82d291.log`;
+The trace is `~/ngs2-diagnostic-10ff9e19.log`;
 the renderer log remains `~/.local/share/shadPS4/log/shad_log.txt`.
 
 The earlier `graphics_build.py` and `test/rdr-texture-containment` revision are

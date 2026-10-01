@@ -36,7 +36,8 @@ def selection(original, binary):
                      "f1c1c79073b811ada98b963d6a87c066b66e2bc8",
                      "2abd0fb0f807e84713517e6a25e982043897353f",
                      "038bb3d83e751e50328abb98f04fcb2c3ee7897e",
-                     "d5c5acc0787ab64939685010cd5878b57479caa7"):
+                     "d5c5acc0787ab64939685010cd5878b57479caa7",
+                     "2b82d291daa57d23052594051dacc64e6bdf9e9f"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -289,8 +290,8 @@ def main():
         if SOURCE_BRANCH == 'main':
             print('MAIN_LOCAL_RESULT=PASS; combined main revision ' + REVISION)
         if OCCLUSION_TEST:
-            print('EXPERIMENTAL: measured occlusion-query writeback; indoor light fix unconfirmed.')
-            print('GRAPHICS_TRACE=ENABLED; compare indoor light and frame pacing with the previous build.')
+            print('EXPERIMENTAL: corrected guest occlusion count control; geometry fix unconfirmed.')
+            print('GRAPHICS_TRACE=ENABLED; check disappearing geometry, indoor light and frame pacing.')
         elif GRAPHICS_TRACE:
             print('GRAPHICS_TRACE=ENABLED; observation only, no new rendering fix.')
         else:
