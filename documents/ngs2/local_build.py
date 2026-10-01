@@ -14,6 +14,7 @@ import deploy_test as deploy
 REVISION = "f1c1c79073b811ada98b963d6a87c066b66e2bc8"
 PREVIOUS = deploy.COMMIT
 GRAPHICS_TEST = False
+SOURCE_BRANCH = None
 
 
 def selection(original, binary):
@@ -195,7 +196,14 @@ def main():
             repair_scan_deps_cache(work / 'focused')
         if not source.exists():
             run(['git', 'clone', '--no-checkout', 'https://github.com/Chreece/shadPS4.git', source])
-        run(['git', '-C', source, 'fetch', '--no-tags', '--no-recurse-submodules', 'origin', REVISION])
+        run(['git', '-C', source, 'fetch', '--no-tags', '--no-recurse-submodules',
+             'origin', SOURCE_BRANCH or REVISION])
+        if SOURCE_BRANCH:
+            fetched = subprocess.check_output(
+                ['git', '-C', source, 'rev-parse', 'FETCH_HEAD'], text=True).strip()
+            if fetched != REVISION:
+                raise RuntimeError(f'{SOURCE_BRANCH} moved to {fetched}; this deployment pins '
+                                   f'{REVISION}. No build or launcher switch was performed.')
         # This checkout belongs solely to this pinned local build; refuse edits.
         dirty = subprocess.check_output(['git', '-C', source, 'status', '--porcelain', '--untracked-files=no'], text=True)
         if dirty and (source / 'CMakeLists.txt').exists():
@@ -251,6 +259,8 @@ def main():
     print('TRACE_FILE=' + str(trace))
     if GRAPHICS_TEST:
         print('GRAPHICS_LOCAL_RESULT=PASS')
+        if SOURCE_BRANCH == 'main':
+            print('MAIN_LOCAL_RESULT=PASS; combined main revision ' + REVISION)
         print('EXPERIMENTAL: upstream PR #4818 texture containment; in-game graphics unconfirmed.')
         print('Use the existing NGS2 probe entry. Check moving past trees and entering the same building.')
         print('Compare missing detail and sun visibility separately, then close the game normally.')

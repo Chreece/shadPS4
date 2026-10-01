@@ -15,6 +15,7 @@ import deploy_test as deploy
 from test_deploy import DeploymentTests
 import test_deploy
 import session_guard
+import main_build
 test_deploy.deploy = deploy
 
 
@@ -35,7 +36,7 @@ class LocalDeploymentTests(DeploymentTests):
         with contextlib.redirect_stdout(io.StringIO()):
             session_guard.install(self.home)
         original = self.wrapper.read_bytes()
-        revision = 'f32415fc426b8aa5577095cdc7efe2750852e65e'
+        revision = main_build.REVISION
         with mock.patch.object(deploy, 'COMMIT', revision), mock.patch.object(
                 deploy, 'MARKER', '# NGS2 isolated core selection: ' + revision), mock.patch.object(
                 deploy, 'selected_wrapper', local.selection):
@@ -43,7 +44,7 @@ class LocalDeploymentTests(DeploymentTests):
         installed = self.wrapper.read_text()
         helper = self.home / '.local/lib/shadps4-session-guard/guard.py'
         self.assertTrue(installed.partition('\n')[2].startswith(session_guard.prefix(helper)))
-        self.assertIn('ngs2-f32415fc/run_diagnostic.py', installed)
+        self.assertIn('ngs2-' + revision[:8] + '/run_diagnostic.py', installed)
         entry = self.home / 'normal entry with spaces.ps4'
         entry.write_text('CUSA36843\n')
         result = subprocess.run(['bash', str(self.wrapper), str(entry)], check=True,
@@ -59,7 +60,7 @@ class LocalDeploymentTests(DeploymentTests):
         helper = self.home / '.local/lib/shadps4-session-guard/guard.py'
         guarded = deploy.with_session_guard(body, session_guard.prefix(helper))
         modified = guarded.replace('exec python3', 'python3', 1).encode()
-        new = self.home / 'Applications/shadps4/releases/ngs2-f32415fc/shadps4'
+        new = self.home / 'Applications/shadps4/releases' / ('ngs2-' + main_build.REVISION[:8]) / 'shadps4'
         with self.assertRaisesRegex(RuntimeError, 'single-instance guard'):
             local.selection(modified, new)
 

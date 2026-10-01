@@ -47,28 +47,36 @@ supervisor exit, lock release and inheritance, argument preservation, idempotent
 installation and exact removal. It uses disposable Linux processes, not a game
 or GPU. Actual Moonlight window restoration still needs the user's local test.
 
-## Local graphics containment test
+## Combined main: local graphics test
 
-`python3 graphics_build.py --docker` pins
-`f32415fc426b8aa5577095cdc7efe2750852e65e` on `test/rdr-texture-containment`.
-The sole parent is the game-tested audio build
-`f1c1c79073b811ada98b963d6a87c066b66e2bc8`. Its four-file delta applies upstream
+Develop each runtime fix on its own feature/fix branch, merge it into `main`,
+and build the resulting combined main revision locally. Remote platform builds
+follow successful local testing when requested.
+
+`python3 main_build.py --docker` pins main revision
+`2abd0fb0f807e84713517e6a25e982043897353f`. It fetches `main` and refuses to build
+if that branch no longer matches the pinned revision. Main contains the clean
+NGS2 audio integration, tested sparse queue/BDA fixes, and the new graphics fix.
+The graphics change was developed on `fix/texture-subresource-containment`
+(`fc8945dfdd08dfa51fd2537e16b639240123b4f4`) and merged with its branch ancestry
+preserved. The four-file delta from previous main applies upstream
 [PR #4818](https://github.com/shadps4-emu/shadPS4/pull/4818), by jute-ado:
 texture containment must check both mip levels and array layers. The old
 lexicographical comparison could accept an image with too few layers.
 
 The two renderer captures contained image-copy layer mismatch warnings. Those
 warnings do not prove this bug causes the reported disappearing detail; this
-build is an isolated local test. Sun visibility through walls remains a separate
-occlusion suspect. No predication, tiling, readback, or additional graphics PR is
-included in this candidate, and it has not been merged into main or the clean
-audio branch.
+build is a local test of combined main. Sun visibility through walls remains a
+separate occlusion suspect. No predication, tiling, readback, or additional
+graphics PR is included. The clean audio branch remains independent.
 
 The helper reuses the existing `ca67919d-docker` workspace and compiler cache.
 It runs only the four texture-containment tests and the full Linux emulator
 build for this graphics change, then checks executable startup before switching
-the existing NGS2 probe entry. Audio and UserService source are byte-identical
-to the working build; their previous focused suites are not repeated here.
+the existing NGS2 probe entry. Audio and sparse code are unchanged from the
+previous main integration; their previous focused suites are not repeated for
+this graphics change. Main keeps the previously requested scope and excludes
+unrelated controller/UserService experiments from the older diagnostic branch.
 No remote or cross-platform CI build is requested.
 
 The launcher switch preserves the single-instance guard and normal fallback,
@@ -81,11 +89,14 @@ tests passed with the repository's vendored Google Test; all 30 local deployment
 checks passed, including a real guarded fallback launch and exact rollback.
 Full Linux integration compilation runs in Docker on the user's homeserver.
 
-After `GRAPHICS_LOCAL_RESULT=PASS`, launch the existing NGS2 probe/test entry.
+After `MAIN_LOCAL_RESULT=PASS`, launch the existing NGS2 probe/test entry.
 Move the camera near the affected trees, walk through the same area, and enter
 the building where the sun remained visible. Report missing/flickering detail
-and sun visibility separately. The trace is `~/ngs2-diagnostic-f32415fc.log`;
+and sun visibility separately. The trace is `~/ngs2-diagnostic-2abd0fb0.log`;
 the renderer log remains `~/.local/share/shadPS4/log/shad_log.txt`.
+
+The earlier `graphics_build.py` and `test/rdr-texture-containment` revision are
+retained as history; the deployment for this workflow uses `main_build.py`.
 
 ## Original artifact installer
 
