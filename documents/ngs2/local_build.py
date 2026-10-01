@@ -11,7 +11,7 @@ import sys
 import zipfile
 import deploy_test as deploy
 
-REVISION = "c827aa1d5b052c70f938d6d34a4d704f5d21e088"
+REVISION = "87c0112389d82055570ee6e54a66210625010f51"
 PREVIOUS = deploy.COMMIT
 
 
@@ -23,7 +23,8 @@ def selection(original, binary):
                      "ac36a0edd40409c3c9ed67dc68c630b7d2dcba7e",
                      "59566b916c3ff680616081c9bcde642e70f874a7",
                      "66a2ef4d25e2029628dad50f5ec9a308ef072c47",
-                     "9e95c1727d287514d0e85aef9f863e0b293f6e5b"):
+                     "9e95c1727d287514d0e85aef9f863e0b293f6e5b",
+                     "c827aa1d5b052c70f938d6d34a4d704f5d21e088"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -223,9 +224,9 @@ def main():
     # Reuses checked ELF/startup, atomic switch, backup, and verified rollback.
     deploy.install(home, 0)
     print('TRACE_FILE=' + str(trace))
-    print('DIAGNOSTIC_ONLY: cutscene/audio behavior is unchanged and still experimental.')
-    print('Test the NGS2 probe entry; leave the first stalled cutscene for 15 seconds,')
-    print('then close the emulator normally and upload TRACE_FILE.')
+    print('EXPERIMENTAL: waveform queue replacement candidate; in-game fix unconfirmed.')
+    print('Test the first cutscene from the NGS2 probe entry. If it stalls, wait 15 seconds.')
+    print('Then close the emulator normally and upload TRACE_FILE.')
 
 
 if __name__ == '__main__':
