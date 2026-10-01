@@ -647,8 +647,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     // immediately
                     regs.cp_strmout_cntl.offset_update_done = 1;
                 } else if (event->event_type.Value() == EventType::PixelPipeStatControl) {
-                    if (rasterizer) {
-                        rasterizer->GetOcclusionQuery().Control();
+                    if (rasterizer && header->type3.count.Value() >= 2) {
+                        rasterizer->GetOcclusionQuery().Control(
+                            event->address[0], event->address[1], regs.depth_count_control);
                     }
                 } else if (event->event_type.Value() == EventType::PixelPipeStatReset) {
                     if (rasterizer) {

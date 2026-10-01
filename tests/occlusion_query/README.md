@@ -1,5 +1,44 @@
 # Pixel-pipe occlusion query writeback
 
+## Follow-up: count control correction
+
+The user tested combined main 2b82d291: outdoor light no longer appeared indoors,
+but disappearing/reappearing geometry became worse. Its trace ends with exit_code=0
+and contains 32,768 sampled-event progression for controls/results; sampled query
+results include both zero and positive counts, all with complete=1. This confirms
+query execution, not correct draw coverage or a complete graphics fix.
+
+Review found that the PR #4610 adaptation incorrectly toggled counting on every
+PIXEL_PIPE_STAT_CONTROL. AMD defines this event as selection of the counter to
+dump/reset, not start/stop. Counting is controlled per draw by DB_COUNT_CONTROL
+(0x28004 / register word 0xA001). Repeated control packets must be idempotent.
+
+The correction maps that register, snapshots enabled ZPASS bank masks for each
+draw, and keeps four independent totals. A control packet selects a dump/reset
+bank. Resetting one bank retains other totals. Z-fail/stencil-fail/depth-bounds-fail
+or single-slice counting cannot be measured by the existing Vulkan query path;
+these are marked incomplete and conservatively positive rather than false zero.
+The existing paired-qword 8/16-pipe output layout is retained; other dump stride
+and instance-mask layouts are not implemented by this correction. Raw control
+words and count-register/mask changes are included in the bounded trace.
+
+The counter-control regression covers register masks, repeated selection, bank
+isolation, selective resets and unsupported modes. It does not establish the
+cause of all flicker; the next local test must check both geometry and indoor light.
+
+Primary sources:
+- AMD CIK 3D Registers v2, VGT_EVENT_INITIATOR and DB_COUNT_CONTROL:
+  https://docs.amd.com/api/khub/documents/9fuBVmqajj07G~5~aeTUig/content
+- Mesa GFX7 register fields:
+  https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/src/amd/registers/gfx7.json
+- Mesa pixel-pipe packet fields and preamble:
+  https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/src/amd/common/sid.h
+  https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/src/amd/common/ac_cmdbuf.c
+- AMD PAL documents control selection separately from begin/end dumps:
+  https://github.com/GPUOpen-Drivers/pal/blob/dev/src/core/hw/gfxip/gfx9/gfx9OcclusionQueryPool.cpp
+
+## Initial implementation and evidence
+
 The RDR trace from diagnostic main d5c5acc0 records 16,384 pixel-pipe dumps in
 104 seconds, with begin/end result addresses eight bytes apart. The existing
 implementation increments every dump by 0x2ffffff, so an occluded probe still

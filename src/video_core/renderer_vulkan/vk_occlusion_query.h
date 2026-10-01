@@ -16,14 +16,18 @@ class Scheduler;
 // Query/readback portion adapted from cuesta4's upstream PR #4610.
 class OcclusionQuery {
 public:
+    struct DrawQuery {
+        u32 slot;
+        unsigned counters;
+    };
     OcclusionQuery(const Instance& instance, Scheduler& scheduler);
     ~OcclusionQuery();
-    void Control();
+    void Control(u32 control, u32 high, u32 count_control);
     void Reset();
     void Dump(VAddr address, u32 pipes);
-    std::optional<u32> PrepareDraw();
-    void BeginDraw(vk::CommandBuffer command, std::optional<u32> query);
-    void EndDraw(vk::CommandBuffer command, std::optional<u32> query);
+    std::optional<DrawQuery> PrepareDraw(u32 count_control);
+    void BeginDraw(vk::CommandBuffer command, std::optional<DrawQuery> query);
+    void EndDraw(vk::CommandBuffer command, std::optional<DrawQuery> query);
     void SubmitPending();
     void Drain();
 
@@ -33,12 +37,11 @@ private:
     const Instance& instance;
     Scheduler& scheduler;
     std::shared_ptr<State> state;
-    std::vector<u32> active_queries;
+    std::vector<DrawQuery> active_queries;
     u32 cursor{};
     u64 last_pending_tick{};
-    bool seen_control{};
-    bool control_enabled{};
-    bool seen_dump{};
-    bool incomplete{};
+    unsigned selected_counter{};
+    unsigned incomplete{};
+    std::optional<u32> last_count_control;
 };
 } // namespace Vulkan
