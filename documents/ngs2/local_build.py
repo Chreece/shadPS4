@@ -14,6 +14,7 @@ import deploy_test as deploy
 REVISION = "f1c1c79073b811ada98b963d6a87c066b66e2bc8"
 PREVIOUS = deploy.COMMIT
 GRAPHICS_TEST = False
+GRAPHICS_TRACE = False
 STARTUP_TEST = False
 SOURCE_BRANCH = None
 
@@ -32,7 +33,8 @@ def selection(original, binary):
                      "87c0112389d82055570ee6e54a66210625010f51",
                      "7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e",
                      "f1c1c79073b811ada98b963d6a87c066b66e2bc8",
-                     "2abd0fb0f807e84713517e6a25e982043897353f"):
+                     "2abd0fb0f807e84713517e6a25e982043897353f",
+                     "038bb3d83e751e50328abb98f04fcb2c3ee7897e"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -68,7 +70,8 @@ if trace.exists():
                                     datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") +
                                     "-" + str(os.getpid()) + trace.suffix)
     trace.replace(previous_trace)
-env = dict(os.environ, SHADPS4_NGS2_DIAGNOSTICS="1")
+env = dict(os.environ, SHADPS4_NGS2_DIAGNOSTICS="1",
+           SHADPS4_GRAPHICS_DIAGNOSTICS=GRAPHICS_ENABLED)
 with trace.open("wb") as report:
     report.write(b"NGS2 diagnostic revision REVISION\\n")
     if previous_trace is not None:
@@ -77,6 +80,7 @@ with trace.open("wb") as report:
     process = subprocess.Popen([binary, "--game", "CUSA36843", "--fullscreen", "true"],
                                env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     saved = 0
+    graphics_saved = 0
     console_tail = deque(maxlen=512)
     errors = deque(maxlen=128)
     # Drain both streams after the caps, retaining the final crash output too.
@@ -89,6 +93,11 @@ with trace.open("wb") as report:
                 report.write(line[:1024])
                 report.flush()
                 saved += 1
+        elif line.startswith(b"GRAPHICS_DIAG "):
+            if graphics_saved < 512:
+                report.write(line[:2048])
+                report.flush()
+                graphics_saved += 1
         else:
             console_tail.append(line)
             if any(marker in line.lower() for marker in
@@ -105,7 +114,8 @@ with trace.open("wb") as report:
         report.write(("signal=%s\\n" % signal.Signals(-code).name).encode())
 sys.exit(128 - code if code < 0 else code)
 '''.replace('BINARY', repr(str(binary))).replace('TRACE', 'Path(' + repr(str(trace)) + ')')
-        .replace('REVISION', REVISION)).encode()
+        .replace('REVISION', REVISION)
+        .replace('GRAPHICS_ENABLED', repr('1' if GRAPHICS_TRACE else '0'))).encode()
 
 
 DOCKERFILE = """FROM debian:trixie-slim
@@ -234,6 +244,12 @@ def main():
                  '-DCMAKE_BUILD_TYPE=Release', *compiler])
             run(['cmake', '--build', startup, '--parallel', jobs])
             run(['ctest', '--test-dir', startup, '--output-on-failure'])
+        if GRAPHICS_TRACE:
+            diagnostics = work / 'graphics-diagnostics-test'
+            run(['cmake', '-S', source / 'tests/graphics_diagnostics', '-B', diagnostics,
+                 '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
+            run(['cmake', '--build', diagnostics, '--parallel', jobs])
+            run(['ctest', '--test-dir', diagnostics, '--no-tests=error', '--output-on-failure'])
         build = work / 'build'
         options = ['-DCMAKE_BUILD_TYPE=Release', '-DENABLE_TESTS=OFF',
                    '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF']
@@ -264,7 +280,10 @@ def main():
         print('GRAPHICS_LOCAL_RESULT=PASS')
         if SOURCE_BRANCH == 'main':
             print('MAIN_LOCAL_RESULT=PASS; combined main revision ' + REVISION)
-        print('EXPERIMENTAL: upstream PR #4818 texture containment; in-game graphics unconfirmed.')
+        if GRAPHICS_TRACE:
+            print('GRAPHICS_TRACE=ENABLED; observation only, no new rendering fix.')
+        else:
+            print('EXPERIMENTAL: upstream PR #4818 texture containment; in-game graphics unconfirmed.')
         print('Use the existing NGS2 probe entry. Check moving past trees and entering the same building.')
         print('Compare missing detail and sun visibility separately, then close the game normally.')
     else:

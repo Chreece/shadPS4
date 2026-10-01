@@ -24,6 +24,16 @@ An existing normal-level log may contain no pixel-pipe events; absence is not
 evidence that the game does not use occlusion queries. A screenshot of the
 same scene can distinguish a sun flare from missing building geometry.
 
+The supplied 14:25 capture confirms main 038bb3d8, one running emulator,
+eight-channel/48 kHz output, and 16 layer-copy warnings (15 in the earlier
+capture). No renderer error or device loss is recorded. The next combined-main
+revision d5c5acc0 merges `diagnostics/graphics-visibility` (c2f872a7), an optional
+bounded trace of pixel-pipe queries, predication/conditional execution, image
+copies and containment failures. Existing rendering decisions are unchanged.
+This is an evidence build, not a new graphics fix. The local runner enables it
+and saves up to 512 graphics records independently of the audio trace limit.
+Disabled/enabled trace checks and live runner capture-limit checks pass.
+
 ## Single-instance ES-DE launch guard
 
 `python3 session_guard.py install` adds a reversible prefix to the existing
@@ -73,7 +83,7 @@ and build the resulting combined main revision locally. Remote platform builds
 follow successful local testing when requested.
 
 `python3 main_build.py --docker` pins main revision
-`038bb3d83e751e50328abb98f04fcb2c3ee7897e`. It fetches `main` and refuses to build
+`d5c5acc0787ab64939685010cd5878b57479caa7`. It fetches `main` and refuses to build
 if that branch no longer matches the pinned revision. Main contains the clean
 NGS2 audio integration, tested sparse queue/BDA fixes, the new graphics fix, and
 the restored user-colour startup guard from `fix/userservice-missing-user`
@@ -92,7 +102,8 @@ separate occlusion suspect. No predication, tiling, readback, or additional
 graphics PR is included. The clean audio branch remains independent.
 
 The helper reuses the existing `ca67919d-docker` workspace and compiler cache.
-It runs the four texture-containment tests, the user-colour regression, and the full Linux emulator
+It runs the four texture-containment tests, the user-colour regression, the
+bounded graphics-trace checks, and the full Linux emulator
 build for this graphics change, then checks executable startup before switching
 the existing NGS2 probe entry. Audio and sparse code are unchanged from the
 previous main integration; their previous focused suites are not repeated for
@@ -114,7 +125,7 @@ Full Linux integration compilation runs in Docker on the user's homeserver.
 After `MAIN_LOCAL_RESULT=PASS`, launch the existing NGS2 probe/test entry.
 Move the camera near the affected trees, walk through the same area, and enter
 the building where the sun remained visible. Report missing/flickering detail
-and sun visibility separately. The trace is `~/ngs2-diagnostic-038bb3d8.log`;
+and sun visibility separately. The trace is `~/ngs2-diagnostic-d5c5acc0.log`;
 the renderer log remains `~/.local/share/shadPS4/log/shad_log.txt`.
 
 The earlier `graphics_build.py` and `test/rdr-texture-containment` revision are

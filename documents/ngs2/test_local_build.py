@@ -33,7 +33,11 @@ class LocalDeploymentTests(DeploymentTests):
 
     def test_graphics_switch_preserves_installed_guard_fallback_and_exact_rollback(self):
         self.mock_install_inputs()
-        self.wrapper.write_bytes(self.working_audio_dispatcher())
+        previous = '038bb3d83e751e50328abb98f04fcb2c3ee7897e'
+        binary = self.home / 'Applications/shadps4/releases/ngs2-038bb3d8/shadps4'
+        original_audio = self.working_audio_dispatcher()
+        with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + previous):
+            self.wrapper.write_bytes(local.selection(original_audio, binary))
         with contextlib.redirect_stdout(io.StringIO()):
             session_guard.install(self.home)
         original = self.wrapper.read_bytes()
@@ -165,7 +169,8 @@ class LocalDeploymentTests(DeploymentTests):
                          'c827aa1d5b052c70f938d6d34a4d704f5d21e088',
                          '87c0112389d82055570ee6e54a66210625010f51',
                          '7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e',
-                         '2abd0fb0f807e84713517e6a25e982043897353f'):
+                         '2abd0fb0f807e84713517e6a25e982043897353f',
+                         '038bb3d83e751e50328abb98f04fcb2c3ee7897e'):
             with self.subTest(previous=revision):
                 previous = self.home / 'Applications/shadps4/releases' / ('ngs2-' + revision[:8]) / 'shadps4'
                 with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + revision):
@@ -234,6 +239,9 @@ import os, resource, signal, sys
 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 for n in range(2500):
     print("NGS2_DIAG number=%s" % n, file=sys.stderr)
+for n in range(600):
+    print("GRAPHICS_DIAG enabled=%s number=%s" %
+          (os.environ.get("SHADPS4_GRAPHICS_DIAGNOSTICS"), n), file=sys.stderr)
 print("[Lib.Ngs2] <Error> earlier cutscene failure", flush=True)
 for n in range(600):
     print("startup-line-" + str(n) + "x" * 4000)
@@ -244,11 +252,14 @@ os.kill(os.getpid(), signal.SIGTRAP)
         binary.chmod(0o700)
         trace = self.home / 'crash.log'
         helper = self.home / 'runner.py'
-        helper.write_bytes(local.runner(binary, trace))
+        with mock.patch.object(local, 'GRAPHICS_TRACE', True):
+            helper.write_bytes(local.runner(binary, trace))
         result = subprocess.run([sys.executable, str(helper)], timeout=20)
         self.assertEqual(result.returncode, 133)
         data = trace.read_text()
         self.assertEqual(sum(line.startswith('NGS2_DIAG ') for line in data.splitlines()), 2048)
+        self.assertEqual(sum(line.startswith('GRAPHICS_DIAG ') for line in data.splitlines()), 512)
+        self.assertIn('GRAPHICS_DIAG enabled=1 number=511', data)
         self.assertIn('[Lib.Ngs2] <Error> earlier cutscene failure', data)
         self.assertIn('EMULATOR_ERROR_TAIL', data)
         self.assertIn('critical startup error on stdout', data)
