@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import readbacks_test as test
@@ -87,6 +88,58 @@ class ReadbackComparisonTests(unittest.TestCase):
         self.wrapper.write_text('# other build\n')
         with self.assertRaisesRegex(RuntimeError, 'not 10ff9e19'):
             test.apply(self.home)
+        self.assertFalse(self.profile.exists())
+
+    def validation_session(self, original=None):
+        if original is not None:
+            self.profile.parent.mkdir(exist_ok=True)
+            self.profile.write_bytes(original)
+        collector = Path(__file__).with_name('collect_graphics.py')
+        with mock.patch.object(test, 'require_validation_layer'), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            test.apply(self.home, validation=True, collector=collector)
+        records = list((self.home / '.local/state/shadps4-graphics-readbacks').glob('*/state.json'))
+        self.assertEqual(len(records), 1)
+        self.assertIn('--finish-validation ', output.getvalue())
+        self.assertEqual(test.digest((records[0].parent / 'collect_graphics.py').read_bytes()),
+                         test.COLLECTOR_SHA256)
+        return records[0]
+
+    def test_validation_preserves_readbacks_audio_and_restores_exact_profile(self):
+        original = (b'{ "GPU":{"readbacks_mode":2},"Audio":{"channels":8},'
+                    b'"Vulkan":{"vkvalidation_gpu_enabled":true,"gpu_id":0}}')
+        record = self.validation_session(original)
+        expected = json.loads(original)
+        expected['Vulkan'].update(test.VALIDATION_SETTINGS)
+        self.assertEqual(json.loads(self.profile.read_bytes()), expected)
+        self.assertEqual(self.global_path.read_bytes(), self.global_bytes)
+        with mock.patch.object(test.subprocess, 'run', return_value=SimpleNamespace(returncode=0)):
+            test.finish_validation(self.home, record)
+        self.assertEqual(self.profile.read_bytes(), original)
+
+    def test_missing_validation_layer_does_not_change_configuration(self):
+        with mock.patch.object(test, 'require_validation_layer', side_effect=RuntimeError('missing')):
+            with self.assertRaisesRegex(RuntimeError, 'missing'):
+                test.apply(self.home, validation=True,
+                           collector=Path(__file__).with_name('collect_graphics.py'))
+        self.assertFalse(self.profile.exists())
+        self.assertFalse((self.home / '.local/state/shadps4-graphics-readbacks').exists())
+
+    def test_collection_failure_still_restores_absent_profile(self):
+        record = self.validation_session()
+        with mock.patch.object(test.subprocess, 'run', return_value=SimpleNamespace(returncode=1)):
+            with self.assertRaisesRegex(RuntimeError, 'collection failed'):
+                test.finish_validation(self.home, record)
+        self.assertFalse(self.profile.exists())
+
+    def test_changed_collector_cannot_be_executed(self):
+        record = self.validation_session()
+        (record.parent / 'collect_graphics.py').write_text('raise RuntimeError("changed")')
+        with mock.patch.object(test.subprocess, 'run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'checksum mismatch'):
+                test.finish_validation(self.home, record)
+            run.assert_not_called()
+        test.restore(self.home, record)
         self.assertFalse(self.profile.exists())
 
 
