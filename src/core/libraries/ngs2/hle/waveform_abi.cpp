@@ -28,8 +28,10 @@ s32 DecodeFormat(const OrbisNgs2WaveformFormat& f, Waveform& w) {
         w.codec = Codec::Pcm16;
     } else if (f.waveformType == Atrac9) {
         std::array<u8, 4> bytes{};
+        // The public ABI uses a bit-packed scalar (e.g. 0xfe4005f0),
+        // while RIFF and LibAtrac9 carry bytes in codec bitstream order.
         for (unsigned i = 0; i < 4; ++i)
-            bytes[i] = static_cast<u8>(f.configData >> (i * 8));
+            bytes[i] = static_cast<u8>(f.configData >> ((3 - i) * 8));
         const auto config = ParseAtrac9Config(bytes);
         if (!config || config->channels != f.numChannels || config->sample_rate != f.sampleRate)
             return ORBIS_NGS2_ERROR_INVALID_WAVEFORM_CONFIG;
@@ -76,7 +78,7 @@ s32 WaveformInfo(const Waveform& w, OrbisNgs2WaveformInfo& out) {
     info.format.sampleRate = w.sample_rate;
     if (w.codec == Codec::Atrac9)
         for (unsigned i = 0; i < 4; ++i)
-            info.format.configData |= u32{w.atrac9.bytes[i]} << (i * 8);
+            info.format.configData |= u32{w.atrac9.bytes[i]} << ((3 - i) * 8);
     info.dataOffset = static_cast<u32>(w.data_offset);
     info.dataSize = static_cast<u32>(w.data_size);
     info.numSamples = static_cast<u32>(w.num_samples);

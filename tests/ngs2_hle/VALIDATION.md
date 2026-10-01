@@ -5,6 +5,37 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # NGS2 validation — 2026-09-30
 
+## Local ATRAC9 config correction — 2026-10-01
+
+Base: `66a2ef4d25e2029628dad50f5ec9a308ef072c47`.
+
+The next uploaded diagnostic contains no recorded render/matrix failures, while
+rendering continues at 48 kHz with eight output channels. It does contain sampler
+setup failures for literal `configData=0xfe4005f0`, mono 24 kHz, followed by
+UNINIT_VOICE. This is a valid ATRAC9 configuration whose bytes were reversed by
+the public ABI adapter. The user reports brief cutscene audio, a stalled scene
+with moving elements, then reaching gameplay. This capture has no exit footer;
+no completed shutdown or full cutscene success is inferred from it.
+
+The correction changes the two scalar/byte conversions, including public parser
+output. Three new regression cases fail on the parent and pass after correction:
+explicit public frame/block queries and parser output words; guest-literal setup,
+nonzero ATRAC9 decode and 24-to-48 kHz rendering through an eight-channel buffer;
+and malformed/mismatched words leaving outputs and a playing voice unchanged.
+The tests use original synthetic encoded audio, with no game payloads.
+
+- GCC 13.3 Release: 120 unique cases in eight executables; all nine CTest
+  invocations passed, including the audio suite repeated with diagnostics enabled.
+- GCC 13.3 ASan/UBSan: the 22-case public audio suite passed both with and without
+  diagnostics. Leak detection remains disabled in this environment.
+- Full Linux compilation is performed by the pinned local Docker helper before
+  installation. No cross-platform CI or new in-game success is claimed.
+
+Nonzero waveform-block flags and non-identity direct filters remain unsupported.
+They are present in the trace and still need separate semantic/DSP work. This
+conversion fix does not establish the cause of the cutscene stall or promise
+complete dialogue/surround audio.
+
 ## Local callback/control correction — 2026-10-01
 
 Base: `59566b916c3ff680616081c9bcde642e70f874a7`.

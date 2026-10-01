@@ -112,9 +112,9 @@ ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
   ctest --test-dir build-ngs2-hle-asan --output-on-failure
 ```
 
-The seven test executables contain 109 named cases: 23 parser/range tests, 14
+The eight test executables contain 120 named cases: 23 parser/range tests, 14
 registry tests, 26 public lifecycle API tests, four memory-access tests, 13 decoder
-tests, 15 playback tests and 14 public audio tests. They include all 13,224 shorter prefixes of the observed-format
+tests, 15 playback tests, 22 public audio tests and three diagnostic-budget tests. They include all 13,224 shorter prefixes of the observed-format
 fixture, 10,000 deterministic metadata mutations, published ATRAC9 rate/channel
 indices, eight-channel layouts, resource limits, stale handles and concurrent
 creation/lookup/destruction. The runtime suite also exercises callback re-entry,

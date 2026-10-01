@@ -16,6 +16,12 @@ duration and forward-loop block descriptions for PCM16 and ATRAC9. FrameInfo and
 CalcWaveformBlock validate their complete outputs before writing. Invalid formats,
 unsupported codecs and arithmetic overflow return errors rather than empty success.
 
+ATRAC9 `configData` is a bit-packed scalar in codec order: observed guest value
+`0xfe4005f0` maps to decoder bytes `fe 40 05 f0` (mono, 24 kHz). Both public
+parsing and incoming format validation use that order explicitly, independently
+of host endianness. The earlier bridge reversed both directions, so parser-to-
+setup round trips passed while guest-authored scalar configurations were rejected.
+
 VoiceControl copies and validates a signed-relative linked parameter list before
 publishing its changes. A malformed later parameter rolls back the whole batch.
 Headers are bounded and cycles rejected. Supported controls are:

@@ -145,6 +145,80 @@ TEST(PublicAtrac9PathTrimsDelayAndPreservesEightIndependentChannels) {
     }
     CHECK(nonzero && g.State().numDecodedSamples == 2701 && g.State().voiceState.stateFlags == 32);
 }
+TEST(PublicAtrac9ConfigWordMatchesGuestAndContainerBytes) {
+    // Literal guest scalar from the diagnostic, independent of our parser output.
+    Guest<OrbisNgs2WaveformFormat> format;
+    format.value = {Atrac9, 1, 24000, 0xfe4005f0, 0, 0};
+    Guest<u32> size, samples, units, delay;
+    CHECK(sceNgs2GetWaveformFrameInfo(format.ptr(), size.ptr(), samples.ptr(), units.ptr(),
+                                      delay.ptr()) == 0);
+    CHECK(size.value == 192 && samples.value == 512 && units.value == 4 && delay.value == 128);
+    Guest<OrbisNgs2WaveformBlock> block;
+    CHECK(sceNgs2CalcWaveformBlock(format.ptr(), 128, 768, block.ptr()) == 0);
+    CHECK(block.value.dataSize == 384 && block.value.numSkipSamples == 128 &&
+          block.value.numSamples == 768);
+    for (bool surround : {false, true}) {
+        const auto riff = At9Audio(surround);
+        Mapping mapping{riff.data(), riff.size(), 1};
+        Guest<OrbisNgs2WaveformInfo> info;
+        CHECK(sceNgs2ParseWaveformData(riff.data(), riff.size(), info.ptr()) == 0);
+        CHECK(info.value.format.configData == (surround ? 0xfe782ff0u : 0xfe4005f0u));
+    }
+}
+TEST(PublicAtrac9LiteralGuestConfigDecodesThroughEightChannelOutput) {
+    Graph g;
+    const auto riff = At9Audio();
+    const auto parsed = ParseWaveform(riff);
+    CHECK(parsed);
+    CHECK(Control(g.source, 0x10000000,
+                  OrbisNgs2SamplerVoiceSetupParam{
+                      {}, {Atrac9, 1, 24000, 0xfe4005f0, 0, 0}, 0, 0}) == 0);
+    Mapping mapping{riff.data(), riff.size(), 1};
+    Guest<OrbisNgs2WaveformBlock> block;
+    block.value = {0, static_cast<u32>(parsed.value.data_size), 0, 0, 1536, 0, 123};
+    CHECK(Control(g.source, 0x10000001,
+                  OrbisNgs2SamplerVoiceWaveformBlocksParam{
+                      {}, riff.data() + parsed.value.data_offset, 0, 1, block.ptr()}) == 0);
+    Event(g.source, 0);
+    auto reference = AudioDecoder::Create(riff);
+    CHECK(reference);
+    std::vector<float> decoded(1536);
+    CHECK(reference.value->Read(decoded).value == decoded.size());
+    bool nonzero = false;
+    for (unsigned grain = 0; grain < 12; ++grain) {
+        CHECK(g.Render() == 0);
+        for (unsigned frame = 0; frame < 256; ++frame) {
+            const unsigned at = grain * 256 + frame;
+            const unsigned source = at / 2;
+            const auto a = decoded[source];
+            const auto b = decoded[std::min(source + 1, 1535u)];
+            const float expected = at % 2 ? a + (b - a) * 0.5f : a;
+            CHECK(std::abs(g.output.value[frame * 8] - expected) < 1e-6f);
+            nonzero |= expected != 0;
+            for (unsigned ch = 1; ch < 8; ++ch)
+                CHECK(g.output.value[frame * 8 + ch] == 0);
+        }
+    }
+    CHECK(nonzero && g.State().numDecodedSamples == 1536);
+    CHECK(g.State().voiceState.stateFlags == 32 && g.State().userData == 123);
+}
+TEST(PublicAtrac9BadConfigLeavesOutputsAndPlayingVoiceUnchanged) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(512, 8192)));
+    Guest<OrbisNgs2WaveformFormat> format;
+    Guest<u32> size;
+    size.value = 77;
+    for (const u32 config : {0xf00540feu, 0xff4005f0u, 0xfe4105f0u, 0xfe7805f0u}) {
+        format.value = {Atrac9, 1, 24000, config, 0, 0};
+        CHECK(sceNgs2GetWaveformFrameInfo(format.ptr(), size.ptr(), nullptr, nullptr, nullptr) ==
+              ORBIS_NGS2_ERROR_INVALID_WAVEFORM_CONFIG);
+        CHECK(size.value == 77);
+        CHECK(Control(g.source, 0x10000000,
+                      OrbisNgs2SamplerVoiceSetupParam{{}, format.value, 0, 0}) ==
+              ORBIS_NGS2_ERROR_INVALID_WAVEFORM_CONFIG);
+    }
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.25f && g.State().numDecodedSamples == 256);
+}
 TEST(InvalidRenderDoesNotAdvancePlaybackOrWriteAnyBuffer) {
     Graph g;
     g.Load(PcmSamples(std::vector<s16>(512, 1234)));
