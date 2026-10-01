@@ -115,14 +115,14 @@ void DiagnoseState(OrbisNgs2Handle handle, const Voice* voice, u32 kind, const c
     Diagnostics::Record(
         0x800000000ULL | handle, 0,
         "state-query voice=%llu query=%s configured=%u flags=%x queued=%zu samples=%llu "
-        "completed-bytes=%llu front-samples=%u front-position=%llu front-started=%u",
+        "completed-bytes=%llu front-samples=%u front-position=%llu front-started=%u open=%u",
         static_cast<unsigned long long>(handle), query, voice && voice->channels ? 1u : 0u,
         voice ? Flags(*voice) : 32u, progress ? progress->blocks.size() : size_t{0},
         static_cast<unsigned long long>(progress ? progress->rendered_samples : 0),
         static_cast<unsigned long long>(progress ? progress->completed_bytes : 0),
         block ? block->info.numSamples : 0,
         static_cast<unsigned long long>(block ? block->playback->SourcePosition() : 0),
-        block && block->started ? 1u : 0u);
+        block && block->started ? 1u : 0u, progress && progress->accepts_blocks ? 1u : 0u);
 }
 void DiagnoseBlocks(OrbisNgs2Handle handle, const OrbisNgs2SamplerVoiceWaveformBlocksParam& param) {
     if (!Diagnostics::Enabled())
@@ -188,12 +188,12 @@ void DiagnoseRejectedParameter(OrbisNgs2Handle handle, const OrbisNgs2VoiceParam
         OrbisNgs2SamplerVoiceFilterParam p{};
         if (Parameter(address, header, p) < 0)
             break;
-        Diagnostics::Record(key, 0,
-                            "filter-rejected voice=%llu index=%u type=%x location=%u mask=%x "
-                            "coefficients=%.8g,%.8g,%.8g,%.8g,%.8g reserved=%x",
-                            id, p.index, p.type, p.location, p.channelMask, p.param.direct.i0,
-                            p.param.direct.i1, p.param.direct.i2, p.param.direct.o1,
-                            p.param.direct.o2, p.reserved3);
+        Diagnostics::RecordFailure(
+            key,
+            "filter-rejected voice=%llu index=%u type=%x location=%u mask=%x "
+            "coefficients=%.8g,%.8g,%.8g,%.8g,%.8g reserved=%x",
+            id, p.index, p.type, p.location, p.channelMask, p.param.direct.i0, p.param.direct.i1,
+            p.param.direct.i2, p.param.direct.o1, p.param.direct.o2, p.reserved3);
         break;
     }
     default:
@@ -742,6 +742,13 @@ static s32 VoiceControlImpl(OrbisNgs2Handle handle, const OrbisNgs2VoiceParamHea
                                 static_cast<unsigned>(header.size), static_cast<unsigned>(result),
                                 staged->progress->blocks.size(), staged->channels);
             if (result < 0) {
+                Diagnostics::RecordFailure(
+                    0xd00000000ULL | header.id,
+                    "control-rollback voice=%llu command=%x result=%x parameters=%zu "
+                    "staged-event=%u staged-queued=%zu",
+                    static_cast<unsigned long long>(handle), header.id,
+                    static_cast<unsigned>(result), visited.size(), last_event,
+                    staged->progress->blocks.size());
                 DiagnoseRejectedParameter(handle, address, header);
                 return result;
             }
@@ -1098,12 +1105,12 @@ static s32 SystemRenderImpl(OrbisNgs2Handle handle, const OrbisNgs2RenderBufferI
                                 audio[frame * voice.channels + ch] * port.volume;
                 } else {
                     const auto& matrix = voice.matrices.at(port.matrix);
-                    const u32 stride = matrix.size() == 64 ? 8 : channels;
+                    const u32 stride = matrix.size() == 64 ? 8 : voice.channels;
                     for (u32 frame = 0; frame < frames; ++frame)
                         for (u32 in = 0; in < voice.channels; ++in)
                             for (u32 out = 0; out < channels; ++out)
                                 target[frame * channels + out] +=
-                                    audio[frame * voice.channels + in] * matrix[in * stride + out] *
+                                    audio[frame * voice.channels + in] * matrix[out * stride + in] *
                                     port.volume;
                 }
             }
