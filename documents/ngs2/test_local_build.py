@@ -22,7 +22,7 @@ class LocalDeploymentTests(DeploymentTests):
         old = self.home / 'Applications/shadps4/releases/ngs2-f00bef80/shadps4'
         original = deploy.selected_probe_wrapper(deploy.probe_wrapper(self.home, backup), old)
         self.wrapper.write_bytes(original)
-        new = self.home / 'Applications/shadps4/releases/ngs2-ca67919d/shadps4'
+        new = self.home / 'Applications/shadps4/releases' / ('ngs2-' + local.REVISION[:8]) / 'shadps4'
         with mock.patch.object(deploy, 'COMMIT', local.REVISION), mock.patch.object(
                 deploy, 'MARKER', '# NGS2 isolated core selection: ' + local.REVISION), mock.patch.object(
                 deploy, 'selected_wrapper', local.selection):
@@ -42,6 +42,19 @@ class LocalDeploymentTests(DeploymentTests):
         state = next((self.home / '.local/state/shadps4-ngs2').glob('*/deployment.json'))
         deploy.restore(state)
         self.assertEqual(self.wrapper.read_bytes(), original)
+
+    def test_upgrade_from_diagnostic_dispatch_preserves_fallback(self):
+        backup = self.wrapper.with_name('shadps4-esde.before-ngs2-probe.20260930-223701')
+        old = self.home / 'Applications/shadps4/releases/ngs2-f00bef80/shadps4'
+        original = deploy.selected_probe_wrapper(deploy.probe_wrapper(self.home, backup), old)
+        diagnostic = self.home / 'Applications/shadps4/releases/ngs2-ca67919d/shadps4'
+        with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ca67919dacf2917140fb957142dcd993737d9dd6'):
+            installed = local.selection(original, diagnostic)
+        new = self.home / 'Applications/shadps4/releases' / ('ngs2-' + local.REVISION[:8]) / 'shadps4'
+        with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + local.REVISION):
+            patched = local.selection(installed, new)
+        self.assertIn(str(new.parent / 'run_diagnostic.py').encode(), patched)
+        self.assertIn(('bash ' + str(backup) + ' "$@"').encode(), patched)
 
     def test_docker_builder_mounts_only_workspace_as_current_user(self):
         args = local.container_command(self.home, 'builder:test', ['cmake', '--version'])

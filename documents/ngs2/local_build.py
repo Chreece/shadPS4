@@ -11,20 +11,24 @@ import sys
 import zipfile
 import deploy_test as deploy
 
-REVISION = "ca67919dacf2917140fb957142dcd993737d9dd6"
+REVISION = "ac36a0edd40409c3c9ed67dc68c630b7d2dcba7e"
 PREVIOUS = deploy.COMMIT
 
 
 def selection(original, binary):
     text = original.decode()
     home = binary.parents[4]
-    old_binary = home / "Applications/shadps4/releases/ngs2-f00bef80/shadps4"
-    old_command = shlex.quote(str(old_binary)) + " --game CUSA36843 --fullscreen true"
-    old_marker = "# NGS2 isolated core selection: " + PREVIOUS
-    old_block = old_marker + "\n        " + old_command
+    candidates = []
+    for previous in (PREVIOUS, "ca67919dacf2917140fb957142dcd993737d9dd6"):
+        release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
+        command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
+                   if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
+        candidates.append("# NGS2 isolated core selection: " + previous + "\n        " + command)
+    found = [block for block in candidates if text.count(block) == 1]
+    if len(found) != 1:
+        raise RuntimeError("Expected the f00bef80 or ca67919d test selection; launcher left unchanged.")
+    old_block = found[0]
     probe_command = f'python3 {home}/Applications/shadps4/releases/ngs2-probe/run_probe.py "$@"'
-    if text.count(old_block) != 1:
-        raise RuntimeError("Expected the installed f00bef80 probe selection; launcher left unchanged.")
     restored = text.replace(old_block, probe_command, 1)
     # Validate the complete known dispatcher before replacing its test invocation.
     deploy.selected_probe_wrapper(restored, binary)
@@ -100,7 +104,7 @@ def main():
     if missing:
         raise RuntimeError("Missing build tools: " + ', '.join(missing))
     home = Path.home()
-    work = home / '.cache/shadps4-ngs2-local' / (REVISION[:8] + ('-docker' if use_docker else ''))
+    work = home / '.cache/shadps4-ngs2-local' / ('ca67919d' + ('-docker' if use_docker else ''))
     work.mkdir(parents=True, exist_ok=True)
     logfile = work / 'build.log'
     print('BUILD_LOG=' + str(logfile), flush=True)
