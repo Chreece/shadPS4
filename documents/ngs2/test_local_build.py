@@ -1,6 +1,9 @@
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
 import importlib.util
+import contextlib
+import io
+import os
 import subprocess
 import sys
 import unittest
@@ -11,10 +14,55 @@ import local_build as local
 import deploy_test as deploy
 from test_deploy import DeploymentTests
 import test_deploy
+import session_guard
 test_deploy.deploy = deploy
 
 
 class LocalDeploymentTests(DeploymentTests):
+    def working_audio_dispatcher(self):
+        fallback = self.wrapper.with_name('shadps4-esde.before-ngs2-probe.20260930-223701')
+        fallback.write_text('#!/bin/bash\nprintf "normal:%s\\n" "$@"\n')
+        old = self.home / 'Applications/shadps4/releases/ngs2-f00bef80/shadps4'
+        original = deploy.selected_probe_wrapper(deploy.probe_wrapper(self.home, fallback), old)
+        working = self.home / 'Applications/shadps4/releases/ngs2-f1c1c790/shadps4'
+        with mock.patch.object(deploy, 'MARKER',
+                               '# NGS2 isolated core selection: f1c1c79073b811ada98b963d6a87c066b66e2bc8'):
+            return local.selection(original, working)
+
+    def test_graphics_switch_preserves_installed_guard_fallback_and_exact_rollback(self):
+        self.mock_install_inputs()
+        self.wrapper.write_bytes(self.working_audio_dispatcher())
+        with contextlib.redirect_stdout(io.StringIO()):
+            session_guard.install(self.home)
+        original = self.wrapper.read_bytes()
+        revision = 'f32415fc426b8aa5577095cdc7efe2750852e65e'
+        with mock.patch.object(deploy, 'COMMIT', revision), mock.patch.object(
+                deploy, 'MARKER', '# NGS2 isolated core selection: ' + revision), mock.patch.object(
+                deploy, 'selected_wrapper', local.selection):
+            deploy.install(self.home, 0)
+        installed = self.wrapper.read_text()
+        helper = self.home / '.local/lib/shadps4-session-guard/guard.py'
+        self.assertTrue(installed.partition('\n')[2].startswith(session_guard.prefix(helper)))
+        self.assertIn('ngs2-f32415fc/run_diagnostic.py', installed)
+        entry = self.home / 'normal entry with spaces.ps4'
+        entry.write_text('CUSA36843\n')
+        result = subprocess.run(['bash', str(self.wrapper), str(entry)], check=True,
+                                capture_output=True, text=True,
+                                env=dict(os.environ, HOME=str(self.home)), timeout=10)
+        self.assertEqual(result.stdout, 'normal:' + str(entry) + '\n')
+        state = next((self.home / '.local/state/shadps4-ngs2').glob('*/deployment.json'))
+        deploy.restore(state)
+        self.assertEqual(self.wrapper.read_bytes(), original)
+
+    def test_graphics_switch_rejects_modified_guard(self):
+        body = self.working_audio_dispatcher().decode()
+        helper = self.home / '.local/lib/shadps4-session-guard/guard.py'
+        guarded = deploy.with_session_guard(body, session_guard.prefix(helper))
+        modified = guarded.replace('exec python3', 'python3', 1).encode()
+        new = self.home / 'Applications/shadps4/releases/ngs2-f32415fc/shadps4'
+        with self.assertRaisesRegex(RuntimeError, 'single-instance guard'):
+            local.selection(modified, new)
+
     def test_local_upgrade_capture_fallback_and_rollback(self):
         self.mock_install_inputs()
         backup = self.wrapper.with_name('shadps4-esde.before-ngs2-probe.20260930-223701')

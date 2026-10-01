@@ -13,11 +13,13 @@ import deploy_test as deploy
 
 REVISION = "f1c1c79073b811ada98b963d6a87c066b66e2bc8"
 PREVIOUS = deploy.COMMIT
+GRAPHICS_TEST = False
 
 
 def selection(original, binary):
     text = original.decode()
     home = binary.parents[4]
+    guard, text = deploy.split_session_guard(text, home)
     candidates = []
     for previous in (PREVIOUS, "ca67919dacf2917140fb957142dcd993737d9dd6",
                      "ac36a0edd40409c3c9ed67dc68c630b7d2dcba7e",
@@ -26,7 +28,8 @@ def selection(original, binary):
                      "9e95c1727d287514d0e85aef9f863e0b293f6e5b",
                      "c827aa1d5b052c70f938d6d34a4d704f5d21e088",
                      "87c0112389d82055570ee6e54a66210625010f51",
-                     "7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e"):
+                     "7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e",
+                     "f1c1c79073b811ada98b963d6a87c066b66e2bc8"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -40,7 +43,8 @@ def selection(original, binary):
     # Validate the complete known dispatcher before replacing its test invocation.
     deploy.selected_probe_wrapper(restored, binary)
     invocation = "python3 " + shlex.quote(str(binary.parent / "run_diagnostic.py"))
-    return text.replace(old_block, deploy.MARKER + "\n        " + invocation, 1).encode()
+    selected = text.replace(old_block, deploy.MARKER + "\n        " + invocation, 1)
+    return deploy.with_session_guard(selected, guard).encode()
 
 
 def runner(binary, trace):
@@ -191,7 +195,7 @@ def main():
             repair_scan_deps_cache(work / 'focused')
         if not source.exists():
             run(['git', 'clone', '--no-checkout', 'https://github.com/Chreece/shadPS4.git', source])
-        run(['git', '-C', source, 'fetch', 'origin', REVISION])
+        run(['git', '-C', source, 'fetch', '--no-tags', '--no-recurse-submodules', 'origin', REVISION])
         # This checkout belongs solely to this pinned local build; refuse edits.
         dirty = subprocess.check_output(['git', '-C', source, 'status', '--porcelain', '--untracked-files=no'], text=True)
         if dirty and (source / 'CMakeLists.txt').exists():
@@ -201,17 +205,27 @@ def main():
         compiler = ['-DCMAKE_C_COMPILER=clang-19', '-DCMAKE_CXX_COMPILER=clang++-19']
         if use_docker:
             compiler += ['-DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS=/usr/bin/clang-scan-deps-19']
-        focused = work / 'focused'
-        run(['cmake', '-S', source / 'tests/ngs2_hle', '-B', focused, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
-        run(['cmake', '--build', focused, '--parallel', jobs])
-        run(['ctest', '--test-dir', focused, '--output-on-failure'])
-        startup = work / 'userservice-test'
-        run(['cmake', '-S', source / 'tests/userservice', '-B', startup, '-G', 'Ninja',
-             '-DCMAKE_BUILD_TYPE=Release', *compiler])
-        run(['cmake', '--build', startup, '--parallel', jobs])
-        run(['ctest', '--test-dir', startup, '--output-on-failure'])
+        if GRAPHICS_TEST:
+            focused = work / 'graphics-containment-test'
+            run(['cmake', '-S', source, '-B', focused, '-G', 'Ninja',
+                 '-DCMAKE_BUILD_TYPE=Release', '-DENABLE_TESTS=ON', *compiler])
+            run(['cmake', '--build', focused, '--target', 'shadps4_texture_types_test',
+                 '--parallel', jobs])
+            run(['ctest', '--test-dir', focused, '-R', '^SubresourceExtent\\.',
+                 '--no-tests=error', '--output-on-failure'])
+        else:
+            focused = work / 'focused'
+            run(['cmake', '-S', source / 'tests/ngs2_hle', '-B', focused, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
+            run(['cmake', '--build', focused, '--parallel', jobs])
+            run(['ctest', '--test-dir', focused, '--output-on-failure'])
+            startup = work / 'userservice-test'
+            run(['cmake', '-S', source / 'tests/userservice', '-B', startup, '-G', 'Ninja',
+                 '-DCMAKE_BUILD_TYPE=Release', *compiler])
+            run(['cmake', '--build', startup, '--parallel', jobs])
+            run(['ctest', '--test-dir', startup, '--output-on-failure'])
         build = work / 'build'
-        options = ['-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF']
+        options = ['-DCMAKE_BUILD_TYPE=Release', '-DENABLE_TESTS=OFF',
+                   '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF']
         if use_docker or shutil.which('ccache'):
             options += ['-DCMAKE_C_COMPILER_LAUNCHER=ccache', '-DCMAKE_CXX_COMPILER_LAUNCHER=ccache']
         run(['cmake', '-S', source, '-B', build, '-G', 'Ninja', *compiler, *options])
@@ -235,9 +249,15 @@ def main():
     # Reuses checked ELF/startup, atomic switch, backup, and verified rollback.
     deploy.install(home, 0)
     print('TRACE_FILE=' + str(trace))
-    print('EXPERIMENTAL: ATRAC9 streaming correction; in-game fix unconfirmed.')
-    print('Test the first cutscene from the NGS2 probe entry. If it stalls, wait 15 seconds.')
-    print('Then close the emulator normally and upload TRACE_FILE.')
+    if GRAPHICS_TEST:
+        print('GRAPHICS_LOCAL_RESULT=PASS')
+        print('EXPERIMENTAL: upstream PR #4818 texture containment; in-game graphics unconfirmed.')
+        print('Use the existing NGS2 probe entry. Check moving past trees and entering the same building.')
+        print('Compare missing detail and sun visibility separately, then close the game normally.')
+    else:
+        print('EXPERIMENTAL: ATRAC9 streaming correction; in-game fix unconfirmed.')
+        print('Test the first cutscene from the NGS2 probe entry. If it stalls, wait 15 seconds.')
+        print('Then close the emulator normally and upload TRACE_FILE.')
 
 
 if __name__ == '__main__':

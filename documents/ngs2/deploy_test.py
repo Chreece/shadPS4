@@ -35,6 +35,30 @@ LAUNCH = re.compile(
 PROBE_MARKER = "# NGS2_PROBE_DISPATCH_V1"
 
 
+def split_session_guard(text, home):
+    marker = '# SHADPS4_SESSION_GUARD_V1'
+    if marker not in text:
+        return '', text
+    helper = home / '.local/lib/shadps4-session-guard/guard.py'
+    expected = (marker + '\n'
+                'if [[ "${SHADPS4_GUARD_PARENT_PID:-}" != "$PPID" ]]; then\n'
+                f'    exec python3 {shlex.quote(str(helper))} run "$0" "$@"\n'
+                'fi\n'
+                'unset SHADPS4_GUARD_PARENT_PID\n'
+                '# END SHADPS4_SESSION_GUARD_V1\n')
+    first, separator, body = text.partition('\n')
+    if not separator or not body.startswith(expected) or text.count(marker) != 1:
+        raise RuntimeError('Unrecognized single-instance guard; launcher left unchanged.')
+    return expected, first + '\n' + body[len(expected):]
+
+
+def with_session_guard(text, guard):
+    first, separator, body = text.partition('\n')
+    if not separator:
+        raise RuntimeError('Launcher has no shebang line terminator.')
+    return first + '\n' + guard + body
+
+
 def probe_wrapper(home, backup):
     """Known probe dispatcher; keep its fallback and token handling intact."""
     return f'''#!/usr/bin/env bash

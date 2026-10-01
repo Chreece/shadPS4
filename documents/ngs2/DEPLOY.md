@@ -37,15 +37,55 @@ To remove only the guard prefix, run:
 python3 "$HOME/.local/lib/shadps4-session-guard/guard.py" uninstall
 ```
 
-The existing deployment scripts validate the entire dispatcher. Future core
-selection changes must explicitly preserve this prefix; older pinned installers
-reject the guarded shape rather than silently bypassing it.
+The current local deployment validates and preserves this exact prefix while
+switching the test invocation. Modified guards are rejected. Older pinned local
+installers can reject the guarded shape rather than silently bypassing it.
 
 `python3 -m unittest discover -s documents/ngs2 -p test_session_guard.py -v`
 checks simultaneous launches, an existing unguarded core, reconnection after
 supervisor exit, lock release and inheritance, argument preservation, idempotent
 installation and exact removal. It uses disposable Linux processes, not a game
 or GPU. Actual Moonlight window restoration still needs the user's local test.
+
+## Local graphics containment test
+
+`python3 graphics_build.py --docker` pins
+`f32415fc426b8aa5577095cdc7efe2750852e65e` on `test/rdr-texture-containment`.
+The sole parent is the game-tested audio build
+`f1c1c79073b811ada98b963d6a87c066b66e2bc8`. Its four-file delta applies upstream
+[PR #4818](https://github.com/shadps4-emu/shadPS4/pull/4818), by jute-ado:
+texture containment must check both mip levels and array layers. The old
+lexicographical comparison could accept an image with too few layers.
+
+The two renderer captures contained image-copy layer mismatch warnings. Those
+warnings do not prove this bug causes the reported disappearing detail; this
+build is an isolated local test. Sun visibility through walls remains a separate
+occlusion suspect. No predication, tiling, readback, or additional graphics PR is
+included in this candidate, and it has not been merged into main or the clean
+audio branch.
+
+The helper reuses the existing `ca67919d-docker` workspace and compiler cache.
+It runs only the four texture-containment tests and the full Linux emulator
+build for this graphics change, then checks executable startup before switching
+the existing NGS2 probe entry. Audio and UserService source are byte-identical
+to the working build; their previous focused suites are not repeated here.
+No remote or cross-platform CI build is requested.
+
+The launcher switch preserves the single-instance guard and normal fallback,
+backs up the complete current wrapper, and prints a checked `RESTORE` command.
+Configuration, the working binary, saves, AI services, and 7.1 audio stay intact.
+The game must be closed before starting the build and before the final switch.
+
+Validation performed before publication: all four upstream C++ containment
+tests passed with the repository's vendored Google Test; all 30 local deployment
+checks passed, including a real guarded fallback launch and exact rollback.
+Full Linux integration compilation runs in Docker on the user's homeserver.
+
+After `GRAPHICS_LOCAL_RESULT=PASS`, launch the existing NGS2 probe/test entry.
+Move the camera near the affected trees, walk through the same area, and enter
+the building where the sun remained visible. Report missing/flickering detail
+and sun visibility separately. The trace is `~/ngs2-diagnostic-f32415fc.log`;
+the renderer log remains `~/.local/share/shadPS4/log/shad_log.txt`.
 
 ## Original artifact installer
 
