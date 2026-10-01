@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""Build and install a local Linux diagnostic core without a remote CI gate."""
+import os
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
+import zipfile
+import deploy_test as deploy
+
+REVISION = "ca67919dacf2917140fb957142dcd993737d9dd6"
+PREVIOUS = deploy.COMMIT
+
+
+def selection(original, binary):
+    text = original.decode()
+    home = binary.parents[4]
+    old_binary = home / "Applications/shadps4/releases/ngs2-f00bef80/shadps4"
+    old_command = shlex.quote(str(old_binary)) + " --game CUSA36843 --fullscreen true"
+    old_marker = "# NGS2 isolated core selection: " + PREVIOUS
+    old_block = old_marker + "\n        " + old_command
+    probe_command = f'python3 {home}/Applications/shadps4/releases/ngs2-probe/run_probe.py "$@"'
+    if text.count(old_block) != 1:
+        raise RuntimeError("Expected the installed f00bef80 probe selection; launcher left unchanged.")
+    restored = text.replace(old_block, probe_command, 1)
+    # Validate the complete known dispatcher before replacing its test invocation.
+    deploy.selected_probe_wrapper(restored, binary)
+    invocation = "python3 " + shlex.quote(str(binary.parent / "run_diagnostic.py"))
+    return text.replace(old_block, deploy.MARKER + "\n        " + invocation, 1).encode()
+
+
+def runner(binary, trace):
+    return ('''#!/usr/bin/env python3
+import os
+from pathlib import Path
+import subprocess
+import sys
+binary = BINARY
+trace = TRACE
+trace.parent.mkdir(parents=True, exist_ok=True)
+env = dict(os.environ, SHADPS4_NGS2_DIAGNOSTICS="1")
+with trace.open("wb") as report:
+    report.write(b"NGS2 diagnostic revision REVISION\\n")
+    report.flush()
+    process = subprocess.Popen([binary, "--game", "CUSA36843", "--fullscreen", "true"],
+                               env=env, stderr=subprocess.PIPE)
+    saved = 0
+    # Drain stderr even after the output cap; never block the game on a full pipe.
+    while True:
+        line = process.stderr.readline(4096)
+        if not line:
+            break
+        if line.startswith(b"NGS2_DIAG ") and saved < 2048:
+            report.write(line[:1024])
+            report.flush()
+            saved += 1
+    process.stderr.close()
+    code = process.wait()
+    report.write(("exit_code=%s\\n" % code).encode())
+sys.exit(code)
+'''.replace('BINARY', repr(str(binary))).replace('TRACE', 'Path(' + repr(str(trace)) + ')')
+        .replace('REVISION', REVISION)).encode()
+
+
+def main():
+    if os.geteuid() == 0:
+        raise RuntimeError("Run as your normal user, without sudo.")
+    if sys.platform != "linux" or os.uname().machine != "x86_64":
+        raise RuntimeError("This local build targets Linux x86-64.")
+    os.environ['PATH'] = str(Path.home() / '.local/bin') + os.pathsep + os.environ['PATH']
+    required = ('git', 'cmake', 'ctest', 'ninja', 'clang-19', 'clang++-19', 'pkg-config')
+    missing = [tool for tool in required if not shutil.which(tool)]
+    if missing:
+        raise RuntimeError("Missing build tools: " + ', '.join(missing))
+    home = Path.home()
+    work = home / '.cache/shadps4-ngs2-local' / REVISION[:8]
+    work.mkdir(parents=True, exist_ok=True)
+    logfile = work / 'build.log'
+    print('BUILD_LOG=' + str(logfile), flush=True)
+    deploy.COMMIT = REVISION
+    deploy.MARKER = '# NGS2 isolated core selection: ' + REVISION
+    deploy.BUILD = 'local'
+    binary = home / 'Applications/shadps4/releases' / ('ngs2-' + REVISION[:8]) / 'shadps4'
+    wrapper = home / '.local/bin/shadps4-esde'
+    if wrapper.is_symlink():
+        raise RuntimeError('Unexpected launcher symlink.')
+    selection(wrapper.read_bytes(), binary)
+    deploy.no_running_core()
+    source = work / 'source'
+    jobs = str(min(8, os.cpu_count() or 2))
+    with logfile.open('ab') as log:
+        def run(args):
+            print('STEP=' + shlex.join([str(x) for x in args]), flush=True)
+            result = subprocess.run(args, stdout=log, stderr=subprocess.STDOUT)
+            if result.returncode:
+                log.flush()
+                print(logfile.read_text(errors='replace')[-6000:])
+                raise RuntimeError('Build step failed; upload ' + str(logfile))
+        if not source.exists():
+            run(['git', 'clone', '--no-checkout', 'https://github.com/Chreece/shadPS4.git', source])
+        run(['git', '-C', source, 'fetch', 'origin', REVISION])
+        # This checkout belongs solely to this pinned local build; refuse edits.
+        dirty = subprocess.check_output(['git', '-C', source, 'status', '--porcelain', '--untracked-files=no'], text=True)
+        if dirty and (source / 'CMakeLists.txt').exists():
+            raise RuntimeError('Local build source has edits; refusing to overwrite them.')
+        run(['git', '-C', source, 'checkout', '--detach', REVISION])
+        run(['git', '-C', source, 'submodule', 'update', '--init', '--recursive', '--jobs', jobs])
+        compiler = ['-DCMAKE_C_COMPILER=clang-19', '-DCMAKE_CXX_COMPILER=clang++-19']
+        focused = work / 'focused'
+        run(['cmake', '-S', source / 'tests/ngs2_hle', '-B', focused, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
+        run(['cmake', '--build', focused, '--parallel', jobs])
+        run(['ctest', '--test-dir', focused, '--output-on-failure'])
+        build = work / 'build'
+        options = ['-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF']
+        if shutil.which('ccache'):
+            options += ['-DCMAKE_C_COMPILER_LAUNCHER=ccache', '-DCMAKE_CXX_COMPILER_LAUNCHER=ccache']
+        run(['cmake', '-S', source, '-B', build, '-G', 'Ninja', *compiler, *options])
+        run(['cmake', '--build', build, '--target', 'shadps4', '--parallel', jobs])
+    archive = work / 'local-build.zip'
+    with zipfile.ZipFile(archive, 'w') as zipped:
+        zipped.write(build / 'shadps4', 'shadps4')
+    payload = archive.read_bytes()
+    metadata = {'id': 'local-' + REVISION, 'size_in_bytes': len(payload),
+                'digest': 'sha256:' + deploy.digest(payload)}
+    deploy.artifact_metadata = lambda wait: metadata
+    deploy.download = lambda artifact, destination: shutil.copyfile(archive, destination)
+    deploy.selected_wrapper = selection
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    trace = home / 'ngs2-diagnostic-ca67919d.log'
+    helper = binary.parent / 'run_diagnostic.py'
+    content = runner(binary, trace)
+    if helper.is_symlink() or (helper.exists() and helper.read_bytes() != content):
+        raise RuntimeError('Diagnostic helper already exists with different contents.')
+    deploy.atomic_write(helper, content, 0o700)
+    # Reuses checked ELF/startup, atomic switch, backup, and verified rollback.
+    deploy.install(home, 0)
+    print('TRACE_FILE=' + str(trace))
+    print('Test the NGS2 probe entry, then close the game and upload TRACE_FILE.')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
+        print('NGS2_LOCAL_RESULT=FAIL: ' + str(error), file=sys.stderr)
+        sys.exit(1)
