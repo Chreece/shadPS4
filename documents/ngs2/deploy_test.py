@@ -32,6 +32,42 @@ LAUNCH = re.compile(
     r'(?m)^([ \t]*)(?:(?:exec|setsid)(?:[ \t]+--)?[ \t]+)*'
     r'(?:"\$CORE"|"\$\{CORE\}")[ \t]+(?:--game|-g)[ \t]'
 )
+PROBE_MARKER = "# NGS2_PROBE_DISPATCH_V1"
+
+
+def probe_wrapper(home, backup):
+    """Known probe dispatcher; keep its fallback and token handling intact."""
+    return f'''#!/usr/bin/env bash
+# NGS2_PROBE_DISPATCH_V1
+_ngs2_dispatch() {{
+    local token=""
+    if [[ -f "${{1:-}}" ]]; then
+        IFS= read -r token < "$1" || true
+        token="${{token%$'\\r'}}"
+    fi
+    if [[ "$token" == "CUSA36843|ngs2probe" ]]; then
+        python3 {home}/Applications/shadps4/releases/ngs2-probe/run_probe.py "$@"
+    else
+        bash {backup} "$@"
+    fi
+}}
+_ngs2_dispatch "$@"
+'''
+
+
+def selected_probe_wrapper(text, binary):
+    home = binary.parents[4]
+    # Match the complete known dispatcher, allowing only indentation differences.
+    # Unknown shell logic must not be silently bypassed.
+    normalize = lambda value: "\n".join(line.strip() for line in value.splitlines())
+    expected = normalize(probe_wrapper(home, "BACKUP_PATH"))
+    backup_pattern = re.escape(str(home / ".local/bin/shadps4-esde.before-ngs2-probe.")) + r"[0-9]{8}-[0-9]{6}"
+    pattern = re.escape(expected).replace("BACKUP_PATH", backup_pattern)
+    if not re.fullmatch(pattern, normalize(text)):
+        raise RuntimeError("The probe dispatcher differs from the recognized template; nothing was switched.")
+    command = f'python3 {home}/Applications/shadps4/releases/ngs2-probe/run_probe.py "$@"'
+    replacement = MARKER + "\n        " + shlex.quote(str(binary)) + " --game CUSA36843 --fullscreen true"
+    return text.replace(command, replacement, 1).encode()
 
 
 def digest(data):
@@ -150,6 +186,8 @@ def selected_wrapper(original, binary):
         raise RuntimeError("An NGS2 test selection is already installed. Restore it before switching again.")
     if not text.startswith("#!"):
         raise RuntimeError("The ES-DE launcher is not a shell script; nothing was changed.")
+    if PROBE_MARKER in text:
+        return selected_probe_wrapper(text, binary)
     found = list(LAUNCH.finditer(text))
     if len(found) != 1:
         raise RuntimeError("The ES-DE wrapper does not have one recognized CORE --game launch. "
@@ -277,7 +315,11 @@ def install(home, wait_minutes):
         say("COMMIT=" + COMMIT)
         say("BINARY_SHA256=" + digest(payload))
         say("RESTORE=" + shlex.quote(str(backup / "restore.sh")))
-        say("Launch the game through ES-DE as usual. Existing 7.1/audio, GPU and game settings were not edited.")
+        if PROBE_MARKER.encode() in original:
+            say("Launch the existing NGS2 probe/test entry in ES-DE to test the new core. Ordinary entries retain their previous launcher.")
+        else:
+            say("Launch the game through ES-DE as usual.")
+        say("Existing 7.1/audio, GPU and game settings were not edited. In-game audio remains experimental.")
 
 
 def main():

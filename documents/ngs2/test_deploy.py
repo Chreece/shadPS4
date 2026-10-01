@@ -84,6 +84,41 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(old.read_bytes(), b"old binary")
         self.assertEqual(config.read_text(), '{"audioChannels":8}')
 
+    def test_probe_dispatch_routes_only_test_entry_and_restores(self):
+        self.mock_install_inputs()
+        fallback = self.wrapper.with_name("shadps4-esde.before-ngs2-probe.20260930-223701")
+        fallback.write_text('#!/bin/bash\nprintf "original\\n"\nprintf "%s\\n" "$@"\n')
+        original = deploy.probe_wrapper(self.home, fallback).encode()
+        self.wrapper.write_bytes(original)
+        deploy.install(self.home, 0)
+        binary = self.home / "Applications/shadps4/releases/ngs2-f00bef80/shadps4"
+        binary.write_text('#!/bin/bash\nprintf "test-core\\n"\nprintf "%s\\n" "$@"\n')
+        entry = self.home / "probe entry.txt"
+        entry.write_bytes(b"CUSA36843|ngs2probe\r\n")
+        result = subprocess.run(["bash", str(self.wrapper), str(entry)],
+                                capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.splitlines(),
+                         ["test-core", "--game", "CUSA36843", "--fullscreen", "true"])
+        for token in ("CUSA36843", "OTHER|ngs2probe"):
+            entry.write_text(token + "\n")
+            result = subprocess.run(["bash", str(self.wrapper), str(entry), "argument with spaces"],
+                                    capture_output=True, text=True, check=True)
+            self.assertEqual(result.stdout.splitlines(), ["original", str(entry), "argument with spaces"])
+        state = next((self.home / ".local/state/shadps4-ngs2").glob("*/deployment.json"))
+        deploy.restore(state)
+        self.assertEqual(self.wrapper.read_bytes(), original)
+
+    def test_probe_dispatch_rejects_unknown_logic(self):
+        original = deploy.probe_wrapper(self.home, self.wrapper.with_name(
+            "shadps4-esde.before-ngs2-probe.20260930-223701"))
+        binary = self.home / "Applications/shadps4/releases/ngs2-f00bef80/shadps4"
+        for changed in (original.replace("CUSA36843|ngs2probe", "OTHER|ngs2probe"),
+                        original.replace("run_probe.py", "different.py"),
+                        original + "echo extra-logic\n"):
+            with self.subTest(changed=changed):
+                with self.assertRaisesRegex(RuntimeError, "differs"):
+                    deploy.selected_wrapper(changed.encode(), binary)
+
     def test_restore_refuses_to_erase_later_user_edits(self):
         self.mock_install_inputs()
         deploy.install(self.home, 0)

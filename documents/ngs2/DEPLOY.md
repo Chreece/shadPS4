@@ -16,6 +16,9 @@ any running shadPS4 game. It expects the existing shell launcher at
 ~/.local/bin/shadps4-esde with one final "$CORE" --game invocation.
 It recognizes an optional exec/setsid prefix and braced CORE spelling. Other
 launcher shapes are rejected before changes, rather than guessed.
+The known NGS2_PROBE_DISPATCH_V1 wrapper is also supported. Its complete
+structure is checked before replacing only the probe runner invocation with
+the pinned core's CUSA36843 launch. Ordinary entries retain the existing fallback.
 
 The installer:
 
@@ -35,6 +38,8 @@ The installer:
 7. Inserts a CORE selection immediately before the existing final launch, after
    any per-game sparse-queue/core selection. The invocation, arguments and
    surrounding session/gamepad logic stay in place.
+   For the recognized probe dispatcher, only the dedicated NGS2 test entry
+   selects the new core; the normal-game fallback is preserved byte for byte.
 
 The sole active installation change is the ES-DE shell wrapper. Audio settings,
 7.1 selection, GPU settings, game files, firmware, saves and the Qt launcher are
@@ -42,7 +47,9 @@ not edited. The game itself continues to use the same existing user profile.
 The original sparse-queue change is an ancestor of the pinned runtime commit.
 
 Success prints NGS2_DEPLOY_RESULT=PASS, the core path, revision, binary hash and
-the exact RESTORE command. Then launch through ES-DE normally. To restore,
+the exact RESTORE command. For a probe dispatcher, select the existing NGS2
+probe/test entry in ES-DE; ordinary game entries still select the old core.
+For a direct CORE wrapper, launch through ES-DE normally. To restore,
 close the game and execute the printed restore script. Restore checks that no
 later wrapper edits would be overwritten. The SSH parent shell remains open.
 
@@ -55,9 +62,11 @@ tests/ngs2_hle/BRIDGE.md at the runtime revision.
 
 Run python3 documents/ngs2/test_deploy.py -v.
 
-Eight regression cases pass using temporary homes and synthetic ZIP artifacts.
+Ten regression cases pass using temporary homes and synthetic ZIP artifacts.
 They exercise a real shell launch after a per-game override, install/restore,
 file modes and preserved settings, later user edits, changes during download,
 invalid launcher shapes, bad ZIP/startup failures, download hashes/size limits and
-the CI readiness gate. No test switches a real user installation. The actual
+the CI readiness gate. Probe tests exercise CRLF token dispatch in a real shell,
+ordinary-entry argument forwarding, exact rollback and unknown-logic rejection.
+No test switches a real user installation. The actual
 download and binary startup remain checked by the installer on the target host.
