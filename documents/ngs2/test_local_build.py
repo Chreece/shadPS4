@@ -3,6 +3,7 @@
 import importlib.util
 import contextlib
 import io
+import json
 import os
 import subprocess
 import sys
@@ -64,6 +65,54 @@ class LocalDeploymentTests(DeploymentTests):
         with self.assertRaisesRegex(RuntimeError, 'single-instance guard'):
             local.selection(modified, new)
 
+    def prepare_failed_main(self):
+        self.mock_install_inputs()
+        self.wrapper.write_bytes(self.working_audio_dispatcher())
+        with contextlib.redirect_stdout(io.StringIO()):
+            session_guard.install(self.home)
+        original = self.wrapper.read_bytes()
+        working = self.home / 'Applications/shadps4/releases/ngs2-f1c1c790/shadps4'
+        working.parent.mkdir(parents=True)
+        working.write_bytes(b'known working executable')
+        working.chmod(0o700)
+        record = self.home / '.local/state/shadps4-ngs2/working/deployment.json'
+        record.parent.mkdir(parents=True)
+        record.write_text(json.dumps({'commit': main_build.WORKING, 'wrapper': str(self.wrapper),
+                                     'binary': str(working), 'binary_sha256': deploy.digest(working.read_bytes())}))
+        with mock.patch.object(deploy, 'COMMIT', main_build.FAILED), mock.patch.object(
+                deploy, 'MARKER', '# NGS2 isolated core selection: ' + main_build.FAILED), mock.patch.object(
+                deploy, 'selected_wrapper', local.selection):
+            deploy.install(self.home, 0)
+        (self.home / 'ngs2-diagnostic-2abd0fb0.log').write_bytes(b'failed launch signal=SIGTRAP\n')
+        return original, working
+
+    def test_failed_main_recovery_preserves_trace_and_guard(self):
+        original, _ = self.prepare_failed_main()
+        main_build.recover_failed_main(self.home)
+        self.assertEqual(self.wrapper.read_bytes(), original)
+        traces = list(self.home.glob('ngs2-crash-2abd0fb0-*/ngs2-diagnostic-2abd0fb0.log'))
+        self.assertEqual(len(traces), 1)
+        self.assertEqual(traces[0].read_bytes(), b'failed launch signal=SIGTRAP\n')
+        self.assertEqual(traces[0].parent.stat().st_mode & 0o777, 0o700)
+        main_build.recover_failed_main(self.home)
+        self.assertEqual(self.wrapper.read_bytes(), original)
+
+    def test_failed_main_recovery_rejects_changed_working_binary(self):
+        _, working = self.prepare_failed_main()
+        current = self.wrapper.read_bytes()
+        working.write_bytes(b'changed executable')
+        with self.assertRaisesRegex(RuntimeError, 'does not match'):
+            main_build.recover_failed_main(self.home)
+        self.assertEqual(self.wrapper.read_bytes(), current)
+
+    def test_failed_main_recovery_rejects_later_launcher_edit(self):
+        self.prepare_failed_main()
+        current = self.wrapper.read_bytes() + b'# later edit\n'
+        self.wrapper.write_bytes(current)
+        with self.assertRaisesRegex(RuntimeError, 'No unique verified'):
+            main_build.recover_failed_main(self.home)
+        self.assertEqual(self.wrapper.read_bytes(), current)
+
     def test_local_upgrade_capture_fallback_and_rollback(self):
         self.mock_install_inputs()
         backup = self.wrapper.with_name('shadps4-esde.before-ngs2-probe.20260930-223701')
@@ -115,7 +164,8 @@ class LocalDeploymentTests(DeploymentTests):
                          '9e95c1727d287514d0e85aef9f863e0b293f6e5b',
                          'c827aa1d5b052c70f938d6d34a4d704f5d21e088',
                          '87c0112389d82055570ee6e54a66210625010f51',
-                         '7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e'):
+                         '7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e',
+                         '2abd0fb0f807e84713517e6a25e982043897353f'):
             with self.subTest(previous=revision):
                 previous = self.home / 'Applications/shadps4/releases' / ('ngs2-' + revision[:8]) / 'shadps4'
                 with mock.patch.object(deploy, 'MARKER', '# NGS2 isolated core selection: ' + revision):

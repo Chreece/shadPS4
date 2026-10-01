@@ -54,9 +54,11 @@ and build the resulting combined main revision locally. Remote platform builds
 follow successful local testing when requested.
 
 `python3 main_build.py --docker` pins main revision
-`2abd0fb0f807e84713517e6a25e982043897353f`. It fetches `main` and refuses to build
+`038bb3d83e751e50328abb98f04fcb2c3ee7897e`. It fetches `main` and refuses to build
 if that branch no longer matches the pinned revision. Main contains the clean
-NGS2 audio integration, tested sparse queue/BDA fixes, and the new graphics fix.
+NGS2 audio integration, tested sparse queue/BDA fixes, the new graphics fix, and
+the restored user-colour startup guard from `fix/userservice-missing-user`
+(`e2251423f46f0bc20e07f5d9e127af141adb7e26`).
 The graphics change was developed on `fix/texture-subresource-containment`
 (`fc8945dfdd08dfa51fd2537e16b639240123b4f4`) and merged with its branch ancestry
 preserved. The four-file delta from previous main applies upstream
@@ -71,12 +73,13 @@ separate occlusion suspect. No predication, tiling, readback, or additional
 graphics PR is included. The clean audio branch remains independent.
 
 The helper reuses the existing `ca67919d-docker` workspace and compiler cache.
-It runs only the four texture-containment tests and the full Linux emulator
+It runs the four texture-containment tests, the user-colour regression, and the full Linux emulator
 build for this graphics change, then checks executable startup before switching
 the existing NGS2 probe entry. Audio and sparse code are unchanged from the
 previous main integration; their previous focused suites are not repeated for
-this graphics change. Main keeps the previously requested scope and excludes
-unrelated controller/UserService experiments from the older diagnostic branch.
+this graphics change. The earlier main integration incorrectly omitted the
+startup guard included in the working f1c1c790 build. Main now retains that guard
+as a separate fix; unrelated controller changes remain outside this integration.
 No remote or cross-platform CI build is requested.
 
 The launcher switch preserves the single-instance guard and normal fallback,
@@ -92,11 +95,28 @@ Full Linux integration compilation runs in Docker on the user's homeserver.
 After `MAIN_LOCAL_RESULT=PASS`, launch the existing NGS2 probe/test entry.
 Move the camera near the affected trees, walk through the same area, and enter
 the building where the sun remained visible. Report missing/flickering detail
-and sun visibility separately. The trace is `~/ngs2-diagnostic-2abd0fb0.log`;
+and sun visibility separately. The trace is `~/ngs2-diagnostic-038bb3d8.log`;
 the renderer log remains `~/.local/share/shadPS4/log/shad_log.txt`.
 
 The earlier `graphics_build.py` and `test/rdr-texture-containment` revision are
 retained as history; the deployment for this workflow uses `main_build.py`.
+
+When the currently selected test entry is failed main 2abd0fb0, `main_build.py`
+first verifies that deployment and its saved launcher backup. It verifies the
+retained f1c1c790 executable against its original deployment hash, saves the
+failed trace and renderer-log tails (up to 2 MiB each) in the private directory
+printed as `CRASH_EVIDENCE`, and restores the exact guarded working launcher.
+The Docker build then starts with that known working selection in place. A
+later build failure leaves the working selection active. Unknown launcher
+edits, changed binaries or a backup selecting another revision stop recovery.
+No game is launched automatically and no configuration or save is edited.
+
+The missing-user regression passes against the restored production function;
+the same fixture reproduces SIGSEGV against 2abd0fb0's unchecked function.
+The new host crash trace has not yet been supplied, so the fault attribution
+remains provisional until local startup is retested. Recovery checks cover
+exact guard preservation, saved trace content, idempotence, and refusal of
+modified launchers or working executables.
 
 ## Original artifact installer
 

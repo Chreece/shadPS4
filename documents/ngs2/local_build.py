@@ -14,6 +14,7 @@ import deploy_test as deploy
 REVISION = "f1c1c79073b811ada98b963d6a87c066b66e2bc8"
 PREVIOUS = deploy.COMMIT
 GRAPHICS_TEST = False
+STARTUP_TEST = False
 SOURCE_BRANCH = None
 
 
@@ -30,7 +31,8 @@ def selection(original, binary):
                      "c827aa1d5b052c70f938d6d34a4d704f5d21e088",
                      "87c0112389d82055570ee6e54a66210625010f51",
                      "7a26f2c2b2461d11461bd1f523cbb8a2087b2d0e",
-                     "f1c1c79073b811ada98b963d6a87c066b66e2bc8"):
+                     "f1c1c79073b811ada98b963d6a87c066b66e2bc8",
+                     "2abd0fb0f807e84713517e6a25e982043897353f"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -226,6 +228,7 @@ def main():
             run(['cmake', '-S', source / 'tests/ngs2_hle', '-B', focused, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
             run(['cmake', '--build', focused, '--parallel', jobs])
             run(['ctest', '--test-dir', focused, '--output-on-failure'])
+        if STARTUP_TEST or not GRAPHICS_TEST:
             startup = work / 'userservice-test'
             run(['cmake', '-S', source / 'tests/userservice', '-B', startup, '-G', 'Ninja',
                  '-DCMAKE_BUILD_TYPE=Release', *compiler])
