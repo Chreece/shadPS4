@@ -5,6 +5,50 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # Isolated Linux test deployment
 
+## Single-instance ES-DE launch guard
+
+`python3 session_guard.py install` adds a reversible prefix to the existing
+`~/.local/bin/shadps4-esde` Bash launcher. The original dispatcher, test core,
+fallback entries and arguments are retained. No emulator build is required.
+Run as the desktop user without sudo. Installation can run while a game is open;
+it lists existing shadPS4 processes and does not terminate any of them.
+
+Future launches through that wrapper take a per-user lock before starting a
+game. If a same-user shadPS4 core already exists, including one started before
+installation or surviving the old frontend, the guard waits for that game
+instead of starting another. It requests window activation using existing
+`wmctrl` or `xdotool` when available. Without those tools, duplicate blocking
+still works but automatic focus is unavailable. When existing duplicates are
+present, an identifiable active game is preferred; otherwise the newest core
+is selected. No duplicate is automatically stopped and no game is queued to
+start after the current game exits.
+
+This is shadPS4 launcher protection, not a change to Sunshine disconnect policy
+or the lifecycle of other emulators. Direct launches bypassing `shadps4-esde`
+are outside its lock. AI services, game saves, audio/7.1 settings, renderer
+settings and emulator binaries are not changed. Save and close pre-existing
+duplicates normally before testing a fresh launch/disconnect/reconnect cycle.
+
+The helper is installed at `~/.local/lib/shadps4-session-guard/guard.py` and the
+original launcher is backed up under `~/.local/state/shadps4-session-guard/`.
+To remove only the guard prefix, run:
+
+```
+python3 "$HOME/.local/lib/shadps4-session-guard/guard.py" uninstall
+```
+
+The existing deployment scripts validate the entire dispatcher. Future core
+selection changes must explicitly preserve this prefix; older pinned installers
+reject the guarded shape rather than silently bypassing it.
+
+`python3 -m unittest discover -s documents/ngs2 -p test_session_guard.py -v`
+checks simultaneous launches, an existing unguarded core, reconnection after
+supervisor exit, lock release and inheritance, argument preservation, idempotent
+installation and exact removal. It uses disposable Linux processes, not a game
+or GPU. Actual Moonlight window restoration still needs the user's local test.
+
+## Original artifact installer
+
 This installer selects runtime commit
 f00bef80a74e6df0835ea0e9818c71c9d4ddf578 from Build and Release run
 [36789001354](https://github.com/Chreece/shadPS4/actions/runs/36789001354).
