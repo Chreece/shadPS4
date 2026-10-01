@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <shared_mutex>
+
 #include "common/alignment.h"
 #include "common/assert.h"
 #include "common/debug.h"
@@ -11,6 +13,7 @@
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/process.h"
 #include "core/memory.h"
+#include "core/memory_access.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
 namespace Core {
@@ -97,6 +100,11 @@ void MemoryManager::SetupMemoryRegions(u64 flexible_size, bool use_extended_mem1
 
     LOG_INFO(Kernel_Vmm, "Configured memory regions: flexible size = {:#x}, direct size = {:#x}",
              total_flexible_size, total_direct_size);
+}
+
+bool MemoryManager::IsAccessibleRange(VAddr address, u64 size, MemoryProt required) {
+    std::shared_lock lk{mutex};
+    return Detail::IsAccessibleRange(vma_map, address, size, static_cast<u32>(required));
 }
 
 u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
