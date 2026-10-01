@@ -5,6 +5,25 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # Isolated Linux test deployment
 
+## Graphics capture after the startup correction
+
+The user confirmed that combined main 038bb3d8 starts without the immediate
+crash, but light remains visible through buildings and other graphics glitches
+remain. The texture-containment change is not a confirmed solution for those
+symptoms. The current renderer still writes synthetic pixel-pipe counters;
+upstream PR #4610 is an occlusion/predication candidate, currently a draft with
+no reported RDR validation. Do not treat it as an established game fix.
+
+Run `python3 collect_graphics.py` while the affected scene is visible. Collector
+v3 selects the diagnostic trace for the running release instead of always
+collecting f1c1c790. With no running core it uses the selected launcher's revision
+and explicitly warns that renderer logs may be stale. GPU and Vulkan settings
+are read alongside current renderer logs and process information. The helper
+does not launch or stop the game, edit configuration, or upload the archive.
+An existing normal-level log may contain no pixel-pipe events; absence is not
+evidence that the game does not use occlusion queries. A screenshot of the
+same scene can distinguish a sun flare from missing building geometry.
+
 ## Single-instance ES-DE launch guard
 
 `python3 session_guard.py install` adds a reversible prefix to the existing

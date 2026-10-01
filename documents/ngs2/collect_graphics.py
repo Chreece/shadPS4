@@ -6,8 +6,29 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import tarfile
 import time
+
+
+def diagnostic_paths(home, processes):
+    revisions = set()
+    for process in processes:
+        release = Path(process['executable']).parent
+        if release.parent == home / 'Applications/shadps4/releases':
+            match = re.fullmatch(r'ngs2-([0-9a-f]{8})', release.name)
+            if match:
+                revisions.add(match[1])
+    if processes:
+        # A running core takes precedence over the selected next-launch entry.
+        return [home / f'ngs2-diagnostic-{revision}.log' for revision in sorted(revisions)]
+    try:
+        wrapper = (home / '.local/bin/shadps4-esde').read_text()
+        revisions.update(re.findall(r'^\s*# NGS2 isolated core selection: ([0-9a-f]{40})\s*$',
+                                    wrapper, re.MULTILINE))
+    except OSError:
+        pass
+    return [home / f'ngs2-diagnostic-{revision[:8]}.log' for revision in sorted(revisions)]
 
 
 def memory_bytes(value):
@@ -110,8 +131,8 @@ def main():
     if data_home:
         roots.add(Path(data_home) / 'shadPS4')
     candidates = set()
-    report = {'collector_version': 2, 'captured_unix': now, 'processes': [], 'gpu': [], 'logs': [],
-              'log_settings': [], 'warnings': []}
+    report = {'collector_version': 3, 'captured_unix': now, 'processes': [], 'gpu': [], 'logs': [],
+              'log_settings': [], 'renderer_settings': [], 'warnings': []}
     for process in Path('/proc').iterdir():
         if not process.name.isdigit():
             continue
@@ -119,7 +140,7 @@ def main():
             if process.stat().st_uid != os.getuid():
                 continue
             exe = (process / 'exe').resolve(strict=True)
-            if 'shadps4' not in exe.name.lower():
+            if exe.name.lower().removesuffix(' (deleted)') not in ('shadps4', 'shadps4.exe'):
                 continue
             cwd = (process / 'cwd').resolve(strict=True)
             report['processes'].append({'pid': int(process.name), 'executable': str(exe),
@@ -155,6 +176,10 @@ def main():
             try:
                 data = json.loads(path.read_text())
                 report['log_settings'].append({'path': str(path), 'Log': data.get('Log', {})})
+                report['renderer_settings'].append({
+                    'path': str(path),
+                    'settings': {group: data[group] for group in ('GPU', 'Vulkan') if group in data},
+                })
             except (OSError, ValueError) as error:
                 report['warnings'].append(f'{path}: {error}')
 
@@ -218,14 +243,20 @@ def main():
         with tarfile.open(fileobj=raw, mode='w:gz') as archive:
             for index, (_, path) in enumerate(sorted(available, reverse=True)[:6]):
                 add_log(archive, path, f'renderer-{index + 1}-{path.name}')
-            diagnostic = home / 'ngs2-diagnostic-f1c1c790.log'
-            if diagnostic.is_file():
-                add_log(archive, diagnostic, diagnostic.name)
+            diagnostics = diagnostic_paths(home, report['processes'])
+            report['expected_diagnostic_paths'] = [str(path) for path in diagnostics]
+            for diagnostic in diagnostics:
+                if diagnostic.is_file():
+                    add_log(archive, diagnostic, diagnostic.name)
+                else:
+                    report['warnings'].append('Current-revision trace not found: ' + str(diagnostic))
             if not available:
                 report['warnings'].append('No renderer logs found in the detected user directories.')
             add_bytes(archive, 'capture-info.json', json.dumps(report, indent=2).encode())
     print('GRAPHICS_REPORT=' + str(output))
     print('Renderer logs collected:', min(len(available), 6))
+    for process in report['processes']:
+        print('RUNNING_CORE=' + process['executable'])
     print('Accessible GPU clients (resident memory; shared buffers can overlap):')
     clients = sorted(report['gpu_clients']['clients'], reverse=True,
                      key=lambda item: item['resident_bytes'].get('vram', 0))
