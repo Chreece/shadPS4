@@ -557,7 +557,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         if (exact_fmt && info.pixel_format != image_resolved.info.pixel_format) {
             // Cannot reuse this image as we need the exact requested format.
             image_id = {};
-        } else if (!image_resolved.info.resources.CanContain(info.resources)) {
+        } else if (image_resolved.info.resources < info.resources) {
             GraphicsDiagnostics::Emit(
                 GraphicsDiagnostics::Event::Containment,
                 "address=%llx available-mips=%u requested-mips=%u available-layers=%u "

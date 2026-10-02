@@ -126,15 +126,8 @@ No game payload or raw pointer log is included in the repository.
 
 Opt-in diagnostics (`SHADPS4_NGS2_DIAGNOSTICS=1`) include failure-specific block
 metadata and validation reasons. These have independent bounded sampling and a
-256-line reservation within the default 2,048-line process limit, so ordinary
-request/state traffic cannot consume the entire failure allowance. Setting
-`SHADPS4_NGS2_DIAGNOSTICS_TRIGGER` to a marker path permits one additional bounded
-window when that regular file appears. The process emits at most 4,096 records
-plus one capture marker. The marker is checked at most once per second during
-diagnostic calls; no acknowledgement does not establish why audio is inactive.
-State records include whether the streaming queue is open, and rejected control
-batches report their staged event and queue length without changing playback.
-Capture limitations and the
+256-line reservation within the 2,048-line process limit, so ordinary request/state
+traffic cannot consume the entire failure allowance. Capture limitations and the
 latest unresolved cutscene evidence are recorded in [VALIDATION.md](VALIDATION.md).
 
 Public ABI facts were cross-checked against these source snapshots; no proprietary

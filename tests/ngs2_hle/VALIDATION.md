@@ -201,20 +201,6 @@ separate blocks are still unfinished. No in-game cutscene, dialogue crackle or
 physical speaker-layout fix is claimed. Local Docker compilation and the isolated
 game test remain the deployment path; cross-platform CI is not requested.
 
-## On-demand cutscene capture — 2026-10-01
-
-The `f9f2aa50` user capture exhausts ordinary NGS2 logging at about 101 seconds,
-well before the later cutscene stall. Continued rendering does not prove that
-audio advanced, and the absence of later audio records is not evidence that it
-stopped. The user reports the stall at scene entry before any dialogue.
-
-An optional marker now rearms one diagnostic window without changing voice or
-render behavior. Control rollback records use the reserved failure allowance;
-state queries also report open streaming queues. GCC 13.3 Release passes all ten
-focused CTest invocations, including a real marker-file capture and rejection of
-a third window. No cutscene fix is claimed. Capture should be triggered just
-before entering the problem scene, or while it is stalled, with the game running.
-
 ## Cutscene wait diagnostic — 2026-10-01
 
 Base: `9e95c1727d287514d0e85aef9f863e0b293f6e5b`.

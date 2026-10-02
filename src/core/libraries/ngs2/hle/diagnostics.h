@@ -9,7 +9,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <mutex>
 
 namespace Libraries::Ngs2::Diagnostics {
@@ -17,16 +16,6 @@ namespace Libraries::Ngs2::Diagnostics {
 // Callers serialize Budget access; Record supplies that lock.
 class Budget {
 public:
-    bool Rearm() {
-        if (rearmed)
-            return false;
-        entries = {};
-        failures = {};
-        emitted = ordinary_emitted = 0;
-        rearmed = true;
-        return true;
-    }
-
     bool Take(std::uint64_t key, std::uint32_t interval = 0, bool failure = false) {
         // Reserve the last 256 lines for failures. Ordinary request/state churn
         // must not hide the first bad waveform, even late in a session.
@@ -61,7 +50,6 @@ private:
     std::array<Entry, 64> failures{};
     unsigned emitted{};
     unsigned ordinary_emitted{};
-    bool rearmed{};
 };
 
 inline bool Enabled() {
@@ -79,29 +67,14 @@ inline void RecordV(bool failure, std::uint64_t key, std::uint32_t interval, con
     static std::mutex mutex;
     static Budget budget;
     static const auto start = std::chrono::steady_clock::now();
-    static auto next_check = start;
-    static bool rearmed = false;
-    static const std::filesystem::path trigger = [] {
-        const char* value = std::getenv("SHADPS4_NGS2_DIAGNOSTICS_TRIGGER");
-        return std::filesystem::path{value ? value : ""};
-    }();
     const std::lock_guard lock{mutex};
-    const auto now = std::chrono::steady_clock::now();
-    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
-    if (!rearmed && !trigger.empty() && now >= next_check) {
-        next_check = now + std::chrono::seconds{1};
-        std::error_code error;
-        if (std::filesystem::is_regular_file(trigger, error) && budget.Rearm()) {
-            rearmed = true;
-            std::fprintf(stderr, "NGS2_DIAG ms=%lld capture-rearmed window=2\n",
-                         static_cast<long long>(elapsed));
-            std::fflush(stderr);
-        }
-    }
     if (!budget.Take(key, interval, failure))
         return;
     std::array<char, 480> message{};
     std::vsnprintf(message.data(), message.size(), format, arguments);
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::steady_clock::now() - start)
+                             .count();
     std::fprintf(stderr, "NGS2_DIAG ms=%lld %s\n", static_cast<long long>(elapsed), message.data());
 }
 inline void Record(std::uint64_t key, std::uint32_t interval, const char* format, ...) {
