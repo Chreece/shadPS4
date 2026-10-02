@@ -25,6 +25,10 @@ DROPIN = Path('/etc/systemd/system/sunshine.service.d/90-session-x11.conf')
 WATCHDOG_SHA = '9df276592044e7c310ff8b0bccc616e742c6a49f1a0654bba527042577e95314'
 KMS_SHA = '8f5339d867ce4f512411414558643e7c2480249b97c3224fb8e6560f5b8bc5a9'
 MODULE_SHA = '5f222179a866eedc96f31d383cd949667ad945c5f77f3290fdd79a5f6ac67029'
+RECOVERABLE_INSTALLERS = {
+    '2d1d9b0f9b654b7f7045f0721adf7a0b89a97dc9b49c7bcd11cc6bc74afd6aa9',
+    '891e763dfe700d3e8455700222c09046664582e44c46b418b4bda991b4f74c99',
+}
 
 
 def digest(content):
@@ -211,10 +215,14 @@ def no_games(services, proc_root=Path('/proc')):
             group = (process / 'cgroup').read_text()
             in_sunshine = any(line.split(':', 2)[-1] == services[0]['ControlGroup']
                               for line in group.splitlines())
+            launcher = False
+            if in_sunshine and process.name == services[0].get('MainPID') and name.startswith('python3'):
+                args = [os.fsdecode(arg) for arg in (process / 'cmdline').read_bytes().split(b'\0') if arg]
+                launcher = args[1:] == [str(paths(Path.home())[0]), '--sunshine']
             # The frontend and verified mount workers can close with their service.
             # Still scan every process: accepting a worker must not hide its game.
             if name.startswith('shadps4') or (in_sunshine and name not in {'sunshine', 'es-de'}
-                                             and not mount_helper(process, name)):
+                                             and not launcher and not mount_helper(process, name)):
                 blocked.append(process.name + ':' + name)
         except FileNotFoundError:
             continue
@@ -397,12 +405,172 @@ def restore(home, backup):
     print('SUNSHINE_DISPLAY_RESTORE=PASS; prior service command and display guards restored.')
 
 
+def recovery_plan(home):
+    """Accept installed, rolled-back, or partially restored files from a known attempt."""
+    root = home / '.local/state/sunshine-display'
+    problems = []
+    for backup in sorted(root.glob('backup-*'), key=lambda p: p.lstat().st_mtime, reverse=True):
+        try:
+            if backup.is_symlink() or not backup.is_dir() or backup.stat().st_uid != os.getuid():
+                raise RuntimeError('Unexpected backup directory')
+            state = json.loads(regular(backup / 'state.json')[0])
+            records = state['files']
+            if (len(records) != 4 or records[0]['before'] is not None or
+                    records[1]['before'] is not None or
+                    records[0]['after'] not in RECOVERABLE_INSTALLERS or
+                    records[1]['after'] != MODULE_SHA or
+                    [r['before'] for r in records[2:]] != [WATCHDOG_SHA, KMS_SHA] or
+                    state['dropin'].encode() != dropin(home)):
+                raise RuntimeError('Backup does not describe a known failed installation')
+            entries = []
+            for index, (path, record) in enumerate(zip(paths(home), records)):
+                before = regular(backup / f'before-{index}')[0] if record['before'] else None
+                if before is not None and digest(before) != record['before']:
+                    raise RuntimeError('Original backup checksum mismatch')
+                current = regular(path)[0] if path.exists() or path.is_symlink() else None
+                current_hash = digest(current) if current is not None else None
+                if current_hash not in (record['before'], record['after']):
+                    raise RuntimeError('A repair target was subsequently edited: ' + str(path))
+                mode = record['mode']
+                if not isinstance(mode, int) or mode & ~0o777 or mode & 0o002:
+                    raise RuntimeError('Invalid backup file permissions')
+                entries.append((path, current, before, mode))
+            override = regular(DROPIN, root=True)[0] if DROPIN.exists() or DROPIN.is_symlink() else None
+            if override is not None and override != dropin(home):
+                raise RuntimeError('Sunshine override was subsequently edited')
+            return backup, entries, override
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
+            problems.append(str(backup) + ': ' + str(error))
+    raise RuntimeError('No compatible recovery backup. ' + '; '.join(problems))
+
+
+def recovery_command(report, command):
+    report.write('\n=== ' + shlex.join(command) + ' ===\n')
+    report.flush()
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=12)
+        report.write(result.stdout + result.stderr + f'\nrc={result.returncode}\n')
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError) as error:
+        report.write(str(error) + '\n')
+        return False
+    finally:
+        report.flush()
+
+
+def recovery_capture(report, home, phase):
+    report.write('\n=== ' + phase + ' ===\n')
+    properties = ['User', 'Type', 'NotifyAccess', 'ActiveState', 'SubState', 'Result',
+                  'MainPID', 'ControlPID', 'ControlGroup', 'ExecMainStatus', 'ExecStart',
+                  'ExecStartPre', 'ExecStartPost', 'ExecStop', 'TimeoutStartUSec',
+                  'TimeoutStopUSec', 'Job', 'After', 'Requires', 'Restart',
+                  'NRestarts', 'PrivateTmp', 'ProtectHome', 'DropInPaths', 'KillMode']
+    for unit in UNITS:
+        recovery_command(report, ['systemctl', 'show', unit] +
+                         [item for prop in properties for item in ('-p', prop)])
+    recovery_command(report, ['sudo', '-n', '/usr/bin/journalctl', '--no-pager',
+                             '-o', 'short-precise', '-u', UNITS[0], '-u', UNITS[1],
+                             '--since', '-30min', '-n', '160'])
+    recovery_command(report, ['systemctl', '--user', 'show', 'headless-x.service',
+                             '-p', 'ActiveState', '-p', 'SubState', '-p', 'MainPID'])
+    for path in [home / '.config/sunshine/sunshine.log',
+                 home / '.local/state/sunshine-display-watchdog.log']:
+        try:
+            with path.open('rb') as handle:
+                handle.seek(max(0, path.stat().st_size - 24000))
+                report.write('\n=== ' + str(path) + ' tail ===\n' +
+                             handle.read().decode(errors='replace'))
+        except OSError as error:
+            report.write(str(error) + '\n')
+    report.flush()
+
+
+def wait_service_state(active, seconds=20):
+    deadline = time.monotonic() + seconds
+    while True:
+        states = [show(unit) for unit in UNITS]
+        if active:
+            complete = all(state['ActiveState'] == 'active' for state in states)
+        else:
+            complete = all(state['ActiveState'] in ('inactive', 'failed') and
+                           state.get('MainPID') == '0' for state in states)
+        if complete:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.5)
+
+
+def recover(home):
+    fd, report_path = tempfile.mkstemp(prefix='sunshine-start-recovery-', suffix='.txt', dir=home)
+    print('RECOVERY_REPORT=' + report_path, flush=True)
+    with os.fdopen(fd, 'w') as report:
+        try:
+            subprocess.run(['sudo', '-v'], check=True)
+            recovery_capture(report, home, 'BEFORE RECOVERY')
+            backup, entries, override = recovery_plan(home)
+            report.write('\nBACKUP=' + str(backup) + '\n')
+            services = [show(unit) for unit in UNITS]
+            username = pwd.getpwuid(os.getuid()).pw_name
+            for unit, service in zip(UNITS, services):
+                if service['User'] != username or service['KillMode'] not in ('control-group', 'mixed'):
+                    raise RuntimeError('Service ownership or shutdown scope changed; recovery stopped')
+                # Inactive units have an empty ControlGroup property.
+                service['ControlGroup'] = service['ControlGroup'] or '/system.slice/' + unit
+            commands = [('/usr/bin/sunshine', '/usr/bin/python3 ' + str(paths(home)[0]) + ' --sunshine'),
+                        (str(paths(home)[2]),)]
+            for service, allowed in zip(services, commands):
+                if not any(re.search(r'argv\[\]\s*=\s*' + re.escape(command) + r'\s*;',
+                                     service['ExecStart']) for command in allowed):
+                    raise RuntimeError('Service start command changed; recovery stopped')
+            no_games(services)
+            changed = override is not None or any(current != before for _, current, before, _ in entries)
+            if changed:
+                if not recovery_command(report, ['sudo', '-n', '/usr/bin/systemctl', '--no-block',
+                                                  'stop', *reversed(UNITS)]):
+                    raise RuntimeError('Could not enqueue a scoped service stop; files preserved')
+                if not wait_service_state(False):
+                    raise RuntimeError('Service stop is still pending; files preserved. See recovery report')
+                # Revalidate all files together after service shutdown, before changing any.
+                for path, current, _, _ in entries:
+                    if not same(path, current):
+                        raise RuntimeError('Repair target changed during recovery; preserved')
+                if not same(DROPIN, override, root=True):
+                    raise RuntimeError('Service override changed during recovery; preserved')
+                for path, current, before, mode in entries:
+                    if current == before:
+                        continue
+                    if before is None:
+                        path.unlink()
+                    else:
+                        atomic(path, before, mode)
+                if override is not None:
+                    sudo('/usr/bin/rm', '--', DROPIN)
+                sudo('/usr/bin/systemctl', 'daemon-reload')
+            print('SUNSHINE_RECOVERY_FILES=RESTORED; original service command and guard scripts.', flush=True)
+            recovery_command(report, ['sudo', '-n', '/usr/bin/systemctl', 'reset-failed', *UNITS])
+            accepted = True
+            for unit in UNITS:
+                ok = recovery_command(report, ['sudo', '-n', '/usr/bin/systemctl', '--no-block', 'start', unit])
+                accepted = accepted and ok
+            ready = wait_service_state(True) if accepted else False
+            for unit in UNITS:
+                state = show(unit)
+                print(unit + ': ' + state['ActiveState'] + '/' + state.get('SubState', '?'), flush=True)
+            print('SUNSHINE_RECOVERY_RESULT=' + ('SERVICES_ACTIVE' if ready else 'START_PENDING_OR_FAILED'), flush=True)
+            print('Upload RECOVERY_REPORT; visible-window recovery is not yet confirmed.', flush=True)
+        finally:
+            recovery_capture(report, home, 'AFTER RECOVERY')
+            print('RECOVERY_REPORT=' + report_path, flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--sunshine', action='store_true')
     group.add_argument('--authority', action='store_true')
     group.add_argument('--restore', type=Path)
+    group.add_argument('--recover', action='store_true', help='Recover the known timed-out attempts and save systemd diagnostics')
     args = parser.parse_args()
     if os.geteuid() == 0 or sys.platform != 'linux':
         raise RuntimeError('Run as the normal Linux desktop user, not with sudo.')
@@ -432,7 +600,9 @@ def main():
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
             raise RuntimeError('Unexpected repair lock.')
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        if args.restore:
+        if args.recover:
+            recover(home)
+        elif args.restore:
             restore(home, args.restore)
         else:
             install(home)

@@ -208,6 +208,69 @@ class RepairTests(unittest.TestCase):
         (process / 'fd/7').unlink()
         self.assertFalse(repair.mount_helper(process, 'memfd:squashfus'))
 
+    def recovery_fixture(self):
+        override = self.fixture()
+        self.mock('RECOVERABLE_INSTALLERS', new={repair.digest(Path(repair.__file__).read_bytes())})
+        with contextlib.redirect_stdout(io.StringIO()):
+            repair.install(self.home)
+        backup, = (self.home / '.local/state/sunshine-display').glob('backup-*')
+        return override, backup
+
+    def test_recovery_accepts_installed_and_partial_and_completed_rollback(self):
+        override, backup = self.recovery_fixture()
+        self.assertEqual(repair.recovery_plan(self.home)[0], backup)
+        repair.paths(self.home)[0].unlink()
+        repair.paths(self.home)[2].write_bytes(WATCHDOG)
+        self.assertEqual(repair.recovery_plan(self.home)[0], backup)
+        repair.paths(self.home)[1].unlink()
+        repair.paths(self.home)[3].write_bytes(KMS)
+        override.unlink()
+        _, entries, dropin = repair.recovery_plan(self.home)
+        self.assertIsNone(dropin)
+        self.assertTrue(all(current == before for _, current, before, _ in entries))
+
+    def test_recovery_preserves_modified_files_and_overrides(self):
+        override, _ = self.recovery_fixture()
+        original = override.read_bytes()
+        override.write_bytes(original + b'# later admin edit\n')
+        with self.assertRaisesRegex(RuntimeError, 'subsequently edited'):
+            repair.recovery_plan(self.home)
+        override.write_bytes(original)
+        repair.paths(self.home)[2].write_bytes(b'# unrelated guard\n')
+        with self.assertRaisesRegex(RuntimeError, 'subsequently edited'):
+            repair.recovery_plan(self.home)
+
+    def test_pending_start_is_not_reported_as_active(self):
+        self.mock('show', return_value={'ActiveState': 'activating', 'MainPID': '123'})
+        self.assertFalse(repair.wait_service_state(True, seconds=0))
+        self.assertFalse(repair.wait_service_state(False, seconds=0))
+
+    def test_recovery_does_not_require_units_to_be_active(self):
+        override, _ = self.recovery_fixture()
+        repair.paths(self.home)[0].unlink()
+        repair.paths(self.home)[1].unlink()
+        repair.paths(self.home)[2].write_bytes(WATCHDOG)
+        repair.paths(self.home)[3].write_bytes(KMS)
+        override.unlink()
+        def show(unit):
+            command = '/usr/bin/sunshine' if unit == repair.UNITS[0] else str(repair.paths(self.home)[2])
+            return {'User': repair.pwd.getpwuid(os.getuid()).pw_name, 'KillMode': 'control-group',
+                    'ControlGroup': '', 'ActiveState': 'inactive', 'SubState': 'dead',
+                    'ExecStart': '{ argv[]=' + command + ' ; }'}
+        self.mock('show', side_effect=show)
+        self.mock('recovery_capture')
+        commands = self.mock('recovery_command', return_value=True)
+        self.mock('wait_service_state', return_value=False)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            repair.recover(self.home)
+        self.assertIn('SUNSHINE_RECOVERY_FILES=RESTORED', output.getvalue())
+        self.assertIn('START_PENDING_OR_FAILED', output.getvalue())
+        self.assertNotIn('SERVICES_ACTIVE', output.getvalue())
+        starts = [call.args[1] for call in commands.call_args_list if 'start' in call.args[1]]
+        self.assertEqual(len(starts), 2)
+        self.assertTrue(all('--no-block' in command for command in starts))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -7,6 +7,21 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 ## Current local graphics test: 2026-10-02
 
+At 12:28 UTC the host repair reports a 50-second timeout while starting the two
+system services. The error alone does not identify the failed unit or establish
+whether rollback completed; its own start can replace the original exception.
+Do not repeat the installation until the service report has been reviewed.
+`repair_sunshine_display.py --recover` saves the journal and service properties
+before changes, finds a checksum-compatible backup of either published attempt,
+and accepts files already rolled back or partially restored. It requires the
+known service owner, shutdown scope and start commands, and still refuses games.
+It restores only the matching original files and removes only its exact drop-in.
+Service jobs are enqueued without blocking, then their states are checked with
+bounded polling; a pending start is explicitly not a successful recovery.
+The private `RECOVERY_REPORT` captures both before and after states. No Xorg,
+emulator, audio configuration, or unrelated service is changed. This is a recovery
+and evidence collection step, not another claimed blank-screen fix.
+
 The 11:50 UTC capture confirms that the inherited `.Xauthority` is rejected,
 while the running user's Xorg `-auth` file opens the same display successfully.
 X11 is awake at 1920x1080, has no ES-DE client window, and ES-DE reports a
