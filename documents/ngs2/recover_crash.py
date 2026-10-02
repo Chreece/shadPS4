@@ -74,11 +74,9 @@ def collect(home, states, wrapper):
                                key=lambda p: p.stat().st_mtime, reverse=True)
                 for path in files[:12]:
                     copy(path, "logs/%s/%s" % (index, path.name))
-            copy(home / "ngs2-diagnostic-ca67919d.log", "diagnostic.log")
             for revision in sorted(DIAGNOSTIC):
-                if not revision.startswith("ca67919d"):
-                    copy(home / ("ngs2-diagnostic-" + revision[:8] + ".log"),
-                         "diagnostic-" + revision[:8] + ".log")
+                copy(home / ("ngs2-diagnostic-" + revision[:8] + ".log"),
+                     "diagnostic-" + revision[:8] + ".log")
             copy(wrapper, "launcher.before-recovery")
             for state_file, _ in states:
                 copy(state_file, "deployments/" + state_file.parent.name + ".json")
@@ -92,7 +90,8 @@ def collect(home, states, wrapper):
                                           if state.get("installed_wrapper_sha256") == current_hash
                                           and state.get("commit") in DIAGNOSTIC), None)
                     current_binary = (current_state["binary"] if current_state else
-                                      str(home / "Applications/shadps4/releases/ngs2-ac36a0ed/shadps4"))
+                                      str(home / "Applications/shadps4/releases" /
+                                          ("ngs2-" + sorted(DIAGNOSTIC)[0][:8]) / "shadps4"))
                     result = subprocess.run(
                         ["coredumpctl", "--no-pager", "--since=-2h", "info",
                          current_binary],
@@ -106,9 +105,9 @@ def collect(home, states, wrapper):
 
 def rollback_plan(home, states, current):
     wrapper = home / ".local/bin/shadps4-esde"
-    binary = home / "Applications/shadps4/releases/ngs2-f00bef80/shadps4"
+    binary = home / "Applications/shadps4/releases" / ("ngs2-" + WORKING[:8]) / "shadps4"
     if binary.is_symlink() or not binary.is_file() or not os.access(binary, os.X_OK):
-        raise RuntimeError("The previous f00bef80 executable is missing or not executable.")
+        raise RuntimeError("The retained " + WORKING[:8] + " executable is missing or not executable.")
     working_states = [s for _, s in states if s.get("commit") == WORKING
                       and s.get("wrapper") == str(wrapper) and s.get("binary") == str(binary)]
     binary_hash = digest(binary.read_bytes())
@@ -140,7 +139,8 @@ def rollback_plan(home, states, current):
         mode = state["original_mode"]
         if not isinstance(mode, int) or mode & ~0o777 or not mode & 0o111:
             raise RuntimeError("Invalid saved launcher permissions.")
-    raise RuntimeError("No verified rollback chain to f00bef80; preserving the current launcher.")
+    raise RuntimeError("No verified rollback chain to " + WORKING[:8] +
+                       "; preserving the current launcher.")
 
 
 def recover(home):
@@ -177,7 +177,7 @@ def recover(home):
                     os.replace(temporary, wrapper)
                 finally:
                     temporary.unlink(missing_ok=True)
-        print("NGS2_RECOVERY=PASS: f00bef80 test launcher selected; settings unchanged.")
+        print("NGS2_RECOVERY=PASS: " + WORKING[:8] + " test launcher selected; settings unchanged.")
         print("Upload CRASH_ARCHIVE. No game was launched.")
 
 

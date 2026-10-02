@@ -98,6 +98,33 @@ class RecoveryTests(unittest.TestCase):
         recovery.recover(self.home)
         self.assertEqual(self.wrapper.read_bytes(), self.working)
 
+    def test_mip_test_restores_exact_guarded_6e00_launcher_and_captures_failure(self):
+        working = '6e00d2ccadfa4ec1f5a7bbd46ad8a233857bbbfa'
+        failed = '286d0cca483ce80f9d4a4fe98d4620b6b003e0ca'
+        self.binary = self.home / 'Applications/shadps4/releases/ngs2-6e00d2cc/shadps4'
+        self.binary.parent.mkdir(parents=True)
+        self.binary.write_bytes(b'retained 6e00 executable')
+        self.binary.chmod(0o755)
+        guarded = b'#!/bin/bash\n# retained single-instance guard\necho previous-test\n'
+        self.add_state('stable', working, self.working, guarded)
+        self.add_state('mip', failed, guarded, self.diagnostic)
+        trace = self.home / 'ngs2-diagnostic-286d0cca.log'
+        trace.write_bytes(b'exit_code=-6\nsignal=SIGABRT\n')
+        with mock.patch.object(recovery, 'WORKING', working), mock.patch.object(
+                recovery, 'DIAGNOSTIC', {failed}):
+            recovery.recover(self.home)
+            self.assertEqual(self.wrapper.read_bytes(), guarded)
+            self.assertEqual(self.config.read_bytes(), b'{"audioChannels":8}')
+            self.assertEqual(self.binary.read_bytes(), b'retained 6e00 executable')
+            archive = next(self.home.glob('ngs2-startup-crash-*.tar.gz'))
+            with tarfile.open(archive) as bundle:
+                self.assertEqual(bundle.extractfile('diagnostic-286d0cca.log').read(),
+                                 trace.read_bytes())
+                self.assertEqual(bundle.extractfile('launcher.before-recovery').read(),
+                                 self.diagnostic)
+            recovery.recover(self.home)
+            self.assertEqual(self.wrapper.read_bytes(), guarded)
+
 
 if __name__ == '__main__':
     unittest.main()

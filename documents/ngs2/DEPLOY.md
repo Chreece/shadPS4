@@ -7,6 +7,13 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 ## Current local graphics test: 2026-10-02
 
+**Test on hold:** the user reports that `286d0cca` fails to launch the game.
+No failure log has been supplied yet, so the fault is not attributed to a
+specific function. Run `recover_mip_test.py` with the matching `recover_crash.py`
+to save the failed launch trace, renderer logs and build tail, then restore the
+verified retained `6e00d2cc` launcher. This performs no build and does not launch
+or kill a process. Upload the printed `CRASH_ARCHIVE` before further runtime changes.
+
 `main_build.py --docker` now pins combined main
 `286d0cca483ce80f9d4a4fe98d4620b6b003e0ca`. This integrates
 `fix/tiled-mip-layout` (`261f339244bd3179089ed131be371df4c1b670b2`), based on
