@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Capture one guarded launch using the live ES-DE process environment."""
 from datetime import datetime, timezone
+import argparse
 import hashlib
 import io
 import json
@@ -21,6 +22,18 @@ REVISION = '286d0cca483ce80f9d4a4fe98d4620b6b003e0ca'
 ENV_KEYS = ('DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR',
             'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'SDL_VIDEODRIVER', 'SDL_VIDEO_DRIVER',
             'LD_LIBRARY_PATH', 'LD_PRELOAD', 'APPDIR', 'APPIMAGE', 'PATH', 'PULSE_SINK')
+ENV_KEYS += ('RADV_DEBUG', 'RADV_PERFTEST', 'VK_INSTANCE_LAYERS', 'VK_ICD_FILENAMES',
+             'VK_DRIVER_FILES')
+
+
+def launch_environment(frontend, sync_shaders):
+    environment = dict(frontend)
+    environment.pop('SHADPS4_GUARD_PARENT_PID', None)
+    if sync_shaders:
+        if environment.get('RADV_DEBUG', '').strip():
+            raise RuntimeError('ES-DE already supplies RADV_DEBUG; preserve it and do not mix tests.')
+        environment['RADV_DEBUG'] = 'syncshaders'
+    return environment
 
 
 def processes():
@@ -67,7 +80,7 @@ def snapshot(path):
         return {'path': str(path), 'error': str(error)}
 
 
-def main():
+def main(sync_shaders=False):
     if os.geteuid() == 0 or sys.platform != 'linux':
         raise RuntimeError('Run as your normal desktop user, without sudo.')
     home = Path.home()
@@ -77,6 +90,7 @@ def main():
     trace = home / 'ngs2-diagnostic-286d0cca.log'
     before = processes()
     report = {'started_utc': datetime.now(timezone.utc).isoformat(),
+              'test': 'radv-syncshaders' if sync_shaders else 'launch-only',
               'before': public_processes(before), 'trace_before': snapshot(trace)}
     frontend = [p for p in before if p['name'] == 'es-de']
     cores = [p for p in before if Path(p['exe']).name.lower() in ('shadps4', 'shadps4.exe')]
@@ -104,24 +118,44 @@ def main():
         report['frontend_pid_used'] = selected['pid']
         token = output / 'probe.ps4'
         token.write_text('CUSA36843|ngs2probe\n')
-        environment = dict(selected['environment'])
-        environment.pop('SHADPS4_GUARD_PARENT_PID', None)
+        environment = launch_environment(selected['environment'], sync_shaders)
+        report['requested_environment'] = {k: environment[k] for k in ENV_KEYS if k in environment}
         with (output / 'launcher-console.log').open('wb') as console:
             child = subprocess.Popen(['/bin/bash', str(wrapper), str(token)],
                                      cwd=selected['cwd'], env=environment, stdin=subprocess.DEVNULL,
                                      stdout=console, stderr=subprocess.STDOUT,
                                      start_new_session=True, close_fds=True)
         report['launcher_pid'] = child.pid
-        print('One guarded launch requested; collecting for up to 12 seconds.', flush=True)
+        print('One guarded launch requested; checking startup for up to 12 seconds.', flush=True)
         for _ in range(24):
             if child.poll() is not None:
                 break
             time.sleep(0.5)
+        report['during'] = public_processes(processes())
+        if sync_shaders:
+            expected_exe = str(home / 'Applications/shadps4/releases/ngs2-286d0cca/shadps4')
+            report['sync_observed_in_core'] = any(
+                p['exe'] == expected_exe and p['environment'].get('RADV_DEBUG') == 'syncshaders'
+                for p in report['during'])
+        if sync_shaders and child.poll() is None:
+            print('SYNC TEST: compare the same affected area, then exit the emulator normally.\n'
+                  'This SSH command waits to collect the completed trace; it does not stop the game.\n'
+                  'RADV_DEBUG=syncshaders applies only to this launch and may reduce performance.',
+                  flush=True)
+            child.wait()
         report['launcher_exit_code'] = child.poll()
     except (RuntimeError, OSError, ValueError) as error:
         report['launch_note'] = str(error)
     report['after'] = public_processes(processes())
     report['trace_after'] = snapshot(trace)
+    report['trace_changed'] = report['trace_before'] != report['trace_after']
+    entry = Path('/mnt/roms-all/ps4/Red Dead Redemption [NGS2 trace].ps4')
+    report['esde_entry'] = snapshot(entry)
+    try:
+        with entry.open('rb') as stream:
+            report['esde_entry']['first_line'] = repr(stream.readline(512))
+    except OSError as error:
+        report['esde_entry']['read_error'] = str(error)
     configs = [home / '.emulationstation', home / 'ES-DE', home / '.config/ES-DE']
     for p in frontend:
         if p['environment'].get('XDG_CONFIG_HOME'):
@@ -176,8 +210,12 @@ def main():
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--radv-sync-shaders', action='store_true',
+                        help='Use RADV syncshaders for one launch and collect after normal exit.')
+    args = parser.parse_args()
     try:
-        main()
+        main(args.radv_sync_shaders)
     except (RuntimeError, OSError, ValueError) as error:
         print('LAUNCH_CAPTURE=FAIL: ' + str(error), file=sys.stderr)
         sys.exit(1)
