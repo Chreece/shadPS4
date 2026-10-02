@@ -66,6 +66,14 @@ normal-entry preservation, data/guard preservation, cleanup, external symlink
 protection, and a usable previous-core restore. CPU-focused checks do not establish
 game correctness; the complete cleaned combination still needs the local game run.
 
+The first installation stopped before the build on a legacy
+`Red Dead Redemption [shadPS4 0.10.0].ps4` entry. Entry classification now handles
+version labels and the older `CUSAxxxxx|selector` stubs, retiring every recognized
+selector without executing it. Version-only games receive an ordinary entry;
+region annotations survive, and colliding titles cannot overwrite another game.
+Unexpected contents still stop preflight, with all unrecognized entries reported
+together. This installer-only correction does not change emulator code.
+
 AI assistance: Codex prepared and reviewed the cleanup, controller integration,
 installer and focused regression fixtures. No upstream PR or multi-platform CI
 build is requested by this integration.

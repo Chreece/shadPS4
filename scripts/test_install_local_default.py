@@ -110,12 +110,65 @@ class DefaultInstallTests(unittest.TestCase):
         self.assertEqual(self.normal.read_text(), 'CUSA36843\n')
         self.assertFalse(self.trace.exists())
 
+    def test_version_entries_and_old_selectors_are_retired_together(self):
+        versions = []
+        for version, selector in [('0.10.0', 'v0100'), ('0.11.0', '0.11.0'),
+                                  ('0.12.0', 'v0.12.0'), ('0.18.0', None)]:
+            entry = self.roms / ('Red Dead Redemption [shadPS4 ' + version + '].ps4')
+            entry.write_text('CUSA36843' + ('|' + selector if selector else '') + '\n')
+            versions.append(entry)
+        extra = self.roms / 'Red Dead Redemption [older experiment].ps4'
+        extra.write_text('CUSA36843|old-build\n')
+        versions.append(extra)
+        self.install()
+        self.assertEqual(self.normal.read_text(), 'CUSA36843\n')
+        self.assertTrue(all(not entry.exists() for entry in versions))
+        state = next((self.home / '.local/state/shadps4-default-main').glob('install-*/state.json'))
+        self.assertEqual(len(json.loads(state.read_text())['removed_entries']), 6)
+
+    def test_version_only_game_gets_normal_entry_with_region_preserved(self):
+        self.normal.unlink()
+        self.trace.unlink()
+        entry = self.roms / 'Red Dead Redemption [Europe] [shadPS4 0.10.0].ps4'
+        entry.write_bytes(b'CUSA36843|v0100\r\n')
+        self.install()
+        self.assertFalse(entry.exists())
+        self.assertEqual((self.roms / 'Red Dead Redemption [Europe].ps4').read_text(), 'CUSA36843\n')
+
+    def test_ordinary_title_with_trace_word_is_not_a_test_entry(self):
+        entry = self.roms / 'Trace [Europe].ps4'
+        entry.write_text('CUSA12345\n')
+        self.install()
+        self.assertEqual(entry.read_text(), 'CUSA12345\n')
+
+    def test_normalized_title_collision_keeps_both_game_ids(self):
+        self.normal.unlink()
+        self.trace.unlink()
+        for version, game in [('0.10.0', 'CUSA36843'), ('0.11.0', 'CUSA12345')]:
+            entry = self.roms / ('Red Dead Redemption [shadPS4 ' + version + '].ps4')
+            entry.write_text(game + '|v' + version + '\n')
+        self.install()
+        self.assertEqual({p.read_text().strip() for p in self.roms.glob('*.ps4')},
+                         {'CUSA36843', 'CUSA12345'})
+
+    def test_version_label_does_not_authorize_unrecognized_payload(self):
+        entry = self.roms / 'Red Dead Redemption [shadPS4 0.10.0].ps4'
+        payload = 'CUSA36843|$(touch unwanted)\n'
+        entry.write_text(payload)
+        with mock.patch.object(deploy, 'no_running_apps'), \
+             mock.patch.object(deploy.shutil, 'which', return_value='/usr/bin/tool'), \
+             mock.patch.object(deploy, 'build') as build:
+            with self.assertRaisesRegex(RuntimeError, 'Unrecognized PS4 entries'):
+                deploy.install(self.home, self.revision)
+            build.assert_not_called()
+        self.assertEqual(entry.read_text(), payload)
+
     def test_unknown_entries_stop_before_build_or_cleanup(self):
         (self.roms / 'unknown.ps4').write_text('unexpected format\n')
         with mock.patch.object(deploy, 'no_running_apps'), \
              mock.patch.object(deploy.shutil, 'which', return_value='/usr/bin/tool'), \
              mock.patch.object(deploy, 'build') as build:
-            with self.assertRaisesRegex(RuntimeError, 'Unrecognized PS4 entry'):
+            with self.assertRaisesRegex(RuntimeError, 'Unrecognized PS4 entries'):
                 deploy.install(self.home, self.revision)
             build.assert_not_called()
         self.assertTrue(self.old.exists())
