@@ -80,7 +80,7 @@ struct Runtime {
 
 struct ImageSlots {
     std::deque<Image> images;
-    ImageId insert(int, Runtime&, int, const ImageInfo& info) {
+    ImageId Insert(int, Runtime&, int, const ImageInfo& info) {
         images.emplace_back(info);
         return static_cast<ImageId>(images.size());
     }
@@ -124,7 +124,7 @@ void CheckGrowth(const std::string& name, SubresourceExtent old_extent,
     old_info.props.is_depth = source_depth;
     old_info.pixel_format = source_depth ? 126 : 100;
     old_info.resources = old_extent;
-    const auto old_id = cache.slot_images.insert(0, cache.runtime, 0, old_info);
+    const auto old_id = cache.slot_images.Insert(0, cache.runtime, 0, old_info);
     auto& old = cache.slot_images[old_id];
     old.usage = 42;
     old.flags = GpuModified;
@@ -173,7 +173,7 @@ int main() {
                     false);
         TextureCache cache;
         ImageInfo info;
-        const auto id = cache.slot_images.insert(0, cache.runtime, 0, info);
+        const auto id = cache.slot_images.Insert(0, cache.runtime, 0, info);
         ASSERT(cache.ResolveDepthOverlap(info, BindingType::Texture, id) == 0);
         cache.slot_images[id].info.props.is_depth = info.props.is_depth = true;
         ASSERT(cache.ResolveDepthOverlap(info, BindingType::DepthTarget, id) == id);
