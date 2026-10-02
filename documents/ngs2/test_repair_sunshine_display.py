@@ -173,6 +173,41 @@ class RepairTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'Close running games'):
             repair.no_games(services, proc)
 
+    def test_memfd_mount_worker_does_not_count_as_game_or_hide_one(self):
+        group = '/system.slice/sunshine.service'
+        proc = self.home / 'proc'
+        worker = proc / '3144031'
+        (worker / 'fd').mkdir(parents=True)
+        (worker / 'comm').write_text('memfd:squashfus')
+        (worker / 'cgroup').write_text('0::' + group + '\n')
+        (worker / 'exe').symlink_to('/memfd:squashfuse (deleted)')
+        (worker / 'fd/7').symlink_to('/dev/fuse')
+        services = [{'ControlGroup': group}]
+        repair.no_games(services, proc)
+        game = proc / '3144032'
+        game.mkdir()
+        (game / 'comm').write_text('rpcs3')
+        (game / 'cgroup').write_text('0::' + group + '\n')
+        with self.assertRaisesRegex(RuntimeError, '3144032:rpcs3'):
+            repair.no_games(services, proc)
+        # A game outside Sunshine's cgroup must still stop shadPS4 deployment.
+        (game / 'comm').write_text('shadPS4:Main')
+        (game / 'cgroup').write_text('0::/user.slice/test.service\n')
+        with self.assertRaisesRegex(RuntimeError, '3144032:shadps4:main'):
+            repair.no_games(services, proc)
+
+    def test_mount_worker_requires_executable_and_fuse_descriptor(self):
+        process = self.home / 'process'
+        (process / 'fd').mkdir(parents=True)
+        (process / 'exe').symlink_to('/usr/bin/unrelated')
+        (process / 'fd/7').symlink_to('/dev/fuse')
+        self.assertFalse(repair.mount_helper(process, 'memfd:squashfus'))
+        (process / 'exe').unlink()
+        (process / 'exe').symlink_to('/memfd:squashfuse_ll (deleted)')
+        self.assertTrue(repair.mount_helper(process, 'memfd:squashfus'))
+        (process / 'fd/7').unlink()
+        self.assertFalse(repair.mount_helper(process, 'memfd:squashfus'))
+
 
 if __name__ == '__main__':
     unittest.main()

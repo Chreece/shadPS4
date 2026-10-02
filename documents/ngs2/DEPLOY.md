@@ -40,6 +40,15 @@ No emulator build or GitHub CI is needed for this host-service repair.
 AI assistance: Codex prepared and reviewed this change on
 `fix/sunshine-display-inheritance`, using the user's supplied process/display log.
 
+The first host attempt stopped before installation on `memfd:squashfus`, an
+AppImage mount-worker name truncated by Linux. The preflight now recognizes
+SquashFUSE workers using their executable identity and open `/dev/fuse` descriptor
+inside the current user's Sunshine service. These workers can exit with the
+service restart; every other process is still checked so a worker never hides
+an active game. Regression checks cover a leftover worker, an accompanying game,
+and a matching name without the required executable/FUSE descriptor. No broad
+process-name kill or manual PID termination is introduced.
+
 At 11:35 UTC the user reports a blank Moonlight screen after exiting and
 relaunching ES-DE. Pause the renderer comparison until the frontend is usable.
 The older Sunshine watchdog's `repair_x11` silently returns when `xrandr` cannot

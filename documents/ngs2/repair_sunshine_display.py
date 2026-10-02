@@ -172,6 +172,30 @@ def service_preflight(home, installed=False):
     return services
 
 
+def mount_helper(process, name):
+    # AppImage runtimes can leave a FUSE mount worker after the application exits.
+    # Linux truncates the comm value of memfd:squashfuse to memfd:squashfus.
+    # Check the executable and an open FUSE descriptor, not just a process name.
+    if name not in {'squashfuse', 'squashfuse_ll', 'memfd:squashfus'}:
+        return False
+    try:
+        executable = os.readlink(process / 'exe').removesuffix(' (deleted)')
+        if name == 'memfd:squashfus':
+            if executable not in {'/memfd:squashfuse', '/memfd:squashfuse_ll'}:
+                return False
+        elif Path(executable).name not in {'squashfuse', 'squashfuse_ll'}:
+            return False
+        for descriptor in (process / 'fd').iterdir():
+            try:
+                if os.readlink(descriptor) == '/dev/fuse':
+                    return True
+            except FileNotFoundError:
+                continue
+    except OSError:
+        return False
+    return False
+
+
 def no_games(services, proc_root=Path('/proc')):
     groups = {info['ControlGroup'] for info in services}
     if not all(group.startswith('/system.slice/sunshine') for group in groups):
@@ -187,8 +211,10 @@ def no_games(services, proc_root=Path('/proc')):
             group = (process / 'cgroup').read_text()
             in_sunshine = any(line.split(':', 2)[-1] == services[0]['ControlGroup']
                               for line in group.splitlines())
-            # Only the captured frontend/AppImage pair may be closed by this restart.
-            if name.startswith('shadps4') or (in_sunshine and name not in {'sunshine', 'es-de'}):
+            # The frontend and verified mount workers can close with their service.
+            # Still scan every process: accepting a worker must not hide its game.
+            if name.startswith('shadps4') or (in_sunshine and name not in {'sunshine', 'es-de'}
+                                             and not mount_helper(process, name)):
                 blocked.append(process.name + ':' + name)
         except FileNotFoundError:
             continue
