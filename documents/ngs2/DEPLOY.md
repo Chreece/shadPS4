@@ -7,6 +7,38 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 ## Current local graphics test: 2026-10-02
 
+The 11:20 UTC launch capture and completed trace confirm that `286d0cca` now
+starts through the guarded wrapper with ES-DE's live environment. The resolver
+selected Xorg authorization, one core was observed, and the game exited with
+code zero. The user reports glitches throughout gameplay. The mip correction
+was exercised (`micro-mip-detile` reaches count 8192); it did not resolve the
+reported symptom. Sampled query results were complete with no missing mask.
+These observations do not prove all queries correct. Validation was disabled.
+The UI entry's earlier failure is not explained by this successful wrapper test.
+
+`trace_launch.py --radv-sync-shaders` runs a controlled comparison with the same
+installed core and `RADV_DEBUG=syncshaders` in only the child launch environment.
+It waits for normal exit, then packages the completed bounded trace and renderer
+log tails. This is a diagnostic test, not a renderer fix or a permanent setting.
+The choice follows the user's earlier report that validation reduced glitches
+while slowing the game; a change under serialization supports timing/scheduling
+sensitivity, but does not establish an AMD driver bug or select a specific patch.
+Mesa documents the option at https://docs.mesa3d.org/envvars.html#envvar-RADV_DEBUG.
+It can reduce performance and does not flush every GPU cache.
+
+Keep Moonlight/ES-DE open, start one test with the helper, compare the same area
+and route, then exit normally using the existing gamepad exit control. Upload the
+printed LAUNCH_REPORT archive and report whether geometry still disappears. No
+second manual launch is needed. The report records the live core's flag, not just
+the requested setting, and also reads the existing NGS2 entry's first line to
+investigate why its UI launch differed. Existing cores prevent another launch;
+an inherited RADV_DEBUG prevents mixed experiments. Audio/7.1 configuration,
+installed files, GPU settings and services are not modified. The next ordinary
+launch does not inherit this option. No build or GitHub CI is requested.
+
+AI assistance: Codex prepared this diagnostic on `diagnostics/radv-sync-shaders`
+after reviewing the supplied logs, renderer paths and current upstream PRs.
+
 The supplied 10:17 UTC failure capture confirms that the local `286d0cca`
 build completed and the binary started. X11 then rejected display authorization;
 `SDL_Init(SDL_INIT_VIDEO)` stopped at `sdl_window.cpp:105` with "No available
