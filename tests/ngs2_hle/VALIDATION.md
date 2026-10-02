@@ -412,3 +412,22 @@ workflow was still running when this update was recorded; it is not counted as a
 full-build pass. Repository lint identified missing SPDX tags in the milestone
 Markdown notes and formatting in the earlier foundation/notification include;
 this follow-up corrects those without changing runtime behavior.
+
+## Queued-block interpolation regression
+
+The public PCM path differed from contiguous playback at fractional samples before
+queued block boundaries. Reproduced at 24 kHz and 44.1 kHz into 48 kHz, with block
+boundaries inside render grains. Matching-rate queued blocks now share interpolation
+lookahead while retaining separate ownership and completion accounting. Public ATRAC9
+continuation tests compare every output sample against continuous decoding, including
+the fractional boundary samples. Starved queues still hold their last sample.
+
+This demonstrates a host resampling defect and its correction. It does not establish
+that this defect caused the reported in-game dialogue crackles, or validate physical
+7.1/LFE speaker output. No filters, envelopes or bass synthesis were added.
+
+Checks for this change: all nine focused CTest entries passed in Release and
+GCC AddressSanitizer/UndefinedBehaviorSanitizer builds. LeakSanitizer could not
+inspect `/proc` tasks in this execution environment; sanitizer checks passed with
+leak detection disabled. A full emulator build and in-game comparison remain local
+Docker deployment checks.

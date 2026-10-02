@@ -75,6 +75,8 @@ void Playback::ExitLoop() {
 void Playback::Stop() {
     state = PlaybackState::Stopped;
     failure = WaveError::None;
+    ++generation;
+    prepared_after = nullptr;
     primed = false;
     next_valid = next_wrapped = current_wrapped = current_unplayed = false;
     source_frames = 0;
@@ -103,8 +105,11 @@ WaveError Playback::StartAfter(Playback& previous, bool continue_decoder) {
     if (&previous == this || previous.state != PlaybackState::Finished ||
         (continue_decoder && !CanContinueAfter(previous)))
         return WaveError::InvalidFormat;
-    Stop();
-    failure = continue_decoder ? decoder->ContinueAfter(*previous.decoder) : decoder->Seek(0);
+    if (prepared_after != &previous || prepared_generation != previous.generation) {
+        Stop();
+        failure = continue_decoder ? decoder->ContinueAfter(*previous.decoder) : decoder->Seek(0);
+    }
+    prepared_after = nullptr;
     state = failure == WaveError::None ? PlaybackState::Playing : PlaybackState::Failed;
     phase = previous.phase * output_rate / previous.output_rate;
     return failure;
@@ -159,7 +164,8 @@ WaveError Playback::Advance() {
     return result.error;
 }
 
-WaveResult<std::size_t> Playback::Render(std::span<float> output) {
+WaveResult<std::size_t> Playback::Render(std::span<float> output, Playback* successor,
+                                        bool continue_decoder) {
     const auto channels = Format().channels;
     if (output.size() % channels != 0)
         return {WaveError::InvalidFormat, 0};
@@ -181,9 +187,35 @@ WaveResult<std::size_t> Playback::Render(std::span<float> output) {
     while (produced < output.size() / channels && state == PlaybackState::Playing &&
            failure == WaveError::None) {
         const float fraction = static_cast<float>(phase) / static_cast<float>(denominator);
+        const float* boundary = nullptr;
+        if (!next_valid && fraction != 0 && successor && successor != this &&
+            successor->Format().channels == channels &&
+            successor->Format().sample_rate == Format().sample_rate) {
+            // The decoder has consumed this block, but its last source sample
+            // still has fractional output time left. Prime the queued successor
+            // once, without consuming its playback clock or guest counters.
+            if (successor->prepared_after != this ||
+                successor->prepared_generation != generation) {
+                successor->Stop();
+                successor->failure = continue_decoder
+                                         ? successor->decoder->ContinueAfter(*decoder)
+                                         : successor->decoder->Seek(0);
+                successor->state = PlaybackState::Playing;
+                if (successor->failure == WaveError::None)
+                    successor->failure = successor->Prime();
+                successor->prepared_after = this;
+                successor->prepared_generation = generation;
+            }
+            if (successor->failure != WaveError::None) {
+                failure = successor->failure;
+                break;
+            }
+            if (successor->state == PlaybackState::Playing)
+                boundary = successor->current.data();
+        }
         for (std::uint32_t channel = 0; channel < channels; ++channel) {
-            // Hold the last source sample for its remaining fractional duration.
-            const float right = next_valid ? next[channel] : current[channel];
+            const float right = next_valid ? next[channel]
+                                           : boundary ? boundary[channel] : current[channel];
             output[produced * channels + channel] =
                 current[channel] + (right - current[channel]) * fraction;
         }

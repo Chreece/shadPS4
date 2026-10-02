@@ -653,7 +653,10 @@ s32 RenderSource(OrbisNgs2Handle handle, Voice& voice, std::span<float> output, 
             voice.progress->exit_loop = false;
         }
         const auto source_before = playback.SourcePosition();
-        const auto result = playback.Render(output.subspan(position));
+        auto* successor = voice.progress->blocks.size() > 1 ? &voice.progress->blocks[1] : nullptr;
+        const auto result = playback.Render(output.subspan(position),
+                                            successor ? successor->playback.get() : nullptr,
+                                            successor && successor->continuation);
         position += result.value * voice.channels;
         voice.progress->rendered_samples += playback.SourcePosition() - source_before;
         if (!result) {

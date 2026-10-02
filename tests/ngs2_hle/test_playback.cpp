@@ -32,6 +32,55 @@ std::vector<float> Render(const Bytes& riff, unsigned rate, std::size_t chunk,
 }
 } // namespace
 
+TEST(QueuedLookaheadPreservesPitchChannelsGrainSizeAndRestart) {
+    std::array<std::int16_t, 19 * 8> samples{};
+    for (size_t i = 0; i < samples.size(); ++i)
+        samples[i] = static_cast<std::int16_t>(static_cast<int>((i * 997) % 30000) - 15000);
+    for (const size_t grain : {1u, 7u, 256u}) {
+        for (const float pitch : {0.5f, 1.25f, 2.0f}) {
+            auto reference = Playback::Create(PcmSamples(samples, 8, 44100), 48000);
+            auto first = Playback::Create(PcmSamples(std::span{samples}.first(3 * 8), 8, 44100),
+                                          48000);
+            auto second = Playback::Create(
+                PcmSamples(std::span{samples}.subspan(3 * 8, 5 * 8), 8, 44100), 48000);
+            auto third = Playback::Create(PcmSamples(std::span{samples}.subspan(8 * 8), 8, 44100),
+                                          48000);
+            CHECK(reference && first && second && third);
+            std::array<Playback*, 3> blocks{first.value.get(), second.value.get(),
+                                           third.value.get()};
+            for (Playback* p : {reference.value.get(), blocks[0], blocks[1], blocks[2]})
+                CHECK(p->SetPitch(pitch) == WaveError::None);
+            for (unsigned run = 0; run < 2; ++run) {
+                CHECK(reference.value->Start() == WaveError::None);
+                for (auto* p : blocks)
+                    p->Stop();
+                CHECK(blocks[0]->Start() == WaveError::None);
+                std::vector<float> expected, actual, buffer(grain * 8);
+                while (reference.value->State() == PlaybackState::Playing) {
+                    const auto result = reference.value->Render(buffer);
+                    CHECK(result);
+                    expected.insert(expected.end(), buffer.begin(),
+                                    buffer.begin() + result.value * 8);
+                }
+                for (size_t part = 0; part < blocks.size(); ++part) {
+                    if (part)
+                        CHECK(blocks[part]->StartAfter(*blocks[part - 1], false) ==
+                              WaveError::None);
+                    while (blocks[part]->State() == PlaybackState::Playing) {
+                        const auto result = blocks[part]->Render(
+                            buffer, part + 1 < blocks.size() ? blocks[part + 1] : nullptr);
+                        CHECK(result);
+                        actual.insert(actual.end(), buffer.begin(),
+                                      buffer.begin() + result.value * 8);
+                    }
+                }
+                CHECK(actual == expected);
+                CHECK(blocks[0]->SourcePosition() == 3 && blocks[1]->SourcePosition() == 5 &&
+                      blocks[2]->SourcePosition() == 11);
+            }
+        }
+    }
+}
 TEST(UpsamplingInterpolatesAndHoldsFinalSampleForItsDuration) {
     const auto riff = PcmSamples(std::array<std::int16_t, 3>{0, 16384, -16384}, 1, 24000);
     const auto output = Render(riff, 48000, 256);

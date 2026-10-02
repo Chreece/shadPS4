@@ -816,6 +816,37 @@ TEST(ReplacementDoesNotInheritExitLoopFromDiscardedQueue) {
         CHECK(g.output.value[255 * 8] == 2048 / 32768.0f);
     }
 }
+TEST(QueuedPcmResamplingMatchesContinuousWaveform) {
+    for (const u32 rate : {24000u, 44100u}) {
+        Graph continuous, queued;
+        Guest<std::array<s16, 600>> samples;
+        for (size_t i = 0; i < samples.value.size(); ++i)
+            samples.value[i] = static_cast<s16>(static_cast<int>((i * 997) % 30000) - 15000);
+        Guest<std::array<OrbisNgs2WaveformBlock, 3>> blocks;
+        blocks.value = {{{0, 202, 0, 0, 101, 0, 0},
+                         {202, 398, 0, 0, 199, 0, 0},
+                         {600, 600, 0, 0, 300, 0, 0}}};
+        Guest<OrbisNgs2WaveformBlock> whole;
+        whole.value = {0, sizeof(samples.value), 0, 0, 600, 0, 0};
+        for (Graph* g : {&continuous, &queued}) {
+            CHECK(Control(g->source, 0x10000000,
+                          OrbisNgs2SamplerVoiceSetupParam{{}, {PcmS16LE, 1, rate, 0, 0, 0},
+                                                         0, 0}) == 0);
+            CHECK(Control(g->source, 0x10000001,
+                          OrbisNgs2SamplerVoiceWaveformBlocksParam{
+                              {}, samples.value.data(), 0, g == &queued ? 3u : 1u,
+                              g == &queued ? blocks.value.data() : whole.ptr()}) == 0);
+            Event(g->source, 0);
+        }
+        for (unsigned grain = 0; grain < 5; ++grain) {
+            CHECK(continuous.Render() == 0 && queued.Render() == 0);
+            for (size_t i = 0; i < queued.output.value.size(); ++i)
+                CHECK(std::abs(queued.output.value[i] - continuous.output.value[i]) < 1e-7f);
+            CHECK(queued.State().numDecodedSamples == continuous.State().numDecodedSamples);
+        }
+        CHECK(queued.State().decodedDataSize == sizeof(samples.value));
+    }
+}
 TEST(OpenPcmQueueAppendsWithoutDiscardingAudioAndClosesExplicitly) {
     Graph g;
     CHECK(Control(g.source, 0x10000000,
@@ -838,6 +869,40 @@ TEST(OpenPcmQueueAppendsWithoutDiscardingAudioAndClosesExplicitly) {
     CHECK(Control(g.source, 0x10000001,
                   OrbisNgs2SamplerVoiceWaveformBlocksParam{{}, nullptr, 0, 0, nullptr}) == 0);
     CHECK(g.Render() == 0 && g.State().voiceState.stateFlags == 32);
+}
+TEST(QueuedAtrac9InterpolationMatchesContinuousCodecHistory) {
+    Graph continuous, queued;
+    const auto riff = At9Audio();
+    const auto parsed = ParseWaveform(riff);
+    CHECK(parsed);
+    Mapping payload{riff.data(), riff.size(), 1};
+    Guest<OrbisNgs2WaveformBlock> block;
+    for (Graph* g : {&continuous, &queued}) {
+        CHECK(Control(g->source, 0x10000000,
+                      OrbisNgs2SamplerVoiceSetupParam{
+                          {}, {Atrac9, 1, 24000, 0xfe4005f0, 0, 0}, 0, 0}) == 0);
+        block.value = {static_cast<u32>(parsed.value.data_offset),
+                       g == &queued ? 192u : 576u, 0, 0, UINT32_MAX, 0, 0};
+        CHECK(Control(g->source, 0x10000001,
+                      OrbisNgs2SamplerVoiceWaveformBlocksParam{
+                          {}, riff.data(), g == &queued ? 1u : 0u, 1, block.ptr()}) == 0);
+        if (g == &queued) {
+            for (unsigned part = 1; part < 3; ++part) {
+                block.value.dataOffset += 192;
+                CHECK(Control(g->source, 0x10000001,
+                              OrbisNgs2SamplerVoiceWaveformBlocksParam{
+                                  {}, riff.data(), part == 2 ? 2u : 3u, 1, block.ptr()}) == 0);
+            }
+        }
+        Event(g->source, 0);
+    }
+    for (unsigned grain = 0; grain < 12; ++grain) {
+        CHECK(continuous.Render() == 0 && queued.Render() == 0);
+        for (size_t i = 0; i < queued.output.value.size(); ++i)
+            CHECK(std::abs(queued.output.value[i] - continuous.output.value[i]) < 1e-7f);
+        CHECK(queued.State().numDecodedSamples == continuous.State().numDecodedSamples);
+    }
+    CHECK(queued.State().decodedDataSize == 576);
 }
 TEST(UnknownAtrac9LengthAndContinuationPreserveCodecHistoryAcrossStarvation) {
     Graph g;
