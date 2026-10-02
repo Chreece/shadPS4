@@ -409,7 +409,42 @@ def restore(state_file):
     say('DEFAULT_MAIN_RESTORE=PASS; previous core restored with ordinary ES-DE entries.')
 
 
+def verified_selected_install(home, revision):
+    root = home / 'Applications/shadps4'
+    wrapper = home / '.local/bin/shadps4-esde'
+    core = root / 'shadps4'
+    if root.is_symlink() or not regular(wrapper) or not core.exists():
+        return None
+    selected = core.resolve(strict=True)
+    expected = root / 'releases' / ('main-' + revision[:12]) / 'shadps4'
+    if selected != expected or not regular(selected):
+        return None
+    checksum = digest(selected)
+    launcher_checksum = digest(wrapper)
+    for path in (home / '.local/state/shadps4-default-main').glob('install-*/state.json'):
+        if not regular(path):
+            continue
+        try:
+            state = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if (state.get('revision') == revision and state.get('home') == str(home) and
+                state.get('binary') == str(selected) and state.get('binary_sha256') == checksum and
+                state.get('launcher_sha256') == launcher_checksum and
+                state.get('cleanup') == 'complete'):
+            return state
+    return None
+
+
 def install(home, revision):
+    installed = verified_selected_install(home, revision)
+    if installed:
+        say('DEFAULT_SELECTED=' + installed['binary'])
+        say('COMMIT=' + revision)
+        say('BINARY_SHA256=' + installed['binary_sha256'])
+        say('DEFAULT_MAIN_REUSED=True; verified installed build, no rebuild or launcher changes.')
+        say('DEFAULT_MAIN_RESULT=PASS')
+        return
     no_running_apps()
     for tool in ('git', 'docker', 'ldd', 'bash'):
         if not shutil.which(tool):

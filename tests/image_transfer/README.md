@@ -103,3 +103,11 @@ The collector tests launch a real child through exit and archive creation; the
 installer, launcher, and `/proc` identity are fixtures. Both verified and denied
 identity cases are tested. These checks do not replace evidence from the user's
 emulator session.
+
+The collector waits indefinitely for launch by default (`--wait-minutes 0`).
+Its 30-minute session limit starts only after a game process is recorded; time
+spent waiting after a build does not consume it. Ctrl+C restores the launcher.
+To repeat a capture, run only the collector against the installed revision. A
+new compilation is unnecessary. The installer also reuses an already selected
+revision when its binary, launcher, and completed installation record still
+match, so repeated builds cannot cause a same-revision binary conflict there.

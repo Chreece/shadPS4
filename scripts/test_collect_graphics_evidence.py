@@ -40,6 +40,13 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(report['depth_growth_result'], 'NOT_OBSERVED')
         self.assertEqual(report['visual_result'], 'UNVERIFIED_REQUIRES_USER_FEEDBACK')
 
+    def test_waiting_does_not_consume_the_game_capture_limit(self):
+        self.assertIsNone(capture.timeout_reason(7200, None, 0, 1800))
+        self.assertIsNone(capture.timeout_reason(7500, 300, 0, 1800))
+        self.assertIsNotNone(capture.timeout_reason(9000, 1800, 0, 1800))
+        self.assertIsNotNone(capture.timeout_reason(180, None, 180, 1800))
+        self.assertIsNone(capture.timeout_reason(100000, 90000, 0, 0))
+
     def test_success_marker_and_errors_are_independent(self):
         report = self.analyze(START + GROWTH + '[Render_Vulkan] <Error> VUID-test-1234\n')
         self.assertTrue(report['graphics_diagnostics_started'])
