@@ -161,3 +161,25 @@ original nonzero PCM/ATRAC9 fixtures. They check eight independent channels, del
 duration, matrices, two-source mixing, clipping, pause/pitch, guest buffer lifetime,
 rollback, stale/cyclic patches, callback reentry/destruction and permission revocation.
 They establish host behavior, not native ABI equivalence or audible game success.
+
+## Opt-in LFE routing capture
+
+`SHADPS4_NGS2_LFE_DIAGNOSTICS=1` enables a separate, process-bounded trace
+(`NGS2_LFE`, at most 8192 records plus an explicit exhaustion marker). This
+changes no DSP, filter acceptance, routing matrix, channel order or speaker settings.
+Output windows measure every rendered frame, preserve small peaks with nine
+significant digits, and count exactly nonzero LFE samples. Reports are emitted for
+the first four grains, every 1024 grains afterwards, and a partial window on system
+destruction. Abrupt process exit can leave a final partial window unreported.
+Voice/port records sample the same report grains: pre/post-UserFx LFE, per-channel
+post-Fx peaks, mastering gains, effective matrix row 3, port volume and calculated
+LFE contribution. These periodic snapshots cannot prove that a transient routing
+configuration never occurred. Staged matrix coefficients and transaction commit/rejection records help detect a
+requested matrix that was rolled back by a later unsupported command. Filter and
+control records are independently throttled; snapshots show the actual committed graph.
+
+`scripts/collect_ngs2_lfe.py` temporarily instruments the existing guarded ES-DE
+launcher at its recognized path, waits for an ordinary ES-DE game launch, collects
+read-only host routing snapshots and restores the launcher. It does not launch a
+second emulator, rebuild, modify audio settings or repair Sunshine. Reports contain
+channel statistics and routing metadata, not an audio recording.

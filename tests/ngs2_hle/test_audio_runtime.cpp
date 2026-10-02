@@ -251,6 +251,16 @@ TEST(PauseResumeAndPitchUseSourceSampleCounters) {
     Event(g.source, 3);
     CHECK(g.Render() == 0 && g.State().voiceState.stateFlags == 32);
 }
+TEST(RejectedCapturedDirectFilterPreservesPlayingAudio) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(256, 4096)));
+    OrbisNgs2SamplerVoiceFilterParam filter{};
+    filter.type = 0x20;
+    filter.param.direct.i0 = 0.95520216f;
+    filter.param.direct.o1 = 0.044797838f;
+    CHECK(Control(g.source, 0x1000000a, filter) == ORBIS_NGS2_ERROR_INVALID_OPERATION);
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.125f);
+}
 TEST(MatrixFanoutPortVolumeAndIntegerClippingMixCorrectly) {
     Graph g;
     g.Load(PcmSamples(std::vector<s16>(512, 16384)));

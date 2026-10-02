@@ -27,6 +27,9 @@ endforeach()
 add_test(NAME ngs2_audio_runtime_diagnostics_test COMMAND "${CMAKE_COMMAND}"
     "-DAUDIO_TEST=$<TARGET_FILE:ngs2_audio_runtime_test>"
     -P "${CMAKE_CURRENT_LIST_DIR}/verify_audio_diagnostics.cmake")
+add_test(NAME ngs2_lfe_diagnostics_test COMMAND "${CMAKE_COMMAND}"
+    "-DAUDIO_TEST=$<TARGET_FILE:ngs2_audio_runtime_test>"
+    -P "${CMAKE_CURRENT_LIST_DIR}/verify_lfe_diagnostics.cmake")
 foreach(target ngs2_hle_foundation ngs2_waveform_test ngs2_handles_test ngs2_runtime_test ngs2_memory_access_test ngs2_decoder_test ngs2_playback_test ngs2_audio_runtime_test ngs2_diagnostics_test ngs2_atrac9)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         if(NOT target STREQUAL "ngs2_atrac9")

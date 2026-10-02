@@ -9,6 +9,7 @@
 #include "core/libraries/ngs2/ngs2_sampler.h"
 #include "core/libraries/ngs2/ngs2_submixer.h"
 #include "handles.h"
+#include "lfe_diagnostics.h"
 
 namespace Libraries::Ngs2::Runtime {
 
@@ -29,6 +30,8 @@ struct Context {
     u32 rack_id{};
     u64 render_count{};
     bool rendering{};
+    // Allocated only for an explicitly enabled LFE capture; destroyed with the system.
+    std::map<u32, Diagnostics::LfeWindow> lfe_windows;
 };
 struct Voice;
 
