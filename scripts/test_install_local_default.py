@@ -163,6 +163,24 @@ class DefaultInstallTests(unittest.TestCase):
             build.assert_not_called()
         self.assertEqual(entry.read_text(), payload)
 
+    def test_manager_shortcut_survives_cleanup_and_launches_existing_gui(self):
+        entry = self.roms / 'shadPS4 Manager.ps4'
+        entry.write_text('GUI\n')
+        manager = self.home / 'Applications/shadps4QtLauncher-latest.AppImage'
+        result_path = self.home / 'manager-invocation.json'
+        manager.write_text('#!' + sys_executable() + '\nimport os,json,sys\n'
+                           'from pathlib import Path\nPath(' + repr(str(result_path)) +
+                           ').write_text(json.dumps([sys.argv[1:],os.getcwd()]))\n')
+        manager.chmod(0o755)
+        self.gamelist.write_text('<gameList><game><path>./shadPS4 Manager.ps4</path>'
+                                '<name>shadPS4 Manager</name></game></gameList>')
+        self.install()
+        self.assertEqual(entry.read_text(), 'GUI\n')
+        self.assertIn('shadPS4 Manager', self.gamelist.read_text())
+        env = dict(os.environ, SHADPS4_GUARD_PARENT_PID=str(os.getpid()))
+        subprocess.run(['bash', str(self.wrapper), str(entry)], env=env, check=True)
+        self.assertEqual(json.loads(result_path.read_text()), [[], str(self.home)])
+
     def test_unknown_entries_stop_before_build_or_cleanup(self):
         (self.roms / 'unknown.ps4').write_text('unexpected format\n')
         with mock.patch.object(deploy, 'no_running_apps'), \

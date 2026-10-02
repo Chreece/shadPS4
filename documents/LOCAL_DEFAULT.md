@@ -73,6 +73,8 @@ selector without executing it. Version-only games receive an ordinary entry;
 region annotations survive, and colliding titles cannot overwrite another game.
 Unexpected contents still stop preflight, with all unrecognized entries reported
 together. This installer-only correction does not change emulator code.
+`GUI` shortcuts such as `shadPS4 Manager.ps4` are preserved with their gamelist
+metadata and continue opening the existing `shadps4QtLauncher-latest.AppImage`.
 
 AI assistance: Codex prepared and reviewed the cleanup, controller integration,
 installer and focused regression fixtures. No upstream PR or multi-platform CI
