@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -90,6 +91,81 @@ class CaptureTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             capture.selected_install(self.home, 'a' * 40)
 
+    def log_fixture(self, content=b'previous launch: old error\n'):
+        path = self.home / 'shared.log'
+        path.write_bytes(content)
+        return path, self.home / 'captured.log', capture.snapshot_renderer_log(path)
+
+    def test_appended_log_excludes_all_historical_bytes(self):
+        path, dest, before = self.log_fixture()
+        with path.open('ab') as out:
+            out.write(b'current launch only\n')
+        result = capture.capture_renderer_log(path, dest, before)
+        self.assertEqual(result['status'], 'captured')
+        self.assertEqual(result['boundary'], 'verified_append')
+        self.assertEqual(dest.read_bytes(), b'current launch only\n')
+        self.assertEqual(result['sha256'], capture.digest(dest))
+        self.assertEqual(path.read_bytes(), b'previous launch: old error\ncurrent launch only\n')
+
+    def test_touching_old_log_does_not_make_it_fresh(self):
+        path, dest, before = self.log_fixture()
+        os.utime(path, ns=(before['mtime_ns'], before['mtime_ns'] + 2_000_000_000))
+        result = capture.capture_renderer_log(path, dest, before)
+        self.assertEqual(result['status'], 'unchanged')
+        self.assertFalse(dest.exists())
+
+    def test_truncated_or_rewritten_log_is_not_claimed_as_fresh(self):
+        for content, reason in [(b'short\n', 'truncated'),
+                                (b'X' * len(b'previous launch: old error\n'), 'rewritten_prefix'),
+                                (b'replacement launch\n' * 10, 'rewritten_prefix')]:
+            with self.subTest(reason=reason, length=len(content)):
+                path, dest, before = self.log_fixture()
+                path.write_bytes(content)
+                result = capture.capture_renderer_log(path, dest, before)
+                self.assertEqual(result['reason'], reason)
+                self.assertFalse(dest.exists())
+                self.assertEqual(path.read_bytes(), content)
+
+    def test_rotation_is_omitted_even_when_replacement_has_the_same_prefix(self):
+        path, dest, before = self.log_fixture()
+        rotated = path.with_suffix('.old')
+        path.rename(rotated)
+        path.write_bytes(rotated.read_bytes() + b'other session\n')
+        result = capture.capture_renderer_log(path, dest, before)
+        self.assertEqual(result['reason'], 'rotated_or_replaced')
+        self.assertFalse(dest.exists())
+        self.assertEqual(rotated.read_bytes(), b'previous launch: old error\n')
+
+    def test_new_file_captures_the_whole_session(self):
+        path = self.home / 'new.log'
+        dest = self.home / 'captured.log'
+        before = capture.snapshot_renderer_log(path)
+        path.write_bytes(b'new session\n')
+        result = capture.capture_renderer_log(path, dest, before)
+        self.assertEqual(result['boundary'], 'new_file')
+        self.assertEqual(dest.read_bytes(), b'new session\n')
+
+    def test_missing_or_unreadable_boundary_never_includes_an_old_file(self):
+        path, dest, before = self.log_fixture()
+        path.unlink()
+        self.assertEqual(capture.capture_renderer_log(path, dest, before)['reason'],
+                         'missing_at_exit')
+        path.write_bytes(b'unrelated old file\n')
+        result = capture.capture_renderer_log(path, dest, {'status': 'omitted'})
+        self.assertEqual(result['reason'], 'no_verified_start_boundary')
+        self.assertFalse(dest.exists())
+
+    def test_size_limit_preserves_source_and_does_not_write_partial_capture(self):
+        path, dest, before = self.log_fixture(b'old\n')
+        with path.open('ab') as out:
+            out.write(b'new\n' * 10)
+        with patch.object(capture, 'MAX_RENDERER_LOG_BYTES', 8):
+            result = capture.capture_renderer_log(path, dest, before)
+            self.assertEqual(result['reason'], 'size_limit')
+            self.assertEqual(capture.snapshot_renderer_log(path)['reason'], 'size_limit')
+        self.assertFalse(dest.exists())
+        self.assertEqual(path.read_bytes(), b'old\n' + b'new\n' * 10)
+
     def run_session(self, identity_error=False):
         wrapper = self.home / '.local/bin/shadps4-esde'
         wrapper.parent.mkdir(parents=True)
@@ -101,12 +177,27 @@ class CaptureTests(unittest.TestCase):
         workers = []
         failures = []
         real_write = capture.atomic_write
+        log_root = self.home / '.local/share/shadPS4/log'
+        log_root.mkdir(parents=True)
+        startup = log_root / 'shadps4.log'
+        game_log = log_root / 'shad_log.txt'
+        startup.write_text('previous launch: Game ID or file path not found\n')
+        game_log.write_text('previous renderer error\n')
+        current_startup = 'THIS SESSION startup\n'
 
         def launch(work):
             try:
                 code = ('import os,time; assert os.environ["SHADPS4_GRAPHICS_DIAGNOSTICS"]=="1"; '
+                        'from pathlib import Path; '
+                        'f=Path(' + repr(str(startup)) + ').open("a"); '
+                        'f.write(' + repr(current_startup) + '); f.close(); '
+                        'Path(' + repr(str(game_log)) + ').write_text(' + repr(START + GROWTH) + '); '
                         'print(' + repr(START + GROWTH) + ',flush=True); time.sleep(0.2)')
                 capture.run_game(work, [core, '-c', code])
+                # Collection/archive happens later; it must use the worker's
+                # frozen copy, not pick up another launch from this live file.
+                with startup.open('a') as out:
+                    out.write('FOLLOWING SESSION error\n')
             except BaseException as error:
                 failures.append(error)
 
@@ -114,6 +205,8 @@ class CaptureTests(unittest.TestCase):
             real_write(path, content, mode)
             if path == wrapper and content != LAUNCHER:
                 work = next(self.home.glob('shadps4-graphics-evidence-*'))
+                with startup.open('a') as out:
+                    out.write('AFTER ARMING but before this launch\n')
                 worker = threading.Thread(target=launch, args=(work,))
                 workers.append(worker)
                 worker.start()
@@ -135,6 +228,13 @@ class CaptureTests(unittest.TestCase):
         with tarfile.open(archive) as stream:
             member = next(m for m in stream.getmembers() if m.name.endswith('/summary.json'))
             report = json.load(stream.extractfile(member))
+            current = next(m for m in stream.getmembers()
+                           if m.name.endswith('/renderer-shadps4.log'))
+            self.assertEqual(stream.extractfile(current).read(), current_startup.encode())
+            self.assertFalse(any(m.name.endswith('/renderer-shad_log.txt')
+                                 for m in stream.getmembers()))
+            direct = next(m for m in stream.getmembers() if m.name.endswith('/emulator.log'))
+            self.assertIn(GROWTH.encode(), stream.extractfile(direct).read())
         self.assertEqual(report['capture_complete'], not identity_error)
         self.assertEqual(report['exact_running_binary_verified'], not identity_error)
         self.assertTrue(report['launcher_restored'])
@@ -142,12 +242,54 @@ class CaptureTests(unittest.TestCase):
         self.assertGreaterEqual(report['report_created_unix'], report['exit']['ended_unix'])
         self.assertEqual(report['depth_growth_result'], 'INITIALIZATION_PATH_OBSERVED')
         self.assertEqual(report['visual_result'], 'UNVERIFIED_REQUIRES_USER_FEEDBACK')
+        self.assertEqual(report['fresh_renderer_logs'], ['shadps4.log'])
+        self.assertEqual(report['renderer_log_capture']['shad_log.txt']['reason'],
+                         'rewritten_prefix')
 
     def test_real_child_launch_to_exit_and_archive(self):
         self.run_session()
 
     def test_inaccessible_running_identity_keeps_capture_incomplete(self):
         self.run_session(identity_error=True)
+
+    def test_interrupted_capture_restores_launcher_without_copying_shared_logs(self):
+        wrapper = self.home / '.local/bin/shadps4-esde'
+        wrapper.parent.mkdir(parents=True)
+        wrapper.write_bytes(LAUNCHER)
+        startup = self.home / '.local/share/shadPS4/log/shadps4.log'
+        startup.parent.mkdir(parents=True)
+        startup.write_text('old error must not appear in this report\n')
+        selected = {'revision': 'a' * 40, 'binary': '/fixture/shadps4',
+                    'binary_sha256': 'fixture'}
+        real_write = capture.atomic_write
+
+        def on_write(path, content, mode):
+            real_write(path, content, mode)
+            if path == wrapper and content != LAUNCHER:
+                work = next(self.home.glob('shadps4-graphics-evidence-*'))
+                (work / 'emulator.log').write_text(START)
+                capture.write_json(work / 'process.json', {
+                    'pid': os.getpid(), 'started_unix': 0,
+                    'running_executable': selected['binary'],
+                    'running_binary_sha256': selected['binary_sha256']})
+
+        with patch.object(capture, 'games', return_value={}), \
+                patch.object(capture, 'selected_install', return_value=selected), \
+                patch.object(capture, 'atomic_write', side_effect=on_write), \
+                patch.object(capture, 'timeout_reason', return_value='fixture: session limit'):
+            with self.assertRaisesRegex(RuntimeError, 'Capture incomplete'):
+                capture.collect(self.home, 'a' * 40)
+        self.assertEqual(wrapper.read_bytes(), LAUNCHER)
+        self.assertEqual(startup.read_text(), 'old error must not appear in this report\n')
+        with tarfile.open(next(self.home.glob('*.tar.gz'))) as stream:
+            members = stream.getmembers()
+            report = json.load(stream.extractfile(
+                next(m for m in members if m.name.endswith('/summary.json'))))
+            self.assertFalse(any('/renderer-' in m.name for m in members))
+        self.assertFalse(report['capture_complete'])
+        self.assertEqual(report['session_exit'], 'NOT_OBSERVED')
+        self.assertEqual(report['fresh_renderer_logs'], [])
+        self.assertEqual(report['renderer_log_capture'], {})
 
 
 if __name__ == '__main__':
