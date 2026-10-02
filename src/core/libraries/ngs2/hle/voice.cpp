@@ -73,6 +73,13 @@ struct Voice {
 std::map<OrbisNgs2Handle, std::shared_ptr<Voice>> voices;
 
 void RemoveVoices(OrbisNgs2Handle handle, bool is_system) {
+    if (is_system && Diagnostics::LfeEnabled()) {
+        if (const auto system = systems.find(handle); system != systems.end())
+            for (const auto& [output, window] : system->second.lfe_windows)
+                if (window.frames)
+                    Diagnostics::ReportLfeWindow(handle, system->second.render_count, output,
+                                                 window, true);
+    }
     for (auto it = voices.begin(); it != voices.end();) {
         const auto& owner = it->second->identity;
         if ((is_system ? owner.system : owner.rack) == handle) {
@@ -158,7 +165,7 @@ s32 Parameter(const OrbisNgs2VoiceParamHeader* address, const OrbisNgs2VoicePara
 }
 void DiagnoseRejectedParameter(OrbisNgs2Handle handle, const OrbisNgs2VoiceParamHeader* address,
                                const OrbisNgs2VoiceParamHeader& header) {
-    if (!Diagnostics::Enabled())
+    if (!Diagnostics::Enabled() && !Diagnostics::LfeEnabled())
         return;
     const auto key = 0x700000000ULL | header.id;
     const auto id = static_cast<unsigned long long>(handle);
@@ -188,6 +195,13 @@ void DiagnoseRejectedParameter(OrbisNgs2Handle handle, const OrbisNgs2VoiceParam
         OrbisNgs2SamplerVoiceFilterParam p{};
         if (Parameter(address, header, p) < 0)
             break;
+        if (Diagnostics::LfeControlTake(handle, 4)) {
+            Diagnostics::LfeRecord(
+                "filter-rejected voice=%llu index=%u type=%x location=%u mask=%x "
+                "coefficients=%.9g,%.9g,%.9g,%.9g,%.9g",
+                id, p.index, p.type, p.location, p.channelMask, p.param.direct.i0,
+                p.param.direct.i1, p.param.direct.i2, p.param.direct.o1, p.param.direct.o2);
+        }
         Diagnostics::Record(key, 0,
                             "filter-rejected voice=%llu index=%u type=%x location=%u mask=%x "
                             "coefficients=%.8g,%.8g,%.8g,%.8g,%.8g reserved=%x",
@@ -416,6 +430,22 @@ s32 ApplyParameter(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack
         if (!std::ranges::all_of(
                 levels, [](float level) { return std::isfinite(level) && std::abs(level) <= 16; }))
             return ORBIS_NGS2_ERROR_INVALID_NUM_MATRIX_LEVELS;
+        if (Diagnostics::LfeControlTake(handle, 1)) {
+            std::array<char, 896> values{};
+            size_t position = 0;
+            for (const auto value : levels) {
+                const auto written = std::snprintf(values.data() + position,
+                                                   values.size() - position,
+                                                   position ? ",%.9g" : "%.9g", value);
+                if (written < 0 || static_cast<size_t>(written) >= values.size() - position)
+                    break;
+                position += static_cast<size_t>(written);
+            }
+            Diagnostics::LfeRecord("matrix-staged voice=%llu matrix=%u source-channels=%u "
+                                   "levels=%u values=%s",
+                                   static_cast<unsigned long long>(handle), p.matrixId,
+                                   voice.channels, p.numLevels, values.data());
+        }
         voice.matrices[p.matrixId] = std::move(levels);
         return 0;
     }
@@ -745,6 +775,11 @@ static s32 VoiceControlImpl(OrbisNgs2Handle handle, const OrbisNgs2VoiceParamHea
                                 static_cast<unsigned>(header.size), static_cast<unsigned>(result),
                                 staged->progress->blocks.size(), staged->channels);
             if (result < 0) {
+                if (Diagnostics::LfeControlTake(handle, 3))
+                    Diagnostics::LfeRecord("transaction-rejected voice=%llu command=%x "
+                                           "parameters=%zu result=%x",
+                                           static_cast<unsigned long long>(handle), header.id,
+                                           visited.size(), static_cast<unsigned>(result));
                 DiagnoseRejectedParameter(handle, address, header);
                 return result;
             }
@@ -775,6 +810,9 @@ static s32 VoiceControlImpl(OrbisNgs2Handle handle, const OrbisNgs2VoiceParamHea
             staged->progress = found->second->progress;
         }
         voices[handle] = std::move(staged);
+        if (Diagnostics::LfeControlTake(handle, 2))
+            Diagnostics::LfeRecord("transaction-committed voice=%llu parameters=%zu",
+                                   static_cast<unsigned long long>(handle), visited.size());
         if (last_event != UINT32_MAX || reset_progress) {
             const auto& committed = *voices.at(handle);
             Diagnostics::Record(
@@ -1012,6 +1050,9 @@ static s32 SystemRenderImpl(OrbisNgs2Handle handle, const OrbisNgs2RenderBufferI
         }
         if (order.size() != indegree.size())
             return ORBIS_NGS2_ERROR_INVALID_PATCH;
+        const bool lfe_snapshot = Diagnostics::LfeEnabled() &&
+                                  (system->second.render_count < 4 ||
+                                   system->second.render_count % 1024 == 0);
         s32 error = 0;
         for (const auto key : order) {
             auto& voice = *graph.at(key);
@@ -1024,6 +1065,9 @@ static s32 SystemRenderImpl(OrbisNgs2Handle handle, const OrbisNgs2RenderBufferI
                 if (result < 0 && !error)
                     error = result;
             }
+            Diagnostics::LfeWindow before_fx;
+            if (lfe_snapshot)
+                (void)before_fx.Observe(audio, voice.channels);
             if (voice.user_fx) {
                 if (!GuestAccessible(reinterpret_cast<const void*>(voice.user_fx), 1,
                                      GuestAccess::Execute))
@@ -1079,6 +1123,21 @@ static s32 SystemRenderImpl(OrbisNgs2Handle handle, const OrbisNgs2RenderBufferI
             }
             for (const auto sample : audio)
                 voice.progress->peak = std::max(voice.progress->peak, std::abs(sample));
+            if (lfe_snapshot) {
+                Diagnostics::LfeWindow after_fx;
+                (void)after_fx.Observe(audio, voice.channels);
+                const auto& p = after_fx.peaks;
+                Diagnostics::LfeRecord(
+                    "voice system=%llu grain=%llu voice=%llu kind=%x channels=%u fx=%u "
+                    "pre-fx-lfe=%.9g post-fx-peaks=%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g "
+                    "gain=%.9g lfe-gain=%.9g output=%u",
+                    static_cast<unsigned long long>(handle),
+                    static_cast<unsigned long long>(systems.at(handle).render_count),
+                    static_cast<unsigned long long>(key), voice.kind, voice.channels,
+                    voice.user_fx ? 1u : 0u, voice.channels >= 6 ? before_fx.peaks[3] : 0,
+                    p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], voice.gain,
+                    voice.lfe_gain, voice.output);
+            }
             if (voice.kind == 0x3000) {
                 auto& output = outputs[voice.output];
                 const auto channels = buffers[voice.output].numChannels;
@@ -1094,6 +1153,34 @@ static s32 SystemRenderImpl(OrbisNgs2Handle handle, const OrbisNgs2RenderBufferI
                     continue;
                 const auto channels = graph.at(port.destination)->channels;
                 auto& target = destination->second;
+                if (lfe_snapshot && channels >= 6) {
+                    std::array<float, 8> row{};
+                    if (port.matrix < 0) {
+                        if (voice.channels >= 6)
+                            row[3] = 1;
+                    } else {
+                        const auto& matrix = voice.matrices.at(port.matrix);
+                        const u32 stride = matrix.size() == 64 ? 8 : voice.channels;
+                        std::copy_n(matrix.begin() + 3 * stride, voice.channels, row.begin());
+                    }
+                    float contribution = 0;
+                    for (u32 frame = 0; frame < frames; ++frame) {
+                        float sample = 0;
+                        for (u32 ch = 0; ch < voice.channels; ++ch)
+                            sample += audio[frame * voice.channels + ch] * row[ch] * port.volume;
+                        contribution = std::max(contribution, std::abs(sample));
+                    }
+                    Diagnostics::LfeRecord(
+                        "route system=%llu grain=%llu voice=%llu port=%u destination=%llu "
+                        "source-channels=%u destination-channels=%u matrix=%d volume=%.9g "
+                        "lfe-row=%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g contribution=%.9g",
+                        static_cast<unsigned long long>(handle),
+                        static_cast<unsigned long long>(systems.at(handle).render_count),
+                        static_cast<unsigned long long>(key), index,
+                        static_cast<unsigned long long>(port.destination), voice.channels, channels,
+                        port.matrix, port.volume, row[0], row[1], row[2], row[3], row[4], row[5],
+                        row[6], row[7], contribution);
+                }
                 if (port.matrix < 0) {
                     for (u32 frame = 0; frame < frames; ++frame)
                         for (u32 ch = 0; ch < std::min(voice.channels, channels); ++ch)
@@ -1129,6 +1216,18 @@ static s32 SystemRenderImpl(OrbisNgs2Handle handle, const OrbisNgs2RenderBufferI
                 } else {
                     std::memcpy(destination + i * 4, &sample, sizeof(sample));
                 }
+            }
+        }
+        if (Diagnostics::LfeEnabled()) {
+            auto& windows = systems.at(handle).lfe_windows;
+            for (u32 index = 0; index < count; ++index) {
+                auto& window = windows[index];
+                (void)window.Observe(outputs[index], buffers[index].numChannels);
+                if (!lfe_snapshot)
+                    continue;
+                Diagnostics::ReportLfeWindow(handle, systems.at(handle).render_count,
+                                             index, window);
+                window = {};
             }
         }
         if (Diagnostics::Enabled()) {

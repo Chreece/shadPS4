@@ -431,3 +431,21 @@ GCC AddressSanitizer/UndefinedBehaviorSanitizer builds. LeakSanitizer could not
 inspect `/proc` tasks in this execution environment; sanitizer checks passed with
 leak detection disabled. A full emulator build and in-game comparison remain local
 Docker deployment checks.
+
+## LFE routing diagnostic coverage
+
+The captured RDR session on b345ef2f contained 72 rounded, periodic output records
+with zero reported LFE and active front/rear/side channels. Host playback used an
+unmuted eight-channel stream into Sunshine surround71. A separate LFE-only test
+was audible on the user's subwoofer. This establishes a functioning LFE playback
+path; it does not establish a native RDR PS4 LFE mix or identify an emulator fault.
+
+The additional trace measures contiguous output windows rather than occasional
+rounded grains. A fixture checks sub-0.0001 signals, exact nonzero counts, invalid
+spans, nonfinite handling and channel-count changes. The opt-in integration runs
+the same public audio fixtures with tracing disabled/enabled and requires identical
+results, actual LFE matrix/gain activity, rejection of captured direct-filter
+coefficients, and final-window reporting. Collector fixtures cover guarded-prefix
+preservation, active-game refusal, launcher restoration on failure, mode preservation
+and scientific-notation summary parsing. No missing filter was implemented and no
+bass-routing fix is claimed by this diagnostic change.

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "check.h"
 #include "core/libraries/ngs2/hle/diagnostics.h"
+#include "core/libraries/ngs2/hle/lfe_diagnostics.h"
+#include <limits>
 using Libraries::Ngs2::Diagnostics::Budget;
 
 TEST(RepeatedErrorsAreExponentiallyThrottled) {
@@ -44,6 +46,25 @@ TEST(RequestKeysCannotThrottleOrEvictFailureKeys) {
     for (unsigned i = 0; i < 64; ++i)
         CHECK(budget.Take(i, 0, true));
     CHECK(!budget.Take(64, 0, true));
+}
+TEST(LfeWindowCountsEveryFrameAndPreservesTinySignals) {
+    Libraries::Ngs2::Diagnostics::LfeWindow window;
+    std::array<float, 16> audio{};
+    audio[3] = 0.000001f;
+    audio[11] = -0.000002f;
+    CHECK(window.Observe(audio, 8));
+    CHECK(window.frames == 2 && window.nonzero[3] == 2 && window.peaks[3] == 0.000002f);
+    audio.fill(0);
+    CHECK(window.Observe(audio, 8));
+    CHECK(window.frames == 4 && window.nonzero[3] == 2 && window.peaks[3] == 0.000002f);
+    audio[0] = std::numeric_limits<float>::quiet_NaN();
+    CHECK(window.Observe(audio, 8));
+    CHECK(window.nonfinite == 1 && window.nonzero[0] == 0);
+    CHECK(!window.Observe(audio, 0) && !window.Observe(audio, 9));
+    CHECK(!window.Observe(std::span{audio}.first(15), 8));
+    CHECK(window.frames == 6);
+    CHECK(window.Observe(audio, 2));
+    CHECK(window.channels == 2 && window.frames == 8 && window.nonzero[3] == 0);
 }
 int main() {
     return Test::Run();
