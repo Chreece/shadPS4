@@ -20,6 +20,10 @@ import tempfile
 import time
 
 
+RENDERER_LOG_NAMES = ('shad_log.txt', 'shadps4.log')
+MAX_RENDERER_LOG_BYTES = 110 * 1024 * 1024
+
+
 def digest(path):
     with Path(path).open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
@@ -168,6 +172,90 @@ def running_identity(pid):
         return {'identity_error': str(error)}
 
 
+def log_stamp(info):
+    return {key: getattr(info, 'st_' + key) for key in
+            ('dev', 'ino', 'size', 'mtime_ns', 'ctime_ns')}
+
+
+def hash_prefix(stream, size):
+    value = hashlib.sha256()
+    while size:
+        block = stream.read(min(size, 1024 * 1024))
+        if not block:
+            raise OSError('Log changed while reading its boundary.')
+        value.update(block)
+        size -= len(block)
+    return value.hexdigest()
+
+
+def snapshot_renderer_log(path):
+    """Record the existing prefix immediately before starting the emulator."""
+    try:
+        if path.is_symlink():
+            return {'status': 'omitted', 'reason': 'symlink'}
+        try:
+            info = path.stat()
+        except FileNotFoundError:
+            return {'status': 'absent'}
+        if not stat.S_ISREG(info.st_mode):
+            return {'status': 'omitted', 'reason': 'not_regular'}
+        if info.st_size > MAX_RENDERER_LOG_BYTES:
+            return {'status': 'omitted', 'reason': 'size_limit'}
+        with path.open('rb') as stream:
+            before = log_stamp(os.fstat(stream.fileno()))
+            if before['size'] > MAX_RENDERER_LOG_BYTES:
+                return {'status': 'omitted', 'reason': 'size_limit'}
+            prefix = hash_prefix(stream, before['size'])
+            if (log_stamp(os.fstat(stream.fileno())) != before or
+                    log_stamp(path.stat()) != before):
+                return {'status': 'omitted', 'reason': 'changed_during_snapshot'}
+        return {'status': 'present', **before, 'prefix_sha256': prefix}
+    except OSError as error:
+        return {'status': 'omitted', 'reason': str(error)}
+
+
+def capture_renderer_log(path, destination, before):
+    """Only copy a proven new file or bytes after an unchanged original prefix.
+
+    Rotation and truncation destroy that boundary. Omit such supplemental logs
+    instead of guessing; emulator.log remains the exact child's stdout/stderr.
+    Never clear, truncate or rotate the user's live logs.
+    """
+    if before.get('status') not in ('present', 'absent'):
+        return {'status': 'omitted', 'reason': 'no_verified_start_boundary'}
+    try:
+        if path.is_symlink() or not stat.S_ISREG(path.stat().st_mode):
+            return {'status': 'omitted', 'reason': 'not_regular'}
+        with path.open('rb') as stream:
+            after = log_stamp(os.fstat(stream.fileno()))
+            offset = 0
+            if before['status'] == 'present':
+                if any(before[key] != after[key] for key in ('dev', 'ino')):
+                    return {'status': 'omitted', 'reason': 'rotated_or_replaced'}
+                offset = before['size']
+                if after['size'] < offset:
+                    return {'status': 'omitted', 'reason': 'truncated'}
+                if hash_prefix(stream, offset) != before['prefix_sha256']:
+                    return {'status': 'omitted', 'reason': 'rewritten_prefix'}
+            size = after['size'] - offset
+            if size == 0:
+                return {'status': 'unchanged', 'start_offset': offset, 'bytes': 0}
+            if size > MAX_RENDERER_LOG_BYTES:
+                return {'status': 'omitted', 'reason': 'size_limit'}
+            data = stream.read(size)
+            if (len(data) != size or log_stamp(os.fstat(stream.fileno())) != after or
+                    log_stamp(path.stat()) != after):
+                return {'status': 'omitted', 'reason': 'changed_during_capture'}
+        atomic_write(destination, data, 0o600)
+        return {'status': 'captured', 'start_offset': offset, 'bytes': size,
+                'boundary': 'new_file' if before['status'] == 'absent' else 'verified_append',
+                'sha256': hashlib.sha256(data).hexdigest()}
+    except FileNotFoundError:
+        return {'status': 'omitted', 'reason': 'missing_at_exit'}
+    except OSError as error:
+        return {'status': 'omitted', 'reason': str(error)}
+
+
 def run_game(work, command):
     selected = json.loads((work / 'selected-install.json').read_text())
     if (not command or str(Path(command[0]).resolve(strict=True)) != selected['binary'] or
@@ -177,15 +265,25 @@ def run_game(work, command):
     os.close(fd)
     env = os.environ.copy()
     env['SHADPS4_GRAPHICS_DIAGNOSTICS'] = '1'
+    log_root = work.parent / '.local/share/shadPS4/log'
+    boundaries = {name: snapshot_renderer_log(log_root / name) for name in RENDERER_LOG_NAMES}
+    write_json(work / 'renderer-logs-before.json', boundaries)
     with (work / 'emulator.log').open('xb') as log:
+        started = time.time()
         process = subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT)
-        record = {'pid': process.pid, 'started_unix': time.time(), 'command': command,
+        record = {'pid': process.pid, 'started_unix': started, 'command': command,
                   'graphics_diagnostics_requested': True}
         record.update(running_identity(process.pid))
         write_json(work / 'process.json', record)
         returncode = process.wait()
+        ended = time.time()
         log.flush()
-    write_json(work / 'exit.json', {'returncode': returncode, 'ended_unix': time.time()})
+    # Finalize before publishing exit.json. The collector must never copy a
+    # shared live log later, when another session may already have appended.
+    captured = {name: capture_renderer_log(log_root / name, work / ('renderer-' + name), before)
+                for name, before in boundaries.items()}
+    write_json(work / 'renderer-logs.json', captured)
+    write_json(work / 'exit.json', {'returncode': returncode, 'ended_unix': ended})
     return returncode
 
 
@@ -276,18 +374,19 @@ def collect(home, revision, wait_minutes=0, session_minutes=30):
     report = analyze(work / 'emulator.log')
     process = json.loads((work / 'process.json').read_text()) if (work / 'process.json').exists() else {}
     exited = json.loads((work / 'exit.json').read_text()) if (work / 'exit.json').exists() else {}
-    renderer_logs = []
-    for name in ('shad_log.txt', 'shadps4.log'):
-        path = home / '.local/share/shadPS4/log' / name
-        if path.is_file() and process and path.stat().st_mtime >= process['started_unix'] - 1:
-            if path.stat().st_size <= 110 * 1024 * 1024:
-                shutil.copy2(path, work / ('renderer-' + name))
-                renderer_logs.append(name)
+    renderer_capture = (json.loads((work / 'renderer-logs.json').read_text())
+                        if exited and (work / 'renderer-logs.json').exists() else {})
+    renderer_logs = [name for name, result in renderer_capture.items()
+                     if result.get('status') == 'captured']
     identity = (process.get('running_executable') == selected['binary'] and
                 process.get('running_binary_sha256') == selected['binary_sha256'])
     report.update(selected_install=selected, process=process, exit=exited,
                   exact_running_binary_verified=identity, launcher_restored=restored,
                   fresh_renderer_logs=renderer_logs,
+                  renderer_log_capture=renderer_capture,
+                  renderer_log_scope='Supplemental files contain verified additions only. '
+                                     'Rewritten/rotated logs are omitted; emulator.log is the '
+                                     'direct child capture. Missing exit means no final log boundary.',
                   interruption=interruption, report_created_unix=time.time())
     report['capture_complete'] = bool(identity and exited and not interruption and
                                       report['graphics_diagnostics_started'])
