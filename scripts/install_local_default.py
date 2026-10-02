@@ -122,6 +122,7 @@ def guard_prefix(home, text):
 
 def launcher(home, prefix):
     core = home / 'Applications/shadps4/shadps4'
+    manager = home / 'Applications/shadps4QtLauncher-latest.AppImage'
     # Run from the same directory as the successfully observed NGS2 sessions.
     # Neither the user data directory nor any audio/GPU configuration is changed.
     text = ('#!/usr/bin/env bash\n' + prefix + '# SHADPS4_DEFAULT_MAIN_V1\n'
@@ -131,6 +132,10 @@ def launcher(home, prefix):
             '    IFS= read -r game < "$entry" || [[ -n "${game:-}" ]]\n'
             '    game="${game%$\'\\r\'}"\n'
             'else\n    game="$entry"\nfi\n'
+            'if [[ "$game" == GUI ]]; then\n'
+            '    cd ' + shlex.quote(str(home)) + '\n'
+            '    exec ' + shlex.quote(str(manager)) + '\n'
+            'fi\n'
             'if [[ ! "$game" =~ ^CUSA[0-9]{5}$ ]]; then\n'
             '    printf "Invalid or retired PS4 entry: %s\\n" "$entry" >&2\n'
             '    exit 2\nfi\n'
@@ -173,6 +178,9 @@ def inspect_esde(home):
             raise RuntimeError('Unexpected PS4 entry; preserved: ' + str(path))
         lines = path.read_text().splitlines()
         token = lines[0] if lines else ''
+        if token == 'GUI':
+            # Manager shortcuts are not games or disposable test entries.
+            continue
         build_label = ordinary_title(path.stem) != path.stem
         selector = BUILD_SELECTOR.fullmatch(token)
         if GAME_ID.fullmatch(token) and not build_label:
