@@ -189,7 +189,23 @@ def run_game(work, command):
     return returncode
 
 
-def collect(home, revision):
+def timeout_reason(wait_elapsed, game_elapsed, wait_seconds, session_seconds):
+    if game_elapsed is None:
+        if wait_seconds > 0 and wait_elapsed >= wait_seconds:
+            return 'No game launch within the requested waiting period.'
+    elif session_seconds > 0 and game_elapsed >= session_seconds:
+        return 'Session limit reached; game was not stopped. Capture is partial.'
+    return None
+
+
+def nonnegative_minutes(value):
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError('Minutes must be zero or positive; zero disables the limit.')
+    return parsed
+
+
+def collect(home, revision, wait_minutes=0, session_minutes=30):
     if games():
         raise RuntimeError('Exit the game normally before arming capture. Nothing changed.')
     selected = selected_install(home, revision)
@@ -211,22 +227,29 @@ def collect(home, revision):
     interruption = None
     restored = False
     missing_since = None
+    game_started = None
     try:
         if games() or wrapper.read_bytes() != original:
             raise RuntimeError('Game/launcher changed during preparation; preserved.')
         atomic_write(wrapper, modified, mode)
         print('CAPTURE_ARMED=' + str(work), flush=True)
+        print('CAPTURE_REVISION=' + selected['revision'], flush=True)
+        print('CAPTURE_BINARY_SHA256=' + selected['binary_sha256'], flush=True)
+        print('WAIT_FOR_LAUNCH=' + (str(wait_minutes) + ' minutes' if wait_minutes else
+                                  'unlimited; Ctrl+C restores the launcher'), flush=True)
         print('NOW launch the ordinary game entry in ES-DE. Reproduce the graphics problem, '
               'then EXIT THE GAME normally. This command creates the report after exit.', flush=True)
         print('RECOVER_LAUNCHER=python3 ' + shlex.quote(str(script)) +
               ' --restore ' + shlex.quote(str(work)), flush=True)
         started = time.monotonic()
         while not (work / 'exit.json').exists():
-            elapsed = time.monotonic() - started
+            now = time.monotonic()
             if (work / 'worker-error.json').exists():
                 interruption = 'Launch worker failed; see worker-error.json.'
                 break
             if (work / 'process.json').exists():
+                if game_started is None:
+                    game_started = now
                 observed = json.loads((work / 'process.json').read_text())
                 if not Path(f"/proc/{observed['pid']}").exists():
                     missing_since = missing_since or time.monotonic()
@@ -238,11 +261,10 @@ def collect(home, revision):
             elif (work / 'claimed').exists() and time.time() - (work / 'claimed').stat().st_mtime > 20:
                 interruption = 'Launch was claimed but no game process was recorded.'
                 break
-            if elapsed > 180 and not (work / 'claimed').exists():
-                interruption = 'No game launch within three minutes.'
-                break
-            if elapsed > 1800:
-                interruption = 'Thirty-minute limit reached; game was not stopped. Capture is partial.'
+            interruption = timeout_reason(now - started,
+                                          None if game_started is None else now - game_started,
+                                          wait_minutes * 60, session_minutes * 60)
+            if interruption:
                 break
             time.sleep(0.5)
     except (KeyboardInterrupt, OSError, RuntimeError) as error:
@@ -297,6 +319,10 @@ def main():
     mode.add_argument('--run', type=Path)
     mode.add_argument('--restore', type=Path)
     parser.add_argument('--command', nargs=argparse.REMAINDER)
+    parser.add_argument('--wait-minutes', type=nonnegative_minutes, default=0,
+                        help='Wait for launch; 0 waits until launch or Ctrl+C (default).')
+    parser.add_argument('--session-minutes', type=nonnegative_minutes, default=30,
+                        help='Capture limit after game launch; 0 disables this limit.')
     args = parser.parse_args()
     if os.geteuid() == 0:
         raise RuntimeError('Run as your desktop user, without sudo.')
@@ -319,7 +345,7 @@ def main():
             return 0
         for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, interrupted)
-        collect(Path.home(), args.expected_revision)
+        collect(Path.home(), args.expected_revision, args.wait_minutes, args.session_minutes)
     return 0
 
 

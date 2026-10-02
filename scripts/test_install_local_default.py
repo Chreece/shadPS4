@@ -80,6 +80,33 @@ class DefaultInstallTests(unittest.TestCase):
         self.assertTrue(self.trace.exists())
         self.assertEqual((self.root / 'shadps4').resolve(), self.old)
 
+    def test_same_revision_reuses_verified_binary_without_rebuilding(self):
+        self.install()
+        core = (self.root / 'shadps4').resolve()
+        wrapper = self.wrapper.read_bytes()
+        state_root = self.home / '.local/state/shadps4-default-main'
+        backups = list(state_root.glob('install-*/state.json'))
+        self.built.write_bytes(b'different bytes from another build of the same revision')
+        with mock.patch.object(deploy, 'build', side_effect=AssertionError('must not rebuild')), \
+             mock.patch.object(deploy, 'no_running_apps', side_effect=AssertionError('read-only reuse')):
+            deploy.install(self.home, self.revision)
+        self.assertEqual((self.root / 'shadps4').resolve(), core)
+        self.assertEqual(core.read_bytes(), b'\x7fELF\x02new core')
+        self.assertEqual(self.wrapper.read_bytes(), wrapper)
+        self.assertEqual(list(state_root.glob('install-*/state.json')), backups)
+
+    def test_reuse_rejects_changed_binary_launcher_and_revision(self):
+        self.install()
+        self.assertIsNotNone(deploy.verified_selected_install(self.home, self.revision))
+        self.assertIsNone(deploy.verified_selected_install(self.home, 'b' * 40))
+        before = self.wrapper.read_bytes()
+        self.wrapper.write_bytes(before + b'# independent edit\n')
+        self.assertIsNone(deploy.verified_selected_install(self.home, self.revision))
+        self.wrapper.write_bytes(before)
+        core = (self.root / 'shadps4').resolve()
+        core.write_bytes(b'different selected binary')
+        self.assertIsNone(deploy.verified_selected_install(self.home, self.revision))
+
     def test_default_cleanup_and_rollback_preserve_data_and_guard(self):
         config = self.config.read_bytes()
         guard = self.guard.read_bytes()
