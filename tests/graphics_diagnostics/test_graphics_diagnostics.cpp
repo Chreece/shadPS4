@@ -29,8 +29,10 @@ int main(int argc, char** argv) {
     }
     Emit(Event::BufferImageSync, "requested=%u image-bytes=%u", 65536u, 65536u);
     Emit(Event::RawBufferImageSync, "bytes=%u", 65536u);
+    Emit(Event::MicroMipDetile, "micro-mask=%x", 0x1fcu);
     if (g_counts[static_cast<size_t>(Event::BufferImageSync)].load() != (enabled ? 1 : 0) ||
         g_counts[static_cast<size_t>(Event::RawBufferImageSync)].load() != (enabled ? 1 : 0) ||
+        g_counts[static_cast<size_t>(Event::MicroMipDetile)].load() != (enabled ? 1 : 0) ||
         g_counts[static_cast<size_t>(Event::PixelPipe)].load() != observed) {
         return 4;
     }
