@@ -1,5 +1,28 @@
 # Reviewed upstream integration — 2026-10-02
 
+## Acceptance update: rejected and reverted on 2026-10-03
+
+The combined revision `2a6ac3284da58175f386b8dcdda2d1f5ac6d26f0` failed the
+user's visual acceptance test. Near surfaces lost details and showed heat-like
+colours. The user confirmed that switching back to the saved previous binary
+restored those details. The original intermittent glitches remained on both builds.
+No individual PR has been isolated as the cause.
+
+The supplied session report verified the combined binary, a normal exit and
+consumed gamepad quit confirmation, with no renderer errors. That evidence did
+not establish visual correctness. Pipeline caching and Vulkan validation were
+disabled, and the depth-growth path was not observed in that capture.
+
+All seven integration merges are reversed together on a dedicated rollback
+branch, restoring emulator source, build definitions, tests and the installer to
+the pre-batch baseline below. Earlier NGS2, sparse/BDA, graphics and input changes
+are retained. The experimental topic branches and this historical audit remain
+available; these PRs must not be automatically reintroduced as accepted fixes.
+The original visual glitches remain unresolved. No new emulator build or game
+test is required for this source rollback; the user already selected the saved
+previous binary. The entries and test results below describe the rejected batch,
+not the current contents or acceptance status of main.
+
 Prepared with OpenAI Codex. This is a candidate for the user's Linux Docker build and game testing, not a claim that every open PR is safe or that the remaining visual symptoms are fixed.
 
 Baseline: `ac9122931a1d19467e1288e29350a8fbd9bf7a14` (fork main).

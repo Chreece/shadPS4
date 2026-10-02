@@ -839,7 +839,6 @@ set(COMMON src/common/logging/classes.cpp
            src/common/singleton.h
            src/common/slab_heap.h
            src/common/small_vector.h
-           src/common/slot_vector.cpp
            src/common/slot_vector.h
            src/common/spin_lock.cpp
            src/common/spin_lock.h
@@ -1115,8 +1114,6 @@ set(VIDEO_CORE src/video_core/amdgpu/cb_db_extent.h
                src/video_core/amdgpu/liverpool.h
                src/video_core/amdgpu/pixel_format.cpp
                src/video_core/amdgpu/pixel_format.h
-               src/video_core/amdgpu/pm4_packet_assembler.cpp
-               src/video_core/amdgpu/pm4_packet_assembler.h
                src/video_core/amdgpu/pm4_cmds.h
                src/video_core/amdgpu/pm4_opcodes.h
                src/video_core/amdgpu/regs_color.h
