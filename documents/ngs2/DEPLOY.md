@@ -7,12 +7,39 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 ## Current local graphics test: 2026-10-02
 
-**Test on hold:** the user reports that `286d0cca` fails to launch the game.
-No failure log has been supplied yet, so the fault is not attributed to a
-specific function. Run `recover_mip_test.py` with the matching `recover_crash.py`
-to save the failed launch trace, renderer logs and build tail, then restore the
-verified retained `6e00d2cc` launcher. This performs no build and does not launch
-or kill a process. Upload the printed `CRASH_ARCHIVE` before further runtime changes.
+The supplied 10:17 UTC failure capture confirms that the local `286d0cca`
+build completed and the binary started. X11 then rejected display authorization;
+`SDL_Init(SDL_INIT_VIDEO)` stopped at `sdl_window.cpp:105` with "No available
+video device" and SIGTRAP. No renderer or tiled-mip code ran in this captured
+launch. The texture change's game result remains untested by this failed launch.
+
+`repair_display_launch.py` addresses the launcher/session environment without
+rebuilding the emulator. It verifies the retained `286d0cca` binary against its
+deployment record, authenticates a read-only `xprop` request to the reported
+headless display `:0`, and updates only the exact known shadPS4 session guard.
+The guard resolves current display credentials before starting its child while
+retaining the single-instance lock. A working inherited environment is kept;
+fallback authority paths must come from same-user session processes or Xorg
+inside this user's session cgroup, match the requested display, be readable,
+and pass the live connection probe. No cookie contents are logged or copied,
+no `xhost` access is granted, and no X server or Sunshine service is restarted.
+
+The repair restores the already-built candidate's recorded test selection after
+a rollback to `6e00d2cc`. It backs up the launcher, guard and optional sidecar,
+prints a checked RESTORE command, refuses unknown edits, and stops if any game
+is running. Emulator settings, saves and eight-channel routing are untouched.
+Keep Moonlight/ES-DE open; after `DISPLAY_REPAIR_RESULT=PASS`, launch the existing
+NGS2 entry once. Upload a graphics capture after reaching the affected scene.
+If display authentication cannot be verified, no launcher files are changed.
+
+Twelve local checks cover display selection, authorization failure, other-user
+session rejection, retained-binary verification, exact restoration and an actual
+three-launch process race with the patched guard. Host X11 access and game
+rendering still require the user's local test. AI assistance: Codex prepared the
+launcher repair and its regression checks on `fix/launcher-display-session`.
+
+`recover_mip_test.py` remains available to capture a failed launch and restore
+the verified retained `6e00d2cc` launcher without a build.
 
 `main_build.py --docker` now pins combined main
 `286d0cca483ce80f9d4a4fe98d4620b6b003e0ca`. This integrates
