@@ -148,10 +148,12 @@ is accepted because it has no sample effect; other filter parameters fail explic
 Peak-enable controls are accepted, with peak measurement always available.
 
 Queued blocks now carry rate-conversion phase across transitions and starvation.
-Their interpolation lookahead is still separate, so a transition at unequal rates
-can hold a boundary sample instead of interpolating into the next block; this is
-not yet a seamless streaming resampler. Internal loops retain phase. ATRAC9
-seeks decode from the beginning, so late loop points may cost too much render time.
+When a matching-rate successor is already queued, interpolation uses its first
+sample across the block boundary. Lookahead primes the successor during rendering,
+including ATRAC9 codec-history transfer, without advancing guest sample/byte counters.
+If the next block arrives only after starvation, the preceding endpoint is still held:
+already submitted output cannot be corrected retroactively. Internal loops retain phase.
+ATRAC9 seeks decode from the beginning, so late loop points may cost too much render time.
 Linear interpolation has no anti-aliasing filter for downsampling.
 
 End-to-end tests call public parse → setup → blocks → patch → play → render with

@@ -40,7 +40,9 @@ public:
     WaveError SetPitch(float ratio);
     // Writes whole interleaved frames at the configured output rate. Clears the
     // unwritten tail (including paused/stopped output). A bad span is untouched.
-    WaveResult<std::size_t> Render(std::span<float> output);
+    // A queued successor supplies boundary lookahead without advancing its clock.
+    WaveResult<std::size_t> Render(std::span<float> output, Playback* successor = nullptr,
+                                   bool continue_decoder = false);
     PlaybackState State() const {
         return state;
     }
@@ -67,6 +69,9 @@ private:
     std::optional<std::uint32_t> repeats_left;
     std::array<float, 8> current{};
     std::array<float, 8> next{};
+    const Playback* prepared_after{};
+    std::uint64_t generation{};
+    std::uint64_t prepared_generation{};
     bool primed{};
     bool next_valid{};
     bool next_wrapped{};
