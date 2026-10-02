@@ -7,6 +7,20 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 ## Current local graphics test: 2026-10-02
 
+At 11:35 UTC the user reports a blank Moonlight screen after exiting and
+relaunching ES-DE. Pause the renderer comparison until the frontend is usable.
+The older Sunshine watchdog's `repair_x11` silently returns when `xrandr` cannot
+open the display; its environment still selects the client's `.Xauthority`.
+The shadPS4-only resolver did not update that service or the ES-DE app command.
+This identifies a recovery gap, but does not prove the current blank screen's
+cause. `collect_sunshine_display.py` now probes the running user's verified Xorg
+authority as well as the inherited client path, captures window placement and
+DPMS state, the current watchdog/idle-guard scripts, both service scopes, and
+recent ES-DE/Sunshine logs. It does not restart services, signal processes, change
+windows or copy authorization cookies. Run it while the blank stream is connected
+and upload DISPLAY_REPORT before making another persistent launcher change.
+AI assistance: Codex prepared this collector on `diagnostics/esde-relaunch`.
+
 The 11:20 UTC launch capture and completed trace confirm that `286d0cca` now
 starts through the guarded wrapper with ES-DE's live environment. The resolver
 selected Xorg authorization, one core was observed, and the game exited with
