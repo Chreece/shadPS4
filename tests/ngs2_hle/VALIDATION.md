@@ -449,3 +449,43 @@ coefficients, and final-window reporting. Collector fixtures cover guarded-prefi
 preservation, active-game refusal, launcher restoration on failure, mode preservation
 and scientific-notation summary parsing. No missing filter was implemented and no
 bass-routing fix is claimed by this diagnostic change.
+
+## Direct-filter implementation, 2026-10-02
+
+The latest captured session on main `40c369acca9ebd3091977efd46c4256355021c7d`
+contained 260 rejected non-identity direct-filter requests: index 0, location 0,
+type 0x20, mask 0. These requests are now supported on sampler and submixer voices.
+Earlier sections describing non-identity filters as unsupported are historical.
+Static native-module evidence, the recurrence and remaining limits are recorded
+in [DIRECT_FILTERS.md](DIRECT_FILTERS.md). No native module is shipped or required
+on the host. This change does not implement other filter types or positions.
+
+Validation on the changed source tree:
+
+| Check | Result |
+| --- | --- |
+| GCC 13.3 Release, warnings as errors | 163 unique cases passed; all 11 CTest entries passed. |
+| GCC 13.3 ASan/UBSan, including LibAtrac9 | All 163 cases and 11 CTest entries passed with `detect_leaks=0` and `halt_on_error=1`. |
+| Parent implementation comparison | All 41 pre-existing public audio cases passed; all 12 added public filter cases failed against the prior `voice.cpp`. |
+| Patch whitespace | `git diff --check` passed. |
+
+Six new DSP cases check all five coefficient signs, captured one-pole responses,
+DC behavior, independent eight-channel state, mask bypass/reset, chunk invariance
+and nonfinite handling. Twelve public cases check acceptance, queued-block/grain
+continuity, pause/resume, play/setup reset, sampler/submixer chains before UserFx,
+slot order, transaction rollback, reentrant coefficient updates, setup isolation,
+invalid controls, explicit rack capacity and overflow failure. Existing diagnostic
+checks retain their original execution order so their bounded trace expectations
+are not displaced by the new filter fixtures. The rejected-filter diagnostic now
+uses a nonzero reserved field instead of treating valid coefficients as invalid.
+
+LeakSanitizer remains unavailable in this execution environment as documented
+above. No all-platform workflow or full emulator build was run for this change.
+The next gate is the user's local Docker build and game comparison using the
+existing default installer and rollback. Audio remains experimental; these checks
+do not claim bit-exact console output or an audible improvement in the game.
+
+The captured continuous LFE windows covered approximately 103.77 seconds with zero
+LFE samples. Captured source routing set the LFE contribution to zero, while the
+downstream path preserved it and the separate physical LFE tone test was audible.
+This remains evidence about the captured mix, not proof of an emulator bass bug.

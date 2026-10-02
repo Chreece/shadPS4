@@ -475,6 +475,7 @@ set(SYSTEM_LIBS src/core/libraries/system/commondialog.cpp
                 src/core/libraries/ngs2/hle/waveform.h
                 src/core/libraries/ngs2/hle/decoder.cpp
                 src/core/libraries/ngs2/hle/decoder.h
+                src/core/libraries/ngs2/hle/direct_filter.h
                 src/core/libraries/ngs2/hle/playback.cpp
                 src/core/libraries/ngs2/hle/playback.h
                 src/core/libraries/ngs2/hle/runtime.h
