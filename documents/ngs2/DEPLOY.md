@@ -13,6 +13,16 @@ build completed and the binary started. X11 then rejected display authorization;
 video device" and SIGTRAP. No renderer or tiled-mip code ran in this captured
 launch. The texture change's game result remains untested by this failed launch.
 
+The display repair subsequently passed its live SSH check using Xorg PID 859660,
+but the user reports that the NGS2 entry still fails. That check did not establish
+a successful game launch. `trace_launch.py` makes one launch through the existing
+guard with the live ES-DE environment, records guard stdout/stderr, trace times,
+process state, selected display/library variables and available PS4 custom-system
+commands, and produces a private LAUNCH_REPORT archive. It does not rebuild,
+edit installed files or settings, or terminate a process. If a core is already
+running it captures that fact and requests no additional launch. A running test
+started by the capture is left open after the bounded observation window.
+
 `repair_display_launch.py` addresses the launcher/session environment without
 rebuilding the emulator. It verifies the retained `286d0cca` binary against its
 deployment record, authenticates a read-only `xprop` request to the reported
