@@ -1,7 +1,5 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include <fstream>
-#include <thread>
 #include "check.h"
 #include "core/libraries/ngs2/hle/diagnostics.h"
 using Libraries::Ngs2::Diagnostics::Budget;
@@ -47,34 +45,6 @@ TEST(RequestKeysCannotThrottleOrEvictFailureKeys) {
         CHECK(budget.Take(i, 0, true));
     CHECK(!budget.Take(64, 0, true));
 }
-TEST(ManualCaptureRestartsExhaustedBudgetOnce) {
-    Budget budget;
-    for (unsigned i = 0; i < 1792; ++i)
-        CHECK(budget.Take(1, 1));
-    CHECK(!budget.Take(2));
-    for (unsigned i = 0; i < 256; ++i)
-        CHECK(budget.Take(1, 1, true));
-    CHECK(!budget.Take(2, 0, true));
-    CHECK(budget.Rearm());
-    for (unsigned i = 0; i < 1792; ++i)
-        CHECK(budget.Take(1, 1));
-    for (unsigned i = 0; i < 256; ++i)
-        CHECK(budget.Take(1, 1, true));
-    CHECK(!budget.Rearm());
-    CHECK(!budget.Take(2, 0, true));
-}
-int main(int argc, char** argv) {
-    if (argc == 2) {
-        using namespace Libraries::Ngs2::Diagnostics;
-        for (unsigned i = 0; i < 2000; ++i)
-            Record(1, 1, "before-trigger number=%u", i);
-        std::ofstream(argv[1]) << "capture\n";
-        std::this_thread::sleep_for(std::chrono::milliseconds{1100});
-        for (unsigned i = 0; i < 2000; ++i)
-            Record(1, 1, "after-trigger number=%u", i);
-        std::this_thread::sleep_for(std::chrono::milliseconds{1100});
-        Record(2, 0, "unexpected-third-window");
-        return 0;
-    }
+int main() {
     return Test::Run();
 }

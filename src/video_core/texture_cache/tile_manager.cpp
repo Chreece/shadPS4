@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -31,7 +30,7 @@ namespace VideoCore {
 
 struct TilingInfo {
     u32 bank_swizzle;
-    u32 micro_tiled_mips;
+    u32 num_slices;
     u32 num_mips;
     std::array<ImageInfo::MipInfo, 16> mips;
 };
@@ -202,7 +201,7 @@ std::pair<const Buffer*, u64> TileManager::DetileImage(const VideoCore::Buffer* 
 
     TilingInfo params{};
     params.bank_swizzle = info.bank_swizzle;
-    params.micro_tiled_mips = info.micro_tiled_mips;
+    params.num_slices = info.props.is_volume ? info.size.depth : info.resources.layers;
     params.num_mips = info.resources.levels;
     for (u32 mip = 0; mip < params.num_mips; ++mip) {
         auto& mip_info = params.mips[mip];
@@ -271,17 +270,6 @@ std::pair<const Buffer*, u64> TileManager::DetileImage(const VideoCore::Buffer* 
     const auto dim_x = (info.guest_size / (info.num_bits / 8)) / 64;
     cmdbuf.dispatch(dim_x, 1, 1);
 
-    if (info.micro_tiled_mips != 0) {
-        GraphicsDiagnostics::Emit(
-            GraphicsDiagnostics::Event::MicroMipDetile,
-            "address=%llx bytes=%u tile=%u bits=%u block=%u width=%u height=%u "
-            "levels=%u layers=%u micro-mask=%x",
-            static_cast<unsigned long long>(info.guest_address), info.guest_size,
-            static_cast<u32>(info.tile_mode), info.num_bits, u32(info.props.is_block),
-            info.size.width, info.size.height, info.resources.levels, info.resources.layers,
-            info.micro_tiled_mips);
-    }
-
     runtime.AccessBuffer(staging.buffer, staging.offset, info.guest_size,
                          vk::PipelineStageFlagBits2::eComputeShader,
                          vk::AccessFlagBits2::eShaderWrite);
@@ -302,7 +290,7 @@ void TileManager::TileImage(Image& in_image, std::span<vk::BufferImageCopy> buff
 
     TilingInfo params{};
     params.bank_swizzle = info.bank_swizzle;
-    params.micro_tiled_mips = info.micro_tiled_mips;
+    params.num_slices = info.props.is_volume ? info.size.depth : info.resources.layers;
     params.num_mips = static_cast<u32>(buffer_copies.size());
     for (u32 mip = 0; mip < params.num_mips; ++mip) {
         auto& mip_info = params.mips[mip];
