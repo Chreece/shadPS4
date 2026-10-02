@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""Resolve X11 authorization centrally for the captured Sunshine system service."""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import pwd
+import re
+import shlex
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+
+import display_session
+
+UNITS = ('sunshine.service', 'sunshine-display-watchdog.service')
+DROPIN = Path('/etc/systemd/system/sunshine.service.d/90-session-x11.conf')
+WATCHDOG_SHA = '9df276592044e7c310ff8b0bccc616e742c6a49f1a0654bba527042577e95314'
+KMS_SHA = '8f5339d867ce4f512411414558643e7c2480249b97c3224fb8e6560f5b8bc5a9'
+MODULE_SHA = '5f222179a866eedc96f31d383cd949667ad945c5f77f3290fdd79a5f6ac67029'
+
+
+def digest(content):
+    return hashlib.sha256(content).hexdigest()
+
+
+def directory(path):
+    # Never follow a replaced ancestor when installing launch code or state.
+    for item in reversed((path, *path.parents)):
+        if not item.exists() and not item.is_symlink():
+            item.mkdir(mode=0o700)
+        info = item.lstat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.getuid()) or
+                (info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX)):
+            raise RuntimeError('Unsafe directory: ' + str(item))
+
+
+def regular(path, root=False):
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != (0 if root else os.getuid()) or
+            info.st_mode & 0o002):
+        raise RuntimeError('Unexpected file owner, type or permissions: ' + str(path))
+    return path.read_bytes(), stat.S_IMODE(info.st_mode)
+
+
+def atomic(path, content, mode=0o600):
+    directory(path.parent)
+    fd, temporary = tempfile.mkstemp(prefix='.' + path.name + '-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'wb') as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+            os.fchmod(handle.fileno(), mode)
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def paths(home):
+    helper = home / '.local/lib/sunshine-display/repair_sunshine_display.py'
+    return [helper, helper.with_name('display_session.py'),
+            home / '.local/bin/sunshine-display-watchdog',
+            home / '.local/bin/sunshine-kms-guard.sh']
+
+
+def authority(home, environment):
+    """Publish only a symlink to an already readable, successfully probed authority.
+
+    Sunshine keeps this stable filename in its environment. The existing global
+    prep command and watchdog refresh its target before launches/after X restarts.
+    No cookies are copied and the X server's access policy is unchanged.
+    """
+    root = home / '.local/state/sunshine-display'
+    directory(root)
+    if stat.S_IMODE(root.stat().st_mode) != 0o700 or root.stat().st_uid != os.getuid():
+        raise RuntimeError('Sunshine display state must be a private user directory.')
+    link = root / 'Xauthority'
+    if link.exists() or link.is_symlink():
+        if not link.is_symlink() or link.lstat().st_uid != os.getuid():
+            raise RuntimeError('Unexpected Sunshine authority alias; preserved.')
+    env = dict(environment, DISPLAY=':0', XAUTHORITY=str(link))
+    resolved, source = display_session.resolve_environment(env)
+    target = resolved.get('XAUTHORITY', '')
+    if target != str(link):
+        if not display_session.readable_authority(target):
+            raise RuntimeError('Resolved authorization is not a safe readable file.')
+        # mkdtemp makes the temporary symlink name private and collision-free.
+        temporary = Path(tempfile.mkdtemp(prefix='.authority-', dir=root))
+        try:
+            (temporary / 'link').symlink_to(target)
+            os.replace(temporary / 'link', link)
+        finally:
+            shutil.rmtree(temporary)
+    elif not link.is_symlink():
+        raise RuntimeError('X11 probe succeeded without the expected authority alias.')
+    resolved['XAUTHORITY'] = str(link)
+    if not display_session.probe(resolved):
+        raise RuntimeError('X11 authorization changed while refreshing; retry.')
+    return resolved, source
+
+
+def dropin(home):
+    helper = str(paths(home)[0])
+    # systemd expands percent specifiers and dollar variables even in quotes.
+    if not re.fullmatch(r'/[A-Za-z0-9_./-]+', helper):
+        raise RuntimeError('Unsupported home path for the systemd override.')
+    return ('# Managed by repair_sunshine_display.py; runs as the existing service User.\n'
+            '[Service]\nExecStart=\nExecStart=/usr/bin/python3 ' + helper +
+            ' --sunshine\n').encode()
+
+
+def patch_scripts(home, watchdog, kms):
+    command = '/usr/bin/python3 ' + shlex.quote(str(paths(home)[0])) + ' --authority'
+    start = b'repair_x11()\n{\n'
+    addition = ('    XAUTHORITY="$(' + command + ')" || return\n'
+                '    export XAUTHORITY\n').encode()
+    kms_start = b'export XAUTHORITY=/home/chreece/.Xauthority\n'
+    kms_new = ('XAUTHORITY="$(' + command + ')"\nexport XAUTHORITY\n').encode()
+    # Accept only the captured originals or this exact patch, including on reruns.
+    old_watchdog = watchdog.replace(start + addition, start, 1)
+    old_kms = kms.replace(kms_new, kms_start, 1)
+    if digest(old_watchdog) != WATCHDOG_SHA or digest(old_kms) != KMS_SHA:
+        raise RuntimeError('Display guards differ from the supplied capture; files preserved.')
+    result = (old_watchdog.replace(start, start + addition, 1),
+              old_kms.replace(kms_start, kms_new, 1))
+    for payload in result:
+        subprocess.run(['bash', '-n'], input=payload, check=True, timeout=5)
+    return result
+
+
+def show(unit):
+    result = subprocess.run(['systemctl', 'show', unit, '-p', 'User', '-p', 'ExecStart',
+                             '-p', 'ActiveState', '-p', 'KillMode', '-p', 'MainPID',
+                             '-p', 'ControlGroup'], text=True, capture_output=True,
+                            check=True, timeout=10)
+    return dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+
+
+def service_preflight(home, installed=False):
+    for parent in DROPIN.parents:
+        if parent.exists() or parent.is_symlink():
+            info = parent.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                raise RuntimeError('Unexpected system service directory: ' + str(parent))
+    username = pwd.getpwuid(os.getuid()).pw_name
+    services = [show(unit) for unit in UNITS]
+    for unit, info in zip(UNITS, services):
+        if info['User'] != username or info['ActiveState'] != 'active':
+            raise RuntimeError('Expected the current user\'s active system service: ' + unit)
+        if info['KillMode'] not in ('control-group', 'mixed'):
+            raise RuntimeError('Service cannot reliably close its old child processes: ' + unit)
+    expected = ('/usr/bin/python3' if installed else '/usr/bin/sunshine', str(paths(home)[2]))
+    for info, executable in zip(services, expected):
+        if not re.search(r'\bpath\s*=\s*' + re.escape(executable) + r'\s*;', info['ExecStart']):
+            raise RuntimeError('Unexpected service start command; no service changes made.')
+    sunshine_command = ('/usr/bin/python3 ' + str(paths(home)[0]) + ' --sunshine'
+                        if installed else '/usr/bin/sunshine')
+    if not re.search(r'argv\[\]\s*=\s*' + re.escape(sunshine_command) + r'\s*;', services[0]['ExecStart']):
+        raise RuntimeError('Sunshine has additional start arguments; preserve them for review.')
+    # Application-level environment overrides must not defeat the central fix.
+    config = json.loads(regular(home / '.config/sunshine/apps.json')[0])
+    if any(key in config.get('env', {}) for key in ('DISPLAY', 'XAUTHORITY')):
+        raise RuntimeError('apps.json overrides display authorization; preserved for review.')
+    return services
+
+
+def no_games(services, proc_root=Path('/proc')):
+    groups = {info['ControlGroup'] for info in services}
+    if not all(group.startswith('/system.slice/sunshine') for group in groups):
+        raise RuntimeError('Unexpected service control group.')
+    blocked = []
+    for process in proc_root.iterdir():
+        if not process.name.isdigit():
+            continue
+        try:
+            if process.stat().st_uid != os.getuid():
+                continue
+            name = (process / 'comm').read_text().strip().lower()
+            group = (process / 'cgroup').read_text()
+            in_sunshine = any(line.split(':', 2)[-1] == services[0]['ControlGroup']
+                              for line in group.splitlines())
+            # Only the captured frontend/AppImage pair may be closed by this restart.
+            if name.startswith('shadps4') or (in_sunshine and name not in {'sunshine', 'es-de'}):
+                blocked.append(process.name + ':' + name)
+        except FileNotFoundError:
+            continue
+    if blocked:
+        raise RuntimeError('Close running games/other Sunshine apps first: ' + ', '.join(blocked))
+
+
+def sudo(*args):
+    subprocess.run(['sudo', '-n', *map(str, args)], check=True, timeout=50)
+
+
+def write_dropin(payload, state):
+    if payload is None:
+        sudo('/usr/bin/rm', '--', DROPIN)
+    else:
+        source = state / 'override.conf'
+        atomic(source, payload)
+        sudo('/usr/bin/install', '-d', '-m', '0755', DROPIN.parent)
+        sudo('/usr/bin/install', '-m', '0644', '-o', 'root', '-g', 'root', source, DROPIN)
+    sudo('/usr/bin/systemctl', 'daemon-reload')
+
+
+def activate():
+    sudo('/usr/bin/systemctl', 'start', *UNITS)
+    for unit in UNITS:
+        subprocess.run(['systemctl', 'is-active', '--quiet', unit], check=True, timeout=10)
+
+
+def verify(home):
+    expected = str(home / '.local/state/sunshine-display/Xauthority')
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        info = show(UNITS[0])
+        if info['ActiveState'] == 'failed':
+            break
+        try:
+            process = Path('/proc') / info['MainPID']
+            data = (process / 'environ').read_bytes()
+            env = dict(os.environ)
+            env.update({os.fsdecode(k): os.fsdecode(v) for k, v in
+                        (part.split(b'=', 1) for part in data.split(b'\0') if b'=' in part)})
+            if (os.readlink(process / 'exe') == '/usr/bin/sunshine' and
+                    env.get('XAUTHORITY') == expected and env.get('DISPLAY') == ':0' and
+                    display_session.probe(env)):
+                print('SUNSHINE_X11_ACCESS=PASS; the running Sunshine environment opens display :0.', flush=True)
+                return
+        except FileNotFoundError:
+            pass
+        time.sleep(0.25)
+    raise RuntimeError('Running Sunshine did not inherit verified X11 authorization.')
+
+
+def same(path, before, root=False):
+    if before is None:
+        return not path.exists() and not path.is_symlink()
+    return regular(path, root)[0] == before
+
+
+def apply(home, entries, before_dropin, after_dropin, backup):
+    subprocess.run(['sudo', '-v'], check=True)  # Interactive terminal only; never read a password.
+    services = service_preflight(home, installed=before_dropin is not None)
+    no_games(services)
+    if not same(DROPIN, before_dropin, root=True):
+        raise RuntimeError('Sunshine override changed during checks; preserved.')
+    for path, before, _, _ in entries:
+        if not same(path, before):
+            raise RuntimeError('A display repair target changed during checks: ' + str(path))
+    applied = []
+    override_changed = False
+    try:
+        # Stop the existing processes before replacing scripts. No Xorg/AI service is touched.
+        sudo('/usr/bin/systemctl', 'stop', *reversed(UNITS))
+        for path, before, after, mode in entries:
+            if not same(path, before):
+                raise RuntimeError('A repair target changed while stopping services.')
+            if after is None:
+                path.unlink()
+            else:
+                atomic(path, after, mode)
+            applied.append((path, before, after, mode))
+        override_changed = True
+        write_dropin(after_dropin, backup)
+        activate()
+        if after_dropin is not None:
+            verify(home)
+    except BaseException:
+        # Exact snapshots only: do not overwrite a subsequent unrelated edit.
+        sudo('/usr/bin/systemctl', 'stop', *reversed(UNITS))
+        for path, before, after, mode in reversed(applied):
+            if not same(path, after):
+                raise RuntimeError('File changed during recovery; use the printed backup: ' + str(path))
+            if before is None:
+                path.unlink()
+            else:
+                atomic(path, before, mode)
+        if override_changed:
+            if not (same(DROPIN, after_dropin, root=True) or same(DROPIN, before_dropin, root=True)):
+                raise RuntimeError('Service override changed during recovery; backup: ' + str(backup))
+            if before_dropin is not None or DROPIN.exists():
+                write_dropin(before_dropin, backup)
+            else:
+                sudo('/usr/bin/systemctl', 'daemon-reload')
+        activate()
+        raise
+
+
+def install(home):
+    helper, module, watchdog, kms = paths(home)
+    originals = []
+    for path in paths(home):
+        originals.append(regular(path) if path.exists() or path.is_symlink() else (None, 0o700))
+    if originals[2][0] is None or originals[3][0] is None:
+        raise RuntimeError('The captured display guards are missing.')
+    source = Path(__file__).read_bytes()
+    resolver = Path(__file__).with_name('display_session.py').read_bytes()
+    if digest(resolver) != MODULE_SHA:
+        raise RuntimeError('Display resolver checksum mismatch.')
+    for old, new in zip(originals[:2], (source, resolver)):
+        if old[0] is not None and old[0] != new:
+            raise RuntimeError('An unrelated Sunshine display helper exists; preserved.')
+    new_scripts = patch_scripts(home, originals[2][0], originals[3][0])
+    payloads = (source, resolver, *new_scripts)
+    expected_dropin = dropin(home)
+    old_dropin = regular(DROPIN, root=True)[0] if DROPIN.exists() or DROPIN.is_symlink() else None
+    if old_dropin is not None and old_dropin != expected_dropin:
+        raise RuntimeError('A different Sunshine display override exists; preserved.')
+    services = service_preflight(home, installed=old_dropin is not None)
+    no_games(services)
+    authority(home, os.environ)
+    if all(before == after for (before, _), after in zip(originals, payloads)) and old_dropin == expected_dropin:
+        verify(home)
+        print('SUNSHINE_DISPLAY_REPAIR=ALREADY_INSTALLED')
+        return
+    if old_dropin is not None:
+        raise RuntimeError('An incomplete prior repair exists; use its printed restore command first.')
+    root = home / '.local/state/sunshine-display'
+    backup = Path(tempfile.mkdtemp(prefix='backup-', dir=root))
+    entries = []
+    record = []
+    for index, (path, (before, mode), after) in enumerate(zip(paths(home), originals, payloads)):
+        if before is not None:
+            atomic(backup / f'before-{index}', before)
+        entries.append((path, before, after, mode))
+        record.append({'before': digest(before) if before is not None else None,
+                       'after': digest(after), 'mode': mode})
+    atomic(backup / 'state.json', json.dumps({'files': record, 'dropin': expected_dropin.decode()}).encode())
+    atomic(backup / 'repair_sunshine_display.py', source, 0o700)
+    atomic(backup / 'display_session.py', resolver, 0o700)
+    print('BACKUP=' + str(backup), flush=True)
+    print('RESTORE=/usr/bin/python3 ' + shlex.quote(str(backup / 'repair_sunshine_display.py')) +
+          ' --restore ' + shlex.quote(str(backup)), flush=True)
+    apply(home, entries, old_dropin, expected_dropin, backup)
+    print('SUNSHINE_DISPLAY_REPAIR=PASS; reconnect Moonlight and test ES-DE exit/relaunch.')
+    print('Visible-window/game testing is pending; no emulator or audio configuration was changed.')
+
+
+def restore(home, backup):
+    root = home / '.local/state/sunshine-display'
+    if backup.parent != root or not backup.name.startswith('backup-') or backup.is_symlink():
+        raise RuntimeError('Unexpected display repair backup path.')
+    state = json.loads(regular(backup / 'state.json')[0])
+    expected_dropin = dropin(home)
+    if state['dropin'].encode() != expected_dropin or not same(DROPIN, expected_dropin, root=True):
+        raise RuntimeError('Service override changed after repair; preserved.')
+    if len(state['files']) != 4:
+        raise RuntimeError('Unexpected backup entries.')
+    entries = []
+    for index, (path, entry) in enumerate(zip(paths(home), state['files'])):
+        current, _ = regular(path)
+        if digest(current) != entry['after']:
+            raise RuntimeError('A file changed after repair; preserved: ' + str(path))
+        before = regular(backup / f'before-{index}')[0] if entry['before'] is not None else None
+        if before is not None and digest(before) != entry['before']:
+            raise RuntimeError('Backup checksum mismatch.')
+        mode = entry['mode']
+        if not isinstance(mode, int) or mode & ~0o777 or mode & 0o002:
+            raise RuntimeError('Invalid backup mode.')
+        entries.append((path, current, before, mode))
+    apply(home, entries, expected_dropin, None, backup)
+    print('SUNSHINE_DISPLAY_RESTORE=PASS; prior service command and display guards restored.')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--sunshine', action='store_true')
+    group.add_argument('--authority', action='store_true')
+    group.add_argument('--restore', type=Path)
+    args = parser.parse_args()
+    if os.geteuid() == 0 or sys.platform != 'linux':
+        raise RuntimeError('Run as the normal Linux desktop user, not with sudo.')
+    home = Path.home()
+    if args.sunshine or args.authority:
+        # At boot the independently managed headless X service may still be starting.
+        deadline = time.monotonic() + (30 if args.sunshine else 0)
+        while True:
+            try:
+                env, source = authority(home, os.environ)
+                break
+            except RuntimeError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.5)
+        if args.authority:
+            print(env['XAUTHORITY'])
+        else:
+            print('SUNSHINE_DISPLAY_START=PASS source=' + source, flush=True)
+            os.execve('/usr/bin/sunshine', ['/usr/bin/sunshine'], env)
+        return
+    root = home / '.local/state/sunshine-display'
+    directory(root)
+    fd = os.open(root / 'install.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    with os.fdopen(fd, 'r+') as lock:
+        info = os.fstat(lock.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+            raise RuntimeError('Unexpected repair lock.')
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if args.restore:
+            restore(home, args.restore)
+        else:
+            install(home)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+        print('SUNSHINE_DISPLAY_REPAIR=FAIL: ' + str(error), file=sys.stderr)
+        sys.exit(1)

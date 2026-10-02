@@ -7,6 +7,39 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 ## Current local graphics test: 2026-10-02
 
+The 11:50 UTC capture confirms that the inherited `.Xauthority` is rejected,
+while the running user's Xorg `-auth` file opens the same display successfully.
+X11 is awake at 1920x1080, has no ES-DE client window, and ES-DE reports a
+1024x768 screen. This is consistent with an offscreen fallback; the SDL video
+driver itself is not logged. The AppImage parent and renderer child belong to
+one launch, not two separate frontend sessions.
+
+Per the user's correction, `repair_sunshine_display.py` fixes authorization at
+**Sunshine's service start**, not in an ES-DE-specific launcher. A scoped systemd
+drop-in executes the existing `/usr/bin/sunshine` with verified `DISPLAY=:0`
+and a stable, private XAUTHORITY symlink. The current global KMS prep guard and
+display watchdog refresh that symlink to a successfully probed, already readable
+authority file when Xorg changes. It never copies cookies or changes X11 access
+permissions. Applications inherit Sunshine's environment; apps.json, application
+commands, video-driver selection, emulator binaries, saves and audio/7.1 settings
+are unchanged. An application explicitly overriding XAUTHORITY may still need
+separate review; global apps.json display overrides stop installation.
+
+The installer checks the supplied guard hashes, service ownership/commands and
+process scope, refuses a running game/other Sunshine app, backs up exact bytes,
+and retains a checksum-verified restore command. It asks for sudo because both
+services are system units. It briefly stops/restarts Sunshine and its watchdog,
+disconnecting Moonlight and closing its existing ES-DE process pair; it does not
+restart Xorg or unrelated services. Startup failure triggers rollback. A PASS
+checks the actual running Sunshine process's X11 access, not just file contents.
+Local fixture tests cover authority rotation, inheritance without audio changes,
+failed auth with cleanup preserved, idempotence, rollback after failed start,
+later-edit protection, and a live-game stop. Real host window/relaunch testing
+remains pending: reconnect Moonlight, open ES-DE, exit, and launch it again.
+No emulator build or GitHub CI is needed for this host-service repair.
+AI assistance: Codex prepared and reviewed this change on
+`fix/sunshine-display-inheritance`, using the user's supplied process/display log.
+
 At 11:35 UTC the user reports a blank Moonlight screen after exiting and
 relaunching ES-DE. Pause the renderer comparison until the frontend is usable.
 The older Sunshine watchdog's `repair_x11` silently returns when `xrandr` cannot
@@ -17,8 +50,8 @@ cause. `collect_sunshine_display.py` now probes the running user's verified Xorg
 authority as well as the inherited client path, captures window placement and
 DPMS state, the current watchdog/idle-guard scripts, both service scopes, and
 recent ES-DE/Sunshine logs. It does not restart services, signal processes, change
-windows or copy authorization cookies. Run it while the blank stream is connected
-and upload DISPLAY_REPORT before making another persistent launcher change.
+windows or copy authorization cookies. Its resulting 11:50 UTC capture provided
+the evidence for the central repair above.
 AI assistance: Codex prepared this collector on `diagnostics/esde-relaunch`.
 
 The 11:20 UTC launch capture and completed trace confirm that `286d0cca` now
