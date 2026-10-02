@@ -209,6 +209,10 @@ void WindowSDL::WaitEvent() {
         return;
     }
 
+    if (Overlay::ProcessQuitEvent(event)) {
+        return;
+    }
+
     if (Libraries::Mouse::PushSDLEvent(event) || Libraries::Keyboard::PushSDLEvent(event)) {
         return;
     }
@@ -252,6 +256,7 @@ void WindowSDL::WaitEvent() {
         OnGamepadEvent(&event);
         break;
     case SDL_EVENT_QUIT:
+        LOG_INFO(Frontend, "HOST_QUIT action=accepted");
         is_open = false;
         break;
     case SDL_EVENT_QUIT_DIALOG:
@@ -403,15 +408,6 @@ void WindowSDL::OnKeyboardMouseInput(const SDL_Event* event) {
 }
 
 void WindowSDL::OnGamepadEvent(const SDL_Event* event) {
-    // The guide/PS button opens the host quit confirmation. Consume both edges
-    // so it never reaches guest bindings; releasing it must not close the dialog.
-    if ((event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ||
-         event->type == SDL_EVENT_GAMEPAD_BUTTON_UP) &&
-        event->gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE) {
-        if (event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN)
-            Overlay::ToggleQuitWindow();
-        return;
-    }
     bool input_down = event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION ||
                       event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
     Input::InputEvent input_event = Input::InputBinding::GetInputEventFromSDLEvent(*event);
