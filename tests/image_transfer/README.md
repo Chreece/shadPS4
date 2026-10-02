@@ -35,3 +35,37 @@ A short optional validation run should then check whether 01548 and the reported
 depth READ_AFTER_WRITE/WRITE_AFTER_WRITE errors are gone. The report also contains
 swapchain present hazards, an arena four bytes above maxBufferSize, and a mapped
 memory flush alignment error; those are separate issues and remain unresolved here.
+
+## Depth overlap growth initialization
+
+The detailed `ngs2-diagnostic-286d0cca(1)` capture records two R32_SFLOAT images
+with five layers being recreated as D32_SFLOAT images with six layers. The newer
+`f9110284` audio-review log also has a five-to-six layer warning, but lacks the
+format metadata needed to identify its path on its own.
+
+`ResolveDepthOverlap` created a fresh image, cleared its dirty flags, disabled
+the first-use HTile clear, and copied the overlapping layers. Unlike `ExpandImage`,
+it never initialized the additional layers or mip levels. Copying the minimum
+layer count is correct; marking the uncopied part initialized is the defect.
+
+For single-sample replacements that add layers or mip levels, refresh the new
+image from guest/buffer-cache data before copying the old GPU image over the
+overlapping part. Existing GPU-rendered data therefore wins over stale guest data,
+while newly added subresources receive their guest contents. Same-size format
+conversions retain their existing path and avoid an extra upload. Multisample
+initialization and stencil contents are outside this fix.
+
+`image_transfer_depth_growth` compiles the production `ResolveDepthOverlap` body
+from `texture_cache.cpp` in a CPU fixture. Allocation, upload, and copy operations
+are test doubles with distinct data for each layer/mip and for GPU versus guest
+contents. CMake regenerates the fixture when the production file changes; the
+decision and ordering code is not duplicated in the test. The original code fails
+the logged five-to-six case with the sixth layer still holding the uninitialized
+sentinel. The corrected code passes layer growth, mip growth, combined growth,
+same-size conversion, and unchanged-cache cases. These checks also detect an
+upload incorrectly placed after the preservation copy.
+
+This establishes the missing initialization, not its visual impact in RDR. Test
+the same street, character details, new locations, and cutscene locally with the
+normal settings. The copy-layer warning can remain because the preservation copy
+still correctly uses the smaller layer count.
