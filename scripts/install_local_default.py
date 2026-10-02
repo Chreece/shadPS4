@@ -41,6 +41,16 @@ GUARD_START = '# SHADPS4_SESSION_GUARD_V1\n'
 GUARD_END = '# END SHADPS4_SESSION_GUARD_V1\n'
 GAME_ID = re.compile(r'CUSA[0-9]{5}')
 TEST_LABEL = re.compile(r'ngs2|sparse|wait.?stage|\bbda\b|\btrace\b|\bbaseline\b', re.I)
+VERSION_LABEL = re.compile(r'shadPS4\s+v?[0-9]+(?:\.[0-9]+){1,3}(?:[-+][\w.-]+)?', re.I)
+BUILD_SELECTOR = re.compile(r'(CUSA[0-9]{5})\|[A-Za-z0-9][A-Za-z0-9_.-]*')
+
+
+def ordinary_title(stem):
+    """Remove build/test annotations, retaining region and other title metadata."""
+    def annotation(match):
+        label = match.group(1).strip()
+        return '' if TEST_LABEL.search(label) or VERSION_LABEL.fullmatch(label) else match.group()
+    return re.sub(r'\s*\[([^]]*)\]', annotation, stem).strip()
 
 
 def say(value):
@@ -155,7 +165,7 @@ def inspect_esde(home):
     roms = Path(node.findtext('path', '')).expanduser()
     if not roms.is_absolute() or not roms.is_dir() or roms.is_symlink():
         raise RuntimeError('Expected an accessible PS4 ROM-entry directory.')
-    entries, tests = {}, []
+    entries, tests, unknown = {}, [], []
     for path in sorted(roms.iterdir()):
         if path.suffix.lower() != '.ps4':
             continue
@@ -163,13 +173,18 @@ def inspect_esde(home):
             raise RuntimeError('Unexpected PS4 entry; preserved: ' + str(path))
         lines = path.read_text().splitlines()
         token = lines[0] if lines else ''
-        if GAME_ID.fullmatch(token) and not TEST_LABEL.search(path.stem):
+        build_label = ordinary_title(path.stem) != path.stem
+        selector = BUILD_SELECTOR.fullmatch(token)
+        if GAME_ID.fullmatch(token) and not build_label:
             entries.setdefault(token, []).append(path)
-        elif (GAME_ID.fullmatch(token.split('|', 1)[0]) and
-              (TEST_LABEL.search(path.stem) or TEST_LABEL.search(token.partition('|')[2]))):
-            tests.append((path, token.split('|', 1)[0]))
+        elif selector or (GAME_ID.fullmatch(token) and build_label):
+            # The old version/experiment selector is retired, not interpreted as
+            # a command or path. Only the validated game ID reaches the new entry.
+            tests.append((path, selector.group(1) if selector else token))
         else:
-            raise RuntimeError('Unrecognized PS4 entry; nothing switched: ' + str(path))
+            unknown.append(str(path) + ' (first line: ' + repr(token[:160]) + ')')
+    if unknown:
+        raise RuntimeError('Unrecognized PS4 entries; nothing switched:\n' + '\n'.join(unknown))
     return roms, entries, tests
 
 
@@ -289,16 +304,18 @@ def plan_entries(home, roms, entries, tests):
     removed = {p for p, _ in tests}
     additions = []
     known = set(entries)
+    reserved = set(roms.iterdir())
     # Keep an ordinary launch entry for every game that only had a test entry.
     for old, game in tests:
         if game not in known:
-            title = re.sub(r'\s*\[[^]]*\]', '', old.stem).strip() or game
+            title = ordinary_title(old.stem) or game
             dest = roms / (title + '.ps4')
-            if dest.exists() and dest not in removed:
+            if dest in reserved:
                 dest = roms / (game + '.ps4')
-            if dest.exists():
+            if dest in reserved:
                 raise RuntimeError('Cannot safely create ordinary entry: ' + str(dest))
             additions.append((dest, (game + '\n').encode()))
+            reserved.add(dest)
             known.add(game)
     gamelists = []
     for i, path in enumerate((home / 'ES-DE/gamelists/ps4/gamelist.xml', roms / 'gamelist.xml')):
