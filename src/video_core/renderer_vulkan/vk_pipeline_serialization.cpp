@@ -12,8 +12,7 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-// Invalidate binaries compiled before the reviewed EXEC/atomic/ALU corrections.
-static constexpr u32 ShaderBinaryVersion = 7u;
+static constexpr u32 ShaderBinaryVersion = 6u;
 static constexpr u32 ShaderMetaVersion = 6u;
 static constexpr u32 PipelineKeyVersion = 3u;
 } // namespace Serialization
@@ -290,7 +289,6 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
         } else {
             module = CompileSPV(spv, instance.GetDevice());
         }
-        it_pgm.value()->info.flattened_ud_buf = std::move(program->info.flattened_ud_buf);
     }
     it_pgm.value()->InsertPermut(module, std::move(spec), perm_idx);
 
@@ -310,29 +308,23 @@ void PipelineCache::WarmUp() {
 
     Storage::DataBase::Instance().Open();
 
-    // The profile is only saved when it is missing, so an incompatible cache stays incompatible on
-    // every later launch as well. Delete it and start over instead.
-    const auto start_fresh_cache = [this] {
-        Storage::DataBase::Instance().FinishPreload();
-        std::vector<u8> data(sizeof(profile));
-        std::memcpy(data.data(), &profile, sizeof(profile));
-        Storage::DataBase::Instance().Save(Storage::BlobType::ShaderProfile, "profile",
-                                           std::move(data));
-    };
-
     // Check if cache is compatible
     std::vector<u8> profile_data{};
     Storage::DataBase::Instance().Load(Storage::BlobType::ShaderProfile, "profile", profile_data);
     if (profile_data.empty()) {
-        start_fresh_cache();
+        Storage::DataBase::Instance().FinishPreload();
+
+        profile_data.resize(sizeof(profile));
+        std::memcpy(profile_data.data(), &profile, sizeof(profile));
+        Storage::DataBase::Instance().Save(Storage::BlobType::ShaderProfile, "profile",
+                                           std::move(profile_data));
         return;
     }
     if (profile_data.size() != sizeof(Shader::Profile)) {
         LOG_WARNING(Render,
                     "Pipeline cache profile has unexpected size ({} != {}). Ignoring the cache",
                     profile_data.size(), sizeof(Shader::Profile));
-        Storage::DataBase::Instance().Reset();
-        start_fresh_cache();
+        Storage::DataBase::Instance().Close();
         return;
     }
 
@@ -341,8 +333,7 @@ void PipelineCache::WarmUp() {
     if (cached_profile != profile) {
         LOG_WARNING(Render,
                     "Pipeline cache isn't compatible with current system. Ignoring the cache");
-        Storage::DataBase::Instance().Reset();
-        start_fresh_cache();
+        Storage::DataBase::Instance().Close();
         return;
     }
 

@@ -1,6 +1,13 @@
 {
   "date": "2026-10-02",
   "baseline": "ac9122931a1d19467e1288e29350a8fbd9bf7a14",
+  "acceptance_update": {
+    "date": "2026-10-03",
+    "status": "REJECTED_BATCH_REVERTED",
+    "rejected_revision": "2a6ac3284da58175f386b8dcdda2d1f5ac6d26f0",
+    "evidence": "User observed missing near-surface details and heat-like colours on the combined build, then confirmed the details returned after restoring the previous saved binary. The original glitches remain. Quiet renderer logs did not establish visual correctness.",
+    "scope": "Reverse all seven integration merges; preserve earlier local fixes and experimental branches. No individual upstream PR is identified as the cause. The per-PR decisions below are historical review decisions, not current acceptance."
+  },
   "upstream_head": "62653e388ccd2f5d062b6bcf4df06e4081a0aca0",
   "scope": "Linux local Docker integration; read all 65 open PR discussions and inline thread status plus 12 recent merged PRs. Not a claim of universal compatibility or game correctness.",
   "pull_requests": [

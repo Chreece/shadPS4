@@ -18,7 +18,6 @@
 #include "common/types.h"
 #include "common/unique_function.h"
 #include "video_core/amdgpu/cb_db_extent.h"
-#include "video_core/amdgpu/pm4_packet_assembler.h"
 #include "video_core/amdgpu/regs.h"
 
 namespace Vulkan {
@@ -131,13 +130,15 @@ public:
     }
 
     struct AscQueueInfo {
+        static constexpr size_t Pm4BufferSize = 1024;
         VAddr map_addr;
         u32* read_addr;
         u32 ring_size_dw;
         u32 pipe_id;
-        Pm4PacketAssembler packet_assembler;
+        std::array<u32, Pm4BufferSize> tmp_packet;
+        u32 tmp_dwords;
     };
-    Common::SlotVector<AscQueueInfo> asc_queues{64};
+    Common::SlotVector<AscQueueInfo> asc_queues{};
 
     std::thread::id GetGpuCommandProcessorThread() {
         return gpu_id;
