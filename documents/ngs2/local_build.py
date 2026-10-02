@@ -20,6 +20,7 @@ IMAGE_TRANSFER_TEST = False
 STARTUP_TEST = False
 LATE_AUDIO_TRACE = False
 RAW_BUFFER_SYNC_TEST = False
+TILED_MIP_TEST = False
 SOURCE_BRANCH = None
 
 
@@ -44,7 +45,8 @@ def selection(original, binary):
                      "10ff9e19a7d94340aaedd1e333f1a11abeeb9e75",
                      "77c6bd3a1f116c605370e765464423a668f25ba1",
                      "f9f2aa508c90a98e800ee398a824acd57b68fdbb",
-                     "f96686b8b5f0d813723d29e7de581efc1d2fb0a8"):
+                     "f96686b8b5f0d813723d29e7de581efc1d2fb0a8",
+                     "6e00d2ccadfa4ec1f5a7bbd46ad8a233857bbbfa"):
         release = home / "Applications/shadps4/releases" / ("ngs2-" + previous[:8])
         command = (shlex.quote(str(release / "shadps4")) + " --game CUSA36843 --fullscreen true"
                    if previous == PREVIOUS else "python3 " + shlex.quote(str(release / "run_diagnostic.py")))
@@ -279,6 +281,12 @@ def main():
                  '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
             run(['cmake', '--build', transfer, '--parallel', jobs])
             run(['ctest', '--test-dir', transfer, '--no-tests=error', '--output-on-failure'])
+        if TILED_MIP_TEST:
+            layout = work / 'texture-layout-test'
+            run(['cmake', '-S', source / 'tests/texture_layout', '-B', layout,
+                 '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', *compiler])
+            run(['cmake', '--build', layout, '--parallel', jobs])
+            run(['ctest', '--test-dir', layout, '--no-tests=error', '--output-on-failure'])
         build = work / 'build'
         options = ['-DCMAKE_BUILD_TYPE=Release', '-DENABLE_TESTS=OFF',
                    '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF']
@@ -302,7 +310,7 @@ def main():
     if helper.is_symlink() or (helper.exists() and helper.read_bytes() != content):
         raise RuntimeError('Diagnostic helper already exists with different contents.')
     deploy.atomic_write(helper, content, 0o700)
-    if LATE_AUDIO_TRACE or RAW_BUFFER_SYNC_TEST:
+    if LATE_AUDIO_TRACE or RAW_BUFFER_SYNC_TEST or TILED_MIP_TEST:
         collector = binary.parent / 'collect_graphics.py'
         if collector.is_symlink():
             raise RuntimeError('Unexpected capture helper symlink.')
@@ -314,7 +322,10 @@ def main():
         print('GRAPHICS_LOCAL_RESULT=PASS')
         if SOURCE_BRANCH == 'main':
             print('MAIN_LOCAL_RESULT=PASS; combined main revision ' + REVISION)
-        if RAW_BUFFER_SYNC_TEST:
+        if TILED_MIP_TEST:
+            print('EXPERIMENTAL: upstream tiled mip layout fix; game result unverified.')
+            print('CAPTURE_GRAPHICS=python3 ' + shlex.quote(str(collector)))
+        elif RAW_BUFFER_SYNC_TEST:
             print('EXPERIMENTAL: raw buffer/image read synchronization; game result unverified.')
             print('CAPTURE_GRAPHICS=python3 ' + shlex.quote(str(collector)))
         elif LATE_AUDIO_TRACE:
@@ -330,7 +341,10 @@ def main():
             print('GRAPHICS_TRACE=ENABLED; observation only, no new rendering fix.')
         else:
             print('EXPERIMENTAL: upstream PR #4818 texture containment; in-game graphics unconfirmed.')
-        if RAW_BUFFER_SYNC_TEST:
+        if TILED_MIP_TEST:
+            print('Use the existing NGS2 probe entry. Compare initial loading and the same route twice.')
+            print('Run CAPTURE_GRAPHICS while missing elements are visible; keep the game running.')
+        elif RAW_BUFFER_SYNC_TEST:
             print('Use the existing NGS2 probe entry. Revisit the same area and compare missing geometry.')
             print('Run CAPTURE_GRAPHICS while the game is running and the problem is visible.')
         elif LATE_AUDIO_TRACE:

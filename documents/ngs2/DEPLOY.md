@@ -5,6 +5,37 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # Isolated Linux test deployment
 
+## Current local graphics test: 2026-10-02
+
+`main_build.py --docker` now pins combined main
+`286d0cca483ce80f9d4a4fe98d4620b6b003e0ca`. This integrates
+`fix/tiled-mip-layout` (`261f339244bd3179089ed131be371df4c1b670b2`), based on
+the merged upstream PR #5196 (`7e77898756a50e2aa0bae0031790eb81b392e9b2`).
+It retains the existing audio, sparse queue, startup, depth and presentation fixes.
+
+The latest test of `6e00d2cc` still showed missing elements while entering gameplay.
+Its capture contains tiled uploads but no raw-buffer/image synchronization events.
+The upstream mip fix is a candidate for this symptom, not a confirmed game fix.
+A bounded `micro-mip-detile` event now records affected image uploads.
+
+The helper recognizes an upgrade from `6e00d2cc`, runs the five new Linux layout
+regressions alongside existing focused checks, and compiles the full Linux core
+in the existing Docker cache before the guarded launcher switch. No GitHub or
+cross-platform build is required. Source is pinned; if main moves, the helper
+stops without switching the launcher. Existing saves, configuration and 7.1 audio
+are retained. The installer prints the verified rollback command.
+
+After `MAIN_LOCAL_RESULT=PASS`, launch the existing NGS2 probe entry once. Compare
+the initial load and the same route twice, then collect while elements are missing:
+
+```sh
+python3 "$HOME/Applications/shadps4/releases/ngs2-286d0cca/collect_graphics.py"
+```
+
+Upload the resulting `GRAPHICS_REPORT` archive. This test has not yet established
+in-game graphics correctness; in-game audio also remains experimental.
+Older revision-specific notes below are retained as deployment history.
+
 ## Graphics capture after the startup correction
 
 The user confirmed that combined main 038bb3d8 starts without the immediate
