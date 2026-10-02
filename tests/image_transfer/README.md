@@ -69,3 +69,37 @@ This establishes the missing initialization, not its visual impact in RDR. Test
 the same street, character details, new locations, and cutscene locally with the
 normal settings. The copy-layer warning can remain because the preservation copy
 still correctly uses the smaller layer count.
+
+## Runtime evidence
+
+With `SHADPS4_GRAPHICS_DIAGNOSTICS=1`, the production overlap path emits a bounded
+`depth-growth` record after refreshing the replacement and returning from the
+preservation copy. `upload-recorded=1` means the dirty state was cleared by the
+refresh before the copy. `depth-growth-uninitialized` identifies growth for which
+this did not happen, including unsupported multisample initialization. These are
+CPU-side command-recording observations, not a GPU readback or proof of visual
+correctness. Existing layer-count warnings can still occur.
+
+`scripts/collect_graphics_evidence.py --expected-revision <40-character SHA>` arms
+one ordinary ES-DE launch. It verifies the selected installer record and binary
+hash, preserves the single-instance guard, enables diagnostics only for the game
+process, and captures stdout/stderr from launch until exit. It also verifies the
+running executable through `/proc`, records the exit code and relevant settings,
+includes fresh renderer logs, and restores the original launcher. It does not
+enable Vulkan validation or change emulator settings or host services.
+
+Run the collector before launching the game. Wait for `CAPTURE_ARMED`, launch
+through the ordinary ES-DE game entry, reproduce the affected scenes, and exit
+the game normally. Only then is `GRAPHICS_REPORT` created. Upload that archive
+with observations about the same session. `CAPTURE_COMPLETE=True` describes
+capture coverage, not a fixed bug. `NOT_OBSERVED` requires another relevant test;
+it must never be reported as success. Missing binary identity, missing diagnostics,
+interruption or a missing exit record keeps the capture incomplete. The controller
+does not stop the game on timeout or interruption, and prints a guarded launcher
+recovery command when arming.
+
+Run `python3 -m unittest discover -s scripts -p test_collect_graphics_evidence.py`.
+The collector tests launch a real child through exit and archive creation; the
+installer, launcher, and `/proc` identity are fixtures. Both verified and denied
+identity cases are tested. These checks do not replace evidence from the user's
+emulator session.

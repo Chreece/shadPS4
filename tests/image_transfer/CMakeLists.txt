@@ -26,5 +26,6 @@ string(SUBSTRING "${TEXTURE_CACHE_TEXT}" ${DEPTH_BEGIN} ${DEPTH_LENGTH} DEPTH_BO
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/depth_overlap_body.inc" "${DEPTH_BODY}")
 add_executable(depth_overlap_test test_depth_overlap.cpp)
 target_compile_features(depth_overlap_test PRIVATE cxx_std_23)
-target_include_directories(depth_overlap_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_include_directories(depth_overlap_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}"
+    "${CMAKE_CURRENT_LIST_DIR}/../../src")
 add_test(NAME image_transfer_depth_growth COMMAND depth_overlap_test)

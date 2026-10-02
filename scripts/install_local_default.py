@@ -275,6 +275,8 @@ def build(home, revision):
                  '-DCMAKE_BUILD_TYPE=Release', *compiler], docker=True)
             run(['cmake', '--build', folder, '--parallel', jobs], docker=True)
             run(['ctest', '--test-dir', folder, '--no-tests=error', '--output-on-failure'], docker=True)
+        run(['python3', '-m', 'unittest', 'discover', '-s', source / 'scripts',
+             '-p', 'test_collect_graphics_evidence.py'], docker=True)
         folder = work / 'build'
         # Older CMake cached the missing dependency scanner outside CMakeCache.txt too.
         for path in [folder / 'CMakeCache.txt', *folder.glob('CMakeFiles/*/CMakeCXXCompiler.cmake')]:

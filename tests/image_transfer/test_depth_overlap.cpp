@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include "video_core/graphics_diagnostics.h"
 
 #define ASSERT(expression)                                                                         \
     do {                                                                                           \
@@ -18,6 +19,10 @@
 
 using u32 = std::uint32_t;
 using ImageId = u32;
+namespace GraphicsDiagnostics = VideoCore::GraphicsDiagnostics;
+constexpr bool False(u32 value) {
+    return value == 0;
+}
 
 enum class BindingType { Texture, Storage, RenderTarget, DepthTarget };
 enum ImageFlagBits : u32 { Dirty = 7, GpuModified = 8 };
@@ -39,6 +44,8 @@ struct ImageInfo {
     SubresourceExtent resources;
     u32 num_bits = 32;
     u32 num_samples = 1;
+    u32 pixel_format = 100;
+    std::uint64_t guest_address = 0x10000;
     void UpdateSize() {}
 };
 
@@ -115,6 +122,7 @@ void CheckGrowth(const std::string& name, SubresourceExtent old_extent,
     TextureCache cache;
     ImageInfo old_info;
     old_info.props.is_depth = source_depth;
+    old_info.pixel_format = source_depth ? 126 : 100;
     old_info.resources = old_extent;
     const auto old_id = cache.slot_images.insert(0, cache.runtime, 0, old_info);
     auto& old = cache.slot_images[old_id];
@@ -127,6 +135,7 @@ void CheckGrowth(const std::string& name, SubresourceExtent old_extent,
     }
     ImageInfo requested = old_info;
     requested.props.is_depth = true;
+    requested.pixel_format = 126;
     requested.resources = new_extent;
     const auto id = cache.ResolveDepthOverlap(requested, BindingType::DepthTarget, old_id);
     ASSERT(id != old_id);
