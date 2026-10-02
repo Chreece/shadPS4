@@ -10,6 +10,7 @@
 #include <vector>
 #include "core/libraries/ngs2/ngs2_error.h"
 #include "diagnostics.h"
+#include "direct_filter.h"
 #include "guest_memory.h"
 #include "playback.h"
 #include "waveform_abi.h"
@@ -43,6 +44,7 @@ struct Block {
 // so an in-flight grain cannot advance or overwrite the new waveform's state.
 struct VoiceProgress {
     std::deque<Block> blocks;
+    std::map<u32, DirectFilter::History> filter_history;
     RunState state{RunState::Idle};
     float peak{};
     u64 rendered_samples{};
@@ -62,6 +64,7 @@ struct Voice {
     OrbisNgs2WaveformFormat format{};
     std::map<u32, Port> ports;
     std::map<u32, std::vector<float>> matrices;
+    std::map<u32, DirectFilter> filters;
     float pitch{1};
     u32 output{};
     float gain{1};
@@ -530,6 +533,7 @@ s32 ApplyParameter(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack
         voice.progress->rendered_samples = voice.progress->completed_bytes = 0;
         voice.progress->waveform_data = voice.progress->user_data = 0;
         voice.progress->exit_loop = exit_loop = false;
+        voice.progress->filter_history.clear();
         return 0;
     }
     case 0x10000001: {
@@ -570,6 +574,7 @@ s32 ApplyParameter(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack
         reset_progress = true;
         voice.channels = p.numIoChannels;
         voice.progress->state = RunState::Idle;
+        voice.progress->filter_history.clear();
         return 0;
     }
     case 0x10000008:
@@ -596,12 +601,22 @@ s32 ApplyParameter(OrbisNgs2Handle handle, Voice& voice, const RackOptions& rack
         OrbisNgs2SamplerVoiceFilterParam p{};
         if (const auto e = Parameter(address, header, p); e < 0)
             return e;
-        // The captured game initializes an identity direct filter. Other filter
-        // modes need DSP/ABI validation and must not silently report success.
-        if (p.index >= 64 || p.location || p.reserved3 || p.type != 0x20 ||
-            p.param.direct.i0 != 1 || p.param.direct.i1 != 0 || p.param.direct.i2 != 0 ||
-            p.param.direct.o1 != 0 || p.param.direct.o2 != 0)
+        const u32 filter_limit = rack.base.size > sizeof(OrbisNgs2RackOption)
+                                     ? (voice.kind == 0x1000 ? rack.sampler.maxFilters
+                                                            : rack.submixer.maxFilters)
+                                     : 16;
+        if (p.index >= std::min(filter_limit, 16u))
+            return ORBIS_NGS2_ERROR_INVALID_FILTER_INDEX;
+        if (p.location)
+            return ORBIS_NGS2_ERROR_INVALID_FILTER_LOCATION;
+        if (p.type != 0x20)
+            return ORBIS_NGS2_ERROR_INVALID_FILTER_TYPE;
+        DirectFilter filter{{p.param.direct.i0, p.param.direct.i1, p.param.direct.i2,
+                             p.param.direct.o1, p.param.direct.o2},
+                            static_cast<u8>(p.channelMask)};
+        if (p.reserved3 || !filter.Valid())
             return ORBIS_NGS2_ERROR_INVALID_OPERATION;
+        voice.filters[p.index] = filter;
         return 0;
     }
     case 0x30000004: {
@@ -632,6 +647,7 @@ void Event(Voice& voice, u32 event) {
     switch (event) {
     case 0:
         if (voice.progress->state != RunState::Playing) {
+            voice.progress->filter_history.clear();
             for (auto& block : voice.progress->blocks)
                 block.started = false;
             voice.progress->state = RunState::Playing;
@@ -644,6 +660,7 @@ void Event(Voice& voice, u32 event) {
         break;
     case 3:
         voice.progress->state = RunState::Idle;
+        voice.progress->filter_history.clear();
         voice.progress->blocks.clear();
         voice.progress->tail.reset();
         voice.progress->accepts_blocks = false;
@@ -1064,6 +1081,19 @@ static s32 SystemRenderImpl(OrbisNgs2Handle handle, const OrbisNgs2RenderBufferI
                 const auto result = RenderSource(key, voice, audio, rate);
                 if (result < 0 && !error)
                     error = result;
+            }
+            for (const auto& [index, filter] : voice.filters) {
+                if (!filter.Process(audio, voice.channels, voice.progress->filter_history[index])) {
+                    voice.progress->state = RunState::Failed;
+                    if (!error)
+                        error = ORBIS_NGS2_ERROR_FAIL;
+                    break;
+                }
+            }
+            if (voice.progress->state == RunState::Failed && !voice.filters.empty()) {
+                voice.progress->filter_history.clear();
+                std::ranges::fill(audio, 0);
+                continue;
             }
             Diagnostics::LfeWindow before_fx;
             if (lfe_snapshot)

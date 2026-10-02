@@ -29,8 +29,8 @@ Headers are bounded and cycles rejected. Supported controls are:
 | Control group | IDs implemented |
 | --- | --- |
 | Generic | 1 matrix levels, 2 port volume, 3 port matrix, 4 zero delay, 5 patch, 6 event |
-| Sampler `0x10000000` | 0 setup, 1 queue/continue/clear blocks, 4 exit loop, 5 pitch, 8 UserFx, 9 peak enable, 10 identity direct filter |
-| Submixer `0x20000000` | 0 setup, 4 UserFx, 5 peak enable, 6 identity direct filter |
+| Sampler `0x10000000` | 0 setup, 1 queue/continue/clear blocks, 4 exit loop, 5 pitch, 8 UserFx, 9 peak enable, 10 direct filter at location 0 |
+| Submixer `0x20000000` | 0 setup, 4 UserFx, 5 peak enable, 6 direct filter at location 0 |
 | Mastering `0x30000000` | 0 setup, 4 gain, 5 output ID |
 
 Events are ordinal: play 0, stop 1, immediate stop 2, kill 3, pause 4, resume 5.
@@ -140,11 +140,12 @@ SDK or psOff implementation code was copied:
 
 ## Remaining limitations and test scope
 
-General filters, envelopes, compressor/distortion/limiter, generic voice completion
+Filter types other than direct `0x20`, filter locations other than 0, envelopes,
+compressor/distortion/limiter, generic voice completion
 callbacks, address replacement, file/user waveform parsing and guest multi-call
 lock semantics are unfinished. Unsupported VoiceControl commands return an error;
-unmodified exports outside this bridge may still be stubs. Identity filter setup
-is accepted because it has no sample effect; other filter parameters fail explicitly.
+unmodified exports outside this bridge may still be stubs. Direct-filter scope,
+reference evidence and state limitations are recorded in [DIRECT_FILTERS.md](DIRECT_FILTERS.md).
 Peak-enable controls are accepted, with peak measurement always available.
 
 Queued blocks now carry rate-conversion phase across transitions and starvation.

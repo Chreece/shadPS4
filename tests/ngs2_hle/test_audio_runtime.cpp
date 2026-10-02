@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 using namespace Fixture;
 namespace {
@@ -251,13 +252,14 @@ TEST(PauseResumeAndPitchUseSourceSampleCounters) {
     Event(g.source, 3);
     CHECK(g.Render() == 0 && g.State().voiceState.stateFlags == 32);
 }
-TEST(RejectedCapturedDirectFilterPreservesPlayingAudio) {
+TEST(RejectedReservedFilterFieldPreservesPlayingAudio) {
     Graph g;
     g.Load(PcmSamples(std::vector<s16>(256, 4096)));
     OrbisNgs2SamplerVoiceFilterParam filter{};
     filter.type = 0x20;
     filter.param.direct.i0 = 0.95520216f;
     filter.param.direct.o1 = 0.044797838f;
+    filter.reserved3 = 1;
     CHECK(Control(g.source, 0x1000000a, filter) == ORBIS_NGS2_ERROR_INVALID_OPERATION);
     CHECK(g.Render() == 0 && g.output.value[0] == 0.125f);
 }
@@ -1057,6 +1059,265 @@ TEST(SetupAndKillDiscardRetiredStreamHistory) {
         CHECK(g.State().voiceState.stateFlags == 32);
     }
 }
+namespace {
+OrbisNgs2SamplerVoiceFilterParam Filter(float i0 = 0.5f, float o1 = 0.5f) {
+    OrbisNgs2SamplerVoiceFilterParam p{};
+    p.type = 0x20;
+    p.param.direct = {i0, 0, 0, o1, 0};
+    return p;
+}
+s32 PS4_SYSV_ABI ObserveFilteredFx(OrbisNgs2UserFxProcessContext* context) {
+    CHECK(context->aChannelData[0][0] == 0.0625f);
+    for (unsigned ch = 1; ch < context->numChannels; ++ch)
+        CHECK(context->aChannelData[ch][0] == 0);
+    std::fill_n(context->aChannelData[0], context->numGrainSamples, 0.75f);
+    return 0;
+}
+} // namespace
+TEST(CapturedDirectFilterIsAcceptedAndChangesEightChannelAudio) {
+    for (const u32 mask : {0u, 0x88u, 0xff00u}) {
+        Graph g;
+        std::vector<s16> input(256 * 8);
+        for (unsigned ch = 0; ch < 8; ++ch)
+            input[ch] = s16((ch + 1) * 1024);
+        g.Load(PcmSamples(input, 8));
+        auto filter = Filter(0.933768392f, 0.0662315786f);
+        filter.channelMask = mask;
+        CHECK(Control(g.source, 0x1000000a, filter) == 0);
+        CHECK(g.Render() == 0);
+        for (unsigned n = 0; n < 256; ++n)
+            for (unsigned ch = 0; ch < 8; ++ch) {
+                const float amplitude = float(ch + 1) / 32;
+                const double expected = mask & (1u << ch) ? (n == 0 ? amplitude : 0)
+                                                          : amplitude * 0.933768392f *
+                                                                std::pow(double(0.0662315786f), n);
+                CHECK(std::abs(g.output.value[n * 8 + ch] - expected) < 1e-7);
+            }
+    }
+}
+TEST(DirectFilterHistorySurvivesQueuedBlocksAndDifferentGrainSizes) {
+    for (const unsigned grain : {64, 128, 256}) {
+        Graph g;
+        CHECK(sceNgs2SystemSetGrainSamples(g.system.handle.value, grain) == 0);
+        std::vector<s16> input(2 * grain);
+        input[grain - 1] = 8192;
+        g.Load(PcmSamples(input));
+        Mapping mapping{input.data(), input.size() * sizeof(s16), 1};
+        Guest<std::array<OrbisNgs2WaveformBlock, 2>> blocks;
+        blocks.value = {
+            {{0, grain * 2, 0, 0, grain, 0, 11}, {grain * 2, grain * 2, 0, 0, grain, 0, 22}}};
+        CHECK(Control(g.source, 0x10000001,
+                      OrbisNgs2SamplerVoiceWaveformBlocksParam{
+                          {}, input.data(), 4, 2, blocks.value.data()}) == 0);
+        CHECK(Control(g.source, 0x1000000a, Filter()) == 0);
+        CHECK(g.Render() == 0 && g.output.value[(grain - 1) * 8] == 0.125f);
+        CHECK(g.State().numDecodedSamples == grain);
+        CHECK(g.Render() == 0 && g.output.value[0] == 0.0625f);
+        CHECK(g.State().numDecodedSamples == 2 * grain && g.State().userData == 22);
+    }
+}
+TEST(FilterCoefficientUpdatesPreserveHistoryAndPauseResumeFreezesIt) {
+    Graph g;
+    std::vector<s16> input(768);
+    input[255] = 8192;
+    g.Load(PcmSamples(input));
+    CHECK(Control(g.source, 0x1000000a, Filter()) == 0);
+    CHECK(g.Render() == 0 && g.output.value[255 * 8] == 0.125f);
+    Event(g.source, 4);
+    CHECK(g.Render() == 0 && g.output.value[0] == 0);
+    CHECK(g.State().numDecodedSamples == 256);
+    CHECK(Control(g.source, 0x1000000a, Filter(0.5f, 0.25f)) == 0);
+    Event(g.source, 5);
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.03125f);
+    CHECK(g.State().numDecodedSamples == 512);
+}
+TEST(PlayAndFreshSetupResetFilterHistoryButKeepCoefficients) {
+    for (bool setup : {false, true}) {
+        Graph g;
+        std::vector<s16> input(768);
+        input[255] = 8192;
+        g.Load(PcmSamples(input));
+        CHECK(Control(g.source, 0x1000000a, Filter()) == 0);
+        CHECK(g.Render() == 0);
+        if (setup) {
+            g.Load(PcmSamples(std::vector<s16>(512, 8192)));
+        } else {
+            Event(g.source, 1);
+            Event(g.source, 0);
+        }
+        CHECK(g.Render() == 0 && g.output.value[0] == (setup ? 0.125f : 0));
+    }
+}
+TEST(SamplerAndSubmixerFilterChainsRunBeforeUserFx) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(512, 8192)));
+    auto sampler = Filter(0.5f, 0);
+    sampler.index = 1;
+    CHECK(Control(g.source, 0x1000000a, sampler) == 0);
+    OrbisNgs2SubmixerVoiceFilterParam bus{};
+    bus.type = 0x20;
+    bus.param.direct.i0 = 0.5f;
+    CHECK(Control(g.bus, 0x20000006, bus) == 0);
+    Mapping code{reinterpret_cast<void*>(ObserveFilteredFx), 1, 4};
+    CHECK(Control(g.bus, 0x20000004,
+                  OrbisNgs2SubmixerVoiceUserFxParam{{}, ObserveFilteredFx, 0, 0, 0}) == 0);
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.75f);
+}
+TEST(FilterSlotsRunInIndexOrderAndKeepIndependentHistory) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(768, 8192)));
+    auto later = Filter(0.5f, 0);
+    later.index = 1;
+    CHECK(Control(g.source, 0x1000000a, later) == 0);
+    CHECK(Control(g.source, 0x1000000a, Filter()) == 0);
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.0625f);
+    CHECK(g.output.value[255 * 8] == 0.125f);
+    later.param.direct.i0 = 0.25f;
+    CHECK(Control(g.source, 0x1000000a, later) == 0);
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.0625f);
+}
+TEST(RejectedFilterBatchRollsBackCoefficientsBlocksAndHistory) {
+    Graph g;
+    std::vector<s16> input(768);
+    input[255] = 8192;
+    g.Load(PcmSamples(input));
+    CHECK(Control(g.source, 0x1000000a, Filter()) == 0);
+    CHECK(g.Render() == 0);
+    struct Batch {
+        OrbisNgs2SamplerVoiceFilterParam filter;
+        OrbisNgs2VoiceEventParam kill{{sizeof(OrbisNgs2VoiceEventParam), 0, 6}, 3};
+        OrbisNgs2SamplerVoiceFilterParam bad;
+    };
+    Guest<Batch> batch;
+    batch.value.filter = Filter(0.5f, 0.25f);
+    batch.value.filter.header = {sizeof(batch.value.filter), offsetof(Batch, kill), 0x1000000a};
+    batch.value.kill.header.next = offsetof(Batch, bad) - offsetof(Batch, kill);
+    batch.value.bad = Filter();
+    batch.value.bad.header = {sizeof(batch.value.bad), 0, 0x1000000a};
+    batch.value.bad.type = 0x1234;
+    CHECK(sceNgs2VoiceControl(g.source, &batch.value.filter.header) ==
+          ORBIS_NGS2_ERROR_INVALID_FILTER_TYPE);
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.0625f);
+    CHECK(g.State().numDecodedSamples == 512);
+}
+TEST(CallbackCoefficientUpdatesTakeEffectNextGrainWithoutLosingHistory) {
+    for (bool update_source : {false, true}) {
+        Graph g;
+        g.Load(PcmSamples(std::vector<s16>(768 * 8, 8192), 8));
+        const auto target = update_source ? g.source : g.bus;
+        const auto command = update_source ? 0x1000000au : 0x20000006u;
+        CHECK(Control(target, command, Filter()) == 0);
+        Mapping code{reinterpret_cast<void*>(ProcessFx), 1, 4};
+        FxState fx;
+        fx.reenter = [&] { CHECK(Control(target, command, Filter(0.25f, 0.5f)) == 0); };
+        if (update_source) {
+            InstallFx(g, fx);
+        } else {
+            CHECK(Control(g.source, 0x10000008,
+                          OrbisNgs2SamplerVoiceUserFxParam{
+                              {}, ProcessFx, reinterpret_cast<uintptr_t>(&fx), 42, 99}) == 0);
+        }
+        CHECK(g.Render() == 0 && g.output.value[0] == 0.125f);
+        fx.reenter = {};
+        CHECK(g.Render() == 0 && g.output.value[0] == 0.1875f);
+    }
+}
+TEST(CallbackSetupIsolatesOldAndNewFilterHistory) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(768 * 8, 8192), 8));
+    CHECK(Control(g.bus, 0x20000006, Filter()) == 0);
+    Mapping code{reinterpret_cast<void*>(ProcessFx), 1, 4};
+    FxState fx;
+    fx.reenter = [&] { Bus(g.bus, 0x2000); };
+    CHECK(Control(g.source, 0x10000008,
+                  OrbisNgs2SamplerVoiceUserFxParam{
+                      {}, ProcessFx, reinterpret_cast<uintptr_t>(&fx), 42, 99}) == 0);
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.125f);
+    fx.reenter = {};
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.125f);
+}
+TEST(UnsupportedAndNonfiniteFiltersDoNotReplaceAWorkingFilter) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(768, 8192)));
+    CHECK(Control(g.source, 0x1000000a, Filter(0.5f, 0)) == 0);
+    for (unsigned failure = 0; failure < 7; ++failure) {
+        auto filter = Filter();
+        s32 expected = ORBIS_NGS2_ERROR_INVALID_OPERATION;
+        switch (failure) {
+        case 0:
+            filter.index = 16;
+            expected = ORBIS_NGS2_ERROR_INVALID_FILTER_INDEX;
+            break;
+        case 1:
+            filter.location = 1;
+            expected = ORBIS_NGS2_ERROR_INVALID_FILTER_LOCATION;
+            break;
+        case 2:
+            filter.type = 1;
+            expected = ORBIS_NGS2_ERROR_INVALID_FILTER_TYPE;
+            break;
+        case 3:
+            filter.reserved3 = 1;
+            break;
+        case 4:
+            filter.param.direct.i0 = std::numeric_limits<float>::quiet_NaN();
+            break;
+        case 5:
+            filter.param.direct.i2 = std::numeric_limits<float>::infinity();
+            break;
+        case 6:
+            filter.param.direct.o2 = -std::numeric_limits<float>::infinity();
+            break;
+        }
+        CHECK(Control(g.source, 0x1000000a, filter) == expected);
+    }
+    CHECK(g.Render() == 0 && g.output.value[0] == 0.125f);
+}
+TEST(ExplicitRackFilterLimitsAreRespected) {
+    System system;
+    for (const u32 limit : {0u, 1u, 16u}) {
+        Guest<OrbisNgs2SamplerRackOption> sampler;
+        auto& base = sampler.value.rackOption;
+        base.size = sizeof(sampler.value);
+        base.maxGrainSamples = 256;
+        base.maxVoices = 1;
+        sampler.value.maxFilters = limit;
+        Rack rack{system.handle.value, 0x1000, &base};
+        auto filter = Filter();
+        const auto voice = VoiceHandle(rack);
+        CHECK(Control(voice, 0x1000000a, filter) ==
+              (limit ? 0 : ORBIS_NGS2_ERROR_INVALID_FILTER_INDEX));
+        filter.index = limit;
+        CHECK(Control(voice, 0x1000000a, filter) == ORBIS_NGS2_ERROR_INVALID_FILTER_INDEX);
+        Guest<OrbisNgs2SubmixerRackOption> submixer;
+        submixer.value.rackOption = base;
+        submixer.value.rackOption.size = sizeof(submixer.value);
+        submixer.value.maxChannels = 8;
+        submixer.value.maxFilters = limit;
+        Rack bus{system.handle.value, 0x2000, &submixer.value.rackOption};
+        filter.index = 0;
+        CHECK(Control(VoiceHandle(bus), 0x20000006, filter) ==
+              (limit ? 0 : ORBIS_NGS2_ERROR_INVALID_FILTER_INDEX));
+        filter.index = limit;
+        CHECK(Control(VoiceHandle(bus), 0x20000006, filter) ==
+              ORBIS_NGS2_ERROR_INVALID_FILTER_INDEX);
+    }
+}
+TEST(FilterOverflowFailsSilentlyWithoutCallingTheFailedVoicesUserFx) {
+    Graph g;
+    g.Load(PcmSamples(std::vector<s16>(768 * 8, 8192), 8));
+    CHECK(Control(g.source, 0x1000000a, Filter(1, std::numeric_limits<float>::max())) == 0);
+    Mapping code{reinterpret_cast<void*>(ProcessFx), 1, 4};
+    FxState fx;
+    CHECK(Control(g.source, 0x10000008,
+                  OrbisNgs2SamplerVoiceUserFxParam{
+                      {}, ProcessFx, reinterpret_cast<uintptr_t>(&fx), 42, 99}) == 0);
+    CHECK(g.Render() == ORBIS_NGS2_ERROR_FAIL);
+    CHECK(fx.calls == 0 && g.State().voiceState.stateFlags == 16);
+    CHECK(std::ranges::all_of(g.output.value, [](float f) { return f == 0; }));
+    CHECK(g.Render() == 0 && fx.calls == 0);
+}
+
 int main() {
     return Test::Run();
 }
