@@ -22,6 +22,7 @@ import display_session
 
 UNITS = ('sunshine.service', 'sunshine-display-watchdog.service')
 DROPIN = Path('/etc/systemd/system/sunshine.service.d/90-session-x11.conf')
+GPU_PRESTART = Path('/etc/systemd/system/sunshine.service.d/gpu-recovery.conf')
 WATCHDOG_SHA = '9df276592044e7c310ff8b0bccc616e742c6a49f1a0654bba527042577e95314'
 KMS_SHA = '8f5339d867ce4f512411414558643e7c2480249b97c3224fb8e6560f5b8bc5a9'
 MODULE_SHA = '5f222179a866eedc96f31d383cd949667ad945c5f77f3290fdd79a5f6ac67029'
@@ -140,15 +141,59 @@ def patch_scripts(home, watchdog, kms):
     return result
 
 
+def patch_prestart(home, original):
+    """Repair the three stale-authority hooks observed in the 14:45 report.
+
+    Keep all capability and GPU recovery commands; refresh the authority before
+    the existing readiness loop, which runs before Sunshine's ExecStart wrapper.
+    """
+    text = original.decode()
+    stale = str(home / '.Xauthority')
+    stable = str(home / '.local/state/sunshine-display/Xauthority')
+    helper = str(paths(home)[0])
+    username = pwd.getpwuid(os.getuid()).pw_name
+    if not re.fullmatch(r'[a-z_][a-z0-9_-]*', username) or not re.fullmatch(r'/[A-Za-z0-9_./-]+', helper):
+        raise RuntimeError('Unsupported service user or helper path.')
+    # An explicit privilege drop also supports old PermissionsStartOnly units.
+    prep = ('# SUNSHINE_X11_PRESTART_V1\n'
+            'ExecStartPre=+/usr/sbin/runuser -u ' + username +
+            ' -- /usr/bin/python3 ' + helper + ' --prepare\n')
+    if prep in text:
+        text = text.replace(prep, '', 1).replace(stable, stale)
+    if 'SUNSHINE_X11_PRESTART' in text:
+        raise RuntimeError('Unexpected earlier prestart repair; preserved.')
+    lines = text.splitlines(keepends=True)
+    section = None
+    selected = []
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith('['):
+            section = stripped
+        if section == '[Service]' and stripped.startswith('ExecStartPre=') and stale in line:
+            if line.rstrip().endswith('\\'):
+                raise RuntimeError('Unexpected multiline X11 startup hook; preserved.')
+            selected.append(index)
+    if (len(selected) != 3 or
+            'for i in $(seq 1 90)' not in lines[selected[0]] or
+            'X11 display :0 not ready' not in lines[selected[0]] or
+            'xrandr --output HDMI-A-0 --mode 1920x1080 --rate 60 --primary' not in lines[selected[1]] or
+            'xset -dpms s off s noblank' not in lines[selected[2]]):
+        raise RuntimeError('X11 startup hooks differ from the supplied report; preserved.')
+    for index in selected:
+        lines[index] = lines[index].replace(stale, stable)
+    lines[selected[0]] = prep + lines[selected[0]]
+    return ''.join(lines).encode()
+
+
 def show(unit):
     result = subprocess.run(['systemctl', 'show', unit, '-p', 'User', '-p', 'ExecStart',
                              '-p', 'ActiveState', '-p', 'KillMode', '-p', 'MainPID',
-                             '-p', 'ControlGroup'], text=True, capture_output=True,
+                             '-p', 'ControlGroup', '-p', 'ControlPID', '-p', 'SubState'], text=True, capture_output=True,
                             check=True, timeout=10)
     return dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
 
 
-def service_preflight(home, installed=False):
+def service_preflight(home, installed=False, startup=False):
     for parent in DROPIN.parents:
         if parent.exists() or parent.is_symlink():
             info = parent.lstat()
@@ -157,10 +202,12 @@ def service_preflight(home, installed=False):
     username = pwd.getpwuid(os.getuid()).pw_name
     services = [show(unit) for unit in UNITS]
     for unit, info in zip(UNITS, services):
-        if info['User'] != username or info['ActiveState'] != 'active':
+        allowed = {'active', 'activating', 'inactive', 'failed'} if startup and unit == UNITS[0] else {'active'}
+        if info['User'] != username or info['ActiveState'] not in allowed:
             raise RuntimeError('Expected the current user\'s active system service: ' + unit)
         if info['KillMode'] not in ('control-group', 'mixed'):
             raise RuntimeError('Service cannot reliably close its old child processes: ' + unit)
+        info['ControlGroup'] = info['ControlGroup'] or '/system.slice/' + unit
     expected = ('/usr/bin/python3' if installed else '/usr/bin/sunshine', str(paths(home)[2]))
     for info, executable in zip(services, expected):
         if not re.search(r'\bpath\s*=\s*' + re.escape(executable) + r'\s*;', info['ExecStart']):
@@ -174,6 +221,26 @@ def service_preflight(home, installed=False):
     if any(key in config.get('env', {}) for key in ('DISPLAY', 'XAUTHORITY')):
         raise RuntimeError('apps.json overrides display authorization; preserved for review.')
     return services
+
+
+def startup_process(process, service, proc_root):
+    # systemd explicitly identifies the ExecStartPre supervisor; its children are
+    # service startup work, not a Moonlight app. No live Sunshine main may exist.
+    if (service.get('ActiveState') != 'activating' or service.get('SubState') != 'start-pre' or
+            service.get('MainPID') != '0' or service.get('ControlPID', '0') == '0'):
+        return False
+    pid = process.name
+    for _ in range(24):
+        if pid == service['ControlPID']:
+            return True
+        if pid in ('0', '1'):
+            break
+        try:
+            fields = (proc_root / pid / 'stat').read_text().rsplit(')', 1)[1].split()
+            pid = fields[1]
+        except (OSError, IndexError):
+            break
+    return False
 
 
 def mount_helper(process, name):
@@ -222,7 +289,8 @@ def no_games(services, proc_root=Path('/proc')):
             # The frontend and verified mount workers can close with their service.
             # Still scan every process: accepting a worker must not hide its game.
             if name.startswith('shadps4') or (in_sunshine and name not in {'sunshine', 'es-de'}
-                                             and not launcher and not mount_helper(process, name)):
+                                             and not launcher and not startup_process(process, services[0], proc_root)
+                                             and not mount_helper(process, name)):
                 blocked.append(process.name + ':' + name)
         except FileNotFoundError:
             continue
@@ -246,7 +314,9 @@ def write_dropin(payload, state):
 
 
 def activate():
-    sudo('/usr/bin/systemctl', 'start', *UNITS)
+    sudo('/usr/bin/systemctl', '--no-block', 'start', *UNITS)
+    if not wait_service_state(True, seconds=30):
+        raise RuntimeError('Sunshine service startup is pending or failed; check the saved journal.')
     for unit in UNITS:
         subprocess.run(['systemctl', 'is-active', '--quiet', unit], check=True, timeout=10)
 
@@ -281,9 +351,9 @@ def same(path, before, root=False):
     return regular(path, root)[0] == before
 
 
-def apply(home, entries, before_dropin, after_dropin, backup):
+def apply(home, entries, before_dropin, after_dropin, backup, gpu=None):
     subprocess.run(['sudo', '-v'], check=True)  # Interactive terminal only; never read a password.
-    services = service_preflight(home, installed=before_dropin is not None)
+    services = service_preflight(home, installed=before_dropin is not None, startup=gpu is not None)
     no_games(services)
     if not same(DROPIN, before_dropin, root=True):
         raise RuntimeError('Sunshine override changed during checks; preserved.')
@@ -292,9 +362,14 @@ def apply(home, entries, before_dropin, after_dropin, backup):
             raise RuntimeError('A display repair target changed during checks: ' + str(path))
     applied = []
     override_changed = False
+    gpu_changed = False
     try:
         # Stop the existing processes before replacing scripts. No Xorg/AI service is touched.
-        sudo('/usr/bin/systemctl', 'stop', *reversed(UNITS))
+        sudo('/usr/bin/systemctl', '--no-block', 'stop', *reversed(UNITS))
+        if not wait_service_state(False):
+            raise RuntimeError('Service stop is pending; files preserved.')
+        if gpu and not same(GPU_PRESTART, gpu[0], root=True):
+            raise RuntimeError('GPU recovery configuration changed; preserved.')
         for path, before, after, mode in entries:
             if not same(path, before):
                 raise RuntimeError('A repair target changed while stopping services.')
@@ -303,14 +378,25 @@ def apply(home, entries, before_dropin, after_dropin, backup):
             else:
                 atomic(path, after, mode)
             applied.append((path, before, after, mode))
+        if gpu:
+            atomic(backup / 'gpu-prestart.install', gpu[1])
+            gpu_changed = True
+            sudo('/usr/bin/install', '-m', format(gpu[2], 'o'), '-o', 'root', '-g', 'root',
+                 backup / 'gpu-prestart.install', GPU_PRESTART)
         override_changed = True
         write_dropin(after_dropin, backup)
         activate()
         if after_dropin is not None:
             verify(home)
-    except BaseException:
+    except BaseException as initial_error:
+        with (backup / 'failure.txt').open('w') as report:
+            report.write('INITIAL_FAILURE=' + str(initial_error) + '\n')
+            recovery_capture(report, home, 'BEFORE ROLLBACK')
+        print('FAILURE_REPORT=' + str(backup / 'failure.txt'), flush=True)
         # Exact snapshots only: do not overwrite a subsequent unrelated edit.
-        sudo('/usr/bin/systemctl', 'stop', *reversed(UNITS))
+        sudo('/usr/bin/systemctl', '--no-block', 'stop', *reversed(UNITS))
+        if not wait_service_state(False):
+            raise RuntimeError(str(initial_error) + '; rollback stop pending. See FAILURE_REPORT.') from initial_error
         for path, before, after, mode in reversed(applied):
             if not same(path, after):
                 raise RuntimeError('File changed during recovery; use the printed backup: ' + str(path))
@@ -318,6 +404,12 @@ def apply(home, entries, before_dropin, after_dropin, backup):
                 path.unlink()
             else:
                 atomic(path, before, mode)
+        if gpu_changed:
+            if not (same(GPU_PRESTART, gpu[1], root=True) or same(GPU_PRESTART, gpu[0], root=True)):
+                raise RuntimeError('GPU recovery configuration changed after repair; preserved.')
+            atomic(backup / 'gpu-prestart.restore', gpu[0])
+            sudo('/usr/bin/install', '-m', format(gpu[2], 'o'), '-o', 'root', '-g', 'root',
+                 backup / 'gpu-prestart.restore', GPU_PRESTART)
         if override_changed:
             if not (same(DROPIN, after_dropin, root=True) or same(DROPIN, before_dropin, root=True)):
                 raise RuntimeError('Service override changed during recovery; backup: ' + str(backup))
@@ -325,8 +417,12 @@ def apply(home, entries, before_dropin, after_dropin, backup):
                 write_dropin(before_dropin, backup)
             else:
                 sudo('/usr/bin/systemctl', 'daemon-reload')
-        activate()
-        raise
+        try:
+            activate()
+        except (RuntimeError, OSError, subprocess.SubprocessError) as rollback_error:
+            raise RuntimeError(str(initial_error) + '; original files restored, original startup also failed: ' +
+                               str(rollback_error) + '. See FAILURE_REPORT.') from initial_error
+        raise initial_error
 
 
 def install(home):
@@ -344,15 +440,22 @@ def install(home):
         if old[0] is not None and old[0] != new:
             raise RuntimeError('An unrelated Sunshine display helper exists; preserved.')
     new_scripts = patch_scripts(home, originals[2][0], originals[3][0])
+    gpu_before, gpu_mode = regular(GPU_PRESTART, root=True)
+    if gpu_mode & 0o022:
+        raise RuntimeError('Unexpected writable system startup configuration; preserved.')
+    gpu_after = patch_prestart(home, gpu_before)
+    if not Path('/usr/sbin/runuser').is_file():
+        raise RuntimeError('The system runuser executable is missing.')
     payloads = (source, resolver, *new_scripts)
     expected_dropin = dropin(home)
     old_dropin = regular(DROPIN, root=True)[0] if DROPIN.exists() or DROPIN.is_symlink() else None
     if old_dropin is not None and old_dropin != expected_dropin:
         raise RuntimeError('A different Sunshine display override exists; preserved.')
-    services = service_preflight(home, installed=old_dropin is not None)
+    services = service_preflight(home, installed=old_dropin is not None, startup=True)
     no_games(services)
     authority(home, os.environ)
-    if all(before == after for (before, _), after in zip(originals, payloads)) and old_dropin == expected_dropin:
+    if (all(before == after for (before, _), after in zip(originals, payloads)) and
+            old_dropin == expected_dropin and gpu_before == gpu_after):
         verify(home)
         print('SUNSHINE_DISPLAY_REPAIR=ALREADY_INSTALLED')
         return
@@ -368,13 +471,15 @@ def install(home):
         entries.append((path, before, after, mode))
         record.append({'before': digest(before) if before is not None else None,
                        'after': digest(after), 'mode': mode})
-    atomic(backup / 'state.json', json.dumps({'files': record, 'dropin': expected_dropin.decode()}).encode())
+    atomic(backup / 'gpu-prestart.original', gpu_before)
+    atomic(backup / 'state.json', json.dumps({'files': record, 'dropin': expected_dropin.decode(),
+           'gpu_prestart': {'before': digest(gpu_before), 'after': digest(gpu_after), 'mode': gpu_mode}}).encode())
     atomic(backup / 'repair_sunshine_display.py', source, 0o700)
     atomic(backup / 'display_session.py', resolver, 0o700)
     print('BACKUP=' + str(backup), flush=True)
     print('RESTORE=/usr/bin/python3 ' + shlex.quote(str(backup / 'repair_sunshine_display.py')) +
           ' --restore ' + shlex.quote(str(backup)), flush=True)
-    apply(home, entries, old_dropin, expected_dropin, backup)
+    apply(home, entries, old_dropin, expected_dropin, backup, (gpu_before, gpu_after, gpu_mode))
     print('SUNSHINE_DISPLAY_REPAIR=PASS; reconnect Moonlight and test ES-DE exit/relaunch.')
     print('Visible-window/game testing is pending; no emulator or audio configuration was changed.')
 
@@ -401,7 +506,18 @@ def restore(home, backup):
         if not isinstance(mode, int) or mode & ~0o777 or mode & 0o002:
             raise RuntimeError('Invalid backup mode.')
         entries.append((path, current, before, mode))
-    apply(home, entries, expected_dropin, None, backup)
+    gpu = None
+    if 'gpu_prestart' in state:
+        current, _ = regular(GPU_PRESTART, root=True)
+        original = regular(backup / 'gpu-prestart.original')[0]
+        record = state['gpu_prestart']
+        if digest(current) != record['after'] or digest(original) != record['before']:
+            raise RuntimeError('GPU recovery configuration changed after repair; preserved.')
+        mode = record['mode']
+        if not isinstance(mode, int) or mode & ~0o777 or mode & 0o022:
+            raise RuntimeError('Invalid GPU recovery backup permissions.')
+        gpu = current, original, mode
+    apply(home, entries, expected_dropin, None, backup, gpu)
     print('SUNSHINE_DISPLAY_RESTORE=PASS; prior service command and display guards restored.')
 
 
@@ -569,15 +685,16 @@ def main():
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--sunshine', action='store_true')
     group.add_argument('--authority', action='store_true')
+    group.add_argument('--prepare', action='store_true')
     group.add_argument('--restore', type=Path)
     group.add_argument('--recover', action='store_true', help='Recover the known timed-out attempts and save systemd diagnostics')
     args = parser.parse_args()
     if os.geteuid() == 0 or sys.platform != 'linux':
         raise RuntimeError('Run as the normal Linux desktop user, not with sudo.')
     home = Path.home()
-    if args.sunshine or args.authority:
+    if args.sunshine or args.authority or args.prepare:
         # At boot the independently managed headless X service may still be starting.
-        deadline = time.monotonic() + (30 if args.sunshine else 0)
+        deadline = time.monotonic() + (30 if args.sunshine or args.prepare else 0)
         while True:
             try:
                 env, source = authority(home, os.environ)
@@ -588,6 +705,8 @@ def main():
                 time.sleep(0.5)
         if args.authority:
             print(env['XAUTHORITY'])
+        elif args.prepare:
+            print('SUNSHINE_DISPLAY_PREPARE=PASS source=' + source, flush=True)
         else:
             print('SUNSHINE_DISPLAY_START=PASS source=' + source, flush=True)
             os.execve('/usr/bin/sunshine', ['/usr/bin/sunshine'], env)

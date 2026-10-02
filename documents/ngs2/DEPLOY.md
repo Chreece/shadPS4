@@ -7,10 +7,33 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 ## Current local graphics test: 2026-10-02
 
+The 12:45 UTC recovery report shows zero clients, an active headless X service,
+and Sunshine with `MainPID=0`, `SubState=start-pre`. Its GPU recovery startup
+hook waits for three minutes using the rejected `.Xauthority`, fails, and retries.
+The prior ExecStart resolver could never run because ExecStartPre had not passed.
+The recovery preflight also incorrectly classified that startup shell/sleep as
+an app. The original display override had already been rolled back.
+
+The corrected installer recognizes systemd's ControlPID and its startup children
+when no Sunshine main process exists. It permits repairing this failed/activating
+service without requiring a connected Moonlight client. It patches only the
+three observed X11 hooks in `gpu-recovery.conf`: refresh the verified authority
+before the readiness loop and use the stable path for its probes/mode commands.
+The capability setup and GPU recovery policy remain present. The prep helper
+explicitly runs as the desktop user, including on units with privileged prestart
+commands. Normal apps continue inheriting the verified Sunshine environment.
+
+The root-owned startup file is backed up with checksums and restored along with
+the previous launcher/guards on rollback. Service starts use bounded state checks;
+the original journal is saved before any rollback, so another failed original
+start cannot hide the first failure. Focused tests reproduce the startup-shell
+classification and prep ordering, preserve capabilities, check idempotence and
+restore the exact GPU recovery file. The new host startup/relaunch test is pending.
+
 At 12:28 UTC the host repair reports a 50-second timeout while starting the two
 system services. The error alone does not identify the failed unit or establish
 whether rollback completed; its own start can replace the original exception.
-Do not repeat the installation until the service report has been reviewed.
+That report has now been reviewed and the precise prestart failure is addressed above.
 `repair_sunshine_display.py --recover` saves the journal and service properties
 before changes, finds a checksum-compatible backup of either published attempt,
 and accepts files already rolled back or partially restored. It requires the

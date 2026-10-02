@@ -19,6 +19,19 @@ KMS = (b'#!/bin/bash\nset -euo pipefail\nexport DISPLAY=:0\n'
        b'export XAUTHORITY=/home/chreece/.Xauthority\necho display\n')
 
 
+def gpu_config(home):
+    auth = str(home / '.Xauthority')
+    return ('[Service]\n# Keep existing capability and restart policies\nRestart=on-failure\n'
+            'ExecStartPre=+/bin/bash -lc \'setcap cap_sys_admin,cap_sys_nice+p /usr/bin/sunshine\'\n'
+            'ExecStartPre=/bin/bash -lc \'for i in $(seq 1 90); do [ -S /tmp/.X11-unix/X0 ] && '
+            '[ -f ' + auth + ' ] && DISPLAY=:0 XAUTHORITY=' + auth +
+            ' xset q >/dev/null 2>&1 && exit 0; sleep 2; done; echo "X11 display :0 not ready" >&2; exit 1\'\n'
+            'ExecStartPre=/bin/bash -lc \'DISPLAY=:0 XAUTHORITY=' + auth +
+            ' xrandr --output HDMI-A-0 --mode 1920x1080 --rate 60 --primary >/dev/null 2>&1 || true\'\n'
+            'ExecStartPre=/bin/bash -lc \'DISPLAY=:0 XAUTHORITY=' + auth +
+            ' xset -dpms s off s noblank >/dev/null 2>&1 || true\'\n').encode()
+
+
 class RepairTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -45,7 +58,15 @@ class RepairTests(unittest.TestCase):
         self.mock('no_games')
         self.mock('authority')
         self.mock('verify')
-        self.mock('sudo')
+        gpu = self.home / 'system/sunshine.service.d/gpu-recovery.conf'
+        repair.atomic(gpu, gpu_config(self.home), 0o644)
+        self.mock('GPU_PRESTART', new=gpu)
+        def sudo(*args):
+            if args[0] == '/usr/bin/install' and args[-1] == gpu:
+                repair.atomic(gpu, Path(args[-2]).read_bytes(), 0o644)
+        self.mock('sudo', side_effect=sudo)
+        self.mock('wait_service_state', return_value=True)
+        self.mock('recovery_capture')
         self.activate = self.mock('activate')
         # Keep bash syntax checks real. Only simulate sudo -v.
         original_run = subprocess.run
@@ -126,6 +147,7 @@ class RepairTests(unittest.TestCase):
         for path, original in zip(repair.paths(self.home)[2:], (WATCHDOG, KMS)):
             self.assertEqual(path.read_bytes(), original)
             self.assertEqual(path.stat().st_mode & 0o777, 0o775)
+        self.assertEqual(repair.GPU_PRESTART.read_bytes(), gpu_config(self.home))
 
     def test_failed_restart_restores_originals(self):
         override = self.fixture()
@@ -136,6 +158,7 @@ class RepairTests(unittest.TestCase):
         self.assertFalse(repair.paths(self.home)[0].exists())
         self.assertEqual(repair.paths(self.home)[2].read_bytes(), WATCHDOG)
         self.assertEqual(repair.paths(self.home)[3].read_bytes(), KMS)
+        self.assertEqual(repair.GPU_PRESTART.read_bytes(), gpu_config(self.home))
         self.assertEqual(self.activate.call_count, 2)
 
     def test_restore_refuses_later_edits_before_restarting_services(self):
@@ -152,6 +175,7 @@ class RepairTests(unittest.TestCase):
 
     def test_service_with_extra_arguments_is_not_overridden(self):
         info = {'User': repair.pwd.getpwuid(os.getuid()).pw_name, 'ActiveState': 'active',
+                'ControlGroup': '',
                 'KillMode': 'control-group', 'ExecStart': '{ path=/usr/bin/sunshine ; '
                 'argv[]=/usr/bin/sunshine --config another.conf ; }'}
         watchdog = dict(info, ExecStart='{ path=' + str(repair.paths(self.home)[2]) + ' ; }')
@@ -270,6 +294,37 @@ class RepairTests(unittest.TestCase):
         starts = [call.args[1] for call in commands.call_args_list if 'start' in call.args[1]]
         self.assertEqual(len(starts), 2)
         self.assertTrue(all('--no-block' in command for command in starts))
+
+    def test_startup_shell_and_children_are_not_apps_but_an_unrelated_game_is(self):
+        group = '/system.slice/sunshine.service'
+        proc = self.home / 'proc'
+        for pid, name, parent in ((101, 'bash', 1), (102, 'sleep', 101)):
+            folder = proc / str(pid)
+            folder.mkdir(parents=True)
+            (folder / 'comm').write_text(name)
+            (folder / 'cgroup').write_text('0::' + group + '\n')
+            (folder / 'stat').write_text(f'{pid} ({name}) S {parent} 0 0\n')
+        service = {'ActiveState': 'activating', 'SubState': 'start-pre', 'MainPID': '0',
+                   'ControlPID': '101', 'ControlGroup': group}
+        repair.no_games([service], proc)
+        game = proc / '103'
+        game.mkdir()
+        (game / 'comm').write_text('rpcs3')
+        (game / 'cgroup').write_text('0::' + group + '\n')
+        (game / 'stat').write_text('103 (rpcs3) S 1 0 0\n')
+        with self.assertRaisesRegex(RuntimeError, '103:rpcs3'):
+            repair.no_games([service], proc)
+
+    def test_prestart_resolves_auth_before_existing_wait_and_preserves_capabilities(self):
+        original = gpu_config(self.home)
+        changed = repair.patch_prestart(self.home, original)
+        self.assertLess(changed.index(b' --prepare\n'), changed.index(b'for i in $(seq 1 90)'))
+        self.assertNotIn(str(self.home / '.Xauthority').encode(), changed)
+        self.assertIn(b'setcap cap_sys_admin,cap_sys_nice+p /usr/bin/sunshine', changed)
+        self.assertIn(b'Restart=on-failure\n', changed)
+        self.assertEqual(repair.patch_prestart(self.home, changed), changed)
+        with self.assertRaisesRegex(RuntimeError, 'differ'):
+            repair.patch_prestart(self.home, original.replace(b'1920x1080', b'3840x2160'))
 
 
 if __name__ == '__main__':
