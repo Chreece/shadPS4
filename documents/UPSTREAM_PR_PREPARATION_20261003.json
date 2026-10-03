@@ -1,0 +1,347 @@
+{
+  "date": "2026-10-03",
+  "upstream_repository": "shadps4-emu/shadPS4",
+  "upstream_base": "8e23388af83fe31ec6372a29e3940e2b459dfc6d",
+  "deployment_main": "e6cf874a170c528068627bb43f2c6bc2e89e4375",
+  "deployment_changed": false,
+  "upstream_prs_submitted": 0,
+  "open_prs_inspected": 64,
+  "contribution_policy": "https://github.com/shadps4-emu/shadPS4/blob/8e23388af83fe31ec6372a29e3940e2b459dfc6d/CONTRIBUTING.md",
+  "ai_assistance": {
+    "code_extraction": true,
+    "focused_validation": true,
+    "pr_text_written": false,
+    "human_review_required": true,
+    "ai_disclosure_required": true
+  },
+  "capture": {
+    "archive_sha256": "0e473eb89248636354eef0c0e060ab41f128c918ae92f508c6b248ce793a667d",
+    "elapsed_seconds": 97.04,
+    "revision": "e6cf874a170c528068627bb43f2c6bc2e89e4375",
+    "binary_sha256": "a6b0962d51699ba2eada3c41d543af3bf8e3257b6ea044ad1047f727a52f3e06",
+    "exit_code": 0,
+    "settings_unchanged": true,
+    "renderer_error_records": 0,
+    "depth_growth_observed": "NOT_OBSERVED",
+    "game": "Red Dead Redemption",
+    "title_id": "CUSA36843",
+    "graphics_validation_enabled": false,
+    "visual_correctness": "REQUIRES_USER_FEEDBACK",
+    "gamepad_confirmation_consumed": true,
+    "audio_backend": "NATIVE_LIBSCENGS2",
+    "audio_sample_rate_hz": 48000,
+    "audio_channels": 8,
+    "graphics_queue_family": 0,
+    "sparse_queue_family": 4,
+    "new_error_signature": "UNKNOWN_USER_COLOR_2097152_REJECTED_WITHOUT_CRASH",
+    "unresolved": [
+      "MISSING_SYSTEM_FONTS",
+      "MISSING_TROPHY_RESOURCES",
+      "REGISTRY_RESPONSE_CONTRACT_UNVERIFIED",
+      "OTHER_EXISTING_STUBS"
+    ],
+    "newly_actionable_emulator_regression": "NONE_IDENTIFIED_IN_THIS_CAPTURE"
+  },
+  "topics": [
+    {
+      "topic": "sparse-queue",
+      "branch": "pr-ready/sparse-queue",
+      "commit": "b0adb63c43f50e6eff7d30e96414c1a62bc56b90",
+      "tree": "920f0a1fb5a4bd80f77ca1d880c5f7a03aa853ed",
+      "base": "8e23388af83fe31ec6372a29e3940e2b459dfc6d",
+      "compare_url": "https://github.com/shadps4-emu/shadPS4/compare/main...Chreece:shadPS4:pr-ready/sparse-queue",
+      "files": [
+        "src/video_core/buffer_cache/buffer_cache.cpp",
+        "src/video_core/renderer_vulkan/vk_instance.cpp",
+        "src/video_core/renderer_vulkan/vk_instance.h"
+      ],
+      "original_commits": [
+        "3e61c16a",
+        "e8f9e4eb",
+        "0a7790aa"
+      ],
+      "focused_test_suite": null,
+      "focused_ctest_passed": 0,
+      "verification": "SOURCE_REVIEW_AND_PREVIOUS_INTEGRATED_GAME_BUILD",
+      "full_emulator_build_of_this_standalone_branch": "NOT_RUN",
+      "human_code_and_comment_review": "REQUIRED_BEFORE_SUBMISSION",
+      "pr_description": "HUMAN_WRITTEN_REQUIRED"
+    },
+    {
+      "topic": "sparse-device-address",
+      "branch": "pr-ready/sparse-device-address",
+      "commit": "cc5274cb298fbdd1021a90863ad08248ab4fc7e4",
+      "tree": "22d717247b44303ab76551d11b52b69964afa6c6",
+      "base": "8e23388af83fe31ec6372a29e3940e2b459dfc6d",
+      "compare_url": "https://github.com/shadps4-emu/shadPS4/compare/main...Chreece:shadPS4:pr-ready/sparse-device-address",
+      "files": [
+        "src/video_core/buffer_cache/buffer_cache.cpp"
+      ],
+      "original_commits": [
+        "1e6bb5a6"
+      ],
+      "focused_test_suite": null,
+      "focused_ctest_passed": 0,
+      "verification": "SOURCE_REVIEW_AND_PREVIOUS_INTEGRATED_GAME_BUILD",
+      "full_emulator_build_of_this_standalone_branch": "NOT_RUN",
+      "human_code_and_comment_review": "REQUIRED_BEFORE_SUBMISSION",
+      "pr_description": "HUMAN_WRITTEN_REQUIRED"
+    },
+    {
+      "topic": "userservice-color",
+      "branch": "pr-ready/userservice-color",
+      "commit": "0c8d7edfb7463148123f22eb734ea49dd124e235",
+      "tree": "3a00de14da1371f6983c6d56350ea6441f9b5a4c",
+      "base": "8e23388af83fe31ec6372a29e3940e2b459dfc6d",
+      "compare_url": "https://github.com/shadps4-emu/shadPS4/compare/main...Chreece:shadPS4:pr-ready/userservice-color",
+      "files": [
+        "CMakeLists.txt",
+        "src/core/libraries/system/userservice.cpp",
+        "src/core/libraries/system/userservice_user_color.cpp",
+        "tests/userservice/CMakeLists.txt",
+        "tests/userservice/test_user_color.cpp"
+      ],
+      "original_commits": [
+        "e2251423"
+      ],
+      "focused_test_suite": "userservice",
+      "focused_ctest_passed": 1,
+      "verification": "LINUX_RELEASE_CTEST_PASSED",
+      "full_emulator_build_of_this_standalone_branch": "NOT_RUN",
+      "human_code_and_comment_review": "REQUIRED_BEFORE_SUBMISSION",
+      "pr_description": "HUMAN_WRITTEN_REQUIRED"
+    },
+    {
+      "topic": "presentation-sync",
+      "branch": "pr-ready/presentation-sync",
+      "commit": "15fd8f56366c913c5205181dd057aa8cbdc14f8d",
+      "tree": "49770ea07b1e7dea8b0955e60df37f7a4d72227c",
+      "base": "8e23388af83fe31ec6372a29e3940e2b459dfc6d",
+      "compare_url": "https://github.com/shadps4-emu/shadPS4/compare/main...Chreece:shadPS4:pr-ready/presentation-sync",
+      "files": [
+        "src/video_core/renderer_vulkan/vk_presenter.cpp",
+        "src/video_core/renderer_vulkan/vk_scheduler.cpp"
+      ],
+      "original_commits": [
+        "287e0d09"
+      ],
+      "focused_test_suite": null,
+      "focused_ctest_passed": 0,
+      "verification": "SOURCE_REVIEW_AND_PREVIOUS_INTEGRATED_GAME_BUILD",
+      "full_emulator_build_of_this_standalone_branch": "NOT_RUN",
+      "human_code_and_comment_review": "REQUIRED_BEFORE_SUBMISSION",
+      "pr_description": "HUMAN_WRITTEN_REQUIRED"
+    },
+    {
+      "topic": "depth-transfer",
+      "branch": "pr-ready/depth-transfer",
+      "commit": "17198a07daa4a50e4c0388a5002d2c4fee3fe636",
+      "tree": "f4feafdb5478f061d5b0baab00e7db7af1ed9557",
+      "base": "8e23388af83fe31ec6372a29e3940e2b459dfc6d",
+      "compare_url": "https://github.com/shadps4-emu/shadPS4/compare/main...Chreece:shadPS4:pr-ready/depth-transfer",
+      "files": [
+        "src/video_core/renderer_vulkan/vk_image_transfer.h",
+        "src/video_core/renderer_vulkan/vk_runtime.cpp",
+        "src/video_core/renderer_vulkan/vk_runtime.h",
+        "tests/image_transfer/CMakeLists.txt",
+        "tests/image_transfer/test_image_transfer.cpp"
+      ],
+      "original_commits": [
+        "bc479ce3"
+      ],
+      "focused_test_suite": "image_transfer",
+      "focused_ctest_passed": 3,
+      "verification": "LINUX_RELEASE_CTEST_PASSED",
+      "full_emulator_build_of_this_standalone_branch": "NOT_RUN",
+      "human_code_and_comment_review": "REQUIRED_BEFORE_SUBMISSION",
+      "pr_description": "HUMAN_WRITTEN_REQUIRED"
+    },
+    {
+      "topic": "depth-growth",
+      "branch": "pr-ready/depth-growth",
+      "commit": "965c05fd08aae44f88ae133a394a3ab5224077a9",
+      "tree": "fe507c3c284e6ff9bf52cddc370a306326752259",
+      "base": "8e23388af83fe31ec6372a29e3940e2b459dfc6d",
+      "compare_url": "https://github.com/shadps4-emu/shadPS4/compare/main...Chreece:shadPS4:pr-ready/depth-growth",
+      "files": [
+        "src/video_core/texture_cache/texture_cache.cpp",
+        "tests/depth_growth/CMakeLists.txt",
+        "tests/depth_growth/test_depth_overlap.cpp"
+      ],
+      "original_commits": [
+        "e78385ae"
+      ],
+      "focused_test_suite": "depth_growth",
+      "focused_ctest_passed": 1,
+      "verification": "LINUX_RELEASE_CTEST_PASSED",
+      "full_emulator_build_of_this_standalone_branch": "NOT_RUN",
+      "human_code_and_comment_review": "REQUIRED_BEFORE_SUBMISSION",
+      "pr_description": "HUMAN_WRITTEN_REQUIRED"
+    },
+    {
+      "topic": "gamepad-quit",
+      "branch": "pr-ready/gamepad-quit",
+      "commit": "c2c5dba485013d2cc18cc8150af0be24c07092a5",
+      "tree": "7c8981312e8930efc0a0985ebddcf327ade7f1a1",
+      "base": "8e23388af83fe31ec6372a29e3940e2b459dfc6d",
+      "compare_url": "https://github.com/shadps4-emu/shadPS4/compare/main...Chreece:shadPS4:pr-ready/gamepad-quit",
+      "files": [
+        "src/core/devtools/layer.cpp",
+        "src/core/devtools/layer.h",
+        "src/core/devtools/quit_dialog.h",
+        "src/imgui/renderer/imgui_core.cpp",
+        "src/sdl_window.cpp",
+        "tests/quit_dialog/CMakeLists.txt",
+        "tests/quit_dialog/test_quit_dialog.cpp"
+      ],
+      "original_commits": [],
+      "focused_test_suite": "quit_dialog",
+      "focused_ctest_passed": 6,
+      "verification": "LINUX_RELEASE_CTEST_PASSED",
+      "full_emulator_build_of_this_standalone_branch": "NOT_RUN",
+      "human_code_and_comment_review": "REQUIRED_BEFORE_SUBMISSION",
+      "pr_description": "HUMAN_WRITTEN_REQUIRED"
+    },
+    {
+      "topic": "kernel-unlink",
+      "branch": "pr-ready/kernel-unlink",
+      "commit": "53c1def065426d33026b373f8a2344a3b22ec1d1",
+      "tree": "8e2c74b200c604569f6b62a02af19f6c39281176",
+      "base": "8e23388af83fe31ec6372a29e3940e2b459dfc6d",
+      "compare_url": "https://github.com/shadps4-emu/shadPS4/compare/main...Chreece:shadPS4:pr-ready/kernel-unlink",
+      "files": [
+        "src/common/io_file.cpp",
+        "src/common/io_file.h",
+        "src/core/libraries/kernel/file_system.cpp",
+        "src/core/libraries/kernel/kernel.cpp",
+        "tests/kernel_unlink/CMakeLists.txt",
+        "tests/kernel_unlink/test_unlink.cpp"
+      ],
+      "original_commits": [
+        "d0af073b"
+      ],
+      "focused_test_suite": "kernel_unlink",
+      "focused_ctest_passed": 14,
+      "verification": "LINUX_RELEASE_CTEST_PASSED",
+      "full_emulator_build_of_this_standalone_branch": "NOT_RUN",
+      "human_code_and_comment_review": "REQUIRED_BEFORE_SUBMISSION",
+      "pr_description": "HUMAN_WRITTEN_REQUIRED"
+    }
+  ],
+  "tests": {
+    "focused_ctest_passed": 25,
+    "configuration": "Release",
+    "compiler": "GCC 13.3",
+    "negative_controls": [
+      {
+        "topic": "depth-growth",
+        "upstream": "FAIL_NEW_LAYER_UNINITIALIZED",
+        "patched": "PASS"
+      },
+      {
+        "topic": "gamepad-quit",
+        "upstream_event_routing": "FAIL_UNFOCUSED_CONFIRM_REACHES_GAME",
+        "patched": "PASS"
+      }
+    ],
+    "changed_line_clang_format": true,
+    "diff_check": true,
+    "independent_upstream_parent_verified": true,
+    "remote_tree_matches_checked_tree": true,
+    "full_emulator_build": "VERIFIED_ONLY_FOR_DEPLOYMENT_MAIN_BY_EXACT_RUNNING_BINARY",
+    "all_platform_ci": "NOT_REQUESTED"
+  },
+  "upstream_matches": [
+    {
+      "pr": 5193,
+      "state": "MERGED",
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/5193",
+      "overlap": "SPARSE_OFFSETS_BARRIERS_BUDGET",
+      "queue_selection_fix": false,
+      "device_address_allocation_fix": false
+    },
+    {
+      "pr": 4610,
+      "state": "OPEN",
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/4610",
+      "overlap": "OCCLUSION_QUERY_WRITEBACK_AND_PREDICATION",
+      "action": "COORDINATE_EXISTING_PR"
+    },
+    {
+      "pr": 5190,
+      "state": "OPEN",
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/5190",
+      "overlap": "PREDICATION_PACKET_PARSING",
+      "action": "NO_DUPLICATE_PR"
+    },
+    {
+      "pr": 5002,
+      "state": "OPEN",
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/5002",
+      "overlap": "IMAGE_COPY_DIMENSIONS_AND_FAULT_DIAGNOSTICS",
+      "d32_stencil_format_transfer_fix": false,
+      "ordered_pending_image_transition_fix": false,
+      "review_note": "NEEDS_REBASE"
+    },
+    {
+      "pr": 4885,
+      "state": "OPEN",
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/4885",
+      "overlap": "FILESYSTEM_PATH_RESOLUTION_REFACTOR",
+      "host_unlink_error_propagation_fix": false
+    },
+    {
+      "pr": 4794,
+      "state": "OPEN",
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/4794",
+      "overlap": "TRUNCATE_AND_LOG_SEVERITY",
+      "host_unlink_error_propagation_fix": false
+    },
+    {
+      "pr": 3771,
+      "state": "OPEN_DRAFT",
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/3771",
+      "overlap": "FULL_FILESYSTEM_REPLACEMENT",
+      "action": "DISCLOSE_DESIGN_OVERLAP_NOT_A_NARROW_READY_DUPLICATE"
+    },
+    {
+      "pr": 3891,
+      "state": "CLOSED_UNMERGED",
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/3891",
+      "overlap": "NGS2_HLE",
+      "maintainer_status": "DEPRECATED_AND_UNFINISHED",
+      "action": "DO_NOT_REUSE_AS_ACCEPTED_IMPLEMENTATION"
+    }
+  ],
+  "held": [
+    {
+      "topic": "occlusion-query-writeback",
+      "reason": "EXISTING_UPSTREAM_PR_4610_OVERLAP"
+    },
+    {
+      "topic": "ngs2-audio-hle",
+      "reason": "BROAD_PARTIAL_IMPLEMENTATION_REQUIRES_HLE_ACTIVE_GAME_EVIDENCE_AND_SCOPE_REVIEW",
+      "latest_capture_uses_native_module": true
+    },
+    {
+      "topic": "kernel-sanitizer-exports",
+      "reason": "PREVIOUS_ZERO_RESULT_PRESERVED_NO_CONFIRMED_GAMEPLAY_CHANGE"
+    },
+    {
+      "topic": "kernel-thread-atexit",
+      "reason": "MODULE_UNLOADING_AND_CALLBACK_CONSUMER_INCOMPLETE"
+    },
+    {
+      "topic": "kernel-regmgr",
+      "reason": "DIAGNOSTICS_ONLY_RESPONSE_SEMANTICS_UNVERIFIED"
+    },
+    {
+      "topic": "local-installers-and-capture-tools",
+      "reason": "FORK_DEPLOYMENT_AND_INVESTIGATION_SUPPORT"
+    },
+    {
+      "topic": "sunshine-display-session-tools",
+      "reason": "OUTSIDE_SHADPS4_SCOPE"
+    }
+  ]
+}
