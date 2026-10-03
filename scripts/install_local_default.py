@@ -297,6 +297,27 @@ def build(home, revision):
     return binary
 
 
+def verified_rollback_core(home, resolved):
+    """Recognize only a checksum-matched previous core recorded by this installer."""
+    state_root = home / '.local/state/shadps4-default-main'
+    backup = resolved.parent.parent
+    if (resolved.name != 'shadps4' or resolved.parent.name != 'previous' or
+            backup.parent != state_root or
+            not re.fullmatch(r'install-[A-Za-z0-9_-]+', backup.name) or
+            state_root.is_symlink() or backup.is_symlink() or
+            resolved.parent.is_symlink() or not regular(resolved)):
+        return False
+    state_file = backup / 'state.json'
+    if not regular(state_file):
+        return False
+    try:
+        state = json.loads(state_file.read_text())
+        return (isinstance(state, dict) and state.get('home') == str(home) and
+                state.get('previous_sha256') == digest(resolved))
+    except (OSError, ValueError):
+        return False
+
+
 def current_core(home, text):
     selected = re.findall(r'# NGS2 isolated core selection: ([0-9a-f]{40})', text)
     if len(selected) == 1:
@@ -306,8 +327,10 @@ def current_core(home, text):
     else:
         raise RuntimeError('Multiple old test selections; preserved.')
     resolved = core.resolve(strict=True)
-    if not resolved.is_relative_to(home / 'Applications/shadps4') or not regular(resolved):
-        raise RuntimeError('Previous core is outside the known installation; preserved.')
+    in_installation = resolved.is_relative_to(home / 'Applications/shadps4')
+    if not regular(resolved) or not (in_installation or verified_rollback_core(home, resolved)):
+        raise RuntimeError('Previous core is outside the known installation and is not a '
+                           'verified rollback: ' + str(resolved) + '; preserved.')
     return resolved
 
 

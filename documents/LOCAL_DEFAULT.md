@@ -61,6 +61,17 @@ One previous core is copied outside the active releases as a rollback; the print
 RESTORE command selects it with ordinary entries. Old archives/logs and the Docker
 build cache are not additional active emulator installations and are retained.
 
+Installing again after that restore is supported. The installer accepts a selected
+`~/.local/state/shadps4-default-main/install-*/previous/shadps4` only when its
+regular `state.json` records the same home and matching `previous_sha256`. An
+unknown path, missing/changed metadata, modified backup payload or symlink escape
+still stops before building or changing the installation. A successful upgrade
+copies the selected rollback into the new backup before retiring the old copy.
+The install/restore/install/restore regression reproduces the earlier rejection
+(`Previous core is outside the known installation`) and passes with this fix;
+the full installer suite now has 21 passing tests. Emulator code is unchanged by
+this installer correction.
+
 Installer fixtures cover a failed compile, failed switch rollback, argument handling,
 normal-entry preservation, data/guard preservation, cleanup, external symlink
 protection, and a usable previous-core restore. CPU-focused checks do not establish
