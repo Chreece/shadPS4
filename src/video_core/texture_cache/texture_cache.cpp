@@ -11,6 +11,7 @@
 #include "core/emulator_settings.h"
 #include "core/memory.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/page_manager.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -238,10 +239,33 @@ ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, Bindi
         // Inherit image usage
         auto& new_image = slot_images[new_image_id];
         new_image.usage = cache_image.usage;
+        const bool grew = new_info.resources.layers > cache_image.info.resources.layers ||
+                          new_info.resources.levels > cache_image.info.resources.levels;
+        bool initialized = false;
+        if (new_info.num_samples == 1 && grew) {
+            RefreshImage(new_image);
+            initialized = False(new_image.flags & ImageFlagBits::Dirty);
+        }
         new_image.flags &= ~ImageFlagBits::Dirty;
         // When creating a depth buffer through overlap resolution don't clear it on first use.
         new_image.info.meta_info.htile_clear_mask = 0;
         runtime.CopyColorAndDepth(&cache_image, &new_image);
+
+        if (grew) {
+            GraphicsDiagnostics::Emit(
+                initialized ? GraphicsDiagnostics::Event::DepthGrowth
+                            : GraphicsDiagnostics::Event::DepthGrowthUninitialized,
+                "address=%llx src-format=%u dst-format=%u src-layers=%u dst-layers=%u "
+                "src-mips=%u dst-mips=%u "
+                "src-samples=%u dst-samples=%u upload-recorded=%u copy-returned=1",
+                static_cast<unsigned long long>(new_info.guest_address),
+                static_cast<unsigned>(cache_image.info.pixel_format),
+                static_cast<unsigned>(new_info.pixel_format),
+                cache_image.info.resources.layers, new_info.resources.layers,
+                cache_image.info.resources.levels, new_info.resources.levels,
+                cache_image.info.num_samples, new_info.num_samples,
+                static_cast<unsigned>(initialized));
+        }
 
         // Free the cache image.
         FreeImage(cache_image_id);
@@ -561,6 +585,14 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
             // Cannot reuse this image as we need the exact requested format.
             image_id = {};
         } else if (image_resolved.info.resources < info.resources) {
+            GraphicsDiagnostics::Emit(
+                GraphicsDiagnostics::Event::Containment,
+                "address=%llx available-mips=%u requested-mips=%u available-layers=%u "
+                "requested-layers=%u binding=%u",
+                static_cast<unsigned long long>(info.guest_address),
+                image_resolved.info.resources.levels, info.resources.levels,
+                image_resolved.info.resources.layers, info.resources.layers,
+                static_cast<unsigned>(desc.type));
             // The image was clearly picked up wrong.
             FreeImage(image_id);
             image_id = {};

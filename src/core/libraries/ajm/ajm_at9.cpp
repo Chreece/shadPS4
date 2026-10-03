@@ -3,8 +3,11 @@
 
 #include "ajm_result.h"
 #include "common/assert.h"
+#include "common/atrac9_lock.h"
 #include "core/libraries/ajm/ajm_at9.h"
 #include "error_codes.h"
+
+#include <mutex>
 
 extern "C" {
 #include <decoder.h>
@@ -62,6 +65,7 @@ AjmAt9Decoder::~AjmAt9Decoder() {
 }
 
 void AjmAt9Decoder::Reset() {
+    const std::unique_lock table_lock{Common::Atrac9TableMutex()};
     Atrac9ReleaseHandle(m_handle);
     m_handle = Atrac9GetHandle();
     Atrac9InitDecoder(m_handle, m_config_data);
@@ -154,6 +158,7 @@ DecoderResult AjmAt9Decoder::ProcessData(std::span<u8>& in_buf, SparseOutputBuff
 
     int ret = 0;
     int bytes_used = 0;
+    const std::shared_lock table_lock{Common::Atrac9TableMutex()};
     switch (m_format) {
     case AjmFormatEncoding::S16:
         ret = Atrac9Decode(m_handle, in_buf.data(), static_cast<int>(in_buf.size()),
