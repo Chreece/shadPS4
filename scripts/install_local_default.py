@@ -269,7 +269,8 @@ def build(home, revision):
         compiler = ['-DCMAKE_C_COMPILER=clang-19', '-DCMAKE_CXX_COMPILER=clang++-19',
                     '-DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS=/usr/bin/clang-scan-deps-19']
         for suite in ('ngs2_hle', 'userservice', 'occlusion_query', 'image_transfer',
-                      'graphics_diagnostics', 'quit_dialog'):
+                      'graphics_diagnostics', 'quit_dialog', 'kernel_sanitizer',
+                      'kernel_thread_atexit'):
             folder = work / ('default-check-' + suite)
             run(['cmake', '-S', source / 'tests' / suite, '-B', folder, '-G', 'Ninja',
                  '-DCMAKE_BUILD_TYPE=Release', *compiler], docker=True)
