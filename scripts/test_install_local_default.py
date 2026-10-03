@@ -68,6 +68,100 @@ class DefaultInstallTests(unittest.TestCase):
              mock.patch.object(deploy, 'build', return_value=self.built):
             deploy.install(self.home, self.revision)
 
+    def install_and_restore(self):
+        self.install()
+        state = next((self.home / '.local/state/shadps4-default-main').glob('install-*/state.json'))
+        with mock.patch.object(deploy.Path, 'home', return_value=self.home), \
+             mock.patch.object(deploy, 'no_running_apps'):
+            deploy.restore(state)
+        return state
+
+    def test_install_after_own_restore_retains_a_working_rollback(self):
+        state = self.install_and_restore()
+        previous = (self.root / 'shadps4').resolve()
+        saved_core = previous.read_bytes()
+        config = self.config.read_bytes()
+        guard = self.guard.read_bytes()
+        self.revision = 'b' * 40
+        self.built.write_bytes(b'\x7fELF\x02new kernel core')
+        self.install()
+        self.assertEqual((self.root / 'shadps4').read_bytes(), self.built.read_bytes())
+        states = [p for p in state.parent.parent.glob('install-*/state.json') if p != state]
+        self.assertEqual(len(states), 1)
+        self.assertEqual((states[0].parent / 'previous/shadps4').read_bytes(), saved_core)
+        self.assertFalse(previous.exists(), 'Old backup should retire only after being recopied')
+        with mock.patch.object(deploy.Path, 'home', return_value=self.home), \
+             mock.patch.object(deploy, 'no_running_apps'):
+            deploy.restore(states[0])
+        self.assertEqual((self.root / 'shadps4').read_bytes(), saved_core)
+        self.assertEqual(self.config.read_bytes(), config)
+        self.assertEqual(self.guard.read_bytes(), guard)
+        self.assertEqual(self.data.read_bytes(), b'precious save')
+
+    def test_failed_build_after_restore_keeps_selected_backup(self):
+        self.install_and_restore()
+        core = self.root / 'shadps4'
+        previous = core.resolve()
+        old_link = core.readlink()
+        wrapper = self.wrapper.read_bytes()
+        self.revision = 'b' * 40
+        with mock.patch.object(deploy, 'no_running_apps'), \
+             mock.patch.object(deploy.shutil, 'which', return_value='/usr/bin/tool'), \
+             mock.patch.object(deploy, 'build', side_effect=RuntimeError('compile failed')) as build:
+            with self.assertRaisesRegex(RuntimeError, 'compile failed'):
+                deploy.install(self.home, self.revision)
+            build.assert_called_once()
+        self.assertEqual(core.readlink(), old_link)
+        self.assertEqual(previous.read_bytes(), b'\x7fELF\x02previous core')
+        self.assertEqual(self.wrapper.read_bytes(), wrapper)
+
+    def assert_backup_rejected_before_build(self):
+        core = self.root / 'shadps4'
+        old_link = core.readlink()
+        wrapper = self.wrapper.read_bytes()
+        with mock.patch.object(deploy, 'no_running_apps'), \
+             mock.patch.object(deploy.shutil, 'which', return_value='/usr/bin/tool'), \
+             mock.patch.object(deploy, 'build') as build:
+            with self.assertRaisesRegex(RuntimeError, 'Previous core'):
+                deploy.install(self.home, 'b' * 40)
+            build.assert_not_called()
+        self.assertEqual(core.readlink(), old_link)
+        self.assertEqual(self.wrapper.read_bytes(), wrapper)
+
+    def test_restored_core_requires_matching_backup_metadata(self):
+        state_path = self.install_and_restore()
+        valid = json.loads(state_path.read_text())
+        for invalid in (dict(valid, home='/some/other/home'),
+                        dict(valid, previous_sha256='0' * 64), [], {}):
+            with self.subTest(state=invalid):
+                state_path.write_text(json.dumps(invalid))
+                self.assert_backup_rejected_before_build()
+        state_path.unlink()
+        self.assert_backup_rejected_before_build()
+
+    def test_modified_backup_is_not_accepted(self):
+        self.install_and_restore()
+        (self.root / 'shadps4').write_bytes(b'\x7fELF\x02independent replacement')
+        self.assert_backup_rejected_before_build()
+
+    def test_rollback_payload_symlink_cannot_escape_backup_directory(self):
+        state = self.install_and_restore()
+        previous = state.parent / 'previous/shadps4'
+        outside = self.home / 'unrelated-core'
+        outside.write_bytes(previous.read_bytes())
+        previous.unlink()
+        previous.symlink_to(outside)
+        self.assert_backup_rejected_before_build()
+        self.assertTrue(outside.exists())
+
+    def test_rollback_state_symlink_is_rejected(self):
+        state = self.install_and_restore()
+        outside = self.home / 'unrelated-state.json'
+        outside.write_bytes(state.read_bytes())
+        state.unlink()
+        state.symlink_to(outside)
+        self.assert_backup_rejected_before_build()
+
     def test_failed_build_keeps_entire_existing_installation(self):
         before = self.wrapper.read_bytes()
         with mock.patch.object(deploy, 'no_running_apps'), \
