@@ -283,16 +283,6 @@ s32 Linker::LoadAndStartModule(const std::filesystem::path& path, u64 args, cons
     return handle;
 }
 
-Module* Linker::FindByAddress(VAddr address) {
-    for (auto& module : m_modules) {
-        const VAddr base = module->GetBaseAddress();
-        if (address >= base && address < base + module->aligned_base_size) {
-            return module.get();
-        }
-    }
-    return nullptr;
-}
-
 void Linker::Relocate(Module* module) {
     module->ForEachRelocation([&](elf_relocation* rel, u32 i, bool is_jmp_rel) {
         const u32 num_relocs = module->dynamic_info.relocation_table_size / sizeof(elf_relocation);

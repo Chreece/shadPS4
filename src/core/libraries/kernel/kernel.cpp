@@ -23,6 +23,7 @@
 #include "core/libraries/kernel/posix_error.h"
 #include "core/libraries/kernel/process.h"
 #include "core/libraries/kernel/sanitizer.h"
+#include "core/libraries/kernel/thread_atexit.h"
 #include "core/libraries/kernel/threads.h"
 #include "core/libraries/kernel/threads/exception.h"
 #include "core/libraries/kernel/threads/pthread.h"
@@ -455,6 +456,7 @@ void RegisterLib(Core::Loader::SymbolsResolver* sym) {
     Libraries::Kernel::RegisterKernelEventFlag(sym);
     Libraries::Kernel::RegisterMemory(sym);
     Libraries::Kernel::RegisterSanitizer(sym);
+    Libraries::Kernel::RegisterThreadAtexit(sym);
     Libraries::Kernel::RegisterEventQueue(sym);
     Libraries::Kernel::RegisterProcess(sym);
     Libraries::Kernel::RegisterException(sym);

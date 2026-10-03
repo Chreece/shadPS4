@@ -358,6 +358,8 @@ set(KERNEL_LIB src/core/libraries/kernel/coredump/coredump.cpp
                src/core/libraries/kernel/memory.h
                src/core/libraries/kernel/sanitizer.cpp
                src/core/libraries/kernel/sanitizer.h
+               src/core/libraries/kernel/thread_atexit.cpp
+               src/core/libraries/kernel/thread_atexit.h
                src/core/libraries/kernel/threads.cpp
                src/core/libraries/kernel/threads.h
                src/core/libraries/kernel/time.cpp
@@ -964,6 +966,8 @@ set(CORE src/core/aerolib/stubs.cpp
          src/core/debugger.h
          src/core/linker.cpp
          src/core/linker.h
+         src/core/linker_thread_atexit.cpp
+         src/core/module_thread_atexit.h
          src/core/memory.cpp
          src/core/memory.h
          src/core/memory_access.h
