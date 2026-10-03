@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstring>
 #include <thread>
 #include <boost/asio/io_context.hpp>
 
@@ -30,6 +31,7 @@
 #include "core/libraries/kernel/time.h"
 #include "core/libraries/libs.h"
 #include "core/libraries/network/sys_net.h"
+#include "core/memory.h"
 
 #ifdef _WIN64
 #include <Rpc.h>
@@ -325,6 +327,24 @@ s32 PS4_SYSV_ABI sceKernelGetProcessType(s32 pid) {
 }
 
 s32 PS4_SYSV_ABI __sys_regmgr_call(u32 op, u32 key, void* result, void* value, u64 len) {
+    // The 0x19 integer-read request carries its encoded key in the buffer, not
+    // in the second syscall argument. Record only the input fields until the
+    // requested entry and its response contract are established. Do not read
+    // either output (result or the word at offset 12), which may be uninitialized.
+    // As with other HLE calls, the caller must keep its buffer mapped during the call.
+    if (op == 0x19 && len == 16 &&
+        Core::Memory::Instance()->IsAccessibleRange(reinterpret_cast<VAddr>(value), len,
+                                                    Core::MemoryProt::CpuRead)) {
+        u64 encoded_key;
+        u32 request_word8;
+        std::memcpy(&encoded_key, value, sizeof(encoded_key));
+        std::memcpy(&request_word8, static_cast<const u8*>(value) + 8, sizeof(request_word8));
+        LOG_ERROR(Lib_Kernel,
+                  "(STUBBED) called, op: {:#x}, key: {}, len: {}, encoded_key: {:#018x}, "
+                  "request_word8: {:#010x}; outputs unchanged",
+                  op, key, len, encoded_key, request_word8);
+        return ORBIS_OK;
+    }
     LOG_ERROR(Lib_Kernel, "(STUBBED) called, op: {:#x}, key: {}, len: {}", op, key, len);
     return ORBIS_OK;
 }
