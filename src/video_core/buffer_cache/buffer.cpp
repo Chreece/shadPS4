@@ -126,6 +126,9 @@ Buffer::Buffer(const Vulkan::Instance& instance, VAddr cpu_addr_, u64 size_bytes
       buffer{instance.GetDevice(), instance.GetAllocator()} {
 
     vk::BufferCreateInfo buffer_ci = {
+        .flags = mem_type == MemoryType::Sparse && instance.IsSparseAliasingSupported()
+                     ? vk::BufferCreateFlagBits::eSparseAliased
+                     : vk::BufferCreateFlags{},
         .size = size_bytes,
         .usage = AllFlags,
         .sharingMode = vk::SharingMode::eExclusive,
