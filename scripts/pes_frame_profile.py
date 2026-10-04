@@ -212,7 +212,7 @@ PROFILE = {
     "symbol_queries": ("sceGnmSubmit", "sceGnmDingDong", "sceVideoOutSubmit",
                        "sceVideoOutGetFlipStatus", "sceVideoOutGetVblankStatus", "VideoOutDriver::",
                        "Vulkan::Rasterizer::", "scePlayGoGet", "sceKernelStat"),
-    "symbol_pattern": (r"^\s*(0x[0-9a-fA-F]+)\s+(?![^\n]*\[clone )(?:Libraries::"
+    "symbol_pattern": (r"^\s*(0x[0-9a-fA-F]+)\s+(?:Libraries::"
                        r"(?:GnmDriver|VideoOut|PlayGo|Kernel)::|Vulkan::)([A-Za-z0-9_:]+)\("),
     "profile_source": SUPPORT,
 }
@@ -278,6 +278,12 @@ public:
     PROBE_API void ResetBindings(bool) {}
 };
 }
+// Real ELF symbols with the suffixes emitted for outlined/cold fragments.
+// These must never be treated as function-entry breakpoints.
+extern "C" PROBE_API void cold_one() asm("_ZN6Vulkan10Rasterizer12DrawIndirectEbmjjjmtt.cold.1");
+extern "C" PROBE_API void cold_two() asm("_ZN6Vulkan10Rasterizer12DrawIndirectEbmjjjmtt.cold.2");
+void cold_one() {}
+void cold_two() {}
 namespace Libraries::PlayGo {
 PROBE_API int scePlayGoGetInstallSpeed(unsigned, int* value) { *value = 2; return 0; }
 PROBE_API int scePlayGoGetLanguageMask(unsigned, std::uint64_t* value) { *value = 0x4000000000000000ULL; return 0; }
@@ -345,6 +351,9 @@ void frame_activity() {
 
 def validate_observations(mode, result, require):
     apis = result['apis']
+    require(len([line for line in result.get('skipped_symbol_fragments', [])
+                 if 'Rasterizer::DrawIndirect' in line]) == 2,
+            'Cold symbol fixtures were not excluded from entry breakpoints')
     require(set(apis) == set(APIS), 'Frame symbols are missing or unexpected')
     if mode == 'idle':
         require(all(v['calls'] == 0 for v in apis.values()), 'Idle target recorded frame activity')

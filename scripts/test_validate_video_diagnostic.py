@@ -19,7 +19,9 @@ import pes_frame_profile
 
 class LauncherTests(unittest.TestCase):
     def test_frame_idle_result_reaches_profile_validator_without_shadowing_module(self):
-        result = {'apis': {api: {'calls': 0} for api in pes_frame_profile.APIS}}
+        result = {'apis': {api: {'calls': 0} for api in pes_frame_profile.APIS},
+                  'skipped_symbol_fragments': ['Rasterizer::DrawIndirect.cold.1',
+                                               'Rasterizer::DrawIndirect.cold.2']}
         validate.validate_observations('idle', result, profile='frames')
         result['apis']['sceVideoOutSubmitFlip']['calls'] = 1
         with self.assertRaisesRegex(RuntimeError, 'Idle target recorded frame activity'):

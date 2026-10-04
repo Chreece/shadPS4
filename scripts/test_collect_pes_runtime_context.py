@@ -26,10 +26,15 @@ class OutputTests(unittest.TestCase):
             empty_log = root / 'shadps4.log'
             empty_log.write_bytes(b'launch line only\n')
             (proc / 'fd' / '9').symlink_to(empty_log)
+            game_log = root / 'CUSA18676.log'
+            game_log.write_bytes(b'[Game] loading failure detail\n')
+            (proc / 'fd' / '4').symlink_to(game_log)
             records = {r['fd']: r for r in context.collect_outputs(proc, work)}
             self.assertEqual((work / 'fd-1.0.log').read_bytes(), actual.read_bytes())
             self.assertEqual(records[2]['status'], 'not_regular_not_read')
             self.assertEqual(records[9]['status'], 'captured')
+            self.assertEqual(records[4]['status'], 'captured')
+            self.assertEqual((work / 'fd-4.0.log').read_bytes(), game_log.read_bytes())
 
     def test_large_file_retains_exact_head_tail_offsets_without_changing_source(self):
         with tempfile.TemporaryDirectory() as directory:

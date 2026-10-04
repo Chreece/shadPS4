@@ -109,6 +109,30 @@ def consume_return(context):
     pass
 
 
+def resolve_symbols(listing, pattern, allowed=None):
+    # Keep full function entries, deduplicate repeated queries, reject real overloads.
+    candidates = {}
+    skipped = []
+    for line in listing.splitlines():
+        match = re.match(pattern, line)
+        if not match:
+            continue
+        address, api = match.groups()
+        if allowed is not None and api not in allowed:
+            continue
+        # A cold/outlined fragment is inside a function, not a callable ABI entry.
+        # GDB/binutils render compiler suffixes both as [clone ...] and as .cold.N.
+        if not re.search(r"\)(?: (?:const|volatile|noexcept))*;?$", line.rstrip()):
+            skipped.append(line.strip())
+            continue
+        candidates.setdefault(api, {})[int(address, 16)] = line.strip()
+    for api, addresses in candidates.items():
+        if len(addresses) != 1:
+            raise RuntimeError("Ambiguous canonical API symbol: " + api + ": " +
+                               " | ".join(addresses.values()))
+    return {api: next(iter(addresses)) for api, addresses in candidates.items()}, sorted(set(skipped))
+
+
 class Entry(gdb.Breakpoint):
     def __init__(self, address, api):
         super().__init__("*" + hex(address), internal=True)
@@ -182,22 +206,23 @@ try:
 
     symbols = "".join(gdb.execute("info functions " + query, to_string=True)
                       for query in CONFIG.get("symbol_queries", ("sceVideodec", "sceVdecsw")))
+    # Keep the actual listing even when resolution fails, so a user need not repeat
+    # attachment merely to reveal the names that made resolution ambiguous.
+    result["symbol_listing"] = symbols
     pattern = CONFIG.get("symbol_pattern", (r"^\s*(0x[0-9a-fA-F]+)\s+Libraries::"
                r"(?:Videodec2|Videodec|Vdecsw)::(sce[A-Za-z0-9_]+)\("))
-    seen = set()
-    for address, api in re.findall(pattern, symbols, re.M):
-        if CONFIG.get("only_required") and api not in CONFIG.get("allowed_apis", CONFIG["required_apis"]):
-            continue
-        if api in seen:
-            raise RuntimeError("Ambiguous API symbol: " + api)
-        seen.add(api)
-        entries.append(Entry(int(address, 16), api))
+    allowed = CONFIG.get("allowed_apis", CONFIG["required_apis"]) if CONFIG.get("only_required") else None
+    resolved, skipped = resolve_symbols(symbols, pattern, allowed)
+    result["resolved_symbols"] = {api: hex(address) for api, address in resolved.items()}
+    result["skipped_symbol_fragments"] = skipped
+    for required in CONFIG["required_apis"]:
+        if required not in resolved:
+            raise RuntimeError("Required API symbol not found: " + required)
+    for api, address in resolved.items():
+        entries.append(Entry(address, api))
         result["apis"][api] = {"calls": 0, "returns": 0, "errors": {},
                                 "valid_frames": 0, "out_of_scope": 0, "capped": False}
-    for required in CONFIG["required_apis"]:
-        if required not in seen:
-            raise RuntimeError("Required API symbol not found: " + required)
-    result["unavailable_optional"] = sorted(set(CONFIG.get("allowed_apis", ())) - seen)
+    result["unavailable_optional"] = sorted(set(CONFIG.get("allowed_apis", ())) - resolved.keys())
 
     gdb.execute("handle SIGSEGV nostop noprint pass")
     gdb.execute("handle SIGBUS nostop noprint pass")
@@ -321,9 +346,11 @@ def capture_profile(profile):
     raise ValueError("Unknown diagnostic profile: " + profile)
 
 
-def write_probe(identity, probe_file, *, profile="video"):
+def write_probe(identity, probe_file, *, profile="video", extra_symbol_queries=()):
     config = dict(capture_profile(profile), identity=identity,
                   stop_request=str(probe_file.parent / "stop-request.json"))
+    if extra_symbol_queries:
+        config['symbol_queries'] = tuple(config.get('symbol_queries', ('sceVideodec', 'sceVdecsw'))) + tuple(extra_symbol_queries)
     probe_file.write_text("CONFIG = " + repr(config) + "\n" + PROBE)
 
 

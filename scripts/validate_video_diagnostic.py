@@ -170,7 +170,9 @@ def run_case(root, mode, profile='video'):
                     'sha256': hashlib.sha256(Path('/test/fixture').read_bytes()).hexdigest()}
         (work / 'identity.json').write_text(json.dumps(identity))
         probe = work / 'probe.py'
-        trace.write_probe(identity, probe, profile=profile)
+        # Exercise repeated canonical addresses from overlapping GDB queries too.
+        trace.write_probe(identity, probe, profile=profile,
+                          extra_symbol_queries=("Vulkan::Rasterizer::DrawIndirect",) if profile == 'frames' else ())
         if mode == 'interrupt':
             other = work / 'unrelated.py'
             other.write_text('import time\ntime.sleep(100)\n')
