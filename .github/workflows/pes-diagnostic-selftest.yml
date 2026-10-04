@@ -22,11 +22,11 @@ jobs:
         run: |
           docker build -t pes-window-fixture -f - scripts <<'DOCKERFILE'
           FROM debian:trixie-slim
-          RUN apt-get update && apt-get install -y --no-install-recommends python3 libx11-6 xvfb xauth openbox && rm -rf /var/lib/apt/lists/*
+          RUN apt-get update && apt-get install -y --no-install-recommends python3 libx11-6 xvfb openbox && rm -rf /var/lib/apt/lists/*
           COPY show_pes_window.py trace_video_progress.py test_show_pes_window.py /test/
           ENV HOME=/tmp PES_WINDOW_X11_TEST=1
           WORKDIR /test
-          CMD ["xvfb-run", "-a", "python3", "test_show_pes_window.py"]
+          CMD ["python3", "-u", "test_show_pes_window.py"]
           DOCKERFILE
       - name: Verify focus, minimization, workspaces, and exact process selection
         run: >-
