@@ -210,7 +210,10 @@ def collect_screenshots(home, work, previous):
     return captured
 
 
-def run(home, *, profile="video", reuse_existing=False, screenshots=False, graphics=False):
+def run(home, *, profile="video", reuse_existing=False, screenshots=False, graphics=False,
+        validation=False):
+    if validation and not graphics:
+        raise RuntimeError("Vulkan validation requires the native graphics launcher")
     trace.capture_profile(profile)
     existing = trace.find_process() if reuse_existing and running_emulators() else None
     if existing is None:
@@ -239,13 +242,18 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
     print("Observing the existing PES session." if existing else
           "Launching PES in the background; automatic collection takes about one minute.", flush=True)
     identity = existing
+    if graphics:
+        import pes_graphics_launch as native
     screenshots_before = {p.name for p in (home / ".local/share/shadPS4/screenshots").glob("CUSA18676_*.png")}
     try:
+        if validation:
+            import pes_vulkan_validation as vulkan
+            vulkan.preflight(work)
+            record["vulkan_preflight_passed"] = True
         started = time.monotonic()
         if existing is None:
-            if graphics:
-                import pes_graphics_launch as native
-            launch_context = (native.enabled_launch(home, wrapper, wrapper_sha, work)
+            launch_context = (native.enabled_launch(home, wrapper, wrapper_sha, work,
+                                                    **({'validation': True} if validation else {}))
                               if graphics else nullcontext())
             with launch_context:
                 with (work / "emulator.log").open("wb") as log:
@@ -253,8 +261,10 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
                 record["launcher_pid"] = launcher.pid
                 identity = await_game(launcher)
             if graphics:
-                native.verify_environment(identity)
+                native.verify_environment(identity, **({'validation': True} if validation else {}))
                 record["graphics_environment_verified"] = True
+                if validation:
+                    record["vulkan_layer_loaded"] = True
                 print("PES_NATIVE_GRAPHICS=enabled; original launcher restored", flush=True)
         else:
             identity = existing
@@ -350,11 +360,20 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
                     record["graphics"]["event_count_lower_bounds"], sort_keys=True), flush=True)
             except Exception as error:
                 record["errors"].append("native graphics: " + str(error))
+        if validation:
+            try:
+                record["vulkan_validation"] = vulkan.analyze(sorted(work.glob("console.*.log")))
+                print("PES_VULKAN_MESSAGES=" + json.dumps(record["vulkan_validation"],
+                                                         sort_keys=True), flush=True)
+            except Exception as error:
+                record["errors"].append("Vulkan validation: " + str(error))
         context.save_json(work / "startup.json", record)
         archive = work.with_suffix(".tar.gz")
         with tarfile.open(archive, "w:gz") as output:
             for path in sorted(work.rglob("*")):
-                if path.is_file() and path.name != "emulator.log":
+                if (path.is_file() and path.name != "emulator.log" and
+                        not {'validation-package', 'validation-runtime'}.intersection(
+                            path.relative_to(work).parts)):
                     output.add(path, arcname=str(path.relative_to(work)), recursive=False)
         print("PES_STARTUP_ARCHIVE=" + str(archive), flush=True)
         print("Collection ended. PES is left running if it has not exited; close it normally when finished.", flush=True)

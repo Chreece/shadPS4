@@ -7,6 +7,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import shlex
 import stat
 import tempfile
 
@@ -24,7 +25,7 @@ def atomic_write(path, data, mode):
         Path(name).unlink(missing_ok=True)
 
 
-def instrument(original, home):
+def instrument(original, home, validation=False):
     command = b'exec ' + os.fsencode(home / 'Applications/shadps4/shadps4')
     command += b' --game "$game" --fullscreen true\n'
     lines = original.splitlines(keepends=True)
@@ -33,18 +34,22 @@ def instrument(original, home):
         raise RuntimeError('Unrecognized guarded launcher; preserved')
     index = lines.index(command)
     lines.insert(index, b'export SHADPS4_GRAPHICS_DIAGNOSTICS=1\n')
+    if validation:
+        from pes_vulkan_validation import ENVIRONMENT
+        lines.insert(index, ''.join('export ' + key + '=' + shlex.quote(value) + '\n'
+                                   for key, value in ENVIRONMENT.items()).encode())
     return b''.join(lines)
 
 
 @contextmanager
-def enabled_launch(home, wrapper, expected_sha, work):
+def enabled_launch(home, wrapper, expected_sha, work, validation=False):
     info = wrapper.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
         raise RuntimeError('Launcher owner or file type changed; preserved')
     original = wrapper.read_bytes()
     if hashlib.sha256(original).hexdigest() != expected_sha:
         raise RuntimeError('Launcher changed before graphics capture; preserved')
-    modified = instrument(original, home)
+    modified = instrument(original, home, validation)
     (work / 'launcher.original').write_bytes(original)
     (work / 'launcher.instrumented').write_bytes(modified)
     try:
@@ -62,7 +67,7 @@ def enabled_launch(home, wrapper, expected_sha, work):
             raise RuntimeError('Launcher restoration failed; original saved in ' + str(work))
 
 
-def verify_environment(identity, proc_root=Path('/proc')):
+def verify_environment(identity, proc_root=Path('/proc'), validation=False):
     proc = proc_root / str(identity['pid'])
     def start_ticks():
         return (proc / 'stat').read_text().rsplit(')', 1)[1].split()[19]
@@ -71,6 +76,16 @@ def verify_environment(identity, proc_root=Path('/proc')):
     enabled = b'SHADPS4_GRAPHICS_DIAGNOSTICS=1' in (proc / 'environ').read_bytes().split(b'\0')
     if start_ticks() != identity['start_ticks'] or not enabled:
         raise RuntimeError('Native graphics diagnostics did not reach the emulator')
+    if validation:
+        from pes_vulkan_validation import ENVIRONMENT
+        environment = (proc / 'environ').read_bytes().split(b'\0')
+        if any((key + '=' + value).encode() not in environment
+               for key, value in ENVIRONMENT.items()):
+            raise RuntimeError('Vulkan validation environment did not reach the emulator')
+        if 'libVkLayer_khronos_validation.so' not in (proc / 'maps').read_text():
+            raise RuntimeError('Vulkan validation layer is not loaded in the emulator')
+        if start_ticks() != identity['start_ticks']:
+            raise RuntimeError('Emulator identity changed during validation verification')
 
 
 def analyze(paths):
