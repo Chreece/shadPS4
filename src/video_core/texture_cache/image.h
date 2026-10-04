@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <mutex>
 #include <optional>
 
@@ -152,6 +153,7 @@ public:
     };
     SmallVector<BackingImage, 2> backing_images;
     BackingImage* backing{};
+    std::array<u64, MAX_MIPS> mip_hashes{};
     u64 image_uid{};
     u64 lru_id{};
     u64 tick_accessed_last{};
