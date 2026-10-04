@@ -339,13 +339,29 @@ def interrupt_debugger(work, prefix, *, reason="interrupted"):
         temporary = Path(request.name)
     temporary.replace(work / "stop-request.json")
     command = prefix + [sys.executable, "-c", INTERRUPT_HELPER, str(work)]
-    result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    evidence = {"reason": reason}
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+        evidence.update(returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
+    except (Exception, KeyboardInterrupt) as error:
+        evidence["error"] = type(error).__name__ + ": " + str(error)
+        for field in ("stdout", "stderr"):
+            value = getattr(error, field, None)
+            if isinstance(value, bytes):
+                value = value.decode(errors="replace")
+            evidence[field] = value
+        raise
+    finally:
+        # Retain the exact helper output even when validation or sudo fails.
+        with (work / "interrupt-helper.jsonl").open("a") as output:
+            output.write(json.dumps(evidence) + "\n")
     if result.stdout:
         say(result.stdout.rstrip())
     if result.returncode:
         raise RuntimeError("Could not interrupt this debugger: " + result.stderr[-1000:])
     if not re.search(r"^MATCHED_TRACE_DEBUGGERS=1$", result.stdout, re.M):
-        raise RuntimeError("The interrupt helper did not identify exactly one trace debugger.")
+        raise RuntimeError("The interrupt helper did not identify exactly one trace debugger. "
+                           "See interrupt-helper.jsonl for its exact output.")
 
 
 def wait_for_debugger(child, work, prefix, *, setup_seconds=SETUP_SECONDS,

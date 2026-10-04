@@ -217,6 +217,31 @@ class ProbeStopTests(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaisesRegex(RuntimeError, 'exactly one'):
                 trace.interrupt_debugger(Path(directory), [])
+            evidence = json.loads((Path(directory) / 'interrupt-helper.jsonl').read_text())
+            self.assertEqual(evidence['stdout'], 'MATCHED_TRACE_DEBUGGERS=0\n')
+            self.assertEqual(evidence['returncode'], 0)
+
+    def test_helper_failure_retains_unmodified_output_including_terminal_codes(self):
+        output = '\x1b[?2004lMATCHED_TRACE_DEBUGGERS=1\r\n'
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(trace.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                    [], 0, output, 'helper stderr\n')), \
+                contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, 'exactly one'):
+                trace.interrupt_debugger(Path(directory), [])
+            evidence = json.loads((Path(directory) / 'interrupt-helper.jsonl').read_text())
+            self.assertEqual(evidence['stdout'], output)
+            self.assertEqual(evidence['stderr'], 'helper stderr\n')
+
+    def test_helper_timeout_retains_partial_output(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(trace.subprocess, 'run', side_effect=subprocess.TimeoutExpired(
+                    ['helper'], 10, output=b'partial\n', stderr=b'error\n')):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                trace.interrupt_debugger(Path(directory), [])
+            evidence = json.loads((Path(directory) / 'interrupt-helper.jsonl').read_text())
+            self.assertEqual(evidence['stdout'], 'partial\n')
+            self.assertEqual(evidence['stderr'], 'error\n')
 
 
 class WatchdogTests(unittest.TestCase):

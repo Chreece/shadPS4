@@ -11,14 +11,35 @@ root cause or repair the emulator. The installed emulator remains pinned to
 No emulator build, install, launcher, save, audio/7.1 setting, or retained fix
 was changed. Emulator builds remain subject to the local-Docker-first rule.
 
-**Do not request another PES capture yet. Rerun the disposable Docker self-test first.**
+The updated disposable Docker self-test passed all four cases in the user's
+`selftest-evidence.tar.gz`: idle (20.222 seconds), active (20.199 seconds),
+manual interruption and target exit. Active decoding produced the expected
+32 entries/returns, 6 errors and 26 valid frames. Surviving targets resumed
+with `TracerPid=0`.
 
 The user ran the real-GDB Docker self-test at `67d92a2d`: the idle case did
 not stop at 20 seconds. The external watchdog interrupted exactly one GDB at
 25.215 seconds and it detached successfully. The collector now schedules that
 external interrupt at 20 seconds and removes the GDB Python timer thread.
 It distinguishes a scheduled stop from manual interruption and retains the
-25-second overrun check. The updated live-GDB self-test is pending.
+25-second overrun check.
+
+The subsequent PES archive `shadps4-pes-video-qmcgz5sy.tar.gz` records 20.086
+seconds, 36 hooked APIs with zero observed calls, normal GDB exit and verified
+detach. The parent marked it failed because the helper's exact-one-match
+check failed. Its stdout was not archived, so the reason for that mismatch
+is unknown. New captures retain the helper's stdout, stderr and exit status in
+`interrupt-helper.jsonl`, including failures/timeouts. Signal selection and
+the strict acceptance check are unchanged; this capture is not reclassified.
+
+The earlier `shadps4-graphics-evidence-5s5x8div` contains 3,383,796 bytes of
+direct console output but only 123 fresh bytes in `shadps4.log`. Video-only
+named-log filtering cannot establish the earlier startup history. The passive
+`collect_pes_runtime_context.py` now reads the running process's stdout/stderr
+destinations when they are regular files, named logs and three procfs activity
+samples. It never attaches, signals, resumes or changes an emulator process;
+it skips pipes/devices and caps each log at 16 MiB with exact head/tail offsets.
+Its next run requires PES to remain open but does not repeat the video trace.
 
 ## Evidence retained
 
