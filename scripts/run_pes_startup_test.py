@@ -211,7 +211,9 @@ def collect_screenshots(home, work, previous):
 
 
 def run(home, *, profile="video", reuse_existing=False, screenshots=False, graphics=False,
-        validation=False):
+        validation=False, close_after=False, work=None, archive=True, trace_delay_seconds=0):
+    if close_after and reuse_existing:
+        raise RuntimeError("Automatic cleanup requires a fresh test-owned launch")
     if validation and not graphics:
         raise RuntimeError("Vulkan validation requires the native graphics launcher")
     trace.capture_profile(profile)
@@ -233,7 +235,10 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
         raise RuntimeError("PES identity changed during preparation; preserved")
     if checksum(wrapper) != wrapper_sha:
         raise RuntimeError("Launcher changed during preparation; preserved")
-    work = Path(tempfile.mkdtemp(prefix="shadps4-pes-startup-", dir=home))
+    if work is None:
+        work = Path(tempfile.mkdtemp(prefix="shadps4-pes-startup-", dir=home))
+    else:
+        work.mkdir()
     record = {"revision": trace.REVISION, "desktop_source": desktop_source,
               "baseline": getattr(trace, "BASELINE_METADATA", None),
               "capture_profile": profile, "reused_existing": existing is not None,
@@ -242,6 +247,13 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
     print("Observing the existing PES session." if existing else
           "Launching PES in the background; automatic collection takes about one minute.", flush=True)
     identity = existing
+    debugger = None
+    capture = work / profile
+    owner = None
+    if close_after:
+        from pes_test_cleanup import OwnedLaunch
+        owner = OwnedLaunch()
+        env = owner.environment(env)
     if graphics:
         import pes_graphics_launch as native
     screenshots_before = {p.name for p in (home / ".local/share/shadPS4/screenshots").glob("CUSA18676_*.png")}
@@ -258,8 +270,12 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
             with launch_context:
                 with (work / "emulator.log").open("wb") as log:
                     launcher = launch_game(wrapper, env, home, log)
+                    if owner is not None:
+                        owner.adopt_launcher(launcher)
                 record["launcher_pid"] = launcher.pid
                 identity = await_game(launcher)
+                if owner is not None:
+                    owner.remember(identity['pid'], identity['start_ticks'])
             if graphics:
                 native.verify_environment(identity, **({'validation': True} if validation else {}))
                 record["graphics_environment_verified"] = True
@@ -269,7 +285,18 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
         else:
             identity = existing
         record["identity"] = identity
-        capture = work / profile
+        index = 0
+        if trace_delay_seconds:
+            print('PES_OBSERVATION=running; final frames and screenshots are captured near the end', flush=True)
+        while time.monotonic() - started < trace_delay_seconds:
+            state = trace.inspect_target(identity)
+            if state.get('status') != 'observed' or state.get('state') in ('Z', 'X'):
+                raise RuntimeError('PES exited before the final observation window')
+            context.save_json(work / f'activity-{index}.json',
+                              context.sample(Path('/proc') / str(identity['pid'])))
+            index += 1
+            time.sleep(min(5, max(0, trace_delay_seconds - (time.monotonic() - started))))
+        record['trace_started_after_seconds'] = round(time.monotonic() - started, 3)
         capture.mkdir()
         context.save_json(capture / "identity.json", identity)
         trace.write_probe(identity, capture / "probe.py", profile=profile, screenshots=screenshots)
@@ -278,6 +305,12 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
             debugger = subprocess.Popen(trace.debugger_command(identity, capture / "probe.py", prefix),
                                         stdout=output, stderr=subprocess.STDOUT,
                                         start_new_session=True)
+            from pes_test_cleanup import process_fields
+            try:
+                context.save_json(capture / 'debugger-launch.json',
+                                  process_fields(Path('/proc') / str(debugger.pid)))
+            except FileNotFoundError:
+                pass
             outcome = trace.wait_for_debugger(debugger, capture, prefix)
         report = trace.build_report((capture / "gdb.txt").read_text(errors="replace"),
                                     outcome, trace.inspect_target(identity), profile=profile)
@@ -309,7 +342,6 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
         if not existing:
             print("Collecting startup activity through 60 seconds; keep the Moonlight session connected.", flush=True)
         proc = Path("/proc") / str(identity["pid"])
-        index = 0
         while True:
             state = trace.inspect_target(identity)
             if state.get("status") != "observed" or state.get("state") in ("Z", "X"):
@@ -322,10 +354,28 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
         (work / "maps.txt").write_text((proc / "maps").read_text())
         record["target_after"] = trace.inspect_target(identity)
         record["observed_seconds"] = round(time.monotonic() - started, 3)
+        if screenshots and trace_delay_seconds:
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                try:
+                    images = collect_screenshots(home, work, screenshots_before)
+                    if {"game" if "_game_" in item['file'] else "hud" for item in images} == {'game', 'hud'}:
+                        break
+                except RuntimeError:
+                    pass
+                time.sleep(0.1)
     except (Exception, KeyboardInterrupt) as error:
         record["errors"].append(type(error).__name__ + ": " + (str(error) or "Interrupted"))
         print("PES_STARTUP_ERROR=" + record["errors"][-1], flush=True)
     finally:
+        if close_after:
+            from pes_test_cleanup import stop_debugger
+            try:
+                record['debugger_cleanup'] = stop_debugger(debugger, capture, prefix)
+                if not record['debugger_cleanup']['complete']:
+                    record['errors'].append('Debugger cleanup incomplete')
+            except Exception as error:
+                record['errors'].append('debugger cleanup: ' + str(error))
         if screenshots:
             try:
                 record["screenshots"] = collect_screenshots(home, work, screenshots_before)
@@ -336,6 +386,19 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
                 print("PES_NATIVE_IMAGES=" + str(len(record["screenshots"])), flush=True)
             except Exception as error:
                 record["errors"].append("screenshots: " + str(error))
+        if owner is not None:
+            try:
+                if identity is not None and trace.inspect_target(identity).get('status') == 'observed':
+                    context.collect_outputs(Path('/proc') / str(identity['pid']), work)
+            except OSError as error:
+                record['errors'].append('pre-close log capture: ' + str(error))
+            try:
+                record['process_cleanup'] = owner.close(identity, env)
+                if not record['process_cleanup']['complete']:
+                    record['errors'].append('Test-owned process cleanup incomplete')
+                print('PES_PROCESS_CLEANUP=' + ('PASS' if record['process_cleanup']['complete'] else 'FAIL'), flush=True)
+            except Exception as error:
+                record['errors'].append('process cleanup: ' + str(error))
         try:
             record["settings_after"] = settings(home)
             record["settings_unchanged"] = record["settings_after"] == before
@@ -368,15 +431,17 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
             except Exception as error:
                 record["errors"].append("Vulkan validation: " + str(error))
         context.save_json(work / "startup.json", record)
-        archive = work.with_suffix(".tar.gz")
-        with tarfile.open(archive, "w:gz") as output:
-            for path in sorted(work.rglob("*")):
-                if (path.is_file() and path.name != "emulator.log" and
-                        not {'validation-package', 'validation-runtime'}.intersection(
-                            path.relative_to(work).parts)):
-                    output.add(path, arcname=str(path.relative_to(work)), recursive=False)
-        print("PES_STARTUP_ARCHIVE=" + str(archive), flush=True)
-        print("Collection ended. PES is left running if it has not exited; close it normally when finished.", flush=True)
+        if archive:
+            archive_path = work.with_suffix(".tar.gz")
+            with tarfile.open(archive_path, "w:gz") as output:
+                for path in sorted(work.rglob("*")):
+                    if (path.is_file() and path.name != "emulator.log" and
+                            not {'validation-package', 'validation-runtime'}.intersection(
+                                path.relative_to(work).parts)):
+                        output.add(path, arcname=str(path.relative_to(work)), recursive=False)
+            print("PES_STARTUP_ARCHIVE=" + str(archive_path), flush=True)
+        if not close_after:
+            print("Collection ended. PES is left running if it has not exited; close it normally when finished.", flush=True)
     return record
 
 
