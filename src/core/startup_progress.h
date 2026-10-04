@@ -6,10 +6,20 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <span>
 
 namespace Core::Startup {
 
 enum class Stage { Inactive, Libraries, Executable, Modules, Launch, FirstFrame, Complete };
+
+inline bool HasVisibleRgb8Content(std::span<const std::uint8_t> pixels) {
+    for (std::size_t i = 0; i + 3 < pixels.size(); i += 4) {
+        if (pixels[i] > 4 || pixels[i + 1] > 4 || pixels[i + 2] > 4) {
+            return true;
+        }
+    }
+    return false;
+}
 
 class Progress {
 public:
@@ -39,8 +49,8 @@ public:
         return current != Stage::Inactive && current != Stage::Complete;
     }
 
-    bool Presented(bool game_content, bool success) {
-        if (!game_content || !success) {
+    bool Presented(bool visible_content, bool success) {
+        if (!visible_content || !success) {
             return false;
         }
         auto current = stage.load(std::memory_order_relaxed);

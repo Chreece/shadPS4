@@ -16,4 +16,5 @@ target_compile_definitions(startup_loading_test PRIVATE IMGUI_USER_CONFIG="imgui
 target_include_directories(startup_loading_test PRIVATE "${SHADPS4_SOURCE}" "${IMGUI_SOURCE_PATH}")
 target_link_libraries(startup_loading_test PRIVATE Threads::Threads)
 add_test(NAME startup_loading_lifecycle COMMAND startup_loading_test lifecycle)
+add_test(NAME startup_loading_black_frames COMMAND startup_loading_test black_frames)
 add_test(NAME startup_loading_ui COMMAND startup_loading_test ui)

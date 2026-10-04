@@ -28,7 +28,7 @@ void DrawStartupLoading(ImVec2 position, ImVec2 size, std::string_view game_titl
         activity = "Waiting for the launcher...";
         break;
     case Stage::FirstFrame:
-        activity = "Waiting for the first game frame...";
+        activity = "Waiting for game video...";
         break;
     default:
         break;
@@ -37,7 +37,7 @@ void DrawStartupLoading(ImVec2 position, ImVec2 size, std::string_view game_titl
     const float scale = std::min({size.x / 1280.0f, size.y / 720.0f, 2.0f});
     const ImVec2 panel_size{760.0f * scale, 180.0f * scale};
     const ImVec2 origin{position.x + (size.x - panel_size.x) * 0.5f,
-                        position.y + size.y - panel_size.y - 36.0f * scale};
+                        position.y + (size.y - panel_size.y) * 0.5f};
     auto* draw = GetWindowDrawList();
     draw->AddRectFilled(origin, {origin.x + panel_size.x, origin.y + panel_size.y},
                         IM_COL32(16, 20, 29, 240), 14.0f * scale);
