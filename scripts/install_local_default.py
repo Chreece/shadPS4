@@ -222,7 +222,9 @@ def fetch_revision(source, revision, source_branch, run):
         raise RuntimeError(source_branch + ' moved to ' + fetched + '; this command pins ' + revision)
 
 
-def build(home, revision, source_branch='main'):
+def build(home, revision, source_branch='main', *, cleanup_token=None):
+    if cleanup_token is not None and not re.fullmatch(r'[0-9a-f]{32}', cleanup_token):
+        raise RuntimeError('Invalid build ownership token')
     work = home / '.cache/shadps4-ngs2-local/ca67919d-docker'
     work.mkdir(parents=True, exist_ok=True)
     source = work / 'source'
@@ -231,7 +233,8 @@ def build(home, revision, source_branch='main'):
     jobs = str(min(8, os.cpu_count() or 2))
 
     def container(args):
-        return ['docker', 'run', '--rm', '--user', f'{os.getuid()}:{os.getgid()}',
+        ownership = ['--label', 'org.shadps4.pes-test=' + cleanup_token] if cleanup_token else []
+        return ['docker', 'run', '--rm', *ownership, '--user', f'{os.getuid()}:{os.getgid()}',
                 '--mount', f'type=bind,src={work},dst={work}', '--workdir', str(work),
                 '--env', 'HOME=' + str(work / 'container-home'),
                 '--env', 'CCACHE_DIR=' + str(work / 'ccache'), IMAGE, *map(str, args)]
