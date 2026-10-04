@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Collector regressions. Protocol fixtures do NOT validate GDB/ptrace behavior."""
 
+import ast
 import contextlib
 import io
 import json
@@ -21,6 +22,7 @@ import trace_video_progress as trace
 
 def complete_report():
     return {"status": "complete", "detached": True, "seconds": 20.001,
+            "stop_reason": "capture_complete",
             "requested_seconds": 20, "deadline_exceeded": False,
             "apis": {api: {"calls": 0} for api in (
                 "sceVideodec2CreateDecoder", "sceVideodec2Decode", "sceVideodec2Flush")},
@@ -122,6 +124,12 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(report['status'], 'overrun')
         self.assertFalse(trace.report_passed(report))
 
+    def test_no_pass_without_scheduled_stop_evidence(self):
+        for reason in (None, 'interrupted'):
+            payload = complete_report()
+            payload['stop_reason'] = reason
+            self.assertFalse(trace.report_passed(self.report(payload)))
+
     def test_watchdog_reason_survives_complete_result(self):
         for reason in ('setup_timeout', 'capture_timeout', 'interrupted', 'monitor_failed'):
             with self.subTest(reason=reason):
@@ -161,6 +169,54 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(trace.BINARY_SHA256,
                          '370c0c31b36b1afa464c67cf30974cb19fe21dd3b13cb07bb35d9d8c45f79800')
         compile(trace.PROBE, '<video-probe>', 'exec')
+
+
+class ProbeStopTests(unittest.TestCase):
+    """Exercise the actual embedded decision function, without pretending to run GDB."""
+
+    def decision(self, request, elapsed):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'stop-request.json'
+            if request is not None:
+                path.write_text(request)
+            function = next(n for n in ast.parse(trace.PROBE).body
+                            if isinstance(n, ast.FunctionDef) and n.name == 'interrupted_status')
+            namespace = {'Path': Path, 'json': json, 'time': time,
+                         'CONFIG': {'stop_request': str(path)}, 'started': 100.0, 'result': {}}
+            exec(compile(ast.Module(body=[function], type_ignores=[]), '<probe-stop>', 'exec'), namespace)
+            with patch.object(time, 'monotonic', return_value=100 + elapsed):
+                status = namespace['interrupted_status']()
+            return status, namespace['result']
+
+    def test_scheduled_stop_requires_the_full_window(self):
+        request = json.dumps({'reason': 'capture_complete'})
+        self.assertEqual(self.decision(request, 19.99)[0], 'interrupted')
+        status, result = self.decision(request, 20.01)
+        self.assertEqual(status, 'complete')
+        self.assertEqual(result['stop_reason'], 'capture_complete')
+
+    def test_manual_missing_or_invalid_requests_do_not_complete(self):
+        for request in (None, '{broken', '[]', json.dumps({'reason': 'interrupted'})):
+            self.assertEqual(self.decision(request, 21)[0], 'interrupted')
+
+    def test_request_is_written_before_the_signal_helper(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            def helper(command, **kwargs):
+                self.assertEqual(json.loads((work / 'stop-request.json').read_text()),
+                                 {'reason': 'capture_complete'})
+                return subprocess.CompletedProcess(command, 0, 'MATCHED_TRACE_DEBUGGERS=1\n', '')
+            with patch.object(trace.subprocess, 'run', side_effect=helper), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                trace.interrupt_debugger(work, [], reason='capture_complete')
+
+    def test_zero_matches_is_not_a_successful_signal_request(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(trace.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                    [], 0, 'MATCHED_TRACE_DEBUGGERS=0\n', '')), \
+                contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, 'exactly one'):
+                trace.interrupt_debugger(Path(directory), [])
 
 
 class WatchdogTests(unittest.TestCase):
@@ -207,7 +263,7 @@ class WatchdogTests(unittest.TestCase):
         limits = dict(setup_seconds=0.2, capture_seconds=0.2, grace=0.1,
                       detach_seconds=0.2, poll_seconds=0.01)
         limits.update(kwargs)
-        def interrupt(work, prefix):
+        def interrupt(work, prefix, *, reason='interrupted'):
             if helper_error:
                 raise RuntimeError(helper_error)
             child.send_signal(signal.SIGINT)
@@ -226,9 +282,9 @@ class WatchdogTests(unittest.TestCase):
         self.assertIsNone(decoy.poll())
         self.assertEqual(os.getpgrp(), group)
 
-    def test_capture_timeout_and_cooperative_exit(self):
+    def test_scheduled_stop_and_cooperative_exit(self):
         outcome = self.wait(self.launch())
-        self.assertEqual(outcome['reason'], 'capture_timeout')
+        self.assertEqual(outcome['reason'], 'capture_complete')
         self.assertTrue(outcome['debugger_exited'])
         self.assertEqual(outcome['errors'], [])
 
@@ -251,11 +307,11 @@ class WatchdogTests(unittest.TestCase):
         start = time.monotonic()
         outcome = self.wait(child, production=True)
         elapsed = time.monotonic() - start
-        self.assertEqual(outcome['reason'], 'capture_timeout')
+        self.assertEqual(outcome['reason'], 'capture_complete')
         self.assertTrue(outcome['debugger_exited'])
         self.assertEqual(outcome['errors'], [])
-        self.assertGreaterEqual(elapsed, 25)
-        self.assertLess(elapsed, 30)
+        self.assertGreaterEqual(elapsed, 20)
+        self.assertLess(elapsed, 25)
         print(f'PROTOCOL_WATCHDOG_SECONDS={elapsed:.3f}; live GDB remains unverified')
 
 

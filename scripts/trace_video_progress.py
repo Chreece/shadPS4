@@ -25,21 +25,18 @@ CAPTURE_GRACE = 5
 SETUP_SECONDS = 60
 DETACH_SECONDS = 10
 PROBE = r"""
-import collections
 import gdb
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
-import threading
 import time
 
 entries = []
 pending = None
-finished = threading.Event()
-expired = threading.Event()
 started = None
+stop_signal = None
+stop_connected = False
 result = {"status": "failed", "apis": {}, "records": [], "errors": []}
 limit = 32
 identity = CONFIG["identity"]
@@ -124,19 +121,29 @@ class Return(gdb.FinishBreakpoint):
         result["apis"][api]["out_of_scope"] += 1
 
 
-def timer():
-    if not finished.wait(20):
-        expired.set()
-        if hasattr(gdb, "interrupt"):
-            gdb.interrupt()
-        else:
-            os.kill(os.getpid(), 2)
+def on_stop(event):
+    global stop_signal
+    stop_signal = getattr(event, "stop_signal", None)
+
+
+def interrupted_status():
+    # The parent owns the timer and records its intent before signalling GDB.
+    # Read this only on an actual interrupt, never on an API breakpoint.
+    try:
+        request = json.loads(Path(CONFIG["stop_request"]).read_text())
+    except (OSError, ValueError, KeyError):
+        return "interrupted"
+    if not isinstance(request, dict):
+        return "interrupted"
+    if (request.get("reason") == "capture_complete" and started is not None and
+            time.monotonic() - started >= 20):
+        result["stop_reason"] = "capture_complete"
+        return "complete"
+    return "interrupted"
 
 
 try:
     print("PES_VIDEO_STAGE=checking_process", flush=True)
-    if not hasattr(gdb, "Thread"):
-        raise RuntimeError("This trace needs a GDB version providing gdb.Thread.")
     current = (proc / "stat").read_text().rsplit(")", 1)[1].split()[19]
     if current != identity["start_ticks"]:
         raise RuntimeError("Process identity changed before attach.")
@@ -172,21 +179,25 @@ try:
 
     gdb.execute("handle SIGSEGV nostop noprint pass")
     gdb.execute("handle SIGBUS nostop noprint pass")
+    # GDB documents that noprint also implies nostop; keep the interrupt stoppable.
+    gdb.execute("handle SIGINT stop print nopass")
+    gdb.events.stop.connect(on_stop)
+    stop_connected = True
     started = time.monotonic()
-    gdb.Thread(target=timer, daemon=True).start()
     print("PES_VIDEO_ARMED=20_seconds", flush=True)
-    while not expired.is_set() and gdb.selected_inferior().pid:
+    while gdb.selected_inferior().pid:
         pending = None
+        stop_signal = None
         try:
             gdb.execute("continue", to_string=True)
         except KeyboardInterrupt:
-            result["status"] = "complete" if expired.is_set() else "interrupted"
-            break
-        if expired.is_set():
-            result["status"] = "complete"
+            result["status"] = interrupted_status()
             break
         if not gdb.selected_inferior().pid:
             result["status"] = "target_exited"
+            break
+        if stop_signal == "SIGINT":
+            result["status"] = interrupted_status()
             break
         if pending is None:
             result["status"] = "unexpected_stop"
@@ -230,15 +241,14 @@ try:
             emit("return", api=api, seq=value["seq"], thread=value["thread"],
                  rc=hex(rc), elapsed_ms=round((time.monotonic() - value["time"]) * 1000, 3),
                  **details)
-    if expired.is_set():
-        result["status"] = "complete"
 except KeyboardInterrupt:
-    result["status"] = "complete" if expired.is_set() else "interrupted"
+    result["status"] = interrupted_status()
 except BaseException as error:
     result["errors"].append(str(error))
 finally:
-    finished.set()
     print("PES_VIDEO_STAGE=detaching", flush=True)
+    if stop_connected:
+        gdb.events.stop.disconnect(on_stop)
     if started is not None:
         result["seconds"] = round(time.monotonic() - started, 3)
         result["requested_seconds"] = 20
@@ -267,6 +277,11 @@ finally:
 
 def say(text):
     print(text, flush=True)
+
+
+def write_probe(identity, probe_file):
+    config = {"identity": identity, "stop_request": str(probe_file.parent / "stop-request.json")}
+    probe_file.write_text("CONFIG = " + repr(config) + "\n" + PROBE)
 
 
 def debugger_command(identity, probe_file, prefix=()):
@@ -316,13 +331,21 @@ print("MATCHED_TRACE_DEBUGGERS=" + str(matched), flush=True)
 """
 
 
-def interrupt_debugger(work, prefix):
+def interrupt_debugger(work, prefix, *, reason="interrupted"):
+    # An atomic request avoids partial JSON while GDB processes the signal.
+    with tempfile.NamedTemporaryFile(mode="w", prefix=".stop-request-", dir=work,
+                                     delete=False) as request:
+        json.dump({"reason": reason}, request)
+        temporary = Path(request.name)
+    temporary.replace(work / "stop-request.json")
     command = prefix + [sys.executable, "-c", INTERRUPT_HELPER, str(work)]
     result = subprocess.run(command, capture_output=True, text=True, timeout=10)
     if result.stdout:
         say(result.stdout.rstrip())
     if result.returncode:
         raise RuntimeError("Could not interrupt this debugger: " + result.stderr[-1000:])
+    if not re.search(r"^MATCHED_TRACE_DEBUGGERS=1$", result.stdout, re.M):
+        raise RuntimeError("The interrupt helper did not identify exactly one trace debugger.")
 
 
 def wait_for_debugger(child, work, prefix, *, setup_seconds=SETUP_SECONDS,
@@ -347,15 +370,18 @@ def wait_for_debugger(child, work, prefix, *, setup_seconds=SETUP_SECONDS,
                     say(line)
                 elif line.startswith("PES_VIDEO_ARMED=") and armed_at is None:
                     armed_at = time.monotonic()
-                    deadline = armed_at + capture_seconds + grace
+                    deadline = armed_at + capture_seconds
                     say("VIDEO_TRACE=armed; capturing for 20 seconds now")
             # Drain the final output even if the child exited between polls.
             if child.poll() is not None:
                 break
             if time.monotonic() >= deadline:
-                phase = "capture" if armed_at is not None else "setup"
-                say("VIDEO_TRACE_TIMEOUT=" + phase + "; requesting debugger detach")
-                outcome["reason"] = phase + "_timeout"
+                if armed_at is not None:
+                    say("VIDEO_TRACE=20-second window ended; requesting debugger detach")
+                    outcome["reason"] = "capture_complete"
+                else:
+                    say("VIDEO_TRACE_TIMEOUT=setup; requesting debugger detach")
+                    outcome["reason"] = "setup_timeout"
                 break
             time.sleep(poll_seconds)
         except KeyboardInterrupt:
@@ -368,7 +394,7 @@ def wait_for_debugger(child, work, prefix, *, setup_seconds=SETUP_SECONDS,
             break
     if child.poll() is None:
         try:
-            interrupt_debugger(work, prefix)
+            interrupt_debugger(work, prefix, reason=outcome["reason"])
         except (Exception, KeyboardInterrupt) as error:
             # Preserve the report even if sudo expires or the helper times out.
             outcome["errors"].append("interrupt request: " + str(error))
@@ -380,6 +406,8 @@ def wait_for_debugger(child, work, prefix, *, setup_seconds=SETUP_SECONDS,
     outcome.update(debugger_exited=child.poll() is not None,
                    returncode=child.poll(), elapsed_seconds=round(ended - started, 3),
                    armed=armed_at is not None,
+                   deadline_exceeded=(armed_at is not None and
+                                      ended - armed_at > capture_seconds + grace),
                    capture_and_cleanup_seconds=(round(ended - armed_at, 3)
                                                 if armed_at is not None else None))
     return outcome
@@ -434,12 +462,13 @@ def build_report(log, outcome, target):
                or (cleanup_seconds is not None and
                    cleanup_seconds > CAPTURE_SECONDS + CAPTURE_GRACE)
                or outcome["reason"] == "capture_timeout"
+               or outcome.get("deadline_exceeded") is True
                or report.get("deadline_exceeded") is True)
     if overrun:
         report["status"] = "overrun"
         report["deadline_exceeded"] = True
         report["errors"].append("Capture or cleanup exceeded the 20-second target and 5-second grace.")
-    elif outcome["reason"] != "exited":
+    elif outcome["reason"] not in ("exited", "capture_complete"):
         report["status"] = outcome["reason"]
         report["errors"].append("Watchdog ended capture: " + outcome["reason"])
     elif outcome["returncode"] != 0:
@@ -453,6 +482,9 @@ def build_report(log, outcome, target):
         if not required.issubset(report["apis"]):
             report["status"] = "failed"
             report["errors"].append("Required video APIs were not all hooked.")
+        if report.get("stop_reason") != "capture_complete":
+            report["status"] = "failed"
+            report["errors"].append("A scheduled external stop was not established.")
     report["cleanup_verified"] = (target.get("status") == "observed" and
                                   target.get("tracer_pid") == 0 and
                                   target.get("state") not in ("T", "t", "Z", "X"))
@@ -588,8 +620,8 @@ def run():
         check_code = (Path(check) / "check.py")
         check_code.write_text(
             "import gdb\n"
-            "if not hasattr(gdb, 'Thread'):\n"
-            "    raise RuntimeError('GDB lacks gdb.Thread')\n"
+            "if not hasattr(gdb.events, 'stop'):\n"
+            "    raise RuntimeError('GDB lacks stop events')\n"
             "print('PES_VIDEO_GDB_CHECK=PASS')\n")
         checked = subprocess.run(
             ["gdb", "-q", "-nx", "-nh", "--batch", "-iex", "set auto-load off",
@@ -603,7 +635,7 @@ def run():
     before = collect_log_lines(identity, work)
     (work / "before-video-logs.json").write_text(json.dumps(before, indent=2))
     probe_file = work / "probe.py"
-    probe_file.write_text("CONFIG = " + repr({"identity": identity}) + "\n" + PROBE)
+    write_probe(identity, probe_file)
     command = debugger_command(identity, probe_file, prefix)
     say("Preparing GDB; setup has a 60-second deadline. Keep the game open.")
     say("TRACE_DIRECTORY=" + str(work))

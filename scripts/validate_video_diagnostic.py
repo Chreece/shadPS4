@@ -163,7 +163,7 @@ def run_case(root, mode):
                     'sha256': hashlib.sha256(Path('/test/fixture').read_bytes()).hexdigest()}
         (work / 'identity.json').write_text(json.dumps(identity))
         probe = work / 'probe.py'
-        probe.write_text('CONFIG = ' + repr({'identity': identity}) + '\n' + trace.PROBE)
+        trace.write_probe(identity, probe)
         if mode == 'interrupt':
             other = work / 'unrelated.py'
             other.write_text('import time\ntime.sleep(100)\n')

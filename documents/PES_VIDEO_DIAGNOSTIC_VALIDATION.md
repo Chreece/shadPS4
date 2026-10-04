@@ -11,7 +11,14 @@ root cause or repair the emulator. The installed emulator remains pinned to
 No emulator build, install, launcher, save, audio/7.1 setting, or retained fix
 was changed. Emulator builds remain subject to the local-Docker-first rule.
 
-**Do not request another PES capture yet. Live GDB validation remains blocked.**
+**Do not request another PES capture yet. Rerun the disposable Docker self-test first.**
+
+The user ran the real-GDB Docker self-test at `67d92a2d`: the idle case did
+not stop at 20 seconds. The external watchdog interrupted exactly one GDB at
+25.215 seconds and it detached successfully. The collector now schedules that
+external interrupt at 20 seconds and removes the GDB Python timer thread.
+It distinguishes a scheduled stop from manual interruption and retains the
+25-second overrun check. The updated live-GDB self-test is pending.
 
 ## Evidence retained
 
@@ -51,9 +58,8 @@ paths. It independently reads the original target's start ticks, `TracerPid`,
 and process state before accepting cleanup. It does not resume or signal the
 target to make a cleanup check pass.
 
-The embedded GDB probe was reformatted from an escaped one-line literal into a
-readable literal; its executable content is unchanged from `dd9025bf` apart from
-leading whitespace. The timer/interrupt mechanism has not been claimed fixed.
+At `91c2da75`, the embedded GDB probe was only reformatted. The subsequent
+Docker failure above provided evidence for replacing its timer mechanism.
 
 ## Validation performed
 
