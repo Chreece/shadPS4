@@ -7,6 +7,7 @@ import collections
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -19,7 +20,249 @@ import time
 
 REVISION = "0539f6dba2a1b075aa017c691b2c8955258e5a1e"
 BINARY_SHA256 = "370c0c31b36b1afa464c67cf30974cb19fe21dd3b13cb07bb35d9d8c45f79800"
-PROBE = "import collections\nimport gdb\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport re\nimport threading\nimport time\n\nentries = []\npending = None\nfinished = threading.Event()\nexpired = threading.Event()\nstarted = None\nresult = {\"status\": \"failed\", \"apis\": {}, \"records\": [], \"errors\": []}\nlimit = 32\nidentity = CONFIG[\"identity\"]\nproc = Path(\"/proc\") / str(identity[\"pid\"])\n\n\ndef emit(kind, **fields):\n    result[\"records\"].append(dict(event=kind, **fields))\n\n\ndef register(name):\n    return int(gdb.parse_and_eval(\"$\" + name))\n\n\ndef memory(address, size):\n    if not address:\n        raise ValueError(\"null pointer\")\n    return bytes(gdb.selected_inferior().read_memory(address, size))\n\n\ndef number(data, offset, size=8):\n    return int.from_bytes(data[offset:offset + size], \"little\")\n\n\ndef fields_before(api, args):\n    if api == \"sceVideodec2Decode\":\n        data = memory(args[1], 0x30)\n        return {\"input_size\": number(data, 0), \"au_bytes\": number(data, 16),\n                \"pts\": number(data, 24), \"dts\": number(data, 32)}\n    if api == \"sceVideodec2CreateDecoder\":\n        data = memory(args[0], 0x48)\n        return {\"config_size\": number(data, 0), \"codec\": number(data, 12, 4),\n                \"max_width\": number(data, 24, 4), \"max_height\": number(data, 28, 4)}\n    return {}\n\n\ndef fields_after(api, args, rc):\n    if rc != 0:\n        return {}\n    if api == \"sceVideodec2Decode\":\n        frame_address, output_address = args[2], args[3]\n    elif api == \"sceVideodec2Flush\":\n        frame_address, output_address = args[1], args[2]\n    else:\n        return {}\n    frame = memory(frame_address, 0x20)\n    output = memory(output_address, 0x30)\n    valid = bool(output[8])\n    values = {\"frame_accepted\": bool(frame[24]), \"valid\": valid, \"pictures\": output[10]}\n    if valid:\n        values.update(error_frame=bool(output[9]), width=number(output, 16, 4),\n                      pitch=number(output, 20, 4), height=number(output, 24, 4))\n    return values\n\n\nclass Entry(gdb.Breakpoint):\n    def __init__(self, address, api):\n        super().__init__(\"*\" + hex(address), internal=True)\n        self.silent = True\n        self.api = api\n        self.calls = 0\n\n    def stop(self):\n        global pending\n        pending = (\"entry\", self)\n        return True\n\n\nclass Return(gdb.FinishBreakpoint):\n    def __init__(self, context):\n        super().__init__(gdb.newest_frame(), internal=True)\n        self.silent = True\n        self.context = context\n\n    def stop(self):\n        global pending\n        pending = (\"return\", self.context)\n        return True\n\n    def out_of_scope(self):\n        api = self.context[\"api\"]\n        result[\"apis\"][api][\"out_of_scope\"] += 1\n\n\ndef timer():\n    if not finished.wait(20):\n        expired.set()\n        if hasattr(gdb, \"interrupt\"):\n            gdb.interrupt()\n        else:\n            os.kill(os.getpid(), 2)\n\n\ntry:\n    print(\"PES_VIDEO_STAGE=checking_process\", flush=True)\n    if not hasattr(gdb, \"Thread\"):\n        raise RuntimeError(\"This trace needs a GDB version providing gdb.Thread.\")\n    current = (proc / \"stat\").read_text().rsplit(\")\", 1)[1].split()[19]\n    if current != identity[\"start_ticks\"]:\n        raise RuntimeError(\"Process identity changed before attach.\")\n    with (proc / \"exe\").open(\"rb\") as stream:\n        actual = hashlib.file_digest(stream, \"sha256\").hexdigest()\n    if actual != identity[\"sha256\"]:\n        raise RuntimeError(\"Executable changed before attach.\")\n    tracer = re.search(r\"^TracerPid:\\s*(\\d+)\", (proc / \"status\").read_text(), re.M)\n    if tracer is None or tracer[1] != \"0\":\n        raise RuntimeError(\"The emulator already has a debugger attached.\")\n\n    print(\"PES_VIDEO_STAGE=attaching\", flush=True)\n    gdb.execute(\"attach \" + str(identity[\"pid\"]))\n    print(\"PES_VIDEO_STAGE=resolving_video_symbols\", flush=True)\n    if \"x86-64\" not in gdb.selected_frame().architecture().name():\n        raise RuntimeError(\"Unexpected target architecture.\")\n\n    symbols = gdb.execute(\"info functions sceVideodec\", to_string=True)\n    symbols += gdb.execute(\"info functions sceVdecsw\", to_string=True)\n    pattern = (r\"^\\s*(0x[0-9a-fA-F]+)\\s+Libraries::\"\n               r\"(?:Videodec2|Videodec|Vdecsw)::(sce[A-Za-z0-9_]+)\\(\")\n    seen = set()\n    for address, api in re.findall(pattern, symbols, re.M):\n        if api in seen:\n            raise RuntimeError(\"Ambiguous API symbol: \" + api)\n        seen.add(api)\n        entries.append(Entry(int(address, 16), api))\n        result[\"apis\"][api] = {\"calls\": 0, \"returns\": 0, \"errors\": {},\n                                \"valid_frames\": 0, \"out_of_scope\": 0, \"capped\": False}\n    for required in (\"sceVideodec2CreateDecoder\", \"sceVideodec2Decode\", \"sceVideodec2Flush\"):\n        if required not in seen:\n            raise RuntimeError(\"Required API symbol not found: \" + required)\n\n    gdb.execute(\"handle SIGSEGV nostop noprint pass\")\n    gdb.execute(\"handle SIGBUS nostop noprint pass\")\n    started = time.monotonic()\n    gdb.Thread(target=timer, daemon=True).start()\n    print(\"PES_VIDEO_ARMED=20_seconds\", flush=True)\n    while not expired.is_set() and gdb.selected_inferior().pid:\n        pending = None\n        try:\n            gdb.execute(\"continue\", to_string=True)\n        except KeyboardInterrupt:\n            result[\"status\"] = \"complete\" if expired.is_set() else \"interrupted\"\n            break\n        if expired.is_set():\n            result[\"status\"] = \"complete\"\n            break\n        if not gdb.selected_inferior().pid:\n            result[\"status\"] = \"target_exited\"\n            break\n        if pending is None:\n            result[\"status\"] = \"unexpected_stop\"\n            emit(\"stop\", location=gdb.execute(\"frame\", to_string=True).strip())\n            break\n\n        kind, value = pending\n        if kind == \"entry\":\n            value.calls += 1\n            api = value.api\n            result[\"apis\"][api][\"calls\"] += 1\n            context = {\"api\": api, \"seq\": value.calls,\n                       \"args\": [register(r) for r in (\"rdi\", \"rsi\", \"rdx\", \"rcx\")],\n                       \"time\": time.monotonic(), \"thread\": gdb.selected_thread().global_num}\n            details = {}\n            try:\n                details = fields_before(api, context[\"args\"])\n            except Exception as error:\n                details[\"read_error\"] = str(error)\n            emit(\"enter\", api=api, seq=value.calls, thread=context[\"thread\"],\n                 seconds=round(context[\"time\"] - started, 3), **details)\n            Return(context)\n            if value.calls >= limit:\n                value.enabled = False\n                result[\"apis\"][api][\"capped\"] = True\n        else:\n            api = value[\"api\"]\n            rc = register(\"rax\") & 0xffffffff\n            stats = result[\"apis\"][api]\n            stats[\"returns\"] += 1\n            if rc:\n                key = hex(rc)\n                stats[\"errors\"][key] = stats[\"errors\"].get(key, 0) + 1\n            details = {}\n            try:\n                details = fields_after(api, value[\"args\"], rc)\n            except Exception as error:\n                details[\"read_error\"] = str(error)\n            if details.get(\"valid\"):\n                stats[\"valid_frames\"] += 1\n            emit(\"return\", api=api, seq=value[\"seq\"], thread=value[\"thread\"],\n                 rc=hex(rc), elapsed_ms=round((time.monotonic() - value[\"time\"]) * 1000, 3),\n                 **details)\n    if expired.is_set():\n        result[\"status\"] = \"complete\"\nexcept KeyboardInterrupt:\n    result[\"status\"] = \"complete\" if expired.is_set() else \"interrupted\"\nexcept BaseException as error:\n    result[\"errors\"].append(str(error))\nfinally:\n    finished.set()\n    print(\"PES_VIDEO_STAGE=detaching\", flush=True)\n    if started is not None:\n        result[\"seconds\"] = round(time.monotonic() - started, 3)\n        result[\"requested_seconds\"] = 20\n        result[\"deadline_exceeded\"] = result[\"seconds\"] > 25\n        if result[\"deadline_exceeded\"]:\n            result[\"status\"] = \"overrun\"\n            result[\"errors\"].append(\"Capture exceeded its 20-second target and 5-second grace.\")\n    for breakpoint in gdb.breakpoints() or ():\n        try:\n            if breakpoint.is_valid():\n                breakpoint.delete()\n        except Exception as error:\n            result[\"errors\"].append(\"breakpoint cleanup: \" + str(error))\n    if gdb.selected_inferior().pid:\n        try:\n            gdb.execute(\"detach\")\n            result[\"detached\"] = True\n        except Exception as error:\n            result[\"errors\"].append(\"detach: \" + str(error))\n            result[\"detached\"] = False\n    else:\n        result[\"detached\"] = True\n    print(\"PES_VIDEO_JSON=\" + json.dumps(result, sort_keys=True), flush=True)\n"
+CAPTURE_SECONDS = 20
+CAPTURE_GRACE = 5
+SETUP_SECONDS = 60
+DETACH_SECONDS = 10
+PROBE = r"""
+import collections
+import gdb
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import threading
+import time
+
+entries = []
+pending = None
+finished = threading.Event()
+expired = threading.Event()
+started = None
+result = {"status": "failed", "apis": {}, "records": [], "errors": []}
+limit = 32
+identity = CONFIG["identity"]
+proc = Path("/proc") / str(identity["pid"])
+
+
+def emit(kind, **fields):
+    result["records"].append(dict(event=kind, **fields))
+
+
+def register(name):
+    return int(gdb.parse_and_eval("$" + name))
+
+
+def memory(address, size):
+    if not address:
+        raise ValueError("null pointer")
+    return bytes(gdb.selected_inferior().read_memory(address, size))
+
+
+def number(data, offset, size=8):
+    return int.from_bytes(data[offset:offset + size], "little")
+
+
+def fields_before(api, args):
+    if api == "sceVideodec2Decode":
+        data = memory(args[1], 0x30)
+        return {"input_size": number(data, 0), "au_bytes": number(data, 16),
+                "pts": number(data, 24), "dts": number(data, 32)}
+    if api == "sceVideodec2CreateDecoder":
+        data = memory(args[0], 0x48)
+        return {"config_size": number(data, 0), "codec": number(data, 12, 4),
+                "max_width": number(data, 24, 4), "max_height": number(data, 28, 4)}
+    return {}
+
+
+def fields_after(api, args, rc):
+    if rc != 0:
+        return {}
+    if api == "sceVideodec2Decode":
+        frame_address, output_address = args[2], args[3]
+    elif api == "sceVideodec2Flush":
+        frame_address, output_address = args[1], args[2]
+    else:
+        return {}
+    frame = memory(frame_address, 0x20)
+    output = memory(output_address, 0x30)
+    valid = bool(output[8])
+    values = {"frame_accepted": bool(frame[24]), "valid": valid, "pictures": output[10]}
+    if valid:
+        values.update(error_frame=bool(output[9]), width=number(output, 16, 4),
+                      pitch=number(output, 20, 4), height=number(output, 24, 4))
+    return values
+
+
+class Entry(gdb.Breakpoint):
+    def __init__(self, address, api):
+        super().__init__("*" + hex(address), internal=True)
+        self.silent = True
+        self.api = api
+        self.calls = 0
+
+    def stop(self):
+        global pending
+        pending = ("entry", self)
+        return True
+
+
+class Return(gdb.FinishBreakpoint):
+    def __init__(self, context):
+        super().__init__(gdb.newest_frame(), internal=True)
+        self.silent = True
+        self.context = context
+
+    def stop(self):
+        global pending
+        pending = ("return", self.context)
+        return True
+
+    def out_of_scope(self):
+        api = self.context["api"]
+        result["apis"][api]["out_of_scope"] += 1
+
+
+def timer():
+    if not finished.wait(20):
+        expired.set()
+        if hasattr(gdb, "interrupt"):
+            gdb.interrupt()
+        else:
+            os.kill(os.getpid(), 2)
+
+
+try:
+    print("PES_VIDEO_STAGE=checking_process", flush=True)
+    if not hasattr(gdb, "Thread"):
+        raise RuntimeError("This trace needs a GDB version providing gdb.Thread.")
+    current = (proc / "stat").read_text().rsplit(")", 1)[1].split()[19]
+    if current != identity["start_ticks"]:
+        raise RuntimeError("Process identity changed before attach.")
+    with (proc / "exe").open("rb") as stream:
+        actual = hashlib.file_digest(stream, "sha256").hexdigest()
+    if actual != identity["sha256"]:
+        raise RuntimeError("Executable changed before attach.")
+    tracer = re.search(r"^TracerPid:\s*(\d+)", (proc / "status").read_text(), re.M)
+    if tracer is None or tracer[1] != "0":
+        raise RuntimeError("The emulator already has a debugger attached.")
+
+    print("PES_VIDEO_STAGE=attaching", flush=True)
+    gdb.execute("attach " + str(identity["pid"]))
+    print("PES_VIDEO_STAGE=resolving_video_symbols", flush=True)
+    if "x86-64" not in gdb.selected_frame().architecture().name():
+        raise RuntimeError("Unexpected target architecture.")
+
+    symbols = gdb.execute("info functions sceVideodec", to_string=True)
+    symbols += gdb.execute("info functions sceVdecsw", to_string=True)
+    pattern = (r"^\s*(0x[0-9a-fA-F]+)\s+Libraries::"
+               r"(?:Videodec2|Videodec|Vdecsw)::(sce[A-Za-z0-9_]+)\(")
+    seen = set()
+    for address, api in re.findall(pattern, symbols, re.M):
+        if api in seen:
+            raise RuntimeError("Ambiguous API symbol: " + api)
+        seen.add(api)
+        entries.append(Entry(int(address, 16), api))
+        result["apis"][api] = {"calls": 0, "returns": 0, "errors": {},
+                                "valid_frames": 0, "out_of_scope": 0, "capped": False}
+    for required in ("sceVideodec2CreateDecoder", "sceVideodec2Decode", "sceVideodec2Flush"):
+        if required not in seen:
+            raise RuntimeError("Required API symbol not found: " + required)
+
+    gdb.execute("handle SIGSEGV nostop noprint pass")
+    gdb.execute("handle SIGBUS nostop noprint pass")
+    started = time.monotonic()
+    gdb.Thread(target=timer, daemon=True).start()
+    print("PES_VIDEO_ARMED=20_seconds", flush=True)
+    while not expired.is_set() and gdb.selected_inferior().pid:
+        pending = None
+        try:
+            gdb.execute("continue", to_string=True)
+        except KeyboardInterrupt:
+            result["status"] = "complete" if expired.is_set() else "interrupted"
+            break
+        if expired.is_set():
+            result["status"] = "complete"
+            break
+        if not gdb.selected_inferior().pid:
+            result["status"] = "target_exited"
+            break
+        if pending is None:
+            result["status"] = "unexpected_stop"
+            emit("stop", location=gdb.execute("frame", to_string=True).strip())
+            break
+
+        kind, value = pending
+        if kind == "entry":
+            value.calls += 1
+            api = value.api
+            result["apis"][api]["calls"] += 1
+            context = {"api": api, "seq": value.calls,
+                       "args": [register(r) for r in ("rdi", "rsi", "rdx", "rcx")],
+                       "time": time.monotonic(), "thread": gdb.selected_thread().global_num}
+            details = {}
+            try:
+                details = fields_before(api, context["args"])
+            except Exception as error:
+                details["read_error"] = str(error)
+            emit("enter", api=api, seq=value.calls, thread=context["thread"],
+                 seconds=round(context["time"] - started, 3), **details)
+            Return(context)
+            if value.calls >= limit:
+                value.enabled = False
+                result["apis"][api]["capped"] = True
+        else:
+            api = value["api"]
+            rc = register("rax") & 0xffffffff
+            stats = result["apis"][api]
+            stats["returns"] += 1
+            if rc:
+                key = hex(rc)
+                stats["errors"][key] = stats["errors"].get(key, 0) + 1
+            details = {}
+            try:
+                details = fields_after(api, value["args"], rc)
+            except Exception as error:
+                details["read_error"] = str(error)
+            if details.get("valid"):
+                stats["valid_frames"] += 1
+            emit("return", api=api, seq=value["seq"], thread=value["thread"],
+                 rc=hex(rc), elapsed_ms=round((time.monotonic() - value["time"]) * 1000, 3),
+                 **details)
+    if expired.is_set():
+        result["status"] = "complete"
+except KeyboardInterrupt:
+    result["status"] = "complete" if expired.is_set() else "interrupted"
+except BaseException as error:
+    result["errors"].append(str(error))
+finally:
+    finished.set()
+    print("PES_VIDEO_STAGE=detaching", flush=True)
+    if started is not None:
+        result["seconds"] = round(time.monotonic() - started, 3)
+        result["requested_seconds"] = 20
+        result["deadline_exceeded"] = result["seconds"] > 25
+        if result["deadline_exceeded"]:
+            result["status"] = "overrun"
+            result["errors"].append("Capture exceeded its 20-second target and 5-second grace.")
+    for breakpoint in gdb.breakpoints() or ():
+        try:
+            if breakpoint.is_valid():
+                breakpoint.delete()
+        except Exception as error:
+            result["errors"].append("breakpoint cleanup: " + str(error))
+    if gdb.selected_inferior().pid:
+        try:
+            gdb.execute("detach")
+            result["detached"] = True
+        except Exception as error:
+            result["errors"].append("detach: " + str(error))
+            result["detached"] = False
+    else:
+        result["detached"] = True
+    print("PES_VIDEO_JSON=" + json.dumps(result, sort_keys=True), flush=True)
+"""
 
 
 def say(text):
@@ -72,13 +315,16 @@ def interrupt_debugger(work, prefix):
         raise RuntimeError("Could not interrupt this debugger: " + result.stderr[-1000:])
 
 
-def wait_for_debugger(child, work, prefix):
+def wait_for_debugger(child, work, prefix, *, setup_seconds=SETUP_SECONDS,
+                      capture_seconds=CAPTURE_SECONDS, grace=CAPTURE_GRACE,
+                      detach_seconds=DETACH_SECONDS, poll_seconds=0.25):
     position = 0
     partial_line = ""
-    armed = False
-    deadline = time.monotonic() + 60
-    interrupted = False
-    while child.poll() is None:
+    started = time.monotonic()
+    armed_at = None
+    deadline = started + setup_seconds
+    outcome = {"reason": "exited", "errors": []}
+    while True:
         try:
             with (work / "gdb.txt").open() as output:
                 output.seek(position)
@@ -89,28 +335,130 @@ def wait_for_debugger(child, work, prefix):
             for line in complete_lines:
                 if line.startswith("PES_VIDEO_STAGE="):
                     say(line)
-                elif line.startswith("PES_VIDEO_ARMED=") and not armed:
-                    armed = True
-                    deadline = time.monotonic() + 25
+                elif line.startswith("PES_VIDEO_ARMED=") and armed_at is None:
+                    armed_at = time.monotonic()
+                    deadline = armed_at + capture_seconds + grace
                     say("VIDEO_TRACE=armed; capturing for 20 seconds now")
-            if time.monotonic() >= deadline:
-                phase = "capture" if armed else "setup"
-                say("VIDEO_TRACE_TIMEOUT=" + phase + "; requesting debugger detach")
-                interrupt_debugger(work, prefix)
-                interrupted = True
+            # Drain the final output even if the child exited between polls.
+            if child.poll() is not None:
                 break
-            time.sleep(0.25)
+            if time.monotonic() >= deadline:
+                phase = "capture" if armed_at is not None else "setup"
+                say("VIDEO_TRACE_TIMEOUT=" + phase + "; requesting debugger detach")
+                outcome["reason"] = phase + "_timeout"
+                break
+            time.sleep(poll_seconds)
         except KeyboardInterrupt:
             say("VIDEO_TRACE=interrupt requested; requesting debugger detach")
-            interrupt_debugger(work, prefix)
-            interrupted = True
+            outcome["reason"] = "interrupted"
             break
-    if interrupted:
+        except OSError as error:
+            outcome["reason"] = "monitor_failed"
+            outcome["errors"].append("monitor: " + str(error))
+            break
+    if child.poll() is None:
         try:
-            child.wait(timeout=10)
-        except subprocess.TimeoutExpired:
+            interrupt_debugger(work, prefix)
+        except (Exception, KeyboardInterrupt) as error:
+            # Preserve the report even if sudo expires or the helper times out.
+            outcome["errors"].append("interrupt request: " + str(error))
+        try:
+            child.wait(timeout=detach_seconds)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt):
             say("VIDEO_TRACE_DETACH_PENDING=" + str(work / "gdb.txt"))
-    return child.poll() is not None
+    ended = time.monotonic()
+    outcome.update(debugger_exited=child.poll() is not None,
+                   returncode=child.poll(), elapsed_seconds=round(ended - started, 3),
+                   armed=armed_at is not None,
+                   capture_and_cleanup_seconds=(round(ended - armed_at, 3)
+                                                if armed_at is not None else None))
+    return outcome
+
+
+def inspect_target(identity):
+    """Observe cleanup without sending any signal to the target or its shell."""
+    proc = Path("/proc") / str(identity["pid"])
+    try:
+        ticks = (proc / "stat").read_text().rsplit(")", 1)[1].split()[19]
+        if ticks != identity["start_ticks"]:
+            return {"status": "identity_changed"}
+        status = (proc / "status").read_text()
+        tracer = re.search(r"^TracerPid:\s*(\d+)", status, re.M)
+        state = re.search(r"^State:\s*(\S+)", status, re.M)
+        if tracer is None or state is None:
+            return {"status": "unverified"}
+        return {"status": "observed", "tracer_pid": int(tracer[1]), "state": state[1]}
+    except FileNotFoundError:
+        return {"status": "exited"}
+    except OSError as error:
+        return {"status": "unverified", "error": str(error)}
+
+
+def build_report(log, outcome, target):
+    """Independently reject partial/overlong captures, retaining raw evidence."""
+    lines = [line for line in log.splitlines() if line.startswith("PES_VIDEO_JSON=")]
+    report = {"status": "failed", "errors": [], "apis": {}, "records": []}
+    try:
+        if not lines:
+            raise ValueError("GDB did not produce a result.")
+        parsed = json.loads(lines[-1].split("=", 1)[1])
+        if not isinstance(parsed, dict):
+            raise ValueError("GDB result is not an object.")
+        for key, kind in (("status", str), ("errors", list), ("apis", dict), ("records", list)):
+            if not isinstance(parsed.get(key), kind):
+                raise ValueError("Invalid GDB result field: " + key)
+        if any(not isinstance(stats, dict) or not isinstance(stats.get("calls"), int)
+               for stats in parsed["apis"].values()):
+            raise ValueError("Invalid API counters.")
+        report = parsed
+    except (ValueError, TypeError) as error:
+        report["errors"].append("result: " + str(error))
+    report["watchdog"] = outcome
+    report["target_after"] = target
+    report["errors"].extend(outcome["errors"])
+    seconds = report.get("seconds")
+    valid_seconds = (isinstance(seconds, (int, float)) and not isinstance(seconds, bool)
+                     and math.isfinite(seconds) and seconds >= 0)
+    cleanup_seconds = outcome.get("capture_and_cleanup_seconds")
+    overrun = ((valid_seconds and seconds > CAPTURE_SECONDS + CAPTURE_GRACE)
+               or (cleanup_seconds is not None and
+                   cleanup_seconds > CAPTURE_SECONDS + CAPTURE_GRACE)
+               or outcome["reason"] == "capture_timeout"
+               or report.get("deadline_exceeded") is True)
+    if overrun:
+        report["status"] = "overrun"
+        report["deadline_exceeded"] = True
+        report["errors"].append("Capture or cleanup exceeded the 20-second target and 5-second grace.")
+    elif outcome["reason"] != "exited":
+        report["status"] = outcome["reason"]
+        report["errors"].append("Watchdog ended capture: " + outcome["reason"])
+    elif outcome["returncode"] != 0:
+        report["status"] = "failed"
+        report["errors"].append("GDB exit code: " + str(outcome["returncode"]))
+    if report["status"] == "complete":
+        required = {"sceVideodec2CreateDecoder", "sceVideodec2Decode", "sceVideodec2Flush"}
+        if not valid_seconds or seconds < CAPTURE_SECONDS or not outcome["armed"]:
+            report["status"] = "failed"
+            report["errors"].append("A full 20-second armed window was not established.")
+        if not required.issubset(report["apis"]):
+            report["status"] = "failed"
+            report["errors"].append("Required video APIs were not all hooked.")
+    report["cleanup_verified"] = (target.get("status") == "observed" and
+                                  target.get("tracer_pid") == 0 and
+                                  target.get("state") not in ("T", "t", "Z", "X"))
+    if not report["cleanup_verified"]:
+        report["errors"].append("Target cleanup was not verified: " + json.dumps(target))
+    if report["status"] == "complete" and (report["errors"] or report.get("detached") is not True):
+        report["status"] = "failed"
+    if not outcome["debugger_exited"]:
+        report["status"] = "detach_pending"
+        report["errors"].append("Debugger did not exit after the interrupt request.")
+    return report
+
+
+def report_passed(report):
+    return (report["status"] == "complete" and report.get("detached") is True and
+            report.get("cleanup_verified") is True and not report.get("errors"))
 
 
 def interrupt_existing(work):
@@ -258,14 +606,9 @@ def run():
     with (work / "gdb.txt").open("w") as log:
         child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
                                  start_new_session=True)
-        debugger_exited = wait_for_debugger(child, work, prefix)
+        outcome = wait_for_debugger(child, work, prefix)
     log = (work / "gdb.txt").read_text(errors="replace")
-    lines = [line for line in log.splitlines() if line.startswith("PES_VIDEO_JSON=")]
-    report = json.loads(lines[-1].split("=", 1)[1]) if lines else {
-        "status": "failed", "errors": ["GDB did not produce a result."], "apis": {}, "records": []}
-    if not debugger_exited:
-        report["status"] = "detach_pending"
-        report["errors"].append("Debugger did not exit after the interrupt request.")
+    report = build_report(log, outcome, inspect_target(identity))
     (work / "video-trace.json").write_text(json.dumps(report, indent=2))
     evidence = collect_log_lines(identity, work)
     archive = work.with_suffix(".tar.gz")
@@ -276,6 +619,9 @@ def run():
     say("PES_VIDEO_EXCERPT_BEGIN")
     say("STATUS=" + report["status"] + " DETACHED=" + str(report.get("detached", False)) +
         " SECONDS=" + str(report.get("seconds", 0)))
+    say("CLEANUP_VERIFIED=" + str(report["cleanup_verified"]) +
+        " GDB_EXIT_CODE=" + str(outcome["returncode"]) +
+        " WATCHDOG=" + outcome["reason"])
     say("HOOKED_APIS=" + str(len(report["apis"])))
     for api, stats in sorted(report["apis"].items()):
         if stats["calls"]:
@@ -292,13 +638,13 @@ def run():
     if not evidence:
         say("EXISTING_LOG=unavailable; earlier decoder activity cannot be inferred.")
     for error in report.get("errors", []):
-        say("TRACE_ERROR=" + error)
-    if not lines:
+        say("TRACE_ERROR=" + str(error))
+    if "PES_VIDEO_JSON=" not in log:
         say(log[-3000:])
     say("NOTE=HLE APIs only. Each API stops tracing after 32 calls; capped counts are lower bounds.")
     say("NOTE=No calls in this window does not establish that decoding never started.")
     say("PES_VIDEO_EXCERPT_END")
-    if report["status"] != "complete" or not report.get("detached") or report.get("errors"):
+    if not report_passed(report):
         raise RuntimeError("Trace incomplete; preserve the report above.")
     say("PES_VIDEO_RESULT=PASS (capture completed, not a game-fix verdict)")
 
