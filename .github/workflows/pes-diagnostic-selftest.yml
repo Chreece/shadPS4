@@ -30,7 +30,7 @@ jobs:
           DOCKERFILE
       - name: Verify focus, minimization, workspaces, and exact process selection
         run: >-
-          docker run --rm --network none --read-only
+          timeout --signal=TERM --kill-after=5s 60s docker run --rm --network none --read-only
           --tmpfs /tmp:rw,exec,size=128m --cap-drop ALL
           --security-opt no-new-privileges --pids-limit 64
           --memory 256m --cpus 1 pes-window-fixture
