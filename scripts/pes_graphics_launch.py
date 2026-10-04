@@ -25,7 +25,7 @@ def atomic_write(path, data, mode):
         Path(name).unlink(missing_ok=True)
 
 
-def instrument(original, home, validation=False):
+def instrument(original, home, validation=False, gpu_collector=None):
     command = b'exec ' + os.fsencode(home / 'Applications/shadps4/shadps4')
     command += b' --game "$game" --fullscreen true\n'
     lines = original.splitlines(keepends=True)
@@ -38,18 +38,25 @@ def instrument(original, home, validation=False):
         from pes_vulkan_validation import ENVIRONMENT
         lines.insert(index, ''.join('export ' + key + '=' + shlex.quote(value) + '\n'
                                    for key, value in ENVIRONMENT.items()).encode())
+    if gpu_collector is not None:
+        extra = ''.join('export ' + key + '=' + shlex.quote(value) + '\n'
+                        for key, value in gpu_collector.environment.items()).encode()
+        index = lines.index(command)
+        lines.insert(index, extra)
+        lines[index + 1] = (b'exec ' + shlex.join(gpu_collector.command).encode() + b' ' +
+                            command.removeprefix(b'exec '))
     return b''.join(lines)
 
 
 @contextmanager
-def enabled_launch(home, wrapper, expected_sha, work, validation=False):
+def enabled_launch(home, wrapper, expected_sha, work, validation=False, gpu_collector=None):
     info = wrapper.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
         raise RuntimeError('Launcher owner or file type changed; preserved')
     original = wrapper.read_bytes()
     if hashlib.sha256(original).hexdigest() != expected_sha:
         raise RuntimeError('Launcher changed before graphics capture; preserved')
-    modified = instrument(original, home, validation)
+    modified = instrument(original, home, validation, gpu_collector)
     (work / 'launcher.original').write_bytes(original)
     (work / 'launcher.instrumented').write_bytes(modified)
     try:

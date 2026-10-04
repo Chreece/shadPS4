@@ -211,7 +211,8 @@ def collect_screenshots(home, work, previous):
 
 
 def run(home, *, profile="video", reuse_existing=False, screenshots=False, graphics=False,
-        validation=False, close_after=False, work=None, archive=True, trace_delay_seconds=0):
+        validation=False, close_after=False, work=None, archive=True, trace_delay_seconds=0,
+        gpu_collector=None):
     if close_after and reuse_existing:
         raise RuntimeError("Automatic cleanup requires a fresh test-owned launch")
     if validation and not graphics:
@@ -265,7 +266,9 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
         started = time.monotonic()
         if existing is None:
             launch_context = (native.enabled_launch(home, wrapper, wrapper_sha, work,
-                                                    **({'validation': True} if validation else {}))
+                                                    **({'validation': True} if validation else {}),
+                                                    **({'gpu_collector': gpu_collector}
+                                                       if gpu_collector is not None else {}))
                               if graphics else nullcontext())
             with launch_context:
                 with (work / "emulator.log").open("wb") as log:
@@ -296,6 +299,14 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False, graph
                               context.sample(Path('/proc') / str(identity['pid'])))
             index += 1
             time.sleep(min(5, max(0, trace_delay_seconds - (time.monotonic() - started))))
+        if gpu_collector is not None:
+            try:
+                gpu_collector.capture(identity)
+                record['gpu_frame_captured'] = True
+            except Exception as error:
+                record['errors'].append('GPU capture: ' + str(error))
+                print('PES_GPU_CAPTURE=FAIL: ' + str(error) +
+                      '; continuing with screenshots and thread evidence', flush=True)
         record['trace_started_after_seconds'] = round(time.monotonic() - started, 3)
         capture.mkdir()
         context.save_json(capture / "identity.json", identity)

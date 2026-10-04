@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import pes_graphics_launch as native
 import run_pes_packet_test as packets
@@ -65,6 +66,24 @@ class NativeLaunchTests(unittest.TestCase):
             with native.enabled_launch(self.home, self.wrapper, self.sha, self.work):
                 raise RuntimeError('boot failed')
         self.assertEqual(self.wrapper.read_bytes(), self.original)
+
+    def test_gpu_injection_is_quoted_scoped_to_child_and_restored(self):
+        collector = SimpleNamespace(
+            environment={'PES_FIXTURE_VALUE': 'path with spaces'},
+            command=['env', 'PES_FIXTURE_CHILD=one frame'])
+        self.binary.write_text('#!' + sys.executable + '\nimport json,os,sys\n'
+            'print(json.dumps([os.getenv("PES_FIXTURE_VALUE"),'
+            'os.getenv("PES_FIXTURE_CHILD"),sys.argv[1:]]))\n')
+        with self.assertRaisesRegex(RuntimeError, 'after capture'):
+            with native.enabled_launch(self.home, self.wrapper, self.sha, self.work,
+                                       gpu_collector=collector):
+                result = subprocess.run([self.wrapper, 'CUSA18676'], capture_output=True,
+                                        text=True, check=True, timeout=3)
+                self.assertEqual(json.loads(result.stdout), ['path with spaces', 'one frame',
+                    ['--game', 'CUSA18676', '--fullscreen', 'true']])
+                raise RuntimeError('after capture')
+        self.assertEqual(self.wrapper.read_bytes(), self.original)
+        self.assertNotIn('PES_FIXTURE_CHILD', os.environ)
 
     def test_concurrent_launcher_edit_is_preserved(self):
         with self.assertRaisesRegex(RuntimeError, 'edited externally'):
