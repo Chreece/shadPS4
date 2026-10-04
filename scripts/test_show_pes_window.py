@@ -20,6 +20,7 @@ class BareSession(unittest.TestCase):
     def setUp(self):
         self.x = X11(os.environ["DISPLAY"])
         self.windows = []
+        self.addCleanup(self.cleanup_windows)
         D, W, I, U = C.c_void_p, C.c_ulong, C.c_int, C.c_uint
         for name, result, args in (
             ("XCreateSimpleWindow", W, [D, W, I, I, U, U, U, W, W]),
@@ -33,7 +34,7 @@ class BareSession(unittest.TestCase):
         self.decoy = self.create(12346, "Unrelated window")
         self.x.lib.XSync(self.x.display, 0)
 
-    def tearDown(self):
+    def cleanup_windows(self):
         for window in self.windows:
             self.x.lib.XDestroyWindow(self.x.display, window)
         self.x.close()
@@ -85,12 +86,15 @@ class BareSession(unittest.TestCase):
 class ManagedSession(BareSession):
     @classmethod
     def setUpClass(cls):
-        cls.wm = subprocess.Popen(["openbox", "--sm-disable"], stdout=subprocess.DEVNULL,
+        cls.ready = Path("/tmp/pes-window-wm-ready")
+        cls.ready.unlink(missing_ok=True)
+        cls.wm = subprocess.Popen(["openbox", "--sm-disable", "--startup",
+                                   "touch /tmp/pes-window-wm-ready"], stdout=subprocess.DEVNULL,
                                   stderr=subprocess.DEVNULL)
         x = X11(os.environ["DISPLAY"])
         try:
             deadline = time.monotonic() + 5
-            while not x.prop(x.root, "_NET_SUPPORTING_WM_CHECK"):
+            while not cls.ready.exists() or not x.prop(x.root, "_NET_SUPPORTING_WM_CHECK"):
                 if time.monotonic() > deadline or cls.wm.poll() is not None:
                     cls.wm.terminate()
                     cls.wm.wait(timeout=5)
