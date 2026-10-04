@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""Launch the installed PES build in a separate session and collect startup evidence."""
+
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+
+import collect_pes_runtime_context as context
+import trace_video_progress as trace
+
+GUI_KEYS = ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR",
+            "DBUS_SESSION_BUS_ADDRESS", "PULSE_SERVER", "PIPEWIRE_REMOTE",
+            "SDL_AUDIODRIVER", "SDL_VIDEODRIVER")
+
+
+def checksum(path):
+    with path.open("rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+def running_emulators():
+    found = []
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            if proc.stat().st_uid == os.getuid() and (proc / "exe").readlink().name.lower() == "shadps4":
+                found.append(int(proc.name))
+        except OSError:
+            pass
+    return found
+
+
+def require_idle():
+    if running_emulators():
+        raise RuntimeError("Close the current game normally, leave ES-DE open, then rerun this script")
+
+
+def choose_desktop(candidates, inherited):
+    """Use a unique GUI session; never silently choose an SSH-forwarded display."""
+    if candidates:
+        priority = min(item[0] for item in candidates)
+        selected = [item for item in candidates if item[0] == priority]
+        sessions = {(item[2].get("DISPLAY"), item[2].get("WAYLAND_DISPLAY"),
+                     item[2].get("XAUTHORITY"), item[2].get("XDG_RUNTIME_DIR"))
+                    for item in selected}
+        if len(sessions) != 1:
+            raise RuntimeError("Multiple desktop sessions found; leave only the intended ES-DE session open")
+        _, source, values = selected[0]
+    else:
+        source, values = "current shell", {k: inherited[k] for k in GUI_KEYS if k in inherited}
+    display = values.get("DISPLAY", "")
+    if display and not re.fullmatch(r"(?:unix)?:\d+(?:\.\d+)?", display):
+        raise RuntimeError("Only a local desktop is supported; connect Moonlight and leave ES-DE open")
+    if not display and not values.get("WAYLAND_DISPLAY"):
+        raise RuntimeError("No desktop session found; connect Moonlight and leave ES-DE open")
+    env = dict(inherited)
+    for key in GUI_KEYS:
+        env.pop(key, None)
+    env.update(values)
+    return env, source
+
+
+def desktop_environment():
+    candidates = []
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            if proc.stat().st_uid != os.getuid():
+                continue
+            name = (proc / "exe").readlink().name.lower()
+            if name not in ("es-de", "emulationstation", "sunshine"):
+                continue
+            raw = (proc / "environ").read_bytes().split(b"\0")
+            values = dict(item.decode(errors="replace").split("=", 1) for item in raw if b"=" in item)
+            values = {key: values[key] for key in GUI_KEYS if values.get(key)}
+            if values.get("DISPLAY") or values.get("WAYLAND_DISPLAY"):
+                candidates.append((1 if name == "sunshine" else 0, name + ":" + proc.name, values))
+        except OSError:
+            pass
+    env, source = choose_desktop(candidates, os.environ)
+    if env.get("DISPLAY"):
+        number = re.search(r":(\d+)", env["DISPLAY"])[1]
+        if not Path("/tmp/.X11-unix/X" + number).exists():
+            raise RuntimeError("The selected X display is unavailable; connect Moonlight and leave ES-DE open")
+    elif not (Path(env.get("XDG_RUNTIME_DIR", "/nonexistent")) / env["WAYLAND_DISPLAY"]).exists():
+        raise RuntimeError("The selected Wayland socket is unavailable")
+    return env, source
+
+
+def selected_launch(home):
+    binary = home / "Applications/shadps4/shadps4"
+    wrapper = home / ".local/bin/shadps4-esde"
+    if checksum(binary) != trace.BINARY_SHA256:
+        raise RuntimeError("Installed emulator differs from the pinned build; preserved")
+    content = wrapper.read_text()
+    expected = 'exec ' + str(binary) + ' --game "$game" --fullscreen true'
+    if ("# SHADPS4_SESSION_GUARD_V1\n" not in content or
+            "# SHADPS4_DEFAULT_MAIN_V1\n" not in content or
+            expected not in content.splitlines() or
+            not (home / ".local/lib/shadps4-session-guard/guard.py").is_file()):
+        raise RuntimeError("The existing guarded launcher is not recognized; preserved")
+    return wrapper, checksum(wrapper)
+
+
+def settings(home):
+    result = {}
+    root = home / ".local/share/shadPS4"
+    for path in (root / "config.json", root / "custom_configs/CUSA18676.json"):
+        if path.is_file():
+            data = json.loads(path.read_text())
+            result[str(path)] = {k: data.get(k) for k in ("GPU", "Vulkan", "Audio")}
+    return result
+
+
+def launch_game(wrapper, env, home, log):
+    return subprocess.Popen([str(wrapper), "CUSA18676"], cwd=home, env=env,
+                            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                            start_new_session=True)
+
+
+def descendant_of(pid, ancestor):
+    seen = set()
+    while pid > 1 and pid not in seen:
+        if pid == ancestor:
+            return True
+        seen.add(pid)
+        try:
+            pid = int((Path("/proc") / str(pid) / "stat").read_text().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            return False
+    return False
+
+
+def await_game(launcher, *, seconds=45):
+    deadline = time.monotonic() + seconds
+    identity = None
+    while time.monotonic() < deadline:
+        processes = running_emulators()
+        if processes:
+            if len(processes) != 1 or not descendant_of(processes[0], launcher.pid):
+                raise RuntimeError("Emulator does not uniquely belong to this launch; no debugger attached")
+            if identity is None:
+                identity = trace.find_process()
+            proc = Path("/proc") / str(identity["pid"])
+            if (proc / "stat").read_text().rsplit(")", 1)[1].split()[19] != identity["start_ticks"]:
+                raise RuntimeError("Launched emulator identity changed")
+            try:
+                if any((thread / "comm").read_text().strip() == "Game:Main"
+                       for thread in (proc / "task").iterdir()):
+                    return identity
+            except FileNotFoundError:
+                pass
+        if launcher.poll() is not None and not processes:
+            raise RuntimeError("Guarded launcher exited before PES started: " + str(launcher.returncode))
+        time.sleep(0.1)
+    raise RuntimeError("PES did not create Game:Main within 45 seconds; inspect emulator.log")
+
+
+def debugger_prefix():
+    if shutil.which("gdb") is None:
+        raise RuntimeError("gdb is not installed")
+    scope_file = Path("/proc/sys/kernel/yama/ptrace_scope")
+    scope = int(scope_file.read_text()) if scope_file.exists() else 0
+    if scope >= 3:
+        raise RuntimeError("Debugger attachment is disabled; no security settings changed")
+    if scope:
+        print("Authenticating debugger access before launching PES.", flush=True)
+        subprocess.run(["sudo", "-v"], check=True)
+        return ["sudo", "-n"]
+    return []
+
+
+def run(home):
+    require_idle()
+    wrapper, wrapper_sha = selected_launch(home)
+    env, desktop_source = desktop_environment()
+    prefix = debugger_prefix()
+    before = settings(home)
+    require_idle()
+    if checksum(wrapper) != wrapper_sha:
+        raise RuntimeError("Launcher changed during preparation; preserved")
+    work = Path(tempfile.mkdtemp(prefix="shadps4-pes-startup-", dir=home))
+    record = {"revision": trace.REVISION, "desktop_source": desktop_source,
+              "settings_before": before, "errors": [], "visual_result": "unverified"}
+    print("PES_STARTUP_DIRECTORY=" + str(work), flush=True)
+    print("Launching PES in the background; automatic collection takes about one minute.", flush=True)
+    try:
+        started = time.monotonic()
+        with (work / "emulator.log").open("wb") as log:
+            launcher = launch_game(wrapper, env, home, log)
+        record["launcher_pid"] = launcher.pid
+        identity = await_game(launcher)
+        record["identity"] = identity
+        capture = work / "video"
+        capture.mkdir()
+        context.save_json(capture / "identity.json", identity)
+        trace.write_probe(identity, capture / "probe.py")
+        print("PES_PID=" + str(identity["pid"]) + "; starting 20-second video observation", flush=True)
+        with (capture / "gdb.txt").open("w") as output:
+            debugger = subprocess.Popen(trace.debugger_command(identity, capture / "probe.py", prefix),
+                                        stdout=output, stderr=subprocess.STDOUT,
+                                        start_new_session=True)
+            outcome = trace.wait_for_debugger(debugger, capture, prefix)
+        report = trace.build_report((capture / "gdb.txt").read_text(errors="replace"),
+                                    outcome, trace.inspect_target(identity))
+        context.save_json(capture / "video-trace.json", report)
+        record["video_capture_passed"] = trace.report_passed(report)
+        print("VIDEO_CAPTURE_STATUS=" + report["status"], flush=True)
+        if not report["cleanup_verified"]:
+            raise RuntimeError("Debugger cleanup not verified; preserve this capture directory")
+        print("Collecting startup activity through 60 seconds; keep the Moonlight session connected.", flush=True)
+        proc = Path("/proc") / str(identity["pid"])
+        index = 0
+        while True:
+            state = trace.inspect_target(identity)
+            if state.get("status") != "observed" or state.get("state") in ("Z", "X"):
+                raise RuntimeError("PES exited or changed during startup: " + json.dumps(state))
+            context.save_json(work / f"activity-{index}.json", context.sample(proc))
+            index += 1
+            if time.monotonic() - started >= 60:
+                break
+            time.sleep(min(5, max(0, 60 - (time.monotonic() - started))))
+        (work / "maps.txt").write_text((proc / "maps").read_text())
+        record["target_after"] = trace.inspect_target(identity)
+        record["observed_seconds"] = round(time.monotonic() - started, 3)
+    except (Exception, KeyboardInterrupt) as error:
+        record["errors"].append(type(error).__name__ + ": " + (str(error) or "Interrupted"))
+        print("PES_STARTUP_ERROR=" + record["errors"][-1], flush=True)
+    finally:
+        try:
+            record["settings_after"] = settings(home)
+            record["settings_unchanged"] = record["settings_after"] == before
+            record["launcher_unchanged"] = checksum(wrapper) == wrapper_sha
+        except Exception as error:
+            record["errors"].append("final checks: " + str(error))
+        # Snapshot a bounded log for the archive. The background game retains its own log FD.
+        try:
+            record["console_capture"] = context.copy_regular_log(
+                work / "emulator.log", work / "console", limit=32 * 1024 * 1024)
+        except OSError as error:
+            record["errors"].append("console capture: " + str(error))
+        context.save_json(work / "startup.json", record)
+        archive = work.with_suffix(".tar.gz")
+        with tarfile.open(archive, "w:gz") as output:
+            for path in sorted(work.rglob("*")):
+                if path.is_file() and path.name != "emulator.log":
+                    output.add(path, arcname=str(path.relative_to(work)), recursive=False)
+        print("PES_STARTUP_ARCHIVE=" + str(archive), flush=True)
+        print("Collection ended. PES is left running if it has not exited; close it normally when finished.", flush=True)
+
+
+def main():
+    if os.geteuid() == 0 or sys.argv[1:]:
+        raise RuntimeError("Run as chreece, without sudo or arguments")
+    cache = Path.home() / ".cache"
+    cache.mkdir(exist_ok=True)
+    with (cache / "shadps4-video-trace.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        run(Path.home())
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (Exception, KeyboardInterrupt) as error:
+        print("PES_STARTUP_ERROR=" + (str(error) or "Interrupted"), flush=True)
+    finally:
+        print("Returning to your existing SSH prompt.", flush=True)

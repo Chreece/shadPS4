@@ -41,6 +41,24 @@ samples. It never attaches, signals, resumes or changes an emulator process;
 it skips pipes/devices and caps each log at 16 MiB with exact head/tail offsets.
 Its next run requires PES to remain open but does not repeat the video trace.
 
+`shadps4-pes-context-pqlyapl9` subsequently confirmed that console output was
+connected to a pipe and the named log contained historical runs. Across 2.008
+seconds, Game:Main gained 199 CPU ticks (100 ticks/second); GPU command and job
+threads also gained CPU time. This is activity, not proof of useful startup
+progress or a permanent GPU wait.
+
+`run_pes_startup_test.py` launches the verified installed build through the
+existing guarded ES-DE wrapper in a separate session, with a fresh console
+file. Run it as the normal user with the current game closed and the intended
+ES-DE desktop open. It discovers that desktop's display environment, begins
+the shared 20-second video probe after Game:Main appears, and samples activity
+through 60 seconds. It archives a bounded console snapshot and leaves the game
+running. A diagnostic PASS does not establish that the black screen is fixed.
+The controller returns to the invoking SSH prompt. Disposable process tests
+cover session separation, initial output, closed stdin, startup failure
+archival, active-game refusal and desktop selection. No new emulator build is
+installed; the real PES orchestration remains to be exercised on the host.
+
 ## Evidence retained
 
 The supplied capture summary reports zero entries across 36 hooked video APIs,
