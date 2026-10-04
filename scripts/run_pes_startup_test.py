@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Launch the installed PES build in a separate session and collect startup evidence."""
 
+from contextlib import nullcontext
 import fcntl
 import hashlib
 import json
@@ -209,11 +210,13 @@ def collect_screenshots(home, work, previous):
     return captured
 
 
-def run(home, *, profile="video", reuse_existing=False, screenshots=False):
+def run(home, *, profile="video", reuse_existing=False, screenshots=False, graphics=False):
     trace.capture_profile(profile)
     existing = trace.find_process() if reuse_existing and running_emulators() else None
     if existing is None:
         require_idle()
+    if graphics and existing is not None:
+        raise RuntimeError("Native packet capture requires a fresh game launch")
     wrapper, wrapper_sha = selected_launch(home)
     env, desktop_source = (None, "existing PES") if existing else desktop_environment()
     if screenshots:
@@ -240,10 +243,19 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False):
     try:
         started = time.monotonic()
         if existing is None:
-            with (work / "emulator.log").open("wb") as log:
-                launcher = launch_game(wrapper, env, home, log)
-            record["launcher_pid"] = launcher.pid
-            identity = await_game(launcher)
+            if graphics:
+                import pes_graphics_launch as native
+            launch_context = (native.enabled_launch(home, wrapper, wrapper_sha, work)
+                              if graphics else nullcontext())
+            with launch_context:
+                with (work / "emulator.log").open("wb") as log:
+                    launcher = launch_game(wrapper, env, home, log)
+                record["launcher_pid"] = launcher.pid
+                identity = await_game(launcher)
+            if graphics:
+                native.verify_environment(identity)
+                record["graphics_environment_verified"] = True
+                print("PES_NATIVE_GRAPHICS=enabled; original launcher restored", flush=True)
         else:
             identity = existing
         record["identity"] = identity
@@ -329,6 +341,15 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False):
                 context.collect_outputs(Path("/proc") / str(identity["pid"]), work)
         except OSError as error:
             record["errors"].append("console capture: " + str(error))
+        if graphics:
+            try:
+                record["graphics"] = native.analyze(sorted(work.glob("console.*.log")))
+                if not record["graphics"]["started"]:
+                    record["errors"].append("Native GPU startup marker missing")
+                print("PES_NATIVE_PACKET_COUNTS=" + json.dumps(
+                    record["graphics"]["event_count_lower_bounds"], sort_keys=True), flush=True)
+            except Exception as error:
+                record["errors"].append("native graphics: " + str(error))
         context.save_json(work / "startup.json", record)
         archive = work.with_suffix(".tar.gz")
         with tarfile.open(archive, "w:gz") as output:
