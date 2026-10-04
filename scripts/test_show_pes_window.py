@@ -68,7 +68,10 @@ class BareSession(unittest.TestCase):
         self.assertEqual(self.x.find_window(12346), self.decoy)
 
     def test_ambiguous_pid_does_not_change_focus(self):
-        self.create(12345, "Duplicate PES fixture")
+        duplicate = self.create(12345, "Duplicate PES fixture")
+        if self.x.prop(self.x.root, "_NET_SUPPORTING_WM_CHECK"):
+            # Let the WM handle the new window before measuring the read-only lookup.
+            self.until(lambda: duplicate in self.x.prop(self.x.root, "_NET_CLIENT_LIST"))
         self.x.activate(self.decoy, 12346)
         before = self.x.state(self.decoy)["input_focus"]
         with self.assertRaisesRegex(RuntimeError, "found 2"):
