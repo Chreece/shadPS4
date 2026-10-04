@@ -186,7 +186,7 @@ try:
                r"(?:Videodec2|Videodec|Vdecsw)::(sce[A-Za-z0-9_]+)\("))
     seen = set()
     for address, api in re.findall(pattern, symbols, re.M):
-        if CONFIG.get("only_required") and api not in CONFIG["required_apis"]:
+        if CONFIG.get("only_required") and api not in CONFIG.get("allowed_apis", CONFIG["required_apis"]):
             continue
         if api in seen:
             raise RuntimeError("Ambiguous API symbol: " + api)
@@ -197,6 +197,7 @@ try:
     for required in CONFIG["required_apis"]:
         if required not in seen:
             raise RuntimeError("Required API symbol not found: " + required)
+    result["unavailable_optional"] = sorted(set(CONFIG.get("allowed_apis", ())) - seen)
 
     gdb.execute("handle SIGSEGV nostop noprint pass")
     gdb.execute("handle SIGBUS nostop noprint pass")
@@ -250,10 +251,11 @@ try:
             else:
                 api = value["api"]
                 consume_return(value)
-                rc = None if return_kind(api) == "void" else register("rax") & 0xffffffff
+                kind = return_kind(api)
+                rc = None if kind == "void" else register("rax") & (0xff if kind == "bool" else 0xffffffff)
                 stats = result["apis"][api]
                 stats["returns"] += 1
-                if rc:
+                if rc and kind == "error_code":
                     key = hex(rc)
                     stats["errors"][key] = stats["errors"].get(key, 0) + 1
                 details = {}

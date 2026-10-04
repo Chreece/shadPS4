@@ -234,6 +234,19 @@ def run(home, *, profile="video", reuse_existing=False):
             for api, stats in sorted(report["apis"].items()):
                 print(f"{api}: entries={stats['calls']} returns={stats.get('returns')} "
                       f"errors={stats.get('errors')} capped={stats.get('capped')}", flush=True)
+            selected = {}
+            for item in report['records']:
+                api = item.get('api', '')
+                if api.startswith('scePlayGo') or api in ('sceKernelStat', 'Rasterizer::FilterDraw',
+                                                         'Rasterizer::ResetBindings'):
+                    fields = {k: v for k, v in item.items() if k not in
+                              ('seq', 'thread', 'seconds', 'elapsed_ms', 'caller')}
+                    key = json.dumps(fields, sort_keys=True)
+                    selected[key] = selected.get(key, 0) + 1
+            for fields, count in list(selected.items())[:40]:
+                print('PES_RENDER_DETAIL=' + fields + ' samples=' + str(count), flush=True)
+            if report.get('unavailable_optional'):
+                print('PES_RENDER_OPTIONAL_UNAVAILABLE=' + ','.join(report['unavailable_optional']), flush=True)
         if not report["cleanup_verified"]:
             raise RuntimeError("Debugger cleanup not verified; preserve this capture directory")
         observation_seconds = 20 if existing else 60

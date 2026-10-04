@@ -10,7 +10,13 @@ APIS = (
     "sceVideoOutGetFlipStatus", "sceVideoOutGetVblankStatus",
     "VideoOutDriver::Flip", "VideoOutDriver::DrawBlankFrame",
     "VideoOutDriver::DrawLastFrame", "VideoOutDriver::SubmitFlipInternal",
+    "Rasterizer::Draw", "Rasterizer::DrawIndirect", "Rasterizer::DispatchDirect",
+    "Rasterizer::DispatchIndirect", "Rasterizer::FilterDraw",
+    "Rasterizer::PrepareRenderState", "Rasterizer::ResetBindings",
+    "scePlayGoGetInstallSpeed", "scePlayGoGetLanguageMask", "scePlayGoGetToDoList",
+    "scePlayGoGetProgress", "scePlayGoGetLocus", "sceKernelStat",
 )
+OPTIONAL_APIS = ("Rasterizer::FilterDraw", "Rasterizer::PrepareRenderState", "Rasterizer::ResetBindings")
 
 SUPPORT = r'''
 frame_returns = {}
@@ -67,7 +73,9 @@ def capture_args(api):
 
 
 def return_kind(api):
-    return "void" if api.startswith(("VideoOutDriver::", "sceGnmDingDong")) else "error_code"
+    if api == "Rasterizer::FilterDraw":
+        return "bool"
+    return "void" if api.startswith(("VideoOutDriver::", "sceGnmDingDong", "Rasterizer::")) else "error_code"
 
 
 def signed32(value):
@@ -76,6 +84,28 @@ def signed32(value):
 
 
 def fields_before(api, args):
+    if api.startswith("Rasterizer::"):
+        if api in ("Rasterizer::Draw", "Rasterizer::DrawIndirect"):
+            return {"indexed": bool(args[1] & 0xff)}
+        if api == "Rasterizer::ResetBindings":
+            return {"is_compute": bool(args[1] & 0xff)}
+        return {}
+    if api.startswith("scePlayGo"):
+        values = {"handle": signed32(args[0]), "caller": hex(number(memory(register("rsp"), 8), 0))}
+        if api in ("scePlayGoGetProgress", "scePlayGoGetLocus"):
+            count = args[2] & 0xffffffff
+            data = memory(args[1], min(count, 8) * 2) if count and args[1] else b""
+            values.update(chunk_count=count, chunks=[number(data, i, 2) for i in range(0, len(data), 2)])
+        return values
+    if api == "sceKernelStat":
+        path = bytearray()
+        for offset in range(512):
+            value = memory(args[0] + offset, 1)
+            if value == b"\0":
+                break
+            path.extend(value)
+        return {"path": path.decode("utf-8", errors="replace"), "path_truncated": len(path) == 512,
+                "caller": hex(number(memory(register("rsp"), 8), 0))}
     if api.startswith("sceGnmSubmit") and api != "sceGnmSubmitDone":
         shift = int(api.endswith("ForWorkload"))
         count = args[shift] & 0xffffffff
@@ -108,8 +138,22 @@ def fields_before(api, args):
 
 
 def fields_after(api, args, rc):
+    if api == "Rasterizer::FilterDraw":
+        return {"draw_allowed": bool(rc)}
     if rc != 0:
         return {}
+    if api == "scePlayGoGetInstallSpeed":
+        return {"install_speed": signed32(number(memory(args[1], 4), 0, 4))}
+    if api == "scePlayGoGetLanguageMask":
+        return {"language_mask": hex(number(memory(args[1], 8), 0))}
+    if api == "scePlayGoGetToDoList":
+        return {"todo_entries": number(memory(args[3], 4), 0, 4)}
+    if api == "scePlayGoGetProgress":
+        data = memory(args[3], 16)
+        return {"installed_bytes": number(data, 0), "total_bytes": number(data, 8)}
+    if api == "scePlayGoGetLocus":
+        count = min(args[2] & 0xffffffff, 8)
+        return {"loci": list(memory(args[3], count))}
     if api == "sceVideoOutGetFlipStatus":
         data = memory(args[1], 64)
         return {"flip_count": number(data, 0), "flip_arg": hex(number(data, 24)),
@@ -162,12 +206,14 @@ def profile_snapshot(phase):
 '''
 
 PROFILE = {
-    "required_apis": APIS,
+    "required_apis": tuple(api for api in APIS if api not in OPTIONAL_APIS),
+    "allowed_apis": APIS,
     "only_required": True,
     "symbol_queries": ("sceGnmSubmit", "sceGnmDingDong", "sceVideoOutSubmit",
-                       "sceVideoOutGetFlipStatus", "sceVideoOutGetVblankStatus", "VideoOutDriver::"),
-    "symbol_pattern": (r"^\s*(0x[0-9a-fA-F]+)\s+Libraries::"
-                       r"(?:GnmDriver|VideoOut)::([A-Za-z0-9_:]+)\("),
+                       "sceVideoOutGetFlipStatus", "sceVideoOutGetVblankStatus", "VideoOutDriver::",
+                       "Vulkan::Rasterizer::", "scePlayGoGet", "sceKernelStat"),
+    "symbol_pattern": (r"^\s*(0x[0-9a-fA-F]+)\s+(?![^\n]*\[clone )(?:Libraries::"
+                       r"(?:GnmDriver|VideoOut|PlayGo|Kernel)::|Vulkan::)([A-Za-z0-9_:]+)\("),
     "profile_source": SUPPORT,
 }
 
@@ -220,6 +266,36 @@ void VideoOutDriver::DrawBlankFrame() {}
 void VideoOutDriver::DrawLastFrame() {}
 void VideoOutDriver::SubmitFlipInternal(void*, int, std::int64_t, bool) {}
 }
+namespace Vulkan {
+class Rasterizer {
+public:
+    PROBE_API void Draw(bool, unsigned) {}
+    PROBE_API void DrawIndirect(bool, std::uint64_t, unsigned, unsigned, unsigned, std::uint64_t, unsigned short, unsigned short) {}
+    PROBE_API void DispatchDirect() {}
+    PROBE_API void DispatchIndirect(std::uint64_t, unsigned, unsigned) {}
+    PROBE_API bool FilterDraw() { static unsigned count = 0; return ++count % 2 != 0; }
+    PROBE_API void PrepareRenderState(const void*) {}
+    PROBE_API void ResetBindings(bool) {}
+};
+}
+namespace Libraries::PlayGo {
+PROBE_API int scePlayGoGetInstallSpeed(unsigned, int* value) { *value = 2; return 0; }
+PROBE_API int scePlayGoGetLanguageMask(unsigned, std::uint64_t* value) { *value = 0x4000000000000000ULL; return 0; }
+PROBE_API int scePlayGoGetToDoList(unsigned, void*, unsigned, unsigned* value) { *value = 0; return 0; }
+PROBE_API int scePlayGoGetProgress(unsigned, const unsigned short*, unsigned, Bytes* value) {
+    put<std::uint64_t>(value, 0, 1000); put<std::uint64_t>(value, 8, 1000); return 0;
+}
+PROBE_API int scePlayGoGetLocus(unsigned, const unsigned short*, unsigned count, Bytes* value) {
+    for (unsigned i = 0; i < count; ++i) value[i] = 3;
+    return 0;
+}
+}
+namespace Libraries::Kernel {
+PROBE_API int sceKernelStat(const char*, void*) {
+    static unsigned calls = 0;
+    return ++calls % 5 == 0 ? static_cast<int>(0x80020002u) : 0;
+}
+}
 void frame_activity() {
     using namespace Libraries::GnmDriver;
     using namespace Libraries::VideoOut;
@@ -244,6 +320,25 @@ void frame_activity() {
     driver.Flip(request);
     driver.DrawLastFrame();
     driver.DrawBlankFrame();
+    Vulkan::Rasterizer rasterizer;
+    rasterizer.Draw(true, 0);
+    rasterizer.DrawIndirect(false, 0, 0, 0, 0, 0, 0, 0);
+    rasterizer.DispatchDirect();
+    rasterizer.DispatchIndirect(0, 0, 0);
+    rasterizer.FilterDraw();
+    rasterizer.PrepareRenderState(nullptr);
+    rasterizer.ResetBindings(false);
+    using namespace Libraries::PlayGo;
+    int speed = 0;
+    std::uint64_t language = 0;
+    unsigned entries = 42;
+    const unsigned short chunks[] = {0, 9};
+    scePlayGoGetInstallSpeed(1, &speed);
+    scePlayGoGetLanguageMask(1, &language);
+    scePlayGoGetToDoList(1, status, 1, &entries);
+    scePlayGoGetProgress(1, chunks, 2, status);
+    scePlayGoGetLocus(1, chunks, 2, status);
+    Libraries::Kernel::sceKernelStat("/app0/test-file.bin", status);
 }
 '''
 
@@ -257,7 +352,8 @@ def validate_observations(mode, result, require):
     for api, stats in apis.items():
         require(stats['calls'] == stats['returns'] == 32 and stats['capped'] and stats['out_of_scope'] == 0,
                 'Incorrect entry/return cap for ' + api + ': ' + str(stats))
-        expected = {'0x80d11000': 6} if api == 'sceGnmSubmitDone' else {}
+        expected = {'0x80d11000': 6} if api == 'sceGnmSubmitDone' else (
+            {'0x80020002': 6} if api == 'sceKernelStat' else {})
         require(stats['errors'] == expected, 'Wrong return classification for ' + api)
     records = result['records']
     require(not any('read_error' in r for r in records), 'Frame argument/output read failed')
@@ -278,8 +374,31 @@ def validate_observations(mode, result, require):
             if api in ('VideoOutDriver::Flip', 'VideoOutDriver::SubmitFlipInternal'):
                 require(record.get('buffer_index') == -1 and record.get('eop') is True and
                         record.get('flip_arg') == '0x1122334455667788', 'Wrong driver request fields')
-        elif api.startswith(('VideoOutDriver::', 'sceGnmDingDong')):
+            if api == 'sceKernelStat':
+                require(record.get('path') == '/app0/test-file.bin' and not record.get('path_truncated'),
+                        'Wrong missing-file path')
+            if api in ('scePlayGoGetProgress', 'scePlayGoGetLocus'):
+                require(record.get('chunks') == [0, 9] and record.get('chunk_count') == 2,
+                        'Wrong PlayGo chunk IDs')
+            if api == 'Rasterizer::Draw':
+                require(record.get('indexed') is True, 'Wrong indexed draw argument')
+            if api == 'Rasterizer::ResetBindings':
+                require(record.get('is_compute') is False, 'Wrong draw/compute completion')
+        elif api == 'Rasterizer::FilterDraw':
+            require(record.get('draw_allowed') == (record['seq'] % 2 != 0), 'Wrong draw filter result')
+        elif api.startswith(('VideoOutDriver::', 'sceGnmDingDong', 'Rasterizer::')):
             require(record.get('rc') is None, 'Void function was interpreted as an error code')
+        elif api == 'scePlayGoGetInstallSpeed':
+            require(record.get('install_speed') == 2, 'Wrong installation speed')
+        elif api == 'scePlayGoGetLanguageMask':
+            require(record.get('language_mask') == '0x4000000000000000', 'Wrong 64-bit language mask')
+        elif api == 'scePlayGoGetToDoList':
+            require(record.get('todo_entries') == 0, 'Wrong installation work count')
+        elif api == 'scePlayGoGetProgress':
+            require(record.get('installed_bytes') == record.get('total_bytes') == 1000,
+                    'Wrong installation progress')
+        elif api == 'scePlayGoGetLocus':
+            require(record.get('loci') == [3, 3], 'Wrong installed chunk states')
         elif api == 'sceVideoOutGetFlipStatus':
             require(record.get('flip_count') == record['seq'] and record.get('current_buffer') == -1
                     and record.get('flip_pending_num') == 3 and record.get('gc_queue_num') == 2,

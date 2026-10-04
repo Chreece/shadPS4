@@ -100,6 +100,23 @@ class FrameFieldsTests(unittest.TestCase):
         self.assertEqual(scope['completion_snapshot'](0x2e8192b, 1)['status'], 'guest_signature_mismatch')
         self.assertEqual(scope['memory'].call_count, 1)
 
+    def test_playgo_outputs_preserve_64_bit_values_and_ignore_failed_outputs(self):
+        scope = self.namespace({0x1000: struct.pack('<QQ', 0x1122334455667788, 0x2233445566778899)})
+        self.assertEqual(scope['fields_after']('scePlayGoGetProgress', [1, 0, 2, 0x1000], 0),
+                         {'installed_bytes': 0x1122334455667788, 'total_bytes': 0x2233445566778899})
+        self.assertEqual(scope['fields_after']('scePlayGoGetLanguageMask', [1, 0x1000], 0),
+                         {'language_mask': '0x1122334455667788'})
+        scope['memory'].reset_mock()
+        self.assertEqual(scope['fields_after']('scePlayGoGetProgress', [1, 0, 2, 0], 0x80b20005), {})
+        scope['memory'].assert_not_called()
+
+    def test_file_path_read_is_bounded(self):
+        scope = self.namespace({0x1000: b'x' * 512, 0x2000: struct.pack('<Q', 0x3000)}, {'rsp': 0x2000})
+        value = scope['fields_before']('sceKernelStat', [0x1000])
+        self.assertEqual(value['path'], 'x' * 512)
+        self.assertTrue(value['path_truncated'])
+        self.assertEqual(value['caller'], '0x3000')
+
     def test_changing_completion_values_are_preserved_without_claiming_a_stall(self):
         key = 0x166999
         slot = 0x10000 + 24 * (key & 1023)
