@@ -3,7 +3,7 @@
   "upstream": {
     "repository": "shadps4-emu/shadPS4",
     "branch": "main",
-    "revision": "16e79a4296cd8c92a214d66d34cf83babe456123"
+    "revision": "c49529087953b38339f7cde9033001dbd478204d"
   },
   "retained_revision": "0539f6dba2a1b075aa017c691b2c8955258e5a1e",
   "pending_fixes": [
