@@ -10,11 +10,14 @@ import sys
 
 import run_pes_startup_test as startup
 import validate_video_diagnostic as validate
+import pes_current_baseline as baseline
 
 
 def run_validated(home):
+    baseline.verify_installed(home)
     # Any build/test failure raises before the game launcher or attach can run.
     validate.launch(profile="frames")
+    baseline.verify_installed(home)
     result = startup.run(home, profile="frames", reuse_existing=True)
     if (result.get("errors") or not result.get("frames_capture_passed") or
             not result.get("settings_unchanged") or not result.get("launcher_unchanged")):

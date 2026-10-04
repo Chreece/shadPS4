@@ -200,6 +200,7 @@ def run(home, *, profile="video", reuse_existing=False):
         raise RuntimeError("Launcher changed during preparation; preserved")
     work = Path(tempfile.mkdtemp(prefix="shadps4-pes-startup-", dir=home))
     record = {"revision": trace.REVISION, "desktop_source": desktop_source,
+              "baseline": getattr(trace, "BASELINE_METADATA", None),
               "capture_profile": profile, "reused_existing": existing is not None,
               "settings_before": before, "errors": [], "visual_result": "unverified"}
     print("PES_STARTUP_DIRECTORY=" + str(work), flush=True)
