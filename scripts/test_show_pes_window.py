@@ -4,6 +4,7 @@
 """Real X11 activation tests, run only on a disposable Xvfb display."""
 
 import ctypes as C
+import faulthandler
 import os
 import subprocess
 import time
@@ -133,4 +134,5 @@ class ManagedSession(BareSession):
 
 
 if __name__ == "__main__":
+    faulthandler.dump_traceback_later(20, exit=True)
     unittest.main(verbosity=2)
