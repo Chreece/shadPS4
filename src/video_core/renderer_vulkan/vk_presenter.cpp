@@ -16,6 +16,7 @@
 #include "imgui/renderer/imgui_core.h"
 #include "imgui/renderer/imgui_impl_vulkan.h"
 #include "imgui/shadnet_notifications_layer.h"
+#include "imgui/startup_loading.h"
 #include "sdl_window.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderdoc.h"
@@ -670,6 +671,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     texture_cache.UpdateImage(image_id);
 
     Frame* frame = GetRenderFrame();
+    frame->has_game_content = true;
 
     const auto frame_subresources = vk::ImageSubresourceRange{
         .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -770,6 +772,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 Frame* Presenter::PrepareBlankFrame(bool present_thread) {
     // Request a free presentation frame.
     Frame* frame = GetRenderFrame();
+    frame->has_game_content = false;
 
     auto& scheduler = present_thread ? present_scheduler : draw_scheduler;
     scheduler.EndRendering();
@@ -981,6 +984,18 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 ImGui::SetCursorPos(ImGui::GetCursorStartPos() + offset);
                 ImGui::Image(game_texture, size);
 
+                if (Core::Startup::progress.IsActive() && !frame->has_game_content) {
+                    ImGui::DrawStartupLoading(ImGui::GetWindowPos() + ImGui::GetCursorStartPos(),
+                                              contentArea, Common::ElfInfo::Instance().Title(),
+                                              Core::Startup::progress.GetStage(),
+                                              Core::Startup::progress.ElapsedMs());
+                    if (!startup_screen_logged) {
+                        LOG_INFO(Frontend, "STARTUP_UI event=shown elapsed_ms={}",
+                                 Core::Startup::progress.ElapsedMs());
+                        startup_screen_logged = true;
+                    }
+                }
+
                 if (EmulatorSettings.IsNullGPU()) {
                     Core::Devtools::Layer::DrawNullGpuNotice();
                 }
@@ -1076,7 +1091,12 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     // Present to swapchain.
     {
         std::scoped_lock submit_lock{Scheduler::submit_mutex};
-        if (!swapchain.Present()) {
+        const bool presented = swapchain.Present();
+        if (Core::Startup::progress.Presented(frame->has_game_content, presented)) {
+            LOG_INFO(Frontend, "STARTUP_UI event=first_game_frame elapsed_ms={}",
+                     Core::Startup::progress.ElapsedMs());
+        }
+        if (!presented) {
             swapchain.Recreate(window.GetWidth(), window.GetHeight());
         }
     }
