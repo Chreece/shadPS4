@@ -16,6 +16,7 @@ import threading
 import time
 
 import trace_video_progress as trace
+import pes_frame_profile as frames
 
 
 FIXTURE_CPP = r'''
@@ -55,6 +56,7 @@ __attribute__((noinline, used)) int sceVideodec2Flush(void*, Bytes* frame, Bytes
 }
 }
 // EXTRA_SYMBOLS
+// FRAME_SYMBOLS
 int main(int argc, char** argv) {
     if (argc != 3) return 2;
     const std::filesystem::path dir(argv[1]);
@@ -82,6 +84,7 @@ int main(int argc, char** argv) {
                 Libraries::Videodec2::sceVideodec2Decode(nullptr, input.data(), frame.data(), output.data());
                 Libraries::Videodec2::sceVideodec2Flush(nullptr, frame.data(), output.data());
             }
+            if (mode == "frames-active") frame_activity();
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -89,13 +92,13 @@ int main(int argc, char** argv) {
 }
 '''.replace('// EXTRA_SYMBOLS', 'namespace Libraries::Videodec {\n' + '\n'.join(
     f'__attribute__((noinline, used)) int sceVideodecFixture{i:02d}() {{ return {i}; }}'
-    for i in range(33)) + '\n}')
+    for i in range(33)) + '\n}').replace('// FRAME_SYMBOLS', frames.FIXTURE_CPP)
 
 DOCKERFILE = '''FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends g++ gdb python3 \\
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /test
-COPY trace_video_progress.py validate_video_diagnostic.py fixture.cpp ./
+COPY trace_video_progress.py validate_video_diagnostic.py pes_frame_profile.py fixture.cpp ./
 RUN g++ -std=c++20 -O0 -fno-omit-frame-pointer -fno-inline -pthread fixture.cpp -o fixture \\
     && touch /run/pes-fixture-container
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -120,7 +123,10 @@ def heartbeat(work):
     return int((work / 'heartbeat').read_text().strip())
 
 
-def validate_observations(mode, result):
+def validate_observations(mode, result, profile='video'):
+    if profile == 'frames':
+        frames.validate_observations(mode, result, require)
+        return
     apis = result['apis']
     require(len(apis) == 36, f'Expected 36 resolved APIs, got {len(apis)}')
     if mode == 'idle':
@@ -144,7 +150,7 @@ def validate_observations(mode, result):
                 'Output fields did not match fixture values')
 
 
-def run_case(root, mode):
+def run_case(root, mode, profile='video'):
     work = root / mode
     work.mkdir()
     target = debugger = decoy = None
@@ -152,7 +158,8 @@ def run_case(root, mode):
     finished = threading.Event()
     controller_errors = []
     try:
-        target = subprocess.Popen(['/test/fixture', str(work), mode], start_new_session=True)
+        fixture_mode = 'frames-active' if profile == 'frames' and mode == 'active' else mode
+        target = subprocess.Popen(['/test/fixture', str(work), fixture_mode], start_new_session=True)
         until = time.monotonic() + 5
         while not (work / 'heartbeat').exists():
             require(target.poll() is None and time.monotonic() < until, 'Fixture failed to start')
@@ -163,7 +170,7 @@ def run_case(root, mode):
                     'sha256': hashlib.sha256(Path('/test/fixture').read_bytes()).hexdigest()}
         (work / 'identity.json').write_text(json.dumps(identity))
         probe = work / 'probe.py'
-        trace.write_probe(identity, probe)
+        trace.write_probe(identity, probe, profile=profile)
         if mode == 'interrupt':
             other = work / 'unrelated.py'
             other.write_text('import time\ntime.sleep(100)\n')
@@ -198,7 +205,7 @@ def run_case(root, mode):
         controller.join(timeout=12)
         require(not controller.is_alive(), 'Fixture controller did not exit')
         result = trace.build_report((work / 'gdb.txt').read_text(errors='replace'),
-                                    outcome, trace.inspect_target(identity))
+                                    outcome, trace.inspect_target(identity), profile=profile)
         result['controller_errors'] = controller_errors
         (work / 'result.json').write_text(json.dumps(result, indent=2))
         require(not controller_errors, str(controller_errors))
@@ -206,7 +213,7 @@ def run_case(root, mode):
         if mode in ('idle', 'active'):
             require(trace.report_passed(result), json.dumps(result.get('errors')) +
                     '; status=' + result['status'])
-            validate_observations(mode, result)
+            validate_observations(mode, result, profile)
         elif mode == 'interrupt':
             require(result['status'] == 'interrupted' and result['cleanup_verified'] and
                     result.get('detached') is True and not trace.report_passed(result),
@@ -240,10 +247,12 @@ def run_case(root, mode):
 def inside_container():
     require(Path('/run/pes-fixture-container').exists(), 'Run the Docker launcher, not this flag on the host')
     root = Path('/results')
+    profile = os.environ.get('PES_CAPTURE_PROFILE', 'video')
+    trace.capture_profile(profile)
     try:
         print(subprocess.check_output(['gdb', '--version'], text=True).splitlines()[0], flush=True)
         for mode in ('idle', 'active', 'interrupt', 'exit'):
-            run_case(root, mode)
+            run_case(root, mode, profile)
         print('PES_DIAGNOSTIC_SELFTEST=PASS', flush=True)
     finally:
         owner = os.environ.get('SELFTEST_OWNER', '').split(':')
@@ -252,16 +261,18 @@ def inside_container():
                 os.chown(path, int(owner[0]), int(owner[1]), follow_symlinks=False)
 
 
-def docker_run_command(prefix, image, name, results):
+def docker_run_command(prefix, image, name, results, profile='video'):
     return prefix + ['docker', 'run', '--rm', '--name', name,
                      '--network', 'none', '--cap-add', 'SYS_PTRACE',
                      '--read-only', '--tmpfs', '/tmp:rw,nosuid,nodev,size=128m',
                      '--pids-limit', '128', '--memory', '512m', '--cpus', '2',
                      '--env', f'SELFTEST_OWNER={os.getuid()}:{os.getgid()}',
+                     '--env', 'PES_CAPTURE_PROFILE=' + profile,
                      '--mount', f'type=bind,src={results},dst=/results', image]
 
 
-def launch():
+def launch(profile='video'):
+    trace.capture_profile(profile)
     require(shutil.which('docker'), 'Docker is not installed; no emulator changes were made')
     prefix = []
     check = subprocess.run(['docker', 'info'], capture_output=True, text=True, timeout=20)
@@ -277,7 +288,7 @@ def launch():
     context.mkdir()
     results.mkdir()
     here = Path(__file__).resolve().parent
-    for name in ('trace_video_progress.py', 'validate_video_diagnostic.py'):
+    for name in ('trace_video_progress.py', 'validate_video_diagnostic.py', 'pes_frame_profile.py'):
         shutil.copy2(here / name, context / name)
     (context / 'fixture.cpp').write_text(FIXTURE_CPP)
     (context / 'Dockerfile').write_text(DOCKERFILE)
@@ -288,7 +299,7 @@ def launch():
     subprocess.run(prefix + ['docker', 'build', '-t', image, str(context)],
                    check=True, timeout=900, start_new_session=True)
     print('Testing the diagnostic on four disposable targets; about one minute.', flush=True)
-    command = docker_run_command(prefix, image, name, results)
+    command = docker_run_command(prefix, image, name, results, profile)
     log = work / 'selftest.log'
     child = None
     try:

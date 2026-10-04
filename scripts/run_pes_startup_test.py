@@ -183,45 +183,62 @@ def debugger_prefix():
     return []
 
 
-def run(home):
-    require_idle()
+def run(home, *, profile="video", reuse_existing=False):
+    trace.capture_profile(profile)
+    existing = trace.find_process() if reuse_existing and running_emulators() else None
+    if existing is None:
+        require_idle()
     wrapper, wrapper_sha = selected_launch(home)
-    env, desktop_source = desktop_environment()
+    env, desktop_source = (None, "existing PES") if existing else desktop_environment()
     prefix = debugger_prefix()
     before = settings(home)
-    require_idle()
+    if existing is None:
+        require_idle()
+    elif trace.find_process() != existing:
+        raise RuntimeError("PES identity changed during preparation; preserved")
     if checksum(wrapper) != wrapper_sha:
         raise RuntimeError("Launcher changed during preparation; preserved")
     work = Path(tempfile.mkdtemp(prefix="shadps4-pes-startup-", dir=home))
     record = {"revision": trace.REVISION, "desktop_source": desktop_source,
+              "capture_profile": profile, "reused_existing": existing is not None,
               "settings_before": before, "errors": [], "visual_result": "unverified"}
     print("PES_STARTUP_DIRECTORY=" + str(work), flush=True)
-    print("Launching PES in the background; automatic collection takes about one minute.", flush=True)
+    print("Observing the existing PES session." if existing else
+          "Launching PES in the background; automatic collection takes about one minute.", flush=True)
     try:
         started = time.monotonic()
-        with (work / "emulator.log").open("wb") as log:
-            launcher = launch_game(wrapper, env, home, log)
-        record["launcher_pid"] = launcher.pid
-        identity = await_game(launcher)
+        if existing is None:
+            with (work / "emulator.log").open("wb") as log:
+                launcher = launch_game(wrapper, env, home, log)
+            record["launcher_pid"] = launcher.pid
+            identity = await_game(launcher)
+        else:
+            identity = existing
         record["identity"] = identity
-        capture = work / "video"
+        capture = work / profile
         capture.mkdir()
         context.save_json(capture / "identity.json", identity)
-        trace.write_probe(identity, capture / "probe.py")
-        print("PES_PID=" + str(identity["pid"]) + "; starting 20-second video observation", flush=True)
+        trace.write_probe(identity, capture / "probe.py", profile=profile)
+        print("PES_PID=" + str(identity["pid"]) + "; starting 20-second " + profile + " observation", flush=True)
         with (capture / "gdb.txt").open("w") as output:
             debugger = subprocess.Popen(trace.debugger_command(identity, capture / "probe.py", prefix),
                                         stdout=output, stderr=subprocess.STDOUT,
                                         start_new_session=True)
             outcome = trace.wait_for_debugger(debugger, capture, prefix)
         report = trace.build_report((capture / "gdb.txt").read_text(errors="replace"),
-                                    outcome, trace.inspect_target(identity))
-        context.save_json(capture / "video-trace.json", report)
-        record["video_capture_passed"] = trace.report_passed(report)
-        print("VIDEO_CAPTURE_STATUS=" + report["status"], flush=True)
+                                    outcome, trace.inspect_target(identity), profile=profile)
+        context.save_json(capture / (profile + "-trace.json"), report)
+        record[profile + "_capture_passed"] = trace.report_passed(report)
+        print(profile.upper() + "_CAPTURE_STATUS=" + report["status"], flush=True)
+        if profile == "frames":
+            for api, stats in sorted(report["apis"].items()):
+                print(f"{api}: entries={stats['calls']} returns={stats.get('returns')} "
+                      f"errors={stats.get('errors')} capped={stats.get('capped')}", flush=True)
         if not report["cleanup_verified"]:
             raise RuntimeError("Debugger cleanup not verified; preserve this capture directory")
-        print("Collecting startup activity through 60 seconds; keep the Moonlight session connected.", flush=True)
+        observation_seconds = 20 if existing else 60
+        if not existing:
+            print("Collecting startup activity through 60 seconds; keep the Moonlight session connected.", flush=True)
         proc = Path("/proc") / str(identity["pid"])
         index = 0
         while True:
@@ -230,9 +247,9 @@ def run(home):
                 raise RuntimeError("PES exited or changed during startup: " + json.dumps(state))
             context.save_json(work / f"activity-{index}.json", context.sample(proc))
             index += 1
-            if time.monotonic() - started >= 60:
+            if time.monotonic() - started >= observation_seconds:
                 break
-            time.sleep(min(5, max(0, 60 - (time.monotonic() - started))))
+            time.sleep(min(5, max(0, observation_seconds - (time.monotonic() - started))))
         (work / "maps.txt").write_text((proc / "maps").read_text())
         record["target_after"] = trace.inspect_target(identity)
         record["observed_seconds"] = round(time.monotonic() - started, 3)
@@ -248,8 +265,11 @@ def run(home):
             record["errors"].append("final checks: " + str(error))
         # Snapshot a bounded log for the archive. The background game retains its own log FD.
         try:
-            record["console_capture"] = context.copy_regular_log(
-                work / "emulator.log", work / "console", limit=32 * 1024 * 1024)
+            if existing is None:
+                record["console_capture"] = context.copy_regular_log(
+                    work / "emulator.log", work / "console", limit=32 * 1024 * 1024)
+            elif trace.inspect_target(existing).get("status") == "observed":
+                context.collect_outputs(Path("/proc") / str(existing["pid"]), work)
         except OSError as error:
             record["errors"].append("console capture: " + str(error))
         context.save_json(work / "startup.json", record)
@@ -260,6 +280,7 @@ def run(home):
                     output.add(path, arcname=str(path.relative_to(work)), recursive=False)
         print("PES_STARTUP_ARCHIVE=" + str(archive), flush=True)
         print("Collection ended. PES is left running if it has not exited; close it normally when finished.", flush=True)
+    return record
 
 
 def main():

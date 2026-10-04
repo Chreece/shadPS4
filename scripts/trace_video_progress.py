@@ -24,6 +24,7 @@ CAPTURE_SECONDS = 20
 CAPTURE_GRACE = 5
 SETUP_SECONDS = 60
 DETACH_SECONDS = 10
+VIDEO_APIS = ("sceVideodec2CreateDecoder", "sceVideodec2Decode", "sceVideodec2Flush")
 PROBE = r"""
 import gdb
 import hashlib
@@ -33,7 +34,7 @@ import re
 import time
 
 entries = []
-pending = None
+pending = []
 started = None
 stop_signal = None
 stop_connected = False
@@ -92,6 +93,18 @@ def fields_after(api, args, rc):
     return values
 
 
+def capture_args(api):
+    return [register(r) for r in ("rdi", "rsi", "rdx", "rcx")]
+
+
+def return_kind(api):
+    return "error_code"
+
+
+def profile_snapshot(phase):
+    pass
+
+
 class Entry(gdb.Breakpoint):
     def __init__(self, address, api):
         super().__init__("*" + hex(address), internal=True)
@@ -100,8 +113,7 @@ class Entry(gdb.Breakpoint):
         self.calls = 0
 
     def stop(self):
-        global pending
-        pending = ("entry", self)
+        pending.append(("entry", self))
         return True
 
 
@@ -112,8 +124,7 @@ class Return(gdb.FinishBreakpoint):
         self.context = context
 
     def stop(self):
-        global pending
-        pending = ("return", self.context)
+        pending.append(("return", self.context))
         return True
 
     def out_of_scope(self):
@@ -142,6 +153,10 @@ def interrupted_status():
     return "interrupted"
 
 
+if CONFIG.get("profile_source"):
+    # Only a bundled, checksum-pinned diagnostic profile is supplied by the parent.
+    exec(compile(CONFIG["profile_source"], "<capture-profile>", "exec"))
+
 try:
     print("PES_VIDEO_STAGE=checking_process", flush=True)
     current = (proc / "stat").read_text().rsplit(")", 1)[1].split()[19]
@@ -161,19 +176,21 @@ try:
     if "x86-64" not in gdb.selected_frame().architecture().name():
         raise RuntimeError("Unexpected target architecture.")
 
-    symbols = gdb.execute("info functions sceVideodec", to_string=True)
-    symbols += gdb.execute("info functions sceVdecsw", to_string=True)
-    pattern = (r"^\s*(0x[0-9a-fA-F]+)\s+Libraries::"
-               r"(?:Videodec2|Videodec|Vdecsw)::(sce[A-Za-z0-9_]+)\(")
+    symbols = "".join(gdb.execute("info functions " + query, to_string=True)
+                      for query in CONFIG.get("symbol_queries", ("sceVideodec", "sceVdecsw")))
+    pattern = CONFIG.get("symbol_pattern", (r"^\s*(0x[0-9a-fA-F]+)\s+Libraries::"
+               r"(?:Videodec2|Videodec|Vdecsw)::(sce[A-Za-z0-9_]+)\("))
     seen = set()
     for address, api in re.findall(pattern, symbols, re.M):
+        if CONFIG.get("only_required") and api not in CONFIG["required_apis"]:
+            continue
         if api in seen:
             raise RuntimeError("Ambiguous API symbol: " + api)
         seen.add(api)
         entries.append(Entry(int(address, 16), api))
         result["apis"][api] = {"calls": 0, "returns": 0, "errors": {},
                                 "valid_frames": 0, "out_of_scope": 0, "capped": False}
-    for required in ("sceVideodec2CreateDecoder", "sceVideodec2Decode", "sceVideodec2Flush"):
+    for required in CONFIG["required_apis"]:
         if required not in seen:
             raise RuntimeError("Required API symbol not found: " + required)
 
@@ -183,10 +200,11 @@ try:
     gdb.execute("handle SIGINT stop print nopass")
     gdb.events.stop.connect(on_stop)
     stop_connected = True
+    profile_snapshot("before")
     started = time.monotonic()
     print("PES_VIDEO_ARMED=20_seconds", flush=True)
     while gdb.selected_inferior().pid:
-        pending = None
+        pending = []
         stop_signal = None
         try:
             gdb.execute("continue", to_string=True)
@@ -199,48 +217,51 @@ try:
         if stop_signal == "SIGINT":
             result["status"] = interrupted_status()
             break
-        if pending is None:
+        if not pending:
             result["status"] = "unexpected_stop"
             emit("stop", location=gdb.execute("frame", to_string=True).strip())
             break
 
-        kind, value = pending
-        if kind == "entry":
-            value.calls += 1
-            api = value.api
-            result["apis"][api]["calls"] += 1
-            context = {"api": api, "seq": value.calls,
-                       "args": [register(r) for r in ("rdi", "rsi", "rdx", "rcx")],
-                       "time": time.monotonic(), "thread": gdb.selected_thread().global_num}
-            details = {}
-            try:
-                details = fields_before(api, context["args"])
-            except Exception as error:
-                details["read_error"] = str(error)
-            emit("enter", api=api, seq=value.calls, thread=context["thread"],
-                 seconds=round(context["time"] - started, 3), **details)
-            Return(context)
-            if value.calls >= limit:
-                value.enabled = False
-                result["apis"][api]["capped"] = True
-        else:
-            api = value["api"]
-            rc = register("rax") & 0xffffffff
-            stats = result["apis"][api]
-            stats["returns"] += 1
-            if rc:
-                key = hex(rc)
-                stats["errors"][key] = stats["errors"].get(key, 0) + 1
-            details = {}
-            try:
-                details = fields_after(api, value["args"], rc)
-            except Exception as error:
-                details["read_error"] = str(error)
-            if details.get("valid"):
-                stats["valid_frames"] += 1
-            emit("return", api=api, seq=value["seq"], thread=value["thread"],
-                 rc=hex(rc), elapsed_ms=round((time.monotonic() - value["time"]) * 1000, 3),
-                 **details)
+        # Tail-called wrappers can share a return PC. Preserve every callback at
+        # that stop instead of overwriting one API's return with another's.
+        for kind, value in pending:
+            if kind == "entry":
+                value.calls += 1
+                api = value.api
+                result["apis"][api]["calls"] += 1
+                context = {"api": api, "seq": value.calls,
+                           "args": capture_args(api),
+                           "time": time.monotonic(), "thread": gdb.selected_thread().global_num}
+                details = {}
+                try:
+                    details = fields_before(api, context["args"])
+                except Exception as error:
+                    details["read_error"] = str(error)
+                emit("enter", api=api, seq=value.calls, thread=context["thread"],
+                     seconds=round(context["time"] - started, 3), **details)
+                Return(context)
+                if value.calls >= limit:
+                    value.enabled = False
+                    result["apis"][api]["capped"] = True
+            else:
+                api = value["api"]
+                rc = None if return_kind(api) == "void" else register("rax") & 0xffffffff
+                stats = result["apis"][api]
+                stats["returns"] += 1
+                if rc:
+                    key = hex(rc)
+                    stats["errors"][key] = stats["errors"].get(key, 0) + 1
+                details = {}
+                try:
+                    details = fields_after(api, value["args"], rc)
+                except Exception as error:
+                    details["read_error"] = str(error)
+                if details.get("valid"):
+                    stats["valid_frames"] += 1
+                emit("return", api=api, seq=value["seq"], thread=value["thread"],
+                     rc=None if rc is None else hex(rc),
+                     elapsed_ms=round((time.monotonic() - value["time"]) * 1000, 3),
+                     **details)
 except KeyboardInterrupt:
     result["status"] = interrupted_status()
 except BaseException as error:
@@ -263,6 +284,11 @@ finally:
         except Exception as error:
             result["errors"].append("breakpoint cleanup: " + str(error))
     if gdb.selected_inferior().pid:
+        if started is not None:
+            try:
+                profile_snapshot("after")
+            except Exception as error:
+                result["errors"].append("final snapshot: " + str(error))
         try:
             gdb.execute("detach")
             result["detached"] = True
@@ -279,8 +305,18 @@ def say(text):
     print(text, flush=True)
 
 
-def write_probe(identity, probe_file):
-    config = {"identity": identity, "stop_request": str(probe_file.parent / "stop-request.json")}
+def capture_profile(profile):
+    if profile == "video":
+        return {"required_apis": VIDEO_APIS}
+    if profile == "frames":
+        from pes_frame_profile import PROFILE
+        return PROFILE
+    raise ValueError("Unknown diagnostic profile: " + profile)
+
+
+def write_probe(identity, probe_file, *, profile="video"):
+    config = dict(capture_profile(profile), identity=identity,
+                  stop_request=str(probe_file.parent / "stop-request.json"))
     probe_file.write_text("CONFIG = " + repr(config) + "\n" + PROBE)
 
 
@@ -448,7 +484,7 @@ def inspect_target(identity):
         return {"status": "unverified", "error": str(error)}
 
 
-def build_report(log, outcome, target):
+def build_report(log, outcome, target, *, profile="video"):
     """Independently reject partial/overlong captures, retaining raw evidence."""
     lines = [line for line in log.splitlines() if line.startswith("PES_VIDEO_JSON=")]
     report = {"status": "failed", "errors": [], "apis": {}, "records": []}
@@ -491,16 +527,20 @@ def build_report(log, outcome, target):
         report["status"] = "failed"
         report["errors"].append("GDB exit code: " + str(outcome["returncode"]))
     if report["status"] == "complete":
-        required = {"sceVideodec2CreateDecoder", "sceVideodec2Decode", "sceVideodec2Flush"}
+        required = set(capture_profile(profile)["required_apis"])
         if not valid_seconds or seconds < CAPTURE_SECONDS or not outcome["armed"]:
             report["status"] = "failed"
             report["errors"].append("A full 20-second armed window was not established.")
         if not required.issubset(report["apis"]):
             report["status"] = "failed"
-            report["errors"].append("Required video APIs were not all hooked.")
+            report["errors"].append("Required " + profile + " APIs were not all hooked.")
         if report.get("stop_reason") != "capture_complete":
             report["status"] = "failed"
             report["errors"].append("A scheduled external stop was not established.")
+        if profile == "frames" and any(isinstance(record, dict) and "read_error" in record
+                                       for record in report["records"]):
+            report["status"] = "failed"
+            report["errors"].append("Frame arguments or status could not be read; inspect raw records.")
     report["cleanup_verified"] = (target.get("status") == "observed" and
                                   target.get("tracer_pid") == 0 and
                                   target.get("state") not in ("T", "t", "Z", "X"))
