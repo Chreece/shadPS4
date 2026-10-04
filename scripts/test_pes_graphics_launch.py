@@ -28,12 +28,13 @@ class NativeLaunchTests(unittest.TestCase):
         self.binary.parent.mkdir(parents=True)
         self.binary.write_text('#!' + sys.executable + '\nimport json,os\n'
                                'print(json.dumps({"flag":os.getenv("SHADPS4_GRAPHICS_DIAGNOSTICS"),'
+                               '"startup":os.getenv("SHADPS4_STARTUP_DIAGNOSTICS"),'
                                '"sid":os.getsid(0)}))\n')
         self.binary.chmod(0o700)
         self.wrapper = self.home / 'launcher'
         self.original = (f'#!/bin/sh\n# SHADPS4_SESSION_GUARD_V1\n'
                          f'# SHADPS4_DEFAULT_MAIN_V1\n'
-                         f'unset SHADPS4_GRAPHICS_DIAGNOSTICS\ngame="$1"\n'
+                         f'unset SHADPS4_GRAPHICS_DIAGNOSTICS SHADPS4_STARTUP_DIAGNOSTICS\ngame="$1"\n'
                          f'exec {self.binary} --game "$game" --fullscreen true\n').encode()
         self.wrapper.write_bytes(self.original)
         self.wrapper.chmod(0o750)
@@ -45,6 +46,7 @@ class NativeLaunchTests(unittest.TestCase):
                                     capture_output=True, text=True, check=True, timeout=3)
             actual = json.loads(result.stdout)
             self.assertEqual(actual['flag'], '1')
+            self.assertEqual(actual['startup'], '1')
             self.assertNotEqual(actual['sid'], os.getsid(0))
         self.assertEqual(self.wrapper.read_bytes(), self.original)
         self.assertEqual(stat.S_IMODE(self.wrapper.stat().st_mode), 0o750)
@@ -53,11 +55,11 @@ class NativeLaunchTests(unittest.TestCase):
         proc = self.work / '123'
         proc.mkdir()
         (proc / 'stat').write_text('123 (fixture) ' + ' '.join(['0'] * 19 + ['456']))
-        (proc / 'environ').write_bytes(b'SHADPS4_GRAPHICS_DIAGNOSTICS=1\0')
+        (proc / 'environ').write_bytes(b'SHADPS4_GRAPHICS_DIAGNOSTICS=1\0SHADPS4_STARTUP_DIAGNOSTICS=1\0')
         native.verify_environment({'pid': 123, 'start_ticks': '456'}, self.work)
         with self.assertRaisesRegex(RuntimeError, 'identity changed'):
             native.verify_environment({'pid': 123, 'start_ticks': '455'}, self.work)
-        (proc / 'environ').write_bytes(b'UNRELATED=value\0')
+        (proc / 'environ').write_bytes(b'SHADPS4_GRAPHICS_DIAGNOSTICS=1\0')
         with self.assertRaisesRegex(RuntimeError, 'did not reach'):
             native.verify_environment({'pid': 123, 'start_ticks': '456'}, self.work)
 

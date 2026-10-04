@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Enable existing native GPU diagnostics after the guarded launcher's env reset."""
+"""Enable native GPU and startup diagnostics after the guarded launcher's env reset."""
 
 from contextlib import contextmanager
 import hashlib
@@ -33,7 +33,8 @@ def instrument(original, home, validation=False, gpu_collector=None):
             b'# SHADPS4_DEFAULT_MAIN_V1\n' not in lines):
         raise RuntimeError('Unrecognized guarded launcher; preserved')
     index = lines.index(command)
-    lines.insert(index, b'export SHADPS4_GRAPHICS_DIAGNOSTICS=1\n')
+    lines.insert(index, b'export SHADPS4_GRAPHICS_DIAGNOSTICS=1\n'
+                 b'export SHADPS4_STARTUP_DIAGNOSTICS=1\n')
     if validation:
         from pes_vulkan_validation import ENVIRONMENT
         lines.insert(index, ''.join('export ' + key + '=' + shlex.quote(value) + '\n'
@@ -80,9 +81,11 @@ def verify_environment(identity, proc_root=Path('/proc'), validation=False):
         return (proc / 'stat').read_text().rsplit(')', 1)[1].split()[19]
     if start_ticks() != identity['start_ticks']:
         raise RuntimeError('Emulator identity changed before graphics verification')
-    enabled = b'SHADPS4_GRAPHICS_DIAGNOSTICS=1' in (proc / 'environ').read_bytes().split(b'\0')
+    environment = (proc / 'environ').read_bytes().split(b'\0')
+    enabled = all(value in environment for value in
+                  (b'SHADPS4_GRAPHICS_DIAGNOSTICS=1', b'SHADPS4_STARTUP_DIAGNOSTICS=1'))
     if start_ticks() != identity['start_ticks'] or not enabled:
-        raise RuntimeError('Native graphics diagnostics did not reach the emulator')
+        raise RuntimeError('Native graphics/startup diagnostics did not reach the emulator')
     if validation:
         from pes_vulkan_validation import ENVIRONMENT
         environment = (proc / 'environ').read_bytes().split(b'\0')
