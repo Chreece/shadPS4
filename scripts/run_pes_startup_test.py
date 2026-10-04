@@ -219,7 +219,6 @@ def run(home, *, profile="video", reuse_existing=False, screenshots=False):
     if screenshots:
         if existing is not None or profile != "frames":
             raise RuntimeError("Native image test requires a fresh launch and the frames profile")
-        env["SHADPS4_GRAPHICS_DIAGNOSTICS"] = "1"
     prefix = debugger_prefix()
     before = settings(home)
     if existing is None:

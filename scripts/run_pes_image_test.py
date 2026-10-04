@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Launch the current baseline with automatic native-image and graphics capture."""
+"""Launch the current baseline with automatic native-image and frame-API capture."""
 
 import fcntl
 import os
