@@ -249,6 +249,8 @@ def run(home, *, profile="video", reuse_existing=False):
                 print('PES_RENDER_OPTIONAL_UNAVAILABLE=' + ','.join(report['unavailable_optional']), flush=True)
         if not report["cleanup_verified"]:
             raise RuntimeError("Debugger cleanup not verified; preserve this capture directory")
+        if not trace.report_passed(report):
+            raise RuntimeError("Capture failed: " + "; ".join(report.get("errors", [])))
         observation_seconds = 20 if existing else 60
         if not existing:
             print("Collecting startup activity through 60 seconds; keep the Moonlight session connected.", flush=True)

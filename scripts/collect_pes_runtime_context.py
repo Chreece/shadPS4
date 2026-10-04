@@ -14,7 +14,7 @@ import time
 
 import trace_video_progress as trace
 
-LOG_NAMES = {"shad_log.txt", "shadps4.log", "emulator.log"}
+LOG_NAMES = {"shad_log.txt", "shadps4.log", "emulator.log", "CUSA18676.log"}
 LOG_LIMIT = 16 * 1024 * 1024
 
 

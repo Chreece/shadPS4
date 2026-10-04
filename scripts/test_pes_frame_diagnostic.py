@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 from pathlib import Path
+import re
 import struct
 import tempfile
 import unittest
@@ -133,6 +134,28 @@ class FrameFieldsTests(unittest.TestCase):
 
 
 class FrameGateTests(unittest.TestCase):
+    def resolver(self):
+        definition = next(node for node in ast.parse(trace.PROBE).body
+                          if isinstance(node, ast.FunctionDef) and node.name == 'resolve_symbols')
+        scope = {'re': re}
+        exec(compile(ast.Module(body=[definition], type_ignores=[]), '<symbol-resolver>', 'exec'), scope)
+        return scope['resolve_symbols']
+
+    def test_cold_fragments_are_excluded_and_repeated_addresses_are_deduplicated(self):
+        name = 'Vulkan::Rasterizer::DrawIndirect(bool, unsigned long, unsigned int)'
+        listing = '\n'.join(('0x1000 ' + name + '.cold.1', '0x1100 ' + name + '.cold.2',
+                             '0x1200 ' + name + ' [clone .cold]', '0x1300 ' + name + '@plt',
+                             '0x2000 ' + name, '0x2000 ' + name))
+        resolved, skipped = self.resolver()(listing, frames.PROFILE['symbol_pattern'], frames.APIS)
+        self.assertEqual(resolved, {'Rasterizer::DrawIndirect': 0x2000})
+        self.assertEqual(len(skipped), 4)
+
+    def test_real_overload_ambiguity_keeps_both_addresses_in_error(self):
+        listing = ('0x2000 Vulkan::Rasterizer::DrawIndirect(bool)\n'
+                   '0x3000 Vulkan::Rasterizer::DrawIndirect(bool, unsigned long)')
+        with self.assertRaisesRegex(RuntimeError, '0x2000.*0x3000'):
+            self.resolver()(listing, frames.PROFILE['symbol_pattern'], frames.APIS)
+
     def test_tail_called_functions_keep_both_return_callbacks_at_same_stop(self):
         class Breakpoint:
             def __init__(self, *args, **kwargs):
