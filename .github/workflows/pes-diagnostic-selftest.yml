@@ -11,6 +11,29 @@ permissions:
   contents: read
 
 jobs:
+  window-action:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build disposable X11 fixture
+        run: |
+          docker build -t pes-window-fixture -f - scripts <<'DOCKERFILE'
+          FROM debian:trixie-slim
+          RUN apt-get update && apt-get install -y --no-install-recommends python3 libx11-6 xvfb xauth openbox && rm -rf /var/lib/apt/lists/*
+          COPY show_pes_window.py trace_video_progress.py test_show_pes_window.py /test/
+          ENV HOME=/tmp PES_WINDOW_X11_TEST=1
+          WORKDIR /test
+          CMD ["xvfb-run", "-a", "python3", "test_show_pes_window.py"]
+          DOCKERFILE
+      - name: Verify focus, minimization, workspaces, and exact process selection
+        run: >-
+          docker run --rm --network none --read-only
+          --tmpfs /tmp:rw,exec,size=128m --cap-drop ALL
+          --security-opt no-new-privileges --pids-limit 64
+          --memory 256m --cpus 1 pes-window-fixture
   frame-probe:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
