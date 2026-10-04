@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Validate frame hooks in local Docker before using them on the installed PES build."""
+"""Launch the current baseline with automatic native-image and graphics capture."""
 
 import fcntl
 import os
 from pathlib import Path
 import sys
 
+import pes_current_baseline as baseline
 import run_pes_startup_test as startup
 import validate_video_diagnostic as validate
-import pes_current_baseline as baseline
 
 
 def run_validated(home):
+    startup.require_idle()
     baseline.verify_installed(home)
-    # Any build/test failure raises before the game launcher or attach can run.
     validate.launch(profile="frames")
     baseline.verify_installed(home)
-    result = startup.run(home, profile="frames", reuse_existing=True)
+    result = startup.run(home, profile="frames", screenshots=True)
     if (result.get("errors") or not result.get("frames_capture_passed") or
-            not result.get("settings_unchanged") or not result.get("launcher_unchanged")):
-        raise RuntimeError("Frame capture or preservation check failed; upload the printed archive")
-    print("PES_FRAME_CAPTURE=PASS (diagnostic completed; game fix not established)", flush=True)
+            not result.get("screenshots_complete") or not result.get("settings_unchanged") or
+            not result.get("launcher_unchanged")):
+        raise RuntimeError("Image capture failed; upload the printed archive")
+    print("PES_IMAGE_CAPTURE=PASS (images collected; PES fix not established)", flush=True)
 
 
 def main():
@@ -39,7 +40,7 @@ if __name__ == "__main__":
     try:
         main()
     except (Exception, KeyboardInterrupt) as error:
-        print("PES_FRAME_CAPTURE=FAIL: " + (str(error) or "Interrupted"), flush=True)
+        print("PES_IMAGE_CAPTURE=FAIL: " + (str(error) or "Interrupted"), flush=True)
         sys.exit(1)
     finally:
         print("Returning to your existing SSH prompt.", flush=True)

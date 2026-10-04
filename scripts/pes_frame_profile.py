@@ -184,6 +184,20 @@ def completion_snapshot(pc, key):
             "slot_matches_key": expected == key, "equal_at_sample": observed == expected}
 
 
+def request_native_screenshots():
+    requests = []
+    for kind in ("game_only", "with_overlays"):
+        symbol = "VideoCore::screenshot_" + kind + "_count"
+        address = int(gdb.parse_and_eval("(void*)&'" + symbol + "'"))
+        value = number(memory(address, 4), 0, 4)
+        if value != 0:
+            raise RuntimeError("Screenshot already pending: " + symbol)
+        requests.append((kind, address))
+    for kind, address in requests:
+        gdb.selected_inferior().write_memory(address, (1).to_bytes(4, "little"))
+        result.setdefault("screenshot_requests", []).append({"kind": kind, "address": hex(address)})
+
+
 def profile_snapshot(phase):
     original = gdb.selected_thread()
     sample = {"phase": phase, "status": "game_thread_not_found"}
@@ -203,6 +217,8 @@ def profile_snapshot(phase):
         if original is not None and original.is_valid():
             original.switch()
     result.setdefault("game_samples", []).append(sample)
+    if phase == "after" and CONFIG.get("screenshots") and result.get("status") == "complete":
+        request_native_screenshots()
 '''
 
 PROFILE = {
@@ -221,6 +237,10 @@ PROFILE = {
 # No real renderer, emulator, game, or user data is mounted into that container.
 FIXTURE_CPP = r'''
 #define PROBE_API __attribute__((noinline, noipa, used))
+namespace VideoCore {
+static std::atomic<unsigned> screenshot_game_only_count{0};
+static std::atomic<unsigned> screenshot_with_overlays_count{0};
+}
 namespace Libraries::GnmDriver {
 PROBE_API int sceGnmSubmitCommandBuffers(unsigned, void**, unsigned*, void**, unsigned*) { return 0; }
 PROBE_API int sceGnmSubmitCommandBuffersForWorkload(unsigned, unsigned, void**, unsigned*, void**, unsigned*) { return 0; }

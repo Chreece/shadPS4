@@ -189,7 +189,8 @@ class FrameGateTests(unittest.TestCase):
         self.assertEqual(scope['pending'], [('return', outer), ('return', inner)])
 
     def test_failed_docker_validation_never_launches_or_attaches(self):
-        with patch.object(runner.validate, 'launch', side_effect=RuntimeError('fixture failed')), \
+        with patch.object(runner.baseline, 'verify_installed'), \
+                patch.object(runner.validate, 'launch', side_effect=RuntimeError('fixture failed')), \
                 patch.object(runner.startup, 'run') as game:
             with self.assertRaisesRegex(RuntimeError, 'fixture failed'):
                 runner.run_validated(Path('/unused'))
@@ -197,11 +198,13 @@ class FrameGateTests(unittest.TestCase):
 
     def test_successful_gate_selects_frames_and_reuses_existing_game(self):
         result = {'frames_capture_passed': True, 'settings_unchanged': True, 'launcher_unchanged': True}
-        with patch.object(runner.validate, 'launch') as validation, \
+        with patch.object(runner.baseline, 'verify_installed') as baseline, \
+                patch.object(runner.validate, 'launch') as validation, \
                 patch.object(runner.startup, 'run', return_value=result) as game, \
                 contextlib.redirect_stdout(io.StringIO()):
             runner.run_validated(Path('/test-home'))
         validation.assert_called_once_with(profile='frames')
+        self.assertEqual(baseline.call_count, 2)
         game.assert_called_once_with(Path('/test-home'), profile='frames', reuse_existing=True)
 
     def test_video_result_cannot_pass_as_frame_capture(self):

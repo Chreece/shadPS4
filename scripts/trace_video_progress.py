@@ -29,6 +29,7 @@ PROBE = r"""
 import gdb
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import time
@@ -199,6 +200,12 @@ if CONFIG.get("profile_source"):
     exec(compile(CONFIG["profile_source"], "<capture-profile>", "exec"))
 
 try:
+    debugger_proc = Path("/proc/self")
+    debugger_identity = {"pid": os.getpid(), "start_ticks":
+                         (debugger_proc / "stat").read_text().rsplit(")", 1)[1].split()[19]}
+    debugger_file = Path(CONFIG["stop_request"]).parent / "debugger.json"
+    debugger_file.with_suffix(".tmp").write_text(json.dumps(debugger_identity))
+    debugger_file.with_suffix(".tmp").replace(debugger_file)
     print("PES_VIDEO_STAGE=checking_process", flush=True)
     current = (proc / "stat").read_text().rsplit(")", 1)[1].split()[19]
     if current != identity["start_ticks"]:
@@ -359,9 +366,11 @@ def capture_profile(profile):
     raise ValueError("Unknown diagnostic profile: " + profile)
 
 
-def write_probe(identity, probe_file, *, profile="video", extra_symbol_queries=()):
+def write_probe(identity, probe_file, *, profile="video", extra_symbol_queries=(),
+                screenshots=False):
     config = dict(capture_profile(profile), identity=identity,
-                  stop_request=str(probe_file.parent / "stop-request.json"))
+                  stop_request=str(probe_file.parent / "stop-request.json"),
+                  screenshots=screenshots)
     if extra_symbol_queries:
         config['symbol_queries'] = tuple(config.get('symbol_queries', ('sceVideodec', 'sceVdecsw'))) + tuple(extra_symbol_queries)
     probe_file.write_text("CONFIG = " + repr(config) + "\n" + PROBE)
@@ -389,24 +398,27 @@ identity = json.loads((work / "identity.json").read_text())
 source_argument = ("source " + str(work / "probe.py")).encode()
 binary_argument = identity["executable"].encode()
 matched = 0
-for proc in Path("/proc").iterdir():
-    if not proc.name.isdigit():
-        continue
+debugger = json.loads((work / "debugger.json").read_text())
+proc = Path("/proc") / str(debugger["pid"])
+if proc.exists():
     handle = None
     try:
         handle = os.pidfd_open(int(proc.name))
+        ticks = (proc / "stat").read_text().rsplit(")", 1)[1].split()[19]
+        if ticks != debugger["start_ticks"]:
+            raise RuntimeError("Debugger PID was reused; no signal sent")
         executable = (proc / "exe").readlink().name
         if executable != "gdb" and not executable.endswith("-gdb"):
-            continue
+            raise RuntimeError("Pinned process is not GDB; no signal sent")
         arguments = (proc / "cmdline").read_bytes().split(b"\0")
         if (source_argument not in arguments or binary_argument not in arguments or
                 b"--batch" not in arguments):
-            continue
+            raise RuntimeError("Pinned GDB command changed; no signal sent")
         signal.pidfd_send_signal(handle, signal.SIGINT)
         matched += 1
         print("INTERRUPTED_TRACE_GDB=" + proc.name, flush=True)
     except (ProcessLookupError, FileNotFoundError, PermissionError):
-        continue
+        pass
     finally:
         if handle is not None:
             os.close(handle)

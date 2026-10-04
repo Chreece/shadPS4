@@ -48,7 +48,7 @@ jobs:
           python3 -m unittest -v
           test_trace_video_progress test_validate_video_diagnostic
           test_pes_frame_diagnostic test_run_pes_startup_test
-          test_collect_pes_runtime_context
+          test_collect_pes_runtime_context test_pes_current_baseline test_pes_image_test
       - name: Build and run disposable Debian GDB fixtures in Docker
         run: |
           python3 -u - <<'PY'

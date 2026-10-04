@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -183,13 +184,42 @@ def debugger_prefix():
     return []
 
 
-def run(home, *, profile="video", reuse_existing=False):
+def collect_screenshots(home, work, previous):
+    root = home / ".local/share/shadPS4/screenshots"
+    captured = []
+    for path in sorted(root.glob("CUSA18676_*.png")):
+        if path.name in previous:
+            continue
+        if not re.fullmatch(r"CUSA18676_\d{8}_\d{6}_\d{3}_(game|hud)_\d+\.png", path.name):
+            continue
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or not 20 <= info.st_size <= 32 * 1024 * 1024:
+                raise RuntimeError("Invalid native screenshot: " + path.name)
+            data = source.read(32 * 1024 * 1024 + 1)
+        if not data.startswith(b"\x89PNG\r\n\x1a\n") or not data.endswith(b"\0\0\0\0IEND\xaeB`\x82"):
+            raise RuntimeError("Incomplete native screenshot: " + path.name)
+        if len(captured) >= 4:
+            raise RuntimeError("Unexpected extra screenshots; bounded collection stopped")
+        target = work / "screenshots" / path.name
+        target.parent.mkdir(exist_ok=True)
+        target.write_bytes(data)
+        captured.append({"file": str(target.relative_to(work)), "bytes": len(data)})
+    return captured
+
+
+def run(home, *, profile="video", reuse_existing=False, screenshots=False):
     trace.capture_profile(profile)
     existing = trace.find_process() if reuse_existing and running_emulators() else None
     if existing is None:
         require_idle()
     wrapper, wrapper_sha = selected_launch(home)
     env, desktop_source = (None, "existing PES") if existing else desktop_environment()
+    if screenshots:
+        if existing is not None or profile != "frames":
+            raise RuntimeError("Native image test requires a fresh launch and the frames profile")
+        env["SHADPS4_GRAPHICS_DIAGNOSTICS"] = "1"
     prefix = debugger_prefix()
     before = settings(home)
     if existing is None:
@@ -200,12 +230,14 @@ def run(home, *, profile="video", reuse_existing=False):
         raise RuntimeError("Launcher changed during preparation; preserved")
     work = Path(tempfile.mkdtemp(prefix="shadps4-pes-startup-", dir=home))
     record = {"revision": trace.REVISION, "desktop_source": desktop_source,
+              "baseline": getattr(trace, "BASELINE_METADATA", None),
               "capture_profile": profile, "reused_existing": existing is not None,
               "settings_before": before, "errors": [], "visual_result": "unverified"}
     print("PES_STARTUP_DIRECTORY=" + str(work), flush=True)
     print("Observing the existing PES session." if existing else
           "Launching PES in the background; automatic collection takes about one minute.", flush=True)
     identity = existing
+    screenshots_before = {p.name for p in (home / ".local/share/shadPS4/screenshots").glob("CUSA18676_*.png")}
     try:
         started = time.monotonic()
         if existing is None:
@@ -219,7 +251,7 @@ def run(home, *, profile="video", reuse_existing=False):
         capture = work / profile
         capture.mkdir()
         context.save_json(capture / "identity.json", identity)
-        trace.write_probe(identity, capture / "probe.py", profile=profile)
+        trace.write_probe(identity, capture / "probe.py", profile=profile, screenshots=screenshots)
         print("PES_PID=" + str(identity["pid"]) + "; starting 20-second " + profile + " observation", flush=True)
         with (capture / "gdb.txt").open("w") as output:
             debugger = subprocess.Popen(trace.debugger_command(identity, capture / "probe.py", prefix),
@@ -273,6 +305,16 @@ def run(home, *, profile="video", reuse_existing=False):
         record["errors"].append(type(error).__name__ + ": " + (str(error) or "Interrupted"))
         print("PES_STARTUP_ERROR=" + record["errors"][-1], flush=True)
     finally:
+        if screenshots:
+            try:
+                record["screenshots"] = collect_screenshots(home, work, screenshots_before)
+                kinds = {"game" if "_game_" in item["file"] else "hud" for item in record["screenshots"]}
+                record["screenshots_complete"] = kinds == {"game", "hud"}
+                if not record["screenshots_complete"]:
+                    record["errors"].append("Both native screenshots were not saved; inspect capture and logs")
+                print("PES_NATIVE_IMAGES=" + str(len(record["screenshots"])), flush=True)
+            except Exception as error:
+                record["errors"].append("screenshots: " + str(error))
         try:
             record["settings_after"] = settings(home)
             record["settings_unchanged"] = record["settings_after"] == before
