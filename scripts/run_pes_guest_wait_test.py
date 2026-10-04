@@ -23,6 +23,7 @@ ARENA_FIX = '201124a6c533020ffd9cabf5d84fb6d8e207a864'
 IMGUI_FIX = 'eaa2e17e42c6a083af6650c83bc94992adeb6d92'
 HELPER_REVISION = '4621958f1e0e749d429245c43e511a87e0a66fd5'
 HELPER_REVISIONS = {
+    'pes_current_baseline.py': '334f662444665c4647101ced7a2938082d54fb20',
     'install_local_default.py': 'c501f37774ee14dddbca99ca1b84b2d3cb8a8761',
     'run_pes_startup_test.py': '9ff21ec091efa3f0f4889cee60bc79fdb2e2a5f8',
     'pes_test_cleanup.py': '9ff21ec091efa3f0f4889cee60bc79fdb2e2a5f8',
@@ -32,7 +33,7 @@ HELPER_REVISIONS = {
 RAW = 'https://raw.githubusercontent.com/Chreece/shadPS4/'
 HELPERS = {
     'install_local_default.py': '230c64cc1c835079ab907f122a0d099917a0610ca6c85d87d92a2b301395976d',
-    'pes_current_baseline.py': '41b4da73dbc2b0fb64a306a441cd8f4b717bf6114e1a851f6753c333a68533ab',
+    'pes_current_baseline.py': 'b044656a37aadbb54e27903125cc6e4648fdd6d171741b0039a37f7ff6b66224',
     'trace_video_progress.py': 'c770af6e639464064ec543f99cb6181d75bf4b3bbe493ae6e8c015652d9b1a6b',
     'validate_pes_guest_wait.py': '106368e005251edfc1eb9d3b35dc9defad10640ae70d9eec15efce39d2e98182',
     'pes_frame_profile.py': '372a6ae31acac770d10d5f93ae0a9a190140757c2d0c125d308573c96f1842f2',
