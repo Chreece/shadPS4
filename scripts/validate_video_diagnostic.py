@@ -21,6 +21,7 @@ import pes_frame_profile as frames
 
 FIXTURE_CPP = r'''
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -77,6 +78,12 @@ int main(int argc, char** argv) {
     while (std::chrono::steady_clock::now() < end) {
         { std::ofstream out(dir / "heartbeat.next"); out << ++ticks << '\n'; }
         std::filesystem::rename(dir / "heartbeat.next", dir / "heartbeat");
+        if (VideoCore::screenshot_game_only_count.exchange(0)) {
+            std::ofstream(dir / "game-request-consumed") << "1";
+        }
+        if (VideoCore::screenshot_with_overlays_count.exchange(0)) {
+            std::ofstream(dir / "hud-request-consumed") << "1";
+        }
         if (std::filesystem::exists(dir / "go")) {
             if (mode == "exit") return 0;
             if (mode == "active") {
@@ -172,12 +179,14 @@ def run_case(root, mode, profile='video'):
         probe = work / 'probe.py'
         # Exercise repeated canonical addresses from overlapping GDB queries too.
         trace.write_probe(identity, probe, profile=profile,
+                          screenshots=profile == 'frames',
                           extra_symbol_queries=("Vulkan::Rasterizer::DrawIndirect",) if profile == 'frames' else ())
-        if mode == 'interrupt':
-            other = work / 'unrelated.py'
-            other.write_text('import time\ntime.sleep(100)\n')
+        if mode != 'exit':
+            # Same executable, target and source arguments: the old helper signals both.
+            decoy_command = trace.debugger_command(identity, probe)
+            decoy_command[1:1] = ['-iex', 'python import time; time.sleep(100)']
             with (work / 'decoy.txt').open('w') as output:
-                decoy = subprocess.Popen(trace.debugger_command(identity, other),
+                decoy = subprocess.Popen(decoy_command,
                                          stdout=output, stderr=subprocess.STDOUT,
                                          start_new_session=True)
 
@@ -225,10 +234,21 @@ def run_case(root, mode, profile='video'):
             require(result['status'] == 'target_exited' and not trace.report_passed(result),
                     'Target exit was misclassified: ' + json.dumps(result))
         if mode != 'exit':
+            require(decoy.poll() is None, 'Interrupt helper affected the same-command GDB decoy')
             before = heartbeat(work)
             time.sleep(0.3)
             require(target.poll() is None and heartbeat(work) > before,
                     'Fixture did not resume after detach')
+            if profile == 'frames' and mode in ('idle', 'active'):
+                require(len(result.get('screenshot_requests', [])) == 2,
+                        'Native screenshot requests were not queued')
+                require((work / 'game-request-consumed').exists() and
+                        (work / 'hud-request-consumed').exists(),
+                        'Target did not consume both requests after detach')
+            else:
+                require(not (work / 'game-request-consumed').exists() and
+                        not (work / 'hud-request-consumed').exists(),
+                        'Screenshots requested on an incomplete capture')
         print(f'CASE={mode} PASS elapsed={time.monotonic()-started:.3f}s', flush=True)
     except BaseException:
         log = work / 'gdb.txt'

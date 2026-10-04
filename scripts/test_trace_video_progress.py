@@ -244,6 +244,50 @@ class ProbeStopTests(unittest.TestCase):
             self.assertEqual(evidence['stderr'], 'error\n')
 
 
+class DebuggerIdentityTests(unittest.TestCase):
+    def exercise(self, *, reused=False):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            work = root / 'capture'
+            work.mkdir()
+            (work / 'identity.json').write_text(json.dumps({'executable': '/fixture/game'}))
+            (work / 'debugger.json').write_text(json.dumps({'pid': 17, 'start_ticks': '7'}))
+            for pid in (17, 23):
+                proc = root / 'proc' / str(pid)
+                proc.mkdir(parents=True)
+                (proc / 'exe').symlink_to('/usr/bin/gdb')
+                fields = ['S'] + ['0'] * 18 + ['8' if reused and pid == 17 else '7']
+                (proc / 'stat').write_text(str(pid) + ' (gdb) ' + ' '.join(fields))
+                (proc / 'cmdline').write_bytes(b'gdb\0--batch\0-se\0/fixture/game\0-ex\0' +
+                                              ('source ' + str(work / 'probe.py')).encode() + b'\0')
+            actual_path = Path
+            def path(value):
+                return root / 'proc' if str(value) == '/proc' else actual_path(value)
+            sent = []
+            output = io.StringIO()
+            with patch('pathlib.Path', side_effect=path), \
+                    patch.object(sys, 'argv', ['helper', str(work)]), \
+                    patch.object(os, 'pidfd_open', side_effect=lambda pid: pid + 100), \
+                    patch.object(os, 'close'), \
+                    patch.object(signal, 'pidfd_send_signal', side_effect=lambda fd, sig: sent.append((fd, sig))), \
+                    contextlib.redirect_stdout(output):
+                if reused:
+                    with self.assertRaisesRegex(RuntimeError, 'reused'):
+                        exec(compile(trace.INTERRUPT_HELPER, '<helper>', 'exec'), {})
+                else:
+                    exec(compile(trace.INTERRUPT_HELPER, '<helper>', 'exec'), {})
+            return sent, output.getvalue()
+
+    def test_same_command_decoy_is_not_signalled(self):
+        sent, output = self.exercise()
+        self.assertEqual(sent, [(117, signal.SIGINT)])
+        self.assertIn('MATCHED_TRACE_DEBUGGERS=1', output)
+        self.assertNotIn('INTERRUPTED_TRACE_GDB=23', output)
+
+    def test_reused_debugger_pid_sends_no_signal(self):
+        self.assertEqual(self.exercise(reused=True)[0], [])
+
+
 class WatchdogTests(unittest.TestCase):
     """Real subprocess waits and SIGINT, with GDB discovery replaced at its boundary."""
 
