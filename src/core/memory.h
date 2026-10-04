@@ -248,6 +248,9 @@ public:
         return size_to_validate <= 0;
     }
 
+    // Check mappings and CPU permissions across the entire range under the VMA lock.
+    bool IsAccessibleRange(VAddr address, u64 size, MemoryProt required);
+
     u64 ClampRangeSize(VAddr virtual_addr, u64 size);
 
     void SetPrtArea(u32 id, VAddr address, u64 size);

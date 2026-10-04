@@ -67,12 +67,20 @@ public:
         return queue_family_index;
     }
 
+    u32 GetSparseQueueFamilyIndex() const {
+        return sparse_queue_family_index;
+    }
+
     vk::Queue GetGraphicsQueue() const {
         return graphics_queue;
     }
 
     vk::Queue GetPresentQueue() const {
         return present_queue;
+    }
+
+    vk::Queue GetSparseQueue() const {
+        return sparse_queue;
     }
 
     TracyVkCtx GetProfilerContext() const {
@@ -82,6 +90,14 @@ public:
     /// Returns true if anisotropic filtering is supported
     bool IsAnisotropicFilteringSupported() const {
         return features.samplerAnisotropy;
+    }
+
+    bool IsPreciseOcclusionSupported() const {
+        return features.occlusionQueryPrecise;
+    }
+
+    bool IsHostQueryResetSupported() const {
+        return vk12_features.hostQueryReset;
     }
 
     /// Returns true if depth bounds testing is supported
@@ -361,6 +377,14 @@ public:
         return vk11_props.maxMemoryAllocationSize;
     }
 
+    vk::DeviceSize MaxBufferSize() const {
+        return vk13_props.maxBufferSize;
+    }
+
+    bool IsSparseAliasingSupported() const {
+        return features.sparseResidencyAliased;
+    }
+
     /// Returns the vulkan 1.2 physical device properties.
     const vk::PhysicalDeviceVulkan12Properties& GetVk12Properties() const noexcept {
         return vk12_props;
@@ -503,11 +527,13 @@ private:
     VmaAllocator allocator{};
     vk::Queue present_queue;
     vk::Queue graphics_queue;
+    vk::Queue sparse_queue;
     std::vector<vk::PhysicalDevice> physical_devices;
     std::vector<std::string> available_extensions;
     std::unordered_map<vk::Format, vk::FormatProperties3> format_properties;
     TracyVkCtx profiler_context{};
     u32 queue_family_index{0};
+    u32 sparse_queue_family_index{0};
     bool custom_border_color{};
     bool fragment_shader_barycentric{};
     bool amd_shader_explicit_vertex_parameter{};
