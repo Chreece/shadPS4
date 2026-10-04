@@ -5,7 +5,7 @@ name: Build and Release
 
 on:
   push:
-    branches-ignore: [Pre-release-shadPS4-*]
+    branches-ignore: [Pre-release-shadPS4-*, ci/pes-diagnostic-selftest]
     paths-ignore:
       - "documents/**"
       - "**/*.md"

@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+# SPDX-License-Identifier: GPL-2.0-or-later
+name: PES diagnostic self-test
+
+on:
+  push:
+    branches: [ci/pes-diagnostic-selftest]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frame-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: scripts
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Check diagnostic decoding, deadlines, and launch gates
+        run: >-
+          python3 -m unittest -v
+          test_trace_video_progress test_validate_video_diagnostic
+          test_pes_frame_diagnostic test_run_pes_startup_test
+          test_collect_pes_runtime_context
+      - name: Build and run disposable Debian GDB fixtures in Docker
+        run: |
+          python3 -u - <<'PY'
+          import validate_video_diagnostic as validate
+          validate.launch(profile="frames")
+          PY
+      - name: Preserve GDB evidence even when validation fails
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pes-frame-selftest-evidence
+          path: ~/shadps4-pes-selftest-*/selftest-evidence.tar.gz
+          if-no-files-found: warn
+          retention-days: 14
