@@ -24,6 +24,9 @@ enum class Event {
     QueryCountState,
     DepthGrowth,
     DepthGrowthUninitialized,
+    ImageUpload,
+    ImageUploadSkipped,
+    PresentImage,
     Count
 };
 inline std::array<std::atomic<unsigned long long>, static_cast<size_t>(Event::Count)> g_counts{};
@@ -62,7 +65,10 @@ void Emit(Event event, const char* format, Args... args) {
                                       "query-result",
                                       "query-count-state",
                                       "depth-growth",
-                                      "depth-growth-uninitialized"};
+                                      "depth-growth-uninitialized",
+                                      "image-upload",
+                                      "image-upload-skipped",
+                                      "present-image"};
     static_assert(names.size() == static_cast<size_t>(Event::Count));
     const auto index = static_cast<size_t>(event);
     const auto count = g_counts[index].fetch_add(1, std::memory_order_relaxed) + 1;

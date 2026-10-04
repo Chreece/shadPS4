@@ -19,6 +19,7 @@
 #include "imgui/startup_loading.h"
 #include "sdl_window.h"
 #include "video_core/buffer_cache/buffer.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
@@ -679,6 +680,13 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     auto desc = VideoCore::TextureCache::ImageDesc{attribute, cpu_address};
     const auto image_id = texture_cache.FindImage(desc);
     texture_cache.UpdateImage(image_id);
+    const auto& output_image = texture_cache.GetImage(image_id);
+    VideoCore::GraphicsDiagnostics::Emit(
+        VideoCore::GraphicsDiagnostics::Event::PresentImage,
+        "image=%llu address=%llx width=%u height=%u",
+        static_cast<unsigned long long>(output_image.image_uid),
+        static_cast<unsigned long long>(cpu_address), output_image.info.size.width,
+        output_image.info.size.height);
 
     Frame* frame = GetRenderFrame();
     frame->has_game_content = true;

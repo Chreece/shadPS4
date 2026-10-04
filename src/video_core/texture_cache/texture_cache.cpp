@@ -779,6 +779,12 @@ void TextureCache::RefreshImage(Image& image) {
             const u8* addr = std::bit_cast<u8*>(image.info.guest_address);
             const u64 hash = XXH3_64bits(addr + mip_offset, mip_size);
             if (image.mip_hashes[m] == hash) {
+                GraphicsDiagnostics::Emit(
+                    GraphicsDiagnostics::Event::ImageUploadSkipped,
+                    "image=%llu address=%llx mip=%u bytes=%u video-out=%u",
+                    static_cast<unsigned long long>(image.image_uid),
+                    static_cast<unsigned long long>(image.info.guest_address), m, mip_size,
+                    static_cast<unsigned>(image.usage.vo_surface));
                 continue;
             }
             image.mip_hashes[m] = hash;
@@ -814,6 +820,13 @@ void TextureCache::RefreshImage(Image& image) {
         copy.bufferOffset += offset;
     }
 
+    GraphicsDiagnostics::Emit(
+        GraphicsDiagnostics::Event::ImageUpload,
+        "image=%llu address=%llx mips=%zu gpu-modified=%u gpu-dirty=%u video-out=%u",
+        static_cast<unsigned long long>(image.image_uid),
+        static_cast<unsigned long long>(image.info.guest_address), image_copies.size(),
+        static_cast<unsigned>(is_gpu_modified), static_cast<unsigned>(is_gpu_dirty),
+        static_cast<unsigned>(image.usage.vo_surface));
     runtime.UploadImage(&image, buffer, image_copies);
 }
 
