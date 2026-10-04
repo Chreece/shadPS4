@@ -6,7 +6,9 @@
 import ctypes as C
 import faulthandler
 import os
+from pathlib import Path
 import subprocess
+import sys
 import time
 import unittest
 
@@ -135,4 +137,26 @@ class ManagedSession(BareSession):
 
 if __name__ == "__main__":
     faulthandler.dump_traceback_later(20, exit=True)
-    unittest.main(verbosity=2)
+    server = None
+    try:
+        if os.environ.get("PES_WINDOW_X11_TEST") == "1" and not os.environ.get("DISPLAY"):
+            print("X11_SELFTEST=starting_isolated_display", flush=True)
+            # Only used inside the disposable container: no host X socket or network.
+            server = subprocess.Popen(["Xvfb", ":99", "-screen", "0", "1024x768x24",
+                                       "-nolisten", "tcp", "-noreset", "-ac", "-extension", "GLX"])
+            deadline = time.monotonic() + 5
+            while not Path("/tmp/.X11-unix/X99").exists():
+                if server.poll() is not None or time.monotonic() > deadline:
+                    raise RuntimeError("Isolated X display did not start")
+                time.sleep(0.05)
+            os.environ["DISPLAY"] = ":99"
+        result = unittest.main(verbosity=2, exit=False)
+        sys.exit(not result.result.wasSuccessful())
+    finally:
+        if server is not None:
+            server.terminate()
+            try:
+                server.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait(timeout=3)
