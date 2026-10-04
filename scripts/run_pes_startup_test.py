@@ -205,6 +205,7 @@ def run(home, *, profile="video", reuse_existing=False):
     print("PES_STARTUP_DIRECTORY=" + str(work), flush=True)
     print("Observing the existing PES session." if existing else
           "Launching PES in the background; automatic collection takes about one minute.", flush=True)
+    identity = existing
     try:
         started = time.monotonic()
         if existing is None:
@@ -283,8 +284,8 @@ def run(home, *, profile="video", reuse_existing=False):
             if existing is None:
                 record["console_capture"] = context.copy_regular_log(
                     work / "emulator.log", work / "console", limit=32 * 1024 * 1024)
-            elif trace.inspect_target(existing).get("status") == "observed":
-                context.collect_outputs(Path("/proc") / str(existing["pid"]), work)
+            if identity is not None and trace.inspect_target(identity).get("status") == "observed":
+                context.collect_outputs(Path("/proc") / str(identity["pid"]), work)
         except OSError as error:
             record["errors"].append("console capture: " + str(error))
         context.save_json(work / "startup.json", record)
