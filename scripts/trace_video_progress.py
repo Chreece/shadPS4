@@ -105,6 +105,10 @@ def profile_snapshot(phase):
     pass
 
 
+def consume_return(context):
+    pass
+
+
 class Entry(gdb.Breakpoint):
     def __init__(self, address, api):
         super().__init__("*" + hex(address), internal=True)
@@ -245,6 +249,7 @@ try:
                     result["apis"][api]["capped"] = True
             else:
                 api = value["api"]
+                consume_return(value)
                 rc = None if return_kind(api) == "void" else register("rax") & 0xffffffff
                 stats = result["apis"][api]
                 stats["returns"] += 1
