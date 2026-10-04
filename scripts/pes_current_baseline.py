@@ -106,13 +106,13 @@ def prepare(home, revision, branch, manifest, builder):
     if (not core.is_symlink() or core.readlink() != previous_link or
             digest(previous) != previous_sha or preserved_files(home) != before):
         raise RuntimeError('Installation or settings changed during build; selection preserved')
+    sha = digest(built)
     releases = root / 'releases'
-    release = releases / ('baseline-' + revision[:12])
+    release = releases / ('baseline-' + revision[:12] + '-' + sha)
     if releases.is_symlink() or release.is_symlink():
         raise RuntimeError('Unexpected release symlink; preserved')
     release.mkdir(parents=True, exist_ok=True)
     binary = release / 'shadps4'
-    sha = digest(built)
     if binary.is_symlink() or (binary.exists() and digest(binary) != sha):
         raise RuntimeError('Candidate release contains a different binary; preserved')
     if not binary.exists():

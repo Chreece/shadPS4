@@ -131,6 +131,69 @@ class CurrentBaselineTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'differs'):
                     baseline.verify_installed(home)
 
+    def test_same_revision_legacy_binary_is_preserved_when_rebuild_differs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            core, previous, config, built = self.fixture(home)
+            legacy = core.parent / 'releases' / ('baseline-' + 'c' * 12) / 'shadps4'
+            legacy.parent.mkdir()
+            legacy.write_bytes(b'first build of same revision')
+            core.unlink()
+            core.symlink_to(legacy)
+            before = baseline.preserved_files(home)
+            with patch.object(baseline, 'require_current'), patch.object(baseline, 'require_no_game'), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                record = baseline.prepare(home, 'c' * 40, 'integration', MANIFEST, Mock(return_value=built))
+            self.assertNotEqual(core.resolve(), legacy)
+            self.assertEqual(core.read_bytes(), built.read_bytes())
+            self.assertEqual(legacy.read_bytes(), b'first build of same revision')
+            self.assertEqual(record['previous_binary'], str(legacy))
+            self.assertEqual(record['previous_sha256'], baseline.digest(legacy))
+            self.assertEqual(baseline.preserved_files(home), before)
+
+    def test_rebuilt_content_gets_separate_release_and_identical_content_is_reused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            core, previous, config, built = self.fixture(home)
+            with patch.object(baseline, 'require_current'), patch.object(baseline, 'require_no_game'), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                first = baseline.prepare(home, 'c' * 40, 'integration', MANIFEST, Mock(return_value=built))
+                first_path = Path(first['binary'])
+                built.write_bytes(b'second build of the same source')
+                second = baseline.prepare(home, 'c' * 40, 'integration', MANIFEST, Mock(return_value=built))
+                second_path = Path(second['binary'])
+                before = second_path.stat()
+                third = baseline.prepare(home, 'c' * 40, 'integration', MANIFEST, Mock(return_value=built))
+            self.assertNotEqual(first_path, second_path)
+            self.assertEqual(first_path.read_bytes(), b'new compiled binary')
+            self.assertEqual(second_path.read_bytes(), built.read_bytes())
+            self.assertEqual(second['previous_binary'], str(first_path))
+            self.assertEqual(third['binary'], second['binary'])
+            self.assertEqual(second_path.stat().st_ino, before.st_ino)
+            self.assertEqual(second_path.stat().st_mtime_ns, before.st_mtime_ns)
+            self.assertEqual(previous.read_bytes(), b'previous binary')
+
+    def test_content_addressed_release_conflict_is_still_rejected(self):
+        for symlink in (False, True):
+            with self.subTest(symlink=symlink), tempfile.TemporaryDirectory() as directory:
+                home = Path(directory)
+                core, previous, config, built = self.fixture(home)
+                dest = core.parent / 'releases' / ('baseline-' + 'c' * 12 + '-' + baseline.digest(built))
+                dest.mkdir()
+                target = dest / 'shadps4'
+                if symlink:
+                    target.symlink_to(previous)
+                else:
+                    target.write_bytes(b'unexpected existing content')
+                with patch.object(baseline, 'require_current'), patch.object(baseline, 'require_no_game'):
+                    with self.assertRaisesRegex(RuntimeError, 'different binary'):
+                        baseline.prepare(home, 'c' * 40, 'integration', MANIFEST, Mock(return_value=built))
+                self.assertEqual(core.resolve(), previous)
+                self.assertEqual(previous.read_bytes(), b'previous binary')
+                self.assertEqual(target.is_symlink(), symlink)
+                if not symlink:
+                    self.assertEqual(target.read_bytes(), b'unexpected existing content')
+
 
 if __name__ == '__main__':
     unittest.main()
