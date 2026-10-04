@@ -1,0 +1,155 @@
+All functions matching regular expression "sceGnmSubmit":
+
+Non-debugging symbols:
+0x00005559517602c0  Libraries::GnmDriver::sceGnmSubmitAndFlipCommandBuffers(unsigned int, unsigned int**, unsigned int*, unsigned int**, unsigned int*, unsigned int, unsigned int, unsigned int, long)
+0x00005559517602f0  Libraries::GnmDriver::sceGnmSubmitAndFlipCommandBuffersForWorkload(unsigned int, unsigned int, unsigned int**, unsigned int*, unsigned int**, unsigned int*, unsigned int, unsigned int, unsigned int, long)
+0x0000555951761220  Libraries::GnmDriver::sceGnmSubmitCommandBuffersForWorkload(unsigned int, unsigned int, unsigned int const**, unsigned int*, unsigned int const**, unsigned int*)
+0x0000555951761560  Libraries::GnmDriver::sceGnmSubmitCommandBuffers(unsigned int, unsigned int const**, unsigned int*, unsigned int const**, unsigned int*)
+0x0000555951761580  Libraries::GnmDriver::sceGnmSubmitDone()
+0x0000555951768c50  Core::HostCallWrapperImpl<&Libraries::GnmDriver::sceGnmSubmitAndFlipCommandBuffers>::wrap(unsigned int, unsigned int**, unsigned int*, unsigned int**, unsigned int*, unsigned int, unsigned int, unsigned int, long)
+0x0000555951768c80  Core::HostCallWrapperImpl<&Libraries::GnmDriver::sceGnmSubmitAndFlipCommandBuffersForWorkload>::wrap(unsigned int, unsigned int, unsigned int**, unsigned int*, unsigned int**, unsigned int*, unsigned int, unsigned int, unsigned int, long)
+0x0000555951768c90  Core::HostCallWrapperImpl<&Libraries::GnmDriver::sceGnmSubmitCommandBuffers>::wrap(unsigned int, unsigned int const**, unsigned int*, unsigned int const**, unsigned int*)
+0x0000555951768cb0  Core::HostCallWrapperImpl<&Libraries::GnmDriver::sceGnmSubmitCommandBuffersForWorkload>::wrap(unsigned int, unsigned int, unsigned int const**, unsigned int*, unsigned int const**, unsigned int*)
+0x0000555951768cc0  Core::HostCallWrapperImpl<&Libraries::GnmDriver::sceGnmSubmitDone>::wrap()
+All functions matching regular expression "sceGnmDingDong":
+
+Non-debugging symbols:
+0x000055595175c820  Libraries::GnmDriver::sceGnmDingDong(unsigned int, unsigned int)
+0x000055595175cbd0  Libraries::GnmDriver::sceGnmDingDongForWorkload(unsigned int, unsigned int, unsigned long)
+0x0000555951766bb0  Core::HostCallWrapperImpl<&Libraries::GnmDriver::sceGnmDingDong>::wrap(unsigned int, unsigned int)
+0x0000555951766bc0  Core::HostCallWrapperImpl<&Libraries::GnmDriver::sceGnmDingDongForWorkload>::wrap(unsigned int, unsigned int, unsigned long)
+All functions matching regular expression "sceVideoOutSubmit":
+
+Non-debugging symbols:
+0x0000555951981600  Libraries::VideoOut::sceVideoOutSubmitFlip(int, int, int, long)
+0x0000555951981fd0  Libraries::VideoOut::sceVideoOutSubmitEopFlip(int, unsigned int, unsigned int, long, void**)
+0x00005559519825b0  Libraries::VideoOut::sceVideoOutSubmitChangeBufferAttribute(int, int, Libraries::VideoOut::BufferAttribute const*)
+0x0000555951982d60  std::_Function_handler<void (Platform::InterruptId), Libraries::VideoOut::sceVideoOutSubmitEopFlip(int, unsigned int, unsigned int, long, void**)::$_0>::_M_invoke(std::_Any_data const&, Platform::InterruptId&&)
+0x0000555951982e20  std::_Function_handler<void (Platform::InterruptId), Libraries::VideoOut::sceVideoOutSubmitEopFlip(int, unsigned int, unsigned int, long, void**)::$_0>::_M_manager(std::_Any_data&, std::_Any_data const&, std::_Manager_operation)
+0x0000555951983010  Core::HostCallWrapperImpl<&Libraries::VideoOut::sceVideoOutSubmitFlip>::wrap(int, int, int, long)
+0x0000555951983480  Core::HostCallWrapperImpl<&Libraries::VideoOut::sceVideoOutSubmitChangeBufferAttribute>::wrap(int, int, Libraries::VideoOut::BufferAttribute const*)
+All functions matching regular expression "sceVideoOutGetFlipStatus":
+
+Non-debugging symbols:
+0x0000555951981a10  Libraries::VideoOut::sceVideoOutGetFlipStatus(int, Libraries::VideoOut::FlipStatus*)
+0x0000555951983000  Core::HostCallWrapperImpl<&Libraries::VideoOut::sceVideoOutGetFlipStatus>::wrap(int, Libraries::VideoOut::FlipStatus*)
+All functions matching regular expression "sceVideoOutGetVblankStatus":
+
+Non-debugging symbols:
+0x0000555951981ba0  Libraries::VideoOut::sceVideoOutGetVblankStatus(int, Libraries::VideoOut::SceVideoOutVblankStatus*)
+0x0000555951983240  Core::HostCallWrapperImpl<&Libraries::VideoOut::sceVideoOutGetVblankStatus>::wrap(int, Libraries::VideoOut::SceVideoOutVblankStatus*)
+All functions matching regular expression "VideoOutDriver::":
+
+Non-debugging symbols:
+0x000055595197dfc0  Libraries::VideoOut::VideoOutDriver::VideoOutDriver(unsigned int, unsigned int)
+0x000055595197dfc0  Libraries::VideoOut::VideoOutDriver::VideoOutDriver(unsigned int, unsigned int)
+0x000055595197e380  Libraries::VideoOut::VideoOutDriver::~VideoOutDriver()
+0x000055595197e380  Libraries::VideoOut::VideoOutDriver::~VideoOutDriver()
+0x000055595197e4b0  Libraries::VideoOut::VideoOutDriver::Open(Libraries::VideoOut::ServiceThreadParams const*)
+0x000055595197e4e0  Libraries::VideoOut::VideoOutDriver::Close(int)
+0x000055595197e790  Libraries::VideoOut::VideoOutDriver::GetPort(int)
+0x000055595197e7a0  Libraries::VideoOut::VideoOutDriver::RegisterBuffers(Libraries::VideoOut::VideoOutPort*, int, void* const*, int, Libraries::VideoOut::BufferAttribute const*)
+0x000055595197eeb0  Libraries::VideoOut::VideoOutDriver::UnregisterBuffers(Libraries::VideoOut::VideoOutPort*, int)
+0x000055595197f170  Libraries::VideoOut::VideoOutDriver::ChangeBufferAttribute(Libraries::VideoOut::VideoOutPort*, int, Libraries::VideoOut::BufferAttribute const*)
+0x000055595197f560  Libraries::VideoOut::VideoOutDriver::Flip(Libraries::VideoOut::VideoOutDriver::Request const&)
+0x000055595197f6f0  Libraries::VideoOut::VideoOutDriver::DrawBlankFrame()
+0x000055595197f720  Libraries::VideoOut::VideoOutDriver::DrawLastFrame()
+0x000055595197f780  Libraries::VideoOut::VideoOutDriver::SubmitFlip(Libraries::VideoOut::VideoOutPort*, int, long, bool)
+0x000055595197faf0  Libraries::VideoOut::VideoOutDriver::SubmitFlipInternal(Libraries::VideoOut::VideoOutPort*, int, long, bool)
+0x000055595197fc40  Libraries::VideoOut::VideoOutDriver::PresentThread(std::stop_token)
+0x0000555951980050  std::thread::_State_impl<std::thread::_Invoker<std::tuple<Libraries::VideoOut::VideoOutDriver::VideoOutDriver(unsigned int, unsigned int)::$_0, std::stop_token> > >::~_State_impl()
+0x0000555951980090  std::thread::_State_impl<std::thread::_Invoker<std::tuple<Libraries::VideoOut::VideoOutDriver::VideoOutDriver(unsigned int, unsigned int)::$_0, std::stop_token> > >::~_State_impl()
+0x00005559519800d0  std::thread::_State_impl<std::thread::_Invoker<std::tuple<Libraries::VideoOut::VideoOutDriver::VideoOutDriver(unsigned int, unsigned int)::$_0, std::stop_token> > >::_M_run()
+0x0000555951980170  Common::UniqueFunction<void>::Callable<Libraries::VideoOut::VideoOutDriver::SubmitFlip(Libraries::VideoOut::VideoOutPort*, int, long, bool)::$_0>::~Callable()
+0x0000555951980180  Common::UniqueFunction<void>::Callable<Libraries::VideoOut::VideoOutDriver::SubmitFlip(Libraries::VideoOut::VideoOutPort*, int, long, bool)::$_0>::operator()()
+0x00005559519801a0  std::queue<Libraries::VideoOut::VideoOutDriver::Request, std::deque<Libraries::VideoOut::VideoOutDriver::Request, std::allocator<Libraries::VideoOut::VideoOutDriver::Request> > >::~queue()
+0x00005559519804c0  std::_Deque_base<Libraries::VideoOut::VideoOutDriver::Request, std::allocator<Libraries::VideoOut::VideoOutDriver::Request> >::_M_initialize_map(unsigned long)
+0x0000555951980810  void std::deque<Libraries::VideoOut::VideoOutDriver::Request, std::allocator<Libraries::VideoOut::VideoOutDriver::Request> >::_M_push_back_aux<Libraries::VideoOut::VideoOutDriver::Request>(Libraries::VideoOut::VideoOutDriver::Request&&)
+0x00005559519808e0  std::deque<Libraries::VideoOut::VideoOutDriver::Request, std::allocator<Libraries::VideoOut::VideoOutDriver::Request> >::_M_reallocate_map(unsigned long, bool)
+All functions matching regular expression "Vulkan::Rasterizer::":
+
+Non-debugging symbols:
+0x0000555951576ebc  Vulkan::Rasterizer::DrawIndirect(bool, unsigned long, unsigned int, unsigned int, unsigned int, unsigned long, unsigned short, unsigned short)::$_0::operator()() const
+0x0000555951576ee2  Vulkan::Rasterizer::DrawIndirect(bool, unsigned long, unsigned int, unsigned int, unsigned int, unsigned long, unsigned short, unsigned short)::$_1::operator()() const
+0x0000555951576f08  Vulkan::Rasterizer::BindVertexBuffers(Vulkan::GraphicsPipeline const*)::$_2::operator()() const
+0x0000555951576f2e  Vulkan::Rasterizer::BindTextures(Shader::Info const&, Shader::Backend::Bindings&)::$_0::operator()() const
+0x0000555951576f54  Vulkan::Rasterizer::BeginRendering(Vulkan::GraphicsPipeline const*)::$_0::operator()() const
+0x0000555951c0c730  void Vulkan::Rasterizer::ScopeMarker<AmdGpu::Liverpool::ProcessCompute<false>(std::span<unsigned int const, 18446744073709551615ul>, unsigned int)::{lambda()#3}>(fmt::v12::basic_string_view<char>, fmt::v12::basic_format_args<fmt::v12::context>, AmdGpu::Liverpool::ProcessCompute<false>(std::span<unsigned int const, 18446744073709551615ul>, unsigned int)::{lambda()#3}&&)
+0x0000555951c0c7f0  void Vulkan::Rasterizer::ScopeMarker<AmdGpu::Liverpool::ProcessCompute<false>(std::span<unsigned int const, 18446744073709551615ul>, unsigned int)::{lambda()#4}>(fmt::v12::basic_string_view<char>, fmt::v12::basic_format_args<fmt::v12::context>, AmdGpu::Liverpool::ProcessCompute<false>(std::span<unsigned int const, 18446744073709551615ul>, unsigned int)::{lambda()#4}&&)
+0x0000555951c0cab0  void Vulkan::Rasterizer::ScopeMarker<AmdGpu::Liverpool::ProcessCompute<true>(std::span<unsigned int const, 18446744073709551615ul>, unsigned int)::{lambda()#3}>(fmt::v12::basic_string_view<char>, fmt::v12::basic_format_args<fmt::v12::context>, AmdGpu::Liverpool::ProcessCompute<true>(std::span<unsigned int const, 18446744073709551615ul>, unsigned int)::{lambda()#3}&&)
+0x0000555951c0cb70  void Vulkan::Rasterizer::ScopeMarker<AmdGpu::Liverpool::ProcessCompute<true>(std::span<unsigned int const, 18446744073709551615ul>, unsigned int)::{lambda()#4}>(fmt::v12::basic_string_view<char>, fmt::v12::basic_format_args<fmt::v12::context>, AmdGpu::Liverpool::ProcessCompute<true>(std::span<unsigned int const, 18446744073709551615ul>, unsigned int)::{lambda()#4}&&)
+0x0000555951c8e0d0  Vulkan::Rasterizer::Rasterizer(Vulkan::Instance const&, Vulkan::Scheduler&, Vulkan::Runtime&, AmdGpu::Liverpool*)
+0x0000555951c8e0d0  Vulkan::Rasterizer::Rasterizer(Vulkan::Instance const&, Vulkan::Scheduler&, Vulkan::Runtime&, AmdGpu::Liverpool*)
+0x0000555951c8e7e0  Vulkan::Rasterizer::~Rasterizer()
+0x0000555951c8e7e0  Vulkan::Rasterizer::~Rasterizer()
+0x0000555951c8e890  Vulkan::Rasterizer::GetOcclusionQuery()
+0x0000555951c8e920  Vulkan::Rasterizer::SubmitPendingQueries()
+0x0000555951c8e940  Vulkan::Rasterizer::FilterDraw()
+0x0000555951c8ea80  Vulkan::Rasterizer::EliminateFastClear()
+0x0000555951c8eda0  Vulkan::Rasterizer::ScopedMarkerInsert(std::basic_string_view<char, std::char_traits<char> > const&, bool)
+0x0000555951c8ef50  Vulkan::Rasterizer::Resolve()
+0x0000555951c8f150  Vulkan::Rasterizer::DepthStencilCopy(bool, bool)
+0x0000555951c8f3d0  Vulkan::Rasterizer::PrepareRenderState(Vulkan::GraphicsPipeline const*)
+0x0000555951c8f740  Vulkan::Rasterizer::ScopeMarkerBegin(std::basic_string_view<char, std::char_traits<char> > const&, bool)
+0x0000555951c8f8f0  Vulkan::Rasterizer::ScopeMarkerEnd(bool)
+0x0000555951c8fa70  Vulkan::Rasterizer::Draw(bool, unsigned int)
+0x0000555951c8fda0  Vulkan::Rasterizer::BindResources(Vulkan::Pipeline const*)
+0x0000555951c8ffb0  Vulkan::Rasterizer::BeginRendering(Vulkan::GraphicsPipeline const*)
+0x0000555951c90a40  Vulkan::Rasterizer::BindVertexBuffers(Vulkan::GraphicsPipeline const*)
+0x0000555951c914f0  Vulkan::Rasterizer::BindIndexBuffer(unsigned int)
+0x0000555951c915b0  Vulkan::Rasterizer::UpdateDynamicState(Vulkan::GraphicsPipeline const*, bool) const
+0x0000555951c917e0  Vulkan::Rasterizer::ResetBindings(bool)
+0x0000555951c918f0  Vulkan::Rasterizer::DrawIndirect(bool, unsigned long, unsigned int, unsigned int, unsigned int, unsigned long, unsigned short, unsigned short)
+0x0000555951c91d60  Vulkan::Rasterizer::DispatchDirect()
+0x0000555951c91f50  Vulkan::Rasterizer::DispatchIndirect(unsigned long, unsigned int, unsigned int)
+0x0000555951c92130  Vulkan::Rasterizer::Flush()
+0x0000555951c92180  Vulkan::Rasterizer::Finish()
+0x0000555951c92190  Vulkan::Rasterizer::OnSubmit()
+0x0000555951c921d0  Vulkan::Rasterizer::OnFence()
+0x0000555951c92200  Vulkan::Rasterizer::IsComputeImageCopy(Vulkan::Pipeline const*)
+0x0000555951c92420  Vulkan::Rasterizer::IsComputeMetaClear(Vulkan::Pipeline const*)
+0x0000555951c92850  Vulkan::Rasterizer::IsComputeImageClear(Vulkan::Pipeline const*)
+0x0000555951c92a60  Vulkan::Rasterizer::BindBuffers(Shader::Info const&, Shader::Backend::Bindings&, Shader::PushData&)
+0x0000555951c93530  Vulkan::Rasterizer::BindTextures(Shader::Info const&, Shader::Backend::Bindings&)
+0x0000555951c946c0  Vulkan::Rasterizer::FillBuffer(unsigned long, unsigned int, unsigned int, bool)
+0x0000555951c94890  Vulkan::Rasterizer::CopyBuffer(unsigned long, unsigned long, unsigned int, bool, bool)
+0x0000555951c94a20  Vulkan::Rasterizer::ReadDataFromGds(unsigned int)
+0x0000555951c94a30  Vulkan::Rasterizer::InvalidateMemory(unsigned long, unsigned long, bool)
+0x0000555951c94a90  Vulkan::Rasterizer::IsMapped(unsigned long, unsigned long)
+0x0000555951c94b60  Vulkan::Rasterizer::ReadMemory(unsigned long, unsigned long, bool)
+0x0000555951c94bb0  Vulkan::Rasterizer::MapMemory(unsigned long, unsigned long)
+0x0000555951c94c60  Vulkan::Rasterizer::RegisterMemory(unsigned long, unsigned long)
+0x0000555951c94c70  Vulkan::Rasterizer::UnmapMemory(unsigned long, unsigned long)
+0x0000555951c94d40  Vulkan::Rasterizer::UpdateViewportScissorState() const
+0x0000555951c953d0  Vulkan::Rasterizer::UpdateDepthStencilState() const
+0x0000555951c95a00  Vulkan::Rasterizer::UpdatePrimitiveState(bool) const
+0x0000555951c95ba0  Vulkan::Rasterizer::UpdateRasterizationState() const
+0x0000555951c95be0  Vulkan::Rasterizer::UpdateColorBlendingState(Vulkan::GraphicsPipeline const*) const
+0x0000555951c95d80  Vulkan::Rasterizer::ScopedMarkerInsertColor(std::basic_string_view<char, std::char_traits<char> > const&, unsigned int, bool)
+0x0000555951c95fa0  Vulkan::Rasterizer::GetGpuCommandProcessorThread()
+0x0000555951c95fb0  Vulkan::Rasterizer::GetGpuCommandProcessorThreadId()
+0x0000555951c95fc0  void std::__introsort_loop<boost::container::vec_iterator<Vulkan::Rasterizer::BindVertexBuffers(Vulkan::GraphicsPipeline const*)::BufferRange*, false>, long, __gnu_cxx::__ops::_Iter_comp_iter<std::ranges::__detail::__make_comp_proj<Vulkan::Rasterizer::BindVertexBuffers(Vulkan::GraphicsPipeline const*)::$_0, std::identity>(Vulkan::Rasterizer::BindVertexBuffers(Vulkan::GraphicsPipeline const*)::$_0&, std::identity&)::{lambda(auto:1&&, auto:2&&)#1}> >(boost::container::vec_iterator<Vulkan::Rasterizer::BindVertexBuffers(Vulkan::GraphicsPipeline const*)::BufferRange*, false>, boost::container::vec_iterator<Vulkan::Rasterizer::BindVertexBuffers(Vulkan::GraphicsPipeline const*)::BufferRange*, false>, long, __gnu_cxx::__ops::_Iter_comp_iter<std::ranges::__detail::__make_comp_proj<Vulkan::Rasterizer::BindVertexBuffers(Vulkan::GraphicsPipeline const*)::$_0, std::identity>(Vulkan::Rasterizer::BindVertexBuffers(Vulkan::GraphicsPipeline const*)::$_0&, std::identity&)::{lambda(auto:1&&, auto:2&&)#1}>)
+0x0000555951c96440  Common::UniqueFunction<void, Vulkan::SubmitInfo&>::Callable<Vulkan::Rasterizer::Rasterizer(Vulkan::Instance const&, Vulkan::Scheduler&, Vulkan::Runtime&, AmdGpu::Liverpool*)::$_0>::~Callable()
+0x0000555951c96450  Common::UniqueFunction<void, Vulkan::SubmitInfo&>::Callable<Vulkan::Rasterizer::Rasterizer(Vulkan::Instance const&, Vulkan::Scheduler&, Vulkan::Runtime&, AmdGpu::Liverpool*)::$_0>::operator()(Vulkan::SubmitInfo&)
+All functions matching regular expression "scePlayGoGet":
+
+Non-debugging symbols:
+0x0000555951a7d900  Libraries::PlayGo::scePlayGoGetChunkId(unsigned int, unsigned short*, unsigned int, unsigned int*)
+0x0000555951a7daf0  Libraries::PlayGo::scePlayGoGetEta(unsigned int, unsigned short const*, unsigned int, long*)
+0x0000555951a7dbc0  Libraries::PlayGo::scePlayGoGetInstallSpeed(unsigned int, OrbisPlayGoInstallSpeed*)
+0x0000555951a7dcf0  Libraries::PlayGo::scePlayGoGetLanguageMask(unsigned int, unsigned long*)
+0x0000555951a7ddc0  Libraries::PlayGo::scePlayGoGetLocus(unsigned int, unsigned short const*, unsigned int, OrbisPlayGoLocus*)
+0x0000555951a7df20  Libraries::PlayGo::scePlayGoGetProgress(unsigned int, unsigned short const*, unsigned int, OrbisPlayGoProgress*)
+0x0000555951a7e060  Libraries::PlayGo::scePlayGoGetToDoList(unsigned int, OrbisPlayGoToDo*, unsigned int, unsigned int*)
+0x0000555951a7eec0  Core::HostCallWrapperImpl<&Libraries::PlayGo::scePlayGoGetChunkId>::wrap(unsigned int, unsigned short*, unsigned int, unsigned int*)
+0x0000555951a7f0b0  Core::HostCallWrapperImpl<&Libraries::PlayGo::scePlayGoGetEta>::wrap(unsigned int, unsigned short const*, unsigned int, long*)
+0x0000555951a7f180  Core::HostCallWrapperImpl<&Libraries::PlayGo::scePlayGoGetInstallSpeed>::wrap(unsigned int, OrbisPlayGoInstallSpeed*)
+0x0000555951a7f190  Core::HostCallWrapperImpl<&Libraries::PlayGo::scePlayGoGetLanguageMask>::wrap(unsigned int, unsigned long*)
+0x0000555951a7f260  Core::HostCallWrapperImpl<&Libraries::PlayGo::scePlayGoGetLocus>::wrap(unsigned int, unsigned short const*, unsigned int, OrbisPlayGoLocus*)
+0x0000555951a7f3c0  Core::HostCallWrapperImpl<&Libraries::PlayGo::scePlayGoGetProgress>::wrap(unsigned int, unsigned short const*, unsigned int, OrbisPlayGoProgress*)
+0x0000555951a7f500  Core::HostCallWrapperImpl<&Libraries::PlayGo::scePlayGoGetToDoList>::wrap(unsigned int, OrbisPlayGoToDo*, unsigned int, unsigned int*)
+All functions matching regular expression "sceKernelStat":
+
+Non-debugging symbols:
+0x0000555951793800  Libraries::Kernel::sceKernelStat(char const*, Libraries::Kernel::OrbisKernelStat*)
+0x00005559517979d0  Core::HostCallWrapperImpl<&Libraries::Kernel::sceKernelStat>::wrap(char const*, Libraries::Kernel::OrbisKernelStat*)

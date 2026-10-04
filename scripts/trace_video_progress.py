@@ -120,9 +120,22 @@ def resolve_symbols(listing, pattern, allowed=None):
         address, api = match.groups()
         if allowed is not None and api not in allowed:
             continue
-        # A cold/outlined fragment is inside a function, not a callable ABI entry.
-        # GDB/binutils render compiler suffixes both as [clone ...] and as .cold.N.
-        if not re.search(r"\)(?: (?:const|volatile|noexcept))*;?$", line.rstrip()):
+        # The pattern ends at the API's opening parenthesis. Find its matching
+        # close, not the final ')' in a nested lambda's operator() signature.
+        # Parameter types can themselves contain parentheses (e.g. callbacks).
+        depth = 1
+        suffix = None
+        for index in range(match.end(), len(line)):
+            if line[index] == "(":
+                depth += 1
+            elif line[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    suffix = line[index + 1:].rstrip()
+                    break
+        # Only qualifiers may follow a canonical function's parameter list.
+        # Reject nested functions, cold fragments, clones and PLT entries.
+        if suffix is None or not re.fullmatch(r"(?: (?:const|volatile|noexcept))*;?", suffix):
             skipped.append(line.strip())
             continue
         candidates.setdefault(api, {})[int(address, 16)] = line.strip()

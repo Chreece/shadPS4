@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 import struct
+import tarfile
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -156,6 +157,24 @@ class FrameGateTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, '0x2000.*0x3000'):
             self.resolver()(listing, frames.PROFILE['symbol_pattern'], frames.APIS)
 
+    def test_installed_emulator_listing_resolves_every_api_and_skips_nested_lambdas(self):
+        listing = (Path(__file__).parent / 'fixtures' / 'pes-0539f6dba2a1-symbols.txt').read_text()
+        resolved, skipped = self.resolver()(listing, frames.PROFILE['symbol_pattern'], frames.APIS)
+        self.assertEqual(set(resolved), set(frames.APIS))
+        self.assertEqual(resolved['Rasterizer::DrawIndirect'], 0x0000555951c918f0)
+        self.assertEqual(len(skipped), 2)
+        self.assertTrue(all('::operator()() const' in line for line in skipped))
+
+    def test_callback_parameter_parentheses_do_not_hide_nested_symbols(self):
+        name = 'Vulkan::Rasterizer::DrawIndirect(void (*)(unsigned int), bool)'
+        listing = '\n'.join(('0x1000 ' + name + '::{lambda()#1}::operator()() const',
+                             '0x2000 ' + name + ' const noexcept',
+                             '0x3000 ' + name + '::Local::run()',
+                             '0x4000 Vulkan::Rasterizer::DrawIndirect(bool'))
+        resolved, skipped = self.resolver()(listing, frames.PROFILE['symbol_pattern'], frames.APIS)
+        self.assertEqual(resolved, {'Rasterizer::DrawIndirect': 0x2000})
+        self.assertEqual(len(skipped), 3)
+
     def test_tail_called_functions_keep_both_return_callbacks_at_same_stop(self):
         class Breakpoint:
             def __init__(self, *args, **kwargs):
@@ -232,6 +251,38 @@ class FrameGateTests(unittest.TestCase):
             self.assertTrue(result['reused_existing'])
             self.assertTrue(result['settings_unchanged'])
             self.assertEqual(result['errors'], ['RuntimeError: stop before attach'])
+
+    def test_closed_pes_is_launched_and_its_game_log_survives_capture_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            wrapper = home / 'wrapper'
+            wrapper.write_text('original')
+            identity = {'pid': 42, 'start_ticks': '7', 'executable': '/unused', 'sha256': 'fixture'}
+
+            def outputs(proc, work):
+                self.assertEqual(proc, Path('/proc/42'))
+                (work / 'fd-4.0.log').write_text('fresh PES log')
+
+            with patch.object(startup, 'running_emulators', return_value=[]), \
+                    patch.object(startup, 'selected_launch', return_value=(wrapper, startup.checksum(wrapper))), \
+                    patch.object(startup, 'settings', return_value={'Audio': '7.1'}), \
+                    patch.object(startup, 'debugger_prefix', return_value=[]), \
+                    patch.object(startup, 'desktop_environment', return_value=({'DISPLAY': ':0'}, 'fixture')), \
+                    patch.object(startup, 'launch_game', return_value=Mock(pid=41)) as launch, \
+                    patch.object(startup, 'await_game', return_value=identity), \
+                    patch.object(trace, 'debugger_command', side_effect=RuntimeError('stop before attach')), \
+                    patch.object(trace, 'inspect_target', return_value={'status': 'observed'}), \
+                    patch.object(startup.context, 'collect_outputs', side_effect=outputs) as collect, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                result = startup.run(home, profile='frames', reuse_existing=True)
+            launch.assert_called_once()
+            self.assertEqual(launch.call_args.args[:3], (wrapper, {'DISPLAY': ':0'}, home))
+            collect.assert_called_once()
+            self.assertFalse(result['reused_existing'])
+            self.assertTrue(result['settings_unchanged'])
+            self.assertTrue(result['launcher_unchanged'])
+            with tarfile.open(next(home.glob('*.tar.gz'))) as archive:
+                self.assertEqual(archive.extractfile('fd-4.0.log').read(), b'fresh PES log')
 
 
 if __name__ == '__main__':
