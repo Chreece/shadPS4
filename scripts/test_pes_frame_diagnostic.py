@@ -21,6 +21,13 @@ import trace_video_progress as trace
 class FrameFieldsTests(unittest.TestCase):
     def namespace(self, regions=None, registers=None):
         regions = regions or {}
+        class Breakpoint:
+            def __init__(self, *args, **kwargs):
+                self.valid = True
+            def is_valid(self):
+                return self.valid
+            def delete(self):
+                self.valid = False
         def memory(address, size):
             for start, data in regions.items():
                 offset = address - start
@@ -28,9 +35,35 @@ class FrameFieldsTests(unittest.TestCase):
                     return data[offset:offset + size]
             raise AssertionError(f'Unexpected memory read: {address:#x}, {size}')
         scope = {'memory': Mock(side_effect=memory), 'register': (registers or {}).__getitem__,
-                 'number': lambda data, offset, size=8: int.from_bytes(data[offset:offset + size], 'little')}
+                 'number': lambda data, offset, size=8: int.from_bytes(data[offset:offset + size], 'little'),
+                 'gdb': Mock(Breakpoint=Breakpoint), 'pending': [],
+                 'result': {'apis': {api: {'out_of_scope': 0} for api in frames.APIS}}}
         exec(compile(frames.SUPPORT, '<frame-profile>', 'exec'), scope)
         return scope
+
+    def test_native_return_slots_preserve_tail_calls_and_reject_wrong_stack_or_thread(self):
+        registers = {'rsp': 0x3000}
+        scope = self.namespace({0x3000: struct.pack('<Q', 0x4000)}, registers)
+        thread = Mock(global_num=7)
+        scope['gdb'].selected_thread.return_value = thread
+        outer = {'api': 'sceVideoOutSubmitFlip', 'thread': 7}
+        inner = {'api': 'sceVideoOutSubmitEopFlip', 'thread': 7}
+        outer_probe = scope['Return'](outer)
+        inner_probe = scope['Return'](inner)
+        registers['rsp'] = 0x2008
+        self.assertFalse(outer_probe.stop())
+        registers['rsp'] = 0x3008
+        thread.global_num = 8
+        self.assertFalse(outer_probe.stop())
+        thread.global_num = 7
+        self.assertTrue(outer_probe.stop())
+        self.assertTrue(inner_probe.stop())
+        self.assertEqual(scope['pending'], [('return', outer), ('return', inner)])
+        scope['consume_return'](outer)
+        scope['consume_return'](inner)
+        self.assertFalse(outer_probe.is_valid())
+        self.assertFalse(inner_probe.is_valid())
+        self.assertEqual(scope['frame_returns'], {})
 
     def test_both_submit_flip_abis_read_stack_arguments_and_buffer_arrays(self):
         for suffix, prefix in (('', []), ('ForWorkload', [99])):

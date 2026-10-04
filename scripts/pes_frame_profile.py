@@ -13,6 +13,49 @@ APIS = (
 )
 
 SUPPORT = r'''
+frame_returns = {}
+
+
+class Return(gdb.Breakpoint):
+    def __init__(self, context):
+        # Entry breakpoints stop at the first instruction, before the prologue.
+        # A tail jump retains this same return slot; FinishBreakpoint's frame
+        # lifetime inference can drop the outer call in stripped optimized code.
+        stack = register("rsp")
+        address = number(memory(stack, 8), 0)
+        key = (context["thread"], stack, context["api"])
+        previous = frame_returns.get(key)
+        if previous is not None:
+            # A new invocation supersedes an unmatched earlier one (e.g. unwind).
+            result["apis"][context["api"]]["out_of_scope"] += 1
+            if previous.is_valid():
+                previous.delete()
+        super().__init__("*" + hex(address), internal=True)
+        self.thread = context["thread"]
+        self.silent = True
+        self.expected_rsp = stack + 8
+        self.context = context
+        self.key = key
+        context["return_probe"] = self
+        frame_returns[key] = self
+
+    def stop(self):
+        # Another recursive invocation or thread at this address is not this return.
+        if (gdb.selected_thread().global_num != self.context["thread"] or
+                register("rsp") != self.expected_rsp):
+            return False
+        pending.append(("return", self.context))
+        return True
+
+
+def consume_return(context):
+    # Delete outside Breakpoint.stop(), as required by the GDB Python API.
+    probe = context.pop("return_probe")
+    frame_returns.pop(probe.key, None)
+    if probe.is_valid():
+        probe.delete()
+
+
 def capture_args(api):
     args = [register(r) for r in ("rdi", "rsi", "rdx", "rcx", "r8", "r9")]
     if api in ("sceGnmSubmitAndFlipCommandBuffers", "sceGnmSubmitAndFlipCommandBuffersForWorkload"):
@@ -212,7 +255,7 @@ def validate_observations(mode, result, require):
         require(all(v['calls'] == 0 for v in apis.values()), 'Idle target recorded frame activity')
         return
     for api, stats in apis.items():
-        require(stats['calls'] == stats['returns'] == 32 and stats['capped'],
+        require(stats['calls'] == stats['returns'] == 32 and stats['capped'] and stats['out_of_scope'] == 0,
                 'Incorrect entry/return cap for ' + api + ': ' + str(stats))
         expected = {'0x80d11000': 6} if api == 'sceGnmSubmitDone' else {}
         require(stats['errors'] == expected, 'Wrong return classification for ' + api)
