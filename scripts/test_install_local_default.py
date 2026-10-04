@@ -11,6 +11,23 @@ import install_local_default as deploy
 
 
 class DefaultInstallTests(unittest.TestCase):
+    def test_branch_build_requires_exact_fetched_revision(self):
+        source = Path('/build/source')
+        branch = 'feat/startup-loading-indicator'
+        run = mock.Mock()
+        with mock.patch.object(deploy.subprocess, 'check_output', return_value='a' * 40 + '\n'):
+            deploy.fetch_revision(source, 'a' * 40, branch, run)
+            run.assert_called_once_with(['git', '-C', source, 'fetch', '--no-tags',
+                                         '--no-recurse-submodules', 'origin', 'refs/heads/' + branch])
+            with self.assertRaisesRegex(RuntimeError, 'moved to'):
+                deploy.fetch_revision(source, 'b' * 40, branch, run)
+
+    def test_invalid_branch_stops_before_fetch(self):
+        run = mock.Mock()
+        with self.assertRaises(subprocess.CalledProcessError):
+            deploy.fetch_revision(Path('/build/source'), 'a' * 40, '../main', run)
+        run.assert_not_called()
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

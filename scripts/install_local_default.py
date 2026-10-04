@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Build pinned main in Docker, select it in ES-DE, and retire old test cores.
+"""Build a pinned revision in Docker, select it in ES-DE, and retire old test cores.
 
 Run as the desktop user with games and ES-DE closed. No sudo or service changes.
 """
@@ -212,7 +212,17 @@ def smoke(binary):
             raise RuntimeError('Core startup check failed: ' + (result.stdout + result.stderr)[-2000:])
 
 
-def build(home, revision):
+def fetch_revision(source, revision, source_branch, run):
+    ref = 'refs/heads/' + source_branch
+    subprocess.run(['git', 'check-ref-format', ref], check=True, capture_output=True)
+    run(['git', '-C', source, 'fetch', '--no-tags', '--no-recurse-submodules', 'origin', ref])
+    fetched = subprocess.check_output(['git', '-C', source, 'rev-parse', 'FETCH_HEAD'],
+                                      text=True).strip()
+    if fetched != revision:
+        raise RuntimeError(source_branch + ' moved to ' + fetched + '; this command pins ' + revision)
+
+
+def build(home, revision, source_branch='main'):
     work = home / '.cache/shadps4-ngs2-local/ca67919d-docker'
     work.mkdir(parents=True, exist_ok=True)
     source = work / 'source'
@@ -248,11 +258,7 @@ def build(home, revision):
                                          text=True).strip()
         if remote != REPO:
             raise RuntimeError('Build cache belongs to another repository; preserved.')
-        run(['git', '-C', source, 'fetch', '--no-tags', '--no-recurse-submodules', 'origin', 'main'])
-        fetched = subprocess.check_output(['git', '-C', source, 'rev-parse', 'FETCH_HEAD'],
-                                          text=True).strip()
-        if fetched != revision:
-            raise RuntimeError('Main moved to ' + fetched + '; this command pins ' + revision)
+        fetch_revision(source, revision, source_branch, run)
         dirty = subprocess.check_output(['git', '-C', source, 'status', '--porcelain',
                                          '--untracked-files=normal'], text=True)
         if dirty:
@@ -270,7 +276,7 @@ def build(home, revision):
                     '-DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS=/usr/bin/clang-scan-deps-19']
         for suite in ('ngs2_hle', 'userservice', 'occlusion_query', 'image_transfer',
                       'graphics_diagnostics', 'quit_dialog', 'kernel_sanitizer',
-                      'kernel_thread_atexit', 'kernel_unlink', 'kernel_regmgr'):
+                      'kernel_thread_atexit', 'kernel_unlink', 'kernel_regmgr', 'startup_loading'):
             folder = work / ('default-check-' + suite)
             run(['cmake', '-S', source / 'tests' / suite, '-B', folder, '-G', 'Ninja',
                  '-DCMAKE_BUILD_TYPE=Release', *compiler], docker=True)
@@ -460,7 +466,7 @@ def verified_selected_install(home, revision):
     return None
 
 
-def install(home, revision):
+def install(home, revision, source_branch='main'):
     installed = verified_selected_install(home, revision)
     if installed:
         say('DEFAULT_SELECTED=' + installed['binary'])
@@ -491,7 +497,7 @@ def install(home, revision):
     old_link = core.readlink() if core.is_symlink() else None
     if not core.is_symlink() and not regular(core):
         raise RuntimeError('Existing default core is missing or not a file; preserved.')
-    built = build(home, revision)
+    built = build(home, revision, source_branch)
     # A failed build never gets this far. Recheck launchers and active processes
     # after the long compile before touching the usable installation.
     no_running_apps()
@@ -522,7 +528,8 @@ def install(home, revision):
     if old_link is None:
         shutil.copy2(core, backup / 'default.before')
     shutil.copy2(Path(__file__), backup / 'install_local_default.py')
-    state = {'revision': revision, 'home': str(home), 'binary': str(binary),
+    state = {'revision': revision, 'source_branch': source_branch,
+             'home': str(home), 'binary': str(binary),
              'binary_sha256': built_sha, 'previous_sha256': previous_sha,
              'launcher_sha256': hashlib.sha256(candidate).hexdigest(), 'cleanup': 'pending'}
     state_file = backup / 'state.json'
@@ -580,6 +587,8 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--revision')
     group.add_argument('--restore', type=Path)
+    parser.add_argument('--source-branch', default='main',
+                        help='Branch whose HEAD must match --revision (default: main)')
     args = parser.parse_args()
     if os.geteuid() == 0 or sys.platform != 'linux' or os.uname().machine != 'x86_64':
         raise RuntimeError('Run as your normal desktop user on Linux x86-64, without sudo.')
@@ -592,7 +601,7 @@ def main():
         else:
             if not re.fullmatch(r'[0-9a-f]{40}', args.revision):
                 raise RuntimeError('An exact 40-character commit is required.')
-            install(Path.home(), args.revision)
+            install(Path.home(), args.revision, args.source_branch)
 
 
 if __name__ == '__main__':
