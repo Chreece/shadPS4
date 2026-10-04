@@ -140,13 +140,13 @@ def validate_observations(mode, result, profile='video'):
         require(decode['valid_frames'] == 26, f'Unexpected valid frames: {decode}')
         inputs = [r for r in result['records'] if r['event'] == 'enter' and
                   r.get('api') == 'sceVideodec2Decode']
-        frames = [r for r in result['records'] if r.get('valid')]
+        decoded_frames = [r for r in result['records'] if r.get('valid')]
         require(len(inputs) == 32 and all(r.get('au_bytes') == 4096 and
                 r.get('pts') == 90000 and r.get('dts') == 89999 for r in inputs),
                 'Input fields did not match fixture values')
-        require(len(frames) == 26 and all(r.get('width') == 1280 and
+        require(len(decoded_frames) == 26 and all(r.get('width') == 1280 and
                 r.get('height') == 720 and r.get('pitch') == 1280 and
-                r.get('frame_accepted') is True for r in frames),
+                r.get('frame_accepted') is True for r in decoded_frames),
                 'Output fields did not match fixture values')
 
 

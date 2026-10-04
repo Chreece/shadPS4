@@ -14,9 +14,17 @@ from unittest.mock import patch
 
 import trace_video_progress as trace
 import validate_video_diagnostic as validate
+import pes_frame_profile
 
 
 class LauncherTests(unittest.TestCase):
+    def test_frame_idle_result_reaches_profile_validator_without_shadowing_module(self):
+        result = {'apis': {api: {'calls': 0} for api in pes_frame_profile.APIS}}
+        validate.validate_observations('idle', result, profile='frames')
+        result['apis']['sceVideoOutSubmitFlip']['calls'] = 1
+        with self.assertRaisesRegex(RuntimeError, 'Idle target recorded frame activity'):
+            validate.validate_observations('idle', result, profile='frames')
+
     def exercise(self, returncode):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
