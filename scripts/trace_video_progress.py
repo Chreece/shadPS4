@@ -269,6 +269,16 @@ def say(text):
     print(text, flush=True)
 
 
+def debugger_command(identity, probe_file, prefix=()):
+    return list(prefix) + [
+        "gdb", "-q", "-nx", "-nh", "--batch",
+        "-iex", "set auto-load off", "-iex", "set debuginfod enabled off",
+        "-iex", "set sysroot /", "-iex", "set pagination off",
+        "-iex", "set confirm off", "-iex", "set print thread-events off",
+        "-iex", "set may-call-functions off",
+        "-se", identity["executable"], "-ex", "source " + str(probe_file)]
+
+
 INTERRUPT_HELPER = r"""
 import json
 import os
@@ -594,13 +604,7 @@ def run():
     (work / "before-video-logs.json").write_text(json.dumps(before, indent=2))
     probe_file = work / "probe.py"
     probe_file.write_text("CONFIG = " + repr({"identity": identity}) + "\n" + PROBE)
-    command = prefix + [
-        "gdb", "-q", "-nx", "-nh", "--batch",
-        "-iex", "set auto-load off", "-iex", "set debuginfod enabled off",
-        "-iex", "set sysroot /", "-iex", "set pagination off",
-        "-iex", "set confirm off", "-iex", "set print thread-events off",
-        "-iex", "set may-call-functions off",
-        "-se", identity["executable"], "-ex", "source " + str(probe_file)]
+    command = debugger_command(identity, probe_file, prefix)
     say("Preparing GDB; setup has a 60-second deadline. Keep the game open.")
     say("TRACE_DIRECTORY=" + str(work))
     with (work / "gdb.txt").open("w") as log:
