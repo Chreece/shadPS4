@@ -434,6 +434,10 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
     }
 
     EmulatorSettings.Load(id);
+    if (id == "CUSA03745") {
+        EmulatorSettings.SetReadbacksMode(static_cast<u32>(GpuReadbacksMode::Precise), true);
+        LOG_WARNING(Config, "Playtest override: forcing Precise GPU readbacks for {}", id);
+    }
     // Switch to configured log
     Common::Log::Switch((!id.empty() && EmulatorSettings.IsLogSeparate()) ? id + ".log"
                                                                           : "shad_log.txt",
