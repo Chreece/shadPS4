@@ -28,8 +28,8 @@ HELPER_REVISIONS = {
     'install_local_default.py': '19153e3113228c22b4f233487043d768469532f3',
     'run_pes_startup_test.py': '3be159501a0935153a4384d2f9e6d97d2117b894',
     'pes_test_cleanup.py': '9ff21ec091efa3f0f4889cee60bc79fdb2e2a5f8',
-    'pes_frame_profile.py': '4bac698b584c3bc2e26bee68a2b2bfd81977de87',
-    'validate_pes_guest_wait.py': '4bac698b584c3bc2e26bee68a2b2bfd81977de87',
+    'pes_frame_profile.py': '25818a985c3ed0ba210ec0ab4e36f9d4c42224e7',
+    'validate_pes_guest_wait.py': '25818a985c3ed0ba210ec0ab4e36f9d4c42224e7',
     'pes_gpu_frame.py': '3be159501a0935153a4384d2f9e6d97d2117b894',
     'pes_gpu_frame.cpp': '3be159501a0935153a4384d2f9e6d97d2117b894',
     'pes_graphics_launch.py': '40bde232e0e9c11b1712c182d28b4b3fbbedf397',
@@ -40,8 +40,8 @@ HELPERS = {
     'install_local_default.py': '8c7a85d2819775ad853d692ba754f905ae2d0306864de31bef7dd91e81a2288c',
     'pes_current_baseline.py': 'b044656a37aadbb54e27903125cc6e4648fdd6d171741b0039a37f7ff6b66224',
     'trace_video_progress.py': 'c770af6e639464064ec543f99cb6181d75bf4b3bbe493ae6e8c015652d9b1a6b',
-    'validate_pes_guest_wait.py': 'c503cef5424eb250a2030d212c53f6f4254baa4530b9877dd9dc59b28e2c4701',
-    'pes_frame_profile.py': '32fd8ad52bac9ce4eeb64accd4dbde7a780dec45c00c6991138231285ba9b9ae',
+    'validate_pes_guest_wait.py': '429a2aed3d9da5fdaf5816d59ca8807d92d98bcb4367ec28e63375711b9595b6',
+    'pes_frame_profile.py': 'a06b69ffd197630758e88fcb2781b17a2fcafc5a42f2093365ccd1235ba076d6',
     'collect_pes_runtime_context.py': '58cb93a9b52f2264e11d13259e379d676b7aa940c9522f7e80198943ae6ed612',
     'run_pes_startup_test.py': '1df09f76e745ddd34c62e81263f343c2cd113aa5afc5b2f23bb90a91f6a717ad',
     'pes_test_cleanup.py': 'fe5d13cf6fe1cee2c1e50c3329c8092f220ec3ca27de7834ab4537d744330b96',
@@ -186,7 +186,7 @@ def run(home, work, session, manifest, installer, baseline, startup, *, capture_
         if stage.get('listener'):
             print('PES_INIT_LISTENER=' + json.dumps(
                 dict(phase=stage['phase'], **stage['listener']), sort_keys=True), flush=True)
-    for api in ('PES::InitStage', 'PES::InitListener'):
+    for api in ('PES::InitStage', 'PES::InitListener', 'PES::GameTick', 'PES::DispatcherTick'):
         if api in frames.get('apis', {}):
             print('PES_INIT_CALLS=' + api + ' ' + json.dumps(frames['apis'][api]), flush=True)
     check_capture(result)
