@@ -159,8 +159,13 @@ def refresh_source(work, manifest):
             raise RuntimeError('Diagnostic source apply failed: ' +
                                (result.stderr or result.stdout)[-3000:])
         return result.stdout.strip()
-    git('fetch', '--depth=1', '--no-tags', '--no-recurse-submodules', 'origin',
+    # Fetch the diagnostic commit with its parent. A depth-1 fetch marks the commit as a
+    # shallow root, which makes cherry-pick treat its complete tree like a root-commit diff.
+    git('fetch', '--depth=2', '--no-tags', '--no-recurse-submodules', 'origin',
         DIAGNOSTIC_FIX)
+    diagnostic_parent = git('rev-parse', DIAGNOSTIC_FIX + '^')
+    if diagnostic_parent != REVISION:
+        raise RuntimeError('Unexpected diagnostic parent: ' + diagnostic_parent)
     git('-c', 'user.name=PES post-title diagnostic',
         '-c', 'user.email=pes-local@localhost',
         'cherry-pick', DIAGNOSTIC_FIX)
