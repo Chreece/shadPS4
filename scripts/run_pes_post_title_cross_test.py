@@ -172,8 +172,24 @@ def refresh_source(work, manifest):
     record['diagnostic_fix'] = DIAGNOSTIC_FIX
     record['revision'] = git('rev-parse', 'HEAD')
     record['tree'] = git('rev-parse', 'HEAD^{tree}')
+
+    # pes_refresh_baseline created candidate.bundle before the diagnostic cherry-pick.
+    # Recreate it so refs/heads/pes-current-test resolves to the exact diagnostic revision
+    # that the build helper is asked to compile.
+    bundle = work / 'source-refresh/candidate.bundle'
+    bundle.unlink(missing_ok=True)
+    git('bundle', 'create', bundle, record['source_branch'], '^' + record['upstream'])
+    bundled_head = subprocess.check_output(
+        ['git', 'bundle', 'list-heads', str(bundle)], text=True
+    ).split()
+    if not bundled_head or bundled_head[0] != record['revision']:
+        raise RuntimeError('Diagnostic candidate bundle does not advertise the diagnostic revision')
+
+    patch = git('diff', '--binary', record['upstream'], record['revision'])
+    (work / 'source-refresh/retained.patch').write_text(patch + '\n')
     (work / 'source-refresh/source.json').write_text(json.dumps(record, indent=2) + '\n')
     print('PES_POST_TITLE_SOURCE=' + record['revision'], flush=True)
+    print('PES_POST_TITLE_BUNDLE=PASS:' + record['revision'], flush=True)
     return record
 
 
