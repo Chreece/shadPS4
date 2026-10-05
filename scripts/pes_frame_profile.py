@@ -198,6 +198,220 @@ def request_native_screenshots():
         result.setdefault("screenshot_requests", []).append({"kind": kind, "address": hex(address)})
 
 
+def guest_wait_snapshot(phase):
+    started_at = time.monotonic()
+    original = gdb.selected_thread()
+    snapshot = {"phase": phase, "threads": [], "memory": [], "code": [], "errors": []}
+    deadline = started_at + 1.0
+    regions = []
+    consumed = 0
+    saved = set()
+    code_saved = set()
+    for line in (proc / "maps").read_text().splitlines():
+        fields = line.split()
+        low, high = (int(value, 16) for value in fields[0].split("-"))
+        if "r" in fields[1] and low < (1 << 40):
+            regions.append((low, min(high, 1 << 40), fields[1]))
+
+    def region_at(address, executable=False):
+        return next((r for r in regions if r[0] <= address < r[1] and
+                     (not executable or "x" in r[2])), None)
+
+    def read_window(address, length, kind):
+        nonlocal consumed
+        region = region_at(address)
+        if region is None or time.monotonic() >= deadline:
+            return b""
+        length = min(length, region[1] - address, 32768 - consumed)
+        key = (address, length)
+        if length <= 0 or key in saved:
+            return b""
+        consumed += length
+        saved.add(key)
+        try:
+            data = memory(address, length)
+            snapshot["memory"].append({"address": hex(address), "kind": kind,
+                                       "bytes": data.hex()})
+            return data
+        except Exception as error:
+            snapshot["errors"].append("read " + hex(address) + ": " + str(error))
+            return b""
+
+    def code_window(address):
+        region = region_at(address, executable=True)
+        if region is None or address in code_saved or len(code_saved) >= 12:
+            return
+        if time.monotonic() >= deadline:
+            return
+        code_saved.add(address)
+        start = max(region[0], address - 256)
+        read_window(start, 768, "code around " + hex(address))
+        try:
+            instructions = gdb.selected_frame().architecture().disassemble(
+                address, min(address + 192, region[1]))
+            snapshot["code"].append({"pc": hex(address), "instructions": instructions})
+        except Exception as error:
+            snapshot["errors"].append("code " + hex(address) + ": " + str(error))
+
+    try:
+        threads = sorted(gdb.selected_inferior().threads(),
+                         key=lambda t: (t.name != "Game:Main", t.global_num))
+        for thread in threads:
+            name = thread.name or ""
+            if name.startswith(("shadPS4", "SDL", "Pulse", "WSI ")):
+                continue
+            if time.monotonic() >= deadline or len(snapshot["threads"]) >= 96:
+                snapshot["limited"] = True
+                break
+            item = {"thread": thread.global_num, "ptid": list(thread.ptid), "name": name,
+                    "registers": {}, "frames": []}
+            snapshot["threads"].append(item)
+            try:
+                thread.switch()
+                for reg in ("rip", "rsp", "rbp", "rax", "rbx", "rcx", "rdx", "rsi", "rdi",
+                            "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "eflags"):
+                    item["registers"][reg] = hex(register(reg))
+                stack_address = register("rsp")
+                stack = read_window(stack_address, 512 if name == "Game:Main" else 128,
+                                    name + " stack")
+                frame = gdb.newest_frame()
+                for _ in range(24 if name == "Game:Main" else 12):
+                    if frame is None or time.monotonic() >= deadline:
+                        break
+                    address = frame.pc()
+                    item["frames"].append({"pc": hex(address), "symbol": frame.name()})
+                    code_window(address)
+                    frame = frame.older()
+                if name == "Game:Main":
+                    pointers = [int(value, 16) for value in item["registers"].values()]
+                    pointers += [number(stack, offset) for offset in range(0, len(stack) - 7, 8)]
+                    for address in pointers[:64]:
+                        if region_at(address, executable=True):
+                            code_window(address)
+                        else:
+                            data = read_window(address, 128, "main register/stack pointer")
+                            for offset in range(0, min(len(data), 32), 8):
+                                nested = number(data, offset)
+                                if not region_at(nested, executable=True):
+                                    read_window(nested, 64, "main nested pointer")
+            except Exception as error:
+                item["error"] = str(error)
+    finally:
+        if original is not None and original.is_valid():
+            original.switch()
+        snapshot["read_bytes"] = consumed
+        snapshot["seconds"] = round(time.monotonic() - started_at, 4)
+        result.setdefault("guest_wait_samples", []).append(snapshot)
+
+
+def startup_stage_snapshot(phase):
+    import re
+    started = time.monotonic()
+    deadline = started + 0.5
+    sample = {"phase": phase, "status": "signature_mismatch", "memory": [],
+              "code": [], "errors": [], "read_bytes": 0}
+    regions = []
+    saved = {}
+    queued = set()
+    queue = []
+    for line in (proc / "maps").read_text().splitlines():
+        fields = line.split()
+        low, high = (int(value, 16) for value in fields[0].split("-"))
+        if "r" in fields[1] and low < (1 << 40):
+            regions.append((low, min(high, 1 << 40), fields[1]))
+
+    def region_at(address, executable=False):
+        return next((r for r in regions if r[0] <= address < r[1] and
+                     (not executable or "x" in r[2])), None)
+
+    def read(address, size, kind):
+        region = region_at(address)
+        if region is None or time.monotonic() >= deadline:
+            return b""
+        size = min(size, region[1] - address, 131072 - sample["read_bytes"])
+        if size <= 0:
+            return b""
+        key = (address, size)
+        if key in saved:
+            return saved[key]
+        try:
+            data = memory(address, size)
+            saved[key] = data
+            sample["read_bytes"] += size
+            sample["memory"].append({"address": hex(address), "kind": kind,
+                                      "bytes": data.hex()})
+            return data
+        except Exception as error:
+            sample["errors"].append(hex(address) + ": " + str(error))
+            return b""
+
+    def enqueue(address, depth, kind):
+        if address not in queued and region_at(address, True) and len(queued) < 64:
+            queued.add(address)
+            queue.append((address, depth, kind))
+
+    try:
+        signatures = ((0x6c8d3b, "8b05fb687b0583f80f0f848b000000"),
+                      (0x6c8d73, "489848c1e00542ff543810"))
+        if any(read(address, len(bytes.fromhex(expected)), "signature") !=
+               bytes.fromhex(expected) for address, expected in signatures):
+            return
+        value = read(0x5e7f63c, 4, "startup stage index")
+        table = read(0x4c113d0, 15 * 32, "startup callback table")
+        if len(value) != 4 or len(table) != 15 * 32:
+            sample["status"] = "unreadable_stage"
+            return
+        stage = number(value, 0, 4)
+        sample.update(status="sampled" if stage <= 15 else "invalid_stage",
+                      stage_index=stage, stage_count=15, callbacks=[])
+        for index in range(15):
+            entry = [number(table, index * 32 + offset) for offset in range(0, 32, 8)]
+            sample["callbacks"].append({"index": index, "words": [hex(v) for v in entry],
+                                         "poll_callback": hex(entry[2])})
+        if stage < 15:
+            enqueue(number(table, stage * 32 + 16), 0, "active startup callback")
+        enqueue(0x6c8d3b, 0, "startup dispatcher")
+        for index in range(15):
+            enqueue(number(table, index * 32 + 16), 0, "startup callback " + str(index))
+        while queue and time.monotonic() < deadline and sample["read_bytes"] < 131072:
+            address, depth, kind = queue.pop(0)
+            data = read(address, 1536 if depth == 0 else 768, kind)
+            if len(data) < 16:
+                continue
+            instructions = gdb.selected_inferior().architecture().disassemble(
+                address, address + min(len(data) - 15, 1024 if depth == 0 else 512))
+            sample["code"].append({"pc": hex(address), "kind": kind,
+                                    "instructions": instructions})
+            for instruction in instructions:
+                asm = instruction["asm"]
+                direct = re.match(r"call\w*\s+(0x[0-9a-fA-F]+)", asm)
+                if direct and depth == 0:
+                    enqueue(int(direct[1], 16), 1, "direct startup callee")
+                reference = re.search(r"#\s*(0x[0-9a-fA-F]+)", asm)
+                if not reference:
+                    continue
+                target = int(reference[1], 16)
+                if region_at(target, True):
+                    if depth == 0:
+                        enqueue(target, 1, "referenced startup code")
+                    continue
+                values = read(target, 256, "startup referenced data")
+                for offset in range(0, min(len(values), 64) - 7, 8):
+                    pointer = number(values, offset)
+                    if region_at(pointer, True):
+                        if depth == 0:
+                            enqueue(pointer, 1, "startup function pointer")
+                    else:
+                        read(pointer, 512, "startup referenced object")
+        sample["limited"] = bool(queue)
+    except Exception as error:
+        sample["status"] = "failed"
+        sample["errors"].append(str(error))
+    finally:
+        sample["seconds"] = round(time.monotonic() - started, 4)
+        result.setdefault("startup_stage_samples", []).append(sample)
+
+
 def profile_snapshot(phase):
     original = gdb.selected_thread()
     sample = {"phase": phase, "status": "game_thread_not_found"}
@@ -217,11 +431,15 @@ def profile_snapshot(phase):
         if original is not None and original.is_valid():
             original.switch()
     result.setdefault("game_samples", []).append(sample)
+    if CONFIG.get("guest_wait"):
+        guest_wait_snapshot(phase)
+        startup_stage_snapshot(phase)
     if phase == "after" and CONFIG.get("screenshots") and result.get("status") == "complete":
         request_native_screenshots()
 '''
 
 PROFILE = {
+    "guest_wait": True,
     "required_apis": tuple(api for api in APIS if api not in OPTIONAL_APIS),
     "allowed_apis": APIS,
     "only_required": True,
