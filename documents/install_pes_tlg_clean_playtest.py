@@ -16,15 +16,14 @@ import sys
 import tempfile
 
 REPO = "https://github.com/Chreece/shadPS4.git"
-BRANCH = "playtest/tlg-ui-diagnostics-20261005"
-REVISION = "a66eb3c5ff66421b9685006778c004ff19d956ea"
+BRANCH = "playtest/tlg-early-fragment-tests-20261005"
+REVISION = "f8c65adfe74c3ce8df246760455a93e6bb95a3e0"
 IMAGE = "shadps4-render-playtest-builder:trixie-clang19-v1"
 UNSET_LINE = (
     "unset SHADPS4_NGS2_DIAGNOSTICS SHADPS4_GRAPHICS_DIAGNOSTICS "
     "SHADPS4_NGS2_DIAGNOSTICS_TRIGGER\n"
 )
 GRAPHICS_EXPORT = "export SHADPS4_GRAPHICS_DIAGNOSTICS=1\n"
-UI_DIAG_EXPORT = "export SHADPS4_TLG_UI_DIAGNOSTICS=1\n"
 DOCKERFILE = """FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \\
     ca-certificates git cmake ninja-build build-essential clang-19 clang-tools-19 llvm-19-dev \\
@@ -201,9 +200,15 @@ def build(home):
         raise RuntimeError("Startup loading black-frame retention is missing")
     if '"predicated-skip"' not in diagnostics or '"zpass-evaluation"' not in diagnostics:
         raise RuntimeError("PES predication diagnostics are missing")
-    rasterizer = (source / "src/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text()
-    if "TLG_UI_PIPE" not in rasterizer or "TLG_UI_FRAME" not in rasterizer:
-        raise RuntimeError("TLG UI renderer diagnostics are missing")
+    runtime_info = (source / "src/shader_recompiler/runtime_info.h").read_text()
+    spirv = (source / "src/shader_recompiler/backend/spirv/emit_spirv.cpp").read_text()
+    pipeline_cache = (source / "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp").read_text()
+    if "depth_before_shader" not in runtime_info:
+        raise RuntimeError("DEPTH_BEFORE_SHADER runtime state is missing")
+    if "spv::ExecutionMode::EarlyFragmentTests" not in spirv:
+        raise RuntimeError("Early fragment test SPIR-V mode is missing")
+    if "EARLY_FRAGMENT_TESTS ps=" not in pipeline_cache:
+        raise RuntimeError("Early fragment test runtime logging is missing")
     process = (source / "src/core/libraries/kernel/process.cpp").read_text()
     pthread_cpp = (source / "src/core/libraries/kernel/threads/pthread.cpp").read_text()
     pthread_h = (source / "src/core/libraries/kernel/threads/pthread.h").read_text()
@@ -264,8 +269,8 @@ def ensure_graphics_diagnostics(home):
     if not regular(wrapper):
         raise RuntimeError("Expected regular ES-DE shadPS4 wrapper: " + str(wrapper))
     text = wrapper.read_text()
-    replacement = UNSET_LINE + GRAPHICS_EXPORT + UI_DIAG_EXPORT
-    old_replacement = UNSET_LINE + GRAPHICS_EXPORT
+    replacement = UNSET_LINE + GRAPHICS_EXPORT
+    old_replacement = UNSET_LINE + GRAPHICS_EXPORT + "export SHADPS4_TLG_UI_DIAGNOSTICS=1\\n"
     if replacement not in text:
         if old_replacement in text:
             text = text.replace(old_replacement, replacement, 1)
@@ -278,7 +283,6 @@ def ensure_graphics_diagnostics(home):
     if check.count(replacement) != 1:
         raise RuntimeError("Graphics diagnostics launcher verification failed")
     say("GRAPHICS_DIAGNOSTICS=ENABLED")
-    say("TLG_UI_DIAGNOSTICS=ENABLED")
 
 
 def select(home, built):
@@ -353,7 +357,7 @@ def main():
             "tlg_base_instance_step_rate": True,
             "tlg_precise_readbacks_test_override": True,
             "graphics_diagnostics": True,
-            "tlg_ui_diagnostics": True,
+            "tlg_early_fragment_tests": True,
         }
         state_path.write_text(json.dumps(state, indent=2) + "\n")
 
@@ -371,12 +375,12 @@ def main():
         say("PES_WAIT_ZPASS_PREDICATION=ENABLED")
         say("TLG_BASE_INSTANCE_STEP_RATE=ENABLED")
         say("TLG_PRECISE_READBACKS_TEST_OVERRIDE=ENABLED")
-        say("TLG_UI_DIAGNOSTICS=ENABLED")
+        say("TLG_EARLY_FRAGMENT_TESTS=ENABLED")
         say("GAME_LAUNCHED=NO")
         say("RESULT=PASS")
         say("")
-        say("Launch The Last Guardian and reproduce the missing subtitle/menu-focus scene.")
-        say("Move the menu selection several times, close the menu, wait a few seconds, then exit.")
+        say("Launch The Last Guardian and reproduce the exact missing subtitle/menu-focus scene.")
+        say("Check whether the selected menu item and subtitles now remain visible, then exit.")
         say("After the test: shadps4-pack-playtest-logs")
         say("Returning to your existing SSH prompt.")
 
