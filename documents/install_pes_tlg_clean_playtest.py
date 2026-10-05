@@ -15,8 +15,8 @@ import sys
 import tempfile
 
 REPO = "https://github.com/Chreece/shadPS4.git"
-BRANCH = "playtest/tlg-current-main-precise-20261005"
-REVISION = "aa6b784b3eb50e5f3b9e96fd1b6f5afe99d77004"
+BRANCH = "playtest/tlg-current-main-sparse-startup-20261005"
+REVISION = "ae683fa1ee4e8605843d1d7990a3cb725803a762"
 IMAGE = "shadps4-render-playtest-builder:trixie-clang19-v1"
 DOCKERFILE = """FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \\
@@ -178,6 +178,19 @@ def build(home):
         raise RuntimeError("TLG Precise-readback playtest override is missing")
     if 'id == "CUSA03745"' not in emulator:
         raise RuntimeError("TLG playtest override is not scoped to CUSA03745")
+    startup = (source / "src/core/startup_progress.h").read_text()
+    presenter = (source / "src/video_core/renderer_vulkan/vk_presenter.cpp").read_text()
+    if "HasVisibleRgb8Content" not in startup or "DrawStartupLoading" not in presenter:
+        raise RuntimeError("Startup loading implementation is missing")
+    instance_h = (source / "src/video_core/renderer_vulkan/vk_instance.h").read_text()
+    instance_cpp = (source / "src/video_core/renderer_vulkan/vk_instance.cpp").read_text()
+    buffer_cache = (source / "src/video_core/buffer_cache/buffer_cache.cpp").read_text()
+    if "GetSparseQueue()" not in instance_h or "sparse_queue_family_index" not in instance_h:
+        raise RuntimeError("Sparse queue state is missing")
+    if "vk::QueueFlagBits::eSparseBinding" not in instance_cpp:
+        raise RuntimeError("Sparse-capable queue selection is missing")
+    if "GetSparseQueue().bindSparse" not in buffer_cache:
+        raise RuntimeError("Sparse binds are still submitted on the graphics queue")
 
     (context / "Dockerfile").write_text(DOCKERFILE)
     run(["docker", "build", "--tag", IMAGE, context])
@@ -287,19 +300,21 @@ def main():
             "tlg_current_upstream_main": "10393d2c3b4457b5b2d14620f87974a25f9c62a5",
             "tlg_base_instance_step_rate_upstream": True,
             "tlg_precise_readbacks_test_override": True,
+            "startup_loading_screen": True,
+            "sparse_capable_queue": True,
         }
         state_path.write_text(json.dumps(state, indent=2) + "\n")
 
         say("")
         say("============================================================")
-        say(" CURRENT-UPSTREAM THE LAST GUARDIAN PLAYTEST READY")
+        say(" CURRENT-UPSTREAM + SPARSE-QUEUE TLG PLAYTEST READY")
         say("============================================================")
         say("REVISION=" + REVISION)
         say("UPSTREAM_BASE=10393d2c3b4457b5b2d14620f87974a25f9c62a5")
         say("BINARY=" + str(binary))
         say("BINARY_SHA256=" + built_sha)
         say("PREVIOUS_BINARY=" + str(previous))
-        say("TLG_BASE_INSTANCE_STEP_RATE=UPSTREAM")
+        say("TLG_BASE_INSTANCE_STEP_RATE=UPSTREAM")\n        say("STARTUP_LOADING_SCREEN=ENABLED")\n        say("SPARSE_CAPABLE_QUEUE=ENABLED")
         say("TLG_PRECISE_READBACKS_TEST_OVERRIDE=ENABLED")
         say("GAME_LAUNCHED=NO")
         say("RESULT=PASS")
