@@ -435,7 +435,7 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
     EmulatorSettings.Load(id);
     if (id == "CUSA03745") {
         // Test-only playtest override. Keep out of production branches.
-        EmulatorSettings.SetReadbacksMode(static_cast<u32>(GpuReadbacksMode::Precise));
+        EmulatorSettings.SetReadbacksMode(static_cast<u32>(GpuReadbacksMode::Precise), true);
         LOG_WARNING(Config, "Playtest override: forcing Precise GPU readbacks for {}", id);
     }
     // Switch to configured log
