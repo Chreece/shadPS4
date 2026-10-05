@@ -7,6 +7,7 @@
 #include <coroutine>
 #include <exception>
 #include <mutex>
+#include <optional>
 #include <semaphore>
 #include <span>
 #include <thread>
@@ -208,6 +209,9 @@ private:
     VAddr indirect_args_addr{};
     u32 num_counter_pairs{};
     u64 pixel_counter{};
+    bool predication_active{};
+    bool predication_execute{true};
+    std::optional<bool> predication_visible{};
 
     struct ConstantEngine {
         void Reset() {
