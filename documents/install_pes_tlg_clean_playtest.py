@@ -16,8 +16,8 @@ import sys
 import tempfile
 
 REPO = "https://github.com/Chreece/shadPS4.git"
-BRANCH = "playtest/tlg-early-fragment-tests-20261005"
-REVISION = "f8c65adfe74c3ce8df246760455a93e6bb95a3e0"
+BRANCH = "playtest/tlg-buffer-read-barriers-20261005"
+REVISION = "2062d88be2d1b0eddd1c06b5b8f65d3e4c9c9e1e"
 IMAGE = "shadps4-render-playtest-builder:trixie-clang19-v1"
 UNSET_LINE = (
     "unset SHADPS4_NGS2_DIAGNOSTICS SHADPS4_GRAPHICS_DIAGNOSTICS "
@@ -200,15 +200,18 @@ def build(home):
         raise RuntimeError("Startup loading black-frame retention is missing")
     if '"predicated-skip"' not in diagnostics or '"zpass-evaluation"' not in diagnostics:
         raise RuntimeError("PES predication diagnostics are missing")
-    runtime_info = (source / "src/shader_recompiler/runtime_info.h").read_text()
-    spirv = (source / "src/shader_recompiler/backend/spirv/emit_spirv.cpp").read_text()
-    pipeline_cache = (source / "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp").read_text()
-    if "depth_before_shader" not in runtime_info:
-        raise RuntimeError("DEPTH_BEFORE_SHADER runtime state is missing")
-    if "spv::ExecutionMode::EarlyFragmentTests" not in spirv:
-        raise RuntimeError("Early fragment test SPIR-V mode is missing")
-    if "EARLY_FRAGMENT_TESTS ps=" not in pipeline_cache:
-        raise RuntimeError("Early fragment test runtime logging is missing")
+    rasterizer_h = (source / "src/video_core/renderer_vulkan/vk_rasterizer.h").read_text()
+    rasterizer_cpp = (source / "src/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text()
+    if "vk::AccessFlags2 src_access" not in rasterizer_h:
+        raise RuntimeError("Exact buffer access tracking is missing")
+    if "vk::AccessFlagBits2::eVertexAttributeRead" not in rasterizer_cpp:
+        raise RuntimeError("Vertex-buffer read tracking is missing")
+    if "vk::AccessFlagBits2::eIndexRead" not in rasterizer_cpp:
+        raise RuntimeError("Index-buffer read tracking is missing")
+    if "vk::AccessFlagBits2::eIndirectCommandRead" not in rasterizer_cpp:
+        raise RuntimeError("Indirect-buffer read tracking is missing")
+    if "BUFFER_SYNC count=" not in rasterizer_cpp:
+        raise RuntimeError("Buffer synchronization diagnostics are missing")
     process = (source / "src/core/libraries/kernel/process.cpp").read_text()
     pthread_cpp = (source / "src/core/libraries/kernel/threads/pthread.cpp").read_text()
     pthread_h = (source / "src/core/libraries/kernel/threads/pthread.h").read_text()
@@ -357,7 +360,7 @@ def main():
             "tlg_base_instance_step_rate": True,
             "tlg_precise_readbacks_test_override": True,
             "graphics_diagnostics": True,
-            "tlg_early_fragment_tests": True,
+            "tlg_buffer_read_barriers": True,
         }
         state_path.write_text(json.dumps(state, indent=2) + "\n")
 
@@ -375,12 +378,12 @@ def main():
         say("PES_WAIT_ZPASS_PREDICATION=ENABLED")
         say("TLG_BASE_INSTANCE_STEP_RATE=ENABLED")
         say("TLG_PRECISE_READBACKS_TEST_OVERRIDE=ENABLED")
-        say("TLG_EARLY_FRAGMENT_TESTS=ENABLED")
+        say("TLG_BUFFER_READ_BARRIERS=ENABLED")
         say("GAME_LAUNCHED=NO")
         say("RESULT=PASS")
         say("")
         say("Launch The Last Guardian and reproduce the exact missing subtitle/menu-focus scene.")
-        say("Check whether the selected menu item and subtitles now remain visible, then exit.")
+        say("Check the menu focus and subtitles, then exit. BUFFER_SYNC entries are collected automatically.")
         say("After the test: shadps4-pack-playtest-logs")
         say("Returning to your existing SSH prompt.")
 
