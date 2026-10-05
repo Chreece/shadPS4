@@ -21,9 +21,16 @@ std::atomic<unsigned> gate{17};
 std::atomic<bool> ready{false};
 __attribute__((noinline)) void checkpoint() { asm volatile("" ::: "memory"); }
 __attribute__((noinline)) void waiting_caller() { checkpoint(); gate.fetch_add(1); }
+__attribute__((noinline)) void game_tick(void* object, double delta) {
+    *reinterpret_cast<double*>(static_cast<char*>(object) + 0x40) += delta;
+}
+__attribute__((noinline)) void dispatcher_tick(void* object, double delta) {
+    *reinterpret_cast<double*>(static_cast<char*>(object) + 0x40) += delta;
+    *reinterpret_cast<unsigned*>(static_cast<char*>(object) + 0x48) += 1;
+}
 void prepare_startup_stage() {
     for (auto address : {0x6c8000ul, 0x5e7f000ul, 0x4c11000ul, 0x6ce000ul, 0x6cf000ul,
-                         0x3639000ul}) {
+                         0x3639000ul, 0x4d8a000ul, 0x4d8b000ul}) {
         if (mmap(reinterpret_cast<void*>(address), 4096, PROT_READ | PROT_WRITE,
                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) == MAP_FAILED)
             throw std::runtime_error("fixture mapping unavailable");
@@ -45,6 +52,15 @@ void prepare_startup_stage() {
     *reinterpret_cast<unsigned long*>(0x5e7f988) = 0x5e7fa00;
     *reinterpret_cast<unsigned long*>(0x5e7fa00) = 0x4c11a68;
     *reinterpret_cast<unsigned*>(0x5e7fa30) = 1;
+    *reinterpret_cast<unsigned long*>(0x5e7f8d8) = 0x5e7fb00;
+    *reinterpret_cast<unsigned long*>(0x5e7f8c0) = 0x5e7fc00;
+    *reinterpret_cast<unsigned long*>(0x5e7fb00) = 0x4d8b140;
+    *reinterpret_cast<unsigned long*>(0x5e7fc00) = 0x4d8aed8;
+    *reinterpret_cast<unsigned long*>(0x5e7fb10) = 0x5e7fd00;
+    *reinterpret_cast<unsigned long*>(0x5e7fd00) = 0x4d8b400;
+    *reinterpret_cast<unsigned long*>(0x5e7fd20) = 0x5e7fa00;
+    *reinterpret_cast<void(**)(void*,double)>(0x4d8b180) = game_tick;
+    *reinterpret_cast<void(**)(void*,double)>(0x4d8af10) = dispatcher_tick;
     for (unsigned i = 0; i < 19; ++i)
         *reinterpret_cast<int*>(0x3639dd0 + 4*i) = 0x6ce921 - 0x3639dd0;
     if (mprotect(reinterpret_cast<void*>(0x6ce000), 8192, PROT_READ | PROT_EXEC))
@@ -65,8 +81,13 @@ int main() {
     unsigned event = 2;
     reinterpret_cast<void(*)(void*,void*,void*)>(0x6ce910)(
         reinterpret_cast<void*>(0x5e7fa00), nullptr, &event);
+    game_tick(reinterpret_cast<void*>(0x5e7fb00), 0.125);
+    dispatcher_tick(reinterpret_cast<void*>(0x5e7fc00), 0.25);
     worker.join();
-    return 0;
+    return (*reinterpret_cast<unsigned*>(0x5e7fa30) != 2 ||
+            *reinterpret_cast<double*>(0x5e7fb40) != 0.125 ||
+            *reinterpret_cast<double*>(0x5e7fc40) != 0.25 ||
+            *reinterpret_cast<unsigned*>(0x5e7fc48) != 1);
 }
 '''
 
@@ -84,8 +105,18 @@ def number(data, offset, size=8): return int.from_bytes(data[offset:offset+size]
 exec(compile(pes_frame_profile.SUPPORT, "<profile>", "exec"))
 guest_wait_snapshot("before")
 startup_stage_snapshot("before")
+dispatcher_snapshot("before", result["startup_stage_samples"][-1])
 guest_wait_snapshot("after")
 startup_stage_snapshot("after")
+dispatcher_snapshot("after", result["startup_stage_samples"][-1])
+assert all(s['status'] == 'sampled' and len(s['roots']) == 2
+           for s in result['dispatcher_samples']), result['dispatcher_samples']
+assert all(any(m['address'] == '0x5e7fd00' for m in s['memory'])
+           for s in result['dispatcher_samples'])
+gdb.selected_inferior().write_memory(0x5e7fb00, (0).to_bytes(8, 'little'))
+dispatcher_snapshot('wrong-vtable', result['startup_stage_samples'][-1])
+assert result['dispatcher_samples'].pop()['status'] == 'failed'
+gdb.selected_inferior().write_memory(0x5e7fb00, (0x4d8b140).to_bytes(8, 'little'))
 assert all(s["stage_index"] == 2 for s in result["startup_stage_samples"])
 expected = hex(int(gdb.parse_and_eval("(void*)&waiting_caller")))
 assert all(s["callbacks"][2]["poll_callback"] == expected
@@ -111,6 +142,7 @@ exec(compile(ast.Module(body=[entry_class], type_ignores=[]), '<actual-entry-pro
 entries, pending = [], []
 result.update(apis={}, resolved_symbols={})
 arm_startup_listener_probes(result['startup_stage_samples'][0])
+arm_dispatcher_probes(result['dispatcher_samples'][0])
 gdb.execute('continue', to_string=True)
 assert len(pending) == 1 and pending[0][0] == 'entry'
 probe = pending[0][1]
@@ -128,6 +160,27 @@ consume_return(context)
 after = fields_after(probe.api, args, None)
 assert after['substate'] == 2 and not after['complete'], after
 result['listener_preflight'] = {'before': before, 'after': after, 'passed': True}
+dispatch_checks = []
+for api, delta in (('PES::GameTick', 0.125), ('PES::DispatcherTick', 0.25)):
+    pending = []
+    gdb.execute('continue', to_string=True)
+    assert len(pending) == 1 and pending[0][0] == 'entry', pending
+    probe = pending[0][1]
+    assert probe.api == api, probe.api
+    probe.enabled = False
+    args = capture_args(api)
+    before = fields_before(api, args)
+    assert float(before['delta_seconds']) == delta, before
+    context = {'api': api, 'thread': gdb.selected_thread().global_num, 'args': args}
+    Return(context)
+    pending = []
+    gdb.execute('continue', to_string=True)
+    assert len(pending) == 1 and pending[0][0] == 'return', pending
+    consume_return(context)
+    after = fields_after(api, args, None)
+    assert before['object_bytes'] != after['object_bytes'], (before, after)
+    dispatch_checks.append({'api': api, 'before': before, 'after': after})
+result['dispatcher_preflight'] = {'passed': True, 'checks': dispatch_checks}
 for breakpoint in gdb.breakpoints() or ():
     breakpoint.delete()
 Path("/results/snapshots.json").write_text(json.dumps(result, indent=2))
@@ -147,6 +200,8 @@ CMD ["gdb", "--batch", "-ex", "set debuginfod enabled off", "-ex", "break checkp
 def check_samples(result, fixture=False):
     if fixture and not result.get('listener_preflight', {}).get('passed'):
         raise RuntimeError('Guest listener entry/return preflight did not pass')
+    if fixture and not result.get('dispatcher_preflight', {}).get('passed'):
+        raise RuntimeError('Guest dispatcher entry/return preflight did not pass')
     stages = result.get('startup_stage_samples', [])
     if [s.get('phase') for s in stages] != ['before', 'after']:
         raise RuntimeError('Both startup-stage snapshots are required')
@@ -161,12 +216,21 @@ def check_samples(result, fixture=False):
             if not listener.get('code_verified') or 'substate' not in listener:
                 raise RuntimeError('Stage 11 listener was not identified safely')
     if not fixture and any(s.get('listener', {}).get('code_verified') for s in stages):
-        required = {'PES::InitStage', 'PES::InitListener'}
+        required = {'PES::InitStage', 'PES::InitListener', 'PES::GameTick', 'PES::DispatcherTick'}
         if not required.issubset(result.get('apis', {})):
             raise RuntimeError('Init-listener probes were not armed')
         if any(r.get('api') in required and r.get('read_error')
                for r in result.get('records', [])):
             raise RuntimeError('Init-listener argument or return capture failed')
+    dispatchers = result.get('dispatcher_samples', [])
+    if [s.get('phase') for s in dispatchers] != ['before', 'after']:
+        raise RuntimeError('Both dispatcher snapshots are required')
+    for sample in dispatchers:
+        if (sample.get('status') != 'sampled' or sample.get('errors') or
+                len(sample.get('roots', [])) != 2 or not sample.get('code') or
+                not 0 < sample.get('read_bytes', 0) <= 524288 or
+                sample.get('seconds', 99) > 1.0):
+            raise RuntimeError('Dispatcher state was not captured within its bounds')
     samples = result.get('guest_wait_samples', [])
     if [sample.get('phase') for sample in samples] != ['before', 'after']:
         raise RuntimeError('Both guest wait snapshots are required')

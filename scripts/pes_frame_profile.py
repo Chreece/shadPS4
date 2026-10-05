@@ -75,7 +75,7 @@ def capture_args(api):
 def return_kind(api):
     if api in ("Rasterizer::FilterDraw", "PES::InitStage"):
         return "bool"
-    if api == "PES::InitListener":
+    if api in ("PES::InitListener", "PES::GameTick", "PES::DispatcherTick"):
         return "void"
     return "void" if api.startswith(("VideoOutDriver::", "sceGnmDingDong", "Rasterizer::")) else "error_code"
 
@@ -86,6 +86,10 @@ def signed32(value):
 
 
 def fields_before(api, args):
+    if api in ("PES::GameTick", "PES::DispatcherTick"):
+        return {"object": hex(args[0]), "object_bytes": memory(args[0], 128).hex(),
+                "delta_seconds": str(gdb.parse_and_eval("$xmm0.v2_double[0]")),
+                "caller": hex(number(memory(register("rsp"), 8), 0))}
     if api == "PES::InitListener":
         return dict(listener_fields(args[0]),
                     event_type=number(memory(args[2], 4), 0, 4),
@@ -146,6 +150,8 @@ def fields_before(api, args):
 
 
 def fields_after(api, args, rc):
+    if api in ("PES::GameTick", "PES::DispatcherTick"):
+        return {"object": hex(args[0]), "object_bytes": memory(args[0], 128).hex()}
     if api == "PES::InitListener":
         return listener_fields(args[0])
     if api == "PES::InitStage":
@@ -336,6 +342,153 @@ def arm_startup_listener_probes(sample):
         result["resolved_symbols"][api] = hex(address)
 
 
+def dispatcher_snapshot(phase, stage_sample):
+    import re
+    started = time.monotonic()
+    deadline = started + 0.75
+    sample = {"phase": phase, "status": "unverified_image", "roots": [],
+              "memory": [], "code": [], "errors": [], "read_bytes": 0}
+    result.setdefault("dispatcher_samples", []).append(sample)
+    if not stage_sample.get("listener", {}).get("code_verified"):
+        return
+    regions = []
+    for line in (proc / "maps").read_text().splitlines():
+        fields = line.split()
+        low, high = (int(value, 16) for value in fields[0].split("-"))
+        if "r" in fields[1] and low < (1 << 40):
+            regions.append((low, min(high, 1 << 40), fields[1]))
+    saved, objects, methods = {}, [], []
+    seen_objects, seen_methods = set(), set()
+
+    def region_at(address, executable=False):
+        return next((r for r in regions if r[0] <= address < r[1] and
+                     (not executable or "x" in r[2])), None)
+
+    def read(address, size, kind):
+        region = region_at(address)
+        if region is None or time.monotonic() >= deadline:
+            return b""
+        size = min(size, region[1] - address, 524288 - sample["read_bytes"])
+        if size <= 0:
+            return b""
+        key = (address, size)
+        if key not in saved:
+            data = memory(address, size)
+            saved[key] = data
+            sample["read_bytes"] += len(data)
+            sample["memory"].append({"address": hex(address), "kind": kind,
+                                      "bytes": data.hex()})
+        return saved[key]
+
+    def enqueue_object(address, depth):
+        # Follow aligned data pointers with bounded depth and node count.
+        if (address & 7 or address < 0x4b70000 or not region_at(address) or
+                region_at(address, True) or address in seen_objects or depth > 4):
+            return
+        if len(seen_objects) >= 160:
+            sample["object_limit_reached"] = True
+            return
+        seen_objects.add(address)
+        objects.append((address, depth))
+
+    def enqueue_method(address, depth):
+        if address in seen_methods or not region_at(address, True):
+            return
+        if len(seen_methods) >= 32:
+            sample["code_limit_reached"] = True
+            return
+        seen_methods.add(address)
+        methods.append((address, depth))
+
+    try:
+        for api, global_address, expected_vtable, slot in (
+                ("PES::GameTick", 0x5e7f8d8, 0x4d8b140, 0x40),
+                ("PES::DispatcherTick", 0x5e7f8c0, 0x4d8aed8, 0x38)):
+            pointer = read(global_address, 8, api + " global")
+            if len(pointer) != 8:
+                raise RuntimeError(api + " global unreadable")
+            address = number(pointer, 0)
+            data = read(address, 512, api + " object")
+            if len(data) < 128 or number(data, 0) != expected_vtable:
+                raise RuntimeError(api + " vtable mismatch")
+            table = read(expected_vtable, 192, api + " vtable")
+            target = number(table, slot) if len(table) >= slot + 8 else 0
+            if not region_at(target, True):
+                raise RuntimeError(api + " method is not executable")
+            sample["roots"].append({"api": api, "object": hex(address),
+                                    "vtable": hex(expected_vtable), "slot": slot,
+                                    "target": hex(target)})
+            enqueue_method(target, 0)
+            enqueue_object(address, 0)
+            # The game context owns the event dispatcher at +0x10.
+            if api == "PES::GameTick":
+                dispatcher = number(data, 0x10)
+                state = read(dispatcher, 512, "game event dispatcher")
+                enqueue_object(dispatcher, 0)
+                if len(state) >= 8:
+                    vtable = read(number(state, 0), 192, "event dispatcher vtable")
+                    for offset in range(0, len(vtable) - 7, 8):
+                        enqueue_method(number(vtable, offset), 1)
+        # Preserve this compact engine area for offline inspection of registration,
+        # queue processing and event filtering without another capture for each callee.
+        for address, size, label in ((0x2770000, 0x4000, "event engine code"),
+                                     (0x6cbf00, 0x1200, "dispatcher call sites"),
+                                     (0x1e6fae0, 0x840, "game mode gates")):
+            if region_at(address, True):
+                read(address, size, label)
+        # Capture the root listener lists before following incidental code references.
+        while objects and time.monotonic() < deadline:
+            address, depth = objects.pop(0)
+            data = read(address, 512, "dispatcher object graph")
+            for offset in range(0, len(data) - 7, 8):
+                enqueue_object(number(data, offset), depth + 1)
+        while methods and time.monotonic() < deadline:
+            address, depth = methods.pop(0)
+            data = read(address, 4096, "dispatcher method")
+            if len(data) < 16:
+                continue
+            instructions = gdb.selected_inferior().architecture().disassemble(
+                address, address + min(2048, len(data) - 15))
+            sample["code"].append({"pc": hex(address), "instructions": instructions})
+            for instruction in instructions:
+                asm = instruction["asm"]
+                direct = re.match(r"(?:call\w*|jmp\w*)\s+(0x[0-9a-fA-F]+)", asm)
+                if direct and depth < 2:
+                    enqueue_method(int(direct[1], 16), depth + 1)
+                reference = re.search(r"#\s*(0x[0-9a-fA-F]+)", asm)
+                if reference:
+                    target = int(reference[1], 16)
+                    values = read(target, 256, "dispatcher referenced data")
+                    if not region_at(target, True):
+                        enqueue_object(target, 1)
+                        for offset in range(0, min(len(values), 64) - 7, 8):
+                            enqueue_object(number(values, offset), 1)
+        while objects and time.monotonic() < deadline:
+            address, depth = objects.pop(0)
+            data = read(address, 512, "dispatcher object graph")
+            for offset in range(0, len(data) - 7, 8):
+                enqueue_object(number(data, offset), depth + 1)
+        sample["status"] = "sampled"
+        sample["limited"] = bool(methods or objects or sample.get("object_limit_reached") or
+                                 sample.get("code_limit_reached"))
+    except Exception as error:
+        sample["status"] = "failed"
+        sample["errors"].append(str(error))
+    finally:
+        sample["seconds"] = round(time.monotonic() - started, 4)
+
+
+def arm_dispatcher_probes(sample):
+    if sample.get("status") != "sampled":
+        return
+    for root in sample["roots"]:
+        api, address = root["api"], int(root["target"], 16)
+        entries.append(Entry(address, api))
+        result["apis"][api] = {"calls": 0, "returns": 0, "errors": {},
+                               "valid_frames": 0, "out_of_scope": 0, "capped": False}
+        result["resolved_symbols"][api] = hex(address)
+
+
 def startup_stage_snapshot(phase):
     import re
     started = time.monotonic()
@@ -498,8 +651,10 @@ def profile_snapshot(phase):
     if CONFIG.get("guest_wait"):
         guest_wait_snapshot(phase)
         startup_stage_snapshot(phase)
+        dispatcher_snapshot(phase, result["startup_stage_samples"][-1])
         if phase == "before":
             arm_startup_listener_probes(result["startup_stage_samples"][-1])
+            arm_dispatcher_probes(result["dispatcher_samples"][-1])
     if phase == "after" and CONFIG.get("screenshots") and result.get("status") == "complete":
         request_native_screenshots()
 '''
