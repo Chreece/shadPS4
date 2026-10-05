@@ -17,6 +17,7 @@ jobs:
       - name: Validate helper
         run: |
           python3 -m py_compile documents/install_pes_tlg_clean_playtest.py
-          grep -F 'BRANCH = "playtest/tlg-current-main-precise-20261005"' documents/install_pes_tlg_clean_playtest.py
-          grep -F 'REVISION = "aa6b784b3eb50e5f3b9e96fd1b6f5afe99d77004"' documents/install_pes_tlg_clean_playtest.py
+          grep -F 'BRANCH = "playtest/tlg-current-main-sparse-startup-20261005"' documents/install_pes_tlg_clean_playtest.py
+          grep -F 'REVISION = "ae683fa1ee4e8605843d1d7990a3cb725803a762"' documents/install_pes_tlg_clean_playtest.py
           grep -F 'UPSTREAM_BASE=10393d2c3b4457b5b2d14620f87974a25f9c62a5' documents/install_pes_tlg_clean_playtest.py
+
