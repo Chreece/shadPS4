@@ -17,7 +17,7 @@ import tempfile
 
 REPO = "https://github.com/Chreece/shadPS4.git"
 BRANCH = "playtest/pes-zpass-tlg-precise-clean-20261005"
-REVISION = "869dc7e206574fce19813921db77892f0e447ecc"
+REVISION = "7d96f4c6df64d42eec1edeab1423ebbc584af25e"
 IMAGE = "shadps4-render-playtest-builder:trixie-clang19-v1"
 UNSET_LINE = (
     "unset SHADPS4_NGS2_DIAGNOSTICS SHADPS4_GRAPHICS_DIAGNOSTICS "
@@ -167,6 +167,17 @@ def build(home):
             + REVISION + " fetched=" + fetched
         )
     run(["git", "-C", source, "checkout", "--detach", REVISION])
+    translate = (source / "src/shader_recompiler/frontend/translate/translate.cpp").read_text()
+    if "ASSERT(base_instance_sgpr == -1);" in translate:
+        raise RuntimeError("TLG base-instance/step-rate assertion is still present")
+    if "fetch_data.Empty() || fetch_data.instance_offset_sgpr == -1" not in translate:
+        raise RuntimeError("Upstream base-instance fetch semantics are missing")
+    liverpool = (source / "src/video_core/amdgpu/liverpool.cpp").read_text()
+    if "EvaluateZpass(" not in liverpool or "predication_execute" not in liverpool:
+        raise RuntimeError("PES WAIT/ZPASS predication implementation is missing")
+    emulator = (source / "src/emulator.cpp").read_text()
+    if 'SetReadbacksMode(static_cast<u32>(GpuReadbacksMode::Precise), true)' not in emulator:
+        raise RuntimeError("TLG game-specific Precise-readback test override is missing")
     jobs = str(min(8, os.cpu_count() or 2))
     run(["git", "-C", source, "submodule", "update", "--init", "--recursive", "--jobs", jobs])
 
