@@ -271,13 +271,13 @@ def ensure_graphics_diagnostics(home):
     text = wrapper.read_text()
     replacement = UNSET_LINE + GRAPHICS_EXPORT
     old_replacement = UNSET_LINE + GRAPHICS_EXPORT + "export SHADPS4_TLG_UI_DIAGNOSTICS=1\\n"
-    if replacement not in text:
-        if old_replacement in text:
-            text = text.replace(old_replacement, replacement, 1)
-        elif text.count(UNSET_LINE) == 1:
-            text = text.replace(UNSET_LINE, replacement, 1)
-        else:
+    if old_replacement in text:
+        text = text.replace(old_replacement, replacement, 1)
+        atomic_write(wrapper, text.encode(), stat.S_IMODE(wrapper.stat().st_mode))
+    elif replacement not in text:
+        if text.count(UNSET_LINE) != 1:
             raise RuntimeError("Launcher diagnostics reset is not recognized; wrapper preserved")
+        text = text.replace(UNSET_LINE, replacement, 1)
         atomic_write(wrapper, text.encode(), stat.S_IMODE(wrapper.stat().st_mode))
     check = wrapper.read_text()
     if check.count(replacement) != 1:
