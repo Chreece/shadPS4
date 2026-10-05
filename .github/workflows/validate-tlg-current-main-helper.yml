@@ -1,0 +1,22 @@
+name: Validate TLG Current Main Helper
+
+on:
+  push:
+    branches:
+      - playtest/tlg-current-main-deploy-20261005
+    paths:
+      - documents/install_pes_tlg_clean_playtest.py
+      - .github/workflows/validate-tlg-current-main-helper.yml
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate helper
+        run: |
+          python3 -m py_compile documents/install_pes_tlg_clean_playtest.py
+          grep -F 'BRANCH = "playtest/tlg-current-main-precise-20261005"' documents/install_pes_tlg_clean_playtest.py
+          grep -F 'REVISION = "aa6b784b3eb50e5f3b9e96fd1b6f5afe99d77004"' documents/install_pes_tlg_clean_playtest.py
+          grep -F 'UPSTREAM_BASE=10393d2c3b4457b5b2d14620f87974a25f9c62a5' documents/install_pes_tlg_clean_playtest.py
