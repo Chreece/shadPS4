@@ -16,8 +16,8 @@ import sys
 import tempfile
 
 REPO = "https://github.com/Chreece/shadPS4.git"
-BRANCH = "playtest/pes-zpass-tlg-precise-clean-20261005"
-REVISION = "7d96f4c6df64d42eec1edeab1423ebbc584af25e"
+BRANCH = "playtest/pes-cpu-zpass-tlg-precise-20261005"
+REVISION = "0f11ba5253b84c47787fec2b7f9eb56858d0c7c1"
 IMAGE = "shadps4-render-playtest-builder:trixie-clang19-v1"
 UNSET_LINE = (
     "unset SHADPS4_NGS2_DIAGNOSTICS SHADPS4_GRAPHICS_DIAGNOSTICS "
@@ -191,6 +191,17 @@ def build(home):
     emulator = (source / "src/emulator.cpp").read_text()
     if 'SetReadbacksMode(static_cast<u32>(GpuReadbacksMode::Precise), true)' not in emulator:
         raise RuntimeError("TLG game-specific Precise-readback test override is missing")
+    process = (source / "src/core/libraries/kernel/process.cpp").read_text()
+    pthread_cpp = (source / "src/core/libraries/kernel/threads/pthread.cpp").read_text()
+    pthread_h = (source / "src/core/libraries/kernel/threads/pthread.h").read_text()
+    if "g_curthread->guest_cpu.load" not in process:
+        raise RuntimeError("PES guest CPU identity query fix is missing")
+    if "UpdateGuestCpu(new_thread->attr.cpuset);" not in pthread_cpp:
+        raise RuntimeError("PES initial guest CPU affinity tracking is missing")
+    if "thread->UpdateGuestCpu(thread->attr.cpuset);" not in pthread_cpp:
+        raise RuntimeError("PES guest CPU affinity update tracking is missing")
+    if "std::atomic<s32> guest_cpu{0};" not in pthread_h:
+        raise RuntimeError("PES guest CPU identity storage is missing")
     jobs = str(min(8, os.cpu_count() or 2))
     run(["git", "-C", source, "submodule", "update", "--init", "--recursive", "--jobs", jobs])
 
@@ -317,6 +328,7 @@ def main():
             "binary_sha256": built_sha,
             "previous_binary": str(previous),
             "previous_sha256": previous_sha,
+            "pes_guest_cpu_identity": True,
             "pes_wait_zpass_predication": True,
             "tlg_base_instance_step_rate": True,
             "tlg_precise_readbacks_test_override": True,
@@ -332,6 +344,7 @@ def main():
         say("BINARY=" + str(binary))
         say("BINARY_SHA256=" + built_sha)
         say("PREVIOUS_BINARY=" + str(previous))
+        say("PES_GUEST_CPU_IDENTITY=ENABLED")
         say("PES_WAIT_ZPASS_PREDICATION=ENABLED")
         say("TLG_BASE_INSTANCE_STEP_RATE=ENABLED")
         say("TLG_PRECISE_READBACKS_TEST_OVERRIDE=ENABLED")
