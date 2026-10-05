@@ -9,6 +9,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_occlusion_query.h"
@@ -21,6 +22,21 @@
 #include "video_core/texture_cache/texture_cache.h"
 
 namespace Vulkan {
+
+static void LogBufferSyncHazard(const char* kind, VAddr address, u64 size) {
+    if (!VideoCore::GraphicsDiagnostics::Enabled()) {
+        return;
+    }
+    static std::atomic<unsigned long long> count{};
+    const auto value = count.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (!VideoCore::GraphicsDiagnostics::ShouldSample(value)) {
+        return;
+    }
+    std::fprintf(stderr, "BUFFER_SYNC count=%llu kind=%s address=%llx size=%llu\n", value, kind,
+                 static_cast<unsigned long long>(address),
+                 static_cast<unsigned long long>(size));
+    std::fflush(stderr);
+}
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
@@ -287,14 +303,22 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
     const auto size = stride * max_count;
     const auto [buffer, base] = buffer_cache.ObtainBuffer(arg_address + offset, size, false);
-    needs_barrier |= runtime.IsBufferAccessed(buffer, base, size);
+    const bool arg_hazard = runtime.IsBufferAccessed(buffer, base, size);
+    needs_barrier |= arg_hazard;
+    if (arg_hazard) {
+        LogBufferSyncHazard("draw-indirect", arg_address + offset, size);
+    }
     bound_buffers.emplace_back(buffer, base, size, vk::AccessFlagBits2::eIndirectCommandRead);
 
     const VideoCore::Buffer* count_buffer;
     u64 count_offset;
     if (count_address != 0) {
         std::tie(count_buffer, count_offset) = buffer_cache.ObtainBuffer(count_address, 4, false);
-        needs_barrier |= runtime.IsBufferAccessed(count_buffer, count_offset, 4);
+        const bool count_hazard = runtime.IsBufferAccessed(count_buffer, count_offset, 4);
+        needs_barrier |= count_hazard;
+        if (count_hazard) {
+            LogBufferSyncHazard("draw-indirect-count", count_address, 4);
+        }
         bound_buffers.emplace_back(count_buffer, count_offset, 4,
                                    vk::AccessFlagBits2::eIndirectCommandRead);
     }
@@ -394,7 +418,11 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     }
 
     const auto [buffer, base] = buffer_cache.ObtainBuffer(address + offset, size, false);
-    needs_barrier |= runtime.IsBufferAccessed(buffer, base, size);
+    const bool dispatch_hazard = runtime.IsBufferAccessed(buffer, base, size);
+    needs_barrier |= dispatch_hazard;
+    if (dispatch_hazard) {
+        LogBufferSyncHazard("dispatch-indirect", address + offset, size);
+    }
     bound_buffers.emplace_back(buffer, base, size, vk::AccessFlagBits2::eIndirectCommandRead);
 
     if (needs_barrier) {
@@ -534,7 +562,11 @@ void Rasterizer::BindVertexBuffers(const GraphicsPipeline* pipeline) {
         const u64 size = memory->ClampRangeSize(range.base_address, range.GetSize());
         std::tie(range.buffer, range.offset) =
             buffer_cache.ObtainBuffer(range.base_address, size, false);
-        needs_barrier |= runtime.IsBufferAccessed(range.buffer, range.offset, size);
+        const bool vertex_hazard = runtime.IsBufferAccessed(range.buffer, range.offset, size);
+        needs_barrier |= vertex_hazard;
+        if (vertex_hazard) {
+            LogBufferSyncHazard("vertex", range.base_address, size);
+        }
         bound_buffers.emplace_back(range.buffer, range.offset, size,
                                    vk::AccessFlagBits2::eVertexAttributeRead);
     }
@@ -587,7 +619,11 @@ void Rasterizer::BindIndexBuffer(u32 index_offset) {
     const u32 index_buffer_size = regs.num_indices * index_size;
     const auto [buffer, offset] =
         buffer_cache.ObtainBuffer(index_address, index_buffer_size, false);
-    needs_barrier |= runtime.IsBufferAccessed(buffer, offset, index_buffer_size);
+    const bool index_hazard = runtime.IsBufferAccessed(buffer, offset, index_buffer_size);
+    needs_barrier |= index_hazard;
+    if (index_hazard) {
+        LogBufferSyncHazard("index", index_address, index_buffer_size);
+    }
     bound_buffers.emplace_back(buffer, offset, index_buffer_size, vk::AccessFlagBits2::eIndexRead);
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindIndexBuffer(buffer->Handle(), offset, index_type);
