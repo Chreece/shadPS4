@@ -414,8 +414,13 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break;
             }
             case PM4ItOpcode::SetPredication: {
+                const auto* words = reinterpret_cast<const u32*>(header) + 1;
+                const u32 word0 = count > 0 ? words[0] : 0;
+                const u32 word1 = count > 1 ? words[1] : 0;
                 VideoCore::GraphicsDiagnostics::Emit(
-                    VideoCore::GraphicsDiagnostics::Event::Predication, "packet-count=%u", count);
+                    VideoCore::GraphicsDiagnostics::Event::Predication,
+                    "packet-count=%u word0=%08x word1=%08x pred-op=%u", count, word0, word1,
+                    (word1 >> 16) & 0x7);
                 LOG_WARNING(Render, "Unimplemented IT_SET_PREDICATION");
                 break;
             }
