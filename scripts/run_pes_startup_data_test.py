@@ -18,7 +18,7 @@ import tempfile
 import urllib.request
 import uuid
 
-REVISION = 'e31d619e875adaf898a5506da49557c632c4e4d8'
+REVISION = '8ce9e14a0cc008b9dc92f6429600f5ef34c52c03'
 ARENA_FIX = '201124a6c533020ffd9cabf5d84fb6d8e207a864'
 IMGUI_FIX = 'eaa2e17e42c6a083af6650c83bc94992adeb6d92'
 HELPER_REVISION = '4621958f1e0e749d429245c43e511a87e0a66fd5'
@@ -28,8 +28,8 @@ HELPER_REVISIONS = {
     'install_local_default.py': '19153e3113228c22b4f233487043d768469532f3',
     'run_pes_startup_test.py': '3be159501a0935153a4384d2f9e6d97d2117b894',
     'pes_test_cleanup.py': '9ff21ec091efa3f0f4889cee60bc79fdb2e2a5f8',
-    'pes_frame_profile.py': '25818a985c3ed0ba210ec0ab4e36f9d4c42224e7',
-    'validate_pes_guest_wait.py': '25818a985c3ed0ba210ec0ab4e36f9d4c42224e7',
+    'pes_frame_profile.py': '7b3e0aef6d8537451ef2e439110c1a0a983ddbc1',
+    'validate_pes_guest_wait.py': '7b3e0aef6d8537451ef2e439110c1a0a983ddbc1',
     'pes_gpu_frame.py': '3be159501a0935153a4384d2f9e6d97d2117b894',
     'pes_gpu_frame.cpp': '3be159501a0935153a4384d2f9e6d97d2117b894',
     'pes_graphics_launch.py': '40bde232e0e9c11b1712c182d28b4b3fbbedf397',
@@ -40,8 +40,8 @@ HELPERS = {
     'install_local_default.py': '8c7a85d2819775ad853d692ba754f905ae2d0306864de31bef7dd91e81a2288c',
     'pes_current_baseline.py': 'b044656a37aadbb54e27903125cc6e4648fdd6d171741b0039a37f7ff6b66224',
     'trace_video_progress.py': 'c770af6e639464064ec543f99cb6181d75bf4b3bbe493ae6e8c015652d9b1a6b',
-    'validate_pes_guest_wait.py': '429a2aed3d9da5fdaf5816d59ca8807d92d98bcb4367ec28e63375711b9595b6',
-    'pes_frame_profile.py': 'a06b69ffd197630758e88fcb2781b17a2fcafc5a42f2093365ccd1235ba076d6',
+    'validate_pes_guest_wait.py': '2e0b168eb8fe792d1bf7bdfd8e649c4015a148752082cf12008eb6cb75986457',
+    'pes_frame_profile.py': 'a9c3d97ddf4d757a0401ddd79aea2cf7ead69453961ffa2b80943032b92d1160',
     'collect_pes_runtime_context.py': '58cb93a9b52f2264e11d13259e379d676b7aa940c9522f7e80198943ae6ed612',
     'run_pes_startup_test.py': '1df09f76e745ddd34c62e81263f343c2cd113aa5afc5b2f23bb90a91f6a717ad',
     'pes_test_cleanup.py': 'fe5d13cf6fe1cee2c1e50c3329c8092f220ec3ca27de7834ab4537d744330b96',
@@ -50,7 +50,7 @@ HELPERS = {
     'pes_gpu_frame.py': 'ddb38620a125a1aefc6a88e2b7a65990132901367f4c45e3dd5d182341e75ee1',
     'pes_gpu_frame.cpp': 'a17fe13ed30d67b21395c1ae7b0d4e04105557b5a39c991724e7bcf37b3adb23',
 }
-MANIFEST_SHA256 = 'af44ad689c6dfbe49d65e455a44cfa3537717c40b774affe7743725706645887'
+MANIFEST_SHA256 = '8311a41f84687651195312ad0d7e06bd18ae8452eb9b0870bdd8cc57551d80e0'
 TARGET_ERRORS = ('VUID-VkBufferCreateInfo-size-06409',
                  'VUID-VkMappedMemoryRange-size-01389',
                  'VUID-VkMappedMemoryRange-size-01390')
@@ -135,6 +135,8 @@ def collect_startup_trace(work):
     summary['trace_observed'] = bool(summary['events'].get('api-enter') and
                                      summary['events'].get('api-return') and
                                      summary['events'].get('file-read'))
+    summary['semaphore_trace_observed'] = bool(summary['events'].get('semaphore-create') and
+                                               summary['events'].get('semaphore'))
     (work / 'startup-trace.json').write_text(json.dumps(summary, indent=2) + '\n')
     return summary
 
@@ -194,7 +196,9 @@ def run(home, work, session, manifest, installer, baseline, startup, *, capture_
         raise RuntimeError('Complete GPU frame missing')
     if not session['startup_trace']['trace_observed']:
         raise RuntimeError('Native startup API/file trace missing; upload the printed archive')
-    print('PES_STARTUP_TEST=PASS; startup callbacks, files and screenshots archived', flush=True)
+    if not session['startup_trace']['semaphore_trace_observed']:
+        raise RuntimeError('Native semaphore trace missing; upload the printed archive')
+    print('PES_STARTUP_TEST=PASS; semaphore history, worker queues and screenshots archived', flush=True)
 
 
 def cleanup_containers(token):

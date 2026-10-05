@@ -89,7 +89,9 @@ class SessionTests(unittest.TestCase):
                 (work / 'console.0.log').write_text(
                     'STARTUP_DIAG ms=0 thread=[fixture] event=api-enter api=sceKernelRead call=1 args=3\n'
                     'STARTUP_DIAG ms=1 thread=[fixture] event=file-read count=1 path=[/app0/dt00_ps4.cpk] offset=0 requested=8 returned=8\n'
-                    'STARTUP_DIAG ms=1 thread=[fixture] event=api-return api=sceKernelRead call=1 result=8\n')
+                    'STARTUP_DIAG ms=1 thread=[fixture] event=api-return api=sceKernelRead call=1 result=8\n'
+                    'STARTUP_DIAG ms=2 thread=[fixture] event=semaphore-create handle=42 object=0x1000 name=[fixture] initial=0 maximum=1 attr=1\n'
+                    'STARTUP_DIAG ms=3 thread=[game] event=semaphore object=0x1000 name=[fixture] op=wait phase=queued call=1 requested=1 tokens=0 waiters=1 result=00000000\n')
                 (work / 'frames').mkdir()
                 (work / 'frames/frames-trace.json').write_text('{}')
                 gpu = work.parent / 'gpu-frame'
@@ -127,6 +129,7 @@ class SessionTests(unittest.TestCase):
                 self.assertFalse(any('source-checkout' in name for name in archive.getnames()))
                 self.assertEqual(json.load(archive.extractfile('session.json'))['candidate_revision'], 'b' * 40)
                 self.assertTrue(json.load(archive.extractfile('startup-trace.json'))['trace_observed'])
+                self.assertTrue(json.load(archive.extractfile('startup-trace.json'))['semaphore_trace_observed'])
                 self.assertFalse(any('gpu-runtime' in name or 'gpu-build' in name or name.endswith('.rdc') for name in archive.getnames()))
 
     def test_refresh_failure_is_archived_without_building_or_launching(self):
@@ -222,6 +225,7 @@ class SessionTests(unittest.TestCase):
                 'STARTUP_DIAG ms=7 thread=[Main_Thread] event=api-enter api=sceKernelStat call=64 args=def\n')
             result = runner.collect_startup_trace(work)
             self.assertFalse(result['trace_observed'])
+            self.assertFalse(result['semaphore_trace_observed'])
             self.assertEqual(result['api_call_lower_bounds']['sceKernelStat'], 64)
             self.assertEqual(result['api_return_samples']['sceKernelStat'], {'ffffffff80020002': 1})
             self.assertEqual(result['first_ms'], 4)
