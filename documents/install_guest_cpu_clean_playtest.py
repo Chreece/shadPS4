@@ -17,7 +17,7 @@ import tempfile
 
 REPO = "https://github.com/Chreece/shadPS4.git"
 BRANCH = "kernel/current-cpu-affinity-upstream-20261005"
-REVISION = "6e9091173b6d548f6f1e947ac65998b57439a192"
+REVISION = "360f8dc64799743b8ea9831637e2c07bbc79a210"
 IMAGE = "shadps4-guest-cpu-builder:trixie-clang19-v1"
 
 DOCKERFILE = """FROM debian:trixie-slim
