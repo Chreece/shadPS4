@@ -73,8 +73,10 @@ def capture_args(api):
 
 
 def return_kind(api):
-    if api == "Rasterizer::FilterDraw":
+    if api in ("Rasterizer::FilterDraw", "PES::InitStage"):
         return "bool"
+    if api == "PES::InitListener":
+        return "void"
     return "void" if api.startswith(("VideoOutDriver::", "sceGnmDingDong", "Rasterizer::")) else "error_code"
 
 
@@ -84,6 +86,12 @@ def signed32(value):
 
 
 def fields_before(api, args):
+    if api == "PES::InitListener":
+        return dict(listener_fields(args[0]),
+                    event_type=number(memory(args[2], 4), 0, 4),
+                    event_address=hex(args[2]))
+    if api == "PES::InitStage":
+        return {"stage_state": number(memory(0x5e7f984, 4), 0, 4)}
     if api.startswith("Rasterizer::"):
         if api in ("Rasterizer::Draw", "Rasterizer::DrawIndirect"):
             return {"indexed": bool(args[1] & 0xff)}
@@ -138,6 +146,11 @@ def fields_before(api, args):
 
 
 def fields_after(api, args, rc):
+    if api == "PES::InitListener":
+        return listener_fields(args[0])
+    if api == "PES::InitStage":
+        return {"complete": bool(rc),
+                "stage_state": number(memory(0x5e7f984, 4), 0, 4)}
     if api == "Rasterizer::FilterDraw":
         return {"draw_allowed": bool(rc)}
     if rc != 0:
@@ -304,6 +317,25 @@ def guest_wait_snapshot(phase):
         result.setdefault("guest_wait_samples", []).append(snapshot)
 
 
+def listener_fields(address):
+    data = memory(address, 0x48)
+    return {"object": hex(address), "vtable": hex(number(data, 0)),
+            "substate": number(data, 0x30, 4), "cancelled": bool(data[0x34]),
+            "complete": bool(data[0x35]), "notify": bool(data[0x36]),
+            "pending_object": hex(number(data, 0x38)),
+            "pending_status": number(data, 0x40, 4)}
+
+
+def arm_startup_listener_probes(sample):
+    if not sample.get("listener", {}).get("code_verified"):
+        return
+    for api, address in (("PES::InitStage", 0x6ce3a0), ("PES::InitListener", 0x6ce910)):
+        entries.append(Entry(address, api))
+        result["apis"][api] = {"calls": 0, "returns": 0, "errors": {},
+                                "valid_frames": 0, "out_of_scope": 0, "capped": False}
+        result["resolved_symbols"][api] = hex(address)
+
+
 def startup_stage_snapshot(phase):
     import re
     started = time.monotonic()
@@ -345,10 +377,15 @@ def startup_stage_snapshot(phase):
             sample["errors"].append(hex(address) + ": " + str(error))
             return b""
 
-    def enqueue(address, depth, kind):
+    def enqueue(address, depth, kind, priority=False):
+        if address not in queued and region_at(address, True) and len(queued) >= 64:
+            sample["code_limit_reached"] = True
         if address not in queued and region_at(address, True) and len(queued) < 64:
             queued.add(address)
-            queue.append((address, depth, kind))
+            if priority:
+                queue.insert(0, (address, depth, kind))
+            else:
+                queue.append((address, depth, kind))
 
     try:
         signatures = ((0x6c8d3b, "8b05fb687b0583f80f0f848b000000"),
@@ -368,6 +405,32 @@ def startup_stage_snapshot(phase):
             entry = [number(table, index * 32 + offset) for offset in range(0, 32, 8)]
             sample["callbacks"].append({"index": index, "words": [hex(v) for v in entry],
                                          "poll_callback": hex(entry[2])})
+        signature = bytes.fromhex("554889e54157415641554154534883ec48")
+        poll_signature = bytes.fromhex("554889e541574156534883ec18")
+        if (read(0x6ce910, len(signature), "listener signature") == signature and
+                read(0x6ce3a0, len(poll_signature), "listener poll signature") == poll_signature):
+            listener = sample["listener"] = {"code_verified": True}
+            state = read(0x5e7f984, 20, "listener globals")
+            address = number(state, 4) if len(state) == 20 else 0
+            body = read(0x6ce910, 0x6cf6c0 - 0x6ce910, "complete init listener")
+            read(0x3639dd0, 19 * 4, "init listener switch table")
+            if len(body) == 0x6cf6c0 - 0x6ce910:
+                sample["code"].append({"pc": hex(0x6ce910), "kind": "complete init listener",
+                    "instructions": gdb.selected_inferior().architecture().disassemble(
+                        0x6ce910, 0x6cf6c0 - 15)})
+            data = read(address, 0x48, "init listener state")
+            if len(data) == 0x48 and number(data, 0) == 0x4c11a68:
+                listener.update(listener_fields(address))
+                substate = listener["substate"]
+                if 1 <= substate <= 19:
+                    slot = read(0x3639dd0 + (substate - 1) * 4, 4, "selected listener branch")
+                    if len(slot) == 4:
+                        target = 0x3639dd0 + int.from_bytes(slot, "little", signed=True)
+                        listener["selected_branch"] = hex(target)
+                        if 0x6ce910 <= target < 0x6cf6c0:
+                            enqueue(target, -1, "selected listener branch", priority=True)
+                        else:
+                            raise RuntimeError("Init listener switch target outside verified callback")
         if stage < 15:
             enqueue(number(table, stage * 32 + 16), 0, "active startup callback")
         enqueue(0x6c8d3b, 0, "startup dispatcher")
@@ -375,27 +438,28 @@ def startup_stage_snapshot(phase):
             enqueue(number(table, index * 32 + 16), 0, "startup callback " + str(index))
         while queue and time.monotonic() < deadline and sample["read_bytes"] < 131072:
             address, depth, kind = queue.pop(0)
-            data = read(address, 1536 if depth == 0 else 768, kind)
+            data = read(address, 1536 if depth <= 0 else 768, kind)
             if len(data) < 16:
                 continue
             instructions = gdb.selected_inferior().architecture().disassemble(
-                address, address + min(len(data) - 15, 1024 if depth == 0 else 512))
+                address, address + min(len(data) - 15, 1024 if depth <= 0 else 512))
             sample["code"].append({"pc": hex(address), "kind": kind,
                                     "instructions": instructions})
             for instruction in instructions:
                 asm = instruction["asm"]
                 direct = re.match(r"call\w*\s+(0x[0-9a-fA-F]+)", asm)
-                if direct and depth == 0:
-                    enqueue(int(direct[1], 16), 1, "direct startup callee")
+                if direct and depth <= 0:
+                    enqueue(int(direct[1], 16), depth + 1, "direct startup callee",
+                            priority=depth < 0)
                 reference = re.search(r"#\s*(0x[0-9a-fA-F]+)", asm)
                 if not reference:
                     continue
                 target = int(reference[1], 16)
-                if region_at(target, True):
-                    if depth == 0:
-                        enqueue(target, 1, "referenced startup code")
-                    continue
                 values = read(target, 256, "startup referenced data")
+                if region_at(target, True):
+                    if depth <= 0 and values.startswith((b"\x55\x48\x89\xe5", b"\xe9")):
+                        enqueue(target, depth + 1, "referenced startup code")
+                    continue
                 for offset in range(0, min(len(values), 64) - 7, 8):
                     pointer = number(values, offset)
                     if region_at(pointer, True):
@@ -403,7 +467,7 @@ def startup_stage_snapshot(phase):
                             enqueue(pointer, 1, "startup function pointer")
                     else:
                         read(pointer, 512, "startup referenced object")
-        sample["limited"] = bool(queue)
+        sample["limited"] = bool(queue) or sample.get("code_limit_reached", False)
     except Exception as error:
         sample["status"] = "failed"
         sample["errors"].append(str(error))
@@ -434,6 +498,8 @@ def profile_snapshot(phase):
     if CONFIG.get("guest_wait"):
         guest_wait_snapshot(phase)
         startup_stage_snapshot(phase)
+        if phase == "before":
+            arm_startup_listener_probes(result["startup_stage_samples"][-1])
     if phase == "after" and CONFIG.get("screenshots") and result.get("status") == "complete":
         request_native_screenshots()
 '''
