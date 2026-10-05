@@ -16,14 +16,15 @@ import sys
 import tempfile
 
 REPO = "https://github.com/Chreece/shadPS4.git"
-BRANCH = "playtest/tlg-builtin-font-files-20261005"
-REVISION = "b09f89f8923bcf6e67f728945fe931eb2b246116"
+BRANCH = "playtest/tlg-ui-diagnostics-20261005"
+REVISION = "565f8c2174b9a27f31ae0997d640aa50b22fd624"
 IMAGE = "shadps4-render-playtest-builder:trixie-clang19-v1"
 UNSET_LINE = (
     "unset SHADPS4_NGS2_DIAGNOSTICS SHADPS4_GRAPHICS_DIAGNOSTICS "
     "SHADPS4_NGS2_DIAGNOSTICS_TRIGGER\n"
 )
 GRAPHICS_EXPORT = "export SHADPS4_GRAPHICS_DIAGNOSTICS=1\n"
+UI_DIAG_EXPORT = "export SHADPS4_TLG_UI_DIAGNOSTICS=1\n"
 DOCKERFILE = """FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \\
     ca-certificates git cmake ninja-build build-essential clang-19 clang-tools-19 llvm-19-dev \\
@@ -200,10 +201,9 @@ def build(home):
         raise RuntimeError("Startup loading black-frame retention is missing")
     if '"predicated-skip"' not in diagnostics or '"zpass-evaluation"' not in diagnostics:
         raise RuntimeError("PES predication diagnostics are missing")
-    if "PrepareBuiltinGuestFontsForPlaytest" not in emulator:
-        raise RuntimeError("TLG guest-font fallback playtest code is missing")
-    if "exposing embedded Latin font files through guest font mounts" not in emulator:
-        raise RuntimeError("TLG guest-font fallback log marker is missing")
+    rasterizer = (source / "src/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text()
+    if "TLG_UI_PIPE" not in rasterizer or "TLG_UI_FRAME" not in rasterizer:
+        raise RuntimeError("TLG UI renderer diagnostics are missing")
     process = (source / "src/core/libraries/kernel/process.cpp").read_text()
     pthread_cpp = (source / "src/core/libraries/kernel/threads/pthread.cpp").read_text()
     pthread_h = (source / "src/core/libraries/kernel/threads/pthread.h").read_text()
@@ -264,16 +264,21 @@ def ensure_graphics_diagnostics(home):
     if not regular(wrapper):
         raise RuntimeError("Expected regular ES-DE shadPS4 wrapper: " + str(wrapper))
     text = wrapper.read_text()
-    replacement = UNSET_LINE + GRAPHICS_EXPORT
+    replacement = UNSET_LINE + GRAPHICS_EXPORT + UI_DIAG_EXPORT
+    old_replacement = UNSET_LINE + GRAPHICS_EXPORT
     if replacement not in text:
-        if text.count(UNSET_LINE) != 1:
+        if old_replacement in text:
+            text = text.replace(old_replacement, replacement, 1)
+        elif text.count(UNSET_LINE) == 1:
+            text = text.replace(UNSET_LINE, replacement, 1)
+        else:
             raise RuntimeError("Launcher diagnostics reset is not recognized; wrapper preserved")
-        text = text.replace(UNSET_LINE, replacement, 1)
         atomic_write(wrapper, text.encode(), stat.S_IMODE(wrapper.stat().st_mode))
     check = wrapper.read_text()
     if check.count(replacement) != 1:
         raise RuntimeError("Graphics diagnostics launcher verification failed")
     say("GRAPHICS_DIAGNOSTICS=ENABLED")
+    say("TLG_UI_DIAGNOSTICS=ENABLED")
 
 
 def select(home, built):
@@ -347,8 +352,8 @@ def main():
             "pes_wait_zpass_predication": True,
             "tlg_base_instance_step_rate": True,
             "tlg_precise_readbacks_test_override": True,
-            "tlg_builtin_guest_fonts_test_override": True,
             "graphics_diagnostics": True,
+            "tlg_ui_diagnostics": True,
         }
         state_path.write_text(json.dumps(state, indent=2) + "\n")
 
@@ -366,13 +371,13 @@ def main():
         say("PES_WAIT_ZPASS_PREDICATION=ENABLED")
         say("TLG_BASE_INSTANCE_STEP_RATE=ENABLED")
         say("TLG_PRECISE_READBACKS_TEST_OVERRIDE=ENABLED")
-        say("TLG_BUILTIN_GUEST_FONTS_TEST_OVERRIDE=ENABLED")
+        say("TLG_UI_DIAGNOSTICS=ENABLED")
         say("GAME_LAUNCHED=NO")
         say("RESULT=PASS")
         say("")
-        say("Launch PES first from the normal ES-DE entry, play one match, then optionally verify The Last Guardian.")
-        say("Expected TLG log: GPU readbacksMode: 2 and guest font fallback override enabled")
-        say("After both tests: shadps4-pack-playtest-logs")
+        say("Launch The Last Guardian and reproduce the missing subtitle/menu-focus scene.")
+        say("Move the menu selection several times, close the menu, wait a few seconds, then exit.")
+        say("After the test: shadps4-pack-playtest-logs")
         say("Returning to your existing SSH prompt.")
 
 
