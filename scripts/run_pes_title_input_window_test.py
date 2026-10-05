@@ -30,8 +30,8 @@ HELPERS = {
         "c770af6e639464064ec543f99cb6181d75bf4b3bbe493ae6e8c015652d9b1a6b",
     ),
     "run_pes_startup_test.py": (
-        "3be159501a0935153a4384d2f9e6d97d2117b894",
-        "1df09f76e745ddd34c62e81263f343c2cd113aa5afc5b2f23bb90a91f6a717ad",
+        "9cd2d972fb0bbcc687d6fa34ed1c7d0489241adf",
+        "dedc6cd156e19799b8814af45e2813b0aa1b824c95abfabcea47b50b623954b3",
     ),
     "pes_test_cleanup.py": (
         "9ff21ec091efa3f0f4889cee60bc79fdb2e2a5f8",
@@ -182,7 +182,9 @@ def main():
         verify_installed(home)
         startup = importlib.import_module("run_pes_startup_test")
         previous = os.environ.get("SHADPS4_DIAG_AUTO_CROSS_MS")
+        previous_four = os.environ.get("SHADPS4_DIAG_EXPECT_FOUR_SCREENSHOTS")
         os.environ["SHADPS4_DIAG_AUTO_CROSS_MS"] = AUTO_CROSS_MS
+        os.environ["SHADPS4_DIAG_EXPECT_FOUR_SCREENSHOTS"] = "1"
         try:
             result = startup.run(
                 home,
@@ -200,6 +202,10 @@ def main():
                 os.environ.pop("SHADPS4_DIAG_AUTO_CROSS_MS", None)
             else:
                 os.environ["SHADPS4_DIAG_AUTO_CROSS_MS"] = previous
+            if previous_four is None:
+                os.environ.pop("SHADPS4_DIAG_EXPECT_FOUR_SCREENSHOTS", None)
+            else:
+                os.environ["SHADPS4_DIAG_EXPECT_FOUR_SCREENSHOTS"] = previous_four
         verify_evidence(work, result)
         print("PES_TITLE_INPUT_TEST=PASS", flush=True)
     except (Exception, KeyboardInterrupt) as error:
