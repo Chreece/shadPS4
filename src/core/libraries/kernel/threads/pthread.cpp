@@ -14,6 +14,7 @@
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/posix_error.h"
 #include "core/libraries/kernel/threads.h"
+#include "core/libraries/kernel/threads/cpu_affinity.h"
 #include "core/libraries/kernel/threads/pthread.h"
 #include "core/libraries/kernel/threads/thread_state.h"
 #include "core/libraries/libs.h"
@@ -360,7 +361,10 @@ int PS4_SYSV_ABI posix_pthread_create_name_np(PthreadT* thread, const PthreadAtt
     ASSERT_MSG(ret == 0, "Failed to create thread with error {}", ret);
 
     if (attr != nullptr && *attr != nullptr && (*attr)->cpuset != nullptr) {
-        new_thread->SetAffinity((*attr)->cpuset);
+        const int affinity_ret = new_thread->SetAffinity((*attr)->cpuset);
+        if (affinity_ret == 0) {
+            new_thread->UpdateGuestCpu((*attr)->cpuset);
+        }
     }
     if (ret) {
         *thread = nullptr;
@@ -1089,6 +1093,14 @@ bool Pthread::DispatchPendingSignals(Siginfo* info, Ucontext* context) {
     return DispatchSignal(sig, info, context);
 }
 
+void Pthread::UpdateGuestCpu(const Cpuset* cpuset) noexcept {
+    if (cpuset == nullptr) {
+        return;
+    }
+    const s32 current_cpu = guest_cpu.load(std::memory_order_relaxed);
+    guest_cpu.store(SelectGuestCpu(cpuset->bits, current_cpu), std::memory_order_relaxed);
+}
+
 int Pthread::SetAffinity(const Cpuset* cpuset) {
     const auto processor_count = std::thread::hardware_concurrency();
     if (processor_count < 8) {
@@ -1173,6 +1185,9 @@ int PS4_SYSV_ABI posix_pthread_setaffinity_np(PthreadT thread, size_t cpusetsize
 
     if (ret == ORBIS_OK) {
         ret = thread->SetAffinity(thread->attr.cpuset);
+        if (ret == 0) {
+            thread->UpdateGuestCpu(thread->attr.cpuset);
+        }
     }
 
     thread->lock->unlock();

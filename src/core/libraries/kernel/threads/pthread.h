@@ -425,7 +425,10 @@ struct Pthread {
         }
     }
 
+    void UpdateGuestCpu(const Cpuset* cpuset) noexcept;
     int SetAffinity(const Cpuset* cpuset);
+
+    std::atomic<s32> guest_cpu{0};
 };
 // fym static assertion expression is not an integral constant expression
 // static_assert(offsetof(Pthread, specific) == 0x1c8);
