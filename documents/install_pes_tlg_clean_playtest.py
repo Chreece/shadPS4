@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Build and select the exact clean PES + The Last Guardian renderer playtest."""
+"""Build and select a clean current-upstream The Last Guardian playtest."""
 
 import fcntl
 import hashlib
@@ -10,20 +10,14 @@ import os
 from pathlib import Path
 import shlex
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
 
 REPO = "https://github.com/Chreece/shadPS4.git"
-BRANCH = "playtest/tlg-buffer-read-barriers-20261005"
-REVISION = "2062d88be2d1b0eddd1c06b5b8f65d3e4c9c9e1e"
+BRANCH = "playtest/tlg-current-main-precise-20261005"
+REVISION = "aa6b784b3eb50e5f3b9e96fd1b6f5afe99d77004"
 IMAGE = "shadps4-render-playtest-builder:trixie-clang19-v1"
-UNSET_LINE = (
-    "unset SHADPS4_NGS2_DIAGNOSTICS SHADPS4_GRAPHICS_DIAGNOSTICS "
-    "SHADPS4_NGS2_DIAGNOSTICS_TRIGGER\n"
-)
-GRAPHICS_EXPORT = "export SHADPS4_GRAPHICS_DIAGNOSTICS=1\n"
 DOCKERFILE = """FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \\
     ca-certificates git cmake ninja-build build-essential clang-19 clang-tools-19 llvm-19-dev \\
@@ -64,20 +58,6 @@ def atomic_link(path, target):
         os.replace(temp, path)
     finally:
         temp.unlink(missing_ok=True)
-
-
-def atomic_write(path, data, mode):
-    path = Path(path)
-    fd, name = tempfile.mkstemp(prefix=path.name + ".new-", dir=path.parent)
-    try:
-        with os.fdopen(fd, "wb") as out:
-            out.write(data)
-            out.flush()
-            os.fsync(out.fileno())
-            os.fchmod(out.fileno(), mode)
-        os.replace(name, path)
-    finally:
-        Path(name).unlink(missing_ok=True)
 
 
 def require_idle():
@@ -182,47 +162,12 @@ def build(home):
         raise RuntimeError("Build source is unexpectedly dirty after pinned checkout: " + dirty[:1000])
     translate = (source / "src/shader_recompiler/frontend/translate/translate.cpp").read_text()
     if "ASSERT(base_instance_sgpr == -1);" in translate:
-        raise RuntimeError("TLG base-instance/step-rate assertion is still present")
-    if "fetch_data.Empty() || fetch_data.instance_offset_sgpr == -1" not in translate:
-        raise RuntimeError("Upstream base-instance fetch semantics are missing")
-    liverpool = (source / "src/video_core/amdgpu/liverpool.cpp").read_text()
-    if "EvaluateZpass(" not in liverpool or "predication_execute" not in liverpool:
-        raise RuntimeError("PES WAIT/ZPASS predication implementation is missing")
+        raise RuntimeError("Current upstream base-instance/step-rate fix is missing")
     emulator = (source / "src/emulator.cpp").read_text()
     if 'SetReadbacksMode(static_cast<u32>(GpuReadbacksMode::Precise), true)' not in emulator:
-        raise RuntimeError("TLG game-specific Precise-readback test override is missing")
-    startup = (source / "src/core/startup_progress.h").read_text()
-    presenter = (source / "src/video_core/renderer_vulkan/vk_presenter.cpp").read_text()
-    diagnostics = (source / "src/video_core/graphics_diagnostics.h").read_text()
-    if "HasVisibleRgb8Content" not in startup or "DrawStartupLoading" not in presenter:
-        raise RuntimeError("Centered startup loading screen implementation is missing")
-    if "PrepareStartupReadback" not in presenter or "STARTUP_UI event=black_game_frame" not in presenter:
-        raise RuntimeError("Startup loading black-frame retention is missing")
-    if '"predicated-skip"' not in diagnostics or '"zpass-evaluation"' not in diagnostics:
-        raise RuntimeError("PES predication diagnostics are missing")
-    rasterizer_h = (source / "src/video_core/renderer_vulkan/vk_rasterizer.h").read_text()
-    rasterizer_cpp = (source / "src/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text()
-    if "vk::AccessFlags2 src_access" not in rasterizer_h:
-        raise RuntimeError("Exact buffer access tracking is missing")
-    if "vk::AccessFlagBits2::eVertexAttributeRead" not in rasterizer_cpp:
-        raise RuntimeError("Vertex-buffer read tracking is missing")
-    if "vk::AccessFlagBits2::eIndexRead" not in rasterizer_cpp:
-        raise RuntimeError("Index-buffer read tracking is missing")
-    if "vk::AccessFlagBits2::eIndirectCommandRead" not in rasterizer_cpp:
-        raise RuntimeError("Indirect-buffer read tracking is missing")
-    if "BUFFER_SYNC count=" not in rasterizer_cpp:
-        raise RuntimeError("Buffer synchronization diagnostics are missing")
-    process = (source / "src/core/libraries/kernel/process.cpp").read_text()
-    pthread_cpp = (source / "src/core/libraries/kernel/threads/pthread.cpp").read_text()
-    pthread_h = (source / "src/core/libraries/kernel/threads/pthread.h").read_text()
-    if "g_curthread->guest_cpu.load" not in process:
-        raise RuntimeError("PES guest CPU identity query fix is missing")
-    if "UpdateGuestCpu(new_thread->attr.cpuset);" not in pthread_cpp:
-        raise RuntimeError("PES initial guest CPU affinity tracking is missing")
-    if "thread->UpdateGuestCpu(thread->attr.cpuset);" not in pthread_cpp:
-        raise RuntimeError("PES guest CPU affinity update tracking is missing")
-    if "std::atomic<s32> guest_cpu{0};" not in pthread_h:
-        raise RuntimeError("PES guest CPU identity storage is missing")
+        raise RuntimeError("TLG Precise-readback playtest override is missing")
+    if 'id == "CUSA03745"' not in emulator:
+        raise RuntimeError("TLG playtest override is not scoped to CUSA03745")
     jobs = str(min(8, os.cpu_count() or 2))
     run(["git", "-C", source, "submodule", "update", "--init", "--recursive", "--jobs", jobs])
 
@@ -265,27 +210,6 @@ def build(home):
     smoke(binary)
     say("BUILD_LOG=" + str(log_path))
     return binary
-
-
-def ensure_graphics_diagnostics(home):
-    wrapper = home / ".local/bin/shadps4-esde"
-    if not regular(wrapper):
-        raise RuntimeError("Expected regular ES-DE shadPS4 wrapper: " + str(wrapper))
-    text = wrapper.read_text()
-    replacement = UNSET_LINE + GRAPHICS_EXPORT
-    old_replacement = UNSET_LINE + GRAPHICS_EXPORT + "export SHADPS4_TLG_UI_DIAGNOSTICS=1\\n"
-    if old_replacement in text:
-        text = text.replace(old_replacement, replacement, 1)
-        atomic_write(wrapper, text.encode(), stat.S_IMODE(wrapper.stat().st_mode))
-    elif replacement not in text:
-        if text.count(UNSET_LINE) != 1:
-            raise RuntimeError("Launcher diagnostics reset is not recognized; wrapper preserved")
-        text = text.replace(UNSET_LINE, replacement, 1)
-        atomic_write(wrapper, text.encode(), stat.S_IMODE(wrapper.stat().st_mode))
-    check = wrapper.read_text()
-    if check.count(replacement) != 1:
-        raise RuntimeError("Graphics diagnostics launcher verification failed")
-    say("GRAPHICS_DIAGNOSTICS=ENABLED")
 
 
 def select(home, built):
@@ -341,7 +265,6 @@ def main():
         built = build(home)
         require_idle()
         previous, previous_sha, binary, built_sha = select(home, built)
-        ensure_graphics_diagnostics(home)
 
         state_path = home / ".local/state/shadps4-playtest-logs/build.json"
         state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -353,37 +276,27 @@ def main():
             "binary_sha256": built_sha,
             "previous_binary": str(previous),
             "previous_sha256": previous_sha,
-            "startup_loading_screen": True,
-            "pes_guest_cpu_identity": True,
-            "pes_predication_diagnostics": True,
-            "pes_wait_zpass_predication": True,
-            "tlg_base_instance_step_rate": True,
+            "tlg_current_upstream_main": "10393d2c3b4457b5b2d14620f87974a25f9c62a5",
+            "tlg_base_instance_step_rate_upstream": True,
             "tlg_precise_readbacks_test_override": True,
-            "graphics_diagnostics": True,
-            "tlg_buffer_read_barriers": True,
         }
         state_path.write_text(json.dumps(state, indent=2) + "\n")
 
         say("")
         say("============================================================")
-        say(" CLEAN PES + THE LAST GUARDIAN PLAYTEST READY")
+        say(" CURRENT-UPSTREAM THE LAST GUARDIAN PLAYTEST READY")
         say("============================================================")
         say("REVISION=" + REVISION)
+        say("UPSTREAM_BASE=10393d2c3b4457b5b2d14620f87974a25f9c62a5")
         say("BINARY=" + str(binary))
         say("BINARY_SHA256=" + built_sha)
         say("PREVIOUS_BINARY=" + str(previous))
-        say("STARTUP_LOADING_SCREEN=ENABLED")
-        say("PES_GUEST_CPU_IDENTITY=ENABLED")
-        say("PES_PREDICATION_DIAGNOSTICS=ENABLED")
-        say("PES_WAIT_ZPASS_PREDICATION=ENABLED")
-        say("TLG_BASE_INSTANCE_STEP_RATE=ENABLED")
+        say("TLG_BASE_INSTANCE_STEP_RATE=UPSTREAM")
         say("TLG_PRECISE_READBACKS_TEST_OVERRIDE=ENABLED")
-        say("TLG_BUFFER_READ_BARRIERS=ENABLED")
         say("GAME_LAUNCHED=NO")
         say("RESULT=PASS")
         say("")
-        say("Launch The Last Guardian and reproduce the exact missing subtitle/menu-focus scene.")
-        say("Check the menu focus and subtitles, then exit. BUFFER_SYNC entries are collected automatically.")
+        say("Launch The Last Guardian from the normal ES-DE entry and test the same broken scene.")
         say("After the test: shadps4-pack-playtest-logs")
         say("Returning to your existing SSH prompt.")
 
