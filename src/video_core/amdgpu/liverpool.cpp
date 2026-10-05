@@ -16,6 +16,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/pm4_cmds.h"
 #include "video_core/graphics_diagnostics.h"
+#include "video_core/occlusion_counter.h"
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_occlusion_query.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -259,6 +260,14 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
         case 3:
             const u32 count = header->type3.NumWords();
             const PM4ItOpcode opcode = header->type3.opcode;
+            if (header->type3.predicate == PM4Predicate::PredEnable && predication_active &&
+                !predication_execute) {
+                VideoCore::GraphicsDiagnostics::Emit(
+                    VideoCore::GraphicsDiagnostics::Event::Predication,
+                    "skip=1 opcode=%u", static_cast<unsigned>(opcode));
+                dcb = NextPacket(dcb, count + 1);
+                continue;
+            }
             switch (opcode) {
             case PM4ItOpcode::Nop: {
                 const auto* nop = reinterpret_cast<const PM4CmdNop*>(header);
@@ -414,14 +423,88 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break;
             }
             case PM4ItOpcode::SetPredication: {
-                const auto* words = reinterpret_cast<const u32*>(header) + 1;
-                const u32 word0 = count > 0 ? words[0] : 0;
-                const u32 word1 = count > 1 ? words[1] : 0;
+                const auto* set_pred = reinterpret_cast<const PM4CmdSetPredication*>(header);
+                const VAddr address = set_pred->Address();
+                const auto pred_op = set_pred->pred_op.Value();
+                const bool draw_visible = set_pred->draw_visible.Value() != 0;
+                const bool combine = set_pred->continue_predication.Value() != 0;
+
+                if (pred_op == PredicationOp::Clear) {
+                    predication_active = false;
+                    predication_execute = true;
+                    predication_visible.reset();
+                    VideoCore::GraphicsDiagnostics::Emit(
+                        VideoCore::GraphicsDiagnostics::Event::Predication,
+                        "clear=1 execute=1");
+                    break;
+                }
+
+                if (pred_op != PredicationOp::Zpass) {
+                    // Unsupported predicate types fail open: never hide geometry on an
+                    // emulation path we cannot evaluate correctly yet.
+                    predication_active = true;
+                    predication_execute = true;
+                    predication_visible.reset();
+                    VideoCore::GraphicsDiagnostics::Emit(
+                        VideoCore::GraphicsDiagnostics::Event::Predication,
+                        "path=unsupported op=%u addr=%llx execute=1",
+                        static_cast<unsigned>(pred_op),
+                        static_cast<unsigned long long>(address));
+                    break;
+                }
+
+                std::optional<bool> visible;
+                const auto hint = set_pred->hint.Value();
+                if (hint == PredicationHint::Wait && rasterizer) {
+                    // PES uses WAIT ZPASS predicates. Its pixel-pipe dumps are already
+                    // implemented by OcclusionQuery; make their guest writeback visible before
+                    // evaluating the begin/end counter pair.
+                    rasterizer->GetOcclusionQuery().Drain();
+
+                    auto* memory = Core::Memory::Instance();
+                    const u64 result_size = u64(num_counter_pairs) * sizeof(u64) * 2;
+                    if (address != 0 && memory->IsValidMapping(address, result_size)) {
+                        const auto* results = reinterpret_cast<const u64*>(address);
+                        bool any_visible = false;
+                        bool valid = true;
+                        for (u32 i = 0; i < num_counter_pairs; ++i) {
+                            const u64 begin = results[i * 2];
+                            const u64 end = results[i * 2 + 1];
+                            if ((begin & end & VideoCore::OcclusionCounter::Valid) == 0) {
+                                valid = false;
+                                break;
+                            }
+                            any_visible |=
+                                (begin & VideoCore::OcclusionCounter::Mask) !=
+                                (end & VideoCore::OcclusionCounter::Mask);
+                        }
+                        if (valid) {
+                            visible = any_visible;
+                        }
+                    }
+                }
+
+                if (combine) {
+                    if (predication_visible.has_value() && visible.has_value()) {
+                        visible = *predication_visible || *visible;
+                    } else {
+                        visible.reset();
+                    }
+                }
+
+                predication_active = true;
+                predication_visible = visible;
+                predication_execute =
+                    visible.has_value() ? (draw_visible ? *visible : !*visible) : true;
+
                 VideoCore::GraphicsDiagnostics::Emit(
                     VideoCore::GraphicsDiagnostics::Event::Predication,
-                    "packet-count=%u word0=%08x word1=%08x pred-op=%u", count, word0, word1,
-                    (word1 >> 16) & 0x7);
-                LOG_WARNING(Render, "Unimplemented IT_SET_PREDICATION");
+                    "path=zpass-static addr=%llx hint=%u visible=%d draw-visible=%u "
+                    "combine=%u execute=%u",
+                    static_cast<unsigned long long>(address), static_cast<unsigned>(hint),
+                    visible.has_value() ? (*visible ? 1 : 0) : -1,
+                    static_cast<unsigned>(draw_visible), static_cast<unsigned>(combine),
+                    static_cast<unsigned>(predication_execute));
                 break;
             }
             case PM4ItOpcode::IndexType: {
