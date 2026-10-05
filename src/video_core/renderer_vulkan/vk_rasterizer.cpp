@@ -37,6 +37,8 @@ namespace {
 
 struct UiDiagState {
     u32 frame = std::numeric_limits<u32>::max();
+    u32 current_id{};
+    u32 current_frame{};
     u64 previous_set_hash{};
     std::unordered_map<u64, u32> ids;
     std::unordered_map<u32, u32> active_counts;
@@ -132,20 +134,23 @@ void UiDiagFlushFrame(u32 next_frame) {
 }
 
 void UiDiagRecord(const AmdGpu::Regs& regs, const GraphicsPipeline& pipeline, bool indirect) {
+    auto& state = GetUiDiagState();
     if (!UiDiagEnabled() || !UiDiagCandidate(regs)) {
+        state.current_id = 0;
         return;
     }
 
     const u32 frame = DebugState.GetFrameNum();
     UiDiagFlushFrame(frame);
 
-    auto& state = GetUiDiagState();
     const u64 signature = UiDiagPipelineSignature(regs, pipeline, indirect);
     auto [it, inserted] = state.ids.try_emplace(signature, state.next_id);
     if (inserted) {
         ++state.next_id;
     }
     const u32 id = it->second;
+    state.current_id = id;
+    state.current_frame = frame;
     ++state.active_counts[id];
 
     if (!inserted || state.lines >= 12000) {
