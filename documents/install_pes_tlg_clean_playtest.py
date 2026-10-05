@@ -155,6 +155,16 @@ def build(home):
     run(["git", "-C", source, "clean", "-ffd"])
     run(["git", "-C", source, "checkout", "--detach", "--force", REVISION])
 
+    # A branch switch can legitimately leave an already-initialized submodule at
+    # the previous branch's gitlink revision. Synchronize and force the exact
+    # pinned submodule revisions before deciding whether the checkout is dirty.
+    jobs = str(min(8, os.cpu_count() or 2))
+    run(["git", "-C", source, "submodule", "sync", "--recursive"])
+    run([
+        "git", "-C", source, "submodule", "update", "--init", "--recursive", "--force",
+        "--jobs", jobs,
+    ])
+
     dirty = subprocess.check_output(
         ["git", "-C", source, "status", "--porcelain", "--untracked-files=normal"], text=True
     )
@@ -168,8 +178,6 @@ def build(home):
         raise RuntimeError("TLG Precise-readback playtest override is missing")
     if 'id == "CUSA03745"' not in emulator:
         raise RuntimeError("TLG playtest override is not scoped to CUSA03745")
-    jobs = str(min(8, os.cpu_count() or 2))
-    run(["git", "-C", source, "submodule", "update", "--init", "--recursive", "--jobs", jobs])
 
     (context / "Dockerfile").write_text(DOCKERFILE)
     run(["docker", "build", "--tag", IMAGE, context])
