@@ -20,7 +20,156 @@
 #include "video_core/texture_cache/image_view.h"
 #include "video_core/texture_cache/texture_cache.h"
 
+#include <algorithm>
+#include <array>
+#include <bit>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <unordered_map>
+#include <vector>
+
 namespace Vulkan {
+
+namespace {
+
+struct UiDiagState {
+    u32 frame = std::numeric_limits<u32>::max();
+    u64 previous_set_hash{};
+    std::unordered_map<u64, u32> ids;
+    std::vector<u32> active_ids;
+    u32 next_id{1};
+    u32 lines{};
+};
+
+UiDiagState& GetUiDiagState() {
+    static UiDiagState state;
+    return state;
+}
+
+bool UiDiagEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("SHADPS4_TLG_UI_DIAGNOSTICS");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+
+u64 UiDiagMix(u64 hash, u64 value) {
+    hash ^= value + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+    return hash;
+}
+
+u64 UiDiagPipelineSignature(const AmdGpu::Regs& regs, const GraphicsPipeline& pipeline,
+                            bool indirect) {
+    const auto& key = pipeline.GetGraphicsKey();
+    u64 hash = 0xcbf29ce484222325ULL;
+    for (const auto stage_hash : key.stage_hashes) {
+        hash = UiDiagMix(hash, stage_hash);
+    }
+    hash = UiDiagMix(hash, std::bit_cast<u32>(regs.blend_control[0]));
+    hash = UiDiagMix(hash, regs.color_target_mask.raw);
+    hash = UiDiagMix(hash, regs.color_shader_mask.raw);
+    hash = UiDiagMix(hash, std::bit_cast<u32>(regs.depth_control));
+    hash = UiDiagMix(hash, std::bit_cast<u32>(regs.polygon_control));
+    hash = UiDiagMix(hash, static_cast<u32>(regs.primitive_type));
+    hash = UiDiagMix(hash, key.mrt_mask);
+    hash = UiDiagMix(hash, key.num_color_attachments);
+    hash = UiDiagMix(hash, indirect);
+    return hash;
+}
+
+bool UiDiagCandidate(const AmdGpu::Regs& regs) {
+    return regs.blend_control[0].enable || !regs.depth_control.depth_enable ||
+           regs.viewport_control.xy_transformed ||
+           regs.primitive_type == AmdGpu::PrimitiveType::RectList;
+}
+
+void UiDiagFlushFrame(u32 next_frame) {
+    auto& state = GetUiDiagState();
+    if (state.frame == std::numeric_limits<u32>::max()) {
+        state.frame = next_frame;
+        return;
+    }
+    if (state.frame == next_frame) {
+        return;
+    }
+
+    std::ranges::sort(state.active_ids);
+    state.active_ids.erase(std::unique(state.active_ids.begin(), state.active_ids.end()),
+                           state.active_ids.end());
+
+    u64 set_hash = 0xcbf29ce484222325ULL;
+    for (const u32 id : state.active_ids) {
+        set_hash = UiDiagMix(set_hash, id);
+    }
+
+    if (set_hash != state.previous_set_hash || (state.frame % 120) == 0) {
+        if (state.lines < 12000) {
+            std::fprintf(stderr,
+                         "TLG_UI_FRAME frame=%u candidates=%zu set=%016llx changed=%u\n",
+                         state.frame, state.active_ids.size(),
+                         static_cast<unsigned long long>(set_hash),
+                         static_cast<unsigned>(set_hash != state.previous_set_hash));
+            std::fflush(stderr);
+            ++state.lines;
+        }
+        state.previous_set_hash = set_hash;
+    }
+
+    state.active_ids.clear();
+    state.frame = next_frame;
+}
+
+void UiDiagRecord(const AmdGpu::Regs& regs, const GraphicsPipeline& pipeline, bool indirect) {
+    if (!UiDiagEnabled() || !UiDiagCandidate(regs)) {
+        return;
+    }
+
+    const u32 frame = DebugState.GetFrameNum();
+    UiDiagFlushFrame(frame);
+
+    auto& state = GetUiDiagState();
+    const u64 signature = UiDiagPipelineSignature(regs, pipeline, indirect);
+    auto [it, inserted] = state.ids.try_emplace(signature, state.next_id);
+    if (inserted) {
+        ++state.next_id;
+    }
+    const u32 id = it->second;
+    state.active_ids.push_back(id);
+
+    if (!inserted || state.lines >= 12000) {
+        return;
+    }
+
+    const auto& key = pipeline.GetGraphicsKey();
+    const auto vs = key.stage_hashes[static_cast<u32>(Shader::SwStage::Vertex)];
+    const auto fs = key.stage_hashes[static_cast<u32>(Shader::SwStage::Fragment)];
+    const auto blend = std::bit_cast<u32>(regs.blend_control[0]);
+    const auto depth = std::bit_cast<u32>(regs.depth_control);
+    const auto polygon = std::bit_cast<u32>(regs.polygon_control);
+    const auto& vp = regs.viewports[0];
+
+    std::fprintf(
+        stderr,
+        "TLG_UI_PIPE id=%u frame=%u kind=%s sig=%016llx vs=%016llx fs=%016llx "
+        "prim=%u indices=%u instances=%u blend=%08x target=%08x shader-mask=%08x "
+        "depth=%08x polygon=%08x mrt=%02x attachments=%u scissor=%d,%d-%d,%d "
+        "viewport=%.3f,%.3f,%.3f,%.3f xy-transformed=%u\n",
+        id, frame, indirect ? "indirect" : "direct",
+        static_cast<unsigned long long>(signature),
+        static_cast<unsigned long long>(vs), static_cast<unsigned long long>(fs),
+        static_cast<u32>(regs.primitive_type), regs.num_indices, regs.num_instances.NumInstances(),
+        blend, regs.color_target_mask.raw, regs.color_shader_mask.raw, depth, polygon, key.mrt_mask,
+        key.num_color_attachments, regs.screen_scissor.top_left_x, regs.screen_scissor.top_left_y,
+        regs.screen_scissor.bottom_right_x, regs.screen_scissor.bottom_right_y, vp.xscale,
+        vp.xoffset, vp.yscale, vp.yoffset,
+        static_cast<unsigned>(regs.viewport_control.xy_transformed));
+    std::fflush(stderr);
+    ++state.lines;
+}
+
+} // namespace
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
@@ -208,6 +357,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         return;
     }
 
+    UiDiagRecord(regs, *pipeline, false);
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
         return;
@@ -274,6 +424,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         return;
     }
 
+    UiDiagRecord(liverpool->regs, *pipeline, true);
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
         return;
