@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
@@ -163,9 +165,9 @@ private:
         const VideoCore::Buffer* buffer;
         u64 offset;
         u32 size;
-        bool is_written;
+        vk::AccessFlags2 src_access;
     };
-    boost::container::static_vector<BoundBuffer, Shader::NUM_BUFFERS> bound_buffers;
+    std::vector<BoundBuffer> bound_buffers;
 
     u32 set_write_index{};
     Pipeline::DescriptorWrites set_writes;
