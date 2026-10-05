@@ -4,6 +4,8 @@
 #include "common/elf_info.h"
 #include "common/logging/log.h"
 #include "common/singleton.h"
+#include "common/startup_diagnostics.h"
+#include "core/libraries/kernel/time.h"
 #include "core/emulator_settings.h"
 #include "core/libraries/libs.h"
 #include "core/libraries/pad/pad_errors.h"
@@ -14,6 +16,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cstdlib>
 #include <optional>
 
 namespace Libraries::Pad {
@@ -42,6 +46,90 @@ static bool g_initialized = false;
 static u64 pad_handle_counter = 1;
 static std::unordered_map<HandleKey, s32, HandleKeyHash> pad_handle_map{};
 static std::unordered_map<s32, GameController*> handle_to_controller_map{};
+
+namespace {
+
+constexpr u64 AutoCrossHoldUs = 250'000;
+
+u64 AutoCrossDelayUs() {
+    static const u64 delay_us = [] {
+        const char* value = std::getenv("SHADPS4_DIAG_AUTO_CROSS_MS");
+        if (value == nullptr || *value == '\0') {
+            return u64{0};
+        }
+        char* end = nullptr;
+        const unsigned long long delay_ms = std::strtoull(value, &end, 10);
+        if (end == value || *end != '\0' || delay_ms == 0 || delay_ms > 120'000) {
+            LOG_ERROR(Lib_Pad,
+                      "Ignoring invalid SHADPS4_DIAG_AUTO_CROSS_MS={} (expected 1..120000)",
+                      value);
+            return u64{0};
+        }
+        LOG_INFO(Lib_Pad, "Diagnostic auto-Cross armed for {} ms", delay_ms);
+        return static_cast<u64>(delay_ms) * 1'000;
+    }();
+    return delay_us;
+}
+
+void ApplyDiagnosticAutoCross(OrbisPadData* data, s32 count) {
+    if (count <= 0) {
+        return;
+    }
+    const u64 delay_us = AutoCrossDelayUs();
+    if (delay_us == 0) {
+        return;
+    }
+
+    const u64 now = Libraries::Kernel::sceKernelGetProcessTime();
+    static std::atomic_bool press_logged{false};
+    static std::atomic_bool release_logged{false};
+    if (now >= delay_us && now < delay_us + AutoCrossHoldUs) {
+        for (s32 i = 0; i < count; ++i) {
+            data[i].buttons |= OrbisPadButtonDataOffset::Cross;
+        }
+        if (!press_logged.exchange(true, std::memory_order_relaxed)) {
+            Common::StartupDiagnostics::Emit(
+                "auto-cross", "phase=press process_us=%llu delay_ms=%llu count=%d connected=%d",
+                static_cast<unsigned long long>(now),
+                static_cast<unsigned long long>(delay_us / 1'000), count,
+                static_cast<int>(data[0].connected));
+            LOG_INFO(Lib_Pad, "Diagnostic auto-Cross pressed at {} us (connected={})", now,
+                     data[0].connected);
+        }
+    } else if (now >= delay_us + AutoCrossHoldUs &&
+               press_logged.load(std::memory_order_relaxed) &&
+               !release_logged.exchange(true, std::memory_order_relaxed)) {
+        Common::StartupDiagnostics::Emit(
+            "auto-cross", "phase=release process_us=%llu delay_ms=%llu connected=%d",
+            static_cast<unsigned long long>(now),
+            static_cast<unsigned long long>(delay_us / 1'000),
+            static_cast<int>(data[0].connected));
+        LOG_INFO(Lib_Pad, "Diagnostic auto-Cross released at {} us (connected={})", now,
+                 data[0].connected);
+    }
+}
+
+void TraceDeliveredButtons(const OrbisPadData* data, s32 count) {
+    if (!Common::StartupDiagnostics::Enabled() || count <= 0) {
+        return;
+    }
+    static thread_local unsigned long long calls{};
+    for (s32 i = 0; i < count; ++i) {
+        if (data[i].buttons == OrbisPadButtonDataOffset::None) {
+            continue;
+        }
+        const auto call = ++calls;
+        if (Common::StartupDiagnostics::Sample(call, 16)) {
+            Common::StartupDiagnostics::Emit(
+                "pad-delivery", "call=%llu index=%d buttons=%08x connected=%d timestamp=%llu",
+                call, i, static_cast<unsigned>(data[i].buttons),
+                static_cast<int>(data[i].connected),
+                static_cast<unsigned long long>(data[i].timestamp));
+        }
+    }
+}
+
+} // namespace
 
 int PS4_SYSV_ABI scePadClose(s32 handle) {
     LOG_WARNING(Lib_Pad, "called, handle: {}", handle);
@@ -441,7 +529,10 @@ int PS4_SYSV_ABI scePadRead(s32 handle, OrbisPadData* pData, s32 num) {
     auto& controller = *it->second;
     std::array<Input::State, ORBIS_PAD_MAX_DATA_NUM> states;
     const int ret_num = controller.ReadStates(states.data(), num);
-    return ProcessStates(pData, states.data(), ret_num);
+    const int processed = ProcessStates(pData, states.data(), ret_num);
+    ApplyDiagnosticAutoCross(pData, processed);
+    TraceDeliveredButtons(pData, processed);
+    return processed;
 }
 
 int PS4_SYSV_ABI scePadReadBlasterForTracker() {
