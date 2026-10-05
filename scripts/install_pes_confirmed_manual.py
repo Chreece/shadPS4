@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Build/select the confirmed PES playtest core without launching or modifying ES-DE."""
+"""Build/select the known-good v0.19 graphics core plus the proven PES guest-CPU fix."""
 
 import hashlib
 import importlib.util
@@ -15,8 +15,8 @@ import sys
 import tempfile
 import urllib.request
 
-REVISION = "ab46655439abc75d491e403fe2447ec3d58c4176"
-SOURCE_BRANCH = "playtest/pes-confirmed-20261005"
+REVISION = "ac691d782afa92019a1be5f493d7fc522c878270"
+SOURCE_BRANCH = "playtest/pes-v019-goodgfx-cpu-20261005"
 HELPER_REVISION = "19153e3113228c22b4f233487043d768469532f3"
 HELPER_SHA256 = "8c7a85d2819775ad853d692ba754f905ae2d0306864de31bef7dd91e81a2288c"
 HELPER_URL = (
@@ -138,7 +138,7 @@ def main():
     installer = download_helper(work)
 
     print("============================================================", flush=True)
-    print(" BUILDING CONFIRMED PES PLAYTEST CORE", flush=True)
+    print(" BUILDING KNOWN-GOOD GRAPHICS + PES CPU FIX CORE", flush=True)
     print(" revision      : " + REVISION, flush=True)
     print(" source branch : " + SOURCE_BRANCH, flush=True)
     print(" auto Cross    : disabled / absent", flush=True)
@@ -156,7 +156,7 @@ def main():
         raise RuntimeError("Previously selected core changed during build")
 
     built_sha = digest(built)
-    release = releases / ("pes-confirmed-" + REVISION[:12])
+    release = releases / ("pes-v019-goodgfx-cpu-" + REVISION[:12])
     if release.is_symlink() or (release.exists() and not release.is_dir()):
         raise RuntimeError("Unexpected playtest release path")
     release.mkdir(parents=True, exist_ok=True)
@@ -171,7 +171,7 @@ def main():
     if digest(binary) != built_sha:
         raise RuntimeError("Copied playtest binary checksum mismatch")
 
-    state_root = home / ".local/state/shadps4-pes-confirmed"
+    state_root = home / ".local/state/shadps4-pes-v019-goodgfx-cpu"
     state_root.mkdir(parents=True, exist_ok=True)
     state = {
         "schema": 1,
@@ -200,7 +200,7 @@ def main():
 
     print("", flush=True)
     print("============================================================", flush=True)
-    print(" PES CONFIRMED PLAYTEST BUILD READY", flush=True)
+    print(" PES / LAST GUARDIAN A-B PLAYTEST BUILD READY", flush=True)
     print("============================================================", flush=True)
     print("COMMIT=" + REVISION, flush=True)
     print("BINARY=" + str(binary), flush=True)
