@@ -1,0 +1,36 @@
+name: Validate Guest CPU Playtest Helper
+
+on:
+  push:
+    branches:
+      - playtest/guest-cpu-clean-deploy-20261005
+    paths:
+      - "documents/install_guest_cpu_clean_playtest.py"
+      - ".github/workflows/validate-guest-cpu-helper.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compile helper
+        run: python3 -m py_compile documents/install_guest_cpu_clean_playtest.py
+      - name: Verify pinned candidate and safe checkout ordering
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("documents/install_guest_cpu_clean_playtest.py")
+          text = path.read_text()
+
+          assert 'BRANCH = "kernel/current-cpu-affinity-upstream-20261005"' in text
+          assert 'REVISION = "6e9091173b6d548f6f1e947ac65998b57439a192"' in text
+          assert 'shadps4_kernel_cpu_test' in text
+          assert 'UNIT_TESTS=PASS' in text
+          assert 'SCOPE=UPSTREAM_MAIN_PLUS_GUEST_CPU_ONLY' in text
+
+          checkout = text.index('run(["git", "-C", source, "checkout", "--detach", "--force", REVISION])')
+          status = text.index('dirty = subprocess.check_output(', checkout)
+          assert checkout < status
+          assert "os.exec" not in text
+          PY
