@@ -23,6 +23,7 @@ import xml.etree.ElementTree as ET
 
 
 REPO = 'https://github.com/Chreece/shadPS4.git'
+UPSTREAM = 'https://github.com/shadps4-emu/shadPS4.git'
 IMAGE = 'shadps4-ngs2-builder:trixie-clang19-v1'
 DOCKERFILE = '''FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -212,17 +213,38 @@ def smoke(binary):
             raise RuntimeError('Core startup check failed: ' + (result.stdout + result.stderr)[-2000:])
 
 
-def fetch_revision(source, revision, source_branch, run):
+def fetch_revision(source, revision, source_branch, run, local_source=None):
     ref = 'refs/heads/' + source_branch
     subprocess.run(['git', 'check-ref-format', ref], check=True, capture_output=True)
-    run(['git', '-C', source, 'fetch', '--no-tags', '--no-recurse-submodules', 'origin', ref])
+    remote = 'origin'
+    if local_source is not None:
+        local_source = Path(local_source)
+        if local_source.is_symlink() or not local_source.is_dir():
+            raise RuntimeError('Invalid refreshed source directory')
+        dirty = subprocess.check_output(['git', '-C', local_source, 'status', '--porcelain',
+                                         '--untracked-files=normal'], text=True)
+        if dirty:
+            raise RuntimeError('Refreshed source has edits; nothing built')
+        manifest = json.loads((local_source / 'documents/LOCAL_TEST_BASELINE.json').read_text())
+        upstream_revision = manifest['upstream']['revision']
+        if (manifest['upstream']['repository'] != 'shadps4-emu/shadPS4' or
+                not re.fullmatch(r'[0-9a-f]{40}', upstream_revision)):
+            raise RuntimeError('Invalid refreshed upstream revision')
+        run(['git', '-C', source, 'fetch', '--no-tags', '--no-recurse-submodules', UPSTREAM,
+             upstream_revision])
+        bundle = local_source.parent / 'candidate.bundle'
+        if bundle.is_symlink() or not bundle.is_file():
+            raise RuntimeError('Missing refreshed source bundle')
+        run(['git', '-C', source, 'bundle', 'verify', bundle])
+        remote = str(bundle.resolve(strict=True))
+    run(['git', '-C', source, 'fetch', '--no-tags', '--no-recurse-submodules', remote, ref])
     fetched = subprocess.check_output(['git', '-C', source, 'rev-parse', 'FETCH_HEAD'],
                                       text=True).strip()
     if fetched != revision:
         raise RuntimeError(source_branch + ' moved to ' + fetched + '; this command pins ' + revision)
 
 
-def build(home, revision, source_branch='main', *, cleanup_token=None):
+def build(home, revision, source_branch='main', *, cleanup_token=None, local_source=None):
     if cleanup_token is not None and not re.fullmatch(r'[0-9a-f]{32}', cleanup_token):
         raise RuntimeError('Invalid build ownership token')
     work = home / '.cache/shadps4-ngs2-local/ca67919d-docker'
@@ -261,7 +283,7 @@ def build(home, revision, source_branch='main', *, cleanup_token=None):
                                          text=True).strip()
         if remote != REPO:
             raise RuntimeError('Build cache belongs to another repository; preserved.')
-        fetch_revision(source, revision, source_branch, run)
+        fetch_revision(source, revision, source_branch, run, local_source)
         dirty = subprocess.check_output(['git', '-C', source, 'status', '--porcelain',
                                          '--untracked-files=normal'], text=True)
         if dirty:
