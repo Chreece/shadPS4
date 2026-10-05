@@ -13,4 +13,38 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - run: python3 -m py_compile documents/install_pes_tlg_clean_playtest.py
+      - name: Compile helper
+        run: python3 -m py_compile documents/install_pes_tlg_clean_playtest.py
+      - name: Guard fresh no-checkout cache handling
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$(mktemp -d)"
+          trap 'rm -rf "$root"' EXIT
+
+          git init -q "$root/origin"
+          git -C "$root/origin" config user.email ci@example.invalid
+          git -C "$root/origin" config user.name CI
+          mkdir -p "$root/origin/.github"
+          printf 'tracked\n' > "$root/origin/README.md"
+          printf 'tracked\n' > "$root/origin/.github/test.yml"
+          git -C "$root/origin" add .
+          git -C "$root/origin" commit -qm initial
+
+          git clone -q --no-checkout "$root/origin" "$root/cache"
+
+          # A --no-checkout clone reports tracked files as deleted until checkout.
+          test -n "$(git -C "$root/cache" status --porcelain)"
+
+          git -C "$root/cache" clean -ffd
+          git -C "$root/cache" checkout --detach --force HEAD
+
+          test -z "$(git -C "$root/cache" status --porcelain)"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("documents/install_pes_tlg_clean_playtest.py").read_text()
+          checkout = text.index('run(["git", "-C", source, "checkout", "--detach", "--force", REVISION])')
+          status = text.index('dirty = subprocess.check_output(', checkout)
+          assert checkout < status
+          PY
