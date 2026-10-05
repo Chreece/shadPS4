@@ -1,0 +1,16 @@
+name: Validate Playtest Helper
+
+on:
+  push:
+    branches:
+      - playtest/pes-zpass-tlg-precise-deploy-20261005
+    paths:
+      - "documents/install_pes_tlg_clean_playtest.py"
+      - ".github/workflows/validate-playtest-helper.yml"
+
+jobs:
+  pycompile:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 -m py_compile documents/install_pes_tlg_clean_playtest.py
