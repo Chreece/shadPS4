@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <array>
 #include <condition_variable>
 #include <limits>
 #include <list>
@@ -11,6 +12,7 @@
 
 #include "common/logging/log.h"
 #include "common/slot_vector.h"
+#include "common/startup_diagnostics.h"
 #include "core/libraries/kernel/kernel.h"
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/posix_error.h"
@@ -158,33 +160,44 @@ public:
 
     s32 Wait(bool can_block, s32 need_count, u32* timeout) {
         std::unique_lock lk{mutex};
+        const auto trace = TraceSequence(can_block ? 0 : 1);
+        const auto operation = can_block ? "wait" : "poll";
+        Trace(trace, operation, "enter", need_count, 0);
+        const auto finish = [&](s32 result) {
+            Trace(trace, operation, "return", need_count, result);
+            return result;
+        };
         if (token_count >= need_count) {
             token_count -= need_count;
-            return ORBIS_OK;
+            return finish(ORBIS_OK);
         }
         if (!can_block) {
-            return ORBIS_KERNEL_ERROR_EBUSY;
+            return finish(ORBIS_KERNEL_ERROR_EBUSY);
         }
 
         if (timeout && *timeout == 0) {
-            return ORBIS_KERNEL_ERROR_ETIMEDOUT;
+            return finish(ORBIS_KERNEL_ERROR_ETIMEDOUT);
         }
 
         // Create waiting thread object and add it into the list of waiters.
         WaitingThread waiter{need_count, is_fifo};
         const auto it = AddWaiter(&waiter);
+        Trace(trace, operation, "queued", need_count, 0);
 
         // Perform the wait.
         const s32 result = waiter.Wait(lk, timeout);
         if (result == ORBIS_KERNEL_ERROR_ETIMEDOUT) {
             wait_list.erase(it);
         }
-        return result;
+        return finish(result);
     }
 
     bool Signal(s32 signal_count) {
         std::scoped_lock lk{mutex};
+        const auto trace = TraceSequence(2);
+        Trace(trace, "signal", "enter", signal_count, 0);
         if (token_count + signal_count > max_count) {
+            Trace(trace, "signal", "return", signal_count, ORBIS_KERNEL_ERROR_EINVAL);
             return false;
         }
         token_count += signal_count;
@@ -199,14 +212,22 @@ public:
             it = wait_list.erase(it);
             token_count -= waiter->need_count;
             waiter->was_signaled = true;
+            if (trace) {
+                Common::StartupDiagnostics::Emit(
+                    "semaphore-wake", "object=%p name=[%s] call=%llu target=[%s] need=%d",
+                    static_cast<void*>(this), name.c_str(), trace, waiter->thr_name.c_str(),
+                    waiter->need_count);
+            }
             waiter->sem.release();
         }
 
+        Trace(trace, "signal", "return", signal_count, ORBIS_OK);
         return true;
     }
 
     s32 Cancel(s32 set_count, s32* num_waiters) {
         std::scoped_lock lk{mutex};
+        Trace(TraceSequence(3), "cancel", "enter", set_count, 0);
         if (num_waiters) {
             *num_waiters = static_cast<s32>(wait_list.size());
         }
@@ -221,6 +242,7 @@ public:
 
     void Delete() {
         std::scoped_lock lk{mutex};
+        Trace(TraceSequence(3), "delete", "enter", 0, 0);
         for (auto* waiter : wait_list) {
             waiter->was_deleted = true;
             waiter->sem.release();
@@ -301,6 +323,25 @@ public:
         return wait_list.insert(it, waiter);
     }
 
+    unsigned long long TraceSequence(size_t operation) {
+        if (!Common::StartupDiagnostics::Enabled()) {
+            return 0;
+        }
+        const auto count = ++trace_counts[operation];
+        return Common::StartupDiagnostics::Sample(count, 64) ? count : 0;
+    }
+
+    void Trace(unsigned long long sequence, const char* operation, const char* phase, s32 requested,
+               s32 result) {
+        if (sequence) {
+            Common::StartupDiagnostics::Emit(
+                "semaphore", "object=%p name=[%s] op=%s phase=%s call=%llu requested=%d "
+                             "tokens=%d waiters=%zu result=%08x",
+                static_cast<void*>(this), name.c_str(), operation, phase, sequence, requested,
+                token_count.load(), wait_list.size(), static_cast<u32>(result));
+        }
+    }
+
     WaitList wait_list;
     std::string name;
     std::atomic<s32> token_count;
@@ -308,6 +349,7 @@ public:
     s32 max_count;
     s32 init_count;
     bool is_fifo;
+    std::array<unsigned long long, 4> trace_counts{};
 };
 
 static constexpr u32 MAX_ORBIS_SEMAPHORES = std::numeric_limits<u16>::max();
@@ -323,6 +365,11 @@ s32 PS4_SYSV_ABI sceKernelCreateSema(OrbisKernelSema* sem, const char* pName, u3
         return ORBIS_KERNEL_ERROR_EINVAL;
     }
     *sem = orbis_sems.Insert(initCount, maxCount, pName, attr == 1);
+    if (Common::StartupDiagnostics::Enabled()) {
+        Common::StartupDiagnostics::Emit(
+            "semaphore-create", "handle=%u object=%p name=[%s] initial=%d maximum=%d attr=%u",
+            sem->index, static_cast<void*>(&orbis_sems[*sem]), pName, initCount, maxCount, attr);
+    }
     return ORBIS_OK;
 }
 

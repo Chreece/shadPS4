@@ -11,6 +11,7 @@
 #include "core/emulator_settings.h"
 #include "core/memory.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/page_manager.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -244,10 +245,33 @@ ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, Bindi
         // Inherit image usage
         auto& new_image = slot_images[new_image_id];
         new_image.usage = cache_image.usage;
+        const bool grew = new_info.resources.layers > cache_image.info.resources.layers ||
+                          new_info.resources.levels > cache_image.info.resources.levels;
+        bool initialized = false;
+        if (new_info.num_samples == 1 && grew) {
+            RefreshImage(new_image);
+            initialized = False(new_image.flags & ImageFlagBits::Dirty);
+        }
         new_image.flags &= ~ImageFlagBits::Dirty;
         // When creating a depth buffer through overlap resolution don't clear it on first use.
         new_image.info.meta_info.htile_clear_mask = 0;
         runtime.CopyColorAndDepth(&cache_image, &new_image);
+
+        if (grew) {
+            GraphicsDiagnostics::Emit(
+                initialized ? GraphicsDiagnostics::Event::DepthGrowth
+                            : GraphicsDiagnostics::Event::DepthGrowthUninitialized,
+                "address=%llx src-format=%u dst-format=%u src-layers=%u dst-layers=%u "
+                "src-mips=%u dst-mips=%u "
+                "src-samples=%u dst-samples=%u upload-recorded=%u copy-returned=1",
+                static_cast<unsigned long long>(new_info.guest_address),
+                static_cast<unsigned>(cache_image.info.pixel_format),
+                static_cast<unsigned>(new_info.pixel_format),
+                cache_image.info.resources.layers, new_info.resources.layers,
+                cache_image.info.resources.levels, new_info.resources.levels,
+                cache_image.info.num_samples, new_info.num_samples,
+                static_cast<unsigned>(initialized));
+        }
 
         // Free the cache image.
         FreeImage(cache_image_id);
@@ -566,6 +590,14 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
             // Cannot reuse this image as we need the exact requested format.
             image_id = {};
         } else if (image_resolved.info.resources < info.resources) {
+            GraphicsDiagnostics::Emit(
+                GraphicsDiagnostics::Event::Containment,
+                "address=%llx available-mips=%u requested-mips=%u available-layers=%u "
+                "requested-layers=%u binding=%u",
+                static_cast<unsigned long long>(info.guest_address),
+                image_resolved.info.resources.levels, info.resources.levels,
+                image_resolved.info.resources.layers, info.resources.layers,
+                static_cast<unsigned>(desc.type));
             // The image was clearly picked up wrong.
             FreeImage(image_id);
             image_id = {};
@@ -743,6 +775,20 @@ void TextureCache::RefreshImage(Image& image) {
         const u32 depth =
             image.info.props.is_volume ? std::max(image.info.size.depth >> m, 1u) : 1u;
         const auto [mip_size, mip_pitch, mip_height, mip_offset] = image.info.mips_layout[m];
+        if (is_gpu_modified && !is_gpu_dirty) {
+            const u8* addr = std::bit_cast<u8*>(image.info.guest_address);
+            const u64 hash = XXH3_64bits(addr + mip_offset, mip_size);
+            if (image.mip_hashes[m] == hash) {
+                GraphicsDiagnostics::Emit(
+                    GraphicsDiagnostics::Event::ImageUploadSkipped,
+                    "image=%llu address=%llx mip=%u bytes=%u video-out=%u",
+                    static_cast<unsigned long long>(image.image_uid),
+                    static_cast<unsigned long long>(image.info.guest_address), m, mip_size,
+                    static_cast<unsigned>(image.usage.vo_surface));
+                continue;
+            }
+            image.mip_hashes[m] = hash;
+        }
         const u32 extent_width = mip_pitch ? std::min<u32>(mip_pitch, width) : width;
         const u32 extent_height = mip_height ? std::min<u32>(mip_height, height) : height;
         image_copies.push_back({
@@ -774,6 +820,13 @@ void TextureCache::RefreshImage(Image& image) {
         copy.bufferOffset += offset;
     }
 
+    GraphicsDiagnostics::Emit(
+        GraphicsDiagnostics::Event::ImageUpload,
+        "image=%llu address=%llx mips=%zu gpu-modified=%u gpu-dirty=%u video-out=%u",
+        static_cast<unsigned long long>(image.image_uid),
+        static_cast<unsigned long long>(image.info.guest_address), image_copies.size(),
+        static_cast<unsigned>(is_gpu_modified), static_cast<unsigned>(is_gpu_dirty),
+        static_cast<unsigned>(image.usage.vo_surface));
     runtime.UploadImage(&image, buffer, image_copies);
 }
 

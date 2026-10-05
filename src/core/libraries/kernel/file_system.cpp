@@ -347,14 +347,31 @@ s64 PS4_SYSV_ABI sceKernelWrite(s32 fd, const void* buf, u64 nbytes) {
 static thread_local std::vector<u8> file_buf{};
 
 s64 ReadFile(Core::FileSys::File* file, void* buf, u64 nbytes) {
+    const bool trace = Common::StartupDiagnostics::Enabled();
     const auto* memory = Core::Memory::Instance();
     // Invalidate up to the actual number of bytes that could be read.
-    const auto remaining = file->GetSize() - file->Tell();
+    const auto file_size = file->GetSize();
+    const auto trace_offset = file->Tell();
+    const auto remaining = file_size - trace_offset;
     memory->InvalidateMemory(reinterpret_cast<VAddr>(buf), std::min<u64>(nbytes, remaining));
     if (file_buf.capacity() < nbytes) {
         file_buf.reserve(nbytes);
     }
     s64 bytes = file->Read(file_buf.data(), nbytes);
+    if (trace) {
+        static std::atomic<unsigned long long> reads{}, short_reads{};
+        const auto count = reads.fetch_add(1, std::memory_order_relaxed) + 1;
+        const auto short_count = bytes < 0 || static_cast<u64>(bytes) < nbytes
+                                     ? short_reads.fetch_add(1, std::memory_order_relaxed) + 1
+                                     : 0;
+        if (Common::StartupDiagnostics::Sample(count, 8192) ||
+            (short_count && Common::StartupDiagnostics::Sample(short_count, 128))) {
+            Common::StartupDiagnostics::Emit(
+                "file-read", "count=%llu path=[%s] offset=%llu requested=%llu returned=%lld",
+                count, file->m_guest_name.c_str(), static_cast<unsigned long long>(trace_offset),
+                static_cast<unsigned long long>(nbytes), static_cast<long long>(bytes));
+        }
+    }
     if (bytes < 0) {
         return bytes;
     }
@@ -687,6 +704,13 @@ s32 PS4_SYSV_ABI posix_access(const char* path, s32 mode) {
 }
 
 s32 PS4_SYSV_ABI posix_stat(const char* path, OrbisKernelStat* sb) {
+    if (Common::StartupDiagnostics::Enabled()) {
+        static std::atomic<unsigned long long> stats{};
+        const auto count = stats.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (Common::StartupDiagnostics::Sample(count, 4096)) {
+            Common::StartupDiagnostics::Emit("file-stat", "count=%llu path=[%s]", count, path);
+        }
+    }
     LOG_DEBUG(Kernel_Fs, "(PARTIAL) path = {}", path);
     if (strlen(path) > 255) {
         *__Error() = POSIX_ENAMETOOLONG;
@@ -1220,12 +1244,12 @@ s64 PS4_SYSV_ABI sceKernelPwritev(s32 fd, const OrbisKernelIovec* iov, s32 iovcn
 }
 
 s32 PS4_SYSV_ABI posix_unlink(const char* path) {
-    if (strlen(path) > 255) {
-        *__Error() = POSIX_ENAMETOOLONG;
+    if (path == nullptr) {
+        *__Error() = POSIX_EFAULT;
         return -1;
     }
-    if (path == nullptr) {
-        *__Error() = POSIX_EINVAL;
+    if (strlen(path) > ORBIS_MAX_PATH) {
+        *__Error() = POSIX_ENAMETOOLONG;
         return -1;
     }
 
@@ -1244,18 +1268,39 @@ s32 PS4_SYSV_ABI posix_unlink(const char* path) {
         return -1;
     }
 
-    if (fs::is_directory(host_path)) {
+    std::error_code ec;
+    if (fs::is_directory(host_path, ec)) {
         *__Error() = POSIX_EPERM;
+        return -1;
+    }
+    if (ec) {
+        const auto condition = ec.default_error_condition();
+        SetPosixErrno(condition.category() == std::generic_category() ? condition.value() : EIO);
+        LOG_INFO(Kernel_Fs, "Unlink {} failed, error = {}", path, *__Error());
         return -1;
     }
 
     auto* file = h->GetFile(host_path);
+    int error = 0;
     if (file == nullptr) {
         // File to unlink hasn't been opened, manually open and unlink it.
-        Common::FS::IOFile file(host_path, Common::FS::FileAccessMode::ReadWrite);
-        file.Unlink();
+        Common::FS::IOFile temporary;
+        error = temporary.Open(host_path, Common::FS::FileAccessMode::ReadWrite);
+        if (error == 0) {
+            error = temporary.Unlink();
+        }
     } else if (auto* host = file->GetHostFile()) {
-        host->Unlink();
+        error = host->Unlink();
+    } else {
+        // Archive-backed files have no writable host handle.
+        error = EROFS;
+    }
+    if (error != 0) {
+        // The temporary IOFile has already closed; use the saved error rather
+        // than errno, which fclose/logging may have overwritten.
+        SetPosixErrno(error);
+        LOG_INFO(Kernel_Fs, "Unlink {} failed, error = {}", path, *__Error());
+        return -1;
     }
 
     LOG_INFO(Kernel_Fs, "Unlinked {}", path);
@@ -1570,10 +1615,10 @@ s32 PS4_SYSV_ABI posix_select(s32 nfds, fd_set* readfds, fd_set* writefds, fd_se
 #endif
 
 void RegisterFileSystem(Core::Loader::SymbolsResolver* sym) {
-    LIB_FUNCTION("6c3rCVE-fTU", "libkernel", 1, "libkernel", open);
-    LIB_FUNCTION("wuCroIGjt2g", "libScePosix", 1, "libkernel", posix_open);
-    LIB_FUNCTION("wuCroIGjt2g", "libkernel", 1, "libkernel", posix_open);
-    LIB_FUNCTION("1G3lF1Gg1k8", "libkernel", 1, "libkernel", sceKernelOpen);
+    STARTUP_FUNCTION("6c3rCVE-fTU", "libkernel", 1, "libkernel", open);
+    STARTUP_FUNCTION("wuCroIGjt2g", "libScePosix", 1, "libkernel", posix_open);
+    STARTUP_FUNCTION("wuCroIGjt2g", "libkernel", 1, "libkernel", posix_open);
+    STARTUP_FUNCTION("1G3lF1Gg1k8", "libkernel", 1, "libkernel", sceKernelOpen);
     LIB_FUNCTION("NNtFaKJbPt0", "libkernel", 1, "libkernel", close);
     LIB_FUNCTION("bY-PO6JhzhQ", "libScePosix", 1, "libkernel", posix_close);
     LIB_FUNCTION("bY-PO6JhzhQ", "libkernel", 1, "libkernel", posix_close);
@@ -1582,16 +1627,16 @@ void RegisterFileSystem(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("FN4gaPmuFV8", "libScePosix", 1, "libkernel", posix_write);
     LIB_FUNCTION("FN4gaPmuFV8", "libkernel", 1, "libkernel", posix_write);
     LIB_FUNCTION("4wSze92BhLI", "libkernel", 1, "libkernel", sceKernelWrite);
-    LIB_FUNCTION("+WRlkKjZvag", "libkernel", 1, "libkernel", readv);
+    STARTUP_FUNCTION("+WRlkKjZvag", "libkernel", 1, "libkernel", readv);
     LIB_FUNCTION("YSHRBRLn2pI", "libkernel", 1, "libkernel", writev);
     LIB_FUNCTION("kAt6VDbHmro", "libkernel", 1, "libkernel", sceKernelWritev);
     LIB_FUNCTION("Oy6IpwgtYOk", "libScePosix", 1, "libkernel", posix_lseek);
     LIB_FUNCTION("Oy6IpwgtYOk", "libkernel", 1, "libkernel", posix_lseek);
     LIB_FUNCTION("oib76F-12fk", "libkernel", 1, "libkernel", sceKernelLseek);
-    LIB_FUNCTION("DRuBt2pvICk", "libkernel", 1, "libkernel", read);
-    LIB_FUNCTION("AqBioC2vF3I", "libScePosix", 1, "libkernel", posix_read);
-    LIB_FUNCTION("AqBioC2vF3I", "libkernel", 1, "libkernel", posix_read);
-    LIB_FUNCTION("Cg4srZ6TKbU", "libkernel", 1, "libkernel", sceKernelRead);
+    STARTUP_FUNCTION("DRuBt2pvICk", "libkernel", 1, "libkernel", read);
+    STARTUP_FUNCTION("AqBioC2vF3I", "libScePosix", 1, "libkernel", posix_read);
+    STARTUP_FUNCTION("AqBioC2vF3I", "libkernel", 1, "libkernel", posix_read);
+    STARTUP_FUNCTION("Cg4srZ6TKbU", "libkernel", 1, "libkernel", sceKernelRead);
     LIB_FUNCTION("JGMio+21L4c", "libScePosix", 1, "libkernel", posix_mkdir);
     LIB_FUNCTION("JGMio+21L4c", "libkernel", 1, "libkernel", posix_mkdir);
     LIB_FUNCTION("1-LFLmRFxxM", "libkernel", 1, "libkernel", sceKernelMkdir);
@@ -1599,23 +1644,23 @@ void RegisterFileSystem(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("c7ZnT7V1B98", "libkernel", 1, "libkernel", posix_rmdir);
     LIB_FUNCTION("naInUjYt3so", "libkernel", 1, "libkernel", sceKernelRmdir);
     LIB_FUNCTION("8vE6Z6VEYyk", "libkernel_psmkit", 1, "libkernel", posix_access);
-    LIB_FUNCTION("E6ao34wPw+U", "libScePosix", 1, "libkernel", posix_stat);
-    LIB_FUNCTION("E6ao34wPw+U", "libkernel", 1, "libkernel", posix_stat);
-    LIB_FUNCTION("eV9wAD2riIA", "libkernel", 1, "libkernel", sceKernelStat);
-    LIB_FUNCTION("uWyW3v98sU4", "libkernel", 1, "libkernel", sceKernelCheckReachability);
-    LIB_FUNCTION("mqQMh1zPPT8", "libScePosix", 1, "libkernel", posix_fstat);
-    LIB_FUNCTION("mqQMh1zPPT8", "libkernel", 1, "libkernel", posix_fstat);
-    LIB_FUNCTION("kBwCPsYX-m4", "libkernel", 1, "libkernel", sceKernelFstat);
+    STARTUP_FUNCTION("E6ao34wPw+U", "libScePosix", 1, "libkernel", posix_stat);
+    STARTUP_FUNCTION("E6ao34wPw+U", "libkernel", 1, "libkernel", posix_stat);
+    STARTUP_FUNCTION("eV9wAD2riIA", "libkernel", 1, "libkernel", sceKernelStat);
+    STARTUP_FUNCTION("uWyW3v98sU4", "libkernel", 1, "libkernel", sceKernelCheckReachability);
+    STARTUP_FUNCTION("mqQMh1zPPT8", "libScePosix", 1, "libkernel", posix_fstat);
+    STARTUP_FUNCTION("mqQMh1zPPT8", "libkernel", 1, "libkernel", posix_fstat);
+    STARTUP_FUNCTION("kBwCPsYX-m4", "libkernel", 1, "libkernel", sceKernelFstat);
     LIB_FUNCTION("ih4CD9-gghM", "libkernel", 1, "libkernel", posix_ftruncate);
     LIB_FUNCTION("ih4CD9-gghM", "libScePosix", 1, "libkernel", posix_ftruncate);
     LIB_FUNCTION("VW3TVZiM4-E", "libkernel", 1, "libkernel", sceKernelFtruncate);
     LIB_FUNCTION("NN01qLRhiqU", "libScePosix", 1, "libkernel", posix_rename);
     LIB_FUNCTION("NN01qLRhiqU", "libkernel", 1, "libkernel", posix_rename);
     LIB_FUNCTION("52NcYU9+lEo", "libkernel", 1, "libkernel", sceKernelRename);
-    LIB_FUNCTION("yTj62I7kw4s", "libkernel", 1, "libkernel", sceKernelPreadv);
-    LIB_FUNCTION("ezv-RSBNKqI", "libScePosix", 1, "libkernel", posix_pread);
-    LIB_FUNCTION("ezv-RSBNKqI", "libkernel", 1, "libkernel", posix_pread);
-    LIB_FUNCTION("+r3rMFwItV4", "libkernel", 1, "libkernel", sceKernelPread);
+    STARTUP_FUNCTION("yTj62I7kw4s", "libkernel", 1, "libkernel", sceKernelPreadv);
+    STARTUP_FUNCTION("ezv-RSBNKqI", "libScePosix", 1, "libkernel", posix_pread);
+    STARTUP_FUNCTION("ezv-RSBNKqI", "libkernel", 1, "libkernel", posix_pread);
+    STARTUP_FUNCTION("+r3rMFwItV4", "libkernel", 1, "libkernel", sceKernelPread);
     LIB_FUNCTION("juWbTNM+8hw", "libScePosix", 1, "libkernel", posix_fsync);
     LIB_FUNCTION("juWbTNM+8hw", "libkernel", 1, "libkernel", posix_fsync);
     LIB_FUNCTION("fTx66l5iWIA", "libkernel", 1, "libkernel", sceKernelFsync);

@@ -11,6 +11,7 @@
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/vk_occlusion_query.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -53,6 +54,19 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
 }
 
 Rasterizer::~Rasterizer() = default;
+
+OcclusionQuery& Rasterizer::GetOcclusionQuery() {
+    if (!occlusion) {
+        occlusion = std::make_unique<OcclusionQuery>(instance, scheduler);
+    }
+    return *occlusion;
+}
+
+void Rasterizer::SubmitPendingQueries() {
+    if (occlusion) {
+        occlusion->SubmitPending();
+    }
+}
 
 bool Rasterizer::FilterDraw() {
     const auto& regs = liverpool->regs;
@@ -211,6 +225,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     pipeline->BindResources(set_writes, push_data);
     UpdateDynamicState(pipeline, is_indexed);
+    const auto query = occlusion ? occlusion->PrepareDraw(liverpool->regs.depth_count_control)
+                                  : std::nullopt;
     scheduler.BeginRendering(state);
 
     const auto& vs_info = pipeline->GetStage(Shader::SwStage::Vertex);
@@ -219,6 +235,9 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
+    if (occlusion) {
+        occlusion->BeginDraw(cmdbuf, query);
+    }
 
     if (is_indexed) {
         cmdbuf.drawIndexed(regs.num_indices, regs.num_instances.NumInstances(), 0,
@@ -226,6 +245,9 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     } else {
         cmdbuf.draw(regs.num_indices, regs.num_instances.NumInstances(), vertex_offset,
                     instance_offset);
+    }
+    if (occlusion) {
+        occlusion->EndDraw(cmdbuf, query);
     }
     DebugState.IncDrawCall();
 
@@ -283,10 +305,15 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
     pipeline->BindResources(set_writes, push_data);
     UpdateDynamicState(pipeline, is_indexed);
+    const auto query = occlusion ? occlusion->PrepareDraw(liverpool->regs.depth_count_control)
+                                  : std::nullopt;
     scheduler.BeginRendering(state);
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
+    if (occlusion) {
+        occlusion->BeginDraw(cmdbuf, query);
+    }
 
     if (is_indexed) {
         ASSERT(sizeof(VkDrawIndexedIndirectCommand) == stride);
@@ -310,6 +337,9 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         DebugState.IncDrawCall();
     }
 
+    if (occlusion) {
+        occlusion->EndDraw(cmdbuf, query);
+    }
     ResetBindings(false);
 }
 
@@ -402,6 +432,11 @@ void Rasterizer::OnSubmit() {
 
 void Rasterizer::OnFence() {
     texture_cache.ProcessDownloadImages();
+    if (occlusion) {
+        // The caller signals a guest fence immediately after this method.
+        // Complete preceding counter writes before that fence becomes visible.
+        occlusion->Drain();
+    }
 }
 
 bool Rasterizer::BindResources(const Pipeline* pipeline) {

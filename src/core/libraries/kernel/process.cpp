@@ -3,10 +3,12 @@
 
 #include "common/elf_info.h"
 #include "common/logging/log.h"
+#include "common/startup_diagnostics.h"
 #include "core/emulator_settings.h"
 #include "core/file_sys/fs.h"
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/process.h"
+#include "core/libraries/kernel/threads/pthread.h"
 #include "core/libraries/libs.h"
 #include "core/linker.h"
 
@@ -76,8 +78,15 @@ s32 PS4_SYSV_ABI sceKernelGetCpumode() {
 }
 
 s32 PS4_SYSV_ABI sceKernelGetCurrentCpu() {
-    LOG_DEBUG(Lib_Kernel, "called");
-    return 0;
+    const s32 cpu =
+        g_curthread != nullptr ? g_curthread->guest_cpu.load(std::memory_order_relaxed) : 0;
+    if (Common::StartupDiagnostics::Enabled()) {
+        static thread_local unsigned long long calls{};
+        if (Common::StartupDiagnostics::Sample(++calls, 4)) {
+            Common::StartupDiagnostics::Emit("current-cpu", "cpu=%d call=%llu", cpu, calls);
+        }
+    }
+    return cpu;
 }
 
 void* PS4_SYSV_ABI sceKernelGetProcParam() {

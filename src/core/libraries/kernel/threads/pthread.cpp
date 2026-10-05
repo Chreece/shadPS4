@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <bit>
+
 #include "common/assert.h"
+#include "common/startup_diagnostics.h"
 #include "common/thread.h"
 #ifdef _WIN32
 #include "common/ntapi.h"
@@ -338,6 +341,8 @@ int PS4_SYSV_ABI posix_pthread_create_name_np(PthreadT* thread, const PthreadAtt
     } else {
         new_thread->name = fmt::format("Thread{}", new_thread->tid.load());
     }
+
+    new_thread->UpdateGuestCpu(new_thread->attr.cpuset);
 
     ASSERT(new_thread->attr.suspend == 0);
     new_thread->state = PthreadState::Running;
@@ -1089,6 +1094,17 @@ bool Pthread::DispatchPendingSignals(Siginfo* info, Ucontext* context) {
     return DispatchSignal(sig, info, context);
 }
 
+void Pthread::UpdateGuestCpu(const Cpuset* cpuset) {
+    const u64 mask = cpuset != nullptr ? cpuset->bits : 0;
+    const s32 cpu = mask != 0 ? std::countr_zero(mask) : 0;
+    guest_cpu.store(cpu, std::memory_order_relaxed);
+    if (Common::StartupDiagnostics::Enabled()) {
+        Common::StartupDiagnostics::Emit(
+            "guest-cpu-affinity", "target=[%s] tid=%d mask=%llx cpu=%d", name.c_str(), tid.load(),
+            static_cast<unsigned long long>(mask), cpu);
+    }
+}
+
 int Pthread::SetAffinity(const Cpuset* cpuset) {
     const auto processor_count = std::thread::hardware_concurrency();
     if (processor_count < 8) {
@@ -1173,6 +1189,9 @@ int PS4_SYSV_ABI posix_pthread_setaffinity_np(PthreadT thread, size_t cpusetsize
 
     if (ret == ORBIS_OK) {
         ret = thread->SetAffinity(thread->attr.cpuset);
+        if (ret == 0) {
+            thread->UpdateGuestCpu(thread->attr.cpuset);
+        }
     }
 
     thread->lock->unlock();

@@ -36,9 +36,7 @@ class PageManager;
 
 class BufferCache {
     static constexpr u64 ADDRESS_SPACE_BITS = 40;
-    static constexpr u64 ARENA_PAGE_BITS = 32;
-    static constexpr u64 ARENA_PAGE_SIZE = u64{1} << ARENA_PAGE_BITS;
-    static constexpr u64 NUM_ARENA_PAGES = u64{1} << (ADDRESS_SPACE_BITS - ARENA_PAGE_BITS);
+    static constexpr u64 MAX_ARENA_PAGE_SIZE = u64{1} << 32;
     static constexpr u64 MIN_BLOCK_SIZE = 16_KB;
     static constexpr u64 STREAM_THRESHOLD = 16_KB;
 
@@ -102,6 +100,8 @@ public:
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);
 
 private:
+    struct Backing;
+
     struct ArenaBinds {
         const Buffer* arena;
         boost::container::small_vector<vk::SparseMemoryBind, 32> binds;
@@ -116,6 +116,8 @@ private:
     }
 
     const Buffer* GetArena(u64 first_block, u64 last_block);
+
+    void BindBacking(const Buffer* arena, const Backing& backing);
 
     void EnsureResident(const Buffer* arena, u64 first_block, u64 last_block);
 
@@ -143,7 +145,7 @@ private:
     std::unique_ptr<Buffer> bda_pagetable_buffer;
     bool fault_process_pending{};
 
-    std::array<const Buffer*, NUM_ARENA_PAGES> address_space{};
+    std::vector<std::vector<const Buffer*>> address_space;
     std::deque<Buffer> arenas;
     std::vector<ArenaBinds> pending_binds;
     Vulkan::Semaphore memory_semaphore;
@@ -163,7 +165,9 @@ private:
     u32 arena_memory_type_index{};
     u32 block_size{};
     u32 block_shift{};
-    u32 blocks_per_arena_page{};
+    u64 max_arena_size{};
+    u64 arena_page_size{};
+    u32 arena_page_bits{};
     u32 blocks_per_arena_page_shift{};
 };
 

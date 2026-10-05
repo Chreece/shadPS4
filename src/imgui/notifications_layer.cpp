@@ -3,6 +3,7 @@
 
 #include <cmrc/cmrc.hpp>
 #include <imgui.h>
+#include <optional>
 #include <queue>
 
 #include "imgui/imgui_std.h"

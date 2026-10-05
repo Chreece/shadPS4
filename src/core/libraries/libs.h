@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "common/startup_diagnostics.h"
 #include "core/loader/elf.h"
 #include "core/loader/symbols_resolver.h"
 #include "core/tls.h"
@@ -17,6 +18,16 @@ void LinkSymbolImpl(Core::Loader::SymbolsResolver* sym, char const* nid, char co
 #define LIB_OBJ(nid, lib, libversion, mod, obj)                                                    \
     LinkSymbolImpl(sym, nid, lib, libversion, mod, reinterpret_cast<u64>(obj),                     \
                    Core::Loader::SymbolType::Object)
+
+#define STARTUP_FUNCTION(nid, lib, libversion, mod, function)                                     \
+    LinkSymbolImpl(                                                                               \
+        sym, nid, lib, libversion, mod,                                                           \
+        reinterpret_cast<u64>(Common::StartupDiagnostics::Enabled()                               \
+                                  ? Core::HostCallWrapperImpl<                                    \
+                                        Common::StartupDiagnostics::Trace<                        \
+                                            function, #function>::wrap>::wrap                     \
+                                  : HOST_CALL(function)),                                         \
+        Core::Loader::SymbolType::Function)
 
 namespace Libraries {
 
