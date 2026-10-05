@@ -39,6 +39,7 @@ struct UiDiagState {
     u32 frame = std::numeric_limits<u32>::max();
     u32 current_id{};
     u32 current_frame{};
+    bool current_is_new{};
     u64 previous_set_hash{};
     std::unordered_map<u64, u32> ids;
     std::unordered_map<u32, u32> active_counts;
@@ -137,6 +138,7 @@ void UiDiagRecord(const AmdGpu::Regs& regs, const GraphicsPipeline& pipeline, bo
     auto& state = GetUiDiagState();
     if (!UiDiagEnabled() || !UiDiagCandidate(regs)) {
         state.current_id = 0;
+        state.current_is_new = false;
         return;
     }
 
@@ -151,6 +153,7 @@ void UiDiagRecord(const AmdGpu::Regs& regs, const GraphicsPipeline& pipeline, bo
     const u32 id = it->second;
     state.current_id = id;
     state.current_frame = frame;
+    state.current_is_new = inserted;
     ++state.active_counts[id];
 
     if (!inserted || state.lines >= 12000) {
@@ -1015,8 +1018,27 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     // To emulate storing to explicit mip levels, build a descriptor array with each mip level.
     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
 
+    u32 ui_diag_slot = 0;
     for (const auto& image_desc : stage.images) {
         const auto tsharp = image_desc.GetSharp(stage);
+        const auto& ui_diag = GetUiDiagState();
+        if (UiDiagEnabled() && ui_diag.current_id != 0 && ui_diag.current_is_new) {
+            std::fprintf(stderr,
+                         "TLG_UI_TEX id=%u frame=%u stage=%u slot=%u addr=%llx fmt=%u numfmt=%u "
+                         "size=%ux%u pitch=%u levels=%u layers=%u type=%u tiled=%u\n",
+                         ui_diag.current_id, ui_diag.current_frame,
+                         static_cast<unsigned>(stage.sw_stage), ui_diag_slot,
+                         static_cast<unsigned long long>(tsharp.Address()),
+                         static_cast<unsigned>(tsharp.data_format),
+                         static_cast<unsigned>(tsharp.num_format),
+                         static_cast<unsigned>(tsharp.width + 1),
+                         static_cast<unsigned>(tsharp.height + 1), tsharp.Pitch(),
+                         tsharp.NumLevels(), tsharp.NumLayers(),
+                         static_cast<unsigned>(tsharp.GetType()),
+                         static_cast<unsigned>(tsharp.IsTiled()));
+            std::fflush(stderr);
+        }
+        ++ui_diag_slot;
         if (texture_cache.IsMeta(tsharp.Address())) {
             LOG_WARNING(Render_Vulkan, "Unexpected metadata read by a shader (texture)");
         }
