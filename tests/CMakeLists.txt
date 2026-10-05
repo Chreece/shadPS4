@@ -340,3 +340,7 @@ gtest_discover_tests(shadps4_http_test
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DISCOVERY_TIMEOUT 60
 )
+
+
+# Startup loading feedback
+add_subdirectory(startup_loading)
