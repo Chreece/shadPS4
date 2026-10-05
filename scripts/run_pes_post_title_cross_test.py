@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Build current main with retained fixes, trace PES startup, capture and close the test."""
+"""Build current main, inject one diagnostic Cross press, capture post-title PES evidence, and clean up."""
 
 import fcntl
 from contextlib import redirect_stdout, redirect_stderr
@@ -354,7 +354,7 @@ if __name__ == '__main__':
     try:
         sys.exit(main())
     except (Exception, KeyboardInterrupt) as error:
-        print('PES_GPU_TEST=FAIL: ' + (str(error) or 'Interrupted'), flush=True)
+        print('PES_POST_TITLE_TEST=FAIL: ' + (str(error) or 'Interrupted'), flush=True)
         sys.exit(1)
     finally:
         print('Returning to your existing SSH prompt.', flush=True)
