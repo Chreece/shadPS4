@@ -84,6 +84,7 @@ class SessionTests(unittest.TestCase):
                 (work / 'screenshots').mkdir(parents=True)
                 (work / 'screenshots/final.png').write_bytes(b'fixture image bytes')
                 result = capture_result()
+                result['gpu_frame_captured'] = False
                 (work / 'startup.json').write_text(json.dumps(result))
                 (work / 'console.0.log').write_text(
                     'STARTUP_DIAG ms=0 thread=[fixture] event=api-enter api=sceKernelRead call=1 args=3\n'
@@ -112,6 +113,8 @@ class SessionTests(unittest.TestCase):
                     contextlib.redirect_stdout(terminal):
                 self.assertEqual(runner.execute_session(home), 0)
             self.assertTrue(calls[0]['close_after'])
+            self.assertIsNone(calls[0]['gpu_collector'])
+            modules['pes_gpu_frame'].prepare.assert_not_called()
             self.assertEqual(calls[0]['trace_delay_seconds'], 40)
             self.assertFalse(calls[0]['archive'])
             self.assertEqual(terminal.getvalue().count('PES_TEST_ARCHIVE='), 1)
@@ -179,7 +182,7 @@ class SessionTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'triangle replay failed'):
                 runner.run(Path('/fixture'), Path('/fixture/work'),
                            test_session(), {},
-                           SimpleNamespace(build=Mock()), baseline, startup)
+                           SimpleNamespace(build=Mock()), baseline, startup, capture_gpu=True)
         startup.run.assert_not_called()
 
     def test_replay_waits_for_confirmed_game_cleanup(self):
@@ -195,7 +198,7 @@ class SessionTests(unittest.TestCase):
                 runner.run(Path('/fixture'), Path(temporary.name),
                            test_session(), {}, SimpleNamespace(build=Mock()),
                            SimpleNamespace(prepare=Mock(), verify_installed=Mock()),
-                           SimpleNamespace(run=Mock(return_value=result)))
+                           SimpleNamespace(run=Mock(return_value=result)), capture_gpu=True)
         collector.replay.assert_not_called()
 
     def test_docker_cleanup_verifies_label_before_removing_exact_id(self):

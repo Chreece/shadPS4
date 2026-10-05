@@ -150,7 +150,7 @@ def refresh_source(work, manifest):
     return refresh.prepare(work / 'source-refresh', REVISION, manifest)
 
 
-def run(home, work, session, manifest, installer, baseline, startup):
+def run(home, work, session, manifest, installer, baseline, startup, *, capture_gpu=False):
     manifest = dict(manifest, candidate_fixes={
         'sparse_arena_limit': ARENA_FIX,
         'imgui_mapping': IMGUI_FIX,
@@ -164,8 +164,9 @@ def run(home, work, session, manifest, installer, baseline, startup):
                                local_source=session['source']['source_directory'])
     baseline.prepare(home, session['candidate_revision'], session['source']['source_branch'], manifest, build)
     preflight = validate_wait(work, session['ownership_token'])
-    collector = importlib.import_module('pes_gpu_frame').prepare(
-        home, work / 'gpu-frame', session['ownership_token'])
+    session['capture_gpu'] = capture_gpu
+    collector = (importlib.import_module('pes_gpu_frame').prepare(
+        home, work / 'gpu-frame', session['ownership_token']) if capture_gpu else None)
     baseline.verify_installed(home)
     try:
         result = startup.run(home, profile='frames', screenshots=True,
@@ -176,7 +177,7 @@ def run(home, work, session, manifest, installer, baseline, startup):
         session['startup_trace'] = collect_startup_trace(work)
     if not result.get('process_cleanup', {}).get('complete'):
         raise RuntimeError('PES must be closed before GPU replay')
-    if collector.captured is not None:
+    if collector is not None and collector.captured is not None:
         collector.replay()
     frames = json.loads((work / 'startup/frames/frames-trace.json').read_text())
     preflight.check_samples(frames)
@@ -189,11 +190,11 @@ def run(home, work, session, manifest, installer, baseline, startup):
         if api in frames.get('apis', {}):
             print('PES_INIT_CALLS=' + api + ' ' + json.dumps(frames['apis'][api]), flush=True)
     check_capture(result)
-    if not result.get('gpu_frame_captured'):
+    if capture_gpu and not result.get('gpu_frame_captured'):
         raise RuntimeError('Complete GPU frame missing')
     if not session['startup_trace']['trace_observed']:
         raise RuntimeError('Native startup API/file trace missing; upload the printed archive')
-    print('PES_STARTUP_TEST=PASS; startup calls, files, GPU frame and screenshots archived', flush=True)
+    print('PES_STARTUP_TEST=PASS; startup callbacks, files and screenshots archived', flush=True)
 
 
 def cleanup_containers(token):
