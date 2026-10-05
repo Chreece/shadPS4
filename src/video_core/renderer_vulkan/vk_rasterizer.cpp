@@ -38,7 +38,7 @@ struct UiDiagState {
     u32 frame = std::numeric_limits<u32>::max();
     u64 previous_set_hash{};
     std::unordered_map<u64, u32> ids;
-    std::vector<u32> active_ids;
+    std::unordered_map<u32, u32> active_counts;
     u32 next_id{1};
     u32 lines{};
 };
@@ -96,28 +96,37 @@ void UiDiagFlushFrame(u32 next_frame) {
         return;
     }
 
-    std::ranges::sort(state.active_ids);
-    state.active_ids.erase(std::unique(state.active_ids.begin(), state.active_ids.end()),
-                           state.active_ids.end());
+    std::vector<std::pair<u32, u32>> active;
+    active.reserve(state.active_counts.size());
+    for (const auto& [id, count] : state.active_counts) {
+        active.emplace_back(id, count);
+    }
+    std::ranges::sort(active);
 
     u64 set_hash = 0xcbf29ce484222325ULL;
-    for (const u32 id : state.active_ids) {
-        set_hash = UiDiagMix(set_hash, id);
+    std::string active_text;
+    for (const auto& [id, count] : active) {
+        set_hash = UiDiagMix(set_hash, (static_cast<u64>(id) << 32) | count);
+        if (!active_text.empty()) {
+            active_text += ',';
+        }
+        active_text += std::to_string(id) + "x" + std::to_string(count);
     }
 
     if (set_hash != state.previous_set_hash || (state.frame % 120) == 0) {
         if (state.lines < 12000) {
-            std::fprintf(stderr, "TLG_UI_FRAME frame=%u candidates=%zu set=%016llx changed=%u\n",
-                         state.frame, state.active_ids.size(),
-                         static_cast<unsigned long long>(set_hash),
-                         static_cast<unsigned>(set_hash != state.previous_set_hash));
+            std::fprintf(stderr,
+                         "TLG_UI_FRAME frame=%u candidates=%zu set=%016llx changed=%u ids=%s\n",
+                         state.frame, active.size(), static_cast<unsigned long long>(set_hash),
+                         static_cast<unsigned>(set_hash != state.previous_set_hash),
+                         active_text.c_str());
             std::fflush(stderr);
             ++state.lines;
         }
         state.previous_set_hash = set_hash;
     }
 
-    state.active_ids.clear();
+    state.active_counts.clear();
     state.frame = next_frame;
 }
 
@@ -136,7 +145,7 @@ void UiDiagRecord(const AmdGpu::Regs& regs, const GraphicsPipeline& pipeline, bo
         ++state.next_id;
     }
     const u32 id = it->second;
-    state.active_ids.push_back(id);
+    ++state.active_counts[id];
 
     if (!inserted || state.lines >= 12000) {
         return;
