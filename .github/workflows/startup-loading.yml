@@ -1,0 +1,38 @@
+name: Startup Loading Tests
+
+on:
+  push:
+    branches:
+      - fix/startup-loading-screen-20261005
+    paths:
+      - "src/core/startup_progress.h"
+      - "src/imgui/startup_loading.*"
+      - "src/core/libraries/videoout/driver.cpp"
+      - "src/core/linker.cpp"
+      - "src/emulator.cpp"
+      - "src/video_core/renderer_vulkan/vk_presenter.*"
+      - "tests/startup_loading/**"
+      - ".github/workflows/startup-loading.yml"
+  pull_request:
+    paths:
+      - "src/core/startup_progress.h"
+      - "src/imgui/startup_loading.*"
+      - "src/core/libraries/videoout/driver.cpp"
+      - "src/core/linker.cpp"
+      - "src/emulator.cpp"
+      - "src/video_core/renderer_vulkan/vk_presenter.*"
+      - "tests/startup_loading/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: Configure
+        run: cmake -S tests/startup_loading -B build-startup -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build-startup --parallel 4
+      - name: Test
+        run: ctest --test-dir build-startup --output-on-failure --no-tests=error
