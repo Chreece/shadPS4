@@ -160,8 +160,19 @@ void Runtime::InlineData(VideoCore::Buffer* dst, u64 offset, u32 value) {
 }
 
 bool Runtime::Transit(VideoCore::Image* image, vk::ImageLayout dst_layout,
-                      vk::PipelineStageFlags2 dst_stage, vk::AccessFlags2 dst_access,
-                      std::optional<VideoCore::SubresourceRange> subres_range) {
+                       vk::PipelineStageFlags2 dst_stage, vk::AccessFlags2 dst_access,
+                       std::optional<VideoCore::SubresourceRange> subres_range) {
+    // GetBarriers advances tracked state before its barriers are submitted. If the same image
+    // transitions again while one of its barriers is still pending, the later transition depends
+    // on the earlier one. Submit the earlier transition first instead of placing both transitions
+    // in one vkCmdPipelineBarrier2 call.
+    for (const auto& barrier : image_barriers) {
+        if (barrier.image == image->GetImage()) {
+            FlushBarriers();
+            break;
+        }
+    }
+
     const size_t prev_num_barriers = static_cast<size_t>(image_barriers.size());
     image->GetBarriers(image_barriers, dst_layout, dst_access, dst_stage, subres_range);
     return image_barriers.size() != prev_num_barriers;
