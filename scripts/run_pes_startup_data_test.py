@@ -28,8 +28,8 @@ HELPER_REVISIONS = {
     'install_local_default.py': '19153e3113228c22b4f233487043d768469532f3',
     'run_pes_startup_test.py': '3be159501a0935153a4384d2f9e6d97d2117b894',
     'pes_test_cleanup.py': '9ff21ec091efa3f0f4889cee60bc79fdb2e2a5f8',
-    'pes_frame_profile.py': 'ab5f09f3c6e602fecc0c164d9db1329c5c24f26c',
-    'validate_pes_guest_wait.py': 'ab5f09f3c6e602fecc0c164d9db1329c5c24f26c',
+    'pes_frame_profile.py': '32e826849c117241ad07736e3a1d6751d6620d60',
+    'validate_pes_guest_wait.py': '32e826849c117241ad07736e3a1d6751d6620d60',
     'pes_gpu_frame.py': '3be159501a0935153a4384d2f9e6d97d2117b894',
     'pes_gpu_frame.cpp': '3be159501a0935153a4384d2f9e6d97d2117b894',
     'pes_graphics_launch.py': '40bde232e0e9c11b1712c182d28b4b3fbbedf397',
@@ -40,8 +40,8 @@ HELPERS = {
     'install_local_default.py': '8c7a85d2819775ad853d692ba754f905ae2d0306864de31bef7dd91e81a2288c',
     'pes_current_baseline.py': 'b044656a37aadbb54e27903125cc6e4648fdd6d171741b0039a37f7ff6b66224',
     'trace_video_progress.py': 'c770af6e639464064ec543f99cb6181d75bf4b3bbe493ae6e8c015652d9b1a6b',
-    'validate_pes_guest_wait.py': '106368e005251edfc1eb9d3b35dc9defad10640ae70d9eec15efce39d2e98182',
-    'pes_frame_profile.py': '372a6ae31acac770d10d5f93ae0a9a190140757c2d0c125d308573c96f1842f2',
+    'validate_pes_guest_wait.py': 'e18d0953e1e2e426991c2c0229322b128eac2c52e4d6d6f9cd20d6619e98e0d6',
+    'pes_frame_profile.py': '914bd1d74ebefb88e9010fd0f0f3253f8910d7d052ff18721367041517a79cfa',
     'collect_pes_runtime_context.py': '58cb93a9b52f2264e11d13259e379d676b7aa940c9522f7e80198943ae6ed612',
     'run_pes_startup_test.py': '1df09f76e745ddd34c62e81263f343c2cd113aa5afc5b2f23bb90a91f6a717ad',
     'pes_test_cleanup.py': 'fe5d13cf6fe1cee2c1e50c3329c8092f220ec3ca27de7834ab4537d744330b96',
@@ -178,7 +178,10 @@ def run(home, work, session, manifest, installer, baseline, startup):
         raise RuntimeError('PES must be closed before GPU replay')
     if collector.captured is not None:
         collector.replay()
-    preflight.check_samples(json.loads((work / 'startup/frames/frames-trace.json').read_text()))
+    frames = json.loads((work / 'startup/frames/frames-trace.json').read_text())
+    preflight.check_samples(frames)
+    for stage in frames.get('startup_stage_samples', []):
+        print(f"PES_STARTUP_STAGE={stage['phase']}:{stage['stage_index']}/15", flush=True)
     check_capture(result)
     if not result.get('gpu_frame_captured'):
         raise RuntimeError('Complete GPU frame missing')
