@@ -116,7 +116,8 @@ def run(command, *, cwd=None, log=None):
 def build(home):
     work = home / ".cache/shadps4-guest-cpu-playtest"
     source = work / "source"
-    folder = work / "build"
+    tests_folder = work / "build-tests"
+    app_folder = work / "build-app"
     context = work / "docker-context"
     log_path = work / "build.log"
     for path in (work, context, work / "container-home", work / "ccache"):
@@ -197,7 +198,7 @@ def build(home):
     with log_path.open("w") as log:
         run(
             docker([
-                "cmake", "-S", source, "-B", folder, "-G", "Ninja",
+                "cmake", "-S", source, "-B", tests_folder, "-G", "Ninja",
                 *compiler,
                 "-DCMAKE_BUILD_TYPE=Release",
                 "-DENABLE_TESTS=ON",
@@ -208,19 +209,44 @@ def build(home):
             log=log,
         )
         run(
-            docker(["cmake", "--build", folder, "--target", "shadps4_kernel_cpu_test", "--parallel", jobs]),
+            docker([
+                "cmake", "--build", tests_folder, "--target",
+                "shadps4_kernel_cpu_test", "--parallel", jobs,
+            ]),
             log=log,
         )
         run(
-            docker([folder / "tests/shadps4_kernel_cpu_test", "--gtest_filter=KernelCpuAffinity.*"]),
-            log=log,
-        )
-        run(
-            docker(["cmake", "--build", folder, "--target", "shadps4", "--parallel", jobs]),
+            docker([
+                tests_folder / "tests/shadps4_kernel_cpu_test",
+                "--gtest_filter=KernelCpuAffinity.*",
+            ]),
             log=log,
         )
 
-    binary = folder / "shadps4"
+        # The root CMakeLists deliberately omits the emulator executable when
+        # ENABLE_TESTS=ON, so build the tested source revision again with tests
+        # disabled instead of requesting a target that cannot exist.
+        run(
+            docker([
+                "cmake", "-S", source, "-B", app_folder, "-G", "Ninja",
+                *compiler,
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DENABLE_TESTS=OFF",
+                "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF",
+                "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
+                "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
+            ]),
+            log=log,
+        )
+        run(
+            docker([
+                "cmake", "--build", app_folder, "--target", "shadps4",
+                "--parallel", jobs,
+            ]),
+            log=log,
+        )
+
+    binary = app_folder / "shadps4"
     smoke(binary)
     say("BUILD_LOG=" + str(log_path))
     say("UNIT_TESTS=PASS")
