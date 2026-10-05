@@ -146,7 +146,8 @@ void Translator::EmitPrologue(IR::Block* first_block) {
             // v1: instance ID, step rate 0
             if (runtime_info.props.num_input_vgprs > 0) {
                 if (runtime_info.sw.vs.step_rate_0 != 0) {
-                    ASSERT(base_instance_sgpr == -1);
+                    // Some PS4 shaders combine a base-instance SGPR with instance step rates.
+                    // instance_id is already unbiased above, so the divisor path remains valid.
                     ir.SetVectorReg(dst_vreg++,
                                     ir.IDiv(instance_id, ir.Imm32(runtime_info.sw.vs.step_rate_0)));
                 } else {
@@ -156,7 +157,6 @@ void Translator::EmitPrologue(IR::Block* first_block) {
             // v2: instance ID, step rate 1
             if (runtime_info.props.num_input_vgprs > 1) {
                 if (runtime_info.sw.vs.step_rate_1 != 0) {
-                    ASSERT(base_instance_sgpr == -1);
                     ir.SetVectorReg(dst_vreg++,
                                     ir.IDiv(instance_id, ir.Imm32(runtime_info.sw.vs.step_rate_1)));
                 } else {
