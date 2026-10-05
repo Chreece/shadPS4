@@ -17,7 +17,7 @@ import tempfile
 
 REPO = "https://github.com/Chreece/shadPS4.git"
 BRANCH = "playtest/tlg-ui-diagnostics-20261005"
-REVISION = "160cc34baa619263afb1a1dbe6e02770e57419df"
+REVISION = "a66eb3c5ff66421b9685006778c004ff19d956ea"
 IMAGE = "shadps4-render-playtest-builder:trixie-clang19-v1"
 UNSET_LINE = (
     "unset SHADPS4_NGS2_DIAGNOSTICS SHADPS4_GRAPHICS_DIAGNOSTICS "
