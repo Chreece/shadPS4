@@ -157,12 +157,6 @@ def build(home):
     if remote != REPO:
         raise RuntimeError("Build cache belongs to another repository")
 
-    dirty = subprocess.check_output(
-        ["git", "-C", source, "status", "--porcelain", "--untracked-files=normal"], text=True
-    )
-    if dirty:
-        raise RuntimeError("Build source has local edits/untracked files: " + dirty[:1000])
-
     run([
         "git", "-C", source, "fetch", "--no-tags", "--no-recurse-submodules",
         "origin", BRANCH,
@@ -173,7 +167,19 @@ def build(home):
             "Playtest branch moved; refusing an unreviewed build. expected="
             + REVISION + " fetched=" + fetched
         )
-    run(["git", "-C", source, "checkout", "--detach", REVISION])
+
+    # This is a disposable, dedicated build checkout. A fresh --no-checkout clone
+    # intentionally looks "dirty" because every tracked file is absent from the
+    # worktree, so checking status before the first checkout is incorrect.
+    # Clean only this verified cache checkout, then force the exact pinned commit.
+    run(["git", "-C", source, "clean", "-ffd"])
+    run(["git", "-C", source, "checkout", "--detach", "--force", REVISION])
+
+    dirty = subprocess.check_output(
+        ["git", "-C", source, "status", "--porcelain", "--untracked-files=normal"], text=True
+    )
+    if dirty:
+        raise RuntimeError("Build source is unexpectedly dirty after pinned checkout: " + dirty[:1000])
     translate = (source / "src/shader_recompiler/frontend/translate/translate.cpp").read_text()
     if "ASSERT(base_instance_sgpr == -1);" in translate:
         raise RuntimeError("TLG base-instance/step-rate assertion is still present")
