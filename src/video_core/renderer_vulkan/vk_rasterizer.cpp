@@ -171,16 +171,21 @@ void UiDiagRecord(const AmdGpu::Regs& regs, const GraphicsPipeline& pipeline, bo
     std::fprintf(stderr,
                  "TLG_UI_PIPE id=%u frame=%u kind=%s sig=%016llx vs=%016llx fs=%016llx "
                  "prim=%u indices=%u instances=%u blend=%08x target=%08x shader-mask=%08x "
-                 "depth=%08x polygon=%08x mrt=%02x attachments=%u scissor=%d,%d-%d,%d "
+                 "depth=%08x polygon=%08x mrt=%02x attachments=%u cb0=%llx cb0fmt=%u "
+                 "cb0size=%ux%u scissor=%d,%d-%d,%d "
                  "viewport=%.3f,%.3f,%.3f,%.3f xy-transformed=%u\n",
                  id, frame, indirect ? "indirect" : "direct",
                  static_cast<unsigned long long>(signature), static_cast<unsigned long long>(vs),
                  static_cast<unsigned long long>(fs), static_cast<u32>(regs.primitive_type),
                  regs.num_indices, regs.num_instances.NumInstances(), blend,
                  regs.color_target_mask.raw, regs.color_shader_mask.raw, depth, polygon,
-                 key.mrt_mask, key.num_color_attachments, regs.screen_scissor.top_left_x,
-                 regs.screen_scissor.top_left_y, regs.screen_scissor.bottom_right_x,
-                 regs.screen_scissor.bottom_right_y, vp.xscale, vp.xoffset, vp.yscale, vp.yoffset,
+                 key.mrt_mask, key.num_color_attachments,
+                 static_cast<unsigned long long>(regs.color_buffers[0].Address()),
+                 static_cast<unsigned>(regs.color_buffers[0].info.format),
+                 regs.color_buffers[0].Pitch(), regs.color_buffers[0].Height(),
+                 regs.screen_scissor.top_left_x, regs.screen_scissor.top_left_y,
+                 regs.screen_scissor.bottom_right_x, regs.screen_scissor.bottom_right_y, vp.xscale,
+                 vp.xoffset, vp.yscale, vp.yoffset,
                  static_cast<unsigned>(regs.viewport_control.xy_transformed));
     std::fflush(stderr);
     ++state.lines;
