@@ -107,8 +107,7 @@ void UiDiagFlushFrame(u32 next_frame) {
 
     if (set_hash != state.previous_set_hash || (state.frame % 120) == 0) {
         if (state.lines < 12000) {
-            std::fprintf(stderr,
-                         "TLG_UI_FRAME frame=%u candidates=%zu set=%016llx changed=%u\n",
+            std::fprintf(stderr, "TLG_UI_FRAME frame=%u candidates=%zu set=%016llx changed=%u\n",
                          state.frame, state.active_ids.size(),
                          static_cast<unsigned long long>(set_hash),
                          static_cast<unsigned>(set_hash != state.previous_set_hash));
@@ -151,21 +150,20 @@ void UiDiagRecord(const AmdGpu::Regs& regs, const GraphicsPipeline& pipeline, bo
     const auto polygon = std::bit_cast<u32>(regs.polygon_control);
     const auto& vp = regs.viewports[0];
 
-    std::fprintf(
-        stderr,
-        "TLG_UI_PIPE id=%u frame=%u kind=%s sig=%016llx vs=%016llx fs=%016llx "
-        "prim=%u indices=%u instances=%u blend=%08x target=%08x shader-mask=%08x "
-        "depth=%08x polygon=%08x mrt=%02x attachments=%u scissor=%d,%d-%d,%d "
-        "viewport=%.3f,%.3f,%.3f,%.3f xy-transformed=%u\n",
-        id, frame, indirect ? "indirect" : "direct",
-        static_cast<unsigned long long>(signature),
-        static_cast<unsigned long long>(vs), static_cast<unsigned long long>(fs),
-        static_cast<u32>(regs.primitive_type), regs.num_indices, regs.num_instances.NumInstances(),
-        blend, regs.color_target_mask.raw, regs.color_shader_mask.raw, depth, polygon, key.mrt_mask,
-        key.num_color_attachments, regs.screen_scissor.top_left_x, regs.screen_scissor.top_left_y,
-        regs.screen_scissor.bottom_right_x, regs.screen_scissor.bottom_right_y, vp.xscale,
-        vp.xoffset, vp.yscale, vp.yoffset,
-        static_cast<unsigned>(regs.viewport_control.xy_transformed));
+    std::fprintf(stderr,
+                 "TLG_UI_PIPE id=%u frame=%u kind=%s sig=%016llx vs=%016llx fs=%016llx "
+                 "prim=%u indices=%u instances=%u blend=%08x target=%08x shader-mask=%08x "
+                 "depth=%08x polygon=%08x mrt=%02x attachments=%u scissor=%d,%d-%d,%d "
+                 "viewport=%.3f,%.3f,%.3f,%.3f xy-transformed=%u\n",
+                 id, frame, indirect ? "indirect" : "direct",
+                 static_cast<unsigned long long>(signature), static_cast<unsigned long long>(vs),
+                 static_cast<unsigned long long>(fs), static_cast<u32>(regs.primitive_type),
+                 regs.num_indices, regs.num_instances.NumInstances(), blend,
+                 regs.color_target_mask.raw, regs.color_shader_mask.raw, depth, polygon,
+                 key.mrt_mask, key.num_color_attachments, regs.screen_scissor.top_left_x,
+                 regs.screen_scissor.top_left_y, regs.screen_scissor.bottom_right_x,
+                 regs.screen_scissor.bottom_right_y, vp.xscale, vp.xoffset, vp.yscale, vp.yoffset,
+                 static_cast<unsigned>(regs.viewport_control.xy_transformed));
     std::fflush(stderr);
     ++state.lines;
 }
@@ -376,8 +374,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     pipeline->BindResources(set_writes, push_data);
     UpdateDynamicState(pipeline, is_indexed);
-    const auto query = occlusion ? occlusion->PrepareDraw(liverpool->regs.depth_count_control)
-                                  : std::nullopt;
+    const auto query =
+        occlusion ? occlusion->PrepareDraw(liverpool->regs.depth_count_control) : std::nullopt;
     scheduler.BeginRendering(state);
 
     const auto& vs_info = pipeline->GetStage(Shader::SwStage::Vertex);
