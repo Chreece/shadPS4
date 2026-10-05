@@ -134,7 +134,7 @@ std::optional<bool> OcclusionQuery::EvaluateZpass(VAddr address, u32 pipes, bool
 
     auto* memory = Core::Memory::Instance();
     const u64 result_size = u64(pipes) * sizeof(u64) * 2;
-    if (!memory->IsAccessibleRange(address, result_size, Core::MemoryProt::CpuRead)) {
+    if (!memory->IsValidMapping(address, result_size)) {
         return std::nullopt;
     }
 
