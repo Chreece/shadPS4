@@ -19,13 +19,13 @@ import urllib.request
 import uuid
 
 REVISION = 'e31d619e875adaf898a5506da49557c632c4e4d8'
-BRANCH = 'diag/pes-startup-data'
 ARENA_FIX = '201124a6c533020ffd9cabf5d84fb6d8e207a864'
 IMGUI_FIX = 'eaa2e17e42c6a083af6650c83bc94992adeb6d92'
 HELPER_REVISION = '4621958f1e0e749d429245c43e511a87e0a66fd5'
 HELPER_REVISIONS = {
+    'pes_refresh_baseline.py': '19153e3113228c22b4f233487043d768469532f3',
     'pes_current_baseline.py': '334f662444665c4647101ced7a2938082d54fb20',
-    'install_local_default.py': 'c501f37774ee14dddbca99ca1b84b2d3cb8a8761',
+    'install_local_default.py': '19153e3113228c22b4f233487043d768469532f3',
     'run_pes_startup_test.py': '3be159501a0935153a4384d2f9e6d97d2117b894',
     'pes_test_cleanup.py': '9ff21ec091efa3f0f4889cee60bc79fdb2e2a5f8',
     'pes_frame_profile.py': 'ab5f09f3c6e602fecc0c164d9db1329c5c24f26c',
@@ -36,7 +36,8 @@ HELPER_REVISIONS = {
 }
 RAW = 'https://raw.githubusercontent.com/Chreece/shadPS4/'
 HELPERS = {
-    'install_local_default.py': '230c64cc1c835079ab907f122a0d099917a0610ca6c85d87d92a2b301395976d',
+    'pes_refresh_baseline.py': '2d0ba312366bbcbd1ea22b60528e0110de69a857218f1735afb87f894998b49f',
+    'install_local_default.py': '8c7a85d2819775ad853d692ba754f905ae2d0306864de31bef7dd91e81a2288c',
     'pes_current_baseline.py': 'b044656a37aadbb54e27903125cc6e4648fdd6d171741b0039a37f7ff6b66224',
     'trace_video_progress.py': 'c770af6e639464064ec543f99cb6181d75bf4b3bbe493ae6e8c015652d9b1a6b',
     'validate_pes_guest_wait.py': '106368e005251edfc1eb9d3b35dc9defad10640ae70d9eec15efce39d2e98182',
@@ -144,6 +145,11 @@ def validate_wait(work, token):
     return preflight
 
 
+def refresh_source(work, manifest):
+    refresh = importlib.import_module('pes_refresh_baseline')
+    return refresh.prepare(work / 'source-refresh', REVISION, manifest)
+
+
 def run(home, work, session, manifest, installer, baseline, startup):
     manifest = dict(manifest, candidate_fixes={
         'sparse_arena_limit': ARENA_FIX,
@@ -154,8 +160,9 @@ def run(home, work, session, manifest, installer, baseline, startup):
     })
     def build(*args):
         session['build_started'] = True
-        return installer.build(*args, cleanup_token=session['ownership_token'])
-    baseline.prepare(home, REVISION, BRANCH, manifest, build)
+        return installer.build(*args, cleanup_token=session['ownership_token'],
+                               local_source=session['source']['source_directory'])
+    baseline.prepare(home, session['candidate_revision'], session['source']['source_branch'], manifest, build)
     preflight = validate_wait(work, session['ownership_token'])
     collector = importlib.import_module('pes_gpu_frame').prepare(
         home, work / 'gpu-frame', session['ownership_token'])
@@ -242,6 +249,9 @@ def execute_session(home):
         with redirect_stdout(Tee(sys.stdout, output)), redirect_stderr(Tee(sys.stderr, output)):
             try:
                 manifest = prepare_helpers(work / 'helpers')
+                session['source'] = refresh_source(work, manifest)
+                session['candidate_revision'] = session['source']['revision']
+                manifest = session['source']['manifest']
                 session['baseline'] = manifest
                 run(home, work, session, manifest, importlib.import_module('install_local_default'),
                     importlib.import_module('pes_current_baseline'),
@@ -268,7 +278,7 @@ def execute_session(home):
         for path in sorted(work.rglob('*')):
             if (path.is_file() and not path.is_symlink() and path.name not in {'emulator.log', 'gpu-runtime.tar'} and
                     not (path.suffix == '.rdc' and path.stat().st_size > 24 * 1024 * 1024) and
-                    not {'validation-package', 'validation-runtime', '__pycache__', 'gpu-runtime', 'gpu-build'}.intersection(path.relative_to(work).parts)):
+                    not {'validation-package', 'validation-runtime', '__pycache__', 'gpu-runtime', 'gpu-build', 'source-checkout'}.intersection(path.relative_to(work).parts)):
                 target.add(path, arcname=str(path.relative_to(work)), recursive=False)
     print('PES_TEST_ARCHIVE=' + str(archive), flush=True)
     print('Upload that archive only. No visual report is needed.', flush=True)

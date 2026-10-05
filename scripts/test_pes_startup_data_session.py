@@ -24,7 +24,27 @@ def capture_result():
                                 'size_at_open': 1, 'parts': [{'bytes': 1}]}}
 
 
+def test_session():
+    return {'ownership_token': 'a' * 32, 'candidate_revision': 'b' * 40,
+            'source': {'source_directory': '/fixture/source', 'source_branch': 'pes-current-test'}}
+
+
+def refreshed_source(work, manifest):
+    folder = work / 'source-refresh'
+    source = folder / 'source-checkout'
+    source.mkdir(parents=True)
+    (source / 'excluded.cpp').write_text('not upload evidence')
+    result = {'source_directory': str(source), 'source_branch': 'pes-current-test',
+              'revision': 'b' * 40, 'manifest': manifest}
+    (folder / 'source.json').write_text(json.dumps(result))
+    return result
+
+
 class SessionTests(unittest.TestCase):
+    def setUp(self):
+        refreshed = patch.object(runner, 'refresh_source', side_effect=refreshed_source)
+        refreshed.start()
+        self.addCleanup(refreshed.stop)
     def test_failed_build_is_packaged_and_never_launches_game(self):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory)
@@ -100,8 +120,29 @@ class SessionTests(unittest.TestCase):
                 self.assertEqual(archive.extractfile('startup/screenshots/final.png').read(), b'fixture image bytes')
                 self.assertTrue(json.load(archive.extractfile('startup/startup.json'))['process_cleanup']['complete'])
                 self.assertIn('gpu-frame/capture.json', archive.getnames())
+                self.assertIn('source-refresh/source.json', archive.getnames())
+                self.assertFalse(any('source-checkout' in name for name in archive.getnames()))
+                self.assertEqual(json.load(archive.extractfile('session.json'))['candidate_revision'], 'b' * 40)
                 self.assertTrue(json.load(archive.extractfile('startup-trace.json'))['trace_observed'])
                 self.assertFalse(any('gpu-runtime' in name or 'gpu-build' in name or name.endswith('.rdc') for name in archive.getnames()))
+
+    def test_refresh_failure_is_archived_without_building_or_launching(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            def fail(work, manifest):
+                folder = work / 'source-refresh'
+                folder.mkdir()
+                (folder / 'source.json').write_text('{"status":"failed","error":"conflict"}')
+                raise RuntimeError('rebase conflict')
+            with patch.object(runner, 'prepare_helpers', return_value={}), \
+                    patch.object(runner, 'refresh_source', side_effect=fail), \
+                    patch.object(runner.importlib, 'import_module') as modules, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(runner.execute_session(home), 1)
+            modules.assert_not_called()
+            with tarfile.open(next(home.glob('*.tar.gz'))) as archive:
+                self.assertEqual(json.load(archive.extractfile('source-refresh/source.json'))['error'], 'conflict')
+                self.assertFalse(json.load(archive.extractfile('session.json'))['build_started'])
 
     def test_cleanup_failure_cannot_pass(self):
         for key in ('process_cleanup', 'debugger_cleanup'):
@@ -114,7 +155,7 @@ class SessionTests(unittest.TestCase):
         startup = SimpleNamespace(run=Mock())
         baseline = SimpleNamespace(prepare=Mock(side_effect=RuntimeError('stale')))
         with self.assertRaisesRegex(RuntimeError, 'stale'):
-            runner.run(Path('/fixture'), Path('/fixture/work'), {'ownership_token': 'a' * 32}, {},
+            runner.run(Path('/fixture'), Path('/fixture/work'), test_session(), {},
                        SimpleNamespace(build=Mock()), baseline, startup)
         startup.run.assert_not_called()
 
@@ -124,7 +165,7 @@ class SessionTests(unittest.TestCase):
         with patch.object(runner, 'validate_wait', side_effect=RuntimeError('GDB snapshot failed')):
             with self.assertRaisesRegex(RuntimeError, 'GDB snapshot'):
                 runner.run(Path('/fixture'), Path('/fixture/work'),
-                           {'ownership_token': 'a' * 32}, {},
+                           test_session(), {},
                            SimpleNamespace(build=Mock()), baseline, startup)
         baseline.prepare.assert_called_once()
         startup.run.assert_not_called()
@@ -137,7 +178,7 @@ class SessionTests(unittest.TestCase):
                 patch.object(runner.importlib, 'import_module', return_value=gpu):
             with self.assertRaisesRegex(RuntimeError, 'triangle replay failed'):
                 runner.run(Path('/fixture'), Path('/fixture/work'),
-                           {'ownership_token': 'a' * 32}, {},
+                           test_session(), {},
                            SimpleNamespace(build=Mock()), baseline, startup)
         startup.run.assert_not_called()
 
@@ -152,7 +193,7 @@ class SessionTests(unittest.TestCase):
                     prepare=Mock(return_value=collector))):
             with self.assertRaisesRegex(RuntimeError, 'closed before GPU replay'):
                 runner.run(Path('/fixture'), Path(temporary.name),
-                           {'ownership_token': 'a' * 32}, {}, SimpleNamespace(build=Mock()),
+                           test_session(), {}, SimpleNamespace(build=Mock()),
                            SimpleNamespace(prepare=Mock(), verify_installed=Mock()),
                            SimpleNamespace(run=Mock(return_value=result)))
         collector.replay.assert_not_called()
