@@ -16,8 +16,8 @@ import sys
 import tempfile
 
 REPO = "https://github.com/Chreece/shadPS4.git"
-BRANCH = "playtest/pes-cpu-zpass-tlg-precise-20261005"
-REVISION = "0f11ba5253b84c47787fec2b7f9eb56858d0c7c1"
+BRANCH = "playtest/pes-tlg-loading-predication-diag-20261005"
+REVISION = "983effcb7419aed7f464ecaeddb5b237e2cacc14"
 IMAGE = "shadps4-render-playtest-builder:trixie-clang19-v1"
 UNSET_LINE = (
     "unset SHADPS4_NGS2_DIAGNOSTICS SHADPS4_GRAPHICS_DIAGNOSTICS "
@@ -191,6 +191,15 @@ def build(home):
     emulator = (source / "src/emulator.cpp").read_text()
     if 'SetReadbacksMode(static_cast<u32>(GpuReadbacksMode::Precise), true)' not in emulator:
         raise RuntimeError("TLG game-specific Precise-readback test override is missing")
+    startup = (source / "src/core/startup_progress.h").read_text()
+    presenter = (source / "src/video_core/renderer_vulkan/vk_presenter.cpp").read_text()
+    diagnostics = (source / "src/video_core/graphics_diagnostics.h").read_text()
+    if "HasVisibleRgb8Content" not in startup or "DrawStartupLoading" not in presenter:
+        raise RuntimeError("Centered startup loading screen implementation is missing")
+    if "PrepareStartupReadback" not in presenter or "STARTUP_UI event=black_game_frame" not in presenter:
+        raise RuntimeError("Startup loading black-frame retention is missing")
+    if '"predicated-skip"' not in diagnostics or '"zpass-evaluation"' not in diagnostics:
+        raise RuntimeError("PES predication diagnostics are missing")
     process = (source / "src/core/libraries/kernel/process.cpp").read_text()
     pthread_cpp = (source / "src/core/libraries/kernel/threads/pthread.cpp").read_text()
     pthread_h = (source / "src/core/libraries/kernel/threads/pthread.h").read_text()
@@ -328,7 +337,9 @@ def main():
             "binary_sha256": built_sha,
             "previous_binary": str(previous),
             "previous_sha256": previous_sha,
+            "startup_loading_screen": True,
             "pes_guest_cpu_identity": True,
+            "pes_predication_diagnostics": True,
             "pes_wait_zpass_predication": True,
             "tlg_base_instance_step_rate": True,
             "tlg_precise_readbacks_test_override": True,
@@ -344,14 +355,16 @@ def main():
         say("BINARY=" + str(binary))
         say("BINARY_SHA256=" + built_sha)
         say("PREVIOUS_BINARY=" + str(previous))
+        say("STARTUP_LOADING_SCREEN=ENABLED")
         say("PES_GUEST_CPU_IDENTITY=ENABLED")
+        say("PES_PREDICATION_DIAGNOSTICS=ENABLED")
         say("PES_WAIT_ZPASS_PREDICATION=ENABLED")
         say("TLG_BASE_INSTANCE_STEP_RATE=ENABLED")
         say("TLG_PRECISE_READBACKS_TEST_OVERRIDE=ENABLED")
         say("GAME_LAUNCHED=NO")
         say("RESULT=PASS")
         say("")
-        say("Launch The Last Guardian Continue save, then one PES match from the normal ES-DE entries.")
+        say("Launch PES first from the normal ES-DE entry, play one match, then optionally verify The Last Guardian.")
         say("Expected TLG log: GPU readbacksMode: 2")
         say("After both tests: shadps4-pack-playtest-logs")
         say("Returning to your existing SSH prompt.")
