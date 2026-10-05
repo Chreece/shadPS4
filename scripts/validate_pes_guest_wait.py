@@ -30,7 +30,8 @@ __attribute__((noinline)) void dispatcher_tick(void* object, double delta) {
 }
 void prepare_startup_stage() {
     for (auto address : {0x6c8000ul, 0x5e7f000ul, 0x4c11000ul, 0x6ce000ul, 0x6cf000ul,
-                         0x3639000ul, 0x4d8a000ul, 0x4d8b000ul}) {
+                         0x3639000ul, 0x4d8a000ul, 0x4d8b000ul, 0x5e83000ul,
+                         0x6400000ul, 0x643f000ul, 0x6440000ul}) {
         if (mmap(reinterpret_cast<void*>(address), 4096, PROT_READ | PROT_WRITE,
                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) == MAP_FAILED)
             throw std::runtime_error("fixture mapping unavailable");
@@ -59,6 +60,16 @@ void prepare_startup_stage() {
     *reinterpret_cast<unsigned long*>(0x5e7fb10) = 0x5e7fd00;
     *reinterpret_cast<unsigned long*>(0x5e7fd00) = 0x4d8b400;
     *reinterpret_cast<unsigned long*>(0x5e7fd20) = 0x5e7fa00;
+    *reinterpret_cast<unsigned long*>(0x5e7fb58) = 0x5e7fe00;
+    *reinterpret_cast<unsigned long*>(0x5e7fe00) = 0x4d8b110;
+    *reinterpret_cast<unsigned long*>(0x5e7fe20) = 0x6400000;
+    *reinterpret_cast<unsigned*>(0x5e7fe78) = 3;
+    *reinterpret_cast<unsigned long*>(0x5e7fc10) = 0x6400000;
+    *reinterpret_cast<unsigned*>(0x5e83d78) = 7;
+    *reinterpret_cast<unsigned char*>(0x5e83da1) = 1;
+    *reinterpret_cast<unsigned*>(0x6440204) = 9;
+    *reinterpret_cast<unsigned*>(0x6440210) = 42;
+    *reinterpret_cast<unsigned long*>(0x6440000) = 0x5e7fa00;
     *reinterpret_cast<void(**)(void*,double)>(0x4d8b180) = game_tick;
     *reinterpret_cast<void(**)(void*,double)>(0x4d8af10) = dispatcher_tick;
     for (unsigned i = 0; i < 19; ++i)
@@ -111,8 +122,14 @@ startup_stage_snapshot("after")
 dispatcher_snapshot("after", result["startup_stage_samples"][-1])
 assert all(s['status'] == 'sampled' and len(s['roots']) == 2
            for s in result['dispatcher_samples']), result['dispatcher_samples']
-assert all(any(m['address'] == '0x5e7fd00' for m in s['memory'])
-           for s in result['dispatcher_samples'])
+for s in result['dispatcher_samples']:
+    assert s['worker']['state_78'] == 3, s['worker']
+    assert s['queue']['semaphore_handle'] == 42, s['queue']
+    assert s['queue']['field_40204'] == 9, s['queue']
+    assert s['queue']['dispatcher_4178'] == 7, s['queue']
+    assert s['queue']['dispatcher_41a1'] == 1, s['queue']
+    assert any(m['kind'] == 'dispatcher queued packet' and m['address'] == '0x5e7fa00'
+               for m in s['memory'])
 gdb.selected_inferior().write_memory(0x5e7fb00, (0).to_bytes(8, 'little'))
 dispatcher_snapshot('wrong-vtable', result['startup_stage_samples'][-1])
 assert result['dispatcher_samples'].pop()['status'] == 'failed'
@@ -170,7 +187,7 @@ for api, delta in (('PES::GameTick', 0.125), ('PES::DispatcherTick', 0.25)):
     probe.enabled = False
     args = capture_args(api)
     before = fields_before(api, args)
-    assert float(before['delta_seconds']) == delta, before
+    assert float(before['delta_argument']) == delta, before
     context = {'api': api, 'thread': gdb.selected_thread().global_num, 'args': args}
     Return(context)
     pending = []
@@ -228,7 +245,8 @@ def check_samples(result, fixture=False):
     for sample in dispatchers:
         if (sample.get('status') != 'sampled' or sample.get('errors') or
                 len(sample.get('roots', [])) != 2 or not sample.get('code') or
-                not 0 < sample.get('read_bytes', 0) <= 524288 or
+                not sample.get('queue') or not sample.get('worker') or
+                not 0 < sample.get('read_bytes', 0) <= 1048576 or
                 sample.get('seconds', 99) > 1.0):
             raise RuntimeError('Dispatcher state was not captured within its bounds')
     samples = result.get('guest_wait_samples', [])

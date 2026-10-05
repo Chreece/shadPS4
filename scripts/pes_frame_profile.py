@@ -88,7 +88,7 @@ def signed32(value):
 def fields_before(api, args):
     if api in ("PES::GameTick", "PES::DispatcherTick"):
         return {"object": hex(args[0]), "object_bytes": memory(args[0], 128).hex(),
-                "delta_seconds": str(gdb.parse_and_eval("$xmm0.v2_double[0]")),
+                "delta_argument": str(gdb.parse_and_eval("$xmm0.v2_double[0]")),
                 "caller": hex(number(memory(register("rsp"), 8), 0))}
     if api == "PES::InitListener":
         return dict(listener_fields(args[0]),
@@ -274,7 +274,7 @@ def guest_wait_snapshot(phase):
 
     try:
         threads = sorted(gdb.selected_inferior().threads(),
-                         key=lambda t: (t.name != "Game:Main", t.global_num))
+                         key=lambda t: ({"Game:Main": 0, "game": 1}.get(t.name, 2), t.global_num))
         for thread in threads:
             name = thread.name or ""
             if name.startswith(("shadPS4", "SDL", "Pulse", "WSI ")):
@@ -291,8 +291,8 @@ def guest_wait_snapshot(phase):
                             "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "eflags"):
                     item["registers"][reg] = hex(register(reg))
                 stack_address = register("rsp")
-                stack = read_window(stack_address, 512 if name == "Game:Main" else 128,
-                                    name + " stack")
+                stack_size = {"Game:Main": 512, "game": 4096}.get(name, 128)
+                stack = read_window(stack_address, stack_size, name + " stack")
                 frame = gdb.newest_frame()
                 for _ in range(24 if name == "Game:Main" else 12):
                     if frame is None or time.monotonic() >= deadline:
@@ -368,7 +368,7 @@ def dispatcher_snapshot(phase, stage_sample):
         region = region_at(address)
         if region is None or time.monotonic() >= deadline:
             return b""
-        size = min(size, region[1] - address, 524288 - sample["read_bytes"])
+        size = min(size, region[1] - address, 1048576 - sample["read_bytes"])
         if size <= 0:
             return b""
         key = (address, size)
@@ -394,7 +394,7 @@ def dispatcher_snapshot(phase, stage_sample):
     def enqueue_method(address, depth):
         if address in seen_methods or not region_at(address, True):
             return
-        if len(seen_methods) >= 32:
+        if len(seen_methods) >= 16:
             sample["code_limit_reached"] = True
             return
         seen_methods.add(address)
@@ -420,18 +420,46 @@ def dispatcher_snapshot(phase, stage_sample):
                                     "target": hex(target)})
             enqueue_method(target, 0)
             enqueue_object(address, 0)
-            # The game context owns the event dispatcher at +0x10.
             if api == "PES::GameTick":
-                dispatcher = number(data, 0x10)
-                state = read(dispatcher, 512, "game event dispatcher")
-                enqueue_object(dispatcher, 0)
-                if len(state) >= 8:
-                    vtable = read(number(state, 0), 192, "event dispatcher vtable")
-                    for offset in range(0, len(vtable) - 7, 8):
-                        enqueue_method(number(vtable, offset), 1)
-        # Preserve this compact engine area for offline inspection of registration,
-        # queue processing and event filtering without another capture for each callee.
-        for address, size, label in ((0x2770000, 0x4000, "event engine code"),
+                context = number(data, 0x10)
+                read(context, 512, "game context data")
+                enqueue_object(context, 0)
+                worker = number(data, 0x58)
+                state = read(worker, 512, "game worker object")
+                if len(state) < 0x80:
+                    raise RuntimeError("Game worker state unreadable")
+                sample["worker"] = {"object": hex(worker), "vtable": hex(number(state, 0)),
+                                    "thread_wrapper": hex(number(state, 0x10)),
+                                    "queue": hex(number(state, 0x20)),
+                                    "state_78": number(state, 0x78, 4),
+                                    "state_7c": number(state, 0x7c, 4)}
+                read(number(state, 0), 128, "game worker vtable")
+                read(number(state, 0x10), 128, "game worker thread wrapper")
+                enqueue_object(worker, 0)
+            else:
+                control = read(address + 0x4000, 0x1b0, "dispatcher control fields")
+                if len(control) != 0x1b0:
+                    raise RuntimeError("Dispatcher control fields unreadable")
+                queue = number(data, 0x10)
+                header = read(queue + 0x3fff0, 0x240, "dispatcher queue header")
+                if len(header) != 0x240:
+                    raise RuntimeError("Dispatcher queue header unreadable")
+                sample["queue"] = {
+                    "object": hex(queue), "semaphore_handle": number(header, 0x220, 4),
+                    "field_40200": number(header, 0x210, 4),
+                    "field_40204": number(header, 0x214, 4),
+                    "field_40208": number(header, 0x218, 4),
+                    "dispatcher_4158": number(control, 0x158, 4),
+                    "dispatcher_415c": number(control, 0x15c, 4),
+                    "dispatcher_4170": hex(number(control, 0x170)),
+                    "dispatcher_4178": number(control, 0x178, 4),
+                    "dispatcher_417c": number(control, 0x17c, 4),
+                    "dispatcher_41a1": control[0x1a1]}
+                read(queue, 256, "dispatcher queue start")
+                for offset in range(0x10, 0x210, 16):
+                    read(number(header, offset), 512, "dispatcher queued packet")
+        # Preserve worker startup, queue and event dispatch code for offline inspection.
+        for address, size, label in ((0x274c000, 0x49000, "worker and event engine code"),
                                      (0x6cbf00, 0x1200, "dispatcher call sites"),
                                      (0x1e6fae0, 0x840, "game mode gates")):
             if region_at(address, True):
