@@ -16,8 +16,8 @@ import sys
 import tempfile
 
 REPO = "https://github.com/Chreece/shadPS4.git"
-BRANCH = "playtest/pes-tlg-loading-predication-diag-20261005"
-REVISION = "983effcb7419aed7f464ecaeddb5b237e2cacc14"
+BRANCH = "playtest/tlg-linear-image-readback-20261005"
+REVISION = "cd22cb02c076219ba36ad3672edc6dcde5b37eb9"
 IMAGE = "shadps4-render-playtest-builder:trixie-clang19-v1"
 UNSET_LINE = (
     "unset SHADPS4_NGS2_DIAGNOSTICS SHADPS4_GRAPHICS_DIAGNOSTICS "
@@ -191,6 +191,8 @@ def build(home):
     emulator = (source / "src/emulator.cpp").read_text()
     if 'SetReadbacksMode(static_cast<u32>(GpuReadbacksMode::Precise), true)' not in emulator:
         raise RuntimeError("TLG game-specific Precise-readback test override is missing")
+    if 'SetReadbackLinearImagesEnabled(true, true)' not in emulator:
+        raise RuntimeError("TLG linear image readback test override is missing")
     startup = (source / "src/core/startup_progress.h").read_text()
     presenter = (source / "src/video_core/renderer_vulkan/vk_presenter.cpp").read_text()
     diagnostics = (source / "src/video_core/graphics_diagnostics.h").read_text()
@@ -343,6 +345,7 @@ def main():
             "pes_wait_zpass_predication": True,
             "tlg_base_instance_step_rate": True,
             "tlg_precise_readbacks_test_override": True,
+            "tlg_linear_image_readbacks_test_override": True,
             "graphics_diagnostics": True,
         }
         state_path.write_text(json.dumps(state, indent=2) + "\n")
@@ -361,11 +364,12 @@ def main():
         say("PES_WAIT_ZPASS_PREDICATION=ENABLED")
         say("TLG_BASE_INSTANCE_STEP_RATE=ENABLED")
         say("TLG_PRECISE_READBACKS_TEST_OVERRIDE=ENABLED")
+        say("TLG_LINEAR_IMAGE_READBACKS_TEST_OVERRIDE=ENABLED")
         say("GAME_LAUNCHED=NO")
         say("RESULT=PASS")
         say("")
         say("Launch PES first from the normal ES-DE entry, play one match, then optionally verify The Last Guardian.")
-        say("Expected TLG log: GPU readbacksMode: 2")
+        say("Expected TLG log: GPU readbacksMode: 2 and GPU readbackLinearImages: true")
         say("After both tests: shadps4-pack-playtest-logs")
         say("Returning to your existing SSH prompt.")
 
