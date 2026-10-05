@@ -71,7 +71,7 @@ static std::span<const u32> NextPacket(std::span<const u32> span, size_t offset)
 Liverpool::Liverpool() : guest_markers_enabled{EmulatorSettings.IsVkGuestMarkersEnabled()} {
     num_counter_pairs = Libraries::Kernel::sceKernelIsNeoMode() ? 16 : 8;
     VideoCore::GraphicsDiagnostics::Emit(VideoCore::GraphicsDiagnostics::Event::Startup,
-                                        "counter-pairs=%u", num_counter_pairs);
+                                         "counter-pairs=%u", num_counter_pairs);
     process_thread = std::jthread{std::bind_front(&Liverpool::Process, this)};
 }
 
@@ -263,8 +263,8 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             if (header->type3.predicate == PM4Predicate::PredEnable && predication_active &&
                 !predication_execute) {
                 VideoCore::GraphicsDiagnostics::Emit(
-                    VideoCore::GraphicsDiagnostics::Event::Predication,
-                    "skip=1 opcode=%u", static_cast<unsigned>(opcode));
+                    VideoCore::GraphicsDiagnostics::Event::Predication, "skip=1 opcode=%u",
+                    static_cast<unsigned>(opcode));
                 dcb = NextPacket(dcb, count + 1);
                 continue;
             }
@@ -434,8 +434,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     predication_execute = true;
                     predication_visible.reset();
                     VideoCore::GraphicsDiagnostics::Emit(
-                        VideoCore::GraphicsDiagnostics::Event::Predication,
-                        "clear=1 execute=1");
+                        VideoCore::GraphicsDiagnostics::Event::Predication, "clear=1 execute=1");
                     break;
                 }
 
@@ -448,8 +447,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     VideoCore::GraphicsDiagnostics::Emit(
                         VideoCore::GraphicsDiagnostics::Event::Predication,
                         "path=unsupported op=%u addr=%llx execute=1",
-                        static_cast<unsigned>(pred_op),
-                        static_cast<unsigned long long>(address));
+                        static_cast<unsigned>(pred_op), static_cast<unsigned long long>(address));
                     break;
                 }
 
@@ -474,9 +472,8 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                                 valid = false;
                                 break;
                             }
-                            any_visible |=
-                                (begin & VideoCore::OcclusionCounter::Mask) !=
-                                (end & VideoCore::OcclusionCounter::Mask);
+                            any_visible |= (begin & VideoCore::OcclusionCounter::Mask) !=
+                                           (end & VideoCore::OcclusionCounter::Mask);
                         }
                         if (valid) {
                             visible = any_visible;
@@ -747,7 +744,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     if (event->event_type.Value() == EventType::PixelPipeStatDump) {
                         if (rasterizer) {
                             rasterizer->GetOcclusionQuery().Dump(event->Address<VAddr>(),
-                                                                num_counter_pairs);
+                                                                 num_counter_pairs);
                             break;
                         }
                         static constexpr u64 OcclusionCounterValidMask = 0x8000000000000000ULL;
@@ -953,9 +950,8 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 }
                 const auto skip = *cond_exec->Address() == false;
                 VideoCore::GraphicsDiagnostics::Emit(
-                    VideoCore::GraphicsDiagnostics::Event::ConditionalExec,
-                    "skip=%u exec-count=%u", static_cast<unsigned>(skip),
-                    cond_exec->exec_count.Value());
+                    VideoCore::GraphicsDiagnostics::Event::ConditionalExec, "skip=%u exec-count=%u",
+                    static_cast<unsigned>(skip), cond_exec->exec_count.Value());
                 if (skip) {
                     dcb = NextPacket(dcb,
                                      header->type3.NumWords() + 1 + cond_exec->exec_count.Value());
