@@ -33,16 +33,9 @@ HELPERS = {
     ),
     "pes_current_baseline.py": (
         "334f662444665c4647101ced7a2938082d54fb20",
-        "b044656a37aadbb54e27903125cc6e4647101ced7a2938082d54fb20",
+        "b044656a37aadbb54e27903125cc6e4647fdd6d171741b0039a37f7ff6b66224",
     ),
 }
-# Correct checksum for pes_current_baseline.py; kept separately to make a typo impossible to hide.
-HELPERS["pes_current_baseline.py"] = (
-    "334f662444665c4647101ced7a2938082d54fb20",
-    "b044656a37aadbb54e27903125cc6e46410fb20",  # replaced below before use
-)
-PES_CURRENT_BASELINE_SHA256 = "b044656a37aadbb54e27903125cc6e4647fdd6d171741b0039a37f7ff6b66224"
-
 
 def sha256_bytes(data):
     return hashlib.sha256(data).hexdigest()
@@ -65,8 +58,6 @@ def prepare_helpers(work):
     helpers = work / "helpers"
     helpers.mkdir()
     for name, (revision, expected) in HELPERS.items():
-        if name == "pes_current_baseline.py":
-            expected = PES_CURRENT_BASELINE_SHA256
         download(RAW + revision + "/scripts/" + name, expected, helpers / name)
     manifest_path = helpers / "LOCAL_TEST_BASELINE.json"
     download(
