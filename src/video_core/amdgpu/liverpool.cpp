@@ -262,6 +262,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             const bool packet_predicated =
                 header->type3.predicate == PM4Predicate::PredEnable;
             if (packet_predicated && predication_active && !predication_execute) {
+                VideoCore::GraphicsDiagnostics::Emit(
+                    VideoCore::GraphicsDiagnostics::Event::PredicatedSkip,
+                    "opcode=%u words=%u visible=%d",
+                    static_cast<u32>(opcode), header->type3.NumWords() + 1,
+                    predication_visible.has_value() ? static_cast<int>(*predication_visible) : -1);
                 dcb = NextPacket(dcb, header->type3.NumWords() + 1);
                 continue;
             }
@@ -466,6 +471,21 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     static_cast<unsigned>(draw_visible),
                     set_pred->continue_predication.Value(),
                     visible.has_value() ? static_cast<int>(*visible) : -1,
+                    static_cast<unsigned>(predication_execute));
+
+                const auto decision_event =
+                    !visible.has_value()
+                        ? VideoCore::GraphicsDiagnostics::Event::PredicationUnknown
+                        : (*visible ? VideoCore::GraphicsDiagnostics::Event::PredicationVisible
+                                    : VideoCore::GraphicsDiagnostics::Event::PredicationInvisible);
+                VideoCore::GraphicsDiagnostics::Emit(
+                    decision_event,
+                    "op=%u addr=%llx hint=%u draw-visible=%u combine=%u execute=%u",
+                    static_cast<u32>(pred_op),
+                    static_cast<unsigned long long>(set_pred->Address()),
+                    static_cast<u32>(set_pred->hint.Value()),
+                    static_cast<unsigned>(draw_visible),
+                    set_pred->continue_predication.Value(),
                     static_cast<unsigned>(predication_execute));
                 break;
             }
