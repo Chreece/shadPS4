@@ -125,6 +125,13 @@ def run(command, *, cwd=None, log=None):
     if result.returncode:
         if log:
             log.flush()
+            try:
+                path = Path(log.name)
+                with path.open("rb") as stream:
+                    stream.seek(max(0, path.stat().st_size - 12000))
+                    say(stream.read().decode(errors="replace"))
+            except (OSError, AttributeError):
+                pass
         raise RuntimeError("Command failed: " + shlex.join(map(str, command)))
     return result
 
