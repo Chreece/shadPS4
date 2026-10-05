@@ -9,6 +9,7 @@
 #include "core/emulator_settings.h"
 #include "core/loader/elf.h"
 #include "core/loader/symbols_resolver.h"
+#include "core/module_thread_atexit.h"
 
 namespace Core {
 
@@ -241,6 +242,7 @@ public:
     Loader::SymbolsResolver export_sym;
     Loader::SymbolsResolver import_sym;
     ThreadLocalImage tls{};
+    ModuleThreadAtexitRefs thread_atexit_refs;
     OrbisKernelModuleInfo info{};
     std::vector<u8> rela_bits;
 };

@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "upstream": {
+    "repository": "shadps4-emu/shadPS4",
+    "branch": "main",
+    "revision": "4ddaada81d53cfbfc9b4d120644c1b980e430b96"
+  },
+  "retained_revision": "0539f6dba2a1b075aa017c691b2c8955258e5a1e",
+  "pending_fixes": [
+    {
+      "number": 5228,
+      "title": "kernel: propagate host unlink failures",
+      "head": "53c1def065426d33026b373f8a2344a3b22ec1d1",
+      "source_branch": "pr-ready/kernel-unlink"
+    },
+    {
+      "number": 5229,
+      "title": "texture_cache: initialize added depth-overlap subresources",
+      "head": "44cac8539484e1f0e59bbd4ba4ea8d00a892c954",
+      "source_branch": "pr-ready/depth-growth"
+    },
+    {
+      "number": 5230,
+      "title": "renderer_vulkan: order image transitions and transfer D32 depth across formats",
+      "head": "17198a07daa4a50e4c0388a5002d2c4fee3fe636",
+      "source_branch": "pr-ready/depth-transfer"
+    },
+    {
+      "number": 5232,
+      "title": "userservice: reject missing users before reading their color",
+      "head": "89d2333f161abf0ad86afb7f8b7eb62efe5c09d4",
+      "source_branch": "pr-ready/userservice-color"
+    },
+    {
+      "number": 5234,
+      "title": "renderer_vulkan: select a sparse-capable queue",
+      "head": "b0adb63c43f50e6eff7d30e96414c1a62bc56b90",
+      "source_branch": "pr-ready/sparse-queue"
+    },
+    {
+      "number": 5235,
+      "title": "input: capture quit-dialog confirmation before gamepad UI routing",
+      "head": "645f05b562e4872b1f95d352c7f6e0ba49bdb366",
+      "source_branch": "pr-ready/gamepad-quit"
+    }
+  ],
+  "already_upstream": [
+    {
+      "number": 5231,
+      "merge_commit": "43e4c4703e8b83caba806eb1431f5df493402c06"
+    },
+    {
+      "number": 5233,
+      "merge_commit": "1ac65aa7a2c06a7267a9dd2dd07232b373e41c1b"
+    }
+  ],
+  "preserved_local": [
+    "NGS2 audio and 7.1 routing implementation",
+    "Home/Guide quit handling",
+    "Occlusion-query writeback",
+    "Kernel runtime hooks",
+    "Startup indicator and first-visible-frame detection"
+  ],
+  "excluded_pr_batch": "2a6ac3284da58175f386b8dcdda2d1f5ac6d26f0",
+  "policy": {
+    "verify_upstream_before_build_and_test": true,
+    "verify_pending_heads": true,
+    "build_and_test_in_local_docker_before_selecting": true,
+    "keep_previous_binary": true,
+    "modify_saves_or_settings": false
+  },
+  "validation_scope": "Pending fixes retain source-reviewed or focused-regression-verified bug corrections already in the installed baseline. This does not establish a PES fix or independent GPU correctness. The retained NGS2 audio implementation remains experimental."
+}
