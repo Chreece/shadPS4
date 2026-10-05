@@ -18,7 +18,8 @@ import tempfile
 import urllib.request
 import uuid
 
-REVISION = '8ce9e14a0cc008b9dc92f6429600f5ef34c52c03'
+REVISION = 'ab46655439abc75d491e403fe2447ec3d58c4176'
+CPU_FIX = '94834eb610f1e92c5a6ae7385f48de417ad984e6'
 ARENA_FIX = '201124a6c533020ffd9cabf5d84fb6d8e207a864'
 IMGUI_FIX = 'eaa2e17e42c6a083af6650c83bc94992adeb6d92'
 HELPER_REVISION = '4621958f1e0e749d429245c43e511a87e0a66fd5'
@@ -50,7 +51,7 @@ HELPERS = {
     'pes_gpu_frame.py': 'ddb38620a125a1aefc6a88e2b7a65990132901367f4c45e3dd5d182341e75ee1',
     'pes_gpu_frame.cpp': 'a17fe13ed30d67b21395c1ae7b0d4e04105557b5a39c991724e7bcf37b3adb23',
 }
-MANIFEST_SHA256 = '8311a41f84687651195312ad0d7e06bd18ae8452eb9b0870bdd8cc57551d80e0'
+MANIFEST_SHA256 = '0b6c90960c80b220105e52f6558e0e597812f6752381184352520529a098721e'
 TARGET_ERRORS = ('VUID-VkBufferCreateInfo-size-06409',
                  'VUID-VkMappedMemoryRange-size-01389',
                  'VUID-VkMappedMemoryRange-size-01390')
@@ -137,6 +138,8 @@ def collect_startup_trace(work):
                                      summary['events'].get('file-read'))
     summary['semaphore_trace_observed'] = bool(summary['events'].get('semaphore-create') and
                                                summary['events'].get('semaphore'))
+    summary['cpu_identity_observed'] = bool(summary['events'].get('guest-cpu-affinity') and
+                                            summary['events'].get('current-cpu'))
     (work / 'startup-trace.json').write_text(json.dumps(summary, indent=2) + '\n')
     return summary
 
@@ -154,6 +157,7 @@ def refresh_source(work, manifest):
 
 def run(home, work, session, manifest, installer, baseline, startup, *, capture_gpu=False):
     manifest = dict(manifest, candidate_fixes={
+        'guest_cpu_identity': CPU_FIX,
         'sparse_arena_limit': ARENA_FIX,
         'imgui_mapping': IMGUI_FIX,
         'pes_runtime_result': 'unverified',
@@ -198,7 +202,9 @@ def run(home, work, session, manifest, installer, baseline, startup, *, capture_
         raise RuntimeError('Native startup API/file trace missing; upload the printed archive')
     if not session['startup_trace']['semaphore_trace_observed']:
         raise RuntimeError('Native semaphore trace missing; upload the printed archive')
-    print('PES_STARTUP_TEST=PASS; semaphore history, worker queues and screenshots archived', flush=True)
+    if not session['startup_trace']['cpu_identity_observed']:
+        raise RuntimeError('Guest CPU identity trace missing; upload the printed archive')
+    print('PES_STARTUP_TEST=PASS; CPU identity, worker queues and screenshots archived', flush=True)
 
 
 def cleanup_containers(token):
