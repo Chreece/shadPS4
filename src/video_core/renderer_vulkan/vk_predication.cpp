@@ -19,6 +19,17 @@
 
 namespace Vulkan {
 
+static constexpr unsigned MeasuredZpassCounters(u32 count_control) {
+    if (count_control & 1) {
+        return 0;
+    }
+    const unsigned pass = (count_control >> 8) & 0xf;
+    const unsigned failures =
+        ((count_control >> 12) | (count_control >> 16) | (count_control >> 20)) & 0xf;
+    const unsigned both_slices = (count_control >> 24) & (count_control >> 28) & 0xf;
+    return pass & both_slices & ~failures;
+}
+
 static constexpr u64 OcclusionCounterValidMask = 0x8000000000000000ULL;
 
 struct ReducePushConstants {
@@ -198,7 +209,7 @@ PredicationManager::PredicationManager(const Instance& instance_, Scheduler& sch
 }
 
 void PredicationManager::ControlZpassCounting() {
-    counting_enabled = !counting_enabled;
+    // Counter selection is independent from draw-time enable state.
 }
 
 void PredicationManager::ResetZpassCounting() {
@@ -318,8 +329,8 @@ void PredicationManager::Disable() {
     static_execute = true;
 }
 
-std::optional<u32> PredicationManager::PrepareDrawQuery() {
-    if (!counting_enabled) {
+std::optional<u32> PredicationManager::PrepareDrawQuery(u32 count_control) {
+    if (MeasuredZpassCounters(count_control) == 0) {
         return std::nullopt;
     }
 
