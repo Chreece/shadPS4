@@ -5,6 +5,7 @@
 
 #include <array>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -114,6 +115,7 @@ private:
     // ZPASS sample counting.
     static constexpr u32 QueryPoolSize = 4096;
     vk::UniqueQueryPool query_pool;
+    std::mutex query_mutex;
     std::array<bool, QueryPoolSize> query_busy{};
     u32 query_cursor{};
     bool active_poisoned{};
