@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+# SPDX-License-Identifier: GPL-2.0-or-later
+name: Prepare readback fence candidate
+on:
+  push:
+    branches:
+      - fix/relaxed-readback-fence-tracking-20261006
+    paths:
+      - tools/apply_readback_fence_candidate.py
+      - tests/standalone/readback_fence_test.py
+      - .github/workflows/readback-fence-candidate.yml
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.repository == 'Chreece/shadPS4'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install isolated test compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y g++-14
+      - name: Verify baseline exposes missing fence read protection
+        shell: bash
+        run: |
+          set +e
+          python3 tests/standalone/readback_fence_test.py > baseline-test.log 2>&1
+          rc=$?
+          set -e
+          cat baseline-test.log
+          test "$rc" -eq 1
+          grep -q 'FAIL: FenceMakesGpuDataObservable:' baseline-test.log
+      - name: Apply reviewed candidate anchors
+        run: |
+          python3 tools/apply_readback_fence_candidate.py > candidate.diff
+          git diff --check
+          git diff --stat
+      - name: Test real tracker classes
+        run: |
+          python3 tests/standalone/readback_fence_test.py | tee tracker-tests.log
+          python3 tests/standalone/readback_fence_test.py --sanitize | tee tracker-sanitizers.log
+      - name: Publish candidate source without changing any other branch
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git add src/video_core/buffer_cache/region_manager.h src/video_core/buffer_cache/memory_tracker.h src/video_core/buffer_cache/buffer_cache.cpp src/video_core/buffer_cache/buffer_cache.h src/video_core/renderer_vulkan/vk_rasterizer.cpp src/video_core/page_manager.cpp
+          git -c user.name='Chris Chreece' -c user.email='68458228+Chreece@users.noreply.github.com' commit -m 'video_core: test fence-delayed buffer read protection in Relaxed mode' -m 'Candidate only: records dirty and read-protected pages separately, arms read faults before existing guest fence notifications, and keeps the write-only userfaultfd backend away from enabled readbacks. No title checks and no readback-setting override. Real tracker state tests pass; no game runtime or full-build validation claimed.'
+          git push origin HEAD:refs/heads/fix/relaxed-readback-fence-tracking-20261006
+          git rev-parse HEAD | tee candidate-commit.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: readback-fence-candidate-evidence
+          path: |
+            baseline-test.log
+            candidate.diff
+            tracker-tests.log
+            tracker-sanitizers.log
+            candidate-commit.txt
