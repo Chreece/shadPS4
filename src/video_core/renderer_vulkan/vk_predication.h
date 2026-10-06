@@ -37,7 +37,7 @@ public:
     explicit PredicationManager(const Instance& instance, Scheduler& scheduler,
                                 VideoCore::BufferCache& buffer_cache);
 
-    /// Handles PIXEL_PIPE_STAT_CONTROL: toggles perfect ZPASS sample counting.
+    /// PIXEL_PIPE_STAT_CONTROL selects a counter; DB_COUNT_CONTROL gates draw counting.
     void ControlZpassCounting();
 
     /// Handles PIXEL_PIPE_STAT_RESET: clears the accumulated ZPASS sample counter.
@@ -67,8 +67,8 @@ public:
         return mode == Mode::Gpu;
     }
 
-    /// Acquires and resets an occlusion query slot for the next draw when counting is active.
-    std::optional<u32> PrepareDrawQuery();
+    /// Acquires and resets an occlusion query slot when DB_COUNT_CONTROL requests ZPASS.
+    std::optional<u32> PrepareDrawQuery(u32 count_control);
 
     /// Begins conditional rendering and/or the draw's occlusion query.
     void BeginDraw(vk::CommandBuffer cmdbuf, std::optional<u32> query, bool packet_predicated);
@@ -116,7 +116,6 @@ private:
     vk::UniqueQueryPool query_pool;
     std::array<bool, QueryPoolSize> query_busy{};
     u32 query_cursor{};
-    bool counting_enabled{};
     bool active_poisoned{};
     std::vector<u32> active_queries;
     std::unordered_map<VAddr, std::shared_ptr<DumpRecord>> records;
