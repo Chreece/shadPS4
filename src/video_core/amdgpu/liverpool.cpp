@@ -66,33 +66,6 @@ static std::span<const u32> NextPacket(std::span<const u32> span, size_t offset)
     return span.subspan(offset);
 }
 
-static std::optional<bool> EvaluateZpassPredicate(VAddr address, u32 pipes) {
-    static constexpr u64 Valid = 0x8000000000000000ULL;
-    static constexpr u64 Mask = ~Valid;
-
-    if (address == 0 || pipes == 0 || pipes > 16) {
-        return std::nullopt;
-    }
-
-    const u64 result_size = u64(pipes) * sizeof(u64) * 2;
-    auto* memory = Core::Memory::Instance();
-    if (!memory->IsValidMapping(address, result_size)) {
-        return std::nullopt;
-    }
-
-    const auto* results = reinterpret_cast<const u64*>(address);
-    bool visible = false;
-    for (u32 pipe = 0; pipe < pipes; ++pipe) {
-        const u64 begin = results[pipe * 2];
-        const u64 end = results[pipe * 2 + 1];
-        if ((begin & end & Valid) == 0) {
-            return std::nullopt;
-        }
-        visible |= (begin & Mask) != (end & Mask);
-    }
-    return visible;
-}
-
 Liverpool::Liverpool() : guest_markers_enabled{EmulatorSettings.IsVkGuestMarkersEnabled()} {
     num_counter_pairs = Libraries::Kernel::sceKernelIsNeoMode() ? 16 : 8;
     process_thread = std::jthread{std::bind_front(&Liverpool::Process, this)};
@@ -456,8 +429,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 }
 
                 std::optional<bool> visible;
-                if (pred_op == PredicationOp::Zpass) {
-                    visible = EvaluateZpassPredicate(set_pred->Address(), num_counter_pairs);
+                if (pred_op == PredicationOp::Zpass && rasterizer) {
+                    const bool wait = set_pred->hint.Value() == PredicationHint::Wait;
+                    visible = rasterizer->GetOcclusionQuery().EvaluateZpass(
+                        set_pred->Address(), num_counter_pairs, wait);
                 } else {
                     LOG_WARNING(Render, "Unsupported IT_SET_PREDICATION op {}",
                                 static_cast<u32>(pred_op));
