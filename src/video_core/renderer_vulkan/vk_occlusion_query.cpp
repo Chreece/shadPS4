@@ -50,7 +50,7 @@ OcclusionQuery::~OcclusionQuery() {
     Drain();
 }
 
-void OcclusionQuery::Control(u32 control, u32 high, u32 count_control) {
+void OcclusionQuery::Control(u32 control, u32, u32) {
     // PIXEL_PIPE_STAT_CONTROL selects the counter to dump/reset. Repeated
     // selections must not toggle counting; DB_COUNT_CONTROL controls each draw.
     selected_counter = Counter::SelectedCounter(control);
@@ -65,9 +65,6 @@ std::optional<OcclusionQuery::DrawQuery> OcclusionQuery::PrepareDraw(u32 count_c
     const unsigned counters = Counter::MeasuredCounters(count_control);
     const unsigned unmeasured = Counter::ActiveCounters(count_control) & ~counters;
     incomplete |= unmeasured;
-    if (last_count_control != count_control) {
-        last_count_control = count_control;
-    }
     if (!counters) {
         return std::nullopt;
     }
@@ -151,7 +148,6 @@ void OcclusionQuery::Queue(VAddr address, u32 pipes, bool reset) {
         }
         if (address && pipes && pipes <= 16) {
             const bool supported = counter < state->totals.size();
-            const bool exact = supported && !(missing & (1u << counter));
             // Non-occlusion counter IDs are not implemented; never report them
             // as a successful zero-sample occlusion measurement.
             const u64 total = supported ? state->totals[counter] : ++state->unsupported_total;
