@@ -66,6 +66,33 @@ static std::span<const u32> NextPacket(std::span<const u32> span, size_t offset)
     return span.subspan(offset);
 }
 
+static std::optional<bool> EvaluateZpassPredicate(VAddr address, u32 pipes) {
+    static constexpr u64 Valid = 0x8000000000000000ULL;
+    static constexpr u64 Mask = ~Valid;
+
+    if (address == 0 || pipes == 0 || pipes > 16) {
+        return std::nullopt;
+    }
+
+    const u64 result_size = u64(pipes) * sizeof(u64) * 2;
+    auto* memory = Core::Memory::Instance();
+    if (!memory->IsValidMapping(address, result_size)) {
+        return std::nullopt;
+    }
+
+    const auto* results = reinterpret_cast<const u64*>(address);
+    bool visible = false;
+    for (u32 pipe = 0; pipe < pipes; ++pipe) {
+        const u64 begin = results[pipe * 2];
+        const u64 end = results[pipe * 2 + 1];
+        if ((begin & end & Valid) == 0) {
+            return std::nullopt;
+        }
+        visible |= (begin & Mask) != (end & Mask);
+    }
+    return visible;
+}
+
 Liverpool::Liverpool() : guest_markers_enabled{EmulatorSettings.IsVkGuestMarkersEnabled()} {
     num_counter_pairs = Libraries::Kernel::sceKernelIsNeoMode() ? 16 : 8;
     process_thread = std::jthread{std::bind_front(&Liverpool::Process, this)};
@@ -257,6 +284,12 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
         case 3:
             const u32 count = header->type3.NumWords();
             const PM4ItOpcode opcode = header->type3.opcode;
+            const bool packet_predicated =
+                header->type3.predicate == PM4Predicate::PredEnable;
+            if (packet_predicated && predication_active && !predication_execute) {
+                dcb = NextPacket(dcb, header->type3.NumWords() + 1);
+                continue;
+            }
             switch (opcode) {
             case PM4ItOpcode::Nop: {
                 const auto* nop = reinterpret_cast<const PM4CmdNop*>(header);
@@ -412,7 +445,37 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break;
             }
             case PM4ItOpcode::SetPredication: {
-                LOG_WARNING(Render, "Unimplemented IT_SET_PREDICATION");
+                const auto* set_pred = reinterpret_cast<const PM4CmdSetPredication*>(header);
+                const auto pred_op = set_pred->pred_op.Value();
+
+                if (pred_op == PredicationOp::Clear) {
+                    predication_active = false;
+                    predication_visible.reset();
+                    predication_execute = true;
+                    break;
+                }
+
+                std::optional<bool> visible;
+                if (pred_op == PredicationOp::Zpass) {
+                    visible = EvaluateZpassPredicate(set_pred->Address(), num_counter_pairs);
+                } else {
+                    LOG_WARNING(Render, "Unsupported IT_SET_PREDICATION op {}",
+                                static_cast<u32>(pred_op));
+                }
+
+                if (set_pred->continue_predication.Value() != 0 && predication_active) {
+                    if (predication_visible.has_value() && visible.has_value()) {
+                        visible = *predication_visible || *visible;
+                    } else {
+                        visible.reset();
+                    }
+                }
+
+                predication_active = true;
+                predication_visible = visible;
+                const bool draw_visible = set_pred->draw_visible.Value() != 0;
+                predication_execute =
+                    visible.has_value() ? (draw_visible ? *visible : !*visible) : true;
                 break;
             }
             case PM4ItOpcode::IndexType: {
