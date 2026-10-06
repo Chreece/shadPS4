@@ -1,0 +1,16 @@
+{
+  "status": "not_verified_on_original_settings",
+  "required_global_readbacks_mode": 0,
+  "allow_global_configuration_workarounds": false,
+  "allow_per_game_overrides": false,
+  "allow_default_mode_changes": false,
+  "allow_hidden_readback_mode_enablement": false,
+  "retained_binary_revision": "1bb72db9f2f7746e1487050ecb133ebdedd87272",
+  "retained_binary_sha256": "d1e83adce1b953bfa0060aab317ec1d0d1d62e59cd1f6520a998c83c1733d9c7",
+  "previous_success_effective_readbacks_mode": 1,
+  "previous_success_satisfies_requested_mode_zero_gate": false,
+  "upstream_submission_authorized_as_default_settings_fix": false,
+  "source_level_root_cause_of_ui_recovery_established": false,
+  "retain_original_build_and_saves": true,
+  "do_not_run_superseded_helpers": true
+}
