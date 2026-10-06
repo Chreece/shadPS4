@@ -4,6 +4,7 @@
 #include "font_internal.h"
 
 #include <array>
+#include <fstream>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -1915,6 +1916,54 @@ std::shared_ptr<std::vector<unsigned char>> LoadBuiltinFontBytesShared(
 bool IsBuiltinFontPath(const std::filesystem::path& path) {
     const std::string normalized = path.generic_string();
     return normalized.rfind(kBuiltinFontPrefix, 0) == 0;
+}
+
+bool MaterializeBuiltinGuestFonts(const std::filesystem::path& root) {
+    const auto bytes =
+        LoadBuiltinFontBytesShared(std::filesystem::path(std::string(kBuiltinFontLatin)), nullptr);
+    if (!bytes || bytes->empty()) {
+        return false;
+    }
+
+    static constexpr std::array<std::string_view, 15> filenames{
+        "SST-Light.otf",
+        "SST-Roman.otf",
+        "SST-Medium.otf",
+        "SST-Bold.otf",
+        "SST-Italic.otf",
+        "SST-LightItalic.otf",
+        "SST-MediumItalic.otf",
+        "SST-BoldItalic.otf",
+        "SST-EU-ROMAN-L.OTF",
+        "SST-EU-ROMAN.OTF",
+        "SST-EU-ROMAN-M.OTF",
+        "SST-EU-ROMAN-R.OTF",
+        "SST-EU-ROMAN-I.OTF",
+        "SST-EU-ROMAN-B.OTF",
+        "SST-EU-ROMAN-BI.OTF",
+    };
+
+    std::error_code ec;
+    for (const std::string_view directory_name : {"font", "font2"}) {
+        const auto directory = root / directory_name;
+        std::filesystem::create_directories(directory, ec);
+        if (ec) {
+            return false;
+        }
+
+        for (const auto filename : filenames) {
+            std::ofstream out(directory / filename, std::ios::binary | std::ios::trunc);
+            if (!out) {
+                return false;
+            }
+            out.write(reinterpret_cast<const char*>(bytes->data()),
+                      static_cast<std::streamsize>(bytes->size()));
+            if (!out) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 BuiltinSystemFontSelection BuildBuiltinSystemFontSelection(u32 font_set_type) {
