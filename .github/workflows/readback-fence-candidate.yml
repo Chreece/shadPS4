@@ -1,63 +1,55 @@
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
-name: Prepare readback fence candidate
+name: Readback fence candidate Linux validation
 on:
   push:
     branches:
       - fix/relaxed-readback-fence-tracking-20261006
     paths:
-      - tools/apply_readback_fence_candidate.py
+      - src/**
       - tests/standalone/readback_fence_test.py
       - .github/workflows/readback-fence-candidate.yml
 permissions:
-  contents: write
+  contents: read
 jobs:
-  prepare:
+  linux-gcc14:
     if: github.repository == 'Chreece/shadPS4'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
-      - name: Install isolated test compiler
+          submodules: recursive
+          persist-credentials: false
+      - name: Install Linux build dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y g++-14
-      - name: Verify baseline exposes missing fence read protection
-        shell: bash
+          sudo apt-get install -y gcc-14 g++-14 mold build-essential cmake pkg-config libx11-dev libxext-dev libwayland-dev libdecor-0-dev libxkbcommon-dev libglfw3-dev libgles2-mesa-dev libasound2-dev libpulse-dev libopenal-dev libudev-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev libxrandr-dev libxfixes-dev
+      - name: Test committed tracker classes
         run: |
-          set +e
-          python3 tests/standalone/readback_fence_test.py > baseline-test.log 2>&1
-          rc=$?
-          set -e
-          cat baseline-test.log
-          test "$rc" -eq 1
-          grep -q 'FAIL: FenceMakesGpuDataObservable:' baseline-test.log
-      - name: Apply reviewed candidate anchors
+          python3 tests/standalone/readback_fence_test.py 2>&1 | tee tracker-tests.log
+          python3 tests/standalone/readback_fence_test.py --sanitize 2>&1 | tee tracker-sanitizers.log
+          git diff --exit-code
+      - name: Configure full emulator
         run: |
-          python3 tools/apply_readback_fence_candidate.py > candidate.diff
-          git diff --check
-          git diff --stat
-      - name: Test real tracker classes
+          cmake -S . -B build-readback-candidate -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF -DCMAKE_C_COMPILER=/usr/bin/gcc-14 -DCMAKE_CXX_COMPILER=/usr/bin/g++-14 -DCMAKE_ASM_COMPILER=/usr/bin/gcc-14 -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=mold -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF 2>&1 | tee configure.log
+      - name: Build full emulator
         run: |
-          python3 tests/standalone/readback_fence_test.py | tee tracker-tests.log
-          python3 tests/standalone/readback_fence_test.py --sanitize | tee tracker-sanitizers.log
-      - name: Publish candidate source without changing any other branch
-        shell: bash
-        run: |
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          git add src/video_core/buffer_cache/region_manager.h src/video_core/buffer_cache/memory_tracker.h src/video_core/buffer_cache/buffer_cache.cpp src/video_core/buffer_cache/buffer_cache.h src/video_core/renderer_vulkan/vk_rasterizer.cpp src/video_core/page_manager.cpp
-          git -c user.name='Chris Chreece' -c user.email='68458228+Chreece@users.noreply.github.com' commit -m 'video_core: test fence-delayed buffer read protection in Relaxed mode' -m 'Candidate only: records dirty and read-protected pages separately, arms read faults before existing guest fence notifications, and keeps the write-only userfaultfd backend away from enabled readbacks. No title checks and no readback-setting override. Real tracker state tests pass; no game runtime or full-build validation claimed.'
-          git push origin HEAD:refs/heads/fix/relaxed-readback-fence-tracking-20261006
+          cmake --build build-readback-candidate --parallel 2 2>&1 | tee build.log
+          test -x build-readback-candidate/shadps4
+          sha256sum build-readback-candidate/shadps4 | tee binary.sha256
           git rev-parse HEAD | tee candidate-commit.txt
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: readback-fence-candidate-evidence
+          name: readback-fence-linux-validation
           path: |
-            baseline-test.log
-            candidate.diff
             tracker-tests.log
             tracker-sanitizers.log
+            configure.log
+            build.log
+            binary.sha256
             candidate-commit.txt
