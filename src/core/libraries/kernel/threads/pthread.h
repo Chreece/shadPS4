@@ -400,7 +400,10 @@ struct Pthread {
         }
     }
 
+    void UpdateGuestCpu(const Cpuset* cpuset);
     int SetAffinity(const Cpuset* cpuset);
+
+    std::atomic<s32> guest_cpu{0};
 };
 using PthreadT = Pthread*;
 
