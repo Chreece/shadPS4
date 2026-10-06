@@ -25,6 +25,7 @@ public:
     void Control(u32 control, u32 high, u32 count_control);
     void Reset();
     void Dump(VAddr address, u32 pipes);
+    std::optional<bool> EvaluateZpass(VAddr address, u32 pipes, bool wait);
     std::optional<DrawQuery> PrepareDraw(u32 count_control);
     void BeginDraw(vk::CommandBuffer command, std::optional<DrawQuery> query);
     void EndDraw(vk::CommandBuffer command, std::optional<DrawQuery> query);
