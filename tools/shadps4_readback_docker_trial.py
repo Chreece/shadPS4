@@ -27,8 +27,9 @@ BASE = '4f7b012e1dcfe4c7bb44f54504bd735a0c69ec5a'
 PATCH = '5c11752b4059599aa36c94328a12be6222a28b04'
 REPO = 'https://github.com/Chreece/shadPS4.git'
 OLD_IMAGE = 'shadps4-render-playtest-builder:trixie-clang19-v1'
-PREVIOUS_IMAGE_TAG = 'shadps4-readback-trial:trixie-gcc14-v1'
-IMAGE_TAG = 'shadps4-readback-trial:trixie-gcc14-v2-drm'
+PREVIOUS_IMAGE_TAG = 'shadps4-readback-trial:trixie-gcc14-v2-drm'
+IMAGE_TAG = 'shadps4-readback-trial:trixie-gcc14-v3-sdl'
+BUILD_CONTRACT = 'docker-gcc14-sdl-complete-v3'
 FILES = sorted([
     'src/video_core/buffer_cache/buffer_cache.cpp',
     'src/video_core/buffer_cache/buffer_cache.h',
@@ -40,7 +41,8 @@ FILES = sorted([
 HOME = Path.home()
 WORK = HOME / '.cache/shadps4-clean-verified-main'
 SRC = WORK / 'source'
-BUILD = SRC / 'build-verified'
+# Never reuse the host-configured CMake cache in Docker. Preserve that tree.
+BUILD = SRC / 'build-docker-gcc14-v3'
 TRIAL = WORK / 'readback-docker-trial'
 REPORT = TRIAL / 'reports'
 STATE = TRIAL / 'state.json'
@@ -91,6 +93,7 @@ def git(*args: str, check: bool = True) -> str:
 def logged(args: list, name: str, *, cwd: Path | None = None, ok: tuple = (0,)) -> int:
     path = REPORT / name
     print(f'{name}: {path}', flush=True)
+    offset = path.stat().st_size if path.exists() else 0
     with path.open('ab') as log:
         log.write(('\nCOMMAND=' + shlex.join([str(a) for a in args]) + '\n').encode())
         log.flush()
@@ -117,8 +120,12 @@ def logged(args: list, name: str, *, cwd: Path | None = None, ok: tuple = (0,)) 
                 proc.wait()
             raise
     if rc not in ok:
-        tail = path.read_text(errors='replace').splitlines()[-35:]
-        raise RuntimeError(f'{name}: exit {rc}\n' + '\n'.join(tail))
+        with path.open('rb') as f:
+            f.seek(offset)
+            lines = ANSI.sub('', f.read().decode(errors='replace')).splitlines()
+        errors = [line for line in lines if re.search(r'fatal error:|error:|CMake Error|undefined reference', line)][:12]
+        raise RuntimeError(f'{name}: exit {rc}\nFIRST_ERRORS:\n' + '\n'.join(errors) +
+                           '\nLAST_LINES:\n' + '\n'.join(lines[-25:]))
     return rc
 
 
@@ -194,24 +201,58 @@ def change_mode(path: Path, mode: int, allowed: set[int]) -> None:
                  path.stat().st_mode & 0o777)
 
 
-# Check the headers with the compiler, not only pkg-config metadata. A CMake
-# cache from the host may enable SDL backends absent from a Docker image.
+# Explicit development packages from SDL's Linux build requirements, plus the
+# existing emulator toolchain. Installation and all probes run inside Docker.
+# https://wiki.libsdl.org/SDL3/README-linux#build-dependencies
+SDL_PACKAGES = (
+    'libasound2-dev libpulse-dev libaudio-dev libfribidi-dev libjack-dev libsndio-dev '
+    'libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev '
+    'libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev '
+    'libgles2-mesa-dev libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev '
+    'libthai-dev libusb-1.0-0-dev libpipewire-0.3-dev libwayland-dev libdecor-0-dev '
+    'liburing-dev wayland-protocols'
+).split()
+BUILD_PACKAGES = (
+    'gcc-14 g++-14 mold build-essential cmake ninja-build pkg-config python3 git '
+    'ca-certificates libglfw3-dev libopenal-dev libboost-dev libssl-dev uuid-dev '
+    'libvulkan-dev fcitx-libs-dev libxinerama-dev libxrender-dev libxt-dev libxv-dev '
+    'libxxf86vm-dev'
+).split()
+
 DOCKER_PROBE = r"""set -eu
 . /etc/os-release
 test "$VERSION_CODENAME" = trixie
-for x in gcc-14 g++-14 mold cmake python3 git pkg-config; do
+for x in gcc-14 g++-14 mold cmake python3 git pkg-config make; do
     command -v "$x" >/dev/null
 done
+for package in __REQUIRED_PACKAGES__; do
+    test "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null)" = 'install ok installed'
+done
 pkg-config --print-errors --exists xtst x11 xext xrandr xfixes xi xcursor xscrnsaver \
-    wayland-client libdecor-0 xkbcommon alsa libpulse libdrm gbm
+    wayland-client libdecor-0 xkbcommon alsa libpulse libdrm gbm ibus-1.0 dbus-1 \
+    libpipewire-0.3 jack sndio fribidi liburing libudev libusb-1.0 egl glesv2
+# Compile the formerly missing headers, with their real transitive include flags.
 d=$(mktemp -d)
 trap 'rm -rf "$d"' EXIT
-printf '%s\n' '#include <xf86drm.h>' '#include <xf86drmMode.h>' '#include <gbm.h>' \
-    'int main(void) { return 0; }' > "$d/check.c"
-gcc-14 $(pkg-config --cflags libdrm gbm) "$d/check.c" \
-    -o "$d/check" $(pkg-config --libs libdrm gbm)
-printf 'DRM_GBM_HEADERS_AND_LINK=PASS\n'
-"""
+cat > "$d/check.c" <<'C'
+#include <ibus.h>
+#include <dbus/dbus.h>
+#include <xf86drm.h>
+#include <xf86drmMode.h>
+#include <gbm.h>
+#include <pipewire/pipewire.h>
+#include <jack/jack.h>
+#include <sndio.h>
+#include <liburing.h>
+#include <libudev.h>
+#include <libusb.h>
+int main(void) { return 0; }
+C
+modules='ibus-1.0 dbus-1 libdrm gbm libpipewire-0.3 jack sndio liburing libudev libusb-1.0'
+gcc-14 $(pkg-config --cflags $modules) "$d/check.c" \
+    -o "$d/check" $(pkg-config --libs $modules)
+printf 'SDL_DEPENDENCIES_AND_HEADERS=PASS\n'
+""".replace('__REQUIRED_PACKAGES__', ' '.join(SDL_PACKAGES + BUILD_PACKAGES))
 
 
 def image_id(image: str) -> str | None:
@@ -260,32 +301,27 @@ def docker_image(cached: str | None = None, *, allow_repair: bool = True) -> str
             return iid
     # Layer onto the exact existing image when possible. Installs occur only
     # inside Docker; no host package or GPU-driver installation is performed.
-    context = TRIAL / 'docker-context-v2-drm'
+    context = TRIAL / 'docker-context-v3-sdl'
     context.mkdir(parents=True, exist_ok=True)
     base_id = cached_id or (available[0] if available else None)
     base = 'debian:trixie-slim'
     if base_id:
         # BuildKit does not accept a local image config digest in FROM. Give
         # the verified ID a dedicated tag; never retag the user's original image.
-        base = 'shadps4-readback-base:drm-' + base_id.split(':', 1)[1]
+        base = 'shadps4-readback-base:sdl-' + base_id.split(':', 1)[1]
         command(['docker', 'image', 'tag', base_id, base])
         if image_id(base) != base_id:
             raise RuntimeError('Docker repair base tag did not match the saved image')
-    packages = ('gcc-14 g++-14 mold build-essential cmake ninja-build pkg-config python3 git '
-                'ca-certificates libx11-dev libxext-dev libwayland-dev libdecor-0-dev '
-                'libxkbcommon-dev libglfw3-dev libgles2-mesa-dev libasound2-dev libpulse-dev '
-                'libopenal-dev libudev-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev '
-                'libxrandr-dev libxfixes-dev libusb-1.0-0-dev libboost-dev libssl-dev uuid-dev '
-                'libdrm-dev libgbm-dev')
+    packages = ' '.join(dict.fromkeys(BUILD_PACKAGES + SDL_PACKAGES))
     (context / 'Dockerfile').write_text(f'FROM {base}\nUSER root\nRUN apt-get update && '
-        f'apt-get install -y --no-install-recommends {packages} && rm -rf /var/lib/apt/lists/*\n')
+        f'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends {packages} && rm -rf /var/lib/apt/lists/*\n')
     logged(['docker', 'build', '--pull=false', '--progress=plain', '-t', IMAGE_TAG, context],
-           'docker-image-drm-repair.log')
+           'docker-image-sdl-complete.log')
     repaired = image_id(IMAGE_TAG)
     if not repaired or not probe_image(repaired):
-        raise RuntimeError('Docker dependency/DRM header verification failed after repair; '
+        raise RuntimeError('Docker SDL dependency/header verification failed after repair; '
                            'the saved image pin and installed emulator remain unchanged')
-    print('DRM_GBM_HEADERS_AND_LINK=PASS')
+    print('SDL_DEPENDENCIES_AND_HEADERS=PASS')
     return repaired
 
 
@@ -306,26 +342,79 @@ def docker_args(image: str, args: list) -> list:
             '--entrypoint', '/usr/bin/env', image, *args]
 
 
+def bind_build_environment(image: str) -> None:
+    """Reject an unrelated cache instead of silently sharing its feature results."""
+    expected = dict(contract=BUILD_CONTRACT, image=image, source=str(SRC),
+                    generator='Unix Makefiles', cc='/usr/bin/gcc-14', cxx='/usr/bin/g++-14')
+    marker = BUILD / '.docker-build-environment.json'
+    if BUILD.is_symlink():
+        raise RuntimeError('Docker build directory must not be a symlink')
+    if marker.exists():
+        if json.loads(marker.read_text()) != expected:
+            raise RuntimeError('Build directory belongs to a different environment; left untouched')
+    else:
+        if BUILD.exists() and any(BUILD.iterdir()):
+            raise RuntimeError('Unlabelled build directory is not empty; refusing to reuse its cache')
+        BUILD.mkdir(parents=True, exist_ok=True)
+        write_json(marker, expected)
+    cache = BUILD / 'CMakeCache.txt'
+    if cache.exists():
+        values = {}
+        for line in cache.read_text().splitlines():
+            if line and not line.startswith(('#', '//')) and '=' in line and ':' in line:
+                key, value = line.split('=', 1)
+                values[key.split(':', 1)[0]] = value
+        for key, value in {
+            'CMAKE_HOME_DIRECTORY': str(SRC), 'CMAKE_GENERATOR': 'Unix Makefiles',
+            'CMAKE_C_COMPILER': '/usr/bin/gcc-14', 'CMAKE_CXX_COMPILER': '/usr/bin/g++-14'
+        }.items():
+            if key in values and values[key] != value:
+                raise RuntimeError(f'Docker CMake cache mismatch: {key}; left untouched')
+    write_json(REPORT / 'build-environment.json', expected)
+
+
 def compile_binary(image: str, phase: str, jobs: int) -> tuple[str, str]:
-    # Keep the successful GCC14 build directory. Do NOT --fresh or delete objects.
-    args = ['cmake', '-S', SRC, '-B', BUILD, '-DCMAKE_BUILD_TYPE=Release', '-DENABLE_TESTS=OFF',
+    # One clean Docker-only configure, then incremental baseline/candidate builds.
+    # The old host build-verified directory is never deleted or modified.
+    bind_build_environment(image)
+    print(f'BUILD_DIRECTORY={BUILD}', flush=True)
+    args = ['cmake', '-G', 'Unix Makefiles', '-S', SRC, '-B', BUILD,
+            '-DCMAKE_BUILD_TYPE=Release', '-DENABLE_TESTS=OFF',
             '-DCMAKE_C_COMPILER=/usr/bin/gcc-14', '-DCMAKE_CXX_COMPILER=/usr/bin/g++-14',
             '-DCMAKE_ASM_COMPILER=/usr/bin/gcc-14', '-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold',
             '-DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=mold',
             '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF',
             '-DCMAKE_C_COMPILER_LAUNCHER=', '-DCMAKE_CXX_COMPILER_LAUNCHER=',
+            '-DCMAKE_MAKE_PROGRAM=/usr/bin/make', '-DPKG_CONFIG_EXECUTABLE=/usr/bin/pkg-config',
             '-DPython3_EXECUTABLE=/usr/bin/python3', '-DPYTHON_EXECUTABLE=/usr/bin/python3']
-    logged(docker_args(image, args), phase + '-configure.log')
+    logged(docker_args(image, args), phase + '-configure-v3.log')
+    # Compile the entire SDL target FIRST. Its objects are reused by the main build.
+    # This tests every selected SDL backend, not just a hand-picked header list.
+    logged(docker_args(image, ['cmake', '--build', BUILD, '--target', 'SDL3-static',
+                              '--parallel', str(jobs)]), phase + '-sdl-v3.log')
+    print('SDL3_STATIC_BUILD=PASS', flush=True)
     logged(docker_args(image, ['cmake', '--build', BUILD, '--target', 'shadps4', '--parallel', str(jobs)]),
-           phase + '-build.log')
+           phase + '-build-v3.log')
     binary = BUILD / 'shadps4'
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise RuntimeError('Build did not produce an executable shadps4')
-    # Loader/ABI check only; --help returns before emulator/game initialization.
-    logged(['timeout', '20', binary, '--help'], phase + '-host-loader.log')
+    logged(['timeout', '20', binary, '--help'], phase + '-host-loader-v3.log')
     dest = TRIAL / ('shadps4-' + phase)
     shutil.copy2(binary, dest)
     return str(dest), sha(dest)
+
+
+def migrate_build_contract(state: dict) -> None:
+    if state.get('build_contract') == BUILD_CONTRACT:
+        return
+    if state.get('ready') or state.get('baseline_sha') or state.get('candidate_head'):
+        raise RuntimeError('An older trial already built a variant; refusing to mix environments')
+    backup = TRIAL / ('state-before-v3-' + dt.datetime.now().strftime('%Y%m%d-%H%M%S') + '.json')
+    write_json(backup, state)
+    state['build_contract'] = BUILD_CONTRACT
+    state['build_directory'] = str(BUILD)
+    write_json(STATE, state)
+    print('BUILD_CACHE=NEW_DOCKER_ONLY_DIRECTORY; old build-verified preserved', flush=True)
 
 
 def prepare(explicit_config: str | None, jobs: int) -> dict:
@@ -333,6 +422,7 @@ def prepare(explicit_config: str | None, jobs: int) -> dict:
         state = json.loads(STATE.read_text())
         if state.get('base') != BASE or state.get('patch') != PATCH:
             raise RuntimeError('A different trial occupies this directory; left unchanged')
+        migrate_build_contract(state)
         if state.get('ready'):
             print('BUILD_CACHE=READY; no rebuild requested')
             return state
@@ -355,6 +445,7 @@ def prepare(explicit_config: str | None, jobs: int) -> dict:
                      config=str(config), original_mode=json.loads(config.read_text())['GPU']['readbacks_mode'],
                      original_branch=git('symbolic-ref', '--quiet', '--short', 'HEAD', check=False))
         write_json(STATE, state)
+        migrate_build_contract(state)
     source_clean()
     head = git('rev-parse', 'HEAD')
     if head not in {BASE, state.get('candidate_head')}:
