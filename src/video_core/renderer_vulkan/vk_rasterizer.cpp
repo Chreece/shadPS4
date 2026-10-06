@@ -216,7 +216,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     pipeline->BindResources(set_writes, buffer_barriers, push_data);
     UpdateDynamicState(pipeline, is_indexed);
-    const auto zpass_query = predication.PrepareDrawQuery();
+    const auto zpass_query = predication.PrepareDrawQuery(liverpool->regs.depth_count_control);
     const bool predicated = liverpool->IsPacketPredicated();
     scheduler.BeginRendering(state);
 
@@ -288,7 +288,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
     pipeline->BindResources(set_writes, buffer_barriers, push_data);
     UpdateDynamicState(pipeline, is_indexed);
-    const auto zpass_query = predication.PrepareDrawQuery();
+    const auto zpass_query = predication.PrepareDrawQuery(liverpool->regs.depth_count_control);
     const bool predicated = liverpool->IsPacketPredicated();
     scheduler.BeginRendering(state);
 
