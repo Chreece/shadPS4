@@ -6,6 +6,8 @@
 #ifdef _WIN32
 #include "common/ntapi.h"
 #else
+#include <bit>
+
 #include <csignal>
 #include <pthread.h>
 #endif
@@ -341,6 +343,8 @@ int PS4_SYSV_ABI posix_pthread_create_name_np(PthreadT* thread, const PthreadAtt
     } else {
         new_thread->name = fmt::format("Thread{}", new_thread->tid.load());
     }
+
+    new_thread->UpdateGuestCpu(new_thread->attr.cpuset);
 
     ASSERT(new_thread->attr.suspend == 0);
     new_thread->state = PthreadState::Running;
@@ -831,6 +835,11 @@ void PS4_SYSV_ABI scePthreadTestcancel() {
     PthreadTestCancel();
 }
 
+void Pthread::UpdateGuestCpu(const Cpuset* cpuset) {
+    const u64 mask = cpuset != nullptr ? cpuset->bits : 0;
+    guest_cpu.store(mask != 0 ? std::countr_zero(mask) : 0, std::memory_order_relaxed);
+}
+
 int Pthread::SetAffinity(const Cpuset* cpuset) {
     const auto processor_count = std::thread::hardware_concurrency();
     if (processor_count < 8) {
@@ -915,6 +924,9 @@ int PS4_SYSV_ABI posix_pthread_setaffinity_np(PthreadT thread, size_t cpusetsize
 
     if (ret == ORBIS_OK) {
         ret = thread->SetAffinity(thread->attr.cpuset);
+        if (ret == 0) {
+            thread->UpdateGuestCpu(thread->attr.cpuset);
+        }
     }
 
     thread->lock.unlock();
