@@ -3,6 +3,7 @@
 
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
+#include "video_core/renderer_vulkan/vk_image_transfer.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -227,7 +228,8 @@ void Runtime::CopyImage(VideoCore::Image* src, VideoCore::Image* dst) {
     const u32 num_mips = std::min(src->info.resources.levels, dst->info.resources.levels);
 
     // Format mismatch warning (safe but useful)
-    if (src->info.pixel_format != dst->info.pixel_format) {
+    if (src->info.pixel_format != dst->info.pixel_format &&
+        !ImageTransfer::NeedsDepthBufferCopy(src->info.pixel_format, dst->info.pixel_format)) {
         LOG_DEBUG(Render_Vulkan,
                   "Copy between different formats: src={}, dst={}. "
                   "Result may be undefined.",
@@ -313,12 +315,59 @@ void Runtime::CopyImage(VideoCore::Image* src, VideoCore::Image* dst) {
         FlushBarriers();
     }
 
-    auto cmdbuf = scheduler.CommandBuffer();
-    cmdbuf.copyImage(src->GetImage(), vk::ImageLayout::eTransferSrcOptimal, dst->GetImage(),
-                     vk::ImageLayout::eTransferDstOptimal, regions);
+    CopyImageRegions(src, dst, regions);
 
     dst->flags |= (src->flags & VideoCore::ImageFlagBits::GpuModified);
     dst->flags &= ~VideoCore::ImageFlagBits::Dirty;
+}
+
+void Runtime::CopyImageRegions(VideoCore::Image* src, VideoCore::Image* dst,
+                               std::span<const vk::ImageCopy> regions) {
+    if (!ImageTransfer::NeedsDepthBufferCopy(src->info.pixel_format, dst->info.pixel_format) ||
+        src->backing->num_samples != 1 || dst->backing->num_samples != 1) {
+        scheduler.CommandBuffer().copyImage(src->GetImage(), vk::ImageLayout::eTransferSrcOptimal,
+                                            dst->GetImage(), vk::ImageLayout::eTransferDstOptimal,
+                                            regions.size(), regions.data());
+        return;
+    }
+
+    for (const auto& region : regions) {
+        ASSERT(region.srcSubresource.aspectMask == vk::ImageAspectFlagBits::eDepth &&
+               region.dstSubresource.aspectMask == vk::ImageAspectFlagBits::eDepth);
+        ASSERT(region.extent.depth == 1 &&
+               region.srcSubresource.layerCount == region.dstSubresource.layerCount);
+        auto copy = ImageTransfer::MakeDepthBufferCopy(region, 0);
+        const auto staging = staging_pool.Request(copy.size, VideoCore::MemoryType::DeviceLocal, 4);
+        copy.source.bufferOffset = staging.offset;
+        copy.destination.bufferOffset = staging.offset;
+        if (IsBufferAccessed(staging.buffer, staging.offset, copy.size, true)) {
+            FlushBarriers();
+        }
+
+        const auto cmdbuf = scheduler.CommandBuffer();
+        cmdbuf.copyImageToBuffer(src->GetImage(), vk::ImageLayout::eTransferSrcOptimal,
+                                 staging.buffer->Handle(), copy.source);
+
+        const vk::BufferMemoryBarrier2 barrier{
+            .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = staging.buffer->Handle(),
+            .offset = staging.offset,
+            .size = copy.size,
+        };
+        cmdbuf.pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &barrier,
+        });
+        cmdbuf.copyBufferToImage(staging.buffer->Handle(), dst->GetImage(),
+                                 vk::ImageLayout::eTransferDstOptimal, copy.destination);
+        AccessBuffer(staging.buffer, staging.offset, copy.size, vk::PipelineStageFlagBits2::eCopy,
+                     vk::AccessFlagBits2::eTransferRead);
+    }
 }
 
 void Runtime::CopyImageWithBuffer(VideoCore::Image* src, VideoCore::Image* dst,
@@ -501,9 +550,7 @@ void Runtime::CopyDepthStencil(VideoCore::Image* src, VideoCore::Image* dst,
         .extent = {dst->info.size.width, dst->info.size.height, 1},
     };
 
-    const auto cmdbuf = scheduler.CommandBuffer();
-    cmdbuf.copyImage(src->GetImage(), vk::ImageLayout::eTransferSrcOptimal, dst->GetImage(),
-                     vk::ImageLayout::eTransferDstOptimal, region);
+    CopyImageRegions(src, dst, std::span{&region, 1});
 
     dst->flags |= VideoCore::ImageFlagBits::GpuModified;
     dst->flags &= ~VideoCore::ImageFlagBits::Dirty;
