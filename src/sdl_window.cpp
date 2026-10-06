@@ -194,9 +194,8 @@ bool ShowEarlySplash(std::span<const u8> png_data, s32 width, s32 height,
         return false;
     }
 
-    SDL_Surface* image =
-        SDL_CreateSurfaceFrom(image_width, image_height, SDL_PIXELFORMAT_RGBA32, image_data,
-                              image_width * channels);
+    SDL_Surface* image = SDL_CreateSurfaceFrom(image_width, image_height, SDL_PIXELFORMAT_RGBA32,
+                                               image_data, image_width * channels);
     if (image == nullptr) {
         LOG_WARNING(Frontend, "Failed to create early splash image surface: {}", SDL_GetError());
         stbi_image_free(image_data);
@@ -206,9 +205,8 @@ bool ShowEarlySplash(std::span<const u8> png_data, s32 width, s32 height,
     }
 
     SDL_FillSurfaceRect(output, nullptr, 0);
-    const double scale =
-        std::min(static_cast<double>(output_width) / image_width,
-                 static_cast<double>(output_height) / image_height);
+    const double scale = std::min(static_cast<double>(output_width) / image_width,
+                                  static_cast<double>(output_height) / image_height);
     const int draw_width = std::max(1, static_cast<int>(image_width * scale));
     const int draw_height = std::max(1, static_cast<int>(image_height * scale));
     const SDL_Rect dst_rect{
