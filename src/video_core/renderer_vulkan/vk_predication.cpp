@@ -404,7 +404,7 @@ std::optional<u32> PredicationManager::AcquireQuerySlot() {
 }
 
 void PredicationManager::ReleaseQuerySlotsWhenDone(std::vector<u32>&& slots) {
-    scheduler.DeferOperation([this, slots = std::move(slots)]() mutable {
+    scheduler.DeferPriorityOperation([this, slots = std::move(slots)]() mutable {
         for (const u32 slot : slots) {
             query_busy[slot] = false;
         }
