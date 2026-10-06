@@ -152,8 +152,7 @@ void OcclusionQuery::Queue(VAddr address, u32 pipes, bool reset) {
             // as a successful zero-sample occlusion measurement.
             const u64 total = supported ? state->totals[counter] : ++state->unsupported_total;
             auto* memory = Core::Memory::Instance();
-            if (memory->IsAccessibleRange(address, Counter::WriteSpan(pipes),
-                                          Core::MemoryProt::CpuWrite)) {
+            if (memory->IsValidMapping(address, Counter::WriteSpan(pipes))) {
                 for (u32 pipe = 0; pipe < pipes; ++pipe) {
                     const u64 value = Counter::Value(total, pipe, pipes);
                     auto* destination = reinterpret_cast<void*>(address + pipe * 16);
