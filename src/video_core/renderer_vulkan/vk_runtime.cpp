@@ -325,7 +325,7 @@ void Runtime::CopyImageWithBuffer(VideoCore::Image* src, VideoCore::Image* dst,
                                   const VideoCore::Buffer* buffer, u64 offset) {
     const u32 num_mips = std::min(src->info.resources.levels, dst->info.resources.levels);
     const u32 num_layers = std::min(src->info.resources.layers, dst->info.resources.layers);
-    ASSERT(src->info.resources.layers == dst->info.resources.layers && num_mips == 1);
+    ASSERT(num_mips == 1);
 
     SetBackingSamples(dst, dst->info.num_samples, false);
     SetBackingSamples(src, src->info.num_samples);
@@ -440,10 +440,25 @@ void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
             src->aspect_mask == dst->aspect_mask) {
             CopyImage(src, dst);
         } else {
-            // Perform depth from/to color copy using the intermediate copy buffer.
-            static constexpr size_t COPY_BUFFER_SIZE = 128_MB;
+            const u32 num_layers =
+                std::min(src->info.resources.layers, dst->info.resources.layers);
+            const vk::BufferImageCopy buffer_copy = {
+                .bufferOffset = 0,
+                .bufferRowLength = 0,
+                .bufferImageHeight = 0,
+                .imageSubresource{
+                    .aspectMask = src->aspect_mask & ~vk::ImageAspectFlagBits::eStencil,
+                    .mipLevel = 0u,
+                    .baseArrayLayer = 0,
+                    .layerCount = num_layers,
+                },
+                .imageOffset = {0, 0, 0},
+                .imageExtent = {src->info.size.width, src->info.size.height,
+                                src->info.size.depth},
+            };
+            const auto copy_size = BufferImageCopySize(buffer_copy, src->info.pixel_format);
             const auto copy_ref =
-                staging_pool.Request(COPY_BUFFER_SIZE, VideoCore::MemoryType::DeviceLocal);
+                staging_pool.Request(copy_size, VideoCore::MemoryType::DeviceLocal);
             CopyImageWithBuffer(src, dst, copy_ref.buffer, copy_ref.offset);
         }
     } else if (src->info.num_samples == 1 && dst->info.num_samples > 1 &&
