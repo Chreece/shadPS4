@@ -16,6 +16,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/pm4_cmds.h"
 #include "video_core/renderdoc.h"
+#include "video_core/renderer_vulkan/vk_occlusion_query.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
 namespace AmdGpu {
@@ -641,8 +642,22 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     // TODO: handle proper synchronization, for now signal that update is done
                     // immediately
                     regs.cp_strmout_cntl.offset_update_done = 1;
+                } else if (event->event_type.Value() == EventType::PixelPipeStatControl) {
+                    if (rasterizer && header->type3.count.Value() >= 2) {
+                        rasterizer->GetOcclusionQuery().Control(
+                            event->address[0], event->address[1], regs.depth_count_control);
+                    }
+                } else if (event->event_type.Value() == EventType::PixelPipeStatReset) {
+                    if (rasterizer) {
+                        rasterizer->GetOcclusionQuery().Reset();
+                    }
                 } else if (event->event_index.Value() == EventIndex::ZpassDone) {
                     if (event->event_type.Value() == EventType::PixelPipeStatDump) {
+                        if (rasterizer) {
+                            rasterizer->GetOcclusionQuery().Dump(event->Address<VAddr>(),
+                                                                num_counter_pairs);
+                            break;
+                        }
                         static constexpr u64 OcclusionCounterValidMask = 0x8000000000000000ULL;
                         static constexpr u64 OcclusionCounterStep = 0x2FFFFFFULL;
                         u64* results = event->Address<u64*>();
@@ -786,6 +801,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     num_submits == mapped_queues[GfxQueueId].submits.size()) {
                     vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array); });
                     break;
+                }
+                if (rasterizer && !wait_reg_mem->Test(regs.reg_array)) {
+                    rasterizer->SubmitPendingQueries();
                 }
                 while (!wait_reg_mem->Test(regs.reg_array)) {
                     YIELD_GFX();
