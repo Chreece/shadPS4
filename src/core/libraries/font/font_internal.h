@@ -907,6 +907,7 @@ BuiltinSystemFontSelection BuildBuiltinSystemFontSelection(u32 font_set_type);
 bool IsBuiltinFontPath(const std::filesystem::path& path);
 std::shared_ptr<std::vector<unsigned char>> LoadBuiltinFontBytesShared(
     const std::filesystem::path& path, u32* out_subfont_index);
+bool MaterializeBuiltinGuestFonts(const std::filesystem::path& root);
 std::filesystem::path GetSysFontBaseDir();
 std::filesystem::path ResolveSystemFontPath(u32 font_set_type);
 const struct FontSetCache* EnsureFontSetCache(u32 font_set_type);
