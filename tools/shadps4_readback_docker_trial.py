@@ -27,7 +27,8 @@ BASE = '4f7b012e1dcfe4c7bb44f54504bd735a0c69ec5a'
 PATCH = '5c11752b4059599aa36c94328a12be6222a28b04'
 REPO = 'https://github.com/Chreece/shadPS4.git'
 OLD_IMAGE = 'shadps4-render-playtest-builder:trixie-clang19-v1'
-IMAGE_TAG = 'shadps4-readback-trial:trixie-gcc14-v1'
+PREVIOUS_IMAGE_TAG = 'shadps4-readback-trial:trixie-gcc14-v1'
+IMAGE_TAG = 'shadps4-readback-trial:trixie-gcc14-v2-drm'
 FILES = sorted([
     'src/video_core/buffer_cache/buffer_cache.cpp',
     'src/video_core/buffer_cache/buffer_cache.h',
@@ -193,31 +194,109 @@ def change_mode(path: Path, mode: int, allowed: set[int]) -> None:
                  path.stat().st_mode & 0o777)
 
 
-def docker_image() -> str:
+# Check the headers with the compiler, not only pkg-config metadata. A CMake
+# cache from the host may enable SDL backends absent from a Docker image.
+DOCKER_PROBE = r"""set -eu
+. /etc/os-release
+test "$VERSION_CODENAME" = trixie
+for x in gcc-14 g++-14 mold cmake python3 git pkg-config; do
+    command -v "$x" >/dev/null
+done
+pkg-config --print-errors --exists xtst x11 xext xrandr xfixes xi xcursor xscrnsaver \
+    wayland-client libdecor-0 xkbcommon alsa libpulse libdrm gbm
+d=$(mktemp -d)
+trap 'rm -rf "$d"' EXIT
+printf '%s\n' '#include <xf86drm.h>' '#include <xf86drmMode.h>' '#include <gbm.h>' \
+    'int main(void) { return 0; }' > "$d/check.c"
+gcc-14 $(pkg-config --cflags libdrm gbm) "$d/check.c" \
+    -o "$d/check" $(pkg-config --libs libdrm gbm)
+printf 'DRM_GBM_HEADERS_AND_LINK=PASS\n'
+"""
+
+
+def image_id(image: str) -> str | None:
+    p = command(['docker', 'image', 'inspect', '--format', '{{.Id}}', image], check=False)
+    value = p.stdout.strip()
+    if p.returncode != 0:
+        return None
+    if not re.fullmatch(r'sha256:[0-9a-f]{64}', value):
+        raise RuntimeError('Docker returned an unexpected immutable image ID')
+    return value
+
+
+def probe_image(image: str) -> bool:
+    p = command(['docker', 'run', '--rm', '--entrypoint', '/bin/bash', image,
+                 '-lc', DOCKER_PROBE], check=False)
+    REPORT.mkdir(parents=True, exist_ok=True)
+    with (REPORT / 'docker-image-preflight.log').open('a') as f:
+        f.write(f'IMAGE={image}\nRC={p.returncode}\n{p.stdout}\n{p.stderr}\n')
+    return p.returncode == 0
+
+
+def docker_image(cached: str | None = None, *, allow_repair: bool = True) -> str:
     command(['docker', 'info', '--format', '{{.ServerVersion}}'])
-    probe = ('set -eu; . /etc/os-release; test "$VERSION_CODENAME" = trixie; '
-             'for x in gcc-14 g++-14 mold cmake python3 git; do command -v "$x" >/dev/null; done; '
-             'pkg-config --exists xtst x11 xext xrandr xfixes xi xcursor xscrnsaver '
-             'wayland-client libdecor-0 xkbcommon alsa libpulse')
-    for image in [IMAGE_TAG, OLD_IMAGE]:
-        if command(['docker', 'image', 'inspect', image], check=False).returncode == 0:
-            if command(['docker', 'run', '--rm', '--entrypoint', '/bin/bash', image,
-                        '-lc', probe], check=False).returncode == 0:
-                return command(['docker', 'image', 'inspect', '--format', '{{.Id}}', image]).stdout.strip()
-    # Dependency installation is confined to an image. No host apt/sudo commands.
-    context = TRIAL / 'docker-context'
-    context.mkdir(exist_ok=True)
-    base = OLD_IMAGE if command(['docker', 'image', 'inspect', OLD_IMAGE], check=False).returncode == 0 else 'debian:trixie-slim'
+    # Revalidate the saved immutable ID on EVERY incomplete-build resume. Merely
+    # rebuilding a tag cannot repair a state.json that still pins the old image.
+    cached_id = image_id(cached) if cached else None
+    if cached_id and probe_image(cached_id):
+        print('DOCKER_IMAGE=VERIFIED_SAVED_IMAGE')
+        return cached_id
+    if not allow_repair:
+        raise RuntimeError('Saved Docker image is missing or lacks required headers. A baseline '
+                           'has already been built; refusing to mix A/B toolchains.')
+    if cached:
+        print('DOCKER_IMAGE=REPAIRING_INCOMPLETE_SAVED_IMAGE')
+    available: list[str] = []
+    checked = {cached_id} if cached_id else set()
+    for image in [IMAGE_TAG, PREVIOUS_IMAGE_TAG, OLD_IMAGE]:
+        iid = image_id(image)
+        if not iid:
+            continue
+        available.append(iid)
+        if iid in checked:
+            continue
+        checked.add(iid)
+        if probe_image(iid):
+            return iid
+    # Layer onto the exact existing image when possible. Installs occur only
+    # inside Docker; no host package or GPU-driver installation is performed.
+    context = TRIAL / 'docker-context-v2-drm'
+    context.mkdir(parents=True, exist_ok=True)
+    base_id = cached_id or (available[0] if available else None)
+    base = 'debian:trixie-slim'
+    if base_id:
+        # BuildKit does not accept a local image config digest in FROM. Give
+        # the verified ID a dedicated tag; never retag the user's original image.
+        base = 'shadps4-readback-base:drm-' + base_id.split(':', 1)[1]
+        command(['docker', 'image', 'tag', base_id, base])
+        if image_id(base) != base_id:
+            raise RuntimeError('Docker repair base tag did not match the saved image')
     packages = ('gcc-14 g++-14 mold build-essential cmake ninja-build pkg-config python3 git '
                 'ca-certificates libx11-dev libxext-dev libwayland-dev libdecor-0-dev '
                 'libxkbcommon-dev libglfw3-dev libgles2-mesa-dev libasound2-dev libpulse-dev '
                 'libopenal-dev libudev-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev '
-                'libxrandr-dev libxfixes-dev libusb-1.0-0-dev libboost-dev libssl-dev uuid-dev')
+                'libxrandr-dev libxfixes-dev libusb-1.0-0-dev libboost-dev libssl-dev uuid-dev '
+                'libdrm-dev libgbm-dev')
     (context / 'Dockerfile').write_text(f'FROM {base}\nUSER root\nRUN apt-get update && '
         f'apt-get install -y --no-install-recommends {packages} && rm -rf /var/lib/apt/lists/*\n')
-    logged(['docker', 'build', '--pull=false', '--progress=plain', '-t', IMAGE_TAG, context], 'docker-image.log')
-    command(['docker', 'run', '--rm', '--entrypoint', '/bin/bash', IMAGE_TAG, '-lc', probe])
-    return command(['docker', 'image', 'inspect', '--format', '{{.Id}}', IMAGE_TAG]).stdout.strip()
+    logged(['docker', 'build', '--pull=false', '--progress=plain', '-t', IMAGE_TAG, context],
+           'docker-image-drm-repair.log')
+    repaired = image_id(IMAGE_TAG)
+    if not repaired or not probe_image(repaired):
+        raise RuntimeError('Docker dependency/DRM header verification failed after repair; '
+                           'the saved image pin and installed emulator remain unchanged')
+    print('DRM_GBM_HEADERS_AND_LINK=PASS')
+    return repaired
+
+
+def ensure_trial_image(state: dict) -> str:
+    old = state.get('image')
+    image = docker_image(old, allow_repair=not bool(state.get('baseline_sha')))
+    if old != image:
+        state.setdefault('image_history', []).append(dict(previous=old, image=image, time=time.time()))
+    state['image'] = image
+    write_json(STATE, state)
+    return image
 
 
 def docker_args(image: str, args: list) -> list:
@@ -280,9 +359,7 @@ def prepare(explicit_config: str | None, jobs: int) -> dict:
     head = git('rev-parse', 'HEAD')
     if head not in {BASE, state.get('candidate_head')}:
         raise RuntimeError('Source changed since trial initialization; not modifying it')
-    image = state.get('image') or docker_image()
-    state['image'] = image
-    write_json(STATE, state)
+    image = ensure_trial_image(state)
     logged(['git', '-C', SRC, 'fetch', '--no-tags', '--no-recurse-submodules', REPO, PATCH], 'fetch.log')
     if sorted(git('diff-tree', '--no-commit-id', '--name-only', '-r', PATCH).splitlines()) != FILES:
         raise RuntimeError('Candidate is not the expected six-file source-only commit')
