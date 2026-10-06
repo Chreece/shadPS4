@@ -392,6 +392,7 @@ void PredicationManager::EndDraw(vk::CommandBuffer cmdbuf, std::optional<u32> qu
 }
 
 std::optional<u32> PredicationManager::AcquireQuerySlot() {
+    std::scoped_lock lock{query_mutex};
     for (u32 attempt = 0; attempt < QueryPoolSize; ++attempt) {
         const u32 slot = (query_cursor + attempt) % QueryPoolSize;
         if (!query_busy[slot]) {
@@ -404,22 +405,24 @@ std::optional<u32> PredicationManager::AcquireQuerySlot() {
 }
 
 void PredicationManager::ReleaseQuerySlotsWhenDone(std::vector<u32>&& slots) {
-    scheduler.DeferOperation([this, slots = std::move(slots)]() mutable {
+    scheduler.DeferPriorityOperation([this, slots = std::move(slots)]() mutable {
+        std::scoped_lock lock{query_mutex};
+        if (instance.IsHostQueryResetSupported()) {
+            // The GPU tick containing the last use of these slots has completed, so they can be
+            // host-reset here in contiguous runs instead of one driver call per draw at acquire.
+            if (!std::ranges::is_sorted(slots)) {
+                std::ranges::sort(slots);
+            }
+            const auto device = instance.GetDevice();
+            ForEachContiguousRun(slots, [&](u32 first, u32 count, size_t) {
+                device.resetQueryPool(*query_pool, first, count);
+            });
+        }
+        // Publish slots only after any required host reset completed, so PrepareDrawQuery cannot
+        // reuse a slot while the priority completion thread is still resetting it.
         for (const u32 slot : slots) {
             query_busy[slot] = false;
         }
-        if (!instance.IsHostQueryResetSupported()) {
-            return;
-        }
-        // The GPU tick containing the last use of these slots has completed, so they can be
-        // host-reset here in contiguous runs instead of one driver call per draw at acquire.
-        if (!std::ranges::is_sorted(slots)) {
-            std::ranges::sort(slots);
-        }
-        const auto device = instance.GetDevice();
-        ForEachContiguousRun(slots, [&](u32 first, u32 count, size_t) {
-            device.resetQueryPool(*query_pool, first, count);
-        });
     });
 }
 
