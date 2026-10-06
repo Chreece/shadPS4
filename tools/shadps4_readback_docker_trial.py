@@ -234,7 +234,8 @@ def compile_binary(image: str, phase: str, jobs: int) -> tuple[str, str]:
             '-DCMAKE_ASM_COMPILER=/usr/bin/gcc-14', '-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold',
             '-DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=mold',
             '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF',
-            '-DCMAKE_C_COMPILER_LAUNCHER=', '-DCMAKE_CXX_COMPILER_LAUNCHER=']
+            '-DCMAKE_C_COMPILER_LAUNCHER=', '-DCMAKE_CXX_COMPILER_LAUNCHER=',
+            '-DPython3_EXECUTABLE=/usr/bin/python3', '-DPYTHON_EXECUTABLE=/usr/bin/python3']
     logged(docker_args(image, args), phase + '-configure.log')
     logged(docker_args(image, ['cmake', '--build', BUILD, '--target', 'shadps4', '--parallel', str(jobs)]),
            phase + '-build.log')
