@@ -95,6 +95,22 @@ void BufferCache::TickFrame() {
     }
 }
 
+void BufferCache::CommitGpuWrites() {
+    if (!memory_tracker->NeedsFenceProtection()) {
+        return;
+    }
+    u64 num_pages{};
+    // This runs on the GPU command-processor thread before the guest fence is
+    // signalled. No data copy or host-GPU wait is performed here; a subsequent
+    // CPU fault uses the existing synchronous ReadMemory/DownloadMemory path.
+    gpu_modified_ranges.ForEach([&](VAddr start, VAddr end) {
+        num_pages += memory_tracker->ProtectGpuWrites(start, end - start);
+    });
+    if (num_pages != 0 && !std::exchange(fence_readback_logged, true)) {
+        LOG_INFO(Render, "Relaxed readback fence protection active: {} pages", num_pages);
+    }
+}
+
 void BufferCache::InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks) {
     memory_tracker->InvalidateRegion(device_addr, size, [this, device_addr, size, assume_locks] {
         ReadMemory(device_addr, size, true, assume_locks);

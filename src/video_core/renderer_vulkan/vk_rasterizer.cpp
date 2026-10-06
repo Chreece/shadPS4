@@ -402,6 +402,7 @@ void Rasterizer::OnSubmit() {
 }
 
 void Rasterizer::OnFence() {
+    buffer_cache.CommitGpuWrites();
     texture_cache.ProcessDownloadImages();
 }
 

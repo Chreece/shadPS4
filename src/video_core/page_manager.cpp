@@ -447,7 +447,14 @@ struct SignalImpl : public PageManager::Impl {
 
 PageManager::PageManager(Vulkan::Rasterizer* rasterizer_) {
 #ifdef __linux__
-    if (EmulatorSettings.IsUserfaultfdTracking()) {
+    // The current UFFD backend registers write-protection faults only. It
+    // cannot implement the read watches used by either enabled readback mode.
+    const bool needs_read_faults = EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Relaxed ||
+                                  EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise;
+    if (EmulatorSettings.IsUserfaultfdTracking() && needs_read_faults) {
+        LOG_INFO(Config, "Using signal tracking: enabled GPU readbacks require CPU read faults");
+    }
+    if (EmulatorSettings.IsUserfaultfdTracking() && !needs_read_faults) {
         try {
             impl = std::make_unique<UffdImpl>(rasterizer_);
             LOG_INFO(Config, "Memory tracking method: userfaultfd");

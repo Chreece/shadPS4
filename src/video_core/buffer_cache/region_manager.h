@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <mutex>
 #include <utility>
 
 #include "common/adaptive_mutex.h"
@@ -182,6 +183,43 @@ public:
         }
     }
 
+    /// Read-protect GPU-written pages at a guest fence in Relaxed mode.
+    /// GPU dirtiness and installed read watches are deliberately separate: a page
+    /// can be downloaded by a CPU write fault before it ever reaches a fence.
+    u64 ProtectGpuWrites(u64 offset, u64 size) {
+        if (readbacks_mode != GpuReadbacksMode::Relaxed || size == 0) {
+            return 0;
+        }
+        std::scoped_lock lock{mutex};
+        const auto bounds = GetBounds(offset, size);
+        RegionBits read_prot{};
+        Bounds watcher_bounds = MIN_BOUNDS;
+        u64 num_pages{};
+        IterateWords(bounds, [&](u64 index, u64 mask) {
+            const u64 word = gpu[index] & ~read_protected[index] & mask;
+            read_prot[index] = word;
+            if (word == 0) {
+                return;
+            }
+            num_pages += std::popcount(word);
+            if (index <= watcher_bounds.start_word) {
+                watcher_bounds.start_word = index;
+                watcher_bounds.start_page = std::countr_zero(word);
+            }
+            watcher_bounds.end_word = index;
+            watcher_bounds.end_page = PAGES_PER_WORD - std::countl_zero(word) - 1;
+        });
+        if (num_pages == 0) {
+            return 0;
+        }
+        const RegionBits write_prot{};
+        tracker->UpdatePageWatchersForRegion(cpu_addr, watcher_bounds, write_prot, read_prot,
+                                             PageOp::None, PageOp::Track);
+        // Publish installed watches only after PageManager has applied protection.
+        IterateWords(bounds, [&](u64 index, u64) { read_protected[index] |= read_prot[index]; });
+        return num_pages;
+    }
+
     void Lock(const Bounds& bounds) noexcept {
         mutex.lock();
     }
@@ -213,9 +251,13 @@ private:
             prot_word |= write_prot[index];
         }
         if constexpr (gpu_op != StateOp::None) {
-            const u64 prev = gpu[index];
-            const u64 next = Apply<gpu_op>(prev, mask);
-            read_prot[index] = (next ^ prev) & mask;
+            if constexpr (gpu_op == StateOp::Clear) {
+                read_prot[index] = read_protected[index] & mask;
+            } else {
+                read_prot[index] = readbacks_mode == GpuReadbacksMode::Precise
+                                       ? (~read_protected[index] & mask)
+                                       : 0;
+            }
             prot_word |= read_prot[index];
         }
         if (prot_word) {
@@ -244,6 +286,11 @@ private:
         }
         if constexpr (gpu_op != StateOp::None) {
             gpu[index] = Apply<gpu_op>(gpu[index], mask);
+            if constexpr (gpu_op == StateOp::Clear) {
+                read_protected[index] &= ~mask;
+            } else if (readbacks_mode == GpuReadbacksMode::Precise) {
+                read_protected[index] |= mask;
+            }
             gpu.set_summary =
                 gpu[index] ? (gpu.set_summary | summary_bit) : (gpu.set_summary & ~summary_bit);
             gpu.clear_summary = gpu[index] != ~u64{0} ? (gpu.clear_summary | summary_bit)
@@ -309,10 +356,12 @@ private:
             } else if (state_op == StateOp::Clear) {
                 return PageOp::Track;
             }
-        } else if (type == Type::GPU && readbacks_mode == GpuReadbacksMode::Precise) {
-            if (state_op == StateOp::Set) {
+        } else if (type == Type::GPU) {
+            if (state_op == StateOp::Set && readbacks_mode == GpuReadbacksMode::Precise) {
                 return PageOp::Track;
-            } else if (state_op == StateOp::Clear) {
+            } else if (state_op == StateOp::Clear &&
+                       (readbacks_mode == GpuReadbacksMode::Precise ||
+                        readbacks_mode == GpuReadbacksMode::Relaxed)) {
                 return PageOp::Untrack;
             }
         }
@@ -334,6 +383,8 @@ private:
     u32 readbacks_mode;
     RegionBits cpu;
     RegionBits gpu;
+    // Protected pages may be a strict subset of GPU-dirty pages in Relaxed mode.
+    std::array<u64, NUM_REGION_WORDS> read_protected{};
     LockType mutex;
 };
 

@@ -37,6 +37,22 @@ public:
         });
     }
 
+    bool NeedsFenceProtection() const noexcept {
+        return readbacks_mode == GpuReadbacksMode::Relaxed;
+    }
+
+    /// Install pending read watches before the command processor publishes a fence.
+    u64 ProtectGpuWrites(VAddr cpu_addr, u64 size) {
+        if (!NeedsFenceProtection() || size == 0) {
+            return 0;
+        }
+        u64 num_pages{};
+        IteratePages(cpu_addr, size, [&](RegionManager* manager, u64 offset, u64 size) {
+            num_pages += manager->ProtectGpuWrites(offset, size);
+        });
+        return num_pages;
+    }
+
     /// Unmark region as modified from the host GPU
     void UnmarkRegionAsGpuModified(VAddr cpu_addr, u64 size, bool is_write) noexcept {
         IteratePages(cpu_addr, size, [is_write](RegionManager* manager, u64 offset, u64 size) {
