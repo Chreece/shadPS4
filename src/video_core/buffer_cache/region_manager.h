@@ -83,16 +83,19 @@ public:
     template <StateOp cpu_op, StateOp gpu_op, bool locked = true>
     void ChangeRegionState(u64 offset, u64 size) {
         auto bounds = GetBounds(offset, size);
+        if constexpr (locked) {
+            mutex.lock();
+        }
         if (!HasEffect<cpu_op, gpu_op>(bounds)) {
+            if constexpr (locked) {
+                mutex.unlock();
+            }
             return;
         }
         bool update_watchers{};
         RegionBits write_prot;
         RegionBits read_prot;
         Bounds watcher_bounds = MIN_BOUNDS;
-        if constexpr (locked) {
-            mutex.lock();
-        }
         IterateWords(bounds, [&](u64 index, u64 mask) {
             update_watchers |= UpdateProtection<cpu_op, gpu_op>(write_prot, read_prot,
                                                                 watcher_bounds, index, mask);
@@ -114,7 +117,13 @@ public:
     template <Type type, StateOp cpu_op, StateOp gpu_op, bool locked = true>
     void ForEachModifiedRange(u64 offset, s64 size, auto&& func) {
         auto bounds = GetBounds(offset, size);
+        if constexpr (locked) {
+            mutex.lock();
+        }
         if (!HasEffect<cpu_op, gpu_op, type>(bounds)) {
+            if constexpr (locked) {
+                mutex.unlock();
+            }
             return;
         }
         auto& state = GetRegionBits<type>();
@@ -124,9 +133,6 @@ public:
         u64 start_page{};
         u64 end_page{};
         Bounds watcher_bounds = MIN_BOUNDS;
-        if constexpr (locked) {
-            mutex.lock();
-        }
         IterateWords(bounds, [&](u64 index, u64 mask) {
             const u64 base_page = index * PAGES_PER_WORD;
             const u64 word = state[index] & mask;
