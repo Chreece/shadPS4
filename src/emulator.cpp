@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <array>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -36,6 +37,7 @@
 #include "core/file_format/psf.h"
 #include "core/file_format/trp.h"
 #include "core/file_sys/fs.h"
+#include "core/libraries/font/font_internal.h"
 #include "core/libraries/kernel/kernel.h"
 #include "core/libraries/libs.h"
 #include "core/libraries/np/np_trophy.h"
@@ -133,6 +135,76 @@ s32 ReadCompiledSdkVersion(const std::string& guest_or_host_path) {
         return param.sdk_version;
     }
     return 0;
+}
+
+bool PrepareBuiltinGuestFontsForPlaytest() {
+    const auto bytes = Libraries::Font::Internal::LoadBuiltinFontBytesShared(
+        "@builtin/NotoSans-Regular.ttf", nullptr);
+    if (!bytes || bytes->empty()) {
+        LOG_ERROR(Loader, "Playtest font fallback: embedded Latin font is unavailable");
+        return false;
+    }
+
+    const auto root =
+        Common::FS::GetUserPath(Common::FS::PathType::TempDataDir) / "tlg-builtin-fonts";
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    ec.clear();
+
+    const auto font = root / "font";
+    const auto font2 = root / "font2";
+    std::filesystem::create_directories(font, ec);
+    if (ec) {
+        LOG_ERROR(Loader, "Playtest font fallback: failed to create {}: {}", font.string(),
+                  ec.message());
+        return false;
+    }
+    std::filesystem::create_directories(font2, ec);
+    if (ec) {
+        LOG_ERROR(Loader, "Playtest font fallback: failed to create {}: {}", font2.string(),
+                  ec.message());
+        return false;
+    }
+
+    static constexpr std::array<std::string_view, 15> names{
+        "SST-Light.otf",
+        "SST-Roman.otf",
+        "SST-Medium.otf",
+        "SST-Bold.otf",
+        "SST-Italic.otf",
+        "SST-LightItalic.otf",
+        "SST-MediumItalic.otf",
+        "SST-BoldItalic.otf",
+        "SST-EU-ROMAN-L.OTF",
+        "SST-EU-ROMAN.OTF",
+        "SST-EU-ROMAN-M.OTF",
+        "SST-EU-ROMAN-R.OTF",
+        "SST-EU-ROMAN-I.OTF",
+        "SST-EU-ROMAN-B.OTF",
+        "SST-EU-ROMAN-BI.OTF",
+    };
+
+    const auto write_file = [&](const std::filesystem::path& path) -> bool {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            return false;
+        }
+        out.write(reinterpret_cast<const char*>(bytes->data()),
+                  static_cast<std::streamsize>(bytes->size()));
+        return static_cast<bool>(out);
+    };
+
+    for (const auto name : names) {
+        if (!write_file(font / name) || !write_file(font2 / name)) {
+            LOG_ERROR(Loader, "Playtest font fallback: failed to materialize {}", name);
+            return false;
+        }
+    }
+
+    EmulatorSettings.SetFontsDir(root);
+    LOG_WARNING(Config,
+                "Playtest override: exposing embedded Latin font files through guest font mounts");
+    return true;
 }
 
 std::map<s32, std::string> ExtractTrophies(std::string_view npbind_guest,
@@ -436,6 +508,9 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
     if (id == "CUSA03745") {
         EmulatorSettings.SetReadbacksMode(static_cast<u32>(GpuReadbacksMode::Precise), true);
         LOG_WARNING(Config, "Playtest override: forcing Precise GPU readbacks for {}", id);
+        if (!PrepareBuiltinGuestFontsForPlaytest()) {
+            LOG_WARNING(Config, "Playtest override: guest font fallback setup failed");
+        }
     }
     // Switch to configured log
     Common::Log::Switch((!id.empty() && EmulatorSettings.IsLogSeparate()) ? id + ".log"
