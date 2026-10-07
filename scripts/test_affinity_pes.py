@@ -99,7 +99,7 @@ def read_sfo(path):
     return result
 
 
-def find_game(context):
+def find_game(context, inspected=None):
     args = context["args"]
     for index, arg in enumerate(args[1:], 1):
         if arg == "--":
@@ -125,9 +125,14 @@ def find_game(context):
         mods_sfo = Path(str(folder) + "-mods") / "sce_sys/param.sfo"
         if mods_sfo.is_file():
             sfo = mods_sfo
+        detail = {"argument": arg, "resolved_path": str(path), "path_exists": path.exists(),
+                  "sfo": str(sfo), "sfo_exists": sfo.is_file()}
+        if inspected is not None:
+            inspected.append(detail)
         if not sfo.is_file():
             continue
         metadata = read_sfo(sfo)
+        detail["metadata"] = metadata
         if re.search(r"\bPES\b|efootball|pro evolution soccer", metadata.get("TITLE", ""), re.I):
             serial = (metadata["CONTENT_ID"][7:16] if metadata.get("CONTENT_ID")
                       else metadata.get("TITLE_ID", ""))
@@ -146,24 +151,93 @@ def capture_launch(evidence):
     deadline = time.monotonic() + 300
     next_update = time.monotonic() + 30
     observed = {}
-    while time.monotonic() < deadline:
-        for info in emulators():
-            try:
-                context = launch_context(info)
-                game = find_game(context)
-                observed[str(info["pid"])] = {"exe": str(info["exe"]), "cwd": str(info["cwd"]),
-                                               "args": context["args"], "profile": str(context["profile"])}
-                if game:
-                    (evidence / "observed-launches.json").write_text(json.dumps(observed, indent=2))
-                    return context, game
-            except (OSError, ValueError, struct.error) as error:
-                observed[str(info["pid"])] = {"error": str(error)}
-        if time.monotonic() >= next_update:
-            say("Waiting for an unpacked PES game launched by shadPS4...")
-            next_update += 30
-        time.sleep(0.2)
-    (evidence / "observed-launches.json").write_text(json.dumps(observed, indent=2))
+    try:
+        while time.monotonic() < deadline:
+            for info in emulators():
+                detail = {"exe": str(info["exe"]), "cwd": str(info["cwd"]), "inspected": []}
+                observed[str(info["pid"])] = detail
+                try:
+                    context = launch_context(info)
+                    detail.update(args=context["args"], profile=str(context["profile"]))
+                    game = find_game(context, detail["inspected"])
+                    detail["game_recognized"] = game is not None
+                    if game:
+                        return context, game
+                except (OSError, ValueError, struct.error) as error:
+                    detail["error"] = str(error)
+            if time.monotonic() >= next_update:
+                (evidence / "observed-launches.json").write_text(json.dumps(observed, indent=2))
+                say("Waiting for an unpacked PES game launched by shadPS4...")
+                next_update += 30
+            time.sleep(0.2)
+    finally:
+        (evidence / "observed-launches.json").write_text(json.dumps(observed, indent=2))
     raise RuntimeError("No identifiable PES launch captured within five minutes; evidence collected")
+
+
+def diagnose_launch():
+    evidence = Path(tempfile.mkdtemp(prefix="shadps4-pes-detection-", dir=Path.home()))
+    report = {"collector_uid": os.getuid(), "processes": [], "errors": []}
+    say("CAPTURING=Reading running PES launch details; the game stays open")
+    self_proc = Path("/proc/self").resolve()
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit() or proc == self_proc:
+            continue
+        detail = {"pid": int(proc.name), "errors": []}
+        for name in ("comm", "cmdline", "exe", "cwd"):
+            try:
+                if name in {"exe", "cwd"}:
+                    detail[name] = os.readlink(proc / name)
+                elif name == "cmdline":
+                    detail["args"] = [value.decode(errors="replace") for value in
+                                      (proc / name).read_bytes().split(b"\0") if value]
+                else:
+                    detail[name] = (proc / name).read_text().strip()
+            except OSError as error:
+                detail["errors"].append(f"{name}: {error}")
+        args = detail.get("args", [])
+        identity = " ".join([detail.get("comm", ""), detail.get("exe", ""), *args[:1]])
+        if "shadps4" not in identity.lower() and not any(
+                re.search(r"CUSA\d{5}|(?:^|/)eboot\.bin$|\.zar$", arg, re.I) for arg in args[1:]):
+            continue
+        report["processes"].append(detail)
+        try:
+            detail["uid"] = proc.stat().st_uid
+            detail["runner_executable_name_match"] = "shadps4" in Path(detail.get("exe", "")).name.lower()
+            context = launch_context(process_info(proc.name))
+            detail["profile"] = str(context["profile"])
+            detail["profile_exists"] = context["profile"].is_dir()
+            detail["inspected"] = []
+            game = find_game(context, detail["inspected"])
+            detail["game_recognized"] = game is not None
+            if game:
+                detail["game"] = {key: str(value) for key, value in game.items()}
+            log_path = context["profile"] / "log/shad_log.txt"
+            if log_path.is_file():
+                with log_path.open("rb") as stream:
+                    stream.seek(max(0, log_path.stat().st_size - 256 * 1024))
+                    lines = stream.read(256 * 1024).decode(errors="replace").splitlines()
+                detail["game_log_lines"] = [line for line in lines if re.search(
+                    r"CUSA\d{5}|eboot\.bin|param\.sfo|\bPES|efootball|pro evolution", line, re.I)][-100:]
+        except (OSError, ValueError, struct.error) as error:
+            detail["errors"].append(str(error))
+    try:
+        previous = sorted(Path.home().glob("shadps4-affinity-pes-*"),
+                          key=lambda path: path.stat().st_mtime, reverse=True)
+        for folder in [path for path in previous if path.is_dir()][:3]:
+            for name in ("observed-launches.json", "summary.json"):
+                path = folder / name
+                if path.is_file():
+                    copy_path(path, evidence / "previous" / folder.name / name)
+    except OSError as error:
+        report["errors"].append(str(error))
+    (evidence / "launch-detection.json").write_text(json.dumps(report, indent=2) + "\n")
+    archive_path = evidence.with_suffix(".tar.gz")
+    with tarfile.open(archive_path, "w:gz") as archive:
+        archive.add(evidence, arcname=evidence.name)
+    say("PROCESSES_CAPTURED=" + str(len(report["processes"])))
+    say("UPLOAD_ONLY=" + str(archive_path))
+    return 0
 
 
 def wait_for_close(context):
@@ -458,4 +532,9 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    if sys.argv[1:] == ["--diagnose"]:
+        sys.exit(diagnose_launch())
+    elif sys.argv[1:]:
+        raise SystemExit("Usage: test_affinity_pes.py [--diagnose]")
+    else:
+        sys.exit(main())
