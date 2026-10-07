@@ -21,10 +21,10 @@ import time
 import urllib.request
 
 
-SOURCE_COMMIT = "72b19918e262154fca7065b2568976d6a04990c8"
+SOURCE_COMMIT = "ab86cf43ce0ade85bbe810d4ab012f3b4b796deb"
 REPOSITORY = "https://github.com/Chreece/shadPS4.git"
-SUITE_COMMIT = "72b19918e262154fca7065b2568976d6a04990c8"
-SUITE_SHA256 = "cb997d875b09d2a6429c9cf23566ed5a59193dfb0b44e91fa722298cd8ead393"
+SUITE_COMMIT = "ab86cf43ce0ade85bbe810d4ab012f3b4b796deb"
+SUITE_SHA256 = "02d358e53e90e045dcbb9f5cebafc1f3c33769c8d9fd3cd8bf48bf4d7e1c3550"
 
 
 def say(message):
@@ -256,6 +256,7 @@ def run_case(binary, case, suite, cpus, label, work, evidence, env):
                     if (dynamic_started is not None and next_change < len(change_masks)
                             and now - dynamic_started >= next_change * 0.4):
                         mask = change_masks[next_change]
+                        threads = host_threads(process.pid)
                         tids = [int(t["tid"]) for t in threads if t["name"] == "affinity-live"]
                         if len(tids) != case["expected_workers"]:
                             raise RuntimeError("Dynamic homebrew workers were not found; no host masks changed")
@@ -281,10 +282,16 @@ def run_case(binary, case, suite, cpus, label, work, evidence, env):
     extended = re.search(r"AFFINITY_RESULT failures=(\d+) samples=(\d+)", content)
     initial_mask = re.search(r"AFFINITY_START mask=([0-9a-fA-F]+)", content)
     dynamic = re.search(r"AFFINITY_DYNAMIC_RESULT failures=(\d+) samples=(\d+) workers=(\d+)", content)
+    cpu_id = re.search(r"CPU_ID_STATE_RESULT failures=(\d+) samples=(\d+)", content)
+    cpu_id_signals = re.search(r"CPU_ID_SIGNAL_RESULT failures=(\d+) handled=(\d+)", content)
     if case.get("dynamic"):
         checks_ok = (bool(dynamic) and int(dynamic[1]) == 0 and int(dynamic[2]) > 0
                      and int(dynamic[3]) == case["expected_workers"]
                      and len(changes) == len(change_masks))
+        if case.get("cpu_id"):
+            checks_ok = checks_ok and bool(cpu_id) and int(cpu_id[1]) == 0 and int(cpu_id[2]) == 1728
+            checks_ok = (checks_ok and bool(cpu_id_signals) and int(cpu_id_signals[1]) == 0
+                         and int(cpu_id_signals[2]) == 32)
     elif case.get("extended"):
         checks_ok = (bool(extended) and int(extended[1]) == 0
                      and int(extended[2]) == case["expected_samples"]
@@ -296,10 +303,12 @@ def run_case(binary, case, suite, cpus, label, work, evidence, env):
               "timeout": timed_out, "passes": passes, "failures": failures, "ok": ok,
               "extended": extended.group(0) if extended else None,
               "dynamic": dynamic.group(0) if dynamic else None,
+              "cpu_id": cpu_id.group(0) if cpu_id else None,
+              "cpu_id_signals": cpu_id_signals.group(0) if cpu_id_signals else None,
               "host_mask_changes": changes,
               "guest_mask": int(initial_mask[1], 16) if initial_mask else None}
     say(f"TEST={name} RESULT={'PASS' if ok else 'FAIL'}")
-    if passes == 0 and failures == 0 and extended is None and dynamic is None:
+    if passes == 0 and failures == 0 and extended is None and dynamic is None and cpu_id is None:
         result["infrastructure_failure"] = True
         diagnose_startup(args, runtime, evidence, name, env)
     return result
@@ -410,7 +419,7 @@ def main():
                 continue
             seen.add(tuple(cpus))
             selected = (cases if label in {"all", "two", "one"}
-                        else [case for case in cases if case.get("extended")])
+                        else [case for case in cases if case.get("extended") or case.get("cpu_id")])
             for case in selected:
                 result = run_case(binary, case, suite, cpus, label, work, evidence, env)
                 summary["tests"].append(result)
