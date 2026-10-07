@@ -99,6 +99,46 @@ def read_sfo(path):
     return result
 
 
+def resolve_game_id(context, game_id, inspected):
+    config_path = context["profile"] / "config.json"
+    config = json.loads(config_path.read_text())
+    roots = []
+    for entry in config.get("General", {}).get("install_dirs", []):
+        if entry["enabled"]:
+            root = Path(entry["path"])
+            roots.append(root if root.is_absolute() else context["cwd"] / root)
+    detail = {"game_id": game_id, "config": str(config_path),
+              "enabled_install_dirs": [str(root) for root in roots]}
+    if inspected is not None:
+        inspected.append(detail)
+
+    def search(root, depth):
+        if depth < 0 or not root.is_dir():
+            return None
+        for folder in ([root] if root.name == game_id else []) + [root / game_id]:
+            if (folder / "sce_sys/param.sfo").is_file() and (folder / "eboot.bin").is_file():
+                return folder / "eboot.bin"
+        archive = root / (game_id + ".zar")
+        if archive.is_file():
+            raise RuntimeError("PES uses a .zar archive; this runner requires an unpacked game: " + str(archive))
+        try:
+            for child in root.iterdir():
+                if child.is_dir():
+                    found = search(child, depth - 1)
+                    if found is not None:
+                        return found
+        except PermissionError:
+            return None
+        return None
+
+    for root in roots:
+        found = search(root, 5)
+        if found is not None:
+            detail["resolved_path"] = str(found)
+            return found
+    raise RuntimeError("Could not resolve game ID " + game_id + " in the captured profile's enabled game folders")
+
+
 def find_game(context, inspected=None):
     args = context["args"]
     for index, arg in enumerate(args[1:], 1):
@@ -108,6 +148,8 @@ def find_game(context, inspected=None):
         if value.startswith("-"):
             continue
         path = absolute(value, context["cwd"])
+        if not path.exists() and re.fullmatch(r"CUSA\d{5}", value):
+            path = resolve_game_id(context, value, inspected)
         folder = path if path.is_dir() else path.parent
         for suffix in ["-UPDATE", "-patch", "-mods"]:
             if folder.name.endswith(suffix):
@@ -142,7 +184,8 @@ def find_game(context, inspected=None):
             if not re.fullmatch(r"[A-Za-z0-9_-]+", save_serial):
                 raise ValueError("Unexpected PES save directory")
             return {"serial": serial, "save_serial": save_serial,
-                    "title": metadata["TITLE"], "folder": folder, "sfo": sfo}
+                    "title": metadata["TITLE"], "folder": folder, "sfo": sfo,
+                    "boot_path": path, "argument_index": index}
     return None
 
 
@@ -165,6 +208,9 @@ def capture_launch(evidence):
                         return context, game
                 except (OSError, ValueError, struct.error) as error:
                     detail["error"] = str(error)
+                except RuntimeError as error:
+                    detail["error"] = str(error)
+                    raise
             if time.monotonic() >= next_update:
                 (evidence / "observed-launches.json").write_text(json.dumps(observed, indent=2))
                 say("Waiting for an unpacked PES game launched by shadPS4...")
@@ -219,7 +265,7 @@ def diagnose_launch():
                     lines = stream.read(256 * 1024).decode(errors="replace").splitlines()
                 detail["game_log_lines"] = [line for line in lines if re.search(
                     r"CUSA\d{5}|eboot\.bin|param\.sfo|\bPES|efootball|pro evolution", line, re.I)][-100:]
-        except (OSError, ValueError, struct.error) as error:
+        except (OSError, ValueError, RuntimeError, struct.error) as error:
             detail["errors"].append(str(error))
     try:
         previous = sorted(Path.home().glob("shadps4-affinity-pes-*"),
@@ -353,6 +399,12 @@ def candidate_arguments(context):
             index += 2
             continue
         if arg.startswith("--wait-for-pid=") or arg in {"--wait-for-debugger", "--log-append"}:
+            index += 1
+            continue
+        game = context.get("game")
+        if game and index + 1 == game["argument_index"]:
+            prefix = "--game=" if arg.startswith("--game=") else ""
+            result.append(prefix + str(game["boot_path"]))
             index += 1
             continue
         prefix, sep, value = arg.partition("=")
