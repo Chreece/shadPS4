@@ -4,6 +4,7 @@
 
 """Build an isolated affinity candidate and collect the OpenOrbis test results."""
 
+import argparse
 import hashlib
 import json
 import os
@@ -16,11 +17,13 @@ import sys
 import tarfile
 import tempfile
 import time
+import urllib.request
 
 
 SOURCE_COMMIT = "82d07380b6090149e4df5d8092fd2e7925ad5007"
 REPOSITORY = "https://github.com/Chreece/shadPS4.git"
-SUITE_SHA256 = "b167f7d0e4cdbca03b7c9ba69cc47ec74773da968ea751032dee3c9d7ceee559"
+SUITE_COMMIT = "33412f425dd956bc4b40753b3eb5eb4bb52c60f9"
+SUITE_SHA256 = "129e381ed37a7a0bf21d9745a7202bce0fe03983f0446649c43205b2a8b89c18"
 
 
 def say(message):
@@ -253,12 +256,18 @@ def run_case(binary, case, suite, cpus, label, work, evidence, env):
     passes = content.count("[Test passed!]")
     failures = content.count("[Test FAILED!]")
     extended = re.search(r"AFFINITY_RESULT failures=(\d+) samples=(\d+)", content)
-    checks_ok = (bool(extended) and int(extended[1]) == 0 and int(extended[2]) > 0
-                 if case.get("extended") else failures == 0 and passes == case["expected_passes"])
+    initial_mask = re.search(r"AFFINITY_START mask=([0-9a-fA-F]+)", content)
+    if case.get("extended"):
+        checks_ok = (bool(extended) and int(extended[1]) == 0
+                     and int(extended[2]) == case["expected_samples"]
+                     and bool(initial_mask) and int(initial_mask[1], 16) == case["expected_mask"])
+    else:
+        checks_ok = failures == 0 and passes == case["expected_passes"]
     ok = checks_ok and process.returncode == 0 and not timed_out
     result = {"name": name, "host_cpus": cpus, "returncode": process.returncode,
               "timeout": timed_out, "passes": passes, "failures": failures, "ok": ok,
-              "extended": extended.group(0) if extended else None}
+              "extended": extended.group(0) if extended else None,
+              "guest_mask": int(initial_mask[1], 16) if initial_mask else None}
     (evidence / f"{name}-threads.json").write_text(json.dumps(samples, indent=2))
     say(f"TEST={name} RESULT={'PASS' if ok else 'FAIL'}")
     if passes == 0 and failures == 0 and extended is None:
@@ -268,11 +277,20 @@ def run_case(binary, case, suite, cpus, label, work, evidence, env):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--reuse-build", action="store_true",
+                        help="Reuse the cached candidate without configuring or building")
+    parser.add_argument("--binary-sha256", help="Required checksum when reusing a verified build")
+    parser.add_argument("--case", action="append", help="Run only the named homebrew case")
+    args = parser.parse_args()
+    if args.reuse_build and not re.fullmatch(r"[0-9a-f]{64}", args.binary_sha256 or ""):
+        parser.error("--reuse-build requires --binary-sha256 from the previous evidence archive")
     cache = Path.home() / ".cache/shadps4-affinity-20261007"
     cache.mkdir(parents=True, exist_ok=True)
     evidence = Path(tempfile.mkdtemp(prefix="shadps4-affinity-evidence-", dir=Path.home()))
     work = Path(tempfile.mkdtemp(prefix="runtime-", dir=cache))
-    summary = {"source_commit": SOURCE_COMMIT, "tests": [], "installed_binary_changed": False,
+    summary = {"source_commit": SOURCE_COMMIT, "suite_commit": SUITE_COMMIT,
+               "tests": [], "installed_binary_changed": False,
                "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     try:
         active = existing_emulators()
@@ -283,38 +301,48 @@ def main():
         summary["uname"] = list(os.uname())
         env = display_environment()
         log = evidence / "build.log"
-        cc, cxx = compiler(work, log)
-        summary["compiler"] = cxx
-        source = cache / "source"
-        if not source.exists():
-            source.mkdir()
-            command(["git", "init", source], log)
-            command(["git", "remote", "add", "origin", REPOSITORY], log, cwd=source)
-        dirty = subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=no"], cwd=source, text=True)
-        if dirty.strip():
-            raise RuntimeError("The isolated source checkout has local changes; preserved")
-        command(["git", "fetch", "--depth", "1", "--no-tags", "--no-recurse-submodules",
-                 "origin", SOURCE_COMMIT], log, cwd=source)
-        command(["git", "checkout", "--detach", SOURCE_COMMIT], log, cwd=source)
-        command(["git", "submodule", "update", "--init", "--recursive", "--jobs", "4"], log, cwd=source)
-        head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
-        if head != SOURCE_COMMIT:
-            raise RuntimeError("Source revision mismatch")
-        build = cache / ("build-" + SOURCE_COMMIT[:12])
-        configure = ["cmake", "-S", source, "-B", build,
-                     "-DCMAKE_BUILD_TYPE=Release", "-DENABLE_TESTS=OFF",
-                     "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF",
-                     "-DCMAKE_CXX_SCAN_FOR_MODULES=OFF",
-                     "-DCMAKE_C_COMPILER=" + cc, "-DCMAKE_CXX_COMPILER=" + cxx,
-                     "-DENABLE_UPDATER=OFF"]
-        if shutil.which("ninja") and not (build / "CMakeCache.txt").exists():
-            configure += ["-G", "Ninja"]
-        command(configure, log)
-        command(["cmake", "--build", build, "--target", "shadps4", "--parallel", str(min(8, len(allowed)))], log)
-        binary = build / "shadps4"
+        binary = cache / ("build-" + SOURCE_COMMIT[:12]) / "shadps4"
+        if args.reuse_build:
+            if hashlib.sha256(binary.read_bytes()).hexdigest() != args.binary_sha256:
+                raise RuntimeError("Cached binary differs from the verified build; preserved")
+            summary["reused_build"] = True
+        else:
+            cc, cxx = compiler(work, log)
+            summary["compiler"] = cxx
+            source = cache / "source"
+            if not source.exists():
+                source.mkdir()
+                command(["git", "init", source], log)
+                command(["git", "remote", "add", "origin", REPOSITORY], log, cwd=source)
+            dirty = subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=no"], cwd=source, text=True)
+            if dirty.strip():
+                raise RuntimeError("The isolated source checkout has local changes; preserved")
+            command(["git", "fetch", "--depth", "1", "--no-tags", "--no-recurse-submodules",
+                     "origin", SOURCE_COMMIT], log, cwd=source)
+            command(["git", "checkout", "--detach", SOURCE_COMMIT], log, cwd=source)
+            command(["git", "submodule", "update", "--init", "--recursive", "--jobs", "4"], log, cwd=source)
+            head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+            if head != SOURCE_COMMIT:
+                raise RuntimeError("Source revision mismatch")
+            build = cache / ("build-" + SOURCE_COMMIT[:12])
+            configure = ["cmake", "-S", source, "-B", build,
+                         "-DCMAKE_BUILD_TYPE=Release", "-DENABLE_TESTS=OFF",
+                         "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF",
+                         "-DCMAKE_CXX_SCAN_FOR_MODULES=OFF",
+                         "-DCMAKE_C_COMPILER=" + cc, "-DCMAKE_CXX_COMPILER=" + cxx,
+                         "-DENABLE_UPDATER=OFF"]
+            if shutil.which("ninja") and not (build / "CMakeCache.txt").exists():
+                configure += ["-G", "Ninja"]
+            command(configure, log)
+            command(["cmake", "--build", build, "--target", "shadps4", "--parallel", str(min(8, len(allowed)))], log)
+            binary = build / "shadps4"
         summary["binary"] = str(binary)
         summary["binary_sha256"] = hashlib.sha256(binary.read_bytes()).hexdigest()
-        suite_archive = source / "hardware/affinity_revision/suite.tar.gz"
+        suite_archive = work / "suite.tar.gz"
+        suite_url = (f"https://raw.githubusercontent.com/Chreece/shadPS4/{SUITE_COMMIT}/"
+                     "hardware/affinity_revision/suite.tar.gz")
+        with urllib.request.urlopen(suite_url, timeout=30) as response:
+            suite_archive.write_bytes(response.read())
         if hashlib.sha256(suite_archive.read_bytes()).hexdigest() != SUITE_SHA256:
             raise RuntimeError("Homebrew suite checksum mismatch")
         suite = work / "suite"
@@ -326,6 +354,11 @@ def main():
                     raise RuntimeError("Unexpected suite entry")
             archive.extractall(suite, filter="data")
         cases = json.loads((suite / "cases.json").read_text())
+        if args.case:
+            unknown = set(args.case) - {case["directory"] for case in cases}
+            if unknown:
+                raise RuntimeError("Unknown homebrew case: " + ",".join(sorted(unknown)))
+            cases = [case for case in cases if case["directory"] in args.case]
         startup = work / "startup-check"
         prepare_runtime(startup)
         startup_args = [binary, "--add-game-folder", suite]
@@ -342,7 +375,8 @@ def main():
             if tuple(cpus) in seen:
                 continue
             seen.add(tuple(cpus))
-            selected = cases if label in {"all", "two", "one"} else [cases[-1]]
+            selected = (cases if label in {"all", "two", "one"}
+                        else [case for case in cases if case.get("extended")])
             for case in selected:
                 result = run_case(binary, case, suite, cpus, label, work, evidence, env)
                 summary["tests"].append(result)
