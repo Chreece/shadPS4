@@ -5,6 +5,7 @@
 """Build an isolated affinity candidate and collect the OpenOrbis test results."""
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -20,10 +21,10 @@ import time
 import urllib.request
 
 
-SOURCE_COMMIT = "82d07380b6090149e4df5d8092fd2e7925ad5007"
+SOURCE_COMMIT = "72b19918e262154fca7065b2568976d6a04990c8"
 REPOSITORY = "https://github.com/Chreece/shadPS4.git"
-SUITE_COMMIT = "33412f425dd956bc4b40753b3eb5eb4bb52c60f9"
-SUITE_SHA256 = "129e381ed37a7a0bf21d9745a7202bce0fe03983f0446649c43205b2a8b89c18"
+SUITE_COMMIT = "72b19918e262154fca7065b2568976d6a04990c8"
+SUITE_SHA256 = "cb997d875b09d2a6429c9cf23566ed5a59193dfb0b44e91fa722298cd8ead393"
 
 
 def say(message):
@@ -232,6 +233,10 @@ def run_case(binary, case, suite, cpus, label, work, evidence, env):
             "--ignore-game-patch", str(suite / case["directory"] / "eboot.bin")]
     samples = []
     timed_out = False
+    changes = []
+    dynamic_started = None
+    next_change = 0
+    change_masks = [cpus[-1:], sorted(set(cpus[::2] + cpus[-1:])), cpus[:1], cpus] * 3
     with output.open("w") as log:
         process = subprocess.Popen(args, cwd=runtime, env=env, stdin=subprocess.DEVNULL,
                                    stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -242,22 +247,45 @@ def run_case(binary, case, suite, cpus, label, work, evidence, env):
                     timed_out = True
                     capture_process(process.pid, evidence / f"{name}-process.txt")
                     break
-                samples.append(host_threads(process.pid))
+                threads = host_threads(process.pid)
+                samples.append(threads)
+                if case.get("dynamic"):
+                    now = time.monotonic()
+                    if dynamic_started is None and "AFFINITY_DYNAMIC_READY" in output.read_text(errors="replace"):
+                        dynamic_started = now
+                    if (dynamic_started is not None and next_change < len(change_masks)
+                            and now - dynamic_started >= next_change * 0.4):
+                        mask = change_masks[next_change]
+                        tids = [int(t["tid"]) for t in threads if t["name"] == "affinity-live"]
+                        if len(tids) != case["expected_workers"]:
+                            raise RuntimeError("Dynamic homebrew workers were not found; no host masks changed")
+                        for tid in tids:
+                            os.sched_setaffinity(tid, mask)
+                        changes.append({"phase": next_change, "seconds": now - dynamic_started,
+                                        "host_cpus": mask, "tids": tids})
+                        next_change += 1
                 time.sleep(0.1)
         finally:
             stop(process)
+            (evidence / f"{name}-threads.json").write_text(json.dumps(samples, indent=2))
+            (evidence / f"{name}-host-changes.json").write_text(json.dumps(changes, indent=2))
     logs = list((runtime / "user/log").glob("*"))
     for path in logs:
         if path.is_file():
             shutil.copy2(path, evidence / f"{name}-{path.name}")
     content = output.read_text(errors="replace")
-    if "[Test passed!]" not in content and "AFFINITY_RESULT" not in content:
+    if not any(marker in content for marker in ("[Test passed!]", "AFFINITY_RESULT", "AFFINITY_DYNAMIC_RESULT")):
         content += "\n" + "\n".join(p.read_text(errors="replace") for p in logs if p.is_file())
     passes = content.count("[Test passed!]")
     failures = content.count("[Test FAILED!]")
     extended = re.search(r"AFFINITY_RESULT failures=(\d+) samples=(\d+)", content)
     initial_mask = re.search(r"AFFINITY_START mask=([0-9a-fA-F]+)", content)
-    if case.get("extended"):
+    dynamic = re.search(r"AFFINITY_DYNAMIC_RESULT failures=(\d+) samples=(\d+) workers=(\d+)", content)
+    if case.get("dynamic"):
+        checks_ok = (bool(dynamic) and int(dynamic[1]) == 0 and int(dynamic[2]) > 0
+                     and int(dynamic[3]) == case["expected_workers"]
+                     and len(changes) == len(change_masks))
+    elif case.get("extended"):
         checks_ok = (bool(extended) and int(extended[1]) == 0
                      and int(extended[2]) == case["expected_samples"]
                      and bool(initial_mask) and int(initial_mask[1], 16) == case["expected_mask"])
@@ -267,10 +295,11 @@ def run_case(binary, case, suite, cpus, label, work, evidence, env):
     result = {"name": name, "host_cpus": cpus, "returncode": process.returncode,
               "timeout": timed_out, "passes": passes, "failures": failures, "ok": ok,
               "extended": extended.group(0) if extended else None,
+              "dynamic": dynamic.group(0) if dynamic else None,
+              "host_mask_changes": changes,
               "guest_mask": int(initial_mask[1], 16) if initial_mask else None}
-    (evidence / f"{name}-threads.json").write_text(json.dumps(samples, indent=2))
     say(f"TEST={name} RESULT={'PASS' if ok else 'FAIL'}")
-    if passes == 0 and failures == 0 and extended is None:
+    if passes == 0 and failures == 0 and extended is None and dynamic is None:
         result["infrastructure_failure"] = True
         diagnose_startup(args, runtime, evidence, name, env)
     return result
@@ -292,7 +321,12 @@ def main():
     summary = {"source_commit": SOURCE_COMMIT, "suite_commit": SUITE_COMMIT,
                "tests": [], "installed_binary_changed": False,
                "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
+    lock = (cache / "homebrew.lock").open("a")
     try:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("Another affinity homebrew test is already running") from None
         active = existing_emulators()
         if active:
             raise RuntimeError("Close the running shadPS4 session and rerun this command; PIDs=" + ",".join(active))
@@ -384,11 +418,16 @@ def main():
                     raise RuntimeError("The homebrew did not reach its checks; startup evidence collected")
         summary["ok"] = bool(summary["tests"]) and all(r["ok"] for r in summary["tests"])
         say("AFFINITY_SUITE=" + ("PASS" if summary["ok"] else "FAIL"))
+    except KeyboardInterrupt:
+        summary["ok"] = False
+        summary["error"] = "Interrupted by user; test process stopped"
+        say("AFFINITY_TEST_INTERRUPTED=Evidence collected")
     except Exception as error:
         summary["ok"] = False
         summary["error"] = str(error)
         say("AFFINITY_TEST_ERROR=" + str(error))
     finally:
+        lock.close()
         (evidence / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
         archive_path = evidence.with_suffix(".tar.gz")
         with tarfile.open(archive_path, "w:gz") as archive:
