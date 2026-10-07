@@ -4,23 +4,26 @@
 #pragma once
 
 #include <array>
+#include <vector>
 #include "common/types.h"
 
 namespace Core {
 
 class CpuAffinity {
 public:
-    static const CpuAffinity& Instance();
+    explicit CpuAffinity(std::vector<int> allowed = {});
 
-    int SetThreadAffinity(uintptr_t thread, u64 guest_mask) const;
-    int CurrentGuestCpu(u64 guest_mask) const;
+    int SetThreadAffinity(uintptr_t thread, u64 guest_mask);
+    int CurrentGuestCpu(u64 guest_mask);
+    int GetAllowedHostCpus(uintptr_t thread, std::vector<int>& cpus);
 
 private:
-    CpuAffinity();
+    int Refresh(uintptr_t thread);
+    void Remap(std::vector<int> allowed);
 
     std::array<int, 8> host_cpus{};
-    u16 host_group{};
-    bool available{};
+    std::vector<int> allowed_cpus;
+    std::vector<int> applied_cpus;
 };
 
 } // namespace Core

@@ -29,18 +29,19 @@ NativeThread::NativeThread() : native_handle{0} {}
 
 NativeThread::~NativeThread() {}
 
-int NativeThread::Create(ThreadFunc func, void* arg, u64 affinity_mask) {
-    const auto& affinity = CpuAffinity::Instance();
+int NativeThread::Create(ThreadFunc func, void* arg, u64 affinity_mask,
+                         std::vector<int> host_cpus) {
+    cpu_affinity = CpuAffinity{std::move(host_cpus)};
     struct Startup {
         ThreadFunc func;
         void* arg;
-        const CpuAffinity& affinity;
+        CpuAffinity& affinity;
         u64 mask;
         std::promise<int> ready;
         std::future<void> start;
     };
     std::promise<void> start;
-    auto startup = std::make_unique<Startup>(func, arg, affinity, affinity_mask,
+    auto startup = std::make_unique<Startup>(func, arg, cpu_affinity, affinity_mask,
                                              std::promise<int>{}, start.get_future());
     auto ready = startup->ready.get_future();
     const auto entry = [](void* data)

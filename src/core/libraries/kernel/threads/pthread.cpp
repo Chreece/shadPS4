@@ -306,6 +306,14 @@ int PS4_SYSV_ABI posix_pthread_create_name_np(PthreadT* thread, const PthreadAtt
     if ((mask & ~GetGuestCpuMask()) != 0) {
         return POSIX_EPERM;
     }
+    std::vector<int> host_cpus;
+    if (curthread != nullptr) {
+        std::scoped_lock lock{curthread->affinity_mutex};
+        if (const int ret = curthread->native_thr->GetCpuAffinity().GetAllowedHostCpus(0, host_cpus);
+            ret != 0) {
+            return ret;
+        }
+    }
     auto* thread_state = ThrState::Instance();
     Pthread* new_thread = thread_state->Alloc(curthread);
     if (new_thread == nullptr) {
@@ -378,7 +386,7 @@ int PS4_SYSV_ABI posix_pthread_create_name_np(PthreadT* thread, const PthreadAtt
 
     /* Create thread */
     new_thread->native_thr = std::make_unique<Core::NativeThread>(Core::NativeThread());
-    const int ret = new_thread->native_thr->Create(RunThread, new_thread, mask);
+    const int ret = new_thread->native_thr->Create(RunThread, new_thread, mask, std::move(host_cpus));
     if (ret) {
         *thread = nullptr;
         thread_state->Unlink(curthread, new_thread);
@@ -1112,7 +1120,7 @@ bool Pthread::DispatchPendingSignals(Siginfo* info, Ucontext* context) {
 s32 Pthread::GetCurrentCpu() const {
     std::scoped_lock lock{affinity_mutex};
     const u64 mask = affinity_mask.load(std::memory_order_acquire);
-    const int cpu = Core::CpuAffinity::Instance().CurrentGuestCpu(mask);
+    const int cpu = native_thr->GetCpuAffinity().CurrentGuestCpu(mask);
     return cpu >= 0 ? cpu : ORBIS_KERNEL_ERROR_EAGAIN;
 }
 
@@ -1125,7 +1133,7 @@ int Pthread::SetAffinity(u64 mask) {
     }
     std::scoped_lock lock{affinity_mutex};
     const auto handle = this == g_curthread ? 0 : native_thr->GetHandle();
-    const int ret = Core::CpuAffinity::Instance().SetThreadAffinity(handle, mask);
+    const int ret = native_thr->GetCpuAffinity().SetThreadAffinity(handle, mask);
     if (ret == 0) {
         affinity_mask.store(mask, std::memory_order_release);
     }
