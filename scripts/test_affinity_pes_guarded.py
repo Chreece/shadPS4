@@ -39,8 +39,20 @@ def identity():
 
 def alive(info):
     try:
-        return base.process_info(info["pid"])["start"] == info["start"]
-    except OSError:
+        proc = Path("/proc") / str(info["pid"])
+        fields = (proc / "stat").read_text().rsplit(")", 1)[1].split()
+        return (proc.stat().st_uid == os.getuid() and fields[0] not in {"Z", "X"} and
+                fields[19] == str(info["start"]))
+    except (OSError, ValueError, IndexError):
+        return False
+
+
+def controller_running(job_file):
+    with (job_file.parent / "owner.lock").open("r") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
         return False
 
 
@@ -86,12 +98,14 @@ def hook(wrapper, script, job_file):
     if original.splitlines().count(native) != 1:
         raise RuntimeError("Expected guarded launcher command changed; no launcher modification made")
     invocation = f'python3 {shlex.quote(str(script))} --launch {shlex.quote(str(job_file))}'
-    injected = (f'if [[ "$game" == {GAME_ID} && -f {shlex.quote(str(script))} ]]; then\n'
+    injected = (f'if [[ "$game" == {GAME_ID} ]]; then\n'
+                "    printf 'AFFINITY_HOOK=entered\\n'\n"
                 f'    if {invocation}; then\n'
                 '        exit 0\n'
                 '    else\n'
                 '        _affinity_status=$?\n'
-                '        if [[ "$_affinity_status" != 75 ]]; then exit "$_affinity_status"; fi\n'
+                "        printf 'AFFINITY_HOOK=failed status=%s\\n' \"$_affinity_status\"\n"
+                '        exit "$_affinity_status"\n'
                 '    fi\n'
                 'fi\n' + native)
     replacement = original.replace(native, injected)
@@ -134,17 +148,20 @@ def launch(job_file):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return 1
-        if not alive(job["owner"]) or time.time() > job["expires"] or (job_file.parent / "cancel").exists():
-            restore_wrapper(job)
-            return 75
         if status_file.exists():
-            return 75
+            base.say("AFFINITY_LAUNCH_REJECTED=This test launch was already claimed")
+            return 1
         result = {"phase": "preparing", "bridge": identity(), "source_commit": base.SOURCE,
                   "candidate_sha256": base.BINARY_SHA256, "cgroup": group_path(),
                   "installed_binary_replaced": False, "match_playable_user_report": "unconfirmed"}
         write_json(status_file, result)
         context = protected = before = None
         try:
+            result["controller_lock_held"] = controller_running(job_file)
+            if not result["controller_lock_held"]:
+                raise RuntimeError("Test controller no longer holds its lock; no game was launched")
+            if time.time() > job["expires"] or (job_file.parent / "cancel").exists():
+                raise RuntimeError("Test was cancelled or expired; no game was launched")
             if not in_sunshine_group():
                 raise RuntimeError("Launch did not come through sunshine.service; refusing detached gameplay")
             restore_wrapper(job)
@@ -166,7 +183,7 @@ def launch(job_file):
                 "protected": protected, "before": before, "profile": context["profile"],
                 "config_sha256": config_hash, "users_sha256": users_hash,
                 "installed_sha256": result["baseline_sha256"]})
-            if not alive(job["owner"]) or (job_file.parent / "cancel").exists():
+            if not controller_running(job_file) or (job_file.parent / "cancel").exists():
                 raise RuntimeError("Test controller ended before candidate startup")
             if base.emulators():
                 raise RuntimeError("Another emulator core survived the guard; refusing parallel shadPS4")
@@ -187,7 +204,7 @@ def launch(job_file):
                             break
                         if initial_code is not None and remaining:
                             result["relaunch_observed"] = True
-                        if not alive(job["owner"]) or (job_file.parent / "cancel").exists():
+                        if not controller_running(job_file) or (job_file.parent / "cancel").exists():
                             stop_test(job)
                             break
                         time.sleep(0.2)
@@ -199,7 +216,12 @@ def launch(job_file):
                     child.wait(timeout=5)
         except BaseException as error:
             result["error"] = str(error) or type(error).__name__
+            base.say("AFFINITY_LAUNCH_ERROR=" + result["error"])
         finally:
+            try:
+                restore_wrapper(job)
+            except Exception as error:
+                result["launcher_restore_error"] = str(error)
             if protected is not None:
                 try:
                     result["source_files_unchanged"] = base.snapshot(protected) == before
@@ -213,6 +235,26 @@ def launch(job_file):
         return 1 if "error" in result else result.get("returncode", 0)
 
 
+def capture_log(path, evidence, name):
+    if not path.is_file():
+        return
+    with path.open("rb") as stream:
+        size = path.stat().st_size
+        (evidence / ("head-" + name)).write_bytes(stream.read(256 * 1024))
+        stream.seek(max(0, size - 8 * 1024 * 1024))
+        (evidence / ("tail-" + name)).write_bytes(stream.read(8 * 1024 * 1024))
+
+
+def wrapper_session(home, armed_at_ns):
+    latest = home / ".local/state/shadps4-playtest-logs/latest"
+    try:
+        if (latest / "session.meta").stat().st_mtime_ns >= armed_at_ns:
+            return latest.resolve(strict=True)
+    except OSError:
+        pass
+    return None
+
+
 def run():
     home = Path.home()
     cache = home / ".cache/shadps4-affinity-20261007"
@@ -223,7 +265,11 @@ def run():
     wrapper = home / ".local/bin/shadps4-esde"
     status_file = work / "status.json"
     job = None
-    summary = {"source_commit": base.SOURCE, "installed_binary_replaced": False,
+    owner_lock = None
+    armed_at_ns = time.time_ns()
+    observed_session = None
+    summary = {"source_commit": base.SOURCE, "runner_sha256": base.digest(__file__),
+               "installed_binary_replaced": False,
                "match_playable_user_report": "unconfirmed"}
     try:
         if base.emulators():
@@ -247,16 +293,28 @@ def run():
                "original_sha256": base.digest(wrapper), "patched_sha256": hashlib.sha256(replacement).hexdigest(),
                "binary": str(binary), "installed_binary": str(home / "Applications/shadps4/shadps4"),
                "runtime": str(runtime), "evidence": str(evidence)}
+        owner_lock = (work / "owner.lock").open("x")
+        fcntl.flock(owner_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         write_json(job_file, job)
+        write_json(evidence / "armed.json", {"armed_at_ns": armed_at_ns, **job})
         if base.digest(wrapper) != job["original_sha256"]:
             raise RuntimeError("Launcher changed while arming; left untouched")
         atomic_file(wrapper, replacement, job["wrapper_mode"])
-        base.say("READY=Launch PES once through Moonlight / ES-DE. That launch will be the affinity candidate.")
+        base.say("READY=Launch PES once through Moonlight / ES-DE; wait for CANDIDATE_RUNNING here.")
         base.say("The existing session guard handles startup and exit. Ctrl+C here stops only this test.")
         deadline = time.monotonic() + 600
         phase = None
+        hook_deadline = None
         next_update = time.monotonic() + 15
         while time.monotonic() < deadline:
+            observed_session = wrapper_session(home, armed_at_ns) or observed_session
+            if observed_session is not None and hook_deadline is None:
+                hook_deadline = time.monotonic() + 5
+            if not status_file.exists():
+                if (base.digest(wrapper) != job["patched_sha256"] or
+                        (hook_deadline is not None and time.monotonic() >= hook_deadline)):
+                    if not status_file.exists():
+                        raise RuntimeError("Guarded launch did not report its status; collecting the wrapper log")
             status = json.loads(status_file.read_text()) if status_file.exists() else {"phase": "waiting"}
             if status["phase"] != phase:
                 phase = status["phase"]
@@ -267,6 +325,8 @@ def run():
                     base.say(f"CANDIDATE_RUNNING=PID {status['candidate_pid']}; play a match, then exit normally")
                 elif phase == "finished":
                     summary.update(status)
+                    if "error" in status:
+                        base.say("TEST_ERROR=" + status["error"])
                     break
             if "bridge" in status and not alive(status["bridge"]):
                 summary.update(status)
@@ -324,12 +384,14 @@ def run():
                 except Exception as error:
                     summary["preservation_error"] = str(error)
             for path in [work / "candidate-console.log", *(runtime / "user/log").glob("*")]:
-                if path.is_file():
-                    with path.open("rb") as stream:
-                        size = path.stat().st_size
-                        (evidence / ("head-" + path.name)).write_bytes(stream.read(256 * 1024))
-                        stream.seek(max(0, size - 8 * 1024 * 1024))
-                        (evidence / ("tail-" + path.name)).write_bytes(stream.read(8 * 1024 * 1024))
+                capture_log(path, evidence, path.name)
+            observed_session = wrapper_session(home, armed_at_ns) or observed_session
+            if observed_session is not None:
+                summary["wrapper_session"] = str(observed_session)
+                for name in ("session.meta", "runtime.log"):
+                    capture_log(observed_session / name, evidence, "wrapper-" + name)
+            if status_file.exists():
+                shutil.copy2(status_file, evidence / "launch-status.json")
             if job is not None:
                 summary["live_test_pids"] = [info["pid"] for info in test_cores(job)]
             write_json(evidence / "summary.json", summary)
@@ -344,6 +406,8 @@ def run():
             base.say("UPLOAD_ONLY=" + str(archive_path))
             base.say("SSH stays open. The installed emulator binary was not replaced.")
         finally:
+            if owner_lock is not None:
+                owner_lock.close()
             signal.signal(signal.SIGINT, previous_handler)
     return 1 if any(key in summary for key in ("error", "cleanup_error", "launcher_restore_error")) else 0
 
