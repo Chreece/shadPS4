@@ -195,7 +195,8 @@ def capture_launch(evidence):
     (evidence / "preexisting-processes.json").write_text(json.dumps(
         preexisting, indent=2, default=str) + "\n")
     if preexisting:
-        say("EXISTING_PROCESSES_IGNORED=" + ",".join(str(info["pid"]) for info in preexisting))
+        raise RuntimeError("Existing shadPS4 processes must be resolved through the session guard before testing: " +
+                           ",".join(str(info["pid"]) for info in preexisting))
     say("OPEN_PES_NOW=Launch PES normally through Moonlight / ES-DE.")
     deadline = time.monotonic() + 300
     next_update = time.monotonic() + 30
@@ -317,8 +318,7 @@ def wait_for_close(context, evidence):
         else:
             raise RuntimeError(f"Captured PES PID {context['pid']} is still running; left untouched")
     time.sleep(3)
-    initial_ids = {(info["pid"], info["start"]) for info in context["preexisting_processes"]}
-    if any((info["pid"], info["start"]) not in initial_ids for info in emulators()):
+    if emulators():
         raise RuntimeError("Another shadPS4 process is running; left untouched")
 
 
@@ -486,6 +486,8 @@ def play(binary, context, runtime, evidence, summary):
         subprocess.run(command, cwd=runtime, env=env, stdin=subprocess.DEVNULL,
                        stdout=log, stderr=subprocess.STDOUT, timeout=20, check=True)
     with (evidence / "candidate-console.log").open("w") as log:
+        if emulators():
+            raise RuntimeError("Another shadPS4 process started before the candidate; launch cancelled")
         process = subprocess.Popen(args, cwd=runtime, env=env, stdin=subprocess.DEVNULL,
                                    stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         summary["candidate_process_group"] = process.pid
