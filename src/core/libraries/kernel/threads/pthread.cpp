@@ -35,6 +35,28 @@ namespace Libraries::Kernel {
 extern PthreadAttr PthreadAttrDefault;
 extern std::array<Sigaction, 128> PosixActions;
 
+#if defined(__linux__) && defined(ARCH_X86_64)
+static thread_local std::atomic_bool affinity_busy{};
+static thread_local std::atomic_bool affinity_signal_pending{};
+
+class AffinitySignalGuard {
+public:
+    AffinitySignalGuard() : nested{affinity_busy.exchange(true)} {}
+
+    ~AffinitySignalGuard() {
+        if (!nested) {
+            affinity_busy.store(false);
+            if (affinity_signal_pending.exchange(false) && g_curthread != nullptr) {
+                g_curthread->WakeForSignal();
+            }
+        }
+    }
+
+private:
+    bool nested;
+};
+#endif
+
 void _thread_cleanupspecific();
 
 using ThreadDtor = void PS4_SYSV_ABI (*)();
@@ -1096,6 +1118,12 @@ bool Pthread::DispatchSignal(s32 sig, Siginfo* info, Ucontext* context) {
 }
 
 bool Pthread::DispatchPendingSignals(Siginfo* info, Ucontext* context) {
+#if defined(__linux__) && defined(ARCH_X86_64)
+    if (affinity_busy.load()) {
+        affinity_signal_pending.store(true);
+        return false;
+    }
+#endif
     const s32 sig = FindPendingUnblockedSignal();
     if (sig == 0) {
         return false;
@@ -1118,6 +1146,9 @@ bool Pthread::DispatchPendingSignals(Siginfo* info, Ucontext* context) {
 }
 
 s32 Pthread::GetCurrentCpu() const {
+#if defined(__linux__) && defined(ARCH_X86_64)
+    const AffinitySignalGuard signal_guard;
+#endif
     std::scoped_lock lock{affinity_mutex};
     const u64 mask = affinity_mask.load(std::memory_order_acquire);
     const int cpu = native_thr->GetCpuAffinity().CurrentGuestCpu(mask);
@@ -1131,6 +1162,9 @@ int Pthread::SetAffinity(u64 mask) {
     if ((mask & ~GetGuestCpuMask()) != 0) {
         return POSIX_EPERM;
     }
+#if defined(__linux__) && defined(ARCH_X86_64)
+    const AffinitySignalGuard signal_guard;
+#endif
     std::scoped_lock lock{affinity_mutex};
     const auto handle = this == g_curthread ? 0 : native_thr->GetHandle();
     const int ret = native_thr->GetCpuAffinity().SetThreadAffinity(handle, mask);

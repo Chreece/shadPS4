@@ -27,6 +27,10 @@
 #include "core/tls.h"
 #include "cpu_patches.h"
 
+#if defined(__linux__)
+#include "core/cpu_id.h"
+#endif
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -535,7 +539,31 @@ static const bool need_tcb_trampoline = true;
 static const bool need_tcb_trampoline = false;
 #endif
 
+#if defined(__linux__)
+static bool FilterCpuId(const ZydisDecodedOperand*) {
+    return true;
+}
+
+static void GenerateCpuid(void*, const ZydisDecodedOperand*, Xbyak::CodeGenerator& c) {
+    GenerateCpuIdInstruction(c, CpuIdInstruction::Cpuid);
+}
+
+static void GenerateRdtscp(void*, const ZydisDecodedOperand*, Xbyak::CodeGenerator& c) {
+    GenerateCpuIdInstruction(c, CpuIdInstruction::Rdtscp);
+}
+
+static void GenerateRdpid(void*, const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
+    GenerateCpuIdInstruction(c, CpuIdInstruction::Rdpid,
+                            ZydisToXbyakRegisterOperand(operands[0]).getIdx());
+}
+#endif
+
 static const std::unordered_map<ZydisMnemonic, std::vector<PatchInfo>> Patches = {
+#if defined(__linux__)
+    {ZYDIS_MNEMONIC_CPUID, {{FilterCpuId, GenerateCpuid, true}}},
+    {ZYDIS_MNEMONIC_RDTSCP, {{FilterCpuId, GenerateRdtscp, true}}},
+    {ZYDIS_MNEMONIC_RDPID, {{FilterCpuId, GenerateRdpid, true}}},
+#endif
     // SSE4a
     {ZYDIS_MNEMONIC_EXTRQ, {{FilterNoSSE4a, GenerateEXTRQ, true}}},
     {ZYDIS_MNEMONIC_INSERTQ, {{FilterNoSSE4a, GenerateINSERTQ, true}}},
@@ -2255,6 +2283,9 @@ static bool PatchesIllegalInstructionHandler(void* context) {
 }
 
 static void PatchesInit() {
+#if defined(__linux__)
+    InitializeCpuId();
+#endif
     if (!Patches.empty()) {
         auto* signals = Signals::Instance();
         // Should be called last.
