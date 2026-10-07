@@ -252,11 +252,26 @@ def main():
                            "generator": "Unix Makefiles", "cc": "/usr/bin/gcc-14", "cxx": "/usr/bin/g++-14"}
         require(json.loads(marker_path.read_text()) == expected_marker, "Existing build cache identity differs.")
         shutil.copyfile(marker_path, evidence / "build-environment.json")
-        cache_text = (build / "CMakeCache.txt").read_text(errors="replace")
-        cached = dict(re.findall(r"^([^#/:][^:=]*):[^=]*=(.*)$", cache_text, re.MULTILINE))
-        for key, value in {"CMAKE_HOME_DIRECTORY": str(source), "CMAKE_GENERATOR": "Unix Makefiles",
-                           "CMAKE_C_COMPILER": "/usr/bin/gcc-14", "CMAKE_CXX_COMPILER": "/usr/bin/g++-14"}.items():
-            require(cached.get(key) == value, f"Existing CMake cache does not match {key}.")
+        cache_copy = evidence / "CMakeCache.txt"
+        shutil.copyfile(build / "CMakeCache.txt", cache_copy)
+        cache_text = cache_copy.read_text(errors="replace")
+        cached = {}
+        for line in cache_text.splitlines():
+            if not line.strip() or line.lstrip().startswith(("#", "//")):
+                continue
+            key_type, equals, value = line.partition("=")
+            key, colon, _ = key_type.partition(":")
+            if equals and colon:
+                cached[key] = value
+        expected_cache = {"CMAKE_HOME_DIRECTORY": str(source), "CMAKE_GENERATOR": "Unix Makefiles",
+                          "CMAKE_C_COMPILER": "/usr/bin/gcc-14", "CMAKE_CXX_COMPILER": "/usr/bin/g++-14"}
+        record["cmake_cache_checks"] = {
+            key: {"expected": value, "actual": cached.get(key)} for key, value in expected_cache.items()
+        }
+        save()
+        for key, check in record["cmake_cache_checks"].items():
+            require(check["actual"] == check["expected"],
+                    f"Existing CMake cache does not match {key}: actual={check['actual']!r}, expected={check['expected']!r}.")
         require(run(["docker", "image", "inspect", "--format", "{{.Id}}", IMAGE], "docker-image") == IMAGE,
                 "The exact recorded Docker image is unavailable.")
         record["running_before"] = running_emulators()
