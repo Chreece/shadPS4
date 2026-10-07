@@ -41,3 +41,12 @@ cpu_id.elf: cpu_id.o cpu_id_state.o
 
 eboot-cpu-id.bin: cpu_id.elf
 	$(SDK)/bin/linux/create-fself -in=$< -out=cpu_id.oelf --eboot $@ --paid 0x3800000000000011 --sdkver 0x3000000
+
+signals.o: signals.cpp
+	$(CXX) --target=x86_64-pc-freebsd12-elf -std=c++17 -fPIC -funwind-tables -c -isysroot $(SDK) -isystem $(SDK)/include $< -o $@
+
+signals.elf: signals.o
+	$(LD) -m elf_x86_64 -pie --script $(SDK)/link.x --eh-frame-hdr -L$(SDK)/lib signals.o $(SDK)/lib/crt1.o -lc -lkernel -lSceSystemService -o $@
+
+eboot-signals.bin: signals.elf
+	$(SDK)/bin/linux/create-fself -in=$< -out=signals.oelf --eboot $@ --paid 0x3800000000000011 --sdkver 0x3000000
