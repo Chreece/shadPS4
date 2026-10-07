@@ -122,6 +122,7 @@ def display_environment():
         raise RuntimeError("No running display found for the emulator tests")
     env["ALSOFT_DRIVERS"] = "null"
     env["SDL_AUDIODRIVER"] = "dummy"
+    env["SHADPS4_ENABLE_IPC"] = "false"
     return env
 
 
@@ -152,15 +153,77 @@ def host_threads(pid):
     return records
 
 
+def prepare_runtime(runtime):
+    user = runtime / "user"
+    user.mkdir(parents=True)
+    users = []
+    for index in range(4):
+        user_id = 1000 + index
+        for directory in ("savedata", "trophy", "inputs"):
+            (user / "home" / str(user_id) / directory).mkdir(parents=True)
+        users.append({"user_id": user_id, "user_name": f"Affinity Test {index + 1}",
+                      "user_color": index + 1, "player_index": index + 1,
+                      "shadnet_enabled": False})
+    (user / "users.json").write_text(json.dumps({"Users": {"user": users}}))
+    (user / "config.json").write_text(json.dumps({
+        "GPU": {"null_gpu": True, "full_screen": False, "window_width": 640, "window_height": 360},
+        "Log": {"filter": "*:Info", "flush_level": "info", "sync": True, "skip_duplicate": False},
+        "General": {"show_splash": False, "home_dir": str(user / "home")},
+    }))
+
+
+def capture_process(pid, destination):
+    lines = []
+    paths = [Path(f"/proc/{pid}/status"), Path(f"/proc/{pid}/maps")]
+    for task in Path(f"/proc/{pid}/task").glob("*"):
+        paths += [task / name for name in ("status", "wchan", "syscall", "stack")]
+    for path in paths:
+        try:
+            content = path.read_text(errors="replace")
+        except OSError as error:
+            content = str(error)
+        lines.append(str(path) + "\n" + content)
+    destination.write_text("\n\n".join(lines))
+
+
+def diagnose_startup(args, runtime, evidence, name, env):
+    debugger = shutil.which("gdb")
+    if debugger is None:
+        (evidence / f"{name}-backtrace.log").write_text("gdb is not installed\n")
+        return
+    commands = runtime / "diagnostic.gdb"
+    commands.write_text(
+        "set pagination off\nset confirm off\nset debuginfod enabled off\n"
+        "set disable-randomization off\nset startup-with-shell off\n"
+        "set print thread-events off\nset print frame-arguments none\n"
+        "handle SIGSEGV SIGBUS SIGILL SIGFPE SIGSYS SIGUSR1 SIGUSR2 nostop noprint pass\n"
+        "run\nthread apply all bt 24\nkill\nquit\n"
+    )
+    say(f"DIAGNOSTIC={name} capturing startup backtrace")
+    with (evidence / f"{name}-backtrace.log").open("w") as log:
+        process = subprocess.Popen(
+            [debugger, "--nx", "--nh", "--batch", "-x", str(commands), "--args", *map(str, args)],
+            cwd=runtime, env=env, stdin=subprocess.DEVNULL,
+            stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+        )
+        try:
+            try:
+                process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                if process.poll() is None:
+                    process.send_signal(signal.SIGINT)
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass
+        finally:
+            stop(process)
+
+
 def run_case(binary, case, suite, cpus, label, work, evidence, env):
     name = f"{label}-{case['directory']}"
     runtime = work / name
-    (runtime / "user").mkdir(parents=True)
-    (runtime / "user/config.json").write_text(json.dumps({
-        "GPU": {"null_gpu": True, "full_screen": False, "window_width": 640, "window_height": 360},
-        "Log": {"filter": "*:Info", "sync": True, "skip_duplicate": False},
-        "General": {"show_splash": False},
-    }))
+    prepare_runtime(runtime)
     output = evidence / f"{name}.log"
     args = ["taskset", "-c", ",".join(map(str, cpus)), str(binary),
             "--ignore-game-patch", str(suite / case["directory"] / "eboot.bin")]
@@ -174,6 +237,7 @@ def run_case(binary, case, suite, cpus, label, work, evidence, env):
             while process.poll() is None:
                 if time.monotonic() - started > 45:
                     timed_out = True
+                    capture_process(process.pid, evidence / f"{name}-process.txt")
                     break
                 samples.append(host_threads(process.pid))
                 time.sleep(0.1)
@@ -199,6 +263,7 @@ def run_case(binary, case, suite, cpus, label, work, evidence, env):
     say(f"TEST={name} RESULT={'PASS' if ok else 'FAIL'}")
     if passes == 0 and failures == 0 and extended is None:
         result["infrastructure_failure"] = True
+        diagnose_startup(args, runtime, evidence, name, env)
     return result
 
 
@@ -207,7 +272,8 @@ def main():
     cache.mkdir(parents=True, exist_ok=True)
     evidence = Path(tempfile.mkdtemp(prefix="shadps4-affinity-evidence-", dir=Path.home()))
     work = Path(tempfile.mkdtemp(prefix="runtime-", dir=cache))
-    summary = {"source_commit": SOURCE_COMMIT, "tests": [], "installed_binary_changed": False}
+    summary = {"source_commit": SOURCE_COMMIT, "tests": [], "installed_binary_changed": False,
+               "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     try:
         active = existing_emulators()
         if active:
@@ -260,6 +326,15 @@ def main():
                     raise RuntimeError("Unexpected suite entry")
             archive.extractall(suite, filter="data")
         cases = json.loads((suite / "cases.json").read_text())
+        startup = work / "startup-check"
+        prepare_runtime(startup)
+        startup_args = [binary, "--add-game-folder", suite]
+        try:
+            command(startup_args, evidence / "startup-check.log", cwd=startup, env=env, timeout=15)
+        except Exception:
+            diagnose_startup(startup_args, startup, evidence, "startup-check", env)
+            raise
+        summary["startup_check"] = "passed"
         profiles = [("all", allowed), ("four", allowed[-4:]), ("two", allowed[-2:]),
                     ("one", allowed[-1:]), ("sparse", allowed[1::2][:4] or allowed[:1])]
         seen = set()
