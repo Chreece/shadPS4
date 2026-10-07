@@ -190,6 +190,34 @@ int main() {
     asm volatile("hlt" : : : "memory");
     Check(faults_handled == 1, "nested instruction fault");
     Check(sigaction(11, &old_fault, nullptr) == 0, "restore fault handler");
+#if TEST_OPERATION == 2
+    Check(sceKernelMprotect(mapping, 32768, 7) == 0, "register test protection");
+    for (int cpu = 0; cpu < 7; ++cpu) {
+      Check(scePthreadSetaffinity(scePthreadSelf(), 1ULL << cpu) == 0,
+            "register test affinity");
+      for (unsigned reg = 0; reg < 16; ++reg) {
+        auto *code = static_cast<uint8_t *>(mapping) + 32;
+        if (reg == 4) {
+          const uint8_t body[]{0x49, 0x89, 0xe3, 0xf3, 0x0f, 0xc7, 0xfc,
+                               0x48, 0x89, 0xe0, 0x4c, 0x89, 0xdc, 0xc3};
+          memcpy(code, body, sizeof(body));
+        } else {
+          const uint8_t body[]{0x53, 0x55, 0x41, 0x54, 0x41, 0x55,
+                               0x41, 0x56, 0x41, 0x57, 0xf3,
+                               uint8_t(0x40 | (reg >> 3)), 0x0f, 0xc7,
+                               uint8_t(0xf8 | (reg & 7)),
+                               uint8_t(0x48 | ((reg >> 3) << 2)), 0x89,
+                               uint8_t(0xc0 | ((reg & 7) << 3)),
+                               0x41, 0x5f, 0x41, 0x5e, 0x41, 0x5d,
+                               0x41, 0x5c, 0x5d, 0x5b, 0xc3};
+          memcpy(code, body, sizeof(body));
+        }
+        Check(reinterpret_cast<uint64_t (*)()>(code)() == uint64_t(cpu),
+              "RDPID destination register");
+        ++samples;
+      }
+    }
+#endif
     Check(sceKernelMunmap(mapping, 32768) == 0, "unmap");
   }
   printf("GENERATED_CPU_ID_RESULT operation=%s failures=%u samples=%u "
