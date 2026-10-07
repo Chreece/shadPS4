@@ -190,6 +190,12 @@ def find_game(context, inspected=None):
 
 
 def capture_launch(evidence):
+    preexisting = emulators()
+    initial_ids = {(info["pid"], info["start"]) for info in preexisting}
+    (evidence / "preexisting-processes.json").write_text(json.dumps(
+        preexisting, indent=2, default=str) + "\n")
+    if preexisting:
+        say("EXISTING_PROCESSES_IGNORED=" + ",".join(str(info["pid"]) for info in preexisting))
     say("OPEN_PES_NOW=Launch PES normally through Moonlight / ES-DE.")
     deadline = time.monotonic() + 300
     next_update = time.monotonic() + 30
@@ -197,7 +203,10 @@ def capture_launch(evidence):
     try:
         while time.monotonic() < deadline:
             for info in emulators():
-                detail = {"exe": str(info["exe"]), "cwd": str(info["cwd"]), "inspected": []}
+                if (info["pid"], info["start"]) in initial_ids:
+                    continue
+                detail = {"exe": str(info["exe"]), "cwd": str(info["cwd"]),
+                          "start": info["start"], "inspected": []}
                 observed[str(info["pid"])] = detail
                 try:
                     context = launch_context(info)
@@ -205,6 +214,7 @@ def capture_launch(evidence):
                     game = find_game(context, detail["inspected"])
                     detail["game_recognized"] = game is not None
                     if game:
+                        context["preexisting_processes"] = preexisting
                         return context, game
                 except (OSError, ValueError, struct.error) as error:
                     detail["error"] = str(error)
@@ -286,21 +296,29 @@ def diagnose_launch():
     return 0
 
 
-def wait_for_close(context):
-    say("SETTINGS_CAPTURED=Close PES normally now. The affinity candidate will start automatically.")
+def wait_for_close(context, evidence):
+    say(f"SETTINGS_CAPTURED=New PES PID {context['pid']}. Close PES normally now; the candidate will start automatically.")
     deadline = time.monotonic() + 600
-    while time.monotonic() < deadline:
-        try:
-            current = process_info(context["pid"])
-            if current["start"] != context["start"]:
+    next_update = time.monotonic() + 15
+    with (evidence / "waiting-for-close.jsonl").open("w") as records:
+        while time.monotonic() < deadline:
+            try:
+                current = process_info(context["pid"])
+                if current["start"] != context["start"]:
+                    break
+            except OSError:
                 break
-        except OSError:
-            break
-        time.sleep(0.25)
-    else:
-        raise RuntimeError("Original PES session is still running; left untouched")
+            if time.monotonic() >= next_update:
+                records.write(json.dumps(current, default=str) + "\n")
+                records.flush()
+                say(f"WAITING_FOR_CLOSE=PES PID {context['pid']} is still present; Ctrl+C collects evidence")
+                next_update += 15
+            time.sleep(0.25)
+        else:
+            raise RuntimeError(f"Captured PES PID {context['pid']} is still running; left untouched")
     time.sleep(3)
-    if emulators():
+    initial_ids = {(info["pid"], info["start"]) for info in context["preexisting_processes"]}
+    if any((info["pid"], info["start"]) not in initial_ids for info in emulators()):
         raise RuntimeError("Another shadPS4 process is running; left untouched")
 
 
@@ -545,10 +563,11 @@ def main():
         context, game = capture_launch(evidence)
         context["game"] = game
         summary.update(baseline_binary=str(context["exe"]), baseline_sha256=digest(context["exe"]),
+                       baseline_pid=context["pid"], baseline_process_start=context["start"],
                        source_profile=str(context["profile"]), game_title=game["title"], game_id=game["serial"],
                        host_cpus=sorted(os.sched_getaffinity(0)), uname=list(os.uname()))
         candidate_arguments(context)
-        wait_for_close(context)
+        wait_for_close(context, evidence)
         say("COPYING_PROFILE=Creating an isolated copy of PES settings, controls, and saves")
         protected, before, config_hash, users_hash = prepare_profile(context, game, runtime)
         play(binary, context, runtime, evidence, summary)
@@ -559,6 +578,8 @@ def main():
         summary["error"] = str(error)
         say("PLAYTEST_ERROR=" + str(error))
     finally:
+        if context is not None and "candidate_process_group" not in summary and "error" in summary:
+            process_snapshot([context], evidence / "baseline-wait-process.txt")
         if protected is not None:
             try:
                 summary["source_files_unchanged"] = before == snapshot(protected)
