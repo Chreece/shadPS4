@@ -21,7 +21,7 @@ public:
     NativeThread();
     ~NativeThread();
 
-    int Create(ThreadFunc func, void* arg);
+    int Create(ThreadFunc func, void* arg, u64 affinity_mask);
     void Exit();
 
     void Initialize();
