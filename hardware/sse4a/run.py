@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-"""Compare SSE4a execution before and after the vector-state fix without installing it."""
+"""Compare generated SSE4a execution before and after the fallback fix without installing it."""
 
 import argparse
 import fcntl
@@ -22,10 +22,11 @@ HELPER_REVISION = "605ee9649addd9788e630e7c1bbcdaffda4c091c"
 BUILD_SHA = "2b0d969c5914d65683f2da49e0755a9e00891c5327d356e69da792b058dcdf48"
 COLLECT_SHA = "058c4767f20f2a54b980c1e9681e30c78d58c9d5d0c01de4e10d277efbcec632"
 SUITE_SHA = "da547e583454c878c554f33e640579c953d969cb678009c7d5c9f76482ced4c5"
-SOURCE_REVISION = "7be5c17ec5302f73cb898754b75f638804ce5e98"
-BASE_TREE = "db804b1ffcc3098ed7c6a0725a4631abc373ec64"
-BASE_BINARY = "63144d096215a6163fd84c43d4622c253a44880806d7a692babb7b739c8edf7a"
-BASE_CLIENT = "be700042dab3f805280cb1942b37b1fd9730ea902f34d924787901f28e7c45a3"
+SOURCE_REVISION = "0c8f18444ca7805a8bf3fd1e142a12803685114b"
+PATCH_SHA = "d8cd39c701b12a7d719976863de63e8a13809f3fa5c6b3c829656c550a457a6d"
+BASE_TREE = "177f81ade3f26ad44f61229e97b11c359243333d"
+BASE_BINARY = "06382c0af6897519aebb530a03e6a0a8b02e28801c2804d83c2aae46211ad027"
+BASE_CLIENT = "51973bd84b6d55f47d596a0a81ef266f34b0015965eebf9ea084a1aebbc16bfa"
 CASES = ("extrq_reg", "extrq_imm", "insertq_reg", "insertq_imm", "extrq_high", "extrq_imm_high",
          "insertq_high", "insertq_imm_high", "movntss", "movntsd", "movntss_high", "movntsd_high")
 
@@ -49,24 +50,26 @@ def load_helper(work, name, expected):
     return module
 
 
-def build_candidate(builder, cache, evidence):
+def build_candidate(builder, cache, evidence, work, revision):
     git, command = builder.git, builder.command
-    original = cache / "profile-source-c7814c49f926"
-    baseline_build = cache / "profile-build-c7814c49f926"
+    original = cache / "sse4a-source-7be5c17ec530"
+    baseline_build = cache / "sse4a-build-7be5c17ec530"
     source = cache / ("sse4a-source-" + SOURCE_REVISION[:12])
     build = cache / ("sse4a-build-" + SOURCE_REVISION[:12])
     if git(original, "rev-parse", "HEAD^{tree}") != BASE_TREE:
-        raise RuntimeError("The verified CPU-filter source changed; preserved")
+        raise RuntimeError("The verified SSE4a source changed; preserved")
     if git(original, "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all"):
         raise RuntimeError("The original source has local changes; preserved")
     relative = "src/core/cpu_patches.cpp"
-    text = (original / relative).read_text()
-    start, end = text.index("static void GenerateEXTRQ"), text.index("static void ReplaceMOVNT")
-    part = text[start:end]
-    if part.count("c.vmovq(xmm_dst,") != 4:
-        raise RuntimeError("Unexpected SSE4a source")
-    expected_source = text[:start] + part.replace("c.vmovq(xmm_dst,", "c.movq(xmm_dst,") + text[end:]
+    patch = work / "generated.patch"
+    builder.download(revision, "hardware/sse4a/generated.patch", patch, PATCH_SHA)
+    expected = work / "expected-source"
+    (expected / relative).parent.mkdir(parents=True)
+    (expected / relative).write_bytes((original / relative).read_bytes())
     log = evidence / "build.log"
+    command(["git", "apply", "--no-index", "--check", patch], log, expected)
+    command(["git", "apply", "--no-index", patch], log, expected)
+    expected_source = (expected / relative).read_text()
     base_revision = git(original, "rev-parse", "HEAD")
     if not source.exists():
         command(["git", "clone", "--shared", "--no-checkout", original, source], log)
@@ -78,7 +81,7 @@ def build_candidate(builder, cache, evidence):
         command(["git", "add", relative], log, source)
         command(["git", "-c", "user.name=shadPS4 playtest", "-c", "user.email=playtest@localhost",
                  "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-m",
-                 "playtest: preserve SSE4a upper vector state"], log, source)
+                 "playtest: interpret generated SSE4a bit-field instructions"], log, source)
     if git(source, "diff", "--name-only", base_revision, "HEAD").splitlines() != [relative] or (source / relative).read_text() != expected_source:
         raise RuntimeError("Unexpected changes in the isolated candidate")
     status = git(source, "submodule", "status", "--recursive")
@@ -143,7 +146,7 @@ def main():
     cache.mkdir(parents=True, exist_ok=True)
     with (cache / "homebrew.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        evidence = Path(tempfile.mkdtemp(prefix="shadps4-sse4a-", dir=Path.home()))
+        evidence = Path(tempfile.mkdtemp(prefix="shadps4-sse4a-generated-", dir=Path.home()))
         summary = {"source_change": SOURCE_REVISION, "tests": {}, "ok": False,
                    "feature_reporting_changed": False}
         installed = Path.home() / "Applications/shadps4/shadps4"
@@ -156,21 +159,21 @@ def main():
                 collector = load_helper(work, "collect.py", COLLECT_SHA)
                 builder = load_helper(work, "test_filter.py", BUILD_SHA)
                 collector.require_idle()
-                protected = {cache / "profile-build-c7814c49f926/shadps4": BASE_BINARY,
-                    cache / "profile-build-c7814c49f926/src/core/cpu_id_translation/libshadps4_cpu_id.so": BASE_CLIENT}
+                protected = {cache / "sse4a-build-7be5c17ec530/shadps4": BASE_BINARY,
+                    cache / "sse4a-build-7be5c17ec530/src/core/cpu_id_translation/libshadps4_cpu_id.so": BASE_CLIENT}
                 protected.update({cache / name: sha for name, sha in collector.ARTIFACTS.items()})
                 for path, expected in protected.items():
                     if digest(path) != expected:
                         raise RuntimeError("The verified artifact changed: " + str(path))
                 env = collector.display_environment()
-                binary, client, info = build_candidate(builder, cache, evidence)
+                binary, client, info = build_candidate(builder, cache, evidence, work, args.revision)
                 summary["build"] = info
                 suite = work / "suite.tar.gz"
                 builder.download(args.revision, "hardware/sse4a/suite.tar.gz", suite, SUITE_SHA)
                 with tarfile.open(suite) as archive:
                     archive.extractall(work / "suite", filter="data")
                 drrun = cache / "runtime-build-a522a5055820/bin64/drrun"
-                modes = {"before-native": [cache / "profile-build-c7814c49f926/shadps4"],
+                modes = {"before-native": [cache / "sse4a-build-7be5c17ec530/shadps4"],
                          "after-native": [binary], "after-translated": [drrun, "-disable_rseq",
                          "-vm_base", "0x710020000000", "-no_vm_base_near_app", "-c", client, "--", binary]}
                 for mode, prefix in modes.items():
