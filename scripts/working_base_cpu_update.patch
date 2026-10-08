@@ -1,0 +1,1055 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index b46b8330d9207d57746e5bc872f15f55a50ead66..62333b1cc44e16f63aec16e22dec6bd035bd0acb 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -40,6 +40,7 @@ option(ENABLE_DISCORD_RPC "Enable the Discord RPC integration" ON)
+ option(ENABLE_UPDATER "Enables the options to updater" ON)
+ option(ENABLE_TESTS "Build unit tests (requires GTest)" OFF)
+ option(ENABLE_SYSTEM_LIBRARIES "Enable building against system libraries" OFF)
++option(ENABLE_CPU_ID_TRANSLATION "Build experimental DynamoRIO CPU identity translation" OFF)
+ 
+ # First, determine whether to use CMAKE_OSX_ARCHITECTURES or CMAKE_SYSTEM_PROCESSOR.
+ if (APPLE AND CMAKE_OSX_ARCHITECTURES)
+@@ -1324,6 +1325,19 @@ add_executable(shadps4
+ 
+ create_target_directory_groups(shadps4)
+ 
++if (ENABLE_CPU_ID_TRANSLATION)
++    if (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT ARCHITECTURE STREQUAL "x86_64")
++        message(FATAL_ERROR "CPU identity translation requires Linux x86-64")
++    endif()
++    find_package(DynamoRIO CONFIG REQUIRED)
++    set_property(SOURCE src/core/cpu_id.cpp APPEND PROPERTY
++        COMPILE_DEFINITIONS ENABLE_CPU_ID_TRANSLATION)
++    target_link_options(shadps4 PRIVATE
++        "-Wl,--export-dynamic-symbol=ShadCpuIdTranslationActive"
++        "-Wl,--export-dynamic-symbol=ShadCpuIdTranslationRange")
++    add_subdirectory(src/core/cpu_id_translation)
++endif()
++
+ target_link_libraries(shadps4 PRIVATE spdlog::spdlog)
+ target_link_libraries(shadps4 PRIVATE magic_enum::magic_enum fmt::fmt toml11::toml11 tsl::robin_map xbyak::xbyak Tracy::TracyClient RenderDoc::API FFmpeg::ffmpeg Dear_ImGui ImGuiFileDialog gcn half::half ZLIB::ZLIB PNG::PNG minimp3)
+ target_link_libraries(shadps4 PRIVATE Boost::headers GPUOpen::VulkanMemoryAllocator LibAtrac9 sirit Vulkan::Headers xxHash::xxhash Zydis::Zydis SDL3::SDL3 pugixml::pugixml)
+diff --git a/src/core/cpu_affinity.cpp b/src/core/cpu_affinity.cpp
+index 37d5b50fb12bd058f3623838d1d086a5e545f6cc..3a076062cdc6380bce7692e24542df1492fbc52b 100644
+--- a/src/core/cpu_affinity.cpp
++++ b/src/core/cpu_affinity.cpp
+@@ -1,10 +1,8 @@
+ // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+-#include <algorithm>
+ #include <bit>
+ #include <cerrno>
+-#include <utility>
+ #include "core/cpu_affinity.h"
+ #include "core/libraries/kernel/posix_error.h"
+ 
+@@ -132,38 +130,14 @@ int CurrentHostCpu() {
+ 
+ } // namespace
+ 
+-CpuAffinity::CpuAffinity(std::vector<int> allowed) {
+-    Remap(std::move(allowed));
+-}
+-
+-void CpuAffinity::Remap(std::vector<int> allowed) {
+-    allowed_cpus = std::move(allowed);
+-    if (!allowed_cpus.empty()) {
+-        for (size_t guest = 0; guest < host_cpus.size(); ++guest) {
+-            host_cpus[guest] = allowed_cpus[guest % allowed_cpus.size()];
+-        }
+-    }
+-}
+-
+-int CpuAffinity::Refresh(uintptr_t thread) {
+-    std::vector<int> effective;
+-    const int ret = ReadHostAffinity(thread, effective);
+-    if (ret != 0) {
+-        return ret;
++void CpuAffinity::Remap(const std::vector<int>& allowed) {
++    host_cpus.clear();
++    for (const int cpu : allowed) {
++        host_cpus.push_back({cpu, 0});
+     }
+-    if (allowed_cpus.empty() || (!applied_cpus.empty() && effective != applied_cpus)) {
+-        Remap(effective);
+-        applied_cpus = std::move(effective);
++    for (int guest = 0; guest < 8 && !host_cpus.empty(); ++guest) {
++        host_cpus[guest % host_cpus.size()].guest_mask |= 1U << guest;
+     }
+-    return 0;
+-}
+-
+-int CpuAffinity::GetAllowedHostCpus(uintptr_t thread, std::vector<int>& cpus) {
+-    const int ret = Refresh(thread);
+-    if (ret == 0) {
+-        cpus = allowed_cpus;
+-    }
+-    return ret;
+ }
+ 
+ int CpuAffinity::SetThreadAffinity(uintptr_t thread, u64 guest_mask) {
+@@ -173,18 +147,20 @@ int CpuAffinity::SetThreadAffinity(uintptr_t thread, u64 guest_mask) {
+ #if !defined(_WIN32) && !defined(__linux__) && !defined(__FreeBSD__)
+     return 0;
+ #else
+-    if (const int ret = Refresh(thread); ret != 0) {
+-        return ret;
++    if (host_cpus.empty()) {
++        std::vector<int> allowed;
++        if (const int ret = ReadHostAffinity(thread, allowed); ret != 0) {
++            return ret;
++        }
++        Remap(allowed);
+     }
+     for (int attempt = 0; attempt < 3; ++attempt) {
+         std::vector<int> requested;
+-        for (size_t guest = 0; guest < host_cpus.size(); ++guest) {
+-            if (guest_mask & (u64{1} << guest)) {
+-                requested.push_back(host_cpus[guest]);
++        for (const auto& cpu : host_cpus) {
++            if (guest_mask & cpu.guest_mask) {
++                requested.push_back(cpu.id);
+             }
+         }
+-        std::ranges::sort(requested);
+-        requested.erase(std::unique(requested.begin(), requested.end()), requested.end());
+         const int ret = ApplyHostAffinity(thread, requested);
+         if (ret != 0 && ret != POSIX_EINVAL) {
+             return ret;
+@@ -194,11 +170,9 @@ int CpuAffinity::SetThreadAffinity(uintptr_t thread, u64 guest_mask) {
+             return read_ret;
+         }
+         if (ret == 0 && effective == requested) {
+-            applied_cpus = std::move(effective);
+             return 0;
+         }
+         Remap(effective);
+-        applied_cpus = std::move(effective);
+     }
+     return POSIX_EAGAIN;
+ #endif
+@@ -216,11 +190,10 @@ int CpuAffinity::CurrentGuestCpu(u64 guest_mask) {
+         if (host_cpu < 0) {
+             return -1;
+         }
+-        if (!allowed_cpus.empty()) {
+-            for (size_t guest = 0; guest < host_cpus.size(); ++guest) {
+-                if ((guest_mask & (u64{1} << guest)) != 0 && host_cpus[guest] == host_cpu) {
+-                    return static_cast<int>(guest);
+-                }
++        for (const auto& cpu : host_cpus) {
++            const u64 candidates = cpu.guest_mask & guest_mask;
++            if (cpu.id == host_cpu && candidates != 0) {
++                return std::countr_zero(candidates);
+             }
+         }
+         if (SetThreadAffinity(0, guest_mask) != 0) {
+diff --git a/src/core/cpu_affinity.h b/src/core/cpu_affinity.h
+index 964263aedb6bdf682d93ec79bba4590401880acf..3f2023248c4097b4ed4de6a22e8eaa85cb070399 100644
+--- a/src/core/cpu_affinity.h
++++ b/src/core/cpu_affinity.h
+@@ -3,7 +3,6 @@
+ 
+ #pragma once
+ 
+-#include <array>
+ #include <vector>
+ #include "common/types.h"
+ 
+@@ -11,19 +10,17 @@ namespace Core {
+ 
+ class CpuAffinity {
+ public:
+-    explicit CpuAffinity(std::vector<int> allowed = {});
+-
+     int SetThreadAffinity(uintptr_t thread, u64 guest_mask);
+     int CurrentGuestCpu(u64 guest_mask);
+-    int GetAllowedHostCpus(uintptr_t thread, std::vector<int>& cpus);
+ 
+ private:
+-    int Refresh(uintptr_t thread);
+-    void Remap(std::vector<int> allowed);
++    void Remap(const std::vector<int>& allowed);
+ 
+-    std::array<int, 8> host_cpus{};
+-    std::vector<int> allowed_cpus;
+-    std::vector<int> applied_cpus;
++    struct HostCpu {
++        int id;
++        u8 guest_mask;
++    };
++    std::vector<HostCpu> host_cpus;
+ };
+ 
+ } // namespace Core
+diff --git a/src/core/cpu_id.cpp b/src/core/cpu_id.cpp
+index 70e3c09e8303609c6877b4f8fbabd52ef07e19ea..c095479d97238b726d2ad31d94a54f5c6cfc9e50 100644
+--- a/src/core/cpu_id.cpp
++++ b/src/core/cpu_id.cpp
+@@ -8,6 +8,7 @@
+ #include <csignal>
+ #include <memory>
+ #include <asm/prctl.h>
++#include <sys/prctl.h>
+ #include <sys/syscall.h>
+ #include <sys/ucontext.h>
+ #include <unistd.h>
+@@ -16,7 +17,18 @@
+ #include "common/assert.h"
+ #include "core/cpu_id.h"
+ #include "core/libraries/kernel/threads/pthread.h"
+-#include "core/signals.h"
++
++#ifdef ENABLE_CPU_ID_TRANSLATION
++extern "C" __attribute__((noinline, visibility("default"))) int ShadCpuIdTranslationActive() {
++    volatile int active = 0;
++    return active;
++}
++
++extern "C" __attribute__((noinline, visibility("default"))) void ShadCpuIdTranslationRange(
++    uintptr_t begin, uintptr_t end) {
++    asm volatile("" : : "r"(begin), "r"(end) : "memory");
++}
++#endif
+ 
+ namespace Core {
+ namespace {
+@@ -31,7 +43,7 @@ u32 host_cache_leaf{};
+ static_assert(std::atomic<uintptr_t>::is_always_lock_free);
+ std::atomic<uintptr_t> guest_begin{};
+ std::atomic<uintptr_t> guest_end{};
+-std::unique_ptr<Xbyak::CodeGenerator> fault_trampoline;
++std::array<std::unique_ptr<Xbyak::CodeGenerator>, 2> fault_trampolines;
+ 
+ std::array<u32, 4> GuestCpuid(u32 leaf, u32 subleaf, u32 cpu) {
+     std::array<u32, 4> result{};
+@@ -96,11 +108,16 @@ std::array<u32, 4> GuestCpuid(u32 leaf, u32 subleaf, u32 cpu) {
+     return result;
+ }
+ 
+-void PS4_SYSV_ABI ExecuteCpuId(u64* registers, CpuIdInstruction instruction, u32 destination) {
++u32 CurrentGuestCpu() {
+     auto* thread = Libraries::Kernel::g_curthread;
+     ASSERT(thread != nullptr);
+     const s32 cpu = thread->GetCurrentCpu();
+     ASSERT_MSG(cpu >= 0 && cpu < GuestCpuCount, "Cannot resolve guest CPU identity: {}", cpu);
++    return cpu;
++}
++
++void PS4_SYSV_ABI ExecuteCpuId(u64* registers, CpuIdInstruction instruction, u32 destination) {
++    const u32 cpu = CurrentGuestCpu();
+     switch (instruction) {
+     case CpuIdInstruction::Cpuid: {
+         const auto result = GuestCpuid(static_cast<u32>(registers[0]),
+@@ -125,15 +142,45 @@ void PS4_SYSV_ABI ExecuteCpuId(u64* registers, CpuIdInstruction instruction, u32
+     }
+ }
+ 
+-size_t CpuidLength(const u8* code) {
++enum class FaultInstruction { Cpuid, Rdtscp, Rdpid, Rdtsc };
++
++size_t FaultInstructionLength(const u8* code, FaultInstruction& instruction, u32& destination) {
++    u8 rex = 0;
++    u8 repeat = 0;
+     for (size_t index = 0; index < 14; ++index) {
+         const u8 byte = code[index];
+         if (byte == 0x0f) {
+-            return code[index + 1] == 0xa2 ? index + 2 : 0;
++            if (code[index + 1] == 0xa2) {
++                instruction = FaultInstruction::Cpuid;
++                return index + 2;
++            }
++            if (code[index + 1] == 0x31) {
++                instruction = FaultInstruction::Rdtsc;
++                return index + 2;
++            }
++            if (index < 13 && code[index + 1] == 0x01 && code[index + 2] == 0xf9) {
++                instruction = FaultInstruction::Rdtscp;
++                return index + 3;
++            }
++            if (index < 13 && repeat == 0xf3 && code[index + 1] == 0xc7 &&
++                (code[index + 2] & 0xf8) == 0xf8) {
++                instruction = FaultInstruction::Rdpid;
++                destination = (code[index + 2] & 7) | ((rex & 1) << 3);
++                return index + 3;
++            }
++            return 0;
++        }
++        if (byte >= 0x40 && byte <= 0x4f) {
++            rex = byte;
++            continue;
++        }
++        rex = 0;
++        if (byte == 0xf2 || byte == 0xf3) {
++            repeat = byte;
++            continue;
+         }
+-        if ((byte >= 0x40 && byte <= 0x4f) || byte == 0x66 || byte == 0x67 || byte == 0xf2 ||
+-            byte == 0xf3 || byte == 0x26 || byte == 0x2e || byte == 0x36 || byte == 0x3e ||
+-            byte == 0x64 || byte == 0x65) {
++        if (byte == 0x66 || byte == 0x67 || byte == 0x26 || byte == 0x2e || byte == 0x36 ||
++            byte == 0x3e || byte == 0x64 || byte == 0x65) {
+             continue;
+         }
+         return 0;
+@@ -141,26 +188,46 @@ size_t CpuidLength(const u8* code) {
+     return 0;
+ }
+ 
+-bool HandleCpuidFault(void* context, void* fault_address) {
++} // namespace
++
++bool HandleCpuIdFault(void* context, void* fault_address) {
+     auto& registers = static_cast<ucontext_t*>(context)->uc_mcontext.gregs;
+-    if (fault_address != nullptr || registers[REG_TRAPNO] != 13) {
++    const bool illegal = registers[REG_TRAPNO] == 6;
++    if (!illegal && (fault_address != nullptr || registers[REG_TRAPNO] != 13)) {
+         return false;
+     }
+     const auto address = static_cast<uintptr_t>(registers[REG_RIP]);
+-    const size_t length = CpuidLength(reinterpret_cast<const u8*>(address));
++    FaultInstruction instruction{};
++    u32 destination = 0;
++    const size_t length =
++        FaultInstructionLength(reinterpret_cast<const u8*>(address), instruction, destination);
+     if (length == 0) {
+         return false;
+     }
+-    if (address >= guest_begin.load(std::memory_order_relaxed) &&
++    if (instruction != FaultInstruction::Rdtsc &&
++        address >= guest_begin.load(std::memory_order_relaxed) &&
+         address < guest_end.load(std::memory_order_relaxed) &&
+         Libraries::Kernel::g_curthread != nullptr) {
++        if (instruction == FaultInstruction::Rdpid) {
++            static constexpr std::array HostRegisters{
++                REG_RAX, REG_RCX, REG_RDX, REG_RBX, REG_RSP, REG_RBP, REG_RSI, REG_RDI,
++                REG_R8,  REG_R9,  REG_R10, REG_R11, REG_R12, REG_R13, REG_R14, REG_R15};
++            registers[HostRegisters[destination]] = CurrentGuestCpu();
++            registers[REG_RIP] += length;
++            return true;
++        }
+         const auto stack = static_cast<uintptr_t>(registers[REG_RSP]) - FaultStackSize;
+         *reinterpret_cast<u64*>(stack) = address + length;
+         registers[REG_RSP] = stack;
+-        registers[REG_RIP] = reinterpret_cast<uintptr_t>(fault_trampoline->getCode());
++        const auto index = static_cast<size_t>(instruction);
++        registers[REG_RIP] = reinterpret_cast<uintptr_t>(fault_trampolines[index]->getCode());
+         return true;
+     }
+ 
++    if (illegal || instruction == FaultInstruction::Rdpid) {
++        return false;
++    }
++
+     const int saved_errno = errno;
+     sigset_t blocked, previous;
+     sigfillset(&blocked);
+@@ -168,17 +235,31 @@ bool HandleCpuidFault(void* context, void* fault_address) {
+         errno = saved_errno;
+         return false;
+     }
+-    const bool enabled = syscall(SYS_arch_prctl, ARCH_SET_CPUID, 1) == 0;
++    const bool is_cpuid = instruction == FaultInstruction::Cpuid;
++    const bool enabled = is_cpuid ? syscall(SYS_arch_prctl, ARCH_SET_CPUID, 1) == 0
++                                  : prctl(PR_SET_TSC, PR_TSC_ENABLE) == 0;
+     if (enabled) {
+-        u32 result[4];
+-        Xbyak::util::Cpu::getCpuidEx(static_cast<u32>(registers[REG_RAX]),
+-                                     static_cast<u32>(registers[REG_RCX]), result);
+-        if (syscall(SYS_arch_prctl, ARCH_SET_CPUID, 0) != 0) {
++        u32 result[4]{};
++        if (is_cpuid) {
++            Xbyak::util::Cpu::getCpuidEx(static_cast<u32>(registers[REG_RAX]),
++                                         static_cast<u32>(registers[REG_RCX]), result);
++        } else if (instruction == FaultInstruction::Rdtscp) {
++            asm volatile("rdtscp" : "=a"(result[0]), "=d"(result[3]), "=c"(result[2]) : : "memory");
++        } else {
++            asm volatile("rdtsc" : "=a"(result[0]), "=d"(result[3]) : : "memory");
++        }
++        const int restored = is_cpuid ? syscall(SYS_arch_prctl, ARCH_SET_CPUID, 0)
++                                      : prctl(PR_SET_TSC, PR_TSC_SIGSEGV);
++        if (restored != 0) {
+             _exit(1);
+         }
+         registers[REG_RAX] = result[0];
+-        registers[REG_RBX] = result[1];
+-        registers[REG_RCX] = result[2];
++        if (is_cpuid) {
++            registers[REG_RBX] = result[1];
++        }
++        if (instruction != FaultInstruction::Rdtsc) {
++            registers[REG_RCX] = result[2];
++        }
+         registers[REG_RDX] = result[3];
+         registers[REG_RIP] += length;
+     }
+@@ -187,8 +268,6 @@ bool HandleCpuidFault(void* context, void* fault_address) {
+     return enabled;
+ }
+ 
+-} // namespace
+-
+ void GenerateCpuIdInstruction(Xbyak::CodeGenerator& c, CpuIdInstruction instruction,
+                               u32 destination, bool fault_entry) {
+     using namespace Xbyak::util;
+@@ -265,13 +344,30 @@ void InitializeCpuId() {
+     } else if (host_max_extended >= 0x8000001d) {
+         host_cache_leaf = 0x8000001d;
+     }
+-    fault_trampoline = std::make_unique<Xbyak::CodeGenerator>(4096);
+-    GenerateCpuIdInstruction(*fault_trampoline, CpuIdInstruction::Cpuid, 0, true);
+-    fault_trampoline->readyRE();
+-    Signals::Instance()->RegisterAccessViolationHandler(HandleCpuidFault, 2);
++    for (const auto instruction : {CpuIdInstruction::Cpuid, CpuIdInstruction::Rdtscp}) {
++        auto& trampoline = fault_trampolines[static_cast<size_t>(instruction)];
++        trampoline = std::make_unique<Xbyak::CodeGenerator>(4096);
++        GenerateCpuIdInstruction(*trampoline, instruction, 0, true);
++        trampoline->readyRE();
++    }
+ }
+ 
+ void EnableCpuIdFaulting() {
++#ifdef ENABLE_CPU_ID_TRANSLATION
++    if (ShadCpuIdTranslationActive()) {
++        static std::atomic announced{false};
++        if (!announced.exchange(true)) {
++            LOG_INFO(Core, "CPU identity translation active");
++        }
++        return;
++    }
++#endif
++    if (prctl(PR_SET_TSC, PR_TSC_SIGSEGV) != 0) {
++        static std::atomic warned{false};
++        if (!warned.exchange(true)) {
++            LOG_WARNING(Core, "TSC faulting unavailable; RDTSCP identity requires static patches");
++        }
++    }
+     if (syscall(SYS_arch_prctl, ARCH_SET_CPUID, 0) != 0) {
+         static std::atomic warned{false};
+         if (!warned.exchange(true)) {
+@@ -283,6 +379,9 @@ void EnableCpuIdFaulting() {
+ void SetCpuIdGuestAddressRange(uintptr_t begin, uintptr_t end) {
+     guest_begin.store(begin, std::memory_order_relaxed);
+     guest_end.store(end, std::memory_order_relaxed);
++#ifdef ENABLE_CPU_ID_TRANSLATION
++    ShadCpuIdTranslationRange(begin, end);
++#endif
+ }
+ 
+ } // namespace Core
+diff --git a/src/core/cpu_id.h b/src/core/cpu_id.h
+index 3a0b2334977bd790adac56018a356ae040022d4f..fabf283f94be8e18af100c11cd160e5dccf493b4 100644
+--- a/src/core/cpu_id.h
++++ b/src/core/cpu_id.h
+@@ -15,6 +15,7 @@ enum class CpuIdInstruction : u32 { Cpuid, Rdtscp, Rdpid };
+ 
+ void InitializeCpuId();
+ void EnableCpuIdFaulting();
++bool HandleCpuIdFault(void* context, void* fault_address);
+ void SetCpuIdGuestAddressRange(uintptr_t begin, uintptr_t end);
+ void GenerateCpuIdInstruction(Xbyak::CodeGenerator& code, CpuIdInstruction instruction,
+                               u32 destination = 0, bool fault_entry = false);
+diff --git a/src/core/cpu_id_translation/CMakeLists.txt b/src/core/cpu_id_translation/CMakeLists.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..2c95cd29b9311f01ebcd7794c15db66acf4f8bfd
+--- /dev/null
++++ b/src/core/cpu_id_translation/CMakeLists.txt
+@@ -0,0 +1,11 @@
++# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++# SPDX-License-Identifier: GPL-2.0-or-later
++
++set(PREFERRED_BASE 0x710040000000)
++add_library(shadps4_cpu_id SHARED client.c)
++configure_DynamoRIO_client(shadps4_cpu_id)
++if (CMAKE_C_COMPILER_ID MATCHES "Clang" AND LINKER_IS_LLVM_LLD)
++    target_link_options(shadps4_cpu_id PRIVATE "-fuse-ld=${CMAKE_LINKER}")
++endif()
++use_DynamoRIO_extension(shadps4_cpu_id drmgr)
++use_DynamoRIO_extension(shadps4_cpu_id drwrap)
+diff --git a/src/core/cpu_id_translation/build.py b/src/core/cpu_id_translation/build.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36b6afeddbe70fae97f53f9efca30a6617a7744d
+--- /dev/null
++++ b/src/core/cpu_id_translation/build.py
+@@ -0,0 +1,118 @@
++#!/usr/bin/env python3
++# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++# SPDX-License-Identifier: GPL-2.0-or-later
++
++"""Build the experimental Linux x86-64 CPU identity translation runtime and emulator."""
++
++import argparse
++import os
++from pathlib import Path
++import platform
++import shutil
++import subprocess
++import sys
++
++REVISION = "a522a505582076eb7f68363b5d301ddca44399e2"
++REPOSITORY = "https://github.com/DynamoRIO/dynamorio.git"
++ROOT = Path(__file__).resolve().parents[3]
++PATCH = Path(__file__).with_name("dynamorio.patch")
++
++
++def run(*args, cwd=None):
++    subprocess.run([str(arg) for arg in args], cwd=cwd, check=True)
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--build-dir", type=Path, default=ROOT / "build-cpu-id-translation")
++    parser.add_argument("--runtime-source", type=Path)
++    parser.add_argument("--runtime-build", type=Path)
++    parser.add_argument("--cmake", default=shutil.which("cmake"))
++    parser.add_argument("--ninja", default=shutil.which("ninja"))
++    parser.add_argument("--cc", help="Emulator C compiler")
++    parser.add_argument("--cxx", help="Emulator C++23 compiler")
++    parser.add_argument("--jobs", type=int, default=min(4, os.cpu_count() or 1))
++    args = parser.parse_args()
++    if platform.system() != "Linux" or platform.machine() not in {"x86_64", "AMD64"}:
++        parser.error("This experiment supports Linux x86-64 only")
++    if not args.cmake or not args.ninja or args.jobs < 1:
++        parser.error("cmake, ninja, and a positive --jobs value are required")
++    cache = Path.home() / ".cache/shadps4-cpu-id-translation" / REVISION
++    source = (args.runtime_source or cache / "source").resolve()
++    runtime = (args.runtime_build or cache / "build").resolve()
++    build = args.build_dir.resolve()
++    if not source.exists():
++        source.mkdir(parents=True)
++        run("git", "init", source)
++        run("git", "remote", "add", "origin", REPOSITORY, cwd=source)
++        run("git", "fetch", "--depth", "1", "--no-recurse-submodules", "origin", REVISION,
++            cwd=source)
++        run("git", "checkout", "--detach", REVISION, cwd=source)
++    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
++    if head != REVISION:
++        raise RuntimeError("Runtime source has a different revision; preserved")
++    diff = subprocess.check_output(["git", "diff", "HEAD", "--"], cwd=source)
++    if not diff:
++        run("git", "apply", "--check", PATCH, cwd=source)
++        run("git", "apply", PATCH, cwd=source)
++    elif diff != PATCH.read_bytes():
++        raise RuntimeError("Runtime source contains other changes; preserved")
++    run("git", "submodule", "update", "--init", "third_party/elfutils", cwd=source)
++    run(args.cmake, "-S", source, "-B", runtime, "-G", "Ninja",
++        "-DCMAKE_MAKE_PROGRAM=" + args.ninja, "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
++        "-DBUILD_TESTS=OFF", "-DBUILD_SAMPLES=OFF", "-DBUILD_CLIENTS=OFF",
++        "-DBUILD_DOCS=OFF", "-DBUILD_EXT=ON", "-DDISABLE_DRGUI=ON",
++        "-DDISABLE_WARNINGS=ON", "-Dpreferred_base=0x710000000000",
++        "-DPREFERRED_BASE=0x710040000000")
++    run(args.cmake, "--build", runtime, "--target", "dynamorio", "drrun", "drmgr", "drwrap",
++        "--parallel", args.jobs)
++    generator = [] if (build / "CMakeCache.txt").exists() else [
++        "-G", "Ninja", "-DCMAKE_MAKE_PROGRAM=" + args.ninja]
++    compilers = []
++    if args.cc:
++        compilers.append("-DCMAKE_C_COMPILER=" + args.cc)
++    if args.cxx:
++        compilers.append("-DCMAKE_CXX_COMPILER=" + args.cxx)
++    run(args.cmake, "-S", ROOT, "-B", build, *generator, *compilers, "-DCMAKE_BUILD_TYPE=Release",
++        "-DENABLE_CPU_ID_TRANSLATION=ON", "-DDynamoRIO_DIR=" + str(runtime / "cmake"))
++    run(args.cmake, "--build", build, "--target", "shadps4", "shadps4_cpu_id",
++        "--parallel", args.jobs)
++    command = [str(runtime / "bin64/drrun"), "-disable_rseq", "-vm_base", "0x710020000000",
++               "-no_vm_base_near_app", "-c",
++               str(build / "src/core/cpu_id_translation/libshadps4_cpu_id.so"), "--",
++               str(build / "shadps4")]
++    launcher = build / "run-translated.py"
++    launcher.write_text('''#!/usr/bin/env python3
++# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++# SPDX-License-Identifier: GPL-2.0-or-later
++import os
++import signal
++import subprocess
++import sys
++COMMAND = ''' + repr(command) + '''
++process = subprocess.Popen(COMMAND + sys.argv[1:], start_new_session=True)
++try:
++    raise SystemExit(process.wait())
++except KeyboardInterrupt:
++    if process.poll() is None:
++        os.killpg(process.pid, signal.SIGINT)
++        try:
++            process.wait(timeout=5)
++        except subprocess.TimeoutExpired:
++            os.killpg(process.pid, signal.SIGTERM)
++            try:
++                process.wait(timeout=5)
++            except subprocess.TimeoutExpired:
++                os.killpg(process.pid, signal.SIGKILL)
++                process.wait()
++    raise SystemExit(130)
++''')
++    print("LAUNCHER=" + str(launcher))
++
++
++if __name__ == "__main__":
++    try:
++        main()
++    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
++        print("BUILD_FAILED=" + str(error), file=sys.stderr)
++        raise SystemExit(1)
+diff --git a/src/core/cpu_id_translation/client.c b/src/core/cpu_id_translation/client.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..7087ff4fac43d771a88baea7beee7f08e33cf118
+--- /dev/null
++++ b/src/core/cpu_id_translation/client.c
+@@ -0,0 +1,72 @@
++// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#include <stdatomic.h>
++#include <stdint.h>
++#include "dr_api.h"
++#include "drmgr.h"
++#include "drwrap.h"
++
++static atomic_uintptr_t guest_begin;
++static atomic_uintptr_t guest_end;
++static app_pc main_start;
++
++static void SetGuestRange(void* context, void** user_data) {
++    const uintptr_t begin = (uintptr_t)drwrap_get_arg(context, 0);
++    const uintptr_t end = (uintptr_t)drwrap_get_arg(context, 1);
++    atomic_store_explicit(&guest_begin, begin, memory_order_relaxed);
++    atomic_store_explicit(&guest_end, end, memory_order_release);
++}
++
++static void TranslationActive(void* context, void** user_data) {
++    DR_ASSERT(drwrap_skip_call(context, (void*)1, 0));
++}
++
++static void ModuleLoaded(void* context, const module_data_t* module, bool loaded) {
++    if (module->start != main_start) {
++        return;
++    }
++    app_pc active = (app_pc)dr_get_proc_address(module->handle, "ShadCpuIdTranslationActive");
++    app_pc range = (app_pc)dr_get_proc_address(module->handle, "ShadCpuIdTranslationRange");
++    DR_ASSERT_MSG(active != NULL && range != NULL,
++                  "The emulator must be built with ENABLE_CPU_ID_TRANSLATION=ON");
++    DR_ASSERT(drwrap_wrap(active, TranslationActive, NULL));
++    DR_ASSERT(drwrap_wrap(range, SetGuestRange, NULL));
++}
++
++static void Shutdown(void) {
++    drwrap_exit();
++    drmgr_exit();
++}
++
++static dr_emit_flags_t TranslateBlock(void* context, void* tag, instrlist_t* block, bool for_trace,
++                                      bool translating) {
++    const uintptr_t end = atomic_load_explicit(&guest_end, memory_order_acquire);
++    const uintptr_t begin = atomic_load_explicit(&guest_begin, memory_order_relaxed);
++    for (instr_t* instruction = instrlist_first_app(block); instruction != NULL;) {
++        instr_t* next = instr_get_next_app(instruction);
++        const app_pc pc = instr_get_app_pc(instruction);
++        const int opcode = instr_get_opcode(instruction);
++        if ((uintptr_t)pc >= begin && (uintptr_t)pc < end &&
++            (opcode == OP_cpuid || opcode == OP_rdtscp || opcode == OP_rdpid)) {
++            instr_t* trap = INSTR_CREATE_ud2(context);
++            instr_set_translation(trap, pc);
++            instrlist_replace(block, instruction, trap);
++            instr_destroy(context, instruction);
++        }
++        instruction = next;
++    }
++    return DR_EMIT_STORE_TRANSLATIONS;
++}
++
++DR_EXPORT void dr_client_main(client_id_t id, int argc, const char* argv[]) {
++    dr_set_client_name("shadPS4 CPU identity translation", "https://github.com/Chreece/shadPS4");
++    DR_ASSERT(drmgr_init());
++    DR_ASSERT(drwrap_init());
++    module_data_t* main_module = dr_get_main_module();
++    main_start = main_module->start;
++    dr_free_module_data(main_module);
++    DR_ASSERT(drmgr_register_exit_event(Shutdown));
++    DR_ASSERT(drmgr_register_module_load_event(ModuleLoaded));
++    DR_ASSERT(drmgr_register_bb_app2app_event(TranslateBlock, NULL));
++}
+diff --git a/src/core/cpu_id_translation/dynamorio.patch b/src/core/cpu_id_translation/dynamorio.patch
+new file mode 100644
+index 0000000000000000000000000000000000000000..002ea056ad4842d31d46b7b0d8dbe61f78377888
+--- /dev/null
++++ b/src/core/cpu_id_translation/dynamorio.patch
+@@ -0,0 +1,95 @@
++diff --git a/core/unix/memquery_linux.c b/core/unix/memquery_linux.c
++index c570f60..1629abf 100644
++--- a/core/unix/memquery_linux.c
+++++ b/core/unix/memquery_linux.c
++@@ -162,8 +162,7 @@ memquery_iterator_start(memquery_iter_t *iter, app_pc start, bool may_alloc)
++      * "/proc/self/maps" uses pid which fails if primary thread in group
++      * has exited.
++      */
++-    snprintf(maps_name, BUFFER_SIZE_ELEMENTS(maps_name), "/proc/%d/maps",
++-             d_r_get_thread_id());
+++    snprintf(maps_name, BUFFER_SIZE_ELEMENTS(maps_name), "/proc/thread-self/maps");
++     mi->maps = os_open(maps_name, OS_OPEN_READ);
++     ASSERT(mi->maps != INVALID_FILE);
++     mi->buf[BUFSIZE - 1] = '\0'; /* permanently */
++diff --git a/core/unix/os.c b/core/unix/os.c
++index 3c22697..ee86fba 100644
++--- a/core/unix/os.c
+++++ b/core/unix/os.c
++@@ -8530,6 +8530,32 @@ pre_system_call(dcontext_t *dcontext)
++         /* we handle arch_prctl in post_syscall */
++         dcontext->sys_param0 = sys_param(dcontext, 0);
++         dcontext->sys_param1 = sys_param(dcontext, 1);
+++        if (INTERNAL_OPTION(mangle_app_seg) && dcontext->sys_param0 == ARCH_SET_GS) {
+++            /* The code-cache syscall return path already needs DR's GS.  Perform
+++             * the kernel operation here and restore GS before re-entering that
+++             * path.  Block delivery while the stolen register is unavailable.
+++             */
+++            kernel_sigset_t blocked, previous;
+++            os_thread_data_t *ostd = dcontext->os_field;
+++            void *dr_gs = ostd->priv_alt_tls_base;
+++            memset(&blocked, 0xff, sizeof(blocked));
+++            dynamorio_syscall(SYS_rt_sigprocmask, 4, SIG_SETMASK, &blocked, &previous,
+++                              sizeof(blocked));
+++            long result = dynamorio_syscall(SYS_arch_prctl, 2, ARCH_SET_GS,
+++                                            dcontext->sys_param1);
+++            long restored = dynamorio_syscall(SYS_arch_prctl, 2, ARCH_SET_GS, dr_gs);
+++            ASSERT(restored == 0);
+++            if (result == 0)
+++                tls_handle_post_arch_prctl(dcontext, ARCH_SET_GS,
+++                                           dcontext->sys_param1);
+++            dynamorio_syscall(SYS_rt_sigprocmask, 4, SIG_SETMASK, &previous, NULL,
+++                              sizeof(previous));
+++            if (result == 0)
+++                set_success_return_val(dcontext, 0);
+++            else
+++                set_failure_return_val(dcontext, -result);
+++            execute_syscall = false;
+++        }
++         break;
++     }
++ #    endif
++@@ -10015,8 +10041,7 @@ read_proc_self_exe(bool ignore_cache)
++          */
++         ssize_t res;
++         DEBUG_DECLARE(int len =)
++-        snprintf(exepath, BUFFER_SIZE_ELEMENTS(exepath), "/proc/%d/exe",
++-                 get_process_id());
+++        snprintf(exepath, BUFFER_SIZE_ELEMENTS(exepath), "/proc/self/exe");
++         ASSERT(len > 0);
++         NULL_TERMINATE_BUFFER(exepath);
++         /* i#960: readlink does not null terminate, so we do it. */
++@@ -11130,6 +11155,33 @@ os_list_threads_from_task_dir(dcontext_t *dcontext, const char *task_path,
++         ASSERT_MESSAGE(CHKLVL_ASSERTS, "failed to parse /proc/pid/task entry", r == 1);
++         if (tid <= 0)
++             continue;
+++        {
+++            char path[MAXIMUM_PATH];
+++            char status[4096];
+++            snprintf(path, BUFFER_SIZE_ELEMENTS(path), "%s/%s/status", task_path,
+++                     iter.name);
+++            file_t file = os_open(path, OS_OPEN_READ);
+++            if (file != INVALID_FILE) {
+++                ssize_t count = os_read(file, status, sizeof(status) - 1);
+++                os_close(file);
+++                if (count > 0) {
+++                    status[count] = '\0';
+++                    char *field = strstr(status, "\nNSpid:");
+++                    if (field != NULL) {
+++                        field += 7;
+++                        while (*field == ' ' || *field == '\t') {
+++                            while (*field == ' ' || *field == '\t')
+++                                ++field;
+++                            if (*field < '0' || *field > '9')
+++                                break;
+++                            tid = 0;
+++                            while (*field >= '0' && *field <= '9')
+++                                tid = tid * 10 + (*field++ - '0');
+++                        }
+++                    }
+++                }
+++            }
+++        }
++         if (num_threads == tids_alloced) {
++             /* realloc, essentially.  Less expensive than counting first. */
++             new_tids = HEAP_ARRAY_ALLOC(dcontext, thread_id_t, tids_alloced * 2,
+diff --git a/src/core/cpu_id_translation/dynamorio.patch.license b/src/core/cpu_id_translation/dynamorio.patch.license
+new file mode 100644
+index 0000000000000000000000000000000000000000..cb9beacb922a6c3da54ad14966f6efce6f8b2324
+--- /dev/null
++++ b/src/core/cpu_id_translation/dynamorio.patch.license
+@@ -0,0 +1,50 @@
++SPDX-FileCopyrightText: Copyright 2010-2026 Google, Inc.
++SPDX-FileCopyrightText: Copyright 2026 Meta Platforms, Inc.
++SPDX-FileCopyrightText: Copyright 2011 Massachusetts Institute of Technology
++SPDX-FileCopyrightText: Copyright 2000-2010 VMware, Inc.
++SPDX-FileCopyrightText: Copyright 2025 Foundation of Research and Technology, Hellas.
++SPDX-FileCopyrightText: Copyright 2003-2007 Determina Corp.
++SPDX-FileCopyrightText: Copyright 2001-2003 Massachusetts Institute of Technology
++SPDX-FileCopyrightText: Copyright 2000-2001 Hewlett-Packard Company
++SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++SPDX-License-Identifier: BSD-3-Clause
++
++/* *******************************************************************************
++ * Copyright (c) 2010-2026 Google, Inc.  All rights reserved.
++ * Copyright (c) 2026 Meta Platforms, Inc.  All rights reserved.
++ * Copyright (c) 2011 Massachusetts Institute of Technology  All rights reserved.
++ * Copyright (c) 2000-2010 VMware, Inc.  All rights reserved.
++ * Copyright (c) 2025 Foundation of Research and Technology, Hellas.
++ * *******************************************************************************/
++
++/*
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ *
++ * * Redistributions of source code must retain the above copyright notice,
++ *   this list of conditions and the following disclaimer.
++ *
++ * * Redistributions in binary form must reproduce the above copyright notice,
++ *   this list of conditions and the following disclaimer in the documentation
++ *   and/or other materials provided with the distribution.
++ *
++ * * Neither the name of VMware, Inc. nor the names of its contributors may be
++ *   used to endorse or promote products derived from this software without
++ *   specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED. IN NO EVENT SHALL VMWARE, INC. OR CONTRIBUTORS BE LIABLE
++ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
++ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
++ * DAMAGE.
++ */
++
++/* Copyright (c) 2003-2007 Determina Corp. */
++/* Copyright (c) 2001-2003 Massachusetts Institute of Technology */
++/* Copyright (c) 2000-2001 Hewlett-Packard Company */
+diff --git a/src/core/libraries/kernel/threads/pthread.cpp b/src/core/libraries/kernel/threads/pthread.cpp
+index 499cf4c3dc3c7ef2bbd98c047bfcbff21dd0812a..8de1722e70917670c5f4df84bdd94d26341640ef 100644
+--- a/src/core/libraries/kernel/threads/pthread.cpp
++++ b/src/core/libraries/kernel/threads/pthread.cpp
+@@ -317,26 +317,25 @@ int PS4_SYSV_ABI posix_pthread_create_name_np(PthreadT* thread, const PthreadAtt
+         requested_attr->cpuset->_reserved != 0) {
+         return POSIX_EINVAL;
+     }
+-    const u64 mask = requested_attr != nullptr && requested_attr->cpuset != nullptr
+-                         ? requested_attr->cpuset->bits
+-                     : curthread != nullptr
+-                         ? curthread->affinity_mask.load(std::memory_order_acquire)
+-                         : GetGuestCpuMask();
++    const bool explicit_affinity = requested_attr != nullptr && requested_attr->cpuset != nullptr;
++    u64 mask = explicit_affinity ? requested_attr->cpuset->bits : GetGuestCpuMask();
++    Core::CpuAffinity affinity;
++    if (curthread != nullptr) {
++#if defined(__linux__) && defined(ARCH_X86_64)
++        const AffinitySignalGuard signal_guard;
++#endif
++        std::scoped_lock lock{curthread->affinity_mutex};
++        affinity = curthread->native_thr->GetCpuAffinity();
++        if (!explicit_affinity) {
++            mask = curthread->affinity_mask.load(std::memory_order_acquire);
++        }
++    }
+     if (mask == 0) {
+         return POSIX_EINVAL;
+     }
+     if ((mask & ~GetGuestCpuMask()) != 0) {
+         return POSIX_EPERM;
+     }
+-    std::vector<int> host_cpus;
+-    if (curthread != nullptr) {
+-        std::scoped_lock lock{curthread->affinity_mutex};
+-        if (const int ret =
+-                curthread->native_thr->GetCpuAffinity().GetAllowedHostCpus(0, host_cpus);
+-            ret != 0) {
+-            return ret;
+-        }
+-    }
+     auto* thread_state = ThrState::Instance();
+     Pthread* new_thread = thread_state->Alloc(curthread);
+     if (new_thread == nullptr) {
+@@ -410,7 +409,7 @@ int PS4_SYSV_ABI posix_pthread_create_name_np(PthreadT* thread, const PthreadAtt
+     /* Create thread */
+     new_thread->native_thr = std::make_unique<Core::NativeThread>(Core::NativeThread());
+     const int ret =
+-        new_thread->native_thr->Create(RunThread, new_thread, mask, std::move(host_cpus));
++        new_thread->native_thr->Create(RunThread, new_thread, mask, std::move(affinity));
+     if (ret) {
+         *thread = nullptr;
+         thread_state->Unlink(curthread, new_thread);
+@@ -1110,6 +1109,8 @@ bool Pthread::DispatchSignal(s32 sig, Siginfo* info, Ucontext* context) {
+     }
+ 
+     SetGuestSigmask(old_mask);
++    // Signals queued while the callback blocked them need a new delivery attempt.
++    WakeForSignal();
+ 
+     if (in_sigsuspend.load(std::memory_order_acquire)) {
+         sigsuspend_interrupted.store(true, std::memory_order_release);
+diff --git a/src/core/libraries/kernel/threads/thread_state.cpp b/src/core/libraries/kernel/threads/thread_state.cpp
+index cb48a38d2b31bef0d5264a04395b3161fefd4f14..ffff5538ea601f5339f6d8ced1c78e91469e05f5 100644
+--- a/src/core/libraries/kernel/threads/thread_state.cpp
++++ b/src/core/libraries/kernel/threads/thread_state.cpp
+@@ -41,12 +41,13 @@ void ThreadState::Collect(Pthread* curthread) {
+                 ++it;
+                 continue;
+             }
+-            FreeStack(&td->attr);
+             work_list.push_back(td);
+             it = gc_list.erase(it);
+         }
+     }
+     for (Pthread* td : work_list) {
++        td->native_thr->Join();
++        FreeStack(&td->attr);
+         Free(curthread, td);
+     }
+ }
+@@ -118,6 +119,7 @@ Pthread* ThreadState::Alloc(Pthread* curthread) {
+ }
+ 
+ void ThreadState::Free(Pthread* curthread, Pthread* thread) {
++    thread->native_thr.reset();
+     if (curthread != nullptr) {
+         std::scoped_lock lk{tcb_lock};
+         TcbDtor(thread->tcb);
+diff --git a/src/core/signals.cpp b/src/core/signals.cpp
+index 81485023df5a708646f1964fdf93b0b5886c6dbe..c2d465edf0cb074b4af2e8b8af96cc79f3fa1457 100644
+--- a/src/core/signals.cpp
++++ b/src/core/signals.cpp
+@@ -12,6 +12,10 @@
+ #include "core/signals.h"
+ #include "emulator.h"
+ 
++#if defined(__linux__) && defined(ARCH_X86_64)
++#include "core/cpu_id.h"
++#endif
++
+ #ifdef _WIN32
+ #include <windows.h>
+ static constexpr DWORD MS_VC_EXCEPTION = 0x406D1388;
+@@ -247,6 +251,11 @@ static s32 NativeSiCodeToGuest(s32 sig, s32 code) {
+ }
+ 
+ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
++#if defined(__linux__) && defined(ARCH_X86_64)
++    if ((sig == SIGSEGV || sig == SIGILL) && HandleCpuIdFault(raw_context, info->si_addr)) {
++        return;
++    }
++#endif
+     using namespace Libraries::Kernel;
+     auto* thread = g_curthread;
+     const auto* signals = Signals::Instance();
+@@ -336,6 +345,13 @@ SignalDispatch::SignalDispatch() {
+             sigaction(SIGTRAP, &action, nullptr) == 0 && sigaction(SIGSYS, &action, nullptr) == 0 &&
+             sigaction(SIGUSR1, &action, nullptr) == 0 && sigaction(SIGSLEEP, &action, nullptr) == 0,
+         "Failed to register signal handlers.");
++#if defined(__linux__) && defined(ARCH_X86_64)
++    // Host timestamp reads in another fault handler must still reach the TSC emulator.
++    action.sa_flags |= SA_NODEFER;
++    ASSERT_MSG(sigaction(SIGSEGV, &action, nullptr) == 0 &&
++                   sigaction(SIGILL, &action, nullptr) == 0,
++               "Failed to enable nested CPU instruction faults.");
++#endif
+ #endif
+ }
+ 
+diff --git a/src/core/thread.cpp b/src/core/thread.cpp
+index fe189dbfa4da0c3696b51c0a501a4bd18bb41bf9..6abef21a1466d7a2374daf1e4d5b48f3f560d627 100644
+--- a/src/core/thread.cpp
++++ b/src/core/thread.cpp
+@@ -32,21 +32,15 @@ NativeThread::NativeThread() : native_handle{0} {}
+ 
+ NativeThread::~NativeThread() {}
+ 
+-int NativeThread::Create(ThreadFunc func, void* arg, u64 affinity_mask,
+-                         std::vector<int> host_cpus) {
+-    cpu_affinity = CpuAffinity{std::move(host_cpus)};
++int NativeThread::Create(ThreadFunc func, void* arg, u64 affinity_mask, CpuAffinity affinity) {
++    cpu_affinity = std::move(affinity);
+     struct Startup {
+         ThreadFunc func;
+         void* arg;
+-        CpuAffinity& affinity;
+-        u64 mask;
+-        std::promise<int> ready;
+-        std::future<void> start;
++        std::future<int> ready;
+     };
+-    std::promise<void> start;
+-    auto startup = std::make_unique<Startup>(func, arg, cpu_affinity, affinity_mask,
+-                                             std::promise<int>{}, start.get_future());
+-    auto ready = startup->ready.get_future();
++    std::promise<int> ready;
++    auto startup = std::make_unique<Startup>(func, arg, ready.get_future());
+     const auto entry = [](void* data)
+ #ifdef _WIN64
+         -> DWORD
+@@ -57,9 +51,7 @@ int NativeThread::Create(ThreadFunc func, void* arg, u64 affinity_mask,
+         std::unique_ptr<Startup> state{static_cast<Startup*>(data)};
+         const auto func = state->func;
+         const auto arg = state->arg;
+-        const int ret = state->affinity.SetThreadAffinity(0, state->mask);
+-        state->ready.set_value(ret);
+-        state->start.wait();
++        const int ret = state->ready.get();
+         state.reset();
+         if (ret != 0) {
+             return 0;
+@@ -79,8 +71,8 @@ int NativeThread::Create(ThreadFunc func, void* arg, u64 affinity_mask,
+     }
+ #endif
+     startup.release();
+-    const int error = ready.get();
+-    start.set_value();
++    const int error = cpu_affinity.SetThreadAffinity(GetHandle(), affinity_mask);
++    ready.set_value(error);
+     if (error != 0) {
+ #ifdef _WIN64
+         WaitForSingleObject(native_handle, INFINITE);
+@@ -101,7 +93,6 @@ void NativeThread::Exit() {
+     tid = 0;
+ 
+ #ifdef _WIN64
+-    native_handle = nullptr;
+     ExitThread(0);
+ #else
+     // Disable and free the signal stack.
+@@ -118,6 +109,19 @@ void NativeThread::Exit() {
+ #endif
+ }
+ 
++void NativeThread::Join() {
++    if (!native_handle) {
++        return;
++    }
++#ifdef _WIN64
++    ASSERT(WaitForSingleObject(native_handle, INFINITE) == WAIT_OBJECT_0);
++    CloseHandle(native_handle);
++#else
++    ASSERT(pthread_join(reinterpret_cast<pthread_t>(native_handle), nullptr) == 0);
++#endif
++    native_handle = 0;
++}
++
+ void NativeThread::Initialize() {
+ #ifdef ARCH_X86_64
+     // Set MXCSR and FPUCW registers to the values used by Orbis.
+diff --git a/src/core/thread.h b/src/core/thread.h
+index bd370ee61feffdf6f8add7d4c9942faa05c6e01a..486eac7a8402815d0ac63f4c31baf1e5e94244ba 100644
+--- a/src/core/thread.h
++++ b/src/core/thread.h
+@@ -22,8 +22,9 @@ public:
+     NativeThread();
+     ~NativeThread();
+ 
+-    int Create(ThreadFunc func, void* arg, u64 affinity_mask, std::vector<int> host_cpus = {});
++    int Create(ThreadFunc func, void* arg, u64 affinity_mask, CpuAffinity affinity = {});
+     void Exit();
++    void Join();
+ 
+     void Initialize();
+ 

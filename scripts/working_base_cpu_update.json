@@ -1,0 +1,25 @@
+{
+  "base_commit": "89e3c8faaffaebb7910d90dab11cdc39c6c48859",
+  "base_tree": "72a2a8b714fb3535dcba50433271e6a9dbcb57d3",
+  "cpu_reference": "ad8e42e098e7a529227f2a5b2a921070c82b029f",
+  "candidate_tree": "95b74819840db085b987fa8e8709306a8ba4acd7",
+  "installed_sha256": "6bd789967f77e3e8eb315e5d7fde920928c6f6cc86f598d973f733e64a31bfd2",
+  "patch_sha256": "36167e52c2ba1bd6317fb9be02eaa803f058422dcd15c3e4ba74adb9335a8a3a",
+  "changed_files": [
+    "CMakeLists.txt",
+    "src/core/cpu_affinity.cpp",
+    "src/core/cpu_affinity.h",
+    "src/core/cpu_id.cpp",
+    "src/core/cpu_id.h",
+    "src/core/cpu_id_translation/CMakeLists.txt",
+    "src/core/cpu_id_translation/build.py",
+    "src/core/cpu_id_translation/client.c",
+    "src/core/cpu_id_translation/dynamorio.patch",
+    "src/core/cpu_id_translation/dynamorio.patch.license",
+    "src/core/libraries/kernel/threads/pthread.cpp",
+    "src/core/libraries/kernel/threads/thread_state.cpp",
+    "src/core/signals.cpp",
+    "src/core/thread.cpp",
+    "src/core/thread.h"
+  ]
+}
