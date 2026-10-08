@@ -60,7 +60,13 @@ static void Leaf(Query query, const char* mode, int cpu, uint32_t leaf) {
         for (uint32_t subleaf = 1; (value.eax & 31) != 0 && subleaf < 32; ++subleaf) {
             value = Emit(query, mode, cpu, leaf, subleaf);
         }
-    } else if (leaf == 7 || leaf == 0x14 || leaf == 0x17 || leaf == 0x18 || leaf == 0x1d) {
+    } else if (leaf == 7) {
+        for (uint32_t subleaf = 1; (subleaf <= first.eax || subleaf <= 2) && subleaf < 32;
+             ++subleaf) {
+            Emit(query, mode, cpu, leaf, subleaf);
+        }
+        Emit(query, mode, cpu, leaf, 0xffffffff);
+    } else if (leaf == 0x14 || leaf == 0x17 || leaf == 0x18 || leaf == 0x1d) {
         for (uint32_t subleaf = 1; subleaf <= first.eax && subleaf < 32; ++subleaf) {
             Emit(query, mode, cpu, leaf, subleaf);
         }

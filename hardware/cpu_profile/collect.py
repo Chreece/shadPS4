@@ -22,7 +22,7 @@ import urllib.request
 
 
 HERE = Path(__file__).resolve().parent
-SUITE_SHA256 = "e96ea8dfaf0b397a0bbd29fa89193547436e9d479200a262baa3bdb47504b778"
+SUITE_SHA256 = "e69e669064b9347310b567f1952ee1a5270a7857b7d182d61ebe4181d487812b"
 ARTIFACTS = {
     "working-build-95b74819840d/shadps4": "d78c29f93102fa83cfb915a530c71b6a196e7811eeb5757a740427c624af078e",
     "working-build-95b74819840d/src/core/cpu_id_translation/libshadps4_cpu_id.so": "af4b6526a505bd124957584b5c8cb0dca29e85eb0d73ee1a4871f7d1da357861",
