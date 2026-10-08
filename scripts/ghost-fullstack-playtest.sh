@@ -264,6 +264,33 @@ BLOBS
     return 0
 }
 
+resolve_verified_startup_conflicts() {
+    # Audited against the 2026-10-08 13:16 archive and independently tested
+    # with the actual three Git merge-index stages for both CMake files.
+    if [[ "$LOAD_SHA" != 'f8550f0ea3b3dd12eef824c07d1ed02a26533a6f' ||
+          "$(git -C "$WORK" rev-parse MERGE_HEAD)" != "$LOAD_SHA" ]]; then
+        log 'Startup PR has changed; no automatic resolution.'
+        return 1
+    fi
+    local resolver="$SESSION/resolve-startup-20261008.py"
+    if ! curl -fsSL --retry 2 --max-time 30 \
+        "https://raw.githubusercontent.com/Chreece/shadPS4/bd453e3617cb02941e2530426be50eaa3078a795/scripts/resolve_ghost_startup_conflicts.py" \
+        -o "$resolver"; then
+        log 'Pinned startup conflict resolver unavailable.'
+        return 1
+    fi
+    run python3 -I "$resolver" "$WORK" || return 1
+    run git -C "$WORK" add -- CMakeLists.txt tests/CMakeLists.txt || return 1
+    if [[ -n "$(git -C "$WORK" diff --name-only --diff-filter=U)" ]]; then
+        log 'Unexpected merge conflicts remain after startup resolution.'
+        return 1
+    fi
+    run git -C "$WORK" diff --cached --check || return 1
+    run git -C "$WORK" "${GIT[@]}" commit --no-edit || return 1
+    printf 'startup_conflict_resolution=two exact archived CMake conflicts, network code retained\n' >> "$MANIFEST"
+    return 0
+}
+
 merge_one() {
     local label="$1" commit="$2"
     msg "Merge $label"
@@ -277,6 +304,11 @@ merge_one() {
         elif [[ "$label" == 'PR #5304 (includes PR #5287)' ]]; then
             if resolve_verified_cpuid_conflicts; then
                 log 'Exact PR #5304 CPU/affinity conflicts resolved and committed'
+                return 0
+            fi
+        elif [[ "$label" == 'PR #5275 startup loading screen' ]]; then
+            if resolve_verified_startup_conflicts; then
+                log 'Exact startup/network CMake conflicts resolved and committed'
                 return 0
             fi
         fi
