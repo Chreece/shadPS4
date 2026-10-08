@@ -39,6 +39,20 @@ finish() {
         git -C "$CURRENT_WORK" log -n 55 --format='%H %s' >"$SESSION/git-history.txt" 2>&1 || true
         git -C "$CURRENT_WORK" diff --name-only --diff-filter=U >"$SESSION/conflicts.txt" 2>&1 || true
         git -C "$CURRENT_WORK" diff --check >"$SESSION/diff-check.txt" 2>&1 || true
+        # Save conflicted source and all three merge stages for precise follow-up.
+        if [[ -s "$SESSION/conflicts.txt" ]]; then
+            while IFS= read -r path; do
+                [[ -n "$path" && -f "$CURRENT_WORK/$path" ]] || continue
+                target="$SESSION/conflict-files/$path"
+                mkdir -p "$(dirname "$target")"
+                if [[ "$(stat -c%s "$CURRENT_WORK/$path" 2>/dev/null || echo 99999999)" -lt 2000000 ]]; then
+                    cp -a "$CURRENT_WORK/$path" "$target.conflicted" 2>/dev/null || true
+                    for stage in 1 2 3; do
+                        git -C "$CURRENT_WORK" show ":$stage:$path" >"$target.stage$stage" 2>/dev/null || true
+                    done
+                fi
+            done <"$SESSION/conflicts.txt"
+        fi
     fi
     printf 'completed=%s\nresult=%s\n' "$(date -Is)" "$([[ "$rc" == 0 && "$SUCCESS" == 1 ]] && echo success || echo failed)" >> "$MANIFEST"
     tar -czf "$ARCHIVE" -C "$SESSION" --exclude=source --exclude=build --exclude='*.o' . 2>/dev/null || true
