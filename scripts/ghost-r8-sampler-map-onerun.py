@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import signal
 import subprocess
 import sys
@@ -29,8 +30,11 @@ FULLSTACK_ROOT = HOME / ".cache/shadps4-ghost-fullstack-20261008-131621/source"
 FULLSTACK_HEAD = "89af13f6d306ebc24396b4e8e207688537cdc28b"
 FULLSTACK_VK_INSTANCE = FULLSTACK_ROOT / "src/video_core/renderer_vulkan/vk_instance.cpp"
 FULLSTACK_VK_INSTANCE_BLOB = "d719bb4842561e0811de33a47560c461af34ec4c"
+BUILD_DIR = HOME / ".cache/ghost-fullstack-resume-20261008-132842/build"
+ABORTED_TRIAL_BACKUP = HOME / ".cache/ghost-r8-sampler-map-20261008-212159/cached-original"
+ABORTED_TRIAL_TAG = "20261008-212159"
 CONFIG_REV = "05cc36dbb30a899d8f5b5c7fbcd4c9765ac19e12"
-TRIAL_REV = "764be59fe3e1582b50318acbd401b0b64391300a"
+TRIAL_REV = "8ee92c601b99e1e40a326cd00538c7920ab98127"
 STAMP = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 OUT = HOME / ("ghost-r8-map-" + STAMP + ".tar.gz")
 ROOT = Path(tempfile.mkdtemp(prefix="ghost-r8-map-" + STAMP + "-", dir=HOME / ".cache"))
@@ -92,6 +96,81 @@ def available_layer():
         except (OSError, ValueError):
             continue
     return False
+
+
+def restore_aborted_cached_build(
+    build_dir: Path, original_backup: Path, baseline_sha: str,
+    report: Path, tag: str, check_game_running: bool = True,
+) -> None:
+    """Recover only the exact failed Oct 8 build, never an unrelated binary."""
+    candidates = sorted(
+        p for p in build_dir.rglob("shadps4")
+        if p.is_file() and os.access(p, os.X_OK)
+    ) if build_dir.is_dir() else []
+    if len(candidates) != 1:
+        raise RuntimeError(f"Expected one cached shadps4 binary; found {len(candidates)}.")
+    built = candidates[0]
+    if built.is_symlink():
+        raise RuntimeError("Cached binary is a symlink; refusing automatic recovery.")
+    before_sha = sha256_file(built)
+    if before_sha == baseline_sha:
+        say("CACHED_BUILD_ALREADY_BASELINE=" + before_sha)
+        report.write_text("cached_binary=baseline\nsha256=" + before_sha + "\n")
+        return
+    expected_markers = (
+        b"GHOST_R8_SAMPLER_MAP shader=",
+        b"GHOST_MIP_COPY mips=",
+        b"GHOST_VK11_16BIT uniformAndStorageBuffer16BitAccess",
+    )
+    with built.open("rb") as original:
+        payload = original.read()
+    missing = [m.decode() for m in expected_markers if m not in payload]
+    if missing:
+        raise RuntimeError("Cached binary differs from baseline but lacks exact failed "
+                           f"R8 experiment markers {missing}; preserving it unchanged.")
+    if (not original_backup.is_file() or original_backup.is_symlink() or
+            sha256_file(original_backup) != baseline_sha):
+        raise RuntimeError("Verified cached-original backup from 21:21:59 is "
+                           "unavailable or checksum differs; preserving current build.")
+    if check_game_running and any_emulator():
+        raise RuntimeError("An emulator started during cache checks; not touching build.")
+
+    # A hard link in the same directory preserves the previously compiled ELF
+    # without copying hundreds of megabytes. Never overwrite an existing link.
+    preserved = built.with_name(f"shadps4.aborted-r8-map-{tag}")
+    if preserved.exists():
+        if sha256_file(preserved) != before_sha:
+            raise RuntimeError("Preserved candidate filename already occupied by other bytes.")
+    else:
+        os.link(built, preserved)
+
+    fd, temporary = tempfile.mkstemp(prefix=".shadps4.baseline-", dir=built.parent)
+    try:
+        with os.fdopen(fd, "wb") as output, original_backup.open("rb") as inp:
+            shutil.copyfileobj(inp, output, 1024 * 1024)
+            output.flush()
+            os.fsync(output.fileno())
+        os.chmod(temporary, stat.S_IMODE(original_backup.stat().st_mode))
+        if sha256_file(Path(temporary)) != baseline_sha:
+            raise RuntimeError("Baseline recovery staging SHA-256 differs; no replacement.")
+        if sha256_file(built) != before_sha:
+            raise RuntimeError("Cached build changed during recovery; not replacing it.")
+        if check_game_running and any_emulator():
+            raise RuntimeError("An emulator launched during recovery; not replacing cached binary.")
+        os.replace(temporary, built)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+    if sha256_file(built) != baseline_sha:
+        raise RuntimeError("Cached baseline restoration failed final SHA verification.")
+    report.write_text(
+        "cache_recovered_from_exact_prior_archive=true\n"
+        f"stale_candidate_sha256={before_sha}\n"
+        f"restored_baseline_sha256={baseline_sha}\n"
+        f"preserved_trial_binary={preserved}\n"
+    )
+    say("CACHED_BUILD_RECOVERED_EXACTLY=" + baseline_sha)
+    say("FAILED_CANDIDATE_PRESERVED=" + str(preserved))
 
 
 def preflight():
@@ -281,11 +360,44 @@ def selftest():
     assert re.search(r"\bVUID-vkCmdCopyBufferToImage", "VUID-vkCmdCopyBufferToImage-02375")
     assert "ghost-r8-sampler-map-" in "ghost-r8-sampler-map-20261008.tar.gz"
     assert CONFIG_REV != TRIAL_REV
-    assert TRIAL_REV == "764be59fe3e1582b50318acbd401b0b64391300a"
+    assert TRIAL_REV == "8ee92c601b99e1e40a326cd00538c7920ab98127"
     assert len(FULLSTACK_VK_INSTANCE_BLOB) == 40
     assert FULLSTACK_HEAD != FULLSTACK_VK_INSTANCE_BLOB
+    # Test the real atomic recovery logic against throwaway binaries.
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        build = fixture / "build"
+        build.mkdir()
+        cached = build / "shadps4"
+        backup = fixture / "cached-original"
+        original = b"\x7fELF" + b"baseline-fixture-contents"
+        failed = (b"\x7fELF" + b"GHOST_R8_SAMPLER_MAP shader=" +
+                  b"GHOST_MIP_COPY mips=" +
+                  b"GHOST_VK11_16BIT uniformAndStorageBuffer16BitAccess")
+        backup.write_bytes(original)
+        cached.write_bytes(failed)
+        backup.chmod(0o755)
+        cached.chmod(0o755)
+        target_sha = hashlib.sha256(original).hexdigest()
+        report = fixture / "recovery.txt"
+        restore_aborted_cached_build(build, backup, target_sha, report, "fixture",
+                                     check_game_running=False)
+        assert cached.read_bytes() == original
+        assert (build / "shadps4.aborted-r8-map-fixture").read_bytes() == failed
+        assert "cache_recovered_from_exact_prior_archive=true" in report.read_text()
+        # An unknown binary must be refused without touching the backup or file.
+        cached.write_bytes(b"\x7fELF unknown foreign emulator")
+        try:
+            restore_aborted_cached_build(build, backup, target_sha, report, "fixture",
+                                         check_game_running=False)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("Unknown cache binary was not rejected")
+        assert cached.read_bytes() == b"\x7fELF unknown foreign emulator"
     shutil.rmtree(ROOT)
-    print("SELFTEST PASS: pinned baseline, VUID classifier, nested trial naming")
+    print("SELFTEST PASS: pinned baseline, VUID classifier, unique nested trial, "
+          "atomic recovered build, preserved prior candidate, unknown cache rejected")
 
 
 def main() -> int:
@@ -295,6 +407,13 @@ def main() -> int:
         return
     try:
         preflight()
+        # The previous trial aborted after linking but before recording its SHA.
+        # Validate exact failed markers and recover the cached output from its
+        # pinned baseline backup BEFORE arming any CUSA11456 override.
+        restore_aborted_cached_build(
+            BUILD_DIR, ABORTED_TRIAL_BACKUP, BASELINE,
+            ROOT / "cached-build-recovery.txt", ABORTED_TRIAL_TAG,
+        )
         git_raw(CONFIG_REV, "ghost-vk-validation-config.py", HELPER)
         git_raw(TRIAL_REV, "ghost-r8-sampler-map-onerun.sh", RUNNER)
         command([sys.executable, "-m", "py_compile", str(HELPER)])
