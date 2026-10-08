@@ -91,7 +91,15 @@ set can-use-hw-watchpoints 1
 set debuginfod enabled off
 set auto-load safe-path /dev/null
 set may-call-functions off
-info proc mappings
+# The guest CPU-ID/TSC and audio code intentionally handle SIGSEGV/SIGILL.
+# GDB must forward them to the emulator without stopping the watchpoint run.
+# Do not change SIGTRAP handling: hardware watchpoints require it.
+handle SIGSEGV nostop noprint pass
+handle SIGILL nostop noprint pass
+handle SIGBUS nostop noprint pass
+handle SIGUSR1 nostop noprint pass
+handle SIGUSR2 nostop noprint pass
+info signals SIGSEGV SIGILL SIGBUS SIGUSR1 SIGUSR2
 python
 import gdb
 hits = 0
@@ -127,9 +135,36 @@ StateWatch("state_u32", "*(unsigned int*)0x3fb6590")
 StateWatch("transition_ptr_u64", "*(unsigned long long*)0x3fb6550")
 print("GHOST_WATCHPOINTS_ARMED", flush=True)
 end
-continue
 python
-print("GHOST_WATCHPOINT_LIMIT_REACHED", flush=True)
+# "continue" can return on unrelated stops, too. Do not mistake such a stop
+# for reaching the requested number of hardware-watchpoint hits.
+unexpected_stops = 0
+MAX_UNEXPECTED_STOPS = 32
+while hits < MAX_HITS and unexpected_stops < MAX_UNEXPECTED_STOPS:
+    try:
+        gdb.execute("continue")
+    except gdb.error as exc:
+        print("GHOST_CONTINUE_ERROR", str(exc), flush=True)
+        break
+    if hits >= MAX_HITS:
+        break
+    unexpected_stops += 1
+    print("GHOST_UNEXPECTED_STOP", unexpected_stops, "watch_events=", hits, flush=True)
+    try:
+        gdb.execute("info program")
+    except gdb.error as exc:
+        print("GHOST_INFO_PROGRAM_ERROR", str(exc), flush=True)
+    try:
+        inferior = gdb.selected_inferior()
+        if not inferior.is_valid() or inferior.pid <= 0:
+            break
+    except Exception:
+        break
+if hits >= MAX_HITS:
+    print("GHOST_WATCHPOINT_LIMIT_REACHED", hits, flush=True)
+else:
+    print("GHOST_WATCHPOINT_END_WITHOUT_LIMIT", hits,
+          "unexpected_stops=", unexpected_stops, flush=True)
 end
 detach
 '''
@@ -218,12 +253,18 @@ def capture_game(pid, runtime):
         total = transcript.read_text(errors="replace")
         count = total.count("=== GHOST_WATCH_EVENT ")
         armed = "GHOST_WATCHPOINTS_ARMED" in total
-        say(f"GDB exit={proc.returncode}; watchpoints armed={armed}; "
+        early_interruptions = total.count("GHOST_UNEXPECTED_STOP")
+        if count == 0 and "GHOST_WATCHPOINT_END_WITHOUT_LIMIT" in total:
+            say("No hardware write event captured; GDB ended before reaching its "
+                "watchpoint-event limit. See watchpoint-trace.txt.")
+        say(f"GDB exit={proc.returncode}; unexpected stops={early_interruptions}; "
+            f"watchpoints armed={armed}; "
             f"events={count}; output bytes={size}; timeout={timed_out}.")
         (ROOT / "watch-summary.txt").write_text(
             f"gdb_exit={proc.returncode}\nwatchpoints_armed={armed}\n"
             f"events={count}\ntimeout={timed_out}\n"
             f"hardware_confirmed={hardware_confirmed}\nsoftware_rejected={safe_reject}\n"
+            f"unexpected_stops={early_interruptions}\n"
             f"guest_alive_after={process_is_ghost(pid)}\n"
             f"final_trace={read_trace(runtime)}\n"
         )
@@ -240,6 +281,13 @@ def selftest():
     assert "MAX_HITS = 18" in commands and "detach" in commands
     assert "set can-use-hw-watchpoints 1" in commands
     assert "set may-call-functions off" in commands
+    assert "handle SIGSEGV nostop noprint pass" in commands
+    assert "handle SIGILL nostop noprint pass" in commands
+    assert "handle SIGBUS nostop noprint pass" in commands
+    assert "handle SIGTRAP" not in commands
+    assert 'gdb.execute("continue")' in commands
+    assert "GHOST_WATCHPOINT_END_WITHOUT_LIMIT" in commands
+    assert 'print("GHOST_WATCHPOINT_LIMIT_REACHED", hits' in commands
     assert "/proc" not in commands  # debugger only reads guest/process mappings
     print("SELFTEST PASS: exact addresses, write-only watchpoints, 18-event cap, "
           "detach, trace parsing. No debugger was launched.")
