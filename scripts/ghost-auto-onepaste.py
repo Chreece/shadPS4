@@ -31,6 +31,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import traceback
 
 HOME = Path.home()
 ENTRY = Path("/mnt/roms-all/ps4/Ghost of Tsushima.ps4")
@@ -569,6 +570,9 @@ def observe_game(env: dict[str, str]) -> None:
             if not child_alive:
                 STOP_REASON = "game_exited"
                 say(f"GAME_EXITED_AFTER={elapsed:.1f}s rc={GAME_PROC.returncode}")
+                # Even if SDL crashed before its own screenshot shortcut,
+                # grab the X desktop if ImageMagick is available.
+                root_screenshot(env, int(elapsed))
                 break
         for target in SCREEN_TIMES:
             if target in completed_shots or elapsed < target:
@@ -684,6 +688,11 @@ def orchestrate() -> None:
     say("ENDING_AUTOMATED_GAME_SESSION; cleanup begins")
     stop_launched_game()
     # Give the child build/test script its own normal EXIT/rollback path.
+    if STOP_REASON == "game_exited" and SESSION_DIR is None:
+        # The nested trial may otherwise wait 10 minutes for an emulator
+        # session that never started. Ask its shell to run EXIT rollback now.
+        say("AUTO_LAUNCH_DID_NOT_CREATE_SESSION: requesting immediate child cleanup")
+        terminate_child()
     try:
         CHILD_RC = CHILD_PROC.wait(timeout=MAX_ROLLBACK_SECONDS)
     except subprocess.TimeoutExpired:
@@ -727,6 +736,7 @@ def main() -> int:
         error = f"{type(exc).__name__}: {exc}"
         TEST_STATUS = "FAILED"
         say("TRIAL_ERROR=" + error)
+        (WORK / "error-traceback.txt").write_text(traceback.format_exc())
     finally:
         try:
             stop_launched_game()
