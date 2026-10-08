@@ -6,6 +6,7 @@
 
 import argparse
 import fcntl
+import faulthandler
 import hashlib
 import importlib.util
 import json
@@ -14,9 +15,12 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import traceback
 
 HELPER_REVISION = "605ee9649addd9788e630e7c1bbcdaffda4c091c"
 BUILD_SHA = "2b0d969c5914d65683f2da49e0755a9e00891c5327d356e69da792b058dcdf48"
@@ -40,14 +44,73 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+EVIDENCE = None
+LAST_STAGE = "starting"
+
+
+def stage(message):
+    global LAST_STAGE
+    LAST_STAGE = message
+    print("STEP=" + message, flush=True)
+    if EVIDENCE is not None:
+        with (EVIDENCE / "startup.log").open("a") as output:
+            output.write(time.strftime("%Y-%m-%dT%H:%M:%S%z ") + message + "\n")
+        (EVIDENCE / "stage.json").write_text(json.dumps({"stage": message}) + "\n")
+
+
+def capture(arguments, cwd=None, timeout=60):
+    process = subprocess.Popen(list(map(str, arguments)), cwd=cwd, stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               start_new_session=True)
+    started = time.monotonic()
+    try:
+        while True:
+            remaining = timeout - (time.monotonic() - started)
+            if remaining <= 0:
+                raise TimeoutError(f"{LAST_STAGE} exceeded {timeout} seconds")
+            try:
+                output, _ = process.communicate(timeout=min(15, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                print(f"WAITING={LAST_STAGE} ({int(time.monotonic() - started)}s)", flush=True)
+        if process.returncode:
+            detail = output.decode(errors="replace")[-8000:]
+            raise RuntimeError(f"{LAST_STAGE} failed ({process.returncode}):\n{detail}")
+        return output.decode().strip()
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        process.stdout.close()
+
+
+def download(revision, relative, destination, expected, maximum=2 * 1024 * 1024):
+    stage("Download " + relative)
+    url = f"https://raw.githubusercontent.com/Chreece/shadPS4/{revision}/{relative}"
+    code = """import hashlib, pathlib, sys, urllib.request
+url, destination, expected, maximum = sys.argv[1:]
+with urllib.request.urlopen(url, timeout=30) as response:
+    data = response.read(int(maximum) + 1)
+if len(data) > int(maximum) or hashlib.sha256(data).hexdigest() != expected:
+    raise SystemExit("Download checksum mismatch")
+pathlib.Path(destination).write_bytes(data)
+"""
+    capture([sys.executable, "-c", code, url, destination, expected, str(maximum)])
+
+
+def git(source, *arguments):
+    stage("Check Git " + " ".join(arguments))
+    return capture(["git", "-C", source, *arguments], timeout=120)
+
+
 def load_helper(work, name, expected, revision=HELPER_REVISION, directory="hardware/cpu_profile"):
-    import urllib.request
     path = work / name
-    with urllib.request.urlopen(f"https://raw.githubusercontent.com/Chreece/shadPS4/{revision}/{directory}/{name}", timeout=30) as response:
-        content = response.read(256 * 1024 + 1)
-    if hashlib.sha256(content).hexdigest() != expected:
-        raise RuntimeError("Helper checksum mismatch: " + name)
-    path.write_bytes(content)
+    download(revision, directory + "/" + name, path, expected, 256 * 1024)
+    stage("Load " + name)
     spec = importlib.util.spec_from_file_location(name.removesuffix(".py"), path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -55,7 +118,10 @@ def load_helper(work, name, expected, revision=HELPER_REVISION, directory="hardw
 
 
 def build_candidate(builder, cache, work, evidence):
-    git, command = builder.git, builder.command
+    git, original_command = builder.git, builder.command
+    def command(arguments, log, cwd=None):
+        stage("Build " + " ".join(map(str, arguments)))
+        return original_command(arguments, log, cwd)
     original = cache / "profile-source-c7814c49f926"
     baseline_build = cache / "profile-build-c7814c49f926"
     source = cache / ("affinity-bitsets-source-" + SOURCE_REVISION[:12])
@@ -125,6 +191,7 @@ def cancel(signum, frame):
 
 
 def main():
+    global EVIDENCE
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", required=True)
     args = parser.parse_args()
@@ -135,28 +202,47 @@ def main():
     cache = Path.home() / ".cache/shadps4-affinity-20261007"
     cache.mkdir(parents=True, exist_ok=True)
     with (cache / "homebrew.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        print("START=Affinity bitset test; checking the test lock", flush=True)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("BUSY=Another homebrew test is running; nothing started", flush=True)
+            return 1
         evidence = Path(tempfile.mkdtemp(prefix="shadps4-affinity-bitsets-", dir=Path.home()))
+        EVIDENCE = evidence
+        print("EVIDENCE=" + str(evidence), flush=True)
         summary = {"source_change": SOURCE_REVISION, "tests": [], "ok": False}
+        trace = (evidence / "waiting-tracebacks.log").open("w")
+        faulthandler.dump_traceback_later(60, repeat=True, file=trace)
         installed = Path.home() / "Applications/shadps4/shadps4"
-        before = digest(installed) if installed.is_file() else None
+        before = None
+        installed_checked = False
         protected = {}
         handlers = {sig: signal.signal(sig, cancel) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
         try:
+            stage("Verify installed emulator")
+            before = digest(installed) if installed.is_file() else None
+            installed_checked = True
             with tempfile.TemporaryDirectory(prefix="affinity-bitsets-", dir=cache) as folder:
                 work = Path(folder)
                 collector = load_helper(work, "collect.py", COLLECT_SHA)
                 builder = load_helper(work, "test_filter.py", BUILD_SHA)
                 base = load_helper(work, "test_affinity_revision.py", AFFINITY_RUNNER_SHA,
                                    SUITE_REVISION, "scripts")
+                builder.download = download
+                builder.git = git
+                stage("Check running emulators")
                 collector.require_idle()
                 protected = {cache / "profile-build-c7814c49f926/shadps4": BASE_BINARY,
                     cache / "profile-build-c7814c49f926/src/core/cpu_id_translation/libshadps4_cpu_id.so": BASE_CLIENT}
                 protected.update({cache / name: sha for name, sha in collector.ARTIFACTS.items()})
                 for path, expected in protected.items():
+                    stage("Verify " + str(path.relative_to(cache)))
                     if digest(path) != expected:
                         raise RuntimeError("The verified artifact changed: " + str(path))
+                stage("Find display session")
                 env = collector.display_environment()
+                stage("Prepare candidate build")
                 binary, client, info = build_candidate(builder, cache, work, evidence)
                 summary["build"] = info
                 suite = work / "suite.tar.gz"
@@ -189,7 +275,7 @@ def main():
                                              "expected_mask": 127, "expected_samples": 2048}]
                     for case in selected:
                         collector.require_idle()
-                        print("RUNNING=" + label + "-" + case["directory"], flush=True)
+                        stage("Run " + label + "-" + case["directory"])
                         result = base.run_case(binary, case, work / "suite", cpus, label,
                                                work, evidence, env)
                         summary["tests"].append(result)
@@ -199,6 +285,8 @@ def main():
                 summary["ok"] = bool(summary["tests"]) and all(r["ok"] for r in summary["tests"])
                 print("AFFINITY_SUITE=" + ("PASS" if summary["ok"] else "FAIL"), flush=True)
         except (Exception, KeyboardInterrupt) as error:
+            summary["last_stage"] = LAST_STAGE
+            (evidence / "error-traceback.log").write_text(traceback.format_exc())
             summary["error"] = type(error).__name__ + ": " + str(error)
             print("TEST_ERROR=" + summary["error"], flush=True)
             summary["ok"] = False
@@ -206,9 +294,12 @@ def main():
             for sig in handlers:
                 signal.signal(sig, signal.SIG_IGN)
             try:
-                summary["installed_binary_unchanged"] = before == (digest(installed) if installed.is_file() else None)
+                stage("Verify original files and collect archive")
+                summary["installed_binary_unchanged"] = installed_checked and before == (digest(installed) if installed.is_file() else None)
                 summary["baseline_artifacts_preserved"] = all(path.is_file() and digest(path) == expected for path, expected in protected.items())
                 summary["ok"] &= summary["installed_binary_unchanged"] and summary["baseline_artifacts_preserved"]
+                faulthandler.cancel_dump_traceback_later()
+                trace.close()
                 (evidence / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
                 archive_path = evidence.with_suffix(".tar.gz")
                 with tarfile.open(archive_path, "w:gz") as archive:
@@ -216,6 +307,9 @@ def main():
                 print("UPLOAD_ONLY=" + str(archive_path), flush=True)
                 print("SSH stays open. Installed emulator, saves and session guard were not edited.", flush=True)
             finally:
+                faulthandler.cancel_dump_traceback_later()
+                trace.close()
+                EVIDENCE = None
                 for sig, handler in handlers.items():
                     signal.signal(sig, handler)
         return 0 if summary["ok"] else 1
