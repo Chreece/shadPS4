@@ -222,6 +222,37 @@ def validate_filter(before, after):
     return {"ok": not errors, "errors": errors, "compared_rows": len(new)}
 
 
+def validate_current_host(host_text, guest_text):
+    host, guest = records(host_text), records(guest_text)
+    errors = []
+    for key, value in guest.items():
+        mode, cpu, leaf, subleaf = key
+        candidates = [row for other, row in host.items() if other[2:] == key[2:]]
+        if leaf == 1:
+            expected = {row[2] & ~0x40001000 for row in candidates}
+            if value[2] not in expected or value[1] >> 16 != (cpu << 8) | 8:
+                errors.append({"key": key, "error": "Basic features or guest CPU identity differ"})
+        elif leaf == 7:
+            expected = {(0, row[1] & 8, 0, 0) for row in candidates} if subleaf == 0 else {(0, 0, 0, 0)}
+            if value not in expected:
+                errors.append({"key": key, "error": "Unfiltered or missing structured feature"})
+        elif leaf == 0x80000001:
+            expected = {(row[2] & ~0x20218800) | 0x400000 for row in candidates}
+            if value[2] not in expected:
+                errors.append({"key": key, "error": "Extended instruction features differ"})
+        elif leaf == 0xd and value not in candidates:
+            errors.append({"key": key, "error": "Host CPU-state layout changed"})
+    for mode, cpu in {(key[0], key[1]) for key in guest}:
+        for leaf, subleaf in ((1, 0), (7, 0), (7, 1), (7, 2), (7, 0xffffffff), (0x80000001, 0)):
+            if (mode, cpu, leaf, subleaf) not in guest:
+                errors.append({"error": "Missing feature query", "mode": mode, "cpu": cpu,
+                               "leaf": leaf, "subleaf": subleaf})
+    states = lambda text: set(re.findall(r"CPU_PROFILE_XCR0 .* value=([0-9a-f]{16})", text))
+    if not guest or not states(guest_text) <= states(host_text):
+        errors.append({"error": "Missing guest results or changed XCR0"})
+    return {"ok": not errors, "errors": errors, "checked_rows": len(guest)}
+
+
 def read_baseline(path, collector):
     with tarfile.open(path) as archive:
         members = {Path(m.name).name: m for m in archive.getmembers() if m.isfile()}
@@ -247,6 +278,7 @@ def cancel(signum, frame):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", required=True)
+    parser.add_argument("--baseline", type=Path, help="Optional previous profile archive")
     args = parser.parse_args()
     if not re.fullmatch(r"[0-9a-f]{40}", args.revision):
         raise RuntimeError("An immutable revision is required")
@@ -268,9 +300,14 @@ def main():
                 collector = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(collector)
                 collector.require_idle()
-                baseline_path = Path.home() / "shadps4-cpu-profile-gn9jb_8u.tar.gz"
-                baseline_summary, baseline_logs = read_baseline(baseline_path, collector)
-                summary["baseline_archive"] = str(baseline_path)
+                baseline_summary, baseline_logs = None, {}
+                summary["baseline_comparison"] = "pending_comparison_with_previous_upload"
+                if args.baseline:
+                    baseline_summary, baseline_logs = read_baseline(args.baseline, collector)
+                    summary["baseline_archive"] = str(args.baseline)
+                    summary["baseline_comparison"] = "performed_locally"
+                else:
+                    say("BASELINE=Using the previous upload for later comparison; no local archive needed")
                 for name, text in baseline_logs.items():
                     (evidence / ("baseline-" + name + ".profile.txt")).write_text(text)
                 for relative, expected in collector.ARTIFACTS.items():
@@ -284,9 +321,11 @@ def main():
                 collector.unpack_suite(suite, work / "suite")
                 host_log = evidence / "host.log"
                 collector.run([work / "suite/native-cpu-profile"], work, os.environ.copy(), host_log)
-                host = collector.parse_profile(host_log.read_text())
-                host["features_unchanged"] = (host["features_by_cpu"] == baseline_summary["tests"]["host"]["features_by_cpu"])
-                host["ok"] &= host["features_unchanged"]
+                host_text = host_log.read_text()
+                host = collector.parse_profile(host_text)
+                if baseline_summary:
+                    host["features_unchanged"] = (host["features_by_cpu"] == baseline_summary["tests"]["host"]["features_by_cpu"])
+                    host["ok"] &= host["features_unchanged"]
                 summary["tests"]["host"] = host
                 drrun = cache / "runtime-build-a522a5055820/bin64/drrun"
                 modes = {"guest-native": [binary], "guest-translated": [drrun, "-disable_rseq",
@@ -309,8 +348,11 @@ def main():
                             shutil.copy2(profile, evidence / (name + ".profile.txt"))
                     text = (evidence / (name + ".profile.txt")).read_text()
                     result = collector.parse_profile(text)
-                    result["filter_comparison"] = validate_filter(baseline_logs[name], text)
-                    result["ok"] &= result["filter_comparison"]["ok"]
+                    result["current_host_check"] = validate_current_host(host_text, text)
+                    result["ok"] &= result["current_host_check"]["ok"]
+                    if baseline_logs:
+                        result["filter_comparison"] = validate_filter(baseline_logs[name], text)
+                        result["ok"] &= result["filter_comparison"]["ok"]
                     summary["tests"][name] = result
                     profiles[name] = records(text)
                     say("RESULT=" + name + (" PASS" if result["ok"] else " FAIL"))
