@@ -76,7 +76,7 @@ trap 'finish "$?"' EXIT
 msg 'Preflight: source and current binary'
 [[ -d "$SOURCE/.git" || -f "$SOURCE/.git" ]] || { log "Not a Git checkout: $SOURCE"; exit 10; }
 [[ -f "$DEST" && -x "$DEST" ]] || { log "Installed binary missing or not executable: $DEST"; exit 11; }
-for tool in git cmake ninja gcc-14 g++-14 sha256sum tar python3 curl file; do
+for tool in git cmake ninja sha256sum tar python3 curl file; do
     command -v "$tool" >/dev/null || { log "Missing required command: $tool"; exit 12; }
 done
 run git -C "$SOURCE" rev-parse --show-toplevel
@@ -216,11 +216,22 @@ msg 'Initialize dependencies in isolated worktree'
 run git -C "$WORK" submodule sync --recursive
 run git -C "$WORK" submodule update --init --recursive --jobs 4
 
-msg 'Configure with host GCC-14 / Ninja Release toolchain'
+msg 'Configure with Clang 19 (official recommended) or GCC 14 (CI fallback)'
+if command -v clang-19 >/dev/null && command -v clang++-19 >/dev/null; then
+    BUILD_CC="$(command -v clang-19)"
+    BUILD_CXX="$(command -v clang++-19)"
+elif command -v gcc-14 >/dev/null && command -v g++-14 >/dev/null; then
+    BUILD_CC="$(command -v gcc-14)"
+    BUILD_CXX="$(command -v g++-14)"
+else
+    log 'Missing compiler pair: need Clang 19 or GCC 14; no packages installed or binaries changed.'
+    exit 26
+fi
+printf 'compiler_c=%s\ncompiler_cxx=%s\n' "$BUILD_CC" "$BUILD_CXX" >>"$MANIFEST"
 FLAGS=( -S "$WORK" -B "$BUILD" -G Ninja
     -DCMAKE_BUILD_TYPE=Release
-    -DCMAKE_C_COMPILER="$(command -v gcc-14)"
-    -DCMAKE_CXX_COMPILER="$(command -v g++-14)"
+    -DCMAKE_C_COMPILER="$BUILD_CC"
+    -DCMAKE_CXX_COMPILER="$BUILD_CXX"
     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
     -DENABLE_TESTS=OFF )
 if command -v ccache >/dev/null; then
