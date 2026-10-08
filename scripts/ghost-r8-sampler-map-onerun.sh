@@ -124,9 +124,18 @@ finish() {
     fi
     if [[ -n "$ORIGINAL_BUILT" && -f "$SESSION/cached-original" ]]; then
         now_build_sha="$(sha256sum "$ORIGINAL_BUILT" 2>/dev/null | cut -d' ' -f1)"
-        if [[ "$now_build_sha" == "$CANDIDATE_SHA" ]]; then
-            cp -a -- "$SESSION/cached-original" "$ORIGINAL_BUILT"
-            log 'Original cached executable restored.'
+        if [[ -n "$CANDIDATE_SHA" && "$now_build_sha" == "$CANDIDATE_SHA" ]]; then
+            local stage_cached="${ORIGINAL_BUILT}.restore-ghost-map-$STAMP"
+            if cp -a -- "$SESSION/cached-original" "$stage_cached" &&
+               [[ "$(sha256sum "$stage_cached" 2>/dev/null | cut -d' ' -f1)" == "$EXPECTED_SHA" ]] &&
+               mv -fT -- "$stage_cached" "$ORIGINAL_BUILT" &&
+               [[ "$(sha256sum "$ORIGINAL_BUILT" 2>/dev/null | cut -d' ' -f1)" == "$EXPECTED_SHA" ]]; then
+                log 'Original cached executable restored atomically and verified.'
+            else
+                log 'WARNING: cached executable could not be restored or verified; review archive.'
+            fi
+        elif [[ "$now_build_sha" != "$EXPECTED_SHA" ]]; then
+            log "WARNING: unexpected cached build SHA=$now_build_sha; refusing to overwrite."
         fi
     fi
     [[ -d "$ROOT" ]] && git -C "$ROOT" status --short -b >"$SESSION/source-after.txt" 2>&1
@@ -281,17 +290,19 @@ log '=== Incremental Vulkan build (affinity/CPUID unchanged) ==='
 JOBS="${GHOST_BUILD_JOBS:-4}"
 [[ "$JOBS" =~ ^[1-9][0-9]?$ ]] || fail 'Invalid build job count.'
 run cmake --build "$BUILD" --target shadps4 --parallel "$JOBS"
+# RECORD THE BUILT SHA *BEFORE* ANY MARKER CHECK. A failed check must not
+# strand the freshly linked candidate in the cached build output.
+CANDIDATE_SHA="$(sha256sum "$ORIGINAL_BUILT" | cut -d' ' -f1)"
+[[ "$CANDIDATE_SHA" != "$EXPECTED_SHA" ]] || fail 'New executable identical to baseline.'
+printf 'trial_sha256=%s\n' "$CANDIDATE_SHA" >>"$SESSION/manifest.txt"
 grep -aFq 'GHOST_MIP_COPY mips=' "$ORIGINAL_BUILT" || \
     fail 'Build missing nine-mip transfer marker.'
 grep -aFq 'GHOST_VK11_16BIT uniformAndStorageBuffer16BitAccess' "$ORIGINAL_BUILT" ||
     fail 'Built binary missing Vulkan 1.1 16-bit feature diagnostic marker.'
+# This is the actual emitted log format. The GHOST_R8_SAMPLER_HANDLE_MAP
+# token exists only in a C++ comment and is NOT expected in the ELF.
 grep -aFq 'GHOST_R8_SAMPLER_MAP shader=' "$ORIGINAL_BUILT" ||
     fail 'Built binary missing shader-scoped sampler handle diagnostic.'
-grep -aFq 'GHOST_R8_SAMPLER_HANDLE_MAP' "$ORIGINAL_BUILT" ||
-    fail 'Built binary missing sampler-map unique marker.'
-CANDIDATE_SHA="$(sha256sum "$ORIGINAL_BUILT" | cut -d' ' -f1)"
-[[ "$CANDIDATE_SHA" != "$EXPECTED_SHA" ]] || fail 'New executable identical to baseline.'
-printf 'trial_sha256=%s\n' "$CANDIDATE_SHA" >>"$SESSION/manifest.txt"
 
 log '=== Atomic temporary deployment, verified backup ==='
 any_shadps4 && fail 'Emulator started during compilation; refusing install.'
