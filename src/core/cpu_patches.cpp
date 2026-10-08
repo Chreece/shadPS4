@@ -467,7 +467,7 @@ static void GenerateEXTRQ(void* /* address */, const ZydisDecodedInstruction&,
 
         // Writeback to xmm register, extrq instruction says top 64-bits are undefined but zeroed on
         // AMD CPUs
-        c.vmovq(xmm_dst, scratch1);
+        c.movq(xmm_dst, scratch1);
 
         c.pop(scratch2);
         c.pop(scratch1);
@@ -525,7 +525,7 @@ static void GenerateEXTRQ(void* /* address */, const ZydisDecodedInstruction&,
         c.vmovq(scratch1, xmm_dst);
         c.shr(scratch1, cl);
         c.and_(scratch1, mask);
-        c.vmovq(xmm_dst, scratch1);
+        c.movq(xmm_dst, scratch1);
 
         c.pop(mask);
         c.pop(scratch2);
@@ -599,7 +599,7 @@ static void GenerateINSERTQ(void* /* address */, const ZydisDecodedInstruction&,
 
         // Insert scratch2 into low 64 bits of dst, upper 64 bits are undefined but zeroed on AMD
         // CPUs
-        c.vmovq(xmm_dst, scratch2);
+        c.movq(xmm_dst, scratch2);
 
         c.pop(mask);
         c.pop(scratch2);
@@ -666,7 +666,7 @@ static void GenerateINSERTQ(void* /* address */, const ZydisDecodedInstruction&,
         c.or_(scratch2, scratch1);
 
         // Upper 64 bits are undefined in insertq but AMD CPUs zero them
-        c.vmovq(xmm_dst, scratch2);
+        c.movq(xmm_dst, scratch2);
 
         c.pop(mask);
         c.pop(index);
