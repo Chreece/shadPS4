@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-2.0-or-later
-# ONE controlled TSC-fault A/B trial. Restores installed and cached binary
-# and CPU source automatically. Never kills the emulator or current SSH session.
+# ONE controlled GPU dynamic-ReadConst A/B trial. Restores installed and cached
+# binaries and shader sources. Never kills the emulator or current SSH session.
 set -Eeuo pipefail
 umask 077
 
@@ -52,15 +52,19 @@ for proc in Path('/proc').iterdir():
 PY
 }
 any_shadps4() {
-    python3 - "$DEST" <<'PY'
+    # Treat a running shadPS4 image as active even if an older experiment
+    # replaced its executable and /proc/PID/exe ends with "(deleted)".
+    python3 - <<'PY'
 from pathlib import Path
-import sys
-exe = Path(sys.argv[1])
+import os, sys
 for proc in Path('/proc').iterdir():
     if not proc.name.isdigit():
         continue
     try:
-        if (proc / 'exe').samefile(exe):
+        if proc.stat().st_uid != os.getuid():
+            continue
+        actual = os.readlink(proc / 'exe').removesuffix(' (deleted)')
+        if Path(actual).name.lower() == 'shadps4':
             sys.exit(0)
     except (OSError, PermissionError, ValueError):
         continue
