@@ -89,17 +89,31 @@ def capture(arguments, cwd=None, timeout=60):
 
 
 def download(revision, relative, destination, expected, maximum=2 * 1024 * 1024):
-    stage("Download " + relative)
-    url = f"https://raw.githubusercontent.com/Chreece/shadPS4/{revision}/{relative}"
-    code = """import hashlib, pathlib, sys, urllib.request
-url, destination, expected, maximum = sys.argv[1:]
-with urllib.request.urlopen(url, timeout=30) as response:
-    data = response.read(int(maximum) + 1)
-if len(data) > int(maximum) or hashlib.sha256(data).hexdigest() != expected:
-    raise SystemExit("Download checksum mismatch")
-pathlib.Path(destination).write_bytes(data)
-"""
-    capture([sys.executable, "-c", code, url, destination, expected, str(maximum)])
+    curl = shutil.which("curl")
+    if curl is None:
+        raise RuntimeError("curl is required for the bounded IPv4 download fallback")
+    routes = (
+        ("GitHub API", f"https://api.github.com/repos/Chreece/shadPS4/contents/{relative}?ref={revision}"),
+        ("GitHub raw", f"https://raw.githubusercontent.com/Chreece/shadPS4/{revision}/{relative}"),
+    )
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="download-", dir=Path(destination).parent) as directory:
+        temporary = Path(directory) / "payload"
+        for label, url in routes:
+            stage(f"Download {relative} via {label} (IPv4)")
+            try:
+                capture([curl, "-4", "--fail", "--location", "--silent", "--show-error",
+                         "--connect-timeout", "8", "--max-time", "30", "--max-filesize", str(maximum),
+                         "--header", "Accept: application/vnd.github.raw+json",
+                         "--header", "User-Agent: shadps4-playtest", "--output", temporary, url], timeout=35)
+                if temporary.stat().st_size > maximum or digest(temporary) != expected:
+                    raise RuntimeError("Download checksum or size mismatch via " + label)
+                Path(destination).write_bytes(temporary.read_bytes())
+                return
+            except (RuntimeError, TimeoutError) as error:
+                failures.append(str(error))
+                stage("Download attempt failed: " + str(error))
+        raise RuntimeError("All download routes failed for " + relative + "\n" + "\n".join(failures))
 
 
 def git(source, *arguments):
