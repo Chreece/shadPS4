@@ -109,7 +109,9 @@ def hook(original, wrapper, job_file, game_id):
     guard = Path.home() / ".local/lib/shadps4-session-guard/guard.py"
     if (original.splitlines().count(native) != 1 or
             "# SHADPS4_SESSION_GUARD_V1" not in original or str(guard) not in original or
-            '"${SHADPS4_GUARD_PARENT_PID:-}" != "$PPID"' not in original):
+            '"${SHADPS4_GUARD_PARENT_PID:-}" != "$PPID"' not in original or
+            "AFFINITY_HOOK=" in original or "affinity_game_guard.py" in original or
+            "test_affinity_pes_guarded.py" in original):
         raise RuntimeError("Current launcher does not match the guarded command; evidence captured, no edit made")
     invocation = " ".join(shlex.quote(str(arg)) for arg in [
         sys.executable, Path(__file__).resolve(), "--launch", job_file])
@@ -287,14 +289,20 @@ def run_stage(game_id, title, mode, binary, prefix, work, evidence):
         handlers = {sig: signal.signal(sig, signal.SIG_IGN) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
         try:
             (folder / "cancel").touch()
-            restore(job)
-            stop_owned(job)
+            cleanup_errors = []
+            for action in (restore, stop_owned):
+                try:
+                    action(job)
+                except Exception as error:
+                    cleanup_errors.append(str(error))
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline and (folder / "status.json").exists():
                 result = json.loads((folder / "status.json").read_text())
                 if result["phase"] == "finished" or not alive(result["bridge"]):
                     break
                 time.sleep(0.1)
+            if cleanup_errors:
+                result["cleanup_error"] = "; ".join(cleanup_errors)
             for path in folder.iterdir():
                 if path.is_file():
                     shutil.copy2(path, destination / path.name)
@@ -307,6 +315,8 @@ def run_stage(game_id, title, mode, binary, prefix, work, evidence):
             result["launcher_restored"] = profile.digest(wrapper) == job["original_sha256"]
             result["capture_complete"] = (result.get("phase") == "finished" and result.get("returncode") == 0
                 and not result.get("cancelled") and not result.get("error") and not result.get("cleanup_error")
+                and result["launcher_restored"] and all(result.get(key) is True for key in
+                    ["source_files_unchanged", "source_config_unchanged", "source_users_unchanged", "installed_binary_unchanged"])
                 and result["translation_active"] == (mode == "translated"))
             write_json(destination / "result.json", result)
         finally:
