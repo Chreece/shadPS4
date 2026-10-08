@@ -40,8 +40,8 @@ REPLACEMENT = r'''void Runtime::CopyImageWithBuffer(VideoCore::Image* src, Video
                        src->info.size.height == dst->info.size.height,
                    "GHOST_MIP_COPY unsupported image shape for R32->D32 {} mips", num_mips);
 
-        boost::container::small_vector<vk::BufferImageCopy, 16> source_copies;
-        boost::container::small_vector<vk::BufferImageCopy, 16> depth_copies;
+        SmallVector<vk::BufferImageCopy, 16> source_copies;
+        SmallVector<vk::BufferImageCopy, 16> depth_copies;
         u64 end_offset = offset;
         for (u32 mip = 0; mip < num_mips; ++mip) {
             const u32 width = std::max(src->info.size.width >> mip, 1u);
@@ -49,7 +49,7 @@ REPLACEMENT = r'''void Runtime::CopyImageWithBuffer(VideoCore::Image* src, Video
             const u64 bytes = static_cast<u64>(width) * height * sizeof(u32);
             // Buffer/image transfer offsets are aligned for a 32-bit texel.
             ASSERT_MSG(end_offset <= buffer->SizeBytes() &&
-                           end_offset <= std::numeric_limits<u64>::max() - 3,
+                           buffer->SizeBytes() - end_offset >= 3,
                        "GHOST_MIP_COPY invalid buffer start");
             const u64 aligned = (end_offset + 3) & ~u64{3};
             ASSERT_MSG(aligned <= buffer->SizeBytes() &&
