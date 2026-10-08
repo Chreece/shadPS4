@@ -38,7 +38,8 @@ NEW = (
     "                  dst->info.size.width, dst->info.size.height, dst->info.size.depth,\n"
     "                  src->info.resources.layers, dst->info.resources.layers,\n"
     "                  src->info.num_samples, dst->info.num_samples,\n"
-    "                  src->info.props.is_depth, dst->info.props.is_depth,\n"
+    "                  static_cast<u32>(src->info.props.is_depth),\n"
+    "                  static_cast<u32>(dst->info.props.is_depth),\n"
     "                  buffer->SizeBytes(), offset);\n"
     "    }\n"
     "    ASSERT(num_mips == 1);\n"
@@ -72,6 +73,9 @@ def selftest():
         "ASSERT(num_mips == 1);")
     assert changed.count("ASSERT(num_mips == 1);") == 1
     assert "buffer->SizeBytes(), offset" in changed
+    assert "static_cast<u32>(src->info.props.is_depth)" in changed
+    assert "static_cast<u32>(dst->info.props.is_depth)" in changed
+    assert "                  src->info.props.is_depth, dst->info.props.is_depth" not in changed
     assert "u32(src->info.pixel_format), u32(dst->info.pixel_format)" in changed
     try:
         update(changed.encode())
