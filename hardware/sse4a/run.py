@@ -6,6 +6,7 @@
 
 import argparse
 import fcntl
+import faulthandler
 import hashlib
 import importlib.util
 import json
@@ -14,9 +15,12 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import traceback
 
 HELPER_REVISION = "605ee9649addd9788e630e7c1bbcdaffda4c091c"
 BUILD_SHA = "2b0d969c5914d65683f2da49e0755a9e00891c5327d356e69da792b058dcdf48"
@@ -36,14 +40,91 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def load_helper(work, name, expected):
-    import urllib.request
+EVIDENCE = None
+LAST_STAGE = "starting"
+
+
+def stage(message):
+    global LAST_STAGE
+    LAST_STAGE = message
+    print("STEP=" + message, flush=True)
+    if EVIDENCE is not None:
+        with (EVIDENCE / "startup.log").open("a") as output:
+            output.write(time.strftime("%Y-%m-%dT%H:%M:%S%z ") + message + "\n")
+        (EVIDENCE / "stage.json").write_text(json.dumps({"stage": message}) + "\n")
+
+
+def capture(arguments, cwd=None, timeout=60):
+    process = subprocess.Popen(list(map(str, arguments)), cwd=cwd, stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               start_new_session=True)
+    started = time.monotonic()
+    try:
+        while True:
+            remaining = timeout - (time.monotonic() - started)
+            if remaining <= 0:
+                raise TimeoutError(f"{LAST_STAGE} exceeded {timeout} seconds")
+            try:
+                output, _ = process.communicate(timeout=min(15, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                print(f"WAITING={LAST_STAGE} ({int(time.monotonic() - started)}s)", flush=True)
+        if process.returncode:
+            detail = output.decode(errors="replace")[-8000:]
+            raise RuntimeError(f"{LAST_STAGE} failed ({process.returncode}):\n{detail}")
+        return output.decode().strip()
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        process.stdout.close()
+
+
+def download_routes(routes, relative, destination, expected, maximum):
+    curl = shutil.which("curl")
+    if curl is None:
+        raise RuntimeError("curl is required for the bounded IPv4 download fallback")
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="download-", dir=Path(destination).parent) as directory:
+        temporary = Path(directory) / "payload"
+        for label, url in routes:
+            stage(f"Download {relative} via {label} (IPv4)")
+            try:
+                capture([curl, "-4", "--fail", "--location", "--silent", "--show-error",
+                         "--connect-timeout", "8", "--max-time", "30", "--max-filesize", str(maximum),
+                         "--header", "Accept: application/vnd.github.raw+json",
+                         "--header", "User-Agent: shadps4-playtest", "--output", temporary, url], timeout=35)
+                if temporary.stat().st_size > maximum or digest(temporary) != expected:
+                    raise RuntimeError("Download checksum or size mismatch via " + label)
+                Path(destination).write_bytes(temporary.read_bytes())
+                return
+            except (RuntimeError, TimeoutError) as error:
+                failures.append(str(error))
+                stage("Download attempt failed: " + str(error))
+        raise RuntimeError("All download routes failed for " + relative + "\n" + "\n".join(failures))
+
+
+def download(revision, relative, destination, expected, maximum=2 * 1024 * 1024):
+    routes = (
+        ("GitHub API", f"https://api.github.com/repos/Chreece/shadPS4/contents/{relative}?ref={revision}"),
+        ("GitHub raw", f"https://raw.githubusercontent.com/Chreece/shadPS4/{revision}/{relative}"),
+    )
+    download_routes(routes, relative, destination, expected, maximum)
+
+
+def git(source, *arguments):
+    stage("Check Git " + " ".join(arguments))
+    return capture(["git", "-C", source, *arguments], timeout=120)
+
+
+def load_helper(work, name, expected, revision=HELPER_REVISION, directory="hardware/cpu_profile"):
     path = work / name
-    with urllib.request.urlopen(f"https://raw.githubusercontent.com/Chreece/shadPS4/{HELPER_REVISION}/hardware/cpu_profile/{name}", timeout=30) as response:
-        content = response.read(256 * 1024 + 1)
-    if hashlib.sha256(content).hexdigest() != expected:
-        raise RuntimeError("Helper checksum mismatch: " + name)
-    path.write_bytes(content)
+    download(revision, directory + "/" + name, path, expected, 256 * 1024)
+    stage("Load " + name)
     spec = importlib.util.spec_from_file_location(name.removesuffix(".py"), path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -51,7 +132,10 @@ def load_helper(work, name, expected):
 
 
 def build_candidate(builder, cache, evidence, work, revision):
-    git, command = builder.git, builder.command
+    git, original_command = builder.git, builder.command
+    def command(arguments, log, cwd=None):
+        stage("Build " + " ".join(map(str, arguments)))
+        return original_command(arguments, log, cwd)
     original = cache / "sse4a-source-7be5c17ec530"
     baseline_build = cache / "sse4a-build-7be5c17ec530"
     source = cache / ("sse4a-source-" + SOURCE_REVISION[:12])
@@ -97,7 +181,17 @@ def build_candidate(builder, cache, evidence, work, revision):
             settings[match[1]] = match[2]
     if len(settings) != 2 or not all(Path(path).is_file() for path in settings.values()):
         raise RuntimeError("The verified build compilers are unavailable")
-    builder.prepare_ffmpeg(source, build, baseline_build)
+    stage("Prepare cached FFmpeg dependency")
+    ffmpeg_cache = baseline_build
+    if not any(path.stat().st_size == builder.FFMPEG_SIZE and digest(path) == builder.FFMPEG_SHA
+               for path in (baseline_build / "externals").glob("ffmpeg-94dde08*.zip")):
+        ffmpeg_cache = work / "ffmpeg-cache"
+        dependency = ffmpeg_cache / "externals/ffmpeg-94dde08.zip"
+        dependency.parent.mkdir(parents=True)
+        url = "https://github.com/shadps4-emu/ext-ffmpeg-core/releases/download/94dde08/ffmpeg-linux-x64.zip"
+        download_routes((("GitHub release", url),), "FFmpeg", dependency,
+                        builder.FFMPEG_SHA, builder.FFMPEG_SIZE)
+    builder.prepare_ffmpeg(source, build, ffmpeg_cache)
     runtime = cache / "runtime-build-a522a5055820"
     configure = ["cmake", "-S", source, "-B", build, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                  "-DENABLE_TESTS=OFF", "-DENABLE_UPDATER=OFF", "-DCMAKE_CXX_SCAN_FOR_MODULES=OFF",
@@ -135,6 +229,7 @@ def cancel(signum, frame):
 
 
 def main():
+    global EVIDENCE
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", required=True)
     args = parser.parse_args()
@@ -145,27 +240,46 @@ def main():
     cache = Path.home() / ".cache/shadps4-affinity-20261007"
     cache.mkdir(parents=True, exist_ok=True)
     with (cache / "homebrew.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        print("START=SSE4a test; checking the test lock", flush=True)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("BUSY=Another homebrew test is running; nothing started", flush=True)
+            return 1
         evidence = Path(tempfile.mkdtemp(prefix="shadps4-sse4a-generated-", dir=Path.home()))
+        EVIDENCE = evidence
+        print("EVIDENCE=" + str(evidence), flush=True)
         summary = {"source_change": SOURCE_REVISION, "tests": {}, "ok": False,
                    "feature_reporting_changed": False}
+        trace = (evidence / "waiting-tracebacks.log").open("w")
+        faulthandler.dump_traceback_later(60, repeat=True, file=trace)
         installed = Path.home() / "Applications/shadps4/shadps4"
-        before = digest(installed) if installed.is_file() else None
+        before = None
+        installed_checked = False
         protected = {}
         handlers = {sig: signal.signal(sig, cancel) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
         try:
+            stage("Verify installed emulator")
+            before = digest(installed) if installed.is_file() else None
+            installed_checked = True
             with tempfile.TemporaryDirectory(prefix="sse4a-", dir=cache) as folder:
                 work = Path(folder)
                 collector = load_helper(work, "collect.py", COLLECT_SHA)
                 builder = load_helper(work, "test_filter.py", BUILD_SHA)
+                builder.download = download
+                builder.git = git
+                stage("Check running emulators")
                 collector.require_idle()
                 protected = {cache / "sse4a-build-7be5c17ec530/shadps4": BASE_BINARY,
                     cache / "sse4a-build-7be5c17ec530/src/core/cpu_id_translation/libshadps4_cpu_id.so": BASE_CLIENT}
                 protected.update({cache / name: sha for name, sha in collector.ARTIFACTS.items()})
                 for path, expected in protected.items():
+                    stage("Verify " + str(path.relative_to(cache)))
                     if digest(path) != expected:
                         raise RuntimeError("The verified artifact changed: " + str(path))
+                stage("Find display session")
                 env = collector.display_environment()
+                stage("Prepare candidate build")
                 binary, client, info = build_candidate(builder, cache, evidence, work, args.revision)
                 summary["build"] = info
                 suite = work / "suite.tar.gz"
@@ -180,7 +294,7 @@ def main():
                     for generated in (0, 1):
                         for index, case in enumerate(CASES):
                             name = f"{mode}-{'generated' if generated else 'static'}-{case}"
-                            print("TEST=" + name, flush=True)
+                            stage(f"Run {len(summary['tests']) + 1}/72 " + name)
                             runtime = work / name
                             collector.prepare_runtime(runtime)
                             (runtime / "user/data").mkdir(exist_ok=True)
@@ -207,11 +321,14 @@ def main():
                                     result["ok"] = False
                                 result["ok"] &= "error" not in result
                                 summary["tests"][name] = result
+                                (evidence / "progress.json").write_text(json.dumps(summary["tests"], indent=2) + "\n")
                             print("RESULT=" + name + (" PASS" if result["ok"] else " FAIL"), flush=True)
                 summary["ok"] = all(result["ok"] for name, result in summary["tests"].items() if name.startswith("after-"))
                 summary["fixed_cases"] = [name for name, result in summary["tests"].items() if name.startswith("before-")
                     and not result["ok"] and summary["tests"][name.replace("before-", "after-", 1)]["ok"]]
         except (Exception, KeyboardInterrupt) as error:
+            summary["last_stage"] = LAST_STAGE
+            (evidence / "error-traceback.log").write_text(traceback.format_exc())
             summary["error"] = type(error).__name__ + ": " + str(error)
             print("TEST_ERROR=" + summary["error"], flush=True)
             summary["ok"] = False
@@ -219,9 +336,12 @@ def main():
             for sig in handlers:
                 signal.signal(sig, signal.SIG_IGN)
             try:
-                summary["installed_binary_unchanged"] = before == (digest(installed) if installed.is_file() else None)
+                stage("Verify original files and collect archive")
+                summary["installed_binary_unchanged"] = installed_checked and before == (digest(installed) if installed.is_file() else None)
                 summary["baseline_artifacts_preserved"] = all(path.is_file() and digest(path) == expected for path, expected in protected.items())
                 summary["ok"] &= summary["installed_binary_unchanged"] and summary["baseline_artifacts_preserved"]
+                faulthandler.cancel_dump_traceback_later()
+                trace.close()
                 (evidence / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
                 archive_path = evidence.with_suffix(".tar.gz")
                 with tarfile.open(archive_path, "w:gz") as archive:
@@ -229,6 +349,9 @@ def main():
                 print("UPLOAD_ONLY=" + str(archive_path), flush=True)
                 print("SSH stays open. Installed emulator, saves and session guard were not edited.", flush=True)
             finally:
+                faulthandler.cancel_dump_traceback_later()
+                trace.close()
+                EVIDENCE = None
                 for sig, handler in handlers.items():
                     signal.signal(sig, handler)
         return 0 if summary["ok"] else 1
