@@ -21,6 +21,38 @@ import time
 import affinity_game_profile as profile
 
 
+class LaunchStopped(BaseException):
+    def __init__(self, signum):
+        self.signum = signum
+
+
+def launch_stopped(signum, frame):
+    raise LaunchStopped(signum)
+
+
+def verify_preservation(job, folder):
+    saved = json.loads((folder / "preservation.json").read_text())
+    source = Path(saved["profile"])
+    return {
+        "source_files_unchanged": profile.snapshot([Path(p) for p in saved["protected"]]) == saved["before"],
+        "source_config_unchanged": profile.digest(source / "config.json") == saved["config_sha256"],
+        "source_users_unchanged": profile.digest(source / "users.json") == saved["users_sha256"],
+        "installed_binary_unchanged": profile.digest(job["installed_binary"]) == saved["installed_sha256"],
+    }
+
+
+def capture_settings(runtime, folder, game_id):
+    settings = {}
+    for name, path in [("global", runtime / "user/config.json"),
+                       ("game", runtime / "user/custom_configs" / (game_id + ".json"))]:
+        if path.is_file():
+            config = json.loads(path.read_text())
+            settings[name] = {key: config[key] for key in ("GPU", "Vulkan", "Audio") if key in config}
+            settings[name]["General"] = {key: value for key, value in config.get("General", {}).items()
+                                          if isinstance(value, (bool, int, float))}
+    write_json(folder / "graphics-settings.json", settings)
+
+
 def write_json(path, value):
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(value, indent=2, default=str) + "\n")
@@ -153,6 +185,8 @@ def launch(job_file):
         write_json(status_file, result)
         protected = None
         child = None
+        handlers = {sig: signal.signal(sig, launch_stopped)
+                    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
         try:
             if not owner_running(folder) or time.time() > job["expires"] or (folder / "cancel").exists():
                 raise RuntimeError("Test controller stopped or expired")
@@ -172,9 +206,13 @@ def launch(job_file):
             installed_sha = profile.digest(job["installed_binary"])
             result.update(game_title=game["title"], command=job["prefix"] + profile.candidate_arguments(context),
                           source_profile=str(context["profile"]), binary_sha256=job["checksums"][job["binary"]])
-            write_json(folder / "preservation.json", {"protected": protected, "before": before,
-                "profile": context["profile"], "config_sha256": config_sha,
-                "users_sha256": users_sha, "installed_sha256": installed_sha})
+            preservation = {"protected": [str(path) for path in protected], "before": before,
+                "profile": str(context["profile"]), "config_sha256": config_sha,
+                "users_sha256": users_sha, "installed_sha256": installed_sha}
+            write_json(folder / "preservation.json", preservation)
+            if job.get("expected_preservation") is not None and preservation != job["expected_preservation"]:
+                raise RuntimeError("Original profile or installed binary changed between comparison runs")
+            capture_settings(runtime, folder, job["game_id"])
             if not owner_running(folder) or (folder / "cancel").exists():
                 raise RuntimeError("Test cancelled during profile copy")
             if profile.emulators():
@@ -195,29 +233,40 @@ def launch(job_file):
                     sample(job, samples, started)
                     time.sleep(1)
                 result.update(returncode=child.wait(timeout=5), elapsed_seconds=time.monotonic() - started)
+                result["completion_reason"] = "process_exited"
+        except LaunchStopped as error:
+            result.update(termination_signal=error.signum, completion_reason="launcher_received_signal")
+        except KeyboardInterrupt:
+            result.update(cancelled=True, completion_reason="launcher_interrupted")
         except BaseException as error:
             result["error"] = str(error) or type(error).__name__
         finally:
             for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
                 signal.signal(signum, signal.SIG_IGN)
+            cleanup_errors = []
+            result["forced_process_cleanup"] = bool(owned(job))
+            for action in (stop_owned, restore):
+                try:
+                    action(job)
+                except Exception as error:
+                    cleanup_errors.append(str(error))
             try:
-                stop_owned(job)
-                restore(job)
                 if child is not None:
-                    child.wait(timeout=5)
+                    result["returncode"] = child.wait(timeout=5)
                 if protected is not None:
-                    result.update(source_files_unchanged=profile.snapshot(protected) == before,
-                        source_config_unchanged=profile.digest(context["profile"] / "config.json") == config_sha,
-                        source_users_unchanged=profile.digest(context["profile"] / "users.json") == users_sha,
-                        installed_binary_unchanged=profile.digest(job["installed_binary"]) == installed_sha)
+                    result.update(verify_preservation(job, folder))
             except Exception as error:
-                result["cleanup_error"] = str(error)
+                cleanup_errors.append(str(error))
+            if cleanup_errors:
+                result["cleanup_error"] = "; ".join(cleanup_errors)
             result["phase"] = "finished"
             write_json(status_file, result)
+            for signum, handler in handlers.items():
+                signal.signal(signum, handler)
         return 1 if "error" in result or "cleanup_error" in result else result.get("returncode", 1)
 
 
-def run_stage(game_id, title, mode, binary, prefix, work, evidence):
+def run_stage(game_id, title, mode, binary, prefix, work, evidence, *, expected_preservation=None):
     if profile.emulators():
         raise RuntimeError("Close the current emulator through the normal session before testing")
     folder = work / (game_id + "-" + mode)
@@ -247,11 +296,13 @@ def run_stage(game_id, title, mode, binary, prefix, work, evidence):
            "patched_sha256": hashlib.sha256(replacement).hexdigest(), "backup": str(backup),
            "binary": str(binary), "prefix": prefix, "executables": executables, "checksums": checksums,
            "runtime": str(runtime), "game_id": game_id, "mode": mode, "expires": time.time() + 2400,
+           "expected_preservation": expected_preservation,
            "installed_binary": str(Path.home() / "Applications/shadps4/shadps4")}
     write_json(job_file, job)
     result = {"game_id": game_id, "mode": mode, "phase": "waiting"}
     lock = (folder / "owner.lock").open("x")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    controller_error = None
     try:
         if profile.digest(wrapper) != job["original_sha256"]:
             raise RuntimeError("Launcher changed while arming; left untouched")
@@ -273,7 +324,8 @@ def run_stage(game_id, title, mode, binary, prefix, work, evidence):
                     elif phase == "finished":
                         break
                 if not alive(result["bridge"]):
-                    raise RuntimeError("Guarded launcher exited before recording completion")
+                    profile.say(f"COLLECTING={title} [{mode}]: launcher exited; verifying cleanup independently")
+                    break
             else:
                 if profile.digest(wrapper) != job["patched_sha256"]:
                     raise RuntimeError("Launcher changed before the test started")
@@ -285,11 +337,15 @@ def run_stage(game_id, title, mode, binary, prefix, work, evidence):
             time.sleep(0.25)
         else:
             raise RuntimeError("Game stage timed out")
+    except BaseException as error:
+        controller_error = str(error) or type(error).__name__
+        raise
     finally:
         handlers = {sig: signal.signal(sig, signal.SIG_IGN) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
         try:
             (folder / "cancel").touch()
             cleanup_errors = []
+            forced_cleanup = bool(owned(job))
             for action in (restore, stop_owned):
                 try:
                     action(job)
@@ -301,6 +357,20 @@ def run_stage(game_id, title, mode, binary, prefix, work, evidence):
                 if result["phase"] == "finished" or not alive(result["bridge"]):
                     break
                 time.sleep(0.1)
+            if result.get("phase") != "finished" and result.get("bridge") and not alive(result["bridge"]):
+                result.update(phase="recovered", completion_reason="launcher_exited_without_final_status")
+                result.setdefault("returncode", None)
+            result["forced_process_cleanup"] = forced_cleanup or result.get("forced_process_cleanup", False)
+            result["owned_processes_remaining"] = [info["pid"] for info in owned(job)]
+            if result["owned_processes_remaining"]:
+                cleanup_errors.append("Owned emulator is still running")
+            if controller_error:
+                result["controller_error"] = controller_error
+            if (folder / "preservation.json").exists():
+                try:
+                    result.update(verify_preservation(job, folder))
+                except Exception as error:
+                    cleanup_errors.append("Preservation verification: " + str(error))
             if cleanup_errors:
                 result["cleanup_error"] = "; ".join(cleanup_errors)
             for path in folder.iterdir():
@@ -313,8 +383,12 @@ def run_stage(game_id, title, mode, binary, prefix, work, evidence):
                                 if path.is_file() and path.suffix in {".log", ".txt"})
             result["translation_active"] = "CPU identity translation active" in content
             result["launcher_restored"] = profile.digest(wrapper) == job["original_sha256"]
-            result["capture_complete"] = (result.get("phase") == "finished" and result.get("returncode") == 0
-                and not result.get("cancelled") and not result.get("error") and not result.get("cleanup_error")
+            result["clean_exit_verified"] = (result.get("phase") == "finished" and result.get("returncode") == 0
+                and result.get("completion_reason") == "process_exited" and not result.get("forced_process_cleanup")
+                and not any(result.get(key) for key in ("cancelled", "error", "cleanup_error", "controller_error")))
+            result["capture_complete"] = (result.get("phase") in {"finished", "recovered"}
+                and bool(result.get("candidate_pid")) and bool(content)
+                and not any(result.get(key) for key in ("cancelled", "error", "cleanup_error", "controller_error"))
                 and result["launcher_restored"] and all(result.get(key) is True for key in
                     ["source_files_unchanged", "source_config_unchanged", "source_users_unchanged", "installed_binary_unchanged"])
                 and result["translation_active"] == (mode == "translated"))
