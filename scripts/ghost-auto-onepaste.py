@@ -359,8 +359,21 @@ def stop_launched_game() -> None:
 
 
 def cleanup_child_session() -> None:
-    """Reap remaining test-created helpers after the child rollback completed."""
+    """Reap test-created helpers only after verifying the source rollback."""
     if CHILD_PROC is None or CHILD_PROC.poll() is None:
+        return
+    source = HOME / ".cache/shadps4-ghost-fullstack-20261008-131621/source"
+    if not source.is_dir():
+        say("SOURCE_UNAVAILABLE: skipping group kill until rollback can be verified")
+        return
+    try:
+        proc = subprocess.run(["git", "-C", str(source), "status", "--porcelain"],
+                              capture_output=True, text=True, timeout=12)
+        if proc.returncode or proc.stdout.strip():
+            say("SOURCE_DIRTY_AFTER_CHILD: refusing to kill possible rollback helpers")
+            return
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        say("SOURCE_STATUS_UNKNOWN: preserving possible rollback helpers: " + repr(exc))
         return
     sid = CHILD_PROC.pid  # Python child was spawned with start_new_session=True.
     members = alive_session_pids(sid)
@@ -582,21 +595,36 @@ def observe_game(env: dict[str, str]) -> None:
 
 
 def terminate_child() -> None:
+    """Request inner shell EXIT rollback; never TERM/KILL the whole build group."""
     global CHILD_PROC
     if CHILD_PROC is None or CHILD_PROC.poll() is not None:
         return
-    # The validation wrapper and nested build script have their OWN session.
-    # Signal them only if they did not finish cleanup after the game exited.
-    say("CHILD_TRIAL_TIMEOUT: requesting bounded rollback via SIGTERM")
+    sid = CHILD_PROC.pid  # Isolated group created at subprocess launch.
+    script_pids = []
+    for pid in alive_session_pids(sid):
+        info = proc_info(pid)
+        if not info:
+            continue
+        if (Path(info["exe"]).name in ("bash", "sh") and
+                "ghost-arena-1g-with-validation-onerun.sh" in info["argv"]):
+            script_pids.append(pid)
     try:
-        os.killpg(CHILD_PROC.pid, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
-        return
+        if script_pids:
+            say(f"REQUESTING_SHELL_TRAP_ROLLBACK pids={script_pids}")
+            for pid in script_pids:
+                os.kill(pid, signal.SIGTERM)
+        else:
+            say("REQUESTING_CHILD_PYTHON_FINALLY_VIA_SIGINT")
+            os.kill(CHILD_PROC.pid, signal.SIGINT)
+    except (ProcessLookupError, PermissionError) as exc:
+        say("CHILD_CANCEL_SIGNAL_ERROR=" + repr(exc))
     try:
-        CHILD_PROC.wait(timeout=40)
+        CHILD_PROC.wait(timeout=95)
+        say("CHILD_EXITED_AFTER_ROLLBACK_REQUEST")
     except subprocess.TimeoutExpired:
-        # Never kill the shell while it is performing source/binary rollback.
-        say("CHILD_TRIAL_ROLLBACK_STILL_RUNNING; leaving rollback alive and reporting.")
+        # Source/binary restoration matters more than a forced process kill.
+        say("CHILD_ROLLBACK_STILL_RUNNING: no broad kill; see report and allow "
+            "the isolated build trial to finish its EXIT cleanup.")
 
 
 def reader(proc: subprocess.Popen, ready: threading.Event, output: Path) -> None:
