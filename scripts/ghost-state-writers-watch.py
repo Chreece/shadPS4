@@ -87,6 +87,7 @@ def gdb_commands():
     return r'''set pagination off
 set confirm off
 set print thread-events off
+set can-use-hw-watchpoints 1
 set debuginfod enabled off
 set auto-load safe-path /dev/null
 set may-call-functions off
@@ -147,6 +148,8 @@ def capture_game(pid, runtime):
     say("Game may briefly pause at each observed state change; no process is killed.")
     started = time.monotonic()
     timed_out = False
+    hardware_confirmed = False
+    safe_reject = False
     with transcript.open("w") as out:
         proc = subprocess.Popen(
             args, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL
@@ -154,6 +157,28 @@ def capture_game(pid, runtime):
         try:
             while proc.poll() is None:
                 elapsed = time.monotonic() - started
+                if elapsed >= 8 and not hardware_confirmed:
+                    try:
+                        out.flush()
+                        transcript_tail = transcript.read_text(errors="replace")
+                        hardware_count = len(re.findall(
+                            r"(?m)^Hardware watchpoint\s+\d+:", transcript_tail))
+                        if hardware_count >= 2:
+                            hardware_confirmed = True
+                            say("Verified two hardware watchpoints; continuing observation.")
+                        elif elapsed >= 12:
+                            safe_reject = True
+                            say("Could not verify two hardware watchpoints; stopping the "
+                                "debugger to avoid slow software watchpoints.")
+                            proc.terminate()
+                            try:
+                                proc.wait(timeout=6)
+                            except subprocess.TimeoutExpired:
+                                proc.kill()
+                                proc.wait(timeout=5)
+                            break
+                    except OSError:
+                        pass
                 if elapsed >= 75:
                     timed_out = True
                     # Terminate the *debugger* at its deadline, never the game.
@@ -179,7 +204,7 @@ def capture_game(pid, runtime):
                     proc.wait(timeout=5)
     # Never send SIGTERM/SIGKILL to the emulator. If a ptrace stop remained,
     # SIGCONT can release it without terminating or changing application data.
-    if timed_out and process_is_ghost(pid):
+    if (timed_out or safe_reject) and process_is_ghost(pid):
         try:
             status = (Path(f"/proc/{pid}/status").read_text(errors="replace"))
             state = re.search(r"(?m)^State:\s+(\w)", status)
@@ -198,6 +223,7 @@ def capture_game(pid, runtime):
         (ROOT / "watch-summary.txt").write_text(
             f"gdb_exit={proc.returncode}\nwatchpoints_armed={armed}\n"
             f"events={count}\ntimeout={timed_out}\n"
+            f"hardware_confirmed={hardware_confirmed}\nsoftware_rejected={safe_reject}\n"
             f"guest_alive_after={process_is_ghost(pid)}\n"
             f"final_trace={read_trace(runtime)}\n"
         )
@@ -212,6 +238,7 @@ def selftest():
     assert "WP_WRITE" in commands and "GHOST_WATCHPOINTS_ARMED" in commands
     assert "0x3fb6590" in commands and "0x3fb6550" in commands
     assert "MAX_HITS = 18" in commands and "detach" in commands
+    assert "set can-use-hw-watchpoints 1" in commands
     assert "set may-call-functions off" in commands
     assert "/proc" not in commands  # debugger only reads guest/process mappings
     print("SELFTEST PASS: exact addresses, write-only watchpoints, 18-event cap, "
