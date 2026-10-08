@@ -195,7 +195,7 @@ def selftest():
     assert TRACE.search("[Lib.VideoOut] GHOST_TRACE vblank=1440 guest_flips=546 pending=0 queued=0").groups() == ("1440", "546", "0", "0")
     assert not TRACE.search("unrelated log message")
     assert "Ghost of Tsushima.ps4" in b"/mnt/roms-all/ps4/Ghost of Tsushima.ps4".decode()
-    assert all(x >= 0 for x in TRACE.search("GHOST_TRACE vblank=1260 guest_flips=564 pending=0 queued=0").groups() if int(x) >= 0)
+    assert all(int(x) >= 0 for x in TRACE.search("GHOST_TRACE vblank=1260 guest_flips=564 pending=0 queued=0").groups())
     print("SELFTEST PASS: log parser and Ghost launch-name matching; no debugger attach")
     return 0
 
