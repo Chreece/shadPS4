@@ -30,16 +30,41 @@ log() { printf '%s\n' "$*" | tee -a "$LOG"; }
 run() { log "+ $(printf '%q ' "$@")"; "$@" 2>&1 | tee -a "$LOG"; }
 fail() { log "STOP: $*"; exit 1; }
 game_pid() {
-    local pid cmd
-    while read -r pid; do
-        [[ "$pid" =~ ^[0-9]+$ && -r "/proc/$pid/cmdline" ]] || continue
-        cmd="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)"
-        if [[ "$cmd" == *'--game CUSA11456'* ]]; then
-            printf '%s' "$pid"
-            return 0
-        fi
-    done < <(pgrep -x shadps4 || true)
-    return 1
+    # /proc/<pid>/comm is "shadPS4:Main", not "shadps4"; never use pgrep -x.
+    # Match the installed executable inode AND the game's actual command line.
+    python3 - "$DEST" <<'PY'
+from pathlib import Path
+import sys
+exe = Path(sys.argv[1])
+for proc in Path('/proc').iterdir():
+    if not proc.name.isdigit():
+        continue
+    try:
+        if not (proc / 'exe').samefile(exe):
+            continue
+        args = (proc / 'cmdline').read_bytes().replace(b'\0', b' ').decode('utf-8','replace')
+        if 'CUSA11456' in args or 'Ghost of Tsushima.ps4' in args:
+            print(proc.name)
+            break
+    except (OSError, PermissionError, ValueError):
+        continue
+PY
+}
+any_shadps4() {
+    python3 - "$DEST" <<'PY'
+from pathlib import Path
+import sys
+exe = Path(sys.argv[1])
+for proc in Path('/proc').iterdir():
+    if not proc.name.isdigit():
+        continue
+    try:
+        if (proc / 'exe').samefile(exe):
+            sys.exit(0)
+    except (OSError, PermissionError, ValueError):
+        continue
+sys.exit(1)
+PY
 }
 find_session() {
     local candidate t
@@ -131,7 +156,7 @@ log 'Test: native RDTSC on guest threads while retaining CPUID patching.'
 log 'Known limitation: dynamically generated RDTSCP may expose host AUX during test.'
 log 'Source and binaries will be restored when the game exits or after timeout.'
 
-for tool in git cmake ninja curl python3 sha256sum tar install cmp pgrep find stat; do
+for tool in git cmake ninja curl python3 sha256sum tar install cmp find stat; do
     command -v "$tool" >/dev/null || fail "Required tool missing: $tool"
 done
 [[ -f "$ROOT/.git" && -f "$BUILD/CMakeCache.txt" && -x "$DEST" ]] || \
@@ -141,7 +166,7 @@ done
 grep -Fxq "CMAKE_HOME_DIRECTORY:INTERNAL=$ROOT" "$BUILD/CMakeCache.txt" || fail 'Wrong CMake cache.'
 [[ "$(sha256sum "$DEST" | cut -d' ' -f1)" == "$EXPECTED_SHA" ]] || \
     fail 'Installed executable changed since evidence capture; refusing replacement.'
-pgrep -x shadps4 >/dev/null 2>&1 && fail 'shadPS4 already running; please exit normally first.'
+any_shadps4 && fail 'shadPS4 is already running; please exit normally first.'
 mapfile -t bins < <(find "$BUILD" -type f -name shadps4 -perm /111)
 [[ "${#bins[@]}" == 1 ]] || fail "Expected one build output, found ${#bins[@]}"
 ORIGINAL_BUILT="${bins[0]}"
@@ -175,7 +200,7 @@ CANDIDATE_SHA="$(sha256sum "$ORIGINAL_BUILT" | cut -d' ' -f1)"
 printf 'trial_sha256=%s\n' "$CANDIDATE_SHA" >>"$SESSION/manifest.txt"
 
 log '=== Atomic temporary deployment, verified backup ==='
-pgrep -x shadps4 >/dev/null 2>&1 && fail 'Emulator started during compilation; refusing install.'
+any_shadps4 && fail 'Emulator started during compilation; refusing install.'
 [[ "$(sha256sum "$DEST" | cut -d' ' -f1)" == "$EXPECTED_SHA" ]] || \
     fail 'Installed binary changed during build.'
 TEMP="${DEST}.ghost-tsc-trial-$STAMP"
