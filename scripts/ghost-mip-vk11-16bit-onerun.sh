@@ -255,7 +255,8 @@ git -C "$ROOT" diff --check || fail 'Source diff check failed.'
 git -C "$ROOT" diff -- "$REL" "$VK11_REL" >"$SESSION/vk11-16bit-mip.patch"
 grep -q 'GHOST_VK11_16BIT' "$SESSION/vk11-16bit-mip.patch" ||
     fail 'Missing Vulkan 1.1 uniform storage 16-bit feature change.'
-grep -q 'GHOST_MIP_COPY' "$SESSION/mip-copy.patch" || fail 'Missing expected source change.'
+grep -q 'GHOST_MIP_COPY' "$SESSION/vk11-16bit-mip.patch" ||
+    fail 'Missing targeted multi-mip source change.'
 
 log '=== Incremental Vulkan build (affinity/CPUID unchanged) ==='
 JOBS="${GHOST_BUILD_JOBS:-4}"
