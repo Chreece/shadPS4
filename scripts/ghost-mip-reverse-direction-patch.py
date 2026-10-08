@@ -144,7 +144,7 @@ def selftest() -> None:
     updated = modify(fixture, check_hash=False).decode()
     assert updated.count("r32_to_d32") >= 3
     assert updated.count("d32_to_r32") >= 3
-    assert "eColor\\n                                            : vk::ImageAspectFlagBits::eDepth" in updated
+    assert "eColor\n                                            : vk::ImageAspectFlagBits::eDepth" in updated
     assert "r32_to_d32 ? vk::ImageAspectFlagBits::eDepth" in updated
     assert "destination_copies.push_back(copy)" in updated
     assert "GHOST_MIP_REVERSE_COPY mips=" in updated
