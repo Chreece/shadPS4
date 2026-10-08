@@ -2354,9 +2354,8 @@ static bool PatchesIllegalInstructionHandler(void* context) {
     void* code_address = Common::GetRip(context);
 #if defined(_WIN32)
     // Windows static guest red-zone protection
-    const bool inspect_sse4a =
-        !WindowsGuestRedZoneProtection::IsStaticPatchingEnabled() ||
-        GetContainingModule(code_address) != nullptr;
+    const bool inspect_sse4a = !WindowsGuestRedZoneProtection::IsStaticPatchingEnabled() ||
+                               GetContainingModule(code_address) != nullptr;
 #else
     constexpr bool inspect_sse4a = true;
 #endif
