@@ -147,7 +147,7 @@ def selftest() -> None:
     assert "\ndetach\nquit\n" in GDB_COMMANDS
     # A Python loop inside GDB_COMMANDS legitimately uses "continue". Only
     # reject a top-level GDB resume command, not Python flow control.
-    assert not re.search(r"(?m)^continue\\s*$", GDB_COMMANDS)
+    assert not re.search(r"(?m)^continue[ ]*$", GDB_COMMANDS)
     assert 'run("continue")' not in GDB_COMMANDS
     assert "set may-call-functions off" in GDB_COMMANDS
     assert "thread apply all" not in GDB_COMMANDS
