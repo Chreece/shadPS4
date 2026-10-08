@@ -25,8 +25,12 @@ import tempfile
 HOME = Path.home()
 BIN = HOME / "Applications/shadps4/shadps4"
 BASELINE = "f54245b0cf835995172a910c4e3a16cb13aef6c36a39fa5a8be53f3190183e4f"
+FULLSTACK_ROOT = HOME / ".cache/shadps4-ghost-fullstack-20261008-131621/source"
+FULLSTACK_HEAD = "89af13f6d306ebc24396b4e8e207688537cdc28b"
+FULLSTACK_VK_INSTANCE = FULLSTACK_ROOT / "src/video_core/renderer_vulkan/vk_instance.cpp"
+FULLSTACK_VK_INSTANCE_BLOB = "d719bb4842561e0811de33a47560c461af34ec4c"
 CONFIG_REV = "05cc36dbb30a899d8f5b5c7fbcd4c9765ac19e12"
-TRIAL_REV = "6c7d5b7c1c3b3c04ded9e0022ba42bbdb606f217"
+TRIAL_REV = "23eb36bbe8b72a20920b0c5005f90403fce94c67"
 STAMP = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 OUT = HOME / ("ghost-vk-syncval-" + STAMP + ".tar.gz")
 ROOT = Path(tempfile.mkdtemp(prefix="ghost-vk-syncval-" + STAMP + "-", dir=HOME / ".cache"))
@@ -99,6 +103,22 @@ def preflight():
                            "; exit normally before beginning a trial.")
     if not available_layer():
         raise RuntimeError("VK_LAYER_KHRONOS_validation is unavailable; no profile edits made.")
+    if not FULLSTACK_VK_INSTANCE.is_file():
+        raise RuntimeError("Verified local vk_instance.cpp missing; refusing configuration changes.")
+    try:
+        head = subprocess.check_output(["git", "-C", str(FULLSTACK_ROOT), "rev-parse", "HEAD"],
+                                       text=True, timeout=10).strip()
+        dirt = subprocess.check_output(["git", "-C", str(FULLSTACK_ROOT),
+                                        "status", "--porcelain"], text=True, timeout=10).strip()
+        blob = subprocess.check_output(["git", "-C", str(FULLSTACK_ROOT),
+                                        "hash-object", str(FULLSTACK_VK_INSTANCE)],
+                                       text=True, timeout=10).strip()
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("Cannot verify original fullstack source before game settings change") from exc
+    if head != FULLSTACK_HEAD or dirt or blob != FULLSTACK_VK_INSTANCE_BLOB:
+        raise RuntimeError("Local fullstack source changed; refusing to alter game settings: "
+                           f"HEAD={head}, dirty={bool(dirt)}, vk_instance_blob={blob}")
+    say("PREFLIGHT_SOURCE_PASS: clean exact fullstack vk_instance.cpp blob " + blob)
     say("PREFLIGHT_PASS: known binary, emulator idle, validation layer installed")
 
 
@@ -239,6 +259,8 @@ def selftest():
     assert re.search(r"\bVUID-vkCmdCopyBufferToImage", "VUID-vkCmdCopyBufferToImage-02375")
     assert "ghost-mip-vk11-16bit-" in "ghost-mip-vk11-16bit-20261008.tar.gz"
     assert CONFIG_REV != TRIAL_REV
+    assert len(FULLSTACK_VK_INSTANCE_BLOB) == 40
+    assert FULLSTACK_HEAD != FULLSTACK_VK_INSTANCE_BLOB
     shutil.rmtree(ROOT)
     print("SELFTEST PASS: pinned baseline, VUID classifier, nested trial naming")
 
