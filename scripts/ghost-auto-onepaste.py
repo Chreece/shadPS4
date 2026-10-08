@@ -61,6 +61,7 @@ CHILD_READY = threading.Event()
 GAME_LAUNCH_TIME: float | None = None
 GAME_PID: int | None = None
 GAME_SID: int | None = None
+GAME_START_TICKS: int | None = None
 SESSION_DIR: Path | None = None
 CHILD_RC: int | None = None
 TEST_STATUS = "PREPARING"
@@ -260,7 +261,10 @@ def current_session() -> Path | None:
             if not info or not exact_ghost(pid):
                 continue
             if GAME_SID is not None and info["sid"] != GAME_SID and pid != GAME_PID:
-                continue
+                # Some wrappers can launch the emulator in a detached session.
+                # Accept only a game process created after our own launcher.
+                if GAME_START_TICKS is None or info["start_ticks"] < GAME_START_TICKS:
+                    continue
             choices.append((meta.stat().st_mtime, meta.parent))
         except (OSError, PermissionError, ValueError):
             continue
@@ -341,8 +345,8 @@ def stop_launched_game() -> None:
             info = proc_info(extra)
             if (info and exact_ghost(extra) and extra != pid and
                     info["sid"] != GAME_SID and
-                    GAME_LAUNCH_TIME is not None and
-                    Path(f"/proc/{extra}").stat().st_mtime >= GAME_LAUNCH_TIME - 4):
+                    GAME_START_TICKS is not None and
+                    info["start_ticks"] >= GAME_START_TICKS):
                 say(f"DETACHED_TEST_GHOST_SHUTDOWN={extra}")
                 try:
                     os.kill(extra, signal.SIGTERM)
@@ -517,7 +521,7 @@ def ready_preflight() -> dict[str, str]:
 
 
 def launch_test(env: dict[str, str]) -> None:
-    global GAME_PROC, GAME_LAUNCH_TIME, GAME_PID, GAME_SID, SESSION_DIR, STOP_REASON
+    global GAME_PROC, GAME_LAUNCH_TIME, GAME_PID, GAME_SID, GAME_START_TICKS, SESSION_DIR, STOP_REASON
     if emulator_pids():
         raise RuntimeError("An emulator appeared before auto-launch; refusing.")
     GAME_LAUNCH_TIME = time.time()
@@ -527,6 +531,8 @@ def launch_test(env: dict[str, str]) -> None:
             stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
     GAME_PID = GAME_PROC.pid
     GAME_SID = GAME_PID
+    launched = proc_info(GAME_PID)
+    GAME_START_TICKS = launched["start_ticks"] if launched else None
     say(f"AUTOMATIC_GAME_LAUNCH pid={GAME_PID} sid={GAME_SID} display={DISPLAY}")
     STOP_REASON = "running"
     # Prevent rushing screenshot shortcuts before shadPS4's window initializes.
@@ -773,8 +779,9 @@ def main() -> int:
             "installed_baseline_sha256": BASE_SHA,
             "running_after": [
                 pid for pid in emulator_pids()
-                if GAME_SID is not None and proc_info(pid)
-                and proc_info(pid)["sid"] == GAME_SID
+                if GAME_START_TICKS is not None and proc_info(pid)
+                and proc_info(pid)["start_ticks"] >= GAME_START_TICKS
+                and exact_ghost(pid)
             ],
         }, indent=2) + "\n")
         try:
