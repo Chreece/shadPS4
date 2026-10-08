@@ -63,6 +63,11 @@ finish() {
         printf 'INTEGRATION/BUILD STOPPED SAFELY. Installed emulator was not replaced if failure occurred before deployment.\n'
     fi
     printf 'ARCHIVE=%s\n' "$ARCHIVE"
+    if [[ "$rc" == 0 && "$SUCCESS" == 1 ]]; then
+        # Only remove directories created for this successful integration.
+        git -C "$SOURCE" worktree remove --force "$WORK" >/dev/null 2>&1 || true
+        rm -rf -- "$BUILD"
+    fi
     printf 'SESSION=%s\n' "$SESSION"
     printf 'SSH session was not closed.\n'
 }
