@@ -67,8 +67,14 @@ def selftest():
     assert "vk11_features.uniformAndStorageBuffer16BitAccess" in updated
     assert "storageBuffer16BitAccess = vk11_features.storageBuffer16BitAccess" in updated
     assert "vk11_features.shaderDrawParameters" in updated
-    assert updated.index(".storageBuffer16BitAccess") < updated.index(".uniformAndStorageBuffer16BitAccess")
-    assert updated.index(".uniformAndStorageBuffer16BitAccess") < updated.index(".shaderDrawParameters")
+    # Only inspect the Vulkan11 device feature initializer. The earlier
+    # LOG_INFO statement also mentions both feature names in a different order.
+    assert updated.count(REPLACEMENT) == 1
+    assert updated.count(LOG_REPLACEMENT) == 1
+    initializer = updated.split("        vk::PhysicalDeviceVulkan11Features{", 1)[1].split("        },", 1)[0]
+    assert initializer.index(".storageBuffer16BitAccess =") < initializer.index(
+        ".uniformAndStorageBuffer16BitAccess =") < initializer.index(".shaderDrawParameters =")
+    assert initializer.count("vk11_features.uniformAndStorageBuffer16BitAccess") == 1
     assert "GHOST_VK11_16BIT" in updated
     print("SELFTEST PASS: device Vulkan 1.1 feature initialized from advertised support,"
           " original bits preserved, positive log marker, guarded source anchors")
