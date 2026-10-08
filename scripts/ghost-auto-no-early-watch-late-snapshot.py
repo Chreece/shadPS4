@@ -41,13 +41,13 @@ STATE = HOME / ".local/state/shadps4-playtest-logs"
 BASE_SHA = "f54245b0cf835995172a910c4e3a16cb13aef6c36a39fa5a8be53f3190183e4f"
 TRIAL_REV = "7bd483f625129b02f898bf5cadfdb7c59ced96b0"
 TRIAL_FILE = "ghost-no-gdb-validation-onerun.py"
-STALL_SNAP_REV = "1ebf5953d3b05fcbd29f164d675961c77657b336"
+STALL_SNAP_REV = "b9a11fc478cf7f93ec66197bffeac554fb9d736a"
 STALL_SNAP_FILE = "ghost-stall-readonly-snapshot.py"
-STALL_SNAP_TIMES = (110, 138)
+STALL_SNAP_TIMES = (72, 100)
 DISPLAY = ":0"
 READY = "READY - LAUNCH GHOST OF TSUSHIMA THROUGH MOONLIGHT -> ES-DE NOW."
-SCREEN_TIMES = (6, 12, 24, 42, 65, 95, 125, 145)
-MAX_GAME_SECONDS = 156
+SCREEN_TIMES = (6, 12, 24, 42, 65, 95, 122)
+MAX_GAME_SECONDS = 126
 MAX_PREPARE_SECONDS = 850
 MAX_ROLLBACK_SECONDS = 110
 
@@ -710,6 +710,7 @@ def orchestrate() -> None:
     SCREEN_DIR.mkdir(exist_ok=True)
     say("NO EARLY WATCHPOINT: build -> auto-launch -> screenshots -> late readonly GDB -> archive")
     say("NO_GDB_HARDWARE_WATCHPOINT=1: debugger allowed only after stable guest stall")
+    say("STALLED_GUEST_SNAPSHOTS=72s,100s; <=21s each; overall test <=126s plus sampling")
     # Fail closed BEFORE compiling or changing configs when the automatic
     # launch cannot access the same guarded X11 session and game used before.
     SCREEN_ENV = ready_preflight()
@@ -790,7 +791,7 @@ def test() -> None:
     assert STALL_SNAP_TIMES[-1] < MAX_GAME_SECONDS
     assert "guest_stall_is_stable" in globals()
     assert "STALL_SNAP_REV" in globals()
-    assert 110 <= STALL_SNAP_TIMES[0] < STALL_SNAP_TIMES[1] < MAX_GAME_SECONDS
+    assert 65 <= STALL_SNAP_TIMES[0] < STALL_SNAP_TIMES[1] < MAX_GAME_SECONDS
     assert re.fullmatch(r"[0-9a-f]{64}", BASE_SHA)
     assert "Ghost of Tsushima.ps4" in "shadps4 --game /mnt/roms-all/ps4/Ghost of Tsushima.ps4"
     assert TRIAL_FILE == "ghost-no-gdb-validation-onerun.py"
