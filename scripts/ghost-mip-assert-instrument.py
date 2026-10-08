@@ -31,7 +31,7 @@ NEW = """    if (num_mips != 1) {
 """
 
 def git_blob_hash(data: bytes) -> str:
-    return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\\0" + data).hexdigest()
+    return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
 
 def instrument(source: bytes) -> bytes:
     h = git_blob_hash(source)
