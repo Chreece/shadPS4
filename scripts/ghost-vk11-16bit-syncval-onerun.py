@@ -26,7 +26,7 @@ HOME = Path.home()
 BIN = HOME / "Applications/shadps4/shadps4"
 BASELINE = "f54245b0cf835995172a910c4e3a16cb13aef6c36a39fa5a8be53f3190183e4f"
 CONFIG_REV = "05cc36dbb30a899d8f5b5c7fbcd4c9765ac19e12"
-TRIAL_REV = "73cc812bbe1a0c9bdb3a5f5b87aa1f18bd0f4ea9"
+TRIAL_REV = "d119a42f5142c3ba8ef506b9299e4ad6924a5ea5"
 STAMP = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 OUT = HOME / ("ghost-vk-syncval-" + STAMP + ".tar.gz")
 ROOT = Path(tempfile.mkdtemp(prefix="ghost-vk-syncval-" + STAMP + "-", dir=HOME / ".cache"))
