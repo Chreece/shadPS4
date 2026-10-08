@@ -358,6 +358,31 @@ def stop_launched_game() -> None:
     STOP_REASON = "session_stopped"
 
 
+def cleanup_child_session() -> None:
+    """Reap remaining test-created helpers after the child rollback completed."""
+    if CHILD_PROC is None or CHILD_PROC.poll() is None:
+        return
+    sid = CHILD_PROC.pid  # Python child was spawned with start_new_session=True.
+    members = alive_session_pids(sid)
+    if not members:
+        return
+    say(f"LEFTOVER_TEST_HELPERS={members}; stopping only child session sid={sid}")
+    try:
+        os.killpg(sid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return
+    limit = time.monotonic() + 6
+    while time.monotonic() < limit and alive_session_pids(sid):
+        time.sleep(0.3)
+    left = alive_session_pids(sid)
+    if left:
+        say(f"FORCIBLY_STOPPING_TEST_HELPERS={left} sid={sid}")
+        try:
+            os.killpg(sid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
 def cleanup_test_watchers() -> None:
     """Stop ONLY a watcher started by the child trial, by exact PID and argv."""
     output = WORK / "build-and-trial.log"
@@ -679,6 +704,10 @@ def main() -> int:
         except Exception as exc:
             say("CHILD_CLEANUP_ERROR=" + repr(exc))
         try:
+            cleanup_child_session()
+        except Exception as exc:
+            say("HELPER_CLEANUP_ERROR=" + repr(exc))
+        try:
             cleanup_test_watchers()
         except Exception as exc:
             say("WATCHER_CLEANUP_ERROR=" + repr(exc))
@@ -700,13 +729,18 @@ def main() -> int:
         else:
             say("INSTALLED_BINARY_MISSING")
         (WORK / "events.txt").write_text("\n".join(EVENTS) + "\n")
+        count_images = len(list(SCREEN_DIR.glob("*.png")))
+        if GAME_LAUNCH_TIME and count_images == 0:
+            say("SCREENSHOT_WARNING: no PNG saved despite capture triggers; check X11/SDL evidence")
+            if TEST_STATUS == "FINISHED":
+                TEST_STATUS = "INCOMPLETE_NO_SCREENSHOTS"
         (WORK / "summary.json").write_text(json.dumps({
             "test_status": TEST_STATUS,
             "child_returncode": CHILD_RC,
             "stop_reason": STOP_REASON,
             "game_pid": GAME_PID,
             "game_session": str(SESSION_DIR) if SESSION_DIR else None,
-            "screenshots_collected": len(list(SCREEN_DIR.glob("*.png"))),
+            "screenshots_collected": count_images,
             "error": error,
             "installed_baseline_sha256": BASE_SHA,
             "running_after": [
@@ -726,8 +760,12 @@ def main() -> int:
         except Exception as exc:
             say("ARCHIVE_CREATION_FAILED=" + repr(exc))
             return 2
-        say("All processes created by this test have been asked to stop; "
-            "the existing SSH session and unrelated services were preserved.")
+        game_left = alive_session_pids(GAME_SID) if GAME_SID is not None else []
+        child_left = alive_session_pids(CHILD_PROC.pid) if CHILD_PROC is not None else []
+        if game_left or child_left:
+            say(f"WARNING_TEST_PROCESSES_REMAIN game={game_left} helpers={child_left}")
+        else:
+            say("ALL_TEST_SESSIONS_EXITED; SSH/Sunshine/ES-DE and unrelated processes preserved.")
     return 0 if TEST_STATUS == "FINISHED" else 1
 
 
