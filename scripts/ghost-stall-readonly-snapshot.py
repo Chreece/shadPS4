@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 
+MAX_SNAPSHOT_SECONDS = 21
 GDB_COMMANDS = r"""set pagination off
 set confirm off
 set print thread-events off
@@ -114,16 +115,16 @@ def snapshot(pid: int, workdir: Path, label: str) -> None:
                                 stdin=subprocess.DEVNULL, start_new_session=True)
         timeout = False
         try:
-            proc.wait(timeout=28)
+            proc.wait(timeout=14)
         except subprocess.TimeoutExpired:
             timeout = True
             # Ask GDB itself to detach/quit first, allowing the guest to resume.
             os.kill(proc.pid, signal.SIGINT)
             try:
-                proc.wait(timeout=10)
+                proc.wait(timeout=4)
             except subprocess.TimeoutExpired:
                 os.kill(proc.pid, signal.SIGKILL)
-                proc.wait(timeout=5)
+                proc.wait(timeout=3)
         state.write_text(
             f"gdb_pid={proc.pid}\nreturncode={proc.returncode}\n"
             f"timed_out={timeout}\nseconds={time.monotonic()-started:.2f}\n"
@@ -151,6 +152,8 @@ def selftest() -> None:
     assert 'run("continue")' not in GDB_COMMANDS
     assert "set may-call-functions off" in GDB_COMMANDS
     assert "thread apply all" not in GDB_COMMANDS
+    # A debugger must not delay the enclosing 180-second child trial.
+    assert MAX_SNAPSHOT_SECONDS <= 22
     print("SELFTEST PASS: read-only pending queue, guest-hotloop disassembly, "
           "bounded worker stacks, no continue/step/call; debugger detaches")
 
