@@ -10,18 +10,22 @@ import io
 import json
 from pathlib import Path
 import struct
+import sys
 import tarfile
 
 
 ROOT = Path(__file__).resolve().parent
 
 
-def make_sfo():
+def make_sfo(hardware=False):
     values = {
         "APP_TYPE": 1, "APP_VER": "1.00", "ATTRIBUTE": 0, "CATEGORY": "gd",
         "CONTENT_ID": "IV0000-SSE400001_00-SSE4ASTATETEST000", "SYSTEM_VER": 0,
         "TITLE": "SSE4a state test", "TITLE_ID": "SSE400001", "VERSION": "1.00",
     }
+    if hardware:
+        values.update(TITLE_ID="SSE400002", TITLE="SSE4a hardware probe",
+                      CONTENT_ID="IV0000-SSE400002_00-SSE4AHARDWARE0000")
     keys = bytearray()
     data = bytearray()
     entries = bytearray()
@@ -39,16 +43,28 @@ def make_sfo():
 
 
 def main():
-    files = {"SSE400001/eboot.bin": (ROOT / "eboot.bin").read_bytes(),
-             "SSE400001/sce_sys/param.sfo": make_sfo()}
+    if sys.argv[1:] not in ([], ["--hardware"]):
+        raise SystemExit("Usage: package.py [--hardware]")
+    hardware = bool(sys.argv[1:])
+    title = "SSE400002" if hardware else "SSE400001"
+    files = {title + "/eboot.bin": (ROOT / ("console.bin" if hardware else "eboot.bin")).read_bytes(),
+             title + "/sce_sys/param.sfo": make_sfo(hardware)}
     for name in ("main.cpp", "cases.S", "Makefile", "package.py", "musl-COPYRIGHT"):
         files["source/" + name] = (ROOT / name).read_bytes()
-    files["source/GPL-2.0-or-later.txt"] = (ROOT.parents[1] / "LICENSES/GPL-2.0-or-later.txt").read_bytes()
+    if hardware:
+        files["source/native_probe.cpp"] = (ROOT / "native_probe.cpp").read_bytes()
+        files["console.elf"] = (ROOT / "console.elf").read_bytes()
+        files["INSTRUCTIONS.txt"] = (ROOT / "hardware-instructions.txt").read_bytes()
+        files["source/hardware-instructions.txt"] = files["INSTRUCTIONS.txt"]
+    license_path = ROOT / "GPL-2.0-or-later.txt"
+    if not license_path.is_file():
+        license_path = ROOT.parents[1] / "LICENSES/GPL-2.0-or-later.txt"
+    files["source/GPL-2.0-or-later.txt"] = license_path.read_bytes()
     files["manifest.json"] = (json.dumps({
         "format": 1, "sdk": "OpenOrbis v0.5.4", "hardware_result": None,
         "sha256": {name: hashlib.sha256(data).hexdigest() for name, data in files.items()},
     }, indent=2) + "\n").encode()
-    destination = ROOT / "suite.tar.gz"
+    destination = ROOT / ("hardware-probe.tar.gz" if hardware else "suite.tar.gz")
     with destination.open("wb") as stream, gzip.GzipFile(filename="", fileobj=stream, mode="wb", mtime=0) as compressed:
         with tarfile.open(fileobj=compressed, mode="w") as archive:
             for name, data in sorted(files.items()):

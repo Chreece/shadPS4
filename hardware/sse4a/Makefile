@@ -17,3 +17,10 @@ eboot.bin: sse4a.elf
 
 native-probe: native_probe.cpp cases.S
 	$(HOST_CXX) -std=c++17 -O2 -Wall -Wextra -Werror $^ -Wl,-z,noexecstack -o $@
+
+console.o: native_probe.cpp
+	$(ORBIS_CXX) --target=x86_64-pc-freebsd12-elf -std=c++17 -O2 -Wall -Wextra -Werror -DSSE4A_ORBIS -fPIC -funwind-tables -c -isysroot $(SDK) -isystem $(SDK)/include $< -o $@
+console.elf: console.o cases.o
+	$(ORBIS_LD) -m elf_x86_64 -pie --script $(SDK)/link.x --eh-frame-hdr -L$(SDK)/lib console.o cases.o $(SDK)/lib/crt1.o -lc -lkernel -lSceSystemService -o $@
+console.bin: console.elf
+	$(SDK)/bin/linux/create-fself -in=$< -out=console.oelf --eboot $@ --paid 0x3800000000000011 --sdkver 0x3000000
