@@ -93,7 +93,7 @@ std::array<u32, 4> GuestCpuid(u32 leaf, u32 subleaf, u32 cpu) {
     case 0x80000001:
         // XOP, LWP, FMA4, TBM and MONITORX/MWAITX are not Jaguar instructions.
         ecx &= ~((1u << 11) | (1u << 15) | (1u << 16) | (1u << 21) | (1u << 29));
-        ecx |= 1u << 22;
+        ecx |= (1u << 6) | (1u << 22);
         break;
     case 0x80000008:
         ecx = (ecx & ~0xf0ffu) | (3u << 12) | (GuestCpuCount - 1);
