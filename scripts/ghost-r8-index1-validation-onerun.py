@@ -30,7 +30,7 @@ FULLSTACK_HEAD = "89af13f6d306ebc24396b4e8e207688537cdc28b"
 FULLSTACK_VK_INSTANCE = FULLSTACK_ROOT / "src/video_core/renderer_vulkan/vk_instance.cpp"
 FULLSTACK_VK_INSTANCE_BLOB = "d719bb4842561e0811de33a47560c461af34ec4c"
 CONFIG_REV = "05cc36dbb30a899d8f5b5c7fbcd4c9765ac19e12"
-TRIAL_REV = "900c4cd43cd8149321c60cb2aaa95f67709427f3"
+TRIAL_REV = "1e2ffb11ca36d027b3541c16b0414df635512232"
 STAMP = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 OUT = HOME / ("ghost-r8-index1-validation-" + STAMP + ".tar.gz")
 ROOT = Path(tempfile.mkdtemp(prefix="ghost-r8-index1-validation-" + STAMP + "-", dir=HOME / ".cache"))
@@ -289,7 +289,7 @@ def selftest():
     assert re.search(r"\bVUID-vkCmdCopyBufferToImage", "VUID-vkCmdCopyBufferToImage-02375")
     assert "ghost-r8-index1-" in "ghost-r8-index1-20261008.tar.gz"
     assert CONFIG_REV != TRIAL_REV
-    assert TRIAL_REV == "900c4cd43cd8149321c60cb2aaa95f67709427f3"
+    assert TRIAL_REV == "1e2ffb11ca36d027b3541c16b0414df635512232"
     assert len(FULLSTACK_VK_INSTANCE_BLOB) == 40
     assert FULLSTACK_HEAD != FULLSTACK_VK_INSTANCE_BLOB
     shutil.rmtree(ROOT)
