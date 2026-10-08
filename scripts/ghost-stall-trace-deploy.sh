@@ -60,7 +60,7 @@ finish() {
 trap finish EXIT
 
 step 'Preflight: verify the previously working combined build and preserve host state'
-for command in git cmake ninja curl python3 tar sha256sum cmp install file strings; do
+for command in git cmake ninja curl python3 tar sha256sum cmp install file grep; do
     command -v "$command" >/dev/null || { MESSAGE="Missing tool: $command"; exit 11; }
 done
 [[ -d "$ROOT" && -f "$BUILD/CMakeCache.txt" && -x "$DEST" ]] || {
@@ -123,10 +123,10 @@ JOBS="${GHOST_BUILD_JOBS:-4}"
 run cmake --build "$BUILD" --target shadps4 --parallel "$JOBS"
 [[ -x "$BIN" ]] || { MESSAGE='No compiled executable'; exit 23; }
 file -b "$BIN" | grep -q 'ELF 64-bit' || { MESSAGE='Not an ELF64 executable'; exit 24; }
-strings "$BIN" | grep -Fq 'GHOST_TRACE vblank=' || {
+grep -aFq 'GHOST_TRACE vblank=' "$BIN" || {
     MESSAGE='Compiled binary missing guest-flip probe; refusing deployment'; exit 25;
 }
-strings "$BIN" | grep -Fq 'shader={:#x}' || {
+grep -aFq 'shader={:#x}' "$BIN" || {
     MESSAGE='Compiled binary missing shader hash probe; refusing deployment'; exit 26;
 }
 if command -v ldd >/dev/null; then
