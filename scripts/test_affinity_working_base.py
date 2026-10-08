@@ -17,6 +17,7 @@ import sys
 import tarfile
 import tempfile
 import urllib.request
+import zipfile
 
 HERE = Path(__file__).resolve().parent
 DEPENDENCY_REVISION = "251278d933106cb139b9b9df61230e274e60e1d9"
@@ -30,6 +31,10 @@ DEPENDENCIES = {
 RUNTIME_COMMIT = "a522a505582076eb7f68363b5d301ddca44399e2"
 RUNTIME_PATCH_SHA = "989208dc8e2432af107b948df37e958082342999fb1c77f7a75ebcb6480abf0b"
 DRRUN_SHA = "e58dcb8cdefec91d144c1a8fa79a7bd1b8a29969c4319f31df4df01644ef0b97"
+FFMPEG_COMMIT = "94dde08c8a9e4271a93a2a7e4159e9fb05d30c0a"
+FFMPEG_URL = "https://github.com/shadps4-emu/ext-ffmpeg-core/releases/download/94dde08/ffmpeg-linux-x64.zip"
+FFMPEG_SHA = "aacbbfb8e622b684bc5d3b4cd6c9f9f77f5def64ae8d83c0c5b3ebe657aa33dd"
+FFMPEG_SIZE = 15543319
 
 
 def dependencies():
@@ -79,6 +84,67 @@ def prepare_source(original, source, metadata, patch, log, command):
         raise RuntimeError("Unexpected changes outside the reviewed CPU update")
 
 
+def write_atomic(path, data):
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            stream.write(data)
+            stream.close()
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def prepare_ffmpeg(source, build_dir, cache, original, evidence, profile):
+    dependency = source / "externals/ffmpeg-core"
+    if git(dependency, "rev-parse", "HEAD") != FFMPEG_COMMIT:
+        raise RuntimeError("FFmpeg source differs from the pinned release")
+    short_sha = git(dependency, "rev-parse", "--short", "HEAD")
+    if len(short_sha) < 7 or not FFMPEG_COMMIT.startswith(short_sha):
+        raise RuntimeError("Unexpected FFmpeg cache name")
+    # CMake uses the local Git abbreviation for both its URL and cache name.
+    # A reference clone may abbreviate to eight digits, but the release has seven.
+    destination = build_dir / "externals" / ("ffmpeg-" + short_sha + ".zip")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    candidates = [destination]
+    for root in (cache, original.parent, original):
+        candidates.extend(sorted(root.glob("*/externals/ffmpeg-94dde08*.zip")))
+    origin = FFMPEG_URL
+    data = None
+    for candidate in dict.fromkeys(candidates):
+        if candidate.is_file() and candidate.stat().st_size == FFMPEG_SIZE:
+            cached = candidate.read_bytes()
+            if hashlib.sha256(cached).hexdigest() == FFMPEG_SHA:
+                data, origin = cached, str(candidate)
+                profile.say("FFMPEG=Reusing verified " + origin)
+                break
+    if data is None:
+        profile.say("FFMPEG=Downloading pinned release 94dde08 (15 MB)")
+        with urllib.request.urlopen(FFMPEG_URL, timeout=30) as response:
+            data = response.read(FFMPEG_SIZE + 1)
+        if len(data) != FFMPEG_SIZE or hashlib.sha256(data).hexdigest() != FFMPEG_SHA:
+            raise RuntimeError("FFmpeg release checksum mismatch; nothing extracted")
+    if origin != str(destination):
+        write_atomic(destination, data)
+    # Also recover an interrupted extraction: CMake skips extraction whenever
+    # the lib directory exists, even if one or more archives are missing.
+    libraries = build_dir / "externals" / ("ffmpeg-" + short_sha) / "lib"
+    libraries.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(destination) as archive:
+        for name in ("avformat", "avcodec", "swscale", "avutil", "avfilter", "swresample"):
+            filename = "lib" + name + ".a"
+            contents = archive.read(filename)
+            if not contents.startswith(b"!<arch>\n"):
+                raise RuntimeError("Invalid FFmpeg static library: " + filename)
+            path = libraries / filename
+            if not path.is_file() or path.read_bytes() != contents:
+                write_atomic(path, contents)
+    info = {"commit": FFMPEG_COMMIT, "release": "94dde08", "cache_name": short_sha,
+            "sha256": FFMPEG_SHA, "origin": origin, "archive": str(destination)}
+    (evidence / "ffmpeg.json").write_text(json.dumps(info, indent=2) + "\n")
+    return info
+
+
 def build(cache, work, evidence, metadata, base, profile):
     original = Path.home() / ".cache/shadps4-esde-latest-pending/source"
     source = cache / ("working-source-" + metadata["candidate_tree"][:12])
@@ -98,12 +164,17 @@ def build(cache, work, evidence, metadata, base, profile):
     cc, cxx = base.compiler(work, log)
     patch = HERE / "working_base_cpu_update.patch"
     prepare_source(original, source, metadata, patch, log, base.command)
-    base.command(["git", "-c", "submodule.alternateErrorStrategy=info", "submodule", "update",
-                  "--init", "--recursive", "--jobs", "4", "--reference", original], log, cwd=source)
+    status = git(source, "submodule", "status", "--recursive")
+    if any(line[:1] in {"+", "-", "U"} for line in status.splitlines()):
+        base.command(["git", "-c", "submodule.alternateErrorStrategy=info", "submodule", "update",
+                      "--init", "--recursive", "--jobs", "4", "--reference", original], log, cwd=source)
+    else:
+        profile.say("SOURCE=Reusing prepared checkout and matching submodules")
     base.command(["git", "diff", "--exit-code", "HEAD", "--"], log, cwd=source)
     status = git(source, "submodule", "status", "--recursive")
     if any(line[:1] in {"+", "-", "U"} for line in status.splitlines()):
         raise RuntimeError("A build dependency differs from the verified graphics source")
+    ffmpeg = prepare_ffmpeg(source, build_dir, cache, original, evidence, profile)
     jobs = str(max(1, min(6, len(os.sched_getaffinity(0)))))
     configure = ["cmake", "-S", source, "-B", build_dir, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                  "-DENABLE_TESTS=OFF", "-DENABLE_UPDATER=OFF", "-DCMAKE_CXX_SCAN_FOR_MODULES=OFF",
@@ -123,7 +194,7 @@ def build(cache, work, evidence, metadata, base, profile):
     return binary, translated, {**metadata, "local_commit": git(source, "rev-parse", "HEAD"),
         "source": str(source), "binary": str(binary), "binary_sha256": profile.digest(binary),
         "client_sha256": profile.digest(client), "drrun_sha256": profile.digest(drrun),
-        "runtime_library_sha256": profile.digest(runtime_library), "compiler": cxx}
+        "runtime_library_sha256": profile.digest(runtime_library), "compiler": cxx, "ffmpeg": ffmpeg}
 
 
 def cancel(signum, frame):
@@ -180,6 +251,9 @@ def main():
     except Exception as error:
         summary["error"] = str(error)
         profile.say("TEST_ERROR=" + str(error))
+        if "build" not in summary and (evidence / "build.log").is_file():
+            profile.say("BUILD_LOG_TAIL:\n" + "\n".join(
+                (evidence / "build.log").read_text(errors="replace").splitlines()[-25:]))
     finally:
         for sig in handlers:
             signal.signal(sig, signal.SIG_IGN)
@@ -216,3 +290,4 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
