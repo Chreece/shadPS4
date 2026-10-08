@@ -277,7 +277,7 @@ def selftest():
         "GHOST_TRACE vblank=1400 guest_flips=551 pending=0 queued=0"
     ).groups() == ("1400","551","0","0")
     commands = gdb_commands()
-    assert "WP_WRITE" in commands and "GHOST_WATCHPOINTS_ARMED" in commands
+    assert "WP_WRITE" in commands and "GHOST_POINTER_WATCH_ARMED" in commands
     assert "0x3fb6550" in commands
     assert 'StateWatch("state_u32"' not in commands
     assert "MAX_HITS = 6" in commands and "detach" in commands
