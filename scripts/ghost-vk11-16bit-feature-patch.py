@@ -15,7 +15,7 @@ from pathlib import Path
 import sys
 
 REL = "src/video_core/renderer_vulkan/vk_instance.cpp"
-EXPECTED_BLOB = "2f748c201eb7a22b0a556df5e334feb52db79f3b"
+EXPECTED_BLOB = "d719bb4842561e0811de33a47560c461af34ec4c"
 ANCHOR = (
     "        vk::PhysicalDeviceVulkan11Features{\n"
     "            .storageBuffer16BitAccess = vk11_features.storageBuffer16BitAccess,\n"
