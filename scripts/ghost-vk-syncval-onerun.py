@@ -234,10 +234,11 @@ def selftest():
     assert re.search(r"\bVUID-vkCmdCopyBufferToImage", "VUID-vkCmdCopyBufferToImage-02375")
     assert "ghost-mip-with-watch-" in "ghost-mip-with-watch-20261008.tar.gz"
     assert CONFIG_REV != TRIAL_REV
+    shutil.rmtree(ROOT)
     print("SELFTEST PASS: pinned baseline, VUID classifier, nested trial naming")
 
 
-def main():
+def main() -> int:
     global PHASE, RESULT, CONFIG_ARMED
     if "--self-test" in sys.argv:
         selftest()
@@ -265,7 +266,8 @@ def main():
         RESULT = 1
     finally:
         cleanup()
+    return RESULT
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
