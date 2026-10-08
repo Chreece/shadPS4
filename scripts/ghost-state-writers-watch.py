@@ -99,7 +99,6 @@ handle SIGILL nostop noprint pass
 handle SIGBUS nostop noprint pass
 handle SIGUSR1 nostop noprint pass
 handle SIGUSR2 nostop noprint pass
-info signals SIGSEGV SIGILL SIGBUS SIGUSR1 SIGUSR2
 python
 import gdb
 hits = 0
