@@ -129,12 +129,74 @@ msg 'Create isolated Git worktree; existing main checkout remains unchanged'
 run git -C "$SOURCE" worktree add --detach "$WORK" "$BASE"
 CURRENT_WORK="$WORK"
 
+resolve_upstream_quit_overlay_conflict() {
+    # Evidence: user archive 20261008-130154; exactly one conflict in layer.cpp.
+    # Retain checkpoint QuitDialog (tested gamepad exit), use upstream fps_pinned.
+    local file='src/core/devtools/layer.cpp'
+    local unresolved
+    unresolved="$(git -C "$WORK" diff --name-only --diff-filter=U)"
+    if [[ "$MAIN_SHA" != '0fe263a4760dfbfa973366890061749b4af0de97' || "$unresolved" != "$file" ]]; then
+        log "New upstream/conflict set; refusing any automatic conflict resolution: $unresolved"
+        return 1
+    fi
+    if [[ "$(git -C "$WORK" rev-parse HEAD)" != "$BASE" ]]; then
+        log 'Unexpected checkpoint before upstream conflict resolution'
+        return 1
+    fi
+    if [[ "$(git -C "$WORK" rev-parse MERGE_HEAD)" != "$MAIN_SHA" ]]; then
+        log 'Unexpected MERGE_HEAD; refusing change'
+        return 1
+    fi
+    python3 - "$WORK/$file" "$MAIN_SHA" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+main = sys.argv[2]
+text = p.read_text()
+old = (
+    "<<<<<<< HEAD\n"
+    "static float fps_anchor_width = FLT_MAX;\n"
+    "static QuitDialog quit_dialog;\n"
+    "=======\n"
+    "static bool fps_pinned = false;\n"
+    "static bool show_quit_window = false;\n"
+    f">>>>>>> {main}\n"
+)
+new = "static bool fps_pinned = false;\nstatic QuitDialog quit_dialog;\n"
+assert text.count(old) == 1, "upstream conflict block changed"
+fixed = text.replace(old, new)
+assert all(x not in fixed for x in (
+    "<<<<<<<", "=======", ">>>>>>>",
+    "fps_anchor_width", "show_quit_window"
+)), "unresolved marker or obsolete overlay fields"
+assert "fps_pinned = true;" in fixed
+assert "quit_dialog.IsVisible()" in fixed
+assert "bool ProcessQuitEvent(const SDL_Event& event)" in fixed
+assert "return quit_dialog.CapturesGamepad();" in fixed
+p.write_text(fixed)
+print("RESOLVED: latest upstream FPS overlay + checkpoint QuitDialog preserved")
+PY
+    run git -C "$WORK" add -- "$file"
+    if [[ -n "$(git -C "$WORK" diff --name-only --diff-filter=U)" ]]; then
+        log 'Other unresolved merge conflicts remain'; return 1
+    fi
+    run git -C "$WORK" diff --cached --check
+    run git -C "$WORK" "${GIT[@]}" commit --no-edit
+    printf 'upstream_layer_resolution=upstream fps_pinned + checkpoint QuitDialog\n' >>"$MANIFEST"
+}
+
 merge_one() {
     local label="$1" commit="$2"
     msg "Merge $label"
     if ! git -C "$WORK" "${GIT[@]}" merge --no-edit --no-ff -m "Playtest: integrate $label" "$commit" >>"$LOG" 2>&1; then
         git -C "$WORK" status --short >>"$LOG" 2>&1 || true
-        log "MERGE CONFLICT in $label; no automatic ours/theirs resolution."
+        if [[ "$label" == 'latest shadps4-emu/main' ]]; then
+            if resolve_upstream_quit_overlay_conflict; then
+                log 'Evidence-based upstream conflict resolved and committed'
+                return 0
+            fi
+        fi
+        log "MERGE CONFLICT in $label; no unsafe ours/theirs resolution."
         return 1
     fi
 }
