@@ -21,7 +21,7 @@ VK11_PATCHER_REV='698693acac4f0555ddd6fde05ead3529ace4ec1c'
 VK11_REL='src/video_core/renderer_vulkan/vk_instance.cpp'
 VK11_SOURCE_TOUCHED=0
 R8_PATCHER_REV='e43fa05509c0c572fb166e51b66bd6c2602aa21b'
-FALLBACK_PROBE_REV='0650c22ecf575403c0e9005c12b1213278b10e7a'
+FALLBACK_PROBE_REV='33aee211bc16f00326ffe17bcb5407ca5ca0028d'
 R8_REL='src/video_core/renderer_vulkan/vk_rasterizer.cpp'
 R8_SOURCE_TOUCHED=0
 WATCHER_REV='9dc4f4b7e8446b71724b4f2a63a6cc91b7e7cad3'
@@ -300,6 +300,12 @@ grep -q 'GHOST_R8_INDEX1_APPLIED' "$SESSION/vk11-16bit-mip-r8.patch" ||
     fail 'Missing validated R8_UINT sampler-index 1 correction.'
 grep -q 'GHOST_COPY_FALLBACK_ASSERT' "$SESSION/vk11-16bit-mip-r8.patch" ||
     fail 'Missing fallback mip-copy assertion context probe.'
+# Variadic LOG_ERROR cannot bind C++ bit-fields by reference. Explicitly
+# verify the updated depth flags are passed as values before compilation.
+grep -Fq 'static_cast<u32>(src->info.props.is_depth)' "$ROOT/$REL" ||
+    fail 'Fallback diagnostic still forwards source depth bit-field by reference.'
+grep -Fq 'static_cast<u32>(dst->info.props.is_depth)' "$ROOT/$REL" ||
+    fail 'Fallback diagnostic still forwards destination depth bit-field by reference.'
 
 log '=== Incremental Vulkan build (affinity/CPUID unchanged) ==='
 JOBS="${GHOST_BUILD_JOBS:-4}"
