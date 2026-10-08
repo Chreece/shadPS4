@@ -3,6 +3,7 @@
 OO_PS4_TOOLCHAIN ?= /opt/OpenOrbis/PS4Toolchain
 ORBIS_CXX ?= clang++
 ORBIS_LD ?= ld.lld
+HOST_CXX ?= g++
 SDK := $(OO_PS4_TOOLCHAIN)
 all: eboot.bin
 main.o: main.cpp
@@ -13,3 +14,6 @@ sse4a.elf: main.o cases.o
 	$(ORBIS_LD) -m elf_x86_64 -pie --script $(SDK)/link.x --eh-frame-hdr -L$(SDK)/lib main.o cases.o $(SDK)/lib/crt1.o -lc -lkernel -lSceSystemService -o $@
 eboot.bin: sse4a.elf
 	$(SDK)/bin/linux/create-fself -in=$< -out=sse4a.oelf --eboot $@ --paid 0x3800000000000011 --sdkver 0x3000000
+
+native-probe: native_probe.cpp cases.S
+	$(HOST_CXX) -std=c++17 -O2 -Wall -Wextra -Werror $^ -Wl,-z,noexecstack -o $@
