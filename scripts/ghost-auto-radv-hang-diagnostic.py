@@ -605,6 +605,28 @@ def ready_preflight() -> dict[str, str]:
     return env
 
 
+def verify_guest_driver_debug(session: Path) -> None:
+    """Verify the exact test-owned Ghost process received RADV hang tracing."""
+    meta = session / "session.meta"
+    match = re.search(r"(?m)^launcher_pid=(\d+)$", meta.read_text(errors="replace"))
+    if not match:
+        raise RuntimeError("Ghost session lacks launcher PID for RADV verification")
+    pid = int(match.group(1))
+    if not exact_ghost(pid):
+        raise RuntimeError("Ghost session PID does not match the intended game")
+    raw = (Path("/proc") / str(pid) / "environ").read_bytes()
+    observed = [value.split(b"=", 1)[1].decode("utf-8", "replace")
+                for value in raw.split(b"\x00") if value.startswith(b"RADV_DEBUG=")]
+    match_mode = observed == [RADV_HANG_DEBUG]
+    marker = "GUEST_RADV_DEBUG_CONFIRMED" if match_mode else "GUEST_RADV_DEBUG_MISMATCH"
+    (WORK / "guest-radv-debug-status.txt").write_text(
+        f"pid={pid}\n{marker}\nexpected={RADV_HANG_DEBUG}\nobserved={observed!r}\n"
+    )
+    say(f"{marker} pid={pid}")
+    if not match_mode:
+        raise RuntimeError("RADV hang tracing did not reach the actual Ghost process")
+
+
 def launch_test(env: dict[str, str]) -> None:
     global GAME_PROC, GAME_LAUNCH_TIME, GAME_PID, GAME_SID, GAME_START_TICKS, SESSION_DIR, STOP_REASON
     if emulator_pids():
@@ -627,6 +649,7 @@ def launch_test(env: dict[str, str]) -> None:
         SESSION_DIR = current_session()
         if SESSION_DIR:
             say("GAME_SESSION=" + str(SESSION_DIR))
+            verify_guest_driver_debug(SESSION_DIR)
             break
         time.sleep(0.5)
     if not SESSION_DIR:
@@ -820,6 +843,7 @@ def test() -> None:
     assert "ghost-no-gdb-validation-onerun.py" == TRIAL_FILE
     assert "STALL_SNAP_REV" not in globals()
     assert RADV_HANG_DEBUG == "hang,noumr"
+    assert callable(verify_guest_driver_debug)
     assert callable(collect_driver_hang_report)
     assert callable(candidate_archive)
     print("SELFTEST PASS: pinned workflow, launcher/game path, monitor timing, "
