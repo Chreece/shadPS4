@@ -185,6 +185,85 @@ PY
     printf 'upstream_layer_resolution=upstream fps_pinned + checkpoint QuitDialog\n' >>"$MANIFEST"
 }
 
+resolve_verified_cpuid_conflicts() {
+    # All seven stage-3 Git blobs matched the published PR #5304 blobs.
+    # Source: actual 2026-10-08 13:08:10 failure archive.
+    local unresolved expected path old_blob new_blob ours theirs target
+    if [[ "$MAIN_SHA" != '0fe263a4760dfbfa973366890061749b4af0de97' ||
+          "$CPU_SHA" != 'ad8e42e098e7a529227f2a5b2a921070c82b029f' ||
+          "$(git -C "$WORK" rev-parse MERGE_HEAD)" != "$CPU_SHA" ]]; then
+        log 'CPU/affinity inputs changed; refusing the audited conflict resolution.'
+        return 1
+    fi
+    if ! git -C "$WORK" merge-base --is-ancestor "$MAIN_SHA" HEAD; then
+        log 'Upstream must be present before CPU resolution.'
+        return 1
+    fi
+    expected="$(printf '%s\n' \
+        src/core/cpu_affinity.cpp \
+        src/core/cpu_affinity.h \
+        src/core/cpu_id.cpp \
+        src/core/cpu_id.h \
+        src/core/libraries/kernel/threads/pthread.cpp \
+        src/core/thread.cpp \
+        src/core/thread.h | LC_ALL=C sort)"
+    unresolved="$(git -C "$WORK" diff --name-only --diff-filter=U | LC_ALL=C sort)"
+    if [[ "$unresolved" != "$expected" ]]; then
+        log "CPU conflict set changed; refusing to choose either side: $unresolved"
+        return 1
+    fi
+    # Columns: path, measured old checkpoint+upstream blob, exact reviewed PR blob.
+    # Only replace known superseded CPU and native-thread implementations.
+    local known_stage_blobs
+    known_stage_blobs="$(cat <<'BLOBS'
+src/core/cpu_affinity.cpp 37d5b50fb12bd058f3623838d1d086a5e545f6cc 3a076062cdc6380bce7692e24542df1492fbc52b
+src/core/cpu_affinity.h 964263aedb6bdf682d93ec79bba4590401880acf 3f2023248c4097b4ed4de6a22e8eaa85cb070399
+src/core/cpu_id.cpp 70e3c09e8303609c6877b4f8fbabd52ef07e19ea c095479d97238b726d2ad31d94a54f5c6cfc9e50
+src/core/cpu_id.h 3a0b2334977bd790adac56018a356ae040022d4f fabf283f94be8e18af100c11cd160e5dccf493b4
+src/core/libraries/kernel/threads/pthread.cpp 499cf4c3dc3c7ef2bbd98c047bfcbff21dd0812a 8de1722e70917670c5f4df84bdd94d26341640ef
+src/core/thread.cpp fe189dbfa4da0c3696b51c0a501a4bd18bb41bf9 6abef21a1466d7a2374daf1e4d5b48f3f560d627
+src/core/thread.h bd370ee61feffdf6f8add7d4c9942faa05c6e01a 486eac7a8402815d0ac63f4c31baf1e5e94244ba
+BLOBS
+)"
+    while read -r path old_blob new_blob; do
+        [[ -n "$path" ]] || continue
+        ours="$(git -C "$WORK" rev-parse ":2:$path" 2>/dev/null)" || return 1
+        theirs="$(git -C "$WORK" rev-parse ":3:$path" 2>/dev/null)" || return 1
+        target="$(git -C "$WORK" rev-parse "$CPU_SHA:$path" 2>/dev/null)" || return 1
+        if [[ "$ours" != "$old_blob" || "$theirs" != "$new_blob" ||
+              "$target" != "$new_blob" ]]; then
+            log "Source mismatch for $path: ours=$ours theirs=$theirs reviewed=$new_blob."
+            return 1
+        fi
+    done <<<"$known_stage_blobs"
+
+    # Every path has been checked before editing anything. Preserve the
+    # published, tested CPU/affinity implementation rather than combining APIs.
+    while read -r path old_blob new_blob; do
+        [[ -n "$path" ]] || continue
+        run git -C "$WORK" checkout --theirs -- "$path" || return 1
+        run git -C "$WORK" add -- "$path" || return 1
+        if [[ "$(git -C "$WORK" rev-parse ":0:$path")" != "$new_blob" ]]; then
+            log "Staged CPU file did not match pinned PR blob: $path"
+            return 1
+        fi
+        log "Verified CPU/affinity replacement: $path -> $new_blob"
+    done <<<"$known_stage_blobs"
+    if [[ -n "$(git -C "$WORK" diff --name-only --diff-filter=U)" ]]; then
+        log 'Unexpected unresolved CPU conflicts remain.'
+        return 1
+    fi
+    run git -C "$WORK" diff --cached --check || return 1
+    # Explicit checks for critical new behavior.
+    grep -Fq 'WakeForSignal();' "$WORK/src/core/libraries/kernel/threads/pthread.cpp" || return 1
+    grep -Fq 'void NativeThread::Join()' "$WORK/src/core/thread.cpp" || return 1
+    grep -Fq 'FaultInstructionLength(' "$WORK/src/core/cpu_id.cpp" || return 1
+    grep -Fq 'guest_mask' "$WORK/src/core/cpu_affinity.cpp" || return 1
+    run git -C "$WORK" "${GIT[@]}" commit --no-edit || return 1
+    printf 'cpuid_conflict_resolution=seven exact PR-5304 blobs; archived checkpoint blobs verified\n' >>"$MANIFEST"
+    return 0
+}
+
 merge_one() {
     local label="$1" commit="$2"
     msg "Merge $label"
@@ -193,6 +272,11 @@ merge_one() {
         if [[ "$label" == 'latest shadps4-emu/main' ]]; then
             if resolve_upstream_quit_overlay_conflict; then
                 log 'Evidence-based upstream conflict resolved and committed'
+                return 0
+            fi
+        elif [[ "$label" == 'PR #5304 (includes PR #5287)' ]]; then
+            if resolve_verified_cpuid_conflicts; then
+                log 'Exact PR #5304 CPU/affinity conflicts resolved and committed'
                 return 0
             fi
         fi
