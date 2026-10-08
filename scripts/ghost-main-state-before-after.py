@@ -240,6 +240,14 @@ def main():
         if len(sessions) > 1:
             say("Multiple live Ghost sessions found; exit extras normally before capture")
             return
+        if sessions:
+            _, existing_pid, existing_folder = sessions[0]
+            current = latest_flip(existing_folder / "runtime.log")
+            if current and current[1] > 495:
+                say(f"Ghost PID={existing_pid} is already past the intro at {current[1]} "
+                    "frames. Exit it normally with your gamepad, then rerun this collector "
+                    "to capture BOTH sides of the transition.")
+                return
         if not sessions:
             say("ARMED: launch Ghost through Moonlight -> ES-DE now.")
             deadline = time.monotonic() + 600
