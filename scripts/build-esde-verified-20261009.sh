@@ -307,12 +307,95 @@ if grep -q 'not found' "$ev/ldd.txt"; then
 fi
 sha256sum "$bld/shadps4" > "$ev/binary-sha256.txt"
 
-step="configure and run repository tests"
+step="configure and build repository tests"
 cmake -S "$src" -B "$tst" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER="$cc" -DCMAKE_CXX_COMPILER="$cxx" \
   -DENABLE_TESTS=ON -DENABLE_CPU_ID_TRANSLATION=OFF -DENABLE_UPDATER=OFF
 cmake --build "$tst" --parallel 5
-ctest --test-dir "$tst" --output-on-failure --timeout 120 | tee "$ev/ctest.txt"
+
+# Do not run hundreds of Vulkan shader tests after their first shared failure.
+# One successful shader execution is a prerequisite to the full suite.
+step="verify Vulkan execution with one GCN smoke test"
+{
+  printf 'DATE=%s\n' "$(date -Is)"
+  printf 'DISPLAY=%s\n' "${DISPLAY:-unset}"
+  printf 'XDG_RUNTIME_DIR=%s\n' "${XDG_RUNTIME_DIR:-unset}"
+  printf 'VK_DRIVER_FILES=%s\n' "${VK_DRIVER_FILES:-unset}"
+  printf 'VK_ICD_FILENAMES=%s\n' "${VK_ICD_FILENAMES:-unset}"
+  ls -l /dev/dri 2>&1 || true
+  if command -v vulkaninfo >/dev/null; then
+    timeout 20s vulkaninfo --summary 2>&1 || true
+  fi
+} > "$ev/vulkan-environment.txt"
+if ! ctest --test-dir "$tst" --output-on-failure --timeout 25 \
+    -R '^GcnTest\\.add_f32
+
+step="verify ES-DE install path"
+launcher="$HOME/Applications/shadps4/shadps4"
+[[ -e "$launcher" ]] || { echo "Missing existing ES-DE target: $launcher"; exit 1; }
+install_target="$(readlink -f "$launcher")"
+[[ "$install_target" == "$HOME"/* && -f "$install_target" ]] || {
+  echo "Unexpected executable path: $install_target"; exit 1;
+}
+if [[ "$(od -An -tx1 -N4 "$install_target" | tr -d ' \n')" != 7f454c46 ]]; then
+  echo "The current ES-DE executable is not ELF: $install_target; preserving it"; exit 1
+fi
+if pgrep -x shadps4 >/dev/null; then
+  echo 'shadps4 is running. No installation attempted, leaving active game untouched.'
+  exit 1
+fi
+install_dir="$(dirname "$install_target")"
+runtime_path="$install_dir/cpu-id-runtime"
+backup_binary="$install_target.before-verified-$stamp"
+backup_runtime="$install_dir/cpu-id-runtime.before-verified-$stamp"
+binary_candidate="$install_dir/.shadps4.new-$stamp"
+runtime_candidate="$install_dir/.cpu-id-runtime.new-$stamp"
+[[ ! -e "$binary_candidate" && ! -e "$runtime_candidate" ]] || exit 1
+
+step="stage ES-DE release without changing live installation"
+cp -a "$bld/cpu-id-runtime" "$runtime_candidate"
+install -m 755 "$bld/shadps4" "$binary_candidate"
+timeout 20s "$binary_candidate" --help > "$ev/staged-help.txt" 2>&1
+sha256sum "$binary_candidate" > "$ev/staged-sha256.txt"
+cp -a "$install_target" "$backup_binary"
+
+echo "BACKUP_BINARY=$backup_binary"
+step="atomic-ish deployment and installed binary verification"
+deploying=1
+if [[ -e "$runtime_path" || -L "$runtime_path" ]]; then
+  mv -- "$runtime_path" "$backup_runtime"
+fi
+runtime_changed=1
+mv -- "$runtime_candidate" "$runtime_path"
+mv -- "$binary_candidate" "$install_target"
+timeout 20s "$launcher" --help > "$ev/installed-help.txt" 2>&1
+cmp -s "$bld/shadps4" "$install_target"
+[[ -x "$runtime_path/bin64/drrun" && -f "$runtime_path/libshadps4_cpu_id.so" ]]
+
+result="SUCCESS"
+deploying=0
+step="complete: launch a game from ES-DE to verify actual gameplay"
+echo "INSTALLED=$install_target"
+echo "BACKUP_BINARY=$backup_binary"
+echo "BACKUP_CPU_RUNTIME=$backup_runtime"
+echo 'Existing game files, saves, configurations, Sunshine and ES-DE were not modified.'
+ > "$ev/gcn-smoke.txt" 2>&1; then
+  cat "$ev/gcn-smoke.txt"
+  echo 'GCN_SMOKE=FAIL'
+  echo 'SAFE_STOP: Vulkan execution test failed. The full shader suite and ES-DE install are blocked.'
+  echo 'Do not hide this error by skipping all GPU tests.'
+  exit 1
+fi
+cat "$ev/gcn-smoke.txt"
+
+step="run repository tests and stop on first failure"
+if ! ctest --test-dir "$tst" --output-on-failure --stop-on-failure --timeout 45 \
+    > "$ev/ctest.txt" 2>&1; then
+  tail -n 140 "$ev/ctest.txt"
+  echo 'SAFE_STOP: a repository test failed; no ES-DE installation was attempted.'
+  exit 1
+fi
+tail -n 35 "$ev/ctest.txt"
 if grep -Eq '(No tests were found|Total Tests: 0)' "$ev/ctest.txt"; then
   echo 'Test collection unexpectedly empty'; exit 1
 fi
