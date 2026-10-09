@@ -529,6 +529,11 @@ def classify(text, rc):
         "depth_to_color_mip_copy_count":count("GHOST_MIP_REVERSE_COPY mips="),
         "unhandled_mip_shapes":count("GHOST_COPY_FALLBACK_ASSERT mips="),
         "assertion_count":count("Assertion Failed!"),
+        "format_origin_events":[line[:500] for line in text.splitlines()
+                                if "GHOST_FORMAT_ORIGIN" in line][-80:],
+        "unsupported_bc5_ubnormnz_present":(
+            "Unknown data_format=39 and num_format=11" in text),
+        "format_origin_event_count":count("GHOST_FORMAT_ORIGIN"),
         "movie_close_events":count("Closing /app0/movies/cutscene/splash_america.bsf"),
         "unsupported_GetAttributeU32":count("Unexpected instruction for offset computation, GetAttributeU32"),
         "last_shader_offset_errors":[line[:240] for line in text.splitlines()
@@ -617,6 +622,12 @@ def test_candidate():
     if not report["guest_flip_trace_samples"]:
         say("GHOST_TRACE_NOT_FOUND: compilation marker present but no runtime sample")
         detected="no_guest_flip_trace_emitted"
+    if report["unsupported_bc5_ubnormnz_present"]:
+        detected=("format_origin_captured"
+                  if report["format_origin_event_count"]>0
+                  else "format_origin_logging_failed")
+        say("BC5_UBNORMNZ_ASSERTION="+detected+
+            " origin_events="+str(report["format_origin_event_count"]))
     report["test_stop_reason"]=detected
     (WORK/"runtime-analysis.json").write_text(json.dumps(report,indent=2)+"\n")
     GAME_STATUS=detected
@@ -646,6 +657,24 @@ def selftest():
     assert state["unhandled_mip_shapes"] == 1
     assert state["assertion_count"] == 1
     assert BASE_BIN != BIN != OTHER_BIN
+    fake_origins={
+        IMAGE_INFO_FILE:b'    pixel_format = LiverpoolToVK::SurfaceFormat(image.GetDataFmt(), image.GetNumberFmt());\n',
+        IMAGE_VIEW_FILE:b'    format = Vulkan::LiverpoolToVK::SurfaceFormat(dfmt, nfmt);\n',
+        RASTERIZER_FILE:(b'        const auto data_fmt = tsharp.GetDataFmt();\n'
+                         b'        const auto num_fmt = tsharp.GetNumberFmt();\n')
+    }
+    modified=format_origin_patches(fake_origins)
+    assert len(modified)==3
+    for p,original in fake_origins.items():
+        assert modified[p].count(b"GHOST_FORMAT_ORIGIN")==1
+        assert original in modified[p]
+        assert len(modified[p])>len(original)
+    try:
+        format_origin_patches(modified)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Format origin instrumentation applied twice")
     frames=guest_trace_records("\n".join(
         f"GHOST_TRACE vblank={v} guest_flips=530 pending=0 queued=0"
         for v in (1500,1680,1860,2040,2220)))
@@ -666,8 +695,11 @@ def selftest():
         assert binary_markers_present(path, [b"GHOST_MIP_COPY mips=",
                                             b"GHOST_MIP_REVERSE_COPY mips=",
                                             b"GHOST_COPY_FALLBACK_ASSERT mips="])
+    assert classify("Unknown data_format=39 and num_format=11\n"
+                    "GHOST_FORMAT_ORIGIN site=ImageInfo_TSharp", -11)[
+                        "format_origin_event_count"]==1
     say("SELFTEST_PASS=three_pinned_patchers,source_atomic_restore,compiled_markers,"
-        "mip_crash_classifier,isolated_paths")
+        "TSharp_format_origin_fixture,mip_crash_classifier,isolated_paths")
 
 def interrupt_for_rollback(sig, frame):
     raise KeyboardInterrupt("Signal intercepted to restore Ghost source: " + str(sig))
@@ -736,6 +768,7 @@ def main():
         say("UPLOAD_THIS_FILE=" + str(OUT))
         say("SSH_SESSION=REMAINS_OPEN")
     return 0 if ERROR is None and GAME_STATUS not in ("no_guest_flip_trace_emitted",
+                                                       "format_origin_logging_failed",
                                                        "not_started") else 1
 
 if __name__ == "__main__":
