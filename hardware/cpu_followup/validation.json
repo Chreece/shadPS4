@@ -124,5 +124,57 @@
     "reciprocal_differences": 0,
     "details": "hardware/generated_reciprocal/validation.json",
     "readiness": "Validation complete for the Linux execute-permission fix; kept separate for review."
+  },
+  "separated_pr_validation": {
+    "memory_branch": "draft/guest-memory-protection-20261009",
+    "memory_commit": "a893438fe133fc9b1217f506ebff6cdec46b4078",
+    "memory_tree": "852b595ee0e38db33dacbb7652c0efabb7f8e2eb",
+    "translation_pr": 5321,
+    "translation_branch": "draft/automatic-cpu-id-fallback-20261009",
+    "translation_commit": "400192be8ea28b3779235dd9f46f40e57eeed59d",
+    "tested_source_tree": "79ce34459ec16b52c34af1bbffe34e88fd8605ce",
+    "base_commit": "0fe263a4760dfbfa973366890061749b4af0de97",
+    "build": "Linux x86-64, Clang 19 Release, CPU translation enabled",
+    "validation_location": "local sandbox; the original integrated fix separately passed on the user machine",
+    "results": {
+      "binary_sha256": "bae0b4ab5c266aeaad07d5b8cf6dcbdc6f8e2642da8c551f1761e4a4f3c91913",
+      "memory": {
+        "native": {
+          "read_write_checks_passed": 6,
+          "high_map_unmap_cycles": 64,
+          "execute_permission_checks_passed": 2,
+          "execute_permission_failures": [],
+          "all_checks_passed": true,
+          "log_sha256": "06dfb3e8f9d3735e31f8b7120950a5c6eed360c28916d6e20b9a2e28b0ec2b1e"
+        },
+        "translated": {
+          "read_write_checks_passed": 6,
+          "high_map_unmap_cycles": 64,
+          "execute_permission_checks_passed": 2,
+          "execute_permission_failures": [],
+          "all_checks_passed": true,
+          "log_sha256": "06dfb3e8f9d3735e31f8b7120950a5c6eed360c28916d6e20b9a2e28b0ec2b1e"
+        }
+      },
+      "execute": {
+        "native": {
+          "checks_passed": 16,
+          "faults_recovered": 14,
+          "all_checks_passed": true,
+          "log_sha256": "94403adc2f4c6350008633a427015585781a614b811c5f734ee757bc286d8c78"
+        },
+        "translated": {
+          "checks_passed": 16,
+          "faults_recovered": 14,
+          "all_checks_passed": true,
+          "log_sha256": "94403adc2f4c6350008633a427015585781a614b811c5f734ee757bc286d8c78"
+        }
+      }
+    },
+    "memory_only_page_manager_harness": "passed: GPU watch read/write handling, guest fault ownership, permission restoration, execute-bit preservation, mixed-page batching, stale fault retry, high re-registration",
+    "formatting": "passed",
+    "reuse": "passed on both separated branches",
+    "original_translation_patch_series": "14 existing patches unchanged by rebasing; memory prerequisite and execute fix added",
+    "scope": "No generated reciprocal support added to PR 5321. No new game playtest claimed for this rebased tree."
   }
 }
