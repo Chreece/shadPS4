@@ -22,6 +22,8 @@ TESTS = (
      ("native_probe.cpp", "cases.S", "Makefile", "musl-COPYRIGHT")),
     ("cpu_profile", "CPUP00001", "CPU profile readout", "CPUPROFILE000000", "eboot.bin",
      ("main.cpp", "Makefile", "musl-COPYRIGHT")),
+    ("reciprocal", "RCPR00001", "Reciprocal hardware probe", "RECIPROCAL000000", "eboot.bin",
+     ("main.cpp", "cases.S", "Makefile", "compare.py", "INSTRUCTIONS.txt", "musl-COPYRIGHT")),
 )
 
 
@@ -68,6 +70,7 @@ def main():
     parser.add_argument("--cxx", default="clang++-19")
     parser.add_argument("--ld", default="ld.lld-19")
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
+    parser.add_argument("--only", choices=[test[0] for test in TESTS])
     args = parser.parse_args()
     if not args.sdk:
         parser.error("set --sdk or OO_PS4_TOOLCHAIN to OpenOrbis v0.5.4")
@@ -92,6 +95,8 @@ def main():
         shutil.copy2(sdk / "LICENSE", licenses / "OpenOrbis-GPL-3.0.txt")
         shutil.copytree(sdk / "src/modules/right", source / "OpenOrbis-right")
         for directory, title_id, title, suffix, executable, inputs in TESTS:
+            if args.only and directory != args.only:
+                continue
             content_id = f"IV0000-{title_id}_00-{suffix}"
             if len(content_id) != 36:
                 raise ValueError("Invalid content ID: " + content_id)
@@ -135,11 +140,15 @@ def main():
                                       "package": package.name, "sha256": digest(package),
                                       "size": package.stat().st_size, "round_trip": True,
                                       "files": hashes})
-        shutil.copy2(ROOT / "INSTRUCTIONS.txt", bundle)
+        instructions = (HARDWARE / args.only / "INSTRUCTIONS.txt") if args.only else None
+        if not instructions or not instructions.is_file():
+            instructions = ROOT / "INSTRUCTIONS.txt"
+        shutil.copy2(instructions, bundle / "INSTRUCTIONS.txt")
         (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
         (bundle / "SHA256SUMS.txt").write_text("".join(
             f"{item['sha256']}  {item['package']}\n" for item in manifest["tests"]))
-        output = destination / "ps4-cpu-hardware-tests-fpkg.zip"
+        name = f"ps4-{args.only}-hardware-test.zip" if args.only else "ps4-cpu-hardware-tests-fpkg.zip"
+        output = destination / name
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
             for path in sorted(bundle.rglob("*")):
                 if path.is_file():

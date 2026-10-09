@@ -1,0 +1,32 @@
+PS4 reciprocal hardware probe (RCPR00001)
+
+Install IV0000-RCPR00001_00-RECIPROCAL000000.pkg using your existing homebrew
+Package Installer. Launch "Reciprocal hardware probe" once. It runs automatically,
+with no input or game required, then returns to the system menu. A blank screen
+while it runs is expected.
+
+Retrieve /data/reciprocal-hardware.txt through your usual PS4 file-transfer method.
+Send that file, your console model (original/Slim/Pro), and firmware version.
+The file is replaced each run. It does not access saves or modify settings.
+
+The last line must begin RECIPROCAL_END and report 121856 rows. Missing END means
+the run is incomplete; please send the file anyway. state_errors records register,
+flags and MXCSR problems. scalar_packed_differences is an observation, not a
+pass/fail judgment about undocumented arithmetic.
+
+This test records 14 scalar/packed reciprocal and reciprocal-square-root forms,
+544 input patterns, and all 16 rounding/DAZ/FTZ combinations with exceptions masked.
+It includes legacy and AVX forms, scalar memory operands, signed zero, infinities,
+NaNs, denormals and samples from every exponent. It is not exhaustive and does
+not establish cycle accuracy or complete Jaguar emulation. Generated code and
+faulting memory operands are not covered by this probe.
+
+The source is included. Native Linux comparison:
+  cd source/hardware/reciprocal
+  make native-reciprocal
+  ./native-reciprocal native.txt
+  python3 compare.py /path/to/PS4/reciprocal-hardware.txt native.txt
+
+The same eboot.bin may be run under shadPS4; its output is emulator evidence,
+not a substitute for a physical PS4 reference. The comparison lists numerical
+differences separately from unexpected state changes.

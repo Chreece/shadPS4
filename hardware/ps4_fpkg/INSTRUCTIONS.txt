@@ -6,15 +6,17 @@ PS4 CPU hardware tests - ready-to-install FPKGs
 For a PS4 already configured to run homebrew FPKGs. No SDK, compiler, PC script,
 game files, or manual packaging is needed by testers.
 
-1. Extract this ZIP. Copy the two .pkg files to your usual installation media
+1. Extract this ZIP. Copy the three .pkg files to your usual installation media
    and install them using your console's existing Package Installer.
-2. Launch "SSE4a hardware probe" once, then "CPU profile readout" once.
+2. Launch "SSE4a hardware probe", "CPU profile readout", and
+   "Reciprocal hardware probe" once each.
    Each runs automatically without controller input and returns to the menu.
    They have no game screen; a brief blank screen is expected.
-3. Using your existing PS4 FTP/file manager, retrieve these two files:
+3. Using your existing PS4 FTP/file manager, retrieve these three files:
      /data/sse4a-hardware-result.txt
      /data/cpu-profile.txt
-4. Send both text files, your PS4 model (original/Slim/Pro), and firmware version.
+     /data/reciprocal-hardware.txt
+4. Send the text files, your PS4 model (original/Slim/Pro), and firmware version.
    If a test fails to start or crashes, include the error code or a photo instead.
 
 SSE4a hardware probe (SSE400002)
@@ -30,9 +32,15 @@ thread mask, using both normal and generated CPUID. Restores that thread mask.
 A full successful run ends with CPU_PROFILE_END failures=0 and a nonzero row count.
 This result file appends runs; send the whole file.
 
+Reciprocal hardware probe (RCPR00001)
+Records 121856 scalar/packed RCP/RSQRT observations, including legacy and AVX
+forms, special inputs and rounding/DAZ/FTZ modes. A complete run ends with
+RECIPROCAL_END. This file is replaced each run. Read its source/ instructions
+for comparison commands and the distinction between observations and errors.
+
 These apps do not use game/save files, change system settings, perform CPU
 hotplug, or open network connections. Removing the apps afterward is optional.
-Both packages are built with OpenOrbis v0.5.4. Package validation and extracted
+The packages are built with OpenOrbis v0.5.4. Package validation and extracted
 file comparisons are included. A PC/emulator smoke test does not establish
 physical PS4 compatibility or hardware behavior; that is what we need testers
 to check. No particular firmware version is claimed as hardware-tested.
