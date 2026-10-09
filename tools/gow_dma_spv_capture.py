@@ -41,6 +41,54 @@ def active_emulators():
             pass
     return found
 
+def resolve_exact_game(config, limit_seconds=28):
+    """Resolve installed game once, avoiding shadPS4's unbounded ID-folder traversal."""
+    entries = config.get("General", {}).get("install_dirs", [])
+    if not isinstance(entries, list):
+        return None, {"error": "Invalid install_dirs list"}
+    roots = []
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("enabled", True):
+            value = entry.get("path")
+            if isinstance(value, str):
+                p = Path(value)
+                if p.is_dir():
+                    roots.append(p)
+    deadline = time.monotonic() + limit_seconds
+    scanned = 0
+    visited = set()
+    for root in roots:
+        queue = [(root, 0)]
+        position = 0
+        while position < len(queue):
+            if time.monotonic() > deadline:
+                return None, {"roots": len(roots), "scanned": scanned, "timeout": True}
+            current, depth = queue[position]
+            position += 1
+            try:
+                meta = current.stat()
+                identity = (meta.st_dev, meta.st_ino)
+                if identity in visited:
+                    continue
+                visited.add(identity)
+                scanned += 1
+                if current.name == "CUSA34384":
+                    executable = current / "eboot.bin"
+                    if executable.is_file() and (current / "sce_sys/param.sfo").is_file():
+                        return executable.resolve(), {"roots": len(roots), "scanned": scanned, "kind": "eboot"}
+                if depth >= 5:
+                    continue
+                with os.scandir(current) as children:
+                    for child in children:
+                        if child.name == "CUSA34384.zar" and child.is_file(follow_symlinks=True):
+                            return Path(child.path).resolve(), {"roots": len(roots), "scanned": scanned, "kind": "zar"}
+                        if child.is_dir(follow_symlinks=True):
+                            queue.append((Path(child.path), depth + 1))
+            except (OSError, PermissionError):
+                continue
+    return None, {"roots": len(roots), "scanned": scanned, "timeout": False}
+
+
 def main():
     archive = HOME / ("gow-target-spv-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + ".tar.gz")
     result = {"game": GAME, "shader": SHADER, "isolated_xdg": True,
@@ -63,11 +111,23 @@ def main():
             config = json.loads(source.read_text())
             if not isinstance(config.get("GPU"), dict):
                 raise RuntimeError("Unexpected GPU config schema; no game launched")
+            exact_game, game_resolution = resolve_exact_game(config)
+            result["game_resolution"] = game_resolution
+            if exact_game is None:
+                raise RuntimeError("Game executable not located within enabled install directories; no launch attempted")
+            result["game_executable_confirmed"] = True
             config["GPU"]["dump_shaders"] = True
             config["GPU"]["direct_memory_access_enabled"] = False
             base = temp / "xdg"
             profile = base / "shadPS4"
             profile.mkdir(parents=True)
+            # Never allow the copied config to redirect writes to original savedata/addons.
+            if not isinstance(config.get("General"), dict):
+                raise RuntimeError("Missing General configuration; refusing launch")
+            (profile / "home").mkdir()
+            (profile / "addons").mkdir()
+            config["General"]["home_dir"] = str(profile / "home")
+            config["General"]["addon_install_dir"] = str(profile / "addons")
             (profile / "config.json").write_text(json.dumps(config, indent=2, ensure_ascii=False))
             result["original_config_sha256"] = original_hash
             result["trial_sha256"] = hashfile(binary)
@@ -75,6 +135,7 @@ def main():
             env.update({
                 "XDG_DATA_HOME": str(base),
                 "XDG_CACHE_HOME": str(temp / "cache"),
+                "SHADPS4_ENABLE_IPC": "false",
                 "SHADPS4_GOW_ONE_SHADER_DMA_COMPILE": "1",
                 "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
                 "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
@@ -82,7 +143,7 @@ def main():
             })
             env.setdefault("DISPLAY", ":0")
             command = [str(binary), "--cpu-id-mode", "auto",
-                       "--game", GAME, "--fullscreen", "true"]
+                       "--game", str(exact_game), "--fullscreen", "true"]
             with (out / "console.log").open("w") as log:
                 proc = subprocess.Popen(command, cwd=temp, env=env, stdin=subprocess.DEVNULL,
                                         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -114,6 +175,20 @@ def main():
                     if proc.poll() is not None:
                         result["end_reason"] = "PROCESS_EXITED"
                         break
+                    if time.monotonic() - started >= 40:
+                        # Capture the real stop point instead of another silent 150s timeout.
+                        partial_log = (out / "console.log").read_bytes()[-200000:]
+                        if b"Starting shadps4 emulator" not in partial_log:
+                            result["end_reason"] = "BLOCKED_BEFORE_EMULATOR_RUN"
+                            try:
+                                task_dir = Path("/proc") / str(proc.pid) / "task"
+                                result["thread_wait_channels"] = {
+                                    task.name: (task / "wchan").read_text().strip()
+                                    for task in list(task_dir.iterdir())[:48] if task.name.isdigit()
+                                }
+                            except (OSError, PermissionError):
+                                result["thread_wait_channels"] = {"error": "unavailable"}
+                            break
                 else:
                     result["end_reason"] = "TIME_LIMIT"
             result["duration_s"] = round(time.monotonic() - started, 2)
@@ -148,12 +223,15 @@ def main():
                         files.append(path.name)
             result["target_shader_files"] = files
             result["target_spv_count"] = sum(x.endswith(".spv") for x in files)
-            logs = [out / "console.log", profile / "log" / "shadps4.log"]
+            logs = [out / "console.log"]
+            log_dir = profile / "log"
+            if log_dir.is_dir():
+                logs += [f for f in log_dir.glob("*.log") if f.is_file()]
             joined = ""
             for path in logs:
                 if path.is_file():
                     if path.parent != out:
-                        shutil.copy2(path, out / "shadps4.log")
+                        shutil.copy2(path, out / path.name)
                     joined += path.read_text(errors="replace")[-12000000:] + "\n"
             result["shader_dump_enabled_logged"] = bool(re.search(r"shouldDumpShaders:\s*true", joined))
             result["target_dma_info_logged"] = "GOW_TARGET_DMA_INFO" in joined
