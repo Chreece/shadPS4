@@ -1,7 +1,12 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+#include <cstdlib>
+#include <cstring>
+
 #include "common/assert.h"
+#include "common/logging/log.h"
 #include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
@@ -54,8 +59,21 @@ Id EmitGetUserData(EmitContext& ctx, IR::ScalarReg reg) {
 
 Id EmitReadConst(EmitContext& ctx, IR::Inst* inst, Id addr, Id offset) {
     const u32 flatbuf_off_dw = inst->Flags<u32>();
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled()) {
+    const char* gow_dma_env = std::getenv("SHADPS4_GOW_ONE_SHADER_DMA_COMPILE");
+    const bool gow_dma_target = gow_dma_env && std::strcmp(gow_dma_env, "1") == 0 &&
+                                ctx.info.pgm_hash == 0x57b077acULL &&
+                                ctx.info.hw_stage == HwStage::Compute && ctx.info.uses_dma;
+    if (!EmulatorSettings.IsDirectMemoryAccessEnabled() && !gow_dma_target) {
         return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
+    }
+    if (gow_dma_target && flatbuf_off_dw == 0) {
+        static std::atomic<u32> target_dynamic_reads{0};
+        const u32 count = target_dynamic_reads.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (count <= 16 || (count & (count - 1)) == 0) {
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_TARGET_DMA_DYNAMIC_CODEGEN count={} shader={:#x} flags={}",
+                        count, ctx.info.pgm_hash, flatbuf_off_dw);
+        }
     }
     if (flatbuf_off_dw == 0) {
         return ctx.OpFunctionCall(ctx.U32[1], ctx.read_const_dynamic, addr, offset);
