@@ -101,12 +101,12 @@ def replace_once(source: str, original: str, replacement: str, label: str) -> st
     found = source.count(original)
     if found != 1:
         raise ValueError(f"{label}: expected one exact legacy anchor, got {found}")
-    if "GHOST_RELEASE_MEM_NONE" in source or "GHOST_RELEASE_MEM_PACKET" in source:
-        raise ValueError(f"{label}: a previous release-mem trial is already present")
     return source.replace(original, replacement, 1)
 
 
 def transform(pm4: str, liverpool: str) -> tuple[str, str]:
+    if "GHOST_RELEASE_MEM_NONE" in pm4 or "GHOST_RELEASE_MEM_PACKET" in liverpool:
+        raise ValueError("Already-patched PM4 release-mem source")
     if pm4.count("enum class DataSelect : u32 {") != 1 or \
        pm4.count("    None = 0,") < 2:
         raise ValueError("Unexpected PM4 selector enumeration layout")
@@ -142,8 +142,8 @@ def transform(pm4: str, liverpool: str) -> tuple[str, str]:
 
 def test() -> None:
     pm4 = (
-        "enum class DataSelect : u32 { None = 0, Data32Low=1 };\\n"
-        "enum class InterruptSelect : u32 { None=0, IrqOnly = 1, };\\n"
+        "enum class DataSelect : u32 {\\n    None = 0,\\n    Data32Low = 1,\\n};\\n"
+        "enum class InterruptSelect : u32 {\\n    None = 0,\\n    IrqOnly = 1,\\n};\\n"
         "struct PM4CmdEventWriteEop {\\n"
         "  case DataSelect::None:\\n  case InterruptSelect::IrqOnly:\\n"
         "};\\nstruct PM4CmdAcquireMem {};\\n"
@@ -152,9 +152,6 @@ def test() -> None:
         "case DataSelect::GdsMemStore:\\n"
         "default: UNREACHABLE(); default: UNREACHABLE();\\n};\\n"
     )
-    # The fixture keeps the true original selector declarations distinct.
-    pm4 = pm4.replace("None = 0, Data32Low=1", "None = 0, Data32Low=1")
-    pm4 = pm4.replace("None=0, IrqOnly", "None = 0, IrqOnly")
     liv = INCLUDE_OLD + "\\n" + PROCESS_OLD + "\\n"
     edited_pm4, edited_liv = transform(pm4, liv)
     assert "GHOST_RELEASE_MEM_NONE" in edited_pm4
