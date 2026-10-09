@@ -75,6 +75,9 @@ def main():
                 permitted = (ps4["static", cpu, leaf, 0][register] &
                              pro["static", cpu, leaf, 0][register])
                 valid &= value[register] & ~permitted == 0
+        if not args.identity_only and leaf == 0xd and subleaf == 1:
+            permitted = ps4["static", cpu, leaf, subleaf][0] & pro["static", cpu, leaf, subleaf][0]
+            valid &= value[0] & ~permitted == 0 and value[1:] == (0, 0, 0)
         if not valid:
             errors.append({"mode": mode, "cpu": cpu, "leaf": f"{leaf:08x}",
                            "subleaf": subleaf, "registers": [f"{x:08x}" for x in value]})

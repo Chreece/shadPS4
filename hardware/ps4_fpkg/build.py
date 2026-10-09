@@ -29,6 +29,8 @@ TESTS = (
      ("main.cpp", "Makefile", "musl-COPYRIGHT")),
     ("reciprocal", "RCPR00001", "Reciprocal hardware probe", "RECIPROCAL000000", "eboot.bin",
      ("main.cpp", "cases.S", "Makefile", "compare.py", "INSTRUCTIONS.txt", "musl-COPYRIGHT")),
+    ("cpu_xstate", "CPUX00001", "CPU state hardware probe", "CPUXSTATE0000000", "eboot.bin",
+     ("main.cpp", "cases.S", "Makefile", "validate.py", "INSTRUCTIONS.txt", "musl-COPYRIGHT")),
 )
 
 

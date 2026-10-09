@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-09",
+  "candidate_commit": "626013f9e05aceb680c7407197c31af58d0aed76",
+  "candidate_tree": "e3cb4c07b9ddeab670e1c162755875ff96146529",
+  "binary_sha256": "eea8412a66c4f9b63600df8b8b2edd4cf958c8a3943369bd4310eaa33f2e7718",
+  "scope": "Filter CPUID D.1 capabilities to host-supported XSAVEOPT. Preserve native XCR0 and save-area sizes. Collect actual state-instruction behavior before full virtualization.",
+  "physical_ps4_tested": false,
+  "full_xstate_virtualization": false,
+  "package": {
+    "path": "packages/ps4-cpu-xstate-test-20261009.zip",
+    "sha256": "cef02e8ec0c14249dea5e67f882fba69e1eab66d5f1d6afd51c610c4730ffd1b",
+    "round_trip_hashes_and_signatures_passed": true,
+    "runtime_files_identical_to_tested_extraction": true
+  },
+  "tests": {
+    "host-native": {
+      "rows": 220,
+      "recovered_faults": 32,
+      "collection_errors": 0,
+      "xcr0": "00000000000000e7",
+      "physical_equivalence_checked": false
+    },
+    "packaged-native": {
+      "rows": 220,
+      "recovered_faults": 32,
+      "collection_errors": 0,
+      "xcr0": "00000000000000e7",
+      "physical_equivalence_checked": false
+    },
+    "cpuid-native": {
+      "rows": 1176,
+      "errors": [],
+      "scope": "APIC identity, caches and feature ceilings; not a complete CPU model",
+      "log_sha256": "704d98cde6f5562bc5e57cc448a65a421ae54dfcdb162b751ba1822d5ee44a1f"
+    },
+    "packaged-translated": {
+      "rows": 220,
+      "recovered_faults": 32,
+      "collection_errors": 0,
+      "xcr0": "00000000000000e7",
+      "physical_equivalence_checked": false
+    },
+    "cpuid-translated": {
+      "rows": 1176,
+      "errors": [],
+      "scope": "APIC identity, caches and feature ceilings; not a complete CPU model",
+      "log_sha256": "704d98cde6f5562bc5e57cc448a65a421ae54dfcdb162b751ba1822d5ee44a1f"
+    }
+  },
+  "capture_sha256": {
+    "host-native.txt": "51b7645bd2c631d67ccb3c403b5022d660ce361f963c4f8ca50a24fd928cf81b",
+    "profile-translated.txt": "704d98cde6f5562bc5e57cc448a65a421ae54dfcdb162b751ba1822d5ee44a1f",
+    "xstate-native.txt": "f26519ee9bee02f1dee189788cedc990a6e712ba248afd59a4424e1692782a6d",
+    "profile-native.txt": "704d98cde6f5562bc5e57cc448a65a421ae54dfcdb162b751ba1822d5ee44a1f",
+    "xstate-translated.txt": "bcf4650ba26bbf9f1043d04f9b741cac49910892a8e2e36af24d1ee6c5e954a6"
+  }
+}

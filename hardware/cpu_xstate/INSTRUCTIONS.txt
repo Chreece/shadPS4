@@ -1,0 +1,25 @@
+SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
+SPDX-License-Identifier: GPL-2.0-or-later
+
+PS4 CPU state save/restore probe
+
+Install the included FPKG on a console already configured for homebrew.
+Launch "CPU state hardware probe" once. It runs automatically and returns
+to the menu. A blank screen is expected.
+
+Send /data/cpu-xstate-hardware.txt and your console model and firmware.
+The file is replaced on each run. If the test exits unexpectedly, send the
+partial file and the console error code; the last XSTATE_START identifies
+the interrupted case.
+
+This measures XSAVE/XSAVEOPT/XRSTOR, 32/64-bit save formats, XGETBV indexes,
+initial/dirty register state, request masks, malformed headers, alignment
+and protected-memory boundaries. Instructions run from both the executable
+and generated code. Only this test process's own memory and CPU state are
+used. No games, saves, firmware settings or network access are involved.
+
+The footer describes collection errors, not agreement with an emulator.
+Fault outcomes and saved bytes are observations to compare after capture.
+Reserved bytes and x87 instruction/data pointers must not be compared as
+ordinary deterministic values. No physical-console results are bundled
+until a tester has supplied them.
