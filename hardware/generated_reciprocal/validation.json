@@ -128,7 +128,7 @@
   "host_fault_context": "Four native Linux and translated checks agree: initial NX, cached R/RW removal and a cross-page instruction. Fault PC, fault address, SEGV_ACCERR and instruction-fetch error bit verified.",
   "runtime_cache_upgrade": "Exact previous patch upgrade, current reuse, dirty-source refusal and failed-upgrade rollback passed.",
   "known_limits": [
-    "The new candidate has not been tested on the user machine yet. The preceding candidate passed the uploaded PES playtest.",
+    "The current candidate passed CPU homebrew on the user machine. PES gameplay and controller quit were validated on the preceding candidate, not repeated in this CPU-only run.",
     "Other OSes and CPU architectures are outside this validation.",
     "Initial mmap permissions retain the existing emulator policy. This is not a complete memory or CPU emulation claim.",
     "Guest siginfo fault-address forwarding is unchanged; the precise host fault-context checks cover the Linux translation runtime."
@@ -596,5 +596,145 @@
     "archive_and_cleanup": "Single archive, unchanged installed-binary fixture, no gameplay stage, successful temporary-runtime cleanup.",
     "candidate_cache": "Previous cache upgrade, reuse, dirty-source and modified-binary refusal passed with local Git and a simulated compiler.",
     "failed_test_rejection": "Missing cached execute fault and the old translated NX failures rejected."
+  },
+  "user_machine_validation": {
+    "archive": "shadps4-generated-rcp-_rgnvq64.tar.gz",
+    "archive_sha256": "fbc709e9f4a8d4789093f4a2bc6228ac930f74fa262ed3cee05063b68edcbad9",
+    "candidate_commit": "d0932958240eed98e9de396004b0d4d513dfb974",
+    "candidate_tree": "e7eef24a73392ed50fc661eec33004e4c85bdbfb",
+    "binary_sha256": "02465cd9d2b7587791cf24dff844c257937f2e1eb2519e1b434b9bd85ffca423",
+    "runtime_files_sha256": {
+      "shadps4": "02465cd9d2b7587791cf24dff844c257937f2e1eb2519e1b434b9bd85ffca423",
+      "cpu-id-runtime/bin64/drrun": "f6ab59dc827b45e463a606263730629a0c296ccd679131456c67187b72141ad4",
+      "cpu-id-runtime/libshadps4_cpu_id.so": "dfe1b68d10dd04322f41c7e08f457812d0952e267a2b4d8f8319173bfec7cda2",
+      "cpu-id-runtime/lib64/release/libdynamorio.so": "1ca2449f390f0593f4cc16477f79204fcd87024aa4daff2957513c033314f9db"
+    },
+    "all_checks_passed": true,
+    "ordinary_memory": {
+      "native": {
+        "read_write_checks_passed": 6,
+        "high_map_unmap_cycles": 64,
+        "execute_permission_checks_passed": 2,
+        "execute_permission_failures": [],
+        "all_checks_passed": true,
+        "log_sha256": "06dfb3e8f9d3735e31f8b7120950a5c6eed360c28916d6e20b9a2e28b0ec2b1e"
+      },
+      "translated": {
+        "read_write_checks_passed": 6,
+        "high_map_unmap_cycles": 64,
+        "execute_permission_checks_passed": 2,
+        "execute_permission_failures": [],
+        "all_checks_passed": true,
+        "log_sha256": "06dfb3e8f9d3735e31f8b7120950a5c6eed360c28916d6e20b9a2e28b0ec2b1e"
+      }
+    },
+    "execute_permission": {
+      "native": {
+        "checks_passed": 16,
+        "faults_recovered": 14,
+        "all_checks_passed": true,
+        "log_sha256": "94403adc2f4c6350008633a427015585781a614b811c5f734ee757bc286d8c78"
+      },
+      "translated": {
+        "checks_passed": 16,
+        "faults_recovered": 14,
+        "all_checks_passed": true,
+        "log_sha256": "94403adc2f4c6350008633a427015585781a614b811c5f734ee757bc286d8c78"
+      }
+    },
+    "generated_reciprocal": {
+      "rows": 121856,
+      "hardware_differences": 0,
+      "memory_cases": [
+        {
+          "region": "low",
+          "op": "rcpss_mem",
+          "boundary": "3eaaa800",
+          "boundary_faults": "0",
+          "value": "3eaaa800",
+          "recovered": "1",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "low",
+          "op": "vrcpss_mem",
+          "boundary": "3eaaa800",
+          "boundary_faults": "0",
+          "value": "3eaaa800",
+          "recovered": "2",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "low",
+          "op": "rsqrtss_mem",
+          "boundary": "3f13c800",
+          "boundary_faults": "0",
+          "value": "3f13c800",
+          "recovered": "3",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "low",
+          "op": "vrsqrtss_mem",
+          "boundary": "3f13c800",
+          "boundary_faults": "0",
+          "value": "3f13c800",
+          "recovered": "4",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "high",
+          "op": "rcpss_mem",
+          "boundary": "3eaaa800",
+          "boundary_faults": "0",
+          "value": "3eaaa800",
+          "recovered": "5",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "high",
+          "op": "vrcpss_mem",
+          "boundary": "3eaaa800",
+          "boundary_faults": "0",
+          "value": "3eaaa800",
+          "recovered": "6",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "high",
+          "op": "rsqrtss_mem",
+          "boundary": "3f13c800",
+          "boundary_faults": "0",
+          "value": "3f13c800",
+          "recovered": "7",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "high",
+          "op": "vrsqrtss_mem",
+          "boundary": "3f13c800",
+          "boundary_faults": "0",
+          "value": "3f13c800",
+          "recovered": "8",
+          "flags": "200246/200246",
+          "failures": "0"
+        }
+      ],
+      "log_sha256": "8a1439f08e5e9ed675aa602e87cca434d5e84c1a69012d85802c1af4de438245"
+    },
+    "translation_active_confirmed_in_logs": true,
+    "installed_binary_unchanged": true,
+    "cleanup_errors": [],
+    "owned_processes_active": false,
+    "gameplay_test_requested": false,
+    "scope": "CPU-only run; raw logs independently validated against the strict runner, including log hashes. No graphics investigation or performance claim.",
+    "build_log_sha256": "af8f30d268d1a9cb03cba2ab75d2699a171c41101814a902ab951134a929322a"
   }
 }

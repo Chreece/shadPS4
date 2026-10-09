@@ -86,8 +86,7 @@
     "XSAVE/XRSTOR/XGETBV and CPUID 0xD retain the host state layout; not complete Jaguar state emulation.",
     "Physical CPU hotplug remains untested.",
     "macOS and Windows remain outside this follow-up.",
-    "Generated reciprocal game performance has not been measured.",
-    "Translated execution from non-executable guest pages remains a gap; two failing cases are preserved in the memory probe."
+    "A controlled native-versus-translated game performance comparison remains inconclusive."
   ],
   "package": {
     "path": "packages/ps4-cpu_identity-hardware-test-v3.zip",
@@ -106,7 +105,24 @@
     "read_write_recovery": "passed in native and translated modes",
     "high_unmaps": "64 cycles per mode passed",
     "reciprocal": "121856 hardware-matching rows; eight boundary/fault recoveries and low/high unmaps passed",
-    "pes": "awaiting current-candidate test",
+    "pes": "Both modes completed and accepted controller quit on candidate 64b0adc; archive shadps4-generated-rcp-a0d71gx8.tar.gz.",
     "details": "hardware/generated_reciprocal/validation.json"
+  },
+  "execute_permission_followup": {
+    "candidate": "d0932958240eed98e9de396004b0d4d513dfb974",
+    "branch": "draft/translated-nx-20261009",
+    "tested_locally_and_on_user_machine": true,
+    "ordinary_memory_checks_per_mode": 8,
+    "extended_execute_checks_per_mode": 16,
+    "high_map_unmap_cycles_per_mode": 64,
+    "modes": [
+      "native",
+      "translated"
+    ],
+    "errors": 0,
+    "reciprocal_hardware_rows": 121856,
+    "reciprocal_differences": 0,
+    "details": "hardware/generated_reciprocal/validation.json",
+    "readiness": "Validation complete for the Linux execute-permission fix; kept separate for review."
   }
 }
