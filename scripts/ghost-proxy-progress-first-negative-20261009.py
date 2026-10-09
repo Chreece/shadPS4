@@ -1097,7 +1097,7 @@ def test_candidate():
     report["gdb_snapshots"]=GDB_RESULTS
     report["middle_underflow_hardware_watch"]=WATCH_SUMMARY
     report["gpu_irq_origin_tags"]={
-        key:body.count(key) for key in ("GHOST_C6_RELEASE","GHOST_C6_IRQ_FORWARD",
+        key:payload.count(key) for key in ("GHOST_C6_RELEASE","GHOST_C6_IRQ_FORWARD",
                                        "GHOST_C6_TRIGGER","GHOST_C6_DEQUEUE")
     }
     report["target"]="F60790 comparison current versus indexed progress table"
