@@ -124,23 +124,97 @@ for pr in "${prs[@]}"; do
 done
 
 step="integrate verified CPU and general fixes"
-# #5321 contains the #5287, #5304, #5315 and earlier #5314 changes.
-# #5314 adds later captured PS4/Pro CPU-profile corrections.
-# #5325 is the independent reciprocal correction.
-# GPU and other PRs are applied only if not already part of upstream.
-for pr in "${prs[@]}"; do
+# The #5321 head already includes #5287, #5304, #5315 and an earlier #5314.
+# First merge this pinned integration branch. It was verified mergeable against
+# upstream main 661d6fd0463a8ea5b441d3fcefd7d110a819c914.
+if ! git -C "$src" merge-base --is-ancestor refs/remotes/origin/proven-5321 HEAD; then
+  echo '===== MERGING CPU integration PR #5321 ====='
+  if ! git -C "$src" -c commit.gpgsign=false merge --no-ff --no-edit \
+       -m 'Local ES-DE integration: pinned CPU PR #5321' \
+       refs/remotes/origin/proven-5321; then
+    echo 'SAFE_STOP: CPU integration diverges from fresh upstream main.'
+    exit 1
+  fi
+fi
+
+# The newest hardware-profile changes in #5314 were made after the integrated
+# #5321 branch. A normal branch merge conflicts in cpu_id.cpp. Evidence shows
+# the two pinned versions differ *only* in GuestCpuid(), the emulation-profile
+# include/global, and guest_neo initialization. Verify exactly that before
+# selecting the later hardware-validated CPU profile file.
+step="apply hardware-verified PS4 / PS4 Pro CPU profile"
+current_cpu_blob="$(git -C "$src" rev-parse 'HEAD:src/core/cpu_id.cpp')"
+profile_cpu_blob="$(git -C "$src" rev-parse 'refs/remotes/origin/proven-5314:src/core/cpu_id.cpp')"
+if [[ "$current_cpu_blob" != fcdbac396cb109ba457122a2f5fa7b648af4392d ||
+      "$profile_cpu_blob" != 31f691e1e96892866dd0275951fc8ad8e62033a5 ]]; then
+  echo 'SAFE_STOP: CPU profiles changed; cannot use the reviewed resolution.'
+  echo "current=$current_cpu_blob profile=$profile_cpu_blob"
+  exit 1
+fi
+python3 - "$src" <<'PROFILE_CHECK'
+import subprocess
+import sys
+from pathlib import Path
+src = Path(sys.argv[1])
+original = (src / 'src/core/cpu_id.cpp').read_text()
+profile = subprocess.check_output(
+    ['git', '-C', str(src), 'show',
+     'refs/remotes/origin/proven-5314:src/core/cpu_id.cpp'], text=True)
+
+def non_profile(text):
+    for line in (
+        '#include "core/emulator_settings.h"\n',
+        'bool guest_neo{};\n',
+        '    guest_neo = EmulatorSettings.IsNeo();\n',
+    ):
+        text = text.replace(line, '')
+    start = text.index('std::array<u32, 4> GuestCpuid(')
+    end = text.index('\nu32 CurrentGuestCpu()', start)
+    return text[:start] + '/* verified guest CPUID profile */' + text[end:]
+
+if non_profile(original) != non_profile(profile):
+    raise SystemExit('SAFE_STOP: PR #5314 changes code outside the verified CPU profile')
+print('CPU profile isolation confirmed: no unrelated CPU-ID code changed.')
+PROFILE_CHECK
+git -C "$src" show 'refs/remotes/origin/proven-5314:src/core/cpu_id.cpp' \
+  > "$src/src/core/cpu_id.cpp"
+git -C "$src" add src/core/cpu_id.cpp
+git -C "$src" -c commit.gpgsign=false commit \
+  -m 'Local integration: PS4/Pro hardware CPU metadata from PR #5314'
+
+# Independent PRs should be replayed as their own commits, not merged as
+# entire older branches. A branch merge could reintroduce unrelated old code.
+# Verify each change is entirely contained in the expected number of commits.
+step="cherry-pick independently tested CPU and general fixes"
+declare -A expected_commits=(
+  [5325]=1
+  [5234]=1
+  [5230]=1
+  [5232]=2
+  [5228]=1
+  [5235]=2
+  [5275]=6
+)
+for pr in 5325 5234 5230 5232 5228 5235 5275; do
   ref="refs/remotes/origin/proven-$pr"
   if git -C "$src" merge-base --is-ancestor "$ref" HEAD; then
     echo "PR #$pr already integrated; skipping"
     continue
   fi
-  echo "===== MERGING VERIFIED PR #$pr ====="
-  if ! git -C "$src" -c commit.gpgsign=false merge --no-ff --no-edit \
-       -m "Local ES-DE integration: verified shadPS4 PR #$pr" "$ref"; then
-    echo "SAFE_STOP: PR #$pr conflicts with latest upstream or another fix. Not deploying."
-    git -C "$src" status --short
+  ancestor="$(git -C "$src" merge-base refs/remotes/origin/main "$ref")"
+  mapfile -t commits < <(git -C "$src" rev-list --reverse "$ancestor..$ref")
+  if [[ "${#commits[@]}" -ne "${expected_commits[$pr]}" ]]; then
+    echo "SAFE_STOP: PR #$pr has ${#commits[@]} commits; expected ${expected_commits[$pr]}."
     exit 1
   fi
+  echo "===== APPLYING VERIFIED PR #$pr (${#commits[@]} commits) ====="
+  for sha in "${commits[@]}"; do
+    if ! git -C "$src" -c commit.gpgsign=false cherry-pick --no-edit "$sha"; then
+      echo "SAFE_STOP: PR #$pr requires review against newest source. Not deploying."
+      git -C "$src" status --short
+      exit 1
+    fi
+  done
 done
 candidate_sha="$(git -C "$src" rev-parse HEAD)"
 echo "CANDIDATE=$candidate_sha"
