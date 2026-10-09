@@ -30,12 +30,12 @@ FULLSTACK_HEAD = "89af13f6d306ebc24396b4e8e207688537cdc28b"
 FULLSTACK_VK_INSTANCE = FULLSTACK_ROOT / "src/video_core/renderer_vulkan/vk_instance.cpp"
 FULLSTACK_VK_INSTANCE_BLOB = "d719bb4842561e0811de33a47560c461af34ec4c"
 CONFIG_REV = "05cc36dbb30a899d8f5b5c7fbcd4c9765ac19e12"
-TRIAL_REV = "642bac9e3fec667b8f133d03c3c8bd46a9a9ac23"
+TRIAL_REV = "9575536dfd5853a424cfb3de24808b45780f341c"
 STAMP = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 OUT = HOME / ("ghost-no-gdb-validation-" + STAMP + ".tar.gz")
 ROOT = Path(tempfile.mkdtemp(prefix="ghost-no-gdb-validation-" + STAMP + "-", dir=HOME / ".cache"))
 HELPER = ROOT / "ghost-vk-validation-config.py"
-RUNNER = ROOT / "ghost-no-gdb-stencil-srt551d-onerun.sh"
+RUNNER = ROOT / "ghost-no-gdb-stencil-autosrt-onerun.sh"
 LOG = ROOT / "runner-output.txt"
 PHASE = "preflight"
 RESULT = 1
@@ -194,7 +194,7 @@ def report_validation(runtime: str):
         "r8_index1_point_applied": text.count("GHOST_R8_INDEX1_APPLIED shader="),
         "null_image_binding_hits": text.count("GHOST_NULL_IMAGE_BINDING shader="),
         "stencil_storage_alias_hits": text.count("GHOST_STENCIL_STORAGE_ALIAS shader="),
-        "srt_551d_route_events": text.count("GHOST_SRT_551D_ROUTE shader="),
+        "srt_detected_dynamic_route_events": text.count("GHOST_SRT_DETECTED_DYNAMIC shader="),
         "srt_551d_readlane_failures": text.count(
             "Unexpected instruction for offset computation, ReadLane shader=0x551d6087"),
         "storage_depth_illegal_remaining": text.count("GHOST_STORAGE_IMAGE_INVALID shader="),
@@ -246,7 +246,7 @@ def report_validation(runtime: str):
         "R8_INDEX1_APPLIED_EVENTS=" + str(len(sampler_records)),
         "NULL_IMAGE_BINDING_EVENTS=" + str(text.count("GHOST_NULL_IMAGE_BINDING shader=")),
         "STENCIL_STORAGE_ALIAS_HITS=" + str(text.count("GHOST_STENCIL_STORAGE_ALIAS shader=")),
-        "SRT_551D_ROUTE_EVENTS=" + str(text.count("GHOST_SRT_551D_ROUTE shader=")),
+        "SRT_DYNAMIC_ROUTE_EVENTS=" + str(text.count("GHOST_SRT_DETECTED_DYNAMIC shader=")),
         "SRT_551D_READLANE_ERRORS=" + str(text.count(
             "Unexpected instruction for offset computation, ReadLane shader=0x551d6087")),
         "STORAGE_DEPTH_ILLEGAL_REMAINING=" + str(text.count("GHOST_STORAGE_IMAGE_INVALID shader=")),
@@ -260,8 +260,8 @@ def report_validation(runtime: str):
         "OVERSIZE_BUFFER_VUIDS=" + str(len(oversize_records)),
         "SPARSE_ARENA_GUARD_ASSERTS=" + str(len(arena_limit_records)),
         "last_frame_sample=" + (repr(frame_samples[-1]) if frame_samples else "NONE"),
-        "=== SCOPED READCONST ROUTE (first 12) ===",
-        *[line for line in text.splitlines() if "GHOST_SRT_551D_ROUTE shader=" in line][:12],
+        "=== DETECTED DYNAMIC READCONST ROUTE (first 12) ===",
+        *[line for line in text.splitlines() if "GHOST_SRT_DETECTED_DYNAMIC shader=" in line][:12],
         "=== STENCIL STORAGE ALIASES (first 12) ===",
         *[line for line in text.splitlines() if "GHOST_STENCIL_STORAGE_ALIAS shader=" in line][:12],
         "=== REMAINING INVALID STORAGE (first 12) ===",
@@ -336,7 +336,7 @@ def selftest():
     assert re.search(r"\bVUID-vkCmdCopyBufferToImage", "VUID-vkCmdCopyBufferToImage-02375")
     assert "ghost-no-gdb-" in "ghost-no-gdb-20261008.tar.gz"
     assert CONFIG_REV != TRIAL_REV
-    assert TRIAL_REV == "642bac9e3fec667b8f133d03c3c8bd46a9a9ac23"
+    assert TRIAL_REV == "9575536dfd5853a424cfb3de24808b45780f341c"
     assert len(FULLSTACK_VK_INSTANCE_BLOB) == 40
     assert FULLSTACK_HEAD != FULLSTACK_VK_INSTANCE_BLOB
     shutil.rmtree(ROOT)
@@ -351,7 +351,7 @@ def main() -> int:
     try:
         preflight()
         git_raw(CONFIG_REV, "ghost-vk-validation-config.py", HELPER)
-        git_raw(TRIAL_REV, "ghost-no-gdb-stencil-srt551d-onerun.sh", RUNNER)
+        git_raw(TRIAL_REV, "ghost-no-gdb-stencil-autosrt-onerun.sh", RUNNER)
         command([sys.executable, "-m", "py_compile", str(HELPER)])
         command([sys.executable, "-I", str(HELPER), "--self-test"])
         command(["bash", "-n", str(RUNNER)])
@@ -362,7 +362,7 @@ def main() -> int:
         PHASE = "playing_with_sync_validation"
         say("GAME-SPECIFIC Vulkan CORE+SYNC validation armed for CUSA11456.")
         say("Wait until the NESTED script displays READY, then launch via Moonlight.")
-        say("A/B 0x551d6087 per-stage GPU ReadConst with stencil alias; unattended parent launches and stops Ghost.")
+        say("A/B compiler-detected per-stage GPU ReadConst with stencil alias; unattended parent launches and stops Ghost.")
         RESULT = run_trial()
         PHASE = "finished_child_trial"
         say(f"CHILD_TRIAL_RETURN_CODE={RESULT}")
