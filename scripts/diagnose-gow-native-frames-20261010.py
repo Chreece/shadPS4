@@ -20,6 +20,7 @@ def main():
     actual=hashlib.sha256(source).hexdigest()
     if actual!=EXPECTED_SHA256:
         raise RuntimeError("SAFE_STOP: pinned game-only diagnostic checksum mismatch: "+actual)
+    print("GOW_NATIVE_CAPTURE=REUSE_EXISTING_ISOLATED_BINARY_NO_BUILD",flush=True)
     with tempfile.TemporaryDirectory(prefix="gow-raw-verified-") as tmp:
         path=os.path.join(tmp,"diagnose-gow-game-only.py")
         compile(source,path,"exec")
