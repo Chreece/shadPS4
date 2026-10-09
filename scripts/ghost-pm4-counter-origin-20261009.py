@@ -16,6 +16,7 @@ takes two read-only all-thread snapshots at a naturally confirmed stall, and
 leaves ES-DE, Sunshine, all other binaries, and game saves untouched.
 """
 from __future__ import annotations
+import ast
 import ctypes
 import ctypes.util
 import fcntl
@@ -739,10 +740,18 @@ def test_candidate():
                 say("UNKNOWN_PID_REFUSING_PROCESS_TERMINATION="+str(p.pid))
     payload=log.read_text(errors="replace")
     report=classify(payload,p.returncode)
+    if num_reads==0 and detected=="counter_timeline_and_all_threads_captured":
+        detected="full_thread_snapshot_but_guest_counter_reader_unavailable"
     report["test_stop_reason"]=detected
     report["counter_timeline_analysis"]=counter_analysis(timeline,num_reads,read_errors)
     report["gdb_snapshots"]=GDB_RESULTS
-    report["xrefs_memory_samples"]="guest-code-a00000.bin, guest-code-b00000.bin, guest-code-c00000.bin (if mapped)"
+    code_samples={name:(WORK/name).stat().st_size for name in
+                  ("guest-code-a00000.bin","guest-code-b00000.bin","guest-code-c00000.bin")
+                  if (WORK/name).is_file()}
+    report["xrefs_memory_samples"]=code_samples
+    if detected=="counter_timeline_and_all_threads_captured" and not code_samples:
+        detected="timeline_and_threads_captured_but_guest_code_unavailable"
+        report["test_stop_reason"]=detected
     report["target_jump_slot"]="0x197cfc8 for PLT stub 0x13fa250"
     (WORK/"runtime-analysis.json").write_text(json.dumps(report,indent=2)+"\n")
     GAME_STATUS=detected
@@ -791,6 +800,9 @@ def selftest():
     assert extended.count('run("x/gx 0x197cfc8")')==1
     assert extended.count('run("info symbol *(void**)0x197cfc8")')==1
     assert "GHOST_GUEST_CODE_CAPTURE" in extended
+    # Parse the generated Python portion of the GDB helper without GDB.
+    ast_fixture='try:\n    active = [t for t in inf.threads() if t.is_valid()]\nexcept Exception:\n    pass\n'
+    ast.parse(extend_gdb_script_text(ast_fixture))
     assert extended.count('run("x/48i 0xc03bd0")')==1
     assert extended.count('    active = [t for t in inf.threads() if t.is_valid()]')==1
     try:
@@ -819,8 +831,7 @@ def selftest():
         assert binary_markers_present(path, [b"GHOST_MIP_COPY mips=",
                                             b"GHOST_MIP_REVERSE_COPY mips=",
                                             b"GHOST_COPY_FALLBACK_ASSERT mips="])
-    say("SELFTEST_PASS=three_pinned_patchers,source_atomic_restore,compiled_markers,"
-        "mip_crash_classifier,isolated_paths")
+    say("SELFTEST_PASS=counter_fixture,nonstopping_reads,GDB_AST,source_isolation")
 
 def interrupt_for_rollback(sig, frame):
     raise KeyboardInterrupt("Signal intercepted to restore Ghost source: " + str(sig))
