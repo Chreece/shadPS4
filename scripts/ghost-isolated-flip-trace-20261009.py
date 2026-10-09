@@ -387,77 +387,156 @@ def screenshot(env, label):
     except (OSError, subprocess.TimeoutExpired):
         pass
 
+def guest_trace_records(text):
+    records=[]
+    for match in GUEST_TRACE.finditer(text):
+        records.append({"vblank":int(match[1]),"flips":int(match[2]),
+                        "pending":int(match[3]),"queued":int(match[4])})
+    return records
+
+def confirmed_frame_stall(records):
+    # Vblank continues but guest flips do not; never treat an idle GPU as proof.
+    if len(records)<5:return False
+    last=records[-5:]
+    if any(row["flips"] != last[0]["flips"] for row in last):
+        return False
+    return last[-1]["vblank"]-last[0]["vblank"]>=540 and last[-1]["flips"]>=100
+
+def read_owned_thread_ticks(pid):
+    if not owned(pid):
+        return {}
+    result={}
+    for task in (Path("/proc")/str(pid)/"task").iterdir():
+        if not task.name.isdigit():continue
+        try:
+            stat_text=(task/"stat").read_text()
+            rest=stat_text.rsplit(") ",1)[1].split()
+            result[task.name]={"name":(task/"comm").read_text().strip(),
+                               "ticks":int(rest[11])+int(rest[12]),
+                               "starttime":int(rest[19]),"state":rest[0]}
+        except (OSError,ValueError,PermissionError,IndexError):
+            continue
+    return result
+
+def thread_cpu_delta(first,second):
+    rows=[]
+    for tid,a in first.items():
+        b=second.get(tid)
+        if not b or a["starttime"]!=b["starttime"]:continue
+        delta=b["ticks"]-a["ticks"]
+        if delta<0:continue
+        rows.append({"tid":tid,"name":a["name"],
+                     "ticks_delta":delta,"before":a["state"],"after":b["state"]})
+    return sorted(rows,key=lambda t:-t["ticks_delta"])
+
 def classify(text, rc):
-    def count(marker):
-        return text.count(marker)
+    frames=guest_trace_records(text)
+    def count(marker):return text.count(marker)
     return {
-        "game_exit_code": rc,
-        "color_to_depth_mip_copy_count": count("GHOST_MIP_COPY mips="),
-        "depth_to_color_mip_copy_count": count("GHOST_MIP_REVERSE_COPY mips="),
-        "unhandled_mip_shapes": count("GHOST_COPY_FALLBACK_ASSERT mips="),
-        "assertion_count": count("Assertion Failed!"),
-        "movie_close_events": count("Closing /app0/movies/cutscene/splash_america.bsf"),
-        "unsupported_GetAttributeU32": count("Unexpected instruction for offset computation, GetAttributeU32"),
-        "last_12_copy_or_assert_lines": [line for line in text.splitlines()
-            if any(x in line for x in ("GHOST_MIP_COPY", "GHOST_MIP_REVERSE_COPY",
-                                     "GHOST_COPY_FALLBACK_ASSERT", "Assertion Failed!",
-                                     "vk_runtime.cpp:"))][-12:],
+        "game_exit_code":rc,
+        "guest_flip_trace_samples":len(frames),
+        "first_guest_flip_sample":frames[0] if frames else None,
+        "last_guest_flip_sample":frames[-1] if frames else None,
+        "last_ten_guest_flip_samples":frames[-10:],
+        "guest_flip_stall_confirmed":confirmed_frame_stall(frames),
+        "rendered_past_1000_guest_flips":bool(frames and frames[-1]["flips"]>=1000),
+        "color_to_depth_mip_copy_count":count("GHOST_MIP_COPY mips="),
+        "depth_to_color_mip_copy_count":count("GHOST_MIP_REVERSE_COPY mips="),
+        "unhandled_mip_shapes":count("GHOST_COPY_FALLBACK_ASSERT mips="),
+        "assertion_count":count("Assertion Failed!"),
+        "movie_close_events":count("Closing /app0/movies/cutscene/splash_america.bsf"),
+        "unsupported_GetAttributeU32":count("Unexpected instruction for offset computation, GetAttributeU32"),
+        "last_shader_offset_errors":[line[:240] for line in text.splitlines()
+            if "Unexpected instruction for offset computation" in line][-30:],
+        "last_copy_or_assert_lines":[line[:240] for line in text.splitlines()
+            if any(x in line for x in ("GHOST_MIP_COPY","GHOST_MIP_REVERSE_COPY",
+                                      "GHOST_COPY_FALLBACK_ASSERT","Assertion Failed!"))][-20:],
     }
 
 def test_candidate():
     global GAME_STATUS
     if not BIN.is_file() or not GHOST.joinpath("user/config.json").is_file():
-        raise RuntimeError("Private Ghost candidate or portable profile missing")
-    active = find_emulators()
+        raise RuntimeError("Dedicated Ghost candidate or portable config missing")
+    active=find_emulators()
     if active:
-        say("GAME_SKIPPED_UNRELATED_EMULATOR_ACTIVE=" + json.dumps(active))
-        GAME_STATUS = "skipped_other_emulator_active"
+        say("GAME_SKIPPED_OTHER_EMULATOR_ACTIVE="+json.dumps(active))
+        GAME_STATUS="skipped_other_emulator_active"
         return
-    env = env_for_x11()
-    for key in ("RADV_DEBUG", "GHOST_CPU_RIP_LOG", "SHADPS4_CPU_ID_MODE"):
-        env.pop(key, None)
-    env["SHADPS4_GRAPHICS_DIAGNOSTICS"] = "1"
-    env["SHADPS4_STARTUP_DIAGNOSTICS"] = "1"
-    say("STARTING_ONLY_PRIVATE_MIP_CANDIDATE=" + str(BIN))
-    log = WORK / "ghost-candidate-runtime.log"
-    p = None
-    start = time.monotonic()
-    with log.open("w") as f:
-        p = subprocess.Popen([str(BIN), "--game", "CUSA11456",
-                              "--fullscreen", "true"],
-                             cwd=str(GHOST), env=env, stdin=subprocess.DEVNULL,
-                             stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+    env=env_for_x11()
+    for name in ("RADV_DEBUG","GHOST_CPU_RIP_LOG","SHADPS4_CPU_ID_MODE"):
+        env.pop(name,None)
+    env["SHADPS4_GRAPHICS_DIAGNOSTICS"]="1"
+    env["SHADPS4_STARTUP_DIAGNOSTICS"]="1"
+    say("STARTING_PRIVATE_GHOST_TRACE_CANDIDATE="+str(BIN))
+    log=WORK/"ghost-candidate-runtime.log"
+    p=None
+    detected=None
+    start=time.monotonic()
+    with log.open("w") as sink:
+        p=subprocess.Popen([str(BIN),"--game","CUSA11456","--fullscreen","true"],
+                           cwd=str(GHOST),env=env,stdin=subprocess.DEVNULL,
+                           stdout=sink,stderr=subprocess.STDOUT,start_new_session=True)
         try:
-            for step in range(26):
+            snapshots=set()
+            for step in range(64):
+                elapsed=time.monotonic()-start
                 if p.poll() is not None:
+                    say("PRIVATE_GHOST_EXITED_BY_ITSELF="+str(p.returncode))
+                    detected="game_exited"
                     break
-                if step in (3, 8, 16):
-                    screenshot(env, str(step * 5) + "s")
-                time.sleep(5)
-                if step % 3 == 0:
-                    say("GHOST_CANDIDATE_RUNNING_SECONDS=" + str(int(time.monotonic() - start)))
+                for second in (15,35,55):
+                    if elapsed>=second and second not in snapshots:
+                        screenshot(env,str(second)+"s")
+                        snapshots.add(second)
+                # Diagnostic log is this test process only, no previous sessions.
+                text=log.read_text(errors="replace")
+                frames=guest_trace_records(text)
+                if frames and step % 5 == 0:
+                    last=frames[-1]
+                    say("GHOST_FLIP_PROGRESS vblank="+str(last["vblank"])+
+                        " flips="+str(last["flips"])+" pending="+str(last["pending"])+
+                        " queued="+str(last["queued"]))
+                if confirmed_frame_stall(frames):
+                    detected="guest_flip_stall_confirmed"
+                    say("GHOST_GUEST_FLIP_STALL=PROVEN last_five="+
+                        json.dumps(frames[-5:]))
+                    screenshot(env,"confirmed-stall")
+                    before=read_owned_thread_ticks(p.pid)
+                    time.sleep(5)
+                    after=read_owned_thread_ticks(p.pid)
+                    (WORK/"thread-cpu-after-stall.json").write_text(
+                        json.dumps({"ticks_per_second":os.sysconf("SC_CLK_TCK"),
+                                    "samples":thread_cpu_delta(before,after)},indent=2)+"\n")
+                    break
+                if frames and frames[-1]["flips"]>=1000:
+                    detected="rendered_past_1000_flips"
+                    say("GHOST_RENDERED_PAST_1000_GUEST_FLIPS=PASS")
+                    screenshot(env,"rendering-progress")
+                    break
+                time.sleep(2)
+            if detected is None:
+                detected="timeout_without_confirmed_stall"
         finally:
             if p.poll() is None and owned(p.pid):
-                if os.getsid(p.pid) == p.pid:
-                    say("STOP_ONLY_OWN_CANDIDATE_PID=" + str(p.pid))
-                    os.killpg(p.pid, signal.SIGTERM)
-                    try:
-                        p.wait(timeout=5)
+                if os.getsid(p.pid)==p.pid:
+                    say("STOP_ONLY_OWN_TRACE_CANDIDATE_PID="+str(p.pid))
+                    os.killpg(p.pid,signal.SIGTERM)
+                    try:p.wait(timeout=5)
                     except subprocess.TimeoutExpired:
-                        if owned(p.pid):
-                            os.killpg(p.pid, signal.SIGKILL)
+                        if owned(p.pid):os.killpg(p.pid,signal.SIGKILL)
                         p.wait(timeout=5)
             elif p.poll() is None:
-                say("UNKNOWN_PROCESS_IDENTITY_NO_SIGNAL=" + str(p.pid))
-    payload = log.read_text(errors="replace")
-    result = classify(payload, p.returncode)
-    (WORK / "runtime-analysis.json").write_text(json.dumps(result, indent=2) + "\n")
-    GAME_STATUS = ("assertion_still_present" if result["assertion_count"]
-                   else "no_assertion_observed")
-    say("GAME_RESULT=" + GAME_STATUS + " exit_code=" + str(p.returncode))
-    say("MIP_COPIES=" + str(result["color_to_depth_mip_copy_count"]) +
-        " REVERSE=" + str(result["depth_to_color_mip_copy_count"]) +
-        " FALLBACK_SHAPES=" + str(result["unhandled_mip_shapes"]))
+                say("UNKNOWN_PROCESS_IDENTITY_REFUSE_SIGNAL="+str(p.pid))
+    payload=log.read_text(errors="replace")
+    report=classify(payload,p.returncode)
+    report["test_stop_reason"]=detected
+    (WORK/"runtime-analysis.json").write_text(json.dumps(report,indent=2)+"\n")
+    GAME_STATUS=detected
+    say("GHOST_GAME_TEST_RESULT="+detected+
+        " guest_samples="+str(report["guest_flip_trace_samples"])+
+        " assertions="+str(report["assertion_count"])+
+        " mip_copy_calls="+str(report["color_to_depth_mip_copy_count"]+
+                              report["depth_to_color_mip_copy_count"]))
 
 def selftest():
     from tempfile import TemporaryDirectory
@@ -479,6 +558,18 @@ def selftest():
     assert state["unhandled_mip_shapes"] == 1
     assert state["assertion_count"] == 1
     assert BASE_BIN != BIN != OTHER_BIN
+    frames=guest_trace_records("\n".join(
+        f"GHOST_TRACE vblank={v} guest_flips=530 pending=0 queued=0"
+        for v in (1500,1680,1860,2040,2220)))
+    assert confirmed_frame_stall(frames)
+    assert not confirmed_frame_stall(frames[:4])
+    assert not confirmed_frame_stall(guest_trace_records(
+        "GHOST_TRACE vblank=2000 guest_flips=100 pending=0 queued=0\n"
+        "GHOST_TRACE vblank=2180 guest_flips=200 pending=0 queued=0"))
+    ticks1={"12":{"name":"Game:Main","ticks":10,"starttime":42,"state":"R"}}
+    ticks2={"12":{"name":"Game:Main","ticks":110,"starttime":42,"state":"R"}}
+    assert thread_cpu_delta(ticks1,ticks2)[0]["ticks_delta"]==100
+
     with TemporaryDirectory() as path:
         path = Path(path) / "marker.bin"
         path.write_bytes(b"x"*160 + b"GHOST_MIP_COPY mips=" +
