@@ -8,11 +8,9 @@ its actual guest code, queue state and all threads, after confirming natural
 vblank advances with unchanged flips. No pre-stall breakpoints or rebuild.
 
 No build, source edits, binary installation, other-game changes or SSH modification.
-
-The existing private Ghost baseline stays unchanged. Apply three pinned,
-previously tested patches ONLY to the dedicated Ghost checkout temporarily;
-restore that source byte-for-byte before launching the separate candidate.
-No changes to ES-DE, Sunshine, other shadPS4 binaries, SSH, or other games.
+The script reuses only the already SHA-verified private mip-trace executable,
+takes two read-only all-thread snapshots at a naturally confirmed stall, and
+leaves ES-DE, Sunshine, all other binaries, and game saves untouched.
 """
 from __future__ import annotations
 import ctypes
