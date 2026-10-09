@@ -48,7 +48,13 @@
     "rows": 121856,
     "console_result_differences": 0,
     "state_errors": 0,
-    "auto_mode_passed": true
+    "auto_mode_passed": true,
+    "integrated_memory": {
+      "corrected_probe": "hardware/generated_reciprocal/validation.json",
+      "cpu_only_boundary_reads": 4,
+      "cpu_only_recovered_faults": 4,
+      "failures": 0
+    }
   },
   "standalone_production_translator": {
     "recovered_page_faults": 4,
@@ -66,7 +72,7 @@
   },
   "known_limits": [
     "XSAVE/XRSTOR/XGETBV and CPUID 0xD retain the host state layout; not complete Jaguar state emulation.",
-    "The integrated protected-page reciprocal run exits with a Vulkan allocation error. Standalone production translator fault tests pass.",
+    "A plain protected-page read below the 40-bit GPU limit fails with a Vulkan allocation error in native and translated modes. The corrected generated reciprocal probe passes using a CPU-only mapping above that range; the general memory failure remains open.",
     "Physical CPU hotplug remains untested.",
     "macOS and Windows remain outside this follow-up.",
     "Generated reciprocal game performance has not been measured."

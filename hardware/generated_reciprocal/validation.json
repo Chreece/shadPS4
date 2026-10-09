@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-09",
+  "candidate_commit": "b85320a062e71eecc85ccc2c0d01e86a7be85018",
+  "candidate_tree": "555a0c57a421bca7a172268ee3c492ac151e2cfd",
+  "binary_sha256": "3e586f9c5e66919e68cc956616ed87fae993fd3b64f8af2c87d3c26fc62e7f84",
+  "probe_sha256": "d85eaf25063c20a07e2e1507c5dcb303c5b39934da4cc89534aaae0a1a7ce700",
+  "probe_fix": "Scalar memory cases no longer perform an unrelated 32-byte vector load before the tested four-byte instruction.",
+  "generated_numeric_rows": 121856,
+  "hardware_differences": 0,
+  "state_errors": 0,
+  "boundary_reads_without_faults": 4,
+  "recovered_faults": 4,
+  "memory_failures": 0,
+  "scope": "Integrated Linux x86-64 translated mode, CPU-only data mapping above the 40-bit GPU range.",
+  "known_limits": [
+    "A plain non-reciprocal read from PROT_NONE below the 40-bit GPU limit reproduces ErrorOutOfDeviceMemory with translation both enabled and disabled. This is separate from reciprocal translation and is not fixed by moving the test.",
+    "Explicitly unmapping the high CPU-only allocation causes excessive GPU page-table registration in this baseline. The probe retains its 32 KiB until process exit.",
+    "Gameplay and performance comparison remain pending."
+  ],
+  "runner_verification": {
+    "launcher_restore_and_concurrent_edit_refusal": true,
+    "guard_hook_and_duplicate_refusal": true,
+    "cleanup_kills_only_owned_candidate_with_proc_identity_fixture": true,
+    "subprocess_timeout_cleanup": true,
+    "hardware_reference_and_negative_fault_check": true,
+    "actual_x11_ffmpeg_window_capture_with_pid_query_fixture": true
+  },
+  "runner_homebrew_rerun": "Passed with the delivered runner: 121856 hardware-matching rows, four boundary reads and four fault recoveries.",
+  "source_rebuild_matches_packaged_eboot": true
+}

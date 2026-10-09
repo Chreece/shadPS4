@@ -1,0 +1,12 @@
+[0;37m[Kernel.Vmm] <Info> (Game:Main) memory.cpp:203 sceKernelMapNamedDirectMemory: in_addr = 0xfe0000000, len = 0x10000, prot = 0x13, flags = 0x0, phys_addr = 0x0, alignment = 0x10000, name = 'SceGnmDriver'[m
+[0;37m[Kernel.Vmm] <Info> (Game:Main) memory.cpp:255 sceKernelMapNamedDirectMemory: out_addr = 0xfe0000000[m
+[0;37m[Kernel.Fs] <Info> (Game:Main) file_system.cpp:86 open: path = /data/plain-read-control.txt flags = 0x601 mode = 0666[m
+[0;37m[Kernel.Vmm] <Info> (Game:Main) memory.cpp:757 posix_mmap: called addr = 0x0, len = 0x4000, prot = 0x3, flags = 0x1002, fd = -1, phys_addr = 0x0[m
+[0;37m[Kernel.Vmm] <Info> (Game:Main) memory.cpp:814 posix_mmap: addr_out = 0x200000000[m
+[1;33m[Lib.Kernel] <Warning> (Game:Main) kernel.cpp:194 kernel_ioctl: ioctl: fd = 3 cmd = 5413 file->type != Device[m
+[0;37m[Kernel.Vmm] <Info> (Game:Main) memory.cpp:757 posix_mmap: called addr = 0x0, len = 0x4000, prot = 0x3, flags = 0x1002, fd = -1, phys_addr = 0x0[m
+[0;37m[Kernel.Vmm] <Info> (Game:Main) memory.cpp:814 posix_mmap: addr_out = 0x200004000[m
+[0;37m[Kernel.Vmm] <Info> (Game:Main) memory.cpp:400 sceKernelMprotect: called addr = 0x200004000, size = 0x4000, prot = 0x0[m
+[1;35m[Debug] <Critical> (shadPS4:GpuComm) vk_platform.h:66 Check: Assertion Failed!
+vk::Result=ErrorOutOfDeviceMemory[m
+[0;37m[Loader] <Info> (shadPS4:GpuComm) emulator.cpp:917 UpdatePlayTime: Playing time for CPUM00001: 0:00:00 1791561478[m

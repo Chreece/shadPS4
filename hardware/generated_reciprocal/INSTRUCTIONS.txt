@@ -1,0 +1,13 @@
+Generated reciprocal comparison — Linux x86-64
+
+Close games before starting run.py. It builds the pinned candidate in a separate cache and runs the included homebrew automatically. Download/build steps print progress and have time limits.
+
+At READY [native], launch PES once through your normal Moonlight / ES-DE entry. Wait for RUNNING in the terminal. Play a day match and a night match for about two minutes each, using the same teams and stadium. Exit PES normally.
+
+At READY [translated], repeat the same sections and settings, then exit normally. Keep Moonlight connected while each stage is collecting evidence. Note FPS if automatic screenshots are unavailable.
+
+Upload only the .tar.gz named by UPLOAD_ONLY. The installed emulator and original saves are preserved. The temporary launcher dispatch uses the existing session guard, restores itself on launch, and refuses a parallel emulator. Ctrl+C stops only this test and collects evidence; SSH stays open.
+
+The homebrew checks 121856 numerical rows against the physical PS4 reference and four scalar boundary/fault cases. The fault data uses a CPU-only mapping above the GPU address range. A separate ordinary protected-page read in the lower address range still fails in this candidate with both native and translated modes. This package does not fix that general memory issue or claim a gameplay/performance pass.
+
+Rebuild the probe with OpenOrbis: OO_PS4_TOOLCHAIN=/path/to/PS4Toolchain make ORBIS_CXX=clang++-19 ORBIS_LD=ld.lld-19
