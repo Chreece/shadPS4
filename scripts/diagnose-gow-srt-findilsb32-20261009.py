@@ -315,11 +315,34 @@ static bool EmitComputeOffsetFindILsb32(Xbyak::CodeGenerator& c, Xbyak::Reg32 re
 }
 
 """
+    unexpected_offset_anchor = (
+        '        LOG_ERROR(Render_Recompiler, "Unexpected instruction for offset computation, {}",\n'
+        "                  magic_enum::enum_name(inst->GetOpcode()));\n"
+        "        return false;")
+    if srt_text.count(unexpected_offset_anchor) != 1:
+        fail("SRT offset error handler differs from reviewed implementation")
+    if srt_text.count("    PassInfo pass_info;") != 1:
+        fail("SRT pass-info setup differs from reviewed implementation")
+    phi_debug = (
+        "        if (inst->GetOpcode() == IR::Opcode::Phi) {\n"
+        "            const u32 seen = ++pass_info.phi_failed_offset_count;\n"
+        "            if (pass_info.diagnostic_shader_hash == 0x04691bd5ULL && seen <= 5) {\n"
+        '                LOG_WARNING(Render_Recompiler, "GOW_SRT_PHI_SHADER={:#x} num_args={} failed_phi_n={}",\n'
+        "                            pass_info.diagnostic_shader_hash, inst->NumArgs(), seen);\n"
+        "            }\n"
+        "        }\n")
     SRT.write_text(
         srt_text
         .replace("    u16 dst_off_dw;",
                  "    u16 dst_off_dw;\n"
-                 "    u32 findilsb32_codegen_count{};")
+                 "    u32 findilsb32_codegen_count{};\n"
+                 "    u32 phi_failed_offset_count{};\n"
+                 "    u64 diagnostic_shader_hash{};")
+        .replace("    PassInfo pass_info;",
+                 "    PassInfo pass_info;\n"
+                 "    pass_info.diagnostic_shader_hash = program.info.pgm_hash;")
+        .replace(unexpected_offset_anchor,
+                 phi_debug + unexpected_offset_anchor)
         .replace(helper_anchor, findilsb_helper + helper_anchor)
         .replace(allowed_anchor,
                  "    case IR::Opcode::BitFieldUExtract:\n"
@@ -337,9 +360,9 @@ static bool EmitComputeOffsetFindILsb32(Xbyak::CodeGenerator& c, Xbyak::Reg32 re
         .replace(srt_emit_anchor, srt_emit_anchor +
                  "\n    if (pass_info.findilsb32_codegen_count > 0 ||\n"
                  "        program.info.pgm_hash == 0x04691bd5ULL) {\n"
-                 '        LOG_WARNING(Render_Recompiler, "GOW_SRT_FINDILSB32_SHADER={:#x} emitted={} roots={}",\n'
+                 '        LOG_WARNING(Render_Recompiler, "GOW_SRT_FINDILSB32_SHADER={:#x} emitted={} roots={} phi_failed={}",\n'
                  "                    program.info.pgm_hash, pass_info.findilsb32_codegen_count,\n"
-                 "                    pass_info.srt_roots.size());\n"
+                 "                    pass_info.srt_roots.size(), pass_info.phi_failed_offset_count);\n"
                  "    }"))
     diff = git("diff", "--", "src/core/libraries/kernel/process.cpp",
                "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
@@ -492,6 +515,7 @@ def test_game(env):
     from collections import Counter
     counts = Counter()
     all_shader_markers = []
+    phi_shader_markers = []
     with log.open("rb") as source:
         for raw_line in source:
             line = raw_line.decode(errors="replace")
@@ -505,7 +529,10 @@ def test_game(env):
                 counts["compute_suppression_markers"] += 1
             if "GOW_SRT_FINDILSB32_SHADER=" in line and len(all_shader_markers) < 1000:
                 all_shader_markers.append(line.strip()[:550])
+            if "GOW_SRT_PHI_SHADER=" in line and len(phi_shader_markers) < 30:
+                phi_shader_markers.append(line.strip()[:550])
     (WORK / "findilsb32-shader-markers.txt").write_text("\n".join(all_shader_markers))
+    (WORK / "phi-shader-markers.txt").write_text("\n".join(phi_shader_markers))
     (WORK / "complete-log-error-counts.json").write_text(json.dumps(counts, indent=2))
     with log.open("rb") as source:
         start_bytes = source.read(350_000)
@@ -533,6 +560,8 @@ def test_game(env):
             bool(re.search(r"GOW_SRT_FINDILSB32_SHADER=0x4691bd5 emitted=[1-9]", m))
             for m in all_shader_markers),
         "hung_shader_trace_present": any("0x4691bd5" in m for m in all_shader_markers),
+        "hung_shader_phi_markers": [m for m in phi_shader_markers if "0x4691bd5" in m],
+        "hung_shader_phi_rejected": any("0x4691bd5" in m for m in phi_shader_markers),
         "screenshots_captured": sum(1 for row in photo_rows if row["valid"]),
         "menu_confirmed": False,
         "moonlight_needed": False
