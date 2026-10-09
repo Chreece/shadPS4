@@ -1,0 +1,27 @@
+{
+  "emulator_sha256": "2dfc70f77c2a944f69d6ef67b92d53162d3f87128432d22a54432936399cc44f",
+  "return_code": 0,
+  "elapsed_seconds": 0.72,
+  "physical_register_exception_comparison": {
+    "common_rows": 224,
+    "differences": []
+  },
+  "extra": "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0",
+  "tested_local_commit": "82b6c323f7082d1d4fc77880b6fec7d55c5b6008",
+  "tested_tree": "2a5e9d3dcd2a2aa20299e5e3faf762e91c77cce3",
+  "candidate_local_commit": "abcb65880f0b1a1d9b2aee6e50cfd85133d873e8",
+  "minimal_trace_local_commit": "952fd33e96ac1c3a4a5c19181fb1ee4456a6947d",
+  "build_option": "ENABLE_EXPERIMENTAL_XSTATE_TRACE=ON",
+  "trace_disabled_build": "passed",
+  "dependency": "#5329 guest memory protection",
+  "scope": "Marked diagnostic regions only; not automatic game interception",
+  "known_limits": [
+    "Native in-use tracking can differ from Jaguar; empty x87 data is nondeterministic.",
+    "Trace flag is observable; scopes must reach their end markers and not manipulate TF.",
+    "No support for tracing emulator-generated host helper trampolines.",
+    "No software fallback for guest state unsupported by the host.",
+    "No new PES validation or claim of complete Jaguar emulation."
+  ],
+  "archive_sha256": "703f176e275716544a63e37f27c120d47fbef2a23ca89d25add00fa61e43eea3",
+  "physical_reference_sha256": "6d4353fdb5d1abe20c53d72e6e5680992fc692429ddfe31a7ca3b02e81d907de"
+}

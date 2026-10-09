@@ -1,0 +1,56 @@
+SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
+SPDX-License-Identifier: GPL-2.0-or-later
+
+Experimental xstate tracing inside shadPS4 (Linux x86-64)
+
+This diagnostic homebrew is for the emulator only. Do not install this variant
+on a physical PS4. main.cpp and cases.S remain the unmodified console probe;
+build_trace_probe.py creates the marked emulator variant in an output directory.
+
+Build the candidate with ENABLE_EXPERIMENTAL_XSTATE_TRACE=ON. The validation
+candidate also includes #5329, which makes guest memory protection independent
+of GPU write watches. The feature is OFF by default.
+
+With the candidate binary, OpenOrbis SDK, Clang, LLD, make and Xvfb available:
+
+python3 hardware/cpu_xstate/run_trace_emulator.py \
+  --emulator /path/to/candidate/build/shadps4 \
+  --sdk /path/to/OpenOrbis/PS4Toolchain \
+  --output /tmp/shadps4-xstate-trace
+
+Use --icd /path/to/lvp_icd.json to select a software Vulkan driver if required.
+The runner builds the diagnostic, creates a separate emulator profile, runs it
+with a null GPU and its own display, checks the results, then archives the logs.
+It only stops the emulator and display processes it started. No installed
+emulator, games, saves, SSH session or streaming-session guard is changed.
+
+Checks:
+- 224 original register and exception cases compared with the PS4 capture.
+- Generated instructions rewritten 64 times with W-to-X permission changes and
+  64 times while remaining RWX. The guest code bytes must remain unchanged by
+  the tracer after execution.
+- XGETBV in 35 nested guest exception callbacks.
+- Trap number, read/write fault details and the fault address in those callbacks.
+- A callback repairs ECX and retries a faulting XGETBV at the original address.
+
+The start marker is INT3 followed by the eight-byte NOP
+0f 1f 84 00 58 53 4f 4e; the end marker uses 46 as the last byte.
+Only marked regions are traced. Instructions are read afresh at each execution
+boundary, with no rewritten guest instructions or translated-code cache.
+End markers restore the previous trace flag; nested diagnostic scopes are
+supported. The trace flag remains observable while the scope is active.
+
+Limits:
+- This is a diagnostic execution path, not automatic interception for games.
+- Scopes must retain normal control flow to their end marker and must not
+  change the trace flag themselves. Do not include emulator-generated helper
+  trampolines in a scope; those can contain host state-save instructions.
+- Saved-state bitmaps still use native in-use tracking. The host may mark an
+  initial SSE component in use even when Jaguar does not. Empty x87 register
+  data is not a deterministic comparison target.
+- Unsupported native state (such as guest MXCSR bits unavailable on the host)
+  stops the diagnostic; there is no software arithmetic fallback here.
+- This does not implement generated CPUID/RDPID, a complete Jaguar feature
+  model, or Windows/macOS support.
+
+The normal console FPKG is unchanged and still uses the original unmarked probe.
