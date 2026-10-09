@@ -5,8 +5,18 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef RECIPROCAL_GENERATED
+#include <signal.h>
+#endif
+
+#if defined(RECIPROCAL_GENERATED) && !defined(RECIPROCAL_ORBIS)
+#include <sys/mman.h>
+#endif
 
 #ifdef RECIPROCAL_ORBIS
+extern "C" int sceKernelMmap(void*, uint64_t, int, int, int, int64_t, void**);
+extern "C" int sceKernelMprotect(const void*, uint64_t, int);
+extern "C" int sceKernelMunmap(void*, uint64_t);
 extern "C" int sceSystemServiceLoadExec(const char *, const char *const *);
 #endif
 
@@ -21,8 +31,11 @@ static_assert(offsetof(Result, flags_before) == 40);
 static_assert(offsetof(Result, flags_after) == 48);
 
 using Probe = void (*)(const uint32_t *, const uint32_t *, Result *);
-#define DECLARE(name)                                                          \
-  extern "C" void name(const uint32_t *, const uint32_t *, Result *)
+#ifdef RECIPROCAL_GENERATED
+#define DECLARE(name) extern "C" const unsigned char name[], name##_end[]
+#else
+#define DECLARE(name) extern "C" void name(const uint32_t *, const uint32_t *, Result *)
+#endif
 DECLARE(rcp_ss);
 DECLARE(rcp_ss_mem);
 DECLARE(rcp_vss);
@@ -41,25 +54,34 @@ DECLARE(rsqrt_vps256);
 
 struct Case {
   const char *name;
+#ifdef RECIPROCAL_GENERATED
+  const unsigned char *code, *end;
+#else
   Probe run;
+#endif
   unsigned computed_lanes;
   bool vex;
 };
+#ifdef RECIPROCAL_GENERATED
+#define ENTRY(name) name, name##_end
+#else
+#define ENTRY(name) name
+#endif
 static const Case cases[] = {
-    {"rcpss", rcp_ss, 1, false},
-    {"rcpss_mem", rcp_ss_mem, 1, false},
-    {"vrcpss", rcp_vss, 1, true},
-    {"vrcpss_mem", rcp_vss_mem, 1, true},
-    {"rcpps", rcp_ps, 4, false},
-    {"vrcpps", rcp_vps, 4, true},
-    {"vrcpps256", rcp_vps256, 8, true},
-    {"rsqrtss", rsqrt_ss, 1, false},
-    {"rsqrtss_mem", rsqrt_ss_mem, 1, false},
-    {"vrsqrtss", rsqrt_vss, 1, true},
-    {"vrsqrtss_mem", rsqrt_vss_mem, 1, true},
-    {"rsqrtps", rsqrt_ps, 4, false},
-    {"vrsqrtps", rsqrt_vps, 4, true},
-    {"vrsqrtps256", rsqrt_vps256, 8, true},
+    {"rcpss", ENTRY(rcp_ss), 1, false},
+    {"rcpss_mem", ENTRY(rcp_ss_mem), 1, false},
+    {"vrcpss", ENTRY(rcp_vss), 1, true},
+    {"vrcpss_mem", ENTRY(rcp_vss_mem), 1, true},
+    {"rcpps", ENTRY(rcp_ps), 4, false},
+    {"vrcpps", ENTRY(rcp_vps), 4, true},
+    {"vrcpps256", ENTRY(rcp_vps256), 8, true},
+    {"rsqrtss", ENTRY(rsqrt_ss), 1, false},
+    {"rsqrtss_mem", ENTRY(rsqrt_ss_mem), 1, false},
+    {"vrsqrtss", ENTRY(rsqrt_vss), 1, true},
+    {"vrsqrtss_mem", ENTRY(rsqrt_vss_mem), 1, true},
+    {"rsqrtps", ENTRY(rsqrt_ps), 4, false},
+    {"vrsqrtps", ENTRY(rsqrt_vps), 4, true},
+    {"vrsqrtps256", ENTRY(rsqrt_vps256), 8, true},
 };
 
 static uint32_t ReadMxcsr() {
@@ -90,6 +112,59 @@ static bool DescribeCpu(FILE *output) {
   return (a & 6) == 6;
 }
 
+#ifdef RECIPROCAL_GUARDED
+static void *fault_page;
+static unsigned recovered_faults;
+static int Protect(void *address, unsigned size, int flags) {
+#ifdef RECIPROCAL_ORBIS
+  return sceKernelMprotect(address, size, flags);
+#else
+  return mprotect(address, size, flags);
+#endif
+}
+static void RecoverFault(int) {
+  ++recovered_faults;
+  Protect(fault_page, 16384, 3);
+}
+static unsigned CheckMemory(Probe *runners, FILE *output) {
+  void *memory = nullptr;
+#ifdef RECIPROCAL_ORBIS
+  if (sceKernelMmap(nullptr, 32768, 3, 0x1002, -1, 0, &memory) != 0) return 1;
+#else
+  memory = mmap(nullptr, 32768, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (memory == MAP_FAILED) return 1;
+#endif
+  auto *edge = reinterpret_cast<uint32_t *>(static_cast<char *>(memory) + 16384 - 4);
+  fault_page = static_cast<char *>(memory) + 16384;
+  *edge = 0x40400000;
+  *static_cast<uint32_t *>(fault_page) = 0x40400000;
+  const auto previous = signal(SIGSEGV, RecoverFault);
+  const uint32_t merge[8] = {1,2,3,4,5,6,7,8};
+  unsigned failures = 0;
+  const unsigned forms[] = {1, 3, 8, 10};
+  for (unsigned operation : forms) {
+    const uint32_t expected = operation < 7 ? 0x3eaaa800 : 0x3f13c800;
+    Result result{};
+    if (Protect(fault_page, 16384, 0) != 0) { ++failures; break; }
+    const unsigned before = recovered_faults;
+    runners[operation](edge, merge, &result);
+    failures += result.lanes[0] != expected || recovered_faults != before;
+    runners[operation](static_cast<uint32_t *>(fault_page), merge, &result);
+    failures += result.lanes[0] != expected || recovered_faults != before + 1;
+    failures += result.flags_before != result.flags_after;
+    fprintf(output, "RECIPROCAL_MEMORY op=%s value=%08x recovered=%u failures=%u\n",
+            cases[operation].name, result.lanes[0], recovered_faults, failures);
+  }
+  signal(SIGSEGV, previous);
+#ifdef RECIPROCAL_ORBIS
+  sceKernelMunmap(memory, 32768);
+#else
+  munmap(memory, 32768);
+#endif
+  return failures;
+}
+#endif
+
 int main(int argc, char **argv) {
 #ifdef RECIPROCAL_ORBIS
   const char *path = "/data/reciprocal-hardware.txt";
@@ -110,6 +185,35 @@ int main(int argc, char **argv) {
     fclose(output);
     return 1;
   }
+  Probe runners[sizeof(cases) / sizeof(cases[0])]{};
+#ifdef RECIPROCAL_GENERATED
+  void *code = nullptr;
+#ifdef RECIPROCAL_ORBIS
+  if (sceKernelMmap(nullptr, 16384, 3, 0x1002, -1, 0, &code) != 0) return 1;
+#else
+  code = mmap(nullptr, 16384, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (code == MAP_FAILED) return 1;
+#endif
+#endif
+  for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+#ifdef RECIPROCAL_GENERATED
+    const size_t size = cases[i].end - cases[i].code;
+    if (size > 256) return 1;
+    auto *destination = static_cast<unsigned char *>(code) + i * 256;
+    memcpy(destination, cases[i].code, size);
+    runners[i] = reinterpret_cast<Probe>(destination);
+#else
+    runners[i] = cases[i].run;
+#endif
+  }
+#ifdef RECIPROCAL_GENERATED
+#ifdef RECIPROCAL_ORBIS
+  if (sceKernelMprotect(code, 16384, 5) != 0) return 1;
+#else
+  if (mprotect(code, 16384, PROT_READ | PROT_EXEC) != 0) return 1;
+#endif
+  fprintf(output, "RECIPROCAL_MODE generated\n");
+#endif
   const uint32_t saved_mxcsr = ReadMxcsr();
   const uint32_t merge[8] = {0x41200000, 0x42200001, 0x43200002, 0x44200003,
                              0x45200004, 0x46200005, 0x47200006, 0x48200007};
@@ -146,7 +250,7 @@ int main(int argc, char **argv) {
         const auto &test = cases[operation];
         Result result{};
         WriteMxcsr(mxcsr);
-        test.run(input, merge, &result);
+        runners[operation](input, merge, &result);
         WriteMxcsr(saved_mxcsr);
         unsigned errors = result.flags_before != result.flags_after ? 1 : 0;
         errors += result.mxcsr != mxcsr;
@@ -175,6 +279,9 @@ int main(int argc, char **argv) {
     printf("RECIPROCAL_PROGRESS settings=%u/16\n", setting + 1);
   }
   WriteMxcsr(saved_mxcsr);
+#ifdef RECIPROCAL_GUARDED
+  failures += CheckMemory(runners, output);
+#endif
   fprintf(
       output,
       "RECIPROCAL_END rows=%u state_errors=%u scalar_packed_differences=%u\n",
@@ -185,6 +292,13 @@ int main(int argc, char **argv) {
          "file_ok=%u\n",
          rows, failures, scalar_packed_differences,
          !write_failed && close_result == 0);
+#ifdef RECIPROCAL_GENERATED
+#ifdef RECIPROCAL_ORBIS
+  sceKernelMunmap(code, 16384);
+#else
+  munmap(code, 16384);
+#endif
+#endif
 #ifdef RECIPROCAL_ORBIS
   sceSystemServiceLoadExec("EXIT", nullptr);
 #endif

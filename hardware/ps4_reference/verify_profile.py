@@ -45,10 +45,19 @@ def main():
         if identity != pro["static", cpu, 1, 0][1] >> 24:
             raise ValueError("Hardware captures disagree on APIC identity")
         valid = True
+        jaguar_profile = candidate[mode, cpu, 0, 0] == (0xd, 0x68747541, 0x444d4163, 0x69746e65)
+        if jaguar_profile:
+            signature = candidate[mode, cpu, 1, 0][0]
+            valid &= signature in (0x710f31, 0x740f30)
+            profile = pro if signature == 0x740f30 else ps4
+            if leaf in (0, 0x80000000, 2, 0x80000002, 0x80000003, 0x80000004, 0x8000001a):
+                valid &= value == profile['static', cpu, leaf, subleaf]
+            if leaf in (1, 0x80000001):
+                valid &= value[0] == profile['static', cpu, leaf, 0][0]
         if leaf == 1:
             valid &= value[1] >> 24 == identity and (value[1] >> 16) & 255 == 8
         elif leaf in (0xb, 0x1f):
-            valid &= value[3] == identity
+            valid &= value == (0, 0, 0, 0) if jaguar_profile else value[3] == identity
         elif leaf == 0x8000001e:
             valid &= value == (identity, identity, 0, 0)
         elif leaf in (4, 0x80000005, 0x80000006, 0x8000001d):
@@ -56,7 +65,9 @@ def main():
             expected = list(ps4["static", cpu, reference_leaf, subleaf])
             if tuple(expected) != pro["static", cpu, reference_leaf, subleaf]:
                 raise ValueError("Hardware captures disagree on cache data")
-            if leaf == 4 and expected[0]:
+            if leaf == 4 and jaguar_profile:
+                expected = [0, 0, 0, 0]
+            elif leaf == 4 and expected[0]:
                 expected[0] |= 7 << 26
             valid &= value == tuple(expected)
         if not args.identity_only and leaf in (1, 0x80000001):

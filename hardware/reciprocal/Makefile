@@ -23,3 +23,15 @@ reciprocal.elf: main.o cases.o
 
 eboot.bin: reciprocal.elf
 	$(SDK)/bin/linux/create-fself -in=$< -out=reciprocal.oelf --eboot $@ --paid 0x3800000000000011 --sdkver 0x3000000
+
+main-generated.o: main.cpp
+	$(ORBIS_CXX) --target=x86_64-pc-freebsd12-elf -std=c++17 -O2 -Wall -Wextra -Werror -DRECIPROCAL_ORBIS -DRECIPROCAL_GENERATED $(GENERATED_FLAGS) -fPIC -funwind-tables -c -isysroot $(SDK) -isystem $(SDK)/include $< -o $@
+
+cases-generated.o: cases.S
+	$(ORBIS_CXX) --target=x86_64-pc-freebsd12-elf -DRECIPROCAL_GENERATED -c $< -o $@
+
+reciprocal-generated.elf: main-generated.o cases-generated.o
+	$(ORBIS_LD) -m elf_x86_64 -pie --script $(SDK)/link.x --eh-frame-hdr -L$(SDK)/lib main-generated.o cases-generated.o $(SDK)/lib/crt1.o -lc -lkernel -lSceSystemService -o $@
+
+eboot-generated.bin: reciprocal-generated.elf
+	$(SDK)/bin/linux/create-fself -in=$< -out=reciprocal-generated.oelf --eboot $@ --paid 0x3800000000000011 --sdkver 0x3000000

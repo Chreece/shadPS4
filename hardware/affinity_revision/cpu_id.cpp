@@ -116,8 +116,10 @@ static bool InMask(uint32_t cpu, uint64_t mask) {
 static unsigned SampleIdentity(uint64_t mask) {
     unsigned bad = 0;
     bad += !InMask(7u - (ReadCpuid(1).ebx >> 24), mask);
-    bad += !InMask(7u - (ReadCpuid(0xb).edx), mask);
-    bad += !InMask(7u - (ReadCpuid(0x1f, 1).edx), mask);
+    if (ReadCpuid(0).eax >= 0x1f) {
+        bad += !InMask(7u - ReadCpuid(0xb).edx, mask);
+        bad += !InMask(7u - ReadCpuid(0x1f, 1).edx, mask);
+    }
     bad += !InMask(7u - (ReadCpuid(0x8000001e).eax), mask);
     uint32_t low, high, auxiliary;
     asm volatile("rdtscp" : "=a"(low), "=d"(high), "=c"(auxiliary) : : "memory");
@@ -217,7 +219,7 @@ int main() {
     }
     memcpy(generated_cpuid, code, sizeof(code));
     Check(sceKernelMprotect(generated_cpuid, 16384, 5) == 0, "protect generated code");
-    Check(ReadCpuid(0).eax >= 0x1f, "basic maximum");
+    Check(ReadCpuid(0).eax >= 0xd, "basic maximum");
     Check(ReadCpuid(0x80000000).eax >= 0x8000001e, "extended maximum");
     const uint32_t cache_leaves[]{4, 0x8000001d};
     for (uint32_t leaf : cache_leaves) {
@@ -246,6 +248,11 @@ int main() {
         for (uint32_t leaf : topology_leaves) {
             for (unsigned subleaf = 0; subleaf < 4; ++subleaf) {
                 const auto value = ReadCpuid(leaf, subleaf);
+                if (ReadCpuid(0).eax == 0xd) {
+                    Check((value.eax | value.ebx | value.ecx | value.edx) == 0,
+                          "reserved Intel topology leaf");
+                    continue;
+                }
                 Check(value.eax == (subleaf == 1 ? 3u : 0u) &&
                           value.ebx == (subleaf == 0   ? 1u
                                         : subleaf == 1 ? 8u

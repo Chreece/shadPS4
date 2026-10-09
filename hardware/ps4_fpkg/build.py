@@ -21,6 +21,8 @@ HARDWARE = ROOT.parent
 PACKAGE_VERSION = "01.01"
 RUNTIME_MODULES = ("libc", "libSceFios2")
 TESTS = (
+    ("cpu_identity", "CPUI00001", "CPU number hardware probe", "CPUIDENTITY00000", "eboot.bin",
+     ("main.cpp", "Makefile", "INSTRUCTIONS.txt", "musl-COPYRIGHT")),
     ("sse4a", "SSEA00002", "SSE4a hardware probe", "SSE4AHARDWARE000", "console.bin",
      ("native_probe.cpp", "cases.S", "Makefile", "musl-COPYRIGHT")),
     ("cpu_profile", "CPUP00001", "CPU profile readout", "CPUPROFILE000000", "eboot.bin",

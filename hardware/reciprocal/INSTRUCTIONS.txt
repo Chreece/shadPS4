@@ -30,3 +30,15 @@ The source is included. Native Linux comparison:
 The same eboot.bin may be run under shadPS4; its output is emulator evidence,
 not a substitute for a physical PS4 reference. The comparison lists numerical
 differences separately from unexpected state changes.
+
+Generated-code comparison (developer build):
+  make eboot-generated.bin
+This copies the same 14 instruction routines into newly executable memory before
+running the numerical suite. The installed hardware package still uses eboot.bin.
+
+Optional protected-memory test, in a clean source directory:
+  make eboot-generated.bin GENERATED_FLAGS=-DRECIPROCAL_GUARDED
+It adds scalar reads at a guard-page boundary and recoverable page faults.
+This variant passed with the production Linux translation client in isolation.
+The integrated emulator currently fails in Vulkan allocation while changing the
+page protection; its guarded run is not marked as passed.

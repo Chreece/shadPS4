@@ -1,18 +1,34 @@
 # SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+#ifdef RECIPROCAL_GENERATED
+.section .rodata
+#else
 .text
+#endif
 .macro probe name, op, scalar, vex, wide, memory
 .global \name
+#ifdef RECIPROCAL_GENERATED
+.type \name, @object
+#else
 .type \name, @function
+#endif
 \name:
+#ifndef RECIPROCAL_GENERATED
 .cfi_startproc
+#endif
     vmovdqu (%rsi), %ymm0
+.if !\memory
     vmovdqu (%rdi), %ymm1
+.endif
     pushfq
+#ifndef RECIPROCAL_GENERATED
 .cfi_adjust_cfa_offset 8
+#endif
     popq %r8
+#ifndef RECIPROCAL_GENERATED
 .cfi_adjust_cfa_offset -8
+#endif
     movq %r8, 40(%rdx)
 .if \memory
   .if \vex
@@ -28,15 +44,23 @@
     \op %xmm1, %xmm0
 .endif
     pushfq
+#ifndef RECIPROCAL_GENERATED
 .cfi_adjust_cfa_offset 8
+#endif
     popq %r8
+#ifndef RECIPROCAL_GENERATED
 .cfi_adjust_cfa_offset -8
+#endif
     movq %r8, 48(%rdx)
     vmovdqu %ymm0, (%rdx)
     stmxcsr 32(%rdx)
     vzeroupper
     ret
+#ifndef RECIPROCAL_GENERATED
 .cfi_endproc
+#endif
+.global \name\()_end
+\name\()_end:
 .size \name, .-\name
 .endm
 

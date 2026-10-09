@@ -1,0 +1,24 @@
+SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
+SPDX-License-Identifier: GPL-2.0-or-later
+
+PS4 CPU-number probe
+
+Install the included FPKG on a console already configured for homebrew, then
+launch "CPU number hardware probe" once. It runs automatically and returns to
+the menu. A blank screen during the short run is expected.
+
+Send /data/cpu-identity-hardware.txt along with your PS4 model and firmware.
+This is the only new console test needed for this follow-up. You do not need
+to rerun the CPU-profile, SSE4a or reciprocal packages.
+
+The probe pins its own thread to each CPU in its original allowed mask. It
+records the kernel CPU number alongside CPUID APIC/core IDs and RDTSCP AUX,
+using static and generated instructions. It restores its original affinity.
+It does not assume that these different CPU identifiers must be equal.
+
+CPU_IDENTITY_END errors=0 means the collection completed. It is not a verdict
+on which numbering rule an emulator should use. The raw observations determine
+that rule. The output file is replaced on each run; copy it before rerunning.
+
+No game files, saves, network access, or system-wide affinity settings are used.
+If the app fails, send the error and any partial output file.

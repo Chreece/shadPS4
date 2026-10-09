@@ -1,0 +1,82 @@
+{
+  "profile_branch": "draft/jaguar-profile-metadata-20261009",
+  "integrated_branch": "draft/generated-reciprocal-20261009",
+  "integrated_commit": "b85320a062e71eecc85ccc2c0d01e86a7be85018",
+  "tested_source_tree": "555a0c57a421bca7a172268ee3c492ac151e2cfd",
+  "build": "Linux x86-64 Clang 19 Release, CPU translation enabled",
+  "binary_sha256": "3e586f9c5e66919e68cc956616ed87fae993fd3b64f8af2c87d3c26fc62e7f84",
+  "profile_checks": 2688,
+  "profile_homebrew": {
+    "rows_per_run": 784,
+    "runs": 4,
+    "modes": [
+      "native",
+      "translated"
+    ],
+    "models": [
+      "PS4",
+      "PS4 Pro"
+    ],
+    "errors": 0
+  },
+  "identity_homebrew": {
+    "rows_per_run": 448,
+    "runs": 4,
+    "errors": 0,
+    "physical_ps4_tested": false
+  },
+  "affinity": {
+    "runs": 30,
+    "errors": 0,
+    "masks": [
+      "full",
+      "four",
+      "two",
+      "one",
+      "sparse"
+    ],
+    "modes": [
+      "native",
+      "translated"
+    ]
+  },
+  "generated_reciprocal": {
+    "rows": 121856,
+    "console_result_differences": 0,
+    "state_errors": 0,
+    "auto_mode_passed": true
+  },
+  "standalone_production_translator": {
+    "recovered_page_faults": 4,
+    "guard_boundary_reads": 4,
+    "failures": 0,
+    "other_passed": [
+      "high SIMD registers",
+      "distinct merge register",
+      "source/destination aliases",
+      "packed memory",
+      "legacy alignment faults",
+      "FS memory",
+      "self-modified code"
+    ]
+  },
+  "known_limits": [
+    "XSAVE/XRSTOR/XGETBV and CPUID 0xD retain the host state layout; not complete Jaguar state emulation.",
+    "The integrated protected-page reciprocal run exits with a Vulkan allocation error. Standalone production translator fault tests pass.",
+    "Physical CPU hotplug remains untested.",
+    "macOS and Windows remain outside this follow-up.",
+    "Generated reciprocal game performance has not been measured."
+  ],
+  "package": {
+    "path": "packages/ps4-cpu_identity-hardware-test-v3.zip",
+    "sha256": "c20f5632178d9495444bdb07ec2c60b29743bd9e49b351d4315afa54a63e4b80",
+    "pkg_signatures_and_hashes": "passed",
+    "roundtrip_extraction": "passed",
+    "tested_eboot_matches_package": true
+  },
+  "sources": {
+    "src/core/cpu_id.cpp": "f752ee896831fd276e93bbdcf6341f9fc40217d09bf77732fb8f3626d1ec19ec",
+    "src/core/cpu_id_translation/client.c": "4c9a6a3817cdedb32dc2a20a3b3ad8aba61476525f1177a74fc9661b631bda00",
+    "src/core/cpu_patches.cpp": "12ea18a49ad0aa7ab236ba04f51e0c35befad56d2f1380c9bf04149e8c70ef17"
+  }
+}
