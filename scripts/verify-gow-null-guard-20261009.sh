@@ -139,6 +139,15 @@ handle SIGSEGV nostop noprint pass
 handle SIGBUS nostop noprint pass
 handle SIGILL nostop noprint pass
 handle SIGUSR1 nostop noprint pass
+# Confirm whether the guest passed a null filename at the function boundary.
+break sceKernelLoadStartModule if $rdi == 0
+commands
+silent
+printf "\n===== NULL_MODULE_FILENAME_ARGUMENT =====\n"
+bt 14
+info registers rdi rsi rdx rcx r8 r9
+continue
+end
 break unreachable_impl
 commands
 silent
