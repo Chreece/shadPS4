@@ -73,7 +73,7 @@ static void GhostCpuRipCapture(const void* code_address) noexcept {
     for (int shift = int(sizeof(uintptr_t) * 8) - 4; shift >= 0; shift -= 4) {
         line[pos++] = hex[(rip >> shift) & 0xf];
     }
-    line[pos++] = '\\n';
+    line[pos++] = '\n';
     (void)::write(ghost_cpu_rip_fd, line, pos);
 }
 #endif
