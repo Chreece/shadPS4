@@ -127,17 +127,17 @@
   },
   "separated_pr_validation": {
     "memory_branch": "draft/guest-memory-protection-20261009",
-    "memory_commit": "a893438fe133fc9b1217f506ebff6cdec46b4078",
-    "memory_tree": "852b595ee0e38db33dacbb7652c0efabb7f8e2eb",
+    "memory_commit": "ba1ba6013297041029693eea7c980267c6c672e2",
+    "memory_tree": "c149f3b9541ad2bc98cd6f6f56c98a3ccb93b110",
     "translation_pr": 5321,
     "translation_branch": "draft/automatic-cpu-id-fallback-20261009",
-    "translation_commit": "400192be8ea28b3779235dd9f46f40e57eeed59d",
-    "tested_source_tree": "79ce34459ec16b52c34af1bbffe34e88fd8605ce",
-    "base_commit": "0fe263a4760dfbfa973366890061749b4af0de97",
+    "translation_commit": "3965a497532edb7b18027692ab04eb97fa4c145b",
+    "tested_source_tree": "c1e43d0060ca2e7aa9889c0c3de4e0c77d789978",
+    "base_commit": "437dc7eb8f6eeeb143ca0238366bb3aef9e95f03",
     "build": "Linux x86-64, Clang 19 Release, CPU translation enabled",
     "validation_location": "local sandbox; the original integrated fix separately passed on the user machine",
     "results": {
-      "binary_sha256": "bae0b4ab5c266aeaad07d5b8cf6dcbdc6f8e2642da8c551f1761e4a4f3c91913",
+      "binary_sha256": "104cb91123c52438b640685a90024ddf4fd3902104b76bc193e9fe73605bf755",
       "memory": {
         "native": {
           "read_write_checks_passed": 6,
@@ -169,12 +169,65 @@
           "all_checks_passed": true,
           "log_sha256": "94403adc2f4c6350008633a427015585781a614b811c5f734ee757bc286d8c78"
         }
+      },
+      "identity": {
+        "native": {
+          "rows": 448,
+          "physical_ps4_relationship_differences": 0,
+          "log_sha256": "072e2fb0e4fc98f656c3612763435b9fbb5fdc3815582baf640683f7d7e05740"
+        },
+        "translated": {
+          "rows": 448,
+          "physical_ps4_relationship_differences": 0,
+          "log_sha256": "6ffd9e7da318fe673dcc47f28d60b3e28cf4d1c34dc0002ff10fb58028824cf5"
+        }
       }
     },
     "memory_only_page_manager_harness": "passed: GPU watch read/write handling, guest fault ownership, permission restoration, execute-bit preservation, mixed-page batching, stale fault retry, high re-registration",
     "formatting": "passed",
     "reuse": "passed on both separated branches",
-    "original_translation_patch_series": "14 existing patches unchanged by rebasing; memory prerequisite and execute fix added",
-    "scope": "No generated reciprocal support added to PR 5321. No new game playtest claimed for this rebased tree."
+    "original_translation_patch_series": "Preserved the upstream AddressSpace::Unmap cleanup and CPU-ID range registration while resolving the sole rebase conflict; all other patches unchanged.",
+    "scope": "No generated reciprocal support added to PR 5321. No new game playtest claimed for this rebased tree.",
+    "identity_check": "448 static/generated samples per mode match the saved physical PS4 reference, excluding timestamps. No additional console hardware claim.",
+    "previous_validation": {
+      "translation_commit": "400192be8ea28b3779235dd9f46f40e57eeed59d",
+      "tested_source_tree": "79ce34459ec16b52c34af1bbffe34e88fd8605ce",
+      "base_commit": "0fe263a4760dfbfa973366890061749b4af0de97",
+      "results": {
+        "binary_sha256": "bae0b4ab5c266aeaad07d5b8cf6dcbdc6f8e2642da8c551f1761e4a4f3c91913",
+        "memory": {
+          "native": {
+            "read_write_checks_passed": 6,
+            "high_map_unmap_cycles": 64,
+            "execute_permission_checks_passed": 2,
+            "execute_permission_failures": [],
+            "all_checks_passed": true,
+            "log_sha256": "06dfb3e8f9d3735e31f8b7120950a5c6eed360c28916d6e20b9a2e28b0ec2b1e"
+          },
+          "translated": {
+            "read_write_checks_passed": 6,
+            "high_map_unmap_cycles": 64,
+            "execute_permission_checks_passed": 2,
+            "execute_permission_failures": [],
+            "all_checks_passed": true,
+            "log_sha256": "06dfb3e8f9d3735e31f8b7120950a5c6eed360c28916d6e20b9a2e28b0ec2b1e"
+          }
+        },
+        "execute": {
+          "native": {
+            "checks_passed": 16,
+            "faults_recovered": 14,
+            "all_checks_passed": true,
+            "log_sha256": "94403adc2f4c6350008633a427015585781a614b811c5f734ee757bc286d8c78"
+          },
+          "translated": {
+            "checks_passed": 16,
+            "faults_recovered": 14,
+            "all_checks_passed": true,
+            "log_sha256": "94403adc2f4c6350008633a427015585781a614b811c5f734ee757bc286d8c78"
+          }
+        }
+      }
+    }
   }
 }
