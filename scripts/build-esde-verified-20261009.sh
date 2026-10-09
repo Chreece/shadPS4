@@ -1,0 +1,234 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 022
+
+stamp="$(date +%Y%m%d-%H%M%S)"
+root="$HOME/shadps4-esde-verified-builds/$stamp"
+src="$root/source"
+bld="$root/build"
+tst="$root/tests"
+ev="$root/evidence"
+log="$HOME/shadps4-esde-verified-$stamp.log"
+report="$HOME/shadps4-esde-verified-$stamp.tar.gz"
+mkdir -p "$ev"
+exec > >(tee -a "$log") 2>&1
+step="preflight"
+result="FAILED"
+deploying=0
+install_target=""
+backup_binary=""
+runtime_path=""
+backup_runtime=""
+runtime_changed=0
+on_exit() {
+  rc=$1
+  trap - EXIT
+  set +e
+  if (( rc != 0 && deploying == 1 )); then
+    echo 'DEPLOY_FAILED: restoring original emulator/runtime'
+    if [[ -n "$backup_binary" && -e "$backup_binary" ]]; then
+      cp -a -- "$backup_binary" "$install_target" || echo 'BINARY_ROLLBACK_ERROR'
+    fi
+    if (( runtime_changed == 1 )) && [[ -n "$runtime_path" ]]; then
+      if [[ -e "$runtime_path" || -L "$runtime_path" ]]; then
+        mv -- "$runtime_path" "$runtime_path.failed-$stamp" || echo 'RUNTIME_MOVE_ERROR'
+      fi
+      if [[ -n "$backup_runtime" && ( -e "$backup_runtime" || -L "$backup_runtime" ) ]]; then
+        mv -- "$backup_runtime" "$runtime_path" || echo 'RUNTIME_ROLLBACK_ERROR'
+      fi
+    fi
+  fi
+  {
+    echo "RESULT=$result"
+    echo "EXIT_CODE=$rc"
+    echo "LAST_STEP=$step"
+    echo "DATE=$(date -Is)"
+    echo "SOURCE=$src"
+    echo "UPSTREAM_MAIN=${base_sha:-unknown}"
+    echo "CANDIDATE=${candidate_sha:-unknown}"
+    echo "INSTALL_TARGET=${install_target:-unknown}"
+    echo "BACKUP_BINARY=${backup_binary:-none}"
+  } > "$ev/summary.txt"
+  if [[ -d "$src/.git" ]]; then
+    git -C "$src" status --short > "$ev/git-status.txt" 2>&1
+    git -C "$src" log --graph --oneline --decorate -35 > "$ev/integration-history.txt" 2>&1
+    git -C "$src" diff --cc > "$ev/conflicts.diff" 2>&1
+    git -C "$src" diff --name-only --diff-filter=U > "$ev/conflicted-files.txt" 2>&1
+    git -C "$src" submodule status --recursive > "$ev/submodules.txt" 2>&1
+  fi
+  cp -- "$log" "$ev/build.log" 2>/dev/null || true
+  tar -czf "$report" -C "$root" evidence 2>/dev/null || true
+  echo
+  echo "RESULT=$result"
+  echo "STEP=$step"
+  echo "REPORT=$report"
+  echo "LOG=$log"
+  echo "SSH_SESSION=UNCHANGED"
+}
+trap 'on_exit "$?"' EXIT
+
+echo '=== VERIFIED shadPS4 / ES-DE BUILD ==='
+echo "Started $(date -Is)"
+echo "Host: $(hostname), OS: $(. /etc/os-release; echo "${PRETTY_NAME}")"
+command -v git >/dev/null
+command -v cmake >/dev/null
+command -v ninja >/dev/null
+command -v python3 >/dev/null
+command -v tar >/dev/null
+command -v timeout >/dev/null
+command -v readlink >/dev/null
+[[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] || { echo 'Requires Linux x86-64'; exit 1; }
+
+if command -v clang-19 >/dev/null && command -v clang++-19 >/dev/null; then
+  cc=clang-19; cxx=clang++-19
+elif command -v gcc-14 >/dev/null && command -v g++-14 >/dev/null; then
+  cc=gcc-14; cxx=g++-14
+else
+  echo 'MISSING_TOOLCHAIN: Clang 19 or GCC 14 (do not silently use Clang 17).'
+  exit 1
+fi
+echo "Compiler: $($cxx --version | head -1)"
+df -h "$HOME"
+free -h
+
+step="fetch fresh upstream main"
+git clone --filter=blob:none --no-checkout https://github.com/shadps4-emu/shadPS4.git "$src"
+git -C "$src" checkout -B "esde-verified-$stamp" origin/main
+git -C "$src" config user.name 'Local shadPS4 integration'
+git -C "$src" config user.email 'local-shadps4-integration@localhost'
+base_sha="$(git -C "$src" rev-parse HEAD)"
+echo "UPSTREAM_MAIN=$base_sha"
+
+step="fetch pinned proven PRs"
+# Pinned heads were reviewed on 2026-10-09. Do not silently accept later edits.
+declare -A pinned=(
+  [5321]=b02f24559ad86249aef549d11531977a19b8196f
+  [5314]=c48f374d6a7649f7debdd58fc1aa0f81911131f3
+  [5325]=9bb22d370e5847a37ecda13c5628d5d280a03f2f
+  [5234]=b0adb63c43f50e6eff7d30e96414c1a62bc56b90
+  [5230]=17198a07daa4a50e4c0388a5002d2c4fee3fe636
+  [5232]=89d2333f161abf0ad86afb7f8b7eb62efe5c09d4
+  [5228]=53c1def065426d33026b373f8a2344a3b22ec1d1
+  [5235]=4651f38dc15757be7b9428b402f9a223cfc05743
+  [5275]=8a796a331a0c56a2f067fe0c883394f80f9769d6
+)
+prs=(5321 5314 5325 5234 5230 5232 5228 5235 5275)
+for pr in "${prs[@]}"; do
+  git -C "$src" fetch --no-tags origin "refs/pull/$pr/head:refs/remotes/origin/proven-$pr"
+  actual="$(git -C "$src" rev-parse "refs/remotes/origin/proven-$pr")"
+  echo "PR #$pr $actual"
+  if [[ "$actual" != "${pinned[$pr]}" ]]; then
+    echo "STOP: PR #$pr changed since verification. Expected ${pinned[$pr]}"
+    exit 1
+  fi
+done
+
+step="integrate verified CPU and general fixes"
+# #5321 contains the #5287, #5304, #5315 and earlier #5314 changes.
+# #5314 adds later captured PS4/Pro CPU-profile corrections.
+# #5325 is the independent reciprocal correction.
+# GPU and other PRs are applied only if not already part of upstream.
+for pr in "${prs[@]}"; do
+  ref="refs/remotes/origin/proven-$pr"
+  if git -C "$src" merge-base --is-ancestor "$ref" HEAD; then
+    echo "PR #$pr already integrated; skipping"
+    continue
+  fi
+  echo "===== MERGING VERIFIED PR #$pr ====="
+  if ! git -C "$src" -c commit.gpgsign=false merge --no-ff --no-edit \
+       -m "Local ES-DE integration: verified shadPS4 PR #$pr" "$ref"; then
+    echo "SAFE_STOP: PR #$pr conflicts with latest upstream or another fix. Not deploying."
+    git -C "$src" status --short
+    exit 1
+  fi
+done
+candidate_sha="$(git -C "$src" rev-parse HEAD)"
+echo "CANDIDATE=$candidate_sha"
+
+git -C "$src" diff --check "$base_sha" HEAD
+
+step="submodules"
+git -C "$src" submodule update --init --recursive --jobs 4
+
+step="configure release"
+cmake -S "$src" -B "$bld" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER="$cc" -DCMAKE_CXX_COMPILER="$cxx" \
+  -DENABLE_CPU_ID_TRANSLATION=ON -DENABLE_TESTS=OFF \
+  -DENABLE_UPDATER=OFF
+
+step="build emulator and bundled CPU runtime"
+cmake --build "$bld" --parallel 5
+[[ -x "$bld/shadps4" ]] || { echo 'No shadps4 executable'; exit 1; }
+[[ -x "$bld/cpu-id-runtime/bin64/drrun" ]] || { echo 'Bundled DynamoRIO runner missing'; exit 1; }
+[[ -f "$bld/cpu-id-runtime/libshadps4_cpu_id.so" ]] || { echo 'Bundled CPU client missing'; exit 1; }
+
+step="smoke test"
+timeout 20s "$bld/shadps4" --help > "$ev/binary-help.txt" 2>&1
+if ! grep -q -- '--cpu-id-mode' "$ev/binary-help.txt"; then
+  echo 'CPU translation CLI is missing!'; exit 1
+fi
+ldd "$bld/shadps4" > "$ev/ldd.txt"
+if grep -q 'not found' "$ev/ldd.txt"; then
+  echo 'Missing shared library:'; grep 'not found' "$ev/ldd.txt"; exit 1
+fi
+sha256sum "$bld/shadps4" > "$ev/binary-sha256.txt"
+
+step="configure and run repository tests"
+cmake -S "$src" -B "$tst" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER="$cc" -DCMAKE_CXX_COMPILER="$cxx" \
+  -DENABLE_TESTS=ON -DENABLE_CPU_ID_TRANSLATION=OFF -DENABLE_UPDATER=OFF
+cmake --build "$tst" --parallel 5
+ctest --test-dir "$tst" --output-on-failure --timeout 120 | tee "$ev/ctest.txt"
+if grep -Eq '(No tests were found|Total Tests: 0)' "$ev/ctest.txt"; then
+  echo 'Test collection unexpectedly empty'; exit 1
+fi
+
+step="verify ES-DE install path"
+launcher="$HOME/Applications/shadps4/shadps4"
+[[ -e "$launcher" ]] || { echo "Missing existing ES-DE target: $launcher"; exit 1; }
+install_target="$(readlink -f "$launcher")"
+[[ "$install_target" == "$HOME"/* && -f "$install_target" ]] || {
+  echo "Unexpected executable path: $install_target"; exit 1;
+}
+if [[ "$(od -An -tx1 -N4 "$install_target" | tr -d ' \n')" != 7f454c46 ]]; then
+  echo "The current ES-DE executable is not ELF: $install_target; preserving it"; exit 1
+fi
+if pgrep -x shadps4 >/dev/null; then
+  echo 'shadps4 is running. No installation attempted, leaving active game untouched.'
+  exit 1
+fi
+install_dir="$(dirname "$install_target")"
+runtime_path="$install_dir/cpu-id-runtime"
+backup_binary="$install_target.before-verified-$stamp"
+backup_runtime="$install_dir/cpu-id-runtime.before-verified-$stamp"
+binary_candidate="$install_dir/.shadps4.new-$stamp"
+runtime_candidate="$install_dir/.cpu-id-runtime.new-$stamp"
+[[ ! -e "$binary_candidate" && ! -e "$runtime_candidate" ]] || exit 1
+
+step="stage ES-DE release without changing live installation"
+cp -a "$bld/cpu-id-runtime" "$runtime_candidate"
+install -m 755 "$bld/shadps4" "$binary_candidate"
+timeout 20s "$binary_candidate" --help > "$ev/staged-help.txt" 2>&1
+sha256sum "$binary_candidate" > "$ev/staged-sha256.txt"
+cp -a "$install_target" "$backup_binary"
+
+echo "BACKUP_BINARY=$backup_binary"
+step="atomic-ish deployment and installed binary verification"
+deploying=1
+if [[ -e "$runtime_path" || -L "$runtime_path" ]]; then
+  mv -- "$runtime_path" "$backup_runtime"
+fi
+runtime_changed=1
+mv -- "$runtime_candidate" "$runtime_path"
+mv -- "$binary_candidate" "$install_target"
+timeout 20s "$launcher" --help > "$ev/installed-help.txt" 2>&1
+cmp -s "$bld/shadps4" "$install_target"
+[[ -x "$runtime_path/bin64/drrun" && -f "$runtime_path/libshadps4_cpu_id.so" ]]
+
+result="SUCCESS"
+deploying=0
+step="complete: launch a game from ES-DE to verify actual gameplay"
+echo "INSTALLED=$install_target"
+echo "BACKUP_BINARY=$backup_binary"
+echo "BACKUP_CPU_RUNTIME=$backup_runtime"
+echo 'Existing game files, saves, configurations, Sunshine and ES-DE were not modified.'
