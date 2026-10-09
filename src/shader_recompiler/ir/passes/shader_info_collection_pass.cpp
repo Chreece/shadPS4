@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+#include <cstring>
+
+#include "common/logging/log.h"
 #include "core/emulator_settings.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
@@ -180,9 +184,21 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
         }
     }
 
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled()) {
+    // Diagnostic compile-only escape hatch for the Phi-indexed GoW resource loads.
+    // No other shader can enter DMA unless the existing global setting enables it.
+    const char* gow_dma_env = std::getenv("SHADPS4_GOW_ONE_SHADER_DMA_COMPILE");
+    const bool gow_dma_target = gow_dma_env && std::strcmp(gow_dma_env, "1") == 0 &&
+                                info.pgm_hash == 0x57b077acULL &&
+                                info.hw_stage == HwStage::Compute;
+    if (!EmulatorSettings.IsDirectMemoryAccessEnabled() && !gow_dma_target) {
         info.uses_dma = false;
         info.readconst_types = Info::ReadConstType::None;
+    }
+
+    if (gow_dma_target) {
+        LOG_WARNING(Render_Recompiler,
+                    "GOW_TARGET_DMA_INFO shader={:#x} uses_dma={} readconst_types={}",
+                    info.pgm_hash, info.uses_dma, static_cast<u32>(info.readconst_types));
     }
 
     if (info.uses_dma) {
