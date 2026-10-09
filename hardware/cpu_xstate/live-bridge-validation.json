@@ -1,0 +1,43 @@
+{
+  "production_local_commit": "d7ce6f45e6817b2c81c27d5c9a1cb50d93df6900",
+  "production_tree": "2404c293ed3cf8191184707c34f2b17ab4b1321d",
+  "production_parent_remote": "c61955b6ef91a9d76e9d558b1d1f2c837919ed9b",
+  "archive_sha256": "c9dd6650b9680e69722e573b213863f9cd0d6fb3bb08f31d93fdaff455843078",
+  "tests": {
+    "compilers": [
+      "Clang 19 Release",
+      "GCC 14 with UBSAN, fail on first error"
+    ],
+    "live_probe_rows_each": 224,
+    "register_and_exception_mismatches": 0,
+    "recovered_guest_faults_each": 34,
+    "real_nested_page_faults_each": 8,
+    "synthetic_boundary_checks_each": 201,
+    "context_field_preservation_checks_each": 4520,
+    "general_registers_preserved_after_sigreturn": 16,
+    "red_zone_bytes_preserved": 128,
+    "host_extended_state_preserved": [
+      "ZMM31",
+      "ZMM0 upper 256 bits",
+      "K6"
+    ],
+    "full_linux_release_build": "passed"
+  },
+  "saved_memory": {
+    "images_each": 160,
+    "byte_exact_each": 56,
+    "native_sse_in_use_bitmap_differences_each": 32,
+    "empty_x87_data_differences_each": 96,
+    "other_differences": 0,
+    "counts_overlap": true
+  },
+  "limits": [
+    "Explicit test trap sites; automatic game interception and generated-code invalidation are not implemented.",
+    "Production entry point compiled into Linux build but not called by game execution.",
+    "XSTATE_BV uses native conservative in-use tracking, not bit-exact Jaguar tracking.",
+    "Native host CPUID metadata retained in the harness; guest XGETBV is executed through the bridge.",
+    "Valid guest MXCSR bits or x87 selectors unsupported by the host return UnsupportedState; a software backend must handle them.",
+    "No physical PS4 Pro xstate capture; pending x87 exception behaviour is not hardware validated.",
+    "No new PES test requested or claimed."
+  ]
+}
