@@ -294,6 +294,21 @@ def capture_readonly_gpu_state() -> None:
     (WORK / "gpu-status-unprivileged.txt").write_text("".join(chunks))
 
 
+def radv_report_priority(path: Path) -> tuple[int, str]:
+    """Never let many SPIR-V binaries crowd the fault/trace report out."""
+    important = (
+        "trace.log", "vm_fault.log", "pipeline.log", "addr_binding_report.log",
+        "bo_ranges.log", "bo_history.log", "dmesg.log", "registers.log",
+        "gpu_info.log", "app_info.log", "umr_waves.log", "umr_ring.log",
+    )
+    name = path.name
+    if name in important:
+        return (important.index(name), str(path))
+    if path.suffix.lower() == ".spv":
+        return (20, str(path))
+    return (30, str(path))
+
+
 def capture_radv_hang_reports() -> None:
     """Include only dumps from this test's shadPS4 PID and launch timestamp."""
     global RADV_DUMPS_FOUND, RADV_DUMP_FILE_NOTES
@@ -335,7 +350,7 @@ def capture_radv_hang_reports() -> None:
         RADV_DUMPS_FOUND.append(str(directory))
         prefix = dump_root / directory.name
         prefix.mkdir(exist_ok=True)
-        for source in sorted(directory.rglob("*")):
+        for source in sorted(directory.rglob("*"), key=radv_report_priority):
             if captured_files >= RADV_DUMP_FILE_COUNT_CAP or total >= RADV_DUMP_TOTAL_CAP:
                 RADV_DUMP_FILE_NOTES.append({"skipped": "total_capture_limit"})
                 break
@@ -374,6 +389,7 @@ def capture_radv_hang_reports() -> None:
     status = {
         "RADV_DEBUG": "hang,noumr",
         "changes_syncshaders": True,
+        "umr_disabled": True,
         "umr_available": RADV_UMR_PRESENT,
         "game_pid_candidates": sorted(eligible),
         "driver_dump_directories": RADV_DUMPS_FOUND,
@@ -939,6 +955,11 @@ def test() -> None:
     assert RADV_DUMP_FILE_CAP <= 24 * 1024 * 1024
     assert RADV_DUMP_FILE_COUNT_CAP <= 70
     assert capture_radv_hang_reports.__name__ == "capture_radv_hang_reports"
+    names = [Path("00000.spv"), Path("other.log"), Path("trace.log"),
+             Path("pipeline.log"), Path("vm_fault.log")]
+    ordered = [p.name for p in sorted(names, key=radv_report_priority)]
+    assert ordered[:3] == ["trace.log", "vm_fault.log", "pipeline.log"]
+    assert ordered.index("00000.spv") < ordered.index("other.log")
     assert verify_game_debug_environment.__name__ == "verify_game_debug_environment"
     assert datetime.strptime(STAMP, "%Y%m%d-%H%M%S").strftime("%Y%m%d-%H%M%S") == STAMP
     # Avoid the previous false report that a child archive was missing just
@@ -982,7 +1003,7 @@ def test() -> None:
             assert "eligible" in (WORK / "child-archive-discovery.json").read_text()
     finally:
         HOME, WORK, GAME_LAUNCH_TIME, GAME_PID, SESSION_DIR = originals
-    print("SELFTEST PASS: RADV hang dump PID scoping, bounded capture and "
+    print("SELFTEST PASS: RADV hang dump PID scoping, bounded prioritized capture and "
           "nested validation archive discovery, all tested with temporary files")
 
     print("SELFTEST PASS: pinned workflow, launcher/game path, monitor timing, "
