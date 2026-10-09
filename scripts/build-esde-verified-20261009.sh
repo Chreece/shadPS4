@@ -56,7 +56,7 @@ on_exit() {
     git -C "$src" diff --name-only --diff-filter=U > "$ev/conflicted-files.txt" 2>&1
     git -C "$src" submodule status --recursive > "$ev/submodules.txt" 2>&1
   fi
-  cp -- "$log" "$ev/build.log" 2>/dev/null || true
+  tail -n 5000 -- "$log" > "$ev/build.log" 2>/dev/null || true
   tar -czf "$report" -C "$root" evidence 2>/dev/null || true
   echo
   echo "RESULT=$result"
@@ -88,9 +88,57 @@ else
   exit 1
 fi
 echo "Compiler: $($cxx --version | head -1)"
+step="verify existing ES-DE binary before resource-intensive build"
+launcher="$HOME/Applications/shadps4/shadps4"
+if [[ ! -e "$launcher" ]]; then
+  echo "SAFE_STOP: existing ES-DE shadPS4 core missing: $launcher"
+  exit 1
+fi
+install_target="$(readlink -f "$launcher")"
+if [[ "$install_target" != "$HOME"/* || ! -f "$install_target" ]]; then
+  echo "SAFE_STOP: unexpected target for ES-DE symlink: $install_target"
+  exit 1
+fi
+if [[ "$(od -An -tx1 -N4 "$install_target" | tr -d ' \n')" != 7f454c46 ]]; then
+  echo "SAFE_STOP: existing core is not a Linux ELF binary: $install_target"
+  exit 1
+fi
+if [[ ! -w "$install_target" || ! -w "$(dirname "$install_target")" ]]; then
+  echo "SAFE_STOP: no write permission for the existing ES-DE binary or its directory."
+  exit 1
+fi
+echo "EXISTING_ESDE_BINARY=$install_target"
+step="preflight complete"
 df -h "$HOME"
 free -h
 
+step="check previous verified integration"
+# Preserve the exact clean integration produced by the previous attempt.
+# Reuse it ONLY while the upstream base still equals the current main.
+resume_src="$HOME/shadps4-esde-verified-builds/20261009-173836/source"
+resume_base="30d82c9003480b991092279f7a10c2a3d2fe03b8"
+resume_head="9e81877f61837d1423e5dc1fbd6c60fd005e8524"
+resume=0
+if [[ -d "$resume_src/.git" ]] &&
+   [[ "$(git -C "$resume_src" rev-parse HEAD 2>/dev/null)" == "$resume_head" ]] &&
+   [[ "$(git -C "$resume_src" rev-parse refs/remotes/origin/main 2>/dev/null)" == "$resume_base" ]] &&
+   [[ -z "$(git -C "$resume_src" status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+  echo 'Checking the current upstream main before reusing the completed integration.'
+  if remote_main="$(git -C "$resume_src" ls-remote --heads origin main | awk '{print $1}')" &&
+     [[ "$remote_main" == "$resume_base" ]]; then
+    resume=1
+    src="$resume_src"
+    base_sha="$resume_base"
+    candidate_sha="$resume_head"
+    echo "RESUME_EXISTING_INTEGRATION=$src"
+    echo "UPSTREAM_MAIN=$base_sha"
+    echo "CANDIDATE=$candidate_sha"
+  else
+    echo 'The upstream base changed or could not be verified; performing a fresh pinned integration.'
+  fi
+fi
+
+if (( resume == 0 )); then
 step="fetch fresh upstream main"
 git clone --filter=blob:none --no-checkout https://github.com/shadps4-emu/shadPS4.git "$src"
 git -C "$src" checkout -B "esde-verified-$stamp" origin/main
@@ -218,8 +266,20 @@ for pr in 5325 5234 5230 5232 5228 5235 5275; do
 done
 candidate_sha="$(git -C "$src" rev-parse HEAD)"
 echo "CANDIDATE=$candidate_sha"
+fi
 
-git -C "$src" diff --check "$base_sha" HEAD
+step="verify unchanged bundled runtime patch and source whitespace"
+# This .patch is consumed by git apply; its five whitespace lines are part of
+# a pinned upstream runtime patch, not C++ source formatting. Do not rewrite it.
+runtime_patch="src/core/cpu_id_translation/dynamorio.patch"
+expected_runtime_patch="ab9c52d60788adaf41b37cbff0a7a146ca69f6ea"
+runtime_patch_blob="$(git -C "$src" rev-parse "HEAD:$runtime_patch")"
+if [[ "$runtime_patch_blob" != "$expected_runtime_patch" ]]; then
+  echo "SAFE_STOP: bundled DynamoRIO patch changed: $runtime_patch_blob"
+  exit 1
+fi
+git -C "$src" diff --check "$base_sha" HEAD -- . ":(exclude)$runtime_patch"
+echo 'WHITESPACE_CHECK=PASS (source checked; pinned external .patch exempt)'
 
 step="submodules"
 git -C "$src" submodule update --init --recursive --jobs 4
