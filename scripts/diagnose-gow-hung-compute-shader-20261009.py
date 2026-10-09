@@ -137,6 +137,9 @@ __attribute__((force_align_arg_pointer))
     if pipeline_text.count(anchor)!=1:die("Compute shader emission site changed")
     BACKUPS[str(PROCESS)]=PROCESS.read_bytes()
     BACKUPS[str(PIPELINE)]=PIPELINE.read_bytes()
+    # Keep recoverable backup copies in the report, even if source restoration fails.
+    (WORK/"process.cpp.original").write_bytes(BACKUPS[str(PROCESS)])
+    (WORK/"vk_pipeline_cache.cpp.original").write_bytes(BACKUPS[str(PIPELINE)])
     PROCESS.write_text(process_text.replace(needle,replacement))
     PIPELINE.write_text(
         pipeline_text.replace('#include <ranges>',
@@ -375,6 +378,14 @@ def main():
         die("Source has uncommitted changes; preserving them")
     if pids().get("shadps4") or pids().get("drrun"):
         die("Another emulator is currently running")
+    # Don't mutate the source tree while another build is using it.
+    build_check=run(["ps","-eo","args="],timeout=8)
+    if build_check.returncode==0:
+        active_builds=[line for line in build_check.stdout.decode(errors="replace").splitlines()
+                       if (("cmake --build" in line or "ninja " in line or "make -j" in line)
+                           and not ("ps -eo" in line or "diagnose-gow-hung-compute-shader" in line))]
+        if active_builds:
+            die("Concurrent build detected; retry after other builds finish")
     for file in ("bin64/drrun","libshadps4_cpu_id.so","lib64/release/libdynamorio.so"):
         if not (BLD/"cpu-id-runtime"/file).is_file():die("Bundled CPU-ID runtime missing")
     env=collect_display()
