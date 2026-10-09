@@ -39,6 +39,7 @@ cmake_dependent_option(ENABLE_SYSTEM_VULKAN "Enable the system Vulkan driver" OF
 option(ENABLE_DISCORD_RPC "Enable the Discord RPC integration" ON)
 option(ENABLE_UPDATER "Enables the options to updater" ON)
 option(ENABLE_TESTS "Build unit tests (requires GTest)" OFF)
+option(ENABLE_EXPERIMENTAL_XSTATE_TRACE "Enable Linux xstate tracing for marked diagnostic code" OFF)
 option(ENABLE_SYSTEM_LIBRARIES "Enable building against system libraries" OFF)
 
 # First, determine whether to use CMAKE_OSX_ARCHITECTURES or CMAKE_SYSTEM_PROCESSOR.
@@ -1009,6 +1010,12 @@ if (ARCHITECTURE STREQUAL "x86_64")
         list(APPEND CORE src/core/cpu_id.cpp src/core/cpu_id.h
                          src/core/guest_xstate.cpp src/core/guest_xstate.h
                          src/core/guest_xstate_linux.cpp src/core/guest_xstate_linux.h)
+        if (ENABLE_EXPERIMENTAL_XSTATE_TRACE)
+            set_property(SOURCE src/core/signals.cpp APPEND PROPERTY
+                         COMPILE_DEFINITIONS ENABLE_EXPERIMENTAL_XSTATE_TRACE)
+            list(APPEND CORE src/core/xstate_trace.cpp src/core/xstate_trace.h
+                             src/core/xstate_trace.S)
+        endif()
     endif()
 endif()
 

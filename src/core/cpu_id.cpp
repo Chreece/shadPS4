@@ -400,4 +400,9 @@ void SetCpuIdGuestAddressRange(uintptr_t begin, uintptr_t end) {
     guest_end.store(end, std::memory_order_relaxed);
 }
 
+bool IsGuestCpuAddress(uintptr_t address) {
+    return address >= guest_begin.load(std::memory_order_acquire) &&
+           address < guest_end.load(std::memory_order_acquire);
+}
+
 } // namespace Core

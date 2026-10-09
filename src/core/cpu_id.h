@@ -17,6 +17,7 @@ void InitializeCpuId();
 void EnableCpuIdFaulting();
 bool HandleCpuIdFault(void* context, void* fault_address);
 void SetCpuIdGuestAddressRange(uintptr_t begin, uintptr_t end);
+bool IsGuestCpuAddress(uintptr_t address);
 void GenerateCpuIdInstruction(Xbyak::CodeGenerator& code, CpuIdInstruction instruction,
                               u32 destination = 0, bool fault_entry = false);
 
