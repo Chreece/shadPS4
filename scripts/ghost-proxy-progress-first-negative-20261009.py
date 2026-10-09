@@ -1238,7 +1238,8 @@ def selftest():
     assert len(PROVEN_GHOST_BIN_SHA)==64 and len(GDB_HELPER_SHA)==40
     commands=middle_watch_commands()
     assert commands.count("GHOST_MIDDLE_FIRST_NEGATIVE_DETECTED")==1
-    assert commands.count("GHOST_PROXY_PROGRESS_CAPTURE proxy=")==1
+    assert commands.count('print("GHOST_PROXY_PROGRESS_CAPTURE",')==1
+    assert commands.count('print("GHOST_PROXY_PROGRESS_CAPTURE_ERROR",')==1
     assert commands.count("GHOST_PROXY_PROGRESS_VALUES_COMPLETE")==1
     assert "proxy+0x1f30" in commands and "proxy+0x1f34" in commands
     assert "val(0x1ad3208,64)" in commands and "ptr+index*8" in commands
