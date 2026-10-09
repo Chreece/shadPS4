@@ -211,6 +211,7 @@ out.append('NO_GDB_HARDWARE_WATCHPOINT=1')
 out.append(f'VULKAN11_16BIT_FEATURE_DIAGNOSTIC_COUNT={text.count("GHOST_VK11_16BIT uniformAndStorageBuffer16BitAccess")}')
 out.append(f'R8_INDEX1_POINT_APPLIED={text.count("GHOST_R8_INDEX1_APPLIED shader=")}')
 out.append(f'DESCRIPTOR_TYPE_00319_ERRORS={text.count("VUID-VkWriteDescriptorSet-descriptorType-00319:")}')
+out.append(f'VULKAN_LAYER_ACTIVE={"VK_LAYER_KHRONOS_validation" in text}')
 out.append(f'STORAGE_USAGE_00339_ERRORS={text.count("VUID-VkWriteDescriptorSet-descriptorType-00339:")}')
 out.append(f'STORAGE_IMAGE_07028_ERRORS={text.count("VUID-vkCmdDispatchIndirect-OpTypeImage-07028:")}')
 out.append(f'SYNC_WRITE_AFTER_PRESENT={text.count("SYNC-HAZARD-WRITE-AFTER-PRESENT:")}')
@@ -425,7 +426,10 @@ game=pathlib.Path("/mnt/roms-all/ps4/Ghost of Tsushima.ps4")
 assert launcher.is_file() and os.access(launcher,os.X_OK), "Ghost launcher missing"
 assert game.is_file(), "Game entry missing"
 env=os.environ.copy()
-env["DISPLAY"]=env.get("DISPLAY") or ":0"
+env["DISPLAY"]=":0"
+# Enforce validation without modifying user or game configuration files.
+env["VK_INSTANCE_LAYERS"]="VK_LAYER_KHRONOS_validation"
+env["VK_LAYER_ENABLES"]="VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT"
 env.pop("RADV_DEBUG",None)
 def candidate_xauth():
     paths=[]
@@ -436,11 +440,11 @@ def candidate_xauth():
         if not proc.name.isdigit(): continue
         try:
             if proc.stat().st_uid != uid: continue
-            raw=(proc/"environ").read_bytes().split(b"\\0")
+            raw=(proc/"environ").read_bytes().split(b"\0")
             d=dict(field.split(b"=",1) for field in raw if b"=" in field)
             x=d.get(b"XAUTHORITY",b"").decode(errors="replace")
             if x: paths.append(x)
-            argv=(proc/"cmdline").read_bytes().split(b"\\0")
+            argv=(proc/"cmdline").read_bytes().split(b"\0")
             if b"-auth" in argv:
                 idx=argv.index(b"-auth")
                 if idx+1<len(argv): paths.append(argv[idx+1].decode(errors="replace"))
@@ -457,11 +461,12 @@ if check:
     status=subprocess.run(cmd,env=env,capture_output=True,timeout=8)
     if status.returncode!=0: raise RuntimeError("X display authentication failed; test refused and baseline will restore")
 print(f"AUTO_DISPLAY={env['DISPLAY']} xauth={'present' if xauth else 'default'}",flush=True)
+print(f"AUTO_VULKAN_VALIDATION={env['VK_INSTANCE_LAYERS']}",flush=True)
 out=(session/"launcher-auto-stdout.log").open("wb")
 proc=subprocess.Popen([str(launcher),str(game)],env=env,stdin=subprocess.DEVNULL,
                       stdout=out,stderr=subprocess.STDOUT,start_new_session=True)
 print(f"AUTO_GAME_LAUNCH pid={proc.pid} sid={os.getsid(proc.pid)}",flush=True)
-(session/"launcher-auto.pid").write_text(str(proc.pid)+"\\n")
+(session/"launcher-auto.pid").write_text(str(proc.pid)+"\n")
 deadline=time.monotonic()+115
 try:
     while proc.poll() is None and time.monotonic()<deadline:
@@ -479,6 +484,12 @@ try:
 finally:
     out.close()
 GHOST_AUTO_LAUNCH
+PHASE=autoplay_finished
+log 'The automatic game trial finished; collecting runtime evidence and restoring verified baseline.'
+exit 0
+
+# Manual-launch fallback kept below for future opt-in use; unreachable
+# for this auto-run trial.
 game=''
 deadline=$((SECONDS + 600))
 while (( SECONDS < deadline )); do
