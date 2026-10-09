@@ -1,0 +1,128 @@
+{
+  "status": "passed",
+  "scope": "Experimental Linux x86-64 automatic xstate tracing with host native blocks and same-page direct branches; emulator-only homebrew",
+  "code_commit_local": "5d961d90371ab607502837d99970ab7b31205338",
+  "code_tree": "ee4795ff1ea27cc0d78f7644ae8e3255383f2430",
+  "code_commit_github": "0e621cb3d65996045822b90ce94a5eaf59c21218",
+  "test_source_commit_local": "3c6bc423fcdb674fbe7d6a25d8b2da033f1339fe",
+  "reference_sha256": "6d4353fdb5d1abe20c53d72e6e5680992fc692429ddfe31a7ca3b02e81d907de",
+  "branch_checks": {
+    "native_cases": 2146,
+    "short_and_near_jcc_conditions": 16,
+    "flag_combinations": 64,
+    "loop_counter_widths": [
+      32,
+      64
+    ],
+    "counter_values": [
+      "0",
+      "1",
+      "2",
+      "ffffffff",
+      "100000000",
+      "ffffffffffffffff"
+    ],
+    "interruptible_branch_cycle": true
+  },
+  "changes": [
+    "Apply freshly decoded, bounded native blocks to ordinary host instructions as well as guest instructions.",
+    "Resolve direct same-page jumps, conditionals and loop branches from saved registers without an extra trap.",
+    "Limit branch processing to 64 branches per dispatch so native stepping and signal delivery remain possible.",
+    "Preserve real call and return stack addresses; guest callbacks continue through tracing."
+  ],
+  "limits": [
+    "Experimental and off by default; game performance and compatibility have not been established.",
+    "Calls, returns, indirect or cross-page branches, RIP-relative and unsupported instructions retain native single-stepping.",
+    "No persistent block cache; concurrent unsynchronized code or permission changes are not supported.",
+    "Guest cancellation, unusual signal-mask changes, guest debugging and every possible native-to-guest callback are not validated.",
+    "Jaguar in-use tracking, unsupported host state, generated CPU-ID handling and cross-platform runtime work remain outside this change."
+  ],
+  "upstream_prs_modified": false,
+  "github_ci_triggered": false,
+  "runs": {
+    "previous_guest_blocks": {
+      "emulator_sha256": "36dcecaeb13420b87fc26864ea504c3b306cf97c6556229172e0bc0ca41a757c",
+      "unmarked": true,
+      "auto_only": false,
+      "block_only": false,
+      "single_step": false,
+      "guest_blocks_only": true,
+      "return_code": 0,
+      "elapsed_seconds": 212.775,
+      "physical_register_exception_comparison": {
+        "common_rows": 224,
+        "differences": []
+      },
+      "extra": "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0",
+      "automatic_extra": "AUTO_EXTRA flags=64 threads=2 queries=256 redirects=1 explicit_exit=1 errors=0",
+      "block_extra": "BLOCK_EXTRA copies=3 faults=6 nested=6 rewrites=32 async=8 code_checks=3 errors=0",
+      "branch_extra": [
+        "BRANCH_CASES cases=2146 digest=e1d32a499fb84ed5",
+        "BRANCH_EXTRA interruptible_cycle=1 errors=0"
+      ],
+      "native_branch": "BRANCH_CASES cases=2146 digest=e1d32a499fb84ed5"
+    },
+    "host_blocks_and_branches": {
+      "emulator_sha256": "36dcecaeb13420b87fc26864ea504c3b306cf97c6556229172e0bc0ca41a757c",
+      "unmarked": true,
+      "auto_only": false,
+      "block_only": false,
+      "single_step": false,
+      "guest_blocks_only": false,
+      "return_code": 0,
+      "elapsed_seconds": 68.039,
+      "physical_register_exception_comparison": {
+        "common_rows": 224,
+        "differences": []
+      },
+      "extra": "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0",
+      "automatic_extra": "AUTO_EXTRA flags=64 threads=2 queries=256 redirects=1 explicit_exit=1 errors=0",
+      "block_extra": "BLOCK_EXTRA copies=3 faults=6 nested=6 rewrites=32 async=8 code_checks=3 errors=0",
+      "branch_extra": [
+        "BRANCH_CASES cases=2146 digest=e1d32a499fb84ed5",
+        "BRANCH_EXTRA interruptible_cycle=1 errors=0"
+      ],
+      "native_branch": "BRANCH_CASES cases=2146 digest=e1d32a499fb84ed5"
+    },
+    "marked": {
+      "emulator_sha256": "36dcecaeb13420b87fc26864ea504c3b306cf97c6556229172e0bc0ca41a757c",
+      "unmarked": false,
+      "auto_only": false,
+      "block_only": false,
+      "single_step": false,
+      "guest_blocks_only": false,
+      "return_code": 0,
+      "elapsed_seconds": 0.618,
+      "physical_register_exception_comparison": {
+        "common_rows": 224,
+        "differences": []
+      },
+      "extra": "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0"
+    }
+  },
+  "benchmark": {
+    "same_binary_and_probe_sources": true,
+    "runs_per_mode": 1,
+    "elapsed_reduction_percent": 68.02,
+    "scope": "Sequential homebrew elapsed time, not game performance; neither timed run overlapped compilation.",
+    "probe_source_sha256": {
+      "main.cpp": "12e11cd308ffa0546a1e979f5cffd704b674a41474c0be705631e20ef3380a1b",
+      "cases.S": "4304eeb9980fe496b616d40bb3eb78754081b5a66af8b0e95d27ce02201d0a90",
+      "trace_extra.inc": "4744bb86575175aee86ac54478faaa4b6a05d396625c0454b5d46034b8317ab1",
+      "trace_auto.inc": "fc60785516a8681fe85245873ad87ee89161a9c507173975dea93bb379dddaa8",
+      "trace_block.inc": "ccb45e52ea5287b5accc77818c7bd701073608ce857b8e61d3e758e9e08b87b7",
+      "trace_branch.inc": "3b1fe596e5b8a76f18e20b3381ebb46892d369a1e0ddaa49199c33a0a8b00a6c",
+      "branch_cases.inc": "ca0596189cda8539ab2b06cac7fa0381dc0834f072a7cb0edbd629a7d8ed559c"
+    }
+  },
+  "binary_provenance": "Captured before the code commit from the same source tree; embedded Git version reflects its parent.",
+  "build_gates": {
+    "compiler": "Clang 19",
+    "configuration": "Linux Release",
+    "trace_on": "passed",
+    "trace_off": "passed",
+    "clang_format": "passed",
+    "reuse_code": "1075/1075",
+    "reuse_tests_before_artifact": "1234/1234"
+  }
+}

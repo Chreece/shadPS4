@@ -50,6 +50,7 @@ replace_once("  failures += Release(generated, 16384) != 0;",
              "  failures += Release(generated, 16384) != 0;")
 if args.unmarked:
     replace_once('  if (!expected_fault ||',
+                 '  if (CheckBranchSignal(signal, context)) return;\n'
                  '  if (CheckBlockFault(signal, context)) return;\n'
                  '  if (CheckAutomaticRedirect(signal, context)) return;\n'
                  '  if (!expected_fault ||')
@@ -76,7 +77,9 @@ if args.auto_only or args.block_only:
         raise SystemExit("--auto-only/--block-only requires --unmarked")
     check = 'RunBlockTraceChecks' if args.block_only else 'RunAutomaticTraceChecks'
     replace_once('  const uint64_t masks[]{',
-                 f'  if (!{check}(generated)) _Exit(80);\n'
+                 f'  if (!{check}(generated)'
+                 + (' || !RunBranchTraceChecks(generated)' if args.block_only else '')
+                 + ') _Exit(80);\n'
                  '  sceSystemServiceLoadExec("EXIT", nullptr);\n'
                  '  return 0;\n  const uint64_t masks[]{')
 
@@ -95,6 +98,9 @@ if not args.unmarked:
 if args.unmarked:
     assembly += (here / "trace_auto.S").read_text()
     assembly += (here / "trace_block.S").read_text()
+    assembly += (here / "trace_branch.S").read_text()
+    for name in ("trace_branch.inc", "branch_cases.inc"):
+        shutil.copy2(here / name, output / name)
     shutil.copy2(here / "trace_auto.inc", output / "trace_auto.inc")
     shutil.copy2(here / "trace_block.inc", output / "trace_block.inc")
 (output / "cases.S").write_text(assembly)

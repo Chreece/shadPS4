@@ -27,6 +27,7 @@ parser.add_argument("--unmarked", action="store_true")
 parser.add_argument("--auto-only", action="store_true")
 parser.add_argument("--block-only", action="store_true")
 parser.add_argument("--single-step", action="store_true", help="Disable native blocks for comparison")
+parser.add_argument("--guest-blocks-only", action="store_true", help="Use the previous guest-only block path")
 parser.add_argument("--timeout", type=int, default=180)
 parser.add_argument("--emulator", type=Path, required=True)
 parser.add_argument("--sdk", type=Path, required=True)
@@ -49,6 +50,17 @@ try:
                         *(["--block-only"] if args.block_only else []),
                         *(["--auto-only"] if args.auto_only else [])], check=True, stdout=log,
                        stderr=subprocess.STDOUT, timeout=150)
+    if args.unmarked:
+        with (output / "branch-native-build.log").open("w") as log:
+            subprocess.run(["c++", "-std=c++17", "-O2", "-Wall", "-Wextra", "-Werror",
+                            str(here / "branch_native.cpp"), str(here / "trace_branch.S"),
+                            "-o", str(output / "branch-native")], check=True, stdout=log,
+                           stderr=subprocess.STDOUT, timeout=60)
+        native_branch = subprocess.check_output([str(output / "branch-native")], text=True,
+                                                timeout=10).strip()
+        (output / "branch-native.txt").write_text(native_branch + "\n")
+        if not native_branch.startswith("BRANCH_CASES cases=2146 digest="):
+            raise RuntimeError("Native branch comparison did not run all cases")
     game = output / "game"
     (game / "sce_sys").mkdir(parents=True, exist_ok=True)
     shutil.copy2(output / "homebrew/eboot.bin", game / "eboot.bin")
@@ -83,10 +95,13 @@ try:
                SDL_AUDIODRIVER="dummy", ALSOFT_DRIVERS="null", SHADPS4_ENABLE_IPC="false")
     env["SHADPS4_XSTATE_TRACE_AUTO"] = "1" if args.unmarked else "0"
     env["SHADPS4_XSTATE_TRACE_BLOCKS"] = "0" if args.single_step else "1"
+    env["SHADPS4_XSTATE_TRACE_HOST_BLOCKS"] = "0" if args.guest_blocks_only else "1"
+    env["SHADPS4_XSTATE_TRACE_BRANCHES"] = "0" if args.guest_blocks_only else "1"
     summary["unmarked"] = args.unmarked
     summary["auto_only"] = args.auto_only
     summary["block_only"] = args.block_only
     summary["single_step"] = args.single_step
+    summary["guest_blocks_only"] = args.guest_blocks_only
     if args.icd:
         env["VK_DRIVER_FILES"] = str(args.icd.resolve())
     with (output / "display.log").open("w") as log:
@@ -121,7 +136,7 @@ try:
     summary["return_code"] = process.returncode
     summary["elapsed_seconds"] = round(time.monotonic() - start, 3)
     for name in ("cpu-xstate-hardware.txt", "xstate-trace-extra.txt", "xstate-auto-extra.txt",
-                 "xstate-auto-progress.txt", "xstate-block-extra.txt"):
+                 "xstate-auto-progress.txt", "xstate-block-extra.txt", "xstate-branch-extra.txt"):
         if (user / "data" / name).exists():
             shutil.copy2(user / "data" / name, output / name)
     if process.returncode != 0:
@@ -147,6 +162,11 @@ try:
         summary["block_extra"] = block_extra
         if block_extra != "BLOCK_EXTRA copies=3 faults=6 nested=6 rewrites=32 async=8 code_checks=3 errors=0":
             raise RuntimeError("Native block checks failed: " + block_extra)
+        branch_extra = (output / "xstate-branch-extra.txt").read_text().strip().splitlines()
+        summary["branch_extra"] = branch_extra
+        summary["native_branch"] = native_branch
+        if branch_extra != [native_branch, "BRANCH_EXTRA interruptible_cycle=1 errors=0"]:
+            raise RuntimeError("Branch results differ from the native CPU or signal check failed")
     status = 0
     print("PASS=Native block faults, rewrites and asynchronous callbacks" if args.block_only else
           "PASS=Automatic flags, threads and redirected signal return" if args.auto_only else
@@ -171,7 +191,8 @@ finally:
             root_result = path.parent == output and path.suffix in (".txt", ".log", ".json")
             emulator_log = relative.parts[:3] == ("runtime", "user", "log")
             probe_source = relative.parts[0] == "homebrew" and path.name in (
-                "main.cpp", "cases.S", "trace_extra.inc", "trace_auto.inc", "trace_block.inc")
+                "main.cpp", "cases.S", "trace_extra.inc", "trace_auto.inc", "trace_block.inc",
+                "trace_branch.inc", "branch_cases.inc")
             if path.is_file() and (root_result or emulator_log or probe_source):
                 packed.add(path, arcname=str(path.relative_to(output)))
     print("UPLOAD_ONLY=" + str(archive), flush=True)
