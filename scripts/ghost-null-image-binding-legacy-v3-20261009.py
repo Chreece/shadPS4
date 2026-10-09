@@ -101,7 +101,7 @@ def patch_text(source: str) -> str:
 def selftest() -> None:
     fixture = (
         '#include <atomic>\n'
-        TOP
+        + TOP
         + HEADER
         + "        if (null_tsharp) {\n" + OLD + "        }\n"
         + "        if (bad_mapping) {\n" + OLD + "        }\n"
