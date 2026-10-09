@@ -2,12 +2,12 @@ MEMORY_BEGIN
 MEMORY_ACCESS region=low case=none_read faults=1 value=12345678 failures=0
 MEMORY_ACCESS region=low case=none_write faults=1 value=12345678 failures=0
 MEMORY_ACCESS region=low case=readonly_write faults=1 value=12345678 failures=0
-MEMORY_ACCESS region=low case=noexec faults=0 value=12345678 failures=1
+MEMORY_ACCESS region=low case=noexec faults=1 value=12345678 failures=0
 MEMORY_UNMAP region=low result=0
 MEMORY_ACCESS region=high case=none_read faults=1 value=12345678 failures=0
 MEMORY_ACCESS region=high case=none_write faults=1 value=12345678 failures=0
 MEMORY_ACCESS region=high case=readonly_write faults=1 value=12345678 failures=0
-MEMORY_ACCESS region=high case=noexec faults=0 value=12345678 failures=1
+MEMORY_ACCESS region=high case=noexec faults=1 value=12345678 failures=0
 MEMORY_UNMAP region=high result=0
 MEMORY_CYCLE index=0
 MEMORY_CYCLE index=1
@@ -73,4 +73,4 @@ MEMORY_CYCLE index=60
 MEMORY_CYCLE index=61
 MEMORY_CYCLE index=62
 MEMORY_CYCLE index=63
-MEMORY_END recovered=6 failures=2
+MEMORY_END recovered=8 failures=0

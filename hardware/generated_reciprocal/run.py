@@ -151,22 +151,19 @@ def validate_memory(path, mode):
         "none_read", "none_write", "readonly_write", "noexec")]
     if [(r["region"], r["case"]) for r in rows] != wanted or cycles != list(range(64)):
         raise RuntimeError("Protected-memory probe incomplete")
-    pending = []
     for row in rows:
         if row["value"] != "12345678":
             raise RuntimeError("Protected-memory result corrupted")
         if row["faults"] == "1":
             continue
-        if mode == "translated" and row["case"] == "noexec" and row["faults"] == "0":
-            pending.append(row)
-        else:
-            raise RuntimeError("Protected-memory fault recovery failed")
+        raise RuntimeError("Protected-memory fault recovery failed")
     if (unmaps != [{"region": "low", "result": "0"}, {"region": "high", "result": "0"}]
-            or not end or int(end["failures"]) != len(pending)
-            or int(end["recovered"]) != 8 - len(pending)):
+            or not end or int(end["failures"]) != 0
+            or int(end["recovered"]) != 8):
         raise RuntimeError("Protected-memory allocation cleanup or final counters failed")
     return {"read_write_checks_passed": 6, "high_map_unmap_cycles": 64,
-            "execute_permission_failures": pending, "all_checks_passed": not pending,
+            "execute_permission_checks_passed": 2, "execute_permission_failures": [],
+            "all_checks_passed": True,
             "log_sha256": digest(path)}
 
 
@@ -186,14 +183,67 @@ def memory_homebrew(binary, work, evidence):
                     timeout=90, env=display_environment())
             results[mode] = validate_memory(output, mode)
             print("MEMORY=" + mode + ": read/write recovery and 64 high unmaps passed", flush=True)
-            if results[mode]["execute_permission_failures"]:
-                print("KNOWN_FAILURE=Translated no-execute checks failed; retained in results, not counted as passed", flush=True)
         finally:
             if output.exists():
                 shutil.copyfile(output, evidence / ("memory-" + mode + ".txt"))
             for path in (runtime / "user/log").glob("*"):
                 if path.is_file():
                     shutil.copyfile(path, evidence / ("memory-" + mode + "-" + path.name))
+    return results
+
+
+
+def validate_execute(path):
+    rows, unmaps, end = [], [], None
+    for line in path.read_text().splitlines():
+        tag, _, rest = line.partition(" ")
+        if tag in {"EXECUTE", "EXECUTE_UNMAP", "EXECUTE_END"}:
+            values = dict(x.split("=", 1) for x in rest.split())
+            if tag == "EXECUTE":
+                rows.append(values)
+            elif tag == "EXECUTE_UNMAP":
+                unmaps.append(values)
+            else:
+                end = values
+    cases = ("first_nx", "cached_rw", "cached_r", "cached_none", "cross_first",
+             "cross_cached", "fallthrough", "branch_untaken")
+    wanted = [(region, case) for region in ("low", "high") for case in cases]
+    if [(r["region"], r["case"]) for r in rows] != wanted:
+        raise RuntimeError("Execute-permission probe incomplete")
+    for row in rows:
+        expected = "0" if row["case"] == "branch_untaken" else "1"
+        if (row["faults"] != expected or row["expected"] != expected or
+                row["value"] != "12345678" or row["failures"] != "0"):
+            raise RuntimeError("Execute-permission check failed")
+    if (unmaps != [{"region": "low", "result": "0"}, {"region": "high", "result": "0"}]
+            or end != {"recovered": "14", "failures": "0"}):
+        raise RuntimeError("Execute-permission cleanup or final counters failed")
+    return {"checks_passed": len(rows), "faults_recovered": 14,
+            "all_checks_passed": True, "log_sha256": digest(path)}
+
+
+def execute_homebrew(binary, work, evidence):
+    results = {}
+    game = work / "execute-game"
+    (game / "sce_sys").mkdir(parents=True)
+    shutil.copyfile(HERE / "execute_permission/eboot.bin", game / "eboot.bin")
+    shutil.copyfile(HERE / "param.sfo", game / "sce_sys/param.sfo")
+    for mode in ("native", "translated"):
+        runtime = work / ("execute-" + mode)
+        prepare_runtime(runtime)
+        output = runtime / "user/data/execute-permission.txt"
+        try:
+            command([binary, "--cpu-id-mode", mode, "--ignore-game-patch", game / "eboot.bin"],
+                    evidence / ("execute-" + mode + "-launch.log"), runtime,
+                    timeout=90, env=display_environment())
+            results[mode] = validate_execute(output)
+            print("EXECUTE=" + mode + ": all 16 checks passed", flush=True)
+        finally:
+            if output.exists():
+                shutil.copyfile(output, evidence / ("execute-" + mode + ".txt"))
+            for path in (runtime / "user/log").glob("*"):
+                if path.is_file():
+                    shutil.copyfile(path, evidence / ("execute-" + mode + "-" + path.name))
     return results
 
 
@@ -206,8 +256,9 @@ def translated_prefix(binary):
 
 
 def main():
-    if len(sys.argv) != 1:
-        raise RuntimeError("This runner takes no arguments")
+    if sys.argv[1:] not in ([], ["--cpu-only"]):
+        raise RuntimeError("Usage: run.py [--cpu-only]")
+    cpu_only = sys.argv[1:] == ["--cpu-only"]
     evidence = Path(tempfile.mkdtemp(prefix="shadps4-generated-rcp-", dir=Path.home()))
     cache = Path.home() / ".cache/shadps4-affinity-20261007"
     cache.mkdir(parents=True, exist_ok=True)
@@ -224,41 +275,48 @@ def main():
         before = digest(installed)
         if profile.emulators():
             raise RuntimeError("Close the current emulator normally before running this test")
-        wrapper = Path.home() / ".local/bin/shadps4-esde"
-        if wrapper.is_symlink():
-            raise RuntimeError("Launcher is a symlink; left untouched")
-        original = wrapper.read_text()
-        (evidence / "launcher-before.sh").write_text(original)
-        games.hook(original, wrapper, evidence / "preflight.json", "CUSA18676")
+        if not cpu_only:
+            wrapper = Path.home() / ".local/bin/shadps4-esde"
+            if wrapper.is_symlink():
+                raise RuntimeError("Launcher is a symlink; left untouched")
+            original = wrapper.read_text()
+            (evidence / "launcher-before.sh").write_text(original)
+            games.hook(original, wrapper, evidence / "preflight.json", "CUSA18676")
         work = Path(tempfile.mkdtemp(prefix="generated-rcp-", dir=cache))
         binary, summary["build"] = build(cache, evidence)
         if profile.emulators() or digest(installed) != before:
             raise RuntimeError("An emulator started or the installed build changed; no game test launched")
         summary["memory_homebrew"] = memory_homebrew(binary, work, evidence)
+        summary["execute_permission"] = execute_homebrew(binary, work, evidence)
         summary["homebrew"] = homebrew(binary, work, evidence)
-        missing = [name for name in ("ffmpeg", "xprop", "xwininfo") if not shutil.which(name)]
-        summary["missing_capture_tools"] = missing
-        if missing:
-            print("FPS=Automatic screenshots unavailable (missing " + ", ".join(missing) +
-                  "); please note the on-screen FPS during each match", flush=True)
-        preservation = None
-        for mode in ("native", "translated"):
-            if digest(installed) != before:
-                raise RuntimeError("Installed build changed between stages")
-            print("PLAY=Use the SAME day match, teams, stadium and camera in both runs. Set DAY explicitly (not Random). Reach kickoff, leave it untouched for 60 seconds, then play for 60 seconds and exit PES normally.", flush=True)
-            print("Keep Moonlight connected until this stage finishes. The existing session guard controls the launch.", flush=True)
-            prefix = [str(binary), "--cpu-id-mode", "native"] if mode == "native" else translated_prefix(binary)
-            result = games.run_stage("CUSA18676", "PES reciprocal comparison", mode, binary, prefix,
-                                     work, evidence, expected_preservation=preservation)
-            summary["stages"].append(result)
-            if not result["capture_complete"] or not result["clean_exit_verified"]:
-                raise RuntimeError("Stage did not exit cleanly; collecting evidence before another launch")
-            preservation = json.loads((work / ("CUSA18676-" + mode) / "preservation.json").read_text())
-        if any(x.get("frame_time_error") or not x.get("frame_time_samples") for x in summary["stages"]):
-            raise RuntimeError("Frame-time capture is incomplete; see the stage results")
-        summary["capture_complete"] = True
-        summary["performance_frames_captured"] = all(x.get("fps_screenshots", 0) > 0 for x in summary["stages"])
-        summary["performance"] = "Frame times and screenshots recorded. Compare matching kickoff/gameplay intervals only; whole-process FPS includes menus/loading and is not a speed comparison."
+        if cpu_only:
+            summary["capture_complete"] = True
+            summary["performance"] = "CPU-only validation; no games launched"
+            print("CPU_TESTS=Memory, execute permissions and reciprocal checks passed", flush=True)
+        else:
+            missing = [name for name in ("ffmpeg", "xprop", "xwininfo") if not shutil.which(name)]
+            summary["missing_capture_tools"] = missing
+            if missing:
+                print("FPS=Automatic screenshots unavailable (missing " + ", ".join(missing) +
+                      "); please note the on-screen FPS during each match", flush=True)
+            preservation = None
+            for mode in ("native", "translated"):
+                if digest(installed) != before:
+                    raise RuntimeError("Installed build changed between stages")
+                print("PLAY=Use the SAME day match, teams, stadium and camera in both runs. Set DAY explicitly (not Random). Reach kickoff, leave it untouched for 60 seconds, then play for 60 seconds and exit PES normally.", flush=True)
+                print("Keep Moonlight connected until this stage finishes. The existing session guard controls the launch.", flush=True)
+                prefix = [str(binary), "--cpu-id-mode", "native"] if mode == "native" else translated_prefix(binary)
+                result = games.run_stage("CUSA18676", "PES reciprocal comparison", mode, binary, prefix,
+                                         work, evidence, expected_preservation=preservation)
+                summary["stages"].append(result)
+                if not result["capture_complete"] or not result["clean_exit_verified"]:
+                    raise RuntimeError("Stage did not exit cleanly; collecting evidence before another launch")
+                preservation = json.loads((work / ("CUSA18676-" + mode) / "preservation.json").read_text())
+            if any(x.get("frame_time_error") or not x.get("frame_time_samples") for x in summary["stages"]):
+                raise RuntimeError("Frame-time capture is incomplete; see the stage results")
+            summary["capture_complete"] = True
+            summary["performance_frames_captured"] = all(x.get("fps_screenshots", 0) > 0 for x in summary["stages"])
+            summary["performance"] = "Frame times and screenshots recorded. Compare matching kickoff/gameplay intervals only; whole-process FPS includes menus/loading and is not a speed comparison."
     except BlockingIOError:
         summary["error"] = "Another CPU test holds the test lock; nothing launched"
         print("TEST_ERROR=" + summary["error"], flush=True)

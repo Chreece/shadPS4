@@ -1,15 +1,15 @@
 {
   "date": "2026-10-09",
-  "candidate_commit": "64b0adc033eed6b3c10d1608c36411b1111eab66",
-  "candidate_tree": "6d814ba933bb698e4a39329306222f6cbe4ec78f",
-  "binary_sha256": "6c2f2c50e8e65a4b4770bbc2c8525822c45bc413a6fa3301ff83fac3778703f7",
-  "memory_fix_commit": "94cdaab53c514f1b55d9f74c9321d37de2a8fed8",
-  "build": "Clang 19 Linux x86-64 Release; CPU translation enabled",
-  "all_checks_passed": false,
+  "candidate_commit": "d0932958240eed98e9de396004b0d4d513dfb974",
+  "candidate_tree": "e7eef24a73392ed50fc661eec33004e4c85bdbfb",
+  "binary_sha256": "dae58cd6087a66d9284752667dfd1f2ab7b11415091ecd0b1844ceb6bc6ecc49",
+  "scope": "Linux x86-64 execute-permission follow-up. Graphics excluded at user request.",
+  "all_checks_passed": true,
   "ordinary_memory": {
     "native": {
       "read_write_checks_passed": 6,
       "high_map_unmap_cycles": 64,
+      "execute_permission_checks_passed": 2,
       "execute_permission_failures": [],
       "all_checks_passed": true,
       "log_sha256": "06dfb3e8f9d3735e31f8b7120950a5c6eed360c28916d6e20b9a2e28b0ec2b1e"
@@ -17,24 +17,24 @@
     "translated": {
       "read_write_checks_passed": 6,
       "high_map_unmap_cycles": 64,
-      "execute_permission_failures": [
-        {
-          "region": "low",
-          "case": "noexec",
-          "faults": "0",
-          "value": "12345678",
-          "failures": "1"
-        },
-        {
-          "region": "high",
-          "case": "noexec",
-          "faults": "0",
-          "value": "12345678",
-          "failures": "1"
-        }
-      ],
-      "all_checks_passed": false,
-      "log_sha256": "06b4be48375bc0cab12a19ce3df143da4ff2604cf6786c6ba45bf90ef98b029a"
+      "execute_permission_checks_passed": 2,
+      "execute_permission_failures": [],
+      "all_checks_passed": true,
+      "log_sha256": "06dfb3e8f9d3735e31f8b7120950a5c6eed360c28916d6e20b9a2e28b0ec2b1e"
+    }
+  },
+  "execute_permission": {
+    "native": {
+      "checks_passed": 16,
+      "faults_recovered": 14,
+      "all_checks_passed": true,
+      "log_sha256": "94403adc2f4c6350008633a427015585781a614b811c5f734ee757bc286d8c78"
+    },
+    "translated": {
+      "checks_passed": 16,
+      "faults_recovered": 14,
+      "all_checks_passed": true,
+      "log_sha256": "94403adc2f4c6350008633a427015585781a614b811c5f734ee757bc286d8c78"
     }
   },
   "generated_reciprocal": {
@@ -124,91 +124,421 @@
     ],
     "log_sha256": "7a1eb51f0a361efad8d96db1cb1f632ec5c08a182537ea6e9c9dd80a37a82a71"
   },
-  "focused_gpu_watch_checks": "Passed using the production signals-backend implementation and real mprotect/SIGSEGV with stub renderer callbacks: watched reads/writes, guest fault ownership, guest permissions retained after untracking, execute-bit preservation, mixed-page protection batching, stale-fault retry and high re-registration.",
-  "frame_logging": "Opt-in recording verified with an actual emulator launch; interval arithmetic and invalid-sample rejection passed. Gameplay measurements require the delivered user test.",
-  "cache_upgrade": "Prior candidate cache upgrade/reuse and dirty-source/binary refusal passed with local Git and a simulated compiler.",
+  "build": "Clang 19 Release; passed",
+  "host_fault_context": "Four native Linux and translated checks agree: initial NX, cached R/RW removal and a cross-page instruction. Fault PC, fault address, SEGV_ACCERR and instruction-fetch error bit verified.",
+  "runtime_cache_upgrade": "Exact previous patch upgrade, current reuse, dirty-source refusal and failed-upgrade rollback passed.",
   "known_limits": [
-    "Two translated no-execute cases fail (low and high addresses). Native no-execute cases pass. These failures are reported and not counted as passing tests.",
-    "The explicit mprotect read/write and unmap fixes were tested with signal-based tracking. userfaultfd and other operating systems were not runtime-tested.",
-    "Initial mapping permissions retain the existing emulator policy; this change does not claim complete memory-protection emulation.",
-    "The current candidate still requires a PES playtest; no performance result is claimed."
+    "The new candidate has not been tested on the user machine yet. The preceding candidate passed the uploaded PES playtest.",
+    "Other OSes and CPU architectures are outside this validation.",
+    "Initial mmap permissions retain the existing emulator policy. This is not a complete memory or CPU emulation claim.",
+    "Guest siginfo fault-address forwarding is unchanged; the precise host fault-context checks cover the Linux translation runtime."
   ],
   "previous_candidate_validation": {
     "date": "2026-10-09",
-    "candidate_commit": "35cc6d34e8e21e4b62cfdad5ebe185eaa2c31854",
-    "candidate_tree": "a2d32b356103b523a4c023778dbec142e6b98930",
-    "binary_sha256": "4ca3ee199f8b03aa58e0c7ea788b3d9b30d642161f1c3f309217a6439f36fffc",
-    "probe_sha256": "d85eaf25063c20a07e2e1507c5dcb303c5b39934da4cc89534aaae0a1a7ce700",
-    "probe_fix": "Scalar memory cases no longer perform an unrelated 32-byte vector load before the tested four-byte instruction.",
-    "generated_numeric_rows": 121856,
-    "hardware_differences": 0,
-    "state_errors": 0,
-    "boundary_reads_without_faults": 4,
-    "recovered_faults": 4,
-    "memory_failures": 0,
-    "scope": "Integrated Linux x86-64 translated mode, CPU-only data mapping above the 40-bit GPU range.",
-    "known_limits": [
-      "A plain non-reciprocal read from PROT_NONE below the 40-bit GPU limit reproduces ErrorOutOfDeviceMemory with translation both enabled and disabled. This is separate from reciprocal translation and is not fixed by moving the test.",
-      "Explicitly unmapping the high CPU-only allocation causes excessive GPU page-table registration in this baseline. The probe retains its 32 KiB until process exit.",
-      "Both modes reached PES gameplay and exited cleanly. The sampled scenes and durations are not matched sufficiently for a performance conclusion; separate day/night coverage is not established by these frames."
-    ],
-    "runner_verification": {
-      "launcher_restore_and_concurrent_edit_refusal": true,
-      "guard_hook_and_duplicate_refusal": true,
-      "cleanup_kills_only_owned_candidate_with_proc_identity_fixture": true,
-      "subprocess_timeout_cleanup": true,
-      "hardware_reference_and_negative_fault_check": true,
-      "actual_x11_ffmpeg_window_capture_with_pid_query_fixture": true,
-      "input_config_copy_and_isolation": true,
-      "input_config_evidence_capture": true,
-      "incremental_cache_upgrade_reuse_and_tamper_refusal": "passed with local Git and simulated compiler"
+    "candidate_commit": "64b0adc033eed6b3c10d1608c36411b1111eab66",
+    "candidate_tree": "6d814ba933bb698e4a39329306222f6cbe4ec78f",
+    "binary_sha256": "6c2f2c50e8e65a4b4770bbc2c8525822c45bc413a6fa3301ff83fac3778703f7",
+    "memory_fix_commit": "94cdaab53c514f1b55d9f74c9321d37de2a8fed8",
+    "build": "Clang 19 Linux x86-64 Release; CPU translation enabled",
+    "all_checks_passed": false,
+    "ordinary_memory": {
+      "native": {
+        "read_write_checks_passed": 6,
+        "high_map_unmap_cycles": 64,
+        "execute_permission_failures": [],
+        "all_checks_passed": true,
+        "log_sha256": "06dfb3e8f9d3735e31f8b7120950a5c6eed360c28916d6e20b9a2e28b0ec2b1e"
+      },
+      "translated": {
+        "read_write_checks_passed": 6,
+        "high_map_unmap_cycles": 64,
+        "execute_permission_failures": [
+          {
+            "region": "low",
+            "case": "noexec",
+            "faults": "0",
+            "value": "12345678",
+            "failures": "1"
+          },
+          {
+            "region": "high",
+            "case": "noexec",
+            "faults": "0",
+            "value": "12345678",
+            "failures": "1"
+          }
+        ],
+        "all_checks_passed": false,
+        "log_sha256": "06b4be48375bc0cab12a19ce3df143da4ff2604cf6786c6ba45bf90ef98b029a"
+      }
     },
-    "runner_homebrew_rerun": "Passed with the delivered runner: 121856 hardware-matching rows, four boundary reads and four fault recoveries.",
-    "source_rebuild_matches_packaged_eboot": true,
-    "previous_candidate_commit": "b85320a062e71eecc85ccc2c0d01e86a7be85018",
-    "exit_support": {
-      "pr": 5235,
-      "pr_head": "4651f38dc15757be7b9428b402f9a223cfc05743",
-      "production_files": 5,
-      "focused_tests_passed": 7,
-      "release_build": "passed",
-      "live_gamepad_confirmation": "Passed in native and translated modes; controller opened, confirmed and accepted the quit dialog."
-    },
-    "uploaded_run": {
-      "archive": "shadps4-generated-rcp-1bcymqkv.tar.gz",
-      "archive_sha256": "8c7d0de3c14995f37cb71e137dcd66a06357c5925302ea2252f84ffc0ed12aee",
-      "hardware_rows": 121856,
+    "generated_reciprocal": {
+      "rows": 121856,
       "hardware_differences": 0,
-      "memory_failures": 0,
-      "native_run_ended_by_signal": 15,
-      "owned_processes_remaining": 0,
-      "launcher_restored": true,
-      "installed_binary_and_original_profile_unchanged": true,
-      "translated_game_run": "not started",
-      "confirmed_package_omissions": [
-        "input_config was not copied into the isolated profile",
-        "candidate did not include PR #5235 quit routing"
-      ]
+      "memory_cases": [
+        {
+          "region": "low",
+          "op": "rcpss_mem",
+          "boundary": "3eaaa800",
+          "boundary_faults": "0",
+          "value": "3eaaa800",
+          "recovered": "1",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "low",
+          "op": "vrcpss_mem",
+          "boundary": "3eaaa800",
+          "boundary_faults": "0",
+          "value": "3eaaa800",
+          "recovered": "2",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "low",
+          "op": "rsqrtss_mem",
+          "boundary": "3f13c800",
+          "boundary_faults": "0",
+          "value": "3f13c800",
+          "recovered": "3",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "low",
+          "op": "vrsqrtss_mem",
+          "boundary": "3f13c800",
+          "boundary_faults": "0",
+          "value": "3f13c800",
+          "recovered": "4",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "high",
+          "op": "rcpss_mem",
+          "boundary": "3eaaa800",
+          "boundary_faults": "0",
+          "value": "3eaaa800",
+          "recovered": "5",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "high",
+          "op": "vrcpss_mem",
+          "boundary": "3eaaa800",
+          "boundary_faults": "0",
+          "value": "3eaaa800",
+          "recovered": "6",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "high",
+          "op": "rsqrtss_mem",
+          "boundary": "3f13c800",
+          "boundary_faults": "0",
+          "value": "3f13c800",
+          "recovered": "7",
+          "flags": "200246/200246",
+          "failures": "0"
+        },
+        {
+          "region": "high",
+          "op": "vrsqrtss_mem",
+          "boundary": "3f13c800",
+          "boundary_faults": "0",
+          "value": "3f13c800",
+          "recovered": "8",
+          "flags": "200246/200246",
+          "failures": "0"
+        }
+      ],
+      "log_sha256": "7a1eb51f0a361efad8d96db1cb1f632ec5c08a182537ea6e9c9dd80a37a82a71"
     },
-    "successful_playtest": {
-      "archive": "shadps4-generated-rcp-3a4zax5x.tar.gz",
-      "archive_sha256": "8b9fbbf0361d1e9ae06942aac1199b2ed401566694db8cd440e2425889190ba6",
+    "focused_gpu_watch_checks": "Passed using the production signals-backend implementation and real mprotect/SIGSEGV with stub renderer callbacks: watched reads/writes, guest fault ownership, guest permissions retained after untracking, execute-bit preservation, mixed-page protection batching, stale-fault retry and high re-registration.",
+    "frame_logging": "Collected 4600 native and 6049 translated frame samples from the same binary on the user machine; no controlled performance conclusion.",
+    "cache_upgrade": "Prior candidate cache upgrade/reuse and dirty-source/binary refusal passed with local Git and a simulated compiler.",
+    "known_limits": [
+      "Two translated no-execute cases fail (low and high addresses). Native no-execute cases pass. These failures are reported and not counted as passing tests.",
+      "The explicit mprotect read/write and unmap fixes were tested with signal-based tracking. userfaultfd and other operating systems were not runtime-tested.",
+      "Initial mapping permissions retain the existing emulator policy; this change does not claim complete memory-protection emulation."
+    ],
+    "previous_candidate_validation": {
+      "date": "2026-10-09",
       "candidate_commit": "35cc6d34e8e21e4b62cfdad5ebe185eaa2c31854",
       "candidate_tree": "a2d32b356103b523a4c023778dbec142e6b98930",
-      "binary_sha256": "41c9e7867ab71fef37c44cae0044274986dcea8088971a45b0e8f5a61931a216",
-      "hardware_rows": 121856,
+      "binary_sha256": "4ca3ee199f8b03aa58e0c7ea788b3d9b30d642161f1c3f309217a6439f36fffc",
+      "probe_sha256": "d85eaf25063c20a07e2e1507c5dcb303c5b39934da4cc89534aaae0a1a7ce700",
+      "probe_fix": "Scalar memory cases no longer perform an unrelated 32-byte vector load before the tested four-byte instruction.",
+      "generated_numeric_rows": 121856,
       "hardware_differences": 0,
       "state_errors": 0,
       "boundary_reads_without_faults": 4,
       "recovered_faults": 4,
       "memory_failures": 0,
+      "scope": "Integrated Linux x86-64 translated mode, CPU-only data mapping above the 40-bit GPU range.",
+      "known_limits": [
+        "A plain non-reciprocal read from PROT_NONE below the 40-bit GPU limit reproduces ErrorOutOfDeviceMemory with translation both enabled and disabled. This is separate from reciprocal translation and is not fixed by moving the test.",
+        "Explicitly unmapping the high CPU-only allocation causes excessive GPU page-table registration in this baseline. The probe retains its 32 KiB until process exit.",
+        "Both modes reached PES gameplay and exited cleanly. The sampled scenes and durations are not matched sufficiently for a performance conclusion; separate day/night coverage is not established by these frames."
+      ],
+      "runner_verification": {
+        "launcher_restore_and_concurrent_edit_refusal": true,
+        "guard_hook_and_duplicate_refusal": true,
+        "cleanup_kills_only_owned_candidate_with_proc_identity_fixture": true,
+        "subprocess_timeout_cleanup": true,
+        "hardware_reference_and_negative_fault_check": true,
+        "actual_x11_ffmpeg_window_capture_with_pid_query_fixture": true,
+        "input_config_copy_and_isolation": true,
+        "input_config_evidence_capture": true,
+        "incremental_cache_upgrade_reuse_and_tamper_refusal": "passed with local Git and simulated compiler"
+      },
+      "runner_homebrew_rerun": "Passed with the delivered runner: 121856 hardware-matching rows, four boundary reads and four fault recoveries.",
+      "source_rebuild_matches_packaged_eboot": true,
+      "previous_candidate_commit": "b85320a062e71eecc85ccc2c0d01e86a7be85018",
+      "exit_support": {
+        "pr": 5235,
+        "pr_head": "4651f38dc15757be7b9428b402f9a223cfc05743",
+        "production_files": 5,
+        "focused_tests_passed": 7,
+        "release_build": "passed",
+        "live_gamepad_confirmation": "Passed in native and translated modes; controller opened, confirmed and accepted the quit dialog."
+      },
+      "uploaded_run": {
+        "archive": "shadps4-generated-rcp-1bcymqkv.tar.gz",
+        "archive_sha256": "8c7d0de3c14995f37cb71e137dcd66a06357c5925302ea2252f84ffc0ed12aee",
+        "hardware_rows": 121856,
+        "hardware_differences": 0,
+        "memory_failures": 0,
+        "native_run_ended_by_signal": 15,
+        "owned_processes_remaining": 0,
+        "launcher_restored": true,
+        "installed_binary_and_original_profile_unchanged": true,
+        "translated_game_run": "not started",
+        "confirmed_package_omissions": [
+          "input_config was not copied into the isolated profile",
+          "candidate did not include PR #5235 quit routing"
+        ]
+      },
+      "successful_playtest": {
+        "archive": "shadps4-generated-rcp-3a4zax5x.tar.gz",
+        "archive_sha256": "8b9fbbf0361d1e9ae06942aac1199b2ed401566694db8cd440e2425889190ba6",
+        "candidate_commit": "35cc6d34e8e21e4b62cfdad5ebe185eaa2c31854",
+        "candidate_tree": "a2d32b356103b523a4c023778dbec142e6b98930",
+        "binary_sha256": "41c9e7867ab71fef37c44cae0044274986dcea8088971a45b0e8f5a61931a216",
+        "hardware_rows": 121856,
+        "hardware_differences": 0,
+        "state_errors": 0,
+        "boundary_reads_without_faults": 4,
+        "recovered_faults": 4,
+        "memory_failures": 0,
+        "same_binary_both_modes": true,
+        "same_graphics_settings": true,
+        "same_input_bindings": true,
+        "stages": [
+          {
+            "mode": "native",
+            "elapsed_seconds": 173.06004225311335,
+            "returncode": 0,
+            "translation_active": false,
+            "quit_dialog": {
+              "opened": true,
+              "confirmed": true,
+              "accepted": true,
+              "cancelled": false
+            },
+            "forced_process_cleanup": false,
+            "owned_processes_remaining": [],
+            "launcher_restored": true,
+            "original_profile_unchanged": true,
+            "fps_screenshots": 11,
+            "gameplay_observed_in_frames": true
+          },
+          {
+            "mode": "translated",
+            "elapsed_seconds": 113.069610995939,
+            "returncode": 0,
+            "translation_active": true,
+            "quit_dialog": {
+              "opened": true,
+              "confirmed": true,
+              "accepted": true,
+              "cancelled": false
+            },
+            "forced_process_cleanup": false,
+            "owned_processes_remaining": [],
+            "launcher_restored": true,
+            "original_profile_unchanged": true,
+            "fps_screenshots": 7,
+            "gameplay_observed_in_frames": true
+          }
+        ],
+        "installed_binary_unchanged": true,
+        "rendering_observation": "White rendering appears in gameplay frames from both modes. These runs do not isolate its cause.",
+        "performance_conclusion": "Inconclusive: unmatched gameplay samples, only one translated gameplay frame.",
+        "fps_samples": [
+          {
+            "mode": "native",
+            "frame": "frame-0090.png",
+            "fps": 60,
+            "frame_sha256": "46839d777ab4bdf0b411d068d5508c16fc5ea17620fc42d06e62fb886d7a00c4"
+          },
+          {
+            "mode": "native",
+            "frame": "frame-0105.png",
+            "fps": 60,
+            "frame_sha256": "6ef524954a41dbc8602c9e040b709572a708d8d12ad40a6daf3664ca2c8ee0a0"
+          },
+          {
+            "mode": "native",
+            "frame": "frame-0165.png",
+            "fps": 34,
+            "frame_sha256": "e83562f96dfd4fc5c5f00f5efefb9492e500f6f3689cd098c2d7130b34091797"
+          },
+          {
+            "mode": "translated",
+            "frame": "frame-0090.png",
+            "fps": 30,
+            "frame_sha256": "54a527985a4b8ead4a8cc4a99b14e879c2aed7e5185e593f7e195255d80b5c5d"
+          }
+        ]
+      }
+    },
+    "formatting": "passed",
+    "reuse": "passed for candidate source",
+    "current_candidate_playtest": {
+      "archive": "shadps4-generated-rcp-a0d71gx8.tar.gz",
+      "archive_sha256": "dab475794c71e86e37aa1377bcf8c5b6b2b64d8405673be499e97f64a1456cff",
+      "candidate_commit": "64b0adc033eed6b3c10d1608c36411b1111eab66",
+      "candidate_tree": "6d814ba933bb698e4a39329306222f6cbe4ec78f",
+      "binary_sha256": "a7cf85634f89d0e2e38f9f8623bdec9ba2c8476990dbbb545c8a40bbb121d3ce",
+      "ordinary_memory": {
+        "native": {
+          "read_write_checks_passed": 6,
+          "high_map_unmap_cycles": 64,
+          "execute_permission_failures": [],
+          "all_checks_passed": true,
+          "log_sha256": "06dfb3e8f9d3735e31f8b7120950a5c6eed360c28916d6e20b9a2e28b0ec2b1e"
+        },
+        "translated": {
+          "read_write_checks_passed": 6,
+          "high_map_unmap_cycles": 64,
+          "execute_permission_failures": [
+            {
+              "region": "low",
+              "case": "noexec",
+              "faults": "0",
+              "value": "12345678",
+              "failures": "1"
+            },
+            {
+              "region": "high",
+              "case": "noexec",
+              "faults": "0",
+              "value": "12345678",
+              "failures": "1"
+            }
+          ],
+          "all_checks_passed": false,
+          "log_sha256": "06b4be48375bc0cab12a19ce3df143da4ff2604cf6786c6ba45bf90ef98b029a"
+        }
+      },
+      "generated_reciprocal": {
+        "rows": 121856,
+        "hardware_differences": 0,
+        "memory_cases": [
+          {
+            "region": "low",
+            "op": "rcpss_mem",
+            "boundary": "3eaaa800",
+            "boundary_faults": "0",
+            "value": "3eaaa800",
+            "recovered": "1",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "low",
+            "op": "vrcpss_mem",
+            "boundary": "3eaaa800",
+            "boundary_faults": "0",
+            "value": "3eaaa800",
+            "recovered": "2",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "low",
+            "op": "rsqrtss_mem",
+            "boundary": "3f13c800",
+            "boundary_faults": "0",
+            "value": "3f13c800",
+            "recovered": "3",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "low",
+            "op": "vrsqrtss_mem",
+            "boundary": "3f13c800",
+            "boundary_faults": "0",
+            "value": "3f13c800",
+            "recovered": "4",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "high",
+            "op": "rcpss_mem",
+            "boundary": "3eaaa800",
+            "boundary_faults": "0",
+            "value": "3eaaa800",
+            "recovered": "5",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "high",
+            "op": "vrcpss_mem",
+            "boundary": "3eaaa800",
+            "boundary_faults": "0",
+            "value": "3eaaa800",
+            "recovered": "6",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "high",
+            "op": "rsqrtss_mem",
+            "boundary": "3f13c800",
+            "boundary_faults": "0",
+            "value": "3f13c800",
+            "recovered": "7",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "high",
+            "op": "vrsqrtss_mem",
+            "boundary": "3f13c800",
+            "boundary_faults": "0",
+            "value": "3f13c800",
+            "recovered": "8",
+            "flags": "200246/200246",
+            "failures": "0"
+          }
+        ],
+        "log_sha256": "8a1439f08e5e9ed675aa602e87cca434d5e84c1a69012d85802c1af4de438245"
+      },
       "same_binary_both_modes": true,
-      "same_graphics_settings": true,
-      "same_input_bindings": true,
       "stages": [
         {
           "mode": "native",
-          "elapsed_seconds": 173.06004225311335,
+          "elapsed_seconds": 99.69118820503354,
           "returncode": 0,
           "translation_active": false,
           "quit_dialog": {
@@ -220,13 +550,20 @@
           "forced_process_cleanup": false,
           "owned_processes_remaining": [],
           "launcher_restored": true,
-          "original_profile_unchanged": true,
-          "fps_screenshots": 11,
-          "gameplay_observed_in_frames": true
+          "source_files_unchanged": true,
+          "source_config_unchanged": true,
+          "source_users_unchanged": true,
+          "installed_binary_unchanged": true,
+          "fps_screenshots": 6,
+          "frame_time_samples": 4600,
+          "clean_exit_verified": true,
+          "console.log_sha256": "9215e24461c26463bf08c103fdf7542948df6311e2c0ea5bf65f13b1dcbde50e",
+          "frame-times.csv_sha256": "b2ca3e3a15c0ef571906ab86c64ec88fd5c7b77f5f4c830c5f21a808244f087e",
+          "result.json_sha256": "f83178043b069bcc4eb80adb2a2c1a30219e7b5f422d1ff73e152866bdd91f01"
         },
         {
           "mode": "translated",
-          "elapsed_seconds": 113.069610995939,
+          "elapsed_seconds": 132.28670955996495,
           "returncode": 0,
           "translation_active": true,
           "quit_dialog": {
@@ -238,42 +575,26 @@
           "forced_process_cleanup": false,
           "owned_processes_remaining": [],
           "launcher_restored": true,
-          "original_profile_unchanged": true,
-          "fps_screenshots": 7,
-          "gameplay_observed_in_frames": true
+          "source_files_unchanged": true,
+          "source_config_unchanged": true,
+          "source_users_unchanged": true,
+          "installed_binary_unchanged": true,
+          "fps_screenshots": 8,
+          "frame_time_samples": 6049,
+          "clean_exit_verified": true,
+          "console.log_sha256": "e32f291275876804f8f2646ef659285bdc64b5f72ddd120783a7b7a578e6cffc",
+          "frame-times.csv_sha256": "f83a16a1a805f1afa4eeee1a6a461ce331a920160aaf668fc9d1a7d8ce1b0758",
+          "result.json_sha256": "c04c9a8543775b5734a4de8edfa1eb1ed593131a76326b6e6428978cc61a0d34"
         }
       ],
-      "installed_binary_unchanged": true,
-      "rendering_observation": "White rendering appears in gameplay frames from both modes. These runs do not isolate its cause.",
-      "performance_conclusion": "Inconclusive: unmatched gameplay samples, only one translated gameplay frame.",
-      "fps_samples": [
-        {
-          "mode": "native",
-          "frame": "frame-0090.png",
-          "fps": 60,
-          "frame_sha256": "46839d777ab4bdf0b411d068d5508c16fc5ea17620fc42d06e62fb886d7a00c4"
-        },
-        {
-          "mode": "native",
-          "frame": "frame-0105.png",
-          "fps": 60,
-          "frame_sha256": "6ef524954a41dbc8602c9e040b709572a708d8d12ad40a6daf3664ca2c8ee0a0"
-        },
-        {
-          "mode": "native",
-          "frame": "frame-0165.png",
-          "fps": 34,
-          "frame_sha256": "e83562f96dfd4fc5c5f00f5efefb9492e500f6f3689cd098c2d7130b34091797"
-        },
-        {
-          "mode": "translated",
-          "frame": "frame-0090.png",
-          "fps": 30,
-          "frame_sha256": "54a527985a4b8ead4a8cc4a99b14e879c2aed7e5185e593f7e195255d80b5c5d"
-        }
-      ]
+      "performance_conclusion": "No speedup or slowdown conclusion: the recordings include different amounts of menus, loading and gameplay.",
+      "scope": "CPU/memory behavior and clean exit; graphics investigation excluded at user request."
     }
   },
-  "formatting": "passed",
-  "reuse": "passed for candidate source"
+  "runner_validation": {
+    "cpu_only_full_run": "Passed with the real emulator and automatic homebrew. Only the build/download step was replaced with the locally built candidate; game-launch hooks were forbidden.",
+    "archive_and_cleanup": "Single archive, unchanged installed-binary fixture, no gameplay stage, successful temporary-runtime cleanup.",
+    "candidate_cache": "Previous cache upgrade, reuse, dirty-source and modified-binary refusal passed with local Git and a simulated compiler.",
+    "failed_test_rejection": "Missing cached execute fault and the old translated NX failures rejected."
+  }
 }

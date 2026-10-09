@@ -1,0 +1,20 @@
+EXECUTE_BEGIN
+EXECUTE region=low case=first_nx faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=low case=cached_rw faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=low case=cached_r faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=low case=cached_none faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=low case=cross_first faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=low case=cross_cached faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=low case=fallthrough faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=low case=branch_untaken faults=0 expected=0 value=12345678 failures=0
+EXECUTE_UNMAP region=low result=0
+EXECUTE region=high case=first_nx faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=high case=cached_rw faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=high case=cached_r faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=high case=cached_none faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=high case=cross_first faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=high case=cross_cached faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=high case=fallthrough faults=1 expected=1 value=12345678 failures=0
+EXECUTE region=high case=branch_untaken faults=0 expected=0 value=12345678 failures=0
+EXECUTE_UNMAP region=high result=0
+EXECUTE_END recovered=14 failures=0
