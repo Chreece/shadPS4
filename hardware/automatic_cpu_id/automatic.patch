@@ -1,0 +1,531 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 62333b1c..14ba91ba 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -40,7 +40,6 @@ option(ENABLE_DISCORD_RPC "Enable the Discord RPC integration" ON)
+ option(ENABLE_UPDATER "Enables the options to updater" ON)
+ option(ENABLE_TESTS "Build unit tests (requires GTest)" OFF)
+ option(ENABLE_SYSTEM_LIBRARIES "Enable building against system libraries" OFF)
+-option(ENABLE_CPU_ID_TRANSLATION "Build experimental DynamoRIO CPU identity translation" OFF)
+ 
+ # First, determine whether to use CMAKE_OSX_ARCHITECTURES or CMAKE_SYSTEM_PROCESSOR.
+ if (APPLE AND CMAKE_OSX_ARCHITECTURES)
+@@ -66,6 +65,9 @@ if (ARCHITECTURE STREQUAL "x86_64")
+     add_compile_options(-march=x86-64-v3)
+ endif()
+ 
++cmake_dependent_option(ENABLE_CPU_ID_TRANSLATION "Bundle Linux CPU identity translation" ON
++    "CMAKE_SYSTEM_NAME STREQUAL Linux;ARCHITECTURE STREQUAL x86_64" OFF)
++
+ cmake_host_system_information(RESULT PROC_INFO QUERY PROCESSOR_DESCRIPTION)
+ 
+ message(STATUS "${PROC_INFO}")
+@@ -1329,13 +1331,12 @@ if (ENABLE_CPU_ID_TRANSLATION)
+     if (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT ARCHITECTURE STREQUAL "x86_64")
+         message(FATAL_ERROR "CPU identity translation requires Linux x86-64")
+     endif()
+-    find_package(DynamoRIO CONFIG REQUIRED)
+-    set_property(SOURCE src/core/cpu_id.cpp APPEND PROPERTY
+-        COMPILE_DEFINITIONS ENABLE_CPU_ID_TRANSLATION)
++    target_compile_definitions(shadps4 PRIVATE ENABLE_CPU_ID_TRANSLATION)
++    target_sources(shadps4 PRIVATE src/core/cpu_id_translation/launcher.cpp)
+     target_link_options(shadps4 PRIVATE
+         "-Wl,--export-dynamic-symbol=ShadCpuIdTranslationActive"
+         "-Wl,--export-dynamic-symbol=ShadCpuIdTranslationRange")
+-    add_subdirectory(src/core/cpu_id_translation)
++    include(cmake/CpuIdTranslation.cmake)
+ endif()
+ 
+ target_link_libraries(shadps4 PRIVATE spdlog::spdlog)
+diff --git a/cmake/CpuIdTranslation.cmake b/cmake/CpuIdTranslation.cmake
+new file mode 100644
+index 00000000..52aff54d
+--- /dev/null
++++ b/cmake/CpuIdTranslation.cmake
+@@ -0,0 +1,47 @@
++# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++# SPDX-License-Identifier: GPL-2.0-or-later
++
++set(cpu_id_source "${PROJECT_SOURCE_DIR}/src/core/cpu_id_translation")
++set(cpu_id_bundle "${PROJECT_BINARY_DIR}/cpu-id-runtime")
++if (DynamoRIO_DIR)
++    find_package(DynamoRIO CONFIG REQUIRED)
++    add_subdirectory(src/core/cpu_id_translation)
++    get_filename_component(cpu_id_runtime "${DynamoRIO_DIR}/.." ABSOLUTE)
++    if (NOT DynamoRIO_SOURCE_DIR)
++        set(DynamoRIO_SOURCE_DIR "${cpu_id_runtime}")
++    endif()
++    add_custom_target(shadps4_cpu_id_bundle
++        COMMAND "${CMAKE_COMMAND}" "-DRUNTIME=${cpu_id_runtime}"
++            "-DSOURCE=${DynamoRIO_SOURCE_DIR}" "-DCLIENT=$<TARGET_FILE:shadps4_cpu_id>"
++            "-DOUTPUT=${cpu_id_bundle}" -P "${cpu_id_source}/package.cmake"
++        DEPENDS shadps4_cpu_id VERBATIM)
++else()
++    include(ExternalProject)
++    find_package(Python3 REQUIRED COMPONENTS Interpreter)
++    find_program(cpu_id_ninja NAMES ninja ninja-build REQUIRED)
++    set(cpu_id_runtime "${PROJECT_BINARY_DIR}/cpu-id-runtime-build")
++    set(cpu_id_runtime_source "${PROJECT_BINARY_DIR}/cpu-id-runtime-source")
++    ExternalProject_Add(shadps4_cpu_id_runtime
++        SOURCE_DIR "${cpu_id_runtime_source}"
++        DOWNLOAD_COMMAND ""
++        CONFIGURE_COMMAND ""
++        BUILD_COMMAND "${Python3_EXECUTABLE}" "${cpu_id_source}/build.py" --runtime-only
++            --runtime-source "${cpu_id_runtime_source}" --runtime-build "${cpu_id_runtime}"
++            --cmake "${CMAKE_COMMAND}" --ninja "${cpu_id_ninja}" --jobs 2
++        BUILD_ALWAYS TRUE
++        INSTALL_COMMAND "")
++    ExternalProject_Add(shadps4_cpu_id_bundle
++        SOURCE_DIR "${cpu_id_source}"
++        BINARY_DIR "${PROJECT_BINARY_DIR}/cpu-id-client-build"
++        DOWNLOAD_COMMAND ""
++        CMAKE_ARGS "-DDynamoRIO_DIR=${cpu_id_runtime}/cmake"
++            "-DCMAKE_BUILD_TYPE=Release" "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
++        BUILD_ALWAYS TRUE
++        INSTALL_COMMAND "${CMAKE_COMMAND}" "-DRUNTIME=${cpu_id_runtime}"
++            "-DSOURCE=${cpu_id_runtime_source}"
++            "-DCLIENT=<BINARY_DIR>/libshadps4_cpu_id.so" "-DOUTPUT=${cpu_id_bundle}"
++            -P "${cpu_id_source}/package.cmake"
++        DEPENDS shadps4_cpu_id_runtime)
++endif()
++add_dependencies(shadps4 shadps4_cpu_id_bundle)
++install(DIRECTORY "${cpu_id_bundle}" DESTINATION libexec/shadps4 USE_SOURCE_PERMISSIONS)
+diff --git a/src/core/cpu_id_translation/CMakeLists.txt b/src/core/cpu_id_translation/CMakeLists.txt
+index 2c95cd29..8d017fe0 100644
+--- a/src/core/cpu_id_translation/CMakeLists.txt
++++ b/src/core/cpu_id_translation/CMakeLists.txt
+@@ -1,6 +1,12 @@
+ # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+ # SPDX-License-Identifier: GPL-2.0-or-later
+ 
++cmake_minimum_required(VERSION 3.24)
++if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
++    project(shadps4_cpu_id C)
++    find_package(DynamoRIO CONFIG REQUIRED)
++endif()
++
+ set(PREFERRED_BASE 0x710040000000)
+ add_library(shadps4_cpu_id SHARED client.c)
+ configure_DynamoRIO_client(shadps4_cpu_id)
+@@ -9,3 +15,6 @@ if (CMAKE_C_COMPILER_ID MATCHES "Clang" AND LINKER_IS_LLVM_LLD)
+ endif()
+ use_DynamoRIO_extension(shadps4_cpu_id drmgr)
+ use_DynamoRIO_extension(shadps4_cpu_id drwrap)
++set_target_properties(shadps4_cpu_id PROPERTIES
++    BUILD_WITH_INSTALL_RPATH ON
++    INSTALL_RPATH "$ORIGIN/lib64/release;$ORIGIN/ext/lib64/release")
+diff --git a/src/core/cpu_id_translation/build.py b/src/core/cpu_id_translation/build.py
+index 36b6afed..ee497e32 100644
+--- a/src/core/cpu_id_translation/build.py
++++ b/src/core/cpu_id_translation/build.py
+@@ -27,6 +27,7 @@ def main():
+     parser.add_argument("--build-dir", type=Path, default=ROOT / "build-cpu-id-translation")
+     parser.add_argument("--runtime-source", type=Path)
+     parser.add_argument("--runtime-build", type=Path)
++    parser.add_argument("--runtime-only", action="store_true")
+     parser.add_argument("--cmake", default=shutil.which("cmake"))
+     parser.add_argument("--ninja", default=shutil.which("ninja"))
+     parser.add_argument("--cc", help="Emulator C compiler")
+@@ -41,8 +42,10 @@ def main():
+     source = (args.runtime_source or cache / "source").resolve()
+     runtime = (args.runtime_build or cache / "build").resolve()
+     build = args.build_dir.resolve()
+-    if not source.exists():
+-        source.mkdir(parents=True)
++    if not (source / ".git").exists():
++        if source.exists() and any(source.iterdir()):
++            raise RuntimeError("Runtime source is not an empty directory or a git checkout; preserved")
++        source.mkdir(parents=True, exist_ok=True)
+         run("git", "init", source)
+         run("git", "remote", "add", "origin", REPOSITORY, cwd=source)
+         run("git", "fetch", "--depth", "1", "--no-recurse-submodules", "origin", REVISION,
+@@ -51,7 +54,7 @@ def main():
+     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+     if head != REVISION:
+         raise RuntimeError("Runtime source has a different revision; preserved")
+-    diff = subprocess.check_output(["git", "diff", "HEAD", "--"], cwd=source)
++    diff = subprocess.check_output(["git", "diff", "--abbrev=7", "HEAD", "--"], cwd=source)
+     if not diff:
+         run("git", "apply", "--check", PATCH, cwd=source)
+         run("git", "apply", PATCH, cwd=source)
+@@ -64,8 +67,10 @@ def main():
+         "-DBUILD_DOCS=OFF", "-DBUILD_EXT=ON", "-DDISABLE_DRGUI=ON",
+         "-DDISABLE_WARNINGS=ON", "-Dpreferred_base=0x710000000000",
+         "-DPREFERRED_BASE=0x710040000000")
+-    run(args.cmake, "--build", runtime, "--target", "dynamorio", "drrun", "drmgr", "drwrap",
++    run(args.cmake, "--build", runtime, "--target", "dynamorio", "drpreload", "drrun", "drmgr", "drwrap",
+         "--parallel", args.jobs)
++    if args.runtime_only:
++        return
+     generator = [] if (build / "CMakeCache.txt").exists() else [
+         "-G", "Ninja", "-DCMAKE_MAKE_PROGRAM=" + args.ninja]
+     compilers = []
+@@ -74,7 +79,8 @@ def main():
+     if args.cxx:
+         compilers.append("-DCMAKE_CXX_COMPILER=" + args.cxx)
+     run(args.cmake, "-S", ROOT, "-B", build, *generator, *compilers, "-DCMAKE_BUILD_TYPE=Release",
+-        "-DENABLE_CPU_ID_TRANSLATION=ON", "-DDynamoRIO_DIR=" + str(runtime / "cmake"))
++        "-DENABLE_CPU_ID_TRANSLATION=ON", "-DDynamoRIO_DIR=" + str(runtime / "cmake"),
++        "-DDynamoRIO_SOURCE_DIR=" + str(source))
+     run(args.cmake, "--build", build, "--target", "shadps4", "shadps4_cpu_id",
+         "--parallel", args.jobs)
+     command = [str(runtime / "bin64/drrun"), "-disable_rseq", "-vm_base", "0x710020000000",
+diff --git a/src/core/cpu_id_translation/dynamorio.patch b/src/core/cpu_id_translation/dynamorio.patch
+index 002ea056..ab9c52d6 100644
+--- a/src/core/cpu_id_translation/dynamorio.patch
++++ b/src/core/cpu_id_translation/dynamorio.patch
+@@ -13,10 +13,37 @@ index c570f60..1629abf 100644
+      ASSERT(mi->maps != INVALID_FILE);
+      mi->buf[BUFSIZE - 1] = '\0'; /* permanently */
+ diff --git a/core/unix/os.c b/core/unix/os.c
+-index 3c22697..ee86fba 100644
++index 3c22697..3fe7030 100644
+ --- a/core/unix/os.c
+ +++ b/core/unix/os.c
+-@@ -8530,6 +8530,32 @@ pre_system_call(dcontext_t *dcontext)
++@@ -7979,15 +7979,18 @@ pre_system_call(dcontext_t *dcontext)
++            asmlinkage int
++            sys_rt_sigsuspend(sigset_t *unewset, size_t sigsetsize)
++          */
++-        /* TODO i#7955: If a signal is already pending (either because it was blocked
++-         * and is now unblocked by sigsuspend, or because it was already unblocked
++-         * but delayed by DR), executing sigsuspend may hang because the signal
++-         * was already consumed by DR's signal handler. We should detect this (e.g.,
++-         * check signals_pending > 0 after handle_sigsuspend) and preemptively deliver
++-         * the signal and skip/re-execute the syscall.
+++        /* A signal consumed by DR cannot wake the kernel's sigsuspend.  Return
+++         * to dispatch to deliver it with the temporary mask; signal delivery
+++         * restores the original mask through terminate_sigsuspend().
++          */
++-        handle_sigsuspend(dcontext, (kernel_sigset_t *)sys_param(dcontext, 0),
++-                          (size_t)sys_param(dcontext, 1));
+++        dcontext->sys_param0 = sys_param(dcontext, 0);
+++        int error = handle_sigsuspend(dcontext, (kernel_sigset_t *)dcontext->sys_param0,
+++                                     (size_t)sys_param(dcontext, 1));
+++        if (error != 0) {
+++            set_failure_return_val(dcontext, error);
+++            DODEBUG({ dcontext->expect_last_syscall_to_fail = true; });
+++            execute_syscall = false;
+++        }
++         break;
++     }
++ #ifdef LINUX
++@@ -8530,6 +8533,32 @@ pre_system_call(dcontext_t *dcontext)
+          /* we handle arch_prctl in post_syscall */
+          dcontext->sys_param0 = sys_param(dcontext, 0);
+          dcontext->sys_param1 = sys_param(dcontext, 1);
+@@ -49,7 +76,21 @@ index 3c22697..ee86fba 100644
+          break;
+      }
+  #    endif
+-@@ -10015,8 +10041,7 @@ read_proc_self_exe(bool ignore_cache)
++@@ -9571,6 +9600,13 @@ post_system_call(dcontext_t *dcontext)
++         success = true;
++         break;
++ 
+++#ifdef MACOS
+++    case SYS_sigsuspend_nocancel:
+++#endif
+++    case IF_MACOS_ELSE(SYS_sigsuspend, SYS_rt_sigsuspend):
+++        set_syscall_param(dcontext, 0, dcontext->sys_param0);
+++        break;
+++
++     case SYS_setitimer: /* 104 */
++         handle_post_setitimer(dcontext, success, (int)dcontext->sys_param0,
++                               (const struct itimerval *)dcontext->sys_param1,
++@@ -10015,8 +10051,7 @@ read_proc_self_exe(bool ignore_cache)
+           */
+          ssize_t res;
+          DEBUG_DECLARE(int len =)
+@@ -59,7 +100,7 @@ index 3c22697..ee86fba 100644
+          ASSERT(len > 0);
+          NULL_TERMINATE_BUFFER(exepath);
+          /* i#960: readlink does not null terminate, so we do it. */
+-@@ -11130,6 +11155,33 @@ os_list_threads_from_task_dir(dcontext_t *dcontext, const char *task_path,
++@@ -11130,6 +11165,33 @@ os_list_threads_from_task_dir(dcontext_t *dcontext, const char *task_path,
+          ASSERT_MESSAGE(CHKLVL_ASSERTS, "failed to parse /proc/pid/task entry", r == 1);
+          if (tid <= 0)
+              continue;
+@@ -93,3 +134,75 @@ index 3c22697..ee86fba 100644
+          if (num_threads == tids_alloced) {
+              /* realloc, essentially.  Less expensive than counting first. */
+              new_tids = HEAP_ARRAY_ALLOC(dcontext, thread_id_t, tids_alloced * 2,
++diff --git a/core/unix/os_private.h b/core/unix/os_private.h
++index b09211d..6ee30e9 100644
++--- a/core/unix/os_private.h
+++++ b/core/unix/os_private.h
++@@ -370,7 +370,7 @@ handle_sigprocmask(dcontext_t *dcontext, int how, kernel_sigset_t *set,
++ int
++ handle_post_sigprocmask(dcontext_t *dcontext, int how, kernel_sigset_t *set,
++                         kernel_sigset_t *oset, size_t sigsetsize);
++-void
+++int
++ handle_sigsuspend(dcontext_t *dcontext, kernel_sigset_t *set, size_t sigsetsize);
++ 
++ #ifdef LINUX
++diff --git a/core/unix/signal.c b/core/unix/signal.c
++index 2c5c3ab..aa8bae6 100644
++--- a/core/unix/signal.c
+++++ b/core/unix/signal.c
++@@ -2696,12 +2696,18 @@ handle_post_sigprocmask(dcontext_t *dcontext, int how, kernel_sigset_t *app_set,
++     return 0;
++ }
++ 
++-void
+++int
++ handle_sigsuspend(dcontext_t *dcontext, kernel_sigset_t *set, size_t sigsetsize)
++ {
++     thread_sig_info_t *info = (thread_sig_info_t *)dcontext->signal_field;
++     int i;
++-    ASSERT(set != NULL);
+++#ifdef LINUX
+++    if (sigsetsize != sizeof(kernel_sigset_t))
+++        return EINVAL;
+++#endif
+++    if (!d_r_safe_read(set, sizeof(*set), &info->sigsuspend_kernel_mask))
+++        return EFAULT;
+++    set = &info->sigsuspend_kernel_mask;
++     LOG(THREAD, LOG_ASYNCH, 2, "handle_sigsuspend\n");
++     info->in_sigsuspend = true;
++     info->app_sigblocked_save = info->app_sigblocked;
++@@ -2720,8 +2726,21 @@ handle_sigsuspend(dcontext_t *dcontext, kernel_sigset_t *set, size_t sigsetsize)
++         dump_sigset(dcontext, &info->app_sigblocked);
++     }
++ #endif
+++    bool pending = false;
+++    for (i = 1; i <= MAX_SIGNUM; i++) {
+++        if (info->sigpending[i] != NULL &&
+++            !kernel_sigismember(&info->app_sigblocked, i)) {
+++            pending = true;
+++            dcontext->signals_pending = 1;
+++            break;
+++        }
+++    }
++     d_r_mutex_unlock(&info->sigblocked_lock);
++     DOLOG(4, LOG_ASYNCH, dump_unmasked(dcontext, __FUNCTION__););
+++    if (pending)
+++        return EINTR;
+++    set_syscall_param(dcontext, 0, (reg_t)set);
+++    return 0;
++ }
++ 
++ static void
++diff --git a/core/unix/signal_private.h b/core/unix/signal_private.h
++index da6f9e2..1b44157 100644
++--- a/core/unix/signal_private.h
+++++ b/core/unix/signal_private.h
++@@ -510,6 +510,7 @@ typedef struct _thread_sig_info_t {
++     /* to handle sigsuspend we have to save blocked set */
++     bool in_sigsuspend;
++     kernel_sigset_t app_sigblocked_save;
+++    kernel_sigset_t sigsuspend_kernel_mask;
++ 
++     /* to inherit in children must not modify until they're scheduled */
++     volatile int num_unstarted_children;
+diff --git a/src/core/cpu_id_translation/launcher.cpp b/src/core/cpu_id_translation/launcher.cpp
+new file mode 100644
+index 00000000..fc9e3246
+--- /dev/null
++++ b/src/core/cpu_id_translation/launcher.cpp
+@@ -0,0 +1,111 @@
++// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#include <cerrno>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <filesystem>
++#include <string>
++#include <vector>
++#include <asm/prctl.h>
++#include <cpuid.h>
++#include <sys/prctl.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++#include "core/cpu_id_translation/launcher.h"
++
++extern "C" int ShadCpuIdTranslationActive();
++
++namespace Core {
++namespace {
++
++constexpr const char* RestartMarker = "SHADPS4_CPU_ID_RESTART";
++
++bool NeedsTranslation() {
++    unsigned int eax, ebx, ecx, edx;
++    const bool rdpid = __get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) && (ecx & (1u << 22));
++    const bool cpuid_faulting = syscall(SYS_arch_prctl, ARCH_SET_CPUID, 1) == 0;
++    const bool tsc_faulting = prctl(PR_SET_TSC, PR_TSC_ENABLE) == 0;
++    return rdpid || !cpuid_faulting || !tsc_faulting;
++}
++
++} // namespace
++
++bool StartCpuIdTranslation(int argc, char* argv[], std::string_view mode, bool run_guest) {
++    if (setenv("SHADPS4_CPU_ID_MODE", std::string(mode).c_str(), 1) != 0) {
++        std::fprintf(stderr, "Cannot preserve CPU identity mode: %s\n", std::strerror(errno));
++        return false;
++    }
++    if (ShadCpuIdTranslationActive()) {
++        unsetenv(RestartMarker);
++        return true;
++    }
++    if (!run_guest) {
++        return true;
++    }
++    if (std::getenv(RestartMarker)) {
++        std::fputs("CPU identity translation did not start; refusing to restart again.\n", stderr);
++        return false;
++    }
++    if (mode == "native" || (mode == "auto" && !NeedsTranslation())) {
++        return true;
++    }
++
++    std::error_code error;
++    const auto executable = std::filesystem::read_symlink("/proc/self/exe", error);
++    if (error) {
++        std::fprintf(stderr, "Cannot locate the emulator: %s\n", error.message().c_str());
++        return false;
++    }
++    auto runtime = executable.parent_path() / "cpu-id-runtime";
++    if (!std::filesystem::is_directory(runtime, error)) {
++        runtime = executable.parent_path() / "../libexec/shadps4/cpu-id-runtime";
++    }
++    const auto runner = runtime / "bin64/drrun";
++    const auto client = runtime / "libshadps4_cpu_id.so";
++    for (const auto& file : {runner, client, runtime / "lib64/release/libdynamorio.so"}) {
++        if (!std::filesystem::is_regular_file(file, error)) {
++            std::fprintf(stderr,
++                         "CPU identity runtime is missing: %s\n"
++                         "Install the complete emulator package, or explicitly select "
++                         "--cpu-id-mode=native for limited generated-instruction coverage.\n",
++                         file.c_str());
++            return false;
++        }
++    }
++    if (setenv(RestartMarker, "1", 1) != 0) {
++        std::fprintf(stderr, "Cannot prepare CPU identity translation: %s\n", std::strerror(errno));
++        return false;
++    }
++    std::vector<std::string> command{runner.string(),
++                                     "-root",
++                                     runtime.string(),
++                                     "-use_dll",
++                                     (runtime / "lib64/release/libdynamorio.so").string(),
++                                     "-disable_rseq",
++                                     "-no_follow_children",
++                                     "-vm_base",
++                                     "0x710020000000",
++                                     "-no_vm_base_near_app",
++                                     "-c",
++                                     client.string(),
++                                     "--",
++                                     executable.string()};
++    for (int index = 1; index < argc; ++index) {
++        command.emplace_back(argv[index]);
++    }
++    std::vector<char*> arguments;
++    for (auto& argument : command) {
++        arguments.push_back(argument.data());
++    }
++    arguments.push_back(nullptr);
++    std::fputs("Starting CPU identity translation.\n", stderr);
++    execv(runner.c_str(), arguments.data());
++    const int saved_errno = errno;
++    unsetenv(RestartMarker);
++    std::fprintf(stderr, "Cannot start CPU identity translation: %s\n", std::strerror(saved_errno));
++    return false;
++}
++
++} // namespace Core
+diff --git a/src/core/cpu_id_translation/launcher.h b/src/core/cpu_id_translation/launcher.h
+new file mode 100644
+index 00000000..79ed1b03
+--- /dev/null
++++ b/src/core/cpu_id_translation/launcher.h
+@@ -0,0 +1,12 @@
++// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#pragma once
++
++#include <string_view>
++
++namespace Core {
++
++bool StartCpuIdTranslation(int argc, char* argv[], std::string_view mode, bool run_guest = true);
++
++} // namespace Core
+diff --git a/src/core/cpu_id_translation/package.cmake b/src/core/cpu_id_translation/package.cmake
+new file mode 100644
+index 00000000..336402a7
+--- /dev/null
++++ b/src/core/cpu_id_translation/package.cmake
+@@ -0,0 +1,15 @@
++# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++# SPDX-License-Identifier: GPL-2.0-or-later
++
++file(MAKE_DIRECTORY "${OUTPUT}")
++foreach(relative IN ITEMS bin64/drrun lib64/release/libdynamorio.so
++        lib64/release/libdrpreload.so ext/lib64/release/libdrmgr.so ext/lib64/release/libdrwrap.so)
++    if (NOT EXISTS "${RUNTIME}/${relative}")
++        message(FATAL_ERROR "CPU identity runtime is incomplete: ${RUNTIME}/${relative}")
++    endif()
++    get_filename_component(directory "${relative}" DIRECTORY)
++    file(COPY "${RUNTIME}/${relative}" DESTINATION "${OUTPUT}/${directory}")
++endforeach()
++file(COPY "${CLIENT}" DESTINATION "${OUTPUT}")
++file(COPY "${SOURCE}/License.txt" "${SOURCE}/ACKNOWLEDGEMENTS" DESTINATION "${OUTPUT}")
++file(COPY "${CMAKE_CURRENT_LIST_DIR}/dynamorio.patch.license" DESTINATION "${OUTPUT}")
+diff --git a/src/main.cpp b/src/main.cpp
+index 61b45b2c..6809c172 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -26,6 +26,10 @@
+ #include "emulator.h"
+ #include "imgui/big_picture/big_picture.h"
+ 
++#ifdef ENABLE_CPU_ID_TRANSLATION
++#include "core/cpu_id_translation/launcher.h"
++#endif
++
+ #ifdef _WIN32
+ #include <windows.h>
+ #elif defined(__APPLE__)
+@@ -59,6 +63,9 @@ int main(int argc, char* argv[]) {
+     std::optional<int> waitPid;
+     bool waitForDebugger = false;
+     bool userfaultfd = false;
++#ifdef ENABLE_CPU_ID_TRANSLATION
++    std::string cpuIdMode = "auto";
++#endif
+ 
+     std::optional<std::string> fullscreenStr;
+     bool ignoreGamePatch = false;
+@@ -93,6 +100,11 @@ int main(int argc, char* argv[]) {
+ 
+     app.add_flag("--wait-for-debugger", waitForDebugger);
+     app.add_option("--wait-for-pid", waitPid);
++#ifdef ENABLE_CPU_ID_TRANSLATION
++    app.add_option("--cpu-id-mode", cpuIdMode, "CPU identity execution mode")
++        ->check(CLI::IsMember({"auto", "native", "translated"}))
++        ->envname("SHADPS4_CPU_ID_MODE");
++#endif
+ #ifdef __linux__
+     app.add_flag("--userfaultfd", userfaultfd,
+                  "Enable userfaultfd for tracking memory (Linux only)");
+@@ -145,6 +157,13 @@ int main(int argc, char* argv[]) {
+         return app.exit(e);
+     }
+ 
++#ifdef ENABLE_CPU_ID_TRANSLATION
++    if ((gamePath || bigPicture) &&
++        !Core::StartCpuIdTranslation(argc, argv, cpuIdMode, gamePath.has_value() || sameProcess)) {
++        return 1;
++    }
++#endif
++
+     if (waitPid)
+         Core::Debugger::WaitForPid(*waitPid);
+ 
