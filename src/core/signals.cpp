@@ -270,6 +270,13 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
         guest_info._si_errno = NativeToPosixErrno(info->si_errno);
         guest_info._si_code = NativeSiCodeToGuest(sig, info->si_code);
         guest_info._si_addr = (void*)context.uc_mcontext.mc_rip;
+#if defined(__linux__) && defined(ARCH_X86_64)
+        if (sig == SIGSEGV && info->si_code == SI_KERNEL && raw_context &&
+            static_cast<ucontext_t*>(raw_context)->uc_mcontext.gregs[REG_TRAPNO] == 13) {
+            guest_info._si_signo = POSIX_SIGBUS;
+            guest_info._si_code = POSIX_BUS_OBJERR;
+        }
+#endif
     }
     Siginfo* info_p = info ? &guest_info : nullptr;
     Ucontext* context_p = raw_context ? &context : nullptr;
@@ -280,7 +287,7 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
         const bool is_write = Common::IsWriteError(raw_context);
         const bool is_exec = Common::IsExecuteError(raw_context);
         if (!signals->DispatchAccessViolation(raw_context, info->si_addr)) {
-            if (thread && thread->DispatchSignal(NativeToOrbisSignal(sig), info_p, context_p)) {
+            if (thread && thread->DispatchSignal(guest_info._si_signo, info_p, context_p)) {
                 return;
             }
             UNREACHABLE_MSG("Unhandled access violation at code address {}: {} address {}",
