@@ -23,7 +23,11 @@
     "rows_per_run": 448,
     "runs": 4,
     "errors": 0,
-    "physical_ps4_tested": false
+    "physical_ps4_tested": true,
+    "physical_rows": 448,
+    "physical_relationship_mismatches": 0,
+    "physical_validation": "hardware/ps4_reference/cpu-identity-validation.json",
+    "physical_ps4_pro_tested": false
   },
   "affinity": {
     "runs": 30,

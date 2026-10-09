@@ -1,0 +1,159 @@
+{
+  "format": 1,
+  "date": "2026-10-09",
+  "capture": {
+    "log": "ps4-cpu-identity.txt",
+    "sha256": "23339a0d5c57e6178366b31e884abbbb9a8fb19fba87bd8986890f62a4262a0c",
+    "neo": false,
+    "model": null,
+    "firmware": null,
+    "provenance": "Submitted as the requested physical PS4 CPU-number capture. The model and firmware were not separately repeated for this file; no attribution is inferred from CPUID alone.",
+    "original_affinity_mask": "7f",
+    "rows": 448,
+    "rows_per_cpu_per_mode": 32,
+    "modes": [
+      "static",
+      "generated"
+    ],
+    "cpus": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "pin_failures": 0,
+    "restore_failed": false,
+    "collection_errors": 0,
+    "relationship_mismatches": 0
+  },
+  "observed_mapping": [
+    {
+      "affinity_bit": 0,
+      "kernel_cpu": 0,
+      "cpuid_1_apic": 7,
+      "cpuid_8000001e_apic": 7,
+      "cpuid_8000001e_core": 7,
+      "cpuid_8000001e_node": 0,
+      "rdtscp_aux": 0
+    },
+    {
+      "affinity_bit": 1,
+      "kernel_cpu": 1,
+      "cpuid_1_apic": 6,
+      "cpuid_8000001e_apic": 6,
+      "cpuid_8000001e_core": 6,
+      "cpuid_8000001e_node": 0,
+      "rdtscp_aux": 1
+    },
+    {
+      "affinity_bit": 2,
+      "kernel_cpu": 2,
+      "cpuid_1_apic": 5,
+      "cpuid_8000001e_apic": 5,
+      "cpuid_8000001e_core": 5,
+      "cpuid_8000001e_node": 0,
+      "rdtscp_aux": 2
+    },
+    {
+      "affinity_bit": 3,
+      "kernel_cpu": 3,
+      "cpuid_1_apic": 4,
+      "cpuid_8000001e_apic": 4,
+      "cpuid_8000001e_core": 4,
+      "cpuid_8000001e_node": 0,
+      "rdtscp_aux": 3
+    },
+    {
+      "affinity_bit": 4,
+      "kernel_cpu": 4,
+      "cpuid_1_apic": 3,
+      "cpuid_8000001e_apic": 3,
+      "cpuid_8000001e_core": 3,
+      "cpuid_8000001e_node": 0,
+      "rdtscp_aux": 4
+    },
+    {
+      "affinity_bit": 5,
+      "kernel_cpu": 5,
+      "cpuid_1_apic": 2,
+      "cpuid_8000001e_apic": 2,
+      "cpuid_8000001e_core": 2,
+      "cpuid_8000001e_node": 0,
+      "rdtscp_aux": 5
+    },
+    {
+      "affinity_bit": 6,
+      "kernel_cpu": 6,
+      "cpuid_1_apic": 1,
+      "cpuid_8000001e_apic": 1,
+      "cpuid_8000001e_core": 1,
+      "cpuid_8000001e_node": 0,
+      "rdtscp_aux": 6
+    }
+  ],
+  "probe": {
+    "source_commit": "03f1d2dd6b12fed5d75bf520269fbd4c3b4aff4f",
+    "package": "packages/ps4-cpu_identity-hardware-test-v3.zip",
+    "package_sha256": "c20f5632178d9495444bdb07ec2c60b29743bd9e49b351d4315afa54a63e4b80"
+  },
+  "shadps4": {
+    "source_commit": "b85320a062e71eecc85ccc2c0d01e86a7be85018",
+    "binary_sha256": "3e586f9c5e66919e68cc956616ed87fae993fd3b64f8af2c87d3c26fc62e7f84",
+    "profile_correction_pr": 5314,
+    "profile_correction_commit": "c48f374d6a7649f7debdd58fc1aa0f81911131f3",
+    "comparisons": [
+      {
+        "mode": "auto-identity",
+        "header": "CPU_IDENTITY_BEGIN version=1 neo=0",
+        "log_sha256": "e2652c48e1909cca8768ccbbe5ac29ed22c09dc589470cce7c0dca97589801e8",
+        "compared_rows": 448,
+        "differences_excluding_timestamp": 0,
+        "footer": "CPU_IDENTITY_END errors=0 rows=448"
+      },
+      {
+        "mode": "native-identity",
+        "header": "CPU_IDENTITY_BEGIN version=1 neo=1",
+        "log_sha256": "16b7f65d0e7b2063340aaf01f06aa1ec4f77fbac948be5acf399df8a5e845a0a",
+        "compared_rows": 448,
+        "differences_excluding_timestamp": 0,
+        "footer": "CPU_IDENTITY_END errors=0 rows=448"
+      },
+      {
+        "mode": "translated-identity",
+        "header": "CPU_IDENTITY_BEGIN version=1 neo=1",
+        "log_sha256": "352d75c27258d24ece5d1f07cadde0f0b4890ed3a1b67a9352d637d7f24aafd1",
+        "compared_rows": 448,
+        "differences_excluding_timestamp": 0,
+        "footer": "CPU_IDENTITY_END errors=0 rows=448"
+      },
+      {
+        "mode": "native-identity",
+        "header": "CPU_IDENTITY_BEGIN version=1 neo=0",
+        "log_sha256": "ff4634973175ad800c575559c10d48dce2e3b199a6862d3fd9e206d4da33ad4f",
+        "compared_rows": 448,
+        "differences_excluding_timestamp": 0,
+        "footer": "CPU_IDENTITY_END errors=0 rows=448"
+      },
+      {
+        "mode": "translated-identity",
+        "header": "CPU_IDENTITY_BEGIN version=1 neo=0",
+        "log_sha256": "45f4ee900a5d1e1bbf9f18e6969de409f9758370db0b3405cadee5d67f0c9466",
+        "compared_rows": 448,
+        "differences_excluding_timestamp": 0,
+        "footer": "CPU_IDENTITY_END errors=0 rows=448"
+      }
+    ]
+  },
+  "scope": [
+    "Kernel CPU and RDTSCP AUX equal the affinity bit; CPUID APIC and extended core identifiers equal 7 minus that bit for all observed CPUs.",
+    "All static and generated observations agree.",
+    "All captured identity fields match five saved emulator runs; timestamps are excluded from comparison.",
+    "The zero-error footer only confirms collection. Every CPU-number relationship was checked independently.",
+    "CPU 7 is outside the captured application mask and was not measured.",
+    "This is a neo=0 capture; comparing it with emulator Neo-mode runs does not establish physical PS4 Pro behavior.",
+    "No timestamp-frequency, unpinned-migration, RDPID or hotplug claim is made by this probe."
+  ]
+}
