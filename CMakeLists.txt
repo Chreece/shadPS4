@@ -1007,7 +1007,8 @@ if (ARCHITECTURE STREQUAL "x86_64")
              ${FIBER_LIB})
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         list(APPEND CORE src/core/cpu_id.cpp src/core/cpu_id.h
-                         src/core/guest_xstate.cpp src/core/guest_xstate.h)
+                         src/core/guest_xstate.cpp src/core/guest_xstate.h
+                         src/core/guest_xstate_linux.cpp src/core/guest_xstate_linux.h)
     endif()
 endif()
 
