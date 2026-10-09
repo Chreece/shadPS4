@@ -87,6 +87,12 @@ void* PS4_SYSV_ABI sceKernelGetProcParam() {
 
 s32 PS4_SYSV_ABI sceKernelLoadStartModule(const char* moduleFileName, u64 args, const void* argp,
                                           u32 flags, const void* pOpt, s32* pRes) {
+    // Guest input may be null. Validate it before logging as a C string or
+    // constructing std::string, both of which would dereference the pointer.
+    if (moduleFileName == nullptr) {
+        LOG_ERROR(Lib_Kernel, "sceKernelLoadStartModule called with null module filename");
+        return ORBIS_KERNEL_ERROR_EFAULT;
+    }
     LOG_INFO(Lib_Kernel, "called filename = {}, args = {}", moduleFileName, args);
     ASSERT(flags == 0);
 
