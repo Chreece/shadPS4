@@ -787,9 +787,31 @@ def test_candidate():
         detected="full_thread_snapshot_but_guest_counter_reader_unavailable"
     report["test_stop_reason"]=detected
     report["counter_timeline_analysis"]=counter_analysis(timeline,num_reads,read_errors)
+    captured=[record for record in timeline if "job_queues" in record]
+    first_lane1_queue=next((record for record in captured
+                            if record["job_queues"]["lanes"][1]["head"]!="0x0"),None)
+    first_group_outstanding_without_lane1=next(
+        (record for record in captured
+         if record["job_queues"]["group_state"]==1 and
+            record["job_queues"]["group_count"]>0 and
+            record["job_queues"]["group_lane"]==1 and
+            record["job_queues"]["lanes"][1]["head"]=="0x0"),None)
+    report["job_queue_timeline_analysis"]={
+        "queue_readable_records":len(captured),
+        "first_lane1_nonempty":first_lane1_queue,
+        "first_group_outstanding_with_empty_lane1":first_group_outstanding_without_lane1,
+        "first_readable_queue":captured[0] if captured else None,
+        "last_readable_queue":captured[-1] if captured else None,
+        "lane1_ever_nonempty":first_lane1_queue is not None,
+        "queue_never_forced_or_woken_by_test":True
+    }
+    if detected=="counter_timeline_and_all_threads_captured" and not captured:
+        detected="native_threads_captured_but_queue_memory_unavailable"
+        report["test_stop_reason"]=detected
     report["gdb_snapshots"]=GDB_RESULTS
     code_samples={name:(WORK/name).stat().st_size for name in
-                  ("guest-code-a00000.bin","guest-code-b00000.bin","guest-code-c00000.bin")
+                  ("guest-code-a00000.bin","guest-code-b00000.bin","guest-code-c00000.bin",
+                   "guest-code-f00000.bin")
                   if (WORK/name).is_file()}
     report["xrefs_memory_samples"]=code_samples
     if detected=="counter_timeline_and_all_threads_captured" and not code_samples:
@@ -801,6 +823,12 @@ def test_candidate():
                                   "0xc036b0 dequeue","0x13fa250 mutex unlock"]
     (WORK/"runtime-analysis.json").write_text(json.dumps(report,indent=2)+"\n")
     GAME_STATUS=detected
+    say("GHOST_QUEUE_TRANSITION_SUMMARY="+json.dumps({
+        "queue_records":report["job_queue_timeline_analysis"]["queue_readable_records"],
+        "lane1_ever_nonempty":report["job_queue_timeline_analysis"]["lane1_ever_nonempty"],
+        "first_unfinished_empty_lane1":report["job_queue_timeline_analysis"][
+            "first_group_outstanding_with_empty_lane1"],
+        "last_queue":report["job_queue_timeline_analysis"]["last_readable_queue"]}))
     say("GHOST_COUNTER_ORIGIN_RESULT="+detected+
         " latest_flips="+str(report["last_guest_flip_sample"]["flips"]
                              if report["last_guest_flip_sample"] else None))
@@ -838,6 +866,8 @@ def selftest():
     assert decoded["lanes"][1]["head"]=="0x3fb6590"
     assert decoded["group_count"]==1 and decoded["group_lane"]==1
     assert decoded["slot0_callback"]=="0xf60820"
+    assert decoded["lanes"][0]["head"]=="0x0"
+    assert decoded["group_state"]==1 and decoded["slot0_state"]==0
     try:
         decode_job_queues(b"",mock_group)
     except ValueError:pass
