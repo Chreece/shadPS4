@@ -46,6 +46,8 @@ SRT_FILE = SOURCE / "src/shader_recompiler/ir/passes/flatten_extended_userdata_p
 IMAGE_INFO_FILE = SOURCE / "src/video_core/texture_cache/image_info.cpp"
 IMAGE_VIEW_FILE = SOURCE / "src/video_core/texture_cache/image_view.cpp"
 RASTERIZER_FILE = SOURCE / "src/video_core/renderer_vulkan/vk_rasterizer.cpp"
+LIVERPOOL_HEADER = SOURCE / "src/video_core/renderer_vulkan/liverpool_to_vk.h"
+LIVERPOOL_CPP = SOURCE / "src/video_core/renderer_vulkan/liverpool_to_vk.cpp"
 TRACE_REF = "868169792a6be854815e6f9a1b421c2684f47aab"
 TRACE_BLOB = "52bd38e436980b3c3ff901b458a1938b249fda0e"
 GUEST_TRACE = re.compile(r"GHOST_TRACE vblank=(\d+) guest_flips=(\d+) pending=(\d+) queued=(\d+)")
@@ -205,77 +207,111 @@ def binary_markers_present(path, markers):
 
 
 def format_origin_patches(originals:dict)->dict:
-    """Exact source-anchored, read-only diagnostics for unsupported T# combination.
+    """Instrument the *actual* SurfaceFormat definition on pinned local source.
 
-    Individual enum values are recognized by magic_enum but the pair is
-    unsupported by LiverpoolToVK::SurfaceFormats(). Retain original assertion.
+    The pinned Ghost source is a local merge not accessible as a GitHub ref.
+    Do not require exact upstream ImageInfo statement; locate one central
+    converter, and add optional callsite origin probes when structurally safe.
+    Neither the conversion nor its original ASSERT is changed.
     """
-    def substitute(path,needle,replacement):
+    patterns=[]
+    conversion=re.compile(
+        r'(?m)(?P<sig>^[ \t]*(?:(?:static|inline|constexpr|consteval)\s+)*'
+        r'vk::Format\s+SurfaceFormat\s*\(\s*(?:const\s+)?'
+        r'AmdGpu::DataFormat\s*&?\s*(?P<df>[A-Za-z_]\w*)\s*,\s*'
+        r'(?:const\s+)?AmdGpu::NumberFormat\s*&?\s*'
+        r'(?P<nf>[A-Za-z_]\w*)\s*\)\s*(?:noexcept\s*)?\{)'
+    )
+    for path in (LIVERPOOL_HEADER,LIVERPOOL_CPP):
         source=originals[path].decode("utf-8")
-        if "GHOST_FORMAT_ORIGIN" in source:
-            raise RuntimeError("Format origin instrumentation already present")
-        if source.count(needle)!=1:
-            raise RuntimeError("Image descriptor diagnostic source changed: "+
-                               str(path.relative_to(SOURCE)))
-        result=source.replace(needle,replacement,1).encode("utf-8")
-        if result==originals[path] or b"GHOST_FORMAT_ORIGIN" not in result:
-            raise RuntimeError("Format origin instrumentation not present")
-        return result
-
-    info_old=(
-        "    pixel_format = LiverpoolToVK::SurfaceFormat(image.GetDataFmt(), image.GetNumberFmt());\n")
-    info_new=(
-        '    if (image.GetDataFmt() == AmdGpu::DataFormat::FormatBc5 &&\n'
-        '        image.GetNumberFmt() == AmdGpu::NumberFormat::UbnormNz) {\n'
+        for match in conversion.finditer(source):
+            patterns.append((path,source,match))
+    if len(patterns)!=1:
+        raise RuntimeError("Pinned SurfaceFormat function definition count is "+
+                           str(len(patterns))+
+                           "; source excerpts saved in diagnostic archive")
+    path,source,match=patterns[0]
+    if "GHOST_FORMAT_ORIGIN" in source:
+        raise RuntimeError("SurfaceFormat already instrumented; refusing double-patch")
+    df,nf=match.group("df"),match.group("nf")
+    hook=(
+        '\n    // GHOST_FORMAT_ORIGIN: read-only evidence; preserve conversion and ASSERT.\n'
+        '    if ('+df+' == AmdGpu::DataFormat::FormatBc5 &&\n'
+        '        '+nf+' == AmdGpu::NumberFormat::UbnormNz) {\n'
         '        LOG_ERROR(Render_Vulkan,\n'
-        '                  "GHOST_FORMAT_ORIGIN site=ImageInfo_TSharp addr={:#x} "\n'
-        '                  "raw_data={} raw_num={} type={} width={} height={} depth={} "\n'
-        '                  "pitch={} depth_resource={} write_resource={}",\n'
-        '                  image.Address(), u32(image.data_format), u32(image.num_format),\n'
-        '                  u32(image.type), u32(image.width + 1), u32(image.height + 1),\n'
-        '                  u32(image.depth + 1), image.Pitch(),\n'
-        '                  u32(desc.is_depth), u32(desc.is_written));\n'
+        '                  "GHOST_FORMAT_ORIGIN site=SurfaceFormat dfmt={} nfmt={} caller={}",\n'
+        '                  u32('+df+'), u32('+nf+'), fmt::ptr(__builtin_return_address(0)));\n'
         '    }\n'
-        +info_old
     )
-    view_old="    format = Vulkan::LiverpoolToVK::SurfaceFormat(dfmt, nfmt);\n"
-    view_new=(
-        '    if (dfmt == AmdGpu::DataFormat::FormatBc5 &&\n'
-        '        nfmt == AmdGpu::NumberFormat::UbnormNz) {\n'
-        '        LOG_ERROR(Render_Vulkan,\n'
-        '                  "GHOST_FORMAT_ORIGIN site=ImageView_TSharp addr={:#x} "\n'
-        '                  "raw_data={} raw_num={} type={} width={} height={} depth={} "\n'
-        '                  "pitch={} depth_resource={} write_resource={}",\n'
-        '                  image.Address(), u32(image.data_format), u32(image.num_format),\n'
-        '                  u32(image.type), u32(image.width + 1), u32(image.height + 1),\n'
-        '                  u32(image.depth + 1), image.Pitch(),\n'
-        '                  u32(desc.is_depth), u32(desc.is_written));\n'
-        '    }\n'+view_old
+    result={path:(source[:match.end()]+hook+source[match.end():]).encode()}
+    say("PINNED_SURFACE_FORMAT_DEFINITION_FOUND="+str(path.relative_to(SOURCE))+
+        " df="+df+" nf="+nf)
+
+    # Optional, no-fail source-site probes. The central converter probe above
+    # always captures the bad tuple, even if these local source sites differ.
+    optional=[
+        (IMAGE_INFO_FILE,
+         re.compile(r'(?m)^[ \t]*pixel_format\s*=\s*(?:Vulkan::)?'
+                    r'LiverpoolToVK::SurfaceFormat\s*\(\s*'
+                    r'image\.GetDataFmt\(\)\s*,\s*image\.GetNumberFmt\(\)\s*\)\s*;'),
+         'image.GetDataFmt()', 'image.GetNumberFmt()', 'ImageInfo_TSharp'),
+        (IMAGE_VIEW_FILE,
+         re.compile(r'(?m)^[ \t]*format\s*=\s*(?:Vulkan::)?'
+                    r'LiverpoolToVK::SurfaceFormat\s*\(\s*dfmt\s*,\s*nfmt\s*\)\s*;'),
+         'dfmt', 'nfmt', 'ImageView_TSharp'),
+    ]
+    for p,pattern,dfmt,nfmt,label in optional:
+        orig=originals[p].decode("utf-8")
+        matches=list(pattern.finditer(orig))
+        if len(matches)!=1 or "GHOST_FORMAT_ORIGIN" in orig:
+            say("FORMAT_ORIGIN_OPTIONAL_SITE_SKIPPED="+str(p.relative_to(SOURCE))+
+                " matches="+str(len(matches)))
+            continue
+        m=matches[0]
+        base="image.Address()" if "image" in dfmt else "image.Address()"
+        hook=(
+            '    if ('+dfmt+' == AmdGpu::DataFormat::FormatBc5 &&\n'
+            '        '+nfmt+' == AmdGpu::NumberFormat::UbnormNz) {\n'
+            '        LOG_ERROR(Render_Vulkan,\n'
+            '                  "GHOST_FORMAT_ORIGIN site='+label+
+            ' addr={:#x} raw_data={} raw_num={} type={} width={} height={}",\n'
+            '                  '+base+', u32(image.data_format), u32(image.num_format),\n'
+            '                  u32(image.type), u32(image.width+1), u32(image.height+1));\n'
+            '    }\n'
+        )
+        result[p]=(orig[:m.start()]+hook+orig[m.start():]).encode()
+        say("FORMAT_ORIGIN_OPTIONAL_SITE_INSTRUMENTED="+label)
+
+    p=RASTERIZER_FILE
+    raster=originals[p].decode("utf-8")
+    pattern=re.compile(
+        r'(?m)^[ \t]*const\s+auto\s+data_fmt\s*=\s*tsharp.GetDataFmt\(\)\s*;\s*\n'
+        r'[ \t]*const\s+auto\s+num_fmt\s*=\s*tsharp.GetNumberFmt\(\)\s*;'
     )
-    raster_old=(
-        "        const auto data_fmt = tsharp.GetDataFmt();\n"
-        "        const auto num_fmt = tsharp.GetNumberFmt();\n")
-    raster_new=raster_old+(
-        '        if (data_fmt == AmdGpu::DataFormat::FormatBc5 &&\n'
-        '            num_fmt == AmdGpu::NumberFormat::UbnormNz) {\n'
-        '            LOG_ERROR(Render_Vulkan,\n'
-        '                      "GHOST_FORMAT_ORIGIN site=Rasterizer_BindTextures "\n'
-        '                      "shader={:#x} addr={:#x} raw_data={} raw_num={} "\n'
-        '                      "type={} width={} height={} depth={} mapped={} "\n'
-        '                      "depth_resource={} write_resource={}",\n'
-        '                      stage.pgm_hash, tsharp.Address(),\n'
-        '                      u32(tsharp.data_format), u32(tsharp.num_format),\n'
-        '                      u32(tsharp.type), u32(tsharp.width + 1),\n'
-        '                      u32(tsharp.height + 1), u32(tsharp.depth + 1),\n'
-        '                      memory->IsValidGpuMapping(tsharp.Address(), 0),\n'
-        '                      u32(image_desc.is_depth), u32(image_desc.is_written));\n'
-        '        }\n'
-    )
-    return {
-        IMAGE_INFO_FILE:substitute(IMAGE_INFO_FILE,info_old,info_new),
-        IMAGE_VIEW_FILE:substitute(IMAGE_VIEW_FILE,view_old,view_new),
-        RASTERIZER_FILE:substitute(RASTERIZER_FILE,raster_old,raster_new),
-    }
+    match=list(pattern.finditer(raster))
+    if len(match)==1 and "GHOST_FORMAT_ORIGIN" not in raster and (
+        "for (const auto& image_desc : stage.images)" in raster):
+        m=match[0]
+        hook=(
+            '\n        if (data_fmt == AmdGpu::DataFormat::FormatBc5 &&\n'
+            '            num_fmt == AmdGpu::NumberFormat::UbnormNz) {\n'
+            '            LOG_ERROR(Render_Vulkan,\n'
+            '                      "GHOST_FORMAT_ORIGIN site=Rasterizer_BindTextures "\n'
+            '                      "shader={:#x} addr={:#x} raw_data={} raw_num={} "\n'
+            '                      "type={} width={} height={} depth={} mapped={}",\n'
+            '                      stage.pgm_hash, tsharp.Address(),\n'
+            '                      u32(tsharp.data_format), u32(tsharp.num_format),\n'
+            '                      u32(tsharp.type),u32(tsharp.width+1),\n'
+            '                      u32(tsharp.height+1),u32(tsharp.depth+1),\n'
+            '                      memory->IsValidGpuMapping(tsharp.Address(),0));\n'
+            '        }\n'
+        )
+        result[p]=(raster[:m.end()]+hook+raster[m.end():]).encode()
+        say("FORMAT_ORIGIN_OPTIONAL_SITE_INSTRUMENTED=Rasterizer_BindTextures")
+    else:
+        say("FORMAT_ORIGIN_OPTIONAL_SITE_SKIPPED=Rasterizer_BindTextures "+
+            "matches="+str(len(match)))
+    return result
 
 
 def build_candidate():
@@ -293,12 +329,18 @@ def build_candidate():
         raise RuntimeError("An existing Ghost mip candidate is still running")
     originals={}
     modes={}
-    files=(FILE,VIDEO_FILE,SRT_FILE,IMAGE_INFO_FILE,IMAGE_VIEW_FILE,RASTERIZER_FILE)
+    files=(FILE,VIDEO_FILE,SRT_FILE,IMAGE_INFO_FILE,IMAGE_VIEW_FILE,RASTERIZER_FILE,
+           LIVERPOOL_HEADER,LIVERPOOL_CPP)
     for p in files:
         if p.is_symlink() or not p.is_file():
             raise RuntimeError("Untrusted Ghost source file: "+str(p))
         originals[p]=p.read_bytes()
         modes[p]=stat.S_IMODE(p.stat().st_mode)
+        # Capture the real local source for a useful failure report.
+        relative=p.relative_to(SOURCE)
+        evidence=WORK/"pinned-source-evidence"/relative
+        evidence.parent.mkdir(parents=True,exist_ok=True)
+        evidence.write_bytes(originals[p])
         relative=p.relative_to(SOURCE)
         actual=subprocess.check_output(
             ["git","-C",str(SOURCE),"hash-object",str(p)],
@@ -322,6 +364,10 @@ def build_candidate():
     shader=trace.patch_flatten(originals[SRT_FILE].decode()).encode()
     diagnostic=format_origin_patches(originals)
     staged={FILE:vk3,VIDEO_FILE:video,SRT_FILE:shader,**diagnostic}
+    (WORK/"source-patch-selection.json").write_text(json.dumps({
+        "edited_sources":[str(p.relative_to(SOURCE)) for p in staged],
+        "conversion_semantics":"unchanged; diagnostic logging only",
+        "original_cpp_snapshots":"pinned-source-evidence/"},indent=2)+"\n")
     for p,blob in staged.items():
         if blob==originals[p] or p.read_bytes()!=originals[p]:
             raise RuntimeError("Unverified or unchanged staged source "+str(p))
@@ -331,7 +377,8 @@ def build_candidate():
         raise RuntimeError("Pinned flip trace marker missing")
     SOURCE_RESTORED=False
     build_ready=False
-    say("GHOST_FORMAT_ORIGIN_PATCHES_PREPARED source_files=6 no_semantic_changes=1")
+    say("GHOST_FORMAT_ORIGIN_PATCHES_PREPARED modified_sources="+str(len(staged))+
+        " source_copies="+str(len(originals))+" original_assert_preserved=1")
     try:
         for p,blob in staged.items():
             write_atomic(p,blob,modes[p])
@@ -403,7 +450,7 @@ def build_candidate():
             if not p.is_file() or p.read_bytes()!=original:
                 failures.append(str(p.relative_to(SOURCE))+":restoration_unverified")
         SOURCE_RESTORED=not failures
-        say("ALL_SIX_GHOST_SOURCE_FILES_RESTORED="+str(SOURCE_RESTORED))
+        say("ALL_PINNED_GHOST_SOURCE_FILES_RESTORED="+str(SOURCE_RESTORED))
         if failures:
             raise RuntimeError("Ghost source restoration incomplete: "+",".join(failures))
     if not build_ready:
@@ -660,23 +707,45 @@ def selftest():
     assert state["assertion_count"] == 1
     assert BASE_BIN != BIN != OTHER_BIN
     fake_origins={
-        IMAGE_INFO_FILE:b'    pixel_format = LiverpoolToVK::SurfaceFormat(image.GetDataFmt(), image.GetNumberFmt());\n',
-        IMAGE_VIEW_FILE:b'    format = Vulkan::LiverpoolToVK::SurfaceFormat(dfmt, nfmt);\n',
-        RASTERIZER_FILE:(b'        const auto data_fmt = tsharp.GetDataFmt();\n'
-                         b'        const auto num_fmt = tsharp.GetNumberFmt();\n')
+        LIVERPOOL_HEADER:b'vk::Format SurfaceFormat(AmdGpu::DataFormat dfmt, AmdGpu::NumberFormat nfmt);\n',
+        LIVERPOOL_CPP:(b'vk::Format SurfaceFormat(AmdGpu::DataFormat data_format, '
+                       b'AmdGpu::NumberFormat num_format) {\n    return {}; }\n'),
+        IMAGE_INFO_FILE:(b'ImageInfo::ImageInfo(const AmdGpu::Image& image, '
+                         b'const Shader::ImageResource& desc) noexcept {\n'
+                         b'    pixel_format = LiverpoolToVK::SurfaceFormat('
+                         b'image.GetDataFmt(), image.GetNumberFmt());\n}\n'),
+        IMAGE_VIEW_FILE:(b'ImageViewInfo::ImageViewInfo(const AmdGpu::Image& image, '
+                         b'const Shader::ImageResource& desc) noexcept : '
+                         b'is_storage{desc.is_written} {\n'
+                         b'    format = Vulkan::LiverpoolToVK::SurfaceFormat(dfmt, nfmt);\n}\n'),
+        RASTERIZER_FILE:(b'for (const auto& image_desc : stage.images) {\n'
+                         b'        const auto data_fmt = tsharp.GetDataFmt();\n'
+                         b'        const auto num_fmt = tsharp.GetNumberFmt();\n}\n'),
     }
-    modified=format_origin_patches(fake_origins)
-    assert len(modified)==3
-    for p,original in fake_origins.items():
-        assert modified[p].count(b"GHOST_FORMAT_ORIGIN")==1
-        assert original in modified[p]
-        assert len(modified[p])>len(original)
+    test_result=format_origin_patches(fake_origins)
+    assert LIVERPOOL_CPP in test_result
+    assert len(test_result)==4
+    for p,blob in test_result.items():
+        assert blob.count(b"GHOST_FORMAT_ORIGIN")==1
+        assert blob!=fake_origins[p]
+    fake_alt=dict(fake_origins)
+    fake_alt[LIVERPOOL_CPP]=b""
+    fake_alt[LIVERPOOL_HEADER]=(
+        b"inline vk::Format SurfaceFormat(const AmdGpu::DataFormat dfmt, "
+        b"const AmdGpu::NumberFormat nfmt) {\n    return {}; }\n")
+    alt_result=format_origin_patches(fake_alt)
+    assert LIVERPOOL_HEADER in alt_result and LIVERPOOL_CPP not in alt_result
+    fake_unmatched=dict(fake_origins)
+    fake_unmatched[IMAGE_INFO_FILE]=b"// different local ImageInfo implementation\n"
+    missing_result=format_origin_patches(fake_unmatched)
+    assert LIVERPOOL_CPP in missing_result and IMAGE_INFO_FILE not in missing_result
+    assert len(missing_result)==3
     try:
-        format_origin_patches(modified)
+        format_origin_patches({**fake_origins,**test_result})
     except RuntimeError:
         pass
     else:
-        raise AssertionError("Format origin instrumentation applied twice")
+        raise AssertionError("Double diagnostic application accepted")
     frames=guest_trace_records("\n".join(
         f"GHOST_TRACE vblank={v} guest_flips=530 pending=0 queued=0"
         for v in (1500,1680,1860,2040,2220)))
@@ -701,7 +770,7 @@ def selftest():
                     "GHOST_FORMAT_ORIGIN site=ImageInfo_TSharp", -11)[
                         "format_origin_event_count"]==1
     say("SELFTEST_PASS=three_pinned_patchers,source_atomic_restore,compiled_markers,"
-        "TSharp_format_origin_fixture,mip_crash_classifier,isolated_paths")
+        "local_source_tolerant_surface_format,optional_sites,rollback,isolated_paths")
 
 def interrupt_for_rollback(sig, frame):
     raise KeyboardInterrupt("Signal intercepted to restore Ghost source: " + str(sig))
