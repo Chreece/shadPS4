@@ -626,7 +626,7 @@ void Visit(Info& info, const IR::Inst& inst) {
             fail('Self-test: bundled SRT/GDS patch does not apply: ' +
                  result.stdout.decode(errors='replace')[-900:])
     # Exercise exact shader alias guard anchor before any modification.
-    sample = '#include <algorithm>\n    ASSERT_MSG(device_addr == image.info.guest_address,\n               "Texel buffer aliases image subresources {:x} : {:x}", device_addr,\n               image.info.guest_address);'
+    sample = '#include <algorithm>\n' + '    ASSERT_MSG(device_addr == image.info.guest_address,\n               "Texel buffer aliases image subresources {:x} : {:x}", device_addr,\n               image.info.guest_address);'
     alias = make_alias_patch(sample)
     assert alias.count('GOW_IMAGE_ALIAS_UNSUPPORTED') == 1
     assert alias.count('ASSERT_MSG(device_addr == image.info.guest_address') == 1
