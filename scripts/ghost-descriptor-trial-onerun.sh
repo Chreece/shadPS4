@@ -473,12 +473,19 @@ try:
         time.sleep(1)
     if proc.poll() is None:
         print("AUTO_GAME_TIMEOUT=115s; terminating ONLY this isolated launch session",flush=True)
-        if os.getsid(proc.pid)==proc.pid:
-            os.killpg(proc.pid,signal.SIGTERM)
-        try: proc.wait(timeout=8)
-        except subprocess.TimeoutExpired:
+        try:
             if os.getsid(proc.pid)==proc.pid:
-                os.killpg(proc.pid,signal.SIGKILL)
+                os.killpg(proc.pid,signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            proc.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            try:
+                if os.getsid(proc.pid)==proc.pid:
+                    os.killpg(proc.pid,signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             proc.wait(timeout=8)
     print(f"AUTO_GAME_EXIT_CODE={proc.returncode}",flush=True)
 finally:
@@ -488,38 +495,4 @@ PHASE=autoplay_finished
 log 'The automatic game trial finished; collecting runtime evidence and restoring verified baseline.'
 exit 0
 
-# Manual-launch fallback kept below for future opt-in use; unreachable
-# for this auto-run trial.
-game=''
-deadline=$((SECONDS + 600))
-while (( SECONDS < deadline )); do
-    game="$(game_pid || true)"
-    [[ -n "$game" ]] && break
-    sleep 1
-done
-if [[ -z "$game" ]]; then
-    PHASE=no_launch
-    log 'Game not started within ten minutes, restoring baseline.'
-    exit 0
-fi
-GAME_PID="$game"
-PHASE=game_seen
-log "Ghost running: PID=$GAME_PID"
-deadline=$((SECONDS + 180))
-while (( SECONDS < deadline )); do
-    if [[ ! -d "/proc/$GAME_PID" || ! -r "/proc/$GAME_PID/status" ]]; then
-        PHASE=game_exited
-        log 'Game process has exited; collecting evidence.'
-        exit 0
-    fi
-    state="$(awk '/^State:/ {print $2; exit}' "/proc/$GAME_PID/status" 2>/dev/null || true)"
-    if [[ "$state" == Z || "$state" == X || "$state" == x ]]; then
-        PHASE=game_exited
-        log "Game process is $state; collecting evidence without waiting for the zombie PID."
-        exit 0
-    fi
-    sleep 1
-done
-PHASE=time_limit
-log '180 seconds elapsed. Restoring the executable without terminating the running game.'
-log 'If game is still open, its currently mapped executable is unchanged; exit normally.'
+# All source/executable restoration and archive creation happen in EXIT trap.
