@@ -136,7 +136,7 @@ def main():
                 raise RuntimeError("Existing GoW game-specific configuration; refusing to overwrite")
             if dumps.is_symlink():
                 raise RuntimeError("Shader dump directory is a symlink; refusing to move")
-            if list(dumps.parent.glob(".gow-spv-prior-*-dumps")) if dumps.parent.is_dir() else []:
+            if dumps.parent.is_dir() and list(dumps.parent.glob(".gow-spv-prior-*-dumps")):
                 raise RuntimeError("Previous shader backup exists; refusing to overwrite (see report)")
             if dumps.exists():
                 if not dumps.is_dir() or previous_dumps.exists():
@@ -243,7 +243,7 @@ def main():
                 except Exception as exc:
                     result["cleanup_warning"] = str(exc)
             files = []
-            if dumps.is_dir():
+            if dump_created and dumps.is_dir():
                 for path in dumps.iterdir():
                     if path.is_file() and SHADER in path.name.lower():
                         shutil.copy2(path, out / path.name)
@@ -252,7 +252,7 @@ def main():
             result["target_spv_count"] = sum(x.endswith(".spv") for x in files)
             logs = [out / "console.log"]
             log_dir = profile / "log"
-            if log_dir.is_dir():
+            if proc is not None and log_dir.is_dir():
                 logs += [p for p in log_dir.glob("*.log") if p.is_file() and p.name in ("shadps4.log", GAME + ".log")]
             joined = ""
             for path in logs:
