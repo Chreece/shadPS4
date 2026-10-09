@@ -73,6 +73,7 @@ RADV_DUMP_TOTAL_CAP = 180 * 1024 * 1024
 RADV_DUMP_FILE_CAP = 24 * 1024 * 1024
 RADV_DUMP_FILE_COUNT_CAP = 70
 RADV_UMR_PRESENT = False
+RADV_GUEST_ENV_VALUE: str | None = None
 RADV_DUMPS_FOUND: list[str] = []
 RADV_DUMP_FILE_NOTES: list[dict] = []
 
@@ -386,6 +387,30 @@ def capture_radv_hang_reports() -> None:
         say("RADV_DUMP_ABSENT: UMR/debug permissions may be unavailable or no driver hang dump was generated")
 
 
+def verify_game_debug_environment() -> None:
+    """Read *only* RADV_DEBUG from the launched Ghost process, not other env."""
+    global RADV_GUEST_ENV_VALUE
+    if SESSION_DIR is None:
+        say("RADV_GUEST_ENV_UNAVAILABLE=no_game_session")
+        return
+    try:
+        data = (SESSION_DIR / "session.meta").read_text(errors="replace")
+        m = re.search(r"(?m)^launcher_pid=(\d+)$", data)
+        if not m or not exact_ghost(int(m.group(1))):
+            say("RADV_GUEST_ENV_UNAVAILABLE=unverified_emulator_pid")
+            return
+        raw = (Path("/proc") / m.group(1) / "environ").read_bytes().split(b"\x00")
+        for item in raw:
+            if item.startswith(b"RADV_DEBUG="):
+                RADV_GUEST_ENV_VALUE = item.partition(b"=")[2].decode("utf-8", "replace")
+                break
+        say("RADV_DEBUG_CONFIRMED_IN_GUEST=" + repr(RADV_GUEST_ENV_VALUE))
+        if RADV_GUEST_ENV_VALUE != "hang":
+            say("WARNING: RADV_DEBUG=hang did not reach the emulator; hang trace is not active")
+    except (OSError, PermissionError) as exc:
+        say("RADV_GUEST_ENV_READ_UNAVAILABLE=" + repr(exc))
+
+
 def current_session() -> Path | None:
     if GAME_LAUNCH_TIME is None:
         return None
@@ -649,7 +674,7 @@ def candidate_archive() -> None:
         try:
             eligible = (p.is_file() and not p.is_symlink() and p.parent == HOME and
                         p.name.startswith("ghost-no-gdb-validation-") and
-                        p.stat().st_mtime >= WORK.stat().st_mtime - 15)
+                        p.stat().st_mtime >= datetime.strptime(STAMP, "%Y%m%d-%H%M%S").timestamp() - 15)
             notes.append({"path": str(p), "eligible": eligible,
                           "exists": p.is_file()})
             if eligible:
@@ -716,6 +741,7 @@ def launch_test(env: dict[str, str]) -> None:
         SESSION_DIR = current_session()
         if SESSION_DIR:
             say("GAME_SESSION=" + str(SESSION_DIR))
+            verify_game_debug_environment()
             break
         time.sleep(0.5)
     if not SESSION_DIR:
@@ -911,6 +937,11 @@ def test() -> None:
     assert RADV_DUMP_FILE_CAP <= 24 * 1024 * 1024
     assert RADV_DUMP_FILE_COUNT_CAP <= 70
     assert capture_radv_hang_reports.__name__ == "capture_radv_hang_reports"
+    assert verify_game_debug_environment.__name__ == "verify_game_debug_environment"
+    assert datetime.strptime(STAMP, "%Y%m%d-%H%M%S").strftime("%Y%m%d-%H%M%S") == STAMP
+    # Avoid the previous false report that a child archive was missing just
+    # because the working folder's mtime changed during screenshot collection.
+    assert "ghost-no-gdb-validation-" in "ghost-no-gdb-validation-20261008.tar.gz"
     assert "STALL_SNAP_REV" not in globals()
     print("SELFTEST PASS: pinned workflow, launcher/game path, monitor timing, "
           "session PID extraction. No graphics/process operations performed.")
@@ -989,6 +1020,7 @@ def main() -> int:
             "RADV_DEBUG": "hang",
             "RADV_hang_enables_shader_synchronization": True,
             "UMR_available": RADV_UMR_PRESENT,
+            "RADV_DEBUG_seen_in_guest": RADV_GUEST_ENV_VALUE,
             "RADV_dumps_found": RADV_DUMPS_FOUND,
             "game_pid": GAME_PID,
             "game_session": str(SESSION_DIR) if SESSION_DIR else None,
