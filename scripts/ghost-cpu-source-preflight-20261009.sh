@@ -13,7 +13,9 @@
   mkdir -p -- "$WORK/overlay"
   if (
     set -Eeuo pipefail
-    test -d "$ROOT/.git" || { echo "SOURCE_NOT_FOUND_OR_NOT_A_GIT_WORKTREE=$ROOT"; exit 3; }
+    [[ -d "$ROOT" ]] || { echo "SOURCE_PATH_MISSING=$ROOT"; exit 3; }
+    GIT_TOP="$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
+    [[ "$GIT_TOP" == "$ROOT" ]] || { echo "SOURCE_NOT_A_MATCHING_GIT_CHECKOUT=$ROOT actual=$GIT_TOP"; exit 3; }
     git -C "$ROOT" rev-parse --verify HEAD
     git -C "$ROOT" status --porcelain --untracked-files=all > "$WORK/source-before.txt"
     curl -fsSL --retry 2 --max-time 35 \
@@ -34,7 +36,7 @@
   else
     RESULT=FAIL
   fi
-  if [[ -d "$ROOT/.git" ]]; then
+  if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     git -C "$ROOT" status --porcelain --untracked-files=all > "$WORK/source-after.txt" 2>/dev/null || :
     if [[ -f "$WORK/source-before.txt" ]] && ! cmp -s "$WORK/source-before.txt" "$WORK/source-after.txt"; then
       echo 'SOURCE_STATUS_CHANGED=YES; investigate before any build' | tee -a "$WORK/preflight.log"
