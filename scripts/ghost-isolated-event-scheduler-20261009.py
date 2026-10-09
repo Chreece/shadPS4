@@ -329,7 +329,7 @@ def snapshot(helper:Path,pid:int,label:str,frame:tuple[int,int,int,int]|None):
         passed=result.returncode==0 and 'begin_marker=True' in status and 'end_marker=True' in status
         SNAPSHOTS.append({'label':label,'frame':frame,'returncode':result.returncode,
                           'complete':passed,'gdb_status':status[:1000]})
-        info(f'SNAPSHOT_{label}_COMPLETE={passed} guest_flips={frame[1]}')
+        info(f'SNAPSHOT_{label}_COMPLETE={passed} '+('guest_flips='+str(frame[1]) if frame is not None else 'frame_counters=not_instrumented'))
         return passed
     except (OSError,subprocess.TimeoutExpired) as exc:
         SNAPSHOTS.append({'label':label,'frame':frame,'error':repr(exc)})
