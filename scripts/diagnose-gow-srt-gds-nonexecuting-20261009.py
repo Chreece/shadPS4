@@ -213,7 +213,8 @@ def add_nonexecuting_gds_diagnostic(src: str) -> str:
         src, '    if (cs.gow_srt_unresolved_offsets == 0) {\n'
              '        return false; // Valid compute shaders still submit normally.\n'
              '    }',
-        '    if (cs.gow_srt_unresolved_offsets == 0 && cs.gow_gds_unimplemented == 0 &&\n'\n        '        cs.pgm_hash != 0xdbaa6ae4ULL) {\n'
+        '    if (cs.gow_srt_unresolved_offsets == 0 && cs.gow_gds_unimplemented == 0 &&\n'
+        '        cs.pgm_hash != 0xdbaa6ae4ULL) {\n'
         '        return false; // Valid compute and graphics remain enabled.\n'
         '    }\n'
         '    if (cs.gow_gds_unimplemented != 0 || cs.pgm_hash == 0xdbaa6ae4ULL) {\n'
