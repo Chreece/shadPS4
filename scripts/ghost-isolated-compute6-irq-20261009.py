@@ -486,13 +486,50 @@ def classify(text, rc):
                                       "GHOST_COPY_FALLBACK_ASSERT","Assertion Failed!"))][-20:],
     }
 
+
+def gate_state_from_bytes(blob):
+    """Decode four fixed guest dependency gates without altering their data."""
+    if len(blob)!=0x190:
+        raise ValueError("Incomplete guest gate sample")
+    base=0x3fb6490
+    gates={}
+    for name,addr in (
+        ("outer",0x3fb6498),("middle",0x3fb64e0),
+        ("parent",0x3fb6528),("child",0x3fb6590)):
+        state,count=struct.unpack_from("<II",blob,addr-base)
+        gates[name]={"state":state,"count_raw":count,
+                     "count_signed":count-(1<<32) if count>=1<<31 else count}
+    linked=struct.unpack_from("<Q",blob,0x3fb6550-base)[0]
+    return {"gates":gates,"pending_child_link":hex(linked),
+            "middle_underflow":gates["middle"]["count_signed"]<0}
+
+
+def gate_transition_summary(records,samples,errors):
+    first_negative=next((x for x in records if x["gate"]["middle_underflow"]),None)
+    last=records[-1] if records else None
+    def val(x,field):
+        return x["gate"]["gates"][field]["count_signed"]
+    return {
+        "samples":samples,"recorded_transitions":len(records),
+        "first_middle_negative":first_negative,
+        "middle_negative_seen":bool(first_negative),
+        "parent_waiting_at_end":bool(last and
+           last["gate"]["gates"]["parent"]["state"]==1 and
+           val(last,"parent")>0 and
+           last["gate"]["pending_child_link"]=="0x3fb6590"),
+        "last_gate":last,
+        "errors":errors[:10],
+        "sampling_does_not_change_guest_execution":True
+    }
+
+
 def test_candidate():
     global GAME_STATUS
     if not BIN.is_file() or not GHOST.joinpath("user/config.json").is_file():
-        raise RuntimeError("Dedicated Ghost candidate or portable config missing")
+        raise RuntimeError("Dedicated Ghost Compute6 candidate or portable config missing")
     active=find_emulators()
     if active:
-        say("GAME_SKIPPED_OTHER_EMULATOR_ACTIVE="+json.dumps(active))
+        say("OTHER_EMULATOR_RUNNING_REFUSING_TEST="+json.dumps(active))
         GAME_STATUS="skipped_other_emulator_active"
         return
     env=env_for_x11()
@@ -500,84 +537,142 @@ def test_candidate():
         env.pop(name,None)
     env["SHADPS4_GRAPHICS_DIAGNOSTICS"]="1"
     env["SHADPS4_STARTUP_DIAGNOSTICS"]="1"
-    say("STARTING_PRIVATE_GHOST_TRACE_CANDIDATE="+str(BIN))
     log=WORK/"ghost-candidate-runtime.log"
+    memory_fd=None
+    gate_records=[]
+    sample_errors=[]
+    gate_samples=0
+    last_gate=None
+    first_underflow=False
+    detected="not_started"
     p=None
-    detected=None
+    latest_frames=None
     start=time.monotonic()
+    last_log_at=-1.0
+    screenshot_times=set()
+    say("STARTING_PRIVATE_GHOST_COMPUTE6_IRQ="+str(BIN))
     with log.open("w") as sink:
         p=subprocess.Popen([str(BIN),"--game","CUSA11456","--fullscreen","true"],
                            cwd=str(GHOST),env=env,stdin=subprocess.DEVNULL,
                            stdout=sink,stderr=subprocess.STDOUT,start_new_session=True)
         try:
-            snapshots=set()
-            for step in range(64):
+            detected="observing_irq6_and_guest_dependencies"
+            for tick in range(1300):
                 elapsed=time.monotonic()-start
                 if p.poll() is not None:
                     say("PRIVATE_GHOST_EXITED_BY_ITSELF="+str(p.returncode))
                     detected="game_exited"
                     break
-                for second in (15,35,55):
-                    if elapsed>=second and second not in snapshots:
-                        screenshot(env,str(second)+"s")
-                        snapshots.add(second)
-                # Diagnostic log is this test process only, no previous sessions.
-                text=log.read_text(errors="replace")
-                frames=guest_trace_records(text)
-                if frames and step % 5 == 0:
-                    last=frames[-1]
-                    say("GHOST_FLIP_PROGRESS vblank="+str(last["vblank"])+
-                        " flips="+str(last["flips"])+" pending="+str(last["pending"])+
-                        " queued="+str(last["queued"]))
-                if confirmed_frame_stall(frames):
-                    detected="guest_flip_stall_confirmed"
-                    say("GHOST_GUEST_FLIP_STALL=PROVEN last_five="+
-                        json.dumps(frames[-5:]))
-                    screenshot(env,"confirmed-stall")
-                    before=read_owned_thread_ticks(p.pid)
-                    time.sleep(5)
-                    after=read_owned_thread_ticks(p.pid)
-                    (WORK/"thread-cpu-after-stall.json").write_text(
-                        json.dumps({"ticks_per_second":os.sysconf("SC_CLK_TCK"),
-                                    "samples":thread_cpu_delta(before,after)},indent=2)+"\n")
+                if not owned(p.pid):
+                    detected="game_identity_lost"
                     break
-                if frames and frames[-1]["flips"]>=1000:
-                    detected="rendered_past_1000_flips"
-                    say("GHOST_RENDERED_PAST_1000_GUEST_FLIPS=PASS")
-                    screenshot(env,"rendering-progress")
-                    break
-                time.sleep(2)
-            if detected is None:
+                if memory_fd is None:
+                    try:
+                        memory_fd=os.open(f"/proc/{p.pid}/mem",os.O_RDONLY|os.O_CLOEXEC)
+                        say("GUEST_DEPENDENCY_TIMELINE_READONLY_OPEN=YES")
+                    except OSError as exc:
+                        if len(sample_errors)<8:sample_errors.append("open:"+str(exc))
+                if memory_fd is not None:
+                    try:
+                        data=os.pread(memory_fd,0x190,0x3fb6490)
+                        gate=gate_state_from_bytes(data)
+                        gate_samples+=1
+                        signature=(tuple((key,item["state"],item["count_raw"])
+                                         for key,item in gate["gates"].items()),
+                                   gate["pending_child_link"])
+                        changed=signature!=last_gate
+                        if changed or not gate_records or elapsed-gate_records[-1]["elapsed"]>=2:
+                            record={"elapsed":round(elapsed,3),
+                                    "flips":latest_frames["flips"] if latest_frames else None,
+                                    "vblank":latest_frames["vblank"] if latest_frames else None,
+                                    "gate":gate}
+                            if len(gate_records)<2048:gate_records.append(record)
+                            if changed and (len(gate_records)<20 or len(gate_records)%50==0):
+                                say("GUEST_DEPENDENCY_CHANGED="+json.dumps(record))
+                        last_gate=signature
+                        if gate["middle_underflow"] and not first_underflow:
+                            first_underflow=True
+                            say("GHOST_MIDDLE_NEGATIVE_FIRST_SAMPLED="+json.dumps({
+                                "elapsed":round(elapsed,3),"gate":gate,
+                                "note":"non-atomic observational snapshot"}))
+                    except (OSError,ValueError) as exc:
+                        if len(sample_errors)<8:sample_errors.append("read:"+str(exc))
+                if elapsed-last_log_at>=0.9:
+                    last_log_at=elapsed
+                    frames=guest_trace_records(log.read_text(errors="replace"))
+                    if frames:
+                        latest_frames=frames[-1]
+                        if tick%100<10:
+                            say("GHOST_FLIPS_PROGRESS="+json.dumps(latest_frames))
+                    for second in (15,35):
+                        if elapsed>=second and second not in screenshot_times:
+                            screenshot_times.add(second)
+                            screenshot(env,str(second)+"s")
+                    if confirmed_frame_stall(frames):
+                        if any(row["pending"] or row["queued"] for row in frames[-5:]):
+                            detected="stall_with_pending_gpu_work"
+                        else:
+                            detected="guest_flip_stall_confirmed"
+                        say("GHOST_FLIP_STALL="+json.dumps(frames[-5:]))
+                        screenshot(env,"natural_stall")
+                        before=read_owned_thread_ticks(p.pid)
+                        time.sleep(5)
+                        after=read_owned_thread_ticks(p.pid)
+                        (WORK/"thread-cpu-after-stall.json").write_text(
+                            json.dumps({"ticks_per_second":os.sysconf("SC_CLK_TCK"),
+                                        "samples":thread_cpu_delta(before,after)},indent=2)+"\n")
+                        break
+                    if frames and frames[-1]["flips"]>=1000:
+                        detected="rendered_past_1000_flips"
+                        screenshot(env,"past_1000_flips")
+                        break
+                time.sleep(.1)
+            else:
                 detected="timeout_without_confirmed_stall"
         finally:
-            if p.poll() is None and owned(p.pid):
-                if os.getsid(p.pid)==p.pid:
-                    say("STOP_ONLY_OWN_TRACE_CANDIDATE_PID="+str(p.pid))
-                    os.killpg(p.pid,signal.SIGTERM)
-                    try:p.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        if owned(p.pid):os.killpg(p.pid,signal.SIGKILL)
-                        p.wait(timeout=5)
-            elif p.poll() is None:
-                say("UNKNOWN_PROCESS_IDENTITY_REFUSE_SIGNAL="+str(p.pid))
-    payload=log.read_text(errors="replace")
-    report=classify(payload,p.returncode)
+            if memory_fd is not None:
+                try:os.close(memory_fd)
+                except OSError:pass
+            timeline={"summary":gate_transition_summary(gate_records,gate_samples,sample_errors),
+                      "records":gate_records}
+            (WORK/"guest-dependency-timeline.json").write_text(json.dumps(timeline,indent=2)+"\n")
+            if p is not None and p.poll() is None and owned(p.pid) and os.getsid(p.pid)==p.pid:
+                say("STOP_ONLY_OWN_COMPUTE6_CANDIDATE_PID="+str(p.pid))
+                os.killpg(p.pid,signal.SIGTERM)
+                try:p.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    if owned(p.pid):os.killpg(p.pid,signal.SIGKILL)
+                    p.wait(timeout=5)
+            elif p is not None and p.poll() is None:
+                say("UNKNOWN_PID_REFUSING_CLEANUP="+str(p.pid))
+    body=log.read_text(errors="replace")
+    report=classify(body,p.returncode)
+    events={name:[line[:650] for line in body.splitlines() if name in line]
+            for name in ("GHOST_C6_RELEASE","GHOST_C6_IRQ_FORWARD",
+                         "GHOST_C6_TRIGGER","GHOST_C6_DEQUEUE")}
+    counts={key:len(value) for key,value in events.items()}
+    report["compute6_event_counts"]=counts
+    report["compute6_last_events"]={key:value[-20:] for key,value in events.items()}
+    report["compute6_first_events"]={key:value[:5] for key,value in events.items()}
+    report["guest_dependency_summary"]=gate_transition_summary(gate_records,gate_samples,sample_errors)
     if not report["guest_flip_trace_samples"]:
-        say("GHOST_TRACE_NOT_FOUND: compilation marker present but no runtime sample")
-        detected="no_guest_flip_trace_emitted"
-    if report["pm4_release_fence_unreachable_count"]:
-        detected="pm4_release_unknown_selector_crash"
-    elif report["pm4_release_fence_record_count"] and detected=="guest_flip_stall_confirmed":
-        detected="pm4_cases_exercised_but_guest_still_stalled"
+        detected="guest_flip_trace_missing"
+    elif not any(counts.values()):
+        detected="no_compute6_events_observed"
+    elif not gate_samples:
+        detected="compute6_trace_without_dependency_timeline"
     report["test_stop_reason"]=detected
     (WORK/"runtime-analysis.json").write_text(json.dumps(report,indent=2)+"\n")
     GAME_STATUS=detected
-    say("PM4_EXPERIMENT_MATCHING_RECORDS="+str(report["pm4_release_fence_record_count"]))
-    say("GHOST_GAME_TEST_RESULT="+detected+
-        " guest_samples="+str(report["guest_flip_trace_samples"])+
-        " assertions="+str(report["assertion_count"])+
-        " mip_copy_calls="+str(report["color_to_depth_mip_copy_count"]+
-                              report["depth_to_color_mip_copy_count"]))
+    say("GHOST_COMPUTE6_IRQ_COUNTS="+json.dumps(counts))
+    say("GHOST_COMPUTE6_GATE_SUMMARY="+json.dumps({
+        "middle_underflow":report["guest_dependency_summary"]["middle_negative_seen"],
+        "parent_waiting_at_end":report["guest_dependency_summary"]["parent_waiting_at_end"],
+        "last_flips":report["last_guest_flip_sample"]["flips"]
+                     if report["last_guest_flip_sample"] else None,
+        "first_negative":report["guest_dependency_summary"]["first_middle_negative"]
+    }))
+    say("GHOST_COMPUTE6_TEST_RESULT="+detected)
 
 def selftest():
     from tempfile import TemporaryDirectory
@@ -600,6 +695,20 @@ def selftest():
     assert state["assertion_count"] == 1
     assert BASE_BIN != BIN != OTHER_BIN
     assert "compute6-irq-candidate" in str(BIN)
+    fake=bytearray(0x190)
+    for key,addr,state,count in (("outer",0x3fb6498,0,0),
+                                 ("middle",0x3fb64e0,2,0xffffffff),
+                                 ("parent",0x3fb6528,1,1),
+                                 ("child",0x3fb6590,1,1)):
+        struct.pack_into("<II",fake,addr-0x3fb6490,state,count)
+    struct.pack_into("<Q",fake,0x3fb6550-0x3fb6490,0x3fb6590)
+    gate=gate_state_from_bytes(fake)
+    assert gate["middle_underflow"] and gate["gates"]["middle"]["count_signed"]==-1
+    assert gate["pending_child_link"]=="0x3fb6590"
+    assert gate_transition_summary([{"elapsed":2,"gate":gate}],1,[])["middle_negative_seen"]
+    try:gate_state_from_bytes(b"")
+    except ValueError:pass
+    else:raise AssertionError("Truncated dependency snapshot accepted")
     assert classify("GHOST_PM4_RELEASE_MEM data_sel=0 int_sel=1\n", 0)[
         "pm4_release_fence_record_count"]==1
     frames=guest_trace_records("\n".join(
@@ -622,8 +731,8 @@ def selftest():
         assert binary_markers_present(path, [b"GHOST_MIP_COPY mips=",
                                             b"GHOST_MIP_REVERSE_COPY mips=",
                                             b"GHOST_COPY_FALLBACK_ASSERT mips="])
-    say("SELFTEST_PASS=four_pinned_patchers,pm4_selector_logging,source_atomic_restore,"
-        "compiled_markers,mip_crash_classifier,isolated_paths")
+    say("SELFTEST_PASS=all_five_patchers_pinned,compute6_log_markers,"
+        "parent_middle_gate_fixture,source_atomic_restore,isolation")
 
 def interrupt_for_rollback(sig, frame):
     raise KeyboardInterrupt("Signal intercepted to restore Ghost source: " + str(sig))
@@ -691,8 +800,9 @@ def main():
         say("ARCHIVE_READY=" + str(OUT))
         say("UPLOAD_THIS_FILE=" + str(OUT))
         say("SSH_SESSION=REMAINS_OPEN")
-    return 0 if ERROR is None and GAME_STATUS not in ("no_guest_flip_trace_emitted",
-                                                       "not_started") else 1
+    return 0 if ERROR is None and GAME_STATUS in (
+        "guest_flip_stall_confirmed","stall_with_pending_gpu_work",
+        "rendered_past_1000_flips","game_exited") else 1
 
 if __name__ == "__main__":
     raise SystemExit(main())
