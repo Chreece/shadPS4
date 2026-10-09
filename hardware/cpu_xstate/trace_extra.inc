@@ -26,7 +26,7 @@ static void CheckNestedTrace() {
   ++nested_trace_checks;
 }
 
-static uint64_t TraceXcr0() {
+[[maybe_unused]] static uint64_t TraceXcr0() {
   Observation value{};
   reinterpret_cast<Runner>(const_cast<unsigned char *>(probe_xgetbv))(nullptr, 0, &value);
   return value.rax | (value.rdx << 32);

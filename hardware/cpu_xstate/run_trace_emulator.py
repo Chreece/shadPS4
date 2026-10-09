@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-"""Build and execute marked xstate diagnostics in an isolated shadPS4 profile.
+"""Build and execute marked or automatic xstate diagnostics in an isolated shadPS4 profile.
 
 Requires a Linux build with ENABLE_EXPERIMENTAL_XSTATE_TRACE=ON and the guest
 memory-protection changes from #5329. Does not install an emulator or launch a game.
@@ -23,6 +23,9 @@ import time
 from compare import compare
 
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--unmarked", action="store_true")
+parser.add_argument("--auto-only", action="store_true")
+parser.add_argument("--timeout", type=int, default=180)
 parser.add_argument("--emulator", type=Path, required=True)
 parser.add_argument("--sdk", type=Path, required=True)
 parser.add_argument("--output", type=Path, required=True)
@@ -39,7 +42,9 @@ status = 1
 try:
     with (output / "homebrew-build.log").open("w") as log:
         subprocess.run([sys.executable, str(here / "build_trace_probe.py"), "--sdk", str(sdk),
-                        "--output", str(output / "homebrew")], check=True, stdout=log,
+                        "--output", str(output / "homebrew"),
+                        *(["--unmarked"] if args.unmarked else []),
+                        *(["--auto-only"] if args.auto_only else [])], check=True, stdout=log,
                        stderr=subprocess.STDOUT, timeout=150)
     game = output / "game"
     (game / "sce_sys").mkdir(parents=True, exist_ok=True)
@@ -61,6 +66,8 @@ try:
         "Log": {"filter": "*:Info", "flush_level": "info", "sync": True},
         "General": {"show_splash": False, "home_dir": str(user / "home"), "neo_mode": False}}))
     for number in range(101, 151):
+        if Path(f"/tmp/.X{number}-lock").exists():
+            continue
         with socket.socket() as probe:
             try:
                 probe.bind(("127.0.0.1", 6000 + number))
@@ -71,12 +78,15 @@ try:
         raise RuntimeError("No free diagnostic display")
     env = dict(os.environ, DISPLAY=f"127.0.0.1:{number}", SDL_VIDEODRIVER="x11",
                SDL_AUDIODRIVER="dummy", ALSOFT_DRIVERS="null", SHADPS4_ENABLE_IPC="false")
+    env["SHADPS4_XSTATE_TRACE_AUTO"] = "1" if args.unmarked else "0"
+    summary["unmarked"] = args.unmarked
+    summary["auto_only"] = args.auto_only
     if args.icd:
         env["VK_DRIVER_FILES"] = str(args.icd.resolve())
     with (output / "display.log").open("w") as log:
         display = subprocess.Popen(["Xvfb", f":{number}", "-screen", "0", "640x360x24",
                                     "-listen", "tcp", "-nolisten", "unix", "-nolisten", "local", "-ac"],
-                                   stdout=log, stderr=subprocess.STDOUT, env=env)
+                                   stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         if display.poll() is not None:
@@ -89,36 +99,47 @@ try:
     else:
         raise TimeoutError("Diagnostic display did not become ready")
     start = time.monotonic()
-    print("RUNNING=Isolated CPU-state homebrew; 180-second limit", flush=True)
+    print(f"RUNNING=Isolated CPU-state homebrew; {args.timeout}-second limit", flush=True)
     with (output / "launch.log").open("w") as log:
         process = subprocess.Popen([str(emulator), "--ignore-game-patch", str(game / "eboot.bin")],
-                                   cwd=runtime, env=env, stdout=log, stderr=subprocess.STDOUT)
+                                   cwd=runtime, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                   start_new_session=True)
     while process.poll() is None:
         elapsed = time.monotonic() - start
-        if elapsed > 180:
-            raise TimeoutError("CPU-state homebrew exceeded 180 seconds")
+        if elapsed > args.timeout:
+            raise TimeoutError(f"CPU-state homebrew exceeded {args.timeout} seconds")
         try:
             process.wait(timeout=15)
         except subprocess.TimeoutExpired:
             print(f"RUNNING=CPU-state homebrew; {int(time.monotonic() - start)} seconds", flush=True)
     summary["return_code"] = process.returncode
     summary["elapsed_seconds"] = round(time.monotonic() - start, 3)
-    for name in ("cpu-xstate-hardware.txt", "xstate-trace-extra.txt"):
-        shutil.copy2(user / "data" / name, output / name)
+    for name in ("cpu-xstate-hardware.txt", "xstate-trace-extra.txt", "xstate-auto-extra.txt",
+                 "xstate-auto-progress.txt"):
+        if (user / "data" / name).exists():
+            shutil.copy2(user / "data" / name, output / name)
     if process.returncode != 0:
         raise RuntimeError(f"Emulator exited with {process.returncode}")
-    result = compare(here / "ps4_reference/cpu-xstate-hardware.txt", output / "cpu-xstate-hardware.txt")
-    (output / "comparison.json").write_text(json.dumps(result, indent=2) + "\n")
-    summary["physical_register_exception_comparison"] = {
-        "common_rows": result["common_rows"], "differences": result["differences"]}
-    extra = (output / "xstate-trace-extra.txt").read_text().strip()
-    summary["extra"] = extra
-    if (result["common_rows"] != 224 or result["differences"] or
-            extra != "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0"):
-        raise RuntimeError("CPU-state comparison failed; see comparison.json and extra results")
+    if not args.auto_only:
+        result = compare(here / "ps4_reference/cpu-xstate-hardware.txt", output / "cpu-xstate-hardware.txt")
+        (output / "comparison.json").write_text(json.dumps(result, indent=2) + "\n")
+        summary["physical_register_exception_comparison"] = {
+            "common_rows": result["common_rows"], "differences": result["differences"]}
+        extra = (output / "xstate-trace-extra.txt").read_text().strip()
+        summary["extra"] = extra
+        if (result["common_rows"] != 224 or result["differences"] or
+                extra != "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0"):
+            raise RuntimeError("CPU-state comparison failed; see comparison.json and extra results")
+    if args.unmarked:
+        shutil.copy2(user / "data/xstate-auto-extra.txt", output / "xstate-auto-extra.txt")
+        auto_extra = (output / "xstate-auto-extra.txt").read_text().strip()
+        summary["automatic_extra"] = auto_extra
+        if auto_extra != "AUTO_EXTRA flags=64 threads=2 queries=256 redirects=1 explicit_exit=1 errors=0":
+            raise RuntimeError("Automatic trace checks failed: " + auto_extra)
     status = 0
-    print("PASS=224 register/exception cases; 128 code rewrites; 35 nested callbacks; fault retry", flush=True)
-except Exception as error:
+    print("PASS=Automatic flags, threads and redirected signal return" if args.auto_only else
+          "PASS=224 register/exception cases; 128 code rewrites; 35 nested callbacks; fault retry", flush=True)
+except (Exception, KeyboardInterrupt) as error:
     summary["error"] = f"{type(error).__name__}: {error}"
     print("TEST_ERROR=" + summary["error"], flush=True)
 finally:
@@ -138,7 +159,7 @@ finally:
             root_result = path.parent == output and path.suffix in (".txt", ".log", ".json")
             emulator_log = relative.parts[:3] == ("runtime", "user", "log")
             probe_source = relative.parts[0] == "homebrew" and path.name in (
-                "main.cpp", "cases.S", "trace_extra.inc")
+                "main.cpp", "cases.S", "trace_extra.inc", "trace_auto.inc")
             if path.is_file() and (root_result or emulator_log or probe_source):
                 packed.add(path, arcname=str(path.relative_to(output)))
     print("UPLOAD_ONLY=" + str(archive), flush=True)

@@ -1,0 +1,62 @@
+{
+  "candidate_commit": "934509f432be273907997ba6198881143cc9693f",
+  "candidate_tree": "e78f21c0fa21951657a18b316c72bc2df23b599d",
+  "published_candidate_commit": "2ad0c32859b6d577a4c62eefaa8508eadf497c95",
+  "published_candidate_branch": "experiment/xstate-auto-trace-20261010",
+  "test_source_commit": "f02c39b6345de6abb3881e2563d5b95ad0ba5207",
+  "physical_reference_sha256": "6d4353fdb5d1abe20c53d72e6e5680992fc692429ddfe31a7ca3b02e81d907de",
+  "unmarked_source_verified": true,
+  "unmarked": {
+    "emulator_sha256": "54dfc35bb7a76cab23501b2fed738509ed4e312671f9e771422f146b47fbda92",
+    "unmarked": true,
+    "auto_only": false,
+    "return_code": 0,
+    "elapsed_seconds": 282.463,
+    "physical_register_exception_comparison": {
+      "common_rows": 224,
+      "differences": []
+    },
+    "extra": "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0",
+    "automatic_extra": "AUTO_EXTRA flags=64 threads=2 queries=256 redirects=1 explicit_exit=1 errors=0"
+  },
+  "marked_regression": {
+    "emulator_sha256": "54dfc35bb7a76cab23501b2fed738509ed4e312671f9e771422f146b47fbda92",
+    "unmarked": false,
+    "auto_only": false,
+    "return_code": 0,
+    "elapsed_seconds": 0.77,
+    "physical_register_exception_comparison": {
+      "common_rows": 224,
+      "differences": []
+    },
+    "extra": "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0"
+  },
+  "explicit_exit_followup": {
+    "emulator_sha256": "54dfc35bb7a76cab23501b2fed738509ed4e312671f9e771422f146b47fbda92",
+    "unmarked": true,
+    "auto_only": true,
+    "return_code": 0,
+    "elapsed_seconds": 50.984,
+    "automatic_extra": "AUTO_EXTRA flags=64 threads=2 queries=256 redirects=1 explicit_exit=1 errors=0"
+  },
+  "build": {
+    "platform": "Linux x86-64",
+    "compiler": "Clang 19",
+    "configuration": "Release",
+    "experimental_trace_on": "passed",
+    "experimental_trace_off": "passed"
+  },
+  "formatting": "passed",
+  "production_reuse": "1075/1075 files compliant",
+  "fixed_during_validation": [
+    "SIGTRAP during native pthread creation",
+    "Tracing re-enabled by C++ unwinding during explicit pthread exit"
+  ],
+  "limits": [
+    "Slow single-step diagnostic; not suitable for gameplay.",
+    "No generated CPUID/RDPID implementation is added by this change.",
+    "No proof of every native-to-guest callback or concurrent unsynchronized code rewriting.",
+    "Native in-use tracking and host-supported FP-state limits remain.",
+    "No Windows/macOS runtime implementation."
+  ]
+}
