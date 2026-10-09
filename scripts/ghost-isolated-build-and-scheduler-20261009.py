@@ -381,6 +381,7 @@ def game_trial():
     stop_since=None
     stop_vblank=None
     early=False;late=False
+    early_complete=False
     last_capture=-100.0
     while time.monotonic()-t0 < MAX_SECONDS:
         elapsed=time.monotonic()-t0
@@ -400,7 +401,7 @@ def game_trial():
                 early=True
                 info(f'EARLY_SAMPLE_ON_ADVANCING_RENDERING flips={flips} vb={vb}')
                 screenshot(env,'rendering')
-                snapshot(helper,GAME.pid,'A',frame)
+                early_complete=snapshot(helper,GAME.pid,'A',frame)
             if lastframe is None or lastframe[1]!=flips:
                 stop_since=elapsed
                 stop_vblank=vb
@@ -409,8 +410,10 @@ def game_trial():
                 late=True
                 info(f'POSTINTRO_FREEZE_CONFIRMED flips={flips} vbdelta={vb-stop_vblank}')
                 screenshot(env,'stalled')
-                snapshot(helper,GAME.pid,'B',frame)
-                return 'captured_before_and_after'
+                late_complete=snapshot(helper,GAME.pid,'B',frame)
+                return ('captured_before_and_after'
+                        if early_complete and late_complete
+                        else 'incomplete_gdb_capture')
             lastframe=frame
         if elapsed-last_capture>30:
             last_capture=elapsed
