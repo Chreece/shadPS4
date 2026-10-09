@@ -1,0 +1,26 @@
+{
+  "capture": "cpu-xstate-hardware.txt",
+  "sha256": "6d4353fdb5d1abe20c53d72e6e5680992fc692429ddfe31a7ca3b02e81d907de",
+  "platform": "physical PS4",
+  "neo_mode": false,
+  "model": null,
+  "firmware": null,
+  "model_firmware_note": "Not recorded in this upload; do not inherit identities from other captures.",
+  "probe_version": 1,
+  "rows": 224,
+  "recovered_faults": 34,
+  "collection_errors": 0,
+  "xcr0": "0x7",
+  "save_area_size": 832,
+  "cpuid_d_1": [
+    1,
+    0,
+    0,
+    0
+  ],
+  "source_commit": "9bc437c460f5195ff9b6bf2d4c3fd113e3d384a7",
+  "source_hashes": {
+    "main.cpp": "d4db42d2741b236cb96ace265e07453e1b34fa36915a74734767d50858cc7fc4",
+    "cases.S": "5a37c0e95231929a1845e58a9f8459604bbf6e3636dc94dd3c8e119ed98afe2b"
+  }
+}

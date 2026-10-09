@@ -1,0 +1,33 @@
+{
+  "baseline_source": "34fd4ec9e222011035c020f63b4b5ccc92e35315",
+  "fixed_source": "6011f4c763ea151ade2e1e95b8d96a35bb3696c0",
+  "baseline_tree": "69a5a2685d972ca6ef57646a48386a472bc9c0e3",
+  "fixed_tree": "5f5baab0725da5a862ac09f60916d7c5f2b61177",
+  "baseline_binary_sha256": "de06d33a3b972f4c5f25d4e000fb000d83488cee73f32c5540fd2d8eb56e5400",
+  "fixed_binary_sha256": "c92af881dabcd2fe7454e2c4737b90e5043b33f8f4bb7da385146e60068fcb5c",
+  "homebrew_sha256": "f6c44d2d7f44738705edef667757b3944760acd29101de525f0b17b433dbaf07",
+  "runtime_dependency": false,
+  "build": "Linux Clang 19 Release",
+  "test_only_prerequisite": "#5329 guest memory protection fixes; without this the initial clean build timed out at a guard-page fault.",
+  "probe_rows_per_emulator_run": 220,
+  "register_field_checks": 1272,
+  "active_x87_value_checks": 256,
+  "common_fault_checks": 32,
+  "baseline_fault_mismatches": 24,
+  "fixed_fault_mismatches": 0,
+  "remaining_query_cases": [
+    "static/generated XGETBV(0) retains host XCR0",
+    "static/generated XGETBV(1) executes on this host instead of faulting"
+  ],
+  "not_claimed": [
+    "complete Jaguar XSAVE layout",
+    "saved-area byte equivalence",
+    "other platforms",
+    "physical PS4 Pro xstate evidence"
+  ],
+  "signal_code_basis": "https://github.com/freebsd/freebsd-src/blob/releng/9.0/sys/amd64/amd64/trap.c (T_PROTFLT -> SIGBUS/BUS_OBJERR); the physical probe records signal numbers, not siginfo codes.",
+  "reproduction_base": "915dc0d30db946499c7f7854622234b3c32a6637",
+  "reproduction_patch": "linux-validation.tar.gz: candidate.patch (git apply --index; resulting tree must equal fixed_tree)",
+  "published_fix_commit": "6f3dce0546c5b891902dc8a476186249bc49c7df",
+  "published_fix_tree": "0de20096f52ba63a5bfd9677f0217f20c6e0dcc2"
+}

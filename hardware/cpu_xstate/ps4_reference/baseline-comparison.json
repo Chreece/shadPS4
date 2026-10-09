@@ -1,0 +1,725 @@
+{
+  "reference_sha256": "6d4353fdb5d1abe20c53d72e6e5680992fc692429ddfe31a7ca3b02e81d907de",
+  "candidate_sha256": "cdd37a9607d6b121acacb7f3c724bd74409f1f55123ffc9423269db29309de9b",
+  "reference_integrity": {
+    "rows": 224,
+    "recovered_faults": 34,
+    "collection_errors": 0,
+    "xcr0": "0000000000000007",
+    "physical_equivalence_checked": false
+  },
+  "candidate_integrity": {
+    "rows": 220,
+    "recovered_faults": 32,
+    "collection_errors": 0,
+    "xcr0": "00000000000000e7",
+    "physical_equivalence_checked": false
+  },
+  "common_rows": 220,
+  "checks": {
+    "signals": 220,
+    "query_results": 8,
+    "register_fields": 1272,
+    "active_x87_values": 256
+  },
+  "common_fault_checks": 32,
+  "common_fault_mismatches": [
+    [
+      "generated",
+      "xgetbv",
+      "index",
+      "0000000000000002",
+      "0"
+    ],
+    [
+      "generated",
+      "xgetbv",
+      "index",
+      "00000000ffffffff",
+      "0"
+    ],
+    [
+      "generated",
+      "xrstor",
+      "compact_bv",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "generated",
+      "xrstor",
+      "invalid_mxcsr",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "generated",
+      "xrstor",
+      "misaligned",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "generated",
+      "xrstor",
+      "reserved_header",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "generated",
+      "xrstor",
+      "unsupported_bv",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "generated",
+      "xrstor64",
+      "compact_bv",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "generated",
+      "xrstor64",
+      "invalid_mxcsr",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "generated",
+      "xrstor64",
+      "misaligned",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "generated",
+      "xrstor64",
+      "reserved_header",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "generated",
+      "xrstor64",
+      "unsupported_bv",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "static",
+      "xgetbv",
+      "index",
+      "0000000000000002",
+      "0"
+    ],
+    [
+      "static",
+      "xgetbv",
+      "index",
+      "00000000ffffffff",
+      "0"
+    ],
+    [
+      "static",
+      "xrstor",
+      "compact_bv",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "static",
+      "xrstor",
+      "invalid_mxcsr",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "static",
+      "xrstor",
+      "misaligned",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "static",
+      "xrstor",
+      "reserved_header",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "static",
+      "xrstor",
+      "unsupported_bv",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "static",
+      "xrstor64",
+      "compact_bv",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "static",
+      "xrstor64",
+      "invalid_mxcsr",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "static",
+      "xrstor64",
+      "misaligned",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "static",
+      "xrstor64",
+      "reserved_header",
+      "0000000000000007",
+      "1"
+    ],
+    [
+      "static",
+      "xrstor64",
+      "unsupported_bv",
+      "0000000000000007",
+      "1"
+    ]
+  ],
+  "reference_only_rows": [
+    [
+      "generated",
+      "xrstor",
+      "restore",
+      "ffffffffffffffff",
+      "0"
+    ],
+    [
+      "generated",
+      "xrstor64",
+      "restore",
+      "ffffffffffffffff",
+      "0"
+    ],
+    [
+      "static",
+      "xrstor",
+      "restore",
+      "ffffffffffffffff",
+      "0"
+    ],
+    [
+      "static",
+      "xrstor64",
+      "restore",
+      "ffffffffffffffff",
+      "0"
+    ]
+  ],
+  "candidate_only_rows": [],
+  "metadata_differences": {
+    "xcr0": {
+      "reference": "0000000000000007",
+      "candidate": "00000000000000e7"
+    },
+    "cpuid_0": {
+      "reference": [
+        "00000007",
+        "00000340",
+        "00000340",
+        "00000000"
+      ],
+      "candidate": [
+        "000000e7",
+        "00000980",
+        "00000980",
+        "00000000"
+      ]
+    },
+    "cpuid_1": {
+      "reference": [
+        "00000001",
+        "00000000",
+        "00000000",
+        "00000000"
+      ],
+      "candidate": [
+        "0000000f",
+        "000009a8",
+        "00001800",
+        "00000000"
+      ]
+    },
+    "cpuid_5": {
+      "reference": [
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000"
+      ],
+      "candidate": [
+        "00000040",
+        "00000340",
+        "00000000",
+        "00000000"
+      ]
+    },
+    "cpuid_6": {
+      "reference": [
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000"
+      ],
+      "candidate": [
+        "00000200",
+        "00000380",
+        "00000000",
+        "00000000"
+      ]
+    },
+    "cpuid_7": {
+      "reference": [
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000"
+      ],
+      "candidate": [
+        "00000400",
+        "00000580",
+        "00000000",
+        "00000000"
+      ]
+    },
+    "cpuid_11": {
+      "reference": [
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000"
+      ],
+      "candidate": [
+        "00000010",
+        "00000000",
+        "00000001",
+        "00000000"
+      ]
+    },
+    "cpuid_12": {
+      "reference": [
+        "00000000",
+        "00000000",
+        "00000000",
+        "00000000"
+      ],
+      "candidate": [
+        "00000018",
+        "00000000",
+        "00000001",
+        "00000000"
+      ]
+    }
+  },
+  "differences": [
+    {
+      "case": [
+        "generated",
+        "xgetbv",
+        "index",
+        "0000000000000000",
+        "0"
+      ],
+      "field": "query_result",
+      "reference": [
+        "0000000000000007",
+        "0000000000000000"
+      ],
+      "candidate": [
+        "00000000000000e7",
+        "0000000000000000"
+      ]
+    },
+    {
+      "case": [
+        "generated",
+        "xgetbv",
+        "index",
+        "0000000000000001",
+        "0"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 0
+    },
+    {
+      "case": [
+        "generated",
+        "xgetbv",
+        "index",
+        "0000000000000001",
+        "0"
+      ],
+      "field": "query_result",
+      "reference": [
+        "0000000011223344",
+        "0000000055667788"
+      ],
+      "candidate": [
+        "00000000000000a3",
+        "0000000000000000"
+      ]
+    },
+    {
+      "case": [
+        "generated",
+        "xgetbv",
+        "index",
+        "0000000000000002",
+        "0"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "generated",
+        "xgetbv",
+        "index",
+        "00000000ffffffff",
+        "0"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "generated",
+        "xrstor",
+        "compact_bv",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "generated",
+        "xrstor",
+        "invalid_mxcsr",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "generated",
+        "xrstor",
+        "misaligned",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "generated",
+        "xrstor",
+        "reserved_header",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "generated",
+        "xrstor",
+        "unsupported_bv",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "generated",
+        "xrstor64",
+        "compact_bv",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "generated",
+        "xrstor64",
+        "invalid_mxcsr",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "generated",
+        "xrstor64",
+        "misaligned",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "generated",
+        "xrstor64",
+        "reserved_header",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "generated",
+        "xrstor64",
+        "unsupported_bv",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "static",
+        "xgetbv",
+        "index",
+        "0000000000000000",
+        "0"
+      ],
+      "field": "query_result",
+      "reference": [
+        "0000000000000007",
+        "0000000000000000"
+      ],
+      "candidate": [
+        "00000000000000e7",
+        "0000000000000000"
+      ]
+    },
+    {
+      "case": [
+        "static",
+        "xgetbv",
+        "index",
+        "0000000000000001",
+        "0"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 0
+    },
+    {
+      "case": [
+        "static",
+        "xgetbv",
+        "index",
+        "0000000000000001",
+        "0"
+      ],
+      "field": "query_result",
+      "reference": [
+        "0000000011223344",
+        "0000000055667788"
+      ],
+      "candidate": [
+        "00000000000000a3",
+        "0000000000000000"
+      ]
+    },
+    {
+      "case": [
+        "static",
+        "xgetbv",
+        "index",
+        "0000000000000002",
+        "0"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "static",
+        "xgetbv",
+        "index",
+        "00000000ffffffff",
+        "0"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "static",
+        "xrstor",
+        "compact_bv",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "static",
+        "xrstor",
+        "invalid_mxcsr",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "static",
+        "xrstor",
+        "misaligned",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "static",
+        "xrstor",
+        "reserved_header",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "static",
+        "xrstor",
+        "unsupported_bv",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "static",
+        "xrstor64",
+        "compact_bv",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "static",
+        "xrstor64",
+        "invalid_mxcsr",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "static",
+        "xrstor64",
+        "misaligned",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "static",
+        "xrstor64",
+        "reserved_header",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    },
+    {
+      "case": [
+        "static",
+        "xrstor64",
+        "unsupported_bv",
+        "0000000000000007",
+        "1"
+      ],
+      "field": "signal",
+      "reference": 10,
+      "candidate": 11
+    }
+  ],
+  "full_xstate_equivalence_checked": false,
+  "excluded": [
+    "saved-area byte equivalence",
+    "empty x87 values",
+    "reserved register bytes",
+    "x87 instruction/data pointers",
+    "fault siginfo and context metadata"
+  ]
+}
