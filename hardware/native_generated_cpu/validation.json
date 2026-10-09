@@ -1,0 +1,46 @@
+{
+  "candidate_commit": "7c5261fd0f4b495b87f8860505059c720d44914c",
+  "candidate_tree": "18ecf1cd0c875ef44c324a480ac717a98064d800",
+  "base_commit": "915dc0d30db946499c7f7854622234b3c32a6637",
+  "production_execution_path_connected": false,
+  "stage": "instruction relocation component prototype",
+  "build": "Clang 19 Release passed",
+  "formatting": "passed",
+  "reuse": "1070/1070 source files passed",
+  "component_checks": 2436,
+  "failures": 0,
+  "harness_execute_faults": 4160,
+  "host_cpuid_faulting_required": false,
+  "external_runtime_required": false,
+  "cpu_id_helpers": "Linked production cpu_id.cpp object. Deterministic test adapters provide guest CPU indices, settings and logging.",
+  "execution_dispatcher": "Test-only fixed lookup table built before execution. No production memory interception or runtime code discovery is implemented.",
+  "coverage": [
+    "CPUID APIC identity and topology for guest indices 0..7",
+    "RDTSCP AUX and RDPID results for guest indices 0..7",
+    "GPR, flags/DF, red-zone, all YMM registers, MXCSR and x87 control preservation",
+    "Relative and register calls, guest call/pop return addresses, conditional branches, LOOP/LOOPE/JRCXZ, register jumps and returns",
+    "RIP-relative loads and LEA; stack operations; instruction bytes embedded in immediates",
+    "Fresh input snapshot at a reused source address, preserving source bytes",
+    "Two concurrent threads, 2000 RDPID calls and 20 nested signal callbacks",
+    "Truncated input, protected input boundary, unsupported instructions, out-of-range relocation and output-buffer rollback"
+  ],
+  "pending": [
+    "Connect a dispatcher outside signal handlers to genuine guest execute faults",
+    "Track executable permissions and protect instruction snapshots against concurrent writes/unmaps",
+    "Detect writes and aliases; invalidate translations and keep in-flight code alive",
+    "Map relocated exceptions and guest context back to original instructions",
+    "Implement or safely dispatch unsupported instruction forms, including memory-indirect calls and stack-pointer calls",
+    "Integrate the existing non-CPU-ID instruction patches and measure real workload performance",
+    "Run integrated OpenOrbis homebrew and gameplay after the dispatcher is connected"
+  ],
+  "gameplay_tested": false,
+  "physical_ps4_tested": false,
+  "source_sha256": {
+    "src/core/generated_instruction.cpp": "f4d38fc29f560bcd55734e0a5d925938439df942b818f26d6de230e0c2f24a13",
+    "src/core/generated_instruction.h": "66d478494a6dfce92b680d999e8eaa1d3b7751cdfcca20201f3a3c8ab0ac8535",
+    "src/core/cpu_id.cpp": "a7d0518ddc11843072ad484ae7238f6aeaaefd97d8b0b9e1c981867c6cc4e5a9"
+  },
+  "harness_sha256": "3ce65128ba1d489242e3a7e7f9f7dd44a3907e61582b764e1ab170dcb62193dd",
+  "instruction_component_object_sha256": "44aada48082d8ed08ab587b83e57e17feec9b1d110c7e4f071b36b4280e99f0f",
+  "cpu_id_object_sha256": "1c1c2d029099cdf5d84e7a23c393b852574524d3c870ecf6c207f1e847688f90"
+}

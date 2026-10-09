@@ -1,0 +1,22 @@
+CASE constant
+CASE instruction bytes in an immediate
+CASE short branch taken
+CASE short branch not taken
+CASE near branch taken
+CASE near branch not taken
+CASE loop branch
+CASE loope preserves flags
+CASE jrcxz taken
+CASE jrcxz not taken
+CASE direct call and return
+CASE call-pop observes guest return address
+CASE register call
+CASE RIP-relative address
+CASE RIP-relative memory
+CASE register jump
+CASE stack operations
+CASE fresh snapshot at a reused guest address
+STATE_CASE 0
+STATE_CASE 1
+STATE_CASE 2
+NATIVE_RELOCATION_RESULT checks=2436 failures=0 execute_faults=4160
