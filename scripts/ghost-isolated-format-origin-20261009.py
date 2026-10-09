@@ -212,6 +212,8 @@ def format_origin_patches(originals:dict)->dict:
     """
     def substitute(path,needle,replacement):
         source=originals[path].decode("utf-8")
+        if "GHOST_FORMAT_ORIGIN" in source:
+            raise RuntimeError("Format origin instrumentation already present")
         if source.count(needle)!=1:
             raise RuntimeError("Image descriptor diagnostic source changed: "+
                                str(path.relative_to(SOURCE)))
