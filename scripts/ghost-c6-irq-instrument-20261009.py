@@ -103,12 +103,12 @@ def transform(files:dict[str,bytes]) -> dict[str,bytes]:
 def selftest():
     g=(
       '#include "gnm_error.h"\n'
-      'void x(){ equeue->TriggerEvent(static_cast<GnmEventType>(id),\n'
+      'void x(){\n            equeue->TriggerEvent(static_cast<GnmEventType>(id),\n'
       '                                 OrbisKernelEvent::Filter::GraphicsCore,\n'
       '                                 reinterpret_cast<void*>(id)); }\n')
     eq=(
       '#include <thread>\n'
-      'void EqueueInternal::TriggerEvent() { m_cond.notify_one();\n    return has_found;\n }\n'
+      'void EqueueInternal::TriggerEvent() {\n    m_cond.notify_one();\n    return has_found;\n }\n'
       'void EqueueInternal::GetTriggeredEvents(){\n            ev[count++] = it->event;\n }\n')
     liv=(
       'void f(){\n'
