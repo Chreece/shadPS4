@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Unattended Ghost stencil+scoped ReadConst A/B: build, launch, capture, stop and rollback.
+"""Unattended Ghost compiler-demand GPU dynamic ReadConst A/B with stencil alias.
 
 Runs a PINNED existing candidate build+Vulkan-validation+rollback workflow.
 Starts Ghost automatically through the user's existing shadps4-esde launcher
@@ -15,6 +15,7 @@ sudo or install packages. A child build failure still produces an archive.
 from __future__ import annotations
 
 import ctypes
+import collections
 import ctypes.util
 from datetime import datetime
 import hashlib
@@ -39,7 +40,7 @@ LAUNCHER = HOME / ".local/bin/shadps4-esde"
 BINARY = HOME / "Applications/shadps4/shadps4"
 STATE = HOME / ".local/state/shadps4-playtest-logs"
 BASE_SHA = "f54245b0cf835995172a910c4e3a16cb13aef6c36a39fa5a8be53f3190183e4f"
-TRIAL_REV = "1d8c208315f5927efca1adac38383b1c0f4f4306"
+TRIAL_REV = "b370cae7bc5f94267b12595d7e927667a81ca156"
 TRIAL_FILE = "ghost-no-gdb-stencil-srt551d-validation-onerun.py"
 DISPLAY = ":0"
 READY = "READY - LAUNCH GHOST OF TSUSHIMA THROUGH MOONLIGHT -> ES-DE NOW."
@@ -484,9 +485,21 @@ def report_session() -> None:
         diagnostics = {
             "invalid_image_binding_hits": text.count("GHOST_NULL_IMAGE_BINDING shader="),
             "stencil_storage_alias_hits": text.count("GHOST_STENCIL_STORAGE_ALIAS shader="),
-            "srt_551d_route_events": text.count("GHOST_SRT_551D_ROUTE shader="),
-            "srt_551d_readlane_offset_errors": text.count(
-                "Unexpected instruction for offset computation, ReadLane shader=0x551d6087"),
+            "srt_detected_dynamic_route_events": text.count("GHOST_SRT_DETECTED_DYNAMIC shader="),
+            "srt_unsupported_readlane_count": len(re.findall(
+                r"Unexpected instruction for offset computation, ReadLane shader=0x[0-9a-fA-F]+", text)),
+            "srt_unsupported_phi_count": len(re.findall(
+                r"Unexpected instruction for offset computation, Phi shader=0x[0-9a-fA-F]+", text)),
+            "srt_all_unsupported_count": len(re.findall(
+                r"Unexpected instruction for offset computation, [A-Za-z0-9_]+ shader=0x[0-9a-fA-F]+", text)),
+            "srt_dynamic_shader_hashes": sorted(set(re.findall(
+                r"GHOST_SRT_DETECTED_DYNAMIC shader=(0x[0-9a-fA-F]+)", text))),
+            "srt_unsupported_by_opcode_and_shader": [
+                {"opcode": kind, "shader": shader, "count": count}
+                for (kind, shader), count in collections.Counter(re.findall(
+                    r"Unexpected instruction for offset computation, ([A-Za-z0-9_]+) shader=(0x[0-9a-fA-F]+)",
+                    text)).most_common(16)
+            ],
             "storage_depth_illegal_remaining": text.count("GHOST_STORAGE_IMAGE_INVALID shader="),
             "storage_image_usage_00339_messages": text.count("DebugUtilsCallback: VUID-VkWriteDescriptorSet-descriptorType-00339"),
             "storage_image_format_07028_messages": text.count("DebugUtilsCallback: VUID-vkCmdDispatchIndirect-OpTypeImage-07028"),
@@ -498,7 +511,7 @@ def report_session() -> None:
             "max_completed_guest_flips": max((int(x[1]) for x in frames), default=0),
         }
         (WORK / "ghost-binding-results.json").write_text(json.dumps(diagnostics, indent=2) + "\n")
-        say("SCOPED_SRT_TRIAL_COUNTS=" + json.dumps(diagnostics))
+        say("AUTO_DYNAMIC_SRT_TRIAL_COUNTS=" + json.dumps(diagnostics))
     else:
         say("NO_RUNTIME_LOG: game may have exited before runtime initialized")
 
@@ -635,7 +648,7 @@ def terminate_child() -> None:
         if not info:
             continue
         if (Path(info["exe"]).name in ("bash", "sh") and
-                "ghost-no-gdb-stencil-srt551d-onerun.sh" in info["argv"]):
+                "ghost-no-gdb-stencil-autosrt-onerun.sh" in info["argv"]):
             script_pids.append(pid)
     try:
         if script_pids:
@@ -673,7 +686,7 @@ def orchestrate() -> None:
     global CHILD_PROC, CHILD_RC, READER_THREAD, SCREEN_ENV, TEST_STATUS
     WORK.mkdir(parents=True, exist_ok=True)
     SCREEN_DIR.mkdir(exist_ok=True)
-    say("GHOST SCOPED SRT READCONST A/B: stencil alias + shader 0x551d6087 -> auto-launch -> Vulkan logs -> rollback -> archive")
+    say("GHOST DATA-DRIVEN READCONST A/B: stencil alias + per-stage dynamic shader need -> auto-launch -> evidence -> rollback -> archive")
     say("NO_GDB_HARDWARE_WATCHPOINT=1; no debugger attaches during this test")
     # Fail closed BEFORE compiling or changing configs when the automatic
     # launch cannot access the same guarded X11 session and game used before.
