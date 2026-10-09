@@ -441,6 +441,14 @@ def main():
         fail("Source worktree has uncommitted changes")
     if active_emulators():
         fail("An emulator is already running; do not interrupt it")
+    # Refuse to alter source files while another process builds this same tree.
+    builders = command(["ps", "-eo", "args="], timeout=10)
+    if builders.returncode == 0:
+        concurrent = [line for line in builders.stdout.decode(errors="replace").splitlines()
+                      if str(BUILD) in line and
+                      ("cmake --build" in line or "ninja" in line or "make -j" in line)]
+        if concurrent:
+            fail("A concurrent build uses this shadPS4 build directory")
     for part in ("bin64/drrun", "libshadps4_cpu_id.so",
                  "lib64/release/libdynamorio.so"):
         if not (BUILD / "cpu-id-runtime" / part).is_file():
