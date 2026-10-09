@@ -1006,7 +1006,8 @@ if (ARCHITECTURE STREQUAL "x86_64")
              src/core/cpu_patches.h
              ${FIBER_LIB})
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        list(APPEND CORE src/core/cpu_id.cpp src/core/cpu_id.h)
+        list(APPEND CORE src/core/cpu_id.cpp src/core/cpu_id.h
+                         src/core/generated_instruction.cpp src/core/generated_instruction.h)
     endif()
 endif()
 
