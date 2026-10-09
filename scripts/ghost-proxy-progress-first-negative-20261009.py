@@ -740,6 +740,8 @@ def capture_proxy_progress():
               "eq_handle=",eq_handle,
               "gpu_fence_70=",gpu_fence_70,
               "gpu_fence_68=",gpu_fence_68,flush=True)
+        if current is not None and index is not None and target is not None:
+            print("GHOST_PROXY_PROGRESS_VALUES_COMPLETE",flush=True)
         inspect("x/12wx "+hex(proxy+0x1f20))
         if ptr and index is not None and index<0x10000:
             inspect("x/12gx "+hex(ptr+max(0,index-2)*8))
@@ -856,6 +858,7 @@ def finish_middle_watch(proc,pid,why):
         "completed":("GHOST_MIDDLE_FIRST_NEGATIVE_END" in body and
                      bool(re.search(r"Hardware watchpoint\s+\d+",body))),
         "proxy_progress_captured":"GHOST_PROXY_PROGRESS_CAPTURE proxy=" in body,
+        "proxy_operands_complete":"GHOST_PROXY_PROGRESS_VALUES_COMPLETE" in body,
         "proxy_progress_error":"GHOST_PROXY_PROGRESS_CAPTURE_ERROR" in body,
         "normal_writes":body.count("GHOST_MIDDLE_COUNT_WRITE"),
         "reached_limit":"GHOST_MIDDLE_WATCH_LIMIT_REACHED" in body,
@@ -986,8 +989,8 @@ def test_candidate():
                     if (WATCH_SUMMARY.get("triggered") and WATCH_SUMMARY.get("completed")
                         and WATCH_SUMMARY.get("hw_watch_verified")):
                         detected=("proxy_progress_and_first_underflow_captured"
-                                  if WATCH_SUMMARY.get("proxy_progress_captured")
-                                  else "underflow_captured_but_proxy_progress_unavailable")
+                                  if WATCH_SUMMARY.get("proxy_operands_complete")
+                                  else "underflow_captured_but_proxy_progress_incomplete")
                         say("STOP_AFTER_FIRST_NEGATIVE="+detected)
                         screenshot(env,"first-negative-proxy")
                         break
@@ -1236,6 +1239,7 @@ def selftest():
     commands=middle_watch_commands()
     assert commands.count("GHOST_MIDDLE_FIRST_NEGATIVE_DETECTED")==1
     assert commands.count("GHOST_PROXY_PROGRESS_CAPTURE proxy=")==1
+    assert commands.count("GHOST_PROXY_PROGRESS_VALUES_COMPLETE")==1
     assert "proxy+0x1f30" in commands and "proxy+0x1f34" in commands
     assert "val(0x1ad3208,64)" in commands and "ptr+index*8" in commands
     assert "val(0x1100000070,64)" in commands
