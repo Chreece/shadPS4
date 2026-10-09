@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+#include <filesystem>
 #include <ranges>
 
 #include "common/hash.h"
@@ -740,18 +742,34 @@ std::string PipelineCache::GetShaderName(Shader::HwStage stage, u64 hash,
 
 void PipelineCache::DumpShader(std::span<const u32> code, u64 hash, Shader::HwStage stage,
                                size_t perm_idx, std::string_view ext) {
-    if (!EmulatorSettings.IsDumpShaders()) {
+    // One-shader dump without changing the native profile's global/per-game settings.
+    const char* target_dir = std::getenv("SHADPS4_GOW_SPV_DUMP_DIR");
+    const bool capture_target = target_dir && *target_dir && ext == "spv" &&
+                                hash == 0x57b077acULL && stage == HwStage::Compute;
+    if (!EmulatorSettings.IsDumpShaders() && !capture_target) {
         return;
     }
 
     using namespace Common::FS;
-    const auto dump_dir = GetUserPath(PathType::ShaderDir) / "dumps";
-    if (!std::filesystem::exists(dump_dir)) {
-        std::filesystem::create_directories(dump_dir);
+    const auto dump_dir = capture_target ? std::filesystem::path{target_dir}
+                                         : GetUserPath(PathType::ShaderDir) / "dumps";
+    if (capture_target && !dump_dir.is_absolute()) {
+        LOG_ERROR(Render_Vulkan, "GoW SPIR-V output directory must be absolute");
+        return;
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(dump_dir, ec);
+    if (ec) {
+        LOG_ERROR(Render_Vulkan, "Failed to create shader output dir: {}", ec.message());
+        return;
     }
     const auto filename = fmt::format("{}.{}", GetShaderName(stage, hash, perm_idx), ext);
     const auto file = IOFile{dump_dir / filename, FileAccessMode::Create};
     file.WriteSpan(code);
+    if (capture_target) {
+        LOG_WARNING(Render_Vulkan, "GOW_TARGET_SPV_DUMP shader={:#x} file={}", hash,
+                    (dump_dir / filename).string());
+    }
 }
 
 std::optional<std::vector<u32>> PipelineCache::GetShaderPatch(u64 hash, Shader::HwStage stage,
