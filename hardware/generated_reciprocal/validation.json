@@ -1,8 +1,8 @@
 {
   "date": "2026-10-09",
-  "candidate_commit": "b85320a062e71eecc85ccc2c0d01e86a7be85018",
-  "candidate_tree": "555a0c57a421bca7a172268ee3c492ac151e2cfd",
-  "binary_sha256": "3e586f9c5e66919e68cc956616ed87fae993fd3b64f8af2c87d3c26fc62e7f84",
+  "candidate_commit": "35cc6d34e8e21e4b62cfdad5ebe185eaa2c31854",
+  "candidate_tree": "a2d32b356103b523a4c023778dbec142e6b98930",
+  "binary_sha256": "4ca3ee199f8b03aa58e0c7ea788b3d9b30d642161f1c3f309217a6439f36fffc",
   "probe_sha256": "d85eaf25063c20a07e2e1507c5dcb303c5b39934da4cc89534aaae0a1a7ce700",
   "probe_fix": "Scalar memory cases no longer perform an unrelated 32-byte vector load before the tested four-byte instruction.",
   "generated_numeric_rows": 121856,
@@ -23,8 +23,36 @@
     "cleanup_kills_only_owned_candidate_with_proc_identity_fixture": true,
     "subprocess_timeout_cleanup": true,
     "hardware_reference_and_negative_fault_check": true,
-    "actual_x11_ffmpeg_window_capture_with_pid_query_fixture": true
+    "actual_x11_ffmpeg_window_capture_with_pid_query_fixture": true,
+    "input_config_copy_and_isolation": true,
+    "input_config_evidence_capture": true,
+    "incremental_cache_upgrade_reuse_and_tamper_refusal": "passed with local Git and simulated compiler"
   },
   "runner_homebrew_rerun": "Passed with the delivered runner: 121856 hardware-matching rows, four boundary reads and four fault recoveries.",
-  "source_rebuild_matches_packaged_eboot": true
+  "source_rebuild_matches_packaged_eboot": true,
+  "previous_candidate_commit": "b85320a062e71eecc85ccc2c0d01e86a7be85018",
+  "exit_support": {
+    "pr": 5235,
+    "pr_head": "4651f38dc15757be7b9428b402f9a223cfc05743",
+    "production_files": 5,
+    "focused_tests_passed": 7,
+    "release_build": "passed",
+    "live_gamepad_confirmation": "pending user rerun"
+  },
+  "uploaded_run": {
+    "archive": "shadps4-generated-rcp-1bcymqkv.tar.gz",
+    "archive_sha256": "8c7d0de3c14995f37cb71e137dcd66a06357c5925302ea2252f84ffc0ed12aee",
+    "hardware_rows": 121856,
+    "hardware_differences": 0,
+    "memory_failures": 0,
+    "native_run_ended_by_signal": 15,
+    "owned_processes_remaining": 0,
+    "launcher_restored": true,
+    "installed_binary_and_original_profile_unchanged": true,
+    "translated_game_run": "not started",
+    "confirmed_package_omissions": [
+      "input_config was not copied into the isolated profile",
+      "candidate did not include PR #5235 quit routing"
+    ]
+  }
 }

@@ -1,8 +1,10 @@
 Generated reciprocal comparison — Linux x86-64
 
+Version 2 restores the existing input_config bindings and includes the validated quit-dialog event handling from #5235. It upgrades the earlier test cache incrementally.
+
 Close games before starting run.py. It builds the pinned candidate in a separate cache and runs the included homebrew automatically. Download/build steps print progress and have time limits.
 
-At READY [native], launch PES once through your normal Moonlight / ES-DE entry. Wait for RUNNING in the terminal. Play a day match and a night match for about two minutes each, using the same teams and stadium. Exit PES normally.
+At READY [native], launch PES once through your normal Moonlight / ES-DE entry. Wait for RUNNING in the terminal. Play a day match and a night match for about two minutes each, using the same teams and stadium. Exit PES with your existing quit shortcut, then Cross/A to confirm.
 
 At READY [translated], repeat the same sections and settings, then exit normally. Keep Moonlight connected while each stage is collecting evidence. Note FPS if automatic screenshots are unavailable.
 

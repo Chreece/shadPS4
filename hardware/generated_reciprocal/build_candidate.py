@@ -11,8 +11,10 @@ import subprocess
 import time
 import zipfile
 
-REVISION = "b85320a062e71eecc85ccc2c0d01e86a7be85018"
-TREE = "555a0c57a421bca7a172268ee3c492ac151e2cfd"
+REVISION = "35cc6d34e8e21e4b62cfdad5ebe185eaa2c31854"
+TREE = "a2d32b356103b523a4c023778dbec142e6b98930"
+PREVIOUS_TREE = "555a0c57a421bca7a172268ee3c492ac151e2cfd"
+CACHE_KEY = "b85320a062e7"
 FFMPEG_SHA = "aacbbfb8e622b684bc5d3b4cd6c9f9f77f5def64ae8d83c0c5b3ebe657aa33dd"
 
 
@@ -69,16 +71,16 @@ def git(source, *args):
                                    stderr=subprocess.STDOUT, timeout=60).decode().strip()
 
 
-def verify_source(source):
-    if git(source, "rev-parse", "HEAD^{tree}") != TREE:
+def verify_source(source, expected=TREE):
+    if git(source, "rev-parse", "HEAD^{tree}") != expected:
         raise RuntimeError("Candidate source differs from the locally validated tree")
     if git(source, "status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all"):
         raise RuntimeError("Candidate source has local edits; left untouched")
 
 
 def build(cache, evidence):
-    source = cache / ("generated-rcp-source-" + REVISION[:12])
-    output = cache / ("generated-rcp-build-" + REVISION[:12])
+    source = cache / ("generated-rcp-source-" + CACHE_KEY)
+    output = cache / ("generated-rcp-build-" + CACHE_KEY)
     log = evidence / "build.log"
     if not source.exists():
         source.mkdir()
@@ -86,6 +88,12 @@ def build(cache, evidence):
         command(["git", "remote", "add", "origin", "https://github.com/Chreece/shadPS4.git"],
                 log, source, timeout=30)
     if not (source / "CMakeLists.txt").exists():
+        command(["git", "fetch", "--depth=1", "--no-tags", "origin", REVISION],
+                log, source, timeout=300)
+        command(["git", "checkout", "--detach", REVISION], log, source, timeout=120)
+    if git(source, "rev-parse", "HEAD^{tree}") == PREVIOUS_TREE:
+        verify_source(source, PREVIOUS_TREE)
+        print("BUILD=Adding the validated gamepad quit fix; reusing the previous build cache", flush=True)
         command(["git", "fetch", "--depth=1", "--no-tags", "origin", REVISION],
                 log, source, timeout=300)
         command(["git", "checkout", "--detach", REVISION], log, source, timeout=120)
@@ -99,11 +107,14 @@ def build(cache, evidence):
     marker = output / "validated-build.json"
     if marker.is_file():
         saved = json.loads(marker.read_text())
-        if saved.get("source_tree") == TREE and all(
-                Path(p).is_file() and digest(p) == sha for p, sha in saved["files"].items()):
+        intact = bool(saved.get("files")) and all(
+            Path(p).is_file() and digest(p) == sha for p, sha in saved["files"].items())
+        if not intact or saved.get("source_tree") not in {TREE, PREVIOUS_TREE}:
+            raise RuntimeError("Cached candidate changed; preserved for inspection")
+        if saved["source_tree"] == TREE:
             print("BUILD=Reusing the verified candidate", flush=True)
             return output / "shadps4", saved
-        raise RuntimeError("Cached candidate changed; preserved for inspection")
+        marker.rename(output / "validated-build-before-exit-fix.json")
     compilers = next(((shutil.which(c), shutil.which(cxx)) for c, cxx in (
         ("clang-19", "clang++-19"), ("gcc-14", "g++-14"), ("gcc-15", "g++-15"))
         if shutil.which(c) and shutil.which(cxx)), None)

@@ -52,6 +52,10 @@ def capture_settings(runtime, folder, game_id):
             settings[name]["General"] = {key: value for key, value in config.get("General", {}).items()
                                           if isinstance(value, (bool, int, float))}
     write_json(folder / "graphics-settings.json", settings)
+    inputs = runtime / "user/input_config"
+    write_json(folder / "input-config.json", {
+        path.name: path.read_text() for path in inputs.glob("*.ini") if path.is_file()
+    })
 
 
 def write_json(path, value):
@@ -442,6 +446,8 @@ def run_stage(game_id, title, mode, binary, prefix, work, evidence, *, expected_
             content = "\n".join(path.read_text(errors="replace") for path in destination.iterdir()
                                 if path.is_file() and path.suffix in {".log", ".txt"})
             result["translation_active"] = "CPU identity translation active" in content
+            result["quit_dialog"] = {action: "HOST_QUIT action=" + action in content
+                                     for action in ("opened", "confirmed", "accepted", "cancelled")}
             result["launcher_restored"] = profile.digest(wrapper) == job["original_sha256"]
             result["fps_screenshots"] = len(list(destination.glob("frame-*.png")))
             result["clean_exit_verified"] = (result.get("phase") == "finished" and result.get("returncode") == 0

@@ -225,11 +225,11 @@ def prepare_profile(context, game, runtime):
     source_home = absolute(general["home_dir"], context["cwd"]) if general.get("home_dir") else source / "home"
     user = runtime / "user"
     user.mkdir(parents=True)
-    protected = [config_path, source / "users.json"]
+    protected = [config_path, source / "users.json", source / "input_config"]
     for path in source.iterdir():
         if path.is_file() and path.suffix.lower() in {".json", ".toml", ".ini", ".txt"}:
             copy_path(path, user / path.name)
-    for name in ["custom_configs", "custom_modules", "licenses",
+    for name in ["input_config", "custom_configs", "custom_modules", "licenses",
                  "patches", "cheats", "custom_trophy", "trophy", "data"]:
         copy_path(source / name, user / name)
     copy_path(source / "game_data" / game["serial"], user / "game_data" / game["serial"])
