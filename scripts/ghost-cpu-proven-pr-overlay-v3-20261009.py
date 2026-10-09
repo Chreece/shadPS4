@@ -548,11 +548,12 @@ def selftest() -> None:
         original = Path(tmp) / "cpu_affinity.cpp"
         pinned = Path(tmp) / "approved_cpu_affinity.cpp"
         original.write_text("verified existing host implementation\n")
+        os.chmod(original, 0o644)
         pinned.write_text("verified CPU PR implementation\n")
         host_sha, pinned_sha = blob(original), blob(pinned)
         output, mode = stage_clean_host_overlap(original, host_sha, host_sha,
                                                 pinned_sha, pinned)
-        assert output == pinned.read_bytes() and mode == 0o644
+        assert output == pinned.read_bytes() and mode == stat.S_IMODE(original.stat().st_mode)
         for tracked_sha in (None, "0" * 40):
             try:
                 stage_clean_host_overlap(original, host_sha, tracked_sha,
@@ -567,6 +568,8 @@ def selftest() -> None:
             assert "PR_BLOB_MISMATCH" in str(exc)
         else:
             raise AssertionError("Tampered PR overlay unexpectedly accepted")
+        # A different umask must not change the sourced mode.
+        assert mode == 0o644
         original_backup = Path(tmp) / "backup.cpp"
         shutil.copy2(original, original_backup)
         install_bytes(original, output, mode)
