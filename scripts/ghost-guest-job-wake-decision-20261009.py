@@ -54,6 +54,7 @@ GDB_HELPER_SHA = "82b153ec438e057679c95ee582ff8f460d02d36b"
 GDB_HELPER_NAME = "ghost-all-thread-graph-20261009.py"
 GDB_RESULTS = []
 GDB_PROC = None
+GDB_TRACE_SUMMARY = None
 EXPECTED_HEAD = "89af13f6d306ebc24396b4e8e207688537cdc28b"
 EXPECTED_SOURCE = "d870176003d773e742df1d16adc08fd2ca69e931a3a777af4674a071850d5198"
 STAMP = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -496,6 +497,10 @@ class Event(gdb.Breakpoint):
         self.tag=name
         self.silent=True
     def stop(self):
+        # Previous hardware watchpoint proved 0x3fb6550 is written
+        # via [rbx+0x28] at 0xc03bd2, so this is its exact queue.
+        if reg("rbx")!=0x3fb6528:
+            return False
         counts[self.tag]+=1
         count=counts[self.tag]
         if count<=LIMIT:
@@ -551,7 +556,7 @@ def trace_start(pid):
     say("GUEST_JOB_BRANCH_TRACE_START pid="+str(pid))
 
 def trace_stop(pid):
-    global GDB_PROC
+    global GDB_PROC,GDB_TRACE_SUMMARY
     if GDB_PROC is None:return
     debugger=GDB_PROC
     if debugger.poll() is None:
@@ -579,6 +584,7 @@ def trace_stop(pid):
              "events_truncated":"GHOST_JOB_EVENT_LIMIT" in text,
              "signal_pass_through":"handle SIGSEGV nostop noprint pass" in wake_gdb_script()}
     (WORK/"job-branch-summary.json").write_text(json.dumps(summary,indent=2)+"\n")
+    GDB_TRACE_SUMMARY=summary
     say("GUEST_JOB_BRANCH_TRACE_SUMMARY="+json.dumps(summary))
     GDB_PROC=None
 
@@ -653,7 +659,13 @@ def test_candidate():
         elif process is not None and process.poll() is None:
             say("REFUSE_UNKNOWN_PROCESS_CLEANUP="+str(process.pid))
     text=log.read_text(errors="replace")
+    if reason=="confirmed_stall_with_guest_job_trace":
+        if not tracer_started or not GDB_TRACE_SUMMARY or not GDB_TRACE_SUMMARY["armed"]:
+            reason="guest_job_gdb_not_armed"
+        elif GDB_TRACE_SUMMARY["enqueue_decisions_recorded"]==0:
+            reason="guest_job_enqueue_not_observed"
     report=classify(text,process.returncode if process else None)
+    report["job_branch_gdb"]=GDB_TRACE_SUMMARY
     report["stop_reason"]=reason
     (WORK/"runtime-analysis.json").write_text(json.dumps(report,indent=2)+"\n")
     GAME_STATUS=reason
@@ -682,6 +694,7 @@ def selftest():
     assert len(PROVEN_GHOST_BIN_SHA)==64
     cmd=wake_gdb_script()
     assert "Event(0xc03be2" in cmd and "Event(0xc03be7" in cmd
+    assert 'reg("rbx")!=0x3fb6528' in cmd
     assert "GHOST_JOB_BRANCH_TRACE_ARMED" in cmd
     assert "handle SIGSEGV nostop noprint pass" in cmd
     assert "return False" in cmd and "detach" in cmd
