@@ -1263,6 +1263,7 @@ bool Rasterizer::IsMapped(VAddr addr, u64 size) {
 }
 
 void Rasterizer::MapMemory(VAddr addr, u64 size) {
+    page_manager.MapMemory(addr, size);
     {
         std::scoped_lock lock{mapped_ranges_mutex};
         mapped_ranges += decltype(mapped_ranges)::interval_type::right_open(addr, addr + size);
@@ -1271,6 +1272,10 @@ void Rasterizer::MapMemory(VAddr addr, u64 size) {
 
 void Rasterizer::RegisterMemory(VAddr addr, u64 size) {
     page_manager.OnGpuMap(addr, size);
+}
+
+void Rasterizer::ProtectMemory(VAddr addr, u64 size, Core::MemoryPermission perms) {
+    page_manager.ProtectMemory(addr, size, perms);
 }
 
 void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
