@@ -20,12 +20,12 @@ ROOT = Path(__file__).resolve().parent
 def make_sfo(hardware=False):
     values = {
         "APP_TYPE": 1, "APP_VER": "1.00", "ATTRIBUTE": 0, "CATEGORY": "gd",
-        "CONTENT_ID": "IV0000-SSE400001_00-SSE4ASTATETEST000", "SYSTEM_VER": 0,
+        "CONTENT_ID": "IV0000-SSE400001_00-SSE4ASTATETEST00", "SYSTEM_VER": 0,
         "TITLE": "SSE4a state test", "TITLE_ID": "SSE400001", "VERSION": "1.00",
     }
     if hardware:
         values.update(TITLE_ID="SSE400002", TITLE="SSE4a hardware probe",
-                      CONTENT_ID="IV0000-SSE400002_00-SSE4AHARDWARE0000")
+                      CONTENT_ID="IV0000-SSE400002_00-SSE4AHARDWARE000")
     keys = bytearray()
     data = bytearray()
     entries = bytearray()

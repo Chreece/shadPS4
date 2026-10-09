@@ -3,6 +3,10 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 SSE4a hardware probe (OpenOrbis, x86-64 PS4)
 
+Ready-to-install FPKGs for this probe and the CPU-profile test are now provided
+in ps4-cpu-hardware-tests-fpkg.zip. Testers should use those .pkg files instead
+of this developer archive. See hardware/ps4_fpkg/INSTRUCTIONS.txt in the source.
+
 This archive contains an unpacked homebrew SELF, its SFO, linked ELF, and source.
 It is not an installable PKG. Use your existing PS4 homebrew packaging/launch
 workflow with SSE400002/eboot.bin and SSE400002/sce_sys/param.sfo.
