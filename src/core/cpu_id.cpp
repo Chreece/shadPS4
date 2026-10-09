@@ -82,6 +82,9 @@ std::array<u32, 4> GuestCpuid(u32 leaf, u32 subleaf, u32 cpu) {
         break;
     case 0xd:
         // Native XGETBV/XSAVE still use the host layout, including its enabled state size.
+        if (subleaf == 1) {
+            result = {eax & 1u, 0, 0, 0};
+        }
         break;
     case 0x80000000:
         result = {0x8000001e, 0x68747541, 0x444d4163, 0x69746e65};
