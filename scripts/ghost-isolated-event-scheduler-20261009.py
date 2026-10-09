@@ -316,7 +316,7 @@ def get_helper():
     info('PINNED_GDB_CLOCK_QUEUE_SNAPSHOT_READY')
     return target
 
-def snapshot(helper:Path,pid:int,label:str,frame:tuple[int,int,int,int]):
+def snapshot(helper:Path,pid:int,label:str,frame:tuple[int,int,int,int]|None):
     if not test_game_pid(pid):
         info('REFUSED_UNKNOWN_GDB_TARGET='+str(pid));return False
     command=[sys.executable,'-I',str(helper),'--pid',str(pid),'--outdir',str(WORK),
@@ -442,14 +442,14 @@ def game_trial():
             info('PREINTRO_SCHEDULER_SNAPSHOT_A elapsed='+str(round(elapsed,1))+
                  ' gpu_compiles='+str(phase_state['gpu_compile_count']))
             screenshot(env,'movie-active')
-            early_complete=snapshot(helper,GAME.pid,'A',(0,0,0,0))
+            early_complete=snapshot(helper,GAME.pid,'A',None)
         if not late and due_postintro_snapshot(phase_state,elapsed):
             late=True
             info('POSTINTRO_GPU_COMPILATION_QUIET elapsed='+str(round(elapsed,1))+
                  ' audio_events='+str(phase_state['audio_after_close'])+
                  ' no_new_shader_compilation_for=15s')
             screenshot(env,'postintro-quiet')
-            late_complete=snapshot(helper,GAME.pid,'B',(0,0,0,0))
+            late_complete=snapshot(helper,GAME.pid,'B',None)
             (WORK/'host-event-phase-status.json').write_text(json.dumps({
                 'interpretation':'post-intro compile inactivity, NOT confirmed frame-submission stall',
                 'event_state':phase_state,'early_snapshot_complete':early_complete,
@@ -563,7 +563,7 @@ def main():
         info('UPLOAD_THIS_FILE='+str(OUT))
         info('SHARED_ESDE_BINARY=UNCHANGED_BY_THIS_SCRIPT')
         info('SSH_SESSION=REMAINS_OPEN')
-    return 0 if ERROR is None else 1
+    return 0 if ERROR is None and STATUS in ('event_phase_snapshots_complete','isolated_ghost_build_ready','other_emulator_active_skipped_game_test') else 1
 
 if __name__=='__main__':
     raise SystemExit(main())
