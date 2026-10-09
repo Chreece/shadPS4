@@ -463,7 +463,7 @@ def classify(text, rc):
         "pm4_release_fence_records":[line[:600] for line in text.splitlines()
                                       if "GHOST_PM4_RELEASE_MEM" in line][-80:],
         "pm4_release_fence_record_count":count("GHOST_PM4_RELEASE_MEM"),
-        "pm4_release_fence_unreachable_count":count("pm4_cmds.h:975 SignalFence: Unreachable code!"),
+        "pm4_release_fence_unreachable_count":count("SignalFence: Unreachable code!"),
         "movie_close_events":count("Closing /app0/movies/cutscene/splash_america.bsf"),
         "unsupported_GetAttributeU32":count("Unexpected instruction for offset computation, GetAttributeU32"),
         "last_shader_offset_errors":[line[:240] for line in text.splitlines()
