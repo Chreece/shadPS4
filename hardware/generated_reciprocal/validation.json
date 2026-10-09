@@ -15,7 +15,7 @@
   "known_limits": [
     "A plain non-reciprocal read from PROT_NONE below the 40-bit GPU limit reproduces ErrorOutOfDeviceMemory with translation both enabled and disabled. This is separate from reciprocal translation and is not fixed by moving the test.",
     "Explicitly unmapping the high CPU-only allocation causes excessive GPU page-table registration in this baseline. The probe retains its 32 KiB until process exit.",
-    "Gameplay and performance comparison remain pending."
+    "Both modes reached PES gameplay and exited cleanly. The sampled scenes and durations are not matched sufficiently for a performance conclusion; separate day/night coverage is not established by these frames."
   ],
   "runner_verification": {
     "launcher_restore_and_concurrent_edit_refusal": true,
@@ -37,7 +37,7 @@
     "production_files": 5,
     "focused_tests_passed": 7,
     "release_build": "passed",
-    "live_gamepad_confirmation": "pending user rerun"
+    "live_gamepad_confirmation": "Passed in native and translated modes; controller opened, confirmed and accepted the quit dialog."
   },
   "uploaded_run": {
     "archive": "shadps4-generated-rcp-1bcymqkv.tar.gz",
@@ -53,6 +53,89 @@
     "confirmed_package_omissions": [
       "input_config was not copied into the isolated profile",
       "candidate did not include PR #5235 quit routing"
+    ]
+  },
+  "successful_playtest": {
+    "archive": "shadps4-generated-rcp-3a4zax5x.tar.gz",
+    "archive_sha256": "8b9fbbf0361d1e9ae06942aac1199b2ed401566694db8cd440e2425889190ba6",
+    "candidate_commit": "35cc6d34e8e21e4b62cfdad5ebe185eaa2c31854",
+    "candidate_tree": "a2d32b356103b523a4c023778dbec142e6b98930",
+    "binary_sha256": "41c9e7867ab71fef37c44cae0044274986dcea8088971a45b0e8f5a61931a216",
+    "hardware_rows": 121856,
+    "hardware_differences": 0,
+    "state_errors": 0,
+    "boundary_reads_without_faults": 4,
+    "recovered_faults": 4,
+    "memory_failures": 0,
+    "same_binary_both_modes": true,
+    "same_graphics_settings": true,
+    "same_input_bindings": true,
+    "stages": [
+      {
+        "mode": "native",
+        "elapsed_seconds": 173.06004225311335,
+        "returncode": 0,
+        "translation_active": false,
+        "quit_dialog": {
+          "opened": true,
+          "confirmed": true,
+          "accepted": true,
+          "cancelled": false
+        },
+        "forced_process_cleanup": false,
+        "owned_processes_remaining": [],
+        "launcher_restored": true,
+        "original_profile_unchanged": true,
+        "fps_screenshots": 11,
+        "gameplay_observed_in_frames": true
+      },
+      {
+        "mode": "translated",
+        "elapsed_seconds": 113.069610995939,
+        "returncode": 0,
+        "translation_active": true,
+        "quit_dialog": {
+          "opened": true,
+          "confirmed": true,
+          "accepted": true,
+          "cancelled": false
+        },
+        "forced_process_cleanup": false,
+        "owned_processes_remaining": [],
+        "launcher_restored": true,
+        "original_profile_unchanged": true,
+        "fps_screenshots": 7,
+        "gameplay_observed_in_frames": true
+      }
+    ],
+    "installed_binary_unchanged": true,
+    "rendering_observation": "White rendering appears in gameplay frames from both modes. These runs do not isolate its cause.",
+    "performance_conclusion": "Inconclusive: unmatched gameplay samples, only one translated gameplay frame.",
+    "fps_samples": [
+      {
+        "mode": "native",
+        "frame": "frame-0090.png",
+        "fps": 60,
+        "frame_sha256": "46839d777ab4bdf0b411d068d5508c16fc5ea17620fc42d06e62fb886d7a00c4"
+      },
+      {
+        "mode": "native",
+        "frame": "frame-0105.png",
+        "fps": 60,
+        "frame_sha256": "6ef524954a41dbc8602c9e040b709572a708d8d12ad40a6daf3664ca2c8ee0a0"
+      },
+      {
+        "mode": "native",
+        "frame": "frame-0165.png",
+        "fps": 34,
+        "frame_sha256": "e83562f96dfd4fc5c5f00f5efefb9492e500f6f3689cd098c2d7130b34091797"
+      },
+      {
+        "mode": "translated",
+        "frame": "frame-0090.png",
+        "fps": 30,
+        "frame_sha256": "54a527985a4b8ead4a8cc4a99b14e879c2aed7e5185e593f7e195255d80b5c5d"
+      }
     ]
   }
 }

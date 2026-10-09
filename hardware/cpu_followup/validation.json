@@ -54,6 +54,18 @@
       "cpu_only_boundary_reads": 4,
       "cpu_only_recovered_faults": 4,
       "failures": 0
+    },
+    "pes_playtest": {
+      "candidate": "35cc6d34e8e21e4b62cfdad5ebe185eaa2c31854",
+      "modes": [
+        "native",
+        "translated"
+      ],
+      "gameplay_observed": true,
+      "native_gamepad_quit_passed_both_modes": true,
+      "original_profile_and_installed_binary_unchanged": true,
+      "performance": "inconclusive; unmatched samples",
+      "details": "hardware/generated_reciprocal/validation.json"
     }
   },
   "standalone_production_translator": {
