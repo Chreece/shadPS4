@@ -739,7 +739,7 @@ def terminate_child() -> None:
         if not info:
             continue
         if (Path(info["exe"]).name in ("bash", "sh") and
-                "ghost-mip-bidir-with-validation-onerun.sh" in info["argv"]):
+                "ghost-no-gdb-control-onerun.sh" in info["argv"]):
             script_pids.append(pid)
     try:
         if script_pids:
@@ -862,6 +862,8 @@ def test() -> None:
     assert "STALL_SNAP_REV" in globals()
     assert 28 <= STALL_SNAP_TIMES[0] <= 35 < STALL_SNAP_TIMES[1] < MAX_GAME_SECONDS
     assert callable(post_intro_capture_eligible)
+    assert "ghost-no-gdb-validation-" in candidate_archive.__code__.co_consts
+    assert "ghost-no-gdb-control-onerun.sh" in terminate_child.__code__.co_consts
     assert re.fullmatch(r"[0-9a-f]{64}", BASE_SHA)
     assert "Ghost of Tsushima.ps4" in "shadps4 --game /mnt/roms-all/ps4/Ghost of Tsushima.ps4"
     assert TRIAL_FILE == "ghost-no-gdb-validation-onerun.py"
