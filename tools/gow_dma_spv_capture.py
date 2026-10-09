@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Isolated God of War Ragnarok one-shader DMA/SPIR-V capture for shadPS4."""
+"""Native-profile GoW shader SPIR-V diagnostic; restores temporary overrides and dumps."""
 import datetime
 import hashlib
 import json
@@ -17,7 +17,7 @@ import traceback
 HOME = Path.home()
 SHADER = "57b077ac"
 GAME = "CUSA34384"
-TIMEOUT = 150
+TIMEOUT = 105
 
 def hashfile(path):
     h = hashlib.sha256()
@@ -90,8 +90,8 @@ def resolve_exact_game(config, limit_seconds=28):
 
 
 def main():
-    archive = HOME / ("gow-target-spv-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + ".tar.gz")
-    result = {"game": GAME, "shader": SHADER, "isolated_xdg": True,
+    archive = HOME / ("gow-target-spv-native-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + ".tar.gz")
+    result = {"game": GAME, "shader": SHADER, "native_profile": True,
               "installed_binary_unchanged": True, "global_config_modified": False,
               "ssh_session_unchanged": True, "limit_seconds": TIMEOUT}
     with tempfile.TemporaryDirectory(prefix="gow-spv-", dir=HOME) as directory:
@@ -99,6 +99,19 @@ def main():
         out = temp / "evidence"
         out.mkdir()
         proc = None
+        profile = HOME / ".local/share/shadPS4"
+        game_override = profile / "custom_configs" / (GAME + ".json")
+        dumps = profile / "shader" / "dumps"
+        previous_dumps = dumps.parent / (".gow-spv-prior-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + str(os.getpid()) + "-dumps")
+        override_data = b'{"GPU":{"dump_shaders":true}}\n'
+        override_inode = None
+        override_created = False
+        dump_created = False
+        dump_backed_up = False
+        config_bytes = None
+        config_mode = None
+        binary_hash = None
+        previous_log_sizes = {}
         try:
             source = HOME / ".local/share/shadPS4/config.json"
             binary = HOME / "Applications/shadps4-gow-dma-codegen-trial-20261010-004956/shadps4"
@@ -107,8 +120,11 @@ def main():
             running = active_emulators()
             if running:
                 raise RuntimeError(f"An emulator is already running: {running}; no game launched")
-            original_hash = hashfile(source)
-            config = json.loads(source.read_text())
+            config_bytes = source.read_bytes()
+            original_hash = hashlib.sha256(config_bytes).hexdigest()
+            config_mode = source.stat().st_mode
+            config = json.loads(config_bytes.decode("utf-8"))
+            binary_hash = hashfile(binary)
             if not isinstance(config.get("GPU"), dict):
                 raise RuntimeError("Unexpected GPU config schema; no game launched")
             exact_game, game_resolution = resolve_exact_game(config)
@@ -116,25 +132,39 @@ def main():
             if exact_game is None:
                 raise RuntimeError("Game executable not located within enabled install directories; no launch attempted")
             result["game_executable_confirmed"] = True
-            config["GPU"]["dump_shaders"] = True
-            config["GPU"]["direct_memory_access_enabled"] = False
-            base = temp / "xdg"
-            profile = base / "shadPS4"
-            profile.mkdir(parents=True)
-            # Never allow the copied config to redirect writes to original savedata/addons.
-            if not isinstance(config.get("General"), dict):
-                raise RuntimeError("Missing General configuration; refusing launch")
-            (profile / "home").mkdir()
-            (profile / "addons").mkdir()
-            config["General"]["home_dir"] = str(profile / "home")
-            config["General"]["addon_install_dir"] = str(profile / "addons")
-            (profile / "config.json").write_text(json.dumps(config, indent=2, ensure_ascii=False))
+            if game_override.is_symlink() or game_override.exists():
+                raise RuntimeError("Existing GoW game-specific configuration; refusing to overwrite")
+            if dumps.is_symlink():
+                raise RuntimeError("Shader dump directory is a symlink; refusing to move")
+            if list(dumps.parent.glob(".gow-spv-prior-*-dumps")) if dumps.parent.is_dir() else []:
+                raise RuntimeError("Previous shader backup exists; refusing to overwrite (see report)")
+            if dumps.exists():
+                if not dumps.is_dir() or previous_dumps.exists():
+                    raise RuntimeError("Unexpected shader dump directory/backup state")
+                dumps.rename(previous_dumps)
+                dump_backed_up = True
+            dumps.mkdir(parents=True, exist_ok=False)
+            dump_created = True
+            game_override.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(game_override, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as f:
+                f.write(override_data)
+                f.flush()
+                os.fsync(f.fileno())
+            override_created = True
+            override_inode = game_override.stat().st_ino
+            log_root = profile / "log"
+            if log_root.is_dir():
+                for fp in log_root.glob("*.log"):
+                    if fp.is_file() and fp.name in ("shadps4.log", GAME + ".log"):
+                        st = fp.stat()
+                        previous_log_sizes[fp.name] = (st.st_ino, st.st_size)
             result["original_config_sha256"] = original_hash
             result["trial_sha256"] = hashfile(binary)
             env = os.environ.copy()
+            env.pop("XDG_DATA_HOME", None)
+            env.pop("XDG_CACHE_HOME", None)
             env.update({
-                "XDG_DATA_HOME": str(base),
-                "XDG_CACHE_HOME": str(temp / "cache"),
                 "SHADPS4_ENABLE_IPC": "false",
                 "SHADPS4_GOW_ONE_SHADER_DMA_COMPILE": "1",
                 "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
@@ -143,16 +173,15 @@ def main():
             })
             env.setdefault("DISPLAY", ":0")
             command = [str(binary), "--cpu-id-mode", "auto",
-                       "--game", str(exact_game), "--fullscreen", "true"]
+                       "--game", GAME, "--fullscreen", "true"]
             with (out / "console.log").open("w") as log:
-                proc = subprocess.Popen(command, cwd=temp, env=env, stdin=subprocess.DEVNULL,
+                proc = subprocess.Popen(command, cwd=HOME if not (HOME / "user").exists() else temp, env=env, stdin=subprocess.DEVNULL,
                                         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
                 result["trial_pid"] = proc.pid
                 started = time.monotonic()
                 first_seen = None
                 while time.monotonic() - started < TIMEOUT:
                     time.sleep(2)
-                    dumps = profile / "shader" / "dumps"
                     if dumps.is_dir():
                         size = 0
                         count = 0
@@ -192,7 +221,7 @@ def main():
                 else:
                     result["end_reason"] = "TIME_LIMIT"
             result["duration_s"] = round(time.monotonic() - started, 2)
-            result["original_config_unchanged"] = hashfile(source) == original_hash
+            result["original_config_unchanged_before_restore"] = hashfile(source) == original_hash
         except Exception as exc:
             result["error"] = str(exc)
             result["traceback"] = traceback.format_exc()[-6000:]
@@ -213,8 +242,6 @@ def main():
                     result["return_code"] = proc.poll()
                 except Exception as exc:
                     result["cleanup_warning"] = str(exc)
-            profile = temp / "xdg" / "shadPS4"
-            dumps = profile / "shader" / "dumps"
             files = []
             if dumps.is_dir():
                 for path in dumps.iterdir():
@@ -226,13 +253,21 @@ def main():
             logs = [out / "console.log"]
             log_dir = profile / "log"
             if log_dir.is_dir():
-                logs += [f for f in log_dir.glob("*.log") if f.is_file()]
+                logs += [p for p in log_dir.glob("*.log") if p.is_file() and p.name in ("shadps4.log", GAME + ".log")]
             joined = ""
             for path in logs:
-                if path.is_file():
-                    if path.parent != out:
-                        shutil.copy2(path, out / path.name)
-                    joined += path.read_text(errors="replace")[-12000000:] + "\n"
+                if not path.is_file():
+                    continue
+                if path.parent != out:
+                    old = previous_log_sizes.get(path.name)
+                    with path.open("rb") as fp:
+                        if old and path.stat().st_ino == old[0] and path.stat().st_size >= old[1]:
+                            fp.seek(old[1])
+                        raw = fp.read()[-12000000:]
+                    (out / ("captured-" + path.name)).write_bytes(raw)
+                else:
+                    raw = path.read_bytes()[-12000000:]
+                joined += raw.decode("utf-8", "replace") + "\n"
             result["shader_dump_enabled_logged"] = bool(re.search(r"shouldDumpShaders:\s*true", joined))
             result["target_dma_info_logged"] = "GOW_TARGET_DMA_INFO" in joined
             result["target_dma_codegen_logged"] = "GOW_TARGET_DMA_DYNAMIC_CODEGEN" in joined
@@ -254,11 +289,60 @@ def main():
                             result.setdefault("tool_status", {})[tool] = run.returncode
                         except Exception as exc:
                             result.setdefault("tool_status", {})[tool] = str(exc)
+            # Restore the exact native settings and the original shader dump directory.
+            if override_created:
+                try:
+                    if game_override.stat().st_ino == override_inode and game_override.read_bytes() == override_data:
+                        game_override.unlink()
+                        result["temporary_game_config_restored"] = True
+                    else:
+                        result["temporary_game_config_restored"] = False
+                        result["restore_warning"] = "GoW override was externally changed; left untouched"
+                except OSError as exc:
+                    result["game_config_restore_error"] = str(exc)
+            if config_bytes is not None:
+                try:
+                    if source.read_bytes() != config_bytes:
+                        import stat
+                        fd, replacement = tempfile.mkstemp(prefix=".gow-restore-", dir=source.parent)
+                        try:
+                            os.fchmod(fd, stat.S_IMODE(config_mode))
+                            with os.fdopen(fd, "wb") as stream:
+                                stream.write(config_bytes)
+                                stream.flush()
+                                os.fsync(stream.fileno())
+                            os.replace(replacement, source)
+                            result["global_config_reverted_after_emulator_write"] = True
+                        finally:
+                            if os.path.exists(replacement):
+                                os.unlink(replacement)
+                    result["global_config_restored"] = source.read_bytes() == config_bytes
+                except Exception as exc:
+                    result["global_config_restore_error"] = str(exc)
+            if dump_created:
+                try:
+                    other_emulators = active_emulators()
+                    if other_emulators:
+                        result["dumps_restore_error"] = "Another emulator active; original backup retained"
+                        result["remaining_emulators"] = other_emulators
+                    else:
+                        shutil.rmtree(dumps)
+                        if dump_backed_up:
+                            previous_dumps.rename(dumps)
+                        result["original_shader_dumps_restored"] = True
+                except Exception as exc:
+                    result["dumps_restore_error"] = str(exc)
+                    if dump_backed_up:
+                        result["shader_backup_location"] = str(previous_dumps)
+            if binary_hash:
+                result["trial_binary_restored"] = hashfile(binary) == binary_hash
             (out / "report.json").write_text(json.dumps(result, indent=2, ensure_ascii=False))
             with tarfile.open(archive, "w:gz") as package:
                 for path in sorted(out.iterdir()):
                     package.add(path, arcname="gow-target-spv/" + path.name)
-    print("GOW_SPV_RESULT=" + ("FAIL" if "error" in result else "COLLECTED"))
+    print("GOW_SPV_RESULT=" + ("FAIL" if "error" in result else result.get("end_reason","COLLECTED")))
+    print("GLOBAL_CONFIG_RESTORED=" + str(result.get("global_config_restored",False)))
+    print("ORIGINAL_DUMPS_RESTORED=" + str(result.get("original_shader_dumps_restored",False)))
     print("ARCHIVE=" + str(archive))
     print("SPV_COUNT=" + str(result.get("target_spv_count", 0)))
     print("DUMP_ENABLED=" + str(result.get("shader_dump_enabled_logged", False)))
