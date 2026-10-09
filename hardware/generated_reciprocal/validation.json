@@ -736,5 +736,251 @@
     "gameplay_test_requested": false,
     "scope": "CPU-only run; raw logs independently validated against the strict runner, including log hashes. No graphics investigation or performance claim.",
     "build_log_sha256": "af8f30d268d1a9cb03cba2ab75d2699a171c41101814a902ab951134a929322a"
+  },
+  "separated_pr_validation": {
+    "date": "2026-10-09",
+    "branch": "draft/generated-reciprocal-20261009",
+    "published_commit": "a305d9f53badbcaf4c66d23bb5e42fb8c519506b",
+    "local_build_commit": "fcd1563e3445e5cc4a27579c6a14439018c68351",
+    "tested_source_tree": "8d05b6618233d4b59f39a22b3d02a0ffc0f31827",
+    "base_pr": 5321,
+    "base_commit": "3965a497532edb7b18027692ab04eb97fa4c145b",
+    "scalar_pr": 5325,
+    "scalar_commit": "9bb22d370e5847a37ecda13c5628d5d280a03f2f",
+    "rebased_scalar_commit": "09d8773a53822507ea6bad88f7a5efb9fba689d4",
+    "main_commit": "437dc7eb8f6eeeb143ca0238366bb3aef9e95f03",
+    "build": "Linux x86-64 Clang 19 Release, CPU translation enabled",
+    "build_log_sha256": "b44b65fa9a77465d04cad8467cd535516a396b5156ef19f1f16e066cff67759c",
+    "results": {
+      "binary_sha256": "d8ecb2d510d269ba2e2f8bad07eae10017e2ecbcc4d9f178cf270c9b542566e3",
+      "memory": {
+        "native": {
+          "read_write_checks_passed": 6,
+          "high_map_unmap_cycles": 64,
+          "execute_permission_checks_passed": 2,
+          "execute_permission_failures": [],
+          "all_checks_passed": true,
+          "log_sha256": "06dfb3e8f9d3735e31f8b7120950a5c6eed360c28916d6e20b9a2e28b0ec2b1e"
+        },
+        "translated": {
+          "read_write_checks_passed": 6,
+          "high_map_unmap_cycles": 64,
+          "execute_permission_checks_passed": 2,
+          "execute_permission_failures": [],
+          "all_checks_passed": true,
+          "log_sha256": "06dfb3e8f9d3735e31f8b7120950a5c6eed360c28916d6e20b9a2e28b0ec2b1e"
+        }
+      },
+      "execute": {
+        "native": {
+          "checks_passed": 16,
+          "faults_recovered": 14,
+          "all_checks_passed": true,
+          "log_sha256": "94403adc2f4c6350008633a427015585781a614b811c5f734ee757bc286d8c78"
+        },
+        "translated": {
+          "checks_passed": 16,
+          "faults_recovered": 14,
+          "all_checks_passed": true,
+          "log_sha256": "94403adc2f4c6350008633a427015585781a614b811c5f734ee757bc286d8c78"
+        }
+      },
+      "reciprocal": {
+        "rows": 121856,
+        "hardware_differences": 0,
+        "memory_cases": [
+          {
+            "region": "low",
+            "op": "rcpss_mem",
+            "boundary": "3eaaa800",
+            "boundary_faults": "0",
+            "value": "3eaaa800",
+            "recovered": "1",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "low",
+            "op": "vrcpss_mem",
+            "boundary": "3eaaa800",
+            "boundary_faults": "0",
+            "value": "3eaaa800",
+            "recovered": "2",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "low",
+            "op": "rsqrtss_mem",
+            "boundary": "3f13c800",
+            "boundary_faults": "0",
+            "value": "3f13c800",
+            "recovered": "3",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "low",
+            "op": "vrsqrtss_mem",
+            "boundary": "3f13c800",
+            "boundary_faults": "0",
+            "value": "3f13c800",
+            "recovered": "4",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "high",
+            "op": "rcpss_mem",
+            "boundary": "3eaaa800",
+            "boundary_faults": "0",
+            "value": "3eaaa800",
+            "recovered": "5",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "high",
+            "op": "vrcpss_mem",
+            "boundary": "3eaaa800",
+            "boundary_faults": "0",
+            "value": "3eaaa800",
+            "recovered": "6",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "high",
+            "op": "rsqrtss_mem",
+            "boundary": "3f13c800",
+            "boundary_faults": "0",
+            "value": "3f13c800",
+            "recovered": "7",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "high",
+            "op": "vrsqrtss_mem",
+            "boundary": "3f13c800",
+            "boundary_faults": "0",
+            "value": "3f13c800",
+            "recovered": "8",
+            "flags": "200246/200246",
+            "failures": "0"
+          }
+        ],
+        "log_sha256": "78d1ce44cf6a611290d06a7daa8d441bd20a5d83f9a4bb5bc9b9e742f7689016"
+      }
+    },
+    "automatic_mode": {
+      "binary_sha256": "d8ecb2d510d269ba2e2f8bad07eae10017e2ecbcc4d9f178cf270c9b542566e3",
+      "automatic_reciprocal": {
+        "rows": 121856,
+        "hardware_differences": 0,
+        "memory_cases": [
+          {
+            "region": "low",
+            "op": "rcpss_mem",
+            "boundary": "3eaaa800",
+            "boundary_faults": "0",
+            "value": "3eaaa800",
+            "recovered": "1",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "low",
+            "op": "vrcpss_mem",
+            "boundary": "3eaaa800",
+            "boundary_faults": "0",
+            "value": "3eaaa800",
+            "recovered": "2",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "low",
+            "op": "rsqrtss_mem",
+            "boundary": "3f13c800",
+            "boundary_faults": "0",
+            "value": "3f13c800",
+            "recovered": "3",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "low",
+            "op": "vrsqrtss_mem",
+            "boundary": "3f13c800",
+            "boundary_faults": "0",
+            "value": "3f13c800",
+            "recovered": "4",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "high",
+            "op": "rcpss_mem",
+            "boundary": "3eaaa800",
+            "boundary_faults": "0",
+            "value": "3eaaa800",
+            "recovered": "5",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "high",
+            "op": "vrcpss_mem",
+            "boundary": "3eaaa800",
+            "boundary_faults": "0",
+            "value": "3eaaa800",
+            "recovered": "6",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "high",
+            "op": "rsqrtss_mem",
+            "boundary": "3f13c800",
+            "boundary_faults": "0",
+            "value": "3f13c800",
+            "recovered": "7",
+            "flags": "200246/200246",
+            "failures": "0"
+          },
+          {
+            "region": "high",
+            "op": "vrsqrtss_mem",
+            "boundary": "3f13c800",
+            "boundary_faults": "0",
+            "value": "3f13c800",
+            "recovered": "8",
+            "flags": "200246/200246",
+            "failures": "0"
+          }
+        ],
+        "log_sha256": "78d1ce44cf6a611290d06a7daa8d441bd20a5d83f9a4bb5bc9b9e742f7689016"
+      },
+      "automatic_translation_confirmed": true
+    },
+    "runtime_client_sha256": "eb2039e8e4b2786c8fcc66d5204180eb9c1a0ee84c6144404afceed9efe6e140",
+    "numeric_reference_sha256": "1bb40d5466221ef17dd3c0e364718c4845158d3b45d4570d30bb94f73128eb8f",
+    "production_files": [
+      "CMakeLists.txt",
+      "src/core/cpu_id_translation/client.c",
+      "src/core/cpu_id_translation/launcher.cpp",
+      "src/core/cpu_patches.cpp"
+    ],
+    "production_files_identical_to_user_tested_integrated_commit": "d0932958240eed98e9de396004b0d4d513dfb974",
+    "formatting": "passed",
+    "reuse": "passed",
+    "scope": "Exact separated source tree tested locally. Earlier integrated implementation passed on the user machine. No new game, performance or other-platform claims.",
+    "known_limits": [
+      "Linux x86-64 translation only.",
+      "Intel hosts select translation in auto mode for generated reciprocal coverage; forced native mode retains its existing generated-code limitations.",
+      "AMD native behavior is unchanged and was not runtime-tested in this separated validation.",
+      "No controlled native-versus-translated game performance conclusion."
+    ]
   }
 }

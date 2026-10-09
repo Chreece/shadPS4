@@ -229,5 +229,24 @@
         }
       }
     }
+  },
+  "separated_generated_reciprocal_validation": {
+    "commit": "a305d9f53badbcaf4c66d23bb5e42fb8c519506b",
+    "branch": "draft/generated-reciprocal-20261009",
+    "tested_source_tree": "8d05b6618233d4b59f39a22b3d02a0ffc0f31827",
+    "depends_on_prs": [
+      5321,
+      5325
+    ],
+    "numeric_rows_per_run": 121856,
+    "modes": [
+      "translated",
+      "auto"
+    ],
+    "hardware_differences": 0,
+    "memory_boundaries_and_fault_recoveries_per_run": 8,
+    "all_checks_passed": true,
+    "details": "hardware/generated_reciprocal/validation.json",
+    "readiness": "Separated branch built, validated and published for draft review."
   }
 }
