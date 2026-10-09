@@ -820,8 +820,10 @@ def finish_middle_watch(proc,pid,why):
         "gdb_exit":proc.returncode,
         "hw_watch_verified":bool(re.search(r"Hardware watchpoint\s+\d+",body)),
         "armed":"GHOST_MIDDLE_HW_WATCH_ARMED" in body,
-        "triggered":"GHOST_MIDDLE_FIRST_NEGATIVE_DETECTED" in body,
-        "completed":"GHOST_MIDDLE_FIRST_NEGATIVE_END" in body,
+        "triggered":("GHOST_MIDDLE_FIRST_NEGATIVE_DETECTED" in body and
+                     bool(re.search(r"Hardware watchpoint\s+\d+",body))),
+        "completed":("GHOST_MIDDLE_FIRST_NEGATIVE_END" in body and
+                     bool(re.search(r"Hardware watchpoint\s+\d+",body))),
         "normal_writes":body.count("GHOST_MIDDLE_COUNT_WRITE"),
         "reached_limit":"GHOST_MIDDLE_WATCH_LIMIT_REACHED" in body,
         "unexpected_signal_returns":body.count("GHOST_MIDDLE_GDB_CONTINUE_STOP"),
@@ -1051,6 +1053,7 @@ def test_candidate():
     report["gdb_snapshots"]=GDB_RESULTS
     report["middle_underflow_hardware_watch"]=WATCH_SUMMARY
     if (WATCH_SUMMARY.get("triggered") and
+        WATCH_SUMMARY.get("hw_watch_verified") and
         detected=="counter_timeline_and_all_threads_captured"):
         detected="first_middle_underflow_and_stall_captured"
         report["test_stop_reason"]=detected
@@ -1189,6 +1192,10 @@ def selftest():
     assert "gdb.BP_WATCHPOINT" in commands and "gdb.WP_WRITE" in commands
     assert "handle SIGSEGV nostop noprint pass" in commands
     assert "return True" in commands and "return False" in commands
+    assert WATCH_START_FLIPS == 110 and WATCH_MAX_WALL_SECONDS <= 90
+    assert "set can-use-hw-watchpoints 1" in commands
+    assert "set may-call-functions off" in commands
+    assert commands.count("detach")==1
     watch_python=commands.split("\npython\n",1)[1].split("\nend\n",1)[0]
     ast.parse(watch_python)
     fake='before\n    active = [t for t in inf.threads() if t.is_valid()]\nafter'
