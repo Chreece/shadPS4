@@ -24,7 +24,7 @@ TESTS = (
     ("cpu_identity", "CPUI00001", "CPU number hardware probe", "CPUIDENTITY00000", "eboot.bin",
      ("main.cpp", "Makefile", "INSTRUCTIONS.txt", "musl-COPYRIGHT")),
     ("sse4a", "SSEA00002", "SSE4a hardware probe", "SSE4AHARDWARE000", "console.bin",
-     ("native_probe.cpp", "cases.S", "Makefile", "musl-COPYRIGHT")),
+     ("native_probe.cpp", "cases.S", "Makefile", "INSTRUCTIONS.txt", "musl-COPYRIGHT")),
     ("cpu_profile", "CPUP00001", "CPU profile readout", "CPUPROFILE000000", "eboot.bin",
      ("main.cpp", "Makefile", "musl-COPYRIGHT")),
     ("reciprocal", "RCPR00001", "Reciprocal hardware probe", "RECIPROCAL000000", "eboot.bin",
@@ -47,8 +47,7 @@ def validate_identity(title_id, content_id, version):
         raise ValueError("Invalid application version: " + version)
 
 
-def sfo(title_id, title, content_id):
-    version = PACKAGE_VERSION
+def sfo(title_id, title, content_id, version=PACKAGE_VERSION):
     validate_identity(title_id, content_id, version)
     values = {
         "APP_TYPE": (1, 4), "APP_VER": (version, 8), "ATTRIBUTE": (0, 4),
@@ -89,6 +88,7 @@ def main():
     parser.add_argument("--ld", default="ld.lld-19")
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     parser.add_argument("--only", choices=[test[0] for test in TESTS])
+    parser.add_argument("--app-version", default=PACKAGE_VERSION)
     args = parser.parse_args()
     if not args.sdk:
         parser.error("set --sdk or OO_PS4_TOOLCHAIN to OpenOrbis v0.5.4")
@@ -125,7 +125,7 @@ def main():
             if args.only and directory != args.only:
                 continue
             content_id = f"IV0000-{title_id}_00-{suffix}"
-            validate_identity(title_id, content_id, PACKAGE_VERSION)
+            validate_identity(title_id, content_id, args.app_version)
             test_source = source / "hardware" / directory
             test_source.mkdir()
             for name in inputs:
@@ -138,7 +138,7 @@ def main():
             system = package_root / "sce_sys"
             (system / "about").mkdir(parents=True)
             shutil.copy2(build / executable, package_root / "eboot.bin")
-            (system / "param.sfo").write_bytes(sfo(title_id, title, content_id))
+            (system / "param.sfo").write_bytes(sfo(title_id, title, content_id, args.app_version))
             shutil.copy2(ROOT / (directory + "-icon.png"), system / "icon0.png")
             shutil.copy2(sdk / "samples/hello_world/sce_sys/about/right.sprx",
                          system / "about/right.sprx")
@@ -175,7 +175,7 @@ def main():
                     raise RuntimeError("FPKG round-trip mismatch: " + name)
                 hashes[name] = digest(original)
             manifest["tests"].append({"title_id": title_id, "title": title,
-                                      "content_id": content_id, "version": PACKAGE_VERSION,
+                                      "content_id": content_id, "version": args.app_version,
                                       "package": package.name, "sha256": digest(package),
                                       "size": package.stat().st_size, "round_trip": True,
                                       "files": hashes})

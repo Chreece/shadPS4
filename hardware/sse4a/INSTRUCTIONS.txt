@@ -1,0 +1,32 @@
+SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
+SPDX-License-Identifier: GPL-2.0-or-later
+
+SSE4a detailed-check probe (SSEA00002, application version 01.02)
+
+Install the included FPKG and launch "SSE4a hardware probe" once using your
+existing homebrew setup. It runs automatically and returns to the menu.
+A blank screen during the run is expected. No game or controller input is needed.
+
+Send /data/sse4a-hardware-result.txt, with the console model and firmware.
+For an emulator run, identify the emulator, version, and whether SSE4a was
+native or emulated. Emulator observations are not physical PS4 evidence.
+Copy the file before running another version: each run replaces it.
+
+The new log begins SSE4A_HARDWARE_BEGIN format=2. It contains 84 RAW rows and
+924 CHECK rows. Every CHECK prints its field, actual value, expected value,
+comparison mask and individual ok result. defined_ok combines all 11 checks.
+The destination's undefined upper bits remain observations, not pass/fail tests.
+
+Fields: destination low 64 bits; all four 64-bit source lanes; flags; the red-zone
+mismatch mask; RAX, RCX, RBX and RDX. Flags use mask 0x8d5 (CF, PF, AF, ZF, SF, OF).
+For the red-zone mismatch mask, bit 0 represents RSP-128, bit 1 RSP-120, through
+bit 14 RSP-16, at the assembly probe's stack pointer. Zero means no mismatch.
+RSP-8 is used by the probe's flag operations and is not included in that mask.
+RDX is compared with this run's target pointer; addresses may differ across runs.
+
+Send the file even if a check fails. An incomplete log or a crash is also useful.
+No saves, game files, network connection, or system-wide settings are used.
+
+Developer build: make console.bin with OpenOrbis v0.5.4 and Clang/LLD 19.
+Native Linux build: make native-probe, then ./native-probe > result.txt.
+The native build requires SSE4a and enabled AVX state.

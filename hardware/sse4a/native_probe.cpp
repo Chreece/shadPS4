@@ -17,6 +17,11 @@ struct Output {
   Vector dst, src;
   uint64_t flags, rax, rcx, rbx, rdx, redzone;
 };
+struct Check {
+  const char *field;
+  uint64_t actual, expected, mask = UINT64_MAX;
+  bool Passed() const { return (actual & mask) == (expected & mask); }
+};
 static_assert(offsetof(Output, flags) == 64 &&
               offsetof(Output, redzone) == 104);
 using Execute = void (*)(const Input *, Output *, void *);
@@ -109,14 +114,23 @@ static int RunProbe(FILE *stream) {
                                       ? (input.dst.low & ~(mask << index)) |
                                             ((input.src.low & mask) << index)
                                       : (input.dst.low >> index) & mask;
-        const bool ok = output.dst.low == expected &&
-                        memcmp(&input.src, &output.src, sizeof(Vector)) == 0 &&
-                        (output.flags & 0x8d5) == 0x8d5 &&
-                        output.redzone == 0 &&
-                        output.rax == 0x123456789abcdef0 &&
-                        output.rcx == 0x23456789abcdef01 &&
-                        output.rbx == 0x3456789abcdef012 &&
-                        output.rdx == reinterpret_cast<uintptr_t>(target);
+        const Check detail[]{
+            {"dst_63_0", output.dst.low, expected},
+            {"src_63_0", output.src.low, input.src.low},
+            {"src_127_64", output.src.high, input.src.high},
+            {"src_191_128", output.src.upper_low, input.src.upper_low},
+            {"src_255_192", output.src.upper_high, input.src.upper_high},
+            {"flags", output.flags, 0x8d5, 0x8d5},
+            {"redzone_mismatch_mask", output.redzone, 0},
+            {"rax", output.rax, 0x123456789abcdef0},
+            {"rcx", output.rcx, 0x23456789abcdef01},
+            {"rbx", output.rbx, 0x3456789abcdef012},
+            {"rdx", output.rdx, reinterpret_cast<uintptr_t>(target)},
+        };
+        bool ok = true;
+        for (const auto &check : detail) {
+          ok &= check.Passed();
+        }
         ++checks;
         ++samples;
         failures += !ok;
@@ -131,6 +145,13 @@ static int RunProbe(FILE *stream) {
                 "defined_ok=%u\n",
                 test.name, length, index, output.dst.upper_high,
                 output.dst.upper_low, output.dst.high, output.dst.low, ok);
+        for (const auto &check : detail) {
+          fprintf(stream,
+                  "CHECK case=%s length=%u index=%u field=%s actual=%016lx "
+                  "expected=%016lx mask=%016lx ok=%u\n",
+                  test.name, length, index, check.field, check.actual,
+                  check.expected, check.mask, check.Passed());
+        }
       }
     }
     fprintf(
@@ -155,7 +176,7 @@ int main() {
     return 1;
   }
   setvbuf(stream, nullptr, _IONBF, 0);
-  fputs("SSE4A_HARDWARE_BEGIN format=1\n", stream);
+  fputs("SSE4A_HARDWARE_BEGIN format=2\n", stream);
   const int result = RunProbe(stream);
   fprintf(stream, "SSE4A_HARDWARE_END result=%d\n", result);
   fclose(stream);
