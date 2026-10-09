@@ -326,9 +326,18 @@ def snapshot(helper:Path,pid:int,label:str,frame:tuple[int,int,int,int]|None):
         (WORK/('gdb-runner-'+label+'.txt')).write_text(result.stdout+result.stderr)
         result_file=WORK/('gdb-guest-stall-'+label+'.status')
         status=result_file.read_text(errors='replace') if result_file.is_file() else ''
-        passed=result.returncode==0 and 'begin_marker=True' in status and 'end_marker=True' in status
+        graph_file=WORK/('gdb-guest-stall-'+label+'.log')
+        graph=graph_file.read_text(errors='replace') if graph_file.is_file() else ''
+        full_graph=('READ info threads' in graph and
+                    'READ thread apply all bt 7' in graph and
+                    'READ_FAILED info threads' not in graph and
+                    'READ_FAILED thread apply all bt 7' not in graph and
+                    len(graph)>12000)
+        passed=(result.returncode==0 and 'begin_marker=True' in status and
+                'end_marker=True' in status and full_graph)
         SNAPSHOTS.append({'label':label,'frame':frame,'returncode':result.returncode,
-                          'complete':passed,'gdb_status':status[:1000]})
+                          'complete':passed,'full_thread_graph':full_graph,
+                          'gdb_status':status[:1000]})
         info(f'SNAPSHOT_{label}_COMPLETE={passed} '+('guest_flips='+str(frame[1]) if frame is not None else 'frame_counters=not_instrumented'))
         return passed
     except (OSError,subprocess.TimeoutExpired) as exc:
@@ -386,12 +395,16 @@ def thread_cpu_state(pid:int)->dict:
         try:
             raw=(task/'stat').read_text()
             parts=raw.rsplit(') ',1)[1].split()
+            try:
+                wchan=(task/'wchan').read_text().strip()
+            except (OSError,PermissionError):
+                wchan='unavailable'
             result[task.name]={
                 'name':(task/'comm').read_text().strip(),
                 'ticks':int(parts[11])+int(parts[12]),
                 'state':parts[0],
                 'start_ticks':int(parts[19]),
-                'wchan':(task/'wchan').read_text().strip()
+                'wchan':wchan
             }
         except (OSError,ValueError,IndexError,PermissionError):
             continue
