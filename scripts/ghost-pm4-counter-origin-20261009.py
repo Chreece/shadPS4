@@ -568,9 +568,9 @@ def signed_counter_gap(first, second):
     return ((first - second + 0x80000000) & 0xffffffff) - 0x80000000
 
 
-def counter_sample(fd):
+def counter_sample(fd, address=0x2c5d8b0):
     """Non-stopping parent/child /proc memory read. Never writes guest memory."""
-    values=os.pread(fd,8,0x2c5d8b0)
+    values=os.pread(fd,8,address)
     if len(values)!=8:
         raise OSError("Incomplete guest counter read")
     first,second=struct.unpack("<II",values)
@@ -587,8 +587,8 @@ def counter_sample(fd):
 def counter_analysis(transitions,reads,errors):
     first=transitions[0] if transitions else None
     last=transitions[-1] if transitions else None
-    nonzero=[t for t in transitions if t["gap"]!=0 and t.get("flips",0)>0]
-    equal=[t for t in transitions if t["gap"]==0 and t.get("flips",0)>0]
+    nonzero=[t for t in transitions if t["gap"]!=0 and (t.get("flips") or 0)>0]
+    equal=[t for t in transitions if t["gap"]==0 and (t.get("flips") or 0)>0]
     return {
         "read_count":reads,
         "first_record":first,
@@ -777,7 +777,7 @@ def selftest():
         binary=Path(temp)/"counters.bin"
         binary.write_bytes(struct.pack("<II",73,69))
         with binary.open("rb") as inp:
-            sample=counter_sample(inp.fileno())
+            sample=counter_sample(inp.fileno(),address=0)
         assert sample["first"]==73 and sample["second"]==69 and sample["gap"]==4
         assert counter_analysis([dict(sample,flips=704)],1,[])["first_seen_gap4"]["gap"]==4
 
