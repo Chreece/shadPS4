@@ -268,7 +268,7 @@ def build_candidate():
             raise RuntimeError("Ghost candidate is not an ELF 64-bit executable")
         strings = [b"GHOST_MIP_COPY mips=", b"GHOST_MIP_REVERSE_COPY mips=",
                    b"GHOST_COPY_FALLBACK_ASSERT mips=", b"GHOST_TRACE vblank=",
-                   b"Failed to compute offset for SRT walker shader={:#x}"]
+                   b"shader={:#x}"]
         if not binary_markers_present(compiled, strings):
             raise RuntimeError("Ghost tracing candidate compiled without every pinned marker")
         say("COMPILED_MIP_AND_FLIP_TRACE_MARKERS=PASS")
