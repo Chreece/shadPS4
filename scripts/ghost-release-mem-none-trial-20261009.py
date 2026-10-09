@@ -77,11 +77,19 @@ PROCESS_NEW = """        case PM4ItOpcode::ReleaseMem: {
             // GHOST_RELEASE_MEM_PACKET: bounded full packet-selector diagnostics
             // on the real guest command, before SignalFence dispatch.
             static std::atomic<u32> ghost_release_mem_logged{0};
+            static std::atomic<u32> ghost_release_mem_special_logged{0};
             const u32 release_seq =
                 ghost_release_mem_logged.fetch_add(1, std::memory_order_relaxed);
             const u32 data_mode = static_cast<u32>(release_mem->data_sel.Value());
             const u32 irq_mode = static_cast<u32>(release_mem->int_sel.Value());
-            if (release_seq < 96 || data_mode > 5 || irq_mode > 3) {
+            const bool unknown = data_mode > 5 || irq_mode > 3;
+            const bool no_write_or_irq_only = data_mode == 0 || irq_mode == 1;
+            // Include late no-write/IRQ-only modes even if more than 96 normal
+            // release packets preceded the triggering command.
+            const bool record_late = release_seq >= 96 && no_write_or_irq_only &&
+                ghost_release_mem_special_logged.fetch_add(
+                    1, std::memory_order_relaxed) < 96;
+            if (release_seq < 96 || unknown || record_late) {
                 LOG_WARNING(Lib_GnmDriver,
                             "GHOST_RELEASE_MEM_PACKET seq={} data_sel={} int_sel={} "
                             "event={} index={} dst_sel={} dw1={:#x} dw2={:#x} "
