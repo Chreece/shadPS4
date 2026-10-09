@@ -389,8 +389,7 @@ static bool EmitComputeOffsetFindILsb32(Xbyak::CodeGenerator& c, Xbyak::Reg32 re
         fail("IR DumpProgram implementation differs from the reviewed source")
     before_flatten = '''    auto resources = Shader::Optimization::ResourceDiscoverPass(program, profile);
     Shader::Optimization::FlattenExtendedUserdataPass(program);'''
-    early_phi = '''    auto resources = Shader::Optimization::ResourceDiscoverPass(program, profile);
-    if (info.pgm_hash == 0x04691bd5ULL &&
+    early_phi = '''    if (info.pgm_hash == 0x04691bd5ULL &&
         std::getenv("SHADPS4_GOW_EARLY_PHI_SIMPLIFY") != nullptr) {
         const auto count_phis = [&]() {
             u32 count{};
@@ -410,6 +409,7 @@ static bool EmitComputeOffsetFindILsb32(Xbyak::CodeGenerator& c, Xbyak::Reg32 re
                     "GOW_EARLY_PHI_SHADER={:#x} before_phi={} after_phi={}",
                     info.pgm_hash, before, after);
     }
+    auto resources = Shader::Optimization::ResourceDiscoverPass(program, profile);
     Shader::Optimization::FlattenExtendedUserdataPass(program);'''
     if recompiler_text.count(before_flatten) != 1 or \
        recompiler_text.count('#include "common/logging/classes.h"') != 1:
