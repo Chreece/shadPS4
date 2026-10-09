@@ -443,7 +443,7 @@ def build_candidate():
         failures=[]
         for p,original in originals.items():
             observed=p.read_bytes() if p.is_file() and not p.is_symlink() else None
-            if observed==staged[p]:
+            if p in staged and observed==staged[p]:
                 write_atomic(p,original,modes[p])
             elif observed!=original:
                 failures.append(str(p.relative_to(SOURCE))+":externally_changed")
@@ -814,7 +814,7 @@ def main():
             "source_restored": SOURCE_RESTORED,
             "source_sha256_after": digest(FILE),
             "source_expected_sha256": EXPECTED_SOURCE,
-            "restored_all_three_source_files": SOURCE_RESTORED,
+            "restored_all_pinned_source_files": SOURCE_RESTORED,
             "baseline_ghost_sha256_before": BASE_BEFORE,
             "baseline_ghost_sha256_after": digest(BASE_BIN),
             "other_shadps4_sha256_before": SHARED_BEFORE,
