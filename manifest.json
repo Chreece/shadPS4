@@ -1,0 +1,73 @@
+{
+  "format": 1,
+  "packaging_revision": 3,
+  "sdk": "OpenOrbis v0.5.4",
+  "physical_ps4_tested": false,
+  "tests": [
+    {
+      "title_id": "SSEA00002",
+      "title": "SSE4a hardware probe",
+      "content_id": "IV0000-SSEA00002_00-SSE4AHARDWARE000",
+      "version": "01.01",
+      "package": "IV0000-SSEA00002_00-SSE4AHARDWARE000.pkg",
+      "sha256": "21e6e9afcab4133f3e88289e5ad4b886ec88a6bb0d655e9d3cfcba9bf8d7f3f8",
+      "size": 6619136,
+      "round_trip": true,
+      "files": {
+        "eboot.bin": "14939cf66f2d91b86fb8ea9e9c465b34588066926226d6a780ca33cd87f0312e",
+        "sce_module/libSceFios2.prx": "3f8236c5996cf8e9917b8d27706d9743f6603d89de3b9859eacbb9f466b19c01",
+        "sce_module/libc.prx": "39ad53672bb0b14895f8465eb1619478ab935f5afe5dbf69c15f02cfc0a75ce6",
+        "sce_sys/about/right.sprx": "e3416f9c6152276b494982baf7b65ebcd8052274ffc42f95a776318022842b64",
+        "sce_sys/icon0.png": "4af1949b75d76f6c60492882f04f9c8d25f6dab2cdb018fe2cb42093bd97f8da",
+        "sce_sys/param.sfo": "3e9d9137b5a830c2fd3c16deab79e57b808c498d2d10eaebe6ef43558b504334"
+      }
+    },
+    {
+      "title_id": "CPUP00001",
+      "title": "CPU profile readout",
+      "content_id": "IV0000-CPUP00001_00-CPUPROFILE000000",
+      "version": "01.01",
+      "package": "IV0000-CPUP00001_00-CPUPROFILE000000.pkg",
+      "sha256": "4c462377490ab9ad6865659688ef3001f374c96ee71eff015ce4f060aac90918",
+      "size": 6619136,
+      "round_trip": true,
+      "files": {
+        "eboot.bin": "8acc017f9d8a0e53380d4d5391f59233c991c574cd11ce2914e40d968d935255",
+        "sce_module/libSceFios2.prx": "3f8236c5996cf8e9917b8d27706d9743f6603d89de3b9859eacbb9f466b19c01",
+        "sce_module/libc.prx": "39ad53672bb0b14895f8465eb1619478ab935f5afe5dbf69c15f02cfc0a75ce6",
+        "sce_sys/about/right.sprx": "e3416f9c6152276b494982baf7b65ebcd8052274ffc42f95a776318022842b64",
+        "sce_sys/icon0.png": "8ee49827ee699d1d81c3769dc149fd8c30596155b0abe1ef9c091a4cace5087d",
+        "sce_sys/param.sfo": "3f80185ca59a7bf6dc1f25d1fe0ce4556c5876cc1ba6646459e61aecef662666"
+      }
+    },
+    {
+      "title_id": "RCPR00001",
+      "title": "Reciprocal hardware probe",
+      "content_id": "IV0000-RCPR00001_00-RECIPROCAL000000",
+      "version": "01.01",
+      "package": "IV0000-RCPR00001_00-RECIPROCAL000000.pkg",
+      "sha256": "e3d00c33f8a8f70fded199b3281b6dfb9ab8393ca35cc4c1a5c095f2bb75fd71",
+      "size": 6619136,
+      "round_trip": true,
+      "files": {
+        "eboot.bin": "b7c2e21b25bc4c34990f5efa15519ae967b1241dab9b679bb054decec0669af7",
+        "sce_module/libSceFios2.prx": "3f8236c5996cf8e9917b8d27706d9743f6603d89de3b9859eacbb9f466b19c01",
+        "sce_module/libc.prx": "39ad53672bb0b14895f8465eb1619478ab935f5afe5dbf69c15f02cfc0a75ce6",
+        "sce_sys/about/right.sprx": "e3416f9c6152276b494982baf7b65ebcd8052274ffc42f95a776318022842b64",
+        "sce_sys/icon0.png": "89ab3357895f70114971440c803f5c218a13ce71e6ea19d9f904e0ab5e0f5840",
+        "sce_sys/param.sfo": "abaffaa4bb3664c3e7cbf48a6380eec58101670e382b418444fc7e465cd6477f"
+      }
+    }
+  ],
+  "tools": {
+    "PkgTool.Core": "7a96c138aaa5d36a2c39817c9febd27aafb4d9c64086a75f3672eaff81da8e5f",
+    "create-gp4": "491d5adab450313ab573a48e5b191add3a12faf54b2602ae59fef1e5bb07073f",
+    "create-fself": "6232098c3eed1b801c97ae90f271315b898c11c5c630831abce7331b502f952c"
+  },
+  "source_commit": "c9bea04bf83707095bc5a250edf07a21e475f62f",
+  "probe_executables_unchanged": true,
+  "notes": [
+    "v2 installation was reported successful; v3 includes the missing OpenOrbis runtime modules. Physical PS4 execution still awaits retesting.",
+    "Previous Intel native/emulator observations are retained as reference data; they do not validate real-PS4 execution."
+  ]
+}
