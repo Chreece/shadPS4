@@ -159,6 +159,19 @@ def command(argv, log, timeout=1200):
         raise RuntimeError(f"Build command failed rc={rc}; see build.log")
     say("BUILD_STEP_OK=" + Path(argv[0]).name)
 
+def binary_markers_present(path, markers):
+    found = set()
+    tail = b""
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            region = tail + chunk
+            for marker in markers:
+                if marker in region:
+                    found.add(marker)
+            tail = region[-160:]
+    return found == set(markers)
+
+
 def build_candidate():
     global SOURCE_RESTORED
     check_clean_source()
@@ -200,6 +213,11 @@ def build_candidate():
         kind = subprocess.check_output(["file", "-b", str(compiled)], text=True, timeout=10)
         if "ELF 64-bit" not in kind:
             raise RuntimeError("Compiled candidate is not a 64-bit Linux executable")
+        strings = [b"GHOST_MIP_COPY mips=", b"GHOST_MIP_REVERSE_COPY mips=",
+                   b"GHOST_COPY_FALLBACK_ASSERT mips="]
+        if not binary_markers_present(compiled, strings):
+            raise RuntimeError("Compiled candidate does not contain all three exact mip-copy probes")
+        say("COMPILED_MIP_PATCH_MARKERS=PASS")
         ldd = subprocess.run(["ldd", str(compiled)], capture_output=True, text=True, timeout=20)
         (WORK / "candidate-ldd.txt").write_text(ldd.stdout + ldd.stderr)
         if ldd.returncode or "not found" in ldd.stdout:
@@ -399,8 +417,20 @@ def selftest():
     assert state["unhandled_mip_shapes"] == 1
     assert state["assertion_count"] == 1
     assert BASE_BIN != BIN != OTHER_BIN
-    say("SELFTEST_PASS=three_pinned_patchers,source_atomic_restore,"
+    with TemporaryDirectory() as path:
+        path = Path(path) / "marker.bin"
+        path.write_bytes(b"x"*160 + b"GHOST_MIP_COPY mips=" +
+                         b"x"*1024 + b"GHOST_MIP_REVERSE_COPY mips=" +
+                         b"x"*1024 + b"GHOST_COPY_FALLBACK_ASSERT mips=")
+        assert binary_markers_present(path, [b"GHOST_MIP_COPY mips=",
+                                            b"GHOST_MIP_REVERSE_COPY mips=",
+                                            b"GHOST_COPY_FALLBACK_ASSERT mips="])
+    say("SELFTEST_PASS=three_pinned_patchers,source_atomic_restore,compiled_markers,"
         "mip_crash_classifier,isolated_paths")
+
+def interrupt_for_rollback(sig, frame):
+    raise KeyboardInterrupt("Signal intercepted to restore Ghost source: " + str(sig))
+
 
 def main():
     global STATUS, ERROR, SHARED_BEFORE, BASE_BEFORE
@@ -409,6 +439,8 @@ def main():
         return 0
     if sys.argv[1:] not in ([], ["--build-only"]):
         raise SystemExit("Usage: script.py [--self-test|--build-only]")
+    signal.signal(signal.SIGTERM, interrupt_for_rollback)
+    signal.signal(signal.SIGHUP, interrupt_for_rollback)
     WORK.mkdir(parents=True, exist_ok=False)
     lock_file = GHOST / ".mip-candidate-build.lock"
     if not GHOST.is_dir():
