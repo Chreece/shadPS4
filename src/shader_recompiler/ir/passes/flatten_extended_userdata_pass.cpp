@@ -295,7 +295,8 @@ static bool EmitComputeOffsetShiftLeftLogical32(Xbyak::CodeGenerator& c, Xbyak::
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
         ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
-        c.shl(reg, inst->Arg(0).U32());
+        // The evaluated right operand is already the shift count. Do not
+        // shift it by the constant left operand before copying it to CL.
         c.mov(ecx, reg);
         c.mov(reg, inst->Arg(0).U32());
         c.shl(reg, cl);
