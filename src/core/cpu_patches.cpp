@@ -48,6 +48,10 @@ CMRC_DECLARE(res);
 
 using namespace Xbyak::util;
 
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+#include "core/xstate_trace.h"
+#endif
+
 namespace Core {
 
 constexpr static u64 rcp_index_table_size = 1u << 21;
@@ -2402,6 +2406,9 @@ void RegisterPatchModule(void* module_ptr, u64 module_size, void* trampoline_are
                          u64 trampoline_area_size) {
     std::call_once(init_flag, PatchesInit);
 
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+    RegisterXstateTraceHostCode(reinterpret_cast<u64>(trampoline_area_ptr), trampoline_area_size);
+#endif
     const auto module_addr = reinterpret_cast<u64>(module_ptr);
     modules.emplace(std::piecewise_construct, std::forward_as_tuple(module_addr),
                     std::forward_as_tuple(static_cast<u8*>(module_ptr), module_size,

@@ -32,6 +32,10 @@
 #include <signal.h>
 #endif
 
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+#include "core/xstate_trace.h"
+#endif
+
 namespace Core {
 
 static PS4_SYSV_ABI void ProgramExitFunc() {
@@ -40,6 +44,9 @@ static PS4_SYSV_ABI void ProgramExitFunc() {
 
 static PS4_SYSV_ABI void* RunMainEntry [[noreturn]] (EntryParams* params) {
 #ifdef ARCH_X86_64
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+    AutomaticXstateTraceScope trace;
+#endif
     // Start shared library modules
     asm volatile("andq $-16, %%rsp\n" // Align to 16 bytes
                  "subq $8, %%rsp\n"   // videoout_basic expects the stack to be misaligned
@@ -218,6 +225,9 @@ void Linker::Execute(const std::vector<std::string>& args) {
 }
 
 s32 Linker::LoadModule(const std::filesystem::path& elf_name, bool is_dynamic) {
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+    SuspendXstateTraceScope trace;
+#endif
     std::scoped_lock lk{mutex};
     auto* mnt = Common::Singleton<Core::FileSys::MntPoints>::Instance();
     const std::string as_guest = elf_name.generic_string();

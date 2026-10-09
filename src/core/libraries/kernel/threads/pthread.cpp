@@ -30,6 +30,10 @@ void* PS4_SYSV_ABI _runOnAnotherStack(void* arg, void* func, void* stackb) {
 }
 #endif
 
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+#include "core/xstate_trace.h"
+#endif
+
 namespace Libraries::Kernel {
 
 extern PthreadAttr PthreadAttrDefault;
@@ -100,6 +104,9 @@ static void ExitThread() {
     curthread->tid.notify_all();
     curthread->join_wait_cv.notify_all();
 
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+    Core::StopXstateTraceForThreadExit();
+#endif
     curthread->native_thr->Exit();
     UNREACHABLE();
     /* Never reach! */
@@ -293,7 +300,13 @@ static void* RunThread(void* arg) {
     /* Run the current thread's start routine with argument: */
     auto* const stack =
         (void*)(((size_t)curthread->attr.stackaddr_attr + curthread->attr.stacksize_attr) & (~15));
-    void* ret = _runOnAnotherStack(curthread->arg, (void*)curthread->start_routine, stack);
+    void* ret;
+    {
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+        Core::AutomaticXstateTraceScope trace;
+#endif
+        ret = _runOnAnotherStack(curthread->arg, (void*)curthread->start_routine, stack);
+    }
 
     /* Remove thread from tracking */
     DebugState.RemoveCurrentThreadFromGuestList();
@@ -408,8 +421,13 @@ int PS4_SYSV_ABI posix_pthread_create_name_np(PthreadT* thread, const PthreadAtt
 
     /* Create thread */
     new_thread->native_thr = std::make_unique<Core::NativeThread>(Core::NativeThread());
-    const int ret =
-        new_thread->native_thr->Create(RunThread, new_thread, mask, std::move(affinity));
+    int ret;
+    {
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+        Core::SuspendXstateTraceScope trace;
+#endif
+        ret = new_thread->native_thr->Create(RunThread, new_thread, mask, std::move(affinity));
+    }
     if (ret) {
         *thread = nullptr;
         thread_state->Unlink(curthread, new_thread);
@@ -1037,6 +1055,9 @@ struct WrapperArgs {
 
 static void PS4_SYSV_ABI CallbackWrapper(void* arg) {
     WrapperArgs& a = *reinterpret_cast<WrapperArgs*>(arg);
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+    Core::AutomaticXstateTraceScope trace;
+#endif
 
     if (a.action->sa_flags & POSIX_SA_SIGINFO) {
         auto sigaction_handler = a.action->__sigaction_handler.sigaction;

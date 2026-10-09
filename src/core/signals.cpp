@@ -15,6 +15,7 @@
 #if defined(__linux__) && defined(ARCH_X86_64)
 #include "core/cpu_id.h"
 #ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+#include "common/scope_exit.h"
 #include "core/xstate_trace.h"
 #endif
 #endif
@@ -253,23 +254,15 @@ static s32 NativeSiCodeToGuest(s32 sig, s32 code) {
     }
 }
 
-void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
 #ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
-    auto& native_context = *static_cast<ucontext_t*>(raw_context);
-    if ((sig == SIGSEGV || sig == SIGBUS) && IsXstateTraceCopyFault(native_context)) {
-        if (!Signals::Instance()->DispatchAccessViolation(raw_context, info->si_addr)) {
-            RecoverXstateTraceCopyFault(native_context, *info);
-        }
-        return;
-    }
-    siginfo_t traced_info = *info;
-    while (sig == SIGTRAP) {
-        int trace_signal = sig;
+bool DispatchXstateTrace(siginfo_t traced_info, ucontext_t& native_context) {
+    while (true) {
+        int trace_signal = SIGTRAP;
         if (HandleXstateTrace(trace_signal, traced_info, native_context)) {
-            return;
+            return true;
         }
-        if (trace_signal == sig) {
-            break;
+        if (trace_signal == SIGTRAP) {
+            return false;
         }
         using namespace Libraries::Kernel;
         Ucontext trace_context{&traced_info, &native_context};
@@ -285,6 +278,29 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
                    "Unhandled traced xstate exception at {:#x}", trace_context.uc_mcontext.mc_rip);
         traced_info.si_code = TRAP_TRACE;
     }
+}
+#endif
+
+void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+    auto& native_context = *static_cast<ucontext_t*>(raw_context);
+    if ((sig == SIGSEGV || sig == SIGBUS) && IsXstateTraceCopyFault(native_context)) {
+        if (!Signals::Instance()->DispatchAccessViolation(raw_context, info->si_addr)) {
+            RecoverXstateTraceCopyFault(native_context, *info);
+        }
+        return;
+    }
+    if (sig == SIGTRAP && DispatchXstateTrace(*info, native_context)) {
+        return;
+    }
+    SCOPE_EXIT {
+        if (sig != SIGTRAP && IsXstateTraceActive(native_context)) {
+            siginfo_t resumed{};
+            resumed.si_signo = SIGTRAP;
+            resumed.si_code = TRAP_TRACE;
+            DispatchXstateTrace(resumed, native_context);
+        }
+    };
 #endif
 #if defined(__linux__) && defined(ARCH_X86_64)
     if ((sig == SIGSEGV || sig == SIGILL) && HandleCpuIdFault(raw_context, info->si_addr)) {

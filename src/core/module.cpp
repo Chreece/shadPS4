@@ -17,6 +17,10 @@
 #include "core/module.h"
 #include "core/tls.h"
 
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+#include "core/xstate_trace.h"
+#endif
+
 namespace Core {
 
 using EntryFunc = PS4_SYSV_ABI int (*)(size_t args, const void* argp, void* param);
@@ -102,6 +106,9 @@ Module::~Module() = default;
 s32 Module::Start(u64 args, const void* argp, void* param) {
     LOG_INFO(Core_Linker, "Module started : {}", name);
     const VAddr addr = dynamic_info.init_virtual_addr + GetBaseAddress();
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+    AutomaticXstateTraceScope trace;
+#endif
     return reinterpret_cast<EntryFunc>(addr)(args, argp, param);
 }
 
