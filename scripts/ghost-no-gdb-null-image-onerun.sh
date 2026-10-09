@@ -22,7 +22,7 @@ VK11_PATCHER_REV='698693acac4f0555ddd6fde05ead3529ace4ec1c'
 VK11_REL='src/video_core/renderer_vulkan/vk_instance.cpp'
 VK11_SOURCE_TOUCHED=0
 R8_PATCHER_REV='e43fa05509c0c572fb166e51b66bd6c2602aa21b'
-NULL_BINDING_PATCH_REV='215712da0bfd96af88068a005a025bf8a3aabe7e'
+NULL_BINDING_PATCH_REV='57a0e68bcb0af1c1f32a88eb4b9940fe302044b7'
 FALLBACK_PROBE_REV='33aee211bc16f00326ffe17bcb5407ca5ca0028d'
 ARENA_PATCHER_REV='f9b9ceadf21bc1caf5267b339b2539ff887de18c'
 ARENA_HEADER_REL='src/video_core/buffer_cache/buffer_cache.h'
@@ -260,7 +260,7 @@ log 'NEW: 9-mip D32_SFLOAT->R32_SFLOAT transfer now handles the reverse of the v
 log 'Source image aspects, layers, samples, dimensions and fallback assertion stay guarded.'
 log 'All sources and installed/cached ELF restore after this ONE playtest.'
 log 'GHOST_NO_GDB_CONTROL: no early watchpoints and no debugger attachments.'
-log 'GHOST_NULL_IMAGE_BINDING: trial-only count/type fix for invalid T#; separate depth/stencil issue not addressed.'
+log 'GHOST_NULL_IMAGE_BINDING: LEGACY post-R8 indexed binding count/type correction; depth/stencil issue separate.'
 log 'Trial source and binaries restore after the game exits or timeout.'
 
 for tool in git cmake ninja curl python3 sha256sum tar install cmp find stat; do
@@ -332,8 +332,8 @@ R8_SOURCE_TOUCHED=1
 run python3 -I "$R8_PATCHER" "$ROOT" "$SESSION/original-r8"
 # Original R8 backup is already present; this exact-site experiment is
 # restored by the same R8 rollback trap, on every exit path.
-NULL_PATCHER="$SESSION/ghost-null-image-binding-patcher-20261009.py"
-run curl -fsSL --retry 2 --max-time 35   "https://raw.githubusercontent.com/Chreece/shadPS4/$NULL_BINDING_PATCH_REV/scripts/ghost-null-image-binding-patcher-20261009.py"   -o "$NULL_PATCHER"
+NULL_PATCHER="$SESSION/ghost-null-image-binding-legacy-v2-20261009.py"
+run curl -fsSL --retry 2 --max-time 35   "https://raw.githubusercontent.com/Chreece/shadPS4/$NULL_BINDING_PATCH_REV/scripts/ghost-null-image-binding-legacy-v2-20261009.py"   -o "$NULL_PATCHER"
 run python3 -m py_compile "$NULL_PATCHER"
 run python3 -I "$NULL_PATCHER" --self-test
 run python3 -I "$NULL_PATCHER" --check-only "$ROOT/$R8_REL"
