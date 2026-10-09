@@ -206,11 +206,11 @@ def run():
         # routines. Its build_candidate/main are never called.
         helper=WORK/BASE_TOOL
         runner=load_pinned_runner(helper)
+        runner.selftest()  # Original self-test asserts its own original candidate path.
         runner.BIN=EXE
         runner.WORK=WORK
         runner.OUT=OUT
         assert runner.BIN!=runner.BASE_BIN and runner.BIN!=runner.OTHER_BIN
-        runner.selftest()
         active=runner.find_emulators()
         if active:
             status='skipped_running_emulator'
