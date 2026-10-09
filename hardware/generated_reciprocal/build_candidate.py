@@ -11,9 +11,9 @@ import subprocess
 import time
 import zipfile
 
-REVISION = "35cc6d34e8e21e4b62cfdad5ebe185eaa2c31854"
-TREE = "a2d32b356103b523a4c023778dbec142e6b98930"
-PREVIOUS_TREE = "555a0c57a421bca7a172268ee3c492ac151e2cfd"
+REVISION = "64b0adc033eed6b3c10d1608c36411b1111eab66"
+TREE = "6d814ba933bb698e4a39329306222f6cbe4ec78f"
+PREVIOUS_TREE = "a2d32b356103b523a4c023778dbec142e6b98930"
 CACHE_KEY = "b85320a062e7"
 FFMPEG_SHA = "aacbbfb8e622b684bc5d3b4cd6c9f9f77f5def64ae8d83c0c5b3ebe657aa33dd"
 
@@ -93,7 +93,7 @@ def build(cache, evidence):
         command(["git", "checkout", "--detach", REVISION], log, source, timeout=120)
     if git(source, "rev-parse", "HEAD^{tree}") == PREVIOUS_TREE:
         verify_source(source, PREVIOUS_TREE)
-        print("BUILD=Adding the validated gamepad quit fix; reusing the previous build cache", flush=True)
+        print("BUILD=Adding the protected-memory fixes and frame-time capture; reusing the previous build cache", flush=True)
         command(["git", "fetch", "--depth=1", "--no-tags", "origin", REVISION],
                 log, source, timeout=300)
         command(["git", "checkout", "--detach", REVISION], log, source, timeout=120)
@@ -114,7 +114,7 @@ def build(cache, evidence):
         if saved["source_tree"] == TREE:
             print("BUILD=Reusing the verified candidate", flush=True)
             return output / "shadps4", saved
-        marker.rename(output / "validated-build-before-exit-fix.json")
+        marker.rename(output / "validated-build-before-memory-fix.json")
     compilers = next(((shutil.which(c), shutil.which(cxx)) for c, cxx in (
         ("clang-19", "clang++-19"), ("gcc-14", "g++-14"), ("gcc-15", "g++-15"))
         if shutil.which(c) and shutil.which(cxx)), None)

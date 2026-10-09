@@ -126,12 +126,13 @@ static void RecoverFault(int) {
   ++recovered_faults;
   Protect(fault_page, 16384, 3);
 }
-static unsigned CheckMemory(Probe *runners, FILE *output) {
+static unsigned CheckMemory(Probe *runners, FILE *output, uintptr_t hint, const char *region) {
   void *memory = nullptr;
 #ifdef RECIPROCAL_ORBIS
-  if (sceKernelMmap(reinterpret_cast<void *>(0x10000000000ULL), 32768, 3, 0x1002, -1, 0, &memory) != 0) return 1;
-  if (reinterpret_cast<uintptr_t>(memory) < 0x10000000000ULL) return 1;
+  if (sceKernelMmap(reinterpret_cast<void *>(hint), 32768, 3, 0x1002, -1, 0, &memory) != 0) return 1;
+  if (hint && reinterpret_cast<uintptr_t>(memory) < hint) return 1;
 #else
+  (void)hint;
   memory = mmap(nullptr, 32768, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (memory == MAP_FAILED) return 1;
 #endif
@@ -155,8 +156,8 @@ static unsigned CheckMemory(Probe *runners, FILE *output) {
     runners[operation](static_cast<uint32_t *>(fault_page), merge, &result);
     failures += result.lanes[0] != expected || recovered_faults != before + 1;
     failures += result.flags_before != result.flags_after;
-    fprintf(output, "RECIPROCAL_MEMORY op=%s boundary=%08x boundary_faults=%u value=%08x recovered=%u flags=%llx/%llx failures=%u\n",
-            cases[operation].name, boundary_value, boundary_faults, result.lanes[0], recovered_faults,
+    fprintf(output, "RECIPROCAL_MEMORY region=%s op=%s boundary=%08x boundary_faults=%u value=%08x recovered=%u flags=%llx/%llx failures=%u\n",
+            region, cases[operation].name, boundary_value, boundary_faults, result.lanes[0], recovered_faults,
             static_cast<unsigned long long>(result.flags_before), static_cast<unsigned long long>(result.flags_after), failures);
     fflush(output);
   }
@@ -164,9 +165,9 @@ static unsigned CheckMemory(Probe *runners, FILE *output) {
 #ifndef RECIPROCAL_ORBIS
   munmap(memory, 32768);
 #else
-  // The emulator baseline misregisters coalesced CPU-only unmaps with its GPU tracker.
-  // Keep these 32 KiB until process exit; all four protected accesses are still tested.
+  failures += sceKernelMunmap(memory, 32768) != 0;
 #endif
+  fprintf(output, "RECIPROCAL_UNMAP region=%s failures=%u\n", region, failures);
   return failures;
 }
 #endif
@@ -286,7 +287,8 @@ int main(int argc, char **argv) {
   }
   WriteMxcsr(saved_mxcsr);
 #ifdef RECIPROCAL_GENERATED
-  failures += CheckMemory(runners, output);
+  failures += CheckMemory(runners, output, 0, "low");
+  failures += CheckMemory(runners, output, 0x10000000000ULL, "high");
 #endif
   fprintf(
       output,

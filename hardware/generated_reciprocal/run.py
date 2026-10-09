@@ -73,6 +73,7 @@ def validate_probe(path):
     numeric = hashlib.sha256()
     rows = 0
     memory = []
+    unmapped = []
     end = None
     with path.open() as stream:
         for line in stream:
@@ -83,6 +84,8 @@ def validate_probe(path):
                 rows += 1
             elif line.startswith("RECIPROCAL_MEMORY "):
                 memory.append(dict(x.split("=", 1) for x in line.split()[1:]))
+            elif line.startswith("RECIPROCAL_UNMAP "):
+                unmapped.append(dict(x.split("=", 1) for x in line.split()[1:]))
             elif line.startswith("RECIPROCAL_END "):
                 end = dict(x.split("=", 1) for x in line.split()[1:])
     if rows != 121856 or numeric.hexdigest() != REFERENCE:
@@ -91,15 +94,18 @@ def validate_probe(path):
             "rows": "121856", "state_errors": "0", "scalar_packed_differences": "0"}.items()):
         raise RuntimeError("Generated reciprocal state checks failed or the log is incomplete")
     names = ["rcpss_mem", "vrcpss_mem", "rsqrtss_mem", "vrsqrtss_mem"]
-    if [x["op"] for x in memory] != names:
+    if ([x["op"] for x in memory] != names * 2 or
+            [x["region"] for x in memory] != ["low"] * 4 + ["high"] * 4):
         raise RuntimeError("Missing or duplicate memory checks")
     for i, row in enumerate(memory):
-        expected = "3eaaa800" if i < 2 else "3f13c800"
+        expected = "3eaaa800" if i % 4 < 2 else "3f13c800"
         if (row["boundary"] != expected or row["value"] != expected or
                 row["boundary_faults"] != "0" or row["failures"] != "0" or
                 int(row["recovered"]) != i + 1 or
                 len(set(row["flags"].split("/"))) != 1):
             raise RuntimeError("Generated reciprocal memory recovery check failed")
+    if unmapped != [{"region": "low", "failures": "0"}, {"region": "high", "failures": "0"}]:
+        raise RuntimeError("Reciprocal allocation cleanup failed")
     return {"rows": rows, "hardware_differences": 0, "memory_cases": memory,
             "log_sha256": digest(path)}
 
@@ -116,7 +122,7 @@ def homebrew(binary, work, evidence):
         command([binary, "--cpu-id-mode", "translated", "--ignore-game-patch", game / "eboot.bin"],
                 evidence / "homebrew-launch.log", runtime, timeout=180, env=display_environment())
         result = validate_probe(output)
-        print("HOMEBREW=121856 numerical rows, 4 boundaries and 4 recovered faults passed", flush=True)
+        print("HOMEBREW=121856 numerical rows, 8 boundaries, 8 recovered faults and both unmaps passed", flush=True)
         return result
     finally:
         if output.exists():
@@ -124,6 +130,71 @@ def homebrew(binary, work, evidence):
         for path in (runtime / "user/log").glob("*"):
             if path.is_file():
                 shutil.copyfile(path, evidence / ("homebrew-" + path.name))
+
+
+def validate_memory(path, mode):
+    rows, cycles, unmaps, end = [], [], [], None
+    for line in path.read_text().splitlines():
+        parts = line.split()
+        if not parts or len(parts) == 1:
+            continue
+        row = dict(x.split("=", 1) for x in parts[1:])
+        if parts[0] == "MEMORY_ACCESS":
+            rows.append(row)
+        elif parts[0] == "MEMORY_CYCLE":
+            cycles.append(int(row["index"]))
+        elif parts[0] == "MEMORY_UNMAP":
+            unmaps.append(row)
+        elif parts[0] == "MEMORY_END":
+            end = row
+    wanted = [(r, c) for r in ("low", "high") for c in (
+        "none_read", "none_write", "readonly_write", "noexec")]
+    if [(r["region"], r["case"]) for r in rows] != wanted or cycles != list(range(64)):
+        raise RuntimeError("Protected-memory probe incomplete")
+    pending = []
+    for row in rows:
+        if row["value"] != "12345678":
+            raise RuntimeError("Protected-memory result corrupted")
+        if row["faults"] == "1":
+            continue
+        if mode == "translated" and row["case"] == "noexec" and row["faults"] == "0":
+            pending.append(row)
+        else:
+            raise RuntimeError("Protected-memory fault recovery failed")
+    if (unmaps != [{"region": "low", "result": "0"}, {"region": "high", "result": "0"}]
+            or not end or int(end["failures"]) != len(pending)
+            or int(end["recovered"]) != 8 - len(pending)):
+        raise RuntimeError("Protected-memory allocation cleanup or final counters failed")
+    return {"read_write_checks_passed": 6, "high_map_unmap_cycles": 64,
+            "execute_permission_failures": pending, "all_checks_passed": not pending,
+            "log_sha256": digest(path)}
+
+
+def memory_homebrew(binary, work, evidence):
+    results = {}
+    game = work / "memory-game"
+    (game / "sce_sys").mkdir(parents=True)
+    shutil.copyfile(HERE / "guest_memory/eboot.bin", game / "eboot.bin")
+    shutil.copyfile(HERE / "param.sfo", game / "sce_sys/param.sfo")
+    for mode in ("native", "translated"):
+        runtime = work / ("memory-" + mode)
+        prepare_runtime(runtime)
+        output = runtime / "user/data/guest-memory.txt"
+        try:
+            command([binary, "--cpu-id-mode", mode, "--ignore-game-patch", game / "eboot.bin"],
+                    evidence / ("memory-" + mode + "-launch.log"), runtime,
+                    timeout=90, env=display_environment())
+            results[mode] = validate_memory(output, mode)
+            print("MEMORY=" + mode + ": read/write recovery and 64 high unmaps passed", flush=True)
+            if results[mode]["execute_permission_failures"]:
+                print("KNOWN_FAILURE=Translated no-execute checks failed; retained in results, not counted as passed", flush=True)
+        finally:
+            if output.exists():
+                shutil.copyfile(output, evidence / ("memory-" + mode + ".txt"))
+            for path in (runtime / "user/log").glob("*"):
+                if path.is_file():
+                    shutil.copyfile(path, evidence / ("memory-" + mode + "-" + path.name))
+    return results
 
 
 def translated_prefix(binary):
@@ -163,6 +234,7 @@ def main():
         binary, summary["build"] = build(cache, evidence)
         if profile.emulators() or digest(installed) != before:
             raise RuntimeError("An emulator started or the installed build changed; no game test launched")
+        summary["memory_homebrew"] = memory_homebrew(binary, work, evidence)
         summary["homebrew"] = homebrew(binary, work, evidence)
         missing = [name for name in ("ffmpeg", "xprop", "xwininfo") if not shutil.which(name)]
         summary["missing_capture_tools"] = missing
@@ -173,7 +245,7 @@ def main():
         for mode in ("native", "translated"):
             if digest(installed) != before:
                 raise RuntimeError("Installed build changed between stages")
-            print("PLAY=Use the same teams, stadium and settings in both runs. Play a day match for about two minutes, then a night match. Exit PES normally.", flush=True)
+            print("PLAY=Use the SAME day match, teams, stadium and camera in both runs. Set DAY explicitly (not Random). Reach kickoff, leave it untouched for 60 seconds, then play for 60 seconds and exit PES normally.", flush=True)
             print("Keep Moonlight connected until this stage finishes. The existing session guard controls the launch.", flush=True)
             prefix = [str(binary), "--cpu-id-mode", "native"] if mode == "native" else translated_prefix(binary)
             result = games.run_stage("CUSA18676", "PES reciprocal comparison", mode, binary, prefix,
@@ -182,9 +254,11 @@ def main():
             if not result["capture_complete"] or not result["clean_exit_verified"]:
                 raise RuntimeError("Stage did not exit cleanly; collecting evidence before another launch")
             preservation = json.loads((work / ("CUSA18676-" + mode) / "preservation.json").read_text())
+        if any(x.get("frame_time_error") or not x.get("frame_time_samples") for x in summary["stages"]):
+            raise RuntimeError("Frame-time capture is incomplete; see the stage results")
         summary["capture_complete"] = True
         summary["performance_frames_captured"] = all(x.get("fps_screenshots", 0) > 0 for x in summary["stages"])
-        summary["performance"] = "Awaiting comparison of matching gameplay screenshots or user FPS readings; exit status alone is not a performance result."
+        summary["performance"] = "Frame times and screenshots recorded. Compare matching kickoff/gameplay intervals only; whole-process FPS includes menus/loading and is not a speed comparison."
     except BlockingIOError:
         summary["error"] = "Another CPU test holds the test lock; nothing launched"
         print("TEST_ERROR=" + summary["error"], flush=True)

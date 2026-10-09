@@ -1,15 +1,18 @@
-Generated reciprocal comparison — Linux x86-64
+Generated reciprocal and protected-memory comparison — Linux x86-64
 
-Version 2 restores the existing input_config bindings and includes the validated quit-dialog event handling from #5235. It upgrades the earlier test cache incrementally.
+Version 3 fixes explicit guest read/write protection faults and excessive GPU metadata allocation when freeing high-address memory. It retains the existing controller bindings and quit handling from version 2 and upgrades that build cache incrementally.
 
-Close games before starting run.py. It builds the pinned candidate in a separate cache and runs the included homebrew automatically. Download/build steps print progress and have time limits.
+Close games before starting run.py. It builds the pinned candidate in a separate cache. Automatic homebrew checks run first: ordinary protected reads/writes and 64 high-address map/unmap cycles in each mode, then 121856 hardware-referenced reciprocal rows and eight boundary/fault cases at low and high addresses. Both reciprocal allocations are explicitly freed.
 
-At READY [native], launch PES once through your normal Moonlight / ES-DE entry. Wait for RUNNING in the terminal. Play a day match and a night match for about two minutes each, using the same teams and stadium. Exit PES with your existing quit shortcut, then Cross/A to confirm.
+KNOWN FAILURE: two execute-protection checks still fail under CPU translation. They remain reported as failures; the package does not claim the full memory suite passes. Native execute-protection checks pass. The runner can continue to the separate gameplay comparison after recording this known limitation.
 
-At READY [translated], repeat the same sections and settings, then exit normally. Keep Moonlight connected while each stage is collecting evidence. Note FPS if automatic screenshots are unavailable.
+At READY [native], launch PES once through your normal Moonlight / ES-DE entry. Wait for RUNNING. Use one DAY match: set day explicitly, not Random. At kickoff, leave controls untouched for 60 seconds, then play for another 60 seconds. Exit PES with your usual quit shortcut, then Cross/A to confirm.
 
-Upload only the .tar.gz named by UPLOAD_ONLY. The installed emulator and original saves are preserved. The temporary launcher dispatch uses the existing session guard, restores itself on launch, and refuses a parallel emulator. Ctrl+C stops only this test and collects evidence; SSH stays open.
+At READY [translated], repeat the SAME teams, stadium, day setting and camera. Again leave kickoff untouched for 60 seconds, play for 60 seconds, then exit normally. Keep Moonlight connected until each stage finishes.
 
-The homebrew checks 121856 numerical rows against the physical PS4 reference and four scalar boundary/fault cases. The fault data uses a CPU-only mapping above the GPU address range. A separate ordinary protected-page read in the lower address range still fails in this candidate with both native and translated modes. This package does not fix that general memory issue or claim a gameplay/performance pass.
+The candidate records frame durations and screenshots. The summary splits frame data into 15-second intervals so matching gameplay can be compared separately from menus/loading. It does not infer a speed result from whole-session FPS or clean exit.
 
-Rebuild the probe with OpenOrbis: OO_PS4_TOOLCHAIN=/path/to/PS4Toolchain make ORBIS_CXX=clang++-19 ORBIS_LD=ld.lld-19
+Upload only the .tar.gz named by UPLOAD_ONLY. Your installed emulator and original saves remain unchanged. The temporary launcher dispatch uses the existing session guard, restores itself on launch, and refuses a parallel emulator. Ctrl+C stops only this test and collects evidence; SSH stays open.
+
+Rebuild the reciprocal probe with OpenOrbis: OO_PS4_TOOLCHAIN=/path/to/PS4Toolchain make ORBIS_CXX=clang++-19 ORBIS_LD=ld.lld-19
+Build the ordinary memory probe with the same command inside guest_memory/.

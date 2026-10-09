@@ -1,0 +1,76 @@
+MEMORY_BEGIN
+MEMORY_ACCESS region=low case=none_read faults=1 value=12345678 failures=0
+MEMORY_ACCESS region=low case=none_write faults=1 value=12345678 failures=0
+MEMORY_ACCESS region=low case=readonly_write faults=1 value=12345678 failures=0
+MEMORY_ACCESS region=low case=noexec faults=1 value=12345678 failures=0
+MEMORY_UNMAP region=low result=0
+MEMORY_ACCESS region=high case=none_read faults=1 value=12345678 failures=0
+MEMORY_ACCESS region=high case=none_write faults=1 value=12345678 failures=0
+MEMORY_ACCESS region=high case=readonly_write faults=1 value=12345678 failures=0
+MEMORY_ACCESS region=high case=noexec faults=1 value=12345678 failures=0
+MEMORY_UNMAP region=high result=0
+MEMORY_CYCLE index=0
+MEMORY_CYCLE index=1
+MEMORY_CYCLE index=2
+MEMORY_CYCLE index=3
+MEMORY_CYCLE index=4
+MEMORY_CYCLE index=5
+MEMORY_CYCLE index=6
+MEMORY_CYCLE index=7
+MEMORY_CYCLE index=8
+MEMORY_CYCLE index=9
+MEMORY_CYCLE index=10
+MEMORY_CYCLE index=11
+MEMORY_CYCLE index=12
+MEMORY_CYCLE index=13
+MEMORY_CYCLE index=14
+MEMORY_CYCLE index=15
+MEMORY_CYCLE index=16
+MEMORY_CYCLE index=17
+MEMORY_CYCLE index=18
+MEMORY_CYCLE index=19
+MEMORY_CYCLE index=20
+MEMORY_CYCLE index=21
+MEMORY_CYCLE index=22
+MEMORY_CYCLE index=23
+MEMORY_CYCLE index=24
+MEMORY_CYCLE index=25
+MEMORY_CYCLE index=26
+MEMORY_CYCLE index=27
+MEMORY_CYCLE index=28
+MEMORY_CYCLE index=29
+MEMORY_CYCLE index=30
+MEMORY_CYCLE index=31
+MEMORY_CYCLE index=32
+MEMORY_CYCLE index=33
+MEMORY_CYCLE index=34
+MEMORY_CYCLE index=35
+MEMORY_CYCLE index=36
+MEMORY_CYCLE index=37
+MEMORY_CYCLE index=38
+MEMORY_CYCLE index=39
+MEMORY_CYCLE index=40
+MEMORY_CYCLE index=41
+MEMORY_CYCLE index=42
+MEMORY_CYCLE index=43
+MEMORY_CYCLE index=44
+MEMORY_CYCLE index=45
+MEMORY_CYCLE index=46
+MEMORY_CYCLE index=47
+MEMORY_CYCLE index=48
+MEMORY_CYCLE index=49
+MEMORY_CYCLE index=50
+MEMORY_CYCLE index=51
+MEMORY_CYCLE index=52
+MEMORY_CYCLE index=53
+MEMORY_CYCLE index=54
+MEMORY_CYCLE index=55
+MEMORY_CYCLE index=56
+MEMORY_CYCLE index=57
+MEMORY_CYCLE index=58
+MEMORY_CYCLE index=59
+MEMORY_CYCLE index=60
+MEMORY_CYCLE index=61
+MEMORY_CYCLE index=62
+MEMORY_CYCLE index=63
+MEMORY_END recovered=8 failures=0

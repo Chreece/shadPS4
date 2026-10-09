@@ -20,6 +20,7 @@ import tempfile
 import time
 
 import affinity_game_profile as profile
+from frame_intervals import summarize as summarize_frames
 
 
 class LaunchStopped(BaseException):
@@ -275,6 +276,8 @@ def launch(job_file):
                 raise RuntimeError("Another emulator survived the session guard; parallel launch refused")
             env = os.environ.copy()
             env["SHADPS4_ENABLE_IPC"] = "false"
+            env["SHADPS4_FRAME_TIMES"] = str(folder / "frame-times.csv")
+            result["started_monotonic_ns"] = time.monotonic_ns()
             started = time.monotonic()
             with (folder / "console.log").open("w") as output, (folder / "process-samples.jsonl").open("w") as samples:
                 child = subprocess.Popen(result["command"], cwd=runtime, env=env,
@@ -450,6 +453,16 @@ def run_stage(game_id, title, mode, binary, prefix, work, evidence, *, expected_
                                      for action in ("opened", "confirmed", "accepted", "cancelled")}
             result["launcher_restored"] = profile.digest(wrapper) == job["original_sha256"]
             result["fps_screenshots"] = len(list(destination.glob("frame-*.png")))
+            frame_times = destination / "frame-times.csv"
+            if frame_times.is_file() and result.get("started_monotonic_ns"):
+                try:
+                    frame_summary = summarize_frames(frame_times, result["started_monotonic_ns"])
+                    write_json(destination / "frame-intervals.json", frame_summary)
+                    result["frame_time_samples"] = sum(x["frames"] for x in frame_summary["intervals"])
+                except (OSError, RuntimeError) as error:
+                    result["frame_time_error"] = str(error)
+            else:
+                result["frame_time_error"] = "Candidate produced no frame-time log"
             result["clean_exit_verified"] = (result.get("phase") == "finished" and result.get("returncode") == 0
                 and result.get("completion_reason") == "process_exited" and not result.get("forced_process_cleanup")
                 and not any(result.get(key) for key in ("cancelled", "error", "cleanup_error", "controller_error")))

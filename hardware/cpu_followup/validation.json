@@ -84,10 +84,10 @@
   },
   "known_limits": [
     "XSAVE/XRSTOR/XGETBV and CPUID 0xD retain the host state layout; not complete Jaguar state emulation.",
-    "A plain protected-page read below the 40-bit GPU limit fails with a Vulkan allocation error in native and translated modes. The corrected generated reciprocal probe passes using a CPU-only mapping above that range; the general memory failure remains open.",
     "Physical CPU hotplug remains untested.",
     "macOS and Windows remain outside this follow-up.",
-    "Generated reciprocal game performance has not been measured."
+    "Generated reciprocal game performance has not been measured.",
+    "Translated execution from non-executable guest pages remains a gap; two failing cases are preserved in the memory probe."
   ],
   "package": {
     "path": "packages/ps4-cpu_identity-hardware-test-v3.zip",
@@ -100,5 +100,13 @@
     "src/core/cpu_id.cpp": "f752ee896831fd276e93bbdcf6341f9fc40217d09bf77732fb8f3626d1ec19ec",
     "src/core/cpu_id_translation/client.c": "4c9a6a3817cdedb32dc2a20a3b3ad8aba61476525f1177a74fc9661b631bda00",
     "src/core/cpu_patches.cpp": "12ea18a49ad0aa7ab236ba04f51e0c35befad56d2f1380c9bf04149e8c70ef17"
+  },
+  "protected_memory_followup": {
+    "candidate": "64b0adc033eed6b3c10d1608c36411b1111eab66",
+    "read_write_recovery": "passed in native and translated modes",
+    "high_unmaps": "64 cycles per mode passed",
+    "reciprocal": "121856 hardware-matching rows; eight boundary/fault recoveries and low/high unmaps passed",
+    "pes": "awaiting current-candidate test",
+    "details": "hardware/generated_reciprocal/validation.json"
   }
 }
