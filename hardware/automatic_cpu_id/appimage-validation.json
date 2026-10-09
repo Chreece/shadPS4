@@ -1,0 +1,32 @@
+{
+  "appimage_sha256": "929807f8ee6415f8752b09c916d9275db007f1ae91cb10c2df72c312d3c32efd",
+  "launch": "AppImage runtime with APPIMAGE_EXTRACT_AND_RUN=1 from a path containing spaces",
+  "tests": [
+    {
+      "name": "cpuid",
+      "returncode": 0,
+      "translation_active": true,
+      "result": "GENERATED_CPU_ID_RESULT operation=CPUID failures=0 samples=569 signals=32",
+      "ok": true
+    },
+    {
+      "name": "rdpid",
+      "returncode": 0,
+      "translation_active": true,
+      "result": "GENERATED_CPU_ID_RESULT operation=RDPID failures=0 samples=681 signals=32",
+      "ok": true
+    },
+    {
+      "name": "signal_requeue",
+      "returncode": 0,
+      "translation_active": true,
+      "result": "SIGNAL_REQUEUE_RESULT received=2 failures=0",
+      "ok": true
+    }
+  ],
+  "fuse_mount_tested": false,
+  "production_commit": "731ababdb7819486eca8dcc7a7f622efa3b75cc7",
+  "production_tree": "0c87d4b566db0fb074a3ebe952b7f0d3f95d528d",
+  "runtime_files_unchanged": 9,
+  "packaging_script": ".github/workflows/scripts/linux-appimage-sdl.sh"
+}

@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-09",
+  "evidence_archive": "shadps4-auto-cpu-pes-mo_gyfec.tar.gz",
+  "evidence_sha256": "ba0b003d8d3295a1cbf1f78e96ca8d64640c84e9b5526185b9a2217ef2e49145",
+  "scope": "Automatic CPU-ID patch applied to previously tested PES graphics source",
+  "source_tree": "430acab24fc09bd5ff9de7b9c8b763f45ee2fe82",
+  "base_tree": "cf5f4396c91519925e42ee7ae9c9be7514bc76f1",
+  "patch_sha256": "9640051cf206706ff2988a267d6205f052de1b6de0b6b7b8c522fb1dcd980c9c",
+  "binary_sha256": "020e5b08e7b42ad95dcc2b9ee7eb392a27656ed7e58ea65fbd20c282fa571ef5",
+  "user_confirmed": {
+    "day_match_controllable": true,
+    "night_match_controllable": true,
+    "performance_comparable_to_previous_build": true
+  },
+  "log_evidence": {
+    "translation_active": true,
+    "observed_emulator_pid_count": 1,
+    "cpu_id_crash_recorded": false,
+    "host_quit_accepted": true,
+    "returncode": 0,
+    "completion_reason": "launcher_received_signal",
+    "termination_signal": 15,
+    "clean_exit_without_assistance_verified": false,
+    "owned_processes_remaining": [],
+    "launcher_restored": true,
+    "source_files_unchanged": true,
+    "installed_binary_unchanged": true
+  },
+  "gameplay_result": "passed",
+  "shutdown_note": "The wrapper received SIGTERM and cleanup ran. The emulator accepted HOST_QUIT and returned zero; this does not establish unassisted shutdown."
+}
