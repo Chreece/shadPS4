@@ -36,6 +36,16 @@ const bool native_blocks = [] {
     return !value || std::strcmp(value, "0") != 0;
 }();
 
+const bool host_blocks = [] {
+    const char* value = std::getenv("SHADPS4_XSTATE_TRACE_HOST_BLOCKS");
+    return native_blocks && (!value || std::strcmp(value, "0") != 0);
+}();
+
+const bool native_branches = [] {
+    const char* value = std::getenv("SHADPS4_XSTATE_TRACE_BRANCHES");
+    return native_blocks && (!value || std::strcmp(value, "0") != 0);
+}();
+
 constexpr size_t CodePageSize = 4096;
 constexpr size_t MaxBlockBytes = 256;
 constexpr size_t MaxBlockInstructions = 32;
@@ -122,6 +132,116 @@ XstateResult WriteMemory(void*, u64 address, std::span<const u8> bytes) {
     const auto left = XstateTraceCopy(reinterpret_cast<void*>(address), bytes.data(), bytes.size());
     return left ? XstateResult{XstateFault::PageFault, address + bytes.size() - left, true}
                 : XstateResult{};
+}
+
+bool ExecuteTraceBranch(std::span<const u8> bytes, ucontext_t& context) {
+    auto& registers = context.uc_mcontext.gregs;
+    const u64 pc = registers[REG_RIP];
+    if (!native_branches || block.executable_page != CodePage(pc)) {
+        return false;
+    }
+    ZydisDecoder decoder;
+    ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
+    ZydisDecodedInstruction instruction;
+    std::array<ZydisDecodedOperand, ZYDIS_MAX_OPERAND_COUNT> operands;
+    if (!ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, bytes.data(), bytes.size(), &instruction,
+                                             operands.data())) ||
+        (instruction.meta.category != ZYDIS_CATEGORY_COND_BR &&
+         instruction.meta.category != ZYDIS_CATEGORY_UNCOND_BR) ||
+        instruction.operand_count_visible != 1 ||
+        operands[0].type != ZYDIS_OPERAND_TYPE_IMMEDIATE || !operands[0].imm.is_relative ||
+        instruction.meta.branch_type == ZYDIS_BRANCH_TYPE_FAR ||
+        CodePage(pc + instruction.length - 1) != block.executable_page) {
+        return false;
+    }
+    const u64 flags = registers[REG_EFL];
+    const bool carry = flags & 1;
+    const bool parity = flags & 4;
+    const bool zero = flags & 0x40;
+    const bool sign = flags & 0x80;
+    const bool overflow = flags & 0x800;
+    bool taken;
+    bool decrement = false;
+    u64 count = registers[REG_RCX];
+    switch (instruction.mnemonic) {
+    case ZYDIS_MNEMONIC_JMP:
+        taken = true;
+        break;
+    case ZYDIS_MNEMONIC_JB:
+        taken = carry;
+        break;
+    case ZYDIS_MNEMONIC_JNB:
+        taken = !carry;
+        break;
+    case ZYDIS_MNEMONIC_JBE:
+        taken = carry || zero;
+        break;
+    case ZYDIS_MNEMONIC_JNBE:
+        taken = !carry && !zero;
+        break;
+    case ZYDIS_MNEMONIC_JZ:
+        taken = zero;
+        break;
+    case ZYDIS_MNEMONIC_JNZ:
+        taken = !zero;
+        break;
+    case ZYDIS_MNEMONIC_JS:
+        taken = sign;
+        break;
+    case ZYDIS_MNEMONIC_JNS:
+        taken = !sign;
+        break;
+    case ZYDIS_MNEMONIC_JO:
+        taken = overflow;
+        break;
+    case ZYDIS_MNEMONIC_JNO:
+        taken = !overflow;
+        break;
+    case ZYDIS_MNEMONIC_JP:
+        taken = parity;
+        break;
+    case ZYDIS_MNEMONIC_JNP:
+        taken = !parity;
+        break;
+    case ZYDIS_MNEMONIC_JL:
+        taken = sign != overflow;
+        break;
+    case ZYDIS_MNEMONIC_JNL:
+        taken = sign == overflow;
+        break;
+    case ZYDIS_MNEMONIC_JLE:
+        taken = zero || sign != overflow;
+        break;
+    case ZYDIS_MNEMONIC_JNLE:
+        taken = !zero && sign == overflow;
+        break;
+    case ZYDIS_MNEMONIC_JRCXZ:
+        taken = count == 0;
+        break;
+    case ZYDIS_MNEMONIC_JECXZ:
+        taken = static_cast<u32>(count) == 0;
+        break;
+    case ZYDIS_MNEMONIC_LOOP:
+    case ZYDIS_MNEMONIC_LOOPE:
+    case ZYDIS_MNEMONIC_LOOPNE:
+        decrement = true;
+        count = instruction.address_width == 32 ? static_cast<u32>(count - 1) : count - 1;
+        taken = count != 0 && (instruction.mnemonic != ZYDIS_MNEMONIC_LOOPE || zero) &&
+                (instruction.mnemonic != ZYDIS_MNEMONIC_LOOPNE || !zero);
+        break;
+    default:
+        return false;
+    }
+    const u64 next = pc + instruction.length;
+    const u64 target = taken ? next + operands[0].imm.value.s : next;
+    if (CodePage(target) != block.executable_page) {
+        return false;
+    }
+    if (decrement) {
+        registers[REG_RCX] = count;
+    }
+    registers[REG_RIP] = target;
+    return true;
 }
 
 bool CanCopyInstruction(const ZydisDecodedInstruction& instruction,
@@ -424,7 +544,13 @@ bool HandleXstateTrace(int& signal, siginfo_t& info, ucontext_t& context) {
         block.executable_page = ~u64{0};
     }
 
-    while (IsGuestInstruction(registers[REG_RIP])) {
+    u32 branches = 0;
+    while (true) {
+        const bool guest = IsGuestInstruction(registers[REG_RIP]);
+        if (!guest && !host_blocks) {
+            block.executable_page = ~u64{0};
+            return true;
+        }
         std::array<u8, 15> instruction;
         const auto left =
             XstateTraceCopy(instruction.data(), reinterpret_cast<const void*>(registers[REG_RIP]),
@@ -432,18 +558,25 @@ bool HandleXstateTrace(int& signal, siginfo_t& info, ucontext_t& context) {
         if (left == instruction.size()) {
             return true;
         }
-        auto* frame = reinterpret_cast<u8*>(context.uc_mcontext.fpregs);
-        ASSERT_MSG(frame != nullptr, "Missing xstate trace signal frame");
-        u32 size;
-        std::memcpy(&size, frame + 468, sizeof(size));
-        ASSERT_MSG(size >= GuestXstateSize + 4 && size <= 65536,
-                   "Unsupported xstate trace signal frame size: {}", size);
         const auto bytes = std::span{instruction}.first(instruction.size() - left);
-        auto result = ExecuteTraceFlags(bytes, context);
-        if (result.status == LinuxXstateStatus::NotHandled) {
-            result = ExecuteLinuxXstateInstruction(
-                bytes, context, {frame, size}, {nullptr, ReadMemory, WriteMemory},
-                thread ? reinterpret_cast<u64>(thread->tcb) : 0, 0);
+        if (branches < 64 && ExecuteTraceBranch(bytes, context)) {
+            ++branches;
+            continue;
+        }
+        LinuxXstateResult result{LinuxXstateStatus::NotHandled};
+        if (guest) {
+            auto* frame = reinterpret_cast<u8*>(context.uc_mcontext.fpregs);
+            ASSERT_MSG(frame != nullptr, "Missing xstate trace signal frame");
+            u32 size;
+            std::memcpy(&size, frame + 468, sizeof(size));
+            ASSERT_MSG(size >= GuestXstateSize + 4 && size <= 65536,
+                       "Unsupported xstate trace signal frame size: {}", size);
+            result = ExecuteTraceFlags(bytes, context);
+            if (result.status == LinuxXstateStatus::NotHandled) {
+                result = ExecuteLinuxXstateInstruction(
+                    bytes, context, {frame, size}, {nullptr, ReadMemory, WriteMemory},
+                    thread ? reinterpret_cast<u64>(thread->tcb) : 0, 0);
+            }
         }
         if (result.status == LinuxXstateStatus::NotHandled) {
             if (!StartNativeBlock(context)) {
@@ -467,8 +600,6 @@ bool HandleXstateTrace(int& signal, siginfo_t& info, ucontext_t& context) {
                    "Xstate tracing cannot execute guest state at {:#x}: status {}",
                    registers[REG_RIP], static_cast<int>(result.status));
     }
-    block.executable_page = ~u64{0};
-    return true;
 }
 
 } // namespace Core
