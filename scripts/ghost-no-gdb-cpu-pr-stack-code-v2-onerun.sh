@@ -191,6 +191,17 @@ finish() {
             log 'CPU_PR_SOURCE_ROLLBACK=SKIPPED_NO_APPLY_MANIFEST'
         fi
     fi
+    if [[ -f "$SESSION/cmake-cache-before-cpu-verified" &&
+          -f "$BUILD/CMakeCache.txt" ]]; then
+        cache_tmp="$BUILD/CMakeCache.txt.restore-ghost-cpu-$STAMP"
+        if cp -p -- "$SESSION/cmake-cache-before-cpu-verified" "$cache_tmp" &&
+           mv -fT -- "$cache_tmp" "$BUILD/CMakeCache.txt" &&
+           cmp -s -- "$SESSION/cmake-cache-before-cpu-verified" "$BUILD/CMakeCache.txt"; then
+            log 'CPU_PR_CMAKE_CACHE_RESTORED=PASS: original cached options preserved; normal source-driven CMake regeneration required at next build.'
+        else
+            log 'WARNING: CPU_PR_CMAKE_CACHE_RESTORE_FAILED; review archived original.'
+        fi
+    fi
     if (( ARENA_SOURCE_TOUCHED )); then
         for arena_file in "$ARENA_HEADER_REL" "$ARENA_IMPL_REL"; do
             if [[ -f "$SESSION/original-arena/$arena_file" ]]; then
