@@ -918,6 +918,7 @@ def orchestrate() -> None:
 
 
 def test() -> None:
+    global HOME, WORK, GAME_LAUNCH_TIME, GAME_PID, SESSION_DIR
     assert READY.startswith("READY - LAUNCH GHOST")
     assert str(ENTRY).endswith("Ghost of Tsushima.ps4")
     assert LAUNCHER.name == "shadps4-esde"
@@ -943,6 +944,46 @@ def test() -> None:
     # because the working folder's mtime changed during screenshot collection.
     assert "ghost-no-gdb-validation-" in "ghost-no-gdb-validation-20261008.tar.gz"
     assert "STALL_SNAP_REV" not in globals()
+    # Exercise new dump and archive collectors using only throwaway files.
+    # No GPU, root privilege, game launch, process signals or settings changes.
+    originals = (HOME, WORK, GAME_LAUNCH_TIME, GAME_PID, SESSION_DIR)
+    try:
+        with tempfile.TemporaryDirectory(prefix="ghost-radv-hang-selftest-") as tmp:
+            temp = Path(tmp)
+            HOME = temp
+            WORK = temp / "work"
+            WORK.mkdir()
+            GAME_PID = 54321
+            GAME_LAUNCH_TIME = time.time() - 1
+            SESSION_DIR = None
+            wanted = temp / "radv_dumps_54321_fixture"
+            wanted.mkdir()
+            (wanted / "trace.log").write_text("last trace point\nGPU_HANG=1\n")
+            other = temp / "radv_dumps_99999_fixture"
+            other.mkdir()
+            (other / "trace.log").write_text("UNRELATED_PID_MUST_NOT_CAPTURE\n")
+            capture_radv_hang_reports()
+            report = json.loads((WORK / "radv-dump-status.json").read_text())
+            assert report["game_pid_candidates"] == [54321]
+            assert report["files_collected"] == 1, report
+            assert report["RADV_DEBUG"] == "hang"
+            assert all("99999" not in folder for folder in report["driver_dump_directories"])
+            assert (WORK / "radv-dumps" / wanted.name / "trace.log").is_file()
+            dummy = temp / "report.txt"
+            dummy.write_text("ghost test")
+            child = temp / "ghost-no-gdb-validation-fixture.tar.gz"
+            with tarfile.open(child, "w:gz") as bundle:
+                bundle.add(dummy, arcname="report.txt")
+            (WORK / "build-and-trial.log").write_text("ARCHIVE=" + str(child) + "\n")
+            candidate_archive()
+            archived = WORK / "candidate-build-and-validation.tar.gz"
+            assert archived.is_file() and tarfile.is_tarfile(archived)
+            assert "eligible" in (WORK / "child-archive-discovery.json").read_text()
+    finally:
+        HOME, WORK, GAME_LAUNCH_TIME, GAME_PID, SESSION_DIR = originals
+    print("SELFTEST PASS: RADV hang dump PID scoping, bounded capture and "
+          "nested validation archive discovery, all tested with temporary files")
+
     print("SELFTEST PASS: pinned workflow, launcher/game path, monitor timing, "
           "session PID extraction. No graphics/process operations performed.")
 
