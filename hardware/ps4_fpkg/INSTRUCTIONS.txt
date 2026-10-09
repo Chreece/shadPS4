@@ -1,17 +1,20 @@
 SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
 SPDX-License-Identifier: GPL-2.0-or-later
 
-PS4 CPU hardware tests - FPKG packaging revision 2
+PS4 CPU hardware tests - FPKG packaging revision 3 (app version 01.01)
 
-Replaces ps4-cpu-tests-all-fpkg.zip. This revision corrects the SSE4a title ID
-and the version field formatting in all three packages. The probe code and
-output paths are unchanged. Installation on a physical PS4 still needs retesting.
+Replaces the v2 bundle. A tester confirmed that v2 installs, then reported a
+launch failure loading /app0/sce_module/libSceFios2.prx. This revision includes
+the OpenOrbis libc.prx and libSceFios2.prx modules in all three packages.
+The probe code and output paths are unchanged. Physical PS4 execution still
+needs retesting; package checks do not establish that the probes run on hardware.
 
 For a PS4 already configured to run homebrew FPKGs. No SDK, compiler, PC script,
 game files, or manual packaging is needed by testers.
 
 1. Extract this ZIP. Copy the three .pkg files to your usual installation media
    and install them using your console's existing Package Installer.
+   If v2 is installed, accept the installer's replacement/reinstall prompt.
 2. Launch "SSE4a hardware probe", "CPU profile readout", and
    "Reciprocal hardware probe" once each.
    Each runs automatically without controller input and returns to the menu.
@@ -57,5 +60,6 @@ The SDK's bundled Linux PkgTool.Core needs OpenSSL 1.1. On newer build hosts,
 use an isolated compatible runtime or the OpenOrbis toolchain container.
 This is a developer build dependency, not something testers need to install.
 
-The OpenOrbis right.sprx module is included with its source and GPLv3 license.
+The OpenOrbis right.sprx, libc.prx and libSceFios2.prx modules are included with
+their sources and GPLv3 license. These are OpenOrbis's replacement modules.
 Probe source is GPL-2.0-or-later; musl notices are included with each probe.

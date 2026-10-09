@@ -18,6 +18,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent
 HARDWARE = ROOT.parent
+PACKAGE_VERSION = "01.01"
+RUNTIME_MODULES = ("libc", "libSceFios2")
 TESTS = (
     ("sse4a", "SSEA00002", "SSE4a hardware probe", "SSE4AHARDWARE000", "console.bin",
      ("native_probe.cpp", "cases.S", "Makefile", "musl-COPYRIGHT")),
@@ -44,7 +46,7 @@ def validate_identity(title_id, content_id, version):
 
 
 def sfo(title_id, title, content_id):
-    version = "01.00"
+    version = PACKAGE_VERSION
     validate_identity(title_id, content_id, version)
     values = {
         "APP_TYPE": (1, 4), "APP_VER": (version, 8), "ATTRIBUTE": (0, 4),
@@ -92,7 +94,8 @@ def main():
     destination.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, DOTNET_SYSTEM_GLOBALIZATION_INVARIANT="1")
     pkgtool = sdk / "bin/linux/PkgTool.Core"
-    manifest = {"format": 1, "sdk": "OpenOrbis v0.5.4", "physical_ps4_tested": False,
+    manifest = {"format": 1, "packaging_revision": 3, "sdk": "OpenOrbis v0.5.4",
+                "physical_ps4_tested": False,
                 "tests": [], "tools": {}}
     for name in ("PkgTool.Core", "create-gp4", "create-fself"):
         manifest["tools"][name] = digest(sdk / "bin/linux" / name)
@@ -108,11 +111,19 @@ def main():
         shutil.copy2(HARDWARE.parent / "LICENSES/GPL-2.0-or-later.txt", licenses)
         shutil.copy2(sdk / "LICENSE", licenses / "OpenOrbis-GPL-3.0.txt")
         shutil.copytree(sdk / "src/modules/right", source / "OpenOrbis-right")
+        for module in RUNTIME_MODULES:
+            module_source = source / "OpenOrbis-modules" / module
+            (module_source / module).mkdir(parents=True)
+            shutil.copy2(sdk / "src/modules" / module / "Makefile", module_source)
+            shutil.copy2(sdk / "src/modules" / module / module / "lib.c",
+                         module_source / module)
+        shutil.copytree(sdk / "src/crt", source / "OpenOrbis-crt",
+                        ignore=shutil.ignore_patterns("*.o", "*.elf", "*.prx"))
         for directory, title_id, title, suffix, executable, inputs in TESTS:
             if args.only and directory != args.only:
                 continue
             content_id = f"IV0000-{title_id}_00-{suffix}"
-            validate_identity(title_id, content_id, "01.00")
+            validate_identity(title_id, content_id, PACKAGE_VERSION)
             test_source = source / "hardware" / directory
             test_source.mkdir()
             for name in inputs:
@@ -129,6 +140,11 @@ def main():
             shutil.copy2(ROOT / (directory + "-icon.png"), system / "icon0.png")
             shutil.copy2(sdk / "samples/hello_world/sce_sys/about/right.sprx",
                          system / "about/right.sprx")
+            modules = package_root / "sce_module"
+            modules.mkdir()
+            for module in RUNTIME_MODULES:
+                shutil.copy2(sdk / "samples/hello_world/sce_module" / (module + ".prx"),
+                             modules / (module + ".prx"))
             files = sorted(p.relative_to(package_root).as_posix()
                            for p in package_root.rglob("*") if p.is_file())
             run([sdk / "bin/linux/create-gp4", "-out", "package.gp4",
@@ -157,7 +173,7 @@ def main():
                     raise RuntimeError("FPKG round-trip mismatch: " + name)
                 hashes[name] = digest(original)
             manifest["tests"].append({"title_id": title_id, "title": title,
-                                      "content_id": content_id, "version": "01.00",
+                                      "content_id": content_id, "version": PACKAGE_VERSION,
                                       "package": package.name, "sha256": digest(package),
                                       "size": package.stat().st_size, "round_trip": True,
                                       "files": hashes})
@@ -168,8 +184,8 @@ def main():
         (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
         (bundle / "SHA256SUMS.txt").write_text("".join(
             f"{item['sha256']}  {item['package']}\n" for item in manifest["tests"]))
-        name = (f"ps4-{args.only}-hardware-test-v2.zip" if args.only
-                else "ps4-cpu-tests-all-fpkg-v2.zip")
+        name = (f"ps4-{args.only}-hardware-test-v3.zip" if args.only
+                else "ps4-cpu-tests-all-fpkg-v3.zip")
         output = destination / name
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
             for path in sorted(bundle.rglob("*")):
