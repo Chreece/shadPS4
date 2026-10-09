@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""One-run, scoped GPU-side ReadConst fallback for seven proven Ghost shader hashes.
+"""Ghost shader 0x551d6087: controlled dynamic-SRT GPU ReadConst trial.
 
-The old flatbuf fallback reads user-data slot 0 when a dynamic ReadConst
-has no flattened offset and global DMA is disabled. This trial opts the seven
-observed failing shaders into the *existing* BDA/read_const_dynamic pipeline,
-while leaving global DMA disabled and all other shaders unchanged.
-This is NOT a reviewed upstream fix or a permanent setting change.
+The 2026-10-09 Ghost trace with stencil storage VUIDs eliminated still
+reports 128 ReadLane-offset compute failures for fragment shader 0x551d6087,
+then VK_ERROR_DEVICE_LOST. Test the already-existing GPU BDA dynamic-ReadConst
+path ONLY for that shader if shader info requires it. This is an A/B
+hypothesis, not a confirmed fix. Global DMA and other shaders stay unchanged.
+
+The unattended shell owns backups and automatic source/binary rollback.
 """
 from pathlib import Path
 import hashlib
@@ -55,6 +57,8 @@ def change(source: bytes, old: str, new: str, label: str) -> bytes:
     text = source.decode("utf-8")
     assert text.count(old) == 1, f"{label}: expected 1 reviewed anchor, saw {text.count(old)}"
     assert "GHOST_SRT_DMA_TRIAL" not in text
+    assert "GHOST_SRT_551D_ROUTE" not in text
+    assert "GHOST_SRT_551D_EMIT" not in text
     patched = text.replace(old, new)
     assert patched.count(new) == 1
     return patched.encode("utf-8")
@@ -63,8 +67,8 @@ def hashed(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 def selftest():
-    source_info = ("// header\\n" + OLD_INFO + "\\n// footer\\n").encode()
-    source_emit = ("// header\\n" + OLD_EMIT + "\\n// footer\\n").encode()
+    source_info = ("// header\n" + OLD_INFO + "\n// footer\n").encode()
+    source_emit = ("// header\n" + OLD_EMIT + "\n// footer\n").encode()
     assert NEW_INFO in change(source_info, OLD_INFO, NEW_INFO, REL_INFO).decode()
     assert NEW_EMIT in change(source_emit, OLD_EMIT, NEW_EMIT, REL_EMIT).decode()
     assert NEW_INFO.count("info.pgm_hash == 0x551d6087ULL") == 2
