@@ -475,6 +475,7 @@ def test_game(env):
         "srt_errors": text.count("Failed to compute offset for SRT walker"),
         "srt_shift_path_marker": re.findall(r"GOW_SRT_SHIFT_BRANCH_SHADER=0x4691bd5 hits=(\d+) roots=(\d+)", text),
         "shader_hung_srt_shift_used": bool(re.search(r"GOW_SRT_SHIFT_BRANCH_SHADER=0x4691bd5 hits=[1-9]", text)),
+        "shader_hung_srt_trace_present": bool(re.search(r"GOW_SRT_SHIFT_BRANCH_SHADER=0x4691bd5 hits=", text)),
         "screenshots_captured": sum(1 for row in photo_rows if row["valid"]),
         "menu_confirmed": False,
         "moonlight_needed": False
@@ -558,7 +559,8 @@ def main():
     if hashfile(LIVE) != EXPECTED_LIVE:
         fail("Installed ES-DE executable unexpectedly changed")
     RESULT = ("SHIFT_PATH_HIT_IN_HUNG_SHADER" if outcome["shader_hung_srt_shift_used"]
-              else "NO_SHIFT_PATH_HIT_IN_HUNG_SHADER")
+              else "SHIFT_PATH_NOT_USED" if outcome["shader_hung_srt_trace_present"]
+              else "SRT_SHADER_TRACE_MISSING")
     note("SRT_SHIFT_HIT_IN_SHADER_0x04691BD5=" + str(outcome["shader_hung_srt_shift_used"]))
     note("OTHER_SRT_ERRORS=" + str(outcome["srt_errors"]))
     note("GAME_INTRO_AND_MENU=NOT_YET_VISUALLY_CONFIRMED")
@@ -603,4 +605,4 @@ finally:
     note("ESDE_INSTALLATION_AND_SSH=UNCHANGED")
     shutil.rmtree(WORK, ignore_errors=True)
 sys.exit(0 if RESULT in ("SHIFT_PATH_HIT_IN_HUNG_SHADER",
-                          "NO_SHIFT_PATH_HIT_IN_HUNG_SHADER") else 1)
+                          "SHIFT_PATH_NOT_USED") else 1)
