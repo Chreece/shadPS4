@@ -705,7 +705,16 @@ void Visit(Info& info, const IR::Inst& inst) {
         fail('Repeated alias patch failed to refuse duplicate instrumentation')
     if SRC.is_dir() and (SRC/BUFFER_CACHE).is_file():
         make_alias_patch((SRC/BUFFER_CACHE).read_text())
-    note('SELF_TEST=PASS: F64 + bundled SRT/GDS patch + alias diagnostic; video trace guarded by source anchors')
+    if SRC.is_dir() and (SRC/TEXTURE_CACHE).is_file() and (SRC/DRIVER).is_file():
+        if file_sha(SRC/TEXTURE_CACHE) != EXPECTED_TEXTURE_SOURCE_SHA256:
+            fail('Self-test: texture cache checksum differs from reviewed baseline')
+        test_texture,test_driver=video_patch((SRC/TEXTURE_CACHE).read_text(),
+                                             (SRC/DRIVER).read_text())
+        assert test_texture.count('image.info.guest_address != address') >= 1
+        assert test_driver.count('GOW_VO_PRESENT_BEGIN') == 1
+        assert test_driver.count('GOW_VO_PRESENT_END') == 1
+        assert test_driver.count('GOW_VO_SUBMIT') == 1
+    note('SELF_TEST=PASS: F64/SRT/GDS + alias + exact-address lookup + video flip patch anchors')
 
 def main():
     global RESULT,PHASE
