@@ -1,0 +1,48 @@
+{
+  "binary": "integrated Linux Release candidate (Clang 19, CPU-ID translation enabled)",
+  "binary_sha256": "9e8a3ca5be0bf8680aaeb6dc4df83b24285670a95991fe7e5ed0e2fc2bf6120d",
+  "tests": [
+    {
+      "mode": "native",
+      "case": "profile",
+      "returncode": 0,
+      "cpuid_rows": 1176,
+      "static_generated_match": true,
+      "cache_records_match_ps4": true
+    },
+    {
+      "mode": "native",
+      "case": "reciprocal",
+      "returncode": 0,
+      "rows": 121856,
+      "result_differences": 0,
+      "state_errors": 0,
+      "reference_consoles": [
+        "PS4 FAT",
+        "PS4 Pro"
+      ]
+    },
+    {
+      "mode": "translated",
+      "case": "profile",
+      "returncode": 0,
+      "cpuid_rows": 1176,
+      "static_generated_match": true,
+      "cache_records_match_ps4": true
+    },
+    {
+      "mode": "translated",
+      "case": "reciprocal",
+      "returncode": 0,
+      "rows": 121856,
+      "result_differences": 0,
+      "state_errors": 0,
+      "reference_consoles": [
+        "PS4 FAT",
+        "PS4 Pro"
+      ]
+    }
+  ],
+  "source_hashes": "source-checks.json: cpu-hardware-auto entries",
+  "scope": "Integrated candidate, not isolated per-PR binaries; no game rerun in this round"
+}

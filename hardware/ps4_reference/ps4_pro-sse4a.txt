@@ -1,0 +1,97 @@
+SSE4A_HARDWARE_BEGIN format=1
+CPU vendor=AuthenticAMD signature=00740f30 hypervisor=0
+CPU brand=DG1501SML87LB                                  
+RAW case=extrq_reg length=0 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876543210 defined_ok=1
+RAW case=extrq_reg length=1 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000000 defined_ok=1
+RAW case=extrq_reg length=1 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000000 defined_ok=1
+RAW case=extrq_reg length=1 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000000 defined_ok=1
+RAW case=extrq_reg length=1 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000000 defined_ok=1
+RAW case=extrq_reg length=1 index=63 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000001 defined_ok=1
+RAW case=extrq_reg length=8 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000010 defined_ok=1
+RAW case=extrq_reg length=8 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000008 defined_ok=1
+RAW case=extrq_reg length=8 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000032 defined_ok=1
+RAW case=extrq_reg length=8 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000098 defined_ok=1
+RAW case=extrq_reg length=16 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000003210 defined_ok=1
+RAW case=extrq_reg length=16 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000001908 defined_ok=1
+RAW case=extrq_reg length=16 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000005432 defined_ok=1
+RAW case=extrq_reg length=16 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=000000000000ba98 defined_ok=1
+RAW case=extrq_reg length=32 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000076543210 defined_ok=1
+RAW case=extrq_reg length=32 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=000000003b2a1908 defined_ok=1
+RAW case=extrq_reg length=32 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000098765432 defined_ok=1
+RAW case=extrq_reg length=32 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=00000000fedcba98 defined_ok=1
+RAW case=extrq_reg length=63 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=7edcba9876543210 defined_ok=1
+RAW case=extrq_reg length=63 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=7f6e5d4c3b2a1908 defined_ok=1
+CASE name=extrq_reg samples=20 xmm_127_64_zero=20 ymm_255_128_preserved=20 ymm_255_128_zero=0
+RAW case=extrq_imm length=16 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000005432 defined_ok=1
+CASE name=extrq_imm samples=1 xmm_127_64_zero=1 ymm_255_128_preserved=1 ymm_255_128_zero=0
+RAW case=insertq_reg length=0 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=8765432101234567 defined_ok=1
+RAW case=insertq_reg length=1 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876543211 defined_ok=1
+RAW case=insertq_reg length=1 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876543212 defined_ok=1
+RAW case=insertq_reg length=1 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876543310 defined_ok=1
+RAW case=insertq_reg length=1 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9976543210 defined_ok=1
+RAW case=insertq_reg length=1 index=63 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876543210 defined_ok=1
+RAW case=insertq_reg length=8 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876543267 defined_ok=1
+RAW case=insertq_reg length=8 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba98765432ce defined_ok=1
+RAW case=insertq_reg length=8 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876546710 defined_ok=1
+RAW case=insertq_reg length=8 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba6776543210 defined_ok=1
+RAW case=insertq_reg length=16 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876544567 defined_ok=1
+RAW case=insertq_reg length=16 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876548ace defined_ok=1
+RAW case=insertq_reg length=16 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876456710 defined_ok=1
+RAW case=insertq_reg length=16 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedc456776543210 defined_ok=1
+RAW case=insertq_reg length=32 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9801234567 defined_ok=1
+RAW case=insertq_reg length=32 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9802468ace defined_ok=1
+RAW case=insertq_reg length=32 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba0123456710 defined_ok=1
+RAW case=insertq_reg length=32 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0123456776543210 defined_ok=1
+RAW case=insertq_reg length=63 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=8765432101234567 defined_ok=1
+RAW case=insertq_reg length=63 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0eca864202468ace defined_ok=1
+CASE name=insertq_reg samples=20 xmm_127_64_zero=20 ymm_255_128_preserved=20 ymm_255_128_zero=0
+RAW case=insertq_imm length=16 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876456710 defined_ok=1
+CASE name=insertq_imm samples=1 xmm_127_64_zero=1 ymm_255_128_preserved=1 ymm_255_128_zero=0
+RAW case=extrq_high length=0 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876543210 defined_ok=1
+RAW case=extrq_high length=1 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000000 defined_ok=1
+RAW case=extrq_high length=1 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000000 defined_ok=1
+RAW case=extrq_high length=1 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000000 defined_ok=1
+RAW case=extrq_high length=1 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000000 defined_ok=1
+RAW case=extrq_high length=1 index=63 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000001 defined_ok=1
+RAW case=extrq_high length=8 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000010 defined_ok=1
+RAW case=extrq_high length=8 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000008 defined_ok=1
+RAW case=extrq_high length=8 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000032 defined_ok=1
+RAW case=extrq_high length=8 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000000098 defined_ok=1
+RAW case=extrq_high length=16 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000003210 defined_ok=1
+RAW case=extrq_high length=16 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000001908 defined_ok=1
+RAW case=extrq_high length=16 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000005432 defined_ok=1
+RAW case=extrq_high length=16 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=000000000000ba98 defined_ok=1
+RAW case=extrq_high length=32 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000076543210 defined_ok=1
+RAW case=extrq_high length=32 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=000000003b2a1908 defined_ok=1
+RAW case=extrq_high length=32 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000098765432 defined_ok=1
+RAW case=extrq_high length=32 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=00000000fedcba98 defined_ok=1
+RAW case=extrq_high length=63 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=7edcba9876543210 defined_ok=1
+RAW case=extrq_high length=63 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=7f6e5d4c3b2a1908 defined_ok=1
+CASE name=extrq_high samples=20 xmm_127_64_zero=20 ymm_255_128_preserved=20 ymm_255_128_zero=0
+RAW case=extrq_imm_high length=16 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0000000000005432 defined_ok=1
+CASE name=extrq_imm_high samples=1 xmm_127_64_zero=1 ymm_255_128_preserved=1 ymm_255_128_zero=0
+RAW case=insertq_high length=0 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=8765432101234567 defined_ok=1
+RAW case=insertq_high length=1 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876543211 defined_ok=1
+RAW case=insertq_high length=1 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876543212 defined_ok=1
+RAW case=insertq_high length=1 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876543310 defined_ok=1
+RAW case=insertq_high length=1 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9976543210 defined_ok=1
+RAW case=insertq_high length=1 index=63 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876543210 defined_ok=1
+RAW case=insertq_high length=8 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876543267 defined_ok=1
+RAW case=insertq_high length=8 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba98765432ce defined_ok=1
+RAW case=insertq_high length=8 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876546710 defined_ok=1
+RAW case=insertq_high length=8 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba6776543210 defined_ok=1
+RAW case=insertq_high length=16 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876544567 defined_ok=1
+RAW case=insertq_high length=16 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876548ace defined_ok=1
+RAW case=insertq_high length=16 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876456710 defined_ok=1
+RAW case=insertq_high length=16 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedc456776543210 defined_ok=1
+RAW case=insertq_high length=32 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9801234567 defined_ok=1
+RAW case=insertq_high length=32 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9802468ace defined_ok=1
+RAW case=insertq_high length=32 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba0123456710 defined_ok=1
+RAW case=insertq_high length=32 index=32 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0123456776543210 defined_ok=1
+RAW case=insertq_high length=63 index=0 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=8765432101234567 defined_ok=1
+RAW case=insertq_high length=63 index=1 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=0eca864202468ace defined_ok=1
+CASE name=insertq_high samples=20 xmm_127_64_zero=20 ymm_255_128_preserved=20 ymm_255_128_zero=0
+RAW case=insertq_imm_high length=16 index=8 dst_255_192=abcdefabcdefabcd dst_191_128=1234432112344321 dst_127_64=0000000000000000 dst_63_0=fedcba9876456710 defined_ok=1
+CASE name=insertq_imm_high samples=1 xmm_127_64_zero=1 ymm_255_128_preserved=1 ymm_255_128_zero=0
+NATIVE_END checks=84 defined_state_failures=0
+SSE4A_HARDWARE_END result=0

@@ -1,0 +1,294 @@
+{
+  "tests": [
+    {
+      "mode": "native",
+      "mask": "full",
+      "case": "cpu-id",
+      "returncode": 0,
+      "results": [
+        "CPU_ID_STATE_RESULT failures=0 samples=1728",
+        "CPU_ID_SIGNAL_RESULT failures=0 handled=32",
+        "AFFINITY_DYNAMIC_RESULT failures=0 samples=309455 workers=7"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "full",
+      "case": "affinity",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_RESULT failures=0 samples=337000"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "full",
+      "case": "signals",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_SIGNAL_RESULT failures=0 handled=2048 samples=5342078"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "four",
+      "case": "cpu-id",
+      "returncode": 0,
+      "results": [
+        "CPU_ID_STATE_RESULT failures=0 samples=1728",
+        "CPU_ID_SIGNAL_RESULT failures=0 handled=32",
+        "AFFINITY_DYNAMIC_RESULT failures=0 samples=151983 workers=7"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "four",
+      "case": "affinity",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_RESULT failures=0 samples=337000"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "four",
+      "case": "signals",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_SIGNAL_RESULT failures=0 handled=2048 samples=5209221"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "two",
+      "case": "cpu-id",
+      "returncode": 0,
+      "results": [
+        "CPU_ID_STATE_RESULT failures=0 samples=1728",
+        "CPU_ID_SIGNAL_RESULT failures=0 handled=32",
+        "AFFINITY_DYNAMIC_RESULT failures=0 samples=77212 workers=7"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "two",
+      "case": "affinity",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_RESULT failures=0 samples=337000"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "two",
+      "case": "signals",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_SIGNAL_RESULT failures=0 handled=2048 samples=4835848"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "one",
+      "case": "cpu-id",
+      "returncode": 0,
+      "results": [
+        "CPU_ID_STATE_RESULT failures=0 samples=1728",
+        "CPU_ID_SIGNAL_RESULT failures=0 handled=32",
+        "AFFINITY_DYNAMIC_RESULT failures=0 samples=55357 workers=7"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "one",
+      "case": "affinity",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_RESULT failures=0 samples=337000"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "one",
+      "case": "signals",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_SIGNAL_RESULT failures=0 handled=2048 samples=4799540"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "sparse",
+      "case": "cpu-id",
+      "returncode": 0,
+      "results": [
+        "CPU_ID_STATE_RESULT failures=0 samples=1728",
+        "CPU_ID_SIGNAL_RESULT failures=0 handled=32",
+        "AFFINITY_DYNAMIC_RESULT failures=0 samples=103660 workers=7"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "sparse",
+      "case": "affinity",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_RESULT failures=0 samples=337000"
+      ]
+    },
+    {
+      "mode": "native",
+      "mask": "sparse",
+      "case": "signals",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_SIGNAL_RESULT failures=0 handled=2048 samples=5435047"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "full",
+      "case": "cpu-id",
+      "returncode": 0,
+      "results": [
+        "CPU_ID_STATE_RESULT failures=0 samples=1728",
+        "CPU_ID_SIGNAL_RESULT failures=0 handled=32",
+        "AFFINITY_DYNAMIC_RESULT failures=0 samples=959431 workers=7"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "full",
+      "case": "affinity",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_RESULT failures=0 samples=337000"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "full",
+      "case": "signals",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_SIGNAL_RESULT failures=0 handled=2048 samples=4725651"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "four",
+      "case": "cpu-id",
+      "returncode": 0,
+      "results": [
+        "CPU_ID_STATE_RESULT failures=0 samples=1728",
+        "CPU_ID_SIGNAL_RESULT failures=0 handled=32",
+        "AFFINITY_DYNAMIC_RESULT failures=0 samples=529927 workers=7"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "four",
+      "case": "affinity",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_RESULT failures=0 samples=337000"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "four",
+      "case": "signals",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_SIGNAL_RESULT failures=0 handled=2048 samples=4215161"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "two",
+      "case": "cpu-id",
+      "returncode": 0,
+      "results": [
+        "CPU_ID_STATE_RESULT failures=0 samples=1728",
+        "CPU_ID_SIGNAL_RESULT failures=0 handled=32",
+        "AFFINITY_DYNAMIC_RESULT failures=0 samples=261761 workers=7"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "two",
+      "case": "affinity",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_RESULT failures=0 samples=337000"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "two",
+      "case": "signals",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_SIGNAL_RESULT failures=0 handled=2048 samples=3189600"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "one",
+      "case": "cpu-id",
+      "returncode": 0,
+      "results": [
+        "CPU_ID_STATE_RESULT failures=0 samples=1728",
+        "CPU_ID_SIGNAL_RESULT failures=0 handled=32",
+        "AFFINITY_DYNAMIC_RESULT failures=0 samples=185868 workers=7"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "one",
+      "case": "affinity",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_RESULT failures=0 samples=337000"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "one",
+      "case": "signals",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_SIGNAL_RESULT failures=0 handled=2048 samples=3939727"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "sparse",
+      "case": "cpu-id",
+      "returncode": 0,
+      "results": [
+        "CPU_ID_STATE_RESULT failures=0 samples=1728",
+        "CPU_ID_SIGNAL_RESULT failures=0 handled=32",
+        "AFFINITY_DYNAMIC_RESULT failures=0 samples=375792 workers=7"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "sparse",
+      "case": "affinity",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_RESULT failures=0 samples=337000"
+      ]
+    },
+    {
+      "mode": "translated",
+      "mask": "sparse",
+      "case": "signals",
+      "returncode": 0,
+      "results": [
+        "AFFINITY_SIGNAL_RESULT failures=0 handled=2048 samples=4803339"
+      ]
+    }
+  ]
+}

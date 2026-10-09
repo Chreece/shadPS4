@@ -4,13 +4,15 @@
 
 import argparse
 from collections import Counter
+import gzip
 from pathlib import Path
 
 
 def read(path):
     rows = []
     end = None
-    for line in path.read_text().splitlines():
+    text = gzip.decompress(path.read_bytes()).decode() if path.suffix == ".gz" else path.read_text()
+    for line in text.splitlines():
         if line.startswith("RAW "):
             rows.append(dict(item.split("=", 1) for item in line.split()[1:]))
         elif line.startswith("RECIPROCAL_END "):
@@ -24,6 +26,7 @@ def main():
     parser = argparse.ArgumentParser(description="Compare PS4 reciprocal observations")
     parser.add_argument("reference", type=Path)
     parser.add_argument("candidate", type=Path)
+    parser.add_argument("--require-match", action="store_true")
     args = parser.parse_args()
     reference, reference_end = read(args.reference)
     candidate, candidate_end = read(args.candidate)
@@ -39,6 +42,10 @@ def main():
     for op in numerical:
         print(f"{op}: result_differences={numerical[op]} state_differences={state[op]}")
     print("Differences are observations; only a physical PS4 run is a Jaguar reference.")
+    if args.require_match:
+        raise SystemExit(bool(sum(numerical.values()) or sum(state.values()) or
+                              int(reference_end["state_errors"]) or
+                              int(candidate_end["state_errors"])))
 
 
 if __name__ == "__main__":

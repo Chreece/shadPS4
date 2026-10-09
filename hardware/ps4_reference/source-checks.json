@@ -1,0 +1,56 @@
+{
+  "cpuid": [
+    {
+      "branch": "cpu-hardware-id",
+      "compiler": "clang++-19",
+      "checks": 1056
+    },
+    {
+      "branch": "cpu-hardware-id",
+      "compiler": "g++",
+      "checks": 1056
+    },
+    {
+      "branch": "cpu-hardware-jaguar",
+      "compiler": "clang++-19",
+      "checks": 1056
+    },
+    {
+      "branch": "cpu-hardware-jaguar",
+      "compiler": "g++",
+      "checks": 1056
+    },
+    {
+      "branch": "cpu-hardware-auto",
+      "compiler": "clang++-19",
+      "checks": 1056
+    },
+    {
+      "branch": "cpu-hardware-auto",
+      "compiler": "g++",
+      "checks": 1056
+    }
+  ],
+  "reciprocal_generator": {
+    "rows": 121856,
+    "ps4_result_differences": 0,
+    "ps4_pro_result_differences": 0,
+    "state_errors": 0,
+    "guard_page_scalar_loads": 4
+  },
+  "sources": {
+    "cpu-hardware-id/src/core/cpu_id.cpp": "154f09f9bb40da29c88835360ff6b37089453d1b959b92c979fa9579ee8d4262",
+    "cpu-hardware-id/src/core/cpu_affinity.cpp": "6055dce77514fce991da1d4288ae5802fbdead5335dfce74feeb2b77008b7b62",
+    "cpu-hardware-id/src/core/cpu_affinity.h": "589d8ae773f078a2ac95d3201c1b0197aecfa85a4359c212467d5cde38135945",
+    "cpu-hardware-id/src/core/cpu_patches.cpp": "47c82bc8f4f3fa2245b3eb0094bde1bec51470eb11581af8ac1c0716bbe6e5bd",
+    "cpu-hardware-jaguar/src/core/cpu_id.cpp": "272549eac52fdfde6b0f9427acd87f8263221a6911cda6c5a20b9e5117c2dc61",
+    "cpu-hardware-jaguar/src/core/cpu_affinity.cpp": "6055dce77514fce991da1d4288ae5802fbdead5335dfce74feeb2b77008b7b62",
+    "cpu-hardware-jaguar/src/core/cpu_affinity.h": "589d8ae773f078a2ac95d3201c1b0197aecfa85a4359c212467d5cde38135945",
+    "cpu-hardware-jaguar/src/core/cpu_patches.cpp": "553de5682e840e4d83d636c4bba8678a5b36cc515ae65b3929359c2e3497c79c",
+    "cpu-hardware-auto/src/core/cpu_id.cpp": "272549eac52fdfde6b0f9427acd87f8263221a6911cda6c5a20b9e5117c2dc61",
+    "cpu-hardware-auto/src/core/cpu_affinity.cpp": "6055dce77514fce991da1d4288ae5802fbdead5335dfce74feeb2b77008b7b62",
+    "cpu-hardware-auto/src/core/cpu_affinity.h": "589d8ae773f078a2ac95d3201c1b0197aecfa85a4359c212467d5cde38135945",
+    "cpu-hardware-auto/src/core/cpu_patches.cpp": "030f350896d71871a0b29b2c1c4357fd33cf2638ccb8aff2adc0c703f5350571",
+    "cpu-hardware-reciprocal/src/core/cpu_patches.cpp": "0c19200202e6b49971eb604e13900d92b55221e4996b1eb51c91d2e981ea481e"
+  }
+}

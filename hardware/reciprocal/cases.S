@@ -6,10 +6,13 @@
 .global \name
 .type \name, @function
 \name:
+.cfi_startproc
     vmovdqu (%rsi), %ymm0
     vmovdqu (%rdi), %ymm1
     pushfq
+.cfi_adjust_cfa_offset 8
     popq %r8
+.cfi_adjust_cfa_offset -8
     movq %r8, 40(%rdx)
 .if \memory
   .if \vex
@@ -25,12 +28,15 @@
     \op %xmm1, %xmm0
 .endif
     pushfq
+.cfi_adjust_cfa_offset 8
     popq %r8
+.cfi_adjust_cfa_offset -8
     movq %r8, 48(%rdx)
     vmovdqu %ymm0, (%rdx)
     stmxcsr 32(%rdx)
     vzeroupper
     ret
+.cfi_endproc
 .size \name, .-\name
 .endm
 

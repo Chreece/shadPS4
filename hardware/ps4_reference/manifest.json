@@ -1,0 +1,43 @@
+{
+  "format": 1,
+  "consoles": [
+    {
+      "name": "ps4",
+      "model": "CUH-1216A PS4 FAT",
+      "firmware": "13.52",
+      "files": {
+        "ps4-cpu-profile.txt": {
+          "sha256": "f21a599219fdfa16294727e9d2e4a9639f5bad2ec90f3fdf7dfc62ad8233fad9",
+          "uncompressed_sha256": "f21a599219fdfa16294727e9d2e4a9639f5bad2ec90f3fdf7dfc62ad8233fad9"
+        },
+        "ps4-sse4a.txt": {
+          "sha256": "d43fe8118bd7e36663ea2c77069b7944e1dfa92b670b2bab3eba5b6b76d2d91c",
+          "uncompressed_sha256": "d43fe8118bd7e36663ea2c77069b7944e1dfa92b670b2bab3eba5b6b76d2d91c"
+        },
+        "ps4-reciprocal.txt.gz": {
+          "sha256": "c872a04c75694c859919cbbc1dd4696cb8d238e5daaa724fd8e8173c35559339",
+          "uncompressed_sha256": "e2edbfcbd7a5dfd209cdfb0ae292182caac6c958da3d1a33f8badd5b84d2fa6c"
+        }
+      }
+    },
+    {
+      "name": "ps4_pro",
+      "model": "PS4 Pro (model number not supplied)",
+      "firmware": "HEN 13.02 (displayed)",
+      "files": {
+        "ps4_pro-cpu-profile.txt": {
+          "sha256": "3d95f65aea16567b8d80811c05868881d55e51dc26bf21f3df771db4c00c8d25",
+          "uncompressed_sha256": "3d95f65aea16567b8d80811c05868881d55e51dc26bf21f3df771db4c00c8d25"
+        },
+        "ps4_pro-sse4a.txt": {
+          "sha256": "d375d8e718c897c59caee653d88ab28263d2d5fd947093db4821c5d8192e3a35",
+          "uncompressed_sha256": "d375d8e718c897c59caee653d88ab28263d2d5fd947093db4821c5d8192e3a35"
+        },
+        "ps4_pro-reciprocal.txt.gz": {
+          "sha256": "65269ac711a68c2c46b22166ba02d9dc4a1e6c3cac057ea949cc0103f2ea3e15",
+          "uncompressed_sha256": "5760b65f59866e64acf8b39271966ba71ab14c766bea83f8173c4432e4ca2599"
+        }
+      }
+    }
+  ]
+}
