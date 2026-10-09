@@ -529,6 +529,9 @@ def test_candidate():
                 say("UNKNOWN_PROCESS_IDENTITY_REFUSE_SIGNAL="+str(p.pid))
     payload=log.read_text(errors="replace")
     report=classify(payload,p.returncode)
+    if not report["guest_flip_trace_samples"]:
+        say("GHOST_TRACE_NOT_FOUND: compilation marker present but no runtime sample")
+        detected="no_guest_flip_trace_emitted"
     report["test_stop_reason"]=detected
     (WORK/"runtime-analysis.json").write_text(json.dumps(report,indent=2)+"\n")
     GAME_STATUS=detected
@@ -623,6 +626,7 @@ def main():
             "source_restored": SOURCE_RESTORED,
             "source_sha256_after": digest(FILE),
             "source_expected_sha256": EXPECTED_SOURCE,
+            "restored_all_three_source_files": SOURCE_RESTORED,
             "baseline_ghost_sha256_before": BASE_BEFORE,
             "baseline_ghost_sha256_after": digest(BASE_BIN),
             "other_shadps4_sha256_before": SHARED_BEFORE,
@@ -638,14 +642,16 @@ def main():
                 (WORK / "build-log-tail.txt").write_bytes(f.read())
         with tarfile.open(OUT, "w:gz") as archive:
             for child in sorted(WORK.iterdir()):
-                if child.name in ("original-vk-runtime.cpp.backup", "build.log", "__pycache__",
+                if child.name in ("original", "original-vk-runtime.cpp.backup", "build.log",
+                                  "__pycache__", "ghost-instrument-trace.py",
                                   *[x[0] for x in PATCHERS]):
                     continue
                 archive.add(child, arcname=child.name)
         say("ARCHIVE_READY=" + str(OUT))
         say("UPLOAD_THIS_FILE=" + str(OUT))
         say("SSH_SESSION=REMAINS_OPEN")
-    return 0 if ERROR is None else 1
+    return 0 if ERROR is None and GAME_STATUS not in ("no_guest_flip_trace_emitted",
+                                                       "not_started") else 1
 
 if __name__ == "__main__":
     raise SystemExit(main())
