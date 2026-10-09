@@ -39,7 +39,7 @@ LAUNCHER = HOME / ".local/bin/shadps4-esde"
 BINARY = HOME / "Applications/shadps4/shadps4"
 STATE = HOME / ".local/state/shadps4-playtest-logs"
 BASE_SHA = "f54245b0cf835995172a910c4e3a16cb13aef6c36a39fa5a8be53f3190183e4f"
-TRIAL_REV = "2cdd395ab44e527d55a1f51959cbdde0c64e89ac"
+TRIAL_REV = "701eca78fa47f7fbc0539751b6c2e4feece189d6"
 TRIAL_FILE = "ghost-no-gdb-null-validation-onerun.py"
 DISPLAY = ":0"
 READY = "READY - LAUNCH GHOST OF TSUSHIMA THROUGH MOONLIGHT -> ES-DE NOW."
@@ -665,7 +665,7 @@ def orchestrate() -> None:
     global CHILD_PROC, CHILD_RC, READER_THREAD, SCREEN_ENV, TEST_STATUS
     WORK.mkdir(parents=True, exist_ok=True)
     SCREEN_DIR.mkdir(exist_ok=True)
-    say("NULL IMAGE DESCRIPTOR A/B: temporary build -> auto-launch -> screenshots + validation -> full rollback -> one archive")
+    say("GHOST SAFE IMAGE BINDINGS v3 A/B: temporary build -> auto-launch -> screenshots + validation -> rollback -> archive")
     say("NO_GDB_HARDWARE_WATCHPOINT=1; no debugger attaches during this test")
     # Fail closed BEFORE compiling or changing configs when the automatic
     # launch cannot access the same guarded X11 session and game used before.
