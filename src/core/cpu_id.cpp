@@ -19,18 +19,6 @@
 #include "core/emulator_settings.h"
 #include "core/libraries/kernel/threads/pthread.h"
 
-#ifdef ENABLE_CPU_ID_TRANSLATION
-extern "C" __attribute__((noinline, visibility("default"))) int ShadCpuIdTranslationActive() {
-    volatile int active = 0;
-    return active;
-}
-
-extern "C" __attribute__((noinline, visibility("default"))) void ShadCpuIdTranslationRange(
-    uintptr_t begin, uintptr_t end) {
-    asm volatile("" : : "r"(begin), "r"(end) : "memory");
-}
-#endif
-
 namespace Core {
 namespace {
 
@@ -390,15 +378,6 @@ void InitializeCpuId() {
 }
 
 void EnableCpuIdFaulting() {
-#ifdef ENABLE_CPU_ID_TRANSLATION
-    if (ShadCpuIdTranslationActive()) {
-        static std::atomic announced{false};
-        if (!announced.exchange(true)) {
-            LOG_INFO(Core, "CPU identity translation active");
-        }
-        return;
-    }
-#endif
     if (prctl(PR_SET_TSC, PR_TSC_SIGSEGV) != 0) {
         static std::atomic warned{false};
         if (!warned.exchange(true)) {
@@ -416,9 +395,6 @@ void EnableCpuIdFaulting() {
 void SetCpuIdGuestAddressRange(uintptr_t begin, uintptr_t end) {
     guest_begin.store(begin, std::memory_order_relaxed);
     guest_end.store(end, std::memory_order_relaxed);
-#ifdef ENABLE_CPU_ID_TRANSLATION
-    ShadCpuIdTranslationRange(begin, end);
-#endif
 }
 
 } // namespace Core
