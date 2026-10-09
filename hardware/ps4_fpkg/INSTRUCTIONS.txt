@@ -1,7 +1,11 @@
 SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
 SPDX-License-Identifier: GPL-2.0-or-later
 
-PS4 CPU hardware tests - ready-to-install FPKGs
+PS4 CPU hardware tests - FPKG packaging revision 2
+
+Replaces ps4-cpu-tests-all-fpkg.zip. This revision corrects the SSE4a title ID
+and the version field formatting in all three packages. The probe code and
+output paths are unchanged. Installation on a physical PS4 still needs retesting.
 
 For a PS4 already configured to run homebrew FPKGs. No SDK, compiler, PC script,
 game files, or manual packaging is needed by testers.
@@ -17,9 +21,10 @@ game files, or manual packaging is needed by testers.
      /data/cpu-profile.txt
      /data/reciprocal-hardware.txt
 4. Send the text files, your PS4 model (original/Slim/Pro), and firmware version.
-   If a test fails to start or crashes, include the error code or a photo instead.
+   If a test fails, include its name, the error code or a photo, and whether it
+   happened while installing or launching the app.
 
-SSE4a hardware probe (SSE400002)
+SSE4a hardware probe (SSEA00002)
 Records the actual EXTRQ/INSERTQ destination register bits for all 84 cases.
 It observes undefined upper bits without treating their values as a failure.
 A full successful run has 84 RAW lines, 8 CASE lines, and:

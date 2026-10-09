@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import struct
 import subprocess
@@ -18,7 +19,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 HARDWARE = ROOT.parent
 TESTS = (
-    ("sse4a", "SSE400002", "SSE4a hardware probe", "SSE4AHARDWARE000", "console.bin",
+    ("sse4a", "SSEA00002", "SSE4a hardware probe", "SSE4AHARDWARE000", "console.bin",
      ("native_probe.cpp", "cases.S", "Makefile", "musl-COPYRIGHT")),
     ("cpu_profile", "CPUP00001", "CPU profile readout", "CPUPROFILE000000", "eboot.bin",
      ("main.cpp", "Makefile", "musl-COPYRIGHT")),
@@ -31,12 +32,25 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def validate_identity(title_id, content_id, version):
+    if not re.fullmatch(r"[A-Z]{4}[0-9]{5}", title_id):
+        raise ValueError("Invalid title ID: " + title_id)
+    if not re.fullmatch(r"[A-Z]{2}[0-9]{4}-[A-Z]{4}[0-9]{5}_00-[A-Z0-9]{16}", content_id):
+        raise ValueError("Invalid content ID: " + content_id)
+    if content_id[7:16] != title_id:
+        raise ValueError("Content ID and title ID disagree")
+    if not re.fullmatch(r"[0-9]{2}\.[0-9]{2}", version):
+        raise ValueError("Invalid application version: " + version)
+
+
 def sfo(title_id, title, content_id):
+    version = "01.00"
+    validate_identity(title_id, content_id, version)
     values = {
-        "APP_TYPE": (1, 4), "APP_VER": ("1.00", 8), "ATTRIBUTE": (0, 4),
+        "APP_TYPE": (1, 4), "APP_VER": (version, 8), "ATTRIBUTE": (0, 4),
         "CATEGORY": ("gd", 4), "CONTENT_ID": (content_id, 48),
         "DOWNLOAD_DATA_SIZE": (0, 4), "SYSTEM_VER": (0, 4),
-        "TITLE": (title, 128), "TITLE_ID": (title_id, 12), "VERSION": ("1.00", 8),
+        "TITLE": (title, 128), "TITLE_ID": (title_id, 12), "VERSION": (version, 8),
     }
     keys, data, entries = bytearray(), bytearray(), bytearray()
     for key, (value, capacity) in sorted(values.items()):
@@ -98,8 +112,7 @@ def main():
             if args.only and directory != args.only:
                 continue
             content_id = f"IV0000-{title_id}_00-{suffix}"
-            if len(content_id) != 36:
-                raise ValueError("Invalid content ID: " + content_id)
+            validate_identity(title_id, content_id, "01.00")
             test_source = source / "hardware" / directory
             test_source.mkdir()
             for name in inputs:
@@ -120,10 +133,17 @@ def main():
                            for p in package_root.rglob("*") if p.is_file())
             run([sdk / "bin/linux/create-gp4", "-out", "package.gp4",
                  "--content-id=" + content_id, "--files", " ".join(files)], package_root, env)
-            run([pkgtool, "pkg_build", "package.gp4", bundle], package_root, env)
+            build_log = run([pkgtool, "pkg_build", "package.gp4", bundle], package_root, env)
+            if "WARNING" in build_log or "ERROR" in build_log:
+                raise RuntimeError("Package build reported a metadata issue")
+            (bundle / (title_id + "-build.txt")).write_text(build_log)
             package = bundle / (content_id + ".pkg")
-            if package.read_bytes()[:4] != b"\x7fCNT":
+            with package.open("rb") as stream:
+                header = stream.read(0x70)
+            if header[:4] != b"\x7fCNT":
                 raise RuntimeError("Not a PS4 package: " + str(package))
+            if header[0x40:0x70] != content_id.encode() + bytes(48 - len(content_id)):
+                raise RuntimeError("Package header content ID mismatch")
             validation = run([pkgtool, "pkg_validate", "--verbose", package], work, env)
             if "[ERROR]" in validation or "[OK]" not in validation:
                 raise RuntimeError("Package validation failed: " + package.name)
@@ -137,6 +157,7 @@ def main():
                     raise RuntimeError("FPKG round-trip mismatch: " + name)
                 hashes[name] = digest(original)
             manifest["tests"].append({"title_id": title_id, "title": title,
+                                      "content_id": content_id, "version": "01.00",
                                       "package": package.name, "sha256": digest(package),
                                       "size": package.stat().st_size, "round_trip": True,
                                       "files": hashes})
@@ -147,7 +168,8 @@ def main():
         (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
         (bundle / "SHA256SUMS.txt").write_text("".join(
             f"{item['sha256']}  {item['package']}\n" for item in manifest["tests"]))
-        name = f"ps4-{args.only}-hardware-test.zip" if args.only else "ps4-cpu-hardware-tests-fpkg.zip"
+        name = (f"ps4-{args.only}-hardware-test-v2.zip" if args.only
+                else "ps4-cpu-tests-all-fpkg-v2.zip")
         output = destination / name
         with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
             for path in sorted(bundle.rglob("*")):
