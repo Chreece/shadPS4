@@ -166,6 +166,14 @@ with open(out/'emulator-stdout.log','wb') as log:
             pass
         p.wait()
 
+# Bound archived console output even when the game logs heavily.
+stdout_log = out/'emulator-stdout.log'
+if stdout_log.stat().st_size > 2_000_000:
+    with stdout_log.open('rb') as f:
+        f.seek(-2_000_000, os.SEEK_END)
+        last = f.read(2_000_000)
+    stdout_log.write_bytes(last)
+
 elapsed = round(time.monotonic() - start, 1)
 (out/'playtest-result.txt').write_text(
     f'GAME=CUSA34384\nCPU_ID_MODE=auto\n'
