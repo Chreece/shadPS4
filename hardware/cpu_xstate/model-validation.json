@@ -1,0 +1,61 @@
+{
+  "commit": "c61955b6ef91a9d76e9d558b1d1f2c837919ed9b",
+  "tree": "099d2c5f4c43a3df0e3dcbfd5dd933a786e9c8d7",
+  "method": "Offline replay through the production interpreter source via a C ABI test bridge. This is not instruction execution inside shadPS4.",
+  "physical_reference": "ps4_reference/cpu-xstate-hardware.txt",
+  "source_sha256": {
+    "src/core/guest_xstate.cpp": "73be750e369085939ce9e8aa662474ac53c18c0dd15e266983b5ee25e1c6c789",
+    "src/core/guest_xstate.h": "ade4af5d43ef604a3e99c6e69aa3d9b2b1929471672f4626f0eddaee425ccc0b"
+  },
+  "results": {
+    "clang": {
+      "rows": 224,
+      "save_area_byte_comparisons": 160,
+      "capture_sha256": "6d4353fdb5d1abe20c53d72e6e5680992fc692429ddfe31a7ca3b02e81d907de",
+      "additional_checks": {
+        "boundary_and_addressing": 217,
+        "decoder_smoke": 4096
+      },
+      "game_execution_enabled": false,
+      "in_use_tracking": "Provided by caller; replay uses the probe's captured clean/dirty states."
+    },
+    "gcc": {
+      "rows": 224,
+      "save_area_byte_comparisons": 160,
+      "capture_sha256": "6d4353fdb5d1abe20c53d72e6e5680992fc692429ddfe31a7ca3b02e81d907de",
+      "additional_checks": {
+        "boundary_and_addressing": 217,
+        "decoder_smoke": 4096
+      },
+      "game_execution_enabled": false,
+      "in_use_tracking": "Provided by caller; replay uses the probe's captured clean/dirty states."
+    }
+  },
+  "build": "Linux Clang 19 Release; full emulator build passed",
+  "gcc_sanitizer": "GCC 14 -fsanitize=undefined -fno-sanitize-recover=all; no errors",
+  "formatting": "passed",
+  "reuse": "1070 / 1070 production files",
+  "game_execution_enabled": false,
+  "host_cpuid_xsave_layout_changed": false,
+  "notes": [
+    "All 224 physical capture rows replayed, including static and generated source rows; their mode labels do not mean the generated-code runtime is integrated.",
+    "Save-image comparisons are exact for 160 recorded memory images. Register comparisons exclude empty x87 values, pointer metadata and reserved fields.",
+    "Save inputs come from captured unchanged register images; restore inputs and malformed buffers reproduce main.cpp. In-use masks are supplied from the probe clean/dirty setup, not tracked by a running backend."
+  ],
+  "remaining_integration": [
+    "native/generated instruction interception and invalidation",
+    "guest architectural state capture, in-use tracking and host-state restoration",
+    "guest exception delivery at the original instruction",
+    "native handling of guest MXCSR.MM on hosts that lack it"
+  ],
+  "not_hardware_validated": [
+    "pending x87 exception pointer/selector forms",
+    "all fault-order and partial-update combinations",
+    "reserved x87 control-field normalization",
+    "PS4 Pro extended-state behavior"
+  ],
+  "architecture_reference": [
+    "https://www.amd.com/content/dam/amd/en/documents/processor-tech-docs/programmer-references/24593.pdf",
+    "https://www.amd.com/content/dam/amd/en/documents/processor-tech-docs/programmer-references/26569.pdf"
+  ]
+}
