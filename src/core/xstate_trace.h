@@ -34,6 +34,7 @@ private:
 bool IsXstateTraceCopyFault(const ucontext_t& context);
 bool IsXstateTraceActive(const ucontext_t& context);
 void RecoverXstateTraceCopyFault(ucontext_t& context, const siginfo_t& info);
+void RecoverXstateTraceBlock(int signal, siginfo_t& info, ucontext_t& context);
 bool HandleXstateTrace(int& signal, siginfo_t& info, ucontext_t& context);
 
 } // namespace Core

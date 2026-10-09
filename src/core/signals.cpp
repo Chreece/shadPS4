@@ -290,6 +290,7 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
         }
         return;
     }
+    RecoverXstateTraceBlock(sig, *info, native_context);
     if (sig == SIGTRAP && DispatchXstateTrace(*info, native_context)) {
         return;
     }
@@ -314,6 +315,13 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
     auto* code_address = Common::GetRip(raw_context);
 
     Ucontext context{info, reinterpret_cast<ucontext_t*>(raw_context)};
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+    if (IsXstateTraceActive(native_context)) {
+        context.uc_mcontext.mc_trapno = native_context.uc_mcontext.gregs[REG_TRAPNO];
+        context.uc_mcontext.mc_err = native_context.uc_mcontext.gregs[REG_ERR];
+        context.uc_mcontext.mc_rflags = native_context.uc_mcontext.gregs[REG_EFL] & ~0x100;
+    }
+#endif
     Siginfo guest_info{};
     if (info) {
         guest_info = *reinterpret_cast<Siginfo*>(info);

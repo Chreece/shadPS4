@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <Zydis/Zydis.h>
+#include <sys/mman.h>
 #include "common/assert.h"
 #include "core/cpu_id.h"
 #include "core/guest_xstate_linux.h"
@@ -29,6 +30,37 @@ const bool automatic_trace = [] {
     const char* value = std::getenv("SHADPS4_XSTATE_TRACE_AUTO");
     return value && std::strcmp(value, "1") == 0;
 }();
+
+const bool native_blocks = [] {
+    const char* value = std::getenv("SHADPS4_XSTATE_TRACE_BLOCKS");
+    return !value || std::strcmp(value, "0") != 0;
+}();
+
+constexpr size_t CodePageSize = 4096;
+constexpr size_t MaxBlockBytes = 256;
+constexpr size_t MaxBlockInstructions = 32;
+struct NativeBlock {
+    u8* code{};
+    u64 guest_pc{};
+    u64 executable_page{~u64{0}};
+    u64 stepped_pc{};
+    std::array<u16, MaxBlockInstructions + 1> offsets{};
+    size_t count{};
+    size_t size{};
+    bool active{};
+};
+thread_local NativeBlock block;
+
+u64 CodePage(u64 pc) {
+    return pc & ~(CodePageSize - 1);
+}
+
+void ReleaseNativeBlock() {
+    if (block.code) {
+        munmap(block.code, CodePageSize);
+    }
+    block = {};
+}
 
 struct HostCodeRange {
     std::atomic<u64> begin{};
@@ -62,6 +94,11 @@ bool IsGuestInstruction(u64 pc) {
 
 void EnterTrace(greg_t& flags) {
     ASSERT_MSG(trace_depth < previous_trace.size(), "Xstate trace nesting limit exceeded");
+    if (!trace_depth && native_blocks) {
+        void* code = mmap(nullptr, CodePageSize, PROT_READ | PROT_WRITE | PROT_EXEC,
+                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        block.code = code == MAP_FAILED ? nullptr : static_cast<u8*>(code);
+    }
     previous_trace[trace_depth++] = (flags & TrapFlag) != 0;
     flags |= TrapFlag;
 }
@@ -69,6 +106,9 @@ void EnterTrace(greg_t& flags) {
 void LeaveTrace(greg_t& flags) {
     ASSERT_MSG(trace_depth != 0, "Unbalanced xstate trace exit");
     flags = (flags & ~TrapFlag) | (previous_trace[--trace_depth] ? TrapFlag : 0);
+    if (!trace_depth) {
+        ReleaseNativeBlock();
+    }
 }
 
 XstateResult ReadMemory(void*, u64 address, std::span<u8> bytes) {
@@ -82,6 +122,109 @@ XstateResult WriteMemory(void*, u64 address, std::span<const u8> bytes) {
     const auto left = XstateTraceCopy(reinterpret_cast<void*>(address), bytes.data(), bytes.size());
     return left ? XstateResult{XstateFault::PageFault, address + bytes.size() - left, true}
                 : XstateResult{};
+}
+
+bool CanCopyInstruction(const ZydisDecodedInstruction& instruction,
+                        std::span<const ZydisDecodedOperand> operands) {
+    switch (instruction.mnemonic) {
+    case ZYDIS_MNEMONIC_PUSHF:
+    case ZYDIS_MNEMONIC_PUSHFQ:
+    case ZYDIS_MNEMONIC_POPF:
+    case ZYDIS_MNEMONIC_POPFQ:
+        return false;
+    default:
+        break;
+    }
+    if (instruction.attributes & ZYDIS_ATTRIB_IS_PRIVILEGED) {
+        return false;
+    }
+    for (const auto& operand : operands) {
+        if (operand.type == ZYDIS_OPERAND_TYPE_MEMORY &&
+            (operand.mem.base == ZYDIS_REGISTER_RIP || operand.mem.base == ZYDIS_REGISTER_EIP)) {
+            return false;
+        }
+        if (operand.type == ZYDIS_OPERAND_TYPE_REGISTER &&
+            ZydisRegisterGetClass(operand.reg.value) == ZYDIS_REGCLASS_SEGMENT &&
+            (operand.actions & ZYDIS_OPERAND_ACTION_MASK_WRITE)) {
+            return false;
+        }
+    }
+    switch (instruction.meta.category) {
+    case ZYDIS_CATEGORY_AVX:
+    case ZYDIS_CATEGORY_AVX2:
+    case ZYDIS_CATEGORY_BINARY:
+    case ZYDIS_CATEGORY_BITBYTE:
+    case ZYDIS_CATEGORY_CMOV:
+    case ZYDIS_CATEGORY_CONVERT:
+    case ZYDIS_CATEGORY_DATAXFER:
+    case ZYDIS_CATEGORY_FLAGOP:
+    case ZYDIS_CATEGORY_LOGICAL:
+    case ZYDIS_CATEGORY_LOGICAL_FP:
+    case ZYDIS_CATEGORY_NOP:
+    case ZYDIS_CATEGORY_POP:
+    case ZYDIS_CATEGORY_PUSH:
+    case ZYDIS_CATEGORY_ROTATE:
+    case ZYDIS_CATEGORY_SETCC:
+    case ZYDIS_CATEGORY_SHIFT:
+    case ZYDIS_CATEGORY_SSE:
+    case ZYDIS_CATEGORY_STRINGOP:
+    case ZYDIS_CATEGORY_WIDENOP:
+        return true;
+    default:
+        return instruction.mnemonic == ZYDIS_MNEMONIC_LEA;
+    }
+}
+
+bool StartNativeBlock(ucontext_t& context) {
+    const u64 pc = context.uc_mcontext.gregs[REG_RIP];
+    if (!block.code || block.active || block.executable_page != CodePage(pc)) {
+        return false;
+    }
+    std::array<u8, MaxBlockBytes> source;
+    const size_t limit = std::min(source.size(), CodePageSize - (pc & (CodePageSize - 1)));
+    const size_t readable =
+        limit - XstateTraceCopy(source.data(), reinterpret_cast<const void*>(pc), limit);
+    ZydisDecoder decoder;
+    ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
+    size_t size = 0;
+    size_t count = 0;
+    bool repeated = false;
+    while (size < readable && count < MaxBlockInstructions) {
+        ZydisDecodedInstruction instruction;
+        std::array<ZydisDecodedOperand, ZYDIS_MAX_OPERAND_COUNT> operands;
+        if (!ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, source.data() + size, readable - size,
+                                                 &instruction, operands.data()))) {
+            break;
+        }
+        const auto used = std::span{operands}.first(instruction.operand_count);
+        if (!CanCopyInstruction(instruction, used)) {
+            break;
+        }
+        block.offsets[count++] = size;
+        size += instruction.length;
+        repeated |= (instruction.attributes &
+                     (ZYDIS_ATTRIB_HAS_REP | ZYDIS_ATTRIB_HAS_REPE | ZYDIS_ATTRIB_HAS_REPNE)) != 0;
+        // A store could rewrite the following instruction, even on a permanently RWX page.
+        if (std::ranges::any_of(used, [](const auto& operand) {
+                return operand.type == ZYDIS_OPERAND_TYPE_MEMORY &&
+                       (operand.actions & ZYDIS_OPERAND_ACTION_MASK_WRITE);
+            })) {
+            break;
+        }
+    }
+    if (count < 2 && !repeated) {
+        return false;
+    }
+    std::memcpy(block.code, source.data(), size);
+    block.code[size] = 0xcc;
+    block.offsets[count] = size;
+    block.count = count;
+    block.size = size;
+    block.guest_pc = pc;
+    block.active = true;
+    context.uc_mcontext.gregs[REG_RIP] = reinterpret_cast<greg_t>(block.code);
+    context.uc_mcontext.gregs[REG_EFL] &= ~TrapFlag;
+    return true;
 }
 
 LinuxXstateResult ExecuteTraceFlags(std::span<const u8> bytes, ucontext_t& context) {
@@ -174,6 +317,7 @@ void StopXstateTraceForThreadExit() {
         XstateTracePause();
         trace_depth = 0;
     }
+    ReleaseNativeBlock();
     thread_exiting = true;
 }
 
@@ -190,6 +334,38 @@ void RecoverXstateTraceCopyFault(ucontext_t& context, const siginfo_t& info) {
     copy_fault_code = info.si_code;
     copy_fault_error = context.uc_mcontext.gregs[REG_ERR];
     context.uc_mcontext.gregs[REG_RIP] = reinterpret_cast<greg_t>(XstateTraceCopyResume);
+}
+
+void RecoverXstateTraceBlock(int signal, siginfo_t& info, ucontext_t& context) {
+    if (signal != SIGTRAP) {
+        block.stepped_pc = 0;
+        block.executable_page = ~u64{0};
+    }
+    if (!block.active) {
+        return;
+    }
+    auto& registers = context.uc_mcontext.gregs;
+    const u64 pc = registers[REG_RIP];
+    const u64 begin = reinterpret_cast<u64>(block.code);
+    const bool completed = signal == SIGTRAP &&
+                           (info.si_code == TRAP_BRKPT || info.si_code == SI_KERNEL) &&
+                           pc == begin + block.size + 1;
+    if (!completed && (pc < begin || pc > begin + block.size)) {
+        return;
+    }
+    const size_t offset = completed ? block.size : pc - begin;
+    ASSERT_MSG(std::find(block.offsets.begin(), block.offsets.begin() + block.count + 1, offset) !=
+                   block.offsets.begin() + block.count + 1,
+               "Signal inside a copied xstate trace instruction");
+    registers[REG_RIP] = block.guest_pc + offset;
+    registers[REG_EFL] |= TrapFlag;
+    block.active = false;
+    if (completed) {
+        info.si_code = TRAP_TRACE;
+    } else if ((signal == SIGILL || signal == SIGFPE) &&
+               reinterpret_cast<u64>(info.si_addr) == pc) {
+        info.si_addr = reinterpret_cast<void*>(registers[REG_RIP]);
+    }
 }
 
 bool HandleXstateTrace(int& signal, siginfo_t& info, ucontext_t& context) {
@@ -240,6 +416,14 @@ bool HandleXstateTrace(int& signal, siginfo_t& info, ucontext_t& context) {
         return false;
     }
 
+    if (block.stepped_pc) {
+        block.executable_page = CodePage(block.stepped_pc);
+        block.stepped_pc = 0;
+    }
+    if (block.executable_page != CodePage(registers[REG_RIP])) {
+        block.executable_page = ~u64{0};
+    }
+
     while (IsGuestInstruction(registers[REG_RIP])) {
         std::array<u8, 15> instruction;
         const auto left =
@@ -262,6 +446,9 @@ bool HandleXstateTrace(int& signal, siginfo_t& info, ucontext_t& context) {
                 thread ? reinterpret_cast<u64>(thread->tcb) : 0, 0);
         }
         if (result.status == LinuxXstateStatus::NotHandled) {
+            if (!StartNativeBlock(context)) {
+                block.stepped_pc = registers[REG_RIP];
+            }
             return true;
         }
         if (result.status == LinuxXstateStatus::Fault) {
@@ -280,6 +467,7 @@ bool HandleXstateTrace(int& signal, siginfo_t& info, ucontext_t& context) {
                    "Xstate tracing cannot execute guest state at {:#x}: status {}",
                    registers[REG_RIP], static_cast<int>(result.status));
     }
+    block.executable_page = ~u64{0};
     return true;
 }
 

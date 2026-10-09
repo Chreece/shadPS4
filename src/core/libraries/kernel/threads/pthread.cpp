@@ -1029,6 +1029,9 @@ void Pthread::WakeForSignal() {
                                  ExceptionHandler, nullptr, nullptr, nullptr);
     ASSERT(res == 0);
 #else
+#ifdef ENABLE_EXPERIMENTAL_XSTATE_TRACE
+    Core::SuspendXstateTraceScope trace;
+#endif
     pthread_kill(reinterpret_cast<pthread_t>(native_thr->GetHandle()), SIGUSR1);
 #endif
 }
