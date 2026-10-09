@@ -83,6 +83,11 @@ std::array<u32, 4> GuestCpuid(u32 leaf, u32 subleaf, u32 cpu) {
         // BMI1 is the only Jaguar structured extended feature (AMD BKDG 48751).
         result = {0, subleaf == 0 ? ebx & (1u << 3) : 0, 0, 0};
         break;
+    case 0xd:
+        if (subleaf == 1) {
+            result = {eax & 1u, 0, 0, 0};
+        }
+        break;
     case 0xb:
     case 0x1f:
         eax = subleaf == 1 ? 3 : 0;
