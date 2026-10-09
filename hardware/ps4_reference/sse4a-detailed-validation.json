@@ -1,0 +1,52 @@
+{
+  "format": 1,
+  "date": "2026-10-09",
+  "physical_console": {
+    "model": "CUH-1216A",
+    "firmware": "13.52",
+    "provenance": "Confirmed by the submitter in conversation.",
+    "log": "ps4-sse4a-detailed.txt",
+    "sha256": "27dcd2703a70ffa1bf02113ad8db31d8bec4444cd213e29fb93b04d75de1bbe0",
+    "diagnostic_format": 2,
+    "cases": 84,
+    "individual_checks": 924,
+    "recomputed_failures": 0,
+    "inconsistent_verdicts": 0
+  },
+  "probe": {
+    "source_commit": "74b1bacbf5755e5d86c2f91355237512bc84d9b2",
+    "package": "packages/ps4-sse4a-detailed-checks-v4.zip",
+    "sha256": "16acb6b19345db205886c41c079dd1e580240c902e4c81088e86b796917ab6bf"
+  },
+  "shadps4": {
+    "source_commit": "b85320a062e71eecc85ccc2c0d01e86a7be85018",
+    "binary_sha256": "3e586f9c5e66919e68cc956616ed87fae993fd3b64f8af2c87d3c26fc62e7f84",
+    "host": "Linux x86-64 Intel, no native SSE4a",
+    "sse4a_execution": "Emulator fallback in both CPU-ID modes.",
+    "comparisons": [
+      {
+        "cpu_id_mode": "native",
+        "log_sha256": "892ae0180f9601c3115f075fc0cf56036643e60ebd0233d9579d32f5d1f5663b",
+        "raw_differences": 0,
+        "check_differences_excluding_run_specific_rdx_pointer": 0,
+        "failures": 0
+      },
+      {
+        "cpu_id_mode": "translated",
+        "log_sha256": "892ae0180f9601c3115f075fc0cf56036643e60ebd0233d9579d32f5d1f5663b",
+        "raw_differences": 0,
+        "check_differences_excluding_run_specific_rdx_pointer": 0,
+        "failures": 0
+      }
+    ]
+  },
+  "scope": [
+    "EXTRQ and INSERTQ register/immediate forms and high-register variants.",
+    "All eleven defined-state checks pass on the confirmed physical console.",
+    "Destination observations match the earlier original PS4 and PS4 Pro captures.",
+    "RDX contains a run-specific pointer and is compared against the expected pointer within each run.",
+    "The earlier defined_ok=0 report is not reproduced by these captures.",
+    "The separate fpPS4 submission is not used as physical-console evidence; its native-versus-emulated SSE4a mode remains unconfirmed.",
+    "This result does not validate all CPU instructions, generated reciprocal handling, or CPU-number mapping."
+  ]
+}

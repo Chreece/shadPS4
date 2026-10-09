@@ -17,6 +17,10 @@
         "ps4-reciprocal.txt.gz": {
           "sha256": "c872a04c75694c859919cbbc1dd4696cb8d238e5daaa724fd8e8173c35559339",
           "uncompressed_sha256": "e2edbfcbd7a5dfd209cdfb0ae292182caac6c958da3d1a33f8badd5b84d2fa6c"
+        },
+        "ps4-sse4a-detailed.txt": {
+          "sha256": "27dcd2703a70ffa1bf02113ad8db31d8bec4444cd213e29fb93b04d75de1bbe0",
+          "uncompressed_sha256": "27dcd2703a70ffa1bf02113ad8db31d8bec4444cd213e29fb93b04d75de1bbe0"
         }
       }
     },
