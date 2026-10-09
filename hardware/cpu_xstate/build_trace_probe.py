@@ -12,6 +12,7 @@ import subprocess
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--unmarked", action="store_true")
 parser.add_argument("--auto-only", action="store_true")
+parser.add_argument("--block-only", action="store_true")
 parser.add_argument("--sdk", type=pathlib.Path, required=True)
 parser.add_argument("--output", type=pathlib.Path, required=True)
 args = parser.parse_args()
@@ -49,6 +50,7 @@ replace_once("  failures += Release(generated, 16384) != 0;",
              "  failures += Release(generated, 16384) != 0;")
 if args.unmarked:
     replace_once('  if (!expected_fault ||',
+                 '  if (CheckBlockFault(signal, context)) return;\n'
                  '  if (CheckAutomaticRedirect(signal, context)) return;\n'
                  '  if (!expected_fault ||')
     replace_once('#include <signal.h>', '#include <emmintrin.h>\n#include <signal.h>')
@@ -69,11 +71,12 @@ if args.unmarked:
                  '  failures += !RunTraceRewrites(generated);\n'
                  '  failures += !RunAutomaticTraceChecks(generated);')
 
-if args.auto_only:
+if args.auto_only or args.block_only:
     if not args.unmarked:
-        raise SystemExit("--auto-only requires --unmarked")
+        raise SystemExit("--auto-only/--block-only requires --unmarked")
+    check = 'RunBlockTraceChecks' if args.block_only else 'RunAutomaticTraceChecks'
     replace_once('  const uint64_t masks[]{',
-                 '  RunAutomaticTraceChecks(generated);\n'
+                 f'  if (!{check}(generated)) _Exit(80);\n'
                  '  sceSystemServiceLoadExec("EXIT", nullptr);\n'
                  '  return 0;\n  const uint64_t masks[]{')
 
@@ -91,7 +94,9 @@ if not args.unmarked:
 (output / "main.cpp").write_text(code)
 if args.unmarked:
     assembly += (here / "trace_auto.S").read_text()
+    assembly += (here / "trace_block.S").read_text()
     shutil.copy2(here / "trace_auto.inc", output / "trace_auto.inc")
+    shutil.copy2(here / "trace_block.inc", output / "trace_block.inc")
 (output / "cases.S").write_text(assembly)
 for name in ("Makefile", "trace_extra.inc"):
     shutil.copy2(here / name, output / name)

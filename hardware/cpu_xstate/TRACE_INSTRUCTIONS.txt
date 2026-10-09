@@ -23,8 +23,9 @@ The runner sets SHADPS4_XSTATE_TRACE_AUTO=1 for its child emulator only.
 Without that variable the experimental build keeps the original marked mode.
 Automatic mode starts at the main guest entry, new pthread entries, module
 initializers and guest signal callbacks. Tracing pauses during host-only module
-loading/static patching and native pthread creation/exit. Native pthread setup
-temporarily blocks signals and must not inherit the diagnostic trace flag.
+loading/static patching, native pthread creation/exit and native signal delivery.
+Those host operations can temporarily block signals and must not run with the
+diagnostic trace flag set.
 
 Use --icd /path/to/lvp_icd.json to select a software Vulkan driver if required.
 The runner builds the diagnostic, creates a separate emulator profile, runs it
@@ -45,8 +46,15 @@ The start marker is INT3 followed by the eight-byte NOP
 0f 1f 84 00 58 53 4f 4e; the end marker uses 46 as the last byte.
 Without automatic mode, only marked regions are traced. Automatic mode needs
 no marker bytes and executes the original cases.S probe instructions unchanged.
-Both modes read instructions afresh at execution boundaries, with no rewritten
-guest instructions or translated-code cache. Module helper trampoline ranges
+Both modes read instructions afresh at execution boundaries. Eligible straight
+lines run in a per-thread native buffer, with a maximum of 32 instructions or
+256 bytes and one breakpoint at the end. A memory write always ends the block
+so it can change the following instruction safely. Guest code is not modified.
+Only a source page just executed natively can start a block; blocks cannot cross
+its 4-KiB boundary. Branches, RIP-relative instructions, x87 state instructions
+and other unsupported forms keep using the original path. There is no persistent
+translated-code cache. Faults and asynchronous signals restore the original PC
+before guest callbacks run, including partial REP progress. Module helper trampoline ranges
 are excluded from guest xstate interpretation, so they can save full host state.
 Guest PUSHF/PUSHFQ hide the internal trace flag. POPF/POPFQ restore guest flags
 while keeping interception active. Signal returns are checked before execution
@@ -58,19 +66,31 @@ Additional automatic-mode checks:
   One returns normally; the other exits through scePthreadExit. Both are joined.
 - An illegal-instruction callback redirects RIP directly to unmarked XGETBV.
 - Startup's inline XGETBV is unchanged and must report 7.
+- Forward/backward REP copies fault partway through a protected page, then resume
+  with the correct RCX/RSI/RDI, fault address and direction flag.
+- Copied load and divide instructions deliver the original guest PC and exception
+  metadata; callbacks repair an address or skip an instruction and run XGETBV.
+- 32 writes alter the next instruction without a branch on a permanently RWX page.
+- Eight asynchronous callbacks during ordinary instruction blocks preserve GPRs,
+  YMM registers and the red zone, and execute a nested XGETBV.
+- Non-executable code faults before running; RIP-relative loads and instructions
+  crossing a code-page boundary retain their original behavior.
 
 The unmarked variant optimizes only output formatting and the unchanged-tail
 check: SIMD equality checks all bytes from 832 to 81919; the original extent
 scan still runs if any byte differs. No CPU test cases or masks are removed.
 
 Limits:
-- This is a slow diagnostic path. It single-steps native execution and is not
-  suitable for normal gameplay. Performance requires a different execution path.
+- This remains a slow diagnostic path, unsuitable for normal gameplay. Native
+  blocks reduce traps for ordinary guest instructions; host calls and unsupported
+  guest instructions still single-step. No game-performance claim is made.
 - Guest code that requests its own single-stepping, uses IRET or changes SS is
   rejected rather than silently escaping interception. Debuggers, transactional
   execution and unusual flag/context manipulation are not validated.
-- All tested code rewrites occur between calls. This does not make concurrent,
-  unsynchronized writes to executing code safe.
+- Rewrites between calls and writes to the next instruction are tested. Concurrent
+  unsynchronized changes to executing code or its permissions are not supported.
+- Guest-thread cancellation and unusual native signal-mask changes are not
+  validated by this suite. The runtime remains experimental.
 - Main, pthread and signal-callback entries have dedicated runtime checks.
   Module-initializer hooks compile and run during startup but do not have a
   separate xstate-specific fixture. Every possible native-to-guest callback has
@@ -85,5 +105,9 @@ Limits:
 
 For a shorter flags/thread/redirect diagnostic, use --unmarked --auto-only.
 That mode does not run or claim the 224-case hardware comparison.
+Use --unmarked --block-only to run just the added block tests.
+Use --single-step to run the same binary without native blocks for comparison.
+The runner sets SHADPS4_XSTATE_TRACE_BLOCKS=0 for that child only. The default
+is 1; neither setting enables tracing in a normal build or outside a trace scope.
 
 The normal console FPKG is unchanged and still uses the original unmarked probe.

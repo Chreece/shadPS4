@@ -1,0 +1,85 @@
+{
+  "status": "passed",
+  "scope": "Experimental Linux x86-64 bounded native blocks in automatic xstate tracing; emulator-only homebrew",
+  "code_commit_local": "66bcae56b73508cadad30d66e42a3c433156a67a",
+  "code_tree": "af8b742244d8b492ec63d0aa77da577d17d7b5ad",
+  "code_commit_github": "93a273efa6da1806c4f496be7b4c3155109fca10",
+  "test_source_commit_local": "4d3325cc0627a7b9764640a57a006b179eae71c0",
+  "reference_sha256": "6d4353fdb5d1abe20c53d72e6e5680992fc692429ddfe31a7ca3b02e81d907de",
+  "runs": {
+    "single_step": {
+      "emulator_sha256": "a8ad6d1790c9c37ba19a86e58d3138d9f1ece20758ab3b48cec2782a710ba8b3",
+      "unmarked": true,
+      "auto_only": false,
+      "block_only": false,
+      "single_step": true,
+      "return_code": 0,
+      "elapsed_seconds": 299.259,
+      "physical_register_exception_comparison": {
+        "common_rows": 224,
+        "differences": []
+      },
+      "extra": "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0",
+      "automatic_extra": "AUTO_EXTRA flags=64 threads=2 queries=256 redirects=1 explicit_exit=1 errors=0",
+      "block_extra": "BLOCK_EXTRA copies=3 faults=6 nested=6 rewrites=32 async=8 code_checks=3 errors=0"
+    },
+    "native_blocks": {
+      "emulator_sha256": "a8ad6d1790c9c37ba19a86e58d3138d9f1ece20758ab3b48cec2782a710ba8b3",
+      "unmarked": true,
+      "auto_only": false,
+      "block_only": false,
+      "single_step": false,
+      "return_code": 0,
+      "elapsed_seconds": 186.389,
+      "physical_register_exception_comparison": {
+        "common_rows": 224,
+        "differences": []
+      },
+      "extra": "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0",
+      "automatic_extra": "AUTO_EXTRA flags=64 threads=2 queries=256 redirects=1 explicit_exit=1 errors=0",
+      "block_extra": "BLOCK_EXTRA copies=3 faults=6 nested=6 rewrites=32 async=8 code_checks=3 errors=0"
+    },
+    "marked": {
+      "emulator_sha256": "a8ad6d1790c9c37ba19a86e58d3138d9f1ece20758ab3b48cec2782a710ba8b3",
+      "unmarked": false,
+      "auto_only": false,
+      "block_only": false,
+      "single_step": false,
+      "return_code": 0,
+      "elapsed_seconds": 0.667,
+      "physical_register_exception_comparison": {
+        "common_rows": 224,
+        "differences": []
+      },
+      "extra": "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0"
+    }
+  },
+  "benchmark": {
+    "same_binary_and_probe_sources": true,
+    "runs_per_mode": 1,
+    "elapsed_reduction_percent": 37.72,
+    "scope": "Homebrew elapsed time, not game performance"
+  },
+  "build_gates": {
+    "compiler": "Clang 19",
+    "configuration": "Linux Release",
+    "trace_on": "passed",
+    "trace_off": "passed",
+    "clang_format": "passed",
+    "reuse_code": "1075/1075"
+  },
+  "fixes": [
+    "Fresh bounded blocks stop after memory writes; guest code remains unchanged.",
+    "Copied-instruction faults and asynchronous signal returns restore original guest PCs.",
+    "Native pthread_kill pauses tracing because its signal masking cannot run with TF set."
+  ],
+  "limits": [
+    "Experimental and off by default; still too slow for normal gameplay.",
+    "Branches, RIP-relative instructions, x87 instructions and host calls retain single-stepping.",
+    "No persistent block cache; concurrent unsynchronized code or permission changes are not supported.",
+    "Guest cancellation, unusual signal-mask changes, guest debugging and every possible native-to-guest callback are not validated.",
+    "Jaguar in-use tracking, unsupported host state, generated CPU-ID handling and cross-platform runtime work remain outside this change."
+  ],
+  "upstream_prs_modified": false,
+  "github_ci_triggered": false
+}

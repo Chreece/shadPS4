@@ -9,6 +9,9 @@ extern "C" int scePthreadCreate(void **, const void *, void *(*)(void *), void *
 extern "C" int scePthreadJoin(void *, void **);
 extern "C" void scePthreadExit(void *);
 
+static void Fault(int, void *);
+#include "trace_block.inc"
+
 static bool UntouchedTail(const unsigned char *data) {
   const auto expected = _mm_set1_epi8(static_cast<char>(0xa5));
   for (size_t offset = 0; offset < 81920 - 832; offset += 16) {
@@ -102,5 +105,5 @@ static bool RunAutomaticTraceChecks(unsigned char *generated) {
           checked, auto_redirects, unsigned(!ok));
   fclose(extra);
   fclose(progress);
-  return ok && checked == 256 && flags_checked == 64;
+  return ok && checked == 256 && flags_checked == 64 && RunBlockTraceChecks(generated);
 }

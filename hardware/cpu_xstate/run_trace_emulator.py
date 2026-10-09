@@ -25,6 +25,8 @@ from compare import compare
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--unmarked", action="store_true")
 parser.add_argument("--auto-only", action="store_true")
+parser.add_argument("--block-only", action="store_true")
+parser.add_argument("--single-step", action="store_true", help="Disable native blocks for comparison")
 parser.add_argument("--timeout", type=int, default=180)
 parser.add_argument("--emulator", type=Path, required=True)
 parser.add_argument("--sdk", type=Path, required=True)
@@ -44,6 +46,7 @@ try:
         subprocess.run([sys.executable, str(here / "build_trace_probe.py"), "--sdk", str(sdk),
                         "--output", str(output / "homebrew"),
                         *(["--unmarked"] if args.unmarked else []),
+                        *(["--block-only"] if args.block_only else []),
                         *(["--auto-only"] if args.auto_only else [])], check=True, stdout=log,
                        stderr=subprocess.STDOUT, timeout=150)
     game = output / "game"
@@ -79,8 +82,11 @@ try:
     env = dict(os.environ, DISPLAY=f"127.0.0.1:{number}", SDL_VIDEODRIVER="x11",
                SDL_AUDIODRIVER="dummy", ALSOFT_DRIVERS="null", SHADPS4_ENABLE_IPC="false")
     env["SHADPS4_XSTATE_TRACE_AUTO"] = "1" if args.unmarked else "0"
+    env["SHADPS4_XSTATE_TRACE_BLOCKS"] = "0" if args.single_step else "1"
     summary["unmarked"] = args.unmarked
     summary["auto_only"] = args.auto_only
+    summary["block_only"] = args.block_only
+    summary["single_step"] = args.single_step
     if args.icd:
         env["VK_DRIVER_FILES"] = str(args.icd.resolve())
     with (output / "display.log").open("w") as log:
@@ -115,12 +121,12 @@ try:
     summary["return_code"] = process.returncode
     summary["elapsed_seconds"] = round(time.monotonic() - start, 3)
     for name in ("cpu-xstate-hardware.txt", "xstate-trace-extra.txt", "xstate-auto-extra.txt",
-                 "xstate-auto-progress.txt"):
+                 "xstate-auto-progress.txt", "xstate-block-extra.txt"):
         if (user / "data" / name).exists():
             shutil.copy2(user / "data" / name, output / name)
     if process.returncode != 0:
         raise RuntimeError(f"Emulator exited with {process.returncode}")
-    if not args.auto_only:
+    if not (args.auto_only or args.block_only):
         result = compare(here / "ps4_reference/cpu-xstate-hardware.txt", output / "cpu-xstate-hardware.txt")
         (output / "comparison.json").write_text(json.dumps(result, indent=2) + "\n")
         summary["physical_register_exception_comparison"] = {
@@ -130,14 +136,20 @@ try:
         if (result["common_rows"] != 224 or result["differences"] or
                 extra != "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0"):
             raise RuntimeError("CPU-state comparison failed; see comparison.json and extra results")
-    if args.unmarked:
+    if args.unmarked and not args.block_only:
         shutil.copy2(user / "data/xstate-auto-extra.txt", output / "xstate-auto-extra.txt")
         auto_extra = (output / "xstate-auto-extra.txt").read_text().strip()
         summary["automatic_extra"] = auto_extra
         if auto_extra != "AUTO_EXTRA flags=64 threads=2 queries=256 redirects=1 explicit_exit=1 errors=0":
             raise RuntimeError("Automatic trace checks failed: " + auto_extra)
+    if args.unmarked:
+        block_extra = (output / "xstate-block-extra.txt").read_text().strip().splitlines()[-1]
+        summary["block_extra"] = block_extra
+        if block_extra != "BLOCK_EXTRA copies=3 faults=6 nested=6 rewrites=32 async=8 code_checks=3 errors=0":
+            raise RuntimeError("Native block checks failed: " + block_extra)
     status = 0
-    print("PASS=Automatic flags, threads and redirected signal return" if args.auto_only else
+    print("PASS=Native block faults, rewrites and asynchronous callbacks" if args.block_only else
+          "PASS=Automatic flags, threads and redirected signal return" if args.auto_only else
           "PASS=224 register/exception cases; 128 code rewrites; 35 nested callbacks; fault retry", flush=True)
 except (Exception, KeyboardInterrupt) as error:
     summary["error"] = f"{type(error).__name__}: {error}"
@@ -159,7 +171,7 @@ finally:
             root_result = path.parent == output and path.suffix in (".txt", ".log", ".json")
             emulator_log = relative.parts[:3] == ("runtime", "user", "log")
             probe_source = relative.parts[0] == "homebrew" and path.name in (
-                "main.cpp", "cases.S", "trace_extra.inc", "trace_auto.inc")
+                "main.cpp", "cases.S", "trace_extra.inc", "trace_auto.inc", "trace_block.inc")
             if path.is_file() and (root_result or emulator_log or probe_source):
                 packed.add(path, arcname=str(path.relative_to(output)))
     print("UPLOAD_ONLY=" + str(archive), flush=True)
