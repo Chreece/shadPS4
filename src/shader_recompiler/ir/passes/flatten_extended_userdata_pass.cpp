@@ -485,6 +485,24 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
     return true;
 }
 
+// FindILsb32 is host-evaluable only when its operand is itself host-evaluable.
+// A Phi carries GPU loop state and must remain a dynamic read (flatbuf offset zero).
+static bool EmitComputeOffsetFindILsb32(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
+                                        PassInfo& pass_info, IR::Inst* inst) {
+    const IR::Value value = inst->Arg(0);
+    if (value.IsImmediate()) {
+        c.mov(reg, value.U32());
+    } else {
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, value));
+    }
+    Xbyak::Label nonzero;
+    c.bsf(reg, reg);
+    c.jnz(nonzero);
+    c.mov(reg, 0xffffffffU); // SPIR-V FindILsb32 returns all ones for zero.
+    c.L(nonzero);
+    return true;
+}
+
 static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
@@ -502,6 +520,7 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     case IR::Opcode::UMin32:
     case IR::Opcode::UMax32:
     case IR::Opcode::BitFieldUExtract:
+    case IR::Opcode::FindILsb32:
         return true;
     default:
         return false;
@@ -559,6 +578,9 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
     case IR::Opcode::BitFieldUExtract:
         ABORT_ON_FAILURE(EmitComputeOffsetBitFieldUExtract(c, reg, pass_info, inst));
         return true;
+    case IR::Opcode::FindILsb32:
+        ABORT_ON_FAILURE(EmitComputeOffsetFindILsb32(c, reg, pass_info, inst));
+        return true;
     default:
         LOG_ERROR(Render_Recompiler, "Unexpected instruction for offset computation, {}",
                   magic_enum::enum_name(inst->GetOpcode()));
@@ -571,7 +593,12 @@ static inline bool PushPtr(Xbyak::CodeGenerator& c, PassInfo& pass_info, const I
     if (off_dw.IsImmediate()) {
         c.mov(rdi, ptr[rdi + (off_dw.U32() << 2)]);
     } else {
-        ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));
+        if (!ComputeOffset(c, r10d, pass_info, off_dw)) {
+            // PushPtr already emitted a push(rdi). Keep the generated walker stack
+            // balanced even if a dynamic Phi offset cannot be flattened.
+            c.pop(rdi);
+            return false;
+        }
         c.shl(r10d, 2);
         c.mov(r10d, r10d);
         c.mov(rdi, ptr[rdi + r10]);
