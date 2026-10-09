@@ -22,7 +22,7 @@ VK11_PATCHER_REV='698693acac4f0555ddd6fde05ead3529ace4ec1c'
 VK11_REL='src/video_core/renderer_vulkan/vk_instance.cpp'
 VK11_SOURCE_TOUCHED=0
 R8_PATCHER_REV='e43fa05509c0c572fb166e51b66bd6c2602aa21b'
-NULL_BINDING_PATCH_REV='5b6ba3770d19684f5d24bc10730d32649ed16966'
+NULL_BINDING_PATCH_REV='755b620776fd0b249688492c3045d182d41cea52'
 FALLBACK_PROBE_REV='33aee211bc16f00326ffe17bcb5407ca5ca0028d'
 ARENA_PATCHER_REV='f9b9ceadf21bc1caf5267b339b2539ff887de18c'
 ARENA_HEADER_REL='src/video_core/buffer_cache/buffer_cache.h'
@@ -260,7 +260,7 @@ log 'NEW: 9-mip D32_SFLOAT->R32_SFLOAT transfer now handles the reverse of the v
 log 'Source image aspects, layers, samples, dimensions and fallback assertion stay guarded.'
 log 'All sources and installed/cached ELF restore after this ONE playtest.'
 log 'GHOST_NO_GDB_CONTROL: no early watchpoints and no debugger attachments.'
-log 'GHOST_NULL_IMAGE_BINDING: v3 safe image-bindings + invalid T# count/type correction, depth/stencil issue separate.'
+log 'GHOST_NULL_IMAGE_BINDING: v4 std::array indexed access + guarded invalid T# count/type; depth/stencil issue remains separate.'
 log 'Trial source and binaries restore after the game exits or timeout.'
 
 for tool in git cmake ninja curl python3 sha256sum tar install cmp find stat; do
@@ -332,21 +332,24 @@ R8_SOURCE_TOUCHED=1
 run python3 -I "$R8_PATCHER" "$ROOT" "$SESSION/original-r8"
 # Original R8 backup is already present; this exact-site experiment is
 # restored by the same R8 rollback trap, on every exit path.
-NULL_PATCHER="$SESSION/ghost-null-image-binding-legacy-v3-20261009.py"
-run curl -fsSL --retry 2 --max-time 35   "https://raw.githubusercontent.com/Chreece/shadPS4/$NULL_BINDING_PATCH_REV/scripts/ghost-null-image-binding-legacy-v3-20261009.py"   -o "$NULL_PATCHER"
+NULL_PATCHER="$SESSION/ghost-null-image-binding-array-v4-20261009.py"
+run curl -fsSL --retry 2 --max-time 35   "https://raw.githubusercontent.com/Chreece/shadPS4/$NULL_BINDING_PATCH_REV/scripts/ghost-null-image-binding-array-v4-20261009.py"   -o "$NULL_PATCHER"
 run python3 -m py_compile "$NULL_PATCHER"
 run python3 -I "$NULL_PATCHER" --self-test
 run python3 -I "$NULL_PATCHER" --check-only "$ROOT/$R8_REL"
 run python3 -I "$NULL_PATCHER" "$ROOT/$R8_REL"
-# Prevent the previous trial's undefined-behavior image-binding path from
-# reaching the compiler or guest: this old boost::static_vector had size=0.
-grep -Fq 'image_bindings.clear();' "$ROOT/$R8_REL" ||
-    fail 'Per-stage image bindings are not being cleared before use.'
-grep -Fq 'image_bindings.emplace_back(' "$ROOT/$R8_REL" ||
-    fail 'Image descriptors are not safely constructed.'
-if grep -Fq 'image_bindings[num_images++]' "$ROOT/$R8_REL" ||
-   grep -Fq 'std::construct_at(&desc, tsharp, image_desc);' "$ROOT/$R8_REL"; then
-    fail 'Legacy indexed/placement-constructed image binding still present.'
+# Compiler evidence from 2026-10-09 proves this legacy renderer uses
+# std::array<ImageBinding,64>, not boost::static_vector. Retain indexed
+# element access (already constructed) and guard the invalid image count/type.
+grep -Fq 'image_bindings[num_images++]' "$ROOT/$R8_REL" ||
+    fail 'Pinned std::array image binding access unexpectedly changed.'
+grep -Fq 'GHOST_NULL_IMAGE_BINDING shader=' "$ROOT/$R8_REL" ||
+    fail 'Trial source missing null descriptor marker.'
+grep -Fq 'ghost_null_count <= image_bindings.size() - num_images' "$ROOT/$R8_REL" ||
+    fail 'Pinned std::array overflow guard missing.'
+if grep -Fq 'image_bindings.emplace_back' "$ROOT/$R8_REL" ||
+   grep -Fq 'image_bindings.clear();' "$ROOT/$R8_REL"; then
+    fail 'Unsupported vector-style methods in std::array rasterizer.'
 fi
 ARENA_SOURCE_TOUCHED=1
 run python3 -I "$ARENA_PATCHER" "$ROOT" "$SESSION/original-arena"
