@@ -2411,6 +2411,9 @@ RedZonePatchResult PatchCpuInstructionsStatically(u64 segment_addr, u64 segment_
 // ============================================================================
 
 static bool PatchesAccessViolationHandler(void* context, void* /* fault_address */) {
+    if (Common::IsExecuteError(context)) {
+        return false;
+    }
     return TryPatchJit(Common::GetRip(context));
 }
 
