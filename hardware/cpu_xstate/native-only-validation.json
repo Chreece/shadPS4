@@ -1,0 +1,126 @@
+{
+  "candidate_commit": "915dc0d30db946499c7f7854622234b3c32a6637",
+  "candidate_tree": "7414bfc2a639d094c14b16afc3d95947e98f786b",
+  "base_commit": "c48f374d6a7649f7debdd58fc1aa0f81911131f3",
+  "build_source_local_commit": "a7c8bb513261991951462864c4de5723f98abba3",
+  "build_source_tree_matches_published": true,
+  "binary_sha256": "1b136ec188d3b42695c07217d0c79955db1b234a305fba43643f1c2b77528bec",
+  "scope": "Remove optional external CPU-ID runtime and filter CPUID D.1 to host-supported XSAVEOPT; retain native XCR0 and XSAVE component layout.",
+  "external_runtime_dependency": false,
+  "binary_runtime_symbols_remaining": [],
+  "binary_missing_libraries": [],
+  "build": {
+    "type": "Release",
+    "compiler": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
+    "status": "passed",
+    "tests": "OFF",
+    "discord_rpc": "OFF",
+    "updater": "OFF",
+    "lto": "OFF",
+    "external_runtime_configured": false
+  },
+  "host": {
+    "model": "AMD EPYC 9V74 80-Core Processor",
+    "permitted_cpus": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "cpuid_faulting_flag": false,
+    "hypervisor_flag": true
+  },
+  "checks": {
+    "base": "c48f374d6a7649f7debdd58fc1aa0f81911131f3",
+    "cleanup": "d7a05e8f56aa215fdb31e78b3f30f0e5ff710165",
+    "candidate": "a7c8bb513261991951462864c4de5723f98abba3",
+    "cleanup_native_source_equivalent": "Identical after removing disabled translation blocks and blank lines",
+    "runtime_paths_remaining": [],
+    "xsave_filter_added_lines": 3,
+    "runtime_lines_removed": 384,
+    "synthetic_filter_checks": {
+      "gcc14": 332800,
+      "clang19": 332800
+    },
+    "formatting": "passed",
+    "reuse": "passed"
+  },
+  "homebrew": {
+    "ps4": {
+      "rows": 945,
+      "static_checks": 147,
+      "cpus": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "xcr0": "0xe7",
+      "static_xsave_features": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "generated_xsave_features": [
+        15,
+        2472,
+        6144,
+        0
+      ],
+      "generated_cpuid_virtualized": false,
+      "sha256": "9e2b2b5c36248093706b53a53da8c94647d7d41c088c168181e7a2b1f58baed3"
+    },
+    "pro": {
+      "rows": 945,
+      "static_checks": 147,
+      "cpus": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "xcr0": "0xe7",
+      "static_xsave_features": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "generated_xsave_features": [
+        15,
+        2472,
+        6144,
+        0
+      ],
+      "generated_cpuid_virtualized": false,
+      "sha256": "135a3bf8494ab422e7f0b031dd2e8be780b60bd01663a916d6c5c4ffe4a77460"
+    }
+  },
+  "physical_reference_sha256": {
+    "ps4-cpu-profile.txt": "f21a599219fdfa16294727e9d2e4a9639f5bad2ec90f3fdf7dfc62ad8233fad9",
+    "ps4_pro-cpu-profile.txt": "3d95f65aea16567b8d80811c05868881d55e51dc26bf21f3df771db4c00c8d25"
+  },
+  "homebrew_source_commit": "9bc437c460f5195ff9b6bf2d4c3fd113e3d384a7",
+  "homebrew_source_path": "hardware/cpu_profile",
+  "homebrew_eboot_sha256": "8acc017f9d8a0e53380d4d5391f59233c991c574cd11ce2914e40d968d935255",
+  "physical_ps4_xstate_results_received": false,
+  "full_xstate_virtualization": false,
+  "known_limits": [
+    "Generated CPUID is not virtualized on this test host because CPUID faulting is unavailable.",
+    "The native path does not intercept generated RDPID on hosts that execute it natively.",
+    "This checks CPUID reporting and native save-area layout retention, not full XSAVE/XRSTOR hardware equivalence."
+  ],
+  "evidence_archive": "native-only-evidence.tar.gz"
+}
