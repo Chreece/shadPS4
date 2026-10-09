@@ -39,6 +39,7 @@ PREVIOUS_END = "2026-10-09 20:58:25"
 BEGIN_WALL = time.time()
 RESULT = "PRECHECK_FAILED"
 PHASE = "preflight"
+CURRENT_TRIAL = None
 RUN = {"attempted": False, "visual": "NOT_REVIEWED", "menu_confirmed": False,
        "radv_debug": "hang,noumr", "screenshots": 0}
 WATCH_PATTERN = re.compile(
@@ -336,7 +337,7 @@ def classifier(file:Path):
     return {k:len(re.findall(v,txt,re.I)) for k,v in patterns.items()}
 
 def one_instrumented_run(env):
-    global PHASE,RESULT
+    global PHASE,RESULT,CURRENT_TRIAL
     folder=WORK/"01-radv-instrumented"
     (folder/"screenshots").mkdir(parents=True)
     record=folder/"events.jsonl"
@@ -361,6 +362,7 @@ def one_instrumented_run(env):
     with log.open("wb") as stdout:
         p=subprocess.Popen(cmd,env=env,stdout=stdout,stderr=subprocess.STDOUT,
                            start_new_session=True)
+        CURRENT_TRIAL=p
         RUN["attempted"]=True
         RUN["pid"]=p.pid
         RUN["command"]=cmd
@@ -379,7 +381,7 @@ def one_instrumented_run(env):
                                            "ok":ok,"name":file.name if ok else None})
                 if ok:note(f"Screenshot t={at:02d}s: captured")
                 else:note(f"Screenshot t={at:02d}s: X11 capture unavailable")
-            stop.set() if False else None
+            # Worker stops naturally at the last requested screenshot.
 
         worker=threading.Thread(target=shutter,name="GoWScreenshots",daemon=True)
         worker.start()
@@ -430,6 +432,7 @@ def one_instrumented_run(env):
         if p.poll() is None:
             stop_only_own_session(p)
         p.wait()
+        CURRENT_TRIAL=None
         stop.set()
         worker.join(timeout=4)
         RUN["exit_code"]=p.returncode
@@ -535,9 +538,13 @@ try:
     main()
 except KeyboardInterrupt:
     RESULT="INTERRUPTED_WITH_REPORT"
-    (WORK/"error.txt").write_text("User cancelled; only our own trial process group may be stopped.\n")
+    if CURRENT_TRIAL is not None:
+        stop_only_own_session(CURRENT_TRIAL)
+    (WORK/"error.txt").write_text("User cancelled; only the trial process group was stopped.\n")
 except BaseException:
     RESULT="SAFE_STOP_WITH_REPORT"
+    if CURRENT_TRIAL is not None:
+        stop_only_own_session(CURRENT_TRIAL)
     (WORK/"error.txt").write_text(traceback.format_exc())
 finally:
     PHASE_END=PHASE
