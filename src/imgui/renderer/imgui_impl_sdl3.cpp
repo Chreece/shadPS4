@@ -3,6 +3,9 @@
 
 // Based on imgui_impl_sdl3.cpp from Dear ImGui repository
 
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <imgui.h>
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -831,6 +834,20 @@ void NewFrame(bool is_reusing_frame) {
                 : 1.0f / 60.0f;
         bd->nonReusedtime = current_time;
         DebugState.FrameDeltaTime = deltaTime;
+        static FILE* frame_log = [] {
+            const char* path = std::getenv("SHADPS4_FRAME_TIMES");
+            return path && *path ? std::fopen(path, "wx") : nullptr;
+        }();
+        if (frame_log) {
+            const auto now = std::chrono::steady_clock::now().time_since_epoch();
+            const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
+            std::fprintf(frame_log, "%lld,%.9f\n", static_cast<long long>(ns), deltaTime);
+            static long long last_flush = 0;
+            if (ns - last_flush >= 1'000'000'000) {
+                std::fflush(frame_log);
+                last_flush = ns;
+            }
+        }
 
         int& frameIdx = bd->framerateSecPerFrameIdx;
         float& framerateSec = bd->framerateSecPerFrame[frameIdx];
