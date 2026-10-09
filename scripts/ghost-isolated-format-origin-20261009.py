@@ -726,7 +726,7 @@ def selftest():
     assert LIVERPOOL_CPP in test_result
     assert len(test_result)==4
     for p,blob in test_result.items():
-        assert blob.count(b"GHOST_FORMAT_ORIGIN")==1
+        assert blob.count(b"GHOST_FORMAT_ORIGIN site=")==1
         assert blob!=fake_origins[p]
     fake_alt=dict(fake_origins)
     fake_alt[LIVERPOOL_CPP]=b""
