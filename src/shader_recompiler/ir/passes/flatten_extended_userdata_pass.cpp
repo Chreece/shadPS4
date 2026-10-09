@@ -485,6 +485,25 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
     return true;
 }
 
+// The SPIR-V FindILsb operation returns the lowest set-bit index, or
+// 0xffffffff for zero. BSF sets ZF for zero; the fallback must not use
+// BSF's undefined destination value in that case.
+static bool EmitComputeOffsetFindILsb32(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
+                                        PassInfo& pass_info, IR::Inst* inst) {
+    const IR::Value arg = inst->Arg(0);
+    if (arg.IsImmediate()) {
+        c.mov(reg, arg.U32());
+    } else {
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, arg));
+    }
+    Xbyak::Label nonzero;
+    c.bsf(reg, reg);
+    c.jnz(nonzero);
+    c.mov(reg, 0xffffffffU);
+    c.L(nonzero);
+    return true;
+}
+
 static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
@@ -502,6 +521,7 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     case IR::Opcode::UMin32:
     case IR::Opcode::UMax32:
     case IR::Opcode::BitFieldUExtract:
+    case IR::Opcode::FindILsb32:
         return true;
     default:
         return false;
@@ -558,6 +578,9 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
         return true;
     case IR::Opcode::BitFieldUExtract:
         ABORT_ON_FAILURE(EmitComputeOffsetBitFieldUExtract(c, reg, pass_info, inst));
+        return true;
+    case IR::Opcode::FindILsb32:
+        ABORT_ON_FAILURE(EmitComputeOffsetFindILsb32(c, reg, pass_info, inst));
         return true;
     default:
         LOG_ERROR(Render_Recompiler, "Unexpected instruction for offset computation, {}",
