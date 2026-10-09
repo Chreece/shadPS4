@@ -213,10 +213,10 @@ def add_nonexecuting_gds_diagnostic(src: str) -> str:
         src, '    if (cs.gow_srt_unresolved_offsets == 0) {\n'
              '        return false; // Valid compute shaders still submit normally.\n'
              '    }',
-        '    if (cs.gow_srt_unresolved_offsets == 0 && cs.gow_gds_unimplemented == 0) {\n'
+        '    if (cs.gow_srt_unresolved_offsets == 0 && cs.gow_gds_unimplemented == 0 &&\n'\n        '        cs.pgm_hash != 0xdbaa6ae4ULL) {\n'
         '        return false; // Valid compute and graphics remain enabled.\n'
         '    }\n'
-        '    if (cs.gow_gds_unimplemented != 0) {\n'
+        '    if (cs.gow_gds_unimplemented != 0 || cs.pgm_hash == 0xdbaa6ae4ULL) {\n'
         '        LOG_WARNING(Render_Vulkan,\n'
         '                    "GOW_GDS_DIAG_DISPATCH_SUPPRESSED hash={:#x} diagnostic_only=true",\n'
         '                    cs.pgm_hash);\n'
@@ -260,7 +260,7 @@ def add_nonexecuting_gds_diagnostic(src: str) -> str:
                         u32(inst.control.ds.offset1));
             // Only construct a valid IR placeholder to traverse translation.
             // The corresponding compute shader MUST NOT be executed.
-            SetDst(inst.dst[0], ir.Imm32(0));
+            SetDst(inst.dst[0], IR::U32{ir.Imm32(0)});
             return;
         }
         LogMissingOpcode(inst);
@@ -277,16 +277,16 @@ def add_nonexecuting_gds_diagnostic(src: str) -> str:
         .replace(gds_case_anchor, gds_case))
 '''
     old_diff = '''    diff = git("diff", "--", "src/core/libraries/kernel/process.cpp",
-                "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
-                "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
-                "src/shader_recompiler/info.h")'''
+               "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
+               "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
+               "src/shader_recompiler/info.h")'''
     src = replace_once(
         src, old_diff,
         gds_patch + '''    diff = git("diff", "--", "src/core/libraries/kernel/process.cpp",
-                "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
-                "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
-                "src/shader_recompiler/info.h",
-                "src/shader_recompiler/frontend/translate/data_share.cpp")''',
+               "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
+               "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
+               "src/shader_recompiler/info.h",
+               "src/shader_recompiler/frontend/translate/data_share.cpp")''',
         "GDS trace compilation patch")
     src = replace_once(
         src, '''    if blob(INFO) != EXPECTED_INFO_SHA:
@@ -365,7 +365,8 @@ def main() -> int:
         source = add_nonexecuting_gds_diagnostic(transform(content.decode()))
         compile(source, str(trial), "exec")
         for marker in ("GOW_GDS_DIAG_TRANSLATED_ONLY", "GOW_GDS_DIAG_DISPATCH_SUPPRESSED",
-                       "gow_gds_unimplemented", "DATA_SHARE.write_text"):
+                       "gow_gds_unimplemented", "DATA_SHARE.write_text",
+                       "cs.pgm_hash == 0xdbaa6ae4ULL", "cs.pgm_hash != 0xdbaa6ae4ULL"):
             if marker not in source:
                 raise RuntimeError("SAFE_STOP: missing GDS safety marker " + marker)
         trial.write_text(source)
