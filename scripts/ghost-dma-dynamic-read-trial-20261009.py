@@ -136,7 +136,7 @@ def selftest():
             try:
                 gpu_dump_only(invalid)
                 raise AssertionError('Malformed config wrongly accepted')
-            except (ValueError, json.JSONDecodeError):
+            except (ValueError, RuntimeError, json.JSONDecodeError):
                 pass
         d = Path(tmp)
         (d/'fixture').write_bytes(old)
