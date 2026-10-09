@@ -85,6 +85,9 @@ void* PS4_SYSV_ABI sceKernelGetProcParam() {
     return linker->GetProcParam();
 }
 
+// A host SIMD user of this guest-call frame may require 16-byte stack alignment.
+// Keep the guest ABI but realign the C++ stack when it was entered misaligned.
+__attribute__((force_align_arg_pointer))
 s32 PS4_SYSV_ABI sceKernelLoadStartModule(const char* moduleFileName, u64 args, const void* argp,
                                           u32 flags, const void* pOpt, s32* pRes) {
     LOG_INFO(Lib_Kernel, "called filename = {}, args = {}", moduleFileName, args);
