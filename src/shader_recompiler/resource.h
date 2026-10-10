@@ -127,11 +127,18 @@ struct ImageResource {
     bool is_array{};
     bool is_written{};
     bool is_r128{};
+    // Ghost-only dynamic T# source. GPU computes the array element; prototype
+    // supplies compile-time image type/format, never the selected texture.
+    u32 ghost_dynamic_image_count{};
+    AmdGpu::Image ghost_prototype_image{};
     u8 constant_mip_index{};
     MipStorageFallbackMode mip_fallback_mode{};
     SharpFetchPostOp post_op{};
 
     constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {
+        if (ghost_dynamic_image_count) {
+            return ghost_prototype_image;
+        }
         AmdGpu::Image image{};
         if (!Fetch(info.flattened_ud_buf.data(), &image)) {
             return AmdGpu::Image::Null(is_depth);
@@ -166,6 +173,9 @@ struct ImageResource {
     }
 
     u32 NumBindings(const auto& info) const {
+        if (ghost_dynamic_image_count) {
+            return ghost_dynamic_image_count;
+        }
         const AmdGpu::Image tsharp = GetSharp(info);
         return (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex)
                    ? (tsharp.last_level - tsharp.base_level + 1)
