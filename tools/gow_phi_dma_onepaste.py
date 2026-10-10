@@ -1182,12 +1182,12 @@ GOW_WRITER_GPU_PRELUDE = r'''    // Stage18: capture exact GPU-resident argument
         }
         // Both shaders have already passed their native canary resource gates.
         // One capture per writer+phase, even if the game loops.
-        constexpr u32 CmdBytes = 160;
-        constexpr u32 CounterBytes = 512;
-        constexpr u32 Input32Bytes = 32;
-        constexpr u32 Meta32Bytes = 32;
-        constexpr u32 Source64Bytes = 64;
-        constexpr u32 CaptureBytes = CmdBytes + CounterBytes +
+        static constexpr u32 CmdBytes = 160;
+        static constexpr u32 CounterBytes = 512;
+        static constexpr u32 Input32Bytes = 32;
+        static constexpr u32 Meta32Bytes = 32;
+        static constexpr u32 Source64Bytes = 64;
+        static constexpr u32 CaptureBytes = CmdBytes + CounterBytes +
                                      Input32Bytes + Meta32Bytes + Source64Bytes;
         static_assert(CaptureBytes == 800);
         const u32 writer_id = cs.pgm_hash == 0xf2d59856ULL ? 0 : 1;
