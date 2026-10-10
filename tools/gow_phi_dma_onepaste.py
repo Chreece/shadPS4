@@ -680,7 +680,7 @@ def apply_portable_pre_draw_producer_probe(root, pinned_diff):
     source_path = root / GBUFFER_SOURCE
     before = source_path.read_bytes()
     original = before.decode("utf-8", errors="strict")
-    namespace_tag = "namespace Vulkan {\n"
+    namespace_tag = "namespace Vulkan {\n\n"
     helper_tag = "static void TraceGoWIndirectWriterCandidates("
     draw_tag = "void Rasterizer::DrawIndirect(bool is_indexed"
     after_draw = "// This diagnostics-only guard deliberately runs AFTER pipeline creation."
