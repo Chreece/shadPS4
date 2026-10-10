@@ -32,6 +32,7 @@
 #include <cmath>
 #include <csetjmp>
 #include <cstring>
+#include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -462,6 +463,42 @@ static void SavePendingScreenshot(const ScreenshotReadback& readback) {
     }
 }
 
+// GoW black-frame diagnostic: capture the guest video-out image BEFORE FSR or
+// post-processing, using the same GPU screenshot path as regular game-only
+// screenshots. No screenshots outside the temporary diagnostic directory,
+// no user notification and no modification to the presented frame.
+static void SaveGoWGuestFrameProbe(ScreenshotReadback& readback, u32 ordinal) {
+    if (readback.paths.size() != 1) {
+        return;
+    }
+    const u64 byte_size = u64(readback.width) * readback.height * 4;
+    readback.buffer.Invalidate(0, byte_size);
+    std::vector<u8> rgba;
+    if (!ConvertReadbackToRgba8(readback, rgba)) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_FRAME_GUEST_CAPTURE frame={} result=UNSUPPORTED_FORMAT "
+                    "format={}",
+                    ordinal, vk::to_string(readback.format));
+        return;
+    }
+    u64 nonblack = 0;
+    u64 checksum = 14695981039346656037ULL;
+    for (size_t i = 0; i + 3 < rgba.size(); i += 4) {
+        nonblack += (rgba[i] != 0 || rgba[i + 1] != 0 || rgba[i + 2] != 0);
+        for (size_t c = 0; c < 3; ++c) {
+            checksum = (checksum ^ rgba[i + c]) * 1099511628211ULL;
+        }
+    }
+    const auto& filepath = readback.paths.front();
+    const bool saved = WritePng(filepath, rgba, readback.width, readback.height);
+    LOG_WARNING(Render_Vulkan,
+                "GOW_FRAME_GUEST_CAPTURE frame={} result={} width={} height={} "
+                "pixels={} nonblack_pixels={} rgb_hash={:#018x} file={}",
+                ordinal, saved ? "SAVED" : "PNG_WRITE_FAILED",
+                readback.width, readback.height, rgba.size() / 4,
+                nonblack, checksum, filepath.string());
+}
+
 Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_)
     : window{window_}, liverpool{liverpool_},
       instance{window, EmulatorSettings.GetGpuId(), EmulatorSettings.IsVkValidationEnabled(),
@@ -707,6 +744,30 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     const vk::Extent2D image_size = {image.info.size.width, image.info.size.height};
     expected_ratio = static_cast<float>(image_size.width) / static_cast<float>(image_size.height);
 
+    // The source is the real registered VideoOut buffer, before all host
+    // scaling and post-processing. This trace does not assume black pixels
+    // are a graphics-pipeline failure: actual GPU readback follows below.
+    const char* gow_probe_dir = std::getenv("SHADPS4_GOW_FRAME_SOURCE_DIR");
+    const bool gow_probe_enabled = gow_probe_dir && *gow_probe_dir;
+    static std::atomic<u32> gow_frame_ordinal{0};
+    const u32 gow_frame_id = gow_probe_enabled
+        ? gow_frame_ordinal.fetch_add(1, std::memory_order_relaxed) + 1
+        : 0;
+    if (gow_probe_enabled && gow_frame_id <= 12) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_FRAME_SOURCE_META frame={} guest_address={:#x} "
+                    "image_address={:#x} guest_bytes={} width={} height={} "
+                    "pitch={} num_bits={} vk_format={} tiled={} "
+                    "gpu_ready_to_download={} used_as_render_target={} "
+                    "used_as_storage={} backing={}",
+                    gow_frame_id, cpu_address, image.info.guest_address,
+                    image.info.guest_size, image_size.width, image_size.height,
+                    image.info.pitch, image.info.num_bits,
+                    vk::to_string(image.info.pixel_format), image.info.props.is_tiled,
+                    image.SafeToDownload(), image.usage.render_target,
+                    image.usage.storage, image.backing != nullptr);
+    }
+
     const u32 capture_game_only_count = VideoCore::ConsumeGameOnlyScreenshotRequests();
     std::optional<ScreenshotReadback> pending_screenshot;
 
@@ -734,6 +795,42 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         runtime.DownloadImage(&image, &readback.buffer, std::span{&copy_region, 1});
     }
 
+    // Capture the first three guest output images into the per-run evidence
+    // directory. Keep ordinary user-initiated screenshot behavior unchanged.
+    std::optional<ScreenshotReadback> gow_guest_capture;
+    const u64 gow_source_bytes = u64(image_size.width) * image_size.height * 4;
+    if (gow_probe_enabled && gow_frame_id <= 3 && image_size.width > 0 &&
+        image_size.height > 0 && gow_source_bytes <= 16ull * 1024 * 1024) {
+        const bool hdr_encoded =
+            attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Bt2020Pq;
+        const std::filesystem::path capture_path =
+            std::filesystem::path(gow_probe_dir) /
+            fmt::format("gow_guest_pre_fsr_{:02}.png", gow_frame_id);
+        auto& readback = gow_guest_capture.emplace(
+            instance, ScreenshotKind::GameOnly,
+            std::vector<std::filesystem::path>{capture_path},
+            image_size.width, image_size.height, view_info.format, hdr_encoded);
+        const vk::BufferImageCopy region = {
+            .bufferOffset = 0,
+            .bufferRowLength = 0,
+            .bufferImageHeight = 0,
+            .imageSubresource = {
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {image_size.width, image_size.height, 1},
+        };
+        runtime.DownloadImage(&image, &readback.buffer, std::span{&region, 1});
+        LOG_WARNING(Render_Vulkan, "GOW_FRAME_SOURCE_READBACK frame={} bytes={} "
+                    "result=QUEUED", gow_frame_id, gow_source_bytes);
+    } else if (gow_probe_enabled && gow_frame_id <= 3) {
+        LOG_WARNING(Render_Vulkan, "GOW_FRAME_SOURCE_READBACK frame={} bytes={} "
+                    "result=SIZE_REJECTED", gow_frame_id, gow_source_bytes);
+    }
+
     // Continue with host-side passes that draw the displayed (scaled) frame.
 
     runtime.Transit(&image, vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -756,6 +853,12 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         draw_scheduler.DeferPriorityOperation(
             [deferred_screenshot = std::move(pending_screenshot)]() {
                 SavePendingScreenshot(deferred_screenshot.value());
+            });
+    }
+    if (gow_guest_capture) {
+        draw_scheduler.DeferPriorityOperation(
+            [capture = std::move(gow_guest_capture), frame_number = gow_frame_id]() mutable {
+                SaveGoWGuestFrameProbe(capture.value(), frame_number);
             });
     }
 
