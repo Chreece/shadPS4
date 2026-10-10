@@ -339,7 +339,7 @@ def trial_run(binary, temp, result):
                         # not a generic Vulkan canary timeline as a success.
                         probe_saved = sorted(frame_dir.glob("gow_guest_pre_fsr_*.png"))
                         probe_logged = len(re.findall(
-                            r"GOW_FRAME_GUEST_CAPTURE frame=\\d+ result=SAVED",
+                            r"GOW_FRAME_GUEST_CAPTURE frame=\d+ result=SAVED",
                             trial_output))
                         if len(probe_saved) >= 3 and probe_logged >= 3:
                             result["end_reason"] = "FIRST_THREE_GUEST_FRAMES_CAPTURED"
