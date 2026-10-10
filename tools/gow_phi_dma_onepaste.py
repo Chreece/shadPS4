@@ -339,6 +339,96 @@ def verify_staged_instrumentation(staged):
             "gow_frame_id == 6" not in presenter):
         raise RuntimeError("Staged graphics instrumentation integrity check failed")
 
+# The host's original Draw/DrawIndirect layout intentionally differs from
+# GitHub's pinned base. The first nine patches are already host-proven,
+# but git-apply rejects the tenth probe's context at Draw line 258.
+# Extract ONLY the three inserted snippets from the sha-pinned tenth diff,
+# and inject them at unique semantic anchors. Never rewrite a draw command.
+DRAW_DIAGNOSTIC_DIFF_SHA256 = (
+    "ec03883e3d608901fdc8db57a727badc99793435b3da24bc03049fa5f61b1807"
+)
+GBUFFER_SOURCE = "src/video_core/renderer_vulkan/vk_rasterizer.cpp"
+
+def apply_portable_gbuffer_probe(root, pinned_diff):
+    if hashlib.sha256(pinned_diff).hexdigest() != DRAW_DIAGNOSTIC_DIFF_SHA256:
+        raise RuntimeError("The approved G-buffer diagnostic patch bytes changed")
+    diff_text = pinned_diff.decode("utf-8", errors="strict")
+    if diff_text.count("diff --git ") != 1 or not diff_text.startswith(
+        "diff --git a/" + GBUFFER_SOURCE + " b/" + GBUFFER_SOURCE + "\n"
+    ):
+        raise RuntimeError("G-buffer probe diff must modify only vk_rasterizer.cpp")
+    parts = re.split(r"(?m)^@@[^\n]*\n", diff_text)
+    if len(parts) != 4:
+        raise RuntimeError("G-buffer probe expected exactly three insertion hunks")
+    def inserted(block):
+        lines = [
+            line[1:] for line in block.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        ]
+        return "\n".join(lines) + "\n"
+
+    helper, direct_log, indirect_log = (inserted(part) for part in parts[1:])
+    if (not helper.startswith("// GoW Ragnarok: correlate the GPU-zero G-buffer")
+            or helper.count("static void TraceGoWGBufferDraw(") != 1
+            or not direct_log.startswith("    TraceGoWGBufferDraw(")
+            or not indirect_log.startswith("    TraceGoWGBufferDraw(")
+            or "is_indexed, false," not in direct_log
+            or "is_indexed, true," not in indirect_log):
+        raise RuntimeError("G-buffer probe diagnostic snippets do not match approved scope")
+
+    path = root / GBUFFER_SOURCE
+    original_bytes = path.read_bytes()
+    original = original_bytes.decode("utf-8", errors="strict")
+    if "\r\n" in original or "TraceGoWGBufferDraw" in original:
+        raise RuntimeError("Unexpected source encoding or duplicate G-buffer probe")
+    direct_tag = "void Rasterizer::Draw(bool is_indexed, u32 index_offset) {"
+    indirect_tag = "void Rasterizer::DrawIndirect(bool is_indexed"
+    tail_tag = "// This diagnostics-only guard deliberately runs AFTER pipeline creation."
+    for tag in (direct_tag, indirect_tag, tail_tag):
+        if original.count(tag) != 1:
+            raise RuntimeError("Ambiguous or missing known rasterizer anchor: " + tag)
+    start = original.index(direct_tag)
+    middle = original.index(indirect_tag, start)
+    end = original.index(tail_tag, middle)
+    direct = original[start:middle]
+    indirect = original[middle:end]
+    if (not all(term in direct for term in ("cmdbuf.draw(", "cmdbuf.drawIndexed"))
+            or not all(term in indirect for term in (
+                "cmdbuf.drawIndirect", "cmdbuf.drawIndexedIndirect"))):
+        raise RuntimeError("Graphics draw emission differs from expected proven code")
+    debug_anchor = "    DebugState.IncDrawCall();\n"
+    reset_anchor = "    ResetBindings(false);\n"
+    if direct.count(debug_anchor) == 1:
+        direct = direct.replace(debug_anchor, debug_anchor + direct_log)
+    elif direct.count(reset_anchor) == 1:
+        # Older host direct-draw layout lacks a DebugState counter.
+        # This anchor remains AFTER the original submitted draw.
+        direct = direct.replace(reset_anchor, direct_log + reset_anchor)
+    else:
+        raise RuntimeError("Cannot safely identify completed direct draw insertion point")
+    if indirect.count(reset_anchor) != 1:
+        raise RuntimeError("Cannot safely identify completed indirect draw insertion point")
+    indirect = indirect.replace(reset_anchor, indirect_log + reset_anchor)
+    patched = original[:start] + helper + direct + indirect + original[end:]
+    if (patched.count("TraceGoWGBufferDraw(pipeline, regs, state") != 2
+            or patched.count("static void TraceGoWGBufferDraw(") != 1
+            or patched.replace(helper, "", 1).replace(direct_log, "", 1)
+               .replace(indirect_log, "", 1) != original
+            or len(patched) != len(original) +
+               len(helper) + len(direct_log) + len(indirect_log)):
+        raise RuntimeError("G-buffer portable injection failed no-semantic-change check")
+    path.write_bytes(patched.encode("utf-8"))
+    return {
+        "method": "sha256_pinned_semantic_anchor_insertion",
+        "diff_sha256": DRAW_DIAGNOSTIC_DIFF_SHA256,
+        "original_source_sha256": hashlib.sha256(original_bytes).hexdigest(),
+        "patched_source_sha256": sha(path),
+        "matched_direct": True,
+        "matched_indirect": True,
+        "no_existing_lines_modified": True,
+    }
+
+
 def preflight_patches(patches, temp, report):
     # Every git-apply step runs against exact copies of host files.
     # No installed source file is changed during this preflight.
@@ -348,9 +438,14 @@ def preflight_patches(patches, temp, report):
         dst = staged / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / rel, dst)
+    if len(patches) != 10:
+        raise RuntimeError("Expected nine host-proven patches plus one G-buffer probe")
     for step, patch in enumerate(patches):
         filename = temp / f"pinned-{step}.diff"
         filename.write_bytes(patch)
+        if step == 9:
+            report["gbuffer_portable_preflight"] = apply_portable_gbuffer_probe(staged, patch)
+            continue
         check = run(["git", "apply", "--check", "--whitespace=nowarn", str(filename)],
                     cwd=staged)
         if check.returncode:
@@ -406,6 +501,13 @@ def do_build(build, patches, temp, result):
             patch_path = temp / f"pinned-{step}.diff"
             if not patch_path.is_file() or patch_path.read_bytes() != patch:
                 raise RuntimeError("Patches do not match staged preflight")
+            if step == 9:
+                # The same byte-pinned insertion was already validated on
+                # isolated host source copies. Source restoration is armed
+                # BEFORE the first live file is changed.
+                changed = True
+                result["gbuffer_portable_live"] = apply_portable_gbuffer_probe(SOURCE, patch)
+                continue
             check = run(["git", "apply", "--check", "--whitespace=nowarn",
                          str(patch_path)], cwd=SOURCE)
             if check.returncode:
