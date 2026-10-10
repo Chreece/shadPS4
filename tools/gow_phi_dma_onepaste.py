@@ -394,11 +394,12 @@ def get_patches():
     exec_probe = GOW_73_EXECUTION_SOURCE.encode("utf-8")
     writer_probe_gpu = (GOW_WRITER_GPU_PRELUDE + GOW_WRITER_GPU_POST).encode("utf-8")
     native_6d_probe = GOW_6D_NATIVE_SOURCE.encode("utf-8")
+    upstream_spv_probe = (GOW_UPSTREAM_RASTER_SOURCE + GOW_UPSTREAM_PIPELINE_SOURCE).encode("utf-8")
     return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
             index_probe, flatten_probe, root_priority_patch, auto_topo_patch,
             broad_probe, draw_probe, gpu_args_patch, writer_probe, producer_probe,
             one_shot_73, shape_probe, host_binding_probe, exec_probe, writer_probe_gpu,
-            native_6d_probe)
+            native_6d_probe, upstream_spv_probe)
 
 
 def verify_preimages():
@@ -1604,6 +1605,167 @@ GOW_6D_NATIVE_SOURCE = r'''    // Stage19: the missing downstream visibility pro
 
 '''
 
+GOW_UPSTREAM_RASTER_SOURCE = r'''    // Stage 20: identify exact guest inputs/outputs for the large upstream
+    // shader (and the proven downstream consumer), without executing either.
+    const char* upstream_audit = std::getenv("SHADPS4_GOW_UPSTREAM_DESCRIPTORS");
+    if (upstream_audit && std::strcmp(upstream_audit, "1") == 0 &&
+        (cs.pgm_hash == 0x9a1583fbULL || cs.pgm_hash == 0x6d6da626ULL)) {
+        static std::atomic<u32> upstream_seen{0};
+        static std::atomic<u32> downstream_seen{0};
+        const bool upstream = cs.pgm_hash == 0x9a1583fbULL;
+        const u32 invocation = upstream
+            ? upstream_seen.fetch_add(1, std::memory_order_relaxed)
+            : downstream_seen.fetch_add(1, std::memory_order_relaxed);
+        if (invocation < (upstream ? 4u : 1u)) {
+            const auto fetch_ok = [&](const auto& fetch, u32 words) {
+                if (fetch.summary == decltype(fetch.summary)::Invalid) return false;
+                if (fetch.summary == decltype(fetch.summary)::SingleLoad) {
+                    const size_t start = fetch.offsets[0];
+                    return start != Shader::UNKNOWN_LOCATION &&
+                           start <= cs.flattened_ud_buf.size() &&
+                           words <= cs.flattened_ud_buf.size() - start;
+                }
+                for (u32 word = 0; word < words; ++word) {
+                    if ((fetch.load_mask & (1u << word)) &&
+                        (fetch.offsets[word] == Shader::UNKNOWN_LOCATION ||
+                         fetch.offsets[word] >= cs.flattened_ud_buf.size())) return false;
+                }
+                return true;
+            };
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_UPSTREAM_BEGIN shader={:#x} invocation={} grid={}x{}x{} "
+                        "buffers={} images={} samplers={} uses_dma={} translation_failed={} "
+                        "flatbuf_words={} mode=PASSIVE",
+                        cs.pgm_hash, invocation, cs_program.dim_x, cs_program.dim_y,
+                        cs_program.dim_z, cs.buffers.size(), cs.images.size(),
+                        cs.samplers.size(), cs.uses_dma, cs.translation_failed,
+                        cs.flattened_ud_buf.size());
+            for (u32 slot = 0; slot < cs.buffers.size() && slot < 20; ++slot) {
+                const auto& desc = cs.buffers[slot];
+                const bool special = desc.IsSpecial();
+                const bool safe = !special && fetch_ok(desc.sharp_fetch, 4);
+                AmdGpu::Buffer sharp = AmdGpu::Buffer::Null();
+                if (safe) sharp = desc.GetSharp(cs);
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_UPSTREAM_BUFFER shader={:#x} invocation={} slot={} "
+                            "special={} type={} written={} formatted={} fetch_safe={} "
+                            "addr={:#x} bytes={} sharp_valid={} mode=PASSIVE",
+                            cs.pgm_hash, invocation, slot, special,
+                            static_cast<u32>(desc.buffer_type), desc.is_written,
+                            desc.is_formatted, safe,
+                            static_cast<u64>(sharp.base_address), sharp.GetSize(),
+                            safe && sharp.Valid());
+            }
+            for (u32 slot = 0; slot < cs.images.size() && slot < 12; ++slot) {
+                const auto& desc = cs.images[slot];
+                const bool safe = fetch_ok(desc.sharp_fetch, desc.is_r128 ? 4 : 8);
+                AmdGpu::Image sharp{};
+                if (safe) sharp = desc.GetSharp(cs);
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_UPSTREAM_IMAGE shader={:#x} invocation={} slot={} "
+                            "written={} depth={} r128={} fetch_safe={} "
+                            "addr={:#x} type={} format={} width={} height={} "
+                            "sharp_valid={} mode=PASSIVE",
+                            cs.pgm_hash, invocation, slot, desc.is_written, desc.is_depth,
+                            desc.is_r128, safe, safe ? sharp.Address() : 0ULL,
+                            safe ? static_cast<u32>(sharp.GetType()) : 0,
+                            safe ? static_cast<u32>(sharp.GetDataFmt()) : 0,
+                            safe ? static_cast<u32>(sharp.width) + 1 : 0,
+                            safe ? static_cast<u32>(sharp.height) + 1 : 0,
+                            safe && sharp.Valid());
+            }
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_UPSTREAM_END shader={:#x} invocation={} result=CAPTURED "
+                        "gpu_dispatch=SKIPPED", cs.pgm_hash, invocation);
+        }
+    }
+'''
+GOW_UPSTREAM_PIPELINE_SOURCE = r'''    // Stage20: dump only the specified compute shader modules inside the
+    // temporary diagnostic working directory. This doesn't patch the shaders
+    // or change compilation, resource binding, or GPU dispatch behavior.
+    const char* gow_spv_audit = std::getenv("SHADPS4_GOW_TARGET_SPV_AUDIT");
+    if (gow_spv_audit && std::strcmp(gow_spv_audit, "1") == 0 &&
+        perm_idx == 0 && info.hw_stage == HwStage::Compute &&
+        (info.pgm_hash == 0x9a1583fbULL ||
+         info.pgm_hash == 0x6d6da626ULL ||
+         info.pgm_hash == 0xf2d59856ULL ||
+         info.pgm_hash == 0xf875ea48ULL ||
+         info.pgm_hash == 0x73ad8e38ULL ||
+         info.pgm_hash == 0x30980d90ULL)) {
+        std::error_code ec;
+        std::filesystem::create_directories("gow_spv", ec);
+        bool write_ok = false;
+        if (!ec && spv.size() < 2000000U) {
+            const auto filename = std::filesystem::path("gow_spv") /
+                                  (std::to_string(info.pgm_hash) + ".spv");
+            std::ofstream output(filename, std::ios::binary | std::ios::trunc);
+            if (output) {
+                output.write(reinterpret_cast<const char*>(spv.data()),
+                             static_cast<std::streamsize>(spv.size() * sizeof(u32)));
+                output.flush();
+                write_ok = output.good();
+            }
+        }
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_TARGET_SPV shader={:#x} words={} "
+                    "file_ok={} mode=PASSIVE",
+                    info.pgm_hash, spv.size(), write_ok);
+    }
+'''
+
+def apply_portable_upstream_spv_audit(root, patch_bytes):
+    if patch_bytes != (GOW_UPSTREAM_RASTER_SOURCE + GOW_UPSTREAM_PIPELINE_SOURCE).encode("utf-8"):
+        raise RuntimeError("Stage20 pinned shader audit source differs")
+    raster_file = root / GBUFFER_SOURCE
+    pipeline_file = root / "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp"
+    original_raster = raster_file.read_bytes()
+    original_pipeline = pipeline_file.read_bytes()
+    if hashlib.sha256(original_raster).hexdigest() != (
+            "58cde2ef886eda7d13dc0dcff5f30ced1cec5e05a0635fd0aeabedd59d9ff7d5"):
+        raise RuntimeError("Stage20 requires exact stage19 C++ raster source")
+    if hashlib.sha256(original_pipeline).hexdigest() != (
+            "c0ad5190ce773f95a17604db1aa2df84b69eabf58d2186ed03961061b50ea805"):
+        raise RuntimeError("Stage20 requires exact stage19 pipeline source")
+    old_raster = original_raster.decode("utf-8", errors="strict")
+    old_pipeline = original_pipeline.decode("utf-8", errors="strict")
+    raster_anchor = (
+        "    const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);\n"
+        "    TraceGoWProducerResourceChain(cs, buffer_cache, cs_program.dim_x,\n")
+    pipeline_anchor = (
+        '    DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx, "spv");\n')
+    include_anchor = "#include <filesystem>\n"
+    if (old_raster.count(raster_anchor) != 1 or
+            old_pipeline.count(pipeline_anchor) != 1 or
+            old_pipeline.count(include_anchor) != 1 or
+            "GOW_UPSTREAM_BEGIN" in old_raster or
+            "GOW_TARGET_SPV shader=" in old_pipeline):
+        raise RuntimeError("Stage20 C++ anchor ambiguous or already present")
+    new_raster = old_raster.replace(
+        raster_anchor,
+        "    const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);\n" +
+        GOW_UPSTREAM_RASTER_SOURCE +
+        "    TraceGoWProducerResourceChain(cs, buffer_cache, cs_program.dim_x,\n", 1)
+    new_pipeline = old_pipeline.replace(
+        include_anchor, include_anchor + "#include <fstream>\n#include <cstring>\n", 1)
+    new_pipeline = new_pipeline.replace(
+        pipeline_anchor, pipeline_anchor + GOW_UPSTREAM_PIPELINE_SOURCE, 1)
+    if (new_raster.replace(GOW_UPSTREAM_RASTER_SOURCE, "", 1) != old_raster or
+            new_pipeline.replace(GOW_UPSTREAM_PIPELINE_SOURCE, "", 1)
+                        .replace("#include <fstream>\n#include <cstring>\n", "", 1) != old_pipeline or
+            "cmdbuf.dispatch" in GOW_UPSTREAM_RASTER_SOURCE or
+            "cmdbuf.dispatch" in GOW_UPSTREAM_PIPELINE_SOURCE):
+        raise RuntimeError("Stage20 changed existing graphics execution semantics")
+    raster_file.write_bytes(new_raster.encode("utf-8"))
+    pipeline_file.write_bytes(new_pipeline.encode("utf-8"))
+    return {"raster_before_sha256": hashlib.sha256(original_raster).hexdigest(),
+            "raster_after_sha256": sha(raster_file),
+            "pipeline_before_sha256": hashlib.sha256(original_pipeline).hexdigest(),
+            "pipeline_after_sha256": sha(pipeline_file),
+            "added_only": True, "executions_added": 0,
+            "target_upstream": "0x9a1583fb",
+            "target_downstream": "0x6d6da626"}
+
+
 def apply_portable_6d_native_ab(root, patch_bytes):
     if patch_bytes != GOW_6D_NATIVE_SOURCE.encode("utf-8"):
         raise RuntimeError("Stage19 native GPU code is not the pinned source")
@@ -1726,8 +1888,8 @@ def preflight_patches(patches, temp, report):
         dst = staged / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / rel, dst)
-    if len(patches) != 19:
-        raise RuntimeError("Expected 15 proven patches plus stages 16-19")
+    if len(patches) != 20:
+        raise RuntimeError("Expected 15 proven patches plus stages 16-20")
     for step, patch in enumerate(patches):
         filename = temp / f"pinned-{step}.diff"
         filename.write_bytes(patch)
@@ -1761,6 +1923,9 @@ def preflight_patches(patches, temp, report):
         if step == 18:
             report["native_6d_preflight"] = apply_portable_6d_native_ab(staged, patch)
             continue
+        if step == 19:
+            report["upstream_spv_preflight"] = apply_portable_upstream_spv_audit(staged, patch)
+            continue
         check = run(["git", "apply", "--check", "--whitespace=nowarn", str(filename)],
                     cwd=staged)
         if check.returncode:
@@ -1769,7 +1934,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_nineteen_patch_preflight"] = True
+    report["staged_twenty_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -1858,6 +2023,10 @@ def do_build(build, patches, temp, result):
             if step == 18:
                 changed = True
                 result["native_6d_live"] = apply_portable_6d_native_ab(SOURCE, patch)
+                continue
+            if step == 19:
+                changed = True
+                result["upstream_spv_live"] = apply_portable_upstream_spv_audit(SOURCE, patch)
                 continue
             check = run(["git", "apply", "--check", "--whitespace=nowarn",
                          str(patch_path)], cwd=SOURCE)
@@ -1993,12 +2162,12 @@ def trial_run(binary, temp, result):
         # Retain the previously proven automatic resource dependencies.
         # Their verbose per-shader flattened-buffer trace stays disabled.
         "SHADPS4_GOW_SRT_AUTO_ROOTS": "2",
-        # The six host-proven small canaries remain unchanged; shader73 and
-        # every unvalidated compute shader remain suppressed. New shader6D
-        # may run ONCE, only after checking all exact guest/host resources.
+        # Stage20 is PASSIVE for both large shaders: do not run 6D, 73, or
+        # 9A. Prior small canaries retain their known behavior, unchanged.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
-        "SHADPS4_GOW_6D_NATIVE_ONCE": "1",
-        "SHADPS4_GOW_INDIRECT_GPU_ARGS": "1",
+        "SHADPS4_GOW_UPSTREAM_DESCRIPTORS": "1",
+        "SHADPS4_GOW_TARGET_SPV_AUDIT": "1",
+        "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
         # No large frame or offscreen readbacks.
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
@@ -2030,21 +2199,21 @@ def trial_run(binary, temp, result):
                 # The exact instance-count values were already confirmed
                 # from six GPU-completed readbacks in the 19:53 archive.
                 # This trial observes their candidate writers only.
-                gate_denied = any(
-                    "GOW_6D_GATE shader=0x6d6da626" in line and
-                    "result=DENIED" in line for line in raw_console.splitlines())
-                if gate_denied:
-                    result["end_reason"] = "GOW6D_RESOURCE_GATE_DENIED"
+                upstream_four = raw_console.count(
+                    "GOW_UPSTREAM_END shader=0x9a1583fb") >= 4
+                downstream_once = (
+                    "GOW_UPSTREAM_END shader=0x6d6da626" in raw_console)
+                spv_ready = all(
+                    (temp / "gow_spv" / (str(int(shader, 16)) + ".spv")).is_file()
+                    for shader in ("0x9a1583fb", "0x6d6da626",
+                                   "0xf2d59856", "0xf875ea48"))
+                if upstream_four and downstream_once and spv_ready:
+                    result["end_reason"] = "UPSTREAM_GUEST_SHARPS_AND_SOURCE_SPV_CAPTURED"
                     break
-                completion = "GOW_6D_GPU_AB_COMPLETE shader=0x6d6da626" in raw_console
-                draws = raw_console.count("GOW_INDIRECT_GPU_CAPTURE slot=") >= 6
-                if completion and draws:
-                    result["end_reason"] = "GOW6D_GPU_AB_AND_SIX_DRAWS_COMPLETE"
-                    break
-                if completion:
-                    result.setdefault("six_d_gpu_ready_at", time.monotonic())
-                    if time.monotonic() - result["six_d_gpu_ready_at"] > 15:
-                        result["end_reason"] = "GOW6D_GPU_AB_COMPLETED_DRAWS_MISSING"
+                if upstream_four and downstream_once:
+                    result.setdefault("upstream_ready_at", time.monotonic())
+                    if time.monotonic() - result["upstream_ready_at"] > 15:
+                        result["end_reason"] = "UPSTREAM_DESCRIPTORS_CAPTURED_SPV_MISSING"
                         break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -2759,6 +2928,102 @@ def trial_run(binary, temp, result):
                 "output_changed_bytes": 0, "six_indirect_instance_counts": [0]*6},
         }, ensure_ascii=False, indent=2))
 
+    # Stage20: correlate live descriptor addresses between the candidate 9A
+    # source and shader6D, and archive exact compiled SPIR-V. No GPU execution
+    # was enabled for either large shader.
+    upstream_rows = []
+    for line in joined.splitlines():
+        for mark in ("GOW_UPSTREAM_BEGIN shader=", "GOW_UPSTREAM_BUFFER shader=",
+                     "GOW_UPSTREAM_IMAGE shader=", "GOW_UPSTREAM_END shader="):
+            if mark in line:
+                row = _kv(line[line.index(mark):])
+                row["record"] = mark.split(" shader=")[0]
+                if row not in upstream_rows:
+                    upstream_rows.append(row)
+                break
+    result["upstream_descriptor_rows"] = upstream_rows
+    upstream_end = [
+        x for x in upstream_rows
+        if x["record"] == "GOW_UPSTREAM_END" and x.get("result") == "CAPTURED"
+    ]
+    result["upstream_9a_invocations"] = sorted({
+        int(x["invocation"]) for x in upstream_end
+        if x.get("shader") == "0x9a1583fb" and
+        x.get("invocation", "").isdigit()
+    })
+    result["downstream_6d_descriptor_captured"] = any(
+        x.get("shader") == "0x6d6da626" for x in upstream_end)
+    observed_9a_writes = {
+        (x.get("addr"), x.get("bytes"))
+        for x in upstream_rows if x["record"] == "GOW_UPSTREAM_BUFFER" and
+        x.get("shader") == "0x9a1583fb" and x.get("written") == "true" and
+        x.get("sharp_valid") == "true"
+    }
+    observed_6d_images = {
+        x.get("addr") for x in upstream_rows
+        if x["record"] == "GOW_UPSTREAM_IMAGE" and
+        x.get("shader") == "0x6d6da626" and
+        x.get("sharp_valid") == "true"
+    }
+    result["upstream_9a_writer_to_6d_image_overlap"] = sorted(
+        addr for addr, size in observed_9a_writes
+        if addr in observed_6d_images)
+
+    spv_out = evidence / "upstream_shaders"
+    spv_out.mkdir(exist_ok=True)
+    spv_summary = {}
+    for source in sorted((temp / "gow_spv").glob("*.spv")):
+        if source.is_symlink() or not source.is_file() or source.stat().st_size > 8000000:
+            continue
+        data = source.read_bytes()
+        valid = len(data) >= 20 and len(data) % 4 == 0 and data[:4] == b"\x03\x02\x23\x07"
+        opcodes = {}
+        if valid:
+            cursor = 20
+            while cursor < len(data):
+                header = struct.unpack_from("<I", data, cursor)[0]
+                words, opcode = header >> 16, header & 0xffff
+                if words == 0 or cursor + words * 4 > len(data):
+                    valid = False
+                    break
+                opcodes[opcode] = opcodes.get(opcode, 0) + 1
+                cursor += words * 4
+        if valid:
+            target = spv_out / source.name
+            shutil.copyfile(source, target)
+            if shutil.which("spirv-dis"):
+                try:
+                    dis = run(["spirv-dis", str(source), "-o", str(target)+".spvasm"],
+                              timeout=20)
+                    if dis.returncode != 0:
+                        (spv_out / (source.name + ".dis.error")).write_text(
+                            dis.stderr[-2000:])
+                except Exception as exc:
+                    (spv_out / (source.name + ".dis.error")).write_text(str(exc))
+        spv_summary[source.stem] = {
+            "valid_spirv": valid, "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "instructions": sum(opcodes.values()),
+            "op_load": opcodes.get(61, 0), "op_store": opcodes.get(62, 0),
+            "op_image_write": opcodes.get(99, 0),
+            "op_branch_conditional": opcodes.get(250, 0),
+        }
+    result["upstream_spv_summary"] = spv_summary
+    result["upstream_spv_captured"] = (
+        str(int("0x9a1583fb", 16)) in spv_summary and
+        str(int("0x6d6da626", 16)) in spv_summary and
+        spv_summary[str(int("0x9a1583fb", 16))]["valid_spirv"] and
+        spv_summary[str(int("0x6d6da626", 16))]["valid_spirv"])
+    (evidence / "gow-upstream-static-resource-spv-audit.json").write_text(
+        json.dumps({
+            "9a_source_invocations": result["upstream_9a_invocations"],
+            "6d_consumer_captured": result["downstream_6d_descriptor_captured"],
+            "9a_write_6d_image_address_overlap":
+                result["upstream_9a_writer_to_6d_image_overlap"],
+            "descriptors": upstream_rows, "spv": spv_summary,
+            "native_9a_executed": False, "native_6d_executed": False,
+        }, ensure_ascii=False, indent=2))
+
     # Native downstream producer: no inferred host writes, only completed
     # Vulkan timeline readbacks from the same GPU buffers as its dispatch.
     six_d_gate, six_d_submit, six_d_output = [], [], []
@@ -3250,23 +3515,16 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif (report.get("six_d_gate") or {}).get("result") == "DENIED":
-                    report["result"] = "GOW6D_EXACT_RESOURCE_GATE_DENIED"
-                elif report.get("six_d_gpu_completed"):
-                    output = report.get("six_d_gpu_output") or {}
-                    if int(output.get("counter_changed", "0")) > 0:
-                        report["result"] = "GOW6D_NATIVE_GPU_COUNTER_CHANGED"
-                    elif any(int(output.get(k, "0")) > 0 for k in (
-                            "big_head_changed", "big_mid_changed",
-                            "big_tail_changed", "commands_changed",
-                            "metadata_changed")):
-                        report["result"] = "GOW6D_NATIVE_GPU_OUTPUT_SAMPLE_CHANGED"
-                    else:
-                        report["result"] = "GOW6D_NATIVE_GPU_COMPLETE_SAMPLED_OUTPUT_UNCHANGED"
-                elif report.get("six_d_submitted"):
-                    report["result"] = "GOW6D_NATIVE_SUBMITTED_GPU_COMPLETION_UNCONFIRMED"
+                elif (report.get("upstream_9a_invocations") == [0, 1, 2, 3] and
+                      report.get("downstream_6d_descriptor_captured") and
+                      report.get("upstream_spv_captured")):
+                    report["result"] = "UPSTREAM_LIVE_DESCRIPTOR_AND_COMPILED_SPV_CAPTURED"
+                elif report.get("upstream_spv_captured"):
+                    report["result"] = "UPSTREAM_COMPILED_SPV_CAPTURED_DESCRIPTOR_INCOMPLETE"
+                elif report.get("upstream_descriptor_rows"):
+                    report["result"] = "UPSTREAM_DESCRIPTOR_CAPTURED_SPV_INCOMPLETE"
                 else:
-                    report["result"] = "GOW6D_NATIVE_DISPATCH_NOT_OBSERVED"
+                    report["result"] = "UPSTREAM_SHADER_AUDIT_NOT_CAPTURED"
 
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
@@ -3288,6 +3546,10 @@ def main():
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
     print("GOW73_HOST_BIND_RESULT=" + str(report.get("producer73_host_bind")))
     print("GOW73_HOST_BIND_PASS=" + str(report.get("producer73_host_bind_pass", False)))
+    print("UPSTREAM_SPV_CAPTURED=" + str(report.get("upstream_spv_captured", False)))
+    print("UPSTREAM_9A_INVOCATIONS=" + str(report.get("upstream_9a_invocations")))
+    print("UPSTREAM_6D_IMAGE_OVERLAP=" + str(report.get("upstream_9a_writer_to_6d_image_overlap")))
+    print("UPSTREAM_SPV_SUMMARY=" + str(report.get("upstream_spv_summary", {})))
     print("GOW6D_GATE=" + str(report.get("six_d_gate")))
     print("GOW6D_NATIVE_SUBMITTED=" + str(report.get("six_d_submitted", False)))
     print("GOW6D_GPU_COMPLETED=" + str(report.get("six_d_gpu_completed", False)))
