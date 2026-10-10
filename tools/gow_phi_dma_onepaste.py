@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "acc76199ea827875413b82a83b50828c18a58069"
+HEAD_SHA = "7168663a6dc51736eae0f9220d595f43a79a8bda"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -305,6 +305,8 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_IMAGE_OUTPUT_DELTA": "1",
         # Capture first three actual game VideoOut images before FSR/PP.
         "SHADPS4_GOW_FRAME_SOURCE_DIR": str(frame_dir.resolve()),
+        # Track graphics draws and their real PS4 ColorBuffer addresses.
+        "SHADPS4_GOW_DRAW_TARGET_AUDIT": "1",
         # Preserve the causally verified D80 active baseline.
         "SHADPS4_GOW_D80_CONTROL_NO_DISPATCH": "0",
         "SHADPS4_GOW_COMPUTE_CENSUS": "1",
@@ -430,7 +432,7 @@ def trial_run(binary, temp, result):
     # VideoOut and presenter diagnostics are sourced from game-local logs.
     # The source captures occur before any host FSR / postprocessing pass.
     def _kv(line):
-        return dict(re.findall(r"([a-z_]+)=([^\s]+)", line))
+        return dict(re.findall(r"([a-z_][a-z_0-9]*)=([^\s]+)", line))
 
     flips = {}
     source_meta = {}
@@ -490,6 +492,83 @@ def trial_run(binary, temp, result):
         result["guest_frame_pixels_status"] = "FLIPS_RECORDED_NO_SOURCE_IMAGE"
     else:
         result["guest_frame_pixels_status"] = "NO_GUEST_FRAME_OBSERVED"
+    # Real graphics commands leading up to VideoOut flips, not a shader census.
+    # Each "EMITTED" stage occurs only after vkCmdDraw* was actually recorded.
+    draw_stages = {}
+    target_bindings = {}
+    for line in joined.splitlines():
+        if "GOW_DRAW_AUDIT seq=" in line:
+            kv = _kv(line[line.index("GOW_DRAW_AUDIT seq="):])
+            if kv.get("seq", "").isdigit() and kv.get("stage"):
+                draw_stages[(int(kv["seq"]), kv["stage"])] = kv
+        elif "GOW_RENDER_ATTACHMENT event=" in line:
+            kv = _kv(line[line.index("GOW_RENDER_ATTACHMENT event="):])
+            if kv.get("event", "").isdigit():
+                target_bindings[int(kv["event"])] = kv
+    draw_rows = [draw_stages[key] for key in sorted(draw_stages)]
+    submitted_draws = [row for row in draw_rows if row.get("stage") == "EMITTED"]
+    stage_counts = {}
+    for row in draw_rows:
+        name = row["stage"]
+        stage_counts[name] = stage_counts.get(name, 0) + 1
+    videoout_addrs = {
+        int(row["address"], 0) for row in result["videoout_flip_events"]
+        if row.get("address", "").startswith("0x")
+    }
+    emitted_color_addresses = {}
+    emitted_to_videoout = []
+    for row in submitted_draws:
+        mrt = int(row.get("mrt_mask", "0"), 0)
+        for slot in range(4):
+            if not (mrt & (1 << slot)):
+                continue
+            addr = int(row.get("color" + str(slot), "0"), 0)
+            mask = int(row.get("mask" + str(slot), "0"), 0)
+            if addr == 0 or mask == 0:
+                continue
+            text_addr = hex(addr)
+            emitted_color_addresses[text_addr] = (
+                emitted_color_addresses.get(text_addr, 0) + 1)
+            if addr in videoout_addrs:
+                emitted_to_videoout.append({
+                    "seq": int(row["seq"]), "slot": slot,
+                    "address": text_addr,
+                    "mrt_mask": row.get("mrt_mask"),
+                })
+    bound_to_videoout = []
+    for record in target_bindings.values():
+        if int(record.get("image_address", "0"), 0) in videoout_addrs:
+            bound_to_videoout.append(record)
+    # Use a single log to determine approximate ordering. A later duplicate
+    # logfile is appended to "joined" and must not affect these counts.
+    raw_console = (evidence / "console.log").read_text(errors="replace")
+    first_flip_offset = raw_console.find("GOW_FRAME_FLIP sequence=1 ")
+    emitted_before_flip = (
+        sum("GOW_DRAW_AUDIT seq=" in line and "stage=EMITTED" in line
+            for line in raw_console[:first_flip_offset].splitlines())
+        if first_flip_offset >= 0 else None)
+    result["graphics_draw_stage_counts"] = stage_counts
+    result["graphics_draw_attempted"] = stage_counts.get("ATTEMPT", 0)
+    result["graphics_draw_emitted"] = len(submitted_draws)
+    result["graphics_draw_to_videoout"] = emitted_to_videoout
+    result["graphics_draw_to_videoout_count"] = len(emitted_to_videoout)
+    result["graphics_color_addresses"] = emitted_color_addresses
+    result["graphics_render_attachment_count"] = len(target_bindings)
+    result["graphics_render_attachments"] = [
+        target_bindings[k] for k in sorted(target_bindings)[:128]]
+    result["graphics_attachment_videoout_count"] = len(bound_to_videoout)
+    result["graphics_draw_emitted_before_first_flip"] = emitted_before_flip
+    result["graphics_draw_samples"] = draw_rows[:256]
+    if not result["graphics_draw_attempted"]:
+        result["graphics_draw_diagnosis"] = "NO_GRAPHICS_DRAW_ATTEMPTS"
+    elif not submitted_draws:
+        result["graphics_draw_diagnosis"] = "GRAPHICS_DRAWS_FILTERED_OR_REJECTED"
+    elif not emitted_to_videoout:
+        result["graphics_draw_diagnosis"] = "GRAPHICS_EMITTED_OFFSCREEN_ONLY"
+    elif result.get("guest_frame_nonblack_count", 0) == 0:
+        result["graphics_draw_diagnosis"] = "VIDEOOUT_TARGETED_BUT_SOURCE_BLACK"
+    else:
+        result["graphics_draw_diagnosis"] = "VIDEOOUT_SOURCE_NONBLACK"
     # Census the other dispatches while allowing only one guarded direct dispatch.
     census_pattern = re.compile(
         r"GOW_COMPUTE_CENSUS_DIRECT shader=(0x[0-9a-fA-F]+) "
@@ -813,7 +892,9 @@ def main():
                     report["result"] = "GPU_FAULT_EVIDENCE"
                 else:
                     report["result"] = report.get(
-                        "guest_frame_pixels_status", "GUEST_FRAME_PROBE_NO_EVIDENCE")
+                        "graphics_draw_diagnosis",
+                        report.get("guest_frame_pixels_status",
+                                   "GUEST_FRAME_PROBE_NO_EVIDENCE"))
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -850,6 +931,17 @@ def main():
           str(report.get("guest_frame_nonblack_count", 0)))
     print("GUEST_FRAME_PIXELS_STATUS=" +
           str(report.get("guest_frame_pixels_status")))
+    print("GRAPHICS_DRAW_ATTEMPTS=" + str(report.get("graphics_draw_attempted", 0)))
+    print("GRAPHICS_DRAW_STAGE_COUNTS=" +
+          str(report.get("graphics_draw_stage_counts", {})))
+    print("GRAPHICS_DRAW_EMITTED=" + str(report.get("graphics_draw_emitted", 0)))
+    print("GRAPHICS_DRAW_TO_VIDEOOUT=" +
+          str(report.get("graphics_draw_to_videoout_count", 0)))
+    print("GRAPHICS_RENDER_ATTACHMENT_TO_VIDEOOUT=" +
+          str(report.get("graphics_attachment_videoout_count", 0)))
+    print("GRAPHICS_DRAW_TARGETS=" +
+          str(report.get("graphics_color_addresses", {})))
+    print("GRAPHICS_DRAW_DIAGNOSIS=" + str(report.get("graphics_draw_diagnosis")))
     print("GUEST_FRAME_PNG_FILES=" +
           str(sorted(report.get("guest_frame_pngs", {}))))
     print("MEDIUM_135_GRID=15x9x1")
