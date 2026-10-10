@@ -957,9 +957,9 @@ def trial_run(binary, temp, result):
         # Preserve the 19:53 execution policy: six resource-guarded canaries,
         # all other compute suppressed. Do not execute any new shader.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
-        # Passive CPU-side inspection of compute writable resource bindings
-        # and GPU-modified status of the six argument structures.
-        "SHADPS4_GOW_INDIRECT_WRITER_SCAN": "1",
+        # Passive compute descriptor map before the first target draw only.
+        # No GPU-buffer downloads or unrestricted compute execution.
+        "SHADPS4_GOW_PRODUCER_INPUTS": "1",
         # No further frame, offscreen, or command-buffer GPU readbacks.
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
@@ -991,11 +991,11 @@ def trial_run(binary, temp, result):
                 # The exact instance-count values were already confirmed
                 # from six GPU-completed readbacks in the 19:53 archive.
                 # This trial observes their candidate writers only.
-                origin_seen = "GOW_INDIRECT_BUFFER_ORIGIN address=0x1039242c40" in raw_console
-                if origin_seen and time.monotonic() - start >= 20:
-                    # No overlap/summary lines is meaningful negative evidence.
-                    # Do not require positive writer candidates to stop.
-                    result["end_reason"] = "INDIRECT_WRITER_ORIGIN_AND_WINDOW_CAPTURED"
+                first_draw = "GOW_PRODUCER_FIRST_DRAW address=0x1039242c40" in raw_console
+                early_a = "GOW_PRODUCER_RESOURCE shader=0xf2d59856 " in raw_console
+                early_b = "GOW_PRODUCER_RESOURCE shader=0xf875ea48 " in raw_console
+                if first_draw and early_a and early_b:
+                    result["end_reason"] = "PRE_DRAW_PRODUCER_RESOURCE_CHAIN_CAPTURED"
                     break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -1427,6 +1427,82 @@ def trial_run(binary, temp, result):
             "timeline_completed": bool(
                 recorded and tick is not None and tick == finished_tick),
         }
+    # Resource map before the first zero-instance indexed-indirect draw.
+    # The 20:10 archive proved late giant-buffer overlaps are not causal for
+    # the *first* empty draw, so retain encounter order and exclude late data.
+    producer_map = []
+    keys_seen = set()
+    first_draw_seen = False
+    for line in joined.splitlines():
+        if "GOW_PRODUCER_FIRST_DRAW address=0x1039242c40" in line:
+            first_draw_seen = True
+            continue
+        if first_draw_seen or "GOW_PRODUCER_RESOURCE shader=" not in line:
+            continue
+        fragment = line[line.index("GOW_PRODUCER_RESOURCE shader="):]
+        fields = _kv(fragment)
+        if not (fields.get("address", "").startswith("0x") and
+                fields.get("bytes", "").isdigit() and
+                fields.get("buffer", "").isdigit()):
+            continue
+        key = (fields.get("shader"), fields.get("buffer"),
+               fields.get("address"), fields.get("bytes"), fields.get("written"))
+        if key in keys_seen:
+            continue
+        keys_seen.add(key)
+        fields["capture_order"] = len(producer_map)
+        producer_map.append(fields)
+    (evidence / "pre-draw-producer-resource-map.txt").write_text(
+        "\n".join(" ".join(f"{k}={v}" for k, v in fields.items())
+                  for fields in producer_map) + "\n")
+    target_shaders = ("0xf2d59856", "0xf875ea48")
+    target_inputs = {
+        shader: [row for row in producer_map if row.get("shader") == shader]
+        for shader in target_shaders
+    }
+    def intersect(a, b):
+        aa, ab = int(a["address"], 16), int(a["bytes"])
+        ba, bb = int(b["address"], 16), int(b["bytes"])
+        return aa < ba + bb and ba < aa + ab
+    possible_edges = {}
+    for shader in target_shaders:
+        for consume in target_inputs[shader]:
+            # Ignore the indirect command target itself: we already know both
+            # shaders write its 160-byte descriptor. Find their OTHER inputs.
+            if consume["address"] == "0x1039242c40":
+                continue
+            for produce in producer_map:
+                if (produce["capture_order"] >= consume["capture_order"] or
+                        produce.get("written") != "true" or
+                        produce.get("shader") == shader or
+                        not intersect(consume, produce)):
+                    continue
+                key = (produce.get("shader"), shader,
+                       produce["address"], consume["address"])
+                possible_edges[key] = {
+                    "producer_shader": produce.get("shader"),
+                    "producer_buffer": produce.get("buffer"),
+                    "consumer_shader": shader,
+                    "consumer_buffer": consume.get("buffer"),
+                    "producer_address": produce.get("address"),
+                    "consumer_address": consume.get("address"),
+                    "consumer_writable": consume.get("written") == "true",
+                    "producer_gpu_modified_before": produce.get("gpu_modified_before"),
+                    "consumer_gpu_modified_before": consume.get("gpu_modified_before"),
+                    "proof_level": "ADDRESS_OVERLAP_ONLY",
+                }
+    result["pre_draw_producer_map"] = producer_map
+    result["pre_draw_producer_count"] = len(producer_map)
+    result["pre_draw_first_draw_observed"] = first_draw_seen
+    result["pre_draw_target_resources"] = target_inputs
+    result["pre_draw_possible_input_edges"] = list(possible_edges.values())
+    result["pre_draw_possible_input_edge_count"] = len(possible_edges)
+    result["pre_draw_target_has_read_only_inputs"] = {
+        sh: any(row.get("written") == "false" for row in target_inputs[sh])
+        for sh in target_shaders
+    }
+    result["pre_draw_both_writers_seen"] = all(target_inputs.values())
+
     # Passive candidate provenance for the six previously confirmed
     # zero-instance commands. Deduplicate console/game-log copies, but
     # preserve candidate buffer addresses and descriptor indices.
@@ -1884,18 +1960,14 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif not report.get("indirect_writer_origin"):
-                    report["result"] = "INDIRECT_WRITER_ORIGIN_NOT_OBSERVED"
-                elif report.get("indirect_writer_candidate_count", 0) > 0:
-                    report["result"] = "INDIRECT_WRITER_OVERLAPPING_BUFFER_CANDIDATES"
-                elif (report.get("indirect_writer_dma_count", 0) or
-                      report.get("indirect_writer_special_count", 0) or
-                      report.get("indirect_writer_invalid_writable_count", 0)):
-                    report["result"] = "INDIRECT_WRITER_NO_DIRECT_MATCH_DYNAMIC_POSSIBLE"
-                elif report.get("indirect_writer_gpu_modified"):
-                    report["result"] = "INDIRECT_WRITER_GPU_MODIFIED_NO_STATIC_MATCH"
+                elif not report.get("pre_draw_first_draw_observed"):
+                    report["result"] = "PRE_DRAW_FIRST_COMMAND_NOT_OBSERVED"
+                elif not report.get("pre_draw_both_writers_seen"):
+                    report["result"] = "PRE_DRAW_EARLY_WRITER_INPUTS_MISSING"
+                elif report.get("pre_draw_possible_input_edge_count"):
+                    report["result"] = "PRE_DRAW_POTENTIAL_PRODUCER_DEPENDENCIES"
                 else:
-                    report["result"] = "INDIRECT_WRITER_NO_STATIC_MATCH"
+                    report["result"] = "PRE_DRAW_RESOURCE_MAP_NO_STATIC_PRODUCER_LINK"
 
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
@@ -1915,16 +1987,12 @@ def main():
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
-    print("INDIRECT_WRITER_ORIGIN=" + str(report.get("indirect_writer_origin")))
-    print("INDIRECT_WRITER_GPU_MODIFIED=" + str(report.get("indirect_writer_gpu_modified")))
-    print("INDIRECT_WRITER_DIRECT_CANDIDATES=" +
-          str(report.get("indirect_writer_candidate_count", 0)))
-    print("INDIRECT_WRITER_CANDIDATES=" + str(report.get("indirect_writer_candidates", [])))
-    print("INDIRECT_WRITER_UNIQUE_SUMMARIES=" +
-          str(report.get("indirect_writer_summary_count", 0)))
-    print("INDIRECT_WRITER_DMA_POSSIBLE=" + str(report.get("indirect_writer_dma_count", 0)))
-    print("INDIRECT_WRITER_SPECIAL_POSSIBLE=" +
-          str(report.get("indirect_writer_special_count", 0)))
+    print("PRE_DRAW_FIRST_DRAW=" + str(report.get("pre_draw_first_draw_observed", False)))
+    print("PRE_DRAW_BUFFERS_MAPPED=" + str(report.get("pre_draw_producer_count", 0)))
+    print("EARLY_WRITER_INPUTS=" + str(report.get("pre_draw_target_resources", {})))
+    print("POTENTIAL_PRODUCER_EDGES=" + str(report.get("pre_draw_possible_input_edges", [])))
+    print("POTENTIAL_PRODUCER_EDGE_COUNT=" +
+          str(report.get("pre_draw_possible_input_edge_count", 0)))
     print("ARCHIVE=" + str(archive))
     print("SRT_TRACE_COMPLETE=" + str(report.get("fs_srt_flatten_complete", False)))
     print("SRT_ROOT_ORDER=" + str(report.get("fs_srt_root_order", [])))
