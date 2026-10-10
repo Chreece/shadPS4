@@ -3,6 +3,7 @@
 
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cstdlib>
 #include <cstring>
 
@@ -418,6 +419,10 @@ static void AuditGoWResourceIntegrity(const Shader::Info& cs) {
 // proven by GoW's pre-resource-discovery IR.  The active descriptor is selected
 // inside the shader by FindILsb32(Phi), so a single static SharpFetch is invalid.
 // Do not use this information to create a replacement descriptor or dispatch.
+// Diagnostic only: image SRT operands are DWORD indices (not byte offsets).
+// The Phi loops read masks from SGPR2:SGPR3 at DW 5899 / DW 5900 and clear one
+// selected bit each iteration. Table offsets come from pre-resource-discovery IR.
+// No descriptor is allocated or modified here and all compute is suppressed.
 static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* memory) {
     const char* enabled = std::getenv("SHADPS4_GOW_IMAGE_TABLE_AUDIT");
     const char* suppressed = std::getenv("SHADPS4_GOW_SUPPRESS_GPU_COMPUTE");
@@ -427,77 +432,104 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
         return;
     }
     if (cs.user_data.size() <= 9) {
-        LOG_WARNING(Render_Vulkan, "GOW_IMAGE_TABLE_AUDIT result=MISSING_SGPR8_9 dispatch=SKIPPED");
+        LOG_WARNING(Render_Vulkan, "GOW_IMAGE_TABLE_AUDIT result=MISSING_SGPRS dispatch=SKIPPED");
         return;
     }
-    // The guest SRT base is supplied through SGPR8:SGPR9 and has 48-bit addressing.
-    const u64 srt_base = (u64(cs.user_data[8]) | (u64(cs.user_data[9]) << 32)) &
-                         0x0000FFFFFFFFFFFFULL;
+    constexpr u64 MaxGuestPointer = 0x0000FFFFFFFFFFFFULL;
+    constexpr u32 SlotCount = 32;
+    static_assert(sizeof(AmdGpu::Image) == 32, "Unexpected PS4 image descriptor size");
+
+    const u64 table_base = (u64(cs.user_data[8]) | (u64(cs.user_data[9]) << 32)) &
+                           MaxGuestPointer;
+    const u64 mask_base = (u64(cs.user_data[2]) | (u64(cs.user_data[3]) << 32)) &
+                          MaxGuestPointer;
     struct TableLayout {
         const char* label;
-        u32 stride_bytes;
-        u32 image_offset_bytes;
+        u32 stride_dw;
+        u32 image_offset_dw;
+        u32 mask_offset_dw;
     };
-    constexpr TableLayout layouts[] = {{"A", 776, 544}, {"B", 264, 3536}};
-    static_assert(sizeof(AmdGpu::Image) == 32, "Unexpected PS4 image descriptor size");
+    constexpr TableLayout layouts[] = {{"A", 776, 544, 5899}, {"B", 264, 3536, 5900}};
+
     for (const auto& layout : layouts) {
-        u32 sampled = 0;
-        u32 populated = 0;
-        u32 valid = 0;
-        u32 first_type = 0;
-        bool first_type_set = false;
-        bool same_type = true;
+        u32 selected_mask{};
+        bool mask_source_nonzero = false;
+        const u64 mask_offset_bytes = u64(layout.mask_offset_dw) * 4;
+        if (mask_base != 0 && mask_base <= MaxGuestPointer - mask_offset_bytes - 4) {
+            std::array<u8, 4> raw_mask{};
+            memory->CopySparseMemory(mask_base + mask_offset_bytes,
+                                     raw_mask.data(), raw_mask.size());
+            std::memcpy(&selected_mask, raw_mask.data(), sizeof(selected_mask));
+            mask_source_nonzero = true;
+        }
+
         u32 sampled_mask = 0;
         u32 populated_mask = 0;
         u32 valid_mask = 0;
-        for (u32 index = 0; index < 32; ++index) {
-            const u64 relative = u64(index) * layout.stride_bytes +
-                                 layout.image_offset_bytes;
-            if (srt_base == 0 || srt_base > 0x0000FFFFFFFFFFFFULL - relative -
-                                                    sizeof(AmdGpu::Image)) {
+        u32 address_mask = 0;
+        u32 valid_type_mask = 0;
+        u32 selected_type_mask = 0;
+        for (u32 index = 0; index < SlotCount; ++index) {
+            // ReadConst offsets (stride, base) are in 32-bit words, as confirmed
+            // by EmitContext::DefineReadConst's shift-left-by-two byte conversion.
+            const u64 offset_bytes =
+                (u64(index) * layout.stride_dw + layout.image_offset_dw) * 4;
+            if (table_base == 0 ||
+                table_base > MaxGuestPointer - offset_bytes - sizeof(AmdGpu::Image)) {
                 continue;
             }
-            const VAddr address = srt_base + relative;
-            // CopySparseMemory exists in the verified 20261009 source and zero-
-            // fills unbacked guest pages. No direct guest dereference or new
-            // MemoryManager API is required for this read-only census.
+            const VAddr address = table_base + offset_bytes;
             std::array<u8, sizeof(AmdGpu::Image)> raw{};
+            // Available in the pinned build; zero-fills unbacked guest pages.
             memory->CopySparseMemory(address, raw.data(), raw.size());
-            ++sampled;
             sampled_mask |= (1u << index);
-            bool is_populated = false;
-            for (u8 value : raw) {
-                is_populated |= value != 0;
+            bool populated = false;
+            for (u8 b : raw) {
+                populated |= b != 0;
             }
-            if (!is_populated) {
+            if (!populated) {
                 continue;
             }
-            ++populated;
             populated_mask |= (1u << index);
             AmdGpu::Image image{};
             std::memcpy(&image, raw.data(), sizeof(image));
             if (!image.Valid() || image.GetType() == AmdGpu::ImageType::Invalid) {
                 continue;
             }
-            ++valid;
             valid_mask |= (1u << index);
             const u32 type = static_cast<u32>(image.GetType());
-            if (first_type_set && first_type != type) {
-                same_type = false;
+            valid_type_mask |= (1u << type);
+            if (image.Address() != 0) {
+                address_mask |= (1u << index);
             }
-            if (!first_type_set) {
-                first_type = type;
-                first_type_set = true;
+            if (selected_mask & (1u << index)) {
+                selected_type_mask |= (1u << type);
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_IMAGE_SELECTED_SLOT group={} index={} type={} "
+                            "texture_addr_nonzero={} dispatch=SKIPPED",
+                            layout.label, index, type, image.Address() != 0);
             }
         }
+        const u32 selected_valid_mask = selected_mask & valid_mask;
+        const u32 selected_nonzero_addr_mask = selected_mask & address_mask;
+        const u32 selected_unresolved_mask = selected_mask & ~valid_mask;
         LOG_WARNING(Render_Vulkan,
-                    "GOW_IMAGE_TABLE_AUDIT group={} stride={} image_offset={} slots=32 "
-                    "sampled={} populated={} valid={} sampled_mask={:#010x} "
-                    "populated_mask={:#010x} valid_mask={:#010x} "
-                    "uniform_type={} image_type={} dispatch=SKIPPED",
-                    layout.label, layout.stride_bytes, layout.image_offset_bytes,
-                    sampled, populated, valid, sampled_mask, populated_mask,
-                    valid_mask, same_type, first_type_set ? first_type : 0u);
+                    "GOW_IMAGE_TABLE_AUDIT group={} stride_dw={} image_offset_dw={} "
+                    "mask_dw={} slots=32 sampled={} populated={} type_valid={} "
+                    "sampled_mask={:#010x} populated_mask={:#010x} "
+                    "valid_mask={:#010x} address_mask={:#010x} "
+                    "selected_mask={:#010x} selected_valid_mask={:#010x} "
+                    "selected_nonzero_addr_mask={:#010x} "
+                    "selected_unresolved_mask={:#010x} "
+                    "valid_type_mask={:#06x} selected_type_mask={:#06x} "
+                    "mask_source_nonzero={} dispatch=SKIPPED",
+                    layout.label, layout.stride_dw, layout.image_offset_dw,
+                    layout.mask_offset_dw, std::popcount(sampled_mask),
+                    std::popcount(populated_mask), std::popcount(valid_mask),
+                    sampled_mask, populated_mask, valid_mask, address_mask,
+                    selected_mask, selected_valid_mask, selected_nonzero_addr_mask,
+                    selected_unresolved_mask, valid_type_mask, selected_type_mask,
+                    mask_source_nonzero);
     }
 }
 
