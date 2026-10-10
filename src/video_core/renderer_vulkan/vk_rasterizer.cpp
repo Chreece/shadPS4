@@ -208,7 +208,13 @@ static u32 NextGoWDrawAuditSequence() {
     if (!enabled || std::strcmp(enabled, "1") != 0) {
         return 0;
     }
-    return gow_draw_audit_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
+    const u32 seq = gow_draw_audit_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (seq == 257) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_DRAW_AUDIT_TRUNCATED max_records=256 "
+                    "result=FURTHER_DRAWS_NOT_LOGGED");
+    }
+    return seq;
 }
 static void LogGoWDrawAudit(u32 seq, const AmdGpu::Regs& regs,
                             const char* stage, bool indirect, bool indexed,
