@@ -407,7 +407,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     if (occlusion) {
         occlusion->EndDraw(cmdbuf, query);
     }
-    TraceGoWGBufferDraw(pipeline, regs, state, is_indexed, true,
+    TraceGoWGBufferDraw(pipeline, liverpool->regs, state, is_indexed, true,
                        0, 0, arg_address + offset, max_count, count_address);
     ResetBindings(false);
 }
