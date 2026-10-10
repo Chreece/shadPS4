@@ -657,18 +657,43 @@ static inline void PopPtr(Xbyak::CodeGenerator& c) {
 
 static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& pass_info,
                          Xbyak::CodeGenerator& c) {
-    if (subtree->GetOpcode() == IR::Opcode::ReadConst && subtree->Flags<u16>() == 0 ||
-        subtree->GetOpcode() == IR::Opcode::ReadConstBuffer &&
-            subtree->Flags<IR::BufferInstInfo>().flatbuf_off_dw == 0) {
+    const auto sub_op = subtree->GetOpcode();
+    const bool unflattened =
+        (sub_op == IR::Opcode::ReadConst && subtree->Flags<u16>() == 0) ||
+        (sub_op == IR::Opcode::ReadConstBuffer &&
+         subtree->Flags<IR::BufferInstInfo>().flatbuf_off_dw == 0);
+    if (pass_info.GoWLog()) {
+        const auto* off_inst = off_dw.TryInst();
+        LOG_WARNING(Render_Recompiler,
+                    "GOW_SRT_FLATTEN_TRACE shader={:#x} event=VISIT "
+                    "node={} opcode={} index_opcode={} index_immediate={} "
+                    "index_literal={} unflattened={}",
+                    pass_info.gow_shader, pass_info.GoWId(subtree), IR::NameOf(sub_op),
+                    off_inst ? IR::NameOf(off_inst->GetOpcode()) : "Immediate",
+                    off_dw.IsImmediate(), off_dw.IsImmediate() ? off_dw.U32() : 0u,
+                    unflattened);
+    }
+    if (unflattened) {
         return;
     }
 
     if (!PushPtr(c, pass_info, off_dw)) {
+        if (pass_info.GoWLog()) {
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_SRT_FLATTEN_TRACE shader={:#x} event=POINTER_INDEX_FAILED "
+                        "node={}", pass_info.gow_shader, pass_info.GoWId(subtree));
+        }
         LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
         return;
     }
     PassInfo::PtrUserList* use_list = pass_info.GetUsesAsPointer(subtree);
     ASSERT(use_list);
+    if (pass_info.GoWLog()) {
+        LOG_WARNING(Render_Recompiler,
+                    "GOW_SRT_FLATTEN_TRACE shader={:#x} event=POINTER_CHILDREN "
+                    "node={} child_count={}",
+                    pass_info.gow_shader, pass_info.GoWId(subtree), use_list->size());
+    }
 
     // First copy all the src data from this tree level
     // That way, all data that was contiguous in the guest SRT is also contiguous in the
@@ -680,6 +705,16 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
             c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
         } else {
             if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
+                if (pass_info.GoWLog()) {
+                    const auto* source = src_off_dw.TryInst();
+                    LOG_WARNING(Render_Recompiler,
+                                "GOW_SRT_FLATTEN_TRACE shader={:#x} "
+                                "event=USE_INDEX_FAILED parent={} child={} "
+                                "offset_opcode={}",
+                                pass_info.gow_shader, pass_info.GoWId(subtree),
+                                pass_info.GoWId(use),
+                                source ? IR::NameOf(source->GetOpcode()) : "Immediate");
+                }
                 LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
                 continue;
             }
@@ -690,6 +725,14 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         c.mov(ptr[rsi + (pass_info.dst_off_dw << 2)], r10d);
 
         SetFlatbufOffset(use, pass_info.dst_off_dw);
+        if (pass_info.GoWLog()) {
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_SRT_FLATTEN_TRACE shader={:#x} event=OFFSET_ASSIGNED "
+                        "parent={} child={} child_opcode={} offset={}",
+                        pass_info.gow_shader, pass_info.GoWId(subtree),
+                        pass_info.GoWId(use), IR::NameOf(use->GetOpcode()),
+                        pass_info.dst_off_dw);
+        }
         pass_info.dst_off_dw++;
     }
 
@@ -724,6 +767,13 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
     ASSERT(pass_info.dst_off_dw == info.srt_info.flattened_bufsize_dw);
 
     for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
+        if (pass_info.GoWLog()) {
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_SRT_FLATTEN_TRACE shader={:#x} event=ROOT_VISIT "
+                        "sgpr={} node={}",
+                        pass_info.gow_shader, static_cast<u32>(sgpr_base),
+                        pass_info.GoWId(root));
+        }
         VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
     }
 
