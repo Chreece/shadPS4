@@ -697,13 +697,13 @@ void Rasterizer::DispatchDirect() {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+    cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+    DebugState.IncDispatch();
     if (allow_one_shot) {
         LOG_WARNING(Render_Vulkan,
                     "GOW_COMPUTE_ONE_SHOT_RESULT shader={:#x} result=SUBMITTED grid={}x{}x{}",
                     cs.pgm_hash, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     }
-    cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
-    DebugState.IncDispatch();
 
     ResetBindings(true);
 }
