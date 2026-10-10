@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "2b28e513c80af5f5945a7cdf57ef5fb3a9d437c5"
+HEAD_SHA = "733a79257da2828834f1188b761065daba1e2194"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -293,7 +293,8 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_BIND_PROBE": "1",
         "SHADPS4_GOW_IMAGE_TABLE_AUDIT": "1",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
-        # Passive metadata only: every guest GPU compute dispatch stays disabled.
+        # A single 2x1x1 compute dispatch may pass strict in-emulator guards.
+        "SHADPS4_GOW_SAFE_COMPUTE_ONESHOT": "1",
         "SHADPS4_GOW_COMPUTE_CENSUS": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
@@ -397,7 +398,7 @@ def trial_run(binary, temp, result):
                 data = f.read()[-16000000:]
             (evidence / ("new-" + p.name)).write_bytes(data)
             joined += data.decode("utf-8", "replace")
-    # Classify observed direct compute grids without allowing GPU execution.
+    # Census the other dispatches while allowing only one guarded direct dispatch.
     census_pattern = re.compile(
         r"GOW_COMPUTE_CENSUS_DIRECT shader=(0x[0-9a-fA-F]+) "
         r"grid=(\d+)x(\d+)x(\d+) groups=(\d+) "
@@ -431,7 +432,8 @@ def trial_run(binary, temp, result):
         and not (item["invalid_buffers"] or item["invalid_images"]
                  or item["invalid_samplers"])
     ]
-    result["compute_execution_enabled"] = False
+    result["compute_execution_enabled"] = True
+    result["one_shot_target"] = {"shader": "0x6e9a8b98", "grid": [2, 1, 1]}
     result["one_shot_candidate"] = (
         next((line[:1500] for line in joined.splitlines()
               if "GOW_COMPUTE_ONE_SHOT_CANDIDATE" in line), None))
@@ -608,9 +610,15 @@ def main():
                         "DYNAMIC_IMAGE_MASKS_CAPTURED"
                         if report.get("image_live_masks_captured")
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
-                # Prefer the purpose of this read-only run when census evidence exists.
-                if report.get("compute_census_count"):
-                    report["result"] = "COMPUTE_CENSUS_CAPTURED"
+                # Priority: don't disguise a rejected one-shot as a census success.
+                if report.get("one_shot_submitted"):
+                    report["result"] = "ONE_SHOT_COMMAND_RECORDED"
+                elif report.get("one_shot_bind_failed"):
+                    report["result"] = "ONE_SHOT_BIND_FAILED"
+                elif report.get("one_shot_candidate"):
+                    report["result"] = "ONE_SHOT_ELIGIBILITY_CHECKED"
+                elif report.get("compute_census_count"):
+                    report["result"] = "COMPUTE_CENSUS_ONLY"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -634,9 +642,12 @@ def main():
     print("BIND_PROBE_PASSED=" + str(report.get("bind_probe_passed", False)))
     print("COMPUTE_CENSUS_COUNT=" + str(report.get("compute_census_count", 0)))
     print("SMALL_GRID_CANDIDATES=" + str(report.get("small_grid_candidates", [])))
-    print("GPU_COMPUTE_EXECUTION_ENABLED=False")
+    print("GPU_COMPUTE_ONE_SHOT_ENABLED=" + str(report.get("compute_execution_enabled", False)))
+    print("ONE_SHOT_TARGET=" + str(report.get("one_shot_target")))
     print("ONE_SHOT_ELIGIBILITY=" + str(report.get("one_shot_candidate")))
     print("ONE_SHOT_RESULT=" + str(report.get("one_shot_result")))
+    print("ONE_SHOT_COMMAND_RECORDED=" + str(report.get("one_shot_submitted", False)))
+    print("AMDGPU_KERNEL_HANG_LOGGED=" + str(report.get("kernel_gpu_hang_logged", False)))
     print("GPU_DEVICE_LOST_LOGGED=" + str(report.get("gpu_device_lost_logged", False)))
     print("RESOURCE_AUDIT_PASSED=" + str(report.get("resource_audit_passed", False)))
     print("RESOURCE_AUDIT_COUNTS=" + str(report.get("resource_audit_counts")))
