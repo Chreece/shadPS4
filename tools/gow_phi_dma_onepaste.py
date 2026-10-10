@@ -39,7 +39,9 @@ FLATTEN_SHA = "0b14e5f5c7961ffcbd691f32223a1b20f25154b2"
 ROOT_PRIORITY_SHA = "55c7ef1d1ca61078b90e4dabc83b5c35ee552e3f"
 AUTO_SHA = "41b199383806734f3b753bf9f96761de7f7e5234"
 BROAD_SHA = "ae1ab93fa6b89e37efc07d8f6f4d09e70880eeda"
-HEAD_SHA = "88fbecd1abdd224ce74b39e204357403fa85e907"
+GPU_PROBE_BASE_SHA = "3b8c11e6cdad20cb039f76eaa9fe28677a31b80a"
+HEAD_SHA = "ff31dc5c39bd5aa45d658efb8aba9fac280b1ceb"
+INDIRECT_GPU_DIFF_SHA256 = "30693439d0ba218354aa65e8b6ca6c88a7f24d45665d30d77455e893f0eb8055"
 BROAD_PATCH_SHA256 = "83000ad98104b0f335f4539ad9879d7212b678cdc327a18234fbd7117f2c47f6"
 AUTO_PATCH_SHA256 = "7743ac55071ce5656b84b8943a486b23ad729778460b1b354d355e879fb42def"
 ROOT_PATCH_SHA256 = "88b7fd1ded0f2d429e0b759a44e58a91107d9c023ab08ae8f0a049814b355185"
@@ -278,9 +280,16 @@ def get_patches():
             any(b'cmdBuf.draw' in l or b'cmdbuf.draw' in l or
                 b'inst.SetArg(' in l for l in additions)):
         raise RuntimeError("Unexpected graphics-semantic change in passive draw trace")
+    # Phase eleven: the one new diagnostic, on exactly one source file.
+    # GPIO-style source changes from earlier host runs remain unchanged.
+    gpu_args_patch = fetch_strict_patch(
+        GPU_PROBE_BASE_SHA, HEAD_SHA, {GBUFFER_SOURCE})
+    if hashlib.sha256(gpu_args_patch).hexdigest() != INDIRECT_GPU_DIFF_SHA256:
+        raise RuntimeError("GPU indirect command probe differs from pinned code")
     return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
             index_probe, flatten_probe, root_priority_patch, auto_topo_patch,
-            broad_probe, draw_probe)
+            broad_probe, draw_probe, gpu_args_patch)
+
 
 def verify_preimages():
     if set(EXPECTED_SOURCE_HASHES) != PROTECTED_SOURCES:
@@ -334,7 +343,10 @@ def verify_staged_instrumentation(staged):
                 "TraceGoWGBufferDraw(pipeline, liverpool->regs, state, "
                 "is_indexed, true,") != 1 or
             "TraceGoWGBufferDraw(pipeline, regs, state, is_indexed, true," in raster or
-            "SHADPS4_GOW_GBUFFER_DRAW_TRACE" not in raster):
+            "SHADPS4_GOW_GBUFFER_DRAW_TRACE" not in raster or
+            raster.count("static void TraceGoWIndirectGpuArgs(") != 1 or
+            raster.count("TraceGoWIndirectGpuArgs(pipeline, liverpool->regs,") != 1 or
+            "GOW_INDIRECT_GPU_CAPTURE slot={}" not in raster):
         raise RuntimeError("Staged passive G-buffer draw trace missing")
     if (raster.count("void LogGoWGraphicsDrawTotals(u32 frame)") != 1 or
             raster.count("RecordGoWPreparedDrawTargets(regs, key.mrt_mask, pipeline);") != 1 or
@@ -439,6 +451,92 @@ def apply_portable_gbuffer_probe(root, pinned_diff):
     }
 
 
+# The installed host has a different DrawIndirect layout from the GitHub
+# baseline. Stage the new probe at unique, verified source anchors instead of
+# reusing a context-dependent diff that already failed in an earlier attempt.
+# The git comparison, exact SHA and 3 insertion hunks are all mandatory.
+def apply_portable_indirect_gpu_probe(root, pinned_diff):
+    if hashlib.sha256(pinned_diff).hexdigest() != INDIRECT_GPU_DIFF_SHA256:
+        raise RuntimeError("Pinned indirect GPU diff hash mismatch")
+    rel = GBUFFER_SOURCE
+    text_diff = pinned_diff.decode("utf-8", errors="strict")
+    if (text_diff.count("diff --git ") != 1 or not text_diff.startswith(
+        f"diff --git a/{rel} b/{rel}\n"
+    ):
+        raise RuntimeError("Indirect GPU probe attempted to change another source file")
+    blocks = re.split(r"(?m)^@@[^\n]*\n", text_diff)
+    if len(blocks) != 4:
+        raise RuntimeError("Indirect GPU probe must have exactly 3 additive hunks")
+    def inserted(block):
+        if any(line.startswith("-") and not line.startswith("---")
+               for line in block.splitlines()):
+            raise RuntimeError("Indirect GPU probe may not remove existing code")
+        return "\n".join(
+            line[1:] for line in block.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        ) + "\n"
+
+    inc, helper, call = (inserted(block) for block in blocks[1:])
+    if (inc != "#include <algorithm>\n" or
+            not helper.startswith("// GoW Ragnarok: read back the ACTUAL 20-byte") or
+            helper.count("static void TraceGoWIndirectGpuArgs(") != 1 or
+            "GOW_INDIRECT_GPU_CAPTURE slot={}" not in helper or
+            "sizeof(VkDrawIndexedIndirectCommand)" not in helper or
+            "scheduler.DeferPriorityOperation(" not in helper or
+            "runtime.CopyBuffer(buffer, capture.buffer" not in helper or
+            "SHADPS4_GOW_INDIRECT_GPU_ARGS" not in helper or
+            not call.startswith("    // Snapshot Vulkan's true indirect arguments") or
+            call.count("TraceGoWIndirectGpuArgs(") != 1):
+        raise RuntimeError("Unexpected content in indirect GPU diagnostic")
+    source_path = root / rel
+    before = source_path.read_bytes()
+    original = before.decode("utf-8", errors="strict")
+    head = "#include <array>\n"
+    indirect = "void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 stride,"
+    tail = "// This diagnostics-only guard deliberately runs AFTER pipeline creation."
+    if (original.count(head) != 1 or original.count(indirect) != 1 or
+            original.count(tail) != 1 or
+            "#include <algorithm>\n" in original or
+            "TraceGoWIndirectGpuArgs" in original):
+        raise RuntimeError("Indeterminate or already-instrumented source anchors")
+    start = original.index(indirect)
+    end = original.index(tail, start)
+    body = original[start:end]
+    barrier = (
+        "    if (needs_barrier) {\n"
+        "        runtime.FlushBarriers();\n"
+        "    }\n\n"
+        "    pipeline->BindResources(set_writes, push_data);"
+    )
+    if (body.count(barrier) != 1 or
+            "cmdbuf.drawIndexedIndirect(buffer->Handle(), base, max_count, stride);" not in body or
+            "TraceGoWGBufferDraw(pipeline, liverpool->regs, state, is_indexed, true," not in body):
+        raise RuntimeError("Indirect draw code is not the 19:32 working layout")
+    updated_body = body.replace(
+        barrier,
+        barrier.replace("    pipeline->BindResources(set_writes, push_data);",
+                        call + "    pipeline->BindResources(set_writes, push_data);"))
+    modified = original.replace(head, head + inc, 1)
+    begin = modified.index(indirect)
+    finish = modified.index(tail, begin)
+    modified = modified[:begin] + helper + updated_body + modified[finish:]
+    if (modified.count("static void TraceGoWIndirectGpuArgs(") != 1 or
+            modified.count("TraceGoWIndirectGpuArgs(pipeline, liverpool->regs,") != 1 or
+            modified.replace(inc, "", 1).replace(helper, "", 1)
+                    .replace(call, "", 1) != original or
+            len(modified) != len(original) + len(inc) + len(helper) + len(call)):
+        raise RuntimeError("Indirect GPU probe altered existing draw code")
+    source_path.write_bytes(modified.encode("utf-8"))
+    return {
+        "source_before_sha256": hashlib.sha256(before).hexdigest(),
+        "source_after_sha256": sha(source_path),
+        "patch_sha256": INDIRECT_GPU_DIFF_SHA256,
+        "original_lines_unchanged": True,
+        "record_bytes": 20,
+        "unique_address_limit": 6,
+    }
+
+
 def preflight_patches(patches, temp, report):
     # Every git-apply step runs against exact copies of host files.
     # No installed source file is changed during this preflight.
@@ -448,13 +546,16 @@ def preflight_patches(patches, temp, report):
         dst = staged / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / rel, dst)
-    if len(patches) != 10:
-        raise RuntimeError("Expected nine host-proven patches plus one G-buffer probe")
+    if len(patches) != 11:
+        raise RuntimeError("Expected ten host-proven patches plus one indirect readback")
     for step, patch in enumerate(patches):
         filename = temp / f"pinned-{step}.diff"
         filename.write_bytes(patch)
         if step == 9:
             report["gbuffer_portable_preflight"] = apply_portable_gbuffer_probe(staged, patch)
+            continue
+        if step == 10:
+            report["indirect_gpu_preflight"] = apply_portable_indirect_gpu_probe(staged, patch)
             continue
         check = run(["git", "apply", "--check", "--whitespace=nowarn", str(filename)],
                     cwd=staged)
@@ -464,7 +565,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_ten_patch_preflight"] = True
+    report["staged_eleven_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -517,6 +618,10 @@ def do_build(build, patches, temp, result):
                 # BEFORE the first live file is changed.
                 changed = True
                 result["gbuffer_portable_live"] = apply_portable_gbuffer_probe(SOURCE, patch)
+                continue
+            if step == 10:
+                changed = True
+                result["indirect_gpu_live"] = apply_portable_indirect_gpu_probe(SOURCE, patch)
                 continue
             check = run(["git", "apply", "--check", "--whitespace=nowarn",
                          str(patch_path)], cwd=SOURCE)
@@ -660,7 +765,9 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
         "SHADPS4_GOW_COMPUTE_CENSUS": "1",
         # Do not repeat the proven before/after GPU image delta captures.
-        "SHADPS4_GOW_GBUFFER_DRAW_TRACE": "1",
+        # Keep the 19:32 draw results; do not repeat the 128-line audit.
+        # New probe reads only the six Vulkan indirect-command structs.
+        "SHADPS4_GOW_INDIRECT_GPU_ARGS": "1",
         "SHADPS4_GOW_D80_CONTROL_NO_DISPATCH": "0",
         # First direct screen comparison after the generalized SRT fix.
         "SHADPS4_GOW_FRAME_SOURCE_DIR": str(frame_dir.resolve()),
@@ -695,18 +802,12 @@ def trial_run(binary, temp, result):
                 source_png_count = len(list(
                     frame_dir.glob("gow_guest_pre_fsr_*.png")))
                 frame6 = "GOW_GRAPHICS_SUMMARY frame=6 " in raw_console
-                traces = re.findall(
-                    r"GOW_GBUFFER_DRAW seq=(\d+) shader=0x7f710602",
-                    raw_console)
-                # The previous capture observed 48 attachment preparations
-                # for this shader. Do not require exactly 48 Vulkan draws:
-                # a mismatch itself is the reason for this new diagnostic.
-                enough = len(set(traces)) >= 48
-                ready = srt_done and sharp_done and frame6 and source_png_count >= 3
-                if ready and (enough or time.monotonic() - start >= 20):
-                    result["end_reason"] = (
-                        "GBUFFER_DRAW_COMMANDS_AND_FRAME_CAPTURED"
-                        if enough else "GBUFFER_DRAW_COUNT_UNDER_OBSERVED_PREPARATIONS")
+                # Only GPU-completed (not queued) command readbacks qualify.
+                gpu_done = set(re.findall(
+                    r"GOW_INDIRECT_GPU_CAPTURE slot=([0-5]) [^\n]*"
+                    r"result=GPU_READBACK_COMPLETE", raw_console))
+                if srt_done and sharp_done and len(gpu_done) == 6:
+                    result["end_reason"] = "SIX_INDIRECT_GPU_ARGUMENTS_CAPTURED"
                     break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -1138,6 +1239,48 @@ def trial_run(binary, temp, result):
             "timeline_completed": bool(
                 recorded and tick is not None and tick == finished_tick),
         }
+    # Decode only deferred, GPU-completed copies of the same 20-byte VkBuffer
+    # arguments passed to drawIndexedIndirect. Never infer from regs.num_indices.
+    indirect_queued = {}
+    indirect_complete = {}
+    indirect_skips = {}
+    for line in joined.splitlines():
+        if "GOW_INDIRECT_GPU_" not in line:
+            continue
+        data = line[line.index("GOW_INDIRECT_GPU_"):]
+        kv = _kv(data)
+        if not kv.get("slot", "").isdigit():
+            continue
+        slot = int(kv["slot"])
+        if not 0 <= slot < 6:
+            continue
+        if data.startswith("GOW_INDIRECT_GPU_QUEUED"):
+            indirect_queued[slot] = kv
+        elif data.startswith("GOW_INDIRECT_GPU_CAPTURE") and kv.get("result") == "GPU_READBACK_COMPLETE":
+            indirect_complete[slot] = kv
+        elif data.startswith("GOW_INDIRECT_GPU_SKIP"):
+            indirect_skips[slot] = kv
+    result["indirect_gpu_queued"] = [indirect_queued[k] for k in sorted(indirect_queued)]
+    result["indirect_gpu_captures"] = [indirect_complete[k] for k in sorted(indirect_complete)]
+    result["indirect_gpu_skips"] = [indirect_skips[k] for k in sorted(indirect_skips)]
+    result["indirect_gpu_completed_count"] = len(indirect_complete)
+    result["indirect_gpu_all_six"] = (
+        set(indirect_complete) == set(range(6)) and not indirect_skips)
+    result["indirect_gpu_nonzero_draws"] = [
+        x for x in result["indirect_gpu_captures"]
+        if int(x.get("index_count", "0")) > 0 and
+           int(x.get("instance_count", "0")) > 0
+    ]
+    result["indirect_gpu_zero_index"] = sum(
+        int(x.get("index_count", "0")) == 0
+        for x in result["indirect_gpu_captures"])
+    result["indirect_gpu_zero_instance"] = sum(
+        int(x.get("instance_count", "0")) == 0
+        for x in result["indirect_gpu_captures"])
+    result["indirect_gpu_distinct_addresses"] = len({
+        x.get("address", "") for x in result["indirect_gpu_captures"]
+    })
+
     # G-buffer draw emission (vs merely binding/render-target preparation).
     # Dedup stdout and game-log copies by the monotonic per-process seq.
     draw_rows = {}
@@ -1521,25 +1664,17 @@ def main():
                 elif not (report.get("fs_srt_all_24_resolved") and
                           report.get("fs_image_sharp_valid_after_reorder")):
                     report["result"] = "MULTISHADER_TOPOLOGY_TARGET_REGRESSION"
-                elif report.get("gbuffer_draws_issued", 0) == 0:
-                    report["result"] = "GBUFFER_NO_VULKAN_DRAW_ISSUED"
-                elif report.get("gbuffer_zero_color_mask", 0):
-                    report["result"] = "GBUFFER_COLOR_WRITE_MASK_ZERO"
-                elif report.get("gbuffer_zero_screen_scissor", 0):
-                    report["result"] = "GBUFFER_SCREEN_SCISSOR_ZERO"
-                elif report.get("gbuffer_zero_render_extent", 0):
-                    report["result"] = "GBUFFER_RENDER_EXTENT_ZERO"
-                elif report.get("gbuffer_zero_viewport_scale", 0):
-                    report["result"] = "GBUFFER_VIEWPORT_SCALE_ZERO"
-                elif (report.get("gbuffer_direct_zero_geometry", 0) or
-                      report.get("gbuffer_direct_zero_instances", 0)):
-                    report["result"] = "GBUFFER_DIRECT_GEOMETRY_ZERO"
-                elif report.get("guest_frame_verified_count", 0) < 3:
-                    report["result"] = "GBUFFER_DRAW_TRACE_NO_VIDEOOUT"
-                elif report.get("guest_frame_nonblack_count", 0) > 0:
-                    report["result"] = "GBUFFER_DRAWS_SOURCE_NONBLACK"
+                elif not report.get("indirect_gpu_all_six"):
+                    report["result"] = "INDIRECT_GPU_ARGUMENT_READBACK_INCOMPLETE"
+                elif report.get("indirect_gpu_nonzero_draws"):
+                    report["result"] = "INDIRECT_GPU_ARGUMENTS_HAVE_GEOMETRY"
+                elif report.get("indirect_gpu_zero_index", 0) == 6:
+                    report["result"] = "INDIRECT_GPU_ARGUMENTS_ALL_ZERO_INDEX_COUNT"
+                elif report.get("indirect_gpu_zero_instance", 0) == 6:
+                    report["result"] = "INDIRECT_GPU_ARGUMENTS_ALL_ZERO_INSTANCES"
                 else:
-                    report["result"] = "GBUFFER_DRAWS_ISSUED_SOURCE_BLACK"
+                    report["result"] = "INDIRECT_GPU_ARGUMENTS_MIXED_EMPTY"
+
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -1558,15 +1693,12 @@ def main():
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
-    print("GBUFFER_DRAW_COMMANDS=" + str(report.get("gbuffer_draws_issued", 0)))
-    print("GBUFFER_DIRECT=" + str(report.get("gbuffer_direct_issued", 0)))
-    print("GBUFFER_INDIRECT=" + str(report.get("gbuffer_indirect_issued", 0)))
-    print("GBUFFER_ZERO_COLOR_MASK=" + str(report.get("gbuffer_zero_color_mask", 0)))
-    print("GBUFFER_ZERO_SCREEN_SCISSOR=" + str(report.get("gbuffer_zero_screen_scissor", 0)))
-    print("GBUFFER_ZERO_RENDER_EXTENT=" + str(report.get("gbuffer_zero_render_extent", 0)))
-    print("GBUFFER_ZERO_VIEWPORT=" + str(report.get("gbuffer_zero_viewport_scale", 0)))
-    print("GBUFFER_ZERO_DIRECT_GEOMETRY=" + str(report.get("gbuffer_direct_zero_geometry", 0)))
-    print("GBUFFER_ZERO_DIRECT_INSTANCES=" + str(report.get("gbuffer_direct_zero_instances", 0)))
+    print("INDIRECT_GPU_COMPLETED=" + str(report.get("indirect_gpu_completed_count", 0)))
+    print("INDIRECT_GPU_SIX_CAPTURED=" + str(report.get("indirect_gpu_all_six", False)))
+    print("INDIRECT_GPU_HAS_GEOMETRY=" + str(len(report.get("indirect_gpu_nonzero_draws", []))))
+    print("INDIRECT_GPU_ZERO_INDEX=" + str(report.get("indirect_gpu_zero_index", 0)))
+    print("INDIRECT_GPU_ZERO_INSTANCES=" + str(report.get("indirect_gpu_zero_instance", 0)))
+    print("INDIRECT_GPU_COMMANDS=" + str(report.get("indirect_gpu_captures", [])))
     print("ARCHIVE=" + str(archive))
     print("SRT_TRACE_COMPLETE=" + str(report.get("fs_srt_flatten_complete", False)))
     print("SRT_ROOT_ORDER=" + str(report.get("fs_srt_root_order", [])))
