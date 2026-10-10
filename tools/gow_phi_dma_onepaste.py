@@ -603,13 +603,14 @@ def main():
                 report["result"] = "BUILD_PASS"
                 trial_run(trial, tmp, report)
                 report["result"] = report.get("end_reason", "TRIAL_COMPLETE")
-                if report.get("compute_census_count"):
-                    report["result"] = "COMPUTE_CENSUS_CAPTURED"
                 if report.get("resource_audit_logged") and not report.get("resource_audit_passed"):
                     report["result"] = (
                         "DYNAMIC_IMAGE_MASKS_CAPTURED"
                         if report.get("image_live_masks_captured")
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
+                # Prefer the purpose of this read-only run when census evidence exists.
+                if report.get("compute_census_count"):
+                    report["result"] = "COMPUTE_CENSUS_CAPTURED"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
