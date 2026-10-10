@@ -389,6 +389,9 @@ def verify_staged_instrumentation(staged):
             "GOW_INDIRECT_BUFFER_ORIGIN" not in raster or
             "GOW_PRODUCER_RESOURCE shader={:#x}" not in raster or
             "GOW_PRODUCER_FIRST_DRAW" not in raster or
+            "GOW_73_ADMISSION shader={:#x}" not in raster or
+            "SHADPS4_GOW_ENABLE_73_ONE_SHOT" not in raster or
+            "std::array<GoWComputeCanary, 7>" not in raster or
             raster.count("static void TraceGoWProducerResourceChain(") != 1 or
             raster.count("static void TraceGoWIndirectGpuArgs(") != 1 or
             raster.count("TraceGoWIndirectGpuArgs(pipeline, liverpool->regs,") != 1 or
@@ -804,8 +807,8 @@ def preflight_patches(patches, temp, report):
         dst = staged / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / rel, dst)
-    if len(patches) != 13:
-        raise RuntimeError("Expected 12 proven patches and one pre-draw resource-map patch")
+    if len(patches) != 14:
+        raise RuntimeError("Expected 13 proven patches plus one strictly gated compute trial")
     for step, patch in enumerate(patches):
         filename = temp / f"pinned-{step}.diff"
         filename.write_bytes(patch)
@@ -821,6 +824,9 @@ def preflight_patches(patches, temp, report):
         if step == 12:
             report["producer_chain_preflight"] = apply_portable_pre_draw_producer_probe(staged, patch)
             continue
+        if step == 13:
+            report["one_shot_73_preflight"] = apply_portable_73_one_shot(staged, patch)
+            continue
         check = run(["git", "apply", "--check", "--whitespace=nowarn", str(filename)],
                     cwd=staged)
         if check.returncode:
@@ -829,7 +835,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_thirteen_patch_preflight"] = True
+    report["staged_fourteen_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -894,6 +900,10 @@ def do_build(build, patches, temp, result):
             if step == 12:
                 changed = True
                 result["producer_chain_live"] = apply_portable_pre_draw_producer_probe(SOURCE, patch)
+                continue
+            if step == 13:
+                changed = True
+                result["one_shot_73_live"] = apply_portable_73_one_shot(SOURCE, patch)
                 continue
             check = run(["git", "apply", "--check", "--whitespace=nowarn",
                          str(patch_path)], cwd=SOURCE)
