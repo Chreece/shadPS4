@@ -865,6 +865,13 @@ void Rasterizer::DispatchDirect() {
     }
     const int canary_idx = SelectGoWComputeCanary(
         cs, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+    // Diagnostic A/B control: retain identical bindings and image transfers
+    // but OMIT the single D80 compute dispatch. No other shader is modified.
+    const char* no_dispatch_env = std::getenv("SHADPS4_GOW_D80_CONTROL_NO_DISPATCH");
+    const bool d80_no_dispatch = canary_idx >= 0 &&
+                                 cs.pgm_hash == 0xd80cbb16ULL &&
+                                 no_dispatch_env &&
+                                 std::strcmp(no_dispatch_env, "1") == 0;
     if (canary_idx < 0 && SuppressDiagnosticCompute(cs)) {
         return;
     }
@@ -981,8 +988,15 @@ void Rasterizer::DispatchDirect() {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
-    cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
-    DebugState.IncDispatch();
+    if (d80_no_dispatch) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_IMAGE_OUTPUT_CONTROL_NO_DISPATCH shader={:#x} "
+                    "grid={}x{}x{} result=SKIPPED",
+                    cs.pgm_hash, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+    } else {
+        cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+        DebugState.IncDispatch();
+    }
     if (image_delta.ready) {
         auto after_copy = image_delta.region;
         after_copy.bufferOffset = image_delta.after.offset;
@@ -995,14 +1009,18 @@ void Rasterizer::DispatchDirect() {
                 EvaluateGoWImageOutputDelta(capture, pool);
             });
     }
-    if (canary_idx >= 0) {
+    if (canary_idx >= 0 && !d80_no_dispatch) {
         LOG_WARNING(Render_Vulkan,
                     "GOW_COMPUTE_CANARY_RESULT shader={:#x} result=SUBMITTED grid={}x{}x{}",
                     cs.pgm_hash, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+    } else if (d80_no_dispatch) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_COMPUTE_CANARY_RESULT shader={:#x} result=CONTROL_SKIPPED",
+                    cs.pgm_hash);
     }
 
     ResetBindings(true);
-    if (canary_idx >= 0) {
+    if (canary_idx >= 0 && !d80_no_dispatch) {
         const u64 tick = scheduler.CurrentTick();
         gow_canary_ticks[canary_idx].store(tick, std::memory_order_release);
         LOG_WARNING(Render_Vulkan,
