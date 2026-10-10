@@ -562,6 +562,25 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
 // reported invalid resources. This optional probe admits at most one dispatch,
 // and ONLY with fully resolved metadata, small buffers and a small grid.
 // Every other compute shader remains suppressed.
+// An emitted Vulkan command is not necessarily complete. Track the scheduler
+// timeline value for the sole GoW compute probe and poll without waiting or
+// changing normal queue submission ordering.
+static std::atomic<u64> gow_one_shot_completion_tick{0};
+static std::atomic<bool> gow_one_shot_gpu_completed{false};
+static void PollGoWOneShotGPUCompletion(Scheduler& scheduler) {
+    const u64 tick = gow_one_shot_completion_tick.load(std::memory_order_acquire);
+    if (tick == 0 || gow_one_shot_gpu_completed.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (scheduler.IsFree(tick) &&
+        !gow_one_shot_gpu_completed.exchange(true, std::memory_order_acq_rel)) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_COMPUTE_ONE_SHOT_GPU_COMPLETE shader={:#x} tick={} "
+                    "result=TIMELINE_SIGNALED",
+                    0x6e9a8b98ULL, tick);
+    }
+}
+
 static std::atomic<bool> gow_one_shot_examined{false};
 static bool AllowFirstGoWComputeProbe(const Shader::Info& cs, u32 x, u32 y, u32 z) {
     const char* flag = std::getenv("SHADPS4_GOW_SAFE_COMPUTE_ONESHOT");
@@ -699,6 +718,7 @@ void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
 
     scheduler.PopPendingOperations();
+    PollGoWOneShotGPUCompletion(scheduler);
 
     const auto& cs_program = liverpool->GetCsRegs();
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
@@ -779,12 +799,22 @@ void Rasterizer::DispatchDirect() {
     }
 
     ResetBindings(true);
+    if (allow_one_shot) {
+        const u64 tick = scheduler.CurrentTick();
+        gow_one_shot_completion_tick.store(tick, std::memory_order_release);
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_COMPUTE_ONE_SHOT_GPU_TICK shader={:#x} tick={} "
+                    "result=WAITING_FOR_NORMAL_SUBMISSION",
+                    cs.pgm_hash, tick);
+        PollGoWOneShotGPUCompletion(scheduler);
+    }
 }
 
 void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     RENDERER_TRACE;
 
     scheduler.PopPendingOperations();
+    PollGoWOneShotGPUCompletion(scheduler);
 
     const auto& cs_program = liverpool->GetCsRegs();
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
@@ -857,11 +887,13 @@ u64 Rasterizer::Flush() {
     const u64 current_tick = scheduler.CurrentTick();
     SubmitInfo info{};
     scheduler.Flush(info);
+    PollGoWOneShotGPUCompletion(scheduler);
     return current_tick;
 }
 
 void Rasterizer::Finish() {
     scheduler.Finish();
+    PollGoWOneShotGPUCompletion(scheduler);
 }
 
 void Rasterizer::OnSubmit() {
