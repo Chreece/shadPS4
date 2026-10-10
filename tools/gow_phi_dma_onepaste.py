@@ -851,24 +851,16 @@ def trial_run(binary, temp, result):
     env.update({
         "SHADPS4_ENABLE_IPC": "false",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
-        "SHADPS4_GOW_SRT_FLATTEN_TRACE": "1",
-        # This run derives the order from IR rather than using the manual
-        # SGPR8-first override. The override remains disabled.
+        # Retain the previously proven automatic resource dependencies.
+        # Their verbose per-shader flattened-buffer trace stays disabled.
         "SHADPS4_GOW_SRT_AUTO_ROOTS": "2",
-        # Exactly the six already verified, one-shot compute canaries.
-        # Suppression remains enabled for EVERY non-canary compute dispatch.
-        # Each canary additionally checks exact shader/hash/grid, resource
-        # shapes, image/sampler validity, DMA, and host limits in C++.
+        # Preserve the 19:53 execution policy: six resource-guarded canaries,
+        # all other compute suppressed. Do not execute any new shader.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
-        # Do not repeat the proven before/after GPU image delta captures.
-        # Keep the 19:32 draw results; do not repeat the 128-line audit.
-        # New probe reads only the six Vulkan indirect-command structs.
-        "SHADPS4_GOW_INDIRECT_GPU_ARGS": "1",
-        # First direct screen comparison after the generalized SRT fix.
-        # Earlier 19:04 offscreen readbacks are already conclusive for the
-        # zero G-buffer. Avoid repeating large GPU surface downloads.
-        # Cross-check the final image SHARP (all eight words) in the same run.
-        "SHADPS4_GOW_FS_IMAGE_SHARP_TRACE": "1",
+        # Passive CPU-side inspection of compute writable resource bindings
+        # and GPU-modified status of the six argument structures.
+        "SHADPS4_GOW_INDIRECT_WRITER_SCAN": "1",
+        # No further frame, offscreen, or command-buffer GPU readbacks.
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
     env.setdefault("DISPLAY", ":0")
@@ -896,11 +888,13 @@ def trial_run(binary, temp, result):
                     frame_dir.glob("gow_guest_pre_fsr_*.png")))
                 frame6 = "GOW_GRAPHICS_SUMMARY frame=6 " in raw_console
                 # Only GPU-completed (not queued) command readbacks qualify.
-                gpu_done = set(re.findall(
-                    r"GOW_INDIRECT_GPU_CAPTURE slot=([0-5]) [^\n]*"
-                    r"result=GPU_READBACK_COMPLETE", raw_console))
-                if srt_done and sharp_done and len(gpu_done) == 6:
-                    result["end_reason"] = "SIX_INDIRECT_GPU_ARGUMENTS_CAPTURED"
+                # The exact instance-count values were already confirmed
+                # from six GPU-completed readbacks in the 19:53 archive.
+                # This trial observes their candidate writers only.
+                origin_seen = "GOW_INDIRECT_BUFFER_ORIGIN address=0x1039242c40" in raw_console
+                writer_seen = "GOW_INDIRECT_WRITER_SUMMARY shader=" in raw_console
+                if origin_seen and writer_seen and time.monotonic() - start >= 20:
+                    result["end_reason"] = "INDIRECT_WRITER_CENSUS_AND_ORIGIN_CAPTURED"
                     break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -1332,6 +1326,51 @@ def trial_run(binary, temp, result):
             "timeline_completed": bool(
                 recorded and tick is not None and tick == finished_tick),
         }
+    # Passive candidate provenance for the six previously confirmed
+    # zero-instance commands. Deduplicate console/game-log copies, but
+    # preserve candidate buffer addresses and descriptor indices.
+    seen_origin = set()
+    origin_rows = []
+    summary_rows = {}
+    candidate_rows = {}
+    for line in joined.splitlines():
+        for marker in ("GOW_INDIRECT_BUFFER_ORIGIN", "GOW_INDIRECT_WRITER_SUMMARY",
+                       "GOW_INDIRECT_WRITER_CANDIDATE"):
+            if marker not in line:
+                continue
+            payload = line[line.index(marker):]
+            if payload in seen_origin:
+                continue
+            seen_origin.add(payload)
+            row = _kv(payload)
+            if marker == "GOW_INDIRECT_BUFFER_ORIGIN":
+                origin_rows.append(row)
+            elif marker == "GOW_INDIRECT_WRITER_SUMMARY":
+                key = (row.get("shader"), row.get("grid"))
+                summary_rows[key] = row
+            else:
+                key = (row.get("shader"), row.get("buffer"), row.get("address"))
+                candidate_rows[key] = row
+            break
+    (evidence / "indirect-writer-census.txt").write_text(
+        "\n".join(sorted(seen_origin)) + "\n")
+    result["indirect_writer_origin"] = origin_rows[-1] if origin_rows else None
+    result["indirect_writer_gpu_modified"] = (
+        origin_rows[-1].get("gpu_modified_before_obtain") == "true"
+        if origin_rows else None)
+    result["indirect_writer_summaries"] = list(summary_rows.values())
+    result["indirect_writer_candidates"] = list(candidate_rows.values())
+    result["indirect_writer_summary_count"] = len(summary_rows)
+    result["indirect_writer_candidate_count"] = len(candidate_rows)
+    result["indirect_writer_special_count"] = sum(
+        int(row.get("special_writable", "0")) > 0
+        for row in summary_rows.values())
+    result["indirect_writer_dma_count"] = sum(
+        row.get("uses_dma") == "true" for row in summary_rows.values())
+    result["indirect_writer_invalid_writable_count"] = sum(
+        int(row.get("invalid_writable", "0")) > 0
+        for row in summary_rows.values())
+
     # Decode only deferred, GPU-completed copies of the same 20-byte VkBuffer
     # arguments passed to drawIndexedIndirect. Never infer from regs.num_indices.
     indirect_queued = {}
@@ -1744,29 +1783,18 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif not report.get("fs_srt_flatten_complete"):
-                    report["result"] = "FS_SRT_FLATTEN_TRACE_MISSING"
-                elif not report.get("fs_srt_auto_proved_order"):
-                    report["result"] = "SRT_AUTO_ROOT_TOPOLOGY_NOT_PROVEN"
-                elif report.get("fs_srt_flatten_truncated"):
-                    report["result"] = "FS_SRT_FLATTEN_TRACE_CAPPED"
-                elif report.get("srt_topology_shaders_seen", 0) < 2:
-                    report["result"] = "MULTISHADER_TOPOLOGY_NOT_OBSERVED"
-                elif report.get("srt_topology_not_enabled"):
-                    report["result"] = "MULTISHADER_TOPOLOGY_GATE_MISMATCH"
-                elif not (report.get("fs_srt_all_24_resolved") and
-                          report.get("fs_image_sharp_valid_after_reorder")):
-                    report["result"] = "MULTISHADER_TOPOLOGY_TARGET_REGRESSION"
-                elif not report.get("indirect_gpu_all_six"):
-                    report["result"] = "INDIRECT_GPU_ARGUMENT_READBACK_INCOMPLETE"
-                elif report.get("indirect_gpu_nonzero_draws"):
-                    report["result"] = "INDIRECT_GPU_ARGUMENTS_HAVE_GEOMETRY"
-                elif report.get("indirect_gpu_zero_index", 0) == 6:
-                    report["result"] = "INDIRECT_GPU_ARGUMENTS_ALL_ZERO_INDEX_COUNT"
-                elif report.get("indirect_gpu_zero_instance", 0) == 6:
-                    report["result"] = "INDIRECT_GPU_ARGUMENTS_ALL_ZERO_INSTANCES"
+                elif not report.get("indirect_writer_origin"):
+                    report["result"] = "INDIRECT_WRITER_ORIGIN_NOT_OBSERVED"
+                elif report.get("indirect_writer_candidate_count", 0) > 0:
+                    report["result"] = "INDIRECT_WRITER_OVERLAPPING_BUFFER_CANDIDATES"
+                elif (report.get("indirect_writer_dma_count", 0) or
+                      report.get("indirect_writer_special_count", 0) or
+                      report.get("indirect_writer_invalid_writable_count", 0)):
+                    report["result"] = "INDIRECT_WRITER_NO_DIRECT_MATCH_DYNAMIC_POSSIBLE"
+                elif report.get("indirect_writer_gpu_modified"):
+                    report["result"] = "INDIRECT_WRITER_GPU_MODIFIED_NO_STATIC_MATCH"
                 else:
-                    report["result"] = "INDIRECT_GPU_ARGUMENTS_MIXED_EMPTY"
+                    report["result"] = "INDIRECT_WRITER_NO_STATIC_MATCH"
 
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
@@ -1786,12 +1814,16 @@ def main():
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
-    print("INDIRECT_GPU_COMPLETED=" + str(report.get("indirect_gpu_completed_count", 0)))
-    print("INDIRECT_GPU_SIX_CAPTURED=" + str(report.get("indirect_gpu_all_six", False)))
-    print("INDIRECT_GPU_HAS_GEOMETRY=" + str(len(report.get("indirect_gpu_nonzero_draws", []))))
-    print("INDIRECT_GPU_ZERO_INDEX=" + str(report.get("indirect_gpu_zero_index", 0)))
-    print("INDIRECT_GPU_ZERO_INSTANCES=" + str(report.get("indirect_gpu_zero_instance", 0)))
-    print("INDIRECT_GPU_COMMANDS=" + str(report.get("indirect_gpu_captures", [])))
+    print("INDIRECT_WRITER_ORIGIN=" + str(report.get("indirect_writer_origin")))
+    print("INDIRECT_WRITER_GPU_MODIFIED=" + str(report.get("indirect_writer_gpu_modified")))
+    print("INDIRECT_WRITER_DIRECT_CANDIDATES=" +
+          str(report.get("indirect_writer_candidate_count", 0)))
+    print("INDIRECT_WRITER_CANDIDATES=" + str(report.get("indirect_writer_candidates", [])))
+    print("INDIRECT_WRITER_UNIQUE_SUMMARIES=" +
+          str(report.get("indirect_writer_summary_count", 0)))
+    print("INDIRECT_WRITER_DMA_POSSIBLE=" + str(report.get("indirect_writer_dma_count", 0)))
+    print("INDIRECT_WRITER_SPECIAL_POSSIBLE=" +
+          str(report.get("indirect_writer_special_count", 0)))
     print("ARCHIVE=" + str(archive))
     print("SRT_TRACE_COMPLETE=" + str(report.get("fs_srt_flatten_complete", False)))
     print("SRT_ROOT_ORDER=" + str(report.get("fs_srt_root_order", [])))
