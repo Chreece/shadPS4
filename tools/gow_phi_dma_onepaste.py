@@ -606,11 +606,21 @@ def trial_run(binary, temp, result):
                         probe_logged = len(re.findall(
                             r"GOW_FRAME_GUEST_CAPTURE frame=\d+ result=SAVED",
                             trial_output))
-                        if len(probe_saved) >= 3 and probe_logged >= 3:
-                            result["end_reason"] = "FIRST_THREE_GUEST_FRAMES_CAPTURED"
+                        offscreen_complete = 0
+                        for addr in OFFSCREEN_TARGETS:
+                            lookup = "GOW_OFFSCREEN_GPU_LOOKUP address=" + addr + " result="
+                            outcome = "GOW_OFFSCREEN_GPU_CAPTURE address=" + addr + " result="
+                            # A rejected/missing cache image is already an
+                            # evidence-backed result, not a silent absence.
+                            if ((lookup + "UNSAFE") in trial_output or
+                                (lookup + "NOT_FOUND") in trial_output or
+                                outcome in trial_output):
+                                offscreen_complete += 1
+                        if len(probe_saved) >= 3 and probe_logged >= 3 and offscreen_complete == 3:
+                            result["end_reason"] = "GUEST_AND_OFFSCREEN_FRAMES_CAPTURED"
                             break
-                        if time.monotonic() - last_spv >= 36:
-                            result["end_reason"] = "GUEST_FRAME_OBSERVATION_WINDOW_ENDED"
+                        if time.monotonic() - last_spv >= 45:
+                            result["end_reason"] = "OFFSCREEN_OBSERVATION_WINDOW_ENDED"
                             break
                 else:
                     last_spv = None
@@ -755,6 +765,64 @@ def trial_run(binary, temp, result):
         result["guest_frame_pixels_status"] = "FLIPS_RECORDED_NO_SOURCE_IMAGE"
     else:
         result["guest_frame_pixels_status"] = "NO_GUEST_FRAME_OBSERVED"
+    # GPU-backed (not raw guest RAM) offscreen images recorded before the
+    # first registered VideoOut presentation. Distinguish unseen from black.
+    offscreen_lookups = {}
+    offscreen_captures = {}
+    for line in joined.splitlines():
+        if "GOW_OFFSCREEN_GPU_LOOKUP address=" in line:
+            kv = _kv(line[line.index("GOW_OFFSCREEN_GPU_LOOKUP address="):])
+            if kv.get("address") in OFFSCREEN_TARGETS:
+                offscreen_lookups[kv["address"]] = kv
+        if "GOW_OFFSCREEN_GPU_CAPTURE address=" in line:
+            kv = _kv(line[line.index("GOW_OFFSCREEN_GPU_CAPTURE address="):])
+            if kv.get("address") in OFFSCREEN_TARGETS:
+                offscreen_captures[kv["address"]] = kv
+    offscreen_pngs = {}
+    for path in sorted(frame_dir.glob("gow_offscreen_*.png")):
+        if not path.is_file() or path.is_symlink() or path.stat().st_size > 20_000_000:
+            continue
+        with path.open("rb") as fp:
+            head = fp.read(24)
+        if (len(head) != 24 or not head.startswith(b"\x89PNG\r\n\x1a\n")
+                or head[12:16] != b"IHDR"):
+            continue
+        width, height = struct.unpack(">II", head[16:24])
+        offscreen_pngs[path.name] = {
+            "width": width, "height": height,
+            "size_bytes": path.stat().st_size, "sha256": sha(path),
+        }
+    offscreen_results = {}
+    for addr in OFFSCREEN_TARGETS:
+        lookup = offscreen_lookups.get(addr)
+        capture = offscreen_captures.get(addr)
+        png_name = capture.get("file", "").split("/")[-1] if capture else ""
+        verified = bool(capture and capture.get("result") == "SAVED"
+                        and png_name in offscreen_pngs)
+        nonblack = (int(capture["nonblack_pixels"])
+                    if verified and capture.get("nonblack_pixels", "").isdigit()
+                    else None)
+        offscreen_results[addr] = {
+            "lookup": lookup, "capture": capture if verified else capture,
+            "png": offscreen_pngs.get(png_name),
+            "gpu_readback_verified": verified,
+            "nonblack_pixels": nonblack,
+            "has_visible_rgb": nonblack > 0 if nonblack is not None else None,
+        }
+    result["offscreen_gpu_targets"] = offscreen_results
+    result["offscreen_pngs"] = offscreen_pngs
+    result["offscreen_gpu_readback_count"] = sum(
+        v["gpu_readback_verified"] for v in offscreen_results.values())
+    result["offscreen_nonblack_count"] = sum(
+        v["has_visible_rgb"] is True for v in offscreen_results.values())
+    if result["offscreen_nonblack_count"]:
+        result["offscreen_gpu_status"] = "OFFSCREEN_NONBLACK_PIXELS_FOUND"
+    elif result["offscreen_gpu_readback_count"] == len(OFFSCREEN_TARGETS):
+        result["offscreen_gpu_status"] = "THREE_OFFSCREEN_IMAGES_BLACK"
+    elif result["offscreen_gpu_readback_count"]:
+        result["offscreen_gpu_status"] = "OFFSCREEN_PARTIAL_READBACK"
+    else:
+        result["offscreen_gpu_status"] = "OFFSCREEN_CAPTURE_UNAVAILABLE"
     # Real graphics commands leading up to VideoOut flips, not a shader census.
     # Each "EMITTED" stage occurs only after vkCmdDraw* was actually recorded.
     draw_stages = {}
@@ -824,7 +892,15 @@ def trial_run(binary, temp, result):
     result["graphics_attachment_videoout_count"] = len(bound_to_videoout)
     result["graphics_draw_emitted_before_first_flip"] = emitted_before_flip
     result["graphics_draw_samples"] = draw_rows[:256]
-    if emitted_to_videoout and result.get("guest_frame_nonblack_count", 0) == 0:
+    if (result.get("guest_frame_verified_count", 0) >= 3 and
+            result.get("guest_frame_nonblack_count", 0) == 0 and
+            result.get("offscreen_nonblack_count", 0) > 0):
+        result["graphics_draw_diagnosis"] = "OFFSCREEN_NONBLACK_BUT_VIDEOOUT_BLACK"
+    elif (result.get("guest_frame_verified_count", 0) >= 3 and
+          result.get("guest_frame_nonblack_count", 0) == 0 and
+          result.get("offscreen_gpu_readback_count", 0) == len(OFFSCREEN_TARGETS)):
+        result["graphics_draw_diagnosis"] = "OFFSCREEN_AND_VIDEOOUT_ALL_BLACK"
+    elif emitted_to_videoout and result.get("guest_frame_nonblack_count", 0) == 0:
         result["graphics_draw_diagnosis"] = "VIDEOOUT_TARGETED_BUT_SOURCE_BLACK"
     elif result["graphics_draw_audit_truncated"]:
         result["graphics_draw_diagnosis"] = "DRAW_AUDIT_TRUNCATED_INCOMPLETE"
@@ -1211,6 +1287,17 @@ def main():
           str(report.get("graphics_color_addresses", {})))
     print("GRAPHICS_DRAW_AUDIT_TRUNCATED=" +
           str(report.get("graphics_draw_audit_truncated", False)))
+    print("OFFSCREEN_GPU_READBACK_COUNT=" +
+          str(report.get("offscreen_gpu_readback_count", 0)))
+    print("OFFSCREEN_NONBLACK_COUNT=" +
+          str(report.get("offscreen_nonblack_count", 0)))
+    print("OFFSCREEN_GPU_STATUS=" + str(report.get("offscreen_gpu_status")))
+    for addr, probe in report.get("offscreen_gpu_targets", {}).items():
+        print("OFFSCREEN_" + addr + "=" + str({
+            "lookup": probe.get("lookup", {}).get("result")
+            if probe.get("lookup") else None,
+            "readback": probe.get("gpu_readback_verified"),
+            "nonblack_pixels": probe.get("nonblack_pixels")}))
     print("GRAPHICS_DRAW_DIAGNOSIS=" + str(report.get("graphics_draw_diagnosis")))
     print("GUEST_FRAME_PNG_FILES=" +
           str(sorted(report.get("guest_frame_pngs", {}))))
