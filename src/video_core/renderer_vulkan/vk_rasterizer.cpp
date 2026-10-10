@@ -886,6 +886,85 @@ static int SelectGoWComputeCanary(const Shader::Info& cs, u32 x, u32 y, u32 z) {
         // experimental stage just because the ordinary canaries are enabled.
         bool producer_73_eligible = true;
         if (cs.pgm_hash == 0x73ad8e38ULL) {
+            // The 20:50 trial denied this shader because it has three buffers
+            // and two images, not the two ordinary buffers discovered in the
+            // earlier writer scan. Audit the *extra* descriptor metadata
+            // without relaxing the execution guard or issuing any GPU work.
+            const char* shape_flag = std::getenv("SHADPS4_GOW_73_SHAPE_AUDIT");
+            if (shape_flag && std::strcmp(shape_flag, "1") == 0) {
+                const auto fetch_bounds_ok = [&](const auto& fetch, u32 words) {
+                    if (fetch.summary == decltype(fetch.summary)::Invalid) {
+                        return false;
+                    }
+                    if (fetch.summary == decltype(fetch.summary)::SingleLoad) {
+                        const size_t start = fetch.offsets[0];
+                        return start != Shader::UNKNOWN_LOCATION &&
+                               start <= cs.flattened_ud_buf.size() &&
+                               words <= cs.flattened_ud_buf.size() - start;
+                    }
+                    for (u32 word = 0; word < words; ++word) {
+                        if ((fetch.load_mask & (1u << word)) &&
+                            (fetch.offsets[word] == Shader::UNKNOWN_LOCATION ||
+                             fetch.offsets[word] >= cs.flattened_ud_buf.size())) {
+                            return false;
+                        }
+                    }
+                    return true;
+                };
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_73_SHAPE_BEGIN shader={:#x} grid={}x{}x{} "
+                            "workgroups={} buffers={} images={} samplers={} "
+                            "uses_dma={} translation_failed={}",
+                            cs.pgm_hash, x, y, z, u64(x) * y * z,
+                            cs.buffers.size(), cs.images.size(), cs.samplers.size(),
+                            cs.uses_dma, cs.translation_failed);
+                for (u32 slot = 0; slot < cs.buffers.size(); ++slot) {
+                    const auto& b = cs.buffers[slot];
+                    const bool special = b.IsSpecial();
+                    const bool safe = !special && fetch_bounds_ok(
+                        b.sharp_fetch, sizeof(AmdGpu::Buffer) / sizeof(u32));
+                    AmdGpu::Buffer sharp = AmdGpu::Buffer::Null();
+                    if (safe) {
+                        sharp = b.GetSharp(cs);
+                    }
+                    LOG_WARNING(Render_Vulkan,
+                                "GOW_73_SHAPE_BUFFER shader={:#x} slot={} "
+                                "special={} buffer_type={} written={} formatted={} "
+                                "fetch_summary={} safe_flatbuf={} base={:#x} size={} "
+                                "descriptor_valid={}",
+                                cs.pgm_hash, slot, special,
+                                static_cast<u32>(b.buffer_type), b.is_written,
+                                b.is_formatted, static_cast<u32>(b.sharp_fetch.summary),
+                                safe, sharp.base_address, sharp.GetSize(),
+                                safe && sharp.Valid());
+                }
+                for (u32 slot = 0; slot < cs.images.size(); ++slot) {
+                    const auto& im = cs.images[slot];
+                    const u32 words = im.is_r128 ? 4 : 8;
+                    const bool safe = fetch_bounds_ok(im.sharp_fetch, words);
+                    AmdGpu::Image sharp{};
+                    if (safe) {
+                        sharp = im.GetSharp(cs);
+                    }
+                    LOG_WARNING(Render_Vulkan,
+                                "GOW_73_SHAPE_IMAGE shader={:#x} slot={} "
+                                "written={} atomic={} depth={} r128={} "
+                                "fetch_summary={} safe_flatbuf={} base={:#x} "
+                                "type={} data_fmt={} width={} height={} valid={}",
+                                cs.pgm_hash, slot, im.is_written, im.is_atomic,
+                                im.is_depth, im.is_r128,
+                                static_cast<u32>(im.sharp_fetch.summary), safe,
+                                safe ? sharp.Address() : 0ULL,
+                                safe ? static_cast<u32>(sharp.GetType()) : 0,
+                                safe ? static_cast<u32>(sharp.GetDataFmt()) : 0,
+                                safe ? static_cast<u32>(sharp.width) + 1 : 0,
+                                safe ? static_cast<u32>(sharp.height) + 1 : 0,
+                                safe && sharp.Valid());
+                }
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_73_SHAPE_END shader={:#x} result=CAPTURED",
+                            cs.pgm_hash);
+            }
             const char* one_shot = std::getenv("SHADPS4_GOW_ENABLE_73_ONE_SHOT");
             producer_73_eligible = one_shot && std::strcmp(one_shot, "1") == 0 &&
                                    x == 128 && y == 128 && z == 1 &&
