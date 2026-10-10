@@ -435,6 +435,9 @@ Id EmitImageSampleRaw(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address1,
                       Id address3, Id address4);
 Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id bias,
                               const IR::Value& offset);
+Id EmitImageSampleImplicitLodGhostIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle,
+                                          Id record_index, Id coords, Id bias,
+                                          const IR::Value& offset);
 Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
                               const IR::Value& offset);
 Id EmitImageSampleDrefImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id dref,
