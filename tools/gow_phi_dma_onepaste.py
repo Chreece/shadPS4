@@ -30,13 +30,17 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "a6a1cd9c5888608ebaffbeb724afefc3c5d0c782"
+HEAD_SHA = "abbf1480e145d8e2f5a3a8868ac0feac3ce276e6"
 # This earlier full patch is confirmed to apply to the verified host source.
 # The subsequent draw probe is inserted semantically, because the host's
 # rasterizer is not byte-identical to the GitHub BASE_SHA version.
 PROVEN_HEAD_SHA = "acc76199ea827875413b82a83b50828c18a58069"
 HOST_RASTERIZER_SHA256 = "8d73198df4f9114aa1a2e79892ed489a89a73fd01c1a982f616116fc08e7588d"
 DRAW_TARGET_RASTERIZER_BLOB = "ecbdff5e49cb0d45a3db5203fe3881abfd0a5de6"
+PRESENTER = "src/video_core/renderer_vulkan/vk_presenter.cpp"
+HOST_PRESENTER_SHA256 = "9905ed541376c6b45798526df6a5b1e00920bb2085b3fffa33214bc1b328489b"
+OFFSCREEN_PRESENTER_BLOB = "e243c1ca9824e9deba55c861fdf21a73ccd802d4"
+OFFSCREEN_TARGETS = ("0x2172d0000", "0x22a798000", "0x209a90000")
 RASTERIZER = "src/video_core/renderer_vulkan/vk_rasterizer.cpp"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{PROVEN_HEAD_SHA}")
@@ -320,6 +324,92 @@ def add_verified_draw_audit_to_host(result):
     result["draw_target_source_commit"] = HEAD_SHA
     result["draw_target_source_blob_sha1"] = git_blob
 
+def add_verified_offscreen_capture_to_host(result):
+    """Insert only offscreen readback instrumentation in proven presenter code.
+
+    Fetches one exact pinned Git blob and validates both the host source SHA
+    and every semantic anchor. No existing source line is removed or edited.
+    """
+    path = SOURCE / PRESENTER
+    if result["source_hashes_before"].get(PRESENTER) != HOST_PRESENTER_SHA256:
+        raise RuntimeError(
+            "Verified presenter differs from last successful run; "
+            "refusing unverified frame-capture modification")
+    old = path.read_text(encoding="utf-8")
+    request = urllib.request.Request(
+        f"https://raw.githubusercontent.com/Chreece/shadPS4/{HEAD_SHA}/{PRESENTER}",
+        headers={"User-Agent": "gow-offscreen-gpu-diagnostic"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        body = response.read(350_000)
+    git_blob = hashlib.sha1(
+        b"blob " + str(len(body)).encode() + b"\x00" + body).hexdigest()
+    if git_blob != OFFSCREEN_PRESENTER_BLOB:
+        raise RuntimeError("Pinned presenter source does not match expected Git blob")
+    target = body.decode("utf-8")
+
+    def between(contents, start, end):
+        i = contents.index(start)
+        j = contents.index(end, i + len(start))
+        return contents[i:j]
+
+    helper = between(
+        target,
+        "// GPU-backed snapshots of the specific 1920x1080 offscreen targets",
+        "Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_)")
+    before_flip = between(
+        target, "    // On the FIRST registered VideoOut flip,",
+        "    const u32 capture_game_only_count =")
+    completion = between(
+        target, "    if (!gow_offscreen.empty()) {",
+        "\n    // Flush frame creation commands.")
+
+    if ("GOW_OFFSCREEN_GPU_CAPTURE" not in helper or
+            "GOW_OFFSCREEN_GPU_LOOKUP" not in before_flip or
+            "SaveGoWOffscreenProbe" not in completion):
+        raise RuntimeError("Incomplete pinned GPU offscreen diagnostic")
+
+    def add_before(contents, anchor, addition, label):
+        n = contents.count(anchor)
+        if n != 1:
+            raise RuntimeError(
+                f"Presenter GPU capture anchor {label}: expected 1, found {n}")
+        return contents.replace(anchor, addition + anchor, 1)
+
+    updated = add_before(
+        old, "Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_)",
+        helper, "helper")
+    start = updated.index("Frame* Presenter::PrepareFrame(")
+    end = updated.index("Frame* Presenter::PrepareBlankFrame(", start)
+    head, method, tail = updated[:start], updated[start:end], updated[end:]
+    method = add_before(
+        method, "    const u32 capture_game_only_count =",
+        before_flip, "bounded targets")
+    method = add_before(
+        method, "    // Flush frame creation commands.",
+        completion + "\n", "deferred staging comparison")
+    updated = head + method + tail
+
+    # Fail closed before writing if any existing source line changed.
+    new_lines = iter(updated.splitlines(keepends=True))
+    for line in old.splitlines(keepends=True):
+        for candidate in new_lines:
+            if line == candidate:
+                break
+        else:
+            raise RuntimeError("Offscreen instrumentation would replace source lines")
+    for marker in ("GOW_OFFSCREEN_GPU_CAPTURE", "GOW_OFFSCREEN_GPU_LOOKUP",
+                   "GOW_OFFSCREEN_GPU_READBACK", "SaveGoWOffscreenProbe"):
+        if marker not in updated:
+            raise RuntimeError(f"Missing offscreen diagnostic: {marker}")
+    if updated.count("SaveGoWOffscreenProbe(*readback, addr);") != 1:
+        raise RuntimeError("Deferred offscreen capture must appear exactly once")
+
+    path.write_text(updated, encoding="utf-8")
+    result["offscreen_presenter_source_sha256_after_merge"] = sha(path)
+    result["offscreen_presenter_host_specific_source_preserved"] = True
+    result["offscreen_presenter_transform"] = "INSERT_ONLY_AT_VERIFIED_HOST_ANCHORS"
+    result["offscreen_source_blob_sha1"] = git_blob
+
 def do_build(build, patch, temp, result):
     backup = temp / "original"
     backup.mkdir()
@@ -356,6 +446,7 @@ def do_build(build, patch, temp, result):
         # This only inserts diagnostic lines after the proven patch applies;
         # all original source bytes are restored in the enclosing finally.
         add_verified_draw_audit_to_host(result)
+        add_verified_offscreen_capture_to_host(result)
         command = ["cmake", "--build", str(build), "--target", "shadps4", "--parallel", "4"]
         with (temp / "build.log").open("wb") as logfile:
             proc = subprocess.Popen(command, cwd=SOURCE, stdout=logfile,
