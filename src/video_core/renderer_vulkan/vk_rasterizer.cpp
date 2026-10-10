@@ -1417,6 +1417,67 @@ void Rasterizer::DispatchDirect() {
         }
         return; // Unconditionally skip this and every subsequent target dispatch.
     }
+    // Ghost of Tsushima proved that valid guest image descriptors can still
+    // become NULL host VkImageViews. Audit the exact GoW 73 producer bindings
+    // before ever allowing its 16,384-group GPU dispatch. This mode NEVER
+    // executes the 73 shader or any new previously suppressed compute.
+    const char* bind_73_flag = std::getenv("SHADPS4_GOW_73_HOST_BIND_AUDIT");
+    if (cs.pgm_hash == 0x73ad8e38ULL && bind_73_flag &&
+        std::strcmp(bind_73_flag, "1") == 0) {
+        static std::atomic<bool> audited_once{false};
+        if (!audited_once.exchange(true, std::memory_order_relaxed)) {
+            const bool shape = cs_program.dim_x == 128 && cs_program.dim_y == 128 &&
+                               cs_program.dim_z == 1 &&
+                               cs.buffers.size() == 3 && cs.images.size() == 2 &&
+                               cs.samplers.empty() && !cs.uses_dma &&
+                               !cs.translation_failed;
+            bool has_flatbuf = false;
+            bool resources_bound = false;
+            u32 valid_host_buffers = 0;
+            u32 valid_host_image_views = 0;
+            u32 null_host_image_views = 0;
+            if (shape) {
+                has_flatbuf = cs.buffers[2].IsSpecial() &&
+                              cs.buffers[2].buffer_type == Shader::BufferType::Flatbuf;
+                if (has_flatbuf) {
+                    resources_bound = BindResources(pipeline);
+                }
+                if (resources_bound) {
+                    for (const auto& write : set_writes) {
+                        if (write.descriptorType == vk::DescriptorType::eStorageBuffer &&
+                            write.pBufferInfo && write.descriptorCount == 1 &&
+                            write.pBufferInfo->buffer != vk::Buffer{} &&
+                            write.pBufferInfo->range != 0) {
+                            ++valid_host_buffers;
+                        }
+                        if (write.descriptorType == vk::DescriptorType::eSampledImage &&
+                            write.pImageInfo && write.descriptorCount == 1) {
+                            if (write.pImageInfo->imageView != vk::ImageView{}) {
+                                ++valid_host_image_views;
+                            } else {
+                                ++null_host_image_views;
+                            }
+                        }
+                    }
+                    ResetBindings(true);
+                }
+            }
+            const bool passed = shape && has_flatbuf && resources_bound &&
+                                valid_host_buffers == 3 &&
+                                valid_host_image_views == 2 &&
+                                null_host_image_views == 0;
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_73_HOST_BIND_RESULT shader={:#x} "
+                        "shape_ok={} flatbuf_ok={} bind_resources={} "
+                        "host_buffers={} host_image_views={} null_image_views={} "
+                        "dispatch=SKIPPED result={}",
+                        cs.pgm_hash, shape, has_flatbuf, resources_bound,
+                        valid_host_buffers, valid_host_image_views,
+                        null_host_image_views, passed ? "PASS" : "FAIL");
+        }
+        return; // Always suppress this shader; binding evidence only.
+    }
+
     const int canary_idx = SelectGoWComputeCanary(
         cs, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     // Diagnostic A/B control: retain identical bindings and image transfers
