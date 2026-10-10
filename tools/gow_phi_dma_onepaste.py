@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "ebcddc26a4ff1843969104e7df8f62752d9fe9eb"
+HEAD_SHA = "84d925ab1096ef0a9aae5ef1f3365dda9dfd4415"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -294,7 +294,7 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_BIND_PROBE": "1",
         "SHADPS4_GOW_IMAGE_TABLE_AUDIT": "1",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
-        # Three exact-grid canaries may execute once each; all others suppressed.
+        # Four exact-grid canaries may execute once each; all others suppressed.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
         "SHADPS4_GOW_COMPUTE_CENSUS": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
@@ -325,11 +325,12 @@ def trial_run(binary, temp, result):
                         complete_canaries = (
                             "GOW_COMPUTE_CANARY_GPU_COMPLETE shader=0x6e9a8b98" in trial_output
                             and "GOW_COMPUTE_CANARY_GPU_COMPLETE shader=0xf2d59856" in trial_output
-                            and "GOW_COMPUTE_CANARY_GPU_COMPLETE shader=0xf875ea48" in trial_output)
+                            and "GOW_COMPUTE_CANARY_GPU_COMPLETE shader=0xf875ea48" in trial_output
+                            and "GOW_COMPUTE_CANARY_GPU_COMPLETE shader=0xd80cbb16" in trial_output)
                         if complete_canaries:
-                            result["end_reason"] = "ALL_THREE_GPU_TIMELINES_SIGNALED"
+                            result["end_reason"] = "ALL_FOUR_GPU_TIMELINES_SIGNALED"
                             break
-                        if time.monotonic() - last_spv >= 22:
+                        if time.monotonic() - last_spv >= 28:
                             result["end_reason"] = "CANARY_OBSERVATION_WINDOW_ENDED"
                             break
                 else:
@@ -448,12 +449,13 @@ def trial_run(binary, temp, result):
     ]
     result["compute_execution_enabled"] = True
     canary_specs = (
-        ("0x6e9a8b98", "2x1x1", 2),
-        ("0xf2d59856", "1x1x1", 5),
-        ("0xf875ea48", "1x1x1", 4),
+        ("0x6e9a8b98", "2x1x1", 2, 0),
+        ("0xf2d59856", "1x1x1", 5, 0),
+        ("0xf875ea48", "1x1x1", 4, 0),
+        ("0xd80cbb16", "4x1x1", 1, 1),
     )
     canaries = {}
-    for shader, grid, expected_buffers in canary_specs:
+    for shader, grid, expected_buffers, expected_images in canary_specs:
         prefix = re.escape(shader)
         candidate = re.search(
             r"GOW_COMPUTE_CANARY_CANDIDATE shader=" + prefix +
@@ -472,9 +474,24 @@ def trial_run(binary, temp, result):
             r" tick=(\d+) result=TIMELINE_SIGNALED", joined)
         tick = int(gpu_tick.group(1)) if gpu_tick else None
         finished_tick = int(completed.group(1)) if completed else None
+        image_guard = re.search(
+            r"GOW_COMPUTE_CANARY_CANDIDATE shader=" + prefix +
+            r" grid=" + grid +
+            r"[^\n]*image_ok=(true|false) image_type=(\d+) "
+            r"width=(\d+) height=(\d+) image_written=(true|false) permit=",
+            joined)
         canaries[shader] = {
             "grid": grid,
             "expected_buffers": expected_buffers,
+            "expected_images": expected_images,
+            "image_guard_ok": (image_guard.group(1) == "true"
+                               if image_guard else None),
+            "image_type": int(image_guard.group(2)) if image_guard else None,
+            "image_dimensions": (
+                [int(image_guard.group(3)), int(image_guard.group(4))]
+                if image_guard else None),
+            "image_written": (
+                image_guard.group(5) == "true" if image_guard else None),
             "candidate_seen": candidate is not None,
             "permit": candidate.group(1) == "true" if candidate else None,
             "command_recorded": bool(recorded),
@@ -659,7 +676,7 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 # Do not claim success from command recording alone.
                 if report.get("compute_canary_all_completed"):
-                    report["result"] = "THREE_GPU_CANARY_TIMELINES_COMPLETED"
+                    report["result"] = "FOUR_GPU_CANARY_TIMELINES_COMPLETED"
                 elif report.get("compute_canary_completed_count", 0):
                     report["result"] = "PARTIAL_GPU_CANARY_COMPLETION"
                 elif report.get("compute_canary_any_submitted"):
