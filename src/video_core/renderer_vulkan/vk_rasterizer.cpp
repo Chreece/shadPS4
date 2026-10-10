@@ -201,6 +201,66 @@ void Rasterizer::EliminateFastClear() {
     ScopeMarkerEnd();
 }
 
+// GoW Ragnarok: correlate the GPU-zero G-buffer with the *actual* Vulkan
+// graphics commands issued for its proven fragment shader. This passive
+// trace does not read guest buffers, alter draw/viewport/depth state, or
+// change compute suppression. Only the first 128 matching draws are logged.
+static std::atomic<u32> gow_gbuffer_draw_log_count{0};
+static void TraceGoWGBufferDraw(const GraphicsPipeline* pipeline,
+                               const AmdGpu::Regs& regs, const RenderState& state,
+                               bool is_indexed, bool is_indirect,
+                               u32 vertex_offset, u32 instance_offset,
+                               VAddr indirect_arg, u32 max_count,
+                               VAddr count_address) {
+    const char* enabled = std::getenv("SHADPS4_GOW_GBUFFER_DRAW_TRACE");
+    if (!enabled || std::strcmp(enabled, "1") != 0) {
+        return;
+    }
+    const auto stages = pipeline->GetStages();
+    const auto frag_idx = static_cast<u32>(Shader::SwStage::Fragment);
+    const auto* fragment = frag_idx < stages.size() ? stages[frag_idx] : nullptr;
+    if (!fragment || fragment->pgm_hash != 0x7f710602ULL) {
+        return;
+    }
+    const auto& key = pipeline->GetGraphicsKey();
+    u32 target_mask = 0;
+    u32 guest_color_mask = 0;
+    for (u32 cb = 0; cb < AmdGpu::NUM_COLOR_BUFFERS; ++cb) {
+        const auto& color = regs.color_buffers[cb];
+        if (color && color.Address() == 0x209a90000ULL &&
+            (key.mrt_mask & (1u << cb))) {
+            target_mask |= 1u << cb;
+            guest_color_mask |= regs.color_target_mask.GetMask(cb);
+        }
+    }
+    if (!target_mask) {
+        return;
+    }
+    const u32 count = gow_gbuffer_draw_log_count.fetch_add(
+        1, std::memory_order_relaxed) + 1;
+    if (count > 128) {
+        return;
+    }
+    LOG_WARNING(Render_Vulkan,
+                "GOW_GBUFFER_DRAW seq={} shader={:#x} issued=true indexed={} "
+                "indirect={} vertex_or_index_count={} instance_count={} "
+                "vertex_offset={} instance_offset={} indirect_arg={:#x} "
+                "max_count={} count_address={:#x} primitive={} "
+                "render_width={} render_height={} target_slots={:#x} "
+                "guest_color_mask={:#x} mrt_mask={:#x} "
+                "vp_xscale={} vp_yscale={} screen_scissor_w={} screen_scissor_h={} "
+                "depth_enable={} depth_write={}",
+                count, fragment->pgm_hash, is_indexed, is_indirect,
+                regs.num_indices, regs.num_instances.NumInstances(),
+                vertex_offset, instance_offset, indirect_arg, max_count,
+                count_address, static_cast<u32>(regs.primitive_type),
+                state.width, state.height, target_mask, guest_color_mask,
+                key.mrt_mask, regs.viewports[0].xscale, regs.viewports[0].yscale,
+                regs.screen_scissor.GetWidth(), regs.screen_scissor.GetHeight(),
+                static_cast<bool>(regs.depth_control.depth_enable),
+                static_cast<bool>(regs.depth_control.depth_write_enable));
+}
+
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     RENDERER_TRACE;
 
@@ -258,6 +318,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         occlusion->EndDraw(cmdbuf, query);
     }
     DebugState.IncDrawCall();
+    TraceGoWGBufferDraw(pipeline, regs, state, is_indexed, false,
+                       vertex_offset, instance_offset, 0, 0, 0);
 
     ResetBindings(false);
 }
@@ -345,6 +407,8 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     if (occlusion) {
         occlusion->EndDraw(cmdbuf, query);
     }
+    TraceGoWGBufferDraw(pipeline, regs, state, is_indexed, true,
+                       0, 0, arg_address + offset, max_count, count_address);
     ResetBindings(false);
 }
 
