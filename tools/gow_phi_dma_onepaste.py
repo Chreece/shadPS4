@@ -316,8 +316,17 @@ def trial_run(binary, temp, result):
                 if spv and all(f.stat().st_size >= 20 for f in spv):
                     last_spv = last_spv or time.monotonic()
                     if time.monotonic() - last_spv >= 6:
-                        result["end_reason"] = "TARGET_SHADER_CAPTURED"
-                        break
+                        # Give the normal Vulkan queue time to signal the
+                        # guarded dispatch's timeline tick; never wait on
+                        # the GPU directly or indefinitely.
+                        trial_output = (evidence / "console.log").read_text(
+                            errors="replace")
+                        if "GOW_COMPUTE_ONE_SHOT_GPU_COMPLETE" in trial_output:
+                            result["end_reason"] = "GPU_TIMELINE_SIGNALED"
+                            break
+                        if time.monotonic() - last_spv >= 16:
+                            result["end_reason"] = "GPU_TIMELINE_NOT_OBSERVED"
+                            break
                 else:
                     last_spv = None
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
