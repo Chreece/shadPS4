@@ -583,7 +583,7 @@ def build_test_executable():
   '    switch (inst->GetOpcode()) {'
  )
  old_source=orig.decode('utf-8')
- if old_source.count(old)!=1 or 'IR::Opcode::UGreaterThanEqual32' not in (SRC/'src/shader_recompiler/ir/opcodes.inc').read_text():
+ if old_source.count(old)!=1 or 'OPCODE(UGreaterThanEqual32,' not in (SRC/'src/shader_recompiler/ir/opcodes.inc').read_text():
   raise RuntimeError('V12 shader translator opcode/entry source changed')
  changed=old_source.replace(old,new,1).encode()
  if changed.count(b'GHOST_V12_RECORD_GUARD')!=1 or changed.count(b'ctx.ConstU32(53U)')!=1:
