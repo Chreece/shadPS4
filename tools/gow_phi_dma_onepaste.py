@@ -46,6 +46,7 @@ WRITER_PREVIOUS_RUNNER_SHA = "de56da87eb9a1593901deb29eee14a12beaaf508"
 WRITER_HEAD_SHA = "ddeaf86eaa0e758d12e7d981b54c0014365cd1d8"
 PRE_DRAW_BASE_SHA = "0c416c3af8e401076439f5857a5a7e4e9f57a3bc"
 PRE_DRAW_HEAD_SHA = "ae8c33a6d5f5ccc9f53901cffaedf0469063b28e"
+CANARY_73_BASE_SHA = "1d08d2efe2e4017d4bb9174d227a4dc33a42a0b9"
 CANARY_73_SOURCE_SHA = "f82d951999e98e130053ac22fbca3d566c89efa4"
 CANARY_73_DIFF_SHA256 = "0312992dc6f12ef4303542981b4e0aa82ea0a0a41c1a9c7d6b049ca8fb63d6ed"
 WRITER_PATCH_SHA256 = "f1f2676e35b6dea461341e08da3268d78f2493b6db0b8ed75d74669654e72dc6"
@@ -318,7 +319,7 @@ def get_patches():
     # Phase fourteen: one specifically allowed 0x73ad8e38 compute shader,
     # 128x128x1 with exact observed 32-byte input and 512-byte output.
     one_shot_73 = fetch_strict_patch(
-        PRE_DRAW_HEAD_SHA, CANARY_73_SOURCE_SHA, {GBUFFER_SOURCE})
+        CANARY_73_BASE_SHA, CANARY_73_SOURCE_SHA, {GBUFFER_SOURCE})
     if hashlib.sha256(one_shot_73).hexdigest() != CANARY_73_DIFF_SHA256:
         raise RuntimeError("The guarded producer canary patch changed")
     for marker in (b'SHADPS4_GOW_ENABLE_73_ONE_SHOT',
