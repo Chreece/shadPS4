@@ -255,6 +255,14 @@ def validate_spv(directory, evidence, result):
                     result.setdefault("spv_tools", {})[tool] = str(exc)
 
 def trial_run(binary, temp, result):
+    # Native settings can be rewritten on startup when config versions differ.
+    # Preserve the exact user file while retaining the verified native profile.
+    config_path = HOME / ".local/share/shadPS4/config.json"
+    if config_path.is_symlink() or not config_path.is_file():
+        raise RuntimeError("Native config is missing or symlinked; refusing trial")
+    original_config = config_path.read_bytes()
+    original_mode = config_path.stat().st_mode & 0o7777
+    result["native_config_sha256_before"] = hashlib.sha256(original_config).hexdigest()
     evidence = temp / "evidence"
     dump_dir = evidence / "target_shader"
     dump_dir.mkdir(parents=True)
@@ -268,6 +276,8 @@ def trial_run(binary, temp, result):
     env = os.environ.copy()
     env.pop("XDG_DATA_HOME", None)
     env.pop("XDG_CACHE_HOME", None)
+    env.pop("SHADPS4_CPU_ID_RESTART", None)
+    env.pop("SHADPS4_CPU_ID_MODE", None)
     env.update({
         "SHADPS4_ENABLE_IPC": "false",
         "SHADPS4_GOW_ONE_SHADER_DMA_COMPILE": "1",
@@ -323,6 +333,23 @@ def trial_run(binary, temp, result):
         stop_owned(proc)
         result["trial_return_code"] = proc.poll() if proc else None
         result["trial_elapsed_s"] = round(time.monotonic() - start, 2)
+        try:
+            if config_path.read_bytes() != original_config:
+                fd, name = tempfile.mkstemp(prefix=".gow-restore-", dir=config_path.parent)
+                try:
+                    os.fchmod(fd, original_mode)
+                    with os.fdopen(fd, "wb") as fp:
+                        fp.write(original_config)
+                        fp.flush()
+                        os.fsync(fp.fileno())
+                    os.replace(name, config_path)
+                finally:
+                    if os.path.exists(name):
+                        os.unlink(name)
+            result["native_config_restored"] = (config_path.read_bytes() == original_config)
+        except Exception as exc:
+            result["native_config_restored"] = False
+            result["native_config_restore_error"] = str(exc)
     joined = (evidence / "console.log").read_text(errors="replace")
     if log_dir.is_dir():
         for p in log_dir.glob("*.log"):
