@@ -928,24 +928,80 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
     pass_info.dst_off_dw = NUM_USER_DATA_REGS;
     ASSERT(pass_info.dst_off_dw == info.srt_info.flattened_bufsize_dw);
 
-    // Experimental, shader-scoped dependency-order A/B control.
-    // The earlier trace proved that SGPR6's 24 child reads depend on
-    // ReadConst values created by SGPR8. Visit SGPR8 first only when
-    // specifically requested; retain the original loop for every other shader.
-    const char* root_order_flag = std::getenv("SHADPS4_GOW_SRT_SGPR8_FIRST");
-    const bool root_order_requested =
-        pass_info.gow_diag && root_order_flag && std::strcmp(root_order_flag, "1") == 0;
-    constexpr IR::ScalarReg prerequisite_root = static_cast<IR::ScalarReg>(8);
-    auto priority_it = pass_info.srt_roots.end();
-    if (root_order_requested) {
-        priority_it = pass_info.srt_roots.find(prerequisite_root);
+    // A/B: derive the visitation order from actual ReadConst dependencies
+    // for the single shader already proved correct by SGPR8-first. Keep the
+    // original behavior (including the original optional control) for other
+    // shaders. No descriptor substitutions or dynamic-index evaluation.
+    const char* topo_flag = std::getenv("SHADPS4_GOW_SRT_AUTO_ROOTS");
+    const bool auto_topology_requested =
+        pass_info.gow_diag && topo_flag && std::strcmp(topo_flag, "1") == 0;
+    if (auto_topology_requested) {
+        std::vector<std::pair<IR::ScalarReg, IR::Inst*>> roots;
+        for (const auto& [sgpr, root] : pass_info.srt_roots) {
+            roots.emplace_back(sgpr, root);
+        }
+        const auto plan = MakeSrtRootDependencyPlan(pass_info);
         LOG_WARNING(Render_Recompiler,
-                    "GOW_SRT_ROOT_ORDER shader={:#x} enabled={} prerequisite_sgpr=8 "
-                    "prerequisite_found={} mode=CONTROLLED_PROOF",
-                    info.pgm_hash, root_order_requested,
-                    priority_it != pass_info.srt_roots.end());
-        if (priority_it != pass_info.srt_roots.end()) {
-            const auto [sgpr_base, root] = *priority_it;
+                    "GOW_SRT_TOPO_PLAN shader={:#x} enabled={} roots={} "
+                    "dependency_edges={} reordered={} ambiguous={} cyclic={} capped={}",
+                    info.pgm_hash, auto_topology_requested, roots.size(),
+                    plan.edges.size(), plan.reordered, plan.ambiguous,
+                    plan.cyclic, plan.capped);
+        for (const auto& [dependent, prerequisite] : plan.edges) {
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_SRT_TOPO_EDGE shader={:#x} dependent_sgpr={} "
+                        "prerequisite_sgpr={}",
+                        info.pgm_hash, static_cast<u32>(roots[dependent].first),
+                        static_cast<u32>(roots[prerequisite].first));
+        }
+        for (u32 position = 0; position < plan.order.size(); ++position) {
+            const auto [sgpr, root] = roots[plan.order[position]];
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_SRT_TOPO_ORDER shader={:#x} position={} sgpr={}",
+                        info.pgm_hash, position, static_cast<u32>(sgpr));
+            if (pass_info.GoWLog()) {
+                LOG_WARNING(Render_Recompiler,
+                            "GOW_SRT_FLATTEN_TRACE shader={:#x} event=ROOT_VISIT "
+                            "sgpr={} node={}",
+                            pass_info.gow_shader, static_cast<u32>(sgpr),
+                            pass_info.GoWId(root));
+            }
+            VisitPointer(IR::Value(static_cast<u32>(sgpr)), root, pass_info, c);
+        }
+    } else {
+        // Experimental, shader-scoped dependency-order A/B control.
+        // The earlier trace proved that SGPR6's 24 child reads depend on
+        // ReadConst values created by SGPR8. Visit SGPR8 first only when
+        // specifically requested; retain the original loop for every other shader.
+        const char* root_order_flag = std::getenv("SHADPS4_GOW_SRT_SGPR8_FIRST");
+        const bool root_order_requested =
+            pass_info.gow_diag && root_order_flag && std::strcmp(root_order_flag, "1") == 0;
+        constexpr IR::ScalarReg prerequisite_root = static_cast<IR::ScalarReg>(8);
+        auto priority_it = pass_info.srt_roots.end();
+        if (root_order_requested) {
+            priority_it = pass_info.srt_roots.find(prerequisite_root);
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_SRT_ROOT_ORDER shader={:#x} enabled={} prerequisite_sgpr=8 "
+                        "prerequisite_found={} mode=CONTROLLED_PROOF",
+                        info.pgm_hash, root_order_requested,
+                        priority_it != pass_info.srt_roots.end());
+            if (priority_it != pass_info.srt_roots.end()) {
+                const auto [sgpr_base, root] = *priority_it;
+                if (pass_info.GoWLog()) {
+                    LOG_WARNING(Render_Recompiler,
+                                "GOW_SRT_FLATTEN_TRACE shader={:#x} event=ROOT_VISIT "
+                                "sgpr={} node={}",
+                                pass_info.gow_shader, static_cast<u32>(sgpr_base),
+                                pass_info.GoWId(root));
+                }
+                VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
+            }
+        }
+        for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
+            if (root_order_requested && priority_it != pass_info.srt_roots.end() &&
+                sgpr_base == prerequisite_root) {
+                continue; // Already visited once, with all offset writes retained.
+            }
             if (pass_info.GoWLog()) {
                 LOG_WARNING(Render_Recompiler,
                             "GOW_SRT_FLATTEN_TRACE shader={:#x} event=ROOT_VISIT "
@@ -955,20 +1011,7 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
             }
             VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
         }
-    }
-    for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
-        if (root_order_requested && priority_it != pass_info.srt_roots.end() &&
-            sgpr_base == prerequisite_root) {
-            continue; // Already visited once, with all offset writes retained.
-        }
-        if (pass_info.GoWLog()) {
-            LOG_WARNING(Render_Recompiler,
-                        "GOW_SRT_FLATTEN_TRACE shader={:#x} event=ROOT_VISIT "
-                        "sgpr={} node={}",
-                        pass_info.gow_shader, static_cast<u32>(sgpr_base),
-                        pass_info.GoWId(root));
-        }
-        VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
+
     }
 
     c.ret();
