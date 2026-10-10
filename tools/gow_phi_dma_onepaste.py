@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "8b921edc53fa1d52c40acc0b9dae23553499cf40"
+HEAD_SHA = "411524dcc2021b118bf3549784cd0fcb3381277d"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -333,6 +333,7 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_FRAME_SOURCE_DIR": str(frame_dir.resolve()),
         # Raw GPU snapshots of exact observed offscreen targets at first flip.
         "SHADPS4_GOW_OFFSCREEN_DIR": str(offscreen_dir.resolve()),
+        "SHADPS4_GOW_GRAPHICS_AUDIT": "1",
         # Preserve the causally verified D80 active baseline.
         "SHADPS4_GOW_D80_CONTROL_NO_DISPATCH": "0",
         "SHADPS4_GOW_COMPUTE_CENSUS": "1",
@@ -369,9 +370,24 @@ def trial_run(binary, temp, result):
                         probe_logged = len(re.findall(
                             r"GOW_FRAME_GUEST_CAPTURE frame=\d+ result=SAVED",
                             trial_output))
-                        offscreen_raws = sorted(offscreen_dir.glob("gow_offscreen_*.bin"))
-                        if len(probe_saved) >= 3 and probe_logged >= 3 and len(offscreen_raws) >= 3:
-                            result["end_reason"] = "FIRST_OFFSCREEN_TRIAD_CAPTURED"
+                        # A target legitimately absent from cache is not a
+                        # missing readback. Require frame-six disposition for
+                        # each queued readback, plus cumulative graphics totals.
+                        sixth_queued = set(re.findall(
+                            r"GOW_OFFSCREEN_READBACK label=(f06_\\w+)[^\\n]*"
+                            r"result=QUEUED_AND_LAYOUT_RESTORED",
+                            trial_output))
+                        sixth_done = set(re.findall(
+                            r"GOW_OFFSCREEN_GPU_CAPTURE label=(f06_\\w+)[^\\n]*"
+                            r"result=GPU_READBACK_COMPLETE",
+                            trial_output))
+                        sixth_observed = "GOW_OFFSCREEN_READBACK label=f06_" in trial_output
+                        sixth_graphics = "GOW_GRAPHICS_SUMMARY frame=6 " in trial_output
+                        if (len(probe_saved) >= 3 and probe_logged >= 3 and
+                                sixth_observed and sixth_graphics and
+                                sixth_queued.issubset(sixth_done) and
+                                time.monotonic() - last_spv >= 10):
+                            result["end_reason"] = "SIXTH_FLIP_GPU_AND_GRAPHICS_CAPTURED"
                             break
                         if time.monotonic() - last_spv >= 36:
                             result["end_reason"] = "GUEST_FRAME_OBSERVATION_WINDOW_ENDED"
@@ -618,6 +634,36 @@ def trial_run(binary, temp, result):
             "timeline_completed": bool(
                 recorded and tick is not None and tick == finished_tick),
         }
+    # Cumulative graphics-call census covering all draws (not just the first
+    # 256). Per-target totals are snapshots at each VideoOut presentation.
+    graphics_snapshots = {}
+    graphics_targets = {}
+    for line in joined.splitlines():
+        if "GOW_GRAPHICS_SUMMARY frame=" in line:
+            kv = _kv(line[line.index("GOW_GRAPHICS_SUMMARY frame="):])
+            if kv.get("frame", "").isdigit():
+                graphics_snapshots[kv["frame"]] = kv
+        elif "GOW_GRAPHICS_TARGET frame=" in line:
+            kv = _kv(line[line.index("GOW_GRAPHICS_TARGET frame="):])
+            if kv.get("frame", "").isdigit() and kv.get("address"):
+                graphics_targets.setdefault(kv["frame"], {})[kv["address"].lower()] = int(
+                    kv.get("emitted_attachment_calls", "0"))
+    result["graphics_census_snapshots"] = graphics_snapshots
+    result["graphics_target_snapshots"] = graphics_targets
+    result["graphics_census_frame6"] = "6" in graphics_snapshots
+    result["graphics_census_incomplete"] = any(
+        snap.get("target_audit_truncated") == "true"
+        for snap in graphics_snapshots.values())
+    result["graphics_videoout_attachment_calls"] = {}
+    for f, stats in graphics_snapshots.items():
+        videoout_addresses = {
+            item["image_address"].lower()
+            for item in result.get("guest_frame_source_metadata", [])
+            if item.get("image_address")
+        }
+        match_counts = graphics_targets.get(f, {})
+        result["graphics_videoout_attachment_calls"][f] = sum(
+            match_counts.get(addr, 0) for addr in videoout_addresses)
     # Read only GPU-completed readback records; printed QUEUED != completed.
     offscreen_lines = {}
     offscreen_skips = {}
@@ -648,9 +694,9 @@ def trial_run(binary, temp, result):
         int(row.get("nonzero_bytes", "0")) > 0
         for row in offscreen_lines.values())
     result["offscreen_status"] = (
-        "GPU_TRIAD_CAPTURED_" +
+        "MULTIFRAME_GPU_CAPTURE_" +
         ("NONZERO_PRESENT" if result["offscreen_nonzero_count"] else "ALL_ZERO")
-        if result["offscreen_complete_count"] == 3
+        if result["offscreen_complete_count"] >= 2
         else "GPU_TARGET_READBACK_INCOMPLETE")
     # GPU-to-host staging readback, ordered before and after the original
     # canary. Changed bytes establish a GPU-side effect, NOT game correctness.
@@ -876,6 +922,10 @@ def main():
                 # A GPU timeline success is not a correctly rendered frame.
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
+                elif report.get("graphics_census_incomplete"):
+                    report["result"] = "GRAPHICS_TARGET_AUDIT_TRUNCATED"
+                elif not report.get("graphics_census_frame6"):
+                    report["result"] = "GRAPHICS_CENSUS_MISSING_SIXTH_FLIP"
                 else:
                     report["result"] = report.get(
                         "offscreen_status", "OFFSCREEN_READBACK_NO_EVIDENCE")
@@ -898,6 +948,10 @@ def main():
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
     print("GOW_PHI_DMA_RESULT=" + report.get("result", "UNKNOWN"))
     print("IGNORED_SHELL_LAUNCHERS=" + str(report.get("ignored_shell_launchers", [])))
+    print("GRAPHICS_CENSUS_FRAME6=" + str(report.get("graphics_census_frame6", False)))
+    print("GRAPHICS_CENSUS_INCOMPLETE=" + str(report.get("graphics_census_incomplete", False)))
+    print("GRAPHICS_VIDEOOUT_ATTACHMENTS=" + str(report.get("graphics_videoout_attachment_calls", {})))
+    print("GRAPHICS_TARGETS=" + str(report.get("graphics_target_snapshots", {})))
     print("OFFSCREEN_GPU_COMPLETED=" + str(report.get("offscreen_complete_count", 0)))
     print("OFFSCREEN_NONZERO_TARGETS=" + str(report.get("offscreen_nonzero_count", 0)))
     print("OFFSCREEN_FILES=" + str(report.get("offscreen_files", {})))
