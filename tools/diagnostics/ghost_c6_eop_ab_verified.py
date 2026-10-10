@@ -226,6 +226,12 @@ def instrument(result):
                 }
             }'''
  code=ensure_one(code,needle,snippet,'compute RELEASE_MEM')
+ # Prove the exact enum numbers from this reconstructed Ghost source before building.
+ # The preceding real runs had data_sel=2, int_sel=3, confirmed by 328 releases each.
+ pm4=result['src/video_core/amdgpu/pm4_cmds.h'].decode()
+ if pm4.count('Data64 = 2,')!=1 or pm4.count('IrqUndocumented = 3,')!=1:
+  raise RuntimeError('Queue-6 RELEASE_MEM enum values changed; refusing A/B')
+ S['c6_selector_preflight']={'data_sel':2,'int_sel':3}
  # Two strictly opt-in A/B modes; no change to normal (mode 0) behavior.
  # Mode 1: submit pending GPU commands before guest RELEASE_MEM.
  # Mode 2: submit and wait for that exact timeline tick before guest notification.
@@ -237,8 +243,8 @@ def instrument(result):
                        value && std::strcmp(value, "2") == 0 ? 2 : 0;
             }();
             if (ghost_release_mode != 0 && queue.pipe_id == 6 && rasterizer &&
-                release_mem->data_sel.Value() == DataSelect::Data32Low &&
-                release_mem->int_sel.Value() == InterruptSelect::IrqWhenWriteConfirm) {
+                release_mem->data_sel.Value() == DataSelect::Data64 &&
+                release_mem->int_sel.Value() == InterruptSelect::IrqUndocumented) {
                 const u64 seq = ghost_eop_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
                 const u64 tick = rasterizer->Flush();
                 auto& scheduler = rasterizer->GetScheduler();
@@ -482,6 +488,9 @@ def playtest(candidate,mode):
      ticks=re.findall(r'GHOST_TIMELINE_RELEASE seq=(\d+) pipe=(\d+) recording=(\d+) submitted=(\d+) completed=(\d+) pending=(\w+)',text)
      gates=re.findall(r'GHOST_C6_EOP_GATE seq=(\d+) mode=(\d+) tick=(\d+) recording=(\d+) submitted=(\d+) completed=(\d+) ready=(\w+) wait_us=(\d+) timeout=(\w+)',text)
      S['gate_records']=len(gates)
+     observed=re.findall(r'GHOST_C6_RELEASE seq=\d+ pipe=6 int_sel=(\d+) data_sel=(\d+)',text)
+     S['selector_matches']=sum(i=='3' and d=='2' for i,d in observed)
+     S['selector_unexpected']=sorted(set(observed)-{('3','2')})
      S['gate_timeouts']=sum(x[8]=='true' for x in gates)
      S['gate_incomplete_at_guest_signal']=sum(x[6]=='false' for x in gates)
      S['last_gate_samples']=gates[-8:]
@@ -502,6 +511,7 @@ def playtest(candidate,mode):
   summary={key:S.get(key) for key in (
    'result','guest_flips','timeline_releases','pending_submissions_at_release',
    'gate_records','gate_timeouts','gate_incomplete_at_guest_signal',
+   'selector_matches','selector_unexpected',
    'first_gate_samples','last_gate_samples','original_release_count',
    'original_irq_forward_count','gpu_submit_sample_count','runtime_tail')}
   summary['mode']=mode
@@ -536,6 +546,8 @@ try:
  print('GHOST_ARCHIVED_7_FILE_RECONSTRUCTION=PASS',flush=True)
  print('GHOST_TIMELINE_BUILD=PASS',flush=True)
  playtest(candidate,2)
+ if not S.get('ab_results') or S['ab_results'][-1].get('gate_records',0)==0:
+  raise RuntimeError('Mode 2 executed zero queue-6 gates; refusing mode 1 replay')
  playtest(candidate,1)
  S['result']='A/B trials complete'
 except BaseException as e:
