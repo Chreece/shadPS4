@@ -1009,7 +1009,8 @@ static void TraceGoWIndirectWriterCandidates(const Shader::Info& info,
     static std::mutex log_mutex;
     static std::array<u64, 128> seen{};
     static size_t seen_count = 0;
-    static u32 scan_summary_count = 0;
+    static std::array<u64, 128> summary_seen{};
+    static size_t summary_seen_count = 0;
     u32 writable = 0;
     u32 unresolved = 0;
     u32 special = 0;
@@ -1066,14 +1067,18 @@ static void TraceGoWIndirectWriterCandidates(const Shader::Info& info,
         }
     }
     bool log_summary = false;
+    const u64 summary_key = info.pgm_hash ^ (u64(grid_x) << 40) ^
+                            (u64(grid_y) << 20) ^ u64(grid_z);
     {
         std::scoped_lock guard{log_mutex};
-        if (scan_summary_count < 96) {
-            ++scan_summary_count;
+        if (summary_seen_count < summary_seen.size() &&
+            std::find(summary_seen.begin(), summary_seen.begin() + summary_seen_count,
+                      summary_key) == summary_seen.begin() + summary_seen_count) {
+            summary_seen[summary_seen_count++] = summary_key;
             log_summary = true;
         }
     }
-    // Bounded shader/descriptor summary even when no direct writer overlaps:
+    // Bounded unique shader/grid summary even when no direct writer overlaps:
     // this helps identify a dynamic/bindless or DMA-based producer.
     if (log_summary && (writable || info.uses_dma)) {
         LOG_WARNING(Render_Vulkan,
