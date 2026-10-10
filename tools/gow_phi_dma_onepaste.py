@@ -1276,7 +1276,7 @@ def trial_run(binary, temp, result):
         # guarded canaries. 0x73ad8e38 is STILL DENIED, as in the 20:50 test.
         # This run is a passive descriptor metadata audit only.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
-        "SHADPS4_GOW_73_SHAPE_AUDIT": "1",
+        "SHADPS4_GOW_73_HOST_BIND_AUDIT": "1",
         # No large frame or offscreen readbacks.
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
@@ -1308,14 +1308,11 @@ def trial_run(binary, temp, result):
                 # The exact instance-count values were already confirmed
                 # from six GPU-completed readbacks in the 19:53 archive.
                 # This trial observes their candidate writers only.
-                audit_done = (
-                    "GOW_73_SHAPE_END shader=0x73ad8e38 result=CAPTURED"
+                host_bind_done = (
+                    "GOW_73_HOST_BIND_RESULT shader=0x73ad8e38"
                     in raw_console)
-                denied = bool(re.search(
-                    r"GOW_73_ADMISSION shader=0x73ad8e38 [^\n]*result=DENIED",
-                    raw_console))
-                if audit_done and denied:
-                    result["end_reason"] = "SHADER73_PASSIVE_SHAPE_CAPTURED_GUARD_DENIED"
+                if host_bind_done:
+                    result["end_reason"] = "GO_T_TRANSFER_HOST_DESCRIPTOR_BINDINGS_CAPTURED"
                     break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -1941,6 +1938,36 @@ def trial_run(binary, temp, result):
     result["producer73_treatment_nonzero_instance_count"] = len(
         result["indirect_gpu_nonzero_draws"])
     result["producer73_baseline_control_zero_instances"] = 6
+    # Ghost cross-game observation: guest-side valid T# is not proof that the
+    # host created/bound VkImageViews. Here we inspect actual Vulkan set_writes.
+    host_bind_rows = []
+    for line in joined.splitlines():
+        marker = "GOW_73_HOST_BIND_RESULT shader=0x73ad8e38"
+        if marker not in line:
+            continue
+        fields = _kv(line[line.index(marker):])
+        if fields not in host_bind_rows:
+            host_bind_rows.append(fields)
+    result["producer73_host_bind"] = host_bind_rows[-1] if host_bind_rows else None
+    result["producer73_host_bind_pass"] = bool(
+        host_bind_rows and host_bind_rows[-1].get("result") == "PASS" and
+        host_bind_rows[-1].get("host_buffers") == "3" and
+        host_bind_rows[-1].get("host_image_views") == "2" and
+        host_bind_rows[-1].get("null_image_views") == "0" and
+        host_bind_rows[-1].get("dispatch") == "SKIPPED"
+    )
+    (evidence / "gow73-vulkan-host-bindings.json").write_text(
+        json.dumps({
+            "host_bind_result": result["producer73_host_bind"],
+            "passed": result["producer73_host_bind_pass"],
+            "previously_proven_image_sharps": {
+                "0": {"base": "0x21c010000", "type": "Color2D",
+                      "data_format": "Format32", "size": "1024x1024"},
+                "1": {"base": "0x21c410000", "type": "Color2D",
+                      "data_format": "Format32", "size": "1024x1024"},
+            },
+            "compute_73_executed": False,
+        }, ensure_ascii=False, indent=2))
 
     # New, strictly passive shape audit. Original 20:50 log saw 3 buffers,
     # 2 images, no samplers. The earlier two-buffer provenance scan omitted
@@ -2367,14 +2394,14 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif not report.get("producer73_shape_complete"):
-                    report["result"] = "PRODUCER73_PASSIVE_SHAPE_NOT_CAPTURED"
-                elif not report.get("producer73_denied") or report.get("producer73_submitted"):
-                    report["result"] = "PRODUCER73_EXECUTION_POLICY_VIOLATION"
-                elif not report.get("producer73_shape_expected"):
-                    report["result"] = "PRODUCER73_SHAPE_MISMATCH"
+                elif report.get("producer73_submitted") or report.get("producer73_gpu_completed"):
+                    report["result"] = "PRODUCER73_UNEXPECTED_GPU_EXECUTION"
+                elif not report.get("producer73_host_bind"):
+                    report["result"] = "GOW73_VULKAN_HOST_BIND_PROBE_NOT_OBSERVED"
+                elif report.get("producer73_host_bind_pass"):
+                    report["result"] = "GOW73_TWO_VULKAN_IMAGE_VIEWS_AND_FLATBUF_BOUND"
                 else:
-                    report["result"] = "PRODUCER73_EXTRA_DESCRIPTORS_AUDITED_STILL_DENIED"
+                    report["result"] = "GOW73_NULL_OR_INVALID_VULKAN_BINDING"
 
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
@@ -2394,13 +2421,10 @@ def main():
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
-    print("PRODUCER73_SHAPE_CAPTURED=" + str(report.get("producer73_shape_complete", False)))
-    print("PRODUCER73_BUFFERS=" + str(report.get("producer73_shape_buffers", [])))
-    print("PRODUCER73_IMAGES=" + str(report.get("producer73_shape_images", [])))
-    print("PRODUCER73_EXTRA_SPECIAL=" + str(report.get("producer73_shape_special", [])))
-    print("PRODUCER73_UNSAFE_SHARPS=" + str(report.get("producer73_shape_invalid", [])))
-    print("PRODUCER73_EXECUTED=" + str(report.get("producer73_submitted", False)))
-    print("PRODUCER73_GUARD_DENIED=" + str(report.get("producer73_denied", False)))
+    print("GOW73_HOST_BIND_RESULT=" + str(report.get("producer73_host_bind")))
+    print("GOW73_HOST_BIND_PASS=" + str(report.get("producer73_host_bind_pass", False)))
+    print("GOW73_EXECUTED=" + str(report.get("producer73_submitted", False)))
+    print("GOT_TRANSFERABLE_FINDING=Validate actual VkImageView; guest T# alone is insufficient")
     print("ARCHIVE=" + str(archive))
     print("SRT_TRACE_COMPLETE=" + str(report.get("fs_srt_flatten_complete", False)))
     print("SRT_ROOT_ORDER=" + str(report.get("fs_srt_root_order", [])))
