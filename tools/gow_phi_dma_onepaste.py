@@ -1757,12 +1757,30 @@ GOW_6D_IMAGE_INPUT_SOURCE = r'''    // Stage22: inspect the TRUE host Vulkan ima
                 0x21c010000ULL, 0x21c410000ULL
             };
             if (shape) {
+                const auto safe_fetch = [&](const auto& fetch, u32 words) {
+                    if (fetch.summary == decltype(fetch.summary)::Invalid) {
+                        return false;
+                    }
+                    if (fetch.summary == decltype(fetch.summary)::SingleLoad) {
+                        const size_t start = fetch.offsets[0];
+                        return start != Shader::UNKNOWN_LOCATION &&
+                               start <= cs.flattened_ud_buf.size() &&
+                               words <= cs.flattened_ud_buf.size() - start;
+                    }
+                    for (u32 word = 0; word < words; ++word) {
+                        if ((fetch.load_mask & (1u << word)) &&
+                            (fetch.offsets[word] == Shader::UNKNOWN_LOCATION ||
+                             fetch.offsets[word] >= cs.flattened_ud_buf.size())) {
+                            return false;
+                        }
+                    }
+                    return true;
+                };
                 for (u32 slot = 0; slot < 2; ++slot) {
                     const auto& desc = cs.images[slot];
                     if (desc.is_written || desc.is_atomic ||
                         desc.is_depth || desc.is_r128 ||
-                        desc.sharp_fetch.summary ==
-                            decltype(desc.sharp_fetch.summary)::Invalid ||
+                        !safe_fetch(desc.sharp_fetch, 8) ||
                         desc.NumBindings(cs) != 1) {
                         guest_images_ok = false;
                         continue;
