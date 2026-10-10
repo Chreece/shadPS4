@@ -31,8 +31,15 @@ GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
 HEAD_SHA = "a6a1cd9c5888608ebaffbeb724afefc3c5d0c782"
+# This earlier full patch is confirmed to apply to the verified host source.
+# The subsequent draw probe is inserted semantically, because the host's
+# rasterizer is not byte-identical to the GitHub BASE_SHA version.
+PROVEN_HEAD_SHA = "acc76199ea827875413b82a83b50828c18a58069"
+HOST_RASTERIZER_SHA256 = "8d73198df4f9114aa1a2e79892ed489a89a73fd01c1a982f616116fc08e7588d"
+DRAW_TARGET_RASTERIZER_BLOB = "ecbdff5e49cb0d45a3db5203fe3881abfd0a5de6"
+RASTERIZER = "src/video_core/renderer_vulkan/vk_rasterizer.cpp"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
-             f"{BASE_SHA}...{HEAD_SHA}")
+             f"{BASE_SHA}...{PROVEN_HEAD_SHA}")
 REQUIRED = {
     "src/core/libraries/kernel/process.cpp",
     "src/core/libraries/videoout/driver.cpp",
@@ -109,7 +116,7 @@ def get_patch():
     # GitHub's compare REST response exposes the compared head as the final
     # commit, not as a top-level head_commit object. Keep the pin strict.
     commits = payload.get("commits", [])
-    if not commits or commits[-1].get("sha") != HEAD_SHA:
+    if not commits or commits[-1].get("sha") != PROVEN_HEAD_SHA:
         raise RuntimeError("Unexpected last commit SHA in pinned compare")
     if payload.get("total_commits") != len(commits):
         raise RuntimeError("Incomplete or paginated pinned compare result")
@@ -151,6 +158,168 @@ def stop_owned(proc):
     except ProcessLookupError:
         pass
 
+def add_verified_draw_audit_to_host(result):
+    """Temporarily add the draw audit without replacing any host-specific code.
+
+    The host's clean rasterizer SHA differs from GitHub's BASE_SHA variant,
+    so the GitHub full-context draw diff cannot apply around the direct draw.
+    Apply the PREVIOUSLY PROVEN base patch first; add only lines at verified
+    semantic anchors. Any mismatch fails closed and do_build restores bytes.
+    """
+    path = SOURCE / RASTERIZER
+    if result["source_hashes_before"].get(RASTERIZER) != HOST_RASTERIZER_SHA256:
+        raise RuntimeError(
+            "Verified host rasterizer differs from the last working captures; "
+            "refusing unverified source transformation")
+    ancestor_sha = sha(path)
+    old = path.read_text(encoding="utf-8")
+    request = urllib.request.Request(
+        f"https://raw.githubusercontent.com/Chreece/shadPS4/{HEAD_SHA}/{RASTERIZER}",
+        headers={"User-Agent": "gow-draw-target-diagnostic"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        body = response.read(500_000)
+    git_blob = hashlib.sha1(b"blob " + str(len(body)).encode() + b"\x00" + body).hexdigest()
+    if git_blob != DRAW_TARGET_RASTERIZER_BLOB:
+        raise RuntimeError("Pinned draw-target source does not match expected Git blob")
+    target = body.decode("utf-8")
+
+    def between(text, start, end):
+        i = text.index(start)
+        j = text.index(end, i + len(start))
+        return text[i:j]
+
+    helper = between(
+        target, "// GoW frame-source diagnostic: a bounded read-only record",
+        "void Rasterizer::Draw(bool is_indexed, u32 index_offset) {")
+    rt_body = between(
+        target,
+        '        const char* trace_rt = std::getenv("SHADPS4_GOW_DRAW_TARGET_AUDIT");',
+        "\n    }\n    for (u32 cb = state.num_color_attachments;")
+    if ("GOW_DRAW_AUDIT_TRUNCATED" not in helper or
+            "GOW_RENDER_ATTACHMENT" not in rt_body):
+        raise RuntimeError("Pinned draw probe does not have expected audit markers")
+
+    def one(text, needle, insert, label, before=False):
+        matches = text.count(needle)
+        if matches != 1:
+            raise RuntimeError(
+                f"Host draw source anchor {label}: expected 1 occurrence, got {matches}")
+        return text.replace(needle, insert + needle if before else needle + insert, 1)
+
+    code = one(old,
+               "void Rasterizer::Draw(bool is_indexed, u32 index_offset) {",
+               helper, "draw helper", before=True)
+
+    def modify_method(code, start, end, transform):
+        i = code.index(start)
+        j = code.index(end, i + len(start))
+        prefix, segment, suffix = code[:i], code[i:j], code[j:]
+        return prefix + transform(segment) + suffix
+
+    def direct(method):
+        method = one(method, "    scheduler.PopPendingOperations();\n",
+                     "    const u32 gow_id = NextGoWDrawAuditSequence();\n"
+                     '    LogGoWDrawAudit(gow_id, liverpool->regs, "ATTEMPT", '
+                     "false, is_indexed,\n"
+                     "                    liverpool->regs.num_indices, 0);\n",
+                     "direct attempt")
+        method = one(method, "    if (!FilterDraw()) {\n",
+                     '        LogGoWDrawAudit(gow_id, liverpool->regs, "FILTERED", '
+                     "false, is_indexed,\n"
+                     "                        liverpool->regs.num_indices, 0);\n",
+                     "direct filtered")
+        method = one(method,
+                     "    if (!pipeline) {\n",
+                     '        LogGoWDrawAudit(gow_id, liverpool->regs, "PIPELINE_NULL", '
+                     "false, is_indexed,\n"
+                     "                        liverpool->regs.num_indices, 0);\n",
+                     "direct pipeline")
+        method = one(method,
+                     "    if (!BindResources(pipeline)) {\n",
+                     '        LogGoWDrawAudit(gow_id, liverpool->regs, "BIND_FAILED", '
+                     "false, is_indexed,\n"
+                     "                        liverpool->regs.num_indices, "
+                     "pipeline->GetGraphicsKey().mrt_mask);\n",
+                     "direct resource binding")
+        method = one(method, "    DebugState.IncDrawCall();\n",
+                     '    LogGoWDrawAudit(gow_id, liverpool->regs, "EMITTED", '
+                     "false, is_indexed,\n"
+                     "                    liverpool->regs.num_indices, "
+                     "pipeline->GetGraphicsKey().mrt_mask);\n",
+                     "direct vkCmdDraw submission")
+        return method
+
+    def indirect(method):
+        method = one(method, "    scheduler.PopPendingOperations();\n",
+                     "    const u32 gow_id = NextGoWDrawAuditSequence();\n"
+                     '    LogGoWDrawAudit(gow_id, liverpool->regs, "ATTEMPT", '
+                     "true, is_indexed,\n"
+                     "                    max_count, 0);\n",
+                     "indirect attempt")
+        method = one(method, "    if (!FilterDraw()) {\n",
+                     '        LogGoWDrawAudit(gow_id, liverpool->regs, "FILTERED", '
+                     "true, is_indexed,\n"
+                     "                        max_count, 0);\n",
+                     "indirect filtered")
+        method = one(method, "    if (!pipeline) {\n",
+                     '        LogGoWDrawAudit(gow_id, liverpool->regs, "PIPELINE_NULL", '
+                     "true, is_indexed,\n"
+                     "                        max_count, 0);\n",
+                     "indirect pipeline")
+        method = one(method, "    if (!BindResources(pipeline)) {\n",
+                     '        LogGoWDrawAudit(gow_id, liverpool->regs, "BIND_FAILED", '
+                     "true, is_indexed,\n"
+                     "                        max_count, "
+                     "pipeline->GetGraphicsKey().mrt_mask);\n",
+                     "indirect resource binding")
+        method = one(method, "    ResetBindings(false);\n",
+                     '    LogGoWDrawAudit(gow_id, liverpool->regs, "EMITTED", '
+                     "true, is_indexed,\n"
+                     "                    max_count, "
+                     "pipeline->GetGraphicsKey().mrt_mask);\n",
+                     "indirect vkCmdDraw submission")
+        return method
+
+    code = modify_method(
+        code, "void Rasterizer::Draw(bool is_indexed, u32 index_offset) {",
+        "void Rasterizer::DrawIndirect(", direct)
+    code = modify_method(
+        code, "void Rasterizer::DrawIndirect(",
+        "void Rasterizer::DispatchDirect()", indirect)
+    render_start = code.index("RenderState Rasterizer::BeginRendering(")
+    render_part = code[render_start:]
+    render_part = one(
+        render_part, "        image->usage.render_target = 1u;\n",
+        rt_body, "resolved GPU render-target metadata")
+    code = code[:render_start] + render_part
+
+    # Additional safety invariant: EVERY original line must remain in order,
+    # with only new diagnostic lines inserted. Do not rewrite the source.
+    newlines = iter(code.splitlines(keepends=True))
+    for original_line in old.splitlines(keepends=True):
+        for line in newlines:
+            if line == original_line:
+                break
+        else:
+            raise RuntimeError(
+                "Draw instrumentation would alter verified host source lines")
+    for marker in ("GOW_DRAW_AUDIT seq=", "GOW_DRAW_AUDIT_TRUNCATED",
+                   "GOW_RENDER_ATTACHMENT", 'stage="EMITTED"'):
+        if marker == 'stage="EMITTED"':
+            continue  # The format logger receives the stage as an argument.
+        if marker not in code:
+            raise RuntimeError(f"Missing mandatory draw audit marker: {marker}")
+    if code.count(' "EMITTED",') != 2:
+        raise RuntimeError("Both direct and indirect emitted-draw markers are required")
+
+    path.write_text(code, encoding="utf-8")
+    result["draw_target_host_source_sha256_before_merge"] = ancestor_sha
+    result["draw_target_host_source_sha256_after_merge"] = sha(path)
+    result["draw_target_host_specific_source_preserved"] = True
+    result["draw_target_transform"] = "INSERT_ONLY_AT_VERIFIED_HOST_ANCHORS"
+    result["draw_target_source_commit"] = HEAD_SHA
+    result["draw_target_source_blob_sha1"] = git_blob
+
 def do_build(build, patch, temp, result):
     backup = temp / "original"
     backup.mkdir()
@@ -184,6 +353,9 @@ def do_build(build, patch, temp, result):
         applied = run(["git", "apply", "--whitespace=nowarn", str(patch_path)], cwd=SOURCE)
         if applied.returncode:
             raise RuntimeError("git apply failed: " + applied.stderr[-2600:])
+        # This only inserts diagnostic lines after the proven patch applies;
+        # all original source bytes are restored in the enclosing finally.
+        add_verified_draw_audit_to_host(result)
         command = ["cmake", "--build", str(build), "--target", "shadps4", "--parallel", "4"]
         with (temp / "build.log").open("wb") as logfile:
             proc = subprocess.Popen(command, cwd=SOURCE, stdout=logfile,
@@ -844,7 +1016,8 @@ def main():
     args = parser.parse_args()
     archive = HOME / ("gow-phi-dma-" + dt.datetime.now().strftime("%Y%m%d-%H%M%S")
                       + ".tar.gz")
-    report = {"branch_head": HEAD_SHA, "baseline": BASE_SHA,
+    report = {"branch_head": HEAD_SHA, "proven_core_patch_head": PROVEN_HEAD_SHA,
+              "baseline": BASE_SHA,
               "source": str(SOURCE), "installed_emulator_modified": False,
               "native_config_modified_by_helper": False, "user_session_preserved": True}
     lock_path = HOME / ".cache/gow-phi-dma-diagnostic.lock"
