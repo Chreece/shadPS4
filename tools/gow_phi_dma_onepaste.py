@@ -38,7 +38,9 @@ INDEX_SHA = "28957366755addb221d3956a69de4d601a83b390"
 FLATTEN_SHA = "0b14e5f5c7961ffcbd691f32223a1b20f25154b2"
 ROOT_PRIORITY_SHA = "55c7ef1d1ca61078b90e4dabc83b5c35ee552e3f"
 AUTO_SHA = "41b199383806734f3b753bf9f96761de7f7e5234"
-HEAD_SHA = "ae1ab93fa6b89e37efc07d8f6f4d09e70880eeda"
+BROAD_SHA = "ae1ab93fa6b89e37efc07d8f6f4d09e70880eeda"
+HEAD_SHA = "71f4f2c8de9e258631ce525511aa913a1070cf2e"
+BROAD_PATCH_SHA256 = "83000ad98104b0f335f4539ad9879d7212b678cdc327a18234fbd7117f2c47f6"
 AUTO_PATCH_SHA256 = "7743ac55071ce5656b84b8943a486b23ad729778460b1b354d355e879fb42def"
 ROOT_PATCH_SHA256 = "88b7fd1ded0f2d429e0b759a44e58a91107d9c023ab08ae8f0a049814b355185"
 FLATTEN_PATCH_SHA256 = "3f55a88b945aacabfe07846f8528f8560ca94f356fe672cc0d81e3dd038401ac"
@@ -252,21 +254,33 @@ def get_patches():
     if auto_hash != AUTO_PATCH_SHA256:
         raise RuntimeError("Host-proven auto-topology patch changed: " + auto_hash)
 
-    # Phase nine extends *only* the existing opt-in mode selector across
-    # shader stages. It leaves the walker/dependency algorithm untouched.
+    # Phase nine compiled/reran successfully in the 19:04 host archive.
     broad_probe = fetch_strict_patch(
-        AUTO_SHA, HEAD_SHA,
+        AUTO_SHA, BROAD_SHA,
         {flatten_path, "tools/gow_phi_dma_onepaste.py"})
-    if not all(marker in broad_probe for marker in (
-            b'all_shader_trial', b'GOW_SRT_TOPO_PLAN',
-            b'SHADPS4_GOW_SRT_AUTO_ROOTS')):
-        raise RuntimeError("Unexpected files or missing broad-topology markers")
-    if any(marker in broad_probe for marker in (
-            b'void Rasterizer::Draw(', b'inst->SetArg(', b'SetFlatbufOffset(')):
-        raise RuntimeError("Broad topology diff modifies shader semantics")
+    broad_hash = hashlib.sha256(broad_probe).hexdigest()
+    if broad_hash != BROAD_PATCH_SHA256:
+        raise RuntimeError("Proven generalized SRT source changed: " + broad_hash)
+
+    # Only addition: passive, first-128 G-buffer draw issuance and raster
+    # state telemetry. The source tree includes this diagnostic runner as
+    # a known extra, which is never applied to the emulator source.
+    draw_path = "src/video_core/renderer_vulkan/vk_rasterizer.cpp"
+    draw_probe = fetch_strict_patch(
+        BROAD_SHA, HEAD_SHA, {draw_path, "tools/gow_phi_dma_onepaste.py"})
+    additions = [
+        l for l in draw_probe.splitlines()
+        if l.startswith(b"+") and not l.startswith(b"+++")
+    ]
+    if (b'GOW_GBUFFER_DRAW seq=' not in draw_probe or
+            b'SHADPS4_GOW_GBUFFER_DRAW_TRACE' not in draw_probe or
+            b'TraceGoWGBufferDraw' not in draw_probe or
+            any(b'cmdBuf.draw' in l or b'cmdbuf.draw' in l or
+                b'inst.SetArg(' in l for l in additions)):
+        raise RuntimeError("Unexpected graphics-semantic change in passive draw trace")
     return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
             index_probe, flatten_probe, root_priority_patch, auto_topo_patch,
-            broad_probe)
+            broad_probe, draw_probe)
 
 def verify_preimages():
     if set(EXPECTED_SOURCE_HASHES) != PROTECTED_SOURCES:
@@ -311,6 +325,10 @@ def verify_staged_instrumentation(staged):
             "GOW_SRT_ROOT_ORDER" not in flat or
             "event=USE_INDEX_FAILED" not in flat):
         raise RuntimeError("Staged flattening-only instrumentation missing")
+    if (raster.count("void TraceGoWGBufferDraw(") != 1 or
+            raster.count("TraceGoWGBufferDraw(pipeline, regs, state") != 2 or
+            "SHADPS4_GOW_GBUFFER_DRAW_TRACE" not in raster):
+        raise RuntimeError("Staged passive G-buffer draw trace missing")
     if (raster.count("void LogGoWGraphicsDrawTotals(u32 frame)") != 1 or
             raster.count("RecordGoWPreparedDrawTargets(regs, key.mrt_mask, pipeline);") != 1 or
             "RecordGoWGraphicsAudit(" in raster or
@@ -341,7 +359,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_nine_patch_preflight"] = True
+    report["staged_ten_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -529,15 +547,14 @@ def trial_run(binary, temp, result):
         # shapes, image/sampler validity, DMA, and host limits in C++.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
         "SHADPS4_GOW_COMPUTE_CENSUS": "1",
-        "SHADPS4_GOW_IMAGE_OUTPUT_DELTA": "1",
+        # Do not repeat the proven before/after GPU image delta captures.
+        "SHADPS4_GOW_GBUFFER_DRAW_TRACE": "1",
         "SHADPS4_GOW_D80_CONTROL_NO_DISPATCH": "0",
         # First direct screen comparison after the generalized SRT fix.
         "SHADPS4_GOW_FRAME_SOURCE_DIR": str(frame_dir.resolve()),
         "SHADPS4_GOW_GRAPHICS_AUDIT": "1",
-        # Unlike 18:55, take the GPU-backed targets at the same sampled
-        # frames; their previous zero-byte baseline was measured before the
-        # corrected fragment image descriptor and these compute canaries.
-        "SHADPS4_GOW_OFFSCREEN_DIR": str(offscreen_dir.resolve()),
+        # Earlier 19:04 offscreen readbacks are already conclusive for the
+        # zero G-buffer. Avoid repeating large GPU surface downloads.
         # Cross-check the final image SHARP (all eight words) in the same run.
         "SHADPS4_GOW_FS_IMAGE_SHARP_TRACE": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
@@ -566,31 +583,18 @@ def trial_run(binary, temp, result):
                 source_png_count = len(list(
                     frame_dir.glob("gow_guest_pre_fsr_*.png")))
                 frame6 = "GOW_GRAPHICS_SUMMARY frame=6 " in raw_console
-                completed_canaries = set(re.findall(
-                    r"GOW_COMPUTE_CANARY_GPU_COMPLETE shader=(0x[0-9a-fA-F]+)"
-                    r" tick=\d+ result=TIMELINE_SIGNALED",
-                    raw_console))
-                # Do not mistake queued readbacks for GPU-completed data.
-                sixth_labels = ("f06_gbuffer0", "f06_shading", "f06_composition")
-                sixth_resolved = True
-                for label in sixth_labels:
-                    captured = re.search(
-                        r"GOW_OFFSCREEN_GPU_CAPTURE label=" + label +
-                        r" [^\n]*result=GPU_READBACK_COMPLETE",
-                        raw_console)
-                    skipped = re.search(
-                        r"GOW_OFFSCREEN_READBACK label=" + label +
-                        r" [^\n]*result=(NOT_CACHED|GUARD_REJECTED)",
-                        raw_console)
-                    sixth_resolved &= bool(captured or skipped)
-                stable_frame = (srt_done and sharp_done and frame6 and
-                                source_png_count >= 3 and sixth_resolved)
-                if stable_frame and (len(completed_canaries) >= 6 or
-                                     time.monotonic() - start >= 30):
+                traces = re.findall(
+                    r"GOW_GBUFFER_DRAW seq=(\d+) shader=0x7f710602",
+                    raw_console)
+                # The previous capture observed 48 attachment preparations
+                # for this shader. Do not require exactly 48 Vulkan draws:
+                # a mismatch itself is the reason for this new diagnostic.
+                enough = len(set(traces)) >= 48
+                ready = srt_done and sharp_done and frame6 and source_png_count >= 3
+                if ready and (enough or time.monotonic() - start >= 20):
                     result["end_reason"] = (
-                        "GUARDED_CANARIES_AND_GPU_TARGETS_CAPTURED"
-                        if len(completed_canaries) >= 6
-                        else "GUARDED_CANARY_OBSERVATION_WINDOW_ENDED")
+                        "GBUFFER_DRAW_COMMANDS_AND_FRAME_CAPTURED"
+                        if enough else "GBUFFER_DRAW_COUNT_UNDER_OBSERVED_PREPARATIONS")
                     break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -1022,6 +1026,39 @@ def trial_run(binary, temp, result):
             "timeline_completed": bool(
                 recorded and tick is not None and tick == finished_tick),
         }
+    # G-buffer draw emission (vs merely binding/render-target preparation).
+    # Dedup stdout and game-log copies by the monotonic per-process seq.
+    draw_rows = {}
+    for line in joined.splitlines():
+        if "GOW_GBUFFER_DRAW seq=" not in line:
+            continue
+        fields = _kv(line[line.index("GOW_GBUFFER_DRAW seq="):])
+        if fields.get("seq", "").isdigit() and fields.get("shader") == "0x7f710602":
+            draw_rows[int(fields["seq"])] = fields
+    draws = [draw_rows[k] for k in sorted(draw_rows)]
+    result["gbuffer_draws"] = draws
+    result["gbuffer_draws_issued"] = len(draws)
+    result["gbuffer_direct_issued"] = sum(row.get("indirect") == "false" for row in draws)
+    result["gbuffer_indirect_issued"] = sum(row.get("indirect") == "true" for row in draws)
+    result["gbuffer_direct_zero_geometry"] = sum(
+        row.get("indirect") == "false" and
+        int(row.get("vertex_or_index_count", "0")) == 0 for row in draws)
+    result["gbuffer_direct_zero_instances"] = sum(
+        row.get("indirect") == "false" and
+        int(row.get("instance_count", "0")) == 0 for row in draws)
+    result["gbuffer_zero_screen_scissor"] = sum(
+        int(row.get("screen_scissor_w", "0")) == 0 or
+        int(row.get("screen_scissor_h", "0")) == 0 for row in draws)
+    result["gbuffer_zero_render_extent"] = sum(
+        int(row.get("render_width", "0")) == 0 or
+        int(row.get("render_height", "0")) == 0 for row in draws)
+    result["gbuffer_zero_viewport_scale"] = sum(
+        float(row.get("vp_xscale", "0")) == 0.0 or
+        float(row.get("vp_yscale", "0")) == 0.0 for row in draws)
+    result["gbuffer_zero_color_mask"] = sum(
+        int(row.get("guest_color_mask", "0"), 0) == 0 for row in draws)
+    result["gbuffer_draw_truncated"] = len(draws) >= 128
+
     # Cumulative graphics-call census covering all draws (not just the first
     # 256). Per-target totals are snapshots at each VideoOut presentation.
     graphics_snapshots = {}
@@ -1372,20 +1409,25 @@ def main():
                 elif not (report.get("fs_srt_all_24_resolved") and
                           report.get("fs_image_sharp_valid_after_reorder")):
                     report["result"] = "MULTISHADER_TOPOLOGY_TARGET_REGRESSION"
-                elif not report.get("compute_canary_any_submitted"):
-                    report["result"] = "GUARDED_COMPUTE_NOT_SUBMITTED"
-                elif report.get("compute_canary_completed_count", 0) == 0:
-                    report["result"] = "GUARDED_COMPUTE_NOT_GPU_COMPLETED"
+                elif report.get("gbuffer_draws_issued", 0) == 0:
+                    report["result"] = "GBUFFER_NO_VULKAN_DRAW_ISSUED"
+                elif report.get("gbuffer_zero_color_mask", 0):
+                    report["result"] = "GBUFFER_COLOR_WRITE_MASK_ZERO"
+                elif report.get("gbuffer_zero_screen_scissor", 0):
+                    report["result"] = "GBUFFER_SCREEN_SCISSOR_ZERO"
+                elif report.get("gbuffer_zero_render_extent", 0):
+                    report["result"] = "GBUFFER_RENDER_EXTENT_ZERO"
+                elif report.get("gbuffer_zero_viewport_scale", 0):
+                    report["result"] = "GBUFFER_VIEWPORT_SCALE_ZERO"
+                elif (report.get("gbuffer_direct_zero_geometry", 0) or
+                      report.get("gbuffer_direct_zero_instances", 0)):
+                    report["result"] = "GBUFFER_DIRECT_GEOMETRY_ZERO"
                 elif report.get("guest_frame_verified_count", 0) < 3:
-                    report["result"] = "GUARDED_COMPUTE_NO_VERIFIED_VIDEOOUT"
+                    report["result"] = "GBUFFER_DRAW_TRACE_NO_VIDEOOUT"
                 elif report.get("guest_frame_nonblack_count", 0) > 0:
-                    report["result"] = "GUARDED_COMPUTE_SOURCE_NONBLACK"
-                elif report.get("scene_target_nonzero"):
-                    report["result"] = "GUARDED_COMPUTE_SCENE_TARGET_NONZERO"
-                elif not report.get("gbuffer_f06_captured"):
-                    report["result"] = "GUARDED_COMPUTE_GBUFFER_READBACK_UNAVAILABLE"
+                    report["result"] = "GBUFFER_DRAWS_SOURCE_NONBLACK"
                 else:
-                    report["result"] = "GUARDED_COMPUTE_SCREEN_BLACK_GBUFFER_ZERO"
+                    report["result"] = "GBUFFER_DRAWS_ISSUED_SOURCE_BLACK"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -1404,6 +1446,15 @@ def main():
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
+    print("GBUFFER_DRAW_COMMANDS=" + str(report.get("gbuffer_draws_issued", 0)))
+    print("GBUFFER_DIRECT=" + str(report.get("gbuffer_direct_issued", 0)))
+    print("GBUFFER_INDIRECT=" + str(report.get("gbuffer_indirect_issued", 0)))
+    print("GBUFFER_ZERO_COLOR_MASK=" + str(report.get("gbuffer_zero_color_mask", 0)))
+    print("GBUFFER_ZERO_SCREEN_SCISSOR=" + str(report.get("gbuffer_zero_screen_scissor", 0)))
+    print("GBUFFER_ZERO_RENDER_EXTENT=" + str(report.get("gbuffer_zero_render_extent", 0)))
+    print("GBUFFER_ZERO_VIEWPORT=" + str(report.get("gbuffer_zero_viewport_scale", 0)))
+    print("GBUFFER_ZERO_DIRECT_GEOMETRY=" + str(report.get("gbuffer_direct_zero_geometry", 0)))
+    print("GBUFFER_ZERO_DIRECT_INSTANCES=" + str(report.get("gbuffer_direct_zero_instances", 0)))
     print("ARCHIVE=" + str(archive))
     print("SRT_TRACE_COMPLETE=" + str(report.get("fs_srt_flatten_complete", False)))
     print("SRT_ROOT_ORDER=" + str(report.get("fs_srt_root_order", [])))
