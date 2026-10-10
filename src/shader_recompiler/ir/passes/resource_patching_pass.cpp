@@ -323,6 +323,10 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         ASSERT_MSG(prototype.has_value(), "Ghost dynamic image2 53-row guest table unreadable");
         image_res.ghost_dynamic_image_count = 53;
         image_res.ghost_prototype_image = *prototype;
+        LOG_WARNING(Render_Recompiler,
+                    "GHOST_BINDLESS_SOURCE shader={:#x} records=53 format={} image_type={} "
+                    "record_offset=64 stride=340",
+                    info.pgm_hash, u32(prototype->GetDataFmt()), u32(prototype->GetType()));
     }
 
     auto image = image_res.GetSharp(info);
