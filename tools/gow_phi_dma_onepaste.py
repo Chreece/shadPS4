@@ -395,11 +395,12 @@ def get_patches():
     writer_probe_gpu = (GOW_WRITER_GPU_PRELUDE + GOW_WRITER_GPU_POST).encode("utf-8")
     native_6d_probe = GOW_6D_NATIVE_SOURCE.encode("utf-8")
     upstream_spv_probe = (GOW_UPSTREAM_RASTER_SOURCE + GOW_UPSTREAM_PIPELINE_SOURCE).encode("utf-8")
+    input_image_probe = GOW_6D_IMAGE_INPUT_SOURCE.encode("utf-8")
     return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
             index_probe, flatten_probe, root_priority_patch, auto_topo_patch,
             broad_probe, draw_probe, gpu_args_patch, writer_probe, producer_probe,
             one_shot_73, shape_probe, host_binding_probe, exec_probe, writer_probe_gpu,
-            native_6d_probe, upstream_spv_probe)
+            native_6d_probe, upstream_spv_probe, input_image_probe)
 
 
 def verify_preimages():
@@ -1736,6 +1737,228 @@ GOW_UPSTREAM_PIPELINE_SOURCE = r'''    // Stage20: dump only the specified compu
     }
 '''
 
+GOW_6D_IMAGE_INPUT_SOURCE = r'''    // Stage22: inspect the TRUE host Vulkan images sampled by shader 6D,
+    // before the native dispatch is suppressed. Two read-only transfers,
+    // with exact guest-address, format, layout, and size guards.
+    const char* input_flag = std::getenv("SHADPS4_GOW_6D_INPUT_GPU_PROOF");
+    if (cs.pgm_hash == 0x6d6da626ULL && input_flag &&
+        std::strcmp(input_flag, "1") == 0) {
+        static std::atomic<bool> captured_once{false};
+        if (!captured_once.exchange(true, std::memory_order_acq_rel)) {
+            const bool shape = cs_program.dim_x == 128 &&
+                               cs_program.dim_y == 128 &&
+                               cs_program.dim_z == 1 &&
+                               cs.buffers.size() == 5 &&
+                               cs.images.size() == 2 &&
+                               cs.samplers.empty() && !cs.uses_dma &&
+                               !cs.translation_failed;
+            bool guest_images_ok = shape;
+            constexpr std::array<VAddr, 2> ExpectedImageAddresses{
+                0x21c010000ULL, 0x21c410000ULL
+            };
+            if (shape) {
+                for (u32 slot = 0; slot < 2; ++slot) {
+                    const auto& desc = cs.images[slot];
+                    if (desc.is_written || desc.is_atomic ||
+                        desc.is_depth || desc.is_r128 ||
+                        desc.sharp_fetch.summary ==
+                            decltype(desc.sharp_fetch.summary)::Invalid ||
+                        desc.NumBindings(cs) != 1) {
+                        guest_images_ok = false;
+                        continue;
+                    }
+                    const auto sharp = desc.GetSharp(cs);
+                    guest_images_ok &=
+                        sharp.Valid() &&
+                        sharp.Address() == ExpectedImageAddresses[slot] &&
+                        sharp.GetType() == AmdGpu::ImageType::Color2D &&
+                        sharp.GetDataFmt() == AmdGpu::DataFormat::Format32 &&
+                        static_cast<u32>(sharp.width) + 1 == 1024 &&
+                        static_cast<u32>(sharp.height) + 1 == 1024;
+                }
+            }
+            if (!shape || !guest_images_ok) {
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_6D_INPUT_IMAGE_GATE shader={:#x} shape={} "
+                            "guest_images={} result=DENIED",
+                            cs.pgm_hash, shape, guest_images_ok);
+                return;
+            }
+            const bool bound = BindResources(pipeline);
+            if (!bound) {
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_6D_INPUT_IMAGE_GATE shader={:#x} "
+                            "reason=BIND_RESOURCES_FAILED result=DENIED",
+                            cs.pgm_hash);
+                return;
+            }
+            u32 host_views = 0;
+            u32 null_views = 0;
+            for (const auto& write : set_writes) {
+                if (write.descriptorType == vk::DescriptorType::eSampledImage &&
+                    write.descriptorCount == 1 && write.pImageInfo) {
+                    if (write.pImageInfo->imageView != vk::ImageView{}) {
+                        ++host_views;
+                    } else {
+                        ++null_views;
+                    }
+                }
+            }
+            const bool valid_bindings = image_bindings.size() == 2 &&
+                                        host_views == 2 && null_views == 0;
+            if (!valid_bindings) {
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_6D_INPUT_IMAGE_GATE shader={:#x} views={} "
+                            "null_views={} image_bindings={} result=DENIED",
+                            cs.pgm_hash, host_views, null_views, image_bindings.size());
+                ResetBindings(true);
+                return;
+            }
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_6D_INPUT_IMAGE_GATE shader={:#x} "
+                        "views=2 null_views=0 dispatch=SKIPPED result=PASS",
+                        cs.pgm_hash);
+            auto& pool = runtime.GetStagingPool();
+            for (u32 slot = 0; slot < 2; ++slot) {
+                const auto& [image_id, descriptor] = image_bindings[slot];
+                if (!image_id ||
+                    descriptor.type == VideoCore::TextureCache::BindingType::Storage) {
+                    LOG_WARNING(Render_Vulkan,
+                                "GOW_6D_INPUT_IMAGE_SKIP shader={:#x} slot={} "
+                                "reason=IMAGE_ID_OR_STORAGE", cs.pgm_hash, slot);
+                    continue;
+                }
+                auto& img = texture_cache.GetImage(image_id);
+                const auto& info = img.info;
+                const auto guest_addr = ExpectedImageAddresses[slot];
+                const u64 bytes = u64(info.pitch) * info.size.height * 4;
+                const bool usable =
+                    info.guest_address == guest_addr &&
+                    img.backing != nullptr &&
+                    img.backing->state.layout != vk::ImageLayout::eUndefined &&
+                    img.backing->num_samples == 1 &&
+                    !info.props.is_depth && !info.props.is_block &&
+                    info.pixel_format != vk::Format::eUndefined &&
+                    info.num_bits == 32 && info.num_samples == 1 &&
+                    info.resources.layers == 1 && info.size.depth == 1 &&
+                    info.size.width == 1024 && info.size.height == 1024 &&
+                    info.pitch >= 1024 && info.pitch <= 2048 &&
+                    bytes > 0 && bytes <= 8ULL * 1024 * 1024 &&
+                    bool(img.usage_flags & vk::ImageUsageFlagBits::eTransferSrc);
+                if (!usable) {
+                    LOG_WARNING(Render_Vulkan,
+                                "GOW_6D_INPUT_IMAGE_SKIP shader={:#x} slot={} "
+                                "reason=IMAGE_LAYOUT actual={:#x} "
+                                "width={} height={} pitch={} bits={} "
+                                "bytes={} backing={} format={} safe_to_download={}",
+                                cs.pgm_hash, slot, info.guest_address,
+                                info.size.width, info.size.height, info.pitch,
+                                info.num_bits, bytes, img.backing != nullptr,
+                                vk::to_string(info.pixel_format),
+                                img.SafeToDownload());
+                    continue;
+                }
+
+                const auto shot = pool.Request(
+                    bytes, VideoCore::MemoryType::HostCached, 16, true);
+                if (!shot.buffer || !shot.mapped || shot.size < bytes) {
+                    if (shot.buffer) pool.FreeDeferred(shot);
+                    LOG_WARNING(Render_Vulkan,
+                                "GOW_6D_INPUT_IMAGE_SKIP shader={:#x} slot={} "
+                                "reason=STAGING", cs.pgm_hash, slot);
+                    continue;
+                }
+                const auto original = img.backing->state;
+                const vk::BufferImageCopy region{
+                    .bufferOffset = shot.offset,
+                    .bufferRowLength = info.pitch,
+                    .bufferImageHeight = info.size.height,
+                    .imageSubresource = {
+                        .aspectMask = vk::ImageAspectFlagBits::eColor,
+                        .mipLevel = 0,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1,
+                    },
+                    .imageOffset = {0, 0, 0},
+                    .imageExtent = {info.size.width, info.size.height, 1},
+                };
+                runtime.DownloadImage(&img, shot.buffer, std::span{&region, 1});
+                // Restore the exact tracked Vulkan layout after the copy,
+                // rather than leaving a diagnostic transfer layout active.
+                runtime.Transit(&img, original.layout, original.pl_stage,
+                                original.access_mask);
+                runtime.FlushBarriers();
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_6D_INPUT_IMAGE_QUEUED shader={:#x} slot={} "
+                            "guest={:#x} bytes={} pitch={} format={} "
+                            "safe_to_download={} result=QUEUED",
+                            cs.pgm_hash, slot, guest_addr, bytes, info.pitch,
+                            vk::to_string(info.pixel_format), img.SafeToDownload());
+                scheduler.DeferPriorityOperation(
+                    [shot, bytes, pool_ptr = &pool, guest_addr, slot] {
+                        shot.Invalidate();
+                        const auto* data = static_cast<const u8*>(shot.mapped);
+                        u64 nonzero_bytes = 0;
+                        u64 hash = 14695981039346656037ULL;
+                        for (u64 i = 0; i < bytes; ++i) {
+                            nonzero_bytes += data[i] != 0;
+                            hash = (hash ^ data[i]) * 1099511628211ULL;
+                        }
+                        u64 nonzero_words = 0;
+                        for (u64 i = 0; i < bytes / 4; ++i) {
+                            u32 word = 0;
+                            std::memcpy(&word, data + i * 4, sizeof(word));
+                            nonzero_words += word != 0;
+                        }
+                        u32 first = 0, middle = 0, last = 0;
+                        std::memcpy(&first, data, sizeof(first));
+                        std::memcpy(&middle, data + (bytes / 8) * 4,
+                                    sizeof(middle));
+                        std::memcpy(&last, data + bytes - 4, sizeof(last));
+                        LOG_WARNING(Render_Vulkan,
+                                    "GOW_6D_INPUT_IMAGE_RESULT shader=0x6d6da626 "
+                                    "slot={} guest={:#x} bytes={} "
+                                    "nonzero_bytes={} nonzero_words={} "
+                                    "first_dw={:#010x} middle_dw={:#010x} "
+                                    "last_dw={:#010x} hash={:#018x} "
+                                    "result=GPU_READBACK_COMPLETE",
+                                    slot, guest_addr, bytes, nonzero_bytes,
+                                    nonzero_words, first, middle, last, hash);
+                        pool_ptr->FreeDeferred(shot);
+                    });
+            }
+            ResetBindings(true);
+        }
+        return; // The large 6D dispatch remains suppressed unconditionally.
+    }
+
+'''
+
+def apply_portable_6d_gpu_input_audit(root, patch_bytes):
+    if patch_bytes != GOW_6D_IMAGE_INPUT_SOURCE.encode("utf-8"):
+        raise RuntimeError("Stage22 source differed from pinned runner")
+    src = root / GBUFFER_SOURCE
+    original_bytes = src.read_bytes()
+    if hashlib.sha256(original_bytes).hexdigest() != (
+            "78f19594bd11844ff570afb453f4411d2068494b3b55c31ee92b0fe3db1aa58f"):
+        raise RuntimeError("Stage22 requires the host-proven Stage21 raster source")
+    old = original_bytes.decode("utf-8", errors="strict")
+    anchor = ("    const int canary_idx = SelectGoWComputeCanary(\n"
+              "        cs, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);\n")
+    if old.count(anchor) != 1 or "GOW_6D_INPUT_IMAGE_RESULT" in old:
+        raise RuntimeError("Stage22 source insertion was ambiguous")
+    new = old.replace(anchor, GOW_6D_IMAGE_INPUT_SOURCE + anchor, 1)
+    if (new.replace(GOW_6D_IMAGE_INPUT_SOURCE, "", 1) != old or
+            new.count("GOW_6D_INPUT_IMAGE_RESULT shader=0x6d6da626") != 1 or
+            "return; // The large 6D dispatch remains suppressed" not in GOW_6D_IMAGE_INPUT_SOURCE):
+        raise RuntimeError("Stage22 cannot change compute dispatch behavior")
+    src.write_bytes(new.encode("utf-8"))
+    return {"original_sha256": hashlib.sha256(original_bytes).hexdigest(),
+            "result_sha256": sha(src), "only_additions": True,
+            "native_6d_dispatched": False, "gpu_image_readbacks": 2,
+            "bytes_upper_bound_per_image": 8 * 1024 * 1024}
+
+
 def apply_portable_upstream_spv_audit(root, patch_bytes):
     if patch_bytes != (GOW_UPSTREAM_RASTER_SOURCE + GOW_UPSTREAM_PIPELINE_SOURCE).encode("utf-8"):
         raise RuntimeError("Stage20 pinned shader audit source differs")
@@ -1911,8 +2134,8 @@ def preflight_patches(patches, temp, report):
         dst = staged / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / rel, dst)
-    if len(patches) != 20:
-        raise RuntimeError("Expected 15 proven patches plus stages 16-20")
+    if len(patches) != 21:
+        raise RuntimeError("Expected 15 proven patches plus stages 16-22")
     for step, patch in enumerate(patches):
         filename = temp / f"pinned-{step}.diff"
         filename.write_bytes(patch)
@@ -1949,6 +2172,9 @@ def preflight_patches(patches, temp, report):
         if step == 19:
             report["upstream_spv_preflight"] = apply_portable_upstream_spv_audit(staged, patch)
             continue
+        if step == 20:
+            report["six_d_input_gpu_preflight"] = apply_portable_6d_gpu_input_audit(staged, patch)
+            continue
         check = run(["git", "apply", "--check", "--whitespace=nowarn", str(filename)],
                     cwd=staged)
         if check.returncode:
@@ -1957,7 +2183,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_twenty_patch_preflight"] = True
+    report["staged_twenty_one_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -2050,6 +2276,10 @@ def do_build(build, patches, temp, result):
             if step == 19:
                 changed = True
                 result["upstream_spv_live"] = apply_portable_upstream_spv_audit(SOURCE, patch)
+                continue
+            if step == 20:
+                changed = True
+                result["six_d_input_gpu_live"] = apply_portable_6d_gpu_input_audit(SOURCE, patch)
                 continue
             check = run(["git", "apply", "--check", "--whitespace=nowarn",
                          str(patch_path)], cwd=SOURCE)
@@ -2185,12 +2415,11 @@ def trial_run(binary, temp, result):
         # Retain the previously proven automatic resource dependencies.
         # Their verbose per-shader flattened-buffer trace stays disabled.
         "SHADPS4_GOW_SRT_AUTO_ROOTS": "2",
-        # Stage21 remains strictly passive for large shaders. The Stage20
-        # SPIR-V is already archived, so only actual runtime fill constants
-        # are captured here. The proven small canaries remain unchanged.
+        # Stage22 reads ONLY the two live 6D Vulkan image inputs, before
+        # its suppressed dispatch. No synthetic writes or newly admitted
+        # compute workloads. Previously proven tiny canaries stay guarded.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
-        "SHADPS4_GOW_UPSTREAM_DESCRIPTORS": "1",
-        "SHADPS4_GOW_9A_FILL_WORD_AUDIT": "1",
+        "SHADPS4_GOW_6D_INPUT_GPU_PROOF": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
         # No large frame or offscreen readbacks.
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
@@ -2223,19 +2452,24 @@ def trial_run(binary, temp, result):
                 # The exact instance-count values were already confirmed
                 # from six GPU-completed readbacks in the 19:53 archive.
                 # This trial observes their candidate writers only.
-                upstream_four = raw_console.count(
-                    "GOW_UPSTREAM_END shader=0x9a1583fb") >= 4
-                downstream_once = (
-                    "GOW_UPSTREAM_END shader=0x6d6da626" in raw_console)
-                fill_four = raw_console.count(
-                    "GOW_9A_FILL_WORD shader=0x9a1583fb") >= 4
-                if upstream_four and downstream_once and fill_four:
-                    result["end_reason"] = "UPSTREAM_FOUR_RUNTIME_FILL_VALUES_CAPTURED"
+                both_completed = raw_console.count(
+                    "GOW_6D_INPUT_IMAGE_RESULT shader=0x6d6da626") >= 2
+                if both_completed:
+                    result["end_reason"] = "SIX_D_BOTH_REAL_VULKAN_IMAGES_GPU_READBACK_COMPLETE"
                     break
-                if upstream_four and downstream_once:
-                    result.setdefault("upstream_ready_at", time.monotonic())
-                    if time.monotonic() - result["upstream_ready_at"] > 15:
-                        result["end_reason"] = "UPSTREAM_FILL_WORDS_NOT_CAPTURED"
+                gate_denied = any(
+                    "GOW_6D_INPUT_IMAGE_GATE shader=0x6d6da626" in line and
+                    "result=DENIED" in line
+                    for line in raw_console.splitlines())
+                if gate_denied:
+                    result["end_reason"] = "SIX_D_IMAGE_INPUT_GATE_DENIED"
+                    break
+                skip = (
+                    "GOW_6D_INPUT_IMAGE_SKIP shader=0x6d6da626" in raw_console)
+                if skip:
+                    result.setdefault("six_d_skip_at", time.monotonic())
+                    if time.monotonic() - result["six_d_skip_at"] > 8:
+                        result["end_reason"] = "SIX_D_IMAGE_READBACK_PARTIALLY_UNAVAILABLE"
                         break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -2950,6 +3184,53 @@ def trial_run(binary, temp, result):
                 "output_changed_bytes": 0, "six_indirect_instance_counts": [0]*6},
         }, ensure_ascii=False, indent=2))
 
+    # Stage22: real, host Vulkan image data from the 6D sampled resources.
+    input_images = {}
+    input_skips = []
+    input_gates = []
+    for line in joined.splitlines():
+        for marker, target in (
+            ("GOW_6D_INPUT_IMAGE_RESULT shader=0x6d6da626", input_images),
+            ("GOW_6D_INPUT_IMAGE_SKIP shader=0x6d6da626", input_skips),
+            ("GOW_6D_INPUT_IMAGE_GATE shader=0x6d6da626", input_gates),
+        ):
+            if marker not in line:
+                continue
+            kv = _kv(line[line.index(marker):])
+            if marker.startswith("GOW_6D_INPUT_IMAGE_RESULT"):
+                if kv.get("slot", "").isdigit():
+                    input_images[int(kv["slot"])] = kv
+            elif kv not in target:
+                target.append(kv)
+            break
+    result["six_d_input_images"] = [
+        input_images[k] for k in sorted(input_images)]
+    result["six_d_input_skips"] = input_skips
+    result["six_d_input_gates"] = input_gates
+    result["six_d_input_gpu_both_complete"] = (
+        set(input_images) == {0, 1} and
+        all(x.get("result") == "GPU_READBACK_COMPLETE"
+            for x in input_images.values()))
+    result["six_d_input_zero_image_slots"] = [
+        k for k, v in sorted(input_images.items())
+        if v.get("nonzero_words") == "0"]
+    result["six_d_input_nonzero_image_slots"] = [
+        k for k, v in sorted(input_images.items())
+        if v.get("nonzero_words", "0").isdigit() and
+           int(v.get("nonzero_words", "0")) > 0]
+    (evidence / "gow-6d-real-gpu-input-image-proof.json").write_text(
+        json.dumps({
+            "image0_expected_address": "0x21c010000",
+            "image1_expected_address": "0x21c410000",
+            "shader6d_executed": False,
+            "gpu_readback_complete_both": result["six_d_input_gpu_both_complete"],
+            "readbacks": result["six_d_input_images"],
+            "skips": input_skips,
+            "gates": input_gates,
+            "all_zero_image_slots": result["six_d_input_zero_image_slots"],
+            "nonzero_image_slots": result["six_d_input_nonzero_image_slots"],
+        }, ensure_ascii=False, indent=2))
+
     # Stage21: four runtime shader9a uniform fill values. The Stage20 SPIR-V
     # establishes the write-source chain:
     # OpLoad srt_flatbuf[20] -> OpBitcast F32 -> OpCompositeExtract
@@ -3584,14 +3865,18 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif (report.get("nine_a_fill_all_four") and
-                      report.get("upstream_9a_invocations") == [0, 1, 2, 3] and
-                      report.get("downstream_6d_descriptor_captured")):
-                    report["result"] = "UPSTREAM_FOUR_NATIVE_FILL_VALUES_CAPTURED"
-                elif report.get("nine_a_fill_shape_mismatches"):
-                    report["result"] = "UPSTREAM_FILL_FLATBUF_SHAPE_MISMATCH"
+                elif report.get("six_d_input_gpu_both_complete"):
+                    count_nonzero = len(report.get("six_d_input_nonzero_image_slots", []))
+                    if count_nonzero == 2:
+                        report["result"] = "SIX_D_BOTH_INPUT_IMAGES_NONZERO"
+                    elif count_nonzero == 1:
+                        report["result"] = "SIX_D_ONE_INPUT_IMAGE_FULLY_ZERO"
+                    else:
+                        report["result"] = "SIX_D_BOTH_INPUT_IMAGES_FULLY_ZERO"
+                elif report.get("six_d_input_skips") or report.get("six_d_input_gates"):
+                    report["result"] = "SIX_D_REAL_GPU_IMAGE_READBACK_BLOCKED_BY_GUARD"
                 else:
-                    report["result"] = "UPSTREAM_FILL_VALUES_INCOMPLETE"
+                    report["result"] = "SIX_D_REAL_GPU_IMAGE_READBACK_NOT_OBSERVED"
 
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
@@ -3613,6 +3898,9 @@ def main():
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
     print("GOW73_HOST_BIND_RESULT=" + str(report.get("producer73_host_bind")))
     print("GOW73_HOST_BIND_PASS=" + str(report.get("producer73_host_bind_pass", False)))
+    print("SIX_D_INPUT_BOTH_GPU_COMPLETED=" + str(report.get("six_d_input_gpu_both_complete", False)))
+    print("SIX_D_INPUT_GPU_READBACKS=" + str(report.get("six_d_input_images", [])))
+    print("SIX_D_INPUT_SKIPS=" + str(report.get("six_d_input_skips", [])))
     print("NINE_A_FILL_ALL_FOUR=" + str(report.get("nine_a_fill_all_four", False)))
     print("NINE_A_FILL_BITS=" + str(report.get("nine_a_fill_bits")))
     print("NINE_A_ZERO_FLOAT_COUNT=" + str(report.get("nine_a_fill_float_zero_count")))
