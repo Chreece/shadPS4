@@ -898,9 +898,10 @@ def trial_run(binary, temp, result):
                 # from six GPU-completed readbacks in the 19:53 archive.
                 # This trial observes their candidate writers only.
                 origin_seen = "GOW_INDIRECT_BUFFER_ORIGIN address=0x1039242c40" in raw_console
-                writer_seen = "GOW_INDIRECT_WRITER_SUMMARY shader=" in raw_console
-                if origin_seen and writer_seen and time.monotonic() - start >= 20:
-                    result["end_reason"] = "INDIRECT_WRITER_CENSUS_AND_ORIGIN_CAPTURED"
+                if origin_seen and time.monotonic() - start >= 20:
+                    # No overlap/summary lines is meaningful negative evidence.
+                    # Do not require positive writer candidates to stop.
+                    result["end_reason"] = "INDIRECT_WRITER_ORIGIN_AND_WINDOW_CAPTURED"
                     break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
