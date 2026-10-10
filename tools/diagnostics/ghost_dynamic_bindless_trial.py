@@ -313,7 +313,8 @@ def prepare_dynamic_patch():
  head=get_output(['git','rev-parse','exact-prototype'],cwd=repo)
  if base.returncode or head.returncode or base.stdout.strip()!=PROTOTYPE_BASE or head.stdout.strip()!=PROTOTYPE_HEAD:
   raise RuntimeError('Source diff commit IDs are not exactly pinned')
- names=get_output(['git','diff','--name-only','exact-base','exact-prototype'],cwd=repo)
+ names=get_output(['git','diff','--name-only','exact-base','exact-prototype',
+                   '--',*PROTOTYPE_PATHS],cwd=repo)
  if names.returncode or set(names.stdout.splitlines())!=set(PROTOTYPE_PATHS):
   raise RuntimeError('Prototype diff changed unexpected source paths: '+repr(names.stdout))
  patch=W/'ghost-gpu-indexing.patch'
