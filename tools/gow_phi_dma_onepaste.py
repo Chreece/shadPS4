@@ -1198,13 +1198,17 @@ GOW_WRITER_GPU_PRELUDE = r'''    // Stage18: capture exact GPU-resident argument
         // The two command writers have distinct counter-buffer slots.
         // Guard their exact already-observed SHARPs before reading addresses.
         const u32 counter_slot = writer_id == 0 ? 0 : 1;
+        if (cs.buffers.size() != (writer_id == 0 ? 5u : 4u)) {
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_WRITER_GPU_SNAPSHOT_SKIP shader={:#x} phase={} "
+                        "reason=DESCRIPTOR_COUNT_CHANGED",
+                        cs.pgm_hash, after_dispatch ? "POST" : "PRE");
+            return;
+        }
         const auto& command_desc = cs.buffers[2];
         const auto& counter_desc = cs.buffers[counter_slot];
-        const bool known_shape =
-            cs.buffers.size() == (writer_id == 0 ? 5u : 4u) &&
-            !command_desc.IsSpecial() && !counter_desc.IsSpecial() &&
-            command_desc.is_written && counter_desc.is_written;
-        if (!known_shape) {
+        if (command_desc.IsSpecial() || counter_desc.IsSpecial() ||
+            !command_desc.is_written || !counter_desc.is_written) {
             LOG_WARNING(Render_Vulkan,
                         "GOW_WRITER_GPU_SNAPSHOT_SKIP shader={:#x} phase={} "
                         "reason=DESCRIPTOR_SHAPE_CHANGED",
