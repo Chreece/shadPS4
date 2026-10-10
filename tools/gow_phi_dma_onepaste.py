@@ -2161,7 +2161,7 @@ GOW_5367_NATIVE_GPU_AB_SOURCE = r'''    // Stage24: native, strictly one-shot im
                 const auto& desc = cs.images[slot];
                 if (desc.is_written != ExactWritten[slot] ||
                     desc.is_atomic || desc.is_depth || desc.is_r128 ||
-                    desc.NumBindings(cs) != 1 || !safe_fetch(desc.sharp_fetch)) {
+                    !safe_fetch(desc.sharp_fetch) || desc.NumBindings(cs) != 1) {
                     guest_ok = false;
                     continue;
                 }
