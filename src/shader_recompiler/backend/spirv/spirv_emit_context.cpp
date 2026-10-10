@@ -80,6 +80,13 @@ EmitContext::EmitContext(const Profile& profile_, const RuntimeInfo& runtime_inf
     String(fmt::format("{:#x}", info.pgm_hash));
 
     AddCapability(spv::Capability::Shader);
+    if (std::ranges::any_of(info.images, [](const ImageResource& image) {
+            return image.ghost_dynamic_image_count != 0;
+        })) {
+        AddExtension("SPV_EXT_descriptor_indexing");
+        AddCapability(spv::Capability::ShaderNonUniformEXT);
+        AddCapability(spv::Capability::SampledImageArrayNonUniformIndexingEXT);
+    }
     DefineArithmeticTypes();
     DefineInterfaces();
     DefineSharedMemory();
@@ -1000,7 +1007,8 @@ void EmitContext::DefineImagesAndSamplers() {
 
         const u32 num_bindings = image_desc.NumBindings(info);
         Id pointee_type = image_type;
-        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex) {
+        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex ||
+            image_desc.ghost_dynamic_image_count) {
             pointee_type = TypeArray(pointee_type, ConstU32(num_bindings));
         }
 
