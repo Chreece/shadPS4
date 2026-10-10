@@ -1,6 +1,12 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <array>
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
+#include <unistd.h>
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -852,6 +858,51 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
     for (const auto& image_desc : stage.images) {
         const auto tsharp = image_desc.GetSharp(stage);
+        std::array<AmdGpu::Image, 53> ghost_dynamic_images{};
+        if (image_desc.ghost_dynamic_image_count) {
+            // Read all real guest textures from the same indirect descriptor
+            // table that the shader indexes with its own lane-reduced record.
+            ASSERT_MSG(stage.pgm_hash == 0x8e743c8eULL &&
+                       stage.user_data.size() >= 2 &&
+                       image_desc.ghost_dynamic_image_count == ghost_dynamic_images.size(),
+                       "Ghost sampled-image table shape changed");
+            const u64 root = u64(stage.user_data[0]) |
+                             (u64(stage.user_data[1]) << 32);
+            ASSERT_MSG(root && root <= 0x00007fffffffffffull - 0x180 - 16,
+                       "Ghost SRT root pointer invalid");
+            const int fd = ::open("/proc/self/mem", O_RDONLY | O_CLOEXEC);
+            ASSERT_MSG(fd >= 0, "Ghost guest-memory read handle unavailable");
+            AmdGpu::Buffer table{};
+            const ssize_t table_size = ::pread(fd, &table, sizeof(table),
+                                                static_cast<off_t>(root + 0x180));
+            ASSERT_MSG(table_size == sizeof(table) && table.base_address != 0 &&
+                       table.GetStride() == 340 && table.GetSize() == 18020 &&
+                       table.base_address <=
+                           0x00007fffffffffffull - (52 * 340 + 64 + sizeof(AmdGpu::Image)),
+                       "Ghost dynamic T# table no longer matches 53 x 340");
+            for (u32 row = 0; row < 53; ++row) {
+                const u64 address = table.base_address + u64(row) * 340 + 64;
+                const ssize_t n = ::pread(fd, &ghost_dynamic_images[row],
+                                           sizeof(AmdGpu::Image),
+                                           static_cast<off_t>(address));
+                const auto& candidate = ghost_dynamic_images[row];
+                ASSERT_MSG(n == sizeof(AmdGpu::Image) && candidate.Valid() &&
+                           candidate.Address() != 0 &&
+                           candidate.GetType() == tsharp.GetType() &&
+                           candidate.GetDataFmt() == tsharp.GetDataFmt() &&
+                           candidate.GetNumberFmt() == tsharp.GetNumberFmt(),
+                           "Ghost dynamic T# row {} is unreadable or incompatible", row);
+            }
+            ::close(fd);
+            static std::atomic<u64> logged_table{};
+            if (logged_table.exchange(table.base_address, std::memory_order_relaxed) !=
+                table.base_address) {
+                LOG_WARNING(Render_Vulkan,
+                            "GHOST_BINDLESS_TABLE shader={:#x} base={:#x} count=53 "
+                            "record_stride=340 image_offset=64",
+                            stage.pgm_hash, u64(table.base_address));
+            }
+        }
         if (texture_cache.IsMeta(tsharp.Address())) {
             LOG_WARNING(Render_Vulkan, "Unexpected metadata read by a shader (texture)");
         }
@@ -880,8 +931,11 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         const u32 num_bindings = image_desc.NumBindings(stage);
 
         for (auto i = 0; i < num_bindings; i++) {
+            const auto& selected = image_desc.ghost_dynamic_image_count
+                                       ? ghost_dynamic_images[i]
+                                       : tsharp;
             auto& [image_id, desc] = image_bindings.emplace_back(
-                std::piecewise_construct, std::tuple{}, std::tuple{tsharp, image_desc});
+                std::piecewise_construct, std::tuple{}, std::tuple{selected, image_desc});
 
             if (mip_fallback_mode == Shader::MipStorageFallbackMode::ConstantIndex) {
                 ASSERT(num_bindings == 1);
