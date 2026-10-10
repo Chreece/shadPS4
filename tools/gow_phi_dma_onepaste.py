@@ -641,7 +641,7 @@ def main():
     print("TARGET_SPV_COUNT=" + str(len(report.get("spv", []))))
     print("BIND_PROBE_PASSED=" + str(report.get("bind_probe_passed", False)))
     print("COMPUTE_CENSUS_COUNT=" + str(report.get("compute_census_count", 0)))
-    print("SMALL_GRID_CANDIDATES=" + str(report.get("small_grid_candidates", [])))
+    print("SMALL_GRID_CANDIDATE_COUNT=" + str(len(report.get("small_grid_candidates", []))))
     print("GPU_COMPUTE_ONE_SHOT_ENABLED=" + str(report.get("compute_execution_enabled", False)))
     print("ONE_SHOT_TARGET=" + str(report.get("one_shot_target")))
     print("ONE_SHOT_ELIGIBILITY=" + str(report.get("one_shot_candidate")))
