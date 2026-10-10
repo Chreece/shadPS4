@@ -37,7 +37,9 @@ SHARP_SHA = "2492be06a203373bcb58c7b7d993f27dc54de661"
 INDEX_SHA = "28957366755addb221d3956a69de4d601a83b390"
 FLATTEN_SHA = "0b14e5f5c7961ffcbd691f32223a1b20f25154b2"
 ROOT_PRIORITY_SHA = "55c7ef1d1ca61078b90e4dabc83b5c35ee552e3f"
-HEAD_SHA = "41b199383806734f3b753bf9f96761de7f7e5234"
+AUTO_SHA = "41b199383806734f3b753bf9f96761de7f7e5234"
+HEAD_SHA = "ae1ab93fa6b89e37efc07d8f6f4d09e70880eeda"
+AUTO_PATCH_SHA256 = "7743ac55071ce5656b84b8943a486b23ad729778460b1b354d355e879fb42def"
 ROOT_PATCH_SHA256 = "88b7fd1ded0f2d429e0b759a44e58a91107d9c023ab08ae8f0a049814b355185"
 FLATTEN_PATCH_SHA256 = "3f55a88b945aacabfe07846f8528f8560ca94f356fe672cc0d81e3dd038401ac"
 INDEX_PATCH_SHA256 = "fe149e0618d65504a78d71a72810a900340b3a5fe888a54fd70651ae55914c49"
@@ -242,18 +244,29 @@ def get_patches():
     if root_digest != ROOT_PATCH_SHA256:
         raise RuntimeError("Proven SGPR8 root priority patch changed: " + root_digest)
 
-    # Phase eight is a bounded, deterministic dependency planner. It remains
-    # strictly opt-in for the SAME single target shader, and preserves the
-    # previous fallback behavior on unknown/shared/cyclic dependencies.
+    # Phase eight is byte-identical to the 18:45 successful host test.
     auto_topo_patch = fetch_strict_patch(
-        ROOT_PRIORITY_SHA, HEAD_SHA,
+        ROOT_PRIORITY_SHA, AUTO_SHA,
         {flatten_path, "tools/gow_phi_dma_onepaste.py"})
-    if not all(term in auto_topo_patch for term in (
-            b'MakeSrtRootDependencyPlan', b'GOW_SRT_TOPO_PLAN',
-            b'GOW_SRT_TOPO_EDGE', b'SHADPS4_GOW_SRT_AUTO_ROOTS')):
-        raise RuntimeError("Unexpected auto-topology diagnostic patch")
+    auto_hash = hashlib.sha256(auto_topo_patch).hexdigest()
+    if auto_hash != AUTO_PATCH_SHA256:
+        raise RuntimeError("Host-proven auto-topology patch changed: " + auto_hash)
+
+    # Phase nine extends *only* the existing opt-in mode selector across
+    # shader stages. It leaves the walker/dependency algorithm untouched.
+    broad_probe = fetch_strict_patch(
+        AUTO_SHA, HEAD_SHA,
+        {flatten_path, "tools/gow_phi_dma_onepaste.py"})
+    if not all(marker in broad_probe for marker in (
+            b'all_shader_trial', b'GOW_SRT_TOPO_PLAN',
+            b'SHADPS4_GOW_SRT_AUTO_ROOTS')):
+        raise RuntimeError("Unexpected files or missing broad-topology markers")
+    if any(marker in broad_probe for marker in (
+            b'void Rasterizer::Draw(', b'inst->SetArg(', b'SetFlatbufOffset(')):
+        raise RuntimeError("Broad topology diff modifies shader semantics")
     return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
-            index_probe, flatten_probe, root_priority_patch, auto_topo_patch)
+            index_probe, flatten_probe, root_priority_patch, auto_topo_patch,
+            broad_probe)
 
 def verify_preimages():
     if set(EXPECTED_SOURCE_HASHES) != PROTECTED_SOURCES:
@@ -294,6 +307,7 @@ def verify_staged_instrumentation(staged):
             "SHADPS4_GOW_SRT_AUTO_ROOTS" not in flat or
             "GOW_SRT_TOPO_PLAN" not in flat or
             "MakeSrtRootDependencyPlan" not in flat or
+            "all_shader_trial" not in flat or
             "GOW_SRT_ROOT_ORDER" not in flat or
             "event=USE_INDEX_FAILED" not in flat):
         raise RuntimeError("Staged flattening-only instrumentation missing")
@@ -327,7 +341,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_eight_patch_preflight"] = True
+    report["staged_nine_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -508,7 +522,11 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_SRT_FLATTEN_TRACE": "1",
         # This run derives the order from IR rather than using the manual
         # SGPR8-first override. The override remains disabled.
-        "SHADPS4_GOW_SRT_AUTO_ROOTS": "1",
+        "SHADPS4_GOW_SRT_AUTO_ROOTS": "2",
+        # Revisit VideoOut once after enabling the planner across all stages.
+        # No repeated raw offscreen surface downloads.
+        "SHADPS4_GOW_FRAME_SOURCE_DIR": str(frame_dir.resolve()),
+        "SHADPS4_GOW_GRAPHICS_AUDIT": "1",
         # Cross-check the final image SHARP (all eight words) in the same run.
         "SHADPS4_GOW_FS_IMAGE_SHARP_TRACE": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
@@ -534,8 +552,11 @@ def trial_run(binary, temp, result):
                 sharp_done = (
                     "GOW_FS_IMAGE_SHARP_END shader=0x7f710602 result=CAPTURED"
                     in raw_console)
-                if srt_done and sharp_done:
-                    result["end_reason"] = "TARGET_SRT_AND_IMAGE_SHARP_CAPTURED"
+                source_png_count = len(list(
+                    frame_dir.glob("gow_guest_pre_fsr_*.png")))
+                frame6 = "GOW_GRAPHICS_SUMMARY frame=6 " in raw_console
+                if srt_done and sharp_done and frame6 and source_png_count >= 3:
+                    result["end_reason"] = "MULTISHADER_SRT_AND_SIXTH_FRAME_CAPTURED"
                     break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -620,6 +641,41 @@ def trial_run(binary, temp, result):
     def _kv(line):
         return dict(re.findall(r"([a-z_][a-z_0-9]*)=([^\s]+)", line))
 
+    # The new opt-in mode applies the SAME planner to all shaders. Every
+    # generated SRT walker logs its compact plan; deduplicate mirrored
+    # console and game log records and preserve the full census in archive.
+    global_plan_rows = []
+    global_plan_seen = set()
+    for line in joined.splitlines():
+        if "GOW_SRT_TOPO_PLAN shader=" not in line:
+            continue
+        part = line[line.index("GOW_SRT_TOPO_PLAN shader="):]
+        if part in global_plan_seen:
+            continue
+        global_plan_seen.add(part)
+        global_plan_rows.append(part)
+    (evidence / "srt-topology-all-shaders.txt").write_text(
+        "\n".join(global_plan_rows) + "\n")
+    global_plan = [_kv(line) for line in global_plan_rows]
+    result["srt_topology_shader_plans"] = global_plan
+    result["srt_topology_shaders_seen"] = len({
+        (r.get("shader", ""), r.get("hw_stage", ""))
+        for r in global_plan if r.get("shader")
+    })
+    result["srt_topology_plans"] = len(global_plan)
+    result["srt_topology_reordered"] = sum(
+        item.get("reordered") == "true" for item in global_plan)
+    result["srt_topology_dependency_edges"] = sum(
+        int(item.get("dependency_edges", "0")) for item in global_plan)
+    result["srt_topology_ambiguous"] = sum(
+        item.get("ambiguous") == "true" for item in global_plan)
+    result["srt_topology_cyclic"] = sum(
+        item.get("cyclic") == "true" for item in global_plan)
+    result["srt_topology_capped"] = sum(
+        item.get("capped") == "true" for item in global_plan)
+    result["srt_topology_not_enabled"] = sum(
+        item.get("enabled") != "true" or item.get("all_shader_trial") != "true"
+        for item in global_plan)
     # Recover the bounded, one-shader flattening walk from the existing
     # console log. Keep every failure/assignment event in the evidence file.
     seen_flat_lines = set()
@@ -1250,12 +1306,20 @@ def main():
                     report["result"] = "SRT_AUTO_ROOT_TOPOLOGY_NOT_PROVEN"
                 elif report.get("fs_srt_flatten_truncated"):
                     report["result"] = "FS_SRT_FLATTEN_TRACE_CAPPED"
-                elif report.get("fs_srt_all_24_resolved") and report.get("fs_image_sharp_valid_after_reorder"):
-                    report["result"] = "SRT_AUTO_TOPO_AND_IMAGE_SHARP_FIXED"
-                elif report.get("fs_srt_all_24_resolved"):
-                    report["result"] = "SRT_AUTO_TOPO_FIXED_IMAGE_SHARP_NOT_CONFIRMED"
+                elif report.get("srt_topology_shaders_seen", 0) < 2:
+                    report["result"] = "MULTISHADER_TOPOLOGY_NOT_OBSERVED"
+                elif report.get("srt_topology_not_enabled"):
+                    report["result"] = "MULTISHADER_TOPOLOGY_GATE_MISMATCH"
+                elif not (report.get("fs_srt_all_24_resolved") and
+                          report.get("fs_image_sharp_valid_after_reorder")):
+                    report["result"] = "MULTISHADER_TOPOLOGY_TARGET_REGRESSION"
+                elif report.get("guest_frame_verified_count", 0) >= 3:
+                    report["result"] = (
+                        "MULTISHADER_TOPOLOGY_SOURCE_NONBLACK"
+                        if report.get("guest_frame_nonblack_count", 0)
+                        else "MULTISHADER_TOPOLOGY_SOURCE_BLACK")
                 else:
-                    report["result"] = "SRT_AUTO_TOPO_DEPENDENCIES_PARTIAL"
+                    report["result"] = "MULTISHADER_TOPOLOGY_CAPTURED_NO_SIXTH_FRAME"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -1283,6 +1347,15 @@ def main():
     print("SRT_AUTO_ROOTS=" + str(report.get("fs_srt_auto_roots", [])))
     print("SRT_AUTO_DEPENDENCIES=" + str(report.get("fs_srt_auto_dependencies", [])))
     print("SRT_AUTO_TOPO_PROVEN=" + str(report.get("fs_srt_auto_proved_order", False)))
+    print("SRT_TOPO_SHADERS=" + str(report.get("srt_topology_shaders_seen", 0)))
+    print("SRT_TOPO_REORDERED=" + str(report.get("srt_topology_reordered", 0)))
+    print("SRT_TOPO_EDGES=" + str(report.get("srt_topology_dependency_edges", 0)))
+    print("SRT_TOPO_AMBIGUOUS=" + str(report.get("srt_topology_ambiguous", 0)))
+    print("SRT_TOPO_CYCLIC=" + str(report.get("srt_topology_cyclic", 0)))
+    print("SRT_TOPO_CAPPED=" + str(report.get("srt_topology_capped", 0)))
+    print("VIDEOOUT_FLIPS=" + str(report.get("videoout_flip_count", 0)))
+    print("SOURCE_FRAMES=" + str(report.get("guest_frame_verified_count", 0)))
+    print("SOURCE_NONBLACK=" + str(report.get("guest_frame_nonblack_count", 0)))
     print("SRT_RESOLVED_SHARPS=" + str(report.get("fs_srt_flatten_resolved", 0)))
     print("SRT_UNRESOLVED_SHARPS=" + str(report.get("fs_srt_flatten_unresolved", 0)))
     print("SRT_EVENTS=" + str(report.get("fs_srt_flatten_events", {})))
