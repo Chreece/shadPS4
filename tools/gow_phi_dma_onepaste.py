@@ -33,7 +33,9 @@ BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
 VERIFIED_SHA = "8b921edc53fa1d52c40acc0b9dae23553499cf40"
 GRAPHICS_SHA = "b64f66078ec0fb5efbf10b86496dade0942a591d"
 FRAGMENT_SHA = "77341a4c4d076ea8af7b00038a884e903069f007"
-HEAD_SHA = "2492be06a203373bcb58c7b7d993f27dc54de661"
+SHARP_SHA = "2492be06a203373bcb58c7b7d993f27dc54de661"
+HEAD_SHA = "28957366755addb221d3956a69de4d601a83b390"
+SHARP_PATCH_SHA256 = "af20618e05a7d007f7c73e5c4cb8e0f9aac0117b64ed7b3bd0c7aa35e18a8e5e"
 FRAGMENT_PATCH_SHA256 = "82cde74c723e35a4593c63c3d04657fd790d194c962769668dc3a3dac98137e4"
 GRAPHICS_PATCH_SHA256 = "bb6a023fe0fca2c192d3da649a3c9bb71006ee4886cd152993960c2f570492e6"
 # Exact source preimages from the successful 2026-10-10 16:09 test.
@@ -204,16 +206,22 @@ def get_patches():
     fragment_hash = hashlib.sha256(fragment_patch).hexdigest()
     if fragment_hash != FRAGMENT_PATCH_SHA256:
         raise RuntimeError("Previously proven fragment patch changed: " + fragment_hash)
-    # Phase four is ONLY a read-only probe in the descriptor patcher.
-    # The GitHub commit also includes the runner; fetch_strict_patch validates
-    # the exact change list and discards that runner rather than applying it.
+    # Phase four is exactly the successful 17:40 host-proven descriptor trace.
     sharp_probe = fetch_strict_patch(
-        FRAGMENT_SHA, HEAD_SHA, {NEW_SOURCE, "tools/gow_phi_dma_onepaste.py"})
-    if (b"GOW_FS_IMAGE_SHARP_BEGIN" not in sharp_probe or
-            b"GoWTraceImageSharp" in sharp_probe or
-            b"void Rasterizer::Draw" in sharp_probe):
-        raise RuntimeError("Unexpected image SHARP diagnostic patch")
-    return verified_patch, graphics_patch, fragment_patch, sharp_probe
+        FRAGMENT_SHA, SHARP_SHA, {NEW_SOURCE, "tools/gow_phi_dma_onepaste.py"})
+    known_hash = hashlib.sha256(sharp_probe).hexdigest()
+    if known_hash != SHARP_PATCH_SHA256:
+        raise RuntimeError("Proven SHARP probe patch bytes changed: " + known_hash)
+    # Phase five is one source-only, read-only expression graph. No other
+    # compiler, runtime, graphics or GPU-execution files may change.
+    index_probe = fetch_strict_patch(SHARP_SHA, HEAD_SHA, {NEW_SOURCE})
+    if (b"GOW_FS_INDEX_GRAPH_BEGIN" not in index_probe or
+            b"GOW_FS_INDEX_GRAPH_END" not in index_probe or
+            b"const bool immediate_offset = arg.IsImmediate()" not in index_probe or
+            b"void Rasterizer::Draw" in index_probe or
+            b"inst.SetArg(0" in index_probe):
+        raise RuntimeError("Invalid change scope in targeted index tree probe")
+    return verified_patch, graphics_patch, fragment_patch, sharp_probe, index_probe
 
 def verify_preimages():
     if set(EXPECTED_SOURCE_HASHES) != PROTECTED_SOURCES:
@@ -241,8 +249,10 @@ def verify_staged_instrumentation(staged):
     presenter = (staged / "src/video_core/renderer_vulkan/vk_presenter.cpp").read_text()
     desc_patcher = (staged / NEW_SOURCE).read_text()
     if ("GOW_FS_IMAGE_SHARP_BEGIN" not in desc_patcher or
-            "GOW_FS_IMAGE_SHARP_END" not in desc_patcher or
-            "SHADPS4_GOW_FS_IMAGE_SHARP_TRACE" not in desc_patcher):
+            "GOW_FS_INDEX_GRAPH_BEGIN" not in desc_patcher or
+            "GOW_FS_INDEX_GRAPH_END" not in desc_patcher or
+            "SHADPS4_GOW_FS_INDEX_TREE_TRACE" not in desc_patcher or
+            "const bool immediate_offset = arg.IsImmediate()" not in desc_patcher):
         raise RuntimeError("Staged read-only SHARP diagnostic missing")
     if (raster.count("void LogGoWGraphicsDrawTotals(u32 frame)") != 1 or
             raster.count("RecordGoWPreparedDrawTargets(regs, key.mrt_mask, pipeline);") != 1 or
@@ -452,7 +462,7 @@ def trial_run(binary, temp, result):
     env.update({
         "SHADPS4_ENABLE_IPC": "false",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
-        "SHADPS4_GOW_FS_IMAGE_SHARP_TRACE": "1",
+        "SHADPS4_GOW_FS_INDEX_TREE_TRACE": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
     env.setdefault("DISPLAY", ":0")
@@ -470,8 +480,10 @@ def trial_run(binary, temp, result):
             while time.monotonic() - start < TIME_LIMIT:
                 time.sleep(2)
                 raw_console = (evidence / "console.log").read_text(errors="replace")
-                if "GOW_FS_IMAGE_SHARP_END shader=0x7f710602 result=CAPTURED" in raw_console:
-                    result["end_reason"] = "TARGET_IMAGE_SHARP_CAPTURED"
+                if re.search(
+                    r"GOW_FS_INDEX_GRAPH_END shader=0x7f710602 [^\n]*result=CAPTURED",
+                    raw_console):
+                    result["end_reason"] = "TARGET_INDEX_TREE_CAPTURED"
                     break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -555,6 +567,33 @@ def trial_run(binary, temp, result):
     # The source captures occur before any host FSR / postprocessing pass.
     def _kv(line):
         return dict(re.findall(r"([a-z_][a-z_0-9]*)=([^\s]+)", line))
+
+    # Deduplicate duplicated stdout and game-log lines while preserving tree
+    # order. Keep full node/literal/edge details in a separate archive file.
+    seen_index_lines = set()
+    index_lines = []
+    for line in joined.splitlines():
+        if "GOW_FS_INDEX_" not in line or "shader=0x7f710602" not in line:
+            continue
+        trimmed = line[line.index("GOW_FS_INDEX_"):]
+        if trimmed in seen_index_lines:
+            continue
+        seen_index_lines.add(trimmed)
+        index_lines.append(trimmed)
+    (evidence / "fs-7f710602-index-tree.txt").write_text("\n".join(index_lines) + "\n")
+    completed = [
+        line for line in index_lines
+        if line.startswith("GOW_FS_INDEX_GRAPH_END") and "result=CAPTURED" in line]
+    parsed_end = _kv(completed[-1]) if completed else {}
+    result["fs_index_tree_captured"] = bool(completed)
+    result["fs_index_tree_roots"] = [
+        line for line in index_lines if line.startswith("GOW_FS_INDEX_ROOT")]
+    result["fs_index_tree_summary"] = parsed_end
+    result["fs_index_tree_node_count"] = int(parsed_end.get("nodes", "0"))
+    result["fs_index_tree_truncated"] = parsed_end.get("truncated") == "true"
+    result["fs_index_tree_has_phi"] = int(parsed_end.get("phi", "0")) > 0
+    result["fs_index_tree_has_readfirstlane"] = int(parsed_end.get("readfirstlane", "0")) > 0
+    result["fs_index_tree_line_count"] = len(index_lines)
 
     # Per-word origin, rather than 6,572 unscoped SRT failures.
     trace_begin = []
@@ -1051,10 +1090,12 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif report.get("fs_image_sharp_trace_complete"):
-                    report["result"] = "FS_IMAGE_SHARP_TRACE_CAPTURED"
+                elif not report.get("fs_index_tree_captured"):
+                    report["result"] = "FS_INDEX_TREE_MISSING"
+                elif report.get("fs_index_tree_truncated"):
+                    report["result"] = "FS_INDEX_TREE_CAPTURE_TRUNCATED"
                 else:
-                    report["result"] = "FS_IMAGE_SHARP_TRACE_MISSING"
+                    report["result"] = "FS_INDEX_TREE_CAPTURED"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -1072,18 +1113,21 @@ def main():
                 for p in evidence.rglob("*"):
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
-    print("GOW_FS_SHARP_RESULT=" + report.get("result", "UNKNOWN"))
+    print("GOW_FS_INDEX_RESULT=" + report.get("result", "UNKNOWN"))
     print("ARCHIVE=" + str(archive))
-    print("TARGET_TRACE_COMPLETE=" + str(report.get("fs_image_sharp_trace_complete", False)))
-    print("IMAGE_DESCRIPTOR_WORDS=" + str(report.get("fs_image_sharp_descriptor_word_count", 0)))
-    print("UNKNOWN_DESCRIPTOR_WORDS=" + str(report.get("fs_image_sharp_unknown_words", [])))
+    print("INDEX_TREE_NODES=" + str(report.get("fs_index_tree_node_count", 0)))
+    print("INDEX_TREE_ROOTS=" + str(len(report.get("fs_index_tree_roots", []))))
+    print("INDEX_TREE_PHI=" + str(report.get("fs_index_tree_has_phi", False)))
+    print("INDEX_TREE_READ_FIRST_LANE=" +
+          str(report.get("fs_index_tree_has_readfirstlane", False)))
+    print("INDEX_TREE_TRUNCATED=" + str(report.get("fs_index_tree_truncated", False)))
     print("BUILD_EXIT_CODE=" + str(report.get("build_exit_code")))
     print("SOURCE_RESTORED=" + str(report.get("sources_restored")))
     print("BUILD_BINARY_RESTORED=" + str(report.get("build_binary_restored")))
     print("NATIVE_CONFIG_RESTORED=" + str(report.get("native_config_restored")))
     if report.get("error"):
         print("ERROR=" + report["error"])
-    if report.get("result") in ("FAIL", "INTERRUPTED", "FS_IMAGE_SHARP_TRACE_MISSING"):
+    if report.get("result") in ("FAIL", "INTERRUPTED", "FS_INDEX_TREE_MISSING"):
         raise SystemExit(1)
 
 if __name__ == "__main__":
