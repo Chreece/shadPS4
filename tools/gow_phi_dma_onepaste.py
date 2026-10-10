@@ -35,7 +35,9 @@ GRAPHICS_SHA = "b64f66078ec0fb5efbf10b86496dade0942a591d"
 FRAGMENT_SHA = "77341a4c4d076ea8af7b00038a884e903069f007"
 SHARP_SHA = "2492be06a203373bcb58c7b7d993f27dc54de661"
 INDEX_SHA = "28957366755addb221d3956a69de4d601a83b390"
-HEAD_SHA = "c494430f6d738fd9f4ec093352125867e6c889d1"
+FLATTEN_SHA = "0b14e5f5c7961ffcbd691f32223a1b20f25154b2"
+HEAD_SHA = "55c7ef1d1ca61078b90e4dabc83b5c35ee552e3f"
+FLATTEN_PATCH_SHA256 = "3f55a88b945aacabfe07846f8528f8560ca94f356fe672cc0d81e3dd038401ac"
 INDEX_PATCH_SHA256 = "fe149e0618d65504a78d71a72810a900340b3a5fe888a54fd70651ae55914c49"
 SHARP_PATCH_SHA256 = "af20618e05a7d007f7c73e5c4cb8e0f9aac0117b64ed7b3bd0c7aa35e18a8e5e"
 FRAGMENT_PATCH_SHA256 = "82cde74c723e35a4593c63c3d04657fd790d194c962769668dc3a3dac98137e4"
@@ -222,23 +224,25 @@ def get_patches():
     if known_index_hash != INDEX_PATCH_SHA256:
         raise RuntimeError("Proven IR index-tree patch changed: " + known_index_hash)
 
-    # Phase six only adds read-only logs inside the flattening pass; skip
-    # exactly the known runner file from that pinned comparison.
+    # Phase six is the same bounded, read-only flattening probe that
+    # compiled and captured all 24 failures in the 18:23 host run.
     flatten_path = "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp"
     flatten_probe = fetch_strict_patch(
-        INDEX_SHA, HEAD_SHA, {flatten_path, "tools/gow_phi_dma_onepaste.py"})
-    additions = [
-        line for line in flatten_probe.splitlines()
-        if line.startswith(b"+") and not line.startswith(b"+++")
-    ]
-    if (b"GOW_SRT_FLATTEN_BEGIN" not in flatten_probe or
-            b"GOW_SRT_FLATTEN_END" not in flatten_probe or
-            b"event=DEPENDENCY_ZERO" not in flatten_probe or
-            any(b"inst->SetArg(" in line or b"c.mov(" in line or
-                b"c.add(" in line or b"SetFlatbufOffset(" in line
-                for line in additions)):
-        raise RuntimeError("Unexpected shader-semantic edits in flatten diagnostic")
-    return verified_patch, graphics_patch, fragment_patch, sharp_probe, index_probe, flatten_probe
+        INDEX_SHA, FLATTEN_SHA, {flatten_path, "tools/gow_phi_dma_onepaste.py"})
+    flatten_hash = hashlib.sha256(flatten_probe).hexdigest()
+    if flatten_hash != FLATTEN_PATCH_SHA256:
+        raise RuntimeError("Previously proven flatten trace changed: " + flatten_hash)
+
+    # Phase seven changes only the order of visiting the already observed
+    # SGPR8 prerequisite, scoped to shader 0x7f710602 and one opt-in flag.
+    root_priority_patch = fetch_strict_patch(FLATTEN_SHA, HEAD_SHA, {flatten_path})
+    if (b'SHADPS4_GOW_SRT_SGPR8_FIRST' not in root_priority_patch or
+            b'GOW_SRT_ROOT_ORDER' not in root_priority_patch or
+            b'prerequisite_sgpr=8' not in root_priority_patch or
+            b'void Rasterizer::Draw(' in root_priority_patch):
+        raise RuntimeError("Expected only scoped prerequisite-root ordering trial")
+    return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
+            index_probe, flatten_probe, root_priority_patch)
 
 def verify_preimages():
     if set(EXPECTED_SOURCE_HASHES) != PROTECTED_SOURCES:
@@ -275,6 +279,8 @@ def verify_staged_instrumentation(staged):
     if ("GOW_SRT_FLATTEN_BEGIN" not in flat or
             "GOW_SRT_FLATTEN_END" not in flat or
             "SHADPS4_GOW_SRT_FLATTEN_TRACE" not in flat or
+            "SHADPS4_GOW_SRT_SGPR8_FIRST" not in flat or
+            "GOW_SRT_ROOT_ORDER" not in flat or
             "event=USE_INDEX_FAILED" not in flat):
         raise RuntimeError("Staged flattening-only instrumentation missing")
     if (raster.count("void LogGoWGraphicsDrawTotals(u32 frame)") != 1 or
@@ -307,7 +313,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_four_patch_preflight"] = True
+    report["staged_seven_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -486,6 +492,7 @@ def trial_run(binary, temp, result):
         "SHADPS4_ENABLE_IPC": "false",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
         "SHADPS4_GOW_SRT_FLATTEN_TRACE": "1",
+        "SHADPS4_GOW_SRT_SGPR8_FIRST": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
     env.setdefault("DISPLAY", ":0")
@@ -622,6 +629,31 @@ def trial_run(binary, temp, result):
     result["fs_srt_flatten_unresolved"] = int(flat_sum.get("unresolved_sharps", "0"))
     result["fs_srt_flatten_resolved"] = int(flat_sum.get("resolved_sharps", "0"))
     result["fs_srt_flatten_truncated"] = flat_sum.get("trace_capped") == "true"
+    root_visits = []
+    for line in flatten_lines:
+        if not line.startswith("GOW_SRT_FLATTEN_TRACE"):
+            continue
+        kv = _kv(line)
+        if kv.get("event") == "ROOT_VISIT" and kv.get("sgpr", "").isdigit():
+            root_visits.append(int(kv["sgpr"]))
+    order_markers = [
+        _kv(line) for line in joined.splitlines()
+        if "GOW_SRT_ROOT_ORDER shader=0x7f710602" in line
+    ]
+    result["fs_srt_root_order"] = root_visits
+    result["fs_srt_priority_requested"] = any(
+        item.get("enabled") == "true" and item.get("prerequisite_found") == "true"
+        for item in order_markers)
+    result["fs_srt_priority_proved_first"] = (
+        bool(root_visits) and root_visits[0] == 8
+        and root_visits.count(8) == 1)
+    result["fs_srt_all_24_resolved"] = (
+        result["fs_srt_flatten_complete"]
+        and result["fs_srt_priority_requested"]
+        and result["fs_srt_priority_proved_first"]
+        and result["fs_srt_flatten_resolved"] >= 24
+        and result["fs_srt_flatten_unresolved"] == 0
+        and not result["fs_srt_flatten_truncated"])
 
     # Deduplicate duplicated stdout and game-log lines while preserving tree
     # order. Keep full node/literal/edge details in a separate archive file.
@@ -1147,10 +1179,14 @@ def main():
                     report["result"] = "GPU_FAULT_EVIDENCE"
                 elif not report.get("fs_srt_flatten_complete"):
                     report["result"] = "FS_SRT_FLATTEN_TRACE_MISSING"
+                elif not report.get("fs_srt_priority_proved_first"):
+                    report["result"] = "SGPR8_PRIORITY_NOT_APPLIED"
                 elif report.get("fs_srt_flatten_truncated"):
                     report["result"] = "FS_SRT_FLATTEN_TRACE_CAPPED"
+                elif report.get("fs_srt_all_24_resolved"):
+                    report["result"] = "SRT_DEPENDENCY_ORDER_FIX_PROVEN"
                 else:
-                    report["result"] = "FS_SRT_FLATTEN_TRACE_CAPTURED"
+                    report["result"] = "SRT_DEPENDENCY_ORDER_PARTIAL"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -1171,6 +1207,8 @@ def main():
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
     print("ARCHIVE=" + str(archive))
     print("SRT_TRACE_COMPLETE=" + str(report.get("fs_srt_flatten_complete", False)))
+    print("SRT_ROOT_ORDER=" + str(report.get("fs_srt_root_order", [])))
+    print("SRT_SGPR8_FIRST=" + str(report.get("fs_srt_priority_proved_first", False)))
     print("SRT_RESOLVED_SHARPS=" + str(report.get("fs_srt_flatten_resolved", 0)))
     print("SRT_UNRESOLVED_SHARPS=" + str(report.get("fs_srt_flatten_unresolved", 0)))
     print("SRT_EVENTS=" + str(report.get("fs_srt_flatten_events", {})))
