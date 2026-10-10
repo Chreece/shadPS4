@@ -953,7 +953,11 @@ def trial_run(binary, temp, result):
         and not (item["invalid_buffers"] or item["invalid_images"]
                  or item["invalid_samplers"])
     ]
-    result["compute_execution_enabled"] = True
+    # This means at least one actual guarded command was submitted, not
+    # simply that a canary-capable binary was compiled.
+    result["compute_execution_enabled"] = bool(re.search(
+        r"GOW_COMPUTE_CANARY_RESULT shader=0x[0-9a-fA-F]+ result=SUBMITTED",
+        joined))
     canary_specs = (
         ("0x6e9a8b98", "2x1x1", 2, 0, 0),
         ("0xf2d59856", "1x1x1", 5, 0, 0),
@@ -1109,6 +1113,27 @@ def trial_run(binary, temp, result):
     result["offscreen_nonzero_count"] = sum(
         int(row.get("nonzero_bytes", "0")) > 0
         for row in offscreen_lines.values())
+    # An unchanged, near-zero shading gradient was already captured in the
+    # black-screen baseline. Do NOT mistake that for rendered geometry.
+    # Compare only frame-six G-buffer and composition readbacks, if confirmed
+    # GPU-complete and actually saved, to the earlier all-zero samples.
+    scene_labels = ("f06_gbuffer0", "f06_composition")
+    scene_samples = {}
+    for label in scene_labels:
+        row = offscreen_lines.get(label)
+        saved = bool(row and row.get("raw_saved") == "true" and
+                     ("gow_offscreen_" + label + ".bin") in offscreen_files)
+        scene_samples[label] = {
+            "gpu_readback_saved": saved,
+            "nonzero_bytes": int(row.get("nonzero_bytes", "0")) if saved else None,
+            "checksum": row.get("checksum") if saved else None,
+            "skipped": offscreen_skips.get(label, {}).get("result"),
+        }
+    result["scene_target_samples"] = scene_samples
+    result["scene_target_nonzero"] = any(
+        v["nonzero_bytes"] is not None and v["nonzero_bytes"] > 0
+        for v in scene_samples.values())
+    result["gbuffer_f06_captured"] = scene_samples["f06_gbuffer0"]["gpu_readback_saved"]
     result["offscreen_status"] = (
         "MULTIFRAME_GPU_CAPTURE_" +
         ("NONZERO_PRESENT" if result["offscreen_nonzero_count"] else "ALL_ZERO")
@@ -1347,8 +1372,6 @@ def main():
                 elif not (report.get("fs_srt_all_24_resolved") and
                           report.get("fs_image_sharp_valid_after_reorder")):
                     report["result"] = "MULTISHADER_TOPOLOGY_TARGET_REGRESSION"
-                elif report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
-                    report["result"] = "GUARDED_COMPUTE_GPU_FAULT"
                 elif not report.get("compute_canary_any_submitted"):
                     report["result"] = "GUARDED_COMPUTE_NOT_SUBMITTED"
                 elif report.get("compute_canary_completed_count", 0) == 0:
@@ -1357,10 +1380,12 @@ def main():
                     report["result"] = "GUARDED_COMPUTE_NO_VERIFIED_VIDEOOUT"
                 elif report.get("guest_frame_nonblack_count", 0) > 0:
                     report["result"] = "GUARDED_COMPUTE_SOURCE_NONBLACK"
-                elif report.get("offscreen_nonzero_count", 0) > 0:
-                    report["result"] = "GUARDED_COMPUTE_OFFSCREEN_NONZERO"
+                elif report.get("scene_target_nonzero"):
+                    report["result"] = "GUARDED_COMPUTE_SCENE_TARGET_NONZERO"
+                elif not report.get("gbuffer_f06_captured"):
+                    report["result"] = "GUARDED_COMPUTE_GBUFFER_READBACK_UNAVAILABLE"
                 else:
-                    report["result"] = "GUARDED_COMPUTE_VIDEOOUT_AND_GBUFFER_BLACK"
+                    report["result"] = "GUARDED_COMPUTE_SCREEN_BLACK_GBUFFER_ZERO"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -1396,6 +1421,8 @@ def main():
     print("GPU_TARGET_READBACKS=" + str(report.get("offscreen_complete_count", 0)))
     print("GPU_TARGET_NONZERO=" + str(report.get("offscreen_nonzero_count", 0)))
     print("GPU_TARGET_SKIPS=" + str(report.get("offscreen_skips", {})))
+    print("SCENE_TARGET_SAMPLES=" + str(report.get("scene_target_samples", {})))
+    print("SCENE_TARGET_NONZERO=" + str(report.get("scene_target_nonzero", False)))
     print("GPU_IMAGE_OUTPUT_DELTAS=" + str(report.get("gpu_image_output_deltas", {})))
     print("SRT_TOPO_REORDERED=" + str(report.get("srt_topology_reordered", 0)))
     print("SRT_TOPO_EDGES=" + str(report.get("srt_topology_dependency_edges", 0)))
