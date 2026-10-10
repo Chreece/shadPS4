@@ -891,6 +891,7 @@ void Rasterizer::DispatchDirect() {
                               (cs.pgm_hash == 0xd80cbb16ULL ||
                                cs.pgm_hash == 0xb223c956ULL);
     if (enable_delta) {
+        bool specific_skip_logged = false;
         // BindTextures has already resolved these image IDs and Vulkan layouts.
         // All earlier eligibility checks require ordinary, resolved Color2D
         // images with a single descriptor binding.
@@ -916,6 +917,7 @@ void Rasterizer::DispatchDirect() {
                               desc.view_info.range.base.level == 0 &&
                               desc.view_info.range.base.layer == 0;
             if (!safe) {
+                specific_skip_logged = true;
                 LOG_WARNING(Render_Vulkan,
                             "GOW_IMAGE_OUTPUT_SKIP shader={:#x} reason=IMAGE_LAYOUT "
                             "width={} height={} pitch={} bpp={} bytes={}",
@@ -929,6 +931,7 @@ void Rasterizer::DispatchDirect() {
             const auto after = staging.Request(bytes, VideoCore::MemoryType::HostCached,
                                                16, true);
             if (!before.mapped || !after.mapped) {
+                specific_skip_logged = true;
                 LOG_WARNING(Render_Vulkan,
                             "GOW_IMAGE_OUTPUT_SKIP shader={:#x} reason=STAGING_UNMAPPED",
                             cs.pgm_hash);
@@ -967,7 +970,7 @@ void Rasterizer::DispatchDirect() {
                         cs.pgm_hash, bytes, info.size.width, info.size.height);
             break;  // One image and at most 256 KiB per canary.
         }
-        if (!image_delta.ready) {
+        if (!image_delta.ready && !specific_skip_logged) {
             LOG_WARNING(Render_Vulkan,
                         "GOW_IMAGE_OUTPUT_SKIP shader={:#x} reason=NO_SUITABLE_STORAGE_IMAGE",
                         cs.pgm_hash);
