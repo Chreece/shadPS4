@@ -43,7 +43,7 @@ GBUFFER_SHA = "88fbecd1abdd224ce74b39e204357403fa85e907"
 GPU_PROBE_BASE_SHA = "3b8c11e6cdad20cb039f76eaa9fe28677a31b80a"
 HEAD_SHA = "ff31dc5c39bd5aa45d658efb8aba9fac280b1ceb"
 WRITER_PREVIOUS_RUNNER_SHA = "de56da87eb9a1593901deb29eee14a12beaaf508"
-WRITER_HEAD_SHA = "cc51c34f7b988b9d451cf7babcc7d6e0b118e9d9"
+WRITER_HEAD_SHA = "ddeaf86eaa0e758d12e7d981b54c0014365cd1d8"
 INDIRECT_GPU_DIFF_SHA256 = "30693439d0ba218354aa65e8b6ca6c88a7f24d45665d30d77455e893f0eb8055"
 BROAD_PATCH_SHA256 = "83000ad98104b0f335f4539ad9879d7212b678cdc327a18234fbd7117f2c47f6"
 AUTO_PATCH_SHA256 = "7743ac55071ce5656b84b8943a486b23ad729778460b1b354d355e879fb42def"
@@ -294,7 +294,8 @@ def get_patches():
     # The separate branch is an exact GitHub commit descendant of the last
     # runner that compiled successfully on the user's Debian host.
     writer_probe = fetch_strict_patch(
-        WRITER_PREVIOUS_RUNNER_SHA, WRITER_HEAD_SHA, {GBUFFER_SOURCE})
+        WRITER_PREVIOUS_RUNNER_SHA, WRITER_HEAD_SHA,
+        {GBUFFER_SOURCE, "tools/gow_phi_dma_onepaste.py"})
     for marker in (b'TraceGoWIndirectWriterCandidates',
                    b'GOW_INDIRECT_WRITER_CANDIDATE',
                    b'GOW_INDIRECT_BUFFER_ORIGIN'):
@@ -585,7 +586,9 @@ def apply_portable_writer_origin_probe(root, pinned_diff):
             helper.count('GOW_INDIRECT_WRITER_CANDIDATE') != 1 or
             helper.count('GOW_INDIRECT_WRITER_SUMMARY') != 1 or
             'buffer_cache.IsRegionGpuModified' not in draw_origin or
-            'SHADPS4_GOW_INDIRECT_WRITER_SCAN' not in helper):
+            'SHADPS4_GOW_INDIRECT_WRITER_SCAN' not in helper or
+            'unsafe_fetch' not in helper or
+            'Shader::UNKNOWN_LOCATION' not in helper):
         raise RuntimeError('New source additions do not match audited writer probe')
     path = root / GBUFFER_SOURCE
     pre = path.read_bytes()
