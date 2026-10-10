@@ -170,7 +170,7 @@ Id EmitImageSampleImplicitLodGhostIndexed(EmitContext& ctx, IR::Inst* inst, u32 
     ctx.Decorate(record_index, spv::Decoration::NonUniformEXT);
     const Id pointer_type = ctx.TypePointer(spv::StorageClass::UniformConstant,
                                            texture.image_type);
-    const Id pointer = ctx.OpAccessChain(pointer_type, texture.id, record_index);
+    const Id pointer = ctx.OpAccessChain(pointer_type, texture.id, std::array{record_index});
     ctx.Decorate(pointer, spv::Decoration::NonUniformEXT);
     const Id image = ctx.OpLoad(texture.image_type, pointer);
     ctx.Decorate(image, spv::Decoration::NonUniformEXT);
