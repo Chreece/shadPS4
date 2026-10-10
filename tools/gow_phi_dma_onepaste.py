@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "478086080c147aab17cf56e60bf44f638584ca11"
+HEAD_SHA = "0e1cf55d95dff9e84bde45ad1123bf0f7fdba0b4"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -380,6 +380,21 @@ def trial_run(binary, temp, result):
         r"writes=18[^\n]*bda_valid=true[^\n]*fault_valid=true[^\n]*dispatch=SKIPPED",
         joined))
     result["gds_placeholder_logged"] = "GOW_GDS_DIAG_TRANSLATED_ONLY" in joined
+    audit = re.search(
+        r"GOW_TARGET_RESOURCE_AUDIT shader=0x57b077ac "
+        r"invalid_guest_buffers=(\\d+) invalid_images=(\\d+) "
+        r"invalid_samplers=(\\d+) dispatch=SKIPPED", joined)
+    result["resource_audit_logged"] = bool(audit)
+    result["resource_audit_counts"] = (
+        dict(zip(("guest_buffers", "images", "samplers"),
+                 (int(value) for value in audit.groups())))
+        if audit else None)
+    result["resource_audit_passed"] = (
+        all(value == 0 for value in result["resource_audit_counts"].values())
+        if audit else False)
+    if result["resource_audit_counts"] and not result["resource_audit_passed"]:
+        result["resource_integrity_warning"] = (
+            "Some guest descriptor sources are unresolved; GPU dispatch must remain disabled.")
     relevant = [line[:1600] for line in joined.splitlines() if
                 re.search(r"GOW_|failed|error|shader 0x57b077ac|Vulkan|CPU identity", line, re.I)]
     (evidence / "key-events.txt").write_text("\n".join(relevant[-3500:]))
@@ -432,6 +447,8 @@ def main():
                 report["result"] = "BUILD_PASS"
                 trial_run(trial, tmp, report)
                 report["result"] = report.get("end_reason", "TRIAL_COMPLETE")
+                if report.get("resource_audit_logged") and not report.get("resource_audit_passed"):
+                    report["result"] = "UNRESOLVED_GUEST_RESOURCES"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -453,6 +470,8 @@ def main():
     print("ARCHIVE=" + str(archive))
     print("TARGET_SPV_COUNT=" + str(len(report.get("spv", []))))
     print("BIND_PROBE_PASSED=" + str(report.get("bind_probe_passed", False)))
+    print("RESOURCE_AUDIT_PASSED=" + str(report.get("resource_audit_passed", False)))
+    print("RESOURCE_AUDIT_COUNTS=" + str(report.get("resource_audit_counts")))
     print("SOURCE_RESTORED=" + str(report.get("sources_restored")))
     print("BUILD_BINARY_RESTORED=" + str(report.get("build_binary_restored")))
     if report.get("error"):
