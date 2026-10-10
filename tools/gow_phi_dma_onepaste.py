@@ -103,8 +103,15 @@ def get_patch():
         payload = json.load(res)
     if payload.get("base_commit", {}).get("sha") != BASE_SHA:
         raise RuntimeError("Unexpected base SHA from GitHub")
-    if payload.get("head_commit", {}).get("sha") != HEAD_SHA:
-        raise RuntimeError("Unexpected diagnostic branch head SHA")
+    # GitHub's compare REST response exposes the compared head as the final
+    # commit, not as a top-level head_commit object. Keep the pin strict.
+    commits = payload.get("commits", [])
+    if not commits or commits[-1].get("sha") != HEAD_SHA:
+        raise RuntimeError("Unexpected last commit SHA in pinned compare")
+    if payload.get("total_commits") != len(commits):
+        raise RuntimeError("Incomplete or paginated pinned compare result")
+    if payload.get("merge_base_commit", {}).get("sha") != BASE_SHA:
+        raise RuntimeError("Unexpected merge base for pinned patch")
     files = payload.get("files", [])
     if {f["filename"] for f in files} != REQUIRED:
         raise RuntimeError("Unexpected changed-file set; refusing patch")
