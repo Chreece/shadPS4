@@ -186,9 +186,24 @@ def do_build(build, patch, temp, result):
             raise RuntimeError("Focused local build failed (see build.log)")
         if not target.is_file():
             raise RuntimeError("Build completed but shadps4 binary missing")
+        # The Linux CPU-identity loader finds DynamoRIO next to /proc/self/exe.
+        # An emulator binary without its matching cpu-id-runtime package cannot
+        # reliably start --cpu-id-mode auto. Copy the bundle produced by this build.
+        runtime = build / "cpu-id-runtime"
+        required_runtime = ("bin64/drrun", "libshadps4_cpu_id.so",
+                            "lib64/release/libdynamorio.so")
+        missing = [rel for rel in required_runtime if not (runtime / rel).is_file()]
+        if missing:
+            raise RuntimeError("Bundled CPU identity runtime missing: " + ", ".join(missing))
         trial_binary.parent.mkdir(parents=True)
         shutil.copy2(target, trial_binary)
+        shutil.copytree(runtime, trial_binary.parent / "cpu-id-runtime", symlinks=False)
         result["trial_binary_sha256"] = sha(trial_binary)
+        result["cpu_runtime_bundled"] = True
+        result["cpu_runtime_sha256"] = {
+            rel: sha(trial_binary.parent / "cpu-id-runtime" / rel)
+            for rel in required_runtime
+        }
         return trial_binary
     finally:
         stop_owned(proc)
@@ -289,6 +304,19 @@ def trial_run(binary, temp, result):
                 if proc.poll() is not None:
                     result["end_reason"] = "PROCESS_EXIT"
                     break
+                if time.monotonic() - start > 45 and not last_spv:
+                    raw_console = (evidence / "console.log").read_text(errors="replace")
+                    if "Starting shadps4 emulator" not in raw_console:
+                        result["end_reason"] = "EARLY_STARTUP_STALL"
+                        try:
+                            task_dir = Path("/proc") / str(proc.pid) / "task"
+                            result["startup_thread_wchans"] = {
+                                t.name: (t / "wchan").read_text().strip()
+                                for t in list(task_dir.iterdir())[:48] if t.name.isdigit()
+                            }
+                        except (OSError, PermissionError) as exc:
+                            result["startup_thread_wchans"] = {"error": str(exc)}
+                        break
             else:
                 result["end_reason"] = "TIME_LIMIT"
     finally:
