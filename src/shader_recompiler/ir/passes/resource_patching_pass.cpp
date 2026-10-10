@@ -2,6 +2,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <limits>
+#include <array>
+#include <cstdlib>
+#include <cstring>
+#include <optional>
+#include <fcntl.h>
+#include <unistd.h>
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/ir_emitter.h"
@@ -16,6 +22,67 @@
 
 namespace Shader::Optimization {
 namespace {
+
+// Strict match for Ghost's original dynamic ImageHandle source, as proven in
+// fs_0x8e743c8e pre-res-patch IR: (record*340 + 64)>>2. Do NOT guess a row.
+std::optional<IR::Value> GhostRecordSelector(const SharpReference& sharp) {
+    const auto* load = sharp.dwords[0].TryInst();
+    if (!load || load->GetOpcode() != IR::Opcode::ReadConstBuffer)
+        return {};
+    const auto* shift = load->Arg(1).TryInst();
+    if (!shift || shift->GetOpcode() != IR::Opcode::ShiftRightLogical32 ||
+        !shift->Arg(1).IsImmediate() || shift->Arg(1).U32() != 2)
+        return {};
+    const auto* add = shift->Arg(0).TryInst();
+    if (!add || add->GetOpcode() != IR::Opcode::IAdd32)
+        return {};
+    IR::Value mul_value{};
+    if (add->Arg(0).IsImmediate() && add->Arg(0).U32() == 64)
+        mul_value = add->Arg(1);
+    else if (add->Arg(1).IsImmediate() && add->Arg(1).U32() == 64)
+        mul_value = add->Arg(0);
+    else
+        return {};
+    const auto* mul = mul_value.TryInst();
+    if (!mul || mul->GetOpcode() != IR::Opcode::IMul32)
+        return {};
+    if (mul->Arg(0).IsImmediate() && mul->Arg(0).U32() == 340)
+        return mul->Arg(1);
+    if (mul->Arg(1).IsImmediate() && mul->Arg(1).U32() == 340)
+        return mul->Arg(0);
+    return {};
+}
+
+// Read the first REAL row solely for sampled-image dimensional/format typing.
+// The runtime Vulkan descriptor array is populated from all 53 CURRENT rows;
+// row zero never replaces the shader-computed GPU selection.
+std::optional<AmdGpu::Image> GhostPrototypeImage(const Info& info) {
+    if (info.user_data.size() < 2) return {};
+    const u64 root = u64(info.user_data[0]) | (u64(info.user_data[1]) << 32);
+    if (!root || root > 0x00007fffffffffffull - 0x180 - sizeof(AmdGpu::Buffer))
+        return {};
+    const int fd = ::open("/proc/self/mem", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return {};
+    AmdGpu::Buffer table{};
+    const ssize_t n = ::pread(fd, &table, sizeof(table), static_cast<off_t>(root + 0x180));
+    AmdGpu::Image image{};
+    ssize_t result = -1;
+    if (n == sizeof(table) && table.base_address &&
+        table.GetStride() == 340 && table.GetSize() == 18020 &&
+        table.base_address <= 0x00007fffffffffffull - 64 - sizeof(image)) {
+        result = ::pread(fd, &image, sizeof(image), static_cast<off_t>(table.base_address + 64));
+    }
+    ::close(fd);
+    if (result != sizeof(image) || !image.Valid() || !image.Address() ||
+        image.GetType() != AmdGpu::ImageType::Color2D)
+        return {};
+    return image;
+}
+
+static bool GhostBindlessEnabled() {
+    const char* flag = std::getenv("SHADPS4_GHOST_BINDLESS_EXPERIMENT");
+    return flag && std::strcmp(flag, "1") == 0;
+}
 
 IR::Type BufferDataType(const IR::Inst& inst, const Profile& profile) {
     switch (inst.GetOpcode()) {
@@ -247,6 +314,16 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         .is_r128 = bool(inst_info.is_r128),
         .post_op = resource.sharps[0].post_op,
     };
+    if (GhostBindlessEnabled() && info.pgm_hash == 0x8e743c8eULL &&
+        inst.GetOpcode() == IR::Opcode::ImageSampleRaw &&
+        image_res.sharp_fetch.summary == decltype(image_res.sharp_fetch.summary)::Invalid) {
+        const auto index = GhostRecordSelector(resource.sharps[0]);
+        ASSERT_MSG(index.has_value(), "Ghost dynamic image2 source does not match 340/64 IR");
+        const auto prototype = GhostPrototypeImage(info);
+        ASSERT_MSG(prototype.has_value(), "Ghost dynamic image2 53-row guest table unreadable");
+        image_res.ghost_dynamic_image_count = 53;
+        image_res.ghost_prototype_image = *prototype;
+    }
 
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
@@ -637,7 +714,7 @@ void PatchBufferArgs(IR::Inst& inst, Info& info) {
 }
 
 void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image_res,
-                          const AmdGpu::Image& image) {
+                          const AmdGpu::Image& image, const IR::Value& dynamic_record_index) {
     const auto handle = inst.Arg(0);
     const auto& sampler_res = info.samplers[(handle.U32() >> 16) & 0xFFFF];
     const auto sampler = sampler_res.GetSharp(info);
@@ -818,6 +895,13 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
         if (explicit_lod) {
             return ir.ImageSampleExplicitLod(handle, coords, lod, offset, inst_info);
         }
+        if (image_res.ghost_dynamic_image_count) {
+            ASSERT_MSG(!dynamic_record_index.IsEmpty() && !inst_info.is_depth &&
+                       !inst_info.has_derivatives && !inst_info.has_lod,
+                       "Ghost indexed sample requires the real record selector and implicit LOD");
+            return ir.ImageSampleImplicitLodGhostIndexed(
+                handle, IR::U32{dynamic_record_index}, coords, bias, offset, inst_info);
+        }
         return ir.ImageSampleImplicitLod(handle, coords, bias, offset, inst_info);
     }();
 
@@ -828,7 +912,7 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
     inst.ReplaceUsesWith(converted);
 }
 
-void PatchImageArgs(IR::Inst& inst, Info& info) {
+void PatchImageArgs(IR::Inst& inst, Info& info, const ResourceDiscovery& discovery) {
     // Nothing to patch for dimension query.
     if (inst.GetOpcode() == IR::Opcode::ImageQueryDimensions) {
         return;
@@ -841,7 +925,13 @@ void PatchImageArgs(IR::Inst& inst, Info& info) {
 
     // Sample instructions must be handled separately using address register data.
     if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
-        return PatchImageSampleArgs(inst, info, image_res, image);
+        const auto selector = image_res.ghost_dynamic_image_count
+                                  ? GhostRecordSelector(discovery.sharps[0])
+                                  : std::optional<IR::Value>{};
+        ASSERT_MSG(!image_res.ghost_dynamic_image_count || selector.has_value(),
+                   "Ghost dynamic record selector was lost before sample lowering");
+        return PatchImageSampleArgs(inst, info, image_res, image,
+                                    selector.value_or(IR::Value{}));
     }
 
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
@@ -945,7 +1035,7 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         if (IsBufferInstruction(inst)) {
             PatchBufferArgs(inst, info);
         } else if (IsImageInstruction(inst)) {
-            PatchImageArgs(inst, info);
+            PatchImageArgs(inst, info, usage);
         } else if (IsDataRingInstruction(inst)) {
             PatchGlobalDataShareAccess(inst, info, descriptors, profile);
         }
