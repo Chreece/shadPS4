@@ -1039,13 +1039,18 @@ def trial_run(binary, temp, result):
         # Retain the previously proven automatic resource dependencies.
         # Their verbose per-shader flattened-buffer trace stays disabled.
         "SHADPS4_GOW_SRT_AUTO_ROOTS": "2",
-        # Preserve the 19:53 execution policy: six resource-guarded canaries,
-        # all other compute suppressed. Do not execute any new shader.
+        # Seven total canary definitions, but the seventh 0x73ad8e38 shader
+        # requires its OWN explicit flag, exact grid, descriptor count, and
+        # independently verified 32-byte read/512-byte write locations.
+        # Everything else remains suppressed. This is an experimental GPU
+        # execution and can still trigger a driver hang if the guest shader is
+        # unsupported; no unconditional GPU compute is enabled.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
-        # Passive compute descriptor map before the first target draw only.
-        # No GPU-buffer downloads or unrestricted compute execution.
-        "SHADPS4_GOW_PRODUCER_INPUTS": "1",
-        # No further frame, offscreen, or command-buffer GPU readbacks.
+        "SHADPS4_GOW_ENABLE_73_ONE_SHOT": "1",
+        # Reuse existing tiny, GPU-ordered six-command capture to compare
+        # with the 19:53 proven control where instanceCount was zero.
+        "SHADPS4_GOW_INDIRECT_GPU_ARGS": "1",
+        # No large frame or offscreen readbacks.
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
     env.setdefault("DISPLAY", ":0")
@@ -1076,11 +1081,23 @@ def trial_run(binary, temp, result):
                 # The exact instance-count values were already confirmed
                 # from six GPU-completed readbacks in the 19:53 archive.
                 # This trial observes their candidate writers only.
-                first_draw = "GOW_PRODUCER_FIRST_DRAW address=0x1039242c40" in raw_console
-                early_a = "GOW_PRODUCER_RESOURCE shader=0xf2d59856 " in raw_console
-                early_b = "GOW_PRODUCER_RESOURCE shader=0xf875ea48 " in raw_console
-                if first_draw and early_a and early_b:
-                    result["end_reason"] = "PRE_DRAW_PRODUCER_RESOURCE_CHAIN_CAPTURED"
+                # A/B trial: six tiny GPU-completed argument readbacks.
+                completed_slots = set(re.findall(
+                    r"GOW_INDIRECT_GPU_CAPTURE slot=([0-5]) [^\n]*"
+                    r"result=GPU_READBACK_COMPLETE", raw_console))
+                candidate_seen = "GOW_73_ADMISSION shader=0x73ad8e38" in raw_console
+                candidate_denied = re.search(
+                    r"GOW_73_ADMISSION shader=0x73ad8e38 [^\n]*result=DENIED",
+                    raw_console)
+                gpu_complete = re.search(
+                    r"GOW_COMPUTE_CANARY_GPU_COMPLETE shader=0x73ad8e38 "
+                    r"tick=\d+ result=TIMELINE_SIGNALED", raw_console)
+                if len(completed_slots) == 6 and candidate_seen and (
+                        candidate_denied or gpu_complete or
+                        time.monotonic() - start >= 30):
+                    result["end_reason"] = (
+                        "ONE_SHOT_73_AND_SIX_INDIRECT_ARGS_CAPTURED" if gpu_complete else
+                        "ONE_SHOT_73_DENIED_OR_UNCONFIRMED")
                     break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
