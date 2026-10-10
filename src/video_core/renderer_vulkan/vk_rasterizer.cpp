@@ -6,6 +6,7 @@
 #include <bit>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 
 #include "common/debug.h"
 #include "core/debug_state.h"
@@ -623,6 +624,72 @@ static bool AllowFirstGoWComputeProbe(const Shader::Info& cs, u32 x, u32 y, u32 
     return permit;
 }
 
+// Passive compute census. Keep every dispatch suppressed; report first
+// occurrence of each (shader hash, direct-dispatch grid) without reading guest
+// buffers or creating GPU commands. Bounded to 96 entries for log hygiene.
+static void LogGoWComputeCensus(const Shader::Info& info, u32 x, u32 y, u32 z) {
+    const char* flag = std::getenv("SHADPS4_GOW_COMPUTE_CENSUS");
+    const char* suppress = std::getenv("SHADPS4_GOW_SUPPRESS_GPU_COMPUTE");
+    if (!flag || std::strcmp(flag, "1") != 0 ||
+        !suppress || std::strcmp(suppress, "1") != 0) {
+        return;
+    }
+    struct Shape {
+        u64 shader{};
+        u32 x{}, y{}, z{};
+    };
+    static std::array<Shape, 96> seen{};
+    static std::size_t count{};
+    static std::mutex mutex{};
+    {
+        std::lock_guard guard{mutex};
+        for (std::size_t i = 0; i < count; ++i) {
+            if (seen[i].shader == info.pgm_hash &&
+                seen[i].x == x && seen[i].y == y && seen[i].z == z) {
+                return;
+            }
+        }
+        if (count >= seen.size()) {
+            return;
+        }
+        seen[count++] = Shape{info.pgm_hash, x, y, z};
+    }
+    u32 invalid_buffers = 0;
+    u32 invalid_images = 0;
+    u32 invalid_samplers = 0;
+    bool gds = false;
+    bool shared = false;
+    for (const auto& buffer : info.buffers) {
+        if (buffer.IsSpecial()) {
+            gds |= buffer.buffer_type == Shader::BufferType::GdsBuffer;
+            shared |= buffer.buffer_type == Shader::BufferType::SharedMemory;
+        } else {
+            invalid_buffers +=
+                buffer.sharp_fetch.summary == decltype(buffer.sharp_fetch.summary)::Invalid;
+        }
+    }
+    for (const auto& image : info.images) {
+        invalid_images +=
+            image.sharp_fetch.summary == decltype(image.sharp_fetch.summary)::Invalid;
+    }
+    for (const auto& sampler : info.samplers) {
+        invalid_samplers +=
+            sampler.sharp_fetch.summary == decltype(sampler.sharp_fetch.summary)::Invalid;
+    }
+    const u64 groups = u64(x) * u64(y) * u64(z);
+    const bool small = x && y && z && x <= 128 && y <= 128 && z <= 128 &&
+                       groups <= 128;
+    LOG_WARNING(Render_Vulkan,
+                "GOW_COMPUTE_CENSUS_DIRECT shader={:#x} grid={}x{}x{} "
+                "groups={} buffers={} images={} samplers={} "
+                "invalid_buffers={} invalid_images={} invalid_samplers={} "
+                "uses_dma={} gds={} shared={} small_grid={}",
+                info.pgm_hash, x, y, z, groups, info.buffers.size(),
+                info.images.size(), info.samplers.size(),
+                invalid_buffers, invalid_images, invalid_samplers,
+                info.uses_dma, gds, shared, small);
+}
+
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
 
@@ -638,6 +705,7 @@ void Rasterizer::DispatchDirect() {
     if (ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this)) {
         return;
     }
+    LogGoWComputeCensus(cs, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     if (ShouldProbeGoWBindings(cs)) {
         if (!gow_binding_probed.exchange(true, std::memory_order_relaxed)) {
             LOG_WARNING(Render_Vulkan, "GOW_TARGET_BIND_PROBE_BEGIN shader={:#x}", cs.pgm_hash);
