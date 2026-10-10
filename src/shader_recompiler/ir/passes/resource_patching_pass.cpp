@@ -4,6 +4,9 @@
 #include <limits>
 #include <cstdlib>
 #include <cstring>
+#include <atomic>
+#include <unordered_map>
+#include <vector>
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/ir_emitter.h"
@@ -228,6 +231,121 @@ void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors
     inst.SetArg(0, ir.Imm32(buffer_binding));
 }
 
+// Bounded read-only IR provenance for the GoW fragment shader whose eight
+// image descriptor dwords were all UNKNOWN_LOCATION. This does not execute
+// IR, read guest memory, alter a descriptor, or enable GPU compute.
+static void GoWTraceImageIndexTree(const ResourceDiscovery& resource, const Info& info) {
+    const char* enabled = std::getenv("SHADPS4_GOW_FS_INDEX_TREE_TRACE");
+    if (!enabled || std::strcmp(enabled, "1") != 0 ||
+        info.hw_stage != HwStage::Fragment || info.pgm_hash != 0x7f710602ULL) {
+        return;
+    }
+    static std::atomic<bool> traced{false};
+    if (traced.exchange(true, std::memory_order_relaxed)) {
+        return;
+    }
+    struct Pending {
+        const IR::Inst* inst;
+        u32 parent;
+        u32 parent_arg;
+        u32 word;
+        u32 depth;
+    };
+    std::vector<Pending> pending;
+    const auto& sharp = resource.sharps[0];
+    constexpr u32 MAX_NODES = 192;
+    constexpr u32 MAX_DEPTH = 12;
+    constexpr u32 MAX_ARGS_PER_NODE = 16;
+    LOG_WARNING(Render_Recompiler,
+                "GOW_FS_INDEX_GRAPH_BEGIN shader={:#x} words={} "
+                "max_nodes={} max_depth={} output=READ_ONLY",
+                info.pgm_hash, sharp.num_dwords, MAX_NODES, MAX_DEPTH);
+    for (u32 word = 0; word < sharp.num_dwords && word < 8; ++word) {
+        const auto& value = sharp.dwords[word];
+        if (const auto* root = value.TryInst()) {
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_FS_INDEX_ROOT shader={:#x} word={} opcode={}",
+                        info.pgm_hash, word, IR::NameOf(root->GetOpcode()));
+            pending.push_back({root, 0, 0, word, 0});
+        } else {
+            const bool literal = value.IsImmediate() && value.Type() == IR::Type::U32;
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_FS_INDEX_ROOT shader={:#x} word={} opcode=IMMEDIATE "
+                        "u32_literal={} value={:#x}",
+                        info.pgm_hash, word, literal, literal ? value.U32() : 0u);
+        }
+    }
+    std::unordered_map<const IR::Inst*, u32> ids;
+    u32 total = 0;
+    u32 u64_add = 0;
+    u32 u64_shift = 0;
+    u32 phi = 0;
+    u32 read_first_lane = 0;
+    bool truncated = false;
+    while (!pending.empty() && total < MAX_NODES) {
+        const auto item = pending.back();
+        pending.pop_back();
+        if (auto found = ids.find(item.inst); found != ids.end()) {
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_FS_INDEX_LINK shader={:#x} word={} parent={} arg={} "
+                        "child={} reused=true",
+                        info.pgm_hash, item.word, item.parent, item.parent_arg, found->second);
+            continue;
+        }
+        const u32 id = ++total;
+        ids.emplace(item.inst, id);
+        const auto opcode = item.inst->GetOpcode();
+        u64_add += opcode == IR::Opcode::IAdd64;
+        u64_shift += opcode == IR::Opcode::ShiftRightLogical64;
+        phi += opcode == IR::Opcode::Phi;
+        read_first_lane += opcode == IR::Opcode::ReadFirstLane;
+        const auto count = item.inst->NumArgs();
+        LOG_WARNING(Render_Recompiler,
+                    "GOW_FS_INDEX_NODE shader={:#x} id={} parent={} arg={} "
+                    "word={} depth={} opcode={} opcode_id={} args={}",
+                    info.pgm_hash, id, item.parent, item.parent_arg, item.word,
+                    item.depth, IR::NameOf(opcode), static_cast<u32>(opcode), count);
+        if (item.depth >= MAX_DEPTH) {
+            truncated |= count != 0;
+            continue;
+        }
+        if (count > MAX_ARGS_PER_NODE) {
+            truncated = true;
+        }
+        for (u32 arg_idx = 0; arg_idx < std::min<size_t>(count, MAX_ARGS_PER_NODE); ++arg_idx) {
+            const IR::Value operand = item.inst->Arg(arg_idx);
+            if (operand.IsImmediate()) {
+                const IR::Type ty = operand.Type();
+                const bool imm_u32 = ty == IR::Type::U32;
+                const bool imm_u64 = ty == IR::Type::U64;
+                const bool scalar = ty == IR::Type::ScalarReg;
+                LOG_WARNING(Render_Recompiler,
+                            "GOW_FS_INDEX_LITERAL shader={:#x} node={} arg={} "
+                            "word={} type={} u32={} u64={:#x} scalar_reg={} "
+                            "value_is_immediate=true",
+                            info.pgm_hash, id, arg_idx, item.word, static_cast<u32>(ty),
+                            imm_u32 ? operand.U32() : 0u,
+                            imm_u64 ? operand.U64() : 0ull,
+                            scalar ? static_cast<u32>(operand.ScalarReg()) : 0u);
+            } else if (const auto* child = operand.TryInst()) {
+                pending.push_back({child, id, arg_idx, item.word, item.depth + 1});
+            } else {
+                LOG_WARNING(Render_Recompiler,
+                            "GOW_FS_INDEX_LITERAL shader={:#x} node={} arg={} "
+                            "word={} type={} value_is_immediate=false child=null",
+                            info.pgm_hash, id, arg_idx, item.word,
+                            static_cast<u32>(operand.Type()));
+            }
+        }
+    }
+    truncated |= !pending.empty();
+    LOG_WARNING(Render_Recompiler,
+                "GOW_FS_INDEX_GRAPH_END shader={:#x} nodes={} iadd64={} "
+                "shr64={} phi={} readfirstlane={} truncated={} result=CAPTURED",
+                info.pgm_hash, total, u64_add, u64_shift, phi,
+                read_first_lane, truncated);
+}
+
 void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors& descriptors,
                      const Profile& profile) {
     IR::Inst& inst = *resource.user;
@@ -291,7 +409,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                                     src->NumArgs() > 1;
             const auto arg = has_offset ? src->Arg(1) : IR::Value{};
             const auto* arg_inst = arg.TryInst();
-            const bool immediate_offset = arg.Type() == IR::Type::U32;
+            const bool immediate_offset = arg.IsImmediate() && arg.Type() == IR::Type::U32;
             LOG_WARNING(Render_Recompiler,
                         "GOW_FS_IMAGE_SHARP_WORD shader={:#x} word={} immediate={} "
                         "source_opcode={} source_flatbuf={} fetch_offset={} unknown={} "
@@ -306,6 +424,8 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                     "GOW_FS_IMAGE_SHARP_END shader={:#x} result=CAPTURED",
                     info.pgm_hash);
     }
+
+    GoWTraceImageIndexTree(resource, info);
 
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
