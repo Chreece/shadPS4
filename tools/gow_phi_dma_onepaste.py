@@ -1822,30 +1822,59 @@ GOW_6D_IMAGE_INPUT_SOURCE = r'''    // Stage22: inspect the TRUE host Vulkan ima
                     }
                 }
             }
-            const bool valid_bindings = image_bindings.size() == 2 &&
-                                        host_views == 2 && null_views == 0;
-            if (!valid_bindings) {
+            // A shader descriptor is NOT a one-to-one index into the
+            // renderer's expanded image-binding table. Stage22 observed
+            // 64 entries here despite two valid guest image descriptors.
+            // Locate the exact sampled Vulkan images without guessing a slot.
+            const bool valid_views = host_views == 2 && null_views == 0;
+            std::array<int, 2> matched_binding{-1, -1};
+            std::array<u32, 2> candidate_counts{0, 0};
+            for (u32 index = 0; index < image_bindings.size(); ++index) {
+                const auto& [id, desc] = image_bindings[index];
+                if (!id ||
+                    desc.type == VideoCore::TextureCache::BindingType::Storage ||
+                    desc.view_info.range.base.level != 0 ||
+                    desc.view_info.range.base.layer != 0) {
+                    continue;
+                }
+                const auto& cached = texture_cache.GetImage(id);
+                for (u32 slot = 0; slot < 2; ++slot) {
+                    if (cached.info.guest_address == ExpectedImageAddresses[slot]) {
+                        ++candidate_counts[slot];
+                        matched_binding[slot] = static_cast<int>(index);
+                    }
+                }
+            }
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_6D_INPUT_IMAGE_MAP shader={:#x} "
+                        "guest_descriptors={} expanded_entries={} host_views={} "
+                        "null_views={} matches0={} matches1={} index0={} index1={} "
+                        "result=CAPTURED",
+                        cs.pgm_hash, cs.images.size(), image_bindings.size(),
+                        host_views, null_views, candidate_counts[0],
+                        candidate_counts[1], matched_binding[0], matched_binding[1]);
+            const bool matches_exact = candidate_counts[0] == 1 &&
+                                       candidate_counts[1] == 1 &&
+                                       matched_binding[0] != matched_binding[1];
+            if (!valid_views || !matches_exact) {
                 LOG_WARNING(Render_Vulkan,
-                            "GOW_6D_INPUT_IMAGE_GATE shader={:#x} views={} "
-                            "null_views={} image_bindings={} result=DENIED",
-                            cs.pgm_hash, host_views, null_views, image_bindings.size());
+                            "GOW_6D_INPUT_IMAGE_GATE shader={:#x} "
+                            "valid_views={} exact_matches={} "
+                            "expanded_entries={} result=DENIED",
+                            cs.pgm_hash, valid_views, matches_exact,
+                            image_bindings.size());
                 ResetBindings(true);
                 return;
             }
             LOG_WARNING(Render_Vulkan,
                         "GOW_6D_INPUT_IMAGE_GATE shader={:#x} "
-                        "views=2 null_views=0 dispatch=SKIPPED result=PASS",
+                        "views=2 null_views=0 exact_matches=2 "
+                        "dispatch=SKIPPED result=PASS",
                         cs.pgm_hash);
             auto& pool = runtime.GetStagingPool();
             for (u32 slot = 0; slot < 2; ++slot) {
-                const auto& [image_id, descriptor] = image_bindings[slot];
-                if (!image_id ||
-                    descriptor.type == VideoCore::TextureCache::BindingType::Storage) {
-                    LOG_WARNING(Render_Vulkan,
-                                "GOW_6D_INPUT_IMAGE_SKIP shader={:#x} slot={} "
-                                "reason=IMAGE_ID_OR_STORAGE", cs.pgm_hash, slot);
-                    continue;
-                }
+                const u32 binding_idx = static_cast<u32>(matched_binding[slot]);
+                const auto& [image_id, descriptor] = image_bindings[binding_idx];
                 auto& img = texture_cache.GetImage(image_id);
                 const auto& info = img.info;
                 const auto guest_addr = ExpectedImageAddresses[slot];
@@ -3206,11 +3235,13 @@ def trial_run(binary, temp, result):
     input_images = {}
     input_skips = []
     input_gates = []
+    input_maps = []
     for line in joined.splitlines():
         for marker, target in (
             ("GOW_6D_INPUT_IMAGE_RESULT shader=0x6d6da626", input_images),
             ("GOW_6D_INPUT_IMAGE_SKIP shader=0x6d6da626", input_skips),
             ("GOW_6D_INPUT_IMAGE_GATE shader=0x6d6da626", input_gates),
+            ("GOW_6D_INPUT_IMAGE_MAP shader=0x6d6da626", input_maps),
         ):
             if marker not in line:
                 continue
@@ -3225,6 +3256,7 @@ def trial_run(binary, temp, result):
         input_images[k] for k in sorted(input_images)]
     result["six_d_input_skips"] = input_skips
     result["six_d_input_gates"] = input_gates
+    result["six_d_image_mapping"] = input_maps[-1] if input_maps else None
     result["six_d_input_gpu_both_complete"] = (
         set(input_images) == {0, 1} and
         all(x.get("result") == "GPU_READBACK_COMPLETE"
@@ -3245,6 +3277,7 @@ def trial_run(binary, temp, result):
             "readbacks": result["six_d_input_images"],
             "skips": input_skips,
             "gates": input_gates,
+            "actual_vulkan_bindings_mapping": result["six_d_image_mapping"],
             "all_zero_image_slots": result["six_d_input_zero_image_slots"],
             "nonzero_image_slots": result["six_d_input_nonzero_image_slots"],
         }, ensure_ascii=False, indent=2))
@@ -3919,6 +3952,7 @@ def main():
     print("SIX_D_INPUT_BOTH_GPU_COMPLETED=" + str(report.get("six_d_input_gpu_both_complete", False)))
     print("SIX_D_INPUT_GPU_READBACKS=" + str(report.get("six_d_input_images", [])))
     print("SIX_D_INPUT_SKIPS=" + str(report.get("six_d_input_skips", [])))
+    print("SIX_D_IMAGE_MAPPING=" + str(report.get("six_d_image_mapping")))
     print("NINE_A_FILL_ALL_FOUR=" + str(report.get("nine_a_fill_all_four", False)))
     print("NINE_A_FILL_BITS=" + str(report.get("nine_a_fill_bits")))
     print("NINE_A_ZERO_FLOAT_COUNT=" + str(report.get("nine_a_fill_float_zero_count")))
