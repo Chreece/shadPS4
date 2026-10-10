@@ -30,20 +30,22 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "5ffa2795b3095268897d5f59434a4e4fc8fd830d"
+HEAD_SHA = "062ee2d34281ecc53dd4fa8e3136c5ba8475b705"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
     "src/core/libraries/kernel/process.cpp",
+    "src/core/libraries/videoout/driver.cpp",
     "src/shader_recompiler/backend/spirv/emit_spirv.cpp",
     "src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp",
     "src/shader_recompiler/frontend/translate/data_share.cpp",
     "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
     "src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp",
     "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp",
+    "src/video_core/renderer_vulkan/vk_presenter.cpp",
     "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
 }
-TIME_LIMIT = 120
+TIME_LIMIT = 75
 
 def sha(path):
     h = hashlib.sha256()
@@ -273,6 +275,8 @@ def trial_run(binary, temp, result):
     evidence = temp / "evidence"
     dump_dir = evidence / "target_shader"
     dump_dir.mkdir(parents=True)
+    frame_dir = evidence / "pre_fsr"
+    frame_dir.mkdir(parents=True)
     log_dir = HOME / ".local/share/shadPS4/log"
     before = {}
     if log_dir.is_dir():
@@ -287,6 +291,7 @@ def trial_run(binary, temp, result):
     env.pop("SHADPS4_CPU_ID_MODE", None)
     env.pop("SHADPS4_GOW_SAFE_COMPUTE_ONESHOT", None)
     env.pop("SHADPS4_GOW_COMPUTE_CANARIES", None)
+    env.pop("SHADPS4_GOW_FRAME_SOURCE_DIR", None)
     env.update({
         "SHADPS4_ENABLE_IPC": "false",
         "SHADPS4_GOW_ONE_SHADER_DMA_COMPILE": "1",
@@ -298,7 +303,9 @@ def trial_run(binary, temp, result):
         # Unapproved compute/DMA stays suppressed.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
         "SHADPS4_GOW_IMAGE_OUTPUT_DELTA": "1",
-        # Restore the proven D80 active behavior after its successful control.
+        # Capture first three actual game VideoOut images before FSR/PP.
+        "SHADPS4_GOW_FRAME_SOURCE_DIR": str(frame_dir.resolve()),
+        # Preserve the causally verified D80 active baseline.
         "SHADPS4_GOW_D80_CONTROL_NO_DISPATCH": "0",
         "SHADPS4_GOW_COMPUTE_CENSUS": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
@@ -328,31 +335,17 @@ def trial_run(binary, temp, result):
                             errors="replace")
                         # The D80 shader MUST NOT dispatch in this control.
                         # Its pre/post GPU copies should still finish naturally.
-                        medium_marker = (
-                            "GOW_COMPUTE_CANARY_CANDIDATE shader=0x3b8b91e6")
-                        medium_seen = medium_marker in trial_output
-                        medium_completed = (
-                            "GOW_COMPUTE_CANARY_GPU_COMPLETE shader=0x3b8b91e6"
-                            in trial_output)
-                        medium_output_done = (
-                            "GOW_IMAGE_OUTPUT_DELTA shader=0x3b8b91e6"
-                            in trial_output or
-                            "GOW_IMAGE_OUTPUT_SKIP shader=0x3b8b91e6"
-                            in trial_output)
-                        if medium_completed and medium_output_done:
-                            result["end_reason"] = "MEDIUM_135_GPU_OUTPUT_CONCLUDED"
+                        # Prefer actual GPU-completed pre-FSR screenshots,
+                        # not a generic Vulkan canary timeline as a success.
+                        probe_saved = sorted(frame_dir.glob("gow_guest_pre_fsr_*.png"))
+                        probe_logged = len(re.findall(
+                            r"GOW_FRAME_GUEST_CAPTURE frame=\\d+ result=SAVED",
+                            trial_output))
+                        if len(probe_saved) >= 3 and probe_logged >= 3:
+                            result["end_reason"] = "FIRST_THREE_GUEST_FRAMES_CAPTURED"
                             break
-                        # A rejected shader cannot become eligible later: the
-                        # one-shot guard consumes first matching occurrence.
-                        if medium_seen and "GOW_COMPUTE_CANARY_RESULT shader=0x3b8b91e6" not in trial_output:
-                            rejected = any(
-                                "permit=false" in ln for ln in trial_output.splitlines()
-                                if medium_marker in ln)
-                            if rejected:
-                                result["end_reason"] = "MEDIUM_135_RUNTIME_REJECTED"
-                                break
-                        if time.monotonic() - last_spv >= 42:
-                            result["end_reason"] = "MEDIUM_135_OBSERVATION_WINDOW_ENDED"
+                        if time.monotonic() - last_spv >= 36:
+                            result["end_reason"] = "GUEST_FRAME_OBSERVATION_WINDOW_ENDED"
                             break
                 else:
                     last_spv = None
@@ -434,6 +427,69 @@ def trial_run(binary, temp, result):
                 data = f.read()[-16000000:]
             (evidence / ("new-" + p.name)).write_bytes(data)
             joined += data.decode("utf-8", "replace")
+    # VideoOut and presenter diagnostics are sourced from game-local logs.
+    # The source captures occur before any host FSR / postprocessing pass.
+    def _kv(line):
+        return dict(re.findall(r"([a-z_]+)=([^\s]+)", line))
+
+    flips = {}
+    source_meta = {}
+    source_captures = {}
+    for line in joined.splitlines():
+        if "GOW_FRAME_FLIP sequence=" in line:
+            kv = _kv(line[line.index("GOW_FRAME_FLIP sequence="):])
+            if kv.get("sequence", "").isdigit():
+                flips[int(kv["sequence"])] = kv
+        if "GOW_FRAME_SOURCE_META frame=" in line:
+            kv = _kv(line[line.index("GOW_FRAME_SOURCE_META frame="):])
+            if kv.get("frame", "").isdigit():
+                source_meta[int(kv["frame"])] = kv
+        if "GOW_FRAME_GUEST_CAPTURE frame=" in line:
+            kv = _kv(line[line.index("GOW_FRAME_GUEST_CAPTURE frame="):])
+            if kv.get("frame", "").isdigit():
+                source_captures[int(kv["frame"])] = kv
+
+    source_pngs = {}
+    for path in sorted(frame_dir.glob("gow_guest_pre_fsr_*.png")):
+        if not path.is_file() or path.is_symlink() or path.stat().st_size > 20_000_000:
+            continue
+        with path.open("rb") as fp:
+            header = fp.read(24)
+        if (len(header) != 24 or not header.startswith(b"\x89PNG\r\n\x1a\n")
+                or header[12:16] != b"IHDR"):
+            continue
+        width, height = struct.unpack(">II", header[16:24])
+        source_pngs[path.name] = {
+            "width": width, "height": height,
+            "size_bytes": path.stat().st_size,
+            "sha256": sha(path),
+        }
+    result["videoout_flip_events"] = list(flips.values())[:16]
+    result["videoout_flip_count"] = len(flips)
+    result["guest_frame_source_metadata"] = [
+        source_meta[key] for key in sorted(source_meta)]
+    result["guest_frame_gpu_captures"] = [
+        source_captures[key] for key in sorted(source_captures)]
+    result["guest_frame_pngs"] = source_pngs
+    result["guest_frame_png_count"] = len(source_pngs)
+    verified_captures = [
+        row for row in source_captures.values()
+        if row.get("result") == "SAVED" and
+        row.get("file", "").split("/")[-1] in source_pngs]
+    result["guest_frame_verified_count"] = len(verified_captures)
+    result["guest_frame_nonblack_count"] = sum(
+        int(row.get("nonblack_pixels", 0)) > 0 for row in verified_captures)
+    if verified_captures:
+        result["guest_frame_pixels_status"] = (
+            "SOURCE_NONBLACK_BEFORE_HOST_POSTPROCESS"
+            if result["guest_frame_nonblack_count"] else
+            "SOURCE_BLACK_BEFORE_HOST_POSTPROCESS")
+    elif source_meta:
+        result["guest_frame_pixels_status"] = "SOURCE_IMAGE_PRESENT_READBACK_INCOMPLETE"
+    elif flips:
+        result["guest_frame_pixels_status"] = "FLIPS_RECORDED_NO_SOURCE_IMAGE"
+    else:
+        result["guest_frame_pixels_status"] = "NO_GUEST_FRAME_OBSERVED"
     # Census the other dispatches while allowing only one guarded direct dispatch.
     census_pattern = re.compile(
         r"GOW_COMPUTE_CENSUS_DIRECT shader=(0x[0-9a-fA-F]+) "
@@ -751,25 +807,13 @@ def main():
                         "DYNAMIC_IMAGE_MASKS_CAPTURED"
                         if report.get("image_live_masks_captured")
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
-                # Timeline completion and actual image data must be separate
-                # fields: recording a command alone is never a GPU pass.
-                medium = report.get("compute_canaries", {}).get("0x3b8b91e6", {})
-                medium_output = report.get("medium_135_output")
+                # First decide which side of the presentation boundary is black.
+                # A GPU timeline success is not a correctly rendered frame.
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif medium.get("timeline_completed") and medium_output is not None:
-                    report["result"] = (
-                        "MEDIUM_135_GPU_IMAGE_CHANGED"
-                        if medium_output.get("changed_bytes", 0) > 0
-                        else "MEDIUM_135_GPU_OUTPUT_UNCHANGED")
-                elif medium.get("timeline_completed"):
-                    report["result"] = "MEDIUM_135_GPU_COMPLETED_READBACK_SKIPPED"
-                elif medium.get("permit") is False:
-                    report["result"] = "MEDIUM_135_RUNTIME_REJECTED"
-                elif medium.get("command_recorded"):
-                    report["result"] = "MEDIUM_135_COMMAND_RECORDED_NOT_COMPLETED"
                 else:
-                    report["result"] = "MEDIUM_135_NO_EXECUTION_EVIDENCE"
+                    report["result"] = report.get(
+                        "guest_frame_pixels_status", "GUEST_FRAME_PROBE_NO_EVIDENCE")
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -797,6 +841,17 @@ def main():
     print("GPU_CANARY_COMPLETED_COUNT=" +
           str(report.get("compute_canary_completed_count", 0)))
     medium = report.get("compute_canaries", {}).get("0x3b8b91e6", {})
+    print("VIDEOOUT_FLIP_COUNT=" + str(report.get("videoout_flip_count", 0)))
+    print("GUEST_FRAME_SOURCE_META_COUNT=" +
+          str(len(report.get("guest_frame_source_metadata", []))))
+    print("GUEST_FRAME_CAPTURE_COUNT=" +
+          str(report.get("guest_frame_verified_count", 0)))
+    print("GUEST_FRAME_NONBLACK_CAPTURE_COUNT=" +
+          str(report.get("guest_frame_nonblack_count", 0)))
+    print("GUEST_FRAME_PIXELS_STATUS=" +
+          str(report.get("guest_frame_pixels_status")))
+    print("GUEST_FRAME_PNG_FILES=" +
+          str(sorted(report.get("guest_frame_pngs", {}))))
     print("MEDIUM_135_GRID=15x9x1")
     print("MEDIUM_135_PERMIT=" + str(medium.get("permit")))
     print("MEDIUM_135_COMMAND_RECORDED=" + str(medium.get("command_recorded", False)))
