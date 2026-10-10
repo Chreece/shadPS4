@@ -397,13 +397,14 @@ def trial_run(binary, temp, result):
         result["resource_integrity_warning"] = (
             "Some guest descriptor sources are unresolved; GPU dispatch must remain disabled.")
     table_pattern = re.compile(
-        r"GOW_IMAGE_TABLE_AUDIT group=(A|B) stride=(\\d+) image_offset=(\\d+) "
-        r"slots=32 readable=(\\d+) valid=(\\d+) "
+        r"GOW_IMAGE_TABLE_AUDIT group=(A|B) stride=(\d+) image_offset=(\d+) "
+        r"slots=32 readable=(\d+) valid=(\d+) "
         r"readable_mask=(0x[0-9a-fA-F]+) valid_mask=(0x[0-9a-fA-F]+) "
-        r"uniform_type=(true|false) image_type=(\\d+) dispatch=SKIPPED")
+        r"uniform_type=(true|false) image_type=(\d+) dispatch=SKIPPED")
     table_audits = {}
     for match in table_pattern.finditer(joined):
-        group, stride, offset, readable, valid, readable_mask, valid_mask,             uniform_type, image_type = match.groups()
+        (group, stride, offset, readable, valid, readable_mask, valid_mask,
+         uniform_type, image_type) = match.groups()
         table_audits[group] = {
             "stride_bytes": int(stride), "image_offset_bytes": int(offset),
             "slots": 32, "readable": int(readable), "valid": int(valid),
