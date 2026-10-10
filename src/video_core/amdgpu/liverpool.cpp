@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+#include <cstdlib>
+#include <cstring>
 #include <boost/preprocessor/stringize.hpp>
 
 #include "common/assert.h"
@@ -21,6 +24,17 @@
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
 namespace AmdGpu {
+
+// Opt-in GPU/guest completion correlation. Never changes RELEASE_MEM ordering,
+// guest-visible fence contents or interrupt delivery.
+static std::atomic<u64> ghost_timeline_release_sequence{0};
+static bool GhostTimelineProbeEnabled() {
+    static const bool enabled = [] {
+        const char* flag = std::getenv("SHADPS4_GHOST_TIMELINE_PROBE");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    return enabled;
+}
 
 static const char* dcb_task_name{"DCB_TASK"};
 static const char* ccb_task_name{"CCB_TASK"};
@@ -1131,16 +1145,45 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
         case PM4ItOpcode::ReleaseMem: {
             const auto* release_mem = reinterpret_cast<const PM4CmdReleaseMem*>(header);
+            // Queue 6 was the source of Ghost's observed release/IRQ sequence.
+            // Inspect the real Vulkan timeline before notifying the guest.
+            // No fence waits, extra Flush/Finish, or change to callback order.
+            u64 timeline_seq = 0;
+            if (GhostTimelineProbeEnabled() && queue.pipe_id == 6 && rasterizer) {
+                timeline_seq = ghost_timeline_release_sequence.fetch_add(
+                                   1, std::memory_order_relaxed) +
+                               1;
+                const auto ticks = rasterizer->GetScheduler().SampleGpuTimelineNonblocking();
+                const u64 fence_addr =
+                    u64(release_mem->address_lo) | (u64(release_mem->address_hi) << 32);
+                LOG_WARNING(Render,
+                            "GHOST_TIMELINE_RELEASE seq={} pipe={} vqid={} "
+                            "recording={} submitted={} completed={} in_flight={} "
+                            "fence_addr={:#x} int_sel={} data_sel={}",
+                            timeline_seq, queue.pipe_id, vqid, ticks.recording_tick,
+                            ticks.submitted_tick, ticks.completed_tick,
+                            ticks.submitted_tick > ticks.completed_tick, fence_addr,
+                            u32(release_mem->int_sel.Value()), u32(release_mem->data_sel.Value()));
+            }
             if (rasterizer) {
                 rasterizer->OnFence();
             }
             release_mem->SignalFence(
-                [pipe_id = queue.pipe_id] {
+                [pipe_id = queue.pipe_id, timeline_seq] {
+                    if (timeline_seq) {
+                        LOG_WARNING(Render,
+                                    "GHOST_TIMELINE_IRQ seq={} pipe={} phase=before_guest_irq",
+                                    timeline_seq, pipe_id);
+                    }
                     Platform::IrqC::Instance()->Signal(static_cast<Platform::InterruptId>(pipe_id));
                 },
                 [this](VAddr dst, u16 gds_index, u16 num_dwords) {
                     rasterizer->CopyBuffer(dst, gds_index, num_dwords * sizeof(u32), false, true);
                 });
+            if (timeline_seq) {
+                LOG_WARNING(Render, "GHOST_TIMELINE_RELEASE_DONE seq={} phase=after_guest_signal",
+                            timeline_seq);
+            }
             break;
         }
         case PM4ItOpcode::EventWrite: {
