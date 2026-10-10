@@ -392,10 +392,11 @@ def get_patches():
     # the previously suppressed 0x73 compute shader.
     host_binding_probe = GOW_73_HOST_BIND_SOURCE.encode("utf-8")
     exec_probe = GOW_73_EXECUTION_SOURCE.encode("utf-8")
+    writer_probe_gpu = (GOW_WRITER_GPU_PRELUDE + GOW_WRITER_GPU_POST).encode("utf-8")
     return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
             index_probe, flatten_probe, root_priority_patch, auto_topo_patch,
             broad_probe, draw_probe, gpu_args_patch, writer_probe, producer_probe,
-            one_shot_73, shape_probe, host_binding_probe, exec_probe)
+            one_shot_73, shape_probe, host_binding_probe, exec_probe, writer_probe_gpu)
 
 
 def verify_preimages():
@@ -1166,6 +1167,190 @@ GOW_73_EXECUTION_SOURCE = r'''    // One strictly guarded native 128x128x1 dispa
 
 '''
 
+GOW_WRITER_GPU_PRELUDE = r'''    // Stage18: capture exact GPU-resident arguments and three inputs both
+    // before and after EACH directly overlapping native writer, on its
+    // unmodified compute dispatch timeline. No synthetic instance counts.
+    const auto snapshot_go_w_writer = [&](bool after_dispatch) {
+        const char* flag = std::getenv("SHADPS4_GOW_WRITER_AB_GPU");
+        if (!flag || std::strcmp(flag, "1") != 0 ||
+            canary_idx < 0 ||
+            cs_program.dim_x != 1 || cs_program.dim_y != 1 ||
+            cs_program.dim_z != 1 ||
+            (cs.pgm_hash != 0xf2d59856ULL &&
+             cs.pgm_hash != 0xf875ea48ULL)) {
+            return;
+        }
+        // Both shaders have already passed their native canary resource gates.
+        // One capture per writer+phase, even if the game loops.
+        constexpr u32 CmdBytes = 160;
+        constexpr u32 CounterBytes = 512;
+        constexpr u32 Input32Bytes = 32;
+        constexpr u32 Meta32Bytes = 32;
+        constexpr u32 Source64Bytes = 64;
+        constexpr u32 CaptureBytes = CmdBytes + CounterBytes +
+                                     Input32Bytes + Meta32Bytes + Source64Bytes;
+        static_assert(CaptureBytes == 800);
+        const u32 writer_id = cs.pgm_hash == 0xf2d59856ULL ? 0 : 1;
+        const u32 slot = 2 * writer_id + (after_dispatch ? 1 : 0);
+        static std::array<std::atomic<bool>, 4> attempted{};
+        if (attempted[slot].exchange(true, std::memory_order_acq_rel)) return;
+
+        const std::array<std::pair<VAddr, u64>, 5> segments{{
+            {0x1039242c40ULL, CmdBytes},       // 8 indexed indirect records
+            {0x1039242d00ULL, CounterBytes},   // shared producer output
+            {0x1038bc2b80ULL, Input32Bytes},   // shader73 input
+            {0x1038bc2c00ULL, Meta32Bytes},    // writer/indirect metadata
+            {0x1038bc2bc0ULL, Source64Bytes},  // f2 input
+        }};
+
+        // Check the buffer cache's actual Vulkan backing before any copying.
+        struct CopySource {
+            const VideoCore::Buffer* buffer;
+            u64 offset;
+        };
+        std::array<CopySource, 5> sources{};
+        u64 dst_offset = 0;
+        bool valid = true;
+        for (u32 i = 0; i < segments.size(); ++i) {
+            const auto [buf, offset] =
+                buffer_cache.ObtainBuffer(segments[i].first, segments[i].second, false);
+            sources[i] = {buf, offset};
+            if (!buf || offset > buf->SizeBytes() ||
+                segments[i].second > buf->SizeBytes() - offset) {
+                valid = false;
+            }
+            dst_offset += segments[i].second;
+        }
+        if (!valid || dst_offset != CaptureBytes) {
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_WRITER_GPU_SNAPSHOT_SKIP shader={:#x} phase={} "
+                        "reason=SOURCE_INVALID", cs.pgm_hash,
+                        after_dispatch ? "POST" : "PRE");
+            return;
+        }
+        auto& pool = runtime.GetStagingPool();
+        const auto shot = pool.Request(CaptureBytes,
+                                       VideoCore::MemoryType::HostCached, 16, true);
+        if (!shot.buffer || !shot.mapped || shot.size < CaptureBytes) {
+            if (shot.buffer) pool.FreeDeferred(shot);
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_WRITER_GPU_SNAPSHOT_SKIP shader={:#x} phase={} "
+                        "reason=STAGING", cs.pgm_hash,
+                        after_dispatch ? "POST" : "PRE");
+            return;
+        }
+
+        u64 copy_dest = shot.offset;
+        for (u32 i = 0; i < sources.size(); ++i) {
+            const vk::BufferCopy copy{
+                .srcOffset = sources[i].offset,
+                .dstOffset = copy_dest,
+                .size = segments[i].second,
+            };
+            runtime.CopyBuffer(sources[i].buffer, shot.buffer, std::span{&copy, 1});
+            copy_dest += segments[i].second;
+        }
+        const u64 shader = cs.pgm_hash;
+        scheduler.DeferPriorityOperation(
+            [shot, pool_ptr = &pool, shader, after_dispatch] {
+                shot.Invalidate();
+                const auto* raw = static_cast<const u8*>(shot.mapped);
+                const auto nonzero = [&](u32 first, u32 bytes) {
+                    u32 count = 0;
+                    for (u32 i = 0; i < bytes; ++i) count += raw[first + i] != 0;
+                    return count;
+                };
+                const auto fnv = [&](u32 first, u32 bytes) {
+                    u64 digest = 14695981039346656037ULL;
+                    for (u32 i = 0; i < bytes; ++i) {
+                        digest ^= raw[first + i];
+                        digest *= 1099511628211ULL;
+                    }
+                    return digest;
+                };
+                std::array<u32, 6> instance_counts{};
+                std::array<u32, 6> index_counts{};
+                for (u32 i = 0; i < instance_counts.size(); ++i) {
+                    std::memcpy(&index_counts[i], raw + i * 20, 4);
+                    std::memcpy(&instance_counts[i], raw + i * 20 + 4, 4);
+                }
+                u32 input_0 = 0;
+                u32 input_1 = 0;
+                u32 meta_0 = 0;
+                std::memcpy(&input_0, raw + CmdBytes + CounterBytes, 4);
+                std::memcpy(&input_1, raw + CmdBytes + CounterBytes + 4, 4);
+                std::memcpy(&meta_0, raw + CmdBytes + CounterBytes + Input32Bytes, 4);
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_WRITER_GPU_SNAPSHOT shader={:#x} phase={} "
+                            "i0={} i1={} i2={} i3={} i4={} i5={} "
+                            "ix0={} ix1={} ix2={} ix3={} ix4={} ix5={} "
+                            "cmd_hash={} cmd_nonzero={} counter_hash={} counter_nonzero={} "
+                            "input32_nonzero={} input_dw0={} input_dw1={} "
+                            "meta32_nonzero={} meta_dw0={} source64_nonzero={} "
+                            "result=GPU_READBACK_COMPLETE",
+                            shader, after_dispatch ? "POST" : "PRE",
+                            instance_counts[0], instance_counts[1], instance_counts[2],
+                            instance_counts[3], instance_counts[4], instance_counts[5],
+                            index_counts[0], index_counts[1], index_counts[2],
+                            index_counts[3], index_counts[4], index_counts[5],
+                            fnv(0, CmdBytes), nonzero(0, CmdBytes),
+                            fnv(CmdBytes, CounterBytes),
+                            nonzero(CmdBytes, CounterBytes),
+                            nonzero(CmdBytes + CounterBytes, Input32Bytes),
+                            input_0, input_1,
+                            nonzero(CmdBytes + CounterBytes + Input32Bytes, Meta32Bytes),
+                            meta_0,
+                            nonzero(CmdBytes + CounterBytes + Input32Bytes + Meta32Bytes,
+                                    Source64Bytes));
+                pool_ptr->FreeDeferred(shot);
+            });
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_WRITER_GPU_SNAPSHOT_QUEUED shader={:#x} phase={} bytes={} "
+                    "result=QUEUED", cs.pgm_hash, after_dispatch ? "POST" : "PRE",
+                    CaptureBytes);
+    };
+    snapshot_go_w_writer(false);
+
+'''
+GOW_WRITER_GPU_POST = r'''    // Native shader dispatch and ResetBindings just completed; copy its real
+    // Vulkan-visible outputs before the next producer can overwrite them.
+    snapshot_go_w_writer(true);
+'''
+
+def apply_portable_writer_gpu_ab(root, patch_bytes):
+    if patch_bytes != (GOW_WRITER_GPU_PRELUDE + GOW_WRITER_GPU_POST).encode("utf-8"):
+        raise RuntimeError("Stage18 GPU snapshot code differs from pinned runner")
+    path = root / GBUFFER_SOURCE
+    original_bytes = path.read_bytes()
+    if hashlib.sha256(original_bytes).hexdigest() != (
+            "c5850297eb926f763987e47a72ff3467593e8a9e5610b35e93c22f63daaa27f0"):
+        raise RuntimeError("Stage18 expected the exact host-proven Stage17 preimage")
+    original = original_bytes.decode("utf-8", errors="strict")
+    entry = ("    const int canary_idx = SelectGoWComputeCanary(\n"
+             "        cs, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);\n")
+    exit_hook = ("    ResetBindings(true);\n"
+                 "    if (canary_idx >= 0 && !d80_no_dispatch) {\n")
+    if (original.count(entry) != 1 or original.count(exit_hook) != 1 or
+            "GOW_WRITER_GPU_SNAPSHOT" in original):
+        raise RuntimeError("Stage18 C++ insertion anchors are not unique")
+    modified = original.replace(entry, entry + GOW_WRITER_GPU_PRELUDE, 1)
+    modified = modified.replace(
+        exit_hook,
+        "    ResetBindings(true);\n" + GOW_WRITER_GPU_POST +
+        "    if (canary_idx >= 0 && !d80_no_dispatch) {\n", 1)
+    if (modified.replace(GOW_WRITER_GPU_PRELUDE, "", 1)
+                .replace(GOW_WRITER_GPU_POST, "", 1) != original or
+            modified.count("GOW_WRITER_GPU_SNAPSHOT shader={:#x}") != 1 or
+            "cmdbuf.dispatch" in GOW_WRITER_GPU_PRELUDE or
+            "cmdbuf.dispatch" in GOW_WRITER_GPU_POST):
+        raise RuntimeError("Stage18 must only add instrumentation, not GPU dispatch")
+    path.write_bytes(modified.encode("utf-8"))
+    return {"source_before_sha256": hashlib.sha256(original_bytes).hexdigest(),
+            "source_after_sha256": sha(path), "only_additions": True,
+            "writer_shaders": ["0xf2d59856", "0xf875ea48"],
+            "gpu_snapshot_phases": ["PRE", "POST"], "bytes_per_snapshot": 800}
+
+
 def apply_portable_73_execution(root, patch_bytes):
     if patch_bytes != GOW_73_EXECUTION_SOURCE.encode("utf-8"):
         raise RuntimeError("Stage17 code changed from pinned runner")
@@ -1227,8 +1412,8 @@ def preflight_patches(patches, temp, report):
         dst = staged / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / rel, dst)
-    if len(patches) != 17:
-        raise RuntimeError("Expected 15 proven patches plus stages 16-17")
+    if len(patches) != 18:
+        raise RuntimeError("Expected 15 proven patches plus stages 16-18")
     for step, patch in enumerate(patches):
         filename = temp / f"pinned-{step}.diff"
         filename.write_bytes(patch)
@@ -1256,6 +1441,9 @@ def preflight_patches(patches, temp, report):
         if step == 16:
             report["execution_73_preflight"] = apply_portable_73_execution(staged, patch)
             continue
+        if step == 17:
+            report["writer_gpu_ab_preflight"] = apply_portable_writer_gpu_ab(staged, patch)
+            continue
         check = run(["git", "apply", "--check", "--whitespace=nowarn", str(filename)],
                     cwd=staged)
         if check.returncode:
@@ -1264,7 +1452,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_seventeen_patch_preflight"] = True
+    report["staged_eighteen_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -1345,6 +1533,10 @@ def do_build(build, patches, temp, result):
             if step == 16:
                 changed = True
                 result["execution_73_live"] = apply_portable_73_execution(SOURCE, patch)
+                continue
+            if step == 17:
+                changed = True
+                result["writer_gpu_ab_live"] = apply_portable_writer_gpu_ab(SOURCE, patch)
                 continue
             check = run(["git", "apply", "--check", "--whitespace=nowarn",
                          str(patch_path)], cwd=SOURCE)
@@ -1480,10 +1672,11 @@ def trial_run(binary, temp, result):
         # Retain the previously proven automatic resource dependencies.
         # Their verbose per-shader flattened-buffer trace stays disabled.
         "SHADPS4_GOW_SRT_AUTO_ROOTS": "2",
-        # Previously validated compute canaries remain guarded; shader73
-        # gets exactly one separately guarded native dispatch and GPU copies.
+        # Only the six previously proved small canaries execute. Shader73 is
+        # suppressed in this control. The extra copies are read-only snapshots
+        # of the exact indirect writers' native buffer state.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
-        "SHADPS4_GOW_73_EXECUTE_ONE_SHOT": "1",
+        "SHADPS4_GOW_WRITER_AB_GPU": "1",
         "SHADPS4_GOW_INDIRECT_GPU_ARGS": "1",
         # No large frame or offscreen readbacks.
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
@@ -1516,21 +1709,21 @@ def trial_run(binary, temp, result):
                 # The exact instance-count values were already confirmed
                 # from six GPU-completed readbacks in the 19:53 archive.
                 # This trial observes their candidate writers only.
-                denied = any(
-                    "GOW_73_EXEC_GATE shader=0x73ad8e38" in line and
-                    "result=DENIED" in line for line in raw_console.splitlines())
-                if denied:
-                    result["end_reason"] = "GOW73_STRICT_EXECUTION_GATE_DENIED"
+                writer_captures = raw_console.count(
+                    "GOW_WRITER_GPU_SNAPSHOT shader=")
+                final_captures = raw_console.count(
+                    "GOW_INDIRECT_GPU_CAPTURE slot=")
+                if writer_captures >= 4 and final_captures >= 6:
+                    result["end_reason"] = "FOUR_WRITER_GPU_PHASES_AND_SIX_DRAWS_COMPLETE"
                     break
-                output_ready = "GOW_73_OUTPUT_GPU_COMPLETE shader=0x73ad8e38" in raw_console
-                if output_ready and raw_console.count("GOW_INDIRECT_GPU_CAPTURE slot=") >= 6:
-                    result["end_reason"] = "GOW73_OUTPUT_AND_SIX_INDIRECT_GPU_READBACKS"
-                    break
-                if output_ready:
-                    result.setdefault("gow73_output_ready_at", time.monotonic())
-                    if time.monotonic() - result["gow73_output_ready_at"] > 15:
-                        result["end_reason"] = "GOW73_OUTPUT_READBACK_NO_SIX_DRAW_RESULTS"
+                if writer_captures >= 4:
+                    result.setdefault("writer_ab_ready_at", time.monotonic())
+                    if time.monotonic() - result["writer_ab_ready_at"] > 15:
+                        result["end_reason"] = "WRITER_AB_COMPLETE_DRAW_READBACK_MISSING"
                         break
+                if "GOW_WRITER_GPU_SNAPSHOT_SKIP shader=" in raw_console:
+                    result["end_reason"] = "WRITER_GPU_SNAPSHOT_SOURCE_OR_STAGING_MISSING"
+                    break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
                     result["end_reason"] = "ANOTHER_EMULATOR_OR_BUILD_STARTED"
@@ -2186,6 +2379,64 @@ def trial_run(binary, temp, result):
             "compute_73_executed": False,
         }, ensure_ascii=False, indent=2))
 
+    # Stage18 is a native GPU causal probe, not a repeat of stage17.
+    # These four snapshots are from the same host VkBuffers as the writers,
+    # taken immediately before and after each original compute dispatch.
+    stage18_by_key = {}
+    stage18_skips = []
+    stage18_queued = []
+    for line in joined.splitlines():
+        for marker, collection in (
+                ("GOW_WRITER_GPU_SNAPSHOT shader=", stage18_by_key),
+                ("GOW_WRITER_GPU_SNAPSHOT_SKIP shader=", stage18_skips),
+                ("GOW_WRITER_GPU_SNAPSHOT_QUEUED shader=", stage18_queued)):
+            if marker not in line:
+                continue
+            kv = _kv(line[line.index(marker):])
+            if marker.startswith("GOW_WRITER_GPU_SNAPSHOT shader="):
+                stage18_by_key[(kv.get("shader"), kv.get("phase"))] = kv
+            elif kv not in collection:
+                collection.append(kv)
+            break
+    expected_writer_phases = {
+        ("0xf2d59856", "PRE"), ("0xf2d59856", "POST"),
+        ("0xf875ea48", "PRE"), ("0xf875ea48", "POST"),
+    }
+    result["writer_ab_gpu_snapshots"] = list(stage18_by_key.values())
+    result["writer_ab_gpu_skips"] = stage18_skips
+    result["writer_ab_gpu_queued"] = stage18_queued
+    result["writer_ab_gpu_all_four"] = (
+        expected_writer_phases <= stage18_by_key.keys() and
+        all(stage18_by_key[k].get("result") == "GPU_READBACK_COMPLETE"
+            for k in expected_writer_phases))
+    result["writer_ab_gpu_changes"] = {}
+    for shader in ("0xf2d59856", "0xf875ea48"):
+        pre = stage18_by_key.get((shader, "PRE"))
+        post = stage18_by_key.get((shader, "POST"))
+        if pre and post:
+            result["writer_ab_gpu_changes"][shader] = {
+                "cmd_hash_changed": pre.get("cmd_hash") != post.get("cmd_hash"),
+                "counter_hash_changed": pre.get("counter_hash") != post.get("counter_hash"),
+                "pre_instances": [pre.get(f"i{k}") for k in range(6)],
+                "post_instances": [post.get(f"i{k}") for k in range(6)],
+                "pre_counter_nonzero": pre.get("counter_nonzero"),
+                "post_counter_nonzero": post.get("counter_nonzero"),
+                "pre_input32_nonzero": pre.get("input32_nonzero"),
+                "post_input32_nonzero": post.get("input32_nonzero"),
+                "pre_meta32_nonzero": pre.get("meta32_nonzero"),
+                "post_meta32_nonzero": post.get("meta32_nonzero"),
+            }
+    (evidence / "gow-writer-two-shader-gpu-ab.json").write_text(
+        json.dumps({
+            "all_four_gpu_phase_snapshots": result["writer_ab_gpu_all_four"],
+            "snapshots": result["writer_ab_gpu_snapshots"],
+            "changes": result["writer_ab_gpu_changes"],
+            "six_indirect_gpu_commands": result["indirect_gpu_captures"],
+            "shader73_executed_in_this_control": False,
+            "previous_shader73_treatment": {
+                "output_changed_bytes": 0, "six_indirect_instance_counts": [0]*6},
+        }, ensure_ascii=False, indent=2))
+
     treatment_gate, treatment_submit, treatment_output = [], [], []
     for line in joined.splitlines():
         for marker, target in (
@@ -2641,21 +2892,12 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif (report.get("gow73_gate") or {}).get("result") == "DENIED":
-                    report["result"] = "GOW73_SAFE_GATE_DENIED"
-                elif report.get("gow73_gpu_completed"):
-                    changed = report.get("gow73_changed_bytes") or 0
-                    nonzero = report.get("gow73_nonzero_indirect") or 0
-                    if changed and nonzero:
-                        report["result"] = "GOW73_OUTPUT_CHANGED_AND_INDIRECT_NONZERO"
-                    elif changed:
-                        report["result"] = "GOW73_OUTPUT_CHANGED_INDIRECT_NOT_RECOVERED"
-                    else:
-                        report["result"] = "GOW73_GPU_COMPLETE_OUTPUT_UNCHANGED"
-                elif report.get("gow73_submitted"):
-                    report["result"] = "GOW73_SUBMITTED_GPU_COMPLETION_UNCONFIRMED"
+                elif report.get("writer_ab_gpu_skips"):
+                    report["result"] = "WRITER_GPU_BUFFER_CAPTURE_UNAVAILABLE"
+                elif report.get("writer_ab_gpu_all_four"):
+                    report["result"] = "DIRECT_WRITER_AB_GPU_STATES_CAPTURED"
                 else:
-                    report["result"] = "GOW73_TREATMENT_NOT_OBSERVED"
+                    report["result"] = "DIRECT_WRITER_AB_GPU_STATES_INCOMPLETE"
 
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
@@ -2677,6 +2919,9 @@ def main():
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
     print("GOW73_HOST_BIND_RESULT=" + str(report.get("producer73_host_bind")))
     print("GOW73_HOST_BIND_PASS=" + str(report.get("producer73_host_bind_pass", False)))
+    print("WRITER_AB_ALL_FOUR_GPU_SNAPSHOTS=" + str(report.get("writer_ab_gpu_all_four", False)))
+    print("WRITER_AB_GPU_CHANGES=" + str(report.get("writer_ab_gpu_changes")))
+    print("WRITER_AB_GPU_SKIPS=" + str(report.get("writer_ab_gpu_skips")))
     print("GOW73_EXECUTED=" + str(report.get("gow73_submitted", False)))
     print("GOW73_GPU_COMPLETED=" + str(report.get("gow73_gpu_completed", False)))
     print("GOW73_CHANGED_BYTES=" + str(report.get("gow73_changed_bytes")))
