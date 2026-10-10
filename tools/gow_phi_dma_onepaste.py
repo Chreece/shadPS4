@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "062ee2d34281ecc53dd4fa8e3136c5ba8475b705"
+HEAD_SHA = "8b921edc53fa1d52c40acc0b9dae23553499cf40"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -277,6 +277,8 @@ def trial_run(binary, temp, result):
     dump_dir.mkdir(parents=True)
     frame_dir = evidence / "pre_fsr"
     frame_dir.mkdir(parents=True)
+    offscreen_dir = evidence / "offscreen"
+    offscreen_dir.mkdir(parents=True)
     log_dir = HOME / ".local/share/shadPS4/log"
     before = {}
     if log_dir.is_dir():
@@ -292,6 +294,7 @@ def trial_run(binary, temp, result):
     env.pop("SHADPS4_GOW_SAFE_COMPUTE_ONESHOT", None)
     env.pop("SHADPS4_GOW_COMPUTE_CANARIES", None)
     env.pop("SHADPS4_GOW_FRAME_SOURCE_DIR", None)
+    env.pop("SHADPS4_GOW_OFFSCREEN_DIR", None)
     env.update({
         "SHADPS4_ENABLE_IPC": "false",
         "SHADPS4_GOW_ONE_SHADER_DMA_COMPILE": "1",
@@ -305,6 +308,8 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_IMAGE_OUTPUT_DELTA": "1",
         # Capture first three actual game VideoOut images before FSR/PP.
         "SHADPS4_GOW_FRAME_SOURCE_DIR": str(frame_dir.resolve()),
+        # Raw GPU snapshots of exact observed offscreen targets at first flip.
+        "SHADPS4_GOW_OFFSCREEN_DIR": str(offscreen_dir.resolve()),
         # Preserve the causally verified D80 active baseline.
         "SHADPS4_GOW_D80_CONTROL_NO_DISPATCH": "0",
         "SHADPS4_GOW_COMPUTE_CENSUS": "1",
@@ -341,8 +346,9 @@ def trial_run(binary, temp, result):
                         probe_logged = len(re.findall(
                             r"GOW_FRAME_GUEST_CAPTURE frame=\d+ result=SAVED",
                             trial_output))
-                        if len(probe_saved) >= 3 and probe_logged >= 3:
-                            result["end_reason"] = "FIRST_THREE_GUEST_FRAMES_CAPTURED"
+                        offscreen_raws = sorted(offscreen_dir.glob("gow_offscreen_*.bin"))
+                        if len(probe_saved) >= 3 and probe_logged >= 3 and len(offscreen_raws) >= 3:
+                            result["end_reason"] = "FIRST_OFFSCREEN_TRIAD_CAPTURED"
                             break
                         if time.monotonic() - last_spv >= 36:
                             result["end_reason"] = "GUEST_FRAME_OBSERVATION_WINDOW_ENDED"
@@ -430,7 +436,7 @@ def trial_run(binary, temp, result):
     # VideoOut and presenter diagnostics are sourced from game-local logs.
     # The source captures occur before any host FSR / postprocessing pass.
     def _kv(line):
-        return dict(re.findall(r"([a-z_]+)=([^\s]+)", line))
+        return dict(re.findall(r"([a-z_][a-z_0-9]*)=([^\s]+)", line))
 
     flips = {}
     source_meta = {}
@@ -589,6 +595,40 @@ def trial_run(binary, temp, result):
             "timeline_completed": bool(
                 recorded and tick is not None and tick == finished_tick),
         }
+    # Read only GPU-completed readback records; printed QUEUED != completed.
+    offscreen_lines = {}
+    offscreen_skips = {}
+    for line in joined.splitlines():
+        if "GOW_OFFSCREEN_GPU_CAPTURE label=" in line:
+            kv = _kv(line[line.index("GOW_OFFSCREEN_GPU_CAPTURE label="):])
+            if kv.get("result") == "GPU_READBACK_COMPLETE" and kv.get("label"):
+                offscreen_lines[kv["label"]] = kv
+        elif "GOW_OFFSCREEN_READBACK label=" in line:
+            kv = _kv(line[line.index("GOW_OFFSCREEN_READBACK label="):])
+            if kv.get("result") in ("NOT_CACHED", "GUARD_REJECTED"):
+                offscreen_skips[kv.get("label", "unknown")] = kv
+    offscreen_files = {}
+    for item in sorted(offscreen_dir.glob("gow_offscreen_*")):
+        if not item.is_file() or item.is_symlink() or item.stat().st_size > 25_000_000:
+            continue
+        offscreen_files[item.name] = {
+            "bytes": item.stat().st_size, "sha256": sha(item),
+        }
+    result["offscreen_gpu_captures"] = offscreen_lines
+    result["offscreen_skips"] = offscreen_skips
+    result["offscreen_files"] = offscreen_files
+    result["offscreen_complete_count"] = sum(
+        row.get("raw_saved") == "true" and
+        ("gow_offscreen_" + name + ".bin") in offscreen_files
+        for name, row in offscreen_lines.items())
+    result["offscreen_nonzero_count"] = sum(
+        int(row.get("nonzero_bytes", "0")) > 0
+        for row in offscreen_lines.values())
+    result["offscreen_status"] = (
+        "GPU_TRIAD_CAPTURED_" +
+        ("NONZERO_PRESENT" if result["offscreen_nonzero_count"] else "ALL_ZERO")
+        if result["offscreen_complete_count"] == 3
+        else "GPU_TARGET_READBACK_INCOMPLETE")
     # GPU-to-host staging readback, ordered before and after the original
     # canary. Changed bytes establish a GPU-side effect, NOT game correctness.
     image_output_pattern = re.compile(
@@ -813,7 +853,7 @@ def main():
                     report["result"] = "GPU_FAULT_EVIDENCE"
                 else:
                     report["result"] = report.get(
-                        "guest_frame_pixels_status", "GUEST_FRAME_PROBE_NO_EVIDENCE")
+                        "offscreen_status", "OFFSCREEN_READBACK_NO_EVIDENCE")
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -832,6 +872,10 @@ def main():
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
     print("GOW_PHI_DMA_RESULT=" + report.get("result", "UNKNOWN"))
+    print("OFFSCREEN_GPU_COMPLETED=" + str(report.get("offscreen_complete_count", 0)))
+    print("OFFSCREEN_NONZERO_TARGETS=" + str(report.get("offscreen_nonzero_count", 0)))
+    print("OFFSCREEN_FILES=" + str(report.get("offscreen_files", {})))
+    print("OFFSCREEN_SKIPS=" + str(report.get("offscreen_skips", {})))
     print("ARCHIVE=" + str(archive))
     print("TARGET_SPV_COUNT=" + str(len(report.get("spv", []))))
     print("BIND_PROBE_PASSED=" + str(report.get("bind_probe_passed", False)))
@@ -884,6 +928,8 @@ def main():
     print("BUILD_BINARY_RESTORED=" + str(report.get("build_binary_restored")))
     if report.get("error"):
         print("ERROR=" + report["error"])
+    if report.get("result") in ("FAIL", "INTERRUPTED"):
+        raise SystemExit(1)
 
 if __name__ == "__main__":
     main()
