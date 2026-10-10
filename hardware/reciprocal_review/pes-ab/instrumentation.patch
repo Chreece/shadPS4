@@ -1,5 +1,5 @@
 diff --git a/src/core/cpu_patches.cpp b/src/core/cpu_patches.cpp
-index 285c01f98..89c2cfaa8 100644
+index 3881480be..df2cffff9 100644
 --- a/src/core/cpu_patches.cpp
 +++ b/src/core/cpu_patches.cpp
 @@ -26,6 +26,7 @@
@@ -10,7 +10,7 @@ index 285c01f98..89c2cfaa8 100644
  #include "core/signals.h"
  #include "core/tls.h"
  #include "cpu_patches.h"
-@@ -409,6 +410,8 @@ static void GenerateScalarReciprocalInstruction(void* address,
+@@ -413,6 +414,8 @@ static void GenerateScalarReciprocalInstruction(void* address,
                                                  const ZydisDecodedInstruction& instruction,
                                                  const ZydisDecodedOperand* operands,
                                                  Xbyak::CodeGenerator& c, bool rsqrt, bool vex) {
@@ -19,7 +19,7 @@ index 285c01f98..89c2cfaa8 100644
      const bool table_loaded = InitializeIndexTables();
      ASSERT_MSG(table_loaded, "Failed to load RCP index table");
 
-@@ -468,6 +471,19 @@ static void GenerateScalarReciprocalInstruction(void* address,
+@@ -472,6 +475,19 @@ static void GenerateScalarReciprocalInstruction(void* address,
      c.mov(rcx, reinterpret_cast<u64>(xor_table));
      c.mov(eax, dword[rcx + rax * 4]);
 
@@ -39,11 +39,21 @@ index 285c01f98..89c2cfaa8 100644
      const Xbyak::Xmm merge_reg =
          vex ? Xbyak::Xmm(ZydisToXbyakRegisterOperand(operands[1]).getIdx()) : dst_reg;
      const auto func = rsqrt ? &Xbyak::CodeGenerator::vrsqrtss : &Xbyak::CodeGenerator::vrcpss;
-@@ -836,29 +852,38 @@ static const bool need_tcb_trampoline = true;
- static const bool need_tcb_trampoline = false;
+@@ -862,34 +878,44 @@ static void GenerateRdpid(void*, const ZydisDecodedInstruction&,
+ }
  #endif
 
 -static const std::unordered_map<ZydisMnemonic, std::vector<PatchInfo>> Patches = {
++static const auto Patches = [] {
++    std::unordered_map<ZydisMnemonic, std::vector<PatchInfo>> patches = {
+ #if defined(__linux__)
+-    {ZYDIS_MNEMONIC_CPUID, {{FilterCpuId, GenerateCpuid, true}}},
+-    {ZYDIS_MNEMONIC_RDTSCP, {{FilterCpuId, GenerateRdtscp, true}}},
+-    {ZYDIS_MNEMONIC_RDPID, {{FilterCpuId, GenerateRdpid, true}}},
++        {ZYDIS_MNEMONIC_CPUID, {{FilterCpuId, GenerateCpuid, true}}},
++        {ZYDIS_MNEMONIC_RDTSCP, {{FilterCpuId, GenerateRdtscp, true}}},
++        {ZYDIS_MNEMONIC_RDPID, {{FilterCpuId, GenerateRdpid, true}}},
+ #endif
 -    // SSE4a
 -    {ZYDIS_MNEMONIC_EXTRQ, {{FilterNoSSE4a, GenerateEXTRQ, true}}},
 -    {ZYDIS_MNEMONIC_INSERTQ, {{FilterNoSSE4a, GenerateINSERTQ, true}}},
@@ -57,8 +67,6 @@ index 285c01f98..89c2cfaa8 100644
 -    {ZYDIS_MNEMONIC_VRCPSS, {{FilterIntelCPU, GenerateVRCPSS, true}}},
 -    {ZYDIS_MNEMONIC_RSQRTSS, {{FilterIntelCPU, GenerateRSQRTSS, true}}},
 -    {ZYDIS_MNEMONIC_VRSQRTSS, {{FilterIntelCPU, GenerateVRSQRTSS, true}}},
-+static const auto Patches = [] {
-+    std::unordered_map<ZydisMnemonic, std::vector<PatchInfo>> patches = {
 +        // SSE4a
 +        {ZYDIS_MNEMONIC_EXTRQ, {{FilterNoSSE4a, GenerateEXTRQ, true}}},
 +        {ZYDIS_MNEMONIC_INSERTQ, {{FilterNoSSE4a, GenerateINSERTQ, true}}},
@@ -93,6 +101,7 @@ index 285c01f98..89c2cfaa8 100644
 +            patches.erase(mnemonic);
 +        }
 +    }
++    ScalarAB::Configuration();
 +    return patches;
 +}();
 

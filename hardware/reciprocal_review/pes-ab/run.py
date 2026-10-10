@@ -24,10 +24,10 @@ import traceback
 import urllib.request
 import zipfile
 
-BASE = '0e5a0e1273df701d8069f17c347ec5372d94068d'
-CPU_SHA = '8a5cbb3726189ccd28e1295f35bedd5825cbd32bd0883a00268befe0e7ac7e40'
+BASE = '731ababdb7819486eca8dcc7a7f622efa3b75cc7'
+CPU_SHA = '553de5682e840e4d83d636c4bba8678a5b36cc515ae65b3929359c2e3497c79c'
 FFMPEG_SHA = 'aacbbfb8e622b684bc5d3b4cd6c9f9f77f5def64ae8d83c0c5b3ebe657aa33dd'
-ASSETS = {'manual.py': '5d22d552d6a9acf0661be6a44a75f6e06691e0dbc421c822c6ec230bcffc7649', 'profile.py': '00f25e0ffc6f6311f155b64219def15bb5583da1126cc54d3cd9ab62ead90746', 'instrumentation.patch': '621a74bb4c6f2f391ea0ba7b66c5b3d4d159b90daeb9bd8e8daaecddf2c831ce', 'scalar_ab.h': '976220ffce3b5876d141bdfcf9dd90bdb85620f07be79d27a819f54b6f7483cc', 'README.md': '26c0b2d293bd2fae4f0f6fb5165b22db6edc3cb7b97d49facd638f675476f07a', 'README.md.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'instrumentation.patch.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'validation.txt': '422de1a8bcea888061782cca089aab1e59914d39cd32ff56ea79478c3c742e79', 'validation.txt.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0'}
+ASSETS = {'cpu-baseline.patch': 'a2fabe0c86b899319b4aaf7a80ad405ca7ae2e6b80668093d7ae33e5b65ae4a1', 'cpu-baseline.json': 'f38686786b8ccec5d0eb87ed14c5bc5f93da6c69ca1ea36e31ba250b148f028f', 'cpu-baseline.patch.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'cpu-baseline.json.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'manual.py': '94d4ebdd0f403c7f3f9caf2ed1f445c1102bc30dc0990d20b571d4489f2463fe', 'profile.py': '00f25e0ffc6f6311f155b64219def15bb5583da1126cc54d3cd9ab62ead90746', 'instrumentation.patch': '6ad36fda634f19900134d380586af1bbd9ca04d0fc6df63535a67e31d9480707', 'scalar_ab.h': 'cc825d23425371955071e97e0975657bfaeee09daecca5acd75936a956d47a2b', 'README.md': '3e79997657fee4fc6307a6268015c5b3c5245f2f361d9154d45d728546f10179', 'README.md.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'instrumentation.patch.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'validation.txt': '002a248fe802869cc10719e033d0a04dacaa035605c8e68da709064cae09a9f0', 'validation.txt.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0'}
 USE_LANDLOCK = False
 MODES = ('native', 'fixed', 'fixed', 'native', 'diagnostic')
 SERIAL = 'CUSA18676'
@@ -155,6 +155,11 @@ def clean_env(root, desktop=None):
         path = root / name
         path.mkdir(parents=True, exist_ok=True)
         env[key] = str(path)
+    count = int(env.get('GIT_CONFIG_COUNT', '0'))
+    for offset, (key, value) in enumerate((('http.lowSpeedLimit', '1024'), ('http.lowSpeedTime', '30'))):
+        env[f'GIT_CONFIG_KEY_{count + offset}'] = key
+        env[f'GIT_CONFIG_VALUE_{count + offset}'] = value
+    env['GIT_CONFIG_COUNT'] = str(count + 2)
     env.update(GIT_TERMINAL_PROMPT='0', PYTHONDONTWRITEBYTECODE='1')
     return env
 
@@ -230,7 +235,18 @@ def build(root, report, home):
              'fetch', '--recurse-submodules=no', '--depth=1', 'origin', BASE], log, root, timeout=600)
     command(['git', '-C', source, 'checkout', '--detach', BASE], log, root)
     if digest(source / 'src/core/cpu_patches.cpp') != CPU_SHA:
-        raise RuntimeError('Pinned scalar source does not match the verified optimization')
+        raise RuntimeError('Pinned CPU baseline does not match the verified source')
+    say('Applying the CPU baseline: affinity, CPU identity, SSE4a, feature filtering and bundled translation')
+    command(['git', '-C', source, 'apply', '--check', HERE / 'cpu-baseline.patch'], log, root)
+    command(['git', '-C', source, 'apply', HERE / 'cpu-baseline.patch'], log, root)
+    prerequisites = json.loads((HERE / 'cpu-baseline.json').read_text())
+    if prerequisites['base_commit'] != BASE:
+        raise RuntimeError('CPU prerequisite manifest has a different baseline')
+    for relative, expected in prerequisites['files'].items():
+        if digest(source / relative) != expected:
+            raise RuntimeError('CPU prerequisite verification failed: ' + relative)
+    write_json(report / 'cpu-baseline.json', prerequisites)
+    say('CPU prerequisites verified; both modes use this same source')
     command(['git', '-C', source, '-c', 'http.lowSpeedLimit=1024', '-c', 'http.lowSpeedTime=30',
              'submodule', 'update', '--init', '--recursive', '--depth=1', '--jobs=4'],
             log, root, timeout=1800)
@@ -261,13 +277,27 @@ def build(root, report, home):
     configure = ['cmake', '-S', source, '-B', build_dir, '-G', 'Ninja',
                  '-DCMAKE_BUILD_TYPE=Release', '-DENABLE_TESTS=OFF', '-DENABLE_UPDATER=OFF',
                  '-DENABLE_DISCORD_RPC=OFF', '-DCMAKE_CXX_SCAN_FOR_MODULES=OFF',
-                 '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF',
+                 '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF', '-DENABLE_CPU_ID_TRANSLATION=ON',
                  '-DCMAKE_C_COMPILER=' + compiler_c, '-DCMAKE_CXX_COMPILER=' + compiler_cxx]
     command(configure, log, root)
     command(['cmake', '--build', build_dir, '--target', 'shadps4', '--parallel',
              str(max(1, min(4, len(os.sched_getaffinity(0)))))], log, root, timeout=5400)
     binary = build_dir / 'shadps4'
+    help_text = subprocess.check_output([binary, '--help'], stderr=subprocess.STDOUT, timeout=30).decode()
+    if '--cpu-id-mode' not in help_text:
+        raise RuntimeError('CPU identity startup is missing from the built emulator')
+    runtime = build_dir / 'cpu-id-runtime'
+    runtime_files = ['bin64/drrun', 'lib64/release/libdynamorio.so',
+                     'lib64/release/libdrpreload.so', 'ext/lib64/release/libdrmgr.so',
+                     'ext/lib64/release/libdrwrap.so', 'libshadps4_cpu_id.so']
+    if not all((runtime / name).is_file() for name in runtime_files):
+        raise RuntimeError('The built CPU identity runtime is incomplete')
+    runtime_hashes = {name: digest(runtime / name) for name in runtime_files}
+    say('Built emulator and bundled CPU identity runtime verified')
     record = {'base_commit': BASE, 'binary_sha256': digest(binary),
+              'cpu_prerequisites': prerequisites, 'cpu_id_mode': 'translated',
+              'cpu_baseline_patch_sha256': digest(HERE / 'cpu-baseline.patch'),
+              'runtime_hashes': runtime_hashes,
               'instrumentation_sha256': digest(HERE / 'instrumentation.patch'),
               'compiler_c': compiler_c, 'compiler_cxx': compiler_cxx,
               'compiler_version': subprocess.check_output([compiler_cxx,'--version'],text=True).splitlines()[0],
@@ -428,7 +458,8 @@ def stage_run(binary, root, report, seed, active, desktop, game, number, mode,
     stage = report / f'{number:02d}-{mode}'
     stage.mkdir()
     env=clean_env(active,desktop)
-    env.update(SHADPS4_SCALAR_AB_DIR=str(stage), SHADPS4_SCALAR_AB_MODE=mode)
+    env.update(SHADPS4_SCALAR_AB_DIR=str(stage), SHADPS4_SCALAR_AB_MODE=mode,
+               SHADPS4_CPU_ID_MODE='translated')
     record={'mode':mode,'diagnostic_excluded_from_speed':mode=='diagnostic',
             'profile_before':snapshot([active/'user/config.json',active/'user/users.json',
                                        active/'user/custom_configs',active/'user/home'])}

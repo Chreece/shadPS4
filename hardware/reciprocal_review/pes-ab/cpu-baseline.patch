@@ -1,0 +1,336 @@
+diff --git a/src/core/cpu_affinity.cpp b/src/core/cpu_affinity.cpp
+index 3a076062c..d9722e231 100644
+--- a/src/core/cpu_affinity.cpp
++++ b/src/core/cpu_affinity.cpp
+@@ -1,8 +1,13 @@
+ // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+
++#include <algorithm>
++#include <array>
+ #include <bit>
+ #include <cerrno>
++#include <span>
++#include <utility>
++#include <vector>
+ #include "core/cpu_affinity.h"
+ #include "core/libraries/kernel/posix_error.h"
+
+@@ -18,6 +23,23 @@
+ #endif
+
+ namespace Core {
++
++struct CpuAffinityMap {
++    explicit CpuAffinityMap(std::span<const int> allowed)
++        : host_count{static_cast<size_t>(allowed[std::min<size_t>(8, allowed.size()) - 1]) + 1},
++          host_to_guest{std::make_unique<u8[]>(host_count)} {
++        for (size_t guest = 0; guest < guest_to_host.size(); ++guest) {
++            const int host = allowed[guest % allowed.size()];
++            guest_to_host[guest] = host;
++            host_to_guest[host] |= 1U << guest;
++        }
++    }
++
++    const size_t host_count;
++    const std::unique_ptr<u8[]> host_to_guest;
++    std::array<int, 8> guest_to_host{};
++};
++
+ namespace {
+
+ int ReadHostAffinity(uintptr_t thread, std::vector<int>& cpus) {
+@@ -76,7 +98,7 @@ int ReadHostAffinity(uintptr_t thread, std::vector<int>& cpus) {
+     return cpus.empty() ? POSIX_EAGAIN : 0;
+ }
+
+-int ApplyHostAffinity(uintptr_t thread, const std::vector<int>& cpus) {
++int ApplyHostAffinity(uintptr_t thread, std::span<const int> cpus) {
+ #ifdef _WIN32
+     GROUP_AFFINITY affinity{};
+     affinity.Group = static_cast<WORD>(cpus.front() >> 16);
+@@ -130,16 +152,6 @@ int CurrentHostCpu() {
+
+ } // namespace
+
+-void CpuAffinity::Remap(const std::vector<int>& allowed) {
+-    host_cpus.clear();
+-    for (const int cpu : allowed) {
+-        host_cpus.push_back({cpu, 0});
+-    }
+-    for (int guest = 0; guest < 8 && !host_cpus.empty(); ++guest) {
+-        host_cpus[guest % host_cpus.size()].guest_mask |= 1U << guest;
+-    }
+-}
+-
+ int CpuAffinity::SetThreadAffinity(uintptr_t thread, u64 guest_mask) {
+     if (guest_mask == 0 || (guest_mask & ~u64{0xff}) != 0) {
+         return POSIX_EINVAL;
+@@ -147,32 +159,34 @@ int CpuAffinity::SetThreadAffinity(uintptr_t thread, u64 guest_mask) {
+ #if !defined(_WIN32) && !defined(__linux__) && !defined(__FreeBSD__)
+     return 0;
+ #else
+-    if (host_cpus.empty()) {
+-        std::vector<int> allowed;
+-        if (const int ret = ReadHostAffinity(thread, allowed); ret != 0) {
+-            return ret;
++    if (!mapping) {
++        static const auto initial = [] {
++            std::vector<int> allowed;
++            const int ret = ReadHostAffinity(0, allowed);
++            return std::pair{ret == 0 ? std::make_shared<const CpuAffinityMap>(allowed) : nullptr,
++                             ret};
++        }();
++        if (initial.second != 0) {
++            return initial.second;
+         }
+-        Remap(allowed);
++        mapping = initial.first;
+     }
+     for (int attempt = 0; attempt < 3; ++attempt) {
+-        std::vector<int> requested;
+-        for (const auto& cpu : host_cpus) {
+-            if (guest_mask & cpu.guest_mask) {
+-                requested.push_back(cpu.id);
+-            }
+-        }
+-        const int ret = ApplyHostAffinity(thread, requested);
+-        if (ret != 0 && ret != POSIX_EINVAL) {
++        auto requested = mapping->guest_to_host;
++        std::ranges::sort(requested);
++        auto end = std::unique(requested.begin(), requested.end());
++        end = std::remove_if(requested.begin(), end, [&](int host) {
++            return (mapping->host_to_guest[host] & guest_mask) == 0;
++        });
++        const int ret = ApplyHostAffinity(thread, {requested.begin(), end});
++        if (ret != POSIX_EINVAL) {
+             return ret;
+         }
+         std::vector<int> effective;
+         if (const int read_ret = ReadHostAffinity(thread, effective); read_ret != 0) {
+             return read_ret;
+         }
+-        if (ret == 0 && effective == requested) {
+-            return 0;
+-        }
+-        Remap(effective);
++        mapping = std::make_shared<const CpuAffinityMap>(effective);
+     }
+     return POSIX_EAGAIN;
+ #endif
+@@ -190,9 +204,9 @@ int CpuAffinity::CurrentGuestCpu(u64 guest_mask) {
+         if (host_cpu < 0) {
+             return -1;
+         }
+-        for (const auto& cpu : host_cpus) {
+-            const u64 candidates = cpu.guest_mask & guest_mask;
+-            if (cpu.id == host_cpu && candidates != 0) {
++        if (mapping && static_cast<size_t>(host_cpu) < mapping->host_count) {
++            const u64 candidates = mapping->host_to_guest[host_cpu] & guest_mask;
++            if (candidates != 0) {
+                 return std::countr_zero(candidates);
+             }
+         }
+diff --git a/src/core/cpu_affinity.h b/src/core/cpu_affinity.h
+index 3f2023248..a3481a78e 100644
+--- a/src/core/cpu_affinity.h
++++ b/src/core/cpu_affinity.h
+@@ -3,24 +3,20 @@
+
+ #pragma once
+
+-#include <vector>
++#include <memory>
+ #include "common/types.h"
+
+ namespace Core {
+
++struct CpuAffinityMap;
++
+ class CpuAffinity {
+ public:
+     int SetThreadAffinity(uintptr_t thread, u64 guest_mask);
+     int CurrentGuestCpu(u64 guest_mask);
+
+ private:
+-    void Remap(const std::vector<int>& allowed);
+-
+-    struct HostCpu {
+-        int id;
+-        u8 guest_mask;
+-    };
+-    std::vector<HostCpu> host_cpus;
++    std::shared_ptr<const CpuAffinityMap> mapping;
+ };
+
+ } // namespace Core
+diff --git a/src/core/cpu_patches.cpp b/src/core/cpu_patches.cpp
+index 5d567ce8d..3881480be 100644
+--- a/src/core/cpu_patches.cpp
++++ b/src/core/cpu_patches.cpp
+@@ -346,12 +346,14 @@ static void GenerateReciprocalInstruction(void* address, const ZydisDecodedInstr
+     }
+     void* index_table = rsqrt ? rsqrt_index_table.data() : rcp_index_table.data();
+     const int* xor_table = rsqrt ? rsqrt_xor_values.data() : rcp_xor_values.data();
++    c.mov(eax, 0x7f800000);
++    c.vmovd(xmm_scratch2.cvt128(), eax);
++    c.vpbroadcastd(xmm_scratch2, xmm_scratch2.cvt128());
++    c.vpslld(xmm_scratch3, src_reg, 1);
++    c.vpsrld(xmm_scratch3, xmm_scratch3, 1);
++    c.vpcmpgtd(nan_mask, xmm_scratch3, xmm_scratch2);
+     c.mov(scratch1, reinterpret_cast<u64>(index_table));
+     c.mov(scratch2, reinterpret_cast<u64>(xor_table));
+-    // Find NaNs in source
+-    // In non-VEX forms this will zero the top elements which will make the vblendvps
+-    // pick from dst_reg, thus preserving the top bits
+-    c.vcmpunordps(nan_mask, src_reg, src_reg);
+     // Set mask to all ones for the elements we'll load
+     c.vpcmpeqd(xmm_scratch2, xmm_scratch2, xmm_scratch2);
+     // Load indices for active elements from table
+@@ -362,11 +364,7 @@ static void GenerateReciprocalInstruction(void* address, const ZydisDecodedInstr
+     // Load XOR values using those indices
+     c.vpcmpeqd(xmm_scratch2, xmm_scratch2, xmm_scratch2); // vgather sets to zero
+     c.vgatherdps(xmm_scratch3, ptr[scratch2 + xmm_scratch1 * 4], xmm_scratch2);
+-    if (dst_reg == src_reg) {
+-        // The RCP would modify our source reg so we wouldn't be able to use it for NaN merging
+-        c.vmovaps(xmm_scratch1, src_reg);
+-        src_reg = xmm_scratch1;
+-    }
++    c.vpandn(xmm_scratch3, nan_mask, xmm_scratch3);
+     if (vex) {
+         auto func = rsqrt ? &Xbyak::CodeGenerator::vrsqrtps : &Xbyak::CodeGenerator::vrcpps;
+         (c.*func)(dst_reg, src_reg);
+@@ -377,8 +375,6 @@ static void GenerateReciprocalInstruction(void* address, const ZydisDecodedInstr
+         (c.*func)(dst_reg, src_reg);
+         c.xorps(dst_reg, xmm_scratch3);
+     }
+-    // Merge NaNs back into dst
+-    c.vblendvps(dst_reg.cvt256(), dst_reg.cvt256(), src_reg.cvt256(), nan_mask);
+
+     c.pop(scratch2);
+     c.pop(scratch1);
+@@ -413,6 +409,113 @@ static void GenerateVRCPPS(void* address, const ZydisDecodedInstruction& instruc
+     GenerateReciprocalInstruction(address, instruction, operands, c, false, true);
+ }
+
++static void GenerateScalarReciprocalInstruction(void* address,
++                                                const ZydisDecodedInstruction& instruction,
++                                                const ZydisDecodedOperand* operands,
++                                                Xbyak::CodeGenerator& c, bool rsqrt, bool vex) {
++    const bool table_loaded = InitializeIndexTables();
++    ASSERT_MSG(table_loaded, "Failed to load RCP index table");
++
++    const auto dst = ZydisToXbyakRegisterOperand(operands[0]);
++    ASSERT_MSG(dst.isXMM(), "operand 0 must be an XMM register");
++    const Xbyak::Xmm dst_reg(dst.getIdx());
++    const auto& source = operands[vex ? 2 : 1];
++    const bool is_src_mem = source.type == ZYDIS_OPERAND_TYPE_MEMORY;
++    const int upper_offset = 8 * 3 + (is_src_mem ? 8 : 0);
++    const int rsp_disp = 128 + (is_src_mem ? 8 : 0) + (vex ? 0 : 16);
++
++    c.lea(rsp, ptr[rsp - rsp_disp]);
++    c.push(rax);
++    c.push(rcx);
++    // The lookup and correction only modify arithmetic flags.
++    c.seto(al);
++    c.lahf();
++    c.push(rax);
++    if (is_src_mem &&
++        (source.mem.base == ZYDIS_REGISTER_RAX || source.mem.index == ZYDIS_REGISTER_RAX)) {
++        c.mov(rax, qword[rsp + 8 * 2]);
++    }
++
++    if (!vex) {
++        c.vextractf128(ptr[rsp + upper_offset], dst_reg.cvt256(), 1);
++    }
++
++    Xbyak::Xmm src_reg;
++    if (is_src_mem) {
++        if (source.mem.base == ZYDIS_REGISTER_RIP) {
++            const u64 target =
++                reinterpret_cast<u64>(address) + instruction.length + source.mem.disp.value;
++            c.mov(rax, target);
++            c.mov(eax, dword[rax]);
++        } else {
++            auto operand = source;
++            if (operand.mem.base == ZYDIS_REGISTER_RSP) {
++                operand.mem.disp.size = 32;
++                operand.mem.disp.value += rsp_disp + 8 * 3;
++            }
++            c.mov(eax, ZydisToXbyakMemoryOperand(operand));
++        }
++        c.mov(dword[rsp + 8 * 3], eax);
++    } else {
++        const auto src = ZydisToXbyakRegisterOperand(source);
++        ASSERT_MSG(src.isXMM(), "source must be an XMM register");
++        src_reg = Xbyak::Xmm(src.getIdx());
++        c.vmovd(eax, src_reg);
++    }
++
++    const auto* index_table = rsqrt ? rsqrt_index_table.data() : rcp_index_table.data();
++    const auto* xor_table = rsqrt ? rsqrt_xor_values.data() : rcp_xor_values.data();
++    // NaN and infinity buckets have zero correction in both tables.
++    c.shr(eax, 11);
++    c.mov(rcx, reinterpret_cast<u64>(index_table));
++    c.movzx(eax, byte[rcx + rax]);
++    c.mov(rcx, reinterpret_cast<u64>(xor_table));
++    c.mov(eax, dword[rcx + rax * 4]);
++
++    const Xbyak::Xmm merge_reg =
++        vex ? Xbyak::Xmm(ZydisToXbyakRegisterOperand(operands[1]).getIdx()) : dst_reg;
++    const auto func = rsqrt ? &Xbyak::CodeGenerator::vrsqrtss : &Xbyak::CodeGenerator::vrcpss;
++    if (is_src_mem) {
++        (c.*func)(dst_reg, merge_reg, dword[rsp + 8 * 3]);
++    } else {
++        (c.*func)(dst_reg, merge_reg, src_reg);
++    }
++    c.vmovd(ecx, dst_reg);
++    c.xor_(eax, ecx);
++    c.vpinsrd(dst_reg, dst_reg, eax, 0);
++    if (!vex) {
++        c.vinsertf128(dst_reg.cvt256(), dst_reg.cvt256(), ptr[rsp + upper_offset], 1);
++    }
++
++    c.pop(rax);
++    // Restore OF from SETO, then restore SF/ZF/AF/PF/CF with SAHF.
++    c.add(al, 0x7f);
++    c.sahf();
++    c.pop(rcx);
++    c.pop(rax);
++    c.lea(rsp, ptr[rsp + rsp_disp]);
++}
++
++static void GenerateRCPSS(void* address, const ZydisDecodedInstruction& instruction,
++                          const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
++    GenerateScalarReciprocalInstruction(address, instruction, operands, c, false, false);
++}
++
++static void GenerateVRCPSS(void* address, const ZydisDecodedInstruction& instruction,
++                           const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
++    GenerateScalarReciprocalInstruction(address, instruction, operands, c, false, true);
++}
++
++static void GenerateRSQRTSS(void* address, const ZydisDecodedInstruction& instruction,
++                            const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
++    GenerateScalarReciprocalInstruction(address, instruction, operands, c, true, false);
++}
++
++static void GenerateVRSQRTSS(void* address, const ZydisDecodedInstruction& instruction,
++                             const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
++    GenerateScalarReciprocalInstruction(address, instruction, operands, c, true, true);
++}
++
+ static void GenerateEXTRQ(void* /* address */, const ZydisDecodedInstruction&,
+                           const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
+     bool immediateForm = operands[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE &&
+@@ -774,6 +877,10 @@ static const std::unordered_map<ZydisMnemonic, std::vector<PatchInfo>> Patches =
+     {ZYDIS_MNEMONIC_VRSQRTPS, {{FilterIntelCPU, GenerateVRSQRTPS, true}}},
+     {ZYDIS_MNEMONIC_RCPPS, {{FilterIntelCPU, GenerateRCPPS, true}}},
+     {ZYDIS_MNEMONIC_VRCPPS, {{FilterIntelCPU, GenerateVRCPPS, true}}},
++    {ZYDIS_MNEMONIC_RCPSS, {{FilterIntelCPU, GenerateRCPSS, true}}},
++    {ZYDIS_MNEMONIC_VRCPSS, {{FilterIntelCPU, GenerateVRCPSS, true}}},
++    {ZYDIS_MNEMONIC_RSQRTSS, {{FilterIntelCPU, GenerateRSQRTSS, true}}},
++    {ZYDIS_MNEMONIC_VRSQRTSS, {{FilterIntelCPU, GenerateVRSQRTSS, true}}},
+
+ #if !defined(__APPLE__)
+     // FS segment patches

@@ -1,3 +1,50 @@
+Corrected manual CPU-stack capture (2026-10-10):
+
+CPU baseline: 731ababdb7819486eca8dcc7a7f622efa3b75cc7
+Affinity implementation: 9811afcdcfd14172adc7a13514b91442c5e5ef88
+Scalar and packed reciprocal generators: 0e5a0e1273df701d8069f17c347ec5372d94068d
+
+PASS: the failed ouorrlg9 capture reproduces a stale ready-state idle check.
+      The coordinator cancelled its own capture after 10.403 seconds; normal exit,
+      return code 0, zero measured frames, originals unchanged, launcher restored.
+PASS: launch locking prevents the false already-running abort.
+PASS: an ES-DE launch overlapping the coordinator check waits and is not dropped.
+PASS: a duplicate launch during capture is ignored; unrelated emulators are left alone.
+PASS: packaged baseline and instrumentation patches recreate the combined sources.
+PASS: CPU-ID, SSE4a and packed registrations stay enabled in both scalar modes.
+PASS: existing SSE4a implementations survive the integration byte-for-byte.
+PASS: the exact combined-build scalar generator passes all 353,280 register,
+      alias, flags, memory and four-byte guard-page cases under the bundled
+      CPU identity runtime, with timing-mode execution counters disabled.
+PASS: real bundled-runtime probe traps generated CPUID in both scalar modes,
+      preserves the scalar environment, and retains the launched process PID.
+PASS: normal manual capture, early BEFORE exit followed by AFTER, cancellation
+      while waiting/running, original-state verification and unrelated-process survival.
+PASS: complete manual archive contains both runs and matching initial profiles;
+      launcher restoration and temporary directory removal succeed.
+PASS: Python syntax checks and focused C++ source whitespace checks.
+
+PASS: GCC 14.2 Release compile/link of the combined CPU stack and instrumentation.
+PASS: actual linked executable starts for --help in both scalar modes, directly
+      and under its own bundled CPU identity runtime; the CPU identity option is
+      present and scalar-config.json matches OFF/ON with diagnostics disabled.
+Combined local validation binary SHA-256: 9c1ce4cf8a9d82c758d3bfdfde636d15f9e041179d349492bf379044fa5ceb1f
+Local validation reused matching prebuilt dependencies and unchanged translation
+units after comparing compiler commands and recorded source/header inputs.
+Changed CPU/thread/renderer units were rebuilt. The extra CPU-ID define is unused
+in the reused units; conditional CPU-ID units were rebuilt. This is an incremental
+build check, not a claim of an entirely fresh build. The homeserver runner always
+uses an independent checkout and build; it does not copy these local binaries.
+Local-only configuration: SDL console backend, libusb udev disabled, extracted GCC
+14/UUID/X11 development files; no packages installed on the user's machine.
+
+No PES gameplay/performance result is claimed by these development checks.
+The user's two game captures remain necessary. The older standalone scalar
+baseline below did not contain the CPU prerequisites and is historical only.
+The scalar generator itself is unchanged by this CPU-stack integration.
+
+Historical standalone scalar validation follows:
+
 Validation in the development container (not a PES game run):
 
 PASS: native mode removes all four scalar patch registrations; packed entries remain.

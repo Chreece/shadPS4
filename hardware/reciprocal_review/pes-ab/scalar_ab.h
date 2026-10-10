@@ -41,6 +41,15 @@ inline uint64_t Now() {
 inline std::string Path(const char* name) {
     return std::string(std::getenv("SHADPS4_SCALAR_AB_DIR")) + "/" + name;
 }
+inline void Configuration() {
+    if (Enabled()) {
+        if (FILE* output = std::fopen(Path("scalar-config.json").c_str(), "w")) {
+            std::fprintf(output, "{\"fixed\":%s,\"diagnostic\":%s}\n",
+                         Fixed() ? "true" : "false", Diagnostic() ? "true" : "false");
+            std::fclose(output);
+        }
+    }
+}
 inline void Frame() {
     if (!Enabled()) {
         return;

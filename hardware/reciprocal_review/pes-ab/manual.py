@@ -126,6 +126,22 @@ def cancel_current(root):
         os.kill(bridge['pid'], signal.SIGKILL)
 
 
+def check_waiting_launch(root):
+    with (root/'launch.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        current = json.loads((root/'manual-job.json').read_text())
+        if current['state'] == 'ready':
+            found = profile.emulators()
+            if found:
+                atomic_json(root/'report/observed-emulators.json',
+                            [{k:str(v) if isinstance(v,Path) else v for k,v in p.items()}
+                             for p in found])
+                raise RuntimeError('An emulator started outside the armed PES route; evidence saved, process left alone')
+
+
 def wait_for_session(root, stage, input_stream):
     prompted = False
     last_notice = 0
@@ -156,7 +172,7 @@ def wait_for_session(root, stage, input_stream):
                 start = json.loads((stage/'measure.json').read_text())['started_monotonic_ns']/1e9
                 r.say('Capture elapsed after your marker: ' + str(int(time.monotonic()-start)) + ' seconds')
         if job['state'] == 'ready':
-            r.require_idle()
+            check_waiting_launch(root)
 
 
 def comparison(records):
@@ -216,6 +232,10 @@ def sessions(binary, root, report, seed, active, game, wrapper, installed, summa
                 summary['keep_work'] = True
                 summary['launcher_restored'] = False
                 raise
+            finally:
+                state = root/'manual-job.json'
+                if state.exists():
+                    shutil.copy2(state, report/'capture-state.json')
 
 
 def capture(root, job):
@@ -224,7 +244,8 @@ def capture(root, job):
     r.USE_LANDLOCK = job['landlock']
     r.require_idle()
     env = r.clean_env(active)
-    env.update(SHADPS4_SCALAR_AB_DIR=str(stage), SHADPS4_SCALAR_AB_MODE=job['mode'])
+    env.update(SHADPS4_SCALAR_AB_DIR=str(stage), SHADPS4_SCALAR_AB_MODE=job['mode'],
+               SHADPS4_CPU_ID_MODE='translated')
     started_ns = time.monotonic_ns()
     started = started_ns/1e9
     measure = None
@@ -286,10 +307,18 @@ def capture(root, job):
             record['metrics'] = r.metrics(stage,started_ns,begin,end)
         record['screenshots'] = len(list((stage/'screenshots').glob('*.png')))
         record['input_allowed'] = True
+        record['cpu_id_mode'] = 'translated'
+        console = (stage/'console.log').read_text(errors='replace') if (stage/'console.log').exists() else ''
+        record['cpu_translation_active'] = 'CPU identity translation active' in console
+        configuration = stage/'scalar-config.json'
+        record['scalar_configuration'] = json.loads(configuration.read_text()) if configuration.exists() else None
+        record['scalar_mode_verified'] = record['scalar_configuration'] == {
+            'fixed': job['mode'] != 'native', 'diagnostic': job['mode'] == 'diagnostic'}
         record['speed_valid'] = bool(measure is not None and record.get('reached_capture_end') and
                                     record.get('metrics',{}).get('frames') and
                                     record['metrics'].get('last_frame_s',0) >= end-1 and
                                     record['screenshots'] == len(job['screenshots']) and
+                                    record['cpu_translation_active'] and record['scalar_mode_verified'] and
                                     not record.get('errors'))
         r.write_json(stage/'run.json',record)
     return record
@@ -299,10 +328,21 @@ def launch(root):
     job_path = root/'manual-job.json'
     if not job_path.is_file(): return 75
     with (root/'launch.lock').open('a') as lock:
-        try:
-            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        except BlockingIOError:
-            return 0
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                current = json.loads(job_path.read_text())
+                if not alive(current.get('owner')):
+                    return 75
+                if current['state'] != 'ready':
+                    return 0
+                if time.monotonic() >= deadline:
+                    r.say('PES launch lock stayed busy; no emulator was started. Retry the ES-DE launch.')
+                    return 1
+                time.sleep(.05)
         job = json.loads(job_path.read_text())
         if not alive(job.get('owner')): return 75
         if job['state'] != 'ready': return 0

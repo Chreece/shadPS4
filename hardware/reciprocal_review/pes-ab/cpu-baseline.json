@@ -1,0 +1,33 @@
+{
+  "base_commit": "731ababdb7819486eca8dcc7a7f622efa3b75cc7",
+  "affinity_commit": "9811afcdcfd14172adc7a13514b91442c5e5ef88",
+  "reciprocal_commit": "0e5a0e1273df701d8069f17c347ec5372d94068d",
+  "cpu_identity_runtime": "bundled DynamoRIO; CPUID/RDTSCP/RDPID only; same in both modes",
+  "generated_reciprocal_extension": false,
+  "files": {
+    "src/core/cpu_affinity.cpp": "6055dce77514fce991da1d4288ae5802fbdead5335dfce74feeb2b77008b7b62",
+    "src/core/cpu_affinity.h": "589d8ae773f078a2ac95d3201c1b0197aecfa85a4359c212467d5cde38135945",
+    "src/core/cpu_id.cpp": "15b1863b2cf4def65ac37d2f9401348f9a4059bf1b62d1a9c31bf54f900fb924",
+    "src/core/cpu_id.h": "112d68d2a8ed0d029b7bb320f5d57523b628e694adc43d5cabe932bf6cdfe729",
+    "src/core/cpu_id_translation/client.c": "882b4a2e3773afa0b65f111f684570a4b67abb8e974f6e8fab958ba37b5ea7c3",
+    "src/core/cpu_id_translation/dynamorio.patch": "cf24a7d5a056099e7240c54b783c66e0abf3277a48370f1d67a9c1f65c61e789",
+    "src/core/cpu_id_translation/launcher.cpp": "d5c8defb33f3e5701ddf494e57e824c3e0d819f025edc3c69553b9f068655d6d",
+    "src/core/libraries/kernel/threads/pthread.cpp": "8f4746b9e3c01a3b2da5cbae0c1d7ae939a138f2f7f5cb8f9f7652c85d4ae3ef",
+    "src/core/libraries/kernel/threads/thread_state.cpp": "82536cef669170c9f9aacd282ac6fdb00b87644001c28cc93a7ba91457e33a24",
+    "src/core/thread.cpp": "22e4029cfa420f223dc9afd3fdbc4dfccdc7e3c4fe3fd5ae69bea97f90b5d018",
+    "src/core/signals.cpp": "22e8dff7bfb570ce225031d3d70b93af06109d861be2a6ac7908cc9595714a76",
+    "src/main.cpp": "efe9ea03c4d3497312ce9f0112c14c3bb3ac4c60340906669f39cafd5bd20fa5",
+    "CMakeLists.txt": "59d6d54eec80ec0ee4ef902934339270adf738ea15120dcd90567d450e10dc31",
+    "src/core/cpu_patches.cpp": "ef7f3c227506e69477f099066bb7a8e4ce4230d566dcdb067f5d6a95f9876f29",
+    "src/core/address_space.cpp": "2653da10ba43998fdade609d7b457dc71e05b3bda963401329ff8804f303b982",
+    "src/core/cpu_id_translation/build.py": "0665cc91ae749d67e1990b47313e4523be1e25789918675400f9d8483eafc79e",
+    "src/core/cpu_id_translation/CMakeLists.txt": "924d036fc97e8e30080234381d9a847874a6b9d9e9a4682f6612a388bd64de3e",
+    "src/core/cpu_id_translation/package.cmake": "740675a545ab9f251468158a22c7d22fcda4c751f55ab372a386d270fc9f6191",
+    "src/core/libraries/kernel/process.cpp": "19f0f273b1cb3d36bca923fd1cb78277b0676a8faa74f91bf145555afc09e5ea",
+    "src/core/libraries/kernel/threads/pthread.h": "93a3eb0e1e71535f0482273850b0c66db95da4ded47f7162ba4a1afaf1e46754",
+    "src/core/libraries/kernel/threads/pthread_attr.cpp": "9439ecad1df6e863652bcd286ef376427b90bc979d4654f5ab5c0eef82eaf053",
+    "src/core/libraries/system/systemservice.cpp": "95074075b1114eee6c1ebdb4f39704a6138ff3f4aa069cf4daddb55487e80d75",
+    "src/core/thread.h": "ae674770c41d4312c88bd39ae218979931f4f565de569022ba2add68d2bd0fb9",
+    "cmake/CpuIdTranslation.cmake": "5da7e139ba8279a158edb9776d55a166331ff6cc5d2f8b620a8c70dc7f49fcaf"
+  }
+}

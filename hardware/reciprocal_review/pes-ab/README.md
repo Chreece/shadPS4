@@ -4,6 +4,16 @@ This runner compares native scalar RCPSS/RSQRTSS (including VEX forms) with the 
 
 The installed emulator is not an A/B participant: the comparison uses the same pinned candidate on both sides, with the current PES saves and settings copied into a portable profile. This avoids attributing unrelated changes between installed and experimental builds to the scalar fix.
 
+## CPU baseline
+
+Both modes use the bundled CPU stack at `731ababdb7819486eca8dcc7a7f622efa3b75cc7`, with the current affinity implementation from `9811afcdcfd14172adc7a13514b91442c5e5ef88`. The scalar and packed reciprocal generators come from `0e5a0e1273df701d8069f17c347ec5372d94068d`. The source integration preserves the CPU-ID handlers, corrected SSE4a paths, guest feature filtering, pending-signal handling, thread cleanup and bundled Linux runtime. It does not replace the installed emulator or claim the combined candidate has already passed PES gameplay.
+
+`cpu-baseline.patch` adds only the two affinity files and the reciprocal generators/registrations to that CPU stack. `cpu-baseline.json` pins and hashes its required source files before instrumentation. Build completion requires the CPU identity command-line option and all six runtime executables/libraries. Both captures explicitly use translated CPU identity mode, and the report records runtime hashes. A manual timing result requires the emulator's actual “CPU identity translation active” log and its recorded scalar configuration to match the requested mode.
+
+The CPU-ID client translates CPUID, RDTSCP and RDPID only; it has no separate reciprocal handler that could silently override the scalar switch. The optional generated-reciprocal extension is not included. This comparison measures the static scalar correction from the PR, with the same packed correction and CPU prerequisites on both sides.
+
+The previous standalone scalar baseline omitted these prerequisites and must not be used for this PES comparison. The launch detector now uses the same lock as the ES-DE bridge and reads the current state while holding it, avoiding the stale `ready` check that stopped the earlier capture. The final capture state is retained in the archive.
+
 ## Manual launch workflow
 
 `pes-manual.py` is a single-download package containing the runner and all helpers. It verifies and writes the bundled files locally, then starts `run.py --manual`; no per-helper network requests are made. The source and pinned dependencies still need to be downloaded and built once.
@@ -28,7 +38,7 @@ Both launches start with identical copied settings and saves. The report contain
 
 Keep Moonlight connected with ES-DE open and no game running. Do not provide game input during the capture. The unattended test may remain at a title screen; it does **not** establish match gameplay performance. The screenshots must be inspected to establish that equivalent scenes were reached. Rendering differences are evidence to investigate, not automatic proof that a bug was fixed.
 
-Progress messages begin with helper downloads, then identify preflight checks, profile copying, file hashing and each build command. Long build commands report their elapsed time and log path every 15 seconds.
+Progress messages confirm the bundled helpers, then identify preflight checks, profile copying, file hashing and each build command. Long build commands report their elapsed time and log path every 15 seconds.
 
 ## Evidence
 
