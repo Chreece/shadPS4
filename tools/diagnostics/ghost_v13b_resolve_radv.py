@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix='ghost-v13b-symbols-', dir=HOME) as tmp:
         if actual != BID:
             raise RuntimeError('REFUSED: driver build ID differs from captured v13b')
         print('MESA_BUILD_ID_MATCH=PASS', flush=True)
-        _, out = capture(['dpkg-query','-W','-f=\${Version}\n','mesa-vulkan-drivers'])
+        _, out = capture(['dpkg-query','-W','-f=${Version}\n','mesa-vulkan-drivers'])
         report['mesa_package_version'] = out.strip()
         for index, addr in enumerate(ADDRESSES[:2]):
             a = int(addr,16)
