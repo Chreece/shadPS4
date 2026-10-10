@@ -361,6 +361,17 @@ static bool SuppressDiagnosticCompute(const Shader::Info& info) {
     return true;
 }
 
+// Bind/descriptor probe is opt-in and only allowed when all compute dispatches
+// are already suppressed. It probes exactly one target invocation per process.
+static std::atomic<bool> gow_binding_probed{false};
+static bool ShouldProbeGoWBindings(const Shader::Info& cs) {
+    const char* requested = std::getenv("SHADPS4_GOW_BIND_PROBE");
+    const char* suppressed = std::getenv("SHADPS4_GOW_SUPPRESS_GPU_COMPUTE");
+    return requested && std::strcmp(requested, "1") == 0 && suppressed &&
+           std::strcmp(suppressed, "1") == 0 && cs.pgm_hash == 0x57b077acULL &&
+           cs.hw_stage == Shader::HwStage::Compute;
+}
+
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
 
@@ -375,6 +386,38 @@ void Rasterizer::DispatchDirect() {
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
     if (ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this)) {
         return;
+    }
+    if (ShouldProbeGoWBindings(cs)) {
+        if (!gow_binding_probed.exchange(true, std::memory_order_relaxed)) {
+            const bool bound = BindResources(pipeline);
+            bool bda_valid = false;
+            bool fault_valid = false;
+            if (bound) {
+                for (const auto& write : set_writes) {
+                    if ((write.dstBinding == 1 || write.dstBinding == 2) &&
+                        write.descriptorType == vk::DescriptorType::eStorageBuffer &&
+                        write.pBufferInfo && write.pBufferInfo->buffer != VK_NULL_HANDLE &&
+                        write.pBufferInfo->range > 0) {
+                        if (write.dstBinding == 1) bda_valid = true;
+                        if (write.dstBinding == 2) fault_valid = true;
+                    }
+                }
+                if (needs_barrier) {
+                    runtime.FlushBarriers();
+                }
+                scheduler.EndRendering();
+                pipeline->BindResources(set_writes, push_data);
+                ResetBindings(true);
+            }
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_TARGET_BIND_PROBE shader={:#x} bound={} uses_dma={} "
+                        "buffers={} images={} samplers={} writes={} "
+                        "bda_valid={} fault_valid={} dispatch=SKIPPED",
+                        cs.pgm_hash, bound, cs.uses_dma, cs.buffers.size(),
+                        cs.images.size(), cs.samplers.size(), set_write_index,
+                        bda_valid, fault_valid);
+        }
+        return; // Unconditionally skip this and every subsequent target dispatch.
     }
     if (SuppressDiagnosticCompute(cs)) {
         return;
@@ -410,6 +453,38 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
         return;
     }
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
+    if (ShouldProbeGoWBindings(cs)) {
+        if (!gow_binding_probed.exchange(true, std::memory_order_relaxed)) {
+            const bool bound = BindResources(pipeline);
+            bool bda_valid = false;
+            bool fault_valid = false;
+            if (bound) {
+                for (const auto& write : set_writes) {
+                    if ((write.dstBinding == 1 || write.dstBinding == 2) &&
+                        write.descriptorType == vk::DescriptorType::eStorageBuffer &&
+                        write.pBufferInfo && write.pBufferInfo->buffer != VK_NULL_HANDLE &&
+                        write.pBufferInfo->range > 0) {
+                        if (write.dstBinding == 1) bda_valid = true;
+                        if (write.dstBinding == 2) fault_valid = true;
+                    }
+                }
+                if (needs_barrier) {
+                    runtime.FlushBarriers();
+                }
+                scheduler.EndRendering();
+                pipeline->BindResources(set_writes, push_data);
+                ResetBindings(true);
+            }
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_TARGET_BIND_PROBE shader={:#x} bound={} uses_dma={} "
+                        "buffers={} images={} samplers={} writes={} "
+                        "bda_valid={} fault_valid={} dispatch=SKIPPED",
+                        cs.pgm_hash, bound, cs.uses_dma, cs.buffers.size(),
+                        cs.images.size(), cs.samplers.size(), set_write_index,
+                        bda_valid, fault_valid);
+        }
+        return; // Unconditionally skip this and every subsequent target dispatch.
+    }
     if (SuppressDiagnosticCompute(cs)) {
         return;
     }
