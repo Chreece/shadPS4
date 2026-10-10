@@ -219,9 +219,11 @@ def verify_preimages():
         if not path.is_file() or path.is_symlink():
             raise RuntimeError("Missing or symlinked source: " + rel)
         observed[rel] = sha(path)
+    # The new descriptor source was not hashed in the previous host report:
+    # verify that it exists, but never invent or assume its old SHA.
     changed = {
         rel: {"expected": EXPECTED_SOURCE_HASHES[rel], "observed": observed[rel]}
-        for rel in sorted(PROTECTED_SOURCES)
+        for rel in sorted(REQUIRED)
         if observed[rel] != EXPECTED_SOURCE_HASHES[rel]
     }
     if changed:
