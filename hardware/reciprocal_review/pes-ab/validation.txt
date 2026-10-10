@@ -126,3 +126,36 @@ permitted. Thus live GDB capture, translated-runtime interaction and PES crash
 reproduction are NOT claimed locally validated. The production runner performs
 an actual isolated SIGBUS preflight on the target before building or modifying
 its launcher. That preflight is mandatory; failure archives evidence and stops.
+
+BEFORE startup fault diagnostic (2026-10-10, qfwvsla3):
+
+OBSERVED on user's host: scalar OFF exited -6 after 20.4518 seconds. Console
+reports JobGraph::worker writing 0x20 at guest PC 0x6c4dbe, followed by an
+uncaught runtime_error and abort. CPU identity translation was active. The ON
+run was interrupted through its launcher (signal 15), then exited normally.
+Neither run reached a user measurement marker. No performance result is valid.
+
+PASS: --debug-before selects only scalar OFF, captures automatically from
+launch without stdin input, and preserves translated CPU mode. Fixture cases:
+normal completion, early emulator exit, cancellation during capture; original
+launcher/settings/saves restored and unrelated process survived.
+PASS: full main/archive fixture retained the single OFF record, null benchmark
+FPS, restored originals and removed temporary source/profile.
+PASS: failed preflight fixture prevented build and launcher installation,
+preserved originals and archived the error.
+PASS: GDB API mock installed the exact 0x20 SIGSEGV condition, recognized the
+signal catchpoint's BreakpointEvent, saved native/guest code and vector state,
+then captured SIGABRT, continuing without injecting or suppressing signals.
+PASS: existing SIGBUS capture mock still retained 16 distinct snapshots plus
+latest-event rotation across 18 events.
+PASS: Python compilation and command-line parsing.
+PASS: CPU baseline, manifest, C++ instrumentation, scalar_ab.h and profile.py
+are byte-identical to the qfwvsla3 package. No emulator implementation changed.
+
+LIMIT: these new GDB catchpoint checks use a mock API locally. Local ptrace
+access was already found blocked and was not represented as a live pass.
+The earlier n8haf6p4 archive proves real SIGBUS preflight and PES attachment
+on the user's host. The new mode additionally requires a live helper write
+to 0x20 to be caught, with SIGSEGV delivered and the fault address verified,
+before compiling or launching PES. The new PES fault is not yet reproduced
+under this diagnostic and no root-cause fix is claimed.

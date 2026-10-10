@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Run inside GDB; record SIGBUS/SIGABRT and deliver each signal unchanged."""
+"""Record crash signals and an optional fault-address catchpoint without suppressing signals."""
 import json
 import os
 from pathlib import Path
@@ -17,6 +17,7 @@ seen = set()
 loaded = set()
 sequence = 0
 last_signal = None
+segv_catchpoint = None
 
 
 def save(name, value):
@@ -66,6 +67,8 @@ def load_symbols(maps):
 def stopped(event):
     global last_signal
     last_signal = event.stop_signal if isinstance(event, gdb.SignalEvent) else None
+    if segv_catchpoint is not None and segv_catchpoint in getattr(event, 'breakpoints', ()):
+        last_signal = 'SIGSEGV'
 
 
 def capture_signal():
@@ -80,6 +83,8 @@ def capture_signal():
     record = {'sequence': sequence, 'signal': last_signal, 'pc': hex(pc), 'sp': hex(sp),
               'thread': list(gdb.selected_thread().ptid), 'monotonic_ns': time.monotonic_ns(),
               'siginfo': execute('p $_siginfo')}
+    if last_signal == 'SIGSEGV':
+        record['fault_address'] = hex(int(gdb.parse_and_eval('$_siginfo._sifields._sigfault.si_addr')))
     first = key not in seen and len(seen) < 16
     if first:
         seen.add(key)
@@ -88,9 +93,18 @@ def capture_signal():
     for command in ('info registers', 'x/24i $pc', 'x/64gx $sp', 'bt 32',
                     'info threads', 'thread apply all bt 8'):
         parts.append(command + '\n' + execute(command))
+    guest_pc = target.get('guest_pc')
+    if guest_pc is not None:
+        command = 'x/24i ' + hex(guest_pc)
+        parts.append(command + '\n' + execute(command))
+        parts.append('info all-registers\n' + execute('info all-registers'))
     (stage / (prefix + '.txt')).write_text('\n'.join(parts))
     (stage / (prefix + '.maps')).write_text(maps)
-    for label, address, length in [('code', max(0, pc-64), 256), ('stack', sp, 4096)]:
+    regions = [('code', max(0, pc-64), 256), ('stack', sp, 4096)]
+    if guest_pc is not None:
+        record['guest_pc'] = hex(guest_pc)
+        regions.append(('guest-code', max(0, guest_pc-64), 256))
+    for label, address, length in regions:
         try:
             (stage / (prefix + '.' + label + '.bin')).write_bytes(
                 bytes(inferior.read_memory(address, length)))
@@ -106,6 +120,7 @@ def capture_signal():
 
 
 def main():
+    global segv_catchpoint
     for command in ('set pagination off', 'set confirm off', 'set auto-load off',
                     'set debuginfod enabled off', 'set print thread-events off',
                     'set disable-randomization off',
@@ -116,12 +131,19 @@ def main():
     if fields[19] != target['start'] or proc.stat().st_uid != os.getuid():
         raise RuntimeError('Target process identity changed; refusing debugger attach')
     gdb.execute('attach ' + str(target['pid']), to_string=True)
+    if target.get('fault_address') is not None:
+        existing = {bp.number for bp in (gdb.breakpoints() or ())}
+        gdb.execute('catch signal SIGSEGV', to_string=True)
+        segv_catchpoint = next(bp for bp in gdb.breakpoints() if bp.number not in existing)
+        gdb.execute('condition ' + str(segv_catchpoint.number) +
+                    ' $_siginfo._sifields._sigfault.si_addr == (void*)' +
+                    hex(target['fault_address']), to_string=True)
     gdb.events.stop.connect(stopped)
     load_symbols((proc / 'maps').read_text())
     save('debug-ready.json', {'pid': target['pid'], 'monotonic_ns': time.monotonic_ns()})
     while gdb.selected_inferior().pid and not (stage / 'debug-stop').exists():
         gdb.execute('continue', to_string=True)
-        if gdb.selected_inferior().pid and last_signal in ('SIGBUS', 'SIGABRT'):
+        if gdb.selected_inferior().pid and last_signal in ('SIGBUS', 'SIGABRT', 'SIGSEGV'):
             capture_signal()
 
 

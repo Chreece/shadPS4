@@ -23,8 +23,10 @@ def permit_parent():
         raise OSError(error, 'Allow parent-owned debugger')
 
 
-def start(child, owner, stage, script, build_dir):
-    (stage / 'debug-target.json').write_text(json.dumps({**owner, 'build_dir': str(build_dir)}))
+def start(child, owner, stage, script, build_dir, fault_address=None, guest_pc=None):
+    (stage / 'debug-target.json').write_text(json.dumps({
+        **owner, 'build_dir': str(build_dir),
+        'fault_address': fault_address, 'guest_pc': guest_pc}))
     env = dict(os.environ, PES_GDB_STAGE=str(stage), DEBUGINFOD_URLS='')
     with (stage / 'gdb.log').open('w') as output:
         debug = subprocess.Popen(['gdb', '-nx', '-nh', '-q', '--batch',
@@ -65,15 +67,18 @@ def finish(debug):
                 debug.wait(timeout=3)
 
 
-def preflight(runner, manual, root, report):
+def preflight(runner, manual, root, report, fault_address=None):
     runner.say('Checking GDB capture on an isolated helper before building PES')
     folder = report / 'debugger-preflight'
     folder.mkdir()
     child = debug = None
-    code = ('import os,signal,time,pathlib,sys; p=pathlib.Path(sys.argv[1]); '
+    expected_signal = signal.SIGBUS if fault_address is None else signal.SIGSEGV
+    trigger = ('os.kill(os.getpid(),signal.SIGBUS)' if fault_address is None else
+               'ctypes.memset(' + str(fault_address) + ',0,1)')
+    code = ('import os,signal,time,pathlib,sys,ctypes; p=pathlib.Path(sys.argv[1]); '
             'deadline=time.monotonic()+30\n'
             'while not p.exists() and time.monotonic()<deadline: time.sleep(.05)\n'
-            'os.kill(os.getpid(),signal.SIGBUS) if p.exists() else sys.exit(2)\n')
+            + trigger + ' if p.exists() else sys.exit(2)\n')
     try:
         def setup():
             permit_parent()
@@ -83,15 +88,18 @@ def preflight(runner, manual, root, report):
                                  stderr=subprocess.DEVNULL, start_new_session=True,
                                  preexec_fn=setup)
         debug = start(child, manual.identity(child.pid), folder,
-                      runner.HERE / 'gdb_capture.py', root / 'build')
+                      runner.HERE / 'gdb_capture.py', root / 'build', fault_address=fault_address)
         wait_ready(debug, child, folder)
         (folder / 'fire').touch()
         status = child.wait(timeout=20)
         debug.wait(timeout=10)
         evidence = json.loads((folder / 'signal-last.json').read_text())
-        if status != -signal.SIGBUS or evidence['signal'] != 'SIGBUS' or (folder / 'debug-error.txt').exists():
+        if (status != -expected_signal or evidence['signal'] != expected_signal.name or
+                (folder / 'debug-error.txt').exists() or
+                (fault_address is not None and evidence.get('fault_address') != hex(fault_address))):
             raise RuntimeError('GDB crash preflight failed; see debugger-preflight')
-        runner.say('GDB preflight passed: SIGBUS registers, stack and memory maps preserved')
+        runner.say('GDB preflight passed: ' + expected_signal.name +
+                   ' registers, stack and memory maps preserved')
     finally:
         finish(debug)
         if child is not None:

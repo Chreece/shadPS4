@@ -95,3 +95,31 @@ status and any debugger error.
 Debugger timings are never benchmark results: `speed_valid` is false and
 `fps_over_full_window` is null. Incomplete ordinary manual runs also have null
 full-window FPS, instead of dividing partial frame counts by 90 seconds.
+
+## BEFORE startup access violation
+
+The `qfwvsla3` archive records scalar OFF aborting after 20.45 seconds, before
+the measurement marker. Its log reports a worker-thread write to `0x20` at
+guest PC `0x6c4dbe`, followed by SIGABRT. CPU translation was active. This is a
+different recorded failure from the earlier scalar-ON SIGBUS; the log alone
+does not identify why the pointer was invalid or establish a scalar dependency.
+
+Run the bundle with `--debug-before` to select one scalar-OFF startup capture.
+Launch through ES-DE after READY. Capture starts automatically from launch;
+do not press Enter. It ends after 90 seconds plus the existing exit allowance,
+or sooner if PES exits. This uses the unchanged emulator source, CPU baseline,
+profile and scalar OFF switch from the ordinary A/B test.
+
+In addition to SIGBUS/SIGABRT, GDB installs a conditional SIGSEGV catchpoint for
+fault address `0x20`. Other SIGSEGV events pass through without evidence dumps.
+The matching fault records the original registers and instruction before the
+emulator's handler can unwind them. Small guest-code bytes at the observed PC
+and vector registers are included. Every signal is still delivered unchanged.
+The address is a diagnostic filter, not an emulation change or game workaround.
+
+Before building, a disposable Python helper deliberately writes to `0x20`.
+Preparation continues only if this exact catchpoint captures the registers,
+stack and maps and the helper exits from SIGSEGV. This self-test is clearly
+stored under `debugger-preflight`, separately from PES evidence. Restoration,
+owned-process cleanup and archive creation are unchanged. All timings under
+the debugger remain excluded from performance comparisons.

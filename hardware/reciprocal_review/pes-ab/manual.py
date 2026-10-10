@@ -161,9 +161,12 @@ def wait_for_session(root, stage, input_stream):
         if job['state'] in ('starting', 'running') and not alive(job.get('bridge')):
             raise RuntimeError('Capture launcher disappeared; partial evidence retained')
         if job['state'] == 'running' and not prompted:
-            if input_stream.isatty():
-                termios.tcflush(input_stream.fileno(), termios.TCIFLUSH)
-            r.say('PES is running. Reach the same match/replay scene, then press ENTER here to measure 90 seconds.')
+            if job.get('auto_start'):
+                r.say('PES startup diagnostic is recording automatically; no ENTER needed.')
+            else:
+                if input_stream.isatty():
+                    termios.tcflush(input_stream.fileno(), termios.TCIFLUSH)
+                r.say('PES is running. Reach the same match/replay scene, then press ENTER here to measure 90 seconds.')
             prompted = True
         if prompted and not (stage/'measure.json').exists():
             if select.select([input_stream], [], [], .25)[0]:
@@ -179,7 +182,8 @@ def wait_for_session(root, stage, input_stream):
                 r.say('Waiting for your PES launch in ES-DE: ' + job['label'])
             elif (stage/'measure.json').exists():
                 start = json.loads((stage/'measure.json').read_text())['started_monotonic_ns']/1e9
-                r.say('Capture elapsed after your marker: ' + str(int(time.monotonic()-start)) + ' seconds')
+                label = 'Capture elapsed from launch: ' if job.get('auto_start') else 'Capture elapsed after your marker: '
+                r.say(label + str(int(time.monotonic()-start)) + ' seconds')
         if job['state'] == 'ready':
             check_waiting_launch(root)
 
@@ -190,7 +194,7 @@ def comparison(records):
               'timing_complete': len(records) == 2 and all(v.get('speed_valid') for v in records)}
     if any(v.get('debugger_enabled') for v in records):
         result['reason'] = 'GDB diagnostic capture; timings are not benchmark results'
-        result['scope'] = 'single scalar-ON run under GDB'
+        result['scope'] = 'single scalar-' + ('OFF' if records[0]['mode'] == 'native' else 'ON') + ' run under GDB'
     for item in records:
         result[item['mode']] = {'metrics': item.get('metrics'), 'returncode': item.get('returncode'),
                                 'errors': item.get('errors', [])}
@@ -203,13 +207,16 @@ def comparison(records):
 
 def sessions(binary, root, report, seed, active, game, wrapper, installed, summary,
              input_stream=None, duration=90, screenshots=(3,9), finish_after=15,
-             debug_crash=False):
+             debug_crash=False, debug_before=False):
+    debug_crash = debug_crash or debug_before
     input_stream = input_stream or sys.stdin
     for name in ('manual.py','run.py','profile.py','debugger.py','gdb_capture.py'):
         shutil.copy2(r.HERE/name, root/name)
     route = Route(wrapper, installed, root, report)
     modes = (('fixed','DIAGNOSTIC: scalar fix ON with GDB'),) if debug_crash else (
         ('native','BEFORE: scalar fix OFF'), ('fixed','AFTER: scalar fix ON'))
+    if debug_before:
+        modes = (('native','DIAGNOSTIC: scalar fix OFF, startup write to 0x20'),)
     if debug_crash:
         screenshots = tuple(offset-duration for offset in (2,20,40))
     try:
@@ -230,6 +237,9 @@ def sessions(binary, root, report, seed, active, game, wrapper, installed, summa
                    'binary': str(binary), 'stage': str(stage), 'active': str(active),
                    'game': str(game['boot_path']), 'landlock': r.USE_LANDLOCK,
                    'debug_crash': debug_crash,
+                   'auto_start': debug_before,
+                   'fault_address': 0x20 if debug_before else None,
+                   'guest_pc': 0x6c4dbe if debug_before else None,
                    'duration': duration, 'screenshots': list(screenshots), 'finish_after': finish_after}
             atomic_json(root/'manual-job.json', job)
             if not route.installed:
@@ -284,10 +294,13 @@ def capture(root, job):
                                      preexec_fn=setup)
             if job.get('debug_crash'):
                 debug = debugger.start(child, identity(child.pid), stage,
-                                       root/'gdb_capture.py', Path(job['binary']).parent)
+                                       root/'gdb_capture.py', Path(job['binary']).parent,
+                                       fault_address=job.get('fault_address'), guest_pc=job.get('guest_pc'))
                 job.update(child=identity(child.pid), debugger=identity(debug.pid))
                 atomic_json(root/'manual-job.json', job)
                 debugger.wait_ready(debug, child, stage)
+            if job.get('auto_start'):
+                atomic_json(stage/'measure.json', {'started_monotonic_ns': started_ns, 'automatic': True})
             job.update(state='running',child=identity(child.pid))
             atomic_json(root/'manual-job.json', job)
             while child.poll() is None:
