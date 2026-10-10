@@ -49,6 +49,10 @@
 
 namespace Vulkan {
 
+// Defined by vk_rasterizer.cpp; complete, cumulative counts, not an
+// arbitrarily truncated sample of the first draw calls.
+void LogGoWGraphicsDrawTotals(u32 frame);
+
 bool CanBlitToSwapchain(const vk::PhysicalDevice physical_device, vk::Format format) {
     const vk::FormatProperties props{physical_device.getFormatProperties(format)};
     return static_cast<bool>(props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eBlitDst);
@@ -838,6 +842,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     const u32 gow_frame_id = gow_probe_enabled
         ? gow_frame_ordinal.fetch_add(1, std::memory_order_relaxed) + 1
         : 0;
+    if (gow_probe_enabled && gow_frame_id <= 6) {
+        LogGoWGraphicsDrawTotals(gow_frame_id);
+    }
     if (gow_probe_enabled && gow_frame_id <= 12) {
         LOG_WARNING(Render_Vulkan,
                     "GOW_FRAME_SOURCE_META frame={} guest_address={:#x} "
@@ -919,24 +926,26 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                     "result=SIZE_REJECTED", gow_frame_id, gow_source_bytes);
     }
 
-    // Take one bounded GPU snapshot at the FIRST actual VideoOut flip, after
-    // the corresponding graphics draws have been submitted and before FSR/PP.
-    // Addresses are from CUSA34384's observed render attachments, not guesses.
+    // Take three bounded GPU snapshots at observed VideoOut flips 1, 3 and 6.
+    // These are images observed in CUSA34384 trace; values do not imply scene
+    // correctness. This trial never creates a missing source image.
     std::vector<std::unique_ptr<GoWOffscreenReadback>> gow_offscreen_readbacks;
     const char* gow_offscreen_dir = std::getenv("SHADPS4_GOW_OFFSCREEN_DIR");
-    if (gow_offscreen_dir && *gow_offscreen_dir && gow_frame_id == 1) {
+    if (gow_offscreen_dir && *gow_offscreen_dir &&
+        (gow_frame_id == 1 || gow_frame_id == 3 || gow_frame_id == 6)) {
         constexpr std::array<std::pair<const char*, u64>, 3> targets{{
             {"composition", 0x22af90000ULL},
             {"shading", 0x22a798000ULL},
             {"gbuffer0", 0x209a90000ULL},
         }};
         for (const auto& [label, address] : targets) {
+            const std::string probe_label = fmt::format("f{:02}_{}", gow_frame_id, label);
             // Do not create a new image or force uploads for this diagnostic.
             const auto target_id = texture_cache.FindImageFromRange(address, 4, false);
             if (!target_id) {
                 LOG_WARNING(Render_Vulkan,
                             "GOW_OFFSCREEN_READBACK label={} address={:#x} "
-                            "result=NOT_CACHED", label, address);
+                            "result=NOT_CACHED", probe_label, address);
                 continue;
             }
             auto& target = texture_cache.GetImage(target_id);
@@ -957,16 +966,16 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                             "GOW_OFFSCREEN_READBACK label={} address={:#x} "
                             "result=GUARD_REJECTED actual_address={:#x} "
                             "width={} height={} bits={} backing={} safe={} usage={:#x}",
-                            label, address, target.info.guest_address, w, h, bits,
+                            probe_label, address, target.info.guest_address, w, h, bits,
                             target.backing != nullptr, target.SafeToDownload(),
                             static_cast<u32>(static_cast<VkImageUsageFlags>(target.usage_flags)));
                 continue;
             }
             const auto old_state = target.backing->state;
             auto raw_path = std::filesystem::path(gow_offscreen_dir) /
-                            fmt::format("gow_offscreen_{}.bin", label);
+                            fmt::format("gow_offscreen_{}.bin", probe_label);
             auto cap = std::make_unique<GoWOffscreenReadback>(
-                instance, label, address, target.info.pixel_format, w, h, bits,
+                instance, probe_label.c_str(), address, target.info.pixel_format, w, h, bits,
                 std::move(raw_path));
             const vk::BufferImageCopy region = {
                 .bufferOffset = 0,
@@ -991,7 +1000,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                         "GOW_OFFSCREEN_READBACK label={} address={:#x} "
                         "format={} width={} height={} bits={} bytes={} "
                         "result=QUEUED_AND_LAYOUT_RESTORED",
-                        label, address, vk::to_string(target.info.pixel_format),
+                        probe_label, address, vk::to_string(target.info.pixel_format),
                         w, h, bits, bytes);
             gow_offscreen_readbacks.emplace_back(std::move(cap));
         }
