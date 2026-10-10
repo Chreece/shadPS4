@@ -386,10 +386,15 @@ def get_patches():
             b'GOW_73_SHAPE_IMAGE shader=' not in shape_probe or
             b'GOW_73_SHAPE_END' not in shape_probe):
         raise RuntimeError("The passive descriptor-shape patch is incomplete")
+    # Stage 16: directly embedded, source-commit-verified C++ insertion,
+    # avoiding another rate-limited GitHub API call or redundant patch bundle.
+    # Only checks REAL Vulkan image views and Flatbuf bindings. Never launches
+    # the previously suppressed 0x73 compute shader.
+    host_binding_probe = GOW_73_HOST_BIND_SOURCE.encode("utf-8")
     return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
             index_probe, flatten_probe, root_priority_patch, auto_topo_patch,
             broad_probe, draw_probe, gpu_args_patch, writer_probe, producer_probe,
-            one_shot_73, shape_probe)
+            one_shot_73, shape_probe, host_binding_probe)
 
 
 def verify_preimages():
@@ -454,6 +459,8 @@ def verify_staged_instrumentation(staged):
             "GOW_73_SHAPE_BUFFER shader={:#x}" not in raster or
             "GOW_73_SHAPE_IMAGE shader={:#x}" not in raster or
             "GOW_73_SHAPE_END shader={:#x}" not in raster or
+            "GOW_73_HOST_BIND_RESULT shader={:#x}" not in raster or
+            "SHADPS4_GOW_73_HOST_BIND_AUDIT" not in raster or
             "SHADPS4_GOW_73_SHAPE_AUDIT" not in raster or
             "SHADPS4_GOW_ENABLE_73_ONE_SHOT" not in raster or
             "std::array<GoWComputeCanary, 7>" not in raster or
@@ -916,6 +923,100 @@ def apply_portable_73_shape_audit(root, pinned_diff):
     }
 
 
+# Source matched byte-for-byte against pinned 356b02772f08427af926feafacc119b2e373e9c0.
+# Unlike Ghost's game-specific 53-texture solution, this only observes two
+# ordinary Color2D image views and the required special Flatbuf.
+GOW_73_HOST_BIND_SOURCE = r'''    // Ghost of Tsushima proved that valid guest image descriptors can still
+    // become NULL host VkImageViews. Audit the exact GoW 73 producer bindings
+    // before ever allowing its 16,384-group GPU dispatch. This mode NEVER
+    // executes the 73 shader or any new previously suppressed compute.
+    const char* bind_73_flag = std::getenv("SHADPS4_GOW_73_HOST_BIND_AUDIT");
+    if (cs.pgm_hash == 0x73ad8e38ULL && bind_73_flag &&
+        std::strcmp(bind_73_flag, "1") == 0) {
+        static std::atomic<bool> audited_once{false};
+        if (!audited_once.exchange(true, std::memory_order_relaxed)) {
+            const bool shape = cs_program.dim_x == 128 && cs_program.dim_y == 128 &&
+                               cs_program.dim_z == 1 &&
+                               cs.buffers.size() == 3 && cs.images.size() == 2 &&
+                               cs.samplers.empty() && !cs.uses_dma &&
+                               !cs.translation_failed;
+            bool has_flatbuf = false;
+            bool resources_bound = false;
+            u32 valid_host_buffers = 0;
+            u32 valid_host_image_views = 0;
+            u32 null_host_image_views = 0;
+            if (shape) {
+                has_flatbuf = cs.buffers[2].IsSpecial() &&
+                              cs.buffers[2].buffer_type == Shader::BufferType::Flatbuf;
+                if (has_flatbuf) {
+                    resources_bound = BindResources(pipeline);
+                }
+                if (resources_bound) {
+                    for (const auto& write : set_writes) {
+                        if (write.descriptorType == vk::DescriptorType::eStorageBuffer &&
+                            write.pBufferInfo && write.descriptorCount == 1 &&
+                            write.pBufferInfo->buffer != vk::Buffer{} &&
+                            write.pBufferInfo->range != 0) {
+                            ++valid_host_buffers;
+                        }
+                        if (write.descriptorType == vk::DescriptorType::eSampledImage &&
+                            write.pImageInfo && write.descriptorCount == 1) {
+                            if (write.pImageInfo->imageView != vk::ImageView{}) {
+                                ++valid_host_image_views;
+                            } else {
+                                ++null_host_image_views;
+                            }
+                        }
+                    }
+                    ResetBindings(true);
+                }
+            }
+            const bool passed = shape && has_flatbuf && resources_bound &&
+                                valid_host_buffers == 3 &&
+                                valid_host_image_views == 2 &&
+                                null_host_image_views == 0;
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_73_HOST_BIND_RESULT shader={:#x} "
+                        "shape_ok={} flatbuf_ok={} bind_resources={} "
+                        "host_buffers={} host_image_views={} null_image_views={} "
+                        "dispatch=SKIPPED result={}",
+                        cs.pgm_hash, shape, has_flatbuf, resources_bound,
+                        valid_host_buffers, valid_host_image_views,
+                        null_host_image_views, passed ? "PASS" : "FAIL");
+        }
+        return; // Always suppress this shader; binding evidence only.
+    }
+
+'''
+
+def apply_portable_73_host_bind_audit(root, patch_bytes):
+    if patch_bytes != GOW_73_HOST_BIND_SOURCE.encode("utf-8"):
+        raise RuntimeError("Stage16 binding audit differed from immutable runner source")
+    source = root / GBUFFER_SOURCE
+    original_bytes = source.read_bytes()
+    if hashlib.sha256(original_bytes).hexdigest() != (
+            "bb63c99ac95295080263e7f6a82644f579f0213909054ee5d8bfb8fbe985b26"):
+        raise RuntimeError("Stage16 source isn't the 21:32 host-proven 15-patch result")
+    original = original_bytes.decode("utf-8", errors="strict")
+    anchor = ("    const int canary_idx = SelectGoWComputeCanary(\n"
+              "        cs, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);\n")
+    if original.count(anchor) != 1 or "GOW_73_HOST_BIND_RESULT" in original:
+        raise RuntimeError("Stage16 nonexecuting binding audit anchor ambiguous")
+    patched = original.replace(anchor, GOW_73_HOST_BIND_SOURCE + anchor, 1)
+    if (patched.replace(GOW_73_HOST_BIND_SOURCE, "", 1) != original or
+            patched.count("GOW_73_HOST_BIND_RESULT shader={:#x}") != 1 or
+            "return; // Always suppress this shader" not in GOW_73_HOST_BIND_SOURCE):
+        raise RuntimeError("Stage16 changed existing compute/draw behavior")
+    source.write_bytes(patched.encode("utf-8"))
+    return {
+        "before_sha256": hashlib.sha256(original_bytes).hexdigest(),
+        "after_sha256": sha(source),
+        "probe_bytes": len(patch_bytes),
+        "existing_lines_unchanged": True,
+        "shader_execution_suppressed": True,
+    }
+
+
 def preflight_patches(patches, temp, report):
     # Every git-apply step runs against exact copies of host files.
     # No installed source file is changed during this preflight.
@@ -925,8 +1026,8 @@ def preflight_patches(patches, temp, report):
         dst = staged / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / rel, dst)
-    if len(patches) != 15:
-        raise RuntimeError("Expected 14 proven patches plus one passive descriptor-audit patch")
+    if len(patches) != 16:
+        raise RuntimeError("Expected 15 host-proven patches plus a nonexecuting host-binding audit")
     for step, patch in enumerate(patches):
         filename = temp / f"pinned-{step}.diff"
         filename.write_bytes(patch)
@@ -948,6 +1049,9 @@ def preflight_patches(patches, temp, report):
         if step == 14:
             report["shape_73_preflight"] = apply_portable_73_shape_audit(staged, patch)
             continue
+        if step == 15:
+            report["host_bind_73_preflight"] = apply_portable_73_host_bind_audit(staged, patch)
+            continue
         check = run(["git", "apply", "--check", "--whitespace=nowarn", str(filename)],
                     cwd=staged)
         if check.returncode:
@@ -956,7 +1060,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_fifteen_patch_preflight"] = True
+    report["staged_sixteen_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -1029,6 +1133,10 @@ def do_build(build, patches, temp, result):
             if step == 14:
                 changed = True
                 result["shape_73_live"] = apply_portable_73_shape_audit(SOURCE, patch)
+                continue
+            if step == 15:
+                changed = True
+                result["host_bind_73_live"] = apply_portable_73_host_bind_audit(SOURCE, patch)
                 continue
             check = run(["git", "apply", "--check", "--whitespace=nowarn",
                          str(patch_path)], cwd=SOURCE)
