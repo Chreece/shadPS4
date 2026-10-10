@@ -57,8 +57,16 @@ def sha(path):
 def run(args, *, cwd=None, timeout=30):
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
 
-def processes_in_use(exclude=(), exclude_group=None):
+def processes_in_use(exclude=(), exclude_group=None, ignored_launchers=None):
+    """Guard real emulator/build processes, not the ES-DE package launcher shell.
+
+    /proc/PID/comm can be named after a shell script rather than /proc/PID/exe.
+    An idle /bin/bash /home/.../.local/bin/shadps4-pkg-auto was falsely
+    classified as an emulator. Only that exact shell+script combination is
+    exempt; any actual shadps4 binary or build process still blocks the trial.
+    """
     problems = []
+    known_launcher = str(HOME / ".local/bin/shadps4-pkg-auto")
     for item in Path("/proc").iterdir():
         if not item.name.isdigit():
             continue
@@ -74,8 +82,23 @@ def processes_in_use(exclude=(), exclude_group=None):
         try:
             if item.stat().st_uid != os.getuid():
                 continue
-            cmd = (item / "cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace")
+            argv = (item / "cmdline").read_bytes().split(b"\x00")
+            cmd = " ".join(os.fsdecode(arg) for arg in argv if arg)
             name = (item / "comm").read_text().strip().lower()
+            # Read the executable, not merely 'comm': the kernel may use the
+            # interpreted script's basename as comm even though bash runs it.
+            try:
+                executable = os.readlink(item / "exe").removesuffix(" (deleted)")
+            except OSError:
+                executable = ""
+            launcher_shell = (Path(executable).name in ("bash", "sh", "dash") and
+                              len(argv) > 1 and os.fsdecode(argv[1]) == known_launcher)
+            if launcher_shell:
+                if ignored_launchers is not None:
+                    ignored_launchers.append({
+                        "pid": pid, "executable": executable,
+                        "reason": "verified_shell_launcher", "command": cmd[:140]})
+                continue
             if name.startswith("shadps4") or re.search(r"(?<![\w-])shadps4(?:\s|$)", cmd.lower()):
                 problems.append({"pid": pid, "reason": "emulator", "command": cmd[:140]})
             elif name in ("ninja", "cmake", "c++", "cc1plus") and "shadps4" in cmd.lower():
@@ -812,10 +835,12 @@ def main():
         evidence.mkdir()
         try:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            busy = processes_in_use()
+            ignored_launchers = []
+            busy = processes_in_use(ignored_launchers=ignored_launchers)
+            report["ignored_shell_launchers"] = ignored_launchers
             if busy:
                 report["busy_processes"] = busy
-                raise RuntimeError("Another emulator/build active: refusing to interfere with Ghost")
+                raise RuntimeError("Another real emulator/build process active; trial refused")
             if not SOURCE.is_dir() or not (SOURCE / ".git").exists():
                 raise RuntimeError("Verified shadPS4 source tree is unavailable")
             check = run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=SOURCE)
@@ -872,6 +897,7 @@ def main():
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
     print("GOW_PHI_DMA_RESULT=" + report.get("result", "UNKNOWN"))
+    print("IGNORED_SHELL_LAUNCHERS=" + str(report.get("ignored_shell_launchers", [])))
     print("OFFSCREEN_GPU_COMPLETED=" + str(report.get("offscreen_complete_count", 0)))
     print("OFFSCREEN_NONZERO_TARGETS=" + str(report.get("offscreen_nonzero_count", 0)))
     print("OFFSCREEN_FILES=" + str(report.get("offscreen_files", {})))
