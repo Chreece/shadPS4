@@ -450,6 +450,11 @@ def verify_staged_instrumentation(staged):
             "GOW_PRODUCER_RESOURCE shader={:#x}" not in raster or
             "GOW_PRODUCER_FIRST_DRAW" not in raster or
             "GOW_73_ADMISSION shader={:#x}" not in raster or
+            "GOW_73_SHAPE_BEGIN shader={:#x}" not in raster or
+            "GOW_73_SHAPE_BUFFER shader={:#x}" not in raster or
+            "GOW_73_SHAPE_IMAGE shader={:#x}" not in raster or
+            "GOW_73_SHAPE_END shader={:#x}" not in raster or
+            "SHADPS4_GOW_73_SHAPE_AUDIT" not in raster or
             "SHADPS4_GOW_ENABLE_73_ONE_SHOT" not in raster or
             "std::array<GoWComputeCanary, 7>" not in raster or
             raster.count("static void TraceGoWProducerResourceChain(") != 1 or
@@ -858,6 +863,58 @@ def apply_portable_73_one_shot(root, pinned_diff):
             "only_one_opted_in_shader": True}
 
 
+# The 20:50 host source is verified but its DrawIndirect line context differs
+# from GitHub. Stage fifteen is *only* source-line additions at one unique
+# shader-specific C++ condition, both on isolated copies and in the live tree.
+def apply_portable_73_shape_audit(root, pinned_diff):
+    expected_hash = "c9f05a0d1fcca00d4768b8c76739f70e58e13b9adc1b876a464612dec18f674f"
+    if hashlib.sha256(pinned_diff).hexdigest() != expected_hash:
+        raise RuntimeError("Passive shader shape patch digest mismatch")
+    patch = pinned_diff.decode("utf-8", errors="strict")
+    expected_header = (
+        "diff --git a/" + GBUFFER_SOURCE + " b/" + GBUFFER_SOURCE + "\n")
+    if patch.count("diff --git ") != 1 or not patch.startswith(expected_header):
+        raise RuntimeError("Shape-audit patch is not limited to vk_rasterizer.cpp")
+    blocks = re.split(r"(?m)^@@[^\n]*\n", patch)
+    if len(blocks) != 2:
+        raise RuntimeError("Expected exactly one additive shader-audit hunk")
+    lines = blocks[1].splitlines()
+    if any(x.startswith("-") and not x.startswith("---") for x in lines):
+        raise RuntimeError("Shader-shape audit attempts to delete existing source")
+    added = [x[1:] for x in lines
+             if x.startswith("+") and not x.startswith("+++")]
+    snippet = "\n".join(added) + "\n"
+    if (not snippet.startswith("            // The 20:50 trial denied this shader") or
+            snippet.count("GOW_73_SHAPE_BEGIN shader=") != 1 or
+            snippet.count("GOW_73_SHAPE_BUFFER shader=") != 1 or
+            snippet.count("GOW_73_SHAPE_IMAGE shader=") != 1 or
+            snippet.count("GOW_73_SHAPE_END shader=") != 1 or
+            snippet.count("SHADPS4_GOW_73_SHAPE_AUDIT") != 1 or
+            "Shader::UNKNOWN_LOCATION" not in snippet or
+            "producer_73_eligible =" in snippet or
+            len(added) != 79):
+        raise RuntimeError("Unexpected code inside additive shader-audit hunk")
+    source = root / GBUFFER_SOURCE
+    previous_bytes = source.read_bytes()
+    previous = previous_bytes.decode("utf-8", errors="strict")
+    anchor = "        if (cs.pgm_hash == 0x73ad8e38ULL) {\n"
+    if previous.count(anchor) != 1 or "GOW_73_SHAPE_BEGIN" in previous:
+        raise RuntimeError("Shader 73 audit anchor is not unique or already patched")
+    patched = previous.replace(anchor, anchor + snippet, 1)
+    if (patched.replace(snippet, "", 1) != previous or
+            patched.count("GOW_73_SHAPE_END") != 1 or
+            len(patched) != len(previous) + len(snippet)):
+        raise RuntimeError("Shader shape patch changed non-audit statements")
+    source.write_bytes(patched.encode("utf-8"))
+    return {
+        "sha256_before": hashlib.sha256(previous_bytes).hexdigest(),
+        "sha256_after": sha(source),
+        "patch_digest": expected_hash,
+        "existing_source_lines_unchanged": True,
+        "compute_execution_policy_unchanged": True,
+    }
+
+
 def preflight_patches(patches, temp, report):
     # Every git-apply step runs against exact copies of host files.
     # No installed source file is changed during this preflight.
@@ -867,8 +924,8 @@ def preflight_patches(patches, temp, report):
         dst = staged / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / rel, dst)
-    if len(patches) != 14:
-        raise RuntimeError("Expected 13 proven patches plus one strictly gated compute trial")
+    if len(patches) != 15:
+        raise RuntimeError("Expected 14 proven patches plus one passive descriptor-audit patch")
     for step, patch in enumerate(patches):
         filename = temp / f"pinned-{step}.diff"
         filename.write_bytes(patch)
@@ -887,6 +944,9 @@ def preflight_patches(patches, temp, report):
         if step == 13:
             report["one_shot_73_preflight"] = apply_portable_73_one_shot(staged, patch)
             continue
+        if step == 14:
+            report["shape_73_preflight"] = apply_portable_73_shape_audit(staged, patch)
+            continue
         check = run(["git", "apply", "--check", "--whitespace=nowarn", str(filename)],
                     cwd=staged)
         if check.returncode:
@@ -895,7 +955,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_fourteen_patch_preflight"] = True
+    report["staged_fifteen_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -964,6 +1024,10 @@ def do_build(build, patches, temp, result):
             if step == 13:
                 changed = True
                 result["one_shot_73_live"] = apply_portable_73_one_shot(SOURCE, patch)
+                continue
+            if step == 14:
+                changed = True
+                result["shape_73_live"] = apply_portable_73_shape_audit(SOURCE, patch)
                 continue
             check = run(["git", "apply", "--check", "--whitespace=nowarn",
                          str(patch_path)], cwd=SOURCE)
