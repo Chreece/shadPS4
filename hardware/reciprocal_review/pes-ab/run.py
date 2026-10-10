@@ -27,7 +27,7 @@ import zipfile
 BASE = '731ababdb7819486eca8dcc7a7f622efa3b75cc7'
 CPU_SHA = '553de5682e840e4d83d636c4bba8678a5b36cc515ae65b3929359c2e3497c79c'
 FFMPEG_SHA = 'aacbbfb8e622b684bc5d3b4cd6c9f9f77f5def64ae8d83c0c5b3ebe657aa33dd'
-ASSETS = {'cpu-baseline.patch': 'a2fabe0c86b899319b4aaf7a80ad405ca7ae2e6b80668093d7ae33e5b65ae4a1', 'cpu-baseline.json': 'f38686786b8ccec5d0eb87ed14c5bc5f93da6c69ca1ea36e31ba250b148f028f', 'cpu-baseline.patch.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'cpu-baseline.json.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'manual.py': '94d4ebdd0f403c7f3f9caf2ed1f445c1102bc30dc0990d20b571d4489f2463fe', 'profile.py': '00f25e0ffc6f6311f155b64219def15bb5583da1126cc54d3cd9ab62ead90746', 'instrumentation.patch': '6ad36fda634f19900134d380586af1bbd9ca04d0fc6df63535a67e31d9480707', 'scalar_ab.h': 'cc825d23425371955071e97e0975657bfaeee09daecca5acd75936a956d47a2b', 'README.md': '3e79997657fee4fc6307a6268015c5b3c5245f2f361d9154d45d728546f10179', 'README.md.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'instrumentation.patch.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'validation.txt': '002a248fe802869cc10719e033d0a04dacaa035605c8e68da709064cae09a9f0', 'validation.txt.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0'}
+ASSETS = {'debugger.py': '047fcee1ecfd5fb12167869e3b7a834734751ea0eacddd4ebd7a9a5c5ace6649', 'gdb_capture.py': 'd629b97241d7ff3849e1a2ac59e06e3ff9869b72fb90ec98cd856302d2884f36', 'cpu-baseline.patch': 'a2fabe0c86b899319b4aaf7a80ad405ca7ae2e6b80668093d7ae33e5b65ae4a1', 'cpu-baseline.json': 'f38686786b8ccec5d0eb87ed14c5bc5f93da6c69ca1ea36e31ba250b148f028f', 'cpu-baseline.patch.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'cpu-baseline.json.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'manual.py': '7aead7bb9f32f6ac7f9ca9d8bff1d1b1c113255eb22f741eff1dc1e4c7095323', 'profile.py': '00f25e0ffc6f6311f155b64219def15bb5583da1126cc54d3cd9ab62ead90746', 'instrumentation.patch': '6ad36fda634f19900134d380586af1bbd9ca04d0fc6df63535a67e31d9480707', 'scalar_ab.h': 'cc825d23425371955071e97e0975657bfaeee09daecca5acd75936a956d47a2b', 'README.md': '02320c5d20526fe9c997418530833af58c1e827237bc0be195dfe8b67baec77e', 'README.md.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'instrumentation.patch.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'validation.txt': '67f41a633ec030020ada10209483d143e9135c2c4c486be84636a88b9758aafd', 'validation.txt.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0'}
 USE_LANDLOCK = False
 MODES = ('native', 'fixed', 'fixed', 'native', 'diagnostic')
 SERIAL = 'CUSA18676'
@@ -542,6 +542,9 @@ def comparison(records):
 def main(args):
     assets(args.assets_url)
     manual_mode = getattr(args, 'manual', False)
+    debug_crash = getattr(args, 'debug_crash', False)
+    if debug_crash and not manual_mode:
+        raise RuntimeError('--debug-crash requires --manual')
     if manual_mode and not sys.stdin.isatty():
         raise RuntimeError('Manual capture needs an interactive SSH terminal')
     global profile
@@ -573,6 +576,8 @@ def main(args):
              'runner_sha256':digest(__file__),'originals_unchanged':None}
     if manual_mode:
         summary.update(order=['native','fixed'], scope='manual ES-DE launch and user-selected scene')
+    if debug_crash:
+        summary.update(order=['fixed'], scope='GDB crash diagnostic, not a performance comparison')
     protected=[]
     before=None
     archive=home/(root.name.replace('-work-','-')+'.tar.gz')
@@ -599,6 +604,8 @@ def main(args):
         for tool in ('git','cmake','ninja','gcc-14','g++-14'):
             if not shutil.which(tool):
                 raise RuntimeError('Required existing tool is missing: '+tool)
+        if debug_crash and not shutil.which('gdb'):
+            raise RuntimeError('Existing GDB is required for crash capture; no packages were installed')
         if shutil.disk_usage(home).free<10*1024**3:
             raise RuntimeError('Less than 10 GiB free for the isolated build/profile')
         global USE_LANDLOCK
@@ -622,12 +629,16 @@ def main(args):
         before=snapshot(protected)
         write_json(report/'original-state.json',before)
         summary['settings']=settings
+        if debug_crash:
+            import debugger
+            debugger.preflight(sys.modules[__name__], manual, root, report)
         binary=build(root,report,home)
         require_idle()
         if snapshot(protected)!=before:
             raise RuntimeError('Original files changed during setup; stopping without overwriting them')
         if manual_mode:
-            manual.sessions(binary,root,report,seed,active,game,wrapper,installed,summary)
+            manual.sessions(binary,root,report,seed,active,game,wrapper,installed,summary,
+                            debug_crash=debug_crash)
         else:
             for index,mode in enumerate(MODES,1):
                 say('Cooling down for 20 seconds before the next run')
@@ -708,6 +719,7 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--assets-url')
     parser.add_argument('--manual', action='store_true')
+    parser.add_argument('--debug-crash', action='store_true')
     args=parser.parse_args()
     def interrupted(sig,frame):
         for handled in (signal.SIGINT,signal.SIGTERM,signal.SIGHUP):

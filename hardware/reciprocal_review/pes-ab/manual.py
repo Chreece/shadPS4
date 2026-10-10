@@ -18,6 +18,7 @@ import traceback
 
 import run as r
 import profile
+import debugger
 r.profile = profile
 
 
@@ -124,6 +125,14 @@ def cancel_current(root):
         os.killpg(child['pid'], signal.SIGKILL)
     if alive(bridge):
         os.kill(bridge['pid'], signal.SIGKILL)
+    debug = job.get('debugger', {})
+    if alive(debug):
+        os.kill(debug['pid'], signal.SIGTERM)
+        deadline = time.monotonic() + 3
+        while alive(debug) and time.monotonic() < deadline:
+            time.sleep(.1)
+        if alive(debug):
+            os.kill(debug['pid'], signal.SIGKILL)
 
 
 def check_waiting_launch(root):
@@ -179,6 +188,9 @@ def comparison(records):
     result = {'valid': False, 'scope': 'manually selected scene, one run per mode',
               'reason': 'Scene equivalence requires screenshot/log review; no repeatability claim',
               'timing_complete': len(records) == 2 and all(v.get('speed_valid') for v in records)}
+    if any(v.get('debugger_enabled') for v in records):
+        result['reason'] = 'GDB diagnostic capture; timings are not benchmark results'
+        result['scope'] = 'single scalar-ON run under GDB'
     for item in records:
         result[item['mode']] = {'metrics': item.get('metrics'), 'returncode': item.get('returncode'),
                                 'errors': item.get('errors', [])}
@@ -190,14 +202,18 @@ def comparison(records):
 
 
 def sessions(binary, root, report, seed, active, game, wrapper, installed, summary,
-             input_stream=None, duration=90, screenshots=(3,9), finish_after=15):
+             input_stream=None, duration=90, screenshots=(3,9), finish_after=15,
+             debug_crash=False):
     input_stream = input_stream or sys.stdin
-    for name in ('manual.py','run.py','profile.py'):
+    for name in ('manual.py','run.py','profile.py','debugger.py','gdb_capture.py'):
         shutil.copy2(r.HERE/name, root/name)
     route = Route(wrapper, installed, root, report)
+    modes = (('fixed','DIAGNOSTIC: scalar fix ON with GDB'),) if debug_crash else (
+        ('native','BEFORE: scalar fix OFF'), ('fixed','AFTER: scalar fix ON'))
+    if debug_crash:
+        screenshots = tuple(offset-duration for offset in (2,20,40))
     try:
-        for number, (mode, label) in enumerate((('native','BEFORE: scalar fix OFF'),
-                                              ('fixed','AFTER: scalar fix ON')), 1):
+        for number, (mode, label) in enumerate(modes, 1):
             r.require_idle()
             if active.exists():
                 shutil.rmtree(active)
@@ -206,12 +222,14 @@ def sessions(binary, root, report, seed, active, game, wrapper, installed, summa
             stage = report / f'{number:02d}-{mode}'
             stage.mkdir()
             record = {'mode': mode, 'label': label, 'manual_launch': True,
+                      'debugger_enabled': debug_crash,
                       'profile_before': r.snapshot([active/'user/config.json',active/'user/users.json',
                                                      active/'user/custom_configs',active/'user/home'])}
             r.write_json(stage/'run.json', record)
             job = {'state': 'ready', 'mode': mode, 'label': label, 'owner': identity(os.getpid()),
                    'binary': str(binary), 'stage': str(stage), 'active': str(active),
                    'game': str(game['boot_path']), 'landlock': r.USE_LANDLOCK,
+                   'debug_crash': debug_crash,
                    'duration': duration, 'screenshots': list(screenshots), 'finish_after': finish_after}
             atomic_json(root/'manual-job.json', job)
             if not route.installed:
@@ -219,7 +237,8 @@ def sessions(binary, root, report, seed, active, game, wrapper, installed, summa
             r.say('\nREADY — ' + label + '. Launch PES normally from ES-DE.')
             result = wait_for_session(root, stage, input_stream)
             summary['records'].append({k:v for k,v in result.items() if k != 'profile_before'})
-            r.say(label + ' saved. Return to ES-DE and wait for the next READY message.')
+            r.say(label + ' saved.' + (' Return to ES-DE and wait for the next READY message.'
+                                      if number < len(modes) else ' Capture finished.'))
         summary['comparison'] = comparison(summary['records'])
     finally:
         try:
@@ -252,15 +271,30 @@ def capture(root, job):
     requested = set()
     next_sample = 0
     child = None
+    debug = None
     try:
         with (stage/'console.log').open('w') as log, (stage/'process.jsonl').open('w') as samples:
+            def setup():
+                if job.get('debug_crash'):
+                    debugger.permit_parent()
+                r.child_setup(root)
             child = subprocess.Popen([job['binary'],'--game',job['game'],'--fullscreen','true'],
                                      cwd=active,env=env,stdin=subprocess.DEVNULL,stdout=log,
                                      stderr=subprocess.STDOUT,start_new_session=True,
-                                     preexec_fn=lambda:r.child_setup(root))
+                                     preexec_fn=setup)
+            if job.get('debug_crash'):
+                debug = debugger.start(child, identity(child.pid), stage,
+                                       root/'gdb_capture.py', Path(job['binary']).parent)
+                job.update(child=identity(child.pid), debugger=identity(debug.pid))
+                atomic_json(root/'manual-job.json', job)
+                debugger.wait_ready(debug, child, stage)
             job.update(state='running',child=identity(child.pid))
             atomic_json(root/'manual-job.json', job)
             while child.poll() is None:
+                if debug is not None and debug.poll() is not None:
+                    if child.poll() is None:
+                        raise RuntimeError('GDB stopped before the emulator; see gdb.log')
+                    break
                 if (stage/'cancel').exists() or not alive(job['owner']):
                     raise InterruptedError('Capture cancelled or coordinating SSH process ended')
                 elapsed = time.monotonic()-started
@@ -293,6 +327,7 @@ def capture(root, job):
         record.setdefault('errors',[]).append(type(exc).__name__+': '+str(exc))
         (stage/'error.txt').write_text(traceback.format_exc())
     finally:
+        debugger.finish(debug)
         if child is not None:
             record.update(r.stop(child,stage))
         record['elapsed_s'] = time.monotonic()-started
@@ -305,6 +340,11 @@ def capture(root, job):
             begin = measure if measure is not None else 0
             end = begin + job['duration'] if measure is not None else max(.001,record['elapsed_s'])
             record['metrics'] = r.metrics(stage,started_ns,begin,end)
+            record['metrics']['window_complete'] = bool(
+                measure is not None and record.get('reached_capture_end') and
+                record['metrics'].get('last_frame_s', 0) >= end-1)
+            if not record['metrics']['window_complete'] or job.get('debug_crash'):
+                record['metrics']['fps_over_full_window'] = None
         record['screenshots'] = len(list((stage/'screenshots').glob('*.png')))
         record['input_allowed'] = True
         record['cpu_id_mode'] = 'translated'
@@ -320,6 +360,12 @@ def capture(root, job):
                                     record['screenshots'] == len(job['screenshots']) and
                                     record['cpu_translation_active'] and record['scalar_mode_verified'] and
                                     not record.get('errors'))
+        if job.get('debug_crash'):
+            record['speed_valid'] = False
+            record['debugger_enabled'] = True
+            record['debugger_attached'] = (stage/'debug-ready.json').exists()
+            evidence = stage/'signal-last.json'
+            record['last_signal'] = json.loads(evidence.read_text()) if evidence.exists() else None
         r.write_json(stage/'run.json',record)
     return record
 

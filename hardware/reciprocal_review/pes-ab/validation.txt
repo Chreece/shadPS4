@@ -95,3 +95,34 @@ PASS: original saves/settings/binary are unchanged; unrelated sentinel process s
 Fixture process lookup adapts the container's mismatched PID namespace and procfs view.
 No emulator C++ code or instrumentation changed for manual mode.
 PASS: manual main archives both runs, verifies restoration and removes temporary work.
+
+2026-10-10 SIGBUS diagnostic runner
+------------------------------------
+The ai2jrgdt archive has a complete native run and a fixed run exiting with
+Linux SIGBUS (-7), without a runner quit request or forced cleanup. Original
+state hashes and launch profiles match. The fixed full-window FPS denominator
+was invalid after early exit; manual captures now emit null for that field.
+The privileged kernel excerpt has 9,296 init_user_pages failures, including
+events after PES exited; it has no process-specific SIGBUS instruction/stack.
+No GPU or scalar cause is inferred from these messages.
+
+Python compilation: PASS for runner, manual bridge, debugger supervisor and GDB
+script. All C++ source/patch assets are byte-identical to the previous runner;
+no emulator rebuild was required for these Python-only changes.
+Manual lifecycle fixtures: PASS normal, early-native exit, running cancellation,
+waiting cancellation, identical original files and unrelated process intact.
+Full main/archive fixture: PASS both ordinary records preserved and temporary
+source/profile removed. Failed GDB preflight fixture: PASS no build or launch,
+originals identical, diagnostic error archived and temporary files removed.
+GDB API fixture: PASS 18 handled SIGBUS stops continued without synthetic signal
+injection or kill, first 16 unique snapshots retained, latest snapshot rotated.
+Diagnostic session fixtures use a debugger process substitute: PASS one fixed
+run, early screenshot, null benchmark FPS, invalid speed claim, cancellation
+and launcher/profile restoration.
+
+Live debugger validation limit: portable Ubuntu GDB 15.1 launches successfully
+in this environment, but actual ptrace attach is rejected with Operation not
+permitted. Thus live GDB capture, translated-runtime interaction and PES crash
+reproduction are NOT claimed locally validated. The production runner performs
+an actual isolated SIGBUS preflight on the target before building or modifying
+its launcher. That preflight is mandatory; failure archives evidence and stops.

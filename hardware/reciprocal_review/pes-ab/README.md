@@ -63,3 +63,35 @@ The source patch also adds the missing `<optional>` include needed to compile th
 ## Validation
 
 See `validation.txt`. Harness runs validate the orchestration and cleanup; they are not PES results. The actual game run occurs on the user's machine. A completed or failed capture produces `PES_AB_ARCHIVE=...tar.gz` for inspection.
+
+## SIGBUS diagnostic after the manual A/B run
+
+Run the single-file bundle with `--debug-crash`. This selects only scalar ON,
+using the same pinned CPU baseline, reciprocal generators and C++ instrumentation
+as the timing run. Existing GDB with Python support is required. No package is
+installed and no global ptrace policy is changed. The owned emulator grants its
+parent and the parent's debugger permission to attach when Yama is available.
+
+Before building, an isolated helper deliberately raises SIGBUS. The runner
+requires GDB to preserve its signal, registers, stack and maps, and verifies that
+the helper really exits from SIGBUS. An attach failure stops preparation and
+archives the diagnostics.
+
+After READY, launch PES through ES-DE, reach the same scene and press Enter in
+SSH. Screenshots are requested 2, 20 and 40 seconds after the marker. Capture
+ends after 90 seconds plus the existing 15-second exit allowance, or sooner if
+the emulator exits. Original launcher/profile/save verification and cleanup
+remain active.
+
+GDB records SIGBUS and SIGABRT events, then delivers the original signal to the
+emulator. Handled runtime safe-read faults therefore do not get mislabeled as
+fatal crashes; the parent records the actual process return code independently.
+Up to 16 unique signal sites get full snapshots, and the latest later event
+replaces `signal-last.*`. Metadata for the first 512 events is retained.
+Snapshots include registers, disassembly, current/all-thread backtraces, maps,
+and small code/stack memory excerpts. The archive includes `gdb.log`, attach
+status and any debugger error.
+
+Debugger timings are never benchmark results: `speed_valid` is false and
+`fps_over_full_window` is null. Incomplete ordinary manual runs also have null
+full-window FPS, instead of dividing partial frame counts by 90 seconds.
