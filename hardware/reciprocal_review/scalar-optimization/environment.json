@@ -1,0 +1,26 @@
+{
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+  "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "compiler": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+  "affinity_before": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "rounds": 21,
+  "iterations_per_round": 100000,
+  "modes": {
+    "0": "native scalar / baseline packed",
+    "1": "native scalar / corrected packed",
+    "2": "original scalar",
+    "3": "integer loads with PUSHFQ/POPFQ",
+    "4": "final scalar optimization"
+  },
+  "benchmark_cpu": 0
+}

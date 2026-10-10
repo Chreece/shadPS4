@@ -1,7 +1,9 @@
 # Isolated reciprocal review — 2026-10-10
 
+Scalar performance follow-up: [optimized scalar implementation and reproducible results](scalar-optimization/README.md), at `0e5a0e1273df701d8069f17c347ec5372d94068d` on `draft/jaguar-scalar-reciprocal-20261010`. The original measurements below describe the earlier PR split, before that optimization.
+
 PR #5325 is now packed-only at 31a118b127c0c1f0c8b0c32fa9ce21923fa0ccaa.
-Scalar translation is preserved separately at 36353d88a604a2d9d47586cd31b1ef63ef0911ab on draft/jaguar-scalar-reciprocal-20261010.
+Scalar translation was initially preserved separately at 36353d88a604a2d9d47586cd31b1ef63ef0911ab on draft/jaguar-scalar-reciprocal-20261010.
 
 The change is an accuracy correction, with no demonstrated game fix or speed gain.
 Removing scalar translation avoids its additional cost compared with the original PR, while retaining main's native scalar behavior.

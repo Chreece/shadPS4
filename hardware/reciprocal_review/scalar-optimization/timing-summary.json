@@ -1,0 +1,62 @@
+{
+  "hot": [
+    {
+      "op": "vrcpss",
+      "native_ns": 3.729,
+      "old_ns": 55.273,
+      "new_ns": 7.225,
+      "speedup_vs_old": 7.65
+    },
+    {
+      "op": "vrcpss_mem",
+      "native_ns": 4.924,
+      "old_ns": 54.463,
+      "new_ns": 5.941,
+      "speedup_vs_old": 9.17
+    },
+    {
+      "op": "vrsqrtss",
+      "native_ns": 3.712,
+      "old_ns": 54.941,
+      "new_ns": 5.565,
+      "speedup_vs_old": 9.87
+    },
+    {
+      "op": "vrsqrtss_mem",
+      "native_ns": 4.853,
+      "old_ns": 50.997,
+      "new_ns": 5.519,
+      "speedup_vs_old": 9.24
+    }
+  ],
+  "varied": [
+    {
+      "op": "vrcpss",
+      "native_ns": 4.24,
+      "old_ns": 82.334,
+      "new_ns": 7.424,
+      "speedup_vs_old": 11.09
+    },
+    {
+      "op": "vrcpss_mem",
+      "native_ns": 4.069,
+      "old_ns": 68.999,
+      "new_ns": 6.498,
+      "speedup_vs_old": 10.62
+    },
+    {
+      "op": "vrsqrtss",
+      "native_ns": 5.445,
+      "old_ns": 62.999,
+      "new_ns": 5.558,
+      "speedup_vs_old": 11.33
+    },
+    {
+      "op": "vrsqrtss_mem",
+      "native_ns": 4.344,
+      "old_ns": 52.735,
+      "new_ns": 5.432,
+      "speedup_vs_old": 9.71
+    }
+  ]
+}

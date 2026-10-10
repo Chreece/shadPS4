@@ -1,0 +1,12 @@
+{
+  "ps4": {
+    "rows": 121856,
+    "result_mismatches": 0,
+    "state_mismatches": 0
+  },
+  "ps4_pro": {
+    "rows": 121856,
+    "result_mismatches": 0,
+    "state_mismatches": 0
+  }
+}

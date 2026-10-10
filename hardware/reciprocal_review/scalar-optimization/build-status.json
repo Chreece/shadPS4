@@ -1,0 +1,40 @@
+{
+  "source_commit": "0e5a0e1273df701d8069f17c347ec5372d94068d",
+  "source_sha256": "8a5cbb3726189ccd28e1295f35bedd5825cbd32bd0883a00268befe0e7ac7e40",
+  "compiler": "GCC 13.3.0",
+  "configuration": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "ENABLE_TESTS": "OFF",
+    "ENABLE_DISCORD_RPC": "OFF",
+    "ENABLE_UPDATER": "OFF",
+    "SDL_UNIX_CONSOLE_BUILD": "ON",
+    "LIBUSB_ENABLE_UDEV": "OFF"
+  },
+  "changed_translation_unit": {
+    "result": "pass",
+    "exit_code": 0,
+    "command": "cmake --build <build-dir> --target CMakeFiles/shadps4.dir/src/core/cpu_patches.cpp.o -j 2",
+    "additional_check": "Also passed the actual CMake-generated Release compiler command with only object/dependency output paths redirected."
+  },
+  "full_project": {
+    "result": "blocked",
+    "file": "src/imgui/notifications_layer.cpp",
+    "line": 14,
+    "error": "std::optional is used without including <optional> under GCC 13.3.0.",
+    "preexisting": true,
+    "unchanged_from": "36353d88a604a2d9d47586cd31b1ef63ef0911ab",
+    "earlier_dependency_workaround": "Configured LIBUSB_ENABLE_UDEV=OFF to use the supported Linux netlink backend because libudev.h is absent.",
+    "exit_code": 1
+  },
+  "format": {
+    "tool": "clang-format 19.1.7",
+    "whole_modified_file": "pass",
+    "git_diff_check": "pass"
+  },
+  "packed_generator_unchanged": true,
+  "ci": {
+    "repository": "Chreece/shadPS4",
+    "observed_runs_for_source_commit": 0,
+    "skip_marker_present": false
+  }
+}

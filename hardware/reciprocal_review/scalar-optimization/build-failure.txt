@@ -1,0 +1,27 @@
+/workspace/scratch/c75261a9da1c/shadPS4-scalar-opt/src/imgui/notifications_layer.cpp:14:6: error: ‘optional’ in namespace ‘std’ does not name a template type
+   14 | std::optional<NotificationsUI> current_notif;
+      |      ^~~~~~~~
+/workspace/scratch/c75261a9da1c/shadPS4-scalar-opt/src/imgui/notifications_layer.cpp:10:1: note: ‘std::optional’ is defined in header ‘<optional>’; did you forget to ‘#include <optional>’?
+    9 | #include "notifications_layer.h"
+  +++ |+#include <optional>
+   10 |
+/workspace/scratch/c75261a9da1c/shadPS4-scalar-opt/src/imgui/notifications_layer.cpp: In member function ‘virtual void shadNotifications::NotificationsUI::Draw()’:
+/workspace/scratch/c75261a9da1c/shadPS4-scalar-opt/src/imgui/notifications_layer.cpp:122:13: error: ‘current_notif’ was not declared in this scope; did you mean ‘current_pos’?
+  122 |             current_notif.emplace(next);
+      |             ^~~~~~~~~~~~~
+      |             current_pos
+/workspace/scratch/c75261a9da1c/shadPS4-scalar-opt/src/imgui/notifications_layer.cpp:124:13: error: ‘current_notif’ was not declared in this scope; did you mean ‘current_pos’?
+  124 |             current_notif.reset();
+      |             ^~~~~~~~~~~~~
+      |             current_pos
+/workspace/scratch/c75261a9da1c/shadPS4-scalar-opt/src/imgui/notifications_layer.cpp: In function ‘void shadNotifications::QueueNotification(std::string, float, position, std::vector<unsigned char>, bool)’:
+/workspace/scratch/c75261a9da1c/shadPS4-scalar-opt/src/imgui/notifications_layer.cpp:155:10: error: ‘current_notif’ was not declared in this scope
+  155 |     if (!current_notif.has_value()) {
+      |          ^~~~~~~~~~~~~
+[394/807] Building CXX object CMakeFiles/shadps4.dir/src/imgui/imgui_translations.cpp.o
+[395/807] Building CXX object CMakeFiles/shadps4.dir/src/imgui/invitation_prompt_layer.cpp.o
+[396/807] Building CXX object CMakeFiles/shadps4.dir/src/imgui/renderer/imgui_impl_vulkan.cpp.o
+[397/807] Building CXX object CMakeFiles/shadps4.dir/src/imgui/renderer/imgui_impl_sdl3.cpp.o
+[398/807] Building CXX object CMakeFiles/shadps4.dir/src/imgui/renderer/imgui_core.cpp.o
+[399/807] Building CXX object CMakeFiles/shadps4.dir/src/imgui/renderer/font_data.cpp.o
+ninja: build stopped: subcommand failed.
