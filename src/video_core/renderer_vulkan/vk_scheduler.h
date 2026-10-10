@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -355,6 +356,25 @@ public:
     explicit Scheduler(const Instance& instance);
     ~Scheduler();
 
+    // Read-only diagnostic snapshot, intentionally opt-in at the call site.
+    // RecordingTick can still contain unsubmitted Vulkan commands. SubmittedTick
+    // records the last successful queue submission; CompletedTick comes from
+    // the live Vulkan timeline semaphore, not a guest-visible fence/IRQ.
+    struct GpuTimelineDiagnostic {
+        u64 recording_tick;
+        u64 submitted_tick;
+        u64 completed_tick;
+    };
+
+    [[nodiscard]] GpuTimelineDiagnostic SampleGpuTimelineNonblocking() {
+        const u64 submitted = last_submitted_tick.load(std::memory_order_acquire);
+        if (submitted) {
+            // IsFree refreshes the Vulkan semaphore counter; it never waits.
+            (void)IsFree(submitted);
+        }
+        return {CurrentTick(), submitted, work_semaphore.KnownGpuTick()};
+    }
+
     /// Sends the current execution context to the GPU
     /// and increments the scheduler timeline semaphore.
     void Flush(SubmitInfo& info);
@@ -457,6 +477,7 @@ private:
 private:
     const Instance& instance;
     Semaphore work_semaphore;
+    std::atomic<u64> last_submitted_tick{0};
     CommandPool command_pool;
     DynamicState dynamic_state;
     SessionFunc on_session{};
