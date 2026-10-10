@@ -78,7 +78,7 @@ if args.auto_only or args.block_only:
     check = 'RunBlockTraceChecks' if args.block_only else 'RunAutomaticTraceChecks'
     replace_once('  const uint64_t masks[]{',
                  f'  if (!{check}(generated)'
-                 + (' || !RunBranchTraceChecks(generated)' if args.block_only else '')
+                 + (' || !RunBranchTraceChecks(generated) || !RunRelativeTraceChecks(generated)' if args.block_only else '')
                  + ') _Exit(80);\n'
                  '  sceSystemServiceLoadExec("EXIT", nullptr);\n'
                  '  return 0;\n  const uint64_t masks[]{')
@@ -99,7 +99,7 @@ if args.unmarked:
     assembly += (here / "trace_auto.S").read_text()
     assembly += (here / "trace_block.S").read_text()
     assembly += (here / "trace_branch.S").read_text()
-    for name in ("trace_branch.inc", "branch_cases.inc"):
+    for name in ("trace_branch.inc", "branch_cases.inc", "trace_relative.inc", "relative_cases.inc"):
         shutil.copy2(here / name, output / name)
     shutil.copy2(here / "trace_auto.inc", output / "trace_auto.inc")
     shutil.copy2(here / "trace_block.inc", output / "trace_block.inc")

@@ -1,0 +1,132 @@
+{
+  "status": "passed",
+  "scope": "Experimental Linux x86-64 relative addressing in bounded xstate native blocks; emulator-only homebrew",
+  "code_commit_local": "ed95deb5cb1ad3e781dedb992a66b74f98f211a8",
+  "code_tree": "7c92f168e95cab7ffc692d713870316f9101efa3",
+  "code_commit_github": "e3f449badb6d9ed0c5596fa10d444f7aa1af127f",
+  "test_source_commit_local": "7de54542826701d6a88ceeeeb80ba04476604b23",
+  "reference_sha256": "6d4353fdb5d1abe20c53d72e6e5680992fc692429ddfe31a7ca3b02e81d907de",
+  "binary_provenance": "Captured before the code commit from the same source tree; embedded Git version reflects its parent.",
+  "native_checks": {
+    "return_code": 0,
+    "production_sha256": "1783f4072f9c0dfbc2e6113054e195ed3d5b7990015b5ba3bc74d4c2ad435719",
+    "extracted_helper_sha256": "aa165b9650342edf644417ea21a579a54c4b41810b5e06233d0f5cc9325ce0bf",
+    "stdout": "RELATIVE_ALLOCATION success=1 failure=1 errno_preserved=1\nRELATIVE_NATIVE lea=1152 errors=0\nRELATIVE_COPY near=1008 rejected=144 errors=0 far=576 rejected=576 errors=0\nRELATIVE_MEMORY copies=12 rejected=4 faults=1 errors=0\n"
+  },
+  "changes": [
+    "Patch RIP/EIP-relative displacements without changing instruction lengths or operands.",
+    "Keep bounded per-thread nearby copy pages when ordinary mmap hints succeed; never replace an existing mapping.",
+    "Resolve relative LEA directly with 16-, 32- and 64-bit destination semantics and unchanged flags.",
+    "Retain native stepping when relocation is out of range or a copy page is unavailable.",
+    "Preserve errno across successful and failed copy-page allocations."
+  ],
+  "checks": [
+    "1,152 LEA cases cover all 16 general-purpose registers, three operand widths, RIP/EIP addressing, both displacement limits, and ignored FS/GS prefixes.",
+    "The extracted production displacement helper executes 1,008 near and 576 far-address LEA copies; rejects the other 720 out-of-range cases.",
+    "Native scalar/vector loads and scalar stores retain original data addresses; relocated page-fault retry succeeds.",
+    "Allocation succeeds normally and fails under a temporary RLIMIT_AS cap while preserving errno."
+  ],
+  "limits": [
+    "Experimental and off by default; game performance and compatibility have not been established.",
+    "The reserved guest address space often prevents nearby buffers. Out-of-range guest memory operands retain native stepping; relative LEA can still be resolved directly.",
+    "Calls, returns, indirect or cross-page branches and unsupported instructions retain native stepping.",
+    "No persistent translated block cache; unsynchronized concurrent code or permission changes are unsupported.",
+    "Guest cancellation, unusual signal-mask changes, guest debugging and every possible native-to-guest callback remain unvalidated.",
+    "Jaguar in-use tracking, unsupported host state, generated CPU-ID handling and cross-platform runtime work remain outside this change."
+  ],
+  "upstream_prs_modified": false,
+  "github_ci_triggered": false,
+  "runs": {
+    "previous_path": {
+      "emulator_sha256": "6d38d77565f588c5749486129beeaee46689f962e2cc9b6083a1e896f69ca825",
+      "no_relative_blocks": true,
+      "unmarked": true,
+      "auto_only": false,
+      "block_only": false,
+      "single_step": false,
+      "guest_blocks_only": false,
+      "return_code": 0,
+      "elapsed_seconds": 67.334,
+      "physical_register_exception_comparison": {
+        "common_rows": 224,
+        "differences": []
+      },
+      "extra": "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0",
+      "automatic_extra": "AUTO_EXTRA flags=64 threads=2 queries=256 redirects=1 explicit_exit=1 errors=0",
+      "block_extra": "BLOCK_EXTRA copies=3 faults=6 nested=6 rewrites=32 async=8 code_checks=3 errors=0",
+      "branch_extra": [
+        "BRANCH_CASES cases=2146 digest=e1d32a499fb84ed5",
+        "BRANCH_EXTRA interruptible_cycle=1 errors=0"
+      ],
+      "native_branch": "BRANCH_CASES cases=2146 digest=e1d32a499fb84ed5",
+      "relative_extra": "RELATIVE_EXTRA lea=1152 errors=0"
+    },
+    "relative_addressing": {
+      "emulator_sha256": "6d38d77565f588c5749486129beeaee46689f962e2cc9b6083a1e896f69ca825",
+      "no_relative_blocks": false,
+      "unmarked": true,
+      "auto_only": false,
+      "block_only": false,
+      "single_step": false,
+      "guest_blocks_only": false,
+      "return_code": 0,
+      "elapsed_seconds": 65.73,
+      "physical_register_exception_comparison": {
+        "common_rows": 224,
+        "differences": []
+      },
+      "extra": "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0",
+      "automatic_extra": "AUTO_EXTRA flags=64 threads=2 queries=256 redirects=1 explicit_exit=1 errors=0",
+      "block_extra": "BLOCK_EXTRA copies=3 faults=6 nested=6 rewrites=32 async=8 code_checks=3 errors=0",
+      "branch_extra": [
+        "BRANCH_CASES cases=2146 digest=e1d32a499fb84ed5",
+        "BRANCH_EXTRA interruptible_cycle=1 errors=0"
+      ],
+      "native_branch": "BRANCH_CASES cases=2146 digest=e1d32a499fb84ed5",
+      "relative_extra": "RELATIVE_EXTRA lea=1152 errors=0"
+    },
+    "marked": {
+      "emulator_sha256": "6d38d77565f588c5749486129beeaee46689f962e2cc9b6083a1e896f69ca825",
+      "no_relative_blocks": false,
+      "unmarked": false,
+      "auto_only": false,
+      "block_only": false,
+      "single_step": false,
+      "guest_blocks_only": false,
+      "return_code": 0,
+      "elapsed_seconds": 0.621,
+      "physical_register_exception_comparison": {
+        "common_rows": 224,
+        "differences": []
+      },
+      "extra": "TRACE_EXTRA rewrites=128 nested_callbacks=35 metadata=35 retry=1 errors=0"
+    }
+  },
+  "benchmark": {
+    "same_binary_and_probe_sources": true,
+    "runs_per_mode": 1,
+    "elapsed_reduction_percent": 2.38,
+    "scope": "Sequential homebrew elapsed time; neither timed run overlapped compilation. Not a game benchmark.",
+    "interpretation": "The measured difference is small and a single pair does not establish a reliable speedup.",
+    "probe_source_sha256": {
+      "main.cpp": "12e11cd308ffa0546a1e979f5cffd704b674a41474c0be705631e20ef3380a1b",
+      "cases.S": "4304eeb9980fe496b616d40bb3eb78754081b5a66af8b0e95d27ce02201d0a90",
+      "trace_extra.inc": "4744bb86575175aee86ac54478faaa4b6a05d396625c0454b5d46034b8317ab1",
+      "trace_auto.inc": "792a3e3a52f06da354fc61398296e01a5e98d1062093d5be58935710e64ff56c",
+      "trace_block.inc": "ccb45e52ea5287b5accc77818c7bd701073608ce857b8e61d3e758e9e08b87b7",
+      "trace_branch.inc": "3b1fe596e5b8a76f18e20b3381ebb46892d369a1e0ddaa49199c33a0a8b00a6c",
+      "branch_cases.inc": "ca0596189cda8539ab2b06cac7fa0381dc0834f072a7cb0edbd629a7d8ed559c",
+      "trace_relative.inc": "97174022cf54917084ca5acc53f7b0d1fb54f75aa2ba3051532143d89a38e8ce",
+      "relative_cases.inc": "1a52bde38b28a10aca9709289303e08056f10e3c82b52b3636cec970f9860dd5"
+    }
+  },
+  "build_gates": {
+    "compiler": "Clang 19",
+    "configuration": "Linux Release",
+    "trace_on": "passed",
+    "trace_off": "passed",
+    "clang_format": "passed",
+    "reuse_code": "1075/1075",
+    "reuse_tests_before_artifact": "1240/1240"
+  }
+}

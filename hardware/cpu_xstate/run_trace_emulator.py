@@ -28,6 +28,7 @@ parser.add_argument("--auto-only", action="store_true")
 parser.add_argument("--block-only", action="store_true")
 parser.add_argument("--single-step", action="store_true", help="Disable native blocks for comparison")
 parser.add_argument("--guest-blocks-only", action="store_true", help="Use the previous guest-only block path")
+parser.add_argument("--no-relative-blocks", action="store_true", help="Disable relative-address optimizations")
 parser.add_argument("--timeout", type=int, default=180)
 parser.add_argument("--emulator", type=Path, required=True)
 parser.add_argument("--sdk", type=Path, required=True)
@@ -97,6 +98,8 @@ try:
     env["SHADPS4_XSTATE_TRACE_BLOCKS"] = "0" if args.single_step else "1"
     env["SHADPS4_XSTATE_TRACE_HOST_BLOCKS"] = "0" if args.guest_blocks_only else "1"
     env["SHADPS4_XSTATE_TRACE_BRANCHES"] = "0" if args.guest_blocks_only else "1"
+    env["SHADPS4_XSTATE_TRACE_RELATIVE"] = "0" if args.no_relative_blocks or args.guest_blocks_only else "1"
+    summary["no_relative_blocks"] = args.no_relative_blocks or args.guest_blocks_only
     summary["unmarked"] = args.unmarked
     summary["auto_only"] = args.auto_only
     summary["block_only"] = args.block_only
@@ -136,7 +139,7 @@ try:
     summary["return_code"] = process.returncode
     summary["elapsed_seconds"] = round(time.monotonic() - start, 3)
     for name in ("cpu-xstate-hardware.txt", "xstate-trace-extra.txt", "xstate-auto-extra.txt",
-                 "xstate-auto-progress.txt", "xstate-block-extra.txt", "xstate-branch-extra.txt"):
+                 "xstate-auto-progress.txt", "xstate-block-extra.txt", "xstate-branch-extra.txt", "xstate-relative-extra.txt"):
         if (user / "data" / name).exists():
             shutil.copy2(user / "data" / name, output / name)
     if process.returncode != 0:
@@ -167,6 +170,10 @@ try:
         summary["native_branch"] = native_branch
         if branch_extra != [native_branch, "BRANCH_EXTRA interruptible_cycle=1 errors=0"]:
             raise RuntimeError("Branch results differ from the native CPU or signal check failed")
+        relative_extra = (output / "xstate-relative-extra.txt").read_text().strip()
+        summary["relative_extra"] = relative_extra
+        if relative_extra != "RELATIVE_EXTRA lea=1152 errors=0":
+            raise RuntimeError("Relative-address checks failed: " + relative_extra)
     status = 0
     print("PASS=Native block faults, rewrites and asynchronous callbacks" if args.block_only else
           "PASS=Automatic flags, threads and redirected signal return" if args.auto_only else
@@ -192,7 +199,7 @@ finally:
             emulator_log = relative.parts[:3] == ("runtime", "user", "log")
             probe_source = relative.parts[0] == "homebrew" and path.name in (
                 "main.cpp", "cases.S", "trace_extra.inc", "trace_auto.inc", "trace_block.inc",
-                "trace_branch.inc", "branch_cases.inc")
+                "trace_branch.inc", "branch_cases.inc", "trace_relative.inc", "relative_cases.inc")
             if path.is_file() and (root_result or emulator_log or probe_source):
                 packed.add(path, arcname=str(path.relative_to(output)))
     print("UPLOAD_ONLY=" + str(archive), flush=True)

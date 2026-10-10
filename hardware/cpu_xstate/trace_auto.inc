@@ -12,6 +12,7 @@ extern "C" void scePthreadExit(void *);
 static void Fault(int, void *);
 #include "trace_block.inc"
 #include "trace_branch.inc"
+#include "trace_relative.inc"
 
 static bool UntouchedTail(const unsigned char *data) {
   const auto expected = _mm_set1_epi8(static_cast<char>(0xa5));
@@ -107,5 +108,5 @@ static bool RunAutomaticTraceChecks(unsigned char *generated) {
   fclose(extra);
   fclose(progress);
   return ok && checked == 256 && flags_checked == 64 && RunBlockTraceChecks(generated) &&
-         RunBranchTraceChecks(generated);
+         RunBranchTraceChecks(generated) && RunRelativeTraceChecks(generated);
 }

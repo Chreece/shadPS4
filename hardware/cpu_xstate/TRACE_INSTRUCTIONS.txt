@@ -51,9 +51,17 @@ lines run in a per-thread native buffer, with a maximum of 32 instructions or
 256 bytes and one breakpoint at the end. A memory write always ends the block
 so it can change the following instruction safely. Guest code is not modified.
 Only a source page just executed natively can start a block; blocks cannot cross
-its 4-KiB boundary. Branches, RIP-relative instructions, x87 state instructions
-and other unsupported forms keep using the original path. There is no persistent
-translated-code cache. Faults and asynchronous signals restore the original PC
+its 4-KiB boundary. Eligible host instructions also use these native blocks.
+Direct branches within that page and relative LEA instructions can be resolved
+from the saved registers. Each dispatch handles at most 64 such steps.
+RIP/EIP-relative memory operands keep their original target by adjusting the
+32-bit displacement. A bounded set of per-thread nearby buffers is allocated
+using ordinary mmap hints, without replacing mappings. If the displacement
+cannot be represented, the instruction keeps using the original path. Guest
+address-space reservations often prevent a nearby buffer; LEA can still be
+resolved directly. Calls, returns, indirect/cross-page branches, x87 state
+instructions and other unsupported forms retain native stepping. There is no
+persistent translated-code cache. Faults and asynchronous signals restore the original PC
 before guest callbacks run, including partial REP progress. Module helper trampoline ranges
 are excluded from guest xstate interpretation, so they can save full host state.
 Guest PUSHF/PUSHFQ hide the internal trace flag. POPF/POPFQ restore guest flags
@@ -75,6 +83,10 @@ Additional automatic-mode checks:
   YMM registers and the red zone, and execute a nested XGETBV.
 - Non-executable code faults before running; RIP-relative loads and instructions
   crossing a code-page boundary retain their original behavior.
+- 2,146 branch cases compared with the native CPU, plus an interruptible tight
+  branch cycle whose callback redirects execution out of the loop.
+- 1,152 relative LEA cases covering all 16 general-purpose registers, 16/32/64-bit
+  operands, RIP/EIP addressing, displacement limits and ignored FS/GS prefixes.
 
 The unmarked variant optimizes only output formatting and the unchanged-tail
 check: SIMD equality checks all bytes from 832 to 81919; the original extent
@@ -82,8 +94,8 @@ scan still runs if any byte differs. No CPU test cases or masks are removed.
 
 Limits:
 - This remains a slow diagnostic path, unsuitable for normal gameplay. Native
-  blocks reduce traps for ordinary guest instructions; host calls and unsupported
-  guest instructions still single-step. No game-performance claim is made.
+  blocks reduce traps for eligible guest and host instructions; calls, returns
+  and unsupported instructions still single-step. No game-performance claim is made.
 - Guest code that requests its own single-stepping, uses IRET or changes SS is
   rejected rather than silently escaping interception. Debuggers, transactional
   execution and unusual flag/context manipulation are not validated.
@@ -105,9 +117,27 @@ Limits:
 
 For a shorter flags/thread/redirect diagnostic, use --unmarked --auto-only.
 That mode does not run or claim the 224-case hardware comparison.
-Use --unmarked --block-only to run just the added block tests.
+Use --unmarked --block-only to run the block, branch and relative-address checks.
 Use --single-step to run the same binary without native blocks for comparison.
 The runner sets SHADPS4_XSTATE_TRACE_BLOCKS=0 for that child only. The default
 is 1; neither setting enables tracing in a normal build or outside a trace scope.
+
+Use --no-relative-blocks to compare against the previous branch/host-block path.
+Use --guest-blocks-only to disable host blocks, branch resolution and relative
+address optimizations together. Both switches affect only the child emulator.
+
+To exercise the actual production relocation helper directly on native Linux:
+
+python3 hardware/cpu_xstate/run_relative_native.py \
+  --source /path/to/candidate/source \
+  --build /path/to/candidate/build \
+  --output /tmp/shadps4-relative-native
+
+This compiles the verbatim relocation/allocation helpers from the specified
+source and records their hashes. It checks near/far instruction copies, refused
+out-of-range displacements, original data addresses, vector loads, page-fault
+retry, and allocation failure with errno preserved. It requires a C++23 compiler
+and the candidate's already-built Zydis libraries. Use --cxx and --extra-flag if
+your compiler needs an explicit toolchain path.
 
 The normal console FPKG is unchanged and still uses the original unmarked probe.
