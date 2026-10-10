@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 #include <cstdlib>
 #include <cstring>
 #include <boost/container/flat_map.hpp>
@@ -746,6 +748,164 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
     }
 
     PopPtr(c);
+}
+
+// Topologically order *root* walkers by the ReadConst/ReadConstBuffer
+// instructions consumed by their guest index expressions. A read produced
+// under another root must be assigned a flat-buffer slot before we JIT the
+// dependent root. Never execute IR, evaluate guest addresses, reorder
+// independent roots, or invent an offset to break an actual dependency cycle.
+struct SrtRootDependencyPlan {
+    std::vector<u32> order;
+    std::vector<std::pair<u32, u32>> edges; // (dependent, prerequisite) root indices
+    bool reordered{};
+    bool cyclic{};
+    bool ambiguous{};
+    bool capped{};
+};
+
+static SrtRootDependencyPlan MakeSrtRootDependencyPlan(PassInfo& pass_info) {
+    SrtRootDependencyPlan plan;
+    using Root = std::pair<IR::ScalarReg, IR::Inst*>;
+    std::vector<Root> roots;
+    for (const auto& [sgpr, root] : pass_info.srt_roots) {
+        roots.emplace_back(sgpr, root);
+    }
+    for (u32 i = 0; i < roots.size(); ++i) {
+        plan.order.push_back(i);
+    }
+    constexpr size_t MAX_ROOTS = 32;
+    constexpr size_t MAX_WALK_NODES = 4096;
+    constexpr size_t MAX_INDEX_NODES = 4096;
+    if (roots.size() > MAX_ROOTS) {
+        plan.capped = true;
+        return plan;
+    }
+
+    std::unordered_map<IR::Inst*, u32> produced_by_root;
+    std::vector<std::vector<IR::Value>> index_expressions(roots.size());
+    size_t walked_nodes = 0;
+    for (u32 root_id = 0; root_id < roots.size(); ++root_id) {
+        std::vector<IR::Inst*> todo{roots[root_id].second};
+        std::unordered_set<IR::Inst*> visited;
+        for (size_t pos = 0; pos < todo.size(); ++pos) {
+            if (++walked_nodes > MAX_WALK_NODES) {
+                plan.capped = true;
+                return plan;
+            }
+            auto* parent = todo[pos];
+            if (!visited.insert(parent).second) {
+                continue;
+            }
+            auto* children = pass_info.GetUsesAsPointer(parent);
+            if (!children) {
+                continue;
+            }
+            for (const auto& [src_offset, child] : *children) {
+                index_expressions[root_id].push_back(src_offset);
+                // The walker consults the canonical GVN representative when
+                // evaluating nested ReadConst offsets.
+                IR::Inst* canonical = pass_info.DeduplicateInstruction(child);
+                for (IR::Inst* source : {child, canonical}) {
+                    const auto [it, inserted] =
+                        produced_by_root.try_emplace(source, root_id);
+                    if (!inserted && it->second != root_id) {
+                        plan.ambiguous = true;
+                    }
+                }
+                if (pass_info.GetUsesAsPointer(child)) {
+                    todo.push_back(child);
+                }
+            }
+        }
+    }
+    if (plan.ambiguous) {
+        return plan; // Preserve original order when ownership is shared.
+    }
+
+    std::vector<std::vector<bool>> deps(
+        roots.size(), std::vector<bool>(roots.size(), false));
+    size_t index_nodes = 0;
+    for (u32 consumer = 0; consumer < roots.size(); ++consumer) {
+        std::vector<IR::Value> pending = index_expressions[consumer];
+        std::unordered_set<IR::Inst*> visited;
+        while (!pending.empty()) {
+            if (++index_nodes > MAX_INDEX_NODES) {
+                plan.capped = true;
+                return plan;
+            }
+            const IR::Value value = pending.back();
+            pending.pop_back();
+            if (value.IsImmediate()) {
+                continue;
+            }
+            IR::Inst* inst = value.TryInst();
+            if (!inst || !visited.insert(inst).second) {
+                continue;
+            }
+            const auto op = inst->GetOpcode();
+            if (op == IR::Opcode::ReadConst || op == IR::Opcode::ReadConstBuffer) {
+                // ComputeOffset reads a flattened value for these instructions,
+                // so this is a producer dependency, not an instruction to
+                // evaluate recursively at code-generation time.
+                auto it = produced_by_root.find(inst);
+                if (it == produced_by_root.end()) {
+                    it = produced_by_root.find(pass_info.DeduplicateInstruction(inst));
+                }
+                if (it != produced_by_root.end() && it->second != consumer) {
+                    deps[consumer][it->second] = true;
+                }
+                continue;
+            }
+            if (op == IR::Opcode::GetUserData || !IsAllowedOffsetInstruction(inst)) {
+                continue; // Dynamic/unsupported instructions remain untouched.
+            }
+            for (u32 arg = 0; arg < inst->NumArgs(); ++arg) {
+                IR::Value child = inst->Arg(arg);
+                if (!child.IsImmediate()) {
+                    pending.push_back(child);
+                }
+            }
+        }
+    }
+
+    for (u32 consumer = 0; consumer < roots.size(); ++consumer) {
+        for (u32 prerequisite = 0; prerequisite < roots.size(); ++prerequisite) {
+            if (deps[consumer][prerequisite]) {
+                plan.edges.emplace_back(consumer, prerequisite);
+            }
+        }
+    }
+    std::vector<u32> sorted;
+    std::vector<bool> completed(roots.size(), false);
+    while (sorted.size() < roots.size()) {
+        bool advanced = false;
+        for (u32 candidate = 0; candidate < roots.size(); ++candidate) {
+            if (completed[candidate]) {
+                continue;
+            }
+            bool ready = true;
+            for (u32 dependency = 0; dependency < roots.size(); ++dependency) {
+                if (deps[candidate][dependency] && !completed[dependency]) {
+                    ready = false;
+                    break;
+                }
+            }
+            if (ready) {
+                completed[candidate] = true;
+                sorted.push_back(candidate);
+                advanced = true;
+                break; // Stable original order among independent roots.
+            }
+        }
+        if (!advanced) {
+            plan.cyclic = true;
+            return plan; // Never guess an order for a dependency cycle.
+        }
+    }
+    plan.reordered = sorted != plan.order;
+    plan.order = std::move(sorted);
+    return plan;
 }
 
 static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
