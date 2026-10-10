@@ -413,6 +413,85 @@ static void AuditGoWResourceIntegrity(const Shader::Info& cs) {
                 cs.pgm_hash, invalid_guest_buffers, invalid_images, invalid_samplers);
 }
 
+// Targeted, read-only census of the two 32-entry texture descriptor tables
+// proven by GoW's pre-resource-discovery IR.  The active descriptor is selected
+// inside the shader by FindILsb32(Phi), so a single static SharpFetch is invalid.
+// Do not use this information to create a replacement descriptor or dispatch.
+static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* memory) {
+    const char* enabled = std::getenv("SHADPS4_GOW_IMAGE_TABLE_AUDIT");
+    const char* suppressed = std::getenv("SHADPS4_GOW_SUPPRESS_GPU_COMPUTE");
+    if (!enabled || std::strcmp(enabled, "1") != 0 || !suppressed ||
+        std::strcmp(suppressed, "1") != 0 || cs.pgm_hash != 0x57b077acULL ||
+        cs.hw_stage != Shader::HwStage::Compute) {
+        return;
+    }
+    if (cs.user_data.size() <= 9) {
+        LOG_WARNING(Render_Vulkan, "GOW_IMAGE_TABLE_AUDIT result=MISSING_SGPR8_9 dispatch=SKIPPED");
+        return;
+    }
+    // The guest SRT base is supplied through SGPR8:SGPR9 and has 48-bit addressing.
+    const u64 srt_base = (u64(cs.user_data[8]) | (u64(cs.user_data[9]) << 32)) &
+                         0x0000FFFFFFFFFFFFULL;
+    struct TableLayout {
+        const char* label;
+        u32 stride_bytes;
+        u32 image_offset_bytes;
+    };
+    constexpr TableLayout layouts[] = {{"A", 776, 544}, {"B", 264, 3536}};
+    for (const auto& layout : layouts) {
+        u32 readable = 0;
+        u32 valid = 0;
+        u32 first_type = 0;
+        bool first_type_set = false;
+        bool same_type = true;
+        u32 readable_mask = 0;
+        u32 valid_mask = 0;
+        for (u32 index = 0; index < 32; ++index) {
+            const u64 relative = u64(index) * layout.stride_bytes +
+                                 layout.image_offset_bytes;
+            if (srt_base == 0 || srt_base > 0x0000FFFFFFFFFFFFULL - relative -
+                                                    sizeof(AmdGpu::Image)) {
+                continue;
+            }
+            const VAddr address = srt_base + relative;
+            // Check mapping/permissions before touching PS4 memory. The sparse
+            // backing copier fills holes with zero and never dereferences the
+            // guest address as a raw host pointer.
+            if (!memory->IsAccessibleRange(address, sizeof(AmdGpu::Image),
+                                           Core::MemoryProt::CpuRead) &&
+                !memory->IsAccessibleRange(address, sizeof(AmdGpu::Image),
+                                           Core::MemoryProt::GpuRead)) {
+                continue;
+            }
+            ++readable;
+            readable_mask |= (1u << index);
+            AmdGpu::Image image{};
+            memory->CopySparseMemory(address, reinterpret_cast<u8*>(&image),
+                                     sizeof(image));
+            if (!image.Valid() || image.GetType() == AmdGpu::ImageType::Invalid) {
+                continue;
+            }
+            ++valid;
+            valid_mask |= (1u << index);
+            const u32 type = static_cast<u32>(image.GetType());
+            if (first_type_set && first_type != type) {
+                same_type = false;
+            }
+            if (!first_type_set) {
+                first_type = type;
+                first_type_set = true;
+            }
+        }
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_IMAGE_TABLE_AUDIT group={} stride={} image_offset={} slots=32 "
+                    "readable={} valid={} readable_mask={:#010x} valid_mask={:#010x} "
+                    "uniform_type={} image_type={} dispatch=SKIPPED",
+                    layout.label, layout.stride_bytes, layout.image_offset_bytes,
+                    readable, valid, readable_mask, valid_mask, same_type,
+                    first_type_set ? first_type : 0u);
+    }
+}
+
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
 
@@ -432,6 +511,7 @@ void Rasterizer::DispatchDirect() {
         if (!gow_binding_probed.exchange(true, std::memory_order_relaxed)) {
             LOG_WARNING(Render_Vulkan, "GOW_TARGET_BIND_PROBE_BEGIN shader={:#x}", cs.pgm_hash);
             AuditGoWResourceIntegrity(cs);
+            AuditGoWImageTables(cs, memory);
             const bool bound = BindResources(pipeline);
             bool bda_valid = false;
             bool fault_valid = false;
@@ -500,6 +580,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
         if (!gow_binding_probed.exchange(true, std::memory_order_relaxed)) {
             LOG_WARNING(Render_Vulkan, "GOW_TARGET_BIND_PROBE_BEGIN shader={:#x}", cs.pgm_hash);
             AuditGoWResourceIntegrity(cs);
+            AuditGoWImageTables(cs, memory);
             const bool bound = BindResources(pipeline);
             bool bda_valid = false;
             bool fault_valid = false;
