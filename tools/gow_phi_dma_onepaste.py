@@ -763,15 +763,11 @@ def trial_run(binary, temp, result):
         # Each canary additionally checks exact shader/hash/grid, resource
         # shapes, image/sampler validity, DMA, and host limits in C++.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
-        "SHADPS4_GOW_COMPUTE_CENSUS": "1",
         # Do not repeat the proven before/after GPU image delta captures.
         # Keep the 19:32 draw results; do not repeat the 128-line audit.
         # New probe reads only the six Vulkan indirect-command structs.
         "SHADPS4_GOW_INDIRECT_GPU_ARGS": "1",
-        "SHADPS4_GOW_D80_CONTROL_NO_DISPATCH": "0",
         # First direct screen comparison after the generalized SRT fix.
-        "SHADPS4_GOW_FRAME_SOURCE_DIR": str(frame_dir.resolve()),
-        "SHADPS4_GOW_GRAPHICS_AUDIT": "1",
         # Earlier 19:04 offscreen readbacks are already conclusive for the
         # zero G-buffer. Avoid repeating large GPU surface downloads.
         # Cross-check the final image SHARP (all eight words) in the same run.
