@@ -176,9 +176,9 @@ def find_build():
             pass
     raise RuntimeError("No existing CMake build configured for the verified source; nothing modified")
 
-PATCH_BUNDLE_COMMIT = "f4d6a92690a130d0ef28cf3a164146421303df9e"
-PATCH_BUNDLE_SHA256 = "115b170e9a823c43a28014d0e7da326194832384304c14e46d57bfbfbd699d90"
-PATCH_BUNDLE_FILE = "tools/gow_phi_verified_15_patch_bundle_20261010.json"
+PATCH_BUNDLE_COMMIT = "167af2ad5120f4b9ea693fcba838fe58e929d503"
+PATCH_BUNDLE_SHA256 = "98c872db3b9a075d8dd1a3c5cf8fbc0577123df106e0573c444990f4ff49f7de"
+PATCH_BUNDLE_FILE = "tools/gow_phi_verified_15_patch_bundle_20261010_v2.json"
 _PATCH_BUNDLE_CACHE = None
 
 def _load_verified_patch_bundle():
@@ -377,9 +377,9 @@ def get_patches():
     # demonstrated safe denial for the unexpected 3-buffer/2-image shape.
     shape_probe = fetch_strict_patch(
         "09fd9b96615ce9a9e6a82a5e2dbcc1660591f773",
-        "085d268e8905aba7716327d92f5bae46d415b44e", {GBUFFER_SOURCE})
+        "6c0e8db439f9d24063eb25f0545a1a0890cf9734", {GBUFFER_SOURCE})
     if hashlib.sha256(shape_probe).hexdigest() != (
-            "c9f05a0d1fcca00d4768b8c76739f70e58e13b9adc1b876a464612dec18f674f"):
+            "b38b640d04bd4c7118fdde7a551fad768519a582244adfe81ba3c14e8465a046"):
         raise RuntimeError("The passive descriptor-shape patch changed")
     if (b'SHADPS4_GOW_73_SHAPE_AUDIT' not in shape_probe or
             b'GOW_73_SHAPE_BUFFER shader=' not in shape_probe or
@@ -867,7 +867,7 @@ def apply_portable_73_one_shot(root, pinned_diff):
 # from GitHub. Stage fifteen is *only* source-line additions at one unique
 # shader-specific C++ condition, both on isolated copies and in the live tree.
 def apply_portable_73_shape_audit(root, pinned_diff):
-    expected_hash = "c9f05a0d1fcca00d4768b8c76739f70e58e13b9adc1b876a464612dec18f674f"
+    expected_hash = "b38b640d04bd4c7118fdde7a551fad768519a582244adfe81ba3c14e8465a046"
     if hashlib.sha256(pinned_diff).hexdigest() != expected_hash:
         raise RuntimeError("Passive shader shape patch digest mismatch")
     patch = pinned_diff.decode("utf-8", errors="strict")
@@ -892,6 +892,7 @@ def apply_portable_73_shape_audit(root, pinned_diff):
             snippet.count("SHADPS4_GOW_73_SHAPE_AUDIT") != 1 or
             "Shader::UNKNOWN_LOCATION" not in snippet or
             "producer_73_eligible =" in snippet or
+            "static_cast<u64>(sharp.base_address)" not in snippet or
             len(added) != 79):
         raise RuntimeError("Unexpected code inside additive shader-audit hunk")
     source = root / GBUFFER_SOURCE
