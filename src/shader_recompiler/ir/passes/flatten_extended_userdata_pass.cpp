@@ -928,37 +928,48 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
     pass_info.dst_off_dw = NUM_USER_DATA_REGS;
     ASSERT(pass_info.dst_off_dw == info.srt_info.flattened_bufsize_dw);
 
-    // A/B: derive the visitation order from actual ReadConst dependencies
-    // for the single shader already proved correct by SGPR8-first. Keep the
-    // original behavior (including the original optional control) for other
-    // shaders. No descriptor substitutions or dynamic-index evaluation.
+    // "1": proven-shader-only control. "2": opt-in experimental coverage
+    // for all shaders in the isolated trial executable. Both modes retain
+    // the stable dependency planner and the unchanged original fallback.
+    // Installed shadPS4 runs without this environment flag.
     const char* topo_flag = std::getenv("SHADPS4_GOW_SRT_AUTO_ROOTS");
+    const bool all_shader_trial =
+        topo_flag && std::strcmp(topo_flag, "2") == 0;
     const bool auto_topology_requested =
-        pass_info.gow_diag && topo_flag && std::strcmp(topo_flag, "1") == 0;
+        all_shader_trial ||
+        (pass_info.gow_diag && topo_flag && std::strcmp(topo_flag, "1") == 0);
     if (auto_topology_requested) {
         std::vector<std::pair<IR::ScalarReg, IR::Inst*>> roots;
         for (const auto& [sgpr, root] : pass_info.srt_roots) {
             roots.emplace_back(sgpr, root);
         }
         const auto plan = MakeSrtRootDependencyPlan(pass_info);
+        // Every shader with SRT roots yields one compact audit record.
+        // The target-specific edge and order records below remain unchanged.
         LOG_WARNING(Render_Recompiler,
                     "GOW_SRT_TOPO_PLAN shader={:#x} enabled={} roots={} "
-                    "dependency_edges={} reordered={} ambiguous={} cyclic={} capped={}",
+                    "dependency_edges={} reordered={} ambiguous={} cyclic={} capped={} "
+                    "hw_stage={} all_shader_trial={}",
                     info.pgm_hash, auto_topology_requested, roots.size(),
                     plan.edges.size(), plan.reordered, plan.ambiguous,
-                    plan.cyclic, plan.capped);
-        for (const auto& [dependent, prerequisite] : plan.edges) {
-            LOG_WARNING(Render_Recompiler,
-                        "GOW_SRT_TOPO_EDGE shader={:#x} dependent_sgpr={} "
-                        "prerequisite_sgpr={}",
-                        info.pgm_hash, static_cast<u32>(roots[dependent].first),
-                        static_cast<u32>(roots[prerequisite].first));
+                    plan.cyclic, plan.capped, static_cast<u32>(info.hw_stage),
+                    all_shader_trial);
+        if (plan.reordered || pass_info.gow_diag) {
+            for (const auto& [dependent, prerequisite] : plan.edges) {
+                LOG_WARNING(Render_Recompiler,
+                            "GOW_SRT_TOPO_EDGE shader={:#x} dependent_sgpr={} "
+                            "prerequisite_sgpr={}",
+                            info.pgm_hash, static_cast<u32>(roots[dependent].first),
+                            static_cast<u32>(roots[prerequisite].first));
+            }
         }
         for (u32 position = 0; position < plan.order.size(); ++position) {
             const auto [sgpr, root] = roots[plan.order[position]];
-            LOG_WARNING(Render_Recompiler,
-                        "GOW_SRT_TOPO_ORDER shader={:#x} position={} sgpr={}",
-                        info.pgm_hash, position, static_cast<u32>(sgpr));
+            if (plan.reordered || pass_info.gow_diag) {
+                LOG_WARNING(Render_Recompiler,
+                            "GOW_SRT_TOPO_ORDER shader={:#x} position={} sgpr={}",
+                            info.pgm_hash, position, static_cast<u32>(sgpr));
+            }
             if (pass_info.GoWLog()) {
                 LOG_WARNING(Render_Recompiler,
                             "GOW_SRT_FLATTEN_TRACE shader={:#x} event=ROOT_VISIT "
