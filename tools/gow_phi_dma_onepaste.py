@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "888aae349f766df7d32103059e89e7549dbc4109"
+HEAD_SHA = "2b28e513c80af5f5945a7cdf57ef5fb3a9d437c5"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -285,6 +285,7 @@ def trial_run(binary, temp, result):
     env.pop("XDG_CACHE_HOME", None)
     env.pop("SHADPS4_CPU_ID_RESTART", None)
     env.pop("SHADPS4_CPU_ID_MODE", None)
+    env.pop("SHADPS4_GOW_SAFE_COMPUTE_ONESHOT", None)
     env.update({
         "SHADPS4_ENABLE_IPC": "false",
         "SHADPS4_GOW_ONE_SHADER_DMA_COMPILE": "1",
@@ -292,8 +293,8 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_BIND_PROBE": "1",
         "SHADPS4_GOW_IMAGE_TABLE_AUDIT": "1",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
-        # Small, strictly gated GPU A/B: only one early resolved shader may run.
-        "SHADPS4_GOW_SAFE_COMPUTE_ONESHOT": "1",
+        # Passive metadata only: every guest GPU compute dispatch stays disabled.
+        "SHADPS4_GOW_COMPUTE_CENSUS": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
     env.setdefault("DISPLAY", ":0")
@@ -396,6 +397,41 @@ def trial_run(binary, temp, result):
                 data = f.read()[-16000000:]
             (evidence / ("new-" + p.name)).write_bytes(data)
             joined += data.decode("utf-8", "replace")
+    # Classify observed direct compute grids without allowing GPU execution.
+    census_pattern = re.compile(
+        r"GOW_COMPUTE_CENSUS_DIRECT shader=(0x[0-9a-fA-F]+) "
+        r"grid=(\d+)x(\d+)x(\d+) groups=(\d+) "
+        r"buffers=(\d+) images=(\d+) samplers=(\d+) "
+        r"invalid_buffers=(\d+) invalid_images=(\d+) invalid_samplers=(\d+) "
+        r"uses_dma=(true|false) gds=(true|false) shared=(true|false) "
+        r"small_grid=(true|false)")
+    census = {}
+    for entry in census_pattern.finditer(joined):
+        (shader, x, y, z, groups, buffers, images, samplers,
+         bad_buffers, bad_images, bad_samplers, dma, gds, shared,
+         small_grid) = entry.groups()
+        key = (shader, int(x), int(y), int(z))
+        if key in census:
+            continue  # console and game logs can report the same dispatch
+        census[key] = {
+            "shader": shader, "grid": [int(x), int(y), int(z)],
+            "workgroups": int(groups),
+            "buffers": int(buffers), "images": int(images),
+            "samplers": int(samplers), "invalid_buffers": int(bad_buffers),
+            "invalid_images": int(bad_images), "invalid_samplers": int(bad_samplers),
+            "uses_dma": dma == "true", "gds": gds == "true",
+            "shared": shared == "true", "small_grid": small_grid == "true",
+        }
+    result["compute_census"] = list(census.values())
+    result["compute_census_count"] = len(census)
+    result["small_grid_candidates"] = [
+        item for item in census.values()
+        if item["small_grid"] and not item["uses_dma"]
+        and not item["gds"] and not item["shared"]
+        and not (item["invalid_buffers"] or item["invalid_images"]
+                 or item["invalid_samplers"])
+    ]
+    result["compute_execution_enabled"] = False
     result["one_shot_candidate"] = (
         next((line[:1500] for line in joined.splitlines()
               if "GOW_COMPUTE_ONE_SHOT_CANDIDATE" in line), None))
@@ -567,6 +603,8 @@ def main():
                 report["result"] = "BUILD_PASS"
                 trial_run(trial, tmp, report)
                 report["result"] = report.get("end_reason", "TRIAL_COMPLETE")
+                if report.get("compute_census_count"):
+                    report["result"] = "COMPUTE_CENSUS_CAPTURED"
                 if report.get("resource_audit_logged") and not report.get("resource_audit_passed"):
                     report["result"] = (
                         "DYNAMIC_IMAGE_MASKS_CAPTURED"
@@ -593,6 +631,9 @@ def main():
     print("ARCHIVE=" + str(archive))
     print("TARGET_SPV_COUNT=" + str(len(report.get("spv", []))))
     print("BIND_PROBE_PASSED=" + str(report.get("bind_probe_passed", False)))
+    print("COMPUTE_CENSUS_COUNT=" + str(report.get("compute_census_count", 0)))
+    print("SMALL_GRID_CANDIDATES=" + str(report.get("small_grid_candidates", [])))
+    print("GPU_COMPUTE_EXECUTION_ENABLED=False")
     print("ONE_SHOT_ELIGIBILITY=" + str(report.get("one_shot_candidate")))
     print("ONE_SHOT_RESULT=" + str(report.get("one_shot_result")))
     print("GPU_DEVICE_LOST_LOGGED=" + str(report.get("gpu_device_lost_logged", False)))
