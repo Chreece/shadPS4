@@ -176,34 +176,80 @@ def find_build():
             pass
     raise RuntimeError("No existing CMake build configured for the verified source; nothing modified")
 
-def fetch_strict_patch(base_sha, head_sha, expected_changed):
-    url = f"https://api.github.com/repos/Chreece/shadPS4/compare/{base_sha}...{head_sha}"
+PATCH_BUNDLE_COMMIT = "b9841f87268c3d407c4c224f28f2291c98281099"
+PATCH_BUNDLE_SHA256 = "1b7e16c9f20d9b3f97c0592a4f8e99618c68a41673c4f1e8a603a150d97cfd09"
+PATCH_BUNDLE_FILE = "tools/gow_phi_verified_14_patch_bundle_20261010.json"
+_PATCH_BUNDLE_CACHE = None
+
+def _load_verified_patch_bundle():
+    global _PATCH_BUNDLE_CACHE
+    if _PATCH_BUNDLE_CACHE is not None:
+        return _PATCH_BUNDLE_CACHE
+    # This is a public immutable GitHub raw file, NOT the GitHub REST API.
+    # Only ONE download per run, irrespective of the number of stages.
+    url = ("https://raw.githubusercontent.com/Chreece/shadPS4/" +
+           PATCH_BUNDLE_COMMIT + "/" + PATCH_BUNDLE_FILE)
     req = urllib.request.Request(url, headers={
-        "User-Agent": "gow-graphics-census-diagnostics",
-        "Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req, timeout=25) as res:
-        payload = json.load(res)
-    commits = payload.get("commits", [])
-    if (payload.get("base_commit", {}).get("sha") != base_sha or
-            payload.get("merge_base_commit", {}).get("sha") != base_sha or
-            not commits or commits[-1].get("sha") != head_sha or
-            payload.get("total_commits") != len(commits)):
-        raise RuntimeError("Unexpected pinned comparison ancestry or incomplete GitHub diff")
-    files = payload.get("files", [])
-    changed = {f["filename"] for f in files}
-    if changed != expected_changed:
-        raise RuntimeError("Unexpected changed files in pinned compare: " + repr(changed))
-    parts = []
-    for f in files:
-        rel = f["filename"]
-        if rel == "tools/gow_phi_dma_onepaste.py":
-            continue
-        if (f.get("status") != "modified" or not f.get("patch") or
-                not rel.startswith("src/") or ".." in Path(rel).parts):
-            raise RuntimeError("Unsafe or unavailable pinned patch: " + rel)
-        parts.append(f"diff --git a/{rel} b/{rel}\n--- a/{rel}\n+++ b/{rel}\n"
-                     + f["patch"].rstrip("\n") + "\n")
-    return "".join(parts).encode()
+        "User-Agent": "gow-phi-pinned-bundle/1.0",
+        "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=45) as response:
+        payload = response.read(512_001)
+    if len(payload) > 512_000:
+        raise RuntimeError("Pinned patch bundle exceeds 512 KB limit")
+    digest = hashlib.sha256(payload).hexdigest()
+    if digest != PATCH_BUNDLE_SHA256:
+        raise RuntimeError(
+            "Pinned patch bundle SHA256 mismatch; refusing any source change: " + digest)
+    data = json.loads(payload.decode("utf-8", errors="strict"))
+    if (data.get("format") != "gow-phi-immutable-github-patches-v1"
+            or data.get("entryCount") != 14
+            or not isinstance(data.get("steps"), list)
+            or len(data["steps"]) != 14):
+        raise RuntimeError("Pinned patch bundle manifest contract mismatch")
+    entries = {}
+    for index, entry in enumerate(data["steps"]):
+        if (not isinstance(entry, dict) or entry.get("step") != index or
+                not isinstance(entry.get("base"), str) or
+                not isinstance(entry.get("head"), str) or
+                not isinstance(entry.get("expectedChanged"), list) or
+                not isinstance(entry.get("patch"), str) or
+                not isinstance(entry.get("sha256"), str)):
+            raise RuntimeError(f"Malformed pinned patch bundle stage {index}")
+        if (len(entry["base"]) != 40 or len(entry["head"]) != 40 or
+                not re.fullmatch(r"[0-9a-f]{40}", entry["base"]) or
+                not re.fullmatch(r"[0-9a-f]{40}", entry["head"]) or
+                not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"])):
+            raise RuntimeError(f"Invalid immutable refs at patch stage {index}")
+        paths = entry["expectedChanged"]
+        if (len(paths) != len(set(paths)) or
+                any(not isinstance(p, str) or
+                    not (p.startswith("src/") or p == "tools/gow_phi_dma_onepaste.py")
+                    or ".." in Path(p).parts for p in paths)):
+            raise RuntimeError(f"Invalid pinned patch file scope at stage {index}")
+        patch_bytes = entry["patch"].encode("utf-8")
+        if hashlib.sha256(patch_bytes).hexdigest() != entry["sha256"]:
+            raise RuntimeError(f"Pinned patch stage {index} SHA256 mismatch")
+        key = (entry["base"], entry["head"])
+        if key in entries:
+            raise RuntimeError("Duplicate pinned commit comparison")
+        entries[key] = (set(paths), patch_bytes)
+    _PATCH_BUNDLE_CACHE = entries
+    print("PINNED_PATCH_BUNDLE_OK=14 sha256=" + PATCH_BUNDLE_SHA256, flush=True)
+    return entries
+
+def fetch_strict_patch(base_sha, head_sha, expected_changed):
+    # Exact replacements for the former compare API responses; source bytes
+    # were individually SHA-verified against the user's successful 20:26
+    # archive, except step 14, which is SHA-pinned to its one-commit diff.
+    manifest = _load_verified_patch_bundle()
+    key = (base_sha, head_sha)
+    if key not in manifest:
+        raise RuntimeError(f"Pinned patch comparison is absent: {base_sha}...{head_sha}")
+    changed_paths, patch_bytes = manifest[key]
+    if changed_paths != set(expected_changed):
+        raise RuntimeError(
+            "Pinned patch scope differs from expected: " + repr(changed_paths))
+    return patch_bytes
 
 def get_patches():
     # Phase one is byte-for-byte the patch that compiled and ran at 16:09.
