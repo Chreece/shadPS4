@@ -372,6 +372,47 @@ static bool ShouldProbeGoWBindings(const Shader::Info& cs) {
            cs.hw_stage == Shader::HwStage::Compute;
 }
 
+// A bound Vulkan descriptor is not proof that its guest SRT source resolved.
+// SharpFetch::Invalid silently becomes a null resource in GetSharp(). Inspect
+// the target's persistent resource metadata before any GPU execution is enabled.
+static void AuditGoWResourceIntegrity(const Shader::Info& cs) {
+    const auto invalid = [](const auto& fetch) {
+        return fetch.summary == decltype(fetch.summary)::Invalid;
+    };
+    u32 invalid_guest_buffers = 0;
+    u32 invalid_images = 0;
+    u32 invalid_samplers = 0;
+    for (u32 i = 0; i < cs.buffers.size(); ++i) {
+        const auto& buffer = cs.buffers[i];
+        if (!buffer.IsSpecial() && invalid(buffer.sharp_fetch)) {
+            ++invalid_guest_buffers;
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_RESOURCE_INVALID shader={:#x} kind=buffer index={}",
+                        cs.pgm_hash, i);
+        }
+    }
+    for (u32 i = 0; i < cs.images.size(); ++i) {
+        if (invalid(cs.images[i].sharp_fetch)) {
+            ++invalid_images;
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_RESOURCE_INVALID shader={:#x} kind=image index={}",
+                        cs.pgm_hash, i);
+        }
+    }
+    for (u32 i = 0; i < cs.samplers.size(); ++i) {
+        if (invalid(cs.samplers[i].sharp_fetch)) {
+            ++invalid_samplers;
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_RESOURCE_INVALID shader={:#x} kind=sampler index={}",
+                        cs.pgm_hash, i);
+        }
+    }
+    LOG_WARNING(Render_Vulkan,
+                "GOW_TARGET_RESOURCE_AUDIT shader={:#x} invalid_guest_buffers={} "
+                "invalid_images={} invalid_samplers={} dispatch=SKIPPED",
+                cs.pgm_hash, invalid_guest_buffers, invalid_images, invalid_samplers);
+}
+
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
 
@@ -390,6 +431,7 @@ void Rasterizer::DispatchDirect() {
     if (ShouldProbeGoWBindings(cs)) {
         if (!gow_binding_probed.exchange(true, std::memory_order_relaxed)) {
             LOG_WARNING(Render_Vulkan, "GOW_TARGET_BIND_PROBE_BEGIN shader={:#x}", cs.pgm_hash);
+            AuditGoWResourceIntegrity(cs);
             const bool bound = BindResources(pipeline);
             bool bda_valid = false;
             bool fault_valid = false;
@@ -457,6 +499,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     if (ShouldProbeGoWBindings(cs)) {
         if (!gow_binding_probed.exchange(true, std::memory_order_relaxed)) {
             LOG_WARNING(Render_Vulkan, "GOW_TARGET_BIND_PROBE_BEGIN shader={:#x}", cs.pgm_hash);
+            AuditGoWResourceIntegrity(cs);
             const bool bound = BindResources(pipeline);
             bool bda_valid = false;
             bool fault_valid = false;
