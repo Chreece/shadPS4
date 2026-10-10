@@ -734,6 +734,67 @@ def apply_portable_pre_draw_producer_probe(root, pinned_diff):
             "no_original_lines_modified": True}
 
 
+def apply_portable_73_one_shot(root, pinned_diff):
+    if hashlib.sha256(pinned_diff).hexdigest() != CANARY_73_DIFF_SHA256:
+        raise RuntimeError("Phase14 producer patch digest mismatch")
+    patch = pinned_diff.decode("utf-8", errors="strict")
+    header = "diff --git a/" + GBUFFER_SOURCE + " b/" + GBUFFER_SOURCE + "\n"
+    if patch.count("diff --git ") != 1 or not patch.startswith(header):
+        raise RuntimeError("Phase14 tried modifying an unexpected source file")
+    blocks = re.split(r"(?m)^@@[^\n]*\n", patch)
+    if len(blocks) != 3:
+        raise RuntimeError("Phase14 requires exactly two audited hunks")
+    def changes(block):
+        added = [x[1:] for x in block.splitlines()
+                 if x.startswith("+") and not x.startswith("+++")]
+        removed = [x[1:] for x in block.splitlines()
+                   if x.startswith("-") and not x.startswith("---")]
+        return added, removed
+    first_add, first_remove = changes(blocks[1])
+    guard_add, guard_remove = changes(blocks[2])
+    old_array = "static constexpr std::array<GoWComputeCanary, 6> gow_canaries{{"
+    new_array = "static constexpr std::array<GoWComputeCanary, 7> gow_canaries{{"
+    old_permit = "        const bool permit = shape_ok && image_ok && sampler_ok && !cs.uses_dma &&"
+    guarded_permit = ("        const bool permit = shape_ok && producer_73_eligible && "
+                      "image_ok && sampler_ok && !cs.uses_dma &&")
+    special_entry = ("    {0x73ad8e38ULL, 128, 128, 1, 2, 0, 0}, "
+                     "// Experimental once, only with strict opt-in")
+    if (first_remove != [old_array] or
+            first_add != [new_array, special_entry] or
+            guard_remove != [old_permit] or
+            guard_add[-1] != guarded_permit or
+            "GOW_73_ADMISSION shader={:#x}" not in "\n".join(guard_add) or
+            "0x1039242d00ULL" not in "\n".join(guard_add) or
+            "0x1038bc2b80ULL" not in "\n".join(guard_add) or
+            "SHADPS4_GOW_ENABLE_73_ONE_SHOT" not in "\n".join(guard_add)):
+        raise RuntimeError("Phase14 violates approved guarded shader scope")
+    source_path = root / GBUFFER_SOURCE
+    before = source_path.read_bytes()
+    original = before.decode("utf-8", errors="strict")
+    f2_entry = ("    {0xf2d59856ULL, 1, 1, 1, 5, 0, 0},   "
+                "// GPU timeline completed, buffers\n")
+    for anchor in (old_array, old_permit + "\n", f2_entry):
+        if original.count(anchor) != 1:
+            raise RuntimeError("Phase14 ambiguous source anchor: " + anchor)
+    if "GOW_73_ADMISSION" in original or new_array in original:
+        raise RuntimeError("Phase14 already applied")
+    guard_insert = "\n".join(guard_add) + "\n"
+    patched = original.replace(old_array, new_array, 1)
+    patched = patched.replace(f2_entry, f2_entry + special_entry + "\n", 1)
+    patched = patched.replace(old_permit + "\n", guard_insert, 1)
+    if (patched.replace(guard_insert, old_permit + "\n", 1)
+               .replace(special_entry + "\n", "", 1)
+               .replace(new_array, old_array, 1) != original or
+            patched.count("GOW_73_ADMISSION") != 1 or
+            patched.count("0x73ad8e38ULL, 128, 128, 1, 2, 0, 0") != 1):
+        raise RuntimeError("Phase14 modified unrelated emulator source")
+    source_path.write_bytes(patched.encode("utf-8"))
+    return {"source_before": hashlib.sha256(before).hexdigest(),
+            "source_after": sha(source_path),
+            "pinned_diff": CANARY_73_DIFF_SHA256,
+            "only_one_opted_in_shader": True}
+
+
 def preflight_patches(patches, temp, report):
     # Every git-apply step runs against exact copies of host files.
     # No installed source file is changed during this preflight.
