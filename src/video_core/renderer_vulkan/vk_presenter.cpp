@@ -822,14 +822,14 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
             auto& candidate = texture_cache.GetImage(id);
             const auto& info = candidate.info;
             const u64 bytes = u64(info.size.width) * info.size.height * 4;
-            const auto fmt = info.pixel_format;
+            const auto pixel_format = info.pixel_format;
             const bool supported_format =
-                fmt == vk::Format::eR8G8B8A8Unorm ||
-                fmt == vk::Format::eR8G8B8A8Srgb ||
-                fmt == vk::Format::eB8G8R8A8Unorm ||
-                fmt == vk::Format::eB8G8R8A8Srgb ||
-                fmt == vk::Format::eA2R10G10B10UnormPack32 ||
-                fmt == vk::Format::eA2B10G10R10UnormPack32;
+                pixel_format == vk::Format::eR8G8B8A8Unorm ||
+                pixel_format == vk::Format::eR8G8B8A8Srgb ||
+                pixel_format == vk::Format::eB8G8R8A8Unorm ||
+                pixel_format == vk::Format::eB8G8R8A8Srgb ||
+                pixel_format == vk::Format::eA2R10G10B10UnormPack32 ||
+                pixel_format == vk::Format::eA2B10G10R10UnormPack32;
             const bool safe = candidate.backing &&
                               candidate.info.guest_address == addr &&
                               candidate.SafeToDownload() &&
@@ -855,7 +855,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                 std::vector<std::filesystem::path>{
                     std::filesystem::path(gow_probe_dir) /
                     fmt::format("gow_offscreen_{:x}.png", addr)},
-                info.size.width, info.size.height, fmt, false);
+                info.size.width, info.size.height, pixel_format, false);
             const vk::BufferImageCopy copy = {
                 .bufferOffset = 0,
                 .bufferRowLength = 0,
