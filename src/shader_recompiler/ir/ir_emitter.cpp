@@ -2112,6 +2112,13 @@ Value IREmitter::ImageSampleImplicitLod(const Value& handle, const Value& coords
     return Inst(Opcode::ImageSampleImplicitLod, Flags{info}, handle, coords, bias, offset);
 }
 
+Value IREmitter::ImageSampleImplicitLodGhostIndexed(const Value& handle, const U32& record_index,
+                                                    const Value& coords, const F32& bias,
+                                                    const Value& offset, TextureInstInfo info) {
+    return Inst(Opcode::ImageSampleImplicitLodGhostIndexed, Flags{info},
+                handle, record_index, coords, bias, offset);
+}
+
 Value IREmitter::ImageSampleExplicitLod(const Value& handle, const Value& coords, const F32& lod,
                                         const Value& offset, TextureInstInfo info) {
     return Inst(Opcode::ImageSampleExplicitLod, Flags{info}, handle, coords, lod, offset);
