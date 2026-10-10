@@ -763,9 +763,12 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                     gow_frame_id, cpu_address, image.info.guest_address,
                     image.info.guest_size, image_size.width, image_size.height,
                     image.info.pitch, image.info.num_bits,
-                    vk::to_string(image.info.pixel_format), image.info.props.is_tiled,
-                    image.SafeToDownload(), image.usage.render_target,
-                    image.usage.storage, image.backing != nullptr);
+                    vk::to_string(image.info.pixel_format),
+                    static_cast<u32>(image.info.props.is_tiled),
+                    image.SafeToDownload(),
+                    static_cast<u32>(image.usage.render_target),
+                    static_cast<u32>(image.usage.storage),
+                    image.backing != nullptr);
     }
 
     const u32 capture_game_only_count = VideoCore::ConsumeGameOnlyScreenshotRequests();
