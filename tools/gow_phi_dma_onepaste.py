@@ -463,7 +463,7 @@ def apply_portable_indirect_gpu_probe(root, pinned_diff):
     text_diff = pinned_diff.decode("utf-8", errors="strict")
     if (text_diff.count("diff --git ") != 1 or not text_diff.startswith(
         f"diff --git a/{rel} b/{rel}\n"
-    ):
+    )):
         raise RuntimeError("Indirect GPU probe attempted to change another source file")
     blocks = re.split(r"(?m)^@@[^\n]*\n", text_diff)
     if len(blocks) != 4:
