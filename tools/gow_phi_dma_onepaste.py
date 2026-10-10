@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "0e1cf55d95dff9e84bde45ad1123bf0f7fdba0b4"
+HEAD_SHA = "2d9cbce4779ffa06e51977d149e89b5c7a030a52"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -290,6 +290,7 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_ONE_SHADER_DMA_COMPILE": "1",
         "SHADPS4_GOW_SPV_DUMP_DIR": str(dump_dir.resolve()),
         "SHADPS4_GOW_BIND_PROBE": "1",
+        "SHADPS4_GOW_IMAGE_TABLE_AUDIT": "1",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
@@ -395,6 +396,28 @@ def trial_run(binary, temp, result):
     if result["resource_audit_counts"] and not result["resource_audit_passed"]:
         result["resource_integrity_warning"] = (
             "Some guest descriptor sources are unresolved; GPU dispatch must remain disabled.")
+    table_pattern = re.compile(
+        r"GOW_IMAGE_TABLE_AUDIT group=(A|B) stride=(\\d+) image_offset=(\\d+) "
+        r"slots=32 readable=(\\d+) valid=(\\d+) "
+        r"readable_mask=(0x[0-9a-fA-F]+) valid_mask=(0x[0-9a-fA-F]+) "
+        r"uniform_type=(true|false) image_type=(\\d+) dispatch=SKIPPED")
+    table_audits = {}
+    for match in table_pattern.finditer(joined):
+        group, stride, offset, readable, valid, readable_mask, valid_mask,             uniform_type, image_type = match.groups()
+        table_audits[group] = {
+            "stride_bytes": int(stride), "image_offset_bytes": int(offset),
+            "slots": 32, "readable": int(readable), "valid": int(valid),
+            "readable_mask": readable_mask, "valid_mask": valid_mask,
+            "uniform_type": uniform_type == "true", "image_type": int(image_type),
+        }
+    result["image_table_audits"] = table_audits
+    result["image_table_audit_complete"] = set(table_audits) == {"A", "B"}
+    result["image_table_audit_expected_layout"] = (
+        table_audits.get("A", {}).get("stride_bytes") == 776 and
+        table_audits.get("A", {}).get("image_offset_bytes") == 544 and
+        table_audits.get("B", {}).get("stride_bytes") == 264 and
+        table_audits.get("B", {}).get("image_offset_bytes") == 3536)
+
     relevant = [line[:1600] for line in joined.splitlines() if
                 re.search(r"GOW_|failed|error|shader 0x57b077ac|Vulkan|CPU identity", line, re.I)]
     (evidence / "key-events.txt").write_text("\n".join(relevant[-3500:]))
@@ -448,7 +471,10 @@ def main():
                 trial_run(trial, tmp, report)
                 report["result"] = report.get("end_reason", "TRIAL_COMPLETE")
                 if report.get("resource_audit_logged") and not report.get("resource_audit_passed"):
-                    report["result"] = "UNRESOLVED_GUEST_RESOURCES"
+                    report["result"] = (
+                        "DYNAMIC_IMAGE_TABLE_CAPTURED"
+                        if report.get("image_table_audit_complete")
+                        else "UNRESOLVED_GUEST_RESOURCES")
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -472,6 +498,8 @@ def main():
     print("BIND_PROBE_PASSED=" + str(report.get("bind_probe_passed", False)))
     print("RESOURCE_AUDIT_PASSED=" + str(report.get("resource_audit_passed", False)))
     print("RESOURCE_AUDIT_COUNTS=" + str(report.get("resource_audit_counts")))
+    print("IMAGE_TABLE_AUDITS=" + str(report.get("image_table_audits")))
+    print("IMAGE_TABLE_LAYOUT_MATCH=" + str(report.get("image_table_audit_expected_layout", False)))
     print("SOURCE_RESTORED=" + str(report.get("sources_restored")))
     print("BUILD_BINARY_RESTORED=" + str(report.get("build_binary_restored")))
     if report.get("error"):
