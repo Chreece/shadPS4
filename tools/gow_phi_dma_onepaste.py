@@ -36,7 +36,9 @@ FRAGMENT_SHA = "77341a4c4d076ea8af7b00038a884e903069f007"
 SHARP_SHA = "2492be06a203373bcb58c7b7d993f27dc54de661"
 INDEX_SHA = "28957366755addb221d3956a69de4d601a83b390"
 FLATTEN_SHA = "0b14e5f5c7961ffcbd691f32223a1b20f25154b2"
-HEAD_SHA = "55c7ef1d1ca61078b90e4dabc83b5c35ee552e3f"
+ROOT_PRIORITY_SHA = "55c7ef1d1ca61078b90e4dabc83b5c35ee552e3f"
+HEAD_SHA = "41b199383806734f3b753bf9f96761de7f7e5234"
+ROOT_PATCH_SHA256 = "88b7fd1ded0f2d429e0b759a44e58a91107d9c023ab08ae8f0a049814b355185"
 FLATTEN_PATCH_SHA256 = "3f55a88b945aacabfe07846f8528f8560ca94f356fe672cc0d81e3dd038401ac"
 INDEX_PATCH_SHA256 = "fe149e0618d65504a78d71a72810a900340b3a5fe888a54fd70651ae55914c49"
 SHARP_PATCH_SHA256 = "af20618e05a7d007f7c73e5c4cb8e0f9aac0117b64ed7b3bd0c7aa35e18a8e5e"
@@ -233,16 +235,25 @@ def get_patches():
     if flatten_hash != FLATTEN_PATCH_SHA256:
         raise RuntimeError("Previously proven flatten trace changed: " + flatten_hash)
 
-    # Phase seven changes only the order of visiting the already observed
-    # SGPR8 prerequisite, scoped to shader 0x7f710602 and one opt-in flag.
-    root_priority_patch = fetch_strict_patch(FLATTEN_SHA, HEAD_SHA, {flatten_path})
-    if (b'SHADPS4_GOW_SRT_SGPR8_FIRST' not in root_priority_patch or
-            b'GOW_SRT_ROOT_ORDER' not in root_priority_patch or
-            b'prerequisite_sgpr=8' not in root_priority_patch or
-            b'void Rasterizer::Draw(' in root_priority_patch):
-        raise RuntimeError("Expected only scoped prerequisite-root ordering trial")
+    # Phase seven is the exact 18:32 host-proven SGPR8-first patch.
+    root_priority_patch = fetch_strict_patch(
+        FLATTEN_SHA, ROOT_PRIORITY_SHA, {flatten_path})
+    root_digest = hashlib.sha256(root_priority_patch).hexdigest()
+    if root_digest != ROOT_PATCH_SHA256:
+        raise RuntimeError("Proven SGPR8 root priority patch changed: " + root_digest)
+
+    # Phase eight is a bounded, deterministic dependency planner. It remains
+    # strictly opt-in for the SAME single target shader, and preserves the
+    # previous fallback behavior on unknown/shared/cyclic dependencies.
+    auto_topo_patch = fetch_strict_patch(
+        ROOT_PRIORITY_SHA, HEAD_SHA,
+        {flatten_path, "tools/gow_phi_dma_onepaste.py"})
+    if not all(term in auto_topo_patch for term in (
+            b'MakeSrtRootDependencyPlan', b'GOW_SRT_TOPO_PLAN',
+            b'GOW_SRT_TOPO_EDGE', b'SHADPS4_GOW_SRT_AUTO_ROOTS')):
+        raise RuntimeError("Unexpected auto-topology diagnostic patch")
     return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
-            index_probe, flatten_probe, root_priority_patch)
+            index_probe, flatten_probe, root_priority_patch, auto_topo_patch)
 
 def verify_preimages():
     if set(EXPECTED_SOURCE_HASHES) != PROTECTED_SOURCES:
@@ -280,6 +291,9 @@ def verify_staged_instrumentation(staged):
             "GOW_SRT_FLATTEN_END" not in flat or
             "SHADPS4_GOW_SRT_FLATTEN_TRACE" not in flat or
             "SHADPS4_GOW_SRT_SGPR8_FIRST" not in flat or
+            "SHADPS4_GOW_SRT_AUTO_ROOTS" not in flat or
+            "GOW_SRT_TOPO_PLAN" not in flat or
+            "MakeSrtRootDependencyPlan" not in flat or
             "GOW_SRT_ROOT_ORDER" not in flat or
             "event=USE_INDEX_FAILED" not in flat):
         raise RuntimeError("Staged flattening-only instrumentation missing")
@@ -313,7 +327,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_seven_patch_preflight"] = True
+    report["staged_eight_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -492,7 +506,9 @@ def trial_run(binary, temp, result):
         "SHADPS4_ENABLE_IPC": "false",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
         "SHADPS4_GOW_SRT_FLATTEN_TRACE": "1",
-        "SHADPS4_GOW_SRT_SGPR8_FIRST": "1",
+        # This run derives the order from IR rather than using the manual
+        # SGPR8-first override. The override remains disabled.
+        "SHADPS4_GOW_SRT_AUTO_ROOTS": "1",
         # Cross-check the final image SHARP (all eight words) in the same run.
         "SHADPS4_GOW_FS_IMAGE_SHARP_TRACE": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
@@ -642,21 +658,53 @@ def trial_run(binary, temp, result):
         kv = _kv(line)
         if kv.get("event") == "ROOT_VISIT" and kv.get("sgpr", "").isdigit():
             root_visits.append(int(kv["sgpr"]))
-    order_markers = [
-        _kv(line) for line in joined.splitlines()
-        if "GOW_SRT_ROOT_ORDER shader=0x7f710602" in line
+    topo_lines = []
+    for line in joined.splitlines():
+        if "GOW_SRT_TOPO_" in line and "shader=0x7f710602" in line:
+            item = line[line.index("GOW_SRT_TOPO_"):]
+            if item not in topo_lines:
+                topo_lines.append(item)
+    (evidence / "fs-7f710602-root-topology.txt").write_text(
+        "\n".join(topo_lines) + "\n")
+    plans = [_kv(v) for v in topo_lines if v.startswith("GOW_SRT_TOPO_PLAN")]
+    edges = [_kv(v) for v in topo_lines if v.startswith("GOW_SRT_TOPO_EDGE")]
+    root_rows = [_kv(v) for v in topo_lines if v.startswith("GOW_SRT_TOPO_ORDER")]
+    topo_plan = plans[-1] if plans else {}
+    root_rows = sorted(
+        (row for row in root_rows
+         if row.get("position", "").isdigit() and row.get("sgpr", "").isdigit()),
+        key=lambda row: int(row["position"]))
+    planned_roots = [int(row["sgpr"]) for row in root_rows]
+    prerequisites = [
+        {"dependent": int(edge["dependent_sgpr"]),
+         "prerequisite": int(edge["prerequisite_sgpr"])}
+        for edge in edges
+        if edge.get("dependent_sgpr", "").isdigit() and
+           edge.get("prerequisite_sgpr", "").isdigit()
     ]
+    valid_plan = (
+        topo_plan.get("enabled") == "true"
+        and topo_plan.get("reordered") == "true"
+        and topo_plan.get("ambiguous") == "false"
+        and topo_plan.get("cyclic") == "false"
+        and topo_plan.get("capped") == "false")
+    dependency_found = {"dependent": 6, "prerequisite": 8} in prerequisites
+    correctly_ordered = (
+        len(planned_roots) == 3 and len(set(planned_roots)) == 3
+        and 8 in planned_roots and 6 in planned_roots
+        and planned_roots.index(8) < planned_roots.index(6))
     result["fs_srt_root_order"] = root_visits
-    result["fs_srt_priority_requested"] = any(
-        item.get("enabled") == "true" and item.get("prerequisite_found") == "true"
-        for item in order_markers)
-    result["fs_srt_priority_proved_first"] = (
-        bool(root_visits) and root_visits[0] == 8
-        and root_visits.count(8) == 1)
+    result["fs_srt_auto_plan"] = topo_plan
+    result["fs_srt_auto_roots"] = planned_roots
+    result["fs_srt_auto_dependencies"] = prerequisites
+    result["fs_srt_auto_plan_valid"] = valid_plan
+    result["fs_srt_auto_dependency_found"] = dependency_found
+    result["fs_srt_auto_proved_order"] = (
+        valid_plan and dependency_found and correctly_ordered
+        and root_visits == planned_roots)
     result["fs_srt_all_24_resolved"] = (
         result["fs_srt_flatten_complete"]
-        and result["fs_srt_priority_requested"]
-        and result["fs_srt_priority_proved_first"]
+        and result["fs_srt_auto_proved_order"]
         and result["fs_srt_flatten_resolved"] >= 24
         and result["fs_srt_flatten_unresolved"] == 0
         and not result["fs_srt_flatten_truncated"])
@@ -1198,16 +1246,16 @@ def main():
                     report["result"] = "GPU_FAULT_EVIDENCE"
                 elif not report.get("fs_srt_flatten_complete"):
                     report["result"] = "FS_SRT_FLATTEN_TRACE_MISSING"
-                elif not report.get("fs_srt_priority_proved_first"):
-                    report["result"] = "SGPR8_PRIORITY_NOT_APPLIED"
+                elif not report.get("fs_srt_auto_proved_order"):
+                    report["result"] = "SRT_AUTO_ROOT_TOPOLOGY_NOT_PROVEN"
                 elif report.get("fs_srt_flatten_truncated"):
                     report["result"] = "FS_SRT_FLATTEN_TRACE_CAPPED"
                 elif report.get("fs_srt_all_24_resolved") and report.get("fs_image_sharp_valid_after_reorder"):
-                    report["result"] = "SRT_DEPENDENCY_AND_IMAGE_SHARP_FIXED"
+                    report["result"] = "SRT_AUTO_TOPO_AND_IMAGE_SHARP_FIXED"
                 elif report.get("fs_srt_all_24_resolved"):
-                    report["result"] = "SRT_DEPENDENCY_FIXED_IMAGE_SHARP_NOT_CONFIRMED"
+                    report["result"] = "SRT_AUTO_TOPO_FIXED_IMAGE_SHARP_NOT_CONFIRMED"
                 else:
-                    report["result"] = "SRT_DEPENDENCY_ORDER_PARTIAL"
+                    report["result"] = "SRT_AUTO_TOPO_DEPENDENCIES_PARTIAL"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -1232,7 +1280,9 @@ def main():
     print("IMAGE_SHARP_VALID=" + str(report.get("fs_image_sharp_valid_after_reorder", False)))
     print("IMAGE_SHARP_SUMMARY=" + str(report.get("fs_image_sharp_fetch_summary")))
     print("IMAGE_SHARP_UNRESOLVED_WORDS=" + str(report.get("fs_image_sharp_unknown_words", [])))
-    print("SRT_SGPR8_FIRST=" + str(report.get("fs_srt_priority_proved_first", False)))
+    print("SRT_AUTO_ROOTS=" + str(report.get("fs_srt_auto_roots", [])))
+    print("SRT_AUTO_DEPENDENCIES=" + str(report.get("fs_srt_auto_dependencies", [])))
+    print("SRT_AUTO_TOPO_PROVEN=" + str(report.get("fs_srt_auto_proved_order", False)))
     print("SRT_RESOLVED_SHARPS=" + str(report.get("fs_srt_flatten_resolved", 0)))
     print("SRT_UNRESOLVED_SHARPS=" + str(report.get("fs_srt_flatten_unresolved", 0)))
     print("SRT_EVENTS=" + str(report.get("fs_srt_flatten_events", {})))
