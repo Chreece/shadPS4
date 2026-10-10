@@ -523,10 +523,21 @@ def trial_run(binary, temp, result):
         # This run derives the order from IR rather than using the manual
         # SGPR8-first override. The override remains disabled.
         "SHADPS4_GOW_SRT_AUTO_ROOTS": "2",
-        # Revisit VideoOut once after enabling the planner across all stages.
-        # No repeated raw offscreen surface downloads.
+        # Exactly the six already verified, one-shot compute canaries.
+        # Suppression remains enabled for EVERY non-canary compute dispatch.
+        # Each canary additionally checks exact shader/hash/grid, resource
+        # shapes, image/sampler validity, DMA, and host limits in C++.
+        "SHADPS4_GOW_COMPUTE_CANARIES": "1",
+        "SHADPS4_GOW_COMPUTE_CENSUS": "1",
+        "SHADPS4_GOW_IMAGE_OUTPUT_DELTA": "1",
+        "SHADPS4_GOW_D80_CONTROL_NO_DISPATCH": "0",
+        # First direct screen comparison after the generalized SRT fix.
         "SHADPS4_GOW_FRAME_SOURCE_DIR": str(frame_dir.resolve()),
         "SHADPS4_GOW_GRAPHICS_AUDIT": "1",
+        # Unlike 18:55, take the GPU-backed targets at the same sampled
+        # frames; their previous zero-byte baseline was measured before the
+        # corrected fragment image descriptor and these compute canaries.
+        "SHADPS4_GOW_OFFSCREEN_DIR": str(offscreen_dir.resolve()),
         # Cross-check the final image SHARP (all eight words) in the same run.
         "SHADPS4_GOW_FS_IMAGE_SHARP_TRACE": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
@@ -555,8 +566,31 @@ def trial_run(binary, temp, result):
                 source_png_count = len(list(
                     frame_dir.glob("gow_guest_pre_fsr_*.png")))
                 frame6 = "GOW_GRAPHICS_SUMMARY frame=6 " in raw_console
-                if srt_done and sharp_done and frame6 and source_png_count >= 3:
-                    result["end_reason"] = "MULTISHADER_SRT_AND_SIXTH_FRAME_CAPTURED"
+                completed_canaries = set(re.findall(
+                    r"GOW_COMPUTE_CANARY_GPU_COMPLETE shader=(0x[0-9a-fA-F]+)"
+                    r" tick=\d+ result=TIMELINE_SIGNALED",
+                    raw_console))
+                # Do not mistake queued readbacks for GPU-completed data.
+                sixth_labels = ("f06_gbuffer0", "f06_shading", "f06_composition")
+                sixth_resolved = True
+                for label in sixth_labels:
+                    captured = re.search(
+                        r"GOW_OFFSCREEN_GPU_CAPTURE label=" + label +
+                        r" [^\n]*result=GPU_READBACK_COMPLETE",
+                        raw_console)
+                    skipped = re.search(
+                        r"GOW_OFFSCREEN_READBACK label=" + label +
+                        r" [^\n]*result=(NOT_CACHED|GUARD_REJECTED)",
+                        raw_console)
+                    sixth_resolved &= bool(captured or skipped)
+                stable_frame = (srt_done and sharp_done and frame6 and
+                                source_png_count >= 3 and sixth_resolved)
+                if stable_frame and (len(completed_canaries) >= 6 or
+                                     time.monotonic() - start >= 30):
+                    result["end_reason"] = (
+                        "GUARDED_CANARIES_AND_GPU_TARGETS_CAPTURED"
+                        if len(completed_canaries) >= 6
+                        else "GUARDED_CANARY_OBSERVATION_WINDOW_ENDED")
                     break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -1313,13 +1347,20 @@ def main():
                 elif not (report.get("fs_srt_all_24_resolved") and
                           report.get("fs_image_sharp_valid_after_reorder")):
                     report["result"] = "MULTISHADER_TOPOLOGY_TARGET_REGRESSION"
-                elif report.get("guest_frame_verified_count", 0) >= 3:
-                    report["result"] = (
-                        "MULTISHADER_TOPOLOGY_SOURCE_NONBLACK"
-                        if report.get("guest_frame_nonblack_count", 0)
-                        else "MULTISHADER_TOPOLOGY_SOURCE_BLACK")
+                elif report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
+                    report["result"] = "GUARDED_COMPUTE_GPU_FAULT"
+                elif not report.get("compute_canary_any_submitted"):
+                    report["result"] = "GUARDED_COMPUTE_NOT_SUBMITTED"
+                elif report.get("compute_canary_completed_count", 0) == 0:
+                    report["result"] = "GUARDED_COMPUTE_NOT_GPU_COMPLETED"
+                elif report.get("guest_frame_verified_count", 0) < 3:
+                    report["result"] = "GUARDED_COMPUTE_NO_VERIFIED_VIDEOOUT"
+                elif report.get("guest_frame_nonblack_count", 0) > 0:
+                    report["result"] = "GUARDED_COMPUTE_SOURCE_NONBLACK"
+                elif report.get("offscreen_nonzero_count", 0) > 0:
+                    report["result"] = "GUARDED_COMPUTE_OFFSCREEN_NONZERO"
                 else:
-                    report["result"] = "MULTISHADER_TOPOLOGY_CAPTURED_NO_SIXTH_FRAME"
+                    report["result"] = "GUARDED_COMPUTE_VIDEOOUT_AND_GBUFFER_BLACK"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -1348,6 +1389,14 @@ def main():
     print("SRT_AUTO_DEPENDENCIES=" + str(report.get("fs_srt_auto_dependencies", [])))
     print("SRT_AUTO_TOPO_PROVEN=" + str(report.get("fs_srt_auto_proved_order", False)))
     print("SRT_TOPO_SHADERS=" + str(report.get("srt_topology_shaders_seen", 0)))
+    print("GUARDED_CANARIES_SUBMITTED=" + str(sum(
+        bool(x.get("command_recorded")) for x in report.get("compute_canaries", {}).values())))
+    print("GUARDED_CANARIES_GPU_COMPLETED=" + str(report.get("compute_canary_completed_count", 0)))
+    print("GUARDED_CANARIES_DETAILS=" + str(report.get("compute_canaries", {})))
+    print("GPU_TARGET_READBACKS=" + str(report.get("offscreen_complete_count", 0)))
+    print("GPU_TARGET_NONZERO=" + str(report.get("offscreen_nonzero_count", 0)))
+    print("GPU_TARGET_SKIPS=" + str(report.get("offscreen_skips", {})))
+    print("GPU_IMAGE_OUTPUT_DELTAS=" + str(report.get("gpu_image_output_deltas", {})))
     print("SRT_TOPO_REORDERED=" + str(report.get("srt_topology_reordered", 0)))
     print("SRT_TOPO_EDGES=" + str(report.get("srt_topology_dependency_edges", 0)))
     print("SRT_TOPO_AMBIGUOUS=" + str(report.get("srt_topology_ambiguous", 0)))
