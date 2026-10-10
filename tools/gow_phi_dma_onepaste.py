@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "cf440265d81f99e9f81e148e9f49eef907a3817b"
+HEAD_SHA = "a4811b1d2a4d8acbf227f54fcbb049e27b319ac6"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -296,6 +296,7 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
         # Five exact-grid canaries may execute once each; all others suppressed.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
+        "SHADPS4_GOW_IMAGE_OUTPUT_DELTA": "1",
         "SHADPS4_GOW_COMPUTE_CENSUS": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
@@ -329,10 +330,20 @@ def trial_run(binary, temp, result):
                             and "GOW_COMPUTE_CANARY_GPU_COMPLETE shader=0xd80cbb16" in trial_output
                             and "GOW_COMPUTE_CANARY_GPU_COMPLETE shader=0xb223c956" in trial_output)
                         if complete_canaries:
-                            result["end_reason"] = "ALL_FIVE_GPU_TIMELINES_SIGNALED"
-                            break
-                        if time.monotonic() - last_spv >= 30:
-                            result["end_reason"] = "CANARY_OBSERVATION_WINDOW_ENDED"
+                            # Output snapshots use a normal GPU transfer and
+                            # deferred staging callback. Wait only within the
+                            # bounded observation window for two conclusions.
+                            has_d80 = (
+                                "GOW_IMAGE_OUTPUT_DELTA shader=0xd80cbb16" in trial_output
+                                or "GOW_IMAGE_OUTPUT_SKIP shader=0xd80cbb16" in trial_output)
+                            has_b223 = (
+                                "GOW_IMAGE_OUTPUT_DELTA shader=0xb223c956" in trial_output
+                                or "GOW_IMAGE_OUTPUT_SKIP shader=0xb223c956" in trial_output)
+                            if has_d80 and has_b223:
+                                result["end_reason"] = "GPU_OUTPUT_PROBES_CONCLUDED"
+                                break
+                        if time.monotonic() - last_spv >= 38:
+                            result["end_reason"] = "OUTPUT_OBSERVATION_WINDOW_ENDED"
                             break
                 else:
                     last_spv = None
@@ -512,6 +523,41 @@ def trial_run(binary, temp, result):
             "timeline_completed": bool(
                 recorded and tick is not None and tick == finished_tick),
         }
+    # GPU-to-host staging readback, ordered before and after the original
+    # canary. Changed bytes establish a GPU-side effect, NOT game correctness.
+    image_output_pattern = re.compile(
+        r"GOW_IMAGE_OUTPUT_DELTA shader=(0x[0-9a-fA-F]+) "
+        r"bytes=(\d+) changed_bytes=(\d+) "
+        r"before_hash=(0x[0-9a-fA-F]+) after_hash=(0x[0-9a-fA-F]+) "
+        r"nonzero_before=(\d+) nonzero_after=(\d+) "
+        r"result=GPU_READBACK_COMPLETE")
+    output_deltas = {}
+    for match in image_output_pattern.finditer(joined):
+        (shader, nbytes, changed, before_hash, after_hash,
+         nonzero_before, nonzero_after) = match.groups()
+        output_deltas[shader.lower()] = {
+            "bytes": int(nbytes), "changed_bytes": int(changed),
+            "before_hash": before_hash, "after_hash": after_hash,
+            "nonzero_before": int(nonzero_before),
+            "nonzero_after": int(nonzero_after),
+            "gpu_output_changed": int(changed) > 0,
+        }
+    output_skips = {}
+    skip_pattern = re.compile(
+        r"GOW_IMAGE_OUTPUT_SKIP shader=(0x[0-9a-fA-F]+) "
+        r"reason=([A-Z_]+)")
+    for match in skip_pattern.finditer(joined):
+        output_skips[match.group(1).lower()] = match.group(2)
+    result["gpu_image_output_deltas"] = output_deltas
+    result["gpu_image_output_skips"] = output_skips
+    result["gpu_image_output_completed_count"] = len(output_deltas)
+    result["gpu_image_output_changed_count"] = sum(
+        1 for x in output_deltas.values() if x["gpu_output_changed"])
+    result["gpu_image_output_targets"] = {
+        shader: {"delta": output_deltas.get(shader),
+                 "skip": output_skips.get(shader)}
+        for shader in ("0xd80cbb16", "0xb223c956")
+    }
     result["compute_canaries"] = canaries
     result["compute_canary_completed_count"] = sum(
         candidate["timeline_completed"] for candidate in canaries.values())
@@ -685,8 +731,13 @@ def main():
                         "DYNAMIC_IMAGE_MASKS_CAPTURED"
                         if report.get("image_live_masks_captured")
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
-                # Do not claim success from command recording alone.
-                if report.get("compute_canary_all_completed"):
+                # A signed Vulkan timeline and a complete staging readback
+                # are different milestones. Keep them clearly separated.
+                if report.get("gpu_image_output_completed_count", 0) == 2:
+                    report["result"] = "TWO_GPU_IMAGE_OUTPUTS_READ_BACK"
+                elif report.get("gpu_image_output_completed_count", 0):
+                    report["result"] = "PARTIAL_GPU_IMAGE_OUTPUT_READBACK"
+                elif report.get("compute_canary_all_completed"):
                     report["result"] = "FIVE_GPU_CANARY_TIMELINES_COMPLETED"
                 elif report.get("compute_canary_completed_count", 0):
                     report["result"] = "PARTIAL_GPU_CANARY_COMPLETION"
@@ -723,6 +774,12 @@ def main():
     print("COMPUTE_CANARY_MODE_ENABLED=" + str(report.get("compute_execution_enabled", False)))
     print("GPU_CANARY_COMPLETED_COUNT=" +
           str(report.get("compute_canary_completed_count", 0)))
+    print("GPU_IMAGE_OUTPUT_COMPLETED_COUNT=" +
+          str(report.get("gpu_image_output_completed_count", 0)))
+    print("GPU_IMAGE_OUTPUT_CHANGED_COUNT=" +
+          str(report.get("gpu_image_output_changed_count", 0)))
+    for shader, item in report.get("gpu_image_output_targets", {}).items():
+        print("OUTPUT_" + shader + "=" + str(item))
     print("GPU_CANARY_ALL_TIMELINES_COMPLETED=" +
           str(report.get("compute_canary_all_completed", False)))
     for shader, candidate in report.get("compute_canaries", {}).items():
