@@ -762,9 +762,10 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
  // The fourth/fifth shaders have live 2D image descriptors which are checked
  // before binding. All other compute execution remains suppressed.
 struct GoWComputeCanary { u64 shader; u32 x, y, z, buffers, images, samplers; };
-static constexpr std::array<GoWComputeCanary, 6> gow_canaries{{
+static constexpr std::array<GoWComputeCanary, 7> gow_canaries{{
     {0x6e9a8b98ULL, 2, 1, 1, 2, 0, 0},   // GPU timeline completed, buffers
     {0xf2d59856ULL, 1, 1, 1, 5, 0, 0},   // GPU timeline completed, buffers
+    {0x73ad8e38ULL, 128, 128, 1, 2, 0, 0}, // Experimental once, only with strict opt-in
     {0xf875ea48ULL, 1, 1, 1, 4, 0, 0},   // GPU timeline completed, buffers
     {0xd80cbb16ULL, 4, 1, 1, 1, 1, 0},   // GPU output changed, A/B control passed
     {0xb223c956ULL, 1, 1, 1, 1, 2, 1},   // Two images + one sampler, GPU complete
@@ -878,7 +879,71 @@ static int SelectGoWComputeCanary(const Shader::Info& cs, u32 x, u32 y, u32 z) {
             const auto sharp = s.GetSharp(cs);
             sampler_ok &= static_cast<bool>(sharp) && sharp.Valid();
         }
-        const bool permit = shape_ok && image_ok && sampler_ok && !cs.uses_dma &&
+        // This missing producer is admitted ONLY for the bounded A/B trial.
+        // Exact shader, 128x128x1 dispatch, two descriptors, and the exact
+        // 32-byte read + 512-byte write locations captured at 20:26.
+        // Other shader dispatch behavior is unchanged. Do not execute this
+        // experimental stage just because the ordinary canaries are enabled.
+        bool producer_73_eligible = true;
+        if (cs.pgm_hash == 0x73ad8e38ULL) {
+            const char* one_shot = std::getenv("SHADPS4_GOW_ENABLE_73_ONE_SHOT");
+            producer_73_eligible = one_shot && std::strcmp(one_shot, "1") == 0 &&
+                                   x == 128 && y == 128 && z == 1 &&
+                                   cs.buffers.size() == 2 && cs.images.empty() &&
+                                   cs.samplers.empty() && !cs.uses_dma &&
+                                   !cs.translation_failed;
+            if (producer_73_eligible) {
+                const auto& input = cs.buffers[0];
+                const auto& output = cs.buffers[1];
+                if (input.IsSpecial() || output.IsSpecial() ||
+                    input.is_written || !output.is_written ||
+                    input.sharp_fetch.summary ==
+                        decltype(input.sharp_fetch.summary)::Invalid ||
+                    output.sharp_fetch.summary ==
+                        decltype(output.sharp_fetch.summary)::Invalid) {
+                    producer_73_eligible = false;
+                } else {
+                    // Both SHARPs have already been flattened for this compiled
+                    // shader. Keep a separate bound check before dereferencing
+                    // the pointers; never accept UNKNOWN_LOCATION.
+                    const auto safe_fetch = [&](const auto& fetch) {
+                        constexpr u32 words = sizeof(AmdGpu::Buffer) / sizeof(u32);
+                        if (fetch.summary == decltype(fetch.summary)::SingleLoad) {
+                            const u32 idx = fetch.offsets[0];
+                            return idx != Shader::UNKNOWN_LOCATION &&
+                                   idx <= cs.flattened_ud_buf.size() &&
+                                   words <= cs.flattened_ud_buf.size() - idx;
+                        }
+                        for (u32 word = 0; word < words; ++word) {
+                            if ((fetch.load_mask & (1u << word)) &&
+                                (fetch.offsets[word] == Shader::UNKNOWN_LOCATION ||
+                                 fetch.offsets[word] >= cs.flattened_ud_buf.size())) {
+                                return false;
+                            }
+                        }
+                        return true;
+                    };
+                    if (!safe_fetch(input.sharp_fetch) ||
+                        !safe_fetch(output.sharp_fetch)) {
+                        producer_73_eligible = false;
+                    } else {
+                        const auto in_sharp = input.GetSharp(cs);
+                        const auto out_sharp = output.GetSharp(cs);
+                        producer_73_eligible =
+                            in_sharp.base_address == 0x1038bc2b80ULL &&
+                            in_sharp.GetSize() == 32 &&
+                            out_sharp.base_address == 0x1039242d00ULL &&
+                            out_sharp.GetSize() == 512;
+                    }
+                }
+            }
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_73_ADMISSION shader={:#x} grid={}x{}x{} "
+                        "strict_resources={} result={}",
+                        cs.pgm_hash, x, y, z, producer_73_eligible,
+                        producer_73_eligible ? "ELIGIBLE" : "DENIED");
+        }
+        const bool permit = shape_ok && producer_73_eligible && image_ok && sampler_ok && !cs.uses_dma &&
                             !cs.translation_failed && !invalid &&
                             !unsupported_special && !oversized_buffer;
         LOG_WARNING(Render_Vulkan,
