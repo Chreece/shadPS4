@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <limits>
+#include <cstdlib>
+#include <cstring>
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/ir_emitter.h"
@@ -247,6 +249,63 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         .is_r128 = bool(inst_info.is_r128),
         .post_op = resource.sharps[0].post_op,
     };
+
+    // Diagnostic only: inspect the image resource identified as invalid for
+    // GoW fragment 0x7f710602. No changes to resource discovery or binding.
+    const char* gow_trace = std::getenv("SHADPS4_GOW_FS_IMAGE_SHARP_TRACE");
+    if (gow_trace && std::strcmp(gow_trace, "1") == 0 &&
+        info.hw_stage == HwStage::Fragment && info.pgm_hash == 0x7f710602ULL) {
+        const auto& ref = resource.sharps[0];
+        const auto& fetch = image_res.sharp_fetch;
+        LOG_WARNING(Render_Recompiler,
+                    "GOW_FS_IMAGE_SHARP_BEGIN shader={:#x} words={} "
+                    "summary={} load_mask={:#x} image_op={} written={}",
+                    info.pgm_hash, ref.num_dwords, static_cast<u32>(fetch.summary),
+                    static_cast<u32>(fetch.load_mask),
+                    static_cast<u32>(inst.GetOpcode()), is_written);
+        for (u32 i = 0; i < ref.num_dwords && i < 8; ++i) {
+            const auto& v = ref.dwords[i];
+            if (v.IsImmediate()) {
+                LOG_WARNING(Render_Recompiler,
+                            "GOW_FS_IMAGE_SHARP_WORD shader={:#x} word={} immediate={} "
+                            "value={:#x}",
+                            info.pgm_hash, i, true, v.U32());
+                continue;
+            }
+            const IR::Inst* src = v.TryInst();
+            if (!src) {
+                LOG_WARNING(Render_Recompiler,
+                            "GOW_FS_IMAGE_SHARP_WORD shader={:#x} word={} source=NULL",
+                            info.pgm_hash, i);
+                continue;
+            }
+            const auto opcode = src->GetOpcode();
+            u32 source_offset = 0;
+            if (opcode == IR::Opcode::ReadConst) {
+                source_offset = src->Flags<SharpLocation>();
+            } else if (opcode == IR::Opcode::ReadConstBuffer) {
+                source_offset = src->Flags<IR::BufferInstInfo>().flatbuf_off_dw;
+            }
+            const bool has_offset = (opcode == IR::Opcode::ReadConst ||
+                                     opcode == IR::Opcode::ReadConstBuffer) &&
+                                    src->NumArgs() > 1;
+            const auto arg = has_offset ? src->Arg(1) : IR::Value{};
+            const auto* arg_inst = arg.TryInst();
+            const bool immediate_offset = arg.Type() == IR::Type::U32;
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_FS_IMAGE_SHARP_WORD shader={:#x} word={} immediate={} "
+                        "source_opcode={} source_flatbuf={} fetch_offset={} unknown={} "
+                        "index_opcode={} index_immediate={} index_value={:#x}",
+                        info.pgm_hash, i, false, static_cast<u32>(opcode), source_offset,
+                        static_cast<u32>(fetch.offsets[i]),
+                        fetch.offsets[i] == UNKNOWN_LOCATION,
+                        arg_inst ? static_cast<u32>(arg_inst->GetOpcode()) : 0u,
+                        immediate_offset, immediate_offset ? arg.U32() : 0u);
+        }
+        LOG_WARNING(Render_Recompiler,
+                    "GOW_FS_IMAGE_SHARP_END shader={:#x} result=CAPTURED",
+                    info.pgm_hash);
+    }
 
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
