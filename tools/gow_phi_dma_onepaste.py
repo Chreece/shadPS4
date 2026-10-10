@@ -382,8 +382,8 @@ def trial_run(binary, temp, result):
     result["gds_placeholder_logged"] = "GOW_GDS_DIAG_TRANSLATED_ONLY" in joined
     audit = re.search(
         r"GOW_TARGET_RESOURCE_AUDIT shader=0x57b077ac "
-        r"invalid_guest_buffers=(\\d+) invalid_images=(\\d+) "
-        r"invalid_samplers=(\\d+) dispatch=SKIPPED", joined)
+        r"invalid_guest_buffers=(\d+) invalid_images=(\d+) "
+        r"invalid_samplers=(\d+) dispatch=SKIPPED", joined)
     result["resource_audit_logged"] = bool(audit)
     result["resource_audit_counts"] = (
         dict(zip(("guest_buffers", "images", "samplers"),
