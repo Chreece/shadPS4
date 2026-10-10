@@ -1833,6 +1833,60 @@ def trial_run(binary, temp, result):
         result["indirect_gpu_nonzero_draws"])
     result["producer73_baseline_control_zero_instances"] = 6
 
+    # New, strictly passive shape audit. Original 20:50 log saw 3 buffers,
+    # 2 images, no samplers. The earlier two-buffer provenance scan omitted
+    # specials and images; preserve ALL actual descriptor slots here.
+    buffers73, images73, headers73, endings73 = {}, {}, [], []
+    for line in joined.splitlines():
+        for marker, target in (
+            ("GOW_73_SHAPE_BEGIN shader=0x73ad8e38", headers73),
+            ("GOW_73_SHAPE_BUFFER shader=0x73ad8e38", None),
+            ("GOW_73_SHAPE_IMAGE shader=0x73ad8e38", None),
+            ("GOW_73_SHAPE_END shader=0x73ad8e38", endings73)
+        ):
+            if marker not in line:
+                continue
+            row = _kv(line[line.index(marker):])
+            if marker.startswith("GOW_73_SHAPE_BUFFER"):
+                if row.get("slot", "").isdigit():
+                    buffers73[int(row["slot"])] = row
+            elif marker.startswith("GOW_73_SHAPE_IMAGE"):
+                if row.get("slot", "").isdigit():
+                    images73[int(row["slot"])] = row
+            elif row not in target:
+                target.append(row)
+            break
+    result["producer73_shape_begin"] = headers73[-1] if headers73 else None
+    result["producer73_shape_buffers"] = [buffers73[k] for k in sorted(buffers73)]
+    result["producer73_shape_images"] = [images73[k] for k in sorted(images73)]
+    result["producer73_shape_complete"] = bool(
+        endings73 and endings73[-1].get("result") == "CAPTURED")
+    result["producer73_shape_buffer_count"] = len(buffers73)
+    result["producer73_shape_image_count"] = len(images73)
+    result["producer73_shape_expected"] = bool(
+        headers73 and headers73[-1].get("buffers") == "3" and
+        headers73[-1].get("images") == "2" and
+        headers73[-1].get("samplers") == "0" and
+        len(buffers73) == 3 and len(images73) == 2)
+    result["producer73_shape_special"] = [
+        row for row in result["producer73_shape_buffers"]
+        if row.get("special") == "true"
+    ]
+    result["producer73_shape_invalid"] = [
+        row for row in (
+            result["producer73_shape_buffers"] +
+            result["producer73_shape_images"])
+        if row.get("safe_flatbuf") == "false"
+    ]
+    (evidence / "shader73-descriptor-shape.json").write_text(
+        json.dumps({
+            "header": result["producer73_shape_begin"],
+            "buffers": result["producer73_shape_buffers"],
+            "images": result["producer73_shape_images"],
+            "complete": result["producer73_shape_complete"],
+            "guard_denied": result["producer73_denied"],
+        }, ensure_ascii=False, indent=2))
+
     # G-buffer draw emission (vs merely binding/render-target preparation).
     # Dedup stdout and game-log copies by the monotonic per-process seq.
     draw_rows = {}
@@ -2203,22 +2257,14 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif report.get("producer73_denied"):
-                    report["result"] = "PRODUCER73_EXACT_GUARD_DENIED"
-                elif not report.get("producer73_admitted"):
-                    report["result"] = "PRODUCER73_ADMISSION_NOT_OBSERVED"
-                elif not report.get("producer73_submitted"):
-                    report["result"] = "PRODUCER73_GPU_NOT_SUBMITTED"
-                elif not report.get("producer73_gpu_completed"):
-                    report["result"] = "PRODUCER73_GPU_COMPLETION_UNCONFIRMED"
-                elif not report.get("indirect_gpu_all_six"):
-                    report["result"] = "PRODUCER73_GPU_ARGUMENT_READBACK_INCOMPLETE"
-                elif report.get("producer73_treatment_nonzero_instance_count"):
-                    report["result"] = "PRODUCER73_RESTORED_NONZERO_INSTANCES"
-                elif report.get("indirect_gpu_zero_instance", 0) == 6:
-                    report["result"] = "PRODUCER73_COMPLETED_ALL_INSTANCES_STILL_ZERO"
+                elif not report.get("producer73_shape_complete"):
+                    report["result"] = "PRODUCER73_PASSIVE_SHAPE_NOT_CAPTURED"
+                elif not report.get("producer73_denied") or report.get("producer73_submitted"):
+                    report["result"] = "PRODUCER73_EXECUTION_POLICY_VIOLATION"
+                elif not report.get("producer73_shape_expected"):
+                    report["result"] = "PRODUCER73_SHAPE_MISMATCH"
                 else:
-                    report["result"] = "PRODUCER73_MIXED_INSTANCE_COUNTS"
+                    report["result"] = "PRODUCER73_EXTRA_DESCRIPTORS_AUDITED_STILL_DENIED"
 
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
@@ -2238,16 +2284,13 @@ def main():
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
-    print("PRODUCER73_ADMISSION=" + str(report.get("producer73_admission", [])))
-    print("PRODUCER73_SUBMITTED=" + str(report.get("producer73_submitted", False)))
-    print("PRODUCER73_GPU_COMPLETED=" + str(report.get("producer73_gpu_completed", False)))
-    print("INDIRECT_GPU_SIX_CAPTURED=" + str(report.get("indirect_gpu_all_six", False)))
-    print("BASELINE_ZERO_INSTANCE_COMMANDS=6")
-    print("TREATMENT_NONZERO_INSTANCE_COMMANDS=" +
-          str(report.get("producer73_treatment_nonzero_instance_count", 0)))
-    print("TREATMENT_ZERO_INSTANCE_COMMANDS=" +
-          str(report.get("indirect_gpu_zero_instance", 0)))
-    print("TREATMENT_GPU_COMMANDS=" + str(report.get("indirect_gpu_captures", [])))
+    print("PRODUCER73_SHAPE_CAPTURED=" + str(report.get("producer73_shape_complete", False)))
+    print("PRODUCER73_BUFFERS=" + str(report.get("producer73_shape_buffers", [])))
+    print("PRODUCER73_IMAGES=" + str(report.get("producer73_shape_images", [])))
+    print("PRODUCER73_EXTRA_SPECIAL=" + str(report.get("producer73_shape_special", [])))
+    print("PRODUCER73_UNSAFE_SHARPS=" + str(report.get("producer73_shape_invalid", [])))
+    print("PRODUCER73_EXECUTED=" + str(report.get("producer73_submitted", False)))
+    print("PRODUCER73_GUARD_DENIED=" + str(report.get("producer73_denied", False)))
     print("ARCHIVE=" + str(archive))
     print("SRT_TRACE_COMPLETE=" + str(report.get("fs_srt_flatten_complete", False)))
     print("SRT_ROOT_ORDER=" + str(report.get("fs_srt_root_order", [])))
