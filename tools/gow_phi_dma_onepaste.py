@@ -39,6 +39,7 @@ FLATTEN_SHA = "0b14e5f5c7961ffcbd691f32223a1b20f25154b2"
 ROOT_PRIORITY_SHA = "55c7ef1d1ca61078b90e4dabc83b5c35ee552e3f"
 AUTO_SHA = "41b199383806734f3b753bf9f96761de7f7e5234"
 BROAD_SHA = "ae1ab93fa6b89e37efc07d8f6f4d09e70880eeda"
+GBUFFER_SHA = "88fbecd1abdd224ce74b39e204357403fa85e907"
 GPU_PROBE_BASE_SHA = "3b8c11e6cdad20cb039f76eaa9fe28677a31b80a"
 HEAD_SHA = "ff31dc5c39bd5aa45d658efb8aba9fac280b1ceb"
 INDIRECT_GPU_DIFF_SHA256 = "30693439d0ba218354aa65e8b6ca6c88a7f24d45665d30d77455e893f0eb8055"
@@ -269,7 +270,7 @@ def get_patches():
     # a known extra, which is never applied to the emulator source.
     draw_path = "src/video_core/renderer_vulkan/vk_rasterizer.cpp"
     draw_probe = fetch_strict_patch(
-        BROAD_SHA, HEAD_SHA, {draw_path, "tools/gow_phi_dma_onepaste.py"})
+        BROAD_SHA, GBUFFER_SHA, {draw_path, "tools/gow_phi_dma_onepaste.py"})
     additions = [
         l for l in draw_probe.splitlines()
         if l.startswith(b"+") and not l.startswith(b"+++")
