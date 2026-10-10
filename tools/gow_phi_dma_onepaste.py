@@ -325,8 +325,15 @@ def verify_staged_instrumentation(staged):
             "GOW_SRT_ROOT_ORDER" not in flat or
             "event=USE_INDEX_FAILED" not in flat):
         raise RuntimeError("Staged flattening-only instrumentation missing")
+    # Direct Draw has a local regs reference; DrawIndirect does not.
+    # Validate the *compiled source form* of both instrumentation callsites.
     if (raster.count("void TraceGoWGBufferDraw(") != 1 or
-            raster.count("TraceGoWGBufferDraw(pipeline, regs, state") != 2 or
+            raster.count(
+                "TraceGoWGBufferDraw(pipeline, regs, state, is_indexed, false,") != 1 or
+            raster.count(
+                "TraceGoWGBufferDraw(pipeline, liverpool->regs, state, "
+                "is_indexed, true,") != 1 or
+            "TraceGoWGBufferDraw(pipeline, regs, state, is_indexed, true," in raster or
             "SHADPS4_GOW_GBUFFER_DRAW_TRACE" not in raster):
         raise RuntimeError("Staged passive G-buffer draw trace missing")
     if (raster.count("void LogGoWGraphicsDrawTotals(u32 frame)") != 1 or
