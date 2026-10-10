@@ -897,10 +897,10 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                            "Ghost dynamic T# row {} is unreadable or incompatible", row);
             }
             ::close(fd);
-            static std::atomic<u64> logged_table_slots{};
-            const u64 slot_key = (u64(table.base_address) << 3) |
-                                 image_desc.ghost_dynamic_image_slot;
-            if (logged_table_slots.exchange(slot_key, std::memory_order_relaxed) != slot_key) {
+            static std::array<std::atomic<u64>, 7> logged_slot_bases{};
+            auto& last_base = logged_slot_bases[image_desc.ghost_dynamic_image_slot];
+            if (last_base.exchange(table.base_address, std::memory_order_relaxed) !=
+                table.base_address) {
                 LOG_WARNING(Render_Vulkan,
                             "GHOST_BINDLESS_TABLE shader={:#x} base={:#x} count=53 "
                             "slot={} record_stride=340 image_offset={}",
