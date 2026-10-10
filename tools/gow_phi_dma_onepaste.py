@@ -1136,7 +1136,7 @@ GOW_73_EXECUTION_SOURCE = r'''    // One strictly guarded native 128x128x1 dispa
                                   .dstOffset = after.offset, .size = Bytes};
         // Copy waits for the tracked compute write on the same GPU timeline.
         runtime.CopyBuffer(out_buffer, after.buffer, std::span{&post, 1});
-        scheduler.DeferPriorityOperation([before, after, &pool] {
+        scheduler.DeferPriorityOperation([before, after, pool_ptr = &pool] {
             before.Invalidate();
             after.Invalidate();
             const auto* old_bytes = static_cast<const u8*>(before.mapped);
@@ -1154,8 +1154,8 @@ GOW_73_EXECUTION_SOURCE = r'''    // One strictly guarded native 128x128x1 dispa
                         "bytes=512 before_nonzero={} after_nonzero={} changed_bytes={} "
                         "result=GPU_READBACK_COMPLETE",
                         prior_nonzero, after_nonzero, changed);
-            pool.FreeDeferred(before);
-            pool.FreeDeferred(after);
+            pool_ptr->FreeDeferred(before);
+            pool_ptr->FreeDeferred(after);
         });
         LOG_WARNING(Render_Vulkan,
                     "GOW_73_EXEC_SUBMIT shader={:#x} grid=128x128x1 "
