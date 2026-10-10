@@ -493,6 +493,8 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
         "SHADPS4_GOW_SRT_FLATTEN_TRACE": "1",
         "SHADPS4_GOW_SRT_SGPR8_FIRST": "1",
+        # Cross-check the final image SHARP (all eight words) in the same run.
+        "SHADPS4_GOW_FS_IMAGE_SHARP_TRACE": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
     env.setdefault("DISPLAY", ":0")
@@ -510,10 +512,14 @@ def trial_run(binary, temp, result):
             while time.monotonic() - start < TIME_LIMIT:
                 time.sleep(2)
                 raw_console = (evidence / "console.log").read_text(errors="replace")
-                if re.search(
+                srt_done = re.search(
                     r"GOW_SRT_FLATTEN_END shader=0x7f710602 [^\n]*result=CAPTURED",
-                    raw_console):
-                    result["end_reason"] = "TARGET_SRT_FLATTEN_CAPTURED"
+                    raw_console)
+                sharp_done = (
+                    "GOW_FS_IMAGE_SHARP_END shader=0x7f710602 result=CAPTURED"
+                    in raw_console)
+                if srt_done and sharp_done:
+                    result["end_reason"] = "TARGET_SRT_AND_IMAGE_SHARP_CAPTURED"
                     break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -703,6 +709,19 @@ def trial_run(binary, temp, result):
         if row.get("unknown") == "true"
     ]
     result["fs_image_sharp_descriptor_word_count"] = len(trace_words)
+    summary_values = [
+        item.get("summary") for item in trace_begin
+        if item.get("summary") in ("0", "1", "2")
+    ]
+    result["fs_image_sharp_fetch_summary"] = (
+        summary_values[-1] if summary_values else None)
+    # SharpFetch::Summary enum: 0=SingleLoad, 1=MultiLoad, 2=Invalid.
+    result["fs_image_sharp_valid_after_reorder"] = (
+        result["fs_image_sharp_trace_complete"] and
+        result["fs_image_sharp_descriptor_word_count"] == 8 and
+        not result["fs_image_sharp_unknown_words"] and
+        result["fs_image_sharp_fetch_summary"] in ("0", "1"))
+
 
     flips = {}
     source_meta = {}
@@ -1183,8 +1202,10 @@ def main():
                     report["result"] = "SGPR8_PRIORITY_NOT_APPLIED"
                 elif report.get("fs_srt_flatten_truncated"):
                     report["result"] = "FS_SRT_FLATTEN_TRACE_CAPPED"
+                elif report.get("fs_srt_all_24_resolved") and report.get("fs_image_sharp_valid_after_reorder"):
+                    report["result"] = "SRT_DEPENDENCY_AND_IMAGE_SHARP_FIXED"
                 elif report.get("fs_srt_all_24_resolved"):
-                    report["result"] = "SRT_DEPENDENCY_ORDER_FIX_PROVEN"
+                    report["result"] = "SRT_DEPENDENCY_FIXED_IMAGE_SHARP_NOT_CONFIRMED"
                 else:
                     report["result"] = "SRT_DEPENDENCY_ORDER_PARTIAL"
         except KeyboardInterrupt:
@@ -1208,6 +1229,9 @@ def main():
     print("ARCHIVE=" + str(archive))
     print("SRT_TRACE_COMPLETE=" + str(report.get("fs_srt_flatten_complete", False)))
     print("SRT_ROOT_ORDER=" + str(report.get("fs_srt_root_order", [])))
+    print("IMAGE_SHARP_VALID=" + str(report.get("fs_image_sharp_valid_after_reorder", False)))
+    print("IMAGE_SHARP_SUMMARY=" + str(report.get("fs_image_sharp_fetch_summary")))
+    print("IMAGE_SHARP_UNRESOLVED_WORDS=" + str(report.get("fs_image_sharp_unknown_words", [])))
     print("SRT_SGPR8_FIRST=" + str(report.get("fs_srt_priority_proved_first", False)))
     print("SRT_RESOLVED_SHARPS=" + str(report.get("fs_srt_flatten_resolved", 0)))
     print("SRT_UNRESOLVED_SHARPS=" + str(report.get("fs_srt_flatten_unresolved", 0)))
