@@ -130,6 +130,7 @@ struct ImageResource {
     // Ghost-only dynamic T# source. GPU computes the array element; prototype
     // supplies compile-time image type/format, never the selected texture.
     u32 ghost_dynamic_image_count{};
+    u32 ghost_dynamic_image_slot{}; // 0..6; 32-byte descriptors within each 340-byte record
     AmdGpu::Image ghost_prototype_image{};
     u8 constant_mip_index{};
     MipStorageFallbackMode mip_fallback_mode{};
