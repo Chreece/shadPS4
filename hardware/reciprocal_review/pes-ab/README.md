@@ -7,7 +7,7 @@ The installed emulator is not an A/B participant: the comparison uses the same p
 ## Automated sequence
 
 1. Resolve PES `CUSA18676` from the existing game configuration and identify the local ES-DE/Sunshine desktop session.
-2. Refuse to start while another shadPS4 instance is active. Build in a temporary directory without changing the installed executable, wrapper, or system packages.
+2. Refuse to start while another shadPS4 instance is active. Fetch a fresh shallow source checkout and pinned submodules without borrowing Git objects from existing caches. Build in a temporary directory without changing the installed executable, wrapper, or system packages.
 3. Create a profile snapshot including the existing PES saves, audio and graphics settings, required resources, and existing emulator caches. Deep-copy that snapshot before each run. Driver caches start empty in separate temporary directories for every run.
 4. Run **native → fixed → fixed → native**, followed by a fixed diagnostic run. Each launch lasts 135 seconds, with a 20-second cooldown beforehand.
 5. Measure game presentations between **30 and 120 seconds after process launch**. Request game-only screenshots around seconds 123 and 129, after that interval. This also prevents a screenshot queued during a slow boot from landing inside the timing window. No game input is injected. Button, key, or mouse clicks invalidate the speed comparison.
@@ -15,6 +15,8 @@ The installed emulator is not an A/B participant: the comparison uses the same p
 7. Recheck original file hashes, archive the evidence, and remove the temporary source, build, profiles, and caches. The runner never restores stale copies over externally modified originals.
 
 Keep Moonlight connected with ES-DE open and no game running. Do not provide game input during the capture. The unattended test may remain at a title screen; it does **not** establish match gameplay performance. The screenshots must be inspected to establish that equivalent scenes were reached. Rendering differences are evidence to investigate, not automatic proof that a bug was fixed.
+
+Progress messages begin with helper downloads, then identify preflight checks, profile copying, file hashing and each build command. Long build commands report their elapsed time and log path every 15 seconds.
 
 ## Evidence
 

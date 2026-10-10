@@ -29,3 +29,10 @@ No system packages were installed. Local configure used SDL_UNIX_CONSOLE_BUILD=O
 The container uses SDL console configuration; actual desktop/game behavior is checked on the homeserver.
 
 Local validation binary SHA-256: 0d4188fdb2cb237f5b2bce6bf7383dcec4e60729a08e7a5112ec20b2cae072a2
+
+Source bootstrap correction (2026-10-10):
+PASS: old source setup reproduces failure with an overly deep Git alternate-object chain.
+PASS: corrected build setup checks out the commit and nested submodules without shared objects.
+PASS: the existing broken-cache fixture remains byte-for-byte unchanged.
+PASS: fresh fetch of the actual pinned upstream commit; CPU source SHA-256 matches.
+Emulator source and instrumentation are unchanged; the earlier full build remains applicable.

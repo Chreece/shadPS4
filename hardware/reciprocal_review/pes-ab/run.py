@@ -27,7 +27,7 @@ import zipfile
 BASE = '0e5a0e1273df701d8069f17c347ec5372d94068d'
 CPU_SHA = '8a5cbb3726189ccd28e1295f35bedd5825cbd32bd0883a00268befe0e7ac7e40'
 FFMPEG_SHA = 'aacbbfb8e622b684bc5d3b4cd6c9f9f77f5def64ae8d83c0c5b3ebe657aa33dd'
-ASSETS = {'profile.py': '00f25e0ffc6f6311f155b64219def15bb5583da1126cc54d3cd9ab62ead90746', 'instrumentation.patch': '621a74bb4c6f2f391ea0ba7b66c5b3d4d159b90daeb9bd8e8daaecddf2c831ce', 'scalar_ab.h': '976220ffce3b5876d141bdfcf9dd90bdb85620f07be79d27a819f54b6f7483cc', 'README.md': 'afb5176d9e3811fa8db3492a4d1ab64eea065ba0201717db54500480b1e73ef2', 'README.md.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'instrumentation.patch.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'validation.txt': '7bd20b43d3ac6fb2e352fd928c2eca7162b387daababac0a6996da94bb8084b6', 'validation.txt.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0'}
+ASSETS = {'profile.py': '00f25e0ffc6f6311f155b64219def15bb5583da1126cc54d3cd9ab62ead90746', 'instrumentation.patch': '621a74bb4c6f2f391ea0ba7b66c5b3d4d159b90daeb9bd8e8daaecddf2c831ce', 'scalar_ab.h': '976220ffce3b5876d141bdfcf9dd90bdb85620f07be79d27a819f54b6f7483cc', 'README.md': 'dd211728f19d0f123e943aa156c0a868263f018e6a997db41960105558dd2992', 'README.md.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'instrumentation.patch.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'validation.txt': 'd939e68a226d9d94475d8ddae13e6fd9e028533a8c65394fde94dae384bca4bb', 'validation.txt.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0'}
 USE_LANDLOCK = False
 MODES = ('native', 'fixed', 'fixed', 'native', 'diagnostic')
 SERIAL = 'CUSA18676'
@@ -48,17 +48,20 @@ def digest(path):
 
 
 def assets(url):
+    say('Checking the pinned runner package')
     for name, expected in ASSETS.items():
         path = HERE / name
         if not path.is_file():
             if not url or not re.fullmatch(
                     r'https://raw\.githubusercontent\.com/Chreece/shadPS4/[0-9a-f]{40}/hardware/reciprocal_review/pes-ab', url):
                 raise RuntimeError('Missing packaged assets and no pinned asset URL')
+            say('Downloading helper: ' + name)
             with urllib.request.urlopen(url + '/' + name, timeout=45) as response:
                 data = response.read(512 * 1024)
             path.write_bytes(data)
         if digest(path) != expected:
             raise RuntimeError('Package checksum mismatch: ' + name)
+    say('Runner package verified')
 
 
 def landlock_available():
@@ -121,6 +124,7 @@ def probe(root, protected):
 def snapshot(roots):
     result = {}
     for root in roots:
+        say('Hashing files: ' + str(root))
         result[str(root)] = {'exists': root.exists()}
         paths = [root] + (sorted(root.rglob('*')) if root.is_dir() else [])
         for path in paths:
@@ -187,7 +191,7 @@ def stop(process, stage=None):
 
 
 def command(args, log, root, cwd=None, timeout=3600, env=None):
-    say('Running: ' + ' '.join(map(str, args[:5])))
+    say('Running: ' + ' '.join(map(str, args)))
     with log.open('a') as output:
         child = subprocess.Popen(list(map(str, args)), cwd=cwd, env=env or clean_env(root),
                                  stdin=subprocess.DEVNULL, stdout=output,
@@ -218,25 +222,17 @@ def git(source, *args):
 def build(root, report, home):
     source, build_dir = root / 'source', root / 'build'
     log = report / 'build.log'
-    cache = home / '.cache/shadps4-affinity-20261007'
-    reference = cache / 'auto-cpu-source-9640051cf206'
-    if (reference / '.git').exists():
-        command(['git', 'clone', '--shared', '--no-checkout', reference, source], log, root)
-        command(['git', '-C', source, 'remote', 'set-url', 'origin',
-                 'https://github.com/Chreece/shadPS4.git'], log, root)
-    else:
-        reference = None
-        command(['git', 'init', source], log, root)
-        command(['git', '-C', source, 'remote', 'add', 'origin',
-                 'https://github.com/Chreece/shadPS4.git'], log, root)
+    say('Preparing an independent source checkout; build log: ' + str(log))
+    command(['git', 'init', '--template=', source], log, root)
+    command(['git', '-C', source, 'remote', 'add', 'origin',
+             'https://github.com/Chreece/shadPS4.git'], log, root)
     command(['git', '-C', source, '-c', 'http.lowSpeedLimit=1024', '-c', 'http.lowSpeedTime=30',
              'fetch', '--recurse-submodules=no', '--depth=1', 'origin', BASE], log, root, timeout=600)
     command(['git', '-C', source, 'checkout', '--detach', BASE], log, root)
     if digest(source / 'src/core/cpu_patches.cpp') != CPU_SHA:
         raise RuntimeError('Pinned scalar source does not match the verified optimization')
     command(['git', '-C', source, '-c', 'http.lowSpeedLimit=1024', '-c', 'http.lowSpeedTime=30',
-             'submodule', 'update', '--init', '--recursive', '--depth=1', '--jobs=4'] +
-            (['--reference', reference] if reference else []),
+             'submodule', 'update', '--init', '--recursive', '--depth=1', '--jobs=4'],
             log, root, timeout=1800)
     command(['git', '-C', source, 'apply', '--check', HERE / 'instrumentation.patch'], log, root)
     command(['git', '-C', source, 'apply', HERE / 'instrumentation.patch'], log, root)
@@ -287,6 +283,7 @@ def build(root, report, home):
 
 
 def profile_seed(source, game, seed, active, home):
+    say('Copying settings and PES saves into the temporary profile')
     config = json.loads((source / 'config.json').read_text())
     custom_file = source / 'custom_configs' / (SERIAL + '.json')
     custom = json.loads(custom_file.read_text()) if custom_file.is_file() else {}
@@ -299,6 +296,7 @@ def profile_seed(source, game, seed, active, home):
             profile.copy_path(path, user / path.name)
     for name in ['custom_configs', 'custom_modules', 'licenses', 'patches', 'cheats',
                  'custom_trophy', 'trophy', 'data', 'shader', 'cache']:
+        say('Preparing profile directory: ' + name)
         profile.copy_path(source / name, user / name)
     profile.copy_path(source / 'game_data' / SERIAL, user / 'game_data' / SERIAL)
     protected = [p for p in source.iterdir()
@@ -313,6 +311,7 @@ def profile_seed(source, game, seed, active, home):
         for serial in {game['serial'], game['save_serial']}:
             save = u / 'savedata' / serial
             protected.append(save)
+            say('Copying PES saves for user ' + u.name)
             profile.copy_path(save, user / 'home' / u.name / 'savedata' / serial)
         for name in ['inputs', 'trophy']:
             profile.copy_path(u / name, user / 'home' / u.name / name)
@@ -325,6 +324,7 @@ def profile_seed(source, game, seed, active, home):
     paths = {'home_dir': str(active / 'user/home')}
     for key, default in [('sys_modules_dir','sys_modules'), ('font_dir','fonts'),
                          ('addon_install_dir','addcont')]:
+        say('Preparing profile resources: ' + default)
         original = profile.absolute(effective[key], home) if effective.get(key) else source / default
         if key == 'addon_install_dir':
             profile.copy_path(original / SERIAL, user / default / SERIAL)
@@ -525,6 +525,7 @@ def main(args):
     root=Path(tempfile.mkdtemp(prefix='shadps4-pes-scalar-work-',dir=home))
     report=root/'report'
     report.mkdir()
+    say('PES test workspace: ' + str(root))
     for name in ['run.py',*ASSETS]:
         shutil.copy2(HERE/name,report/name)
     summary={'base_commit':BASE,'order':MODES,'records':[],'errors':[],
@@ -537,6 +538,7 @@ def main(args):
     before=None
     archive=home/(root.name.replace('-work-','-')+'.tar.gz')
     try:
+        say('Checking the desktop session, launcher, game path and build tools')
         require_idle()
         desktop,session=profile.desktop_environment()
         summary['desktop_source']=session
@@ -564,6 +566,7 @@ def main(args):
         USE_LANDLOCK=landlock_available()
         summary['write_isolation']='Landlock plus copied profile' if USE_LANDLOCK else 'copied portable profile; Landlock unavailable'
         if USE_LANDLOCK:
+            say('Checking filesystem write isolation')
             outside=HERE/'isolation-probe'
             outside.write_text('preserved')
             try:
@@ -575,6 +578,7 @@ def main(args):
                 outside.unlink(missing_ok=True)
         seed,active=root/'seed',root/'active'
         protected,settings=profile_seed(source,game,seed,active,home)
+        say('Temporary profile ready; recording original file hashes')
         protected += [wrapper,installed,home/'.local/lib/shadps4-session-guard',game['sfo'],game['boot_path']]
         before=snapshot(protected)
         write_json(report/'original-state.json',before)
