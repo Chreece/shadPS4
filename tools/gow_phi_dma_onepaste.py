@@ -300,6 +300,7 @@ def trial_run(binary, temp, result):
     command = [str(binary), "--cpu-id-mode", "auto", "--game", GAME, "--fullscreen", "true"]
     proc = None
     start = time.monotonic()
+    wall_start = dt.datetime.now()
     last_spv = None
     try:
         with (evidence / "console.log").open("wb") as output:
@@ -361,6 +362,28 @@ def trial_run(binary, temp, result):
         except Exception as exc:
             result["native_config_restored"] = False
             result["native_config_restore_error"] = str(exc)
+    # Read-only kernel evidence for a GPU reset/hang; no sudo, driver or
+    # display changes. Some Debian accounts cannot read the kernel journal.
+    if shutil.which("journalctl"):
+        try:
+            kernel_log = run(
+                ["journalctl", "-k", "--since",
+                 wall_start.strftime("%Y-%m-%d %H:%M:%S"),
+                 "--no-pager", "-o", "short-iso", "-n", "900"],
+                timeout=15)
+            if kernel_log.returncode == 0:
+                suspicious = [ln for ln in kernel_log.stdout.splitlines()
+                              if re.search(r"amdgpu|drm|gpu reset|ring timeout|gpu hang",
+                                           ln, re.I)]
+                (evidence / "kernel-gpu.txt").write_text("\n".join(suspicious[-200:]))
+                result["kernel_gpu_lines"] = len(suspicious)
+                result["kernel_gpu_hang_logged"] = any(
+                    re.search(r"gpu reset|ring.*timeout|gpu hang|job timed out",
+                              ln, re.I) for ln in suspicious)
+            else:
+                result["kernel_gpu_evidence_unavailable"] = True
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            result["kernel_gpu_evidence_error"] = str(exc)
     joined = (evidence / "console.log").read_text(errors="replace")
     if log_dir.is_dir():
         for p in log_dir.glob("*.log"):
