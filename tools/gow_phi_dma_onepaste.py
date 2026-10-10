@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "1a6f49c8e72ca1cd98110473ea5504d92df8a81e"
+HEAD_SHA = "db00cab6472dba61504fde5bbc6e9d57566bef49"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -289,6 +289,7 @@ def trial_run(binary, temp, result):
         "SHADPS4_ENABLE_IPC": "false",
         "SHADPS4_GOW_ONE_SHADER_DMA_COMPILE": "1",
         "SHADPS4_GOW_SPV_DUMP_DIR": str(dump_dir.resolve()),
+        "SHADPS4_GOW_BIND_PROBE": "1",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
@@ -373,6 +374,11 @@ def trial_run(binary, temp, result):
     result["dma_codegen_logged"] = "GOW_TARGET_DMA_DYNAMIC_CODEGEN" in joined
     result["spv_dump_logged"] = "GOW_TARGET_SPV_DUMP" in joined
     result["compute_suppression_logged"] = "GOW_DIAG_COMPUTE_SUPPRESSED" in joined
+    result["bind_probe_logged"] = "GOW_TARGET_BIND_PROBE" in joined
+    result["bind_probe_passed"] = bool(re.search(
+        r"GOW_TARGET_BIND_PROBE[^\n]*bound=true[^\n]*uses_dma=true[^\n]*"
+        r"writes=18[^\n]*bda_valid=true[^\n]*fault_valid=true[^\n]*dispatch=SKIPPED",
+        joined))
     result["gds_placeholder_logged"] = "GOW_GDS_DIAG_TRANSLATED_ONLY" in joined
     relevant = [line[:1600] for line in joined.splitlines() if
                 re.search(r"GOW_|failed|error|shader 0x57b077ac|Vulkan|CPU identity", line, re.I)]
@@ -446,6 +452,7 @@ def main():
     print("GOW_PHI_DMA_RESULT=" + report.get("result", "UNKNOWN"))
     print("ARCHIVE=" + str(archive))
     print("TARGET_SPV_COUNT=" + str(len(report.get("spv", []))))
+    print("BIND_PROBE_PASSED=" + str(report.get("bind_probe_passed", False)))
     print("SOURCE_RESTORED=" + str(report.get("sources_restored")))
     print("BUILD_BINARY_RESTORED=" + str(report.get("build_binary_restored")))
     if report.get("error"):
