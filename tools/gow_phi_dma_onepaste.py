@@ -1640,6 +1640,29 @@ GOW_UPSTREAM_RASTER_SOURCE = r'''    // Stage 20: identify exact guest inputs/ou
                         cs_program.dim_z, cs.buffers.size(), cs.images.size(),
                         cs.samplers.size(), cs.uses_dma, cs.translation_failed,
                         cs.flattened_ud_buf.size());
+            // Stage21: SPIR-V's ONLY shader 9a OpStore consumes the float
+            // bitcast of srt_flatbuf[20], not a dynamically generated color.
+            // Log the runtime uniform and bound controls, with zero GPU work.
+            const char* audit_word = std::getenv("SHADPS4_GOW_9A_FILL_WORD_AUDIT");
+            if (upstream && audit_word && std::strcmp(audit_word, "1") == 0) {
+                if (cs.flattened_ud_buf.size() == 22) {
+                    const u32 fill_bits = cs.flattened_ud_buf[20];
+                    LOG_WARNING(Render_Vulkan,
+                                "GOW_9A_FILL_WORD shader={:#x} invocation={} "
+                                "fill_bits={:#010x} float_zero={} "
+                                "limit_dw18={} limit_dw21={} index_dw5={} shift_dw6={} "
+                                "flattened_words=22 result=CAPTURED",
+                                cs.pgm_hash, invocation, fill_bits,
+                                (fill_bits & 0x7fffffffu) == 0u,
+                                cs.flattened_ud_buf[18], cs.flattened_ud_buf[21],
+                                cs.flattened_ud_buf[5], cs.flattened_ud_buf[6]);
+                } else {
+                    LOG_WARNING(Render_Vulkan,
+                                "GOW_9A_FILL_WORD shader={:#x} invocation={} "
+                                "flattened_words={} result=SHAPE_MISMATCH",
+                                cs.pgm_hash, invocation, cs.flattened_ud_buf.size());
+                }
+            }
             for (u32 slot = 0; slot < cs.buffers.size() && slot < 20; ++slot) {
                 const auto& desc = cs.buffers[slot];
                 const bool special = desc.IsSpecial();
@@ -2162,11 +2185,12 @@ def trial_run(binary, temp, result):
         # Retain the previously proven automatic resource dependencies.
         # Their verbose per-shader flattened-buffer trace stays disabled.
         "SHADPS4_GOW_SRT_AUTO_ROOTS": "2",
-        # Stage20 is PASSIVE for both large shaders: do not run 6D, 73, or
-        # 9A. Prior small canaries retain their known behavior, unchanged.
+        # Stage21 remains strictly passive for large shaders. The Stage20
+        # SPIR-V is already archived, so only actual runtime fill constants
+        # are captured here. The proven small canaries remain unchanged.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
         "SHADPS4_GOW_UPSTREAM_DESCRIPTORS": "1",
-        "SHADPS4_GOW_TARGET_SPV_AUDIT": "1",
+        "SHADPS4_GOW_9A_FILL_WORD_AUDIT": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
         # No large frame or offscreen readbacks.
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
@@ -2203,17 +2227,15 @@ def trial_run(binary, temp, result):
                     "GOW_UPSTREAM_END shader=0x9a1583fb") >= 4
                 downstream_once = (
                     "GOW_UPSTREAM_END shader=0x6d6da626" in raw_console)
-                spv_ready = all(
-                    (temp / "gow_spv" / (str(int(shader, 16)) + ".spv")).is_file()
-                    for shader in ("0x9a1583fb", "0x6d6da626",
-                                   "0xf2d59856", "0xf875ea48"))
-                if upstream_four and downstream_once and spv_ready:
-                    result["end_reason"] = "UPSTREAM_GUEST_SHARPS_AND_SOURCE_SPV_CAPTURED"
+                fill_four = raw_console.count(
+                    "GOW_9A_FILL_WORD shader=0x9a1583fb") >= 4
+                if upstream_four and downstream_once and fill_four:
+                    result["end_reason"] = "UPSTREAM_FOUR_RUNTIME_FILL_VALUES_CAPTURED"
                     break
                 if upstream_four and downstream_once:
                     result.setdefault("upstream_ready_at", time.monotonic())
                     if time.monotonic() - result["upstream_ready_at"] > 15:
-                        result["end_reason"] = "UPSTREAM_DESCRIPTORS_CAPTURED_SPV_MISSING"
+                        result["end_reason"] = "UPSTREAM_FILL_WORDS_NOT_CAPTURED"
                         break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -2928,6 +2950,53 @@ def trial_run(binary, temp, result):
                 "output_changed_bytes": 0, "six_indirect_instance_counts": [0]*6},
         }, ensure_ascii=False, indent=2))
 
+    # Stage21: four runtime shader9a uniform fill values. The Stage20 SPIR-V
+    # establishes the write-source chain:
+    # OpLoad srt_flatbuf[20] -> OpBitcast F32 -> OpCompositeExtract
+    # -> the shader's ONLY OpStore into a 4-MiB SSBO.
+    fill_words = {}
+    mismatches = {}
+    for line in joined.splitlines():
+        marker = "GOW_9A_FILL_WORD shader=0x9a1583fb"
+        if marker not in line:
+            continue
+        kv = _kv(line[line.index(marker):])
+        if not kv.get("invocation", "").isdigit():
+            continue
+        inv = int(kv["invocation"])
+        if inv not in range(4):
+            continue
+        if kv.get("result") == "CAPTURED":
+            fill_words[inv] = kv
+        else:
+            mismatches[inv] = kv
+    result["nine_a_fill_words"] = [
+        fill_words[k] for k in sorted(fill_words)]
+    result["nine_a_fill_shape_mismatches"] = [
+        mismatches[k] for k in sorted(mismatches)]
+    result["nine_a_fill_all_four"] = set(fill_words) == set(range(4))
+    result["nine_a_fill_float_zero_count"] = sum(
+        row.get("float_zero") == "true"
+        for row in result["nine_a_fill_words"])
+    result["nine_a_fill_nonzero_count"] = (
+        len(fill_words) - result["nine_a_fill_float_zero_count"])
+    result["nine_a_fill_bits"] = [
+        row.get("fill_bits") for row in result["nine_a_fill_words"]]
+    (evidence / "gow9a-four-actual-fill-values.json").write_text(
+        json.dumps({
+            "shader": "0x9a1583fb",
+            "native_grid": [16384, 1, 1],
+            "instructions": "Store of bitcast(flattened_ud_buf[20])",
+            "four_expected_invocations": list(range(4)),
+            "all_four_values": result["nine_a_fill_all_four"],
+            "fill_values": result["nine_a_fill_words"],
+            "unexpected_flatbuf_shape": result["nine_a_fill_shape_mismatches"],
+            "zero_float_values": result["nine_a_fill_float_zero_count"],
+            "nonzero_float_values": result["nine_a_fill_nonzero_count"],
+            "shader_executed": False,
+            "upstream_spv_captured_prior_stage20": True,
+        }, ensure_ascii=False, indent=2))
+
     # Stage20: correlate live descriptor addresses between the candidate 9A
     # source and shader6D, and archive exact compiled SPIR-V. No GPU execution
     # was enabled for either large shader.
@@ -3515,16 +3584,14 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif (report.get("upstream_9a_invocations") == [0, 1, 2, 3] and
-                      report.get("downstream_6d_descriptor_captured") and
-                      report.get("upstream_spv_captured")):
-                    report["result"] = "UPSTREAM_LIVE_DESCRIPTOR_AND_COMPILED_SPV_CAPTURED"
-                elif report.get("upstream_spv_captured"):
-                    report["result"] = "UPSTREAM_COMPILED_SPV_CAPTURED_DESCRIPTOR_INCOMPLETE"
-                elif report.get("upstream_descriptor_rows"):
-                    report["result"] = "UPSTREAM_DESCRIPTOR_CAPTURED_SPV_INCOMPLETE"
+                elif (report.get("nine_a_fill_all_four") and
+                      report.get("upstream_9a_invocations") == [0, 1, 2, 3] and
+                      report.get("downstream_6d_descriptor_captured")):
+                    report["result"] = "UPSTREAM_FOUR_NATIVE_FILL_VALUES_CAPTURED"
+                elif report.get("nine_a_fill_shape_mismatches"):
+                    report["result"] = "UPSTREAM_FILL_FLATBUF_SHAPE_MISMATCH"
                 else:
-                    report["result"] = "UPSTREAM_SHADER_AUDIT_NOT_CAPTURED"
+                    report["result"] = "UPSTREAM_FILL_VALUES_INCOMPLETE"
 
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
@@ -3546,6 +3613,10 @@ def main():
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
     print("GOW73_HOST_BIND_RESULT=" + str(report.get("producer73_host_bind")))
     print("GOW73_HOST_BIND_PASS=" + str(report.get("producer73_host_bind_pass", False)))
+    print("NINE_A_FILL_ALL_FOUR=" + str(report.get("nine_a_fill_all_four", False)))
+    print("NINE_A_FILL_BITS=" + str(report.get("nine_a_fill_bits")))
+    print("NINE_A_ZERO_FLOAT_COUNT=" + str(report.get("nine_a_fill_float_zero_count")))
+    print("NINE_A_NONZERO_FLOAT_COUNT=" + str(report.get("nine_a_fill_nonzero_count")))
     print("UPSTREAM_SPV_CAPTURED=" + str(report.get("upstream_spv_captured", False)))
     print("UPSTREAM_9A_INVOCATIONS=" + str(report.get("upstream_9a_invocations")))
     print("UPSTREAM_6D_IMAGE_OVERLAP=" + str(report.get("upstream_9a_writer_to_6d_image_overlap")))
