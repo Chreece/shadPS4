@@ -1,0 +1,496 @@
+--- a/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp
++++ b/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp
+@@ -160,6 +160,31 @@
+     return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
+ }
+ 
++Id EmitImageSampleImplicitLodGhostIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle,
++                                          Id record_index, Id coords, Id bias,
++                                          const IR::Value& offset) {
++    const auto& texture = ctx.images[handle & 0xFFFF];
++    ASSERT(ctx.info.images[handle & 0xFFFF].ghost_dynamic_image_count == 53);
++    // The original shader's lane-reduction result selects the texture.
++    // No forced shader loop exits, fixed-row substitution or host-side guessing.
++    ctx.Decorate(record_index, spv::Decoration::NonUniformEXT);
++    const Id pointer_type = ctx.TypePointer(spv::StorageClass::UniformConstant,
++                                           texture.image_type);
++    const Id pointer = ctx.OpAccessChain(pointer_type, texture.id, std::array{record_index});
++    ctx.Decorate(pointer, spv::Decoration::NonUniformEXT);
++    const Id image = ctx.OpLoad(texture.image_type, pointer);
++    ctx.Decorate(image, spv::Decoration::NonUniformEXT);
++    const Id sampler = ctx.OpLoad(ctx.sampler_type, ctx.samplers[handle >> 16]);
++    const Id sampled_image = ctx.OpSampledImage(texture.sampled_type, image, sampler);
++    const Id fixed_coords = FixImageCoords<true>(ctx, coords, texture.view_type);
++    ImageOperands operands;
++    operands.Add(spv::ImageOperandsMask::Bias, bias);
++    operands.AddOffset(ctx, texture.view_type, offset);
++    const Id sample = ctx.OpImageSampleImplicitLod(texture.data_types->Get(4),
++        sampled_image, fixed_coords, operands.mask, operands.operands);
++    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
++}
++
+ Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
+                               const IR::Value& offset) {
+     const auto& texture = ctx.images[handle & 0xFFFF];
+--- a/src/shader_recompiler/backend/spirv/emit_spirv_instructions.h
++++ b/src/shader_recompiler/backend/spirv/emit_spirv_instructions.h
+@@ -436,6 +436,9 @@
+                       Id address3, Id address4);
+ Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id bias,
+                               const IR::Value& offset);
++Id EmitImageSampleImplicitLodGhostIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle,
++                                          Id record_index, Id coords, Id bias,
++                                          const IR::Value& offset);
+ Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
+                               const IR::Value& offset);
+ Id EmitImageSampleDrefImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id dref,
+--- a/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
++++ b/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
+@@ -13,6 +13,8 @@
+ #include <fmt/format.h>
+ #include <spirv/unified1/spirv.hpp11>
+ 
++#include <algorithm>
++#include <ranges>
+ #include <numbers>
+ #include <string_view>
+ 
+@@ -80,6 +82,13 @@
+     String(fmt::format("{:#x}", info.pgm_hash));
+ 
+     AddCapability(spv::Capability::Shader);
++    if (std::ranges::any_of(info.images, [](const ImageResource& image) {
++            return image.ghost_dynamic_image_count != 0;
++        })) {
++        AddExtension("SPV_EXT_descriptor_indexing");
++        AddCapability(spv::Capability::ShaderNonUniformEXT);
++        AddCapability(spv::Capability::SampledImageArrayNonUniformIndexingEXT);
++    }
+     DefineArithmeticTypes();
+     DefineInterfaces();
+     DefineSharedMemory();
+@@ -1006,7 +1015,8 @@
+ 
+         const u32 num_bindings = image_desc.NumBindings(info);
+         Id pointee_type = image_type;
+-        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex) {
++        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex ||
++            image_desc.ghost_dynamic_image_count) {
+             pointee_type = TypeArray(pointee_type, ConstU32(num_bindings));
+         }
+ 
+--- a/src/shader_recompiler/ir/ir_emitter.cpp
++++ b/src/shader_recompiler/ir/ir_emitter.cpp
+@@ -2116,6 +2116,13 @@
+     return Inst(Opcode::ImageSampleImplicitLod, Flags{info}, handle, coords, bias, offset);
+ }
+ 
++Value IREmitter::ImageSampleImplicitLodGhostIndexed(const Value& handle, const U32& record_index,
++                                                    const Value& coords, const F32& bias,
++                                                    const Value& offset, TextureInstInfo info) {
++    return Inst(Opcode::ImageSampleImplicitLodGhostIndexed, Flags{info},
++                handle, record_index, coords, bias, offset);
++}
++
+ Value IREmitter::ImageSampleExplicitLod(const Value& handle, const Value& coords, const F32& lod,
+                                         const Value& offset, TextureInstInfo info) {
+     return Inst(Opcode::ImageSampleExplicitLod, Flags{info}, handle, coords, lod, offset);
+--- a/src/shader_recompiler/ir/ir_emitter.h
++++ b/src/shader_recompiler/ir/ir_emitter.h
+@@ -379,6 +379,12 @@
+     [[nodiscard]] Value ImageSampleImplicitLod(const Value& handle, const Value& body,
+                                                const F32& bias, const Value& offset,
+                                                TextureInstInfo info);
++    [[nodiscard]] Value ImageSampleImplicitLodGhostIndexed(const Value& handle,
++                                                            const U32& record_index,
++                                                            const Value& coords,
++                                                            const F32& bias,
++                                                            const Value& offset,
++                                                            TextureInstInfo info);
+ 
+     [[nodiscard]] Value ImageSampleExplicitLod(const Value& handle, const Value& body,
+                                                const F32& lod, const Value& offset,
+--- a/src/shader_recompiler/ir/opcodes.inc
++++ b/src/shader_recompiler/ir/opcodes.inc
+@@ -422,6 +422,7 @@
+ OPCODE(ImageHandle,                                         Opaque,         U32x4,          U32x4,                                                          )
+ OPCODE(ImageSampleRaw,                                      F32x4,          Opaque,         Opaque,         F32x4,          F32x4,          F32x4,          F32,           )
+ OPCODE(ImageSampleImplicitLod,                              F32x4,          Opaque,         F32x4,          F32,            Opaque,                         )
++OPCODE(ImageSampleImplicitLodGhostIndexed,                  F32x4,          Opaque,         U32,            F32x4,          F32,            Opaque,                         )
+ OPCODE(ImageSampleExplicitLod,                              F32x4,          Opaque,         Opaque,         F32,            Opaque,                         )
+ OPCODE(ImageSampleDrefImplicitLod,                          F32x4,          Opaque,         Opaque,         F32,            F32,            Opaque,         )
+ OPCODE(ImageSampleDrefExplicitLod,                          F32x4,          Opaque,         Opaque,         F32,            F32,            Opaque,         )
+--- a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+@@ -2,6 +2,12 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include <limits>
++#include <array>
++#include <cstdlib>
++#include <cstring>
++#include <optional>
++#include <fcntl.h>
++#include <unistd.h>
+ #include "shader_recompiler/info.h"
+ #include "shader_recompiler/ir/basic_block.h"
+ #include "shader_recompiler/ir/ir_emitter.h"
+@@ -16,6 +22,84 @@
+ 
+ namespace Shader::Optimization {
+ namespace {
++
++// Strict match for Ghost's original dynamic ImageHandle source, as proven in
++// fs_0x8e743c8e pre-res-patch IR: (record*340 + 64)>>2. Do NOT guess a row.
++struct GhostSelector {
++    IR::Value record;
++    u32 slot;
++};
++
++// Seven T# positions per 340-byte record: 0,32,...,192. The IR shifts
++// (record*340+slot*32) right by two before ReadConstBuffer. Keep the GPU
++// index value itself; never choose a row on the CPU.
++std::optional<GhostSelector> GhostRecordSelector(const SharpReference& sharp) {
++    const auto* load = sharp.dwords[0].TryInst();
++    if (!load || load->GetOpcode() != IR::Opcode::ReadConstBuffer)
++        return {};
++    const auto* shift = load->Arg(1).TryInst();
++    if (!shift || shift->GetOpcode() != IR::Opcode::ShiftRightLogical32 ||
++        !shift->Arg(1).IsImmediate() || shift->Arg(1).U32() != 2)
++        return {};
++
++    IR::Value mul_value = shift->Arg(0);
++    u32 offset = 0;
++    if (const auto* add = mul_value.TryInst();
++        add && add->GetOpcode() == IR::Opcode::IAdd32) {
++        if (add->Arg(0).IsImmediate()) {
++            offset = add->Arg(0).U32();
++            mul_value = add->Arg(1);
++        } else if (add->Arg(1).IsImmediate()) {
++            offset = add->Arg(1).U32();
++            mul_value = add->Arg(0);
++        } else {
++            return {};
++        }
++    }
++    if ((offset % 32) != 0 || offset > 192)
++        return {};
++    const auto* mul = mul_value.TryInst();
++    if (!mul || mul->GetOpcode() != IR::Opcode::IMul32)
++        return {};
++    if (mul->Arg(0).IsImmediate() && mul->Arg(0).U32() == 340)
++        return GhostSelector{mul->Arg(1), offset / 32};
++    if (mul->Arg(1).IsImmediate() && mul->Arg(1).U32() == 340)
++        return GhostSelector{mul->Arg(0), offset / 32};
++    return {};
++}
++
++// Read the first REAL row solely for sampled-image dimensional/format typing.
++// The runtime Vulkan descriptor array is populated from all 53 CURRENT rows;
++// row zero never replaces the shader-computed GPU selection.
++std::optional<AmdGpu::Image> GhostPrototypeImage(const Info& info, u32 slot) {
++    if (info.user_data.size() < 2) return {};
++    const u64 root = u64(info.user_data[0]) | (u64(info.user_data[1]) << 32);
++    if (!root || root > 0x00007fffffffffffull - 0x180 - sizeof(AmdGpu::Buffer))
++        return {};
++    const int fd = ::open("/proc/self/mem", O_RDONLY | O_CLOEXEC);
++    if (fd < 0) return {};
++    AmdGpu::Buffer table{};
++    const ssize_t n = ::pread(fd, &table, sizeof(table), static_cast<off_t>(root + 0x180));
++    AmdGpu::Image image{};
++    ssize_t result = -1;
++    if (n == sizeof(table) && table.base_address &&
++        table.GetStride() == 340 && table.GetSize() == 18020 &&
++        slot < 7 && table.base_address <=
++            0x00007fffffffffffull - (u64(slot) * 32 + sizeof(image))) {
++        result = ::pread(fd, &image, sizeof(image),
++                         static_cast<off_t>(table.base_address + u64(slot) * 32));
++    }
++    ::close(fd);
++    if (result != sizeof(image) || !image.Valid() || !image.Address() ||
++        image.GetType() != AmdGpu::ImageType::Color2D)
++        return {};
++    return image;
++}
++
++static bool GhostBindlessEnabled() {
++    const char* flag = std::getenv("SHADPS4_GHOST_BINDLESS_EXPERIMENT");
++    return flag && std::strcmp(flag, "1") == 0;
++}
+ 
+ IR::Type BufferDataType(const IR::Inst& inst, const Profile& profile) {
+     switch (inst.GetOpcode()) {
+@@ -115,6 +199,8 @@
+         const u32 index{Add(image_resources, desc, [&desc](const auto& existing) {
+             return desc.sharp_fetch == existing.sharp_fetch &&
+                    desc.atomic_uint_alias == existing.atomic_uint_alias &&
++                   desc.ghost_dynamic_image_slot == existing.ghost_dynamic_image_slot &&
++                   desc.ghost_dynamic_image_count == existing.ghost_dynamic_image_count &&
+                    desc.is_array == existing.is_array &&
+                    desc.mip_fallback_mode == existing.mip_fallback_mode &&
+                    desc.constant_mip_index == existing.constant_mip_index &&
+@@ -254,6 +340,22 @@
+         .is_r128 = bool(inst_info.is_r128),
+         .post_op = resource.sharps[0].post_op,
+     };
++    if (GhostBindlessEnabled() && info.pgm_hash == 0x8e743c8eULL &&
++        inst.GetOpcode() == IR::Opcode::ImageSampleRaw &&
++        image_res.sharp_fetch.summary == decltype(image_res.sharp_fetch.summary)::Invalid) {
++        const auto index = GhostRecordSelector(resource.sharps[0]);
++        ASSERT_MSG(index.has_value(), "Ghost dynamic image2 source is not one of the seven verified IR slots");
++        const auto prototype = GhostPrototypeImage(info, index->slot);
++        ASSERT_MSG(prototype.has_value(), "Ghost indexed T# slot {} is not a valid 2D texture", index->slot);
++        image_res.ghost_dynamic_image_count = 53;
++        image_res.ghost_dynamic_image_slot = index->slot;
++        image_res.ghost_prototype_image = *prototype;
++        LOG_WARNING(Render_Recompiler,
++                    "GHOST_BINDLESS_SOURCE shader={:#x} records=53 slot={} format={} "
++                    "image_type={} record_offset={} stride=340",
++                    info.pgm_hash, index->slot, u32(prototype->GetDataFmt()),
++                    u32(prototype->GetType()), index->slot * 32);
++    }
+ 
+     auto image = image_res.GetSharp(info);
+ 
+@@ -654,7 +756,7 @@
+ }
+ 
+ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image_res,
+-                          const AmdGpu::Image& image) {
++                          const AmdGpu::Image& image, const IR::Value& dynamic_record_index) {
+     const auto handle = inst.Arg(0);
+     const auto& sampler_res = info.samplers[(handle.U32() >> 16) & 0xFFFF];
+     const auto sampler = sampler_res.GetSharp(info);
+@@ -850,6 +952,13 @@
+         if (explicit_lod) {
+             return ir.ImageSampleExplicitLod(handle, coords, lod, offset, inst_info);
+         }
++        if (image_res.ghost_dynamic_image_count) {
++            ASSERT_MSG(!dynamic_record_index.IsEmpty() && !inst_info.is_depth &&
++                       !inst_info.has_derivatives && !inst_info.has_lod,
++                       "Ghost indexed sample requires the real record selector and implicit LOD");
++            return ir.ImageSampleImplicitLodGhostIndexed(
++                handle, IR::U32{dynamic_record_index}, coords, bias, offset, inst_info);
++        }
+         return ir.ImageSampleImplicitLod(handle, coords, bias, offset, inst_info);
+     }();
+ 
+@@ -860,7 +969,7 @@
+     inst.ReplaceUsesWith(converted);
+ }
+ 
+-void PatchImageArgs(IR::Inst& inst, Info& info) {
++void PatchImageArgs(IR::Inst& inst, Info& info, const ResourceDiscovery& discovery) {
+     // Nothing to patch for dimension query.
+     if (inst.GetOpcode() == IR::Opcode::ImageQueryDimensions) {
+         return;
+@@ -873,7 +982,13 @@
+ 
+     // Sample instructions must be handled separately using address register data.
+     if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
+-        return PatchImageSampleArgs(inst, info, image_res, image);
++        const auto selector = image_res.ghost_dynamic_image_count
++                                  ? GhostRecordSelector(discovery.sharps[0])
++                                  : std::optional<GhostSelector>{};
++        ASSERT_MSG(!image_res.ghost_dynamic_image_count || selector.has_value(),
++                   "Ghost dynamic record selector was lost before sample lowering");
++        return PatchImageSampleArgs(inst, info, image_res, image,
++                                    selector.has_value() ? selector->record : IR::Value{});
+     }
+ 
+     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
+@@ -977,7 +1092,7 @@
+         if (IsBufferInstruction(inst)) {
+             PatchBufferArgs(inst, info);
+         } else if (IsImageInstruction(inst)) {
+-            PatchImageArgs(inst, info);
++            PatchImageArgs(inst, info, usage);
+         } else if (IsDataRingInstruction(inst)) {
+             PatchGlobalDataShareAccess(inst, info, descriptors, profile);
+         }
+--- a/src/shader_recompiler/resource.h
++++ b/src/shader_recompiler/resource.h
+@@ -130,11 +130,19 @@
+     bool is_array{};
+     bool is_written{};
+     bool is_r128{};
++    // Ghost-only dynamic T# source. GPU computes the array element; prototype
++    // supplies compile-time image type/format, never the selected texture.
++    u32 ghost_dynamic_image_count{};
++    u32 ghost_dynamic_image_slot{}; // 0..6; 32-byte descriptors within each 340-byte record
++    AmdGpu::Image ghost_prototype_image{};
+     u8 constant_mip_index{};
+     MipStorageFallbackMode mip_fallback_mode{};
+     SharpFetchPostOp post_op{};
+ 
+     constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {
++        if (ghost_dynamic_image_count) {
++            return ghost_prototype_image;
++        }
+         AmdGpu::Image image{};
+         if (!Fetch(info.flattened_ud_buf.data(), &image)) {
+             return AmdGpu::Image::Null(is_depth);
+@@ -169,6 +177,9 @@
+     }
+ 
+     u32 NumBindings(const auto& info) const {
++        if (ghost_dynamic_image_count) {
++            return ghost_dynamic_image_count;
++        }
+         const AmdGpu::Image tsharp = GetSharp(info);
+         return (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex)
+                    ? (tsharp.last_level - tsharp.base_level + 1)
+--- a/src/video_core/renderer_vulkan/vk_instance.cpp
++++ b/src/video_core/renderer_vulkan/vk_instance.cpp
+@@ -1,6 +1,8 @@
+ // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <cstdlib>
++#include <cstring>
+ #include <boost/container/static_vector.hpp>
+ #include <fmt/format.h>
+ #include <fmt/ranges.h>
+@@ -424,6 +426,17 @@
+     const auto vk11_features = feature_chain.get<vk::PhysicalDeviceVulkan11Features>();
+     vk12_features = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
+     vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();
++    // Opt-in Ghost bindless experiment; unchanged for all other games.
++    static const bool ghost_bindless = [] {
++        const char* value = std::getenv("SHADPS4_GHOST_BINDLESS_EXPERIMENT");
++        return value && std::strcmp(value, "1") == 0;
++    }();
++    if (ghost_bindless) {
++        ASSERT_MSG(features.shaderSampledImageArrayDynamicIndexing &&
++                   vk12_features.descriptorIndexing &&
++                   vk12_features.shaderSampledImageArrayNonUniformIndexing,
++                   "Ghost bindless requested but Vulkan sampled-image indexing is unavailable");
++    }
+     vk::StructureChain device_chain = {
+         vk::DeviceCreateInfo{
+             .queueCreateInfoCount = static_cast<u32>(queue_infos.size()),
+@@ -454,6 +467,8 @@
+                 .shaderImageGatherExtended = features.shaderImageGatherExtended,
+                 .shaderStorageImageExtendedFormats = features.shaderStorageImageExtendedFormats,
+                 .shaderStorageImageMultisample = features.shaderStorageImageMultisample,
++                .shaderSampledImageArrayDynamicIndexing =
++                    ghost_bindless && features.shaderSampledImageArrayDynamicIndexing,
+                 .shaderClipDistance = features.shaderClipDistance,
+                 .shaderFloat64 = features.shaderFloat64,
+                 .shaderInt64 = features.shaderInt64,
+@@ -474,6 +489,9 @@
+             .shaderSharedInt64Atomics = vk12_features.shaderSharedInt64Atomics,
+             .shaderFloat16 = vk12_features.shaderFloat16,
+             .shaderInt8 = vk12_features.shaderInt8,
++            .descriptorIndexing = ghost_bindless && vk12_features.descriptorIndexing,
++            .shaderSampledImageArrayNonUniformIndexing =
++                ghost_bindless && vk12_features.shaderSampledImageArrayNonUniformIndexing,
+             .scalarBlockLayout = vk12_features.scalarBlockLayout,
+             .uniformBufferStandardLayout = vk12_features.uniformBufferStandardLayout,
+             .separateDepthStencilLayouts = vk12_features.separateDepthStencilLayouts,
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+@@ -1,6 +1,13 @@
+ // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <atomic>
++#include <array>
++#include <cerrno>
++#include <cstdlib>
++#include <cstring>
++#include <fcntl.h>
++#include <unistd.h>
+ #include "common/debug.h"
+ #include "core/debug_state.h"
+ #include "core/emulator_settings.h"
+@@ -850,6 +857,60 @@
+     u32 num_images{};
+     for (const auto& image_desc : stage.images) {
+         const auto tsharp = image_desc.GetSharp(stage);
++        std::array<AmdGpu::Image, 53> ghost_dynamic_images{};
++        if (image_desc.ghost_dynamic_image_count) {
++            // Read all real guest textures from the same indirect descriptor
++            // table that the shader indexes with its own lane-reduced record.
++            ASSERT_MSG(stage.pgm_hash == 0x8e743c8eULL &&
++                       stage.user_data.size() >= 2 &&
++                       image_desc.ghost_dynamic_image_count == ghost_dynamic_images.size() &&
++                       image_desc.ghost_dynamic_image_slot < 7,
++                       "Ghost sampled-image table shape changed");
++            const u64 root = u64(stage.user_data[0]) |
++                             (u64(stage.user_data[1]) << 32);
++            ASSERT_MSG(root && root <= 0x00007fffffffffffull - 0x180 - 16,
++                       "Ghost SRT root pointer invalid");
++            const int fd = ::open("/proc/self/mem", O_RDONLY | O_CLOEXEC);
++            ASSERT_MSG(fd >= 0, "Ghost guest-memory read handle unavailable");
++            AmdGpu::Buffer table{};
++            const ssize_t table_size = ::pread(fd, &table, sizeof(table),
++                                                static_cast<off_t>(root + 0x180));
++            ASSERT_MSG(table_size == sizeof(table) && table.base_address != 0 &&
++                       table.GetStride() == 340 && table.GetSize() == 18020 &&
++                       table.base_address <=
++                           0x00007fffffffffffull - (52 * 340 + 6 * 32 + sizeof(AmdGpu::Image)),
++                       "Ghost dynamic T# table no longer matches 53 x 340");
++            for (u32 row = 0; row < 53; ++row) {
++                const u64 address = table.base_address + u64(row) * 340 +
++                                    u64(image_desc.ghost_dynamic_image_slot) * 32;
++                const ssize_t n = ::pread(fd, &ghost_dynamic_images[row],
++                                           sizeof(AmdGpu::Image),
++                                           static_cast<off_t>(address));
++                const auto& candidate = ghost_dynamic_images[row];
++                ASSERT_MSG(n == sizeof(AmdGpu::Image) && candidate.Valid() &&
++                           candidate.Address() != 0 &&
++                           candidate.GetType() == tsharp.GetType() &&
++                           candidate.GetDataFmt() == tsharp.GetDataFmt() &&
++                           candidate.GetNumberFmt() == tsharp.GetNumberFmt(),
++                           "Ghost dynamic T# row {} is unreadable or incompatible", row);
++            }
++            ::close(fd);
++            static std::array<std::atomic<u64>, 7> logged_slot_bases{};
++            auto& last_base = logged_slot_bases[image_desc.ghost_dynamic_image_slot];
++            if (last_base.exchange(table.base_address, std::memory_order_relaxed) !=
++                table.base_address) {
++                LOG_WARNING(Render_Vulkan,
++                            "GHOST_BINDLESS_TABLE shader={:#x} base={:#x} count=53 "
++                            "slot={} record_stride=340 image_offset={}",
++                            stage.pgm_hash, u64(table.base_address),
++                            image_desc.ghost_dynamic_image_slot,
++                            image_desc.ghost_dynamic_image_slot * 32);
++            }
++        }
++        if (texture_cache.IsMeta(tsharp.Address())) {
++            LOG_WARNING(Render_Vulkan, "Unexpected metadata read by a shader (texture)");
++        }
++
+         const auto data_fmt = tsharp.GetDataFmt();
+         const auto num_fmt = tsharp.GetNumberFmt();
+         if (tsharp.Address() == 0 || data_fmt == AmdGpu::DataFormat::FormatInvalid) {
+@@ -874,8 +935,11 @@
+         const u32 num_bindings = image_desc.NumBindings(stage);
+ 
+         for (auto i = 0; i < num_bindings; i++) {
++            const auto& selected = image_desc.ghost_dynamic_image_count
++                                       ? ghost_dynamic_images[i]
++                                       : tsharp;
+             auto& [image_id, desc] = image_bindings[num_images++];
+-            std::construct_at(&desc, tsharp, image_desc);
++            std::construct_at(&desc, selected, image_desc);
+ 
+             if (mip_fallback_mode == Shader::MipStorageFallbackMode::ConstantIndex) {
+                 ASSERT(num_bindings == 1);
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.h
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.h
+@@ -153,11 +153,11 @@
+         VideoCore::ImageId image_id;
+         VideoCore::TextureCache::ImageDesc desc;
+     };
+-    std::array<ImageBinding, Shader::NUM_IMAGES> image_bindings;
++    std::array<ImageBinding, Shader::NUM_IMAGES * 16> image_bindings;
+     std::array<ImageBinding, AmdGpu::NUM_COLOR_BUFFERS> cb_descs;
+     ImageBinding db_desc;
+ 
+-    boost::container::static_vector<vk::DescriptorImageInfo, Shader::NUM_IMAGES> image_infos;
++    boost::container::static_vector<vk::DescriptorImageInfo, Shader::NUM_IMAGES * 16> image_infos;
+     boost::container::static_vector<vk::DescriptorBufferInfo, Shader::NUM_BUFFERS> buffer_infos;
+ 
+     struct BoundBuffer {
