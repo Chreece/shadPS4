@@ -562,90 +562,87 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
 // reported invalid resources. This optional probe admits at most one dispatch,
 // and ONLY with fully resolved metadata, small buffers and a small grid.
 // Every other compute shader remains suppressed.
-// An emitted Vulkan command is not necessarily complete. Track the scheduler
-// timeline value for the sole GoW compute probe and poll without waiting or
-// changing normal queue submission ordering.
-static std::atomic<u64> gow_one_shot_completion_tick{0};
-static std::atomic<bool> gow_one_shot_gpu_completed{false};
-static void PollGoWOneShotGPUCompletion(Scheduler& scheduler) {
-    const u64 tick = gow_one_shot_completion_tick.load(std::memory_order_acquire);
-    if (tick == 0 || gow_one_shot_gpu_completed.load(std::memory_order_acquire)) {
-        return;
-    }
-    if (scheduler.IsFree(tick) &&
-        !gow_one_shot_gpu_completed.exchange(true, std::memory_order_acq_rel)) {
-        LOG_WARNING(Render_Vulkan,
-                    "GOW_COMPUTE_ONE_SHOT_GPU_COMPLETE shader={:#x} tick={} "
-                    "result=TIMELINE_SIGNALED",
-                    0x6e9a8b98ULL, tick);
+// Original GoW shader/grid and buffer-count combinations confirmed by the
+// 20261010 passive census. Each has at most ONE execution with original dims.
+struct GoWComputeCanary { u64 shader; u32 x, y, z, buffers; };
+static constexpr std::array<GoWComputeCanary, 3> gow_canaries{{
+    {0x6e9a8b98ULL, 2, 1, 1, 2},  // Timeline completed in prior trial
+    {0xf2d59856ULL, 1, 1, 1, 5},
+    {0xf875ea48ULL, 1, 1, 1, 4},
+}};
+static std::array<std::atomic<bool>, gow_canaries.size()> gow_canary_examined{};
+static std::array<std::atomic<u64>, gow_canaries.size()> gow_canary_ticks{};
+static std::array<std::atomic<bool>, gow_canaries.size()> gow_canary_done{};
+
+// Poll a real scheduler timeline, without additional waits or submissions.
+// A signalled tick only proves GPU completion, not correct guest-buffer data.
+static void PollGoWCanaryGPUCompletion(Scheduler& scheduler) {
+    for (u32 i = 0; i < gow_canaries.size(); ++i) {
+        const u64 tick = gow_canary_ticks[i].load(std::memory_order_acquire);
+        if (tick == 0 || gow_canary_done[i].load(std::memory_order_acquire)) {
+            continue;
+        }
+        if (scheduler.IsFree(tick) &&
+            !gow_canary_done[i].exchange(true, std::memory_order_acq_rel)) {
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_COMPUTE_CANARY_GPU_COMPLETE shader={:#x} tick={} "
+                        "result=TIMELINE_SIGNALED",
+                        gow_canaries[i].shader, tick);
+        }
     }
 }
 
-static std::atomic<bool> gow_one_shot_examined{false};
-static bool AllowFirstGoWComputeProbe(const Shader::Info& cs, u32 x, u32 y, u32 z) {
-    const char* flag = std::getenv("SHADPS4_GOW_SAFE_COMPUTE_ONESHOT");
-    const char* suppress = std::getenv("SHADPS4_GOW_SUPPRESS_GPU_COMPUTE");
-    if (!flag || std::strcmp(flag, "1") != 0 ||
-        !suppress || std::strcmp(suppress, "1") != 0 ||
-        cs.pgm_hash != 0x6e9a8b98ULL ||
-        cs.hw_stage != Shader::HwStage::Compute ||
-        x != 2 || y != 1 || z != 1 ||
-        gow_one_shot_examined.exchange(true, std::memory_order_relaxed)) {
-        return false;
+static int SelectGoWComputeCanary(const Shader::Info& cs, u32 x, u32 y, u32 z) {
+    const char* enabled = std::getenv("SHADPS4_GOW_COMPUTE_CANARIES");
+    const char* suppressed = std::getenv("SHADPS4_GOW_SUPPRESS_GPU_COMPUTE");
+    if (!enabled || std::strcmp(enabled, "1") != 0 ||
+        !suppressed || std::strcmp(suppressed, "1") != 0 ||
+        cs.hw_stage != Shader::HwStage::Compute) {
+        return -1;
     }
-    bool invalid = false;
-    bool unsupported_special = false;
-    bool oversized_buffer = false;
-    // Census evidence: exactly two buffers, no image/sampler descriptors.
-    // Any change in the shader's resource shape aborts this trial.
-    const bool shape_ok = cs.buffers.size() == 2 &&
-                          cs.images.empty() && cs.samplers.empty();
-    for (const auto& b : cs.buffers) {
-        if (b.IsSpecial()) {
-            // Flatbuf is expected; no DMA/GDS/shared or other special
-            // memory buffer is permitted in this first execution probe.
-            unsupported_special |= b.buffer_type != Shader::BufferType::Flatbuf;
+    for (u32 i = 0; i < gow_canaries.size(); ++i) {
+        const auto& target = gow_canaries[i];
+        if (cs.pgm_hash != target.shader || x != target.x ||
+            y != target.y || z != target.z) {
             continue;
         }
-        if (b.sharp_fetch.summary == decltype(b.sharp_fetch.summary)::Invalid) {
-            invalid = true;
-            continue;
+        // Denied candidates cannot silently run on a later invocation.
+        if (gow_canary_examined[i].exchange(true, std::memory_order_acq_rel)) {
+            return -1;
         }
-        const auto sharp = b.GetSharp(cs);
-        if (!sharp.base_address || !sharp.GetSize()) {
-            invalid = true;
-        } else if (sharp.GetSize() > 16u * 1024u * 1024u) {
-            oversized_buffer = true;
+        const bool shape_ok = cs.buffers.size() == target.buffers &&
+                              cs.images.empty() && cs.samplers.empty();
+        bool invalid = false;
+        bool unsupported_special = false;
+        bool oversized_buffer = false;
+        for (const auto& b : cs.buffers) {
+            if (b.IsSpecial()) {
+                unsupported_special |= b.buffer_type != Shader::BufferType::Flatbuf;
+                continue;
+            }
+            if (b.sharp_fetch.summary == decltype(b.sharp_fetch.summary)::Invalid) {
+                invalid = true;
+                continue;
+            }
+            const auto sharp = b.GetSharp(cs);
+            if (!sharp.base_address || !sharp.GetSize()) {
+                invalid = true;
+            } else if (sharp.GetSize() > 16u * 1024u * 1024u) {
+                oversized_buffer = true;
+            }
         }
+        const bool permit = shape_ok && !cs.uses_dma && !cs.translation_failed &&
+                            !invalid && !unsupported_special && !oversized_buffer;
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_COMPUTE_CANARY_CANDIDATE shader={:#x} grid={}x{}x{} "
+                    "buffers={} images={} samplers={} dma={} invalid={} "
+                    "unsupported_special={} oversized_buffer={} shape_ok={} permit={}",
+                    cs.pgm_hash, x, y, z, cs.buffers.size(), cs.images.size(),
+                    cs.samplers.size(), cs.uses_dma, invalid,
+                    unsupported_special, oversized_buffer, shape_ok, permit);
+        return permit ? static_cast<int>(i) : -1;
     }
-    for (const auto& image : cs.images) {
-        if (image.sharp_fetch.summary == decltype(image.sharp_fetch.summary)::Invalid) {
-            invalid = true;
-            continue;
-        }
-        const auto sharp = image.GetSharp(cs);
-        if (!sharp.Valid() || !sharp.Address()) {
-            invalid = true;
-        }
-    }
-    for (const auto& sampler : cs.samplers) {
-        if (sampler.sharp_fetch.summary == decltype(sampler.sharp_fetch.summary)::Invalid) {
-            invalid = true;
-        }
-    }
-    const bool grid_ok = x && y && z && x <= 128 && y <= 128 && z <= 128 &&
-                         u64(x) * y * z <= 128;
-    const bool permit = grid_ok && shape_ok && !cs.uses_dma &&
-                        !cs.translation_failed && !invalid &&
-                        !unsupported_special && !oversized_buffer;
-    LOG_WARNING(Render_Vulkan,
-                "GOW_COMPUTE_ONE_SHOT_CANDIDATE shader={:#x} grid={}x{}x{} "
-                "buffers={} images={} samplers={} dma={} invalid={} "
-                "unsupported_special={} oversized_buffer={} shape_ok={} permit={}",
-                cs.pgm_hash, x, y, z, cs.buffers.size(), cs.images.size(),
-                cs.samplers.size(), cs.uses_dma, invalid, unsupported_special,
-                oversized_buffer, shape_ok, permit);
-    return permit;
+    return -1;
 }
 
 // Passive compute census. Keep every dispatch suppressed; report first
@@ -718,7 +715,7 @@ void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
 
     scheduler.PopPendingOperations();
-    PollGoWOneShotGPUCompletion(scheduler);
+    PollGoWCanaryGPUCompletion(scheduler);
 
     const auto& cs_program = liverpool->GetCsRegs();
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
@@ -766,16 +763,16 @@ void Rasterizer::DispatchDirect() {
         }
         return; // Unconditionally skip this and every subsequent target dispatch.
     }
-    const bool allow_one_shot = AllowFirstGoWComputeProbe(
+    const int canary_idx = SelectGoWComputeCanary(
         cs, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
-    if (!allow_one_shot && SuppressDiagnosticCompute(cs)) {
+    if (canary_idx < 0 && SuppressDiagnosticCompute(cs)) {
         return;
     }
 
     if (!BindResources(pipeline)) {
-        if (allow_one_shot) {
+        if (canary_idx >= 0) {
             LOG_WARNING(Render_Vulkan,
-                        "GOW_COMPUTE_ONE_SHOT_RESULT shader={:#x} result=BIND_FAILED",
+                        "GOW_COMPUTE_CANARY_RESULT shader={:#x} result=BIND_FAILED",
                         cs.pgm_hash);
         }
         return;
@@ -792,21 +789,21 @@ void Rasterizer::DispatchDirect() {
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     DebugState.IncDispatch();
-    if (allow_one_shot) {
+    if (canary_idx >= 0) {
         LOG_WARNING(Render_Vulkan,
-                    "GOW_COMPUTE_ONE_SHOT_RESULT shader={:#x} result=SUBMITTED grid={}x{}x{}",
+                    "GOW_COMPUTE_CANARY_RESULT shader={:#x} result=SUBMITTED grid={}x{}x{}",
                     cs.pgm_hash, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     }
 
     ResetBindings(true);
-    if (allow_one_shot) {
+    if (canary_idx >= 0) {
         const u64 tick = scheduler.CurrentTick();
-        gow_one_shot_completion_tick.store(tick, std::memory_order_release);
+        gow_canary_ticks[canary_idx].store(tick, std::memory_order_release);
         LOG_WARNING(Render_Vulkan,
-                    "GOW_COMPUTE_ONE_SHOT_GPU_TICK shader={:#x} tick={} "
+                    "GOW_COMPUTE_CANARY_GPU_TICK shader={:#x} tick={} "
                     "result=WAITING_FOR_NORMAL_SUBMISSION",
                     cs.pgm_hash, tick);
-        PollGoWOneShotGPUCompletion(scheduler);
+        PollGoWCanaryGPUCompletion(scheduler);
     }
 }
 
@@ -814,7 +811,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     RENDERER_TRACE;
 
     scheduler.PopPendingOperations();
-    PollGoWOneShotGPUCompletion(scheduler);
+    PollGoWCanaryGPUCompletion(scheduler);
 
     const auto& cs_program = liverpool->GetCsRegs();
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
@@ -887,13 +884,13 @@ u64 Rasterizer::Flush() {
     const u64 current_tick = scheduler.CurrentTick();
     SubmitInfo info{};
     scheduler.Flush(info);
-    PollGoWOneShotGPUCompletion(scheduler);
+    PollGoWCanaryGPUCompletion(scheduler);
     return current_tick;
 }
 
 void Rasterizer::Finish() {
     scheduler.Finish();
-    PollGoWOneShotGPUCompletion(scheduler);
+    PollGoWCanaryGPUCompletion(scheduler);
 }
 
 void Rasterizer::OnSubmit() {
