@@ -660,8 +660,8 @@ static int SelectGoWComputeCanary(const Shader::Info& cs, u32 x, u32 y, u32 z) {
             image_ok &= sharp.Valid() && sharp.Address() != 0 &&
                         sharp.GetType() == AmdGpu::ImageType::Color2D &&
                         sharp.GetDataFmt() != AmdGpu::DataFormat::FormatInvalid &&
-                        !image.is_r128 && image_width <= 4096 &&
-                        image_height <= 4096 && image.NumBindings(cs) == 1;
+                        image_width <= 4096 && image_height <= 4096 &&
+                        image.NumBindings(cs) == 1;
         }
         // A sampler is not valid merely because SharpFetch is non-invalid:
         // reject zeroed or malformed guest sampler descriptors as well.
