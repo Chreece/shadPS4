@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2025 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+#include <cstring>
+
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -239,8 +242,23 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     ImGui::Core::TextureManager::Submit();
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
     ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
+    if (submit_result == vk::Result::eSuccess) {
+        last_submitted_tick.store(signal_value, std::memory_order_release);
+    }
 
     work_semaphore.Refresh();
+    // Same nonblocking proof used by the GoW one-shot test, without suppressing
+    // or flushing any work. Disabled by default; sample initial and periodic ticks.
+    static const bool ghost_timeline_probe = [] {
+        const char* flag = std::getenv("SHADPS4_GHOST_TIMELINE_PROBE");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    if (ghost_timeline_probe && (signal_value <= 32 || signal_value % 32 == 0)) {
+        LOG_WARNING(Render_Vulkan,
+                    "GHOST_TIMELINE_SUBMIT tick={} completed={} cmd_buffers={} waits={} signals={}",
+                    signal_value, work_semaphore.KnownGpuTick(), cmd_buffers.size(),
+                    info.num_wait_semas, info.num_signal_semas);
+    }
     BeginSession();
 
     // Apply pending operations
