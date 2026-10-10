@@ -200,23 +200,65 @@ void Rasterizer::EliminateFastClear() {
     ScopeMarkerEnd();
 }
 
+// GoW frame-source diagnostic: a bounded read-only record of actual draws.
+// Colors refer to PS4 guest addresses and are compared to VideoOut buffers.
+static std::atomic<u32> gow_draw_audit_sequence{0};
+static u32 NextGoWDrawAuditSequence() {
+    const char* enabled = std::getenv("SHADPS4_GOW_DRAW_TARGET_AUDIT");
+    if (!enabled || std::strcmp(enabled, "1") != 0) {
+        return 0;
+    }
+    return gow_draw_audit_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+static void LogGoWDrawAudit(u32 seq, const AmdGpu::Regs& regs,
+                            const char* stage, bool indirect, bool indexed,
+                            u32 work_items, u32 mrt_mask) {
+    if (!seq || seq > 256) {
+        return;
+    }
+    const auto color_address = [&](u32 slot) -> u64 {
+        const auto& cb = regs.color_buffers[slot];
+        return cb ? cb.Address() : 0;
+    };
+    LOG_WARNING(Render_Vulkan,
+                "GOW_DRAW_AUDIT seq={} stage={} indirect={} indexed={} "
+                "work_items={} primitive={} color_mode={} mrt_mask={:#x} "
+                "mask0={:#x} mask1={:#x} mask2={:#x} mask3={:#x} "
+                "color0={:#x} color1={:#x} color2={:#x} color3={:#x}",
+                seq, stage, indirect, indexed, work_items,
+                static_cast<u32>(regs.primitive_type),
+                static_cast<u32>(regs.color_control.mode), mrt_mask,
+                regs.color_target_mask.GetMask(0),
+                regs.color_target_mask.GetMask(1),
+                regs.color_target_mask.GetMask(2),
+                regs.color_target_mask.GetMask(3),
+                color_address(0), color_address(1),
+                color_address(2), color_address(3));
+}
+
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     RENDERER_TRACE;
 
     scheduler.PopPendingOperations();
-
+    const u32 gow_id = NextGoWDrawAuditSequence();
+    const auto& regs = liverpool->regs;
+    LogGoWDrawAudit(gow_id, regs, "ATTEMPT", false, is_indexed,
+                    regs.num_indices, 0);
     if (!FilterDraw()) {
+        LogGoWDrawAudit(gow_id, regs, "FILTERED", false, is_indexed,
+                        regs.num_indices, 0);
         return;
     }
-
-    const auto& regs = liverpool->regs;
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline();
     if (!pipeline) {
+        LogGoWDrawAudit(gow_id, regs, "PIPELINE_NULL", false, is_indexed,
+                        regs.num_indices, 0);
         return;
     }
-
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
+        LogGoWDrawAudit(gow_id, regs, "BIND_FAILED", false, is_indexed,
+                        regs.num_indices, pipeline->GetGraphicsKey().mrt_mask);
         return;
     }
     const auto state = BeginRendering(pipeline);
@@ -257,7 +299,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         occlusion->EndDraw(cmdbuf, query);
     }
     DebugState.IncDrawCall();
-
+    LogGoWDrawAudit(gow_id, regs, "EMITTED", false, is_indexed,
+                    regs.num_indices, pipeline->GetGraphicsKey().mrt_mask);
     ResetBindings(false);
 }
 
@@ -267,22 +310,29 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     RENDERER_TRACE;
 
     scheduler.PopPendingOperations();
-
+    const u32 gow_id = NextGoWDrawAuditSequence();
+    const auto& regs = liverpool->regs;
+    LogGoWDrawAudit(gow_id, regs, "ATTEMPT", true, is_indexed,
+                    max_count, 0);
     if (!FilterDraw()) {
+        LogGoWDrawAudit(gow_id, regs, "FILTERED", true, is_indexed,
+                        max_count, 0);
         return;
     }
-
     const DrawIndirectParams params = {
         .vertex_sgpr_offset = vertex_sgpr_offset,
         .instance_sgpr_offset = instance_sgpr_offset,
     };
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline(params);
     if (!pipeline) {
+        LogGoWDrawAudit(gow_id, regs, "PIPELINE_NULL", true, is_indexed,
+                        max_count, 0);
         return;
     }
-
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
+        LogGoWDrawAudit(gow_id, regs, "BIND_FAILED", true, is_indexed,
+                        max_count, pipeline->GetGraphicsKey().mrt_mask);
         return;
     }
     const auto state = BeginRendering(pipeline);
@@ -344,6 +394,8 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     if (occlusion) {
         occlusion->EndDraw(cmdbuf, query);
     }
+    LogGoWDrawAudit(gow_id, regs, "EMITTED", true, is_indexed,
+                    max_count, pipeline->GetGraphicsKey().mrt_mask);
     ResetBindings(false);
 }
 
@@ -1781,6 +1833,23 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
         attachment.is_clear = is_clear;
 
         image->usage.render_target = 1u;
+        const char* trace_rt = std::getenv("SHADPS4_GOW_DRAW_TARGET_AUDIT");
+        if (trace_rt && std::strcmp(trace_rt, "1") == 0) {
+            static std::atomic<u32> rt_seq{0};
+            const u32 event = rt_seq.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (event <= 256) {
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_RENDER_ATTACHMENT event={} slot={} "
+                            "color_address={:#x} image_address={:#x} "
+                            "width={} height={} num_bits={} is_clear={} "
+                            "mrt_mask={:#x} color_mask={:#x} ready_to_download={}",
+                            event, cb, col_buf.Address(), image->info.guest_address,
+                            image->info.size.width, image->info.size.height,
+                            image->info.num_bits, is_clear, key.mrt_mask,
+                            regs.color_target_mask.GetMask(cb),
+                            image->SafeToDownload());
+            }
+        }
     }
     for (u32 cb = state.num_color_attachments; cb < state.color_attachments.size(); ++cb) {
         state.color_attachments[cb] = {};
