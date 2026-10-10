@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "d190be6ff16792e6ab524fab74b629f9f3fd875e"
+HEAD_SHA = "4c4b998d4341a43040e8d079c1998b32d5f042ab"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -292,6 +292,8 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_BIND_PROBE": "1",
         "SHADPS4_GOW_IMAGE_TABLE_AUDIT": "1",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
+        # Small, strictly gated GPU A/B: only one early resolved shader may run.
+        "SHADPS4_GOW_SAFE_COMPUTE_ONESHOT": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
     env.setdefault("DISPLAY", ":0")
@@ -371,6 +373,19 @@ def trial_run(binary, temp, result):
                 data = f.read()[-16000000:]
             (evidence / ("new-" + p.name)).write_bytes(data)
             joined += data.decode("utf-8", "replace")
+    result["one_shot_candidate"] = (
+        next((line[:1500] for line in joined.splitlines()
+              if "GOW_COMPUTE_ONE_SHOT_CANDIDATE" in line), None))
+    result["one_shot_result"] = (
+        next((line[:1500] for line in joined.splitlines()
+              if "GOW_COMPUTE_ONE_SHOT_RESULT" in line), None))
+    result["one_shot_submitted"] = bool(
+        result["one_shot_result"] and "result=SUBMITTED" in result["one_shot_result"])
+    result["one_shot_bind_failed"] = bool(
+        result["one_shot_result"] and "result=BIND_FAILED" in result["one_shot_result"])
+    result["gpu_device_lost_logged"] = bool(
+        re.search(r"VK_ERROR_DEVICE_LOST|ErrorDeviceLost|device lost|GPU hang",
+                  joined, re.IGNORECASE))
     result["dma_info_logged"] = "GOW_TARGET_DMA_INFO" in joined
     result["dma_codegen_logged"] = "GOW_TARGET_DMA_DYNAMIC_CODEGEN" in joined
     result["spv_dump_logged"] = "GOW_TARGET_SPV_DUMP" in joined
@@ -555,6 +570,9 @@ def main():
     print("ARCHIVE=" + str(archive))
     print("TARGET_SPV_COUNT=" + str(len(report.get("spv", []))))
     print("BIND_PROBE_PASSED=" + str(report.get("bind_probe_passed", False)))
+    print("ONE_SHOT_ELIGIBILITY=" + str(report.get("one_shot_candidate")))
+    print("ONE_SHOT_RESULT=" + str(report.get("one_shot_result")))
+    print("GPU_DEVICE_LOST_LOGGED=" + str(report.get("gpu_device_lost_logged", False)))
     print("RESOURCE_AUDIT_PASSED=" + str(report.get("resource_audit_passed", False)))
     print("RESOURCE_AUDIT_COUNTS=" + str(report.get("resource_audit_counts")))
     print("IMAGE_TABLE_AUDITS=" + str(report.get("image_table_audits")))
