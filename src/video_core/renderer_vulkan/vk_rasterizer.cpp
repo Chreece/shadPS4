@@ -1025,8 +1025,32 @@ static void TraceGoWIndirectWriterCandidates(const Shader::Info& info,
             ++special;
             continue;
         }
-        if (descriptor.sharp_fetch.summary ==
-            decltype(descriptor.sharp_fetch.summary)::Invalid) {
+        const auto& fetch = descriptor.sharp_fetch;
+        if (fetch.summary == decltype(fetch.summary)::Invalid) {
+            ++unresolved;
+            continue;
+        }
+        // Normally BindBuffers() consumes these SHARPs. This probe runs
+        // BEFORE suppressed dispatches would bind resources, so inspect the
+        // flat-buffer bounds before calling GetSharp() on unfamiliar shaders.
+        constexpr size_t word_count = sizeof(AmdGpu::Buffer) / sizeof(u32);
+        bool unsafe_fetch = false;
+        if (fetch.summary == decltype(fetch.summary)::SingleLoad) {
+            const size_t first = fetch.offsets[0];
+            unsafe_fetch = first == Shader::UNKNOWN_LOCATION ||
+                           first > info.flattened_ud_buf.size() ||
+                           word_count > info.flattened_ud_buf.size() - first;
+        } else {
+            for (size_t word = 0; word < word_count; ++word) {
+                if ((fetch.load_mask & (1u << word)) &&
+                    (fetch.offsets[word] == Shader::UNKNOWN_LOCATION ||
+                     fetch.offsets[word] >= info.flattened_ud_buf.size())) {
+                    unsafe_fetch = true;
+                    break;
+                }
+            }
+        }
+        if (unsafe_fetch) {
             ++unresolved;
             continue;
         }
