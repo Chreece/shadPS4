@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "7168663a6dc51736eae0f9220d595f43a79a8bda"
+HEAD_SHA = "a6a1cd9c5888608ebaffbeb724afefc3c5d0c782"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -547,6 +547,8 @@ def trial_run(binary, temp, result):
         sum("GOW_DRAW_AUDIT seq=" in line and "stage=EMITTED" in line
             for line in raw_console[:first_flip_offset].splitlines())
         if first_flip_offset >= 0 else None)
+    result["graphics_draw_audit_truncated"] = (
+        "GOW_DRAW_AUDIT_TRUNCATED" in joined)
     result["graphics_draw_stage_counts"] = stage_counts
     result["graphics_draw_attempted"] = stage_counts.get("ATTEMPT", 0)
     result["graphics_draw_emitted"] = len(submitted_draws)
@@ -559,14 +561,16 @@ def trial_run(binary, temp, result):
     result["graphics_attachment_videoout_count"] = len(bound_to_videoout)
     result["graphics_draw_emitted_before_first_flip"] = emitted_before_flip
     result["graphics_draw_samples"] = draw_rows[:256]
-    if not result["graphics_draw_attempted"]:
+    if emitted_to_videoout and result.get("guest_frame_nonblack_count", 0) == 0:
+        result["graphics_draw_diagnosis"] = "VIDEOOUT_TARGETED_BUT_SOURCE_BLACK"
+    elif result["graphics_draw_audit_truncated"]:
+        result["graphics_draw_diagnosis"] = "DRAW_AUDIT_TRUNCATED_INCOMPLETE"
+    elif not result["graphics_draw_attempted"]:
         result["graphics_draw_diagnosis"] = "NO_GRAPHICS_DRAW_ATTEMPTS"
     elif not submitted_draws:
         result["graphics_draw_diagnosis"] = "GRAPHICS_DRAWS_FILTERED_OR_REJECTED"
     elif not emitted_to_videoout:
         result["graphics_draw_diagnosis"] = "GRAPHICS_EMITTED_OFFSCREEN_ONLY"
-    elif result.get("guest_frame_nonblack_count", 0) == 0:
-        result["graphics_draw_diagnosis"] = "VIDEOOUT_TARGETED_BUT_SOURCE_BLACK"
     else:
         result["graphics_draw_diagnosis"] = "VIDEOOUT_SOURCE_NONBLACK"
     # Census the other dispatches while allowing only one guarded direct dispatch.
@@ -941,6 +945,8 @@ def main():
           str(report.get("graphics_attachment_videoout_count", 0)))
     print("GRAPHICS_DRAW_TARGETS=" +
           str(report.get("graphics_color_addresses", {})))
+    print("GRAPHICS_DRAW_AUDIT_TRUNCATED=" +
+          str(report.get("graphics_draw_audit_truncated", False)))
     print("GRAPHICS_DRAW_DIAGNOSIS=" + str(report.get("graphics_draw_diagnosis")))
     print("GUEST_FRAME_PNG_FILES=" +
           str(sorted(report.get("guest_frame_pngs", {}))))
