@@ -13,6 +13,10 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 
+#include <atomic>
+#include <cstdlib>
+#include <cstring>
+
 extern std::unique_ptr<Vulkan::Presenter> presenter;
 extern std::unique_ptr<AmdGpu::Liverpool> liverpool;
 
@@ -316,6 +320,34 @@ bool VideoOutDriver::SubmitFlip(VideoOutPort* port, s32 index, s64 flip_arg,
 }
 
 void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_arg, bool is_eop) {
+    // The guest may enqueue a blank flip (-1) or a registered surface. Trace
+    // only the first few submissions and do not change their ordering.
+    const char* frame_probe = std::getenv("SHADPS4_GOW_FRAME_SOURCE_DIR");
+    if (frame_probe && *frame_probe) {
+        static std::atomic<u32> logged{0};
+        const u32 ordinal = logged.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (ordinal <= 16) {
+            if (index == -1) {
+                LOG_WARNING(Lib_VideoOut,
+                            "GOW_FRAME_FLIP sequence={} type=BLANK "
+                            "index={} eop={} flip_arg={}",
+                            ordinal, index, is_eop, flip_arg);
+            } else {
+                const auto& guest_buffer = port->buffer_slots[index];
+                const auto& attr = port->groups[guest_buffer.group_index].attrib;
+                LOG_WARNING(Lib_VideoOut,
+                            "GOW_FRAME_FLIP sequence={} type=REGISTERED "
+                            "index={} group={} address={:#x} "
+                            "width={} height={} pitch={} pixel_format={} "
+                            "eop={} flip_arg={}",
+                            ordinal, index, guest_buffer.group_index,
+                            guest_buffer.address_left, attr.width, attr.height,
+                            attr.pitch_in_pixel, static_cast<u32>(attr.pixel_format),
+                            is_eop, flip_arg);
+            }
+        }
+    }
+
     Vulkan::Frame* frame;
     if (index == -1) {
         frame = presenter->PrepareBlankFrame(false);
