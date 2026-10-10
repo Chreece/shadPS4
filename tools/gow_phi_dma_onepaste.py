@@ -447,10 +447,10 @@ def trial_run(binary, temp, result):
     # Keep command recording separate from GPU completion: the scheduler's
     # Vulkan timeline is the source of truth and is never waited on here.
     gpu_tick_match = re.search(
-        r"GOW_COMPUTE_ONE_SHOT_GPU_TICK shader=0x6e9a8b98 tick=(\\d+) "
+        r"GOW_COMPUTE_ONE_SHOT_GPU_TICK shader=0x6e9a8b98 tick=(\d+) "
         r"result=WAITING_FOR_NORMAL_SUBMISSION", joined)
     gpu_complete_match = re.search(
-        r"GOW_COMPUTE_ONE_SHOT_GPU_COMPLETE shader=0x6e9a8b98 tick=(\\d+) "
+        r"GOW_COMPUTE_ONE_SHOT_GPU_COMPLETE shader=0x6e9a8b98 tick=(\d+) "
         r"result=TIMELINE_SIGNALED", joined)
     result["one_shot_gpu_tick"] = (
         int(gpu_tick_match.group(1)) if gpu_tick_match else None)
