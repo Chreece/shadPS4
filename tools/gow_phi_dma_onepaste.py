@@ -214,13 +214,21 @@ def get_patches():
         raise RuntimeError("Proven SHARP probe patch bytes changed: " + known_hash)
     # Phase five is one source-only, read-only expression graph. No other
     # compiler, runtime, graphics or GPU-execution files may change.
-    index_probe = fetch_strict_patch(SHARP_SHA, HEAD_SHA, {NEW_SOURCE})
+    # The branch inherited a runner update after SHARP_SHA. The pinned
+    # comparison therefore contains the runner as well as the C++ file;
+    # fetch_strict_patch filters out runner edits after validating the set.
+    index_probe = fetch_strict_patch(
+        SHARP_SHA, HEAD_SHA, {NEW_SOURCE, "tools/gow_phi_dma_onepaste.py"})
+    additions = [
+        line for line in index_probe.splitlines()
+        if line.startswith(b"+") and not line.startswith(b"+++")
+    ]
     if (b"GOW_FS_INDEX_GRAPH_BEGIN" not in index_probe or
             b"GOW_FS_INDEX_GRAPH_END" not in index_probe or
             b"const bool immediate_offset = arg.IsImmediate()" not in index_probe or
-            b"void Rasterizer::Draw" in index_probe or
-            b"inst.SetArg(0" in index_probe):
-        raise RuntimeError("Invalid change scope in targeted index tree probe")
+            any(b"inst.SetArg(" in line or b"void Rasterizer::Draw" in line
+                for line in additions)):
+        raise RuntimeError("Invalid added lines in targeted index tree probe")
     return verified_patch, graphics_patch, fragment_patch, sharp_probe, index_probe
 
 def verify_preimages():
