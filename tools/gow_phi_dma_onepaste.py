@@ -607,11 +607,14 @@ def apply_portable_writer_origin_probe(root, pinned_diff):
         raise RuntimeError('Unexpected source state for incremental writer probe')
     result = original.replace(dispatch_tag, helper + dispatch_tag, 1)
     dispatch_start = result.index(dispatch_tag)
-    dispatch_tail = result[dispatch_start:]
-    if dispatch_tail.count(cs_anchor) != 1:
-        raise RuntimeError('Compute shader metadata anchor missing')
-    result = result[:dispatch_start] + dispatch_tail.replace(
-        cs_anchor, cs_anchor + compute_call, 1)
+    dispatch_stop_tag = 'void Rasterizer::DispatchIndirect('
+    dispatch_stop = result.index(dispatch_stop_tag, dispatch_start)
+    dispatch_body = result[dispatch_start:dispatch_stop]
+    if dispatch_body.count(cs_anchor) != 1:
+        raise RuntimeError('Compute shader metadata anchor missing in DispatchDirect')
+    result = (result[:dispatch_start] +
+              dispatch_body.replace(cs_anchor, cs_anchor + compute_call, 1) +
+              result[dispatch_stop:])
     indirect_start = result.index(indirect_tag)
     indirect_end = result.index(after_indirect, indirect_start)
     body = result[indirect_start:indirect_end]
