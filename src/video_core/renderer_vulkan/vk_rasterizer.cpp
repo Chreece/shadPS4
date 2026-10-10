@@ -865,7 +865,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             // table that the shader indexes with its own lane-reduced record.
             ASSERT_MSG(stage.pgm_hash == 0x8e743c8eULL &&
                        stage.user_data.size() >= 2 &&
-                       image_desc.ghost_dynamic_image_count == ghost_dynamic_images.size(),
+                       image_desc.ghost_dynamic_image_count == ghost_dynamic_images.size() &&
+                       image_desc.ghost_dynamic_image_slot < 7,
                        "Ghost sampled-image table shape changed");
             const u64 root = u64(stage.user_data[0]) |
                              (u64(stage.user_data[1]) << 32);
@@ -879,10 +880,11 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             ASSERT_MSG(table_size == sizeof(table) && table.base_address != 0 &&
                        table.GetStride() == 340 && table.GetSize() == 18020 &&
                        table.base_address <=
-                           0x00007fffffffffffull - (52 * 340 + 64 + sizeof(AmdGpu::Image)),
+                           0x00007fffffffffffull - (52 * 340 + 6 * 32 + sizeof(AmdGpu::Image)),
                        "Ghost dynamic T# table no longer matches 53 x 340");
             for (u32 row = 0; row < 53; ++row) {
-                const u64 address = table.base_address + u64(row) * 340 + 64;
+                const u64 address = table.base_address + u64(row) * 340 +
+                                    u64(image_desc.ghost_dynamic_image_slot) * 32;
                 const ssize_t n = ::pread(fd, &ghost_dynamic_images[row],
                                            sizeof(AmdGpu::Image),
                                            static_cast<off_t>(address));
@@ -895,13 +897,16 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                            "Ghost dynamic T# row {} is unreadable or incompatible", row);
             }
             ::close(fd);
-            static std::atomic<u64> logged_table{};
-            if (logged_table.exchange(table.base_address, std::memory_order_relaxed) !=
-                table.base_address) {
+            static std::atomic<u64> logged_table_slots{};
+            const u64 slot_key = (u64(table.base_address) << 3) |
+                                 image_desc.ghost_dynamic_image_slot;
+            if (logged_table_slots.exchange(slot_key, std::memory_order_relaxed) != slot_key) {
                 LOG_WARNING(Render_Vulkan,
                             "GHOST_BINDLESS_TABLE shader={:#x} base={:#x} count=53 "
-                            "record_stride=340 image_offset=64",
-                            stage.pgm_hash, u64(table.base_address));
+                            "slot={} record_stride=340 image_offset={}",
+                            stage.pgm_hash, u64(table.base_address),
+                            image_desc.ghost_dynamic_image_slot,
+                            image_desc.ghost_dynamic_image_slot * 32);
             }
         }
         if (texture_cache.IsMeta(tsharp.Address())) {
