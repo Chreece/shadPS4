@@ -114,11 +114,17 @@ def get_patch():
     if payload.get("merge_base_commit", {}).get("sha") != BASE_SHA:
         raise RuntimeError("Unexpected merge base for pinned patch")
     files = payload.get("files", [])
-    if {f["filename"] for f in files} != REQUIRED:
+    # The pinned comparison now includes this diagnostic runner because it
+    # was committed before the stack-alignment fix. Never apply runner edits to
+    # the verified emulator tree: allow ONLY this known extra file.
+    changed = {f["filename"] for f in files}
+    if changed != REQUIRED | {"tools/gow_phi_dma_onepaste.py"}:
         raise RuntimeError("Unexpected changed-file set; refusing patch")
     parts = []
     for f in files:
         path = f["filename"]
+        if path == "tools/gow_phi_dma_onepaste.py":
+            continue
         if f.get("status") != "modified" or not f.get("patch"):
             raise RuntimeError("Missing/unsafe diff for " + path)
         if not path.startswith("src/") or ".." in Path(path).parts:
