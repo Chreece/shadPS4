@@ -374,11 +374,11 @@ def trial_run(binary, temp, result):
                         # missing readback. Require frame-six disposition for
                         # each queued readback, plus cumulative graphics totals.
                         sixth_queued = set(re.findall(
-                            r"GOW_OFFSCREEN_READBACK label=(f06_\\w+)[^\\n]*"
+                            r"GOW_OFFSCREEN_READBACK label=(f06_\w+)[^\n]*"
                             r"result=QUEUED_AND_LAYOUT_RESTORED",
                             trial_output))
                         sixth_done = set(re.findall(
-                            r"GOW_OFFSCREEN_GPU_CAPTURE label=(f06_\\w+)[^\\n]*"
+                            r"GOW_OFFSCREEN_GPU_CAPTURE label=(f06_\w+)[^\n]*"
                             r"result=GPU_READBACK_COMPLETE",
                             trial_output))
                         sixth_observed = "GOW_OFFSCREEN_READBACK label=f06_" in trial_output
