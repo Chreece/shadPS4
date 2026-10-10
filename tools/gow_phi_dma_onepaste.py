@@ -39,7 +39,7 @@ FLATTEN_SHA = "0b14e5f5c7961ffcbd691f32223a1b20f25154b2"
 ROOT_PRIORITY_SHA = "55c7ef1d1ca61078b90e4dabc83b5c35ee552e3f"
 AUTO_SHA = "41b199383806734f3b753bf9f96761de7f7e5234"
 BROAD_SHA = "ae1ab93fa6b89e37efc07d8f6f4d09e70880eeda"
-HEAD_SHA = "71f4f2c8de9e258631ce525511aa913a1070cf2e"
+HEAD_SHA = "88fbecd1abdd224ce74b39e204357403fa85e907"
 BROAD_PATCH_SHA256 = "83000ad98104b0f335f4539ad9879d7212b678cdc327a18234fbd7117f2c47f6"
 AUTO_PATCH_SHA256 = "7743ac55071ce5656b84b8943a486b23ad729778460b1b354d355e879fb42def"
 ROOT_PATCH_SHA256 = "88b7fd1ded0f2d429e0b759a44e58a91107d9c023ab08ae8f0a049814b355185"
@@ -345,7 +345,7 @@ def verify_staged_instrumentation(staged):
 # Extract ONLY the three inserted snippets from the sha-pinned tenth diff,
 # and inject them at unique semantic anchors. Never rewrite a draw command.
 DRAW_DIAGNOSTIC_DIFF_SHA256 = (
-    "ec03883e3d608901fdc8db57a727badc99793435b3da24bc03049fa5f61b1807"
+    "69d5c77dbe9458e98d5abe0ef522771c1d5d49dc80126cb9744e6ba849b32d98"
 )
 GBUFFER_SOURCE = "src/video_core/renderer_vulkan/vk_rasterizer.cpp"
 
@@ -372,8 +372,9 @@ def apply_portable_gbuffer_probe(root, pinned_diff):
             or helper.count("static void TraceGoWGBufferDraw(") != 1
             or not direct_log.startswith("    TraceGoWGBufferDraw(")
             or not indirect_log.startswith("    TraceGoWGBufferDraw(")
-            or "is_indexed, false," not in direct_log
-            or "is_indexed, true," not in indirect_log):
+            or "pipeline, regs, state, is_indexed, false," not in direct_log
+            or "pipeline, liverpool->regs, state, is_indexed, true," not in indirect_log
+            or "pipeline, regs, state, is_indexed, true," in indirect_log):
         raise RuntimeError("G-buffer probe diagnostic snippets do not match approved scope")
 
     path = root / GBUFFER_SOURCE
@@ -410,7 +411,9 @@ def apply_portable_gbuffer_probe(root, pinned_diff):
         raise RuntimeError("Cannot safely identify completed indirect draw insertion point")
     indirect = indirect.replace(reset_anchor, indirect_log + reset_anchor)
     patched = original[:start] + helper + direct + indirect + original[end:]
-    if (patched.count("TraceGoWGBufferDraw(pipeline, regs, state") != 2
+    if (patched.count("TraceGoWGBufferDraw(pipeline, regs, state, is_indexed, false") != 1
+            or patched.count(
+                "TraceGoWGBufferDraw(pipeline, liverpool->regs, state, is_indexed, true") != 1
             or patched.count("static void TraceGoWGBufferDraw(") != 1
             or patched.replace(helper, "", 1).replace(direct_log, "", 1)
                .replace(indirect_log, "", 1) != original
