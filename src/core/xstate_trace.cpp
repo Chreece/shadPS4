@@ -4,8 +4,10 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <Zydis/Zydis.h>
 #include <sys/mman.h>
 #include "common/assert.h"
@@ -46,11 +48,23 @@ const bool native_branches = [] {
     return native_blocks && (!value || std::strcmp(value, "0") != 0);
 }();
 
+const bool relative_blocks = [] {
+    const char* value = std::getenv("SHADPS4_XSTATE_TRACE_RELATIVE");
+    return native_blocks && (!value || std::strcmp(value, "0") != 0);
+}();
+
 constexpr size_t CodePageSize = 4096;
 constexpr size_t MaxBlockBytes = 256;
 constexpr size_t MaxBlockInstructions = 32;
+struct NativeBlockPage {
+    u64 region{};
+    u8* code{};
+};
 struct NativeBlock {
     u8* code{};
+    u8* allocation{};
+    std::array<NativeBlockPage, 16> nearby_pages{};
+    size_t nearby_count{};
     u64 guest_pc{};
     u64 executable_page{~u64{0}};
     u64 stepped_pc{};
@@ -66,10 +80,56 @@ u64 CodePage(u64 pc) {
 }
 
 void ReleaseNativeBlock() {
-    if (block.code) {
-        munmap(block.code, CodePageSize);
+    if (block.allocation) {
+        munmap(block.allocation, CodePageSize);
+    }
+    for (const auto& page : block.nearby_pages) {
+        if (page.code) {
+            munmap(page.code, CodePageSize);
+        }
     }
     block = {};
+}
+
+u8* AllocateNativeBlockPage(void* hint) {
+    const int saved_errno = errno;
+    void* code = mmap(hint, CodePageSize, PROT_READ | PROT_WRITE | PROT_EXEC,
+                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    errno = saved_errno;
+    return code == MAP_FAILED ? nullptr : static_cast<u8*>(code);
+}
+
+u8* SelectNativeBlockCode(u64 pc) {
+    const u64 original = reinterpret_cast<u64>(block.allocation);
+    constexpr u64 RegionSize = u64{1} << 30;
+    if (!relative_blocks || (pc > original ? pc - original : original - pc) < RegionSize) {
+        return block.allocation;
+    }
+    const u64 region = pc / RegionSize;
+    for (size_t i = 0; i < block.nearby_count; ++i) {
+        if (block.nearby_pages[i].region == region) {
+            return block.nearby_pages[i].code ? block.nearby_pages[i].code : block.allocation;
+        }
+    }
+    if (block.nearby_count == block.nearby_pages.size()) {
+        return block.allocation;
+    }
+    auto& page = block.nearby_pages[block.nearby_count++];
+    page.region = region;
+    for (const s64 distance : {0x1000000LL, -0x1000000LL, 0x4000000LL, -0x4000000LL, 0x10000000LL,
+                               -0x10000000LL, 0x30000000LL, -0x30000000LL}) {
+        u8* code = AllocateNativeBlockPage(reinterpret_cast<void*>(CodePage(pc + distance)));
+        if (!code) {
+            continue;
+        }
+        const u64 address = reinterpret_cast<u64>(code);
+        if ((pc > address ? pc - address : address - pc) < RegionSize) {
+            page.code = code;
+            return page.code;
+        }
+        munmap(code, CodePageSize);
+    }
+    return block.allocation;
 }
 
 struct HostCodeRange {
@@ -105,9 +165,7 @@ bool IsGuestInstruction(u64 pc) {
 void EnterTrace(greg_t& flags) {
     ASSERT_MSG(trace_depth < previous_trace.size(), "Xstate trace nesting limit exceeded");
     if (!trace_depth && native_blocks) {
-        void* code = mmap(nullptr, CodePageSize, PROT_READ | PROT_WRITE | PROT_EXEC,
-                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        block.code = code == MAP_FAILED ? nullptr : static_cast<u8*>(code);
+        block.allocation = AllocateNativeBlockPage(nullptr);
     }
     previous_trace[trace_depth++] = (flags & TrapFlag) != 0;
     flags |= TrapFlag;
@@ -134,10 +192,10 @@ XstateResult WriteMemory(void*, u64 address, std::span<const u8> bytes) {
                 : XstateResult{};
 }
 
-bool ExecuteTraceBranch(std::span<const u8> bytes, ucontext_t& context) {
+bool ExecuteTraceStep(std::span<const u8> bytes, ucontext_t& context) {
     auto& registers = context.uc_mcontext.gregs;
     const u64 pc = registers[REG_RIP];
-    if (!native_branches || block.executable_page != CodePage(pc)) {
+    if ((!native_branches && !relative_blocks) || block.executable_page != CodePage(pc)) {
         return false;
     }
     ZydisDecoder decoder;
@@ -146,12 +204,44 @@ bool ExecuteTraceBranch(std::span<const u8> bytes, ucontext_t& context) {
     std::array<ZydisDecodedOperand, ZYDIS_MAX_OPERAND_COUNT> operands;
     if (!ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, bytes.data(), bytes.size(), &instruction,
                                              operands.data())) ||
+        CodePage(pc + instruction.length - 1) != block.executable_page) {
+        return false;
+    }
+    if (relative_blocks && instruction.mnemonic == ZYDIS_MNEMONIC_LEA &&
+        instruction.operand_count_visible == 2 && operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER &&
+        operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY &&
+        (operands[1].mem.base == ZYDIS_REGISTER_RIP ||
+         operands[1].mem.base == ZYDIS_REGISTER_EIP)) {
+        constexpr std::array RegisterIds{REG_RAX, REG_RCX, REG_RDX, REG_RBX, REG_RSP, REG_RBP,
+                                         REG_RSI, REG_RDI, REG_R8,  REG_R9,  REG_R10, REG_R11,
+                                         REG_R12, REG_R13, REG_R14, REG_R15};
+        const auto id = ZydisRegisterGetId(operands[0].reg.value);
+        if (id < 0 || static_cast<size_t>(id) >= RegisterIds.size()) {
+            return false;
+        }
+        u64 address = pc + instruction.length + operands[1].mem.disp.value;
+        if (operands[1].mem.base == ZYDIS_REGISTER_EIP) {
+            address = static_cast<u32>(address);
+        }
+        auto& destination = registers[RegisterIds[id]];
+        if (operands[0].size == 16) {
+            destination = (destination & ~u64{0xffff}) | static_cast<u16>(address);
+        } else if (operands[0].size == 32) {
+            destination = static_cast<u32>(address);
+        } else if (operands[0].size == 64) {
+            destination = address;
+        } else {
+            return false;
+        }
+        registers[REG_RIP] += instruction.length;
+        return true;
+    }
+    if (!native_branches ||
         (instruction.meta.category != ZYDIS_CATEGORY_COND_BR &&
          instruction.meta.category != ZYDIS_CATEGORY_UNCOND_BR) ||
         instruction.operand_count_visible != 1 ||
         operands[0].type != ZYDIS_OPERAND_TYPE_IMMEDIATE || !operands[0].imm.is_relative ||
-        instruction.meta.branch_type == ZYDIS_BRANCH_TYPE_FAR ||
-        CodePage(pc + instruction.length - 1) != block.executable_page) {
+        instruction.meta.branch_type == ZYDIS_BRANCH_TYPE_FAR) {
         return false;
     }
     const u64 flags = registers[REG_EFL];
@@ -259,10 +349,6 @@ bool CanCopyInstruction(const ZydisDecodedInstruction& instruction,
         return false;
     }
     for (const auto& operand : operands) {
-        if (operand.type == ZYDIS_OPERAND_TYPE_MEMORY &&
-            (operand.mem.base == ZYDIS_REGISTER_RIP || operand.mem.base == ZYDIS_REGISTER_EIP)) {
-            return false;
-        }
         if (operand.type == ZYDIS_OPERAND_TYPE_REGISTER &&
             ZydisRegisterGetClass(operand.reg.value) == ZYDIS_REGCLASS_SEGMENT &&
             (operand.actions & ZYDIS_OPERAND_ACTION_MASK_WRITE)) {
@@ -295,11 +381,36 @@ bool CanCopyInstruction(const ZydisDecodedInstruction& instruction,
     }
 }
 
+bool RelocateBlockInstruction(std::span<u8> bytes, const ZydisDecodedInstruction& instruction,
+                              std::span<const ZydisDecodedOperand> operands, u64 pc, u64 copy_pc) {
+    for (const auto& operand : operands) {
+        if (operand.type != ZYDIS_OPERAND_TYPE_MEMORY ||
+            (operand.mem.base != ZYDIS_REGISTER_RIP && operand.mem.base != ZYDIS_REGISTER_EIP)) {
+            continue;
+        }
+        if (!relative_blocks || instruction.raw.disp.size != 32) {
+            return false;
+        }
+        const s64 adjusted =
+            instruction.raw.disp.value + static_cast<s64>(pc) - static_cast<s64>(copy_pc);
+        if (operand.mem.base == ZYDIS_REGISTER_RIP &&
+            (adjusted < std::numeric_limits<s32>::min() ||
+             adjusted > std::numeric_limits<s32>::max())) {
+            return false;
+        }
+        const u32 displacement = static_cast<u32>(adjusted);
+        std::memcpy(bytes.data() + instruction.raw.disp.offset, &displacement,
+                    sizeof(displacement));
+    }
+    return true;
+}
+
 bool StartNativeBlock(ucontext_t& context) {
     const u64 pc = context.uc_mcontext.gregs[REG_RIP];
-    if (!block.code || block.active || block.executable_page != CodePage(pc)) {
+    if (!block.allocation || block.active || block.executable_page != CodePage(pc)) {
         return false;
     }
+    u8* code = SelectNativeBlockCode(pc);
     std::array<u8, MaxBlockBytes> source;
     const size_t limit = std::min(source.size(), CodePageSize - (pc & (CodePageSize - 1)));
     const size_t readable =
@@ -317,7 +428,10 @@ bool StartNativeBlock(ucontext_t& context) {
             break;
         }
         const auto used = std::span{operands}.first(instruction.operand_count);
-        if (!CanCopyInstruction(instruction, used)) {
+        if (!CanCopyInstruction(instruction, used) ||
+            !RelocateBlockInstruction(std::span{source}.subspan(size, instruction.length),
+                                      instruction, used, pc + size,
+                                      reinterpret_cast<u64>(code) + size)) {
             break;
         }
         block.offsets[count++] = size;
@@ -335,6 +449,7 @@ bool StartNativeBlock(ucontext_t& context) {
     if (count < 2 && !repeated) {
         return false;
     }
+    block.code = code;
     std::memcpy(block.code, source.data(), size);
     block.code[size] = 0xcc;
     block.offsets[count] = size;
@@ -544,7 +659,7 @@ bool HandleXstateTrace(int& signal, siginfo_t& info, ucontext_t& context) {
         block.executable_page = ~u64{0};
     }
 
-    u32 branches = 0;
+    u32 steps = 0;
     while (true) {
         const bool guest = IsGuestInstruction(registers[REG_RIP]);
         if (!guest && !host_blocks) {
@@ -559,8 +674,8 @@ bool HandleXstateTrace(int& signal, siginfo_t& info, ucontext_t& context) {
             return true;
         }
         const auto bytes = std::span{instruction}.first(instruction.size() - left);
-        if (branches < 64 && ExecuteTraceBranch(bytes, context)) {
-            ++branches;
+        if (steps < 64 && ExecuteTraceStep(bytes, context)) {
+            ++steps;
             continue;
         }
         LinuxXstateResult result{LinuxXstateStatus::NotHandled};
