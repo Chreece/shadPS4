@@ -389,6 +389,7 @@ void Rasterizer::DispatchDirect() {
     }
     if (ShouldProbeGoWBindings(cs)) {
         if (!gow_binding_probed.exchange(true, std::memory_order_relaxed)) {
+            LOG_WARNING(Render_Vulkan, "GOW_TARGET_BIND_PROBE_BEGIN shader={:#x}", cs.pgm_hash);
             const bool bound = BindResources(pipeline);
             bool bda_valid = false;
             bool fault_valid = false;
@@ -396,7 +397,7 @@ void Rasterizer::DispatchDirect() {
                 for (const auto& write : set_writes) {
                     if ((write.dstBinding == 1 || write.dstBinding == 2) &&
                         write.descriptorType == vk::DescriptorType::eStorageBuffer &&
-                        write.pBufferInfo && write.pBufferInfo->buffer != VK_NULL_HANDLE &&
+                        write.pBufferInfo && write.pBufferInfo->buffer != vk::Buffer{} &&
                         write.pBufferInfo->range > 0) {
                         if (write.dstBinding == 1) bda_valid = true;
                         if (write.dstBinding == 2) fault_valid = true;
@@ -455,6 +456,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
     if (ShouldProbeGoWBindings(cs)) {
         if (!gow_binding_probed.exchange(true, std::memory_order_relaxed)) {
+            LOG_WARNING(Render_Vulkan, "GOW_TARGET_BIND_PROBE_BEGIN shader={:#x}", cs.pgm_hash);
             const bool bound = BindResources(pipeline);
             bool bda_valid = false;
             bool fault_valid = false;
@@ -462,7 +464,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
                 for (const auto& write : set_writes) {
                     if ((write.dstBinding == 1 || write.dstBinding == 2) &&
                         write.descriptorType == vk::DescriptorType::eStorageBuffer &&
-                        write.pBufferInfo && write.pBufferInfo->buffer != VK_NULL_HANDLE &&
+                        write.pBufferInfo && write.pBufferInfo->buffer != vk::Buffer{} &&
                         write.pBufferInfo->range > 0) {
                         if (write.dstBinding == 1) bda_valid = true;
                         if (write.dstBinding == 2) fault_valid = true;
