@@ -13,6 +13,8 @@
 #include <fmt/format.h>
 #include <spirv/unified1/spirv.hpp11>
 
+#include <algorithm>
+#include <ranges>
 #include <numbers>
 #include <string_view>
 
