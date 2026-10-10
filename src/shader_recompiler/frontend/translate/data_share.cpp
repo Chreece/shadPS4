@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+#include <cstring>
+
+#include "common/logging/log.h"
 #include "shader_recompiler/frontend/translate/translate.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/runtime_info.h"
@@ -90,6 +94,23 @@ void Translator::EmitDataShare(const GcnInst& inst) {
         return DS_READ(64, false, true, false, inst);
     case Opcode::DS_READ2ST64_B64:
         return DS_READ(64, false, true, true, inst);
+    case Opcode::DS_ORDERED_COUNT: {
+        const char* gate = std::getenv("SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING");
+        if (gate && std::strcmp(gate, "1") == 0 && info.pgm_hash == 0xdbaa6ae4ULL &&
+            info.hw_stage == HwStage::Compute) {
+            // This is a translation-only stub, NOT an emulation of DS_ORDERED_COUNT.
+            // SHADPS4_GOW_SUPPRESS_GPU_COMPUTE=1 must guard execution of ALL compute.
+            const char* suppress = std::getenv("SHADPS4_GOW_SUPPRESS_GPU_COMPUTE");
+            if (suppress && std::strcmp(suppress, "1") == 0) {
+                LOG_WARNING(Render_Recompiler, "GOW_GDS_DIAG_TRANSLATED_ONLY hash={:#x}",
+                            info.pgm_hash);
+                SetDst(inst.dst[0], IR::U32{ir.Imm32(0)});
+                return;
+            }
+        }
+        LogMissingOpcode(inst);
+        return;
+    }
     default:
         LogMissingOpcode(inst);
     }
