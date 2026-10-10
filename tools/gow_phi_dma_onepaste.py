@@ -30,10 +30,11 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "1ab762f94bf9c28522bc2cf03ce3b27c84589953"
+HEAD_SHA = "1a6f49c8e72ca1cd98110473ea5504d92df8a81e"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
+    "src/core/libraries/kernel/process.cpp",
     "src/shader_recompiler/backend/spirv/emit_spirv.cpp",
     "src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp",
     "src/shader_recompiler/frontend/translate/data_share.cpp",
