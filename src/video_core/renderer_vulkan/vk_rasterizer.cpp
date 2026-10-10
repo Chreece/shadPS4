@@ -557,6 +557,72 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
     }
 }
 
+// A single early shader (0x9a1583fb) had zero SRT offset errors in the
+// previous GoW capture. This optional probe admits at most one dispatch,
+// and ONLY with fully resolved metadata, small buffers and a small grid.
+// Every other compute shader remains suppressed.
+static std::atomic<bool> gow_one_shot_examined{false};
+static bool AllowFirstGoWComputeProbe(const Shader::Info& cs, u32 x, u32 y, u32 z) {
+    const char* flag = std::getenv("SHADPS4_GOW_SAFE_COMPUTE_ONESHOT");
+    const char* suppress = std::getenv("SHADPS4_GOW_SUPPRESS_GPU_COMPUTE");
+    if (!flag || std::strcmp(flag, "1") != 0 ||
+        !suppress || std::strcmp(suppress, "1") != 0 ||
+        cs.pgm_hash != 0x9a1583fbULL ||
+        cs.hw_stage != Shader::HwStage::Compute ||
+        gow_one_shot_examined.exchange(true, std::memory_order_relaxed)) {
+        return false;
+    }
+    bool invalid = false;
+    bool unsupported_special = false;
+    bool oversized_buffer = false;
+    for (const auto& b : cs.buffers) {
+        if (b.IsSpecial()) {
+            if (b.buffer_type == Shader::BufferType::GdsBuffer ||
+                b.buffer_type == Shader::BufferType::SharedMemory) {
+                unsupported_special = true;
+            }
+            continue;
+        }
+        if (b.sharp_fetch.summary == decltype(b.sharp_fetch.summary)::Invalid) {
+            invalid = true;
+            continue;
+        }
+        const auto sharp = b.GetSharp(cs);
+        if (!sharp.base_address || !sharp.GetSize()) {
+            invalid = true;
+        } else if (sharp.GetSize() > 16u * 1024u * 1024u) {
+            oversized_buffer = true;
+        }
+    }
+    for (const auto& image : cs.images) {
+        if (image.sharp_fetch.summary == decltype(image.sharp_fetch.summary)::Invalid) {
+            invalid = true;
+            continue;
+        }
+        const auto sharp = image.GetSharp(cs);
+        if (!sharp.Valid() || !sharp.Address()) {
+            invalid = true;
+        }
+    }
+    for (const auto& sampler : cs.samplers) {
+        if (sampler.sharp_fetch.summary == decltype(sampler.sharp_fetch.summary)::Invalid) {
+            invalid = true;
+        }
+    }
+    const bool grid_ok = x && y && z && x <= 128 && y <= 128 && z <= 128 &&
+                         u64(x) * y * z <= 128;
+    const bool permit = grid_ok && !cs.uses_dma && !cs.translation_failed &&
+                        !invalid && !unsupported_special && !oversized_buffer;
+    LOG_WARNING(Render_Vulkan,
+                "GOW_COMPUTE_ONE_SHOT_CANDIDATE shader={:#x} grid={}x{}x{} "
+                "buffers={} images={} samplers={} dma={} invalid={} "
+                "unsupported_special={} oversized_buffer={} permit={}",
+                cs.pgm_hash, x, y, z, cs.buffers.size(), cs.images.size(),
+                cs.samplers.size(), cs.uses_dma, invalid, unsupported_special,
+                oversized_buffer, permit);
+    return permit;
+}
+
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
 
@@ -607,11 +673,18 @@ void Rasterizer::DispatchDirect() {
         }
         return; // Unconditionally skip this and every subsequent target dispatch.
     }
-    if (SuppressDiagnosticCompute(cs)) {
+    const bool allow_one_shot = AllowFirstGoWComputeProbe(
+        cs, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+    if (!allow_one_shot && SuppressDiagnosticCompute(cs)) {
         return;
     }
 
     if (!BindResources(pipeline)) {
+        if (allow_one_shot) {
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_COMPUTE_ONE_SHOT_RESULT shader={:#x} result=BIND_FAILED",
+                        cs.pgm_hash);
+        }
         return;
     }
 
@@ -624,6 +697,11 @@ void Rasterizer::DispatchDirect() {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+    if (allow_one_shot) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_COMPUTE_ONE_SHOT_RESULT shader={:#x} result=SUBMITTED grid={}x{}x{}",
+                    cs.pgm_hash, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+    }
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     DebugState.IncDispatch();
 
