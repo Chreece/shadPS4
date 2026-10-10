@@ -442,6 +442,23 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     }
     const auto state = BeginRendering(pipeline);
 
+    // Non-mutating cache-state provenance check, sampled once for the known
+    // six-command G-buffer range before the indirect arguments are obtained.
+    const char* origin_flag = std::getenv("SHADPS4_GOW_INDIRECT_WRITER_SCAN");
+    if (origin_flag && std::strcmp(origin_flag, "1") == 0 && is_indexed &&
+        arg_address + offset == 0x1039242c40ULL && stride == 20 && max_count == 1) {
+        static bool origin_logged = false; // One thread: GPU command processor.
+        if (!origin_logged) {
+            origin_logged = true;
+            const bool gpu_modified =
+                buffer_cache.IsRegionGpuModified(0x1039242c40ULL, 6 * 20);
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_INDIRECT_BUFFER_ORIGIN address=0x1039242c40 "
+                        "bytes=120 gpu_modified_before_obtain={} result=PASSIVE",
+                        gpu_modified);
+        }
+    }
+
     BindVertexBuffers(pipeline);
     if (is_indexed) {
         BindIndexBuffer();
@@ -975,6 +992,99 @@ static void EvaluateGoWImageOutputDelta(GoWImageOutputDelta capture,
     staging->FreeDeferred(capture.after);
 }
 
+// GoW Ragnarok: passive provenance census for six zero-instance indirect draws.
+// No additional resource bindings, memory reads, or GPU commands. Inspect
+// compiler-produced writable buffer descriptors BEFORE compute suppression.
+static void TraceGoWIndirectWriterCandidates(const Shader::Info& info,
+                                             u32 grid_x, u32 grid_y, u32 grid_z) {
+    const char* flag = std::getenv("SHADPS4_GOW_INDIRECT_WRITER_SCAN");
+    if (!flag || std::strcmp(flag, "1") != 0 ||
+        info.hw_stage != Shader::HwStage::Compute) {
+        return;
+    }
+    constexpr VAddr first_command = 0x1039242c40ULL;
+    constexpr VAddr one_past_last = first_command + 6 * sizeof(VkDrawIndexedIndirectCommand);
+    // Track candidates by shader/descriptor/range, rather than by shader alone,
+    // since descriptor contents can change between dispatches.
+    static std::mutex log_mutex;
+    static std::array<u64, 128> seen{};
+    static size_t seen_count = 0;
+    static u32 scan_summary_count = 0;
+    u32 writable = 0;
+    u32 unresolved = 0;
+    u32 special = 0;
+    u32 overlap = 0;
+    for (u32 i = 0; i < info.buffers.size(); ++i) {
+        const auto& descriptor = info.buffers[i];
+        if (!descriptor.is_written) {
+            continue;
+        }
+        ++writable;
+        if (descriptor.IsSpecial()) {
+            ++special;
+            continue;
+        }
+        if (descriptor.sharp_fetch.summary ==
+            decltype(descriptor.sharp_fetch.summary)::Invalid) {
+            ++unresolved;
+            continue;
+        }
+        const auto sharp = descriptor.GetSharp(info);
+        const VAddr base = sharp.base_address;
+        const u64 size = sharp.GetSize();
+        if (!base || !size) {
+            ++unresolved;
+            continue;
+        }
+        // Subtraction form avoids overflowing base+size on malformed SHARPs.
+        const bool intersects =
+            base < one_past_last && first_command >= base
+                ? first_command - base < size
+                : base >= first_command && base < one_past_last;
+        if (!intersects) {
+            continue;
+        }
+        ++overlap;
+        const u64 key = (u64(info.pgm_hash) << 32) ^
+                        (u64(i) << 24) ^ base ^ (size << 1);
+        bool first = false;
+        {
+            std::scoped_lock guard{log_mutex};
+            if (std::find(seen.begin(), seen.begin() + seen_count, key) ==
+                    seen.begin() + seen_count && seen_count < seen.size()) {
+                seen[seen_count++] = key;
+                first = true;
+            }
+        }
+        if (first) {
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_INDIRECT_WRITER_CANDIDATE shader={:#x} buffer={} "
+                        "address={:#x} size={} writable=true grid={}x{}x{} "
+                        "uses_dma={} descriptor_valid=true result=OVERLAP",
+                        info.pgm_hash, i, base, size, grid_x, grid_y, grid_z,
+                        info.uses_dma);
+        }
+    }
+    bool log_summary = false;
+    {
+        std::scoped_lock guard{log_mutex};
+        if (scan_summary_count < 96) {
+            ++scan_summary_count;
+            log_summary = true;
+        }
+    }
+    // Bounded shader/descriptor summary even when no direct writer overlaps:
+    // this helps identify a dynamic/bindless or DMA-based producer.
+    if (log_summary && (writable || info.uses_dma)) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_INDIRECT_WRITER_SUMMARY shader={:#x} grid={}x{}x{} "
+                    "buffers={} writable={} invalid_writable={} special_writable={} "
+                    "overlap={} uses_dma={} result=PASSIVE",
+                    info.pgm_hash, grid_x, grid_y, grid_z, info.buffers.size(),
+                    writable, unresolved, special, overlap, info.uses_dma);
+    }
+}
+
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
 
@@ -988,6 +1098,8 @@ void Rasterizer::DispatchDirect() {
     }
 
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
+    TraceGoWIndirectWriterCandidates(cs, cs_program.dim_x, cs_program.dim_y,
+                                     cs_program.dim_z);
     if (ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this)) {
         return;
     }
