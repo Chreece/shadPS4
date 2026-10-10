@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+#include <cstring>
 #include <boost/container/static_vector.hpp>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -419,6 +421,17 @@ bool Instance::CreateDevice() {
     const auto vk11_features = feature_chain.get<vk::PhysicalDeviceVulkan11Features>();
     vk12_features = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
     vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();
+    // Opt-in Ghost bindless experiment; unchanged for all other games.
+    static const bool ghost_bindless = [] {
+        const char* value = std::getenv("SHADPS4_GHOST_BINDLESS_EXPERIMENT");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (ghost_bindless) {
+        ASSERT_MSG(features.shaderSampledImageArrayDynamicIndexing &&
+                   vk12_features.descriptorIndexing &&
+                   vk12_features.shaderSampledImageArrayNonUniformIndexing,
+                   "Ghost bindless requested but Vulkan sampled-image indexing is unavailable");
+    }
     vk::StructureChain device_chain = {
         vk::DeviceCreateInfo{
             .queueCreateInfoCount = static_cast<u32>(queue_infos.size()),
@@ -448,6 +461,8 @@ bool Instance::CreateDevice() {
                 .vertexPipelineStoresAndAtomics = features.vertexPipelineStoresAndAtomics,
                 .fragmentStoresAndAtomics = features.fragmentStoresAndAtomics,
                 .shaderImageGatherExtended = features.shaderImageGatherExtended,
+                .shaderSampledImageArrayDynamicIndexing =
+                    ghost_bindless && features.shaderSampledImageArrayDynamicIndexing,
                 .shaderStorageImageExtendedFormats = features.shaderStorageImageExtendedFormats,
                 .shaderStorageImageMultisample = features.shaderStorageImageMultisample,
                 .shaderClipDistance = features.shaderClipDistance,
@@ -477,6 +492,9 @@ bool Instance::CreateDevice() {
             .timelineSemaphore = vk12_features.timelineSemaphore,
             .bufferDeviceAddress = vk12_features.bufferDeviceAddress,
             .shaderOutputLayer = vk12_features.shaderOutputLayer,
+            .descriptorIndexing = ghost_bindless && vk12_features.descriptorIndexing,
+            .shaderSampledImageArrayNonUniformIndexing =
+                ghost_bindless && vk12_features.shaderSampledImageArrayNonUniformIndexing,
         },
         vk::PhysicalDeviceVulkan13Features{
             .robustImageAccess = vk13_features.robustImageAccess,
