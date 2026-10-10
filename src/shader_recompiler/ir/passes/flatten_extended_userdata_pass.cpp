@@ -866,6 +866,19 @@ void SimplifyReadConstAddressAdd(IR::Inst& inst) {
 void FlattenExtendedUserdataPass(IR::Program& program) {
     auto& post_order = program.post_order_blocks;
     PassInfo pass_info;
+    const char* gow_enabled = std::getenv("SHADPS4_GOW_SRT_FLATTEN_TRACE");
+    pass_info.gow_diag = gow_enabled && std::strcmp(gow_enabled, "1") == 0 &&
+                         program.info.pgm_hash == 0x7f710602ULL &&
+                         program.info.hw_stage == Shader::HwStage::Fragment;
+    pass_info.gow_shader = program.info.pgm_hash;
+    u32 gow_buffer_candidates = 0;
+    u32 gow_sharp_sources = 0;
+    if (pass_info.gow_diag) {
+        LOG_WARNING(Render_Recompiler,
+                    "GOW_SRT_FLATTEN_BEGIN shader={:#x} blocks={} "
+                    "mode=READ_ONLY max_events=256",
+                    pass_info.gow_shader, post_order.size());
+    }
 
     // traverse at end and assign offsets to duplicate readconsts, using
     // vn_to_inst as the source
@@ -882,8 +895,24 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
 
             if (inst.GetOpcode() == IR::Opcode::ReadConstBuffer) {
                 // Only flatten ReadConstBuffer if it was marked as a sharp source in the
-                // resource discovery pass
+                // resource discovery pass.
                 auto inst_info = inst.Flags<IR::BufferInstInfo>();
+                if (pass_info.gow_diag) {
+                    ++gow_buffer_candidates;
+                    gow_sharp_sources += static_cast<bool>(inst_info.sharp_source);
+                    if (pass_info.GoWLog()) {
+                        const auto off = inst.Arg(1);
+                        const auto* off_inst = off.TryInst();
+                        LOG_WARNING(Render_Recompiler,
+                                    "GOW_SRT_FLATTEN_TRACE shader={:#x} event=DISCOVER "
+                                    "node={} kind=ReadConstBuffer sharp_source={} "
+                                    "flatbuf={} index_opcode={}",
+                                    pass_info.gow_shader, pass_info.GoWId(&inst),
+                                    static_cast<bool>(inst_info.sharp_source),
+                                    static_cast<u32>(inst_info.flatbuf_off_dw),
+                                    off_inst ? IR::NameOf(off_inst->GetOpcode()) : "Immediate");
+                    }
+                }
                 if (!inst_info.sharp_source) {
                     continue;
                 }
@@ -892,6 +921,16 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
             SimplifyReadConstAddressAdd(inst);
 
             all_readconsts.push_back(&inst);
+            if (pass_info.GoWLog()) {
+                const auto off = inst.Arg(1);
+                const auto* off_inst = off.TryInst();
+                LOG_WARNING(Render_Recompiler,
+                            "GOW_SRT_FLATTEN_TRACE shader={:#x} event=CANDIDATE_INCLUDED "
+                            "node={} opcode={} index_opcode={}",
+                            pass_info.gow_shader, pass_info.GoWId(&inst),
+                            IR::NameOf(inst.GetOpcode()),
+                            off_inst ? IR::NameOf(off_inst->GetOpcode()) : "Immediate");
+            }
 
             auto offset = inst.Arg(1);
             if (offset.IsImmediate()) {
@@ -939,14 +978,28 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
     }
 
     for (auto inst : all_readconsts) {
-        if (pass_info.DeduplicateInstruction(inst) != inst) {
-            // This is a duplicate of a readconst we've already visited
+        IR::Inst* canonical = pass_info.DeduplicateInstruction(inst);
+        if (canonical != inst) {
+            // This is a duplicate of a readconst we've already visited.
+            if (pass_info.GoWLog()) {
+                LOG_WARNING(Render_Recompiler,
+                            "GOW_SRT_FLATTEN_TRACE shader={:#x} event=GVN_DUPLICATE "
+                            "node={} canonical={}",
+                            pass_info.gow_shader, pass_info.GoWId(inst),
+                            pass_info.GoWId(canonical));
+            }
             continue;
         }
 
         IR::Inst* base = inst->Arg(0).Inst();
-        if (auto* inst = base->Arg(0).TryInst();
-            inst && inst->GetOpcode() == IR::Opcode::ReadFirstLane) {
+        if (auto* root = base->Arg(0).TryInst();
+            root && root->GetOpcode() == IR::Opcode::ReadFirstLane) {
+            if (pass_info.GoWLog()) {
+                LOG_WARNING(Render_Recompiler,
+                            "GOW_SRT_FLATTEN_TRACE shader={:#x} event=READFIRSTLANE_SKIPPED "
+                            "node={} root={}", pass_info.gow_shader,
+                            pass_info.GoWId(inst), pass_info.GoWId(root));
+            }
             continue;
         }
         ASSERT_MSG(IsReadConstSource(base->Arg(0)), "ReadConst base low not from constant memory");
@@ -959,6 +1012,16 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
         PassInfo::PtrUserList& user_list = ptr_uses_kv.first->second;
 
         user_list[inst->Arg(1)] = inst;
+        if (pass_info.GoWLog()) {
+            const IR::Value idx = inst->Arg(1);
+            const IR::Inst* idx_inst = idx.TryInst();
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_SRT_FLATTEN_TRACE shader={:#x} event=USE_MAPPED "
+                        "node={} parent={} parent_opcode={} index_opcode={}",
+                        pass_info.gow_shader, pass_info.GoWId(inst),
+                        pass_info.GoWId(ptr_lo), IR::NameOf(ptr_lo->GetOpcode()),
+                        idx_inst ? IR::NameOf(idx_inst->GetOpcode()) : "Immediate");
+        }
 
         if (ptr_lo->GetOpcode() == IR::Opcode::GetUserData) {
             IR::ScalarReg ud_reg = ptr_lo->Arg(0).ScalarReg();
@@ -968,13 +1031,47 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
 
     GenerateSrtProgram(program.info, pass_info);
 
-    // Assign offsets to duplicate readconsts
+    // Assign offsets to duplicate readconsts.
+    u32 gow_resolved_sharps = 0;
+    u32 gow_unresolved_sharps = 0;
     for (IR::Inst* readconst : all_readconsts) {
         ASSERT(pass_info.vn_to_inst.contains(pass_info.gvn_table.GetValueNumber(readconst)));
         IR::Inst* original = pass_info.DeduplicateInstruction(readconst);
         SetFlatbufOffset(readconst, GetFlatbufOffset(original));
+        if (pass_info.gow_diag) {
+            const auto opcode = readconst->GetOpcode();
+            const u32 assigned = GetFlatbufOffset(readconst);
+            if (opcode == IR::Opcode::ReadConstBuffer &&
+                readconst->Flags<IR::BufferInstInfo>().sharp_source) {
+                if (assigned) {
+                    ++gow_resolved_sharps;
+                } else {
+                    ++gow_unresolved_sharps;
+                }
+            }
+            if (pass_info.GoWLog()) {
+                LOG_WARNING(Render_Recompiler,
+                            "GOW_SRT_FLATTEN_TRACE shader={:#x} event=FINAL_OFFSET "
+                            "node={} canonical={} opcode={} offset={}",
+                            pass_info.gow_shader, pass_info.GoWId(readconst),
+                            pass_info.GoWId(original),
+                            IR::NameOf(opcode), assigned);
+            }
+        }
     }
 
+    if (pass_info.gow_diag) {
+        LOG_WARNING(Render_Recompiler,
+                    "GOW_SRT_FLATTEN_END shader={:#x} candidates={} "
+                    "readconstbuffer_seen={} marked_sharp={} ptr_nodes={} "
+                    "roots={} resolved_sharps={} unresolved_sharps={} "
+                    "trace_events={} trace_capped={} result=CAPTURED",
+                    pass_info.gow_shader, all_readconsts.size(),
+                    gow_buffer_candidates, gow_sharp_sources,
+                    pass_info.pointer_uses.size(), pass_info.srt_roots.size(),
+                    gow_resolved_sharps, gow_unresolved_sharps,
+                    pass_info.gow_events, pass_info.gow_events >= 256);
+    }
     program.info.RefreshFlatBuf();
 }
 
