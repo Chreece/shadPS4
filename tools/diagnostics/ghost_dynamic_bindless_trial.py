@@ -37,7 +37,7 @@ PSTART=None
 BACKUP={}
 BINARY_COPY=None
 PROTOTYPE_BASE='105514765f7c69dbd65a5041f089ca2076e50f0a'
-PROTOTYPE_HEAD='4c589fc0b8944e0d1317ab47aea1202abb59bb49'
+PROTOTYPE_HEAD='0668209bb0d1e35fd990abc189a2141d496c0e10'
 PROTOTYPE_PATHS=(
  'src/shader_recompiler/backend/spirv/emit_spirv_image.cpp',
  'src/shader_recompiler/backend/spirv/emit_spirv_instructions.h',
@@ -475,6 +475,13 @@ def playtest(candidate):
     S['result']='dynamic-index-shader-source-not-recognized';break
    if now-start>=45 and 'GHOST_BINDLESS_TABLE' not in text:
     S['result']='gpu-dynamic-descriptor-array-not-bound';break
+   if now-start>=60:
+    compiled_slots=set(re.findall(r'GHOST_BINDLESS_SOURCE[^\n]*?slot=(\d+)',text))
+    bound_slots=set(re.findall(r'GHOST_BINDLESS_TABLE[^\n]*?slot=(\d+)',text))
+    if compiled_slots!={str(i) for i in range(7)}:
+     S['result']='not-all-seven-source-slots-compiled';break
+    if bound_slots!={str(i) for i in range(7)}:
+     S['result']='not-all-seven-descriptor-arrays-bound';break
    ftrace=re.findall(r'GHOST_TRACE vblank=(\d+) guest_flips=(\d+) pending=(\d+) queued=(\d+)',text)
    if ftrace:
     vb,n,p,q=map(int,ftrace[-1]);S['guest_flips']=n
@@ -491,6 +498,8 @@ def playtest(candidate):
  ticks=re.findall(r'GHOST_TIMELINE_RELEASE seq=(\d+) pipe=(\d+) recording=(\d+) submitted=(\d+) completed=(\d+) pending=(\w+)',text)
  S['bindless_source_compiles']=len(re.findall(r'GHOST_BINDLESS_SOURCE shader=',text))
  S['bindless_table_binds']=len(re.findall(r'GHOST_BINDLESS_TABLE shader=',text))
+ S['source_slots']=sorted(set(re.findall(r'GHOST_BINDLESS_SOURCE[^\n]*?slot=(\d+)',text)))
+ S['bound_slots']=sorted(set(re.findall(r'GHOST_BINDLESS_TABLE[^\n]*?slot=(\d+)',text)))
  S['timeline_releases']=len(ticks)
  S['pending_submissions_at_release']=sum(int(x[3])>int(x[4]) for x in ticks)
  S['first_timeline_records']=ticks[:8]
@@ -538,6 +547,8 @@ finally:
  print('GHOST_PROVENANCE='+str(S.get('seven_staged_hashes')),flush=True)
  print('GHOST_BINDLESS_COMPILES='+str(S.get('bindless_source_compiles')),flush=True)
  print('GHOST_BINDLESS_TABLE_BINDS='+str(S.get('bindless_table_binds')),flush=True)
+ print('GHOST_SOURCE_SLOTS='+str(S.get('source_slots')),flush=True)
+ print('GHOST_BOUND_SLOTS='+str(S.get('bound_slots')),flush=True)
  print('GHOST_GUEST_FLIPS='+str(S.get('guest_flips')),flush=True)
  print('GHOST_SOURCE_RESTORED='+str(S.get('source_restored')),flush=True)
  print('GHOST_BUILD_RESTORED='+str(S.get('build_binary_restored')),flush=True)
