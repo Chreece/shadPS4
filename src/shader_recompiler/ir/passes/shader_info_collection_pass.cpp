@@ -23,6 +23,11 @@ static void AddFlatbuf(Info& info) {
 }
 
 void Visit(Info& info, const IR::Inst& inst) {
+    // Phi may be the only remaining F64 operation after optimization.
+    // Track it before SPIR-V type emission (seen in GoW shader 0xd0ba3e4d).
+    if (inst.GetOpcode() == IR::Opcode::Phi && inst.Type() == IR::Type::F64) {
+        info.uses_fp64 = true;
+    }
     switch (inst.GetOpcode()) {
     case IR::Opcode::GetAttribute:
     case IR::Opcode::GetAttributeU1:
