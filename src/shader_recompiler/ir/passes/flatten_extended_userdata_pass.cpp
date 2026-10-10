@@ -192,7 +192,7 @@ struct PassInfo {
     }
 
     bool GoWLog() {
-        if (!gow_diag || gow_events >= 256) {
+        if (!gow_diag || gow_events >= 1024) {
             return false;
         }
         ++gow_events;
@@ -878,7 +878,7 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
     if (pass_info.gow_diag) {
         LOG_WARNING(Render_Recompiler,
                     "GOW_SRT_FLATTEN_BEGIN shader={:#x} blocks={} "
-                    "mode=READ_ONLY max_events=256",
+                    "mode=READ_ONLY max_events=1024",
                     pass_info.gow_shader, post_order.size());
     }
 
@@ -1072,7 +1072,7 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
                     gow_buffer_candidates, gow_sharp_sources,
                     pass_info.pointer_uses.size(), pass_info.srt_roots.size(),
                     gow_resolved_sharps, gow_unresolved_sharps,
-                    pass_info.gow_events, pass_info.gow_events >= 256);
+                    pass_info.gow_events, pass_info.gow_events >= 1024);
     }
     program.info.RefreshFlatBuf();
 }
