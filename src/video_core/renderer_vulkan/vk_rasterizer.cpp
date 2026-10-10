@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <map>
 
 #include "common/debug.h"
 #include "core/debug_state.h"
@@ -200,23 +201,126 @@ void Rasterizer::EliminateFastClear() {
     ScopeMarkerEnd();
 }
 
+// Game-specific, opt-in graphics census. Unlike a bounded first-N-draw trace,
+// this accumulates every attempted and emitted draw call through each flip.
+// Logging does not alter guest registers, command submission or graphics output.
+struct GoWGraphicsAudit {
+    std::mutex mutex;
+    u64 attempted{};
+    u64 filtered{};
+    u64 pipeline_null{};
+    u64 bind_failed{};
+    u64 emitted_direct{};
+    u64 emitted_indirect_calls{};
+    u64 emitted_without_color{};
+    std::map<u64, u64> target_counts;
+};
+static GoWGraphicsAudit& GetGoWGraphicsAudit() {
+    static GoWGraphicsAudit audit{};
+    return audit;
+}
+static bool GoWGraphicsAuditEnabled() {
+    const char* enabled = std::getenv("SHADPS4_GOW_GRAPHICS_AUDIT");
+    return enabled && std::strcmp(enabled, "1") == 0;
+}
+static void RecordGoWGraphicsAudit(const AmdGpu::Regs& regs,
+                                   const GraphicsPipeline* pipeline,
+                                   const char* stage, bool indirect) {
+    if (!GoWGraphicsAuditEnabled()) {
+        return;
+    }
+    auto& audit = GetGoWGraphicsAudit();
+    std::scoped_lock lock(audit.mutex);
+    if (std::strcmp(stage, "ATTEMPT") == 0) {
+        ++audit.attempted;
+        return;
+    }
+    if (std::strcmp(stage, "FILTERED") == 0) {
+        ++audit.filtered;
+        return;
+    }
+    if (std::strcmp(stage, "PIPELINE_NULL") == 0) {
+        ++audit.pipeline_null;
+        return;
+    }
+    if (std::strcmp(stage, "BIND_FAILED") == 0) {
+        ++audit.bind_failed;
+        return;
+    }
+    if (!pipeline || std::strcmp(stage, "EMITTED") != 0) {
+        return;
+    }
+    if (indirect) {
+        ++audit.emitted_indirect_calls;
+    } else {
+        ++audit.emitted_direct;
+    }
+    const auto mrt_mask = pipeline->GetGraphicsKey().mrt_mask;
+    const bool disabled = regs.color_control.mode ==
+                          AmdGpu::ColorControl::OperationMode::Disable;
+    bool attached = false;
+    for (u32 slot = 0; slot < AmdGpu::NUM_COLOR_BUFFERS; ++slot) {
+        const auto& color = regs.color_buffers[slot];
+        if (disabled || !color || !(mrt_mask & (1u << slot)) ||
+            !regs.color_target_mask.GetMask(slot)) {
+            continue;
+        }
+        ++audit.target_counts[color.Address()];
+        attached = true;
+    }
+    if (!attached) {
+        ++audit.emitted_without_color;
+    }
+}
+void LogGoWGraphicsDrawTotals(u32 frame) {
+    if (!GoWGraphicsAuditEnabled() || frame > 6) {
+        return;
+    }
+    auto& audit = GetGoWGraphicsAudit();
+    std::scoped_lock lock(audit.mutex);
+    LOG_WARNING(Render_Vulkan,
+                "GOW_GRAPHICS_SUMMARY frame={} attempted={} filtered={} "
+                "pipeline_null={} bind_failed={} emitted_direct={} "
+                "emitted_indirect_calls={} emitted_without_color={} "
+                "unique_targets={} target_audit_truncated={}",
+                frame, audit.attempted, audit.filtered, audit.pipeline_null,
+                audit.bind_failed, audit.emitted_direct, audit.emitted_indirect_calls,
+                audit.emitted_without_color, audit.target_counts.size(),
+                audit.target_counts.size() > 256);
+    u32 shown = 0;
+    for (const auto& [address, calls] : audit.target_counts) {
+        if (shown++ == 256) {
+            break;
+        }
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_GRAPHICS_TARGET frame={} address={:#x} "
+                    "emitted_attachment_calls={}",
+                    frame, address, calls);
+    }
+}
+
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     RENDERER_TRACE;
 
     scheduler.PopPendingOperations();
 
+    const auto& gow_regs = liverpool->regs;
+    RecordGoWGraphicsAudit(gow_regs, nullptr, "ATTEMPT", false);
     if (!FilterDraw()) {
+        RecordGoWGraphicsAudit(gow_regs, nullptr, "FILTERED", false);
         return;
     }
 
     const auto& regs = liverpool->regs;
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline();
     if (!pipeline) {
+        RecordGoWGraphicsAudit(regs, nullptr, "PIPELINE_NULL", false);
         return;
     }
 
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
+        RecordGoWGraphicsAudit(regs, pipeline, "BIND_FAILED", false);
         return;
     }
     const auto state = BeginRendering(pipeline);
@@ -257,6 +361,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         occlusion->EndDraw(cmdbuf, query);
     }
     DebugState.IncDrawCall();
+    RecordGoWGraphicsAudit(regs, pipeline, "EMITTED", false);
 
     ResetBindings(false);
 }
@@ -268,7 +373,10 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
     scheduler.PopPendingOperations();
 
+    const auto& gow_regs = liverpool->regs;
+    RecordGoWGraphicsAudit(gow_regs, nullptr, "ATTEMPT", true);
     if (!FilterDraw()) {
+        RecordGoWGraphicsAudit(gow_regs, nullptr, "FILTERED", true);
         return;
     }
 
@@ -278,11 +386,13 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     };
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline(params);
     if (!pipeline) {
+        RecordGoWGraphicsAudit(regs, nullptr, "PIPELINE_NULL", true);
         return;
     }
 
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
+        RecordGoWGraphicsAudit(regs, pipeline, "BIND_FAILED", true);
         return;
     }
     const auto state = BeginRendering(pipeline);
@@ -344,6 +454,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     if (occlusion) {
         occlusion->EndDraw(cmdbuf, query);
     }
+    RecordGoWGraphicsAudit(regs, pipeline, "EMITTED", true);
     ResetBindings(false);
 }
 
