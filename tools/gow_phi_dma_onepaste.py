@@ -54,7 +54,7 @@ def sha(path):
 def run(args, *, cwd=None, timeout=30):
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
 
-def processes_in_use(exclude=()):
+def processes_in_use(exclude=(), exclude_group=None):
     problems = []
     for item in Path("/proc").iterdir():
         if not item.name.isdigit():
@@ -62,6 +62,12 @@ def processes_in_use(exclude=()):
         pid = int(item.name)
         if pid == os.getpid() or pid in exclude:
             continue
+        if exclude_group is not None:
+            try:
+                if os.getpgid(pid) == exclude_group:
+                    continue
+            except (ProcessLookupError, PermissionError):
+                pass
         try:
             if item.stat().st_uid != os.getuid():
                 continue
@@ -158,10 +164,10 @@ def do_build(build, patch, temp, result):
         if check.returncode:
             raise RuntimeError("Patch does not apply cleanly to verified source: "
                                + check.stderr[-2600:])
+        changed = True  # Restore originals even if applying a checked patch partially fails.
         applied = run(["git", "apply", "--whitespace=nowarn", str(patch_path)], cwd=SOURCE)
         if applied.returncode:
             raise RuntimeError("git apply failed: " + applied.stderr[-2600:])
-        changed = True
         command = ["cmake", "--build", str(build), "--target", "shadps4", "--parallel", "4"]
         with (temp / "build.log").open("wb") as logfile:
             proc = subprocess.Popen(command, cwd=SOURCE, stdout=logfile,
@@ -268,7 +274,7 @@ def trial_run(binary, temp, result):
                         break
                 else:
                     last_spv = None
-                others = processes_in_use(exclude=(proc.pid,))
+                others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
                     result["end_reason"] = "ANOTHER_EMULATOR_OR_BUILD_STARTED"
                     result["other_processes"] = others
@@ -335,9 +341,6 @@ def main():
             patch = get_patch()
             (evidence / "pinned-code.diff").write_bytes(patch)
             report["patch_sha256"] = hashlib.sha256(patch).hexdigest()
-            verify = run(["git", "apply", "--check", "--whitespace=nowarn", "-"],
-                         cwd=SOURCE)
-            # Use the saved file: subprocess.run with stdin DEVNULL cannot pipe a patch.
             verify = run(["git", "apply", "--check", "--whitespace=nowarn",
                           str(evidence / "pinned-code.diff")], cwd=SOURCE)
             if verify.returncode:
@@ -361,6 +364,8 @@ def main():
             report["error"] = str(exc)
             report["traceback"] = traceback.format_exc()[-9000:]
         finally:
+            if (tmp / "build.log").is_file() and not (evidence / "build.log").exists():
+                shutil.copy2(tmp / "build.log", evidence / "build.log")
             report["source_tree_clean_after"] = (
                 run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=SOURCE).stdout.strip() == ""
                 if SOURCE.is_dir() and (SOURCE / ".git").exists() else None)
