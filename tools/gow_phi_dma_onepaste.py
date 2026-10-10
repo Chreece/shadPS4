@@ -51,6 +51,8 @@ EXPECTED_SOURCE_HASHES = {
         "b77d42862c8c14e7e9cc7cec2101918002f9a9649ab284db46ffa24e7bcd4478",
     "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp":
         "bfcfb28400afddc0e8ac4aad85d41419c302d9807e53f4b736bc497dfcc252db",
+    "src/shader_recompiler/ir/passes/resource_patching_pass.cpp":
+        "3ad8a3c389b9ab8da205b12b9ac348f2fd0b0a15f7d38333fc1a4a17b03640c6",
     "src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp":
         "a41011fc1b7ea14f21cb02d4f26a7e39c1551e2624c9091ddc659dd6dbb7ed7c",
     "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp":
@@ -203,7 +205,10 @@ def get_patches():
     if fragment_hash != FRAGMENT_PATCH_SHA256:
         raise RuntimeError("Previously proven fragment patch changed: " + fragment_hash)
     # Phase four is ONLY a read-only probe in the descriptor patcher.
-    sharp_probe = fetch_strict_patch(FRAGMENT_SHA, HEAD_SHA, {NEW_SOURCE})
+    # The GitHub commit also includes the runner; fetch_strict_patch validates
+    # the exact change list and discards that runner rather than applying it.
+    sharp_probe = fetch_strict_patch(
+        FRAGMENT_SHA, HEAD_SHA, {NEW_SOURCE, "tools/gow_phi_dma_onepaste.py"})
     if (b"GOW_FS_IMAGE_SHARP_BEGIN" not in sharp_probe or
             b"GoWTraceImageSharp" in sharp_probe or
             b"void Rasterizer::Draw" in sharp_probe):
@@ -211,7 +216,7 @@ def get_patches():
     return verified_patch, graphics_patch, fragment_patch, sharp_probe
 
 def verify_preimages():
-    if set(EXPECTED_SOURCE_HASHES) != REQUIRED:
+    if set(EXPECTED_SOURCE_HASHES) != PROTECTED_SOURCES:
         raise RuntimeError("Incomplete known-good source preimage list")
     observed = {}
     for rel in sorted(PROTECTED_SOURCES):
@@ -219,11 +224,11 @@ def verify_preimages():
         if not path.is_file() or path.is_symlink():
             raise RuntimeError("Missing or symlinked source: " + rel)
         observed[rel] = sha(path)
-    # The new descriptor source was not hashed in the previous host report:
-    # verify that it exists, but never invent or assume its old SHA.
+    # Every source preimage, including the descriptor patcher, was measured
+    # by the previous preflight and must match before any live source change.
     changed = {
         rel: {"expected": EXPECTED_SOURCE_HASHES[rel], "observed": observed[rel]}
-        for rel in sorted(REQUIRED)
+        for rel in sorted(PROTECTED_SOURCES)
         if observed[rel] != EXPECTED_SOURCE_HASHES[rel]
     }
     if changed:
