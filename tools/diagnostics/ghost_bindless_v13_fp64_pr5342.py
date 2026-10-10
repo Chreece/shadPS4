@@ -181,6 +181,7 @@ S.update({
     'v13_shader_binary_version_after': new_version,
     'v13_pr5342_patched_source_sha256': sha_bytes(information_after.encode()),
     'v13_pr5342_patch_provenance': 'Pinned 40-opcode FP64 detection in independent Visit switch + local version bump',
+    'v13_retry': 'v13b: source-independent opcode layout',
 })
 print(
     f'GHOST_V13_PR5342_PREFLIGHT=PASS 40 F64 opcodes cache={old_version}->{new_version}',
@@ -195,7 +196,7 @@ anchor = " print('GHOST_V12_CXX_BUILD=START; waiting for build.log; may take sev
 code = inject_once(base, anchor, to_insert + " print('GHOST_V13_CXX_BUILD=START; PR5342+v12',flush=True)", 'v12 build')
 code = inject_once(code,
     "OUT=H/f'ghost-bindless-v12-record-guard-{datetime.now():%Y%m%d-%H%M%S}.tar.gz'",
-    "OUT=H/f'ghost-bindless-v13-fp64-pr5342-{datetime.now():%Y%m%d-%H%M%S}.tar.gz'", 'output name')
+    "OUT=H/f'ghost-bindless-v13b-fp64-pr5342-{datetime.now():%Y%m%d-%H%M%S}.tar.gz'", 'output name')
 code = inject_once(code,
     "S={'goal':'Ghost v12 test whether records >=53 cause GPU SQC fault: shader-scoped IR loop sentinel 53, preserve v11 index 0..52 and private RADV; restore all',",
     "S={'goal':'Ghost v13 compare v12 with the pinned 40-opcode FP64 fix from shadPS4 PR 5342; preserve v12 runtime controls and rollback',", 'trial goal')
@@ -220,7 +221,7 @@ code = inject_once(code,
     'final evidence')
 
 compile(code, '<Ghost-v13-pinned-controller>', 'exec')
-print('GHOST_V13_CONTROLLER_SYNTAX=PASS', flush=True)
+print('GHOST_V13B_CONTROLLER_SYNTAX=PASS', flush=True)
 print('GHOST_V13_UPSTREAM_PR_HEAD=' + PINNED_PR_HEAD, flush=True)
 namespace = {
     '__name__': '__main__',
