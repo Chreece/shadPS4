@@ -1,6 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+#include <cstdlib>
+#include <cstring>
+
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -340,6 +344,23 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     ResetBindings(false);
 }
 
+// This diagnostics-only guard deliberately runs AFTER pipeline creation. It lets
+// SPIR-V compilation and dumping finish without executing unvalidated compute.
+// No effect unless explicitly enabled by the GoW capture launcher.
+static bool SuppressDiagnosticCompute(const Shader::Info& info) {
+    const char* flag = std::getenv("SHADPS4_GOW_SUPPRESS_GPU_COMPUTE");
+    if (!flag || std::strcmp(flag, "1") != 0) {
+        return false;
+    }
+    static std::atomic<u32> count{0};
+    const u32 n = count.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (n <= 16 || (n & (n - 1)) == 0) {
+        LOG_WARNING(Render_Vulkan, "GOW_DIAG_COMPUTE_SUPPRESSED shader={:#x} n={}",
+                    info.pgm_hash, n);
+    }
+    return true;
+}
+
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
 
@@ -353,6 +374,9 @@ void Rasterizer::DispatchDirect() {
 
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
     if (ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this)) {
+        return;
+    }
+    if (SuppressDiagnosticCompute(cs)) {
         return;
     }
 
@@ -383,6 +407,10 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     const auto& cs_program = liverpool->GetCsRegs();
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
     if (!pipeline) {
+        return;
+    }
+    const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
+    if (SuppressDiagnosticCompute(cs)) {
         return;
     }
 
