@@ -30,9 +30,33 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "062ee2d34281ecc53dd4fa8e3136c5ba8475b705"
-PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
-             f"{BASE_SHA}...{HEAD_SHA}")
+VERIFIED_SHA = "8b921edc53fa1d52c40acc0b9dae23553499cf40"
+HEAD_SHA = "b64f66078ec0fb5efbf10b86496dade0942a591d"
+# Exact source preimages from the successful 2026-10-10 16:09 test.
+# A changed source is NOT silently patched or overwritten.
+EXPECTED_SOURCE_HASHES = {
+    "src/core/libraries/kernel/process.cpp":
+        "19f0f273b1cb3d36bca923fd1cb78277b0676a8faa74f91bf145555afc09e5ea",
+    "src/core/libraries/videoout/driver.cpp":
+        "b33eebf943320b00493d86094a96e0f37b70a8f24076c12a6a51e40323d7da77",
+    "src/shader_recompiler/backend/spirv/emit_spirv.cpp":
+        "eb2dc86d538549b1cfc2eb83ef2ed60cfa377d0d5db11a16e276ef2063cc0585",
+    "src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp":
+        "a916c1ffac0152202b0d46217b7fcee36db2f47ac5b3852f784fc14729e0fd29",
+    "src/shader_recompiler/frontend/translate/data_share.cpp":
+        "b77d42862c8c14e7e9cc7cec2101918002f9a9649ab284db46ffa24e7bcd4478",
+    "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp":
+        "bfcfb28400afddc0e8ac4aad85d41419c302d9807e53f4b736bc497dfcc252db",
+    "src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp":
+        "a41011fc1b7ea14f21cb02d4f26a7e39c1551e2624c9091ddc659dd6dbb7ed7c",
+    "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp":
+        "8de5f2822c0cce350ff41f48ea742598e03d165f11bbb2732f1579a64839ee46",
+    "src/video_core/renderer_vulkan/vk_presenter.cpp":
+        "9905ed541376c6b45798526df6a5b1e00920bb2085b3fffa33214bc1b328489b",
+    "src/video_core/renderer_vulkan/vk_rasterizer.cpp":
+        "8d73198df4f9114aa1a2e79892ed489a89a73fd01c1a982f616116fc08e7588d",
+}
+VERIFIED_BASE_PATCH_SHA256 = "d1236a631e1bd4c7bf9e2b69a53370f3ea0eb93cc62a1648dbcaf9cb9cbf7058"
 REQUIRED = {
     "src/core/libraries/kernel/process.cpp",
     "src/core/libraries/videoout/driver.cpp",
@@ -57,8 +81,16 @@ def sha(path):
 def run(args, *, cwd=None, timeout=30):
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
 
-def processes_in_use(exclude=(), exclude_group=None):
+def processes_in_use(exclude=(), exclude_group=None, ignored_launchers=None):
+    """Guard real emulator/build processes, not the ES-DE package launcher shell.
+
+    /proc/PID/comm can be named after a shell script rather than /proc/PID/exe.
+    An idle /bin/bash /home/.../.local/bin/shadps4-pkg-auto was falsely
+    classified as an emulator. Only that exact shell+script combination is
+    exempt; any actual shadps4 binary or build process still blocks the trial.
+    """
     problems = []
+    known_launcher = str(HOME / ".local/bin/shadps4-pkg-auto")
     for item in Path("/proc").iterdir():
         if not item.name.isdigit():
             continue
@@ -74,8 +106,23 @@ def processes_in_use(exclude=(), exclude_group=None):
         try:
             if item.stat().st_uid != os.getuid():
                 continue
-            cmd = (item / "cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", "replace")
+            argv = (item / "cmdline").read_bytes().split(b"\x00")
+            cmd = " ".join(os.fsdecode(arg) for arg in argv if arg)
             name = (item / "comm").read_text().strip().lower()
+            # Read the executable, not merely 'comm': the kernel may use the
+            # interpreted script's basename as comm even though bash runs it.
+            try:
+                executable = os.readlink(item / "exe").removesuffix(" (deleted)")
+            except OSError:
+                executable = ""
+            launcher_shell = (Path(executable).name in ("bash", "sh", "dash") and
+                              len(argv) > 1 and os.fsdecode(argv[1]) == known_launcher)
+            if launcher_shell:
+                if ignored_launchers is not None:
+                    ignored_launchers.append({
+                        "pid": pid, "executable": executable,
+                        "reason": "verified_shell_launcher", "command": cmd[:140]})
+                continue
             if name.startswith("shadps4") or re.search(r"(?<![\w-])shadps4(?:\s|$)", cmd.lower()):
                 problems.append({"pid": pid, "reason": "emulator", "command": cmd[:140]})
             elif name in ("ninja", "cmake", "c++", "cc1plus") and "shadps4" in cmd.lower():
@@ -98,42 +145,109 @@ def find_build():
             pass
     raise RuntimeError("No existing CMake build configured for the verified source; nothing modified")
 
-def get_patch():
-    req = urllib.request.Request(PATCH_URL,
-                                 headers={"User-Agent": "gow-phi-dma-diagnostics",
-                                          "Accept": "application/vnd.github+json"})
+def fetch_strict_patch(base_sha, head_sha, expected_changed):
+    url = f"https://api.github.com/repos/Chreece/shadPS4/compare/{base_sha}...{head_sha}"
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "gow-graphics-census-diagnostics",
+        "Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(req, timeout=25) as res:
         payload = json.load(res)
-    if payload.get("base_commit", {}).get("sha") != BASE_SHA:
-        raise RuntimeError("Unexpected base SHA from GitHub")
-    # GitHub's compare REST response exposes the compared head as the final
-    # commit, not as a top-level head_commit object. Keep the pin strict.
     commits = payload.get("commits", [])
-    if not commits or commits[-1].get("sha") != HEAD_SHA:
-        raise RuntimeError("Unexpected last commit SHA in pinned compare")
-    if payload.get("total_commits") != len(commits):
-        raise RuntimeError("Incomplete or paginated pinned compare result")
-    if payload.get("merge_base_commit", {}).get("sha") != BASE_SHA:
-        raise RuntimeError("Unexpected merge base for pinned patch")
+    if (payload.get("base_commit", {}).get("sha") != base_sha or
+            payload.get("merge_base_commit", {}).get("sha") != base_sha or
+            not commits or commits[-1].get("sha") != head_sha or
+            payload.get("total_commits") != len(commits)):
+        raise RuntimeError("Unexpected pinned comparison ancestry or incomplete GitHub diff")
     files = payload.get("files", [])
-    # The pinned comparison now includes this diagnostic runner because it
-    # was committed before the stack-alignment fix. Never apply runner edits to
-    # the verified emulator tree: allow ONLY this known extra file.
     changed = {f["filename"] for f in files}
-    if changed != REQUIRED | {"tools/gow_phi_dma_onepaste.py"}:
-        raise RuntimeError("Unexpected changed-file set; refusing patch")
+    if changed != expected_changed:
+        raise RuntimeError("Unexpected changed files in pinned compare: " + repr(changed))
     parts = []
     for f in files:
-        path = f["filename"]
-        if path == "tools/gow_phi_dma_onepaste.py":
+        rel = f["filename"]
+        if rel == "tools/gow_phi_dma_onepaste.py":
             continue
-        if f.get("status") != "modified" or not f.get("patch"):
-            raise RuntimeError("Missing/unsafe diff for " + path)
-        if not path.startswith("src/") or ".." in Path(path).parts:
-            raise RuntimeError("Unsafe patch filename")
-        parts.append(f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n"
+        if (f.get("status") != "modified" or not f.get("patch") or
+                not rel.startswith("src/") or ".." in Path(rel).parts):
+            raise RuntimeError("Unsafe or unavailable pinned patch: " + rel)
+        parts.append(f"diff --git a/{rel} b/{rel}\n--- a/{rel}\n+++ b/{rel}\n"
                      + f["patch"].rstrip("\n") + "\n")
     return "".join(parts).encode()
+
+def get_patches():
+    # Phase one is byte-for-byte the patch that compiled and ran at 16:09.
+    # The host source differs from the GitHub BASE_SHA tree.
+    verified_patch = fetch_strict_patch(
+        BASE_SHA, VERIFIED_SHA, REQUIRED | {"tools/gow_phi_dma_onepaste.py"})
+    actual_hash = hashlib.sha256(verified_patch).hexdigest()
+    if actual_hash != VERIFIED_BASE_PATCH_SHA256:
+        raise RuntimeError("Previously proven patch bytes changed: " + actual_hash)
+    # Phase two changes only BeginRendering instrumentation and frame sampling.
+    # It does NOT edit either direct or indirect draw emission.
+    incremental = fetch_strict_patch(
+        VERIFIED_SHA, HEAD_SHA, {
+            "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
+            "src/video_core/renderer_vulkan/vk_presenter.cpp"})
+    forbidden = (b'RecordGoWGraphicsAudit(', b'@@ -250,')
+    if any(marker in incremental for marker in forbidden):
+        raise RuntimeError("Incremental patch unexpectedly edits direct draw path")
+    return verified_patch, incremental
+
+def verify_preimages():
+    if set(EXPECTED_SOURCE_HASHES) != REQUIRED:
+        raise RuntimeError("Incomplete known-good source preimage list")
+    observed = {}
+    for rel in sorted(REQUIRED):
+        path = SOURCE / rel
+        if not path.is_file() or path.is_symlink():
+            raise RuntimeError("Missing or symlinked source: " + rel)
+        observed[rel] = sha(path)
+    changed = {
+        rel: {"expected": EXPECTED_SOURCE_HASHES[rel], "observed": observed[rel]}
+        for rel in sorted(REQUIRED)
+        if observed[rel] != EXPECTED_SOURCE_HASHES[rel]
+    }
+    if changed:
+        raise RuntimeError("Verified source preimages changed; refusing build: "
+                           + json.dumps(changed, sort_keys=True))
+    return observed
+
+def verify_staged_instrumentation(staged):
+    raster = (staged / "src/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text()
+    presenter = (staged / "src/video_core/renderer_vulkan/vk_presenter.cpp").read_text()
+    if (raster.count("void LogGoWGraphicsDrawTotals(u32 frame)") != 1 or
+            raster.count("RecordGoWPreparedDrawTargets(regs, key.mrt_mask);") != 1 or
+            "RecordGoWGraphicsAudit(" in raster or
+            "GOW_GRAPHICS_SUMMARY frame={}" not in raster or
+            'fmt::format("f{:02}_{}", gow_frame_id, label)' not in presenter or
+            "LogGoWGraphicsDrawTotals(gow_frame_id)" not in presenter or
+            "gow_frame_id == 6" not in presenter):
+        raise RuntimeError("Staged graphics instrumentation integrity check failed")
+
+def preflight_patches(patches, temp, report):
+    # Both real git-apply steps run against exact copies of the host files.
+    # No installed source file is changed during this preflight.
+    staged = temp / "staged-preflight"
+    staged.mkdir()
+    for rel in sorted(REQUIRED):
+        dst = staged / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SOURCE / rel, dst)
+    for step, patch in enumerate(patches):
+        filename = temp / f"pinned-{step}.diff"
+        filename.write_bytes(patch)
+        check = run(["git", "apply", "--check", "--whitespace=nowarn", str(filename)],
+                    cwd=staged)
+        if check.returncode:
+            raise RuntimeError(f"Staged patch {step} rejected: " + check.stderr[-2600:])
+        applied = run(["git", "apply", "--whitespace=nowarn", str(filename)], cwd=staged)
+        if applied.returncode:
+            raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
+    verify_staged_instrumentation(staged)
+    report["staged_two_patch_preflight"] = True
+    report["stage_source_hashes"] = {
+        rel: sha(staged / rel) for rel in sorted(REQUIRED)
+    }
 
 def stop_owned(proc):
     if proc is None or proc.poll() is not None:
@@ -151,7 +265,7 @@ def stop_owned(proc):
     except ProcessLookupError:
         pass
 
-def do_build(build, patch, temp, result):
+def do_build(build, patches, temp, result):
     backup = temp / "original"
     backup.mkdir()
     originals = {}
@@ -169,21 +283,26 @@ def do_build(build, patch, temp, result):
     if had_target:
         shutil.copy2(target, executable_backup)
         result["build_binary_sha256_before"] = sha(target)
-    (temp / "patch.diff").write_bytes(patch)
-    patch_path = temp / "patch.diff"
     changed = False
     proc = None
     trial_binary = temp / "trial" / "shadps4"
     try:
-        check = run(["git", "apply", "--check", "--whitespace=nowarn",
-                     str(patch_path)], cwd=SOURCE)
-        if check.returncode:
-            raise RuntimeError("Patch does not apply cleanly to verified source: "
-                               + check.stderr[-2600:])
-        changed = True  # Restore originals even if applying a checked patch partially fails.
-        applied = run(["git", "apply", "--whitespace=nowarn", str(patch_path)], cwd=SOURCE)
-        if applied.returncode:
-            raise RuntimeError("git apply failed: " + applied.stderr[-2600:])
+        for step, patch in enumerate(patches):
+            patch_path = temp / f"pinned-{step}.diff"
+            if not patch_path.is_file() or patch_path.read_bytes() != patch:
+                raise RuntimeError("Patches do not match staged preflight")
+            check = run(["git", "apply", "--check", "--whitespace=nowarn",
+                         str(patch_path)], cwd=SOURCE)
+            if check.returncode:
+                raise RuntimeError(f"Live patch {step} failed check: " + check.stderr[-2600:])
+            changed = True  # Restore exact preimages on any partial apply.
+            applied = run(["git", "apply", "--whitespace=nowarn", str(patch_path)], cwd=SOURCE)
+            if applied.returncode:
+                raise RuntimeError(f"Live patch {step} failed apply: " + applied.stderr[-2600:])
+        # Exact hash comparison with staged two-patch output.
+        for rel, expected in result["stage_source_hashes"].items():
+            if sha(SOURCE / rel) != expected:
+                raise RuntimeError(f"Live source differs from staged preview: {rel}")
         command = ["cmake", "--build", str(build), "--target", "shadps4", "--parallel", "4"]
         with (temp / "build.log").open("wb") as logfile:
             proc = subprocess.Popen(command, cwd=SOURCE, stdout=logfile,
@@ -277,6 +396,8 @@ def trial_run(binary, temp, result):
     dump_dir.mkdir(parents=True)
     frame_dir = evidence / "pre_fsr"
     frame_dir.mkdir(parents=True)
+    offscreen_dir = evidence / "offscreen"
+    offscreen_dir.mkdir(parents=True)
     log_dir = HOME / ".local/share/shadPS4/log"
     before = {}
     if log_dir.is_dir():
@@ -292,6 +413,7 @@ def trial_run(binary, temp, result):
     env.pop("SHADPS4_GOW_SAFE_COMPUTE_ONESHOT", None)
     env.pop("SHADPS4_GOW_COMPUTE_CANARIES", None)
     env.pop("SHADPS4_GOW_FRAME_SOURCE_DIR", None)
+    env.pop("SHADPS4_GOW_OFFSCREEN_DIR", None)
     env.update({
         "SHADPS4_ENABLE_IPC": "false",
         "SHADPS4_GOW_ONE_SHADER_DMA_COMPILE": "1",
@@ -305,6 +427,9 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_IMAGE_OUTPUT_DELTA": "1",
         # Capture first three actual game VideoOut images before FSR/PP.
         "SHADPS4_GOW_FRAME_SOURCE_DIR": str(frame_dir.resolve()),
+        # Raw GPU snapshots of exact observed offscreen targets at first flip.
+        "SHADPS4_GOW_OFFSCREEN_DIR": str(offscreen_dir.resolve()),
+        "SHADPS4_GOW_GRAPHICS_AUDIT": "1",
         # Preserve the causally verified D80 active baseline.
         "SHADPS4_GOW_D80_CONTROL_NO_DISPATCH": "0",
         "SHADPS4_GOW_COMPUTE_CENSUS": "1",
@@ -341,8 +466,24 @@ def trial_run(binary, temp, result):
                         probe_logged = len(re.findall(
                             r"GOW_FRAME_GUEST_CAPTURE frame=\d+ result=SAVED",
                             trial_output))
-                        if len(probe_saved) >= 3 and probe_logged >= 3:
-                            result["end_reason"] = "FIRST_THREE_GUEST_FRAMES_CAPTURED"
+                        # A target legitimately absent from cache is not a
+                        # missing readback. Require frame-six disposition for
+                        # each queued readback, plus cumulative graphics totals.
+                        sixth_queued = set(re.findall(
+                            r"GOW_OFFSCREEN_READBACK label=(f06_\w+)[^\n]*"
+                            r"result=QUEUED_AND_LAYOUT_RESTORED",
+                            trial_output))
+                        sixth_done = set(re.findall(
+                            r"GOW_OFFSCREEN_GPU_CAPTURE label=(f06_\w+)[^\n]*"
+                            r"result=GPU_READBACK_COMPLETE",
+                            trial_output))
+                        sixth_observed = "GOW_OFFSCREEN_READBACK label=f06_" in trial_output
+                        sixth_graphics = "GOW_GRAPHICS_SUMMARY frame=6 " in trial_output
+                        if (len(probe_saved) >= 3 and probe_logged >= 3 and
+                                sixth_observed and sixth_graphics and
+                                sixth_queued.issubset(sixth_done) and
+                                time.monotonic() - last_spv >= 10):
+                            result["end_reason"] = "SIXTH_FLIP_GPU_AND_GRAPHICS_CAPTURED"
                             break
                         if time.monotonic() - last_spv >= 36:
                             result["end_reason"] = "GUEST_FRAME_OBSERVATION_WINDOW_ENDED"
@@ -430,7 +571,7 @@ def trial_run(binary, temp, result):
     # VideoOut and presenter diagnostics are sourced from game-local logs.
     # The source captures occur before any host FSR / postprocessing pass.
     def _kv(line):
-        return dict(re.findall(r"([a-z_]+)=([^\s]+)", line))
+        return dict(re.findall(r"([a-z_][a-z_0-9]*)=([^\s]+)", line))
 
     flips = {}
     source_meta = {}
@@ -589,6 +730,70 @@ def trial_run(binary, temp, result):
             "timeline_completed": bool(
                 recorded and tick is not None and tick == finished_tick),
         }
+    # Cumulative graphics-call census covering all draws (not just the first
+    # 256). Per-target totals are snapshots at each VideoOut presentation.
+    graphics_snapshots = {}
+    graphics_targets = {}
+    for line in joined.splitlines():
+        if "GOW_GRAPHICS_SUMMARY frame=" in line:
+            kv = _kv(line[line.index("GOW_GRAPHICS_SUMMARY frame="):])
+            if kv.get("frame", "").isdigit():
+                graphics_snapshots[kv["frame"]] = kv
+        elif "GOW_GRAPHICS_TARGET frame=" in line:
+            kv = _kv(line[line.index("GOW_GRAPHICS_TARGET frame="):])
+            if kv.get("frame", "").isdigit() and kv.get("address"):
+                graphics_targets.setdefault(kv["frame"], {})[kv["address"].lower()] = int(
+                    kv.get("prepared_attachment_calls", "0"))
+    result["graphics_census_snapshots"] = graphics_snapshots
+    result["graphics_target_snapshots"] = graphics_targets
+    result["graphics_census_frame6"] = "6" in graphics_snapshots
+    result["graphics_census_incomplete"] = any(
+        snap.get("target_audit_truncated") == "true"
+        for snap in graphics_snapshots.values())
+    result["graphics_videoout_prepared_attachment_calls"] = {}
+    for f, stats in graphics_snapshots.items():
+        videoout_addresses = {
+            item["image_address"].lower()
+            for item in result.get("guest_frame_source_metadata", [])
+            if item.get("image_address")
+        }
+        match_counts = graphics_targets.get(f, {})
+        result["graphics_videoout_prepared_attachment_calls"][f] = sum(
+            match_counts.get(addr, 0) for addr in videoout_addresses)
+    # Read only GPU-completed readback records; printed QUEUED != completed.
+    offscreen_lines = {}
+    offscreen_skips = {}
+    for line in joined.splitlines():
+        if "GOW_OFFSCREEN_GPU_CAPTURE label=" in line:
+            kv = _kv(line[line.index("GOW_OFFSCREEN_GPU_CAPTURE label="):])
+            if kv.get("result") == "GPU_READBACK_COMPLETE" and kv.get("label"):
+                offscreen_lines[kv["label"]] = kv
+        elif "GOW_OFFSCREEN_READBACK label=" in line:
+            kv = _kv(line[line.index("GOW_OFFSCREEN_READBACK label="):])
+            if kv.get("result") in ("NOT_CACHED", "GUARD_REJECTED"):
+                offscreen_skips[kv.get("label", "unknown")] = kv
+    offscreen_files = {}
+    for item in sorted(offscreen_dir.glob("gow_offscreen_*")):
+        if not item.is_file() or item.is_symlink() or item.stat().st_size > 25_000_000:
+            continue
+        offscreen_files[item.name] = {
+            "bytes": item.stat().st_size, "sha256": sha(item),
+        }
+    result["offscreen_gpu_captures"] = offscreen_lines
+    result["offscreen_skips"] = offscreen_skips
+    result["offscreen_files"] = offscreen_files
+    result["offscreen_complete_count"] = sum(
+        row.get("raw_saved") == "true" and
+        ("gow_offscreen_" + name + ".bin") in offscreen_files
+        for name, row in offscreen_lines.items())
+    result["offscreen_nonzero_count"] = sum(
+        int(row.get("nonzero_bytes", "0")) > 0
+        for row in offscreen_lines.values())
+    result["offscreen_status"] = (
+        "MULTIFRAME_GPU_CAPTURE_" +
+        ("NONZERO_PRESENT" if result["offscreen_nonzero_count"] else "ALL_ZERO")
+        if result["offscreen_complete_count"] >= 2
+        else "GPU_TARGET_READBACK_INCOMPLETE")
     # GPU-to-host staging readback, ordered before and after the original
     # canary. Changed bytes establish a GPU-side effect, NOT game correctness.
     image_output_pattern = re.compile(
@@ -772,10 +977,12 @@ def main():
         evidence.mkdir()
         try:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            busy = processes_in_use()
+            ignored_launchers = []
+            busy = processes_in_use(ignored_launchers=ignored_launchers)
+            report["ignored_shell_launchers"] = ignored_launchers
             if busy:
                 report["busy_processes"] = busy
-                raise RuntimeError("Another emulator/build active: refusing to interfere with Ghost")
+                raise RuntimeError("Another real emulator/build process active; trial refused")
             if not SOURCE.is_dir() or not (SOURCE / ".git").exists():
                 raise RuntimeError("Verified shadPS4 source tree is unavailable")
             check = run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=SOURCE)
@@ -783,19 +990,17 @@ def main():
                 raise RuntimeError("Verified source has modifications; refusing concurrent changes")
             build = find_build()
             report["build_directory"] = str(build)
-            patch = get_patch()
-            (evidence / "pinned-code.diff").write_bytes(patch)
-            report["patch_sha256"] = hashlib.sha256(patch).hexdigest()
-            verify = run(["git", "apply", "--check", "--whitespace=nowarn",
-                          str(evidence / "pinned-code.diff")], cwd=SOURCE)
-            if verify.returncode:
-                raise RuntimeError("Branch patch incompatible with verified source: "
-                                   + verify.stderr[-2600:])
+            report["verified_source_hashes"] = verify_preimages()
+            patches = get_patches()
+            for step, patch in enumerate(patches):
+                (evidence / f"pinned-{step}.diff").write_bytes(patch)
+            report["patch_sha256"] = [hashlib.sha256(p).hexdigest() for p in patches]
+            preflight_patches(patches, tmp, report)
             report["patch_applies"] = True
             if args.preflight_only:
                 report["result"] = "PREFLIGHT_PASS"
             else:
-                trial = do_build(build, patch, tmp, report)
+                trial = do_build(build, patches, tmp, report)
                 shutil.copy2(tmp / "build.log", evidence / "build.log")
                 if not report.get("sources_restored") or not report.get("build_binary_restored"):
                     raise RuntimeError("Source/build restore verification failed; no game launched")
@@ -811,9 +1016,13 @@ def main():
                 # A GPU timeline success is not a correctly rendered frame.
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
+                elif report.get("graphics_census_incomplete"):
+                    report["result"] = "GRAPHICS_TARGET_AUDIT_TRUNCATED"
+                elif not report.get("graphics_census_frame6"):
+                    report["result"] = "GRAPHICS_CENSUS_MISSING_SIXTH_FLIP"
                 else:
                     report["result"] = report.get(
-                        "guest_frame_pixels_status", "GUEST_FRAME_PROBE_NO_EVIDENCE")
+                        "offscreen_status", "OFFSCREEN_READBACK_NO_EVIDENCE")
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -832,6 +1041,15 @@ def main():
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
     print("GOW_PHI_DMA_RESULT=" + report.get("result", "UNKNOWN"))
+    print("IGNORED_SHELL_LAUNCHERS=" + str(report.get("ignored_shell_launchers", [])))
+    print("GRAPHICS_CENSUS_FRAME6=" + str(report.get("graphics_census_frame6", False)))
+    print("GRAPHICS_CENSUS_INCOMPLETE=" + str(report.get("graphics_census_incomplete", False)))
+    print("GRAPHICS_VIDEOOUT_PREPARED_ATTACHMENTS=" + str(report.get("graphics_videoout_prepared_attachment_calls", {})))
+    print("GRAPHICS_TARGETS=" + str(report.get("graphics_target_snapshots", {})))
+    print("OFFSCREEN_GPU_COMPLETED=" + str(report.get("offscreen_complete_count", 0)))
+    print("OFFSCREEN_NONZERO_TARGETS=" + str(report.get("offscreen_nonzero_count", 0)))
+    print("OFFSCREEN_FILES=" + str(report.get("offscreen_files", {})))
+    print("OFFSCREEN_SKIPS=" + str(report.get("offscreen_skips", {})))
     print("ARCHIVE=" + str(archive))
     print("TARGET_SPV_COUNT=" + str(len(report.get("spv", []))))
     print("BIND_PROBE_PASSED=" + str(report.get("bind_probe_passed", False)))
@@ -884,6 +1102,8 @@ def main():
     print("BUILD_BINARY_RESTORED=" + str(report.get("build_binary_restored")))
     if report.get("error"):
         print("ERROR=" + report["error"])
+    if report.get("result") in ("FAIL", "INTERRUPTED"):
+        raise SystemExit(1)
 
 if __name__ == "__main__":
     main()
