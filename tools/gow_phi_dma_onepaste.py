@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "d9522cd82b9c8e5cdf6e85c4c4a83bc0d38d08f2"
+HEAD_SHA = "017b1b64d61aa7092ec26fa83ae6e2e406ec35dd"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -396,30 +396,64 @@ def trial_run(binary, temp, result):
     if result["resource_audit_counts"] and not result["resource_audit_passed"]:
         result["resource_integrity_warning"] = (
             "Some guest descriptor sources are unresolved; GPU dispatch must remain disabled.")
+    # IR uses dword offsets; this parser accepts only the corrected byte-scaled
+    # capture, never the previous (incorrectly byte-addressed) tables.
     table_pattern = re.compile(
-        r"GOW_IMAGE_TABLE_AUDIT group=(A|B) stride=(\d+) image_offset=(\d+) "
-        r"slots=32 sampled=(\d+) populated=(\d+) valid=(\d+) "
+        r"GOW_IMAGE_TABLE_AUDIT group=(A|B) stride_dw=(\d+) "
+        r"image_offset_dw=(\d+) mask_dw=(\d+) slots=32 "
+        r"sampled=(\d+) populated=(\d+) type_valid=(\d+) "
         r"sampled_mask=(0x[0-9a-fA-F]+) populated_mask=(0x[0-9a-fA-F]+) "
-        r"valid_mask=(0x[0-9a-fA-F]+) "
-        r"uniform_type=(true|false) image_type=(\d+) dispatch=SKIPPED")
+        r"valid_mask=(0x[0-9a-fA-F]+) address_mask=(0x[0-9a-fA-F]+) "
+        r"selected_mask=(0x[0-9a-fA-F]+) "
+        r"selected_valid_mask=(0x[0-9a-fA-F]+) "
+        r"selected_nonzero_addr_mask=(0x[0-9a-fA-F]+) "
+        r"selected_unresolved_mask=(0x[0-9a-fA-F]+) "
+        r"valid_type_mask=(0x[0-9a-fA-F]+) "
+        r"selected_type_mask=(0x[0-9a-fA-F]+) "
+        r"mask_source_nonzero=(true|false) dispatch=SKIPPED")
     table_audits = {}
     for match in table_pattern.finditer(joined):
-        (group, stride, offset, sampled, populated, valid, sampled_mask,
-         populated_mask, valid_mask, uniform_type, image_type) = match.groups()
+        (group, stride_dw, image_offset_dw, mask_dw, sampled, populated,
+         type_valid, sampled_mask, populated_mask, valid_mask, address_mask,
+         selected_mask, selected_valid_mask, selected_nonzero_addr_mask,
+         selected_unresolved_mask, valid_type_mask, selected_type_mask,
+         mask_source_nonzero) = match.groups()
         table_audits[group] = {
-            "stride_bytes": int(stride), "image_offset_bytes": int(offset),
-            "slots": 32, "sampled": int(sampled), "populated": int(populated),
-            "valid": int(valid), "sampled_mask": sampled_mask,
-            "populated_mask": populated_mask, "valid_mask": valid_mask,
-            "uniform_type": uniform_type == "true", "image_type": int(image_type),
+            "stride_dw": int(stride_dw),
+            "stride_bytes": int(stride_dw) * 4,
+            "image_offset_dw": int(image_offset_dw),
+            "image_offset_bytes": int(image_offset_dw) * 4,
+            "mask_dw": int(mask_dw),
+            "slots": 32,
+            "sampled": int(sampled),
+            "populated": int(populated),
+            "type_valid": int(type_valid),
+            "sampled_mask": sampled_mask,
+            "populated_mask": populated_mask,
+            "valid_mask": valid_mask,
+            "address_mask": address_mask,
+            "selected_mask": selected_mask,
+            "selected_valid_mask": selected_valid_mask,
+            "selected_nonzero_addr_mask": selected_nonzero_addr_mask,
+            "selected_unresolved_mask": selected_unresolved_mask,
+            "valid_type_mask": valid_type_mask,
+            "selected_type_mask": selected_type_mask,
+            "mask_source_nonzero": mask_source_nonzero == "true",
+            "selected_type_mixed": int(selected_type_mask, 16).bit_count() > 1,
+            "selected_unresolved_count": int(selected_unresolved_mask, 16).bit_count(),
         }
     result["image_table_audits"] = table_audits
     result["image_table_audit_complete"] = set(table_audits) == {"A", "B"}
     result["image_table_audit_expected_layout"] = (
-        table_audits.get("A", {}).get("stride_bytes") == 776 and
-        table_audits.get("A", {}).get("image_offset_bytes") == 544 and
-        table_audits.get("B", {}).get("stride_bytes") == 264 and
-        table_audits.get("B", {}).get("image_offset_bytes") == 3536)
+        table_audits.get("A", {}).get("stride_dw") == 776 and
+        table_audits.get("A", {}).get("image_offset_dw") == 544 and
+        table_audits.get("A", {}).get("mask_dw") == 5899 and
+        table_audits.get("B", {}).get("stride_dw") == 264 and
+        table_audits.get("B", {}).get("image_offset_dw") == 3536 and
+        table_audits.get("B", {}).get("mask_dw") == 5900)
+    result["image_live_masks_captured"] = (
+        result["image_table_audit_complete"] and
+        all(item["mask_source_nonzero"] for item in table_audits.values()))
 
     relevant = [line[:1600] for line in joined.splitlines() if
                 re.search(r"GOW_|failed|error|shader 0x57b077ac|Vulkan|CPU identity", line, re.I)]
@@ -475,9 +509,9 @@ def main():
                 report["result"] = report.get("end_reason", "TRIAL_COMPLETE")
                 if report.get("resource_audit_logged") and not report.get("resource_audit_passed"):
                     report["result"] = (
-                        "DYNAMIC_IMAGE_TABLE_CAPTURED"
-                        if report.get("image_table_audit_complete")
-                        else "UNRESOLVED_GUEST_RESOURCES")
+                        "DYNAMIC_IMAGE_MASKS_CAPTURED"
+                        if report.get("image_live_masks_captured")
+                        else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -503,6 +537,7 @@ def main():
     print("RESOURCE_AUDIT_COUNTS=" + str(report.get("resource_audit_counts")))
     print("IMAGE_TABLE_AUDITS=" + str(report.get("image_table_audits")))
     print("IMAGE_TABLE_LAYOUT_MATCH=" + str(report.get("image_table_audit_expected_layout", False)))
+    print("IMAGE_LIVE_MASKS_CAPTURED=" + str(report.get("image_live_masks_captured", False)))
     print("SOURCE_RESTORED=" + str(report.get("sources_restored")))
     print("BUILD_BINARY_RESTORED=" + str(report.get("build_binary_restored")))
     if report.get("error"):
