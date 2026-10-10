@@ -419,10 +419,11 @@ static void AuditGoWResourceIntegrity(const Shader::Info& cs) {
 // proven by GoW's pre-resource-discovery IR.  The active descriptor is selected
 // inside the shader by FindILsb32(Phi), so a single static SharpFetch is invalid.
 // Do not use this information to create a replacement descriptor or dispatch.
-// Diagnostic only: image SRT operands are DWORD indices (not byte offsets).
-// The Phi loops read masks from SGPR2:SGPR3 at DW 5899 / DW 5900 and clear one
-// selected bit each iteration. Table offsets come from pre-resource-discovery IR.
-// No descriptor is allocated or modified here and all compute is suppressed.
+// Diagnostic only: the Phi loops read SGPR2:SGPR3 masks at DW 5899/5900.
+// Texture offsets are BYTE displacements: guest IR divides by four before
+// ReadConst re-multiplies by four. SGPR8:SGPR9 DW 0/1 supply table A/B bounds.
+// These masks/limits bound possible access, not exact executed image reads.
+// This helper never allocates descriptors or enables GPU compute execution.
 static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* memory) {
     const char* enabled = std::getenv("SHADPS4_GOW_IMAGE_TABLE_AUDIT");
     const char* suppressed = std::getenv("SHADPS4_GOW_SUPPRESS_GPU_COMPUTE");
@@ -445,11 +446,12 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
                           MaxGuestPointer;
     struct TableLayout {
         const char* label;
-        u32 stride_dw;
-        u32 image_offset_dw;
+        u32 stride_bytes;
+        u32 image_offset_bytes;
         u32 mask_offset_dw;
+        u32 bound_offset_dw;
     };
-    constexpr TableLayout layouts[] = {{"A", 776, 544, 5899}, {"B", 264, 3536, 5900}};
+    constexpr TableLayout layouts[] = {{"A", 776, 544, 5899, 0}, {"B", 264, 3536, 5900, 1}};
 
     for (const auto& layout : layouts) {
         u32 selected_mask{};
@@ -463,6 +465,24 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
             mask_source_nonzero = true;
         }
 
+
+        u32 raw_bound = 0;
+        bool bound_source_nonzero = false;
+        const u64 bound_byte_offset = u64(layout.bound_offset_dw) * 4;
+        if (table_base != 0 &&
+            table_base <= MaxGuestPointer - bound_byte_offset - sizeof(raw_bound)) {
+            std::array<u8, sizeof(u32)> bound_bytes{};
+            memory->CopySparseMemory(table_base + bound_byte_offset,
+                                     bound_bytes.data(), bound_bytes.size());
+            std::memcpy(&raw_bound, bound_bytes.data(), sizeof(raw_bound));
+            bound_source_nonzero = true;
+        }
+        const u32 limit = std::min(raw_bound, SlotCount);
+        const u32 allowed_mask = limit == 32 ? 0xffffffffU :
+                                 (limit == 0 ? 0u : (1u << limit) - 1u);
+        // This is a POSSIBLE selection, not proof each lane executes.
+        const u32 bounded_selection = selected_mask & allowed_mask;
+
         u32 sampled_mask = 0;
         u32 populated_mask = 0;
         u32 valid_mask = 0;
@@ -470,10 +490,10 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
         u32 valid_type_mask = 0;
         u32 selected_type_mask = 0;
         for (u32 index = 0; index < SlotCount; ++index) {
-            // ReadConst offsets (stride, base) are in 32-bit words, as confirmed
-            // by EmitContext::DefineReadConst's shift-left-by-two byte conversion.
+            // IR: IMul(index, stride_bytes) + image_offset_bytes,
+            // ShiftRightLogical32(..., 2), then ReadConst. Never scale twice.
             const u64 offset_bytes =
-                (u64(index) * layout.stride_dw + layout.image_offset_dw) * 4;
+                u64(index) * layout.stride_bytes + layout.image_offset_bytes;
             if (table_base == 0 ||
                 table_base > MaxGuestPointer - offset_bytes - sizeof(AmdGpu::Image)) {
                 continue;
@@ -502,7 +522,7 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
             if (image.Address() != 0) {
                 address_mask |= (1u << index);
             }
-            if (selected_mask & (1u << index)) {
+            if (bounded_selection & (1u << index)) {
                 selected_type_mask |= (1u << type);
                 LOG_WARNING(Render_Vulkan,
                             "GOW_IMAGE_SELECTED_SLOT group={} index={} type={} "
@@ -510,26 +530,30 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
                             layout.label, index, type, image.Address() != 0);
             }
         }
-        const u32 selected_valid_mask = selected_mask & valid_mask;
-        const u32 selected_nonzero_addr_mask = selected_mask & address_mask;
-        const u32 selected_unresolved_mask = selected_mask & ~valid_mask;
+        const u32 selected_valid_mask = bounded_selection & valid_mask;
+        const u32 selected_nonzero_addr_mask = bounded_selection & address_mask;
+        const u32 selected_unresolved_mask = bounded_selection & ~valid_mask;
         LOG_WARNING(Render_Vulkan,
-                    "GOW_IMAGE_TABLE_AUDIT group={} stride_dw={} image_offset_dw={} "
-                    "mask_dw={} slots=32 sampled={} populated={} type_valid={} "
+                    "GOW_IMAGE_TABLE_AUDIT group={} stride_bytes={} image_offset_bytes={} "
+                    "mask_dw={} bound_dw={} raw_bound={} bounded_limit={} slots=32 "
+                    "sampled={} populated={} type_valid={} "
                     "sampled_mask={:#010x} populated_mask={:#010x} "
                     "valid_mask={:#010x} address_mask={:#010x} "
-                    "selected_mask={:#010x} selected_valid_mask={:#010x} "
+                    "selected_mask={:#010x} bounded_selection={:#010x} "
+                    "selected_valid_mask={:#010x} "
                     "selected_nonzero_addr_mask={:#010x} "
                     "selected_unresolved_mask={:#010x} "
                     "valid_type_mask={:#06x} selected_type_mask={:#06x} "
-                    "mask_source_nonzero={} dispatch=SKIPPED",
-                    layout.label, layout.stride_dw, layout.image_offset_dw,
-                    layout.mask_offset_dw, std::popcount(sampled_mask),
+                    "mask_source_nonzero={} bound_source_nonzero={} dispatch=SKIPPED",
+                    layout.label, layout.stride_bytes, layout.image_offset_bytes,
+                    layout.mask_offset_dw, layout.bound_offset_dw,
+                    raw_bound, limit, std::popcount(sampled_mask),
                     std::popcount(populated_mask), std::popcount(valid_mask),
                     sampled_mask, populated_mask, valid_mask, address_mask,
-                    selected_mask, selected_valid_mask, selected_nonzero_addr_mask,
+                    selected_mask, bounded_selection,
+                    selected_valid_mask, selected_nonzero_addr_mask,
                     selected_unresolved_mask, valid_type_mask, selected_type_mask,
-                    mask_source_nonzero);
+                    mask_source_nonzero, bound_source_nonzero);
     }
 }
 
