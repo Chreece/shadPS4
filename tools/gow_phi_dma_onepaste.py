@@ -1195,6 +1195,36 @@ GOW_WRITER_GPU_PRELUDE = r'''    // Stage18: capture exact GPU-resident argument
         static std::array<std::atomic<bool>, 4> attempted{};
         if (attempted[slot].exchange(true, std::memory_order_acq_rel)) return;
 
+        // The two command writers have distinct counter-buffer slots.
+        // Guard their exact already-observed SHARPs before reading addresses.
+        const u32 counter_slot = writer_id == 0 ? 0 : 1;
+        const auto& command_desc = cs.buffers[2];
+        const auto& counter_desc = cs.buffers[counter_slot];
+        const bool known_shape =
+            cs.buffers.size() == (writer_id == 0 ? 5u : 4u) &&
+            !command_desc.IsSpecial() && !counter_desc.IsSpecial() &&
+            command_desc.is_written && counter_desc.is_written;
+        if (!known_shape) {
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_WRITER_GPU_SNAPSHOT_SKIP shader={:#x} phase={} "
+                        "reason=DESCRIPTOR_SHAPE_CHANGED",
+                        cs.pgm_hash, after_dispatch ? "POST" : "PRE");
+            return;
+        }
+        const auto cmd_sharp = command_desc.GetSharp(cs);
+        const auto counter_sharp = counter_desc.GetSharp(cs);
+        if (!cmd_sharp.Valid() || !counter_sharp.Valid() ||
+            cmd_sharp.base_address != 0x1039242c40ULL ||
+            cmd_sharp.GetSize() != CmdBytes ||
+            counter_sharp.base_address != 0x1039242d00ULL ||
+            counter_sharp.GetSize() != CounterBytes) {
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_WRITER_GPU_SNAPSHOT_SKIP shader={:#x} phase={} "
+                        "reason=DESCRIPTOR_ADDRESSES_CHANGED",
+                        cs.pgm_hash, after_dispatch ? "POST" : "PRE");
+            return;
+        }
+
         const std::array<std::pair<VAddr, u64>, 5> segments{{
             {0x1039242c40ULL, CmdBytes},       // 8 indexed indirect records
             {0x1039242d00ULL, CounterBytes},   // shared producer output
