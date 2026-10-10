@@ -1691,6 +1691,38 @@ def trial_run(binary, temp, result):
     result["indirect_gpu_distinct_addresses"] = len({
         x.get("address", "") for x in result["indirect_gpu_captures"]
     })
+    # The earlier, unchanged 19:53 control captured six GPU commands with
+    # nonzero indices and zero instances. The only extra compute execution
+    # in this treatment is 0x73ad8e38 (and only if all admission guards pass).
+    admission = []
+    for line in joined.splitlines():
+        if "GOW_73_ADMISSION shader=0x73ad8e38" not in line:
+            continue
+        row = _kv(line[line.index("GOW_73_ADMISSION shader="):])
+        if row not in admission:
+            admission.append(row)
+    admitted = any(row.get("strict_resources") == "true" and
+                   row.get("result") == "ELIGIBLE" for row in admission)
+    denied = any(row.get("result") == "DENIED" for row in admission)
+    submit_marker = re.search(
+        r"GOW_COMPUTE_CANARY_RESULT shader=0x73ad8e38 "
+        r"result=SUBMITTED grid=128x128x1", joined)
+    complete_marker = re.search(
+        r"GOW_COMPUTE_CANARY_GPU_COMPLETE shader=0x73ad8e38 "
+        r"tick=(\d+) result=TIMELINE_SIGNALED", joined)
+    result["producer73_admission"] = admission
+    result["producer73_admitted"] = admitted
+    result["producer73_denied"] = denied
+    result["producer73_submitted"] = bool(submit_marker)
+    result["producer73_gpu_completed"] = bool(complete_marker)
+    result["producer73_completed_tick"] = (
+        int(complete_marker.group(1)) if complete_marker else None)
+    result["producer73_exact_grid"] = [128, 128, 1]
+    result["producer73_suppression_still_active"] = (
+        "GOW_DIAG_COMPUTE_SUPPRESSED" in joined)
+    result["producer73_treatment_nonzero_instance_count"] = len(
+        result["indirect_gpu_nonzero_draws"])
+    result["producer73_baseline_control_zero_instances"] = 6
 
     # G-buffer draw emission (vs merely binding/render-target preparation).
     # Dedup stdout and game-log copies by the monotonic per-process seq.
@@ -2062,14 +2094,22 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif not report.get("pre_draw_first_draw_observed"):
-                    report["result"] = "PRE_DRAW_FIRST_COMMAND_NOT_OBSERVED"
-                elif not report.get("pre_draw_both_writers_seen"):
-                    report["result"] = "PRE_DRAW_EARLY_WRITER_INPUTS_MISSING"
-                elif report.get("pre_draw_possible_input_edge_count"):
-                    report["result"] = "PRE_DRAW_POTENTIAL_PRODUCER_DEPENDENCIES"
+                elif report.get("producer73_denied"):
+                    report["result"] = "PRODUCER73_EXACT_GUARD_DENIED"
+                elif not report.get("producer73_admitted"):
+                    report["result"] = "PRODUCER73_ADMISSION_NOT_OBSERVED"
+                elif not report.get("producer73_submitted"):
+                    report["result"] = "PRODUCER73_GPU_NOT_SUBMITTED"
+                elif not report.get("producer73_gpu_completed"):
+                    report["result"] = "PRODUCER73_GPU_COMPLETION_UNCONFIRMED"
+                elif not report.get("indirect_gpu_all_six"):
+                    report["result"] = "PRODUCER73_GPU_ARGUMENT_READBACK_INCOMPLETE"
+                elif report.get("producer73_treatment_nonzero_instance_count"):
+                    report["result"] = "PRODUCER73_RESTORED_NONZERO_INSTANCES"
+                elif report.get("indirect_gpu_zero_instance", 0) == 6:
+                    report["result"] = "PRODUCER73_COMPLETED_ALL_INSTANCES_STILL_ZERO"
                 else:
-                    report["result"] = "PRE_DRAW_RESOURCE_MAP_NO_STATIC_PRODUCER_LINK"
+                    report["result"] = "PRODUCER73_MIXED_INSTANCE_COUNTS"
 
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
@@ -2089,12 +2129,16 @@ def main():
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
-    print("PRE_DRAW_FIRST_DRAW=" + str(report.get("pre_draw_first_draw_observed", False)))
-    print("PRE_DRAW_BUFFERS_MAPPED=" + str(report.get("pre_draw_producer_count", 0)))
-    print("EARLY_WRITER_INPUTS=" + str(report.get("pre_draw_target_resources", {})))
-    print("POTENTIAL_PRODUCER_EDGES=" + str(report.get("pre_draw_possible_input_edges", [])))
-    print("POTENTIAL_PRODUCER_EDGE_COUNT=" +
-          str(report.get("pre_draw_possible_input_edge_count", 0)))
+    print("PRODUCER73_ADMISSION=" + str(report.get("producer73_admission", [])))
+    print("PRODUCER73_SUBMITTED=" + str(report.get("producer73_submitted", False)))
+    print("PRODUCER73_GPU_COMPLETED=" + str(report.get("producer73_gpu_completed", False)))
+    print("INDIRECT_GPU_SIX_CAPTURED=" + str(report.get("indirect_gpu_all_six", False)))
+    print("BASELINE_ZERO_INSTANCE_COMMANDS=6")
+    print("TREATMENT_NONZERO_INSTANCE_COMMANDS=" +
+          str(report.get("producer73_treatment_nonzero_instance_count", 0)))
+    print("TREATMENT_ZERO_INSTANCE_COMMANDS=" +
+          str(report.get("indirect_gpu_zero_instance", 0)))
+    print("TREATMENT_GPU_COMMANDS=" + str(report.get("indirect_gpu_captures", [])))
     print("ARCHIVE=" + str(archive))
     print("SRT_TRACE_COMPLETE=" + str(report.get("fs_srt_flatten_complete", False)))
     print("SRT_ROOT_ORDER=" + str(report.get("fs_srt_root_order", [])))
