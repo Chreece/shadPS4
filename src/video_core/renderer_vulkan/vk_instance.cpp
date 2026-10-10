@@ -461,10 +461,10 @@ bool Instance::CreateDevice() {
                 .vertexPipelineStoresAndAtomics = features.vertexPipelineStoresAndAtomics,
                 .fragmentStoresAndAtomics = features.fragmentStoresAndAtomics,
                 .shaderImageGatherExtended = features.shaderImageGatherExtended,
-                .shaderSampledImageArrayDynamicIndexing =
-                    ghost_bindless && features.shaderSampledImageArrayDynamicIndexing,
                 .shaderStorageImageExtendedFormats = features.shaderStorageImageExtendedFormats,
                 .shaderStorageImageMultisample = features.shaderStorageImageMultisample,
+                .shaderSampledImageArrayDynamicIndexing =
+                    ghost_bindless && features.shaderSampledImageArrayDynamicIndexing,
                 .shaderClipDistance = features.shaderClipDistance,
                 .shaderFloat64 = features.shaderFloat64,
                 .shaderInt64 = features.shaderInt64,
@@ -485,6 +485,9 @@ bool Instance::CreateDevice() {
             .shaderSharedInt64Atomics = vk12_features.shaderSharedInt64Atomics,
             .shaderFloat16 = vk12_features.shaderFloat16,
             .shaderInt8 = vk12_features.shaderInt8,
+            .descriptorIndexing = ghost_bindless && vk12_features.descriptorIndexing,
+            .shaderSampledImageArrayNonUniformIndexing =
+                ghost_bindless && vk12_features.shaderSampledImageArrayNonUniformIndexing,
             .scalarBlockLayout = vk12_features.scalarBlockLayout,
             .uniformBufferStandardLayout = vk12_features.uniformBufferStandardLayout,
             .separateDepthStencilLayouts = vk12_features.separateDepthStencilLayouts,
@@ -492,9 +495,6 @@ bool Instance::CreateDevice() {
             .timelineSemaphore = vk12_features.timelineSemaphore,
             .bufferDeviceAddress = vk12_features.bufferDeviceAddress,
             .shaderOutputLayer = vk12_features.shaderOutputLayer,
-            .descriptorIndexing = ghost_bindless && vk12_features.descriptorIndexing,
-            .shaderSampledImageArrayNonUniformIndexing =
-                ghost_bindless && vk12_features.shaderSampledImageArrayNonUniformIndexing,
         },
         vk::PhysicalDeviceVulkan13Features{
             .robustImageAccess = vk13_features.robustImageAccess,
