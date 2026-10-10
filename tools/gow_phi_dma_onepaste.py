@@ -46,6 +46,8 @@ WRITER_PREVIOUS_RUNNER_SHA = "de56da87eb9a1593901deb29eee14a12beaaf508"
 WRITER_HEAD_SHA = "ddeaf86eaa0e758d12e7d981b54c0014365cd1d8"
 PRE_DRAW_BASE_SHA = "0c416c3af8e401076439f5857a5a7e4e9f57a3bc"
 PRE_DRAW_HEAD_SHA = "ae8c33a6d5f5ccc9f53901cffaedf0469063b28e"
+CANARY_73_SOURCE_SHA = "f82d951999e98e130053ac22fbca3d566c89efa4"
+CANARY_73_DIFF_SHA256 = "0312992dc6f12ef4303542981b4e0aa82ea0a0a41c1a9c7d6b049ca8fb63d6ed"
 WRITER_PATCH_SHA256 = "f1f2676e35b6dea461341e08da3268d78f2493b6db0b8ed75d74669654e72dc6"
 INDIRECT_GPU_DIFF_SHA256 = "30693439d0ba218354aa65e8b6ca6c88a7f24d45665d30d77455e893f0eb8055"
 BROAD_PATCH_SHA256 = "83000ad98104b0f335f4539ad9879d7212b678cdc327a18234fbd7117f2c47f6"
@@ -313,9 +315,21 @@ def get_patches():
                    b'TraceGoWProducerResourceChain(', b'SHADPS4_GOW_PRODUCER_INPUTS'):
         if marker not in producer_probe:
             raise RuntimeError("Pre-draw producer patch missing expected instrumentation")
+    # Phase fourteen: one specifically allowed 0x73ad8e38 compute shader,
+    # 128x128x1 with exact observed 32-byte input and 512-byte output.
+    one_shot_73 = fetch_strict_patch(
+        PRE_DRAW_HEAD_SHA, CANARY_73_SOURCE_SHA, {GBUFFER_SOURCE})
+    if hashlib.sha256(one_shot_73).hexdigest() != CANARY_73_DIFF_SHA256:
+        raise RuntimeError("The guarded producer canary patch changed")
+    for marker in (b'SHADPS4_GOW_ENABLE_73_ONE_SHOT',
+                   b'GOW_73_ADMISSION', b'0x73ad8e38ULL',
+                   b'out_sharp.GetSize() == 512'):
+        if marker not in one_shot_73:
+            raise RuntimeError("Missing exact-resource guard for 73 canary")
     return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
             index_probe, flatten_probe, root_priority_patch, auto_topo_patch,
-            broad_probe, draw_probe, gpu_args_patch, writer_probe, producer_probe)
+            broad_probe, draw_probe, gpu_args_patch, writer_probe, producer_probe,
+            one_shot_73)
 
 
 def verify_preimages():
