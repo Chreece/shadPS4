@@ -499,6 +499,91 @@ static void SaveGoWGuestFrameProbe(ScreenshotReadback& readback, u32 ordinal) {
                 nonblack, checksum, filepath.string());
 }
 
+// GoW Ragnarok: one-frame, GPU-backed diagnostic of three *observed*
+// offscreen color targets. Raw bytes are retained even when PNG conversion
+// cannot represent the image's native format (e.g. RGBA16F).
+struct GoWOffscreenReadback {
+    std::string label;
+    u64 address;
+    vk::Format format;
+    u32 width;
+    u32 height;
+    u32 bits;
+    std::filesystem::path path;
+    VideoCore::Buffer buffer;
+
+    GoWOffscreenReadback(const Instance& instance, const char* label_, u64 address_,
+                         vk::Format format_, u32 width_, u32 height_, u32 bits_,
+                         std::filesystem::path path_)
+        : label{label_}, address{address_}, format{format_}, width{width_},
+          height{height_}, bits{bits_}, path{std::move(path_)},
+          buffer{instance, 0, u64(width_) * height_ * (bits_ / 8),
+                 VideoCore::MemoryType::HostCached} {}
+};
+
+static void SaveGoWOffscreenReadback(GoWOffscreenReadback& capture) {
+    const u64 bytes = u64(capture.width) * capture.height * (capture.bits / 8);
+    capture.buffer.Invalidate(0, bytes);
+    if (capture.buffer.mapped_data.size() < bytes) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_OFFSCREEN_GPU_CAPTURE label={} result=BUFFER_TOO_SMALL "
+                    "have={} expected={}", capture.label,
+                    capture.buffer.mapped_data.size(), bytes);
+        return;
+    }
+    const auto* data = capture.buffer.mapped_data.data();
+    u64 checksum = 14695981039346656037ULL;
+    u64 nonzero_bytes = 0;
+    for (u64 i = 0; i < bytes; ++i) {
+        checksum = (checksum ^ data[i]) * 1099511628211ULL;
+        nonzero_bytes += data[i] != 0;
+    }
+    std::ofstream raw{capture.path, std::ios::binary};
+    raw.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(bytes));
+    raw.close();
+    const bool saved_raw = raw.good();
+    bool saved_png = false;
+    if (saved_raw && capture.bits == 32) {
+        const bool r8 = capture.format == vk::Format::eR8G8B8A8Unorm ||
+                        capture.format == vk::Format::eR8G8B8A8Srgb;
+        const bool b8 = capture.format == vk::Format::eB8G8R8A8Unorm ||
+                        capture.format == vk::Format::eB8G8R8A8Srgb;
+        const bool rgba10 = capture.format == vk::Format::eA2B10G10R10UnormPack32;
+        const bool bgra10 = capture.format == vk::Format::eA2R10G10B10UnormPack32;
+        if (r8 || b8 || rgba10 || bgra10) {
+            std::vector<u8> rgba(static_cast<size_t>(bytes));
+            const auto& lut = GetUnorm10ToU8Lut();
+            for (u64 i = 0; i < u64(capture.width) * capture.height; ++i) {
+                const size_t o = static_cast<size_t>(i * 4);
+                if (r8 || b8) {
+                    rgba[o + 0] = data[o + (b8 ? 2 : 0)];
+                    rgba[o + 1] = data[o + 1];
+                    rgba[o + 2] = data[o + (b8 ? 0 : 2)];
+                } else {
+                    const u32 packed = u32(data[o]) | (u32(data[o + 1]) << 8) |
+                                       (u32(data[o + 2]) << 16) |
+                                       (u32(data[o + 3]) << 24);
+                    rgba[o + 0] = lut[(packed >> (rgba10 ? 0 : 20)) & 1023];
+                    rgba[o + 1] = lut[(packed >> 10) & 1023];
+                    rgba[o + 2] = lut[(packed >> (rgba10 ? 20 : 0)) & 1023];
+                }
+                rgba[o + 3] = 255;
+            }
+            auto png_path = capture.path;
+            png_path.replace_extension(".png");
+            saved_png = WritePng(png_path, rgba, capture.width, capture.height);
+        }
+    }
+    LOG_WARNING(Render_Vulkan,
+                "GOW_OFFSCREEN_GPU_CAPTURE label={} address={:#x} "
+                "width={} height={} bits={} format={} bytes={} "
+                "nonzero_bytes={} fnv64={:#018x} "
+                "raw_saved={} png_saved={} raw_file={} result=GPU_READBACK_COMPLETE",
+                capture.label, capture.address, capture.width, capture.height,
+                capture.bits, vk::to_string(capture.format), bytes, nonzero_bytes,
+                checksum, saved_raw, saved_png, capture.path.string());
+}
+
 Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_)
     : window{window_}, liverpool{liverpool_},
       instance{window, EmulatorSettings.GetGpuId(), EmulatorSettings.IsVkValidationEnabled(),
@@ -834,6 +919,84 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                     "result=SIZE_REJECTED", gow_frame_id, gow_source_bytes);
     }
 
+    // Take one bounded GPU snapshot at the FIRST actual VideoOut flip, after
+    // the corresponding graphics draws have been submitted and before FSR/PP.
+    // Addresses are from CUSA34384's observed render attachments, not guesses.
+    std::vector<std::unique_ptr<GoWOffscreenReadback>> gow_offscreen_readbacks;
+    const char* gow_offscreen_dir = std::getenv("SHADPS4_GOW_OFFSCREEN_DIR");
+    if (gow_offscreen_dir && *gow_offscreen_dir && gow_frame_id == 1) {
+        constexpr std::array<std::pair<const char*, u64>, 3> targets{{
+            {"composition", 0x22af90000ULL},
+            {"shading", 0x22a798000ULL},
+            {"gbuffer0", 0x209a90000ULL},
+        }};
+        for (const auto& [label, address] : targets) {
+            // Do not create a new image or force uploads for this diagnostic.
+            const auto target_id = texture_cache.FindImageFromRange(address, 4, false);
+            if (!target_id) {
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_OFFSCREEN_READBACK label={} address={:#x} "
+                            "result=NOT_CACHED", label, address);
+                continue;
+            }
+            auto& target = texture_cache.GetImage(target_id);
+            const u32 w = target.info.size.width;
+            const u32 h = target.info.size.height;
+            const u32 bits = target.info.num_bits;
+            const u64 bytes = u64(w) * h * (bits / 8);
+            const bool source_ok = target.info.guest_address == address &&
+                                   target.backing &&
+                                   target.SafeToDownload() &&
+                                   target.backing->num_samples == 1 &&
+                                   target.backing->state.layout != vk::ImageLayout::eUndefined &&
+                                   bool(target.usage_flags & vk::ImageUsageFlagBits::eTransferSrc) &&
+                                   (bits == 32 || bits == 64) && w && h &&
+                                   bytes <= 20ull * 1024 * 1024;
+            if (!source_ok) {
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_OFFSCREEN_READBACK label={} address={:#x} "
+                            "result=GUARD_REJECTED actual_address={:#x} "
+                            "width={} height={} bits={} backing={} safe={} usage={:#x}",
+                            label, address, target.info.guest_address, w, h, bits,
+                            target.backing != nullptr, target.SafeToDownload(),
+                            static_cast<u32>(static_cast<VkImageUsageFlags>(target.usage_flags)));
+                continue;
+            }
+            const auto old_state = target.backing->state;
+            auto raw_path = std::filesystem::path(gow_offscreen_dir) /
+                            fmt::format("gow_offscreen_{}.bin", label);
+            auto cap = std::make_unique<GoWOffscreenReadback>(
+                instance, label, address, target.info.pixel_format, w, h, bits,
+                std::move(raw_path));
+            const vk::BufferImageCopy region = {
+                .bufferOffset = 0,
+                .bufferRowLength = 0,
+                .bufferImageHeight = 0,
+                .imageSubresource = {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .mipLevel = 0,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+                .imageOffset = {0, 0, 0},
+                .imageExtent = {w, h, 1},
+            };
+            runtime.DownloadImage(&target, &cap->buffer, std::span{&region, 1});
+            // Restore the tracked Vulkan layout/access exactly. No guest
+            // memory is written, and no compute dispatch is enabled.
+            runtime.Transit(&target, old_state.layout, old_state.pl_stage,
+                            old_state.access_mask);
+            runtime.FlushBarriers();
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_OFFSCREEN_READBACK label={} address={:#x} "
+                        "format={} width={} height={} bits={} bytes={} "
+                        "result=QUEUED_AND_LAYOUT_RESTORED",
+                        label, address, vk::to_string(target.info.pixel_format),
+                        w, h, bits, bytes);
+            gow_offscreen_readbacks.emplace_back(std::move(cap));
+        }
+    }
+
     // Continue with host-side passes that draw the displayed (scaled) frame.
 
     runtime.Transit(&image, vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -862,6 +1025,13 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         draw_scheduler.DeferPriorityOperation(
             [capture = std::move(gow_guest_capture), frame_number = gow_frame_id]() mutable {
                 SaveGoWGuestFrameProbe(capture.value(), frame_number);
+            });
+    }
+
+    for (auto& capture : gow_offscreen_readbacks) {
+        draw_scheduler.DeferPriorityOperation(
+            [item = std::move(capture)]() mutable {
+                SaveGoWOffscreenReadback(*item);
             });
     }
 
