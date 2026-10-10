@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "2d9cbce4779ffa06e51977d149e89b5c7a030a52"
+HEAD_SHA = "d9522cd82b9c8e5cdf6e85c4c4a83bc0d38d08f2"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -398,17 +398,19 @@ def trial_run(binary, temp, result):
             "Some guest descriptor sources are unresolved; GPU dispatch must remain disabled.")
     table_pattern = re.compile(
         r"GOW_IMAGE_TABLE_AUDIT group=(A|B) stride=(\d+) image_offset=(\d+) "
-        r"slots=32 readable=(\d+) valid=(\d+) "
-        r"readable_mask=(0x[0-9a-fA-F]+) valid_mask=(0x[0-9a-fA-F]+) "
+        r"slots=32 sampled=(\d+) populated=(\d+) valid=(\d+) "
+        r"sampled_mask=(0x[0-9a-fA-F]+) populated_mask=(0x[0-9a-fA-F]+) "
+        r"valid_mask=(0x[0-9a-fA-F]+) "
         r"uniform_type=(true|false) image_type=(\d+) dispatch=SKIPPED")
     table_audits = {}
     for match in table_pattern.finditer(joined):
-        (group, stride, offset, readable, valid, readable_mask, valid_mask,
-         uniform_type, image_type) = match.groups()
+        (group, stride, offset, sampled, populated, valid, sampled_mask,
+         populated_mask, valid_mask, uniform_type, image_type) = match.groups()
         table_audits[group] = {
             "stride_bytes": int(stride), "image_offset_bytes": int(offset),
-            "slots": 32, "readable": int(readable), "valid": int(valid),
-            "readable_mask": readable_mask, "valid_mask": valid_mask,
+            "slots": 32, "sampled": int(sampled), "populated": int(populated),
+            "valid": int(valid), "sampled_mask": sampled_mask,
+            "populated_mask": populated_mask, "valid_mask": valid_mask,
             "uniform_type": uniform_type == "true", "image_type": int(image_type),
         }
     result["image_table_audits"] = table_audits
