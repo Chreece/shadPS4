@@ -4,7 +4,19 @@ This runner compares native scalar RCPSS/RSQRTSS (including VEX forms) with the 
 
 The installed emulator is not an A/B participant: the comparison uses the same pinned candidate on both sides, with the current PES saves and settings copied into a portable profile. This avoids attributing unrelated changes between installed and experimental builds to the scalar fix.
 
-## Automated sequence
+## Manual launch workflow
+
+`pes-manual.py` is a single-download package containing the runner and all helpers. It verifies and writes the bundled files locally, then starts `run.py --manual`; no per-helper network requests are made. The source and pinned dependencies still need to be downloaded and built once.
+
+After preparation, wait for **READY — BEFORE**, then launch PES normally from ES-DE. Reach a repeatable match or replay scene and press Enter in the coordinating SSH terminal. A 90-second measurement starts at that marker. Controller input is allowed. Two screenshots are requested 3 and 9 seconds after the measurement window; normal emulator exit is requested 15 seconds after the window.
+
+Next, wait for **READY — AFTER** and launch PES again. Reach the same scene and press Enter again. The script records the same window, captures screenshots, exits, restores the launcher, verifies original files, archives the evidence and removes its temporary build and profiles. A game that exits early remains in the report and does not prevent trying the other mode. Ctrl+C in the coordinating terminal stops the owned capture, restores the launcher and archives partial evidence.
+
+The same executable uses scalar correction **off** for the first launch and **on** for the second. The temporary launcher route applies only to PES `CUSA18676`, after the existing session guard. Other games retain their original launch command; launching another emulator stops this comparison. While preparing, and after cleanup, the original launcher is used. The route is restored only if it still matches the runner's own edit; an external conflicting edit is preserved and the backup/work directory retained for recovery.
+
+Both launches start with identical copied settings and saves. The report contains the user-selected measurement boundaries, raw frame timestamps, process samples, input timestamps, screenshots and logs. One manual run per mode cannot establish repeatability. Scene equivalence must be checked before interpreting the observed FPS difference. Execution/correction counters are disabled in both timed modes, so these two runs alone do not prove that changed scalar results fixed a game bug.
+
+## Automated sequence (optional original mode)
 
 1. Resolve PES `CUSA18676` from the existing game configuration and identify the local ES-DE/Sunshine desktop session.
 2. Refuse to start while another shadPS4 instance is active. Fetch a fresh shallow source checkout and pinned submodules without borrowing Git objects from existing caches. Build in a temporary directory without changing the installed executable, wrapper, or system packages.
@@ -34,7 +46,7 @@ Python 3.11+, the existing GCC 14 toolchain, CMake, Ninja and Git are required. 
 
 The portable profile redirects save home, fonts, system modules, add-ons and caches into the temporary area. The emulator mounts the game directory read-only. When Linux Landlock ABI 3+ is available, child processes additionally receive filesystem write restrictions; this is tested before use and recorded. Otherwise the copied portable profile and path redirection are used. This does not alter system security settings.
 
-Original configs/users, custom configs, patches, cheats, PES saves, installed binary, launcher/guard and game metadata/eboot are hashed before and after. Original files are never overwritten. A home-directory inode lock prevents concurrent copies of this runner; process checks detect other emulator runs. Other processes are not terminated.
+Original configs/users, custom configs, patches, cheats, PES saves, installed binary, launcher/guard and game metadata/eboot are hashed before and after. Game saves, settings and the installed binary are never overwritten. Manual mode temporarily routes the PES launcher and restores its original contents, mode and timestamps before this verification. A home-directory inode lock prevents concurrent copies of this runner; process checks detect other emulator runs. Other processes are not terminated.
 
 The source patch also adds the missing `<optional>` include needed to compile the unchanged notification code. That build-only correction is identical in both modes and does not enter the production scalar PR.
 

@@ -27,7 +27,7 @@ import zipfile
 BASE = '0e5a0e1273df701d8069f17c347ec5372d94068d'
 CPU_SHA = '8a5cbb3726189ccd28e1295f35bedd5825cbd32bd0883a00268befe0e7ac7e40'
 FFMPEG_SHA = 'aacbbfb8e622b684bc5d3b4cd6c9f9f77f5def64ae8d83c0c5b3ebe657aa33dd'
-ASSETS = {'profile.py': '00f25e0ffc6f6311f155b64219def15bb5583da1126cc54d3cd9ab62ead90746', 'instrumentation.patch': '621a74bb4c6f2f391ea0ba7b66c5b3d4d159b90daeb9bd8e8daaecddf2c831ce', 'scalar_ab.h': '976220ffce3b5876d141bdfcf9dd90bdb85620f07be79d27a819f54b6f7483cc', 'README.md': 'dd211728f19d0f123e943aa156c0a868263f018e6a997db41960105558dd2992', 'README.md.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'instrumentation.patch.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'validation.txt': 'd939e68a226d9d94475d8ddae13e6fd9e028533a8c65394fde94dae384bca4bb', 'validation.txt.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0'}
+ASSETS = {'manual.py': '5d22d552d6a9acf0661be6a44a75f6e06691e0dbc421c822c6ec230bcffc7649', 'profile.py': '00f25e0ffc6f6311f155b64219def15bb5583da1126cc54d3cd9ab62ead90746', 'instrumentation.patch': '621a74bb4c6f2f391ea0ba7b66c5b3d4d159b90daeb9bd8e8daaecddf2c831ce', 'scalar_ab.h': '976220ffce3b5876d141bdfcf9dd90bdb85620f07be79d27a819f54b6f7483cc', 'README.md': '26c0b2d293bd2fae4f0f6fb5165b22db6edc3cb7b97d49facd638f675476f07a', 'README.md.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'instrumentation.patch.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0', 'validation.txt': '422de1a8bcea888061782cca089aab1e59914d39cd32ff56ea79478c3c742e79', 'validation.txt.license': '8f3edffe7a0fb2b41cbc2f26f4349ef68f80835aedb7073c56aa102c952486b0'}
 USE_LANDLOCK = False
 MODES = ('native', 'fixed', 'fixed', 'native', 'diagnostic')
 SERIAL = 'CUSA18676'
@@ -510,10 +510,16 @@ def comparison(records):
 
 def main(args):
     assets(args.assets_url)
+    manual_mode = getattr(args, 'manual', False)
+    if manual_mode and not sys.stdin.isatty():
+        raise RuntimeError('Manual capture needs an interactive SSH terminal')
     global profile
     sys.path.insert(0,str(HERE))
     import profile as profile_module
     profile=profile_module
+    if manual_mode:
+        import manual
+        manual.r = sys.modules[__name__]
     home=Path.home()
     if os.geteuid()==0 or platform.machine()!='x86_64':
         raise RuntimeError('Run this from your usual x86-64 desktop user, not sudo')
@@ -534,6 +540,8 @@ def main(args):
              'measurement':'CPU-side new game-frame presentations; not GPU duration or display scanout',
              'cpu':next((s.split(':',1)[1].strip() for s in Path('/proc/cpuinfo').read_text().splitlines() if s.startswith('model name')),platform.processor()),'kernel':platform.release(),
              'runner_sha256':digest(__file__),'originals_unchanged':None}
+    if manual_mode:
+        summary.update(order=['native','fixed'], scope='manual ES-DE launch and user-selected scene')
     protected=[]
     before=None
     archive=home/(root.name.replace('-work-','-')+'.tar.gz')
@@ -587,14 +595,17 @@ def main(args):
         require_idle()
         if snapshot(protected)!=before:
             raise RuntimeError('Original files changed during setup; stopping without overwriting them')
-        for index,mode in enumerate(MODES,1):
-            say('Cooling down for 20 seconds before the next run')
-            time.sleep(20)
-            record=stage_run(binary,root,report,seed,active,desktop,game,index,mode)
-            summary['records'].append({k:v for k,v in record.items() if k!='profile_before'})
-            if not record['reached_capture_end']:
-                say(f'Run {index} exited early; recorded. Continuing the other variant for comparison.')
-        summary['comparison']=comparison(summary['records'])
+        if manual_mode:
+            manual.sessions(binary,root,report,seed,active,game,wrapper,installed,summary)
+        else:
+            for index,mode in enumerate(MODES,1):
+                say('Cooling down for 20 seconds before the next run')
+                time.sleep(20)
+                record=stage_run(binary,root,report,seed,active,desktop,game,index,mode)
+                summary['records'].append({k:v for k,v in record.items() if k!='profile_before'})
+                if not record['reached_capture_end']:
+                    say(f'Run {index} exited early; recorded. Continuing the other variant for comparison.')
+            summary['comparison']=comparison(summary['records'])
     except BaseException as exc:
         summary['errors'].append(type(exc).__name__+': '+str(exc))
         (report/'error.txt').write_text(traceback.format_exc())
@@ -611,14 +622,15 @@ def main(args):
                     summary['errors'].append('Original-state hashes changed; no stale backup was written over them')
             except Exception as exc:
                 summary['errors'].append('Original-state verification failed: '+str(exc))
-        summary.setdefault('comparison',comparison(summary['records']))
+        summary.setdefault('comparison',manual.comparison(summary['records']) if manual_mode
+                           else comparison(summary['records']))
         summary['owned_processes_remaining']=[]
         try:
             summary['owned_processes_remaining']=[str(p['exe']) for p in profile.emulators()
                                                    if p['exe'].is_relative_to(root)]
         except Exception as exc:
             summary['errors'].append('Final process check: '+str(exc))
-        if not summary['owned_processes_remaining']:
+        if not summary['owned_processes_remaining'] and not summary.get('keep_work'):
             for path in root.iterdir():
                 if path == report:
                     continue
@@ -645,7 +657,7 @@ def main(args):
             except OSError:
                 pass
             say('Could not create the archive; evidence retained at '+str(report)+': '+str(exc))
-        if archive_ok and not summary['owned_processes_remaining'] and not any(
+        if archive_ok and not summary.get('keep_work') and not summary['owned_processes_remaining'] and not any(
                 error.startswith('Temporary cleanup failed:') for error in summary['errors']):
             shutil.rmtree(root)
         elif archive_ok:
@@ -664,6 +676,7 @@ if __name__=='__main__':
         sys.exit(0)
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--assets-url')
+    parser.add_argument('--manual', action='store_true')
     args=parser.parse_args()
     def interrupted(sig,frame):
         for handled in (signal.SIGINT,signal.SIGTERM,signal.SIGHUP):

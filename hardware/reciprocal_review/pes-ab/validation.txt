@@ -36,3 +36,15 @@ PASS: corrected build setup checks out the commit and nested submodules without 
 PASS: the existing broken-cache fixture remains byte-for-byte unchanged.
 PASS: fresh fetch of the actual pinned upstream commit; CPU source SHA-256 matches.
 Emulator source and instrumentation are unchanged; the earlier full build remains applicable.
+
+Manual capture workflow (2026-10-10):
+PASS: waits for ES-DE launch; uses the saved guarded launcher structure and .ps4 entry path.
+PASS: unrelated game launch retains the original executable and arguments.
+PASS: user scene marker selects the measurement window; controller input is allowed.
+PASS: before/after sessions have identical starting profiles, screenshots, frame data and normal exit.
+PASS: early native exit is retained and the corrected run can still complete.
+PASS: cancellation while waiting or running restores original launcher bytes, mode and timestamp.
+PASS: original saves/settings/binary are unchanged; unrelated sentinel process survives cleanup.
+Fixture process lookup adapts the container's mismatched PID namespace and procfs view.
+No emulator C++ code or instrumentation changed for manual mode.
+PASS: manual main archives both runs, verifies restoration and removes temporary work.
