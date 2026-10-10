@@ -34,7 +34,9 @@ VERIFIED_SHA = "8b921edc53fa1d52c40acc0b9dae23553499cf40"
 GRAPHICS_SHA = "b64f66078ec0fb5efbf10b86496dade0942a591d"
 FRAGMENT_SHA = "77341a4c4d076ea8af7b00038a884e903069f007"
 SHARP_SHA = "2492be06a203373bcb58c7b7d993f27dc54de661"
-HEAD_SHA = "28957366755addb221d3956a69de4d601a83b390"
+INDEX_SHA = "28957366755addb221d3956a69de4d601a83b390"
+HEAD_SHA = "c494430f6d738fd9f4ec093352125867e6c889d1"
+INDEX_PATCH_SHA256 = "fe149e0618d65504a78d71a72810a900340b3a5fe888a54fd70651ae55914c49"
 SHARP_PATCH_SHA256 = "af20618e05a7d007f7c73e5c4cb8e0f9aac0117b64ed7b3bd0c7aa35e18a8e5e"
 FRAGMENT_PATCH_SHA256 = "82cde74c723e35a4593c63c3d04657fd790d194c962769668dc3a3dac98137e4"
 GRAPHICS_PATCH_SHA256 = "bb6a023fe0fca2c192d3da649a3c9bb71006ee4886cd152993960c2f570492e6"
@@ -212,24 +214,31 @@ def get_patches():
     known_hash = hashlib.sha256(sharp_probe).hexdigest()
     if known_hash != SHARP_PATCH_SHA256:
         raise RuntimeError("Proven SHARP probe patch bytes changed: " + known_hash)
-    # Phase five is one source-only, read-only expression graph. No other
-    # compiler, runtime, graphics or GPU-execution files may change.
-    # The branch inherited a runner update after SHARP_SHA. The pinned
-    # comparison therefore contains the runner as well as the C++ file;
-    # fetch_strict_patch filters out runner edits after validating the set.
+    # Phase five is the exact image-index tree source used in the 18:05
+    # successful test, verified against its recorded diff digest.
     index_probe = fetch_strict_patch(
-        SHARP_SHA, HEAD_SHA, {NEW_SOURCE, "tools/gow_phi_dma_onepaste.py"})
+        SHARP_SHA, INDEX_SHA, {NEW_SOURCE, "tools/gow_phi_dma_onepaste.py"})
+    known_index_hash = hashlib.sha256(index_probe).hexdigest()
+    if known_index_hash != INDEX_PATCH_SHA256:
+        raise RuntimeError("Proven IR index-tree patch changed: " + known_index_hash)
+
+    # Phase six only adds read-only logs inside the flattening pass; skip
+    # exactly the known runner file from that pinned comparison.
+    flatten_path = "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp"
+    flatten_probe = fetch_strict_patch(
+        INDEX_SHA, HEAD_SHA, {flatten_path, "tools/gow_phi_dma_onepaste.py"})
     additions = [
-        line for line in index_probe.splitlines()
+        line for line in flatten_probe.splitlines()
         if line.startswith(b"+") and not line.startswith(b"+++")
     ]
-    if (b"GOW_FS_INDEX_GRAPH_BEGIN" not in index_probe or
-            b"GOW_FS_INDEX_GRAPH_END" not in index_probe or
-            b"const bool immediate_offset = arg.IsImmediate()" not in index_probe or
-            any(b"inst.SetArg(" in line or b"void Rasterizer::Draw" in line
+    if (b"GOW_SRT_FLATTEN_BEGIN" not in flatten_probe or
+            b"GOW_SRT_FLATTEN_END" not in flatten_probe or
+            b"event=DEPENDENCY_ZERO" not in flatten_probe or
+            any(b"inst->SetArg(" in line or b"c.mov(" in line or
+                b"c.add(" in line or b"SetFlatbufOffset(" in line
                 for line in additions)):
-        raise RuntimeError("Invalid added lines in targeted index tree probe")
-    return verified_patch, graphics_patch, fragment_patch, sharp_probe, index_probe
+        raise RuntimeError("Unexpected shader-semantic edits in flatten diagnostic")
+    return verified_patch, graphics_patch, fragment_patch, sharp_probe, index_probe, flatten_probe
 
 def verify_preimages():
     if set(EXPECTED_SOURCE_HASHES) != PROTECTED_SOURCES:
@@ -262,6 +271,12 @@ def verify_staged_instrumentation(staged):
             "SHADPS4_GOW_FS_INDEX_TREE_TRACE" not in desc_patcher or
             "const bool immediate_offset = arg.IsImmediate()" not in desc_patcher):
         raise RuntimeError("Staged read-only SHARP diagnostic missing")
+    flat = (staged / "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp").read_text()
+    if ("GOW_SRT_FLATTEN_BEGIN" not in flat or
+            "GOW_SRT_FLATTEN_END" not in flat or
+            "SHADPS4_GOW_SRT_FLATTEN_TRACE" not in flat or
+            "event=USE_INDEX_FAILED" not in flat):
+        raise RuntimeError("Staged flattening-only instrumentation missing")
     if (raster.count("void LogGoWGraphicsDrawTotals(u32 frame)") != 1 or
             raster.count("RecordGoWPreparedDrawTargets(regs, key.mrt_mask, pipeline);") != 1 or
             "RecordGoWGraphicsAudit(" in raster or
@@ -470,7 +485,7 @@ def trial_run(binary, temp, result):
     env.update({
         "SHADPS4_ENABLE_IPC": "false",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
-        "SHADPS4_GOW_FS_INDEX_TREE_TRACE": "1",
+        "SHADPS4_GOW_SRT_FLATTEN_TRACE": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
     env.setdefault("DISPLAY", ":0")
@@ -489,9 +504,9 @@ def trial_run(binary, temp, result):
                 time.sleep(2)
                 raw_console = (evidence / "console.log").read_text(errors="replace")
                 if re.search(
-                    r"GOW_FS_INDEX_GRAPH_END shader=0x7f710602 [^\n]*result=CAPTURED",
+                    r"GOW_SRT_FLATTEN_END shader=0x7f710602 [^\n]*result=CAPTURED",
                     raw_console):
-                    result["end_reason"] = "TARGET_INDEX_TREE_CAPTURED"
+                    result["end_reason"] = "TARGET_SRT_FLATTEN_CAPTURED"
                     break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
@@ -575,6 +590,38 @@ def trial_run(binary, temp, result):
     # The source captures occur before any host FSR / postprocessing pass.
     def _kv(line):
         return dict(re.findall(r"([a-z_][a-z_0-9]*)=([^\s]+)", line))
+
+    # Recover the bounded, one-shader flattening walk from the existing
+    # console log. Keep every failure/assignment event in the evidence file.
+    seen_flat_lines = set()
+    flatten_lines = []
+    for line in joined.splitlines():
+        if "GOW_SRT_FLATTEN_" not in line or "shader=0x7f710602" not in line:
+            continue
+        part = line[line.index("GOW_SRT_FLATTEN_"):]
+        if part not in seen_flat_lines:
+            seen_flat_lines.add(part)
+            flatten_lines.append(part)
+    (evidence / "fs-7f710602-flatten-trace.txt").write_text(
+        "\n".join(flatten_lines) + "\n")
+    flatten_ends = [
+        line for line in flatten_lines
+        if line.startswith("GOW_SRT_FLATTEN_END") and "result=CAPTURED" in line
+    ]
+    flat_sum = _kv(flatten_ends[-1]) if flatten_ends else {}
+    event_counts = {}
+    for line in flatten_lines:
+        if not line.startswith("GOW_SRT_FLATTEN_TRACE"):
+            continue
+        event = _kv(line).get("event", "UNSPECIFIED")
+        event_counts[event] = event_counts.get(event, 0) + 1
+    result["fs_srt_flatten_complete"] = bool(flatten_ends)
+    result["fs_srt_flatten_summary"] = flat_sum
+    result["fs_srt_flatten_events"] = event_counts
+    result["fs_srt_flatten_trace_lines"] = len(flatten_lines)
+    result["fs_srt_flatten_unresolved"] = int(flat_sum.get("unresolved_sharps", "0"))
+    result["fs_srt_flatten_resolved"] = int(flat_sum.get("resolved_sharps", "0"))
+    result["fs_srt_flatten_truncated"] = flat_sum.get("trace_capped") == "true"
 
     # Deduplicate duplicated stdout and game-log lines while preserving tree
     # order. Keep full node/literal/edge details in a separate archive file.
@@ -1098,12 +1145,12 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif not report.get("fs_index_tree_captured"):
-                    report["result"] = "FS_INDEX_TREE_MISSING"
-                elif report.get("fs_index_tree_truncated"):
-                    report["result"] = "FS_INDEX_TREE_CAPTURE_TRUNCATED"
+                elif not report.get("fs_srt_flatten_complete"):
+                    report["result"] = "FS_SRT_FLATTEN_TRACE_MISSING"
+                elif report.get("fs_srt_flatten_truncated"):
+                    report["result"] = "FS_SRT_FLATTEN_TRACE_CAPPED"
                 else:
-                    report["result"] = "FS_INDEX_TREE_CAPTURED"
+                    report["result"] = "FS_SRT_FLATTEN_TRACE_CAPTURED"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -1121,21 +1168,20 @@ def main():
                 for p in evidence.rglob("*"):
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
-    print("GOW_FS_INDEX_RESULT=" + report.get("result", "UNKNOWN"))
+    print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
     print("ARCHIVE=" + str(archive))
-    print("INDEX_TREE_NODES=" + str(report.get("fs_index_tree_node_count", 0)))
-    print("INDEX_TREE_ROOTS=" + str(len(report.get("fs_index_tree_roots", []))))
-    print("INDEX_TREE_PHI=" + str(report.get("fs_index_tree_has_phi", False)))
-    print("INDEX_TREE_READ_FIRST_LANE=" +
-          str(report.get("fs_index_tree_has_readfirstlane", False)))
-    print("INDEX_TREE_TRUNCATED=" + str(report.get("fs_index_tree_truncated", False)))
+    print("SRT_TRACE_COMPLETE=" + str(report.get("fs_srt_flatten_complete", False)))
+    print("SRT_RESOLVED_SHARPS=" + str(report.get("fs_srt_flatten_resolved", 0)))
+    print("SRT_UNRESOLVED_SHARPS=" + str(report.get("fs_srt_flatten_unresolved", 0)))
+    print("SRT_EVENTS=" + str(report.get("fs_srt_flatten_events", {})))
+    print("SRT_TRACE_CAPPED=" + str(report.get("fs_srt_flatten_truncated", False)))
     print("BUILD_EXIT_CODE=" + str(report.get("build_exit_code")))
     print("SOURCE_RESTORED=" + str(report.get("sources_restored")))
     print("BUILD_BINARY_RESTORED=" + str(report.get("build_binary_restored")))
     print("NATIVE_CONFIG_RESTORED=" + str(report.get("native_config_restored")))
     if report.get("error"):
         print("ERROR=" + report["error"])
-    if report.get("result") in ("FAIL", "INTERRUPTED", "FS_INDEX_TREE_MISSING"):
+    if report.get("result") in ("FAIL", "INTERRUPTED", "FS_SRT_FLATTEN_TRACE_MISSING"):
         raise SystemExit(1)
 
 if __name__ == "__main__":
