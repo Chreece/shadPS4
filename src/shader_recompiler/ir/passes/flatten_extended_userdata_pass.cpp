@@ -670,7 +670,9 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
                     "index_literal={} unflattened={}",
                     pass_info.gow_shader, pass_info.GoWId(subtree), IR::NameOf(sub_op),
                     off_inst ? IR::NameOf(off_inst->GetOpcode()) : "Immediate",
-                    off_dw.IsImmediate(), off_dw.IsImmediate() ? off_dw.U32() : 0u,
+                    off_dw.IsImmediate(),
+                    off_dw.IsImmediate() && off_dw.Type() == IR::Type::U32
+                        ? off_dw.U32() : 0u,
                     unflattened);
     }
     if (unflattened) {
