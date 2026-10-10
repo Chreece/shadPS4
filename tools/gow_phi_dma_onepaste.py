@@ -42,6 +42,8 @@ BROAD_SHA = "ae1ab93fa6b89e37efc07d8f6f4d09e70880eeda"
 GBUFFER_SHA = "88fbecd1abdd224ce74b39e204357403fa85e907"
 GPU_PROBE_BASE_SHA = "3b8c11e6cdad20cb039f76eaa9fe28677a31b80a"
 HEAD_SHA = "ff31dc5c39bd5aa45d658efb8aba9fac280b1ceb"
+WRITER_PREVIOUS_RUNNER_SHA = "de56da87eb9a1593901deb29eee14a12beaaf508"
+WRITER_HEAD_SHA = "cc51c34f7b988b9d451cf7babcc7d6e0b118e9d9"
 INDIRECT_GPU_DIFF_SHA256 = "30693439d0ba218354aa65e8b6ca6c88a7f24d45665d30d77455e893f0eb8055"
 BROAD_PATCH_SHA256 = "83000ad98104b0f335f4539ad9879d7212b678cdc327a18234fbd7117f2c47f6"
 AUTO_PATCH_SHA256 = "7743ac55071ce5656b84b8943a486b23ad729778460b1b354d355e879fb42def"
@@ -287,9 +289,20 @@ def get_patches():
         GPU_PROBE_BASE_SHA, HEAD_SHA, {GBUFFER_SOURCE})
     if hashlib.sha256(gpu_args_patch).hexdigest() != INDIRECT_GPU_DIFF_SHA256:
         raise RuntimeError("GPU indirect command probe differs from pinned code")
+    # A twelfth, additive-only source probe: identify writable compute
+    # resources intersecting the six known zero-instance indirect commands.
+    # The separate branch is an exact GitHub commit descendant of the last
+    # runner that compiled successfully on the user's Debian host.
+    writer_probe = fetch_strict_patch(
+        WRITER_PREVIOUS_RUNNER_SHA, WRITER_HEAD_SHA, {GBUFFER_SOURCE})
+    for marker in (b'TraceGoWIndirectWriterCandidates',
+                   b'GOW_INDIRECT_WRITER_CANDIDATE',
+                   b'GOW_INDIRECT_BUFFER_ORIGIN'):
+        if marker not in writer_probe:
+            raise RuntimeError("Pinned writer-provenance probe is incomplete")
     return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
             index_probe, flatten_probe, root_priority_patch, auto_topo_patch,
-            broad_probe, draw_probe, gpu_args_patch)
+            broad_probe, draw_probe, gpu_args_patch, writer_probe)
 
 
 def verify_preimages():
@@ -345,6 +358,8 @@ def verify_staged_instrumentation(staged):
                 "is_indexed, true,") != 1 or
             "TraceGoWGBufferDraw(pipeline, regs, state, is_indexed, true," in raster or
             "SHADPS4_GOW_GBUFFER_DRAW_TRACE" not in raster or
+            "GOW_INDIRECT_WRITER_CANDIDATE" not in raster or
+            "GOW_INDIRECT_BUFFER_ORIGIN" not in raster or
             raster.count("static void TraceGoWIndirectGpuArgs(") != 1 or
             raster.count("TraceGoWIndirectGpuArgs(pipeline, liverpool->regs,") != 1 or
             "GOW_INDIRECT_GPU_CAPTURE slot={}" not in raster):
@@ -538,6 +553,80 @@ def apply_portable_indirect_gpu_probe(root, pinned_diff):
     }
 
 
+def apply_portable_writer_origin_probe(root, pinned_diff):
+    # Stage twelve is additive only, pinned to a GitHub compare with exactly
+    # one source file, and never changes the draw/dispatch execution path.
+    text_diff = pinned_diff.decode('utf-8', errors='strict')
+    prefix = f'diff --git a/{GBUFFER_SOURCE} b/{GBUFFER_SOURCE}\n'
+    if (text_diff.count('diff --git ') != 1 or
+            not text_diff.startswith(prefix)):
+        raise RuntimeError('Writer probe changed unexpected source files')
+    parts = re.split(r'(?m)^@@[^\n]*\n', text_diff)[1:]
+    if len(parts) < 3 or len(parts) > 5:
+        raise RuntimeError('Unexpected writer-probe diff structure')
+    sections = []
+    for block in parts:
+        lines = block.splitlines()
+        if any(line.startswith('-') and not line.startswith('---') for line in lines):
+            raise RuntimeError('Writer-probe diff removes existing source code')
+        sections.append('\n'.join(line[1:] for line in lines
+                                  if line.startswith('+') and not line.startswith('+++')) + '\n')
+    def unique_section(marker):
+        matches = [chunk for chunk in sections if marker in chunk]
+        if len(matches) != 1:
+            raise RuntimeError('Writer-probe marker not unique: ' + marker)
+        return matches[0]
+    helper = unique_section('static void TraceGoWIndirectWriterCandidates(')
+    compute_call = unique_section('TraceGoWIndirectWriterCandidates(cs,')
+    draw_origin = unique_section('GOW_INDIRECT_BUFFER_ORIGIN')
+    if (not helper.startswith('// GoW Ragnarok: passive provenance census') or
+            not draw_origin.startswith('    // Non-mutating cache-state provenance') or
+            not compute_call.startswith('    TraceGoWIndirectWriterCandidates(cs,') or
+            helper.count('GOW_INDIRECT_WRITER_CANDIDATE') != 1 or
+            helper.count('GOW_INDIRECT_WRITER_SUMMARY') != 1 or
+            'buffer_cache.IsRegionGpuModified' not in draw_origin or
+            'SHADPS4_GOW_INDIRECT_WRITER_SCAN' not in helper):
+        raise RuntimeError('New source additions do not match audited writer probe')
+    path = root / GBUFFER_SOURCE
+    pre = path.read_bytes()
+    original = pre.decode('utf-8')
+    dispatch_tag = 'void Rasterizer::DispatchDirect() {'
+    indirect_tag = 'void Rasterizer::DrawIndirect(bool is_indexed'
+    after_indirect = '// This diagnostics-only guard deliberately runs AFTER pipeline creation.'
+    cs_anchor = '    const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);\n'
+    state_anchor = '    const auto state = BeginRendering(pipeline);\n\n'
+    if (original.count(dispatch_tag) != 1 or
+            original.count(indirect_tag) != 1 or
+            original.count(after_indirect) != 1 or
+            'GOW_INDIRECT_WRITER_CANDIDATE' in original or
+            'GOW_INDIRECT_BUFFER_ORIGIN' in original or
+            'GOW_INDIRECT_GPU_CAPTURE' not in original):
+        raise RuntimeError('Unexpected source state for incremental writer probe')
+    result = original.replace(dispatch_tag, helper + dispatch_tag, 1)
+    dispatch_start = result.index(dispatch_tag)
+    dispatch_tail = result[dispatch_start:]
+    if dispatch_tail.count(cs_anchor) != 1:
+        raise RuntimeError('Compute shader metadata anchor missing')
+    result = result[:dispatch_start] + dispatch_tail.replace(
+        cs_anchor, cs_anchor + compute_call, 1)
+    indirect_start = result.index(indirect_tag)
+    indirect_end = result.index(after_indirect, indirect_start)
+    body = result[indirect_start:indirect_end]
+    if body.count(state_anchor) != 1:
+        raise RuntimeError('Indirect draw-state anchor missing')
+    result = (result[:indirect_start] + body.replace(
+        state_anchor, state_anchor + draw_origin, 1) + result[indirect_end:])
+    if (result.replace(helper, '', 1).replace(compute_call, '', 1)
+            .replace(draw_origin, '', 1) != original or
+            len(result) != len(original) + len(helper) + len(compute_call) + len(draw_origin)):
+        raise RuntimeError('Writer probe modified existing source semantics')
+    path.write_bytes(result.encode('utf-8'))
+    return {'source_before': hashlib.sha256(pre).hexdigest(),
+            'source_after': sha(path),
+            'no_existing_lines_modified': True,
+            'producer_probe_installed': True}
+
+
 def preflight_patches(patches, temp, report):
     # Every git-apply step runs against exact copies of host files.
     # No installed source file is changed during this preflight.
@@ -547,8 +636,8 @@ def preflight_patches(patches, temp, report):
         dst = staged / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / rel, dst)
-    if len(patches) != 11:
-        raise RuntimeError("Expected ten host-proven patches plus one indirect readback")
+    if len(patches) != 12:
+        raise RuntimeError("Expected eleven host-proven patches plus one writer scan")
     for step, patch in enumerate(patches):
         filename = temp / f"pinned-{step}.diff"
         filename.write_bytes(patch)
@@ -558,6 +647,9 @@ def preflight_patches(patches, temp, report):
         if step == 10:
             report["indirect_gpu_preflight"] = apply_portable_indirect_gpu_probe(staged, patch)
             continue
+        if step == 11:
+            report["writer_origin_preflight"] = apply_portable_writer_origin_probe(staged, patch)
+            continue
         check = run(["git", "apply", "--check", "--whitespace=nowarn", str(filename)],
                     cwd=staged)
         if check.returncode:
@@ -566,7 +658,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_eleven_patch_preflight"] = True
+    report["staged_twelve_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -623,6 +715,10 @@ def do_build(build, patches, temp, result):
             if step == 10:
                 changed = True
                 result["indirect_gpu_live"] = apply_portable_indirect_gpu_probe(SOURCE, patch)
+                continue
+            if step == 11:
+                changed = True
+                result["writer_origin_live"] = apply_portable_writer_origin_probe(SOURCE, patch)
                 continue
             check = run(["git", "apply", "--check", "--whitespace=nowarn",
                          str(patch_path)], cwd=SOURCE)
