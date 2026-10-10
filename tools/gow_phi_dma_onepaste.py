@@ -176,9 +176,9 @@ def find_build():
             pass
     raise RuntimeError("No existing CMake build configured for the verified source; nothing modified")
 
-PATCH_BUNDLE_COMMIT = "b9841f87268c3d407c4c224f28f2291c98281099"
-PATCH_BUNDLE_SHA256 = "1b7e16c9f20d9b3f97c0592a4f8e99618c68a41673c4f1e8a603a150d97cfd09"
-PATCH_BUNDLE_FILE = "tools/gow_phi_verified_14_patch_bundle_20261010.json"
+PATCH_BUNDLE_COMMIT = "f4d6a92690a130d0ef28cf3a164146421303df9e"
+PATCH_BUNDLE_SHA256 = "115b170e9a823c43a28014d0e7da326194832384304c14e46d57bfbfbd699d90"
+PATCH_BUNDLE_FILE = "tools/gow_phi_verified_15_patch_bundle_20261010.json"
 _PATCH_BUNDLE_CACHE = None
 
 def _load_verified_patch_bundle():
@@ -202,9 +202,9 @@ def _load_verified_patch_bundle():
             "Pinned patch bundle SHA256 mismatch; refusing any source change: " + digest)
     data = json.loads(payload.decode("utf-8", errors="strict"))
     if (data.get("format") != "gow-phi-immutable-github-patches-v1"
-            or data.get("entryCount") != 14
+            or data.get("entryCount") != 15
             or not isinstance(data.get("steps"), list)
-            or len(data["steps"]) != 14):
+            or len(data["steps"]) != 15):
         raise RuntimeError("Pinned patch bundle manifest contract mismatch")
     entries = {}
     for index, entry in enumerate(data["steps"]):
@@ -234,7 +234,7 @@ def _load_verified_patch_bundle():
             raise RuntimeError("Duplicate pinned commit comparison")
         entries[key] = (set(paths), patch_bytes)
     _PATCH_BUNDLE_CACHE = entries
-    print("PINNED_PATCH_BUNDLE_OK=14 sha256=" + PATCH_BUNDLE_SHA256, flush=True)
+    print("PINNED_PATCH_BUNDLE_OK=15 sha256=" + PATCH_BUNDLE_SHA256, flush=True)
     return entries
 
 def fetch_strict_patch(base_sha, head_sha, expected_changed):
@@ -373,10 +373,23 @@ def get_patches():
                    b'out_sharp.GetSize() == 512'):
         if marker not in one_shot_73:
             raise RuntimeError("Missing exact-resource guard for 73 canary")
+    # Stage fifteen adds diagnostic logging only. It does NOT relax the
+    # demonstrated safe denial for the unexpected 3-buffer/2-image shape.
+    shape_probe = fetch_strict_patch(
+        "09fd9b96615ce9a9e6a82a5e2dbcc1660591f773",
+        "085d268e8905aba7716327d92f5bae46d415b44e", {GBUFFER_SOURCE})
+    if hashlib.sha256(shape_probe).hexdigest() != (
+            "c9f05a0d1fcca00d4768b8c76739f70e58e13b9adc1b876a464612dec18f674f"):
+        raise RuntimeError("The passive descriptor-shape patch changed")
+    if (b'SHADPS4_GOW_73_SHAPE_AUDIT' not in shape_probe or
+            b'GOW_73_SHAPE_BUFFER shader=' not in shape_probe or
+            b'GOW_73_SHAPE_IMAGE shader=' not in shape_probe or
+            b'GOW_73_SHAPE_END' not in shape_probe):
+        raise RuntimeError("The passive descriptor-shape patch is incomplete")
     return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
             index_probe, flatten_probe, root_priority_patch, auto_topo_patch,
             broad_probe, draw_probe, gpu_args_patch, writer_probe, producer_probe,
-            one_shot_73)
+            one_shot_73, shape_probe)
 
 
 def verify_preimages():
