@@ -272,8 +272,7 @@ static bool FilterIntelCPU(const ZydisDecodedOperand*) {
 
 static void GenerateReciprocalInstruction(void* address, const ZydisDecodedInstruction& instruction,
                                           const ZydisDecodedOperand* operands,
-                                          Xbyak::CodeGenerator& c, bool rsqrt, bool vex,
-                                          bool scalar = false) {
+                                          Xbyak::CodeGenerator& c, bool rsqrt, bool vex) {
     bool table_loaded = InitializeIndexTables();
     ASSERT_MSG(table_loaded, "Failed to load RCP index table");
 
@@ -282,21 +281,14 @@ static void GenerateReciprocalInstruction(void* address, const ZydisDecodedInstr
     const auto dst = ZydisToXbyakRegisterOperand(operands[0]);
 
     ASSERT_MSG(dst.isXMM() || dst.isYMM(), "operand 0 must be an XMM or YMM register");
-    const auto& source = operands[scalar && vex ? 2 : 1];
-    const bool is_src_mem = source.type == ZYDIS_OPERAND_TYPE_MEMORY;
+    bool is_src_mem = operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY;
 
     std::array<bool, 16> taken_vecs = {};
     Xbyak::Xmm dst_reg;
     Xbyak::Xmm src_reg;
-    Xbyak::Xmm merge_reg;
-
-    if (scalar && vex) {
-        merge_reg = Xbyak::Xmm(ZydisToXbyakRegisterOperand(operands[1]).getIdx());
-        taken_vecs[merge_reg.getIdx()] = true;
-    }
 
     if (!is_src_mem) {
-        const auto src = ZydisToXbyakRegisterOperand(source);
+        const auto src = ZydisToXbyakRegisterOperand(operands[1]);
         src_reg = Xbyak::Xmm(src.getKind(), src.getIdx());
         taken_vecs[src_reg.getIdx()] = true;
     }
@@ -333,25 +325,18 @@ static void GenerateReciprocalInstruction(void* address, const ZydisDecodedInstr
     c.push(scratch2);
 
     if (is_src_mem) {
-        const auto load_source = [&](const Xbyak::Address& memory) {
-            if (scalar) {
-                c.vmovss(src_storage, memory);
-            } else {
-                c.vmovups(src_storage, memory);
-            }
-        };
-        if (source.mem.base == ZYDIS_REGISTER_RIP) {
-            const u64 target = (u64)address + instruction.length + source.mem.disp.value;
+        if (operands[1].mem.base == ZYDIS_REGISTER_RIP) {
+            const u64 target = (u64)address + instruction.length + operands[1].mem.disp.value;
             c.mov(rax, target);
-            load_source(ptr[rax]);
+            c.vmovups(src_storage, ptr[rax]);
         } else {
-            ZydisDecodedOperand operand = source;
-            if (source.mem.base == ZYDIS_REGISTER_RSP) { // rsp can't be index
+            ZydisDecodedOperand operand = operands[1];
+            if (operands[1].mem.base == ZYDIS_REGISTER_RSP) { // rsp can't be index
                 operand.mem.disp.size = 32;
                 operand.mem.disp.value += rsp_disp + 8 * 3; // Account for what we pushed
             }
             Xbyak::Address mem = ZydisToXbyakMemoryOperand(operand);
-            load_source(mem);
+            c.vmovups(src_storage, mem);
         }
         src_reg = src_storage;
     }
@@ -376,25 +361,7 @@ static void GenerateReciprocalInstruction(void* address, const ZydisDecodedInstr
     c.vpcmpeqd(xmm_scratch2, xmm_scratch2, xmm_scratch2); // vgather sets to zero
     c.vgatherdps(xmm_scratch3, ptr[scratch2 + xmm_scratch1 * 4], xmm_scratch2);
     c.vpandn(xmm_scratch3, nan_mask, xmm_scratch3);
-    if (scalar) {
-        c.vpslldq(xmm_scratch3, xmm_scratch3, 12);
-        c.vpsrldq(xmm_scratch3, xmm_scratch3, 12);
-        if (vex) {
-            if (rsqrt) {
-                c.vrsqrtss(dst_reg, merge_reg, src_reg);
-            } else {
-                c.vrcpss(dst_reg, merge_reg, src_reg);
-            }
-            c.vxorps(dst_reg, dst_reg, xmm_scratch3);
-        } else {
-            if (rsqrt) {
-                c.rsqrtss(dst_reg, src_reg);
-            } else {
-                c.rcpss(dst_reg, src_reg);
-            }
-            c.xorps(dst_reg, xmm_scratch3);
-        }
-    } else if (vex) {
+    if (vex) {
         auto func = rsqrt ? &Xbyak::CodeGenerator::vrsqrtps : &Xbyak::CodeGenerator::vrcpps;
         (c.*func)(dst_reg, src_reg);
         c.vxorps(dst_reg, dst_reg, xmm_scratch3);
@@ -438,24 +405,111 @@ static void GenerateVRCPPS(void* address, const ZydisDecodedInstruction& instruc
     GenerateReciprocalInstruction(address, instruction, operands, c, false, true);
 }
 
+static void GenerateScalarReciprocalInstruction(void* address,
+                                                const ZydisDecodedInstruction& instruction,
+                                                const ZydisDecodedOperand* operands,
+                                                Xbyak::CodeGenerator& c, bool rsqrt, bool vex) {
+    const bool table_loaded = InitializeIndexTables();
+    ASSERT_MSG(table_loaded, "Failed to load RCP index table");
+
+    const auto dst = ZydisToXbyakRegisterOperand(operands[0]);
+    ASSERT_MSG(dst.isXMM(), "operand 0 must be an XMM register");
+    const Xbyak::Xmm dst_reg(dst.getIdx());
+    const auto& source = operands[vex ? 2 : 1];
+    const bool is_src_mem = source.type == ZYDIS_OPERAND_TYPE_MEMORY;
+    const int upper_offset = 8 * 3 + (is_src_mem ? 8 : 0);
+    const int rsp_disp = 128 + (is_src_mem ? 8 : 0) + (vex ? 0 : 16);
+
+    c.lea(rsp, ptr[rsp - rsp_disp]);
+    c.push(rax);
+    c.push(rcx);
+    // The lookup and correction only modify arithmetic flags.
+    c.seto(al);
+    c.lahf();
+    c.push(rax);
+    if (is_src_mem &&
+        (source.mem.base == ZYDIS_REGISTER_RAX || source.mem.index == ZYDIS_REGISTER_RAX)) {
+        c.mov(rax, qword[rsp + 8 * 2]);
+    }
+
+    if (!vex) {
+        c.vextractf128(ptr[rsp + upper_offset], dst_reg.cvt256(), 1);
+    }
+
+    Xbyak::Xmm src_reg;
+    if (is_src_mem) {
+        if (source.mem.base == ZYDIS_REGISTER_RIP) {
+            const u64 target =
+                reinterpret_cast<u64>(address) + instruction.length + source.mem.disp.value;
+            c.mov(rax, target);
+            c.mov(eax, dword[rax]);
+        } else {
+            auto operand = source;
+            if (operand.mem.base == ZYDIS_REGISTER_RSP) {
+                operand.mem.disp.size = 32;
+                operand.mem.disp.value += rsp_disp + 8 * 3;
+            }
+            c.mov(eax, ZydisToXbyakMemoryOperand(operand));
+        }
+        c.mov(dword[rsp + 8 * 3], eax);
+    } else {
+        const auto src = ZydisToXbyakRegisterOperand(source);
+        ASSERT_MSG(src.isXMM(), "source must be an XMM register");
+        src_reg = Xbyak::Xmm(src.getIdx());
+        c.vmovd(eax, src_reg);
+    }
+
+    const auto* index_table = rsqrt ? rsqrt_index_table.data() : rcp_index_table.data();
+    const auto* xor_table = rsqrt ? rsqrt_xor_values.data() : rcp_xor_values.data();
+    // NaN and infinity buckets have zero correction in both tables.
+    c.shr(eax, 11);
+    c.mov(rcx, reinterpret_cast<u64>(index_table));
+    c.movzx(eax, byte[rcx + rax]);
+    c.mov(rcx, reinterpret_cast<u64>(xor_table));
+    c.mov(eax, dword[rcx + rax * 4]);
+
+    const Xbyak::Xmm merge_reg =
+        vex ? Xbyak::Xmm(ZydisToXbyakRegisterOperand(operands[1]).getIdx()) : dst_reg;
+    const auto func = rsqrt ? &Xbyak::CodeGenerator::vrsqrtss : &Xbyak::CodeGenerator::vrcpss;
+    if (is_src_mem) {
+        (c.*func)(dst_reg, merge_reg, dword[rsp + 8 * 3]);
+    } else {
+        (c.*func)(dst_reg, merge_reg, src_reg);
+    }
+    c.vmovd(ecx, dst_reg);
+    c.xor_(eax, ecx);
+    c.vpinsrd(dst_reg, dst_reg, eax, 0);
+    if (!vex) {
+        c.vinsertf128(dst_reg.cvt256(), dst_reg.cvt256(), ptr[rsp + upper_offset], 1);
+    }
+
+    c.pop(rax);
+    // Restore OF from SETO, then restore SF/ZF/AF/PF/CF with SAHF.
+    c.add(al, 0x7f);
+    c.sahf();
+    c.pop(rcx);
+    c.pop(rax);
+    c.lea(rsp, ptr[rsp + rsp_disp]);
+}
+
 static void GenerateRCPSS(void* address, const ZydisDecodedInstruction& instruction,
                           const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
-    GenerateReciprocalInstruction(address, instruction, operands, c, false, false, true);
+    GenerateScalarReciprocalInstruction(address, instruction, operands, c, false, false);
 }
 
 static void GenerateVRCPSS(void* address, const ZydisDecodedInstruction& instruction,
                            const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
-    GenerateReciprocalInstruction(address, instruction, operands, c, false, true, true);
+    GenerateScalarReciprocalInstruction(address, instruction, operands, c, false, true);
 }
 
 static void GenerateRSQRTSS(void* address, const ZydisDecodedInstruction& instruction,
                             const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
-    GenerateReciprocalInstruction(address, instruction, operands, c, true, false, true);
+    GenerateScalarReciprocalInstruction(address, instruction, operands, c, true, false);
 }
 
 static void GenerateVRSQRTSS(void* address, const ZydisDecodedInstruction& instruction,
                              const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
-    GenerateReciprocalInstruction(address, instruction, operands, c, true, true, true);
+    GenerateScalarReciprocalInstruction(address, instruction, operands, c, true, true);
 }
 
 static void GenerateEXTRQ(void* /* address */, const ZydisDecodedInstruction&,
