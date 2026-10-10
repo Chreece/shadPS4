@@ -1876,7 +1876,8 @@ def trial_run(binary, temp, result):
         row for row in (
             result["producer73_shape_buffers"] +
             result["producer73_shape_images"])
-        if row.get("safe_flatbuf") == "false"
+        if row.get("safe_flatbuf") == "false" and
+           row.get("special") != "true"
     ]
     (evidence / "shader73-descriptor-shape.json").write_text(
         json.dumps({
