@@ -1,0 +1,170 @@
+diff --git a/src/core/cpu_patches.cpp b/src/core/cpu_patches.cpp
+index 285c01f98..89c2cfaa8 100644
+--- a/src/core/cpu_patches.cpp
++++ b/src/core/cpu_patches.cpp
+@@ -26,6 +26,7 @@
+ #include "common/decoder.h"
+ #include "common/signal_context.h"
+ #include "common/types.h"
++#include "core/scalar_ab.h"
+ #include "core/signals.h"
+ #include "core/tls.h"
+ #include "cpu_patches.h"
+@@ -409,6 +410,8 @@ static void GenerateScalarReciprocalInstruction(void* address,
+                                                 const ZydisDecodedInstruction& instruction,
+                                                 const ZydisDecodedOperand* operands,
+                                                 Xbyak::CodeGenerator& c, bool rsqrt, bool vex) {
++    const size_t ab_index = (rsqrt ? 2 : 0) + (vex ? 1 : 0);
++    ScalarAB::sites[ab_index].fetch_add(1, std::memory_order_relaxed);
+     const bool table_loaded = InitializeIndexTables();
+     ASSERT_MSG(table_loaded, "Failed to load RCP index table");
+
+@@ -468,6 +471,19 @@ static void GenerateScalarReciprocalInstruction(void* address,
+     c.mov(rcx, reinterpret_cast<u64>(xor_table));
+     c.mov(eax, dword[rcx + rax * 4]);
+
++    if (ScalarAB::Diagnostic()) {
++        c.mov(rcx, reinterpret_cast<u64>(&ScalarAB::hits[ab_index]));
++        c.lock();
++        c.inc(qword[rcx]);
++        Xbyak::Label unchanged;
++        c.test(eax, eax);
++        c.jz(unchanged);
++        c.mov(rcx, reinterpret_cast<u64>(&ScalarAB::changes[ab_index]));
++        c.lock();
++        c.inc(qword[rcx]);
++        c.L(unchanged);
++    }
++
+     const Xbyak::Xmm merge_reg =
+         vex ? Xbyak::Xmm(ZydisToXbyakRegisterOperand(operands[1]).getIdx()) : dst_reg;
+     const auto func = rsqrt ? &Xbyak::CodeGenerator::vrsqrtss : &Xbyak::CodeGenerator::vrcpss;
+@@ -836,29 +852,38 @@ static const bool need_tcb_trampoline = true;
+ static const bool need_tcb_trampoline = false;
+ #endif
+
+-static const std::unordered_map<ZydisMnemonic, std::vector<PatchInfo>> Patches = {
+-    // SSE4a
+-    {ZYDIS_MNEMONIC_EXTRQ, {{FilterNoSSE4a, GenerateEXTRQ, true}}},
+-    {ZYDIS_MNEMONIC_INSERTQ, {{FilterNoSSE4a, GenerateINSERTQ, true}}},
+-    {ZYDIS_MNEMONIC_MOVNTSS, {{FilterNoSSE4a, ReplaceMOVNTSS, false}}},
+-    {ZYDIS_MNEMONIC_MOVNTSD, {{FilterNoSSE4a, ReplaceMOVNTSD, false}}},
+-    {ZYDIS_MNEMONIC_RSQRTPS, {{FilterIntelCPU, GenerateRSQRTPS, true}}},
+-    {ZYDIS_MNEMONIC_VRSQRTPS, {{FilterIntelCPU, GenerateVRSQRTPS, true}}},
+-    {ZYDIS_MNEMONIC_RCPPS, {{FilterIntelCPU, GenerateRCPPS, true}}},
+-    {ZYDIS_MNEMONIC_VRCPPS, {{FilterIntelCPU, GenerateVRCPPS, true}}},
+-    {ZYDIS_MNEMONIC_RCPSS, {{FilterIntelCPU, GenerateRCPSS, true}}},
+-    {ZYDIS_MNEMONIC_VRCPSS, {{FilterIntelCPU, GenerateVRCPSS, true}}},
+-    {ZYDIS_MNEMONIC_RSQRTSS, {{FilterIntelCPU, GenerateRSQRTSS, true}}},
+-    {ZYDIS_MNEMONIC_VRSQRTSS, {{FilterIntelCPU, GenerateVRSQRTSS, true}}},
++static const auto Patches = [] {
++    std::unordered_map<ZydisMnemonic, std::vector<PatchInfo>> patches = {
++        // SSE4a
++        {ZYDIS_MNEMONIC_EXTRQ, {{FilterNoSSE4a, GenerateEXTRQ, true}}},
++        {ZYDIS_MNEMONIC_INSERTQ, {{FilterNoSSE4a, GenerateINSERTQ, true}}},
++        {ZYDIS_MNEMONIC_MOVNTSS, {{FilterNoSSE4a, ReplaceMOVNTSS, false}}},
++        {ZYDIS_MNEMONIC_MOVNTSD, {{FilterNoSSE4a, ReplaceMOVNTSD, false}}},
++        {ZYDIS_MNEMONIC_RSQRTPS, {{FilterIntelCPU, GenerateRSQRTPS, true}}},
++        {ZYDIS_MNEMONIC_VRSQRTPS, {{FilterIntelCPU, GenerateVRSQRTPS, true}}},
++        {ZYDIS_MNEMONIC_RCPPS, {{FilterIntelCPU, GenerateRCPPS, true}}},
++        {ZYDIS_MNEMONIC_VRCPPS, {{FilterIntelCPU, GenerateVRCPPS, true}}},
++        {ZYDIS_MNEMONIC_RCPSS, {{FilterIntelCPU, GenerateRCPSS, true}}},
++        {ZYDIS_MNEMONIC_VRCPSS, {{FilterIntelCPU, GenerateVRCPSS, true}}},
++        {ZYDIS_MNEMONIC_RSQRTSS, {{FilterIntelCPU, GenerateRSQRTSS, true}}},
++        {ZYDIS_MNEMONIC_VRSQRTSS, {{FilterIntelCPU, GenerateVRSQRTSS, true}}},
+
+ #if !defined(__APPLE__)
+-    // FS segment patches
+-    // For most of these, Windows needs a trampoline while other platforms do not.
+-    {ZYDIS_MNEMONIC_XOR, {{FilterTcbAccess, GenerateTcbExclusiveOr, need_tcb_trampoline}}},
+-    {ZYDIS_MNEMONIC_MOV, {{FilterTcbAccess, GenerateTcbAccess, need_tcb_trampoline}}},
+-    {ZYDIS_MNEMONIC_CMP, {{FilterTcbAccess, GenerateTcbCompare, need_tcb_trampoline}}}
++        // FS segment patches
++        // For most of these, Windows needs a trampoline while other platforms do not.
++        {ZYDIS_MNEMONIC_XOR, {{FilterTcbAccess, GenerateTcbExclusiveOr, need_tcb_trampoline}}},
++        {ZYDIS_MNEMONIC_MOV, {{FilterTcbAccess, GenerateTcbAccess, need_tcb_trampoline}}},
++        {ZYDIS_MNEMONIC_CMP, {{FilterTcbAccess, GenerateTcbCompare, need_tcb_trampoline}}}
+ #endif
+-};
++    };
++    if (!ScalarAB::Fixed()) {
++        for (auto mnemonic : {ZYDIS_MNEMONIC_RCPSS, ZYDIS_MNEMONIC_VRCPSS, ZYDIS_MNEMONIC_RSQRTSS,
++                              ZYDIS_MNEMONIC_VRSQRTSS}) {
++            patches.erase(mnemonic);
++        }
++    }
++    return patches;
++}();
+
+ static std::once_flag init_flag;
+
+diff --git a/src/imgui/notifications_layer.cpp b/src/imgui/notifications_layer.cpp
+index e822610c1..ec761ec6a 100644
+--- a/src/imgui/notifications_layer.cpp
++++ b/src/imgui/notifications_layer.cpp
+@@ -1,6 +1,7 @@
+ // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+
++#include <optional>
+ #include <cmrc/cmrc.hpp>
+ #include <imgui.h>
+ #include <queue>
+diff --git a/src/sdl_window.cpp b/src/sdl_window.cpp
+index a7d365024..137e4304a 100644
+--- a/src/sdl_window.cpp
++++ b/src/sdl_window.cpp
+@@ -21,6 +21,7 @@
+ #include "core/libraries/kernel/time.h"
+ #include "core/libraries/pad/pad.h"
+ #include "core/libraries/system/userservice.h"
++#include "core/scalar_ab.h"
+ #include "core/user_settings.h"
+ #include "imgui/friends_layer.h"
+ #include "imgui/renderer/imgui_core.h"
+@@ -205,10 +206,24 @@ void WindowSDL::WaitEvent() {
+     // Called on main thread
+     SDL_Event event;
+
+-    if (!SDL_WaitEvent(&event)) {
++    const auto command = ScalarAB::Control();
++    if (command == "quit") {
++        is_open = false;
++        return;
++    }
++    if (command == "screenshot") {
++        VideoCore::RequestScreenshot(VideoCore::ScreenshotRequest::GameOnly);
++    }
++    const bool received =
++        ScalarAB::Enabled() ? SDL_WaitEventTimeout(&event, 100) : SDL_WaitEvent(&event);
++    if (!received) {
+         return;
+     }
+
++    if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
++        event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
++        ScalarAB::Input(event.type);
++    }
+     if (Libraries::Mouse::PushSDLEvent(event) || Libraries::Keyboard::PushSDLEvent(event)) {
+         return;
+     }
+diff --git a/src/video_core/renderer_vulkan/vk_presenter.cpp b/src/video_core/renderer_vulkan/vk_presenter.cpp
+index daec351dc..36aa57c30 100644
+--- a/src/video_core/renderer_vulkan/vk_presenter.cpp
++++ b/src/video_core/renderer_vulkan/vk_presenter.cpp
+@@ -10,6 +10,7 @@
+ #include "core/devtools/layer.h"
+ #include "core/emulator_settings.h"
+ #include "core/libraries/system/systemservice.h"
++#include "core/scalar_ab.h"
+ #include "imgui/friends_layer.h"
+ #include "imgui/invitation_prompt_layer.h"
+ #include "imgui/notifications_layer.h"
+@@ -1083,6 +1084,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
+
+     free_frame();
+     if (!is_reusing_frame && is_game_frame) {
++        ScalarAB::Frame();
+         DebugState.IncFlipFrameNum();
+     }
+ }

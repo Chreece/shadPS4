@@ -1,0 +1,31 @@
+Validation in the development container (not a PES game run):
+
+PASS: native mode removes all four scalar patch registrations; packed entries remain.
+PASS: packed reciprocal generators are byte-for-byte unchanged from the optimized source.
+PASS: 353,280 scalar register/alias/flags/memory cases with diagnostic counting enabled.
+      Counted 353,280 executions and 44,160 changed numerical results in these synthetic cases.
+PASS: the same 353,280 cases with diagnostic counting disabled; both execution counters stay zero.
+PASS: guard-page test confirms four-byte scalar memory access.
+PASS: frame timestamp units, percentile interpolation, and stall-inclusive window FPS.
+PASS: direct C++ hook check for monotonic clock alignment, CSV flush/format, and quit command consumption.
+PASS: complete ABBA sequence plus separate diagnostic using a fixture emulator.
+PASS: matching starting profile hashes and preserved original binary/wrapper/settings/saves/resources.
+PASS: normal exit, early crash rejection, interruption cleanup, and hung-child TERM/KILL cleanup.
+PASS: native crashes do not prevent fixed runs; crash outcomes remain available with FPS comparison rejected.
+PASS: an unrelated sentinel process remains alive during owned-child cleanup.
+PASS: build failure still archives evidence and removes temporary work.
+PASS: archive failure removes temporary build/profile data and retains the report.
+PASS: assets match their sealed SHA-256 values.
+
+Landlock is unavailable in this container (ENOSYS). Portable-profile isolation was exercised.
+The runner additionally probes Landlock write rejection before using it on a supporting host.
+
+PASS: full GCC 14.2 Release compile and link, with the complete test instrumentation.
+PASS: the linked executable exits successfully for --help in an isolated portable directory.
+PASS: applying the packaged patch recreates the compiled sources byte-for-byte.
+PASS: bootstrap failure is caught even under parent-shell errexit; the parent shell continues.
+Local build dependencies were extracted into temporary paths, including GCC 14, UUID and X11 headers.
+No system packages were installed. Local configure used SDL_UNIX_CONSOLE_BUILD=ON and LIBUSB_ENABLE_UDEV=OFF.
+The container uses SDL console configuration; actual desktop/game behavior is checked on the homeserver.
+
+Local validation binary SHA-256: 0d4188fdb2cb237f5b2bce6bf7383dcec4e60729a08e7a5112ec20b2cae072a2
