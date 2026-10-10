@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "733a79257da2828834f1188b761065daba1e2194"
+HEAD_SHA = "0213806ffc77403b412dfed939f975914d85b032"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -444,6 +444,24 @@ def trial_run(binary, temp, result):
         result["one_shot_result"] and "result=SUBMITTED" in result["one_shot_result"])
     result["one_shot_bind_failed"] = bool(
         result["one_shot_result"] and "result=BIND_FAILED" in result["one_shot_result"])
+    # Keep command recording separate from GPU completion: the scheduler's
+    # Vulkan timeline is the source of truth and is never waited on here.
+    gpu_tick_match = re.search(
+        r"GOW_COMPUTE_ONE_SHOT_GPU_TICK shader=0x6e9a8b98 tick=(\\d+) "
+        r"result=WAITING_FOR_NORMAL_SUBMISSION", joined)
+    gpu_complete_match = re.search(
+        r"GOW_COMPUTE_ONE_SHOT_GPU_COMPLETE shader=0x6e9a8b98 tick=(\\d+) "
+        r"result=TIMELINE_SIGNALED", joined)
+    result["one_shot_gpu_tick"] = (
+        int(gpu_tick_match.group(1)) if gpu_tick_match else None)
+    result["one_shot_gpu_completed_tick"] = (
+        int(gpu_complete_match.group(1)) if gpu_complete_match else None)
+    result["one_shot_gpu_timeline_completed"] = bool(
+        result["one_shot_submitted"] and
+        result["one_shot_gpu_tick"] is not None and
+        result["one_shot_gpu_tick"] == result["one_shot_gpu_completed_tick"])
+    result["one_shot_gpu_timeline_mismatch"] = bool(
+        gpu_complete_match and not result["one_shot_gpu_timeline_completed"])
     result["gpu_device_lost_logged"] = bool(
         re.search(r"VK_ERROR_DEVICE_LOST|ErrorDeviceLost|device lost|GPU hang",
                   joined, re.IGNORECASE))
@@ -611,7 +629,11 @@ def main():
                         if report.get("image_live_masks_captured")
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 # Priority: don't disguise a rejected one-shot as a census success.
-                if report.get("one_shot_submitted"):
+                if report.get("one_shot_gpu_timeline_completed"):
+                    report["result"] = "ONE_SHOT_GPU_TIMELINE_COMPLETED"
+                elif report.get("one_shot_gpu_tick") is not None:
+                    report["result"] = "ONE_SHOT_GPU_TIMELINE_PENDING"
+                elif report.get("one_shot_submitted"):
                     report["result"] = "ONE_SHOT_COMMAND_RECORDED"
                 elif report.get("one_shot_bind_failed"):
                     report["result"] = "ONE_SHOT_BIND_FAILED"
@@ -647,6 +669,9 @@ def main():
     print("ONE_SHOT_ELIGIBILITY=" + str(report.get("one_shot_candidate")))
     print("ONE_SHOT_RESULT=" + str(report.get("one_shot_result")))
     print("ONE_SHOT_COMMAND_RECORDED=" + str(report.get("one_shot_submitted", False)))
+    print("ONE_SHOT_GPU_TICK=" + str(report.get("one_shot_gpu_tick")))
+    print("ONE_SHOT_GPU_TIMELINE_COMPLETED=" +
+          str(report.get("one_shot_gpu_timeline_completed", False)))
     print("AMDGPU_KERNEL_HANG_LOGGED=" + str(report.get("kernel_gpu_hang_logged", False)))
     print("GPU_DEVICE_LOST_LOGGED=" + str(report.get("gpu_device_lost_logged", False)))
     print("RESOURCE_AUDIT_PASSED=" + str(report.get("resource_audit_passed", False)))
