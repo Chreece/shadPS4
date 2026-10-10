@@ -1721,13 +1721,24 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 // Read-only, opt-in graphics census. Count the renderer's accepted draw setups
 // without patching either direct or indirect command emission. Called only
 // after successful graphics pipeline/resource binding.
+struct GoWFragmentUseStats {
+    u64 prepared_attachment_calls{};
+    u32 buffers{};
+    u32 images{};
+    u32 samplers{};
+    u32 invalid_buffers{};
+    u32 invalid_images{};
+    u32 invalid_samplers{};
+};
 struct GoWPreparedDrawAudit {
     std::mutex mutex;
     u64 prepared_draws{};
     u64 prepared_with_color{};
     u64 prepared_without_color{};
     bool truncated{};
+    bool fragment_truncated{};
     std::map<u64, u64> target_counts;
+    std::map<std::pair<u64, u64>, GoWFragmentUseStats> target_fragments;
 };
 static GoWPreparedDrawAudit& GetGoWPreparedDrawAudit() {
     static GoWPreparedDrawAudit audit{};
@@ -1737,10 +1748,15 @@ static bool GoWPreparedDrawAuditEnabled() {
     const char* flag = std::getenv("SHADPS4_GOW_GRAPHICS_AUDIT");
     return flag && std::strcmp(flag, "1") == 0;
 }
-static void RecordGoWPreparedDrawTargets(const AmdGpu::Regs& regs, u32 mrt_mask) {
+static void RecordGoWPreparedDrawTargets(const AmdGpu::Regs& regs, u32 mrt_mask,
+                                         const GraphicsPipeline* pipeline) {
     if (!GoWPreparedDrawAuditEnabled()) {
         return;
     }
+    const auto stages = pipeline->GetStages();
+    const auto frag_index = static_cast<u32>(Shader::SwStage::Fragment);
+    const Shader::Info* fs = frag_index < stages.size() ? stages[frag_index] : nullptr;
+    const u64 fs_hash = fs ? fs->pgm_hash : 0;
     auto& audit = GetGoWPreparedDrawAudit();
     std::scoped_lock lock(audit.mutex);
     ++audit.prepared_draws;
@@ -1754,14 +1770,47 @@ static void RecordGoWPreparedDrawTargets(const AmdGpu::Regs& regs, u32 mrt_mask)
             continue;
         }
         has_color = true;
-        auto it = audit.target_counts.find(color.Address());
+        const u64 address = color.Address();
+        auto it = audit.target_counts.find(address);
         if (it != audit.target_counts.end()) {
             ++it->second;
         } else if (audit.target_counts.size() < 512) {
-            audit.target_counts.emplace(color.Address(), 1);
+            audit.target_counts.emplace(address, 1);
         } else {
             audit.truncated = true;
         }
+
+        const auto key = std::make_pair(address, fs_hash);
+        auto frag_it = audit.target_fragments.find(key);
+        if (frag_it == audit.target_fragments.end()) {
+            if (audit.target_fragments.size() >= 512) {
+                audit.fragment_truncated = true;
+                continue;
+            }
+            frag_it = audit.target_fragments.try_emplace(key).first;
+            auto& stats = frag_it->second;
+            if (fs) {
+                stats.buffers = static_cast<u32>(fs->buffers.size());
+                stats.images = static_cast<u32>(fs->images.size());
+                stats.samplers = static_cast<u32>(fs->samplers.size());
+                for (const auto& buffer : fs->buffers) {
+                    stats.invalid_buffers +=
+                        buffer.sharp_fetch.summary ==
+                        decltype(buffer.sharp_fetch.summary)::Invalid;
+                }
+                for (const auto& image : fs->images) {
+                    stats.invalid_images +=
+                        image.sharp_fetch.summary ==
+                        decltype(image.sharp_fetch.summary)::Invalid;
+                }
+                for (const auto& sampler : fs->samplers) {
+                    stats.invalid_samplers +=
+                        sampler.sharp_fetch.summary ==
+                        decltype(sampler.sharp_fetch.summary)::Invalid;
+                }
+            }
+        }
+        ++frag_it->second.prepared_attachment_calls;
     }
     if (has_color) {
         ++audit.prepared_with_color;
@@ -1778,15 +1827,25 @@ void LogGoWGraphicsDrawTotals(u32 frame) {
     LOG_WARNING(Render_Vulkan,
                 "GOW_GRAPHICS_SUMMARY frame={} prepared_draws={} "
                 "prepared_with_color={} prepared_without_color={} "
-                "unique_targets={} target_audit_truncated={}",
+                "unique_targets={} target_audit_truncated={} "
+                "unique_fragment_pairs={} fragment_audit_truncated={}",
                 frame, audit.prepared_draws, audit.prepared_with_color,
                 audit.prepared_without_color, audit.target_counts.size(),
-                audit.truncated);
+                audit.truncated, audit.target_fragments.size(), audit.fragment_truncated);
     for (const auto& [address, calls] : audit.target_counts) {
         LOG_WARNING(Render_Vulkan,
                     "GOW_GRAPHICS_TARGET frame={} address={:#x} "
                     "prepared_attachment_calls={}",
                     frame, address, calls);
+    }
+    for (const auto& [key, stats] : audit.target_fragments) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_GRAPHICS_FRAGMENT frame={} address={:#x} shader={:#x} "
+                    "prepared_attachment_calls={} buffers={} images={} samplers={} "
+                    "invalid_buffers={} invalid_images={} invalid_samplers={}",
+                    frame, key.first, key.second, stats.prepared_attachment_calls,
+                    stats.buffers, stats.images, stats.samplers, stats.invalid_buffers,
+                    stats.invalid_images, stats.invalid_samplers);
     }
 }
 
@@ -1794,7 +1853,7 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
     attachment_feedback_loop = false;
     const auto& regs = liverpool->regs;
     const auto& key = pipeline->GetGraphicsKey();
-    RecordGoWPreparedDrawTargets(regs, key.mrt_mask);
+    RecordGoWPreparedDrawTargets(regs, key.mrt_mask, pipeline);
     RenderState state;
     state.width = instance.GetMaxFramebufferWidth();
     state.height = instance.GetMaxFramebufferHeight();
