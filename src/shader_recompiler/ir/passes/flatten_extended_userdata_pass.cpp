@@ -768,7 +768,39 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
     pass_info.dst_off_dw = NUM_USER_DATA_REGS;
     ASSERT(pass_info.dst_off_dw == info.srt_info.flattened_bufsize_dw);
 
+    // Experimental, shader-scoped dependency-order A/B control.
+    // The earlier trace proved that SGPR6's 24 child reads depend on
+    // ReadConst values created by SGPR8. Visit SGPR8 first only when
+    // specifically requested; retain the original loop for every other shader.
+    const char* root_order_flag = std::getenv("SHADPS4_GOW_SRT_SGPR8_FIRST");
+    const bool root_order_requested =
+        pass_info.gow_diag && root_order_flag && std::strcmp(root_order_flag, "1") == 0;
+    constexpr IR::ScalarReg prerequisite_root = static_cast<IR::ScalarReg>(8);
+    auto priority_it = pass_info.srt_roots.end();
+    if (root_order_requested) {
+        priority_it = pass_info.srt_roots.find(prerequisite_root);
+        LOG_WARNING(Render_Recompiler,
+                    "GOW_SRT_ROOT_ORDER shader={:#x} enabled={} prerequisite_sgpr=8 "
+                    "prerequisite_found={} mode=CONTROLLED_PROOF",
+                    info.pgm_hash, root_order_requested,
+                    priority_it != pass_info.srt_roots.end());
+        if (priority_it != pass_info.srt_roots.end()) {
+            const auto [sgpr_base, root] = *priority_it;
+            if (pass_info.GoWLog()) {
+                LOG_WARNING(Render_Recompiler,
+                            "GOW_SRT_FLATTEN_TRACE shader={:#x} event=ROOT_VISIT "
+                            "sgpr={} node={}",
+                            pass_info.gow_shader, static_cast<u32>(sgpr_base),
+                            pass_info.GoWId(root));
+            }
+            VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
+        }
+    }
     for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
+        if (root_order_requested && priority_it != pass_info.srt_roots.end() &&
+            sgpr_base == prerequisite_root) {
+            continue; // Already visited once, with all offset writes retained.
+        }
         if (pass_info.GoWLog()) {
             LOG_WARNING(Render_Recompiler,
                         "GOW_SRT_FLATTEN_TRACE shader={:#x} event=ROOT_VISIT "
