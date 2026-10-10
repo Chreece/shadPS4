@@ -378,6 +378,12 @@ public:
     [[nodiscard]] Value ImageSampleImplicitLod(const Value& handle, const Value& body,
                                                const F32& bias, const Value& offset,
                                                TextureInstInfo info);
+    [[nodiscard]] Value ImageSampleImplicitLodGhostIndexed(const Value& handle,
+                                                            const U32& record_index,
+                                                            const Value& coords,
+                                                            const F32& bias,
+                                                            const Value& offset,
+                                                            TextureInstInfo info);
 
     [[nodiscard]] Value ImageSampleExplicitLod(const Value& handle, const Value& body,
                                                const F32& lod, const Value& offset,
