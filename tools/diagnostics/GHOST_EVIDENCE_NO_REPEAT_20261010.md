@@ -48,6 +48,11 @@ Source: `ghost-readlane-ir-v2-20261010-012401.tar.gz`, `target-shaders/fs_0x0000
 - **Still unverified**: full C++ compile, SPIR-V validation, all seven live family bindings, no RADV hang, and gameplay beyond PlayStation Studios logo. A bindless slot failing layout/type validation is an experiment failure, NOT a reason to fake/select a static texture.
 - No need to recollect T# slot +64, repeat root SRT reads, re-run DMA toggles, or repeat the Vulkan queue-6 fence A/B experiments.
 
+## 2026-10-10 19:14 — first bindless prototype preflight failure, no gameplay run
+- Archive `ghost-bindless-prototype-20261010-191430.tar.gz`: the proven 7 source hashes, exact manifest and implementation Git ref all PASS. `git apply --check` failed ONLY in `src/shader_recompiler/ir/passes/resource_patching_pass.cpp` and `src/video_core/renderer_vulkan/vk_rasterizer.cpp` because the prototype was authored against the fork Ghost branch `1055147` while the verified local candidate uses older local commit `89af13f6`. No compilation/game launch occurred. Original source unchanged/restored.
+- New source-compatibility controller `diagnostic/ghost-dynamic-textures-prototype-20261010:tools/diagnostics/ghost_dynamic_bindless_threeway_trial.py`, pinned `exact-base=105514765f7c69dbd65a5041f089ca2076e50f0a`, `exact-prototype=0668209bb0d1e35fd990abc189a2141d496c0e10`. For each of ten files, compare the local pinned source with the immutable fork base. If different, use strict **`git merge-file --stdout --diff3`** on scratch sources, preserve local edits, reject conflict before touching/building local source. Exclude downloaded Git pack from the archive. Offline synthetic two-file merge succeeded; real older source may still require manual conflict resolution if it overlaps.
+- DO NOT repeat the all-or-nothing `git apply --check` on that mismatched older checkout. If 3-way conflict, use its captured exact local/base/prototype sources, not another blind A/B.
+
 ## Open questions
 1. Are the 53 correctly assembled 32-byte T# descriptors starting at row+64 valid? The last census mistakenly began at row+80, so its 0/53 result must not be reused.
 2. Which lane-reduced index does the hung draw use, and can the recompiler preserve runtime descriptor semantics (including divergent/control-flow masking)?
