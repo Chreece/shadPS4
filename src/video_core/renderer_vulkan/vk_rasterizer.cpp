@@ -564,14 +564,15 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
 // Every other compute shader remains suppressed.
 // Original GoW shader/grid/resource-count combinations confirmed by the
 // 20261010 passive census. Each has at most ONE execution with original dims.
- // The fourth shader has an actual 2D texture descriptor which is checked
+ // The fourth/fifth shaders have live 2D image descriptors which are checked
  // before binding. All other compute execution remains suppressed.
-struct GoWComputeCanary { u64 shader; u32 x, y, z, buffers, images; };
-static constexpr std::array<GoWComputeCanary, 4> gow_canaries{{
-    {0x6e9a8b98ULL, 2, 1, 1, 2, 0},  // Buffer-only: GPU timeline completed
-    {0xf2d59856ULL, 1, 1, 1, 5, 0},  // Buffer-only: GPU timeline completed
-    {0xf875ea48ULL, 1, 1, 1, 4, 0},  // Buffer-only: GPU timeline completed
-    {0xd80cbb16ULL, 4, 1, 1, 1, 1},  // New: one image, four workgroups
+struct GoWComputeCanary { u64 shader; u32 x, y, z, buffers, images, samplers; };
+static constexpr std::array<GoWComputeCanary, 5> gow_canaries{{
+    {0x6e9a8b98ULL, 2, 1, 1, 2, 0, 0},  // GPU timeline completed, buffers
+    {0xf2d59856ULL, 1, 1, 1, 5, 0, 0},  // GPU timeline completed, buffers
+    {0xf875ea48ULL, 1, 1, 1, 4, 0, 0},  // GPU timeline completed, buffers
+    {0xd80cbb16ULL, 4, 1, 1, 1, 1, 0},  // GPU timeline completed, image write
+    {0xb223c956ULL, 1, 1, 1, 1, 2, 1},  // First two images + one sampler
 }};
 static std::array<std::atomic<bool>, gow_canaries.size()> gow_canary_examined{};
 static std::array<std::atomic<u64>, gow_canaries.size()> gow_canary_ticks{};
@@ -615,7 +616,7 @@ static int SelectGoWComputeCanary(const Shader::Info& cs, u32 x, u32 y, u32 z) {
         }
         const bool shape_ok = cs.buffers.size() == target.buffers &&
                               cs.images.size() == target.images &&
-                              cs.samplers.empty();
+                              cs.samplers.size() == target.samplers;
         bool invalid = false;
         bool unsupported_special = false;
         bool oversized_buffer = false;
@@ -643,7 +644,9 @@ static int SelectGoWComputeCanary(const Shader::Info& cs, u32 x, u32 y, u32 z) {
         u32 image_type = 0;
         u32 image_width = 0;
         u32 image_height = 0;
+        u32 image_count_checked = 0;
         for (const auto& image : cs.images) {
+            ++image_count_checked;
             if (image.sharp_fetch.summary ==
                 decltype(image.sharp_fetch.summary)::Invalid) {
                 image_ok = false;
@@ -657,21 +660,36 @@ static int SelectGoWComputeCanary(const Shader::Info& cs, u32 x, u32 y, u32 z) {
             image_ok &= sharp.Valid() && sharp.Address() != 0 &&
                         sharp.GetType() == AmdGpu::ImageType::Color2D &&
                         sharp.GetDataFmt() != AmdGpu::DataFormat::FormatInvalid &&
-                        image_width <= 4096 && image_height <= 4096 &&
-                        image.NumBindings(cs) == 1;
+                        !image.is_r128 && image_width <= 4096 &&
+                        image_height <= 4096 && image.NumBindings(cs) == 1;
         }
-        const bool permit = shape_ok && image_ok && !cs.uses_dma &&
+        // A sampler is not valid merely because SharpFetch is non-invalid:
+        // reject zeroed or malformed guest sampler descriptors as well.
+        bool sampler_ok = true;
+        u32 sampler_count_checked = 0;
+        for (const auto& s : cs.samplers) {
+            ++sampler_count_checked;
+            if (s.sharp_fetch.summary == decltype(s.sharp_fetch.summary)::Invalid) {
+                sampler_ok = false;
+                continue;
+            }
+            const auto sharp = s.GetSharp(cs);
+            sampler_ok &= static_cast<bool>(sharp) && sharp.Valid();
+        }
+        const bool permit = shape_ok && image_ok && sampler_ok && !cs.uses_dma &&
                             !cs.translation_failed && !invalid &&
                             !unsupported_special && !oversized_buffer;
         LOG_WARNING(Render_Vulkan,
                     "GOW_COMPUTE_CANARY_CANDIDATE shader={:#x} grid={}x{}x{} "
                     "buffers={} images={} samplers={} dma={} invalid={} "
                     "unsupported_special={} oversized_buffer={} shape_ok={} "
-                    "image_ok={} image_type={} width={} height={} image_written={} permit={}",
+                    "image_ok={} image_type={} width={} height={} image_written={} "
+                    "image_count_checked={} sampler_ok={} sampler_count_checked={} permit={}",
                     cs.pgm_hash, x, y, z, cs.buffers.size(), cs.images.size(),
                     cs.samplers.size(), cs.uses_dma, invalid, unsupported_special,
                     oversized_buffer, shape_ok, image_ok, image_type,
-                    image_width, image_height, image_written, permit);
+                    image_width, image_height, image_written, image_count_checked,
+                    sampler_ok, sampler_count_checked, permit);
         return permit ? static_cast<int>(i) : -1;
     }
     return -1;
