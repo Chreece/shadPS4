@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <map>
 
 #include "common/debug.h"
 #include "core/debug_state.h"
@@ -1717,10 +1718,83 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     }
 }
 
+// Read-only, opt-in graphics census. Count the renderer's accepted draw setups
+// without patching either direct or indirect command emission. Called only
+// after successful graphics pipeline/resource binding.
+struct GoWPreparedDrawAudit {
+    std::mutex mutex;
+    u64 prepared_draws{};
+    u64 prepared_with_color{};
+    u64 prepared_without_color{};
+    bool truncated{};
+    std::map<u64, u64> target_counts;
+};
+static GoWPreparedDrawAudit& GetGoWPreparedDrawAudit() {
+    static GoWPreparedDrawAudit audit{};
+    return audit;
+}
+static bool GoWPreparedDrawAuditEnabled() {
+    const char* flag = std::getenv("SHADPS4_GOW_GRAPHICS_AUDIT");
+    return flag && std::strcmp(flag, "1") == 0;
+}
+static void RecordGoWPreparedDrawTargets(const AmdGpu::Regs& regs, u32 mrt_mask) {
+    if (!GoWPreparedDrawAuditEnabled()) {
+        return;
+    }
+    auto& audit = GetGoWPreparedDrawAudit();
+    std::scoped_lock lock(audit.mutex);
+    ++audit.prepared_draws;
+    bool has_color = false;
+    const bool disabled = regs.color_control.mode ==
+                          AmdGpu::ColorControl::OperationMode::Disable;
+    for (u32 slot = 0; slot < AmdGpu::NUM_COLOR_BUFFERS; ++slot) {
+        const auto& color = regs.color_buffers[slot];
+        if (disabled || !color || !(mrt_mask & (1u << slot)) ||
+            !regs.color_target_mask.GetMask(slot)) {
+            continue;
+        }
+        has_color = true;
+        auto it = audit.target_counts.find(color.Address());
+        if (it != audit.target_counts.end()) {
+            ++it->second;
+        } else if (audit.target_counts.size() < 512) {
+            audit.target_counts.emplace(color.Address(), 1);
+        } else {
+            audit.truncated = true;
+        }
+    }
+    if (has_color) {
+        ++audit.prepared_with_color;
+    } else {
+        ++audit.prepared_without_color;
+    }
+}
+void LogGoWGraphicsDrawTotals(u32 frame) {
+    if (!GoWPreparedDrawAuditEnabled() || frame > 6) {
+        return;
+    }
+    auto& audit = GetGoWPreparedDrawAudit();
+    std::scoped_lock lock(audit.mutex);
+    LOG_WARNING(Render_Vulkan,
+                "GOW_GRAPHICS_SUMMARY frame={} prepared_draws={} "
+                "prepared_with_color={} prepared_without_color={} "
+                "unique_targets={} target_audit_truncated={}",
+                frame, audit.prepared_draws, audit.prepared_with_color,
+                audit.prepared_without_color, audit.target_counts.size(),
+                audit.truncated);
+    for (const auto& [address, calls] : audit.target_counts) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_GRAPHICS_TARGET frame={} address={:#x} "
+                    "prepared_attachment_calls={}",
+                    frame, address, calls);
+    }
+}
+
 RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
     attachment_feedback_loop = false;
     const auto& regs = liverpool->regs;
     const auto& key = pipeline->GetGraphicsKey();
+    RecordGoWPreparedDrawTargets(regs, key.mrt_mask);
     RenderState state;
     state.width = instance.GetMaxFramebufferWidth();
     state.height = instance.GetMaxFramebufferHeight();
