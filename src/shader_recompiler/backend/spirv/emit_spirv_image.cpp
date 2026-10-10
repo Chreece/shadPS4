@@ -160,6 +160,31 @@ Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id c
     return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
 }
 
+Id EmitImageSampleImplicitLodGhostIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle,
+                                          Id record_index, Id coords, Id bias,
+                                          const IR::Value& offset) {
+    const auto& texture = ctx.images[handle & 0xFFFF];
+    ASSERT(ctx.info.images[handle & 0xFFFF].ghost_dynamic_image_count == 53);
+    // The original shader's lane-reduction result selects the texture.
+    // No forced shader loop exits, fixed-row substitution or host-side guessing.
+    ctx.Decorate(record_index, spv::Decoration::NonUniformEXT);
+    const Id pointer_type = ctx.TypePointer(spv::StorageClass::UniformConstant,
+                                           texture.image_type);
+    const Id pointer = ctx.OpAccessChain(pointer_type, texture.id, record_index);
+    ctx.Decorate(pointer, spv::Decoration::NonUniformEXT);
+    const Id image = ctx.OpLoad(texture.image_type, pointer);
+    ctx.Decorate(image, spv::Decoration::NonUniformEXT);
+    const Id sampler = ctx.OpLoad(ctx.sampler_type, ctx.samplers[handle >> 16]);
+    const Id sampled_image = ctx.OpSampledImage(texture.sampled_type, image, sampler);
+    const Id fixed_coords = FixImageCoords<true>(ctx, coords, texture.view_type);
+    ImageOperands operands;
+    operands.Add(spv::ImageOperandsMask::Bias, bias);
+    operands.AddOffset(ctx, texture.view_type, offset);
+    const Id sample = ctx.OpImageSampleImplicitLod(texture.data_types->Get(4),
+        sampled_image, fixed_coords, operands.mask, operands.operands);
+    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
+}
+
 Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
                               const IR::Value& offset) {
     const auto& texture = ctx.images[handle & 0xFFFF];
