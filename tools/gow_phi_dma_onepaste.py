@@ -290,7 +290,7 @@ def add_verified_draw_audit_to_host(result):
     render_part = code[render_start:]
     render_part = one(
         render_part, "        image->usage.render_target = 1u;\n",
-        rt_body, "resolved GPU render-target metadata")
+        rt_body + "\n", "resolved GPU render-target metadata")
     code = code[:render_start] + render_part
 
     # Additional safety invariant: EVERY original line must remain in order,
