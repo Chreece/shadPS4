@@ -562,13 +562,16 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
 // reported invalid resources. This optional probe admits at most one dispatch,
 // and ONLY with fully resolved metadata, small buffers and a small grid.
 // Every other compute shader remains suppressed.
-// Original GoW shader/grid and buffer-count combinations confirmed by the
+// Original GoW shader/grid/resource-count combinations confirmed by the
 // 20261010 passive census. Each has at most ONE execution with original dims.
-struct GoWComputeCanary { u64 shader; u32 x, y, z, buffers; };
-static constexpr std::array<GoWComputeCanary, 3> gow_canaries{{
-    {0x6e9a8b98ULL, 2, 1, 1, 2},  // Timeline completed in prior trial
-    {0xf2d59856ULL, 1, 1, 1, 5},
-    {0xf875ea48ULL, 1, 1, 1, 4},
+ // The fourth shader has an actual 2D texture descriptor which is checked
+ // before binding. All other compute execution remains suppressed.
+struct GoWComputeCanary { u64 shader; u32 x, y, z, buffers, images; };
+static constexpr std::array<GoWComputeCanary, 4> gow_canaries{{
+    {0x6e9a8b98ULL, 2, 1, 1, 2, 0},  // Buffer-only: GPU timeline completed
+    {0xf2d59856ULL, 1, 1, 1, 5, 0},  // Buffer-only: GPU timeline completed
+    {0xf875ea48ULL, 1, 1, 1, 4, 0},  // Buffer-only: GPU timeline completed
+    {0xd80cbb16ULL, 4, 1, 1, 1, 1},  // New: one image, four workgroups
 }};
 static std::array<std::atomic<bool>, gow_canaries.size()> gow_canary_examined{};
 static std::array<std::atomic<u64>, gow_canaries.size()> gow_canary_ticks{};
@@ -611,7 +614,8 @@ static int SelectGoWComputeCanary(const Shader::Info& cs, u32 x, u32 y, u32 z) {
             return -1;
         }
         const bool shape_ok = cs.buffers.size() == target.buffers &&
-                              cs.images.empty() && cs.samplers.empty();
+                              cs.images.size() == target.images &&
+                              cs.samplers.empty();
         bool invalid = false;
         bool unsupported_special = false;
         bool oversized_buffer = false;
@@ -631,15 +635,43 @@ static int SelectGoWComputeCanary(const Shader::Info& cs, u32 x, u32 y, u32 z) {
                 oversized_buffer = true;
             }
         }
-        const bool permit = shape_ok && !cs.uses_dma && !cs.translation_failed &&
-                            !invalid && !unsupported_special && !oversized_buffer;
+        // Read-only guard for the new image path. The PS4 sharp must identify
+        // an actual backed guest image, not the default null descriptor.
+        // Restrict this first test to a single ordinary 2D image.
+        bool image_ok = true;
+        bool image_written = false;
+        u32 image_type = 0;
+        u32 image_width = 0;
+        u32 image_height = 0;
+        for (const auto& image : cs.images) {
+            if (image.sharp_fetch.summary ==
+                decltype(image.sharp_fetch.summary)::Invalid) {
+                image_ok = false;
+                continue;
+            }
+            const auto sharp = image.GetSharp(cs);
+            image_written = image.is_written;
+            image_type = static_cast<u32>(sharp.GetType());
+            image_width = static_cast<u32>(sharp.width) + 1;
+            image_height = static_cast<u32>(sharp.height) + 1;
+            image_ok &= sharp.Valid() && sharp.Address() != 0 &&
+                        sharp.GetType() == AmdGpu::ImageType::Color2D &&
+                        sharp.GetDataFmt() != AmdGpu::DataFormat::FormatInvalid &&
+                        image_width <= 4096 && image_height <= 4096 &&
+                        image.NumBindings(cs) == 1;
+        }
+        const bool permit = shape_ok && image_ok && !cs.uses_dma &&
+                            !cs.translation_failed && !invalid &&
+                            !unsupported_special && !oversized_buffer;
         LOG_WARNING(Render_Vulkan,
                     "GOW_COMPUTE_CANARY_CANDIDATE shader={:#x} grid={}x{}x{} "
                     "buffers={} images={} samplers={} dma={} invalid={} "
-                    "unsupported_special={} oversized_buffer={} shape_ok={} permit={}",
+                    "unsupported_special={} oversized_buffer={} shape_ok={} "
+                    "image_ok={} image_type={} width={} height={} image_written={} permit={}",
                     cs.pgm_hash, x, y, z, cs.buffers.size(), cs.images.size(),
-                    cs.samplers.size(), cs.uses_dma, invalid,
-                    unsupported_special, oversized_buffer, shape_ok, permit);
+                    cs.samplers.size(), cs.uses_dma, invalid, unsupported_special,
+                    oversized_buffer, shape_ok, image_ok, image_type,
+                    image_width, image_height, image_written, permit);
         return permit ? static_cast<int>(i) : -1;
     }
     return -1;
