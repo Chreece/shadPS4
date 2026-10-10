@@ -567,12 +567,13 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
  // The fourth/fifth shaders have live 2D image descriptors which are checked
  // before binding. All other compute execution remains suppressed.
 struct GoWComputeCanary { u64 shader; u32 x, y, z, buffers, images, samplers; };
-static constexpr std::array<GoWComputeCanary, 5> gow_canaries{{
-    {0x6e9a8b98ULL, 2, 1, 1, 2, 0, 0},  // GPU timeline completed, buffers
-    {0xf2d59856ULL, 1, 1, 1, 5, 0, 0},  // GPU timeline completed, buffers
-    {0xf875ea48ULL, 1, 1, 1, 4, 0, 0},  // GPU timeline completed, buffers
-    {0xd80cbb16ULL, 4, 1, 1, 1, 1, 0},  // GPU timeline completed, image write
-    {0xb223c956ULL, 1, 1, 1, 1, 2, 1},  // First two images + one sampler
+static constexpr std::array<GoWComputeCanary, 6> gow_canaries{{
+    {0x6e9a8b98ULL, 2, 1, 1, 2, 0, 0},   // GPU timeline completed, buffers
+    {0xf2d59856ULL, 1, 1, 1, 5, 0, 0},   // GPU timeline completed, buffers
+    {0xf875ea48ULL, 1, 1, 1, 4, 0, 0},   // GPU timeline completed, buffers
+    {0xd80cbb16ULL, 4, 1, 1, 1, 1, 0},   // GPU output changed, A/B control passed
+    {0xb223c956ULL, 1, 1, 1, 1, 2, 1},   // Two images + one sampler, GPU complete
+    {0x3b8b91e6ULL, 15, 9, 1, 1, 2, 0},  // 135-group image workload; new test
 }};
 static std::array<std::atomic<bool>, gow_canaries.size()> gow_canary_examined{};
 static std::array<std::atomic<u64>, gow_canaries.size()> gow_canary_ticks{};
@@ -896,7 +897,8 @@ void Rasterizer::DispatchDirect() {
     const bool enable_delta = delta_env && std::strcmp(delta_env, "1") == 0 &&
                               canary_idx >= 0 &&
                               (cs.pgm_hash == 0xd80cbb16ULL ||
-                               cs.pgm_hash == 0xb223c956ULL);
+                               cs.pgm_hash == 0xb223c956ULL ||
+                               cs.pgm_hash == 0x3b8b91e6ULL);
     if (enable_delta) {
         bool specific_skip_logged = false;
         // BindTextures has already resolved these image IDs and Vulkan layouts.
@@ -910,17 +912,22 @@ void Rasterizer::DispatchDirect() {
             const auto& info = gpu_image.info;
             const u64 bytes_per_pixel = info.num_bits / 8u;
             const u64 bytes = u64(info.pitch) * info.size.height * bytes_per_pixel;
+            // The 135-workgroup 2D output may use a larger framebuffer; keep
+            // the proven tiny readback limits unchanged for other shaders.
+            const bool medium_135 = cs.pgm_hash == 0x3b8b91e6ULL;
+            const u32 max_side = medium_135 ? 2048u : 512u;
+            const u64 max_bytes = medium_135 ? 4ull * 1024 * 1024 : 256ull * 1024;
             const bool safe = gpu_image.backing != nullptr &&
                               info.pixel_format != vk::Format::eUndefined &&
                               !info.props.is_block && !info.props.is_depth &&
                               info.num_samples == 1 &&
                               info.resources.layers == 1 && info.size.depth == 1 &&
-                              info.size.width > 0 && info.size.width <= 512 &&
-                              info.size.height > 0 && info.size.height <= 512 &&
+                              info.size.width > 0 && info.size.width <= max_side &&
+                              info.size.height > 0 && info.size.height <= max_side &&
                               info.pitch >= info.size.width &&
                               (info.num_bits == 8 || info.num_bits == 16 ||
                                info.num_bits == 32 || info.num_bits == 64) &&
-                              bytes > 0 && bytes <= 256 * 1024 &&
+                              bytes > 0 && bytes <= max_bytes &&
                               desc.view_info.range.base.level == 0 &&
                               desc.view_info.range.base.layer == 0;
             if (!safe) {
@@ -975,7 +982,7 @@ void Rasterizer::DispatchDirect() {
                         "GOW_IMAGE_OUTPUT_CAPTURE shader={:#x} bytes={} "
                         "width={} height={} result=BEFORE_SNAPSHOTTED",
                         cs.pgm_hash, bytes, info.size.width, info.size.height);
-            break;  // One image and at most 256 KiB per canary.
+            break;  // At most one GPU image, strictly size-limited per shader.
         }
         if (!image_delta.ready && !specific_skip_logged) {
             LOG_WARNING(Render_Vulkan,
