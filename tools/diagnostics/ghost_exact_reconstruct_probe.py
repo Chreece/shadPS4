@@ -38,6 +38,7 @@ BACKUP={}
 BINARY_COPY=None
 SOURCES_STAGED=False
 BUILD_OBJECTS_RESTORED=False
+BUILD_RESTORE_ATTEMPTED=False
 
 def sha_bytes(b):return hashlib.sha256(b).hexdigest()
 def sha_file(p):
@@ -230,12 +231,16 @@ def restore_binary():
   S['build_binary_restored']=sha_file(BUILD/'shadps4')==S.get('build_sha_before')
 
 def restore_build_state():
- global SOURCES_STAGED, BUILD_OBJECTS_RESTORED
+ global SOURCES_STAGED, BUILD_OBJECTS_RESTORED, BUILD_RESTORE_ATTEMPTED
  # Restoring only the build executable leaves instrumented .o files in CMake's
  # build tree. Force a rebuild from the pristine sources before restoring its
  # original executable. Report any failure instead of claiming a clean build.
  if SOURCES_STAGED:
   restore_source()
+  if BUILD_RESTORE_ATTEMPTED:
+   restore_binary()
+   raise RuntimeError('Build object restoration already attempted; see restore-build.log')
+  BUILD_RESTORE_ATTEMPTED=True
   for name in BACKUP:
    os.utime(SRC/name,None)
   code=log_run(['cmake','--build',str(BUILD),'--target','shadps4',
