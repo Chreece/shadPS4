@@ -1,5 +1,5 @@
 # Ghost of Tsushima (CUSA11456) — evidence ledger and no-repeat contract
-Last updated: 2026-10-10. Scope: Ghost ONLY, not God of War Ragnarök/PES.
+Last updated: 2026-10-10 (18:04 follow-up, first-vs-second-half SRT correction). Scope: Ghost ONLY, not God of War Ragnarök/PES.
 
 ## Proven baseline
 - Debian 13, i9-11900K, AMD RX 7900 XTX, Mesa RADV. shadPS4 Ghost executable `/home/chreece/Applications/shadps4-ghost/fence-readback-candidate/shadps4` SHA256 `e294cc6b5fabb7c41b7f7caca20ad14e47993bd0e9f1a774f341b35846fa2fae`, reported `v0.19.0-71-g89af13f6`.
@@ -24,13 +24,14 @@ Source: `ghost-readlane-ir-v2-20261010-012401.tar.gz`, `target-shaders/fs_0x0000
 - `%1609 = CompositeConstructU32x4 %79,%80,%81,%82` => guest indirect buffer descriptor.
 - `%1322 = UMin32(ReadLane(...,31), ReadLane(...,63))` selects the record index.
 - `%1582 = IMul32 %1322, #340`; `%1597 = IAdd32 %1582, #80`; `%1608 = ShiftRightLogical32 %1597, #2`; `%1610 = ReadConstBuffer(sharp_source=true, flatbuf_off_dw=0) %1609,%1608`.
-- Dynamic texture address = **indirect buffer base + selected_index*340 + 80**. Image2 `SharpFetch::Invalid` is consistent with 112 `ReadLane`-dependent sharp loads that cannot be statically flattened.
+- **Correct 32-byte image T# starts at indirect buffer + selected_index*340 + 64**, with words 0–3 read at +64 and words 4–7 read at +80. The IR constructs `ImageHandle` from both `CompositeConstructU32x4` halves (`%1687/%1688`). Image2 `SharpFetch::Invalid` is consistent with 112 `ReadLane`-dependent sharp loads that cannot be statically flattened.
 - Runtime `ghost-srt-origin-20261010-172653.tar.gz` reports resource buffer index1: `base=0x1500047a00` (samples1–4), `base=0x150136bf00` (samples7–10), **stride340 size18020 = 53 records**, fetch valid. These are real buffers; neither address is the root SRT address.
-- Next NEW evidence: read **indirect buffer table at base + row*340 + 80** for 53 rows (two observed groups), and cross-check root+0x180's 16-byte buffer descriptor against bound buffer1. Never assume selected index known: it is lane-dependent on GPU. Safely sample mapped guest memory via read-only `pread("/proc/self/mem")`, no guest writes or shader substitutions. Only execute if static source preflight and selector/layout checks pass.
+- Oct 10 18:01 `ghost-indirect-table-20261010-180114.tar.gz`: proven root SRT+0x180 buffer descriptor **matches** the shader-bound buffer1. All 53 records at record+80 were mapped, nonzero and readable; scanning them as complete T# yielded 0/53 valid **because this was only the last 16 bytes of each descriptor combined with unrelated following bytes**. This is an invalid diagnostic interpretation, NOT evidence the guest has 53 invalid textures. Never repeat a census beginning at +80.
+- Next truly NEW evidence: safely read the **complete 32-byte T# starting at bound buffer1 + row*340 + 64**, across all 53 rows; stop after one full table (the second observed table isn't required to correct this 16-byte offset error). Do not assume which lane-reduced row is selected or synthesize an image.
 - If rows are valid but shadPS4 resolves image2 to null, upstream work must address runtime bindless/dynamic resource selection, not synthesize a static T#. If rows invalid, trace the selected index and producer. Do not claim the invalid image CAUSES GPU hang until experimentally shown.
 
 ## Open questions
-1. Are candidate indirect-table T# descriptors valid across actual 53 slots in each of the two buffers?
+1. Are the 53 correctly assembled 32-byte T# descriptors starting at row+64 valid? The last census mistakenly began at row+80, so its 0/53 result must not be reused.
 2. Which lane-reduced index does the hung draw use, and can the recompiler preserve runtime descriptor semantics (including divergent/control-flow masking)?
 3. Does accurately resolving that resource permit GPU completion AND transition beyond PlayStation Studios logo, without modifying original shader loop semantics?
 
