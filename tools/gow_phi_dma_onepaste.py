@@ -2061,7 +2061,7 @@ GOW_EARLY_IMAGE_RASTER_SOURCE = r'''    // Stage23: the first two image-using co
                 const u64 address = safe ? sharp.base_address : 0;
                 const u64 bytes = safe ? sharp.GetSize() : 0;
                 const bool bounds = safe && sharp.Valid() && bytes &&
-                                    address <= UINT64_MAX - bytes;
+                                    address <= std::numeric_limits<u64>::max() - bytes;
                 const auto overlaps = [&](u64 start) {
                     return bounds && address < start + ImageBytes &&
                            start < address + bytes;
@@ -3443,8 +3443,8 @@ def trial_run(binary, temp, result):
     spv_targets = {"0xc605392", "0x5367baa7"}
     for shader in sorted(spv_targets):
         source_file = temp / "gow_early_spv" / (str(int(shader, 16)) + ".spv")
-        if not source_file.is_file() or source_file.is_symlink() or
-                source_file.stat().st_size > 2000000:
+        if (not source_file.is_file() or source_file.is_symlink() or
+                source_file.stat().st_size > 2000000):
             continue
         contents = source_file.read_bytes()
         valid = (len(contents) >= 20 and len(contents) % 4 == 0 and
