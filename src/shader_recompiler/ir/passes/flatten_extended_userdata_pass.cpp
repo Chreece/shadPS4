@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <unordered_map>
+#include <cstdlib>
+#include <cstring>
 #include <boost/container/flat_map.hpp>
 #include <queue>
 #include <xbyak/xbyak.h>
@@ -169,6 +171,33 @@ struct PassInfo {
 
     // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
+
+    // GoW-targeted read-only instrumentation. IDs identify nodes within
+    // this shader compilation without logging host pointers or guest memory.
+    bool gow_diag{};
+    u64 gow_shader{};
+    u32 gow_events{};
+    u32 gow_next_id{};
+    std::unordered_map<const IR::Inst*, u32> gow_ids;
+
+    u32 GoWId(const IR::Inst* inst) {
+        if (!gow_diag || !inst) {
+            return 0;
+        }
+        const auto [it, inserted] = gow_ids.try_emplace(inst, 0);
+        if (inserted) {
+            it->second = ++gow_next_id;
+        }
+        return it->second;
+    }
+
+    bool GoWLog() {
+        if (!gow_diag || gow_events >= 256) {
+            return false;
+        }
+        ++gow_events;
+        return true;
+    }
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
         auto it = pointer_uses.find(inst);
@@ -541,6 +570,13 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
             c.mov(reg, ptr[rsi + (offset << 2)]);
             return true;
         }
+        if (pass_info.GoWLog()) {
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_SRT_FLATTEN_TRACE shader={:#x} event=DEPENDENCY_ZERO "
+                        "node={} opcode={}",
+                        pass_info.gow_shader, pass_info.GoWId(inst),
+                        IR::NameOf(inst->GetOpcode()));
+        }
         return false;
     case IR::Opcode::IAdd32:
         ABORT_ON_FAILURE(EmitComputeOffsetIAdd32(c, reg, pass_info, inst));
@@ -582,6 +618,13 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
         ABORT_ON_FAILURE(EmitComputeOffsetFindILsb32(c, reg, pass_info, inst));
         return true;
     default:
+        if (pass_info.GoWLog()) {
+            LOG_WARNING(Render_Recompiler,
+                        "GOW_SRT_FLATTEN_TRACE shader={:#x} event=UNSUPPORTED_OFFSET "
+                        "node={} opcode={}",
+                        pass_info.gow_shader, pass_info.GoWId(inst),
+                        IR::NameOf(inst->GetOpcode()));
+        }
         LOG_ERROR(Render_Recompiler, "Unexpected instruction for offset computation, {}",
                   magic_enum::enum_name(inst->GetOpcode()));
         return false;
