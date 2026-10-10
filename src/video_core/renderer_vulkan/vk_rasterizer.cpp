@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <array>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
@@ -438,13 +439,16 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
         u32 image_offset_bytes;
     };
     constexpr TableLayout layouts[] = {{"A", 776, 544}, {"B", 264, 3536}};
+    static_assert(sizeof(AmdGpu::Image) == 32, "Unexpected PS4 image descriptor size");
     for (const auto& layout : layouts) {
-        u32 readable = 0;
+        u32 sampled = 0;
+        u32 populated = 0;
         u32 valid = 0;
         u32 first_type = 0;
         bool first_type_set = false;
         bool same_type = true;
-        u32 readable_mask = 0;
+        u32 sampled_mask = 0;
+        u32 populated_mask = 0;
         u32 valid_mask = 0;
         for (u32 index = 0; index < 32; ++index) {
             const u64 relative = u64(index) * layout.stride_bytes +
@@ -454,20 +458,24 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
                 continue;
             }
             const VAddr address = srt_base + relative;
-            // Check mapping/permissions before touching PS4 memory. The sparse
-            // backing copier fills holes with zero and never dereferences the
-            // guest address as a raw host pointer.
-            if (!memory->IsAccessibleRange(address, sizeof(AmdGpu::Image),
-                                           Core::MemoryProt::CpuRead) &&
-                !memory->IsAccessibleRange(address, sizeof(AmdGpu::Image),
-                                           Core::MemoryProt::GpuRead)) {
+            // CopySparseMemory exists in the verified 20261009 source and zero-
+            // fills unbacked guest pages. No direct guest dereference or new
+            // MemoryManager API is required for this read-only census.
+            std::array<u8, sizeof(AmdGpu::Image)> raw{};
+            memory->CopySparseMemory(address, raw.data(), raw.size());
+            ++sampled;
+            sampled_mask |= (1u << index);
+            bool is_populated = false;
+            for (u8 value : raw) {
+                is_populated |= value != 0;
+            }
+            if (!is_populated) {
                 continue;
             }
-            ++readable;
-            readable_mask |= (1u << index);
+            ++populated;
+            populated_mask |= (1u << index);
             AmdGpu::Image image{};
-            memory->CopySparseMemory(address, reinterpret_cast<u8*>(&image),
-                                     sizeof(image));
+            std::memcpy(&image, raw.data(), sizeof(image));
             if (!image.Valid() || image.GetType() == AmdGpu::ImageType::Invalid) {
                 continue;
             }
@@ -484,11 +492,12 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
         }
         LOG_WARNING(Render_Vulkan,
                     "GOW_IMAGE_TABLE_AUDIT group={} stride={} image_offset={} slots=32 "
-                    "readable={} valid={} readable_mask={:#010x} valid_mask={:#010x} "
+                    "sampled={} populated={} valid={} sampled_mask={:#010x} "
+                    "populated_mask={:#010x} valid_mask={:#010x} "
                     "uniform_type={} image_type={} dispatch=SKIPPED",
                     layout.label, layout.stride_bytes, layout.image_offset_bytes,
-                    readable, valid, readable_mask, valid_mask, same_type,
-                    first_type_set ? first_type : 0u);
+                    sampled, populated, valid, sampled_mask, populated_mask,
+                    valid_mask, same_type, first_type_set ? first_type : 0u);
     }
 }
 
