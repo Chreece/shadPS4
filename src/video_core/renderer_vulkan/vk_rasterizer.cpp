@@ -767,6 +767,50 @@ static void LogGoWComputeCensus(const Shader::Info& info, u32 x, u32 y, u32 z) {
                 info.uses_dma, gds, shared, small);
 }
 
+// Image output proof: for approved small image-writing canaries, read a
+// bounded color image into two independent host-cached staging buffers,
+// immediately before/after ONE original dispatch. Readbacks are ordered on
+// the normal GPU command stream; deferred CPU comparison runs only after the
+// scheduler's GPU timeline signals. This proves a byte difference, NOT that
+// the emulated game's pixels are correct.
+struct GoWImageOutputDelta {
+    VideoCore::Image* image{};
+    StagingBufferRef before{};
+    StagingBufferRef after{};
+    vk::BufferImageCopy region{};
+    u64 bytes{};
+    u64 shader{};
+    bool ready{};
+};
+
+static void EvaluateGoWImageOutputDelta(GoWImageOutputDelta capture,
+                                       StagingBufferPool* staging) {
+    capture.before.Invalidate();
+    capture.after.Invalidate();
+    u64 before_hash = 14695981039346656037ULL;
+    u64 after_hash = 14695981039346656037ULL;
+    u64 changed = 0;
+    u64 nonzero_before = 0;
+    u64 nonzero_after = 0;
+    for (u64 i = 0; i < capture.bytes; ++i) {
+        const u8 b = capture.before.mapped[i];
+        const u8 a = capture.after.mapped[i];
+        before_hash = (before_hash ^ b) * 1099511628211ULL;
+        after_hash = (after_hash ^ a) * 1099511628211ULL;
+        changed += (a != b);
+        nonzero_before += (b != 0);
+        nonzero_after += (a != 0);
+    }
+    LOG_WARNING(Render_Vulkan,
+                "GOW_IMAGE_OUTPUT_DELTA shader={:#x} bytes={} changed_bytes={} "
+                "before_hash={:#018x} after_hash={:#018x} "
+                "nonzero_before={} nonzero_after={} result=GPU_READBACK_COMPLETE",
+                capture.shader, capture.bytes, changed, before_hash, after_hash,
+                nonzero_before, nonzero_after);
+    staging->FreeDeferred(capture.before);
+    staging->FreeDeferred(capture.after);
+}
+
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
 
@@ -839,12 +883,115 @@ void Rasterizer::DispatchDirect() {
     }
 
     scheduler.EndRendering();
+
+    GoWImageOutputDelta image_delta{};
+    const char* delta_env = std::getenv("SHADPS4_GOW_IMAGE_OUTPUT_DELTA");
+    const bool enable_delta = delta_env && std::strcmp(delta_env, "1") == 0 &&
+                              canary_idx >= 0 &&
+                              (cs.pgm_hash == 0xd80cbb16ULL ||
+                               cs.pgm_hash == 0xb223c956ULL);
+    if (enable_delta) {
+        // BindTextures has already resolved these image IDs and Vulkan layouts.
+        // All earlier eligibility checks require ordinary, resolved Color2D
+        // images with a single descriptor binding.
+        for (const auto& [image_id, desc] : image_bindings) {
+            if (!image_id || desc.type != VideoCore::TextureCache::BindingType::Storage) {
+                continue;
+            }
+            auto& gpu_image = texture_cache.GetImage(image_id);
+            const auto& info = gpu_image.info;
+            const u64 bytes_per_pixel = info.num_bits / 8u;
+            const u64 bytes = u64(info.pitch) * info.size.height * bytes_per_pixel;
+            const bool safe = gpu_image.backing != nullptr &&
+                              info.pixel_format != vk::Format::eUndefined &&
+                              !info.props.is_block && !info.props.is_depth &&
+                              info.num_samples == 1 &&
+                              info.resources.layers == 1 && info.size.depth == 1 &&
+                              info.size.width > 0 && info.size.width <= 512 &&
+                              info.size.height > 0 && info.size.height <= 512 &&
+                              info.pitch >= info.size.width &&
+                              (info.num_bits == 8 || info.num_bits == 16 ||
+                               info.num_bits == 32 || info.num_bits == 64) &&
+                              bytes > 0 && bytes <= 256 * 1024 &&
+                              desc.view_info.range.base.level == 0 &&
+                              desc.view_info.range.base.layer == 0;
+            if (!safe) {
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_IMAGE_OUTPUT_SKIP shader={:#x} reason=IMAGE_LAYOUT "
+                            "width={} height={} pitch={} bpp={} bytes={}",
+                            cs.pgm_hash, info.size.width, info.size.height,
+                            info.pitch, info.num_bits, bytes);
+                break;
+            }
+            auto& staging = runtime.GetStagingPool();
+            const auto before = staging.Request(bytes, VideoCore::MemoryType::HostCached,
+                                                16, true);
+            const auto after = staging.Request(bytes, VideoCore::MemoryType::HostCached,
+                                               16, true);
+            if (!before.mapped || !after.mapped) {
+                LOG_WARNING(Render_Vulkan,
+                            "GOW_IMAGE_OUTPUT_SKIP shader={:#x} reason=STAGING_UNMAPPED",
+                            cs.pgm_hash);
+                staging.FreeDeferred(before);
+                staging.FreeDeferred(after);
+                break;
+            }
+            const vk::BufferImageCopy before_copy = {
+                .bufferOffset = before.offset,
+                .bufferRowLength = info.pitch,
+                .bufferImageHeight = info.size.height,
+                .imageSubresource = {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .mipLevel = 0,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+                .imageOffset = {0, 0, 0},
+                .imageExtent = {info.size.width, info.size.height, 1},
+            };
+            // Snapshot the GPU's true image bytes, then transition back to the
+            // writable Vulkan descriptor layout before the original dispatch.
+            runtime.DownloadImage(&gpu_image, before.buffer,
+                                  std::span{&before_copy, 1});
+            runtime.Transit(&gpu_image, vk::ImageLayout::eGeneral,
+                            vk::PipelineStageFlagBits2::eAllCommands,
+                            vk::AccessFlagBits2::eShaderRead |
+                                vk::AccessFlagBits2::eShaderWrite,
+                            desc.view_info.range);
+            runtime.FlushBarriers();
+            image_delta = {&gpu_image, before, after, before_copy, bytes,
+                           cs.pgm_hash, true};
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_IMAGE_OUTPUT_CAPTURE shader={:#x} bytes={} "
+                        "width={} height={} result=BEFORE_SNAPSHOTTED",
+                        cs.pgm_hash, bytes, info.size.width, info.size.height);
+            break;  // One image and at most 256 KiB per canary.
+        }
+        if (!image_delta.ready) {
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_IMAGE_OUTPUT_SKIP shader={:#x} reason=NO_SUITABLE_STORAGE_IMAGE",
+                        cs.pgm_hash);
+        }
+    }
+
     pipeline->BindResources(set_writes, push_data);
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     DebugState.IncDispatch();
+    if (image_delta.ready) {
+        auto after_copy = image_delta.region;
+        after_copy.bufferOffset = image_delta.after.offset;
+        runtime.DownloadImage(image_delta.image, image_delta.after.buffer,
+                              std::span{&after_copy, 1});
+        // Same scheduler timeline as the image copy, no forced queue submit,
+        // and no CPU wait. The priority callback owns both deferred buffers.
+        scheduler.DeferPriorityOperation(
+            [capture = image_delta, pool = &runtime.GetStagingPool()] {
+                EvaluateGoWImageOutputDelta(capture, pool);
+            });
+    }
     if (canary_idx >= 0) {
         LOG_WARNING(Render_Vulkan,
                     "GOW_COMPUTE_CANARY_RESULT shader={:#x} result=SUBMITTED grid={}x{}x{}",
