@@ -10,7 +10,7 @@ SRC=H/'.cache/shadps4-ghost-fullstack-20261008-131621/source'
 BUILD=H/'.cache/shadps4-ghost-isolated/build'
 PIN='89af13f6d306ebc24396b4e8e207688537cdc28b'
 FILES={
- 'src/video_core/renderer_vulkan/vk_runtime.cpp':('d870176003d773e742df1d16adc08fd2ca69e931a3a777af4674a071850d5198','30a25a11ef8e506b8e42eac95590617f259b5164fafa8a1423852e6b6'),
+ 'src/video_core/renderer_vulkan/vk_runtime.cpp':('d870176003d773e742df1d16adc08fd2ca69e931a3a777af4674a071850d5198','30a25a11ef8e506b8e42eac24daaec95590617f259b5164fafa8a1423852e6b6'),
  'src/core/libraries/videoout/driver.cpp':('b33eebf943320b00493d86094a96e0f37b70a8f24076c12a6a51e40323d7da77','66685848ca208733b00b060544f9e3d887bb4216a9a1f22a303c9e39cbc7603d'),
  'src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp':('bfcfb28400afddc0e8ac4aad85d41419c302d9807e53f4b736bc497dfcc252db','2b1c9af5e8610cf003512bf927dde295c1f557323f4464bf02d3ab064055d9cb'),
  'src/video_core/amdgpu/pm4_cmds.h':('83d7139ce43313d8c91f06fd5b4e92c24a425fcd5c7f0e8ef534f63d04cd05ae','67bc5d894751b52574c11f67dbc75a314d2ee9d4e5c5a8fd95c47035b40e0a91'),
@@ -84,10 +84,35 @@ def module_from_blob(name,sha):
  if 'selftest' in ns:ns['selftest']()
  return ns
 
+def validate_candidate_manifest():
+    # The archived manifest is the authority for all seven source-file hashes.
+    # Validate it before reconstructing or touching the checkout, so a copied
+    # SHA constant cannot accidentally invalidate a correct source build.
+    archive=H/'ghost-c6-fence-readback-20261009-234617.tar.gz'
+    with tarfile.open(archive,'r:gz') as tf:
+        entry=tf.getmember('candidate-build.json')
+        if not entry.isfile() or entry.size!=2506:
+            raise RuntimeError('Unexpected original candidate-build manifest size')
+        raw=tf.extractfile(entry).read()
+    manifest_sha='80e8c8007e2048915a161e4fa7078c5511300548626ffc8530bcedd454dde6d0'
+    if sha_bytes(raw)!=manifest_sha:
+        raise RuntimeError('Original candidate-build manifest SHA256 mismatch')
+    manifest=json.loads(raw)
+    original={name:pair[0] for name,pair in FILES.items()}
+    staged={name:pair[1] for name,pair in FILES.items()}
+    if (manifest.get('source_head')!=PIN or
+        manifest.get('candidate_sha256')!=ORIGINAL_SHA or
+        manifest.get('original_source_hashes')!=original or
+        manifest.get('staged_source_hashes')!=staged):
+        raise RuntimeError('Controller constants differ from exact archived Ghost manifest')
+    S['candidate_manifest_sha256']=manifest_sha
+    S['candidate_manifest_verified']=True
+
 def reconstruct():
  # Hard stop unless the original local Git commit and all SEVEN originals match.
  if not ORIGINAL.is_file() or sha_file(ORIGINAL)!=ORIGINAL_SHA:
   raise RuntimeError('Verified Ghost executable SHA changed')
+ validate_candidate_manifest()
  if not SRC.is_dir() or not (BUILD/'CMakeCache.txt').is_file() or not (BUILD/'shadps4').is_file():
   raise RuntimeError('Archived source/build paths no longer exist')
  g=get_output(['git','rev-parse','HEAD'],cwd=SRC)
