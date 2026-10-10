@@ -1,7 +1,7 @@
 # Isolated reciprocal review — 2026-10-10
 
-PR #5325 is now packed-only at a448205cb1a28411943dbc3a54eeefe7f0ff9553.
-Scalar translation is preserved separately at e15328b5451382fe1869fab8f82084d8214cbc3c on draft/jaguar-scalar-reciprocal-20261010.
+PR #5325 is now packed-only at 31a118b127c0c1f0c8b0c32fa9ce21923fa0ccaa.
+Scalar translation is preserved separately at 36353d88a604a2d9d47586cd31b1ef63ef0911ab on draft/jaguar-scalar-reciprocal-20261010.
 
 The change is an accuracy correction, with no demonstrated game fix or speed gain.
 Removing scalar translation avoids its additional cost compared with the original PR, while retaining main's native scalar behavior.
@@ -40,7 +40,7 @@ taskset -c <allowed-cpu> ./probe bench
 Compare RAW rows against hardware/ps4_reference/ps4-reciprocal.txt.gz and ps4_pro-reciprocal.txt.gz, using op, in, mxcsr_in to verify identical input order, and out, mxcsr_out, errors for the result/state checks. Restrict the packed-only correctness claim to the six packed op names.
 
 ## Remaining work
-No games were tested. An isolated full emulator build and platform CI remain pending; CMake is absent in this local environment. Upstream Build and Release run 38043571553 was observed queued for the revised head.
+No games were tested. An isolated full emulator build and platform CI remain pending; CMake is absent in this local environment. Upstream Build and Release run 38043708241 was observed pending for the revised head.
 
 The GitHub integration rejected updates to upstream PR title/body and draft status with HTTP 403 / Resource not accessible by integration. The code branch update succeeded, so the upstream PR description still describes the old combined scope and needs correction by the author.
 
