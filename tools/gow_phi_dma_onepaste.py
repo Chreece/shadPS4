@@ -32,7 +32,9 @@ SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
 VERIFIED_SHA = "8b921edc53fa1d52c40acc0b9dae23553499cf40"
 GRAPHICS_SHA = "b64f66078ec0fb5efbf10b86496dade0942a591d"
-HEAD_SHA = "77341a4c4d076ea8af7b00038a884e903069f007"
+FRAGMENT_SHA = "77341a4c4d076ea8af7b00038a884e903069f007"
+HEAD_SHA = "2492be06a203373bcb58c7b7d993f27dc54de661"
+FRAGMENT_PATCH_SHA256 = "82cde74c723e35a4593c63c3d04657fd790d194c962769668dc3a3dac98137e4"
 GRAPHICS_PATCH_SHA256 = "bb6a023fe0fca2c192d3da649a3c9bb71006ee4886cd152993960c2f570492e6"
 # Exact source preimages from the successful 2026-10-10 16:09 test.
 # A changed source is NOT silently patched or overwritten.
@@ -72,6 +74,8 @@ REQUIRED = {
     "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
 }
 TIME_LIMIT = 75
+NEW_SOURCE = "src/shader_recompiler/ir/passes/resource_patching_pass.cpp"
+PROTECTED_SOURCES = REQUIRED | {NEW_SOURCE}
 
 def sha(path):
     h = hashlib.sha256()
@@ -192,27 +196,32 @@ def get_patches():
     graphics_hash = hashlib.sha256(graphics_patch).hexdigest()
     if graphics_hash != GRAPHICS_PATCH_SHA256:
         raise RuntimeError("Previous successful graphics patch changed: " + graphics_hash)
-    # New probe affects only BeginRendering, never the GPU draw commands.
+    # Phase three also ran successfully at 17:16; enforce identical bytes.
     fragment_patch = fetch_strict_patch(
-        GRAPHICS_SHA, HEAD_SHA, {"src/video_core/renderer_vulkan/vk_rasterizer.cpp"})
-    if (b'RecordGoWGraphicsAudit(' in fragment_patch or
-            b'void Rasterizer::Draw(' in fragment_patch or
-            b'void Rasterizer::DrawIndirect(' in fragment_patch):
-        raise RuntimeError("Fragment probe unexpectedly edits graphics draw emission")
-    return verified_patch, graphics_patch, fragment_patch
+        GRAPHICS_SHA, FRAGMENT_SHA, {"src/video_core/renderer_vulkan/vk_rasterizer.cpp"})
+    fragment_hash = hashlib.sha256(fragment_patch).hexdigest()
+    if fragment_hash != FRAGMENT_PATCH_SHA256:
+        raise RuntimeError("Previously proven fragment patch changed: " + fragment_hash)
+    # Phase four is ONLY a read-only probe in the descriptor patcher.
+    sharp_probe = fetch_strict_patch(FRAGMENT_SHA, HEAD_SHA, {NEW_SOURCE})
+    if (b"GOW_FS_IMAGE_SHARP_BEGIN" not in sharp_probe or
+            b"GoWTraceImageSharp" in sharp_probe or
+            b"void Rasterizer::Draw" in sharp_probe):
+        raise RuntimeError("Unexpected image SHARP diagnostic patch")
+    return verified_patch, graphics_patch, fragment_patch, sharp_probe
 
 def verify_preimages():
     if set(EXPECTED_SOURCE_HASHES) != REQUIRED:
         raise RuntimeError("Incomplete known-good source preimage list")
     observed = {}
-    for rel in sorted(REQUIRED):
+    for rel in sorted(PROTECTED_SOURCES):
         path = SOURCE / rel
         if not path.is_file() or path.is_symlink():
             raise RuntimeError("Missing or symlinked source: " + rel)
         observed[rel] = sha(path)
     changed = {
         rel: {"expected": EXPECTED_SOURCE_HASHES[rel], "observed": observed[rel]}
-        for rel in sorted(REQUIRED)
+        for rel in sorted(PROTECTED_SOURCES)
         if observed[rel] != EXPECTED_SOURCE_HASHES[rel]
     }
     if changed:
@@ -223,6 +232,11 @@ def verify_preimages():
 def verify_staged_instrumentation(staged):
     raster = (staged / "src/video_core/renderer_vulkan/vk_rasterizer.cpp").read_text()
     presenter = (staged / "src/video_core/renderer_vulkan/vk_presenter.cpp").read_text()
+    desc_patcher = (staged / NEW_SOURCE).read_text()
+    if ("GOW_FS_IMAGE_SHARP_BEGIN" not in desc_patcher or
+            "GOW_FS_IMAGE_SHARP_END" not in desc_patcher or
+            "SHADPS4_GOW_FS_IMAGE_SHARP_TRACE" not in desc_patcher):
+        raise RuntimeError("Staged read-only SHARP diagnostic missing")
     if (raster.count("void LogGoWGraphicsDrawTotals(u32 frame)") != 1 or
             raster.count("RecordGoWPreparedDrawTargets(regs, key.mrt_mask, pipeline);") != 1 or
             "RecordGoWGraphicsAudit(" in raster or
@@ -238,7 +252,7 @@ def preflight_patches(patches, temp, report):
     # No installed source file is changed during this preflight.
     staged = temp / "staged-preflight"
     staged.mkdir()
-    for rel in sorted(REQUIRED):
+    for rel in sorted(PROTECTED_SOURCES):
         dst = staged / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / rel, dst)
@@ -253,9 +267,9 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_two_patch_preflight"] = True
+    report["staged_four_patch_preflight"] = True
     report["stage_source_hashes"] = {
-        rel: sha(staged / rel) for rel in sorted(REQUIRED)
+        rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
 
 def stop_owned(proc):
@@ -278,7 +292,7 @@ def do_build(build, patches, temp, result):
     backup = temp / "original"
     backup.mkdir()
     originals = {}
-    for rel in sorted(REQUIRED):
+    for rel in sorted(PROTECTED_SOURCES):
         src = SOURCE / rel
         if not src.is_file() or src.is_symlink():
             raise RuntimeError(f"Missing or symlinked source: {rel}")
@@ -423,24 +437,15 @@ def trial_run(binary, temp, result):
     env.pop("SHADPS4_GOW_COMPUTE_CANARIES", None)
     env.pop("SHADPS4_GOW_FRAME_SOURCE_DIR", None)
     env.pop("SHADPS4_GOW_OFFSCREEN_DIR", None)
+    # Remove inherited GoW diagnostic flags: this test MUST remain focused
+    # on one fragment image SHARP and must not enable other compute canaries.
+    for key in list(env):
+        if key.startswith("SHADPS4_GOW_"):
+            env.pop(key, None)
     env.update({
         "SHADPS4_ENABLE_IPC": "false",
-        "SHADPS4_GOW_ONE_SHADER_DMA_COMPILE": "1",
-        "SHADPS4_GOW_SPV_DUMP_DIR": str(dump_dir.resolve()),
-        "SHADPS4_GOW_BIND_PROBE": "1",
-        "SHADPS4_GOW_IMAGE_TABLE_AUDIT": "1",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
-        # Six exact original grids, including one 135-workgroup image shader.
-        # Unapproved compute/DMA stays suppressed.
-        "SHADPS4_GOW_COMPUTE_CANARIES": "1",
-        "SHADPS4_GOW_IMAGE_OUTPUT_DELTA": "1",
-        # Capture first three actual game VideoOut images before FSR/PP.
-        "SHADPS4_GOW_FRAME_SOURCE_DIR": str(frame_dir.resolve()),
-        # Do not repeat the proven offscreen GPU readback.
-        "SHADPS4_GOW_GRAPHICS_AUDIT": "1",
-        # Preserve the causally verified D80 active baseline.
-        "SHADPS4_GOW_D80_CONTROL_NO_DISPATCH": "0",
-        "SHADPS4_GOW_COMPUTE_CENSUS": "1",
+        "SHADPS4_GOW_FS_IMAGE_SHARP_TRACE": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
     env.setdefault("DISPLAY", ":0")
@@ -457,35 +462,10 @@ def trial_run(binary, temp, result):
             result["trial_pid"] = proc.pid
             while time.monotonic() - start < TIME_LIMIT:
                 time.sleep(2)
-                spv = list(dump_dir.glob("*57b077ac*.spv"))
-                if spv and all(f.stat().st_size >= 20 for f in spv):
-                    last_spv = last_spv or time.monotonic()
-                    if time.monotonic() - last_spv >= 6:
-                        # Give the normal Vulkan queue time to signal the
-                        # guarded dispatch's timeline tick; never wait on
-                        # the GPU directly or indefinitely.
-                        trial_output = (evidence / "console.log").read_text(
-                            errors="replace")
-                        # The D80 shader MUST NOT dispatch in this control.
-                        # Its pre/post GPU copies should still finish naturally.
-                        # Prefer actual GPU-completed pre-FSR screenshots,
-                        # not a generic Vulkan canary timeline as a success.
-                        probe_saved = sorted(frame_dir.glob("gow_guest_pre_fsr_*.png"))
-                        probe_logged = len(re.findall(
-                            r"GOW_FRAME_GUEST_CAPTURE frame=\d+ result=SAVED",
-                            trial_output))
-                        sixth_graphics = "GOW_GRAPHICS_SUMMARY frame=6 " in trial_output
-                        sixth_fragment = "GOW_GRAPHICS_FRAGMENT frame=6 " in trial_output
-                        if (len(probe_saved) >= 3 and probe_logged >= 3 and
-                                sixth_graphics and sixth_fragment and
-                                time.monotonic() - last_spv >= 10):
-                            result["end_reason"] = "SIXTH_FLIP_FRAGMENT_PROVENANCE_CAPTURED"
-                            break
-                        if time.monotonic() - last_spv >= 36:
-                            result["end_reason"] = "GUEST_FRAME_OBSERVATION_WINDOW_ENDED"
-                            break
-                else:
-                    last_spv = None
+                raw_console = (evidence / "console.log").read_text(errors="replace")
+                if "GOW_FS_IMAGE_SHARP_END shader=0x7f710602 result=CAPTURED" in raw_console:
+                    result["end_reason"] = "TARGET_IMAGE_SHARP_CAPTURED"
+                    break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
                     result["end_reason"] = "ANOTHER_EMULATOR_OR_BUILD_STARTED"
@@ -494,19 +474,17 @@ def trial_run(binary, temp, result):
                 if proc.poll() is not None:
                     result["end_reason"] = "PROCESS_EXIT"
                     break
-                if time.monotonic() - start > 45 and not last_spv:
-                    raw_console = (evidence / "console.log").read_text(errors="replace")
-                    if "Starting shadps4 emulator" not in raw_console:
-                        result["end_reason"] = "EARLY_STARTUP_STALL"
-                        try:
-                            task_dir = Path("/proc") / str(proc.pid) / "task"
-                            result["startup_thread_wchans"] = {
-                                t.name: (t / "wchan").read_text().strip()
-                                for t in list(task_dir.iterdir())[:48] if t.name.isdigit()
-                            }
-                        except (OSError, PermissionError) as exc:
-                            result["startup_thread_wchans"] = {"error": str(exc)}
-                        break
+                if time.monotonic() - start > 45 and "Starting shadps4 emulator" not in raw_console:
+                    result["end_reason"] = "EARLY_STARTUP_STALL"
+                    try:
+                        task_dir = Path("/proc") / str(proc.pid) / "task"
+                        result["startup_thread_wchans"] = {
+                            t.name: (t / "wchan").read_text().strip()
+                            for t in list(task_dir.iterdir())[:48] if t.name.isdigit()
+                        }
+                    except (OSError, PermissionError) as exc:
+                        result["startup_thread_wchans"] = {"error": str(exc)}
+                    break
             else:
                 result["end_reason"] = "TIME_LIMIT"
     finally:
@@ -570,6 +548,28 @@ def trial_run(binary, temp, result):
     # The source captures occur before any host FSR / postprocessing pass.
     def _kv(line):
         return dict(re.findall(r"([a-z_][a-z_0-9]*)=([^\s]+)", line))
+
+    # Per-word origin, rather than 6,572 unscoped SRT failures.
+    trace_begin = []
+    trace_words = {}
+    trace_done = False
+    for line in joined.splitlines():
+        if "GOW_FS_IMAGE_SHARP_BEGIN shader=0x7f710602" in line:
+            trace_begin.append(_kv(line[line.index("GOW_FS_IMAGE_SHARP_BEGIN shader="):]))
+        elif "GOW_FS_IMAGE_SHARP_WORD shader=0x7f710602" in line:
+            data = _kv(line[line.index("GOW_FS_IMAGE_SHARP_WORD shader="):])
+            if data.get("word", "").isdigit():
+                trace_words[int(data["word"])] = data
+        elif "GOW_FS_IMAGE_SHARP_END shader=0x7f710602 result=CAPTURED" in line:
+            trace_done = True
+    result["fs_image_sharp_trace_begin"] = trace_begin
+    result["fs_image_sharp_trace_words"] = trace_words
+    result["fs_image_sharp_trace_complete"] = trace_done and bool(trace_begin)
+    result["fs_image_sharp_unknown_words"] = [
+        word for word, row in sorted(trace_words.items())
+        if row.get("unknown") == "true"
+    ]
+    result["fs_image_sharp_descriptor_word_count"] = len(trace_words)
 
     flips = {}
     source_meta = {}
@@ -1042,18 +1042,12 @@ def main():
                         "DYNAMIC_IMAGE_MASKS_CAPTURED"
                         if report.get("image_live_masks_captured")
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
-                # First decide which side of the presentation boundary is black.
-                # A GPU timeline success is not a correctly rendered frame.
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif report.get("graphics_census_incomplete"):
-                    report["result"] = "GRAPHICS_TARGET_AUDIT_TRUNCATED"
-                elif not report.get("graphics_census_frame6"):
-                    report["result"] = "GRAPHICS_CENSUS_MISSING_SIXTH_FLIP"
-                elif not report.get("fragment_provenance_frame6"):
-                    report["result"] = "FRAGMENT_PROVENANCE_MISSING_SIXTH_FLIP"
+                elif report.get("fs_image_sharp_trace_complete"):
+                    report["result"] = "FS_IMAGE_SHARP_TRACE_CAPTURED"
                 else:
-                    report["result"] = "FRAGMENT_RESOURCE_CORRELATION_CAPTURED"
+                    report["result"] = "FS_IMAGE_SHARP_TRACE_MISSING"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -1071,72 +1065,18 @@ def main():
                 for p in evidence.rglob("*"):
                     if p.is_file() and p.stat().st_size < 32_000_000:
                         result_archive.add(p, arcname=str(p.relative_to(tmp)))
-    print("GOW_PHI_DMA_RESULT=" + report.get("result", "UNKNOWN"))
-    print("IGNORED_SHELL_LAUNCHERS=" + str(report.get("ignored_shell_launchers", [])))
-    print("GRAPHICS_CENSUS_FRAME6=" + str(report.get("graphics_census_frame6", False)))
-    print("GRAPHICS_CENSUS_INCOMPLETE=" + str(report.get("graphics_census_incomplete", False)))
-    print("GRAPHICS_VIDEOOUT_PREPARED_ATTACHMENTS=" + str(report.get("graphics_videoout_prepared_attachment_calls", {})))
-    print("GRAPHICS_TARGETS=" + str(report.get("graphics_target_snapshots", {})))
-    print("FRAGMENT_PROVENANCE_FRAME6=" + str(report.get("fragment_provenance_frame6", False)))
-    print("FRAGMENT_TARGET_PAIRS_FRAME6=" + str(report.get("fragment_target_pair_count_frame6", 0)))
-    print("FRAGMENT_SHADERS_INVALID=" + str(report.get("fragment_shaders_with_invalid_resources_frame6", [])))
-    print("OFFSCREEN_GPU_COMPLETED=" + str(report.get("offscreen_complete_count", 0)))
-    print("OFFSCREEN_NONZERO_TARGETS=" + str(report.get("offscreen_nonzero_count", 0)))
-    print("OFFSCREEN_FILES=" + str(report.get("offscreen_files", {})))
-    print("OFFSCREEN_SKIPS=" + str(report.get("offscreen_skips", {})))
+    print("GOW_FS_SHARP_RESULT=" + report.get("result", "UNKNOWN"))
     print("ARCHIVE=" + str(archive))
-    print("TARGET_SPV_COUNT=" + str(len(report.get("spv", []))))
-    print("BIND_PROBE_PASSED=" + str(report.get("bind_probe_passed", False)))
-    print("COMPUTE_CENSUS_COUNT=" + str(report.get("compute_census_count", 0)))
-    print("SMALL_GRID_CANDIDATE_COUNT=" + str(len(report.get("small_grid_candidates", []))))
-    print("COMPUTE_CANARY_MODE_ENABLED=" + str(report.get("compute_execution_enabled", False)))
-    print("GPU_CANARY_COMPLETED_COUNT=" +
-          str(report.get("compute_canary_completed_count", 0)))
-    medium = report.get("compute_canaries", {}).get("0x3b8b91e6", {})
-    print("VIDEOOUT_FLIP_COUNT=" + str(report.get("videoout_flip_count", 0)))
-    print("GUEST_FRAME_SOURCE_META_COUNT=" +
-          str(len(report.get("guest_frame_source_metadata", []))))
-    print("GUEST_FRAME_CAPTURE_COUNT=" +
-          str(report.get("guest_frame_verified_count", 0)))
-    print("GUEST_FRAME_NONBLACK_CAPTURE_COUNT=" +
-          str(report.get("guest_frame_nonblack_count", 0)))
-    print("GUEST_FRAME_PIXELS_STATUS=" +
-          str(report.get("guest_frame_pixels_status")))
-    print("GUEST_FRAME_PNG_FILES=" +
-          str(sorted(report.get("guest_frame_pngs", {}))))
-    print("MEDIUM_135_GRID=15x9x1")
-    print("MEDIUM_135_PERMIT=" + str(medium.get("permit")))
-    print("MEDIUM_135_COMMAND_RECORDED=" + str(medium.get("command_recorded", False)))
-    print("MEDIUM_135_GPU_TIMELINE_COMPLETED=" + str(medium.get("timeline_completed", False)))
-    print("MEDIUM_135_OUTPUT=" + str(report.get("medium_135_output")))
-    print("MEDIUM_135_READBACK_SKIP=" + str(report.get("medium_135_output_skip")))
-    print("GPU_IMAGE_OUTPUT_COMPLETED_COUNT=" +
-          str(report.get("gpu_image_output_completed_count", 0)))
-    print("GPU_IMAGE_OUTPUT_CHANGED_COUNT=" +
-          str(report.get("gpu_image_output_changed_count", 0)))
-    for shader, item in report.get("gpu_image_output_targets", {}).items():
-        print("OUTPUT_" + shader + "=" + str(item))
-    print("GPU_CANARY_ALL_TIMELINES_COMPLETED=" +
-          str(report.get("compute_canary_all_completed", False)))
-    for shader, candidate in report.get("compute_canaries", {}).items():
-        print("CANARY_" + shader + "=" + str({
-            key: candidate[key] for key in
-            ("permit", "command_recorded", "scheduler_tick",
-             "completed_tick", "timeline_completed")}))
-    print("AMDGPU_KERNEL_HANG_LOGGED=" +
-          str(report.get("kernel_gpu_hang_logged", False)))
-    print("GPU_DEVICE_LOST_LOGGED=" +
-          str(report.get("gpu_device_lost_logged", False)))
-    print("RESOURCE_AUDIT_PASSED=" + str(report.get("resource_audit_passed", False)))
-    print("RESOURCE_AUDIT_COUNTS=" + str(report.get("resource_audit_counts")))
-    print("IMAGE_TABLE_AUDITS=" + str(report.get("image_table_audits")))
-    print("IMAGE_TABLE_LAYOUT_MATCH=" + str(report.get("image_table_audit_expected_layout", False)))
-    print("IMAGE_LIVE_MASKS_CAPTURED=" + str(report.get("image_live_masks_captured", False)))
+    print("TARGET_TRACE_COMPLETE=" + str(report.get("fs_image_sharp_trace_complete", False)))
+    print("IMAGE_DESCRIPTOR_WORDS=" + str(report.get("fs_image_sharp_descriptor_word_count", 0)))
+    print("UNKNOWN_DESCRIPTOR_WORDS=" + str(report.get("fs_image_sharp_unknown_words", [])))
+    print("BUILD_EXIT_CODE=" + str(report.get("build_exit_code")))
     print("SOURCE_RESTORED=" + str(report.get("sources_restored")))
     print("BUILD_BINARY_RESTORED=" + str(report.get("build_binary_restored")))
+    print("NATIVE_CONFIG_RESTORED=" + str(report.get("native_config_restored")))
     if report.get("error"):
         print("ERROR=" + report["error"])
-    if report.get("result") in ("FAIL", "INTERRUPTED"):
+    if report.get("result") in ("FAIL", "INTERRUPTED", "FS_IMAGE_SHARP_TRACE_MISSING"):
         raise SystemExit(1)
 
 if __name__ == "__main__":
