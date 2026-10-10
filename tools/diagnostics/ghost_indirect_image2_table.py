@@ -238,7 +238,7 @@ def instrument(result):
 
  raster='src/video_core/renderer_vulkan/vk_rasterizer.cpp'
  src=BACKUP[raster][0].decode()
- src=ensure_one(src,'#include "common/debug.h"', '#include <atomic>\n#include <cerrno>\n#include <cstdlib>\n#include <cstring>\n#include <fcntl.h>\n#include <unistd.h>\n#include "common/debug.h"', 'resource audit C++ includes')
+ src=ensure_one(src,'#include "common/debug.h"', '#include <algorithm>\n#include <atomic>\n#include <cerrno>\n#include <cstdlib>\n#include <cstring>\n#include <fcntl.h>\n#include <unistd.h>\n#include "common/debug.h"', 'resource audit C++ includes')
  audit=r'''    static const bool ghost_resource_audit_enabled = [] {
         const char* flag = std::getenv("SHADPS4_GHOST_RESOURCE_AUDIT");
         return flag && std::strcmp(flag, "1") == 0;
@@ -394,7 +394,7 @@ def instrument(result):
                             "dw0={:#x} dw1={:#x} dw2={:#x} dw3={:#x} "
                             "dw4={:#x} dw5={:#x} dw6={:#x} dw7={:#x}",
                             n, row, image_valid, all_zero, image.Address(),
-                            u32(image.GetDataFmt()), raw[0], raw[1], raw[2],
+                            u32(image.data_format), raw[0], raw[1], raw[2],
                             raw[3], raw[4], raw[5], raw[6], raw[7]);
                     }
                     if (fd >= 0) ::close(fd);
@@ -624,7 +624,7 @@ def playtest(candidate):
  S['resource_audit_first']=samples[:6]
  S['resource_audit_last']=samples[-6:]
  S['resource_audit_invalid_samples']=sum(int(x[3])+int(x[5])+int(x[7])>0 for x in samples)
- S['srt_read_strategy']='pread:/proc/self/mem; validated with local mapped/unmapped/PROT_NONE test'
+ S['srt_read_strategy']='pread:/proc/self/mem on shader-bound indirect buffer1, record*340+80; no guest writes'
  S['srt_source_samples']=len(re.findall(r'GHOST_SRT_SRC sample=',text))
  S['indirect_summaries']=re.findall(
   r'GHOST_INDIRECT_SUMMARY sample=(\d+) base=0x([0-9a-f]+) rows=(\d+) readable=(\d+) valid=(\d+) invalid=(\d+) zero=(\d+) errors=(\d+) source_match=(\w+)',text,re.I)
@@ -633,7 +633,7 @@ def playtest(candidate):
  S['indirect_invalid']=sum(int(x[5]) for x in S['indirect_summaries'])
  S['indirect_errors']=sum(int(x[7]) for x in S['indirect_summaries'])
  S['srt_raw_samples']=len(re.findall(r'GHOST_SRT_RAW sample=',text))
- S['srt_raw_image2_readable']=len(re.findall(r'GHOST_SRT_RAW sample=\d+ image=2 addr=0x[0-9a-f]+ readable=true',text,re.I))
+ S['srt_raw_image2_readable']=0 # Old root+0x80 probe deliberately disabled; correct indirect table is audited above
  S['srt_flat_samples']=len(re.findall(r'GHOST_SRT_FLAT sample=',text))
  S['timeline_releases']=len(ticks)
  S['pending_submissions_at_release']=sum(int(x[3])>int(x[4]) for x in ticks)
