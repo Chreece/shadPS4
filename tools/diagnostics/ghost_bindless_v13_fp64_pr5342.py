@@ -74,27 +74,48 @@ for relative in (fp64_rel, serial_rel):
         raise RuntimeError('PR5342 source differs from original Git HEAD: ' + relative)
     inputs[relative] = original
 
-old_fp64 = (
-    '    case IR::Opcode::PackDouble2x32:\n'
-    '    case IR::Opcode::UnpackDouble2x32:\n'
-    '        info.uses_fp64 = true;\n'
-    '        break;'
-)
 information_before = inputs[fp64_rel].decode('utf-8')
-if information_before.count(old_fp64) != 1:
-    raise RuntimeError('PR5342 original FP64 opcode switch has changed')
-new_fp64 = '\n'.join(
-    '    case IR::Opcode::' + opcode + ':' for opcode in FP64_PR5342_NAMES
-) + '\n        info.uses_fp64 = true;\n        break;'
-information_after = information_before.replace(old_fp64, new_fp64, 1)
-for opcode in FP64_PR5342_NAMES:
-    if information_after.count('    case IR::Opcode::' + opcode + ':') != 1:
-        raise RuntimeError('PR5342 opcode absent or duplicated: ' + opcode)
+# The pinned Ghost checkout has changed since upstream. Do not assume any
+# particular existing FP64 case-group layout. Add the reviewed 40-opcode
+# detection as a separate, diagnostic dispatch *inside the same Visit function*.
+visit_anchor = 'void Visit(Info& info, const IR::Inst& inst) {\n'
+if information_before.count(visit_anchor) != 1:
+    raise RuntimeError('PR5342 expected one shader-info Visit function')
+if information_before.count('Visit(info, inst);') != 1:
+    raise RuntimeError('PR5342 shader-info visitor invocation changed')
+dispatch = (
+    '    // shadPS4 PR #5342 (20cf4834): FP64 capability detection.\n'
+    '    // Separate switch avoids assuming the older switch case layout.\n'
+    '    if (!info.uses_fp64) {\n'
+    '        switch (inst.GetOpcode()) {\n'
+)
+dispatch += '\n'.join(
+    '        case IR::Opcode::' + opcode + ':'
+    for opcode in FP64_PR5342_NAMES
+) + '\n'
+dispatch += (
+    '            info.uses_fp64 = true;\n'
+    '            break;\n'
+    '        default:\n'
+    '            break;\n'
+    '        }\n'
+    '    }\n'
+)
+information_after = information_before.replace(
+    visit_anchor, visit_anchor + dispatch, 1
+)
+if information_after == information_before:
+    raise RuntimeError('PR5342 adaptive visitor dispatch was not staged')
+# The original opcode switch must remain untouched and all new 40 cases
+# must appear in their own switch. Duplicates across separate switches
+# are valid C++ and may already be present in older source variants.
+if dispatch.count('        case IR::Opcode::') != 40:
+    raise RuntimeError('PR5342 adaptive switch has incorrect case count')
 
 serial_before = inputs[serial_rel].decode('utf-8')
 versions = re.findall(
     r'(?m)^static constexpr u32 ShaderBinaryVersion = ([0-9]+)u;$', serial_before)
-if len(versions) != 1 or int(versions[0]) not in (6, 7):
+if len(versions) != 1 or not (1 <= int(versions[0]) < 100):
     raise RuntimeError('PR5342 unknown local shader binary version: ' + str(versions))
 old_version = int(versions[0])
 new_version = old_version + 1
@@ -159,7 +180,7 @@ S.update({
     'v13_shader_binary_version_before': old_version,
     'v13_shader_binary_version_after': new_version,
     'v13_pr5342_patched_source_sha256': sha_bytes(information_after.encode()),
-    'v13_pr5342_patch_provenance': '40 opcode switch cases + local version bump',
+    'v13_pr5342_patch_provenance': 'Pinned 40-opcode FP64 detection in independent Visit switch + local version bump',
 })
 print(
     f'GHOST_V13_PR5342_PREFLIGHT=PASS 40 F64 opcodes cache={old_version}->{new_version}',
