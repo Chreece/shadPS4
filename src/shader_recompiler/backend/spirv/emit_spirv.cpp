@@ -147,6 +147,9 @@ Id TypeId(const EmitContext& ctx, IR::Type type) {
         return ctx.F32[1];
     case IR::Type::U64:
         return ctx.U64;
+    case IR::Type::F64:
+        // Requires uses_fp64 set by shader info collection for surviving F64 Phi.
+        return ctx.F64[1];
     default:
         UNREACHABLE_MSG("Phi node type {}", type);
     }
