@@ -599,6 +599,9 @@ def build_test_executable():
  S['v12_original_source_sha256']=sha_bytes(orig)
  S['v12_modified_source_sha256']=sha_bytes(changed)
  S['v12_shader_hash']='0x8e743c8e'
+ S['v11_loop_sentinel_preserved']=False  # v12 overrides only this shader
+ S['v12_record_loop_sentinel']=53
+ S['v12_original_sentinel_other_shaders']=255
  S['v12_test_change']='replace only immediate 255 UGE loop guard in Ghost shader with 53'
  S['v12_other_shaders_untouched']=True
  print('GHOST_V12_RECORD_GUARD_PATCH=PASS; GPU index bound 0..52 retained; SSBO-loop guard 53 experimental',flush=True)
