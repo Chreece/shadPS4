@@ -558,8 +558,8 @@ static void AuditGoWImageTables(const Shader::Info& cs, Core::MemoryManager* mem
     }
 }
 
-// A single early shader (0x9a1583fb) had zero SRT offset errors in the
-// previous GoW capture. This optional probe admits at most one dispatch,
+// The early shader 0x6e9a8b98 has a 2x1x1 grid, 2 buffers and zero
+// reported invalid resources. This optional probe admits at most one dispatch,
 // and ONLY with fully resolved metadata, small buffers and a small grid.
 // Every other compute shader remains suppressed.
 static std::atomic<bool> gow_one_shot_examined{false};
@@ -568,20 +568,24 @@ static bool AllowFirstGoWComputeProbe(const Shader::Info& cs, u32 x, u32 y, u32 
     const char* suppress = std::getenv("SHADPS4_GOW_SUPPRESS_GPU_COMPUTE");
     if (!flag || std::strcmp(flag, "1") != 0 ||
         !suppress || std::strcmp(suppress, "1") != 0 ||
-        cs.pgm_hash != 0x9a1583fbULL ||
+        cs.pgm_hash != 0x6e9a8b98ULL ||
         cs.hw_stage != Shader::HwStage::Compute ||
+        x != 2 || y != 1 || z != 1 ||
         gow_one_shot_examined.exchange(true, std::memory_order_relaxed)) {
         return false;
     }
     bool invalid = false;
     bool unsupported_special = false;
     bool oversized_buffer = false;
+    // Census evidence: exactly two buffers, no image/sampler descriptors.
+    // Any change in the shader's resource shape aborts this trial.
+    const bool shape_ok = cs.buffers.size() == 2 &&
+                          cs.images.empty() && cs.samplers.empty();
     for (const auto& b : cs.buffers) {
         if (b.IsSpecial()) {
-            if (b.buffer_type == Shader::BufferType::GdsBuffer ||
-                b.buffer_type == Shader::BufferType::SharedMemory) {
-                unsupported_special = true;
-            }
+            // Flatbuf is expected; no DMA/GDS/shared or other special
+            // memory buffer is permitted in this first execution probe.
+            unsupported_special |= b.buffer_type != Shader::BufferType::Flatbuf;
             continue;
         }
         if (b.sharp_fetch.summary == decltype(b.sharp_fetch.summary)::Invalid) {
@@ -612,15 +616,16 @@ static bool AllowFirstGoWComputeProbe(const Shader::Info& cs, u32 x, u32 y, u32 
     }
     const bool grid_ok = x && y && z && x <= 128 && y <= 128 && z <= 128 &&
                          u64(x) * y * z <= 128;
-    const bool permit = grid_ok && !cs.uses_dma && !cs.translation_failed &&
-                        !invalid && !unsupported_special && !oversized_buffer;
+    const bool permit = grid_ok && shape_ok && !cs.uses_dma &&
+                        !cs.translation_failed && !invalid &&
+                        !unsupported_special && !oversized_buffer;
     LOG_WARNING(Render_Vulkan,
                 "GOW_COMPUTE_ONE_SHOT_CANDIDATE shader={:#x} grid={}x{}x{} "
                 "buffers={} images={} samplers={} dma={} invalid={} "
-                "unsupported_special={} oversized_buffer={} permit={}",
+                "unsupported_special={} oversized_buffer={} shape_ok={} permit={}",
                 cs.pgm_hash, x, y, z, cs.buffers.size(), cs.images.size(),
                 cs.samplers.size(), cs.uses_dma, invalid, unsupported_special,
-                oversized_buffer, permit);
+                oversized_buffer, shape_ok, permit);
     return permit;
 }
 
