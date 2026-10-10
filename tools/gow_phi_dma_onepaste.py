@@ -391,10 +391,11 @@ def get_patches():
     # Only checks REAL Vulkan image views and Flatbuf bindings. Never launches
     # the previously suppressed 0x73 compute shader.
     host_binding_probe = GOW_73_HOST_BIND_SOURCE.encode("utf-8")
+    exec_probe = GOW_73_EXECUTION_SOURCE.encode("utf-8")
     return (verified_patch, graphics_patch, fragment_patch, sharp_probe,
             index_probe, flatten_probe, root_priority_patch, auto_topo_patch,
             broad_probe, draw_probe, gpu_args_patch, writer_probe, producer_probe,
-            one_shot_73, shape_probe, host_binding_probe)
+            one_shot_73, shape_probe, host_binding_probe, exec_probe)
 
 
 def verify_preimages():
@@ -989,6 +990,206 @@ GOW_73_HOST_BIND_SOURCE = r'''    // Ghost of Tsushima proved that valid guest i
 
 '''
 
+GOW_73_EXECUTION_SOURCE = r'''    // One strictly guarded native 128x128x1 dispatch; all further 73
+    // invocations stay suppressed, as do all other disallowed shaders.
+    const char* one_73 = std::getenv("SHADPS4_GOW_73_EXECUTE_ONE_SHOT");
+    if (cs.pgm_hash == 0x73ad8e38ULL && one_73 &&
+        std::strcmp(one_73, "1") == 0) {
+        static std::atomic<bool> attempted{false};
+        if (attempted.exchange(true, std::memory_order_acq_rel)) return;
+        constexpr u64 OutputAddress = 0x1039242d00ULL;
+        constexpr u64 Bytes = 512;
+        const bool shape = cs_program.dim_x == 128 && cs_program.dim_y == 128 &&
+                           cs_program.dim_z == 1 && cs.buffers.size() == 3 &&
+                           cs.images.size() == 2 && cs.samplers.empty() &&
+                           !cs.uses_dma && !cs.translation_failed;
+        bool buffers_ok = false;
+        bool images_ok = false;
+        if (shape) {
+            const auto valid_fetch = [&](const auto& fetch, u32 words) {
+                if (fetch.summary == decltype(fetch.summary)::Invalid) return false;
+                if (fetch.summary == decltype(fetch.summary)::SingleLoad) {
+                    const size_t first = fetch.offsets[0];
+                    return first != Shader::UNKNOWN_LOCATION &&
+                           first <= cs.flattened_ud_buf.size() &&
+                           words <= cs.flattened_ud_buf.size() - first;
+                }
+                for (u32 i = 0; i < words; ++i) {
+                    if ((fetch.load_mask & (1u << i)) &&
+                        (fetch.offsets[i] == Shader::UNKNOWN_LOCATION ||
+                         fetch.offsets[i] >= cs.flattened_ud_buf.size())) return false;
+                }
+                return true;
+            };
+            const auto& input = cs.buffers[0];
+            const auto& output = cs.buffers[1];
+            const auto& flat = cs.buffers[2];
+            buffers_ok = !input.IsSpecial() && !output.IsSpecial() &&
+                         !input.is_written && input.is_formatted &&
+                         output.is_written && !output.is_formatted &&
+                         flat.IsSpecial() &&
+                         flat.buffer_type == Shader::BufferType::Flatbuf &&
+                         !cs.flattened_ud_buf.empty() &&
+                         valid_fetch(input.sharp_fetch, 4) &&
+                         valid_fetch(output.sharp_fetch, 4);
+            if (buffers_ok) {
+                const auto src = input.GetSharp(cs);
+                const auto dst = output.GetSharp(cs);
+                buffers_ok = src.Valid() && dst.Valid() &&
+                             src.base_address == 0x1038bc2b80ULL &&
+                             src.GetSize() == 32 &&
+                             dst.base_address == OutputAddress &&
+                             dst.GetSize() == Bytes;
+            }
+            images_ok = true;
+            for (u32 index = 0; index < 2; ++index) {
+                const auto& img = cs.images[index];
+                if (img.is_written || img.is_atomic || img.is_depth || img.is_r128 ||
+                    !valid_fetch(img.sharp_fetch, 8) || img.NumBindings(cs) != 1) {
+                    images_ok = false;
+                    continue;
+                }
+                const auto sharp = img.GetSharp(cs);
+                const u64 addr = index == 0 ? 0x21c010000ULL : 0x21c410000ULL;
+                images_ok &= sharp.Valid() && sharp.Address() == addr &&
+                             sharp.GetType() == AmdGpu::ImageType::Color2D &&
+                             static_cast<u32>(sharp.GetDataFmt()) == 4 &&
+                             static_cast<u32>(sharp.width) + 1 == 1024 &&
+                             static_cast<u32>(sharp.height) + 1 == 1024;
+            }
+        }
+        if (!shape || !buffers_ok || !images_ok) {
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_73_EXEC_GATE shader={:#x} shape={} buffers={} "
+                        "images={} result=DENIED",
+                        cs.pgm_hash, shape, buffers_ok, images_ok);
+            return;
+        }
+        const auto [out_buffer, out_offset] =
+            buffer_cache.ObtainBuffer(OutputAddress, Bytes, false);
+        if (!out_buffer || out_offset > out_buffer->SizeBytes() ||
+            Bytes > out_buffer->SizeBytes() - out_offset) {
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_73_EXEC_GATE shader={:#x} reason=BUFFER result=DENIED",
+                        cs.pgm_hash);
+            return;
+        }
+        auto& pool = runtime.GetStagingPool();
+        const auto before = pool.Request(Bytes, VideoCore::MemoryType::HostCached, 16, true);
+        const auto after = pool.Request(Bytes, VideoCore::MemoryType::HostCached, 16, true);
+        if (!before.buffer || !after.buffer || !before.mapped || !after.mapped ||
+            before.size < Bytes || after.size < Bytes) {
+            if (before.buffer) pool.FreeDeferred(before);
+            if (after.buffer) pool.FreeDeferred(after);
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_73_EXEC_GATE shader={:#x} reason=STAGING result=DENIED",
+                        cs.pgm_hash);
+            return;
+        }
+        // Actual host-buffer snapshot before the dispatch, on the normal queue.
+        const vk::BufferCopy pre{.srcOffset = out_offset,
+                                 .dstOffset = before.offset, .size = Bytes};
+        runtime.CopyBuffer(out_buffer, before.buffer, std::span{&pre, 1});
+        const bool bound = BindResources(pipeline);
+        u32 host_buffers = 0;
+        u32 host_views = 0;
+        u32 null_views = 0;
+        if (bound) {
+            for (const auto& write : set_writes) {
+                if (write.descriptorType == vk::DescriptorType::eStorageBuffer &&
+                    write.descriptorCount == 1 && write.pBufferInfo &&
+                    write.pBufferInfo->buffer != vk::Buffer{} &&
+                    write.pBufferInfo->range != 0) ++host_buffers;
+                if (write.descriptorType == vk::DescriptorType::eSampledImage &&
+                    write.descriptorCount == 1 && write.pImageInfo) {
+                    if (write.pImageInfo->imageView != vk::ImageView{}) ++host_views;
+                    else ++null_views;
+                }
+            }
+        }
+        const bool host_ok = bound && host_buffers == 3 &&
+                             host_views == 2 && null_views == 0;
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_73_EXEC_GATE shader={:#x} host_buffers={} "
+                    "host_image_views={} null_views={} result={}",
+                    cs.pgm_hash, host_buffers, host_views, null_views,
+                    host_ok ? "PASS" : "DENIED");
+        if (!host_ok) {
+            if (bound) ResetBindings(true);
+            pool.FreeDeferred(before);
+            pool.FreeDeferred(after);
+            return;
+        }
+        // The pre-copy read must complete before this compute buffer write.
+        if (needs_barrier ||
+            runtime.IsBufferAccessed(out_buffer, out_offset, Bytes, true)) {
+            runtime.FlushBarriers();
+        }
+        scheduler.EndRendering();
+        pipeline->BindResources(set_writes, push_data);
+        const auto cmdbuf = scheduler.CommandBuffer();
+        cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+        cmdbuf.dispatch(128, 128, 1);
+        DebugState.IncDispatch();
+        ResetBindings(true);
+        const vk::BufferCopy post{.srcOffset = out_offset,
+                                  .dstOffset = after.offset, .size = Bytes};
+        // Copy waits for the tracked compute write on the same GPU timeline.
+        runtime.CopyBuffer(out_buffer, after.buffer, std::span{&post, 1});
+        scheduler.DeferPriorityOperation([before, after, &pool] {
+            before.Invalidate();
+            after.Invalidate();
+            const auto* old_bytes = static_cast<const u8*>(before.mapped);
+            const auto* new_bytes = static_cast<const u8*>(after.mapped);
+            u32 changed = 0;
+            u32 prior_nonzero = 0;
+            u32 after_nonzero = 0;
+            for (u32 i = 0; i < Bytes; ++i) {
+                changed += old_bytes[i] != new_bytes[i];
+                prior_nonzero += old_bytes[i] != 0;
+                after_nonzero += new_bytes[i] != 0;
+            }
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_73_OUTPUT_GPU_COMPLETE shader=0x73ad8e38 "
+                        "bytes=512 before_nonzero={} after_nonzero={} changed_bytes={} "
+                        "result=GPU_READBACK_COMPLETE",
+                        prior_nonzero, after_nonzero, changed);
+            pool.FreeDeferred(before);
+            pool.FreeDeferred(after);
+        });
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_73_EXEC_SUBMIT shader={:#x} grid=128x128x1 "
+                    "output_address={:#x} output_bytes=512 result=SUBMITTED",
+                    cs.pgm_hash, OutputAddress);
+        return;
+    }
+
+'''
+
+def apply_portable_73_execution(root, patch_bytes):
+    if patch_bytes != GOW_73_EXECUTION_SOURCE.encode("utf-8"):
+        raise RuntimeError("Stage17 code changed from pinned runner")
+    source = root / GBUFFER_SOURCE
+    original_bytes = source.read_bytes()
+    if hashlib.sha256(original_bytes).hexdigest() != (
+            "2db5606379b7ad2e5c163c8cf35d14fcda4d08ab68fae11c4cc806f10d61319a"):
+        raise RuntimeError("Stage17 requires the successful stage16 code")
+    original = original_bytes.decode("utf-8", errors="strict")
+    anchor = ("    const int canary_idx = SelectGoWComputeCanary(\n"
+              "        cs, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);\n")
+    if original.count(anchor) != 1 or "GOW_73_EXEC_SUBMIT" in original:
+        raise RuntimeError("Stage17 insertion anchor is not unique")
+    patched = original.replace(anchor, GOW_73_EXECUTION_SOURCE + anchor, 1)
+    if (patched.replace(GOW_73_EXECUTION_SOURCE, "", 1) != original or
+            patched.count("GOW_73_EXEC_SUBMIT shader={:#x}") != 1 or
+            "attempted.exchange(true" not in GOW_73_EXECUTION_SOURCE):
+        raise RuntimeError("Stage17 new GPU code not additive/guarded")
+    source.write_bytes(patched.encode("utf-8"))
+    return {"before_sha256": hashlib.sha256(original_bytes).hexdigest(),
+            "after_sha256": sha(source), "only_additions": True,
+            "one_dispatch": True, "output_copies": 2}
+
+
 def apply_portable_73_host_bind_audit(root, patch_bytes):
     if patch_bytes != GOW_73_HOST_BIND_SOURCE.encode("utf-8"):
         raise RuntimeError("Stage16 binding audit differed from immutable runner source")
@@ -1026,8 +1227,8 @@ def preflight_patches(patches, temp, report):
         dst = staged / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / rel, dst)
-    if len(patches) != 16:
-        raise RuntimeError("Expected 15 host-proven patches plus a nonexecuting host-binding audit")
+    if len(patches) != 17:
+        raise RuntimeError("Expected 15 proven patches plus stages 16-17")
     for step, patch in enumerate(patches):
         filename = temp / f"pinned-{step}.diff"
         filename.write_bytes(patch)
@@ -1052,6 +1253,9 @@ def preflight_patches(patches, temp, report):
         if step == 15:
             report["host_bind_73_preflight"] = apply_portable_73_host_bind_audit(staged, patch)
             continue
+        if step == 16:
+            report["execution_73_preflight"] = apply_portable_73_execution(staged, patch)
+            continue
         check = run(["git", "apply", "--check", "--whitespace=nowarn", str(filename)],
                     cwd=staged)
         if check.returncode:
@@ -1060,7 +1264,7 @@ def preflight_patches(patches, temp, report):
         if applied.returncode:
             raise RuntimeError(f"Staged apply {step} failed: " + applied.stderr[-2600:])
     verify_staged_instrumentation(staged)
-    report["staged_sixteen_patch_preflight"] = True
+    report["staged_seventeen_patch_preflight"] = True
     report["stage_source_hashes"] = {
         rel: sha(staged / rel) for rel in sorted(PROTECTED_SOURCES)
     }
@@ -1137,6 +1341,10 @@ def do_build(build, patches, temp, result):
             if step == 15:
                 changed = True
                 result["host_bind_73_live"] = apply_portable_73_host_bind_audit(SOURCE, patch)
+                continue
+            if step == 16:
+                changed = True
+                result["execution_73_live"] = apply_portable_73_execution(SOURCE, patch)
                 continue
             check = run(["git", "apply", "--check", "--whitespace=nowarn",
                          str(patch_path)], cwd=SOURCE)
@@ -1272,11 +1480,11 @@ def trial_run(binary, temp, result):
         # Retain the previously proven automatic resource dependencies.
         # Their verbose per-shader flattened-buffer trace stays disabled.
         "SHADPS4_GOW_SRT_AUTO_ROOTS": "2",
-        # Restrict execution to the same six established, individually
-        # guarded canaries. 0x73ad8e38 is STILL DENIED, as in the 20:50 test.
-        # This run is a passive descriptor metadata audit only.
+        # Previously validated compute canaries remain guarded; shader73
+        # gets exactly one separately guarded native dispatch and GPU copies.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
-        "SHADPS4_GOW_73_HOST_BIND_AUDIT": "1",
+        "SHADPS4_GOW_73_EXECUTE_ONE_SHOT": "1",
+        "SHADPS4_GOW_INDIRECT_GPU_ARGS": "1",
         # No large frame or offscreen readbacks.
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
@@ -1308,12 +1516,21 @@ def trial_run(binary, temp, result):
                 # The exact instance-count values were already confirmed
                 # from six GPU-completed readbacks in the 19:53 archive.
                 # This trial observes their candidate writers only.
-                host_bind_done = (
-                    "GOW_73_HOST_BIND_RESULT shader=0x73ad8e38"
-                    in raw_console)
-                if host_bind_done:
-                    result["end_reason"] = "GO_T_TRANSFER_HOST_DESCRIPTOR_BINDINGS_CAPTURED"
+                denied = any(
+                    "GOW_73_EXEC_GATE shader=0x73ad8e38" in line and
+                    "result=DENIED" in line for line in raw_console.splitlines())
+                if denied:
+                    result["end_reason"] = "GOW73_STRICT_EXECUTION_GATE_DENIED"
                     break
+                output_ready = "GOW_73_OUTPUT_GPU_COMPLETE shader=0x73ad8e38" in raw_console
+                if output_ready and raw_console.count("GOW_INDIRECT_GPU_CAPTURE slot=") >= 6:
+                    result["end_reason"] = "GOW73_OUTPUT_AND_SIX_INDIRECT_GPU_READBACKS"
+                    break
+                if output_ready:
+                    result.setdefault("gow73_output_ready_at", time.monotonic())
+                    if time.monotonic() - result["gow73_output_ready_at"] > 15:
+                        result["end_reason"] = "GOW73_OUTPUT_READBACK_NO_SIX_DRAW_RESULTS"
+                        break
                 others = processes_in_use(exclude=(proc.pid,), exclude_group=os.getpgid(proc.pid))
                 if others:
                     result["end_reason"] = "ANOTHER_EMULATOR_OR_BUILD_STARTED"
@@ -1969,6 +2186,36 @@ def trial_run(binary, temp, result):
             "compute_73_executed": False,
         }, ensure_ascii=False, indent=2))
 
+    treatment_gate, treatment_submit, treatment_output = [], [], []
+    for line in joined.splitlines():
+        for marker, target in (
+                ("GOW_73_EXEC_GATE shader=0x73ad8e38", treatment_gate),
+                ("GOW_73_EXEC_SUBMIT shader=0x73ad8e38", treatment_submit),
+                ("GOW_73_OUTPUT_GPU_COMPLETE shader=0x73ad8e38", treatment_output)):
+            if marker in line:
+                row = _kv(line[line.index(marker):])
+                if row not in target:
+                    target.append(row)
+                break
+    result["gow73_gate"] = treatment_gate[-1] if treatment_gate else None
+    result["gow73_submitted"] = bool(
+        treatment_submit and treatment_submit[-1].get("result") == "SUBMITTED")
+    result["gow73_gpu_completed"] = bool(
+        treatment_output and treatment_output[-1].get("result") == "GPU_READBACK_COMPLETE")
+    result["gow73_gpu_output"] = treatment_output[-1] if treatment_output else None
+    result["gow73_changed_bytes"] = (
+        int(treatment_output[-1].get("changed_bytes", "0"))
+        if treatment_output else None)
+    result["gow73_nonzero_indirect"] = len(result["indirect_gpu_nonzero_draws"])
+    (evidence / "gow73-one-shot-treatment.json").write_text(json.dumps({
+        "guest_and_host_gate": result["gow73_gate"],
+        "submitted_once": result["gow73_submitted"],
+        "gpu_complete": result["gow73_gpu_completed"],
+        "output_gpu_before_after": result["gow73_gpu_output"],
+        "indirect_gpu_commands": result["indirect_gpu_captures"],
+        "control_six_zero_instances": [0, 0, 0, 0, 0, 0],
+        "nonzero_indirect_draws": result["gow73_nonzero_indirect"],
+    }, ensure_ascii=False, indent=2))
     # New, strictly passive shape audit. Original 20:50 log saw 3 buffers,
     # 2 images, no samplers. The earlier two-buffer provenance scan omitted
     # specials and images; preserve ALL actual descriptor slots here.
@@ -2394,14 +2641,21 @@ def main():
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
                 if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
                     report["result"] = "GPU_FAULT_EVIDENCE"
-                elif report.get("producer73_submitted") or report.get("producer73_gpu_completed"):
-                    report["result"] = "PRODUCER73_UNEXPECTED_GPU_EXECUTION"
-                elif not report.get("producer73_host_bind"):
-                    report["result"] = "GOW73_VULKAN_HOST_BIND_PROBE_NOT_OBSERVED"
-                elif report.get("producer73_host_bind_pass"):
-                    report["result"] = "GOW73_TWO_VULKAN_IMAGE_VIEWS_AND_FLATBUF_BOUND"
+                elif (report.get("gow73_gate") or {}).get("result") == "DENIED":
+                    report["result"] = "GOW73_SAFE_GATE_DENIED"
+                elif report.get("gow73_gpu_completed"):
+                    changed = report.get("gow73_changed_bytes") or 0
+                    nonzero = report.get("gow73_nonzero_indirect") or 0
+                    if changed and nonzero:
+                        report["result"] = "GOW73_OUTPUT_CHANGED_AND_INDIRECT_NONZERO"
+                    elif changed:
+                        report["result"] = "GOW73_OUTPUT_CHANGED_INDIRECT_NOT_RECOVERED"
+                    else:
+                        report["result"] = "GOW73_GPU_COMPLETE_OUTPUT_UNCHANGED"
+                elif report.get("gow73_submitted"):
+                    report["result"] = "GOW73_SUBMITTED_GPU_COMPLETION_UNCONFIRMED"
                 else:
-                    report["result"] = "GOW73_NULL_OR_INVALID_VULKAN_BINDING"
+                    report["result"] = "GOW73_TREATMENT_NOT_OBSERVED"
 
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
@@ -2423,7 +2677,11 @@ def main():
     print("GOW_SRT_FLATTEN_RESULT=" + report.get("result", "UNKNOWN"))
     print("GOW73_HOST_BIND_RESULT=" + str(report.get("producer73_host_bind")))
     print("GOW73_HOST_BIND_PASS=" + str(report.get("producer73_host_bind_pass", False)))
-    print("GOW73_EXECUTED=" + str(report.get("producer73_submitted", False)))
+    print("GOW73_EXECUTED=" + str(report.get("gow73_submitted", False)))
+    print("GOW73_GPU_COMPLETED=" + str(report.get("gow73_gpu_completed", False)))
+    print("GOW73_CHANGED_BYTES=" + str(report.get("gow73_changed_bytes")))
+    print("GOW73_INDIRECT_GPU_COMPLETED=" + str(report.get("indirect_gpu_completed_count")))
+    print("GOW73_INDIRECT_NONZERO=" + str(report.get("gow73_nonzero_indirect")))
     print("GOT_TRANSFERABLE_FINDING=Validate actual VkImageView; guest T# alone is insufficient")
     print("ARCHIVE=" + str(archive))
     print("SRT_TRACE_COMPLETE=" + str(report.get("fs_srt_flatten_complete", False)))
