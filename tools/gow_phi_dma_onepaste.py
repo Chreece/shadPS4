@@ -30,7 +30,7 @@ BUILD_ROOT = HOME / "shadps4-esde-verified-builds"
 GAME = "CUSA34384"
 SHADER = "57b077ac"
 BASE_SHA = "aa5b281c0016d64844e784566ef9dd092655ba8b"
-HEAD_SHA = "749d7da78d9c2ec23880df410281ea31edd15fc7"
+HEAD_SHA = "5ffa2795b3095268897d5f59434a4e4fc8fd830d"
 PATCH_URL = (f"https://api.github.com/repos/Chreece/shadPS4/compare/"
              f"{BASE_SHA}...{HEAD_SHA}")
 REQUIRED = {
@@ -294,11 +294,12 @@ def trial_run(binary, temp, result):
         "SHADPS4_GOW_BIND_PROBE": "1",
         "SHADPS4_GOW_IMAGE_TABLE_AUDIT": "1",
         "SHADPS4_GOW_SUPPRESS_GPU_COMPUTE": "1",
-        # Five exact-grid canaries may execute once each; all others suppressed.
+        # Six exact original grids, including one 135-workgroup image shader.
+        # Unapproved compute/DMA stays suppressed.
         "SHADPS4_GOW_COMPUTE_CANARIES": "1",
         "SHADPS4_GOW_IMAGE_OUTPUT_DELTA": "1",
-        # Preserve identical GPU transfers while deliberately skipping D80 only.
-        "SHADPS4_GOW_D80_CONTROL_NO_DISPATCH": "1",
+        # Restore the proven D80 active behavior after its successful control.
+        "SHADPS4_GOW_D80_CONTROL_NO_DISPATCH": "0",
         "SHADPS4_GOW_COMPUTE_CENSUS": "1",
         "SHADPS4_GOW_DIAGNOSTIC_GDS_NONEXECUTING": "1",
     })
@@ -327,16 +328,31 @@ def trial_run(binary, temp, result):
                             errors="replace")
                         # The D80 shader MUST NOT dispatch in this control.
                         # Its pre/post GPU copies should still finish naturally.
-                        control_skipped = (
-                            "GOW_IMAGE_OUTPUT_CONTROL_NO_DISPATCH shader=0xd80cbb16" in trial_output)
-                        d80_output_concluded = (
-                            "GOW_IMAGE_OUTPUT_DELTA shader=0xd80cbb16" in trial_output
-                            or "GOW_IMAGE_OUTPUT_SKIP shader=0xd80cbb16" in trial_output)
-                        if control_skipped and d80_output_concluded:
-                            result["end_reason"] = "D80_NO_DISPATCH_CONTROL_OBSERVED"
+                        medium_marker = (
+                            "GOW_COMPUTE_CANARY_CANDIDATE shader=0x3b8b91e6")
+                        medium_seen = medium_marker in trial_output
+                        medium_completed = (
+                            "GOW_COMPUTE_CANARY_GPU_COMPLETE shader=0x3b8b91e6"
+                            in trial_output)
+                        medium_output_done = (
+                            "GOW_IMAGE_OUTPUT_DELTA shader=0x3b8b91e6"
+                            in trial_output or
+                            "GOW_IMAGE_OUTPUT_SKIP shader=0x3b8b91e6"
+                            in trial_output)
+                        if medium_completed and medium_output_done:
+                            result["end_reason"] = "MEDIUM_135_GPU_OUTPUT_CONCLUDED"
                             break
-                        if time.monotonic() - last_spv >= 28:
-                            result["end_reason"] = "D80_CONTROL_OBSERVATION_WINDOW_ENDED"
+                        # A rejected shader cannot become eligible later: the
+                        # one-shot guard consumes first matching occurrence.
+                        if medium_seen and "GOW_COMPUTE_CANARY_RESULT shader=0x3b8b91e6" not in trial_output:
+                            rejected = any(
+                                "permit=false" in ln for ln in trial_output.splitlines()
+                                if medium_marker in ln)
+                            if rejected:
+                                result["end_reason"] = "MEDIUM_135_RUNTIME_REJECTED"
+                                break
+                        if time.monotonic() - last_spv >= 42:
+                            result["end_reason"] = "MEDIUM_135_OBSERVATION_WINDOW_ENDED"
                             break
                 else:
                     last_spv = None
@@ -459,6 +475,7 @@ def trial_run(binary, temp, result):
         ("0xf875ea48", "1x1x1", 4, 0, 0),
         ("0xd80cbb16", "4x1x1", 1, 1, 0),
         ("0xb223c956", "1x1x1", 1, 2, 1),
+        ("0x3b8b91e6", "15x9x1", 1, 2, 0),
     )
     canaries = {}
     for shader, grid, expected_buffers, expected_images, expected_samplers in canary_specs:
@@ -549,28 +566,18 @@ def trial_run(binary, temp, result):
     result["gpu_image_output_targets"] = {
         shader: {"delta": output_deltas.get(shader),
                  "skip": output_skips.get(shader)}
-        for shader in ("0xd80cbb16", "0xb223c956")
+        for shader in ("0xd80cbb16", "0xb223c956", "0x3b8b91e6")
     }
-    result["d80_no_dispatch_control_requested"] = True
-    result["d80_control_dispatch_skipped"] = bool(re.search(
-        r"GOW_IMAGE_OUTPUT_CONTROL_NO_DISPATCH shader=0xd80cbb16 "
-        r"grid=4x1x1 result=SKIPPED", joined))
-    result["d80_control_delta"] = output_deltas.get("0xd80cbb16")
-    result["d80_control_skip_reason"] = output_skips.get("0xd80cbb16")
-    result["d80_control_result"] = (
-        "CONTROL_PASSED_NO_CHANGE"
-        if (result["d80_control_dispatch_skipped"] and
-            result["d80_control_delta"] is not None and
-            result["d80_control_delta"]["changed_bytes"] == 0)
-        else "CONTROL_FAILED_BYTES_CHANGED"
-        if (result["d80_control_dispatch_skipped"] and
-            result["d80_control_delta"] is not None and
-            result["d80_control_delta"]["changed_bytes"] > 0)
-        else "CONTROL_INCONCLUSIVE"
-    )
-    # Do not use a completed GPU timeline from a skipped dispatch as proof
-    # that this shader executed: in control mode it intentionally did not.
-    result["d80_compute_executed"] = False
+    # The prior A/B control established that D80 was responsible for its
+    # image-byte change. This run restores normal D80 dispatch and tests one
+    # exact 135-group image workload independently.
+    result["d80_no_dispatch_control_requested"] = False
+    result["medium_135_target"] = {
+        "shader": "0x3b8b91e6", "grid": [15, 9, 1],
+        "groups": 135, "buffers": 1, "images": 2, "samplers": 0,
+    }
+    result["medium_135_output"] = output_deltas.get("0x3b8b91e6")
+    result["medium_135_output_skip"] = output_skips.get("0x3b8b91e6")
     result["compute_canaries"] = canaries
     result["compute_canary_completed_count"] = sum(
         candidate["timeline_completed"] for candidate in canaries.values())
@@ -744,13 +751,25 @@ def main():
                         "DYNAMIC_IMAGE_MASKS_CAPTURED"
                         if report.get("image_live_masks_captured")
                         else "DYNAMIC_IMAGE_MASKS_NOT_CAPTURED")
-                # Evaluate the no-dispatch control before any generic canary status.
-                if report.get("d80_control_result") == "CONTROL_PASSED_NO_CHANGE":
-                    report["result"] = "D80_NO_DISPATCH_CONTROL_PASSED"
-                elif report.get("d80_control_result") == "CONTROL_FAILED_BYTES_CHANGED":
-                    report["result"] = "D80_NO_DISPATCH_CONTROL_FAILED"
+                # Timeline completion and actual image data must be separate
+                # fields: recording a command alone is never a GPU pass.
+                medium = report.get("compute_canaries", {}).get("0x3b8b91e6", {})
+                medium_output = report.get("medium_135_output")
+                if report.get("gpu_device_lost_logged") or report.get("kernel_gpu_hang_logged"):
+                    report["result"] = "GPU_FAULT_EVIDENCE"
+                elif medium.get("timeline_completed") and medium_output is not None:
+                    report["result"] = (
+                        "MEDIUM_135_GPU_IMAGE_CHANGED"
+                        if medium_output.get("changed_bytes", 0) > 0
+                        else "MEDIUM_135_GPU_OUTPUT_UNCHANGED")
+                elif medium.get("timeline_completed"):
+                    report["result"] = "MEDIUM_135_GPU_COMPLETED_READBACK_SKIPPED"
+                elif medium.get("permit") is False:
+                    report["result"] = "MEDIUM_135_RUNTIME_REJECTED"
+                elif medium.get("command_recorded"):
+                    report["result"] = "MEDIUM_135_COMMAND_RECORDED_NOT_COMPLETED"
                 else:
-                    report["result"] = "D80_NO_DISPATCH_CONTROL_INCONCLUSIVE"
+                    report["result"] = "MEDIUM_135_NO_EXECUTION_EVIDENCE"
         except KeyboardInterrupt:
             report["result"] = "INTERRUPTED"
         except Exception as exc:
@@ -777,10 +796,13 @@ def main():
     print("COMPUTE_CANARY_MODE_ENABLED=" + str(report.get("compute_execution_enabled", False)))
     print("GPU_CANARY_COMPLETED_COUNT=" +
           str(report.get("compute_canary_completed_count", 0)))
-    print("D80_NO_DISPATCH_CONTROL_SKIPPED=" +
-          str(report.get("d80_control_dispatch_skipped", False)))
-    print("D80_CONTROL_RESULT=" + str(report.get("d80_control_result")))
-    print("D80_CONTROL_DELTA=" + str(report.get("d80_control_delta")))
+    medium = report.get("compute_canaries", {}).get("0x3b8b91e6", {})
+    print("MEDIUM_135_GRID=15x9x1")
+    print("MEDIUM_135_PERMIT=" + str(medium.get("permit")))
+    print("MEDIUM_135_COMMAND_RECORDED=" + str(medium.get("command_recorded", False)))
+    print("MEDIUM_135_GPU_TIMELINE_COMPLETED=" + str(medium.get("timeline_completed", False)))
+    print("MEDIUM_135_OUTPUT=" + str(report.get("medium_135_output")))
+    print("MEDIUM_135_READBACK_SKIP=" + str(report.get("medium_135_output_skip")))
     print("GPU_IMAGE_OUTPUT_COMPLETED_COUNT=" +
           str(report.get("gpu_image_output_completed_count", 0)))
     print("GPU_IMAGE_OUTPUT_CHANGED_COUNT=" +
