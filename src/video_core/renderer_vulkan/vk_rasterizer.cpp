@@ -31,6 +31,10 @@
 
 namespace Vulkan {
 
+// Diagnostic only: stop enumerating potential producer resources once the
+// first target indexed-indirect G-buffer draw is reached.
+static std::atomic<bool> gow_producer_chain_before_first_draw{true};
+
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
     // is encountered and implemented in the recompiler.
@@ -442,6 +446,17 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     }
     const auto state = BeginRendering(pipeline);
 
+    const char* producer_flag = std::getenv("SHADPS4_GOW_PRODUCER_INPUTS");
+    if (producer_flag && std::strcmp(producer_flag, "1") == 0 &&
+        is_indexed && count_address == 0 && max_count == 1 &&
+        stride == sizeof(VkDrawIndexedIndirectCommand) &&
+        arg_address + offset == 0x1039242c40ULL &&
+        gow_producer_chain_before_first_draw.exchange(
+            false, std::memory_order_relaxed)) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_PRODUCER_FIRST_DRAW address={:#x} result=PASSIVE",
+                    arg_address + offset);
+    }
     // Non-mutating cache-state provenance check, sampled once for the known
     // six-command G-buffer range before the indirect arguments are obtained.
     const char* origin_flag = std::getenv("SHADPS4_GOW_INDIRECT_WRITER_SCAN");
@@ -995,6 +1010,94 @@ static void EvaluateGoWImageOutputDelta(GoWImageOutputDelta capture,
 // GoW Ragnarok: passive provenance census for six zero-instance indirect draws.
 // No additional resource bindings, memory reads, or GPU commands. Inspect
 // compiler-produced writable buffer descriptors BEFORE compute suppression.
+// Passive, bounded dependency discovery for the two confirmed producers of
+// the zero-instance indirect command buffer. Observe resource ranges of
+// compute shaders BEFORE the first draw. No new dispatches, CPU guest-memory
+// reads, resource binds, GPU synchronization, or command buffer modifications.
+static void TraceGoWProducerResourceChain(const Shader::Info& info,
+                                          VideoCore::BufferCache& cache,
+                                          u32 grid_x, u32 grid_y, u32 grid_z) {
+    const char* flag = std::getenv("SHADPS4_GOW_PRODUCER_INPUTS");
+    if (!flag || std::strcmp(flag, "1") != 0 ||
+        !gow_producer_chain_before_first_draw.load(std::memory_order_relaxed) ||
+        info.hw_stage != Shader::HwStage::Compute) {
+        return;
+    }
+    struct ResourceKey {
+        u64 shader{}, address{}, size{};
+        u32 index{};
+        bool written{};
+    };
+    static std::array<ResourceKey, 256> seen{};
+    static u32 seen_count{};
+    static std::mutex mutex;
+
+    constexpr size_t words = sizeof(AmdGpu::Buffer) / sizeof(u32);
+    for (u32 idx = 0; idx < info.buffers.size(); ++idx) {
+        const auto& descriptor = info.buffers[idx];
+        if (descriptor.IsSpecial()) {
+            continue;
+        }
+        const auto& fetch = descriptor.sharp_fetch;
+        if (fetch.summary == decltype(fetch.summary)::Invalid) {
+            continue;
+        }
+        bool safe = true;
+        if (fetch.summary == decltype(fetch.summary)::SingleLoad) {
+            const size_t start = fetch.offsets[0];
+            safe = start != Shader::UNKNOWN_LOCATION &&
+                   start <= info.flattened_ud_buf.size() &&
+                   words <= info.flattened_ud_buf.size() - start;
+        } else {
+            for (size_t w = 0; w < words; ++w) {
+                if ((fetch.load_mask & (1u << w)) &&
+                    (fetch.offsets[w] == Shader::UNKNOWN_LOCATION ||
+                     fetch.offsets[w] >= info.flattened_ud_buf.size())) {
+                    safe = false;
+                    break;
+                }
+            }
+        }
+        if (!safe) {
+            continue;
+        }
+        const AmdGpu::Buffer sharp = descriptor.GetSharp(info);
+        const u64 address = sharp.base_address;
+        const u64 bytes = sharp.GetSize();
+        if (!address || !bytes || bytes > 64ull * 1024 * 1024 ||
+            address > std::numeric_limits<u64>::max() - bytes) {
+            continue;
+        }
+        bool first = false;
+        {
+            std::scoped_lock lock{mutex};
+            const auto end = seen.begin() + seen_count;
+            if (seen_count < seen.size() &&
+                std::find_if(seen.begin(), end, [&](const ResourceKey& key) {
+                    return key.shader == info.pgm_hash && key.address == address &&
+                           key.size == bytes && key.index == idx &&
+                           key.written == descriptor.is_written;
+                }) == end) {
+                seen[seen_count++] = {info.pgm_hash, address, bytes, idx,
+                                     descriptor.is_written};
+                first = true;
+            }
+        }
+        if (!first) {
+            continue;
+        }
+        // A positive GPU-modified mark proves prior GPU-write activity;
+        // a negative mark does not prove guest-memory contents are invalid.
+        const bool modified = cache.IsRegionGpuModified(address, bytes);
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_PRODUCER_RESOURCE shader={:#x} grid={}x{}x{} "
+                    "buffer={} address={:#x} bytes={} written={} "
+                    "gpu_modified_before={} result=PASSIVE",
+                    info.pgm_hash, grid_x, grid_y, grid_z, idx, address, bytes,
+                    descriptor.is_written, modified);
+    }
+}
+
 static void TraceGoWIndirectWriterCandidates(const Shader::Info& info,
                                              u32 grid_x, u32 grid_y, u32 grid_z) {
     const char* flag = std::getenv("SHADPS4_GOW_INDIRECT_WRITER_SCAN");
@@ -1127,6 +1230,8 @@ void Rasterizer::DispatchDirect() {
     }
 
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
+    TraceGoWProducerResourceChain(cs, buffer_cache, cs_program.dim_x,
+                                  cs_program.dim_y, cs_program.dim_z);
     TraceGoWIndirectWriterCandidates(cs, cs_program.dim_x, cs_program.dim_y,
                                      cs_program.dim_z);
     if (ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this)) {
