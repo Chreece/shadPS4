@@ -37,7 +37,7 @@ PSTART=None
 BACKUP={}
 BINARY_COPY=None
 PROTOTYPE_BASE='105514765f7c69dbd65a5041f089ca2076e50f0a'
-PROTOTYPE_HEAD='cb00062980b4a7467aa2f9de92081f713158944c'
+PROTOTYPE_HEAD='4c589fc0b8944e0d1317ab47aea1202abb59bb49'
 PROTOTYPE_PATHS=(
  'src/shader_recompiler/backend/spirv/emit_spirv_image.cpp',
  'src/shader_recompiler/backend/spirv/emit_spirv_instructions.h',
