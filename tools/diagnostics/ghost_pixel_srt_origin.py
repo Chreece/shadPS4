@@ -236,7 +236,7 @@ def instrument(result):
 
  raster='src/video_core/renderer_vulkan/vk_rasterizer.cpp'
  src=BACKUP[raster][0].decode()
- src=ensure_one(src,'#include "common/debug.h"', '#include <atomic>\n#include <cstdlib>\n#include <cstring>\n#include "common/debug.h"', 'resource audit C++ includes')
+ src=ensure_one(src,'#include "common/debug.h"', '#include <atomic>\n#include <cerrno>\n#include <cstdlib>\n#include <cstring>\n#include <fcntl.h>\n#include <unistd.h>\n#include "common/debug.h"', 'resource audit C++ includes')
  audit=r'''    static const bool ghost_resource_audit_enabled = [] {
         const char* flag = std::getenv("SHADPS4_GHOST_RESOURCE_AUDIT");
         return flag && std::strcmp(flag, "1") == 0;
@@ -331,27 +331,43 @@ def instrument(result):
                     u32(source.offsets[0]), u32(source.offsets[1]),
                     stage->flattened_ud_buf.size());
                 constexpr std::array<u32, 3> positions{0, 64, 128};
+                // Linux /proc/self/mem gives a checked, read-only view of
+                // mapped guest memory. Unlike memcpy, pread returns -1/EIO
+                // for unmapped guest pointers rather than raising SIGSEGV.
+                // It may read PROT_NONE pages, which is useful for shadPS4's
+                // GPU-memory tracking protections; no page permissions change.
+                const int mem_fd = ::open("/proc/self/mem", O_RDONLY | O_CLOEXEC);
+                const int open_errno = mem_fd >= 0 ? 0 : errno;
                 for (u32 index = 0; index < positions.size(); ++index) {
                     const u32 off = positions[index];
                     const bool in_range = srt_base > 0 &&
-                        srt_base <= UINT64_MAX - u64(off) - 32;
+                        srt_base <= 0x00007fffffffffffull - u64(off) - 32;
                     const u64 address = in_range ? srt_base + off : 0;
-                    const bool readable = in_range &&
-                        memory->IsAccessibleRange(address, 32, Core::MemoryProt::CpuRead);
-                    if (!readable) {
+                    std::array<u32, 8> dw{};
+                    ssize_t read_bytes = -1;
+                    int read_errno = open_errno;
+                    if (in_range && mem_fd >= 0) {
+                        errno = 0;
+                        read_bytes = ::pread(mem_fd, dw.data(), sizeof(dw),
+                                             static_cast<off_t>(address));
+                        read_errno = read_bytes == sizeof(dw) ? 0 : errno;
+                    }
+                    if (read_bytes != sizeof(dw)) {
                         LOG_WARNING(Render_Vulkan,
-                            "GHOST_SRT_RAW sample={} image={} addr={:#x} readable=false",
-                            n, index, address);
+                            "GHOST_SRT_RAW sample={} image={} addr={:#x} "
+                            "readable=false bytes={} errno={}",
+                            n, index, address, read_bytes, read_errno);
                         continue;
                     }
-                    std::array<u32, 8> dw{};
-                    std::memcpy(dw.data(), reinterpret_cast<const void*>(address), 32);
                     LOG_WARNING(Render_Vulkan,
                         "GHOST_SRT_RAW sample={} image={} addr={:#x} readable=true "
                         "dw0={:#x} dw1={:#x} dw2={:#x} dw3={:#x} "
                         "dw4={:#x} dw5={:#x} dw6={:#x} dw7={:#x}",
                         n, index, address, dw[0], dw[1], dw[2], dw[3],
                         dw[4], dw[5], dw[6], dw[7]);
+                }
+                if (mem_fd >= 0) {
+                    ::close(mem_fd);
                 }
                 const auto& flat = stage->flattened_ud_buf;
                 if (flat.size() >= 40) {
@@ -583,6 +599,7 @@ def playtest(candidate):
  S['resource_audit_first']=samples[:6]
  S['resource_audit_last']=samples[-6:]
  S['resource_audit_invalid_samples']=sum(int(x[3])+int(x[5])+int(x[7])>0 for x in samples)
+ S['srt_read_strategy']='pread:/proc/self/mem; validated with local mapped/unmapped/PROT_NONE test'
  S['srt_source_samples']=len(re.findall(r'GHOST_SRT_SRC sample=',text))
  S['srt_raw_samples']=len(re.findall(r'GHOST_SRT_RAW sample=',text))
  S['srt_raw_image2_readable']=len(re.findall(r'GHOST_SRT_RAW sample=\d+ image=2 addr=0x[0-9a-f]+ readable=true',text,re.I))
