@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <array>
+#include <algorithm>
 #include <atomic>
 #include <bit>
 #include <cstdlib>
@@ -324,6 +325,97 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     ResetBindings(false);
 }
 
+// GoW Ragnarok: read back the ACTUAL 20-byte Vulkan indirect argument records.
+// This copy uses the same VkBuffer+offset as drawIndexedIndirect, on the same
+// GPU queue immediately before the draw. No CPU guest-memory snapshots,
+// extra submissions or queue waits; no other indirect draws are changed.
+static void TraceGoWIndirectGpuArgs(const GraphicsPipeline* pipeline,
+                                   const AmdGpu::Regs& regs,
+                                   const VideoCore::Buffer* buffer, u64 source_offset,
+                                   VAddr guest_address, u32 stride, u32 max_count,
+                                   VAddr count_address, bool indexed,
+                                   Runtime& runtime, Scheduler& scheduler) {
+    const char* flag = std::getenv("SHADPS4_GOW_INDIRECT_GPU_ARGS");
+    if (!flag || std::strcmp(flag, "1") != 0 ||
+        !indexed || count_address != 0 || max_count != 1 ||
+        stride != sizeof(VkDrawIndexedIndirectCommand)) {
+        return;
+    }
+    const auto stages = pipeline->GetStages();
+    const auto fs_id = static_cast<u32>(Shader::SwStage::Fragment);
+    const Shader::Info* fs = fs_id < stages.size() ? stages[fs_id] : nullptr;
+    if (!fs || fs->pgm_hash != 0x7f710602ULL) {
+        return;
+    }
+    const auto& key = pipeline->GetGraphicsKey();
+    bool gbuffer_target = false;
+    for (u32 cb = 0; cb < AmdGpu::NUM_COLOR_BUFFERS; ++cb) {
+        const auto& color = regs.color_buffers[cb];
+        if (color && color.Address() == 0x209a90000ULL &&
+            (key.mrt_mask & (1u << cb)) && regs.color_target_mask.GetMask(cb)) {
+            gbuffer_target = true;
+            break;
+        }
+    }
+    if (!gbuffer_target || !buffer ||
+        source_offset > buffer->SizeBytes() ||
+        sizeof(VkDrawIndexedIndirectCommand) > buffer->SizeBytes() - source_offset) {
+        return;
+    }
+    // The 19:32 host log established six unique argument addresses, each
+    // repeated across many indirect draws. Sample each distinct address once.
+    static std::mutex addresses_mutex;
+    static std::array<VAddr, 6> addresses{};
+    static u32 address_count{};
+    u32 slot{};
+    {
+        std::scoped_lock lock{addresses_mutex};
+        if (std::find(addresses.begin(), addresses.begin() + address_count,
+                      guest_address) != addresses.begin() + address_count ||
+            address_count == addresses.size()) {
+            return;
+        }
+        slot = address_count;
+        addresses[address_count++] = guest_address;
+    }
+    auto& staging_pool = runtime.GetStagingPool();
+    const auto capture = staging_pool.Request(
+        sizeof(VkDrawIndexedIndirectCommand), VideoCore::MemoryType::HostCached, 16, true);
+    if (!capture.buffer || !capture.mapped ||
+        capture.size < sizeof(VkDrawIndexedIndirectCommand)) {
+        LOG_WARNING(Render_Vulkan,
+                    "GOW_INDIRECT_GPU_SKIP slot={} address={:#x} reason=STAGING_UNAVAILABLE",
+                    slot, guest_address);
+        if (capture.buffer) {
+            staging_pool.FreeDeferred(capture);
+        }
+        return;
+    }
+    const vk::BufferCopy copy{
+        .srcOffset = source_offset,
+        .dstOffset = capture.offset,
+        .size = sizeof(VkDrawIndexedIndirectCommand),
+    };
+    runtime.CopyBuffer(buffer, capture.buffer, std::span{&copy, 1});
+    LOG_WARNING(Render_Vulkan,
+                "GOW_INDIRECT_GPU_QUEUED slot={} address={:#x} source_offset={} "
+                "bytes={} result=QUEUED",
+                slot, guest_address, source_offset, copy.size);
+    scheduler.DeferPriorityOperation(
+        [capture, pool = &staging_pool, slot, guest_address] {
+            capture.Invalidate();
+            VkDrawIndexedIndirectCommand cmd{};
+            std::memcpy(&cmd, capture.mapped, sizeof(cmd));
+            LOG_WARNING(Render_Vulkan,
+                        "GOW_INDIRECT_GPU_CAPTURE slot={} address={:#x} "
+                        "index_count={} instance_count={} first_index={} "
+                        "vertex_offset={} first_instance={} result=GPU_READBACK_COMPLETE",
+                        slot, guest_address, cmd.indexCount, cmd.instanceCount,
+                        cmd.firstIndex, cmd.vertexOffset, cmd.firstInstance);
+            pool->FreeDeferred(capture);
+        });
+}
+
 void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 stride,
                               u32 max_count, VAddr count_address, u16 vertex_sgpr_offset,
                               u16 instance_sgpr_offset) {
@@ -369,6 +461,12 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     if (needs_barrier) {
         runtime.FlushBarriers();
     }
+
+    // Snapshot Vulkan's true indirect arguments on the normal GPU timeline.
+    // The original draw command below is not modified.
+    TraceGoWIndirectGpuArgs(pipeline, liverpool->regs, buffer, base,
+                           arg_address + offset, stride, max_count, count_address,
+                           is_indexed, runtime, scheduler);
 
     pipeline->BindResources(set_writes, push_data);
     UpdateDynamicState(pipeline, is_indexed);
