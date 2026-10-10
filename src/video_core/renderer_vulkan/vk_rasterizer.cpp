@@ -673,6 +673,12 @@ static int SelectGoWComputeCanary(const Shader::Info& cs, u32 x, u32 y, u32 z) {
                 sampler_ok = false;
                 continue;
             }
+            if (s.post_op == Shader::SharpFetchPostOp::DisableAnisoIfSingleLod &&
+                (s.post_op_tsharp_dw3_off == Shader::UNKNOWN_LOCATION ||
+                 s.post_op_tsharp_dw3_off >= cs.flattened_ud_buf.size())) {
+                sampler_ok = false;
+                continue;
+            }
             const auto sharp = s.GetSharp(cs);
             sampler_ok &= static_cast<bool>(sharp) && sharp.Valid();
         }
