@@ -995,7 +995,7 @@ def apply_portable_73_host_bind_audit(root, patch_bytes):
     source = root / GBUFFER_SOURCE
     original_bytes = source.read_bytes()
     if hashlib.sha256(original_bytes).hexdigest() != (
-            "bb63c99ac95295080263e7f6a82644f579f0213909054ee5d8bfb8fbe985b26"):
+            "bb63c99ac95295080263e7f6a82644f579f0213909054ee5ed8bfb8fbe985b26"):
         raise RuntimeError("Stage16 source isn't the 21:32 host-proven 15-patch result")
     original = original_bytes.decode("utf-8", errors="strict")
     anchor = ("    const int canary_idx = SelectGoWComputeCanary(\n"
