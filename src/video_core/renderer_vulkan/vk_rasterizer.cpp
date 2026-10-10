@@ -935,7 +935,7 @@ static int SelectGoWComputeCanary(const Shader::Info& cs, u32 x, u32 y, u32 z) {
                                 cs.pgm_hash, slot, special,
                                 static_cast<u32>(b.buffer_type), b.is_written,
                                 b.is_formatted, static_cast<u32>(b.sharp_fetch.summary),
-                                safe, sharp.base_address, sharp.GetSize(),
+                                safe, static_cast<u64>(sharp.base_address), sharp.GetSize(),
                                 safe && sharp.Valid());
                 }
                 for (u32 slot = 0; slot < cs.images.size(); ++slot) {
