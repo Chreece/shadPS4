@@ -123,7 +123,8 @@ args+=(
 exec gdb "${args[@]}" --args "$BIN" "$@"
 GDBWRAPPER
 chmod 700 "$WRAPPER"
-bash -n "$NEW" "$WRAPPER" || fail 'generated runner/wrapper bash syntax invalid'
+bash -n "$NEW" || fail 'generated runner syntax invalid'
+bash -n "$WRAPPER" || fail 'generated wrapper syntax invalid'
 
 printf 'PRECHECK=PASS; V33_UNCHANGED=YES; V34_UNCHANGED=YES\n'
 printf 'GDB=ENABLED; DETACHED=SYSTEMD_USER; SCREENSHOTS=YES; GPU_SOURCE_CHANGES=NO\n'
