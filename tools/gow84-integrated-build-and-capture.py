@@ -58,48 +58,100 @@ def preflight():
     if not Path('/mnt/roms-all/ps4-games/CUSA34384').is_dir():raise RuntimeError('GoW CUSA34384 missing')
     for source in (BASE/'source',BASE/'build/_deps',BASE/'build/cpu-id-runtime-source'):
         if not source.is_dir():raise RuntimeError('Required offline source missing: '+str(source))
-    for exe in ('cmake','ninja','cp','curl'):
+    for exe in ('cmake','ninja','cp','curl','git'):
         if not shutil.which(exe):raise RuntimeError('Missing command '+exe)
 
 def prepare(out,work):
+    """Merge all integrated hunks with the exact Stage80 source, preserving local edits."""
+    import tempfile
     (work/'build').mkdir(parents=True)
     for src,dst in ((BASE/'source',work/'source'),(BASE/'build/_deps',work/'build/_deps'),(BASE/'build/cpu-id-runtime-source',work/'build/cpu-id-runtime-source')):
         run(['cp','-a','--reflink=auto','--',src,dst],out/('copy-'+dst.name+'.log'),1800)
     for cache in (work/'build').rglob('CMakeCache.txt'):
         if cache.is_symlink():raise RuntimeError('Unexpected symlinked CMake cache')
         cache.unlink()
-    archive=out/'integrated-source.tar.gz'
-    run(['curl','-4','-fLSs','--retry','2','--connect-timeout','20','--max-time','420',URL,'-o',archive],out/'fetch.log',480)
-    records=[]
-    with tarfile.open(archive,'r:gz') as tar:
-        selected={}
-        for item in tar.getmembers():
-            if item.isfile() and '/' in item.name:
-                path=item.name.split('/',1)[1]
-                if path in PATHS:
-                    if path in selected:raise RuntimeError('Duplicate tar source '+path)
-                    selected[path]=item
-        if set(selected)!=set(PATHS):raise RuntimeError('Incomplete pinned source: '+str(set(PATHS)-set(selected)))
-        for name in PATHS:
+    versions={
+        'recovery':'2cf684317f818dd6159cfed7acf350ca50155382',
+        'integrated':PIN,
+    }
+    selections={}
+    archive_paths={}
+    for label,rev in versions.items():
+        path=out/(label+'-source.tar.gz')
+        run(['curl','-4','-fLSs','--retry','2','--connect-timeout','20','--max-time','420',
+             'https://codeload.github.com/Chreece/shadPS4/tar.gz/'+rev,'-o',path],
+            out/('fetch-'+label+'.log'),480)
+        archive_paths[label]=path
+        with tarfile.open(path,'r:gz') as tar:
+            selected={}
+            for item in tar.getmembers():
+                if item.isfile() and '/' in item.name:
+                    rel=item.name.split('/',1)[1]
+                    if rel in PATHS:
+                        if rel in selected:raise RuntimeError('Duplicate archive member '+rel)
+                        selected[rel]=item
+            if set(selected)!=set(PATHS):
+                raise RuntimeError('Incomplete '+label+' source archive: '+str(set(PATHS)-set(selected)))
+            entries={}
+            for rel,item in selected.items():
+                if item.size>12000000:raise RuntimeError('Unexpected large source file '+rel)
+                with tar.extractfile(item) as stream:entries[rel]=stream.read()
+                if len(entries[rel])!=item.size:raise RuntimeError('Truncated '+label+' file '+rel)
+            selections[label]=entries
+    report=[]
+    changes=[]
+    conflicts=[]
+    with tempfile.TemporaryDirectory(prefix='gow84-merge-',dir=out) as temp:
+        folder=Path(temp)
+        for i,name in enumerate(PATHS):
             target=work/'source'/name
-            if target.is_symlink() or not target.is_file() or selected[name].size>12000000:raise RuntimeError('Unsafe source file '+name)
-            before=digest(target)
-            data=tar.extractfile(selected[name]).read()
-            if len(data)!=selected[name].size:raise RuntimeError('Truncated source '+name)
-            target.write_bytes(data)
-            records.append({'path':name,'before_sha256':before,'after_sha256':digest(target)})
-    (out/'overlaid-files.json').write_text(json.dumps(records,indent=2)+'\n')
-    (out/'source-sha.json').write_text(json.dumps({'pinned_commit':PIN,'original_archive_sha256':digest(archive)},indent=2)+'\n')
-    archive.unlink()
-    checks={
-      'src/shader_recompiler/frontend/translate/data_share.cpp':'DS_ORDERED_COUNT',
-      'src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp':'EmitBufferOrderedCount',
-      'src/video_core/buffer_cache/buffer_cache.cpp':'GetSparseQueue().bindSparse',
-      'src/video_core/buffer_cache/buffer_cache.h':'STREAM_THRESHOLD = 64_KB',
-      'src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp':'ShaderBinaryVersion = 8u'}
-    for path,token in checks.items():
-        if token not in (work/'source'/path).read_text():raise RuntimeError('Integrated code missing '+token)
-    note(out,'SOURCE=PASS 39 source files; Phase80 fixes and CPU-ID preserved')
+            if target.is_symlink() or not target.is_file():raise RuntimeError('Missing or unsafe '+name)
+            local=target.read_bytes()
+            before=selections['recovery'][name]
+            after=selections['integrated'][name]
+            if local==before:
+                merged=after;status='direct'
+            elif local==after:
+                merged=local;status='already-integrated'
+            else:
+                ours=folder/(str(i)+'-phase80')
+                ancestor=folder/(str(i)+'-recovery')
+                theirs=folder/(str(i)+'-ordered')
+                ours.write_bytes(local);ancestor.write_bytes(before);theirs.write_bytes(after)
+                p=subprocess.run(['git','merge-file','-p',ours,ancestor,theirs],
+                                 capture_output=True,timeout=35)
+                if p.returncode!=0:
+                    conflicts.append({'file':name,'returncode':p.returncode,
+                                      'diagnostic':p.stderr.decode(errors='replace')[-1500:]})
+                    continue
+                merged=p.stdout;status='merged'
+            report.append({'file':name,'status':status,'phase80_sha':hashlib.sha256(local).hexdigest(),
+                           'merged_sha':hashlib.sha256(merged).hexdigest()})
+            changes.append((target,merged))
+    (out/'source-merge-audit.json').write_text(json.dumps(
+        {'patch_files':len(PATHS),'safe_merge_files':len(changes),
+         'conflicts':conflicts,'details':report,'base_sha':versions['recovery'],'integrated_sha':PIN},
+        indent=2)+'\n')
+    if conflicts:
+        raise RuntimeError('Source merge conflict; no source files replaced: '+str([c['file'] for c in conflicts]))
+    for target,merged in changes:
+        target.write_bytes(merged)
+    for path,token in (
+      ('src/shader_recompiler/frontend/translate/data_share.cpp','DS_ORDERED_COUNT'),
+      ('src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp','EmitBufferOrderedCount'),
+      ('src/video_core/buffer_cache/buffer_cache.cpp','GetSparseQueue().bindSparse'),
+      ('src/video_core/buffer_cache/buffer_cache.h','STREAM_THRESHOLD = 64_KB'),
+      ('src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp','ShaderBinaryVersion = 8u'),
+      ('src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp','ShaderMetaVersion = 7u')):
+        if token not in (work/'source'/path).read_text():
+            raise RuntimeError('Integrated code missing '+token)
+    (out/'source-sha.json').write_text(json.dumps(
+        {'base_recovery':versions['recovery'],'integrated':PIN,
+         'source_tar_sha256':{label:digest(path) for label,path in archive_paths.items()}},
+        indent=2)+'\n')
+    for path in archive_paths.values():path.unlink()
+    note(out,'SOURCE=PASS 39-file three-way merge; local Phase80 modifications retained')
+
 
 def game_environment():
     e=os.environ.copy()
