@@ -15,9 +15,10 @@ AHASH="1e7264ec822d00060cddf9649fc704217524163e81673d87e5059e64e1375f6f"
 PIN="3b7197f57c2a44048f6365e2568050df7324aa33"
 fail() { echo "STOP: $*" >&2; exit 2; }
 hash() { sha256sum "$1" | cut -d' ' -f1; }
-for x in "$A" "$B" "$C" "$C/build"; do
+for x in "$A" "$B" "$C"; do
   [[ -d "$x" && ! -L "$x" && -f "$x/.git" ]] || fail "missing or unsafe worktree $x"
 done
+[[ -d "$C/build" && ! -L "$C/build" ]] || fail "missing or unsafe v33 build directory"
 for x in "$A/build/shadps4" "$B/build/shadps4" "$B/$SRC" "$C/$SRC" \
  "$C/build/compile-one.sh" "$C/build/link-v33.sh" "$B/build/compile-one.sh" \
  "$B/build/link-v32.sh" "$L32"; do
