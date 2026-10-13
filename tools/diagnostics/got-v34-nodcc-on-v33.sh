@@ -42,7 +42,7 @@ source_name='got-v33-gow-srt-correctness-20261013'
 if oldlabel not in s or source_name not in s or sha not in s:
     raise SystemExit('STOP: v33 screenshot harness does not match tested version')
 # Exact, safe one-variable change: retain ALL existing RADV flags but disable DCC.
-pattern=re.compile(r'(?m)^(?P<pre>[ \t]*(?:export[ \t]+)?RADV_DEBUG=)(?P<quote>["\\']?)(?P<flags>[a-z0-9_,]+)(?P=quote)(?P<comment>[ \t]*(?:#.*)?)$')
+pattern=re.compile(r"(?m)^(?P<pre>[ \t]*(?:export[ \t]+)?RADV_DEBUG=)(?P<quote>['\"]?)(?P<flags>[a-z0-9_,]+)(?P=quote)(?P<comment>[ \t]*(?:#.*)?)$")
 matches=list(pattern.finditer(s))
 if len(matches)!=1:
     raise SystemExit(f'STOP: expected exactly 1 literal RADV_DEBUG assignment, found {len(matches)}')
