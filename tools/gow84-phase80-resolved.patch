@@ -57,4 +57,4 @@ diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/r
      }
 +    ResetOrderedCount(cs);
  
-     const auto [buffer, base] = buffer_cache.ObtainBuffer(address + offset, size, false)
+     const auto [buffer, base] = buffer_cache.ObtainBuffer(address + offset, size, false);
