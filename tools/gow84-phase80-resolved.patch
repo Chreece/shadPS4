@@ -1,0 +1,60 @@
+diff --git a/src/shader_recompiler/ir/opcodes.inc b/src/shader_recompiler/ir/opcodes.inc
+--- a/src/shader_recompiler/ir/opcodes.inc
++++ b/src/shader_recompiler/ir/opcodes.inc
+@@ -156,4 +156,6 @@
+ OPCODE(BufferAtomicCmpSwap32,                               U32,            Opaque,         Opaque,         U32,            U32,                            )
+ OPCODE(BufferAtomicFCmpSwap32,                              F32,            Opaque,         Opaque,         F32,            F32,                            )
++OPCODE(BufferOrderedCount,                                  U32,            Opaque,         Opaque,         U32,            U32,                            )
++OPCODE(BufferOrderedSignal,                                 Void,           Opaque,         U32,                                                            )
+ 
+ // Vector utility
+@@ -470,4 +472,6 @@
+ OPCODE(DataAppend,                                          U32,            U32,            U1                                                              )
+ OPCODE(DataConsume,                                         U32,            U32,            U1                                                              )
++OPCODE(GdsOrderedCount,                                     U32,            U32,            U32,            U32,                                            )
++OPCODE(GdsOrderedSignal,                                    Void,           U32,                                                                            )
+ OPCODE(GroupAny,                                            U1,             U1,                                                                             )
+ 
+diff --git a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+--- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+@@ -13,6 +13,6 @@
+ namespace Serialization {
+ /* You should increment versions below once corresponding serialization scheme is changed. */
+-static constexpr u32 ShaderBinaryVersion = 10u;
+-static constexpr u32 ShaderMetaVersion = 7u;
++static constexpr u32 ShaderBinaryVersion = 11u;
++static constexpr u32 ShaderMetaVersion = 8u;
+ static constexpr u32 PipelineKeyVersion = 3u;
+ } // namespace Serialization
+diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+@@ -3225,4 +3225,5 @@
+         return;
+     }
++    ResetOrderedCount(cs);
+ 
+     // GOW58: bounded independent guest dispatch provenance and opt-in first-15x9 skip.
+@@ -4595,4 +4596,15 @@
+ }
+ 
++void Rasterizer::ResetOrderedCount(const Shader::Info& stage) {
++    if (!stage.uses_ordered_count) {
++        return;
++    }
++    const auto* gds_buffer = buffer_cache.GetGdsBuffer();
++    constexpr u32 tickets_size = Shader::GdsOrderedCounters * sizeof(u32);
++    runtime.FillBuffer(gds_buffer, Shader::GdsOrderedTicketOffset, tickets_size, 0);
++    needs_barrier |=
++        runtime.IsBufferAccessed(gds_buffer, Shader::GdsOrderedTicketOffset, tickets_size);
++}
++
+ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
+     RENDERER_TRACE;
+@@ -4649,4 +4661,5 @@
+         return;
+     }
++    ResetOrderedCount(cs);
+ 
+     const auto [buffer, base] = buffer_cache.ObtainBuffer(address + offset, size, false)
