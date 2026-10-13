@@ -24,6 +24,11 @@ MANUAL_SHA={
 }
 PATCH_PIN='cf467a52aceab56e827c96a6d6aae9620b5f761c'
 PATCH_SHA='107a39a738cf7518105ac4688f20322f0556de5aff6dccc141f1e8eb58aa015f'
+EXPECTED_MANUAL_RESULTS={
+    "src/shader_recompiler/ir/opcodes.inc": "4bc38ed827180cad02a785f772e5d11ad7660d3dc1bcd39788f57bd8037a11e8",
+    "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp": "d53e86a290864eab791fcc96e8a707b2f4ad8c8b645deb492bc140244dab45cd",
+    "src/video_core/renderer_vulkan/vk_rasterizer.cpp": "8e3f37478dbdf423992323a9b3821545827c8d31ecc5b340eddad9de3b3d6a60"
+}
 PATCH_URL='https://raw.githubusercontent.com/Chreece/shadPS4/'+PATCH_PIN+'/tools/gow84-phase80-resolved.patch'
 PATHS=["src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp","src/shader_recompiler/backend/spirv/emit_spirv_barriers.cpp","src/shader_recompiler/backend/spirv/emit_spirv_instructions.h","src/shader_recompiler/backend/spirv/emit_spirv_special.cpp","src/shader_recompiler/backend/spirv/emit_spirv_warp.cpp","src/shader_recompiler/backend/spirv/spirv_emit_context.cpp","src/shader_recompiler/backend/spirv/spirv_emit_context.h","src/shader_recompiler/frontend/control_flow_graph.cpp","src/shader_recompiler/frontend/translate/data_share.cpp","src/shader_recompiler/frontend/translate/scalar_flow.cpp","src/shader_recompiler/frontend/translate/translate.cpp","src/shader_recompiler/frontend/translate/translate.h","src/shader_recompiler/info.h","src/shader_recompiler/ir/ir_emitter.cpp","src/shader_recompiler/ir/ir_emitter.h","src/shader_recompiler/ir/microinstruction.cpp","src/shader_recompiler/ir/opcodes.inc","src/shader_recompiler/ir/passes/lower_wave64_pass.cpp","src/shader_recompiler/ir/passes/resource_pass.h","src/shader_recompiler/ir/passes/resource_patching_pass.cpp","src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp","src/shader_recompiler/recompiler.cpp","src/shader_recompiler/runtime_info.h","src/video_core/amdgpu/regs_shader.h","src/video_core/buffer_cache/buffer_cache.cpp","src/video_core/buffer_cache/buffer_cache.h","src/video_core/renderer_vulkan/vk_instance.cpp","src/video_core/renderer_vulkan/vk_instance.h","src/video_core/renderer_vulkan/vk_pipeline_cache.cpp","src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp","src/video_core/renderer_vulkan/vk_rasterizer.cpp","src/video_core/renderer_vulkan/vk_rasterizer.h","tests/gcn/gcn_test_runner.cpp","tests/gcn/gcn_test_runner.hpp","tests/gcn/instructions.hpp","tests/gcn/test_gcn_instructions.cpp","tests/gcn/translator.cpp","tests/gcn/translator.hpp","tests/stubs/resource_tracking_pass_stub.cpp"]
 
@@ -171,7 +176,16 @@ def prepare(out,work):
         out/'manual-resolution-check.log',90)
     run(['git','-C',work/'source','apply',patchfile],
         out/'manual-resolution-apply.log',90)
-    note(out,'PHASE80_MANUAL_RESOLUTION=PASS 8 confirmed snapshots; 3 exact patched sources')
+    checked=[]
+    for name in sorted(MANUAL_SHA):
+        actual=digest(work/'source'/name)
+        expected=EXPECTED_MANUAL_RESULTS.get(name,MANUAL_SHA[name])
+        if actual!=expected:
+            raise RuntimeError('Manual phase84 merge output mismatch: '+name+
+                               ' expected='+expected+' actual='+actual)
+        checked.append({'path':name,'sha256':actual,'modified':name in EXPECTED_MANUAL_RESULTS})
+    (out/'manual-resolution-verified.json').write_text(json.dumps(checked,indent=2)+'\n')
+    note(out,'PHASE80_MANUAL_RESOLUTION=PASS all 8 resulting source files match locally verified SHA-256')
     for path,token in (
       ('src/shader_recompiler/frontend/translate/data_share.cpp','DS_ORDERED_COUNT'),
       ('src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp','EmitBufferOrderedCount'),
@@ -272,6 +286,7 @@ def main():
     if opts.self_test:
         assert len(PATHS)==39 and len(set(PATHS))==39 and all(p.startswith(('src/','tests/')) for p in PATHS)
         assert len(MANUAL_SHA)==8 and set(MANUAL_SHA).issubset(set(PATHS))
+        assert len(EXPECTED_MANUAL_RESULTS)==3 and set(EXPECTED_MANUAL_RESULTS).issubset(set(MANUAL_SHA))
         assert len(PATCH_SHA)==64 and len(PATCH_PIN)==40
         assert PATCH_URL.endswith('/tools/gow84-phase80-resolved.patch')
         assert len(PIN)==40 and len(BASE_BINARY)==64 and URL.endswith(PIN)
