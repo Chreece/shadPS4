@@ -318,7 +318,13 @@ def capture_recorded(project: Path) -> bool:
 
 
 def running_emulators(proc: Path = Path('/proc'), uid: int | None = None) -> list[dict]:
-    """Inspect our processes only. Never signal any game or its parent shell."""
+    """Find only positively identified shadPS4 processes, without disturbing others.
+
+    A restricted /proc/<pid>/stat or exe is common on headless Linux systems.
+    In that case try comm/cmdline; unrelated inaccessible processes must not
+    prevent launching the capture. Unknown candidate shadPS4 processes fail
+    closed rather than assuming the GPU is idle.
+    """
     owner = os.getuid() if uid is None else uid
     found = []
     for entry in proc.iterdir():
@@ -327,22 +333,45 @@ def running_emulators(proc: Path = Path('/proc'), uid: int | None = None) -> lis
         try:
             if entry.stat().st_uid != owner:
                 continue
-            state = (entry / 'stat').read_text().rsplit(') ', 1)[1].split()[0]
-            if state in ('Z', 'X'):
-                continue
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            continue
+        comm = ''
+        try:
             comm = (entry / 'comm').read_text().strip()
-            try:
-                exe = os.readlink(entry / 'exe').removesuffix(' (deleted)')
-            except FileNotFoundError:
-                exe = ''
-            if not (comm.lower().startswith('shadps4') or
-                    Path(exe).name.lower().startswith('shadps4')):
-                continue
-            found.append({'pid': int(entry.name), 'name': comm, 'executable': exe})
         except (FileNotFoundError, ProcessLookupError):
             continue
-        except (PermissionError, IndexError) as exc:
-            raise RuntimeError('Cannot safely inspect own process ' + entry.name) from exc
+        except PermissionError:
+            pass
+        try:
+            raw = (entry / 'cmdline').read_bytes()
+            argv = raw.split(b'\\0')
+            cmd0 = os.fsdecode(argv[0]) if argv and argv[0] else ''
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        except PermissionError:
+            cmd0 = ''
+        exe = ''
+        try:
+            exe = os.readlink(entry / 'exe').removesuffix(' (deleted)')
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            pass
+        candidate = (comm.lower().startswith('shadps4') or
+                     Path(cmd0).name.lower().startswith('shadps4') or
+                     Path(exe).name.lower().startswith('shadps4'))
+        if not candidate:
+            continue
+        try:
+            stat_text = (entry / 'stat').read_text()
+            fields = stat_text.rsplit(') ', 1)
+            state = fields[1].split()[0] if len(fields) == 2 else '?'
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        except (PermissionError, IndexError):
+            state = '?'
+        if state in ('Z', 'X'):
+            continue
+        found.append({'pid': int(entry.name), 'name': comm or Path(cmd0).name,
+                      'executable': exe or cmd0, 'state': state})
     return sorted(found, key=lambda item: item['pid'])
 
 
