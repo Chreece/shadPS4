@@ -8,5 +8,5 @@ Experimental source integration only: not yet proven to render gameplay.
 - Phase80 GPU fixes retained: sparse-capable queue selection, stream-buffer threshold 64 KiB, GPU-dirty check, sparse device-address backing.
 - Shader cache versions are binary 8 and meta 7; GCN test sources included without claiming tests passed on this combined build.
 - Phase83 measured four flattened SRT tables for shader 0x04691bd5, with flat word 86=1 and word 91=0 in all four. This does not prove a shader correctness defect or a gameplay fix.
-- Build runner is source-only and uses a clean CMake build directory; original Phase80 source, binary, game saves and SSH process group are not intentionally changed.
+- Build runner uses a three-way source merge (GoW recovery base, Phase80 local source, ordered-count candidate) for all 39 files; conflicts abort without touching the copied source. It uses a clean CMake build directory. Original Phase80 source, binary, saves and SSH process group are not intentionally changed.
 - Next verification: compile on the Debian/RADV host, examine screenshots and RADV last-reached trace point, compare with Phase82/83 baseline.
