@@ -24,7 +24,13 @@ for x in "$A/build/shadps4" "$B/build/shadps4" "$B/$SRC" "$C/$SRC" \
  "$B/build/link-v32.sh" "$L32"; do
   [[ -f "$x" && ! -L "$x" ]] || fail "missing or unsafe input $x"
 done
-[[ ! -e "$L33" && ! -L "$L33" ]] || fail "v33 launcher already present; check its status"
+# A previously completed v33 visual run needs only its status, not a rebuild.
+if [[ -f "$L33" && ! -L "$L33" ]]; then
+  printf 'V33_ALREADY_LAUNCHED=YES; NO_REBUILD_NEEDED\n'
+  bash "$L33" status
+  exit 0
+fi
+[[ ! -e "$L33" && ! -L "$L33" ]] || fail "unsafe existing v33 launcher"
 [[ ! -e "$C/build/shadps4" && ! -L "$C/build/shadps4" ]] ||
  fail "v33 binary already exists: do not overwrite"
 for x in "$A" "$B" "$C"; do
