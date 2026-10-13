@@ -6,14 +6,18 @@ are confined to a private copy. Never patch /usr/lib, permissions, or other game
 The existing pinned dual-capture/UMR broker remains the hardware diagnostic path.
 """
 from __future__ import annotations
+import fcntl
 import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
+import stat
 import struct
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -298,6 +302,207 @@ def load_stack(project: Path):
     return dual, base
 
 
+def capture_recorded(project: Path) -> bool:
+    """A created shell script is NOT evidence that its game was scheduled."""
+    pointer = project.parent / 'logs' / ('.' + LABEL + '-latest')
+    if not pointer.exists() and not pointer.is_symlink():
+        return False
+    data = read_regular(pointer, 8192).decode('utf-8')
+    values = dict(line.split('=', 1) for line in data.splitlines() if '=' in line)
+    unit, report = values.get('unit', ''), Path(values.get('report', ''))
+    if (not re.fullmatch(re.escape(LABEL) + r'-[0-9]{8}-[0-9]{6}', unit)
+            or report.parent != project.parent / 'logs'
+            or not report.name.startswith(unit + '-')):
+        raise RuntimeError('Capture pointer is incomplete or changed; preserving all state')
+    return True
+
+
+def running_emulators(proc: Path = Path('/proc'), uid: int | None = None) -> list[dict]:
+    """Inspect our processes only. Never signal any game or its parent shell."""
+    owner = os.getuid() if uid is None else uid
+    found = []
+    for entry in proc.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            if entry.stat().st_uid != owner:
+                continue
+            state = (entry / 'stat').read_text().rsplit(') ', 1)[1].split()[0]
+            if state in ('Z', 'X'):
+                continue
+            comm = (entry / 'comm').read_text().strip()
+            try:
+                exe = os.readlink(entry / 'exe').removesuffix(' (deleted)')
+            except FileNotFoundError:
+                exe = ''
+            if not (comm.lower().startswith('shadps4') or
+                    Path(exe).name.lower().startswith('shadps4')):
+                continue
+            found.append({'pid': int(entry.name), 'name': comm, 'executable': exe})
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        except (PermissionError, IndexError) as exc:
+            raise RuntimeError('Cannot safely inspect own process ' + entry.name) from exc
+    return sorted(found, key=lambda item: item['pid'])
+
+
+def show_busy(games: list[dict]) -> None:
+    print('CAPTURE=BLOCKED_OTHER_SHADPS4; NO_GAME_STARTED; NO_GPU_PROBE', flush=True)
+    for game in games:
+        print('EXISTING_GAME_PID=%s NAME=%s EXE=%s' %
+              (game['pid'], game['name'], game['executable']), flush=True)
+    print('EXISTING_GAME_UNTOUCHED; CLOSE_IT_NORMALLY_THEN_RERUN_THIS_HELPER', flush=True)
+
+
+def active_capture_units() -> list[str]:
+    """Do not rotate a launcher used by a timer, including its startup delay."""
+    command = ['systemctl', '--user', 'list-units', '--all', '--plain',
+               '--no-legend', '--no-pager', LABEL + '-*.timer', LABEL + '-*.service']
+    result = subprocess.run(command, capture_output=True, text=True, timeout=10,
+                            env=dict(os.environ, LC_ALL='C', SYSTEMD_COLORS='0'))
+    if result.returncode:
+        raise RuntimeError('Cannot check capture timers; preserving launcher: ' + result.stderr[-400:])
+    active = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        if len(fields) < 4 or not fields[0].startswith(LABEL + '-'):
+            raise RuntimeError('Unexpected systemd unit listing; preserving launcher')
+        if fields[2] not in ('inactive', 'failed'):
+            active.append(fields[0])
+    return active
+
+
+def broker_is_inactive(unit: str) -> bool:
+    result = subprocess.run(['systemctl', 'show', unit + '.service', '--no-pager',
+                             '--property=LoadState', '--property=ActiveState'],
+                            capture_output=True, text=True, timeout=10,
+                            env=dict(os.environ, LC_ALL='C', SYSTEMD_COLORS='0'))
+    values = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+    if result.returncode not in (0, 4) or 'LoadState' not in values or 'ActiveState' not in values:
+        raise RuntimeError('Cannot establish previous broker state; nothing replaced')
+    return values['ActiveState'] in ('inactive', 'failed')
+
+
+def archive_unscheduled_launcher(project: Path, base, script: Path) -> None:
+    """Recover ONLY an exact launcher from a recorded failed, unscheduled setup.
+
+    Preserve it and its failure evidence. A scheduled capture, unknown launcher,
+    active broker or active timer is never overwritten or stopped.
+    """
+    launcher = project / 'scripts' / (LABEL + '.sh')
+    if not launcher.exists() and not launcher.is_symlink():
+        return
+    contents = read_regular(launcher, 100_000)
+    old = project / 'scripts' / (base.OLD_LABEL + '.sh')
+    source = read_regular(old, 100_000)
+    if digest(source) != base.LAUNCHER_SHA:
+        raise RuntimeError('Original v37 launcher changed; no retry reconstruction')
+    matches = []
+    for session in sorted((project / 'tools').glob('umr-session-*')):
+        if session.is_symlink() or not session.is_dir():
+            continue
+        if not re.fullmatch(r'umr-session-[a-z0-9_]+', session.name):
+            continue
+        setup_path, error_path = session / 'setup.json', session / 'setup-error.json'
+        if not setup_path.exists() or not error_path.exists():
+            continue
+        setup = json.loads(read_regular(setup_path, 32_000))
+        error = json.loads(read_regular(error_path, 32_000))
+        unit = 'got-umr-broker-' + session.name.removeprefix('umr-session-')
+        if (setup.get('launcher') != str(launcher) or setup.get('root_unit') != unit
+                or error.get('root_unit') != unit
+                or error.get('error') != 'Game launcher declined; see its output'):
+            continue
+        if (setup.get('old_launcher_sha256') != base.LAUNCHER_SHA
+                or setup.get('umr_sha256') != base.UMR_SHA
+                or setup.get('game_sha256') != base.GAME_SHA):
+            continue
+        expected = base.transform(source.decode('utf-8'), script, session).encode('utf-8')
+        if contents == expected:
+            matches.append((session, unit))
+    if len(matches) != 1:
+        raise RuntimeError('Launcher is not a uniquely verified failed setup; nothing overwritten')
+    session, unit = matches[0]
+    if not broker_is_inactive(unit):
+        raise RuntimeError('Previous finite broker is still exiting; retry later; no process stopped')
+    if capture_recorded(project) or active_capture_units():
+        raise RuntimeError('Capture became scheduled/active; retry recovery cancelled')
+    # Only our setup processes share this lock; a manually started game is left
+    # alone by the later launcher and worker checks as well.
+    if running_emulators():
+        raise RuntimeError('A game started during retry preparation; nothing replaced')
+    if read_regular(launcher, 100_000) != contents:
+        raise RuntimeError('Launcher changed during verification; preserving it')
+    folder = Path(tempfile.mkdtemp(prefix='got-radv-unscheduled-', dir=project.parent / 'logs'))
+    proof = {'reason': 'launcher_created_but_game_not_scheduled', 'session': str(session),
+             'launcher_sha256': digest(contents), 'broker_unit': unit,
+             'prior_capture_restarted': False, 'existing_games_signalled': False}
+    (folder / 'retry-proof.json').write_text(json.dumps(proof, indent=2) + '\n')
+    for name in ('setup.json', 'setup-error.json'):
+        write_or_verify(folder / name, read_regular(session / name, 32_000), 0o600)
+    # Keep the old launcher in the report directory. Do not delete a checkpoint.
+    launcher.rename(folder / launcher.name)
+    print('UNSCHEDULED_LAUNCHER=ARCHIVED; FRESH_SESSION_ALLOWED', flush=True)
+    print('PREVIOUS_SETUP_PRESERVED=' + str(folder), flush=True)
+
+
+def run_setup(project: Path, script: Path, dual, base, prepare_only: bool = False) -> int:
+    home = Path.home()
+    if os.geteuid() == 0 or project != home / 'projects/shadps4/GhostOfTsushima':
+        raise RuntimeError('Run from the normal user project, not sudo python')
+    lockpath = project / 'scripts' / ('.' + LABEL + '-setup.lock')
+    fd = os.open(lockpath, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
+            raise RuntimeError('Unsafe setup lock file')
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print('CAPTURE=SETUP_ALREADY_IN_PROGRESS; NO_SECOND_START', flush=True)
+            return 0
+        if not prepare_only:
+            if capture_recorded(project):
+                print('EXISTING_CAPTURE=RECORDED_STATUS_ONLY; NO_REPEAT_RUN', flush=True)
+                base.status(home)
+                return 0
+            games = running_emulators()
+            if games:
+                show_busy(games)
+                return 0
+            units = active_capture_units()
+            if units:
+                print('CAPTURE=EXISTING_UNIT_ACTIVE; NO_RESTART; UNITS=' + ','.join(units), flush=True)
+                return 0
+            archive_unscheduled_launcher(project, base, script)
+        logs = project.parent / 'logs'
+        logs.mkdir(parents=True, exist_ok=True)
+        try:
+            prepare_driver(project)
+            print('PRIVATE_RADV=EXACT_RETAINED_V17_HASH; SYSTEM_RADV=UNTOUCHED', flush=True)
+            print('PREPARATION=' + str(paths(project)[0].parent / 'preparation.json'), flush=True)
+            if prepare_only:
+                return 0
+            dual.preflight_gdb(base)
+            # The base still checks for another emulator at launch and again in
+            # its worker. A late refusal remains retryable using setup-error.json.
+            return base.main()
+        except Exception as exc:
+            with tempfile.TemporaryDirectory(prefix='got-radv-restore-', dir=logs) as temp:
+                p = Path(temp) / 'failure.json'
+                p.write_text(json.dumps({'error': str(exc), 'time': base.now(),
+                                        'gameplay_verified': False}, indent=2) + '\n')
+                archive = logs / (Path(temp).name + '.tar.gz')
+                with tarfile.open(archive, 'w:gz') as t:
+                    t.add(p, arcname='failure.json')
+                print('UPLOAD_PREPARATION_FAILURE=' + str(archive), flush=True)
+            raise
+    finally:
+        os.close(fd)
+
+
 def main() -> int:
     os.umask(0o077)
     script = Path(__file__).resolve()
@@ -307,35 +512,13 @@ def main() -> int:
     args = sys.argv[1:]
     dual, base = load_stack(project)
     if args == ['status']:
-        base.status(project.parent.parent.parent); return 0
+        if capture_recorded(project):
+            base.status(project.parent.parent.parent)
+        else:
+            print('CAPTURE=NOT_SCHEDULED; RERUN_WITHOUT_STATUS_TO_RETRY')
+        return 0
     if not args or args == ['prepare']:
-        home = Path.home()
-        if project != home/'projects/shadps4/GhostOfTsushima':
-            raise RuntimeError('Project is not under the current normal user home')
-        launcher = project/'scripts'/(LABEL+'.sh')
-        if base.regular(launcher) and not args:
-            print('EXISTING_CAPTURE=STATUS_ONLY; NO_REPEAT_RUN')
-            base.status(home); return 0
-        logs = home/'projects/shadps4/logs'
-        logs.mkdir(parents=True, exist_ok=True)
-        try:
-            info = prepare_driver(project)
-            print('PRIVATE_RADV=EXACT_RETAINED_V17_HASH; SYSTEM_RADV=UNTOUCHED', flush=True)
-            print('PREPARATION='+str(paths(project)[0].parent/'preparation.json'), flush=True)
-            if args == ['prepare']:
-                return 0
-            dual.preflight_gdb(base)
-            return base.main()
-        except Exception as exc:
-            with tempfile.TemporaryDirectory(prefix='got-radv-restore-', dir=logs) as temp:
-                p = Path(temp)/'failure.json'
-                p.write_text(json.dumps({'error': str(exc), 'time': base.now(),
-                                        'gameplay_verified': False}, indent=2)+'\n')
-                archive = logs/(Path(temp).name+'.tar.gz')
-                with tarfile.open(archive, 'w:gz') as t:
-                    t.add(p, arcname='failure.json')
-                print('UPLOAD_PREPARATION_FAILURE='+str(archive), flush=True)
-            raise
+        return run_setup(project, script, dual, base, args == ['prepare'])
     if args[0] == 'broker' and len(args) == 3:
         return base.broker(int(args[1]), Path(args[2]))
     if args[0] == 'client' and len(args) >= 3:
