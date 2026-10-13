@@ -111,6 +111,8 @@ for before,after in [('compile-one.sh','compile-one.sh'),('link-v32.sh','link-v3
 PY
 bash -n "$C/build/compile-one.sh" || fail "compile command syntax"
 bash -n "$C/build/link-v33.sh" || fail "link command syntax"
+# Redirected compiler object and -MF depfile need their parent directory.
+mkdir -p -- "$C/build/CMakeFiles/shadps4.dir/$(dirname "$SRC")"
 printf 'STAGE=COMPILE_ONE_TU_AND_RELINK_V33\n'
 (cd "$A/build" && bash "$C/build/compile-one.sh") >"$BUILDLOG" 2>&1 ||
     { tail -50 "$BUILDLOG"; fail "shader compile failed: $BUILDLOG"; }
