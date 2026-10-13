@@ -1,0 +1,280 @@
+--- a/src/video_core/renderer_vulkan/vk_pipeline_cache.h
++++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.h
+@@ -3,6 +3,7 @@
+ 
+ #pragma once
+ 
++#include <memory>
+ #include <variant>
+ #include <tsl/robin_map.h>
+ #include "shader_recompiler/profile.h"
+@@ -40,29 +41,31 @@
+ 
+ struct Program {
+     struct Module {
+-        vk::ShaderModule module;
++        vk::ShaderModule module{};
+         Shader::StageSpecialization spec;
++        // Shader resources and flattened SRT belong to this exact permutation.
++        // Heap ownership keeps pipeline/spec pointers valid when modules reallocates.
++        std::unique_ptr<Shader::Info> info;
+     };
+     static constexpr size_t MaxPermutations = 8;
+     using ModuleList = boost::container::small_vector<Module, MaxPermutations>;
+ 
+-    Shader::Info info;
+     ModuleList modules{};
+ 
+-    Program() = default;
+-    Program(Shader::HwStage stage, Shader::SwStage l_stage, Shader::ShaderParams params)
+-        : info{stage, l_stage, params} {}
+-
+-    void AddPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec) {
+-        modules.emplace_back(module, std::move(spec));
++    void AddPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec,
++                   std::unique_ptr<Shader::Info> info) {
++        spec.info = info.get();
++        modules.push_back(Module{module, std::move(spec), std::move(info)});
+     }
+ 
+     void InsertPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec,
+-                      size_t perm_idx) {
+-        modules.resize(std::max(modules.size(), perm_idx + 1)); // <-- beware of realloc
+-        modules[perm_idx] = {module, std::move(spec)};
++                      size_t perm_idx, std::unique_ptr<Shader::Info> info) {
++        modules.resize(std::max(modules.size(), perm_idx + 1));
++        spec.info = info.get();
++        modules[perm_idx] = Module{module, std::move(spec), std::move(info)};
+     }
+ };
++
+ 
+ struct DrawIndirectParams {
+     u16 vertex_sgpr_offset;
+--- a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+@@ -659,54 +659,61 @@
+ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_stage,
+                                                 const Shader::ShaderParams& params,
+                                                 Shader::Backend::Bindings& binding) {
+-    auto runtime_info = BuildRuntimeInfo(hw_stage, sw_stage);
++    const auto runtime_info = BuildRuntimeInfo(hw_stage, sw_stage);
++    const auto start = binding;
+     auto [it_pgm, new_program] = program_cache.try_emplace(params.hash);
+     if (new_program) {
+-        it_pgm.value() = std::make_unique<Program>(hw_stage, sw_stage, params);
+-        auto& program = it_pgm.value();
+-        auto start = binding;
+-        const auto module = CompileModule(program->info, runtime_info, params.code, 0, binding);
+-        auto spec = Shader::StageSpecialization(program->info, runtime_info, profile, start);
+-        const auto perm_hash = HashCombine(params.hash, 0);
+-
+-        RegisterShaderMeta(program->info, spec.fetch_shader_data, spec, perm_hash, 0);
+-        program->AddPermut(module, std::move(spec));
+-        if (auto& fetch = program->modules[0].spec.fetch_shader_data; !fetch.Empty()) {
++        it_pgm.value() = std::make_unique<Program>();
++    }
++    auto& program = *it_pgm.value();
++
++    // A later compilation may add/remove resources (for example clip planes or
++    // DMA buffers). Never use permutation zero's Info to describe another SPIR-V.
++    for (size_t perm_idx = 0; perm_idx < program.modules.size(); ++perm_idx) {
++        auto& cached = program.modules[perm_idx];
++        if (!cached.module || !cached.info || !cached.spec.Valid()) {
++            continue; // Empty slot from sparse disk-cache permutation indices.
++        }
++        auto& info = *cached.info;
++        if (info.hw_stage != hw_stage || info.sw_stage != sw_stage) {
++            continue;
++        }
++        info.pgm_base = params.Base();
++        info.user_data = params.user_data;
++        info.RefreshFlatBuf();
++        const auto current = Shader::StageSpecialization(info, runtime_info, profile, start);
++        if (!(cached.spec == current)) {
++            continue;
++        }
++        info.AddBindings(binding);
++        if (auto& fetch = cached.spec.fetch_shader_data; !fetch.Empty()) {
+             fetch_shader = &fetch;
+         }
+-        return std::make_tuple(&program->info, module, perm_hash);
+-    }
+-
+-    auto& program = it_pgm.value();
+-    auto& info = program->info;
+-    info.pgm_base = params.Base(); // Needs to be actualized for inline cbuffer address fixup
+-    info.user_data = params.user_data;
+-    info.RefreshFlatBuf();
+-    auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
+-
+-    size_t perm_idx = program->modules.size();
+-    u64 perm_hash = HashCombine(params.hash, perm_idx);
+-
+-    vk::ShaderModule module{};
+-
+-    const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
+-    if (it == program->modules.end()) {
+-        auto new_info = Shader::Info(hw_stage, sw_stage, params);
+-        module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
+-
+-        RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
+-        program->AddPermut(module, std::move(spec));
+-    } else {
+-        info.AddBindings(binding);
+-        module = it->module;
+-        perm_idx = std::distance(program->modules.begin(), it);
+-        perm_hash = HashCombine(params.hash, perm_idx);
+-    }
+-    if (auto& fetch = program->modules[perm_idx].spec.fetch_shader_data; !fetch.Empty()) {
++        return std::make_tuple(cached.info.get(), cached.module,
++                               HashCombine(params.hash, perm_idx));
++    }
++
++    const size_t perm_idx = program.modules.size();
++    const auto perm_hash = HashCombine(params.hash, perm_idx);
++    auto info = std::make_unique<Shader::Info>(hw_stage, sw_stage, params);
++    auto compiled_runtime = runtime_info;
++    const auto module = CompileModule(*info, compiled_runtime, params.code, perm_idx, binding);
++    auto spec = Shader::StageSpecialization(*info, compiled_runtime, profile, start);
++
++    RegisterShaderMeta(*info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
++    LOG_INFO(Render_Vulkan,
++             "Shader permutation metadata: shader={:#x} permutation={} buffers={} images={} "
++             "flat_words={} first_binding={}",
++             params.hash, perm_idx, info->buffers.size(), info->images.size(),
++             info->flattened_ud_buf.size(), start.unified);
++    program.AddPermut(module, std::move(spec), std::move(info));
++    auto& cached = program.modules.back();
++    if (auto& fetch = cached.spec.fetch_shader_data; !fetch.Empty()) {
+         fetch_shader = &fetch;
+     }
+-    return std::make_tuple(&program->info, module, perm_hash);
+-}
++    return std::make_tuple(cached.info.get(), module, perm_hash);
++}
++
+ 
+ std::optional<vk::ShaderModule> PipelineCache::ReplaceShader(vk::ShaderModule module,
+                                                              std::span<const u32> spv_code) {
+--- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+@@ -12,8 +12,8 @@
+ 
+ namespace Serialization {
+ /* You should increment versions below once corresponding serialization scheme is changed. */
+-static constexpr u32 ShaderBinaryVersion = 11u;
+-static constexpr u32 ShaderMetaVersion = 8u;
++static constexpr u32 ShaderBinaryVersion = 12u;
++static constexpr u32 ShaderMetaVersion = 9u;
+ static constexpr u32 PipelineKeyVersion = 3u;
+ } // namespace Serialization
+ 
+@@ -246,60 +246,52 @@
+ }
+ 
+ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) {
+-    auto program = std::make_unique<Program>();
++    auto info = std::make_unique<Shader::Info>();
+     Shader::StageSpecialization spec{};
+-    spec.info = &program->info;
++    spec.info = info.get();
+     size_t perm_idx{};
+-    if (!LoadShaderMeta(ar, program->info, spec, perm_idx)) {
++    if (!LoadShaderMeta(ar, *info, spec, perm_idx)) {
+         return false;
+     }
+ 
+     std::vector<u32> spv{};
+     Storage::DataBase::Instance().Load(Storage::BlobType::ShaderBinary,
+-                                       fmt::format("{:#018x}_{}", program->info.pgm_hash, perm_idx),
+-                                       spv);
++                                      fmt::format("{:#018x}_{}", info->pgm_hash, perm_idx), spv);
+     if (spv.empty()) {
+         return false;
+     }
+ 
+-    // Permutation hash depends on shader variation index. To prevent collisions, we need insert it
+-    // at the exact position rather than append
+-
+-    vk::ShaderModule module{};
+-
+-    auto [it_pgm, new_program] = program_cache.try_emplace(program->info.pgm_hash);
++    auto [it_pgm, new_program] = program_cache.try_emplace(info->pgm_hash);
+     if (new_program) {
+-        module = CompileSPV(spv, instance.GetDevice());
+-        it_pgm.value() = std::move(program);
++        it_pgm.value() = std::make_unique<Program>();
++    }
++    auto& program = *it_pgm.value();
++    auto match = std::ranges::find(program.modules, spec, &Program::Module::spec);
++    if (match != program.modules.end()) {
++        const auto existing_idx = static_cast<size_t>(std::distance(program.modules.begin(), match));
++        if (existing_idx != perm_idx || !match->module || !match->info) {
++            LOG_WARNING(Render_Vulkan, "Cached shader permutation index mismatch, skipping preload");
++            return false;
++        }
++        // Do not replace existing metadata: already-created pipelines point to it.
+     } else {
+-        const auto& it = std::ranges::find(it_pgm.value()->modules, spec, &Program::Module::spec);
+-        if (it != it_pgm.value()->modules.end()) {
+-            // A matching permutation is valid only at its original index. A different index means
+-            // the store holds entries from more than one cache generation, so this pipeline is
+-            // left to compile at runtime.
+-            const auto idx = std::distance(it_pgm.value()->modules.begin(), it);
+-            if (perm_idx != idx) {
+-                LOG_WARNING(Render_Vulkan,
+-                            "Cached permutation {} of {}_{:x} conflicts with index {}, skipping "
+-                            "preload",
+-                            perm_idx, program->info.hw_stage, program->info.pgm_hash, idx);
+-                return false;
+-            }
+-            module = it->module;
+-        } else {
+-            module = CompileSPV(spv, instance.GetDevice());
++        if (perm_idx < program.modules.size() && program.modules[perm_idx].module) {
++            LOG_WARNING(Render_Vulkan, "Conflicting cached shader permutation slot, skipping preload");
++            return false;
+         }
+-    }
+-    it_pgm.value()->InsertPermut(module, std::move(spec), perm_idx);
+-
+-    infos[stage] = &it_pgm.value()->info;
+-    modules[stage] = module;
+-    if (auto& fetch = it_pgm.value()->modules[perm_idx].spec.fetch_shader_data; !fetch.Empty()) {
++        const auto module = CompileSPV(spv, instance.GetDevice());
++        program.InsertPermut(module, std::move(spec), perm_idx, std::move(info));
++    }
++
++    auto& cached = program.modules[perm_idx];
++    infos[stage] = cached.info.get();
++    modules[stage] = cached.module;
++    if (auto& fetch = cached.spec.fetch_shader_data; !fetch.Empty()) {
+         fetch_shader = &fetch;
+     }
+-
+-    return true;
+-}
++    return true;
++}
++
+ 
+ void PipelineCache::WarmUp() {
+     if (!EmulatorSettings.IsPipelineCacheEnabled()) {
+--- a/src/shader_recompiler/specialization.h
++++ b/src/shader_recompiler/specialization.h
+@@ -190,7 +190,13 @@
+     }
+ 
+     bool operator==(const StageSpecialization& other) const {
+-        if (!Valid()) {
++        if (!Valid() || !other.Valid()) {
++            return false;
++        }
++        // Layouts may differ between compiled permutations. Check sizes before
++        // indexing the other specialization's descriptor vectors.
++        if (buffers.size() != other.buffers.size() || images.size() != other.images.size() ||
++            samplers.size() != other.samplers.size()) {
+             return false;
+         }
+ 
