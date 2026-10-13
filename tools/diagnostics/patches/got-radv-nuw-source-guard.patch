@@ -1,0 +1,16 @@
+--- a/src/amd/vulkan/nir/radv_nir_apply_pipeline_layout.c
++++ b/src/amd/vulkan/nir/radv_nir_apply_pipeline_layout.c
+@@ -77,5 +77,9 @@
+-   nir_def *binding_ptr = nir_imul_imm(b, intrin->src[0].ssa, stride);
+-   nir_instr_as_alu(binding_ptr->parent_instr)->no_unsigned_wrap = true;
++   nir_def *index = intrin->src[0].ssa;
++   nir_def *binding_ptr = nir_imul_imm(b, index, stride);
++   /* Multiplication by zero creates a load_const; by one returns index.
++    * Only attach ALU metadata to a newly created ALU instruction.
++    */
++   if (binding_ptr != index && binding_ptr->parent_instr->type == nir_instr_type_alu)
++      nir_instr_as_alu(binding_ptr->parent_instr)->no_unsigned_wrap = true;
+ 
+-   binding_ptr = nir_iadd_imm(b, binding_ptr, offset);
+-   nir_instr_as_alu(binding_ptr->parent_instr)->no_unsigned_wrap = true;
++   binding_ptr = nir_iadd_imm_nuw(b, binding_ptr, offset);
