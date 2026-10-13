@@ -12,6 +12,19 @@ BASE_BINARY='03d9cfad127eb0d08d40fdb7f8dd7494ea0f1e2ade87363afd6b0e929e6960f3'
 BASE_RASTER='e20d7f2705e087d7feae54bc9a1a449b6554101c3174f3bb7774e194baf2f212'
 PIN='966fa45bc36ce2e46b8c14f77acb5fdd95d96fbe'
 URL='https://codeload.github.com/Chreece/shadPS4/tar.gz/'+PIN
+MANUAL_SHA={
+    "src/shader_recompiler/backend/spirv/emit_spirv_warp.cpp": "3b8a2aeaafa9bf7c07a40eb9c46393fc6e0213d533010afb99cf1bbb9780f281",
+    "src/shader_recompiler/frontend/control_flow_graph.cpp": "5d82a59d14cd5bbf7754dac71bd4f2f7a6633829cb9260122ece31e2ad855057",
+    "src/shader_recompiler/ir/opcodes.inc": "d6899086e8514b8e41c2cb0962e15327d54f35a4fcee39d024fb533423dfbf55",
+    "src/shader_recompiler/ir/passes/lower_wave64_pass.cpp": "a877290628467c06780977adf1279b2ef902ef31ebd634f329e7d138bb719a6d",
+    "src/video_core/buffer_cache/buffer_cache.h": "403d7b08844b68ab6f122de0b19fb32093692f45b7c4d2595e6885a726f90a5f",
+    "src/video_core/renderer_vulkan/vk_instance.cpp": "22a04d1e2463ff4a8a8b0d62dd1adb54ef8b1e4a0d3a32eb2e8b777efda2f237",
+    "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp": "4d1a54ab3788bea88cc7d4f1813dd799aea6ef42ce0731016308f0c57f590321",
+    "src/video_core/renderer_vulkan/vk_rasterizer.cpp": "e20d7f2705e087d7feae54bc9a1a449b6554101c3174f3bb7774e194baf2f212"
+}
+PATCH_PIN='cf467a52aceab56e827c96a6d6aae9620b5f761c'
+PATCH_SHA='107a39a738cf7518105ac4688f20322f0556de5aff6dccc141f1e8eb58aa015f'
+PATCH_URL='https://raw.githubusercontent.com/Chreece/shadPS4/'+PATCH_PIN+'/tools/gow84-phase80-resolved.patch'
 PATHS=["src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp","src/shader_recompiler/backend/spirv/emit_spirv_barriers.cpp","src/shader_recompiler/backend/spirv/emit_spirv_instructions.h","src/shader_recompiler/backend/spirv/emit_spirv_special.cpp","src/shader_recompiler/backend/spirv/emit_spirv_warp.cpp","src/shader_recompiler/backend/spirv/spirv_emit_context.cpp","src/shader_recompiler/backend/spirv/spirv_emit_context.h","src/shader_recompiler/frontend/control_flow_graph.cpp","src/shader_recompiler/frontend/translate/data_share.cpp","src/shader_recompiler/frontend/translate/scalar_flow.cpp","src/shader_recompiler/frontend/translate/translate.cpp","src/shader_recompiler/frontend/translate/translate.h","src/shader_recompiler/info.h","src/shader_recompiler/ir/ir_emitter.cpp","src/shader_recompiler/ir/ir_emitter.h","src/shader_recompiler/ir/microinstruction.cpp","src/shader_recompiler/ir/opcodes.inc","src/shader_recompiler/ir/passes/lower_wave64_pass.cpp","src/shader_recompiler/ir/passes/resource_pass.h","src/shader_recompiler/ir/passes/resource_patching_pass.cpp","src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp","src/shader_recompiler/recompiler.cpp","src/shader_recompiler/runtime_info.h","src/video_core/amdgpu/regs_shader.h","src/video_core/buffer_cache/buffer_cache.cpp","src/video_core/buffer_cache/buffer_cache.h","src/video_core/renderer_vulkan/vk_instance.cpp","src/video_core/renderer_vulkan/vk_instance.h","src/video_core/renderer_vulkan/vk_pipeline_cache.cpp","src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp","src/video_core/renderer_vulkan/vk_rasterizer.cpp","src/video_core/renderer_vulkan/vk_rasterizer.h","tests/gcn/gcn_test_runner.cpp","tests/gcn/gcn_test_runner.hpp","tests/gcn/instructions.hpp","tests/gcn/test_gcn_instructions.cpp","tests/gcn/translator.cpp","tests/gcn/translator.hpp","tests/stubs/resource_tracking_pass_stub.cpp"]
 
 def digest(path):
@@ -109,7 +122,17 @@ def prepare(out,work):
             local=target.read_bytes()
             before=selections['recovery'][name]
             after=selections['integrated'][name]
-            if local==before:
+            # These eight have already been manually reconciled from the actual
+            # Phase80 snapshot. Preserve the exact originals and apply the audited
+            # three-file patch after all other merges have succeeded.
+            if name in MANUAL_SHA:
+                actual=hashlib.sha256(local).hexdigest()
+                if actual != MANUAL_SHA[name]:
+                    conflicts.append({'file':name,'reason':'phase80_sha_changed',
+                                      'expected':MANUAL_SHA[name],'actual':actual})
+                    continue
+                merged=local;status='phase80_manually_preserved'
+            elif local==before:
                 merged=after;status='direct'
             elif local==after:
                 merged=local;status='already-integrated'
@@ -136,13 +159,28 @@ def prepare(out,work):
         raise RuntimeError('Source merge conflict; no source files replaced: '+str([c['file'] for c in conflicts]))
     for target,merged in changes:
         target.write_bytes(merged)
+    # Apply only the three changes still absent from the local Phase80 snapshot:
+    # four IR opcodes, ordered-count resets, and shader-cache 11/8. The other five
+    # conflict files are retained byte-for-byte from Phase80.
+    patchfile=out/'gow84-phase80-resolved.patch'
+    run(['curl','-4','-fLSs','--retry','2','--connect-timeout','20',
+         '--max-time','120',PATCH_URL,'-o',patchfile],out/'fetch-manual-resolution.log',160)
+    if digest(patchfile) != PATCH_SHA:
+        raise RuntimeError('Manual merge patch integrity mismatch, refusing compilation')
+    run(['git','-C',work/'source','apply','--check',patchfile],
+        out/'manual-resolution-check.log',90)
+    run(['git','-C',work/'source','apply',patchfile],
+        out/'manual-resolution-apply.log',90)
+    note(out,'PHASE80_MANUAL_RESOLUTION=PASS 8 confirmed snapshots; 3 exact patched sources')
     for path,token in (
       ('src/shader_recompiler/frontend/translate/data_share.cpp','DS_ORDERED_COUNT'),
       ('src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp','EmitBufferOrderedCount'),
       ('src/video_core/buffer_cache/buffer_cache.cpp','GetSparseQueue().bindSparse'),
       ('src/video_core/buffer_cache/buffer_cache.h','STREAM_THRESHOLD = 64_KB'),
-      ('src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp','ShaderBinaryVersion = 8u'),
-      ('src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp','ShaderMetaVersion = 7u')):
+      ('src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp','ShaderBinaryVersion = 11u'),
+      ('src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp','ShaderMetaVersion = 8u'),
+      ('src/video_core/renderer_vulkan/vk_rasterizer.cpp','ResetOrderedCount(cs);'),
+      ('src/shader_recompiler/ir/opcodes.inc','OPCODE(GdsOrderedCount,')):
         if token not in (work/'source'/path).read_text():
             raise RuntimeError('Integrated code missing '+token)
     (out/'source-sha.json').write_text(json.dumps(
@@ -150,7 +188,7 @@ def prepare(out,work):
          'source_tar_sha256':{label:digest(path) for label,path in archive_paths.items()}},
         indent=2)+'\n')
     for path in archive_paths.values():path.unlink()
-    note(out,'SOURCE=PASS 39-file three-way merge; local Phase80 modifications retained')
+    note(out,'SOURCE=PASS 31 safe 3-way files + 8 exact Phase80 sources + ordered-count patch')
 
 
 def game_environment():
@@ -233,8 +271,11 @@ def main():
     opts=arg.parse_args()
     if opts.self_test:
         assert len(PATHS)==39 and len(set(PATHS))==39 and all(p.startswith(('src/','tests/')) for p in PATHS)
+        assert len(MANUAL_SHA)==8 and set(MANUAL_SHA).issubset(set(PATHS))
+        assert len(PATCH_SHA)==64 and len(PATCH_PIN)==40
+        assert PATCH_URL.endswith('/tools/gow84-phase80-resolved.patch')
         assert len(PIN)==40 and len(BASE_BINARY)==64 and URL.endswith(PIN)
-        print('GOW84_SELF_TEST=PASS pinned source manifest and isolation contract')
+        print('GOW84_SELF_TEST=PASS pinned source, 8 source snapshots, manual patch and isolation contract')
         return 0
     LOGS.mkdir(parents=True,exist_ok=True)
     with (LOGS/'gow84-exclusive.lock').open('a+') as lock:
