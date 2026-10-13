@@ -295,7 +295,7 @@ static bool EmitComputeOffsetShiftLeftLogical32(Xbyak::CodeGenerator& c, Xbyak::
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
         ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
-        c.shl(reg, inst->Arg(0).U32());
+        // Preserve the dynamic shift count; discard no value operand.
         c.mov(ecx, reg);
         c.mov(reg, inst->Arg(0).U32());
         c.shl(reg, cl);
@@ -469,16 +469,28 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
         if (in_stack) {
             c.pop(reg.cvt64());
         }
-        c.and_(reg, (1U << inst->Arg(2).U32()) - 1);
+        const u32 bits = inst->Arg(2).U32();
+        // A full 32-bit extract must not perform an undefined 1u << 32.
+        if (bits < 32) {
+            c.and_(reg, bits == 0 ? 0u : (1u << bits) - 1u);
+        }
     } else {
         if (!in_stack) {
             c.push(reg.cvt64());
         }
         POP_ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(2)));
         c.mov(ecx, reg);
+        // x86 masks shift counts mod 32: explicitly handle 32+ as full width.
+        Xbyak::Label full_width, mask_ready;
+        c.cmp(ecx, 32);
+        c.jae(full_width);
         c.mov(edx, 1);
         c.shl(edx, cl);
         c.dec(edx);
+        c.jmp(mask_ready);
+        c.L(full_width);
+        c.mov(edx, 0xFFFFFFFFu);
+        c.L(mask_ready);
         c.and_(dword[rsp], edx);
         c.pop(reg.cvt64());
     }
@@ -567,11 +579,16 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
 }
 
 static inline bool PushPtr(Xbyak::CodeGenerator& c, PassInfo& pass_info, const IR::Value& off_dw) {
+    // Failed dynamic offsets must not leave a PUSH or incomplete JIT code.
+    const size_t checkpoint = c.getSize();
     c.push(rdi);
     if (off_dw.IsImmediate()) {
         c.mov(rdi, ptr[rdi + (off_dw.U32() << 2)]);
     } else {
-        ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));
+        if (!ComputeOffset(c, r10d, pass_info, off_dw)) {
+            c.setSize(checkpoint);
+            return false;
+        }
         c.shl(r10d, 2);
         c.mov(r10d, r10d);
         c.mov(rdi, ptr[rdi + r10]);
@@ -609,7 +626,9 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         if (src_off_dw.IsImmediate()) {
             c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
         } else {
+            const size_t checkpoint = c.getSize();
             if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
+                c.setSize(checkpoint);
                 LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
                 continue;
             }
