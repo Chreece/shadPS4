@@ -1,3 +1,21 @@
+# v4 — 14 October 2026, 15:36 build-log repair
+
+Source evidence: `esde-20261014-153630.log` shows a single merge conflict in `src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp`. Upstream at `f47bbd5d6e9f49d3fd11cb4fd50533a835976a08` has shader versions `9/6` (blob `08108e16888984bb8b06cb87ddedc6c094b995d3`), whereas the exact proven GoW Phase91 ancestor `bde2b3c1fdc8add6b73b24894d4d47837b1f2db3` has `11/8` (blob `adc6045a0064fbe284848a54c4ea33ed431e37cc`).
+
+The full 15,063/15,064-byte GitHub files were compared; **all bytes other than the two version declarations are identical**. The verified local conflict-replay fixture produced `MERGE_CONFLICT_FLOW=PASS`: detect one conflicted path, verify stages, select GoW values, commit merged result. v4 handles **only this exact conflict and exact pair of stage blobs**, then verifies the committed blob and GoW ancestry. Any other conflict, changed upstream code, changed blob, unexpected cache version, or nontrivial serialization difference fails without installing anything.
+
+Earlier v3 fallback for missing `src/core/debug_state.cpp` was also verified: upstream and the GoW pin both contain blob `3d6ec64f2394c155ae4e0b4e0b69ca62c4c1d2a5`.
+
+**One-paste on the Debian host (v4 pinned source):**
+
+```bash
+curl -4fsSL https://raw.githubusercontent.com/Chreece/shadPS4/3cc8f3b6c7d43f1fa748fc371c76af3c018d0125/esde-v4.py | python3 -
+```
+
+This is an upstream-main merge and release-build candidate, **not a tested game binary**. The C++ compilation, preserved overlay reconciliation, loading GUI and controller exit, and gameplay still require verification on the user's machine. Existing ES-DE is protected by the installer's fail-closed checks.
+
+---
+
 **Short pinned mobile-SSH command (same v2 code, matching blob `b9f077681fabae0c991c2fc3ba04f433a47b4e1b`):**
 
 ```bash
