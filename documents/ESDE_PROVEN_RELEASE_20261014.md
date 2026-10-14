@@ -1,3 +1,21 @@
+# Resume after Phase91/SRT provenance stop — 14 October 2026, 16:14
+
+The uploaded `esde-resume-20261014-161419.log` confirms that checkout `62925125` is clean and contains the upstream GoW/quit/loading merges. It then fails at a **faulty check of the SRT source**: the 15 Phase91 replacement objects do not contain `flatten_extended_userdata_pass.cpp`.
+
+GoW93's committed contract identifies the actual SRT source as `BASE84/source`, located under `~/projects/shadps4/GodOfWarRagnarok/builds/gow84-ds-ordered-20261013-194151-79151/source`, with SHA-256 `b70df7890134f497e9eb7efd2c717d6cf09afa784a007ca7dac59f50a26f6651`. The Phase84 executable is separately pinned at `7f6b320cdc2d60e0fc9e72b3bde58a2f2f18e3b7f1783825732a0a6ccf76ae`. GoW93 directly verifies that the Phase91 binary contains the root-plan markers and uses `SHADPS4_GOW_SRT_AUTO_ROOTS=2`.
+
+**New resumable integration:** In addition to the 15 Phase91 replacement objects and SRT, the implementation verifies Phase84's original 39-file DS-ordered integration contract (including 32 runtime sources plus tests) and the expected manual output hashes. It plans all GoW84, GoW91, GoT-v33 and GoT-v46 changes in memory before writing any sources. On conflicts, it reports every conflict in `evidence/resume-*/source-merge-plan.json` without modifying the worktree. On success it commits a single checkpoint; future runs recognize the checkpoint and run only an incremental CMake build, not Git merges or new clones.
+
+**Single command (pinned current implementation):**
+
+```bash
+curl -4fsSL https://raw.githubusercontent.com/Chreece/shadPS4/b970f6994f6daa2b5290cd94b7ae8898f50e21f9/scripts/resume-esde-20261014-v2.py | python3 -
+```
+
+No automatic Cross/X presses, screenshots, GoW93 input automation, or GoT48 setup automation are included. Only user-driven gameplay controls and the regular controller-exit feature remain. The C++ compilation and live ES-DE gameplay are **not yet verified**.
+
+---
+
 # v5: Controller cherry-pick conflict repair (15:52 server log)
 
 `esde-20261014-155206.log` confirms GoW merge resolution `REVIEWED_MERGE_RESOLUTION=PASS`, then stops on source `075bd16f79dd7ea4342f5a3d1790e1c52cf77fcd` when cherry-picking the quit dialog. The merge conflicted on `src/core/devtools/layer.cpp` and the deleted `scripts/install_local_default.py`.
