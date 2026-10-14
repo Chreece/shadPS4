@@ -77,16 +77,82 @@ def adapt_flatten(data: bytes):
     if len(data) > 2_000_000 or b"\0" in data or b"\r" in data:
         raise RuntimeError("Unexpected flatten source encoding/size")
     text=data.decode()
-    if text.count(OLD) != 1:
-        if text.count(NEW) == 1:
-            raise RuntimeError("SRT stack-balance fix already present")
-        raise RuntimeError("PushPtr implementation does not match retained source")
-    out=text.replace(OLD,NEW,1)
-    # Prove this patch changes only PushPtr.
-    if out[:out.index(NEW)] != text[:text.index(OLD)]:
-        raise RuntimeError("Unexpected prefix change")
-    if out[out.index(NEW)+len(NEW):] != text[text.index(OLD)+len(OLD):]:
-        raise RuntimeError("Unexpected suffix change")
+
+    # Locate PushPtr structurally instead of requiring exact formatting/comments.
+    sig = "static inline bool PushPtr("
+    if text.count(sig) != 1:
+        raise RuntimeError("PushPtr definition is missing or ambiguous")
+    fn_start = text.index(sig)
+    brace = text.find("{", fn_start)
+    if brace < 0:
+        raise RuntimeError("PushPtr opening brace missing")
+    depth = 0
+    fn_end = None
+    for i in range(brace, len(text)):
+        ch = text[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                fn_end = i + 1
+                break
+    if fn_end is None:
+        raise RuntimeError("PushPtr closing brace missing")
+
+    fn = text[fn_start:fn_end]
+    if "ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));" not in fn:
+        raise RuntimeError("PushPtr dynamic ComputeOffset call missing")
+    if fn.count("c.push(rdi);") != 1:
+        raise RuntimeError("Unexpected number of rdi pushes in retained PushPtr")
+
+    # Already-fixed source is rejected clearly.
+    dyn_pos = fn.index("ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));")
+    push_pos = fn.index("c.push(rdi);")
+    if dyn_pos < push_pos:
+        raise RuntimeError("SRT stack-balance fix already present")
+
+    # Retained implementation currently pushes before the immediate/dynamic split.
+    # Remove that one push, add it to the immediate arm, and add it only after
+    # successful dynamic offset computation in the dynamic arm.
+    push_line = re.search(r'(?m)^(?P<indent>[ \t]*)c\.push\(rdi\);[ \t]*\n', fn)
+    if not push_line:
+        raise RuntimeError("Could not isolate retained PushPtr rdi push")
+    indent = push_line.group("indent")
+    fn2 = fn[:push_line.start()] + fn[push_line.end():]
+
+    immediate_anchor = re.search(
+        r'(?m)^(?P<indent>[ \t]*)if\s*\(off_dw\.IsImmediate\(\)\)\s*\{[ \t]*\n',
+        fn2)
+    if not immediate_anchor:
+        raise RuntimeError("PushPtr immediate branch missing")
+    imm_indent = immediate_anchor.group("indent") + "    "
+    insert = immediate_anchor.end()
+    fn2 = fn2[:insert] + imm_indent + "c.push(rdi);\n" + fn2[insert:]
+
+    compute = "ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));"
+    cp = fn2.index(compute)
+    line_end = fn2.find("\n", cp)
+    if line_end < 0:
+        raise RuntimeError("PushPtr ComputeOffset line terminator missing")
+    # Insert after ComputeOffset succeeds, before any dynamic pointer dereference.
+    dynamic_indent_match = re.match(r'[ \t]*', fn2[fn2.rfind("\n", 0, cp)+1:cp])
+    dynamic_indent = dynamic_indent_match.group(0) if dynamic_indent_match else indent + "    "
+    fn2 = fn2[:line_end+1] + dynamic_indent + "c.push(rdi);\n" + fn2[line_end+1:]
+
+    # Structural proof: immediate branch has one push; dynamic push follows ComputeOffset.
+    if fn2.count("c.push(rdi);") != 2:
+        raise RuntimeError("Stack-balance rewrite did not produce two guarded pushes")
+    cp2 = fn2.index(compute)
+    second_push = fn2.index("c.push(rdi);", cp2)
+    if second_push < cp2:
+        raise RuntimeError("Dynamic rdi push still precedes ComputeOffset")
+
+    out = text[:fn_start] + fn2 + text[fn_end:]
+    # Prove no bytes outside PushPtr changed.
+    if out[:fn_start] != text[:fn_start] or out[fn_start+len(fn2):] != text[fn_end:]:
+        raise RuntimeError("Unexpected change outside PushPtr")
+
     patch="".join(difflib.unified_diff(
         text.splitlines(keepends=True),out.splitlines(keepends=True),
         fromfile="a/"+FLAT,tofile="b/"+FLAT,n=3)).encode()
@@ -94,8 +160,9 @@ def adapt_flatten(data: bytes):
         "before_sha256":hashlib.sha256(data).hexdigest(),
         "after_sha256":hashlib.sha256(out.encode()).hexdigest(),
         "bug":"PushPtr emitted push rdi before a fallible ComputeOffset",
-        "fix":"emit push rdi only after dynamic offset computation succeeds",
+        "fix":"emit push rdi only in the chosen branch, after dynamic ComputeOffset succeeds",
         "game_specific":False,
+        "structural_match":True,
     }
 
 def build_candidate(gow96,gow91,base,phase90,phase89,helper,work,logs):
