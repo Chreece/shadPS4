@@ -44,6 +44,8 @@ struct ResourceDiscovery {
 };
 using ResourceDiscoveryList = boost::container::small_vector<ResourceDiscovery, 32>;
 
+[[nodiscard]] DynamicSharpTable DetectDynamicSharpTable(const SharpReference& sharp);
+
 inline bool IsBufferAtomic(const IR::Inst& inst) {
     switch (inst.GetOpcode()) {
     case IR::Opcode::BufferAtomicIAdd32:
