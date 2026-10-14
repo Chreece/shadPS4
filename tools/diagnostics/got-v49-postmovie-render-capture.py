@@ -8,7 +8,6 @@ with verified game PID, loaded driver and focus. No movement, repeated buttons,
 shader bypass, privileged command, or new emulator/driver patch.
 """
 from __future__ import annotations
-import base64
 import ctypes as C
 import hashlib
 import json
@@ -19,7 +18,7 @@ import shutil
 import subprocess
 import sys
 import types
-import zlib
+import tarfile
 
 LABEL = 'got-v49-postmovie-render-visual'
 READY_PREFIX = 'got-v49-postmovie-render-ready-'
@@ -28,8 +27,8 @@ V48_URL = 'https://raw.githubusercontent.com/Chreece/shadPS4/3c067d02124a242f1b1
 MOVIE = '/app0/movies/cutscene/v_gp_invasion_komoda_ridge.bsf'
 DUMP_LIMIT = 512 * 1024 * 1024
 REPORT_SHADER_LIMIT = 128 * 1024 * 1024
-# 64x36 luminance samples from the actual v48 595-second screenshot.
-EMPTY_FRAME = 'eNp1lWli2jAQhU9QbNlYRsYLNpi0IRD2BJL2IL3/QTqj0TKy3fnN996bxWKzWUN1bbtaNU1T11VVluVyuSyK4lkssHIsCZXpmkOlaZokiRBxHG+w1l3XaYG60gLEK2X4gnhpaFJAHgT6Hvk18o0LoPne8XkjZWH8gc15gq3nVyx/gaVYfCW9gMaJF1sMYPna2fv8tnvWPvKZFkiGvLa3/Vv3/EMG7j5AIhz+F+M31XB8zl4yPHW46AfdM1zZ5rNh/NjgIIDrD4bHm2fmedA94RL8EW7bIT3CA3ruIUwl2fpFCCHa2xtkdrWRXy5IbXFAFQ/MbC4NnY2/Nw/1XfN2e47CLPve8oeOYWIpsICnLjNUouYeh3Ky4oWeDsaUjOooWefB96x979D9jiz0fdmvP2xsP5oawcDCU5I2mvvS87LVMeWt6NqP7Da7I7SOKoxgIu2uNzXWJUOC548CtRgUrVVag/t6MbxttvNMNTWaTRWWLSvqfo3UwVIotGOZR7AurWIbAGKlW65sobXzkGBfkv0bGwXwl1NUCFUlzrpk/Co+GQTnolacCWqXXTM83FLDhoynfIBXgsL0HSdmEeAA72ZDbrcm3EBijRJzcTEoAmoffrnrmgmWRPhDTtw5phby52E0APYMPT3pyldKnNBa9aZspTG5XtneLFGJNnPrmxpqpd5TGEsVrWXjt40amcrmm3ZxrGbqDpHu2dMv0JlPELgYsotTppfJJEamNAZeJhXiLn3grpykuYA96KsyKmSHTgemZAofojf26GaVGQad/JRX8MY84NiYnSHmeOHeUYFcsBRcWMoDSJogAN++lQEgc6SZVAoqLstW2GhykuRxPa/AR4ShTF'
+REFERENCE_RUN = 'got-v48-auto-setup-visual-20261014-133959-64ru3sy2'
+REFERENCE_SHA = 'b826118790fee303255519929eebd6f4bfdaa6b9f309ca1d11bf487cd7deba5b'
 
 
 def sha(p: Path) -> str:
@@ -47,6 +46,37 @@ def read_safe(p: Path, limit: int = 100_000) -> bytes:
     if not p.is_file() or p.is_symlink() or p.stat().st_size > limit:
         raise RuntimeError('Missing/unsafe helper: ' + str(p))
     return p.read_bytes()
+
+
+
+def read_reference(project: Path) -> bytes:
+    """Read only the actual last v48 frame, never arbitrary desktop screenshots."""
+    logs = project.parent / 'logs'
+    image = logs / REFERENCE_RUN / 'screenshots/595s.png'
+    if image.is_file() and not image.is_symlink() and image.resolve().is_relative_to(logs.resolve()):
+        raw = read_safe(image, 2_000_000)
+    else:
+        archive = logs / (REFERENCE_RUN + '.tar.gz')
+        if not archive.is_file() or archive.is_symlink() or archive.stat().st_size > 200_000_000:
+            raise RuntimeError('Verified v48 reference frame/archive missing; no guessed scene matching')
+        with tarfile.open(archive, 'r:gz') as tar:
+            member = tar.getmember('screenshots/595s.png')
+            if not member.isfile() or member.size > 2_000_000:
+                raise RuntimeError('Unsafe reference image in v48 archive')
+            with tar.extractfile(member) as f:
+                raw = f.read()
+    if hashlib.sha256(raw).hexdigest() != REFERENCE_SHA:
+        raise RuntimeError('v48 reference frame checksum differs; no input permitted')
+    return raw
+
+
+def normalize_image(image: Path, env: dict) -> bytes:
+    r = subprocess.run(['convert',str(image),'-resize','960x540','-background','black',
+        '-gravity','center','-extent','960x540','-depth','8','rgb:-'],
+        stdin=subprocess.DEVNULL,capture_output=True,timeout=6,env=env)
+    if r.returncode or len(r.stdout) != 960 * 540 * 3:
+        raise RuntimeError('Frame normalization failed')
+    return r.stdout
 
 
 def load_v48(script: Path):
@@ -101,6 +131,7 @@ class MovieMonitor:
         self.shader_errors = set()
         self.history = []
         self.matches = 0
+        self.reference = None
         self.options_at = None
         self.options_attempted = False
         self.options_result = None
@@ -269,15 +300,13 @@ def install(base, v48):
         if report is None or base.read_json(report/'info/session.json').get('ready') != str(ready):
             raise RuntimeError('Profile/report identity mismatch; no game launch')
         shutil.copyfile(v48.PINNED_V48_PATH, report/'info/v48-base.py')
+        (report/'info/postmovie-reference.png').write_bytes(read_reference(project))
         configure_profile(base, ready, report)
         collect_source(base, project, report)
         result['render_capture'] = 'shader dumps + one screenshot-gated post-movie Options test'
         return result
     base.copy_profile = copy_profile
     state = {}
-    reference = zlib.decompress(base64.b64decode(EMPTY_FRAME))
-    if len(reference) != 64 * 36:
-        raise RuntimeError('Invalid embedded v48 empty-scene reference')
     old_screenshot = base.screenshot
     def screenshot(pid, report, elapsed, env):
         shot = old_screenshot(pid, report, elapsed, env)
@@ -293,12 +322,12 @@ def install(base, v48):
                 (report/'stop-requested').touch()
             if mon.closed_at is not None and shot.get('result') == 'CAPTURED':
                 image = report/'screenshots'/shot['file']
-                r = subprocess.run(['convert',str(image),'-resize','960x540','-background','black',
-                    '-gravity','center','-extent','960x540','-depth','8','rgb:-'],
-                    stdin=subprocess.DEVNULL,capture_output=True,timeout=6,env=env)
-                if r.returncode:
-                    raise RuntimeError('Frame normalization failed')
-                distance = v48.difference(reference, v48.fingerprint(r.stdout))
+                if mon.reference is None:
+                    ref = report/'info/postmovie-reference.png'
+                    if hashlib.sha256(read_safe(ref, 2_000_000)).hexdigest() != REFERENCE_SHA:
+                        raise RuntimeError('Frozen scene reference changed')
+                    mon.reference = v48.fingerprint(normalize_image(ref, env))
+                distance = v48.difference(mon.reference, v48.fingerprint(normalize_image(image, env)))
                 mon.history[-1].update(frame=shot['file'], empty_reference_difference=round(distance,4))
                 if mon.allow_options(elapsed, distance):
                     mon.options_attempted = True; mon.options_at = elapsed
@@ -356,6 +385,7 @@ def install(base, v48):
     old_start = base.start
     def start(project, script):
         if not base.running_games():
+            read_reference(project)
             path = project/'tests'/base.TREE/'src/input/input_handler.cpp'
             if 'options = enter' not in read_safe(path, 1_000_000).decode():
                 raise RuntimeError('Actual source lacks the expected Options keyboard binding')
