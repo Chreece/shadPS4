@@ -490,6 +490,7 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     case IR::Opcode::GetUserData:
     case IR::Opcode::ReadConst:
     case IR::Opcode::ReadConstBuffer:
+    case IR::Opcode::ReadFirstLane:
     case IR::Opcode::IAdd32:
     case IR::Opcode::ISub32:
     case IR::Opcode::IMul32:
@@ -523,6 +524,12 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
             return true;
         }
         return false;
+    case IR::Opcode::ReadFirstLane:
+        // ReadFirstLane produces a scalar value. The SRT walker does not execute
+        // shader lanes, but when its operand is itself expressible from user data
+        // or flattened constants, the selected scalar value is that operand.
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
+        return true;
     case IR::Opcode::IAdd32:
         ABORT_ON_FAILURE(EmitComputeOffsetIAdd32(c, reg, pass_info, inst));
         return true;
