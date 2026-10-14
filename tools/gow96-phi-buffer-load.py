@@ -60,8 +60,8 @@ def adapt_resource(data: bytes, reference: str):
     start = reference.index("static bool IsSelectableBufferLoad")
     end = reference.index("ResourceDiscoveryList ResourceDiscoverPass", start)
     helper_block = reference[start:end]
-    if helper_block.count("SplitBufferLoadBySharpPhi") < 2:
-        raise RuntimeError("Pinned collaborator helper block is incomplete")
+    if helper_block.count("static void SplitBufferLoadBySharpPhi") != 1:
+        raise RuntimeError("Pinned collaborator helper definition is missing or ambiguous")
 
     ref_fun = reference[reference.index("ResourceDiscoveryList ResourceDiscoverPass"):]
     marker = "ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {\n"
@@ -101,8 +101,8 @@ def adapt_resource(data: bytes, reference: str):
     target = signature + "\n"
     out = out.replace(target, target + prelude, 1)
 
-    if out.count("SplitBufferLoadBySharpPhi") < 3:
-        raise RuntimeError("Phi buffer-load adaptation did not land")
+    if out.count("SplitBufferLoadBySharpPhi") != 2:
+        raise RuntimeError("Phi buffer-load adaptation did not land exactly once as definition + call")
     if out.count("ResourceDiscoveryList sharp_usages;") != 1:
         raise RuntimeError("Resource discovery body was duplicated")
 
