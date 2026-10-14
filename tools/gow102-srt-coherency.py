@@ -243,7 +243,14 @@ static const void* const* GetWalkerLoadHelpers() {
 """
     text = replace_once(text, pass_anchor, pass_new, "PassInfo ptr depth")
 
-    push_a, push_b = gow98.function_span(text, "PushPtr")
+    push_name_a, push_b = gow98.function_span(text, "PushPtr")
+    # function_span intentionally starts at the function NAME, not at the
+    # declaration.  Replace from the beginning of the declaration line so we
+    # never leave a stale "static inline bool " prefix before the helper.
+    push_a = text.rfind("\n", 0, push_name_a) + 1
+    declaration_prefix = text[push_a:push_name_a]
+    if declaration_prefix.strip() != "static inline bool":
+        raise RuntimeError("Unexpected PushPtr declaration prefix: "+repr(declaration_prefix))
     old_push = text[push_a:push_b]
     if "c.push(rdi);" not in old_push or "ComputeOffset(c, r10d" not in old_push:
         raise RuntimeError("Unexpected PushPtr semantics before coherency adaptation")
@@ -356,6 +363,12 @@ void SetWalkerMemoryCallbacks(const WalkerMemoryCallbacks&) {}
     final_push = text[final_push_a:final_push_b]
     if final_push.count("c.push(rdi);") != 2 or final_push.index("ComputeOffset(c, r10d") > final_push.rindex("c.push(rdi);"):
         raise RuntimeError("GoW97 PushPtr stack ordering was lost")
+    helper_pos = text.find("static void EmitCoherentGuestLoad(")
+    push_decl_pos = text.find("static inline bool PushPtr(")
+    if helper_pos < 0 or push_decl_pos < 0 or helper_pos >= push_decl_pos:
+        raise RuntimeError("Coherent load helper/PushPtr declaration order is invalid")
+    if "static inline bool static" in text or "bool static void" in text:
+        raise RuntimeError("Invalid declaration prefix survived GoW102 splice")
     final_visit = text[final_visit_a:final_visit_b]
     if "c.mov(r10d, dword[rdi" in final_visit or "c.mov(r10d, ptr[rdi" in final_visit:
         raise RuntimeError("Direct nested SRT dword load survived coherency adaptation")
