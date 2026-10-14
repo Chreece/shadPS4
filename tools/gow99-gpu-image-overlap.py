@@ -65,7 +65,7 @@ def adapt_texture(gow98, data: bytes):
     if len(matches) != 1:
         raise RuntimeError("GPU-overlap base-address guard is ambiguous")
 
-    canonical = '''void TextureCache::InvalidateMemoryFromGPU(VAddr address, size_t max_size) {
+    canonical = '''TextureCache::InvalidateMemoryFromGPU(VAddr address, size_t max_size) {
     // Buffer writes can alias any byte range of an image (including mip/slice
     // subresources). ForEachImageInRegion already performs an exact overlap
     // test, so every returned image must be refreshed from GPU-visible memory.
