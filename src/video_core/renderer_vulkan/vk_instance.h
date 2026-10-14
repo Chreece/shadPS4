@@ -114,6 +114,10 @@ public:
         return vk12_features.shaderInt8;
     }
 
+    bool IsSampledImageArrayNonUniformIndexingSupported() const {
+        return vk12_features.shaderSampledImageArrayNonUniformIndexing;
+    }
+
     bool IsMaintenance5Supported() const {
         return maintenance_5;
     }
