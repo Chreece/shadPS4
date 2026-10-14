@@ -11,6 +11,8 @@
 
 namespace Shader {
 
+struct Info;
+
 static constexpr u32 NUM_USER_DATA_REGS = 16;
 static constexpr u32 NUM_IMAGES = 64;
 static constexpr u32 NUM_BUFFERS = 40;
@@ -120,8 +122,18 @@ enum class MipStorageFallbackMode : u16 {
     ConstantIndex,
 };
 
+struct DynamicImageTable {
+    SharpFetch<AmdGpu::Buffer> table_fetch{};
+    u32 record_stride_bytes{};
+    u32 field_offset_bytes{};
+    bool enabled{};
+
+    bool operator==(const DynamicImageTable&) const = default;
+};
+
 struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
+    DynamicImageTable dynamic_table{};
     bool is_depth{};
     bool is_atomic{};
     bool is_array{};
@@ -131,45 +143,27 @@ struct ImageResource {
     MipStorageFallbackMode mip_fallback_mode{};
     SharpFetchPostOp post_op{};
 
-    constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {
-        AmdGpu::Image image{};
-        if (!Fetch(info.flattened_ud_buf.data(), &image)) {
-            return AmdGpu::Image::Null(is_depth);
-        }
-        if (post_op == SharpFetchPostOp::ConvertCubeTo2DArray) {
-            image.type = u64(AmdGpu::ImageType::Color2DArray);
-            image.depth = (image.depth + 1) * 6 - 1;
-        }
-        if (!image.Valid()) {
-            image = AmdGpu::Image::Null(is_depth);
-        } else if (is_depth) {
-            const auto data_fmt = image.GetDataFmt();
-            if (data_fmt != AmdGpu::DataFormat::Format16 &&
-                data_fmt != AmdGpu::DataFormat::Format32) {
-                image = AmdGpu::Image::Null(true);
-            }
-        }
-        return image;
+    [[nodiscard]] bool IsDynamicTable() const noexcept {
+        return dynamic_table.enabled;
     }
+
+    [[nodiscard]] AmdGpu::Buffer GetDynamicTable(const Info& info) const noexcept;
+    [[nodiscard]] bool FetchDynamicSharp(const Info& info, u32 record,
+                                         AmdGpu::Image* out) const noexcept;
+    [[nodiscard]] AmdGpu::Image GetSharp(const Info& info) const noexcept;
+    [[nodiscard]] u32 NumBindings(const Info& info) const noexcept;
 
     constexpr bool Fetch(const u32* flatbuf, AmdGpu::Image* out) const {
         if (!is_r128) {
-            // Fetch full 8 byte T#
+            // Fetch full 8 dword T#.
             return sharp_fetch.Fetch(flatbuf, out);
         }
-        // Fetch r128 T# and fix pitch
+        // Fetch r128 T# and fix pitch.
         if (!sharp_fetch.Fetch<4>(flatbuf, out)) {
             return false;
         }
         out->pitch = out->width;
         return true;
-    }
-
-    u32 NumBindings(const auto& info) const {
-        const AmdGpu::Image tsharp = GetSharp(info);
-        return (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex)
-                   ? (tsharp.last_level - tsharp.base_level + 1)
-                   : 1;
     }
 };
 using ImageResourceList = boost::container::static_vector<ImageResource, NUM_IMAGES>;
