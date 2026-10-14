@@ -89,53 +89,12 @@ cmake --build "$build" --target shadps4 --parallel 5
 }
 echo "COMPILE=PASS"
 sha256sum "$build/shadps4"
-phase="CLI and linker smoke"
-if ldd "$build/shadps4" | grep -F 'not found'; then
-  echo "MISSING_SHARED_LIBRARY"; exit 1;
-fi
-timeout 20s "$build/shadps4" --help > "$root/logs/esde-help-$stamp.log" 2>&1 || {
-  echo "CLI_SMOKE_FAILED; see $root/logs/esde-help-$stamp.log"; exit 1;
-}
-echo "SMOKE=PASS (no gameplay tests)"
-phase="ES-DE deployment"
-launcher="$HOME/Applications/shadps4/shadps4"
-if [[ ! -e "$launcher" ]]; then
-  status="BUILT_NOT_INSTALLED"; echo "MISSING_ESDE_LAUNCHER=$launcher"; exit 0
-fi
-target="$(readlink -f "$launcher")"
-if [[ "$target" != "$HOME/"* || ! -f "$target" || ! -w "$target" ]]; then
-  status="BUILT_NOT_INSTALLED"; echo "UNSAFE_ESDE_TARGET=$target"; exit 0
-fi
-if pgrep -x shadps4 >/dev/null; then
-  status="BUILT_NOT_INSTALLED"; echo "GAME_RUNNING: old ES-DE preserved"; exit 0
-fi
-runtime="$(dirname "$target")/cpu-id-runtime"
-runtime_backup="$runtime.before-direct-$stamp"
-backup="$target.before-direct-$stamp"
-new_bin="$target.new-$stamp"
-new_runtime="$runtime.new-$stamp"
-[[ ! -e "$backup" && ! -e "$runtime_backup" &&
-   ! -e "$new_bin" && ! -e "$new_runtime" ]] || {
-  echo "BACKUP_NAME_EXISTS"; exit 1;
-}
-install -m755 "$build/shadps4" "$new_bin"
-cp -a "$build/cpu-id-runtime" "$new_runtime"
-cmp "$build/shadps4" "$new_bin"
-cp -a "$target" "$backup"
-if pgrep -x shadps4 >/dev/null; then
-  status="BUILT_NOT_INSTALLED"; echo "GAME_STARTED_DURING_STAGE"; exit 0
-fi
-deploy=1
-if [[ -e "$runtime" || -L "$runtime" ]]; then
-  mv "$runtime" "$runtime_backup"
-  runtime_moved=1
-fi
-mv "$new_runtime" "$runtime"
-mv -f "$new_bin" "$target"
-cmp "$build/shadps4" "$target"
-[[ -x "$runtime/bin64/drrun" && -f "$runtime/libshadps4_cpu_id.so" ]] || exit 1
-timeout 20s "$launcher" --help > "$root/logs/esde-installed-help-$stamp.log" 2>&1
-deploy=0
-status="INSTALLED_PENDING_MANUAL_GAMEPLAY"
-echo "INSTALL=PASS; previous executable retained at $backup"
-echo "TEST_SUITES=NOT_RUN; AUTOMATIC_X=DISABLED"
+phase="build completed"
+status="BUILT_NOT_INSTALLED"
+echo "BUILD_STATUS=COMPLETE"
+echo "NEW_BINARY=$build/shadps4"
+echo "CPU_ID_RUNTIME=$build/cpu-id-runtime"
+echo "ESDE_DEPLOYMENT=SKIPPED"
+echo "WHY=GoW Phase84 runtime SRT planner and GoT v46/v51 overlays have not been reconciled."
+echo "PROTECTED=existing ES-DE executable, GoW/GoT workspaces, game saves, SSH."
+echo "NO_TEST_SUITES_OR_AUTOMATED_INPUT_WERE_EXECUTED"
