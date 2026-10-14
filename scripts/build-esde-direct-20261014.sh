@@ -11,36 +11,16 @@ stamp="$(date +%Y%m%d-%H%M%S)"
 log="$root/logs/esde-direct-$stamp.log"
 status="FAILED_NOT_INSTALLED"
 phase="preflight"
-deploy=0
-runtime_moved=0
-target=""
-backup=""
-runtime=""
-runtime_backup=""
 finish() {
   local rc=$?
   trap - EXIT
-  set +e
-  if (( rc != 0 && deploy )); then
-    echo "DEPLOY_FAILED_ROLLBACK=STARTED"
-    if [[ -f "$backup" && -n "$target" ]]; then
-      cp -a "$backup" "$target.restore-$stamp" &&
-        mv -f "$target.restore-$stamp" "$target" || echo "BINARY_ROLLBACK_FAILED"
-    fi
-    if [[ -n "$runtime" && -e "$runtime" ]]; then
-      mv "$runtime" "$runtime.failed-$stamp" || true
-    fi
-    if (( runtime_moved )) && [[ -d "$runtime_backup" ]]; then
-      mv "$runtime_backup" "$runtime" || echo "RUNTIME_ROLLBACK_FAILED"
-    fi
-  fi
   echo "RESULT=$status"
   echo "EXIT_CODE=$rc"
   echo "LAST_PHASE=$phase"
   echo "LOG=$log"
   echo "SOURCE=$src"
   echo "BUILD=$build"
-  echo "BACKUP=$backup"
+  echo "ESDE_INSTALLATION=UNCHANGED"
   echo "SSH_SESSION=UNCHANGED"
 }
 trap finish EXIT
