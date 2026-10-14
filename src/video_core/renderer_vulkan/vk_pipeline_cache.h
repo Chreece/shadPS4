@@ -24,6 +24,10 @@ namespace AmdGpu {
 class Liverpool;
 }
 
+namespace Core {
+class MemoryManager;
+}
+
 namespace Serialization {
 struct Archive;
 }
@@ -73,7 +77,8 @@ struct DrawIndirectParams {
 class PipelineCache {
 public:
     explicit PipelineCache(const Instance& instance, Scheduler& scheduler,
-                           AmdGpu::Liverpool* liverpool, u32 sparse_page_shift);
+                           AmdGpu::Liverpool* liverpool, Core::MemoryManager* memory,
+                           u32 sparse_page_shift);
     ~PipelineCache();
 
     void WarmUp();
@@ -123,6 +128,7 @@ private:
     const Instance& instance;
     Scheduler& scheduler;
     AmdGpu::Liverpool* liverpool;
+    Core::MemoryManager* memory;
     DescriptorHeap desc_heap;
     vk::UniquePipelineCache pipeline_cache;
     vk::UniquePipelineLayout pipeline_layout;
