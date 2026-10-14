@@ -32,6 +32,8 @@ GOW98_BLOB = "50b6c3417e6cc44b46e84ad4fb6b5b60132afa37"
 
 RASTER = "src/video_core/renderer_vulkan/vk_rasterizer.cpp"
 COHERENCY_H = "src/shader_recompiler/ir/passes/srt_coherency.h"
+FLAT_RETAINED_SHA256 = "b70df7890134f497e9eb7efd2c717d6cf09afa784a007ca7dac59f50a26f6651"
+RASTER_RETAINED_SHA256 = "8e3f37478dbdf423992323a9b3821545827c8d31ecc5b340eddad9de3b3d6a60"
 
 
 def blob_sha(data: bytes) -> str:
@@ -464,11 +466,15 @@ def build_candidate(gow98, gow97, gow96, gow91, base, phase90, phase89,
 
     flat_path = source_for(src, overrides, gow97.FLAT)
     flat_data = flat_path.read_bytes()
+    if hashlib.sha256(flat_data).hexdigest() != FLAT_RETAINED_SHA256:
+        raise RuntimeError("Retained flatten source fingerprint changed")
     flat98, _, flat_proof = gow97.adapt_flatten(flat_data)
     flat_after, coherence_patch, coherence_proof = adapt_flat_coherency(gow98, flat98)
 
     raster_path = source_for(src, overrides, RASTER)
     raster_data = raster_path.read_bytes()
+    if hashlib.sha256(raster_data).hexdigest() != RASTER_RETAINED_SHA256:
+        raise RuntimeError("Retained rasterizer source fingerprint changed")
     raster_after, raster_patch, raster_proof = adapt_rasterizer(raster_data)
 
     overlay = work / "overlay"
@@ -549,10 +555,12 @@ def self_test(gow98, gow97, gow96, gow91):
     gow96.adapt_resource(res, gow96.collaborator_source())
 
     flat = source_for(src, overrides, gow97.FLAT).read_bytes()
+    assert hashlib.sha256(flat).hexdigest() == FLAT_RETAINED_SHA256
     flat98, _, _ = gow97.adapt_flatten(flat)
     final_flat, _, proof = adapt_flat_coherency(gow98, flat98)
 
     raster = source_for(src, overrides, RASTER).read_bytes()
+    assert hashlib.sha256(raster).hexdigest() == RASTER_RETAINED_SHA256
     final_raster, _, rproof = adapt_rasterizer(raster)
 
     assert b"SRT_COHERENCY_READBACK" in final_flat
