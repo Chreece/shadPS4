@@ -19,11 +19,23 @@ union PostOpData {
     IR::Value lod_prod{};
 };
 
+struct DynamicSharpTable {
+    std::array<IR::Value, 4> table_dwords{};
+    IR::Value index{};
+    u32 record_stride_bytes{};
+    u32 field_offset_bytes{};
+
+    [[nodiscard]] bool Valid() const noexcept {
+        return !index.IsEmpty();
+    }
+};
+
 struct SharpReference {
     std::array<IR::Value, 8> dwords{};
     u32 num_dwords{};
     SharpFetchPostOp post_op{};
     PostOpData post_op_data;
+    DynamicSharpTable dynamic_table{};
 };
 
 struct ResourceDiscovery {
