@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "common/types.h"
+#include "common/assert.h"\n#include "common/types.h"
 #include "shader_recompiler/ir/type.h"
 #include "video_core/amdgpu/resource.h"
 
@@ -125,6 +125,35 @@ enum class MipStorageFallbackMode : u16 {
     ConstantIndex,
 };
 
+struct GuestMemoryResolver {
+    void* context{};
+    bool (*read)(void* context, VAddr address, void* dst, u64 size){};
+
+    explicit operator bool() const noexcept {
+        return read != nullptr;
+    }
+
+    bool Read(VAddr address, void* dst, u64 size) const {
+        return read && read(context, address, dst, size);
+    }
+};
+
+struct DynamicImageTable {
+    static constexpr u32 InvalidBufferBinding = std::numeric_limits<u32>::max();
+
+    u32 buffer_binding{InvalidBufferBinding};
+    u32 record_stride_bytes{};
+    u32 field_offset_bytes{};
+    u32 num_records{};
+    AmdGpu::Image prototype{};
+
+    bool Enabled() const noexcept {
+        return buffer_binding != InvalidBufferBinding;
+    }
+
+    bool operator==(const DynamicImageTable&) const = default;
+};
+
 struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
     bool is_depth{};
@@ -135,10 +164,13 @@ struct ImageResource {
     u8 constant_mip_index{};
     MipStorageFallbackMode mip_fallback_mode{};
     SharpFetchPostOp post_op{};
+    DynamicImageTable dynamic_table{};
 
     constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {
         AmdGpu::Image image{};
-        if (!Fetch(info.flattened_ud_buf.data(), &image)) {
+        if (dynamic_table.Enabled()) {
+            image = dynamic_table.prototype;
+        } else if (!Fetch(info.flattened_ud_buf.data(), &image)) {
             return AmdGpu::Image::Null(is_depth);
         }
         if (post_op == SharpFetchPostOp::ConvertCubeTo2DArray) {
@@ -171,6 +203,13 @@ struct ImageResource {
     }
 
     u32 NumBindings(const auto& info) const {
+        if (dynamic_table.Enabled()) {
+            ASSERT_MSG(dynamic_table.num_records > 0,
+                       "Dynamic image table has no descriptor records");
+            ASSERT_MSG(mip_fallback_mode == MipStorageFallbackMode::None,
+                       "Dynamic image tables with mip descriptor fallback are not supported");
+            return dynamic_table.num_records;
+        }
         const AmdGpu::Image tsharp = GetSharp(info);
         return (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex)
                    ? (tsharp.last_level - tsharp.base_level + 1)
