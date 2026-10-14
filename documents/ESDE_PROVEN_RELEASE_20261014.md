@@ -1,3 +1,23 @@
+# Current ES-DE resume — 14 October 2026, 16:53
+
+The Phase84 binary check in the user's terminal output reported **the same expected and actual SHA** while raising a mismatch. The original `require()` computes `sha(path)` twice—once for the comparison, again for the error—which permits this misleading result when a file changes between reads. The corrected resume script uses a single SHA-256 and file inode/size/mtime/ctime stability checks.
+
+The Phase84 executable is a **historical, unused intermediate**. Its current hash is recorded under `evidence/resume-*/phase84-binary-audit.json`, but it is no longer an install-blocking requirement. The GoW Phase91 executable and all actual GoW84/91 sources still have strict checks (including the Phase84 SRT planner's recorded digest).
+
+**Preserved GoW graphics behavior:** GoW93's displayed-game-screen breakthrough reused the Phase91 binary with `SHADPS4_GOW_SRT_AUTO_ROOTS=2` and no recompilation. GoW94's later increased picture visibility used a **private per-game `GPU.readbacks_mode=2` setting**, confirmed visually but with severe slowness; the ES-DE builder records this fact and does **not** silently enable this experimental mode globally or modify existing settings.
+
+**Preserved GoT graphics behavior:** GoT v51 adds a stencil-reference correction in `src/video_core/renderer_vulkan/vk_rasterizer.cpp`, with old source SHA-256 `02be53c70ac824ca42b1df41af93163f0e4bdfe5b1666f270193f51fd58f155d` and patched source SHA-256 `814677f63524610ba23932fd4ebbe062be299d641ac4699c390d62fe1cc1b03b`. The script verifies the local v51 build proof and ports only that C++ correction, while **excluding** the later experimental GoT v53 shader nulling, automatic X presses, screenshots and other test scripts. All GoW/GoT source files are merged in a read-only batch preflight before any Git source changes.
+
+**One-paste resume, source pinned to GitHub commit `46b2a654f714ac83460d35c8aa62f37093bbb742`:**
+
+```bash
+curl -4fsSL https://raw.githubusercontent.com/Chreece/shadPS4/46b2a654f714ac83460d35c8aa62f37093bbb742/scripts/resume-esde-20261014-v4.py | python3 -
+```
+
+It reuses the existing `release-20261014-160446/source` checkpoint and original builds, does not clone, change the private driver or close SSH, and stages a replacement only after compilation and smoke checks. If the aggregate source merge encounters conflicts, it writes a single `source-merge-plan.json` with per-file conflict paths and **changes no source files**. This version has not yet run on the Debian host, so compilation and end-to-end game compatibility are pending.
+
+---
+
 # Resume after Phase91/SRT provenance stop — 14 October 2026, 16:14
 
 The uploaded `esde-resume-20261014-161419.log` confirms that checkout `62925125` is clean and contains the upstream GoW/quit/loading merges. It then fails at a **faulty check of the SRT source**: the 15 Phase91 replacement objects do not contain `flatten_extended_userdata_pass.cpp`.
