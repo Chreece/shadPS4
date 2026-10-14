@@ -1,3 +1,9 @@
+**Short pinned mobile-SSH command (same v2 code, matching blob `b9f077681fabae0c991c2fc3ba04f433a47b4e1b`):**
+
+```bash
+curl -4fsSL https://raw.githubusercontent.com/Chreece/shadPS4/e9e354c0ecd37e34e05d9b8ebc48843e882739e2/esde.py | python3 -
+```
+
 # Update: v2 repair after 14:36 CEST log
 
 The first user run on 2026-10-14 at 14:36:54 stopped before build:
