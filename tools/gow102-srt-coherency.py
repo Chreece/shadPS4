@@ -299,36 +299,24 @@ static const void* const* GetWalkerLoadHelpers() {
 """,
         "VisitPointer depth enter")
 
-    old_load = """        if (src_off_dw.IsImmediate()) {
-            c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
-        } else {
-            if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
-                LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
-                continue;
-            }
-            c.shl(r10d, 2);
-            c.mov(r10d, r10d);
-            c.mov(r10d, dword[rdi + r10]);
-        }
-        c.mov(ptr[rsi + (pass_info.dst_off_dw << 2)], r10d);
-"""
-    new_load = """        if (src_off_dw.IsImmediate()) {
-            EmitCoherentGuestLoad(c, WalkerLoadHelper::Load32,
-                                  rdi + (src_off_dw.U32() << 2));
-        } else {
-            const size_t rewind = c.getSize();
-            if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
-                c.setSize(rewind);
-                LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
-                continue;
-            }
-            c.shl(r10d, 2);
-            c.mov(r10d, r10d);
-            EmitCoherentGuestLoad(c, WalkerLoadHelper::Load32, rdi + r10);
-        }
-        c.mov(ptr[rsi + (pass_info.dst_off_dw << 2)], r11d);
-"""
-    visit = replace_once(visit, old_load, new_load, "VisitPointer coherent load")
+    # Preserve any retained GoW SRT diagnostic/topology instrumentation around
+    # the loads.  Rewrite only the three actual memory operations.
+    visit = replace_once(
+        visit,
+        "            c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);\n",
+        "            EmitCoherentGuestLoad(c, WalkerLoadHelper::Load32,\n"
+        "                                  rdi + (src_off_dw.U32() << 2));\n",
+        "VisitPointer immediate guest load")
+    visit = replace_once(
+        visit,
+        "            c.mov(r10d, dword[rdi + r10]);\n",
+        "            EmitCoherentGuestLoad(c, WalkerLoadHelper::Load32, rdi + r10);\n",
+        "VisitPointer dynamic guest load")
+    visit = replace_once(
+        visit,
+        "        c.mov(ptr[rsi + (pass_info.dst_off_dw << 2)], r10d);\n",
+        "        c.mov(ptr[rsi + (pass_info.dst_off_dw << 2)], r11d);\n",
+        "VisitPointer coherent result store")
     visit = replace_once(visit, "    PopPtr(c);\n",
                          "    --pass_info.ptr_depth;\n    PopPtr(c);\n",
                          "VisitPointer depth exit")
