@@ -225,10 +225,11 @@ static const void* const* GetWalkerLoadHelpers() {
 }
 
 '''
-    text = replace_once(
-        text, ns_anchor,
-        "namespace Shader {\n\n" + helper_block + "PFN_SrtWalker RegisterWalkerCode",
-        "Shader helper insertion")
+    ns_pos = text.find(ns_anchor)
+    if ns_pos < 0:
+        raise RuntimeError("x86 Shader namespace helper anchor missing")
+    ns_insert = ns_pos + len("namespace Shader {\n\n")
+    text = text[:ns_insert] + helper_block + text[ns_insert:]
 
     pass_anchor = """    // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
