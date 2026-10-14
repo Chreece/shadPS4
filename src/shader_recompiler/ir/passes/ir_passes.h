@@ -8,7 +8,7 @@
 #include "shader_recompiler/ir/program.h"
 
 namespace Shader {
-struct Profile;
+struct Profile;\nstruct GuestMemoryResolver;
 void InjectClipDistanceAttributes(IR::Program& program, RuntimeInfo& runtime_info);
 } // namespace Shader
 
@@ -28,7 +28,7 @@ void FlattenExtendedUserdataPass(IR::Program& program);
 void ReadLaneEliminationPass(IR::Program& program);
 ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile);
 void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& sharp_usages,
-                          const Profile& profile);
+                          const Profile& profile, GuestMemoryResolver memory);
 void CollectShaderInfoPass(IR::Program& program, const Profile& profile);
 void LowerBufferFormatToRaw(IR::Program& program);
 void LowerUserClipPlanes(IR::Program& program, const RuntimeInfo& runtime_info);
