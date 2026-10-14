@@ -142,7 +142,7 @@ def launch(project:Path,script:Path,proof:dict):
     cmd=['systemd-run','--user','--collect','--no-block','--service-type=exec','--unit='+unit,'--description=GoT v53 manual gamepad','--property=TimeoutStopSec=30s','--property=KillMode=control-group','--working-directory='+str(manual),'--setenv=HOME='+str(Path.home()),'--setenv=PATH=/usr/local/bin:/usr/bin:/bin']
     for key in ('DISPLAY','XAUTHORITY','XDG_RUNTIME_DIR','DBUS_SESSION_BUS_ADDRESS','PULSE_SERVER','PIPEWIRE_REMOTE','SDL_GAMECONTROLLERCONFIG','SDL_GAMECONTROLLERCONFIG_FILE'):
         if env.get(key):cmd.append('--setenv='+key+'='+env[key])
-    cmd+=['/usr/bin/bash',str(runnerY]
+    cmd+=['/usr/bin/bash',str(runner)]
     run(cmd,timeout=30)
     (logroot/'.got-v53-manual-latest').write_text('REPORT='+str(report)+'\nUNIT='+unit+'\n')
     print('SCHEDULED='+unit);print('INPUT=MANUAL_GAMEPAD; AUTOMATIC_INPUT=NONE');print('PROFILE='+str(manual));print('REPORT='+str(report));print('GET_REPORT=cat '+str(logroot/'.got-v53-manual-latest')+'; ls -lh '+str(report)+'.tar.gz 2>/dev/null || true')
