@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "common/assert.h"
+#include <limits>\n\n#include "common/assert.h"
 #include "shader_recompiler/ir/passes/ir_passes.h"
 #include "shader_recompiler/ir/passes/resource_pass.h"
 #include "shader_recompiler/ir/program.h"
@@ -14,6 +14,158 @@ static bool IsSharpSource(const IR::Inst* inst) {
     return inst->GetOpcode() == IR::Opcode::GetUserData ||
            inst->GetOpcode() == IR::Opcode::ReadConst ||
            inst->GetOpcode() == IR::Opcode::ReadConstBuffer;
+}
+
+struct DynamicTableDword {
+    std::array<IR::Value, 4> table_dwords{};
+    IR::Value index{};
+    u32 record_stride_bytes{};
+    u32 byte_offset{};
+    bool found{};
+};
+
+static bool SplitImmediateAdd(IR::Value value, IR::Value& dynamic, u32& immediate) {
+    auto* inst = value.TryInst();
+    if (!inst || inst->GetOpcode() != IR::Opcode::IAdd32) {
+        return false;
+    }
+    const bool lhs_imm = inst->Arg(0).IsImmediate();
+    const bool rhs_imm = inst->Arg(1).IsImmediate();
+    if (lhs_imm == rhs_imm) {
+        return false;
+    }
+    immediate = lhs_imm ? inst->Arg(0).U32() : inst->Arg(1).U32();
+    dynamic = lhs_imm ? inst->Arg(1) : inst->Arg(0);
+    return true;
+}
+
+static DynamicTableDword DetectDynamicTableDword(IR::Value value) {
+    auto* load = value.TryInst();
+    if (!load || load->GetOpcode() != IR::Opcode::ReadConstBuffer) {
+        return {};
+    }
+
+    auto* table = load->Arg(0).TryInst();
+    if (!table || table->GetOpcode() != IR::Opcode::CompositeConstructU32x4) {
+        return {};
+    }
+
+    DynamicTableDword result{};
+    for (u32 i = 0; i < result.table_dwords.size(); ++i) {
+        const IR::Value dword = table->Arg(i);
+        if (!dword.IsImmediate()) {
+            const auto* source = dword.TryInst();
+            if (!source || !IsSharpSource(source)) {
+                return {};
+            }
+        }
+        result.table_dwords[i] = dword;
+    }
+
+    // Descriptor-table accesses are represented as:
+    //   ((runtime_index * record_stride_bytes + field_offset_bytes) >> 2) + dword
+    // Keep the runtime index in IR; only recover the static table geometry here.
+    IR::Value offset = load->Arg(1);
+    u64 byte_offset{};
+    while (true) {
+        IR::Value dynamic{};
+        u32 immediate{};
+        if (!SplitImmediateAdd(offset, dynamic, immediate)) {
+            break;
+        }
+        byte_offset += u64(immediate) * sizeof(u32);
+        if (byte_offset > std::numeric_limits<u32>::max()) {
+            return {};
+        }
+        offset = dynamic;
+    }
+
+    auto* shift = offset.TryInst();
+    if (!shift || shift->GetOpcode() != IR::Opcode::ShiftRightLogical32 ||
+        !shift->Arg(1).IsImmediate() || shift->Arg(1).U32() != 2) {
+        return {};
+    }
+
+    IR::Value byte_address = shift->Arg(0);
+    while (true) {
+        IR::Value dynamic{};
+        u32 immediate{};
+        if (!SplitImmediateAdd(byte_address, dynamic, immediate)) {
+            break;
+        }
+        byte_offset += immediate;
+        if (byte_offset > std::numeric_limits<u32>::max()) {
+            return {};
+        }
+        byte_address = dynamic;
+    }
+
+    auto* multiply = byte_address.TryInst();
+    if (!multiply || multiply->GetOpcode() != IR::Opcode::IMul32) {
+        return {};
+    }
+    const bool lhs_imm = multiply->Arg(0).IsImmediate();
+    const bool rhs_imm = multiply->Arg(1).IsImmediate();
+    if (lhs_imm == rhs_imm) {
+        return {};
+    }
+
+    result.record_stride_bytes =
+        lhs_imm ? multiply->Arg(0).U32() : multiply->Arg(1).U32();
+    result.index = lhs_imm ? multiply->Arg(1) : multiply->Arg(0);
+    if (result.index.IsImmediate() || result.record_stride_bytes == 0 ||
+        (result.record_stride_bytes % sizeof(u32)) != 0) {
+        return {};
+    }
+
+    result.byte_offset = static_cast<u32>(byte_offset);
+    result.found = true;
+    return result;
+}
+
+static bool SameDynamicTable(const DynamicTableDword& lhs, const DynamicTableDword& rhs) {
+    if (lhs.index != rhs.index || lhs.record_stride_bytes != rhs.record_stride_bytes) {
+        return false;
+    }
+    for (u32 i = 0; i < lhs.table_dwords.size(); ++i) {
+        if (lhs.table_dwords[i] != rhs.table_dwords[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static DynamicSharpTable DetectDynamicSharpTable(const SharpReference& sharp) {
+    if (sharp.num_dwords != 4 && sharp.num_dwords != 8) {
+        return {};
+    }
+
+    const DynamicTableDword first = DetectDynamicTableDword(sharp.dwords[0]);
+    if (!first.found) {
+        return {};
+    }
+
+    const u64 field_end =
+        u64(first.byte_offset) + u64(sharp.num_dwords) * sizeof(u32);
+    if (first.byte_offset >= first.record_stride_bytes ||
+        field_end > first.record_stride_bytes) {
+        return {};
+    }
+
+    for (u32 i = 1; i < sharp.num_dwords; ++i) {
+        const DynamicTableDword current = DetectDynamicTableDword(sharp.dwords[i]);
+        if (!current.found || !SameDynamicTable(first, current) ||
+            current.byte_offset != first.byte_offset + i * sizeof(u32)) {
+            return {};
+        }
+    }
+
+    return DynamicSharpTable{
+        .table_dwords = first.table_dwords,
+        .index = first.index,
+        .record_stride_bytes = first.record_stride_bytes,
+        .field_offset_bytes = first.byte_offset,
+    };
 }
 
 struct StridePatchResult {
@@ -289,6 +441,7 @@ void DiscoverBufferSharp(IR::Block& block, IR::Inst& inst, ResourceDiscoveryList
         vsharp.dwords[1] = dword1;
     }
 
+    vsharp.dynamic_table = DetectDynamicSharpTable(vsharp);
     MarkReadConstBufferSharpSources(vsharp);
 }
 
@@ -317,6 +470,7 @@ void DiscoverImageSharp(IR::Block& block, IR::Inst& inst, ResourceDiscoveryList&
         tsharp.dwords[4] = tsharp_dw4;
     }
 
+    tsharp.dynamic_table = DetectDynamicSharpTable(tsharp);
     MarkReadConstBufferSharpSources(tsharp);
 
     if (inst.GetOpcode() != IR::Opcode::ImageSampleRaw) {
@@ -347,6 +501,7 @@ void DiscoverImageSharp(IR::Block& block, IR::Inst& inst, ResourceDiscoveryList&
         ssharp.dwords[0] = ssharp_dw0;
     }
 
+    ssharp.dynamic_table = DetectDynamicSharpTable(ssharp);
     MarkReadConstBufferSharpSources(ssharp);
 }
 
