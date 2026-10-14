@@ -1,0 +1,216 @@
+--- a/src/video_core/renderer_vulkan/vk_presenter.cpp
++++ b/src/video_core/renderer_vulkan/vk_presenter.cpp
+@@ -27,6 +27,8 @@
+ #include <algorithm>
+ #include <array>
+ #include <atomic>
++#include <cstdlib>
++#include <mutex>
+ #include <cctype>
+ #include <chrono>
+ #include <cmath>
+@@ -134,6 +136,76 @@
+     WithOverlays,
+ };
+ 
++// GOW88_FRAME_PROVENANCE: bounded readbacks using the existing screenshot path.
++static const std::filesystem::path& FrameProbeDirectory() {
++    static const std::filesystem::path directory = [] {
++        const char* env = std::getenv("SHADPS4_FRAME_PROBE_DIR");
++        if (!env || !*env) {
++            return std::filesystem::path{};
++        }
++        std::filesystem::path value{env};
++        if (!value.is_absolute() || !std::filesystem::is_directory(value)) {
++            return std::filesystem::path{};
++        }
++        return value;
++    }();
++    return directory;
++}
++
++static bool FrameProbeDue(u64 elapsed_ms, size_t& next) {
++    static constexpr std::array<u64, 8> times{0, 5000, 10000, 15000, 20000, 30000, 45000, 55000};
++    if (next == times.size() || elapsed_ms < times[next]) {
++        return false;
++    }
++    ++next;
++    return true;
++}
++
++struct FrameProbeSample {
++    bool capture{};
++    u64 ordinal{};
++    u64 elapsed_ms{};
++};
++
++static FrameProbeSample FrameProbeTick(bool displayed) {
++    if (FrameProbeDirectory().empty()) {
++        return {};
++    }
++    struct Clock {
++        std::mutex mutex;
++        std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
++        size_t next{};
++        u64 count{};
++    };
++    static std::array<Clock, 2> clocks;
++    auto& clock = clocks[displayed ? 1 : 0];
++    std::lock_guard lock{clock.mutex};
++    const auto elapsed = static_cast<u64>(std::chrono::duration_cast<std::chrono::milliseconds>(
++        std::chrono::steady_clock::now() - clock.start).count());
++    return {FrameProbeDue(elapsed, clock.next), ++clock.count, elapsed};
++}
++
++struct FrameProbePixels {
++    u64 pixels{};
++    u64 nonblack{};
++    u64 rgb_sum{};
++    u32 max_rgb{};
++};
++
++static FrameProbePixels FrameProbeSummarize(std::span<const u8> rgba) {
++    FrameProbePixels result{};
++    for (size_t i = 0; i + 3 < rgba.size(); i += 4) {
++        const auto r = rgba[i];
++        const auto g = rgba[i + 1];
++        const auto b = rgba[i + 2];
++        ++result.pixels;
++        result.nonblack += r != 0 || g != 0 || b != 0;
++        result.rgb_sum += static_cast<u64>(r) + g + b;
++        result.max_rgb = std::max(result.max_rgb, static_cast<u32>(std::max({r, g, b})));
++    }
++    return result;
++}
++
+ struct ScreenshotReadback {
+     ScreenshotKind kind{};
+     std::vector<std::filesystem::path> paths{};
+@@ -173,6 +245,15 @@
+         return paths;
+     }
+ 
++    if (!FrameProbeDirectory().empty()) {
++        const char* label = kind == ScreenshotKind::GameOnly ? "guest" : "display";
++        const auto first = screenshot_sequence.fetch_add(count, std::memory_order_relaxed);
++        for (u32 i = 0; i < count; ++i) {
++            paths.emplace_back(FrameProbeDirectory() /
++                               fmt::format("{:06}_{}.png", first + i, label));
++        }
++        return paths;
++    }
+     const auto& screenshots_dir = Common::FS::GetUserPath(Common::FS::PathType::ScreenshotsDir);
+     std::filesystem::create_directories(screenshots_dir);
+ 
+@@ -415,11 +496,43 @@
+         return;
+     }
+ 
++    // GPU completion is already awaited by DeferPriorityOperation. Make its
++    // writes visible to the host for non-coherent readback allocations as well.
++    if (!FrameProbeDirectory().empty() &&
++        readback.paths.front().parent_path() == FrameProbeDirectory()) {
++        const auto result = vmaInvalidateAllocation(readback.buffer.buffer.allocator,
++            readback.buffer.buffer.allocation, 0, VK_WHOLE_SIZE);
++        if (result != VK_SUCCESS) {
++            LOG_ERROR(Render_Vulkan, "FRAME_PROBE_INVALIDATE_FAILED result={}", static_cast<int>(result));
++            return;
++        }
++    }
+     std::vector<u8> rgba;
+     if (!ConvertReadbackToRgba8(readback, rgba)) {
+         return;
+     }
+ 
++    if (!FrameProbeDirectory().empty() &&
++        readback.paths.front().parent_path() == FrameProbeDirectory()) {
++        const auto stats = FrameProbeSummarize(rgba);
++        const char* label = readback.kind == ScreenshotKind::GameOnly ? "guest" : "display";
++        for (const auto& path : readback.paths) {
++            const bool saved = WritePng(path, rgba, readback.width, readback.height);
++            std::ofstream json(path.string() + ".json");
++            json << "{\"kind\":\"" << label << "\",\"width\":" << readback.width
++                 << ",\"height\":" << readback.height << ",\"format\":"
++                 << static_cast<u32>(readback.format) << ",\"pixels\":" << stats.pixels
++                 << ",\"nonblack_pixels\":" << stats.nonblack << ",\"rgb_sum\":"
++                 << stats.rgb_sum << ",\"max_rgb\":" << stats.max_rgb
++                 << ",\"png_saved\":" << (saved ? "true" : "false")
++                 << ",\"gpu_readback_callback\":true}\n";
++            LOG_INFO(Render_Vulkan,
++                     "FRAME_PROBE_READBACK kind={} size={}x{} nonblack={} total={} max_rgb={} saved={} file={}",
++                     label, readback.width, readback.height, stats.nonblack, stats.pixels,
++                     stats.max_rgb, saved, path.string());
++        }
++        return; // Do not create on-screen notifications for automated evidence.
++    }
+     const auto& primary_path = readback.paths.front();
+     if (!WritePng(primary_path, rgba, readback.width, readback.height)) {
+         LOG_ERROR(Render_Vulkan, "Failed saving screenshot to {}", primary_path.string());
+@@ -707,7 +820,15 @@
+     const vk::Extent2D image_size = {image.info.size.width, image.info.size.height};
+     expected_ratio = static_cast<float>(image_size.width) / static_cast<float>(image_size.height);
+ 
+-    const u32 capture_game_only_count = VideoCore::ConsumeGameOnlyScreenshotRequests();
++    const auto probe = FrameProbeTick(false);
++    const u32 capture_game_only_count = VideoCore::ConsumeGameOnlyScreenshotRequests() +
++                                       static_cast<u32>(probe.capture);
++    if (probe.capture) {
++        LOG_INFO(Render_Vulkan,
++                 "FRAME_PROBE_GUEST ordinal={} ms={} cpu_address={:#x} size={}x{} format={} tick={}",
++                 probe.ordinal, probe.elapsed_ms, cpu_address, image_size.width, image_size.height,
++                 static_cast<u32>(view_info.format), draw_scheduler.CurrentTick());
++    }
+     std::optional<ScreenshotReadback> pending_screenshot;
+ 
+     // Capture the guest output before any host-side scaling (FSR/PP) is applied.
+@@ -732,6 +853,16 @@
+             .imageExtent = {readback.width, readback.height, 1},
+         };
+         runtime.DownloadImage(&image, &readback.buffer, std::span{&copy_region, 1});
++        if (!FrameProbeDirectory().empty()) {
++            const vk::MemoryBarrier2 host_read{
++                .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
++                .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
++                .dstStageMask = vk::PipelineStageFlagBits2::eHost,
++                .dstAccessMask = vk::AccessFlagBits2::eHostRead,
++            };
++            cmdbuf.pipelineBarrier2(vk::DependencyInfo{
++                .memoryBarrierCount = 1, .pMemoryBarriers = &host_read});
++        }
+     }
+ 
+     // Continue with host-side passes that draw the displayed (scaled) frame.
+@@ -880,7 +1011,15 @@
+ 
+     auto& scheduler = present_scheduler;
+     const auto cmdbuf = scheduler.CommandBuffer();
+-    const u32 capture_with_overlays_count = VideoCore::ConsumeWithOverlaysScreenshotRequests();
++    const auto probe = FrameProbeTick(true);
++    const u32 capture_with_overlays_count = VideoCore::ConsumeWithOverlaysScreenshotRequests() +
++                                           static_cast<u32>(probe.capture);
++    if (probe.capture) {
++        LOG_INFO(Render_Vulkan,
++                 "FRAME_PROBE_PRESENT ordinal={} ms={} reused={} game_frame={} ready_tick={} tick={}",
++                 probe.ordinal, probe.elapsed_ms, is_reusing_frame, is_game_frame,
++                 frame->ready_tick, scheduler.CurrentTick());
++    }
+     std::optional<ScreenshotReadback> pending_screenshot;
+ 
+     if (EmulatorSettings.IsVkHostMarkersEnabled()) {
+@@ -1022,6 +1161,16 @@
+                                    vk::DependencyFlagBits::eByRegion, {}, {}, to_transfer);
+             CopyImageToReadback(cmdbuf, swapchain_image, vk::ImageLayout::eTransferSrcOptimal,
+                                 readback);
++            if (!FrameProbeDirectory().empty()) {
++                const vk::MemoryBarrier2 host_read{
++                    .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
++                    .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
++                    .dstStageMask = vk::PipelineStageFlagBits2::eHost,
++                    .dstAccessMask = vk::AccessFlagBits2::eHostRead,
++                };
++                cmdbuf.pipelineBarrier2(vk::DependencyInfo{
++                    .memoryBarrierCount = 1, .pMemoryBarriers = &host_read});
++            }
+             swapchain_copied_for_screenshot = true;
+         }
+ 
