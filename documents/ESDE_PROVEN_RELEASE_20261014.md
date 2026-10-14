@@ -1,3 +1,17 @@
+# v5: Controller cherry-pick conflict repair (15:52 server log)
+
+`esde-20261014-155206.log` confirms GoW merge resolution `REVIEWED_MERGE_RESOLUTION=PASS`, then stops on source `075bd16f79dd7ea4342f5a3d1790e1c52cf77fcd` when cherry-picking the quit dialog. The merge conflicted on `src/core/devtools/layer.cpp` and the deleted `scripts/install_local_default.py`.
+
+Version v5 merges **only** those two exact conflicts: it retains upstream `fps_pinned` instead of restoring the obsolete `fps_anchor_width` mechanism; copies the previously committed SDL quit-dialog actions and event interception from the pinned fork; preserves the deletion of the obsolete installer; and completes the pending cherry-pick. Unexpected conflict paths or unrecognized source shapes stop unchanged ES-DE. The integration does not load GoT48/GoW93 auto-Cross scripts, automatic screenshots, or automated gameplay. Normal controller and manual menu input remain with the user.
+
+```bash
+curl -4fsSL https://raw.githubusercontent.com/Chreece/shadPS4/036d17bf787c9fffc0f9707aaee0337a7f6a0eab/esde-v5.py | python3 -
+```
+
+This is a release-integration candidate; the actual compiler has not yet been reached in the uploaded log, and the new v5 source integration has not been server-tested.
+
+---
+
 # v4 — 14 October 2026, 15:36 build-log repair
 
 Source evidence: `esde-20261014-153630.log` shows a single merge conflict in `src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp`. Upstream at `f47bbd5d6e9f49d3fd11cb4fd50533a835976a08` has shader versions `9/6` (blob `08108e16888984bb8b06cb87ddedc6c094b995d3`), whereas the exact proven GoW Phase91 ancestor `bde2b3c1fdc8add6b73b24894d4d47837b1f2db3` has `11/8` (blob `adc6045a0064fbe284848a54c4ea33ed431e37cc`).
