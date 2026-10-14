@@ -49,7 +49,9 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 def adapt_resource_pass(data: bytes):
     text=data.decode()
     if "u32 dw2_shift;" in text:
-        raise RuntimeError("dw2_shift union alias already present")
+        if text.count("u32 dw2_shift;") != 1 or "union PostOpData {" not in text:
+            raise RuntimeError("existing dw2_shift union alias has unexpected shape")
+        return data
     out=replace_once(text,
         "union PostOpData {\n    u32 dw1_mask;\n",
         "union PostOpData {\n    u32 dw1_mask;\n    u32 dw2_shift;\n",
@@ -60,7 +62,13 @@ def adapt_resource_pass(data: bytes):
 def adapt_resource_header(data: bytes):
     text=data.decode()
     if "ClearStrideAndBitshiftDw2WithImm" in text:
-        raise RuntimeError("clear-stride post-op already present")
+        # Accept only the ABI-preserving form used by this retained-object build.
+        if (text.count("ClearStrideAndBitshiftDw2WithImm") == 2 and
+                "buffer.stride = 0;" in text and
+                "buffer.num_records <<= post_op_dw1_mask;" in text and
+                "u32 post_op_dw2_shift{};" not in text):
+            return data
+        raise RuntimeError("existing clear-stride resource.h has unexpected/non-retained ABI shape")
     # Append the new enumerator so all existing numeric values remain unchanged.
     text=replace_once(text,
         "    ClearAnisoRatioAndThreshold,\n};",
@@ -84,8 +92,33 @@ def adapt_resource_header(data: bytes):
 def adapt_discover_after_phi(gow96, data: bytes):
     base,_,phi_proof=gow96.adapt_resource(data,gow96.collaborator_source())
     text=base.decode()
+
+    # GOW96 deliberately imports the collaborator helper block.  The pinned
+    # collaborator commit already contains upstream #5352's discovery helper
+    # and DiscoverBufferSharp hook, so retain and verify it instead of adding
+    # a duplicate copy.
     if "CheckClearStrideAndPatchRecordsPattern" in text:
-        raise RuntimeError("clear-stride discovery already present")
+        required = (
+            "struct ClearStrideAndPatchRecordsResult {",
+            "IR::Opcode::BitwiseAnd32",
+            "IR::Opcode::ShiftLeftLogical32",
+            "vsharp.post_op = SharpFetchPostOp::ClearStrideAndBitshiftDw2WithImm;",
+            "vsharp.post_op_data.dw2_shift = shift;",
+        )
+        if text.count("CheckClearStrideAndPatchRecordsPattern") != 2:
+            raise RuntimeError("retained clear-stride discovery helper/hook count is unexpected")
+        for token in required:
+            if token not in text:
+                raise RuntimeError("retained clear-stride discovery is incomplete: "+token)
+        proof=dict(phi_proof)
+        proof.update(upstream_fix="shadps4-emu/shadPS4#5352",
+                     upstream_commit="8bafaa5aca9b",
+                     clear_stride_shift_records=True,
+                     clear_stride_source="gow96_pinned_collaborator",
+                     already_present_after_phi=True,
+                     game_specific=False)
+        return base,proof
+
     anchor="struct InlineCbufResult {"
     helper='''struct ClearStrideAndPatchRecordsResult {
     IR::Value vsharp_dw1;
@@ -140,6 +173,8 @@ ClearStrideAndPatchRecordsResult CheckClearStrideAndPatchRecordsPattern(IR::Valu
     proof.update(upstream_fix="shadps4-emu/shadPS4#5352",
                  upstream_commit="8bafaa5aca9b",
                  clear_stride_shift_records=True,
+                 clear_stride_source="gow100_added",
+                 already_present_after_phi=False,
                  game_specific=False)
     return text.encode(),proof
 
