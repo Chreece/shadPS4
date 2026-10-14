@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resume ES-DE: aggregate proven GoW Phase84/91 and GoT v46 sources, then incremental build.
+"""Resume ES-DE: reconstruct GoW84+91 and GoT46 verified cumulative GPU sources, then incremental build.
 
 Preserves the already merged 2026-10-14 16:04 source, production launcher,
 saved GoW/GoT builds, screenshots and game settings. No simulated controller input.
@@ -153,14 +153,21 @@ def main():
     if srt in selected:
         raise RuntimeError('Unexpected Phase91 SRT replacement: audit manifest before proceeding')
     tests=m['GOW']/'tests'
-    candidates=sorted(set(tests.glob('gow84*/source/'+srt)) |
-                      set(tests.glob('gow84*/overlay/'+srt)))
-    # Include the recorded Phase84 source path from the on-disk source tree.
-    candidates += [tests/'gow84-build-20261013/source'/srt]
+    # GoW87/93 pin this EXACT pre-Phase91 source in builds/, not tests/.
+    base84=m['GOW']/'builds/gow84-ds-ordered-20261013-194151-79151'
+    source84=base84/'source'
+    original_require(base84/'build/shadps4',
+        '7f6b320cdc2d60e0fc9e72b3bde58a2f2f18e3b7f1783825732a0a6ccf76ae',
+        root=m['GOW'])
+    if not source84.is_dir() or source84.is_symlink():
+        raise RuntimeError('Verified GoW84 source directory missing or unsafe')
+    candidates=[source84/srt]
+    candidates += sorted((m['GOW']/'builds').glob('gow84*/source/'+srt))
+    candidates += sorted(tests.glob('gow84*/source/'+srt))
     checked=[]
     matching=[]
-    for p in candidates:
-        if p.is_file() and not p.is_symlink() and p.resolve().is_relative_to(tests.resolve()):
+    for p in dict.fromkeys(candidates):
+        if p.is_file() and not p.is_symlink() and p.resolve().is_relative_to(m['GOW'].resolve()):
             digest=m['sha'](p)
             checked.append([str(p),digest])
             if digest==m['GOW_SRT']:
@@ -183,6 +190,40 @@ def main():
                     raise RuntimeError('Proven Phase91 executable lacks '+marker.decode())
     selected[srt]=srt_source
     out('PHASE84_SRT=VERIFIED',srt_source,'sha256='+m['GOW_SRT'])
+    # Phase84 brought DS ordered-count, shader IR/GCN and GPU changes across
+    # 39 source/test files. The Phase91 manifest only lists 15 replacement
+    # objects and cannot certify those earlier changes alone.
+    import ast
+    proof_code=m['show'](GOW_HEAD,'tools/gow84-integrated-build-and-capture.py')
+    tree=ast.parse(proof_code.decode('utf-8'))
+    def pinned_literal(name):
+        found=[]
+        for statement in tree.body:
+            if isinstance(statement,ast.Assign) and any(
+                isinstance(target,ast.Name) and target.id==name
+                for target in statement.targets):
+                found.append(ast.literal_eval(statement.value))
+        if len(found)!=1:
+            raise RuntimeError('GoW84 provenance field missing/ambiguous: '+name)
+        return found[0]
+    paths84=pinned_literal('PATHS')
+    expected_manual=pinned_literal('EXPECTED_MANUAL_RESULTS')
+    if len(paths84)!=39 or not all(isinstance(path,str) for path in paths84):
+        raise RuntimeError('Unexpected Phase84 39-source provenance contract')
+    phase84={}
+    for rel in paths84:
+        if not rel.startswith('src/'):
+            continue  # GCN tests are not runtime source units.
+        phase84[rel]=original_require(source84/rel,root=source84)
+    phase84[srt]=original_require(srt_source,m['GOW_SRT'],root=m['GOW'])
+    for rel,expected in expected_manual.items():
+        if m['sha'](original_require(source84/rel,root=source84))!=expected:
+            raise RuntimeError('Phase84 manually reconciled source differs: '+rel)
+    recovery='2cf684317f818dd6159cfed7acf350ca50155382'
+    for rel in phase84:
+        m['show'](recovery,rel)  # Abort before editing if ancestor not fetched.
+    out('GOW84_BASE=VERIFIED',len(phase84),'source files incl. SRT',
+        'baseline_sha='+recovery)
     got=m['got_sources']()  # Verify all GoT evidence BEFORE touching source.
     (REPORT/'protected-inputs.json').write_text(json.dumps({
         'gow91_binary':m['GOW91_BINARY'],
@@ -190,6 +231,8 @@ def main():
         'gow91_overlays':{rel:m['sha'](path) for rel,path in selected.items()},
         'native_merged_sources':native,
         'phase84_srt_source':str(srt_source),
+        'phase84_source_root':str(source84),
+        'phase84_source_sha256':{rel:m['sha'](path) for rel,path in phase84.items()},
         'got_overlays':{rel:m['sha'](path) for rel,path in got.items()},
     },indent=2)+'\n')
 
@@ -233,8 +276,16 @@ def main():
                       'after_sha256':hashlib.sha256(merged).hexdigest(),
                       'changed':merged!=current})
 
+    for rel,path in sorted(phase84.items()):
+        plan('GoW84',rel,m['show'](recovery,rel),path.read_bytes())
     for rel,path in sorted(selected.items()):
-        plan('GoW91',rel,m['show'](GOW_HEAD,rel),path.read_bytes())
+        if rel==srt:
+            continue  # Applied once from its Phase84 verified source above.
+        # Phase91 overlays are cumulative fixes on top of Phase84's sources;
+        # using modern upstream as the common ancestor would erase Phase80/84.
+        ancestor=(phase84[rel].read_bytes() if rel in phase84
+                  else original_require(source84/rel,root=source84).read_bytes())
+        plan('GoW91',rel,ancestor,path.read_bytes())
     # GoT's source changes concern offset arithmetic and binding spans, while
     # GoW's verified Phase84 source carries the auto-root planner. Layer both.
     plan('GoT-v33-SRT',srt,m['show']('refs/remotes/proven/main',srt),
