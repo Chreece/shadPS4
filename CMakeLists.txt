@@ -1001,6 +1001,7 @@ endif()
 set(SHADER_RECOMPILER src/shader_recompiler/profile.h
                       src/shader_recompiler/recompiler.cpp
                       src/shader_recompiler/recompiler.h
+                      src/shader_recompiler/resource.cpp
                       src/shader_recompiler/resource.h
                       src/shader_recompiler/info.h
                       src/shader_recompiler/params.h
