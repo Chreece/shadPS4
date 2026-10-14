@@ -82,7 +82,7 @@ def adapt_resource_header(data: bytes):
     return text.encode()
 
 def adapt_discover_after_phi(gow96, data: bytes):
-    base,_,phi_proof=gow96.adapt_resource(data)
+    base,_,phi_proof=gow96.adapt_resource(data,gow96.collaborator_source())
     text=base.decode()
     if "CheckClearStrideAndPatchRecordsPattern" in text:
         raise RuntimeError("clear-stride discovery already present")
