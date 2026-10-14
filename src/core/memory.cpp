@@ -161,6 +161,15 @@ void MemoryManager::CopySparseMemory(VAddr virtual_addr, u8* dest, u64 size) {
     }
 }
 
+bool MemoryManager::TryReadBacking(VAddr address, void* dest, u64 size) {
+    std::shared_lock lk{mutex};
+    if (!IsValidMapping(address, size)) {
+        return false;
+    }
+    CopySparseMemory(address, static_cast<u8*>(dest), size);
+    return true;
+}
+
 bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
     const VAddr virtual_addr = std::bit_cast<VAddr>(address);
     std::shared_lock lk{mutex};
