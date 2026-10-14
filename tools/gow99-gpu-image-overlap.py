@@ -74,6 +74,10 @@ def adapt_texture(gow98, data: bytes):
     });
 }'''
     out = text[:a] + canonical + text[b:]
+    if "void void TextureCache::InvalidateMemoryFromGPU" in out:
+        raise RuntimeError("Return type duplicated while replacing InvalidateMemoryFromGPU")
+    if out.count("void TextureCache::InvalidateMemoryFromGPU(") != 1:
+        raise RuntimeError("InvalidateMemoryFromGPU declaration proof failed")
 
     # Prove no bytes outside this method changed.
     if out[:a] != text[:a] or out[a + len(canonical):] != text[b:]:
