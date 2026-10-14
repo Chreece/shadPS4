@@ -567,13 +567,18 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
 }
 
 static inline bool PushPtr(Xbyak::CodeGenerator& c, PassInfo& pass_info, const IR::Value& off_dw) {
-    c.push(rdi);
     if (off_dw.IsImmediate()) {
+        c.push(rdi);
         c.mov(rdi, ptr[rdi + (off_dw.U32() << 2)]);
     } else {
+        // Compute the dynamic offset before saving rdi. ComputeOffset can fail for an
+        // unsupported expression (for example a Phi). Emitting push rdi before that
+        // failure leaves an unmatched push in the generated SRT walker and corrupts
+        // its runtime stack/return address.
         ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));
         c.shl(r10d, 2);
         c.mov(r10d, r10d);
+        c.push(rdi);
         c.mov(rdi, ptr[rdi + r10]);
     }
     c.mov(r10, 0xFFFFFFFFFFFFULL);
