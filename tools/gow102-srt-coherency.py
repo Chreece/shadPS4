@@ -387,9 +387,9 @@ def adapt_rasterizer(data: bytes):
 
     text = replace_once(
         text,
-        '#include "shader_recompiler/resource.h"\n',
+        '#include "shader_recompiler/runtime_info.h"\n',
         '#include "shader_recompiler/ir/passes/srt_coherency.h"\n'
-        '#include "shader_recompiler/resource.h"\n',
+        '#include "shader_recompiler/runtime_info.h"\n',
         "rasterizer coherency include")
 
     text = replace_once(
