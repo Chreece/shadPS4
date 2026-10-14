@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include <limits>
+#include <limits>\n#include <optional>
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/ir_emitter.h"
@@ -113,7 +113,9 @@ public:
 
     u32 Add(const ImageResource& desc) {
         const u32 index{Add(image_resources, desc, [&desc](const auto& existing) {
-            return desc.sharp_fetch == existing.sharp_fetch && desc.is_array == existing.is_array &&
+            return desc.sharp_fetch == existing.sharp_fetch &&
+                   desc.dynamic_table == existing.dynamic_table &&
+                   desc.is_array == existing.is_array &&
                    desc.mip_fallback_mode == existing.mip_fallback_mode &&
                    desc.constant_mip_index == existing.constant_mip_index &&
                    desc.post_op == existing.post_op;
@@ -206,6 +208,126 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
     return sharp_fetch;
 }
 
+struct DynamicImageTableUse {
+    u32 buffer_binding{};
+    IR::Value selector{};
+    u32 record_stride_bytes{};
+    u32 field_offset_bytes{};
+};
+
+std::pair<IR::Value, u32> SplitImmediateAdds(IR::Value value) {
+    u32 immediate = 0;
+    while (IR::Inst* inst = value.TryInst()) {
+        if (inst->GetOpcode() != IR::Opcode::IAdd32) {
+            break;
+        }
+        const bool lhs_imm = inst->Arg(0).IsImmediate();
+        const bool rhs_imm = inst->Arg(1).IsImmediate();
+        if (lhs_imm == rhs_imm) {
+            break;
+        }
+        immediate += lhs_imm ? inst->Arg(0).U32() : inst->Arg(1).U32();
+        value = lhs_imm ? inst->Arg(1) : inst->Arg(0);
+    }
+    return {value, immediate};
+}
+
+std::optional<std::pair<IR::Value, u32>> SplitImmediateMultiply(IR::Value value) {
+    IR::Inst* inst = value.TryInst();
+    if (!inst || inst->GetOpcode() != IR::Opcode::IMul32) {
+        return std::nullopt;
+    }
+    const bool lhs_imm = inst->Arg(0).IsImmediate();
+    const bool rhs_imm = inst->Arg(1).IsImmediate();
+    if (lhs_imm == rhs_imm) {
+        return std::nullopt;
+    }
+    const u32 multiplier = lhs_imm ? inst->Arg(0).U32() : inst->Arg(1).U32();
+    IR::Value selector = lhs_imm ? inst->Arg(1) : inst->Arg(0);
+    if (selector.IsImmediate() || multiplier == 0) {
+        return std::nullopt;
+    }
+    return std::pair{selector, multiplier};
+}
+
+std::optional<DynamicImageTableUse> ParseDynamicImageIndex(IR::Value value, u32 buffer_binding) {
+    auto [base, dword_offset] = SplitImmediateAdds(value);
+
+    if (IR::Inst* shift = base.TryInst();
+        shift && shift->GetOpcode() == IR::Opcode::ShiftRightLogical32 &&
+        shift->Arg(1).IsImmediate() && shift->Arg(1).U32() == 2) {
+        auto [byte_base, byte_offset] = SplitImmediateAdds(shift->Arg(0));
+        auto product = SplitImmediateMultiply(byte_base);
+        if (!product || product->second % sizeof(u32) != 0 ||
+            byte_offset > std::numeric_limits<u32>::max() - dword_offset * sizeof(u32)) {
+            return std::nullopt;
+        }
+        return DynamicImageTableUse{
+            .buffer_binding = buffer_binding,
+            .selector = product->first,
+            .record_stride_bytes = product->second,
+            .field_offset_bytes = byte_offset + dword_offset * sizeof(u32),
+        };
+    }
+
+    auto product = SplitImmediateMultiply(base);
+    if (!product || product->second > std::numeric_limits<u32>::max() / sizeof(u32) ||
+        dword_offset > std::numeric_limits<u32>::max() / sizeof(u32)) {
+        return std::nullopt;
+    }
+    return DynamicImageTableUse{
+        .buffer_binding = buffer_binding,
+        .selector = product->first,
+        .record_stride_bytes = product->second * sizeof(u32),
+        .field_offset_bytes = dword_offset * sizeof(u32),
+    };
+}
+
+std::optional<DynamicImageTableUse> DetectDynamicImageTable(const SharpReference& sharp) {
+    if (sharp.num_dwords != 4 && sharp.num_dwords != 8) {
+        return std::nullopt;
+    }
+
+    std::optional<DynamicImageTableUse> first;
+    for (u32 dword = 0; dword < sharp.num_dwords; ++dword) {
+        IR::Inst* source = sharp.dwords[dword].TryInst();
+        if (!source || source->GetOpcode() != IR::Opcode::ReadConstBuffer ||
+            !source->Arg(0).IsImmediate()) {
+            return std::nullopt;
+        }
+
+        const auto current = ParseDynamicImageIndex(source->Arg(1), source->Arg(0).U32());
+        if (!current) {
+            return std::nullopt;
+        }
+        if (!first) {
+            first = current;
+            continue;
+        }
+
+        const u64 expected_offset =
+            u64(first->field_offset_bytes) + u64(dword) * sizeof(u32);
+        if (current->buffer_binding != first->buffer_binding ||
+            current->selector != first->selector ||
+            current->record_stride_bytes != first->record_stride_bytes ||
+            expected_offset > std::numeric_limits<u32>::max() ||
+            current->field_offset_bytes != expected_offset) {
+            return std::nullopt;
+        }
+    }
+    return first;
+}
+
+u32 PackedImageBinding(IR::Value handle) {
+    if (handle.IsImmediate()) {
+        return handle.U32();
+    }
+    IR::Inst* binding = handle.Inst();
+    ASSERT(binding->GetOpcode() == IR::Opcode::ImageBinding);
+    ASSERT(binding->Arg(0).IsImmediate());
+    return binding->Arg(0).U32();
+}
+
 void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors& descriptors,
                       const Profile& profile) {
     IR::Inst& inst = *resource.user;
@@ -228,7 +350,7 @@ void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors
 }
 
 void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors& descriptors,
-                     const Profile& profile) {
+                     const Profile& profile, GuestMemoryResolver memory) {
     IR::Inst& inst = *resource.user;
 
     // Read image sharp.
@@ -239,8 +361,10 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     // need fallback (TODO is this 100% true?)
     const bool needs_mip_storage_fallback =
         inst_info.has_lod && is_written && !profile.supports_image_load_store_lod;
+    const auto dynamic_table = DetectDynamicImageTable(resource.sharps[0]);
     ImageResource image_res = {
-        .sharp_fetch = ConstructSharpFetch<AmdGpu::Image>(resource.sharps[0]),
+        .sharp_fetch = dynamic_table ? SharpFetch<AmdGpu::Image>{}
+                                     : ConstructSharpFetch<AmdGpu::Image>(resource.sharps[0]),
         .is_depth = bool(inst_info.is_depth),
         .is_atomic = is_atomic,
         .is_array = bool(inst_info.is_array),
@@ -248,6 +372,19 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         .is_r128 = bool(inst_info.is_r128),
         .post_op = resource.sharps[0].post_op,
     };
+
+    if (dynamic_table) {
+        ASSERT_MSG(!is_written, "Dynamic storage-image descriptors are not implemented");
+        ASSERT_MSG(resource.sharps[0].post_op == SharpFetchPostOp::None,
+                   "Dynamic image descriptor post-ops are not implemented");
+        image_res.dynamic_table = DynamicImageTable{
+            .buffer_binding = dynamic_table->buffer_binding,
+            .record_stride_bytes = dynamic_table->record_stride_bytes,
+            .field_offset_bytes = dynamic_table->field_offset_bytes,
+        };
+        ASSERT_MSG(image_res.ResolveDynamicTable(info, memory),
+                   "Unable to resolve dynamic sampled-image table");
+    }
 
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
@@ -331,9 +468,15 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                 lod_prod.IsEmpty() ? UNKNOWN_LOCATION : SharpLocationFromSource(lod_prod.Inst()),
             .is_depth = bool(inst_info.is_depth), // true for the _C (compare) opcodes
         });
-        inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
+        const u32 binding = image_binding | sampler_binding << 16;
+        inst.SetArg(0, dynamic_table
+                           ? ir.ImageBinding(ir.Imm32(binding), IR::U32{dynamic_table->selector})
+                           : ir.Imm32(binding));
     } else {
-        inst.SetArg(0, ir.Imm32(image_binding));
+        inst.SetArg(0, dynamic_table
+                           ? ir.ImageBinding(ir.Imm32(image_binding),
+                                             IR::U32{dynamic_table->selector})
+                           : ir.Imm32(image_binding));
     }
 }
 
@@ -640,7 +783,8 @@ void PatchBufferArgs(IR::Inst& inst, Info& info) {
 void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image_res,
                           const AmdGpu::Image& image) {
     const auto handle = inst.Arg(0);
-    const auto& sampler_res = info.samplers[(handle.U32() >> 16) & 0xFFFF];
+    const u32 packed_binding = PackedImageBinding(handle);
+    const auto& sampler_res = info.samplers[(packed_binding >> 16) & 0xFFFF];
     const auto sampler = sampler_res.GetSharp(info);
 
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
@@ -836,7 +980,7 @@ void PatchImageArgs(IR::Inst& inst, Info& info) {
     }
 
     const auto image_handle = inst.Arg(0);
-    const auto binding_index = image_handle.U32() & 0xFFFF;
+    const auto binding_index = PackedImageBinding(image_handle) & 0xFFFF;
     const auto& image_res = info.images[binding_index];
     auto image = image_res.GetSharp(info);
 
@@ -927,16 +1071,20 @@ void PatchImageArgs(IR::Inst& inst, Info& info) {
 }
 
 void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resources,
-                          const Profile& profile) {
-    // Iterate over discovered resources and patch them after finding the sharp.
-    // Pass 1: Track resource sharps
+                          const Profile& profile, GuestMemoryResolver memory) {
+    // Track all buffer sharps first. Dynamic image-table dwords are ReadConstBuffer
+    // instructions and must already carry their final buffer binding before image tracking.
     Descriptors descriptors{info};
     for (const auto& usage : resources) {
         IR::Inst& inst = *usage.user;
         if (IsBufferInstruction(inst)) {
             PatchBufferSharp(usage, info, descriptors, profile);
-        } else if (IsImageInstruction(inst)) {
-            PatchImageSharp(usage, info, descriptors, profile);
+        }
+    }
+    for (const auto& usage : resources) {
+        IR::Inst& inst = *usage.user;
+        if (IsImageInstruction(inst)) {
+            PatchImageSharp(usage, info, descriptors, profile, memory);
         }
     }
 
