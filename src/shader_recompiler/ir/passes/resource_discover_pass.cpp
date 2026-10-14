@@ -135,7 +135,7 @@ static bool SameDynamicTable(const DynamicTableDword& lhs, const DynamicTableDwo
     return true;
 }
 
-static DynamicSharpTable DetectDynamicSharpTable(const SharpReference& sharp) {
+DynamicSharpTable DetectDynamicSharpTable(const SharpReference& sharp) {
     if (sharp.num_dwords != 4 && sharp.num_dwords != 8) {
         return {};
     }
