@@ -365,7 +365,7 @@ def self_test(manual, base):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--seconds', type=int, default=600)
-    parser.add_argument('--readbacks', type=int, choices=(0,2), default=2,
+    parser.add_argument('--readbacks', type=int, choices=(0,1,2), default=2,
                         help='2=Precise; 0=unchanged readback mode for comparison')
     parser.add_argument('--self-test', action='store_true')
     parser.add_argument('--restore', action='store_true')
