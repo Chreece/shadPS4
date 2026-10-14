@@ -399,12 +399,10 @@ IR::Inst* FindSharpSource(IR::Inst* handle) {
 }
 
 void MarkReadConstBufferSharpSources(const SharpReference& sharp) {
-    // In cases of bindless sharp fetches mark all producer instructions
-    // so the extended userdata flattening pass will include them.
-    for (size_t i = 0; i < sharp.num_dwords; i++) {
-        IR::Inst* source = sharp.dwords[i].TryInst();
+    const auto mark_source = [](IR::Value value) {
+        IR::Inst* source = value.TryInst();
         if (!source) {
-            continue;
+            return;
         }
         ASSERT(IsSharpSource(source));
         if (source->GetOpcode() == IR::Opcode::ReadConstBuffer) {
@@ -412,6 +410,21 @@ void MarkReadConstBufferSharpSources(const SharpReference& sharp) {
             flags.sharp_source.Assign(1u);
             source->SetFlags(flags);
         }
+    };
+
+    if (sharp.dynamic_table.Valid()) {
+        // The descriptor record itself is indexed by shader runtime values and must remain
+        // a GPU ReadConstBuffer chain. Only flatten the table V# so the host can bind the
+        // descriptor array described by that V#.
+        for (const IR::Value dword : sharp.dynamic_table.table_dwords) {
+            mark_source(dword);
+        }
+        return;
+    }
+
+    // Normal bindless sharp fetch: flatten the sharp dwords themselves.
+    for (size_t i = 0; i < sharp.num_dwords; ++i) {
+        mark_source(sharp.dwords[i]);
     }
 }
 
