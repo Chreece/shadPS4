@@ -195,13 +195,23 @@ def main():
     # A previous run reported expected == actual for its binary: the original
     # two-pass digest was susceptible to a concurrent file replacement.
     # Record its current hash, but certify the *source* and Phase91 executable.
-    historical=stable_require(base84/'build/shadps4',root=m['GOW'])
-    historical_actual=stable_digest(historical)
+    historical_path=base84/'build/shadps4'
     historical_expected='7f6b320cdc2d60e0fc9e72b3bde58a2f2f18e3b7f1783825732a0a6ccf76ae'
+    historical_actual=None
+    historical_issue=None
+    try:
+        historical=stable_require(historical_path,root=m['GOW'])
+        historical_actual=stable_digest(historical)
+    except (OSError,RuntimeError) as exc:
+        # Historical intermediate is NEVER used to build; its original pinned
+        # 2026-10-13 source trees and the 2026-10-14 Phase91 binary are checked
+        # separately. Record instability without treating it as a GPU fix loss.
+        historical_issue=str(exc)
     historical_match=(historical_actual==historical_expected)
     (REPORT/'phase84-binary-audit.json').write_text(json.dumps({
-        'path':str(historical),
+        'path':str(historical_path),
         'expected_sha256':historical_expected,
+        'audit_issue':historical_issue,
         'current_sha256':historical_actual,
         'matches_old_build':historical_match,
         'used_as_compilation_input':False,
@@ -209,7 +219,8 @@ def main():
         'note':'Old binary may have been rebuilt; enforce source and Phase91 fingerprints.'
     },indent=2)+'\n')
     out('HISTORICAL_PHASE84_BINARY', 'MATCH' if historical_match else
-        'DIFFERENT_NOT_USED_AS_INPUT', 'sha256='+historical_actual)
+        'DIFFERENT_NOT_USED_AS_INPUT', 'sha256='+str(historical_actual),
+        'audit_issue='+str(historical_issue))
     if not source84.is_dir() or source84.is_symlink():
         raise RuntimeError('Verified GoW84 source directory missing or unsafe')
     candidates=[source84/srt]
