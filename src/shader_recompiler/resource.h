@@ -71,6 +71,8 @@ enum class SharpFetchPostOp : u8 {
     ForceRepeatXyzClamp,
     ForceLastTexelXyClamp,
     ClearAnisoRatioAndThreshold,
+    // For buffers whose shader clears stride and shifts NUM_RECORDS after loading V#.
+    ClearStrideAndBitshiftDw2WithImm,
 };
 
 enum class BufferType : u8 {
@@ -103,6 +105,11 @@ struct BufferResource {
         }
         if (post_op == SharpFetchPostOp::BitwiseOrDw1WithImm) {
             reinterpret_cast<u32*>(&buffer)[1] |= post_op_dw1_mask;
+        } else if (post_op == SharpFetchPostOp::ClearStrideAndBitshiftDw2WithImm) {
+            // post_op_dw1_mask is the existing 32-bit post-op parameter slot.
+            // Reuse it for the shift count to keep BufferResource layout/ABI unchanged.
+            buffer.stride = 0;
+            buffer.num_records <<= post_op_dw1_mask;
         } else if (post_op == SharpFetchPostOp::OffsetByProgramBase) {
             buffer.base_address += info.pgm_base;
         }
