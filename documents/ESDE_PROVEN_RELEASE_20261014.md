@@ -1,3 +1,23 @@
+# Update: v2 repair after 14:36 CEST log
+
+The first user run on 2026-10-14 at 14:36:54 stopped before build:
+`GoW provenance branch changed; refusing unreviewed commits`.
+The GoW branch moved from the pinned implementation `bde2b3c1...` to `2dca9c6d...` solely through a 55-line documentation commit. The GoT branch also added later diagnostics. These changes do **not** invalidate the pinned implementation.
+
+The v2 bootstrap uses immutable original installer source from GitHub commit `153775e23f3e7f2c77fced12a37e9a69b26ddfd1`, verifies plaintext SHA-256 `4351dd9a97ca439215d543cf70307cd6653cb8e39d356d19633ded6691da0b85`, then patches only audited exact matches and compiles it before execution.
+
+**Recommended one-paste command (v2):**
+
+```bash
+curl -4fsSL --http1.1 https://raw.githubusercontent.com/Chreece/shadPS4/37a93129ba9381e6aaed4e513b35c2388ed4d948/scripts/build-esde-proven-20261014-v2.py | python3 -
+```
+
+New safeguards: ancestry validation rather than mutable branch tip equality; never merge later diagnostics; exact GoW SHA as merge target; pinned GoW/GoT file reads; preflight local Phase91/v46 evidence before re-cloning; reuse previously downloaded Git objects without depending on old worktrees; report upstream conflicts under `evidence/upstream-merge-conflicts.*` and abort the incomplete merge. ES-DE is not changed on a source/build failure.
+
+Offline syntax checks and a mock advanced-branch ancestry test passed. Compilation and gameplay on the user's Debian/RADV server remain **unverified** until a new run finishes. The `--print-source` flag displays the entire patched source for audit, and `--check-source` checks the signature/patch/syntax without building.
+
+---
+
 # ES-DE verified integration candidate — 14 October 2026
 
 This is a **source integration/build-and-stage installer**, not a precompiled release or a claim of gameplay compatibility.
