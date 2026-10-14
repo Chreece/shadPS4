@@ -169,13 +169,11 @@ void TextureCache::InvalidateMemory(VAddr addr, size_t size) {
 }
 
 void TextureCache::InvalidateMemoryFromGPU(VAddr address, size_t max_size) {
+    // A storage-buffer write may target any byte range inside an aliased image,
+    // including a mip/slice subresource whose address is not the image base.
+    // ForEachImageInRegion already performs an exact overlap test, so every
+    // returned image is affected and must be refreshed from GPU-visible memory.
     ForEachImageInRegion(address, max_size, [&](ImageId image_id, Image& image) {
-        // Only consider images that match base address.
-        // TODO: Maybe also consider subresources
-        if (image.info.guest_address != address) {
-            return;
-        }
-        // Ensure image is reuploaded when accessed again.
         image.flags |= ImageFlagBits::GpuDirty;
     });
 }
