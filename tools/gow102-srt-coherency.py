@@ -127,7 +127,7 @@ def adapt_flat_coherency(gow98, data: bytes):
             '#include "shader_recompiler/ir/passes/srt_coherency.h"\n',
             "coherency include")
 
-    ns_anchor = "namespace Shader {\n\n"
+    ns_anchor = "namespace Shader {\n\nPFN_SrtWalker RegisterWalkerCode"
     helper_block = r'''// SRT walkers execute on the CPU but may follow pointers written by the GPU.
 // Keep global readbacks disabled; synchronize only a guest range the walker is
 // about to consume and only while BufferCache still marks that range GPU-modified.
@@ -225,7 +225,10 @@ static const void* const* GetWalkerLoadHelpers() {
 }
 
 '''
-    text = replace_once(text, ns_anchor, ns_anchor + helper_block, "Shader helper insertion")
+    text = replace_once(
+        text, ns_anchor,
+        "namespace Shader {\n\n" + helper_block + "PFN_SrtWalker RegisterWalkerCode",
+        "Shader helper insertion")
 
     pass_anchor = """    // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
