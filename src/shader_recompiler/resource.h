@@ -191,7 +191,7 @@ struct ImageResource {
 
     constexpr bool Fetch(const u32* flatbuf, AmdGpu::Image* out) const {
         if (!is_r128) {
-            // Fetch full 8 byte T#
+            // Fetch full 8 dword T#
             return sharp_fetch.Fetch(flatbuf, out);
         }
         // Fetch r128 T# and fix pitch
@@ -199,6 +199,70 @@ struct ImageResource {
             return false;
         }
         out->pitch = out->width;
+        return true;
+    }
+
+    bool ResolveDynamicTable(const auto& info, GuestMemoryResolver resolver) {
+        if (!dynamic_table.Enabled()) {
+            return true;
+        }
+        if (!resolver || dynamic_table.buffer_binding >= info.buffers.size()) {
+            return false;
+        }
+
+        const auto table = info.buffers[dynamic_table.buffer_binding].GetSharp(info);
+        if (!table || table.GetStride() != dynamic_table.record_stride_bytes ||
+            table.num_records == 0 ||
+            dynamic_table.field_offset_bytes + (is_r128 ? 16u : u32(sizeof(AmdGpu::Image))) >
+                table.GetStride()) {
+            return false;
+        }
+
+        dynamic_table.num_records = table.num_records;
+        bool found_type = false;
+        AmdGpu::Image prototype{};
+        AmdGpu::NumberClass prototype_class{};
+        AmdGpu::ImageType prototype_view{};
+
+        for (u32 record = 0; record < table.num_records; ++record) {
+            AmdGpu::Image candidate{};
+            const VAddr address = table.base_address + u64(record) * table.GetStride() +
+                                  dynamic_table.field_offset_bytes;
+            const u64 read_size = is_r128 ? 16u : sizeof(candidate);
+            if (!resolver.Read(address, &candidate, read_size)) {
+                return false;
+            }
+            if (is_r128) {
+                candidate.pitch = candidate.width;
+            }
+            if (!candidate.Valid() ||
+                candidate.GetDataFmt() == AmdGpu::DataFormat::FormatInvalid) {
+                continue;
+            }
+            if (is_depth) {
+                const auto dfmt = candidate.GetDataFmt();
+                if (dfmt != AmdGpu::DataFormat::Format16 &&
+                    dfmt != AmdGpu::DataFormat::Format32) {
+                    return false;
+                }
+            }
+
+            const auto view = candidate.GetViewType(is_array);
+            const auto number_class = AmdGpu::GetNumberClass(candidate.GetNumberFmt());
+            if (!found_type) {
+                prototype = candidate;
+                prototype_view = view;
+                prototype_class = number_class;
+                found_type = true;
+            } else if (view != prototype_view || number_class != prototype_class) {
+                return false;
+            }
+        }
+
+        if (!found_type) {
+            return false;
+        }
+        dynamic_table.prototype = prototype;
         return true;
     }
 
