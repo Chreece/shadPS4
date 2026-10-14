@@ -9,7 +9,7 @@
 
 namespace Shader {
 
-struct Profile;
+struct Profile;\nstruct GuestMemoryResolver;
 struct RuntimeInfo;
 
 struct Pools {
@@ -29,6 +29,6 @@ struct Pools {
 
 [[nodiscard]] IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools,
                                            Info& info, RuntimeInfo& runtime_info,
-                                           const Profile& profile);
+                                           const Profile& profile, GuestMemoryResolver memory);
 
 } // namespace Shader
