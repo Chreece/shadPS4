@@ -98,13 +98,6 @@ def main():
     m.update(SRC=SRC,WORK=WORK,EV=REPORT,LOG=LOG,LOGS=LOG.parent,
              STAMP=STAMP,BUILD=WORK/'build',BASE_SHA=UPSTREAM,
              STEP='resume protected overlays')
-    if already_integrated:
-        out('REUSING_COMMITTED_INTEGRATION',head,'CMAKE_INCREMENTAL=YES')
-        binary,runtime=m['build']()
-        out('COMPILE_SMOKE=PASS',binary)
-        m['install'](binary,runtime)
-        out('RESULT',m['RESULT'])
-        return
     # Replace default-bound SRC argument in original git helper; leave every
     # other build/merge/installation function unchanged.
     def pinned_git(*args,cwd=None,**kwargs):
@@ -112,6 +105,13 @@ def main():
         kw['cwd']=cwd or SRC
         return m['run']('git','-c','http.version=HTTP/1.1',*args,**kw)
     m['git']=pinned_git
+    if already_integrated:
+        out('REUSING_COMMITTED_INTEGRATION',head,'CMAKE_INCREMENTAL=YES')
+        binary,runtime=m['build']()
+        out('COMPILE_SMOKE=PASS',binary)
+        m['install'](binary,runtime)
+        out('RESULT',m['RESULT'])
+        return
     original_require=m['require']
     manifest=json.loads(original_require(m['GOW91']/'manifest.json',
                                         root=m['GOW']).read_text())
