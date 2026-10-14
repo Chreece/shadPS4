@@ -177,7 +177,7 @@ def main():
     if not matching:
         raise RuntimeError('Verified Phase84 SRT source not found; expected SHA-256 '+
             m['GOW_SRT']+'; see phase84-srt-candidates.json. No Git changes made.')
-    srt_source=original_require(matching[0],m['GOW_SRT'],root=tests)
+    srt_source=original_require(matching[0],m['GOW_SRT'],root=m['GOW'])
     if (b'SHADPS4_GOW_SRT_AUTO_ROOTS' not in srt_source.read_bytes() or
         b'GOW_SRT_TOPO_PLAN' not in srt_source.read_bytes()):
         raise RuntimeError('Phase84 source lacks the SRT dependency planner markers')
