@@ -28,7 +28,10 @@ LOGDIR = ROOT / "logs"
 PIN = "62925125e31b513c243ab042a7cf97c34872f06f"
 GOW_PIN = "bde2b3c1fdc8add6b73b24894d4d47837b1f2db3"
 GOT_PIN = "3c067d02124a242f1b13b7245a7c8b558dd87152"
-GOT_TOOL_REF = "refs/remotes/proven/fix/got-v33-gow-srt-port-20261013"
+GOT_40 = "7e873b6956a4e6518b9c025e3862520bfbeef187"
+GOT_45 = "4be865fea13b27"
+GOT_46 = "4bf18b8508de74"
+GOT_51 = "06be28af0d3f3599cde3bedacdad13cc42a909d3"
 BINARY_SHA = "837d07746f33efdd85390ea5e61084e781a44fa82f780253786ea9307cb4b26f"
 PHASE91_SHA = "b7db5807b4b04920b0e8f72d94a19fa74a29c70787c60264d8dfd06f1104ea79"
 PHASE84_SRT_SHA = "b70df7890134f497e9eb7efd2c717d6cf09afa784a007ca7dac59f50a26f6651"
@@ -181,9 +184,9 @@ def main():
     if run(["git", "status", "--porcelain", "--untracked-files=no"],
            output=True).strip():
         raise RuntimeError("Tracked source edits present; preserving them")
-    if run(["git", "merge-base", "--is-ancestor", GOW_PIN, "HEAD"], check=False,
-           output=True) is None:
-        raise RuntimeError("Unexpected Git ancestry")
+    if subprocess.run(["git", "merge-base", "--is-ancestor", GOW_PIN, "HEAD"],
+                      cwd=SRC, stdin=subprocess.DEVNULL).returncode:
+        raise RuntimeError("GoW baseline is no longer an ancestor")
     if not (SRC / "src/imgui/startup_loading.cpp").is_file() or not (
             SRC / "src/core/devtools/quit_dialog.h").is_file():
         raise RuntimeError("Loading GUI/quit dialog absent from compiled source")
@@ -229,7 +232,7 @@ def main():
 
         # GoT cached-stage array bindings; no noisy original diagnostic log.
         got40 = "tools/diagnostics/got-binding-span-fix.py"
-        old, new = literals(GOT_TOOL_REF, got40, "OLD", "NEW")
+        old, new = literals(GOT_40, got40, "OLD", "NEW")
         info = "src/shader_recompiler/info.h"
         changed = exactly_once(safe_file(SRC / info, SRC).decode(), old, new,
                                "GoT40 cached image binding stride")
@@ -244,7 +247,7 @@ def main():
 
         # GoT v45 RELEASE_MEM interrupt selector 3 is not a CPU interrupt.
         before, after = literals(
-            GOT_TOOL_REF, "tools/diagnostics/got-v45-release-mem-fix.py",
+            GOT_45, "tools/diagnostics/got-v45-release-mem-fix.py",
             "BEFORE", "AFTER")
         liverpool = "src/video_core/amdgpu/liverpool.cpp"
         changed = exactly_once(safe_file(SRC / liverpool, SRC).decode(), before,
@@ -253,7 +256,7 @@ def main():
 
         # GoT v46 Vulkan bitfield64 SPIR-V validity correction.
         before, after = literals(
-            GOT_TOOL_REF, "tools/diagnostics/got-v46-bitfield64-fix.py",
+            GOT_46, "tools/diagnostics/got-v46-bitfield64-fix.py",
             "BEFORE", "AFTER")
         spirv = "src/shader_recompiler/backend/spirv/emit_spirv_integer.cpp"
         changed = exactly_once(safe_file(SRC / spirv, SRC).decode(),
@@ -286,7 +289,7 @@ def main():
 
         # GoT51 mask-aware stencil-reference merge; no old rasterizer overwrite.
         selection, before, after = literals(
-            GOT_TOOL_REF, "tools/diagnostics/got-v51-stencil-reference-fix.py",
+            GOT_51, "tools/diagnostics/got-v51-stencil-reference-fix.py",
             "SELECTION", "BEFORE", "AFTER")
         code = raw_raster.decode()
         marker = "void Rasterizer::UpdateDepthStencilState() const {\n"
