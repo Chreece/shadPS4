@@ -78,9 +78,9 @@ def rewrite(source: str) -> str:
             'ES-DE: current upstream main plus pinned GoW baseline', GOW_HEAD)
     except RuntimeError as exc:
         conflicts = git('diff', '--name-only', '--diff-filter=U', stdout=True, check=False)
-        (EV / 'upstream-merge-conflicts.txt').write_text(conflicts + '\n')
+        (EV / 'upstream-merge-conflicts.txt').write_text(conflicts + '\\n')
         diff = git('diff', '--cc', stdout=True, check=False)
-        (EV / 'upstream-merge-conflicts.diff').write_text(diff + '\n')
+        (EV / 'upstream-merge-conflicts.diff').write_text(diff + '\\n')
         git('merge', '--abort', check=False)
         raise RuntimeError('New upstream conflicts with retained GoW CPU/GPU changes; '
                            'existing ES-DE preserved. See ' + str(EV) +
