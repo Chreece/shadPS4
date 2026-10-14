@@ -11,9 +11,23 @@ SOURCE='src/shader_recompiler/ir/passes/resource_patching_pass.cpp'
 PARENT_BINARY='d2a4f5a3c9b25c595739bdc9ee2a879fe27881f3613c48cfa2f0ded843fb5312'
 V31_BINARY='1e7264ec822d00060cddf9649fc704217524163e81673d87e5059e64e1375f6f'
 DRIVER='87908e0c6833c0f6dc86cb079cb0f34de0dee7e970da89b5303f0e6b29e326f7'
-ANCHOR='''    auto image = image_res.GetSharp(info);\n\n    ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);\n'''
-REPLACEMENT='''    auto image = image_res.GetSharp(info);\n\n    // GOT53: the observed Ghost sample can carry a plausible descriptor whose\n    // hardware image type is Invalid. Limit null fallback to this exact shader\n    // and read-only sample path; unrelated resource bugs retain the assertion.\n    if (GhostBindlessEnabled() && info.pgm_hash == 0x8e743c8eULL &&\n        inst.GetOpcode() == IR::Opcode::ImageSampleRaw && !is_written &&\n        image.GetType() == AmdGpu::ImageType::Invalid) {\n        LOG_WARNING(Render_Recompiler,\n                    "GOT53_NULL_INVALID_IMAGE shader={:#x} opcode={} depth={} "\n                    "sharp_summary={} address={:#x} data_format={} num_format={}",\n                    info.pgm_hash, u32(inst.GetOpcode()), image_res.is_depth,\n                    u32(image_res.sharp_fetch.summary), image.Address(),\n                    u32(image.GetDataFmt()), u32(image.GetNumberFmt()));\n        image = AmdGpu::Image::Null(image_res.is_depth);\n    }\n\n    ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);\n'''
+ASSERT_LINE = '    ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);'
+FALLBACK = """    // GOT53: the observed Ghost sample can carry a plausible descriptor whose
+    // hardware image type is Invalid. Limit null fallback to this exact shader
+    // and read-only sample path; unrelated resource bugs retain the assertion.
+    if (GhostBindlessEnabled() && info.pgm_hash == 0x8e743c8eULL &&
+        inst.GetOpcode() == IR::Opcode::ImageSampleRaw && !is_written &&
+        image.GetType() == AmdGpu::ImageType::Invalid) {
+        LOG_WARNING(Render_Recompiler,
+                    "GOT53_NULL_INVALID_IMAGE shader={:#x} opcode={} depth={} "
+                    "sharp_summary={} address={:#x} data_format={} num_format={}",
+                    info.pgm_hash, u32(inst.GetOpcode()), image_res.is_depth,
+                    u32(image_res.sharp_fetch.summary), image.Address(),
+                    u32(image.GetDataFmt()), u32(image.GetNumberFmt()));
+        image = AmdGpu::Image::Null(image_res.is_depth);
+    }
 
+"""
 def sha(p:Path)->str:
     if not p.is_file() or p.is_symlink(): raise RuntimeError('Missing/unsafe file: '+str(p))
     with p.open('rb') as f:return hashlib.file_digest(f,'sha256').hexdigest()
@@ -38,13 +52,26 @@ def args(line:str):
 
 def patch(raw:bytes)->bytes:
     text=raw.decode()
-    if text.count(ANCHOR)!=1:raise RuntimeError('Invalid-image assertion anchor changed')
+    start=text.find('void PatchImageSharp(')
+    if start<0:
+        raise RuntimeError('PatchImageSharp function missing')
+    end=text.find('\nstatic ',start+1)
+    if end<0:
+        end=len(text)
+    body=text[start:end]
+    if body.count(ASSERT_LINE)!=1:
+        raise RuntimeError('PatchImageSharp invalid-image assertion count='+str(body.count(ASSERT_LINE)))
+    if body.count('auto image = image_res.GetSharp(info);')!=1:
+        raise RuntimeError('PatchImageSharp image fetch count='+str(body.count('auto image = image_res.GetSharp(info);')))
+    if 'const bool is_written =' not in body or 'IR::Opcode::ImageSampleRaw' not in text:
+        raise RuntimeError('PatchImageSharp expected read/write context missing')
     if text.count('GhostBindlessEnabled()')<2 or 'ghost_dynamic_image_count' not in text:
         raise RuntimeError('Ghost resource implementation missing')
-    out=text.replace(ANCHOR,REPLACEMENT,1).encode()
-    if out.count(b'GOT53_NULL_INVALID_IMAGE')!=1:raise RuntimeError('Patch generation failed')
+    body2=body.replace(ASSERT_LINE,FALLBACK+ASSERT_LINE,1)
+    out=(text[:start]+body2+text[end:]).encode()
+    if out.count(b'GOT53_NULL_INVALID_IMAGE')!=1:
+        raise RuntimeError('Patch generation failed')
     return out
-
 def build(project:Path)->dict:
     tests=project/'tests';p=tests/PARENT;a=tests/V31;c=tests/TREE;d=c/'build'
     if sha(p/'build/shadps4')!=PARENT_BINARY:raise RuntimeError('v51 binary changed')
