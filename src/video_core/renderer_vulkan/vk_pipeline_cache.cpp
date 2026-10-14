@@ -7,7 +7,7 @@
 #include "common/io_file.h"
 #include "common/path_util.h"
 #include "core/debug_state.h"
-#include "core/emulator_settings.h"
+#include "core/emulator_settings.h"\n#include "core/memory.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/recompiler.h"
@@ -27,6 +27,24 @@ using Shader::Output;
 using Shader::SwStage;
 
 constexpr static auto SpirvVersion1_6 = 0x00010600U;
+
+static Shader::GuestMemoryResolver MakeGuestMemoryResolver(Core::MemoryManager* memory) {
+    return Shader::GuestMemoryResolver{
+        .context = memory,
+        .read = [](void* context, VAddr address, void* dst, u64 size) {
+            return static_cast<Core::MemoryManager*>(context)->TryReadBacking(address, dst, size);
+        },
+    };
+}
+
+static bool ResolveDynamicImageTables(Shader::Info& info, Shader::GuestMemoryResolver memory) {
+    for (auto& image : info.images) {
+        if (!image.ResolveDynamicTable(info, memory)) {
+            return false;
+        }
+    }
+    return true;
+}
 
 constexpr static std::array DescriptorHeapSizes = {
     vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 512},
@@ -270,8 +288,9 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(HwStage stage, SwStag
 }
 
 PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
-                             AmdGpu::Liverpool* liverpool_, u32 sparse_page_shift)
-    : instance{instance_}, scheduler{scheduler_}, liverpool{liverpool_},
+                             AmdGpu::Liverpool* liverpool_, Core::MemoryManager* memory_,
+                             u32 sparse_page_shift)
+    : instance{instance_}, scheduler{scheduler_}, liverpool{liverpool_}, memory{memory_},
       desc_heap{instance, scheduler.GetWorkSemaphore(), DescriptorHeapSizes} {
     const auto& vk12_props = instance.GetVk12Properties();
     profile = Shader::Profile{
@@ -628,7 +647,9 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
              perm_idx != 0 ? "(permutation)" : "");
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
 
-    const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
+    const auto ir_program =
+        Shader::TranslateProgram(code, pools, info, runtime_info, profile,
+                                 MakeGuestMemoryResolver(memory));
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
     DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx, "spv");
 
@@ -680,6 +701,8 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
     info.pgm_base = params.Base(); // Needs to be actualized for inline cbuffer address fixup
     info.user_data = params.user_data;
     info.RefreshFlatBuf();
+    ASSERT_MSG(ResolveDynamicImageTables(info, MakeGuestMemoryResolver(memory)),
+               "Unable to resolve dynamic image resources for shader {:#x}", info.pgm_hash);
     auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
 
     size_t perm_idx = program->modules.size();
