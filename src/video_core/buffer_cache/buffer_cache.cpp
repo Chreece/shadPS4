@@ -112,7 +112,10 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     }
 }
 
-BufferCache::~BufferCache() = default;
+BufferCache::~BufferCache() {
+    LOG_INFO(Render, "DMA CPU-dirty generation: full residency sweeps={}, safely skipped={}",
+             dma_scans_performed, dma_scans_skipped);
+}
 
 void BufferCache::TickFrame() {
     if (std::exchange(fault_process_pending, false)) {
@@ -319,13 +322,24 @@ void BufferCache::ReadEdgeImagePages(const Image& image) {
 }
 
 void BufferCache::SynchronizeDmaBuffers() {
+    // DMA fault-buffer processing is independent of CPU dirty synchronization
+    // and must remain active even when the residency sweep is unnecessary.
     fault_process_pending = true;
+    const u64 cpu_generation = memory_tracker->CpuDirtyGeneration();
+    if (cpu_generation == last_dma_synced_cpu_generation) {
+        ++dma_scans_skipped;
+        return;
+    }
+    ++dma_scans_performed;
     for (const auto& range : resident_ranges) {
         const u64 page = range.start >> (ARENA_PAGE_BITS - block_shift);
         const VAddr device_addr = range.start << block_shift;
         const u64 size = (range.end - range.start) << block_shift;
         SynchronizeMemory(address_space[page], device_addr, size, false, false);
     }
+    // Store the epoch observed BEFORE scanning. If a CPU write occurred during
+    // the sweep, its newer epoch forces another scan on the next DMA access.
+    last_dma_synced_cpu_generation = cpu_generation;
 }
 
 const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
@@ -393,6 +407,10 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
     if (bind_ranges.Empty()) {
         return;
     }
+
+    // Newly resident pages can contain previously untracked CPU memory.
+    // Force the next DMA sweep even if no guest write fault was observed.
+    last_dma_synced_cpu_generation = 0;
 
     const vk::MemoryAllocateFlagsInfo alloc_flags = {
         .flags = vk::MemoryAllocateFlagBits::eDeviceAddress,
