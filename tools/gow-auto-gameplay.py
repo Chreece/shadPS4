@@ -401,9 +401,8 @@ def main():
 
     env = os.environ.copy()
     for key in list(env):
-        if key.startswith("SHADPS4_GOW_"):
+        if key.startswith("SHADPS4_GOW_") or key == "RADV_DEBUG":
             env.pop(key, None)
-    env["RADV_DEBUG"] = "hang"
     env.setdefault("DISPLAY", ":0")
     xa = Path.home() / ".Xauthority"
     if xa.is_file():
@@ -431,6 +430,7 @@ def main():
             "readbacks_mode": args.readbacks_mode,
             "dump_shaders": False,
             "gow_behavior_env": [],
+            "radv_debug_env": None,
         }, indent=2) + "\n")
 
         proc = subprocess.Popen([
