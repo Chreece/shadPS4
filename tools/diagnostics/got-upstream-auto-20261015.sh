@@ -621,6 +621,58 @@ if not out:
     out.append('NO_UNHANDLED_NATIVE_FAULT_OBSERVED')
 output_path.write_text('\n'.join(out) + '\n')
 SYMBOLIZE
+# RADV may write GPU-hang reports under its isolated HOME. Preserve bounded
+# diagnostic text/shader files without archiving multi-gigabyte memory dumps.
+# Also recover the prior 65cde43e hang report if it is still present, so
+# comparisons do not require a third gameplay attempt.
+python3 - "$LOG/radv-home" "$LOGROOT/got-upstream-auto-65cde43e-20261015-135830/radv-home" "$LOG/info/radv-hangs" <<'CAPTURE_RADV'
+from pathlib import Path
+import hashlib, json, shutil, sys
+
+current, prior, output=map(Path,sys.argv[1:])
+output.mkdir(parents=True,exist_ok=True)
+manifest=[]
+remaining=24*1024*1024
+for label,root in (("current",current),("previous",prior)):
+    if not root.is_dir() or root.is_symlink():
+        continue
+    root_real=root.resolve()
+    selected=0
+    for candidate in root.rglob("*"):
+        if len(manifest)>=3000:
+            break
+        if candidate.is_symlink() or not candidate.is_file():
+            continue
+        try:
+            resolved=candidate.resolve()
+            if not resolved.is_relative_to(root_real):
+                continue
+            size=candidate.stat().st_size
+            relative=candidate.relative_to(root)
+        except (OSError,ValueError):
+            continue
+        if not any(part.startswith("radv_dumps_") for part in relative.parts):
+            continue
+        info={"run":label,"path":str(relative),"bytes":size,"copied":False}
+        # RADV shader dumps and metadata are small; entire IB/VRAM dumps
+        # are excluded, preserving them unmodified on the server.
+        accepted={".txt",".log",".json",".csv",".md",".yaml",".yml",
+                  ".nir",".spv",".ir",".xml",".ini",".cfg"}
+        if (candidate.suffix.lower() in accepted or size<=32768) and (
+            0<size<=2*1024*1024 and remaining>=size and selected<70
+        ):
+            dst=output/label/relative
+            dst.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(candidate,dst)
+            info["copied"]=True
+            info["sha256"]=hashlib.sha256(dst.read_bytes()).hexdigest()
+            remaining-=size
+            selected+=1
+        manifest.append(info)
+(output/"manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")
+print("RADV_HANG_FILES_DISCOVERED="+str(len(manifest)),
+      "COPIED="+str(sum(r["copied"] for r in manifest)), flush=True)
+CAPTURE_RADV
 if tar -czf "$LOG.tar.gz" -C "$LOG" game.log exit-code.txt screenshots info input-and-screenshots.log session.log; then
   printf '%s\n' "$LOG.tar.gz" > "$LOGROOT/.got-upstream-auto-latest"
   printf 'UPSTREAM_AUTO_ARCHIVE=%s.tar.gz\n' "$LOG"
