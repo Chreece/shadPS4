@@ -13,6 +13,7 @@
 #include "instructions.hpp"
 #include "translator.hpp"
 #include "shader_recompiler/ir/ir_emitter.h"
+#include "shader_recompiler/ir/microinstruction.h"
 #include "shader_recompiler/ir/passes/ir_passes.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
