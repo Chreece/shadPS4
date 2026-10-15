@@ -466,15 +466,16 @@ def adapt_rasterizer(data: bytes):
     if "ComputeProvenWriteSize" in text:
         raise RuntimeError("GoW104 rasterizer logic already present")
 
-    if "#include <limits>\n" not in text or "#include <optional>\n" not in text:
+    if any(x not in text for x in (
+            "#include <atomic>\n", "#include <limits>\n", "#include <optional>\n")):
         insert = text.find("\n\nnamespace Vulkan")
         if insert < 0:
             raise RuntimeError("Rasterizer include/namespace boundary missing")
         additions = ""
-        if "#include <limits>\n" not in text:
-            additions += "#include <limits>\n"
-        if "#include <optional>\n" not in text:
-            additions += "#include <optional>\n"
+        for header in ("atomic", "limits", "optional"):
+            line = f"#include <{header}>\n"
+            if line not in text:
+                additions += line
         text = text[:insert] + "\n" + additions.rstrip("\n") + text[insert:]
 
     anchor = "void Rasterizer::BindBuffers(const Shader::Info& stage"
@@ -557,7 +558,16 @@ def adapt_rasterizer(data: bytes):
                     const std::array<u64, 3> groups = {cs.dim_x, cs.dim_y, cs.dim_z};
                     if (const auto proven = ComputeProvenWriteSize(desc.write_extent, local, groups);
                         proven && *proven != 0 && *proven < tracked_write_size) {
+                        const u64 full_size = tracked_write_size;
                         tracked_write_size = *proven;
+                        static std::atomic<u64> proven_write_events{0};
+                        const u64 event =
+                            proven_write_events.fetch_add(1, std::memory_order_relaxed) + 1;
+                        if (event <= 32 || (event & (event - 1)) == 0) {
+                            LOG_INFO(Render_Vulkan,
+                                     "PROVEN_WRITE_EXTENT shader={:#x} full={} tracked={} event={}",
+                                     stage.pgm_hash, full_size, tracked_write_size, event);
+                        }
                     }
                 }
                 const auto [buffer, offset] = buffer_cache.ObtainBuffer(
