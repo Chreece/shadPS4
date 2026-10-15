@@ -4,7 +4,7 @@ umask 077
 
 # Isolated gameplay test harness. Input injection is confined to the test
 # process, not emulator fixes, and starts only after a captured screenshot.
-REV='ffe4ac1c045c2caafdb2d2f65eea79cc94b83a2a'
+REV='a181bb53c05f6479f026b7f64bfba5a550a40885'
 BRANCH='fix/generic-srt-readfirstlane-offset-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
 # Reuse only our previous, disposable generic candidate; never v55,
@@ -153,6 +153,19 @@ assert "c.vrcpss(dst_reg, merge_reg, src_reg);" in code
 assert "c.vrsqrtss(dst_reg, merge_reg, src_reg);" in code
 print("GENERAL_SCALAR_CPU_RESTORE=VERIFIED", flush=True)
 VERIFY_CPU
+# Preserve the already validated, general mspace and C++ initialization
+# implementations. Missing exports must abort before launching the game.
+for sym in '-hn1tcVHq5Q' 'OJjm-QOIHlI' 'Vla-Z+eXlxo' '3GPpjQdAMTw' '9rAeANT2tyE' '2emaaluWzUw'; do
+  grep -Fq "\"$sym\"" "$SRC/src/core/libraries/libc_internal/libc_internal_memory.cpp" \
+    "$SRC/src/core/libraries/libc_internal/libc_internal_threads.cpp" ||
+    fail "Missing restored libc implementation: $sym"
+done
+grep -Fq 'g_mspace_registry.Create(base, bytes)' \
+  "$SRC/src/core/libraries/libc_internal/libc_internal_memory.cpp" ||
+  fail 'Guest allocator implementation not found.'
+grep -Fq 'g_cxa_guard_registry.Acquire(guard)' \
+  "$SRC/src/core/libraries/libc_internal/libc_internal_threads.cpp" ||
+  fail 'C++ once guard implementation not found.'
 grep -Fq 'info.uses_fp64 = true;' \
   "$SRC/src/shader_recompiler/recompiler.cpp" || fail 'Missing pre-optimization guest FP64 detection.'
 grep -Fq 'inst.GetOpcode() == IR::Opcode::PackDouble2x32' \
