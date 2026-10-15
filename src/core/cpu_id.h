@@ -13,6 +13,8 @@ namespace Core {
 
 enum class CpuIdInstruction : u32 { Cpuid, Rdtscp, Rdpid };
 
+// Shared guest CPU identity for CPU instructions and sceKernelGetCurrentCpu.
+u32 CurrentGuestCpu();
 void InitializeCpuId();
 void EnableCpuIdFaulting();
 bool HandleCpuIdFault(void* context, void* fault_address);

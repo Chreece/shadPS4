@@ -7,6 +7,7 @@
 #include <cerrno>
 #include <csignal>
 #include <memory>
+#include <sched.h>
 #include <asm/prctl.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
@@ -16,6 +17,7 @@
 #include <xbyak/xbyak_util.h>
 #include "common/assert.h"
 #include "core/cpu_id.h"
+#include "core/guest_cpu_selection.h"
 #include "core/libraries/kernel/threads/pthread.h"
 
 #ifdef ENABLE_CPU_ID_TRANSLATION
@@ -33,7 +35,7 @@ extern "C" __attribute__((noinline, visibility("default"))) void ShadCpuIdTransl
 namespace Core {
 namespace {
 
-constexpr u32 GuestCpuCount = 8;
+constexpr u32 GuestCpuCount = GuestCpuSlots;
 constexpr size_t RedZoneSize = 128;
 constexpr size_t RegisterFrameSize = 17 * sizeof(u64);
 constexpr size_t FaultStackSize = RedZoneSize + sizeof(u64);
@@ -43,6 +45,11 @@ static_assert(std::atomic<uintptr_t>::is_always_lock_free);
 std::atomic<uintptr_t> guest_begin{};
 std::atomic<uintptr_t> guest_end{};
 std::array<std::unique_ptr<Xbyak::CodeGenerator>, 2> fault_trampolines;
+// The host's schedulable CPUs are mapped to eight virtual guest slots once,
+// before guest instructions execute. No malloc, locking, or affinity writes in
+// the signal handler. Guest affinity further restricts the chosen virtual slot.
+std::array<u8, CPU_SETSIZE> host_to_virtual{};
+std::array<bool, CPU_SETSIZE> host_cpu_known{};
 
 std::array<u32, 4> GuestCpuid(u32 leaf, u32 subleaf, u32 cpu) {
     const u32 apic_id = GuestCpuCount - 1 - cpu;
@@ -116,16 +123,24 @@ std::array<u32, 4> GuestCpuid(u32 leaf, u32 subleaf, u32 cpu) {
     return result;
 }
 
-u32 CurrentGuestCpu() {
+u32 CurrentGuestCpuImpl() {
     auto* thread = Libraries::Kernel::g_curthread;
     ASSERT(thread != nullptr);
-    const s32 cpu = thread->GetCurrentCpu();
-    ASSERT_MSG(cpu >= 0 && cpu < GuestCpuCount, "Cannot resolve guest CPU identity: {}", cpu);
-    return cpu;
+    unsigned host_cpu{};
+    const long ret = syscall(SYS_getcpu, &host_cpu, nullptr, nullptr);
+    ASSERT_MSG(ret == 0, "Cannot read native CPU scheduler ID: {}", errno);
+    const unsigned scheduler_slot =
+        host_cpu < host_to_virtual.size() && host_cpu_known[host_cpu]
+            ? host_to_virtual[host_cpu]
+            : host_cpu % GuestCpuCount;
+    const u64 allowed = thread->guest_affinity_mask.load(std::memory_order_relaxed);
+    const int cpu = SelectGuestCpu(scheduler_slot, allowed);
+    ASSERT_MSG(cpu >= 0 && cpu < GuestCpuCount, "Invalid guest CPU affinity mask: {:#x}", allowed);
+    return static_cast<u32>(cpu);
 }
 
 void PS4_SYSV_ABI ExecuteCpuId(u64* registers, CpuIdInstruction instruction, u32 destination) {
-    const u32 cpu = CurrentGuestCpu();
+    const u32 cpu = CurrentGuestCpuImpl();
     switch (instruction) {
     case CpuIdInstruction::Cpuid: {
         const auto result = GuestCpuid(static_cast<u32>(registers[0]),
@@ -340,7 +355,24 @@ void GenerateCpuIdInstruction(Xbyak::CodeGenerator& c, CpuIdInstruction instruct
     }
 }
 
+u32 CurrentGuestCpu() {
+    return CurrentGuestCpuImpl();
+}
+
 void InitializeCpuId() {
+    cpu_set_t host_allowed{};
+    if (sched_getaffinity(0, sizeof(host_allowed), &host_allowed) == 0) {
+        unsigned rank = 0;
+        for (unsigned i = 0; i < CPU_SETSIZE; ++i) {
+            if (CPU_ISSET(i, &host_allowed)) {
+                host_to_virtual[i] = static_cast<u8>(rank++ % GuestCpuCount);
+                host_cpu_known[i] = true;
+            }
+        }
+        LOG_INFO(Core, "Mapped {} host CPUs to {} virtual PS4 CPU slots", rank, GuestCpuCount);
+    } else {
+        LOG_WARNING(Core, "Unable to capture host CPU affinity: {}. Using scheduler indices.", errno);
+    }
     u32 data[4];
     Xbyak::util::Cpu::getCpuid(0, data);
     host_max_basic = data[0];

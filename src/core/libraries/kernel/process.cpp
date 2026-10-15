@@ -4,6 +4,9 @@
 #include "common/elf_info.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
+#if defined(__linux__) && defined(ARCH_X86_64)
+#include "core/cpu_id.h"
+#endif
 #include "core/file_sys/fs.h"
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/process.h"
@@ -76,8 +79,12 @@ s32 PS4_SYSV_ABI sceKernelGetCpumode() {
 }
 
 s32 PS4_SYSV_ABI sceKernelGetCurrentCpu() {
-    LOG_DEBUG(Lib_Kernel, "called");
+#if defined(__linux__) && defined(ARCH_X86_64)
+    return static_cast<s32>(Core::CurrentGuestCpu());
+#else
+    // CPU identity translation is currently implemented for Linux x86-64.
     return 0;
+#endif
 }
 
 void* PS4_SYSV_ABI sceKernelGetProcParam() {
