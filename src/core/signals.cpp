@@ -291,11 +291,15 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
 #ifdef __linux__
             // Preserve a native stack from the original failed formatting or
             // memory access, before the fatal error logger unwinds the process.
+            constexpr char begin[] = "SHAD_NATIVE_STACK_BEGIN\n";
+            constexpr char end[] = "SHAD_NATIVE_STACK_END\n";
+            write(STDERR_FILENO, begin, sizeof(begin) - 1);
             void* frames[48]{};
             const int frame_count = backtrace(frames, 48);
             if (frame_count > 0) {
                 backtrace_symbols_fd(frames, frame_count, STDERR_FILENO);
             }
+            write(STDERR_FILENO, end, sizeof(end) - 1);
 
             // An unhandled host access violation is fatal. Record its module-relative
             // address so a PIE build can be symbolized across different ASLR bases.
