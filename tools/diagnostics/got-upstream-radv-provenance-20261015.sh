@@ -4,7 +4,7 @@ umask 077
 
 # Clean upstream-main integration playtest, independent of installed ES-DE.
 # Retains established screenshot -> Cross/X automation from earlier runs.
-REV='438db0cd501a8060b0e47498960a03633276d201'
+REV='306b4877461711f636536fca0fce2d7052577512'
 UPSTREAM_BASE='b2d7ec7d31f9ad9426db93afe079db8679b3e1e0'
 BRANCH='integration/upstream-main-got-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
@@ -42,7 +42,7 @@ if [[ "${1:-}" != '--worker' ]]; then
 from pathlib import Path
 import re,sys
 source=Path(sys.argv[1]).read_text()
-labels=("VERIFY_SRT","VERIFY_PM4","UPDATE_TEST_PROVENANCE","PREP_PRIVATE",
+labels=("VERIFY_SRT","VERIFY_PM4","VERIFY_REQUIRED_DMA","UPDATE_TEST_PROVENANCE","PREP_PRIVATE",
         "VERIFY_PRIVATE","PREP_SHADER_CAPTURE","PY","SYMBOLIZE",
         "CAPTURE_RADV","MATCH_RADV_SHADERS","CLEAN_PRIVATE_DUMPS")
 for tag in labels:
@@ -136,6 +136,21 @@ grep -Fq 'case IR::Opcode::FPAdd64:' \
 grep -Fq 'case Opcode::IMAGE_GATHER4_C_L:' \
   "$SRC/src/shader_recompiler/frontend/translate/vector_memory.cpp" ||
   fail 'Merged upstream GCN gather support is missing.'
+python3 - "$SRC/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp" <<'VERIFY_REQUIRED_DMA'
+from pathlib import Path
+import sys
+source=Path(sys.argv[1]).read_text()
+visit=source.split("case IR::Opcode::ReadConst:",1)[1].split(
+    "case IR::Opcode::PackUfloat10_11_11:",1)[0]
+assert "if (inst.Flags<u32>() == 0)" in visit
+assert "info.uses_dma = true;" in visit
+collect=source.split("void CollectShaderInfoPass(",1)[1]
+assert "info.uses_dma = false" not in collect
+assert "info.readconst_types = Info::ReadConstType::None" not in collect
+assert "BufferType::BdaPagetable" in collect
+assert "BufferType::FaultBuffer" in collect
+print("MANDATORY_GUEST_DMA_TRANSLATION=VERIFIED",flush=True)
+VERIFY_REQUIRED_DMA
 grep -Fq 'g_mspace_registry.Create(base, bytes)' \
   "$SRC/src/core/libraries/libc_internal/libc_internal_memory.cpp" ||
   fail 'Guest mspace allocator was not preserved.'
@@ -199,7 +214,7 @@ sha256sum "$BUILD/shadps4"
 # Only the previous automatic upstream test profile is disposable.
 # Rename/reuse it rather than copying the stable v55 profile and filling disk
 # with a second full game-user directory.
-PREVIOUS_RUN="$PROJECT/play/auto-upstream-main-438db0cd"
+PREVIOUS_RUN="$PROJECT/play/auto-upstream-main-438db0cd-spv"
 if [[ ! -e "$RUN" && -d "$PREVIOUS_RUN" && ! -L "$PREVIOUS_RUN" &&
       -f "$PREVIOUS_RUN/test-provenance.txt" &&
       ! -L "$PREVIOUS_RUN/test-provenance.txt" ]] &&
@@ -506,9 +521,26 @@ def capture(pid, folder, index, elapsed, xconn, allow_cross):
         result = subprocess.run(['import', '-window', str(window), str(dest)],
                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.PIPE, timeout=10)
-        if (result.returncode or not dest.is_file() or dest.stat().st_size < 1000 or
-                dest.open('rb').read(8) != b'\x89PNG\r\n\x1a\n'):
-            event['reason'] = 'screenshot capture failed'
+        # A completely black frame can be a *valid* PNG far smaller than
+        # 1000 bytes. Validate the actual file framing instead of its size.
+        def valid_png(path):
+            if not path.is_file() or path.stat().st_size < 57:
+                return False
+            with path.open('rb') as stream:
+                header = stream.read(24)
+                if (header[:8] != b'\x89PNG\r\n\x1a\n' or
+                        header[12:16] != b'IHDR'):
+                    return False
+                width, height = __import__('struct').unpack('>II',header[16:24])
+                if not (0 < width < 16384 and 0 < height < 16384):
+                    return False
+                stream.seek(-12,2)
+                last=stream.read(12)
+                return last[:8] == b'\x00\x00\x00\x00IEND'
+        if result.returncode or not valid_png(dest):
+            event['reason'] = ('screenshot invalid or capture failed (exit='+
+                               str(result.returncode)+'): '+
+                               result.stderr.decode('utf-8','replace')[-300:])
             dest.unlink(missing_ok=True)
             return event
         event['screenshot'] = name
