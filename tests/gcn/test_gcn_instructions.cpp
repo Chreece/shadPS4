@@ -12,6 +12,10 @@
 #include "gcn_test_runner.hpp"
 #include "instructions.hpp"
 #include "translator.hpp"
+#include "common/object_pool.h"
+#include "shader_recompiler/ir/basic_block.h"
+#include "shader_recompiler/ir/microinstruction.h"
+#include "shader_recompiler/ir/passes/srt_offset_preflight.h"
 
 class GcnTest : public ::testing::Test {
 protected:
@@ -23,6 +27,66 @@ protected:
         gcn_test::Runner::DestroyInstance();
     }
 };
+
+TEST_F(GcnTest, srt_phi_offset_deferred_without_native_codegen) {
+    Common::ObjectPool<Shader::IR::Inst> pool{128};
+    Shader::IR::Block block{pool};
+    auto phi = block.PrependNewInst(block.end(), Shader::IR::Opcode::Phi);
+    phi->SetFlags(Shader::IR::Type::U32);
+    const Shader::IR::Value phi_value{&*phi};
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(phi_value));
+
+    const auto dependent = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::IAdd32,
+        {phi_value, Shader::IR::Value{u32{8}}});
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        Shader::IR::Value{&*dependent}));
+}
+
+TEST_F(GcnTest, srt_dynamic_select_and_guest_attribute_deferred) {
+    Common::ObjectPool<Shader::IR::Inst> pool{128};
+    Shader::IR::Block block{pool};
+    const auto selection = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::SelectU32,
+        {Shader::IR::Value{true}, Shader::IR::Value{u32{24}},
+         Shader::IR::Value{u32{36}}});
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        Shader::IR::Value{&*selection}));
+    const auto attribute = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::GetAttributeU32);
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        Shader::IR::Value{&*attribute}));
+}
+
+TEST_F(GcnTest, srt_supported_offsets_still_use_existing_native_path) {
+    Common::ObjectPool<Shader::IR::Inst> pool{128};
+    Shader::IR::Block block{pool};
+    const auto ud = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::GetUserData,
+        {Shader::IR::Value{Shader::IR::ScalarReg::S0}});
+    const auto shifted = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::ShiftLeftLogical32,
+        {Shader::IR::Value{&*ud}, Shader::IR::Value{u32{2}}});
+    const auto sum = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::IAdd32,
+        {Shader::IR::Value{&*shifted}, Shader::IR::Value{u32{4}}});
+    EXPECT_TRUE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        Shader::IR::Value{&*sum}));
+
+    const auto width32 = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::BitFieldUExtract,
+        {Shader::IR::Value{&*sum}, Shader::IR::Value{u32{0}},
+         Shader::IR::Value{u32{32}}});
+    EXPECT_TRUE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        Shader::IR::Value{&*width32}));
+
+    const auto width33 = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::BitFieldUExtract,
+        {Shader::IR::Value{&*sum}, Shader::IR::Value{u32{0}},
+         Shader::IR::Value{u32{33}}});
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        Shader::IR::Value{&*width33}));
+}
 
 struct F32x2 {
     float a;
