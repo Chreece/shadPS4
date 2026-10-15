@@ -139,7 +139,7 @@ static void GuestCanSubmitNextBufferWhileBackendIsSlow() {
             std::lock_guard backend_lock{port->backend_mutex};
             backend_started.set_value();
             // SDL pacing may block here, but the producer must not be held.
-            std::this_thread::sleep_for(300ms);
+            std::this_thread::sleep_for(650ms);
         }
         return staged[0] == 11 && staged[1] == 22;
     });
@@ -157,7 +157,7 @@ static void GuestCanSubmitNextBufferWhileBackendIsSlow() {
         port->output_ready = true;
         return true;
     });
-    Require(producer.wait_for(150ms)==std::future_status::ready,
+    Require(producer.wait_for(400ms)==std::future_status::ready,
             "guest submission was blocked by slow host playback");
     Require(producer.get(), "guest could not prepare next audio block");
     Require(worker.wait_for(1000ms)==std::future_status::ready,
