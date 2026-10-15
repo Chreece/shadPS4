@@ -4,7 +4,7 @@ umask 077
 
 # Isolated gameplay test harness. Input injection is confined to the test
 # process, not emulator fixes, and starts only after a captured screenshot.
-REV='1f67fc1e35cc3b1884d0fc9d8732c72fd3f16f2b'
+REV='fa4c59fa1bfa323514ff1c3c2ede1d8c4e66b071'
 BRANCH='fix/generic-srt-readfirstlane-offset-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
 # Reuse only our previous, disposable generic candidate; never v55,
@@ -144,6 +144,25 @@ grep -Fq 'case InterruptSelect::IrqUndocumented:' \
   "$SRC/src/video_core/amdgpu/pm4_cmds.h" || fail 'Missing RELEASE_MEM selector-3 handler.'
 grep -Fq 'RELEASE_MEM interrupt selector 3 confirms a completed data write' \
   "$SRC/src/video_core/amdgpu/pm4_cmds.h" || fail 'Missing general data-confirmation semantics.'
+python3 - "$SRC/src/shader_recompiler/frontend/decode.cpp" \
+  "$SRC/src/shader_recompiler/frontend/translate/vector_memory.cpp" <<'VERIFY_GATHER4'
+from pathlib import Path
+import sys
+decoder, translator = (Path(p).read_text() for p in sys.argv[1:])
+dispatch = translator.split("void Translator::EmitVectorMemory(", 1)[1].split(
+    "void Translator::BUFFER_", 1)[0]
+gathers = dispatch.split("// Image gather operations", 1)[1].split(
+    "// Image misc operations", 1)[0]
+assert "case Opcode::IMAGE_GATHER4_C_L:" in gathers
+assert "return IMAGE_GATHER(inst);" in gathers
+modifier = decoder.split("u32 GcnDecodeContext::getMimgModifier(", 1)[1]
+assert ("case Opcode::IMAGE_GATHER4_C_L:\n"
+        "        flags.set(MimgModifier::Pcf, MimgModifier::Lod);") in modifier
+repair = decoder.split("void GcnDecodeContext::repairOperandType()", 1)[1].split(
+    "OperandField GcnDecodeContext::getOperandField(", 1)[0]
+assert "case Opcode::IMAGE_GATHER4_C_L:" in repair
+print("GENERIC_COMPARE_GATHER_DECODER=VERIFIED",flush=True)
+VERIFY_GATHER4
 python3 - "$SRC/src/video_core/amdgpu/pm4_cmds.h" <<'CHECK_PM4'
 from pathlib import Path
 import sys
