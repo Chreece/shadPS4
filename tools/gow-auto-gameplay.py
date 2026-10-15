@@ -111,43 +111,116 @@ def identity(path: Path):
     return (os.major(st.st_dev), os.minor(st.st_dev), st.st_ino)
 
 
-def validate_process(pid: int, binary: Path):
-    proc = Path("/proc") / str(pid)
-    exe = (proc / "exe").resolve(strict=True)
-    wanted = identity(binary)
-    if identity(exe) == wanted:
-        return "direct"
+def parse_stat(text: str):
+    closing = text.rfind(")")
+    if closing < 0:
+        raise RuntimeError("Malformed process status")
+    fields = text[closing + 1:].split()
+    if len(fields) < 20:
+        raise RuntimeError("Incomplete process status")
+    return {
+        "state": fields[0],
+        "parent_pid": int(fields[1]),
+        "process_group": int(fields[2]),
+        "session_id": int(fields[3]),
+        "start_ticks": int(fields[19]),
+    }
 
-    runtime = binary.parent / "cpu-id-runtime"
-    if not runtime.is_dir():
-        raise RuntimeError("Process executable changed and CPU-ID runtime is unavailable")
-    allowed = []
-    for p in runtime.iterdir():
+
+def runtime_candidates(binary: Path):
+    # This is the exact CPU-ID runtime layout used by launcher.cpp and by the
+    # already-proven GOW93 process guard. libdynamorio.so can be /proc/<pid>/exe
+    # even though it is not a top-level executable in cpu-id-runtime.
+    root = binary.parent / "cpu-id-runtime"
+    if not root.is_dir():
+        root = (binary.parent / "../libexec/shadps4/cpu-id-runtime").resolve()
+    candidates = [root / "bin64/drrun", root / "lib64/release/libdynamorio.so"]
+    out = []
+    for p in candidates:
         try:
-            if p.is_file() and os.access(p, os.X_OK):
-                allowed.append(identity(p.resolve()))
+            if p.is_file():
+                out.append({"path": str(p.resolve(strict=True)), "identity": identity(p)})
         except OSError:
             pass
-    if identity(exe) not in allowed:
-        raise RuntimeError("Live process is neither the pinned binary nor its CPU-ID runtime")
+    if not out:
+        raise RuntimeError("CPU-ID runtime executables are unavailable")
+    return out
 
-    # Under translated execution the original candidate must still be mapped.
-    found = False
-    for row in (proc / "maps").read_text(errors="replace").splitlines():
-        fields = row.split(None, 5)
-        if len(fields) < 5:
-            continue
-        dev = fields[3].split(":")
-        try:
-            dev_id = (int(dev[0], 16), int(dev[1], 16), int(fields[4]))
-        except (ValueError, IndexError):
-            continue
-        if dev_id == wanted and int(fields[2], 16) == 0 and fields[1].startswith("r"):
-            found = True
-            break
-    if not found:
-        raise RuntimeError("Pinned application is not mapped in the translated process")
-    return "translated"
+
+def capture_launch(proc: subprocess.Popen, binary: Path):
+    folder = Path("/proc") / str(proc.pid)
+    stat = parse_stat((folder / "stat").read_text())
+    if stat["parent_pid"] != os.getpid():
+        raise RuntimeError("Launched child parent changed")
+    if stat["process_group"] != proc.pid or stat["session_id"] != proc.pid:
+        raise RuntimeError("Launched child did not enter its dedicated session")
+    return {
+        "pid": proc.pid,
+        "owner_uid": os.getuid(),
+        "parent_pid": stat["parent_pid"],
+        "process_group": stat["process_group"],
+        "session_id": stat["session_id"],
+        "start_ticks": stat["start_ticks"],
+        "binary_identity": identity(binary),
+        "runtime_executables": runtime_candidates(binary),
+    }
+
+
+def validate_process(pid: int, binary: Path, launch):
+    if pid != launch["pid"]:
+        raise RuntimeError("Input target PID differs from launched child")
+    proc = Path("/proc") / str(pid)
+    before = parse_stat((proc / "stat").read_text())
+    current = {
+        "pid": pid,
+        "owner_uid": proc.stat().st_uid,
+        "parent_pid": before["parent_pid"],
+        "process_group": before["process_group"],
+        "session_id": before["session_id"],
+        "start_ticks": before["start_ticks"],
+        "state": before["state"],
+        "exe_identity": identity(proc / "exe"),
+        "binary_identity": identity(binary),
+    }
+    for key in ("owner_uid", "parent_pid", "process_group", "session_id", "start_ticks"):
+        if current[key] != launch[key]:
+            raise RuntimeError("Input process identity changed: " + key)
+    if current["state"] in ("Z", "X", "x"):
+        raise RuntimeError("Input target has exited")
+    if current["binary_identity"] != launch["binary_identity"]:
+        raise RuntimeError("Pinned candidate changed after launch")
+
+    if current["exe_identity"] == launch["binary_identity"]:
+        mode = "direct"
+    else:
+        runtime = next((x for x in launch["runtime_executables"]
+                        if current["exe_identity"] == x["identity"]), None)
+        if runtime is None:
+            raise RuntimeError("Live process is neither the pinned binary nor its CPU-ID runtime")
+
+        wanted = launch["binary_identity"]
+        mapped = False
+        for row in (proc / "maps").read_text(errors="replace").splitlines():
+            fields = row.split(None, 5)
+            if len(fields) < 5:
+                continue
+            try:
+                major, minor = fields[3].split(":")
+                dev_id = (int(major, 16), int(minor, 16), int(fields[4]))
+                offset = int(fields[2], 16)
+            except (ValueError, IndexError):
+                continue
+            if dev_id == wanted and offset == 0 and fields[1].startswith("r"):
+                mapped = True
+                break
+        if not mapped:
+            raise RuntimeError("Pinned candidate is not mapped in the translated process")
+        mode = "translated:" + Path(runtime["path"]).name
+
+    after = parse_stat((proc / "stat").read_text())
+    if after["start_ticks"] != launch["start_ticks"]:
+        raise RuntimeError("Process changed during identity inspection")
+    return mode
 
 
 def xrun(args, env):
@@ -236,7 +309,7 @@ def package(out: Path, pid: int):
 
 
 def self_test():
-    # Pure policy test: every cycle is exactly capture -> Cross -> capture.
+    # Policy: every cycle is exactly capture -> Cross -> capture.
     seconds, interval = 60, 10
     cycles = math.ceil(seconds / interval)
     events = []
@@ -247,7 +320,25 @@ def self_test():
                events[i + 1].startswith("cross-") and
                events[i + 2].startswith("after-")
                for i in range(0, len(events), 3))
-    print("GOW_AUTO_GAMEPLAY_SELF_TEST=PASS")
+
+    # Regression for the exact bug that broke the prior run: CPU-ID executables
+    # are nested at bin64/drrun and lib64/release/libdynamorio.so.
+    with tempfile.TemporaryDirectory(prefix="gow-auto-selftest-") as td:
+        root = Path(td)
+        binary = root / "shadps4"
+        binary.write_bytes(b"x")
+        runtime = root / "cpu-id-runtime"
+        (runtime / "bin64").mkdir(parents=True)
+        (runtime / "lib64/release").mkdir(parents=True)
+        (runtime / "bin64/drrun").write_bytes(b"d")
+        (runtime / "lib64/release/libdynamorio.so").write_bytes(b"l")
+        got = runtime_candidates(binary)
+        names = {Path(x["path"]).name for x in got}
+        assert names == {"drrun", "libdynamorio.so"}
+
+    stat = parse_stat((Path("/proc") / str(os.getpid()) / "stat").read_text())
+    assert stat["start_ticks"] > 0 and stat["process_group"] > 0
+    print("GOW_AUTO_GAMEPLAY_SELF_TEST=PASS process guard + nested CPU-ID runtime + screenshot/Cross policy")
 
 
 def main():
@@ -307,8 +398,11 @@ def main():
         env.setdefault("XAUTHORITY", str(xa))
 
     proc = None
+    launch = None
     events = []
     stopped = False
+    failure = None
+    rc = None
     console = (out / "console.log").open("wb")
     try:
         patch_config(CFG)
@@ -331,6 +425,7 @@ def main():
             str(binary), "--cpu-id-mode", "auto", "--game", SERIAL, "--fullscreen", "true"
         ], cwd=CWD, env=env, stdout=console, stderr=subprocess.STDOUT,
            start_new_session=True)
+        launch = capture_launch(proc, binary)
 
         print(f"GOW_AUTO_GAMEPLAY_PID={proc.pid}", flush=True)
         print("GOW_AUTO_GAMEPLAY=SCREENSHOT_CROSS_SCREENSHOT", flush=True)
@@ -346,7 +441,7 @@ def main():
             next_cycle += args.interval
             cycle += 1
 
-            mode = validate_process(proc.pid, binary)
+            mode = validate_process(proc.pid, binary, launch)
             wid = game_window(proc.pid, env)
             auto.focus_game(wid, proc.pid, env)
 
@@ -356,7 +451,6 @@ def main():
             sent = False
             error = None
             try:
-                # press_cross itself revalidates owner, focus and idle keymap.
                 auto.press_cross(wid, proc.pid, key, env)
                 sent = True
                 print(f"GOW_AUTO_GAMEPLAY cycle={cycle} Cross=X", flush=True)
@@ -368,7 +462,7 @@ def main():
             after = shots / f"{cycle:04d}-after.jpg"
             if proc.poll() is None:
                 try:
-                    validate_process(proc.pid, binary)
+                    validate_process(proc.pid, binary, launch)
                     wid2 = game_window(proc.pid, env)
                     screenshot(wid2, env, after)
                 except Exception as exc:
@@ -394,6 +488,15 @@ def main():
         if proc is not None:
             terminate(proc)
             rc = proc.wait(timeout=10)
+    except BaseException as exc:
+        failure = repr(exc)
+        print("GOW_AUTO_GAMEPLAY_FAILURE=" + failure, flush=True)
+        if proc is not None:
+            terminate(proc)
+            try:
+                rc = proc.wait(timeout=10)
+            except Exception:
+                rc = None
     finally:
         console.close()
         if had_cfg and (txn / "config.before").is_file():
@@ -405,12 +508,14 @@ def main():
     (out / "result.json").write_text(json.dumps({
         "returncode": rc,
         "ctrl_c": stopped,
+        "failure": failure,
         "cycles": len(events),
         "cross_presses": sum(bool(x["cross_sent"]) for x in events),
+        "launch_identity": launch,
     }, indent=2) + "\n")
-    archive = package(out, proc.pid)
+    archive = package(out, proc.pid if proc is not None else -1)
     print("UPLOAD=" + str(archive), flush=True)
-    return 0
+    return 1 if failure else 0
 
 
 if __name__ == "__main__":
