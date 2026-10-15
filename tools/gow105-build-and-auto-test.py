@@ -9,7 +9,7 @@ SCRIPTS=ROOT/"scripts"
 TESTS=ROOT/"tests"
 
 GOW105_URL=("https://raw.githubusercontent.com/Chreece/shadPS4/"
-            "7c87ec93c890c0bc3d3346af9e348972e9575633/"
+            "3f2662db8af9a85390a5fb2c7f4b2a4ab45cb3e6/"
             "tools/gow105-generic-srt-coherency.py")
 AUTO_URL=("https://raw.githubusercontent.com/Chreece/shadPS4/"
           "2c1dc100ed7b5a32ef51445778e7b15669a79508/"
