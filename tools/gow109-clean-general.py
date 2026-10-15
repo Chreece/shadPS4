@@ -209,19 +209,181 @@ def assert_no_game_specific_source(rel: str, data: bytes):
 
 def adapt_generic_srt_order(data: bytes):
     text = data.decode()
-    begin = text.find('    // "1": proven-shader-only control. "2": opt-in experimental coverage')
-    end = text.find('\n    c.ret();', begin)
-    if begin < 0 or end < 0:
-        raise RuntimeError("Retained SRT dependency-control block missing")
+    if "SHADPS4_GOW_SRT_AUTO_ROOTS" in text or "SHADPS4_GOW_SRT_SGPR8_FIRST" in text:
+        raise RuntimeError("Clean SRT source unexpectedly contains game-specific controls")
+    if "MakeSrtRootDependencyPlan" in text:
+        raise RuntimeError("Generic SRT dependency planner already present")
 
-    old = text[begin:end]
-    if "SHADPS4_GOW_SRT_AUTO_ROOTS" not in old or "SHADPS4_GOW_SRT_SGPR8_FIRST" not in old:
-        raise RuntimeError("Retained GoW SRT controls are incomplete/unexpected")
+    if "#include <unordered_set>\n" not in text:
+        text = replace_once(text, "#include <unordered_map>\n",
+                            "#include <unordered_map>\n#include <unordered_set>\n",
+                            "unordered_set include")
 
-    new = '''    // Resolve true inter-root data dependencies for every shader.  The planner
-    // preserves the original stable order when there are no dependencies or
-    // when analysis is ambiguous, cyclic, or capped; it never invents values.
-    std::vector<std::pair<IR::ScalarReg, IR::Inst*>> roots;
+    planner = r'''// Stable topological ordering for SRT roots whose dynamic index expressions
+// consume ReadConst values produced while walking another root. Independent roots
+// retain source order. Ambiguous ownership, cycles and analysis caps preserve the
+// original order rather than guessing or evaluating guest values at compile time.
+struct SrtRootDependencyPlan {
+    std::vector<u32> order;
+    std::vector<std::pair<u32, u32>> edges; // (dependent, prerequisite)
+    bool reordered{};
+    bool cyclic{};
+    bool ambiguous{};
+    bool capped{};
+};
+
+static SrtRootDependencyPlan MakeSrtRootDependencyPlan(PassInfo& pass_info) {
+    SrtRootDependencyPlan plan;
+    using Root = std::pair<IR::ScalarReg, IR::Inst*>;
+    std::vector<Root> roots;
+    for (const auto& [sgpr, root] : pass_info.srt_roots) {
+        roots.emplace_back(sgpr, root);
+    }
+    for (u32 i = 0; i < roots.size(); ++i) {
+        plan.order.push_back(i);
+    }
+
+    constexpr size_t MAX_ROOTS = 32;
+    constexpr size_t MAX_WALK_NODES = 4096;
+    constexpr size_t MAX_INDEX_NODES = 4096;
+    if (roots.size() > MAX_ROOTS) {
+        plan.capped = true;
+        return plan;
+    }
+
+    std::unordered_map<IR::Inst*, u32> produced_by_root;
+    std::vector<std::vector<IR::Value>> index_expressions(roots.size());
+    size_t walked_nodes = 0;
+    for (u32 root_id = 0; root_id < roots.size(); ++root_id) {
+        std::vector<IR::Inst*> todo{roots[root_id].second};
+        std::unordered_set<IR::Inst*> visited;
+        for (size_t pos = 0; pos < todo.size(); ++pos) {
+            if (++walked_nodes > MAX_WALK_NODES) {
+                plan.capped = true;
+                return plan;
+            }
+            auto* parent = todo[pos];
+            if (!visited.insert(parent).second) {
+                continue;
+            }
+            auto* children = pass_info.GetUsesAsPointer(parent);
+            if (!children) {
+                continue;
+            }
+            for (const auto& [src_offset, child] : *children) {
+                index_expressions[root_id].push_back(src_offset);
+                IR::Inst* canonical = pass_info.DeduplicateInstruction(child);
+                for (IR::Inst* source : {child, canonical}) {
+                    const auto [it, inserted] = produced_by_root.try_emplace(source, root_id);
+                    if (!inserted && it->second != root_id) {
+                        plan.ambiguous = true;
+                    }
+                }
+                if (pass_info.GetUsesAsPointer(child)) {
+                    todo.push_back(child);
+                }
+            }
+        }
+    }
+    if (plan.ambiguous) {
+        return plan;
+    }
+
+    std::vector<std::vector<bool>> deps(
+        roots.size(), std::vector<bool>(roots.size(), false));
+    size_t index_nodes = 0;
+    for (u32 consumer = 0; consumer < roots.size(); ++consumer) {
+        std::vector<IR::Value> pending = index_expressions[consumer];
+        std::unordered_set<IR::Inst*> visited;
+        while (!pending.empty()) {
+            if (++index_nodes > MAX_INDEX_NODES) {
+                plan.capped = true;
+                return plan;
+            }
+            const IR::Value value = pending.back();
+            pending.pop_back();
+            if (value.IsImmediate()) {
+                continue;
+            }
+            IR::Inst* inst = value.TryInst();
+            if (!inst || !visited.insert(inst).second) {
+                continue;
+            }
+            const auto op = inst->GetOpcode();
+            if (op == IR::Opcode::ReadConst || op == IR::Opcode::ReadConstBuffer) {
+                auto it = produced_by_root.find(inst);
+                if (it == produced_by_root.end()) {
+                    it = produced_by_root.find(pass_info.DeduplicateInstruction(inst));
+                }
+                if (it != produced_by_root.end() && it->second != consumer) {
+                    deps[consumer][it->second] = true;
+                }
+                continue;
+            }
+            if (op == IR::Opcode::GetUserData || !IsAllowedOffsetInstruction(inst)) {
+                continue;
+            }
+            for (u32 arg = 0; arg < inst->NumArgs(); ++arg) {
+                IR::Value child = inst->Arg(arg);
+                if (!child.IsImmediate()) {
+                    pending.push_back(child);
+                }
+            }
+        }
+    }
+
+    for (u32 consumer = 0; consumer < roots.size(); ++consumer) {
+        for (u32 prerequisite = 0; prerequisite < roots.size(); ++prerequisite) {
+            if (deps[consumer][prerequisite]) {
+                plan.edges.emplace_back(consumer, prerequisite);
+            }
+        }
+    }
+
+    std::vector<u32> sorted;
+    std::vector<bool> completed(roots.size(), false);
+    while (sorted.size() < roots.size()) {
+        bool advanced = false;
+        for (u32 candidate = 0; candidate < roots.size(); ++candidate) {
+            if (completed[candidate]) {
+                continue;
+            }
+            bool ready = true;
+            for (u32 dependency = 0; dependency < roots.size(); ++dependency) {
+                if (deps[candidate][dependency] && !completed[dependency]) {
+                    ready = false;
+                    break;
+                }
+            }
+            if (ready) {
+                completed[candidate] = true;
+                sorted.push_back(candidate);
+                advanced = true;
+                break;
+            }
+        }
+        if (!advanced) {
+            plan.cyclic = true;
+            return plan;
+        }
+    }
+
+    plan.reordered = sorted != plan.order;
+    plan.order = std::move(sorted);
+    return plan;
+}
+
+'''
+    marker = "static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {\n"
+    if text.count(marker) != 1:
+        raise RuntimeError("GenerateSrtProgram anchor missing/ambiguous")
+    text = text.replace(marker, planner + marker, 1)
+
+    old_loop = '''    for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
+        VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
+    }
+'''
+    new_loop = '''    std::vector<std::pair<IR::ScalarReg, IR::Inst*>> roots;
     roots.reserve(pass_info.srt_roots.size());
     for (const auto& [sgpr, root] : pass_info.srt_roots) {
         roots.emplace_back(sgpr, root);
@@ -237,18 +399,17 @@ def adapt_generic_srt_order(data: bytes):
         VisitPointer(IR::Value(static_cast<u32>(sgpr)), root, pass_info, c);
     }
 '''
-    text = text[:begin] + new + text[end:]
+    text = replace_once(text, old_loop, new_loop, "generic SRT root ordering")
 
-    if "SHADPS4_GOW_SRT_AUTO_ROOTS" in text or "SHADPS4_GOW_SRT_SGPR8_FIRST" in text:
-        raise RuntimeError("GoW SRT behavioral environment controls survived genericization")
-    if "const auto plan = MakeSrtRootDependencyPlan(pass_info);" not in text:
-        raise RuntimeError("Generic SRT dependency planner missing")
-    if "for (const u32 root_index : plan.order)" not in text:
-        raise RuntimeError("Generic SRT planner order is not consumed")
+    if "SHADPS4_GOW_" in text or "GOW_SRT_" in text:
+        raise RuntimeError("Game-specific SRT marker survived generic planner construction")
+    if text.count("MakeSrtRootDependencyPlan(pass_info)") != 1:
+        raise RuntimeError("Generic SRT planner call count is not one")
     return text.encode(), {
         "generic_dependency_planner": True,
         "game_env_controls_removed": True,
         "stable_fallback_on_ambiguous_cycle_cap": True,
+        "constructed_from_clean_source": True,
         "game_specific": False,
     }
 
