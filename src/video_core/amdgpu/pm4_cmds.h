@@ -977,19 +977,17 @@ struct PM4CmdReleaseMem {
         }
 
         switch (int_sel.Value()) {
-        case InterruptSelect::None: {
-            // No interrupt
+        case InterruptSelect::None:
             break;
-        }
         case InterruptSelect::IrqUndocumented:
-            [[fallthrough]];
-        case InterruptSelect::IrqWhenWriteConfirm: {
+            // RELEASE_MEM interrupt selector 3 confirms a completed data write,
+            // not an interrupt. The selected data was already written above.
+            break;
+        case InterruptSelect::IrqWhenWriteConfirm:
             signal_irq();
             break;
-        }
-        default: {
+        default:
             UNREACHABLE();
-        }
         }
     }
 };
