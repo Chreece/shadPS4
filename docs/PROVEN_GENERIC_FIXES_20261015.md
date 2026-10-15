@@ -49,8 +49,8 @@ The tested project binary is in `~/projects/shadps4/GodOfWarRagnarok/tests/main-
 
 ## Performance-correction candidate (NOT YET RUNTIME PROVEN)
 
-- `d2905c62104d581abefc5272e6393f6828b5af85`: classify structurally unsupported SRT offset expressions before JIT; leave dynamic reads for their existing guest-memory backing path. No fake values, shader hashes, game conditionals or log filtering; one per-shader DEBUG summary of actual deferred dynamic reads. Add memoization and three GCN regression cases. The initial measured workload includes 16,844 Phi offset failures and 16,851 failed JIT attempts per session. CPU benefit and screenshot parity must be measured in the next run.
-- `d0bd51642d1161136436c18c702c14cb98f94f4b`: pinned preservation/testing runner; keeps the fully rendered binary and all previous generic CPU/GPU/audio corrections, rechecks GCN, standalone SRT arithmetic and audio tests, then runs the original-settings performance profile with a versioned shader cache.
+- `efa903763d7789f3c9fb89be5ac3c8b2a3be2600`: classify structurally unsupported SRT offset expressions before JIT; leave dynamic reads for their existing guest-memory backing path. No fake values, shader hashes, game conditionals or log filtering; one per-shader DEBUG summary of actual deferred dynamic reads. Add memoization and three GCN regression cases. The initial measured workload includes 16,844 Phi offset failures and 16,851 failed JIT attempts per session. CPU benefit and screenshot parity must be measured in the next run.
+- `8442535b6fa26ef90cf2a16f850c0a5ca429e995`: pinned preservation/testing runner; keeps the fully rendered binary and all previous generic CPU/GPU/audio corrections, rechecks GCN, standalone SRT arithmetic and audio tests, then runs the original-settings performance profile with a versioned shader cache.
 
 ## Outstanding work — do not claim solved
 
