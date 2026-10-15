@@ -11,7 +11,7 @@ TESTS=ROOT/"tests"
 GOW108_URL=("https://raw.githubusercontent.com/Chreece/shadPS4/"
             "d053f273356704bba5793a8c039b0ed4558b65fc/tools/gow108-selective-write-fault.py")
 AUTO_URL=("https://raw.githubusercontent.com/Chreece/shadPS4/"
-          "8d5bebbb95f0f50b05a9310fdf60d6c57127e692/tools/gow-auto-gameplay.py")
+          "67db4b90edb6d9e84c94c419f6f6293f5e828bc5/tools/gow-auto-gameplay.py")
 
 def fetch(url,dest):
     dest.parent.mkdir(parents=True,exist_ok=True)
