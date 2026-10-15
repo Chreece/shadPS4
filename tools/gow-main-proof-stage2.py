@@ -318,7 +318,9 @@ def main():
     OUT.mkdir(mode=0o700,exist_ok=False)
     result={"phase":"CHECK_SOURCE","upstream_main":UPSTREAM,
             "pinned_general_fix":FIX_REF,"installed_emulator_unchanged":True,
-            "global_readback_workaround":False,
+            "automated_probe_readbacks_mode":0,
+            "automated_probe_changes_config_temporarily":True,
+            "gdb_reproduction_uses_restored_original_config":True,
             "game_specific_emulator_changes":False,
             "rendered_gameplay_verified":False,
             "cross_title_verified":False,
@@ -371,7 +373,7 @@ def main():
         auto=WORK/"helpers/auto.py"
         if not auto.is_file() or checksum(auto)!=AUTO_HASH:
             raise RuntimeError("previous bounded screenshot/Cross runner changed")
-        note("GAMEPLAY=capture with original test runner; no emulator-specific overrides")
+        note("GAMEPLAY=temporary readbacks-mode 0 diagnostic; config restored after probe")
         game_rc=run([sys.executable,auto,"--binary",binary,
                      "--sha256",new_binary_sha,"--seconds","180",
                      "--interval","5","--after-delay","0.5",
@@ -400,7 +402,7 @@ def main():
         else:
             result["capture_missing"]=True
         if result.get("guest_returncode") in (-6,-11) and result.get("screenshot_count",0)==0:
-            note("GAME=early crash; collect default-config GDB evidence (no guest patch)")
+            note("GAME=early crash; collect GDB with restored original config, no guest patch")
             result["gdb_exit"]=gdb_game(binary)
         result["status"]=("GCN_PASS_GAME_CAPTURE_NEEDS_VISUAL_REVIEW"
                           if result.get("screenshot_count",0)>0 else
