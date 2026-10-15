@@ -226,7 +226,28 @@ ENABLE_DUMPS
   printf 'source=%s\nrevision=%s\nmode=automated_capture_then_cross\n' "$PROFILE" "$REV" > "$TEMP/test-provenance.txt"
   mv "$TEMP" "$RUN"
 fi
-[[ -x "$RUN/shadps4" && -d "$RUN/user" && ! -L "$RUN" ]] || fail 'Invalid isolated gameplay profile.'
+[[ -x "$RUN/shadps4" && -d "$RUN/user" && ! -L "$RUN" && ! -L "$RUN/shadps4" &&
+   ! -L "$RUN/user" && -f "$RUN/test-provenance.txt" &&
+   ! -L "$RUN/test-provenance.txt" ]] || fail 'Invalid isolated gameplay profile.'
+grep -Fxq "revision=$REV" "$RUN/test-provenance.txt" ||
+   fail 'Existing test profile belongs to a different emulator revision.'
+grep -Fxq 'mode=automated_capture_then_cross' "$RUN/test-provenance.txt" ||
+   fail 'Existing test profile is not an isolated automation profile.'
+[[ -z "$(pgrep -u "$(id -u)" -x shadps4 || true)" ]] ||
+   fail 'Another shadPS4 game is running; refusing to replace test binary.'
+
+# CMake may relink the executable when the source changes or scm_rev is
+# regenerated, even while the private profile still holds the previous build.
+# Atomically refresh ONLY this isolated test copy; do not overwrite installed
+# shadPS4, working snapshots, or any unrelated profile.
+if ! cmp -s "$RUN/shadps4" "$BUILD/shadps4"; then
+    PENDING="$RUN/.shadps4-${REV:0:8}-$.pending"
+    [[ ! -e "$PENDING" && ! -L "$PENDING" ]] ||
+       fail 'Unexpected existing pending test binary.'
+    install -m 0700 "$BUILD/shadps4" "$PENDING"
+    mv -T "$PENDING" "$RUN/shadps4"
+    printf 'ISOLATED_TEST_BINARY_REFRESHED=%s\n' "$REV"
+fi
 # Existing profiles from a prior diagnostic run must retain dump mode.
 python3 - "$RUN/user/config.json" <<'ASSERT_DUMPS'
 from pathlib import Path
