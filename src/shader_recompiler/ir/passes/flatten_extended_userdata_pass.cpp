@@ -233,12 +233,20 @@ static bool IsScalarSrtOffset(const IR::Value& value, u32 depth = 0) {
     }
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
+        return true;
     case IR::Opcode::ReadConst:
     case IR::Opcode::ReadConstBuffer:
-        return true;
+        // A scalar memory load is not necessarily draw-uniform: its address
+        // or index may depend on a wave-reduced VGPR. Check *both* operands
+        // before treating the resulting SHARP dword as host-computable.
+        return IsScalarSrtOffset(inst->Arg(0), depth + 1) &&
+               IsScalarSrtOffset(inst->Arg(1), depth + 1);
     case IR::Opcode::ReadLane:
     case IR::Opcode::ReadFirstLane:
         return IsScalarSrtOffset(inst->Arg(0), depth + 1);
+    case IR::Opcode::CompositeConstructU32x2:
+    case IR::Opcode::CompositeConstructU32x3:
+    case IR::Opcode::CompositeConstructU32x4:
     case IR::Opcode::IAdd32:
     case IR::Opcode::ISub32:
     case IR::Opcode::IMul32:
