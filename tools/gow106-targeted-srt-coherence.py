@@ -1121,7 +1121,7 @@ def build_candidate(gow98, gow97, gow96, gow91, base, phase90, phase89, helper, 
             finals[rel].decode().splitlines(keepends=True),
             fromfile="a/" + rel, tofile="b/" + rel, n=3))
 
-    pf = logs / "gow104-proven-write-extent.patch"
+    pf = logs / "gow106-generic-srt-targeted-coherence.patch"
     pf.write_text(patch)
     helper.run(["git", "apply", "--check", pf], logs / "patch-check.log", cwd=overlay, timeout=30)
     helper.run(["git", "apply", pf], logs / "patch-apply.log", cwd=overlay, timeout=30)
@@ -1183,7 +1183,7 @@ def self_test(gow98, gow97, gow96, gow91):
     phase89 = phase90.get_helper()
     base = gow91.get_base(phase89)
     src, _, _, _, overrides = gow91.prior_state(base, phase90, phase89)
-    originals, finals, proof = transform_all(gow97, gow96, gow91, src, overrides)
+    originals, finals, proof = transform_all(gow98, gow97, gow96, gow91, src, overrides)
 
     assert b"struct BufferWriteExtent" in finals[RESOURCE_H]
     assert b"AnalyzeInvocationAffine" in finals[RESOURCE_PATCH]
