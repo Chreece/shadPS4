@@ -19,6 +19,7 @@
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/passes/srt.h"
 #include "shader_recompiler/ir/passes/srt_offset_preflight.h"
+#include "shader_recompiler/ir/passes/srt_offset_codegen.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/ir/srt_gvn_table.h"
@@ -300,10 +301,9 @@ static bool EmitComputeOffsetShiftLeftLogical32(Xbyak::CodeGenerator& c, Xbyak::
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
         ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
-        c.shl(reg, inst->Arg(0).U32());
-        c.mov(ecx, reg);
-        c.mov(reg, inst->Arg(0).U32());
-        c.shl(reg, cl);
+        // The computed register is the runtime shift COUNT, not the left operand.
+        // Preserve its value before loading the constant left operand.
+        SrtCodegen::EmitConstantLeftShiftByDynamicCount(c, reg, inst->Arg(0).U32());
     } else if (inst->Arg(1).IsImmediate()) {
         ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
         c.shl(reg, inst->Arg(1).U32());
@@ -474,16 +474,19 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
         if (in_stack) {
             c.pop(reg.cvt64());
         }
-        c.and_(reg, (1U << inst->Arg(2).U32()) - 1);
+        const u32 width = inst->Arg(2).U32();
+        // Bitfield width 32 preserves all bits. Never shift 1u by 32.
+        if (width < 32) {
+            c.and_(reg, width == 0 ? 0u : (1u << width) - 1u);
+        }
     } else {
         if (!in_stack) {
             c.push(reg.cvt64());
         }
         POP_ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(2)));
-        c.mov(ecx, reg);
-        c.mov(edx, 1);
-        c.shl(edx, cl);
-        c.dec(edx);
+        // x86 variable shift counts wrap mod 32, but BFE widths >= 32
+        // require the full 32-bit mask, not a wrapped narrow mask.
+        SrtCodegen::EmitLowBitMask(c, reg, edx);
         c.and_(dword[rsp], edx);
         c.pop(reg.cvt64());
     }
