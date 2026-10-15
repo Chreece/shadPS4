@@ -11,6 +11,16 @@ namespace Core {
 // This calculation is also used for kernel current-CPU and CPUID/RDTSCP/RDPID.
 inline constexpr unsigned GuestCpuSlots = 8;
 
+// The accessible application CPU mask follows the emulated Orbis CPU mode.
+// CPU mode 5 exposes seven application CPUs, the other modes expose six;
+// the eight hardware threads are still described by the CPUID topology.
+constexpr std::uint64_t GuestCpuMaskFromMode(unsigned cpu_mode) {
+    return cpu_mode == 5 ? 0x7fu : 0x3fu;
+}
+static_assert(GuestCpuMaskFromMode(0) == 0x3f);
+static_assert(GuestCpuMaskFromMode(2) == 0x3f);
+static_assert(GuestCpuMaskFromMode(5) == 0x7f);
+
 constexpr int SelectGuestCpu(unsigned scheduler_slot, std::uint64_t affinity_mask) {
     constexpr std::uint64_t valid_mask = (std::uint64_t{1} << GuestCpuSlots) - 1;
     const std::uint64_t allowed = affinity_mask & valid_mask;

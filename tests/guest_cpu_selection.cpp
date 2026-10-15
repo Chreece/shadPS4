@@ -21,5 +21,17 @@ int main() {
     }
     assert(SelectGuestCpu(0, 0) == -1);
     assert(SelectGuestCpu(7, 0x100) == -1);
+
+    // CPU mode must never expose an unavailable application processor,
+    // including when the host scheduler chooses virtual CPU 6 or 7.
+    for (unsigned mode : {0u, 2u, 5u}) {
+        const unsigned mask = Core::GuestCpuMaskFromMode(mode);
+        assert(mask == (mode == 5 ? 0x7fu : 0x3fu));
+        for (unsigned host = 0; host < 128; ++host) {
+            const int selected = SelectGuestCpu(host, mask);
+            assert(selected >= 0 && selected <= (mode == 5 ? 6 : 5));
+            assert((mask & (1u << selected)) != 0);
+        }
+    }
     return 0;
 }

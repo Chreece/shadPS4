@@ -4,6 +4,7 @@
 #include "common/elf_info.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
+#include "core/guest_cpu_selection.h"
 #if defined(__linux__) && defined(ARCH_X86_64)
 #include "core/cpu_id.h"
 #endif
@@ -76,6 +77,10 @@ s32 PS4_SYSV_ABI sceKernelGetCpumode() {
         return 5;
     }
     return 0;
+}
+
+u64 GetGuestCpuMask() {
+    return Core::GuestCpuMaskFromMode(static_cast<u32>(sceKernelGetCpumode()));
 }
 
 s32 PS4_SYSV_ABI sceKernelGetCurrentCpu() {

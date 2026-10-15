@@ -452,7 +452,7 @@ struct Pthread {
     // Internal state appended to preserve existing Pthread field offsets.
     // Temporary PthreadAttr objects own Cpuset*, so a guest thread retains
     // the mask value instead of borrowing their pointer.
-    std::atomic<u64> guest_affinity_mask{0xffu};
+    std::atomic<u64> guest_affinity_mask{0u};
 };
 // fym static assertion expression is not an integral constant expression
 // static_assert(offsetof(Pthread, specific) == 0x1c8);
