@@ -9,8 +9,8 @@ TREE="$ROOT/tests/got-generic-srt-680029f3"
 SOURCE="$TREE/source"
 BUILD="$TREE/build"
 LOG_ROOT="$HOME/projects/shadps4/logs"
-PARENT="3802579368e737744b82e456c332eb419afb1c95"
-COMMIT="cadbc0cec5e0bf7665ac1177c0664b82f4729e80"
+PARENT="cadbc0cec5e0bf7665ac1177c0664b82f4729e80"
+COMMIT="46e7184bb1bf7c1ae54a2c24b1f228030b9ebb0a"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 mkdir -p "$LOG_ROOT"
 if [[ "$#" -eq 0 ]]; then
@@ -86,6 +86,18 @@ git -C "$SOURCE" checkout -q --detach "$COMMIT" >>"$RUN/build.log" 2>&1
 [[ "$(git -C "$SOURCE" rev-parse HEAD)" == "$COMMIT" ]] || {
     echo "SOURCE_REVISION_MISMATCH; game not launched"; exit 4;
 }
+echo "RUN_GUEST_CPU_AFFINITY_REGRESSION_SUITE"
+if ! g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
+    -I"$SOURCE/src" \
+    "$SOURCE/tests/guest_cpu_selection.cpp" \
+    -o "$RUN/info/guest-cpu-test" >>"$RUN/build.log" 2>&1 ||
+    ! "$RUN/info/guest-cpu-test" >>"$RUN/build.log" 2>&1; then
+    echo "GUEST_CPU_REGRESSION=FAILED; GAME_NOT_LAUNCHED"
+    tail -n 40 "$RUN/build.log"
+    exit 5
+fi
+rm -f -- "$RUN/info/guest-cpu-test"
+echo "GUEST_CPU_REGRESSION=PASS"
 echo "BUILD_UNIVERSAL_LINUX_GUEST_CPU_ID_ON_LATEST_MAIN"
 if ! cmake --build "$BUILD" --target shadps4 --parallel 4 >>"$RUN/build.log" 2>&1; then
     echo "BUILD=FAILED; GAME_NOT_LAUNCHED"
