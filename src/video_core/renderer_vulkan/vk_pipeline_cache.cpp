@@ -629,7 +629,11 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
 
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
+    const u32 got40_first_binding = binding.unified;
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
+    LOG_INFO(Render_Vulkan,
+             "GOT40_MODULE_BINDINGS shader={:#x} stage={} start={} end={}",
+             info.pgm_hash, info.hw_stage, got40_first_binding, binding.unified);
     DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx, "spv");
 
     vk::ShaderModule module;
@@ -695,7 +699,27 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
         RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
         program->AddPermut(module, std::move(spec));
     } else {
-        info.AddBindings(binding);
+        // Account for every allocated image descriptor-array slot when reusing a
+        // shader. Fresh SPIR-V emission and layout construction advance by
+        // NumBindings(info), not by the number of declared images.
+        const u32 first_binding = binding.unified;
+        u32 image_binding_count{};
+        for (const auto& image : info.images) {
+            const u32 count = image.NumBindings(info);
+            ASSERT_MSG(count != 0, "Cached image descriptor array is empty");
+            image_binding_count += count;
+        }
+        const u32 legacy_count = info.buffers.size() + info.images.size() + info.samplers.size();
+        binding.buffer += info.buffers.size();
+        binding.unified += info.buffers.size() + image_binding_count + info.samplers.size();
+        if (image_binding_count != info.images.size()) {
+            static thread_local u32 binding_audits{};
+            if (binding_audits++ < 16) {
+                LOG_INFO(Render_Vulkan,
+                         "GOT40_CACHED_BINDINGS shader={:#x} start={} legacy_end={} corrected_end={}",
+                         info.pgm_hash, first_binding, first_binding + legacy_count, binding.unified);
+            }
+        }
         module = it->module;
         perm_idx = std::distance(program->modules.begin(), it);
         perm_hash = HashCombine(params.hash, perm_idx);
