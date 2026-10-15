@@ -890,9 +890,22 @@ def initialize_exact_submodules(out):
     note("SUBMODULE_LOG=" + str(out/"submodules-update.log"))
     run(["git", "submodule", "sync", "--recursive"],
         log=out/"submodules-sync.log", cwd=SRC, timeout=240)
-    run(["git", "submodule", "update", "--init", "--recursive", "--jobs", "4"],
-        log=out/"submodules-update.log", cwd=SRC, timeout=5400)
-    lines = run(["git", "submodule", "status", "--recursive"],
+    paths = re.findall(r"(?m)^\s*path = (externals/[^\s]+)$",
+                       f.read_text())
+    if len(paths) != 45 or len(set(paths)) != len(paths):
+        raise RuntimeError("upstream submodule list differs from verified manifest")
+    if sys.platform.startswith("linux"):
+        # The excluded dependencies are activated only for Windows, macOS,
+        # or FreeBSD in upstream CMake, not for this Debian proof build.
+        platform_only = {
+            "externals/date", "externals/epoll-shim", "externals/ext-wepoll",
+            "externals/mesa-kosmickrisp", "externals/vulkan-loader",
+        }
+        paths = [p for p in paths if p not in platform_only]
+    note("SUBMODULE_COUNT=" + str(len(paths)) + " selected for host platform")
+    run(["git", "submodule", "update", "--init", "--recursive", "--jobs", "4",
+         "--", *paths], log=out/"submodules-update.log", cwd=SRC, timeout=5400)
+    lines = run(["git", "submodule", "status", "--recursive", "--", *paths],
                 cwd=SRC, timeout=180).stdout.splitlines()
     if len(lines) < 15 or any(not line.startswith(" ") for line in lines):
         raise RuntimeError("incomplete/unexpected submodule revisions: "+repr(lines[:12]))
