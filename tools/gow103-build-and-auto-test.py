@@ -17,7 +17,7 @@ SCRIPTS=ROOT/"scripts"
 TESTS=ROOT/"tests"
 
 GOW103_URL=("https://raw.githubusercontent.com/Chreece/shadPS4/"
-            "ac99f1ada7b16fe877e8d4523d258559cbf6f502/tools/gow103-srt-arithmetic.py")
+            "d79177fea1d9a3ae8a48e0b43b368c23ce16cd25/tools/gow103-srt-arithmetic.py")
 AUTO_URL=("https://raw.githubusercontent.com/Chreece/shadPS4/"
           "508b2c08480d30306950a087a57cb40be89d2200/tools/gow-auto-gameplay.py")
 
