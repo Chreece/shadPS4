@@ -85,8 +85,17 @@ void* PS4_SYSV_ABI sceKernelGetProcParam() {
     return linker->GetProcParam();
 }
 
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+__attribute__((force_align_arg_pointer))
+#endif
 s32 PS4_SYSV_ABI sceKernelLoadStartModule(const char* moduleFileName, u64 args, const void* argp,
                                           u32 flags, const void* pOpt, s32* pRes) {
+    if (moduleFileName == nullptr) {
+        return ORBIS_KERNEL_ERROR_EFAULT;
+    }
+    if (moduleFileName[0] == '\0') {
+        return ORBIS_KERNEL_ERROR_EINVAL;
+    }
     LOG_INFO(Lib_Kernel, "called filename = {}, args = {}", moduleFileName, args);
     ASSERT(flags == 0);
 
