@@ -272,8 +272,16 @@ static bool EmitComputeOffsetShiftRightArithmetic32(Xbyak::CodeGenerator& c, Xby
 def self_test(gow98,gow97):
     gow96=gow97.load_gow96();gow91=gow96.load_gow91()
     phase90=gow91.get_helper();phase89=phase90.get_helper();base=gow91.get_base(phase89)
-    src=base.BASE84/"source"/gow97.FLAT
-    out,_,proof=gow97.adapt_flatten(src.read_bytes())
+    src,_,_,_,overrides=gow91.prior_state(base,phase90,phase89)
+
+    # Verify the retained earlier deltas without running/reporting a game test.
+    buf=Path(overrides[(src/gow91.CPP).resolve()]).read_bytes()
+    gow91.adapt_source(buf)
+    res=(src/gow96.RESOURCE).read_bytes()
+    gow96.adapt_resource(res,gow96.collaborator_source())
+
+    flat=(src/gow97.FLAT).read_bytes()
+    out,_,proof=gow97.adapt_flatten(flat)
     text=out.decode()
     assert proof["game_specific"] is False
     assert proof["dynamic_left_shift_fixed"]
@@ -281,10 +289,8 @@ def self_test(gow98,gow97):
     assert proof["shift_right_arithmetic32"]
     assert proof["findilsb32"]
     assert proof["failed_codegen_rollback"]
-    # Retained chain self-tests too.
-    gow97.self_test(gow96,gow91)
-    print("GOW103_SELF_TEST=PASS generic SRT arithmetic + rollback; retained GoW98/97/96/91; no game launched",
-          flush=True)
+    assert "case IR::Opcode::ReadFirstLane:" in text
+    print("GOW103_SELF_TEST=PASS",flush=True)
 
 
 def main():
