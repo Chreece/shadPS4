@@ -60,9 +60,18 @@ check_headless_x11() {
     # Reuse the previously installed, tested GPU/Xorg/Sunshine recovery unit,
     # but only when :0 is inaccessible. Never start a replacement Xorg here.
     if systemctl cat sunshine-amdgpu-recover.service >/dev/null 2>&1 &&
-       command -v sudo >/dev/null && sudo -n true >/dev/null 2>&1; then
+       command -v sudo >/dev/null; then
       printf 'HEADLESS_X11_RECOVERY=EXISTING_SERVICE\n'
-      if sudo -n systemctl start --no-block sunshine-amdgpu-recover.service; then
+      # On a real SSH terminal, sudo may request its usual password.
+      # For noninteractive invocations use only already-granted privileges.
+      if sudo -n true >/dev/null 2>&1; then
+        RECOVERY=(sudo -n systemctl start --no-block sunshine-amdgpu-recover.service)
+      elif [[ -t 0 ]]; then
+        RECOVERY=(sudo systemctl start --no-block sunshine-amdgpu-recover.service)
+      else
+        RECOVERY=()
+      fi
+      if [[ ${#RECOVERY[@]} -gt 0 ]] && "${RECOVERY[@]}"; then
         for attempt in {1..45}; do
           if probe_headless_x11; then
             printf 'HEADLESS_X11_RECOVERY=SUCCESS_ATTEMPT_%s\n' "$attempt"
@@ -87,12 +96,14 @@ check_headless_x11() {
 [[ "$(id -u)" != 0 ]] || fail 'Do not use sudo.'
 [[ -d "$PROJECT/tests" && -d "$PROJECT/play" ]] || fail 'Existing GoT workspace missing.'
 [[ -f "$GAME" ]] || fail 'GoT executable not present.'
-for tool in git cmake ninja sha256sum flock systemd-run python3 xdotool import; do
+for tool in git sha256sum flock systemd-run python3 xdotool import; do
   command -v "$tool" >/dev/null || fail "Required test tool not found: $tool"
 done
 
 if [[ "${1:-}" != '--worker' ]]; then
-  # Fail or recover *before* enqueueing another costly build/test.
+  [[ -z "$(pgrep -u "$(id -u)" -x shadps4 || true)" ]] ||
+    fail 'Another shadPS4 instance is running; not launching a competing test.'
+  # Fail or recover *before* enqueueing the run-only gameplay test.
   # The existing service can restart Sunshine/Xorg but never touches SSH.
   check_headless_x11 recover
   [[ -d "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" ]] || fail 'No user systemd runtime.'
