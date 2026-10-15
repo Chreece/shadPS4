@@ -47,9 +47,11 @@ public:
         if (!streams_[idx]) {
             return;
         }
+        // Acquire the stream lock before timestamping. This keeps each
+        // stream monotonic even if presentation can be called concurrently.
+        std::lock_guard lock{locks_[idx]};
         const auto time = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
-        std::lock_guard lock{locks_[idx]};
         std::fprintf(streams_[idx], "%lld\n", static_cast<long long>(time));
         if ((++counts_[idx] % 64) == 0) {
             std::fflush(streams_[idx]);
