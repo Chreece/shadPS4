@@ -4,7 +4,7 @@ umask 077
 
 # Isolated gameplay test harness. Input injection is confined to the test
 # process, not emulator fixes, and starts only after a captured screenshot.
-REV='680029f32dbe49d45c89136e9fd921f82e9e4ba9'
+REV='14ee355e98f18184551d1a505181848bbdfdba99'
 BRANCH='fix/generic-srt-readfirstlane-offset-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
 ROOT="$PROJECT/tests/got-generic-srt-${REV:0:8}"
@@ -95,7 +95,12 @@ fi
 # Verify this candidate actually contains the upstream generic kernel
 # implementation missing from the preceding startup-crashing test.
 grep -Fq 'LIB_FUNCTION("DLORcroUqbc", "libSceOpenPsId", 1, "libkernel", sceKernelGetOpenPsId);'   "$SRC/src/core/libraries/kernel/kernel.cpp" || fail 'Missing implemented OpenPsId export.'
-grep -Fq 'std::memcpy(psid, default_psid, sizeof(default_psid));'   "$SRC/src/core/libraries/kernel/kernel.cpp" || fail 'Missing PSID buffer initialization.'
+grep -Fq 'std::memcpy(psid, default_psid, sizeof(default_psid));' \
+  "$SRC/src/core/libraries/kernel/kernel.cpp" || fail 'Missing PSID buffer initialization.'
+grep -Fq 'set(FETCHCONTENT_SOURCE_DIR_FMT "${CMAKE_CURRENT_SOURCE_DIR}/fmt")' \
+  "$SRC/externals/CMakeLists.txt" || fail 'Pinned fmt selection not installed.'
+grep -Fq '#define FMT_VERSION 120101' \
+  "$SRC/externals/fmt/include/fmt/base.h" || fail 'Pinned fmt 12.1.1 unavailable.'
 
 if command -v clang-19 >/dev/null && command -v clang++-19 >/dev/null; then
   CC=clang-19; CXX=clang++-19
@@ -390,6 +395,8 @@ fi
 export MESA_SHADER_CACHE_DISABLE=true
 export MESA_SPIRV_FAIL_DUMP_PATH="$LOG/spirv-failures"
 export SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1
+# Diagnose the original caller before fmt converts type-erased arguments.
+export SHADPS4_TRACE_LOG_FORMATS=1
 unset SHADPS4_GHOST_BINDLESS_EXPERIMENT || true
 cd "$RUN"
 printf 'AUTO_GAME_STARTING=YES\nSCREENSHOTS=%s/screenshots\n' "$LOG"
@@ -403,8 +410,8 @@ wait "$pid" || code=$?
 # key-up finally block can run instead of killing it mid-press.
 wait "$controller" 2>/dev/null || true
 printf '%s\n' "$code" > "$LOG/exit-code.txt"
-# Symbolize only *unhandled* host faults (not normal page-fault
-# interception), using the module-relative offset emitted by signals.cpp.
+# Symbolize unhandled host faults and their original call stack; no
+# symbols, saves or installed binaries are changed on the host.
 python3 - "$LOG/game.log" "$RUN/shadps4" "$LOG/info/native-crash.txt" <<'SYMBOLIZE'
 import pathlib
 import re
@@ -413,29 +420,48 @@ import sys
 
 log_path, binary_path, output_path = map(pathlib.Path, sys.argv[1:])
 lines = re.sub(r'\x1b\[[0-9;]*m', '', log_path.read_text(errors='replace')).splitlines()
-pattern = re.compile(r'Unhandled native fault module=(\S+) offset=(0x[0-9a-fA-F]+)')
+fault_re = re.compile(r'Unhandled native fault module=(\S+) offset=(0x[0-9a-fA-F]+)')
+stack_re = re.compile(r'(?:^|\s)\S*shadps4\(\+(0x[0-9a-fA-F]+)\)')
 out = []
+begin = next((i for i, line in enumerate(lines) if 'SHAD_NATIVE_STACK_BEGIN' in line), len(lines))
+callers = [line for line in lines[:begin] if 'SHAD_FMT_CALL ' in line]
+if callers:
+    out.extend(['LAST_FORMAT_CALLS'] + callers[-12:])
+stack = []
+is_stack = False
 for line in lines:
-    m = pattern.search(line)
-    if not m:
-        continue
-    module = pathlib.Path(m.group(1))
-    offset = int(m.group(2), 16)
-    out.append('FAULT ' + line)
-    # The actual test executable retains debug line tables; plugins and
-    # system libraries are symbolized only when their paths are available.
-    path = module if module.is_file() else binary_path if module.name == 'shadps4' else None
-    if path and path.is_file():
-        try:
-            result = subprocess.run(
-                ['addr2line', '-Cfpie', str(path), hex(offset)],
-                capture_output=True, text=True, timeout=10, check=False)
-            out.append('SOURCE ' + (result.stdout.strip() or result.stderr.strip()))
-        except (OSError, subprocess.TimeoutExpired) as e:
-            out.append('SYMBOLIZER_ERROR ' + str(e))
-    else:
-        out.append('SYMBOLIZER_MODULE_UNAVAILABLE ' + str(module))
-output_path.write_text('\n'.join(out or ['NO_UNHANDLED_NATIVE_FAULT_OBSERVED']) + '\n')
+    if 'SHAD_NATIVE_STACK_BEGIN' in line:
+        is_stack = True
+    elif 'SHAD_NATIVE_STACK_END' in line:
+        is_stack = False
+    elif is_stack:
+        stack.append(line)
+if stack:
+    out.extend(['NATIVE_FRAMES'] + stack[:48])
+
+addresses = []
+for line in lines:
+    m = fault_re.search(line)
+    if m:
+        out.append('FAULT ' + line)
+        if pathlib.Path(m.group(1)).name == 'shadps4':
+            addresses.append(m.group(2))
+for line in stack:
+    m = stack_re.search(line)
+    if m:
+        addresses.append(m.group(1))
+addresses = list(dict.fromkeys(addresses))
+if addresses:
+    try:
+        result = subprocess.run(
+            ['addr2line', '-a', '-C', '-f', '-p', '-i', '-e', str(binary_path), *addresses],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=50, check=False)
+        out.append('RESOLVED_STACK\n' + (result.stdout.strip() or result.stderr.strip()))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        out.append('SYMBOLIZER_ERROR ' + str(exc))
+if not out:
+    out.append('NO_UNHANDLED_NATIVE_FAULT_OBSERVED')
+output_path.write_text('\n'.join(out) + '\n')
 SYMBOLIZE
 if tar -czf "$LOG.tar.gz" -C "$LOG" game.log exit-code.txt screenshots info input-and-screenshots.log session.log; then
   printf '%s\n' "$LOG.tar.gz" > "$LOGROOT/.got-generic-auto-latest"
