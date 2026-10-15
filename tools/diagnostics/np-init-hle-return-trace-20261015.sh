@@ -117,17 +117,17 @@ class HleReturn(gdb.FinishBreakpoint):
         super().__init__(frame, internal=True)
         self.silent = True
         self.label = label
-        self.number = number
-        self.arguments = arguments
+        self.trace_index = number
+        self.saved_arguments = arguments
     def stop(self):
         try:
             value = self.return_value
             result = (int(value) if value is not None else reg("rax")) & 0xffffffffffffffff
             note("HLE_RESULT #%d %s return=0x%x args=%s" %
-                 (self.number, self.label, result, self.arguments))
+                 (self.trace_index, self.label, result, self.saved_arguments))
         except Exception as error:
             note("HLE_RESULT_UNAVAILABLE #%d %s %s" %
-                 (self.number, self.label, str(error)))
+                 (self.trace_index, self.label, str(error)))
         return False
 
 class HleEnter(gdb.Breakpoint):
@@ -145,6 +145,27 @@ class HleEnter(gdb.Breakpoint):
             return False
         records += 1
         args = "rdi=0x%x rsi=0x%x rdx=0x%x" % (reg("rdi"), reg("rsi"), reg("rdx"))
+        if self.label == 'Libraries::Kernel::posix_pthread_create_name_np':
+            # Validate the actual caller-supplied pointer-to-attribute, its
+            # affinity mask, and guest thread mask. Do not modify memory.
+            try:
+                p = reg("rsi")
+                inferior = gdb.selected_inferior()
+                def read_u64(addr):
+                    return int.from_bytes(inferior.read_memory(addr, 8).tobytes(), 'little')
+                attr_address = read_u64(p) if p else 0
+                if attr_address:
+                    ty = gdb.lookup_type('Libraries::Kernel::PthreadAttr')
+                    attr = gdb.Value(attr_address).cast(ty.pointer()).dereference()
+                    cpu_set_ptr = int(attr['cpuset'])
+                    cpu_set_size = int(attr['cpusetsize'])
+                    cpu_mask = read_u64(cpu_set_ptr) if cpu_set_ptr else 0
+                    note("PTHREAD_ATTR attr_ptr=0x%x cpuset_ptr=0x%x cpusetsize=%d mask=0x%x" %
+                         (attr_address, cpu_set_ptr, cpu_set_size, cpu_mask))
+                else:
+                    note("PTHREAD_ATTR attr_ptr=NULL (inherit/default)")
+            except Exception as error:
+                note("PTHREAD_ATTR_UNAVAILABLE %s" % str(error))
         note("HLE_ENTER #%d %s %s" % (records, self.label, args))
         try:
             HleReturn(gdb.newest_frame(), self.label, records, args)
@@ -245,8 +266,8 @@ if command -v xdotool >/dev/null && command -v import >/dev/null; then
     fi
 fi
 {
-  const trace="$(grep -c '^HLE_RESULT ' "$OUT/gdb.log" 2>/dev/null || true)"
+  local trace="$(grep -c '^HLE_RESULT ' "$OUT/gdb.log" 2>/dev/null || true)"
   printf 'NP_HLE_RETURN_RECORDS=%s\n' "$trace"
-  grep -E 'TRACE_STAGE=|HLE_RESULT |NP_INIT_RETURN=|CAPTURE_COMPLETE=' "$OUT/gdb.log" | tail -30 || true
+  grep -E 'TRACE_STAGE=|HLE_RESULT |PTHREAD_ATTR |NP_INIT_RETURN=|CAPTURE_COMPLETE=' "$OUT/gdb.log" | tail -30 || true
 } >"$OUT/info/trace-summary.txt"
 echo 'NO_UNRELATED_PROCESSES_STOPPED; ORIGINAL_BUILDS_AND_PROFILES_UNTOUCHED'
