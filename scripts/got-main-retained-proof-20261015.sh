@@ -30,10 +30,13 @@ pack() {
     set +e
     if [[ -d "$PLAY" ]]; then
         while IFS= read -r -d '' dir; do
-            for name in registers.log pipeline.log bo_ranges.log addr_binding_report.log dmesg.log; do
+            for name in registers.log pipeline.log bo_ranges.log bo_history.log addr_binding_report.log gpu_info.log app_info.log dmesg.log; do
                 if [[ -f "$dir/$name" ]]; then
                     cp -f "$dir/$name" "$RUN/info/$(basename "$dir")-$name"
                 fi
+            done
+            for shader in "$dir"/*.spv; do
+                [[ ! -f "$shader" ]] || cp -f "$shader" "$RUN/info/$(basename "$dir")-$(basename "$shader")"
             done
         done < <(find "$PLAY" -maxdepth 7 -type d -name 'radv_dumps_*' -print0 2>/dev/null)
     fi
@@ -98,7 +101,7 @@ cd "$PLAY"
 # are intentionally not reused in this generic emulator-fix proof.
 unset VK_DRIVER_FILES VK_ICD_FILENAMES SHADPS4_GHOST_BINDLESS_EXPERIMENT
 export HOME="$PLAY"
-export DISPLAY="$(printenv DISPLAY || echo :0)"
+if [[ -z "$(printenv DISPLAY || true)" ]]; then export DISPLAY=:0; fi
 export RADV_DEBUG="hang,noumr"
 export MESA_SHADER_CACHE_DISABLE=true
 export MESA_SPIRV_FAIL_DUMP_PATH="$RUN/info/spirv-failures"
