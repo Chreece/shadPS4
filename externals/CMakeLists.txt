@@ -21,6 +21,12 @@ if (NOT TARGET Boost::headers)
     add_subdirectory(ext-boost)
 endif()
 
+# spdlog's FetchContent(fmt) must use this revision-pinned submodule,
+# not fetch a second fmt version from the network.
+if (NOT TARGET fmt::fmt)
+    set(FETCHCONTENT_SOURCE_DIR_FMT "${CMAKE_CURRENT_SOURCE_DIR}/fmt")
+endif()
+
 # spdlog
 set(SPDLOG_NO_EXCEPTIONS ON)
 set(SPDLOG_DISABLE_GLOBAL_LOGGER ON)

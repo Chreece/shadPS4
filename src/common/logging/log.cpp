@@ -5,6 +5,9 @@
 #include <iostream>
 #include <string>
 #include <fmt/std.h>
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <spdlog/sinks/async_sink.h>
 #include <spdlog/sinks/dup_filter_sink.h>
 
@@ -61,6 +64,15 @@ void VLog(Class log_class, Level level, const char* file, int line, const char* 
     const auto& logger = ALL_LOGGERS[static_cast<size_t>(log_class)];
     if (!logger) {
         return;
+    }
+    // Emit the caller and literal format string before type-erased argument
+    // processing when diagnosing a native formatting crash. The data is
+    // intentionally not formatted and the probe is off in normal runs.
+    if (std::getenv("SHADPS4_TRACE_LOG_FORMATS") != nullptr) {
+        const auto chars = static_cast<int>(std::min<std::size_t>(format.size(), 240));
+        std::fprintf(stderr, "SHAD_FMT_CALL %s:%d %s format=%.*s\n", file, line, func,
+                     chars, format.data());
+        std::fflush(stderr);
     }
     fmt::memory_buffer msg;
     fmt::vformat_to(fmt::appender(msg), format, args);

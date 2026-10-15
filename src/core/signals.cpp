@@ -24,6 +24,8 @@ static constexpr DWORD MS_VC_EXCEPTION = 0x406D1388;
 #include <pthread.h>
 #ifdef __linux__
 #include <dlfcn.h>
+#include <execinfo.h>
+#include <unistd.h>
 #endif
 #ifdef ARCH_X86_64
 #include <Zydis/Formatter.h>
@@ -287,6 +289,14 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
                 return;
             }
 #ifdef __linux__
+            // Preserve a native stack from the original failed formatting or
+            // memory access, before the fatal error logger unwinds the process.
+            void* frames[48]{};
+            const int frame_count = backtrace(frames, 48);
+            if (frame_count > 0) {
+                backtrace_symbols_fd(frames, frame_count, STDERR_FILENO);
+            }
+
             // An unhandled host access violation is fatal. Record its module-relative
             // address so a PIE build can be symbolized across different ASLR bases.
             Dl_info module{};
