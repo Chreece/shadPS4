@@ -654,31 +654,20 @@ void Translator::S_CMP(ConditionOp cond, bool is_signed, const GcnInst& inst) {
 }
 
 void Translator::S_BITCMP(bool compare_mode, u32 bits, const GcnInst& inst) {
-    const IR::U1 result = [&] {
-        const IR::U32 src1 = GetSrc(inst.src[1]);
-        const IR::U32 mask = ir.Imm32(bits == 64 ? 0x3f : 0x1f);
-        const IR::U32 bitpos{ir.BitwiseAnd(src1, mask)};
-        const IR::U32 bittest = [&]() -> IR::U32 {
-            if (bits == 64) {
-                const IR::U64 src0 = GetSrc64(inst.src[0]);
-                const IR::U64 bit{
-                    ir.BitwiseAnd(ir.ShiftRightLogical(src0, bitpos), ir.Imm64(u64(1)))};
-                return ir.UConvert(32, bit);
-            }
-            if (bits != 32) {
-                UNREACHABLE();
-            }
-            const IR::U32 src0 = GetSrc(inst.src[0]);
-            return ir.BitwiseAnd(ir.ShiftRightLogical(src0, bitpos), ir.Imm32(1));
-        }();
-
-        if (!compare_mode) {
-            return ir.IEqual(bittest, ir.Imm32(0));
-        } else {
-            return ir.IEqual(bittest, ir.Imm32(1));
-        }
-    }();
-    ir.SetScc(result);
+    const IR::U32 bitpos = ir.BitwiseAnd(GetSrc(inst.src[1]),
+                                          ir.Imm32(bits == 64 ? 0x3f : 0x1f));
+    if (bits == 64) {
+        // Keep the bit test in 64-bit IR: UConvert does not support narrowing U64 to U32.
+        const IR::U64 src0 = GetSrc64(inst.src[0]);
+        const IR::U64 bit = ir.BitwiseAnd(ir.ShiftRightLogical(src0, bitpos), ir.Imm64(1));
+        ir.SetScc(ir.IEqual(bit, ir.Imm64(compare_mode ? 1 : 0)));
+    } else if (bits == 32) {
+        const IR::U32 src0 = GetSrc(inst.src[0]);
+        const IR::U32 bit = ir.BitwiseAnd(ir.ShiftRightLogical(src0, bitpos), ir.Imm32(1));
+        ir.SetScc(ir.IEqual(bit, ir.Imm32(compare_mode ? 1 : 0)));
+    } else {
+        UNREACHABLE();
+    }
 }
 
 } // namespace Shader::Gcn
