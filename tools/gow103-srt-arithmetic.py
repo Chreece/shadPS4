@@ -16,9 +16,10 @@ import argparse, difflib, hashlib, os, subprocess, sys, tempfile, types
 from pathlib import Path
 
 ROOT=Path.home()/"projects/shadps4/GodOfWarRagnarok"
+FLAT_BASE_SHA256="b70df7890134f497e9eb7efd2c717d6cf09afa784a007ca7dac59f50a26f6651"
 GOW98_URL=("https://raw.githubusercontent.com/Chreece/shadPS4/"
            "a3bdf3fc4c761d368064efc0fb67979f31b318a0/tools/gow98-srt-readfirstlane.py")
-GOW98_BLOB="50b6c3417e6cc44b46e84ad4fb67979f31b318a0"
+GOW98_BLOB="50b6c3417e6cc44b46e84ad4fb6b5b60132afa37"
 
 
 def blob_sha(data:bytes)->str:
@@ -56,6 +57,8 @@ def install_fixes(gow98,gow97):
     prior=gow97.adapt_flatten
 
     def adapt(data:bytes):
+        if hashlib.sha256(data).hexdigest()!=FLAT_BASE_SHA256:
+            raise RuntimeError("Retained flatten source fingerprint changed")
         base,_old_patch,proof=prior(data)
         original=data.decode()
         text=base.decode()
@@ -115,23 +118,6 @@ static bool EmitComputeOffsetShiftRightArithmetic32(Xbyak::CodeGenerator& c, Xby
                "            c.and_(reg, (1U << width) - 1);\n"
                "        }\n",
                "BitFieldUExtract immediate width")
-        fn=one(fn,
-               "        c.mov(ecx, reg);\n"
-               "        c.mov(edx, 1);\n"
-               "        c.shl(edx, cl);\n"
-               "        c.dec(edx);\n"
-               "        c.and_(dword[rsp], edx);\n",
-               "        c.mov(ecx, reg);\n"
-               "        c.mov(edx, 0xffffffffU);\n"
-               "        Xbyak::Label mask_ready;\n"
-               "        c.cmp(ecx, 32);\n"
-               "        c.jae(mask_ready);\n"
-               "        c.mov(edx, 1);\n"
-               "        c.shl(edx, cl);\n"
-               "        c.dec(edx);\n"
-               "        c.L(mask_ready);\n"
-               "        c.and_(dword[rsp], edx);\n",
-               "BitFieldUExtract dynamic width")
         text=text[:a]+fn+text[b:]
 
         # 4) FindILsb32: BSF matches nonzero inputs; for zero the IR/SPIR-V
@@ -236,7 +222,7 @@ static bool EmitComputeOffsetShiftRightArithmetic32(Xbyak::CodeGenerator& c, Xby
             raise RuntimeError("incorrect dynamic-left shift survived")
         a,b=gow98.function_span(text,"EmitComputeOffsetBitFieldUExtract")
         bfe=text[a:b]
-        if "width > 32" not in bfe or "mask_ready" not in bfe:
+        if "width > 32" not in bfe or "width < 32" not in bfe:
             raise RuntimeError("32-bit BFE handling missing")
         a,b=gow98.function_span(text,"PushPtr")
         if "c.setSize(code_begin);" not in text[a:b]:
@@ -281,6 +267,8 @@ def self_test(gow98,gow97):
     gow96.adapt_resource(res,gow96.collaborator_source())
 
     flat=(src/gow97.FLAT).read_bytes()
+    if hashlib.sha256(flat).hexdigest()!=FLAT_BASE_SHA256:
+        raise RuntimeError("Retained flatten source fingerprint changed")
     out,_,proof=gow97.adapt_flatten(flat)
     text=out.decode()
     assert proof["game_specific"] is False
