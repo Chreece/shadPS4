@@ -15,6 +15,7 @@
 #include "core/emulator_settings.h"
 #include "core/libraries/audio/audioout.h"
 #include "core/libraries/audio/audioout_backend.h"
+#include "core/libraries/audio/audioout_sync.h"
 #include "core/libraries/audio/audioout_error.h"
 #include "core/libraries/kernel/time.h"
 #include "core/libraries/libs.h"
@@ -660,7 +661,6 @@ s32 PS4_SYSV_ABI sceAudioOutOutputs(OrbisAudioOutOutputParam* param, u32 num) {
             }
 
             ports.push_back(port);
-            locks.emplace_back(port->mutex);
 
             // Check consistent buffer size
             if (i == 0) {
@@ -672,18 +672,15 @@ s32 PS4_SYSV_ABI sceAudioOutOutputs(OrbisAudioOutOutputParam* param, u32 num) {
         }
     }
 
-    // Wait for all ports to be ready
-    for (u32 i = 0; i < num; i++) {
-        ports[i]->output_cv.wait(locks[i],
-                                 [&] { return !ports[i]->output_ready || ports[i]->closing; });
-
-        if (ports[i]->closing) {
-            LOG_DEBUG(Lib_AudioOut, "Port closed while waiting for drain");
-            return ORBIS_AUDIO_OUT_ERROR_NOT_OPENED;
-        }
+    // Recheck readiness with ALL port locks held. If any port is busy, release
+    // every mutex before waiting for its output worker to drain it. Holding
+    // other ports' locks here deadlocks their workers on multi-port output.
+    if (!WaitForAudioPortsReady(ports, locks)) {
+        LOG_DEBUG(Lib_AudioOut, "Port closed while waiting for drain");
+        return ORBIS_AUDIO_OUT_ERROR_NOT_OPENED;
     }
 
-    // Copy data to all ports
+    // Copy data to all ports while locks are retained atomically
     for (u32 i = 0; i < num; i++) {
         if (param[i].ptr != nullptr) {
             std::memcpy(ports[i]->output_buffer, param[i].ptr, ports[i]->BufferSize());
