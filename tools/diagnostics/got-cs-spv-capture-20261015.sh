@@ -4,7 +4,7 @@ umask 077
 
 # Isolated gameplay test harness. Input injection is confined to the test
 # process, not emulator fixes, and starts only after a captured screenshot.
-REV='23c26e8e3b7a59312882786dd86b0039343ecf3d'
+REV='1f67fc1e35cc3b1884d0fc9d8732c72fd3f16f2b'
 BRANCH='fix/generic-srt-readfirstlane-offset-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
 # Reuse only our previous, disposable generic candidate; never v55,
@@ -144,6 +144,22 @@ grep -Fq 'case InterruptSelect::IrqUndocumented:' \
   "$SRC/src/video_core/amdgpu/pm4_cmds.h" || fail 'Missing RELEASE_MEM selector-3 handler.'
 grep -Fq 'RELEASE_MEM interrupt selector 3 confirms a completed data write' \
   "$SRC/src/video_core/amdgpu/pm4_cmds.h" || fail 'Missing general data-confirmation semantics.'
+python3 - "$SRC/src/video_core/amdgpu/pm4_cmds.h" <<'CHECK_PM4'
+from pathlib import Path
+import sys
+source=Path(sys.argv[1]).read_text()
+packet=source.split("struct PM4CmdReleaseMem {",1)[1].split("struct PM4CmdSetBase {",1)[0]
+for semantic in ("case DataSelect::None:", "case InterruptSelect::IrqOnly:",
+                 "case InterruptSelect::IrqWhenWriteConfirm:",
+                 "case InterruptSelect::IrqUndocumented:"):
+    if semantic not in packet:
+        raise SystemExit("STOP: incomplete RELEASE_MEM packet handling: "+semantic)
+data=packet.split("case InterruptSelect::IrqUndocumented:",1)[1].split(
+    "case InterruptSelect::IrqWhenWriteConfirm:",1)[0]
+if "signal_irq()" in data or "break;" not in data:
+    raise SystemExit("STOP: selector 3 must not signal a CPU IRQ")
+print("GENERAL_RELEASE_MEM_SELECTORS=VERIFIED",flush=True)
+CHECK_PM4
 python3 - "$SRC/src/core/cpu_patches.cpp" <<'VERIFY_CPU'
 from pathlib import Path
 import sys
