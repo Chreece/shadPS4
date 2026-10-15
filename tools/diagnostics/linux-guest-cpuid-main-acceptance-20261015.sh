@@ -9,12 +9,12 @@ TREE="$ROOT/tests/got-generic-srt-680029f3"
 SOURCE="$TREE/source"
 BUILD="$TREE/build"
 LOG_ROOT="$HOME/projects/shadps4/logs"
-PARENT="46e7184bb1bf7c1ae54a2c24b1f228030b9ebb0a"
-COMMIT="dc71bfa1d7ca988425fc1e09142ac7835d79c127"
+PARENT="dc71bfa1d7ca988425fc1e09142ac7835d79c127"
+COMMIT="42fdd3fb975987ba057bb879d9b06178605ef165"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 mkdir -p "$LOG_ROOT"
 if [[ "$#" -eq 0 ]]; then
-    LABEL="linux-guest-cpu-mask-main-$(date +%Y%m%d-%H%M%S)"
+    LABEL="np-init-cpumode-main-$(date +%Y%m%d-%H%M%S)"
     RUN="$LOG_ROOT/$LABEL"
     mkdir -p "$RUN/info" "$RUN/screenshots"
     touch "$RUN/build.log" "$RUN/game.log"
@@ -97,7 +97,7 @@ if ! g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
     exit 5
 fi
 rm -f -- "$RUN/info/guest-cpu-test"
-echo "GUEST_CPU_MASK_REGRESSION=PASS"
+echo "GUEST_CPU_MODE_AND_MASK_REGRESSION=PASS"
 echo "BUILD_UNIVERSAL_LINUX_GUEST_CPU_ID_ON_LATEST_MAIN"
 if ! cmake --build "$BUILD" --target shadps4 --parallel 4 >>"$RUN/build.log" 2>&1; then
     echo "BUILD=FAILED; GAME_NOT_LAUNCHED"
@@ -179,6 +179,8 @@ echo "GAME_EXIT=$rc"
 if [[ "$rc" == 139 ]] && command -v coredumpctl >/dev/null; then
     timeout 10s coredumpctl --no-pager info "$GAME_PID" >"$RUN/info/native-crash.txt" 2>&1 || true
 fi
+echo "NP_TOOLKIT_CALLBACKS=$(grep -cE 'sceUserServiceRegisterEventCallback|sceNpRegisterStateCallbackForToolkit' "$RUN/game.log" || true)"
+echo "GUEST_CPU_AFFINITY_REJECTIONS=$(grep -cE 'Guest pthread requested|Thread affinity requested reserved' "$RUN/game.log" || true)"
 echo "CPU_ID_STATIC_PATCH_RESULT:"
 grep -m1 -E 'Static CPU patching for eboot.bin' "$RUN/game.log" || true
 echo "GPU_HANG_EVENTS=$(grep -c 'GPU hang detected' "$RUN/game.log" || true)"
