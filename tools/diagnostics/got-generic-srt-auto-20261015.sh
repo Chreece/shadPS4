@@ -42,15 +42,16 @@ if [[ "${1:-}" != '--worker' ]]; then
   [[ -n "${DISPLAY:-}" ]] || args+=("--setenv=DISPLAY=:0")
   [[ -n "${XAUTHORITY:-}" || ! -f "$HOME/.Xauthority" ]] ||
     args+=("--setenv=XAUTHORITY=$HOME/.Xauthority")
-  systemd-run "${args[@]}" /usr/bin/bash "$STORED" --worker
-  printf 'AUTO_TEST_QUEUED=%s\nSCREENSHOT_THEN_X=ENABLED\nSSH=UNCHANGED\nESDE=UNCHANGED\n' "$UNIT"
+  systemd-run "${args[@]}" /usr/bin/bash "$STORED" --worker "$STAMP"
+  printf 'AUTO_TEST_QUEUED=%s\nSCREENSHOT_THEN_X=ENABLED\nARCHIVE=%s/got-generic-auto-%s-%s.tar.gz\nSSH=UNCHANGED\nESDE=UNCHANGED\n' "$UNIT" "$LOGROOT" "${REV:0:8}" "$STAMP"
   exit 0
 fi
 
 mkdir -p "$ROOT" "$LOGROOT"
 exec 9>"$ROOT/.single-run.lock"
 flock -n 9 || fail 'Another generic SRT test is running.'
-STAMP=$(date +%Y%m%d-%H%M%S)
+STAMP="${2:-$(date +%Y%m%d-%H%M%S)}"
+[[ "$STAMP" =~ ^[0-9]{8}-[0-9]{6}$ ]] || fail 'Invalid isolated test stamp.'
 LOG="$LOGROOT/got-generic-auto-${REV:0:8}-$STAMP"
 mkdir -p "$LOG"/{screenshots,radv-home,spirv-failures,info}
 exec >"$LOG/session.log" 2>&1
@@ -370,9 +371,15 @@ python3 "$AUTO" "$pid" "$LOG/screenshots" "$RUN/shadps4" >"$LOG/input-and-screen
 controller=$!
 code=0
 wait "$pid" || code=$?
-kill "$controller" 2>/dev/null || true
+# Let the controller exit after detecting this game is gone so its XTEST
+# key-up finally block can run instead of killing it mid-press.
 wait "$controller" 2>/dev/null || true
 printf '%s\n' "$code" > "$LOG/exit-code.txt"
-tar -czf "$LOG.tar.gz" -C "$LOG" game.log exit-code.txt screenshots info input-and-screenshots.log 2>/dev/null || true
-printf 'CANDIDATE_EXIT=%s\nSCREENSHOTS_ARCHIVE=%s.tar.gz\n' "$code" "$LOG"
+if tar -czf "$LOG.tar.gz" -C "$LOG" game.log exit-code.txt screenshots info input-and-screenshots.log; then
+  printf '%s\n' "$LOG.tar.gz" > "$LOGROOT/.got-generic-auto-latest"
+  printf 'SCREENSHOTS_ARCHIVE=%s.tar.gz\n' "$LOG"
+else
+  echo 'SCREENSHOT_ARCHIVE_FAILED'
+fi
+printf 'CANDIDATE_EXIT=%s\n' "$code"
 exit 0
