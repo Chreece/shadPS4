@@ -4,7 +4,7 @@ umask 077
 
 # Isolated gameplay test harness. Input injection is confined to the test
 # process, not emulator fixes, and starts only after a captured screenshot.
-REV='14ee355e98f18184551d1a505181848bbdfdba99'
+REV='829a416d02685e1baa180ab9f41f8ad88234fa43'
 BRANCH='fix/generic-srt-readfirstlane-offset-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
 # Reuse only our previous, disposable generic candidate; never v55,
@@ -112,6 +112,8 @@ fi
 grep -Fq 'LIB_FUNCTION("DLORcroUqbc", "libSceOpenPsId", 1, "libkernel", sceKernelGetOpenPsId);'   "$SRC/src/core/libraries/kernel/kernel.cpp" || fail 'Missing implemented OpenPsId export.'
 grep -Fq 'std::memcpy(psid, default_psid, sizeof(default_psid));' \
   "$SRC/src/core/libraries/kernel/kernel.cpp" || fail 'Missing PSID buffer initialization.'
+grep -Fq 'sceKernelLoadStartModule called with null module filename' \
+  "$SRC/src/core/libraries/kernel/process.cpp" || fail 'Missing generic module filename fix.'
 grep -Fq 'set(FETCHCONTENT_SOURCE_DIR_FMT "${CMAKE_CURRENT_SOURCE_DIR}/fmt")' \
   "$SRC/externals/CMakeLists.txt" || fail 'Pinned fmt selection not installed.'
 grep -Fq '#define FMT_VERSION 120101' \
