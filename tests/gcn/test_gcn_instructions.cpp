@@ -12,6 +12,11 @@
 #include "gcn_test_runner.hpp"
 #include "instructions.hpp"
 #include "translator.hpp"
+#include "shader_recompiler/ir/ir_emitter.h"
+#include "shader_recompiler/ir/passes/ir_passes.h"
+#include "shader_recompiler/ir/program.h"
+#include "shader_recompiler/profile.h"
+#include "shader_recompiler/recompiler.h"
 
 class GcnTest : public ::testing::Test {
 protected:
@@ -23,6 +28,51 @@ protected:
         gcn_test::Runner::DestroyInstance();
     }
 };
+
+TEST_F(GcnTest, dynamic_readconst_requires_guest_memory_backing) {
+    // An unresolved ReadConst has no assigned flattened-buffer offset (flag 0).
+    // Such a load must never be replaced by a read of flattened word zero,
+    // regardless of the global DMA preference.
+    Shader::Info info{};
+    info.hw_stage = Shader::HwStage::Compute;
+    info.sw_stage = Shader::SwStage::Compute;
+    Shader::IR::Program program{info};
+    Shader::Pools pools{};
+    auto* block = pools.block_pool.Create(pools.inst_pool);
+    program.blocks.push_back(block);
+    program.post_order_blocks.push_back(block);
+    Shader::IR::IREmitter ir{*block};
+    const auto address = ir.CompositeConstruct(ir.Imm32(u32{0x1000}),
+                                               ir.Imm32(u32{0}));
+    const Shader::IR::U32 value = ir.ReadConst(address, ir.Imm32(u32{7}));
+    ASSERT_EQ(value.Inst()->Flags<u32>(), 0u);
+    Shader::Optimization::CollectShaderInfoPass(program, Shader::Profile{});
+    EXPECT_TRUE(info.uses_dma);
+    ASSERT_EQ(info.buffers.size(), 3u);
+    EXPECT_EQ(info.buffers[0].buffer_type, Shader::BufferType::Flatbuf);
+    EXPECT_EQ(info.buffers[1].buffer_type, Shader::BufferType::BdaPagetable);
+    EXPECT_EQ(info.buffers[2].buffer_type, Shader::BufferType::FaultBuffer);
+}
+
+TEST_F(GcnTest, resolved_readconst_stays_flattened_without_guest_memory_backing) {
+    Shader::Info info{};
+    info.hw_stage = Shader::HwStage::Compute;
+    info.sw_stage = Shader::SwStage::Compute;
+    Shader::IR::Program program{info};
+    Shader::Pools pools{};
+    auto* block = pools.block_pool.Create(pools.inst_pool);
+    program.blocks.push_back(block);
+    program.post_order_blocks.push_back(block);
+    Shader::IR::IREmitter ir{*block};
+    const auto address = ir.CompositeConstruct(ir.Imm32(u32{0x1000}),
+                                               ir.Imm32(u32{0}));
+    const Shader::IR::U32 value = ir.ReadConst(address, ir.Imm32(u32{7}));
+    value.Inst()->SetFlags(u32{4});
+    Shader::Optimization::CollectShaderInfoPass(program, Shader::Profile{});
+    EXPECT_FALSE(info.uses_dma);
+    ASSERT_EQ(info.buffers.size(), 1u);
+    EXPECT_EQ(info.buffers[0].buffer_type, Shader::BufferType::Flatbuf);
+}
 
 struct F32x2 {
     float a;
