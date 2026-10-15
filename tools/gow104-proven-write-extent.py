@@ -690,8 +690,20 @@ def build_candidate(gow97, gow96, gow91, base, phase90, phase89, helper, work, l
             raise RuntimeError("Applied source differs from verified GoW104 plan: " + rel)
 
     changed = tuple(finals.keys())
+
+    # phase89's preservation audit expects every previously corrected header to
+    # remain the effective include.  When GoW104 intentionally supersedes one
+    # of those headers, point that audit at the verified current overlay copy.
+    # The original retained file is still checked byte-for-byte below.
+    build_overrides = dict(overrides)
+    for rel in changed:
+        original = (src / rel).resolve()
+        current = overlay / rel
+        if Path(rel).suffix == ".h" and original in build_overrides and current.is_file():
+            build_overrides[original] = current.resolve()
+
     binary, stats, mapping = phase89.chained_build(
-        helper, build, src, overlay, work, logs, changed, prior, overrides,
+        helper, build, src, overlay, work, logs, changed, prior, build_overrides,
         [gow91.BASE90 / "overlay", phase90.BASE89 / "overlay",
          phase89.BASE88 / "overlay", base.BASE87 / "overlay"])
 
