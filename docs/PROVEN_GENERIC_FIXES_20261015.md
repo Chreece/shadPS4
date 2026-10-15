@@ -45,13 +45,18 @@ The tested project binary is in `~/projects/shadps4/GodOfWarRagnarok/tests/main-
 | # | General correction | Evidence |
 |---|---|---|
 | 15 | Multi-port `sceAudioOutOutputs` lock-ordering correction, release all port locks while waiting on a busy port and reacquire atomically | `9c4a99ed399f1ee9b2fe5c54a9bfe75ad12fb27e`; 3/3 concurrency checks and the 76/76 GCN suite; runs without graphics regression. **Not a proven stutter fix. Keep the correction.** |
-| 16 | Stage guest samples before slow host backend playback, so the game can queue the next buffer without waiting for SDL/OpenAL pacing; backend operations serialized separately | `8674f61d61df0d2a5217b1b0d069d4fc3281b87b`. **Committed, not runtime-verified or performance-proven as of this manifest.** |
+| 16 | Stage guest samples before slow host backend playback, so the game can queue the next buffer without waiting for SDL/OpenAL pacing; backend operations serialized separately | `8674f61d61df0d2a5217b1b0d069d4fc3281b87b`. **Verified by 5/5 audio concurrency tests, 76/76 GCN tests, and a later rendering capture (`9526f716…e38a0a9de9`, 36 images, no Vulkan device loss). Still not proven to eliminate audible stutter. Retain the fix.** |
+
+## Performance-correction candidate (NOT YET RUNTIME PROVEN)
+
+- `d2905c62104d581abefc5272e6393f6828b5af85`: classify structurally unsupported SRT offset expressions before JIT; leave dynamic reads for their existing guest-memory backing path. No fake values, shader hashes, game conditionals or log filtering; one per-shader DEBUG summary of actual deferred dynamic reads. Add memoization and three GCN regression cases. The initial measured workload includes 16,844 Phi offset failures and 16,851 failed JIT attempts per session. CPU benefit and screenshot parity must be measured in the next run.
+- `d0bd51642d1161136436c18c702c14cb98f94f4b`: pinned preservation/testing runner; keeps the fully rendered binary and all previous generic CPU/GPU/audio corrections, rechecks GCN, standalone SRT arithmetic and audio tests, then runs the original-settings performance profile with a versioned shader cache.
 
 ## Outstanding work — do not claim solved
 
-- Sound stutters and sluggish controls continue after fix #15.
+- Sound stutters and sluggish controls continue after fixes #15 and #16; audio timing/listening improvement is still unproven.
 - About 800 distinct graphics-pipeline compilations and 1,100+ shader-module builds per 146-second run; no proof of duplicate pipeline-key compilation.
-- Roughly 16,844 unsupported SRT/Phi offset reports and 43,433 very-large (0xffffffff-byte) descriptor clamp events per comparable capture.
+- Latest after-audio profile: 16,844 unsupported SRT/Phi offset reports and 44,208 very-large (0xffffffff-byte) descriptor clamp events across ~146 seconds.
 - GPU busy averages only ~12%, emulator CPU ~376%; the game render/submission path is the candidate bottleneck.
 - Synchronous logging and disk pipeline caching disabled in the existing user configuration were **observed**, not changed. Do not toggle them as a workaround.
 - Full playable combat/performance and audio timing are **not** proven, even though the menus and rendered characters work.
@@ -59,8 +64,8 @@ The tested project binary is in `~/projects/shadps4/GodOfWarRagnarok/tests/main-
 
 ## Non-regression requirements for subsequent work
 
-1. Preserve both SHA-pinned rendering checkpoint `26dfc633…` and latest tested `8fb9a3c4…`; every incremental build preserves its previous executable before linking.
-2. Keep all 76 GCN tests, 126 SRT arithmetic checks where applicable, and audio concurrency tests; the audio tests are extended from 3 to 5 in fix #16.
+1. Preserve SHA-pinned rendering checkpoints `26dfc633…`, `8fb9a3c4…`, and latest runtime-tested `9526f716…`; every incremental build preserves its previous executable before linking.
+2. Keep all 76 GCN tests, 126 SRT arithmetic checks where applicable, and 5 audio concurrency tests. The proposed structural SRT preflight adds 3 new GCN tests (79 total) and remains unproven until executed on the actual AMD server.
 3. Any new general correction must be source-level and feature-independent; reject game/shader hash conditions and all forced settings.
 4. Verify current source provenance and unchanged global/per-game config, render screenshots, source/runtime logs, and output binary SHA before promotion.
 5. Resolve audio and graphics slowness separately and compare equal settings/inputs before claiming performance improvements.
