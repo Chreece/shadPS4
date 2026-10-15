@@ -3,6 +3,7 @@
 
 #include "common/assert.h"
 #include "common/debug.h"
+#include "common/frame_metrics.h"
 #include "common/thread.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -239,6 +240,10 @@ void VideoOutDriver::Flip(const Request& req) {
 
     // Present the frame.
     presenter->Present(req.frame);
+    // Count a completed, nonblank new guest frame, not repeated swapchain images.
+    if (req.index >= 0) {
+        Common::FrameMetrics::RecordGuestFlip();
+    }
 
     // Update flip status.
     auto* port = req.port;
