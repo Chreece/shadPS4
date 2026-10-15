@@ -4,7 +4,7 @@ umask 077
 
 # Clean upstream-main integration playtest, independent of installed ES-DE.
 # Retains established screenshot -> Cross/X automation from earlier runs.
-REV='65cde43e2d9c062a66f564d8458fedb7b10889d6'
+REV='438db0cd501a8060b0e47498960a03633276d201'
 UPSTREAM_BASE='b2d7ec7d31f9ad9426db93afe079db8679b3e1e0'
 BRANCH='integration/upstream-main-got-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
@@ -129,6 +129,21 @@ grep -Fq 'g_cxa_guard_registry.Acquire(guard)' \
 grep -Fq 'force_align_arg_pointer' \
   "$SRC/src/core/libraries/kernel/process.cpp" ||
   fail 'Guest-to-host module-loader ABI alignment is missing.'
+python3 - "$SRC/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" <<'VERIFY_SRT'
+from pathlib import Path
+import sys
+source=Path(sys.argv[1]).read_text()
+push=source.split("static inline bool PushPtr(",1)[1].split("static inline void PopPtr(",1)[0]
+reads=source.split("for (auto [src_off_dw, use] : *use_list)",1)[1].split(
+    "// Then visit any children",1)[0]
+assert "const size_t checkpoint = c.getSize();" in push
+assert "if (!ComputeOffset(c, r10d, pass_info, off_dw))" in push
+assert "c.setSize(checkpoint);" in push
+assert "const size_t checkpoint = c.getSize();" in reads
+assert "if (!ComputeOffset(c, r10d, pass_info, src_off_dw))" in reads
+assert "c.setSize(checkpoint);" in reads
+print("SRT_JIT_FAILURE_ROLLBACK=VERIFIED",flush=True)
+VERIFY_SRT
 python3 - "$SRC/src/video_core/amdgpu/pm4_cmds.h" <<'VERIFY_PM4'
 from pathlib import Path
 import sys
@@ -278,11 +293,24 @@ DEADLINE = 720
 def log(*args):
     print(*args, flush=True)
 
-def running(pid, binary):
+def process_start_time(pid):
+    # /proc/<pid>/exe can be unreadable or resolve differently after a
+    # private executable is replaced. PID + kernel starttime is an immutable
+    # identity across this run and prevents signalling a reused PID.
     try:
-        return Path(f'/proc/{pid}/exe').resolve() == binary.resolve()
-    except (OSError, ValueError):
-        return False
+        stat = Path(f'/proc/{pid}/stat').read_text()
+        fields = stat.rsplit(') ', 1)[1].split()
+        if len(fields) < 20 or fields[0] in ('Z', 'X', 'x'):
+            return None
+        return int(fields[19])  # proc stat field 22, process creation tick
+    except (OSError, IndexError, ValueError):
+        return None
+
+expected_process_start_time = None
+
+def running(pid, binary):
+    return (expected_process_start_time is not None and
+            process_start_time(pid) == expected_process_start_time)
 
 def bind(lib, name, argtypes, restype=C.c_int):
     func = getattr(lib, name)
@@ -433,9 +461,15 @@ def main():
         check()
         log('XTEST=READY; GAME_INPUT=NOT_SENT')
         return 0
+    global expected_process_start_time
     pid = int(sys.argv[1])
     folder = Path(sys.argv[2])
     binary = Path(sys.argv[3])
+    expected_process_start_time = process_start_time(pid)
+    if expected_process_start_time is None:
+        log('GAME_PROCESS_IDENTITY_UNAVAILABLE: screenshot automation cannot run safely')
+        return 2
+    log(f'GAME_PID={pid}; START_TICK={expected_process_start_time}; PROCESS_IDENTITY=PINNED')
     event_path = folder.parent / 'info' / 'capture-and-cross.json'
     xconn = XCross(os.environ.get('DISPLAY') or ':0')
     events = []
