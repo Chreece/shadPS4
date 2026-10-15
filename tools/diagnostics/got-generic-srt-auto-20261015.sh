@@ -28,6 +28,7 @@ if [[ "${1:-}" != '--worker' ]]; then
   mkdir -p "$PROJECT/scripts" "$LOGROOT" "$ROOT"
   [[ ! -L "$STORED" ]] || fail 'Unsafe script path.'
   install -m 0700 "${BASH_SOURCE[0]}" "$STORED"
+  bash -n "$STORED" || fail 'Test launcher syntax invalid.'
   STAMP=$(date +%Y%m%d-%H%M%S)
   UNIT="got-generic-auto-${REV:0:8}-$STAMP"
   args=(--user --collect --no-block --service-type=exec --unit="$UNIT"
@@ -347,6 +348,7 @@ if __name__ == '__main__':
     sys.exit(main())
 PY
 chmod 700 "$AUTO"
+python3 -m py_compile "$AUTO" || fail 'Screenshot-and-input controller syntax invalid.'
 
 # No game is launched if targeted XTEST input cannot work.
 python3 "$AUTO" --check
