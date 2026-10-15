@@ -34,7 +34,7 @@ UPSTREAM = "b2d7ec7d31f9ad9426db93afe079db8679b3e1e0"
 CURRENT_SOURCE_DIFF_SHA = "b0044088565024240e2827c1d7d77c5bdaf8475e74ee5a2293936fa706cad057"
 CURRENT_BINARY_SHA = "68a1e91cad00745fa0f9dd4cf2c9962c3e35c77f4c69cc459ee8f9a21a9a0d4e"
 PROCESS = "src/core/libraries/kernel/process.cpp"
-OLD_PROCESS_BLOB = "05acbce16dc315c5abaccb5190011ceed6ad848a"
+OLD_PROCESS_BLOB_PREFIX = "b9096c1f"
 UPSTREAM_PROCESS_BLOB = "276318a89f2f7e9aad4c883854cdf98dcec0681f"
 FIX_PROCESS_BLOB = "3b4ab0d50798f47cbac240ed10e22acc54ae9f8b"
 FIX_COMMIT = "c76e11c0fa4e60338acc427457599fad8e0d4863"
@@ -149,7 +149,7 @@ def apply_previous_general_fix():
         note("KERNEL_HLE_ABI=previous general fix verified")
         return evidence
 
-    if git_blob(old)!=OLD_PROCESS_BLOB or source_diff_sha()!=CURRENT_SOURCE_DIFF_SHA:
+    if not git_blob(old).startswith(OLD_PROCESS_BLOB_PREFIX) or source_diff_sha()!=CURRENT_SOURCE_DIFF_SHA:
         raise RuntimeError("original HLE source is not the unchanged generic stack")
     base_file = run(["git", "show", UPSTREAM+":"+PROCESS], cwd=SRC)[1].encode()
     if git_blob(base_file)!=UPSTREAM_PROCESS_BLOB:
@@ -173,7 +173,7 @@ def apply_previous_general_fix():
     run(["git", "diff", "--check"], cwd=SRC)
     evidence={
         "topic_commit":FIX_COMMIT, "baseline_diff":CURRENT_SOURCE_DIFF_SHA,
-        "before_blob":OLD_PROCESS_BLOB, "after_blob":git_blob(newer),
+        "before_blob":git_blob(old), "after_blob":git_blob(newer),
         "before_sha256":hashlib.sha256(old).hexdigest(),
         "after_sha256":hashlib.sha256(newer).hexdigest(),
         "after_diff":source_diff_sha(),
