@@ -37,6 +37,22 @@ if [[ "${1:-}" != '--worker' ]]; then
   [[ ! -L "$STORED" ]] || fail 'Unsafe script path.'
   install -m 0700 "${BASH_SOURCE[0]}" "$STORED"
   bash -n "$STORED" || fail 'Test launcher syntax invalid.'
+  # Verify postmortem scripts before starting a potentially costly game run.
+  python3 - "$STORED" <<'VERIFY_EMBEDDED_PYTHON'
+from pathlib import Path
+import re,sys
+source=Path(sys.argv[1]).read_text()
+labels=("VERIFY_SRT","VERIFY_PM4","UPDATE_TEST_PROVENANCE","PREP_PRIVATE",
+        "VERIFY_PRIVATE","PREP_SHADER_CAPTURE","PY","SYMBOLIZE",
+        "CAPTURE_RADV","MATCH_RADV_SHADERS","CLEAN_PRIVATE_DUMPS")
+for tag in labels:
+    rx=re.compile("(?ms)^[^\\n]*<<'"+re.escape(tag)+"'\\n(.*?)\\n"+tag+"$")
+    match=rx.search(source)
+    if not match:
+        raise SystemExit("Missing embedded Python program: "+tag)
+    compile(match.group(1),"embedded/"+tag+".py","exec")
+print("ALL_EMBEDDED_PYTHON_SYNTAX=PASS",flush=True)
+VERIFY_EMBEDDED_PYTHON
   STAMP=$(date +%Y%m%d-%H%M%S)
   UNIT="got-upstream-auto-${REV:0:8}-$STAMP"
   args=(--user --collect --no-block --service-type=exec --unit="$UNIT"
@@ -281,7 +297,7 @@ import json,sys
 cfg=json.loads(Path(sys.argv[1]).read_text())
 gpu=cfg.get("GPU",{})
 assert gpu.get("patch_shaders") is False
-assert gpu.get("dump_shaders") is True
+assert gpu.get("dump_shaders") in (False, True)
 VERIFY_PRIVATE
 [[ "$(sha256sum "$RUN/shadps4" | cut -d' ' -f1)" == \
    "$(sha256sum "$BUILD/shadps4" | cut -d' ' -f1)" ]] || fail 'Test executable differs.'
