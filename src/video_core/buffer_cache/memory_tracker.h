@@ -5,9 +5,11 @@
 
 #include <algorithm>
 #include <deque>
+#include <optional>
 #include <vector>
 
 #include "common/types.h"
+#include "video_core/buffer_cache/cpu_dirty_epoch.h"
 #include "video_core/buffer_cache/region_manager.h"
 
 namespace VideoCore {
@@ -22,6 +24,11 @@ public:
     explicit MemoryTracker(PageManager& tracker_)
         : tracker{&tracker_}, readbacks_mode{EmulatorSettings.GetReadbacksMode()} {}
     ~MemoryTracker() = default;
+
+    /// Changes whenever guest memory may require a fresh DMA upload.
+    [[nodiscard]] u64 CpuDirtyGeneration() const noexcept {
+        return cpu_dirty_epoch.Snapshot();
+    }
 
     /// Returns true if a region has been modified from the GPU
     bool IsRegionGpuModified(VAddr cpu_addr, u64 size) noexcept {
@@ -46,6 +53,12 @@ public:
 
     /// Unmark region as modified from the host GPU
     void UnmarkRegionAsGpuModified(VAddr cpu_addr, u64 size, bool is_write) noexcept {
+        // A GPU download performed for a CPU write sets CPU-dirty state.
+        // Notify before and after in case a GPU-command scan races it.
+        std::optional<CpuDirtyEpoch::Mutation> mutation;
+        if (is_write) {
+            mutation.emplace(cpu_dirty_epoch);
+        }
         IteratePages(cpu_addr, size, [is_write](RegionManager* manager, u64 offset, u64 size) {
             if (is_write) {
                 manager->template ChangeRegionState<StateOp::Set, StateOp::Clear>(offset, size);
@@ -57,6 +70,7 @@ public:
 
     /// Mark region as modified from the CPU
     void MarkRegionAsCpuModified(VAddr cpu_addr, u64 size) noexcept {
+        CpuDirtyEpoch::Mutation mutation{cpu_dirty_epoch};
         IteratePages(cpu_addr, size, [](RegionManager* manager, u64 offset, u64 size) {
             manager->template ChangeRegionState<StateOp::Set, StateOp::None>(offset, size);
         });
@@ -64,6 +78,8 @@ public:
 
     /// Removes all protection from a page and ensures GPU data has been flushed if requested
     void InvalidateRegion(VAddr cpu_addr, u64 size, auto&& on_flush) noexcept {
+        // Page-fault invalidation changes CPU write protection and dirty bits.
+        CpuDirtyEpoch::Mutation mutation{cpu_dirty_epoch};
         if (readbacks_mode == GpuReadbacksMode::Disabled) {
             return MarkRegionAsCpuModified(cpu_addr, size);
         }
@@ -161,6 +177,7 @@ private:
         return new_manager;
     }
 
+    CpuDirtyEpoch cpu_dirty_epoch;
     PageManager* tracker;
     const u32 readbacks_mode;
     std::deque<std::array<RegionManager, MANAGER_POOL_SIZE>> manager_pool;
