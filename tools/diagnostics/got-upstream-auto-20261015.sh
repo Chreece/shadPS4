@@ -226,7 +226,7 @@ grep -Fxq 'mode=upstream_auto_capture_then_cross' "$RUN/test-provenance.txt" ||
 # Atomically refresh ONLY this isolated test copy; do not overwrite installed
 # shadPS4, working snapshots, or any unrelated profile.
 if ! cmp -s "$RUN/shadps4" "$BUILD/shadps4"; then
-    PENDING="$RUN/.shadps4-${REV:0:8}-$.pending"
+    PENDING="$RUN/.shadps4-${REV:0:8}-$$.pending"
     [[ ! -e "$PENDING" && ! -L "$PENDING" ]] ||
        fail 'Unexpected existing pending test binary.'
     install -m 0700 "$BUILD/shadps4" "$PENDING"
