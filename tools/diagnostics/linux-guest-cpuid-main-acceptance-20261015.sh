@@ -9,12 +9,12 @@ TREE="$ROOT/tests/got-generic-srt-680029f3"
 SOURCE="$TREE/source"
 BUILD="$TREE/build"
 LOG_ROOT="$HOME/projects/shadps4/logs"
-PARENT="cadbc0cec5e0bf7665ac1177c0664b82f4729e80"
-COMMIT="46e7184bb1bf7c1ae54a2c24b1f228030b9ebb0a"
+PARENT="46e7184bb1bf7c1ae54a2c24b1f228030b9ebb0a"
+COMMIT="dc71bfa1d7ca988425fc1e09142ac7835d79c127"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 mkdir -p "$LOG_ROOT"
 if [[ "$#" -eq 0 ]]; then
-    LABEL="linux-guest-cpuid-main-$(date +%Y%m%d-%H%M%S)"
+    LABEL="linux-guest-cpu-mask-main-$(date +%Y%m%d-%H%M%S)"
     RUN="$LOG_ROOT/$LABEL"
     mkdir -p "$RUN/info" "$RUN/screenshots"
     touch "$RUN/build.log" "$RUN/game.log"
@@ -97,7 +97,7 @@ if ! g++ -std=c++20 -O2 -Wall -Wextra -Werror -pedantic \
     exit 5
 fi
 rm -f -- "$RUN/info/guest-cpu-test"
-echo "GUEST_CPU_REGRESSION=PASS"
+echo "GUEST_CPU_MASK_REGRESSION=PASS"
 echo "BUILD_UNIVERSAL_LINUX_GUEST_CPU_ID_ON_LATEST_MAIN"
 if ! cmake --build "$BUILD" --target shadps4 --parallel 4 >>"$RUN/build.log" 2>&1; then
     echo "BUILD=FAILED; GAME_NOT_LAUNCHED"
@@ -140,7 +140,7 @@ GAME_PID=$!
 echo "GAME_PID=$GAME_PID"
 (
     last=0
-    for mark in 3 7 11 16 20 25 35 50 75 120 180 240 300 480; do
+    for mark in 3 5 6 7 8 9 10 11 12 16 20 25 35 50 75 120 180 240 300 480; do
         sleep "$((mark-last))"
         last="$mark"
         kill -0 "$GAME_PID" 2>/dev/null || break
@@ -148,6 +148,17 @@ echo "GAME_PID=$GAME_PID"
             wid="$(xdotool search --onlyvisible --pid "$GAME_PID" 2>/dev/null | tail -n 1 || true)"
             if [[ -n "$wid" ]]; then
                 import -window "$wid" "$RUN/screenshots/$(printf '%03d' "$mark")s.png" 2>/dev/null || true
+            fi
+            # Main game windows often remain black while a distinct error
+            # dialog owns focus. Capture only focused windows whose title is
+            # related to the emulator/error, not the user's entire desktop.
+            active="$(xdotool getactivewindow 2>/dev/null || true)"
+            if [[ -n "$active" ]]; then
+                title="$(xdotool getwindowname "$active" 2>/dev/null || true)"
+                if [[ "$title" =~ [Ss][Hh][Aa][Dd][Pp][Ss]4|[Gg]host[[:space:]]of[[:space:]]Tsushima|[Ee]rror ]]; then
+                    printf '%s | %s\n' "$mark" "$title" >>"$RUN/info/active-window-titles.log"
+                    import -window "$active" "$RUN/screenshots/active-$(printf '%03d' "$mark")s.png" 2>/dev/null || true
+                fi
             fi
         fi
     done
@@ -165,6 +176,9 @@ wait "$SHOT_PID" 2>/dev/null
 set -e
 echo "$rc" >"$RUN/info/exit-code.txt"
 echo "GAME_EXIT=$rc"
+if [[ "$rc" == 139 ]] && command -v coredumpctl >/dev/null; then
+    timeout 10s coredumpctl --no-pager info "$GAME_PID" >"$RUN/info/native-crash.txt" 2>&1 || true
+fi
 echo "CPU_ID_STATIC_PATCH_RESULT:"
 grep -m1 -E 'Static CPU patching for eboot.bin' "$RUN/game.log" || true
 echo "GPU_HANG_EVENTS=$(grep -c 'GPU hang detected' "$RUN/game.log" || true)"
