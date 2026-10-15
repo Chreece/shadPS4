@@ -118,7 +118,10 @@ struct AudioFormatInfo {
 };
 
 struct PortOut {
+    // Guest submission state is independent of slow host backend operations.
     std::mutex mutex;
+    // Serializes Output and SetVolume without holding the guest port lock.
+    std::mutex backend_mutex;
     std::unique_ptr<PortBackend> impl{};
 
     void* output_buffer = nullptr;
