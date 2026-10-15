@@ -466,11 +466,16 @@ def adapt_rasterizer(data: bytes):
     if "ComputeProvenWriteSize" in text:
         raise RuntimeError("GoW104 rasterizer logic already present")
 
-    if "#include <limits>\n" not in text:
+    if "#include <limits>\n" not in text or "#include <optional>\n" not in text:
         insert = text.find("\n\nnamespace Vulkan")
         if insert < 0:
             raise RuntimeError("Rasterizer include/namespace boundary missing")
-        text = text[:insert] + "\n#include <limits>\n#include <optional>" + text[insert:]
+        additions = ""
+        if "#include <limits>\n" not in text:
+            additions += "#include <limits>\n"
+        if "#include <optional>\n" not in text:
+            additions += "#include <optional>\n"
+        text = text[:insert] + "\n" + additions.rstrip("\n") + text[insert:]
 
     anchor = "void Rasterizer::BindBuffers(const Shader::Info& stage"
     pos = text.find(anchor)
