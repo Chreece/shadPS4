@@ -4,7 +4,7 @@ umask 077
 
 # Isolated gameplay test harness. Input injection is confined to the test
 # process, not emulator fixes, and starts only after a captured screenshot.
-REV='9fa5a1bcb986ab602be66d251b964cefcb226750'
+REV='fc28e8de24ee2eb9234352ef92790390cd0459c6'
 BRANCH='fix/generic-srt-readfirstlane-offset-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
 ROOT="$PROJECT/tests/got-generic-srt-${REV:0:8}"
@@ -72,6 +72,11 @@ else
   git -C "$SRC" diff --quiet && git -C "$SRC" diff --cached --quiet ||
     fail 'Test source contains local changes.'
 fi
+
+# Verify this candidate actually contains the upstream generic kernel
+# implementation missing from the preceding startup-crashing test.
+grep -Fq 'LIB_FUNCTION("DLORcroUqbc", "libSceOpenPsId", 1, "libkernel", sceKernelGetOpenPsId);'   "$SRC/src/core/libraries/kernel/kernel.cpp" || fail 'Missing implemented OpenPsId export.'
+grep -Fq 'std::memcpy(psid, default_psid, sizeof(default_psid));'   "$SRC/src/core/libraries/kernel/kernel.cpp" || fail 'Missing PSID buffer initialization.'
 
 if command -v clang-19 >/dev/null && command -v clang++-19 >/dev/null; then
   CC=clang-19; CXX=clang++-19
@@ -384,4 +389,5 @@ else
   echo 'SCREENSHOT_ARCHIVE_FAILED'
 fi
 printf 'CANDIDATE_EXIT=%s\n' "$code"
-exit 0
+# Propagate native crash status. The archive remains available for inspection.
+exit "$code"
