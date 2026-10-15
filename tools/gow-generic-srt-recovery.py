@@ -250,7 +250,7 @@ def test_jit():
         raise RuntimeError("pinned Xbyak external not initialized")
     note("TEST=independent SRT Xbyak JIT boundary cases")
     command([compiler,"-std=c++20","-O2","-Wall","-Wextra",
-             "-I",SRC,"-I",include,OUT/"test_srt_offset_codegen.cpp",
+             "-I",SRC/"src","-I",include,OUT/"test_srt_offset_codegen.cpp",
              "-o",executable],log=OUT/"jit-build.log",timeout=240)
     command([executable],log=OUT/"jit-test.log",timeout=90)
     report=(OUT/"jit-test.log").read_text()
