@@ -4,7 +4,7 @@ umask 077
 
 # Isolated gameplay test harness. Input injection is confined to the test
 # process, not emulator fixes, and starts only after a captured screenshot.
-REV='829a416d02685e1baa180ab9f41f8ad88234fa43'
+REV='5b79a46b77308b6320e42fa2e02f8372723baa7c'
 BRANCH='fix/generic-srt-readfirstlane-offset-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
 # Reuse only our previous, disposable generic candidate; never v55,
@@ -114,6 +114,21 @@ grep -Fq 'std::memcpy(psid, default_psid, sizeof(default_psid));' \
   "$SRC/src/core/libraries/kernel/kernel.cpp" || fail 'Missing PSID buffer initialization.'
 grep -Fq 'sceKernelLoadStartModule called with null module filename' \
   "$SRC/src/core/libraries/kernel/process.cpp" || fail 'Missing generic module filename fix.'
+grep -Fq 'force_align_arg_pointer' \
+  "$SRC/src/core/libraries/kernel/process.cpp" || fail 'Missing guest-to-host kernel stack alignment.'
+python3 - "$SRC/src/core/cpu_patches.cpp" <<'VERIFY_CPU'
+from pathlib import Path
+import sys
+code = Path(sys.argv[1]).read_text()
+for instruction in ("RCPSS", "VRCPSS", "RSQRTSS", "VRSQRTSS"):
+    assert code.count("ZYDIS_MNEMONIC_" + instruction) == 1, instruction + " registration"
+    assert code.count("static void Generate" + instruction + "(") == 1, instruction + " implementation"
+assert "operands[scalar && vex ? 2 : 1]" in code
+assert "c.vmovss(src_storage, memory);" in code
+assert "c.vrcpss(dst_reg, merge_reg, src_reg);" in code
+assert "c.vrsqrtss(dst_reg, merge_reg, src_reg);" in code
+print("GENERAL_SCALAR_CPU_RESTORE=VERIFIED", flush=True)
+VERIFY_CPU
 grep -Fq 'set(FETCHCONTENT_SOURCE_DIR_FMT "${CMAKE_CURRENT_SOURCE_DIR}/fmt")' \
   "$SRC/externals/CMakeLists.txt" || fail 'Pinned fmt selection not installed.'
 grep -Fq '#define FMT_VERSION 120101' \
