@@ -28,6 +28,7 @@ if [[ "$#" == 0 ]]; then
 fi
 [[ "$#" == 2 && "$1" == --worker ]] || exit 2
 OUT="$2"
+touch "$OUT/gdb.log"
 PLAY="$OUT/play"
 ARCHIVE="$OUT.tar.gz"
 pack() {
@@ -107,6 +108,9 @@ commands 2
   silent
   printf "STAGE=ERROR_DIALOG_OPEN\n"
   info registers rip rdi rsi rdx rax rsp
+  if $rdi > 0x10000
+    x/8wx $rdi
+  end
   bt 16
   printf "CAPTURE_COMPLETE=ERROR_DIALOG\n"
   detach
