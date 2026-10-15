@@ -239,6 +239,7 @@ def build_candidate(g104, gow97, gow96, gow91, base, phase90, phase89,
     if not isinstance(proof, dict) or proof.get("game_specific") is not False:
         raise RuntimeError("GoW105 proof missing")
     stats["gow105_generic_srt_coherency"] = proof
+    stats["readback_validation_mode"] = "normal mode 0; demand-driven SRT coherence"
     stats["gow105_acceptance"] = {
         "readbacks_mode": 0,
         "SHADPS4_GOW_behavior_env": False,
