@@ -4,7 +4,7 @@ umask 077
 
 # Isolated gameplay test harness. Input injection is confined to the test
 # process, not emulator fixes, and starts only after a captured screenshot.
-REV='fc28e8de24ee2eb9234352ef92790390cd0459c6'
+REV='680029f32dbe49d45c89136e9fd921f82e9e4ba9'
 BRANCH='fix/generic-srt-readfirstlane-offset-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
 ROOT="$PROJECT/tests/got-generic-srt-${REV:0:8}"
@@ -88,7 +88,9 @@ fi
 
 if [[ ! -x "$BUILD/shadps4" ]]; then
   cmake -S "$SRC" -B "$BUILD" -G Ninja \
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
+    -DCMAKE_CXX_FLAGS_RELWITHDEBINFO='-O2 -g1 -DNDEBUG -fno-omit-frame-pointer' \
+    -DCMAKE_C_FLAGS_RELWITHDEBINFO='-O2 -g1 -DNDEBUG -fno-omit-frame-pointer' \
     -DENABLE_TESTS=OFF -DENABLE_DISCORD_RPC=OFF -DENABLE_UPDATER=OFF \
     -DENABLE_CPU_ID_TRANSLATION=OFF
   cmake --build "$BUILD" --parallel 6 --target shadps4
@@ -382,6 +384,40 @@ wait "$pid" || code=$?
 # key-up finally block can run instead of killing it mid-press.
 wait "$controller" 2>/dev/null || true
 printf '%s\n' "$code" > "$LOG/exit-code.txt"
+# Symbolize only *unhandled* host faults (not normal page-fault
+# interception), using the module-relative offset emitted by signals.cpp.
+python3 - "$LOG/game.log" "$RUN/shadps4" "$LOG/info/native-crash.txt" <<'SYMBOLIZE'
+import pathlib
+import re
+import subprocess
+import sys
+
+log_path, binary_path, output_path = map(pathlib.Path, sys.argv[1:])
+lines = re.sub(r'\x1b\[[0-9;]*m', '', log_path.read_text(errors='replace')).splitlines()
+pattern = re.compile(r'Unhandled native fault module=(\S+) offset=(0x[0-9a-fA-F]+)')
+out = []
+for line in lines:
+    m = pattern.search(line)
+    if not m:
+        continue
+    module = pathlib.Path(m.group(1))
+    offset = int(m.group(2), 16)
+    out.append('FAULT ' + line)
+    # The actual test executable retains debug line tables; plugins and
+    # system libraries are symbolized only when their paths are available.
+    path = module if module.is_file() else binary_path if module.name == 'shadps4' else None
+    if path and path.is_file():
+        try:
+            result = subprocess.run(
+                ['addr2line', '-Cfpie', str(path), hex(offset)],
+                capture_output=True, text=True, timeout=10, check=False)
+            out.append('SOURCE ' + (result.stdout.strip() or result.stderr.strip()))
+        except (OSError, subprocess.TimeoutExpired) as e:
+            out.append('SYMBOLIZER_ERROR ' + str(e))
+    else:
+        out.append('SYMBOLIZER_MODULE_UNAVAILABLE ' + str(module))
+output_path.write_text('\n'.join(out or ['NO_UNHANDLED_NATIVE_FAULT_OBSERVED']) + '\n')
+SYMBOLIZE
 if tar -czf "$LOG.tar.gz" -C "$LOG" game.log exit-code.txt screenshots info input-and-screenshots.log; then
   printf '%s\n' "$LOG.tar.gz" > "$LOGROOT/.got-generic-auto-latest"
   printf 'SCREENSHOTS_ARCHIVE=%s.tar.gz\n' "$LOG"
