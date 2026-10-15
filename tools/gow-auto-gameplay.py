@@ -76,7 +76,7 @@ def safe_json(path: Path):
     return value
 
 
-def patch_config(path: Path):
+def patch_config(path: Path, readbacks_mode: int):
     obj = safe_json(path)
     for section in ("GPU", "Vulkan"):
         if section in obj and not isinstance(obj[section], dict):
@@ -84,7 +84,7 @@ def patch_config(path: Path):
     gpu = obj.setdefault("GPU", {})
     gpu["direct_memory_access_enabled"] = True
     gpu["dump_shaders"] = False
-    gpu["readbacks_mode"] = 0
+    gpu["readbacks_mode"] = readbacks_mode
     vk = obj.setdefault("Vulkan", {})
     vk["pipeline_cache_enabled"] = False
     vk["pipeline_cache_archived"] = False
@@ -336,6 +336,10 @@ def self_test():
         names = {Path(x["path"]).name for x in got}
         assert names == {"drrun", "libdynamorio.so"}
 
+        cfg = root / "CUSA34384.json"
+        patch_config(cfg, 2)
+        assert json.loads(cfg.read_text())["GPU"]["readbacks_mode"] == 2
+
     stat = parse_stat((Path("/proc") / str(os.getpid()) / "stat").read_text())
     assert stat["start_ticks"] > 0 and stat["process_group"] > 0
     print("GOW_AUTO_GAMEPLAY_SELF_TEST=PASS process guard + nested CPU-ID runtime + screenshot/Cross policy")
@@ -348,6 +352,7 @@ def main():
     ap.add_argument("--seconds", type=int, default=300)
     ap.add_argument("--interval", type=float, default=10.0)
     ap.add_argument("--after-delay", type=float, default=1.0)
+    ap.add_argument("--readbacks-mode", type=int, choices=(0, 1, 2), default=0)
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
 
@@ -405,7 +410,7 @@ def main():
     rc = None
     console = (out / "console.log").open("wb")
     try:
-        patch_config(CFG)
+        patch_config(CFG, args.readbacks_mode)
         (out / "runtime-contract.json").write_text(json.dumps({
             "binary": str(binary),
             "binary_sha256": args.sha256.lower(),
@@ -416,7 +421,7 @@ def main():
             "mapping": mapping,
             "automatic_controller_input": True,
             "other_controller_inputs": False,
-            "readbacks_mode": 0,
+            "readbacks_mode": args.readbacks_mode,
             "dump_shaders": False,
             "srt_auto_roots": 2,
         }, indent=2) + "\n")
