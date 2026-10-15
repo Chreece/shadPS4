@@ -574,25 +574,49 @@ def adapt_region_manager(data: bytes):
 
 def adapt_memory_tracker(data: bytes):
     text = data.decode()
-    if "void MarkRegionAsGpuModified(" in text:
-        # Newer upstream-shaped retained source already has the generic primitive.
-        return data, {"gpu_mark_primitive": "already_present"}
+    if "MarkRegionAsGpuModifiedTracked" in text:
+        raise RuntimeError("Selective GPU tracker already present")
 
     anchor = '''    /// Unmark region as modified from the host GPU
     void UnmarkRegionAsGpuModified'''
-    method = '''    /// Transfer ownership of a region from CPU to host GPU without
-    /// performing another upload. The retained page manager cannot represent
-    /// write-only guest protection: GPU-read tracking must be paired with CPU
-    /// write tracking, exactly like ForEachUploadRange(..., is_written=true).
-    void MarkRegionAsGpuModified(VAddr cpu_addr, u64 size) noexcept {
+    method = '''    /// Mark a statically proven GPU-written range and install a CPU-read
+    /// watcher for exactly those pages even when global precise readbacks are disabled.
+    void MarkRegionAsGpuModifiedTracked(VAddr cpu_addr, u64 size) noexcept {
         IteratePages<true>(cpu_addr, size, [](RegionManager* manager, u64 offset, u64 size) {
-            manager->template ChangeRegionState<StateOp::Clear, StateOp::Set>(offset, size);
+            manager->MarkRegionAsGpuModifiedTracked(offset, size);
         });
     }
 
 '''
-    text = replace_once(text, anchor, method + anchor, "GPU modified marker")
-    return text.encode(), {"gpu_mark_primitive": "added"}
+    text = replace_once(text, anchor, method + anchor, "selective GPU modified marker")
+
+    old = '''    void UnmarkRegionAsGpuModified(VAddr cpu_addr, u64 size, bool is_write) noexcept {
+        IteratePages(cpu_addr, size, [is_write](RegionManager* manager, u64 offset, u64 size) {
+            if (is_write) {
+                manager->template ChangeRegionState<StateOp::Set, StateOp::Clear>(offset, size);
+            } else {
+                manager->template ChangeRegionState<StateOp::None, StateOp::Clear>(offset, size);
+            }
+        });
+    }
+'''
+    new = '''    void UnmarkRegionAsGpuModified(VAddr cpu_addr, u64 size, bool is_write) noexcept {
+        IteratePages(cpu_addr, size, [is_write](RegionManager* manager, u64 offset, u64 size) {
+            manager->UntrackGpuModifiedPages(offset, size);
+            if (is_write) {
+                manager->template ChangeRegionState<StateOp::Set, StateOp::Clear>(offset, size);
+            } else {
+                manager->template ChangeRegionState<StateOp::None, StateOp::Clear>(offset, size);
+            }
+        });
+    }
+'''
+    text = replace_once(text, old, new, "selective GPU watcher removal")
+    return text.encode(), {
+        "selective_cpu_read_watchers": True,
+        "global_precise_required": False,
+        "game_specific": False,
+    }
 
 
 def adapt_buffer_h(data: bytes):
