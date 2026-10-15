@@ -11,6 +11,24 @@ namespace Core {
 // This calculation is also used for kernel current-CPU and CPUID/RDTSCP/RDPID.
 inline constexpr unsigned GuestCpuSlots = 8;
 
+// Orbis CPU mode depends on the compiled SDK and process PSF flags,
+// not on the native host CPU count. This is the pre-rebase kernel contract.
+constexpr unsigned GuestCpuModeFromPsf(std::uint32_t sdk_version, std::uint32_t fw_300,
+                                       bool six_cpu_mode, bool seven_cpu_mode) {
+    if (sdk_version < fw_300 || (six_cpu_mode && seven_cpu_mode)) {
+        return 2;
+    }
+    if (seven_cpu_mode || !six_cpu_mode) {
+        return 5;
+    }
+    return 0;
+}
+static_assert(GuestCpuModeFromPsf(0x2000000, 0x3000000, false, false) == 2);
+static_assert(GuestCpuModeFromPsf(0x8000000, 0x3000000, false, false) == 5);
+static_assert(GuestCpuModeFromPsf(0x8000000, 0x3000000, true, false) == 0);
+static_assert(GuestCpuModeFromPsf(0x8000000, 0x3000000, false, true) == 5);
+static_assert(GuestCpuModeFromPsf(0x8000000, 0x3000000, true, true) == 2);
+
 // The accessible application CPU mask follows the emulated Orbis CPU mode.
 // CPU mode 5 exposes seven application CPUs, the other modes expose six;
 // the eight hardware threads are still described by the CPUID topology.

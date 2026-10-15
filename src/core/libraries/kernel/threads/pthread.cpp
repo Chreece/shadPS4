@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/assert.h"
+#include "common/logging/log.h"
 #include "common/thread.h"
 #ifdef _WIN32
 #include "common/ntapi.h"
@@ -290,6 +291,16 @@ static void* RunThread(void* arg) {
 int PS4_SYSV_ABI posix_pthread_create_name_np(PthreadT* thread, const PthreadAttrT* attr,
                                               PthreadEntryFunc start_routine, void* arg,
                                               const char* name) {
+    if (thread == nullptr) {
+        return POSIX_EINVAL;
+    }
+    const auto* requested_attr = attr ? *attr : nullptr;
+    if (requested_attr != nullptr && requested_attr->cpuset != nullptr &&
+        requested_attr->cpuset->_reserved != 0) {
+        LOG_WARNING(Lib_Kernel, "Thread affinity requested reserved CPU-set bits: {:#x}",
+                    requested_attr->cpuset->_reserved);
+        return POSIX_EINVAL;
+    }
     Pthread* curthread = g_curthread;
     const bool explicit_guest_affinity =
         attr != nullptr && *attr != nullptr && (*attr)->cpuset != nullptr;
@@ -298,8 +309,17 @@ int PS4_SYSV_ABI posix_pthread_create_name_np(PthreadT* thread, const PthreadAtt
         ? (*attr)->cpuset->bits
         : (curthread != nullptr ? curthread->guest_affinity_mask.load(std::memory_order_acquire)
                                 : permitted_guest_cpus);
-    if (guest_affinity == 0 || (guest_affinity & ~permitted_guest_cpus) != 0) {
+    if (guest_affinity == 0) {
+        LOG_WARNING(Lib_Kernel,
+                    "Guest pthread requested empty affinity mask; available={:#x}, explicit={}",
+                    permitted_guest_cpus, explicit_guest_affinity);
         return POSIX_EINVAL;
+    }
+    if ((guest_affinity & ~permitted_guest_cpus) != 0) {
+        LOG_WARNING(Lib_Kernel,
+                    "Guest pthread requested inaccessible CPU mask={:#x}; available={:#x}, explicit={}",
+                    guest_affinity, permitted_guest_cpus, explicit_guest_affinity);
+        return POSIX_EPERM;
     }
     auto* thread_state = ThrState::Instance();
     Pthread* new_thread = thread_state->Alloc(curthread);
