@@ -934,14 +934,14 @@ def build_candidate(gow97, gow96, gow91, base, phase90, phase89, helper, work, l
             finals[rel].decode().splitlines(keepends=True),
             fromfile="a/" + rel, tofile="b/" + rel, n=3))
 
-    pf = logs / "gow104-proven-write-extent.patch"
+    pf = logs / "gow107-selective-readback.patch"
     pf.write_text(patch)
     helper.run(["git", "apply", "--check", pf], logs / "patch-check.log", cwd=overlay, timeout=30)
     helper.run(["git", "apply", pf], logs / "patch-apply.log", cwd=overlay, timeout=30)
 
     for rel, expected in finals.items():
         if (overlay / rel).read_bytes() != expected:
-            raise RuntimeError("Applied source differs from verified GoW104 plan: " + rel)
+            raise RuntimeError("Applied source differs from verified GoW107 plan: " + rel)
 
     changed = tuple(finals.keys())
 
@@ -976,7 +976,7 @@ def build_candidate(gow97, gow96, gow91, base, phase90, phase89, helper, work, l
         raise RuntimeError("Linked library unavailable")
 
     stats.update(
-        gow105_generic_srt_and_write_extent=proof,
+        gow107_generic_srt_selective_readback=proof,
         readback_validation_mode="normal runtime; no forced precise readbacks",
         global_arbitrary_buffer_cap=False,
         game_specific=False,
@@ -996,19 +996,21 @@ def self_test(gow97, gow96, gow91):
 
     assert b"struct BufferWriteExtent" in finals[RESOURCE_H]
     assert b"AnalyzeInvocationAffine" in finals[RESOURCE_PATCH]
-    assert b"MarkRegionAsGpuModified" in finals[MEMORY_TRACKER_H]
-    assert b"ChangeRegionState<StateOp::Clear, StateOp::Set>" in finals[MEMORY_TRACKER_H]
-    assert b"ChangeRegionState<StateOp::None, StateOp::Set>" not in finals[MEMORY_TRACKER_H]
+    assert b"MarkRegionAsGpuModifiedTracked" in finals[MEMORY_TRACKER_H]
+    assert b"gpu_selective_tracked" in finals[REGION_MANAGER_H]
+    assert b"PageOp::None, PageOp::Untrack" in finals[REGION_MANAGER_H]
+    assert b"MarkRegionAsGpuModifiedTracked" in finals[gow91.CPP]
     assert b"proven_write_size" in finals[gow91.CPP]
     assert b"ComputeProvenWriteSize" in finals[RASTER]
     assert b"tracked_write_size" in finals[RASTER]
+    assert b"SELECTIVE_GPU_READBACK" in finals[RASTER]
     assert b"SHADPS4_GOW_SRT_AUTO_ROOTS" not in finals[gow97.FLAT]
     assert b"SHADPS4_GOW_SRT_SGPR8_FIRST" not in finals[gow97.FLAT]
     assert b"SRT root dependency order changed" in finals[gow97.FLAT]
     assert proof["resource_h"]["game_specific"] is False
     assert proof["resource_patch"]["game_specific"] is False
     assert proof["gow103"]["game_specific"] is False
-    print("GOW105_SELF_TEST=PASS", flush=True)
+    print("GOW107_SELF_TEST=PASS", flush=True)
 
 
 def main():
@@ -1040,7 +1042,7 @@ def main():
 
     old = sys.argv[:]
     try:
-        sys.argv = ["gow105"] + (["--build-only"] if args.build_only else []) + (
+        sys.argv = ["gow107"] + (["--build-only"] if args.build_only else []) + (
             ["--restore"] if args.restore else [])
         return base.main()
     finally:
