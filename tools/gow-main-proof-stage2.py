@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tarfile
@@ -126,8 +127,12 @@ def cxx_function(content, name):
     raise RuntimeError("unbalanced shader translator function")
 
 def write_atomic(path, data):
+    if path.is_symlink():
+        raise RuntimeError("unsafe symbolic link during source update: "+str(path))
+    previous_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600
     fd, temp = tempfile.mkstemp(dir=path.parent, prefix=".proof-write-")
     try:
+        os.fchmod(fd, previous_mode)
         with os.fdopen(fd, "wb") as output:
             output.write(data)
             output.flush()
