@@ -9,8 +9,12 @@ namespace Shader::Optimization {
 
 static IR::Inst* SearchChain(IR::Inst* inst, u32 lane) {
     while (inst->GetOpcode() == IR::Opcode::WriteLane) {
+        // A variable write index may alias the queried lane. We cannot
+        // bypass it or treat its value as if it wrote a fixed lane.
+        if (!inst->Arg(2).IsImmediate()) {
+            return nullptr;
+        }
         if (inst->Arg(2).U32() == lane) {
-            // We found a possible write lane source, return it.
             return inst;
         }
         inst = inst->Arg(0).Inst();
@@ -30,7 +34,11 @@ static bool IsPossibleToEliminate(IR::Inst* inst, u32 lane) {
         queue.pop();
 
         // If it's a WriteLane search for possible candidates
-        if (inst = SearchChain(inst, lane); inst->GetOpcode() == IR::Opcode::WriteLane) {
+        inst = SearchChain(inst, lane);
+        if (!inst) {
+            return false;
+        }
+        if (inst->GetOpcode() == IR::Opcode::WriteLane) {
             // We found a possible write lane source, stop looking here.
             continue;
         }
@@ -59,7 +67,9 @@ using PhiMap = std::unordered_map<IR::Inst*, IR::Value>;
 
 static IR::Value GetRealValue(PhiMap& phi_map, IR::Inst* inst, u32 lane) {
     // If this is a WriteLane op search the chain for a possible candidate.
-    if (inst = SearchChain(inst, lane); inst->GetOpcode() == IR::Opcode::WriteLane) {
+    inst = SearchChain(inst, lane);
+    ASSERT(inst);
+    if (inst->GetOpcode() == IR::Opcode::WriteLane) {
         return inst->Arg(1);
     }
 
@@ -106,23 +116,29 @@ void ReadLaneEliminationPass(IR::Program& program) {
             if (inst.GetOpcode() != IR::Opcode::ReadLane) {
                 continue;
             }
-            if (!inst.Arg(1).IsImmediate()) {
-                continue;
-            }
-
-            const u32 lane = inst.Arg(1).U32();
+            const IR::Value lane_index = inst.Arg(1);
             IR::Inst* prod = inst.Arg(0).Inst();
             IR::Value replacement{};
 
-            // Check simple case of no control flow and phis
-            if (prod = SearchChain(prod, lane); prod->GetOpcode() == IR::Opcode::WriteLane) {
+            // ReadLane(WriteLane(previous, value, index), index) always
+            // reads the just-written value, including when index is dynamic.
+            if (prod->GetOpcode() == IR::Opcode::WriteLane &&
+                prod->Arg(2) == lane_index) {
                 replacement = prod->Arg(1);
-            } else if (prod->GetOpcode() == IR::Opcode::Phi && IsPossibleToEliminate(prod, lane)) {
-                replacement = GetRealValue(phi_map, prod, lane);
-                for (const auto& [_, phi_value] : phi_map) {
-                    worklist.push_back(phi_value.Inst());
+            } else if (lane_index.IsImmediate()) {
+                const u32 lane = lane_index.U32();
+                // Only walk across writes whose immediate lane cannot alias.
+                prod = SearchChain(prod, lane);
+                if (prod && prod->GetOpcode() == IR::Opcode::WriteLane) {
+                    replacement = prod->Arg(1);
+                } else if (prod && prod->GetOpcode() == IR::Opcode::Phi &&
+                           IsPossibleToEliminate(prod, lane)) {
+                    replacement = GetRealValue(phi_map, prod, lane);
+                    for (const auto& [_, phi_value] : phi_map) {
+                        worklist.push_back(phi_value.Inst());
+                    }
+                    phi_map.clear();
                 }
-                phi_map.clear();
             }
             if (replacement.IsEmpty()) {
                 continue;
