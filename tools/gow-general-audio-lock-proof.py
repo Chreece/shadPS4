@@ -44,8 +44,8 @@ HEADER="src/core/libraries/audio/audioout_sync.h"
 TEST="tests/audio/test_audio_output_batch_sync.cpp"
 FILES={
     CPP:"2cb12200709588bc587a22eb4a498c4e29821156",
-    HEADER:"",  # populated by exact source provenance below
-    TEST:"",
+    HEADER:"8efda58a938100999a248e7fcdbd7b7159ec5658",
+    TEST:"dbdd33073feb3139843a756464ef82f7a8bf9857",
 }
 CPP_OLD_BLOB="92fcdbf56bc40e91d588030404316eb0713a05e5"
 SNAP=WORK/"preserved-before-general-audio-lock"
@@ -133,23 +133,21 @@ def commit_audio_fix():
     body=fetch(CPP)
     header=fetch(HEADER)
     test=fetch(TEST)
-    if blob(body)!=CPP_OLD_BLOB and blob(body)!="2cb12200709588bc587a22eb4a498c4e29821156":
-        raise RuntimeError("the published source isn't the approved audio general fix")
-    if blob(body)!="2cb12200709588bc587a22eb4a498c4e29821156":
-        raise RuntimeError("published audio implementation hash changed")
+    for path,raw in ((CPP,body),(HEADER,header),(TEST,test)):
+        if blob(raw)!=FILES[path]:
+            raise RuntimeError("published general audio fix/test has an unexpected blob: "+path)
     if b"WaitForAudioPortsReady" not in body or b"std::ranges::find_if" not in header or b"AUDIO_MULTI_PORT_SYNC=PASS cases=3" not in test:
         raise RuntimeError("audio code or test coverage incomplete")
     for raw in (body,header,test):
         if any(x in raw for x in (b"CUSA34384",b"SHADPS4_GOW_",b"GOW_SRT_")):
             raise RuntimeError("game-specific logic found in generic audio source")
-    header_hash=blob(header);test_hash=blob(test)
     manifest={
         "topic":TOPIC,
         "base_upstream":UPSTREAM,
         "general_stack":GENERAL_STACK,
         "before_binary":BIN_OLD,
         "changed_files":[CPP,HEADER,TEST],
-        "published_blob_shas":{CPP:blob(body),HEADER:header_hash,TEST:test_hash},
+        "published_blob_shas":FILES,
         "game_specific_emulator_changes":False,
     }
     if MANIFEST.exists():
