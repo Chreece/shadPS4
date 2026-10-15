@@ -4,6 +4,8 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -55,6 +57,24 @@ bool WaitForAudioPortsReady(const std::vector<std::shared_ptr<Port>>& ports,
             return !waiting->output_ready || waiting->closing;
         });
     }
+}
+
+// Copy a completed guest buffer to backend-owned staging while the producer
+// buffer is protected. Release the guest-facing mutex before any backend
+// operation, which may wait for host audio pacing and must not block the guest
+// from preparing its next buffer. The worker owns the staging buffer; this
+// function never changes its length, volume, channel format or sample data.
+template <typename Port>
+bool StageAudioOutputBuffer(Port& port, void* destination, std::size_t bytes) {
+    std::unique_lock lock{port.mutex};
+    if (!port.impl || port.closing || !port.output_ready) {
+        return false;
+    }
+    std::memcpy(destination, port.output_buffer, bytes);
+    port.output_ready = false;
+    lock.unlock();
+    port.output_cv.notify_all();
+    return true;
 }
 
 } // namespace Libraries::AudioOut
