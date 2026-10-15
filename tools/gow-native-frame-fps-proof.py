@@ -289,9 +289,13 @@ def metrics(timestamps,start_us,end_us):
     low1=statistics.mean(lows[:max(1,math.ceil(len(lows)*0.01))]) if lows else None
     ten_secs=max(1,math.ceil(elapsed/10))
     buckets=[0]*ten_secs
+    seconds=max(1,math.ceil(elapsed))
+    second_buckets=[0]*seconds
     for stamp in times:
         idx=min(ten_secs-1,int((stamp-start_us)//10_000_000))
         buckets[idx]+=1
+        second_idx=min(seconds-1,int((stamp-start_us)//1_000_000))
+        second_buckets[second_idx]+=1
     return {
       "sampled_seconds":round(elapsed,2),
       "frames":len(times),
@@ -306,6 +310,8 @@ def metrics(timestamps,start_us,end_us):
       "stutters_over_50ms":sum(d>50 for d in deltas),
       "stutters_over_100ms":sum(d>100 for d in deltas),
       "stutters_over_250ms":sum(d>250 for d in deltas),
+      "fps_per_1sec":[round(v/min(1,elapsed-i),2)
+          for i,v in enumerate(second_buckets) if elapsed-i>0],
       "fps_per_10sec":[round(v/min(10,elapsed-i*10),2)
           for i,v in enumerate(buckets) if elapsed-i*10>0],
     }
