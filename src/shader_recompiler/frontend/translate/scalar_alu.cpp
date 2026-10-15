@@ -659,8 +659,8 @@ void Translator::S_BITCMP(bool compare_mode, u32 bits, const GcnInst& inst) {
     if (bits == 64) {
         // Keep the bit test in 64-bit IR: UConvert does not support narrowing U64 to U32.
         const IR::U64 src0 = GetSrc64(inst.src[0]);
-        const IR::U64 bit = ir.BitwiseAnd(ir.ShiftRightLogical(src0, bitpos), ir.Imm64(1));
-        ir.SetScc(ir.IEqual(bit, ir.Imm64(compare_mode ? 1 : 0)));
+        const IR::U64 bit = ir.BitwiseAnd(ir.ShiftRightLogical(src0, bitpos), ir.Imm64(u64{1}));
+        ir.SetScc(ir.IEqual(bit, ir.Imm64(u64{compare_mode ? 1u : 0u})));
     } else if (bits == 32) {
         const IR::U32 src0 = GetSrc(inst.src[0]);
         const IR::U32 bit = ir.BitwiseAnd(ir.ShiftRightLogical(src0, bitpos), ir.Imm32(1));
