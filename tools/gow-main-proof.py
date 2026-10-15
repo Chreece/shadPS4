@@ -1035,6 +1035,8 @@ def summarize_capture(archive):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--build-only", action="store_true")
+    ap.add_argument("--resume-from", type=Path, default=None,
+                    help="resume the exact source-provenance checkpoint")
     args = ap.parse_args()
     LOG_ROOT.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -1051,21 +1053,29 @@ def main():
         "rendered_gameplay_verified":False,
     }
     try:
-        prepare_source(out)
-        result["upstream_main"] = UPSTREAM_MAIN
+        if args.resume_from is not None:
+            result["phase"] = "VERIFY_RESUME"
+            resume_proven_source(out, args.resume_from)
+            result["resumed_source"] = str(WORK)
+            result["source_diff_sha256"] = sha256(out/"source-diff.patch")
+        else:
+            prepare_source(out)
+            result["upstream_main"] = UPSTREAM_MAIN
+            result["phase"] = "GENERIC_FIXES"
+            note("PATCH=general emulator fixes only")
+            transformations = apply_generic_fixes()
+            (out/"generic-transform-proof.json").write_text(
+                json.dumps(transformations, indent=2, sort_keys=True)+"\n")
+            (out/"helpers-sha256.json").write_text(json.dumps(
+                {name: {"sha256": sha256(HELPERS/name), "source": url}
+                 for name, url in HELPER_URLS.items()}, indent=2, sort_keys=True)+"\n")
+            audit_source(out)
         version_union = out/"shader-cache-version-union.json"
         if version_union.is_file():
             result["shader_cache_schema_union"] = json.loads(version_union.read_text())
-        result["phase"]="GENERIC_FIXES"
-        note("PATCH=generic fixes only")
-        transforms = apply_generic_fixes()
-        (out/"generic-transform-proof.json").write_text(json.dumps(
-            transforms, indent=2, sort_keys=True)+"\n")
-        (out/"helpers-sha256.json").write_text(json.dumps(
-            {name: {"sha256": sha256(HELPERS/name), "source": url}
-             for name, url in HELPER_URLS.items()}, indent=2, sort_keys=True) + "\n")
-        audit_source(out)
-        result["phase"]="BUILD"
+        result["phase"] = "SUBMODULES"
+        initialize_exact_submodules(out)
+        result["phase"] = "BUILD"
         binary = build(out)
         result["binary"]=str(binary)
         result["binary_sha256"]=sha256(binary)
