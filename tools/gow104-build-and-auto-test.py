@@ -16,7 +16,7 @@ SCRIPTS = ROOT / "scripts"
 TESTS = ROOT / "tests"
 
 GOW104_URL = ("https://raw.githubusercontent.com/Chreece/shadPS4/"
-              "2915349bd49abd02f1a7b9ae48ae0750509c206a/"
+              "e1452660f124f7613b0c92d9a179750540fbad65/"
               "tools/gow104-proven-write-extent.py")
 AUTO_URL = ("https://raw.githubusercontent.com/Chreece/shadPS4/"
             "eb0275c13ac5ec6ccb27cdde60b956c74b067a99/"
