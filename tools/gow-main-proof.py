@@ -671,6 +671,79 @@ def package(out, result):
     print("UPLOAD="+str(archive), flush=True)
     return archive
 
+def reconcile_known_shader_cache_schema_conflict(out):
+    """Union independent shader-cache version changes; refuse other conflicts.
+
+    The merge stages are ancestor (:1), current upstream (:2), and retained
+    generic emulator stack (:3).  Versions are cache compatibility IDs, so if
+    both sides changed the same ID independently, the merged ID must be new to
+    BOTH parents.  No emulator runtime instruction or shader code is changed.
+    """
+    rel = "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp"
+    unmerged = run(["git", "diff", "--name-only", "--diff-filter=U"],
+                   cwd=SRC).stdout.strip().splitlines()
+    if unmerged != [rel]:
+        raise RuntimeError("unrecognized merge conflicts: " + repr(unmerged))
+
+    staged = {}
+    for i, role in ((1, "ancestor"), (2, "upstream"), (3, "generic")):
+        staged[role] = run(["git", "show", f":{i}:{rel}"], cwd=SRC).stdout
+
+    patterns = {
+        "ShaderBinaryVersion": r"^static constexpr u32 ShaderBinaryVersion = ([0-9]+)u;$",
+        "ShaderMetaVersion": r"^static constexpr u32 ShaderMetaVersion = ([0-9]+)u;$",
+    }
+    def parsed(content):
+        found = {}
+        for name, pattern in patterns.items():
+            matches = re.findall(pattern, content, re.MULTILINE)
+            if len(matches) != 1:
+                raise RuntimeError("shader cache schema constant missing or ambiguous: " + name)
+            found[name] = int(matches[0])
+        return found
+
+    versions = {role: parsed(content) for role, content in staged.items()}
+    def blank_versions(content):
+        for key, pattern in patterns.items():
+            content = re.sub(pattern, f"static constexpr u32 {key} = 0u;",
+                             content, flags=re.MULTILINE)
+        return content
+
+    reference = blank_versions(staged["ancestor"])
+    if any(blank_versions(value) != reference for value in staged.values()):
+        raise RuntimeError("shader cache source differs beyond the two schema version numbers")
+
+    combined = {}
+    for name in patterns:
+        b, u, g = (versions[role][name] for role in ("ancestor", "upstream", "generic"))
+        if not (1 <= b <= u <= 2147480000 and b <= g <= 2147480000):
+            raise RuntimeError(f"{name} not monotonic across ancestor and parents")
+        combined[name] = b + (u - b) + (g - b)
+        if combined[name] > 2147480000:
+            raise RuntimeError("shader cache version overflow")
+
+    resolved = staged["upstream"]
+    for name, pattern in patterns.items():
+        resolved, count = re.subn(
+            pattern, f"static constexpr u32 {name} = {combined[name]}u;",
+            resolved, count=1, flags=re.MULTILINE)
+        if count != 1:
+            raise RuntimeError("failed to write merged schema constant: " + name)
+
+    (SRC/rel).write_text(resolved)
+    run(["git", "add", "--", rel], cwd=SRC)
+    if run(["git", "ls-files", "-u"], cwd=SRC).stdout.strip():
+        raise RuntimeError("some merge conflicts remain after shader cache version union")
+
+    evidence = {"path": rel, "ancestor": versions["ancestor"],
+                "upstream": versions["upstream"], "generic_stack": versions["generic"],
+                "merged": combined, "only_version_lines_changed": True,
+                "resolved_schema_conflict_only": True}
+    (out/"shader-cache-version-union.json").write_text(
+        json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+    note("SHADER_CACHE_VERSION_UNION=" + repr(combined))
+    return evidence
+
 def prepare_source(out):
     global UPSTREAM_MAIN
     if WORK.exists():
@@ -703,10 +776,14 @@ def prepare_source(out):
               "refs/remotes/chreece/generic-stack"],
              log=out/"merge-generic-stack.log", cwd=SRC, timeout=300, check=False)
     if rc:
-        run(["git", "status", "--porcelain=v1"], cwd=SRC, check=False)
         run(["git", "diff", "--diff-filter=U"], log=out/"merge-conflicts.diff",
             cwd=SRC, check=False)
-        raise RuntimeError("generic-stack merge conflict; no automatic conflict resolution used")
+        reconcile_known_shader_cache_schema_conflict(out)
+        # The source file differs only in version fields; other conflicts
+        # or merge failure modes still abort rather than guessing.
+        if run(["git", "ls-files", "-u"], cwd=SRC).stdout.strip():
+            raise RuntimeError("unresolved merge conflicts remain")
+    run(["git", "diff", "--cached", "--check"], cwd=SRC)
 
     # The stack contains one development runner; it is not emulator runtime source.
     for p in ("tools/gow45_latest_main_cpu_gow.py",):
@@ -846,7 +923,7 @@ def main():
         "upstream_main":UPSTREAM_MAIN, "generic_stack":GENERIC_STACK,
         "old_gow_binary_used_as_input":False,
         "readbacks_mode":0, "gow_behavior_env":[],
-        "automatic_conflict_resolution":False,
+        "automatic_conflict_resolution":"verified_schema_version_union_only",
         "installed_launcher_modified":False,
         "cross_title_verified":False,
         "rendered_gameplay_verified":False,
@@ -854,6 +931,9 @@ def main():
     try:
         prepare_source(out)
         result["upstream_main"] = UPSTREAM_MAIN
+        version_union = out/"shader-cache-version-union.json"
+        if version_union.is_file():
+            result["shader_cache_schema_union"] = json.loads(version_union.read_text())
         result["phase"]="GENERIC_FIXES"
         note("PATCH=generic fixes only")
         apply_generic_fixes()
