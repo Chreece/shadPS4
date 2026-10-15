@@ -34,7 +34,12 @@ done
 # Prefer reusing the exact SPIR-V from the previous run. No game or
 # emulator process is launched if it has already been preserved.
 PRIOR_SPV="$PRIOR_RUN/user/shader/dumps/cs_0x0000000014906b6a_0.spv"
-if [[ "${1:-}" != '--worker' && -f "$PRIOR_SPV" && ! -L "$PRIOR_SPV" ]]; then
+# A manual profile may already contain an *old* shader dump. The prior
+# automatic test wrote test-provenance.txt after copying that profile, so reuse
+# its SPIR-V only if it was emitted after the new binary was installed.
+if [[ "${1:-}" != '--worker' && -f "$PRIOR_SPV" && ! -L "$PRIOR_SPV" &&
+      -f "$PRIOR_RUN/test-provenance.txt" &&
+      "$PRIOR_SPV" -nt "$PRIOR_RUN/test-provenance.txt" ]]; then
   STAMP=$(date +%Y%m%d-%H%M%S)
   CAP="$LOGROOT/got-compute-shader-$STAMP"
   mkdir -p "$CAP/info/shaders"
