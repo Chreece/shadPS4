@@ -96,9 +96,10 @@ if [[ "$FILTER" != "00000010" && "$FILTER" != "0x10" ]]; then
 fi
 echo "CORE_SOFT_LIMIT_AFTER=$(ulimit -Sc)" >>"$RUN/info/preflight.txt"
 echo "CORE_FILTER_AFTER=$FILTER" >>"$RUN/info/preflight.txt"
-if [[ ! -d "$PLAY" ]]; then mkdir -p "$PLAY"; else
+if [[ -e "$PLAY" || -L "$PLAY" ]]; then
     echo "ISOLATED_PROFILE_EXISTS; NO_OVERWRITE"; exit 4
 fi
+mkdir -p "$PLAY"
 cp -a "$BASE/user" "$PLAY/user"
 for name in config.json users.json keys.json input_config savedata save_data; do
     [[ ! -e "$BASE/$name" ]] || cp -a "$BASE/$name" "$PLAY/$name"
@@ -168,6 +169,8 @@ if [[ "$RC" == 139 ]]; then
           -ex 'set print thread-events off' \
           -ex 'info threads' \
           -ex 'info registers rip rsp rbp rax rdi rsi' \
+          -ex 'info symbol $rip' \
+          -ex 'x/8i $rip' \
           -ex 'thread apply all bt 3' \
           -ex 'info sharedlibrary' \
           "$PLAY/shadps4" "$corefile" \
