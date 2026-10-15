@@ -907,20 +907,31 @@ def initialize_exact_submodules(out):
 
 
 def build(out):
+    # Upstream only declares the emulator with ENABLE_TESTS=OFF, while the
+    # GCN test target requires ENABLE_TESTS=ON. Keep their CMake caches separate.
     BUILD.mkdir(parents=True, exist_ok=True)
-    args = ["cmake", "-S", SRC, "-B", BUILD, "-G", "Ninja",
-            "-DCMAKE_BUILD_TYPE=Release",
-            "-DENABLE_TESTS=ON", "-DENABLE_UPDATER=OFF",
-            "-DENABLE_CPU_ID_TRANSLATION=ON"]
+    test_build = WORK/"build-gcn-tests"
+    test_build.mkdir(parents=True, exist_ok=True)
+    flags = ["-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
+             "-DENABLE_UPDATER=OFF"]
     if shutil.which("ccache"):
-        args += ["-DCMAKE_C_COMPILER_LAUNCHER=ccache",
-                 "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"]
-    note("CONFIGURE")
-    run(args, log=out/"configure.log", timeout=1800)
-    note("BUILD=emulator and independent GCN regression tests")
-    run(["cmake", "--build", BUILD, "--target", "shadps4", "shadps4_gcn_test",
+        flags += ["-DCMAKE_C_COMPILER_LAUNCHER=ccache",
+                  "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"]
+    note("CONFIGURE=emulator ENABLE_TESTS=OFF")
+    run(["cmake", "-S", SRC, "-B", BUILD, *flags,
+         "-DENABLE_TESTS=OFF", "-DENABLE_CPU_ID_TRANSLATION=ON"],
+        log=out/"configure.log", timeout=2400)
+    note("BUILD=emulator CPU translation enabled")
+    run(["cmake", "--build", BUILD, "--target", "shadps4",
          "--parallel", "4"], log=out/"build.log", timeout=7200)
-    test_bins = [p for p in BUILD.rglob("shadps4_gcn_test")
+    note("CONFIGURE=GCN tests ENABLE_TESTS=ON")
+    run(["cmake", "-S", SRC, "-B", test_build, *flags,
+         "-DENABLE_TESTS=ON", "-DENABLE_CPU_ID_TRANSLATION=OFF"],
+        log=out/"gcn-configure.log", timeout=2400)
+    note("BUILD=independent GCN regression tests")
+    run(["cmake", "--build", test_build, "--target", "shadps4_gcn_test",
+         "--parallel", "4"], log=out/"gcn-build.log", timeout=7200)
+    test_bins = [p for p in test_build.rglob("shadps4_gcn_test")
                  if p.is_file() and not p.is_symlink() and os.access(p, os.X_OK)]
     if len(test_bins) != 1:
         raise RuntimeError("cannot uniquely locate built GCN test binary")
