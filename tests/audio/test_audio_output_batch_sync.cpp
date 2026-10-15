@@ -3,6 +3,7 @@
 
 // Standalone host-concurrency regression for the actual multi-port audio
 // synchronization helper used by sceAudioOutOutputs.
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -19,7 +20,11 @@ using namespace std::chrono_literals;
 
 struct TestAudioPort {
     std::mutex mutex;
+    std::mutex backend_mutex;
     std::condition_variable_any output_cv;
+    std::shared_ptr<int> impl{std::make_shared<int>(1)};
+    std::array<std::uint8_t, 16> samples{};
+    void* output_buffer{samples.data()};
     bool output_ready{false};
     bool closing{false};
 };
@@ -114,9 +119,69 @@ static void ClosingPortUnblocksDrainWait() {
     Require(future.get(),"closed audio port left mutexes held");
 }
 
+static void GuestCanSubmitNextBufferWhileBackendIsSlow() {
+    auto port = std::make_shared<TestAudioPort>();
+    port->samples[0] = 11;
+    port->samples[1] = 22;
+    port->output_ready = true;
+    std::promise<void> backend_started;
+    auto future_started = backend_started.get_future();
+
+    // This worker uses the identical staging operation as AudioOutputThread.
+    auto worker = std::async(std::launch::async, [&] {
+        std::array<std::uint8_t, 16> staged{};
+        if (!Libraries::AudioOut::StageAudioOutputBuffer(
+                *port, staged.data(), staged.size())) {
+            return false;
+        }
+        {
+            std::lock_guard backend_lock{port->backend_mutex};
+            backend_started.set_value();
+            // SDL pacing may block here, but the producer must not be held.
+            std::this_thread::sleep_for(300ms);
+        }
+        return staged[0] == 11 && staged[1] == 22;
+    });
+    Require(future_started.wait_for(1000ms)==std::future_status::ready,
+            "slow backend never entered playback");
+
+    auto producer = std::async(std::launch::async, [&] {
+        std::unique_lock lock{port->mutex};
+        port->output_cv.wait(lock, [&] {
+            return !port->output_ready || port->closing;
+        });
+        if (port->closing) return false;
+        port->samples[0] = 33;
+        port->samples[1] = 44;
+        port->output_ready = true;
+        return true;
+    });
+    Require(producer.wait_for(150ms)==std::future_status::ready,
+            "guest submission was blocked by slow host playback");
+    Require(producer.get(), "guest could not prepare next audio block");
+    Require(worker.wait_for(1000ms)==std::future_status::ready,
+            "backend playback remained blocked");
+    Require(worker.get(), "producer overwrite corrupted already-staged samples");
+    Require(port->output_ready && port->samples[0] == 33 && port->samples[1] == 44,
+            "next queued audio block was lost");
+}
+
+static void ClosingPortDoesNotStageBuffer() {
+    TestAudioPort port;
+    port.output_ready = true;
+    port.closing = true;
+    std::array<std::uint8_t, 16> destination{};
+    Require(!Libraries::AudioOut::StageAudioOutputBuffer(
+                port, destination.data(), destination.size()),
+            "closed port accepted a new audio buffer");
+    Require(port.output_ready, "closed port unexpectedly consumed guest audio");
+}
+
 int main() {
     MultipleBusyPortsCanBothDrain();
     ReversePortOrderCannotDeadlock();
     ClosingPortUnblocksDrainWait();
-    std::cout << "AUDIO_MULTI_PORT_SYNC=PASS cases=3" << std::endl;
+    GuestCanSubmitNextBufferWhileBackendIsSlow();
+    ClosingPortDoesNotStageBuffer();
+    std::cout << "AUDIO_MULTI_PORT_SYNC=PASS cases=5" << std::endl;
 }
