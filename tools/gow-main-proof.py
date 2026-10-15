@@ -1027,6 +1027,93 @@ def initialize_exact_submodules(out):
     note("SUBMODULES=PASS exact pinned modules "+str(len(lines)))
 
 
+def diagnose_known_gcn_trap(test_binary, out, rc):
+    """Keep the GCN regression failed and gather independent root-cause evidence.
+
+    This function makes no emulator or GPU behavioral changes. It runs the
+    failing upstream test under GDB and executes the remaining cases in their
+    own processes so an assert in one test cannot hide subsequent failures.
+    """
+    log = (out/"gcn-tests.log").read_text(errors="replace")
+    passed = re.findall(r"(?m)^\[\s+OK\s+\] (GcnTest\.\S+)", log)
+    running = re.findall(r"(?m)^\[ RUN\s+\] (GcnTest\.\S+)", log)
+    failed_at = running[-1] if running else None
+    expected = "GcnTest.bitcmp1_b64_bit32"
+    if rc != -signal.SIGTRAP or failed_at != expected or len(passed) != 52:
+        raise RuntimeError("unexpected GCN failure: rc="+str(rc)+
+                           " running="+str(failed_at)+
+                           " completed="+str(len(passed))+
+                           "; no test failure has been waived")
+
+    listing = run([test_binary, "--gtest_list_tests"], timeout=60).stdout
+    tests = []
+    suite = ""
+    for line in listing.splitlines():
+        if not line.strip() or line.strip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            suite = line.split("#", 1)[0].strip()
+        elif suite == "GcnTest.":
+            test_name = line.split("#", 1)[0].strip()
+            if test_name and not test_name.startswith("#"):
+                tests.append("GcnTest."+test_name)
+    if len(tests) != 71 or len(set(tests)) != len(tests) or expected not in tests:
+        raise RuntimeError("GCN test discovery differs from verified upstream suite")
+    if tests[:len(passed)] != passed or tests[len(passed)] != expected:
+        raise RuntimeError("GCN tests preceding the trap do not match upstream order")
+
+    gdb = shutil.which("gdb")
+    if gdb:
+        command = [gdb, "--quiet", "--batch",
+                   "-ex", "set pagination off",
+                   "-ex", "set debuginfod enabled off",
+                   "-ex", "handle SIGTRAP stop print nopass",
+                   "-ex", "run",
+                   "-ex", "thread apply all bt 22",
+                   "-ex", "info registers",
+                   "--args", str(test_binary), "--gtest_filter="+expected]
+        try:
+            debug_rc = run(command, log=out/"gcn-sigtrap-gdb.log",
+                           timeout=180, check=False)
+        except subprocess.TimeoutExpired:
+            debug_rc = 124
+            (out/"gcn-sigtrap-gdb-timeout.txt").write_text("gdb took longer than allowed\n")
+    else:
+        debug_rc = None
+        (out/"gcn-sigtrap-gdb-unavailable.txt").write_text(
+            "gdb is unavailable on this host; full GCN suite remains failed\n")
+
+    rest = tests[len(passed)+1:]
+    isolated = []
+    for i, test in enumerate(rest, 1):
+        filename = f"{i:02d}-"+test.replace(".", "_")+".log"
+        try:
+            isolated_rc = run([test_binary, "--gtest_filter="+test],
+                              log=out/"gcn-isolated"/filename, timeout=90,
+                              check=False)
+        except subprocess.TimeoutExpired:
+            isolated_rc = 124
+        isolated.append({"test": test, "returncode": isolated_rc,
+                         "passed": isolated_rc == 0, "log": "gcn-isolated/"+filename})
+    status = {
+        "passed": False,
+        "upstream_test_count": len(tests),
+        "passed_before_trap": len(passed),
+        "trapped_test": failed_at,
+        "trapped_signal": "SIGTRAP",
+        "gdb_exit": debug_rc,
+        "isolated_followup_tests": isolated,
+        "independent_followup_failures": [t["test"] for t in isolated if not t["passed"]],
+        "all_tests_passed": False,
+        "gameplay_run_does_not_override_test_failure": True,
+        "cross_title_verified": False,
+    }
+    (out/"gcn-status.json").write_text(json.dumps(status, indent=2, sort_keys=True)+"\n")
+    note("GCN_STATUS=UNRESOLVED_SIGTRAP captured stack and "+
+         str(len(rest))+" independent subsequent tests")
+    return status
+
+
 def build(out):
     # Upstream only declares the emulator with ENABLE_TESTS=OFF, while the
     # GCN test target requires ENABLE_TESTS=ON. Keep their CMake caches separate.
@@ -1057,14 +1144,21 @@ def build(out):
     if len(test_bins) != 1:
         raise RuntimeError("cannot uniquely locate built GCN test binary")
     test_report = out/"gcn-tests.json"
-    run([test_bins[0], "--gtest_output=json:"+str(test_report)],
-        log=out/"gcn-tests.log", timeout=1800)
-    if not test_report.is_file():
-        raise RuntimeError("GCN tests produced no results")
-    suite = json.loads(test_report.read_text())
-    if int(suite.get("tests", 0)) < 1 or int(suite.get("failures", 0)):
-        raise RuntimeError("GCN test count/failure gate did not pass")
-    note("GCN_TESTS=PASS total="+str(suite["tests"]))
+    gcn_rc = run([test_bins[0], "--gtest_output=json:"+str(test_report)],
+                 log=out/"gcn-tests.log", timeout=1800, check=False)
+    if gcn_rc:
+        gcn_status = diagnose_known_gcn_trap(test_bins[0], out, gcn_rc)
+    else:
+        if not test_report.is_file():
+            raise RuntimeError("GCN tests produced no results")
+        suite = json.loads(test_report.read_text())
+        if int(suite.get("tests", 0)) < 1 or int(suite.get("failures", 0)):
+            raise RuntimeError("GCN test count/failure gate did not pass")
+        gcn_status = {"passed": True, "upstream_test_count": int(suite["tests"]),
+                      "gcn_test_failures": 0, "all_tests_passed": True}
+        (out/"gcn-status.json").write_text(
+            json.dumps(gcn_status, indent=2, sort_keys=True)+"\n")
+        note("GCN_TESTS=PASS total="+str(suite["tests"]))
     binary = BUILD/"shadps4"
     if not binary.is_file():
         raise RuntimeError("fresh-main build produced no shadps4")
@@ -1086,9 +1180,11 @@ def build(out):
     (out/"binary-provenance.json").write_text(json.dumps({
         "sha256": sha256(binary), "no_game_specific_binary_markers": True,
         "readbacks_override": False, "upstream_main": UPSTREAM_MAIN,
-        "gcn_test_count": int(suite["tests"]), "gcn_test_failures": int(suite["failures"]),
+        "gcn_test_count": gcn_status["upstream_test_count"],
+        "gcn_suite_passed": gcn_status["passed"],
+        "gcn_trap": gcn_status.get("trapped_test"),
     }, indent=2)+"\n")
-    return binary
+    return binary, gcn_status
 
 def gameplay(binary, out):
     auto = HELPERS/"auto.py"
@@ -1197,13 +1293,15 @@ def main():
         result["phase"] = "SUBMODULES"
         initialize_exact_submodules(out)
         result["phase"] = "BUILD"
-        binary = build(out)
+        binary, gcn_status = build(out)
+        result["gcn_status"] = gcn_status
         result["binary"]=str(binary)
         result["binary_sha256"]=sha256(binary)
         result["status"]="BUILD_PASS"
         if args.build_only:
+            result["status"] = "BUILD_PASS_AND_GCN_PASS" if gcn_status["passed"] else "BUILD_PASS_GCN_TRAP"
             package(out, result)
-            return 0
+            return 0 if gcn_status["passed"] else 1
         result["phase"]="GAMEPLAY"
         rc, digest, capture = gameplay(binary, out)
         result["gameplay_automation_exit"] = rc
@@ -1214,10 +1312,16 @@ def main():
         result["rendered_gameplay_verified"] = False
         result["cross_title_verified"] = False
         capture_ok = bool(result.get("capture_evidence", {}).get("visual_sequence_collected"))
-        result["status"] = ("VISUAL_SEQUENCE_CAPTURED_UNREVIEWED"
-                            if rc == 0 and capture_ok else "CAPTURE_OR_INPUT_INCOMPLETE")
+        if not gcn_status["passed"]:
+            result["status"] = ("VISUAL_CAPTURE_WITH_UNRESOLVED_GCN_TRAP"
+                                if rc == 0 and capture_ok else
+                                "GCN_TRAP_AND_GAMEPLAY_CAPTURE_INCOMPLETE")
+        else:
+            result["status"] = ("VISUAL_SEQUENCE_CAPTURED_UNREVIEWED"
+                                if rc == 0 and capture_ok else
+                                "CAPTURE_OR_INPUT_INCOMPLETE")
         package(out, result)
-        return 0 if rc == 0 and capture_ok else 1
+        return 0 if gcn_status["passed"] and rc == 0 and capture_ok else 1
     except BaseException as exc:
         result["status"]="FAILED"
         result["error"]=repr(exc)
