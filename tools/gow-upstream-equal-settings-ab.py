@@ -246,7 +246,8 @@ def main():
         first=launch("previous-rendered",GOOD,GOOD_SHA,capture_script)
         result["runs"].append(first)
         fraction=first["max_visible_fraction"]
-        if (fraction is None or fraction<0.08 or first["radv_device_lost"]):
+        if (fraction is None or fraction<0.08 or first["radv_device_lost"] or
+                first["guest_exit"] in (-11,-6,-9) or first["runner_failure"]):
             result["status"]="OLD_RENDERING_NOT_REPRODUCED_WITH_UNCHANGED_SETTINGS"
             say("STOP: old known binary does not render stably with current settings; not risking second GPU loss")
             return 1
