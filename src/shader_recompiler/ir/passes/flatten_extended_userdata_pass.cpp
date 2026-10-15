@@ -18,6 +18,7 @@
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/passes/srt.h"
+#include "shader_recompiler/ir/passes/srt_offset_preflight.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/ir/srt_gvn_table.h"
@@ -169,6 +170,9 @@ struct PassInfo {
 
     // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
+    // Dynamic pointer expressions that are not representable by the native
+    // SRT JIT are deliberately left for the existing guest-memory path.
+    u32 dynamic_offsets_deferred{};
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
         auto it = pointer_uses.find(inst);
@@ -593,6 +597,13 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         return;
     }
 
+    // Do not repeatedly enter a JIT that cannot evaluate a control-flow-
+    // dependent pointer. Leave its ReadConst/Buffer offset unresolved so
+    // the existing dynamic backing-memory route handles it correctly.
+    if (!CanLowerSrtOffsetStructurally(off_dw)) {
+        ++pass_info.dynamic_offsets_deferred;
+        return;
+    }
     if (!PushPtr(c, pass_info, off_dw)) {
         LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
         return;
@@ -609,6 +620,10 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         if (src_off_dw.IsImmediate()) {
             c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
         } else {
+            if (!CanLowerSrtOffsetStructurally(src_off_dw)) {
+                ++pass_info.dynamic_offsets_deferred;
+                continue;
+            }
             if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
                 LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
                 continue;
@@ -669,6 +684,11 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
     }
 
     info.srt_info.flattened_bufsize_dw = pass_info.dst_off_dw;
+    if (pass_info.dynamic_offsets_deferred != 0) {
+        LOG_DEBUG(Render_Recompiler,
+                  "SRT dynamic offsets retained for guest-memory evaluation: {} in shader {:#x}",
+                  pass_info.dynamic_offsets_deferred, info.pgm_hash);
+    }
 }
 
 static bool IsReadConstSource(const IR::Value base) {
