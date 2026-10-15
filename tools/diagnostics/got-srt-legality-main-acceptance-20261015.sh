@@ -10,7 +10,7 @@ SOURCE="$TREE/source"
 BUILD="$TREE/build"
 LOG_ROOT="$HOME/projects/shadps4/logs"
 PARENT="319634130ac8098a5bb90fd588f3b5868fe71f9a"
-COMMIT="73840e29b62c50d386d79dee387531a11374c322"
+COMMIT="b8f9de8ce71fa178cc528554593a4540ff86a5e6"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 mkdir -p "$LOG_ROOT"
 if [[ "$#" -eq 0 ]]; then
@@ -173,7 +173,7 @@ else
     echo "SRT_LEGALITY_GCN_TESTS=NOT_CONFIGURED; continuing isolated gameplay trial only"
     tail -n 25 "$RUN/build.log" >"$RUN/info/gcn-config-failure.log"
 fi
-[[ ! -e "$PLAY" ]] || { echo "PROOF_PROFILE_ALREADY_EXISTS=$PLAY"; exit 4; }
+[[ ! -e "$PLAY" && ! -L "$PLAY" ]] || { echo "PROOF_PROFILE_ALREADY_EXISTS=$PLAY"; exit 4; }
 mkdir -p "$PLAY"
 # Copy unchanged portable user/profile from the same baseline as the 21:16 TSC run.
 # Never share saves or credentials with the uploaded diagnostic archive.
