@@ -4,6 +4,7 @@
 // Standalone host-concurrency regression for the actual multi-port audio
 // synchronization helper used by sceAudioOutOutputs.
 #include <array>
+#include <cstdint>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
