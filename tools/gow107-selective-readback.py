@@ -422,6 +422,156 @@ void UpdateBufferWriteExtent(IR::Inst& inst, Info& info, const Profile& profile)
     }
 
 
+def adapt_region_manager(data: bytes):
+    text = data.decode()
+    if "gpu_selective_tracked" in text:
+        raise RuntimeError("Selective GPU readback state already exists")
+
+    ctor_old = '''        cpu.Fill(true);
+        gpu.Fill(false);
+    }
+'''
+    ctor_new = '''        cpu.Fill(true);
+        gpu.Fill(false);
+        gpu_selective_tracked.Fill(false);
+    }
+'''
+    text = replace_once(text, ctor_old, ctor_new, "selective tracker initialization")
+
+    insert_anchor = '''    template <StateOp cpu_op, StateOp gpu_op, bool locked = true>
+    void ChangeRegionState(u64 offset, u64 size) {
+'''
+    methods = r'''    // Mark only a proven GPU-written range for exact CPU-read synchronization.
+    // This is independent of the global readback mode and therefore does not
+    // protect unrelated declared buffer capacity.
+    void MarkRegionAsGpuModifiedTracked(u64 offset, u64 size) {
+        if (readbacks_mode == GpuReadbacksMode::Precise) {
+            ChangeRegionState<StateOp::Clear, StateOp::Set>(offset, size);
+            return;
+        }
+
+        const auto bounds = GetBounds(offset, size);
+        bool update_watchers{};
+        RegionBits write_prot{};
+        RegionBits read_prot{};
+        Bounds watcher_bounds = MIN_BOUNDS;
+
+        mutex.lock();
+        IterateWords(bounds, [&](u64 index, u64 mask) {
+            const u64 prev_cpu = cpu[index];
+            const u64 next_cpu = prev_cpu & ~mask;
+            write_prot[index] = (next_cpu ^ prev_cpu) & mask;
+            read_prot[index] = (~gpu_selective_tracked[index]) & mask;
+            const u64 prot_word = write_prot[index] | read_prot[index];
+            if (prot_word) {
+                update_watchers = true;
+                if (index <= watcher_bounds.start_word) {
+                    watcher_bounds.start_word = index;
+                    watcher_bounds.start_page = std::countr_zero(prot_word);
+                }
+                if (index >= watcher_bounds.end_word) {
+                    watcher_bounds.end_word = index;
+                    watcher_bounds.end_page =
+                        PAGES_PER_WORD - std::countl_zero(prot_word) - 1;
+                }
+            }
+        });
+
+        if (update_watchers) {
+            tracker->UpdatePageWatchersForRegion(cpu_addr, watcher_bounds, write_prot, read_prot,
+                                                 PageOp::Track, PageOp::Track);
+        }
+
+        IterateWords(bounds, [&](u64 index, u64 mask) {
+            UpdateState<StateOp::Clear, StateOp::Set>(index, mask);
+            const u64 summary_bit = u64{1} << index;
+            gpu_selective_tracked[index] |= mask;
+            gpu_selective_tracked.set_summary =
+                gpu_selective_tracked[index]
+                    ? (gpu_selective_tracked.set_summary | summary_bit)
+                    : (gpu_selective_tracked.set_summary & ~summary_bit);
+            gpu_selective_tracked.clear_summary =
+                gpu_selective_tracked[index] != ~u64{0}
+                    ? (gpu_selective_tracked.clear_summary | summary_bit)
+                    : (gpu_selective_tracked.clear_summary & ~summary_bit);
+        });
+        mutex.unlock();
+    }
+
+    // Drop only read watchers installed by MarkRegionAsGpuModifiedTracked.
+    // Precise mode owns its own read watchers through the normal GPU state.
+    void UntrackGpuModifiedPages(u64 offset, u64 size) {
+        if (readbacks_mode == GpuReadbacksMode::Precise) {
+            return;
+        }
+
+        const auto bounds = GetBounds(offset, size);
+        bool update_watchers{};
+        RegionBits write_prot{};
+        RegionBits read_prot{};
+        Bounds watcher_bounds = MIN_BOUNDS;
+
+        mutex.lock();
+        IterateWords(bounds, [&](u64 index, u64 mask) {
+            read_prot[index] = gpu_selective_tracked[index] & mask;
+            const u64 prot_word = read_prot[index];
+            if (prot_word) {
+                update_watchers = true;
+                if (index <= watcher_bounds.start_word) {
+                    watcher_bounds.start_word = index;
+                    watcher_bounds.start_page = std::countr_zero(prot_word);
+                }
+                if (index >= watcher_bounds.end_word) {
+                    watcher_bounds.end_word = index;
+                    watcher_bounds.end_page =
+                        PAGES_PER_WORD - std::countl_zero(prot_word) - 1;
+                }
+            }
+        });
+
+        if (update_watchers) {
+            tracker->UpdatePageWatchersForRegion(cpu_addr, watcher_bounds, write_prot, read_prot,
+                                                 PageOp::None, PageOp::Untrack);
+        }
+
+        IterateWords(bounds, [&](u64 index, u64 mask) {
+            const u64 summary_bit = u64{1} << index;
+            gpu_selective_tracked[index] &= ~mask;
+            gpu_selective_tracked.set_summary =
+                gpu_selective_tracked[index]
+                    ? (gpu_selective_tracked.set_summary | summary_bit)
+                    : (gpu_selective_tracked.set_summary & ~summary_bit);
+            gpu_selective_tracked.clear_summary =
+                gpu_selective_tracked[index] != ~u64{0}
+                    ? (gpu_selective_tracked.clear_summary | summary_bit)
+                    : (gpu_selective_tracked.clear_summary & ~summary_bit);
+        });
+        mutex.unlock();
+    }
+
+'''
+    text = replace_once(text, insert_anchor, methods + insert_anchor,
+                        "selective readback RegionManager methods")
+
+    member_old = '''    RegionBits cpu;
+    RegionBits gpu;
+    LockType mutex;
+'''
+    member_new = '''    RegionBits cpu;
+    RegionBits gpu;
+    RegionBits gpu_selective_tracked;
+    LockType mutex;
+'''
+    text = replace_once(text, member_old, member_new, "selective tracker member")
+
+    return text.encode(), {
+        "selective_page_read_watchers": True,
+        "unrelated_ranges_untouched": True,
+        "global_precise_required": False,
+        "game_specific": False,
+    }
+
+
 def adapt_memory_tracker(data: bytes):
     text = data.decode()
     if "void MarkRegionAsGpuModified(" in text:
