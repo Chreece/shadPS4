@@ -669,7 +669,7 @@ def adapt_buffer_cpp(data: bytes):
         old_dirty = one_line
     new_dirty = """    if (is_written) {
         if (bounded_write) {
-            memory_tracker->MarkRegionAsGpuModified(device_addr, proven_write_size);
+            memory_tracker->MarkRegionAsGpuModifiedTracked(device_addr, proven_write_size);
             gpu_modified_ranges.Add(device_addr, proven_write_size);
         } else {
             gpu_modified_ranges.Add(device_addr, size);
@@ -812,6 +812,33 @@ def adapt_rasterizer(data: bytes):
                 }
 """
     text = replace_once(text, old_inv, new_inv, "bounded image invalidation")
+
+    read_old = '''bool Rasterizer::ReadMemory(VAddr addr, u64 size, bool assume_locks) {
+    if (!IsMapped(addr, size)) {
+        // Not GPU mapped memory, can skip invalidation logic entirely.
+        return false;
+    }
+    buffer_cache.ReadMemory(addr, size, false, assume_locks);
+    return true;
+}'''
+    read_new = '''bool Rasterizer::ReadMemory(VAddr addr, u64 size, bool assume_locks) {
+    if (!IsMapped(addr, size)) {
+        // Not GPU mapped memory, can skip invalidation logic entirely.
+        return false;
+    }
+    if (buffer_cache.IsRegionGpuModified(addr, size)) {
+        static std::atomic<u64> selective_readbacks{0};
+        const u64 event = selective_readbacks.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (event <= 32 || (event & (event - 1)) == 0) {
+            LOG_INFO(Render_Vulkan,
+                     "SELECTIVE_GPU_READBACK address={:#x} bytes={} event={}",
+                     addr, size, event);
+        }
+    }
+    buffer_cache.ReadMemory(addr, size, false, assume_locks);
+    return true;
+}'''
+    text = replace_once(text, read_old, read_new, "selective readback telemetry")
     return text.encode(), {
         "runtime_dispatch_bound": True,
         "full_descriptor_range_preserved": True,
@@ -876,6 +903,7 @@ def transform_all(gow97, gow96, gow91, src, overrides):
         (RESOURCE_H, adapt_resource_h, "resource_h"),
         (RESOURCE_PATCH, adapt_resource_patch, "resource_patch"),
         (BUFFER_H, adapt_buffer_h, "buffer_h"),
+        (REGION_MANAGER_H, adapt_region_manager, "region_manager"),
         (MEMORY_TRACKER_H, adapt_memory_tracker, "memory_tracker"),
         (RASTER, adapt_rasterizer, "rasterizer"),
         (SERIAL, adapt_serialization, "serialization"),
