@@ -202,8 +202,7 @@ def transform_srt(data):
     fn=one(fn,
         "            const size_t code_begin = c.getSize();\n"
         "            if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {\n",
-        "            if (!CanLowerSrtOffsetStructurally(src_off_dw,\n"
-        "                                                pass_info.offset_support_cache)) {\n"
+        "            if (!CanLowerSrtOffsetStructurally(src_off_dw, pass_info.offset_support_cache)) {\n"
         "                ++pass_info.dynamic_offsets_deferred;\n"
         "                continue;\n"
         "            }\n"
