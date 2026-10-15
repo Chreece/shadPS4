@@ -15,6 +15,9 @@
 #include "core/libraries/kernel/memory.h"
 #include "core/memory.h"
 #include "libraries/error_codes.h"
+#if defined(__linux__) && defined(ARCH_X86_64)
+#include "core/cpu_id.h"
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -838,6 +841,11 @@ AddressSpace::AddressSpace() : impl{std::make_unique<Impl>()} {
     system_reserved_size = impl->system_reserved_size;
     user_base = impl->user_base;
     user_size = impl->user_size;
+#if defined(__linux__) && defined(ARCH_X86_64)
+    // Only guest address space receives PS4 CPU identity; host code retains native CPUID.
+    SetCpuIdGuestAddressRange(reinterpret_cast<VAddr>(system_managed_base),
+                              reinterpret_cast<VAddr>(user_base) + user_size);
+#endif
 }
 
 AddressSpace::~AddressSpace() = default;
