@@ -22,6 +22,9 @@ static constexpr DWORD MS_VC_EXCEPTION = 0x406D1388;
 #else
 #include <csignal>
 #include <pthread.h>
+#ifdef __linux__
+#include <dlfcn.h>
+#endif
 #ifdef ARCH_X86_64
 #include <Zydis/Formatter.h>
 #endif
@@ -283,6 +286,18 @@ void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
             if (thread && thread->DispatchSignal(NativeToOrbisSignal(sig), info_p, context_p)) {
                 return;
             }
+#ifdef __linux__
+            // An unhandled host access violation is fatal. Record its module-relative
+            // address so a PIE build can be symbolized across different ASLR bases.
+            Dl_info module{};
+            if (dladdr(code_address, &module) && module.dli_fbase) {
+                const auto module_offset = reinterpret_cast<uintptr_t>(code_address) -
+                                           reinterpret_cast<uintptr_t>(module.dli_fbase);
+                LOG_CRITICAL(Debug, "Unhandled native fault module={} offset={:#x} symbol={}",
+                             module.dli_fname ? module.dli_fname : "<unknown>", module_offset,
+                             module.dli_sname ? module.dli_sname : "<unknown>");
+            }
+#endif
             UNREACHABLE_MSG("Unhandled access violation at code address {}: {} address {}",
                             fmt::ptr(code_address),
                             is_write  ? "Write to"
