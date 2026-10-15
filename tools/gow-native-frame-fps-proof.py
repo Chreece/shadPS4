@@ -36,7 +36,7 @@ BUILD=WORK/"build"
 GCN=WORK/"build-gcn-tests"
 LOGS=HOME/"projects/shadps4/logs"
 OUT=LOGS/("gow-frame-fps-"+dt.datetime.now().strftime("%Y%m%d-%H%M%S")+"-"+str(os.getpid()))
-TOPIC="1f8ee7fd90277713092339fa6bc300e3a35698bc"
+TOPIC="3cb476400a33aa731332441379d37239480e1159"
 BASE="b2d7ec7d31f9ad9426db93afe079db8679b3e1e0"
 STACK="966fa45bc36ce2e46b8c14f77acb5fdd95d96fbe"
 PREVIOUS_SHA="3546bd6dac1b1dcd1327c24e83981ebf4f17d2ef32ab9f135db7a63f52ea8131"
@@ -53,7 +53,7 @@ ORIGINAL_BLOBS={
 TOPIC_BLOBS={
     DRIVER:"be76da4a710ca7336ea70caac3972191b9ff95b1",
     SWAPCHAIN:"76ddbe41832c99baf8f3e2e37d09570fb694d4ba",
-    HEADER:"dd046c93735036e817a9170acfe4d694f029a1d3",
+    HEADER:"449d45debffb6ea62fd8b1bfdd8fcbb45dc16eb5",
     TEST:"cdfd490f3a33f51519be423bad5c60561788f366",
 }
 PROFILE=PROJECT/"scripts/gow-generic-performance-profile.py"
