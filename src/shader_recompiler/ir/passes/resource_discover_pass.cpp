@@ -16,6 +16,25 @@ static bool IsSharpSource(const IR::Inst* inst) {
            inst->GetOpcode() == IR::Opcode::ReadConstBuffer;
 }
 
+// ReadFirstLane is redundant for an immediate or a scalar sharp source,
+// which is already identical across all lanes of the wave. Do not strip it
+// from arbitrary VGPR expressions: selecting the first active lane is
+// observable for divergent descriptors and must be preserved.
+static IR::Value UnwrapScalarSharpReadFirstLane(IR::Value value) {
+    IR::Value source = value;
+    while (auto* inst = source.TryInst()) {
+        if (inst->GetOpcode() != IR::Opcode::ReadFirstLane) {
+            break;
+        }
+        source = inst->Arg(0);
+    }
+    const IR::Inst* producer = source.TryInst();
+    if (source.IsImmediate() || (producer && IsSharpSource(producer))) {
+        return source;
+    }
+    return value;
+}
+
 struct StridePatchResult {
     IR::Value vsharp_dw1;
     u32 dw1_mask;
@@ -271,11 +290,7 @@ void DiscoverBufferSharp(IR::Block& block, IR::Inst& inst, ResourceDiscoveryList
     // Gather V# dwords
     vsharp.num_dwords = handle->NumArgs();
     for (size_t i = 0; i < handle->NumArgs(); ++i) {
-        vsharp.dwords[i] = handle->Arg(i);
-        if (auto* inst = vsharp.dwords[i].TryInst();
-            inst && inst->GetOpcode() == IR::Opcode::ReadFirstLane) {
-            vsharp.dwords[i] = inst->Arg(0);
-        }
+        vsharp.dwords[i] = UnwrapScalarSharpReadFirstLane(handle->Arg(i));
     }
 
     // Attempt to "see through" various V# access patterns and have binding reproduce them
@@ -301,11 +316,11 @@ void DiscoverImageSharp(IR::Block& block, IR::Inst& inst, ResourceDiscoveryList&
     // Gather T# dwords
     IR::Inst* tsharp_low = image_handle->Arg(0).Inst();
     for (size_t i = 0; i < tsharp_low->NumArgs(); ++i) {
-        tsharp.dwords[tsharp.num_dwords++] = tsharp_low->Arg(i);
+        tsharp.dwords[tsharp.num_dwords++] = UnwrapScalarSharpReadFirstLane(tsharp_low->Arg(i));
     }
     if (auto tsharp_high = image_handle->Arg(1).TryInst()) {
         for (size_t i = 0; i < tsharp_high->NumArgs(); ++i) {
-            tsharp.dwords[tsharp.num_dwords++] = tsharp_high->Arg(i);
+            tsharp.dwords[tsharp.num_dwords++] = UnwrapScalarSharpReadFirstLane(tsharp_high->Arg(i));
         }
     }
 
@@ -327,7 +342,7 @@ void DiscoverImageSharp(IR::Block& block, IR::Inst& inst, ResourceDiscoveryList&
     const IR::Inst* sampler = inst.Arg(1).Inst();
     auto& ssharp = resource.sharps[1];
     for (size_t i = 0; i < sampler->NumArgs(); ++i) {
-        ssharp.dwords[ssharp.num_dwords++] = sampler->Arg(i);
+        ssharp.dwords[ssharp.num_dwords++] = UnwrapScalarSharpReadFirstLane(sampler->Arg(i));
     }
     if (auto [ssharp_dw0, tsharp_dw3, found] = CheckDisableAnisoLod0Pattern(ssharp.dwords[0]);
         found) {
