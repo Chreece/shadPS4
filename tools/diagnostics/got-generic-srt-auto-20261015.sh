@@ -172,12 +172,16 @@ class XCross:
              [P, U, U, C.c_long, C.c_long, I, U, C.POINTER(U),
               C.POINTER(I), C.POINTER(U), C.POINTER(U), C.POINTER(P)])
         bind(self.x, 'XFree', [P])
+        bind(self.x, 'XSetErrorHandler', [P], P)
         bind(self.t, 'XTestQueryExtension', [P, C.POINTER(I), C.POINTER(I),
                                             C.POINTER(I), C.POINTER(I)])
         bind(self.t, 'XTestFakeKeyEvent', [P, C.c_uint, I, U])
         self.d = self.x.XOpenDisplay(display.encode())
         if not self.d:
             raise RuntimeError('Cannot open X display')
+        self.errors = []
+        self.handler = C.CFUNCTYPE(I, P, P)(lambda *_: self.errors.append('X11_ERROR') or 0)
+        self.previous_handler = self.x.XSetErrorHandler(C.cast(self.handler, P))
         self.pid_atom = self.x.XInternAtom(self.d, b'_NET_WM_PID', 0)
         self.claimed = False
         a, b, c, d = I(), I(), I(), I()
@@ -208,6 +212,7 @@ class XCross:
 
     def press(self, window, pid):
         sent = False
+        self.errors.clear()
         self.x.XGrabServer(self.d)
         try:
             if self.owner(window) != pid:
@@ -221,8 +226,8 @@ class XCross:
                     raise RuntimeError('Window focus changed: stopping automation')
                 self.x.XSetInputFocus(self.d, window, 2, 0)
                 self.x.XSync(self.d, 0)
-            if self.focus() != window or self.owner(window) != pid:
-                raise RuntimeError('Focus or PID verification failed')
+            if self.focus() != window or self.owner(window) != pid or self.errors:
+                raise RuntimeError('Focus, PID or X11 verification failed')
             sent = bool(self.t.XTestFakeKeyEvent(self.d, self.key, 1, 0))
             self.x.XSync(self.d, 0)
             self.claimed = True
@@ -241,6 +246,7 @@ class XCross:
         if self.d:
             self.x.XCloseDisplay(self.d)
             self.d = None
+            self.x.XSetErrorHandler(self.previous_handler)
 
 def check():
     connection = XCross(os.environ.get('DISPLAY') or ':0')
