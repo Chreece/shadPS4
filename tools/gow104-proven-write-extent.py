@@ -383,10 +383,13 @@ def adapt_memory_tracker(data: bytes):
 
     anchor = '''    /// Unmark region as modified from the host GPU
     void UnmarkRegionAsGpuModified'''
-    method = '''    /// Mark region as modified from the host GPU.
+    method = '''    /// Transfer ownership of a region from CPU to host GPU without
+    /// performing another upload. The retained page manager cannot represent
+    /// write-only guest protection: GPU-read tracking must be paired with CPU
+    /// write tracking, exactly like ForEachUploadRange(..., is_written=true).
     void MarkRegionAsGpuModified(VAddr cpu_addr, u64 size) noexcept {
         IteratePages<true>(cpu_addr, size, [](RegionManager* manager, u64 offset, u64 size) {
-            manager->template ChangeRegionState<StateOp::None, StateOp::Set>(offset, size);
+            manager->template ChangeRegionState<StateOp::Clear, StateOp::Set>(offset, size);
         });
     }
 
@@ -743,6 +746,8 @@ def self_test(gow97, gow96, gow91):
     assert b"struct BufferWriteExtent" in finals[RESOURCE_H]
     assert b"AnalyzeInvocationAffine" in finals[RESOURCE_PATCH]
     assert b"MarkRegionAsGpuModified" in finals[MEMORY_TRACKER_H]
+    assert b"ChangeRegionState<StateOp::Clear, StateOp::Set>" in finals[MEMORY_TRACKER_H]
+    assert b"ChangeRegionState<StateOp::None, StateOp::Set>" not in finals[MEMORY_TRACKER_H]
     assert b"proven_write_size" in finals[gow91.CPP]
     assert b"ComputeProvenWriteSize" in finals[RASTER]
     assert b"tracked_write_size" in finals[RASTER]
