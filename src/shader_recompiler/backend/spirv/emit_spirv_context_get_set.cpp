@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/assert.h"
-#include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/ir/attribute.h"
@@ -54,14 +53,16 @@ Id EmitGetUserData(EmitContext& ctx, IR::ScalarReg reg) {
 
 Id EmitReadConst(EmitContext& ctx, IR::Inst* inst, Id addr, Id offset) {
     const u32 flatbuf_off_dw = inst->Flags<u32>();
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled()) {
+    // A nonzero assigned flat-buffer offset means the SRT walker resolved the
+    // load. Offset zero marks a runtime-dependent pointer, not flat-buffer word
+    // zero. The shader's discovered memory requirement controls this decision;
+    // a global configuration preference cannot change the meaning of the IR.
+    if (flatbuf_off_dw != 0) {
         return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
     }
-    if (flatbuf_off_dw == 0) {
-        return ctx.OpFunctionCall(ctx.U32[1], ctx.read_const_dynamic, addr, offset);
-    } else {
-        return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
-    }
+    ASSERT_MSG(ctx.info.uses_dma && Sirit::ValidId(ctx.read_const_dynamic),
+               "Unresolved shader ReadConst lacks its backing-memory function");
+    return ctx.OpFunctionCall(ctx.U32[1], ctx.read_const_dynamic, addr, offset);
 }
 
 Id EmitReadConstBuffer(EmitContext& ctx, u32 handle, Id index) {
