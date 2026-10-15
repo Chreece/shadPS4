@@ -19,8 +19,10 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import stat
 import statistics
 import subprocess
+import tempfile
 import sys
 import tarfile
 import time
@@ -66,6 +68,40 @@ def config():
             raise RuntimeError("unsafe original configuration")
         result[str(f)]=digest(f) if f.exists() else None
     return result
+
+def config_snapshot():
+    snapshot={}
+    for key in config():
+        p=Path(key)
+        snapshot[key]=(p.read_bytes(),stat.S_IMODE(p.stat().st_mode)) if p.exists() else None
+    return snapshot
+
+def restore_original_config(snapshot):
+    restored=[]
+    for path,previous in snapshot.items():
+        p=Path(path)
+        if p.is_symlink():
+            raise RuntimeError("user config path unexpectedly changed to symlink: "+path)
+        existing=p.read_bytes() if p.is_file() else None
+        wanted=previous[0] if previous is not None else None
+        if existing==wanted:continue
+        if previous is None:
+            p.unlink(missing_ok=True)
+        else:
+            fd,temp=tempfile.mkstemp(dir=p.parent,prefix=".perf-config-restore-")
+            try:
+                os.fchmod(fd,previous[1])
+                with os.fdopen(fd,"wb") as f:
+                    f.write(wanted);f.flush();os.fsync(f.fileno())
+                os.replace(temp,p)
+            finally:
+                Path(temp).unlink(missing_ok=True)
+        restored.append(path)
+    for path,previous in snapshot.items():
+        observed=Path(path).read_bytes() if Path(path).is_file() else None
+        if observed!=(previous[0] if previous else None):
+            raise RuntimeError("original config could not be restored byte-for-byte")
+    return restored
 
 def verified_script():
     if (not STAGE3.is_file() or STAGE3.is_symlink()
@@ -271,6 +307,7 @@ def main():
             "user_dma_or_readback_setting_modified":False,
             "installed_emulator_modified":False,"rendering_baseline_preserved":True}
     before=None
+    original_config_snapshot=None
     helper=None
     try:
         if (not BINARY.is_file() or BINARY.is_symlink() or digest(BINARY)!=BINARY_SHA):
@@ -281,6 +318,7 @@ def main():
                           capture_output=True).returncode==0:
             raise RuntimeError("shadps4 is already active; close it yourself before profiling")
         before=config()
+        original_config_snapshot=config_snapshot()
         script=verified_script()
         gpu=find_amd_gpu()
         result["amd_gpu"]={k:str(v) for k,v in gpu.items()} if gpu else None
@@ -363,10 +401,16 @@ def main():
         (OUT/"traceback.txt").write_text(traceback.format_exc())
         return 1
     finally:
-        if before is not None:
-            result["original_config_hashes_unchanged"]=before==config()
-            if result["original_config_hashes_unchanged"] is False:
-                result["status"]="FAILED_CONFIGURATION_CHANGED"
+        if before is not None and original_config_snapshot is not None:
+            try:
+                result["emulator_automatically_changed_config"]=before!=config()
+                result["restored_config_paths"]=restore_original_config(original_config_snapshot)
+                result["original_config_hashes_unchanged"]=before==config()
+                if result["original_config_hashes_unchanged"] is False:
+                    result["status"]="FAILED_CONFIGURATION_CHANGED"
+            except BaseException as e:
+                result["status"]="FAILED_CONFIGURATION_RESTORE"
+                result["configuration_restore_error"]=repr(e)
         result["verified_binary_unchanged"]=BINARY.is_file() and digest(BINARY)==BINARY_SHA
         package(result)
 
