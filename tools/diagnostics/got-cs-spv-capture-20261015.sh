@@ -4,7 +4,7 @@ umask 077
 
 # Isolated gameplay test harness. Input injection is confined to the test
 # process, not emulator fixes, and starts only after a captured screenshot.
-REV='a181bb53c05f6479f026b7f64bfba5a550a40885'
+REV='23c26e8e3b7a59312882786dd86b0039343ecf3d'
 BRANCH='fix/generic-srt-readfirstlane-offset-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
 # Reuse only our previous, disposable generic candidate; never v55,
@@ -140,6 +140,10 @@ grep -Fq 'sceKernelLoadStartModule called with null module filename' \
   "$SRC/src/core/libraries/kernel/process.cpp" || fail 'Missing generic module filename fix.'
 grep -Fq 'force_align_arg_pointer' \
   "$SRC/src/core/libraries/kernel/process.cpp" || fail 'Missing guest-to-host kernel stack alignment.'
+grep -Fq 'case InterruptSelect::IrqUndocumented:' \
+  "$SRC/src/video_core/amdgpu/pm4_cmds.h" || fail 'Missing RELEASE_MEM selector-3 handler.'
+grep -Fq 'RELEASE_MEM interrupt selector 3 confirms a completed data write' \
+  "$SRC/src/video_core/amdgpu/pm4_cmds.h" || fail 'Missing general data-confirmation semantics.'
 python3 - "$SRC/src/core/cpu_patches.cpp" <<'VERIFY_CPU'
 from pathlib import Path
 import sys
@@ -288,6 +292,7 @@ cat > "$AUTO" <<'PY'
 #!/usr/bin/env python3
 import ctypes as C
 import ctypes.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -465,6 +470,9 @@ def main():
     xconn = XCross(os.environ.get('DISPLAY') or ':0')
     events = []
     input_enabled = True
+    last_frame_hash = None
+    identical_frames = 0
+    stopped_for_stale_frames = False
     started = time.monotonic()
     try:
         for index, when in enumerate(TIMES, 1):
@@ -486,10 +494,27 @@ def main():
                 log('CROSS_DISABLED_FOR_SAFETY='+event.get('reason', 'unknown'))
             else:
                 log('SCREENSHOT_NOT_READY='+str(index)+'; CROSS_NOT_SENT')
+            if event['screenshot'] != 'NOT_CAPTURED':
+                # Exact pixel-equivalent frame bytes across repeated X presses
+                # identify a stalled splash; don't run a useless 12-minute test.
+                current_hash = hashlib.sha256(
+                    (folder / event['screenshot']).read_bytes()).hexdigest()
+                identical_frames = identical_frames + 1 if current_hash == last_frame_hash else 1
+                last_frame_hash = current_hash
+                event['identical_frames'] = identical_frames
+                event['frame_sha256'] = current_hash
             events.append(event)
             event_path.write_text(json.dumps(events, indent=2)+'\n')
-        while time.monotonic() - started < DEADLINE and running(pid, binary):
-            time.sleep(1)
+            if identical_frames >= 10 and when >= 170:
+                reason = ('NO_FRAME_PROGRESS_AFTER_10_CAPTURES'
+                          ' (all screenshots pixel-identical despite X presses)')
+                (folder.parent / 'info' / 'stalled-frame.txt').write_text(reason+'\n')
+                log('AUTO_STALLED_FRAME='+reason)
+                stopped_for_stale_frames = True
+                break
+        if not stopped_for_stale_frames:
+            while time.monotonic() - started < DEADLINE and running(pid, binary):
+                time.sleep(1)
     finally:
         xconn.close()
     # End only the candidate launched by this test, never any existing ES-DE game.
@@ -524,8 +549,9 @@ fi
 export MESA_SHADER_CACHE_DISABLE=true
 export MESA_SPIRV_FAIL_DUMP_PATH="$LOG/spirv-failures"
 export SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS=1
-# Diagnose the original caller before fmt converts type-erased arguments.
-export SHADPS4_TRACE_LOG_FORMATS=1
+# The kernel-format crash is fixed and trace logging has verified there is
+# no remaining native fault. Avoid costly synchronous printf/fflush on each log.
+unset SHADPS4_TRACE_LOG_FORMATS || true
 unset SHADPS4_GHOST_BINDLESS_EXPERIMENT || true
 cd "$RUN"
 printf 'AUTO_GAME_STARTING=YES\nSCREENSHOTS=%s/screenshots\n' "$LOG"
