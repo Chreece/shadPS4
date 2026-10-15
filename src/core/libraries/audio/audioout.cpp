@@ -6,6 +6,7 @@
 #include <shared_mutex>
 #include <stop_token>
 #include <thread>
+#include <vector>
 #include <fmt/format.h>
 #include <magic_enum/magic_enum.hpp>
 
@@ -157,6 +158,7 @@ void AdjustVol() {
         if (auto port = port_table[i]) {
             std::unique_lock lock{port->mutex, std::try_to_lock};
             if (lock.owns_lock()) {
+                std::lock_guard backend_lock{port->backend_mutex};
                 port->impl->SetVolume(port->volume);
             }
         }
@@ -171,25 +173,33 @@ static void AudioOutputThread(std::shared_ptr<PortOut> port, const std::stop_tok
 
     Common::AccurateTimer timer(
         std::chrono::nanoseconds(1000000000ULL * port->buffer_frames / port->sample_rate));
+    // One worker-owned staging buffer preserves the submitted sample bytes while
+    // the guest prepares its next block. Never pass the mutable producer buffer
+    // to a backend that may block on SDL/OpenAL pacing.
+    std::vector<u8> staged_samples(port->BufferSize());
 
     while (true) {
         timer.Start();
-
         {
             std::unique_lock lock{port->mutex};
             if (!port->impl || stop.stop_requested()) {
                 break;
             }
-
-            if (port->output_ready) {
-                port->impl->Output(port->output_buffer);
-                port->output_ready = false;
-                port->last_output_time =
-                    Kernel::sceKernelGetProcessTime(); // moved from sceAudioOutOutput TOOD recheck
-            }
         }
 
-        port->output_cv.notify_all();
+        if (StageAudioOutputBuffer(*port, staged_samples.data(), staged_samples.size())) {
+            // Host audio conversion, queueing and pacing can be slow; they must
+            // not hold the guest submission mutex. Backend calls are serialized
+            // separately from the guest-facing buffer and status.
+            {
+                std::lock_guard backend_lock{port->backend_mutex};
+                port->impl->Output(staged_samples.data());
+            }
+            {
+                std::lock_guard lock{port->mutex};
+                port->last_output_time = Kernel::sceKernelGetProcessTime();
+            }
+        }
 
         if (stop.stop_requested()) {
             break;
@@ -343,8 +353,11 @@ s32 PS4_SYSV_ABI sceAudioOutOpen(UserService::OrbisUserServiceUserId user_id,
         // Start output thread - pass shared_ptr by value to keep port alive
         port->output_thread.Run([port](std::stop_token stop) { AudioOutputThread(port, stop); });
 
-        // Set initial volume
-        port->impl->SetVolume(port->volume);
+        // Set initial volume using the same lock as backend output.
+        {
+            std::lock_guard backend_lock{port->backend_mutex};
+            port->impl->SetVolume(port->volume);
+        }
 
     } catch (const std::bad_alloc&) {
         return ORBIS_AUDIO_OUT_ERROR_OUT_OF_MEMORY;
@@ -758,7 +771,10 @@ s32 PS4_SYSV_ABI sceAudioOutSetVolume(s32 handle, s32 flag, s32* vol) {
     if (flag & ORBIS_AUDIO_VOLUME_FLAG_RE_CH)
         port->volume[7] = *vol;
 
-    port->impl->SetVolume(port->volume);
+    {
+        std::lock_guard backend_lock{port->backend_mutex};
+        port->impl->SetVolume(port->volume);
+    }
 
     return ORBIS_OK;
 }
