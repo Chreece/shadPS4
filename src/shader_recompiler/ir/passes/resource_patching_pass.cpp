@@ -194,15 +194,9 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
             }
         }
     }
-    if (sharp_fetch.summary != Summary::Invalid) {
-        const u32 base = sharp_fetch.offsets[0];
-        for (u32 i = 1; i < sharp.num_dwords; ++i) {
-            if (sharp_fetch.offsets[i] - base != i) {
-                return sharp_fetch;
-            }
-        }
-        sharp_fetch.summary = Summary::SingleLoad;
-    }
+    // Do not coalesce partially-immediate descriptors into a flatbuf
+    // memcpy: that would silently replace immediate SHARP words.
+    sharp_fetch.TrySetSingleLoad(sharp.num_dwords);
     return sharp_fetch;
 }
 

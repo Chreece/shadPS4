@@ -220,6 +220,49 @@ static inline void SetFlatbufOffset(IR::Inst* inst, u16 offset) {
 static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
                           const IR::Value& off_dw);
 
+// Only wave-uniform scalar expressions may be evaluated by the host SRT
+// walker. ReadLane on per-lane data must remain a shader-side operation;
+// executing an arbitrary lane expression on the host changes guest behavior.
+static bool IsScalarSrtOffset(const IR::Value& value, u32 depth = 0) {
+    if (value.IsImmediate()) {
+        return value.Type() == IR::Type::U32;
+    }
+    const IR::Inst* inst = value.TryInst();
+    if (!inst || depth == 64) {
+        return false;
+    }
+    switch (inst->GetOpcode()) {
+    case IR::Opcode::GetUserData:
+    case IR::Opcode::ReadConst:
+    case IR::Opcode::ReadConstBuffer:
+        return true;
+    case IR::Opcode::ReadLane:
+    case IR::Opcode::ReadFirstLane:
+        return IsScalarSrtOffset(inst->Arg(0), depth + 1);
+    case IR::Opcode::IAdd32:
+    case IR::Opcode::ISub32:
+    case IR::Opcode::IMul32:
+    case IR::Opcode::ShiftLeftLogical32:
+    case IR::Opcode::ShiftRightLogical32:
+    case IR::Opcode::ShiftRightArithmetic32:
+    case IR::Opcode::BitwiseAnd32:
+    case IR::Opcode::BitwiseOr32:
+    case IR::Opcode::BitwiseXor32:
+    case IR::Opcode::BitwiseNot32:
+    case IR::Opcode::UMin32:
+    case IR::Opcode::UMax32:
+    case IR::Opcode::BitFieldUExtract:
+        for (size_t i = 0; i < inst->NumArgs(); ++i) {
+            if (!IsScalarSrtOffset(inst->Arg(i), depth + 1)) {
+                return false;
+            }
+        }
+        return true;
+    default:
+        return false;
+    }
+}
+
 #define ABORT_ON_FAILURE(expr)                                                                     \
     if (!(expr)) {                                                                                 \
         return false;                                                                              \
@@ -330,6 +373,28 @@ static bool EmitComputeOffsetShiftRightLogical32(Xbyak::CodeGenerator& c, Xbyak:
         POP_ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
         c.pop(rcx);
         c.shr(reg, cl);
+    }
+    return true;
+}
+
+static bool EmitComputeOffsetShiftRightArithmetic32(Xbyak::CodeGenerator& c,
+                                                    Xbyak::Reg32 reg, PassInfo& pass_info,
+                                                    IR::Inst* inst) {
+    ASSERT(!inst->AreAllArgsImmediates());
+    if (inst->Arg(0).IsImmediate()) {
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
+        c.mov(ecx, reg);
+        c.mov(reg, inst->Arg(0).U32());
+        c.sar(reg, cl);
+    } else if (inst->Arg(1).IsImmediate()) {
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
+        c.sar(reg, inst->Arg(1).U32());
+    } else {
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
+        c.push(reg.cvt64());
+        POP_ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
+        c.pop(rcx);
+        c.sar(reg, cl);
     }
     return true;
 }
@@ -492,11 +557,13 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     case IR::Opcode::ReadConst:
     case IR::Opcode::ReadConstBuffer:
     case IR::Opcode::ReadFirstLane:
+    case IR::Opcode::ReadLane:
     case IR::Opcode::IAdd32:
     case IR::Opcode::ISub32:
     case IR::Opcode::IMul32:
     case IR::Opcode::ShiftLeftLogical32:
     case IR::Opcode::ShiftRightLogical32:
+    case IR::Opcode::ShiftRightArithmetic32:
     case IR::Opcode::BitwiseAnd32:
     case IR::Opcode::BitwiseOr32:
     case IR::Opcode::BitwiseXor32:
@@ -513,6 +580,13 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
 static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
                           const IR::Value& off_dw) {
     ASSERT(reg != ecx && reg != edx);
+    if (off_dw.IsImmediate()) {
+        if (off_dw.Type() != IR::Type::U32) {
+            return false;
+        }
+        c.mov(reg, off_dw.U32());
+        return true;
+    }
     auto inst = off_dw.Inst();
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
@@ -525,10 +599,13 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
             return true;
         }
         return false;
+    case IR::Opcode::ReadLane:
     case IR::Opcode::ReadFirstLane:
-        // ReadFirstLane produces a scalar value. The SRT walker does not execute
-        // shader lanes, but when its operand is itself expressible from user data
-        // or flattened constants, the selected scalar value is that operand.
+        // The SRT walker cannot select guest GPU lanes. Only scalar
+        // expressions known to be wave-uniform can be evaluated here.
+        if (!IsScalarSrtOffset(inst->Arg(0))) {
+            return false;
+        }
         ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
         return true;
     case IR::Opcode::IAdd32:
@@ -545,6 +622,9 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
         return true;
     case IR::Opcode::ShiftRightLogical32:
         ABORT_ON_FAILURE(EmitComputeOffsetShiftRightLogical32(c, reg, pass_info, inst));
+        return true;
+    case IR::Opcode::ShiftRightArithmetic32:
+        ABORT_ON_FAILURE(EmitComputeOffsetShiftRightArithmetic32(c, reg, pass_info, inst));
         return true;
     case IR::Opcode::BitwiseAnd32:
         ABORT_ON_FAILURE(EmitComputeOffsetBitwiseAnd32(c, reg, pass_info, inst));
@@ -816,7 +896,16 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
                     !IsAllowedOffsetInstruction(inst)) {
                     continue;
                 }
-                for (size_t arg = inst->NumArgs(); arg--;) {
+                // The lane index of a wave-uniform value has no bearing on
+                // its value; never include GPU-varying lane selectors in
+                // the host walker dependency graph.
+                const bool lane_read = inst->GetOpcode() == IR::Opcode::ReadLane ||
+                                       inst->GetOpcode() == IR::Opcode::ReadFirstLane;
+                if (lane_read && !IsScalarSrtOffset(inst->Arg(0))) {
+                    continue;
+                }
+                const size_t num_args = lane_read ? 1 : inst->NumArgs();
+                for (size_t arg = num_args; arg--;) {
                     const IR::Value arg_value = inst->Arg(arg);
                     if (arg_value.IsImmediate()) {
                         continue;

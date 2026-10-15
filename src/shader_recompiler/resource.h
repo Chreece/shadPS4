@@ -39,6 +39,24 @@ struct SharpFetch {
 
     bool operator==(const SharpFetch&) const = default;
 
+    // A single memcpy is valid only if every descriptor dword is fetched
+    // from flat user data, in the same order. An immediate interleaved with
+    // consecutive offsets must retain its immediate value.
+    constexpr bool TrySetSingleLoad(u32 num_dwords) noexcept {
+        if (summary == Summary::Invalid || num_dwords == 0 || num_dwords > N ||
+            load_mask != ((1u << num_dwords) - 1u)) {
+            return false;
+        }
+        const u32 base = offsets[0];
+        for (u32 i = 1; i < num_dwords; ++i) {
+            if (offsets[i] != base + i) {
+                return false;
+            }
+        }
+        summary = Summary::SingleLoad;
+        return true;
+    }
+
     template <u32 num_dwords = N>
         requires(num_dwords <= N)
     constexpr bool Fetch(const u32* flatbuf, T* out) const {
