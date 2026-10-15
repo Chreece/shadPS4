@@ -813,6 +813,99 @@ def prepare_source(out):
          "commit", "-m", "main proof: generic CPU and Phase84 emulator fixes"],
         log=out/"merge-commit.log", cwd=SRC, timeout=60)
 
+def resume_proven_source(out, source_workspace):
+    """Resume only the exact source checkpoint whose diff we inspected."""
+    global WORK, SRC, BUILD, HELPERS
+    requested = Path(source_workspace).expanduser()
+    if requested.is_symlink() or not requested.is_dir():
+        raise RuntimeError("resume directory missing or symlinked: " + str(requested))
+    candidate = requested.resolve(strict=True)
+    if candidate.parent != (ROOT/"tests").resolve() or (
+            candidate.name != "main-proof-20261015-151529-3107006"):
+        raise RuntimeError("resume path does not match the verified proof workspace")
+    WORK = candidate
+    SRC = WORK/"source"
+    BUILD = WORK/"build"
+    HELPERS = WORK/"helpers"
+    if not (SRC/".git").is_dir() or not HELPERS.is_dir() or SRC.is_symlink():
+        raise RuntimeError("source or retained helpers missing")
+    parents = run(["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+                  cwd=SRC).stdout.strip().split()
+    if len(parents) != 3 or parents[1:] != [UPSTREAM_MAIN, GENERIC_STACK]:
+        raise RuntimeError("source history is not the verified upstream + general fixes")
+    if run(["git", "ls-files", "-u"], cwd=SRC).stdout.strip():
+        raise RuntimeError("source has unmerged Git files")
+    diff = run(["git", "diff", "--binary", UPSTREAM_MAIN, "--",
+                "src", "CMakeLists.txt", "cmake"], cwd=SRC).stdout
+    expected = "71c967af7f362ec4bb0c856b3be2f01db350bb1ed3669638057a714f769b6829"
+    if hashlib.sha256(diff.encode()).hexdigest() != expected:
+        raise RuntimeError("patched source no longer matches uploaded source-diff")
+    remote = run(["git", "ls-remote", UPSTREAM_URL, "refs/heads/main"],
+                 timeout=120).stdout.strip().splitlines()
+    if len(remote) != 1 or remote[0].split()[0].lower() != UPSTREAM_MAIN:
+        raise RuntimeError("upstream advanced; a fresh upstream port is required")
+    audit_source(out)
+    if sha256(out/"source-diff.patch") != expected:
+        raise RuntimeError("resumed source audit fingerprint mismatch")
+    old_logs = LOG_ROOT/"gow-main-proof-20261015-151529-3107006"
+    copies = {
+        "generic-transform-proof.json":
+            "e6c3121cdbb96217e71960d221aeac28cad7eb493fe6881987ef7b1c2f50a465",
+        "helpers-sha256.json":
+            "652eb876e6bcbf608e78163c866bfef8f3a0cbbb73e8cf52cb331011f94334de",
+        "shader-cache-version-union.json":
+            "a946b3b13019b56811cffb8643542fc8af4ce73cb6e1c6adc3fe460ce9a66067",
+        "vendor-patch-whitespace-audit.json":
+            "c17133d9c118e053cf70ec2aa7f4d2e147e6a8b388e1171bb8d84ae2633711b8",
+    }
+    retained = []
+    for name, checksum in copies.items():
+        p = old_logs/name
+        if not p.exists():
+            continue
+        if not p.is_file() or p.is_symlink() or sha256(p) != checksum:
+            raise RuntimeError("prior source-proof artifact changed: "+name)
+        shutil.copy2(p, out/name)
+        retained.append(name)
+    (out/"resume-provenance.json").write_text(json.dumps({
+        "resume_source": str(WORK),
+        "upstream_main": UPSTREAM_MAIN,
+        "generic_stack": GENERIC_STACK,
+        "source_diff_sha256": expected,
+        "old_compiled_objects_reused": False,
+        "retained_proof_files": retained,
+    }, indent=2, sort_keys=True)+"\n")
+    note("RESUME=exact upstream source and general fixes verified")
+
+
+def initialize_exact_submodules(out):
+    """Materialize recorded third-party revisions, with no changes to emulator code."""
+    f = SRC/".gitmodules"
+    if not f.is_file() or f.is_symlink():
+        raise RuntimeError("upstream .gitmodules missing or unsafe")
+    blob = run(["git", "hash-object", ".gitmodules"], cwd=SRC).stdout.strip()
+    if blob != "6ebfefa22267aa36fae25acb60678cf05c473a70":
+        raise RuntimeError("submodule manifest is not the verified upstream revision")
+    note("SUBMODULES=fetch exact recorded dependency commits")
+    note("SUBMODULE_LOG=" + str(out/"submodules-update.log"))
+    run(["git", "submodule", "sync", "--recursive"],
+        log=out/"submodules-sync.log", cwd=SRC, timeout=240)
+    run(["git", "submodule", "update", "--init", "--recursive", "--jobs", "4"],
+        log=out/"submodules-update.log", cwd=SRC, timeout=5400)
+    lines = run(["git", "submodule", "status", "--recursive"],
+                cwd=SRC, timeout=180).stdout.splitlines()
+    if len(lines) < 15 or any(not line.startswith(" ") for line in lines):
+        raise RuntimeError("incomplete/unexpected submodule revisions: "+repr(lines[:12]))
+    for rel in ("externals/ext-boost", "externals/spdlog", "externals/fmt",
+                "externals/ffmpeg-core", "externals/zlib-ng",
+                "externals/vulkan-headers", "externals/sdl3"):
+        if not (SRC/rel/"CMakeLists.txt").is_file():
+            raise RuntimeError("required upstream dependency missing: "+rel)
+    (out/"submodule-revisions.txt").write_text(
+        "verified_gitmodules_blob=" + blob + "\n" + "\n".join(lines) + "\n")
+    note("SUBMODULES=PASS exact pinned modules "+str(len(lines)))
+
+
 def build(out):
     BUILD.mkdir(parents=True, exist_ok=True)
     args = ["cmake", "-S", SRC, "-B", BUILD, "-G", "Ninja",
