@@ -34,7 +34,13 @@ TEST_F(GcnTest, srt_phi_offset_deferred_without_native_codegen) {
     auto phi = block.PrependNewInst(block.end(), Shader::IR::Opcode::Phi);
     phi->SetFlags(Shader::IR::Type::U32);
     const Shader::IR::Value phi_value{&*phi};
-    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(phi_value));
+    std::unordered_map<const Shader::IR::Inst*, bool> structural_cache;
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        phi_value, structural_cache));
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        phi_value, structural_cache));
+    ASSERT_EQ(structural_cache.size(), 1u);
+    EXPECT_FALSE(structural_cache.at(&*phi));
 
     const auto dependent = block.PrependNewInst(
         block.end(), Shader::IR::Opcode::IAdd32,
