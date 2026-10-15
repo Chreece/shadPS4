@@ -411,67 +411,52 @@ def adapt_buffer_h(data: bytes):
 
 def adapt_buffer_cpp(data: bytes):
     text = data.decode()
-    old = '''std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
-                                                        bool is_written, bool is_texel_buffer) {
-    // For read-only buffers use device local stream buffer to reduce renderpass breaks.
-    if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size)) {
-        const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
-        memory->CopySparseMemory(device_addr, data, size);
-        stream_buffer.Commit();
-        return {&stream_buffer, offset};
-    }
-    const u64 first_block = device_addr >> block_shift;
-    const u64 last_block = (device_addr + size - 1) >> block_shift;
-    const auto* arena = GetArena(first_block, last_block);
-    EnsureResident(arena, first_block, last_block);
-    SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);
-    if (is_written) {
-        gpu_modified_ranges.Add(device_addr, size);
-    }
-    return {arena, arena->Offset(device_addr)};
-}
-'''
-    new = '''std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
+
+    old_sig = """std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
+                                                        bool is_written, bool is_texel_buffer) {"""
+    new_sig = """std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
                                                         bool is_written, bool is_texel_buffer,
-                                                        u32 proven_write_size) {
-    // A proven write extent separates descriptor/binding size from GPU ownership.
-    // The full range is still resident and receives CPU uploads.  Only bytes that
-    // the shader can actually reach become GPU-authoritative.
+                                                        u32 proven_write_size) {"""
+    text = replace_once(text, old_sig, new_sig, "ObtainBuffer definition")
+
+    # GoW91 already wraps the normal SynchronizeMemory call in its texel/image
+    # coherence evidence path. Insert the bounded-write decision without
+    # deleting or bypassing that retained logic.
+    sync_old = """    const bool image_synchronized =
+        SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);"""
+    sync_new = """    // A proven write extent separates descriptor/binding size from GPU ownership.
+    // Keep the full range resident and synchronized for reads, but do not mark
+    // bytes the shader cannot reach as GPU-authored.
     const bool bounded_write =
         is_written && !is_texel_buffer && proven_write_size != 0 && proven_write_size < size;
+    const bool image_synchronized =
+        SynchronizeMemory(arena, device_addr, size, is_written && !bounded_write,
+                          is_texel_buffer);"""
+    text = replace_once(text, sync_old, sync_new, "GoW91 synchronization hook")
 
-    // For read-only buffers use device local stream buffer to reduce renderpass breaks.
-    if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size)) {
-        const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
-        memory->CopySparseMemory(device_addr, data, size);
-        stream_buffer.Commit();
-        return {&stream_buffer, offset};
-    }
-    const u64 first_block = device_addr >> block_shift;
-    const u64 last_block = (device_addr + size - 1) >> block_shift;
-    const auto* arena = GetArena(first_block, last_block);
-    EnsureResident(arena, first_block, last_block);
-
-    if (bounded_write) {
-        // Upload the full readable binding without claiming every page as a GPU
-        // write. Then install precise GPU ownership/read protection only for the
-        // statically proven reachable store range.
-        SynchronizeMemory(arena, device_addr, size, false, false);
-        memory_tracker->MarkRegionAsGpuModified(device_addr, proven_write_size);
-        gpu_modified_ranges.Add(device_addr, proven_write_size);
-    } else {
-        SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);
-        if (is_written) {
+    old_dirty = """    if (is_written) {
+        gpu_modified_ranges.Add(device_addr, size);
+    }"""
+    # GoW91 token rewriting may have retained this statement on one line.
+    if old_dirty not in text:
+        one_line = "    if (is_written) { gpu_modified_ranges.Add(device_addr, size); }"
+        if one_line not in text:
+            raise RuntimeError("GPU dirty-range statement source shape changed")
+        old_dirty = one_line
+    new_dirty = """    if (is_written) {
+        if (bounded_write) {
+            memory_tracker->MarkRegionAsGpuModified(device_addr, proven_write_size);
+            gpu_modified_ranges.Add(device_addr, proven_write_size);
+        } else {
             gpu_modified_ranges.Add(device_addr, size);
         }
-    }
-    return {arena, arena->Offset(device_addr)};
-}
-'''
-    text = replace_once(text, old, new, "ObtainBuffer implementation")
+    }"""
+    text = replace_once(text, old_dirty, new_dirty, "bounded GPU dirty range")
+
     return text.encode(), {
         "full_binding_preserved": True,
         "bounded_write_ownership": True,
+        "gow91_texel_coherency_preserved": "TEXEL_STREAM_ROUTE" in text,
         "legacy_fallback_preserved": True,
     }
 
@@ -481,21 +466,24 @@ def adapt_rasterizer(data: bytes):
     if "ComputeProvenWriteSize" in text:
         raise RuntimeError("GoW104 rasterizer logic already present")
 
+    if "#include <limits>\n" not in text:
+        insert = text.find("\n\nnamespace Vulkan")
+        if insert < 0:
+            raise RuntimeError("Rasterizer include/namespace boundary missing")
+        text = text[:insert] + "\n#include <limits>\n#include <optional>" + text[insert:]
+
     anchor = "void Rasterizer::BindBuffers(const Shader::Info& stage"
     pos = text.find(anchor)
     if pos < 0:
         raise RuntimeError("BindBuffers anchor missing")
     line = text.rfind("\n", 0, pos) + 1
 
-    helper = r'''std::optional<u64> ComputeProvenWriteSize(const Shader::BufferWriteExtent& extent,
-                                               const AmdGpu::ComputeProgram& cs) {
+    helper = r'''std::optional<u64> ComputeProvenWriteSize(
+    const Shader::BufferWriteExtent& extent, const std::array<u64, 3>& local,
+    const std::array<u64, 3>& groups) {
     if (!extent.Usable()) {
         return std::nullopt;
     }
-
-    const std::array<u64, 3> local = {
-        cs.num_thread_x.full, cs.num_thread_y.full, cs.num_thread_z.full};
-    const std::array<u64, 3> groups = {cs.dim_x, cs.dim_y, cs.dim_z};
     for (u32 i = 0; i < 3; ++i) {
         if (local[i] == 0 || groups[i] == 0) {
             return std::nullopt;
@@ -552,14 +540,17 @@ def adapt_rasterizer(data: bytes):
 '''
     text = text[:line] + helper + text[line:]
 
-    old = '''                const auto [buffer, offset] = buffer_cache.ObtainBuffer(
+    old = """                const auto [buffer, offset] = buffer_cache.ObtainBuffer(
                     vsharp.base_address, size, desc.is_written, desc.is_formatted);
-'''
-    new = '''                u64 tracked_write_size = size;
+"""
+    new = """                u64 tracked_write_size = size;
                 if (desc.is_written && !desc.is_formatted &&
                     stage.sw_stage == Shader::SwStage::Compute) {
-                    if (const auto proven =
-                            ComputeProvenWriteSize(desc.write_extent, liverpool->GetCsRegs());
+                    const auto& cs = liverpool->GetCsRegs();
+                    const std::array<u64, 3> local = {
+                        cs.num_thread_x.full, cs.num_thread_y.full, cs.num_thread_z.full};
+                    const std::array<u64, 3> groups = {cs.dim_x, cs.dim_y, cs.dim_z};
+                    if (const auto proven = ComputeProvenWriteSize(desc.write_extent, local, groups);
                         proven && *proven != 0 && *proven < tracked_write_size) {
                         tracked_write_size = *proven;
                     }
@@ -567,20 +558,20 @@ def adapt_rasterizer(data: bytes):
                 const auto [buffer, offset] = buffer_cache.ObtainBuffer(
                     vsharp.base_address, static_cast<u32>(size), desc.is_written, desc.is_formatted,
                     static_cast<u32>(tracked_write_size));
-'''
+"""
     text = replace_once(text, old, new, "bounded ObtainBuffer call")
 
-    old_inv = '''                if (desc.is_written) {
+    old_inv = """                if (desc.is_written) {
                     // Raw storage-buffer writes can also make an aliased cached image stale.
                     texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);
                 }
-'''
-    new_inv = '''                if (desc.is_written) {
-                    // Invalidate only bytes the shader can provably reach. Unsupported
-                    // write expressions retain the legacy full binding range.
+"""
+    new_inv = """                if (desc.is_written) {
+                    // The Vulkan binding remains full-size. Only GPU-authored bytes
+                    // invalidate aliased image state when a proof is available.
                     texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, tracked_write_size);
                 }
-'''
+"""
     text = replace_once(text, old_inv, new_inv, "bounded image invalidation")
     return text.encode(), {
         "runtime_dispatch_bound": True,
