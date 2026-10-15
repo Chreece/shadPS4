@@ -19,7 +19,8 @@ namespace Shader::Optimization {
 // This predicate is a strict over-approximation of structural JIT support:
 // other dynamic failures (e.g. unassigned flat-buffer sources) continue through
 // the existing checked ComputeOffset fallback unchanged.
-[[nodiscard]] inline bool CanLowerSrtOffsetStructurally(\n    const IR::Value& offset, std::unordered_map<const IR::Inst*, bool>& cached) {
+[[nodiscard]] inline bool CanLowerSrtOffsetStructurally(
+    const IR::Value& offset, std::unordered_map<const IR::Inst*, bool>& cached) {
     if (offset.IsImmediate()) {
         return true;
     }
