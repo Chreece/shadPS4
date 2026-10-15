@@ -223,6 +223,15 @@ def validate_process(pid: int, binary: Path, launch):
     return mode
 
 
+def clean_gow_behavior_env(env):
+    removed = []
+    for key in list(env):
+        if key.startswith("SHADPS4_GOW"):
+            removed.append(key)
+            env.pop(key, None)
+    return sorted(removed)
+
+
 def xrun(args, env):
     cp = subprocess.run(["xdotool", *args], env=env, text=True,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -337,8 +346,12 @@ def self_test():
         assert names == {"drrun", "libdynamorio.so"}
 
         cfg = root / "CUSA34384.json"
-        patch_config(cfg, 2)
-        assert json.loads(cfg.read_text())["GPU"]["readbacks_mode"] == 2
+        patch_config(cfg, 0)
+        assert json.loads(cfg.read_text())["GPU"]["readbacks_mode"] == 0
+        fake_env = {"SHADPS4_GOW_SRT_AUTO_ROOTS": "2", "SHADPS4_GOW_FAKE": "1", "KEEP": "yes"}
+        removed = clean_gow_behavior_env(fake_env)
+        assert removed == ["SHADPS4_GOW_FAKE", "SHADPS4_GOW_SRT_AUTO_ROOTS"]
+        assert fake_env == {"KEEP": "yes"}
 
     stat = parse_stat((Path("/proc") / str(os.getpid()) / "stat").read_text())
     assert stat["start_ticks"] > 0 and stat["process_group"] > 0
@@ -395,7 +408,7 @@ def main():
         shutil.copy2(CFG, txn / "config.before")
 
     env = os.environ.copy()
-    env["SHADPS4_GOW_SRT_AUTO_ROOTS"] = "2"
+    removed_gow_env = clean_gow_behavior_env(env)
     env["RADV_DEBUG"] = "hang"
     env.setdefault("DISPLAY", ":0")
     xa = Path.home() / ".Xauthority"
@@ -422,6 +435,8 @@ def main():
             "automatic_controller_input": True,
             "other_controller_inputs": False,
             "readbacks_mode": args.readbacks_mode,
+            "removed_SHADPS4_GOW_env": removed_gow_env,
+            "active_SHADPS4_GOW_env": [],
             "dump_shaders": False,
             "srt_auto_roots": 2,
         }, indent=2) + "\n")
