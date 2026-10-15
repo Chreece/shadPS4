@@ -18,6 +18,21 @@ static void AddFlatbuf(Info& info) {
 
 void Visit(Info& info, const IR::Inst& inst) {
     switch (inst.GetOpcode()) {
+    case IR::Opcode::Phi: {
+        // SSA merges need their typed SPIR-V results and FP64 capability even
+        // when no arithmetic opcode declares the precision separately.
+        switch (inst.Flags<IR::Type>()) {
+        case IR::Type::F64:
+        case IR::Type::F64x2:
+        case IR::Type::F64x3:
+        case IR::Type::F64x4:
+            info.uses_fp64 = true;
+            break;
+        default:
+            break;
+        }
+        break;
+    }
     case IR::Opcode::GetAttribute:
     case IR::Opcode::GetAttributeU1:
     case IR::Opcode::GetAttributeU32:

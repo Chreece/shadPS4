@@ -12,6 +12,12 @@
 #include "gcn_test_runner.hpp"
 #include "instructions.hpp"
 #include "translator.hpp"
+#include "shader_recompiler/runtime_info.h"
+#include "shader_recompiler/recompiler.h"
+#include "shader_recompiler/ir/program.h"
+#include "shader_recompiler/ir/passes/ir_passes.h"
+#include "shader_recompiler/ir/microinstruction.h"
+#include "shader_recompiler/backend/spirv/emit_spirv.h"
 
 class GcnTest : public ::testing::Test {
 protected:
@@ -23,6 +29,88 @@ protected:
         gcn_test::Runner::DestroyInstance();
     }
 };
+
+TEST_F(GcnTest, f64_phi_emits_float64_type_and_capability) {
+    // A float64 value may originate entirely from an SSA merge: there is no
+    // FP64 arithmetic opcode to trigger feature discovery. Verify actual
+    // SPIR-V OpPhi typing and capability, not merely a C++ enum mapping.
+    Shader::Info info{};
+    info.hw_stage = Shader::HwStage::Compute;
+    info.sw_stage = Shader::SwStage::Compute;
+    Shader::IR::Program program{info};
+    Shader::Pools pools{};
+    auto* entry = pools.block_pool.Create(pools.inst_pool);
+    auto* then_block = pools.block_pool.Create(pools.inst_pool);
+    auto* merge = pools.block_pool.Create(pools.inst_pool);
+    program.blocks = {entry, then_block, merge};
+    program.post_order_blocks = {entry, then_block, merge};
+    // The deferred-Phi patcher advances from the first instruction in the
+    // entry block; include a harmless IR Void instruction as its initial node.
+    entry->AppendNewInst(Shader::IR::Opcode::Void, {});
+
+    auto* phi = &*merge->PrependNewInst(merge->begin(), Shader::IR::Opcode::Phi);
+    phi->SetFlags(Shader::IR::Type::F64);
+    phi->AddPhiOperand(entry, Shader::IR::Value{f64{1.25}});
+    phi->AddPhiOperand(then_block, Shader::IR::Value{f64{2.5}});
+
+    auto& start = program.syntax_list.emplace_back();
+    start.type = Shader::IR::AbstractSyntaxNode::Type::Block;
+    start.data.block = entry;
+    auto& branch = program.syntax_list.emplace_back();
+    branch.type = Shader::IR::AbstractSyntaxNode::Type::If;
+    branch.data.if_node.cond = Shader::IR::U1{Shader::IR::Value{true}};
+    branch.data.if_node.body = then_block;
+    branch.data.if_node.merge = merge;
+    auto& then_node = program.syntax_list.emplace_back();
+    then_node.type = Shader::IR::AbstractSyntaxNode::Type::Block;
+    then_node.data.block = then_block;
+    auto& end_if = program.syntax_list.emplace_back();
+    end_if.type = Shader::IR::AbstractSyntaxNode::Type::EndIf;
+    end_if.data.end_if.merge = merge;
+    auto& merge_node = program.syntax_list.emplace_back();
+    merge_node.type = Shader::IR::AbstractSyntaxNode::Type::Block;
+    merge_node.data.block = merge;
+    program.syntax_list.emplace_back().type = Shader::IR::AbstractSyntaxNode::Type::Return;
+
+    Shader::Profile profile{};
+    profile.supported_spirv = 0x00010600;
+    profile.subgroup_size = 32;
+    Shader::RuntimeInfo runtime{};
+    runtime.Initialize(Shader::HwStage::Compute, Shader::SwStage::Compute);
+    runtime.hw.cs.workgroup_size = {1, 1, 1};
+
+    Shader::Optimization::CollectShaderInfoPass(program, profile);
+    ASSERT_TRUE(info.uses_fp64);
+
+    Shader::Backend::Bindings bindings{};
+    const auto spirv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime, program, bindings);
+    ASSERT_GE(spirv.size(), 5u);
+    u32 f64_type{};
+    bool has_float64_capability{};
+    bool has_f64_phi{};
+    for (size_t pos = 5; pos < spirv.size();) {
+        const u32 word_count = spirv[pos] >> 16;
+        const auto op = static_cast<spv::Op>(spirv[pos] & 0xffffu);
+        ASSERT_GT(word_count, 0u);
+        ASSERT_LE(pos + word_count, spirv.size());
+        if (op == spv::Op::OpTypeFloat && word_count == 3u &&
+            spirv[pos + 2] == 64u) {
+            f64_type = spirv[pos + 1];
+        }
+        if (op == spv::Op::OpCapability && word_count >= 2u &&
+            spirv[pos + 1] == static_cast<u32>(spv::Capability::Float64)) {
+            has_float64_capability = true;
+        }
+        if (op == spv::Op::OpPhi && word_count >= 5u &&
+            f64_type != 0u && spirv[pos + 1] == f64_type) {
+            has_f64_phi = true;
+        }
+        pos += word_count;
+    }
+    EXPECT_TRUE(has_float64_capability);
+    EXPECT_NE(f64_type, 0u);
+    EXPECT_TRUE(has_f64_phi);
+}
 
 struct F32x2 {
     float a;
