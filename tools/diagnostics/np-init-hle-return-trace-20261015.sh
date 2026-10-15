@@ -266,7 +266,7 @@ if command -v xdotool >/dev/null && command -v import >/dev/null; then
     fi
 fi
 {
-  local trace="$(grep -c '^HLE_RESULT ' "$OUT/gdb.log" 2>/dev/null || true)"
+  trace="$(grep -c '^HLE_RESULT ' "$OUT/gdb.log" 2>/dev/null || true)"
   printf 'NP_HLE_RETURN_RECORDS=%s\n' "$trace"
   grep -E 'TRACE_STAGE=|HLE_RESULT |PTHREAD_ATTR |NP_INIT_RETURN=|CAPTURE_COMPLETE=' "$OUT/gdb.log" | tail -30 || true
 } >"$OUT/info/trace-summary.txt"
