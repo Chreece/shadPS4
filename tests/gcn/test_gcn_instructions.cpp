@@ -44,6 +44,9 @@ TEST_F(GcnTest, f64_phi_emits_float64_type_and_capability) {
     auto* merge = pools.block_pool.Create(pools.inst_pool);
     program.blocks = {entry, then_block, merge};
     program.post_order_blocks = {entry, then_block, merge};
+    // The deferred-Phi patcher advances from the first instruction in the
+    // entry block; include a harmless IR Void instruction as its initial node.
+    entry->AppendNewInst(Shader::IR::Opcode::Void, {});
 
     auto* phi = &*merge->PrependNewInst(merge->begin(), Shader::IR::Opcode::Phi);
     phi->SetFlags(Shader::IR::Type::F64);
