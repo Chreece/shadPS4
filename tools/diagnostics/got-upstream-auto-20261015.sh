@@ -180,6 +180,32 @@ cmake --build "$BUILD" --parallel 6 --target shadps4
 [[ -x "$BUILD/shadps4" ]] || fail 'No candidate executable produced.'
 sha256sum "$BUILD/shadps4"
 
+# Only the previous automatic upstream test profile is disposable.
+# Rename/reuse it rather than copying the stable v55 profile and filling disk
+# with a second full game-user directory.
+PREVIOUS_RUN="$PROJECT/play/auto-upstream-main-65cde43e"
+if [[ ! -e "$RUN" && -d "$PREVIOUS_RUN" && ! -L "$PREVIOUS_RUN" &&
+      -f "$PREVIOUS_RUN/test-provenance.txt" &&
+      ! -L "$PREVIOUS_RUN/test-provenance.txt" ]] &&
+   grep -Fxq 'revision=65cde43e2d9c062a66f564d8458fedb7b10889d6' \
+     "$PREVIOUS_RUN/test-provenance.txt" &&
+   grep -Fxq 'mode=upstream_auto_capture_then_cross' \
+     "$PREVIOUS_RUN/test-provenance.txt"; then
+  [[ -z "$(find "$PREVIOUS_RUN" -type l -print -quit)" ]] ||
+    fail 'Previous disposable profile contains an unexpected symbolic link.'
+  mv -- "$PREVIOUS_RUN" "$RUN"
+  python3 - "$RUN/test-provenance.txt" "$REV" <<'UPDATE_TEST_PROVENANCE'
+from pathlib import Path
+import sys
+file=Path(sys.argv[1])
+lines=file.read_text().splitlines()
+assert sum(line.startswith("revision=") for line in lines)==1
+assert "mode=upstream_auto_capture_then_cross" in lines
+lines=[("revision="+sys.argv[2]) if line.startswith("revision=") else line for line in lines]
+file.write_text("\n".join(lines)+"\n")
+UPDATE_TEST_PROVENANCE
+  echo 'REUSED_DISPOSABLE_UPSTREAM_PROFILE=YES'
+fi
 if [[ ! -d "$RUN" ]]; then
   PROFILE=''
   for p in "$PROJECT/play/manual-v55-direct" "$PROJECT/play/manual-v54-direct" \
