@@ -56,6 +56,25 @@ STAMP="${2:-$(date +%Y%m%d-%H%M%S)}"
 LOG="$LOGROOT/got-generic-auto-${REV:0:8}-$STAMP"
 mkdir -p "$LOG"/{screenshots,radv-home,spirv-failures,info}
 exec >"$LOG/session.log" 2>&1
+
+# Even a build failure or early fatal native fault must leave one uploadable
+# archive, without packaging the potentially huge Mesa shader cache.
+package_on_exit() {
+  local status=$?
+  trap - EXIT
+  if [[ ! -f "$LOG/exit-code.txt" ]]; then
+    printf '%s\n' "$status" > "$LOG/exit-code.txt"
+  fi
+  if [[ ! -f "$LOG.tar.gz" ]]; then
+    tar -czf "$LOG.tar.gz" -C "$LOG" \
+      --exclude='./radv-home' --exclude='./spirv-failures' . || true
+  fi
+  if [[ -f "$LOG.tar.gz" ]]; then
+    printf '%s\n' "$LOG.tar.gz" > "$LOGROOT/.got-generic-auto-latest"
+  fi
+}
+trap package_on_exit EXIT
+
 echo "REV=$REV"
 [[ -z "$(pgrep -u "$(id -u)" -x shadps4 || true)" ]] || fail 'Another shadPS4 process is running.'
 
@@ -418,7 +437,7 @@ for line in lines:
         out.append('SYMBOLIZER_MODULE_UNAVAILABLE ' + str(module))
 output_path.write_text('\n'.join(out or ['NO_UNHANDLED_NATIVE_FAULT_OBSERVED']) + '\n')
 SYMBOLIZE
-if tar -czf "$LOG.tar.gz" -C "$LOG" game.log exit-code.txt screenshots info input-and-screenshots.log; then
+if tar -czf "$LOG.tar.gz" -C "$LOG" game.log exit-code.txt screenshots info input-and-screenshots.log session.log; then
   printf '%s\n' "$LOG.tar.gz" > "$LOGROOT/.got-generic-auto-latest"
   printf 'SCREENSHOTS_ARCHIVE=%s.tar.gz\n' "$LOG"
 else
