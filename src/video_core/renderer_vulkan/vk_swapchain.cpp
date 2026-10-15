@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <limits>
 #include "common/assert.h"
+#include "common/frame_metrics.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
 #include "imgui/renderer/imgui_core.h"
@@ -142,6 +143,12 @@ bool Swapchain::Present() {
     } else {
         ASSERT_MSG(result == vk::Result::eSuccess, "Swapchain presentation failed: {}",
                    vk::to_string(result));
+    }
+
+    // Display refreshes may reuse old game content. Record them separately
+    // from newly produced guest frames for accurate performance diagnosis.
+    if (result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR) {
+        Common::FrameMetrics::RecordSwapchainPresent();
     }
 
     frame_index = (frame_index + 1) % image_count;
