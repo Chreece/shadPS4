@@ -59,7 +59,9 @@ TEST_F(GcnTest, srt_dynamic_select_and_guest_attribute_deferred) {
     EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
         Shader::IR::Value{&*selection}));
     const auto attribute = block.PrependNewInst(
-        block.end(), Shader::IR::Opcode::GetAttributeU32);
+        block.end(), Shader::IR::Opcode::GetAttributeU32,
+        {Shader::IR::Value{Shader::IR::Attribute::Position0},
+         Shader::IR::Value{u32{0}}});
     EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
         Shader::IR::Value{&*attribute}));
 }
