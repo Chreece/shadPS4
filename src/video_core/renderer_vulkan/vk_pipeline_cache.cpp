@@ -4,6 +4,7 @@
 #include <ranges>
 
 #include "common/hash.h"
+#include "common/gpu_cpu_probe.h"
 #include "common/io_file.h"
 #include "common/path_util.h"
 #include "core/debug_state.h"
@@ -339,6 +340,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
 PipelineCache::~PipelineCache() = default;
 
 const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectParams params) {
+    Common::GpuCpuProbe::Scope cpu_probe{Common::GpuCpuProbe::Slot::GraphicsPipeline};
     draw_indirect_params = params;
     if (!RefreshGraphicsKey()) {
         return nullptr;
@@ -369,6 +371,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
 }
 
 const ComputePipeline* PipelineCache::GetComputePipeline() {
+    Common::GpuCpuProbe::Scope cpu_probe{Common::GpuCpuProbe::Slot::ComputePipeline};
     if (!RefreshComputeKey()) {
         return nullptr;
     }
@@ -624,6 +627,7 @@ bool PipelineCache::RefreshComputeKey() {
 vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::RuntimeInfo& runtime_info,
                                               const std::span<const u32>& code, size_t perm_idx,
                                               Shader::Backend::Bindings& binding) {
+    Common::GpuCpuProbe::Scope cpu_probe{Common::GpuCpuProbe::Slot::CompileShaderModule};
     LOG_INFO(Render_Vulkan, "Compiling {} shader {:#x} {}", info.hw_stage, info.pgm_hash,
              perm_idx != 0 ? "(permutation)" : "");
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
