@@ -14,6 +14,7 @@ import difflib
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -1234,8 +1235,6 @@ def adapt_serialization(data: bytes):
         raise RuntimeError("ShaderMetaVersion source shape changed")
     old = text[pos:end + 2]
     # BufferResource raw bytes are serialized as part of InfoPersistent.
-    import re
-import shutil
     match = re.search(r"ShaderMetaVersion = (\d+)u;", old)
     if not match:
         raise RuntimeError("ShaderMetaVersion parse failed")
@@ -1447,7 +1446,7 @@ def self_test(gow97, gow96, gow91):
         assert_no_game_specific_source(rel, final)
     assert proof["resource_h"]["game_specific"] is False
     assert proof["resource_patch"]["game_specific"] is False
-    assert proof["gow103"]["game_specific"] is False
+    assert proof["srt_arithmetic_and_rollback"]["game_specific"] is False
     print("GOW109_SELF_TEST=PASS clean generic provenance; no historical GoW source markers", flush=True)
 
 
