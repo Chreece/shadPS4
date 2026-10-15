@@ -10,7 +10,7 @@ SOURCE="$TREE/source"
 BUILD="$TREE/build"
 LOG_ROOT="$HOME/projects/shadps4/logs"
 PARENT="42fdd3fb975987ba057bb879d9b06178605ef165"
-COMMIT="9ce6e1d6db918fc75cd59f620e80560efa513956"
+COMMIT="93544d2cec2ca0ab5b48886a6ad46027668eec19"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 mkdir -p "$LOG_ROOT"
 if [[ "$#" -eq 0 ]]; then
