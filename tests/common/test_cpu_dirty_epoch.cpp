@@ -62,6 +62,6 @@ int main() {
     Require(epoch.Snapshot()!=last_full_scan,
             "new-sparse-residency-forces-sweep");
 
-    std::printf("DMA_DIRTY_EPOCH_NATIVE=PASS cases=6\n");
+    std::printf("DMA_DIRTY_EPOCH_NATIVE=PASS cases=8\n");
     return 0;
 }
