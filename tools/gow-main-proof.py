@@ -44,13 +44,18 @@ UPSTREAM_MAIN = "b2d7ec7d31f9ad9426db93afe079db8679b3e1e0"
 GENERIC_STACK = "966fa45bc36ce2e46b8c14f77acb5fdd95d96fbe"
 
 HELPER_URLS = {
-    "gow89.py": "https://raw.githubusercontent.com/Chreece/shadPS4/3ec6cfb41ddb3be4c80c4ba6a6cef3a50947373e/tools/gow89-dma-residency.py",
-    "gow90.py": "https://raw.githubusercontent.com/Chreece/shadPS4/10d61d2a4e0d99fa174e3a037b8f0511c02271ea/tools/gow90-texel-ranges.py",
-    "gow91.py": "https://raw.githubusercontent.com/Chreece/shadPS4/3f7b03f4b816bf25e9352f10e985844c94413e8d/tools/gow91-texel-stream.py",
-    "gow96.py": "https://raw.githubusercontent.com/Chreece/shadPS4/239be281dc524f4992cfc11bde48af6f876b659c/tools/gow96-phi-buffer-load.py",
-    "gow103.py": "https://raw.githubusercontent.com/Chreece/shadPS4/98245b63d1fdd6210c69d9aa8392acf790e6361d/tools/gow103-srt-arithmetic.py",
-    "gow108.py": "https://raw.githubusercontent.com/Chreece/shadPS4/d053f273356704bba5793a8c039b0ed4558b65fc/tools/gow108-selective-write-fault.py",
-    "auto.py": "https://raw.githubusercontent.com/Chreece/shadPS4/343ae209e22391aff8ca513b536a858bb5ee4bfd/tools/gow-auto-gameplay.py",
+    # The upstream-layout adapter includes the same general shader SRT,
+    # DMA, texel alias, stream/coherency, and selective ownership fixes.
+    # Unlike the old incremental helpers it uses current ObtainBufferFlags.
+    "upstream.py": ("https://raw.githubusercontent.com/Chreece/shadPS4/"
+                    "745506e3ef2fd4df87ef703e6a10ac06945cd2bf/"
+                    "tools/gow110-main-transform.py"),
+    "gow96.py": ("https://raw.githubusercontent.com/Chreece/shadPS4/"
+                 "239be281dc524f4992cfc11bde48af6f876b659c/"
+                 "tools/gow96-phi-buffer-load.py"),
+    "auto.py": ("https://raw.githubusercontent.com/Chreece/shadPS4/"
+               "343ae209e22391aff8ca513b536a858bb5ee4bfd/"
+               "tools/gow-auto-gameplay.py"),
 }
 
 PHASE87_FILES = (
@@ -563,61 +568,35 @@ def apply_generic_fixes():
     for name, url in HELPER_URLS.items():
         fetch(url, HELPERS / name)
 
-    g89 = module(HELPERS/"gow89.py", "proof_g89")
-    g90 = module(HELPERS/"gow90.py", "proof_g90")
-    g91 = module(HELPERS/"gow91.py", "proof_g91")
     g96 = module(HELPERS/"gow96.py", "proof_g96")
-    g103 = module(HELPERS/"gow103.py", "proof_g103")
-    g108 = module(HELPERS/"gow108.py", "proof_g108")
+    upstream = module(HELPERS/"upstream.py", "proof_upstream")
 
-    # DMA residency -> exact image/buffer alias ranges -> formatted stream coherency.
-    sources = {rel:(SRC/rel).read_bytes() for rel in g89.CHANGED}
-    patched, _, _ = g89.apply_fix(sources)
-    for rel, data in patched.items():
-        write_changed(rel, data)
-    rel = g90.CPP
-    write_changed(rel, g90.adapt_source((SRC/rel).read_bytes())[0])
-    rel = g91.CPP
-    write_changed(rel, g91.adapt_source((SRC/rel).read_bytes())[0])
-
-    # Shader permutation metadata lifetime is a generic cache correctness fix.
+    # First retain the permutation metadata lifetime correction. This
+    # remains a generic shader cache fix independent of any game ID.
     apply_phase87()
 
-    # Phi-sourced descriptors.
+    # Retain the reviewed collaborator Phi-origin buffer descriptor fix.
+    # It is re-applied to upstream's resource discovery pass, not loaded from
+    # the previous local executable, shader dumps, or a game-specific patch.
     rel = g96.RESOURCE
-    data = (SRC/rel).read_bytes()
-    write_changed(rel, g96.adapt_resource(data, g96.collaborator_source())[0])
+    before = (SRC/rel).read_bytes()
+    after, _, phi_proof = g96.adapt_resource(before, g96.collaborator_source())
+    write_changed(rel, after)
 
-    # SRT evaluator fixes.  Retarget only the fingerprint gate; semantics stay identical.
-    flat_rel = "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp"
-    flat = (SRC/flat_rel).read_bytes()
-    gow98 = g103.load_gow98()
-    gow97 = gow98.load_gow97()
-    gow98.install_readfirstlane_support(gow97)
-    g103.FLAT_BASE_SHA256 = hashlib.sha256(flat).hexdigest()
-    g103.install_fixes(gow98, gow97)
-    flat = gow97.adapt_flatten(flat)[0]
-    flat = adapt_generic_srt_order(flat)
-    write_changed(flat_rel, flat)
+    # Apply generic equivalents of the tested historical DMA residency,
+    # texel/image-range coherency, formatted stream synchronization, bounded
+    # GPU write extents, ownership, and SRT arithmetic/dependency fixes.
+    # The previous helpers assumed pre-ObtainBufferFlags upstream code and
+    # cannot be safely applied to current main.
+    generic_proof = upstream.apply_to_tree(SRC)
+    (LOG_ROOT).mkdir(parents=True, exist_ok=True)
+    proof = {"phi_descriptor": phi_proof,
+             "upstream_generic_transform": generic_proof,
+             "old_helper_runtime_patches_reused": False,
+             "old_binary_or_compiled_objects_reused": False,
+             "game_specific_changes": False}
+    return proof
 
-    # Bounded storage writes + selective GPU/CPU ownership/readback.
-    # Run the buffer-cache transform on top of the already-applied GOW91 source.
-    rel = g108.RESOURCE_H
-    write_changed(rel, g108.adapt_resource_h((SRC/rel).read_bytes())[0])
-    rel = g108.RESOURCE_PATCH
-    write_changed(rel, g108.adapt_resource_patch((SRC/rel).read_bytes())[0])
-    rel = g108.BUFFER_H
-    write_changed(rel, g108.adapt_buffer_h((SRC/rel).read_bytes())[0])
-    rel = g108.REGION_MANAGER_H
-    write_changed(rel, g108.adapt_region_manager((SRC/rel).read_bytes())[0])
-    rel = g108.MEMORY_TRACKER_H
-    write_changed(rel, g108.adapt_memory_tracker((SRC/rel).read_bytes())[0])
-    rel = g91.CPP
-    write_changed(rel, g108.adapt_buffer_cpp((SRC/rel).read_bytes())[0])
-    rel = g108.RASTER
-    write_changed(rel, g108.adapt_rasterizer((SRC/rel).read_bytes())[0])
-    rel = g108.SERIAL
-    write_changed(rel, g108.adapt_serialization((SRC/rel).read_bytes())[0])
 
 def audit_source(out):
     diff = run(["git", "diff", "--binary", UPSTREAM_MAIN, "--", "src", "CMakeLists.txt", "cmake"],
@@ -975,7 +954,9 @@ def main():
             result["shader_cache_schema_union"] = json.loads(version_union.read_text())
         result["phase"]="GENERIC_FIXES"
         note("PATCH=generic fixes only")
-        apply_generic_fixes()
+        transforms = apply_generic_fixes()
+        (out/"generic-transform-proof.json").write_text(json.dumps(
+            transforms, indent=2, sort_keys=True)+"\n")
         (out/"helpers-sha256.json").write_text(json.dumps(
             {name: {"sha256": sha256(HELPERS/name), "source": url}
              for name, url in HELPER_URLS.items()}, indent=2, sort_keys=True) + "\n")
