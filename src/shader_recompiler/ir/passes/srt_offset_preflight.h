@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <cstddef>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -17,13 +19,16 @@ namespace Shader::Optimization {
 // This predicate is a strict over-approximation of structural JIT support:
 // other dynamic failures (e.g. unassigned flat-buffer sources) continue through
 // the existing checked ComputeOffset fallback unchanged.
-[[nodiscard]] inline bool CanLowerSrtOffsetStructurally(const IR::Value& offset) {
+[[nodiscard]] inline bool CanLowerSrtOffsetStructurally(\n    const IR::Value& offset, std::unordered_map<const IR::Inst*, bool>& cached) {
     if (offset.IsImmediate()) {
         return true;
     }
     const IR::Inst* first = offset.TryInst();
     if (first == nullptr) {
         return false;
+    }
+    if (auto hit = cached.find(first); hit != cached.end()) {
+        return hit->second;
     }
 
     std::vector<const IR::Inst*> pending{first};
@@ -63,6 +68,7 @@ namespace Shader::Optimization {
             // The native evaluator does not lower immediate widths above 32;
             // do not emit partial instructions that would subsequently fail.
             if (inst->Arg(2).IsImmediate() && inst->Arg(2).U32() > 32) {
+                cached[first] = false;
                 return false;
             }
             break;
@@ -71,6 +77,7 @@ namespace Shader::Optimization {
             // Phi, SelectU32, GetAttributeU32 and other IR instructions are
             // not valid operands in the scalar SRT JIT. This is NOT a shader
             // exclusion: the unflattened access remains for guest-memory IO.
+            cached[first] = false;
             return false;
         }
 
@@ -82,11 +89,18 @@ namespace Shader::Optimization {
             if (const IR::Inst* child = arg.TryInst()) {
                 pending.push_back(child);
             } else {
+                cached[first] = false;
                 return false;
             }
         }
     }
+    cached[first] = true;
     return true;
+}
+
+[[nodiscard]] inline bool CanLowerSrtOffsetStructurally(const IR::Value& offset) {
+    std::unordered_map<const IR::Inst*, bool> cache;
+    return CanLowerSrtOffsetStructurally(offset, cache);
 }
 
 } // namespace Shader::Optimization
