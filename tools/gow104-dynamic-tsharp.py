@@ -300,12 +300,13 @@ u32 DynamicTsharpArraySize() {
       "namespace Shader::Optimization {\n",
       helper+"namespace Shader::Optimization {\n",
       "dynamic T# runtime helpers")
+    if "const u32 array_size = info.hw_stage == HwStage::Compute ? DynamicTsharpArraySize() : 0;" not in text:
+        raise RuntimeError("core dynamic T# compute-stage gate missing")
     text=one(text,
-      "    const u32 array_size = info.hw_stage == HwStage::Compute ? DynamicTsharpArraySize() : 0;\n",
-      "    const bool dynamic_tsharp_stage =\n"
-      "        info.hw_stage == HwStage::Compute || info.hw_stage == HwStage::Fragment;\n"
-      "    const u32 array_size = dynamic_tsharp_stage ? DynamicTsharpArraySize() : 0;\n",
-      "dynamic T# shader stages")
+      "                   desc.post_op == existing.post_op && desc.array_size == existing.array_size;\n",
+      "                   desc.post_op == existing.post_op && desc.array_size == existing.array_size &&\n"
+      "                   desc.array_stride_dw == existing.array_stride_dw;\n",
+      "dynamic image descriptor dedup stride")
     if "MatchSharpTable" not in text or "ImageArrayHandle" not in text:
         raise RuntimeError("core dynamic T# resource patch did not apply")
     if re.search(r'0x[0-9a-fA-F]{8,}',text[text.find("MatchSharpTable"):text.find("PatchBufferSharp")]):
@@ -546,7 +547,7 @@ def build_candidate(gow103,gow98,gow97,gow96,gow91,base,phase90,phase89,helper,w
       gow104_dynamic_tsharp={
         "runtime_indexed_sampled_tables":True,
         "array_size":64,
-        "stages":["compute","fragment"],
+        "stages":["compute"],
         "global_readbacks":False,
         "game_specific":False,
       },
