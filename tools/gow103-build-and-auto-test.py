@@ -19,7 +19,7 @@ TESTS=ROOT/"tests"
 GOW103_URL=("https://raw.githubusercontent.com/Chreece/shadPS4/"
             "98245b63d1fdd6210c69d9aa8392acf790e6361d/tools/gow103-srt-arithmetic.py")
 AUTO_URL=("https://raw.githubusercontent.com/Chreece/shadPS4/"
-          "508b2c08480d30306950a087a57cb40be89d2200/tools/gow-auto-gameplay.py")
+          "682042a9b85fe0d018aa8824327c700fd04fca94/tools/gow-auto-gameplay.py")
 
 
 def fetch(url: str, dest: Path):
