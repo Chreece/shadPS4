@@ -61,9 +61,9 @@ PHASE87_FILES = (
 FORBIDDEN = (
     r"SHADPS4_GOW_",
     r"CUSA34384",
-    r"GOW43_",
-    r"GOW57_",
-    r"GOW58_",
+    r"God of War",
+    r"Ragnar",
+    r"\\bGOW(?:[0-9]+|_)",
     r"GOW_SRT_",
     r"0xe83356c8",
     r"0xad0b8f1f",
