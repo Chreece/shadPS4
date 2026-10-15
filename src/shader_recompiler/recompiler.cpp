@@ -91,6 +91,20 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
     Gcn::CFG cfg{gcn_block_pool, program.ins_list};
     EmitControlFlowGraph(program, pools, cfg, runtime_info, profile);
 
+    // Float control modes are part of the guest program state, even when
+    // subsequent optimizations eliminate the FP64 operations that exposed them.
+    // Capture that precision requirement before dead-code elimination.
+    if (profile.support_float64) {
+        for (IR::Block* const block : program.post_order_blocks) {
+            for (const IR::Inst& inst : block->Instructions()) {
+                if (inst.GetOpcode() == IR::Opcode::PackDouble2x32 ||
+                    inst.GetOpcode() == IR::Opcode::UnpackDouble2x32) {
+                    info.uses_fp64 = true;
+                }
+            }
+        }
+    }
+
     // On NVIDIA GPUs HW interpolation of clip distance values seems broken, and we need to emulate
     // it with expensive discard in PS.
     Shader::InjectClipDistanceAttributes(program, runtime_info);
