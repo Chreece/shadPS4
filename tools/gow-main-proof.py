@@ -783,7 +783,46 @@ def prepare_source(out):
         # or merge failure modes still abort rather than guessing.
         if run(["git", "ls-files", "-u"], cwd=SRC).stdout.strip():
             raise RuntimeError("unresolved merge conflicts remain")
-    run(["git", "diff", "--cached", "--check"], cwd=SRC)
+    # Verify the original third-party DynamoRIO patch byte-for-byte against
+    # the retained stack. Its five historical whitespace-only patch lines must
+    # remain intact: changing patch lines can change what the patch applies to.
+    vendored = "src/core/cpu_id_translation/dynamorio.patch"
+    retained_blob = run(["git", "rev-parse",
+                         "refs/remotes/chreece/generic-stack:" + vendored],
+                        cwd=SRC).stdout.strip()
+    merged_blob = run(["git", "hash-object", "--", vendored],
+                      cwd=SRC).stdout.strip()
+    indexed = run(["git", "ls-files", "-s", "--", vendored], cwd=SRC).stdout.split()
+    known_blob = "6c28c863a8f9f61cf030ac452f634a272ad5c1eb"
+    if (retained_blob != known_blob or merged_blob != known_blob or
+            len(indexed) < 3 or indexed[1] != known_blob):
+        raise RuntimeError("DynamoRIO patch provenance changed; refusing whitespace exception")
+
+    # Check *every* staged change, and accept only five known whitespace lines
+    # inherited from that exact immutable vendor patch. No other issue passes.
+    whitespace_check = run(["git", "diff", "--cached", "--check"],
+                           cwd=SRC, check=False)
+    expected_lines = []
+    for lineno in (82, 148, 157, 195, 223):
+        expected_lines.extend([f"{vendored}:{lineno}: trailing whitespace.", "+ "])
+    actual_lines = (whitespace_check.stdout +
+                    whitespace_check.stderr).splitlines()
+    if whitespace_check.returncode not in (0, 2) or (
+            whitespace_check.returncode == 0 and actual_lines) or (
+            whitespace_check.returncode != 0 and actual_lines != expected_lines):
+        raise RuntimeError("unexpected staged-source whitespace violation: " +
+                           repr(actual_lines))
+    # The source-formatting gate remains strict for all source changes.
+    run(["git", "diff", "--cached", "--check", "--", ".",
+         ":(exclude)" + vendored], cwd=SRC)
+    (out/"vendor-patch-whitespace-audit.json").write_text(json.dumps({
+        "path": vendored, "stack_blob_sha1": known_blob,
+        "merged_blob_sha1": merged_blob,
+        "preserved_exact_stack_bytes": True,
+        "historical_whitespace_lines": [82, 148, 157, 195, 223],
+        "all_other_staged_changes_pass_git_diff_check": True,
+    }, indent=2, sort_keys=True) + "\n")
+    note("VENDOR_PATCH=original retained unchanged; all other files whitespace-clean")
 
     # The stack contains one development runner; it is not emulator runtime source.
     for p in ("tools/gow45_latest_main_cpu_gow.py",):
