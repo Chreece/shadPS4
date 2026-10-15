@@ -4,7 +4,7 @@ umask 077
 
 # Isolated gameplay test harness. Input injection is confined to the test
 # process, not emulator fixes, and starts only after a captured screenshot.
-REV='5b79a46b77308b6320e42fa2e02f8372723baa7c'
+REV='ffe4ac1c045c2caafdb2d2f65eea79cc94b83a2a'
 BRANCH='fix/generic-srt-readfirstlane-offset-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
 # Reuse only our previous, disposable generic candidate; never v55,
@@ -153,6 +153,10 @@ assert "c.vrcpss(dst_reg, merge_reg, src_reg);" in code
 assert "c.vrsqrtss(dst_reg, merge_reg, src_reg);" in code
 print("GENERAL_SCALAR_CPU_RESTORE=VERIFIED", flush=True)
 VERIFY_CPU
+grep -Fq 'info.uses_fp64 = true;' \
+  "$SRC/src/shader_recompiler/recompiler.cpp" || fail 'Missing pre-optimization guest FP64 detection.'
+grep -Fq 'inst.GetOpcode() == IR::Opcode::PackDouble2x32' \
+  "$SRC/src/shader_recompiler/recompiler.cpp" || fail 'Missing GCN double-precision usage check.'
 grep -Fq 'set(FETCHCONTENT_SOURCE_DIR_FMT "${CMAKE_CURRENT_SOURCE_DIR}/fmt")' \
   "$SRC/externals/CMakeLists.txt" || fail 'Pinned fmt selection not installed.'
 grep -Fq '#define FMT_VERSION 120101' \
