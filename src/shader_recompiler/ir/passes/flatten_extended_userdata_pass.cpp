@@ -173,6 +173,9 @@ struct PassInfo {
     // Dynamic pointer expressions that are not representable by the native
     // SRT JIT are deliberately left for the existing guest-memory path.
     u32 dynamic_offsets_deferred{};
+    // Opcode structure is unchanged by assignment of flat-buffer offsets.
+    // Cache negative and positive structural support for this shader pass.
+    std::unordered_map<const IR::Inst*, bool> offset_support_cache;
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
         auto it = pointer_uses.find(inst);
@@ -600,7 +603,7 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
     // Do not repeatedly enter a JIT that cannot evaluate a control-flow-
     // dependent pointer. Leave its ReadConst/Buffer offset unresolved so
     // the existing dynamic backing-memory route handles it correctly.
-    if (!CanLowerSrtOffsetStructurally(off_dw)) {
+    if (!CanLowerSrtOffsetStructurally(off_dw, pass_info.offset_support_cache)) {
         ++pass_info.dynamic_offsets_deferred;
         return;
     }
@@ -620,7 +623,7 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         if (src_off_dw.IsImmediate()) {
             c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
         } else {
-            if (!CanLowerSrtOffsetStructurally(src_off_dw)) {
+            if (!CanLowerSrtOffsetStructurally(src_off_dw, pass_info.offset_support_cache)) {
                 ++pass_info.dynamic_offsets_deferred;
                 continue;
             }
