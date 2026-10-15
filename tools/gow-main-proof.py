@@ -253,8 +253,9 @@ def apply_phase87():
     cp = SRC / "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp"
     text = cp.read_text()
     a, b = function_span(text, "PipelineCache::GetProgram")
-    old = text[a:b]
-    new = r'''PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_stage,
+    if text[text.rfind("\n", 0, a) + 1:a] != "PipelineCache::Result ":
+        raise RuntimeError("GetProgram return-type declaration changed in upstream")
+    new = r'''PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_stage,
                                                 const Shader::ShaderParams& params,
                                                 Shader::Backend::Bindings& binding) {
     const auto runtime_info = BuildRuntimeInfo(hw_stage, sw_stage);
@@ -329,7 +330,9 @@ def apply_phase87():
     pp = SRC / "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp"
     text = pp.read_text()
     a, b = function_span(text, "PipelineCache::LoadPipelineStage")
-    new = r'''bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) {
+    if text[text.rfind("\n", 0, a) + 1:a] != "bool ":
+        raise RuntimeError("LoadPipelineStage return-type declaration changed in upstream")
+    new = r'''PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) {
     auto info = std::make_unique<Shader::Info>();
     Shader::StageSpecialization spec{};
     spec.info = info.get();
@@ -598,7 +601,31 @@ def apply_generic_fixes():
     return proof
 
 
+def verify_pipeline_return_types():
+    """Reject duplicate return type emissions in the generic pipeline cache fix."""
+    checks = (
+        ("src/video_core/renderer_vulkan/vk_pipeline_cache.cpp",
+         "PipelineCache::Result PipelineCache::GetProgram(",
+         "PipelineCache::Result PipelineCache::Result PipelineCache::GetProgram("),
+        ("src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp",
+         "bool PipelineCache::LoadPipelineStage(",
+         "bool bool PipelineCache::LoadPipelineStage("),
+    )
+    proof = {}
+    for rel, good, bad in checks:
+        p = SRC/rel
+        if not p.is_file() or p.is_symlink():
+            raise RuntimeError("missing/unsafe pipeline source " + rel)
+        source = p.read_text()
+        if source.count(good) != 1 or bad in source:
+            raise RuntimeError("duplicate or missing generic shader pipeline signature: "+rel)
+        proof[rel] = {"signature": good, "sha256": sha256(p)}
+    return proof
+
+
 def audit_source(out):
+    (out/"pipeline-signature-audit.json").write_text(json.dumps(
+        verify_pipeline_return_types(), indent=2, sort_keys=True) + "\n")
     diff = run(["git", "diff", "--binary", UPSTREAM_MAIN, "--", "src", "CMakeLists.txt", "cmake"],
                cwd=SRC).stdout
     (out/"source-diff.patch").write_text(diff)
