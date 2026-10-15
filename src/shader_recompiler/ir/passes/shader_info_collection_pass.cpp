@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "core/emulator_settings.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
 
@@ -217,10 +216,11 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
         }
     }
 
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled()) {
-        info.uses_dma = false;
-        info.readconst_types = Info::ReadConstType::None;
-    }
+    // An unresolved ReadConst cannot be represented by the flattened user-data
+    // buffer. Preserve the backing-memory requirement discovered from the IR
+    // regardless of the global optimization preference, or the SPIR-V backend
+    // would silently load an unrelated flattened word (often word zero).
+    // Already-resolved ReadConst operations still use the flattened buffer.
 
     if (info.uses_dma) {
         info.buffers.push_back({
