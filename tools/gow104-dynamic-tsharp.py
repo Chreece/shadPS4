@@ -27,6 +27,7 @@ INFO_H="src/shader_recompiler/info.h"
 PATCH_CPP="src/shader_recompiler/ir/passes/resource_patching_pass.cpp"
 RASTER_CPP="src/video_core/renderer_vulkan/vk_rasterizer.cpp"
 RASTER_H="src/video_core/renderer_vulkan/vk_rasterizer.h"
+OPCODES_H="src/shader_recompiler/ir/opcodes.h"
 SERIAL_CPP="src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp"
 
 CORE_FILES=(
@@ -42,7 +43,8 @@ CORE_FILES=(
  "src/video_core/renderer_vulkan/vk_instance.cpp",
 )
 MANUAL_FILES=(RESOURCE_H,INFO_H,RASTER_CPP,RASTER_H,SERIAL_CPP)
-DYNAMIC_FILES=CORE_FILES+MANUAL_FILES
+# opcodes.inc changes Opcode values; force every dependent linked TU to recompile through opcodes.h.
+DYNAMIC_FILES=CORE_FILES+MANUAL_FILES+(OPCODES_H,)
 
 
 def git_blob(data:bytes)->str:
@@ -98,7 +100,7 @@ def adapt_resource_h(data:bytes)->bytes:
       "static constexpr u32 NUM_FMASKS = 8;\n",
       "static constexpr u32 NUM_FMASKS = 8;\n"
       "static constexpr u32 MAX_TSHARP_ARRAY_SIZE = 64;\n"
-      "static constexpr u32 NUM_IMAGE_ARRAY_DESCRIPTORS = 2 * (MAX_TSHARP_ARRAY_SIZE + 1);\n",
+      "static constexpr u32 NUM_IMAGE_ARRAY_DESCRIPTORS = 16 * (MAX_TSHARP_ARRAY_SIZE + 1);\n",
       "resource descriptor budget")
 
     text=one(text,
@@ -468,7 +470,7 @@ def install_runtime(base):
         def popen(args,**kwargs):
             if args and Path(str(args[0])).name=="shadps4":
                 env=dict(kwargs.get("env") or os.environ)
-                env["SHADPS4_DYNAMIC_TSHARP_ARRAY_SIZE"]="16"
+                env["SHADPS4_DYNAMIC_TSHARP_ARRAY_SIZE"]="64"
                 kwargs["env"]=env
             return real_popen(args,**kwargs)
         m.subprocess=types.SimpleNamespace(**dict(vars(m.subprocess),Popen=popen))
@@ -543,7 +545,7 @@ def build_candidate(gow103,gow98,gow97,gow96,gow91,base,phase90,phase89,helper,w
     stats.update(
       gow104_dynamic_tsharp={
         "runtime_indexed_sampled_tables":True,
-        "array_size":16,
+        "array_size":64,
         "stages":["compute","fragment"],
         "global_readbacks":False,
         "game_specific":False,
