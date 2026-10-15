@@ -21,6 +21,30 @@ int main() {
     }
     assert(SelectGuestCpu(0, 0) == -1);
     assert(SelectGuestCpu(7, 0x100) == -1);
+    using Core::ConstrainGuestCpuMask;
+    // Every guest title uses the same affinity semantics. The full-width
+    // default CPU set must resolve to the accessible six/seven cores.
+    for (unsigned mode : {0u, 2u, 5u}) {
+        const std::uint64_t permitted = Core::GuestCpuMaskFromMode(mode);
+        assert(ConstrainGuestCpuMask(~std::uint64_t{0}, permitted) == permitted);
+        assert(ConstrainGuestCpuMask(0, permitted) == 0);
+        assert(ConstrainGuestCpuMask(0x80, permitted) == 0);
+        assert(ConstrainGuestCpuMask(0x81, permitted) == 1);
+        assert(ConstrainGuestCpuMask(1ull << 63, permitted) == 0);
+        for (unsigned requested = 0; requested < 256; ++requested) {
+            const std::uint64_t effective = ConstrainGuestCpuMask(requested, permitted);
+            assert(effective == (requested & permitted));
+            for (unsigned scheduler = 0; scheduler < 128; ++scheduler) {
+                const int cpu = SelectGuestCpu(scheduler, effective);
+                if (effective == 0) {
+                    assert(cpu == -1);
+                } else {
+                    assert(cpu >= 0 && cpu < 8);
+                    assert((effective & (std::uint64_t{1} << cpu)) != 0);
+                }
+            }
+        }
+    }
 
     // CPU mode is determined by guest SDK and PSF flags, independently
     // of title or host processor. Exercise every flag combination.

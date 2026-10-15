@@ -305,21 +305,22 @@ int PS4_SYSV_ABI posix_pthread_create_name_np(PthreadT* thread, const PthreadAtt
     const bool explicit_guest_affinity =
         attr != nullptr && *attr != nullptr && (*attr)->cpuset != nullptr;
     const u64 permitted_guest_cpus = GetGuestCpuMask();
-    const u64 guest_affinity = explicit_guest_affinity
+    const u64 requested_guest_affinity = explicit_guest_affinity
         ? (*attr)->cpuset->bits
         : (curthread != nullptr ? curthread->guest_affinity_mask.load(std::memory_order_acquire)
                                 : permitted_guest_cpus);
+    const u64 guest_affinity =
+        Core::ConstrainGuestCpuMask(requested_guest_affinity, permitted_guest_cpus);
     if (guest_affinity == 0) {
         LOG_WARNING(Lib_Kernel,
-                    "Guest pthread requested empty affinity mask; available={:#x}, explicit={}",
-                    permitted_guest_cpus, explicit_guest_affinity);
+                    "Guest pthread CPU affinity has no permitted CPUs: requested={:#x}, available={:#x}",
+                    requested_guest_affinity, permitted_guest_cpus);
         return POSIX_EINVAL;
     }
-    if ((guest_affinity & ~permitted_guest_cpus) != 0) {
-        LOG_WARNING(Lib_Kernel,
-                    "Guest pthread requested inaccessible CPU mask={:#x}; available={:#x}, explicit={}",
-                    guest_affinity, permitted_guest_cpus, explicit_guest_affinity);
-        return POSIX_EPERM;
+    if (requested_guest_affinity != guest_affinity) {
+        LOG_INFO(Lib_Kernel, "Guest pthread CPU affinity intersected: requested={:#x}, "
+                             "available={:#x}, effective={:#x}",
+                 requested_guest_affinity, permitted_guest_cpus, guest_affinity);
     }
     auto* thread_state = ThrState::Instance();
     Pthread* new_thread = thread_state->Alloc(curthread);
@@ -1207,7 +1208,9 @@ int PS4_SYSV_ABI posix_pthread_setaffinity_np(PthreadT thread, size_t cpusetsize
     }
     u64 requested_mask{};
     std::memcpy(&requested_mask, cpusetp, sizeof(requested_mask));
-    if (requested_mask == 0 || (requested_mask & ~GetGuestCpuMask()) != 0) {
+    const u64 effective_mask =
+        Core::ConstrainGuestCpuMask(requested_mask, GetGuestCpuMask());
+    if (effective_mask == 0) {
         return POSIX_EINVAL;
     }
     const auto* data = reinterpret_cast<const u8*>(cpusetp);
@@ -1225,13 +1228,15 @@ int PS4_SYSV_ABI posix_pthread_setaffinity_np(PthreadT thread, size_t cpusetsize
         return ret;
     }
 
+    const Cpuset effective_cpuset = {.bits = effective_mask, ._reserved = 0};
     auto* attr_ptr = &thread->attr;
-    auto ret = posix_pthread_attr_setaffinity_np(&attr_ptr, cpusetsize, cpusetp);
+    auto ret = posix_pthread_attr_setaffinity_np(
+        &attr_ptr, sizeof(effective_cpuset), &effective_cpuset);
 
     if (ret == ORBIS_OK) {
         ret = thread->SetAffinity(thread->attr.cpuset);
         if (ret == ORBIS_OK) {
-            thread->guest_affinity_mask.store(requested_mask, std::memory_order_release);
+            thread->guest_affinity_mask.store(effective_mask, std::memory_order_release);
         }
     }
 

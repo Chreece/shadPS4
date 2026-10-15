@@ -39,6 +39,19 @@ static_assert(GuestCpuMaskFromMode(0) == 0x3f);
 static_assert(GuestCpuMaskFromMode(2) == 0x3f);
 static_assert(GuestCpuMaskFromMode(5) == 0x7f);
 
+// Guest CPU affinity follows the intersection of requested CPUs and the
+// emulated process's accessible application CPUs. An all-ones/default set
+// therefore means all available CPUs, not elevated access to reserved cores.
+// The caller rejects a zero intersection (no permitted CPUs).
+constexpr std::uint64_t ConstrainGuestCpuMask(std::uint64_t requested,
+                                              std::uint64_t available) {
+    return requested & available;
+}
+static_assert(ConstrainGuestCpuMask(~std::uint64_t{0}, 0x7fu) == 0x7fu);
+static_assert(ConstrainGuestCpuMask(~std::uint64_t{0}, 0x3fu) == 0x3fu);
+static_assert(ConstrainGuestCpuMask(0x80u, 0x7fu) == 0);
+static_assert(ConstrainGuestCpuMask(0x81u, 0x7fu) == 1);
+
 constexpr int SelectGuestCpu(unsigned scheduler_slot, std::uint64_t affinity_mask) {
     constexpr std::uint64_t valid_mask = (std::uint64_t{1} << GuestCpuSlots) - 1;
     const std::uint64_t allowed = affinity_mask & valid_mask;
