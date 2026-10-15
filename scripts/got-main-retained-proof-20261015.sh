@@ -4,6 +4,8 @@ set -Eeuo pipefail
 umask 077
 ROOT="$HOME/projects/shadps4/GhostOfTsushima"
 TREE="$ROOT/tests/got-generic-srt-680029f3"
+# The previous 381dd455 session confirms source/ and build/ are siblings.
+SOURCE="$TREE/source"
 BUILD="$TREE/build"
 LOG_ROOT="$HOME/projects/shadps4/logs"
 PARENT="381dd455f6f9a1e35f78fe48d5c26773869641ba"
@@ -50,7 +52,10 @@ flock -n 9 || { echo "ANOTHER_GOT_PROOF=RUNNING; stopping this attempt only"; ex
 echo "SOURCE_PARENT=$PARENT"
 echo "SOURCE_CANDIDATE=$COMMIT"
 echo "DATE=$(date --iso-8601=seconds)"
-[[ -d "$TREE/.git" || -f "$TREE/.git" ]] || { echo "MISSING_ISOLATED_TEST_TREE=$TREE"; exit 4; }
+[[ -d "$SOURCE/.git" || -f "$SOURCE/.git" ]] || {
+    echo "MISSING_ISOLATED_SOURCE=$SOURCE"
+    exit 4
+}
 [[ -f "$BUILD/CMakeCache.txt" && -f "$BUILD/shadps4" ]] || {
     echo "MISSING_EXISTING_CMAKE_BUILD=$BUILD"; exit 4;
 }
@@ -59,19 +64,22 @@ if pgrep -x shadps4 >/dev/null 2>&1; then
     echo "SHADPS4_ALREADY_RUNNING; nothing stopped or replaced"
     exit 4
 fi
-[[ -z "$(git -C "$TREE" diff --name-only)" && -z "$(git -C "$TREE" diff --cached --name-only)" ]] || {
+[[ -z "$(git -C "$SOURCE" diff --name-only)" && -z "$(git -C "$SOURCE" diff --cached --name-only)" ]] || {
     echo "TEST_WORKTREE_HAS_TRACKED_CHANGES; refused to overwrite"
     exit 4
 }
-CURRENT="$(git -C "$TREE" rev-parse HEAD)"
+CURRENT="$(git -C "$SOURCE" rev-parse HEAD)"
 echo "EXISTING_TEST_HEAD=$CURRENT"
 [[ "$CURRENT" == "$PARENT" || "$CURRENT" == "$COMMIT" ]] || {
     echo "TEST_WORKTREE_MOVED; refused to replace newer/unknown work"; exit 4;
 }
 sha256sum "$BUILD/shadps4" >"$RUN/info/previous-disposable-build.sha256"
 echo "FETCH_ISOLATED_RETAINED_COMMIT"
-git -C "$TREE" -c http.version=HTTP/1.1 fetch --no-tags origin "$COMMIT" >>"$RUN/build.log" 2>&1
-git -C "$TREE" checkout -q --detach "$COMMIT" >>"$RUN/build.log" 2>&1
+git -C "$SOURCE" -c http.version=HTTP/1.1 fetch --no-tags origin "$COMMIT" >>"$RUN/build.log" 2>&1
+git -C "$SOURCE" checkout -q --detach "$COMMIT" >>"$RUN/build.log" 2>&1
+[[ "$(git -C "$SOURCE" rev-parse HEAD)" == "$COMMIT" ]] || {
+    echo "SOURCE_REVISION_MISMATCH; game not launched"; exit 4;
+}
 echo "BUILD_FOUR_RESTORED_EMULATOR_SOURCES"
 if ! cmake --build "$BUILD" --target shadps4 --parallel 4 >>"$RUN/build.log" 2>&1; then
     echo "BUILD=FAILED; GAME_NOT_LAUNCHED"
@@ -79,8 +87,8 @@ if ! cmake --build "$BUILD" --target shadps4 --parallel 4 >>"$RUN/build.log" 2>&
     exit 5
 fi
 sha256sum "$BUILD/shadps4" >"$RUN/info/candidate-build.sha256"
-git -C "$TREE" show --stat --oneline HEAD >"$RUN/info/source-commit.txt"
-git -C "$TREE" status --short >"$RUN/info/source-status.txt"
+git -C "$SOURCE" show --stat --oneline HEAD >"$RUN/info/source-commit.txt"
+git -C "$SOURCE" status --short >"$RUN/info/source-status.txt"
 echo "BUILD=PASS"
 [[ ! -e "$PLAY" ]] || { echo "PROOF_PROFILE_ALREADY_EXISTS=$PLAY"; exit 4; }
 mkdir -p "$PLAY"
