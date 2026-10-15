@@ -63,15 +63,26 @@ def install_fixes(gow98,gow97):
         original=data.decode()
         text=base.decode()
 
-        # 1) shl with immediate left / dynamic count:
-        # reg already contains the evaluated right operand (the shift count).
+        # 1) Dynamic-left shift. The retained GOW61 source already carries
+        # SrtCodegen::EmitConstantLeftShiftByDynamicCount; older source shapes
+        # are upgraded here instead of treating an already-fixed form as an error.
         a,b=gow98.function_span(text,"EmitComputeOffsetShiftLeftLogical32")
         fn=text[a:b]
-        fn=one(fn,
-               "        c.shl(reg, inst->Arg(0).U32());\n"
-               "        c.mov(ecx, reg);\n",
-               "        c.mov(ecx, reg);\n",
-               "dynamic left-shift count")
+        buggy=(
+            "        c.shl(reg, inst->Arg(0).U32());\n"
+            "        c.mov(ecx, reg);\n"
+        )
+        if "SrtCodegen::EmitConstantLeftShiftByDynamicCount" in fn:
+            pass
+        elif buggy in fn:
+            fn=one(fn,buggy,"        c.mov(ecx, reg);\n","dynamic left-shift count")
+        elif (
+            "ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));\n"
+            "        c.mov(ecx, reg);\n"
+            "        c.mov(reg, inst->Arg(0).U32());\n"
+            "        c.shl(reg, cl);\n"
+        ) not in fn:
+            raise RuntimeError("dynamic left-shift has unknown source shape")
         text=text[:a]+fn+text[b:]
 
         # 2) arithmetic right shift: same operand evaluation as logical shift,
@@ -104,20 +115,31 @@ static bool EmitComputeOffsetShiftRightArithmetic32(Xbyak::CodeGenerator& c, Xby
 '''
             text=text[:insert]+helper+text[insert:]
 
-        # 3) bfe width 32. x86/C++ 1u<<32 wraps/UB; width 32 means all
-        # remaining 32 bits, i.e. no mask after the right shift.
+        # 3) BitFieldUExtract width 32. GOW61 already fixed this with
+        # an explicit immediate count check plus SrtCodegen::EmitLowBitMask.
         a,b=gow98.function_span(text,"EmitComputeOffsetBitFieldUExtract")
         fn=text[a:b]
-        fn=one(fn,
-               "        c.and_(reg, (1U << inst->Arg(2).U32()) - 1);\n",
-               "        const u32 width = inst->Arg(2).U32();\n"
-               "        if (width > 32) {\n"
-               "            return false;\n"
-               "        }\n"
-               "        if (width < 32) {\n"
-               "            c.and_(reg, (1U << width) - 1);\n"
-               "        }\n",
-               "BitFieldUExtract immediate width")
+        retained_bfe=(
+            "const u32 count = inst->Arg(2).U32();" in fn and
+            "if (count < 32)" in fn and
+            "SrtCodegen::EmitLowBitMask" in fn
+        )
+        if retained_bfe:
+            pass
+        elif "c.and_(reg, (1U << inst->Arg(2).U32()) - 1);" in fn:
+            fn=one(
+                fn,
+                "        c.and_(reg, (1U << inst->Arg(2).U32()) - 1);\n",
+                "        const u32 width = inst->Arg(2).U32();\n"
+                "        if (width > 32) {\n"
+                "            return false;\n"
+                "        }\n"
+                "        if (width < 32) {\n"
+                "            c.and_(reg, (1U << width) - 1);\n"
+                "        }\n",
+                "BitFieldUExtract immediate width")
+        elif not ("width > 32" in fn and "width < 32" in fn):
+            raise RuntimeError("BitFieldUExtract has unknown source shape")
         text=text[:a]+fn+text[b:]
 
         # 4) FindILsb32: BSF matches nonzero inputs; for zero the IR/SPIR-V
@@ -194,14 +216,22 @@ static bool EmitComputeOffsetShiftRightArithmetic32(Xbyak::CodeGenerator& c, Xby
         # that expression. This prevents dead partial instructions from running.
         a,b=gow98.function_span(text,"PushPtr")
         fn=text[a:b]
-        fn=one(fn,
-               "        ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));\n",
-               "        const size_t code_begin = c.getSize();\n"
-               "        if (!ComputeOffset(c, r10d, pass_info, off_dw)) {\n"
-               "            c.setSize(code_begin);\n"
-               "            return false;\n"
-               "        }\n",
-               "PushPtr rollback")
+        rollback=(
+            "        const size_t code_begin = c.getSize();\n"
+            "        if (!ComputeOffset(c, r10d, pass_info, off_dw)) {\n"
+            "            c.setSize(code_begin);\n"
+            "            return false;\n"
+            "        }\n"
+        )
+        if rollback in fn:
+            pass
+        elif "        ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));\n" in fn:
+            fn=one(fn,
+                   "        ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));\n",
+                   rollback,
+                   "PushPtr rollback")
+        else:
+            raise RuntimeError("PushPtr has unknown dynamic-offset source shape")
         text=text[:a]+fn+text[b:]
 
         a,b=gow98.function_span(text,"VisitPointer")
@@ -218,11 +248,20 @@ static bool EmitComputeOffsetShiftRightArithmetic32(Xbyak::CodeGenerator& c, Xby
         # Structural regression checks against the actual retained source.
         a,b=gow98.function_span(text,"EmitComputeOffsetShiftLeftLogical32")
         shl=text[a:b]
-        if "c.shl(reg, inst->Arg(0).U32());" in shl:
+        if "c.shl(reg, inst->Arg(0).U32());\n        c.mov(ecx, reg);" in shl:
             raise RuntimeError("incorrect dynamic-left shift survived")
+        if not (
+            "SrtCodegen::EmitConstantLeftShiftByDynamicCount" in shl or
+            ("c.mov(ecx, reg);" in shl and "c.mov(reg, inst->Arg(0).U32());" in shl)
+        ):
+            raise RuntimeError("dynamic-left shift fix missing")
         a,b=gow98.function_span(text,"EmitComputeOffsetBitFieldUExtract")
         bfe=text[a:b]
-        if "width > 32" not in bfe or "width < 32" not in bfe:
+        if not (
+            ("const u32 count = inst->Arg(2).U32();" in bfe and
+             "if (count < 32)" in bfe and "SrtCodegen::EmitLowBitMask" in bfe) or
+            ("width > 32" in bfe and "width < 32" in bfe)
+        ):
             raise RuntimeError("32-bit BFE handling missing")
         a,b=gow98.function_span(text,"PushPtr")
         if "c.setSize(code_begin);" not in text[a:b]:
@@ -248,6 +287,7 @@ static bool EmitComputeOffsetShiftRightArithmetic32(Xbyak::CodeGenerator& c, Xby
             shift_right_arithmetic32=True,
             findilsb32=True,
             failed_codegen_rollback=True,
+            retained_gow61_fixes_reused=True,
             game_specific=False,
         )
         return text.encode(),patch,p
