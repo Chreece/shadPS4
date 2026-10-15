@@ -44,7 +44,7 @@ import re,sys
 source=Path(sys.argv[1]).read_text()
 labels=("VERIFY_SRT","VERIFY_PM4","VERIFY_REQUIRED_DMA","UPDATE_TEST_PROVENANCE","PREP_PRIVATE",
         "VERIFY_PRIVATE","PREP_SHADER_CAPTURE","PY","SYMBOLIZE",
-        "CAPTURE_RADV","MATCH_RADV_SHADERS","CLEAN_PRIVATE_DUMPS")
+        "CAPTURE_RADV","MATCH_RADV_SHADERS","CAPTURE_REQUIRED_DMA_SPV","CLEAN_PRIVATE_DUMPS")
 for tag in labels:
     rx=re.compile("(?ms)^[^\\n]*<<'"+re.escape(tag)+"'\\n(.*?)\\n"+tag+"$")
     match=rx.search(source)
@@ -829,6 +829,45 @@ result["match_count"]=len(result["matches"])
 print("RADV_SHADER_CORRELATION="+str(result["match_count"])+" "+
       str(result["candidate_count"]),flush=True)
 MATCH_RADV_SHADERS
+# Retain the guest-address shader separately, even if no GPU hang occurs
+# after this correction. This lets us compare the emitted SPIR-V against
+# the prior gameplay-capable version without replaying again for diagnostics.
+python3 - "$RUN/user/shader/dumps" "$LOG/info" <<'CAPTURE_REQUIRED_DMA_SPV'
+from pathlib import Path
+import hashlib,json,shutil,struct,sys
+
+root,info=map(Path,sys.argv[1:])
+name="cs_0x0000000000a4f19a_0"
+source=root/(name+".spv")
+result={"guest_shader":name,"saved":False,"requires_physical_storage":None}
+if source.is_file() and not source.is_symlink() and 20<=source.stat().st_size<12*1024*1024:
+    blob=source.read_bytes()
+    result["sha256"]=hashlib.sha256(blob).hexdigest()
+    result["size_bytes"]=len(blob)
+    words=struct.unpack("<"+str(len(blob)//4)+"I",blob) if len(blob)%4==0 else []
+    extensions=[]
+    if words and words[0]==0x07230203:
+        i=5
+        while i<len(words):
+            n=words[i]>>16
+            if n<=0 or i+n>len(words):
+                extensions.append("INVALID_SPV_WORD_COUNT")
+                break
+            if (words[i]&65535)==10:
+                data=b"".join(w.to_bytes(4,"little") for w in words[i+1:i+n])
+                extensions.append(data.split(b"\0",1)[0].decode("utf-8","replace"))
+            i+=n
+    result["extensions"]=extensions
+    result["requires_physical_storage"]="SPV_KHR_physical_storage_buffer" in extensions
+    out=info/"guest-dma-shader";out.mkdir(exist_ok=True)
+    shutil.copyfile(source,out/source.name)
+    guest_bin=root/(name+".bin")
+    if guest_bin.is_file() and not guest_bin.is_symlink() and guest_bin.stat().st_size<12*1024*1024:
+        shutil.copyfile(guest_bin,out/guest_bin.name)
+    result["saved"]=True
+(info/"mandatory-dma-spv.json").write_text(json.dumps(result,indent=2)+"\n")
+print("REQUIRED_DMA_SPV_CAPABILITY="+str(result["requires_physical_storage"]),flush=True)
+CAPTURE_REQUIRED_DMA_SPV
 # Shader dumps belong only to the disposable copy and are not needed after
 # retaining the matched inputs. Keep discards bounded to this exact path.
 python3 - "$RUN/user/shader/dumps" "$RUN" <<'CLEAN_PRIVATE_DUMPS'
