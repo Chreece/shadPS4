@@ -339,11 +339,14 @@ def self_test():
         cfg = root / "CUSA34384.json"
         patch_config(cfg, 2)
         assert json.loads(cfg.read_text())["GPU"]["readbacks_mode"] == 2
-        env = {"SHADPS4_GOW_SRT_AUTO_ROOTS": "2", "SHADPS4_GOW_TEST": "1", "KEEP": "yes"}
-        for key in list(env):
-            if key.startswith("SHADPS4_GOW_"):
-                env.pop(key, None)
-        assert env == {"KEEP": "yes"}
+        binding_key = "n"
+        env = {"SHADPS4_GOW_SRT_AUTO_ROOTS": "2", "SHADPS4_GOW_TEST": "1",
+               "RADV_DEBUG": "hang", "OLDPWD": "/tmp/example", "KEEP": "yes"}
+        for env_key in list(env):
+            if env_key.startswith("SHADPS4_GOW_") or env_key == "RADV_DEBUG":
+                env.pop(env_key, None)
+        assert env == {"OLDPWD": "/tmp/example", "KEEP": "yes"}
+        assert binding_key == "n"
 
     stat = parse_stat((Path("/proc") / str(os.getpid()) / "stat").read_text())
     assert stat["start_ticks"] > 0 and stat["process_group"] > 0
@@ -385,7 +388,7 @@ def main():
         raise RuntimeError("shadps4 is already running")
 
     auto = load_auto()
-    key, mapping = auto.read_mapping(PROFILE)
+    binding_key, mapping = auto.read_mapping(PROFILE)
 
     LOGS.mkdir(parents=True, exist_ok=True)
     out = LOGS / f'gow-auto-gameplay-{time.strftime("%Y%m%d-%H%M%S")}-{os.getpid()}'
@@ -400,9 +403,9 @@ def main():
         shutil.copy2(CFG, txn / "config.before")
 
     env = os.environ.copy()
-    for key in list(env):
-        if key.startswith("SHADPS4_GOW_") or key == "RADV_DEBUG":
-            env.pop(key, None)
+    for env_key in list(env):
+        if env_key.startswith("SHADPS4_GOW_") or env_key == "RADV_DEBUG":
+            env.pop(env_key, None)
     env.setdefault("DISPLAY", ":0")
     xa = Path.home() / ".Xauthority"
     if xa.is_file():
@@ -423,7 +426,7 @@ def main():
             "seconds": args.seconds,
             "interval": args.interval,
             "sequence": "screenshot -> Cross/X -> screenshot",
-            "cross_key": key,
+            "cross_key": binding_key,
             "mapping": mapping,
             "automatic_controller_input": True,
             "other_controller_inputs": False,
@@ -463,7 +466,7 @@ def main():
             sent = False
             error = None
             try:
-                auto.press_cross(wid, proc.pid, key, env)
+                auto.press_cross(wid, proc.pid, binding_key, env)
                 sent = True
                 print(f"GOW_AUTO_GAMEPLAY cycle={cycle} Cross=X", flush=True)
             except Exception as exc:
