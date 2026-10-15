@@ -31,8 +31,11 @@ ARCHIVE="$RUN.tar.gz"
 PLAY="$ROOT/play/$(basename "$RUN")"
 package_report() {
     set +e
+    # Snapshot live log files before packing: tar must not race with game/GPU logging.
+    [[ ! -f "$RUN/game.log" ]] || tail -c 12500000 "$RUN/game.log" >"$RUN/info/game-console-tail.log" 2>/dev/null
+    [[ ! -f "$RUN/runner.log" ]] || tail -c 1000000 "$RUN/runner.log" >"$RUN/info/launcher-tail.log" 2>/dev/null
     local temp="$ARCHIVE.$BASHPID.partial"
-    if tar -czf "$temp" -C "$RUN" info screenshots game.log runner.log 2>/dev/null; then
+    if tar -czf "$temp" -C "$RUN" info screenshots 2>/dev/null; then
         mv -f -- "$temp" "$ARCHIVE"
         echo "ARCHIVE=$ARCHIVE"
     else
