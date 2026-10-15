@@ -7,7 +7,14 @@ umask 077
 REV='14ee355e98f18184551d1a505181848bbdfdba99'
 BRANCH='fix/generic-srt-readfirstlane-offset-20261015'
 PROJECT="$HOME/projects/shadps4/GhostOfTsushima"
-ROOT="$PROJECT/tests/got-generic-srt-${REV:0:8}"
+# Reuse only our previous, disposable generic candidate; never v55,
+# installed ES-DE, game data, or any of the preserved working builds.
+PREVIOUS="$PROJECT/tests/got-generic-srt-680029f3"
+if [[ -d "$PREVIOUS/source/.git" && -d "$PREVIOUS/build" ]]; then
+  ROOT="$PREVIOUS"
+else
+  ROOT="$PROJECT/tests/got-generic-srt-${REV:0:8}"
+fi
 SRC="$ROOT/source"
 BUILD="$ROOT/build"
 RUN="$PROJECT/play/auto-generic-srt-${REV:0:8}"
@@ -87,9 +94,17 @@ if [[ ! -d "$SRC/.git" ]]; then
   git -C "$SRC" checkout --detach "$REV"
   git -C "$SRC" submodule update --init --recursive --jobs 4
 else
-  [[ "$(git -C "$SRC" rev-parse HEAD)" == "$REV" ]] || fail 'Existing test source differs.'
+  [[ "$(git -C "$SRC" remote get-url origin)" == 'https://github.com/Chreece/shadPS4.git' ]] ||
+    fail 'Existing candidate source has an unexpected remote; will not modify it.'
   git -C "$SRC" diff --quiet && git -C "$SRC" diff --cached --quiet ||
     fail 'Test source contains local changes.'
+  if [[ "$(git -C "$SRC" rev-parse HEAD)" != "$REV" ]]; then
+    # Same disposable GoT candidate: incremental checkout and rebuild.
+    git -C "$SRC" -c http.version=HTTP/1.1 fetch --depth 32 origin "$REV"
+    git -C "$SRC" checkout --detach "$REV"
+    git -C "$SRC" submodule update --init --recursive --jobs 4
+    echo 'REUSED_EXISTING_ISOLATED_BUILD=YES'
+  fi
 fi
 
 # Verify this candidate actually contains the upstream generic kernel
@@ -110,15 +125,15 @@ else
   fail 'C and C++ compilers not installed.'
 fi
 
-if [[ ! -x "$BUILD/shadps4" ]]; then
-  cmake -S "$SRC" -B "$BUILD" -G Ninja \
+# Always reconfigure and build incrementally; testing a newly checked-out
+# source against a stale executable would invalidate every screenshot.
+cmake -S "$SRC" -B "$BUILD" -G Ninja \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_CXX_FLAGS_RELWITHDEBINFO='-O2 -g1 -DNDEBUG -fno-omit-frame-pointer' \
     -DCMAKE_C_FLAGS_RELWITHDEBINFO='-O2 -g1 -DNDEBUG -fno-omit-frame-pointer' \
     -DENABLE_TESTS=OFF -DENABLE_DISCORD_RPC=OFF -DENABLE_UPDATER=OFF \
     -DENABLE_CPU_ID_TRANSLATION=OFF
-  cmake --build "$BUILD" --parallel 6 --target shadps4
-fi
+cmake --build "$BUILD" --parallel 6 --target shadps4
 [[ -x "$BUILD/shadps4" ]] || fail 'No candidate executable produced.'
 sha256sum "$BUILD/shadps4"
 
