@@ -339,6 +339,11 @@ def self_test():
         cfg = root / "CUSA34384.json"
         patch_config(cfg, 2)
         assert json.loads(cfg.read_text())["GPU"]["readbacks_mode"] == 2
+        env = {"SHADPS4_GOW_SRT_AUTO_ROOTS": "2", "SHADPS4_GOW_TEST": "1", "KEEP": "yes"}
+        for key in list(env):
+            if key.startswith("SHADPS4_GOW_"):
+                env.pop(key, None)
+        assert env == {"KEEP": "yes"}
 
     stat = parse_stat((Path("/proc") / str(os.getpid()) / "stat").read_text())
     assert stat["start_ticks"] > 0 and stat["process_group"] > 0
@@ -395,7 +400,9 @@ def main():
         shutil.copy2(CFG, txn / "config.before")
 
     env = os.environ.copy()
-    env["SHADPS4_GOW_SRT_AUTO_ROOTS"] = "2"
+    for key in list(env):
+        if key.startswith("SHADPS4_GOW_"):
+            env.pop(key, None)
     env["RADV_DEBUG"] = "hang"
     env.setdefault("DISPLAY", ":0")
     xa = Path.home() / ".Xauthority"
@@ -423,7 +430,7 @@ def main():
             "other_controller_inputs": False,
             "readbacks_mode": args.readbacks_mode,
             "dump_shaders": False,
-            "srt_auto_roots": 2,
+            "gow_behavior_env": [],
         }, indent=2) + "\n")
 
         proc = subprocess.Popen([
