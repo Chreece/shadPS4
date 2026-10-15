@@ -170,6 +170,13 @@ private:
     std::unique_ptr<Buffer> bda_pagetable_buffer;
     bool fault_process_pending{};
 
+    // A full DMA sweep is necessary only when guest CPU dirty state changes
+    // or a new sparse backing becomes resident. These are GPU-command thread
+    // counters; they never change shader behavior or the configured DMA mode.
+    u64 last_dma_synced_cpu_generation{};
+    u64 dma_scans_performed{};
+    u64 dma_scans_skipped{};
+
     std::array<const Buffer*, NUM_ARENA_PAGES> address_space{};
     std::deque<Buffer> arenas;
     std::vector<ArenaBinds> pending_binds;
