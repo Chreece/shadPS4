@@ -33,7 +33,7 @@ BUILD=WORK/"build"
 GCN=WORK/"build-gcn-tests"
 LOGS=HOME/"projects/shadps4/logs"
 OUT=LOGS/("gow-general-srt-preflight-"+dt.datetime.now().strftime("%Y%m%d-%H%M%S")+"-"+str(os.getpid()))
-TOPIC="d2905c62104d581abefc5272e6393f6828b5af85"
+TOPIC="efa903763d7789f3c9fb89be5ac3c8b2a3be2600"
 BASE="b2d7ec7d31f9ad9426db93afe079db8679b3e1e0"
 STACK="966fa45bc36ce2e46b8c14f77acb5fdd95d96fbe"
 BEFORE_SHA="9526f71635c4a20b604fe33494168f16151e70da9498da39fa48f3e38a0a9de9"
@@ -52,7 +52,7 @@ SOURCE_PINS={
 TOPIC_BLOBS={
     SRT:"a4b677a47d610a5013f9d35819de0d6d3580508f",
     HEADER:"06618418180ae9baac6d0e1054d9f7c704fa5f7b",
-    TEST:"3c24dfb57fe58800b597f87fd84b26540d27bb2f",
+    TEST:"0f92a28ef8c922064ba78f83d807154798de4c57",
 }
 JIT_TOPIC="9165f7e9bbab0d3fb846c980f63dcdfa272d4f53"
 JIT_TEST_BLOB="00fded003c4f0ec076f06a8d36e6187c9d59e560"
