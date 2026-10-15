@@ -623,6 +623,89 @@ def verify_pipeline_return_types():
     return proof
 
 
+def resume_corrected_pipeline_signatures(out, original_diff_sha):
+    """Repair only the two duplicated return types from the recorded old build."""
+    manifest_path = WORK/".pipeline-return-type-repair.json"
+    pairs = (
+        ("src/video_core/renderer_vulkan/vk_pipeline_cache.cpp",
+         "PipelineCache::Result PipelineCache::Result PipelineCache::GetProgram(",
+         "PipelineCache::Result PipelineCache::GetProgram("),
+        ("src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp",
+         "bool bool PipelineCache::LoadPipelineStage(",
+         "bool PipelineCache::LoadPipelineStage("),
+    )
+    def source_diff_sha():
+        diff = run(["git", "diff", "--binary", UPSTREAM_MAIN, "--",
+                    "src", "CMakeLists.txt", "cmake"], cwd=SRC).stdout
+        return hashlib.sha256(diff.encode()).hexdigest()
+
+    current_sha = source_diff_sha()
+    if current_sha == original_diff_sha:
+        if manifest_path.exists():
+            raise RuntimeError("source proof manifest unexpectedly exists before repair")
+        originals = {}
+        repaired = {}
+        proof = {}
+        for rel, duplicate, correct in pairs:
+            p = SRC/rel
+            if p.is_symlink() or not p.is_file():
+                raise RuntimeError("unsafe shader pipeline source: " + rel)
+            before = p.read_bytes()
+            bad, good = duplicate.encode(), correct.encode()
+            if before.count(bad) != 1:
+                raise RuntimeError("unknown prior C++ signature mismatch: "+rel)
+            after = before.replace(bad, good, 1)
+            if after.replace(good, bad, 1) != before:
+                raise RuntimeError("signature-only correction failed reverse validation")
+            originals[rel] = before
+            repaired[rel] = after
+            proof[rel] = {"old_sha256": hashlib.sha256(before).hexdigest(),
+                          "new_sha256": hashlib.sha256(after).hexdigest()}
+        try:
+            for rel, after in repaired.items():
+                (SRC/rel).write_bytes(after)
+            run(["git", "diff", "--check"], cwd=SRC)
+            verify_pipeline_return_types()
+            new_sha = source_diff_sha()
+            if new_sha == original_diff_sha:
+                raise RuntimeError("shader pipeline source was not changed")
+            record = {"original_diff_sha256": original_diff_sha,
+                      "corrected_diff_sha256": new_sha,
+                      "changed_files": proof,
+                      "general_emulator_fix": True,
+                      "game_specific_behavior": False}
+            fd, temp_name = tempfile.mkstemp(dir=WORK, prefix=".return-type-proof-")
+            try:
+                with os.fdopen(fd, "w") as stream:
+                    stream.write(json.dumps(record, indent=2, sort_keys=True)+"\n")
+                os.replace(temp_name, manifest_path)
+            finally:
+                Path(temp_name).unlink(missing_ok=True)
+            note("SHADER_PIPELINE_RETURN_TYPES=FIXED 2 exactly")
+        except BaseException:
+            for rel, before in originals.items():
+                (SRC/rel).write_bytes(before)
+            raise
+    else:
+        if manifest_path.is_symlink() or not manifest_path.is_file():
+            raise RuntimeError("modified source has no valid signature-repair proof")
+        record = json.loads(manifest_path.read_text())
+        if (record.get("original_diff_sha256") != original_diff_sha or
+                record.get("corrected_diff_sha256") != current_sha or
+                set(record.get("changed_files", {})) != {rel for rel, _, _ in pairs}):
+            raise RuntimeError("signature repair provenance no longer matches")
+        for rel, duplicate, correct in pairs:
+            p = SRC/rel
+            if (p.is_symlink() or not p.is_file() or
+                    sha256(p) != record["changed_files"][rel]["new_sha256"]):
+                raise RuntimeError("repaired source fingerprint changed: "+rel)
+        verify_pipeline_return_types()
+        note("SHADER_PIPELINE_RETURN_TYPES=verified repaired source")
+    (out/"pipeline-return-type-repair.json").write_text(
+        json.dumps(record, indent=2, sort_keys=True)+"\n")
+    return record["corrected_diff_sha256"]
+
+
 def audit_source(out):
     (out/"pipeline-signature-audit.json").write_text(json.dumps(
         verify_pipeline_return_types(), indent=2, sort_keys=True) + "\n")
@@ -862,18 +945,15 @@ def resume_proven_source(out, source_workspace):
         raise RuntimeError("source history is not the verified upstream + general fixes")
     if run(["git", "ls-files", "-u"], cwd=SRC).stdout.strip():
         raise RuntimeError("source has unmerged Git files")
-    diff = run(["git", "diff", "--binary", UPSTREAM_MAIN, "--",
-                "src", "CMakeLists.txt", "cmake"], cwd=SRC).stdout
     expected = "71c967af7f362ec4bb0c856b3be2f01db350bb1ed3669638057a714f769b6829"
-    if hashlib.sha256(diff.encode()).hexdigest() != expected:
-        raise RuntimeError("patched source no longer matches uploaded source-diff")
     remote = run(["git", "ls-remote", UPSTREAM_URL, "refs/heads/main"],
                  timeout=120).stdout.strip().splitlines()
     if len(remote) != 1 or remote[0].split()[0].lower() != UPSTREAM_MAIN:
         raise RuntimeError("upstream advanced; a fresh upstream port is required")
+    active_diff_sha = resume_corrected_pipeline_signatures(out, expected)
     audit_source(out)
-    if sha256(out/"source-diff.patch") != expected:
-        raise RuntimeError("resumed source audit fingerprint mismatch")
+    if sha256(out/"source-diff.patch") != active_diff_sha:
+        raise RuntimeError("resumed corrected-source fingerprint mismatch")
     old_logs = LOG_ROOT/"gow-main-proof-20261015-151529-3107006"
     copies = {
         "generic-transform-proof.json":
@@ -898,8 +978,9 @@ def resume_proven_source(out, source_workspace):
         "resume_source": str(WORK),
         "upstream_main": UPSTREAM_MAIN,
         "generic_stack": GENERIC_STACK,
-        "source_diff_sha256": expected,
-        "old_compiled_objects_reused": False,
+        "source_diff_sha256": active_diff_sha,
+        "original_source_diff_sha256": expected,
+        "preserve_completed_object_compilation": True,
         "retained_proof_files": retained,
     }, indent=2, sort_keys=True)+"\n")
     note("RESUME=exact upstream source and general fixes verified")
