@@ -255,7 +255,7 @@ def find_window(pid):
     ids = [int(x) for x in result.stdout.split() if x.isdigit()]
     return ids[-1] if ids else None
 
-def capture(pid, folder, index, elapsed, xconn):
+def capture(pid, folder, index, elapsed, xconn, allow_cross):
     window = find_window(pid)
     event = {'step':index, 'time_sec':elapsed, 'window':window,
              'screenshot':'NOT_CAPTURED','cross':'NOT_SENT'}
@@ -274,9 +274,13 @@ def capture(pid, folder, index, elapsed, xconn):
             dest.unlink(missing_ok=True)
             return event
         event['screenshot'] = name
-        # The screenshot must finish before any input for this step.
-        xconn.press(window, pid)
-        event['cross'] = 'SENT'
+        # Finish the PNG before issuing one Cross. If automation has
+        # been disabled for safety, keep screenshots but send no input.
+        if allow_cross:
+            xconn.press(window, pid)
+            event['cross'] = 'SENT'
+        else:
+            event['cross'] = 'DISABLED'
     except Exception as exc:
         event['reason'] = type(exc).__name__ + ': ' + str(exc)
     return event
@@ -300,16 +304,13 @@ def main():
                 if not running(pid, binary):
                     log('GAME_EXITED_DURING_CAPTURE')
                     return 0
-                time.sleep(min(1, when - (time.monotonic() - started)))
+                time.sleep(max(0.0, min(1, when - (time.monotonic() - started))))
             if not running(pid, binary):
                 break
             elapsed = round(time.monotonic() - started, 1)
-            if input_enabled:
-                event = capture(pid, folder, index, when, xconn)
-            else:
-                # Keep screenshots even if game focus/input verification changed.
-                event = capture(pid, folder, index, when, xconn)
-                event['cross'] = 'DISABLED'
+            # A focus or PID error disables injection for all later frames.
+            # Screenshots continue unchanged.
+            event = capture(pid, folder, index, when, xconn, input_enabled)
             if event['cross'] == 'SENT':
                 log(f'SCREENSHOT={event["screenshot"]}; AFTER_SCREENSHOT=CROSS_{index}')
             elif event.get('reason', '').startswith(('RuntimeError:', 'OSError:')):
