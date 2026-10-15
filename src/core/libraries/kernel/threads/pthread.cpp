@@ -15,6 +15,7 @@
 #endif
 #endif
 #include "core/debug_state.h"
+#include "core/guest_cpu_selection.h"
 #include "core/libraries/kernel/kernel.h"
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/posix_error.h"
