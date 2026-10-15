@@ -342,7 +342,10 @@ def self_test():
 
     stat = parse_stat((Path("/proc") / str(os.getpid()) / "stat").read_text())
     assert stat["start_ticks"] > 0 and stat["process_group"] > 0
-    print("GOW_AUTO_GAMEPLAY_SELF_TEST=PASS process guard + nested CPU-ID runtime + screenshot/Cross policy")
+    source = Path(__file__).read_text()
+    assert 'env["SHADPS4_GOW_SRT_AUTO_ROOTS"]' not in source
+    assert 'startswith("SHADPS4_GOW")' in source
+    print("GOW_AUTO_GAMEPLAY_SELF_TEST=PASS no-GoW-env + process guard + screenshot/Cross policy")
 
 
 def main():
@@ -395,7 +398,10 @@ def main():
         shutil.copy2(CFG, txn / "config.before")
 
     env = os.environ.copy()
-    env["SHADPS4_GOW_SRT_AUTO_ROOTS"] = "2"
+    # Validation must not depend on any GoW-specific behavioral environment.
+    for name in tuple(env):
+        if name.startswith("SHADPS4_GOW"):
+            env.pop(name, None)
     env["RADV_DEBUG"] = "hang"
     env.setdefault("DISPLAY", ":0")
     xa = Path.home() / ".Xauthority"
@@ -423,7 +429,8 @@ def main():
             "other_controller_inputs": False,
             "readbacks_mode": args.readbacks_mode,
             "dump_shaders": False,
-            "srt_auto_roots": 2,
+            "srt_auto_roots": None,
+            "gow_behavioral_environment": False,
         }, indent=2) + "\n")
 
         proc = subprocess.Popen([
