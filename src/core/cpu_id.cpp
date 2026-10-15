@@ -17,6 +17,7 @@
 #include <xbyak/xbyak_util.h>
 #include "common/assert.h"
 #include "core/cpu_id.h"
+#include "core/linux_guest_tsc.h"
 #include "core/guest_cpu_selection.h"
 #include "core/libraries/kernel/threads/pthread.h"
 
@@ -387,6 +388,19 @@ void InitializeCpuId() {
 }
 
 void EnableCpuIdFaulting() {
+    // PR_SET_TSC is inherited by host worker threads created from guest threads.
+    // Faulting on native RDTSC breaks unrelated audio/clock/media libraries.
+    // The guest's RDTSC already uses the native counter, and guest RDTSCP/RDPID
+    // are translated in loaded guest modules by generic CPU instruction patches.
+    // Do not turn on process-wide timing faults to emulate guest CPU identity.
+    // Also clear inherited restrictions if a caller previously enabled them.
+    if (RestoreHostNativeTsc() != 0) {
+        static std::atomic warned{false};
+        if (!warned.exchange(true)) {
+            LOG_WARNING(Core, "Cannot restore host timestamp-counter access on guest thread: {}",
+                        errno);
+        }
+    }
 #ifdef ENABLE_CPU_ID_TRANSLATION
     if (ShadCpuIdTranslationActive()) {
         static std::atomic announced{false};
@@ -396,12 +410,6 @@ void EnableCpuIdFaulting() {
         return;
     }
 #endif
-    if (prctl(PR_SET_TSC, PR_TSC_SIGSEGV) != 0) {
-        static std::atomic warned{false};
-        if (!warned.exchange(true)) {
-            LOG_WARNING(Core, "TSC faulting unavailable; RDTSCP identity requires static patches");
-        }
-    }
     if (syscall(SYS_arch_prctl, ARCH_SET_CPUID, 0) != 0) {
         static std::atomic warned{false};
         if (!warned.exchange(true)) {
