@@ -24,6 +24,66 @@ GAME='/mnt/roms-all/ps4-games/CUSA11456/eboot.bin'
 STORED="$PROJECT/scripts/got-upstream-radv-provenance-20261015.sh"
 
 fail() { printf 'STOP: %s\n' "$*" >&2; exit 2; }
+
+# The user's headless display is served by the existing Xorg :0 session,
+# using its own Xauthority cookie. Ignore SSH X-forwarding DISPLAY values.
+# This is test-environment validation only; it changes no emulator behavior.
+probe_headless_x11() {
+  env DISPLAY=:0 XAUTHORITY="$HOME/.Xauthority" python3 - <<'PROBE_X11'
+from ctypes import CDLL, c_char_p, c_void_p
+import sys
+try:
+    x11=CDLL("libX11.so.6")
+    x11.XOpenDisplay.argtypes=[c_char_p]
+    x11.XOpenDisplay.restype=c_void_p
+    x11.XCloseDisplay.argtypes=[c_void_p]
+    x11.XCloseDisplay.restype=int
+    display=x11.XOpenDisplay(None)
+    if not display:
+        sys.exit(1)
+    x11.XCloseDisplay(display)
+except (OSError,AttributeError):
+    sys.exit(1)
+PROBE_X11
+}
+
+check_headless_x11() {
+  if probe_headless_x11; then
+    printf 'HEADLESS_X11=:0_ACCESSIBLE\n'
+    return 0
+  fi
+  printf 'HEADLESS_X11=:0_UNAVAILABLE\n'
+  if [[ ${1:-} == 'recover' ]]; then
+    if [[ -n "$(pgrep -u "$(id -u)" -x shadps4 || true)" ]]; then
+      fail 'Game still running; will not restart the display.'
+    fi
+    # Reuse the previously installed, tested GPU/Xorg/Sunshine recovery unit,
+    # but only when :0 is inaccessible. Never start a replacement Xorg here.
+    if systemctl cat sunshine-amdgpu-recover.service >/dev/null 2>&1 &&
+       command -v sudo >/dev/null && sudo -n true >/dev/null 2>&1; then
+      printf 'HEADLESS_X11_RECOVERY=EXISTING_SERVICE\n'
+      if sudo -n systemctl start --no-block sunshine-amdgpu-recover.service; then
+        for attempt in {1..45}; do
+          if probe_headless_x11; then
+            printf 'HEADLESS_X11_RECOVERY=SUCCESS_ATTEMPT_%s\n' "$attempt"
+            return 0
+          fi
+          sleep 1
+        done
+      fi
+    fi
+  fi
+  printf 'HEADLESS_X11_DIAG: socket='
+  if [[ -S /tmp/.X11-unix/X0 ]]; then echo present; else echo absent; fi
+  printf 'HEADLESS_X11_DIAG: Xorg='
+  if pgrep -x Xorg >/dev/null; then echo running; else echo unavailable; fi
+  printf 'HEADLESS_X11_DIAG: headless-x.service='
+  systemctl is-active headless-x.service 2>/dev/null || true
+  printf 'HEADLESS_X11_DIAG: sunshine.service='
+  systemctl is-active sunshine.service 2>/dev/null || true
+  fail 'Cannot access Xorg :0. No compilation or gameplay test was started. Recover headless X via the existing sunshine-amdgpu-recover.service, then retry.'
+}
+
 [[ "$(id -u)" != 0 ]] || fail 'Do not use sudo.'
 [[ -d "$PROJECT/tests" && -d "$PROJECT/play" ]] || fail 'Existing GoT workspace missing.'
 [[ -f "$GAME" ]] || fail 'GoT executable not present.'
@@ -32,6 +92,9 @@ for tool in git cmake ninja sha256sum flock systemd-run python3 xdotool import; 
 done
 
 if [[ "${1:-}" != '--worker' ]]; then
+  # Fail or recover *before* enqueueing another costly build/test.
+  # The existing service can restart Sunshine/Xorg but never touches SSH.
+  check_headless_x11 recover
   [[ -d "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" ]] || fail 'No user systemd runtime.'
   mkdir -p "$PROJECT/scripts" "$LOGROOT" "$ROOT"
   [[ ! -L "$STORED" ]] || fail 'Unsafe script path.'
@@ -59,14 +122,12 @@ VERIFY_EMBEDDED_PYTHON
         --description='Upstream-main GoT automatic screenshot and Cross/X playtest'
         --property=KillMode=control-group --property=TimeoutStopSec=30s
         --setenv="HOME=$HOME" --setenv="PATH=$PATH"
-        --setenv="XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}")
-  for name in DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS PULSE_SERVER PIPEWIRE_REMOTE \
+        --setenv="XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+        --setenv="DISPLAY=:0" --setenv="XAUTHORITY=$HOME/.Xauthority")
+  for name in DBUS_SESSION_BUS_ADDRESS PULSE_SERVER PIPEWIRE_REMOTE \
       WAYLAND_DISPLAY SDL_GAMECONTROLLERCONFIG SDL_GAMECONTROLLERCONFIG_FILE SDL_AUDIODRIVER; do
     [[ -n "${!name:-}" ]] && args+=("--setenv=$name=${!name}")
   done
-  [[ -n "${DISPLAY:-}" ]] || args+=("--setenv=DISPLAY=:0")
-  [[ -n "${XAUTHORITY:-}" || ! -f "$HOME/.Xauthority" ]] ||
-    args+=("--setenv=XAUTHORITY=$HOME/.Xauthority")
   systemd-run "${args[@]}" /usr/bin/bash "$STORED" --worker "$STAMP"
   printf 'AUTO_TEST_QUEUED=%s\nSCREENSHOT_THEN_X=ENABLED\nARCHIVE=%s/got-upstream-auto-%s-%s.tar.gz\nSSH=UNCHANGED\nESDE=UNCHANGED\n' "$UNIT" "$LOGROOT" "${REV:0:8}" "$STAMP"
   exit 0
@@ -100,6 +161,9 @@ package_on_exit() {
 trap package_on_exit EXIT
 
 echo "REV=$REV"
+# A GPU hang can kill :0 after the parent preflight. Do not waste a build
+# in that case or confuse 'no display' with another shader regression.
+check_headless_x11
 [[ -z "$(pgrep -u "$(id -u)" -x shadps4 || true)" ]] || fail 'Another shadPS4 process is running.'
 
 if [[ ! -d "$SRC/.git" ]]; then
