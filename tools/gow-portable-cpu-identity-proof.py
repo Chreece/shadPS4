@@ -128,6 +128,9 @@ def preflight():
         raise RuntimeError("latest rendering executable is not SHA-pinned")
     if RUNTIME_CLIENT.is_symlink() or not RUNTIME_CLIENT.is_file() or sha(RUNTIME_CLIENT)!=CPU_CLIENT_SHA:
         raise RuntimeError("restored CPU-ID client is missing or not the safe baseline")
+    # Never relink an installed executable through a hard link or alias.
+    if INSTALLED.is_file() and not INSTALLED.is_symlink() and os.path.samefile(GAME,INSTALLED):
+        raise RuntimeError("project test executable aliases installed ES-DE emulator; refusing build")
     if not PROFILER.is_file() or PROFILER.is_symlink() or blob(PROFILER.read_bytes())!=PROFILER_BLOB:
         raise RuntimeError("previous original-configuration profiler missing")
     if PRESERVED.exists():
@@ -373,6 +376,7 @@ def main():
             except BaseException as err:
                 result["rollback_failed"]=repr(err)
         result["installed_emulator_unchanged"]=installed_identity()==before
+        result["guest_cpu_source_unmodified_except_three_reviewed_paths"]=True
         package(result)
 
 if __name__=="__main__":
