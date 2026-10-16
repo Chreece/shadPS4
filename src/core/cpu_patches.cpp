@@ -2266,6 +2266,46 @@ static RedZonePatchResult PatchSegmentStatically(u64 segment_addr, u64 segment_s
             record_rewrites(site_span);
             patched_spans.emplace_back(site_span.patch_start, site_span.continuation);
         }
+
+#if defined(__linux__) && defined(ARCH_X86_64)
+        // Linux cannot trap a supported host RDPID instruction with arch_prctl.
+        // The normal trampoline patcher handles most sites, but four-byte
+        // RDPID instructions inside indirect-branch functions or with no safe
+        // jump relay remain executable with the WRONG host TSC_AUX identity.
+        //
+        // For the opt-in builtin CPU-ID mode, turn ONLY verified instruction
+        // boundaries that could not be relocated into a two-byte UD2. The
+        // signal handler uses the recorded original length/destination to
+        // return the virtual guest CPU number, preserving every other register
+        // and the instruction flags. No external instrumentation is needed.
+        if (IsBuiltinCpuIdMode()) {
+            for (const auto& [site, rewrite] : rewrite_sites) {
+                if (rewrite.cpu_patch == nullptr ||
+                    module->patched.contains(reinterpret_cast<u8*>(site))) {
+                    continue;
+                }
+                const auto& decoded = function.instructions.at(site);
+                if (decoded.instruction.mnemonic != ZYDIS_MNEMONIC_RDPID) {
+                    continue;
+                }
+                ASSERT(decoded.instruction.length >= 4);
+                const u32 destination =
+                    ZydisToXbyakRegisterOperand(decoded.operands[0]).getIdx();
+
+                // Publish immutable metadata BEFORE guest executable bytes are
+                // changed. This lookup is lock-free and signal-handler safe.
+                RegisterBuiltinRdpidTrap(site, decoded.instruction.length, destination);
+                auto* code = reinterpret_cast<u8*>(site);
+                code[0] = 0x0F;
+                code[1] = 0x0B; // UD2 -- SIGILL with unchanged fault RIP.
+                module->patched.insert(code);
+                ++result.builtin_rdpid_trap_count;
+                ++result.patched_cpu_patch_instruction_count;
+                ASSERT(result.unsupported_cpu_patch_instruction_count != 0);
+                --result.unsupported_cpu_patch_instruction_count;
+            }
+        }
+#endif
     }
     return result;
 }
