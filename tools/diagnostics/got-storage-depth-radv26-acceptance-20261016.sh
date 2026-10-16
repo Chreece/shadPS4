@@ -151,19 +151,27 @@ PARENTBIN="3b4bf921799259ff01db863e7e46c4c018d8cdbb437d9006e0d438b42eb915db"
 [[ "$(sha256sum "$PREVIOUS/build/shadps4" | cut -d' ' -f1)" == "$PARENTBIN" ]] || {
     echo "PREVIOUS_BINARY_MOVED"; exit 4
 }
-[[ ! -e "$SOURCE" && ! -L "$SOURCE" ]] || {
-    echo "ISOLATED_SOURCE_ALREADY_EXISTS; NOTHING_OVERWRITTEN"; exit 4
-}
-echo "FETCH_GENERAL_STORAGE_ALIAS_CORRECTION"
-git -C "$PREVIOUS/source" -c http.version=HTTP/1.1 \
-    fetch -4 --no-tags origin "$EXPECTED_SOURCE" >>"$RUN/build.log" 2>&1 || {
-    echo "PINNED_FIX_FETCH_FAILED"; exit 5
-}
-mkdir -p "$TREE"
-git -C "$PREVIOUS/source" worktree add --detach "$SOURCE" "$EXPECTED_SOURCE" \
-    >>"$RUN/build.log" 2>&1 || {
-    echo "ISOLATED_WORKTREE_CREATION_FAILED"; exit 5
-}
+if [[ -e "$SOURCE" || -L "$SOURCE" ]]; then
+    # A failed build can be retried safely when it is exactly our detached
+    # candidate worktree; never overwrite unrelated or modified source.
+    [[ -d "$SOURCE" && "$(git -C "$SOURCE" rev-parse HEAD 2>/dev/null)" == "$EXPECTED_SOURCE" &&
+       -z "$(git -C "$SOURCE" diff --name-only)" &&
+       -z "$(git -C "$SOURCE" diff --cached --name-only)" ]] || {
+        echo "EXISTING_SOURCE_NOT_OUR_PINNED_CLEAN_WORKTREE; REFUSED"; exit 4
+    }
+    echo "RESUME_EXACT_ISOLATED_SOURCE=$EXPECTED_SOURCE"
+else
+    echo "FETCH_GENERAL_STORAGE_ALIAS_CORRECTION"
+    git -C "$PREVIOUS/source" -c http.version=HTTP/1.1 \
+        fetch -4 --no-tags origin "$EXPECTED_SOURCE" >>"$RUN/build.log" 2>&1 || {
+        echo "PINNED_FIX_FETCH_FAILED"; exit 5
+    }
+    mkdir -p "$TREE"
+    git -C "$PREVIOUS/source" worktree add --detach "$SOURCE" "$EXPECTED_SOURCE" \
+        >>"$RUN/build.log" 2>&1 || {
+        echo "ISOLATED_WORKTREE_CREATION_FAILED"; exit 5
+    }
+fi
 [[ "$(git -C "$SOURCE" rev-parse HEAD)" == "$EXPECTED_SOURCE" ]] || {
     echo "SOURCE_COMMIT_MISMATCH"; exit 5
 }
