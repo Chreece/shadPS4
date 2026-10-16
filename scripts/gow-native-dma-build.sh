@@ -63,7 +63,7 @@ exec > >(tee "$OUT/progress.log") 2>&1
 if ps -u "$(id -un)" -o comm= | grep -Eq '^shadps4'; then
   STATUS="EXISTING_GAME_ACTIVE"
   echo "An emulator is running. Nothing will be stopped or rebuilt."
-  exit 0
+  exit 2
 fi
 if ! git -C "$SOURCE" rev-parse --git-dir >/dev/null 2>&1 ||
    [[ "$(git -C "$SOURCE" rev-parse HEAD)" != "$BASE_SOURCE" ]] ||
@@ -99,7 +99,7 @@ if [[ ! "$free_bytes" =~ ^[0-9]+$ ]] ||
    (( free_bytes < 3*needed + 500000000 )); then
   STATUS="INSUFFICIENT_DISK_SPACE"
   echo "No automatic cleanup; please free space before attempting the build."
-  exit 0
+  exit 2
 fi
 if [[ -e "$CHECKPOINT" ]]; then
   if [[ -L "$CHECKPOINT" ||
