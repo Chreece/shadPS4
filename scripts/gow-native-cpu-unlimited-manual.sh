@@ -42,7 +42,7 @@ finish() {
       done
     fi
     for image in "$OUT/$phase"/screenshots/*.png; do
-      [[ -f "$image" ]] && sha256sum "$image"
+      if [[ -f "$image" ]]; then sha256sum "$image"; fi
     done > "$OUT/$phase/screenshots.sha256"
     awk '{print $1}' "$OUT/$phase/screenshots.sha256" | sort -u | wc -l \
       > "$OUT/$phase/unique-screenshots.txt"
@@ -69,7 +69,7 @@ if [[ "$(sha256sum "$BASE" | awk '{print $1}')" != "$BASE_SHA" ||
   echo "Baseline or topic binary differs from exact validated checkpoint."
   exit 3
 fi
-if pgrep -x -u "$(id -u)" shadps4 >/dev/null 2>&1; then
+if ps -u "$(id -un)" -o comm= 2>/dev/null | grep -Eq '^shadps4'; then
   STATUS="OTHER_EMULATOR_RUNNING"
   echo "A game is already running. No processes stopped."
   exit 0
