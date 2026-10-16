@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+
 #include <limits>
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
@@ -164,7 +166,15 @@ private:
 
 using SharpSources = boost::container::small_vector<const IR::Inst*, 4>;
 
-SharpLocation SharpLocationFromSource(const IR::Inst* inst) {
+static bool SrtSourceAuditEnabled() {
+    static const bool enabled = [] {
+        const char* const flag = std::getenv("SHADPS4_SRT_SOURCE_AUDIT");
+        return flag && flag[0] == '1' && flag[1] == '\0';
+    }();
+    return enabled;
+}
+
+SharpLocation SharpLocationFromSource(const IR::Inst* inst, const Info& info, u32 word) {
     SharpLocation location{};
     if (inst->GetOpcode() == IR::Opcode::GetUserData) {
         return static_cast<SharpLocation>(inst->Arg(0).ScalarReg());
@@ -174,6 +184,19 @@ SharpLocation SharpLocationFromSource(const IR::Inst* inst) {
         location = inst->Flags<SharpLocation>();
     }
     if (location == 0) {
+        if (SrtSourceAuditEnabled()) {
+            const auto arg = inst->NumArgs() > 1 ? inst->Arg(1) : IR::Value{};
+            const IR::Inst* arg_inst = arg.TryInst();
+            LOG_WARNING(Render_Recompiler,
+                        "SrtSourceAudit: shader={:#x} stage={} dword={} producer={} "
+                        "flattened_offset={} index_immediate={} index_value={} index_opcode={} "
+                        "dma={}",
+                        info.pgm_hash, info.hw_stage, word, inst->GetOpcode(), u32(location),
+                        arg.IsImmediate(), arg.IsImmediate() && arg.Type() == IR::Type::U32
+                                               ? arg.U32() : 0u,
+                        arg_inst ? arg_inst->GetOpcode() : IR::Opcode::Phi,
+                        info.uses_dma);
+        }
         LOG_WARNING(Render_Recompiler, "Sharp source was not flatenned");
         return UNKNOWN_LOCATION;
     }
@@ -181,7 +204,7 @@ SharpLocation SharpLocationFromSource(const IR::Inst* inst) {
 }
 
 template <typename T>
-SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
+SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp, const Info& info) {
     using Summary = SharpFetch<T>::Summary;
     SharpFetch<T> sharp_fetch{};
     for (u32 i = 0; i < sharp.num_dwords; i++) {
@@ -189,7 +212,7 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
         if (dword.IsImmediate()) {
             sharp_fetch.immediates[i] = dword.U32();
         } else {
-            sharp_fetch.offsets[i] = SharpLocationFromSource(dword.Inst());
+            sharp_fetch.offsets[i] = SharpLocationFromSource(dword.Inst(), info, i);
             sharp_fetch.load_mask |= (1 << i);
             if (sharp_fetch.offsets[i] == UNKNOWN_LOCATION) {
                 sharp_fetch.summary = Summary::Invalid;
@@ -213,7 +236,7 @@ void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors
     IR::Inst& inst = *resource.user;
 
     const u32 buffer_binding = descriptors.Add(BufferResource{
-        .sharp_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.sharps[0]),
+        .sharp_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.sharps[0], info),
         .used_types = BufferDataType(inst, profile),
         .buffer_type = BufferType::Guest,
         .is_written = IsBufferStore(inst),
@@ -242,7 +265,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     const bool needs_mip_storage_fallback =
         inst_info.has_lod && is_written && !profile.supports_image_load_store_lod;
     ImageResource image_res = {
-        .sharp_fetch = ConstructSharpFetch<AmdGpu::Image>(resource.sharps[0]),
+        .sharp_fetch = ConstructSharpFetch<AmdGpu::Image>(resource.sharps[0], info),
         .is_depth = bool(inst_info.is_depth),
         .is_atomic = is_atomic,
         .is_array = bool(inst_info.is_array),
@@ -327,7 +350,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
 
             // Track FMask resource to do specialization.
             descriptors.Add(FMaskResource{
-                .sharp_idx = SharpLocationFromSource(resource.sharps[0].dwords[0].Inst()),
+                .sharp_idx = SharpLocationFromSource(resource.sharps[0].dwords[0].Inst(), info, 0),
             });
             return;
         }
@@ -343,10 +366,10 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
         auto& lod_prod = resource.sharps[1].post_op_data.lod_prod;
         const u32 sampler_binding = descriptors.Add(SamplerResource{
-            .sharp_fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1]),
+            .sharp_fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1], info),
             .post_op = resource.sharps[1].post_op,
             .post_op_tsharp_dw3_off =
-                lod_prod.IsEmpty() ? UNKNOWN_LOCATION : SharpLocationFromSource(lod_prod.Inst()),
+                lod_prod.IsEmpty() ? UNKNOWN_LOCATION : SharpLocationFromSource(lod_prod.Inst(), info, 3),
             .is_depth = bool(inst_info.is_depth), // true for the _C (compare) opcodes
             .is_integer = AmdGpu::IsInteger(image.GetNumberFmt()),
         });

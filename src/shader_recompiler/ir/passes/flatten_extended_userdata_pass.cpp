@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <unordered_map>
+#include <cstdlib>
 #include <boost/container/flat_map.hpp>
 #include <queue>
 #include <xbyak/xbyak.h>
@@ -175,6 +176,9 @@ struct PassInfo {
     // Preserve control-flow-dependent pointer reads when the native SRT JIT
     // cannot implement their offsets. Do not emit a partial native walker.
     u32 dynamic_offsets_deferred{};
+    u32 unresolved_offset_audits{};
+    u64 audit_shader_hash{};
+    Shader::HwStage audit_shader_stage{};
     std::unordered_map<const IR::Inst*, bool> offset_support_cache;
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
@@ -559,12 +563,35 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
         c.mov(reg, ptr[rsi + (static_cast<u32>(inst->Arg(0).ScalarReg()) << 2)]);
         return true;
     case IR::Opcode::ReadConst:
-    case IR::Opcode::ReadConstBuffer:
-        if (u16 offset = GetFlatbufOffset(pass_info.DeduplicateInstruction(inst)); offset != 0) {
+    case IR::Opcode::ReadConstBuffer: {
+        IR::Inst* const canonical = pass_info.DeduplicateInstruction(inst);
+        if (u16 offset = GetFlatbufOffset(canonical); offset != 0) {
             c.mov(reg, ptr[rsi + (offset << 2)]);
             return true;
         }
+        static const bool audit = [] {
+            const char* const flag = std::getenv("SHADPS4_SRT_SOURCE_AUDIT");
+            return flag && flag[0] == '1' && flag[1] == '\0';
+        }();
+        if (audit && pass_info.unresolved_offset_audits++ < 64) {
+            const IR::Value index = inst->Arg(1);
+            const IR::Inst* const index_inst = index.TryInst();
+            const IR::Value base = inst->Arg(0);
+            const IR::Inst* const base_inst = base.TryInst();
+            LOG_WARNING(Render_Recompiler,
+                        "SrtNativeAudit: shader={:#x} stage={} reason=unresolved_flatbuf "
+                        "read_op={} same_canonical={} index_immediate={} index_value={} "
+                        "index_op={} base_op={} src_flatbuf_offset={} canonical_offset={}",
+                        pass_info.audit_shader_hash, pass_info.audit_shader_stage, inst->GetOpcode(),
+                        canonical == inst, index.IsImmediate(),
+                        index.IsImmediate() && index.Type() == IR::Type::U32
+                            ? index.U32() : 0u,
+                        index_inst ? index_inst->GetOpcode() : IR::Opcode::Phi,
+                        base_inst ? base_inst->GetOpcode() : IR::Opcode::Phi,
+                        GetFlatbufOffset(inst), GetFlatbufOffset(canonical));
+        }
         return false;
+    }
     case IR::Opcode::IAdd32:
         ABORT_ON_FAILURE(EmitComputeOffsetIAdd32(c, reg, pass_info, inst));
         return true;
@@ -827,6 +854,8 @@ void SimplifyReadConstAddressAdd(IR::Inst& inst) {
 void FlattenExtendedUserdataPass(IR::Program& program) {
     auto& post_order = program.post_order_blocks;
     PassInfo pass_info;
+    pass_info.audit_shader_hash = program.info.pgm_hash;
+    pass_info.audit_shader_stage = program.info.hw_stage;
 
     // traverse at end and assign offsets to duplicate readconsts, using
     // vn_to_inst as the source
