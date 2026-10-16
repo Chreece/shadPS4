@@ -21,8 +21,12 @@ struct MockValue {
     
     Shader::IR::Type Type() const { return kind; }
     const MockInst* TryInst() const { return inst; }
-    static MockValue Imm(Type value_type = Type::U32) { return {nullptr, value_type, true}; }
-    static MockValue Ref(const MockInst& node) { return {&node, Type::U32, false}; }
+    static MockValue Imm(Shader::IR::Type value_type = Shader::IR::Type::U32) {
+        return {nullptr, value_type, true};
+    }
+    static MockValue Ref(const MockInst& node) {
+        return {&node, Shader::IR::Type::U32, false};
+    }
 };
 
 struct MockInst {
