@@ -294,8 +294,9 @@ static bool EmitComputeOffsetShiftLeftLogical32(Xbyak::CodeGenerator& c, Xbyak::
                                                 PassInfo& pass_info, IR::Inst* inst) {
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
+        // The left operand is a constant; the right operand is the runtime
+        // shift count. Preserve that count before loading the constant.
         ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
-        c.shl(reg, inst->Arg(0).U32());
         c.mov(ecx, reg);
         c.mov(reg, inst->Arg(0).U32());
         c.shl(reg, cl);
@@ -448,7 +449,8 @@ static bool EmitComputeOffsetUMax32(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, P
 
 static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
                                               PassInfo& pass_info, IR::Inst* inst) {
-    // We asume that the count is always less than 32, Is this correct?
+    // SPIR-V-style bitfield extraction: extract bits [offset, offset+width).
+    // In particular width=32 denotes the full shifted word, not width=0.
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
         c.mov(reg, inst->Arg(0).U32());
@@ -467,18 +469,30 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
     }
     if (inst->Arg(2).IsImmediate()) {
         if (in_stack) {
+            // The dynamic shift updated the low word on the stack. Pop the
+            // shifted value, not the original pre-shift register value.
             c.pop(reg.cvt64());
         }
-        c.and_(reg, (1U << inst->Arg(2).U32()) - 1);
+        const u32 width = inst->Arg(2).U32();
+        if (width < 32) {
+            c.and_(reg, (1U << width) - 1);
+        }
     } else {
         if (!in_stack) {
             c.push(reg.cvt64());
         }
         POP_ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(2)));
         c.mov(ecx, reg);
+        // x86 shifts mask CL to five bits. Width 32 would otherwise build
+        // a zero mask, so keep all bits when width is at least 32.
+        Xbyak::Label full_width;
+        c.mov(edx, 0xffffffffu);
+        c.cmp(ecx, 32);
+        c.jae(full_width);
         c.mov(edx, 1);
         c.shl(edx, cl);
         c.dec(edx);
+        c.L(full_width);
         c.and_(dword[rsp], edx);
         c.pop(reg.cvt64());
     }
