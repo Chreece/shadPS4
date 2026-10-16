@@ -159,7 +159,7 @@ grep -vE '[[:space:]]src/core/libraries/kernel/equeue.cpp$' \
   "$OUT/all-core-gpu-before.sha256" > "$OUT/protected-sources-before.sha256"
 (cd "$SOURCE"; find src/core src/video_core src/shader_recompiler \
   -type f \( -name '*.cpp' -o -name '*.h' \) \
-  ! -path '*/src/core/libraries/kernel/equeue.cpp' \
+  ! -path 'src/core/libraries/kernel/equeue.cpp' \
   ! -path '*/src/common/host_monotonic_clock.h' -print0 |
   LC_ALL=C sort -z | xargs -0 sha256sum) >"$OUT/protected-sources-after.sha256"
 # The new common header lives outside the three scanned trees.
