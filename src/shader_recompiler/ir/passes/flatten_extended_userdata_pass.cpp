@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <limits>
 #include <unordered_map>
 #include <functional>
 #include <vector>
@@ -25,6 +27,7 @@
 #include "shader_recompiler/ir/passes/srt_uniformity.h"
 #include "shader_recompiler/ir/passes/srt_offset_codegen.h"
 #include "shader_recompiler/ir/passes/srt_dependency_schedule.h"
+#include "shader_recompiler/ir/passes/srt_inline_read_codegen.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/ir/srt_gvn_table.h"
@@ -189,6 +192,7 @@ struct PassInfo {
     u32 dynamic_offsets_deferred{};
     u32 pending_offsets_this_round{};
     u32 unresolved_offset_audits{};
+    u32 inline_native_read_count{};
     u32 duplicate_offset_collisions{};
     u32 skipped_lane_pointer_reads{};
     u64 audit_shader_hash{};
@@ -253,6 +257,8 @@ static inline void SetFlatbufOffset(IR::Inst* inst, u16 offset) {
 
 static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
                           const IR::Value& off_dw);
+static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
+                                PassInfo& pass_info, IR::Inst* inst);
 
 #define ABORT_ON_FAILURE(expr)                                                                     \
     if (!(expr)) {                                                                                 \
@@ -592,6 +598,14 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
             c.mov(reg, ptr[rsi + (offset << 2)]);
             return true;
         }
+        // An unflattened ReadConst may still be a genuine scalar,
+        // wave-uniform guest read. Materialize its value directly in the
+        // native walker instead of requiring a pre-existing flatbuf slot.
+        if (inst->GetOpcode() == IR::Opcode::ReadConst &&
+            IsHostUniformSrtOffset(IR::Value{inst}) &&
+            EmitInlineReadConst(c, reg, pass_info, inst)) {
+            return true;
+        }
         static const bool audit = [] {
             const char* const flag = std::getenv("SHADPS4_SRT_SOURCE_AUDIT");
             return flag && flag[0] == '1' && flag[1] == '\0';
@@ -671,6 +685,52 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
                   magic_enum::enum_name(inst->GetOpcode()));
         return false;
     }
+}
+
+// Evaluate a wave-uniform ReadConst using the same guest mapped address
+// and recoverable MOV instruction shape as the existing SRT walker. Nested
+// scalar ReadConst dependencies are supported by ComputeOffset recursion;
+// cyclic/divergent expressions are rejected by IsHostUniformSrtOffset.
+static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
+                                PassInfo& pass_info, IR::Inst* inst) {
+    ASSERT(inst->GetOpcode() == IR::Opcode::ReadConst);
+    IR::Inst* const base = inst->Arg(0).TryInst();
+    if (!base || base->GetOpcode() != IR::Opcode::CompositeConstructU32x2) {
+        return false;
+    }
+
+    const std::size_t checkpoint = c.getSize();
+    c.push(rdi); // original SGPR-table pointer / caller's current table
+    c.push(rax);
+    c.push(r11);
+
+    if (!ComputeOffset(c, reg, pass_info, base->Arg(0))) {
+        c.setSize(checkpoint);
+        return false;
+    }
+    c.mov(eax, reg); // low 32 bits of the guest virtual address
+
+    if (!ComputeOffset(c, reg, pass_info, base->Arg(1))) {
+        c.setSize(checkpoint);
+        return false;
+    }
+    c.shl(reg.cvt64(), 32);
+    c.or_(rax, reg.cvt64());
+
+    // The GCN ReadConst index is a dword offset, not a byte offset.
+    if (!ComputeOffset(c, reg, pass_info, inst->Arg(1))) {
+        c.setSize(checkpoint);
+        return false;
+    }
+    c.mov(r10d, reg);
+    SrtCodegen::EmitGuestReadDword(c); // returns exact guest dword in r10d
+    c.mov(reg, r10d);
+
+    c.pop(r11);
+    c.pop(rax);
+    c.pop(rdi);
+    ++pass_info.inline_native_read_count;
+    return true;
 }
 
 static inline bool PushPtr(Xbyak::CodeGenerator& c, PassInfo& pass_info, const IR::Value& off_dw) {
@@ -805,10 +865,22 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
     PopPtr(c);
 }
 
-static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
+static void GenerateSrtProgram(
+    Info& info, PassInfo& pass_info,
+    const boost::container::small_vector<IR::Inst*, 32>& all_readconsts) {
     Xbyak::CodeGenerator& c = g_srt_codegen;
 
-    if (pass_info.srt_roots.empty()) {
+    // Not every scalar descriptor chain has an SGPR-root entry in the
+    // existing table planner. Unflattened but wave-uniform ReadConst reads
+    // still require a walker to populate their runtime descriptor values.
+    const bool has_inline_reads = std::ranges::any_of(all_readconsts, [](IR::Inst* inst) {
+        const IR::Inst* const base = inst->Arg(0).TryInst();
+        return inst->GetOpcode() == IR::Opcode::ReadConst &&
+               GetFlatbufOffset(inst) == 0 && base &&
+               base->GetOpcode() == IR::Opcode::CompositeConstructU32x2 &&
+               IsHostUniformSrtOffset(IR::Value{inst});
+    });
+    if (pass_info.srt_roots.empty() && !has_inline_reads) {
         return;
     }
 
@@ -862,6 +934,45 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
         LOG_ERROR(Render_Recompiler,
                   "Failed to compute offset for SRT walker after global dependency resolution: {}",
                   global_result.pending);
+    }
+
+    // The original host SRT root graph cannot represent every address
+    // expression. Late-lower any remaining wave-uniform ReadConst from its
+    // *actual* guest pointer, storing the result in an ordinary flatbuf slot.
+    // This restores real shader T#/S# source words without ever manufacturing
+    // a resource or changing non-uniform shader evaluation.
+    u32 late_reads{};
+    for (IR::Inst* read : all_readconsts) {
+        if (read->GetOpcode() != IR::Opcode::ReadConst ||
+            GetFlatbufOffset(read) != 0 ||
+            !IsHostUniformSrtOffset(IR::Value{read})) {
+            continue;
+        }
+        IR::Inst* const canonical = pass_info.DeduplicateInstruction(read);
+        if (const u16 prior = GetFlatbufOffset(canonical); prior != 0) {
+            SetFlatbufOffset(read, prior);
+            continue;
+        }
+        if (pass_info.dst_off_dw == std::numeric_limits<u16>::max()) {
+            break;
+        }
+        if (!EmitInlineReadConst(c, r10d, pass_info, read)) {
+            continue;
+        }
+        const u16 flatbuf_slot = pass_info.dst_off_dw++;
+        c.mov(dword[rsi + (flatbuf_slot << 2)], r10d);
+        SetFlatbufOffset(read, flatbuf_slot);
+        if (canonical != read) {
+            SetFlatbufOffset(canonical, flatbuf_slot);
+        }
+        ++late_reads;
+    }
+    if (late_reads != 0 || pass_info.inline_native_read_count != 0) {
+        LOG_INFO(Render_Recompiler,
+                 "SrtInlineReadConstResult: shader={:#x} late_flattened={} "
+                 "native_read_expressions={} final_flatbuf_words={}",
+                 info.pgm_hash, late_reads, pass_info.inline_native_read_count,
+                 pass_info.dst_off_dw);
     }
 
     c.ret();
@@ -1096,7 +1207,7 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
         }
     }
 
-    GenerateSrtProgram(program.info, pass_info);
+    GenerateSrtProgram(program.info, pass_info, all_readconsts);
     if (SrtPlanningAuditEnabled() &&
         (pass_info.duplicate_offset_collisions != 0 ||
          pass_info.skipped_lane_pointer_reads != 0)) {
