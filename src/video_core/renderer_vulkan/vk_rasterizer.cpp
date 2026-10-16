@@ -902,11 +902,16 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
             image_id = texture_cache.FindImage(desc);
             auto* image = &texture_cache.GetImage(image_id);
-            if (auto depth_image_id = texture_cache.GetAssociatedDepth(*image)) {
-                // If this image has an associated depth image, it's a stencil attachment.
-                // Redirect the access to the actual depth-stencil buffer.
-                image_id = depth_image_id;
-                image = &texture_cache.GetImage(image_id);
+            // An associated depth/stencil image is suitable for sampled stencil
+            // access, but cannot provide a Vulkan storage-image view. Keep
+            // storage accesses on the format-compatible cache image selected
+            // by FindImage/ResolveDepthOverlap rather than redirecting them
+            // to a depth/stencil attachment without STORAGE usage/features.
+            if (desc.type == VideoCore::TextureCache::BindingType::Texture) {
+                if (auto depth_image_id = texture_cache.GetAssociatedDepth(*image)) {
+                    image_id = depth_image_id;
+                    image = &texture_cache.GetImage(image_id);
+                }
             }
             if (image->binding.is_bound) {
                 // The image is already bound. In case if it is about to be used as storage we
