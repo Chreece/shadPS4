@@ -311,6 +311,20 @@ void Module::LoadModuleToMemory(u32& max_tls_index) {
                     ? PatchRedZoneMemoryInstructions(segment_addr, segment_size, function_starts)
                     : PatchCpuInstructionsStatically(segment_addr, segment_size, function_starts);
         }
+#if defined(__linux__) && defined(ARCH_X86_64)
+        if (IsBuiltinCpuIdMode()) {
+            // A short RDPID outside known function boundaries cannot safely
+            // execute natively on Intel CPUs: its TSC_AUX is a host ID.
+            // Never silently accept such a guest instruction. The fallback
+            // must cover it before builtin mode can become the default.
+            for (const auto& [segment_addr, segment_size] : executable_segments) {
+                u64 unpatched{};
+                ASSERT_MSG(!FindUnpatchedRdpid(segment_addr, segment_size, unpatched),
+                           "Builtin CPU identity: uncovered guest RDPID at {:#x} in {}",
+                           unpatched, name);
+            }
+        }
+#endif
         if (total.function_count == 0) {
             if (!executable_segments.empty()) {
                 LOG_WARNING(Core_Linker,
