@@ -32,6 +32,7 @@
 
 #if defined(__linux__)
 #include "core/cpu_id.h"
+#include "core/cpu_id_native_traps.h"
 #endif
 
 #ifdef _WIN32
@@ -2025,6 +2026,51 @@ static RedZonePatchResult PatchSegmentStatically(u64 segment_addr, u64 segment_s
         const auto record_unsupported = [&](uintptr_t site) {
             const auto& rewrite = rewrite_sites.at(site);
             if (rewrite.cpu_patch != nullptr) {
+#if defined(__linux__)
+                // Linux can execute RDPID natively, so leaving an unpatched
+                // short instruction to the SIGILL fallback is not sufficient:
+                // no fault is raised on CPUs that support the opcode. For
+                // positively decoded instruction sites use an in-place UD2
+                // instead of rewriting adjacent instructions or running the
+                // whole process through an external DBT.
+                const auto& decoded = function.instructions.at(site);
+                const auto mnemonic = decoded.instruction.mnemonic;
+                CpuIdInstruction kind{};
+                bool identity_opcode = true;
+                switch (mnemonic) {
+                case ZYDIS_MNEMONIC_CPUID:
+                    kind = CpuIdInstruction::Cpuid;
+                    break;
+                case ZYDIS_MNEMONIC_RDTSCP:
+                    kind = CpuIdInstruction::Rdtscp;
+                    break;
+                case ZYDIS_MNEMONIC_RDPID:
+                    kind = CpuIdInstruction::Rdpid;
+                    break;
+                default:
+                    identity_opcode = false;
+                    break;
+                }
+                if (identity_opcode && decoded.instruction.length >= 2) {
+                    u32 destination = 0;
+                    if (kind == CpuIdInstruction::Rdpid) {
+                        destination =
+                            ZydisToXbyakRegisterOperand(decoded.operands[0]).getIdx();
+                    }
+                    if (NativeCpuId::TrapRegistry::Register(
+                            site, kind, destination, decoded.instruction.length)) {
+                        auto& writer = module->patch_gen;
+                        writer.reset();
+                        writer.setSize(site - reinterpret_cast<uintptr_t>(writer.getCode()));
+                        writer.db(0x0f);
+                        writer.db(0x0b);
+                        writer.nop(decoded.instruction.length - 2);
+                        module->patched.insert(reinterpret_cast<u8*>(site));
+                        ++result.patched_cpu_patch_instruction_count;
+                        return;
+                    }
+                }
+#endif
                 ++result.unsupported_cpu_patch_instruction_count;
             }
             if (rewrite.protect_red_zone) {
