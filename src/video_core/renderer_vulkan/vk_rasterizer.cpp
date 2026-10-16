@@ -13,6 +13,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
+#include "video_core/renderer_vulkan/vk_image_descriptor_contract.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -863,12 +864,20 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
     u32 num_images{};
     for (const auto& image_desc : stage.images) {
+        // Shader declarations determine both the runtime and layout count,
+        // including images with invalid or unmapped guest addresses.
+        const u32 num_bindings = image_desc.NumBindings(stage);
+        ASSERT_MSG(num_bindings > 0 && num_images + num_bindings <= image_bindings.size(),
+                   "Invalid shader image descriptor count: {} + {}", num_images, num_bindings);
         const auto tsharp = image_desc.GetSharp(stage);
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
         if (tsharp.Address() == 0 || data_fmt == AmdGpu::DataFormat::FormatInvalid) {
-            image_bindings[num_images++].image_id = {};
-            image_descriptor_array_sizes.push_back(1);
+            for (u32 i = 0; i < num_bindings; ++i) {
+                ImageDescriptorContract::Invalidate(image_bindings[num_images++],
+                                                    image_desc.is_written);
+            }
+            image_descriptor_array_sizes.push_back(num_bindings);
             continue;
         }
 
@@ -879,13 +888,15 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                         "data_format={}, num_format={}",
                         tsharp.Address(), tsharp.pitch, tsharp.width, static_cast<u32>(data_fmt),
                         static_cast<u32>(num_fmt));
-            image_bindings[num_images++].image_id = {};
-            image_descriptor_array_sizes.push_back(1);
+            for (u32 i = 0; i < num_bindings; ++i) {
+                ImageDescriptorContract::Invalidate(image_bindings[num_images++],
+                                                    image_desc.is_written);
+            }
+            image_descriptor_array_sizes.push_back(num_bindings);
             continue;
         }
 
         const Shader::MipStorageFallbackMode mip_fallback_mode = image_desc.mip_fallback_mode;
-        const u32 num_bindings = image_desc.NumBindings(stage);
 
         for (auto i = 0; i < num_bindings; i++) {
             auto& [image_id, desc] = image_bindings[num_images++];
@@ -976,21 +987,20 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     }
 
     u32 image_info_idx = first_image_idx;
-    u32 image_binding_idx = 0;
-    for (u32 array_size : image_descriptor_array_sizes) {
-        const auto& [_, desc] = image_bindings[image_binding_idx];
-        const bool is_storage = desc.type == VideoCore::TextureCache::BindingType::Storage;
+    ASSERT(image_descriptor_array_sizes.size() == stage.images.size());
+    for (u32 image_index = 0; image_index < stage.images.size(); ++image_index) {
+        const u32 array_size = image_descriptor_array_sizes[image_index];
+        const auto& declared_image = stage.images[image_index];
         auto& set_write = set_writes[set_write_index++];
         set_write.dstSet = VK_NULL_HANDLE;
         set_write.dstBinding = binding.unified;
         set_write.dstArrayElement = 0;
         set_write.descriptorCount = array_size;
         set_write.descriptorType =
-            is_storage ? vk::DescriptorType::eStorageImage : vk::DescriptorType::eSampledImage;
+            ImageDescriptorContract::Type<vk::DescriptorType>(declared_image.is_written);
         set_write.pImageInfo = &image_infos[image_info_idx];
 
         image_info_idx += array_size;
-        image_binding_idx += array_size;
         binding.unified += array_size;
     }
 
