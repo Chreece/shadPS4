@@ -303,7 +303,7 @@ def capture(label,profiler):
 
 def checkpoint(original_client,nonclient):
     if CHECKPOINT.exists():
-        if (CHECKPOINT/"client.c").read_bytes()!=original_client or
+        if ((CHECKPOINT/"client.c").read_bytes()!=original_client or
             sha_file(CHECKPOINT/"libshadps4_cpu_id.so")!=sha_file(LIB)):
             raise RuntimeError("existing preserved CPU-ID client changed unexpectedly")
         note("CHECKPOINT=verified previous baseline for safe retry")
