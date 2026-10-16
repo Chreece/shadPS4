@@ -580,18 +580,25 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
 }
 
 static inline bool PushPtr(Xbyak::CodeGenerator& c, PassInfo& pass_info, const IR::Value& off_dw) {
-    c.push(rdi);
-    if (off_dw.IsImmediate()) {
-        c.mov(rdi, ptr[rdi + (off_dw.U32() << 2)]);
-    } else {
-        ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));
-        c.shl(r10d, 2);
-        c.mov(r10d, r10d);
-        c.mov(rdi, ptr[rdi + r10]);
-    }
-    c.mov(r10, 0xFFFFFFFFFFFFULL);
-    c.and_(rdi, r10);
-    return true;
+    // When an offset cannot yet be lowered (for example an SSA Phi), do not
+    // leave an unmatched PUSH or a partial register calculation in the emitted
+    // program. The walker must remain a well-formed, callable host function.
+    return EmitSrtWalkerAtomically(c, [&]() {
+        c.push(rdi);
+        if (off_dw.IsImmediate()) {
+            c.mov(rdi, ptr[rdi + (off_dw.U32() << 2)]);
+        } else {
+            if (!ComputeOffset(c, r10d, pass_info, off_dw)) {
+                return false;
+            }
+            c.shl(r10d, 2);
+            c.mov(r10d, r10d);
+            c.mov(rdi, ptr[rdi + r10]);
+        }
+        c.mov(r10, 0xFFFFFFFFFFFFULL);
+        c.and_(rdi, r10);
+        return true;
+    });
 }
 
 static inline void PopPtr(Xbyak::CodeGenerator& c) {
@@ -622,7 +629,11 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         if (src_off_dw.IsImmediate()) {
             c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
         } else {
-            if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
+            // Roll back all bytes emitted by an unsupported offset expression
+            // before continuing with another independently usable resource.
+            if (!EmitSrtWalkerAtomically(c, [&]() {
+                    return ComputeOffset(c, r10d, pass_info, src_off_dw);
+                })) {
                 LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
                 continue;
             }

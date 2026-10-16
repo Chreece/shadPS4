@@ -43,6 +43,58 @@ bool Verify(const char* label, Function f) {
     return true;
 }
 
+bool VerifyTransactionalRollback() {
+    using namespace Xbyak::util;
+    // A failed nested offset must not leave a push or bogus computation in
+    // a function that later returns to the caller.
+    Xbyak::CodeGenerator rolled_back(4096);
+#if defined(_WIN32)
+    rolled_back.mov(eax, ecx);
+#else
+    rolled_back.mov(eax, edi);
+#endif
+    const auto checkpoint = rolled_back.getSize();
+    const bool failed = Shader::Optimization::EmitSrtWalkerAtomically(rolled_back, [&] {
+        rolled_back.push(rdi);
+        rolled_back.push(rcx);
+        rolled_back.mov(eax, 0xdeadbeefU);
+        return false;
+    });
+    if (failed || rolled_back.getSize() != checkpoint) {
+        std::fputs("SRT rollback emitted bytes after failure\n", stderr);
+        return false;
+    }
+    rolled_back.ret();
+    rolled_back.ready();
+    const Function identity = rolled_back.getCode<Function>();
+    for (const auto value : {0U, 1U, 15U, 0x80000000U, 0xffffffffU}) {
+        if (identity(value) != value) {
+            std::fputs("SRT rollback corrupted register or return stack\n", stderr);
+            return false;
+        }
+    }
+
+    Xbyak::CodeGenerator committed(4096);
+#if defined(_WIN32)
+    committed.mov(eax, ecx);
+#else
+    committed.mov(eax, edi);
+#endif
+    const bool succeeded = Shader::Optimization::EmitSrtWalkerAtomically(committed, [&] {
+        committed.add(eax, 1);
+        return true;
+    });
+    committed.ret();
+    committed.ready();
+    const Function plus_one = committed.getCode<Function>();
+    if (!succeeded || plus_one(4) != 5) {
+        std::fputs("SRT committed offset was unexpectedly discarded\n", stderr);
+        return false;
+    }
+    std::puts("SRT_WALKER_ROLLBACK=PASS malformed_offsets=REWOUND");
+    return true;
+}
+
 int main() {
 #if !defined(__x86_64__) && !defined(_M_X64)
     std::puts("SRT_FINDILSB32=SKIP non-x86-64 host");
@@ -71,7 +123,8 @@ int main() {
     r10_code.ready();
 
     if (!Verify("eax", eax_code.getCode<Function>()) ||
-        !Verify("r10d", r10_code.getCode<Function>())) {
+        !Verify("r10d", r10_code.getCode<Function>()) ||
+        !VerifyTransactionalRollback()) {
         return 1;
     }
     std::puts("SRT_FINDILSB32=PASS cases=40030 zero=UINT32_MAX");

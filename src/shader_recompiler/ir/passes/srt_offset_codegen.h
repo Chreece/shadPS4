@@ -20,4 +20,18 @@ inline void EmitSrtFindILsb32(Xbyak::CodeGenerator& c, const Xbyak::Reg32 dst) {
     c.cmovz(dst, ecx);
 }
 
+// A failed offset calculation may already have emitted pushes, register
+// changes, or a partial expression. Never leave these bytes in a completed
+// walker: on failure restore the exact previous code position. This affects
+// only host code *generation*, not the guest shader or any runtime patches.
+template <typename Emit>
+[[nodiscard]] bool EmitSrtWalkerAtomically(Xbyak::CodeGenerator& code, Emit&& emit) {
+    const auto checkpoint = code.getSize();
+    if (emit()) {
+        return true;
+    }
+    code.setSize(checkpoint);
+    return false;
+}
+
 } // namespace Shader::Optimization
