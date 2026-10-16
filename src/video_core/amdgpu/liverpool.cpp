@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/preprocessor/stringize.hpp>
+#include <unordered_map>
 
 #include "common/assert.h"
 #include "common/debug.h"
@@ -1020,8 +1021,21 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
         case PM4ItOpcode::SetQueueReg: {
             const auto* set_data = reinterpret_cast<const PM4CmdSetQueueReg*>(header);
-            LOG_WARNING(Render, "Encountered compute SetQueueReg: vqid = {}, reg_offset = {:#x}",
-                        set_data->vqid.Value(), set_data->reg_offset.Value());
+            const u32 vqid = set_data->vqid.Value();
+            const u32 reg_offset = set_data->reg_offset.Value();
+            // Report the first payload value so unsupported queue-register
+            // semantics can be implemented from real packet evidence. The
+            // packet's size is already used for bounds during PM4 traversal.
+            const u32 num_data_dwords = set_data->Size() / sizeof(u32);
+            const u32 first_value = num_data_dwords != 0 ? set_data->data[0] : 0;
+            static thread_local std::unordered_map<u32, u64> reports;
+            const u64 seen = ++reports[(vqid << 8) | reg_offset];
+            if ((seen & (seen - 1)) == 0) {
+                LOG_WARNING(Render,
+                            "Unhandled compute SetQueueReg: vqid={}, reg_offset={:#x}, "
+                            "value0={:#x}, words={}, occurrences={}",
+                            vqid, reg_offset, first_value, num_data_dwords, seen);
+            }
             break;
         }
         case PM4ItOpcode::DispatchDirect: {
