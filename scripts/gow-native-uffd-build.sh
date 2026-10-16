@@ -20,6 +20,7 @@ BASE_SOURCE="1fe3e8b626f34f092bb2be37de8d14fe26d45bc2"
 CPU_SOURCE="09d0bd31c0a81ee5e4c51a5421c3b420c45e3343"
 HRTIMER_SOURCE="b788766dbfcd8727bd90da571fe3d740b5a7c3e9"
 FIX="edd99d6d1fabf76e2a64505d09d139b3fd1f305d"
+COMPILER_FIX="042d33c7430a8fcfc42f39bb9e5a2a6443b03750"
 TEST_COMMIT="c51e5cc19d622aae7279e09fbf785ae8dce9eb01"
 BRANCH="fix/linux-userfaultfd-registration-lifecycle-20261016"
 LOGROOT="$HOME/projects/shadps4/logs"
@@ -49,6 +50,7 @@ finish() {
   {
     printf 'STATUS=%s\nSCRIPT_EXIT=%s\n' "$STATUS" "$code"
     printf 'CPU_BASE=%s\nUSERFAULTFD_CORRECTNESS_COMMIT=%s\n' "$CPU_SOURCE" "$FIX"
+    printf 'PACKED_UFFD_FLAGS_COMPILER_FIX=%s\n' "$COMPILER_FIX"
     printf 'EXPERIMENTAL_BINARY=%s\nPROVEN_BASELINE_SHA=%s\n' "$NEW" "$BASE_SHA"
     printf 'DYNAMORIO=OFF\nSHADER_AND_GPU_SOURCE=UNCHANGED\n'
     printf 'INSTALLED_EMULATOR=UNCHANGED\nSUNSHINE=UNCHANGED\nX11=UNCHANGED\nSSH=UNCHANGED\n'
@@ -120,7 +122,8 @@ echo "PROVEN_RENDERED_NATIVE_BASELINE=PROTECTED"
 STATUS="FETCHING_REVIEWED_CLOCK_SOURCE"
 git -C "$SOURCE" -c http.version=HTTP/1.1 fetch --no-tags \
   "https://github.com/Chreece/shadPS4.git" "refs/heads/$BRANCH"
-git -C "$SOURCE" merge-base --is-ancestor "$FIX" FETCH_HEAD || {
+git -C "$SOURCE" merge-base --is-ancestor "$FIX" FETCH_HEAD &&
+git -C "$SOURCE" merge-base --is-ancestor "$COMPILER_FIX" FETCH_HEAD || {
   STATUS="FIX_REF_NOT_FOUND"
   exit 3
 }
@@ -199,27 +202,38 @@ HELPER="src/video_core/uffd_range.h"
 UNIT="tests/page_manager/test_uffd_range.cpp"
 INTEGRATION="tests/page_manager/test_uffd_kernel.cpp"
 old_blob="$(git -C "$SOURCE" rev-parse "$FIX^:$REL")"
-new_blob="$(git -C "$SOURCE" rev-parse "$FIX:$REL")"
+patched_blob="$(git -C "$SOURCE" rev-parse "$FIX:$REL")"
+compiled_blob="$(git -C "$SOURCE" rev-parse "$COMPILER_FIX:$REL")"
 actual_blob="$(git -C "$SOURCE" hash-object "$SOURCE/$REL")"
+# The prior run passed every UFFD kernel test and applied exactly FIX; it
+# stopped only at packed-member fmt logging. Accept that state and resume
+# with the reviewed one-line semantic copy, without resetting GPU sources.
 if [[ "$actual_blob" == "$old_blob" &&
       ! -e "$SOURCE/$HELPER" &&
       ! -e "$SOURCE/$UNIT" ]]; then
   APPLY_FIX=1
+  APPLY_COMPILER_FIX=1
   echo "USERFAULTFD_REVIEWED_SOURCE=UNPATCHED"
-elif [[ "$actual_blob" == "$new_blob" &&
-        -f "$SOURCE/$HELPER" && ! -L "$SOURCE/$HELPER" &&
+elif [[ "$actual_blob" == "$patched_blob" ||
+        "$actual_blob" == "$compiled_blob" ]] &&
+     [[ -f "$SOURCE/$HELPER" && ! -L "$SOURCE/$HELPER" &&
         -f "$SOURCE/$UNIT" && ! -L "$SOURCE/$UNIT" ]] &&
      [[ "$(git -C "$SOURCE" hash-object "$SOURCE/$HELPER")" == "$(git -C "$SOURCE" rev-parse "$FIX:$HELPER")" ]] &&
      [[ "$(git -C "$SOURCE" hash-object "$SOURCE/$UNIT")" == "$(git -C "$SOURCE" rev-parse "$FIX:$UNIT")" ]]; then
   APPLY_FIX=0
-  echo "USERFAULTFD_REVIEWED_SOURCE=ALREADY_APPLIED"
+  if [[ "$actual_blob" == "$patched_blob" ]]; then
+    APPLY_COMPILER_FIX=1
+    echo "USERFAULTFD_REVIEWED_SOURCE=OLD_PATCH_RESUMING_COMPILER_FIX"
+  else
+    APPLY_COMPILER_FIX=0
+    echo "USERFAULTFD_REVIEWED_SOURCE=CORRECTED_PATCH_ALREADY_PRESENT"
+  fi
 else
   STATUS="USERFAULTFD_SOURCE_CONFLICT"
   echo "Page manager or test sources differ from the exactly reviewed checkpoint."
   echo "No source reset or binary replacement will be attempted."
   exit 4
 fi
-
 (cd "$SOURCE"; find src/core src/video_core src/shader_recompiler \
    -type f \( -name '*.cpp' -o -name '*.h' \) \
    ! -path 'src/video_core/page_manager.cpp' \
@@ -233,12 +247,25 @@ if [[ ! -s "$OUT/reviewed-uffd.patch" ]]; then
   STATUS="REVIEWED_UFFD_PATCH_MISSING"
   exit 4
 fi
+git -C "$SOURCE" diff --binary "$FIX" "$COMPILER_FIX" -- "$REL"   > "$OUT/packed-flags-compile-fix.patch"
+if [[ ! -s "$OUT/packed-flags-compile-fix.patch" ]]; then
+  STATUS="COMPILER_FIX_PATCH_MISSING"
+  exit 4
+fi
 if (( APPLY_FIX==1 )); then
   git -C "$SOURCE" apply --check "$OUT/reviewed-uffd.patch"
   git -C "$SOURCE" apply "$OUT/reviewed-uffd.patch"
 fi
+if (( APPLY_COMPILER_FIX==1 )); then
+  git -C "$SOURCE" apply --check "$OUT/packed-flags-compile-fix.patch"
+  git -C "$SOURCE" apply "$OUT/packed-flags-compile-fix.patch"
+fi
 for rel in "$REL" "$HELPER" "$UNIT"; do
-  expected="$(git -C "$SOURCE" rev-parse "$FIX:$rel")"
+  if [[ "$rel" == "$REL" ]]; then
+    expected="$(git -C "$SOURCE" rev-parse "$COMPILER_FIX:$rel")"
+  else
+    expected="$(git -C "$SOURCE" rev-parse "$FIX:$rel")"
+  fi
   actual="$(git -C "$SOURCE" hash-object "$SOURCE/$rel")"
   if [[ "$actual" != "$expected" ]]; then
     STATUS="UFFD_POSTPATCH_SOURCE_MISMATCH"
@@ -246,6 +273,7 @@ for rel in "$REL" "$HELPER" "$UNIT"; do
     exit 4
   fi
 done
+echo "USERFAULTFD_PACKED_FLAGS_COMPILER_FIX=APPLIED_AND_PINNED"
 (cd "$SOURCE"; find src/core src/video_core src/shader_recompiler \
    -type f \( -name '*.cpp' -o -name '*.h' \) \
    ! -path 'src/video_core/page_manager.cpp' \
