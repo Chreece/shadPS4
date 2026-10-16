@@ -103,6 +103,7 @@ struct PageManager::Impl {
 
     Impl() = default;
     virtual ~Impl() = default;
+    virtual void DrainPendingInvalidations() {}
 
     virtual void OnMap(VAddr address, size_t size) {
         // No-op
@@ -346,6 +347,9 @@ struct PageManager::Impl {
 struct UffdImpl : public PageManager::Impl {
 private:
     std::jthread ufd_thread;
+    // GPU-origin faults must remain serviceable while a CPU-origin fault is
+    // queued for cache readback on the GPU command processor.
+    std::atomic_size_t pending_gpu_invalidations{0};
     int uffd{-1};
 
 public:
@@ -452,9 +456,32 @@ public:
                    Common::GetLastErrorMsg());
     }
 
+    void DrainPendingInvalidations() override {
+        // C++20 atomic wait avoids polling and cannot miss a completion wakeup.
+        for (auto pending = pending_gpu_invalidations.load(); pending != 0;
+             pending = pending_gpu_invalidations.load()) {
+            pending_gpu_invalidations.wait(pending);
+        }
+    }
+
+    void WakeFault(VAddr addr, u32 tid) {
+        // Wake only *after* the corresponding GPU/CPU data is coherent and
+        // the page's write protection has been removed by memory tracking.
+        const auto wake = UffdFaultWakeRange(addr, PageManager::PM_PAGE_SIZE);
+        ASSERT(wake.has_value());
+        uffdio_range range{};
+        range.start = wake->start;
+        range.len = wake->len;
+        const int ret = ioctl(uffd, UFFDIO_WAKE, &range);
+        ASSERT_MSG(ret != -1, "Waking userfaultfd thread {} failed: {}",
+                   tid, Common::GetLastErrorMsg());
+    }
+
     void UffdHandler(std::stop_token token) {
         Common::SetCurrentThreadName("shadPS4:Uffd");
-        while (!token.stop_requested()) {
+        // Continue receiving GPU-origin faults while queued GPU work is
+        // draining during teardown; these faults may otherwise deadlock it.
+        while (!token.stop_requested() || pending_gpu_invalidations.load() != 0) {
             pollfd descriptor{};
             descriptor.fd = uffd;
             descriptor.events = POLLIN;
@@ -503,25 +530,24 @@ public:
                 break;
             }
 
-            // All GPU-cache invalidation and per-page permission accounting
-            // remains unchanged. In particular we must not forcibly clear
-            // write protection just to avoid a freeze.
             const VAddr addr = msg.arg.pagefault.address;
-            const auto ptid = msg.arg.pagefault.feat.ptid;
-            rasterizer->InvalidateMemory(
-                addr, 1, ptid == rasterizer->GetGpuCommandProcessorThreadId());
-
-            // A resolved UFFD WP fault may be woken only AFTER invalidation.
-            // UFFDIO_WAKE itself does not remove write protection. Linux
-            // requires a page-aligned start; the raw fault address needn't be.
-            const auto wake = UffdFaultWakeRange(addr, PageManager::PM_PAGE_SIZE);
-            ASSERT(wake.has_value());
-            uffdio_range range{};
-            range.start = wake->start;
-            range.len = wake->len;
-            const int ret = ioctl(uffd, UFFDIO_WAKE, &range);
-            ASSERT_MSG(ret != -1, "Waking userfaultfd thread {} failed: {}",
-                       ptid, Common::GetLastErrorMsg());
+            const u32 ptid = msg.arg.pagefault.feat.ptid;
+            if (ptid == rasterizer->GetGpuCommandProcessorThreadId()) {
+                // The GPU processor is paused in this fault. Its own memory
+                // invalidation must execute inline, without posting to itself.
+                rasterizer->InvalidateMemory(addr, 1, true);
+                WakeFault(addr, ptid);
+            } else {
+                // Queue the *complete* invalidation on the GPU processor.
+                // Keep the event receiver responsive to faults in that
+                // processor. Never wake the CPU writer before readback.
+                pending_gpu_invalidations.fetch_add(1);
+                rasterizer->InvalidateMemoryOnGpuThread(addr, 1, [this, addr, ptid] {
+                    WakeFault(addr, ptid);
+                    pending_gpu_invalidations.fetch_sub(1);
+                    pending_gpu_invalidations.notify_all();
+                });
+            }
         }
     }
 };
@@ -599,6 +625,10 @@ PageManager::PageManager(Vulkan::Rasterizer* rasterizer_) {
 }
 
 PageManager::~PageManager() = default;
+
+void PageManager::DrainPendingInvalidations() {
+    impl->DrainPendingInvalidations();
+}
 
 void PageManager::OnGpuMap(VAddr address, size_t size) {
     impl->OnMap(address, size);
