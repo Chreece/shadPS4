@@ -159,8 +159,11 @@ struct PassInfo {
     };
 
     // map offset to inst
+    // Multiple descriptor reads can share an SRT pointer and offset yet have
+    // distinct SSA producers. A flat_map assignment silently overwrites one
+    // producer and leaves its flattened slot unassigned. Preserve every use.
     using PtrUserList =
-        boost::container::flat_map<IR::Value, Shader::IR::Inst*, PointerListCompare>;
+        boost::container::flat_multimap<IR::Value, Shader::IR::Inst*, PointerListCompare>;
 
     Optimization::SrtGvnTable gvn_table;
     // keys are GetUserData, ReadConst or ReadConstBuffer instructions that are used as pointers
@@ -177,6 +180,8 @@ struct PassInfo {
     // cannot implement their offsets. Do not emit a partial native walker.
     u32 dynamic_offsets_deferred{};
     u32 unresolved_offset_audits{};
+    u32 duplicate_offset_collisions{};
+    u32 skipped_lane_pointer_reads{};
     u64 audit_shader_hash{};
     Shader::HwStage audit_shader_stage{};
     std::unordered_map<const IR::Inst*, bool> offset_support_cache;
@@ -202,6 +207,15 @@ struct PassInfo {
 namespace Shader::Optimization {
 
 namespace {
+
+
+static bool SrtPlanningAuditEnabled() {
+    static const bool enabled = [] {
+        const char* const flag = std::getenv("SHADPS4_SRT_SOURCE_AUDIT");
+        return flag && flag[0] == '1' && flag[1] == '\0';
+    }();
+    return enabled;
+}
 
 static inline u16 GetFlatbufOffset(const IR::Inst* inst) {
     if (inst->GetOpcode() == IR::Opcode::ReadConstBuffer) {
@@ -940,8 +954,22 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
         }
 
         IR::Inst* base = inst->Arg(0).Inst();
-        if (auto* inst = base->Arg(0).TryInst();
-            inst && inst->GetOpcode() == IR::Opcode::ReadFirstLane) {
+        if (auto* low = base->Arg(0).TryInst();
+            low && low->GetOpcode() == IR::Opcode::ReadFirstLane) {
+            ++pass_info.skipped_lane_pointer_reads;
+            if (SrtPlanningAuditEnabled() && pass_info.skipped_lane_pointer_reads <= 48) {
+                const IR::Value index = inst->Arg(1);
+                const IR::Inst* const index_inst = index.TryInst();
+                const IR::Inst* const lane_source = low->Arg(0).TryInst();
+                LOG_INFO(Render_Recompiler,
+                         "SrtPlanSkip: shader={:#x} stage={} reason=lane_selected_pointer "
+                         "source={} uniform={} read={} index_immediate={} index_op={}",
+                         pass_info.audit_shader_hash, pass_info.audit_shader_stage,
+                         lane_source ? lane_source->GetOpcode() : IR::Opcode::Phi,
+                         IsHostUniformSrtOffset(low->Arg(0)), inst->GetOpcode(),
+                         index.IsImmediate(),
+                         index_inst ? index_inst->GetOpcode() : IR::Opcode::Phi);
+            }
             continue;
         }
         ASSERT_MSG(IsReadConstSource(base->Arg(0)), "ReadConst base low not from constant memory");
@@ -953,7 +981,24 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
         auto ptr_uses_kv = pass_info.pointer_uses.try_emplace(ptr_lo, PassInfo::PtrUserList{});
         PassInfo::PtrUserList& user_list = ptr_uses_kv.first->second;
 
-        user_list[inst->Arg(1)] = inst;
+        // Never replace an earlier read at the same key. Both SSA results
+        // require a well-defined flattened offset, even if their fetch is equal.
+        const size_t existing_uses = user_list.count(inst->Arg(1));
+        if (existing_uses) {
+            ++pass_info.duplicate_offset_collisions;
+            if (SrtPlanningAuditEnabled() && pass_info.duplicate_offset_collisions <= 48) {
+                const IR::Value index = inst->Arg(1);
+                const IR::Inst* const index_inst = index.TryInst();
+                LOG_INFO(Render_Recompiler,
+                         "SrtPlanCollision: shader={:#x} stage={} source={} "
+                         "same_key_prior_uses={} index_immediate={} index_op={} read={}",
+                         pass_info.audit_shader_hash, pass_info.audit_shader_stage,
+                         ptr_lo->GetOpcode(), existing_uses, index.IsImmediate(),
+                         index_inst ? index_inst->GetOpcode() : IR::Opcode::Phi,
+                         inst->GetOpcode());
+            }
+        }
+        user_list.emplace(inst->Arg(1), inst);
 
         if (ptr_lo->GetOpcode() == IR::Opcode::GetUserData) {
             IR::ScalarReg ud_reg = ptr_lo->Arg(0).ScalarReg();
@@ -962,6 +1007,15 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
     }
 
     GenerateSrtProgram(program.info, pass_info);
+    if (SrtPlanningAuditEnabled() &&
+        (pass_info.duplicate_offset_collisions != 0 ||
+         pass_info.skipped_lane_pointer_reads != 0)) {
+        LOG_INFO(Render_Recompiler,
+                 "SrtPlanSummary: shader={:#x} stage={} collisions={} lane_pointer_skips={}",
+                 pass_info.audit_shader_hash, pass_info.audit_shader_stage,
+                 pass_info.duplicate_offset_collisions,
+                 pass_info.skipped_lane_pointer_reads);
+    }
 
     // Assign offsets to duplicate readconsts
     for (IR::Inst* readconst : all_readconsts) {
