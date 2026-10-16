@@ -254,8 +254,8 @@ for name in test_srt_findilsb32 test_srt_uniformity; do
     SRC_FILE="$SOURCE/tests/shader_recompiler/$name.cpp"
     BIN_FILE="$TEST_BIN/$name"
     echo "SRT_TEST_COMPILING=$name"
-    if ! timeout 90s "$CXX_BIN" -std=c++23 -O2 "${TEST_INCLUDES[@]}" \\
-           "$SRC_FILE" -o "$BIN_FILE" \\
+    if ! timeout 90s "$CXX_BIN" -std=c++23 -O2 "${TEST_INCLUDES[@]}" \
+           "$SRC_FILE" -o "$BIN_FILE" \
            >"$RUN/info/$name.build.log" 2>&1; then
         STATUS="SRT_HOST_TEST_COMPILE_FAILED_$name"
         cat "$RUN/info/$name.build.log"
