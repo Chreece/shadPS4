@@ -16,6 +16,7 @@
 #include <xbyak/xbyak_util.h>
 #include "common/assert.h"
 #include "core/cpu_id.h"
+#include "core/cpu_id_native_traps.h"
 #include "core/libraries/kernel/threads/pthread.h"
 
 #ifdef ENABLE_CPU_ID_TRANSLATION
@@ -206,6 +207,50 @@ size_t FaultInstructionLength(const u8* code, FaultInstruction& instruction, u32
 }
 
 } // namespace
+
+bool HandleCpuIdNativeTrap(void* context) {
+    if (!context || Libraries::Kernel::g_curthread == nullptr) {
+        return false;
+    }
+    auto& registers = static_cast<ucontext_t*>(context)->uc_mcontext.gregs;
+    const auto guest_pc = static_cast<uintptr_t>(registers[REG_RIP]);
+    const auto* trap = NativeCpuId::TrapRegistry::Lookup(guest_pc);
+    if (trap == nullptr) {
+        return false;
+    }
+
+    // Only intercept instructions explicitly rewritten by our guest module
+    // patcher. All other SIGILL events keep their existing handling.
+    const auto* instruction = reinterpret_cast<const u8*>(guest_pc);
+    if (instruction[0] != 0x0f || instruction[1] != 0x0b) {
+        return false;
+    }
+
+    if (trap->instruction == CpuIdInstruction::Rdpid) {
+        static constexpr std::array HostRegisters{
+            REG_RAX, REG_RCX, REG_RDX, REG_RBX, REG_RSP, REG_RBP, REG_RSI, REG_RDI,
+            REG_R8,  REG_R9,  REG_R10, REG_R11, REG_R12, REG_R13, REG_R14, REG_R15};
+        registers[HostRegisters[trap->destination]] = CurrentGuestCpu();
+        registers[REG_RIP] += trap->length;
+        return true;
+    }
+
+    if (trap->instruction != CpuIdInstruction::Cpuid &&
+        trap->instruction != CpuIdInstruction::Rdtscp) {
+        return false;
+    }
+
+    // Reuse the existing CPU-ID fault trampoline, including its saved guest
+    // GPRs, flags and XSAVE/XRSTOR state. The host CPUID/RDTSCP execution
+    // must not happen in the asynchronous SIGILL handler.
+    const auto stack = static_cast<uintptr_t>(registers[REG_RSP]) - FaultStackSize;
+    *reinterpret_cast<u64*>(stack) = guest_pc + trap->length;
+    registers[REG_RSP] = stack;
+    const auto index = static_cast<size_t>(trap->instruction);
+    registers[REG_RIP] =
+        reinterpret_cast<uintptr_t>(fault_trampolines[index]->getCode());
+    return true;
+}
 
 bool HandleCpuIdFault(void* context, void* fault_address) {
     auto& registers = static_cast<ucontext_t*>(context)->uc_mcontext.gregs;
