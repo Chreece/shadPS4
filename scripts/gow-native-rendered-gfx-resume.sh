@@ -156,15 +156,60 @@ done
 verify_native AFTER
 echo "CPU_AND_HLE_UNCHANGED=PASS"
 
-# Before rebuilding, verify every internal quoted header used by renderer
-# sources now resolves within this independent native CPU source tree.
+# Resolve checked-in renderer includes separately from generated Vulkan
+# host-shader headers. The latter are produced by CMake's host_shaders target
+# under BUILD/src/video_core/host_shaders/include, not the source tree.
+# We check that the legitimate generator exists before invoking it and verify
+# every requested generated header afterward. Do not create stub files.
+host_cmake="$SOURCE/src/video_core/host_shaders/CMakeLists.txt"
+if [[ ! -f "$host_cmake" ]] ||
+   ! grep -Fq 'add_custom_target(host_shaders DEPENDS' "$host_cmake" ||
+   ! grep -Fq 'set(SHADER_INCLUDE ${CMAKE_CURRENT_BINARY_DIR}/include)' "$host_cmake"; then
+  STATUS="HOST_SHADER_GENERATOR_MISSING"
+  echo "The actual CMake host-shader generator is absent; refusing placeholder headers."
+  exit 3
+fi
+
+# The CPU/HLE build configuration must still forbid DynamoRIO, including
+# independent host-shader generation before the remaining Ninja objects.
+if ! grep -Eq '^ENABLE_CPU_ID_TRANSLATION(:[^=]*)?=OFF$' "$BUILD/CMakeCache.txt"; then
+  STATUS="CPU_TRANSLATION_NOT_DISABLED"
+  echo "Cached CMake configuration does not explicitly disable DynamoRIO."
+  exit 4
+fi
+
+STATUS="BUILDING_HOST_SHADERS"
+echo "HOST_SHADER_GENERATION=START"
+if ! cmake --build "$BUILD" --target host_shaders --parallel 6; then
+  STATUS="HOST_SHADER_GENERATION_FAILED"
+  echo "Host shaders failed to compile; see the build output rather than faking headers."
+  exit 5
+fi
+
 missing=0
+generated=0
 while IFS= read -r header; do
   [[ -n "$header" ]] || continue
-  if [[ ! -f "$SOURCE/src/$header" ]]; then
-    echo "MISSING_INTERNAL_HEADER=$header" | tee -a "$OUT/missing-headers.txt"
-    missing=$((missing+1))
+  if [[ -f "$SOURCE/src/$header" ]]; then
+    continue
   fi
+  case "$header" in
+    video_core/host_shaders/*.h)
+      output="$BUILD/src/video_core/host_shaders/include/$header"
+      if [[ -f "$output" && ! -L "$output" ]]; then
+        generated=$((generated+1))
+        printf '%s\t%s\n' "$header" "$(sha256sum "$output" | awk '{print $1}')" \
+          >> "$OUT/generated-host-shaders.tsv"
+      else
+        echo "MISSING_GENERATED_HOST_SHADER=$header" | tee -a "$OUT/missing-headers.txt"
+        missing=$((missing+1))
+      fi
+      ;;
+    *)
+      echo "MISSING_INTERNAL_HEADER=$header" | tee -a "$OUT/missing-headers.txt"
+      missing=$((missing+1))
+      ;;
+  esac
 done < <(
   grep -RhoE --include='*.h' --include='*.cpp' \
     '^[[:space:]]*#[[:space:]]*include[[:space:]]+"(common|core|shader_recompiler|video_core)/[^"]+"' \
@@ -173,10 +218,12 @@ done < <(
 )
 if (( missing > 0 )); then
   STATUS="OTHER_MISSING_INTERNAL_HEADERS"
-  echo "Additional generic dependencies required before compiling: $missing"
+  echo "Required source/generated headers still missing: $missing"
   exit 3
 fi
+echo "HOST_SHADER_GENERATION=PASS headers=$generated"
 echo "INTERNAL_RENDERER_HEADERS=PASS"
+
 git -C "$SOURCE" diff --check
 git -C "$SOURCE" status --short > "$OUT/source-status.txt"
 
