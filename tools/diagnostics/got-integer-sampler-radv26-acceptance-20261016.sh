@@ -175,6 +175,54 @@ fi
 [[ "$(git -C "$SOURCE" rev-parse HEAD)" == "$EXPECTED_SOURCE" ]] || {
     echo "SOURCE_COMMIT_MISMATCH"; exit 5
 }
+# The prior RelWithDebInfo attempt filled the filesystem while linking
+# Sirit/SDL. Recover space from ONLY its unfinished, exactly identified
+# build directory. All existing successful binaries and checkpoints remain.
+# Release removes the huge per-object debug information; source is unchanged.
+FAILED_BUILD="$TREE/build"
+if [[ -e "$FAILED_BUILD" || -L "$FAILED_BUILD" ]]; then
+    [[ -d "$FAILED_BUILD" && ! -L "$FAILED_BUILD" ]] || {
+        echo "CANDIDATE_BUILD_PATH_NOT_A_REAL_DIRECTORY; REFUSED"; exit 4
+    }
+    CACHE="$FAILED_BUILD/CMakeCache.txt"
+    [[ -f "$CACHE" ]] || {
+        echo "CANDIDATE_CMAKE_CACHE_MISSING; REFUSED_DELETION"; exit 4
+    }
+    grep -Fxq "CMAKE_HOME_DIRECTORY:INTERNAL=$SOURCE" "$CACHE" || {
+        echo "CANDIDATE_BUILD_SOURCE_NOT_MATCHED; REFUSED_DELETION"; exit 4
+    }
+    if grep -Fxq 'CMAKE_BUILD_TYPE:STRING=RelWithDebInfo' "$CACHE"; then
+        [[ ! -e "$BINARY" && ! -L "$BINARY" ]] || {
+            echo "EXISTING_CANDIDATE_BINARY_DETECTED; PRESERVING_BUILD"; exit 4
+        }
+        [[ "$FAILED_BUILD" == "$ROOT/tests/got-integer-sampler-fix-20261016/build" ]] || {
+            echo "CANDIDATE_BUILD_DIRECTORY_UNEXPECTED; REFUSED_DELETION"; exit 4
+        }
+        echo "INCOMPLETE_DEBUG_BUILD_SIZE_BEFORE_RECOVERY:"
+        du -sh -- "$FAILED_BUILD" || true
+        echo "REMOVING_ONLY_INCOMPLETE_CANDIDATE_BUILD=$FAILED_BUILD"
+        rm -rf -- "$FAILED_BUILD"
+        echo "INCOMPLETE_DEBUG_BUILD_RECOVERED=YES"
+    elif grep -Fxq 'CMAKE_BUILD_TYPE:STRING=Release' "$CACHE"; then
+        echo "RESUMING_OWN_RELEASE_BUILD"
+    else
+        echo "UNEXPECTED_CANDIDATE_BUILD_TYPE; REFUSED_DELETION"; exit 4
+    fi
+fi
+echo "DISK_SPACE_AFTER_RECOVERY:"
+df -h "$TREE" || true
+AVAILABLE_KB="$(df -Pk "$TREE" | awk 'NR==2 {print $4}')"
+[[ "$AVAILABLE_KB" =~ ^[0-9]+$ ]] || {
+    echo "AVAILABLE_SPACE_UNDETERMINED; NOT_BUILDING"; exit 4
+}
+if (( AVAILABLE_KB < 6291456 )); then
+    echo "LESS_THAN_6_GIB_FREE; NEED_STORAGE_CHOICE_BEFORE_BUILD; NOTHING_ELSE_DELETED"
+    echo "CANDIDATE_WORKTREE=$TREE"
+    echo "NO_OLDER_BUILDS_LOGS_SAVES_OR_DRIVER_FILES_TOUCHED"
+    exit 4
+fi
+echo "RELEASE_BUILD_DISK_PREFLIGHT=PASS"
+
 echo "FETCH_PINNED_SUBMODULE_REVISIONS"
 git -C "$SOURCE" -c http.version=HTTP/1.1 \
     submodule update --init --recursive --jobs 4 >>"$RUN/build.log" 2>&1 || {
@@ -207,10 +255,10 @@ fi
 echo "INTEGER_SAMPLER_POLICY_TEST=PASS cases=12"
 echo "CONFIGURE_AND_BUILD_GENERAL_INTEGER_SAMPLER_FIX"
 cmake -S "$SOURCE" -B "$TREE/build" -G Ninja \
-    -DCMAKE_BUILD_TYPE=RelWithDebInfo >>"$RUN/build.log" 2>&1 || {
+    -DCMAKE_BUILD_TYPE=Release >>"$RUN/build.log" 2>&1 || {
     echo "CONFIGURE_FAILED"; tail -n 55 "$RUN/build.log"; exit 5
 }
-cmake --build "$TREE/build" --target shadps4 --parallel 4 \
+cmake --build "$TREE/build" --target shadps4 --parallel 2 \
     >>"$RUN/build.log" 2>&1 || {
     echo "BUILD_FAILED"; tail -n 55 "$RUN/build.log"; exit 5
 }
@@ -222,6 +270,8 @@ EXPECTED_EMULATOR_SHA="$(sha256sum "$BINARY" | cut -d' ' -f1)"
     echo "BINARY_SHA256=$EXPECTED_EMULATOR_SHA"
     echo "PREVIOUS_BINARY_SHA256=$PARENTBIN"
     echo "PREVIOUS_BUILD_UNCHANGED=YES"
+    echo "CANDIDATE_BUILD_TYPE=Release"
+    echo "RECLAIMED_SPACE_ONLY_FROM_FAILED_CANDIDATE=YES"
 } >"$RUN/info/build-result.txt"
 echo "BUILD=PASS SOURCE=$EXPECTED_SOURCE"
 [[ -x "$BINARY" && -s "$GAME" && -f "$ICD_LIBRARY" &&
