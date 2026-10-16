@@ -33,6 +33,9 @@
 #if defined(__linux__)
 #include "core/cpu_id.h"
 #include "core/cpu_id_native_traps.h"
+#if defined(ENABLE_CPU_ID_TRANSLATION)
+extern "C" int ShadCpuIdTranslationActive();
+#endif
 #endif
 
 #ifdef _WIN32
@@ -2051,7 +2054,15 @@ static RedZonePatchResult PatchSegmentStatically(u64 segment_addr, u64 segment_s
                     identity_opcode = false;
                     break;
                 }
-                if (identity_opcode && decoded.instruction.length >= 2) {
+                // Preserve the translated-mode behavior: DynamoRIO can
+                // execute a cached copy of an application basic block, so
+                // native UD2 signal site metadata is only valid when running
+                // guest code directly in this emulator process.
+                bool direct_execution = true;
+#if defined(ENABLE_CPU_ID_TRANSLATION)
+                direct_execution = ShadCpuIdTranslationActive() == 0;
+#endif
+                if (identity_opcode && direct_execution && decoded.instruction.length >= 2) {
                     u32 destination = 0;
                     if (kind == CpuIdInstruction::Rdpid) {
                         destination =
