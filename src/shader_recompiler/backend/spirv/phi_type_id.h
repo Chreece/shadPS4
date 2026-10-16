@@ -14,7 +14,7 @@ namespace Shader::Backend::SPIRV {
 // Typed Phi nodes must never be coerced to U64/F32 as a crash avoidance hack.
 // A missing case is reported to the existing diagnostic path by the caller.
 template <typename Context>
-[[nodiscard]] auto LookupPhiTypeId(const Context& ctx, IR::Type type)
+[[nodiscard]] constexpr auto LookupPhiTypeId(const Context& ctx, IR::Type type)
     -> std::optional<std::remove_cvref_t<decltype(ctx.U32[1])>> {
     switch (type) {
     case IR::Type::U1:
