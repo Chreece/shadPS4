@@ -39,9 +39,9 @@ finish() {
     echo "MOONLIGHT=NOT_USED SSH=UNCHANGED SUNSHINE=UNCHANGED ESDE=UNCHANGED"
     files=(info screenshots game.log)
     while IFS= read -r -d '' f; do
-        files+=("\${f##*/}")
+        files+=("${f##*/}")
     done < <(find "$RUN" -maxdepth 1 -type f -name 'radv_dumps_*' -print0)
-    if tar -czf "$ARCHIVE" -C "$RUN" "\${files[@]}" -C "$LOGS" "$NAME.log" "$NAME.sh"; then
+    if tar -czf "$ARCHIVE" -C "$RUN" "${files[@]}" -C "$LOGS" "$NAME.log" "$NAME.sh"; then
         echo "REPORT=$ARCHIVE"
         if [[ "$RUN" == "$LOGS"/.got-atomic-direct-*.runtime ]]; then
             rm -rf -- "$RUN"
@@ -76,7 +76,7 @@ if ! command -v xdpyinfo >/dev/null 2>&1; then
 fi
 
 DISPLAY_OK=""
-for d in "\${DISPLAY:-}" :0 :1 :2; do
+for d in "${DISPLAY:-}" :0 :1 :2; do
     [ -n "$d" ] || continue
     if DISPLAY="$d" timeout 5s xdpyinfo -display "$d" >/dev/null 2>&1; then
         DISPLAY_OK="$d"
@@ -129,7 +129,7 @@ echo "GAME_PID=$pid OBSERVATION=115s"
 
 snapshot() {
     at="$1"
-    path="$RUN/screenshots/\${at}s.png"
+    path="$RUN/screenshots/${at}s.png"
     if command -v import >/dev/null 2>&1; then
         timeout 8s import -display "$DISPLAY" -window root "$path" >/dev/null 2>&1 || true
     elif command -v ffmpeg >/dev/null 2>&1; then
@@ -172,7 +172,7 @@ if [ -d "$RUN/user/shader/dumps" ]; then
     echo "COMPUTE_SHADER_MODULES=$(find "$RUN/info/compute-shaders" -type f | wc -l)" \
         >> "$RUN/info/result.txt"
 fi
-journalctl -k --since "@\${START}" --no-pager -o short-iso 2>/dev/null \
+journalctl -k --since "@${START}" --no-pager -o short-iso 2>/dev/null \
     | grep -Ei 'amdgpu|drm|gpu fault|ring|reset|timeout' \
     | tail -n 250 > "$RUN/info/kernel-gpu-events.txt" || true
 echo "GAME_DIRECT_TEST_COMPLETE RESULT=$RUN/info/result.txt"
