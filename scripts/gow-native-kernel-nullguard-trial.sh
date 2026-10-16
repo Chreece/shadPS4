@@ -9,9 +9,9 @@ BUILD="$STAGE/build"
 BIN="$BUILD/shadps4"
 LOGROOT="$HOME/projects/shadps4/logs"
 ID="$(date +%Y%m%d-%H%M%S)-$$"
-OUT="$STAGE/tests/kernel-filename-$ID"
-ARCHIVE="$LOGROOT/gow-native-kernel-filename-$ID.tar.gz"
-PIN="737d999a748caa0076eac1390d32eea5bedd9d59"
+OUT="$STAGE/tests/stack-align-$ID"
+ARCHIVE="$LOGROOT/gow-native-stack-align-$ID.tar.gz"
+PIN="1fe3e8b626f34f092bb2be37de8d14fe26d45bc2"
 REPO="https://github.com/Chreece/shadPS4.git"
 BRANCH="fix/native-cpu-identity-merged-20261016"
 mkdir -p "$OUT/screenshots" "$LOGROOT"
@@ -73,6 +73,28 @@ if (( JOBS > 8 )); then JOBS=8; fi
 cmake --build "$BUILD" --target shadps4 --parallel "$JOBS"
 test -x "$BIN"
 sha256sum "$BIN" | tee "$OUT/candidate-sha256.txt"
+# Verify the *built* HLE entry realigns the stack, not merely source comments.
+# On Linux x86-64, guest calls may have an 8-byte-displaced native stack.
+if command -v nm >/dev/null 2>&1 && command -v objdump >/dev/null 2>&1; then
+  SYMBOL="$(nm -C "$BIN" | awk 'index($0, " T Libraries::Kernel::sceKernelLoadStartModule(") || index($0, " t Libraries::Kernel::sceKernelLoadStartModule(") {if (!address) address=$1} END {print address}')"
+  if [[ -z "$SYMBOL" ]]; then
+    STATUS="HLE_STACK_PROLOGUE_NOT_FOUND"
+    echo "Cannot locate host HLE entry in candidate binary; refusing gameplay trial."
+    exit 4
+  fi
+  STOP="$(printf '%x' "$((16#$SYMBOL + 160))")"
+  objdump -dC --start-address="0x$SYMBOL" --stop-address="0x$STOP" "$BIN" > "$OUT/hle-stack-prologue.txt"
+  if ! grep -Eq '[[:space:]]and[[:space:]].*%rsp' "$OUT/hle-stack-prologue.txt"; then
+    STATUS="HLE_STACK_PROLOGUE_UNALIGNED"
+    echo "Compiled HLE function did not realign RSP: refusing gameplay trial."
+    exit 4
+  fi
+  echo "COMPILED_HLE_STACK_REALIGN=PASS"
+else
+  STATUS="HLE_DISASSEMBLER_MISSING"
+  echo "nm and objdump required to verify HLE stack alignment."
+  exit 4
+fi
 STATUS="BUILD_OK"
 echo "CPU_TESTS=PASS KERNEL_HLE_TESTS=PASS DYNAMORIO=DISABLED"
 export DISPLAY
