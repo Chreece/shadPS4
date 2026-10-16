@@ -447,6 +447,8 @@ while read -r module package; do
 done <<'X11_PRIVATE_REQUIRED'
 xcb libxcb1-dev
 xcb-randr libxcb-randr0-dev
+xcb-render libxcb-render0-dev
+xcb-shape libxcb-shape0-dev
 x11 libx11-dev
 x11-xcb libx11-xcb-dev
 xcb-dri3 libxcb-dri3-dev
@@ -514,6 +516,9 @@ else
     export LD_LIBRARY_PATH="$DRM_PREFIX/lib:$X11_PRIVATE_LIB"
 fi
 
+# Debian libxcb-randr0-dev requires libxcb-render0-dev, and
+# libxcb-xfixes0-dev additionally requires libxcb-shape0-dev. Both are
+# downloaded up front above, rather than discovered by repeated build errors.
 # Verify ALL required packages now to avoid serial Meson failures.
 while read -r module package; do
     [[ -n "$module" ]] || continue
@@ -529,6 +534,8 @@ while read -r module package; do
 done <<'X11_PRIVATE_RECHECK'
 xcb libxcb1-dev
 xcb-randr libxcb-randr0-dev
+xcb-render libxcb-render0-dev
+xcb-shape libxcb-shape0-dev
 x11 libx11-dev
 x11-xcb libx11-xcb-dev
 xcb-dri3 libxcb-dri3-dev
@@ -549,8 +556,8 @@ fi
 if ! printf 'int main(void){return 0;}\n' | \
     cc -x c - -x none -o "$RUN/info/private-x11-link-test" \
         $(pkg-config --cflags --libs \
-           xcb-randr xcb-dri3 xcb-present xcb-shm xcb-sync \
-           xcb-xfixes x11-xcb xshmfence libelf) \
+           xcb-randr xcb-render xcb-shape xcb-dri3 xcb-present \
+           xcb-shm xcb-sync xcb-xfixes x11-xcb xshmfence libelf) \
         >>"$RUN/build.log" 2>&1; then
     echo "MESA_PRIVATE_X11_LINK_TEST_FAILED; NO_MESA_BUILD"
     tail -n 45 "$RUN/build.log"
