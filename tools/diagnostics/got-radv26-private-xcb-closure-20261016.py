@@ -109,9 +109,12 @@ def download_and_extract(module,package,records):
     if len(matching)!=1:
         raise RuntimeError("Expected one Debian package archive: "+package)
     deb=matching[0]
-    fields=run(["dpkg-deb","--field",deb,"Package","Version","Architecture"],
-               timeout=25)[1].splitlines()
-    if len(fields)<3 or fields[0].strip()!=package or fields[2].strip()!="amd64":
+    # With several field names dpkg-deb emits "Package: value" lines;
+    # querying each field separately returns only its value.
+    fields={}
+    for field in ("Package","Version","Architecture"):
+        fields[field]=run(["dpkg-deb","--field",deb,field],timeout=25)[1].strip()
+    if fields["Package"]!=package or fields["Architecture"]!="amd64":
         raise RuntimeError("Unexpected .deb identity/architecture: "+str(fields))
     run(["dpkg-deb","-x",deb,TOOLS],
         logfile=OUT/(package+".unpack.log"),timeout=120)
@@ -120,7 +123,7 @@ def download_and_extract(module,package,records):
     if len(candidates)!=1:
         raise RuntimeError(f"Expected one extracted {module}.pc, got {len(candidates)}")
     records[package]={
-        "deb_sha256":hash_file(deb),"version":fields[1].strip(),
+        "deb_sha256":hash_file(deb),"version":fields["Version"],
         "pkg_config":str(candidates[0])
     }
     say("PRIVATE_DEB_EXTRACTED="+package)
