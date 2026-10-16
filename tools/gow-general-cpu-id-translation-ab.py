@@ -153,7 +153,21 @@ def prerequisites():
                       stdout=subprocess.DEVNULL).returncode==0:
         raise RuntimeError("shadPS4 running; close it before the automatic A/B")
     if CHECKPOINT.exists():
-        raise RuntimeError("previous CPU-ID selective checkpoint already exists; stop rather than overwrite")
+        if CHECKPOINT.is_symlink() or not CHECKPOINT.is_dir():
+            raise RuntimeError("unsafe existing CPU-ID checkpoint")
+        manifest=CHECKPOINT/"manifest.json"
+        original_source=CHECKPOINT/"client.c"
+        original_lib=CHECKPOINT/"libshadps4_cpu_id.so"
+        if any(not p.is_file() or p.is_symlink() for p in
+               (manifest,original_source,original_lib)):
+            raise RuntimeError("existing CPU-ID checkpoint incomplete")
+        record=json.loads(manifest.read_text())
+        if (record.get("client_source_blob")!=CLIENT_ORIG_BLOB or
+            record.get("emulator_sha256")!=BINARY_SHA or
+            blob(original_source.read_bytes())!=CLIENT_ORIG_BLOB or
+            record.get("client_binary_sha256")!=sha_file(original_lib) or
+            sha_file(LIB)!=sha_file(original_lib)):
+            raise RuntimeError("existing checkpoint does not match the restored CPU-ID client")
     if not shutil.which("gcc") and not shutil.which("clang"):
         raise RuntimeError("C compiler unavailable")
     return {rel:sha_file(RUNTIME/rel) for rel in PACKAGE_FILES}
@@ -288,6 +302,12 @@ def capture(label,profiler):
     return summary
 
 def checkpoint(original_client,nonclient):
+    if CHECKPOINT.exists():
+        if (CHECKPOINT/"client.c").read_bytes()!=original_client or
+            sha_file(CHECKPOINT/"libshadps4_cpu_id.so")!=sha_file(LIB)):
+            raise RuntimeError("existing preserved CPU-ID client changed unexpectedly")
+        note("CHECKPOINT=verified previous baseline for safe retry")
+        return
     CHECKPOINT.mkdir(parents=True,exist_ok=False)
     (CHECKPOINT/"client.c").write_bytes(original_client)
     shutil.copy2(LIB,CHECKPOINT/"libshadps4_cpu_id.so")
