@@ -18,6 +18,7 @@ NEW="$BUILD/shadps4.native-dma-dirty-gate-v1"
 MANIFEST="$BUILD/shadps4.native-dma-dirty-gate-v1.sha256"
 BASE_SOURCE="1fe3e8b626f34f092bb2be37de8d14fe26d45bc2"
 CPU_SOURCE="09d0bd31c0a81ee5e4c51a5421c3b420c45e3343"
+HRTIMER_SOURCE="b788766dbfcd8727bd90da571fe3d740b5a7c3e9"
 FIX="cfdaf64435a9f927c4d257a794723974d2f379ff"
 PATCHER_COMMIT="a1b04f7652adf3b0dd2e261136b14c70befdb636"
 BRANCH="fix/generic-buffer-dma-dirty-gate-20261016"
@@ -123,6 +124,33 @@ git -C "$SOURCE" merge-base --is-ancestor "$FIX" FETCH_HEAD || {
   STATUS="FIX_REF_NOT_FOUND"
   exit 3
 }
+# Verify the precise previously-tested native CPUID/TSC/RDPID and HLE clock
+# implementation before modifying any GPU source. This prevents accidentally
+# benchmarking unrelated local code edits as a DMA-only optimization.
+STATUS="PINNING_PREVIOUS_NATIVE_CPU_AND_HLE_SOURCES"
+for rel in src/core/cpu_id.cpp src/core/module.cpp src/core/cpu_patches.cpp \
+           src/core/cpu_id_guest_ranges.h; do
+  expected="$(git -C "$SOURCE" rev-parse "$CPU_SOURCE:$rel")"
+  actual="$(git -C "$SOURCE" hash-object "$SOURCE/$rel")"
+  if [[ "$actual" != "$expected" ]]; then
+    STATUS="NATIVE_CPU_SOURCE_CHANGED"
+    echo "Protected CPU source differs: $rel"
+    exit 4
+  fi
+done
+for rel in src/core/libraries/kernel/equeue.cpp src/core/libraries/kernel/equeue.h \
+           src/core/libraries/kernel/hrtimer_deadline.h \
+           src/common/host_monotonic_clock.h; do
+  expected="$(git -C "$SOURCE" rev-parse "$HRTIMER_SOURCE:$rel")"
+  actual="$(git -C "$SOURCE" hash-object "$SOURCE/$rel")"
+  if [[ "$actual" != "$expected" ]]; then
+    STATUS="NATIVE_HLE_CLOCK_OR_TIMER_SOURCE_CHANGED"
+    echo "Protected HLE source differs: $rel"
+    exit 4
+  fi
+done
+echo "NATIVE_CPU_AND_HLE_SOURCE=EXACTLY_PINNED"
+
 # The checkpoint has 41 separately validated graphics-source changes.
 # A normal Git checkout of buffer_cache.cpp would lose them. Use the exact
 # renderer file checksums exported by the successful hrtimer build archive,
