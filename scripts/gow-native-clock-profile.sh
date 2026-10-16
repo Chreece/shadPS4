@@ -259,7 +259,7 @@ if (( perf_rc==0 )); then
     -i "$OUT/perf.data" > "$OUT/report.txt" 2> "$OUT/perf-report.stderr" || true
   sudo -n perf script -i "$OUT/perf.data" \
     > "$OUT/stacks.txt" 2> "$OUT/perf-script.stderr" || true
-  sample_count="$(grep -cE '^[[:space:]]*shadps4.*[[:space:]][0-9]+/[0-9]+[[:space:]]' "$OUT/stacks.txt" || true)"
+  sample_count="$(grep -c 'cpu-clock:' "$OUT/stacks.txt" || true)"
   printf 'STACK_SAMPLE_LINES=%s\n' "$sample_count" >> "$OUT/perf-status.txt"
   if [[ -s "$OUT/stacks.txt" ]]; then
     PROFILE_STATUS="SAMPLES_CAPTURED"
