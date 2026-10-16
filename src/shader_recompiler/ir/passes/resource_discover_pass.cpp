@@ -305,6 +305,10 @@ void MarkReadConstBufferSharpSources(const SharpReference& sharp) {
 void DiscoverBufferSharp(IR::Block& block, IR::Inst& inst, ResourceDiscoveryList& resources) {
     IR::Inst* handle = inst.Arg(0).Inst();
     auto& resource = resources.emplace_back(&inst);
+    // Preserve the original guest IR handle, including any lane selectors or
+    // bitwise descriptor operations, instead of the simplified host-sharp
+    // representation that may have stripped ReadFirstLane.
+    resource.original_buffer_handle = inst.Arg(0);
     auto& vsharp = resource.sharps[0];
 
     // Gather V# dwords

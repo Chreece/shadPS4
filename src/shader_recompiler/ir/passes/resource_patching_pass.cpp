@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <cstdlib>
+#include <vector>
 
 #include <limits>
 #include "shader_recompiler/info.h"
@@ -664,13 +665,63 @@ IR::U32 CalculateBufferAddress(IR::IREmitter& ir, const IR::Inst& inst, const In
     return buffer_offset;
 }
 
-void PatchBufferArgs(IR::Inst& inst, Info& info) {
+void PatchBufferArgs(IR::Inst& inst, Info& info, const ResourceDiscovery& discovered,
+                     std::vector<std::pair<IR::Inst*, IR::Value>>& pending_dynamic_reads) {
     const auto handle = inst.Arg(0);
     const auto buffer_res = info.buffers[handle.U32()];
     const auto buffer = buffer_res.GetSharp(info);
 
-    // Address of constant buffer reads can be calculated at IR emission time.
+    // S_BUFFER_LOAD_DWORD reads guest memory using an S# buffer descriptor.
+    // If the native resource-table walker could not flatten the descriptor,
+    // binding the generated invalid V# as a Vulkan null buffer discards a
+    // real guest memory operation. Preserve and execute the original read
+    // through the existing shader-side GPU address-translation path.
+    //
+    // Only use this path for scalar reads with genuinely unflattened V#.
+    // Normal descriptors keep their normal fast bound-buffer lowering.
     if (inst.GetOpcode() == IR::Opcode::ReadConstBuffer) {
+        using Summary = SharpFetch<AmdGpu::Buffer>::Summary;
+        if (buffer_res.sharp_fetch.summary != Summary::Invalid) {
+            return;
+        }
+
+        const auto& sharp = discovered.sharps[0];
+        // Use exactly the guest IR descriptor as issued by the scalar-memory
+        // instruction, before the host-side sharp recognizer stripped any
+        // lane reads or rewritten stride bits. Only the base-address field
+        // participates in S_BUFFER_LOAD_DWORD guest address translation.
+        IR::Inst* const handle = discovered.original_buffer_handle.TryInst();
+        ASSERT_MSG(handle && handle->GetOpcode() == IR::Opcode::CompositeConstructU32x4,
+                   "Scalar buffer read has unsupported source descriptor IR");
+        IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
+
+        const IR::U32 base_lo{handle->Arg(0)};
+        const IR::U32 base_hi = ir.BitwiseAnd(IR::U32{handle->Arg(1)}, ir.Imm32(0xffu));
+        IR::Value gpu_addr = ir.CompositeConstruct(base_lo, base_hi);
+        if (sharp.post_op == SharpFetchPostOp::OffsetByProgramBase) {
+            // The existing host path adds the shader program base for inline
+            // constant buffers. Match it with full 64-bit carry and 40-bit
+            // guest address wraparound.
+            const IR::U64 packed = ir.PackUint2x32(gpu_addr);
+            const IR::U64 relative = ir.IAdd(packed, ir.Imm64(static_cast<u64>(info.pgm_base)));
+            const IR::U64 wrapped = ir.BitwiseAnd(relative, ir.Imm64(u64{0xffffffffff}));
+            gpu_addr = ir.UnpackUint2x32(wrapped);
+        }
+
+        // ReadConst uses an offset in dwords, exactly as scalar_memory.cpp
+        // builds S_BUFFER_LOAD_DWORD. Its dynamic path translates the PS4
+        // guest address through Vulkan BDA and reports unmapped accesses via
+        // the existing fault buffer. Never substitute a fake descriptor.
+        const IR::U32 index{inst.Arg(1)};
+        const IR::U32 guest_read = ir.ReadConst(gpu_addr, index);
+        // Descriptor metadata captured in resource discovery is not a live
+        // IR use-list: postpone producer removal until all shader-side loads
+        // have registered real IR uses of those producers.
+        pending_dynamic_reads.emplace_back(&inst, guest_read);
+        LOG_INFO(Render_Recompiler,
+                 "SBufferDynamic: shader={:#x} stage={} source=guest_gpu_memory "
+                 "descriptor_dwords={} post_op={}",
+                 info.pgm_hash, info.hw_stage, sharp.num_dwords, u32(sharp.post_op));
         return;
     }
 
@@ -982,16 +1033,23 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         }
     }
 
-    // Pass 2: Patch instruction args
+    // Pass 2: patch resource users, keeping old scalar descriptor producers
+    // alive until all fallback read expressions have been constructed.
+    std::vector<std::pair<IR::Inst*, IR::Value>> pending_dynamic_reads;
     for (const auto& usage : resources) {
         IR::Inst& inst = *usage.user;
         if (IsBufferInstruction(inst)) {
-            PatchBufferArgs(inst, info);
+            PatchBufferArgs(inst, info, usage, pending_dynamic_reads);
         } else if (IsImageInstruction(inst)) {
             PatchImageArgs(inst, info);
         } else if (IsDataRingInstruction(inst)) {
             PatchGlobalDataShareAccess(inst, info, descriptors, profile);
         }
+    }
+    // Every new ReadConst now owns IR use references to the original source
+    // nodes. Replacing a producer updates all dependent GPU read expressions.
+    for (const auto& [old_inst, guest_read] : pending_dynamic_reads) {
+        old_inst->ReplaceUsesWithAndRemove(guest_read);
     }
 }
 
