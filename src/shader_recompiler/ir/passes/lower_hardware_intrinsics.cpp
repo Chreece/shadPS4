@@ -1,9 +1,12 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <bit>
 #include <boost/container/small_vector.hpp>
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/program.h"
+#include "shader_recompiler/profile.h"
 
 namespace Shader::Optimization {
 
@@ -68,7 +71,77 @@ static void LowerMaskedBitCount(IR::Block& block, IR::Inst& inst) {
     inst.ReplaceUsesWithAndRemove(ir.IAdd(masked_value, IR::U32{inst.Arg(1)}));
 }
 
-static void Lower(IR::Block& block, IR::Inst& inst) {
+static const IR::Inst* ReadLaneInHalf(const IR::Value& value, u32 half) {
+    if (value.IsImmediate()) {
+        return nullptr;
+    }
+    const IR::Inst* const inst{value.Inst()};
+    if (inst->GetOpcode() != IR::Opcode::ReadLane || !inst->Arg(1).IsImmediate() ||
+        inst->Arg(1).U32() / 32 != half) {
+        return nullptr;
+    }
+    return inst;
+}
+
+static void FoldWaveUMin(IR::Program& program, IR::Block& block, IR::Inst& inst) {
+    const IR::Inst* low{ReadLaneInHalf(inst.Arg(0), 0)};
+    const IR::Inst* high{ReadLaneInHalf(inst.Arg(1), 1)};
+    if (!low || !high) {
+        low = ReadLaneInHalf(inst.Arg(1), 0);
+        high = ReadLaneInHalf(inst.Arg(0), 1);
+    }
+    if (!low || !high || low->Arg(0).IsImmediate() || low->Arg(0) != high->Arg(0)) {
+        return;
+    }
+    if (low->GetParent() != &block || high->GetParent() != &block) {
+        return;
+    }
+    boost::container::small_vector<const IR::Inst*, 13> chain{&inst, low, high};
+    IR::Value value{low->Arg(0)};
+    u32 masks{};
+    for (u32 step = 0; step < 5; ++step) {
+        const IR::Inst* const min{value.IsImmediate() ? nullptr : value.Inst()};
+        if (!min || min->GetOpcode() != IR::Opcode::UMin32 || min->GetParent() != &block) {
+            return;
+        }
+        const IR::Inst* shuffle{};
+        for (u32 i = 0; i < 2 && !shuffle; ++i) {
+            const IR::Value arg{min->Arg(i)};
+            if (!arg.IsImmediate() && arg.Inst()->GetOpcode() == IR::Opcode::ShuffleXor &&
+                arg.Inst()->GetParent() == &block && arg.Inst()->Arg(1).IsImmediate() &&
+                arg.Inst()->Arg(0) == min->Arg(1 - i)) {
+                shuffle = arg.Inst();
+                value = min->Arg(1 - i);
+            }
+        }
+        if (!shuffle) {
+            return;
+        }
+        const u32 mask{shuffle->Arg(1).U32()};
+        if (mask > 16 || !std::has_single_bit(mask) || (masks & mask) != 0) {
+            return;
+        }
+        masks |= mask;
+        chain.push_back(min);
+        chain.push_back(shuffle);
+    }
+    for (const IR::Inst* const link : chain) {
+        if (link != &inst && std::ranges::any_of(link->Uses(), [&](const auto& use) {
+                return !std::ranges::contains(chain, use.user);
+            })) {
+            return;
+        }
+    }
+    IR::IREmitter ir{block, IR::Block::InstructionList::s_iterator_to(inst)};
+    IR::U32 minimum = ir.GroupUMin(IR::U32{value});
+    if (program.info.hw_stage == HwStage::Fragment) {
+        minimum = IR::U32{
+            ir.Select(ir.GetAttributeU1(IR::Attribute::IsHelperInvocation), value, minimum)};
+    }
+    inst.ReplaceUsesWithAndRemove(minimum);
+}
+
+static void Lower(IR::Program& program, IR::Block& block, IR::Inst& inst, bool fold_wave_min) {
     switch (inst.GetOpcode()) {
     case IR::Opcode::FPCmpClass32:
         return LowerCmpClass(block, inst);
@@ -79,15 +152,23 @@ static void Lower(IR::Block& block, IR::Inst& inst) {
         break;
     case IR::Opcode::MaskedBitCount32:
         return LowerMaskedBitCount(block, inst);
+    case IR::Opcode::UMin32:
+        if (fold_wave_min) {
+            FoldWaveUMin(program, block, inst);
+        }
+        break;
     default:
         break;
     }
 }
 
-void LowerHardwareIntrinsics(IR::Program& program) {
+void LowerHardwareIntrinsics(IR::Program& program, const Profile& profile) {
+    const HwStage stage = program.info.hw_stage;
+    const bool fold_wave_min = profile.supports_group_arithmetic &&
+                               (stage == HwStage::Fragment || stage == HwStage::Compute);
     for (IR::Block* const block : program.blocks) {
         for (IR::Inst& inst : block->Instructions()) {
-            Lower(*block, inst);
+            Lower(program, *block, inst, fold_wave_min);
         }
     }
 }
