@@ -561,3 +561,9 @@ add_executable(shadps4_kernel_module_filename_test kernel/test_module_filename.c
 target_include_directories(shadps4_kernel_module_filename_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(shadps4_kernel_module_filename_test PRIVATE cxx_std_23)
 add_test(NAME kernel_module_filename COMMAND shadps4_kernel_module_filename_test)
+
+# Production guest executable ranges: no GPU, game files, or external translator.
+add_executable(shadps4_cpu_guest_ranges_test cpu_id/test_guest_executable_ranges.cpp)
+target_include_directories(shadps4_cpu_guest_ranges_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_cpu_guest_ranges_test PRIVATE cxx_std_23)
+add_test(NAME cpu_guest_executable_ranges COMMAND shadps4_cpu_guest_ranges_test)

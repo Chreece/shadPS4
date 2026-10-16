@@ -17,6 +17,7 @@
 #include "common/assert.h"
 #include "core/cpu_id.h"
 #include "core/cpu_id_guest.h"
+#include "core/cpu_id_guest_ranges.h"
 #include "core/cpu_id_trap_table.h"
 #include "core/libraries/kernel/threads/pthread.h"
 
@@ -46,6 +47,7 @@ std::atomic<uintptr_t> guest_end{};
 std::array<std::unique_ptr<Xbyak::CodeGenerator>, 2> fault_trampolines;
 std::atomic<bool> builtin_cpu_id_mode{};
 CpuId::RdpidTrapTable builtin_rdpid_traps;
+CpuId::GuestExecutableRanges guest_executable_ranges;
 
 std::array<u32, 4> GuestCpuid(u32 leaf, u32 subleaf, u32 cpu) {
     std::array<u32, 4> host_result{};
@@ -136,6 +138,10 @@ size_t FaultInstructionLength(const u8* code, FaultInstruction& instruction, u32
 
 } // namespace
 
+bool RegisterGuestExecutableRange(uintptr_t start, size_t size) {
+    return guest_executable_ranges.Register(start, size);
+}
+
 void SetBuiltinCpuIdMode(bool enabled) noexcept {
     builtin_cpu_id_mode.store(enabled, std::memory_order_release);
 }
@@ -195,9 +201,14 @@ bool HandleCpuIdFault(void* context, void* fault_address) {
     if (length == 0) {
         return false;
     }
-    if (instruction != FaultInstruction::Rdtsc &&
-        address >= guest_begin.load(std::memory_order_relaxed) &&
-        address < guest_end.load(std::memory_order_relaxed) &&
+    // Distinguish guest code from native HLE/host-library code by actual
+    // executable ELF mappings. The old global range was not populated by
+    // the module loader, so deferred CPUID/RDTSCP sites could leak host IDs.
+    const bool is_guest =
+        guest_executable_ranges.Contains(address) ||
+        (address >= guest_begin.load(std::memory_order_relaxed) &&
+         address < guest_end.load(std::memory_order_relaxed));
+    if (instruction != FaultInstruction::Rdtsc && is_guest &&
         Libraries::Kernel::g_curthread != nullptr) {
         if (instruction == FaultInstruction::Rdpid) {
             static constexpr std::array HostRegisters{

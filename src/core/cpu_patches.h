@@ -45,6 +45,11 @@ struct RedZonePatchResult {
     u64 cpu_patch_instruction_count{};
     u64 patched_cpu_patch_instruction_count{};
     u64 unsupported_cpu_patch_instruction_count{};
+    // Deferred static sites, not observed dynamic faults.
+    u64 deferred_cpuid_sites{};
+    u64 deferred_rdtscp_sites{};
+    u64 deferred_rdpid_sites{};
+    u64 deferred_other_cpu_sites{};
     u64 builtin_rdpid_trap_count{};
     u64 inplace_cpu_patch_instruction_count{};
     u64 uncovered_inplace_cpu_patch_instruction_count{};
@@ -64,6 +69,10 @@ struct RedZonePatchResult {
         cpu_patch_instruction_count += other.cpu_patch_instruction_count;
         patched_cpu_patch_instruction_count += other.patched_cpu_patch_instruction_count;
         unsupported_cpu_patch_instruction_count += other.unsupported_cpu_patch_instruction_count;
+        deferred_cpuid_sites += other.deferred_cpuid_sites;
+        deferred_rdtscp_sites += other.deferred_rdtscp_sites;
+        deferred_rdpid_sites += other.deferred_rdpid_sites;
+        deferred_other_cpu_sites += other.deferred_other_cpu_sites;
         builtin_rdpid_trap_count += other.builtin_rdpid_trap_count;
         inplace_cpu_patch_instruction_count += other.inplace_cpu_patch_instruction_count;
         uncovered_inplace_cpu_patch_instruction_count +=

@@ -217,6 +217,16 @@ void Module::LoadModuleToMemory(u32& max_tls_index) {
             add_segment(elf_pheader[i]);
 #ifdef ARCH_X86_64
             if (elf_pheader[i].p_flags & PF_EXEC) {
+#if defined(__linux__)
+                if (IsBuiltinCpuIdMode()) {
+                    // Publish verified executable guest memory before any
+                    // CPUID/RDTSCP instruction can fault. Trampolines and HLE
+                    // are host code and must retain native host identity.
+                    ASSERT_MSG(RegisterGuestExecutableRange(segment_addr, segment_memory_size),
+                               "Invalid guest executable range [{:#x}, {:#x})",
+                               segment_addr, segment_addr + segment_memory_size);
+                }
+#endif
                 PrePatchInstructions(segment_addr, segment_file_size);
                 if (use_static_patching) {
                     executable_segments.emplace_back(segment_addr, segment_file_size);
@@ -380,6 +390,13 @@ void Module::LoadModuleToMemory(u32& max_tls_index) {
                          "handled by verified UD2 traps; {} other CPU patches still unsupported",
                          name, total.builtin_rdpid_trap_count,
                          total.unsupported_cpu_patch_instruction_count);
+                if (total.unsupported_cpu_patch_instruction_count != 0) {
+                    LOG_INFO(Core_Linker,
+                             "CPU deferred static sites for {}: CPUID={}, RDTSCP={}, "
+                             "RDPID={}, other={}; these counts are not executed faults",
+                             name, total.deferred_cpuid_sites, total.deferred_rdtscp_sites,
+                             total.deferred_rdpid_sites, total.deferred_other_cpu_sites);
+                }
             }
 #endif
         }

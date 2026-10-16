@@ -2026,6 +2026,20 @@ static RedZonePatchResult PatchSegmentStatically(u64 segment_addr, u64 segment_s
             const auto& rewrite = rewrite_sites.at(site);
             if (rewrite.cpu_patch != nullptr) {
                 ++result.unsupported_cpu_patch_instruction_count;
+                switch (function.instructions.at(site).instruction.mnemonic) {
+                case ZYDIS_MNEMONIC_CPUID:
+                    ++result.deferred_cpuid_sites;
+                    break;
+                case ZYDIS_MNEMONIC_RDTSCP:
+                    ++result.deferred_rdtscp_sites;
+                    break;
+                case ZYDIS_MNEMONIC_RDPID:
+                    ++result.deferred_rdpid_sites;
+                    break;
+                default:
+                    ++result.deferred_other_cpu_sites;
+                    break;
+                }
             }
             if (rewrite.protect_red_zone) {
                 ++result.unrelocatable_memory_instruction_count;
@@ -2303,6 +2317,8 @@ static RedZonePatchResult PatchSegmentStatically(u64 segment_addr, u64 segment_s
                 ++result.patched_cpu_patch_instruction_count;
                 ASSERT(result.unsupported_cpu_patch_instruction_count != 0);
                 --result.unsupported_cpu_patch_instruction_count;
+                ASSERT(result.deferred_rdpid_sites > 0);
+                --result.deferred_rdpid_sites;
             }
         }
 #endif

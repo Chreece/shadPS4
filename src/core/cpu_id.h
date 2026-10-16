@@ -22,6 +22,9 @@ bool HandleCpuIdFault(void* context, void* fault_address);
 // Only enabled by the explicit --cpu-id-mode=builtin trial.
 void SetBuiltinCpuIdMode(bool enabled) noexcept;
 bool IsBuiltinCpuIdMode() noexcept;
+// Signal-safe guest/host PC discrimination: one registration for each mapped
+// guest executable ELF segment. No whole-process code translation.
+[[nodiscard]] bool RegisterGuestExecutableRange(uintptr_t start, size_t size);
 void RegisterBuiltinRdpidTrap(uintptr_t guest_ip, u32 length, u32 destination);
 bool HandleBuiltinRdpidTrap(void* context);
 void SetCpuIdGuestAddressRange(uintptr_t begin, uintptr_t end);
