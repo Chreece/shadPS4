@@ -117,6 +117,8 @@ if (( FINISHED_EARLY==1 )); then
   STATUS="GAME_EXITED"
   if [[ "$EXIT_CODE" != 0 ]]; then STATUS="GAME_ERROR"; fi
 fi
-BASE_LOG="${XDG_DATA_HOME:-$HOME/.local/share}/shadPS4/log/shad_log.txt"
-if [[ -f "$BASE_LOG" ]]; then cp "$BASE_LOG" "$OUT/shad_log.txt" 2>/dev/null || true; fi
+# The emulator's own console output is the authoritative log for this run.
+# Never attach a global shad_log.txt: it can belong to a different running game
+# or an older emulator, and would misattribute faults to the candidate.
+echo "LOG_SOURCE=ISOLATED_CANDIDATE_CONSOLE"
 echo "TEST_FINISHED=$STATUS EXIT=$EXIT_CODE"
