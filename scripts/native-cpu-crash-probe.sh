@@ -64,12 +64,9 @@ if ! [[ "$LIMIT" =~ ^[0-9]+$ ]] || (( LIMIT < 15 || LIMIT > 300 )); then
     echo "Diagnostic time limit must be from 15 to 300 seconds"
     exit 2
 fi
-if ! nm -an "$BIN" 2>/dev/null | grep -E '[[:space:]]unreachable_impl$' > /dev/null; then
-    echo "unreachable_impl symbol not found. Proceeding with signal-stop fallback."
-    BP="break abort"
-else
-    BP="break unreachable_impl"
-fi
+# The in-tree C++ function is resolved by gdb using its demangled name.
+BP="break unreachable_impl"
+
 echo "TEST_GAME=$GAME"
 echo "CPU_MODE=builtin"
 echo "CRASH_TARGET=$BP"
