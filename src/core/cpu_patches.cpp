@@ -2462,4 +2462,44 @@ void PrePatchInstructions(u64 segment_addr, u64 segment_size) {
 #endif
 }
 
+bool FindUnpatchedRdpid(u64 segment_addr, u64 segment_size,
+                        u64& first_unpatched) noexcept {
+#if defined(__linux__) && defined(ARCH_X86_64)
+    const auto* bytes = reinterpret_cast<const u8*>(segment_addr);
+    // RDPID uses F3 0F C7 /7 with ModRM.MOD=11; REX and operand
+    // size prefixes may precede 0F. This check intentionally refuses an
+    // ambiguous raw candidate rather than exposing the host TSC_AUX to the
+    // guest. It runs only once per ELF code segment during builtin startup.
+    for (u64 i = 1; i + 2 < segment_size; ++i) {
+        if (bytes[i] != 0x0F || bytes[i + 1] != 0xC7 ||
+            (bytes[i + 2] & 0xF8) != 0xF8) {
+            continue;
+        }
+        bool saw_f3 = false;
+        for (u64 back = i; back > 0 && i - back < 14;) {
+            const u8 prefix = bytes[--back];
+            if (prefix == 0xF3) {
+                saw_f3 = true;
+                continue;
+            }
+            if ((prefix >= 0x40 && prefix <= 0x4F) || prefix == 0x66 ||
+                prefix == 0x67 || prefix == 0x2E || prefix == 0x3E ||
+                prefix == 0x26 || prefix == 0x36 || prefix == 0x64 ||
+                prefix == 0x65) {
+                continue;
+            }
+            break;
+        }
+        if (saw_f3) {
+            first_unpatched = segment_addr + i;
+            return true;
+        }
+    }
+#else
+    (void)segment_addr;
+    (void)segment_size;
+#endif
+    return false;
+}
+
 } // namespace Core
