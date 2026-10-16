@@ -10,10 +10,10 @@ OUT="$LOGS/$TAG"
 mkdir -p "$OUT/original"
 BASE="4eba1484301fc1fcc60408c4b270c768b58c93bb"
 SRT="5e4c7aef8e98cd72ab4b1dce84c227867235c4da"
-HEAD="eaaaefe9e468f1b8f999745bf018f41682930080"
+HEAD="16182abfe2e1fcd05a00897ef06de53da269d606"
 REMOTE="https://github.com/Chreece/shadPS4.git"
 REF="refs/heads/fix/general-srt-offset-arithmetic-20261017"
-FILES=(src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp src/video_core/renderer_vulkan/vk_rasterizer.cpp src/video_core/amdgpu/liverpool.cpp)
+FILES=(src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp src/shader_recompiler/ir/passes/resource_patching_pass.cpp src/video_core/renderer_vulkan/vk_rasterizer.cpp src/video_core/amdgpu/liverpool.cpp)
 BACKED=0
 BINBACK=0
 finish() {
