@@ -187,6 +187,7 @@ struct PassInfo {
     // Preserve control-flow-dependent pointer reads when the native SRT JIT
     // cannot implement their offsets. Do not emit a partial native walker.
     u32 dynamic_offsets_deferred{};
+    u32 pending_offsets_this_round{};
     u32 unresolved_offset_audits{};
     u32 duplicate_offset_collisions{};
     u32 skipped_lane_pointer_reads{};
@@ -713,7 +714,9 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         return;
     }
     if (!PushPtr(c, pass_info, off_dw)) {
-        LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
+        // A pointer may depend on a descriptor emitted by a different SRT
+        // root. Do not diagnose it as final until all roots have been tried.
+        ++pass_info.pending_offsets_this_round;
         return;
     }
     PassInfo::PtrUserList* use_list = pass_info.GetUsesAsPointer(subtree);
@@ -781,16 +784,15 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         const IR::Value offset = sources[i].first;
         if (CanLowerSrtOffsetStructurally(offset, pass_info.offset_support_cache)) {
             ++unresolved_dependencies;
-            LOG_ERROR(Render_Recompiler,
-                      "Failed to compute offset for SRT walker after resolving dependencies");
         } else {
             ++pass_info.dynamic_offsets_deferred;
         }
     }
-    if (recovered_dependencies != 0 || unresolved_dependencies != 0) {
+    pass_info.pending_offsets_this_round += unresolved_dependencies;
+    if (recovered_dependencies != 0) {
         LOG_INFO(Render_Recompiler,
-                 "SrtDependencyResult: recovered={} unresolved={} shader={:#x}",
-                 recovered_dependencies, unresolved_dependencies, pass_info.audit_shader_hash);
+                 "SrtLocalDependencyResult: recovered={} shader={:#x}",
+                 recovered_dependencies, pass_info.audit_shader_hash);
     }
 
     // Then visit any children used as pointers
@@ -823,8 +825,43 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
     pass_info.dst_off_dw = NUM_USER_DATA_REGS;
     ASSERT(pass_info.dst_off_dw == info.srt_info.flattened_bufsize_dw);
 
+    // A scalar buffer descriptor can be loaded from a different SRT table
+    // than the table using it. Visit roots to a fixed point of *real*
+    // flattened reads rather than treating the first root traversal as
+    // globally complete. This never generates missing shader data.
+    std::vector<std::pair<IR::ScalarReg, IR::Inst*>> roots;
+    roots.reserve(pass_info.srt_roots.size());
     for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
-        VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
+        roots.emplace_back(sgpr_base, root);
+    }
+    std::size_t max_reads{};
+    for (const auto& [_, uses] : pass_info.pointer_uses) {
+        max_reads += uses.size();
+    }
+    const auto global_result = ScheduleSrtAcrossRoots(
+        roots.size(), max_reads,
+        [&] {
+            pass_info.pending_offsets_this_round = 0;
+            pass_info.dynamic_offsets_deferred = 0;
+        },
+        [&](std::size_t i) {
+            const auto& [sgpr_base, root] = roots[i];
+            VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
+        },
+        [&] { return static_cast<std::size_t>(pass_info.dst_off_dw); },
+        [&] { return static_cast<std::size_t>(pass_info.pending_offsets_this_round); });
+
+    if (global_result.recovered_after_first_round || global_result.pending) {
+        LOG_INFO(Render_Recompiler,
+                 "SrtGlobalDependencyResult: rounds={} cross_root_recovered={} "
+                 "unresolved={} shader={:#x}",
+                 global_result.rounds, global_result.recovered_after_first_round,
+                 global_result.pending, info.pgm_hash);
+    }
+    if (global_result.pending != 0) {
+        LOG_ERROR(Render_Recompiler,
+                  "Failed to compute offset for SRT walker after global dependency resolution: {}",
+                  global_result.pending);
     }
 
     c.ret();

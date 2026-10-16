@@ -8,6 +8,7 @@
 #include "shader_recompiler/ir/passes/srt_dependency_schedule.h"
 
 using Shader::Optimization::ScheduleSrtReadyReads;
+using Shader::Optimization::ScheduleSrtAcrossRoots;
 
 int main() {
     {
@@ -37,5 +38,45 @@ int main() {
         });
         assert(found.empty() && emissions == 0);
     }
-    std::puts("SRT_DEPENDENCY_SCHEDULER=PASS reverse_dependencies=RESOLVED cycles=UNTOUCHED");
+
+    // Three SRT roots: first needs a value emitted by the next root, while
+    // the third is a genuine cycle that must remain unflattened.
+    {
+        std::array<bool, 3> ready{};
+        std::size_t flattened = 16, pending = 0;
+        const auto outcome = ScheduleSrtAcrossRoots(
+            3, 3,
+            [&] { pending = 0; },
+            [&](std::size_t root) {
+                if (root == 0 && !ready[1]) {
+                    ++pending;
+                    return;
+                }
+                if (root == 2) {
+                    ++pending;
+                    return;
+                }
+                if (!ready[root]) {
+                    ready[root] = true;
+                    ++flattened;
+                }
+            },
+            [&] { return flattened; },
+            [&] { return pending; });
+        assert(ready[0] && ready[1] && !ready[2]);
+        assert(outcome.recovered_after_first_round == 1);
+        assert(outcome.pending == 1);
+        assert(outcome.rounds == 3);
+    }
+    // No cross-table work must add needless extra passes.
+    {
+        std::size_t flattened = 16, pending = 0;
+        const auto outcome = ScheduleSrtAcrossRoots(
+            1, 1, [&] { pending = 0; },
+            [&](std::size_t) { ++flattened; },
+            [&] { return flattened; },
+            [&] { return pending; });
+        assert(outcome.rounds == 1 && outcome.pending == 0);
+    }
+    std::puts("SRT_DEPENDENCY_SCHEDULER=PASS reverse_dependencies=RESOLVED cycles=UNTOUCHED cross_root=RESOLVED");
 }
