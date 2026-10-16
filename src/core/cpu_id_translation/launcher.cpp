@@ -16,11 +16,14 @@
 #include "core/cpu_id_translation/launcher.h"
 #include "core/cpu_id.h"
 
+#ifdef ENABLE_CPU_ID_TRANSLATION
 extern "C" int ShadCpuIdTranslationActive();
+#endif
 
 namespace Core {
 namespace {
 
+#ifdef ENABLE_CPU_ID_TRANSLATION
 constexpr const char* RestartMarker = "SHADPS4_CPU_ID_RESTART";
 
 bool NeedsTranslation() {
@@ -30,6 +33,7 @@ bool NeedsTranslation() {
     const bool tsc_faulting = prctl(PR_SET_TSC, PR_TSC_ENABLE) == 0;
     return rdpid || !cpuid_faulting || !tsc_faulting;
 }
+#endif
 
 } // namespace
 
@@ -38,18 +42,26 @@ bool StartCpuIdTranslation(int argc, char* argv[], std::string_view mode, bool r
         std::fprintf(stderr, "Cannot preserve CPU identity mode: %s\n", std::strerror(errno));
         return false;
     }
+#ifdef ENABLE_CPU_ID_TRANSLATION
     if (ShadCpuIdTranslationActive()) {
         unsetenv(RestartMarker);
         return true;
     }
+#endif
     if (!run_guest) {
         return true;
     }
+#ifdef ENABLE_CPU_ID_TRANSLATION
     if (std::getenv(RestartMarker)) {
         std::fputs("CPU identity translation did not start; refusing to restart again.\n", stderr);
         return false;
     }
-    if (mode == "builtin") {
+#endif
+    if (mode == "builtin"
+#ifndef ENABLE_CPU_ID_TRANSLATION
+        || mode == "auto"
+#endif
+    ) {
         // Execute normal host x86-64 code directly, while enforcing PS4
         // CPUID/RDTSCP identity via the existing Linux per-guest-thread fault
         // handlers and short RDPID via the emulator's native CPU patcher.
@@ -58,7 +70,11 @@ bool StartCpuIdTranslation(int argc, char* argv[], std::string_view mode, bool r
         SetBuiltinCpuIdMode(true);
         return true;
     }
-    if (mode == "native" || (mode == "auto" && !NeedsTranslation())) {
+    if (mode == "native") {
+        return true;
+    }
+#ifdef ENABLE_CPU_ID_TRANSLATION
+    if (mode == "auto" && !NeedsTranslation()) {
         return true;
     }
 
@@ -116,6 +132,15 @@ bool StartCpuIdTranslation(int argc, char* argv[], std::string_view mode, bool r
     unsetenv(RestartMarker);
     std::fprintf(stderr, "Cannot start CPU identity translation: %s\n", std::strerror(saved_errno));
     return false;
+#else
+    // In a pure in-process build no external instrumentation is installed,
+    // loaded, or needed by the normal auto/builtin modes.
+    (void)argc;
+    (void)argv;
+    std::fputs("External CPU identity translation is not bundled. "
+               "Choose --cpu-id-mode=builtin or native.\n", stderr);
+    return false;
+#endif
 }
 
 } // namespace Core
