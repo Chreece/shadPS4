@@ -53,8 +53,8 @@ static Id FixImageCoords(EmitContext& ctx, Id coords, AmdGpu::ImageType image_ty
 template <bool is_float>
 static Id PadImageOperand(EmitContext& ctx, Id operand, AmdGpu::ImageType image_type) {
     if (image_type == AmdGpu::ImageType::Color1D || image_type == AmdGpu::ImageType::Color1DArray) {
-        const auto coord_type = is_float ? ctx.F32 : ctx.U32;
-        const auto zero = is_float ? ctx.f32_zero_value : ctx.u32_zero_value;
+        const auto coord_type = is_float ? ctx.F32 : ctx.S32;
+        const auto zero = is_float ? ctx.f32_zero_value : ctx.ConstS32(0);
         return ctx.OpCompositeConstruct(coord_type[2], operand, zero);
     }
     return operand;
@@ -121,7 +121,23 @@ struct ImageOperands {
             }
             ctx.AddCapability(spv::Capability::ImageGatherExtended);
             op_mask = spv::ImageOperandsMask::Offset;
-            value = ctx.Def(offset);
+            // GCN texture offsets are represented as unsigned IR bit
+            // patterns, but Vulkan's signed image offset applies the same
+            // bits as a signed texel displacement (including negatives).
+            const Id raw = ctx.Def(offset);
+            switch (offset.Type()) {
+            case IR::Type::U32:
+                value = ctx.OpBitcast(ctx.S32[1], raw);
+                break;
+            case IR::Type::U32x2:
+                value = ctx.OpBitcast(ctx.S32[2], raw);
+                break;
+            case IR::Type::U32x3:
+                value = ctx.OpBitcast(ctx.S32[3], raw);
+                break;
+            default:
+                UNREACHABLE_MSG("Unsupported dynamic texel offset type {}", offset.Type());
+            }
         }
 
         value = PadImageOperand<false>(ctx, value, image_type);
