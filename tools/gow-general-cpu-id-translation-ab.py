@@ -168,6 +168,11 @@ def prerequisites():
             record.get("client_binary_sha256")!=sha_file(original_lib) or
             sha_file(LIB)!=sha_file(original_lib)):
             raise RuntimeError("existing checkpoint does not match the restored CPU-ID client")
+        for rel,expected in record["nonclient_runtime_checksums"].items():
+            backup=CHECKPOINT/"runtime"/rel
+            if (not backup.is_file() or backup.is_symlink() or
+                sha_file(backup)!=expected or sha_file(RUNTIME/rel)!=expected):
+                raise RuntimeError("existing CPU-ID runtime backup differs: "+rel)
     if not shutil.which("gcc") and not shutil.which("clang"):
         raise RuntimeError("C compiler unavailable")
     return {rel:sha_file(RUNTIME/rel) for rel in PACKAGE_FILES}
@@ -311,6 +316,12 @@ def checkpoint(original_client,nonclient):
     CHECKPOINT.mkdir(parents=True,exist_ok=False)
     (CHECKPOINT/"client.c").write_bytes(original_client)
     shutil.copy2(LIB,CHECKPOINT/"libshadps4_cpu_id.so")
+    # Preserve every bundled runtime file as well as the client. A CMake
+    # package target may refresh the entire bundle; rollback must be complete.
+    for rel in PACKAGE_FILES:
+        backup=CHECKPOINT/"runtime"/rel
+        backup.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(RUNTIME/rel,backup)
     save_json(CHECKPOINT/"manifest.json",{
         "upstream":UPSTREAM,"general":GENERAL,
         "client_source_blob":CLIENT_ORIG_BLOB,
@@ -347,9 +358,16 @@ def rollback():
         return False
     # File-by-file rollback without touching the emulator executable.
     shutil.copy2(CHECKPOINT/"libshadps4_cpu_id.so",LIB)
+    for rel in PACKAGE_FILES:
+        backup=CHECKPOINT/"runtime"/rel
+        if not backup.is_file():
+            raise RuntimeError("runtime rollback file missing: "+str(backup))
+        shutil.copy2(backup,RUNTIME/rel)
     CLIENT.write_bytes((CHECKPOINT/"client.c").read_bytes())
     return (blob(CLIENT.read_bytes())==CLIENT_ORIG_BLOB and
-            sha_file(LIB)==sha_file(CHECKPOINT/"libshadps4_cpu_id.so"))
+            sha_file(LIB)==sha_file(CHECKPOINT/"libshadps4_cpu_id.so") and
+            all(sha_file(RUNTIME/rel)==sha_file(CHECKPOINT/"runtime"/rel)
+                for rel in PACKAGE_FILES))
 
 def package(result):
     save_json(OUT/"result.json",result)
