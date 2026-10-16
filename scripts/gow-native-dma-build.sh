@@ -20,7 +20,7 @@ BASE_SOURCE="1fe3e8b626f34f092bb2be37de8d14fe26d45bc2"
 CPU_SOURCE="09d0bd31c0a81ee5e4c51a5421c3b420c45e3343"
 HRTIMER_SOURCE="b788766dbfcd8727bd90da571fe3d740b5a7c3e9"
 FIX="cfdaf64435a9f927c4d257a794723974d2f379ff"
-PATCHER_COMMIT="a1b04f7652adf3b0dd2e261136b14c70befdb636"
+PATCHER_COMMIT="8d7bc6e0e746ef41089ac7e843a874b4a9273dab"
 BRANCH="fix/generic-buffer-dma-dirty-gate-20261016"
 LOGROOT="$HOME/projects/shadps4/logs"
 ID="$(date +%Y%m%d-%H%M%S)-$$"
@@ -190,6 +190,13 @@ if [[ ! -s "$OUT/apply-native-dma-dirty-gate.py" ]]; then
   exit 4
 fi
 python3 -m py_compile "$OUT/apply-native-dma-dirty-gate.py"
+git -C "$SOURCE" show "$PATCHER_COMMIT:scripts/test_dma_patch_scope.py" \
+  > "$OUT/test_dma_patch_scope.py"
+python3 -m py_compile "$OUT/test_dma_patch_scope.py"
+python3 "$OUT/test_dma_patch_scope.py" "$OUT/apply-native-dma-dirty-gate.py" \
+  | tee "$OUT/patch-scope-tests.txt"
+grep -Fq 'NATIVE_DMA_PATCH_SCOPE=PASS' "$OUT/patch-scope-tests.txt"
+echo "REVIEWED_PATCH_PARSER=TESTED"
 python3 "$OUT/apply-native-dma-dirty-gate.py" "$SOURCE" "$OUT/source-backups" \
   | tee "$OUT/patch-result.txt"
 grep -Eq 'GENERAL_DMA_DIRTY_SOURCE=(APPLIED_AND_CHECKSUM_PINNED|EXACT_PATCH_ALREADY_PRESENT)' \
