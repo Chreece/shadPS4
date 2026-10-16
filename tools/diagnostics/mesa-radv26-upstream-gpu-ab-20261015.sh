@@ -306,7 +306,7 @@ DRM_PREFIX="$DRM_ROOT/install"
 } >"$RUN/info/libdrm-provenance.txt"
 mkdir -p "$DRM_ROOT/src"
 if [[ ! -f "$DRM_ARCHIVE" ]]; then
-    echo "DOWNLOAD_OFFICIAL_LIBDRM_$DRM_VERSION_IPV4"
+    echo "DOWNLOAD_OFFICIAL_LIBDRM_${DRM_VERSION}_IPV4"
     tmp="$DRM_ARCHIVE.$BASHPID.part"
     curl -4 -fLsS --retry 4 --retry-delay 3 --connect-timeout 20 \
         --max-time 400 -o "$tmp" \
