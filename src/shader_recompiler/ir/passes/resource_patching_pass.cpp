@@ -225,9 +225,39 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp, const Info& info)
     // partially-immediate T#/S#/V# descriptors must retain their immediate
     // words: offsets belonging to those words are not meaningful, and can
     // accidentally form a consecutive sequence with the other offsets.
-    if (sharp_fetch.summary != Summary::Invalid &&
-        CanCoalesceSharpDwords(sharp_fetch.load_mask, sharp_fetch.offsets, sharp.num_dwords)) {
-        sharp_fetch.summary = Summary::SingleLoad;
+    if (sharp_fetch.summary != Summary::Invalid) {
+        if (CanCoalesceSharpDwords(sharp_fetch.load_mask, sharp_fetch.offsets,
+                                   sharp.num_dwords)) {
+            sharp_fetch.summary = Summary::SingleLoad;
+        } else {
+            // Opt-in proof of when the previous offsets-only fast path
+            // discarded immediate T#/S#/V# descriptor words. Read-only.
+            static const bool audit = [] {
+                const char* value = std::getenv("SHADPS4_SHARP_MIXED_AUDIT");
+                return value && value[0] == '1' && value[1] == '\0';
+            }();
+            if (audit && sharp.num_dwords > 0 &&
+                sharp.num_dwords <= SharpFetch<T>::N) {
+                bool old_would_coalesce = true;
+                const u32 base = sharp_fetch.offsets[0];
+                for (u32 i = 1; i < sharp.num_dwords; ++i) {
+                    if (u32(sharp_fetch.offsets[i] - base) != i) {
+                        old_would_coalesce = false;
+                        break;
+                    }
+                }
+                if (old_would_coalesce) {
+                    static thread_local u32 reported = 0;
+                    if (reported++ < 96) {
+                        LOG_INFO(Render_Recompiler,
+                                 "SharpMixedCorrected: shader={:#x} stage={} "
+                                 "descriptor_words={} source_mask={:#x}",
+                                 info.pgm_hash, info.hw_stage,
+                                 sharp.num_dwords, u32(sharp_fetch.load_mask));
+                    }
+                }
+            }
+        }
     }
     return sharp_fetch;
 }
