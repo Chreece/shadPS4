@@ -454,6 +454,10 @@ bool Instance::CreateDevice() {
                 .shaderInt16 = features.shaderInt16,
                 .sparseBinding = features.sparseBinding,
                 .sparseResidencyBuffer = features.sparseResidencyBuffer,
+                // Sparse guest VA windows can overlap when the Vulkan device
+                // maxBufferSize is smaller than the emulator's address space.
+                // Enable aliasing only when the physical device supports it.
+                .sparseResidencyAliased = features.sparseResidencyAliased,
             },
         },
         vk::PhysicalDeviceVulkan11Features{
