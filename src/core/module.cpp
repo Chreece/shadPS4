@@ -11,6 +11,9 @@
 #include "common/string_util.h"
 #include "core/aerolib/aerolib.h"
 #include "core/cpu_patches.h"
+#if defined(__linux__) && defined(ARCH_X86_64)
+#include "core/cpu_id.h"
+#endif
 #include "core/libraries/error_codes.h"
 #include "core/loader/dwarf.h"
 #include "core/memory.h"
@@ -356,6 +359,15 @@ void Module::LoadModuleToMemory(u32& max_tls_index) {
                      total.unsupported_cpu_patch_instruction_count,
                      total.uncovered_inplace_cpu_patch_instruction_count,
                      total.uncovered_unsupported_cpu_patch_instruction_count);
+#if defined(__linux__) && defined(ARCH_X86_64)
+            if (IsBuiltinCpuIdMode()) {
+                LOG_INFO(Core_Linker,
+                         "In-process guest CPU identity for {}: {} short RDPID instructions "
+                         "handled by verified UD2 traps; {} other CPU patches still unsupported",
+                         name, total.builtin_rdpid_trap_count,
+                         total.unsupported_cpu_patch_instruction_count);
+            }
+#endif
         }
     }
 #endif
