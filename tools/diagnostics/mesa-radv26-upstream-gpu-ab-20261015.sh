@@ -195,6 +195,99 @@ echo "GSLANG_VALIDATOR_VERIFIED=YES"
     echo "PATH_ONLY_SCOPED_TO_WORKER=YES"
 } >"$RUN/info/build-tool-provenance.txt"
 
+# Mesa only accepts Python >= 3.10 if it can import Mako >= 0.8,
+# PyYAML and version parsing (packaging or distutils).
+# Obtain the missing build-only Python modules without modifying the system.
+PY_SITE="$TOOLS_ROOT/usr/lib/python3/dist-packages"
+mkdir -p "$TOOLS_ROOT/debs" "$PY_SITE"
+if ! command -v dpkg-deb >/dev/null 2>&1 ||
+   ! command -v apt-get >/dev/null 2>&1; then
+    echo "DEBIAN_PYTHON_BUILD_TOOL_HELPER_MISSING; NOT_LAUNCHED"
+    exit 5
+fi
+for package in python3-packaging python3-markupsafe python3-mako python3-yaml; do
+    case "$package" in
+        python3-packaging) module_path="$PY_SITE/packaging/__init__.py" ;;
+        python3-markupsafe) module_path="$PY_SITE/markupsafe/__init__.py" ;;
+        python3-mako) module_path="$PY_SITE/mako/__init__.py" ;;
+        python3-yaml) module_path="$PY_SITE/yaml/__init__.py" ;;
+    esac
+    if [[ -f "$module_path" ]]; then
+        echo "PRIVATE_PYTHON_MODULE_ALREADY_EXTRACTED=$package"
+        continue
+    fi
+    echo "DOWNLOAD_PRIVATE_PYTHON_MODULE=$package"
+    (
+        cd "$TOOLS_ROOT/debs"
+        apt-get -o Acquire::ForceIPv4=true download "$package"
+    ) >>"$RUN/build.log" 2>&1 || {
+        echo "PYTHON_BUILD_DEPENDENCY_DOWNLOAD_FAILED=$package; NO_SYSTEM_CHANGES"
+        exit 5
+    }
+    picked=""
+    for deb in "$TOOLS_ROOT/debs/$package"_*.deb; do
+        [[ -f "$deb" ]] || continue
+        picked="$deb"
+        break
+    done
+    [[ -n "$picked" ]] || {
+        echo "PYTHON_BUILD_DEPENDENCY_DEB_NOT_FOUND=$package"
+        exit 5
+    }
+    dpkg-deb -x "$picked" "$TOOLS_ROOT" >>"$RUN/build.log" 2>&1 || {
+        echo "PYTHON_BUILD_DEPENDENCY_EXTRACTION_FAILED=$package"
+        exit 5
+    }
+    [[ -f "$module_path" ]] || {
+        echo "PYTHON_BUILD_DEPENDENCY_MODULE_NOT_EXTRACTED=$package"
+        exit 5
+    }
+done
+
+# All Meson child Python code generators inherit this private module path.
+# Include the worker's prior PYTHONPATH when set.
+if [[ -n "$(printenv PYTHONPATH || true)" ]]; then
+    export PYTHONPATH="$PY_SITE:$(printenv PYTHONPATH)"
+else
+    export PYTHONPATH="$PY_SITE"
+fi
+python_ok=false
+: >"$RUN/info/mesa-python-preflight.txt"
+for candidate in python3.14 python3.13 python3; do
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    {
+        echo "CANDIDATE=$candidate"
+        "$candidate" - <<'PY'
+import sys
+from packaging.version import Version
+import mako
+import yaml
+
+assert sys.version_info >= (3, 10), sys.version
+assert Version(mako.__version__) >= Version("0.8.0"), mako.__version__
+print("PYTHON=" + sys.version.split()[0])
+print("MAKO=" + mako.__version__)
+print("YAML=" + yaml.__version__)
+print("PACKAGING=IMPORT_PASS")
+print("MESA_PYTHON_DEPENDENCIES=PASS")
+PY
+    } >>"$RUN/info/mesa-python-preflight.txt" 2>&1 && python_ok=true
+done
+if [[ "$python_ok" != true ]]; then
+    echo "MESA_PYTHON_PRECHECK_FAILED; NO_GAME_LAUNCH"
+    tail -n 90 "$RUN/info/mesa-python-preflight.txt"
+    exit 5
+fi
+echo "PRIVATE_MESA_PYTHON_BUILD_DEPENDENCIES=PASS"
+{
+    echo "PYTHON_MODULES_FROM=$PY_SITE"
+    echo "PYTHONPATH_APPLIED_TO_WORKER_ONLY=YES"
+    echo "SOURCE_TARBALL_UNMODIFIED=YES"
+    echo "DPKG_INSTALLATION=NONE"
+    echo "SELECTED_PYTHONS:"
+    grep -A 6 '^CANDIDATE=' "$RUN/info/mesa-python-preflight.txt" || true
+} >>"$RUN/info/build-tool-provenance.txt"
+
 # The preceding run stopped midway through Meson setup. Preserve the failed
 # configuration and its logs, then start a clean build directory. No completed
 # build or emulator checkpoint is ever replaced by this recovery path.
