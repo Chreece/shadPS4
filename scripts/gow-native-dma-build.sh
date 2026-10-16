@@ -19,6 +19,7 @@ MANIFEST="$BUILD/shadps4.native-dma-dirty-gate-v1.sha256"
 BASE_SOURCE="1fe3e8b626f34f092bb2be37de8d14fe26d45bc2"
 CPU_SOURCE="09d0bd31c0a81ee5e4c51a5421c3b420c45e3343"
 FIX="cfdaf64435a9f927c4d257a794723974d2f379ff"
+PATCHER_COMMIT="a1b04f7652adf3b0dd2e261136b14c70befdb636"
 BRANCH="fix/generic-buffer-dma-dirty-gate-20261016"
 LOGROOT="$HOME/projects/shadps4/logs"
 ID="$(date +%Y%m%d-%H%M%S)-$$"
@@ -149,7 +150,12 @@ grep -vE '[[:space:]]src/video_core/buffer_cache/(buffer_cache.cpp|memory_tracke
   "$OUT/all-core-gpu-before.sha256" > "$OUT/untouched-source-before.sha256"
 
 STATUS="APPLYING_GENERIC_DMA_DIRTY_GATE"
-git -C "$SOURCE" show "$FIX:scripts/apply-native-dma-dirty-gate.py" \
+git -C "$SOURCE" merge-base --is-ancestor "$PATCHER_COMMIT" FETCH_HEAD || {
+  STATUS="PATCHER_COMMIT_NOT_FETCHED"
+  exit 4
+}
+mkdir -p "$OUT/source-backups"
+git -C "$SOURCE" show "$PATCHER_COMMIT:scripts/apply-native-dma-dirty-gate.py" \
   > "$OUT/apply-native-dma-dirty-gate.py"
 if [[ ! -s "$OUT/apply-native-dma-dirty-gate.py" ]]; then
   STATUS="REVIEWED_PATCHER_NOT_FOUND"
@@ -195,16 +201,6 @@ g++ -std=c++23 -O2 -Wall -Wextra -pthread -I"$SOURCE/src" \
 "$OUT/tests/monotonic_clock" | tee "$OUT/clock-regressions.txt"
 grep -Fq 'HOST_MONOTONIC_CLOCK=PASS' "$OUT/clock-regressions.txt"
 echo "GENERAL_DMA_NATIVE_CLOCK_TIMER_TESTS=PASS"
-echo "UNRELATED_CPU_AND_GPU_SOURCE=UNCHANGED"
-
-STATUS="TESTING_GENERAL_HRTIMER_WAIT"
-g++ -std=c++23 -O2 -Wall -Wextra -pthread -I"$SOURCE/src" "$SOURCE/tests/kernel/test_hrtimer_wait.cpp" -o "$OUT/tests/hrtimer_wait"
-"$OUT/tests/hrtimer_wait" | tee "$OUT/hrtimer-regressions.txt"
-grep -Fq 'HRTIMER_WAIT=PASS' "$OUT/hrtimer-regressions.txt"
-g++ -std=c++23 -O2 -Wall -Wextra -pthread -I"$SOURCE/src" "$SOURCE/tests/kernel/test_host_monotonic_clock.cpp" -o "$OUT/tests/monotonic_clock"
-"$OUT/tests/monotonic_clock" | tee "$OUT/clock-regressions.txt"
-grep -Fq 'HOST_MONOTONIC_CLOCK=PASS' "$OUT/clock-regressions.txt"
-echo "NATIVE_TSC_CLOCK_AND_HRTIMER_TESTS=PASS"
 STATUS="INCREMENTAL_BUILD"
 echo "BUILD=CPU_NATIVE_DIRTY_DMA_SCAN_GATE_ONLY"
 if ! cmake --build "$BUILD" --target shadps4 --parallel 5 \
