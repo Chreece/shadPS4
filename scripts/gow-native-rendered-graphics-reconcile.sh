@@ -82,6 +82,16 @@ if pgrep -x -u "$(id -u)" shadps4 >/dev/null 2>&1; then
   exit 0
 fi
 echo "RENDERED_BASELINE_SHA256=PASS"
+# Full isolated builds consume SSD space. Do not trigger an out-of-space
+# incident on the homeserver or clean/overwrite user projects automatically.
+free_kb="$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')"
+printf 'FREE_SPACE_KB=%s\n' "$free_kb" > "$RUN/space-check.txt"
+if [[ ! "$free_kb" =~ ^[0-9]+$ ]] || (( free_kb < 6000000 )); then
+  STATUS="LOW_DISK_SPACE"
+  echo "Less than 6 GB free. Refusing isolated rebuild rather than filling SSD."
+  echo "No automatic deletions; existing working and CPU builds are preserved."
+  exit 0
+fi
 git -C "$RENDER_SRC" rev-parse HEAD > "$RUN/rendered-source-head.txt"
 git -C "$RENDER_SRC" status --short > "$RUN/rendered-source-status.txt"
 
