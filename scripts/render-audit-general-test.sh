@@ -111,7 +111,7 @@ if [ "$(git -C "$SOURCE" rev-parse HEAD 2>/dev/null || true)" != "$EXPERIMENT" ]
   git -C "$SOURCE" cat-file -e "$EXPERIMENT^{commit}"
   git -C "$SOURCE" merge-base --is-ancestor "$EXPERIMENT" FETCH_HEAD
   unexpected=$(git -C "$SOURCE" diff --name-only "$EXPERIMENT" FETCH_HEAD |
-      grep -vx 'scripts/render-audit-test.sh' || true)
+      grep -vx 'scripts/render-audit-general-test.sh' || true)
   if [ -n "$unexpected" ]; then
     echo "UNEXPECTED_BRANCH_CHANGES_SINCE_PINNED_SOURCE=$unexpected"
     exit 1
