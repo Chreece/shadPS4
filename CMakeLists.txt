@@ -1327,12 +1327,17 @@ add_executable(shadps4
 
 create_target_directory_groups(shadps4)
 
+# Native, first-party guest CPU identity handling is available on Linux
+# x86-64 regardless of whether the optional DynamoRIO fallback is bundled.
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND ARCHITECTURE STREQUAL "x86_64")
+    target_sources(shadps4 PRIVATE src/core/cpu_id_translation/launcher.cpp)
+endif()
+
 if (ENABLE_CPU_ID_TRANSLATION)
     if (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT ARCHITECTURE STREQUAL "x86_64")
         message(FATAL_ERROR "CPU identity translation requires Linux x86-64")
     endif()
     target_compile_definitions(shadps4 PRIVATE ENABLE_CPU_ID_TRANSLATION)
-    target_sources(shadps4 PRIVATE src/core/cpu_id_translation/launcher.cpp)
     target_link_options(shadps4 PRIVATE
         "-Wl,--export-dynamic-symbol=ShadCpuIdTranslationActive"
         "-Wl,--export-dynamic-symbol=ShadCpuIdTranslationRange")
