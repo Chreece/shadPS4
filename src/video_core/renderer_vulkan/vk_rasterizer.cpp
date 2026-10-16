@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -21,6 +23,96 @@
 #include "video_core/texture_cache/texture_cache.h"
 
 namespace Vulkan {
+
+namespace {
+
+struct DrawAuditCounters {
+    u64 attempted{};
+    u64 filtered{};
+    u64 missing_pipeline{};
+    u64 binding_failed{};
+    u64 submitted{};
+    u64 indexed{};
+    u64 indirect{};
+    u64 color_draws{};
+    u64 depth_draws{};
+};
+
+bool RenderAuditEnabled() {
+    // Diagnostic only. This flag cannot change emulation, resource lifetimes,
+    // descriptor values or shaders; no game titles or hashes are consulted.
+    static const bool enabled = [] {
+        const char* const mode = std::getenv("SHADPS4_RENDER_AUDIT");
+        return mode && mode[0] == '1' && mode[1] == '\0';
+    }();
+    return enabled;
+}
+
+DrawAuditCounters& GetDrawAuditCounters() {
+    // Draws use the GPU command-processing thread; keep counters thread-local.
+    static thread_local DrawAuditCounters audit;
+    return audit;
+}
+
+void LogDrawAudit(const AmdGpu::Regs& regs, const RenderState* state, bool is_indirect) {
+    const auto& audit = GetDrawAuditCounters();
+    u32 bound_colors = 0;
+    u32 framebuffer_width = 0;
+    u32 framebuffer_height = 0;
+    bool bound_depth = false;
+    if (state) {
+        framebuffer_width = state->width;
+        framebuffer_height = state->height;
+        for (u32 i = 0; i < state->num_color_attachments; ++i) {
+            bound_colors += state->color_attachments[i].image_view != vk::ImageView{};
+        }
+        bound_depth = state->depth_stencil_attachment.image_view != vk::ImageView{};
+    }
+    LOG_INFO(Render_Vulkan,
+             "RenderAudit: attempted={} submitted={} filtered={} no_pipeline={} "
+             "bind_failed={} indexed={} indirect={} color_draws={} depth_draws={} "
+             "last_draw_indirect={} last_indices={} last_instances={} last_color_views={} "
+             "last_has_depth={} last_depth_test={} last_fb={}x{}",
+             audit.attempted, audit.submitted, audit.filtered, audit.missing_pipeline,
+             audit.binding_failed, audit.indexed, audit.indirect, audit.color_draws,
+             audit.depth_draws, is_indirect, regs.num_indices, regs.num_instances.NumInstances(),
+             bound_colors, bound_depth,
+             regs.depth_control.depth_enable && regs.depth_buffer.DepthValid(),
+             framebuffer_width, framebuffer_height);
+}
+
+void CountDrawAttempt(const AmdGpu::Regs& regs, bool indirect) {
+    if (!RenderAuditEnabled()) {
+        return;
+    }
+    auto& audit = GetDrawAuditCounters();
+    ++audit.attempted;
+    if (audit.attempted == 1 || audit.attempted % 2048 == 0) {
+        LogDrawAudit(regs, nullptr, indirect);
+    }
+}
+
+void CountSubmittedDraw(const AmdGpu::Regs& regs, const RenderState& state, bool indexed,
+                        bool indirect) {
+    if (!RenderAuditEnabled()) {
+        return;
+    }
+    auto& audit = GetDrawAuditCounters();
+    ++audit.submitted;
+    audit.indexed += indexed;
+    audit.indirect += indirect;
+    u32 bound_colors{};
+    for (u32 i = 0; i < state.num_color_attachments; ++i) {
+        bound_colors += state.color_attachments[i].image_view != vk::ImageView{};
+    }
+    audit.color_draws += bound_colors != 0;
+    audit.depth_draws += state.depth_stencil_attachment.image_view != vk::ImageView{};
+    if (audit.submitted == 1 || audit.submitted % 512 == 0) {
+        LogDrawAudit(regs, &state, indirect);
+    }
+}
+
+} // Anonymous namespace
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
@@ -184,20 +276,30 @@ void Rasterizer::EliminateFastClear() {
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     RENDERER_TRACE;
 
+    CountDrawAttempt(liverpool->regs, false);
     scheduler.PopPendingOperations();
 
     if (!FilterDraw()) {
+        if (RenderAuditEnabled()) {
+            ++GetDrawAuditCounters().filtered;
+        }
         return;
     }
 
     const auto& regs = liverpool->regs;
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline();
     if (!pipeline) {
+        if (RenderAuditEnabled()) {
+            ++GetDrawAuditCounters().missing_pipeline;
+        }
         return;
     }
 
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
+        if (RenderAuditEnabled()) {
+            ++GetDrawAuditCounters().binding_failed;
+        }
         return;
     }
     const auto state = BeginRendering(pipeline);
@@ -230,6 +332,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
                     instance_offset);
     }
     DebugState.IncDrawCall();
+    CountSubmittedDraw(regs, state, is_indexed, false);
 
     ResetBindings(false);
 }
@@ -239,9 +342,13 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
                               u16 instance_sgpr_offset) {
     RENDERER_TRACE;
 
+    CountDrawAttempt(liverpool->regs, true);
     scheduler.PopPendingOperations();
 
     if (!FilterDraw()) {
+        if (RenderAuditEnabled()) {
+            ++GetDrawAuditCounters().filtered;
+        }
         return;
     }
 
@@ -252,11 +359,17 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     };
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline(params);
     if (!pipeline) {
+        if (RenderAuditEnabled()) {
+            ++GetDrawAuditCounters().missing_pipeline;
+        }
         return;
     }
 
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
+        if (RenderAuditEnabled()) {
+            ++GetDrawAuditCounters().binding_failed;
+        }
         return;
     }
     const auto state = BeginRendering(pipeline);
@@ -313,6 +426,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         DebugState.IncDrawCall();
     }
 
+    CountSubmittedDraw(liverpool->regs, state, is_indexed, true);
     ResetBindings(false);
 }
 
