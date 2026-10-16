@@ -3,6 +3,7 @@
 
 #include <cstdlib>
 #include <unordered_map>
+#include <type_traits>
 #include <bit>
 
 #include "common/debug.h"
@@ -987,7 +988,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                                                   ? vsharp.num_records
                                                   : static_cast<u64>(vsharp.stride) *
                                                         vsharp.num_records;
-                        if (full_size > UINT32_MAX) {
+                        if (full_size > std::numeric_limits<u32>::max()) {
                             ++audit->overflow_buffers;
                         }
                         if (audit->clamped_buffers <= 4 ||
@@ -998,7 +999,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                                      "mapped_size={} written={} formatted={} overflow={}",
                                      stage.pgm_hash, stage.hw_stage, vsharp.stride,
                                      vsharp.num_records, full_size, vsharp.GetSize(), size,
-                                     desc.is_written, desc.is_formatted, full_size > UINT32_MAX);
+                                     desc.is_written, desc.is_formatted, full_size > std::numeric_limits<u32>::max());
                         }
                     }
                 }
