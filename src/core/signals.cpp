@@ -252,6 +252,11 @@ static s32 NativeSiCodeToGuest(s32 sig, s32 code) {
 
 void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
 #if defined(__linux__) && defined(ARCH_X86_64)
+    // Handle only sites that the guest-code patcher explicitly registered.
+    // Other guest SIGILL signals retain their existing exception semantics.
+    if (sig == SIGILL && HandleBuiltinRdpidTrap(raw_context)) {
+        return;
+    }
     if ((sig == SIGSEGV || sig == SIGILL) && HandleCpuIdFault(raw_context, info->si_addr)) {
         return;
     }
