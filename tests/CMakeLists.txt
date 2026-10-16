@@ -591,3 +591,9 @@ add_executable(shadps4_sparse_protection_test page_manager/test_sparse_protectio
 target_include_directories(shadps4_sparse_protection_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(shadps4_sparse_protection_test PRIVATE cxx_std_23)
 add_test(NAME sparse_protection COMMAND shadps4_sparse_protection_test)
+
+# Host-independent userfaultfd range/registration semantics; no kernel tuning.
+add_executable(shadps4_uffd_range_test page_manager/test_uffd_range.cpp)
+target_include_directories(shadps4_uffd_range_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_uffd_range_test PRIVATE cxx_std_23)
+add_test(NAME uffd_range COMMAND shadps4_uffd_range_test)
