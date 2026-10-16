@@ -47,26 +47,75 @@ def insert_before_method_close(s: str, signature: str, insertion: str) -> str:
     pos = s.find(signature)
     if pos < 0 or s.find(signature, pos + 1) >= 0:
         raise ValueError(f"Missing/ambiguous method signature: {signature}")
-    opening = s.find("{", pos + len(signature))
-    if opening < 0:
-        raise ValueError(f"Missing opening brace for {signature}")
+    # IMPORTANT: the supplied signature already ENDS in the method's '{'.
+    # Searching from pos+len(signature) accidentally starts at a nested
+    # lambda/if brace, so the old applicator identified its closing brace
+    # rather than the function's. The interrupted run stopped before any
+    # changes were written because its incorrect "close" was indented.
+    if not signature.endswith("{"):
+        raise ValueError(f"Method signature must contain opening brace: {signature}")
+    opening = pos + len(signature) - 1
+    if s[opening] != "{":
+        raise ValueError(f"Missing opening method brace for {signature}")
     depth = 0
     close = -1
-    for j in range(opening, len(s)):
-        if s[j] == "{":
-            depth += 1
-        elif s[j] == "}":
-            depth -= 1
-            if depth == 0:
-                close = j
-                break
+    # Only the exact matched function scope is modified. Nested lambdas,
+    # conditional blocks, and aggregate initializers must remain untouched.
+    # Ignore braces inside C++ literals and comments.
+    state = "code"
+    j = opening
+    while j < len(s):
+        ch = s[j]
+        follow = s[j + 1] if j + 1 < len(s) else ""
+        if state == "line_comment":
+            if ch == "\n":
+                state = "code"
+        elif state == "block_comment":
+            if ch == "*" and follow == "/":
+                state = "code"
+                j += 1
+        elif state == "string":
+            if ch == "\\":
+                j += 1
+            elif ch == '"':
+                state = "code"
+        elif state == "character":
+            if ch == "\\":
+                j += 1
+            elif ch == "'":
+                state = "code"
+        else:
+            if ch == "/" and follow == "/":
+                state = "line_comment"
+                j += 1
+            elif ch == "/" and follow == "*":
+                state = "block_comment"
+                j += 1
+            elif ch == '"':
+                state = "string"
+            elif ch == "'":
+                state = "character"
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    close = j
+                    break
+                if depth < 0:
+                    raise ValueError(f"Unbalanced method braces: {signature}")
+        j += 1
+
     if close < 0:
-        raise ValueError(f"Missing closing brace for {signature}")
-    if not s[close-1:close] == "\n":
-        raise ValueError(f"Expected standard method closing layout for {signature}")
+        raise ValueError(f"Could not find the matching method brace for {signature}")
+    line_start = s.rfind("\n", 0, close) + 1
+    if s[line_start:close].strip():
+        raise ValueError(f"Closing method brace is not on its own line: {signature}")
+    # Include a method exactly once at its final closing brace, preserving
+    # the declaration and closing-brace indentation of this source version.
     if insertion.strip() in s[opening:close]:
         raise ValueError(f"Already modified body of {signature}")
-    return s[:close] + insertion + s[close:]
+    return s[:line_start] + insertion + s[line_start:]
 
 
 def patch_buffer_cache(s: str) -> str:
