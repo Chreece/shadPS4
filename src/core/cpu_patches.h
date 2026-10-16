@@ -81,6 +81,11 @@ void RegisterPatchModule(void* module_ptr, u64 module_size, void* trampoline_are
 /// Applies CPU patches that need to be done before beginning executions.
 void PrePatchInstructions(u64 segment_addr, u64 segment_size);
 
+// Built-in native CPU identity must never let a raw guest RDPID instruction
+// escape into host execution. Audit code segments only after static rewrites.
+[[nodiscard]] bool FindUnpatchedRdpid(u64 segment_addr, u64 segment_size,
+                                      u64& first_unpatched) noexcept;
+
 // Windows static guest red-zone protection
 /// Keeps Windows exception dispatch outside live guest red zones at faultable memory accesses.
 RedZonePatchResult PatchRedZoneMemoryInstructions(u64 segment_addr, u64 segment_size,
