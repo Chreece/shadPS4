@@ -45,6 +45,7 @@ struct RedZonePatchResult {
     u64 cpu_patch_instruction_count{};
     u64 patched_cpu_patch_instruction_count{};
     u64 unsupported_cpu_patch_instruction_count{};
+    u64 builtin_rdpid_trap_count{};
     u64 inplace_cpu_patch_instruction_count{};
     u64 uncovered_inplace_cpu_patch_instruction_count{};
     u64 uncovered_unsupported_cpu_patch_instruction_count{};
@@ -63,6 +64,7 @@ struct RedZonePatchResult {
         cpu_patch_instruction_count += other.cpu_patch_instruction_count;
         patched_cpu_patch_instruction_count += other.patched_cpu_patch_instruction_count;
         unsupported_cpu_patch_instruction_count += other.unsupported_cpu_patch_instruction_count;
+        builtin_rdpid_trap_count += other.builtin_rdpid_trap_count;
         inplace_cpu_patch_instruction_count += other.inplace_cpu_patch_instruction_count;
         uncovered_inplace_cpu_patch_instruction_count +=
             other.uncovered_inplace_cpu_patch_instruction_count;
