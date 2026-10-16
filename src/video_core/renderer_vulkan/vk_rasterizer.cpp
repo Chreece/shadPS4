@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <cstdlib>
+#include <unordered_map>
+#include <bit>
 
 #include "common/debug.h"
 #include "core/debug_state.h"
@@ -25,6 +27,45 @@
 namespace Vulkan {
 
 namespace {
+
+
+struct ResourceAuditCounts {
+    u64 buffer_binds{};
+    u64 null_buffers{};
+    u64 clamped_buffers{};
+    u64 overflow_buffers{};
+    u64 texture_calls{};
+    u64 null_images{};
+    u64 invalid_image_sharps{};
+    u64 unmapped_images{};
+    u64 valid_images{};
+};
+
+bool ResourceAuditEnabled() {
+    static const bool enabled = [] {
+        const char* const mode = std::getenv("SHADPS4_RESOURCE_AUDIT");
+        return mode && mode[0] == '1' && mode[1] == '\0';
+    }();
+    return enabled;
+}
+
+ResourceAuditCounts& ResourceAuditFor(const Shader::Info& stage) {
+    static thread_local std::unordered_map<u64, ResourceAuditCounts> by_shader;
+    const u64 key = (static_cast<u64>(stage.pgm_hash) << 8) |
+                    static_cast<u8>(stage.hw_stage);
+    return by_shader[key];
+}
+
+void LogResourceAudit(const Shader::Info& stage, const ResourceAuditCounts& counts) {
+    LOG_INFO(Render_Vulkan,
+             "ResourceAuditRuntime: shader={:#x} stage={} buffer_binds={} null_buffers={} "
+             "clamps={} overflow={} texture_calls={} valid_images={} null_images={} "
+             "invalid_image_sharps={} unmapped_images={}",
+             stage.pgm_hash, stage.hw_stage, counts.buffer_binds, counts.null_buffers,
+             counts.clamped_buffers, counts.overflow_buffers, counts.texture_calls,
+             counts.valid_images, counts.null_images, counts.invalid_image_sharps,
+             counts.unmapped_images);
+}
 
 struct DrawAuditCounters {
     u64 attempted{};
@@ -869,6 +910,8 @@ bool Rasterizer::IsComputeImageClear(const Pipeline* pipeline) {
 
 void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Bindings& binding,
                              Shader::PushData& push_data) {
+    const bool audit_resources = ResourceAuditEnabled();
+    ResourceAuditCounts* const audit = audit_resources ? &ResourceAuditFor(stage) : nullptr;
     const u64 alignment = instance.StorageMinAlignment();
     for (const auto& desc : stage.buffers) {
         const auto src_access =
@@ -925,6 +968,12 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             }
         } else {
             const auto vsharp = desc.GetSharp(stage);
+            if (audit) {
+                ++audit->buffer_binds;
+                if (vsharp.base_address == 0 || vsharp.GetSize() == 0) {
+                    ++audit->null_buffers;
+                }
+            }
             if (vsharp.base_address == 0 || vsharp.GetSize() == 0) {
                 buffer_infos.emplace_back(VK_NULL_HANDLE, 0, VK_WHOLE_SIZE);
             } else {
@@ -932,6 +981,26 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 if (size != vsharp.GetSize()) {
                     LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
                               vsharp.GetSize(), size, stage.pgm_hash);
+                    if (audit) {
+                        ++audit->clamped_buffers;
+                        const u64 full_size = vsharp.stride == 0
+                                                  ? vsharp.num_records
+                                                  : static_cast<u64>(vsharp.stride) *
+                                                        vsharp.num_records;
+                        if (full_size > UINT32_MAX) {
+                            ++audit->overflow_buffers;
+                        }
+                        if (audit->clamped_buffers <= 4 ||
+                            std::has_single_bit(audit->clamped_buffers)) {
+                            LOG_INFO(Render_Vulkan,
+                                     "ResourceAuditClamp: shader={:#x} stage={} stride={} "
+                                     "num_records={} exact_u64_size={} reported_u32_size={} "
+                                     "mapped_size={} written={} formatted={} overflow={}",
+                                     stage.pgm_hash, stage.hw_stage, vsharp.stride,
+                                     vsharp.num_records, full_size, vsharp.GetSize(), size,
+                                     desc.is_written, desc.is_formatted, full_size > UINT32_MAX);
+                        }
+                    }
                 }
                 VideoCore::ObtainBufferFlags flags = {};
                 if (desc.is_written) {
@@ -971,16 +1040,29 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
 }
 
 void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindings& binding) {
+    ResourceAuditCounts* const audit =
+        ResourceAuditEnabled() ? &ResourceAuditFor(stage) : nullptr;
+    if (audit) {
+        ++audit->texture_calls;
+    }
     const u32 first_image_idx = image_infos.size();
     // To emulate storing to explicit mip levels, build a descriptor array with each mip level.
     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
 
     u32 num_images{};
     for (const auto& image_desc : stage.images) {
+        if (audit) {
+            using Fetch = std::remove_cvref_t<decltype(image_desc.sharp_fetch)>;
+            audit->invalid_image_sharps +=
+                image_desc.sharp_fetch.summary == Fetch::Summary::Invalid;
+        }
         const auto tsharp = image_desc.GetSharp(stage);
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
         if (tsharp.Address() == 0 || data_fmt == AmdGpu::DataFormat::FormatInvalid) {
+            if (audit) {
+                ++audit->null_images;
+            }
             image_bindings[num_images++].image_id = {};
             image_descriptor_array_sizes.push_back(1);
             continue;
@@ -993,11 +1075,17 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                         "data_format={}, num_format={}",
                         tsharp.Address(), tsharp.pitch, tsharp.width, static_cast<u32>(data_fmt),
                         static_cast<u32>(num_fmt));
+            if (audit) {
+                ++audit->unmapped_images;
+            }
             image_bindings[num_images++].image_id = {};
             image_descriptor_array_sizes.push_back(1);
             continue;
         }
 
+        if (audit) {
+            ++audit->valid_images;
+        }
         const Shader::MipStorageFallbackMode mip_fallback_mode = image_desc.mip_fallback_mode;
         const u32 num_bindings = image_desc.NumBindings(stage);
 
@@ -1142,6 +1230,10 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         set_write.descriptorCount = 1;
         set_write.descriptorType = vk::DescriptorType::eSampler;
         set_write.pImageInfo = &image_infos.back();
+    }
+    if (audit && (audit->texture_calls == 1 ||
+                  std::has_single_bit(audit->texture_calls))) {
+        LogResourceAudit(stage, *audit);
     }
 }
 

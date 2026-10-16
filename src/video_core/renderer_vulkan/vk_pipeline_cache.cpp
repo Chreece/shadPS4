@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include <ranges>
 
 #include "common/hash.h"
@@ -27,6 +28,21 @@ using Shader::Output;
 using Shader::SwStage;
 
 constexpr static auto SpirvVersion1_6 = 0x00010600U;
+
+// Universal resource audit: report descriptor-lowering health but never alter it.
+static bool ResourceAuditEnabled() {
+    static const bool enabled = [] {
+        const char* const env = std::getenv("SHADPS4_RESOURCE_AUDIT");
+        return env && env[0] == '1' && env[1] == '\0';
+    }();
+    return enabled;
+}
+
+template <typename Resource>
+static bool HasInvalidSharp(const Resource& resource) {
+    using Fetch = std::remove_cvref_t<decltype(resource.sharp_fetch)>;
+    return resource.sharp_fetch.summary == Fetch::Summary::Invalid;
+}
 
 constexpr static std::array DescriptorHeapSizes = {
     vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 512},
@@ -630,6 +646,27 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
 
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
+    if (ResourceAuditEnabled()) {
+        u32 invalid_buffers{};
+        u32 invalid_images{};
+        u32 invalid_samplers{};
+        for (const auto& resource : info.buffers) {
+            invalid_buffers += !resource.IsSpecial() && HasInvalidSharp(resource);
+        }
+        for (const auto& resource : info.images) {
+            invalid_images += HasInvalidSharp(resource);
+        }
+        for (const auto& resource : info.samplers) {
+            invalid_samplers += HasInvalidSharp(resource);
+        }
+        LOG_INFO(Render_Vulkan,
+                 "ResourceAuditCompile: shader={:#x} stage={} buffers={} images={} samplers={} "
+                 "bad_buffers={} bad_images={} bad_samplers={} flatbuf_words={} dma={} "
+                 "translation_failed={}",
+                 info.pgm_hash, info.hw_stage, info.buffers.size(), info.images.size(),
+                 info.samplers.size(), invalid_buffers, invalid_images, invalid_samplers,
+                 info.flattened_ud_buf.size(), info.uses_dma, info.translation_failed);
+    }
     const u32 got40_first_binding = binding.unified;
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
     LOG_INFO(Render_Vulkan,
