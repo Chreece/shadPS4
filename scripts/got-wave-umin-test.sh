@@ -58,8 +58,9 @@ if [ ! -d "$SOURCE/.git" ]; then
   echo "PREPARING_ISOLATED_GIT_CLONE"
   git clone --quiet --shared --no-checkout --no-recurse-submodules "$BASE" "$SOURCE"
   git -C "$SOURCE" -c submodule.recurse=false checkout --detach "$EXPERIMENT"
+fi
 
-  # Share the already compiled third-party source checkout without altering it.
+# Share the already compiled third-party source checkout without altering it.
   for dep in "$BASE"/externals/*; do
     [ -d "$dep" ] || continue
     name=$(basename "$dep")
@@ -68,16 +69,17 @@ if [ ! -d "$SOURCE/.git" ]; then
     if [ -d "$dest" ] && [ -z "$(ls -A "$dest")" ]; then rmdir "$dest"; fi
     if [ ! -e "$dest" ]; then ln -s "$dep" "$dest"; fi
   done
-  rmdir "$SOURCE/externals/sirit" 2>/dev/null || true
-  git clone --quiet --shared --no-checkout "$BASE/externals/sirit" \
-      "$SOURCE/externals/sirit"
+  if [ ! -e "$SOURCE/externals/sirit/.git" ]; then
+    rmdir "$SOURCE/externals/sirit" 2>/dev/null || true
+    git clone --quiet --shared --no-checkout "$BASE/externals/sirit" \
+        "$SOURCE/externals/sirit"
+  fi
   if ! git -C "$SOURCE/externals/sirit" cat-file -e "$SIRIT^{commit}" 2>/dev/null; then
     git -C "$SOURCE/externals/sirit" -c http.version=HTTP/1.1 \
         -c fetch.recurseSubmodules=false fetch --no-tags --depth=3 \
         https://github.com/shadps4-emu/sirit.git "$SIRIT"
   fi
   git -C "$SOURCE/externals/sirit" checkout --detach "$SIRIT"
-fi
 test "$(git -C "$SOURCE" rev-parse HEAD)" = "$EXPERIMENT"
 test "$(git -C "$SOURCE/externals/sirit" rev-parse HEAD)" = "$SIRIT"
 git -C "$SOURCE" diff --quiet --ignore-submodules=all HEAD --
