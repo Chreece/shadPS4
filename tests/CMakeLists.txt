@@ -597,3 +597,10 @@ add_executable(shadps4_uffd_range_test page_manager/test_uffd_range.cpp)
 target_include_directories(shadps4_uffd_range_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(shadps4_uffd_range_test PRIVATE cxx_std_23)
 add_test(NAME uffd_range COMMAND shadps4_uffd_range_test)
+
+# Real Linux UFFD WP fault and explicit wake. Returns 77 when unavailable.
+add_executable(shadps4_uffd_kernel_test page_manager/test_uffd_kernel.cpp)
+target_include_directories(shadps4_uffd_kernel_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_uffd_kernel_test PRIVATE cxx_std_23)
+add_test(NAME uffd_kernel COMMAND shadps4_uffd_kernel_test)
+set_tests_properties(uffd_kernel PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 12)
