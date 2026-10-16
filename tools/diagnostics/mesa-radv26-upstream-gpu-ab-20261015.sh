@@ -461,6 +461,55 @@ xshmfence libxshmfence-dev
 libelf libelf-dev
 X11_PRIVATE_REQUIRED
 
+# XCB extension headers extracted above include "xcb.h" relative to their
+# own xcb/ directory. Merely finding the *system* xcb.pc is insufficient:
+# -I$TOOLS_ROOT/usr/include selects our extracted shm.h/randr.h first, and
+# these require xcb.h, xcbext.h and xproto.h in the SAME private directory.
+# Always extract libxcb1-dev into the private prefix, even if pkg-config
+# already reports that the host has the base libxcb development package.
+XCB_BASE_PKG="libxcb1-dev"
+XCB_HEADER="$TOOLS_ROOT/usr/include/xcb/xcb.h"
+if [[ ! -f "$XCB_HEADER" ||
+      ! -f "$TOOLS_ROOT/usr/include/xcb/xcbext.h" ||
+      ! -f "$TOOLS_ROOT/usr/include/xcb/xproto.h" ]]; then
+    echo "POPULATE_PRIVATE_XCB_BASE_HEADERS"
+    xcb_deb=""
+    for candidate in "$TOOLS_ROOT/debs/$XCB_BASE_PKG"_*.deb; do
+        [[ -f "$candidate" ]] || continue
+        xcb_deb="$candidate"
+        break
+    done
+    if [[ -z "$xcb_deb" ]]; then
+        (
+            cd "$TOOLS_ROOT/debs"
+            apt-get -o Acquire::ForceIPv4=true download "$XCB_BASE_PKG"
+        ) >>"$RUN/build.log" 2>&1 || {
+            echo "PRIVATE_XCB_BASE_DOWNLOAD_FAILED; MESA_BUILD_NOT_STARTED"
+            exit 5
+        }
+        for candidate in "$TOOLS_ROOT/debs/$XCB_BASE_PKG"_*.deb; do
+            [[ -f "$candidate" ]] || continue
+            xcb_deb="$candidate"
+            break
+        done
+    fi
+    [[ -n "$xcb_deb" && -f "$xcb_deb" ]] || {
+        echo "PRIVATE_XCB_BASE_DEB_NOT_FOUND; MESA_BUILD_NOT_STARTED"
+        exit 5
+    }
+    dpkg-deb -x "$xcb_deb" "$TOOLS_ROOT" >>"$RUN/build.log" 2>&1 || {
+        echo "PRIVATE_XCB_BASE_EXTRACTION_FAILED; MESA_BUILD_NOT_STARTED"
+        exit 5
+    }
+fi
+for required in xcb.h xcbext.h xproto.h; do
+    [[ -f "$TOOLS_ROOT/usr/include/xcb/$required" ]] || {
+        echo "PRIVATE_XCB_FOUNDATION_HEADER_MISSING=$required; MESA_BUILD_NOT_STARTED"
+        exit 5
+    }
+done
+printf 'PRIVATE_XCB_CORE_HEADERS=PASS\n' >>"$RUN/info/mesa-x11-dependencies.txt"
+
 # Debian .pc entries embed prefix=/usr. Copy them to our own pkgconfig path,
 # rewriting only the copies to reference extracted private headers and libs.
 # The official downloaded packages and all installed system files stay intact.
@@ -601,6 +650,39 @@ if [[ "$(pkg-config --modversion libdrm)" != "2.4.133" ||
     echo "MESA_PRIVATE_LIBDRM_LOST_AFTER_X11_SETUP"
     exit 5
 fi
+# Catch partial header trees before resuming Ninja at the failed X11
+# translation unit. The previously missing #include "xcb.h" must now work,
+# as must all existing XCB extension headers and X11 presentation interfaces.
+cat >"$RUN/info/mesa-xcb-header-smoke.c" <<'C'
+#include <xcb/xcb.h>
+#include <xcb/xcbext.h>
+#include <xcb/xproto.h>
+#include <xcb/shm.h>
+#include <xcb/randr.h>
+#include <xcb/render.h>
+#include <xcb/shape.h>
+#include <xcb/present.h>
+#include <xcb/xfixes.h>
+#include <xcb/dri2.h>
+#include <xcb/dri3.h>
+#include <xcb/sync.h>
+#include <X11/Xlib.h>
+#include <X11/Xlib-xcb.h>
+int main(void) { return 0; }
+C
+if ! cc -std=c11 -fsyntax-only -I"$TOOLS_ROOT/usr/include" \
+        $(pkg-config --cflags \
+          xcb xcb-shm xcb-randr xcb-render xcb-shape xcb-present \
+          xcb-xfixes xcb-dri2 xcb-dri3 xcb-sync x11 x11-xcb) \
+        "$RUN/info/mesa-xcb-header-smoke.c" \
+        >"$RUN/info/mesa-xcb-header-smoke.log" 2>&1; then
+    echo "PRIVATE_MESA_XCB_HEADERS_INCOMPLETE; MESA_BUILD_NOT_STARTED"
+    cat "$RUN/info/mesa-xcb-header-smoke.log"
+    exit 5
+fi
+echo "PRIVATE_MESA_XCB_HEADER_SMOKE=PASS"
+rm -f -- "$RUN/info/mesa-xcb-header-smoke.c"
+
 # Check a real native link, not just Meson's pkg-config discovery.
 if ! printf 'int main(void){return 0;}\n' | \
     cc -x c - -x none -o "$RUN/info/private-x11-link-test" \
