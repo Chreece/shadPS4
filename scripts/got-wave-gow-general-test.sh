@@ -14,7 +14,7 @@ ROOT="$HOME/projects/shadps4"
 GOT="$ROOT/GhostOfTsushima"
 LOGS="$ROOT/logs"
 NAME="$1"
-WORK="$GOT/tests/got-wave-gow-general-20261016"
+WORK="$GOT/tests/got-wave-gow-general-20261016-standalone"
 SOURCE="$WORK/source"
 BUILD="$WORK/build"
 BASE="$GOT/tests/got-wave-umin-20261016/source"
@@ -65,20 +65,28 @@ test -f "$GAME"
 test -d "$PROFILE/user"
 test -d "$BASE/externals/sirit"
 
+# Independent object database: do not use clone --shared or Git alternates.
+# This also avoids the previous unresolved-deltas thin-pack fetch failure.
 if [ ! -d "$SOURCE/.git" ]; then
   if [ -e "$SOURCE" ]; then
     echo "UNEXPECTED_SOURCE_DIRECTORY=$SOURCE"
     exit 1
   fi
-  mkdir -p "$WORK"
-  echo "PREPARING_ISOLATED_GIT_CLONE"
-  git clone --quiet --shared --no-checkout --no-recurse-submodules "$BASE" "$SOURCE"
-  git -C "$SOURCE" -c fetch.recurseSubmodules=false -c submodule.recurse=false \
-    -c http.version=HTTP/1.1 fetch --no-tags --no-recurse-submodules \
-    https://github.com/Chreece/shadPS4.git \
-    refs/heads/experiment/got-wave-gow-general-20261016
-  # Branch HEAD includes this test runner; the pinned source commit is its
-  # verified ancestor. Never confuse runner-only commits with source changes.
+  mkdir -p "$SOURCE"
+  git -C "$SOURCE" init -q
+fi
+if [ -s "$SOURCE/.git/objects/info/alternates" ]; then
+  echo "GIT_OBJECT_ALTERNATES_NOT_ALLOWED=$SOURCE"
+  exit 1
+fi
+
+if [ "$(git -C "$SOURCE" rev-parse HEAD 2>/dev/null || true)" != "$EXPERIMENT" ]; then
+  echo "FETCHING_SHALLOW_INDEPENDENT_SOURCE"
+  git -C "$SOURCE" -c gc.auto=0 -c http.version=HTTP/1.1 \
+      -c fetch.recurseSubmodules=false -c submodule.recurse=false \
+      fetch --depth=24 --no-tags --no-recurse-submodules \
+      https://github.com/Chreece/shadPS4.git \
+      refs/heads/experiment/got-wave-gow-general-20261016
   git -C "$SOURCE" cat-file -e "$EXPERIMENT^{commit}"
   git -C "$SOURCE" merge-base --is-ancestor "$EXPERIMENT" FETCH_HEAD
   unexpected=$(git -C "$SOURCE" diff --name-only "$EXPERIMENT" FETCH_HEAD |
@@ -101,7 +109,7 @@ fi
   done
   if [ ! -e "$SOURCE/externals/sirit/.git" ]; then
     rmdir "$SOURCE/externals/sirit" 2>/dev/null || true
-    git clone --quiet --shared --no-checkout "$BASE/externals/sirit" \
+    git clone --quiet --no-local --no-checkout "$BASE/externals/sirit" \
         "$SOURCE/externals/sirit"
   fi
   if ! git -C "$SOURCE/externals/sirit" cat-file -e "$SIRIT^{commit}" 2>/dev/null; then
