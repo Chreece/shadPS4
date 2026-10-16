@@ -102,7 +102,7 @@ int main(int argc, char* argv[]) {
     app.add_option("--wait-for-pid", waitPid);
 #ifdef ENABLE_CPU_ID_TRANSLATION
     app.add_option("--cpu-id-mode", cpuIdMode, "CPU identity execution mode")
-        ->check(CLI::IsMember({"auto", "native", "translated"}))
+        ->check(CLI::IsMember({"auto", "native", "translated", "builtin"}))
         ->envname("SHADPS4_CPU_ID_MODE");
 #endif
 #ifdef __linux__
