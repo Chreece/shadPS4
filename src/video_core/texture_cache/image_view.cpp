@@ -53,6 +53,10 @@ ImageViewInfo::ImageViewInfo(const AmdGpu::Image& image, const Shader::ImageReso
     : is_storage{desc.is_written} {
     const auto dfmt = image.GetDataFmt();
     auto nfmt = image.GetNumberFmt();
+    if (desc.is_atomic_uint_view) {
+        // Reuse the mutable 32-bit backing image, but bind it as R32_UINT.
+        nfmt = AmdGpu::NumberFormat::Uint;
+    }
     if (is_storage && nfmt == AmdGpu::NumberFormat::Srgb) {
         nfmt = AmdGpu::NumberFormat::Unorm;
     }

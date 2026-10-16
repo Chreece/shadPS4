@@ -967,7 +967,9 @@ spv::ImageFormat GetFormat(const AmdGpu::Image& image) {
 
 Id ImageType(EmitContext& ctx, const ImageResource& desc, Id sampled_type) {
     const auto image = desc.GetSharp(ctx.info);
-    const auto format = desc.is_atomic ? GetFormat(image) : spv::ImageFormat::Unknown;
+    const auto format = desc.is_atomic_uint_view
+                            ? spv::ImageFormat::R32ui
+                            : (desc.is_atomic ? GetFormat(image) : spv::ImageFormat::Unknown);
     const auto type = image.GetViewType(desc.is_array);
     const u32 sampled = desc.is_written ? 2 : 1;
     switch (type) {
@@ -991,7 +993,8 @@ Id ImageType(EmitContext& ctx, const ImageResource& desc, Id sampled_type) {
 void EmitContext::DefineImagesAndSamplers() {
     for (const auto& image_desc : info.images) {
         const auto sharp = image_desc.GetSharp(info);
-        const auto nfmt = sharp.GetNumberFmt();
+        const auto nfmt = image_desc.is_atomic_uint_view ? AmdGpu::NumberFormat::Uint
+                                                        : sharp.GetNumberFmt();
         const bool is_integer = AmdGpu::IsInteger(nfmt);
         const bool is_storage = image_desc.is_written;
         const MipStorageFallbackMode mip_fallback_mode = image_desc.mip_fallback_mode;

@@ -129,6 +129,8 @@ struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
     bool is_depth{};
     bool is_atomic{};
+    // Integer atomics on 32-bit floating/signed resources require an unsigned image view.
+    bool is_atomic_uint_view{};
     bool is_array{};
     bool is_written{};
     bool is_r128{};

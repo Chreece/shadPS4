@@ -114,6 +114,7 @@ public:
     u32 Add(const ImageResource& desc) {
         const u32 index{Add(image_resources, desc, [&desc](const auto& existing) {
             return desc.sharp_fetch == existing.sharp_fetch && desc.is_array == existing.is_array &&
+                   desc.is_atomic_uint_view == existing.is_atomic_uint_view &&
                    desc.mip_fallback_mode == existing.mip_fallback_mode &&
                    desc.constant_mip_index == existing.constant_mip_index &&
                    desc.post_op == existing.post_op;
@@ -252,6 +253,22 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
 
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
+
+    // Integer image atomics require integer sampled types and texel pointers.
+    // Reinterpret compatible 32-bit float/signed storage through an R32_UINT
+    // view. Keep sampled descriptors separate to preserve numeric sampling.
+    if (is_atomic && image.GetDataFmt() == AmdGpu::DataFormat::Format32) {
+        const auto nfmt = image.GetNumberFmt();
+        const bool is_float_min_max =
+            inst.GetOpcode() == IR::Opcode::ImageAtomicFMin32 ||
+            inst.GetOpcode() == IR::Opcode::ImageAtomicFMax32;
+        const bool uses_native_float_atomic =
+            is_float_min_max && profile.supports_image_fp32_atomic_min_max &&
+            nfmt == AmdGpu::NumberFormat::Float;
+        image_res.is_atomic_uint_view =
+            !uses_native_float_atomic &&
+            (nfmt == AmdGpu::NumberFormat::Float || nfmt == AmdGpu::NumberFormat::Sint);
+    }
 
     if (needs_mip_storage_fallback) {
         // If the mip level to IMAGE_(LOAD/STORE)_MIP is a constant, set up ImageResource
