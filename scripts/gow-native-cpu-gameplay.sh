@@ -31,21 +31,21 @@ if pgrep -x -u "$(id -u)" shadps4 >/dev/null 2>&1; then
   echo "Another emulator is running. No process stopped."
   exit 2
 fi
-export DISPLAY="\${DISPLAY:-:0}"
-if [[ -z "\${XAUTHORITY:-}" && -f "$HOME/.Xauthority" ]]; then
+export DISPLAY="${DISPLAY:-:0}"
+if [[ -z "${XAUTHORITY:-}" && -f "$HOME/.Xauthority" ]]; then
   export XAUTHORITY="$HOME/.Xauthority"
 fi
-if [[ -z "\${XDG_RUNTIME_DIR:-}" && -d "/run/user/$(id -u)" ]]; then
+if [[ -z "${XDG_RUNTIME_DIR:-}" && -d "/run/user/$(id -u)" ]]; then
   export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 fi
-if [[ -z "\${DBUS_SESSION_BUS_ADDRESS:-}" && -S "$XDG_RUNTIME_DIR/bus" ]]; then
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]]; then
   export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 fi
 if command -v xdpyinfo >/dev/null && ! xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
   echo "Display not accessible; not changing existing X11/Sunshine setup."
   exit 2
 fi
-DURATION="\${GOW_CPU_PLAY_SECONDS:-180}"
+DURATION="${GOW_CPU_PLAY_SECONDS:-180}"
 if ! [[ "$DURATION" =~ ^[0-9]+$ ]] || (( DURATION<30 || DURATION>1200 )); then
   echo "Invalid duration: must be 30 to 1200 seconds"; exit 2
 fi
@@ -117,6 +117,6 @@ if (( FINISHED_EARLY==1 )); then
   STATUS="GAME_EXITED"
   if [[ "$EXIT_CODE" != 0 ]]; then STATUS="GAME_ERROR"; fi
 fi
-BASE_LOG="\${XDG_DATA_HOME:-$HOME/.local/share}/shadPS4/log/shad_log.txt"
+BASE_LOG="${XDG_DATA_HOME:-$HOME/.local/share}/shadPS4/log/shad_log.txt"
 if [[ -f "$BASE_LOG" ]]; then cp "$BASE_LOG" "$OUT/shad_log.txt" 2>/dev/null || true; fi
 echo "TEST_FINISHED=$STATUS EXIT=$EXIT_CODE"
