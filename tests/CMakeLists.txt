@@ -585,3 +585,9 @@ add_executable(shadps4_dma_dirty_gate_test buffer_cache/test_dma_dirty_gate.cpp)
 target_include_directories(shadps4_dma_dirty_gate_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(shadps4_dma_dirty_gate_test PRIVATE cxx_std_23)
 add_test(NAME dma_dirty_gate COMMAND shadps4_dma_dirty_gate_test)
+
+# Protection-range batching correctness without GPU, driver, or guest binary.
+add_executable(shadps4_sparse_protection_test page_manager/test_sparse_protection.cpp)
+target_include_directories(shadps4_sparse_protection_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_sparse_protection_test PRIVATE cxx_std_23)
+add_test(NAME sparse_protection COMMAND shadps4_sparse_protection_test)
