@@ -82,11 +82,32 @@ fi
 
 if [ "$(git -C "$SOURCE" rev-parse HEAD 2>/dev/null || true)" != "$EXPERIMENT" ]; then
   echo "FETCHING_SHALLOW_INDEPENDENT_SOURCE"
-  git -C "$SOURCE" -c gc.auto=0 -c http.version=HTTP/1.1 \
-      -c fetch.recurseSubmodules=false -c submodule.recurse=false \
-      fetch --depth=24 --no-tags --no-recurse-submodules \
-      https://github.com/Chreece/shadPS4.git \
-      refs/heads/experiment/got-wave-gow-general-20261016
+  if [ -n "${GOT_GIT_CACHE:-}" ]; then
+    # The outer one-paste command verifies a fresh Git object database. Reuse
+    # that repository over Git's local protocol instead of downloading again.
+    test -d "$GOT_GIT_CACHE/.git" || { echo "INVALID_GOT_GIT_CACHE"; exit 1; }
+    test "$(git -C "$GOT_GIT_CACHE" rev-parse refs/heads/got-verified-runner)" = \
+         "${GOT_GIT_HEAD:-}" || { echo "PINNED_GOT_GIT_CACHE_HEAD_MISMATCH"; exit 1; }
+    git -C "$SOURCE" -c gc.auto=0 -c fetch.recurseSubmodules=false \
+        fetch --depth=24 --no-tags --no-recurse-submodules \
+        "file://$GOT_GIT_CACHE" refs/heads/got-verified-runner
+    test "$(git -C "$SOURCE" rev-parse FETCH_HEAD)" = "$GOT_GIT_HEAD"
+  else
+    # Standalone execution also uses a shallow, independent object database.
+    # Retry without commit negotiation if a transport left a broken thin pack.
+    if ! git -C "$SOURCE" -c gc.auto=0 -c http.version=HTTP/1.1 \
+        -c fetch.recurseSubmodules=false -c submodule.recurse=false \
+        fetch --depth=24 --no-tags --no-recurse-submodules \
+        https://github.com/Chreece/shadPS4.git \
+        refs/heads/experiment/got-wave-gow-general-20261016; then
+      echo "RETRYING_STANDALONE_GIT_REFETCH"
+      git -C "$SOURCE" -c gc.auto=0 -c http.version=HTTP/1.1 \
+        -c protocol.version=1 -c fetch.recurseSubmodules=false \
+        fetch --refetch --depth=24 --no-tags --no-recurse-submodules \
+        https://github.com/Chreece/shadPS4.git \
+        refs/heads/experiment/got-wave-gow-general-20261016
+    fi
+  fi
   git -C "$SOURCE" cat-file -e "$EXPERIMENT^{commit}"
   git -C "$SOURCE" merge-base --is-ancestor "$EXPERIMENT" FETCH_HEAD
   unexpected=$(git -C "$SOURCE" diff --name-only "$EXPERIMENT" FETCH_HEAD |
