@@ -450,6 +450,7 @@ xcb-randr libxcb-randr0-dev
 x11 libx11-dev
 x11-xcb libx11-xcb-dev
 xcb-dri3 libxcb-dri3-dev
+xcb-dri2 libxcb-dri2-0-dev
 xcb-present libxcb-present-dev
 xcb-shm libxcb-shm0-dev
 xcb-sync libxcb-sync-dev
@@ -476,6 +477,37 @@ for source in sorted(private_usr.glob("lib/*/pkgconfig/*.pc")):
     count += 1
 print("PRIVATE_X11_PKGCONFIG_COPIES=" + str(count))
 PY
+# Development Debian packages provide unversioned lib*.so linker symlinks,
+# while already-installed runtime packages provide versioned lib*.so.N files.
+# Since extraction is private, complete ONLY broken private linker symlinks
+# with read-only copies of their real runtime files, when present on the host.
+# No system libraries are modified, replaced or injected into other processes.
+python3 - "$X11_PRIVATE_LIB" <<'PY'
+from pathlib import Path
+import os
+import shutil
+import sys
+
+private = Path(sys.argv[1])
+public = Path("/usr/lib") / private.name
+count = 0
+if private.exists():
+    for link in sorted(private.glob("lib*.so")):
+        if not link.is_symlink() or link.exists():
+            continue
+        target = Path(os.readlink(link))
+        if target.is_absolute():
+            raise SystemExit("Unexpected absolute private linker target: " + str(link))
+        source = public / target
+        if not source.is_file():
+            raise SystemExit("Missing runtime library for private linker symlink: " + str(link))
+        destination = private / target
+        if destination.exists():
+            continue
+        shutil.copy2(source.resolve(), destination)
+        count += 1
+print("PRIVATE_LINKER_RUNTIME_COPIES=" + str(count))
+PY
 if [[ -n "$(printenv LD_LIBRARY_PATH || true)" ]]; then
     export LD_LIBRARY_PATH="$DRM_PREFIX/lib:$X11_PRIVATE_LIB:$(printenv LD_LIBRARY_PATH)"
 else
@@ -500,6 +532,7 @@ xcb-randr libxcb-randr0-dev
 x11 libx11-dev
 x11-xcb libx11-xcb-dev
 xcb-dri3 libxcb-dri3-dev
+xcb-dri2 libxcb-dri2-0-dev
 xcb-present libxcb-present-dev
 xcb-shm libxcb-shm0-dev
 xcb-sync libxcb-sync-dev
