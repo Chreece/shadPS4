@@ -217,9 +217,9 @@ if [[ -n "$xpid" && -r "/proc/$xpid/cmdline" ]]; then
   xauth="$(tr '\0' '\n' < "/proc/$xpid/cmdline" 2>/dev/null |
     awk 'p=="-auth" {print;exit} {p=$0}' || true)"
 fi
-for d in "$sun_display" "$DISPLAY" :0 :1 :2; do
+for d in "$sun_display" "${DISPLAY:-}" :0 :1 :2; do
   [[ -n "$d" ]] || continue
-  for auth in "$sun_auth" "$xauth" "$XAUTHORITY" \
+  for auth in "$sun_auth" "$xauth" "${XAUTHORITY:-}" \
        "$HOME/.Xauthority" "/run/user/$(id -u)/Xauthority" ""; do
     if [[ -n "$auth" ]]; then
       [[ -r "$auth" && -f "$auth" ]] || continue
