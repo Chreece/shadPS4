@@ -555,3 +555,9 @@ target_link_libraries(shadps4_net_kernel_test PRIVATE
     tsl::robin_map         # fs.h
     miniupnpc::miniupnpc   # UPnP forwarding of the P2P port
 )
+
+# Host-independent kernel HLE argument validation: no game assets or GPU needed.
+add_executable(shadps4_kernel_module_filename_test kernel/test_module_filename.cpp)
+target_include_directories(shadps4_kernel_module_filename_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_kernel_module_filename_test PRIVATE cxx_std_23)
+add_test(NAME kernel_module_filename COMMAND shadps4_kernel_module_filename_test)

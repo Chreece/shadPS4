@@ -6,6 +6,7 @@
 #include "core/emulator_settings.h"
 #include "core/file_sys/fs.h"
 #include "core/libraries/kernel/orbis_error.h"
+#include "core/libraries/kernel/module_filename_validation.h"
 #include "core/libraries/kernel/process.h"
 #include "core/libraries/kernel/threads/pthread.h"
 #include "core/libraries/libs.h"
@@ -94,6 +95,14 @@ void* PS4_SYSV_ABI sceKernelGetProcParam() {
 
 s32 PS4_SYSV_ABI sceKernelLoadStartModule(const char* moduleFileName, u64 args, const void* argp,
                                           u32 flags, const void* pOpt, s32* pRes) {
+    // Guest pointers must be validated before passing them to fmt or std::string.
+    // A null filename is an ordinary guest API error, not a host SIGSEGV.
+    const s32 filename_result = ValidateModuleFilename(moduleFileName);
+    if (filename_result != ORBIS_OK) {
+        LOG_WARNING(Lib_Kernel, "sceKernelLoadStartModule rejected {} filename",
+                    moduleFileName == nullptr ? "null" : "empty");
+        return filename_result;
+    }
     LOG_INFO(Lib_Kernel, "called filename = {}, args = {}", moduleFileName, args);
     ASSERT(flags == 0);
 
