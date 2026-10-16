@@ -280,7 +280,7 @@ echo "GAME_LAUNCHED=PASS PID=$GAME_PID"
         # --batch --nx and disabled debuginfod prevent external scripts or
         # symbol downloads. timeout bounds accidental debugger hangs.
         # GDB normally detaches after the requested backtrace.
-        sudo -n timeout --foreground --signal=INT --kill-after=8s 48s \
+        if sudo -n timeout --foreground --signal=INT --kill-after=8s 48s \
           gdb --nx --quiet --batch --pid "$GAME_PID" \
           -ex 'set pagination off' \
           -ex 'set confirm off' \
@@ -289,14 +289,18 @@ echo "GAME_LAUNCHED=PASS PID=$GAME_PID"
           -ex 'info threads' \
           -ex 'thread apply all bt 20' \
           -ex 'detach' \
-          > "$OUT/possible-stall/gdb-all-threads.txt" 2>&1
-        gdb_rc=$?
+          > "$OUT/possible-stall/gdb-all-threads.txt" 2>&1; then
+          gdb_rc=0
+        else
+          gdb_rc=$?
+        fi
         printf 'GDB_EXIT_CODE=%s\n' "$gdb_rc" \
           > "$OUT/possible-stall/gdb-status.txt"
-        if [[ -s "$OUT/possible-stall/gdb-all-threads.txt" ]]; then
+        if [[ "$gdb_rc" == 0 ]] &&
+           grep -Eq '^Thread [0-9]+ ' "$OUT/possible-stall/gdb-all-threads.txt"; then
           echo "GDB_BACKTRACE_CAPTURED=YES"
         else
-          echo "GDB_BACKTRACE_CAPTURED=NO (see gdb status)"
+          echo "GDB_BACKTRACE_CAPTURED=NO; kernel thread snapshot retained"
         fi
         # Restore execution if a system signal left the tracee stopped
         # without terminating it. This never kills the emulator.
