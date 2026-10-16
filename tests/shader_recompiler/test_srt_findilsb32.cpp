@@ -34,7 +34,7 @@ bool Verify(const char* label, Function f) {
     }
     std::mt19937 generator{0x5a175b32U};
     for (unsigned i = 0; i < 20000; ++i) {
-        const auto value = generator();
+        const std::uint32_t value = generator();
         if (f(value) != Expected(value)) {
             std::fprintf(stderr, "%s randomized failure input=%08x\n", label, value);
             return false;
