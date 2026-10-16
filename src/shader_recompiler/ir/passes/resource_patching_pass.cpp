@@ -8,6 +8,7 @@
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/ir_emitter.h"
+#include "shader_recompiler/ir/passes/sharp_fetch_coalesce.h"
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/operand_helper.h"
 #include "shader_recompiler/ir/passes/ir_passes.h"
@@ -220,13 +221,12 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp, const Info& info)
             }
         }
     }
-    if (sharp_fetch.summary != Summary::Invalid) {
-        const u32 base = sharp_fetch.offsets[0];
-        for (u32 i = 1; i < sharp.num_dwords; ++i) {
-            if (sharp_fetch.offsets[i] - base != i) {
-                return sharp_fetch;
-            }
-        }
+    // Coalesce only genuine consecutive flat-buffer loads. In particular,
+    // partially-immediate T#/S#/V# descriptors must retain their immediate
+    // words: offsets belonging to those words are not meaningful, and can
+    // accidentally form a consecutive sequence with the other offsets.
+    if (sharp_fetch.summary != Summary::Invalid &&
+        CanCoalesceSharpDwords(sharp_fetch.load_mask, sharp_fetch.offsets, sharp.num_dwords)) {
         sharp_fetch.summary = Summary::SingleLoad;
     }
     return sharp_fetch;
