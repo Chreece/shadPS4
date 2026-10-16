@@ -683,6 +683,127 @@ fi
 echo "PRIVATE_MESA_XCB_HEADER_SMOKE=PASS"
 rm -f -- "$RUN/info/mesa-xcb-header-smoke.c"
 
+# Mesa's final RADV link calls "-lelf" directly. A working libelf.pc
+# and libelf headers are NOT enough: Debian's libelf-dev supplies the linker
+# libelf.so entry, separate from libelf1t64's runtime libelf.so.1.
+# The previously configured Meson build cached "-lelf" with no private -L.
+# Supply the private directory through GCC's LIBRARY_PATH (link-time only)
+# without reconfiguring or touching the nearly completed 626/627 build.
+ELF_LINKER_DIR="$TOOLS_ROOT/usr/lib/$(cc -dumpmachine)"
+ELF_LINKER_SO="$ELF_LINKER_DIR/libelf.so"
+mkdir -p "$ELF_LINKER_DIR"
+if [[ ! -e "$ELF_LINKER_SO" ||
+      ! -f "$TOOLS_ROOT/usr/include/libelf.h" ]]; then
+    echo "FETCH_PRIVATE_LIBELF_DEVELOPMENT_LINKER"
+    elfdev_deb=""
+    for candidate in "$TOOLS_ROOT/debs/libelf-dev"_*.deb; do
+        [[ -f "$candidate" ]] || continue
+        elfdev_deb="$candidate"
+        break
+    done
+    if [[ -z "$elfdev_deb" ]]; then
+        (
+            cd "$TOOLS_ROOT/debs"
+            apt-get -o Acquire::ForceIPv4=true download libelf-dev
+        ) >>"$RUN/build.log" 2>&1 || {
+            echo "LIBELF_DEV_DOWNLOAD_FAILED; MESA_BUILD_NOT_STARTED"
+            exit 5
+        }
+        for candidate in "$TOOLS_ROOT/debs/libelf-dev"_*.deb; do
+            [[ -f "$candidate" ]] || continue
+            elfdev_deb="$candidate"
+            break
+        done
+    fi
+    [[ -n "$elfdev_deb" && -f "$elfdev_deb" ]] || {
+        echo "LIBELF_DEV_DEB_NOT_FOUND"
+        exit 5
+    }
+    dpkg-deb -x "$elfdev_deb" "$TOOLS_ROOT" >>"$RUN/build.log" 2>&1 || {
+        echo "LIBELF_DEV_EXTRACTION_FAILED"
+        exit 5
+    }
+fi
+# libelf.so is a development symlink to the runtime SONAME. Complete the
+# private dependency using Debian's matching runtime without changing /usr.
+if [[ ! -e "$ELF_LINKER_SO" ]]; then
+    if [[ ! -e "$ELF_LINKER_DIR/libelf.so.1" ]]; then
+        elf_runtime_deb=""
+        for candidate in "$TOOLS_ROOT/debs/libelf1t64"_*.deb; do
+            [[ -f "$candidate" ]] || continue
+            elf_runtime_deb="$candidate"
+            break
+        done
+        if [[ -z "$elf_runtime_deb" ]]; then
+            echo "FETCH_PRIVATE_LIBELF_RUNTIME_SONAME"
+            (
+                cd "$TOOLS_ROOT/debs"
+                apt-get -o Acquire::ForceIPv4=true download libelf1t64
+            ) >>"$RUN/build.log" 2>&1 || {
+                echo "LIBELF_RUNTIME_DOWNLOAD_FAILED"
+                exit 5
+            }
+            for candidate in "$TOOLS_ROOT/debs/libelf1t64"_*.deb; do
+                [[ -f "$candidate" ]] || continue
+                elf_runtime_deb="$candidate"
+                break
+            done
+        fi
+        [[ -n "$elf_runtime_deb" && -f "$elf_runtime_deb" ]] || {
+            echo "LIBELF_RUNTIME_DEB_NOT_FOUND"
+            exit 5
+        }
+        dpkg-deb -x "$elf_runtime_deb" "$TOOLS_ROOT" >>"$RUN/build.log" 2>&1 || {
+            echo "LIBELF_RUNTIME_EXTRACTION_FAILED"
+            exit 5
+        }
+    fi
+fi
+if [[ ! -e "$ELF_LINKER_SO" ||
+      ! -f "$TOOLS_ROOT/usr/include/libelf.h" ]]; then
+    echo "PRIVATE_LIBELF_LINKER_UNRESOLVED; MESA_BUILD_NOT_STARTED"
+    ls -la "$ELF_LINKER_DIR"/libelf* >>"$RUN/info/libelf-link-provenance.txt" 2>&1 || true
+    exit 5
+fi
+# GCC's LIBRARY_PATH is used by cc and c++ at link time, even when Ninja's
+# already-generated link command has no extra -L. Do not touch Meson cache.
+if [[ -n "$(printenv LIBRARY_PATH || true)" ]]; then
+    export LIBRARY_PATH="$ELF_LINKER_DIR:$(printenv LIBRARY_PATH)"
+else
+    export LIBRARY_PATH="$ELF_LINKER_DIR"
+fi
+if [[ -n "$(printenv LD_LIBRARY_PATH || true)" ]]; then
+    export LD_LIBRARY_PATH="$ELF_LINKER_DIR:$(printenv LD_LIBRARY_PATH)"
+else
+    export LD_LIBRARY_PATH="$ELF_LINKER_DIR"
+fi
+{
+    echo "DEVELOPMENT_LINKER=$ELF_LINKER_SO"
+    echo "RUNTIME_SONAME=$(readlink "$ELF_LINKER_SO" || true)"
+    echo "PACKAGE_VERSION=$(pkg-config --modversion libelf)"
+    echo "LIBRARY_PATH_FOR_NINJA_LINKER=$LIBRARY_PATH"
+    echo "PRIVATE_DEV_HEADERS=$TOOLS_ROOT/usr/include"
+    echo "NO_SYSTEM_LINKER_CONFIGURATION_MODIFIED=YES"
+} >"$RUN/info/libelf-link-provenance.txt"
+# This reproduces the exact "-lelf" search pattern that failed in RADV.
+# The test explicitly CALLS elf_version, so --as-needed cannot hide a
+# missing libelf. Run the result to prove that runtime resolution works.
+if ! printf '#include <libelf.h>\nint main(void){return elf_version(EV_CURRENT)==EV_NONE;}\n' | \
+    cc -I"$TOOLS_ROOT/usr/include" -x c - -x none \
+       -o "$RUN/info/private-libelf-link-test" -lelf \
+       >"$RUN/info/libelf-link-smoke.log" 2>&1; then
+    echo "PRIVATE_LIBELF_LINK_SMOKE_FAILED; MESA_BUILD_NOT_STARTED"
+    cat "$RUN/info/libelf-link-smoke.log"
+    exit 5
+fi
+if ! "$RUN/info/private-libelf-link-test" \
+    >>"$RUN/info/libelf-link-smoke.log" 2>&1; then
+    echo "PRIVATE_LIBELF_RUNTIME_SMOKE_FAILED; MESA_BUILD_NOT_STARTED"
+    exit 5
+fi
+rm -f -- "$RUN/info/private-libelf-link-test"
+echo "PRIVATE_LIBELF_LINK_AND_RUNTIME=PASS"
+
 # Check a real native link, not just Meson's pkg-config discovery.
 if ! printf 'int main(void){return 0;}\n' | \
     cc -x c - -x none -o "$RUN/info/private-x11-link-test" \
