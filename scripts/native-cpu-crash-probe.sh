@@ -64,7 +64,64 @@ if ! [[ "$LIMIT" =~ ^[0-9]+$ ]] || (( LIMIT < 15 || LIMIT > 300 )); then
     echo "Diagnostic time limit must be from 15 to 300 seconds"
     exit 2
 fi
-if ! nm -an "$BIN" 2>/dev/null | grep -q '[[:space:]]unreachable_impl$'; then
+if ! nm -an "$BIN" 2>/dev/null | grep -E '[[:space:]]unreachable_impl; then
+    echo "unreachable_impl symbol not found. Proceeding with signal-stop fallback."
+    BP="break abort"
+else
+    BP="break unreachable_impl"
+fi
+echo "TEST_GAME=$GAME"
+echo "CPU_MODE=builtin"
+echo "CRASH_TARGET=$BP"
+echo "SOURCE_LOG=$OUT/gdb.log"
+echo "DEBUGGER_TIME_LIMIT=$LIMIT seconds"
+echo "No controls or application windows will be closed except this test candidate."
+
+# No large process core dump; capture a live native backtrace instead.
+ulimit -c 0 || true
+cd "$OUT"
+set +e
+timeout --foreground --signal=SIGINT --kill-after=6s "$LIMIT" \
+    gdb -nx -q -batch \
+      -ex 'set pagination off' \
+      -ex 'set confirm off' \
+      -ex 'set debuginfod enabled off' \
+      -ex 'set disable-randomization off' \
+      -ex 'set print thread-events off' \
+      -ex 'handle SIGSEGV nostop noprint pass' \
+      -ex 'handle SIGBUS nostop noprint pass' \
+      -ex 'handle SIGILL nostop noprint pass' \
+      -ex 'handle SIGUSR1 nostop noprint pass' \
+      -ex 'handle SIGUSR2 nostop noprint pass' \
+      -ex 'handle SIGPIPE nostop noprint pass' \
+      -ex "$BP" \
+      -ex 'run' \
+      -ex 'bt 35' \
+      -ex 'thread apply all bt 7' \
+      -ex 'info registers' \
+      -ex 'info proc mappings' \
+      -ex 'frame 3' \
+      -ex 'info registers' \
+      -ex 'x/20i $pc-24' \
+      -ex 'quit' \
+      --args "$BIN" --cpu-id-mode builtin --game "$GAME" --fullscreen true \
+  >"$OUT/gdb.log" 2>&1
+GDB_EXIT=$?
+set -e
+if grep -Eq 'Breakpoint [0-9]+, (unreachable_impl|abort)' "$OUT/gdb.log"; then
+    STATUS="FATAL_BREAKPOINT_CAPTURED"
+elif grep -Eq 'Program received signal|Program terminated with signal' "$OUT/gdb.log"; then
+    STATUS="SIGNAL_CAPTURED"
+elif [[ "$GDB_EXIT" == "124" || "$GDB_EXIT" == "137" ]]; then
+    STATUS="TIME_LIMIT_NO_FATAL"
+else
+    STATUS="DEBUGGER_FINISHED"
+fi
+echo "RESULT=$STATUS (debugger exit=$GDB_EXIT)"
+echo "Fault context excerpt:"
+grep -E 'Breakpoint |Program received signal|Program terminated|unreachable_impl|SignalHandler|Thread [0-9]|^#[0-9]+ |Unhandled access|warning:|Error' \
+    "$OUT/gdb.log" | tail -75 || true
+ > /dev/null; then
     echo "unreachable_impl symbol not found. Proceeding with signal-stop fallback."
     BP="break abort"
 else
