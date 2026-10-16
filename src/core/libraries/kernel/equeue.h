@@ -169,11 +169,15 @@ public:
         return !m_small_timers.empty();
     }
     bool RemoveSmallTimer(u64 id) {
-        if (HasSmallTimer()) {
+        bool removed{};
+        {
             std::scoped_lock lock{m_mutex};
-            return m_small_timers.erase(id) > 0;
+            removed = m_small_timers.erase(id) > 0;
         }
-        return false;
+        if (removed) {
+            m_small_cond.notify_all();
+        }
+        return removed;
     }
 
     int WaitForSmallTimer(OrbisKernelEvent* ev, int num, u32 micros);
@@ -186,6 +190,7 @@ private:
     std::mutex m_mutex;
     std::vector<EqueueEvent> m_events;
     std::condition_variable m_cond;
+    std::condition_variable m_small_cond;
     std::unordered_map<u64, SmallTimer> m_small_timers;
 };
 

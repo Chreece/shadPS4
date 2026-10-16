@@ -14,6 +14,7 @@
 #endif
 #include "core/file_sys/fs.h"
 #include "core/libraries/kernel/equeue.h"
+#include "core/libraries/kernel/hrtimer_deadline.h"
 #include "core/libraries/kernel/kernel.h"
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/posix_error.h"
@@ -282,38 +283,52 @@ bool EqueueInternal::AddSmallTimer(EqueueEvent& ev) {
         std::scoped_lock lock{m_mutex};
         m_small_timers[st.event.ident] = std::move(st);
     }
+    // WaitForSmallTimer may already be blocked on a later deadline.
+    // The queue mutex synchronizes insertion with condition-variable wait.
+    m_small_cond.notify_all();
     return true;
 }
 
 int EqueueInternal::WaitForSmallTimer(OrbisKernelEvent* ev, int num, u32 micros) {
     ASSERT(num >= 1);
 
-    auto curr_clock = HleMonotonicNow();
+    const auto start = HleMonotonicNow();
     const auto wait_end_us = (micros == 0) ? std::chrono::steady_clock::time_point::max()
-                                           : curr_clock + std::chrono::microseconds{micros};
-    int count = 0;
-    do {
-        curr_clock = HleMonotonicNow();
-        {
-            std::scoped_lock lock{m_mutex};
-            for (auto it = m_small_timers.begin(); it != m_small_timers.end() && count < num;) {
-                const SmallTimer& st = it->second;
+                                           : start + std::chrono::microseconds{micros};
 
-                if (curr_clock - st.added >= st.interval) {
-                    ev[count++] = st.event;
-                    it = m_small_timers.erase(it);
-                } else {
-                    ++it;
-                }
+    // Busy-yielding on a sub-millisecond timer repeatedly enters the Linux
+    // scheduler and wastes a CPU core, even after removing the vDSO TSC
+    // faults. Sleep on the REAL monotonic deadline instead, waking promptly
+    // when a new timer is inserted or an existing one is removed. No rounding,
+    // coarse polling interval, artificial timeout or title-specific behavior.
+    std::unique_lock lock{m_mutex};
+    for (;;) {
+        const auto curr_clock = HleMonotonicNow();
+        int count = 0;
+        for (auto it = m_small_timers.begin(); it != m_small_timers.end() && count < num;) {
+            const SmallTimer& timer = it->second;
+            if (curr_clock - timer.added >= timer.interval) {
+                ev[count++] = timer.event;
+                it = m_small_timers.erase(it);
+            } else {
+                ++it;
             }
-
-            if (count > 0)
-                return count;
         }
-        std::this_thread::yield();
-    } while (curr_clock < wait_end_us);
-
-    return 0;
+        if (count > 0) {
+            return count;
+        }
+        if (curr_clock >= wait_end_us) {
+            return 0;
+        }
+        // The existing m_mutex makes the insertion/notification atomic with
+        // entering the wait, so newly scheduled timers cannot be missed.
+        const auto deadline = NextHighResolutionWaitDeadline(m_small_timers, wait_end_us);
+        if (deadline == std::chrono::steady_clock::time_point::max()) {
+            m_small_cond.wait(lock);
+        } else {
+            m_small_cond.wait_until(lock, deadline);
+        }
+    }
 }
 
 bool EqueueInternal::EventExists(u64 id, s16 filter) {
