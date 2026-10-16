@@ -298,6 +298,17 @@ if sudo -n perf list --raw-dump 2>/dev/null | grep -Fq 'syscalls:sys_enter_mprot
 else
   echo "MPROTECT_SYSCALL_COUNTER=NO_TRACEPOINT"
 fi
+# The fully symbolized report and perf script are the portable evidence.
+# Raw DWARF perf.data can exceed 800 MB in 45 seconds. Discard ONLY this
+# run's ephemeral raw recording once its report and stacks are verified,
+# preserving screenshots, call stacks, counters, and game logs in the archive.
+if [[ "$PROFILE_STATUS" == "SAMPLES_CAPTURED" &&
+      -s "$OUT/stacks.txt" && -s "$OUT/report.txt" &&
+      -f "$OUT/perf.data" ]]; then
+  raw_bytes="$(stat -c %s "$OUT/perf.data" || echo 0)"
+  rm -f -- "$OUT/perf.data"
+  echo "RAW_PERF_TEMPORARY_REMOVED_AFTER_REPORT=YES bytes=$raw_bytes"
+fi
 PHASE="PROFILE_FINISHED_GAME_STILL_RUNNING"
 echo "CPU profiling finished. GoW has NOT been stopped."
 echo "Exit shadPS4 normally when you are done inspecting gameplay."
