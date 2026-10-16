@@ -105,7 +105,7 @@ timeout --foreground --signal=SIGINT --kill-after=6s "$LIMIT" \
   >"$OUT/gdb.log" 2>&1
 GDB_EXIT=$?
 set -e
-if grep -Eq 'Breakpoint [0-9]+, (unreachable_impl|abort)' "$OUT/gdb.log"; then
+if grep -Eq 'Breakpoint [0-9]+,.*(unreachable_impl|abort)' "$OUT/gdb.log"; then
     STATUS="FATAL_BREAKPOINT_CAPTURED"
 elif grep -Eq 'Program received signal|Program terminated with signal' "$OUT/gdb.log"; then
     STATUS="SIGNAL_CAPTURED"
