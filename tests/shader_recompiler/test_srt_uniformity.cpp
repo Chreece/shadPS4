@@ -44,6 +44,10 @@ int main() {
     const MockInst phi{Opcode::Phi, {MockValue::Ref(uniform)}, 1};
     const MockInst uniform_add{Opcode::IAdd32, {MockValue::Ref(uniform), MockValue::Imm()}, 2};
     const MockInst varying_add{Opcode::IAdd32, {MockValue::Ref(uniform), MockValue::Ref(varying)}, 2};
+    const MockInst uniform_signed_shift{Opcode::ShiftRightArithmetic32,
+        {MockValue::Ref(uniform_add), MockValue::Imm()}, 2};
+    const MockInst varying_signed_shift{Opcode::ShiftRightArithmetic32,
+        {MockValue::Ref(varying_add), MockValue::Imm()}, 2};
     const MockInst first_uniform{Opcode::ReadFirstLane, {MockValue::Ref(uniform_add)}, 1};
     const MockInst first_varying{Opcode::ReadFirstLane, {MockValue::Ref(varying_add)}, 1};
     const MockInst first_phi{Opcode::ReadFirstLane, {MockValue::Ref(phi)}, 1};
@@ -70,12 +74,14 @@ int main() {
         MockValue value;
         bool expected;
     };
-    const std::array<Case, 15> cases{{
+    const std::array<Case, 17> cases{{
         {"u32-constant", MockValue::Imm(), true},
         {"float-constant", MockValue::Imm(Type::F32), false},
         {"user-data", MockValue::Ref(uniform), true},
         {"varying-attribute", MockValue::Ref(varying), false},
         {"wave-uniform-firstlane", MockValue::Ref(first_uniform), true},
+        {"uniform-arithmetic-right-shift", MockValue::Ref(uniform_signed_shift), true},
+        {"varying-arithmetic-right-shift", MockValue::Ref(varying_signed_shift), false},
         {"wave-varying-firstlane", MockValue::Ref(first_varying), false},
         {"Phi-must-not-guess", MockValue::Ref(first_phi), false},
         {"lane-index-independent-uniform-source", MockValue::Ref(indexed_lane_uniform), true},
@@ -95,6 +101,6 @@ int main() {
             return 1;
         }
     }
-    std::puts("SRT_UNIFORMITY=PASS cases=15 diverging=REJECTED phi=REJECTED");
+    std::puts("SRT_UNIFORMITY=PASS cases=17 diverging=REJECTED phi=REJECTED");
     return 0;
 }
