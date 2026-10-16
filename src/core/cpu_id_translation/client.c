@@ -43,20 +43,30 @@ static dr_emit_flags_t TranslateBlock(void* context, void* tag, instrlist_t* blo
                                       bool translating) {
     const uintptr_t end = atomic_load_explicit(&guest_end, memory_order_acquire);
     const uintptr_t begin = atomic_load_explicit(&guest_begin, memory_order_relaxed);
+    // The overwhelming majority of generated and host blocks contain no CPU
+    // identity instructions. Store precise code-cache translations only for
+    // blocks where this client actually replaces an instruction. Otherwise
+    // DynamoRIO can use its cheaper normal translation representation.
+    bool replaced = false;
+    if (begin >= end) {
+        return DR_EMIT_DEFAULT;
+    }
     for (instr_t* instruction = instrlist_first_app(block); instruction != NULL;) {
         instr_t* next = instr_get_next_app(instruction);
         const app_pc pc = instr_get_app_pc(instruction);
-        const int opcode = instr_get_opcode(instruction);
-        if ((uintptr_t)pc >= begin && (uintptr_t)pc < end &&
-            (opcode == OP_cpuid || opcode == OP_rdtscp || opcode == OP_rdpid)) {
-            instr_t* trap = INSTR_CREATE_ud2(context);
-            instr_set_translation(trap, pc);
-            instrlist_replace(block, instruction, trap);
-            instr_destroy(context, instruction);
+        if ((uintptr_t)pc >= begin && (uintptr_t)pc < end) {
+            const int opcode = instr_get_opcode(instruction);
+            if (opcode == OP_cpuid || opcode == OP_rdtscp || opcode == OP_rdpid) {
+                instr_t* trap = INSTR_CREATE_ud2(context);
+                instr_set_translation(trap, pc);
+                instrlist_replace(block, instruction, trap);
+                instr_destroy(context, instruction);
+                replaced = true;
+            }
         }
         instruction = next;
     }
-    return DR_EMIT_STORE_TRANSLATIONS;
+    return replaced ? DR_EMIT_STORE_TRANSLATIONS : DR_EMIT_DEFAULT;
 }
 
 DR_EXPORT void dr_client_main(client_id_t id, int argc, const char* argv[]) {
