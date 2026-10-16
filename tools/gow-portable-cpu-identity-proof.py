@@ -134,7 +134,19 @@ def preflight():
     if not PROFILER.is_file() or PROFILER.is_symlink() or blob(PROFILER.read_bytes())!=PROFILER_BLOB:
         raise RuntimeError("previous original-configuration profiler missing")
     if PRESERVED.exists():
-        raise RuntimeError("a portable-CPUID checkpoint already exists; refuse to overwrite")
+        # A previously rolled-back attempt can retry without destroying its
+        # original binary/source evidence. Other/incomplete checkpoints fail.
+        if PRESERVED.is_symlink() or not PRESERVED.is_dir():
+            raise RuntimeError("unsafe existing CPU-ID checkpoint")
+        files=(("shadps4",OLD_GAME_SHA),
+               ("libshadps4_cpu_id.so",CPU_CLIENT_SHA))
+        for name,expected in files:
+            p=PRESERVED/name
+            if p.is_symlink() or not p.is_file() or sha(p)!=expected:
+                raise RuntimeError("previous baseline checkpoint was modified: "+name)
+        src=PRESERVED/"cpu_id.cpp"
+        if src.is_symlink() or not src.is_file() or blob(src.read_bytes())!=OLD_SOURCE_BLOB:
+            raise RuntimeError("preserved CPU identity source differs from audited version")
     for rel in TOPIC_BLOBS:
         path=SRC/rel
         if path.is_symlink():
@@ -163,6 +175,10 @@ def download(rel):
         Path(tmp).unlink(missing_ok=True)
 
 def snapshot():
+    if PRESERVED.exists():
+        # Preflight already checksum-verified the complete rollback snapshot.
+        note("CHECKPOINT=verified previous baseline preserved for this retry")
+        return
     PRESERVED.mkdir(parents=True,exist_ok=False)
     shutil.copy2(GAME,PRESERVED/"shadps4")
     shutil.copy2(RUNTIME_CLIENT,PRESERVED/"libshadps4_cpu_id.so")
