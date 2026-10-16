@@ -93,33 +93,36 @@ echo "REFERENCE_RENDER_BINARY=checksum only, not run"
 # Pin every protected CPU, HLE, ABI and emulator build-system source to the
 # SHA256 values recorded in the previous successful source-integrity audit.
 verify_native() {
-  local label="$1" actual expect rel
-  while read -r expect rel; do
-    [[ -n "$expect" && -n "$rel" ]] || continue
-    if [[ ! -f "$SOURCE/$rel" ]]; then
-      echo "MISSING_PROTECTED_SOURCE=$rel"
+  local label="$1" rel expected actual
+  # Exact native-CPU Git object IDs, computed from the pinned commit itself.
+  # No manually transcribed SHA256 manifest: that caused the prior false alarm.
+  for rel in \
+      src/core/cpu_id.cpp \
+      src/core/cpu_id_guest.h \
+      src/core/cpu_id_trap_table.h \
+      src/core/cpu_patches.cpp \
+      src/core/signals.cpp \
+      src/core/module.cpp \
+      src/core/cpu_id_translation/launcher.cpp \
+      src/core/libraries/kernel/process.cpp \
+      src/main.cpp \
+      CMakeLists.txt; do
+    if [[ ! -f "$SOURCE/$rel" || -L "$SOURCE/$rel" ]]; then
+      echo "MISSING_OR_SYMLINKED_PROTECTED_NATIVE_SOURCE=$rel"
       return 1
     fi
-    actual="$(sha256sum "$SOURCE/$rel" | awk '{print $1}')"
-    if [[ "$actual" != "$expect" ]]; then
+    expected="$(git -C "$SOURCE" rev-parse --verify "$NATIVE_SHA:$rel")" || return 1
+    actual="$(git -C "$SOURCE" hash-object -- "$SOURCE/$rel")" || return 1
+    printf '%s\t%s\t%s\n' "$rel" "$expected" "$actual" \
+      >> "$OUT/native-source-objects-$label.tsv"
+    if [[ "$actual" != "$expected" ]]; then
       echo "PROTECTED_NATIVE_SOURCE_CHANGED=$rel"
       return 1
     fi
-  done <<'SHA_CHECK'
-acffb26fbbb8965e07807844dd23b5ea6ad78b55bd64aff751ae13494ead4992 src/core/cpu_id.cpp
-7184a27e85b5e6398dedfccf06d6eb7c37e5580c71a581cae6823c32be3b35d4 src/core/cpu_id_guest.h
-a89d8dd3e46a9f0db527671d1c3a889eb6901b88fce0d5234136cd8ac4779286 src/core/cpu_id_trap_table.h
-a12eb68a980be2ee44f4e1b5bc5f1905503206d986f9738d014b83d859823c6f src/core/cpu_patches.cpp
-7f570cd5992a5c838c40363d0d7c8bf0b52e34f16734b743933c9b416d983b7e src/core/signals.cpp
-b73dec639c826843a5a4049a742a76ad1c164189eec53b2fea21953541897d00 src/core/module.cpp
-6fe41a2ad6289588fec49afcd5f5fd7870e05de5ddcd4258ac8560de97576218 src/core/cpu_id_translation/launcher.cpp
-627964a20c0d29dffad2f7f251f9b69c3668bbefb426180bd1906196ebc4ecbc src/core/libraries/kernel/process.cpp
-fb0c53a53b8b81ed1346a6d64ac2767d0f9842e5bc4fc7a54f4f6a0acca74715 src/main.cpp
-fba90ba2294a6a9f565a9182a71166114bb3fe37884f537cac30f0bd1bf264 src/../CMakeLists.txt
-SHA_CHECK
-  echo "NATIVE_CPU_HLE_CMAKE_INTEGRITY=$label"
+  done
+  echo "NATIVE_CPU_HLE_CMAKE_INTEGRITY=$label PASS"
 }
-# The last line resolves SOURCE/src/../CMakeLists.txt to SOURCE/CMakeLists.txt.
+
 verify_native BEFORE
 
 STATUS="RESTORING_COMMON_DEPENDENCIES"
