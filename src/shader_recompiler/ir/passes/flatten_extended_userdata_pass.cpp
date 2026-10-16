@@ -3,6 +3,7 @@
 
 #include <unordered_map>
 #include <functional>
+#include <vector>
 #include <cstdlib>
 #include <boost/container/flat_map.hpp>
 #include <queue>
@@ -23,6 +24,7 @@
 #include "shader_recompiler/ir/passes/srt_offset_preflight.h"
 #include "shader_recompiler/ir/passes/srt_uniformity.h"
 #include "shader_recompiler/ir/passes/srt_offset_codegen.h"
+#include "shader_recompiler/ir/passes/srt_dependency_schedule.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/ir/srt_gvn_table.h"
@@ -717,33 +719,78 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
     PassInfo::PtrUserList* use_list = pass_info.GetUsesAsPointer(subtree);
     ASSERT(use_list);
 
-    // First copy all the src data from this tree level
-    // That way, all data that was contiguous in the guest SRT is also contiguous in the
-    // flattened buffer.
-    // TODO src and dst are contiguous. Optimize with wider loads/stores
-    // TODO if this subtree is dynamically indexed, don't compact it (keep it sparse)
-    for (auto [src_off_dw, use] : *use_list) {
+    // ReadConstBuffer offsets may themselves depend on a descriptor read in
+    // this SRT table. Emit already-ready reads first and retry the rest only
+    // after their dependencies have received real flattened values. Never
+    // synthesize an index, overwrite a guest resource, or flatten an illegal
+    // expression. The previous single pass silently dropped a dependent read
+    // if it was visited before its producer.
+    std::vector<std::pair<IR::Value, IR::Inst*>> sources;
+    sources.reserve(use_list->size());
+    for (const auto& [source_offset, consumer] : *use_list) {
+        sources.emplace_back(source_offset, consumer);
+    }
+    std::vector<unsigned char> first_deferred(sources.size(), 0);
+    u32 recovered_dependencies{};
+    const auto emitted = ScheduleSrtReadyReads(sources.size(), [&](std::size_t entry) {
+        const auto& [src_off_dw, use] = sources[entry];
+        if (GetFlatbufOffset(use) != 0) {
+            return true;
+        }
+
+        // GVN-equivalent reads represent the same memory value. Share the
+        // canonical offset only when that value has actually been emitted.
+        IR::Inst* const canonical = pass_info.DeduplicateInstruction(use);
+        if (const u16 prior = GetFlatbufOffset(canonical); prior != 0) {
+            SetFlatbufOffset(use, prior);
+            return true;
+        }
+
         if (src_off_dw.IsImmediate()) {
             c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
         } else {
             if (!CanLowerSrtOffsetStructurally(src_off_dw, pass_info.offset_support_cache)) {
-                ++pass_info.dynamic_offsets_deferred;
-                continue;
+                return false;
             }
-            const size_t checkpoint = c.getSize();
+            const std::size_t checkpoint = c.getSize();
             if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
                 c.setSize(checkpoint);
-                LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
-                continue;
+                first_deferred[entry] = 1;
+                return false;
             }
             c.shl(r10d, 2);
             c.mov(r10d, r10d);
             c.mov(r10d, dword[rdi + r10]);
         }
-        c.mov(ptr[rsi + (pass_info.dst_off_dw << 2)], r10d);
+        const u16 offset = pass_info.dst_off_dw;
+        c.mov(ptr[rsi + (offset << 2)], r10d);
+        SetFlatbufOffset(use, offset);
+        if (canonical != use) {
+            SetFlatbufOffset(canonical, offset);
+        }
+        ++pass_info.dst_off_dw;
+        recovered_dependencies += first_deferred[entry];
+        return true;
+    });
 
-        SetFlatbufOffset(use, pass_info.dst_off_dw);
-        pass_info.dst_off_dw++;
+    u32 unresolved_dependencies{};
+    for (std::size_t i = 0; i < emitted.size(); ++i) {
+        if (emitted[i]) {
+            continue;
+        }
+        const IR::Value offset = sources[i].first;
+        if (CanLowerSrtOffsetStructurally(offset, pass_info.offset_support_cache)) {
+            ++unresolved_dependencies;
+            LOG_ERROR(Render_Recompiler,
+                      "Failed to compute offset for SRT walker after resolving dependencies");
+        } else {
+            ++pass_info.dynamic_offsets_deferred;
+        }
+    }
+    if (recovered_dependencies != 0 || unresolved_dependencies != 0) {
+        LOG_INFO(Render_Recompiler,
+                 "SrtDependencyResult: recovered={} unresolved={} shader={:#x}",
+                 recovered_dependencies, unresolved_dependencies, pass_info.audit_shader_hash);
     }
 
     // Then visit any children used as pointers

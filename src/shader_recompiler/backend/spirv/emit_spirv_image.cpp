@@ -78,6 +78,7 @@ struct ImageOperands {
 
     void AddOffset(EmitContext& ctx, AmdGpu::ImageType image_type, const IR::Value& offset,
                    bool can_use_runtime_offsets = false) {
+        (void)can_use_runtime_offsets;
         if (offset.IsEmpty()) {
             return;
         }
@@ -108,11 +109,17 @@ struct ImageOperands {
         }
 
         if (op_mask != spv::ImageOperandsMask::ConstOffset) {
-            if (!can_use_runtime_offsets) {
+            // A dynamic texel offset is a genuine shader operand; dropping it
+            // changes sampling coordinates. Vulkan requires the
+            // shaderImageGatherExtended feature / ImageGatherExtended SPIR-V
+            // capability for dynamic ImageOperands Offset, including samples.
+            // Do not emit unsupported SPIR-V on a GPU lacking that feature.
+            if (!ctx.profile.supports_shader_image_gather_extended) {
                 LOG_WARNING(Render_Vulkan,
-                            "Runtime offset provided to unsupported image sample instruction");
+                            "Dynamic sample/gather offset requires shaderImageGatherExtended");
                 return;
             }
+            ctx.AddCapability(spv::Capability::ImageGatherExtended);
             op_mask = spv::ImageOperandsMask::Offset;
             value = ctx.Def(offset);
         }

@@ -99,6 +99,11 @@ public:
         return features.depthBounds;
     }
 
+    // Dynamic ImageOperands Offset on sampled textures requires this feature.
+    bool IsShaderImageGatherExtendedSupported() const {
+        return features.shaderImageGatherExtended;
+    }
+
     /// Returns true if 16-bit floats are supported in shaders
     bool IsShaderFloat16Supported() const {
         return vk12_features.shaderFloat16;
