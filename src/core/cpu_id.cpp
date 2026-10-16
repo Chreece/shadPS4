@@ -16,6 +16,7 @@
 #include <xbyak/xbyak_util.h>
 #include "common/assert.h"
 #include "core/cpu_id.h"
+#include "core/cpu_id_guest.h"
 #include "core/cpu_id_trap_table.h"
 #include "core/libraries/kernel/threads/pthread.h"
 
@@ -34,12 +35,6 @@ extern "C" __attribute__((noinline, visibility("default"))) void ShadCpuIdTransl
 namespace Core {
 namespace {
 
-constexpr u32 GuestCpuCount = 8;
-// Common CPUID feature bits observed on PS4 and PS4 Pro hardware.
-constexpr u32 GuestFeaturesEcx = 0x3ed8220b;
-constexpr u32 GuestFeaturesEdx = 0x178bfbff;
-constexpr u32 GuestExtendedFeaturesEcx = 0x154837ff;
-constexpr u32 GuestExtendedFeaturesEdx = 0x2fd3fbff;
 constexpr size_t RedZoneSize = 128;
 constexpr size_t RegisterFrameSize = 17 * sizeof(u64);
 constexpr size_t FaultStackSize = RedZoneSize + sizeof(u64);
@@ -53,86 +48,17 @@ std::atomic<bool> builtin_cpu_id_mode{};
 CpuId::RdpidTrapTable builtin_rdpid_traps;
 
 std::array<u32, 4> GuestCpuid(u32 leaf, u32 subleaf, u32 cpu) {
-    const u32 apic_id = GuestCpuCount - 1 - cpu;
-    std::array<u32, 4> result{};
-    Xbyak::util::Cpu::getCpuidEx(leaf, subleaf, result.data());
-    if (leaf > host_max_basic && (leaf < 0x80000000 || leaf > host_max_extended)) {
-        result = {};
-    }
-    auto& [eax, ebx, ecx, edx] = result;
-    switch (leaf) {
-    case 0:
-        eax = std::max(host_max_basic, 0x1fu);
-        break;
-    case 1:
-        ebx = (ebx & 0xffff) | (GuestCpuCount << 16) | (apic_id << 24);
-        ecx &= GuestFeaturesEcx;
-        edx = (edx & GuestFeaturesEdx) | (1u << 28);
-        break;
-    case 4:
-    case 0x8000001d: {
-        constexpr std::array<std::array<u32, 4>, 3> caches{{
-            {0x00000121, 0x01c0003f, 0x0000003f, 0},
-            {0x00000122, 0x0040003f, 0x000000ff, 0},
-            {0x0000c143, 0x03c0003f, 0x000007ff, 2},
-        }};
-        result = subleaf < caches.size() ? caches[subleaf] : std::array<u32, 4>{};
-        if (leaf == 4 && eax != 0) {
-            eax |= (GuestCpuCount - 1) << 26;
-        }
-        break;
-    }
-    case 7:
-        // BMI1 is the only Jaguar structured extended feature (AMD BKDG 48751).
-        result = {0, subleaf == 0 ? ebx & (1u << 3) : 0, 0, 0};
-        break;
-    case 0xb:
-    case 0x1f:
-        eax = subleaf == 1 ? 3 : 0;
-        ebx = subleaf == 0 ? 1 : subleaf == 1 ? GuestCpuCount : 0;
-        ecx = (subleaf & 0xff) | (subleaf < 2 ? (subleaf + 1) << 8 : 0);
-        edx = apic_id;
-        break;
-    case 0x1a:
-        result = {};
-        break;
-    case 0x80000000:
-        eax = std::max(host_max_extended, 0x8000001eu);
-        break;
-    case 0x80000001:
-        ecx &= GuestExtendedFeaturesEcx;
-        ecx |= (1u << 6) | (1u << 22);
-        edx &= GuestExtendedFeaturesEdx;
-        break;
-    case 0x80000005:
-        result = {0xff08ff08, 0xff28ff20, 0x20080140, 0x20020140};
-        break;
-    case 0x80000006:
-        result = {0x21000000, 0x42004200, 0x08008140, 0};
-        break;
-    case 0x80000008:
-        // Jaguar reserves EBX and EDX (AMD BKDG 48751, CPUID Fn8000_0008).
-        ebx = 0;
-        ecx = (ecx & ~0xf0ffu) | (3u << 12) | (GuestCpuCount - 1);
-        edx = 0;
-        break;
-    case 0x8000001e:
-        result = {apic_id, apic_id, 0, 0};
-        break;
-    case 0x80000026:
-        result = {};
-        break;
-    default:
-        break;
-    }
-    return result;
+    std::array<u32, 4> host_result{};
+    Xbyak::util::Cpu::getCpuidEx(leaf, subleaf, host_result.data());
+    return CpuIdentity::QueryGuestCpuid(leaf, subleaf, cpu, host_max_basic, host_max_extended,
+                                       host_result);
 }
 
 u32 CurrentGuestCpu() {
     auto* thread = Libraries::Kernel::g_curthread;
     ASSERT(thread != nullptr);
     const s32 cpu = thread->GetCurrentCpu();
-    ASSERT_MSG(cpu >= 0 && cpu < GuestCpuCount, "Cannot resolve guest CPU identity: {}", cpu);
+    ASSERT_MSG(cpu >= 0 && cpu < CpuIdentity::GuestCpuCount, "Cannot resolve guest CPU identity: {}", cpu);
     return cpu;
 }
 

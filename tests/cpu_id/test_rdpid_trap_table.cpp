@@ -20,10 +20,11 @@ int main() {
 
     assert(table.Register(0x12340, 4, 0));
     assert(table.Register(0x12345, 5, 15));
-    assert(!table.Register(0x12340, 4, 0));
+    // A reloaded executable module must publish the most recent instruction.
+    assert(table.Register(0x12340, 6, 9));
     const auto* first = table.Lookup(0x12340);
     assert(first != nullptr && first->address == 0x12340 &&
-           first->size == 4 && first->destination == 0);
+           first->size == 6 && first->destination == 9);
     const auto* second = table.Lookup(0x12345);
     assert(second != nullptr && second->size == 5 && second->destination == 15);
     assert(table.Lookup(0x12341) == nullptr);
@@ -67,6 +68,6 @@ int main() {
             assert(entry->destination == tid);
         }
     }
-    puts("BUILTIN_RDPID_TRAP_TABLE=PASS concurrency=8 sites=8002");
+    puts("BUILTIN_RDPID_TRAP_TABLE=PASS concurrency=8 sites=8002 reloaded_sites=1");
     return 0;
 }

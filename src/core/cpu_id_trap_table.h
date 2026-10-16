@@ -17,6 +17,9 @@ namespace Core::CpuId {
 // Published nodes are immutable and are never removed while guest code can
 // execute. The signal handler uses only lock-free atomic loads: no allocation,
 // mutex, STL map lookup, logging, or calls to the host kernel.
+// A reloaded guest module may reuse the same executable address. New registrations
+// publish a fresh immutable node at the bucket head; signal readers see either
+// the previous complete node or the new complete node without reclamation.
 class RdpidTrapTable final {
 public:
     struct Site {
@@ -49,8 +52,7 @@ public:
     }
 
     [[nodiscard]] bool Register(uintptr_t address, unsigned size, unsigned destination) {
-        if (address == 0 || size < 4 || size > 15 || destination >= 16 ||
-            Lookup(address) != nullptr) {
+        if (address == 0 || size < 4 || size > 15 || destination >= 16) {
             return false;
         }
         auto* site = new Site{nullptr, address, static_cast<std::uint8_t>(size),
