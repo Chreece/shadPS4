@@ -38,8 +38,7 @@ finish() {
     if cp -p "$OUT/original.shadps4" "$BUILD/.shadps4.original.$$" &&
        mv -f "$BUILD/.shadps4.original.$$" "$BUILD/shadps4"; then
       sha256sum "$BUILD/shadps4" >"$OUT/after-binary-sha256.txt"
-      if [[ "$(cut -d' ' -f1 "$OUT/after-binary-sha256.txt")" ==
-            "$(cut -d' ' -f1 "$OUT/before-binary-sha256.txt")" ]]; then
+      if [[ "$(cut -d' ' -f1 "$OUT/after-binary-sha256.txt")" == "$(cut -d' ' -f1 "$OUT/before-binary-sha256.txt")" ]]; then
         echo "ORIGINAL_BINARY_RESTORED=YES"
         rm -f "$OUT/original.shadps4"
       else
