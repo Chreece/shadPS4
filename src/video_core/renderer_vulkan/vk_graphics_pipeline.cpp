@@ -367,6 +367,17 @@ GraphicsPipeline::GraphicsPipeline(
                                             attachment.dstAlphaBlendFactor,
                                             key.color_buffers[i].num_format);
 
+        if (key.color_buffers[i].blend_self_scale_alpha) {
+            // The shader exports alpha^2 for this normalized target; the
+            // previous destination is already stored in the same domain.
+            // GCN's min/max(src.a*src.a, dst.a*dst.a) is thus reproduced
+            // with unit factors rather than the factors Vulkan ignores.
+            attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+            attachment.dstAlphaBlendFactor = vk::BlendFactor::eOne;
+            LOG_INFO(Render_Vulkan,
+                     "Emulating scaled alpha min/max with squared shader output on attachment {}", i);
+        }
+
         const auto color_scaled_min_max =
             (attachment.colorBlendOp == vk::BlendOp::eMin ||
              attachment.colorBlendOp == vk::BlendOp::eMax) &&
@@ -378,9 +389,21 @@ GraphicsPipeline::GraphicsPipeline(
             (attachment.srcAlphaBlendFactor != vk::BlendFactor::eOne ||
              attachment.dstAlphaBlendFactor != vk::BlendFactor::eOne);
         if (control.enable && (color_scaled_min_max || alpha_scaled_min_max)) {
+            // Report only genuinely unsupported factor combinations after
+            // all PS4-to-Vulkan blend normalization, so further lowering can
+            // be implemented from actual semantics instead of assumptions.
             LOG_WARNING(
                 Render_Vulkan,
-                "Unimplemented use of min/max blend op with blend factor not equal to one.");
+                "Unimplemented use of min/max blend op with blend factor not equal to one. "
+                "attachment={} color_op={} color_src={} color_dst={} "
+                "alpha_op={} alpha_src={} alpha_dst={} numfmt={}",
+                i, vk::to_string(attachment.colorBlendOp),
+                vk::to_string(attachment.srcColorBlendFactor),
+                vk::to_string(attachment.dstColorBlendFactor),
+                vk::to_string(attachment.alphaBlendOp),
+                vk::to_string(attachment.srcAlphaBlendFactor),
+                vk::to_string(attachment.dstAlphaBlendFactor),
+                u32(key.color_buffers[i].num_format));
         }
     }
 

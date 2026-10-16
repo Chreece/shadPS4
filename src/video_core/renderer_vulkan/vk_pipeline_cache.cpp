@@ -17,6 +17,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
+#include "video_core/renderer_vulkan/minmax_alpha_scale.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -463,6 +464,10 @@ bool PipelineCache::RefreshGraphicsKey() {
              bc.color_func == AmdGpu::BlendControl::BlendFunc::Max) &&
             bc.color_src_factor == AmdGpu::BlendControl::BlendFactor::SrcColor &&
             bc.color_dst_factor == AmdGpu::BlendControl::BlendFactor::DstColor;
+
+        color_buffer.blend_self_scale_alpha = CanShaderScaleMinMaxAlpha(
+            bc, color_buffer.num_format, bool(col_buf.info.blend_bypass),
+            (regs.color_shader_mask.GetMask(cb) & AmdGpu::ColorBufferMask::ComponentA) != 0);
     }
 
     // Compile and bind shader stages

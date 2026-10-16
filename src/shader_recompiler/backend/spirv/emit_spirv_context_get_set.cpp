@@ -284,8 +284,12 @@ void EmitSetAttribute(EmitContext& ctx, IR::Attribute attr, Id value, u32 elemen
     if (IR::IsMrt(attr)) {
         const u32 index{u32(attr) - u32(IR::Attribute::RenderTarget0)};
         const auto& info{ctx.frag_outputs.at(index)};
-        if (element < 3 && ctx.runtime_info.hw.fs.color_buffers[index].blend_self_scale) {
-            // Emulates GCN's factor-scaled min/max blend: min/max(src*src, dst*dst).
+        if ((element < 3 && ctx.runtime_info.hw.fs.color_buffers[index].blend_self_scale) ||
+            (element == 3 &&
+             ctx.runtime_info.hw.fs.color_buffers[index].blend_self_scale_alpha)) {
+            // GCN scales MIN/MAX input by the color/alpha factor before
+            // comparing. Vulkan ignores blend factors for MIN/MAX, so encode
+            // the exact self-scaled source into the shader export instead.
             value = ctx.OpFMul(ctx.F32[1], value, value);
         }
         if (info.num_components == 1) {
