@@ -479,6 +479,55 @@ for source in sorted(private_usr.glob("lib/*/pkgconfig/*.pc")):
     count += 1
 print("PRIVATE_X11_PKGCONFIG_COPIES=" + str(count))
 PY
+# Development packages do not download their runtime dependencies when
+# extracted with dpkg-deb -x. Make sure the two newly required libraries have
+# a real runtime target, either already on Debian or within this private tree.
+# Download the matching official Debian runtime .deb only when neither exists.
+for runtime_spec in \
+    "libxcb-render.so.0 libxcb-render0" \
+    "libxcb-shape.so.0 libxcb-shape0"; do
+    read -r soname package <<<"$runtime_spec"
+    if [[ -e "$X11_PRIVATE_LIB/$soname" ||
+          -e "/usr/lib/$(cc -dumpmachine)/$soname" ]]; then
+        echo "X11_RUNTIME_LIBRARY_AVAILABLE=$soname"
+        continue
+    fi
+    echo "DOWNLOAD_PRIVATE_X11_RUNTIME_PACKAGE=$package"
+    runtime_deb=""
+    for deb in "$TOOLS_ROOT/debs/$package"_*.deb; do
+        [[ -f "$deb" ]] || continue
+        runtime_deb="$deb"
+        break
+    done
+    if [[ -z "$runtime_deb" ]]; then
+        (
+            cd "$TOOLS_ROOT/debs"
+            apt-get -o Acquire::ForceIPv4=true download "$package"
+        ) >>"$RUN/build.log" 2>&1 || {
+            echo "X11_PRIVATE_RUNTIME_DOWNLOAD_FAILED=$package"
+            exit 5
+        }
+        for deb in "$TOOLS_ROOT/debs/$package"_*.deb; do
+            [[ -f "$deb" ]] || continue
+            runtime_deb="$deb"
+            break
+        done
+    fi
+    [[ -n "$runtime_deb" && -f "$runtime_deb" ]] || {
+        echo "X11_PRIVATE_RUNTIME_DEB_MISSING=$package"
+        exit 5
+    }
+    dpkg-deb -x "$runtime_deb" "$TOOLS_ROOT" >>"$RUN/build.log" 2>&1 || {
+        echo "X11_PRIVATE_RUNTIME_EXTRACTION_FAILED=$package"
+        exit 5
+    }
+    [[ -e "$X11_PRIVATE_LIB/$soname" ]] || {
+        echo "X11_PRIVATE_RUNTIME_UNRESOLVED=$soname"
+        exit 5
+    }
+    echo "X11_RUNTIME_PACKAGE_EXTRACTED=$package"
+done
+
 # Development Debian packages provide unversioned lib*.so linker symlinks,
 # while already-installed runtime packages provide versioned lib*.so.N files.
 # Since extraction is private, complete ONLY broken private linker symlinks
