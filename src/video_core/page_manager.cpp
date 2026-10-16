@@ -492,11 +492,14 @@ public:
                           Common::GetLastErrorMsg());
                 break;
             }
+            // uffd_msg is packed. fmt/spdlog arguments must not bind a
+            // reference directly to its unaligned bitfield members.
+            const u64 fault_flags = msg.arg.pagefault.flags;
             if (bytes != sizeof(msg) || msg.event != UFFD_EVENT_PAGEFAULT ||
-                !(msg.arg.pagefault.flags & UFFD_PAGEFAULT_FLAG_WP)) {
+                !(fault_flags & UFFD_PAGEFAULT_FLAG_WP)) {
                 LOG_ERROR(Common_Memory,
                           "Unexpected userfaultfd message: bytes={}, event={}, fault_flags={:#x}",
-                          bytes, msg.event, msg.arg.pagefault.flags);
+                          bytes, msg.event, fault_flags);
                 break;
             }
 
