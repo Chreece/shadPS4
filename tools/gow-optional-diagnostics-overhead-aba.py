@@ -230,7 +230,6 @@ def one_run(label,enable_cpu_timing,profile_script,expected_config):
     env.pop("SHADPS4_CPU_TIMING_CSV",None)
     if enable_cpu_timing:
         env["SHADPS4_CPU_TIMING_CSV"]=str(cpu_file)
-    env.pop("RADV_DEBUG",None) if os.getenv("RADV_DEBUG") is None else None
     note("RUN="+label+" same binary, same user settings; CPU timers="+
          ("ON" if enable_cpu_timing else "OFF"))
     runlog=OUT/(label+"-profile-runner.log")
