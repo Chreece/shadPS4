@@ -141,6 +141,68 @@ fi
 [[ "$(cat "$MESA_SOURCE/VERSION")" == "$MESA_VERSION" ]] || {
     echo "MESA_VERSION_UNEXPECTED; NOT_LAUNCHED"; exit 5
 }
+
+# Mesa 26.2 needs a native glslangValidator to compile its generic Vulkan
+# shaders. Debian's glslang-tools package can be downloaded and extracted
+# without administrator privileges or changing the system package database.
+# This is a BUILD TOOL only; the installed RADV source remains untouched.
+TOOLS_ROOT="$MESA_WORK/local-build-tools"
+if ! command -v glslangValidator >/dev/null 2>&1; then
+    for tool in apt-get dpkg-deb; do
+        command -v "$tool" >/dev/null 2>&1 || {
+            echo "MESA_LOCAL_BUILD_TOOL_HELPER_MISSING=$tool; NOT_LAUNCHED"; exit 5
+        }
+    done
+    mkdir -p "$TOOLS_ROOT/debs" "$TOOLS_ROOT/usr"
+    if [[ ! -x "$TOOLS_ROOT/usr/bin/glslangValidator" ]]; then
+        echo "FETCH_DEBIAN_BUILD_TOOLS_WITH_IPV4_NO_INSTALL"
+        (
+            cd "$TOOLS_ROOT/debs"
+            apt-get -o Acquire::ForceIPv4=true download glslang-tools spirv-tools
+        ) >>"$RUN/build.log" 2>&1 || {
+            echo "APT_DOWNLOAD_BUILD_TOOLS_FAILED; NO_SYSTEM_CHANGES"; exit 5
+        }
+        for package in glslang-tools spirv-tools; do
+            found=false
+            for deb in "$TOOLS_ROOT/debs/$package"_*.deb; do
+                [[ ! -f "$deb" ]] && continue
+                found=true
+                dpkg-deb -x "$deb" "$TOOLS_ROOT" >>"$RUN/build.log" 2>&1 || {
+                    echo "BUILD_TOOL_EXTRACT_FAILED=$package"; exit 5
+                }
+            done
+            if [[ "$found" != true ]]; then
+                echo "BUILD_TOOL_PACKAGE_NOT_FOUND=$package"; exit 5
+            fi
+        done
+    fi
+    [[ -x "$TOOLS_ROOT/usr/bin/glslangValidator" ]] || {
+        echo "LOCAL_GLSLANG_VALIDATOR_MISSING; NOT_LAUNCHED"; exit 5
+    }
+    export PATH="$TOOLS_ROOT/usr/bin:$PATH"
+    echo "GSLANG_VALIDATOR_FROM_LOCAL_DEBIAN_TOOLS=$TOOLS_ROOT/usr/bin/glslangValidator"
+else
+    echo "GSLANG_VALIDATOR_FROM_EXISTING_PATH=$(command -v glslangValidator)"
+fi
+glslangValidator --version >"$RUN/info/glslang-version.txt" 2>&1 || {
+    echo "GSLANG_VALIDATOR_CANNOT_RUN; NOT_LAUNCHED"; exit 5
+}
+echo "GSLANG_VALIDATOR_VERIFIED=YES"
+{
+    echo "GSLANG_PROVENANCE=$(command -v glslangValidator)"
+    echo "BUILD_TOOL_DEPENDENCY_ONLY=YES"
+    echo "ROOT_PACKAGE_INSTALL=NONE"
+    echo "PATH_ONLY_SCOPED_TO_WORKER=YES"
+} >"$RUN/info/build-tool-provenance.txt"
+
+# The preceding run stopped midway through Meson setup. Preserve the failed
+# configuration and its logs, then start a clean build directory. No completed
+# build or emulator checkpoint is ever replaced by this recovery path.
+if [[ -d "$MESA_BUILD" && ! -f "$MESA_BUILD/build.ninja" ]]; then
+    failed="$MESA_WORK/failed-meson-setup-$(date +%Y%m%d-%H%M%S)-$BASHPID"
+    mv -- "$MESA_BUILD" "$failed"
+    echo "INCOMPLETE_MESON_SETUP_SAVED=$failed"
+fi
 if [[ ! -f "$MESA_BUILD/build.ninja" ]]; then
     echo "CONFIGURE_OFFICIAL_MESA_RADV_ONLY"
     meson setup "$MESA_BUILD" "$MESA_SOURCE" \
