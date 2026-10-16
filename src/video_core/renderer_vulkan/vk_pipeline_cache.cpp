@@ -3,6 +3,7 @@
 
 #include <cstdlib>
 #include <ranges>
+#include <type_traits>
 
 #include "common/hash.h"
 #include "common/io_file.h"
