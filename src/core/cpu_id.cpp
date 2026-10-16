@@ -16,6 +16,7 @@
 #include <xbyak/xbyak_util.h>
 #include "common/assert.h"
 #include "core/cpu_id.h"
+#include "core/cpu_id_trap_table.h"
 #include "core/libraries/kernel/threads/pthread.h"
 
 #ifdef ENABLE_CPU_ID_TRANSLATION
@@ -48,6 +49,8 @@ static_assert(std::atomic<uintptr_t>::is_always_lock_free);
 std::atomic<uintptr_t> guest_begin{};
 std::atomic<uintptr_t> guest_end{};
 std::array<std::unique_ptr<Xbyak::CodeGenerator>, 2> fault_trampolines;
+std::atomic<bool> builtin_cpu_id_mode{};
+CpuId::RdpidTrapTable builtin_rdpid_traps;
 
 std::array<u32, 4> GuestCpuid(u32 leaf, u32 subleaf, u32 cpu) {
     const u32 apic_id = GuestCpuCount - 1 - cpu;
@@ -206,6 +209,51 @@ size_t FaultInstructionLength(const u8* code, FaultInstruction& instruction, u32
 }
 
 } // namespace
+
+void SetBuiltinCpuIdMode(bool enabled) noexcept {
+    builtin_cpu_id_mode.store(enabled, std::memory_order_release);
+}
+
+bool IsBuiltinCpuIdMode() noexcept {
+    return builtin_cpu_id_mode.load(std::memory_order_acquire);
+}
+
+void RegisterBuiltinRdpidTrap(uintptr_t guest_ip, u32 length, u32 destination) {
+    ASSERT_MSG(IsBuiltinCpuIdMode(),
+               "Unexpected in-process RDPID trap outside builtin CPU-ID execution");
+    ASSERT_MSG(builtin_rdpid_traps.Register(guest_ip, length, destination),
+               "Duplicate or invalid in-process RDPID trap at {:#x}", guest_ip);
+}
+
+bool HandleBuiltinRdpidTrap(void* context) {
+    if (!IsBuiltinCpuIdMode() || context == nullptr) {
+        return false;
+    }
+    auto& registers = static_cast<ucontext_t*>(context)->uc_mcontext.gregs;
+    if (registers[REG_TRAPNO] != 6) { // UD2: #UD
+        return false;
+    }
+    const auto ip = static_cast<uintptr_t>(registers[REG_RIP]);
+    const CpuId::RdpidTrapTable::Site* site = builtin_rdpid_traps.Lookup(ip);
+    if (site == nullptr || Libraries::Kernel::g_curthread == nullptr) {
+        return false;
+    }
+    // A recorded site is valid only while the original patched instruction
+    // still contains UD2. Never consume an unrelated application exception.
+    const auto* opcode = reinterpret_cast<const u8*>(ip);
+    if (opcode[0] != 0x0F || opcode[1] != 0x0B) {
+        return false;
+    }
+
+    static constexpr std::array HostRegisters{
+        REG_RAX, REG_RCX, REG_RDX, REG_RBX, REG_RSP, REG_RBP, REG_RSI, REG_RDI,
+        REG_R8,  REG_R9,  REG_R10, REG_R11, REG_R12, REG_R13, REG_R14, REG_R15};
+    // RDPID returns IA32_TSC_AUX in r32/r64, zero-extending the result.
+    // The PS4 virtual CPU number replaces the host's physical TSC_AUX.
+    registers[HostRegisters[site->destination]] = CurrentGuestCpu();
+    registers[REG_RIP] += site->size;
+    return true;
+}
 
 bool HandleCpuIdFault(void* context, void* fault_address) {
     auto& registers = static_cast<ucontext_t*>(context)->uc_mcontext.gregs;
@@ -374,12 +422,16 @@ void EnableCpuIdFaulting() {
     }
 #endif
     if (prctl(PR_SET_TSC, PR_TSC_SIGSEGV) != 0) {
+        ASSERT_MSG(!IsBuiltinCpuIdMode(),
+                   "Built-in CPU identity requires Linux TSC faulting to emulate RDTSCP");
         static std::atomic warned{false};
         if (!warned.exchange(true)) {
             LOG_WARNING(Core, "TSC faulting unavailable; RDTSCP identity requires static patches");
         }
     }
     if (syscall(SYS_arch_prctl, ARCH_SET_CPUID, 0) != 0) {
+        ASSERT_MSG(!IsBuiltinCpuIdMode(),
+                   "Built-in CPU identity requires Linux CPUID faulting for guest identity");
         static std::atomic warned{false};
         if (!warned.exchange(true)) {
             LOG_WARNING(Core, "CPUID faulting unavailable; CPU identity requires static patches");
