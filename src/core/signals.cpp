@@ -252,6 +252,11 @@ static s32 NativeSiCodeToGuest(s32 sig, s32 code) {
 
 void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
 #if defined(__linux__) && defined(ARCH_X86_64)
+    // The guest module patcher replaces short CPU-ID opcodes with UD2 when
+    // a near jump cannot be safely installed. Handle only registered traps.
+    if (sig == SIGILL && HandleCpuIdNativeTrap(raw_context)) {
+        return;
+    }
     if ((sig == SIGSEGV || sig == SIGILL) && HandleCpuIdFault(raw_context, info->si_addr)) {
         return;
     }
