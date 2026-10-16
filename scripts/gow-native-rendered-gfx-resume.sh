@@ -179,6 +179,11 @@ git -C "$SOURCE" status --short > "$OUT/source-status.txt"
 
 # Resume the existing 2,618-rule Ninja build; already compiled dependencies
 # and objects remain intact. Do NOT delete or reconfigure the build directory.
+if ! grep -Eq '^ENABLE_CPU_ID_TRANSLATION(:[^=]*)?=OFF$' "$BUILD/CMakeCache.txt"; then
+  STATUS="CPU_TRANSLATION_NOT_DISABLED"
+  echo "Cached CMake configuration does not explicitly disable DynamoRIO."
+  exit 4
+fi
 STATUS="INCREMENTAL_BUILD"
 echo "INCREMENTAL_COMPILE_BEGIN"
 if ! cmake --build "$BUILD" --target shadps4 --parallel 6; then
@@ -189,6 +194,25 @@ fi
 test -x "$CANDIDATE"
 sha256sum "$CANDIDATE" | tee "$OUT/candidate-sha256.txt"
 verify_native COMPILED
+if ! command -v nm >/dev/null 2>&1 || ! command -v objdump >/dev/null 2>&1; then
+  STATUS="HLE_PROLOGUE_AUDIT_UNAVAILABLE"
+  echo "nm/objdump unavailable; compiled build retained, game not launched."
+  exit 4
+fi
+symbol="$(nm -C "$CANDIDATE" | awk 'index($0," T Libraries::Kernel::sceKernelLoadStartModule(") || index($0," t Libraries::Kernel::sceKernelLoadStartModule(") {if (!first) first=$1} END {print first}')"
+if [[ -z "$symbol" ]]; then
+  STATUS="HLE_PROLOGUE_SYMBOL_MISSING"
+  echo "Cannot locate protected guest-to-host kernel module loader."
+  exit 4
+fi
+end="$(printf '%x' "$((16#$symbol + 160))")"
+objdump -dC --start-address="0x$symbol" --stop-address="0x$end" "$CANDIDATE" > "$OUT/hle-prologue.txt"
+if ! grep -Eq '[[:space:]]and[[:space:]].*%rsp' "$OUT/hle-prologue.txt"; then
+  STATUS="HLE_PROLOGUE_REGRESSED"
+  echo "Compiled x86-64 HLE stack realignment not verified; no game launch."
+  exit 4
+fi
+echo "COMPILED_HLE_STACK_REALIGN=PASS"
 echo "NATIVE_CPU_UNMODIFIED=PASS"
 echo "DYNAMORIO=OFF (original Ninja CMake options)"
 STATUS="BUILD_SUCCESS"
