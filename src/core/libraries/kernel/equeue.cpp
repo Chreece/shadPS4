@@ -5,9 +5,13 @@
 #include <magic_enum/magic_enum.hpp>
 
 #include "common/assert.h"
+#include "common/host_monotonic_clock.h"
 #include "common/debug.h"
 #include "common/logging/log.h"
 #include "common/singleton.h"
+#if defined(__linux__) && defined(__x86_64__)
+#include "core/cpu_id.h"
+#endif
 #include "core/file_sys/fs.h"
 #include "core/libraries/kernel/equeue.h"
 #include "core/libraries/kernel/kernel.h"
@@ -23,6 +27,14 @@ extern void KernelSignalRequest();
 
 static std::unordered_map<s32, EqueueInternal*> kqueues;
 static constexpr auto HrTimerSpinlockThresholdNs = 1200000u;
+static std::chrono::steady_clock::time_point HleMonotonicNow() noexcept {
+#if defined(__linux__) && defined(__x86_64__)
+    return Common::HostMonotonicNow(Core::IsBuiltinCpuIdMode());
+#else
+    return Common::HostMonotonicNow(false);
+#endif
+}
+
 
 EqueueInternal* GetEqueue(OrbisKernelEqueue eq) {
     if (!kqueues.contains(eq)) {
@@ -57,7 +69,7 @@ bool EqueueInternal::AddEvent(EqueueEvent& event) {
         std::scoped_lock lock{m_mutex};
 
         // Calculate timer interval
-        event.time_added = std::chrono::steady_clock::now();
+        event.time_added = HleMonotonicNow();
         if (event.event.filter == OrbisKernelEvent::Filter::Timer) {
             // Set timer interval, this is stored in milliseconds for timers.
             event.timer_interval = std::chrono::milliseconds(event.event.data);
@@ -264,7 +276,7 @@ bool EqueueInternal::AddSmallTimer(EqueueEvent& ev) {
     // Create the small timer
     SmallTimer st;
     st.event = ev.event;
-    st.added = std::chrono::steady_clock::now();
+    st.added = HleMonotonicNow();
     st.interval = std::chrono::nanoseconds(ts.tv_nsec + ts.tv_sec * 1000000000);
     {
         std::scoped_lock lock{m_mutex};
@@ -276,12 +288,12 @@ bool EqueueInternal::AddSmallTimer(EqueueEvent& ev) {
 int EqueueInternal::WaitForSmallTimer(OrbisKernelEvent* ev, int num, u32 micros) {
     ASSERT(num >= 1);
 
-    auto curr_clock = std::chrono::steady_clock::now();
+    auto curr_clock = HleMonotonicNow();
     const auto wait_end_us = (micros == 0) ? std::chrono::steady_clock::time_point::max()
                                            : curr_clock + std::chrono::microseconds{micros};
     int count = 0;
     do {
-        curr_clock = std::chrono::steady_clock::now();
+        curr_clock = HleMonotonicNow();
         {
             std::scoped_lock lock{m_mutex};
             for (auto it = m_small_timers.begin(); it != m_small_timers.end() && count < num;) {

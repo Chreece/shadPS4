@@ -567,3 +567,9 @@ add_executable(shadps4_cpu_guest_ranges_test cpu_id/test_guest_executable_ranges
 target_include_directories(shadps4_cpu_guest_ranges_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(shadps4_cpu_guest_ranges_test PRIVATE cxx_std_23)
 add_test(NAME cpu_guest_executable_ranges COMMAND shadps4_cpu_guest_ranges_test)
+
+# Native HLE real-monotonic-clock access with TSC faulting enabled.
+add_executable(shadps4_host_monotonic_clock_test kernel/test_host_monotonic_clock.cpp)
+target_include_directories(shadps4_host_monotonic_clock_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_host_monotonic_clock_test PRIVATE cxx_std_23)
+add_test(NAME host_monotonic_clock COMMAND shadps4_host_monotonic_clock_test)
