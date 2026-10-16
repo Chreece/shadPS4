@@ -197,24 +197,41 @@ if ! sudo -v < /dev/tty; then
   exit 4
 fi
 
-# Read-only sampling of CPU load and approximate AMD GPU busy percentage.
+# Real screenshots surrounding the profile, for visual-regression checks.
+capture() {
+  local name="$1" output="$OUT/screenshots/$1.png"
+  if command -v import >/dev/null 2>&1 &&
+     timeout 7s nice -n 15 import -display "$DISPLAY" -window root "$output"        >/dev/null 2>&1 && [[ -s "$output" ]]; then
+    echo "SCREENSHOT_CAPTURED=$name"
+  else
+    rm -f "$output"
+    echo "SCREENSHOT_UNAVAILABLE=$name (profiling continues)"
+  fi
+  return 0
+}
+capture before-perf
+ps -L -p "$GAME_PID" -o tid,pcpu,psr,stat,comm   > "$OUT/threads-before.txt" 2>&1 || true
+# Read-only CPU and AMD GPU activity samples, one normalized row per second.
 (
+  printf 'unix_second\tprocess_cpu_pct_rss_kb_threads_state\tamd_gpu_busy_pct\n'
   for ((i=0;i<45;i++)); do
     [[ -d "/proc/$GAME_PID" ]] || break
-    printf '%s\t' "$(date +%s)"
-    LC_ALL=C ps -p "$GAME_PID" -o %cpu=,rss=,nlwp=,stat= || true
-    if [[ -n "$GPU_BUSY" ]]; then
-      printf '%s\t%s\n' "$(date +%s)" "$(cat "$GPU_BUSY" 2>/dev/null || echo NA)"
-    fi
+    now="$(date +%s)"
+    process_stats="$(LC_ALL=C ps -p "$GAME_PID" -o %cpu=,rss=,nlwp=,stat=       2>/dev/null | tr -d '\n' || true)"
+    busy="NA"
+    if [[ -n "$GPU_BUSY" ]]; then busy="$(cat "$GPU_BUSY" 2>/dev/null || echo NA)"; fi
+    printf '%s\t%s\t%s\n' "$now" "$process_stats" "$busy"
     sleep 1
   done
-) > "$OUT/process-samples.txt" 2>&1 &
+) > "$OUT/process-samples.tsv" 2>&1 &
 sampler_pid=$!
 sudo -n perf record -e cpu-clock -F 49 -g --call-graph dwarf,8192 \
   -p "$GAME_PID" -o "$OUT/perf.data" -- sleep 45 \
   > "$OUT/perf-record.stdout" 2>"$OUT/perf-record.stderr" && perf_rc=0 || perf_rc=$?
 # The sampler is our own child, NOT an emulator process.
 wait "$sampler_pid" || true
+ps -L -p "$GAME_PID" -o tid,pcpu,psr,stat,comm   > "$OUT/threads-after.txt" 2>&1 || true
+capture after-perf
 printf 'PERF_EXIT_CODE=%s\n' "$perf_rc" | tee "$OUT/perf-status.txt"
 if (( perf_rc==0 )); then
   sudo -n perf report --stdio --no-children --percent-limit 0.2 \
