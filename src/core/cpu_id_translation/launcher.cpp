@@ -14,6 +14,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "core/cpu_id_translation/launcher.h"
+#include "core/cpu_id.h"
 
 extern "C" int ShadCpuIdTranslationActive();
 
@@ -47,6 +48,15 @@ bool StartCpuIdTranslation(int argc, char* argv[], std::string_view mode, bool r
     if (std::getenv(RestartMarker)) {
         std::fputs("CPU identity translation did not start; refusing to restart again.\n", stderr);
         return false;
+    }
+    if (mode == "builtin") {
+        // Execute normal host x86-64 code directly, while enforcing PS4
+        // CPUID/RDTSCP identity via the existing Linux per-guest-thread fault
+        // handlers and short RDPID via the emulator's native CPU patcher.
+        // Does not start DynamoRIO and does not silently fall back to host
+        // TSC_AUX identity.
+        SetBuiltinCpuIdMode(true);
+        return true;
     }
     if (mode == "native" || (mode == "auto" && !NeedsTranslation())) {
         return true;
