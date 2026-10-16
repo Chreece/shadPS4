@@ -36,4 +36,27 @@ inline void EmitLowBitMask(Xbyak::CodeGenerator& c, const Xbyak::Reg32& count,
     c.cmovae(mask, Xbyak::util::ecx);
 }
 
+
+// Portable x86-64 SRT FindILsb32 lowering, validated independently in GoW.
+// The GCN instruction returns UINT32_MAX for a zero input, unlike TZCNT.
+// BSF sets ZF and MOV preserves it, allowing CMOVZ to select the sentinel.
+inline void EmitSrtFindILsb32(Xbyak::CodeGenerator& c, const Xbyak::Reg32 dst) {
+    using namespace Xbyak::util;
+    c.bsf(dst, dst);
+    c.mov(ecx, 0xffffffffU);
+    c.cmovz(dst, ecx);
+}
+
+// Failed SRT expressions must not leave partial native code, including PUSHes,
+// after returning to the caller. This is code generation only: no guest patching.
+template <typename Emit>
+[[nodiscard]] bool EmitSrtWalkerAtomically(Xbyak::CodeGenerator& code, Emit&& emit) {
+    const auto checkpoint = code.getSize();
+    if (emit()) {
+        return true;
+    }
+    code.setSize(checkpoint);
+    return false;
+}
+
 } // namespace Shader::Optimization::SrtCodegen

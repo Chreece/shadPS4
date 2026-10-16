@@ -10,6 +10,7 @@
 
 #include "shader_recompiler/ir/microinstruction.h"
 #include "shader_recompiler/ir/value.h"
+#include "shader_recompiler/ir/passes/srt_uniformity.h"
 
 namespace Shader::Optimization {
 
@@ -61,8 +62,14 @@ namespace Shader::Optimization {
         case IR::Opcode::BitwiseNot32:
         case IR::Opcode::UMin32:
         case IR::Opcode::UMax32:
-        case IR::Opcode::ReadFirstLane:
         case IR::Opcode::FindILsb32:
+            break;
+
+        case IR::Opcode::ReadFirstLane:
+            if (!IsHostUniformSrtOffset(inst->Arg(0))) {
+                cached[first] = false;
+                return false;
+            }
             break;
 
         case IR::Opcode::BitFieldUExtract:

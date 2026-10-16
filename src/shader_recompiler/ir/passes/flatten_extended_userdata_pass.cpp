@@ -19,6 +19,7 @@
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/passes/srt.h"
 #include "shader_recompiler/ir/passes/srt_offset_preflight.h"
+#include "shader_recompiler/ir/passes/srt_uniformity.h"
 #include "shader_recompiler/ir/passes/srt_offset_codegen.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
@@ -338,6 +339,29 @@ static bool EmitComputeOffsetShiftRightLogical32(Xbyak::CodeGenerator& c, Xbyak:
     return true;
 }
 
+
+static bool EmitComputeOffsetShiftRightArithmetic32(Xbyak::CodeGenerator& c,
+                                                     Xbyak::Reg32 reg, PassInfo& pass_info,
+                                                     IR::Inst* inst) {
+    ASSERT(!inst->AreAllArgsImmediates());
+    if (inst->Arg(0).IsImmediate()) {
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
+        c.mov(ecx, reg);
+        c.mov(reg, inst->Arg(0).U32());
+        c.sar(reg, cl);
+    } else if (inst->Arg(1).IsImmediate()) {
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
+        c.sar(reg, inst->Arg(1).U32());
+    } else {
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
+        c.push(reg.cvt64());
+        POP_ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
+        c.pop(rcx);
+        c.sar(reg, cl);
+    }
+    return true;
+}
+
 static bool EmitComputeOffsetBitwiseAnd32(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
                                           PassInfo& pass_info, IR::Inst* inst) {
     ASSERT(!inst->AreAllArgsImmediates());
@@ -503,6 +527,9 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     case IR::Opcode::IMul32:
     case IR::Opcode::ShiftLeftLogical32:
     case IR::Opcode::ShiftRightLogical32:
+    case IR::Opcode::ShiftRightArithmetic32:
+    case IR::Opcode::ReadFirstLane:
+    case IR::Opcode::FindILsb32:
     case IR::Opcode::BitwiseAnd32:
     case IR::Opcode::BitwiseOr32:
     case IR::Opcode::BitwiseXor32:
@@ -519,6 +546,13 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
 static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
                           const IR::Value& off_dw) {
     ASSERT(reg != ecx && reg != edx);
+    if (off_dw.IsImmediate()) {
+        if (off_dw.Type() != IR::Type::U32) {
+            return false;
+        }
+        c.mov(reg, off_dw.U32());
+        return true;
+    }
     auto inst = off_dw.Inst();
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
@@ -545,6 +579,21 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
         return true;
     case IR::Opcode::ShiftRightLogical32:
         ABORT_ON_FAILURE(EmitComputeOffsetShiftRightLogical32(c, reg, pass_info, inst));
+        return true;
+    case IR::Opcode::ShiftRightArithmetic32:
+        ABORT_ON_FAILURE(EmitComputeOffsetShiftRightArithmetic32(c, reg, pass_info, inst));
+        return true;
+    case IR::Opcode::ReadFirstLane:
+        // A lane read can be evaluated by the CPU only if the value is
+        // proven wave-uniform across the entire source expression.
+        if (!IsHostUniformSrtOffset(inst->Arg(0))) {
+            return false;
+        }
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
+        return true;
+    case IR::Opcode::FindILsb32:
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
+        SrtCodegen::EmitSrtFindILsb32(c, reg);
         return true;
     case IR::Opcode::BitwiseAnd32:
         ABORT_ON_FAILURE(EmitComputeOffsetBitwiseAnd32(c, reg, pass_info, inst));
@@ -833,6 +882,11 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
                 if (inst->GetOpcode() == IR::Opcode::GetUserData ||
                     inst->GetOpcode() == IR::Opcode::ReadConst ||
                     !IsAllowedOffsetInstruction(inst)) {
+                    continue;
+                }
+                if (inst->GetOpcode() == IR::Opcode::ReadFirstLane &&
+                    !IsHostUniformSrtOffset(inst->Arg(0))) {
+                    // Keep divergent lane accesses on the guest shader path.
                     continue;
                 }
                 for (size_t arg = inst->NumArgs(); arg--;) {
