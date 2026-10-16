@@ -66,9 +66,15 @@ finish() {
   tar -czf "$LOGS/$TAG.tar.gz" -C "$LOGS" "$TAG"
   echo "BUILD_RESULT=$([[ $code == 0 ]] && echo PASS || echo FAILED)"
   echo "ARCHIVE=$LOGS/$TAG.tar.gz"
+  [[ -f "$OUT/srt-candidate.txt" ]] && cat "$OUT/srt-candidate.txt"
+  [[ -f "$OUT/candidate.txt" ]] && cat "$OUT/candidate.txt"
   echo "SUNSHINE_X11=UNCHANGED"
   echo "SSH_SESSION=UNCHANGED"
-  if [[ "$code" != 0 && -f "$OUT/build.log" ]]; then tail -25 "$OUT/build.log"; fi
+  if [[ "$code" != 0 ]]; then
+    for f in "$OUT/srt-build.log" "$OUT/log-perf-build.log" "$OUT/regression-build.log"; do
+      if [[ -s "$f" ]]; then echo "BUILD_FAILURE_TAIL=$f"; tail -18 "$f"; fi
+    done
+  fi
   exit "$code"
 }
 trap 'finish $?' EXIT
@@ -80,6 +86,12 @@ flock -n 9 || { echo "ANOTHER_UFFD_BUILD_RUNNING"; exit 1; }
   echo "ORIGINAL_BUILD_TARGET_MISSING_OR_SYMLINKED; REFUSING_TO_REPLACE"; exit 1;
 }
 [[ -f "$BUILD/CMakeCache.txt" ]] || { echo "CMAKE_CACHE_MISSING"; exit 1; }
+FREE_KIB=$(df -Pk "$BUILD" | awk 'END {print $4}')
+[[ "$FREE_KIB" =~ ^[0-9]+$ ]] || { echo "DISK_SPACE_UNKNOWN"; exit 1; }
+if (( FREE_KIB < 1048576 )); then
+  echo "INSUFFICIENT_FREE_SPACE_KIB=$FREE_KIB; NO_AUTO_CLEANUP_PERFORMED"
+  exit 1
+fi
 grep -Fxq "CMAKE_HOME_DIRECTORY:INTERNAL=$SRC" "$BUILD/CMakeCache.txt" || {
   echo "CMAKE_SOURCE_DIR_MISMATCH; REFUSING_TO_RECONFIGURE"; exit 1;
 }
