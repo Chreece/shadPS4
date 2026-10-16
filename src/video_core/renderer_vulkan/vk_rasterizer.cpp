@@ -53,7 +53,11 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     });
 }
 
-Rasterizer::~Rasterizer() = default;
+Rasterizer::~Rasterizer() {
+    // Deferred userfaultfd invalidations must finish before cache members
+    // are destroyed (they are destroyed before PageManager).
+    page_manager.DrainPendingInvalidations();
+}
 
 bool Rasterizer::FilterDraw() {
     const auto& regs = liverpool->regs;
@@ -1264,6 +1268,16 @@ u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
     u32 value;
     std::memcpy(&value, gds_buf->mapped_data.data() + gds_offset, sizeof(u32));
     return value;
+}
+
+void Rasterizer::InvalidateMemoryOnGpuThread(VAddr addr, u64 size,
+                                               std::function<void()> on_complete) {
+    // Never synchronously wait for the GPU processor from a userfaultfd
+    // receiver: the processor itself may be sleeping in handle_userfault.
+    liverpool->SendCommand([this, addr, size, on_complete = std::move(on_complete)]() mutable {
+        InvalidateMemory(addr, size, true);
+        on_complete();
+    });
 }
 
 bool Rasterizer::InvalidateMemory(VAddr addr, u64 size, bool assume_locks) {
