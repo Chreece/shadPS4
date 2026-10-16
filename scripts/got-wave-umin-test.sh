@@ -80,6 +80,41 @@ fi
         https://github.com/shadps4-emu/sirit.git "$SIRIT"
   fi
   git -C "$SOURCE/externals/sirit" checkout --detach "$SIRIT"
+
+# Sirit itself contains a pinned SPIRV-Headers submodule. The isolated clone
+# intentionally skips recursive submodules; recover this required dependency.
+HEADERS="$SOURCE/externals/sirit/externals/SPIRV-Headers"
+BASE_HEADERS="$BASE/externals/sirit/externals/SPIRV-Headers"
+HEADERS_SHA="2acb319af38d43be3ea76bfabf3998e5281d8d12"
+if [ ! -f "$HEADERS/CMakeLists.txt" ]; then
+  STATUS="RECOVERING_SPIRV_HEADERS"
+  echo "RECOVERING_REQUIRED_SIRIT_SUBMODULE=$HEADERS_SHA"
+  if [ -f "$BASE_HEADERS/CMakeLists.txt" ] &&
+     [ "$(git -C "$BASE_HEADERS" rev-parse HEAD 2>/dev/null || true)" = "$HEADERS_SHA" ]; then
+    # Reuse an exact-version, read-only source checkout from the working build.
+    # No changes to the baseline or its submodule.
+    if [ -d "$HEADERS" ] && [ -z "$(ls -A "$HEADERS")" ]; then
+      rmdir "$HEADERS"
+    fi
+    if [ ! -e "$HEADERS" ]; then
+      ln -s "$BASE_HEADERS" "$HEADERS"
+      echo "SPIRV_HEADERS=REUSED_VERIFIED_BASELINE"
+    fi
+  fi
+  if [ ! -f "$HEADERS/CMakeLists.txt" ]; then
+    echo "SPIRV_HEADERS=INITIALIZING_PINNED_GIT_SUBMODULE"
+    git -C "$SOURCE/externals/sirit" -c http.version=HTTP/1.1 \
+      -c fetch.recurseSubmodules=false submodule update --init --depth 1 \
+      -- externals/SPIRV-Headers
+  fi
+fi
+if [ ! -f "$HEADERS/CMakeLists.txt" ] ||
+   [ "$(git -C "$HEADERS" rev-parse HEAD 2>/dev/null || true)" != "$HEADERS_SHA" ]; then
+  echo "SPIRV_HEADERS_INVALID_OR_WRONG_VERSION"
+  exit 1
+fi
+echo "SPIRV_HEADERS=READY SHA=$HEADERS_SHA"
+STATUS="SOURCE_DEPENDENCIES_READY"
 test "$(git -C "$SOURCE" rev-parse HEAD)" = "$EXPERIMENT"
 test "$(git -C "$SOURCE/externals/sirit" rev-parse HEAD)" = "$SIRIT"
 git -C "$SOURCE" diff --quiet --ignore-submodules=all HEAD --
