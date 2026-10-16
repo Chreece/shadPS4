@@ -553,6 +553,7 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
 static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
+    case IR::Opcode::GetPcLo:
     case IR::Opcode::ReadConst:
     case IR::Opcode::ReadConstBuffer:
     case IR::Opcode::IAdd32:
@@ -590,6 +591,14 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
         c.mov(reg, ptr[rsi + (static_cast<u32>(inst->Arg(0).ScalarReg()) << 2)]);
+        return true;
+    case IR::Opcode::GetPcLo:
+        // Program-counter values already carry their statically translated
+        // low 32-bit address in IR, identical to SPIR-V EmitGetPcLo.
+        if (!inst->Arg(0).IsImmediate() || inst->Arg(0).Type() != IR::Type::U32) {
+            return false;
+        }
+        c.mov(reg, inst->Arg(0).U32());
         return true;
     case IR::Opcode::ReadConst:
     case IR::Opcode::ReadConstBuffer: {
@@ -880,6 +889,61 @@ static void GenerateSrtProgram(
                base->GetOpcode() == IR::Opcode::CompositeConstructU32x2 &&
                IsHostUniformSrtOffset(IR::Value{inst});
     });
+    // Optional, general-purpose explanation for shader descriptor reads that
+    // cannot be evaluated by the CPU-side walker. These remain GPU reads;
+    // this audit never changes guest operations or resource values.
+    static const bool inline_audit = [] {
+        const char* const value = std::getenv("SHADPS4_SRT_INLINE_AUDIT");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    if (inline_audit) {
+        u32 examined{}, eligible{}, not_uniform{}, wrong_base{}, already_flattened{}, samples{};
+        for (IR::Inst* read : all_readconsts) {
+            if (read->GetOpcode() != IR::Opcode::ReadConst) {
+                continue;
+            }
+            if (GetFlatbufOffset(read) != 0) {
+                ++already_flattened;
+                continue;
+            }
+            ++examined;
+            const IR::Inst* const base = read->Arg(0).TryInst();
+            const bool pair = base && base->GetOpcode() == IR::Opcode::CompositeConstructU32x2;
+            const bool uniform = IsHostUniformSrtOffset(IR::Value{read});
+            wrong_base += !pair;
+            not_uniform += !uniform;
+            eligible += pair && uniform;
+            if (samples++ < 8) {
+                const IR::Value low = pair ? base->Arg(0) : IR::Value{};
+                const IR::Value high = pair ? base->Arg(1) : IR::Value{};
+                const IR::Value index = read->Arg(1);
+                const IR::Inst* const low_inst = low.TryInst();
+                const IR::Inst* const high_inst = high.TryInst();
+                const IR::Inst* const index_inst = index.TryInst();
+                LOG_INFO(Render_Recompiler,
+                         "SrtInlineCandidate: shader={:#x} stage={} eligible={} "
+                         "base_op={} lo_op={} hi_op={} index_op={} "
+                         "lo_immediate={} hi_immediate={} index_immediate={} "
+                         "index_value={}",
+                         info.pgm_hash, info.hw_stage, pair && uniform,
+                         base ? IR::NameOf(base->GetOpcode()) : "immediate",
+                         low_inst ? IR::NameOf(low_inst->GetOpcode()) : "immediate",
+                         high_inst ? IR::NameOf(high_inst->GetOpcode()) : "immediate",
+                         index_inst ? IR::NameOf(index_inst->GetOpcode()) : "immediate",
+                         low.IsImmediate(), high.IsImmediate(), index.IsImmediate(),
+                         index.IsImmediate() && index.Type() == IR::Type::U32
+                             ? index.U32() : 0u);
+            }
+        }
+        if (examined || already_flattened) {
+            LOG_INFO(Render_Recompiler,
+                     "SrtInlineEligibility: shader={:#x} stage={} unflattened={} "
+                     "eligible={} nonuniform={} unsupported_base={} already_flattened={}",
+                     info.pgm_hash, info.hw_stage, examined, eligible, not_uniform,
+                     wrong_base, already_flattened);
+        }
+    }
+
     if (pass_info.srt_roots.empty() && !has_inline_reads) {
         return;
     }

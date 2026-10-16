@@ -40,6 +40,8 @@ struct MockInst {
 
 int main() {
     const MockInst uniform{Opcode::GetUserData, {}, 0};
+    const MockInst pc_constant{Opcode::GetPcLo, {MockValue::Imm()}, 1};
+    const MockInst pc_varying{Opcode::GetPcLo, {MockValue::Ref(uniform)}, 1};
     const MockInst varying{Opcode::GetAttribute, {}, 0};
     const MockInst phi{Opcode::Phi, {MockValue::Ref(uniform)}, 1};
     const MockInst uniform_add{Opcode::IAdd32, {MockValue::Ref(uniform), MockValue::Imm()}, 2};
@@ -61,6 +63,12 @@ int main() {
         {MockValue::Ref(uniform), MockValue::Ref(uniform)}, 2};
     const MockInst read_const{Opcode::ReadConstBuffer,
         {MockValue::Ref(descriptor), MockValue::Imm()}, 2};
+    const MockInst pc_pointer{Opcode::CompositeConstructU32x2,
+        {MockValue::Ref(pc_constant), MockValue::Imm()}, 2};
+    const MockInst pc_read{Opcode::ReadConst,
+        {MockValue::Ref(pc_pointer), MockValue::Imm()}, 2};
+    const MockInst pc_read_varying{Opcode::ReadConst,
+        {MockValue::Ref(pc_pointer), MockValue::Ref(varying)}, 2};
     const MockInst first_const{Opcode::ReadFirstLane, {MockValue::Ref(read_const)}, 1};
     const MockInst nonuniform_const{Opcode::ReadConstBuffer,
         {MockValue::Ref(descriptor), MockValue::Ref(varying)}, 2};
@@ -74,10 +82,14 @@ int main() {
         MockValue value;
         bool expected;
     };
-    const std::array<Case, 17> cases{{
+    const std::array<Case, 21> cases{{
         {"u32-constant", MockValue::Imm(), true},
         {"float-constant", MockValue::Imm(Type::F32), false},
         {"user-data", MockValue::Ref(uniform), true},
+        {"pc-immediate-constant", MockValue::Ref(pc_constant), true},
+        {"pc-dynamic-operand-rejected", MockValue::Ref(pc_varying), false},
+        {"pc-based-readconst", MockValue::Ref(pc_read), true},
+        {"pc-based-readconst-varying-index", MockValue::Ref(pc_read_varying), false},
         {"varying-attribute", MockValue::Ref(varying), false},
         {"wave-uniform-firstlane", MockValue::Ref(first_uniform), true},
         {"uniform-arithmetic-right-shift", MockValue::Ref(uniform_signed_shift), true},
@@ -101,6 +113,6 @@ int main() {
             return 1;
         }
     }
-    std::puts("SRT_UNIFORMITY=PASS cases=17 diverging=REJECTED phi=REJECTED");
+    std::puts("SRT_UNIFORMITY=PASS cases=21 diverging=REJECTED phi=REJECTED");
     return 0;
 }

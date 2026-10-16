@@ -49,6 +49,12 @@ namespace Shader::Optimization {
         case IR::Opcode::ReadConst:
         case IR::Opcode::ReadConstBuffer:
             continue;
+        case IR::Opcode::GetPcLo:
+            if (!inst->Arg(0).IsImmediate() || inst->Arg(0).Type() != IR::Type::U32) {
+                cached[first] = false;
+                return false;
+            }
+            continue;
 
         case IR::Opcode::IAdd32:
         case IR::Opcode::ISub32:

@@ -30,6 +30,10 @@ template <typename Value>
     case IR::Opcode::GetUserData:
         // SGPR user data is supplied per draw/dispatch, independent of lane.
         return true;
+    case IR::Opcode::GetPcLo:
+        // GetPcLo wraps an immediate program-counter value. This is a
+        // compile-time scalar for every lane; it has no GPU-lane input.
+        return inst->Arg(0).IsImmediate() && inst->Arg(0).Type() == IR::Type::U32;
     case IR::Opcode::ReadConst:
     case IR::Opcode::ReadConstBuffer:
         // The source pointer AND the offset must both be uniform.
