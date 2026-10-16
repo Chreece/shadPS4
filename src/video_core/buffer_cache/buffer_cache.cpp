@@ -106,6 +106,9 @@ void BufferCache::InvalidateMemory(VAddr device_addr, u64 size, bool assume_lock
     memory_tracker->InvalidateRegion(device_addr, size, [this, device_addr, size, assume_locks] {
         ReadMemory(device_addr, size, true, assume_locks);
     });
+    // A CPU fault may have dirtied a formerly GPU-resident buffer.
+    // Publish AFTER InvalidateRegion updates its dirty-page state.
+    memory_tracker->NotifyPendingDmaUpload();
 }
 
 void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool assume_locks) {
@@ -215,6 +218,14 @@ bool BufferCache::IsRegionGpuModified(VAddr addr, size_t size) {
 
 void BufferCache::SynchronizeDmaBuffers() {
     fault_process_pending = true;
+    // The ordinary per-page tracker still decides WHAT to upload. This
+    // atomic notification skips the expensive full-residency scan only when
+    // no CPU write/mapping/residency change has been published since the
+    // last pass. Take the notification BEFORE scanning so concurrent guest
+    // writes stay pending for the next dispatch.
+    if (!memory_tracker->ConsumePendingDmaUpload()) {
+        return;
+    }
     for (const auto& range : resident_ranges) {
         const u64 page = range.start >> (ARENA_PAGE_BITS - block_shift);
         const VAddr device_addr = range.start << block_shift;
@@ -288,6 +299,9 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
     if (bind_ranges.Empty()) {
         return;
     }
+    // New resident memory needs its initial CPU->GPU contents on the next
+    // DMA pass even if the previous set of resident pages was clean.
+    memory_tracker->NotifyPendingDmaUpload();
 
     const vk::MemoryAllocateFlagsInfo alloc_flags = {
         .flags = vk::MemoryAllocateFlagBits::eDeviceAddress,

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "common/types.h"
+#include "video_core/buffer_cache/pending_dma_upload.h"
 #include "video_core/buffer_cache/region_manager.h"
 
 namespace VideoCore {
@@ -46,6 +47,9 @@ public:
                 manager->template ChangeRegionState<StateOp::None, StateOp::Clear>(offset, size);
             }
         });
+        if (is_write) {
+            pending_dma_upload.Notify();
+        }
     }
 
     /// Mark region as modified from the CPU
@@ -53,6 +57,17 @@ public:
         IteratePages(cpu_addr, size, [](RegionManager* manager, u64 offset, u64 size) {
             manager->template ChangeRegionState<StateOp::Set, StateOp::None>(offset, size);
         });
+        pending_dma_upload.Notify();
+    }
+
+    /// Conservative gate for expensive full-resident-range DMA scans.
+    /// A notification never changes per-page watch/readback correctness.
+    void NotifyPendingDmaUpload() noexcept {
+        pending_dma_upload.Notify();
+    }
+
+    [[nodiscard]] bool ConsumePendingDmaUpload() noexcept {
+        return pending_dma_upload.Consume();
     }
 
     /// Removes all protection from a page and ensures GPU data has been flushed if requested
@@ -151,11 +166,15 @@ private:
         new_manager->SetCpuAddress(base_cpu_addr);
         free_managers.pop_back();
         top_tier[page_index] = new_manager;
+        // Newly tracked pages start CPU-dirty; don't incorrectly classify
+        // their first DMA request as an already-clean resident scan.
+        pending_dma_upload.Notify();
         return new_manager;
     }
 
     PageManager* tracker;
     const u32 readbacks_mode;
+    PendingDmaUpload pending_dma_upload;
     std::deque<std::array<RegionManager, MANAGER_POOL_SIZE>> manager_pool;
     std::vector<RegionManager*> free_managers;
     std::array<RegionManager*, NUM_HIGH_PAGES> top_tier{};

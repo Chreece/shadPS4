@@ -579,3 +579,9 @@ add_executable(shadps4_hrtimer_wait_test kernel/test_hrtimer_wait.cpp)
 target_include_directories(shadps4_hrtimer_wait_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(shadps4_hrtimer_wait_test PRIVATE cxx_std_23)
 add_test(NAME hrtimer_wait COMMAND shadps4_hrtimer_wait_test)
+
+# Universal CPU-side resident DMA synchronization dirty-notification tests.
+add_executable(shadps4_dma_dirty_gate_test buffer_cache/test_dma_dirty_gate.cpp)
+target_include_directories(shadps4_dma_dirty_gate_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_dma_dirty_gate_test PRIVATE cxx_std_23)
+add_test(NAME dma_dirty_gate COMMAND shadps4_dma_dirty_gate_test)
