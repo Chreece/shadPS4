@@ -3,6 +3,7 @@
 
 #include "core/emulator_settings.h"
 #include "shader_recompiler/ir/program.h"
+#include "shader_recompiler/ir/float_type_usage.h"
 #include "shader_recompiler/profile.h"
 
 namespace Shader::Optimization {
@@ -18,6 +19,17 @@ static void AddFlatbuf(Info& info) {
 }
 
 void Visit(Info& info, const IR::Inst& inst) {
+    // Float16/Float64 capabilities are required by surviving IR values,
+    // including SSA Phi and conversions whose *result* is not a float.
+    // The final SSA rewrite is performed before this collection pass.
+    const auto collect_float_type = [&info](IR::Type type) {
+        info.uses_fp16 |= IR::IsFloat16Type(type);
+        info.uses_fp64 |= IR::IsFloat64Type(type);
+    };
+    collect_float_type(inst.Type());
+    for (size_t index = 0; index < inst.NumArgs(); ++index) {
+        collect_float_type(inst.Arg(index).Type());
+    }
     switch (inst.GetOpcode()) {
     case IR::Opcode::GetAttribute:
     case IR::Opcode::GetAttributeU1:

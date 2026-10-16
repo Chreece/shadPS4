@@ -571,3 +571,10 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     target_link_libraries(shadps4_srt_findilsb32_test PRIVATE xbyak::xbyak)
     add_test(NAME srt_findilsb32 COMMAND shadps4_srt_findilsb32_test)
 endif()
+
+# Verify SSA Phi SPIR-V result types without an emulator or GPU runtime.
+add_executable(shadps4_spirv_phi_type_test shader_recompiler/test_spirv_phi_types.cpp)
+target_include_directories(shadps4_spirv_phi_type_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_spirv_phi_type_test PRIVATE cxx_std_23)
+target_link_libraries(shadps4_spirv_phi_type_test PRIVATE fmt::fmt)
+add_test(NAME spirv_phi_types COMMAND shadps4_spirv_phi_type_test)

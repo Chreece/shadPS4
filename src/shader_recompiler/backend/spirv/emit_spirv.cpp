@@ -12,6 +12,8 @@
 #include "common/func_traits.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
+#include "shader_recompiler/backend/spirv/phi_type_id.h"
+#include "shader_recompiler/ir/float_type_usage.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/frontend/translate/translate.h"
 #include "shader_recompiler/ir/basic_block.h"
@@ -132,24 +134,15 @@ void EmitInst(EmitContext& ctx, IR::Inst* inst) {
 }
 
 Id TypeId(const EmitContext& ctx, IR::Type type) {
-    switch (type) {
-    case IR::Type::U1:
-        return ctx.U1[1];
-    case IR::Type::U32:
-        return ctx.U32[1];
-    case IR::Type::U32x2:
-        return ctx.U32[2];
-    case IR::Type::U32x3:
-        return ctx.U32[3];
-    case IR::Type::U32x4:
-        return ctx.U32[4];
-    case IR::Type::F32:
-        return ctx.F32[1];
-    case IR::Type::U64:
-        return ctx.U64;
-    default:
-        UNREACHABLE_MSG("Phi node type {}", type);
-    }
+    // Float types are conditionally declared by the SPIR-V context. Their
+    // presence must agree with shader metadata before emitting an SSA Phi.
+    ASSERT_MSG(!IR::IsFloat16Type(type) || ctx.info.uses_fp16,
+               "F16 Phi is missing shader Float16 metadata");
+    ASSERT_MSG(!IR::IsFloat64Type(type) || ctx.info.uses_fp64,
+               "F64 Phi is missing shader Float64 metadata");
+    const auto id = LookupPhiTypeId(ctx, type);
+    ASSERT_MSG(id.has_value(), "Unsupported Phi node type {}", type);
+    return *id;
 }
 
 void Traverse(EmitContext& ctx, const IR::Program& program) {

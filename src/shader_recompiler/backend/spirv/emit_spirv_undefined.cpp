@@ -38,6 +38,11 @@ Id EmitUndefF32(EmitContext& ctx) {
     return ctx.OpUndef(ctx.F32[1]);
 }
 
+Id EmitUndefF64(EmitContext& ctx) {
+    ASSERT_MSG(ctx.info.uses_fp64, "F64 Undef is missing shader Float64 metadata");
+    return ctx.OpUndef(ctx.F64[1]);
+}
+
 Id EmitUndefU64(EmitContext&) {
     UNREACHABLE_MSG("SPIR-V Instruction");
 }
