@@ -123,13 +123,28 @@ git -C "$SOURCE" merge-base --is-ancestor "$FIX" FETCH_HEAD || {
   exit 3
 }
 REL="src/core/libraries/kernel/equeue.cpp"
+HEADER="src/common/host_monotonic_clock.h"
+TEST="tests/kernel/test_host_monotonic_clock.cpp"
 actual="$(git -C "$SOURCE" hash-object "$SOURCE/$REL")"
 before="$(git -C "$SOURCE" rev-parse "$FIX^:$REL")"
-if [[ "$actual" != "$before" ||
-      -e "$SOURCE/src/common/host_monotonic_clock.h" ||
-      -e "$SOURCE/tests/kernel/test_host_monotonic_clock.cpp" ]]; then
+after="$(git -C "$SOURCE" rev-parse "$FIX:$REL")"
+if [[ "$actual" == "$before" &&
+      ! -e "$SOURCE/$HEADER" && ! -e "$SOURCE/$TEST" ]]; then
+  APPLY_FIX=1
+  echo "REVIEWED_CLOCK_SOURCE=UNPATCHED"
+elif [[ "$actual" == "$after" &&
+        -f "$SOURCE/$HEADER" && ! -L "$SOURCE/$HEADER" &&
+        -f "$SOURCE/$TEST" && ! -L "$SOURCE/$TEST" ]] &&
+     [[ "$(git -C "$SOURCE" hash-object "$SOURCE/$HEADER")" == "$(git -C "$SOURCE" rev-parse "$FIX:$HEADER")" ]] &&
+     [[ "$(git -C "$SOURCE" hash-object "$SOURCE/$TEST")" == "$(git -C "$SOURCE" rev-parse "$FIX:$TEST")" ]]; then
+  # The previous runner fetched and applied these exact files before Bash
+  # discovered its line-150 parse error. Resume instead of rewriting them.
+  APPLY_FIX=0
+  echo "REVIEWED_CLOCK_SOURCE=ALREADY_EXACTLY_PATCHED"
+else
   STATUS="HLE_SOURCE_CONFLICT"
-  echo "The original Equeue clock source no longer matches; refusing overwrite."
+  echo "The HLE clock source is neither its pinned original nor the reviewed patch."
+  echo "No source will be overwritten or reset."
   exit 3
 fi
 # Every other emulated CPU and GPU source must stay byte-identical.
@@ -143,12 +158,15 @@ if [[ ! -s "$OUT/reviewed-clock.patch" ]]; then
   STATUS="EMPTY_REVIEWED_FIX"
   exit 3
 fi
-git -C "$SOURCE" apply --check "$OUT/reviewed-clock.patch"
-git -C "$SOURCE" apply "$OUT/reviewed-clock.patch"
+if (( APPLY_FIX==1 )); then
+  git -C "$SOURCE" apply --check "$OUT/reviewed-clock.patch"
+  git -C "$SOURCE" apply "$OUT/reviewed-clock.patch"
+fi
 for rel in src/core/libraries/kernel/equeue.cpp src/common/host_monotonic_clock.h \
            tests/kernel/test_host_monotonic_clock.cpp; do
-  if [[ "$(git -C "$SOURCE" hash-object "$SOURCE/$rel")" !=
-        "$(git -C "$SOURCE" rev-parse "$FIX:$rel")" ]]; then
+  expected_blob="$(git -C "$SOURCE" rev-parse "$FIX:$rel")"
+  actual_blob="$(git -C "$SOURCE" hash-object "$SOURCE/$rel")"
+  if [[ "$actual_blob" != "$expected_blob" ]]; then
     STATUS="SOURCE_OBJECT_ID_FAILED"
     echo "Reviewed source SHA mismatch: $rel"
     exit 4
