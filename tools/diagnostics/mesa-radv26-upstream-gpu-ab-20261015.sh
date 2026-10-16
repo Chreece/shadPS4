@@ -393,6 +393,146 @@ echo "PRIVATE_LIBDRM_VERSION_VERIFIED=$DRM_VERSION"
     echo "SYSTEM_LIBDRM_UNMODIFIED=YES"
 } >>"$RUN/info/libdrm-provenance.txt"
 
+# Mesa 26.2 Vulkan X11 WSI requires the full XCB extension developer set.
+# Use only Debian Trixie .deb DOWNLOADS and PRIVATE EXTRACTIONS, never install.
+# This leaves the system's X11 libraries, Mesa and package database unchanged.
+X11_PRIVATE_PC="$TOOLS_ROOT/private-pkgconfig"
+X11_PRIVATE_LIB="$TOOLS_ROOT/usr/lib/$(cc -dumpmachine)"
+mkdir -p "$TOOLS_ROOT/debs" "$X11_PRIVATE_PC"
+if [[ -n "$(printenv PKG_CONFIG_PATH || true)" ]]; then
+    export PKG_CONFIG_PATH="$X11_PRIVATE_PC:$(printenv PKG_CONFIG_PATH)"
+else
+    export PKG_CONFIG_PATH="$X11_PRIVATE_PC"
+fi
+printf 'FULL_X11_VULKAN_DEPENDENCY_PRECHECK=START\n' >"$RUN/info/mesa-x11-dependencies.txt"
+while read -r module package; do
+    [[ -n "$module" ]] || continue
+    if pkg-config --exists "$module"; then
+        printf '%s=ALREADY_AVAILABLE version=%s\n' "$module" \
+            "$(pkg-config --modversion "$module")" \
+            >>"$RUN/info/mesa-x11-dependencies.txt"
+        continue
+    fi
+    echo "DOWNLOAD_MISSING_PRIVATE_X11_DEVELOPMENT_PACKAGE=$package"
+    selected=""
+    for deb in "$TOOLS_ROOT/debs/$package"_*.deb; do
+        [[ -f "$deb" ]] || continue
+        selected="$deb"
+        break
+    done
+    if [[ -z "$selected" ]]; then
+        (
+            cd "$TOOLS_ROOT/debs"
+            apt-get -o Acquire::ForceIPv4=true download "$package"
+        ) >>"$RUN/build.log" 2>&1 || {
+            echo "X11_PRIVATE_DEB_DOWNLOAD_FAILED=$package; NO_SYSTEM_INSTALL"
+            exit 5
+        }
+        for deb in "$TOOLS_ROOT/debs/$package"_*.deb; do
+            [[ -f "$deb" ]] || continue
+            selected="$deb"
+            break
+        done
+    fi
+    [[ -n "$selected" && -f "$selected" ]] || {
+        echo "X11_PRIVATE_DEB_NOT_FOUND=$package"
+        exit 5
+    }
+    dpkg-deb -x "$selected" "$TOOLS_ROOT" >>"$RUN/build.log" 2>&1 || {
+        echo "X11_PRIVATE_DEB_EXTRACT_FAILED=$package"
+        exit 5
+    }
+    printf '%s=PRIVATE_DEB_EXTRACTED package=%s\n' "$module" "$package" \
+        >>"$RUN/info/mesa-x11-dependencies.txt"
+done <<'X11_PRIVATE_REQUIRED'
+xcb libxcb1-dev
+xcb-randr libxcb-randr0-dev
+x11 libx11-dev
+x11-xcb libx11-xcb-dev
+xcb-dri3 libxcb-dri3-dev
+xcb-present libxcb-present-dev
+xcb-shm libxcb-shm0-dev
+xcb-sync libxcb-sync-dev
+xcb-xfixes libxcb-xfixes0-dev
+xshmfence libxshmfence-dev
+libelf libelf-dev
+X11_PRIVATE_REQUIRED
+
+# Debian .pc entries embed prefix=/usr. Copy them to our own pkgconfig path,
+# rewriting only the copies to reference extracted private headers and libs.
+# The official downloaded packages and all installed system files stay intact.
+python3 - "$TOOLS_ROOT/usr" "$X11_PRIVATE_PC" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+private_usr = Path(sys.argv[1])
+private_pc = Path(sys.argv[2])
+count = 0
+for source in sorted(private_usr.glob("lib/*/pkgconfig/*.pc")):
+    data = source.read_text(encoding="utf-8")
+    data = re.sub(r"(?m)^prefix=/usr$", "prefix=" + str(private_usr), data)
+    (private_pc / source.name).write_text(data, encoding="utf-8")
+    count += 1
+print("PRIVATE_X11_PKGCONFIG_COPIES=" + str(count))
+PY
+if [[ -n "$(printenv LD_LIBRARY_PATH || true)" ]]; then
+    export LD_LIBRARY_PATH="$DRM_PREFIX/lib:$X11_PRIVATE_LIB:$(printenv LD_LIBRARY_PATH)"
+else
+    export LD_LIBRARY_PATH="$DRM_PREFIX/lib:$X11_PRIVATE_LIB"
+fi
+
+# Verify ALL required packages now to avoid serial Meson failures.
+while read -r module package; do
+    [[ -n "$module" ]] || continue
+    if ! pkg-config --exists "$module"; then
+        echo "MESA_REQUIRED_X11_MODULE_UNRESOLVED=$module; NO_MESA_BUILD"
+        pkg-config --print-errors --exists "$module" \
+            >>"$RUN/info/mesa-x11-dependencies.txt" 2>&1 || true
+        exit 5
+    fi
+    printf '%s=VERIFIED version=%s\n' "$module" \
+        "$(pkg-config --modversion "$module")" \
+        >>"$RUN/info/mesa-x11-dependencies.txt"
+done <<'X11_PRIVATE_RECHECK'
+xcb libxcb1-dev
+xcb-randr libxcb-randr0-dev
+x11 libx11-dev
+x11-xcb libx11-xcb-dev
+xcb-dri3 libxcb-dri3-dev
+xcb-present libxcb-present-dev
+xcb-shm libxcb-shm0-dev
+xcb-sync libxcb-sync-dev
+xcb-xfixes libxcb-xfixes0-dev
+xshmfence libxshmfence-dev
+libelf libelf-dev
+X11_PRIVATE_RECHECK
+if [[ "$(pkg-config --modversion libdrm)" != "2.4.133" ||
+      "$(pkg-config --modversion libdrm_amdgpu)" != "2.4.133" ]]; then
+    echo "MESA_PRIVATE_LIBDRM_LOST_AFTER_X11_SETUP"
+    exit 5
+fi
+# Check a real native link, not just Meson's pkg-config discovery.
+if ! printf 'int main(void){return 0;}\n' | \
+    cc -x c - -x none -o "$RUN/info/private-x11-link-test" \
+        $(pkg-config --cflags --libs \
+           xcb-randr xcb-dri3 xcb-present xcb-shm xcb-sync \
+           xcb-xfixes x11-xcb xshmfence libelf) \
+        >>"$RUN/build.log" 2>&1; then
+    echo "MESA_PRIVATE_X11_LINK_TEST_FAILED; NO_MESA_BUILD"
+    tail -n 45 "$RUN/build.log"
+    exit 5
+fi
+rm -f -- "$RUN/info/private-x11-link-test"
+echo "PRIVATE_MESA_X11_VULKAN_DEPENDENCIES=PASS"
+{
+    echo "BUILD_TOOLS_FROM_PRIVATE_DEBIAN_DEBS=YES"
+    echo "PRIVATE_X11_PKGCONFIG=$X11_PRIVATE_PC"
+    echo "PRIVATE_X11_LINKER_PATH=$X11_PRIVATE_LIB"
+    echo "OFFICIAL_MESA_SOURCE_CHANGED=NO"
+    echo "SYSTEM_PACKAGES_INSTALLED=NONE"
+} >>"$RUN/info/mesa-x11-dependencies.txt"
+
 # The preceding run stopped midway through Meson setup. Preserve the failed
 # configuration and its logs, then start a clean build directory. No completed
 # build or emulator checkpoint is ever replaced by this recovery path.
