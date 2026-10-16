@@ -9,10 +9,10 @@ TAG="gow-uffd-deferred-build-$(date +%Y%m%d-%H%M%S)"
 OUT="$LOGS/$TAG"
 mkdir -p "$OUT/original"
 BASE="eabc3f127b58585811d4a7fbdb4308beac99894c"
-HEAD="5e58458be41bd5b13effb21e262c6079f908fa5e"
+HEAD="dafe3c58057e9ffaec711dbcf56ad66425893c27"
 REMOTE="https://github.com/Chreece/shadPS4.git"
 REF="refs/heads/fix/linux-userfaultfd-deferred-gpu-invalidation-20261016"
-FILES=(src/video_core/page_manager.cpp src/video_core/page_manager.h src/video_core/renderer_vulkan/vk_rasterizer.cpp src/video_core/renderer_vulkan/vk_rasterizer.h)
+FILES=(src/video_core/page_manager.cpp src/video_core/page_manager.h src/video_core/renderer_vulkan/vk_rasterizer.cpp src/video_core/renderer_vulkan/vk_rasterizer.h src/core/libraries/gnmdriver/gnmdriver.cpp)
 BACKED=0
 BINBACK=0
 finish() {
@@ -21,16 +21,31 @@ finish() {
   set +e
   if [[ "$BACKED" == 1 ]]; then
     for f in "${FILES[@]}"; do
-      if [[ -f "$OUT/original/$f" ]] && ! cp -p "$OUT/original/$f" "$SRC/$f"; then
-        echo "SOURCE_RESTORE_FAILED=$f"
-        code=1
+      if [[ -f "$OUT/original/$f" ]]; then
+        if ! cp -p "$OUT/original/$f" "$SRC/$f"; then
+          echo "SOURCE_RESTORE_FAILED=$f"
+          code=1
+        else
+          # The build cache contains objects compiled against the trial patch.
+          # Make the restored source newer so later incremental builds MUST
+          # recompile these translation units instead of reusing stale objects.
+          touch -m "$SRC/$f"
+        fi
       fi
     done
   fi
   if [[ "$BINBACK" == 1 ]]; then
     if cp -p "$OUT/original.shadps4" "$BUILD/.shadps4.original.$$" &&
        mv -f "$BUILD/.shadps4.original.$$" "$BUILD/shadps4"; then
-      rm -f "$OUT/original.shadps4"
+      sha256sum "$BUILD/shadps4" >"$OUT/after-binary-sha256.txt"
+      if [[ "$(cut -d' ' -f1 "$OUT/after-binary-sha256.txt")" ==
+            "$(cut -d' ' -f1 "$OUT/before-binary-sha256.txt")" ]]; then
+        echo "ORIGINAL_BINARY_RESTORED=YES"
+        rm -f "$OUT/original.shadps4"
+      else
+        echo "ORIGINAL_BINARY_RESTORED=NO; BACKUP_RETAINED=$OUT/original.shadps4"
+        code=1
+      fi
     else
       echo "ORIGINAL_BINARY_RESTORE_FAILED; BACKUP_RETAINED=$OUT/original.shadps4"
       code=1
@@ -61,6 +76,13 @@ exec 9>"$LOGS/.gow-uffd-deferred-build.lock"
 flock -n 9 || { echo "ANOTHER_UFFD_BUILD_RUNNING"; exit 1; }
 [[ ( -d "$SRC/.git" || -f "$SRC/.git" ) && -d "$BUILD" ]] || { echo "EXACT_TEST_TREE_MISSING"; exit 1; }
 [[ -f "$BUILD/shadps4.native-userfaultfd-correct-v1" ]] || { echo "PROTECTED_UFFD_BASELINE_MISSING"; exit 1; }
+[[ -f "$BUILD/shadps4" && ! -L "$BUILD/shadps4" ]] || {
+  echo "ORIGINAL_BUILD_TARGET_MISSING_OR_SYMLINKED; REFUSING_TO_REPLACE"; exit 1;
+}
+[[ -f "$BUILD/CMakeCache.txt" ]] || { echo "CMAKE_CACHE_MISSING"; exit 1; }
+grep -Fxq "CMAKE_HOME_DIRECTORY:INTERNAL=$SRC" "$BUILD/CMakeCache.txt" || {
+  echo "CMAKE_SOURCE_DIR_MISMATCH; REFUSING_TO_RECONFIGURE"; exit 1;
+}
 echo "3467a28aa8e498088ddaf780b862f0c734511d6741a43ab94757de2e07b94bef  $BUILD/shadps4.native-userfaultfd-correct-v1" | sha256sum -c - | tee "$OUT/protected-baseline.txt"
 for f in "${FILES[@]}"; do
   [[ -f "$SRC/$f" && ! -L "$SRC/$f" ]] || { echo "UNSAFE_OR_MISSING=$f"; exit 1; }
@@ -68,14 +90,15 @@ for f in "${FILES[@]}"; do
   cp -p "$SRC/$f" "$OUT/original/$f"
 done
 BACKED=1
-if [[ -e "$BUILD/shadps4" ]]; then
-  cp -p "$BUILD/shadps4" "$OUT/original.shadps4"
-  BINBACK=1
-fi
+cp -p "$BUILD/shadps4" "$OUT/original.shadps4"
+sha256sum "$BUILD/shadps4" >"$OUT/before-binary-sha256.txt"
+BINBACK=1
 sha256sum "${FILES[@]/#/$SRC/}" >"$OUT/before-source-sha256.txt"
 echo "FETCHING_PINNED_GENERAL_EMULATOR_FIX=$HEAD"
 git -C "$SRC" -c http.version=HTTP/1.1 fetch --quiet --no-tags "$REMOTE" "$REF" >"$OUT/fetch.log" 2>&1
-git -C "$SRC" merge-base --is-ancestor "$HEAD" FETCH_HEAD || { echo "PINNED_FIX_COMMIT_NOT_IN_FETCHED_BRANCH"; exit 1; }
+git -C "$SRC" merge-base --is-ancestor "$HEAD" FETCH_HEAD || {
+  echo "PINNED_FIX_COMMIT_NOT_IN_FETCHED_BRANCH"; exit 1;
+}
 git -C "$SRC" cat-file -e "$BASE^{commit}"
 git -C "$SRC" diff "$BASE" "$HEAD" -- "${FILES[@]}" >"$OUT/deferred-fix.patch"
 [[ -s "$OUT/deferred-fix.patch" ]] || { echo "EMPTY_PATCH"; exit 1; }
@@ -89,5 +112,5 @@ CANDIDATE="$BUILD/shadps4.native-userfaultfd-deferred-$TAG"
 cp -p "$BUILD/shadps4" "$CANDIDATE"
 sha256sum "$CANDIDATE" >"$OUT/candidate-sha256.txt"
 printf 'CANDIDATE=%s\n' "$CANDIDATE" | tee "$OUT/candidate.txt"
-echo "EMULATOR_SOURCE_ONLY=GENERAL_LINUX_UFFD_DEFERRED_INVALIDATION"
+echo "EMULATOR_FIX=GENERAL_LINUX_UFFD_DEFERRED_INVALIDATION_AND_GPU_LIFECYCLE"
 echo "GAME_LAUNCHED=NO"
