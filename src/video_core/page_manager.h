@@ -36,6 +36,10 @@ public:
     explicit PageManager(Vulkan::Rasterizer* rasterizer);
     ~PageManager();
 
+    // Called before destroying GPU cache members, so queued fault resolutions
+    // cannot access destroyed cache state.
+    void DrainPendingInvalidations();
+
     /// Register a range of mapped gpu memory.
     void OnGpuMap(VAddr address, size_t size);
 

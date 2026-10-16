@@ -25,8 +25,11 @@
 #include "video_core/renderer_vulkan/vk_presenter.h"
 
 extern Frontend::WindowSDL* g_window;
-std::unique_ptr<Vulkan::Presenter> presenter;
+// Keep the GPU command processor alive until the presenter and its rasterizer
+// have drained deferred invalidations and destroyed their GPU resources.
+// Translation-unit statics are destroyed in reverse declaration order.
 std::unique_ptr<AmdGpu::Liverpool> liverpool;
+std::unique_ptr<Vulkan::Presenter> presenter;
 
 namespace Libraries::GnmDriver {
 
