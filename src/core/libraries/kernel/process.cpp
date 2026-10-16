@@ -93,6 +93,12 @@ void* PS4_SYSV_ABI sceKernelGetProcParam() {
     return linker->GetProcParam();
 }
 
+// Guest code may enter this HLE boundary with a stack alignment that differs
+// from the native x86-64 ABI. Align before calling host C++/fmt/SIMD code.
+// Restores the previously validated general fix c76e11c0 (not game-specific).
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+__attribute__((force_align_arg_pointer))
+#endif
 s32 PS4_SYSV_ABI sceKernelLoadStartModule(const char* moduleFileName, u64 args, const void* argp,
                                           u32 flags, const void* pOpt, s32* pRes) {
     // Guest pointers must be validated before passing them to fmt or std::string.
