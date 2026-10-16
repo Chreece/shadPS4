@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <unordered_map>
+#include <functional>
 #include <cstdlib>
 #include <boost/container/flat_map.hpp>
 #include <queue>
@@ -138,10 +139,15 @@ struct PassInfo {
             } else if (!a.IsImmediate() && !b.IsImmediate()) {
                 auto a_inst = a.Inst();
                 auto b_inst = b.Inst();
+                // Flat ordered containers require an irreflexive comparator.
+                // In particular, an instruction must never precede itself.
+                if (a_inst == b_inst) {
+                    return false;
+                }
                 auto a_block = a_inst->GetParent();
                 auto b_block = b_inst->GetParent();
                 if (a_block != b_block) {
-                    return a_block < b_block; // Sort by block address
+                    return std::less<IR::Block*>{}(a_block, b_block);
                 }
 
                 auto it = a_block->Instructions().iterator_to(*a_inst);
