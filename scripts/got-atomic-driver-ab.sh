@@ -34,7 +34,9 @@ finish() {
     trap - EXIT
     printf 'JOB_EXIT=%s\nRESULT_STATUS=%s\n' "$rc" "$STATUS" | tee -a "$RUN/info/status.txt"
     echo 'SSH=UNCHANGED SUNSHINE=UNCHANGED MOONLIGHT=NOT_USED ESDE=UNCHANGED'
-    (cd "$LOGS" && tar -czf "$ARCHIVE" "$(basename "$RUN")" "$NAME.log" "$NAME.sh") \
+    # Archive diagnostics only: never bundle the copied user profile, saves or caches.
+    (cd "$LOGS" && tar --exclude='*/user' -czf "$ARCHIVE" \
+         "$(basename "$RUN")" "$NAME.log" "$NAME.sh") \
         && { echo "REPORT=$ARCHIVE"; rm -rf -- "$RUN"; } \
         || echo "ARCHIVE_FAILED_RETAINED=$RUN"
 }
