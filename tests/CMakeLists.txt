@@ -578,3 +578,10 @@ target_include_directories(shadps4_spirv_phi_type_test PRIVATE ${CMAKE_SOURCE_DI
 target_compile_features(shadps4_spirv_phi_type_test PRIVATE cxx_std_23)
 target_link_libraries(shadps4_spirv_phi_type_test PRIVATE fmt::fmt)
 add_test(NAME spirv_phi_types COMMAND shadps4_spirv_phi_type_test)
+
+# Conservative IR provenance policy for host SRT lane reads (no GPU needed).
+add_executable(shadps4_srt_uniformity_test shader_recompiler/test_srt_uniformity.cpp)
+target_include_directories(shadps4_srt_uniformity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_srt_uniformity_test PRIVATE cxx_std_23)
+target_link_libraries(shadps4_srt_uniformity_test PRIVATE fmt::fmt magic_enum::magic_enum)
+add_test(NAME srt_uniformity COMMAND shadps4_srt_uniformity_test)

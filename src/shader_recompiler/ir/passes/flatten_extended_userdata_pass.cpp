@@ -18,6 +18,7 @@
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/passes/srt.h"
+#include "shader_recompiler/ir/passes/srt_uniformity.h"
 #include "shader_recompiler/ir/passes/srt_offset_codegen.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
@@ -491,6 +492,8 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     case IR::Opcode::GetUserData:
     case IR::Opcode::ReadConst:
     case IR::Opcode::ReadConstBuffer:
+    case IR::Opcode::ReadFirstLane:
+    case IR::Opcode::ReadLane:
     case IR::Opcode::IAdd32:
     case IR::Opcode::ISub32:
     case IR::Opcode::IMul32:
@@ -513,7 +516,17 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
 static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
                           const IR::Value& off_dw) {
     ASSERT(reg != ecx && reg != edx);
-    auto inst = off_dw.Inst();
+    if (off_dw.IsImmediate()) {
+        if (off_dw.Type() != IR::Type::U32) {
+            return false;
+        }
+        c.mov(reg, off_dw.U32());
+        return true;
+    }
+    auto* inst = off_dw.TryInst();
+    if (inst == nullptr) {
+        return false;
+    }
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
         c.mov(reg, ptr[rsi + (static_cast<u32>(inst->Arg(0).ScalarReg()) << 2)]);
@@ -525,6 +538,16 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
             return true;
         }
         return false;
+    case IR::Opcode::ReadLane:
+    case IR::Opcode::ReadFirstLane:
+        // The CPU-side SRT walker has no notion of GPU wave lanes.
+        // Only eliminate lane selection when the input can be proven
+        // wave-uniform from its entire SSA dependency chain.
+        if (!IsHostUniformSrtOffset(inst->Arg(0))) {
+            return false;
+        }
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
+        return true;
     case IR::Opcode::IAdd32:
         ABORT_ON_FAILURE(EmitComputeOffsetIAdd32(c, reg, pass_info, inst));
         return true;
@@ -827,7 +850,16 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
                     !IsAllowedOffsetInstruction(inst)) {
                     continue;
                 }
-                for (size_t arg = inst->NumArgs(); arg--;) {
+                const bool lane_read = inst->GetOpcode() == IR::Opcode::ReadLane ||
+                                       inst->GetOpcode() == IR::Opcode::ReadFirstLane;
+                if (lane_read && !IsHostUniformSrtOffset(inst->Arg(0))) {
+                    // Do not flatten a GPU lane-dependent expression.
+                    continue;
+                }
+                // Lane selector is not a resource dependency when the
+                // selected input is provably uniform.
+                const size_t num_args = lane_read ? 1 : inst->NumArgs();
+                for (size_t arg = num_args; arg--;) {
                     const IR::Value arg_value = inst->Arg(arg);
                     if (arg_value.IsImmediate()) {
                         continue;
