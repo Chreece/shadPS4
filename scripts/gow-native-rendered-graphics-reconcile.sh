@@ -131,6 +131,35 @@ STATUS="GRAFTING_GENERAL_GRAPHICS_SOURCE"
 for area in src/shader_recompiler src/video_core; do
   cp -a "$RENDER_SRC/$area/." "$SOURCE/$area/"
 done
+# Both headers are universal diagnostic dependencies of the rendered renderer.
+# They were untracked in the reference checkout, so copying only tracked
+# shader/video directories previously omitted them and broke the build.
+for header in gpu_cpu_probe.h frame_metrics.h; do
+  origin="$RENDER_SRC/src/common/$header"
+  target="$SOURCE/src/common/$header"
+  if [[ ! -f "$origin" || -L "$origin" ||
+        ! -r "$origin" ]]; then
+    STATUS="MISSING_RENDERED_COMMON_DEPENDENCY"
+    echo "Cannot verify generic renderer dependency: $origin"
+    exit 4
+  fi
+  if grep -Eq 'SHADPS4_GOW_|GOW_SRT_|CUSA34384|God of War|Ragnar|0xe83356c8|0xad0b8f1f|0x04691bd5' "$origin"; then
+    STATUS="NONUNIVERSAL_RENDERER_DEPENDENCY"
+    echo "Unapproved title-specific content in $origin"
+    exit 4
+  fi
+  if [[ -e "$target" ]]; then
+    cmp -s "$origin" "$target" || {
+      STATUS="EXISTING_COMMON_DEPENDENCY_CONFLICT"
+      echo "Refusing to overwrite an existing common header: $target"
+      exit 4
+    }
+  else
+    install -m 0644 "$origin" "$target"
+  fi
+  printf '%s  %s\n' "$(sha256sum "$target" | awk '{print $1}')" "$target" \
+    >> "$RUN/renderer-common-dependencies.sha256"
+done
 sha256sum "$SOURCE/src/core/cpu_id.cpp" > "$RUN/native-cpu-identity-sha256.txt"
 printf 'CPU source hashes AFTER renderer reconciliation:\n' > "$RUN/native-cpu-hashes.after"
 for path in src/core/cpu_id.cpp src/core/cpu_id_guest.h \
