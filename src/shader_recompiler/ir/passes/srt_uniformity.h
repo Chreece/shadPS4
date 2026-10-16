@@ -48,6 +48,7 @@ template <typename Value>
     case IR::Opcode::IMul32:
     case IR::Opcode::ShiftLeftLogical32:
     case IR::Opcode::ShiftRightLogical32:
+    case IR::Opcode::ShiftRightArithmetic32:
     case IR::Opcode::BitwiseAnd32:
     case IR::Opcode::BitwiseOr32:
     case IR::Opcode::BitwiseXor32:
