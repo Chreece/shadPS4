@@ -35,6 +35,20 @@ finish() {
   printf 'JOB_EXIT=%s\nSTATUS=%s\n' "$rc" "$STATUS" | tee "$RUN/info/final.txt"
   echo "SSH=UNCHANGED MOONLIGHT=NOT_USED SUNSHINE=UNCHANGED X11=UNCHANGED ESDE=UNCHANGED"
   # Include evidence only, never user profiles, saves or app credentials.
+  # GPU hang dumps can include huge VRAM snapshots. Preserve bounded shader,
+  # command-stream and text diagnostics without packaging user data or VRAM.
+  mkdir -p "$RUN/info/radv"
+  find "$RUN" -maxdepth 4 -type f -path '*/radv_dumps_*/*' \
+       -printf '%s %p\n' > "$RUN/info/radv-inventory.txt" 2>/dev/null || true
+  while IFS= read -r -d '' artifact; do
+    size=$(stat -c '%s' "$artifact" 2>/dev/null || echo 999999999)
+    [ "$size" -le 33554432 ] || continue
+    case "$artifact" in
+      *.spv|*.txt|*.log|*.json|*.ib|*.bin)
+        name="$(basename "$(dirname "$artifact")")_$(basename "$artifact")"
+        cp -n -- "$artifact" "$RUN/info/radv/$name" 2>/dev/null || true ;;
+    esac
+  done < <(find "$RUN" -maxdepth 4 -type f -path '*/radv_dumps_*/*' -print0 2>/dev/null)
   if tar -czf "$ARCHIVE" -C "$RUN" info screenshots game.log \
       -C "$LOGS" "$NAME.log" "$NAME.sh"; then
     rm -rf -- "$RUN"
@@ -63,7 +77,16 @@ if [ ! -d "$SOURCE/.git" ]; then
     -c http.version=HTTP/1.1 fetch --no-tags --no-recurse-submodules \
     https://github.com/Chreece/shadPS4.git \
     refs/heads/experiment/got-wave-gow-general-20261016
-  test "$(git -C "$SOURCE" rev-parse FETCH_HEAD)" = "$EXPERIMENT"
+  # Branch HEAD includes this test runner; the pinned source commit is its
+  # verified ancestor. Never confuse runner-only commits with source changes.
+  git -C "$SOURCE" cat-file -e "$EXPERIMENT^{commit}"
+  git -C "$SOURCE" merge-base --is-ancestor "$EXPERIMENT" FETCH_HEAD
+  unexpected=$(git -C "$SOURCE" diff --name-only "$EXPERIMENT" FETCH_HEAD |
+      grep -vx 'scripts/got-wave-gow-general-test.sh' || true)
+  if [ -n "$unexpected" ]; then
+    echo "UNEXPECTED_BRANCH_CHANGES_SINCE_PINNED_SOURCE=$unexpected"
+    exit 1
+  fi
   git -C "$SOURCE" -c submodule.recurse=false checkout --detach "$EXPERIMENT"
 fi
 
@@ -187,6 +210,26 @@ cmake --build "$BUILD" --target shadps4 --parallel 8
 test -x "$BIN"
 STATUS="BUILD_PASS"
 sha256sum "$BIN" | tee "$RUN/info/binary.sha256"
+
+# Compile against the actual emulator header, proving the BC5 normalization
+# without launching the game or needing optional GoogleTest downloads.
+cat > "$RUN/info/bc5-format-contract.cpp" <<'CPP'
+#include "video_core/amdgpu/pixel_format.h"
+using namespace AmdGpu;
+static_assert(RemapNumberFormat(NumberFormat::UbnormNz, DataFormat::FormatBc5) ==
+              NumberFormat::Unorm, "BC5 UbnormNz must use the normalized view");
+static_assert(MapNumberConversion(NumberFormat::UbnormNz, DataFormat::FormatBc5) ==
+              NumberConversion::UnormToUbnorm, "BC5 conversion must be preserved");
+CPP
+if c++ -std=c++23 -fsyntax-only -I"$SOURCE/src" -I"$SOURCE/externals/fmt/include" \
+        "$RUN/info/bc5-format-contract.cpp" >"$RUN/info/bc5-format-contract.log" 2>&1; then
+  echo "BC5_FORMAT_CONTRACT=PASS"
+else
+  echo "BC5_FORMAT_CONTRACT=FAIL"
+  cat "$RUN/info/bc5-format-contract.log"
+  STATUS="FORMAT_CONTRACT_FAILURE"
+  exit 1
+fi
 
 # A failing Vulkan preflight must never be reported as a successful emulator run.
 command -v vulkaninfo >/dev/null
