@@ -558,6 +558,57 @@ if ! printf 'int main(void){return 0;}\n' | \
 fi
 rm -f -- "$RUN/info/private-x11-link-test"
 echo "PRIVATE_MESA_X11_VULKAN_DEPENDENCIES=PASS"
+
+# Mesa's compiler generators may require Bison and Flex later in the build.
+# Debian reports these absent in the previous Meson log; satisfy both now.
+# Extract executable tools locally and set only worker-local search variables.
+for generator in bison flex; do
+    if command -v "$generator" >/dev/null 2>&1; then
+        echo "MESA_COMPILER_GENERATOR_PRESENT=$generator"
+        continue
+    fi
+    localdeb=""
+    for deb in "$TOOLS_ROOT/debs/$generator"_*.deb; do
+        [[ -f "$deb" ]] || continue
+        localdeb="$deb"
+        break
+    done
+    if [[ -z "$localdeb" ]]; then
+        echo "DOWNLOAD_PRIVATE_MESA_COMPILER_GENERATOR=$generator"
+        (
+            cd "$TOOLS_ROOT/debs"
+            apt-get -o Acquire::ForceIPv4=true download "$generator"
+        ) >>"$RUN/build.log" 2>&1 || {
+            echo "MESA_GENERATOR_DOWNLOAD_FAILED=$generator; NO_SYSTEM_INSTALL"
+            exit 5
+        }
+        for deb in "$TOOLS_ROOT/debs/$generator"_*.deb; do
+            [[ -f "$deb" ]] || continue
+            localdeb="$deb"
+            break
+        done
+    fi
+    [[ -n "$localdeb" && -f "$localdeb" ]] || {
+        echo "MESA_GENERATOR_DEB_MISSING=$generator"
+        exit 5
+    }
+    dpkg-deb -x "$localdeb" "$TOOLS_ROOT" >>"$RUN/build.log" 2>&1 || {
+        echo "MESA_GENERATOR_EXTRACT_FAILED=$generator"
+        exit 5
+    }
+done
+export PATH="$TOOLS_ROOT/usr/bin:$PATH"
+if [[ -d "$TOOLS_ROOT/usr/share/bison" ]]; then
+    export BISON_PKGDATADIR="$TOOLS_ROOT/usr/share/bison"
+fi
+for generator in bison flex; do
+    if ! command -v "$generator" >/dev/null 2>&1 ||
+       ! "$generator" --version >>"$RUN/info/mesa-generators.txt" 2>&1; then
+        echo "MESA_GENERATOR_VERIFICATION_FAILED=$generator"
+        exit 5
+    fi
+done
+echo "MESA_BISON_FLEX_BUILD_GENERATORS=PASS"
 {
     echo "BUILD_TOOLS_FROM_PRIVATE_DEBIAN_DEBS=YES"
     echo "PRIVATE_X11_PKGCONFIG=$X11_PRIVATE_PC"
