@@ -27,6 +27,13 @@ mkdir -p "$OUT/screenshots"
 finish() {
   local result=$?
   trap - EXIT
+  # If the game has already exited, make sure a possible-stall snapshot is
+  # finished writing BEFORE compressing evidence. Never wait for a watcher
+  # while an active guest emulator is still running.
+  if [[ -n "$MONITOR_PID" && -n "$GAME_PID" ]] &&
+     ! kill -0 "$GAME_PID" 2>/dev/null; then
+    wait "$MONITOR_PID" || true
+  fi
   {
     printf 'PHASE=%s\nSCRIPT_EXIT=%s\nBACKEND=%s\n' "$PHASE" "$result" "$BACKEND"
     printf 'BIN_SHA256=%s\nNO_REBUILD=YES\nPERF_SAMPLING=OFF\n' "$BIN_SHA"
@@ -263,6 +270,9 @@ if [[ "$BACKEND" != USERFAULTFD ]]; then
   echo "Userfaultfd did not become active; this identifies the first blocker."
   echo "Exit GoW normally to finalize the diagnostic archive."
   set +e;wait "$GAME_PID";set -e
+  if [[ -n "$MONITOR_PID" ]]; then
+    wait "$MONITOR_PID" || true
+  fi
   exit 0
 fi
 
@@ -275,6 +285,12 @@ if ! IFS= read -r answer </dev/tty; then
 fi
 if [[ "$(readlink -f "/proc/$GAME_PID/exe" 2>/dev/null || true)" != "$BIN" ]]; then
   PHASE="GAME_EXITED_BEFORE_MEASUREMENT"
+  # It is still valuable to save the frozen-thread snapshot after the
+  # user exits. Do not count this as a valid 45-second FPS measurement.
+  set +e; wait "$GAME_PID"; set -e
+  if [[ -n "$MONITOR_PID" ]]; then
+    wait "$MONITOR_PID" || true
+  fi
   exit 4
 fi
 PHASE="MEASURING_45_SECONDS_NO_PERF"
