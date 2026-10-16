@@ -229,6 +229,39 @@ def find_capture():
                 return f
     return None
 
+def capture_gameplay_failure_evidence(result):
+    """Preserve the child runner's failure evidence without a large archive."""
+    if not GAME_LOG.is_file():
+        return
+    try:
+        entries=GAME_LOG.read_text(errors="replace").splitlines()
+        for row in entries:
+            if not row.startswith("UPLOAD="):
+                continue
+            file=Path(row[7:].strip())
+            if (not file.is_file() or file.is_symlink() or
+                file.parent.resolve()!=LOGROOT.resolve() or
+                not file.name.startswith("gow-auto-gameplay-")):
+                continue
+            result["gameplay_archive"]=str(file)
+            with tarfile.open(file,"r:gz") as archive:
+                results=[m for m in archive.getmembers()
+                         if m.isfile() and m.name.endswith("/result.json")
+                         and m.size<100000]
+                consoles=[m for m in archive.getmembers()
+                          if m.isfile() and m.name.endswith("/console.log")
+                          and m.size<300000000]
+                if len(results)==1:
+                    raw=archive.extractfile(results[0]).read()
+                    (OUT/"gameplay-result.json").write_bytes(raw)
+                    result["gameplay_result"]=json.loads(raw)
+                if len(consoles)==1:
+                    raw=archive.extractfile(consoles[0]).read()
+                    (OUT/"gameplay-console-tail.log").write_bytes(raw[-18000:])
+            break
+    except BaseException as exc:
+        result["capture_evidence_warning"]=repr(exc)
+
 def package(result):
     (OUT/"result.json").write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
     out=LOGROOT/(OUT.name+".tar.gz")
@@ -312,6 +345,7 @@ def main():
         if stream:
             stream.close()
         result["binary_unchanged"]=BINARY.is_file() and file_hash(BINARY)==BINARY_SHA
+        capture_gameplay_failure_evidence(result)
         package(result)
     return exit_code
 
