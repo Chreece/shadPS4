@@ -288,6 +288,111 @@ echo "PRIVATE_MESA_PYTHON_BUILD_DEPENDENCIES=PASS"
     grep -A 6 '^CANDIDATE=' "$RUN/info/mesa-python-preflight.txt" || true
 } >>"$RUN/info/build-tool-provenance.txt"
 
+# Mesa 26.2 RADV requires libdrm >= 2.4.133; Debian Trixie provides
+# 2.4.124. Build official 2.4.133 privately and use it for this Meson build
+# and its runtime only. Never modify system libdrm or package manager state.
+DRM_VERSION="2.4.133"
+DRM_SHA256="fc68f9d0ba2ea63c9432a299e14fea09fad7a8a66e8039fcd7802ca59f77b4f5"
+DRM_ROOT="$MESA_WORK/libdrm-upstream-$DRM_VERSION"
+DRM_ARCHIVE="$DRM_ROOT/libdrm-$DRM_VERSION.tar.xz"
+DRM_SOURCE="$DRM_ROOT/src/libdrm-$DRM_VERSION"
+DRM_BUILD="$DRM_ROOT/build"
+DRM_PREFIX="$DRM_ROOT/install"
+{
+    echo "SYSTEM_LIBDRM_VERSION_BEFORE=$(pkg-config --modversion libdrm 2>/dev/null || echo absent)"
+    echo "MINIMUM_MESA26_AMDGPU_LIBDRM=2.4.133"
+    echo "PRIVATE_LIBDRM_SOURCE=https://dri.freedesktop.org/libdrm/libdrm-$DRM_VERSION.tar.xz"
+    echo "PRIVATE_LIBDRM_SHA256=$DRM_SHA256"
+} >"$RUN/info/libdrm-provenance.txt"
+mkdir -p "$DRM_ROOT/src"
+if [[ ! -f "$DRM_ARCHIVE" ]]; then
+    echo "DOWNLOAD_OFFICIAL_LIBDRM_$DRM_VERSION_IPV4"
+    tmp="$DRM_ARCHIVE.$BASHPID.part"
+    curl -4 -fLsS --retry 4 --retry-delay 3 --connect-timeout 20 \
+        --max-time 400 -o "$tmp" \
+        "https://dri.freedesktop.org/libdrm/libdrm-$DRM_VERSION.tar.xz" \
+        >>"$RUN/build.log" 2>&1 || {
+        rm -f -- "$tmp"
+        echo "LIBDRM_SOURCE_DOWNLOAD_FAILED; NO_SYSTEM_CHANGES"
+        exit 5
+    }
+    echo "$DRM_SHA256  $tmp" | sha256sum -c - >>"$RUN/build.log" 2>&1 || {
+        rm -f -- "$tmp"
+        echo "LIBDRM_SOURCE_SHA_MISMATCH; REFUSED"
+        exit 5
+    }
+    mv -- "$tmp" "$DRM_ARCHIVE"
+fi
+echo "$DRM_SHA256  $DRM_ARCHIVE" | sha256sum -c - >>"$RUN/build.log" 2>&1 || {
+    echo "PREVIOUS_LIBDRM_SOURCE_SHA_MISMATCH; REFUSED"
+    exit 5
+}
+if [[ ! -d "$DRM_SOURCE" ]]; then
+    echo "EXTRACT_VERIFIED_OFFICIAL_LIBDRM_$DRM_VERSION"
+    tar -xf "$DRM_ARCHIVE" -C "$DRM_ROOT/src" >>"$RUN/build.log" 2>&1
+fi
+[[ -f "$DRM_SOURCE/meson.build" ]] || {
+    echo "LIBDRM_SOURCE_TREE_INVALID; NOT_LAUNCHED"
+    exit 5
+}
+if [[ -d "$DRM_BUILD" && ! -f "$DRM_BUILD/build.ninja" ]]; then
+    saved="$DRM_ROOT/failed-meson-setup-$(date +%Y%m%d-%H%M%S)-$BASHPID"
+    mv -- "$DRM_BUILD" "$saved"
+    echo "INCOMPLETE_LIBDRM_MESON_SETUP_SAVED=$saved"
+fi
+if [[ ! -f "$DRM_BUILD/build.ninja" ]]; then
+    echo "CONFIGURE_PRIVATE_LIBDRM_$DRM_VERSION"
+    meson setup "$DRM_BUILD" "$DRM_SOURCE" \
+        --prefix="$DRM_PREFIX" --libdir=lib -Dbuildtype=release \
+        -Damdgpu=enabled -Dintel=disabled -Dradeon=disabled \
+        -Dnouveau=disabled -Dvmwgfx=disabled \
+        -Dtests=false -Dvalgrind=disabled -Dman-pages=disabled \
+        -Dcairo-tests=disabled \
+        >>"$RUN/build.log" 2>&1 || {
+        echo "LIBDRM_PRIVATE_CONFIGURE_FAILED; NO_SYSTEM_CHANGES"
+        exit 5
+    }
+fi
+echo "BUILD_PRIVATE_LIBDRM_$DRM_VERSION"
+meson compile -C "$DRM_BUILD" -j 4 >>"$RUN/build.log" 2>&1 || {
+    echo "LIBDRM_PRIVATE_BUILD_FAILED; NO_SYSTEM_CHANGES"
+    exit 5
+}
+meson install -C "$DRM_BUILD" --no-rebuild >>"$RUN/build.log" 2>&1 || {
+    echo "LIBDRM_PRIVATE_INSTALL_FAILED; NO_SYSTEM_CHANGES"
+    exit 5
+}
+[[ -f "$DRM_PREFIX/lib/pkgconfig/libdrm.pc" &&
+   -f "$DRM_PREFIX/lib/pkgconfig/libdrm_amdgpu.pc" ]] || {
+    echo "PRIVATE_LIBDRM_PC_FILES_NOT_FOUND; NO_GAME_LAUNCH"
+    exit 5
+}
+if [[ -n "$(printenv PKG_CONFIG_PATH || true)" ]]; then
+    export PKG_CONFIG_PATH="$DRM_PREFIX/lib/pkgconfig:$(printenv PKG_CONFIG_PATH)"
+else
+    export PKG_CONFIG_PATH="$DRM_PREFIX/lib/pkgconfig"
+fi
+if [[ -n "$(printenv LD_LIBRARY_PATH || true)" ]]; then
+    export LD_LIBRARY_PATH="$DRM_PREFIX/lib:$(printenv LD_LIBRARY_PATH)"
+else
+    export LD_LIBRARY_PATH="$DRM_PREFIX/lib"
+fi
+for module in libdrm libdrm_amdgpu; do
+    version="$(pkg-config --modversion "$module" 2>/dev/null || true)"
+    if [[ "$version" != "$DRM_VERSION" ]]; then
+        echo "WRONG_PRIVATE_LIBDRM_VERSION=$module/$version; NO_GAME_LAUNCH"
+        exit 5
+    fi
+    echo "$module=$version" >>"$RUN/info/libdrm-provenance.txt"
+done
+echo "PRIVATE_LIBDRM_VERSION_VERIFIED=$DRM_VERSION"
+{
+    echo "PRIVATE_LIBDRM_PREFIX=$DRM_PREFIX"
+    echo "PRIVATE_LIBDRM_PKGCONFIG=$DRM_PREFIX/lib/pkgconfig"
+    echo "PRIVATE_LIBDRM_RUNTIME_PATH=$DRM_PREFIX/lib"
+    echo "SYSTEM_LIBDRM_UNMODIFIED=YES"
+} >>"$RUN/info/libdrm-provenance.txt"
+
 # The preceding run stopped midway through Meson setup. Preserve the failed
 # configuration and its logs, then start a clean build directory. No completed
 # build or emulator checkpoint is ever replaced by this recovery path.
