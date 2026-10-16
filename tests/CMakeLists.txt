@@ -561,3 +561,13 @@ add_executable(shadps4_kernel_module_filename_test kernel/test_module_filename.c
 target_include_directories(shadps4_kernel_module_filename_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(shadps4_kernel_module_filename_test PRIVATE cxx_std_23)
 add_test(NAME kernel_module_filename COMMAND shadps4_kernel_module_filename_test)
+
+# Host-independent validation for SRT FindILsb32 JIT offset lowering.
+# Other architectures keep the generic shader code and skip x86 execution.
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    add_executable(shadps4_srt_findilsb32_test shader_recompiler/test_srt_findilsb32.cpp)
+    target_include_directories(shadps4_srt_findilsb32_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_features(shadps4_srt_findilsb32_test PRIVATE cxx_std_23)
+    target_link_libraries(shadps4_srt_findilsb32_test PRIVATE xbyak::xbyak)
+    add_test(NAME srt_findilsb32 COMMAND shadps4_srt_findilsb32_test)
+endif()
