@@ -178,7 +178,7 @@ cmake --build "$BUILD" --target shadps4 --parallel "$JOBS"
 test -x "$CANDIDATE"
 sha256sum "$CANDIDATE" > "$RUN/candidate-sha256.txt"
 if command -v nm >/dev/null 2>&1 && command -v objdump >/dev/null 2>&1; then
-  symbol="$(nm -C "$CANDIDATE" | awk 'index($0," T Libraries::Kernel::sceKernelLoadStartModule(") || index($0," t Libraries::Kernel::sceKernelLoadStartModule(") {print $1;exit}')"
+  symbol="$(nm -C "$CANDIDATE" | awk 'index($0," T Libraries::Kernel::sceKernelLoadStartModule(") || index($0," t Libraries::Kernel::sceKernelLoadStartModule(") {if (!first) first=$1} END {print first}')"
   if [[ -z "$symbol" ]]; then
     STATUS="HLE_STACK_ALIGNMENT_NOT_VERIFIED"
     echo "Cannot verify HLE guest-to-host stack alignment in built binary."
