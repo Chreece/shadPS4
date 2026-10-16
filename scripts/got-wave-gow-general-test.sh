@@ -370,6 +370,7 @@ STATUS="RUNTIME_CAPTURED"
 echo "PROOF_COMPLETE=$RUN/info/result.txt"
 WORKER
 chmod +x "$JOB"
+bash -n "$JOB" || { echo "WORKER_SCRIPT_SYNTAX_FAILURE"; exit 1; }
 nohup bash "$JOB" "$NAME" >"$LOGS/$NAME.log" 2>&1 </dev/null &
 printf 'JOB_PID=%s\nMONITOR=tail -f %s\nREPORT=%s.tar.gz\nSSH_SESSION=UNCHANGED\nMOONLIGHT=NOT_USED\n' \
   "$!" "$LOGS/$NAME.log" "$LOGS/$NAME"
