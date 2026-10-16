@@ -35,7 +35,8 @@ int main() {
     for (unsigned i=0; i<25000; ++i) {
         const auto a=std::uint32_t(rng()),b=std::uint32_t(rng());
         const auto index=std::uint32_t(rng());
-        const auto pgm=rng()&0xffffffffffULL,mask=std::uint32_t(rng());
+        const std::uint64_t pgm = rng() & 0xffffffffffULL;
+        const std::uint32_t mask = std::uint32_t(rng());
         const auto actual=SBufferGuestDwordAddress(a,b,index,pgm,mask);
         const auto expected=(((std::uint64_t(a) |
             (std::uint64_t((b|mask)&0xffu)<<32)) + pgm) & 0xffffffffffULL) +
