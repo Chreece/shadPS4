@@ -10,6 +10,7 @@
 #include <spirv/unified1/spirv.hpp11>
 
 #include "gcn_test_runner.hpp"
+#include "video_core/renderer_vulkan/vk_image_descriptor_contract.h"
 #include "instructions.hpp"
 #include "translator.hpp"
 #include "shader_recompiler/ir/passes/srt_offset_preflight.h"
@@ -27,6 +28,22 @@ protected:
         gcn_test::Runner::DestroyInstance();
     }
 };
+
+TEST_F(GcnTest, vulkan_image_descriptor_uses_shader_access_not_stale_cache) {
+    // A guest T# may become unmapped while the rasterizer's binding slot
+    // retains the previous draw's storage-image type.
+    const auto stale_cache_type = vk::DescriptorType::eStorageImage;
+    const auto sampled_layout = Vulkan::ShaderImageDescriptorType(false);
+    const auto sampled_push = Vulkan::ShaderImageDescriptorType(false);
+    EXPECT_NE(stale_cache_type, sampled_layout);
+    EXPECT_EQ(sampled_layout, sampled_push);
+    EXPECT_EQ(sampled_push, vk::DescriptorType::eSampledImage);
+
+    const auto storage_layout = Vulkan::ShaderImageDescriptorType(true);
+    const auto storage_push = Vulkan::ShaderImageDescriptorType(true);
+    EXPECT_EQ(storage_layout, storage_push);
+    EXPECT_EQ(storage_push, vk::DescriptorType::eStorageImage);
+}
 
 TEST_F(GcnTest, srt_phi_offset_deferred_without_native_codegen) {
     Common::ObjectPool<Shader::IR::Inst> pool{128};
