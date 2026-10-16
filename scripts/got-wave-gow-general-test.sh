@@ -44,7 +44,7 @@ finish() {
     size=$(stat -c '%s' "$artifact" 2>/dev/null || echo 999999999)
     [ "$size" -le 33554432 ] || continue
     case "$artifact" in
-      *.spv|*.txt|*.log|*.json|*.ib|*.bin)
+      *.spv|*.txt|*.log|*.json|*.ib)
         name="$(basename "$(dirname "$artifact")")_$(basename "$artifact")"
         cp -n -- "$artifact" "$RUN/info/radv/$name" 2>/dev/null || true ;;
     esac
