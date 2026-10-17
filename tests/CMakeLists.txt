@@ -561,3 +561,9 @@ add_executable(shadps4_sparse_protection_test page_manager/test_sparse_protectio
 target_include_directories(shadps4_sparse_protection_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_features(shadps4_sparse_protection_test PRIVATE cxx_std_23)
 add_test(NAME sparse_protection COMMAND shadps4_sparse_protection_test)
+
+// Native scalar S_BUFFER_LOAD guest-address arithmetic regression.
+// This test does not require a game or GPU.
+add_executable(shadps4_srt_sbuffer_address_test shader_recompiler/test_srt_sbuffer_guest_address.cpp)
+target_compile_features(shadps4_srt_sbuffer_address_test PRIVATE cxx_std_23)
+add_test(NAME srt_sbuffer_address COMMAND shadps4_srt_sbuffer_address_test)

@@ -255,6 +255,26 @@ static inline void SetFlatbufOffset(IR::Inst* inst, u16 offset) {
     UNREACHABLE_MSG("Instruction not supported");
 }
 
+// Both GCN S_LOAD and S_BUFFER_LOAD are scalar, wave-uniform reads.
+// A V# descriptor has four dwords, but only its 40-bit base address
+// participates in scalar memory addressing. Unknown/divergent IR stays on
+// the existing GPU guest-memory path. No descriptor values are synthesized.
+static bool CanInlineScalarRead(const IR::Inst* inst) {
+    const IR::Opcode opcode = inst->GetOpcode();
+    if (opcode != IR::Opcode::ReadConst && opcode != IR::Opcode::ReadConstBuffer) {
+        return false;
+    }
+    if (GetFlatbufOffset(inst) != 0) {
+        return false;
+    }
+    const IR::Inst* const base = inst->Arg(0).TryInst();
+    const IR::Opcode expected = opcode == IR::Opcode::ReadConst
+                                    ? IR::Opcode::CompositeConstructU32x2
+                                    : IR::Opcode::CompositeConstructU32x4;
+    return base && base->GetOpcode() == expected &&
+           IsHostUniformSrtOffset(IR::Value{const_cast<IR::Inst*>(inst)});
+}
+
 static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
                           const IR::Value& off_dw);
 static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
@@ -607,12 +627,10 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
             c.mov(reg, ptr[rsi + (offset << 2)]);
             return true;
         }
-        // An unflattened ReadConst may still be a genuine scalar,
-        // wave-uniform guest read. Materialize its value directly in the
-        // native walker instead of requiring a pre-existing flatbuf slot.
-        if (inst->GetOpcode() == IR::Opcode::ReadConst &&
-            IsHostUniformSrtOffset(IR::Value{inst}) &&
-            EmitInlineReadConst(c, reg, pass_info, inst)) {
+        // Scalar S_LOAD and S_BUFFER_LOAD share the native guest-memory
+        // walker only when the complete source address and index are proven
+        // wave-uniform. Otherwise preserve shader-side address translation.
+        if (CanInlineScalarRead(inst) && EmitInlineReadConst(c, reg, pass_info, inst)) {
             return true;
         }
         static const bool audit = [] {
@@ -696,15 +714,19 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
     }
 }
 
-// Evaluate a wave-uniform ReadConst using the same guest mapped address
-// and recoverable MOV instruction shape as the existing SRT walker. Nested
-// scalar ReadConst dependencies are supported by ComputeOffset recursion;
-// cyclic/divergent expressions are rejected by IsHostUniformSrtOffset.
+// Evaluate genuine wave-uniform scalar S_LOAD and S_BUFFER_LOAD from the
+// original guest pointer, using the existing fault-recoverable SRT walker.
+// Nested scalar dependencies are supported; divergent and cyclic expressions
+// remain on the GPU path without guessed values.
 static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
                                 PassInfo& pass_info, IR::Inst* inst) {
-    ASSERT(inst->GetOpcode() == IR::Opcode::ReadConst);
+    const bool is_sbuffer = inst->GetOpcode() == IR::Opcode::ReadConstBuffer;
+    ASSERT(inst->GetOpcode() == IR::Opcode::ReadConst || is_sbuffer);
     IR::Inst* const base = inst->Arg(0).TryInst();
-    if (!base || base->GetOpcode() != IR::Opcode::CompositeConstructU32x2) {
+    const IR::Opcode expected = is_sbuffer ? IR::Opcode::CompositeConstructU32x4
+                                          : IR::Opcode::CompositeConstructU32x2;
+    if (!base || base->GetOpcode() != expected ||
+        !IsHostUniformSrtOffset(IR::Value{inst})) {
         return false;
     }
 
@@ -723,16 +745,23 @@ static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
         c.setSize(checkpoint);
         return false;
     }
+    if (is_sbuffer) {
+        // S# / V# dword 1 contains just eight address bits in [7:0].
+        // The remaining bits encode buffer metadata, not address bits.
+        c.and_(reg, 0xffu);
+    }
     c.shl(reg.cvt64(), 32);
     c.or_(rax, reg.cvt64());
 
-    // The GCN ReadConst index is a dword offset, not a byte offset.
+    // GCN SMRD indices are dword offsets, not byte offsets.
     if (!ComputeOffset(c, reg, pass_info, inst->Arg(1))) {
         c.setSize(checkpoint);
         return false;
     }
     c.mov(r10d, reg);
-    SrtCodegen::EmitGuestReadDword(c); // returns exact guest dword in r10d
+    SrtCodegen::EmitGuestReadDword(
+        c, is_sbuffer ? SrtCodegen::SBufferGuestAddressMask
+                      : SrtCodegen::ScalarGuestAddressMask); // returns guest dword in r10d
     c.mov(reg, r10d);
 
     c.pop(r11);
@@ -882,13 +911,10 @@ static void GenerateSrtProgram(
     // Not every scalar descriptor chain has an SGPR-root entry in the
     // existing table planner. Unflattened but wave-uniform ReadConst reads
     // still require a walker to populate their runtime descriptor values.
-    const bool has_inline_reads = std::ranges::any_of(all_readconsts, [](IR::Inst* inst) {
-        const IR::Inst* const base = inst->Arg(0).TryInst();
-        return inst->GetOpcode() == IR::Opcode::ReadConst &&
-               GetFlatbufOffset(inst) == 0 && base &&
-               base->GetOpcode() == IR::Opcode::CompositeConstructU32x2 &&
-               IsHostUniformSrtOffset(IR::Value{inst});
-    });
+    const bool has_inline_reads =
+        std::ranges::any_of(all_readconsts, [](IR::Inst* read) {
+            return CanInlineScalarRead(read);
+        });
     // Optional, general-purpose explanation for shader descriptor reads that
     // cannot be evaluated by the CPU-side walker. These remain GPU reads;
     // this audit never changes guest operations or resource values.
@@ -899,7 +925,8 @@ static void GenerateSrtProgram(
     if (inline_audit) {
         u32 examined{}, eligible{}, not_uniform{}, wrong_base{}, already_flattened{}, samples{};
         for (IR::Inst* read : all_readconsts) {
-            if (read->GetOpcode() != IR::Opcode::ReadConst) {
+            if (read->GetOpcode() != IR::Opcode::ReadConst &&
+                read->GetOpcode() != IR::Opcode::ReadConstBuffer) {
                 continue;
             }
             if (GetFlatbufOffset(read) != 0) {
@@ -908,14 +935,18 @@ static void GenerateSrtProgram(
             }
             ++examined;
             const IR::Inst* const base = read->Arg(0).TryInst();
-            const bool pair = base && base->GetOpcode() == IR::Opcode::CompositeConstructU32x2;
+            const IR::Opcode expected =
+                read->GetOpcode() == IR::Opcode::ReadConstBuffer
+                    ? IR::Opcode::CompositeConstructU32x4
+                    : IR::Opcode::CompositeConstructU32x2;
+            const bool correct_base = base && base->GetOpcode() == expected;
             const bool uniform = IsHostUniformSrtOffset(IR::Value{read});
-            wrong_base += !pair;
+            wrong_base += !correct_base;
             not_uniform += !uniform;
-            eligible += pair && uniform;
+            eligible += correct_base && uniform;
             if (samples++ < 8) {
-                const IR::Value low = pair ? base->Arg(0) : IR::Value{};
-                const IR::Value high = pair ? base->Arg(1) : IR::Value{};
+                const IR::Value low = correct_base ? base->Arg(0) : IR::Value{};
+                const IR::Value high = correct_base ? base->Arg(1) : IR::Value{};
                 const IR::Value index = read->Arg(1);
                 const IR::Inst* const low_inst = low.TryInst();
                 const IR::Inst* const high_inst = high.TryInst();
@@ -925,7 +956,7 @@ static void GenerateSrtProgram(
                          "base_op={} lo_op={} hi_op={} index_op={} "
                          "lo_immediate={} hi_immediate={} index_immediate={} "
                          "index_value={}",
-                         info.pgm_hash, info.hw_stage, pair && uniform,
+                         info.pgm_hash, info.hw_stage, correct_base && uniform,
                          base ? IR::NameOf(base->GetOpcode()) : "immediate",
                          low_inst ? IR::NameOf(low_inst->GetOpcode()) : "immediate",
                          high_inst ? IR::NameOf(high_inst->GetOpcode()) : "immediate",
@@ -1000,16 +1031,14 @@ static void GenerateSrtProgram(
                   global_result.pending);
     }
 
-    // The original host SRT root graph cannot represent every address
-    // expression. Late-lower any remaining wave-uniform ReadConst from its
-    // *actual* guest pointer, storing the result in an ordinary flatbuf slot.
+    // The root graph cannot represent every scalar address expression.
+    // Late-lower remaining wave-uniform S_LOAD / S_BUFFER_LOAD results from
+    // their real guest pointers into flatbuffer slots, with no fake SHARPs.
     // This restores real shader T#/S# source words without ever manufacturing
     // a resource or changing non-uniform shader evaluation.
     u32 late_reads{};
     for (IR::Inst* read : all_readconsts) {
-        if (read->GetOpcode() != IR::Opcode::ReadConst ||
-            GetFlatbufOffset(read) != 0 ||
-            !IsHostUniformSrtOffset(IR::Value{read})) {
+        if (!CanInlineScalarRead(read)) {
             continue;
         }
         IR::Inst* const canonical = pass_info.DeduplicateInstruction(read);
