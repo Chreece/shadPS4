@@ -8,6 +8,7 @@ ORIGINAL_SRC="$ORIGINAL_ROOT/source"
 PROVEN="$ORIGINAL_ROOT/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 OBSERVER="${1:?pinned observer path required}"
 RESTORER="${2:?pinned source-preserving graphics restoration helper required}"
+SUPPORT="${3:?pinned UFFD support-file helper required}"
 PROVEN_SHA=e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa
 SRC="$ROOT/source"
 BUILD="$ROOT/build"
@@ -102,9 +103,9 @@ trap 'finish $?' EXIT
 exec 9>"$LOGS/.gow-uffd-deferred-build.lock"
 flock -n 9 || { echo "ANOTHER_UFFD_BUILD_RUNNING"; exit 1; }
 [[ ( -d "$SRC/.git" || -f "$SRC/.git" ) && -d "$BUILD" ]] || { echo "EXACT_TEST_TREE_MISSING"; exit 1; }
-[[ -f "$PROVEN" && -f "$OBSERVER" && -f "$RESTORER" ]] || { echo "PROVEN_BINARY_OR_PINNED_TOOLS_MISSING"; exit 1; }
+[[ -f "$PROVEN" && -f "$OBSERVER" && -f "$RESTORER" && -f "$SUPPORT" ]] || { echo "PROVEN_BINARY_OR_PINNED_TOOLS_MISSING"; exit 1; }
 echo "$PROVEN_SHA  $PROVEN" | sha256sum -c - || { echo "PROVEN_GAMEPLAY_SHA_MISMATCH"; exit 1; }
-python3 -m py_compile "$OBSERVER" "$RESTORER"
+python3 -m py_compile "$OBSERVER" "$RESTORER" "$SUPPORT"
 [[ "$SRC" != "$ORIGINAL_SRC" ]] && [[ "$BUILD" != "$ORIGINAL_ROOT/build" ]] || { echo "UNSAFE_BUILD_TARGET_EQUALS_PROVEN"; exit 1; }
 [[ -f "$BUILD/shadps4" && ! -L "$BUILD/shadps4" ]] || {
   echo "ORIGINAL_BUILD_TARGET_MISSING_OR_SYMLINKED; REFUSING_TO_REPLACE"; exit 1;
@@ -216,10 +217,13 @@ PINNED_UFFD_BLOBS
 [[ "$(wc -l < "$OUT/pinned-uffd-blob-checks.txt")" -eq 5 ]] || {
   echo "PINNED_UFFD_BLOB_COUNT_WRONG"; exit 1;
 }
+# The full-file UFFD source replacement used previously discarded working
+# shader/graphics corrections in three other files. Keep the exact proven
+# originals of GnmDriver, PageManager header, Rasterizer header, and renderer.
+# Only page_manager.cpp has a matching historical preimage, so stage it whole.
 while read -r blob file; do
-  if [[ "$file" == "src/video_core/renderer_vulkan/vk_rasterizer.cpp" ]]; then
-    # Preserve the actual proven renderer from ORIGINAL_SRC, not an older whole-file snapshot.
-    echo "HISTORICAL_UFFD_CALLBACK_BLOB=$blob; BASE_RENDERER_FROM_ORIGINAL_PROVEN_SOURCE=YES" > "$OUT/renderer-reconstruction.txt"
+  if [[ "$file" != "src/video_core/page_manager.cpp" ]]; then
+    printf 'PRESERVED_ORIGINAL_FOR_TARGETED_UFFD_OVERLAY=%s BLOB=%s\n' "$file" "$blob" >> "$OUT/preserved-graphics-files.txt"
     continue
   fi
   cp -p -- "$OUT/pinned-uffd-sources/$file" "$SRC/$file"
@@ -231,11 +235,15 @@ done < "$OUT/pinned-uffd-blob-checks.txt"
 [[ "$(sha256sum "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" | cut -d' ' -f1)" == "dd2a54cb630d118ea273fc92ac90af611ac2b84e9ec2cca7e65c357101818f58" ]] || {
   echo "ISOLATED_RENDERER_NOT_MATCHING_PROVEN_GRAPHICS"; exit 1;
 }
-echo "UFFD_FOUR_SUPPORT_FILES_REPLAYED; PROVEN_RENDERER_RETAINED=YES"
 grep -Fq "pending_gpu_invalidations" "$SRC/src/video_core/page_manager.cpp" || {
   echo "DEFERRED_UFFD_HANDLER_NOT_STAGED"; exit 1;
 }
-echo "PINNED_UFFD_BLOBS=SHA_MATCHED; FOUR_STAGED_ONE_RENDERER_RECONSTRUCTED; ORIGINAL_SOURCE=UNCHANGED"
+python3 -B "$SUPPORT" "$ORIGINAL_SRC" "$SRC" "$OUT/support-file-overlays.json" \
+  > "$OUT/support-file-stage.log" 2>&1 || {
+  echo "SOURCE_PRESERVING_UFFD_SUPPORT_STAGE_FAILED"; cat "$OUT/support-file-stage.log"; exit 1;
+}
+cat "$OUT/support-file-stage.log"
+echo "HISTORICAL_UFFD_BLOBS=ALL_SHA_MATCHED; ONLY_PAGE_MANAGER_CPP_REPLAYED_WHOLE; GRAPHICS_SUPPORT_FILES_PRESERVED"
 echo "RECONSTRUCT_PROVEN_GRAPHICS_RENDERER=START"
 python3 -B "$RESTORER" \
   "$ORIGINAL_SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" \
@@ -257,7 +265,7 @@ touch -m "$SRC/src/video_core/page_manager.cpp" \
   "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" \
   "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.h" \
   "$SRC/src/core/libraries/gnmdriver/gnmdriver.cpp"
-echo "GRAPHICS_RENDERER_SOURCE_RETAINED_AND_UFFD_PORTED=PASS"
+echo "GRAPHICS_RENDERER_AND_SUPPORT_SOURCES_RETAINED_AND_UFFD_PORTED=PASS"
 # Compile all touched production translation units independently BEFORE the
 # expensive full link. This catches active BufferCache ABI drift at once.
 STAGE=EARLY_UFFD_RENDERER_COMPILE
@@ -302,7 +310,7 @@ echo "CANDIDATE_GRAPHICS_RETAINED=$CANDIDATE"
 echo "EMULATOR_FIX=GENERAL_LINUX_UFFD_DEFERRED_INVALIDATION_AND_GPU_LIFECYCLE"
 echo "PRESERVED_RENDERER_UFFD_CANDIDATE_BUILT=YES; AUTO_GAMEPLAY_LAUNCH=START"
 [[ -f "$OBSERVER" ]] || { echo "OBSERVER_MISSING"; exit 1; }
-python3 -m py_compile "$OBSERVER" "$RESTORER"
+python3 -m py_compile "$OBSERVER" "$RESTORER" "$SUPPORT"
 if [[ -z "$(printenv DISPLAY || true)" ]]; then export DISPLAY=:0; fi
 if [[ -z "$(printenv XDG_RUNTIME_DIR || true)" ]]; then export XDG_RUNTIME_DIR="/run/user/$(id -u)"; fi
 if [[ -z "$(printenv DBUS_SESSION_BUS_ADDRESS || true)" ]]; then export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"; fi
