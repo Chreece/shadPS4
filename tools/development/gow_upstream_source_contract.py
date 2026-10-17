@@ -47,5 +47,25 @@ require("pending_gpu_invalidations.fetch_add(1)" in pm and
         "pending_gpu_invalidations.fetch_sub(1)" in pm,
         "deferred fault accounting lacks enqueue or completion")
 
+# Do not replace the upstream shader collector with an older revision.
+# Reject references to opcodes not defined by the *actual* current IR.
+collector = read("src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp")
+opcode_list = read("src/shader_recompiler/ir/opcodes.inc")
+known_opcodes = set(re.findall(r"^\\s*OPCODE\\(\\s*(\\w+)\\s*,", opcode_list, re.MULTILINE))
+collected_opcodes = set(re.findall(r"case\\s+IR::Opcode::(\\w+)\\s*:", collector))
+unknown = sorted(collected_opcodes - known_opcodes)
+require(bool(known_opcodes), "current upstream opcode catalog is empty")
+require(not unknown,
+        "shader info collector has undefined upstream IR opcodes: " + ", ".join(unknown))
+require("case IR::Opcode::Phi:" in collector and "info.uses_fp64 = true;" in collector,
+        "ported native SRT Phi-FP64 capability detection is missing")
+require("case IR::Opcode::ReadConst:" in collector and
+        "info.readconst_types |= Info::ReadConstType::Dynamic" in collector and
+        "info.uses_dma = true" in collector,
+        "unflattened ReadConst must preserve guest DMA backing")
+require("info.uses_dma = false" not in collector,
+        "unresolved ReadConst DMA capability is incorrectly suppressed")
+print(f"SHADER_UPSTREAM_IR_COMPATIBILITY=PASS referenced={len(collected_opcodes)} known={len(known_opcodes)}")
+
 print("UPSTREAM_NATIVE_SOURCE_CONTRACT=PASS")
 print("SOURCE_CONTRACT_NOTE=Static assertions only; real C++ compile required")
