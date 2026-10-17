@@ -43,9 +43,13 @@ finish() {
     set +e
     # Restore only test-owned changes to the isolated source/build directory.
     if [ "$OVERLAY_APPLIED" = 1 ] && [ -s "$RUN/info/page-manager.original.cpp" ]; then
-        cp -p -- "$RUN/info/page-manager.original.cpp" "$SOURCE/src/video_core/page_manager.cpp"
-        touch "$SOURCE/src/video_core/page_manager.cpp" # force Ninja to rebuild baseline object next time
-        echo "BASELINE_PAGE_MANAGER_RESTORED=YES" >>"$RUN/info/restore.txt"
+        if cp -p -- "$RUN/info/page-manager.original.cpp" "$SOURCE/src/video_core/page_manager.cpp"; then
+            touch "$SOURCE/src/video_core/page_manager.cpp" # rebuild correct baseline object next time
+            echo "BASELINE_PAGE_MANAGER_RESTORED=YES" >>"$RUN/info/restore.txt"
+        else
+            echo "BASELINE_PAGE_MANAGER_RESTORED=FAILED" >>"$RUN/info/restore.txt"
+            rc=2
+        fi
     fi
     if [ "$HEADER_CREATED" = 1 ]; then
         rm -f -- "$SOURCE/src/video_core/protection_range_coalescer.h"
@@ -56,8 +60,12 @@ finish() {
         cp -p -- "$BIN" "$WORK/bin-backups/shadps4-got-gow-sparse-$CANDIDATE"
         sha256sum "$WORK/bin-backups/shadps4-got-gow-sparse-$CANDIDATE" \
             >>"$RUN/info/restore.txt"
-        cp -p -- "$BASEBIN" "$BIN"
-        echo "BASELINE_BINARY_RESTORED=YES" >>"$RUN/info/restore.txt"
+        if cp -p -- "$BASEBIN" "$BIN"; then
+            echo "BASELINE_BINARY_RESTORED=YES" >>"$RUN/info/restore.txt"
+        else
+            echo "BASELINE_BINARY_RESTORED=FAILED" >>"$RUN/info/restore.txt"
+            rc=2
+        fi
     fi
     printf 'STATUS=%s\nJOB_EXIT=%s\n' "$STATUS" "$rc" | tee "$RUN/info/final.txt"
     if tar -czf "$ARCHIVE" -C "$RUN" evidence info \
@@ -235,10 +243,10 @@ run_phase() {
             metrics=$(ps -p "$pid" -o pcpu=,rss=,nlwp= 2>/dev/null | xargs || true)
             if [ -n "$metrics" ]; then
                 read -r pcpu rss threads <<< "$metrics"
+                [ -n "$GPU_BUSY" ] && busy=$(cat "$GPU_BUSY" 2>/dev/null || true)
+                echo "$elapsed,$pcpu,$rss,$threads,$busy" \
+                    >> "$RUN/evidence/$phase/proc-samples.csv"
             fi
-            [ -n "$GPU_BUSY" ] && busy=$(cat "$GPU_BUSY" 2>/dev/null || true)
-            echo "$elapsed,$pcpu,$rss,$threads,$busy" \
-                >> "$RUN/evidence/$phase/proc-samples.csv"
         fi
         for mark in $shots; do
             if [ "$elapsed" -ge "$mark" ] && [ "$elapsed" -lt "$(( mark + 4 ))" ]; then
