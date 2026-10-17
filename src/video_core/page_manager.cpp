@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -371,6 +372,13 @@ private:
         const char* value = std::getenv("SHADPS4_UFFD_PERF_PROBE");
         return value && value[0] == '1' && value[1] == '\0';
     }();
+    // Kernel userfaultfd read(2) supports more than one uffd_msg per call.
+    // Optional optimization only: the default handler still reads exactly one
+    // event, so behavior remains unchanged unless explicitly enabled.
+    const bool batch_reads_enabled = [] {
+        const char* value = std::getenv("SHADPS4_UFFD_BATCH_READ");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
     // Owned exclusively by UffdHandler; never accessed from queued callbacks.
     std::unordered_map<u32, std::string> fault_thread_names;
 
@@ -510,6 +518,12 @@ public:
         // Continue receiving GPU-origin faults while queued GPU work is
         // draining during teardown; these faults may otherwise deadlock it.
         auto last_perf_report = std::chrono::steady_clock::now();
+        // No heap allocation or extra copy on the hot fault path. All
+        // messages are consumed in kernel delivery order, including GPU faults
+        // which must be serviced inline while the GPU thread is blocked.
+        static constexpr size_t MAX_READ_MESSAGES = 32;
+        std::array<uffd_msg, MAX_READ_MESSAGES> messages{};
+        u64 read_calls = 0, read_events = 0, multi_reads = 0, largest_batch = 0;
         while (!token.stop_requested() || pending_gpu_invalidations.load() != 0) {
             if (perf_enabled) {
                 const auto now = std::chrono::steady_clock::now();
@@ -524,7 +538,8 @@ public:
                         "audio_faults={} game_main_faults={} avg_cpu_us={} max_cpu_us={} "
                         "slow_21ms={} slow_100ms={} audio_slow_21ms={} "
                         "max_audio_us={} max_gpu_inline_us={} pending={} max_pending={} "
-                        "last_slow_tid={}",
+                        "last_slow_tid={} batch_read={} read_calls={} read_events={} "
+                        "multi_reads={} max_read_batch={}",
                         elapsed, perf.cpu_faults.exchange(0), completed,
                         perf.gpu_faults.exchange(0), perf.audio_cpu_faults.exchange(0),
                         perf.game_cpu_faults.exchange(0), completed ? sum / completed : 0,
@@ -533,7 +548,13 @@ public:
                         perf.max_audio_wait_us.exchange(0),
                         perf.max_gpu_inline_us.exchange(0),
                         pending_gpu_invalidations.load(), perf.max_pending.exchange(0),
-                        perf.last_slow_tid.load());
+                        perf.last_slow_tid.load(),
+                        batch_reads_enabled ? 1 : 0, read_calls, read_events,
+                        multi_reads, largest_batch);
+                    read_calls = 0;
+                    read_events = 0;
+                    multi_reads = 0;
+                    largest_batch = 0;
                 }
             }
             pollfd descriptor{};
@@ -563,8 +584,12 @@ public:
                 continue;
             }
 
-            uffd_msg msg{};
-            const ssize_t bytes = read(uffd, &msg, sizeof(msg));
+            // read(2) on userfaultfd fills multiple whole uffd_msg records
+            // when available (Linux userfaultfd(2)); no correctness shortcut.
+            // In default mode this request is exactly one uffd_msg, as before.
+            const size_t requested = batch_reads_enabled ? sizeof(messages) :
+                                     sizeof(messages[0]);
+            const ssize_t bytes = read(uffd, messages.data(), requested);
             if (bytes == -1) {
                 if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
                     continue;
@@ -573,19 +598,36 @@ public:
                           Common::GetLastErrorMsg());
                 break;
             }
-            // uffd_msg is packed. fmt/spdlog arguments must not bind a
-            // reference directly to its unaligned bitfield members.
-            const u64 fault_flags = msg.arg.pagefault.flags;
-            if (bytes != sizeof(msg) || msg.event != UFFD_EVENT_PAGEFAULT ||
-                !(fault_flags & UFFD_PAGEFAULT_FLAG_WP)) {
+            if (bytes <= 0 || bytes % sizeof(messages[0]) != 0) {
                 LOG_ERROR(Common_Memory,
-                          "Unexpected userfaultfd message: bytes={}, event={}, fault_flags={:#x}",
-                          bytes, msg.event, fault_flags);
+                          "Unexpected userfaultfd read length: bytes={}, record_bytes={}",
+                          bytes, sizeof(messages[0]));
                 break;
             }
-
-            const VAddr addr = msg.arg.pagefault.address;
-            const u32 ptid = msg.arg.pagefault.feat.ptid;
+            const size_t count = static_cast<size_t>(bytes) / sizeof(messages[0]);
+            if (perf_enabled) {
+                ++read_calls;
+                read_events += count;
+                multi_reads += count > 1;
+                largest_batch = std::max<u64>(largest_batch, count);
+            }
+            // Never merge addresses or reorder GPU and CPU write faults:
+            // each event retains its original invalidation and wakeup.
+            bool malformed = false;
+            for (size_t i = 0; i != count; ++i) {
+                const uffd_msg& msg = messages[i];
+                // uffd_msg is packed. Copy values before passing to fmt.
+                const u64 fault_flags = msg.arg.pagefault.flags;
+                if (msg.event != UFFD_EVENT_PAGEFAULT ||
+                    !(fault_flags & UFFD_PAGEFAULT_FLAG_WP)) {
+                    LOG_ERROR(Common_Memory,
+                              "Unexpected userfaultfd message: bytes={}, event={}, fault_flags={:#x}",
+                              bytes, msg.event, fault_flags);
+                    malformed = true;
+                    break;
+                }
+                const VAddr addr = msg.arg.pagefault.address;
+                const u32 ptid = msg.arg.pagefault.feat.ptid;
             if (ptid == rasterizer->GetGpuCommandProcessorThreadId()) {
                 // The GPU processor is paused in this fault. Its own memory
                 // invalidation must execute inline, without posting to itself.
@@ -653,6 +695,10 @@ public:
                     pending_gpu_invalidations.fetch_sub(1);
                     pending_gpu_invalidations.notify_all();
                 });
+            }
+            } // Each fault is fully dispatched before handling the next one.
+            if (malformed) {
+                break;
             }
         }
     }
