@@ -127,6 +127,7 @@ public:
                    desc.constant_mip_index == existing.constant_mip_index &&
                    desc.post_op == existing.post_op &&
                    desc.is_guest_indexed == existing.is_guest_indexed &&
+                   desc.oversized_guest_table_probe == existing.oversized_guest_table_probe &&
                    desc.indexed_guest_entries == existing.indexed_guest_entries &&
                    desc.indexed_table_fetch == existing.indexed_table_fetch;
         })};
