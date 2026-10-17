@@ -192,6 +192,11 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, Input::GameControllers* controller
     Input::ControllerOutput::LinkJoystickAxes();
     Input::ParseInputConfig(std::string(Common::ElfInfo::Instance().GameSerial()));
 
+    // All player profiles are loaded before WindowSDL is constructed.
+    // Register controllers (or the primary keyboard fallback) before the
+    // guest starts scePadOpen, not only when the main SDL event loop begins.
+    controllers.PollSDLControllerHotplug(true);
+
 }
 
 WindowSDL::~WindowSDL() = default;
