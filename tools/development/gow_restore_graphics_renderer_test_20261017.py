@@ -71,27 +71,34 @@ def main():
 
     # Real preserved GoW renderer uses a fourth argument for proven GPU
     # writes. Verify it is retained and never silently dropped.
-    extent_source = source.replace(
-        'buffer_cache.ObtainBuffer(vsharp.base_address, size, flags)',
-        'buffer_cache.ObtainBuffer(vsharp.base_address, size, flags, static_cast<u32>(tracked_write_size))')
-    extent_source = extent_source.replace(
-        '                const auto [buffer, offset] =',
-        '                u64 tracked_write_size = size;\n'
-        '                const auto proven = ComputeProvenWriteSize(desc.write_extent, local, groups);\n'
-        '                const auto [buffer, offset] =',1)
-    extent_source = extent_source.replace(
-        'texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);',
-        'texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, tracked_write_size);')
-    if extent_source != source:
-        # This synthetic fixture deliberately lacks the real local/groups
-        # calculation; the helper must reject it, not silently alter graphics.
-        try:
-            mod.restore(extent_source, historical, header)
-        except ValueError as exc:
-            assert 'PROVEN_WRITE_EXTENT_SEMANTICS_MISSING' in str(exc)
-            print('INCOMPLETE_WRITE_EXTENT_NEGATIVE=PASS')
-        else:
-            raise AssertionError('Incomplete write-extent fixture was accepted')
+    # The synthetic source above is LEGACY: it has no typed 'flags' call.
+    # First create a genuine four-argument call, then deliberately omit the
+    # write-extent calculation and texture invalidation.
+    legacy_call='''const auto [buffer, offset] = buffer_cache.ObtainBuffer(
+                    vsharp.base_address, size, desc.is_written, desc.is_formatted);'''
+    assert source.count(legacy_call)==1, 'NEGATIVE_FIXTURE_LEGACY_CALL_MISSING'
+    extent_source=source.replace(
+        legacy_call,
+        '''VideoCore::ObtainBufferFlags flags = {};
+                if (desc.is_written) {
+                    flags |= VideoCore::ObtainBufferFlags::IsWritten;
+                }
+                if (desc.is_formatted) {
+                    flags |= VideoCore::ObtainBufferFlags::IsTexelBuffer;
+                }
+                u64 tracked_write_size = size;
+                const auto [buffer, offset] = buffer_cache.ObtainBuffer(
+                    vsharp.base_address, size, flags, static_cast<u32>(tracked_write_size));''',
+        1)
+    assert extent_source.count('static_cast<u32>(tracked_write_size)')==1
+    assert 'ComputeProvenWriteSize(desc.write_extent, local, groups)' not in extent_source
+    try:
+        mod.restore(extent_source, historical, header)
+    except ValueError as exc:
+        assert 'PROVEN_WRITE_EXTENT_SEMANTICS_MISSING' in str(exc), str(exc)
+        print('INCOMPLETE_WRITE_EXTENT_NEGATIVE=PASS')
+    else:
+        raise AssertionError('Incomplete write-extent fixture was accepted')
 
     bad = source.replace('buffer_cache.ObtainBuffer(arg_address + offset, size, false)',
                          'buffer_cache.ObtainBuffer(arg_address + offset, size, nonsense)', 1)
