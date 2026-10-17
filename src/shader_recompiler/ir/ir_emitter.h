@@ -381,6 +381,10 @@ public:
                                                const F32& bias, const Value& offset,
                                                TextureInstInfo info);
 
+    [[nodiscard]] Value ImageSampleImplicitLodIndexed(
+        const Value& handle, const Value& body, const F32& bias,
+        const Value& offset, const U32& gpu_texture_id, TextureInstInfo info);
+
     [[nodiscard]] Value ImageSampleExplicitLod(const Value& handle, const Value& body,
                                                const F32& lod, const Value& offset,
                                                TextureInstInfo info);
