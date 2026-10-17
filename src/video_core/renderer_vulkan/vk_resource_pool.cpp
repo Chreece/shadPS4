@@ -132,7 +132,7 @@ vk::DescriptorSet DescriptorHeap::Commit(vk::DescriptorSetLayout set_layout,
 
     // Large arrays must never preallocate 32 x 27K descriptors. Allocate
     // one set at a time while retaining the existing fence-owned pool logic.
-    const u32 batch_count = sampled_image_slots > 1024u ? 1u : DescriptorSetBatch;
+    const u32 batch_count = sampled_image_slots >= 256u ? 1u : DescriptorSetBatch;
     DescSetBatch desc_sets(batch_count);
     std::array<vk::DescriptorSetLayout, DescriptorSetBatch> layouts;
     layouts.fill(set_layout);
