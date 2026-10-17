@@ -129,8 +129,15 @@ enum class MipStorageFallbackMode : u16 {
     ConstantIndex,
 };
 
+// Fixed-array Vulkan push-descriptor budget: at most 15 actual T# entries
+// plus one null slot. Enable only for guest tables fully contained here.
+inline constexpr u32 MaxGuestIndexedImageEntries = 15;
+
 struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
+    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};
+    u8 indexed_guest_entries{};
+    bool is_guest_indexed{};
     bool is_depth{};
     bool is_atomic{};
     // Integer atomics on 32-bit floating/signed resources require an unsigned image view.
@@ -143,6 +150,9 @@ struct ImageResource {
     SharpFetchPostOp post_op{};
 
     constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {
+        // SPIR-V needs a single compile-time image type for a fixed array.
+        // The actual images are resolved from guest T# table entries at draw.
+        if (is_guest_indexed) return AmdGpu::Image::Null(false);
         AmdGpu::Image image{};
         if (!Fetch(info.flattened_ud_buf.data(), &image)) {
             return AmdGpu::Image::Null(is_depth);
@@ -177,6 +187,7 @@ struct ImageResource {
     }
 
     u32 NumBindings(const auto& info) const {
+        if (is_guest_indexed) return u32(indexed_guest_entries) + 1u;
         const AmdGpu::Image tsharp = GetSharp(info);
         return (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex)
                    ? (tsharp.last_level - tsharp.base_level + 1)
