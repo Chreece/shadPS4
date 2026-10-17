@@ -72,35 +72,76 @@ fi
 [[ "$(cat "$SRC/.source-sha")" == "$SOURCE_SHA" ]] || {
     echo "WORKING_SOURCE_CHANGED_SINCE_TEST_SNAPSHOT; NO_RESET"; exit 2;
 }
-python3 - "$SRC/$VKR" <<'PATCH'
+python3 - "$OLD/$VKR" "$SRC/$VKR" "$OUT" <<'PATCH'
 from pathlib import Path
+import re
 import sys
-p=Path(sys.argv[1])
-s=p.read_text()
-old='''                if (size != vsharp.GetSize()) {
-                    LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
-                              vsharp.GetSize(), size, stage.pgm_hash);
-                }'''
-new='''                if (size != vsharp.GetSize()) {
-                    // Unbounded guest descriptors are common in real shaders. Preserve
-                    // mapping bounds but never synchronously log on every draw call:
-                    // emit 1, 2, 4, 8 ... sightings per shader instead.
-                    static thread_local std::unordered_map<u32, u64> clamp_counts;
-                    const u64 seen = ++clamp_counts[stage.pgm_hash];
-                    if ((seen & (seen - 1)) == 0) {
-                        LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x} "
-                                          "(seen {} times on this GPU thread)",
-                                  vsharp.GetSize(), size, stage.pgm_hash, seen);
-                    }
-                }'''
-if old in s:
-    assert s.count(old)==1
-    s=s.replace('#include "common/debug.h"','#include <unordered_map>\n\n#include "common/debug.h"',1)
-    s=s.replace(old,new,1)
-    p.write_text(s)
-else:
-    assert s.count(new)==1 and s.count('#include <unordered_map>')==1, "CANDIDATE_PATCH_MISMATCH"
-print("ISOLATED_RENDERER_RATE_LIMIT_PATCH=PASS")
+
+source, target, report = map(Path, sys.argv[1:4])
+assert source.is_file() and not source.is_symlink(), "ORIGINAL_RENDERER_SOURCE_INVALID"
+assert target.is_file() and not target.is_symlink(), "ISOLATED_RENDERER_SOURCE_INVALID"
+original_bytes = source.read_bytes()
+original = original_bytes.decode("utf-8")
+assert original.count('#include "common/debug.h"') == 1, "ORIGINAL_INCLUDE_ANCHOR_MISMATCH"
+assert "#include <unordered_map>" not in original, "ORIGINAL_RENDERER_ALREADY_RATE_LIMITED"
+
+# Identify the exact diagnostic call, allowing differences in whitespace and
+# surrounding layout. Do NOT change buffer sizes, access flags or cache logic.
+pattern = re.compile(
+    r'(?m)^(?P<indent>[ \t]*)LOG_ERROR\(Render,\s*'
+    r'"Clamped size from \{\} to \{\} for stage \{:#x\}",\s*'
+    r'vsharp\.GetSize\(\),\s*size,\s*stage\.pgm_hash\);'
+)
+matches = list(pattern.finditer(original))
+assert len(matches) == 1, (
+    f"ORIGINAL_CLAMP_DIAGNOSTIC_MATCHES={len(matches)}; NO_BUILD"
+)
+indent = matches[0].group("indent")
+modified = pattern.sub(
+    lambda match: (
+        f"{indent}// Preserve guest mapping bounds; avoid logging on every draw.\n"
+        f"{indent}static thread_local std::unordered_map<u64, u64> clamp_counts;\n"
+        f"{indent}const u64 seen = ++clamp_counts[stage.pgm_hash];\n"
+        f"{indent}if ((seen & (seen - 1)) == 0) {{\n"
+        f'{indent}    LOG_ERROR(Render, "Clamped size from {{}} to {{}} for stage {{:#x}} "\n'
+        f'{indent}                      "(seen {{}} times on this GPU thread)",\n'
+        f"{indent}              vsharp.GetSize(), size, stage.pgm_hash, seen);\n"
+        f"{indent}}}"
+    ),
+    original,
+    count=1,
+)
+modified = modified.replace(
+    '#include "common/debug.h"',
+    '#include <unordered_map>\n\n#include "common/debug.h"',
+    1,
+)
+assert modified != original
+assert modified.count("std::unordered_map<u64, u64> clamp_counts;") == 1
+assert modified.count('const u64 size = memory->ClampRangeSize(') == original.count(
+    'const u64 size = memory->ClampRangeSize('
+)
+assert modified.count('buffer_cache.ObtainBuffer(') == original.count(
+    'buffer_cache.ObtainBuffer('
+)
+assert modified.count('texture_cache.InvalidateMemoryFromGPU(') == original.count(
+    'texture_cache.InvalidateMemoryFromGPU('
+)
+
+# An interrupted previous test may have left an unrelated renderer version
+# in the test-owned snapshot. Preserve it as evidence; regenerate only this
+# test-owned source file from the verified original.
+existing = target.read_bytes()
+candidate = modified.encode("utf-8")
+if existing not in (original_bytes, candidate):
+    backup = report / "previous-isolated-renderer.cpp"
+    backup.write_bytes(existing)
+    print("STALE_TEST_RENDERER=BACKED_UP_AND_REGENERATED_FROM_PROVEN_SOURCE")
+if existing != candidate:
+    target.write_bytes(candidate)
+assert target.read_bytes() == candidate
+assert source.read_bytes() == original_bytes, "PROVEN_RENDERER_CHANGED"
+print("ISOLATED_RENDERER_RATE_LIMIT_PATCH=PASS; IDP=ORIGINAL_SOURCE_ONLY")
 PATCH
 sha256sum "$OLD/$VKR" "$SRC/$VKR" > "$OUT/renderer-sources.sha256"
 STAGE=ISOLATED_CONFIGURE
