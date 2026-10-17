@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <thread>
@@ -64,6 +65,18 @@ public:
           num_channels(port.format_info.num_channels), is_float(port.format_info.is_float),
           is_std(port.format_info.is_std), channel_layout(port.format_info.channel_layout),
           port_type(port.type) {
+        // AudioOutputThread already paces guest samples using AccurateTimer.
+        // Optional outer-only pacing prevents a second backend sleep while
+        // the AudioOutputThread owns the port mutex.
+        const char* pacing = std::getenv("SHADPS4_SDL_OUTER_PACING");
+        outer_only_pacing = pacing && pacing[0] == '1' && pacing[1] == '\0';
+        const char* probe = std::getenv("SHADPS4_AUDIO_TIMING_PROBE");
+        timing_probe_enabled = probe && probe[0] == '1' && probe[1] == '\0';
+        if (outer_only_pacing) {
+            LOG_WARNING(Lib_AudioOut,
+                        "SDL outer-thread-only pacing trial active for audio port {}",
+                        static_cast<int>(port_type));
+        }
         intentionally_disabled = IsDisabledAudioDevice(GetDeviceName(port.type));
         if (intentionally_disabled) {
             LOG_INFO(Lib_AudioOut, "SDL audio output intentionally disabled for port type {}",
@@ -92,8 +105,19 @@ public:
 
         UpdateVolumeIfChanged();
         const u64 current_time = Kernel::sceKernelGetProcessTime();
+        if (timing_probe_enabled && previous_output_time != 0 &&
+            current_time >= previous_output_time) {
+            const u64 elapsed = current_time - previous_output_time;
+            max_gap_us = std::max(max_gap_us, elapsed);
+            if (elapsed > period_us + period_us / 2) {
+                ++late_output_gaps;
+            }
+        }
+        previous_output_time = current_time;
         convert(ptr, internal_buffer, buffer_frames, nullptr);
-        HandleTiming(current_time);
+        if (!outer_only_pacing) {
+            HandleTiming(current_time);
+        }
 
         const u32 buffer_index = output_count++;
         if ((buffer_index & 0xF) == 0) { // Check every 16 output buffers.
@@ -134,6 +158,26 @@ public:
         }
 
         last_output_time.store(current_time, std::memory_order_release);
+        // One aggregated record per 256 guest buffers. No per-buffer logging
+        // and no change to guest PCM, scheduling, or queue manipulation.
+        if (timing_probe_enabled && (output_count & 0xFF) == 0) {
+            LOG_WARNING(
+                Lib_AudioOut,
+                "AUDIO_SDL_TIMING port={} pacing={} buffers={} period_us={} "
+                "late_gaps={} max_gap_us={} backend_resyncs={} backend_sleeps={} "
+                "queue_empty_probes={} queue_clears={} queue_last={} queue_max={}",
+                static_cast<int>(port_type), outer_only_pacing ? "outer" : "dual",
+                output_count, period_us, late_output_gaps, max_gap_us,
+                backend_resyncs, backend_sleeps, sampled_queue_empty,
+                sampled_queue_clears, last_sampled_queue, max_sampled_queue);
+            late_output_gaps = 0;
+            max_gap_us = 0;
+            backend_resyncs = 0;
+            backend_sleeps = 0;
+            sampled_queue_empty = 0;
+            sampled_queue_clears = 0;
+            max_sampled_queue = 0;
+        }
     }
 
     void SetVolume(const std::array<int, 8>& ch_volumes) override {
@@ -266,6 +310,9 @@ private:
 
         if (time_diff > static_cast<s64>(TIMING_RESYNC_THRESHOLD_US)) [[unlikely]] {
             // We're far behind - resync
+            if (timing_probe_enabled) {
+                ++backend_resyncs;
+            }
             next_output_time = current_time + period_us;
         } else if (time_diff < 0) {
             // We're ahead of schedule - wait
@@ -274,6 +321,9 @@ private:
 
             if (time_to_wait > MIN_SLEEP_THRESHOLD_US) {
                 // Sleep for most of the wait period
+                if (timing_probe_enabled) {
+                    ++backend_sleeps;
+                }
                 const u64 sleep_duration = time_to_wait - MIN_SLEEP_THRESHOLD_US;
                 std::this_thread::sleep_for(std::chrono::microseconds(sleep_duration));
             }
@@ -285,6 +335,16 @@ private:
 
     void ManageAudioQueue() {
         const auto queued = SDL_GetAudioStreamQueued(stream);
+        if (timing_probe_enabled) {
+            if (queued == 0 && output_count > 32) {
+                ++sampled_queue_empty;
+            }
+            last_sampled_queue = queued;
+            max_sampled_queue = std::max(max_sampled_queue, queued);
+            if (queued >= queue_threshold) {
+                ++sampled_queue_clears;
+            }
+        }
 
         if (queued >= queue_threshold) [[unlikely]] {
             LOG_DEBUG(Lib_AudioOut, "Clearing backed up audio queue ({} >= {})", queued,
@@ -674,6 +734,17 @@ private:
     const std::array<int, 8> channel_layout;
     const OrbisAudioOutPort port_type;
     bool intentionally_disabled{false};
+    bool outer_only_pacing{false};
+    bool timing_probe_enabled{false};
+    u64 previous_output_time{0};
+    u64 max_gap_us{0};
+    u32 late_output_gaps{0};
+    u32 backend_resyncs{0};
+    u32 backend_sleeps{0};
+    u32 sampled_queue_empty{0};
+    u32 sampled_queue_clears{0};
+    int last_sampled_queue{0};
+    int max_sampled_queue{0};
 
     alignas(64) u64 period_us{0};
     alignas(64) std::atomic<u64> last_output_time{0};
