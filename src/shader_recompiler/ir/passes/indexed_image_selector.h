@@ -61,6 +61,72 @@ template<typename Value>
     }
     return true;
 }
+// Some PS4 materials store an eight-dword T# inside each array-of-structs
+// record: ((gpu_record_id * record_stride_bytes) + byte_offset) >> 2.
+// This decoder preserves the ORIGINAL GPU SSA producer (including Phi,
+// per-thread attributes and scalar loads). It only removes proven literal
+// arithmetic, and never substitutes a CPU-evaluated texture ID.
+struct StridedIndexedSharpWord {
+    const void* gpu_record_id{};
+    std::uint32_t record_stride_bytes{};
+    std::uint32_t offset_dwords{};
+    bool valid{};
+};
+
+template <typename Value>
+[[nodiscard]] StridedIndexedSharpWord AnalyzeStridedIndexedSharpWord(Value index) {
+    const auto normalized = AnalyzeIndexedSharpWord(index);
+    const auto* const shift = static_cast<const IR::Inst*>(normalized.selector);
+    if (!normalized.valid || !shift ||
+        shift->GetOpcode() != IR::Opcode::ShiftRightLogical32 ||
+        !shift->Arg(1).IsImmediate() ||
+        shift->Arg(1).Type() != IR::Type::U32 ||
+        shift->Arg(1).U32() != 2u) return {};
+
+    const auto* const add = shift->Arg(0).TryInst();
+    if (!add || add->GetOpcode() != IR::Opcode::IAdd32) return {};
+    const auto a = add->Arg(0);
+    const auto b = add->Arg(1);
+    if (a.IsImmediate() == b.IsImmediate()) return {};
+    const auto literal = a.IsImmediate() ? a : b;
+    const auto expression = a.IsImmediate() ? b : a;
+    if (literal.Type() != IR::Type::U32) return {};
+    const std::uint32_t prefix = literal.U32();
+    if (prefix % 4u != 0u) return {};
+    const auto* const mul = expression.TryInst();
+    if (!mul || mul->GetOpcode() != IR::Opcode::IMul32) return {};
+    const auto lhs = mul->Arg(0);
+    const auto rhs = mul->Arg(1);
+    if (lhs.IsImmediate() == rhs.IsImmediate()) return {};
+    const auto stride = lhs.IsImmediate() ? lhs : rhs;
+    const auto gpu_id = lhs.IsImmediate() ? rhs : lhs;
+    if (stride.Type() != IR::Type::U32 || !gpu_id.TryInst() ||
+        stride.U32() < 32u || stride.U32() % 4u ||
+        stride.U32() > 65536u) return {};
+    const std::uint64_t offset =
+        std::uint64_t(prefix / 4u) + normalized.addend;
+    // The complete 32-byte T# must lie inside exactly one guest record.
+    if (offset > std::uint64_t(stride.U32() / 4u)) return {};
+    return {gpu_id.TryInst(),stride.U32(),
+            static_cast<std::uint32_t>(offset),true};
+}
+
+[[nodiscard]] constexpr bool AreContiguousStridedSharpWords(
+    const std::array<StridedIndexedSharpWord,8>& words) noexcept {
+    const auto& first = words[0];
+    if (!first.valid || !first.gpu_record_id ||
+        first.record_stride_bytes < 32u) return false;
+    for (std::size_t i=0;i<words.size();++i) {
+        const auto& cur=words[i];
+        if (!cur.valid || cur.gpu_record_id != first.gpu_record_id ||
+            cur.record_stride_bytes != first.record_stride_bytes ||
+            std::uint64_t(cur.offset_dwords) !=
+                std::uint64_t(first.offset_dwords) + i) return false;
+    }
+    return std::uint64_t(first.offset_dwords + 8u) <=
+           first.record_stride_bytes / 4u;
+}
+
 // GCN constructs a texture-table dword index with (texture_id << 5) >> 2.
 // The shift-left is 32-bit and wraps before the unsigned shift right.
 // Recover the exact GPU texture-id producer but NEVER evaluate its value.
