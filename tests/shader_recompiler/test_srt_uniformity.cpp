@@ -31,7 +31,7 @@ struct MockValue {
 
 struct MockInst {
     Opcode opcode{};
-    std::array<MockValue, 3> args{};
+    std::array<MockValue, 4> args{};
     size_t count{};
     Opcode GetOpcode() const { return opcode; }
     MockValue Arg(size_t i) const { return args[i]; }
@@ -72,6 +72,25 @@ int main() {
     const MockInst first_const{Opcode::ReadFirstLane, {MockValue::Ref(read_const)}, 1};
     const MockInst nonuniform_const{Opcode::ReadConstBuffer,
         {MockValue::Ref(descriptor), MockValue::Ref(varying)}, 2};
+    // The scalar S_BUFFER_LOAD's address ignores descriptor metadata
+    // words 2/3, even if those words are produced by divergent SSA.
+    const MockInst sbuffer_divergent_metadata{Opcode::CompositeConstructU32x4,
+        {MockValue::Ref(uniform), MockValue::Ref(uniform),
+         MockValue::Ref(varying), MockValue::Ref(phi)}, 4};
+    const MockInst sbuffer_good{Opcode::ReadConstBuffer,
+        {MockValue::Ref(sbuffer_divergent_metadata), MockValue::Imm()}, 2};
+    const MockInst sbuffer_dynamic_index{Opcode::ReadConstBuffer,
+        {MockValue::Ref(sbuffer_divergent_metadata), MockValue::Ref(varying)}, 2};
+    const MockInst sbuffer_bad_address{Opcode::CompositeConstructU32x4,
+        {MockValue::Ref(varying), MockValue::Ref(uniform),
+         MockValue::Imm(), MockValue::Imm()}, 4};
+    const MockInst sbuffer_bad_pointer{Opcode::ReadConstBuffer,
+        {MockValue::Ref(sbuffer_bad_address), MockValue::Imm()}, 2};
+    const MockInst sbuffer_bad_hi_address{Opcode::CompositeConstructU32x4,
+        {MockValue::Ref(uniform), MockValue::Ref(varying),
+         MockValue::Imm(), MockValue::Imm()}, 4};
+    const MockInst sbuffer_bad_hi_pointer{Opcode::ReadConstBuffer,
+        {MockValue::Ref(sbuffer_bad_hi_address), MockValue::Imm()}, 2};
 
     MockInst cycle{Opcode::IAdd32, {}, 2};
     cycle.args[0] = MockValue::Ref(cycle);
@@ -82,7 +101,7 @@ int main() {
         MockValue value;
         bool expected;
     };
-    const std::array<Case, 21> cases{{
+    const std::array<Case, 25> cases{{
         {"u32-constant", MockValue::Imm(), true},
         {"float-constant", MockValue::Imm(Type::F32), false},
         {"user-data", MockValue::Ref(uniform), true},
@@ -101,6 +120,10 @@ int main() {
         {"uniform-FindILsb32", MockValue::Ref(first_lsb), true},
         {"uniform-descriptor-read", MockValue::Ref(first_const), true},
         {"varying-descriptor-index", MockValue::Ref(nonuniform_const), false},
+        {"uniform-sbuffer-address-with-divergent-metadata", MockValue::Ref(sbuffer_good), true},
+        {"divergent-sbuffer-index", MockValue::Ref(sbuffer_dynamic_index), false},
+        {"divergent-sbuffer-low-address", MockValue::Ref(sbuffer_bad_pointer), false},
+        {"divergent-sbuffer-high-address", MockValue::Ref(sbuffer_bad_hi_pointer), false},
         {"SSA-cycle", MockValue::Ref(cycle), false},
         {"unsupported-immediate", MockValue::Imm(Type::U64), false},
         {"empty-SSA", MockValue{}, false},
@@ -113,6 +136,6 @@ int main() {
             return 1;
         }
     }
-    std::puts("SRT_UNIFORMITY=PASS cases=21 diverging=REJECTED phi=REJECTED");
+    std::puts("SRT_UNIFORMITY=PASS cases=25 divergent-address=REJECTED divergent-metadata=IGNORED phi=REJECTED");
     return 0;
 }

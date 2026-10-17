@@ -50,6 +50,28 @@ bool ResourceAuditEnabled() {
     return enabled;
 }
 
+// A generic diagnostic filter: run resource audits for one specified shader
+// hash instead of logging thousands of unrelated shader binds every frame.
+// The filter never changes resource contents, bindings, or draw submission.
+bool ResourceAuditForStage(const Shader::Info& stage) {
+    if (!ResourceAuditEnabled()) {
+        return false;
+    }
+    static const auto target = [] {
+        const char* const v = std::getenv("SHADPS4_RESOURCE_AUDIT_HASH");
+        if (!v || !*v) {
+            return std::pair{false, u64{0}};
+        }
+        char* end{};
+        const auto parsed = std::strtoull(v, &end, 0);
+        if (end == v || *end != '\0') {
+            return std::pair{true, u64{0xffffffffffffffffULL}};
+        }
+        return std::pair{true, static_cast<u64>(parsed)};
+    }();
+    return !target.first || stage.pgm_hash == target.second;
+}
+
 ResourceAuditCounts& ResourceAuditFor(const Shader::Info& stage) {
     static thread_local std::unordered_map<u64, ResourceAuditCounts> by_shader;
     const u64 key = (static_cast<u64>(stage.pgm_hash) << 8) |
@@ -911,7 +933,7 @@ bool Rasterizer::IsComputeImageClear(const Pipeline* pipeline) {
 
 void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Bindings& binding,
                              Shader::PushData& push_data) {
-    const bool audit_resources = ResourceAuditEnabled();
+    const bool audit_resources = ResourceAuditForStage(stage);
     ResourceAuditCounts* const audit = audit_resources ? &ResourceAuditFor(stage) : nullptr;
     const u64 alignment = instance.StorageMinAlignment();
     for (const auto& desc : stage.buffers) {
@@ -1042,7 +1064,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
 
 void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindings& binding) {
     ResourceAuditCounts* const audit =
-        ResourceAuditEnabled() ? &ResourceAuditFor(stage) : nullptr;
+        ResourceAuditForStage(stage) ? &ResourceAuditFor(stage) : nullptr;
     if (audit) {
         ++audit->texture_calls;
     }

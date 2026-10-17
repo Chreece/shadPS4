@@ -944,7 +944,7 @@ static void GenerateSrtProgram(
             wrong_base += !correct_base;
             not_uniform += !uniform;
             eligible += correct_base && uniform;
-            if (samples++ < 8) {
+            if (samples++ < 3) {
                 const IR::Value low = correct_base ? base->Arg(0) : IR::Value{};
                 const IR::Value high = correct_base ? base->Arg(1) : IR::Value{};
                 const IR::Value index = read->Arg(1);
@@ -955,7 +955,7 @@ static void GenerateSrtProgram(
                          "SrtInlineCandidate: shader={:#x} stage={} eligible={} "
                          "base_op={} lo_op={} hi_op={} index_op={} "
                          "lo_immediate={} hi_immediate={} index_immediate={} "
-                         "index_value={}",
+                         "index_value={} sbuffer={} address_uniform={} index_uniform={}",
                          info.pgm_hash, info.hw_stage, correct_base && uniform,
                          base ? IR::NameOf(base->GetOpcode()) : "immediate",
                          low_inst ? IR::NameOf(low_inst->GetOpcode()) : "immediate",
@@ -963,7 +963,12 @@ static void GenerateSrtProgram(
                          index_inst ? IR::NameOf(index_inst->GetOpcode()) : "immediate",
                          low.IsImmediate(), high.IsImmediate(), index.IsImmediate(),
                          index.IsImmediate() && index.Type() == IR::Type::U32
-                             ? index.U32() : 0u);
+                             ? index.U32() : 0u,
+                         read->GetOpcode() == IR::Opcode::ReadConstBuffer,
+                         correct_base &&
+                             IsHostUniformSrtOffset(base->Arg(0)) &&
+                             IsHostUniformSrtOffset(base->Arg(1)),
+                         IsHostUniformSrtOffset(read->Arg(1)));
             }
         }
         if (examined || already_flattened) {
