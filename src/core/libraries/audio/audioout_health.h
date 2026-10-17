@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <string_view>
 
 namespace Libraries::AudioOut {
@@ -31,5 +32,19 @@ namespace Libraries::AudioOut {
         }
     }
     return peak;
+}
+// OpenAL may downmix into signed 16-bit buffers when floating-point
+// output is unsupported by the device. Keep measurement in normalized units
+// so SDL and OpenAL diagnostics can be compared.
+[[nodiscard]] inline float AudioPeakS16(const std::int16_t* samples,
+                                        std::size_t count) noexcept {
+    if (samples == nullptr) {
+        return 0.0f;
+    }
+    int peak = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+        peak = std::max(peak, std::abs(static_cast<int>(samples[i])));
+    }
+    return static_cast<float>(peak) / 32768.0f;
 }
 } // namespace Libraries::AudioOut
