@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # Build the deferred Linux UFFD candidate without replacing the proven GoW executable.
 set -Eeuo pipefail
-ROOT="${GOW_TEST_ROOT:-$HOME/projects/shadps4/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014679}"
+ROOT="$HOME/projects/shadps4/GodOfWarRagnarok/tests/gow-renderer-log-hotpath-20261017"
+ORIGINAL_ROOT="$HOME/projects/shadps4/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014679"
+ORIGINAL_SRC="$ORIGINAL_ROOT/source"
+PROVEN="$ORIGINAL_ROOT/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
+OBSERVER="${1:?pinned observer path required}"
+PROVEN_SHA=e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa
 SRC="$ROOT/source"
 BUILD="$ROOT/build"
 LOGS="$HOME/projects/shadps4/logs"
-TAG="gow-uffd-deferred-build-$(date +%Y%m%d-%H%M%S)"
+TAG="gow-uffd-parity-$(date +%Y%m%d-%H%M%S)"
 OUT="$LOGS/$TAG"
-mkdir -p "$OUT/original"
+mkdir -p "$OUT/original" "$OUT/pretest"
 BASE="eabc3f127b58585811d4a7fbdb4308beac99894c"
 HEAD="dafe3c58057e9ffaec711dbcf56ad66425893c27"
 REMOTE="https://github.com/Chreece/shadPS4.git"
@@ -15,6 +20,7 @@ REF="refs/heads/fix/linux-userfaultfd-deferred-gpu-invalidation-20261016"
 FILES=(src/video_core/page_manager.cpp src/video_core/page_manager.h src/video_core/renderer_vulkan/vk_rasterizer.cpp src/video_core/renderer_vulkan/vk_rasterizer.h src/core/libraries/gnmdriver/gnmdriver.cpp)
 BACKED=0
 BINBACK=0
+PRETEST_SAVED=0
 finish() {
   local code="$1"
   trap - EXIT
@@ -74,7 +80,10 @@ trap 'finish $?' EXIT
 exec 9>"$LOGS/.gow-uffd-deferred-build.lock"
 flock -n 9 || { echo "ANOTHER_UFFD_BUILD_RUNNING"; exit 1; }
 [[ ( -d "$SRC/.git" || -f "$SRC/.git" ) && -d "$BUILD" ]] || { echo "EXACT_TEST_TREE_MISSING"; exit 1; }
-[[ -f "$BUILD/shadps4.native-userfaultfd-correct-v1" ]] || { echo "PROTECTED_UFFD_BASELINE_MISSING"; exit 1; }
+[[ -f "$PROVEN" && -f "$OBSERVER" ]] || { echo "PROVEN_BINARY_OR_OBSERVER_MISSING"; exit 1; }
+echo "$PROVEN_SHA  $PROVEN" | sha256sum -c - || { echo "PROVEN_GAMEPLAY_SHA_MISMATCH"; exit 1; }
+python3 -m py_compile "$OBSERVER"
+[[ "$SRC" != "$ORIGINAL_SRC" ]] && [[ "$BUILD" != "$ORIGINAL_ROOT/build" ]] || { echo "UNSAFE_BUILD_TARGET_EQUALS_PROVEN"; exit 1; }
 [[ -f "$BUILD/shadps4" && ! -L "$BUILD/shadps4" ]] || {
   echo "ORIGINAL_BUILD_TARGET_MISSING_OR_SYMLINKED; REFUSING_TO_REPLACE"; exit 1;
 }
@@ -82,7 +91,7 @@ flock -n 9 || { echo "ANOTHER_UFFD_BUILD_RUNNING"; exit 1; }
 grep -Fxq "CMAKE_HOME_DIRECTORY:INTERNAL=$SRC" "$BUILD/CMakeCache.txt" || {
   echo "CMAKE_SOURCE_DIR_MISMATCH; REFUSING_TO_RECONFIGURE"; exit 1;
 }
-echo "3467a28aa8e498088ddaf780b862f0c734511d6741a43ab94757de2e07b94bef  $BUILD/shadps4.native-userfaultfd-correct-v1" | sha256sum -c - | tee "$OUT/protected-baseline.txt"
+echo "$PROVEN_SHA  $PROVEN" | sha256sum -c - | tee "$OUT/protected-baseline.txt"
 for f in "${FILES[@]}"; do
   [[ -f "$SRC/$f" && ! -L "$SRC/$f" ]] || { echo "UNSAFE_OR_MISSING=$f"; exit 1; }
   mkdir -p "$OUT/original/$(dirname "$f")"
