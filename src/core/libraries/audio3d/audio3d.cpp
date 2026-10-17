@@ -363,6 +363,10 @@ s32 PS4_SYSV_ABI sceAudio3dInitialize(const s64 reserved) {
 
     if (const auto init_ret = AudioOut::sceAudioOutInit();
         init_ret < 0 && init_ret != ORBIS_AUDIO_OUT_ERROR_ALREADY_INIT) {
+        // Audio3D must not remain marked initialized when the real host
+        // audio backend could not be started. A subsequent retry otherwise
+        // incorrectly fails as "already initialized".
+        state.reset();
         return init_ret;
     }
 
