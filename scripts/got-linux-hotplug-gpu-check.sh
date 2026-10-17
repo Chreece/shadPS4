@@ -223,13 +223,18 @@ for name in ("Log", "GPU", "Vulkan", "Debug"):
     if not isinstance(config[name], dict):
         raise SystemExit(f"INVALID_SETTINGS_GROUP:{name}")
 config["Log"].update(filter="*:critical Input:info Config:info Render.Recompiler:info Render.Vulkan:info", sync=False, skip_duplicate=True)
+# Enable controller input if the streaming window is temporarily unfocused,
+# but ONLY in this disposable test profile; never change original settings.
+if not isinstance(config.setdefault("Input", {}), dict):
+    raise SystemExit("INVALID_SETTINGS_GROUP:Input")
+config["Input"]["background_controller_input"] = True
 config["GPU"].update(dump_shaders=False)
 config["Vulkan"].update(pipeline_cache_enabled=True)
 config["Debug"].update(debug_dump=False, shader_collect=False)
 p.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 assert config["Log"]["filter"] == "*:critical Input:info Config:info Render.Recompiler:info Render.Vulkan:info"
 assert config["Vulkan"]["pipeline_cache_enabled"]
-print("ISOLATED_CONFIG_JSON=VERIFIED; LOG_FILTER=TARGETED_UNIFORMITY_DIAGNOSTIC; SYNC=OFF; SHADER_DUMP=OFF; VULKAN_PIPELINE_CACHE=ON")
+print("ISOLATED_CONFIG_JSON=VERIFIED; GAMEPAD_BACKGROUND_INPUT=ON_ISOLATED_ONLY; LOG_FILTER=INPUT_AND_SHADER; SYNC=OFF; SHADER_DUMP=OFF; VULKAN_PIPELINE_CACHE=ON")
 PYJSON
 }
 # Optional GPU busy counter on AMD GPUs, no driver/kernel instrumentation.
