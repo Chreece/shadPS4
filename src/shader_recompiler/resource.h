@@ -129,6 +129,8 @@ struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
     bool is_depth{};
     bool is_atomic{};
+    // Integer atomics on 32-bit floating/signed resources require an unsigned image view.
+    bool is_atomic_uint_view{};
     bool is_array{};
     bool is_written{};
     bool is_r128{};
@@ -184,6 +186,9 @@ struct SamplerResource {
     SharpFetchPostOp post_op{};
     SharpLocation post_op_tsharp_dw3_off{};
     bool is_depth{};
+    // Integer-format images cannot use Vulkan's linear sampler filtering.
+    // A guest S# reused for floating and integer T# needs distinct samplers.
+    bool is_integer{};
 
     constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {
         AmdGpu::Sampler sampler{};

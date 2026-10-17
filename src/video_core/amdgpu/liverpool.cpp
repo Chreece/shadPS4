@@ -1130,7 +1130,19 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                 rasterizer->OnFence();
             }
             release_mem->SignalFence(
-                [pipe_id = queue.pipe_id] {
+                [pipe_id = queue.pipe_id, selector = release_mem->int_sel.Value()] {
+                    // MEC RELEASE_MEM int_sel=3 sends confirmed data, not a CPU IRQ;
+                    // fence writes are still performed by SignalFence.
+                    if (static_cast<u32>(selector) == 3u) {
+                        static thread_local u32 data_confirm_audits{};
+                        if (data_confirm_audits++ < 16) {
+                            LOG_INFO(Render,
+                                     "GOT45_RELEASE_MEM_NOTIFY selector=3 pipe={} "
+                                     "fence_write=preserved irq_forwarded=false",
+                                     static_cast<u32>(pipe_id));
+                        }
+                        return;
+                    }
                     Platform::IrqC::Instance()->Signal(static_cast<Platform::InterruptId>(pipe_id));
                 },
                 [this](VAddr dst, u16 gds_index, u16 num_dwords) {

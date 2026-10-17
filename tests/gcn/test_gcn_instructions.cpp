@@ -12,6 +12,11 @@
 #include "gcn_test_runner.hpp"
 #include "instructions.hpp"
 #include "translator.hpp"
+#include "shader_recompiler/ir/passes/srt_offset_preflight.h"
+#include "shader_recompiler/ir/microinstruction.h"
+#include "shader_recompiler/ir/basic_block.h"
+#include "common/object_pool.h"
+#include "video_core/amdgpu/pixel_format.h"
 
 class GcnTest : public ::testing::Test {
 protected:
@@ -23,6 +28,74 @@ protected:
         gcn_test::Runner::DestroyInstance();
     }
 };
+
+TEST_F(GcnTest, srt_phi_offset_deferred_without_native_codegen) {
+    Common::ObjectPool<Shader::IR::Inst> pool{128};
+    Shader::IR::Block block{pool};
+    auto phi = block.PrependNewInst(block.end(), Shader::IR::Opcode::Phi);
+    phi->SetFlags(Shader::IR::Type::U32);
+    const Shader::IR::Value phi_value{&*phi};
+    std::unordered_map<const Shader::IR::Inst*, bool> structural_cache;
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        phi_value, structural_cache));
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        phi_value, structural_cache));
+    ASSERT_EQ(structural_cache.size(), 1u);
+    EXPECT_FALSE(structural_cache.at(&*phi));
+
+    const auto dependent = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::IAdd32,
+        {phi_value, Shader::IR::Value{u32{8}}});
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        Shader::IR::Value{&*dependent}));
+}
+
+TEST_F(GcnTest, srt_dynamic_select_and_guest_attribute_deferred) {
+    Common::ObjectPool<Shader::IR::Inst> pool{128};
+    Shader::IR::Block block{pool};
+    const auto selection = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::SelectU32,
+        {Shader::IR::Value{true}, Shader::IR::Value{u32{24}},
+         Shader::IR::Value{u32{36}}});
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        Shader::IR::Value{&*selection}));
+    const auto attribute = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::GetAttributeU32,
+        {Shader::IR::Value{Shader::IR::Attribute::Position0},
+         Shader::IR::Value{u32{0}}});
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        Shader::IR::Value{&*attribute}));
+}
+
+TEST_F(GcnTest, srt_supported_offsets_still_use_existing_native_path) {
+    Common::ObjectPool<Shader::IR::Inst> pool{128};
+    Shader::IR::Block block{pool};
+    const auto ud = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::GetUserData,
+        {Shader::IR::Value{Shader::IR::ScalarReg::S0}});
+    const auto shifted = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::ShiftLeftLogical32,
+        {Shader::IR::Value{&*ud}, Shader::IR::Value{u32{2}}});
+    const auto sum = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::IAdd32,
+        {Shader::IR::Value{&*shifted}, Shader::IR::Value{u32{4}}});
+    EXPECT_TRUE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        Shader::IR::Value{&*sum}));
+
+    const auto width32 = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::BitFieldUExtract,
+        {Shader::IR::Value{&*sum}, Shader::IR::Value{u32{0}},
+         Shader::IR::Value{u32{32}}});
+    EXPECT_TRUE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        Shader::IR::Value{&*width32}));
+
+    const auto width33 = block.PrependNewInst(
+        block.end(), Shader::IR::Opcode::BitFieldUExtract,
+        {Shader::IR::Value{&*sum}, Shader::IR::Value{u32{0}},
+         Shader::IR::Value{u32{33}}});
+    EXPECT_FALSE(Shader::Optimization::CanLowerSrtOffsetStructurally(
+        Shader::IR::Value{&*width33}));
+}
 
 struct F32x2 {
     float a;
@@ -725,6 +798,58 @@ TEST_F(GcnTest, bitcmp1_b64_bit32) {
     auto result = runner->run<u32>(spirv, std::array{0U, 1U, 32U, 0U});
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(*result, 1U);
+}
+
+TEST_F(GcnTest, bitcmp1_b64_checks_both_halves_and_masked_index) {
+    auto runner = gcn_test::Runner::instance().value();
+    const std::array<u64, 3> instructions{
+        SOPC(OpcodeSOPC::S_BITCMP1_B64, SOperand8::S0, SOperand8::S2).Get(),
+        SOP2(OpcodeSOP2::S_CSELECT_B32, SOperand7::S0, SOperand8::Const1, SOperand8::Const0).Get(),
+        VOP1(OpcodeVOP1::V_MOV_B32, VOperand8::V0, SOperand9::S0).Get(),
+    };
+    const auto spirv = TranslateToSpirv(instructions);
+
+    // Low half, high half, and 6-bit masking of the bit position.
+    for (const auto& [inputs, expected] : std::array{
+             std::pair{std::array{1U, 0U, 0U, 0U}, 1U},
+             std::pair{std::array{0U, 0x80000000U, 63U, 0U}, 1U},
+             std::pair{std::array{0U, 0x80000000U, 127U, 0U}, 1U},
+             std::pair{std::array{0U, 0U, 63U, 0U}, 0U},
+         }) {
+        const auto result = runner->run<u32>(spirv, inputs);
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(*result, expected);
+    }
+}
+
+TEST_F(GcnTest, bitcmp0_b64_checks_set_clear_and_bit32) {
+    auto runner = gcn_test::Runner::instance().value();
+    const std::array<u64, 3> instructions{
+        SOPC(OpcodeSOPC::S_BITCMP0_B64, SOperand8::S0, SOperand8::S2).Get(),
+        SOP2(OpcodeSOP2::S_CSELECT_B32, SOperand7::S0, SOperand8::Const1, SOperand8::Const0).Get(),
+        VOP1(OpcodeVOP1::V_MOV_B32, VOperand8::V0, SOperand9::S0).Get(),
+    };
+    const auto spirv = TranslateToSpirv(instructions);
+
+    for (const auto& [inputs, expected] : std::array{
+             std::pair{std::array{0U, 0U, 63U, 0U}, 1U},
+             std::pair{std::array{0U, 0x80000000U, 63U, 0U}, 0U},
+             std::pair{std::array{1U, 0U, 0U, 0U}, 0U},
+             std::pair{std::array{0U, 1U, 32U, 0U}, 0U},
+             std::pair{std::array{0U, 0U, 32U, 0U}, 1U},
+         }) {
+        const auto result = runner->run<u32>(spirv, inputs);
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(*result, expected);
+    }
+}
+
+TEST_F(GcnTest, ubnormnz_bc5_number_format_is_consistent) {
+    using namespace AmdGpu;
+    constexpr auto format = DataFormat::FormatBc5;
+    EXPECT_EQ(RemapNumberFormat(NumberFormat::UbnormNz, format), NumberFormat::Unorm);
+    EXPECT_EQ(MapNumberConversion(NumberFormat::UbnormNz, format),
+              NumberConversion::UnormToUbnorm);
 }
 
 TEST_F(GcnTest, subb_u32_clears_vcc) {

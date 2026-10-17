@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <array>
 #include <mutex>
 #include <span>
 #include <type_traits>
@@ -152,6 +153,45 @@ Id TypeId(const EmitContext& ctx, IR::Type type) {
     }
 }
 
+
+void ApplySrcAlphaOneMinMaxExports(EmitContext& ctx) {
+    if (ctx.sw_stage != SwStage::Fragment) {
+        return;
+    }
+
+    // PS4 evaluates MIN/MAX(src * SrcAlpha, dst * ONE), whereas Vulkan
+    // MIN/MAX ignores all factors. For normalized fragment outputs, export
+    // (src.rgba * saturate(src.a)) and use factor ONE in fixed function.
+    // Run at shader return, after the original per-component exports, so
+    // the RGBA values are available regardless of export instruction order.
+    for (u32 target = 0; target < IR::NumRenderTargets; ++target) {
+        if (!ctx.runtime_info.hw.fs.color_buffers[target].blend_src_alpha_one) {
+            continue;
+        }
+        const auto& frag = ctx.frag_outputs[target];
+        if (frag.num_components != 4 || frag.is_integer) {
+            // A fragment lacking an explicit alpha export uses the PS4's
+            // default alpha blend input; this case is handled without a
+            // shader-side multiplication rather than reading undefined data.
+            continue;
+        }
+        const Id rgba = ctx.OpLoad(ctx.F32[4], frag.id);
+        const Id raw_alpha = ctx.OpCompositeExtract(ctx.F32[1], rgba, 3U);
+        const Id alpha = ctx.OpNClamp(ctx.F32[1], raw_alpha,
+                                     ctx.f32_zero_value, ctx.f32_one_value);
+        std::array<Id, 4> scaled{};
+        for (u32 component = 0; component < 4; ++component) {
+            const Id raw = ctx.OpCompositeExtract(ctx.F32[1], rgba, component);
+            const Id normalized = ctx.OpNClamp(ctx.F32[1], raw,
+                                               ctx.f32_zero_value, ctx.f32_one_value);
+            scaled[component] = ctx.OpFMul(ctx.F32[1], normalized, alpha);
+        }
+        const Id result = ctx.OpCompositeConstruct(ctx.F32[4], scaled[0],
+                                                    scaled[1], scaled[2], scaled[3]);
+        ctx.OpStore(frag.id, result);
+    }
+}
+
 void Traverse(EmitContext& ctx, const IR::Program& program) {
     IR::Block* current_block{};
     for (const IR::AbstractSyntaxNode& node : program.syntax_list) {
@@ -204,6 +244,7 @@ void Traverse(EmitContext& ctx, const IR::Program& program) {
             break;
         }
         case IR::AbstractSyntaxNode::Type::Return:
+            ApplySrcAlphaOneMinMaxExports(ctx);
             ctx.OpReturn();
             break;
         case IR::AbstractSyntaxNode::Type::Unreachable:
@@ -303,6 +344,9 @@ void SetupCapabilities(const Info& info, const Profile& profile, const RuntimeIn
     }
     if (info.uses_group_shuffle) {
         ctx.AddCapability(spv::Capability::GroupNonUniformShuffle);
+    }
+    if (info.uses_group_arithmetic) {
+        ctx.AddCapability(spv::Capability::GroupNonUniformArithmetic);
     }
     if (info.uses_group_ballot || info.loads.Get(IR::Attribute::SubgroupLtMask)) {
         ctx.AddCapability(spv::Capability::GroupNonUniformBallot);

@@ -53,8 +53,8 @@ static Id FixImageCoords(EmitContext& ctx, Id coords, AmdGpu::ImageType image_ty
 template <bool is_float>
 static Id PadImageOperand(EmitContext& ctx, Id operand, AmdGpu::ImageType image_type) {
     if (image_type == AmdGpu::ImageType::Color1D || image_type == AmdGpu::ImageType::Color1DArray) {
-        const auto coord_type = is_float ? ctx.F32 : ctx.U32;
-        const auto zero = is_float ? ctx.f32_zero_value : ctx.u32_zero_value;
+        const auto coord_type = is_float ? ctx.F32 : ctx.S32;
+        const auto zero = is_float ? ctx.f32_zero_value : ctx.ConstS32(0);
         return ctx.OpCompositeConstruct(coord_type[2], operand, zero);
     }
     return operand;
@@ -78,6 +78,7 @@ struct ImageOperands {
 
     void AddOffset(EmitContext& ctx, AmdGpu::ImageType image_type, const IR::Value& offset,
                    bool can_use_runtime_offsets = false) {
+        (void)can_use_runtime_offsets;
         if (offset.IsEmpty()) {
             return;
         }
@@ -108,13 +109,35 @@ struct ImageOperands {
         }
 
         if (op_mask != spv::ImageOperandsMask::ConstOffset) {
-            if (!can_use_runtime_offsets) {
+            // A dynamic texel offset is a genuine shader operand; dropping it
+            // changes sampling coordinates. Vulkan requires the
+            // shaderImageGatherExtended feature / ImageGatherExtended SPIR-V
+            // capability for dynamic ImageOperands Offset, including samples.
+            // Do not emit unsupported SPIR-V on a GPU lacking that feature.
+            if (!ctx.profile.supports_shader_image_gather_extended) {
                 LOG_WARNING(Render_Vulkan,
-                            "Runtime offset provided to unsupported image sample instruction");
+                            "Dynamic sample/gather offset requires shaderImageGatherExtended");
                 return;
             }
+            ctx.AddCapability(spv::Capability::ImageGatherExtended);
             op_mask = spv::ImageOperandsMask::Offset;
-            value = ctx.Def(offset);
+            // GCN texture offsets are represented as unsigned IR bit
+            // patterns, but Vulkan's signed image offset applies the same
+            // bits as a signed texel displacement (including negatives).
+            const Id raw = ctx.Def(offset);
+            switch (offset.Type()) {
+            case IR::Type::U32:
+                value = ctx.OpBitcast(ctx.S32[1], raw);
+                break;
+            case IR::Type::U32x2:
+                value = ctx.OpBitcast(ctx.S32[2], raw);
+                break;
+            case IR::Type::U32x3:
+                value = ctx.OpBitcast(ctx.S32[3], raw);
+                break;
+            default:
+                UNREACHABLE_MSG("Unsupported dynamic texel offset type {}", offset.Type());
+            }
         }
 
         value = PadImageOperand<false>(ctx, value, image_type);

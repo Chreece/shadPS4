@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/assert.h"
+#include "common/logging/log.h"
 #include "common/div_ceil.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
@@ -741,6 +742,14 @@ void EmitContext::DefineOutputs() {
             }
             Name(id, fmt::format("frag_color{}", i));
             frag_outputs[i] = GetAttributeInfo(num_format, id, num_components, true);
+            if (runtime_info.hw.fs.color_buffers[i].blend_src_alpha_one) {
+                // Source-code evidence that an actual fragment shader exports
+                // the RGBA value needed by SrcAlpha/ONE MIN/MAX emulation.
+                LOG_INFO(Render_Recompiler,
+                         "SrcAlphaOneShaderExport: shader={:#x} target={} components={} "
+                         "integer={}",
+                         info.pgm_hash, i, num_components, frag_outputs[i].is_integer);
+            }
             ++num_render_targets;
         }
         // Dual source blending allows at most 2 render targets, one for each source.
@@ -967,7 +976,9 @@ spv::ImageFormat GetFormat(const AmdGpu::Image& image) {
 
 Id ImageType(EmitContext& ctx, const ImageResource& desc, Id sampled_type) {
     const auto image = desc.GetSharp(ctx.info);
-    const auto format = desc.is_atomic ? GetFormat(image) : spv::ImageFormat::Unknown;
+    const auto format = desc.is_atomic_uint_view
+                            ? spv::ImageFormat::R32ui
+                            : (desc.is_atomic ? GetFormat(image) : spv::ImageFormat::Unknown);
     const auto type = image.GetViewType(desc.is_array);
     const u32 sampled = desc.is_written ? 2 : 1;
     switch (type) {
@@ -991,7 +1002,8 @@ Id ImageType(EmitContext& ctx, const ImageResource& desc, Id sampled_type) {
 void EmitContext::DefineImagesAndSamplers() {
     for (const auto& image_desc : info.images) {
         const auto sharp = image_desc.GetSharp(info);
-        const auto nfmt = sharp.GetNumberFmt();
+        const auto nfmt = image_desc.is_atomic_uint_view ? AmdGpu::NumberFormat::Uint
+                                                        : sharp.GetNumberFmt();
         const bool is_integer = AmdGpu::IsInteger(nfmt);
         const bool is_storage = image_desc.is_written;
         const MipStorageFallbackMode mip_fallback_mode = image_desc.mip_fallback_mode;

@@ -1,10 +1,14 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+#include <vector>
+
 #include <limits>
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/ir_emitter.h"
+#include "shader_recompiler/ir/passes/sharp_fetch_coalesce.h"
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/operand_helper.h"
 #include "shader_recompiler/ir/passes/ir_passes.h"
@@ -114,6 +118,7 @@ public:
     u32 Add(const ImageResource& desc) {
         const u32 index{Add(image_resources, desc, [&desc](const auto& existing) {
             return desc.sharp_fetch == existing.sharp_fetch && desc.is_array == existing.is_array &&
+                   desc.is_atomic_uint_view == existing.is_atomic_uint_view &&
                    desc.mip_fallback_mode == existing.mip_fallback_mode &&
                    desc.constant_mip_index == existing.constant_mip_index &&
                    desc.post_op == existing.post_op;
@@ -128,7 +133,8 @@ public:
         const u32 index{Add(sampler_resources, desc, [this, &desc](const auto& existing) {
             return desc.sharp_fetch == existing.sharp_fetch && desc.post_op == existing.post_op &&
                    desc.post_op_tsharp_dw3_off == existing.post_op_tsharp_dw3_off &&
-                   desc.is_depth == existing.is_depth;
+                   desc.is_depth == existing.is_depth &&
+                   desc.is_integer == existing.is_integer;
         })};
         return index;
     }
@@ -162,7 +168,15 @@ private:
 
 using SharpSources = boost::container::small_vector<const IR::Inst*, 4>;
 
-SharpLocation SharpLocationFromSource(const IR::Inst* inst) {
+static bool SrtSourceAuditEnabled() {
+    static const bool enabled = [] {
+        const char* const flag = std::getenv("SHADPS4_SRT_SOURCE_AUDIT");
+        return flag && flag[0] == '1' && flag[1] == '\0';
+    }();
+    return enabled;
+}
+
+SharpLocation SharpLocationFromSource(const IR::Inst* inst, const Info& info, u32 word) {
     SharpLocation location{};
     if (inst->GetOpcode() == IR::Opcode::GetUserData) {
         return static_cast<SharpLocation>(inst->Arg(0).ScalarReg());
@@ -172,6 +186,19 @@ SharpLocation SharpLocationFromSource(const IR::Inst* inst) {
         location = inst->Flags<SharpLocation>();
     }
     if (location == 0) {
+        if (SrtSourceAuditEnabled()) {
+            const auto arg = inst->NumArgs() > 1 ? inst->Arg(1) : IR::Value{};
+            const IR::Inst* arg_inst = arg.TryInst();
+            LOG_WARNING(Render_Recompiler,
+                        "SrtSourceAudit: shader={:#x} stage={} dword={} producer={} "
+                        "flattened_offset={} index_immediate={} index_value={} index_opcode={} "
+                        "dma={}",
+                        info.pgm_hash, info.hw_stage, word, inst->GetOpcode(), u32(location),
+                        arg.IsImmediate(), arg.IsImmediate() && arg.Type() == IR::Type::U32
+                                               ? arg.U32() : 0u,
+                        arg_inst ? arg_inst->GetOpcode() : IR::Opcode::Phi,
+                        info.uses_dma);
+        }
         LOG_WARNING(Render_Recompiler, "Sharp source was not flatenned");
         return UNKNOWN_LOCATION;
     }
@@ -179,7 +206,7 @@ SharpLocation SharpLocationFromSource(const IR::Inst* inst) {
 }
 
 template <typename T>
-SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
+SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp, const Info& info) {
     using Summary = SharpFetch<T>::Summary;
     SharpFetch<T> sharp_fetch{};
     for (u32 i = 0; i < sharp.num_dwords; i++) {
@@ -187,21 +214,50 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
         if (dword.IsImmediate()) {
             sharp_fetch.immediates[i] = dword.U32();
         } else {
-            sharp_fetch.offsets[i] = SharpLocationFromSource(dword.Inst());
+            sharp_fetch.offsets[i] = SharpLocationFromSource(dword.Inst(), info, i);
             sharp_fetch.load_mask |= (1 << i);
             if (sharp_fetch.offsets[i] == UNKNOWN_LOCATION) {
                 sharp_fetch.summary = Summary::Invalid;
             }
         }
     }
+    // Coalesce only genuine consecutive flat-buffer loads. In particular,
+    // partially-immediate T#/S#/V# descriptors must retain their immediate
+    // words: offsets belonging to those words are not meaningful, and can
+    // accidentally form a consecutive sequence with the other offsets.
     if (sharp_fetch.summary != Summary::Invalid) {
-        const u32 base = sharp_fetch.offsets[0];
-        for (u32 i = 1; i < sharp.num_dwords; ++i) {
-            if (sharp_fetch.offsets[i] - base != i) {
-                return sharp_fetch;
+        if (CanCoalesceSharpDwords(sharp_fetch.load_mask, sharp_fetch.offsets,
+                                   sharp.num_dwords)) {
+            sharp_fetch.summary = Summary::SingleLoad;
+        } else {
+            // Opt-in proof of when the previous offsets-only fast path
+            // discarded immediate T#/S#/V# descriptor words. Read-only.
+            static const bool audit = [] {
+                const char* value = std::getenv("SHADPS4_SHARP_MIXED_AUDIT");
+                return value && value[0] == '1' && value[1] == '\0';
+            }();
+            if (audit && sharp.num_dwords > 0 &&
+                sharp.num_dwords <= SharpFetch<T>::N) {
+                bool old_would_coalesce = true;
+                const u32 base = sharp_fetch.offsets[0];
+                for (u32 i = 1; i < sharp.num_dwords; ++i) {
+                    if (u32(sharp_fetch.offsets[i] - base) != i) {
+                        old_would_coalesce = false;
+                        break;
+                    }
+                }
+                if (old_would_coalesce) {
+                    static thread_local u32 reported = 0;
+                    if (reported++ < 96) {
+                        LOG_INFO(Render_Recompiler,
+                                 "SharpMixedCorrected: shader={:#x} stage={} "
+                                 "descriptor_words={} source_mask={:#x}",
+                                 info.pgm_hash, info.hw_stage,
+                                 sharp.num_dwords, u32(sharp_fetch.load_mask));
+                    }
+                }
             }
         }
-        sharp_fetch.summary = Summary::SingleLoad;
     }
     return sharp_fetch;
 }
@@ -211,7 +267,7 @@ void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors
     IR::Inst& inst = *resource.user;
 
     const u32 buffer_binding = descriptors.Add(BufferResource{
-        .sharp_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.sharps[0]),
+        .sharp_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.sharps[0], info),
         .used_types = BufferDataType(inst, profile),
         .buffer_type = BufferType::Guest,
         .is_written = IsBufferStore(inst),
@@ -240,7 +296,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     const bool needs_mip_storage_fallback =
         inst_info.has_lod && is_written && !profile.supports_image_load_store_lod;
     ImageResource image_res = {
-        .sharp_fetch = ConstructSharpFetch<AmdGpu::Image>(resource.sharps[0]),
+        .sharp_fetch = ConstructSharpFetch<AmdGpu::Image>(resource.sharps[0], info),
         .is_depth = bool(inst_info.is_depth),
         .is_atomic = is_atomic,
         .is_array = bool(inst_info.is_array),
@@ -251,6 +307,22 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
 
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
+
+    // Integer image atomics require integer sampled types and texel pointers.
+    // Reinterpret compatible 32-bit float/signed storage through an R32_UINT
+    // view. Keep sampled descriptors separate to preserve numeric sampling.
+    if (is_atomic && image.GetDataFmt() == AmdGpu::DataFormat::Format32) {
+        const auto nfmt = image.GetNumberFmt();
+        const bool is_float_min_max =
+            inst.GetOpcode() == IR::Opcode::ImageAtomicFMin32 ||
+            inst.GetOpcode() == IR::Opcode::ImageAtomicFMax32;
+        const bool uses_native_float_atomic =
+            is_float_min_max && profile.supports_image_fp32_atomic_min_max &&
+            nfmt == AmdGpu::NumberFormat::Float;
+        image_res.is_atomic_uint_view =
+            !uses_native_float_atomic &&
+            (nfmt == AmdGpu::NumberFormat::Float || nfmt == AmdGpu::NumberFormat::Sint);
+    }
 
     if (needs_mip_storage_fallback) {
         // If the mip level to IMAGE_(LOAD/STORE)_MIP is a constant, set up ImageResource
@@ -309,7 +381,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
 
             // Track FMask resource to do specialization.
             descriptors.Add(FMaskResource{
-                .sharp_idx = SharpLocationFromSource(resource.sharps[0].dwords[0].Inst()),
+                .sharp_idx = SharpLocationFromSource(resource.sharps[0].dwords[0].Inst(), info, 0),
             });
             return;
         }
@@ -325,11 +397,12 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
         auto& lod_prod = resource.sharps[1].post_op_data.lod_prod;
         const u32 sampler_binding = descriptors.Add(SamplerResource{
-            .sharp_fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1]),
+            .sharp_fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1], info),
             .post_op = resource.sharps[1].post_op,
             .post_op_tsharp_dw3_off =
-                lod_prod.IsEmpty() ? UNKNOWN_LOCATION : SharpLocationFromSource(lod_prod.Inst()),
+                lod_prod.IsEmpty() ? UNKNOWN_LOCATION : SharpLocationFromSource(lod_prod.Inst(), info, 3),
             .is_depth = bool(inst_info.is_depth), // true for the _C (compare) opcodes
+            .is_integer = AmdGpu::IsInteger(image.GetNumberFmt()),
         });
         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
     } else {
@@ -622,13 +695,63 @@ IR::U32 CalculateBufferAddress(IR::IREmitter& ir, const IR::Inst& inst, const In
     return buffer_offset;
 }
 
-void PatchBufferArgs(IR::Inst& inst, Info& info) {
+void PatchBufferArgs(IR::Inst& inst, Info& info, const ResourceDiscovery& discovered,
+                     std::vector<std::pair<IR::Inst*, IR::Value>>& pending_dynamic_reads) {
     const auto handle = inst.Arg(0);
     const auto buffer_res = info.buffers[handle.U32()];
     const auto buffer = buffer_res.GetSharp(info);
 
-    // Address of constant buffer reads can be calculated at IR emission time.
+    // S_BUFFER_LOAD_DWORD reads guest memory using an S# buffer descriptor.
+    // If the native resource-table walker could not flatten the descriptor,
+    // binding the generated invalid V# as a Vulkan null buffer discards a
+    // real guest memory operation. Preserve and execute the original read
+    // through the existing shader-side GPU address-translation path.
+    //
+    // Only use this path for scalar reads with genuinely unflattened V#.
+    // Normal descriptors keep their normal fast bound-buffer lowering.
     if (inst.GetOpcode() == IR::Opcode::ReadConstBuffer) {
+        using Summary = SharpFetch<AmdGpu::Buffer>::Summary;
+        if (buffer_res.sharp_fetch.summary != Summary::Invalid) {
+            return;
+        }
+
+        const auto& sharp = discovered.sharps[0];
+        // Use exactly the guest IR descriptor as issued by the scalar-memory
+        // instruction, before the host-side sharp recognizer stripped any
+        // lane reads or rewritten stride bits. Only the base-address field
+        // participates in S_BUFFER_LOAD_DWORD guest address translation.
+        IR::Inst* const handle = discovered.original_buffer_handle.TryInst();
+        ASSERT_MSG(handle && handle->GetOpcode() == IR::Opcode::CompositeConstructU32x4,
+                   "Scalar buffer read has unsupported source descriptor IR");
+        IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
+
+        const IR::U32 base_lo{handle->Arg(0)};
+        const IR::U32 base_hi = ir.BitwiseAnd(IR::U32{handle->Arg(1)}, ir.Imm32(0xffu));
+        IR::Value gpu_addr = ir.CompositeConstruct(base_lo, base_hi);
+        if (sharp.post_op == SharpFetchPostOp::OffsetByProgramBase) {
+            // The existing host path adds the shader program base for inline
+            // constant buffers. Match it with full 64-bit carry and 40-bit
+            // guest address wraparound.
+            const IR::U64 packed = ir.PackUint2x32(gpu_addr);
+            const IR::U64 relative = ir.IAdd(packed, ir.Imm64(static_cast<u64>(info.pgm_base)));
+            const IR::U64 wrapped = ir.BitwiseAnd(relative, ir.Imm64(u64{0xffffffffff}));
+            gpu_addr = ir.UnpackUint2x32(wrapped);
+        }
+
+        // ReadConst uses an offset in dwords, exactly as scalar_memory.cpp
+        // builds S_BUFFER_LOAD_DWORD. Its dynamic path translates the PS4
+        // guest address through Vulkan BDA and reports unmapped accesses via
+        // the existing fault buffer. Never substitute a fake descriptor.
+        const IR::U32 index{inst.Arg(1)};
+        const IR::U32 guest_read = ir.ReadConst(gpu_addr, index);
+        // Descriptor metadata captured in resource discovery is not a live
+        // IR use-list: postpone producer removal until all shader-side loads
+        // have registered real IR uses of those producers.
+        pending_dynamic_reads.emplace_back(&inst, guest_read);
+        LOG_INFO(Render_Recompiler,
+                 "SBufferDynamic: shader={:#x} stage={} source=guest_gpu_memory "
+                 "descriptor_dwords={} post_op={}",
+                 info.pgm_hash, info.hw_stage, sharp.num_dwords, u32(sharp.post_op));
         return;
     }
 
@@ -940,16 +1063,23 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         }
     }
 
-    // Pass 2: Patch instruction args
+    // Pass 2: patch resource users, keeping old scalar descriptor producers
+    // alive until all fallback read expressions have been constructed.
+    std::vector<std::pair<IR::Inst*, IR::Value>> pending_dynamic_reads;
     for (const auto& usage : resources) {
         IR::Inst& inst = *usage.user;
         if (IsBufferInstruction(inst)) {
-            PatchBufferArgs(inst, info);
+            PatchBufferArgs(inst, info, usage, pending_dynamic_reads);
         } else if (IsImageInstruction(inst)) {
             PatchImageArgs(inst, info);
         } else if (IsDataRingInstruction(inst)) {
             PatchGlobalDataShareAccess(inst, info, descriptors, profile);
         }
+    }
+    // Every new ReadConst now owns IR use references to the original source
+    // nodes. Replacing a producer updates all dependent GPU read expressions.
+    for (const auto& [old_inst, guest_read] : pending_dynamic_reads) {
+        old_inst->ReplaceUsesWithAndRemove(guest_read);
     }
 }
 

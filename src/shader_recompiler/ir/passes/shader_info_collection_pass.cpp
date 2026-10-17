@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "core/emulator_settings.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
 
@@ -142,6 +141,9 @@ void Visit(Info& info, const IR::Inst& inst) {
     case IR::Opcode::ShuffleXor:
         info.uses_group_shuffle = true;
         break;
+    case IR::Opcode::GroupUMin:
+        info.uses_group_arithmetic = true;
+        break;
     case IR::Opcode::ReadLane:
     case IR::Opcode::ReadFirstLane:
     case IR::Opcode::WriteLane:
@@ -217,11 +219,10 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
         }
     }
 
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled()) {
-        info.uses_dma = false;
-        info.readconst_types = Info::ReadConstType::None;
-    }
-
+    // ReadConst values whose SRT offsets cannot be flattened require guest
+    // GPU-address translation. Suppressing those reads when the optional DMA
+    // setting is disabled leaves valid guest instructions without an equivalent
+    // memory source. The page-table path is required by these shaders.
     if (info.uses_dma) {
         info.buffers.push_back({
             .used_types = IR::Type::U64,
