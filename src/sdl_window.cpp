@@ -192,10 +192,9 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, Input::GameControllers* controller
     Input::ControllerOutput::LinkJoystickAxes();
     Input::ParseInputConfig(std::string(Common::ElfInfo::Instance().GameSerial()));
 
-    // All player profiles are loaded before WindowSDL is constructed.
-    // Register controllers (or the primary keyboard fallback) before the
-    // guest starts scePadOpen, not only when the main SDL event loop begins.
-    controllers.PollSDLControllerHotplug(true);
+    // Do not call PollSDLControllerHotplug inside the window constructor.
+    // Connecting a pad publishes a timestamped guest pad state, which must
+    // happen only after the emulator has initialized the kernel runtime.
 
 }
 
@@ -365,6 +364,10 @@ void WindowSDL::WaitEvent() {
 }
 
 void WindowSDL::InitTimers() {
+    // Guest kernel time and user-service state are available at this point
+    // (after linker->Execute). Early constructor-time registration could
+    // dereference uninitialized guest-time state and crash on startup.
+    controllers.PollSDLControllerHotplug(true);
     for (int i = 0; i < 4; ++i) {
         SDL_AddTimer(4, &PollController, controllers[i]);
     }
