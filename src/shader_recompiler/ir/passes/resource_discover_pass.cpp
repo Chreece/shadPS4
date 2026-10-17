@@ -866,6 +866,16 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
     return out;
 }
 
+// The strided material-table lowering remains opt-in until game-facing
+// image and sampler correctness has been validated across GPU vendors.
+static bool StridedGuestTsharpEnabled() {
+    static const bool enabled=[] {
+        const char* const value=std::getenv("SHADPS4_STRIDED_GUEST_TSHARP");
+        return value && value[0]=='1' && value[1]=='\0';
+    }();
+    return enabled;
+}
+
 static bool IndexedImageAuditEnabled(u64 hash) {
     static const bool enabled=[] {
         const char* const v=std::getenv("SHADPS4_INDEXED_IMAGE_AUDIT");
@@ -1017,7 +1027,8 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                     const auto table=AnalyzeIndexedImageTable(inst);
                     if (table.contiguous && table.gpu_texture_id_indexed &&
                         (table.descriptor_stride_words==8u ||
-                         table.record_stride_bytes!=0u)) {
+                         (table.record_stride_bytes!=0u &&
+                          StridedGuestTsharpEnabled()))) {
                         auto& usage=sharp_usages.back();
                         bool uniform=true;
                         for (std::size_t dw=0;dw<4;++dw) {
