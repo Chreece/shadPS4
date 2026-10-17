@@ -15,6 +15,7 @@
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/passes/ir_passes.h"
 #include "shader_recompiler/ir/passes/indexed_image_selector.h"
+#include "shader_recompiler/ir/passes/srt_uniformity.h"
 #include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 #include "shader_recompiler/ir/passes/resource_pass.h"
 #include "shader_recompiler/ir/program.h"
@@ -861,6 +862,11 @@ static bool SplitImageSampleByIndexedSelect(IR::Block& block, IR::Inst& sample,
     if (!table.contiguous || budget<1 ||
         table.selector->GetOpcode()!=IR::Opcode::SelectU32) return false;
     const auto* const select=table.selector;
+    // Only the index is GPU-dependent. The descriptor table itself must
+    // have a stable, host-evaluable base/stride/count across invocations.
+    for (unsigned i=0;i<3;++i) {
+        if (!IsHostUniformSrtOffset(table.buffer->Arg(i))) return false;
+    }
     if (!select->Arg(1).IsImmediate() || !select->Arg(2).IsImmediate() ||
         select->Arg(1).Type()!=IR::Type::U32 ||
         select->Arg(2).Type()!=IR::Type::U32) return false;
@@ -878,6 +884,11 @@ static bool SplitImageSampleByIndexedSelect(IR::Block& block, IR::Inst& sample,
         } else {
             const auto* const producer=word.TryInst();
             if (!producer || !IsSharpSource(producer)) return false;
+            if ((producer->GetOpcode()==IR::Opcode::ReadConst ||
+                 producer->GetOpcode()==IR::Opcode::ReadConstBuffer) &&
+                !IsHostUniformSrtOffset(producer->Arg(1))) {
+                return false;
+            }
         }
     }
     const auto pos=IR::Block::InstructionList::s_iterator_to(sample);
