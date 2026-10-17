@@ -160,7 +160,7 @@ run_phase() {
             pid=$(pgrep -u "$(id -u)" -x shadps4 | head -1 || true)
         fi
         if [ -n "$pid" ]; then
-            local pcpu rss threads busy="" metrics=""
+            local pcpu="" rss="" threads="" busy="" metrics=""
             metrics=$(ps -p "$pid" -o pcpu=,rss=,nlwp= 2>/dev/null | xargs || true)
             if [ -n "$metrics" ]; then
                 read -r pcpu rss threads <<< "$metrics"
