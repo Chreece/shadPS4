@@ -447,7 +447,13 @@ struct Pthread {
         }
     }
 
+    // Native guest CPU identity is derived from the emulator's per-thread
+    // virtual affinity, rather than leaking the host processor/TSC_AUX.
+    s32 GetCurrentCpu() const;
     int SetAffinity(const Cpuset* cpuset);
+    int SetAffinity(u64 mask);
+    std::atomic<u64> affinity_mask{0x3f};
+    mutable std::mutex affinity_mutex;
 };
 // fym static assertion expression is not an integral constant expression
 // static_assert(offsetof(Pthread, specific) == 0x1c8);
