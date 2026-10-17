@@ -29,7 +29,14 @@ int main() {
     if (snap.Update(empty)) return 13;
     if (!snap.Update(empty,true)) return 14;   // explicit SDL add/remove event
     if (snap.Update(empty)) return 15;
+    // A late disconnect must restore the default keyboard/virtual pad
+    // exactly once without ever displacing an assigned physical device.
+    if (!Input::ShouldRestorePrimaryVirtualController(false, false)) return 16;
+    if (Input::ShouldRestorePrimaryVirtualController(false, true)) return 17;
+    if (Input::ShouldRestorePrimaryVirtualController(true, false)) return 18;
+    if (Input::ShouldRestorePrimaryVirtualController(true, true)) return 19;
     std::puts("GAMEPAD_HOTPLUG=PASS late_attach=YES reconnect=YES "
-              "two_controllers=YES order_independent=YES idle_no_reopen=YES");
+              "two_controllers=YES order_independent=YES idle_no_reopen=YES "
+              "virtual_fallback=PASS");
     return 0;
 }

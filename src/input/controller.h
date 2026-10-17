@@ -131,7 +131,6 @@ private:
 class GameControllers {
     std::array<GameController*, 5> controllers;
     GamepadHotplugSnapshot<SDL_JoystickID> hotplug_snapshot;
-    bool first_controller_scan{true};
 
 public:
     GameControllers()

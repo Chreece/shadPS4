@@ -98,6 +98,11 @@ static Uint32 SDLCALL PollControllerLightColour(void* userdata, SDL_TimerID time
 WindowSDL::WindowSDL(s32 width_, s32 height_, Input::GameControllers* controllers_,
                      std::string_view window_title)
     : width{width_}, height{height_}, controllers{*controllers_} {
+    // Set input focus behavior BEFORE initializing SDL. Gamepad hotplug can
+    // happen while the host streaming window is not the foreground window.
+    if (EmulatorSettings.IsBackgroundControllerInput()) {
+        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    }
     if (!SDL_SetHint(SDL_HINT_APP_NAME, "shadPS4")) {
         UNREACHABLE_MSG("Failed to set SDL window hint: {}", SDL_GetError());
     }
@@ -185,9 +190,6 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, Input::GameControllers* controller
     Input::ControllerOutput::LinkJoystickAxes();
     Input::ParseInputConfig(std::string(Common::ElfInfo::Instance().GameSerial()));
 
-    if (EmulatorSettings.IsBackgroundControllerInput()) {
-        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
-    }
 }
 
 WindowSDL::~WindowSDL() = default;

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstring>
 #include <mutex>
+#include <span>
 #include <unordered_set>
 #include <utility>
 
@@ -271,10 +272,19 @@ void GameControllers::PollSDLControllerHotplug(bool force) {
     // SDL_GetGamepads is called only on the SDL main/event thread. Reopening
     // devices is necessary only when a joystick *instance-id set* changes.
     int count = 0;
+    SDL_ClearError();
     SDL_JoystickID* ids = SDL_GetGamepads(&count);
-    const auto length = ids && count > 0 ? static_cast<std::size_t>(count) : 0u;
-    const bool changed =
-        hotplug_snapshot.Update(std::span<const SDL_JoystickID>{ids, length}, force);
+    // A transient enumeration error is NOT a mass controller removal.
+    // Preserve all live slots and retry on the next bounded reconciliation.
+    if (!ids && SDL_GetError()[0] != '\0') {
+        LOG_WARNING(Input, "SDL gamepad enumeration failed: {}", SDL_GetError());
+        return;
+    }
+    std::span<const SDL_JoystickID> available;
+    if (ids && count > 0) {
+        available = {ids, static_cast<std::size_t>(count)};
+    }
+    const bool changed = hotplug_snapshot.Update(available, force);
     SDL_free(ids);
     if (changed) {
         LOG_INFO(Input, "Gamepad hotplug reconciliation: {} SDL gamepads, forced={}",
@@ -286,8 +296,9 @@ void GameControllers::PollSDLControllerHotplug(bool force) {
 void GameControllers::TryOpenSDLControllers() {
     using namespace Libraries::UserService;
     int controller_count = 0;
+    SDL_ClearError();
     SDL_JoystickID* new_joysticks = SDL_GetGamepads(&controller_count);
-    if (controller_count < 0) {
+    if (controller_count < 0 || (!new_joysticks && SDL_GetError()[0] != '\0')) {
         LOG_ERROR(Input, "Unable to enumerate SDL gamepads: {}", SDL_GetError());
         SDL_free(new_joysticks);
         return;
@@ -375,14 +386,16 @@ void GameControllers::TryOpenSDLControllers() {
             SDL_CloseGamepad(pad);
         }
     }
-    if (first_controller_scan) [[unlikely]] {
-        first_controller_scan = false;
-        if (controller_count == 0) {
-            if (auto* u = UserManagement.GetUserByPlayerIndex(1)) {
-                controllers[0]->user_id = u->user_id;
-                controllers[0]->ConnectController(nullptr);
-                UserManagement.LoginUser(u, 1);
-            }
+    // Keep the original keyboard/virtual-pad route usable when no physical
+    // controller is present. It must also be re-established after a late
+    // Moonlight/Sunshine controller disconnects, not only at first startup.
+    if (ShouldRestorePrimaryVirtualController(
+            controller_count > 0, controllers[0]->ReadState().connected)) {
+        if (auto* const u = UserManagement.GetUserByPlayerIndex(1)) {
+            controllers[0]->user_id = u->user_id;
+            controllers[0]->ConnectController(nullptr);
+            UserManagement.LoginUser(u, 1);
+            LOG_INFO(Input, "Restored primary virtual controller on player 1");
         }
     }
     SDL_free(new_joysticks);
