@@ -6,7 +6,7 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=5bfbb4f85250b4410bd9e19789091c8f5a99f66a
+FIX=ac0d1a651cf2c342e6c4d2c9a41af20758f963e9
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
@@ -119,7 +119,7 @@ fi
 }
 echo "REBASE_WORKTREE_FAST_FORWARD=PASS; OLD=$PREVIOUS_HEAD; NEW=$FIX" | tee "$OUT/worktree-advance.txt"
 STAGE=PYTHON_SOURCE_TOOL_SELFTEST
-# Compile all Python helper sources and run 8 positive/negative test cases
+# Compile all Python helper sources and run 10 positive/negative test cases
 # BEFORE the real-source gate. No untested regex or parser can silently stop
 # an otherwise compile-ready native source tree again.
 python3 -m py_compile \
