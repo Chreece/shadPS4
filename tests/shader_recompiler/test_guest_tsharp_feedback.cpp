@@ -10,6 +10,15 @@
 
 using namespace Shader::Optimization;
 
+static_assert(!ShouldSnapshotGuestTsharpFeedback(0u));
+static_assert(!ShouldSnapshotGuestTsharpFeedback(1u));
+static_assert(!ShouldSnapshotGuestTsharpFeedback(7u));
+static_assert(ShouldSnapshotGuestTsharpFeedback(8u));
+static_assert(!ShouldSnapshotGuestTsharpFeedback(9u));
+static_assert(ShouldSnapshotGuestTsharpFeedback(512u));
+static_assert(!ShouldSnapshotGuestTsharpFeedback(513u));
+static_assert(ShouldSnapshotGuestTsharpFeedback(8192u));
+static_assert(!ShouldSnapshotGuestTsharpFeedback(16384u));
 static_assert(GuestTsharpFeedbackWordCount == 1025u);
 static_assert(GuestTsharpFeedbackBytes == 4100u);
 static_assert(GuestTsharpFeedbackClampedId(0u) == 0u);
