@@ -6,7 +6,7 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=ac0d1a651cf2c342e6c4d2c9a41af20758f963e9
+FIX=99579bcfc549ff1bd668162d46cbfaddaebfd990
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
@@ -50,13 +50,14 @@ finish() {
     --exclude="$TAG/gameplay/full-console.log" \
     --exclude="$TAG/base-gameplay/full-console.log" \
     --exclude="$TAG/module-filename-test" \
+    --exclude="$TAG/linux-nested-signal-test" \
     --exclude="$TAG/srt-original" \
     -C "$LOGS" "$TAG"
   cat "$OUT/result.txt"; echo "ARCHIVE=$LOGS/$TAG.tar.gz"
   [[ ! -f "$OUT/base.txt" ]] || cat "$OUT/base.txt"
   [[ ! -f "$OUT/srt.txt" ]] || cat "$OUT/srt.txt"
   if [[ "$rc" != 0 ]]; then
-    for f in "$OUT/"{python-syntax,source-contract-tests,source-contract,observer-unit-tests,module-filename-compile,compile-page-manager,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer,baseline-gameplay-observer}.log; do
+    for f in "$OUT/"{python-syntax,source-contract-tests,source-contract,observer-unit-tests,module-filename-compile,linux-nested-signal-build,compile-page-manager,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer,baseline-gameplay-observer}.log; do
       [[ ! -s "$f" ]] || { echo "ERROR_TAIL=$f"; tail -18 "$f"; }
     done
   fi
@@ -119,7 +120,7 @@ fi
 }
 echo "REBASE_WORKTREE_FAST_FORWARD=PASS; OLD=$PREVIOUS_HEAD; NEW=$FIX" | tee "$OUT/worktree-advance.txt"
 STAGE=PYTHON_SOURCE_TOOL_SELFTEST
-# Compile all Python helper sources and run 10 positive/negative test cases
+# Compile all Python helper sources and run 12 positive/negative test cases
 # BEFORE the real-source gate. No untested regex or parser can silently stop
 # an otherwise compile-ready native source tree again.
 python3 -m py_compile \
@@ -172,6 +173,26 @@ STAGE=GUEST_MODULE_FILENAME_REGRESSION
   }
 "$OUT/module-filename-test"
 echo "GUEST_MODULE_FILENAME_REGRESSION=PASS; HLE_ABI_FIX=SOURCE_INCLUDED"
+STAGE=LINUX_NESTED_CPU_SIGNAL_REGRESSION
+# Independently exercise the kernel signal mechanics in the proven native
+# CPU fault handler. The test fails if nested delivery isn't permitted.
+"$CXX_BIN" -std=c++20 -O2 -Wall -Wextra -Werror \
+  "$SRC/tests/linux_nested_cpu_signal_policy_test.cpp" \
+  -o "$OUT/linux-nested-signal-test" \
+  >"$OUT/linux-nested-signal-build.log" 2>&1 || {
+    echo "NESTED_CPU_SIGNAL_TEST_COMPILE=FAILED"
+    tail -40 "$OUT/linux-nested-signal-build.log"
+    exit 1
+  }
+timeout 8s "$OUT/linux-nested-signal-test" >"$OUT/linux-nested-signal-result.txt" 2>&1 || {
+  echo "NESTED_CPU_SIGNAL_POLICY=FAILED"
+  cat "$OUT/linux-nested-signal-result.txt"
+  exit 1
+}
+grep -q '^NESTED_CPU_SIGNAL_POLICY=PASS;' "$OUT/linux-nested-signal-result.txt" || {
+  echo "NESTED_CPU_SIGNAL_POLICY=NOT_PROVEN"; exit 1
+}
+cat "$OUT/linux-nested-signal-result.txt"
 STAGE=CONFIGURE_UPSTREAM
 if command -v ccache >/dev/null 2>&1; then
   echo "CACHE=CCACHE; REUSE_PREVIOUS_OBJECTS=YES" >"$OUT/cache.txt"
