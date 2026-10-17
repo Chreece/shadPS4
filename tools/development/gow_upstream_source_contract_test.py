@@ -14,6 +14,16 @@ module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
 
 FIXTURE = {
+    "src/core/libraries/kernel/module_filename_validation.h":
+        "ORBIS_KERNEL_ERROR_EFAULT ORBIS_KERNEL_ERROR_ENOENT",
+    "src/core/libraries/kernel/process.cpp": """
+#if defined(__x86_64__)
+__attribute__((force_align_arg_pointer))
+#endif
+sceKernelLoadStartModule(
+const s32 filename_result = ValidateModuleFilename(moduleFileName);
+LOG_INFO(Lib_Kernel, "called filename = {}, args = {}", moduleFileName, args);
+""",
     "src/video_core/page_manager.cpp": """
 struct SignalImpl : public PageManager::Impl {
     inline static SignalImpl* instance{};
@@ -66,6 +76,25 @@ class SourceContractTest(unittest.TestCase):
                                capture_output=True, text=True)
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertIn("UPSTREAM_NATIVE_SOURCE_CONTRACT=PASS", p.stdout)
+
+    def test_missing_guest_hle_module_validation_fails(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            populate(root)
+            file = root / "src/core/libraries/kernel/process.cpp"
+            file.write_text(file.read_text().replace(
+                "ValidateModuleFilename(moduleFileName)", "NO_FILENAME_VALIDATION"))
+            with self.assertRaisesRegex(RuntimeError, "guest module filename must be validated"):
+                module.validate(root)
+
+    def test_missing_guest_hle_stack_alignment_fails(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            populate(root)
+            file = root / "src/core/libraries/kernel/process.cpp"
+            file.write_text(file.read_text().replace("force_align_arg_pointer", "BAD_ABI"))
+            with self.assertRaisesRegex(RuntimeError, "stack realignment is missing"):
+                module.validate(root)
 
     def test_missing_signal_owner_fails(self):
         with TemporaryDirectory() as d:
