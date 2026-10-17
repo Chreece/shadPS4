@@ -18,6 +18,7 @@
 #include "shader_recompiler/ir/reinterpret.h"
 #include "shader_recompiler/profile.h"
 #include "shader_recompiler/resource.h"
+#include "shader_recompiler/guest_tsharp_array.h"
 #include "video_core/amdgpu/resource.h"
 #include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 
@@ -424,7 +425,8 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         !is_written && !inst_info.is_depth && !inst_info.is_array &&
         !inst_info.is_gather && !inst_info.has_derivatives &&
         !inst_info.has_lod && !inst_info.force_level0 &&
-        !inst_info.has_lod_clamp && !inst_info.is_r128) {
+        !inst_info.has_lod_clamp && !inst_info.is_r128 &&
+        !inst_info.is_unnormalized) {
         const auto table_fetch =
             ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp, info);
         AmdGpu::Buffer table{};
@@ -434,9 +436,10 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             const u64 full_size = table.stride==0
                 ? static_cast<u64>(table.num_records)
                 : static_cast<u64>(table.stride)*table.num_records;
-            const u64 entries = full_size / sizeof(AmdGpu::Image);
-            if (full_size % sizeof(AmdGpu::Image) == 0 &&
-                entries>=1 && entries<=MaxGuestIndexedImageEntries) {
+            const u32 entries = CompleteGuestTsharpTableEntries(
+                static_cast<u32>(table.stride),table.num_records,
+                MaxGuestIndexedImageEntries);
+            if (entries != 0u) {
                 image_res.indexed_table_fetch=table_fetch;
                 image_res.indexed_guest_entries=static_cast<u8>(entries);
                 image_res.is_guest_indexed=true;
