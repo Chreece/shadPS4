@@ -555,3 +555,9 @@ target_link_libraries(shadps4_net_kernel_test PRIVATE
     tsl::robin_map         # fs.h
     miniupnpc::miniupnpc   # UPnP forwarding of the P2P port
 )
+
+# General permission semantics regression for sparse mprotect coalescing.
+add_executable(shadps4_sparse_protection_test page_manager/test_sparse_protection.cpp)
+target_include_directories(shadps4_sparse_protection_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_sparse_protection_test PRIVATE cxx_std_23)
+add_test(NAME sparse_protection COMMAND shadps4_sparse_protection_test)
