@@ -59,6 +59,24 @@ def validate(root: pathlib.Path) -> tuple[int, int]:
         required("enum class MemoryPermission : u32;" in read(header),
                  f"Core::MemoryPermission forward declaration missing from {header}")
 
+    # Native CPUID/RDTSCP interception can raise a nested SIGSEGV when
+    # emulator-host timing or logging executes inside another signal handler.
+    # This exact Linux signal policy existed in the gameplay-capable source.
+    signal_source = read("src/core/signals.cpp")
+    signal_setup = signal_source.partition("SignalDispatch::SignalDispatch()")[2].partition(
+        "void SignalDispatch::RemoveHandlers()")[0]
+    required(bool(signal_setup), "native CPU signal handler registration missing")
+    required("sigaddset(&action.sa_mask, SIGUSR1);" in signal_setup,
+             "guest SIGUSR1 callbacks must be masked during CPU instruction faults")
+    sigflags = signal_setup.find("action.sa_flags |= SA_NODEFER;")
+    required(sigflags != -1 and
+             signal_setup.find("sigaction(SIGSEGV, &action, nullptr)", sigflags) > sigflags and
+             signal_setup.find("sigaction(SIGILL, &action, nullptr)", sigflags) > sigflags,
+             "native CPU nested SIGSEGV/SIGILL policy lost in upstream rebase")
+    required("#if defined(__linux__) && defined(ARCH_X86_64)" in
+             signal_setup[:sigflags] if sigflags >= 0 else False,
+             "nested CPU faults must be Linux x86-64-only")
+
     pthread = read("src/core/libraries/kernel/threads/pthread.cpp")
     required('#include "core/libraries/kernel/process.h"' in pthread,
              "pthread.cpp lacks GetGuestCpuMask declaration")
