@@ -124,7 +124,10 @@ public:
                    desc.is_atomic_uint_view == existing.is_atomic_uint_view &&
                    desc.mip_fallback_mode == existing.mip_fallback_mode &&
                    desc.constant_mip_index == existing.constant_mip_index &&
-                   desc.post_op == existing.post_op;
+                   desc.post_op == existing.post_op &&
+                   desc.is_guest_indexed == existing.is_guest_indexed &&
+                   desc.indexed_guest_entries == existing.indexed_guest_entries &&
+                   desc.indexed_table_fetch == existing.indexed_table_fetch;
         })};
         auto& image = image_resources[index];
         image.is_atomic |= desc.is_atomic;
@@ -413,6 +416,43 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         .post_op = resource.sharps[0].post_op,
     };
 
+    // Only a fully represented *actual guest table* is eligible. Do not
+    // truncate or guess the texture ID: an out-of-range GPU ID samples the
+    // extra null slot in the sampled-image array.
+    if (resource.has_indexed_table &&
+        profile.supports_sampled_image_nonuniform_indexing &&
+        !is_written && !inst_info.is_depth && !inst_info.is_array &&
+        !inst_info.is_gather && !inst_info.has_derivatives &&
+        !inst_info.has_lod && !inst_info.force_level0 &&
+        !inst_info.has_lod_clamp && !inst_info.is_r128) {
+        const auto table_fetch =
+            ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp, info);
+        AmdGpu::Buffer table{};
+        if (table_fetch.Fetch(info.flattened_ud_buf.data(), &table) &&
+            table.Valid() && table.base_address &&
+            (table.stride == 0 || table.stride == sizeof(AmdGpu::Image))) {
+            const u64 full_size = table.stride==0
+                ? static_cast<u64>(table.num_records)
+                : static_cast<u64>(table.stride)*table.num_records;
+            const u64 entries = full_size / sizeof(AmdGpu::Image);
+            if (full_size % sizeof(AmdGpu::Image) == 0 &&
+                entries>=1 && entries<=MaxGuestIndexedImageEntries) {
+                image_res.indexed_table_fetch=table_fetch;
+                image_res.indexed_guest_entries=static_cast<u8>(entries);
+                image_res.is_guest_indexed=true;
+                LOG_INFO(Render_Recompiler,
+                         "RealIndexedTSharpEnabled: shader={:#x} stage={} entries={} "
+                         "stride={} full_guest_table=YES",
+                         info.pgm_hash, info.hw_stage, entries, table.stride);
+            } else {
+                LOG_INFO(Render_Recompiler,
+                         "RealIndexedTSharpUnsupportedSize: shader={:#x} stage={} "
+                         "entries={} full_size={}",
+                         info.pgm_hash, info.hw_stage, entries, full_size);
+            }
+        }
+    }
+
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
 
@@ -513,6 +553,12 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             .is_integer = AmdGpu::IsInteger(image.GetNumberFmt()),
         });
         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
+        if (image_res.is_guest_indexed) {
+            // Discovery has already captured the original sampler descriptor.
+            // Preserve the real GPU texture ID in the otherwise unused raw
+            // sample Arg(1) until lowering creates Indexed SPIR-V sampling.
+            inst.SetArg(1, resource.indexed_texture_id);
+        }
     } else {
         inst.SetArg(0, ir.Imm32(image_binding));
     }
@@ -1078,6 +1124,10 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
         }
         if (explicit_lod) {
             return ir.ImageSampleExplicitLod(handle, coords, lod, offset, inst_info);
+        }
+        if (image_res.is_guest_indexed) {
+            return ir.ImageSampleImplicitLodIndexed(
+                handle, coords, bias, offset, IR::U32{inst.Arg(1)}, inst_info);
         }
         return ir.ImageSampleImplicitLod(handle, coords, bias, offset, inst_info);
     }();
