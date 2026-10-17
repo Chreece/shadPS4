@@ -12,6 +12,7 @@
 #include "core/emulator_settings.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/program.h"
+#include "shader_recompiler/targeted_shader_dump.h"
 #include "shader_recompiler/ir/value.h"
 
 namespace Shader::IR {
@@ -19,7 +20,7 @@ namespace Shader::IR {
 void DumpProgram(const Program& program, const Info& info, const std::string& type) {
     using namespace Common::FS;
 
-    if (!EmulatorSettings.IsDumpShaders()) {
+    if (!EmulatorSettings.IsDumpShaders() && !ShaderDumpTargets().Matches(info.pgm_hash)) {
         return;
     }
 

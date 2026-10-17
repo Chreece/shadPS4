@@ -13,6 +13,7 @@
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/recompiler.h"
+#include "shader_recompiler/targeted_shader_dump.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/cache_storage.h"
@@ -819,7 +820,7 @@ std::string PipelineCache::GetShaderName(Shader::HwStage stage, u64 hash,
 
 void PipelineCache::DumpShader(std::span<const u32> code, u64 hash, Shader::HwStage stage,
                                size_t perm_idx, std::string_view ext) {
-    if (!EmulatorSettings.IsDumpShaders()) {
+    if (!EmulatorSettings.IsDumpShaders() && !Shader::ShaderDumpTargets().Matches(hash)) {
         return;
     }
 
