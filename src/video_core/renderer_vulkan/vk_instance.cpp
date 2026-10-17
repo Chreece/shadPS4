@@ -488,6 +488,8 @@ bool Instance::CreateDevice() {
             .descriptorIndexing = vk12_features.descriptorIndexing,
             .shaderSampledImageArrayNonUniformIndexing =
                 vk12_features.shaderSampledImageArrayNonUniformIndexing,
+            .shaderSamplerArrayNonUniformIndexing =
+                vk12_features.shaderSamplerArrayNonUniformIndexing,
             .scalarBlockLayout = vk12_features.scalarBlockLayout,
             .uniformBufferStandardLayout = vk12_features.uniformBufferStandardLayout,
             .separateDepthStencilLayouts = vk12_features.separateDepthStencilLayouts,
