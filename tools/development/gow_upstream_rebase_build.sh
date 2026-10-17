@@ -63,7 +63,7 @@ echo "e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa  $PROVEN"
 sha256sum "$PROVEN" >"$OUT/proven-before.sha256"
 git -C "$OLD" cat-file -e "$FIX^{commit}"
 git -C "$OLD" merge-base --is-ancestor "$UPSTREAM" "$FIX" || { echo "UPSTREAM_ANCESTRY_FAILED"; exit 1; }
-[[ "$(git -C "$OLD" rev-list --count "$UPSTREAM..$FIX")" == 11 ]] || { echo "PINNED_COMMIT_COUNT_MISMATCH"; exit 1; }
+[[ "$(git -C "$OLD" rev-list --count "$UPSTREAM..$FIX")" == 12 ]] || { echo "PINNED_COMMIT_COUNT_MISMATCH"; exit 1; }
 FREE="$(df -Pk "$HOME" | awk 'END{print $4}')"
 [[ "$FREE" =~ ^[0-9]+$ ]] && (( FREE >= 2097152 )) || { echo "FREE_SSD_BELOW_2_GIB; NO_DELETION"; exit 1; }
 STAGE=ISOLATED_WORKTREE
