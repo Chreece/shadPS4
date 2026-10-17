@@ -112,6 +112,10 @@ grep -Fxq "CMAKE_HOME_DIRECTORY:INTERNAL=$SRC" "$BUILD/CMakeCache.txt" || {
   echo "CMAKE_SOURCE_DIR_MISMATCH; REFUSING_TO_RECONFIGURE"; exit 1;
 }
 echo "$PROVEN_SHA  $PROVEN" | sha256sum -c - | tee "$OUT/protected-baseline.txt"
+FREE_KIB="$(df -Pk "$BUILD" | awk 'END {print $4}')"
+[[ "$FREE_KIB" =~ ^[0-9]+$ ]] && (( FREE_KIB >= 2097152 )) || { echo "FREE_SSD_UNDER_2_GIB; NO_BUILD_OR_DELETE"; exit 1; }
+command -v patch >/dev/null || { echo "GNU_PATCH_MISSING"; exit 1; }
+command -v nm >/dev/null || { echo "NM_MISSING"; exit 1; }
 # Exact source replay: the original known-good executable was linked with
 # a deferred UFFD overlay while these FIVE sources were temporarily staged.
 # Older standalone renderer tests rebuilt from their restored preimages.
