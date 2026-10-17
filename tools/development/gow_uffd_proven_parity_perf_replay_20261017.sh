@@ -92,6 +92,50 @@ grep -Fxq "CMAKE_HOME_DIRECTORY:INTERNAL=$SRC" "$BUILD/CMakeCache.txt" || {
   echo "CMAKE_SOURCE_DIR_MISMATCH; REFUSING_TO_RECONFIGURE"; exit 1;
 }
 echo "$PROVEN_SHA  $PROVEN" | sha256sum -c - | tee "$OUT/protected-baseline.txt"
+# Exact source replay: the original known-good executable was linked with
+# a deferred UFFD overlay while these FIVE sources were temporarily staged.
+# Older standalone renderer tests rebuilt from their restored preimages.
+[[ -e "$ORIGINAL_SRC/.git" ]] || { echo "ORIGINAL_GIT_WORKTREE_MISSING"; exit 1; }
+python3 - <<'CHECK_ACTIVE'
+from pathlib import Path
+import os
+active=[]
+for p in Path("/proc").glob("[0-9]*"):
+    try:
+        if p.stat().st_uid!=os.getuid(): continue
+        path=os.path.realpath(p/"exe")
+        if Path(path).name.lower().startswith("shadps4"): active.append((p.name,path))
+    except OSError: pass
+assert not active, "ANOTHER_SHADPS4_PROCESS_RUNNING: "+repr(active)
+print("PREBUILD_GAME_PROCESS_CHECK=PASS")
+CHECK_ACTIVE
+while read -r sha file; do
+  printf '%s  %s\n' "$sha" "$ORIGINAL_SRC/$file" | sha256sum -c - >> "$OUT/source-preimages.log" || {
+    echo "PROVEN_SOURCE_PREIMAGE_CHANGED=$file"
+    exit 1
+  }
+done <<'PINNED_SOURCE'
+40bf7f4983541d61b50ef18282bb2787107f0a4df19aa11bfcc7547b0f990ed7 src/video_core/page_manager.cpp
+e8e8bdb9bb8330e70a3d753ba626e781df34da5864cc537d078509fe044c0965 src/video_core/page_manager.h
+dd2a54cb630d118ea273fc92ac90af611ac2b84e9ec2cca7e65c357101818f58 src/video_core/renderer_vulkan/vk_rasterizer.cpp
+34703c31672f73dd93ede2a04577365f780fc0d5cd86fc8f8001ba282a3e571e src/video_core/renderer_vulkan/vk_rasterizer.h
+3760577a5851bb068e55db2e14346dfa1e62b65af60d3af68fd8458f8919d6a0 src/core/libraries/gnmdriver/gnmdriver.cpp
+PINNED_SOURCE
+for file in src/video_core/page_manager.cpp src/video_core/page_manager.h src/video_core/renderer_vulkan/vk_rasterizer.cpp src/video_core/renderer_vulkan/vk_rasterizer.h src/core/libraries/gnmdriver/gnmdriver.cpp; do
+    [[ -f "$SRC/$file" && ! -L "$SRC/$file" && -f "$ORIGINAL_SRC/$file" && ! -L "$ORIGINAL_SRC/$file" ]] || {
+        echo "UNSAFE_ISOLATED_ORIGINAL_FILE=$file"; exit 1;
+    }
+    mkdir -p "$OUT/pretest/$(dirname "$file")"
+    cp -p "$SRC/$file" "$OUT/pretest/$file"
+    echo "$file" >> "$OUT/pretest-file-list.txt"
+    sha256sum "$SRC/$file" >> "$OUT/pretest-source-hashes.txt"
+    sha256sum "$ORIGINAL_SRC/$file" >> "$OUT/original-source-hashes.txt"
+done
+PRETEST_SAVED=1
+while IFS= read -r file; do
+    cp -p "$ORIGINAL_SRC/$file" "$SRC/$file"
+done < "$OUT/pretest-file-list.txt"
+echo "EXACT_PRE_PATCH_SOURCE_REPLAY=PASS; PROVEN_SOURCE_UNTOUCHED=YES"
 for f in "${FILES[@]}"; do
   [[ -f "$SRC/$f" && ! -L "$SRC/$f" ]] || { echo "UNSAFE_OR_MISSING=$f"; exit 1; }
   mkdir -p "$OUT/original/$(dirname "$f")"
