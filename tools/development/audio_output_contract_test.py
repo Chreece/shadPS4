@@ -32,6 +32,11 @@ void SetVolume() {
     device_context->MakeCurrent(device_name);
 }
 u64 GetLastOutputTime() const {}
+void OutputContextFault() {
+    if (!context_failure_reported.exchange(true)) {
+        log("OpenAL PCM output cannot activate device context");
+    }
+}
 std::unique_ptr<PortBackend> OpenALAudioOut::Open(PortOut& port) {
     auto backend = std::make_unique<OpenALPortBackend>(port);
     if (!backend->IsUsable()) { return {}; }
@@ -91,6 +96,12 @@ class AudioOutputContractTest(unittest.TestCase):
         self.check_mutation("src/core/libraries/audio/openal_audio_out.cpp",
                             "if (!backend->IsUsable())", "if (false)",
                             "must reject an unusable backend")
+
+    def test_missing_openal_context_fault_diagnostic_fails(self):
+        self.check_mutation("src/core/libraries/audio/openal_audio_out.cpp",
+                            "OpenAL PCM output cannot activate device context",
+                            "silent context loss",
+                            "OpenAL PCM loss must be reported")
 
     def test_muted_openal_gain_null_guard_fails(self):
         self.check_mutation("src/core/libraries/audio/openal_audio_out.cpp",
