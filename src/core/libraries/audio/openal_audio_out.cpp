@@ -158,6 +158,36 @@ public:
             alSourceQueueBuffers(source, 1, &buffer_id);
         }
 
+        // Sample only one output in sixteen to diagnose game PCM vs host
+        // sink silence without a per-buffer logging/performance penalty.
+        if ((output_count & 0xF) == 0) {
+            const float peak = use_native_float
+                                   ? AudioPeak(al_buffer_float.data(), al_buffer_float.size())
+                                   : AudioPeakS16(al_buffer_s16.data(), al_buffer_s16.size());
+            sampled_peak = std::max(sampled_peak, peak);
+            if (peak > 0.0001f) {
+                ++non_silent_probes;
+                if (!first_pcm_seen) {
+                    first_pcm_seen = true;
+                    LOG_INFO(Lib_AudioOut,
+                             "OpenAL audio: first non-silent PCM for device '{}' "
+                             "(peak={:.5f}, gain={:.3f})",
+                             device_name, peak, current_gain.load(std::memory_order_acquire));
+                }
+            }
+            ++pcm_probes;
+            if (pcm_probes >= 16) {
+                LOG_INFO(Lib_AudioOut,
+                         "OpenAL audio route: device='{}', output_buffers={}, non_silent="
+                         "{}/{} probes, peak={:.5f}, gain={:.3f}",
+                         device_name, output_count, non_silent_probes, pcm_probes, sampled_peak,
+                         current_gain.load(std::memory_order_acquire));
+                pcm_probes = 0;
+                non_silent_probes = 0;
+                sampled_peak = 0.0f;
+            }
+        }
+
         // Check state and queue health
         ALint state = 0;
         ALint queued = 0;
@@ -1054,6 +1084,10 @@ private:
     u64 next_output_time{0};
     u64 last_volume_check_time{0};
     u32 output_count{0};
+    u32 pcm_probes{0};
+    u32 non_silent_probes{0};
+    float sampled_peak{0.0f};
+    bool first_pcm_seen{false};
 
     // OpenAL objects
     OpenALDevice* device_context{nullptr};
