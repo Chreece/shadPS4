@@ -179,6 +179,8 @@ private:
     // Kept separate from the emulator's GPU page-fault buffer.
     std::unique_ptr<VideoCore::Buffer> guest_tsharp_feedback_buffer;
     u32 guest_tsharp_feedback_fence_count{};
+    u32 guest_tsharp_feedback_fences_since_binding{};
+    bool guest_tsharp_feedback_bound{};
 
     bool attachment_feedback_loop{};
     bool needs_barrier{};
