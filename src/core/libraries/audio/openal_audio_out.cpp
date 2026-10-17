@@ -211,11 +211,13 @@ public:
         output_count++;
     }
     void SetVolume(const std::array<int, 8>& ch_volumes) override {
-        if (!device_context->MakeCurrent(device_name)) {
+        // Explicitly disabled output ports intentionally own no OpenAL context.
+        // sceAudioOutOpen calls SetVolume even on those silent ports, so never
+        // dereference an uninitialized device_context.
+        if (intentionally_disabled || !device_context || !source) [[unlikely]] {
             return;
         }
-
-        if (!source) [[unlikely]] {
+        if (!device_context->MakeCurrent(device_name)) {
             return;
         }
 
