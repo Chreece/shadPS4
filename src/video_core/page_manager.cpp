@@ -16,6 +16,7 @@
 #include "core/memory.h"
 #include "core/signals.h"
 #include "video_core/page_manager.h"
+#include "video_core/protection_range_coalescer.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
 #ifndef _WIN64
@@ -167,6 +168,12 @@ struct PageManager::Impl {
                 perms = new_perms;
             } else if (range_pages != 0) {
                 ++potential_pages;
+                // Avoid re-protecting large spans of unchanged pages just to
+                // coalesce two distant access-permission transitions.
+                if (new_perms == old_perms &&
+                    ShouldFlushSparseProtectionRange(range_pages, potential_pages)) {
+                    release_pending();
+                }
             }
 
             // If the page must be (un)protected
@@ -234,8 +241,11 @@ struct PageManager::Impl {
                 release_pending();
                 perms = new_perms;
             } else if (range_pages != 0) {
-                // If the protection did not change, extend the potential range
                 ++potential_pages;
+                if (new_perms == old_perms &&
+                    ShouldFlushSparseProtectionRange(range_pages, potential_pages)) {
+                    release_pending();
+                }
             }
 
             // If the page must be (un)protected
