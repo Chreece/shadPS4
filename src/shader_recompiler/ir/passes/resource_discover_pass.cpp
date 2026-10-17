@@ -901,10 +901,10 @@ static bool SplitImageSampleByIndexedSelect(IR::Block& block, IR::Inst& sample,
             read->SetArg(1,IR::Value{static_cast<u32>(index+table.addends[i])});
             words[i]=read;
         }
-        const auto* const sourceParts[2]{low,high};
+        const std::array<const IR::Inst*, 2> source_parts{low, high};
         std::array<IR::Inst*,2> parts{};
         for(std::size_t half=0;half<2;++half) {
-            auto* const copy=&*block.PrependNewInst(pos,*sourceParts[half]);
+            auto* const copy=&*block.PrependNewInst(pos,*source_parts[half]);
             for(std::size_t word=0;word<4;++word) {
                 copy->SetArg(word,IR::Value{words[half*4+word]});
             }
