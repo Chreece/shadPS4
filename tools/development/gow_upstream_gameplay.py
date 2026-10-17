@@ -317,7 +317,11 @@ def main():
             if process.returncode < 0:
                 # Guest process exited due to signal; capture crash proof
                 # rather than treating an ELF/module warning as the cause.
-                capture_crash_metadata(process.pid, out)
+                try:
+                    capture_crash_metadata(process.pid, out)
+                except Exception as crash_error:
+                    (out / "crash-capture-error.txt").write_text(
+                        repr(crash_error) + "\n")
         report["process_alive_when_reported"] = bool(process and process.poll() is None)
         report["result"] = "OBSERVED_ALIVE" if status == 0 else "FAILED"
         report["thread_samples"] = len(samples)
