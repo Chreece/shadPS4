@@ -42,6 +42,9 @@ LOG_MARKERS = {
     "audio_openal_context_failure": "OpenAL PCM output cannot activate device context",
     "audio_device_intentional_mute": "audio output intentionally disabled",
     "audio_backend_sink_error": "Failed to resume audio stream",
+    "audio_producer_probe": "AUDIO_PRODUCER_TIMING",
+    "audio_sdl_probe": "AUDIO_SDL_TIMING",
+    "audio_outer_pacing": "SDL outer-thread-only pacing trial active",
     "audio3d_shutdown": "sceAudio3dTerminate: called",
     "audio_unload_error": "Failed sceSysmoduleUnloadModule for SCE_SYSMODULE_AUDIO_3D",
 }
@@ -104,6 +107,11 @@ def sample_threads(pid):
 def summarize_log(path, out):
     first, last = [], deque(maxlen=350)
     shader_ids, category = Counter(), Counter()
+    audio_totals = Counter()
+    audio_maxima = {}
+    audio_modes = Counter()
+    audio_windows = Counter()
+    audio_metric_re = re.compile(r"\b([a-z_]+)=(\d+)")
     total_lines = 0
     if not path.is_file():
         return {"console_missing": True}
@@ -113,6 +121,19 @@ def summarize_log(path, out):
                 total_lines += 1
                 line = raw.decode("utf-8", "replace").rstrip()[:1800]
                 tags = [kind for kind, substring in LOG_MARKERS.items() if substring in line]
+                if "audio_producer_probe" in tags or "audio_sdl_probe" in tags:
+                    kind = "producer" if "audio_producer_probe" in tags else "sdl"
+                    audio_windows[kind] += 1
+                    if kind == "sdl":
+                        match = re.search(r"\bpacing=(outer|dual)", line)
+                        audio_modes[match.group(1) if match else "unknown"] += 1
+                    for field, value_str in audio_metric_re.findall(line):
+                        value = int(value_str)
+                        if field in ("max_backend_us", "max_gap_us", "queue_max"):
+                            audio_maxima[f"{kind}_{field}"] = max(
+                                audio_maxima.get(f"{kind}_{field}", 0), value)
+                        elif field not in ("port", "period_us", "queue_last", "buffers"):
+                            audio_totals[f"{kind}_{field}"] += value
                 if " <Error>" in line or " <Warning>" in line or tags:
                     for tag in tags:
                         category[tag] += 1
@@ -127,6 +148,13 @@ def summarize_log(path, out):
                     match = SHADER_ID.search(line)
                     if match:
                         shader_ids[match.group(1).lower()] += 1
+        (out / "audio-timing-summary.json").write_text(
+            json.dumps({
+                "windows": dict(audio_windows),
+                "totals": dict(audio_totals),
+                "maxima": audio_maxima,
+                "pacing_modes": dict(audio_modes),
+            }, indent=2) + "\n")
         (out / "console-diagnostics.txt").write_text(
             "\n".join(first) + "\n\n... SELECTED DIAGNOSTIC TAIL ...\n\n" +
             "\n".join(last) + "\n", encoding="utf-8")
@@ -142,6 +170,9 @@ def summarize_log(path, out):
     except OSError as error:
         return {"console_read_error": str(error)}
     return {"lines": total_lines, "counts": dict(category),
+            "audio_timing_summary": {
+                "windows": dict(audio_windows), "totals": dict(audio_totals),
+                "maxima": audio_maxima, "pacing_modes": dict(audio_modes)},
             "top_shader_hashes": shader_ids.most_common(32),
             "full_console_path": str(path), "full_console_bytes": path.stat().st_size}
 
@@ -228,7 +259,7 @@ def capture_pipewire_xruns(out, label, env):
         return {"available": False}
     try:
         result = subprocess.run(
-            ["pw-top", "-b", "-n", "1"], env=env, stdin=subprocess.DEVNULL,
+            ["pw-top", "-b", "-n", "4"], env=env, stdin=subprocess.DEVNULL,
             capture_output=True, text=True, errors="replace", timeout=7)
         (out / f"pipewire-xruns-{label}.txt").write_text(
             f"exit={result.returncode}\n" + result.stdout[:64000] +
@@ -328,6 +359,8 @@ def main():
         audio_environment = env
         report["host_audio_prelaunch"] = capture_audio_route(out, "prelaunch", env)
         report["runtime_log_filter"] = env.get("SHADPS4_RUNTIME_LOG_FILTER", "")
+        report["sdl_outer_pacing"] = env.get("SHADPS4_SDL_OUTER_PACING", "")
+        report["audio_timing_probe"] = env.get("SHADPS4_AUDIO_TIMING_PROBE", "")
         command = [str(exe), "--cpu-id-mode", "builtin", "--userfaultfd",
                    "--game", "CUSA34384", "--fullscreen", "true", "--show-fps"]
         (out / "launch-command.json").write_text(json.dumps(command, indent=2) + "\n")
