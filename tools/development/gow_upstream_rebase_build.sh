@@ -6,7 +6,7 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=31ecdcd80bd3e20b4ed4a991e89996e0a18e90ca
+FIX=5bfbb4f85250b4410bd9e19789091c8f5a99f66a
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
@@ -48,13 +48,15 @@ finish() {
   tar -czf "$LOGS/$TAG.tar.gz" \
     --exclude="$TAG/pm4-test" \
     --exclude="$TAG/gameplay/full-console.log" \
+    --exclude="$TAG/base-gameplay/full-console.log" \
+    --exclude="$TAG/module-filename-test" \
     --exclude="$TAG/srt-original" \
     -C "$LOGS" "$TAG"
   cat "$OUT/result.txt"; echo "ARCHIVE=$LOGS/$TAG.tar.gz"
   [[ ! -f "$OUT/base.txt" ]] || cat "$OUT/base.txt"
   [[ ! -f "$OUT/srt.txt" ]] || cat "$OUT/srt.txt"
   if [[ "$rc" != 0 ]]; then
-    for f in "$OUT/"{python-syntax,source-contract-tests,source-contract,observer-unit-tests,compile-page-manager,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer}.log; do
+    for f in "$OUT/"{python-syntax,source-contract-tests,source-contract,observer-unit-tests,module-filename-compile,compile-page-manager,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer,baseline-gameplay-observer}.log; do
       [[ ! -s "$f" ]] || { echo "ERROR_TAIL=$f"; tail -18 "$f"; }
     done
   fi
@@ -68,6 +70,15 @@ print("GAME_PROCESS_LEFT_RUNNING="+str(r.get("process_alive_when_reported",False
 REPORT
   else
     echo "GAME_LAUNCHED=NO; REASON=VERIFICATION_OR_BUILD_NOT_PASSED"
+  fi
+  if [[ -f "$OUT/base-gameplay/gameplay-result.json" ]]; then
+    python3 - "$OUT/base-gameplay/gameplay-result.json" <<'BASELINE_REPORT'
+import json,sys
+r=json.load(open(sys.argv[1]))
+print("PRE_SRT_GAMEPLAY_RESULT="+r.get("result", "UNKNOWN"))
+print("PRE_SRT_GAMEPLAY_PID="+str(r.get("pid", "NOT_STARTED")))
+print("PRE_SRT_GAMEPLAY_RUNNING="+str(r.get("process_alive_when_reported",False)))
+BASELINE_REPORT
   fi
   echo "ORIGINAL_GOW_SOURCE=UNCHANGED; SUNSHINE_X11=UNCHANGED; SSH_SESSION=UNCHANGED"
   exit "$rc"
@@ -151,6 +162,16 @@ CXX_BIN="$(command -v c++ || echo /usr/bin/c++)"
 "$CXX_BIN" -std=c++20 -O2 -Wall -Wextra -Werror -I"$SRC/src" "$SRC/tests/pm4_shader_register_window_test.cpp" -o "$OUT/pm4-test" >"$OUT/pm4-compile.log" 2>&1
 "$OUT/pm4-test" >"$OUT/pm4-result.txt"
 cat "$OUT/pm4-result.txt"
+STAGE=GUEST_MODULE_FILENAME_REGRESSION
+"$CXX_BIN" -std=c++20 -O2 -Wall -Wextra -Werror -I"$SRC/src" \
+  "$SRC/tests/module_filename_validation_test.cpp" -o "$OUT/module-filename-test" \
+  >"$OUT/module-filename-compile.log" 2>&1 || {
+    echo "GUEST_MODULE_FILENAME_COMPILE=FAILED"
+    tail -40 "$OUT/module-filename-compile.log"
+    exit 1
+  }
+"$OUT/module-filename-test"
+echo "GUEST_MODULE_FILENAME_REGRESSION=PASS; HLE_ABI_FIX=SOURCE_INCLUDED"
 STAGE=CONFIGURE_UPSTREAM
 if command -v ccache >/dev/null 2>&1; then
   echo "CACHE=CCACHE; REUSE_PREVIOUS_OBJECTS=YES" >"$OUT/cache.txt"
@@ -288,10 +309,49 @@ GAME_SHA="$(sha256sum "$SRT" | cut -d' ' -f1)"
 echo "GAME_CANDIDATE_SHA256=$GAME_SHA" >"$OUT/auto-game.txt"
 echo "AUTO_GAME_LAUNCH=ENABLED; USER_INPUT=MANUAL_MOONLIGHT"
 STAGE=GAME_LAUNCH_AND_OBSERVATION
-python3 "$OBSERVER" --binary "$SRT" --sha256 "$GAME_SHA" \
-  --report "$OUT/gameplay" --cwd "$ORIG" --seconds 180 \
-  2>&1 | tee "$OUT/gameplay-observer.log"
-
-STAGE=COMPLETE
-echo "GO_W_UPSTREAM_REBASE_FULL_CHAIN=PASS"
-echo "GAME_AUTOMATIC_LAUNCH=COMPLETED; SSH_SESSION=UNCHANGED"
+if python3 "$OBSERVER" --binary "$SRT" --sha256 "$GAME_SHA" \
+    --report "$OUT/gameplay" --cwd "$ORIG" --seconds 180 \
+    2>&1 | tee "$OUT/gameplay-observer.log"; then
+  STAGE=COMPLETE
+  echo "GO_W_UPSTREAM_REBASE_FULL_CHAIN=PASS"
+  echo "GAME_AUTOMATIC_LAUNCH=COMPLETED; SSH_SESSION=UNCHANGED"
+else
+  SRT_RUNTIME_RC=$?
+  echo "SRT_GAME_OBSERVATION=FAILED; RUNTIME_EXIT=$SRT_RUNTIME_RC"
+  # A/B isolation only when the first game is definitively dead due to a
+  # fatal guest-process signal. Never start a second game if one is alive
+  # or if the first launch was blocked by a preexisting emulator.
+  SHOULD_DIFF="$(python3 - "$OUT/gameplay/gameplay-result.json" <<'DECIDE'
+import json,sys
+try:
+    r=json.load(open(sys.argv[1]))
+    ok=(r.get("exit_code") == -11 and
+        r.get("process_alive_when_reported") is False and
+        r.get("pid") is not None)
+    print("YES" if ok else "NO")
+except (OSError, ValueError, TypeError):
+    print("NO")
+DECIDE
+)"
+  if [[ "$SHOULD_DIFF" == "YES" ]]; then
+    STAGE=PRE_SRT_RUNTIME_COMPARISON
+    # BASE was compiled before the native SRT overlay, using exactly the
+    # same new CPU/PM4/UFFD/kernel fix source and game settings.
+    BASE_SHA="$(sha256sum "$BASE" | cut -d' ' -f1)"
+    echo "SRT_SIGSEGV=CONFIRMED; AUTO_PRE_SRT_AB=START" | tee "$OUT/ab-difference.txt"
+    if python3 "$OBSERVER" --binary "$BASE" --sha256 "$BASE_SHA" \
+        --report "$OUT/base-gameplay" --cwd "$ORIG" --seconds 180 \
+        2>&1 | tee "$OUT/baseline-gameplay-observer.log"; then
+      echo "PRE_SRT_GAMEPLAY=ALIVE; SRT_SPECIFIC_REGRESSION=SUSPECTED" \
+        | tee -a "$OUT/ab-difference.txt"
+    else
+      echo "PRE_SRT_GAMEPLAY=FAILED; COMMON_NATIVE_OR_GAME_STARTUP_REGRESSION=SUSPECTED" \
+        | tee -a "$OUT/ab-difference.txt"
+    fi
+    # A failed SRT test is still failed: never promote a partial success.
+  else
+    echo "AB_COMPARISON=SKIPPED; REASON=NO_CONFIRMED_EXITED_SIGSEGV" \
+      | tee "$OUT/ab-difference.txt"
+  fi
+  exit "$SRT_RUNTIME_RC"
+fi
