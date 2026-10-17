@@ -22,7 +22,7 @@ GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
 BASE_SHA256="948742f5b1ffebf0dfc4d1b452806c2e649bf35d76cffbb576e2b81bb36b5826"
-CANDIDATE="a3d4b8bee280c844229c0d29b8cfc4a2d9d4a80a"
+CANDIDATE="bc6f2d6ad22ed52e01e3f9696d8b50fcd65ca78b"
 UPSTREAM="32021e41bc52f744c80d122e732e24e97496c98d"
 BRANCH="fix/linux-sdl-gamepad-hotplug-20261017"
 RUN="$LOGS/.$NAME.runtime"
@@ -406,11 +406,11 @@ apply_blob "src/shader_recompiler/ir/passes/sharp_dword_mask.h" "64688e8abe848d6
 apply_blob "src/shader_recompiler/ir/passes/srt_host_barrier.h" "da91f2ca882474ff990ebe4344bda1ff30354dbf"
 apply_blob "src/shader_recompiler/ir/passes/srt_offset_preflight.h" "667744445a209b0a74197cc6ee8f28e2a1486b63"
 apply_blob "src/shader_recompiler/ir/passes/srt_proven_identity.h" "c9f1f099f93c1a6ab78c32eed0b6f1ba816cdb39"
-apply_blob "src/input/controller.cpp" "7c21cbb0b03247b25e71c6dd2dfa27605795cd0d"
-apply_blob "src/input/controller.h" "0eb7a3ced398cf041c6a87e98b3993334dcf428c"
-apply_blob "src/input/gamepad_hotplug_snapshot.h" "695563a9f758f0f9a5956648cacaaaaf8e94f36f"
+apply_blob "src/input/controller.cpp" "a502814fc610098d5fbeba46004cf5a93dbe0766"
+apply_blob "src/input/controller.h" "9b0915efca6fbdcbf2c302915c3f7959e5f9ac53"
+apply_blob "src/input/gamepad_hotplug_snapshot.h" "85f4033b779c6d12e3be80ebb2c0b03be78be78c"
 apply_blob "src/input/input_handler.cpp" "0553ecf9733fa4bab27984d446e4b1cdd187374a"
-apply_blob "src/sdl_window.cpp" "1e12fa5b1105942a4110a252555c2e80a23f7b00"
+apply_blob "src/sdl_window.cpp" "f97b146efd1e6d53d29a360dd04475dbc7800e06"
 apply_blob "src/sdl_window.h" "9aa97c5eaaad011a35e4924345b0491bea3858f6"
 OVERLAY_APPLIED=1
 # Host-only uniformity test covers divergent descriptor metadata and address/index negatives.
@@ -741,7 +741,7 @@ echo "INVALID_SHARP_SOURCES=$(wc -l <"$RUN/info/invalid-sharp-provenance.txt")"
 # Correlate SDL ID reconciliation with the actual first button/axis
 # inputs after a Moonlight/Sunshine virtual pad appears during game runtime.
 # No gamepad is injected or reconfigured by this diagnostics collector.
-grep -aE 'Gamepad hotplug reconciliation:|Gamepad registered for slot|Restored primary virtual controller|Gamepad hotplug input:' \
+grep -aE 'Gamepad hotplug reconciliation:|Gamepad registered for slot|Restored primary virtual controller|Gamepad hotplug input:|not ready yet' \
     "$RUN/evidence/B/game.log" > "$RUN/info/gamepad-hotplug-events.log" || true
 python3 - "$RUN/info/gamepad-hotplug-events.log" "$RUN/info/gamepad-hotplug-summary.tsv" <<'PYHOTPLUG'
 import collections,pathlib,re,sys
@@ -754,6 +754,7 @@ slots=collections.Counter()
 for line in events.splitlines():
     if "Gamepad hotplug reconciliation:" in line: c["reconciliations"]+=1
     if "Restored primary virtual controller" in line: c["virtual_restores"]+=1
+    if "SDL gamepad" in line and "not ready yet" in line: c["open_retries"]+=1
     m=re.search(r"Gamepad registered for slot (\d+)",line)
     if m:slots[int(m.group(1))+1]+=1
     m=re.search(r"Gamepad hotplug input: slot=(\d+).*?type=(button|axis)",line)
@@ -766,7 +767,7 @@ for slot in range(1,5):
     status="SDL_INPUT_DELIVERED" if b or a else "AWAITING_LIVE_TEST"
     rows.append(f"{slot}\t{n}\t{b}\t{a}\t{status}")
 rows.append(f"SUMMARY\treconciliations={c['reconciliations']}\t"
-            f"virtual_restores={c['virtual_restores']}\t-\t-")
+            f"virtual_restores={c['virtual_restores']}\topen_retries={c['open_retries']}\t-")
 pathlib.Path(sys.argv[2]).write_text("\n".join(rows)+"\n",encoding="utf-8")
 print("HOTPLUG_REPORT_BEGIN")
 print("\n".join(rows))
