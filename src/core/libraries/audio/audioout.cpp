@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cstdlib>
 #include <memory>
 #include <mutex>
@@ -17,6 +19,7 @@
 #include "core/emulator_settings.h"
 #include "core/libraries/audio/audioout.h"
 #include "core/libraries/audio/audioout_backend.h"
+#include "core/libraries/audio/audioout_sync.h"
 #include "core/libraries/audio/audioout_error.h"
 #include "core/libraries/kernel/time.h"
 #include "core/libraries/libs.h"
@@ -708,7 +711,6 @@ s32 PS4_SYSV_ABI sceAudioOutOutputs(OrbisAudioOutOutputParam* param, u32 num) {
             }
 
             ports.push_back(port);
-            locks.emplace_back(port->mutex);
 
             // Check consistent buffer size
             if (i == 0) {
@@ -720,15 +722,13 @@ s32 PS4_SYSV_ABI sceAudioOutOutputs(OrbisAudioOutOutputParam* param, u32 num) {
         }
     }
 
-    // Wait for all ports to be ready
-    for (u32 i = 0; i < num; i++) {
-        ports[i]->output_cv.wait(locks[i],
-                                 [&] { return !ports[i]->output_ready || ports[i]->closing; });
-
-        if (ports[i]->closing) {
-            LOG_DEBUG(Lib_AudioOut, "Port closed while waiting for drain");
-            return ORBIS_AUDIO_OUT_ERROR_NOT_OPENED;
-        }
+    // This helper releases every other port mutex before waiting for a busy
+    // port, then reacquires all locks in stable order before atomic publication.
+    // The previous loop could block an output worker while waiting for a
+    // different port, delaying both guest producers and physical playback.
+    if (!WaitForAudioPortsReady(ports, locks)) {
+        LOG_DEBUG(Lib_AudioOut, "Port closed while waiting for drain");
+        return ORBIS_AUDIO_OUT_ERROR_NOT_OPENED;
     }
 
     // Copy data to all ports
