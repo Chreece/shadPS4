@@ -157,6 +157,7 @@ if [[ -f "$BUILD/CMakeFiles/shadps4.dir/build.make" ]]; then
     CMakeFiles/shadps4.dir/src/core/module.cpp.o
     CMakeFiles/shadps4.dir/src/core/memory.cpp.o
     CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/resource_patching_pass.cpp.o
+    CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp.o
   )
   for obj in "${OBJECTS[@]}"; do
     grep -Fq "$obj:" "$BUILD/CMakeFiles/shadps4.dir/build.make" || {
@@ -180,6 +181,7 @@ if [[ -f "$BUILD/CMakeFiles/shadps4.dir/build.make" ]]; then
       echo "EARLY_CHECK=FAILED"; tail -65 "$OUT/compile-preflight.log"; exit 1;
     }
   echo "EARLY_CHECK=PASS; NATIVE_OBJECTS_COMPILED=${#OBJECTS[@]}"
+  echo "SHADER_INFO_COLLECTOR=COMPILED_FROM_UPSTREAM_RECONCILED_SOURCE"
 else
   echo "EARLY_CHECK=NO_UNIX_MAKEFILE; USING_STANDARD_CMAKE_BUILD"
 fi
