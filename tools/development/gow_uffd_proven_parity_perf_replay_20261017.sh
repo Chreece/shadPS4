@@ -183,8 +183,8 @@ git -C "$ORIGINAL_SRC" merge-base --is-ancestor "$BASE" "$HEAD" || {
 git -C "$ORIGINAL_SRC" diff "$BASE" "$HEAD" -- "${FILES[@]}" >"$OUT/deferred-fix.patch"
 echo "ac174eda286db4e8992d08c9c998381dc083b3f36921ffa230d24b14f1306f23  $OUT/deferred-fix.patch" | sha256sum -c - || { echo "DEFERRED_PATCH_MISMATCH_WITH_PROVEN_BUILD"; exit 1; }
 [[ -s "$OUT/deferred-fix.patch" ]] || { echo "EMPTY_PATCH"; exit 1; }
-git -C "$SRC" apply --check "$OUT/deferred-fix.patch" >"$OUT/apply-check.log" 2>&1 || { echo "PATCH_CONTEXT_MISMATCH"; cat "$OUT/apply-check.log"; exit 1; }
-git -C "$SRC" apply "$OUT/deferred-fix.patch"
+patch --batch --fuzz=0 --dry-run -p1 -d "$SRC" <"$OUT/deferred-fix.patch" >"$OUT/apply-check.log" 2>&1 || { echo "PATCH_CONTEXT_MISMATCH"; cat "$OUT/apply-check.log"; exit 1; }
+patch --batch --fuzz=0 -p1 -d "$SRC" <"$OUT/deferred-fix.patch" >"$OUT/apply.log" 2>&1
 echo "PATCH_APPLICATION=PASS; BUILD_START=YES"
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build.log" 2>&1
 [[ -x "$BUILD/shadps4" ]] || { echo "BUILT_TARGET_MISSING"; exit 1; }
