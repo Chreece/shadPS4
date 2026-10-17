@@ -235,10 +235,7 @@ echo "UFFD_FOUR_SUPPORT_FILES_REPLAYED; PROVEN_RENDERER_RETAINED=YES"
 grep -Fq "pending_gpu_invalidations" "$SRC/src/video_core/page_manager.cpp" || {
   echo "DEFERRED_UFFD_HANDLER_NOT_STAGED"; exit 1;
 }
-grep -Fq "InvalidateMemoryOnGpuThread" "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" || {
-  echo "DEFERRED_GPU_CALLBACK_NOT_STAGED"; exit 1;
-}
-echo "PINNED_UFFD_FIVE_BLOBS=SHA_MATCHED; ORIGINAL_SOURCE=UNCHANGED"
+echo "PINNED_UFFD_BLOBS=SHA_MATCHED; FOUR_STAGED_ONE_RENDERER_RECONSTRUCTED; ORIGINAL_SOURCE=UNCHANGED"
 echo "RECONSTRUCT_PROVEN_GRAPHICS_RENDERER=START"
 python3 -B "$RESTORER" \
   "$ORIGINAL_SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" \
