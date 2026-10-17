@@ -14,6 +14,18 @@ module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
 
 FIXTURE = {
+    "src/core/memory.cpp": """
+static_assert(GuestPermissionContract(), "guest memory mask mapping");
+s64 MemoryManager::ProtectBytes(
+const VMAType type = vma_base.type;
+const MemoryPermission perms = GuestEffectivePermissions(prot);
+CarveVMA(addr, adjusted_size);
+if (type == VMAType::Reserved) {}
+s32 MemoryManager::Protect(
+ASSERT_MSG(IsValidMapping(addr, size), "invalid guest mapping");
+FindVMA(addr + protected_bytes);
+s32 MemoryManager::VirtualQuery(
+""",
     "src/core/signals.cpp": """
 SignalDispatch::SignalDispatch() {
 #if defined(__linux__) && defined(ARCH_X86_64)
@@ -89,6 +101,40 @@ class SourceContractTest(unittest.TestCase):
                                capture_output=True, text=True)
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertIn("UPSTREAM_NATIVE_SOURCE_CONTRACT=PASS", p.stdout)
+
+    def test_combined_readwrite_mask_fails(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            populate(root)
+            file = root / "src/core/memory.cpp"
+            file.write_text(file.read_text().replace(
+                "const MemoryPermission perms = GuestEffectivePermissions(prot);",
+                "if (True(prot & MemoryProt::CpuReadWrite)) {}\n"
+                "const MemoryPermission perms = GuestEffectivePermissions(prot);"))
+            with self.assertRaisesRegex(RuntimeError, "read-only guest memory"):
+                module.validate(root)
+
+    def test_user_memory_protection_range_clipping_fails(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            populate(root)
+            file = root / "src/core/memory.cpp"
+            file.write_text(file.read_text().replace(
+                "ASSERT_MSG(IsValidMapping(addr, size),",
+                "if (addr >= vend) return ORBIS_OK;\n"
+                "ASSERT_MSG(IsValidMapping(addr, size),"))
+            with self.assertRaisesRegex(RuntimeError, "guest user memory"):
+                module.validate(root)
+
+    def test_vma_type_not_saved_before_carving_fails(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            populate(root)
+            file = root / "src/core/memory.cpp"
+            file.write_text(file.read_text().replace(
+                "const VMAType type = vma_base.type;", "// VMA type not snapshotted"))
+            with self.assertRaisesRegex(RuntimeError, "memory VMA type"):
+                module.validate(root)
 
     def test_missing_nested_cpu_sigsegv_policy_fails(self):
         with TemporaryDirectory() as d:
