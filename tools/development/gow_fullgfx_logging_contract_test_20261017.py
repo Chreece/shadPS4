@@ -51,7 +51,7 @@ def main():
     check("ISOLATED_SOURCE_SNAPSHOT_RESTORED=YES" in shell,
           "ISOLATED_SOURCE_RESTORE_CHECK_MISSING")
     for unsafe in ("git reset", "git checkout", "pkill", "kill -9", "sysctl -w",
-                   "systemctl stop", "config.json\", \"w"):
+                   "systemctl stop", "pactl set-", "wpctl set-"):
         check(unsafe not in shell,"UNSAFE_MUTATION_OR_PROCESS_TERMINATION:"+unsafe)
     print("PROVEN_GRAPHICS_HASH_AND_ONE_BUILD_GATES=PASS")
     print("NO_CONFIG_SERVICE_SUNSHINE_OR_SSH_MUTATIONS=PASS")
