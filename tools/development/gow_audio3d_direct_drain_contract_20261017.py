@@ -70,6 +70,11 @@ def main():
     check('if (Audio3dDirectDrainEnabled()) {' in trial
           and 'if (const s32 ret = DrainAssociatedPorts(port); ret < 0)' in trial,
           "OPT_IN_FORWARD_NOT_GUARDED_OR_ERRORS_IGNORED")
+    check('std::unique_lock<std::recursive_mutex> serialized(port.mutex, std::defer_lock);'
+          in trial and
+          'if (Audio3dDirectDrainEnabled()) {\n        serialized.lock();' in trial,
+          "DIRECT_DRAIN_MUST_SERIALIZE_PORT_PUSH_FIFO")
+
     check('const OrbisAudio3dPortId port_id' in trial,
           "AUDIO3D_API_SIGNATURE_MISSING")
     check('mutable std::recursive_mutex mutex;' in header
@@ -90,9 +95,9 @@ def main():
     print("OPT_IN_DIRECT_DRAIN_AND_PER_PORT_AUDIO_HEALTH=PASS")
 
     for proof in (
-        "AUDIO3D_TEST_HEAD=67dce2ddcea88e092b82c8fe550c8c815cfecbe1",
+        "AUDIO3D_TEST_HEAD=0821f7c1d07bbe8cc3daa91e901c573b34500a98",
         "AUDIO3D_ORIGINAL_BLOB=b1b1445eda8823f07b4f66c07afcb175f7ee04b9",
-        "AUDIO3D_TEST_BLOB=837686242b59e10b33ec5e5c42892dd7d37f8b8c",
+        "AUDIO3D_TEST_BLOB=3b6d5bf02ba954a4e30ce9cd063897a0046bbde0",
         "UFFD_BATCHED_READ_2314_BASELINE_CHANGED",
         "uffd-batched-read-2314-unchanged.txt",
         "SOURCE_MATCHES_GRAPHICS_CORRECT_2059_CANDIDATE=PASS",
