@@ -119,6 +119,20 @@ class GameplayObserverTests(unittest.TestCase):
                            "audio_pcm_detected", "audio_pcm_route"):
                 self.assertEqual(counted[marker], 1, marker)
 
+    def test_openal_audio_pcm_marker_in_log(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            log = root / "audio-openal.log"
+            log.write_text(
+                "Initialized OpenAL backend (48000 Hz, 2 ch, float, native)\n"
+                "OpenAL audio: first non-silent PCM for device 'Default Device'\n"
+                "OpenAL audio route: device='Default Device', output_buffers=256\n",
+                encoding="utf-8")
+            counts = gameplay.summarize_log(log, root)["counts"]
+            self.assertEqual(counts["audio_openal_device_open"], 1)
+            self.assertEqual(counts["audio_openal_pcm_detected"], 1)
+            self.assertEqual(counts["audio_openal_pcm_route"], 1)
+
     def test_runtime_proc_queries_are_read_only(self):
         if not Path("/proc").is_dir():
             self.skipTest("Linux procfs not present")
