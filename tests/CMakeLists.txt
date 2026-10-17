@@ -574,3 +574,10 @@ target_compile_features(shadps4_srt_sbuffer_emitter_test PRIVATE cxx_std_23)
 target_include_directories(shadps4_srt_sbuffer_emitter_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(shadps4_srt_sbuffer_emitter_test PRIVATE xbyak::xbyak)
 add_test(NAME srt_sbuffer_emitter COMMAND shadps4_srt_sbuffer_emitter_test)
+
+# Proven, control-flow-independent scalar SRT identities.
+add_executable(shadps4_srt_proven_identity_test shader_recompiler/test_srt_proven_identity.cpp)
+target_compile_features(shadps4_srt_proven_identity_test PRIVATE cxx_std_23)
+target_include_directories(shadps4_srt_proven_identity_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(shadps4_srt_proven_identity_test PRIVATE magic_enum::magic_enum fmt::fmt)
+add_test(NAME srt_proven_identity COMMAND shadps4_srt_proven_identity_test)

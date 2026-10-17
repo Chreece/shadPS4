@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdio>
+#include <cstdint>
 
 #include "shader_recompiler/ir/passes/srt_uniformity.h"
 
@@ -17,12 +18,15 @@ struct MockValue {
     const MockInst* inst{};
     Shader::IR::Type kind{Shader::IR::Type::U32};
     bool immediate{};
+    std::uint32_t bits{};
     bool IsImmediate() const { return immediate; }
+    std::uint32_t U32() const { return bits; }
     
     Shader::IR::Type Type() const { return kind; }
     const MockInst* TryInst() const { return inst; }
-    static MockValue Imm(Shader::IR::Type value_type = Shader::IR::Type::U32) {
-        return {nullptr, value_type, true};
+    static MockValue Imm(Shader::IR::Type value_type = Shader::IR::Type::U32,
+                         std::uint32_t bits = 0) {
+        return {nullptr, value_type, true, bits};
     }
     static MockValue Ref(const MockInst& node) {
         return {&node, Shader::IR::Type::U32, false};
@@ -43,7 +47,7 @@ int main() {
     const MockInst pc_constant{Opcode::GetPcLo, {MockValue::Imm()}, 1};
     const MockInst pc_varying{Opcode::GetPcLo, {MockValue::Ref(uniform)}, 1};
     const MockInst varying{Opcode::GetAttribute, {}, 0};
-    const MockInst phi{Opcode::Phi, {MockValue::Ref(uniform)}, 1};
+    const MockInst phi{Opcode::Phi, {MockValue::Ref(uniform), MockValue::Imm()}, 2};
     const MockInst uniform_add{Opcode::IAdd32, {MockValue::Ref(uniform), MockValue::Imm()}, 2};
     const MockInst varying_add{Opcode::IAdd32, {MockValue::Ref(uniform), MockValue::Ref(varying)}, 2};
     const MockInst uniform_signed_shift{Opcode::ShiftRightArithmetic32,

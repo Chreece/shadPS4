@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <array>
 #include <cstdio>
+#include <cstdint>
 #include "shader_recompiler/ir/passes/srt_host_barrier.h"
 using Shader::IR::Opcode;
 using Shader::IR::Type;
@@ -13,10 +14,12 @@ struct MockValue {
     const MockInst* inst{};
     Shader::IR::Type kind{Shader::IR::Type::U32};
     bool immediate{};
+    std::uint32_t bits{};
     bool IsImmediate() const {return immediate;}
+    std::uint32_t U32() const {return bits;}
     Shader::IR::Type Type() const {return kind;}
     const MockInst* TryInst() const {return inst;}
-    static MockValue Imm(Shader::IR::Type type=Shader::IR::Type::U32){return {nullptr,type,true};}
+    static MockValue Imm(Shader::IR::Type type=Shader::IR::Type::U32,std::uint32_t bits=0){return {nullptr,type,true,bits};}
     static MockValue Ref(const MockInst& node){return {&node,Type::U32,false};}
 };
 struct MockInst {
@@ -29,7 +32,7 @@ struct MockInst {
 };
 int main(){
     const MockInst user{Opcode::GetUserData,{},0};
-    const MockInst phi{Opcode::Phi,{MockValue::Ref(user)},1};
+    const MockInst phi{Opcode::Phi,{MockValue::Ref(user),MockValue::Imm()},2};
     const MockInst selector{Opcode::SelectU32,{MockValue::Ref(user),
                                MockValue::Imm(),MockValue::Imm()},3};
     const MockInst attrib{Opcode::GetAttribute,{},0};
