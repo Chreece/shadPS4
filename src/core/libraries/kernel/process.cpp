@@ -7,6 +7,7 @@
 #include "core/file_sys/fs.h"
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/process.h"
+#include "core/libraries/kernel/module_filename_validation.h"
 #include "core/libraries/kernel/threads/pthread.h"
 #include "core/libraries/libs.h"
 #include "core/linker.h"
@@ -89,8 +90,22 @@ void* PS4_SYSV_ABI sceKernelGetProcParam() {
     return linker->GetProcParam();
 }
 
+// General x86-64 guest/HLE ABI rule: the guest stack can have weaker
+// alignment than host C++/fmt/SIMD code assumes. Preserve the proven
+// argument-stack realignment at this HLE entry point.
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+__attribute__((force_align_arg_pointer))
+#endif
 s32 PS4_SYSV_ABI sceKernelLoadStartModule(const char* moduleFileName, u64 args, const void* argp,
                                           u32 flags, const void* pOpt, s32* pRes) {
+    // Validate before fmt formatting or constructing a host std::string.
+    // A null or empty guest filename is a normal API error, not SIGSEGV.
+    const s32 filename_result = ValidateModuleFilename(moduleFileName);
+    if (filename_result != ORBIS_OK) {
+        LOG_WARNING(Lib_Kernel, "sceKernelLoadStartModule rejected {} filename",
+                    moduleFileName == nullptr ? "null" : "empty");
+        return filename_result;
+    }
     LOG_INFO(Lib_Kernel, "called filename = {}, args = {}", moduleFileName, args);
     ASSERT(flags == 0);
 
