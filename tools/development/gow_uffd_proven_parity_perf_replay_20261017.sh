@@ -203,4 +203,25 @@ cp -p "$BUILD/shadps4" "$CANDIDATE"
 sha256sum "$CANDIDATE" >"$OUT/candidate-sha256.txt"
 printf 'CANDIDATE=%s\n' "$CANDIDATE" | tee "$OUT/candidate.txt"
 echo "EMULATOR_FIX=GENERAL_LINUX_UFFD_DEFERRED_INVALIDATION_AND_GPU_LIFECYCLE"
-echo "GAME_LAUNCHED=NO"
+echo "PROVEN_DEFERRED_UFFD_CANDIDATE_BUILT=YES; AUTO_GAMEPLAY_LAUNCH=START"
+[[ -f "$OBSERVER" ]] || { echo "OBSERVER_MISSING"; exit 1; }
+python3 -m py_compile "$OBSERVER"
+if [[ -z "$(printenv DISPLAY || true)" ]]; then export DISPLAY=:0; fi
+if [[ -z "$(printenv XDG_RUNTIME_DIR || true)" ]]; then export XDG_RUNTIME_DIR="/run/user/$(id -u)"; fi
+if [[ -z "$(printenv DBUS_SESSION_BUS_ADDRESS || true)" ]]; then export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"; fi
+CANDIDATE_SHA="$(sha256sum "$CANDIDATE" | cut -d' ' -f1)"
+python3 -B "$OBSERVER" --binary "$CANDIDATE" --sha256 "$CANDIDATE_SHA" --report "$OUT/gameplay" --cwd "$ORIGINAL_ROOT" --seconds 135 > "$OUT/observer-console.log" 2>&1 &
+OBSERVER_PID=$!
+PREVIOUS_SCREENSHOT=0
+for SCREENSHOT_TIME in 30 60 90 120; do
+  sleep "$((SCREENSHOT_TIME-PREVIOUS_SCREENSHOT))"
+  PREVIOUS_SCREENSHOT="$SCREENSHOT_TIME"
+  if ! kill -0 "$OBSERVER_PID" 2>/dev/null; then break; fi
+  if command -v import >/dev/null 2>&1; then
+    timeout 7s import -display "$DISPLAY" -window root "$OUT/frame-$SCREENSHOT_TIME.png" > "$OUT/frame-$SCREENSHOT_TIME.log" 2>&1 || true
+  fi
+  echo "GAME_OBSERVATION_T=$SCREENSHOT_TIME"
+done
+wait "$OBSERVER_PID" || { echo "DEFERRED_UFFD_GAMEPLAY_OBSERVER_REPORTED_FAILURE"; tail -45 "$OUT/observer-console.log"; exit 2; }
+tail -35 "$OUT/observer-console.log"
+echo "DEFERRED_UFFD_GAMEPLAY=RUNNING; SOURCE_BUILD_RESTORED_ON_EXIT; SSH_PRESERVED"
