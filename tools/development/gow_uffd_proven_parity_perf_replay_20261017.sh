@@ -184,15 +184,51 @@ fi
 git -C "$ORIGINAL_SRC" merge-base --is-ancestor "$BASE" "$HEAD" || {
   echo "FIX_IS_NOT_DESCENDANT_OF_PINNED_BASE"; exit 1;
 }
-git -C "$ORIGINAL_SRC" diff "$BASE" "$HEAD" -- "${FILES[@]}" >"$OUT/deferred-fix.patch"
-echo "ac174eda286db4e8992d08c9c998381dc083b3f36921ffa230d24b14f1306f23  $OUT/deferred-fix.patch" | sha256sum -c - || { echo "DEFERRED_PATCH_MISMATCH_WITH_PROVEN_BUILD"; exit 1; }
-[[ -s "$OUT/deferred-fix.patch" ]] || { echo "EMPTY_PATCH"; exit 1; }
-patch --batch --fuzz=0 --dry-run -p1 -d "$SRC" <"$OUT/deferred-fix.patch" >"$OUT/apply-check.log" 2>&1 || { echo "PATCH_CONTEXT_MISMATCH"; cat "$OUT/apply-check.log"; exit 1; }
-patch --batch --fuzz=0 -p1 -d "$SRC" <"$OUT/deferred-fix.patch" >"$OUT/apply.log" 2>&1
-grep -Fq "pending_gpu_invalidations" "$SRC/src/video_core/page_manager.cpp" || { echo "DEFERRED_UFFD_HANDLER_NOT_STAGED"; exit 1; }
-grep -Fq "InvalidateMemoryOnGpuThread" "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" || { echo "DEFERRED_GPU_CALLBACK_NOT_STAGED"; exit 1; }
-touch -m "$SRC/src/video_core/page_manager.cpp" "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp"
-echo "DEFERRED_UFFD_SOURCE_STAGED=VERIFIED"
+# Materialize the exact five source blobs from the historical deferred-UFFD
+# commit. No generated .patch checksum, no fuzzy application and no git index
+# mutation in the isolated worktree. Validate both revision and stored bytes.
+mkdir -p "$OUT/pinned-uffd-sources"
+: > "$OUT/pinned-uffd-blob-checks.txt"
+while read -r blob file; do
+  [[ -n "$blob" ]] || continue
+  [[ -f "$SRC/$file" && ! -L "$SRC/$file" ]] || {
+    echo "UNSAFE_PINNED_UFFD_TARGET=$file"; exit 1;
+  }
+  actual="$(git -C "$ORIGINAL_SRC" rev-parse "$HEAD:$file")"
+  [[ "$actual" == "$blob" ]] || {
+    echo "UPSTREAM_UFFD_BLOB_MISMATCH=$file EXPECTED=$blob GOT=$actual"; exit 1;
+  }
+  mkdir -p "$OUT/pinned-uffd-sources/$(dirname "$file")"
+  git -C "$ORIGINAL_SRC" show "$HEAD:$file" > "$OUT/pinned-uffd-sources/$file"
+  actual="$(git -C "$ORIGINAL_SRC" hash-object "$OUT/pinned-uffd-sources/$file")"
+  [[ "$actual" == "$blob" ]] || {
+    echo "MATERIALIZED_UFFD_BLOB_MISMATCH=$file"; exit 1;
+  }
+  printf '%s %s\n' "$blob" "$file" >> "$OUT/pinned-uffd-blob-checks.txt"
+done <<'PINNED_UFFD_BLOBS'
+4c5c8eb0fee1375b80a16e8e1aeefca2e59b5494 src/core/libraries/gnmdriver/gnmdriver.cpp
+d137bd671729dd3db9e7dd4e7c573b69874b6480 src/video_core/page_manager.cpp
+15b19433557497158a87d2e81edd46a4dc4de9de src/video_core/page_manager.h
+2c8cbda6454aaadd76c060158342e017d60d8127 src/video_core/renderer_vulkan/vk_rasterizer.cpp
+82265f415785f4ff5b5e2636374bef02c8dec9fa src/video_core/renderer_vulkan/vk_rasterizer.h
+PINNED_UFFD_BLOBS
+[[ "$(wc -l < "$OUT/pinned-uffd-blob-checks.txt")" -eq 5 ]] || {
+  echo "PINNED_UFFD_BLOB_COUNT_WRONG"; exit 1;
+}
+while read -r blob file; do
+  cp -p -- "$OUT/pinned-uffd-sources/$file" "$SRC/$file"
+  touch -m "$SRC/$file"
+  [[ "$(git -C "$ORIGINAL_SRC" hash-object "$SRC/$file")" == "$blob" ]] || {
+    echo "STAGED_UFFD_BLOB_CHANGED=$file"; exit 1;
+  }
+done < "$OUT/pinned-uffd-blob-checks.txt"
+grep -Fq "pending_gpu_invalidations" "$SRC/src/video_core/page_manager.cpp" || {
+  echo "DEFERRED_UFFD_HANDLER_NOT_STAGED"; exit 1;
+}
+grep -Fq "InvalidateMemoryOnGpuThread" "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" || {
+  echo "DEFERRED_GPU_CALLBACK_NOT_STAGED"; exit 1;
+}
+echo "PINNED_UFFD_FIVE_BLOBS=SHA_MATCHED; ORIGINAL_SOURCE=UNCHANGED"
 echo "PATCH_APPLICATION=PASS; BUILD_START=YES"
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build.log" 2>&1
 [[ -x "$BUILD/shadps4" ]] || { echo "BUILT_TARGET_MISSING"; exit 1; }
