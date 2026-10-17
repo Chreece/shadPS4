@@ -3,6 +3,8 @@
 
 #include <cstdlib>
 #include <vector>
+#include <bit>
+#include <unordered_map>
 
 #include <limits>
 #include "shader_recompiler/info.h"
@@ -199,7 +201,18 @@ SharpLocation SharpLocationFromSource(const IR::Inst* inst, const Info& info, u3
                         arg_inst ? arg_inst->GetOpcode() : IR::Opcode::Phi,
                         info.uses_dma);
         }
-        LOG_WARNING(Render_Recompiler, "Sharp source was not flatenned");
+        // Repeated shader variants previously emitted tens of thousands of
+        // identical warnings per run. Preserve early and exponential
+        // occurrences with stage/hash provenance; no resource semantics change.
+        static thread_local std::unordered_map<u64,u64> missing_counts;
+        const u64 key=(static_cast<u64>(info.pgm_hash)<<8) |
+                      static_cast<u8>(info.hw_stage);
+        const u64 seen=++missing_counts[key];
+        if (seen<=4 || std::has_single_bit(seen)) {
+            LOG_WARNING(Render_Recompiler,
+                        "Sharp source was not flatenned shader={:#x} stage={} "
+                        "occurrences={}",info.pgm_hash,info.hw_stage,seen);
+        }
         return UNKNOWN_LOCATION;
     }
     return location;

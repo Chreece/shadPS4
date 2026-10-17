@@ -25,6 +25,8 @@
 #include "shader_recompiler/ir/passes/srt.h"
 #include "shader_recompiler/ir/passes/srt_offset_preflight.h"
 #include "shader_recompiler/ir/passes/srt_uniformity.h"
+#include "shader_recompiler/ir/passes/srt_host_barrier.h"
+#include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 #include "shader_recompiler/ir/passes/srt_offset_codegen.h"
 #include "shader_recompiler/ir/passes/srt_dependency_schedule.h"
 #include "shader_recompiler/ir/passes/srt_inline_read_codegen.h"
@@ -228,6 +230,97 @@ static bool SrtPlanningAuditEnabled() {
         return flag && flag[0] == '1' && flag[1] == '\0';
     }();
     return enabled;
+}
+
+static inline u16 GetFlatbufOffset(const IR::Inst* inst);
+
+static bool SrtBarrierTraceEnabled(u64 shader_hash) {
+    // A generic comma-separated list supplied by diagnostics, never a
+    // game-title-specific workaround. Disabled unless explicitly requested.
+    static const auto hashes = VideoCore::Diagnostics::ParseShaderAuditHashFilter(
+        std::getenv("SHADPS4_SRT_TRACE_HASHES"));
+    return hashes.enabled && hashes.valid && hashes.Matches(shader_hash);
+}
+
+// Run only on shader compilation, not on every GPU draw. This reports why
+// missing scalar descriptor reads cannot currently be native-flattened.
+static void TraceSrtHostBarriers(
+    const Info& info,
+    const boost::container::small_vector<IR::Inst*, 32>& all_readconsts) {
+    if (!SrtBarrierTraceEnabled(info.pgm_hash)) return;
+    u32 eligible=0, nonuniform=0, unsupported_base=0, examined=0, samples=0;
+    std::unordered_map<u32,u32> blocker_histogram;
+    for (const IR::Inst* read : all_readconsts) {
+        const auto op=read->GetOpcode();
+        if (op != IR::Opcode::ReadConst && op != IR::Opcode::ReadConstBuffer) continue;
+        if (GetFlatbufOffset(read) != 0) continue;
+        ++examined;
+        const IR::Inst* const base=read->Arg(0).TryInst();
+        const bool sbuffer=op == IR::Opcode::ReadConstBuffer;
+        const IR::Opcode expected=sbuffer ? IR::Opcode::CompositeConstructU32x4
+                                         : IR::Opcode::CompositeConstructU32x2;
+        if (!base || base->GetOpcode() != expected) {
+            ++unsupported_base;
+            if (samples++<12) {
+                LOG_INFO(Render_Recompiler,
+                         "SrtHostBarrier: shader={:#x} stage={} field=base "
+                         "read_op={} first_blocker={} kind=unsupported-base",
+                         info.pgm_hash,info.hw_stage,IR::NameOf(op),
+                         base ? IR::NameOf(base->GetOpcode()) : "missing");
+            }
+            continue;
+        }
+        const unsigned parts=sbuffer ? 3u : 2u;
+        const char* field="unknown";
+        IR::Value blocked{};
+        for (unsigned j=0;j<parts;++j) {
+            if (!IsHostUniformSrtOffset(base->Arg(j))) {
+                field=j==0 ? "address-low" :
+                      j==1 ? "address-high-stride" : "record-count";
+                blocked=base->Arg(j);
+                break;
+            }
+        }
+        if (field==std::string_view{"unknown"} &&
+            !IsHostUniformSrtOffset(read->Arg(1))) {
+            field="dword-index";
+            blocked=read->Arg(1);
+        }
+        if (field==std::string_view{"unknown"}) {
+            ++eligible;
+            continue;
+        }
+        ++nonuniform;
+        const SrtHostBarrier cause=FindSrtHostBarrier(blocked);
+        const u32 key=cause.kind==SrtHostBarrierKind::UnsupportedOpcode
+                          ? static_cast<u32>(cause.opcode) : 0xffffffffu;
+        ++blocker_histogram[key];
+        if (samples++<16) {
+            const IR::Inst* index=read->Arg(1).TryInst();
+            LOG_INFO(Render_Recompiler,
+                     "SrtHostBarrier: shader={:#x} stage={} field={} "
+                     "read_op={} index_op={} first_blocker={} reason={} depth={}",
+                     info.pgm_hash,info.hw_stage,field,IR::NameOf(op),
+                     index ? IR::NameOf(index->GetOpcode()) : "immediate",
+                     cause.kind==SrtHostBarrierKind::UnsupportedOpcode
+                         ? IR::NameOf(cause.opcode) : "non-opcode",
+                     SrtHostBarrierKindName(cause.kind),cause.depth);
+        }
+    }
+    LOG_INFO(Render_Recompiler,
+             "SrtHostBarrierSummary: shader={:#x} stage={} examined={} "
+             "eligible={} blocked={} unsupported_base={} unique_blockers={}",
+             info.pgm_hash,info.hw_stage,examined,eligible,nonuniform,
+             unsupported_base,blocker_histogram.size());
+    for (const auto& [code,count] : blocker_histogram) {
+        const char* no_opcode="non-opcode-or-immediate";
+        const auto name=code==0xffffffffu
+            ? std::string_view{no_opcode}
+            : IR::NameOf(static_cast<IR::Opcode>(code));
+        LOG_INFO(Render_Recompiler,
+                 "SrtHostBarrierGroup: shader={:#x} stage={} blocker={} count={}",
+                 info.pgm_hash,info.hw_stage,name,count);
+    }
 }
 
 static inline u16 GetFlatbufOffset(const IR::Inst* inst) {
@@ -1000,6 +1093,8 @@ static void GenerateSrtProgram(
                      wrong_base, already_flattened);
         }
     }
+
+    TraceSrtHostBarriers(info, all_readconsts);
 
     if (pass_info.srt_roots.empty() && !has_inline_reads) {
         return;
