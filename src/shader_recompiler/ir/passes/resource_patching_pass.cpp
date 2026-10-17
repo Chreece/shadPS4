@@ -235,6 +235,27 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp, const Info& info)
             }
         }
     }
+    // Compile-time diagnostic only: measure whether the guest actually
+    // masks a resource descriptor in any shader. Default disabled, bounded
+    // to 128 source reports to avoid costly synchronous logging.
+    static const bool audit_sharp_masks = [] {
+        const char* const flag=std::getenv("SHADPS4_SHARP_MASK_AUDIT");
+        return flag && flag[0]=='1' && flag[1]=='\0';
+    }();
+    if (audit_sharp_masks && !SharpMasksAreZero(sharp_fetch.clear_masks,
+                                                sharp.num_dwords)) {
+        static thread_local u32 reports=0;
+        if (reports++ < 128) {
+            u32 masked_dwords=0;
+            for (u32 i=0;i<sharp.num_dwords;++i)
+                masked_dwords += sharp_fetch.clear_masks[i]!=0;
+            LOG_INFO(Render_Recompiler,
+                     "SharpMaskPreserved: shader={:#x} stage={} descriptor_words={} "
+                     "masked_dwords={} first_mask={:#x}",
+                     info.pgm_hash,info.hw_stage,sharp.num_dwords,masked_dwords,
+                     sharp_fetch.clear_masks[0]);
+        }
+    }
     // Coalesce only genuine consecutive flat-buffer loads. In particular,
     // partially-immediate T#/S#/V# descriptors must retain their immediate
     // words: offsets belonging to those words are not meaningful, and can
