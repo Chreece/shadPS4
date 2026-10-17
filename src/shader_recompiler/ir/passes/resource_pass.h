@@ -31,6 +31,9 @@ struct SharpReference {
 struct ResourceDiscovery {
     IR::Inst* user{};
     std::array<SharpReference, 2> sharps;
+    SharpReference indexed_table_sharp{};
+    IR::Value indexed_texture_id{};
+    bool has_indexed_table{};
     // Keep the raw S# producer handle for shader-side scalar memory reads
     // when host resource-table flattening cannot provide valid Vulkan bindings.
     IR::Value original_buffer_handle{};
