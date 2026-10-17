@@ -37,7 +37,8 @@ int main() {
     }
     // An out-of-range ID never aliases a real guest T# descriptor.
     assert(words[1024] == 1u);
-    assert(words[GuestTsharpFeedbackWordIndex(27649u)] == 0u);
+    assert((words[GuestTsharpFeedbackWordIndex(27649u)] &
+            GuestTsharpFeedbackWordBit(27649u)) == 0u);
     assert(words[GuestTsharpFeedbackWordIndex(27650u)] ==
            GuestTsharpFeedbackWordBit(27650u));
     std::puts("GUEST_TSHARP_GPU_ID_FEEDBACK_HOST=PASS distinct=7 overflow=1");
