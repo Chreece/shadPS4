@@ -10,8 +10,33 @@ FIX=06fcb1cdb475c3627dff1eeb54dbe1fb7ecb4ed9
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
+SRT_STAGED=0
+SRT_PATHS=(
+  src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
+  src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp
+  src/shader_recompiler/ir/passes/srt_offset_codegen.h
+  src/shader_recompiler/ir/passes/srt_offset_preflight.h
+)
 finish() {
   rc="$1"; trap - EXIT; set +e
+  if (( SRT_STAGED )); then
+    for f in "${SRT_PATHS[@]}"; do
+      if [[ -f "$OUT/srt-original/$f" ]]; then
+        cp -p "$OUT/srt-original/$f" "$SRC/$f" || rc=1
+        # Force the next incremental build to use restored native source;
+        # never silently link against an object from an incompatible overlay.
+        touch -m "$SRC/$f" || rc=1
+      else
+        rm -f "$SRC/$f" || rc=1
+      fi
+    done
+    if [[ -z "$(git -C "$SRC" status --porcelain --untracked-files=no)" ]]; then
+      echo "REBASED_SOURCE_RESTORED=YES"
+    else
+      echo "REBASED_SOURCE_RESTORED=NO"
+      rc=1
+    fi
+  fi
   sha256sum "$PROVEN" > "$OUT/proven-after.sha256" 2>/dev/null
   if [[ -f "$OUT/proven-before.sha256" ]] && ! cmp -s "$OUT/proven-before.sha256" "$OUT/proven-after.sha256"; then
     echo "PROVEN_BINARY_CHANGED=YES"; rc=1
@@ -48,7 +73,7 @@ if [[ ! -e "$SRC" ]]; then
 fi
 [[ -e "$SRC/.git" && "$(git -C "$SRC" rev-parse HEAD)" == "$FIX" ]] || { echo "ISOLATED_SOURCE_MISMATCH"; exit 1; }
 [[ -z "$(git -C "$SRC" status --porcelain --untracked-files=no)" ]] || { echo "EXISTING_ISOLATED_SOURCE_DIRTY; DO_NOT_RESET"; exit 1; }
-git -C "$SRC" submodule update --init --recursive --jobs 4 >"$OUT/submodules.log" 2>&1
+git -C "$SRC" -c http.version=HTTP/1.1 submodule update --init --recursive --jobs 4 >"$OUT/submodules.log" 2>&1
 echo "UPSTREAM_MAIN=$UPSTREAM" >"$OUT/commits.txt"
 echo "NATIVE_FIX_COMMIT=$FIX" >>"$OUT/commits.txt"
 STAGE=PM4_REGRESSION
@@ -68,12 +93,23 @@ STAGE=BUILD_REBASED_CPU_UFFD_PM4
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build-base.log" 2>&1
 [[ -x "$BUILD/shadps4" ]] || { echo "BUILT_BINARY_MISSING"; exit 1; }
 nm -C "$BUILD/shadps4" | grep -F 'Vulkan::Rasterizer::InvalidateMemoryOnGpuThread' >"$OUT/uffd-symbol.txt" || { echo "DEFERRED_UFFD_SYMBOL_MISSING"; exit 1; }
+nm -C "$BUILD/shadps4" | grep -F 'Core::HandleCpuIdFault' >"$OUT/native-cpu-symbol.txt" || { echo "BUILTIN_CPU_HANDLER_NOT_LINKED"; exit 1; }
 BASE="$BUILD/shadps4.upstream-native-$TAG"
 [[ ! -e "$BASE" ]] || { echo "BASE_CANDIDATE_EXISTS"; exit 1; }
 cp -p "$BUILD/shadps4" "$BASE"; sha256sum "$BASE" >"$OUT/base.sha256"
 echo "BASE_CANDIDATE=$BASE" >"$OUT/base.txt"; BASE_PASS=1
 echo "REBASED_CPU_UFFD_PM4_BUILD=PASS"
 STAGE=STAGE_SOURCE_MATCHED_SRT
+# Keep the separate testing worktree clean even on SRT build failure.
+# Back up the upstream versions before staging anything.
+for f in "${SRT_PATHS[@]}"; do
+  if [[ -e "$SRC/$f" ]]; then
+    [[ -f "$SRC/$f" && ! -L "$SRC/$f" ]] || { echo "UNSAFE_SRT_WORKTREE_FILE=$f"; exit 1; }
+    mkdir -p "$OUT/srt-original/$(dirname "$f")"
+    cp -p "$SRC/$f" "$OUT/srt-original/$f"
+  fi
+done
+SRT_STAGED=1
 while read -r sha relative; do
   [[ -n "$sha" ]] || continue
   oldfile="$OLD/$relative"; newfile="$SRC/$relative"
@@ -82,6 +118,7 @@ while read -r sha relative; do
   if [[ -f "$newfile" && "$(sha256sum "$newfile" | cut -d' ' -f1)" == "$sha" ]]; then continue; fi
   if [[ "$relative" == *.h && -e "$newfile" ]]; then echo "UPSTREAM_HELPER_COLLISION=$relative"; exit 1; fi
   install -D -m 644 "$oldfile" "$newfile"
+  echo "$sha  $newfile" | sha256sum -c - >>"$OUT/srt-overlay-check.txt"
 done <<'PINNED_SRT'
 14130ab04071e93159b074bbbdd6f7b362661eeaa040e20dec91fa54208aa161 src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
 3f3e7d29dbf9dbc42cc1ca3264771fb39c661a3fc24ddc43a2e980436fb0b130 src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp
