@@ -709,7 +709,8 @@ static bool SplitImageSampleBySharpPhi(IR::Block& block, IR::Inst& inst,
                 if (v.Type()!=IR::Type::U32) return false;
             } else {
                 const IR::Inst* const incoming=v.TryInst();
-                if (!incoming || !IsSharpSource(incoming)) return false;
+                if (!incoming || !IsSharpSource(incoming) ||
+                    !CanRebuildSharpValue(v, 4)) return false;
             }
             selected[side][word]=v;
         }
@@ -724,13 +725,18 @@ static bool SplitImageSampleBySharpPhi(IR::Block& block, IR::Inst& inst,
                                 IR::Value{static_cast<u32>(side)});
     }
     const auto insert_point=IR::Block::InstructionList::s_iterator_to(inst);
+    std::unordered_map<const IR::Inst*,IR::Value> rebuilt;
     boost::container::small_vector<IR::Value, 3> sampled;
     for (std::size_t side=0; side<branches; ++side) {
         std::array<IR::Inst*, 3> copies{};
         for (std::size_t group=0; group<3; ++group) {
             IR::Inst* const clone=&*block.PrependNewInst(insert_point,*pieces[group]);
             for (std::size_t word=0; word<4; ++word) {
-                clone->SetArg(word,selected[side][group*4+word]);
+                const std::size_t idx=group*4+word;
+                const IR::Value v = comes_from_phi[idx]
+                    ? RebuildSharpValue(block,insert_point,selected[side][idx],rebuilt)
+                    : selected[side][idx];
+                clone->SetArg(word,v);
             }
             copies[group]=clone;
         }
@@ -781,9 +787,14 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
     std::size_t image_split_budget=
         original_samples<resource_cap ? resource_cap-original_samples : 0;
     for (IR::Block* const block : program.blocks) {
-        for (IR::Inst& inst : block->Instructions()) {
+        // Both buffer and image Phi splitting may remove the original IR
+        // instruction. Advance the iterator BEFORE transformation; a
+        // range-for would increment an invalidated intrusive-list iterator.
+        for (auto it=block->begin(); it!=block->end();) {
+            IR::Inst& inst=*it++;
             if (IsSelectableBufferLoad(inst)) {
                 SplitBufferLoadBySharpPhi(*block, inst);
+                continue;
             }
             if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
                 SplitImageSampleBySharpPhi(*block, inst, image_split_budget, program.info);
