@@ -13,7 +13,6 @@
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
 #include "core/libraries/audio/audioout.h"
-#include "core/libraries/audio/audioout_health.h"
 #include "core/libraries/audio/audioout_backend.h"
 #include "core/libraries/kernel/threads.h"
 
@@ -65,9 +64,9 @@ public:
           num_channels(port.format_info.num_channels), is_float(port.format_info.is_float),
           is_std(port.format_info.is_std), channel_layout(port.format_info.channel_layout),
           port_type(port.type) {
-        // AudioOutputThread already paces guest samples using AccurateTimer.
-        // Optional outer-only pacing prevents a second backend sleep while
-        // the AudioOutputThread owns the port mutex.
+        // The external AudioOutputThread already owns the PS4 sample timer.
+        // Opt-in skips backend pacing's second sleep under its port mutex.
+        // With the flag unset this source retains its exact original behavior.
         const char* pacing = std::getenv("SHADPS4_SDL_OUTER_PACING");
         outer_only_pacing = pacing && pacing[0] == '1' && pacing[1] == '\0';
         const char* probe = std::getenv("SHADPS4_AUDIO_TIMING_PROBE");
@@ -77,17 +76,10 @@ public:
                         "SDL outer-thread-only pacing trial active for audio port {}",
                         static_cast<int>(port_type));
         }
-        intentionally_disabled = IsDisabledAudioDevice(GetDeviceName(port.type));
-        if (intentionally_disabled) {
-            LOG_INFO(Lib_AudioOut, "SDL audio output intentionally disabled for port type {}",
-                     static_cast<int>(port.type));
-        } else if (!Initialize(port.type)) {
+
+        if (!Initialize(port.type)) {
             LOG_ERROR(Lib_AudioOut, "Failed to initialize SDL audio backend");
         }
-    }
-
-    [[nodiscard]] bool IsUsable() const noexcept {
-        return intentionally_disabled || (stream != nullptr && internal_buffer && convert);
     }
 
     ~SDLPortBackend() override {
@@ -119,38 +111,8 @@ public:
             HandleTiming(current_time);
         }
 
-        const u32 buffer_index = output_count++;
-        if ((buffer_index & 0xF) == 0) { // Check every 16 output buffers.
+        if ((output_count++ & 0xF) == 0) { // Check every 16 outputs
             ManageAudioQueue();
-            const u32 channels = ps4_downmix ? 2u : num_channels;
-            const float peak = AudioPeak(static_cast<const float*>(internal_buffer),
-                                         static_cast<size_t>(buffer_frames) * channels);
-            sampled_peak = std::max(sampled_peak, peak);
-            if (peak > 0.0001f) {
-                ++non_silent_probes;
-                if (!first_pcm_seen) {
-                    first_pcm_seen = true;
-                    LOG_INFO(Lib_AudioOut,
-                             "SDL audio: first non-silent PCM on port {} (peak={:.5f}, gain={:.3f})",
-                             static_cast<int>(port_type), peak,
-                             current_gain.load(std::memory_order_acquire));
-                }
-            }
-            ++pcm_probes;
-            if (pcm_probes >= 16) {
-                const SDL_AudioDeviceID device = SDL_GetAudioStreamDevice(stream);
-                const char* resolved = SDL_GetAudioDeviceName(device);
-                LOG_INFO(Lib_AudioOut,
-                         "SDL audio route: port={}, device='{}', output_buffers={}, non_silent="
-                         "{}/{} probes, peak={:.5f}, gain={:.3f}, queued_bytes={}",
-                         static_cast<int>(port_type), resolved ? resolved : "unknown",
-                         output_count, non_silent_probes, pcm_probes, sampled_peak,
-                         current_gain.load(std::memory_order_acquire),
-                         SDL_GetAudioStreamQueued(stream));
-                pcm_probes = 0;
-                non_silent_probes = 0;
-                sampled_peak = 0.0f;
-            }
         }
 
         if (!SDL_PutAudioStreamData(stream, internal_buffer, internal_buffer_size)) [[unlikely]] {
@@ -158,8 +120,7 @@ public:
         }
 
         last_output_time.store(current_time, std::memory_order_release);
-        // One aggregated record per 256 guest buffers. No per-buffer logging
-        // and no change to guest PCM, scheduling, or queue manipulation.
+        // One aggregated record per 256 guest buffers, no per-buffer logs.
         if (timing_probe_enabled && (output_count & 0xFF) == 0) {
             LOG_WARNING(
                 Lib_AudioOut,
@@ -733,7 +694,6 @@ private:
     bool ps4_downmix{false};
     const std::array<int, 8> channel_layout;
     const OrbisAudioOutPort port_type;
-    bool intentionally_disabled{false};
     bool outer_only_pacing{false};
     bool timing_probe_enabled{false};
     u64 previous_output_time{0};
@@ -751,10 +711,6 @@ private:
     u64 next_output_time{0};
     u64 last_volume_check_time{0};
     u32 output_count{0};
-    u32 pcm_probes{0};
-    u32 non_silent_probes{0};
-    float sampled_peak{0.0f};
-    bool first_pcm_seen{false};
 
     // Buffers
     u32 internal_buffer_size{0};
@@ -773,15 +729,7 @@ private:
 };
 
 std::unique_ptr<PortBackend> SDLAudioOut::Open(PortOut& port) {
-    auto backend = std::make_unique<SDLPortBackend>(port);
-    if (!backend->IsUsable()) {
-        // Constructor failure used to return a nominally valid port whose
-        // Output silently discarded all PCM. Signal the failure to
-        // sceAudioOutOpen instead, which already handles null backends.
-        LOG_ERROR(Lib_AudioOut, "SDL audio port has no usable output stream");
-        return {};
-    }
-    return backend;
+    return std::make_unique<SDLPortBackend>(port);
 }
 
 } // namespace Libraries::AudioOut
