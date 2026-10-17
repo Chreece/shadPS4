@@ -61,6 +61,53 @@ template<typename Value>
     }
     return true;
 }
+// Some games select a genuine T# table entry with a finite GPU expression.
+// Keep all side effects of the original GPU selector (Phi, attribute or scalar
+// buffer read) on the device. We only enumerate values when the IR itself
+// PROVES the complete set, never from host-observed values or a table prefix.
+//
+// A two-way SelectU32 explicitly exposes both candidate IDs. For AND with
+// literal 1 or 3, integer arithmetic proves all possible indices without
+// evaluating the source (which may be divergent or loaded from guest RAM).
+// Four candidates are the maximum; larger masks need a proper bindless heap.
+enum class IndexedImageChoiceKind : std::uint8_t {
+    None, SelectTwo, MaskTwo, MaskFour,
+};
+
+struct IndexedImageChoices {
+    std::array<std::uint32_t, 4> ids{};
+    std::uint32_t count{};
+    IndexedImageChoiceKind kind{IndexedImageChoiceKind::None};
+};
+
+template <typename Inst>
+[[nodiscard]] IndexedImageChoices AnalyzeFiniteIndexedImageChoices(const Inst* selector) {
+    if (!selector) return {};
+    using Shader::IR::Opcode;
+    using Shader::IR::Type;
+    if (selector->GetOpcode() == Opcode::SelectU32) {
+        const auto left = selector->Arg(1);
+        const auto right = selector->Arg(2);
+        if (!left.IsImmediate() || !right.IsImmediate() ||
+            left.Type() != Type::U32 || right.Type() != Type::U32) return {};
+        return {{left.U32(), right.U32()}, 2u, IndexedImageChoiceKind::SelectTwo};
+    }
+    if (selector->GetOpcode() != Opcode::BitwiseAnd32) return {};
+    const auto left = selector->Arg(0);
+    const auto right = selector->Arg(1);
+    if (left.IsImmediate() == right.IsImmediate()) return {};
+    const auto mask = left.IsImmediate() ? left : right;
+    const auto source = left.IsImmediate() ? right : left;
+    if (mask.Type() != Type::U32 || !source.TryInst()) return {};
+    if (mask.U32() == 1u) {
+        return {{0u, 1u}, 2u, IndexedImageChoiceKind::MaskTwo};
+    }
+    if (mask.U32() == 3u) {
+        return {{0u, 1u, 2u, 3u}, 4u, IndexedImageChoiceKind::MaskFour};
+    }
+    return {};
+}
+
 // GCN constructs a texture-table dword index with (texture_id << 5) >> 2.
 // The shift-left is 32-bit and wraps before the unsigned shift right.
 // Recover the exact GPU texture-id producer but NEVER evaluate its value.
