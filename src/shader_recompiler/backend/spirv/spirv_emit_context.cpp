@@ -843,6 +843,9 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
     case BufferType::FaultBuffer:
         Name(id, "fault_buffer");
         break;
+    case BufferType::GuestTsharpFeedback:
+        Name(id, "guest_tsharp_feedback");
+        break;
     case BufferType::SharedMemory:
         Name(id, "ssbo_shmem");
         break;
