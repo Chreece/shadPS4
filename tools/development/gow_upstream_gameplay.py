@@ -32,8 +32,11 @@ LOG_MARKERS = {
     "guest_audio_initialized": "sceAudioOutInit: Audio system initialized",
     "audio_main_port": "sceAudioOutOpen: opened port_type=Main",
     "audio_sdl_device_open": "Opened audio device:",
+    "audio_openal_device_open": "Initialized OpenAL backend",
     "audio_pcm_detected": "SDL audio: first non-silent PCM",
+    "audio_openal_pcm_detected": "OpenAL audio: first non-silent PCM",
     "audio_pcm_route": "SDL audio route:",
+    "audio_openal_pcm_route": "OpenAL audio route:",
     "audio_sdl_failure": "SDL audio port has no usable output stream",
     "audio_openal_failure": "OpenAL audio port has no usable source or device",
     "audio_device_intentional_mute": "audio output intentionally disabled",
@@ -395,8 +398,11 @@ def main():
             "initialization_reached": bool(c.get("guest_audio_initialized")),
             "audio3d_init_reached": bool(c.get("audio3d_initialized")),
             "sdl_device_open": bool(c.get("audio_sdl_device_open")),
-            "guest_pcm_detected": bool(c.get("audio_pcm_detected")),
-            "pcm_route_observations": c.get("audio_pcm_route", 0),
+            "openal_device_open": bool(c.get("audio_openal_device_open")),
+            "guest_pcm_detected": bool(c.get("audio_pcm_detected") or
+                                       c.get("audio_openal_pcm_detected")),
+            "pcm_route_observations": c.get("audio_pcm_route", 0) +
+                                      c.get("audio_openal_pcm_route", 0),
             "backend_failures": c.get("audio_sdl_failure", 0) +
                                 c.get("audio_openal_failure", 0),
             "teardown_count": c.get("audio3d_shutdown", 0),
