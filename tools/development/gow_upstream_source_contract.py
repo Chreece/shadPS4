@@ -19,7 +19,7 @@ def require(condition, detail):
 pm = read("src/video_core/page_manager.cpp")
 signal_impl = pm.partition("struct SignalImpl : public PageManager::Impl {")[2].partition("PageManager::PageManager(")[0]
 require(bool(signal_impl), "SignalImpl class not found")
-require(re.search(r"inline\\s+static\\s+SignalImpl\\s*\\*\\s*instance", signal_impl) is not None,
+require(re.search(r"inline\s+static\s+SignalImpl\s*\*\s*instance", signal_impl) is not None,
         "SignalImpl static callback owner pointer is missing")
 require("instance->cached_pages" in signal_impl,
         "SignalImpl callback lost page-state lookup")
@@ -29,7 +29,7 @@ require(assigned != -1 and registered != -1 and assigned < registered,
         "SignalImpl owner must be initialized before its handler is registered")
 
 for header in ("src/video_core/page_manager.h", "src/video_core/renderer_vulkan/vk_rasterizer.h"):
-    require(re.search(r"enum\\s+class\\s+MemoryPermission\\s*:\\s*u32\\s*;", read(header)) is not None,
+    require(re.search(r"enum\s+class\s+MemoryPermission\s*:\s*u32\s*;", read(header)) is not None,
             f"Core::MemoryPermission forward declaration missing from {header}")
 
 pthread = read("src/core/libraries/kernel/threads/pthread.cpp")
