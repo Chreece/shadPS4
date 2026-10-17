@@ -15,6 +15,7 @@
 #include "core/memory.h"
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/guest_tsharp_array.h"
+#include "shader_recompiler/guest_tsharp_feedback.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
@@ -192,6 +193,21 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
       pipeline_cache{instance, scheduler, liverpool, buffer_cache.GetSparsePageShift()},
       host_markers_enabled{EmulatorSettings.IsVkHostMarkersEnabled()},
       guest_markers_enabled{EmulatorSettings.IsVkGuestMarkersEnabled()} {
+    // Isolated opt-in GPU feedback. Never reuse fault tracking or the real
+    // game's texture memory, and do not allocate this buffer in normal runs.
+    const char* const feedback_env = std::getenv("SHADPS4_GUEST_TSHARP_FEEDBACK");
+    if (feedback_env && feedback_env[0] == '1' && feedback_env[1] == '\0') {
+        guest_tsharp_feedback_buffer = std::make_unique<VideoCore::Buffer>(
+            instance, 0, Shader::Optimization::GuestTsharpFeedbackBytes,
+            VideoCore::MemoryType::HostCached, "Guest TSharp GPU ID Feedback");
+        auto& buf = *guest_tsharp_feedback_buffer;
+        ASSERT(!buf.mapped_data.empty());
+        std::memset(buf.mapped_data.data(), 0, buf.SizeBytes());
+        buf.Flush(0, buf.SizeBytes());
+        LOG_INFO(Render_Vulkan,
+                 "GuestTsharpFeedbackBuffer: bytes={} max_gpu_id={} initialised=YES",
+                 buf.SizeBytes(), Shader::Optimization::GuestTsharpFeedbackOverflowId);
+    }
     if (!EmulatorSettings.IsNullGPU()) {
         liverpool->BindRasterizer(this);
     }
@@ -577,6 +593,45 @@ void Rasterizer::OnSubmit() {
 
 void Rasterizer::OnFence() {
     texture_cache.ProcessDownloadImages();
+    if (!guest_tsharp_feedback_buffer) {
+        return;
+    }
+    const u32 fence = ++guest_tsharp_feedback_fence_count;
+    if (fence != 1 && fence != 16 && fence != 64 &&
+        (fence % 128u) != 0u) {
+        return;
+    }
+    // OnFence runs only at a completed graphics fence. Invalidate the
+    // host-cached allocation after the GPU finished writing atomic bits.
+    // Keep bits cumulative; no GPU/CPU concurrent clear or lost IDs.
+    auto& buffer = *guest_tsharp_feedback_buffer;
+    buffer.Invalidate(0, buffer.SizeBytes());
+    const auto* const words =
+        reinterpret_cast<const u32*>(buffer.mapped_data.data());
+    u32 distinct = 0;
+    u32 first_id = Shader::Optimization::GuestTsharpFeedbackOverflowId;
+    u32 last_id = Shader::Optimization::GuestTsharpFeedbackOverflowId;
+    std::string first_ids;
+    for (u32 id = 0; id < Shader::Optimization::GuestTsharpFeedbackOverflowId; ++id) {
+        if (!(words[id >> 5u] & (1u << (id & 31u)))) {
+            continue;
+        }
+        if (distinct == 0) {
+            first_id = id;
+        }
+        last_id = id;
+        if (distinct < 48) {
+            if (!first_ids.empty()) first_ids += ",";
+            first_ids += std::to_string(id);
+        }
+        ++distinct;
+    }
+    const bool overflow =
+        (words[Shader::Optimization::GuestTsharpFeedbackOverflowId >> 5u] & 1u) != 0u;
+    LOG_INFO(Render_Vulkan,
+             "GuestTsharpGpuIdsObserved: completed_fences={} unique={} first={} "
+             "last={} overflow={} first_48=[{}] guest_ids_not_remapped=YES",
+             fence, distinct, first_id, last_id, overflow, first_ids);
 }
 
 bool Rasterizer::BindResources(const Pipeline* pipeline) {
@@ -972,6 +1027,15 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             } else if (desc.buffer_type == Shader::BufferType::FaultBuffer) {
                 const auto* fault_buffer = buffer_cache.GetFaultBuffer();
                 buffer_infos.emplace_back(fault_buffer->Handle(), 0, fault_buffer->SizeBytes());
+            } else if (desc.buffer_type == Shader::BufferType::GuestTsharpFeedback) {
+                if (guest_tsharp_feedback_buffer) {
+                    const auto* buf = guest_tsharp_feedback_buffer.get();
+                    buffer_infos.emplace_back(buf->Handle(), 0, buf->SizeBytes());
+                } else {
+                    // An old cached shader must never be allowed to write an
+                    // unowned buffer when the opt-in flag is disabled.
+                    buffer_infos.emplace_back(VK_NULL_HANDLE, 0, VK_WHOLE_SIZE);
+                }
             } else if (desc.buffer_type == Shader::BufferType::SharedMemory) {
                 auto& lds_buffer = buffer_cache.GetStreamBuffer();
                 const auto& cs_program = liverpool->GetCsRegs();
