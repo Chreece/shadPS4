@@ -112,11 +112,13 @@ def summarize_log(path, out):
             "\n".join(last) + "\n", encoding="utf-8")
         # Cap upload size. Full growing console remains on the user's server.
         with path.open("rb") as stream:
-            prefix = stream.read(512 * 1024)
             if path.stat().st_size > 3 * 1024 * 1024:
+                prefix = stream.read(512 * 1024)
                 stream.seek(-2 * 1024 * 1024, 2)
-            suffix = stream.read()
-        (out / "console-excerpt.log").write_bytes(prefix + b"\n...[MIDDLE OMITTED]...\n" + suffix)
+                excerpt = prefix + b"\n...[MIDDLE OMITTED]...\n" + stream.read()
+            else:
+                excerpt = stream.read()
+        (out / "console-excerpt.log").write_bytes(excerpt)
     except OSError as error:
         return {"console_read_error": str(error)}
     return {"lines": total_lines, "counts": dict(category),
@@ -179,9 +181,12 @@ def main():
         if not args.cwd.is_dir():
             raise RuntimeError("GAME_LAUNCH_CWD_MISSING")
         env = os.environ.copy()
-        env.setdefault("DISPLAY", ":0")
-        env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-        env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{os.getuid()}/bus")
+        if not env.get("DISPLAY"):
+            env["DISPLAY"] = ":0"
+        if not env.get("XDG_RUNTIME_DIR"):
+            env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
+        if not env.get("DBUS_SESSION_BUS_ADDRESS"):
+            env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{os.getuid()}/bus"
         for key in list(env):
             if key.startswith(("SHADPS4_GOW_", "SHADPS4_CPU_ID_")):
                 env.pop(key, None)
