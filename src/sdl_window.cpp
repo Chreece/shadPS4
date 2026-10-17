@@ -7,6 +7,8 @@
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
+#include <array>
+#include <cstdlib>
 #include <cmrc/cmrc.hpp>
 #include <stb_image.h>
 
@@ -449,6 +451,26 @@ void WindowSDL::OnGamepadEvent(const SDL_Event* event) {
         slot = controllers.GetGamepadIndexFromJoystickId(id);
         if (slot == u8{0xff}) {
             return;
+        }
+    }
+
+    // Optional, bounded proof that a late-added virtual controller delivers
+    // actual button/axis input after SDL registration. Diagnostics never
+    // inject any virtual button, bypass user bindings, or affect guest input.
+    static const bool hotplug_audit = [] {
+        const char* const flag = std::getenv("SHADPS4_GAMEPAD_HOTPLUG_AUDIT");
+        return flag && flag[0] == '1' && flag[1] == '\0';
+    }();
+    if (hotplug_audit &&
+        (event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ||
+         event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION)) {
+        static std::array<std::array<u32, 2>, 5> audit_counts{};
+        const unsigned category =
+            event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ? 0u : 1u;
+        if (audit_counts[slot][category]++ < 4) {
+            LOG_INFO(Input, "Gamepad hotplug input: slot={} SDL_id={} type={}",
+                     unsigned(slot) + 1, unsigned(id),
+                     category == 0 ? "button" : "axis");
         }
     }
 
