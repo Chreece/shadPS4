@@ -22,7 +22,7 @@ GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
 BASE_SHA256="948742f5b1ffebf0dfc4d1b452806c2e649bf35d76cffbb576e2b81bb36b5826"
-CANDIDATE="052fd0dc8e895dbc3b4059cdeaf0cf7ccd5eae16"
+CANDIDATE="d36c39401585eb3d568a81aec9241e5930f95234"
 UPSTREAM="32021e41bc52f744c80d122e732e24e97496c98d"
 BRANCH="experiment/got-general-sbuffer-bounds-20261017"
 RUN="$LOGS/.$NAME.runtime"
@@ -370,6 +370,16 @@ c++ -std=c++23 -O2 -I"$SOURCE/src" "$RUN/tmp/test_srt_uniformity.cpp" \
         tail -90 "$RUN/info/srt-uniformity-build.log"; STATUS="SRT_HOST_TEST_BUILD_FAILED"; exit 2;
     }
 "$RUN/info/test-srt-uniformity" | tee "$RUN/info/srt-uniformity-result.txt"
+# Execute the actual native host clamping instructions, not only a mirrored
+# reference calculation. Use the exact vendored xbyak headers from this build.
+git -C "$SOURCE" show "$CANDIDATE:tests/shader_recompiler/test_srt_sbuffer_emitter.cpp" \
+    > "$RUN/tmp/test_srt_sbuffer_emitter.cpp"
+c++ -std=c++23 -O2 -I"$SOURCE/src" -I"$SOURCE/externals/xbyak" \
+    "$RUN/tmp/test_srt_sbuffer_emitter.cpp" \
+    -o "$RUN/info/test-sbuffer-emitter" >"$RUN/info/sbuffer-emitter-build.log" 2>&1 || {
+        tail -100 "$RUN/info/sbuffer-emitter-build.log"; STATUS="SBUFFER_XBYAK_BUILD_FAILED"; exit 2;
+    }
+"$RUN/info/test-sbuffer-emitter" | tee "$RUN/info/sbuffer-emitter-result.txt"
 git -C "$SOURCE" show "$CANDIDATE:tests/page_manager/test_sparse_protection.cpp" \
    > "$RUN/tmp/test_sparse_protection.cpp"
 c++ -std=c++23 -O2 -I"$SOURCE/src" "$RUN/tmp/test_sparse_protection.cpp" \
