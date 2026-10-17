@@ -146,9 +146,11 @@ def summarize_log(path, out):
                     uffd_events.append(line)
                     for key in ("cpu_faults", "completed", "gpu_faults", "audio_faults",
                                 "game_main_faults", "slow_21ms", "slow_100ms",
-                                "audio_slow_21ms"):
+                                "audio_slow_21ms", "read_calls", "read_events",
+                                "multi_reads"):
                         uffd_totals[key] += captures.get(key, 0)
-                    for key in ("max_cpu_us", "max_audio_us", "max_gpu_inline_us", "max_pending"):
+                    for key in ("max_cpu_us", "max_audio_us", "max_gpu_inline_us",
+                                "max_pending", "max_read_batch"):
                         uffd_maxima[key] = max(uffd_maxima.get(key, 0),
                                                captures.get(key, 0))
                 if any(kind in tags for kind in (
@@ -213,6 +215,10 @@ def summarize_log(path, out):
                 "maxima": uffd_maxima,
                 "fault_thread_names": uffd_origins,
                 "elapsed_ms": uffd_elapsed_ms,
+                "mean_records_per_read": round(
+                    uffd_totals["read_events"] / max(1, uffd_totals["read_calls"]), 3),
+                "multi_read_fraction": round(
+                    uffd_totals["multi_reads"] / max(1, uffd_totals["read_calls"]), 5),
             }, indent=2) + "\n", encoding="utf-8")
         (out / "audio-timing-events.txt").write_text(
             "\n".join(audio_events) + "\n")
@@ -241,7 +247,9 @@ def summarize_log(path, out):
     return {"lines": total_lines, "counts": dict(category),
             "uffd_timing_summary": {
                 "windows": len(uffd_windows), "totals": dict(uffd_totals),
-                "maxima": uffd_maxima, "fault_thread_names": uffd_origins},
+                "maxima": uffd_maxima, "fault_thread_names": uffd_origins,
+                "mean_records_per_read": round(
+                    uffd_totals["read_events"] / max(1, uffd_totals["read_calls"]), 3)},
             "audio_timing_summary": {
                 "windows": dict(audio_windows), "totals": dict(audio_totals),
                 "maxima": audio_maxima, "pacing_modes": dict(audio_modes),
