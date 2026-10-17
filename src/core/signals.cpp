@@ -346,6 +346,11 @@ SignalDispatch::SignalDispatch() {
     action.sa_sigaction = SignalHandler;
     action.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&action.sa_mask);
+#if defined(__linux__) && defined(ARCH_X86_64)
+    // Proven on the native guest CPU path: signal delivery must not race
+    // guest SIGUSR1 callbacks while emulating a trapped CPU instruction.
+    sigaddset(&action.sa_mask, SIGUSR1);
+#endif
 
     ASSERT_MSG(
         sigaction(SIGSEGV, &action, nullptr) == 0 && sigaction(SIGBUS, &action, nullptr) == 0 &&
@@ -354,6 +359,18 @@ SignalDispatch::SignalDispatch() {
             sigaction(SIGUSR1, &action, nullptr) == 0 && sigaction(SIGFPE, &action, nullptr) == 0 &&
             sigaction(SIGSLEEP, &action, nullptr) == 0,
         "Failed to register signal handlers.");
+#if defined(__linux__) && defined(ARCH_X86_64)
+    // Host code (logging, timing, error reporting) can execute RDTSC while
+    // already servicing a guest CPUID/RDTSCP fault. Linux PR_SET_TSC traps
+    // that nested host read, which must reach the instruction emulator
+    // immediately rather than being blocked behind the active SIGSEGV.
+    // Restore the proven per-SIGSEGV/SIGILL SA_NODEFER policy; leave all
+    // other handlers at their upstream configuration.
+    action.sa_flags |= SA_NODEFER;
+    ASSERT_MSG(sigaction(SIGSEGV, &action, nullptr) == 0 &&
+                   sigaction(SIGILL, &action, nullptr) == 0,
+               "Failed to enable nested CPU instruction faults.");
+#endif
 #endif
 }
 
