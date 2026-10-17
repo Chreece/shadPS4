@@ -44,6 +44,8 @@ LOG_MARKERS = {
     "audio_backend_sink_error": "Failed to resume audio stream",
     "audio_producer_probe": "AUDIO_PRODUCER_TIMING",
     "audio_sdl_probe": "AUDIO_SDL_TIMING",
+    "audio_guest_submit": "AUDIO_GUEST_SUBMIT",
+    "audio_batch_sync": "AUDIO_BATCH_SYNC",
     "audio_outer_pacing": "SDL outer-thread-only pacing trial active",
     "audio3d_shutdown": "sceAudio3dTerminate: called",
     "audio_unload_error": "Failed sceSysmoduleUnloadModule for SCE_SYSMODULE_AUDIO_3D",
@@ -111,6 +113,7 @@ def summarize_log(path, out):
     audio_maxima = {}
     audio_modes = Counter()
     audio_windows = Counter()
+    audio_by_port = {}
     audio_events = []
     audio_metric_re = re.compile(r"\b([a-z_]+)=(\d+)")
     total_lines = 0
@@ -122,10 +125,35 @@ def summarize_log(path, out):
                 total_lines += 1
                 line = raw.decode("utf-8", "replace").rstrip()[:1800]
                 tags = [kind for kind, substring in LOG_MARKERS.items() if substring in line]
-                if "audio_producer_probe" in tags or "audio_sdl_probe" in tags:
-                    kind = "producer" if "audio_producer_probe" in tags else "sdl"
+                if any(kind in tags for kind in (
+                    "audio_producer_probe", "audio_sdl_probe",
+                    "audio_guest_submit", "audio_batch_sync")):
+                    kind = (
+                        "producer" if "audio_producer_probe" in tags else
+                        "sdl" if "audio_sdl_probe" in tags else
+                        "guest" if "audio_guest_submit" in tags else
+                        "batch"
+                    )
                     audio_windows[kind] += 1
                     audio_events.append(line[:1800])
+                    port = re.search(r"\bport=(\d+)", line)
+                    if port:
+                        key = f"{kind}:port{port.group(1)}"
+                        if key not in audio_by_port:
+                            audio_by_port[key] = {"windows": 0, "total_late_entries": 0,
+                                                  "total_long_waits": 0, "total_missing": 0,
+                                                  "max_entry_gap_us": 0, "max_wait_us": 0}
+                        entry = audio_by_port[key]
+                        entry["windows"] += 1
+                        captures = dict(audio_metric_re.findall(line))
+                        entry["total_late_entries"] += int(captures.get(
+                            "late_entries", captures.get("late_gaps", 0)))
+                        entry["total_long_waits"] += int(captures.get("long_waits", 0))
+                        entry["total_missing"] += int(captures.get("no_guest_buffer", 0))
+                        entry["max_entry_gap_us"] = max(entry["max_entry_gap_us"],
+                            int(captures.get("max_entry_gap_us", captures.get("max_gap_us", 0))))
+                        entry["max_wait_us"] = max(entry["max_wait_us"],
+                            int(captures.get("max_wait_us", captures.get("max_backend_us", 0))))
                     if kind == "sdl":
                         match = re.search(r"\bpacing=(outer|dual)", line)
                         audio_modes[match.group(1) if match else "unknown"] += 1
@@ -158,6 +186,7 @@ def summarize_log(path, out):
                 "totals": dict(audio_totals),
                 "maxima": audio_maxima,
                 "pacing_modes": dict(audio_modes),
+                "by_port": audio_by_port,
             }, indent=2) + "\n")
         (out / "console-diagnostics.txt").write_text(
             "\n".join(first) + "\n\n... SELECTED DIAGNOSTIC TAIL ...\n\n" +
@@ -176,7 +205,8 @@ def summarize_log(path, out):
     return {"lines": total_lines, "counts": dict(category),
             "audio_timing_summary": {
                 "windows": dict(audio_windows), "totals": dict(audio_totals),
-                "maxima": audio_maxima, "pacing_modes": dict(audio_modes)},
+                "maxima": audio_maxima, "pacing_modes": dict(audio_modes),
+                "by_port": audio_by_port},
             "top_shader_hashes": shader_ids.most_common(32),
             "full_console_path": str(path), "full_console_bytes": path.stat().st_size}
 
