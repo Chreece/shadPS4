@@ -762,7 +762,9 @@ static bool SplitImageSampleBySharpPhi(IR::Block& block, IR::Inst& inst,
         return flag && flag[0]=='1' && flag[1]=='\0';
     }();
     if (audit) {
-        static u32 reports=0;
+        // Shader modules may compile concurrently. Keep audit throttling
+        // thread-local instead of racing on a shared non-atomic counter.
+        static thread_local u32 reports=0;
         if (reports++<64) {
             LOG_INFO(Render_Recompiler,
                      "ImagePhiSplit: shader={:#x} stage={} alternatives={} "
