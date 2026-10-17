@@ -1158,7 +1158,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                              "usable={} first_usable={} last_usable={} read_only=YES",
                              stage.pgm_hash, stage.hw_stage, sample, fetched,
                              static_cast<u64>(source.base_address),
-                             static_cast<u32>(source.stride), source.num_records,
+                             static_cast<u32>(source.stride), static_cast<u32>(source.num_records),
                              bytes, entries, span_mapped, valid_shapes, valid_2d,
                              usable, first_usable, last_usable);
                 }
