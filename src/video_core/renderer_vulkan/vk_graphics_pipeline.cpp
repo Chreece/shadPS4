@@ -378,6 +378,17 @@ GraphicsPipeline::GraphicsPipeline(
                      "Emulating scaled alpha min/max with squared shader output on attachment {}", i);
         }
 
+        if (key.color_buffers[i].blend_src_alpha_one) {
+            // The fragment shader premultiplies its normalized RGBA export
+            // by source alpha before returning. Vulkan MIN/MAX ignores
+            // factors, so set them to ONE only for this exact PS4 case.
+            // The destination factor was already ONE and stays unchanged.
+            attachment.srcColorBlendFactor = vk::BlendFactor::eOne;
+            attachment.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+            LOG_INFO(Render_Vulkan,
+                     "Emulating SrcAlpha/One MIN/MAX through fragment output attachment {}", i);
+        }
+
         const auto color_scaled_min_max =
             (attachment.colorBlendOp == vk::BlendOp::eMin ||
              attachment.colorBlendOp == vk::BlendOp::eMax) &&

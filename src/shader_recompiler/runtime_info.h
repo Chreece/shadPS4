@@ -176,6 +176,10 @@ struct PsColorBuffer {
     AmdGpu::ShaderExportFormat export_format : 4;
     u32 blend_self_scale : 1;
     u32 blend_self_scale_alpha : 1;
+    // For MIN/MAX(src * srcAlpha, dst), export premultiplied RGBA and use
+    // unit blend factors. Unlike blend_self_scale, the source factor depends
+    // on the alpha component shared by all four MRT outputs.
+    u32 blend_src_alpha_one : 1;
     AmdGpu::CompMapping swizzle;
 
     bool operator==(const PsColorBuffer& other) const = default;
