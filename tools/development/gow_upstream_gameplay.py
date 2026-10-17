@@ -44,6 +44,8 @@ LOG_MARKERS = {
     "audio_backend_sink_error": "Failed to resume audio stream",
     "audio_producer_probe": "AUDIO_PRODUCER_TIMING",
     "audio_sdl_probe": "AUDIO_SDL_TIMING",
+    "audio3d_assoc": "AUDIO3D_ASSOC operation=",
+    "audio3d_push": "AUDIO3D_PUSH count=",
     "audio_guest_submit": "AUDIO_GUEST_SUBMIT",
     "audio_batch_sync": "AUDIO_BATCH_SYNC",
     "uffd_perf": "UFFD_PERF window_ms=",
@@ -117,6 +119,9 @@ def summarize_log(path, out):
     audio_windows = Counter()
     audio_by_port = {}
     audio_events = []
+    audio3d_events = []
+    audio3d_handles = {}
+    audio3d_port_push = 0
     uffd_events = []
     uffd_origins = {}
     uffd_windows = []
@@ -133,6 +138,29 @@ def summarize_log(path, out):
                 total_lines += 1
                 line = raw.decode("utf-8", "replace").rstrip()[:1800]
                 tags = [kind for kind, substring in LOG_MARKERS.items() if substring in line]
+                if "audio3d_assoc" in tags:
+                    audio3d_events.append(line)
+                    fields = {k: int(v) for k, v in audio_metric_re.findall(line)}
+                    name = re.search(r"\boperation=(enqueue|forward|full)", line)
+                    if name:
+                        idx = str(fields.get("port_index", -1))
+                        bucket = audio3d_handles.setdefault(idx, {
+                            "accepted": 0, "forwarded": 0, "full": 0,
+                            "max_pending": 0, "queue_depth": 0, "eager": 0,
+                        })
+                        for count_name in ("accepted", "forwarded", "full"):
+                            bucket[count_name] = max(bucket[count_name],
+                                fields.get(count_name, 0))
+                        bucket["max_pending"] = max(bucket["max_pending"],
+                            fields.get("pending", 0))
+                        bucket["queue_depth"] = fields.get(
+                            "queue_depth", bucket["queue_depth"])
+                        bucket["eager"] = fields.get("eager", bucket["eager"])
+                if "audio3d_push" in tags:
+                    audio3d_events.append(line)
+                    pushes = dict(audio_metric_re.findall(line))
+                    audio3d_port_push = max(audio3d_port_push,
+                                            int(pushes.get("count", 0)))
                 if "uffd_thread_origin" in tags:
                     who = re.search(r"\btid=(\d+) name=([^\x1b\r\n]+)", line)
                     if who:
@@ -206,6 +234,16 @@ def summarize_log(path, out):
                     match = SHADER_ID.search(line)
                     if match:
                         shader_ids[match.group(1).lower()] += 1
+        (out / "audio3d-queue-events.txt").write_text(
+            "\n".join(audio3d_events) + "\n", encoding="utf-8")
+        (out / "audio3d-queue-summary.json").write_text(
+            json.dumps({
+                "handles": audio3d_handles,
+                "port_push_calls_at_last_report": audio3d_port_push,
+                "associated_events_seen": len(audio3d_events),
+                "direct_drain_enabled": any(
+                    x["eager"] == 1 for x in audio3d_handles.values()),
+            }, indent=2) + "\n", encoding="utf-8")
         (out / "uffd-perf-events.txt").write_text(
             "\n".join(uffd_events) + "\n", encoding="utf-8")
         (out / "uffd-perf-summary.json").write_text(
@@ -245,6 +283,10 @@ def summarize_log(path, out):
     except OSError as error:
         return {"console_read_error": str(error)}
     return {"lines": total_lines, "counts": dict(category),
+            "audio3d_hle_summary": {
+                "handles": audio3d_handles,
+                "push_calls": audio3d_port_push,
+                "events": len(audio3d_events)},
             "uffd_timing_summary": {
                 "windows": len(uffd_windows), "totals": dict(uffd_totals),
                 "maxima": uffd_maxima, "fault_thread_names": uffd_origins,
@@ -443,6 +485,8 @@ def main():
         report["sdl_outer_pacing"] = env.get("SHADPS4_SDL_OUTER_PACING", "")
         report["audio_timing_probe"] = env.get("SHADPS4_AUDIO_TIMING_PROBE", "")
         report["uffd_perf_probe"] = env.get("SHADPS4_UFFD_PERF_PROBE", "")
+        report["audio3d_direct_drain"] = env.get("SHADPS4_AUDIO3D_DIRECT_DRAIN", "")
+        report["audio3d_queue_probe"] = env.get("SHADPS4_AUDIO3D_QUEUE_PROBE", "")
         command = [str(exe), "--cpu-id-mode", "builtin", "--userfaultfd",
                    "--game", "CUSA34384", "--fullscreen", "true", "--show-fps"]
         (out / "launch-command.json").write_text(json.dumps(command, indent=2) + "\n")
