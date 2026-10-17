@@ -46,6 +46,8 @@ LOG_MARKERS = {
     "audio_sdl_probe": "AUDIO_SDL_TIMING",
     "audio_guest_submit": "AUDIO_GUEST_SUBMIT",
     "audio_batch_sync": "AUDIO_BATCH_SYNC",
+    "uffd_perf": "UFFD_PERF window_ms=",
+    "uffd_thread_origin": "UFFD_ORIGIN tid=",
     "audio_outer_pacing": "SDL outer-thread-only pacing trial active",
     "audio3d_shutdown": "sceAudio3dTerminate: called",
     "audio_unload_error": "Failed sceSysmoduleUnloadModule for SCE_SYSMODULE_AUDIO_3D",
@@ -115,6 +117,12 @@ def summarize_log(path, out):
     audio_windows = Counter()
     audio_by_port = {}
     audio_events = []
+    uffd_events = []
+    uffd_origins = {}
+    uffd_windows = []
+    uffd_totals = Counter()
+    uffd_maxima = {}
+    uffd_elapsed_ms = 0
     audio_metric_re = re.compile(r"\b([a-z_]+)=(\d+)")
     total_lines = 0
     if not path.is_file():
@@ -125,6 +133,24 @@ def summarize_log(path, out):
                 total_lines += 1
                 line = raw.decode("utf-8", "replace").rstrip()[:1800]
                 tags = [kind for kind, substring in LOG_MARKERS.items() if substring in line]
+                if "uffd_thread_origin" in tags:
+                    who = re.search(r"\btid=(\d+) name=([^\x1b\r\n]+)", line)
+                    if who:
+                        uffd_origins[who.group(1)] = who.group(2).strip()
+                    uffd_events.append(line)
+                if "uffd_perf" in tags:
+                    captures = {k: int(v) for k, v in audio_metric_re.findall(line)}
+                    uffd_elapsed_ms += captures.get("window_ms", 0)
+                    captures["approx_elapsed_ms"] = uffd_elapsed_ms
+                    uffd_windows.append(captures)
+                    uffd_events.append(line)
+                    for key in ("cpu_faults", "completed", "gpu_faults", "audio_faults",
+                                "game_main_faults", "slow_21ms", "slow_100ms",
+                                "audio_slow_21ms"):
+                        uffd_totals[key] += captures.get(key, 0)
+                    for key in ("max_cpu_us", "max_audio_us", "max_gpu_inline_us", "max_pending"):
+                        uffd_maxima[key] = max(uffd_maxima.get(key, 0),
+                                               captures.get(key, 0))
                 if any(kind in tags for kind in (
                     "audio_producer_probe", "audio_sdl_probe",
                     "audio_guest_submit", "audio_batch_sync")):
@@ -178,6 +204,16 @@ def summarize_log(path, out):
                     match = SHADER_ID.search(line)
                     if match:
                         shader_ids[match.group(1).lower()] += 1
+        (out / "uffd-perf-events.txt").write_text(
+            "\n".join(uffd_events) + "\n", encoding="utf-8")
+        (out / "uffd-perf-summary.json").write_text(
+            json.dumps({
+                "windows": uffd_windows,
+                "totals": dict(uffd_totals),
+                "maxima": uffd_maxima,
+                "fault_thread_names": uffd_origins,
+                "elapsed_ms": uffd_elapsed_ms,
+            }, indent=2) + "\n", encoding="utf-8")
         (out / "audio-timing-events.txt").write_text(
             "\n".join(audio_events) + "\n")
         (out / "audio-timing-summary.json").write_text(
@@ -203,6 +239,9 @@ def summarize_log(path, out):
     except OSError as error:
         return {"console_read_error": str(error)}
     return {"lines": total_lines, "counts": dict(category),
+            "uffd_timing_summary": {
+                "windows": len(uffd_windows), "totals": dict(uffd_totals),
+                "maxima": uffd_maxima, "fault_thread_names": uffd_origins},
             "audio_timing_summary": {
                 "windows": dict(audio_windows), "totals": dict(audio_totals),
                 "maxima": audio_maxima, "pacing_modes": dict(audio_modes),
@@ -395,6 +434,7 @@ def main():
         report["runtime_log_filter"] = env.get("SHADPS4_RUNTIME_LOG_FILTER", "")
         report["sdl_outer_pacing"] = env.get("SHADPS4_SDL_OUTER_PACING", "")
         report["audio_timing_probe"] = env.get("SHADPS4_AUDIO_TIMING_PROBE", "")
+        report["uffd_perf_probe"] = env.get("SHADPS4_UFFD_PERF_PROBE", "")
         command = [str(exe), "--cpu-id-mode", "builtin", "--userfaultfd",
                    "--game", "CUSA34384", "--fullscreen", "true", "--show-fps"]
         (out / "launch-command.json").write_text(json.dumps(command, indent=2) + "\n")
