@@ -37,8 +37,19 @@ for p in /proc/[0-9]*; do
   esac
 done
 if [[ -z "$found" ]]; then
-  echo "START_GOW_WITH_YOUR_EXISTING_WORKING_LAUNCHER_FIRST; NO_AUTO_LAUNCH"
-  exit 2
+  echo "AUTO_LAUNCH=PROVEN_GOW_BINARY"
+  export DISPLAY="${DISPLAY:-:0}"
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+  for key in ${!SHADPS4_GOW_@} ${!SHADPS4_CPU_ID_@}; do unset "$key"; done
+  (cd "$BASE" && "$BIN" --cpu-id-mode builtin --userfaultfd --game CUSA34384 --fullscreen true --show-fps >"$OUT/game-console.log" 2>&1 </dev/null) &
+  found=$!
+  echo "AUTO_LAUNCHED_PID=$found"
+  sleep 4
+  if ! kill -0 "$found" 2>/dev/null; then
+    echo "GAME_EXITED_EARLY; SEE_GAME_CONSOLE_LOG"
+    exit 2
+  fi
 fi
 echo "PROFILE_PID=$found" | tee "$OUT/pid.txt"
 ps -p "$found" -o pid,ppid,etime,pcpu,pmem,rss,nlwp,args > "$OUT/process.txt"
@@ -60,4 +71,4 @@ for i in $(seq 1 20); do
   done
   sleep 2
 done
-echo "PROFILING_COMPLETE=YES"
+echo "PROFILING_COMPLETE=YES; GAME_LEFT_RUNNING=YES"
