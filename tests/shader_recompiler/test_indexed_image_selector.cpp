@@ -105,6 +105,31 @@ int main(){
             if(id<=10000u && actual!=predicted) return 18;
         }
     }
+    // Sampler S# shares the SAME original GPU record selector as the T#.
+    // The four 32-bit S# words begin at byte offset 128, immediately
+    // before the guest texture at offset 144.
+    MockInst samplerOffset{Opcode::IAdd32,
+                          {MockValue::Ref(mulRecord),MockValue::Imm(128u)},};
+    MockInst samplerDwords{Opcode::ShiftRightLogical32,
+                          {MockValue::Ref(samplerOffset),MockValue::Imm(2u)},};
+    std::array<MockInst,4> samplerWords{};
+    std::array<StridedIndexedSharpWord,4> samplerRefs{};
+    for (unsigned i=0;i<4u;++i) {
+        samplerWords[i]={Opcode::IAdd32,
+                         {MockValue::Ref(samplerDwords),MockValue::Imm(i)},};
+        samplerRefs[i]=AnalyzeStridedIndexedSharpWord(MockValue::Ref(samplerWords[i]));
+    }
+    if(!AreContiguousStridedSharpWords(samplerRefs) ||
+       samplerRefs[0].gpu_record_id!=material[0].gpu_record_id ||
+       samplerRefs[0].record_stride_bytes!=536u ||
+       samplerRefs[0].offset_dwords!=32u ||
+       samplerRefs[3].offset_dwords!=35u) return 21;
+    samplerRefs[2].gpu_record_id=&attr;
+    if(AreContiguousStridedSharpWords(samplerRefs)) return 22;
+    samplerRefs[2]=AnalyzeStridedIndexedSharpWord(MockValue::Ref(samplerWords[2]));
+    samplerRefs[3].offset_dwords=36u;
+    if(AreContiguousStridedSharpWords(samplerRefs)) return 23;
+
     material[7].offset_dwords=44u;
     if(AreContiguousStridedSharpWords(material)) return 19;
     material[7]=AnalyzeStridedIndexedSharpWord(MockValue::Ref(materialWords[7]));
@@ -135,6 +160,6 @@ int main(){
     }
     std::puts("INDEXED_TSHARP_SELECTOR=PASS 100000_affine_tables "
               "real_GPU_selector=KEPT gcn_32byte_stride=EXACT "
-              "mismatched_sources=REJECTED strided_536_Tsharp=144");
+              "mismatched_sources=REJECTED strided_536_Tsharp=144 matched_Ssharp=128");
     return 0;
 }
