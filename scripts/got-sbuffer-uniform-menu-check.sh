@@ -397,7 +397,7 @@ export CCACHE_MAXSIZE=8G CCACHE_COMPRESS=true CCACHE_BASEDIR="$GOT"
 ccache --max-size=8G
 ccache --show-stats > "$RUN/info/ccache-before-build.txt"
 echo "INCREMENTAL_CONFIGURE=START"
-cmake -S "$SOURCE" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+cmake -S "$SOURCE" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF \
     -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
     >"$RUN/info/configure.log" 2>&1 || {
        tail -100 "$RUN/info/configure.log"; STATUS="CONFIGURE_FAILED"; exit 2;
