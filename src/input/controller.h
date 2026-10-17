@@ -131,6 +131,8 @@ private:
 class GameControllers {
     std::array<GameController*, 5> controllers;
     GamepadHotplugSnapshot<SDL_JoystickID> hotplug_snapshot;
+    bool pending_gamepad_open_retry{};
+    u32 failed_gamepad_opens{};
 
 public:
     GameControllers()

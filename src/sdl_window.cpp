@@ -331,6 +331,7 @@ void WindowSDL::WaitEvent() {
                 break;
             }
         }
+        controllers.PollSDLControllerHotplug(true);
         break;
     case SDL_EVENT_REMOVE_VIRTUAL_USER:
         LOG_INFO(Input, "Remove user");

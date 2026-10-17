@@ -35,8 +35,12 @@ int main() {
     if (Input::ShouldRestorePrimaryVirtualController(false, true)) return 17;
     if (Input::ShouldRestorePrimaryVirtualController(true, false)) return 18;
     if (Input::ShouldRestorePrimaryVirtualController(true, true)) return 19;
+    if (!Input::ShouldReconcileGamepadSnapshot(true, false)) return 20;
+    if (!Input::ShouldReconcileGamepadSnapshot(false, true)) return 21;
+    if (Input::ShouldReconcileGamepadSnapshot(false, false)) return 22;
+    if (!Input::ShouldReconcileGamepadSnapshot(true, true)) return 23;
     std::puts("GAMEPAD_HOTPLUG=PASS late_attach=YES reconnect=YES "
               "two_controllers=YES order_independent=YES idle_no_reopen=YES "
-              "virtual_fallback=PASS");
+              "virtual_fallback=PASS transient_open_retry=PASS");
     return 0;
 }

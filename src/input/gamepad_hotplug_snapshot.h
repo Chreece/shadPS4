@@ -8,6 +8,13 @@
 
 namespace Input {
 
+// Unchanged instance IDs normally need no work; a newly discovered but
+// temporarily unavailable SDL gamepad is the one exception.
+[[nodiscard]] constexpr bool ShouldReconcileGamepadSnapshot(
+    bool device_set_changed, bool open_retry_pending) noexcept {
+    return device_set_changed || open_retry_pending;
+}
+
 // Keep keyboard input available when the last real gamepad disappears.
 // Never replace a physical pad or re-connect an already connected virtual pad.
 [[nodiscard]] constexpr bool ShouldRestorePrimaryVirtualController(

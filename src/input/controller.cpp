@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <mutex>
@@ -286,9 +287,13 @@ void GameControllers::PollSDLControllerHotplug(bool force) {
     }
     const bool changed = hotplug_snapshot.Update(available, force);
     SDL_free(ids);
-    if (changed) {
-        LOG_INFO(Input, "Gamepad hotplug reconciliation: {} SDL gamepads, forced={}",
-                 count, force);
+    if (ShouldReconcileGamepadSnapshot(changed, pending_gamepad_open_retry)) {
+        if (changed) {
+            LOG_INFO(Input, "Gamepad hotplug reconciliation: {} SDL gamepads, forced={}",
+                     count, force);
+        }
+        // An SDL instance ID can appear before its backend is ready to open.
+        // Retry only unassigned pads, never close/reopen an unchanged slot.
         TryOpenSDLControllers();
     }
 }
@@ -303,7 +308,11 @@ void GameControllers::TryOpenSDLControllers() {
         SDL_free(new_joysticks);
         return;
     }
-    LOG_INFO(Input, "{} controllers are currently connected", controller_count);
+    const bool retrying = pending_gamepad_open_retry;
+    pending_gamepad_open_retry = false;
+    if (!retrying) {
+        LOG_INFO(Input, "{} controllers are currently connected", controller_count);
+    }
 
     std::unordered_set<SDL_JoystickID> assigned_ids;
     std::array<bool, 4> slot_taken{false, false, false, false};
@@ -339,6 +348,12 @@ void GameControllers::TryOpenSDLControllers() {
 
         SDL_Gamepad* pad = SDL_OpenGamepad(id);
         if (!pad) {
+            pending_gamepad_open_retry = true;
+            const u32 failure = ++failed_gamepad_opens;
+            if (failure <= 3 || std::has_single_bit(failure)) {
+                LOG_WARNING(Input, "SDL gamepad {} not ready yet (retry {}): {}",
+                            id, failure, SDL_GetError());
+            }
             continue;
         }
 
@@ -386,6 +401,10 @@ void GameControllers::TryOpenSDLControllers() {
             SDL_CloseGamepad(pad);
         }
     }
+    if (!pending_gamepad_open_retry) {
+        failed_gamepad_opens = 0;
+    }
+
     // Keep the original keyboard/virtual-pad route usable when no physical
     // controller is present. It must also be re-established after a late
     // Moonlight/Sunshine controller disconnects, not only at first startup.
