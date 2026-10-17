@@ -50,6 +50,25 @@ def run_test(mod, original: str, github_trial: str, header: str) -> None:
            "LOCAL_AUDIO3D_CHANGE_IN_APPROVED_SCOPE_DROPPED")
     print("NONOVERLAPPING_LOCAL_AUDIO3D_OUTPUT_CHANGE=RETAINED_PASS")
 
+    # A local comment immediately adjacent to the trial's enqueue insertion
+    # may make Git reject an otherwise safe contextual diff. The add-only
+    # fallback must preserve that comment without deleting existing PCM logic.
+    add_marker = "aout.pending.emplace_back(src, src + aout.buffer_bytes);"
+    ensure(original.count(add_marker) == 1, "ENQUEUE_ANCHOR_CHANGED")
+    local_neighbor = original.replace(
+        add_marker, add_marker +
+        "\n                // LOCAL_ADJACENT_PCM_ACCOUNTING_COMMENT", 1)
+    merged_neighbor, neighbor_info = mod.merge_sources(
+        local_neighbor, original, github_trial, header)
+    ensure("LOCAL_ADJACENT_PCM_ACCOUNTING_COMMENT" in merged_neighbor,
+           "LOCAL_NEIGHBOR_PCM_COMMENT_LOST")
+    ensure("if (Audio3dDirectDrainEnabled())" in merged_neighbor,
+           "SAFE_NEIGHBOR_MERGE_LOST_EXPERIMENT")
+    ensure(mod.mask(local_neighbor)[0] == mod.mask(merged_neighbor)[0],
+           "ADJACENT_LOCAL_AUDIO3D_SCOPE_CONTEXT_CHANGED")
+    print("ADJACENT_LOCAL_AUDIO3D_CHANGE_PRESERVED=PASS strategy=" +
+          neighbor_info["three_way_git_merge"])
+
     # A change in the same PCM copy hunk MUST NOT get overwritten by the
     # trial, whether Git finds a conflict or would otherwise merge it.
     local_pcm = original.replace(
@@ -89,7 +108,7 @@ def run_test(mod, original: str, github_trial: str, header: str) -> None:
     else:
         raise AssertionError("TRIAL_WITH_UNRELATED_HLE_CHANGE_ACCEPTED")
 
-    print("ALL_AUDIO3D_PRESERVE_LOCAL_MERGE_TESTS=PASS cases=6")
+    print("ALL_AUDIO3D_PRESERVE_LOCAL_MERGE_TESTS=PASS cases=7")
 
 
 def main():
