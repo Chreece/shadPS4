@@ -18,6 +18,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tarfile
 import time
@@ -240,6 +241,18 @@ def main():
             if consecutive_deadlock >= 3:
                 status["repeated_old_deadlock_signature"] = True
                 print("OLD_UFFD_DEADLOCK_SIGNATURE=REPRODUCED", flush=True)
+                if shutil.which("gdb") and shutil.which("timeout"):
+                    try:
+                        debugger = subprocess.run(
+                            ["timeout", "25s", "gdb", "-nx", "-batch", "-q",
+                             "-ex", "set pagination off", "-ex", "set confirm off",
+                             "-ex", "info threads", "-ex", "thread apply all bt 18",
+                             "-ex", "detach", "-p", str(child.pid)],
+                            capture_output=True, text=True, errors="replace", timeout=30)
+                        (out / "deadlock-stacks.txt").write_text(
+                            f"returncode={debugger.returncode}\n{debugger.stdout}\n{debugger.stderr}\n")
+                    except (OSError, subprocess.TimeoutExpired) as exc:
+                        (out / "deadlock-stacks-error.txt").write_text(repr(exc) + "\n")
                 break
             previous = current
         status["game_alive_at_capture_end"] = child.poll() is None
