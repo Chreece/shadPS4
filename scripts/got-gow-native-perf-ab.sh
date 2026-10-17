@@ -54,7 +54,7 @@ echo "CANDIDATE=$CANDIDATE"
 echo "UPSTREAM_MAIN=$UPSTREAM"
 echo "PROVENANCE=GOW_GENERAL_SPARSE_MPROTECT_ONLY"
 echo "SHADER_AUDITS=OFF FOR BOTH"
-echo "SHADER_CACHE=REUSED_FROM_COMMON_WARMUP FOR BOTH"
+echo "SHADER_CACHE=ENABLED_JSON_CACHE_AND_MATCHED_PROFILES"
 echo "BUILD_CACHE=EXISTING_NINJA_AND_CCACHE"
 test -d "$SOURCE/.git"
 test -x "$BIN"
@@ -74,7 +74,7 @@ test "$(sha256sum "$BIN" | awk '{print $1}')" = "$BASE_SHA256" || {
     echo "BASELINE_BINARY_CHANGED_REFUSE_TO_COMPARE"
     exit 2
 }
-if pgrep -u "$(id -u)" -x shadps4 >/dev/null; then
+if [ -n "$(find_owned_emulator | head -1)" ]; then
     echo "LIVE_EMULATOR_DETECTED_REFUSE_TO_INTERRUPT"
     exit 2
 fi
@@ -119,34 +119,53 @@ prepare_home() {
 }
 # Use low-noise logging only for isolated test profiles; leave user settings alone.
 set_perf_log_filter() {
-    local file="$1/user/config.toml"
-    python3 - "$file" <<'PYLOG'
-import pathlib, re, sys
-path = pathlib.Path(sys.argv[1])
-lines = path.read_text(encoding="utf-8").splitlines(keepends=True) if path.is_file() else []
-section, has_log, has_filter = "", False, False
-for i, line in enumerate(lines):
-    match = re.match(r'^\s*\[([^\]]+)\]\s*$', line)
-    if match:
-        section = match.group(1)
-        has_log |= section == "Log"
-        continue
-    key = re.match(r'^(\s*)([A-Za-z_][A-Za-z_0-9]*)\s*=', line)
-    if key and ((section == "Log" and key.group(2) == "filter") or
-                (section == "General" and key.group(2) == "logFilter")):
-        lines[i] = f'{key.group(1)}{key.group(2)} = "*:error"\n'
-        has_filter |= section == "Log"
-if not has_filter:
-    if has_log:
-        for i, line in enumerate(lines):
-            if re.match(r'^\s*\[Log\]\s*$', line):
-                lines.insert(i + 1, 'filter = "*:error"\n')
-                break
-    else:
-        lines.append('\n[Log]\nfilter = "*:error"\n')
-path.parent.mkdir(parents=True, exist_ok=True)
-path.write_text("".join(lines), encoding="utf-8")
-PYLOG
+    local userdir="$1/user" config="$1/user/config.json"
+    mkdir -p "$userdir"
+    python3 - "$config" <<'PYJSON'
+import json, pathlib, sys
+p = pathlib.Path(sys.argv[1])
+config = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+if not isinstance(config, dict):
+    raise SystemExit("UNEXPECTED_CONFIG_JSON_FORMAT")
+for name in ("Log", "GPU", "Vulkan", "Debug"):
+    if name not in config:
+        config[name] = {}
+    if not isinstance(config[name], dict):
+        raise SystemExit(f"INVALID_SETTINGS_GROUP:{name}")
+config["Log"].update(filter="*:critical", sync=False, skip_duplicate=True)
+config["GPU"].update(dump_shaders=False)
+config["Vulkan"].update(pipeline_cache_enabled=True)
+config["Debug"].update(debug_dump=False, shader_collect=False)
+p.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+assert config["Log"]["filter"] == "*:critical"
+assert config["Vulkan"]["pipeline_cache_enabled"]
+print("ISOLATED_CONFIG_JSON=VERIFIED; LOG_FILTER=CRITICAL; SYNC=OFF; SHADER_DUMP=OFF; VULKAN_PIPELINE_CACHE=ON")
+PYJSON
+}
+# The emulator's executable can have a name longer than Linux comm's 15 bytes.
+find_owned_emulator() {
+    local proc target name
+    for proc in /proc/[0-9]*; do
+        [ "$(stat -c %u "$proc" 2>/dev/null || true)" = "$(id -u)" ] || continue
+        target=$(readlink -f "$proc/exe" 2>/dev/null || true)
+        name=$(basename "$target")
+        case "$name" in
+            shadps4*|shadPS4*) basename "$proc";;
+        esac
+    done
+}
+find_pid_for_binary() {
+    local expected proc actual
+    expected=$(readlink -f -- "$1")
+    for proc in /proc/[0-9]*; do
+        [ "$(stat -c %u "$proc" 2>/dev/null || true)" = "$(id -u)" ] || continue
+        actual=$(readlink -f "$proc/exe" 2>/dev/null || true)
+        if [ "$actual" = "$expected" ]; then
+            basename "$proc"
+            return 0
+        fi
+    done
+    return 1
 }
 # Optional GPU busy counter on AMD GPUs, no driver/kernel instrumentation.
 GPU_BUSY=""
@@ -160,12 +179,13 @@ done
 run_phase() {
     local phase="$1" exe="$2" duration="$3"
     STATUS="RUNNING_$phase"
-    if pgrep -u "$(id -u)" -x shadps4 >/dev/null; then
+    if [ -n "$(find_owned_emulator | head -1)" ]; then
         echo "ANOTHER_EMULATOR_ACTIVE_BEFORE_$phase"
         exit 2
     fi
     prepare_home "$phase"
-    set_perf_log_filter "$RUN/tmp/$phase"
+    set_perf_log_filter "$RUN/tmp/$phase" | tee "$RUN/evidence/$phase/config-proof.txt"
+    sha256sum "$RUN/tmp/$phase/user/config.json" > "$RUN/evidence/$phase/config-sha256.txt"
     local home="$RUN/tmp/$phase"
     echo "PHASE=$phase SECONDS=$duration EXECUTABLE=$exe"
     local started=$(date +%s)
@@ -187,10 +207,7 @@ run_phase() {
     while kill -0 "$wrapper" 2>/dev/null; do
         local elapsed=$(( $(date +%s) - started ))
         local pid=""
-        pid=$(pgrep -P "$wrapper" -x shadps4 | head -1 || true)
-        if [ -z "$pid" ]; then
-            pid=$(pgrep -u "$(id -u)" -x shadps4 | head -1 || true)
-        fi
+        pid=$(find_pid_for_binary "$exe" || true)
         if [ -n "$pid" ]; then
             local pcpu="" rss="" threads="" busy="" metrics=""
             metrics=$(ps -p "$pid" -o pcpu=,rss=,nlwp= 2>/dev/null | xargs || true)
