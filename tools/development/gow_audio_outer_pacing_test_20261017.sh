@@ -24,6 +24,7 @@ LOGS="$HOME/projects/shadps4/logs"
 TAG="gow-audio-pacing-$(date +%Y%m%d-%H%M%S)"
 OUT="$LOGS/$TAG"
 mkdir -p "$OUT/original" "$OUT/pretest"
+STAGE=CHECK_SAFE_INPUTS
 BASE="eabc3f127b58585811d4a7fbdb4308beac99894c"
 HEAD="dafe3c58057e9ffaec711dbcf56ad66425893c27"
 REMOTE="https://github.com/Chreece/shadPS4.git"
@@ -36,6 +37,8 @@ finish() {
   local code="$1"
   trap - EXIT
   set +e
+  printf 'EXIT_CODE=%s\nFINAL_STAGE=%s\n' "$code" "${STAGE:-NOT_SET}" > "$OUT/exit-stage.txt"
+  echo "GOW_TEST_LAST_STAGE=${STAGE:-NOT_SET}; EXIT_CODE=$code"
   if [[ "$BACKED" == 1 ]]; then
     for f in "${FILES[@]}"; do
       if [[ -f "$OUT/original/$f" ]]; then
@@ -151,6 +154,7 @@ for p in Path("/proc").glob("[0-9]*"):
 assert not active, "ANOTHER_SHADPS4_PROCESS_RUNNING: "+repr(active)
 print("PREBUILD_GAME_PROCESS_CHECK=PASS")
 CHECK_ACTIVE
+STAGE=VERIFY_PROVEN_GRAPHICS_SOURCE
 while read -r sha file; do
   printf '%s  %s\n' "$sha" "$ORIGINAL_SRC/$file" | sha256sum -c - >> "$OUT/source-preimages.log" || {
     echo "PROVEN_SOURCE_PREIMAGE_CHANGED=$file"
@@ -163,6 +167,7 @@ dd2a54cb630d118ea273fc92ac90af611ac2b84e9ec2cca7e65c357101818f58 src/video_core/
 34703c31672f73dd93ede2a04577365f780fc0d5cd86fc8f8001ba282a3e571e src/video_core/renderer_vulkan/vk_rasterizer.h
 3760577a5851bb068e55db2e14346dfa1e62b65af60d3af68fd8458f8919d6a0 src/core/libraries/gnmdriver/gnmdriver.cpp
 PINNED_SOURCE
+STAGE=SNAPSHOT_ISOLATED_GRAPHICS_AND_AUDIO
 for file in src/video_core/page_manager.cpp src/video_core/page_manager.h src/video_core/renderer_vulkan/vk_rasterizer.cpp src/video_core/renderer_vulkan/vk_rasterizer.h src/core/libraries/gnmdriver/gnmdriver.cpp src/common/logging/log.cpp src/core/libraries/audio/sdl_audio_out.cpp src/core/libraries/audio/audioout.cpp; do
     [[ -f "$SRC/$file" && ! -L "$SRC/$file" && -f "$ORIGINAL_SRC/$file" && ! -L "$ORIGINAL_SRC/$file" ]] || {
         echo "UNSAFE_ISOLATED_ORIGINAL_FILE=$file"; exit 1;
@@ -205,6 +210,7 @@ git -C "$ORIGINAL_SRC" merge-base --is-ancestor "$BASE" "$HEAD" || {
 # Materialize the exact five source blobs from the historical deferred-UFFD
 # commit. No generated .patch checksum, no fuzzy application and no git index
 # mutation in the isolated worktree. Validate both revision and stored bytes.
+STAGE=STAGE_UFFD_PATCHES
 mkdir -p "$OUT/pinned-uffd-sources"
 : > "$OUT/pinned-uffd-blob-checks.txt"
 while read -r blob file; do
@@ -260,6 +266,7 @@ python3 -B "$SUPPORT" "$ORIGINAL_SRC" "$SRC" "$OUT/support-file-overlays.json" \
 }
 cat "$OUT/support-file-stage.log"
 echo "HISTORICAL_UFFD_BLOBS=ALL_SHA_MATCHED; ONLY_PAGE_MANAGER_CPP_REPLAYED_WHOLE; GRAPHICS_SUPPORT_FILES_PRESERVED"
+STAGE=RECONSTRUCT_PROVEN_GRAPHICS
 echo "RECONSTRUCT_PROVEN_GRAPHICS_RENDERER=START"
 python3 -B "$RESTORER" \
   "$ORIGINAL_SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" \
@@ -284,6 +291,7 @@ touch -m "$SRC/src/video_core/page_manager.cpp" \
 # This A/B candidate changes only the logging filter selection in
 # addition to the EXACT graphics and UFFD source from the previous run.
 # It does not change any guest/GPU/audio logic or saved user settings.
+STAGE=PATCH_LOGGING_ONLY
 LOG_REL="src/common/logging/log.cpp"
 LOG_OLD_BLOB="d5276147b2f4afb12c884e2761a5c47b87c22610"
 LOG_NEW_BLOB="c0db514053650522588349215738e46408c905e0"
@@ -307,6 +315,7 @@ echo "RUNTIME_LOG_FILTER_FEATURE=STAGED; DEFAULT_LOGGING_UNCHANGED=YES"
 # Verify that all five source files which affect gameplay match the
 # graphics-correct 20:59 build. Changing image tracking or GPU code is forbidden
 # in this log-overhead isolation experiment.
+STAGE=CHECK_GRAPHICS_IDENTICAL_TO_2059
 while read -r expected file; do
   printf '%s  %s\n' "$expected" "$SRC/$file" | sha256sum -c - > "$OUT/verified-$(basename "$file").txt" || {
     echo "SOURCE_MISMATCH_FROM_WORKING_2059_BUILD=$file"; exit 1;
@@ -324,6 +333,7 @@ echo "REBASED_SDL_FROM_EXACT_MAIN_SOURCE=YES; EXISTING_AUDIO_PATH_PRESERVED=YES"
 # Rebuild exactly those same GPU/UFDD/renderer source files and the same
 # runtime log filter as the 21:23 A candidate. Only AUDIO test source differs.
 # No changes to guest input, shader pipeline, GPU buffers or graphics backend.
+STAGE=STAGE_EXACT_AUDIO_PREIMAGE_TRIAL
 while read -r original_blob trial_blob file; do
   [[ -f "$ORIGINAL_SRC/$file" && -f "$SRC/$file" &&
       ! -L "$ORIGINAL_SRC/$file" && ! -L "$SRC/$file" ]] || {
@@ -387,6 +397,7 @@ for obj in "${EARLY_OBJECTS[@]}"; do
   }
 done
 echo "NATIVE_UFFD_RENDERER_LOGGER_AND_TWO_AUDIO_CPP_PREFLIGHT=PASS"
+STAGE=FULL_LINK
 echo "PINNED_SOURCE_REPLAY=PASS; BUILD_START=YES"
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build.log" 2>&1
 [[ -x "$BUILD/shadps4" ]] || { echo "BUILT_TARGET_MISSING"; exit 1; }
@@ -403,6 +414,7 @@ printf 'CANDIDATE=%s\n' "$CANDIDATE" | tee "$OUT/candidate.txt"
 echo "EXACT_PROVEN_GRAPHICS_UFFD_AND_RUNTIME_LOG_FILTER=COMPILED_AND_LINKED_PASS"
 echo "CANDIDATE_GRAPHICS_RETAINED=$CANDIDATE"
 echo "EMULATOR_FIX=GENERAL_LINUX_UFFD_DEFERRED_INVALIDATION_AND_GPU_LIFECYCLE"
+STAGE=GAMEPLAY_AUDIO_OBSERVATION
 echo "IDENTICAL_GRAPHICS_UFFD_AUDIO_TIMING_CANDIDATE=YES; AUTO_GAMEPLAY_LAUNCH=START"
 # Keep all relevant warnings/errors and audio initialization messages.
 # No config.json, game-specific settings, or system audio state is changed.
@@ -435,4 +447,5 @@ for SCREENSHOT_TIME in 30 60 90 120; do
 done
 wait "$OBSERVER_PID" || { echo "DEFERRED_UFFD_GAMEPLAY_OBSERVER_REPORTED_FAILURE"; tail -45 "$OUT/observer-console.log"; exit 2; }
 tail -35 "$OUT/observer-console.log"
+STAGE=COMPLETE
 echo "DEFERRED_UFFD_GAMEPLAY=RUNNING; SOURCE_BUILD_RESTORED_ON_EXIT; SSH_PRESERVED"
