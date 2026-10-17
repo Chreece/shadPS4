@@ -6,14 +6,16 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=e9d2d15bb430cf5a2fb6bbd8290a26c58c8c5400
+FIX=1b756014040b0d3238ce130001efa4980e2d1499
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
 SRT_STAGED=0
 SRT_PATHS=(
+  # Deliberately do NOT replace upstream's shader_info_collection_pass.cpp:
+  # it already carries the proven Phi-FP64 + ReadConst DMA fixes, reconciled
+  # against the actual upstream IR opcode set in the pinned source commit.
   src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
-  src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp
   src/shader_recompiler/ir/passes/srt_offset_codegen.h
   src/shader_recompiler/ir/passes/srt_offset_preflight.h
 )
@@ -195,6 +197,7 @@ echo "BASE_CANDIDATE=$BASE" >"$OUT/base.txt"; BASE_PASS=1
 echo "REBASED_CPU_UFFD_PM4_BUILD=PASS"
 echo "NATIVE_CPU_AFFINITY_INTERFACE=RECONCILED"
 STAGE=STAGE_SOURCE_MATCHED_SRT
+echo "SRT_SHADER_INFO=UPSTREAM_RECONCILED; STALE_IR_OPCODES_NOT_IMPORTED" | tee "$OUT/srt-port-provenance.txt"
 # Keep the separate testing worktree clean even on SRT build failure.
 # Back up the upstream versions before staging anything.
 for f in "${SRT_PATHS[@]}"; do
@@ -216,7 +219,6 @@ while read -r sha relative; do
   echo "$sha  $newfile" | sha256sum -c - >>"$OUT/srt-overlay-check.txt"
 done <<'PINNED_SRT'
 14130ab04071e93159b074bbbdd6f7b362661eeaa040e20dec91fa54208aa161 src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
-3f3e7d29dbf9dbc42cc1ca3264771fb39c661a3fc24ddc43a2e980436fb0b130 src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp
 a8695bab2b6fdbbf42abb24f0d3e75a9c3cd53445d78ffef36c0196cb80167b9 src/shader_recompiler/ir/passes/srt_offset_codegen.h
 4b7b8a6e4422d1620c3c2910e94554bb3fa99a4e05d4ee82bb7ee9a43b88ae1b src/shader_recompiler/ir/passes/srt_offset_preflight.h
 PINNED_SRT
