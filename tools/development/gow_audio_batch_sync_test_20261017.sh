@@ -17,6 +17,10 @@ FULL_GFX_SHA=77b61a953e449e6a31a3a12afa481798a9db78a5f9883f4185777f7982579541
 # Best full-graphics FPS checkpoint (quiet log, before audio pacing experiment).
 BEST_GOW="$HOME/projects/shadps4/GodOfWarRagnarok/tests/gow-renderer-log-hotpath-20261017/build/shadps4.fullgfx-quietlog-gow-fullgfx-logfilter-20261017-212330"
 BEST_SHA=8a3862eeba6399bd03e546642c27229617a81d49972848bd3b8165145ef9d201
+# Exact 22:08 candidate completed gameplay at 30 FPS and remains an immutable
+# correctness/performance reference. Never overwrite it in a new trial.
+OUTER_BASELINE="$HOME/projects/shadps4/GodOfWarRagnarok/tests/gow-renderer-log-hotpath-20261017/build/shadps4.fullgfx-audio-outer-clock-gow-audio-pacing-20261017-220811"
+OUTER_BASELINE_SHA=b4b400e6924e3d2423b9099f767ecf2d8acc5a37bf5d0f800d399533a41d9b78
 AUDIO_TEST_HEAD=8f23d6d51a14c7cba962f88e6e5dae1188387dde
 SRC="$ROOT/source"
 BUILD="$ROOT/build"
@@ -122,6 +126,8 @@ finish() {
   printf '%s  %s\n' "$PROVEN_SHA" "$PROVEN" | sha256sum -c - > "$OUT/proven-binary-unchanged.txt" 2>&1 || code=1
   printf '%s  %s\n' "$FULL_GFX_SHA" "$FULL_GFX" | sha256sum -c - > "$OUT/fullgfx-a-unchanged.txt" 2>&1 || code=1
   printf '%s  %s\n' "$BEST_SHA" "$BEST_GOW" | sha256sum -c - > "$OUT/fullgfx-quiet-best-unchanged.txt" 2>&1 || code=1
+  printf '%s  %s\n' "$OUTER_BASELINE_SHA" "$OUTER_BASELINE" |
+    sha256sum -c - > "$OUT/outer-clock-2208-unchanged.txt" 2>&1 || code=1
   tar --exclude="$TAG/original" --exclude="$TAG/pretest" --exclude="$TAG/original.shadps4" --exclude="$TAG/gameplay/full-console.log" -czf "$LOGS/$TAG.tar.gz" -C "$LOGS" "$TAG"
   echo "BUILD_RESULT=$([[ $code == 0 ]] && echo PASS || echo FAILED)"
   echo "ARCHIVE=$LOGS/$TAG.tar.gz"
@@ -141,6 +147,9 @@ printf '%s  %s\n' "$FULL_GFX_SHA" "$FULL_GFX" | sha256sum -c - || {
 }
 printf '%s  %s\n' "$BEST_SHA" "$BEST_GOW" | sha256sum -c - || {
   echo "LATEST_FULL_GRAPHICS_FPS_BASELINE_CHANGED"; exit 1;
+}
+printf '%s  %s\n' "$OUTER_BASELINE_SHA" "$OUTER_BASELINE" | sha256sum -c - || {
+  echo "OUTER_CLOCK_2208_REFERENCE_CHANGED"; exit 1;
 }
 python3 -m py_compile "$OBSERVER" "$RESTORER" "$SUPPORT"
 [[ "$SRC" != "$ORIGINAL_SRC" ]] && [[ "$BUILD" != "$ORIGINAL_ROOT/build" ]] || { echo "UNSAFE_BUILD_TARGET_EQUALS_PROVEN"; exit 1; }
@@ -422,6 +431,7 @@ grep -Fq "AUDIO_MULTI_PORT_SYNC=PASS cases=3" "$OUT/audio-sync-test.log" || {
 }
 cat "$OUT/audio-sync-test.log"
 echo "AUDIO_BATCH_LOCK_ORDER_AND_PORT_DRAIN=PASS"
+echo "FOUR_PROVEN_CANDIDATES=SHA256_PROTECTED; CURRENT_2208_FPS=BASELINE"
 grep -Fq 'if (!outer_only_pacing)' "$SRC/src/core/libraries/audio/sdl_audio_out.cpp"
 grep -Fq 'AUDIO_SDL_TIMING' "$SRC/src/core/libraries/audio/sdl_audio_out.cpp"
 grep -Fq 'AUDIO_PRODUCER_TIMING' "$SRC/src/core/libraries/audio/audioout.cpp"
