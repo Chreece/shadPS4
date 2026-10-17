@@ -126,6 +126,13 @@ touch -m "$SRC/src/video_core/page_manager.cpp" "$SRC/src/video_core/renderer_vu
 echo "DEFERRED_UFFD_OVERLAY=VERIFIED"
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build-a.log" 2>&1
 [[ -x "$BUILD/shadps4" ]] || { echo "BUILT_A_EXECUTABLE_MISSING"; exit 1; }
+grep -F "page_manager.cpp.o" "$OUT/build-a.log" >"$OUT/uffd-object-rebuild-a.txt" || {
+  echo "DEFERRED_UFFD_PAGE_MANAGER_NOT_RECOMPILED; ABORT"; exit 1;
+}
+grep -F "vk_rasterizer.cpp.o" "$OUT/build-a.log" >"$OUT/rasterizer-object-rebuild-a.txt" || {
+  echo "DEFERRED_UFFD_RASTERIZER_NOT_RECOMPILED; ABORT"; exit 1;
+}
+echo "DEFERRED_UFFD_SOURCE_OBJECTS=REBUILT"
 nm -C "$BUILD/shadps4" | grep -F "Vulkan::Rasterizer::InvalidateMemoryOnGpuThread" >"$OUT/uffd-symbol-a.txt" || {
   echo "DEFERRED_UFFD_SYMBOL_MISSING_A; ABORT"; exit 1;
 }
@@ -146,6 +153,9 @@ HELPER_CREATED=1
 echo "be56b0cdbc8ce6142c4035c264bbb9137a5bffef73d8fbf2cf13427b8ed7f4a4  $SRC/src/video_core/amdgpu/liverpool.cpp" | sha256sum -c - >"$OUT/pm4-source-verified.log"
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build.log" 2>&1
 [[ -x "$BUILD/shadps4" ]] || { echo "BUILT_B_EXECUTABLE_MISSING"; exit 1; }
+grep -F "liverpool.cpp.o" "$OUT/build.log" >"$OUT/pm4-object-rebuild-b.txt" || {
+  echo "PM4_OBJECT_NOT_RECOMPILED; ABORT"; exit 1;
+}
 nm -C "$BUILD/shadps4" | grep -F "Vulkan::Rasterizer::InvalidateMemoryOnGpuThread" >"$OUT/uffd-symbol-b.txt" || {
   echo "DEFERRED_UFFD_SYMBOL_MISSING_B; ABORT"; exit 1;
 }
