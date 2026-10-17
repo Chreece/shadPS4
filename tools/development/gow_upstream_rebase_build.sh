@@ -6,7 +6,7 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=99579bcfc549ff1bd668162d46cbfaddaebfd990
+FIX=b3ac682a3dc2a880c2ab4cbb3302cb498a25bf97
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
@@ -57,7 +57,7 @@ finish() {
   [[ ! -f "$OUT/base.txt" ]] || cat "$OUT/base.txt"
   [[ ! -f "$OUT/srt.txt" ]] || cat "$OUT/srt.txt"
   if [[ "$rc" != 0 ]]; then
-    for f in "$OUT/"{python-syntax,source-contract-tests,source-contract,observer-unit-tests,module-filename-compile,linux-nested-signal-build,compile-page-manager,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer,baseline-gameplay-observer}.log; do
+    for f in "$OUT/"{python-syntax,source-contract-tests,source-contract,observer-unit-tests,module-filename-compile,linux-nested-signal-build,compile-page-manager,compile-memory-permissions,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer,baseline-gameplay-observer}.log; do
       [[ ! -s "$f" ]] || { echo "ERROR_TAIL=$f"; tail -18 "$f"; }
     done
   fi
@@ -120,7 +120,7 @@ fi
 }
 echo "REBASE_WORKTREE_FAST_FORWARD=PASS; OLD=$PREVIOUS_HEAD; NEW=$FIX" | tee "$OUT/worktree-advance.txt"
 STAGE=PYTHON_SOURCE_TOOL_SELFTEST
-# Compile all Python helper sources and run 12 positive/negative test cases
+# Compile all Python helper sources and run 15 positive/negative test cases
 # BEFORE the real-source gate. No untested regex or parser can silently stop
 # an otherwise compile-ready native source tree again.
 python3 -m py_compile \
@@ -237,6 +237,18 @@ if [[ -f "$BUILD/CMakeFiles/shadps4.dir/build.make" ]]; then
     exit 1
   }
   echo "PAGE_MANAGER_COMPILE_CHECK=PASS"
+  STAGE=GUEST_MEMORY_PERMISSION_COMPILE
+  # This compiles the actual production 64-combination static_assert, not
+  # a separate reimplementation of its R/W/X rules. The generated object
+  # is reused by CMake's subsequent link.
+  "$MAKE_BIN" -C "$BUILD" -f CMakeFiles/shadps4.dir/build.make \
+    CMakeFiles/shadps4.dir/src/core/memory.cpp.o \
+    >"$OUT/compile-memory-permissions.log" 2>&1 || {
+      echo "GUEST_MEMORY_PERMISSION_COMPILE=FAILED"
+      tail -85 "$OUT/compile-memory-permissions.log"
+      exit 1
+    }
+  echo "GUEST_MEMORY_64_MASK_CONTRACT=COMPILED_PASS"
   STAGE=EARLY_SOURCE_COMPILE_CHECK
   "$MAKE_BIN" -C "$BUILD" -f CMakeFiles/shadps4.dir/build.make -j4 "${OBJECTS[@]}" \
     >"$OUT/compile-preflight.log" 2>&1 || {
