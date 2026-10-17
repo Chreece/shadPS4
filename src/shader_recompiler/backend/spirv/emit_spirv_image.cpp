@@ -184,6 +184,29 @@ Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id c
     return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
 }
 
+// The same nonuniform GPU record ID selects both T# and S#. An indexed
+// texture must never sample using an unrelated host default sampler.
+static Id LoadIndexedGuestSampler(EmitContext& ctx, u32 handle, Id bounded,
+                                  u32 expected_count) {
+    const u32 sampler_index = handle >> 16;
+    ASSERT(sampler_index < ctx.samplers.size());
+    const u32 sampler_count = ctx.sampler_array_sizes[sampler_index];
+    if (sampler_count == 1u) {
+        // Existing packed T# arrays may use one genuinely uniform S#.
+        return ctx.OpLoad(ctx.sampler_type,ctx.samplers[sampler_index]);
+    }
+    ASSERT(ctx.profile.supports_sampler_array_nonuniform_indexing);
+    ASSERT(sampler_count == expected_count);
+    const Id pointer_type = ctx.TypePointer(spv::StorageClass::UniformConstant,
+                                             ctx.sampler_type);
+    const Id pointer = ctx.OpAccessChain(pointer_type,ctx.samplers[sampler_index],
+                                         std::array{bounded});
+    ctx.Decorate(pointer,spv::Decoration::NonUniform);
+    const Id value = ctx.OpLoad(ctx.sampler_type,pointer);
+    ctx.Decorate(value,spv::Decoration::NonUniform);
+    return value;
+}
+
 // Genuine GPU-controlled image array. Each bound slot is decoded from the
 // actual guest 32-byte T# descriptor table by Rasterizer::BindTextures.
 // A shader ID outside the fully bound table chooses the extra Vulkan null
@@ -206,7 +229,8 @@ Id EmitImageSampleImplicitLodIndexed(
     ctx.Decorate(pointer,spv::Decoration::NonUniform);
     const Id img=ctx.OpLoad(texture.image_type,pointer);
     ctx.Decorate(img,spv::Decoration::NonUniform);
-    const Id sampler=ctx.OpLoad(ctx.sampler_type,ctx.samplers[handle >> 16]);
+    const Id sampler=LoadIndexedGuestSampler(
+        ctx,handle,bounded,texture.image_array_size);
     const Id sampled=ctx.OpSampledImage(texture.sampled_type,img,sampler);
     ctx.Decorate(sampled,spv::Decoration::NonUniform);
     const Id coords_fixed=FixImageCoords<true>(ctx,coords,texture.view_type);
@@ -382,7 +406,8 @@ Id EmitImageGradientIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coo
     ctx.Decorate(pointer,spv::Decoration::NonUniform);
     const Id image = ctx.OpLoad(texture.image_type,pointer);
     ctx.Decorate(image,spv::Decoration::NonUniform);
-    const Id sampler = ctx.OpLoad(ctx.sampler_type,ctx.samplers[handle >> 16]);
+    const Id sampler = LoadIndexedGuestSampler(
+        ctx,handle,bounded,texture.image_array_size);
     const Id sampled = ctx.OpSampledImage(texture.sampled_type,image,sampler);
     ctx.Decorate(sampled,spv::Decoration::NonUniform);
     const Id fixed_coords = FixImageCoords<true>(ctx,coords,texture.view_type);
