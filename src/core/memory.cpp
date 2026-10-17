@@ -15,6 +15,47 @@
 
 namespace Core {
 
+namespace {
+
+// Translating guest CPU/GPU memory permissions is a bitmask operation.
+// A combined 'ReadWrite' mask cannot be tested with a generic any-bit
+// predicate: a read-only mapping would accidentally become writable.
+[[nodiscard]] constexpr MemoryPermission GuestEffectivePermissions(MemoryProt prot) noexcept {
+    MemoryPermission result = MemoryPermission::None;
+    if (True(prot & MemoryProt::CpuRead) || True(prot & MemoryProt::GpuRead)) {
+        result |= MemoryPermission::Read;
+    }
+    if (True(prot & MemoryProt::CpuWrite) || True(prot & MemoryProt::GpuWrite)) {
+        result |= MemoryPermission::ReadWrite;
+    }
+    if (True(prot & MemoryProt::CpuExec)) {
+        result |= MemoryPermission::Execute;
+    }
+    return result;
+}
+
+// Compiler-level regression over all combinations of PS4 CPU/GPU
+// R/W/X protection bits. This checks the actual production mapping, not
+// a second test implementation, and emits no runtime instrumentation.
+[[nodiscard]] consteval bool GuestPermissionContract() {
+    for (u32 bits = 0; bits < 64; ++bits) {
+        const auto permissions = GuestEffectivePermissions(static_cast<MemoryProt>(bits));
+        const bool allow_read = (bits & 0x33u) != 0;
+        const bool allow_write = (bits & 0x22u) != 0;
+        const bool allow_execute = (bits & 0x04u) != 0;
+        if (True(permissions & MemoryPermission::Read) != allow_read ||
+            True(permissions & MemoryPermission::Write) != allow_write ||
+            True(permissions & MemoryPermission::Execute) != allow_execute) {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(GuestPermissionContract(), "PS4 guest protection must not grant read-only write access");
+
+} // namespace
+
+
 MemoryManager::MemoryManager() {
     LOG_INFO(Kernel_Vmm, "Virtual memory space initialized with regions:");
 
@@ -1073,28 +1114,8 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
         prot |= MemoryProt::CpuRead;
     }
 
-    // Set permissions
-    Core::MemoryPermission perms{};
-
-    if (True(prot & MemoryProt::CpuRead)) {
-        perms |= Core::MemoryPermission::Read;
-    }
-    // Query the *write bit*, not the combined ReadWrite mask: a read-only
-    // mapping must never inadvertently become writable.
-    if (True(prot & MemoryProt::CpuWrite)) {
-        perms |= Core::MemoryPermission::ReadWrite;
-    }
-    if (True(prot & MemoryProt::CpuExec)) {
-        perms |= Core::MemoryPermission::Execute;
-    }
-    if (True(prot & MemoryProt::GpuRead)) {
-        perms |= Core::MemoryPermission::Read;
-    }
-    // GPU write permissions similarly require the actual write bit; the
-    // combined ReadWrite flag also matches a GPU-read-only descriptor.
-    if (True(prot & MemoryProt::GpuWrite)) {
-        perms |= Core::MemoryPermission::ReadWrite;
-    }
+    // The same constexpr mapping is verified for all bit combinations above.
+    const MemoryPermission perms = GuestEffectivePermissions(prot);
 
     if (type == VMAType::Direct || type == VMAType::Pooled ||
         type == VMAType::File) {
