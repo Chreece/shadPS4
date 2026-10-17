@@ -88,6 +88,22 @@ echo "14130ab04071e93159b074bbbdd6f7b362661eeaa040e20dec91fa54208aa161  $SRC/src
   echo "EXISTING_SRT_CORRECTNESS_SOURCE_CHANGED; DO_NOT_OVERWRITE"; exit 1;
 }
 echo "EXISTING_NATIVE_SRT_FIXES=PRESERVED"
+# Preserve read-only source evidence to investigate DMA logs vs startup settings.
+mkdir -p "$OUT/graphics-source-evidence"
+EVIDENCE=(
+  src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp
+  src/shader_recompiler/ir/passes/srt_offset_codegen.h
+  src/shader_recompiler/ir/passes/srt_offset_preflight.h
+  src/video_core/amdgpu/pm4_cmds.h
+  src/core/emulator_settings.h
+)
+for f in "${EVIDENCE[@]}"; do
+  if [[ -f "$SRC/$f" && ! -L "$SRC/$f" ]]; then
+    mkdir -p "$OUT/graphics-source-evidence/$(dirname "$f")"
+    cp -p "$SRC/$f" "$OUT/graphics-source-evidence/$f"
+    sha256sum "$SRC/$f" >>"$OUT/graphics-source-evidence-sha256.txt"
+  fi
+done
 grep -Fxq "CMAKE_HOME_DIRECTORY:INTERNAL=$SRC" "$BUILD/CMakeCache.txt" || {
   echo "CMAKE_SOURCE_DIR_MISMATCH; REFUSING_TO_RECONFIGURE"; exit 1;
 }
