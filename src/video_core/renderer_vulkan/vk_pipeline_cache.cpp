@@ -328,6 +328,8 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),
         .supports_shader_image_gather_extended =
             instance_.IsShaderImageGatherExtendedSupported(),
+        .supports_sampled_image_nonuniform_indexing =
+            instance_.IsSampledImageNonUniformIndexingSupported(),
         .supports_native_cube_calc = instance_.IsAmdGcnShaderSupported(),
         .supports_trinary_minmax = instance_.IsAmdShaderTrinaryMinMaxSupported(),
         .supports_buffer_fp32_atomic_min_max =

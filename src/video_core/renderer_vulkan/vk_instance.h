@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 #include "video_core/renderer_vulkan/vk_platform.h"
+#include "shader_recompiler/nonuniform_image_features.h"
 
 #define TRACY_VK_USE_SYMBOL_TABLE
 #include <tracy/TracyVulkan.hpp>
@@ -102,6 +103,15 @@ public:
     // Dynamic ImageOperands Offset on sampled textures requires this feature.
     bool IsShaderImageGatherExtendedSupported() const {
         return features.shaderImageGatherExtended;
+    }
+
+    // Vulkan 1.2 descriptor indexing + nonuniform sampled image arrays
+    // + core dynamic array indexing: all required to index a real T# table.
+    bool IsSampledImageNonUniformIndexingSupported() const {
+        return Shader::Optimization::CanUseNonuniformSampledImageArray(
+            bool(vk12_features.descriptorIndexing),
+            bool(vk12_features.shaderSampledImageArrayNonUniformIndexing),
+            bool(features.shaderSampledImageArrayDynamicIndexing));
     }
 
     /// Returns true if 16-bit floats are supported in shaders
