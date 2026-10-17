@@ -1226,6 +1226,14 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 guest_size==u64(count-1)*sizeof(AmdGpu::Image) &&
                 memory->IsValidMapping(source.base_address,guest_size);
             u32 valid_slots=0;
+            u32 budget_skips=0;
+            u64 estimated_resident_bytes=0;
+            // A guest V# can point to thousands of malformed T# records.
+            // Never allocate arbitrarily large host images just because the
+            // guest T# type bit happens to mark the record as an image.
+            constexpr u64 MaxEstimatedIndexedImageBytes = 4ull << 30;
+            const u32 max_dimension =
+                instance.GetPhysicalDevice().getProperties().limits.maxImageDimension2D;
             for (u32 i=0;i<count;++i) {
                 auto& slot=image_bindings[num_images++];
                 slot.image_id={};
@@ -1250,7 +1258,21 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 if (fmt==AmdGpu::DataFormat::FormatInvalid ||
                     !magic_enum::enum_contains(fmt) ||
                     !magic_enum::enum_contains(nfmt) ||
-                    AmdGpu::IsInteger(nfmt)) continue;
+                    AmdGpu::IsInteger(nfmt) ||
+                    raw.width >= max_dimension || raw.height >= max_dimension ||
+                    raw.base_level > raw.last_level || raw.pitch < raw.width) continue;
+                // Conservative upper bound for most regular 2D sampled
+                // formats; overestimates block-compressed textures. A refused
+                // entry intentionally remains NULL, not a mismatched texture.
+                const u64 estimated_bytes =
+                    (static_cast<u64>(raw.width) + 1u) *
+                    (static_cast<u64>(raw.height) + 1u) * 4u;
+                if (estimated_bytes >
+                    MaxEstimatedIndexedImageBytes - estimated_resident_bytes) {
+                    ++budget_skips;
+                    continue;
+                }
+                estimated_resident_bytes += estimated_bytes;
                 auto& desc=slot.desc;
                 std::construct_at(&desc,raw,image_desc);
                 slot.image_id=texture_cache.FindImage(desc);
@@ -1273,9 +1295,11 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     LOG_INFO(Render_Vulkan,
                              "RealIndexedTSharpBound: shader={:#x} stage={} "
                              "entries={} valid={} full_table={} address={:#x} "
-                             "null_slot=YES",
+                             "budget_skips={} estimated_bytes={} null_slot=YES",
                              stage.pgm_hash,stage.hw_stage,count-1,valid_slots,
-                             complete,static_cast<u64>(source.base_address));
+                             complete && budget_skips==0,
+                             static_cast<u64>(source.base_address),
+                             budget_skips, estimated_resident_bytes);
                 }
             }
             continue;
