@@ -73,8 +73,8 @@ def validate(root: pathlib.Path) -> tuple[int, int]:
              signal_setup.find("sigaction(SIGSEGV, &action, nullptr)", sigflags) > sigflags and
              signal_setup.find("sigaction(SIGILL, &action, nullptr)", sigflags) > sigflags,
              "native CPU nested SIGSEGV/SIGILL policy lost in upstream rebase")
-    required("#if defined(__linux__) && defined(ARCH_X86_64)" in
-             signal_setup[:sigflags] if sigflags >= 0 else False,
+    required(sigflags >= 0 and
+             "#if defined(__linux__) && defined(ARCH_X86_64)" in signal_setup[:sigflags],
              "nested CPU faults must be Linux x86-64-only")
 
     pthread = read("src/core/libraries/kernel/threads/pthread.cpp")
