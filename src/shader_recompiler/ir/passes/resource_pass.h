@@ -37,6 +37,8 @@ struct ResourceDiscovery {
     // Nonzero means the T# starts at a proven offset in each guest record.
     u32 indexed_record_stride_bytes{};
     u32 indexed_descriptor_offset_bytes{};
+    u32 indexed_sampler_offset_bytes{};
+    bool has_indexed_sampler_table{};
     bool has_indexed_table{};
     // Keep the raw S# producer handle for shader-side scalar memory reads
     // when host resource-table flattening cannot provide valid Vulkan bindings.
