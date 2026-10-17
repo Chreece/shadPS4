@@ -22,7 +22,7 @@ GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
 BASE_SHA256="948742f5b1ffebf0dfc4d1b452806c2e649bf35d76cffbb576e2b81bb36b5826"
-CANDIDATE="77c048cc25517e9c48dfda4470a9d6f20fd7d986"
+CANDIDATE="c648b2b11bdcfd684b86b6a121fc5e63250dc346"
 UPSTREAM="32021e41bc52f744c80d122e732e24e97496c98d"
 BRANCH="experiment/got-sbuffer-gpu-bounds-20261017"
 RUN="$LOGS/.$NAME.runtime"
@@ -257,7 +257,7 @@ run_phase() {
     (
         cd "$home"
         export HOME="$home" DISPLAY="$DISPLAY_OK"
-        export SHADPS4_RENDER_AUDIT=0 SHADPS4_RESOURCE_AUDIT=1 SHADPS4_RESOURCE_AUDIT_HASH=0x7eaf40ad,0x55d17c16,0x5c4c2b6f
+        export SHADPS4_RENDER_AUDIT=0 SHADPS4_RESOURCE_AUDIT=1 SHADPS4_RESOURCE_AUDIT_HASH=0x7eaf40ad,0x55d17c16,0x5c4c2b6f SHADPS4_INVALID_SHARP_TRACE_HASHES=0x7eaf40ad,0x55d17c16,0x5c4c2b6f
         export SHADPS4_SRT_SOURCE_AUDIT=0 SHADPS4_SRT_INLINE_AUDIT=0 SHADPS4_SRT_TRACE_HASHES=0x7eaf40ad,0x55d17c16,0x5c4c2b6f
         export SHADPS4_SHARP_MIXED_AUDIT=0 SHADPS4_SHARP_MASK_AUDIT=0
         unset RADV_DEBUG VK_DRIVER_FILES VK_ICD_FILENAMES VK_INSTANCE_LAYERS
@@ -393,7 +393,7 @@ apply_blob "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp" "032a7
 apply_blob "src/shader_recompiler/ir/passes/srt_uniformity.h" "95bdea6f8db9d0a717bd568fd0ae8e0003442170"
 apply_blob "src/video_core/renderer_vulkan/vk_rasterizer.cpp" "594fd3d2043afbeb6952bbc2eba99c1e7a4b45ef"
 apply_blob "src/video_core/renderer_vulkan/resource_audit_hash_filter.h" "28cc1c1d76f59386329bf92883acc5e26385b3dc"
-apply_blob "src/shader_recompiler/ir/passes/resource_patching_pass.cpp" "32454fbc59932ee41782b3289275fa371c4933c8"
+apply_blob "src/shader_recompiler/ir/passes/resource_patching_pass.cpp" "e95c1d8e978542b12a482595cfdced59bc805597"
 apply_blob "src/shader_recompiler/ir/passes/resource_discover_pass.cpp" "cbf6abc6799d63a8a7c4e05ade991b9984f07702"
 apply_blob "src/shader_recompiler/ir/passes/resource_pass.h" "60f3993724bfae658f19cec71009dd55567b8206"
 apply_blob "src/shader_recompiler/resource.h" "cecfdd6cbece0115c87c23a5122d781c8709bdb9"
@@ -683,6 +683,37 @@ print("\n".join(rows))
 print("GPU_SMEM_BOUNDS_REPORT_END")
 PYSMEM
 echo "SMEM_FALLBACK_LOG_LINES=$(wc -l <"$RUN/info/sbuffer-gpu-fallback-events.txt")"
+# Source-level provenance of the real invalid descriptor words for the
+# three still-failing shaders. This does not assume their resources can be
+# evaluated natively or substitute a null texture for a real guest image.
+grep -aE 'InvalidVSharpSource:|InvalidTSharpSource:' \
+    "$RUN/evidence/B/game.log" >"$RUN/info/invalid-sharp-provenance.txt" || true
+python3 - "$RUN/info/invalid-sharp-provenance.txt" \
+    "$RUN/info/three-shader-invalid-sources.tsv" <<'PYSHARP'
+import pathlib,re,sys,collections
+s=pathlib.Path(sys.argv[1]).read_text(errors="replace")
+s=re.sub(r"\x1b\[[0-9;]*m","",s)
+targets=("0x7eaf40ad","0x55d17c16","0x5c4c2b6f")
+summary=collections.defaultdict(collections.Counter)
+for line in s.splitlines():
+    m=re.search(r"(Invalid[VT]SharpSource): shader=(0x[0-9a-f]+) "
+                r"stage=([a-z]+) op=([A-Za-z0-9_]+) missing_mask=(0x[0-9a-f]+)",line)
+    if not m:continue
+    kind,shader,stage,opcode,missing=m.groups()
+    if shader in targets:summary[shader][(kind,stage,opcode,missing)]+=1
+rows=["shader\tdescriptor\tstage\tinstruction\tmissing_words\toccurrences"]
+for shader in targets:
+    if shader not in summary:
+        rows.append(f"{shader}\tNOT_OBSERVED\t-\t-\t-\t0")
+    else:
+        for (kind,stage,opcode,missing),count in sorted(summary[shader].items()):
+            rows.append("\t".join(map(str,(shader,kind,stage,opcode,missing,count))))
+pathlib.Path(sys.argv[2]).write_text("\n".join(rows)+"\n")
+print("SHARP_SOURCE_REPORT_BEGIN")
+print("\n".join(rows[:60]))
+print("SHARP_SOURCE_REPORT_END")
+PYSHARP
+echo "INVALID_SHARP_SOURCES=$(wc -l <"$RUN/info/invalid-sharp-provenance.txt")"
 echo "GRAPHICS_REPORT_READY"
 
 WORKER
