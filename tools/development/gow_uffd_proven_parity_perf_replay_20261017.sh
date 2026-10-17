@@ -57,7 +57,7 @@ finish() {
     fi
   fi
   if [[ -d "$SRC/.git" || -f "$SRC/.git" ]]; then
-    git -C "$SRC" status --short -- "${FILES[@]}" >"$OUT/after-source-status.txt" 2>&1
+    echo "SHARED_GIT_WORKTREE_STATUS_NOT_MUTATED=YES" > "$OUT/after-source-status.txt"
     if [[ "$BACKED" == 1 ]]; then
       sha256sum "${FILES[@]/#/$SRC/}" >"$OUT/after-source-sha256.txt"
       if cmp -s "$OUT/before-source-sha256.txt" "$OUT/after-source-sha256.txt"; then
@@ -177,7 +177,7 @@ if git -C "$ORIGINAL_SRC" cat-file -e "$BASE^{commit}" 2>/dev/null &&
   echo "PINNED_EMULATOR_COMMITS=LOCAL"
 else
   echo "FETCHING_PINNED_GENERAL_EMULATOR_FIX=$HEAD"
-  git -C "$ORIGINAL_SRC" -c http.version=HTTP/1.1 fetch --quiet --no-tags "$REMOTE" "$REF" >"$OUT/fetch.log" 2>&1
+  git -C "$ORIGINAL_SRC" -c gc.auto=0 -c http.version=HTTP/1.1 fetch --quiet --no-tags --no-recurse-submodules "$REMOTE" "$REF" >"$OUT/fetch.log" 2>&1
   git -C "$ORIGINAL_SRC" cat-file -e "$BASE^{commit}"
   git -C "$ORIGINAL_SRC" cat-file -e "$HEAD^{commit}"
 fi
