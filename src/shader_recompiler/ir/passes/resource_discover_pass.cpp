@@ -854,7 +854,7 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
     // descriptor bytes before activating a GPU-indexed Vulkan image array.
     std::array<StridedIndexedSharpWord,8> strided{};
     for (std::size_t i=0;i<strided.size();++i) {
-        strided[i]=AnalyzeStridedIndexedSharpWord(table.words[i]->Arg(1));
+        strided[i]=AnalyzeStridedIndexedSharpWord(out.words[i]->Arg(1));
     }
     if (!AreContiguousStridedSharpWords(strided)) return out;
     out.selector=static_cast<const IR::Inst*>(strided[0].gpu_record_id);
