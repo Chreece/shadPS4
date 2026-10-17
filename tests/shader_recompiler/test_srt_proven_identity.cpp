@@ -24,9 +24,9 @@ struct MockValue {
     Shader::IR::Type Type() const {return kind;}
     const MockInst* TryInst() const {return inst;}
     std::uint32_t U32() const {return bits;}
-    static MockValue Imm(std::uint32_t x=0) {return {nullptr,Type::U32,true,x};}
-    static MockValue FloatImm() {return {nullptr,Type::F32,true,0};}
-    static MockValue Ref(const MockInst& node) {return {&node,Type::U32,false,0};}
+    static MockValue Imm(std::uint32_t x=0) {return {nullptr,Shader::IR::Type::U32,true,x};}
+    static MockValue FloatImm() {return {nullptr,Shader::IR::Type::F32,true,0};}
+    static MockValue Ref(const MockInst& node) {return {&node,Shader::IR::Type::U32,false,0};}
 };
 struct MockInst {
     Opcode opcode{};
