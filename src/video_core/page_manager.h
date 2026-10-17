@@ -9,6 +9,12 @@
 #include "common/types.h"
 #include "video_core/buffer_cache/region_definitions.h"
 
+namespace Core {
+// Match the canonical definition in core/address_space.h without importing
+// the full memory manager into this public GPU-page-management header.
+enum class MemoryPermission : u32;
+}
+
 namespace Vulkan {
 class Rasterizer;
 }
