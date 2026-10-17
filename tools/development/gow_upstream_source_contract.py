@@ -67,6 +67,20 @@ def validate(root: pathlib.Path) -> tuple[int, int]:
     required("new_thread->affinity_mask.store(mask" in pthread,
              "virtual CPU identity mask must be set before guest thread starts")
 
+    kernel = read("src/core/libraries/kernel/process.cpp")
+    guest_module_header = read("src/core/libraries/kernel/module_filename_validation.h")
+    hle_entry = kernel.partition("sceKernelLoadStartModule(")[2]
+    required(bool(hle_entry), "missing sceKernelLoadStartModule HLE entry")
+    validation = hle_entry.find("ValidateModuleFilename(moduleFileName)")
+    unguarded_log = hle_entry.find('LOG_INFO(Lib_Kernel, "called filename = {}')
+    required(validation != -1 and unguarded_log != -1 and validation < unguarded_log,
+             "guest module filename must be validated before host fmt/string operations")
+    required("force_align_arg_pointer" in kernel.partition("sceKernelLoadStartModule(")[0],
+             "proven x86-64 guest HLE stack realignment is missing")
+    required("ORBIS_KERNEL_ERROR_EFAULT" in guest_module_header and
+             "ORBIS_KERNEL_ERROR_ENOENT" in guest_module_header,
+             "invalid guest module filenames must return the correct API errors")
+
     rasterizer = read("src/video_core/renderer_vulkan/vk_rasterizer.cpp")
     required("InvalidateMemoryOnGpuThread(" in rasterizer,
              "deferred UFFD GPU callback implementation missing")
