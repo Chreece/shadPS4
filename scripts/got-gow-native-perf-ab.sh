@@ -44,6 +44,7 @@ finish() {
     # Restore only test-owned changes to the isolated source/build directory.
     if [ "$OVERLAY_APPLIED" = 1 ] && [ -s "$RUN/info/page-manager.original.cpp" ]; then
         cp -p -- "$RUN/info/page-manager.original.cpp" "$SOURCE/src/video_core/page_manager.cpp"
+        touch "$SOURCE/src/video_core/page_manager.cpp" # force Ninja to rebuild baseline object next time
         echo "BASELINE_PAGE_MANAGER_RESTORED=YES" >>"$RUN/info/restore.txt"
     fi
     if [ "$HEADER_CREATED" = 1 ]; then
@@ -153,14 +154,14 @@ for name in ("Log", "GPU", "Vulkan", "Debug"):
         config[name] = {}
     if not isinstance(config[name], dict):
         raise SystemExit(f"INVALID_SETTINGS_GROUP:{name}")
-config["Log"].update(filter="*:critical", sync=False, skip_duplicate=True)
+config["Log"].update(filter="*:critical Config:info", sync=False, skip_duplicate=True)
 config["GPU"].update(dump_shaders=False)
 config["Vulkan"].update(pipeline_cache_enabled=True)
 config["Debug"].update(debug_dump=False, shader_collect=False)
 p.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
-assert config["Log"]["filter"] == "*:critical"
+assert config["Log"]["filter"] == "*:critical Config:info"
 assert config["Vulkan"]["pipeline_cache_enabled"]
-print("ISOLATED_CONFIG_JSON=VERIFIED; LOG_FILTER=CRITICAL; SYNC=OFF; SHADER_DUMP=OFF; VULKAN_PIPELINE_CACHE=ON")
+print("ISOLATED_CONFIG_JSON=VERIFIED; LOG_FILTER=CRITICAL+CONFIG; SYNC=OFF; SHADER_DUMP=OFF; VULKAN_PIPELINE_CACHE=ON")
 PYJSON
 }
 # The emulator's executable can have a name longer than Linux comm's 15 bytes.
@@ -270,6 +271,20 @@ run_phase() {
       echo "UFFD_ENABLED=$(grep -ac 'Memory tracking method: userfaultfd' "$home/game.log" || true)"
       echo "SIGNAL_TRACKING=$(grep -ac 'Memory tracking method: signals' "$home/game.log" || true)"
     } >> "$RUN/evidence/$phase/result.txt"
+    samples=$(( $(wc -l < "$RUN/evidence/$phase/proc-samples.csv") - 1 ))
+    info_lines=$(grep -ac '<Info>' "$home/game.log" || true)
+    printf 'VALID_CPU_SAMPLES=%s\nINFO_LOG_LINES=%s\n' "$samples" "$info_lines" \
+        >> "$RUN/evidence/$phase/result.txt"
+    if [ "$samples" -lt 4 ]; then
+        STATUS="PROCESS_SAMPLER_FAILED_$phase"
+        echo "NO_VALID_SAMPLING_STOP_BEFORE_NEXT_PHASE=$phase"
+        exit 2
+    fi
+    if [ "$info_lines" -gt 250 ]; then
+        STATUS="LOG_FILTER_NOT_APPLIED_$phase"
+        echo "LOG_FILTER_FAILURE_STOP_BEFORE_NEXT_PHASE=$phase info_lines=$info_lines"
+        exit 2
+    fi
     if [ "$phase" = W ]; then
         tail -100 "$home/game.log" > "$RUN/info/warmup-last100.txt"
     else
