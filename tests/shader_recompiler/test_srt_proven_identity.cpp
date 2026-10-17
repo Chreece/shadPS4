@@ -41,7 +41,7 @@ int main() {
     const MockInst sgpr2{Opcode::GetUserData,{},0};
     const MockInst as_float{Opcode::BitCastF32U32,{MockValue::Ref(sgpr)},1};
     const MockInst as_bits{Opcode::BitCastU32F32,{MockValue::Ref(as_float)},1};
-    const MockInst float_value{Opcode::FAdd32,{MockValue::FloatImm(),MockValue::FloatImm()},2};
+    const MockInst float_value{Opcode::FPAdd32,{MockValue::FloatImm(),MockValue::FloatImm()},2};
     const MockInst bad_cast{Opcode::BitCastU32F32,{MockValue::Ref(float_value)},1};
     const MockInst phi_one{Opcode::Phi,{MockValue::Ref(sgpr)},1};
     const MockInst phi_same_ref{Opcode::Phi,{MockValue::Ref(sgpr),MockValue::Ref(sgpr)},2};
