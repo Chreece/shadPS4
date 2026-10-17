@@ -138,10 +138,16 @@ def restore(proven, historical, header):
         if extra.startswith('flags'):
             # Keep any flags chosen by the known-good renderer, including
             # optional texture invalidation; do not replace this block.
-            nearby=s[max(0,position-900):position]
-            if ('VideoCore::ObtainBufferFlags flags' not in nearby or
-                'VideoCore::ObtainBufferFlags::IsWritten' not in nearby or
-                'VideoCore::ObtainBufferFlags::IsTexelBuffer' not in nearby):
+            # Bound validation to this vsharp descriptor, not an arbitrary
+            # 900-character lookback. Proven compute write-extent calculation
+            # legitimately adds >900 characters before the ObtainBuffer call.
+            block_start=s.rfind('const auto vsharp = desc.GetSharp(stage);', 0, position)
+            if block_start < 0:
+                raise ValueError('SHARP_DESCRIPTOR_SCOPE_NOT_FOUND')
+            nearby=s[block_start:position]
+            if (nearby.count('VideoCore::ObtainBufferFlags flags = {};') != 1 or
+                nearby.count('flags |= VideoCore::ObtainBufferFlags::IsWritten;') != 1 or
+                nearby.count('flags |= VideoCore::ObtainBufferFlags::IsTexelBuffer;') != 1):
                 raise ValueError('RENDERER_BUFFER_FLAGS_SOURCE_UNRECOGNIZED')
             extra=extra[len('flags'):]
             if not extra:
