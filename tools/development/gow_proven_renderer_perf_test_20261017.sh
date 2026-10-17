@@ -62,7 +62,7 @@ STAGE=ISOLATED_SOURCE
 SOURCE_SHA="$(sha256sum "$OLD/$VKR" | cut -d' ' -f1)"
 if [[ ! -f "$SRC/.source-sha" ]]; then
     [[ ! -e "$SRC" ]] || { echo "PARTIAL_TEST_SOURCE_EXISTS; REFUSE_REPLACE"; exit 2; }
-    STAGING="$TEST/.source-stage-$"
+    STAGING="$(mktemp -d "$TEST/.source-stage-XXXXXXXX")"
     mkdir "$STAGING"
     ( cd "$OLD" && tar --exclude='.git' --exclude='./build' -cf - . ) |
         ( cd "$STAGING" && tar -xf - )
@@ -72,6 +72,90 @@ fi
 [[ "$(cat "$SRC/.source-sha")" == "$SOURCE_SHA" ]] || {
     echo "WORKING_SOURCE_CHANGED_SINCE_TEST_SNAPSHOT; NO_RESET"; exit 2;
 }
+STAGE=RESTORE_ISOLATED_GIT_METADATA
+# The previous snapshot excluded .git from the root AND every submodule.
+# CMake needs the exact ffmpeg-core submodule Git SHA for matching prebuilts.
+# Create read-only Git *pointers* in the isolated snapshot; do not clone,
+# checkout, reset, fetch, or modify Git metadata in the proven source.
+python3 - "$OLD" "$SRC" "$OUT" <<'RESTORE_GIT_METADATA'
+from pathlib import Path
+import os
+import subprocess
+import sys
+
+def git(path, *args):
+    return subprocess.check_output(
+        ["git", "-C", str(path), *args],
+        stderr=subprocess.PIPE, text=True
+    ).strip()
+
+old, new, report = (Path(x).resolve(strict=True) for x in sys.argv[1:4])
+assert old != new, "ORIGINAL_AND_ISOLATED_SOURCE_SAME_PATH"
+assert (old / ".git").exists() or (old / ".git").is_symlink(), "ORIGINAL_GIT_MISSING"
+markers = []
+for root, dirs, files in os.walk(old, followlinks=False):
+    if ".git" in dirs:
+        dirs.remove(".git")
+        markers.append(Path(root))
+    elif ".git" in files:
+        markers.append(Path(root))
+assert old in markers, "ORIGINAL_GIT_MARKER_MISSING"
+evidence = []
+for idx, original_dir in enumerate(markers):
+    relative = original_dir.relative_to(old)
+    copied_dir = new / relative
+    assert copied_dir.exists(), f"ISOLATED_DIRECTORY_MISSING:{relative}"
+    original_head = git(original_dir, "rev-parse", "HEAD")
+    # Some historical submodules are links to an existing external source.
+    # They are read-only here; never write through a symlink outside new.
+    if not copied_dir.resolve().is_relative_to(new):
+        assert git(copied_dir, "rev-parse", "HEAD") == original_head, (
+            f"EXTERNAL_SUBMODULE_GIT_MISMATCH:{relative}"
+        )
+        evidence.append(f"EXTERNAL_GIT_ALREADY_VALID {relative} {original_head}")
+        continue
+    gitdir = Path(git(original_dir, "rev-parse", "--absolute-git-dir")).resolve(strict=True)
+    pointer = copied_dir / ".git"
+    if pointer.is_dir() or pointer.is_symlink():
+        assert git(copied_dir, "rev-parse", "HEAD") == original_head, (
+            f"EXISTING_ISOLATED_GIT_MISMATCH:{relative}"
+        )
+    else:
+        expected = f"gitdir: {gitdir}\n"
+        if pointer.is_file() and pointer.read_text() != expected:
+            (report / f"replaced-test-git-pointer-{idx}.txt").write_bytes(
+                pointer.read_bytes()
+            )
+        if not pointer.is_file() or pointer.read_text() != expected:
+            temp = pointer.with_name(f".git.repair-{os.getpid()}")
+            temp.write_text(expected)
+            os.replace(temp, pointer)
+    assert git(copied_dir, "rev-parse", "HEAD") == original_head, (
+        f"ISOLATED_GIT_HEAD_MISMATCH:{relative}"
+    )
+    assert git(copied_dir, "rev-parse", "--show-toplevel") == str(copied_dir), (
+        f"ISOLATED_GIT_TOPLEVEL_MISMATCH:{relative}"
+    )
+    evidence.append(f"GIT_SHA_MATCH {relative} {original_head}")
+# Explicitly validate the dependency that caused the last failure.
+ff_orig = old / "externals/ffmpeg-core"
+ff_copy = new / "externals/ffmpeg-core"
+assert ff_orig.is_dir() and ff_copy.is_dir(), "FFMPEG_SUBMODULE_MISSING"
+assert git(ff_orig, "rev-parse", "--show-toplevel") == str(ff_orig.resolve()), (
+    "PROVEN_FFMPEG_METADATA_INVALID"
+)
+assert git(ff_copy, "rev-parse", "--show-toplevel") == str(ff_copy.resolve()), (
+    "ISOLATED_FFMPEG_METADATA_INVALID"
+)
+assert git(ff_orig, "rev-parse", "HEAD") == git(ff_copy, "rev-parse", "HEAD"), (
+    "FFMPEG_PREBUILT_SHA_MISMATCH"
+)
+evidence.append(f"FFMPEG_PREBUILT_GIT_SHA=VERIFIED {git(ff_copy, 'rev-parse', 'HEAD')}")
+(report / "git-metadata-check.txt").write_text("\n".join(evidence) + "\n")
+for line in evidence:
+    print(line)
+print("ISOLATED_GIT_METADATA=VERIFIED")
+RESTORE_GIT_METADATA
 python3 - "$OLD/$VKR" "$SRC/$VKR" "$OUT" <<'PATCH'
 from pathlib import Path
 import re
@@ -151,7 +235,8 @@ if [[ -f "$ORIG/build/CMakeCache.txt" ]]; then
     [[ -z "$cached_type" ]] || build_type="$cached_type"
 fi
 printf 'BUILD_TYPE=%s\n' "$build_type" > "$OUT/build-info.txt"
-if [[ ! -f "$BUILD/Makefile" && ! -f "$BUILD/build.ninja" ]]; then
+# Always refresh CMake after repairing Git metadata from the prior failed configure.
+if :; then
     if command -v ccache >/dev/null; then
         cmake -S "$SRC" -B "$BUILD" -DCMAKE_BUILD_TYPE="$build_type" -DENABLE_TESTS=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache > "$OUT/configure.log" 2>&1 || {
             tail -90 "$OUT/configure.log"; exit 2;
