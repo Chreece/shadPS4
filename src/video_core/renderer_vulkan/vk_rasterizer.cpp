@@ -17,6 +17,7 @@
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
+#include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -51,26 +52,15 @@ bool ResourceAuditEnabled() {
     return enabled;
 }
 
-// A generic diagnostic filter: run resource audits for one specified shader
-// hash instead of logging thousands of unrelated shader binds every frame.
-// The filter never changes resource contents, bindings, or draw submission.
+// Opt-in generic audit of one or several shader hashes, parsed once.
+// Invalid filters fail closed. No shader/resource behavior changes.
 bool ResourceAuditForStage(const Shader::Info& stage) {
     if (!ResourceAuditEnabled()) {
         return false;
     }
-    static const auto target = [] {
-        const char* const v = std::getenv("SHADPS4_RESOURCE_AUDIT_HASH");
-        if (!v || !*v) {
-            return std::pair{false, u64{0}};
-        }
-        char* end{};
-        const auto parsed = std::strtoull(v, &end, 0);
-        if (end == v || *end != '\0') {
-            return std::pair{true, u64{0xffffffffffffffffULL}};
-        }
-        return std::pair{true, static_cast<u64>(parsed)};
-    }();
-    return !target.first || stage.pgm_hash == target.second;
+    static const auto filter = VideoCore::Diagnostics::ParseShaderAuditHashFilter(
+        std::getenv("SHADPS4_RESOURCE_AUDIT_HASH"));
+    return filter.Matches(stage.pgm_hash);
 }
 
 ResourceAuditCounts& ResourceAuditFor(const Shader::Info& stage) {
