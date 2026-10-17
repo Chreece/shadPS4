@@ -22,7 +22,7 @@ GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
 BASE_SHA256="948742f5b1ffebf0dfc4d1b452806c2e649bf35d76cffbb576e2b81bb36b5826"
-CANDIDATE="2da552000cc62c305222a0d0fc97a016b3e76527"
+CANDIDATE="1c67cefc077c5381a0faae74e13f5c92eaffaf0e"
 UPSTREAM="32021e41bc52f744c80d122e732e24e97496c98d"
 BRANCH="experiment/got-universal-sharp-masks-20261017"
 RUN="$LOGS/.$NAME.runtime"
@@ -259,7 +259,7 @@ run_phase() {
         export HOME="$home" DISPLAY="$DISPLAY_OK"
         export SHADPS4_RENDER_AUDIT=0 SHADPS4_RESOURCE_AUDIT=1 SHADPS4_RESOURCE_AUDIT_HASH=0x7eaf40ad,0x55d17c16,0x5c4c2b6f
         export SHADPS4_SRT_SOURCE_AUDIT=0 SHADPS4_SRT_INLINE_AUDIT=0 SHADPS4_SRT_TRACE_HASHES=0x7eaf40ad,0x55d17c16,0x5c4c2b6f
-        export SHADPS4_SHARP_MIXED_AUDIT=0 SHADPS4_SHARP_MASK_AUDIT=1
+        export SHADPS4_SHARP_MIXED_AUDIT=0 SHADPS4_SHARP_MASK_AUDIT=1 SHADPS4_SHARP_MASK_AUDIT_HASHES=0x7eaf40ad,0x55d17c16,0x5c4c2b6f
         unset RADV_DEBUG VK_DRIVER_FILES VK_ICD_FILENAMES VK_INSTANCE_LAYERS
         timeout --foreground -s TERM -k 8s "$duration" "$exe" \
             --game "$GAME" --fullscreen true --show-fps > "$home/game.log" 2>&1
@@ -393,7 +393,7 @@ apply_blob "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp" "5937b
 apply_blob "src/shader_recompiler/ir/passes/srt_uniformity.h" "95bdea6f8db9d0a717bd568fd0ae8e0003442170"
 apply_blob "src/video_core/renderer_vulkan/vk_rasterizer.cpp" "594fd3d2043afbeb6952bbc2eba99c1e7a4b45ef"
 apply_blob "src/video_core/renderer_vulkan/resource_audit_hash_filter.h" "28cc1c1d76f59386329bf92883acc5e26385b3dc"
-apply_blob "src/shader_recompiler/ir/passes/resource_patching_pass.cpp" "d555a5cb14f8d8cb3c9bc081ec1873c16521345d"
+apply_blob "src/shader_recompiler/ir/passes/resource_patching_pass.cpp" "0bd22307b81ea9daee1c67a56b8c56ee84b3e76f"
 apply_blob "src/shader_recompiler/ir/passes/resource_discover_pass.cpp" "cbf6abc6799d63a8a7c4e05ade991b9984f07702"
 apply_blob "src/shader_recompiler/ir/passes/resource_pass.h" "60f3993724bfae658f19cec71009dd55567b8206"
 apply_blob "src/shader_recompiler/resource.h" "cecfdd6cbece0115c87c23a5122d781c8709bdb9"
