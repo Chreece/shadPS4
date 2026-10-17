@@ -38,7 +38,7 @@ void Pipeline::BindResources(DescriptorWrites& set_writes,
         return;
     }
 
-    const auto desc_set = desc_heap.Commit(*desc_layout);
+    const auto desc_set = desc_heap.Commit(*desc_layout, sampled_image_descriptors);
     for (auto& set_write : set_writes) {
         set_write.dstSet = desc_set;
     }
