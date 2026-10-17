@@ -19,6 +19,7 @@
 #include "shader_recompiler/profile.h"
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/guest_tsharp_array.h"
+#include "shader_recompiler/guest_tsharp_feedback.h"
 #include "video_core/amdgpu/resource.h"
 #include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 
@@ -550,6 +551,38 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     u32 image_binding = descriptors.Add(image_res);
 
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
+
+    // When the *actual* guest T# table exceeds the fixed Vulkan sampled-image
+    // array, record the original per-invocation GPU texture ID. Never evaluate
+    // a divergent Phi/GetAttribute or S_BUFFER_LOAD on the host. Atomic OR
+    // writes one bit for each ID; the final slot reports out-of-range values.
+    // This is opt-in and leaves shader image output and descriptor binding
+    // semantics unchanged. A later residency implementation consumes the IDs.
+    static const bool gpu_tsharp_feedback = [] {
+        const char* value = std::getenv("SHADPS4_GUEST_TSHARP_FEEDBACK");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    if (gpu_tsharp_feedback && image_res.oversized_guest_table_probe &&
+        inst.GetOpcode() == IR::Opcode::ImageSampleRaw &&
+        !resource.indexed_texture_id.IsEmpty()) {
+        const u32 feedback_binding = descriptors.Add(BufferResource{
+            .used_types = IR::Type::U32,
+            .buffer_type = BufferType::GuestTsharpFeedback,
+            .is_written = true,
+        });
+        const IR::U32 gpu_id{resource.indexed_texture_id};
+        const IR::U32 bounded = ir.UMin(
+            gpu_id, ir.Imm32(GuestTsharpFeedbackOverflowId));
+        const IR::U32 byte_offset = ir.ShiftLeftLogical(
+            ir.ShiftRightLogical(bounded, ir.Imm32(5u)), ir.Imm32(2u));
+        const IR::U32 bit = ir.ShiftLeftLogical(
+            ir.Imm32(1u), ir.BitwiseAnd(bounded, ir.Imm32(31u)));
+        (void)ir.BufferAtomicOr(ir.Imm32(feedback_binding), byte_offset, bit, {});
+        LOG_INFO(Render_Recompiler,
+                 "GuestTsharpFeedbackInserted: shader={:#x} stage={} "
+                 "gpu_id_source=original overflow_id={} read_only_guest=YES",
+                 info.pgm_hash, info.hw_stage, GuestTsharpFeedbackOverflowId);
+    }
 
     if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
         auto& lod_prod = resource.sharps[1].post_op_data.lod_prod;
