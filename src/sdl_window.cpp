@@ -7,6 +7,8 @@
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
+#include <array>
+#include <cstdlib>
 #include <cmrc/cmrc.hpp>
 #include <stb_image.h>
 
@@ -98,6 +100,11 @@ static Uint32 SDLCALL PollControllerLightColour(void* userdata, SDL_TimerID time
 WindowSDL::WindowSDL(s32 width_, s32 height_, Input::GameControllers* controllers_,
                      std::string_view window_title)
     : width{width_}, height{height_}, controllers{*controllers_} {
+    // Set input focus behavior BEFORE initializing SDL. Gamepad hotplug can
+    // happen while the host streaming window is not the foreground window.
+    if (EmulatorSettings.IsBackgroundControllerInput()) {
+        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    }
     if (!SDL_SetHint(SDL_HINT_APP_NAME, "shadPS4")) {
         UNREACHABLE_MSG("Failed to set SDL window hint: {}", SDL_GetError());
     }
@@ -185,9 +192,10 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, Input::GameControllers* controller
     Input::ControllerOutput::LinkJoystickAxes();
     Input::ParseInputConfig(std::string(Common::ElfInfo::Instance().GameSerial()));
 
-    if (EmulatorSettings.IsBackgroundControllerInput()) {
-        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
-    }
+    // Do not call PollSDLControllerHotplug inside the window constructor.
+    // Connecting a pad publishes a timestamped guest pad state, which must
+    // happen only after the emulator has initialized the kernel runtime.
+
 }
 
 WindowSDL::~WindowSDL() = default;
@@ -205,7 +213,18 @@ void WindowSDL::WaitEvent() {
     // Called on main thread
     SDL_Event event;
 
-    if (!SDL_WaitEvent(&event)) {
+    // SDL hotplug events can be lost when Linux uinput/udev creates a
+    // Moonlight/Sunshine gamepad after the guest starts. Re-enumerate at most
+    // twice a second, and only reopen pads when the SDL ID set changes.
+    // Periodic wakeups also work when no keyboard/window events arrive.
+    const u64 now_ms = SDL_GetTicks();
+    if (!controller_hotplug_polled ||
+        now_ms - last_controller_hotplug_poll_ms >= 500) {
+        controllers.PollSDLControllerHotplug();
+        last_controller_hotplug_poll_ms = now_ms;
+        controller_hotplug_polled = true;
+    }
+    if (!SDL_WaitEventTimeout(&event, 250)) {
         return;
     }
 
@@ -240,7 +259,11 @@ void WindowSDL::WaitEvent() {
         break;
     case SDL_EVENT_GAMEPAD_ADDED:
     case SDL_EVENT_GAMEPAD_REMOVED:
-        controllers.TryOpenSDLControllers();
+    case SDL_EVENT_JOYSTICK_ADDED:
+    case SDL_EVENT_JOYSTICK_REMOVED:
+        // Joysticks sometimes appear first and receive an SDL gamepad
+        // mapping moments later. Poll again even without a second event.
+        controllers.PollSDLControllerHotplug(true);
         break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
     case SDL_EVENT_GAMEPAD_BUTTON_UP:
@@ -312,6 +335,7 @@ void WindowSDL::WaitEvent() {
                 break;
             }
         }
+        controllers.PollSDLControllerHotplug(true);
         break;
     case SDL_EVENT_REMOVE_VIRTUAL_USER:
         LOG_INFO(Input, "Remove user");
@@ -340,6 +364,10 @@ void WindowSDL::WaitEvent() {
 }
 
 void WindowSDL::InitTimers() {
+    // Guest kernel time and user-service state are available at this point
+    // (after linker->Execute). Early constructor-time registration could
+    // dereference uninitialized guest-time state and crash on startup.
+    controllers.PollSDLControllerHotplug(true);
     for (int i = 0; i < 4; ++i) {
         SDL_AddTimer(4, &PollController, controllers[i]);
     }
@@ -403,19 +431,71 @@ void WindowSDL::OnKeyboardMouseInput(const SDL_Event* event) {
 }
 
 void WindowSDL::OnGamepadEvent(const SDL_Event* event) {
-    bool input_down = event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION ||
-                      event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
-    Input::InputEvent input_event = Input::InputBinding::GetInputEventFromSDLEvent(*event);
+    SDL_JoystickID id{};
+    switch (event->type) {
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    case SDL_EVENT_GAMEPAD_BUTTON_UP:
+        id = event->gbutton.which;
+        break;
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+        id = event->gaxis.which;
+        break;
+    case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
+        id = event->gsensor.which;
+        break;
+    case SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN:
+    case SDL_EVENT_GAMEPAD_TOUCHPAD_UP:
+    case SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION:
+        id = event->gtouchpad.which;
+        break;
+    default:
+        return;
+    }
+    // A virtual controller may start producing button events before its
+    // device-added event is delivered. Reconcile once, then fail safely if
+    // SDL has not exposed that joystick instance yet.
+    u8 slot = controllers.GetGamepadIndexFromJoystickId(id);
+    if (slot == u8{0xff}) {
+        controllers.PollSDLControllerHotplug(true);
+        slot = controllers.GetGamepadIndexFromJoystickId(id);
+        if (slot == u8{0xff}) {
+            return;
+        }
+    }
 
-    // the touchpad button shouldn't be rebound to anything else,
-    // as it would break the entire touchpad handling
-    // You can still bind other things to it though
-    if (event->gbutton.button == SDL_GAMEPAD_BUTTON_TOUCHPAD) {
-        controllers[controllers.GetGamepadIndexFromJoystickId(event->gbutton.which)]->Button(
-            OrbisPadButtonDataOffset::TouchPad, input_down);
+    // Optional, bounded proof that a late-added virtual controller delivers
+    // actual button/axis input after SDL registration. Diagnostics never
+    // inject any virtual button, bypass user bindings, or affect guest input.
+    static const bool hotplug_audit = [] {
+        const char* const flag = std::getenv("SHADPS4_GAMEPAD_HOTPLUG_AUDIT");
+        return flag && flag[0] == '1' && flag[1] == '\0';
+    }();
+    if (hotplug_audit &&
+        (event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ||
+         event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION)) {
+        static std::array<std::array<u32, 2>, 5> audit_counts{};
+        const unsigned category =
+            event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ? 0u : 1u;
+        if (audit_counts[slot][category]++ < 4) {
+            LOG_INFO(Input, "Gamepad hotplug input: slot={} SDL_id={} type={}",
+                     unsigned(slot) + 1, unsigned(id),
+                     category == 0 ? "button" : "axis");
+        }
+    }
+
+    const bool input_down = event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION ||
+                            event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+
+    // Only button events may use gbutton.button. Accessing it for axes or
+    // sensors previously interpreted unrelated union bytes as a touchpad.
+    if ((event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ||
+         event->type == SDL_EVENT_GAMEPAD_BUTTON_UP) &&
+        event->gbutton.button == SDL_GAMEPAD_BUTTON_TOUCHPAD) {
+        controllers[slot]->Button(OrbisPadButtonDataOffset::TouchPad, input_down);
         return;
     }
 
+    Input::InputEvent input_event = Input::InputBinding::GetInputEventFromSDLEvent(*event);
     u8 gamepad;
 
     switch (event->type) {
@@ -440,8 +520,7 @@ void WindowSDL::OnGamepadEvent(const SDL_Event* event) {
     case SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN:
     case SDL_EVENT_GAMEPAD_TOUCHPAD_UP:
     case SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION:
-        controllers[controllers.GetGamepadIndexFromJoystickId(event->gtouchpad.which)]
-            ->SetTouchpadState(event->gtouchpad.finger,
+        controllers[slot]->SetTouchpadState(event->gtouchpad.finger,
                                event->type != SDL_EVENT_GAMEPAD_TOUCHPAD_UP, event->gtouchpad.x,
                                event->gtouchpad.y);
         return;

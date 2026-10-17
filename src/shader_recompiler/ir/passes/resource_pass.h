@@ -22,6 +22,7 @@ union PostOpData {
 
 struct SharpReference {
     std::array<IR::Value, 8> dwords{};
+    std::array<u32, 8> clear_masks{};
     u32 num_dwords{};
     SharpFetchPostOp post_op{};
     PostOpData post_op_data;
@@ -30,6 +31,9 @@ struct SharpReference {
 struct ResourceDiscovery {
     IR::Inst* user{};
     std::array<SharpReference, 2> sharps;
+    // Keep the raw S# producer handle for shader-side scalar memory reads
+    // when host resource-table flattening cannot provide valid Vulkan bindings.
+    IR::Value original_buffer_handle{};
 };
 using ResourceDiscoveryList = boost::container::small_vector<ResourceDiscovery, 32>;
 

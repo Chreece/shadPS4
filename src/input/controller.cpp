@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <mutex>
+#include <span>
 #include <unordered_set>
 #include <utility>
 
@@ -267,13 +269,50 @@ bool GameController::SetVibration(u8 smallMotor, u8 largeMotor) {
     return true;
 }
 
-static bool is_first_check = true;
+void GameControllers::PollSDLControllerHotplug(bool force) {
+    // SDL_GetGamepads is called only on the SDL main/event thread. Reopening
+    // devices is necessary only when a joystick *instance-id set* changes.
+    int count = 0;
+    SDL_ClearError();
+    SDL_JoystickID* ids = SDL_GetGamepads(&count);
+    // A transient enumeration error is NOT a mass controller removal.
+    // Preserve all live slots and retry on the next bounded reconciliation.
+    if (!ids && SDL_GetError()[0] != '\0') {
+        LOG_WARNING(Input, "SDL gamepad enumeration failed: {}", SDL_GetError());
+        return;
+    }
+    std::span<const SDL_JoystickID> available;
+    if (ids && count > 0) {
+        available = {ids, static_cast<std::size_t>(count)};
+    }
+    const bool changed = hotplug_snapshot.Update(available, force);
+    SDL_free(ids);
+    if (ShouldReconcileGamepadSnapshot(changed, pending_gamepad_open_retry)) {
+        if (changed) {
+            LOG_INFO(Input, "Gamepad hotplug reconciliation: {} SDL gamepads, forced={}",
+                     count, force);
+        }
+        // An SDL instance ID can appear before its backend is ready to open.
+        // Retry only unassigned pads, never close/reopen an unchanged slot.
+        TryOpenSDLControllers();
+    }
+}
 
 void GameControllers::TryOpenSDLControllers() {
     using namespace Libraries::UserService;
-    int controller_count;
+    int controller_count = 0;
+    SDL_ClearError();
     SDL_JoystickID* new_joysticks = SDL_GetGamepads(&controller_count);
-    LOG_INFO(Input, "{} controllers are currently connected", controller_count);
+    if (controller_count < 0 || (!new_joysticks && SDL_GetError()[0] != '\0')) {
+        LOG_ERROR(Input, "Unable to enumerate SDL gamepads: {}", SDL_GetError());
+        SDL_free(new_joysticks);
+        return;
+    }
+    const bool retrying = pending_gamepad_open_retry;
+    pending_gamepad_open_retry = false;
+    if (!retrying) {
+        LOG_INFO(Input, "{} controllers are currently connected", controller_count);
+    }
 
     std::unordered_set<SDL_JoystickID> assigned_ids;
     std::array<bool, 4> slot_taken{false, false, false, false};
@@ -292,8 +331,10 @@ void GameControllers::TryOpenSDLControllers() {
                 }
             }
             if (!still_connected) {
-                SDL_CloseGamepad(pad);
+                // Invalidate controller-side pointers before closing the SDL
+                // handle. A reconnect is a new input device and state epoch.
                 controllers[i]->DisconnectController();
+                SDL_CloseGamepad(pad);
                 controllers[i]->user_id = -1;
                 slot_taken[i] = false;
             }
@@ -307,9 +348,16 @@ void GameControllers::TryOpenSDLControllers() {
 
         SDL_Gamepad* pad = SDL_OpenGamepad(id);
         if (!pad) {
+            pending_gamepad_open_retry = true;
+            const u32 failure = ++failed_gamepad_opens;
+            if (failure <= 3 || std::has_single_bit(failure)) {
+                LOG_WARNING(Input, "SDL gamepad {} not ready yet (retry {}): {}",
+                            id, failure, SDL_GetError());
+            }
             continue;
         }
 
+        bool registered = false;
         for (int i = 0; i < 4; i++) {
             if (!slot_taken[i]) {
                 auto u = UserManagement.GetUserByPlayerIndex(i + 1);
@@ -325,6 +373,7 @@ void GameControllers::TryOpenSDLControllers() {
                 c->user_id = u->user_id;
                 UserManagement.LoginUser(u, i + 1);
                 c->ConnectController(pad);
+                registered = true;
                 if (EmulatorSettings.IsMotionControlsEnabled()) {
                     if (SDL_SetGamepadSensorEnabled(c->m_sdl_gamepad, SDL_SENSOR_GYRO, true)) {
                         const float poll_rate =
@@ -346,28 +395,41 @@ void GameControllers::TryOpenSDLControllers() {
                 break;
             }
         }
+        // A fifth gamepad or a missing configured user must not leak an
+        // SDL_OpenGamepad handle each time another hotplug event arrives.
+        if (!registered) {
+            SDL_CloseGamepad(pad);
+        }
     }
-    if (is_first_check) [[unlikely]] {
-        is_first_check = false;
-        if (controller_count == 0) {
-            auto u = UserManagement.GetUserByPlayerIndex(1);
+    if (!pending_gamepad_open_retry) {
+        failed_gamepad_opens = 0;
+    }
+
+    // Keep the original keyboard/virtual-pad route usable when no physical
+    // controller is present. It must also be re-established after a late
+    // Moonlight/Sunshine controller disconnects, not only at first startup.
+    if (ShouldRestorePrimaryVirtualController(
+            controller_count > 0, controllers[0]->ReadState().connected)) {
+        if (auto* const u = UserManagement.GetUserByPlayerIndex(1)) {
             controllers[0]->user_id = u->user_id;
             controllers[0]->ConnectController(nullptr);
             UserManagement.LoginUser(u, 1);
+            LOG_INFO(Input, "Restored primary virtual controller on player 1");
         }
     }
     SDL_free(new_joysticks);
 }
 u8 GameControllers::GetGamepadIndexFromJoystickId(SDL_JoystickID id) {
     auto g = SDL_GetGamepadFromID(id);
-    ASSERT(g != nullptr);
+    if (!g) {
+        return u8{0xff}; // SDL event arrived before/after gamepad registration
+    }
     for (int i = 0; i < 5; i++) {
         if (controllers[i]->m_sdl_gamepad == g) {
             return i;
         }
     }
-    // LOG_TRACE(Input, "Gamepad index: {}", index);
-    return -1;
+    return u8{0xff};
 }
 
 std::optional<u8> GameControllers::GetControllerIndexFromUserID(s32 user_id) {

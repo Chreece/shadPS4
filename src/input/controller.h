@@ -11,6 +11,7 @@
 #include <SDL3/SDL_gamepad.h>
 #include "SDL3/SDL_joystick.h"
 #include "common/assert.h"
+#include "input/gamepad_hotplug_snapshot.h"
 #include "common/ring_buffer_queue.h"
 #include "core/libraries/pad/pad.h"
 #include "core/libraries/system/userservice.h"
@@ -129,6 +130,9 @@ private:
 
 class GameControllers {
     std::array<GameController*, 5> controllers;
+    GamepadHotplugSnapshot<SDL_JoystickID> hotplug_snapshot;
+    bool pending_gamepad_open_retry{};
+    u32 failed_gamepad_opens{};
 
 public:
     GameControllers()
@@ -142,6 +146,9 @@ public:
         return controllers[i];
     }
     void TryOpenSDLControllers();
+    // Reconcile missed device-added/removed events, including Linux virtual
+    // controllers appearing after streaming/game launch.
+    void PollSDLControllerHotplug(bool force = false);
     u8 GetGamepadIndexFromJoystickId(SDL_JoystickID id);
     static std::optional<u8> GetControllerIndexFromUserID(s32 user_id);
     static std::optional<u8> GetControllerIndexFromControllerID(s32 controller_id);

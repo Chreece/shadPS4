@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include <ranges>
+#include <type_traits>
 
 #include "common/hash.h"
 #include "common/io_file.h"
@@ -15,6 +17,8 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
+#include "video_core/renderer_vulkan/minmax_alpha_scale.h"
+#include "video_core/renderer_vulkan/minmax_src_alpha_one.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -27,6 +31,21 @@ using Shader::Output;
 using Shader::SwStage;
 
 constexpr static auto SpirvVersion1_6 = 0x00010600U;
+
+// Universal resource audit: report descriptor-lowering health but never alter it.
+static bool ResourceAuditEnabled() {
+    static const bool enabled = [] {
+        const char* const env = std::getenv("SHADPS4_RESOURCE_AUDIT");
+        return env && env[0] == '1' && env[1] == '\0';
+    }();
+    return enabled;
+}
+
+template <typename Resource>
+static bool HasInvalidSharp(const Resource& resource) {
+    using Fetch = std::remove_cvref_t<decltype(resource.sharp_fetch)>;
+    return resource.sharp_fetch.summary == Fetch::Summary::Invalid;
+}
 
 constexpr static std::array DescriptorHeapSizes = {
     vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 512},
@@ -306,6 +325,8 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .support_fp64_signed_zero_inf_nan_preserve =
             bool(vk12_props.shaderSignedZeroInfNanPreserveFloat64),
         .supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),
+        .supports_shader_image_gather_extended =
+            instance_.IsShaderImageGatherExtendedSupported(),
         .supports_native_cube_calc = instance_.IsAmdGcnShaderSupported(),
         .supports_trinary_minmax = instance_.IsAmdShaderTrinaryMinMaxSupported(),
         .supports_buffer_fp32_atomic_min_max =
@@ -319,6 +340,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
             instance_.IsAmdShaderExplicitVertexParameterSupported(),
         .supports_fragment_shader_barycentric = instance_.IsFragmentShaderBarycentricSupported(),
         .supports_shader_subgroup_clock = instance_.IsShaderSubgroupClockSupported(),
+        .supports_group_arithmetic = instance_.IsSubgroupArithmeticSupported(),
         .needs_manual_interpolation = instance.IsFragmentShaderBarycentricSupported() &&
                                       instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
         .needs_lds_barriers = instance.GetDriverID() == vk::DriverId::eNvidiaProprietary ||
@@ -443,6 +465,14 @@ bool PipelineCache::RefreshGraphicsKey() {
              bc.color_func == AmdGpu::BlendControl::BlendFunc::Max) &&
             bc.color_src_factor == AmdGpu::BlendControl::BlendFactor::SrcColor &&
             bc.color_dst_factor == AmdGpu::BlendControl::BlendFactor::DstColor;
+
+        color_buffer.blend_self_scale_alpha = CanShaderScaleMinMaxAlpha(
+            bc, color_buffer.num_format, bool(col_buf.info.blend_bypass),
+            (regs.color_shader_mask.GetMask(cb) & AmdGpu::ColorBufferMask::ComponentA) != 0);
+
+        color_buffer.blend_src_alpha_one = CanShaderScaleMinMaxSrcAlphaOne(
+            bc, color_buffer.num_format, bool(col_buf.info.blend_bypass),
+            (regs.color_shader_mask.GetMask(cb) & AmdGpu::ColorBufferMask::ComponentA) != 0);
     }
 
     // Compile and bind shader stages
@@ -629,7 +659,32 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
 
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
+    if (ResourceAuditEnabled()) {
+        u32 invalid_buffers{};
+        u32 invalid_images{};
+        u32 invalid_samplers{};
+        for (const auto& resource : info.buffers) {
+            invalid_buffers += !resource.IsSpecial() && HasInvalidSharp(resource);
+        }
+        for (const auto& resource : info.images) {
+            invalid_images += HasInvalidSharp(resource);
+        }
+        for (const auto& resource : info.samplers) {
+            invalid_samplers += HasInvalidSharp(resource);
+        }
+        LOG_INFO(Render_Vulkan,
+                 "ResourceAuditCompile: shader={:#x} stage={} buffers={} images={} samplers={} "
+                 "bad_buffers={} bad_images={} bad_samplers={} flatbuf_words={} dma={} "
+                 "translation_failed={}",
+                 info.pgm_hash, info.hw_stage, info.buffers.size(), info.images.size(),
+                 info.samplers.size(), invalid_buffers, invalid_images, invalid_samplers,
+                 info.flattened_ud_buf.size(), info.uses_dma, info.translation_failed);
+    }
+    const u32 got40_first_binding = binding.unified;
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
+    LOG_INFO(Render_Vulkan,
+             "GOT40_MODULE_BINDINGS shader={:#x} stage={} start={} end={}",
+             info.pgm_hash, info.hw_stage, got40_first_binding, binding.unified);
     DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx, "spv");
 
     vk::ShaderModule module;
@@ -695,7 +750,27 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
         RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
         program->AddPermut(module, std::move(spec));
     } else {
-        info.AddBindings(binding);
+        // Account for every allocated image descriptor-array slot when reusing a
+        // shader. Fresh SPIR-V emission and layout construction advance by
+        // NumBindings(info), not by the number of declared images.
+        const u32 first_binding = binding.unified;
+        u32 image_binding_count{};
+        for (const auto& image : info.images) {
+            const u32 count = image.NumBindings(info);
+            ASSERT_MSG(count != 0, "Cached image descriptor array is empty");
+            image_binding_count += count;
+        }
+        const u32 legacy_count = info.buffers.size() + info.images.size() + info.samplers.size();
+        binding.buffer += info.buffers.size();
+        binding.unified += info.buffers.size() + image_binding_count + info.samplers.size();
+        if (image_binding_count != info.images.size()) {
+            static thread_local u32 binding_audits{};
+            if (binding_audits++ < 16) {
+                LOG_INFO(Render_Vulkan,
+                         "GOT40_CACHED_BINDINGS shader={:#x} start={} legacy_end={} corrected_end={}",
+                         info.pgm_hash, first_binding, first_binding + legacy_count, binding.unified);
+            }
+        }
         module = it->module;
         perm_idx = std::distance(program->modules.begin(), it);
         perm_hash = HashCombine(params.hash, perm_idx);

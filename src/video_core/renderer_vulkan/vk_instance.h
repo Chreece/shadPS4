@@ -67,12 +67,22 @@ public:
         return queue_family_index;
     }
 
+    /// Queue family that explicitly supports Vulkan sparse resource binding.
+    u32 GetSparseQueueFamilyIndex() const {
+        return sparse_queue_family_index;
+    }
+
     vk::Queue GetGraphicsQueue() const {
         return graphics_queue;
     }
 
     vk::Queue GetPresentQueue() const {
         return present_queue;
+    }
+
+    /// Binding sparse device-memory pages must use a sparse-capable queue.
+    vk::Queue GetSparseQueue() const {
+        return sparse_queue;
     }
 
     TracyVkCtx GetProfilerContext() const {
@@ -87,6 +97,11 @@ public:
     /// Returns true if depth bounds testing is supported
     bool IsDepthBoundsSupported() const {
         return features.depthBounds;
+    }
+
+    // Dynamic ImageOperands Offset on sampled textures requires this feature.
+    bool IsShaderImageGatherExtendedSupported() const {
+        return features.shaderImageGatherExtended;
     }
 
     /// Returns true if 16-bit floats are supported in shaders
@@ -274,6 +289,14 @@ public:
         return shader_clock && shader_clock_features.shaderSubgroupClock;
     }
 
+    bool IsSubgroupArithmeticSupported() const {
+        constexpr auto stages =
+            vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eCompute;
+        return static_cast<bool>(vk11_props.subgroupSupportedOperations &
+                                 vk::SubgroupFeatureFlagBits::eArithmetic) &&
+               (vk11_props.subgroupSupportedStages & stages) == stages;
+    }
+
     /// Returns the vendor ID of the physical device
     u32 GetVendorID() const {
         return properties.vendorID;
@@ -367,6 +390,15 @@ public:
     /// Returns the maximum size of a single VkDeviceMemory
     vk::DeviceSize MaxMemoryAllocationSize() const {
         return vk11_props.maxMemoryAllocationSize;
+    }
+
+    /// VkPhysicalDeviceVulkan13Properties includes maintenance4 maxBufferSize.
+    vk::DeviceSize MaxBufferSize() const {
+        return vk13_props.maxBufferSize;
+    }
+
+    bool IsSparseAliasingSupported() const {
+        return features.sparseResidencyAliased;
     }
 
     /// Returns the vulkan 1.2 physical device properties.
@@ -511,11 +543,13 @@ private:
     VmaAllocator allocator{};
     vk::Queue present_queue;
     vk::Queue graphics_queue;
+    vk::Queue sparse_queue;
     std::vector<vk::PhysicalDevice> physical_devices;
     std::vector<std::string> available_extensions;
     std::unordered_map<vk::Format, vk::FormatProperties3> format_properties;
     TracyVkCtx profiler_context{};
     u32 queue_family_index{0};
+    u32 sparse_queue_family_index{0};
     bool custom_border_color{};
     bool fragment_shader_barycentric{};
     bool amd_shader_explicit_vertex_parameter{};

@@ -88,7 +88,9 @@ private:
 private:
     s32 width;
     s32 height;
-    Input::GameControllers controllers{};
+    Input::GameControllers& controllers;
+    u64 last_controller_hotplug_poll_ms{};
+    bool controller_hotplug_polled{};
     WindowSystemInfo window_info{};
     SDL_Window* window{};
     bool is_shown{};

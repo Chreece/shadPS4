@@ -660,12 +660,19 @@ InputEvent InputBinding::GetInputEventFromSDLEvent(const SDL_Event& e) {
                           e.type == SDL_EVENT_MOUSE_WHEEL, 0);
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
     case SDL_EVENT_GAMEPAD_BUTTON_UP:
-        gamepad = ControllerOutput::controllers.GetGamepadIndexFromJoystickId(e.gbutton.which) + 1;
-        return InputEvent({InputType::Controller, (u32)e.gbutton.button, gamepad}, e.gbutton.down,
-                          0);
+        gamepad = ControllerOutput::controllers.GetGamepadIndexFromJoystickId(e.gbutton.which);
+        if (gamepad == u8{0xff}) {
+            return {};
+        }
+        return InputEvent({InputType::Controller, (u32)e.gbutton.button,
+                           static_cast<u8>(gamepad + 1)}, e.gbutton.down, 0);
     case SDL_EVENT_GAMEPAD_AXIS_MOTION:
-        gamepad = ControllerOutput::controllers.GetGamepadIndexFromJoystickId(e.gaxis.which) + 1;
-        return InputEvent({InputType::Axis, (u32)e.gaxis.axis, gamepad}, true, e.gaxis.value / 256);
+        gamepad = ControllerOutput::controllers.GetGamepadIndexFromJoystickId(e.gaxis.which);
+        if (gamepad == u8{0xff}) {
+            return {};
+        }
+        return InputEvent({InputType::Axis, (u32)e.gaxis.axis,
+                           static_cast<u8>(gamepad + 1)}, true, e.gaxis.value / 256);
     default:
         return InputEvent();
     }
