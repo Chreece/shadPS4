@@ -30,6 +30,7 @@
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
 #include "core/libraries/audio/audioout.h"
+#include "core/libraries/audio/audioout_health.h"
 #include "core/libraries/audio/audioout_backend.h"
 #include "core/libraries/audio/openal_manager.h"
 #include "core/libraries/kernel/threads.h"
@@ -79,18 +80,27 @@ public:
           num_channels(port.format_info.num_channels), is_float(port.format_info.is_float),
           is_std(port.format_info.is_std), channel_layout(port.format_info.channel_layout),
           device_registered(false), device_name(GetDeviceName(port.type)) {
-
-        if (!Initialize(port.type)) {
+        intentionally_disabled = IsDisabledAudioDevice(device_name);
+        if (intentionally_disabled) {
+            LOG_INFO(Lib_AudioOut, "OpenAL audio output intentionally disabled for device '{}'",
+                     device_name);
+        } else if (!Initialize(port.type)) {
             LOG_ERROR(Lib_AudioOut, "Failed to initialize OpenAL audio backend");
         }
     }
 
+    [[nodiscard]] bool IsUsable() const noexcept {
+        return intentionally_disabled || (device_registered && device_context &&
+                                          source != 0 && convert);
+    }
+
     ~OpenALPortBackend() override {
-        // Unregister port before cleanup
+        // Release AL objects while the device context is still registered.
+        // UnregisterPort may destroy the last context for the device.
+        Cleanup();
         if (device_registered) {
             OpenALDevice::GetInstance().UnregisterPort(device_name);
         }
-        Cleanup();
     }
 
     void Output(void* ptr) override {
@@ -1073,10 +1083,16 @@ private:
 
     std::string device_name;
     bool device_registered;
+    bool intentionally_disabled{false};
 };
 
 std::unique_ptr<PortBackend> OpenALAudioOut::Open(PortOut& port) {
-    return std::make_unique<OpenALPortBackend>(port);
+    auto backend = std::make_unique<OpenALPortBackend>(port);
+    if (!backend->IsUsable()) {
+        LOG_ERROR(Lib_AudioOut, "OpenAL audio port has no usable source or device");
+        return {};
+    }
+    return backend;
 }
 
 } // namespace Libraries::AudioOut
