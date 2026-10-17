@@ -74,6 +74,7 @@ static const auto& RuntimeDescriptorHeapSizes() {
             // One complete 27K T# table must fit in the pool without
             // prematurely recycling a descriptor set still in-flight.
             result[2].descriptorCount = 131072;
+            result[4].descriptorCount = 16384;
         }
         return result;
     }();
@@ -818,9 +819,15 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
             ASSERT_MSG(count != 0, "Cached image descriptor array is empty");
             image_binding_count += count;
         }
+        u32 sampler_binding_count{};
+        for (const auto& sampler : info.samplers) {
+            const u32 count = sampler.NumBindings(info);
+            ASSERT_MSG(count != 0, "Cached sampler descriptor array is empty");
+            sampler_binding_count += count;
+        }
         const u32 legacy_count = info.buffers.size() + info.images.size() + info.samplers.size();
         binding.buffer += info.buffers.size();
-        binding.unified += info.buffers.size() + image_binding_count + info.samplers.size();
+        binding.unified += info.buffers.size() + image_binding_count + sampler_binding_count;
         if (image_binding_count != info.images.size()) {
             static thread_local u32 binding_audits{};
             if (binding_audits++ < 16) {
