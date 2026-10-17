@@ -62,10 +62,12 @@ STAGE=ISOLATED_SOURCE
 SOURCE_SHA="$(sha256sum "$OLD/$VKR" | cut -d' ' -f1)"
 if [[ ! -f "$SRC/.source-sha" ]]; then
     [[ ! -e "$SRC" ]] || { echo "PARTIAL_TEST_SOURCE_EXISTS; REFUSE_REPLACE"; exit 2; }
-    mkdir "$SRC"
+    STAGING="$TEST/.source-stage-$"
+    mkdir "$STAGING"
     ( cd "$OLD" && tar --exclude='.git' --exclude='./build' -cf - . ) |
-        ( cd "$SRC" && tar -xf - )
-    printf '%s\n' "$SOURCE_SHA" > "$SRC/.source-sha"
+        ( cd "$STAGING" && tar -xf - )
+    printf '%s\n' "$SOURCE_SHA" > "$STAGING/.source-sha"
+    mv "$STAGING" "$SRC"
 fi
 [[ "$(cat "$SRC/.source-sha")" == "$SOURCE_SHA" ]] || {
     echo "WORKING_SOURCE_CHANGED_SINCE_TEST_SNAPSHOT; NO_RESET"; exit 2;
