@@ -867,17 +867,18 @@ static bool SplitImageSampleByIndexedSelect(IR::Block& block, IR::Inst& sample,
                      table.gpu_texture_id_indexed,table.descriptor_stride_words);
         }
     }
-    if (!table.contiguous || budget<1 ||
-        table.selector->GetOpcode()!=IR::Opcode::SelectU32) return false;
-    const auto* const select=table.selector;
+    if (!table.contiguous) return false;
+    const auto choices = AnalyzeFiniteIndexedImageChoices(table.selector);
+    if (choices.count < 2u || budget < choices.count - 1u) return false;
+    // Candidate enumeration is exact. Never guess Phi/GetAttribute or
+    // S_BUFFER_LOAD results, or truncate a larger guest descriptor table.
     // Only the index is GPU-dependent. The descriptor table itself must
     // have a stable, host-evaluable base/stride/count across invocations.
     for (unsigned i=0;i<3;++i) {
         if (!IsHostUniformSrtOffset(table.buffer->Arg(i))) return false;
     }
-    if (!select->Arg(1).IsImmediate() || !select->Arg(2).IsImmediate() ||
-        select->Arg(1).Type()!=IR::Type::U32 ||
-        select->Arg(2).Type()!=IR::Type::U32) return false;
+    // For masked GPU inputs the selector remains an IR value evaluated by
+    // the guest invocation, not a host-side approximation.
     const auto* const image=sample.Arg(0).TryInst();
     const auto* const low=image->Arg(0).TryInst();
     const auto* const high=image->Arg(1).TryInst();
@@ -900,9 +901,9 @@ static bool SplitImageSampleByIndexedSelect(IR::Block& block, IR::Inst& sample,
         }
     }
     const auto pos=IR::Block::InstructionList::s_iterator_to(sample);
-    std::array<IR::Value,2> sampled{};
-    for(std::size_t side=0;side<2;++side) {
-        const u32 index=select->Arg(side+1).U32();
+    std::array<IR::Value,4> sampled{};
+    for(std::size_t side=0;side<choices.count;++side) {
+        const u32 index=choices.ids[side];
         std::array<IR::Inst*,8> words{};
         for(std::size_t i=0;i<words.size();++i) {
             IR::Inst* const read=&*block.PrependNewInst(pos,*table.words[i]);
@@ -928,15 +929,28 @@ static bool SplitImageSampleByIndexedSelect(IR::Block& block, IR::Inst& sample,
         sampled[side]=IR::Value{newSample};
     }
     IR::IREmitter ir{block,pos};
-    const IR::U1 taken{select->Arg(0)};
-    const IR::Value result=SelectSideResult(ir,taken,sampled[0],sampled[1]);
+    IR::Value result = sampled[choices.count - 1u];
+    if (choices.kind == IndexedImageChoiceKind::SelectTwo) {
+        const IR::U1 taken{table.selector->Arg(0)};
+        result = SelectSideResult(ir, taken, sampled[0], sampled[1]);
+    } else {
+        // The original nonuniform GPU value already contains the exact AND
+        // mask. Compare it against each proven candidate without executing
+        // any CPU-side Phi, attribute, or S_BUFFER_LOAD evaluation.
+        const IR::U32 gpu_id{IR::Value{const_cast<IR::Inst*>(table.selector)}};
+        for (std::size_t side = choices.count - 1u; side-- > 0;) {
+            const IR::U1 taken = ir.IEqual(gpu_id, ir.Imm32(choices.ids[side]));
+            result = SelectSideResult(ir, taken, sampled[side], result);
+        }
+    }
     sample.ReplaceUsesWithAndRemove(result);
-    --budget;
+    budget -= choices.count - 1u;
     if (IndexedImageAuditEnabled(info.pgm_hash)) {
         LOG_INFO(Render_Recompiler,
-                 "IndexedTSharpSplit: shader={:#x} stage={} branch_count=2 "
-                 "mode=exact_static_index_candidates stride_dwords={}",
-                 info.pgm_hash,info.hw_stage,table.descriptor_stride_words);
+                 "IndexedTSharpSplit: shader={:#x} stage={} branch_count={} "
+                 "mode=exact_bounded_gpu_choice kind={} stride_dwords={}",
+                 info.pgm_hash, info.hw_stage, choices.count,
+                 static_cast<u32>(choices.kind), table.descriptor_stride_words);
     }
     return true;
 }
