@@ -185,9 +185,18 @@ echo "ac174eda286db4e8992d08c9c998381dc083b3f36921ffa230d24b14f1306f23  $OUT/def
 [[ -s "$OUT/deferred-fix.patch" ]] || { echo "EMPTY_PATCH"; exit 1; }
 patch --batch --fuzz=0 --dry-run -p1 -d "$SRC" <"$OUT/deferred-fix.patch" >"$OUT/apply-check.log" 2>&1 || { echo "PATCH_CONTEXT_MISMATCH"; cat "$OUT/apply-check.log"; exit 1; }
 patch --batch --fuzz=0 -p1 -d "$SRC" <"$OUT/deferred-fix.patch" >"$OUT/apply.log" 2>&1
+grep -Fq "pending_gpu_invalidations" "$SRC/src/video_core/page_manager.cpp" || { echo "DEFERRED_UFFD_HANDLER_NOT_STAGED"; exit 1; }
+grep -Fq "InvalidateMemoryOnGpuThread" "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" || { echo "DEFERRED_GPU_CALLBACK_NOT_STAGED"; exit 1; }
+touch -m "$SRC/src/video_core/page_manager.cpp" "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp"
+echo "DEFERRED_UFFD_SOURCE_STAGED=VERIFIED"
 echo "PATCH_APPLICATION=PASS; BUILD_START=YES"
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build.log" 2>&1
 [[ -x "$BUILD/shadps4" ]] || { echo "BUILT_TARGET_MISSING"; exit 1; }
+for obj in page_manager.cpp.o vk_rasterizer.cpp.o; do
+  grep -F "$obj" "$OUT/build.log" > "$OUT/rebuilt-$obj.txt" || { echo "DEFERRED_SOURCE_OBJECT_NOT_COMPILED=$obj"; exit 1; }
+done
+nm -C "$BUILD/shadps4" | grep -F "Vulkan::Rasterizer::InvalidateMemoryOnGpuThread" > "$OUT/deferred-symbol.txt" || { echo "DEFERRED_UFFD_SYMBOL_MISSING_FROM_BINARY"; exit 1; }
+echo "DEFERRED_UFFD_OBJECTS_REBUILT_AND_LINKED=PASS"
 CANDIDATE="$BUILD/shadps4.native-userfaultfd-deferred-$TAG"
 [[ ! -e "$CANDIDATE" ]] || { echo "CANDIDATE_EXISTS"; exit 1; }
 cp -p "$BUILD/shadps4" "$CANDIDATE"
