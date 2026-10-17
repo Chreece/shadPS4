@@ -68,7 +68,27 @@ finish() {
       fi
     fi
   fi
-  tar -czf "$LOGS/$TAG.tar.gz" -C "$LOGS" "$TAG"
+  if [[ "$PRETEST_SAVED" == 1 ]]; then
+    while IFS= read -r file; do
+      if ! cp -p "$OUT/pretest/$file" "$SRC/$file"; then
+        echo "TEST_SOURCE_RESTORE_FAILED=$file"
+        code=1
+      else
+        touch -m "$SRC/$file"
+      fi
+    done < "$OUT/pretest-file-list.txt"
+    if sha256sum -c "$OUT/pretest-source-hashes.txt" > "$OUT/pretest-restore-check.txt" 2>&1; then
+      echo "ISOLATED_SOURCE_SNAPSHOT_RESTORED=YES"
+    else
+      echo "ISOLATED_SOURCE_SNAPSHOT_RESTORED=FAILED"
+      code=1
+    fi
+  fi
+  if [[ -f "$OUT/original-source-hashes.txt" ]]; then
+    sha256sum -c "$OUT/original-source-hashes.txt" > "$OUT/original-source-unchanged.txt" 2>&1 || code=1
+  fi
+  printf '%s  %s\n' "$PROVEN_SHA" "$PROVEN" | sha256sum -c - > "$OUT/proven-binary-unchanged.txt" 2>&1 || code=1
+  tar --exclude="$TAG/original" --exclude="$TAG/pretest" --exclude="$TAG/original.shadps4" --exclude="$TAG/gameplay/full-console.log" -czf "$LOGS/$TAG.tar.gz" -C "$LOGS" "$TAG"
   echo "BUILD_RESULT=$([[ $code == 0 ]] && echo PASS || echo FAILED)"
   echo "ARCHIVE=$LOGS/$TAG.tar.gz"
   echo "SUNSHINE_X11=UNCHANGED"
