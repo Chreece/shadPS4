@@ -78,6 +78,8 @@ void RegisterPatchModule(void* module_ptr, u64 module_size, void* trampoline_are
 
 /// Applies CPU patches that need to be done before beginning executions.
 void PrePatchInstructions(u64 segment_addr, u64 segment_size);
+// Do not allow an unpatched guest RDPID to expose the host TSC_AUX in builtin mode.
+bool FindUnpatchedRdpid(u64 segment_addr, u64 segment_size, u64& first_unpatched) noexcept;
 
 // Windows static guest red-zone protection
 /// Keeps Windows exception dispatch outside live guest red zones at faultable memory accesses.

@@ -11,6 +11,9 @@
 #include "common/string_util.h"
 #include "core/aerolib/aerolib.h"
 #include "core/cpu_patches.h"
+#if defined(__linux__) && defined(ARCH_X86_64)
+#include "core/cpu_id.h"
+#endif
 #include "core/libraries/error_codes.h"
 #include "core/loader/dwarf.h"
 #include "core/memory.h"
@@ -214,6 +217,13 @@ void Module::LoadModuleToMemory(u32& max_tls_index) {
             add_segment(elf_pheader[i]);
 #ifdef ARCH_X86_64
             if (elf_pheader[i].p_flags & PF_EXEC) {
+#if defined(__linux__)
+                if (IsBuiltinCpuIdMode()) {
+                    ASSERT_MSG(RegisterGuestExecutableRange(segment_addr, segment_memory_size),
+                               "Invalid guest executable region [{:#x}, {:#x})",
+                               segment_addr, segment_addr + segment_memory_size);
+                }
+#endif
                 PrePatchInstructions(segment_addr, segment_file_size);
                 if (use_static_patching) {
                     executable_segments.emplace_back(segment_addr, segment_file_size);
@@ -308,6 +318,16 @@ void Module::LoadModuleToMemory(u32& max_tls_index) {
                     ? PatchRedZoneMemoryInstructions(segment_addr, segment_size, function_starts)
                     : PatchCpuInstructionsStatically(segment_addr, segment_size, function_starts);
         }
+#if defined(__linux__) && defined(ARCH_X86_64)
+        if (IsBuiltinCpuIdMode()) {
+            for (const auto& [segment_addr, segment_size] : executable_segments) {
+                u64 unpatched{};
+                ASSERT_MSG(!FindUnpatchedRdpid(segment_addr, segment_size, unpatched),
+                           "Builtin guest CPU identity: uncovered RDPID at {:#x} in {}",
+                           unpatched, name);
+            }
+        }
+#endif
         if (total.function_count == 0) {
             if (!executable_segments.empty()) {
                 LOG_WARNING(Core_Linker,
