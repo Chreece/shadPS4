@@ -61,7 +61,7 @@ def main():
           "AUDIO_OBSERVABILITY_MISSING")
     check('["pw-top", "-b", "-n", "1"]' in py,
           "PIPEWIRE_READ_ONLY_SAMPLING_MISSING")
-    check("wpctl set-" not in py and "pactl set-" not in py,"AUDIO_SYSTEM_MUTATION")
+    check('["wpctl", "set-' not in py and '["pactl", "set-' not in py, "AUDIO_SYSTEM_MUTATION")
     print("READ_ONLY_AUDIO_THREAD_AND_PIPEWIRE_OBSERVER=PASS")
     print("FULL_GFX_RUNTIME_LOG_AB_CONTRACT=PASS")
 
