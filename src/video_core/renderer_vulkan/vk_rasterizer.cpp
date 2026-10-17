@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <cstdlib>
+#include <cstring>
 #include <unordered_map>
 #include <utility>
 #include <type_traits>
@@ -1090,6 +1091,80 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
     u32 num_images{};
     for (const auto& image_desc : stage.images) {
+        if (image_desc.is_guest_indexed) {
+            // Real GCN T# table. Stage specialisation is allowed to declare
+            // this array ONLY if all table entries fit, so a GPU id can
+            // choose exactly its own guest image (or the explicit null slot).
+            const u32 count=image_desc.NumBindings(stage);
+            ASSERT(count>=2 && count<=Shader::MaxGuestIndexedImageEntries+1);
+            ASSERT(num_images+count<=image_bindings.size());
+            AmdGpu::Buffer source{};
+            const bool fetched=image_desc.indexed_table_fetch.Fetch(
+                stage.flattened_ud_buf.data(),&source);
+            const u64 guest_size=fetched
+                ? (source.stride==0 ? static_cast<u64>(source.num_records)
+                                     : static_cast<u64>(source.stride)*source.num_records)
+                : 0u;
+            const bool complete=fetched && source.Valid() &&
+                source.base_address!=0 &&
+                (source.stride==0 || source.stride==sizeof(AmdGpu::Image)) &&
+                guest_size==u64(count-1)*sizeof(AmdGpu::Image) &&
+                memory->IsValidMapping(source.base_address,guest_size);
+            u32 valid_slots=0;
+            for (u32 i=0;i<count;++i) {
+                auto& slot=image_bindings[num_images++];
+                slot.image_id={};
+                // The last slot is an intentional null descriptor for guest
+                // IDs outside the complete table; it is NOT a fake texture.
+                if (!complete || i+1==count) continue;
+                const u64 entry_addr=source.base_address+u64(i)*sizeof(AmdGpu::Image);
+                if (!memory->IsValidMapping(entry_addr,sizeof(AmdGpu::Image))) continue;
+                AmdGpu::Image raw{};
+                std::memcpy(&raw,reinterpret_cast<const void*>(entry_addr),
+                            sizeof(AmdGpu::Image));
+                if (!raw.Valid() ||
+                    raw.GetType()!=AmdGpu::ImageType::Color2D ||
+                    raw.Address()==0 ||
+                    !memory->IsValidGpuMapping(raw.Address(),0) ||
+                    !magic_enum::enum_contains(static_cast<AmdGpu::DataFormat>(
+                        raw.data_format)) ||
+                    !magic_enum::enum_contains(static_cast<AmdGpu::NumberFormat>(
+                        raw.num_format))) continue;
+                const auto fmt=raw.GetDataFmt();
+                const auto nfmt=raw.GetNumberFmt();
+                if (fmt==AmdGpu::DataFormat::FormatInvalid ||
+                    !magic_enum::enum_contains(fmt) ||
+                    !magic_enum::enum_contains(nfmt) ||
+                    AmdGpu::IsInteger(nfmt)) continue;
+                auto& desc=slot.desc;
+                std::construct_at(&desc,raw,image_desc);
+                slot.image_id=texture_cache.FindImage(desc);
+                auto* image=&texture_cache.GetImage(slot.image_id);
+                if (desc.type==VideoCore::TextureCache::BindingType::Texture) {
+                    if (auto depth=texture_cache.GetAssociatedDepth(*image)) {
+                        slot.image_id=depth;
+                        image=&texture_cache.GetImage(slot.image_id);
+                    }
+                }
+                image->binding.is_bound=1u;
+                ++valid_slots;
+            }
+            image_descriptor_array_sizes.push_back(count);
+            if (audit) {
+                static thread_local std::unordered_map<u64,u32> reports;
+                const u64 key=(u64(stage.pgm_hash)<<8)|static_cast<u8>(stage.hw_stage);
+                const u32 n=++reports[key];
+                if(n<=4||std::has_single_bit(n)) {
+                    LOG_INFO(Render_Vulkan,
+                             "RealIndexedTSharpBound: shader={:#x} stage={} "
+                             "entries={} valid={} full_table={} address={:#x} "
+                             "null_slot=YES",
+                             stage.pgm_hash,stage.hw_stage,count-1,valid_slots,
+                             complete,static_cast<u64>(source.base_address));
+                }
+            }
+            continue;
+        }
         if (audit) {
             using Fetch = std::remove_cvref_t<decltype(image_desc.sharp_fetch)>;
             audit->invalid_image_sharps +=
@@ -1168,7 +1243,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     // Second pass to re-bind images that were updated after binding
     for (u32 i = 0; i < num_images; ++i) {
         auto& [image_id, desc] = image_bindings[i];
-        bool is_storage = desc.type == VideoCore::TextureCache::BindingType::Storage;
+        bool is_storage = image_id &&
+            desc.type == VideoCore::TextureCache::BindingType::Storage;
         if (!image_id) {
             image_infos.emplace_back(VK_NULL_HANDLE, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
         } else {
