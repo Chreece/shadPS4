@@ -6,7 +6,7 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=06fcb1cdb475c3627dff1eeb54dbe1fb7ecb4ed9
+FIX=811635a8786796c4a6ae72a2162fe595e29e0fb3
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
@@ -63,7 +63,7 @@ echo "e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa  $PROVEN"
 sha256sum "$PROVEN" >"$OUT/proven-before.sha256"
 git -C "$OLD" cat-file -e "$FIX^{commit}"
 git -C "$OLD" merge-base --is-ancestor "$UPSTREAM" "$FIX" || { echo "UPSTREAM_ANCESTRY_FAILED"; exit 1; }
-[[ "$(git -C "$OLD" rev-list --count "$UPSTREAM..$FIX")" == 9 ]] || { echo "PINNED_COMMIT_COUNT_MISMATCH"; exit 1; }
+[[ "$(git -C "$OLD" rev-list --count "$UPSTREAM..$FIX")" == 11 ]] || { echo "PINNED_COMMIT_COUNT_MISMATCH"; exit 1; }
 FREE="$(df -Pk "$HOME" | awk 'END{print $4}')"
 [[ "$FREE" =~ ^[0-9]+$ ]] && (( FREE >= 2097152 )) || { echo "FREE_SSD_BELOW_2_GIB; NO_DELETION"; exit 1; }
 STAGE=ISOLATED_WORKTREE
@@ -132,4 +132,4 @@ SRT="$BUILD/shadps4.upstream-srt-$TAG"
 [[ ! -e "$SRT" ]] || { echo "SRT_CANDIDATE_EXISTS"; exit 1; }
 cp -p "$BUILD/shadps4" "$SRT"; sha256sum "$SRT" >"$OUT/srt.sha256"
 echo "SRT_CANDIDATE=$SRT" >"$OUT/srt.txt"; SRT_PASS=1; STAGE=COMPLETE
-echo "MAIN_UPSTREAM_REBASE_BUILD=PASS"
+echo "MAIN_UPSTREAM_REBASE_BUILD=PASS; GUEST_PERMISSION_TRACKING=PORT_INCLUDED"
