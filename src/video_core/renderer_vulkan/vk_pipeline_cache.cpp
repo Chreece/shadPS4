@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <cstdlib>
 #include <ranges>
 #include <type_traits>
@@ -55,6 +56,55 @@ constexpr static std::array DescriptorHeapSizes = {
     vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, 1024},
     vk::DescriptorPoolSize{vk::DescriptorType::eSampler, 1024},
 };
+
+// Only enable full-sized T# resource arrays during an explicit experimental
+// run. The default descriptor pools and shader behavior remain unchanged.
+static bool LargeGuestTsharpEnabled() {
+    static const bool enabled = [] {
+        const char* const env = std::getenv("SHADPS4_GUEST_TSHARP_LARGE_ARRAY");
+        return env && env[0] == '1' && env[1] == '\0';
+    }();
+    return enabled;
+}
+
+static const auto& RuntimeDescriptorHeapSizes() {
+    static const auto sizes = [] {
+        auto result = DescriptorHeapSizes;
+        if (LargeGuestTsharpEnabled()) {
+            // One complete 27K T# table must fit in the pool without
+            // prematurely recycling a descriptor set still in-flight.
+            result[2].descriptorCount = 131072;
+        }
+        return result;
+    }();
+    return sizes;
+}
+
+static u32 GuestTsharpArrayLimit(const Instance& instance) {
+    if (!LargeGuestTsharpEnabled() ||
+        !instance.IsSampledImageNonUniformIndexingSupported()) {
+        return Shader::LegacyGuestIndexedImageEntries;
+    }
+    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+    const u32 hard_limit = std::min({
+        Shader::MaxGuestIndexedImageEntries + 1u,
+        limits.maxDescriptorSetSampledImages,
+        limits.maxPerStageDescriptorSampledImages,
+        limits.maxPerStageResources,
+    });
+    // Allow other textures, samplers and storage buffers in the same pipeline.
+    const u32 max_entries = hard_limit > Shader::NUM_IMAGES
+        ? hard_limit - Shader::NUM_IMAGES - 1u : 0u;
+    const u32 selected = max_entries >= Shader::LegacyGuestIndexedImageEntries
+        ? std::min(max_entries, Shader::MaxGuestIndexedImageEntries)
+        : Shader::LegacyGuestIndexedImageEntries;
+    LOG_INFO(Render_Vulkan,
+             "LargeGuestTsharpLimit: enabled=YES selected={} hard_device_limit={} "
+             "max_per_stage_sampled={} max_set_sampled={} max_per_stage_resources={}",
+             selected, hard_limit, limits.maxPerStageDescriptorSampledImages,
+             limits.maxDescriptorSetSampledImages, limits.maxPerStageResources);
+    return selected;
+}
 
 static u32 MapOutputs(std::span<Shader::OutputMap, 3> outputs, const AmdGpu::VsOutputControl& ctl) {
     u32 num_outputs = 0;
@@ -292,7 +342,7 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(HwStage stage, SwStag
 PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
                              AmdGpu::Liverpool* liverpool_, u32 sparse_page_shift)
     : instance{instance_}, scheduler{scheduler_}, liverpool{liverpool_},
-      desc_heap{instance, scheduler.GetWorkSemaphore(), DescriptorHeapSizes} {
+      desc_heap{instance, scheduler.GetWorkSemaphore(), RuntimeDescriptorHeapSizes()} {
     const auto& vk12_props = instance.GetVk12Properties();
     profile = Shader::Profile{
         .max_viewport_width = instance.GetMaxViewportWidth(),
@@ -301,6 +351,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supported_spirv = SpirvVersion1_6,
         .subgroup_size = instance.SubgroupSize(),
         .sparse_page_shift = sparse_page_shift,
+        .max_guest_indexed_image_entries = GuestTsharpArrayLimit(instance),
         .support_int8 = instance.IsShaderInt8Supported(),
         .support_int16 = instance.IsShaderInt16Supported(),
         .support_int64 = instance.IsShaderInt64Supported(),
