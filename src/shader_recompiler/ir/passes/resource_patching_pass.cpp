@@ -439,10 +439,10 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                 : static_cast<u64>(table.stride)*table.num_records;
             const u32 entries = CompleteGuestTsharpTableEntries(
                 static_cast<u32>(table.stride),table.num_records,
-                MaxGuestIndexedImageEntries);
+                profile.max_guest_indexed_image_entries);
             if (entries != 0u) {
                 image_res.indexed_table_fetch=table_fetch;
-                image_res.indexed_guest_entries=static_cast<u8>(entries);
+                image_res.indexed_guest_entries=entries;
                 image_res.is_guest_indexed=true;
                 LOG_INFO(Render_Recompiler,
                          "RealIndexedTSharpEnabled: shader={:#x} stage={} entries={} "
