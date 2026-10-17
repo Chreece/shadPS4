@@ -24,6 +24,7 @@
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/passes/srt.h"
 #include "shader_recompiler/ir/passes/srt_offset_preflight.h"
+#include "shader_recompiler/ir/passes/srt_proven_identity.h"
 #include "shader_recompiler/ir/passes/srt_uniformity.h"
 #include "shader_recompiler/ir/passes/srt_host_barrier.h"
 #include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
@@ -667,6 +668,8 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
     case IR::Opcode::GetPcLo:
+    case IR::Opcode::Phi:
+    case IR::Opcode::BitCastU32F32:
     case IR::Opcode::ReadConst:
     case IR::Opcode::ReadConstBuffer:
     case IR::Opcode::IAdd32:
@@ -701,6 +704,11 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
         return true;
     }
     auto inst = off_dw.Inst();
+    if (inst->GetOpcode() == IR::Opcode::Phi ||
+        inst->GetOpcode() == IR::Opcode::BitCastU32F32) {
+        const auto identity = ResolveProvenSrtIdentity(off_dw);
+        return identity && ComputeOffset(c, reg, pass_info, *identity);
+    }
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
         c.mov(reg, ptr[rsi + (static_cast<u32>(inst->Arg(0).ScalarReg()) << 2)]);

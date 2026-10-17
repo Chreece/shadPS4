@@ -3,6 +3,7 @@
 #pragma once
 
 #include "shader_recompiler/ir/passes/srt_uniformity.h"
+#include "shader_recompiler/ir/passes/srt_proven_identity.h"
 
 namespace Shader::Optimization {
 
@@ -59,6 +60,12 @@ template <typename Value>
         return FindSrtHostBarrier(arg, depth + 1);
     };
     switch (op) {
+    case IR::Opcode::Phi:
+    case IR::Opcode::BitCastU32F32:
+        if (const auto identity = ResolveProvenSrtIdentity(value)) {
+            return visit(*identity);
+        }
+        return {SrtHostBarrierKind::UnsupportedOpcode, op, depth};
     case IR::Opcode::GetUserData:
         return {};
     case IR::Opcode::GetPcLo:

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "shader_recompiler/ir/opcodes.h"
+#include "shader_recompiler/ir/passes/srt_proven_identity.h"
 
 namespace Shader::Optimization {
 
@@ -27,6 +28,12 @@ template <typename Value>
         return false;
     }
     switch (inst->GetOpcode()) {
+    case IR::Opcode::Phi:
+    case IR::Opcode::BitCastU32F32:
+        if (const auto identity = ResolveProvenSrtIdentity(value)) {
+            return IsHostUniformSrtOffset(*identity, depth + 1);
+        }
+        return false;
     case IR::Opcode::GetUserData:
         // SGPR user data is supplied per draw/dispatch, independent of lane.
         return true;

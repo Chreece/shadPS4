@@ -11,6 +11,7 @@
 #include "shader_recompiler/ir/microinstruction.h"
 #include "shader_recompiler/ir/value.h"
 #include "shader_recompiler/ir/passes/srt_uniformity.h"
+#include "shader_recompiler/ir/passes/srt_proven_identity.h"
 
 namespace Shader::Optimization {
 
@@ -42,6 +43,29 @@ namespace Shader::Optimization {
             continue;
         }
         switch (inst->GetOpcode()) {
+        case IR::Opcode::Phi:
+        case IR::Opcode::BitCastU32F32: {
+            // Only proven U32 identities may be evaluated without the GPU
+            // branch decision. Never treat arbitrary Phis as host-uniform.
+            const auto identity = ResolveProvenSrtIdentity(IR::Value{
+                const_cast<IR::Inst*>(inst)});
+            if (!identity) {
+                cached[first] = false;
+                return false;
+            }
+            if (identity->IsImmediate()) {
+                if (identity->Type() != IR::Type::U32) {
+                    cached[first] = false;
+                    return false;
+                }
+            } else if (const auto* source = identity->TryInst()) {
+                pending.push_back(source);
+            } else {
+                cached[first] = false;
+                return false;
+            }
+            continue;
+        }
         // These are leaf values read directly from the flattened user-data
         // buffer. Whether a source has actually been assigned an offset is
         // separately checked at emission time by ComputeOffset.
