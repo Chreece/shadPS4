@@ -6,7 +6,7 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=f84c1fe4fbf571811d69f862f5ba74f4d662930c
+FIX=e7e8c028ef5853ef4ef6b4fab35b37ed2616ea55
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
@@ -43,16 +43,31 @@ finish() {
   fi
   [[ ! -d "$SRC" ]] || git -C "$SRC" status --short >"$OUT/worktree-status.txt" 2>&1
   printf 'STAGE=%s\nBASE_BUILD_PASS=%s\nSRT_BUILD_PASS=%s\nRESULT=%s\n' "$STAGE" "$BASE_PASS" "$SRT_PASS" "$([[ "$rc" == 0 ]] && echo PASS || echo FAILED)" >"$OUT/result.txt"
-  tar -czf "$LOGS/$TAG.tar.gz" --exclude="$TAG/pm4-test" -C "$LOGS" "$TAG"
+  tar -czf "$LOGS/$TAG.tar.gz" \
+    --exclude="$TAG/pm4-test" \
+    --exclude="$TAG/gameplay/full-console.log" \
+    --exclude="$TAG/srt-original" \
+    -C "$LOGS" "$TAG"
   cat "$OUT/result.txt"; echo "ARCHIVE=$LOGS/$TAG.tar.gz"
   [[ ! -f "$OUT/base.txt" ]] || cat "$OUT/base.txt"
   [[ ! -f "$OUT/srt.txt" ]] || cat "$OUT/srt.txt"
   if [[ "$rc" != 0 ]]; then
-    for f in "$OUT/"{source-contract,compile-page-manager,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile}.log; do
+    for f in "$OUT/"{source-contract,compile-page-manager,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer}.log; do
       [[ ! -s "$f" ]] || { echo "ERROR_TAIL=$f"; tail -18 "$f"; }
     done
   fi
-  echo "ORIGINAL_GOW_SOURCE=UNCHANGED; GAME_LAUNCHED=NO; SUNSHINE_X11=UNCHANGED; SSH_SESSION=UNCHANGED"
+  if [[ -f "$OUT/gameplay/gameplay-result.json" ]]; then
+    python3 - "$OUT/gameplay/gameplay-result.json" <<'REPORT'
+import json, sys
+r=json.load(open(sys.argv[1]))
+print("GAME_OBSERVATION_RESULT="+r.get("result","UNKNOWN"))
+print("GAME_PID="+str(r.get("pid","NOT_STARTED")))
+print("GAME_PROCESS_LEFT_RUNNING="+str(r.get("process_alive_when_reported",False)))
+REPORT
+  else
+    echo "GAME_LAUNCHED=NO; REASON=VERIFICATION_OR_BUILD_NOT_PASSED"
+  fi
+  echo "ORIGINAL_GOW_SOURCE=UNCHANGED; SUNSHINE_X11=UNCHANGED; SSH_SESSION=UNCHANGED"
   exit "$rc"
 }
 trap 'finish $?' EXIT
@@ -157,17 +172,9 @@ if [[ -f "$BUILD/CMakeFiles/shadps4.dir/build.make" ]]; then
   echo "EARLY_CHECK=PASS; NATIVE_OBJECTS_COMPILED=${#OBJECTS[@]}"
 else
   echo "EARLY_CHECK=NO_UNIX_MAKEFILE; USING_STANDARD_CMAKE_BUILD"
-  if [[ "${GOW_PREFLIGHT_ONLY:-0}" == "1" ]]; then
-    echo "PREFLIGHT_ONLY_REQUIRES_GNU_MAKE; REFUSING_FALSE_PASS"
-    exit 1
-  fi
 fi
-if [[ "${GOW_PREFLIGHT_ONLY:-0}" == "1" ]]; then
-  STAGE=NATIVE_CPP_PREFLIGHT_COMPLETE
-  echo "NATIVE_CPP_PREFLIGHT=PASS; FULL_BUILD=NOT_ATTEMPTED; SRT_BUILD=NOT_ATTEMPTED"
-  echo "PREVIOUS_OBJECT_CACHE=RETAINED; GAME_LAUNCHED=NO"
-  exit 0
-fi
+# Every successful verification continues to the complete build and
+# automatic game launch. A failing gate exits without launching anything.
 STAGE=BUILD_REBASED_CPU_UFFD_PM4
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build-base.log" 2>&1
 [[ -x "$BUILD/shadps4" ]] || { echo "BUILT_BINARY_MISSING"; exit 1; }
@@ -227,5 +234,32 @@ nm -C "$BUILD/shadps4" | grep -F 'Vulkan::Rasterizer::InvalidateMemoryOnGpuThrea
 SRT="$BUILD/shadps4.upstream-srt-$TAG"
 [[ ! -e "$SRT" ]] || { echo "SRT_CANDIDATE_EXISTS"; exit 1; }
 cp -p "$BUILD/shadps4" "$SRT"; sha256sum "$SRT" >"$OUT/srt.sha256"
-echo "SRT_CANDIDATE=$SRT" >"$OUT/srt.txt"; SRT_PASS=1; STAGE=COMPLETE
+echo "SRT_CANDIDATE=$SRT" >"$OUT/srt.txt"; SRT_PASS=1
 echo "MAIN_UPSTREAM_REBASE_BUILD=PASS; GUEST_PERMISSION_TRACKING=PORT_INCLUDED"
+
+# No verification-only exit: a fully verified and linked build proceeds into
+# the real game automatically. The observer never closes anyone's game.
+STAGE=GAME_LAUNCH_PREFLIGHT
+OBSERVER="$SRC/tools/development/gow_upstream_gameplay.py"
+[[ -f "$OBSERVER" ]] || { echo "GAME_OBSERVER_SCRIPT_MISSING"; exit 1; }
+python3 - "$OBSERVER" >"$OUT/game-observer-syntax.txt" <<'CHECK_PY'
+import ast
+import pathlib
+import sys
+ast.parse(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+print("GAME_OBSERVER_PYTHON_SYNTAX=PASS")
+CHECK_PY
+
+# This copy is immutable and was SHA-recorded after final linking.
+GAME_SHA="$(sha256sum "$SRT" | cut -d' ' -f1)"
+[[ "$GAME_SHA" =~ ^[a-f0-9]{64}$ ]] || { echo "GAME_BINARY_DIGEST_INVALID"; exit 1; }
+echo "GAME_CANDIDATE_SHA256=$GAME_SHA" >"$OUT/auto-game.txt"
+echo "AUTO_GAME_LAUNCH=ENABLED; USER_INPUT=MANUAL_MOONLIGHT"
+STAGE=GAME_LAUNCH_AND_OBSERVATION
+python3 "$OBSERVER" --binary "$SRT" --sha256 "$GAME_SHA" \
+  --report "$OUT/gameplay" --cwd "$ORIG" --seconds 180 \
+  > >(tee "$OUT/gameplay-observer.log") 2>&1
+
+STAGE=COMPLETE
+echo "GO_W_UPSTREAM_REBASE_FULL_CHAIN=PASS"
+echo "GAME_AUTOMATIC_LAUNCH=COMPLETED; SSH_SESSION=UNCHANGED"
