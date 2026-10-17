@@ -614,6 +614,8 @@ echo "CRITICAL_OBJECTS_BUILD=START"
 ninja -C "$BUILD" -j4 \
   CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o \
   CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/resource_discover_pass.cpp.o \
+  CMakeFiles/shadps4.dir/src/shader_recompiler/ir/program.cpp.o \
+  CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp.o \
   CMakeFiles/shadps4.dir/src/sdl_window.cpp.o \
   >"$RUN/info/critical-objects-build.log" 2>&1 || {
     tail -110 "$RUN/info/critical-objects-build.log"
