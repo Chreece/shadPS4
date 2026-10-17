@@ -22,7 +22,7 @@ GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
 BASE_SHA256="948742f5b1ffebf0dfc4d1b452806c2e649bf35d76cffbb576e2b81bb36b5826"
-CANDIDATE="7654a35d739e0cc9e1f3641ea3d42427eae18afa"
+CANDIDATE="79ac833b3c4281770f27f5afcc58231cd41d6d07"
 UPSTREAM="32021e41bc52f744c80d122e732e24e97496c98d"
 BRANCH="experiment/got-gpu-resource-branches-20261017"
 RUN="$LOGS/.$NAME.runtime"
@@ -329,6 +329,12 @@ run_phase() {
     if [ "$phase" != W ]; then
         cp "$home/game.log" "$RUN/evidence/$phase/game.log"
     fi
+    if [ "$game_rc" -eq 139 ]; then
+        STATUS="GAME_SEGFAULT_$phase"
+        echo "GAME_CRASH=SIGSEGV PHASE=$phase DURATION=$seconds"
+        tail -120 "$home/game.log" >"$RUN/info/segfault-$phase-last120.txt"
+        return 2
+    fi
     if [ "$samples" -lt 4 ]; then
         STATUS="EARLY_GAME_EXIT_$phase"
         echo "EARLY_GAME_EXIT=$phase game_rc=$game_rc seconds=$seconds"
@@ -404,7 +410,7 @@ apply_blob "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" 
 apply_blob "src/shader_recompiler/ir/passes/srt_inline_read_codegen.h" "642f62e5353032ff22a23dbd82f665f0d6b5505d"
 apply_blob "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp" "e70e6036ba2271a529cb7d6ac5dc9d39c117517f"
 apply_blob "src/shader_recompiler/ir/passes/srt_uniformity.h" "95bdea6f8db9d0a717bd568fd0ae8e0003442170"
-apply_blob "src/video_core/renderer_vulkan/vk_rasterizer.cpp" "594fd3d2043afbeb6952bbc2eba99c1e7a4b45ef"
+apply_blob "src/video_core/renderer_vulkan/vk_rasterizer.cpp" "cbc36f68db19f8a75b33bf4b4ba248b198115ede"
 apply_blob "src/video_core/renderer_vulkan/resource_audit_hash_filter.h" "28cc1c1d76f59386329bf92883acc5e26385b3dc"
 apply_blob "src/shader_recompiler/ir/passes/resource_patching_pass.cpp" "e95c1d8e978542b12a482595cfdced59bc805597"
 apply_blob "src/shader_recompiler/ir/passes/resource_discover_pass.cpp" "13092d551fb14d3c3da07ab4e8f65e2326776b02"
@@ -870,6 +876,10 @@ print("\n".join(rows[:70]))
 print("IMAGE_PHI_REPORT_END")
 PYPHI
 echo "IMAGE_PHI_SPLITS=$(wc -l <"$RUN/info/image-phi-split-events.txt")"
+grep -a 'ResourceNullBuffer:' "$RUN/evidence/$REPORT_PHASE/game.log" \
+    >"$RUN/info/resource-null-buffer-causes.txt" || true
+echo "NULL_BUFFER_CAUSE_EVENTS=$(wc -l <"$RUN/info/resource-null-buffer-causes.txt")"
+
 echo "GRAPHICS_REPORT_READY"
 
 WORKER
