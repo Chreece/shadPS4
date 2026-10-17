@@ -11,6 +11,9 @@
 #include "core/libraries/kernel/threads/exception.h"
 #include "core/libraries/kernel/threads/pthread.h"
 #include "core/signals.h"
+#if defined(__linux__) && defined(ARCH_X86_64)
+#include "core/cpu_id.h"
+#endif
 #include "emulator.h"
 
 #ifdef _WIN32
@@ -248,6 +251,15 @@ static s32 NativeSiCodeToGuest(s32 sig, s32 code) {
 }
 
 void SignalHandler(int sig, siginfo_t* info, void* raw_context) {
+#if defined(__linux__) && defined(ARCH_X86_64)
+    if (sig == SIGILL && HandleBuiltinRdpidTrap(raw_context)) {
+        return;
+    }
+    if ((sig == SIGSEGV || sig == SIGILL) && info &&
+        HandleCpuIdFault(raw_context, info->si_addr)) {
+        return;
+    }
+#endif
     using namespace Libraries::Kernel;
     auto* thread = g_curthread;
     const auto* signals = Signals::Instance();
