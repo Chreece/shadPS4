@@ -10,6 +10,10 @@ OBSERVER="${1:?pinned observer path required}"
 RESTORER="${2:?pinned source-preserving graphics restoration helper required}"
 SUPPORT="${3:?pinned UFFD support-file helper required}"
 PROVEN_SHA=e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa
+# The exact fully rendered 20:59 executable is a second, immutable A/B
+# reference. Keep this binary even if the logging experiment fails.
+FULL_GFX="$HOME/projects/shadps4/GodOfWarRagnarok/tests/gow-renderer-log-hotpath-20261017/build/shadps4.graphics-preserved-uffd-gow-graphics-retention-20261017-205952"
+FULL_GFX_SHA=77b61a953e449e6a31a3a12afa481798a9db78a5f9883f4185777f7982579541
 SRC="$ROOT/source"
 BUILD="$ROOT/build"
 LOGS="$HOME/projects/shadps4/logs"
@@ -91,6 +95,7 @@ finish() {
     sha256sum -c "$OUT/original-source-hashes.txt" > "$OUT/original-source-unchanged.txt" 2>&1 || code=1
   fi
   printf '%s  %s\n' "$PROVEN_SHA" "$PROVEN" | sha256sum -c - > "$OUT/proven-binary-unchanged.txt" 2>&1 || code=1
+  printf '%s  %s\n' "$FULL_GFX_SHA" "$FULL_GFX" | sha256sum -c - > "$OUT/fullgfx-a-unchanged.txt" 2>&1 || code=1
   tar --exclude="$TAG/original" --exclude="$TAG/pretest" --exclude="$TAG/original.shadps4" --exclude="$TAG/gameplay/full-console.log" -czf "$LOGS/$TAG.tar.gz" -C "$LOGS" "$TAG"
   echo "BUILD_RESULT=$([[ $code == 0 ]] && echo PASS || echo FAILED)"
   echo "ARCHIVE=$LOGS/$TAG.tar.gz"
@@ -105,6 +110,9 @@ flock -n 9 || { echo "ANOTHER_UFFD_BUILD_RUNNING"; exit 1; }
 [[ ( -d "$SRC/.git" || -f "$SRC/.git" ) && -d "$BUILD" ]] || { echo "EXACT_TEST_TREE_MISSING"; exit 1; }
 [[ -f "$PROVEN" && -f "$OBSERVER" && -f "$RESTORER" && -f "$SUPPORT" ]] || { echo "PROVEN_BINARY_OR_PINNED_TOOLS_MISSING"; exit 1; }
 echo "$PROVEN_SHA  $PROVEN" | sha256sum -c - || { echo "PROVEN_GAMEPLAY_SHA_MISMATCH"; exit 1; }
+printf '%s  %s\n' "$FULL_GFX_SHA" "$FULL_GFX" | sha256sum -c - || {
+  echo "LAST_FULL_GRAPHICS_REFERENCE_MISSING_OR_CHANGED"; exit 1;
+}
 python3 -m py_compile "$OBSERVER" "$RESTORER" "$SUPPORT"
 [[ "$SRC" != "$ORIGINAL_SRC" ]] && [[ "$BUILD" != "$ORIGINAL_ROOT/build" ]] || { echo "UNSAFE_BUILD_TARGET_EQUALS_PROVEN"; exit 1; }
 [[ -f "$BUILD/shadps4" && ! -L "$BUILD/shadps4" ]] || {
