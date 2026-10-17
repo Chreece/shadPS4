@@ -27,6 +27,11 @@ OPENAL = """#include "core/libraries/audio/audioout_health.h"
 bool IsUsable() const noexcept { return intentionally_disabled || source; }
 intentionally_disabled = IsDisabledAudioDevice(device_name);
 void Output() { log("OpenAL audio route:"); log("first non-silent PCM"); }
+void SetVolume() {
+    if (intentionally_disabled || !device_context || !source) return;
+    device_context->MakeCurrent(device_name);
+}
+u64 GetLastOutputTime() const {}
 std::unique_ptr<PortBackend> OpenALAudioOut::Open(PortOut& port) {
     auto backend = std::make_unique<OpenALPortBackend>(port);
     if (!backend->IsUsable()) { return {}; }
@@ -86,6 +91,12 @@ class AudioOutputContractTest(unittest.TestCase):
         self.check_mutation("src/core/libraries/audio/openal_audio_out.cpp",
                             "if (!backend->IsUsable())", "if (false)",
                             "must reject an unusable backend")
+
+    def test_muted_openal_gain_null_guard_fails(self):
+        self.check_mutation("src/core/libraries/audio/openal_audio_out.cpp",
+                            "if (intentionally_disabled || !device_context || !source)",
+                            "if (source)",
+                            "OpenAL muted ports must guard null device_context")
 
     def test_missing_disabled_output_setting_fails(self):
         self.check_mutation("src/core/libraries/audio/sdl_audio_out.cpp",
