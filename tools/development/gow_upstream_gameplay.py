@@ -28,6 +28,22 @@ LOG_MARKERS = {
     "invalid_texture": "Rejecting invalid T#",
     "pm4_out_of_range": "out-of-range",
     "vulkan_fault": "VK_ERROR_DEVICE_LOST",
+    "audio3d_initialized": "sceAudio3dInitialize: called",
+    "guest_audio_initialized": "sceAudioOutInit: Audio system initialized",
+    "audio_main_port": "sceAudioOutOpen: opened port_type=Main",
+    "audio_sdl_device_open": "Opened audio device:",
+    "audio_openal_device_open": "Initialized OpenAL backend",
+    "audio_pcm_detected": "SDL audio: first non-silent PCM",
+    "audio_openal_pcm_detected": "OpenAL audio: first non-silent PCM",
+    "audio_pcm_route": "SDL audio route:",
+    "audio_openal_pcm_route": "OpenAL audio route:",
+    "audio_sdl_failure": "SDL audio port has no usable output stream",
+    "audio_openal_failure": "OpenAL audio port has no usable source or device",
+    "audio_openal_context_failure": "OpenAL PCM output cannot activate device context",
+    "audio_device_intentional_mute": "audio output intentionally disabled",
+    "audio_backend_sink_error": "Failed to resume audio stream",
+    "audio3d_shutdown": "sceAudio3dTerminate: called",
+    "audio_unload_error": "Failed sceSysmoduleUnloadModule for SCE_SYSMODULE_AUDIO_3D",
 }
 THREAD_NAMES = ("GpuComm", "Uffd", "Game:Main", "VideoOut", "Render", "TaskManager")
 SHADER_ID = re.compile(r"(?:stage|shader)\s+(?:0x)?([a-f0-9]{6,16})", re.I)
@@ -206,6 +222,44 @@ def capture_crash_metadata(pid, out):
     (out / "crash-metadata.json").write_text(json.dumps(notes, indent=2) + "\n")
 
 
+def capture_audio_route(out, label, env):
+    """Record host playback sink selection without changing audio settings.
+
+    PipeWire's Pulse compatibility and native PipeWire managers can coexist.
+    Snapshotting both avoids guessing why a valid SDL/OpenAL stream is silent
+    to Sunshine. No pactl set-*, wpctl set-*, or service modifications.
+    """
+    commands = {
+        "pactl_info": ["pactl", "info"],
+        "pactl_sinks": ["pactl", "list", "short", "sinks"],
+        "pactl_sink_inputs": ["pactl", "list", "short", "sink-inputs"],
+        "pactl_input_details": ["pactl", "list", "sink-inputs"],
+        "pactl_default_mute": ["pactl", "get-sink-mute", "@DEFAULT_SINK@"],
+        "pactl_default_volume": ["pactl", "get-sink-volume", "@DEFAULT_SINK@"],
+        "wpctl_status": ["wpctl", "status"],
+    }
+    status = {}
+    for name, args in commands.items():
+        if not shutil.which(args[0]):
+            status[name] = {"available": False}
+            continue
+        try:
+            result = subprocess.run(
+                args, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                errors="replace", timeout=4, env=env)
+            status[name] = {
+                "return_code": result.returncode,
+                "stdout": result.stdout[:65536],
+                "stderr": result.stderr[:1600],
+            }
+        except (OSError, subprocess.TimeoutExpired) as err:
+            status[name] = {"error": repr(err)}
+    (out / f"host-audio-route-{label}.json").write_text(
+        json.dumps(status, indent=2) + "\n")
+    return {name: value.get("return_code") for name, value in status.items()
+            if "return_code" in value}
+
+
 def main():
     arg = argparse.ArgumentParser()
     arg.add_argument("--binary", type=Path, required=True)
@@ -228,6 +282,7 @@ def main():
     process = None
     status = 1
     console_file = None
+    audio_environment = os.environ.copy()
     try:
         exe = args.binary.resolve(strict=True)
         if exe != args.binary or args.binary.is_symlink() or not exe.is_file():
@@ -253,6 +308,8 @@ def main():
         for key in list(env):
             if key.startswith(("SHADPS4_GOW_", "SHADPS4_CPU_ID_")):
                 env.pop(key, None)
+        audio_environment = env
+        report["host_audio_prelaunch"] = capture_audio_route(out, "prelaunch", env)
         command = [str(exe), "--cpu-id-mode", "builtin", "--userfaultfd",
                    "--game", "CUSA34384", "--fullscreen", "true", "--show-fps"]
         (out / "launch-command.json").write_text(json.dumps(command, indent=2) + "\n")
@@ -278,6 +335,9 @@ def main():
                 report["exit_code"] = process.returncode
                 raise RuntimeError(f"GAME_EXITED_EARLY_WITH_CODE_{process.returncode}")
             current = sample_threads(process.pid)
+            if elapsed in (15, 60, 120, 180):
+                report[f"host_audio_t{elapsed}"] = capture_audio_route(
+                    out, f"{elapsed}s", audio_environment)
             gpu_fault, uffd_wait = False, False
             rows = []
             for tid, item in current.items():
@@ -322,11 +382,33 @@ def main():
                 except Exception as crash_error:
                     (out / "crash-capture-error.txt").write_text(
                         repr(crash_error) + "\n")
+        if process is not None:
+            try:
+                report["host_audio_at_end"] = capture_audio_route(
+                    out, "at-end", audio_environment)
+            except Exception as audio_error:
+                (out / "audio-route-capture-error.txt").write_text(
+                    repr(audio_error) + "\n")
         report["process_alive_when_reported"] = bool(process and process.poll() is None)
         report["result"] = "OBSERVED_ALIVE" if status == 0 else "FAILED"
         report["thread_samples"] = len(samples)
         (out / "thread-samples.json").write_text(json.dumps(samples, indent=2) + "\n")
         report["console"] = summarize_log(out / "full-console.log", out)
+        c = report["console"].get("counts", {})
+        report["audio_pipeline"] = {
+            "initialization_reached": bool(c.get("guest_audio_initialized")),
+            "audio3d_init_reached": bool(c.get("audio3d_initialized")),
+            "sdl_device_open": bool(c.get("audio_sdl_device_open")),
+            "openal_device_open": bool(c.get("audio_openal_device_open")),
+            "guest_pcm_detected": bool(c.get("audio_pcm_detected") or
+                                       c.get("audio_openal_pcm_detected")),
+            "pcm_route_observations": c.get("audio_pcm_route", 0) +
+                                      c.get("audio_openal_pcm_route", 0),
+            "backend_failures": c.get("audio_sdl_failure", 0) +
+                                c.get("audio_openal_failure", 0) +
+                                c.get("audio_openal_context_failure", 0),
+            "teardown_count": c.get("audio3d_shutdown", 0),
+        }
         (out / "gameplay-result.json").write_text(json.dumps(report, indent=2) + "\n")
         print(f"GAME_REPORT={out}", flush=True)
         print(f"GAME_PROCESS_LEFT_RUNNING={report['process_alive_when_reported']}", flush=True)

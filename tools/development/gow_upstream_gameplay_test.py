@@ -83,6 +83,56 @@ class GameplayObserverTests(unittest.TestCase):
                                  if args and args[0] == "coredumpctl"))
             self.assertTrue((root / "systemd-core-gdb-stacks.txt").exists())
 
+    def test_audio_route_snapshot_has_no_mutating_actions(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            commands = []
+            def fake_run(argv, **options):
+                commands.append(argv)
+                return SimpleNamespace(returncode=0, stdout="Default Sink: test.sink\n",
+                                       stderr="")
+            with patch.object(gameplay.shutil, "which",
+                              side_effect=lambda p: "/usr/bin/" + p):
+                with patch.object(gameplay.subprocess, "run", side_effect=fake_run):
+                    result = gameplay.capture_audio_route(root, "test", {})
+            self.assertTrue((root / "host-audio-route-test.json").exists())
+            self.assertEqual(result["pactl_info"], 0)
+            self.assertTrue(commands)
+            self.assertTrue(all(args[0] in ("pactl", "wpctl") for args in commands))
+            self.assertFalse(any("set-" in part or part in ("set", "mute", "move")
+                                 for argv in commands for part in argv))
+
+    def test_audio_log_counters_preserve_pipeline_stages(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            log = root / "audio.log"
+            log.write_text(
+                "sceAudio3dInitialize: called\n"
+                "sceAudioOutInit: Audio system initialized\n"
+                "sceAudioOutOpen: opened port_type=Main\n"
+                "Opened audio device: Default Device\n"
+                "SDL audio: first non-silent PCM on port 0\n"
+                "SDL audio route: port=0, queued_bytes=4096\n", encoding="utf-8")
+            counted = gameplay.summarize_log(log, root)["counts"]
+            for marker in ("audio3d_initialized", "guest_audio_initialized",
+                           "audio_main_port", "audio_sdl_device_open",
+                           "audio_pcm_detected", "audio_pcm_route"):
+                self.assertEqual(counted[marker], 1, marker)
+
+    def test_openal_audio_pcm_marker_in_log(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            log = root / "audio-openal.log"
+            log.write_text(
+                "Initialized OpenAL backend (48000 Hz, 2 ch, float, native)\n"
+                "OpenAL audio: first non-silent PCM for device 'Default Device'\n"
+                "OpenAL audio route: device='Default Device', output_buffers=256\n",
+                encoding="utf-8")
+            counts = gameplay.summarize_log(log, root)["counts"]
+            self.assertEqual(counts["audio_openal_device_open"], 1)
+            self.assertEqual(counts["audio_openal_pcm_detected"], 1)
+            self.assertEqual(counts["audio_openal_pcm_route"], 1)
+
     def test_runtime_proc_queries_are_read_only(self):
         if not Path("/proc").is_dir():
             self.skipTest("Linux procfs not present")
