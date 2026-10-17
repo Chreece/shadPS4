@@ -6,7 +6,7 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=f408bbcf433008bf792de73c484101f3ae80cef4
+FIX=0b98948dbf7d7c072de78dd0aa90d5904ae34bd4
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
@@ -48,7 +48,7 @@ finish() {
   [[ ! -f "$OUT/base.txt" ]] || cat "$OUT/base.txt"
   [[ ! -f "$OUT/srt.txt" ]] || cat "$OUT/srt.txt"
   if [[ "$rc" != 0 ]]; then
-    for f in "$OUT/"{submodules,configure,build-base,build-srt,pm4-compile}.log; do
+    for f in "$OUT/"{compile-preflight,submodules,configure,build-base,build-srt,pm4-compile}.log; do
       [[ ! -s "$f" ]] || { echo "ERROR_TAIL=$f"; tail -18 "$f"; }
     done
   fi
@@ -63,7 +63,9 @@ echo "e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa  $PROVEN"
 sha256sum "$PROVEN" >"$OUT/proven-before.sha256"
 git -C "$OLD" cat-file -e "$FIX^{commit}"
 git -C "$OLD" merge-base --is-ancestor "$UPSTREAM" "$FIX" || { echo "UPSTREAM_ANCESTRY_FAILED"; exit 1; }
-[[ "$(git -C "$OLD" rev-list --count "$UPSTREAM..$FIX")" == 15 ]] || { echo "PINNED_COMMIT_COUNT_MISMATCH"; exit 1; }
+# Validate immutable tip and upstream ancestry rather than a brittle manual
+# commit count that changes with every source correction.
+git -C "$OLD" rev-list --count "$UPSTREAM..$FIX" >"$OUT/upstream-ahead-count.txt"
 FREE="$(df -Pk "$HOME" | awk 'END{print $4}')"
 [[ "$FREE" =~ ^[0-9]+$ ]] && (( FREE >= 2097152 )) || { echo "FREE_SSD_BELOW_2_GIB; NO_DELETION"; exit 1; }
 STAGE=ISOLATED_WORKTREE
@@ -103,6 +105,37 @@ if command -v ccache >/dev/null 2>&1; then
 else
   echo "CACHE=INCREMENTAL_CMAKE" >"$OUT/cache.txt"
   cmake -S "$SRC" -B "$BUILD" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_TESTS=OFF >"$OUT/configure.log" 2>&1
+fi
+STAGE=EARLY_SOURCE_COMPILE_CHECK
+# The already-configured GNU Make build supports compiling shadps4's own
+# translation units before the full link. This catches header/API regressions
+# without rebuilding Protobuf, SDL, FFmpeg, or Vulkan dependencies first.
+# Objects compiled here are reused by the subsequent normal CMake build.
+if [[ -f "$BUILD/CMakeFiles/shadps4.dir/build.make" ]]; then
+  MAKE_BIN="$(command -v gmake || command -v make)"
+  OBJECTS=(
+    CMakeFiles/shadps4.dir/src/core/devtools/widget/shader_list.cpp.o
+    CMakeFiles/shadps4.dir/src/video_core/page_manager.cpp.o
+    CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o
+    CMakeFiles/shadps4.dir/src/video_core/amdgpu/liverpool.cpp.o
+    CMakeFiles/shadps4.dir/src/core/cpu_id.cpp.o
+    CMakeFiles/shadps4.dir/src/core/libraries/kernel/threads/pthread.cpp.o
+    CMakeFiles/shadps4.dir/src/core/libraries/kernel/process.cpp.o
+    CMakeFiles/shadps4.dir/src/core/module.cpp.o
+    CMakeFiles/shadps4.dir/src/core/memory.cpp.o
+    CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/resource_patching_pass.cpp.o
+  )
+  for obj in "${OBJECTS[@]}"; do
+    grep -Fq "$obj:" "$BUILD/CMakeFiles/shadps4.dir/build.make" || {
+      echo "EARLY_CHECK_TARGET_MISSING=$obj; NO_COMPILATION_STARTED"; exit 1;
+    }
+  done
+  "$MAKE_BIN" -C "$BUILD" -f CMakeFiles/shadps4.dir/build.make -j4 "${OBJECTS[@]}"     >"$OUT/compile-preflight.log" 2>&1 || {
+      echo "EARLY_CHECK=FAILED"; tail -65 "$OUT/compile-preflight.log"; exit 1;
+    }
+  echo "EARLY_CHECK=PASS; NATIVE_OBJECTS_COMPILED=${#OBJECTS[@]}"
+else
+  echo "EARLY_CHECK=NO_UNIX_MAKEFILE; USING_STANDARD_CMAKE_BUILD"
 fi
 STAGE=BUILD_REBASED_CPU_UFFD_PM4
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build-base.log" 2>&1
