@@ -1059,6 +1059,9 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
     const auto adjusted_size = std::min<u64>(vma_base.size - start_in_vma, size);
     const MemoryProt old_prot = vma_base.prot;
     const MemoryProt new_prot = prot;
+    // A CarveVMA/MergeAdjacent operation may invalidate the input VMA
+    // reference. Snapshot its type before splitting or coalescing entries.
+    const VMAType type = vma_base.type;
 
     if (vma_base.type == VMAType::Free || vma_base.type == VMAType::PoolReserved) {
         // On PS4, protecting freed memory does nothing.
@@ -1076,7 +1079,9 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
     if (True(prot & MemoryProt::CpuRead)) {
         perms |= Core::MemoryPermission::Read;
     }
-    if (True(prot & MemoryProt::CpuReadWrite)) {
+    // Query the *write bit*, not the combined ReadWrite mask: a read-only
+    // mapping must never inadvertently become writable.
+    if (True(prot & MemoryProt::CpuWrite)) {
         perms |= Core::MemoryPermission::ReadWrite;
     }
     if (True(prot & MemoryProt::CpuExec)) {
@@ -1085,15 +1090,14 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
     if (True(prot & MemoryProt::GpuRead)) {
         perms |= Core::MemoryPermission::Read;
     }
+    // GPU write permissions similarly require the actual write bit; the
+    // combined ReadWrite flag also matches a GPU-read-only descriptor.
     if (True(prot & MemoryProt::GpuWrite)) {
-        perms |= Core::MemoryPermission::Write;
-    }
-    if (True(prot & MemoryProt::GpuReadWrite)) {
         perms |= Core::MemoryPermission::ReadWrite;
     }
 
-    if (vma_base.type == VMAType::Direct || vma_base.type == VMAType::Pooled ||
-        vma_base.type == VMAType::File) {
+    if (type == VMAType::Direct || type == VMAType::Pooled ||
+        type == VMAType::File) {
         // On PS4, execute permissions are hidden from direct memory and file mappings.
         // Tests show that execute permissions still apply, so handle this after reading perms.
         prot &= ~MemoryProt::CpuExec;
@@ -1105,7 +1109,7 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
     new_vma.prot = prot;
     MergeAdjacent(vma_map, new_it);
 
-    if (vma_base.type == VMAType::Reserved) {
+    if (type == VMAType::Reserved) {
         // On PS4, protections change vma_map, but don't apply.
         // Return early to avoid protecting memory that isn't mapped in address space.
         return adjusted_size;
