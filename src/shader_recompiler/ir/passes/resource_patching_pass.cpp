@@ -129,6 +129,8 @@ public:
                    desc.is_guest_indexed == existing.is_guest_indexed &&
                    desc.oversized_guest_table_probe == existing.oversized_guest_table_probe &&
                    desc.indexed_guest_entries == existing.indexed_guest_entries &&
+                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
+                   desc.indexed_descriptor_offset_bytes == existing.indexed_descriptor_offset_bytes &&
                    desc.indexed_table_fetch == existing.indexed_table_fetch;
         })};
         auto& image = image_resources[index];
@@ -424,7 +426,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     if (resource.has_indexed_table &&
         profile.supports_sampled_image_nonuniform_indexing &&
         !is_written && !inst_info.is_depth && !inst_info.is_array &&
-        !inst_info.is_gather && !inst_info.has_derivatives &&
+        !inst_info.is_gather &&
         !inst_info.has_lod && !inst_info.force_level0 &&
         !inst_info.has_lod_clamp && !inst_info.is_r128 &&
         !inst_info.is_unnormalized) {
@@ -432,22 +434,32 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp, info);
         AmdGpu::Buffer table{};
         if (table_fetch.Fetch(info.flattened_ud_buf.data(), &table) &&
-            table.Valid() && table.base_address &&
-            (table.stride == 0 || table.stride == sizeof(AmdGpu::Image))) {
+            table.Valid() && table.base_address) {
             const u64 full_size = table.stride==0
                 ? static_cast<u64>(table.num_records)
                 : static_cast<u64>(table.stride)*table.num_records;
-            const u32 entries = CompleteGuestTsharpTableEntries(
-                static_cast<u32>(table.stride),table.num_records,
-                profile.max_guest_indexed_image_entries);
+            const u32 record_stride=resource.indexed_record_stride_bytes;
+            const u32 record_offset=resource.indexed_descriptor_offset_bytes;
+            const u32 entries = record_stride != 0u
+                ? CompleteGuestTsharpRecordEntries(
+                    static_cast<u32>(table.stride),static_cast<u32>(table.num_records),
+                    record_stride,record_offset,profile.max_guest_indexed_image_entries)
+                : CompleteGuestTsharpTableEntries(
+                    static_cast<u32>(table.stride),static_cast<u32>(table.num_records),
+                    profile.max_guest_indexed_image_entries);
             if (entries != 0u) {
                 image_res.indexed_table_fetch=table_fetch;
                 image_res.indexed_guest_entries=entries;
+                image_res.indexed_record_stride_bytes=record_stride;
+                image_res.indexed_descriptor_offset_bytes=record_offset;
                 image_res.is_guest_indexed=true;
                 LOG_INFO(Render_Recompiler,
                          "RealIndexedTSharpEnabled: shader={:#x} stage={} entries={} "
-                         "stride={} full_guest_table=YES",
-                         info.pgm_hash, info.hw_stage, entries, static_cast<u32>(table.stride));
+                         "stride={} record_stride={} descriptor_offset={} "
+                         "full_guest_table=YES",
+                         info.pgm_hash, info.hw_stage, entries,
+                         static_cast<u32>(table.stride),
+                         record_stride,record_offset);
             } else {
                 // Keep the real V# pointer available for a bounded, opt-in
                 // runtime census. This does not mark the table as bound and
