@@ -37,6 +37,7 @@ struct Profile {
     bool supports_image_load_store_lod{};
     bool supports_shader_image_gather_extended{};
     bool supports_sampled_image_nonuniform_indexing{};
+    bool supports_sampler_array_nonuniform_indexing{};
     bool supports_native_cube_calc{};
     bool supports_trinary_minmax{};
     bool supports_buffer_fp32_atomic_min_max{};
