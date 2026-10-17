@@ -543,12 +543,14 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
             binding += num_bindings;
         }
         for (const auto& sampler : stage->samplers) {
+            const u32 count = sampler.NumBindings(*stage);
             bindings.push_back({
-                .binding = binding++,
+                .binding = binding,
                 .descriptorType = vk::DescriptorType::eSampler,
-                .descriptorCount = 1,
+                .descriptorCount = count,
                 .stageFlags = stage_bit,
             });
+            binding += count;
         }
     }
     sampled_image_descriptors = 0;
