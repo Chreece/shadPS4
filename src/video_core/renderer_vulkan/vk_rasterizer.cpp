@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <unordered_map>
+
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -833,8 +835,19 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             } else {
                 const u64 size = memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize());
                 if (size != vsharp.GetSize()) {
-                    LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
-                              vsharp.GetSize(), size, stage.pgm_hash);
+                    // The shader's buffer descriptor may advertise an unbounded
+                    // range. Guest mapping boundaries must still be respected,
+                    // but writing identical diagnostics on *every draw* is very
+                    // expensive with synchronous logs and does not add evidence.
+                    // Emit exponentially spaced, per-shader counts instead.
+                    static thread_local std::unordered_map<u32, u64> clamp_counts;
+                    const u64 seen = ++clamp_counts[stage.pgm_hash];
+                    if ((seen & (seen - 1)) == 0) {
+                        LOG_ERROR(Render,
+                                  "Clamped size from {} to {} for stage {:#x} "
+                                  "(seen {} times on this GPU thread)",
+                                  vsharp.GetSize(), size, stage.pgm_hash, seen);
+                    }
                 }
                 const auto [buffer, offset] = buffer_cache.ObtainBuffer(
                     vsharp.base_address, size, desc.is_written, desc.is_formatted);
