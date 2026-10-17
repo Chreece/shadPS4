@@ -10,6 +10,8 @@ using Shader::Optimization::AreContiguousIndexedSharpWords;
 using Shader::Optimization::IndexedSharpWord;
 using Shader::Optimization::IdentifyTsharpSelector;
 using Shader::Optimization::GcnTextureDwordIndex;
+using Shader::Optimization::AnalyzeFiniteIndexedImageChoices;
+using Shader::Optimization::IndexedImageChoiceKind;
 using Shader::IR::Opcode;
 struct MockInst;
 struct MockValue {
@@ -44,6 +46,39 @@ int main(){
                      {MockValue::Ref(texId),MockValue::Imm(5u)},};
     MockInst toDwords{Opcode::ShiftRightLogical32,
                       {MockValue::Ref(mulBytes),MockValue::Imm(2u)},};
+    // GPU-driven texture IDs: accept ONLY a proven two/four-value set.
+    // Arbitrary Phi, attribute, and guest-memory inputs must never be
+    // evaluated, clamped, or guessed on the CPU.
+    MockInst texMaskOne{Opcode::BitwiseAnd32,
+                        {MockValue::Ref(texId), MockValue::Imm(1u)},};
+    MockInst texMaskThree{Opcode::BitwiseAnd32,
+                          {MockValue::Imm(3u), MockValue::Ref(texId)},};
+    MockInst texMaskUnsafe{Opcode::BitwiseAnd32,
+                           {MockValue::Ref(texId), MockValue::Imm(15u)},};
+    MockInst exactSelect{Opcode::SelectU32,
+                         {MockValue::Ref(attr), MockValue::Imm(8u),
+                          MockValue::Imm(42u)},};
+    MockInst divergentSelect{Opcode::SelectU32,
+                             {MockValue::Ref(attr), MockValue::Ref(texId),
+                              MockValue::Imm(42u)},};
+    const auto two=AnalyzeFiniteIndexedImageChoices(&texMaskOne);
+    const auto four=AnalyzeFiniteIndexedImageChoices(&texMaskThree);
+    const auto selected=AnalyzeFiniteIndexedImageChoices(&exactSelect);
+    if (two.count!=2 || two.kind!=IndexedImageChoiceKind::MaskTwo ||
+        two.ids[0]!=0 || two.ids[1]!=1) return 12;
+    if (four.count!=4 || four.kind!=IndexedImageChoiceKind::MaskFour ||
+        four.ids[0]!=0 || four.ids[1]!=1 ||
+        four.ids[2]!=2 || four.ids[3]!=3) return 13;
+    if (selected.count!=2 || selected.kind!=IndexedImageChoiceKind::SelectTwo ||
+        selected.ids[0]!=8 || selected.ids[1]!=42) return 14;
+    if (AnalyzeFiniteIndexedImageChoices(&texMaskUnsafe).count ||
+        AnalyzeFiniteIndexedImageChoices(&texId).count ||
+        AnalyzeFiniteIndexedImageChoices(&divergentSelect).count ||
+        AnalyzeFiniteIndexedImageChoices(nullptr).count) return 15;
+    for (std::uint32_t id=0;id<100000u;++id) {
+        if ((id&1u)>=two.count || (id&3u)>=four.count ||
+            two.ids[id&1u]!=(id&1u) || four.ids[id&3u]!=(id&3u)) return 16;
+    }
     const auto decoding=IdentifyTsharpSelector(&toDwords);
     if(!decoding.normalized || decoding.source!=&texId ||
        decoding.descriptor_stride_words!=8u) return 8;
@@ -80,6 +115,6 @@ int main(){
     }
     std::puts("INDEXED_TSHARP_SELECTOR=PASS 100000_affine_tables "
               "real_GPU_selector=KEPT gcn_32byte_stride=EXACT "
-              "mismatched_sources=REJECTED");
+              "mismatched_sources=REJECTED finite_GPU_indices=PROVEN_100000");
     return 0;
 }
