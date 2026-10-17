@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 GAMEPLAY = Path(__file__).with_name("gow_upstream_gameplay.py")
 SPEC = importlib.util.spec_from_file_location("gow_upstream_gameplay", GAMEPLAY)
@@ -47,6 +49,39 @@ class GameplayObserverTests(unittest.TestCase):
             root = Path(dirname)
             self.assertEqual(gameplay.summarize_log(root / "missing.log", root),
                              {"console_missing": True})
+
+    def test_core_metadata_never_requires_core_dump_file(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            with patch.object(gameplay.shutil, "which", return_value=None):
+                with patch.object(gameplay.subprocess, "run") as execute:
+                    gameplay.capture_crash_metadata(1234567, root)
+                    execute.assert_not_called()
+            saved = json.loads((root / "crash-metadata.json").read_text())
+            self.assertEqual(saved["pid"], 1234567)
+            self.assertFalse(saved["coredumpctl_available"])
+
+    def test_core_capture_uses_exact_pid_without_extraction(self):
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            record = []
+            def fake_run(argv, **kwargs):
+                record.append(argv)
+                return SimpleNamespace(returncode=0, stdout="Signal: 11 (SEGV)",
+                                       stderr="")
+            def which(program):
+                return f"/usr/bin/{program}" if program in ("coredumpctl", "gdb") else None
+            with patch.object(gameplay.shutil, "which", side_effect=which):
+                with patch.object(gameplay.subprocess, "run", side_effect=fake_run):
+                    gameplay.capture_crash_metadata(888888, root)
+            self.assertEqual(len(record), 2)
+            self.assertIn("info", record[0])
+            self.assertIn("debug", record[1])
+            self.assertEqual(record[0][-1], "888888")
+            self.assertEqual(record[1][-1], "888888")
+            self.assertFalse(any("dump" in args for args in record
+                                 if args and args[0] == "coredumpctl"))
+            self.assertTrue((root / "systemd-core-gdb-stacks.txt").exists())
 
     def test_runtime_proc_queries_are_read_only(self):
         if not Path("/proc").is_dir():
