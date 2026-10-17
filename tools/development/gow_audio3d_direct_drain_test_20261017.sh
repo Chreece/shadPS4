@@ -9,6 +9,7 @@ PROVEN="$ORIGINAL_ROOT/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferr
 OBSERVER="${1:?pinned observer path required}"
 RESTORER="${2:?pinned source-preserving graphics restoration helper required}"
 SUPPORT="${3:?pinned UFFD support-file helper required}"
+LOCAL_MERGER="${4:?pinned source-preserving Audio3D merge helper required}"
 PROVEN_SHA=e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa
 # The exact fully rendered 20:59 executable is a second, immutable A/B
 # reference. Keep this binary even if the logging experiment fails.
@@ -35,6 +36,7 @@ READ_BATCH_REFERENCE_SHA=8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811
 AUDIO3D_REL="src/core/libraries/audio3d/audio3d.cpp"
 AUDIO3D_TEST_HEAD=0821f7c1d07bbe8cc3daa91e901c573b34500a98
 AUDIO3D_ORIGINAL_BLOB=b1b1445eda8823f07b4f66c07afcb175f7ee04b9
+AUDIO3D_BASE_HEAD=f909c3abb1ac1e7c8d87de833d3659f7d0b8fc87
 AUDIO3D_TEST_BLOB=3b6d5bf02ba954a4e30ce9cd063897a0046bbde0
 UFFD_DIAGNOSTIC_HEAD=52cafa79bbe97bf072c68c9214f56fc9d7a37665
 UFFD_DIAGNOSTIC_BLOB=75ede506fa3a07b01263542af320a3e90535adc4
@@ -164,7 +166,7 @@ trap 'finish $?' EXIT
 exec 9>"$LOGS/.gow-uffd-deferred-build.lock"
 flock -n 9 || { echo "ANOTHER_UFFD_BUILD_RUNNING"; exit 1; }
 [[ ( -d "$SRC/.git" || -f "$SRC/.git" ) && -d "$BUILD" ]] || { echo "EXACT_TEST_TREE_MISSING"; exit 1; }
-[[ -f "$PROVEN" && -f "$OBSERVER" && -f "$RESTORER" && -f "$SUPPORT" ]] || { echo "PROVEN_BINARY_OR_PINNED_TOOLS_MISSING"; exit 1; }
+[[ -f "$PROVEN" && -f "$OBSERVER" && -f "$RESTORER" && -f "$SUPPORT" && -f "$LOCAL_MERGER" ]] || { echo "PROVEN_BINARY_OR_PINNED_TOOLS_MISSING"; exit 1; }
 echo "$PROVEN_SHA  $PROVEN" | sha256sum -c - || { echo "PROVEN_GAMEPLAY_SHA_MISMATCH"; exit 1; }
 printf '%s  %s\n' "$FULL_GFX_SHA" "$FULL_GFX" | sha256sum -c - || {
   echo "LAST_FULL_GRAPHICS_REFERENCE_MISSING_OR_CHANGED"; exit 1;
@@ -184,7 +186,7 @@ printf '%s  %s\n' "$LAST_GOOD_SHA" "$LAST_GOOD" | sha256sum -c - || {
 printf '%s  %s\n' "$READ_BATCH_REFERENCE_SHA" "$READ_BATCH_REFERENCE" | sha256sum -c - || {
   echo "UFFD_BATCHED_READ_2314_BASELINE_CHANGED"; exit 1;
 }
-python3 -m py_compile "$OBSERVER" "$RESTORER" "$SUPPORT"
+python3 -m py_compile "$OBSERVER" "$RESTORER" "$SUPPORT" "$LOCAL_MERGER"
 [[ "$SRC" != "$ORIGINAL_SRC" ]] && [[ "$BUILD" != "$ORIGINAL_ROOT/build" ]] || { echo "UNSAFE_BUILD_TARGET_EQUALS_PROVEN"; exit 1; }
 [[ -f "$BUILD/shadps4" && ! -L "$BUILD/shadps4" ]] || {
   echo "ORIGINAL_BUILD_TARGET_MISSING_OR_SYMLINKED; REFUSING_TO_REPLACE"; exit 1;
@@ -519,34 +521,53 @@ grep -Fq "UFFD_BATCH_READ_HOST_CONTRACT=PASS cases=3" "$OUT/uffd-batch-test.log"
 }
 cat "$OUT/uffd-batch-test.log"
 echo "UFFD_BATCH_HOST_TEST=PASS; OPT_IN_ONLY; EXACT_DELIVERY_ORDER"
-# Do not replace Audio3D from a different branch; the source must exactly
-# match the one used by the known working 23:14 emulator binary.
-STAGE=STAGE_AUDIO3D_EXACT_SOURCE
+# Merge into the user's actual proven local source. The GitHub reference is
+# only a three-way merge base; NEVER overwrite a differing local HLE file.
+STAGE=STAGE_AUDIO3D_PRESERVE_LOCAL_MERGE
 [[ -f "$ORIGINAL_SRC/$AUDIO3D_REL" && -f "$SRC/$AUDIO3D_REL" &&
     ! -L "$ORIGINAL_SRC/$AUDIO3D_REL" && ! -L "$SRC/$AUDIO3D_REL" ]] || {
   echo "AUDIO3D_SOURCE_UNSAFE"; exit 1;
 }
-[[ "$(git -C "$ORIGINAL_SRC" hash-object "$ORIGINAL_SRC/$AUDIO3D_REL")" == "$AUDIO3D_ORIGINAL_BLOB" ]] || {
-  echo "ORIGINAL_AUDIO3D_SOURCE_CHANGED; WILL_NOT_OVERWRITE"; exit 1;
+cmp -s "$ORIGINAL_SRC/$AUDIO3D_REL" "$SRC/$AUDIO3D_REL" || {
+  echo "AUDIO3D_ISOLATED_NOT_STAGED_FROM_REAL_LOCAL_SOURCE"; exit 1;
 }
-[[ "$(git -C "$ORIGINAL_SRC" hash-object "$SRC/$AUDIO3D_REL")" == "$AUDIO3D_ORIGINAL_BLOB" ]] || {
-  echo "STAGED_AUDIO3D_SOURCE_CHANGED; WILL_NOT_OVERWRITE"; exit 1;
+LOCAL_AUDIO3D_SHA="$(sha256sum "$ORIGINAL_SRC/$AUDIO3D_REL" | cut -d' ' -f1)"
+echo "LOCAL_PROVEN_AUDIO3D_SHA256=$LOCAL_AUDIO3D_SHA" | tee "$OUT/audio3d-local-source-fingerprint.txt"
+[[ "$(git -C "$ORIGINAL_SRC" rev-parse "$AUDIO3D_BASE_HEAD:$AUDIO3D_REL")" == "$AUDIO3D_ORIGINAL_BLOB" ]] || {
+  echo "PINNED_AUDIO3D_REFERENCE_BASE_MISMATCH"; exit 1;
 }
 [[ "$(git -C "$ORIGINAL_SRC" rev-parse "$AUDIO3D_TEST_HEAD:$AUDIO3D_REL")" == "$AUDIO3D_TEST_BLOB" ]] || {
-  echo "AUDIO3D_EXPERIMENT_HEAD_DOES_NOT_MATCH_GIT_BLOB"; exit 1;
+  echo "PINNED_AUDIO3D_REFERENCE_TRIAL_MISMATCH"; exit 1;
 }
-git -C "$ORIGINAL_SRC" show "$AUDIO3D_TEST_HEAD:$AUDIO3D_REL" > "$OUT/pinned-audio3d.cpp"
-[[ "$(git -C "$ORIGINAL_SRC" hash-object "$OUT/pinned-audio3d.cpp")" == "$AUDIO3D_TEST_BLOB" ]] || {
-  echo "AUDIO3D_EXPERIMENT_STAGING_MISMATCH"; exit 1;
+git -C "$ORIGINAL_SRC" show "$AUDIO3D_BASE_HEAD:$AUDIO3D_REL" > "$OUT/pinned-audio3d-github-base.cpp"
+git -C "$ORIGINAL_SRC" show "$AUDIO3D_TEST_HEAD:$AUDIO3D_REL" > "$OUT/pinned-audio3d-github-trial.cpp"
+[[ "$(git -C "$ORIGINAL_SRC" hash-object "$OUT/pinned-audio3d-github-base.cpp")" == "$AUDIO3D_ORIGINAL_BLOB" &&
+    "$(git -C "$ORIGINAL_SRC" hash-object "$OUT/pinned-audio3d-github-trial.cpp")" == "$AUDIO3D_TEST_BLOB" ]] || {
+  echo "REFERENCE_AUDIO3D_BLOBS_CORRUPTED"; exit 1;
 }
-grep -Fq 'SHADPS4_AUDIO3D_DIRECT_DRAIN' "$OUT/pinned-audio3d.cpp"
-grep -Fq 'AUDIO3D_ASSOC operation=' "$OUT/pinned-audio3d.cpp"
-cp -p "$OUT/pinned-audio3d.cpp" "$SRC/$AUDIO3D_REL"
+python3 -B "$LOCAL_MERGER" \
+  "$ORIGINAL_SRC/$AUDIO3D_REL" \
+  "$OUT/pinned-audio3d-github-base.cpp" \
+  "$OUT/pinned-audio3d-github-trial.cpp" \
+  "$ORIGINAL_SRC/src/core/libraries/audio3d/audio3d.h" \
+  "$OUT/merged-audio3d.cpp" \
+  "$OUT/audio3d-local-merge-manifest.json" > "$OUT/audio3d-merge.log" 2>&1 || {
+  echo "AUDIO3D_LOCAL_SOURCE_CANNOT_BE_SAFELY_MERGED; NO_BUILD"
+  cat "$OUT/audio3d-merge.log"
+  exit 1
+}
+cat "$OUT/audio3d-merge.log"
+[[ "$(sha256sum "$ORIGINAL_SRC/$AUDIO3D_REL" | cut -d' ' -f1)" == "$LOCAL_AUDIO3D_SHA" ]] || {
+  echo "LOCAL_PROVEN_AUDIO3D_CHANGED_DURING_MERGE"; exit 1;
+}
+grep -Fq 'SHADPS4_AUDIO3D_DIRECT_DRAIN' "$OUT/merged-audio3d.cpp"
+grep -Fq 'AUDIO3D_ASSOC operation=' "$OUT/merged-audio3d.cpp"
+cp -p "$OUT/merged-audio3d.cpp" "$SRC/$AUDIO3D_REL"
 touch -m "$SRC/$AUDIO3D_REL"
-[[ "$(git -C "$ORIGINAL_SRC" hash-object "$SRC/$AUDIO3D_REL")" == "$AUDIO3D_TEST_BLOB" ]] || {
-  echo "AUDIO3D_STAGE_SOURCE_COPY_FAILED"; exit 1;
+cmp -s "$OUT/merged-audio3d.cpp" "$SRC/$AUDIO3D_REL" || {
+  echo "MERGED_AUDIO3D_STAGE_COPY_CORRUPTED"; exit 1;
 }
-echo "AUDIO3D_SOURCE_EXACTLY_REBASED_AND_STAGED=PASS"
+echo "LOCAL_AUDIO3D_CHANGES_PRESERVED=PASS; OPT_IN_HLE_ONLY=PASS"
 
 grep -Fq 'if (!outer_only_pacing)' "$SRC/src/core/libraries/audio/sdl_audio_out.cpp"
 grep -Fq 'AUDIO_SDL_TIMING' "$SRC/src/core/libraries/audio/sdl_audio_out.cpp"
@@ -628,7 +649,7 @@ echo "AUDIO_MULTI_PORT_DRAIN_LOCK_ORDER=CORRECTED; GUEST_SUBMISSION_CENSUS=ENABL
 echo "UFFD_PROBE=READ_ONLY; GUEST_AUDIO_FAULTING_THREADS_AND_CPU_WAIT_LATENCY=CAPTURED"
 echo "GUEST_AUDIO_BUFFER_MONITORING=ENABLED; AUDIO_CONFIG_UNCHANGED"
 [[ -f "$OBSERVER" ]] || { echo "OBSERVER_MISSING"; exit 1; }
-python3 -m py_compile "$OBSERVER" "$RESTORER" "$SUPPORT"
+python3 -m py_compile "$OBSERVER" "$RESTORER" "$SUPPORT" "$LOCAL_MERGER"
 if [[ -z "$(printenv DISPLAY || true)" ]]; then export DISPLAY=:0; fi
 if [[ -z "$(printenv XDG_RUNTIME_DIR || true)" ]]; then export XDG_RUNTIME_DIR="/run/user/$(id -u)"; fi
 if [[ -z "$(printenv DBUS_SESSION_BUS_ADDRESS || true)" ]]; then export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"; fi
