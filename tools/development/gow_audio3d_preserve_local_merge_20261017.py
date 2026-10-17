@@ -195,7 +195,7 @@ def anchored_add_only_overlay(local: str, base: str, trial: str) -> str:
     ret = "return ORBIS_AUDIO3D_ERROR_NOT_READY;"
     require(trial_output.count(limit) == trial_output.count(ret) == 1,
             "PINNED_AUDIO3D_BACKPRESSURE_HUNK_CHANGED")
-    added_full = trial_output.split(limit, 1)[1].split(ret, 1)[0]
+    added_full = trial_output.split(limit, 1)[1].split(ret, 1)[0].rstrip(" \t")
     require('ReportAssociatedAudio(handle, "full"' in added_full,
             "PINNED_BACKPRESSURE_COUNT_MISSING")
     value = scope_add(value, "associated_pcm_enqueue", limit, limit + added_full)
