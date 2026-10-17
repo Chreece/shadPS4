@@ -288,6 +288,22 @@ touch -m "$SRC/$LOG_REL"
 }
 echo "GRAPHICS_RENDERER_AND_SUPPORT_SOURCES_RETAINED_AND_UFFD_PORTED=PASS"
 echo "RUNTIME_LOG_FILTER_FEATURE=STAGED; DEFAULT_LOGGING_UNCHANGED=YES"
+# Verify that all five source files which affect gameplay match the
+# graphics-correct 20:59 build. Changing image tracking or GPU code is forbidden
+# in this log-overhead isolation experiment.
+while read -r expected file; do
+  printf '%s  %s\n' "$expected" "$SRC/$file" | sha256sum -c - > "$OUT/verified-$(basename "$file").txt" || {
+    echo "SOURCE_MISMATCH_FROM_WORKING_2059_BUILD=$file"; exit 1;
+  }
+done <<'PROVEN_FULL_GRAPHICS_SOURCE'
+bde3553d3c495fff2f34f177982a8f19e7a71542981d5c5194e8032e78328d0a src/video_core/renderer_vulkan/vk_rasterizer.cpp
+8ddd21535bd66135f98fe8a855528e2e409048873a0fdcc41bcc5312f929ce21 src/video_core/page_manager.cpp
+12ae19b6effe8e020e9c5a1f47b886dbc790818d1610566be6c28facd572f62e src/core/libraries/gnmdriver/gnmdriver.cpp
+f5a661ef28f7b00b5c513da33897a31487990a55f2646f2bb4cab7883c4c7511 src/video_core/page_manager.h
+889759b700915f2076ee95ce4af50c5fc8c0c90fee5901c03ec73bff1b165992 src/video_core/renderer_vulkan/vk_rasterizer.h
+PROVEN_FULL_GRAPHICS_SOURCE
+echo "SOURCE_MATCHES_GRAPHICS_CORRECT_2059_CANDIDATE=PASS"
+
 # Compile all touched production translation units independently BEFORE the
 # expensive full link. This catches active BufferCache ABI drift at once.
 STAGE=EARLY_UFFD_RENDERER_COMPILE
@@ -314,21 +330,6 @@ for obj in "${EARLY_OBJECTS[@]}"; do
     echo "NATIVE_OBJECT_NOT_RECOMPILED=$obj"; exit 1;
   }
 done
-# Verify that all five source files which affect gameplay match the
-# graphics-correct 20:59 build. Changing image tracking or GPU code is forbidden
-# in this log-overhead isolation experiment.
-while read -r expected file; do
-  printf '%s  %s\n' "$expected" "$SRC/$file" | sha256sum -c - > "$OUT/verified-$(basename "$file").txt" || {
-    echo "SOURCE_MISMATCH_FROM_WORKING_2059_BUILD=$file"; exit 1;
-  }
-done <<'PROVEN_FULL_GRAPHICS_SOURCE'
-bde3553d3c495fff2f34f177982a8f19e7a71542981d5c5194e8032e78328d0a src/video_core/renderer_vulkan/vk_rasterizer.cpp
-8ddd21535bd66135f98fe8a855528e2e409048873a0fdcc41bcc5312f929ce21 src/video_core/page_manager.cpp
-12ae19b6effe8e020e9c5a1f47b886dbc790818d1610566be6c28facd572f62e src/core/libraries/gnmdriver/gnmdriver.cpp
-f5a661ef28f7b00b5c513da33897a31487990a55f2646f2bb4cab7883c4c7511 src/video_core/page_manager.h
-889759b700915f2076ee95ce4af50c5fc8c0c90fee5901c03ec73bff1b165992 src/video_core/renderer_vulkan/vk_rasterizer.h
-PROVEN_FULL_GRAPHICS_SOURCE
-echo "SOURCE_MATCHES_GRAPHICS_CORRECT_2059_CANDIDATE=PASS"
 echo "NATIVE_UFFD_RENDERER_GNMD_LOGGER_CPP_ABI_PREFLIGHT=PASS"
 echo "PINNED_SOURCE_REPLAY=PASS; BUILD_START=YES"
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build.log" 2>&1
