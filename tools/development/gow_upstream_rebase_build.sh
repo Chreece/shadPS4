@@ -6,7 +6,7 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=0b98948dbf7d7c072de78dd0aa90d5904ae34bd4
+FIX=f84c1fe4fbf571811d69f862f5ba74f4d662930c
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
@@ -48,7 +48,7 @@ finish() {
   [[ ! -f "$OUT/base.txt" ]] || cat "$OUT/base.txt"
   [[ ! -f "$OUT/srt.txt" ]] || cat "$OUT/srt.txt"
   if [[ "$rc" != 0 ]]; then
-    for f in "$OUT/"{compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile}.log; do
+    for f in "$OUT/"{source-contract,compile-page-manager,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile}.log; do
       [[ ! -s "$f" ]] || { echo "ERROR_TAIL=$f"; tail -18 "$f"; }
     done
   fi
@@ -90,6 +90,14 @@ fi
   echo "ISOLATED_WORKTREE_ADVANCE_FAILED"; exit 1;
 }
 echo "REBASE_WORKTREE_FAST_FORWARD=PASS; OLD=$PREVIOUS_HEAD; NEW=$FIX" | tee "$OUT/worktree-advance.txt"
+STAGE=SOURCE_CONTRACT_PREFLIGHT
+python3 "$SRC/tools/development/gow_upstream_source_contract.py" "$SRC" \
+  >"$OUT/source-contract.log" 2>&1 || {
+    echo "SOURCE_CONTRACT=FAILED"
+    cat "$OUT/source-contract.log"
+    exit 1
+  }
+cat "$OUT/source-contract.log"
 git -C "$SRC" -c http.version=HTTP/1.1 submodule update --init --recursive --jobs 4 >"$OUT/submodules.log" 2>&1
 echo "UPSTREAM_MAIN=$UPSTREAM" >"$OUT/commits.txt"
 echo "NATIVE_FIX_COMMIT=$FIX" >>"$OUT/commits.txt"
@@ -130,7 +138,20 @@ if [[ -f "$BUILD/CMakeFiles/shadps4.dir/build.make" ]]; then
       echo "EARLY_CHECK_TARGET_MISSING=$obj; NO_COMPILATION_STARTED"; exit 1;
     }
   done
-  "$MAKE_BIN" -C "$BUILD" -f CMakeFiles/shadps4.dir/build.make -j4 "${OBJECTS[@]}"     >"$OUT/compile-preflight.log" 2>&1 || {
+  STAGE=PAGE_MANAGER_COMPILE_CHECK
+  # Compile the previously failing translation unit by itself first.
+  # On success it becomes an up-to-date object reused by the wider preflight.
+  "$MAKE_BIN" -C "$BUILD" -f CMakeFiles/shadps4.dir/build.make \
+    CMakeFiles/shadps4.dir/src/video_core/page_manager.cpp.o \
+    >"$OUT/compile-page-manager.log" 2>&1 || {
+    echo "PAGE_MANAGER_COMPILE_CHECK=FAILED"
+    tail -65 "$OUT/compile-page-manager.log"
+    exit 1
+  }
+  echo "PAGE_MANAGER_COMPILE_CHECK=PASS"
+  STAGE=EARLY_SOURCE_COMPILE_CHECK
+  "$MAKE_BIN" -C "$BUILD" -f CMakeFiles/shadps4.dir/build.make -j4 "${OBJECTS[@]}" \
+    >"$OUT/compile-preflight.log" 2>&1 || {
       echo "EARLY_CHECK=FAILED"; tail -65 "$OUT/compile-preflight.log"; exit 1;
     }
   echo "EARLY_CHECK=PASS; NATIVE_OBJECTS_COMPILED=${#OBJECTS[@]}"
