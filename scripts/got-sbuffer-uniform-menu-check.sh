@@ -131,6 +131,37 @@ command -v c++ >/dev/null
 command -v ninja >/dev/null
 command -v xdpyinfo >/dev/null
 command -v import >/dev/null
+# Shader opcodes.h includes magic_enum AND fmt. Resolve both vendored header
+# roots before modifying any test source: -Isrc alone is insufficient.
+MAGIC_ENUM_INC=""
+for dir in "$SOURCE/externals/magic_enum/include" "$SOURCE/externals/magic_enum"; do
+    if [ -f "$dir/magic_enum/magic_enum.hpp" ]; then
+        MAGIC_ENUM_INC="$dir"
+        break
+    fi
+done
+FMT_INC=""
+for dir in "$SOURCE/externals/fmt/include" "$SOURCE/externals/fmt"; do
+    if [ -f "$dir/fmt/format.h" ]; then
+        FMT_INC="$dir"
+        break
+    fi
+done
+XBYAK_INC=""
+for dir in "$SOURCE/externals/xbyak" "$SOURCE/externals/xbyak/include"; do
+    if [ -f "$dir/xbyak/xbyak.h" ]; then
+        XBYAK_INC="$dir"
+        break
+    fi
+done
+if [ -z "$MAGIC_ENUM_INC" ] || [ -z "$FMT_INC" ] || [ -z "$XBYAK_INC" ]; then
+    echo "VENDORED_INCLUDE_PREFLIGHT_FAILED magic_enum=$MAGIC_ENUM_INC fmt=$FMT_INC xbyak=$XBYAK_INC"
+    STATUS="VENDORED_INCLUDE_PREFLIGHT_FAILED"
+    exit 2
+fi
+printf 'MAGIC_ENUM_INC=%s\nFMT_INC=%s\nXBYAK_INC=%s\n' \
+    "$MAGIC_ENUM_INC" "$FMT_INC" "$XBYAK_INC" > "$RUN/info/host-include-paths.txt"
+echo "VENDORED_HEADERS=VERIFIED"
 test "$(git -C "$SOURCE" rev-parse HEAD)" = "$BASE" || {
     echo "BASELINE_SOURCE_CHANGED_REFUSE_TO_COMPARE"
     exit 2
@@ -365,7 +396,8 @@ OVERLAY_APPLIED=1
 # Host-only uniformity test covers divergent descriptor metadata and address/index negatives.
 git -C "$SOURCE" show "$CANDIDATE:tests/shader_recompiler/test_srt_uniformity.cpp" \
     > "$RUN/tmp/test_srt_uniformity.cpp"
-c++ -std=c++23 -O2 -I"$SOURCE/src" "$RUN/tmp/test_srt_uniformity.cpp" \
+c++ -std=c++23 -O2 -I"$SOURCE/src" -I"$MAGIC_ENUM_INC" -I"$FMT_INC" \
+    "$RUN/tmp/test_srt_uniformity.cpp" \
     -o "$RUN/info/test-srt-uniformity" >"$RUN/info/srt-uniformity-build.log" 2>&1 || {
         tail -90 "$RUN/info/srt-uniformity-build.log"; STATUS="SRT_HOST_TEST_BUILD_FAILED"; exit 2;
     }
@@ -374,7 +406,7 @@ c++ -std=c++23 -O2 -I"$SOURCE/src" "$RUN/tmp/test_srt_uniformity.cpp" \
 # reference calculation. Use the exact vendored xbyak headers from this build.
 git -C "$SOURCE" show "$CANDIDATE:tests/shader_recompiler/test_srt_sbuffer_emitter.cpp" \
     > "$RUN/tmp/test_srt_sbuffer_emitter.cpp"
-c++ -std=c++23 -O2 -I"$SOURCE/src" -I"$SOURCE/externals/xbyak" \
+c++ -std=c++23 -O2 -I"$SOURCE/src" -I"$XBYAK_INC" \
     "$RUN/tmp/test_srt_sbuffer_emitter.cpp" \
     -o "$RUN/info/test-sbuffer-emitter" >"$RUN/info/sbuffer-emitter-build.log" 2>&1 || {
         tail -100 "$RUN/info/sbuffer-emitter-build.log"; STATUS="SBUFFER_XBYAK_BUILD_FAILED"; exit 2;
