@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -171,6 +172,20 @@ static void AudioOutputThread(std::shared_ptr<PortOut> port, const std::stop_tok
     Common::AccurateTimer timer(
         std::chrono::nanoseconds(1000000000ULL * port->buffer_frames / port->sample_rate));
 
+    // This clock is independent of SDL's backend clock. A throttled GPU/guest
+    // can leave ready buffers empty; measure this without altering guest
+    // sceAudioOutOutput wakeups, scheduling, or the mutex ownership.
+    const char* probe_env = std::getenv("SHADPS4_AUDIO_TIMING_PROBE");
+    const bool probe_enabled =
+        probe_env != nullptr && probe_env[0] == '1' && probe_env[1] == '\0';
+    const u64 expected_period_us =
+        (1000000ULL * port->buffer_frames + port->sample_rate / 2) / port->sample_rate;
+    u64 last_probe_report_us = Kernel::sceKernelGetProcessTime();
+    u64 submitted_buffers = 0;
+    u64 missing_buffers = 0;
+    u64 backend_blocked_periods = 0;
+    u64 longest_backend_us = 0;
+
     while (true) {
         timer.Start();
 
@@ -181,14 +196,46 @@ static void AudioOutputThread(std::shared_ptr<PortOut> port, const std::stop_tok
             }
 
             if (port->output_ready) {
+                const u64 begin_us =
+                    probe_enabled ? Kernel::sceKernelGetProcessTime() : 0;
                 port->impl->Output(port->output_buffer);
+                if (probe_enabled) {
+                    ++submitted_buffers;
+                    const u64 end_us = Kernel::sceKernelGetProcessTime();
+                    const u64 duration_us = end_us >= begin_us ? end_us - begin_us : 0;
+                    longest_backend_us = std::max(longest_backend_us, duration_us);
+                    if (duration_us >= expected_period_us) {
+                        ++backend_blocked_periods;
+                    }
+                }
                 port->output_ready = false;
                 port->last_output_time =
                     Kernel::sceKernelGetProcessTime(); // moved from sceAudioOutOutput TOOD recheck
+            } else if (probe_enabled) {
+                ++missing_buffers;
             }
         }
 
         port->output_cv.notify_all();
+
+        if (probe_enabled) {
+            const u64 now_us = Kernel::sceKernelGetProcessTime();
+            if (now_us >= last_probe_report_us &&
+                now_us - last_probe_report_us >= 5'000'000) {
+                LOG_WARNING(Lib_AudioOut,
+                            "AUDIO_PRODUCER_TIMING port={} period_us={} "
+                            "ready={} no_guest_buffer={} backend_over_period={} "
+                            "max_backend_us={}",
+                            static_cast<int>(port->type), expected_period_us,
+                            submitted_buffers, missing_buffers,
+                            backend_blocked_periods, longest_backend_us);
+                last_probe_report_us = now_us;
+                submitted_buffers = 0;
+                missing_buffers = 0;
+                backend_blocked_periods = 0;
+                longest_backend_us = 0;
+            }
+        }
 
         if (stop.stop_requested()) {
             break;
