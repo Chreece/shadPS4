@@ -168,19 +168,19 @@ BINBACK=1
 sha256sum "${FILES[@]/#/$SRC/}" >"$OUT/before-source-sha256.txt"
 # The one-paste launcher already fetched the pinned changes. Avoid
 # repeating a network operation when both immutable commits are present.
-if git -C "$SRC" cat-file -e "$BASE^{commit}" 2>/dev/null &&
-   git -C "$SRC" cat-file -e "$HEAD^{commit}" 2>/dev/null; then
+if git -C "$ORIGINAL_SRC" cat-file -e "$BASE^{commit}" 2>/dev/null &&
+   git -C "$ORIGINAL_SRC" cat-file -e "$HEAD^{commit}" 2>/dev/null; then
   echo "PINNED_EMULATOR_COMMITS=LOCAL"
 else
   echo "FETCHING_PINNED_GENERAL_EMULATOR_FIX=$HEAD"
-  git -C "$SRC" -c http.version=HTTP/1.1 fetch --quiet --no-tags "$REMOTE" "$REF" >"$OUT/fetch.log" 2>&1
-  git -C "$SRC" cat-file -e "$BASE^{commit}"
-  git -C "$SRC" cat-file -e "$HEAD^{commit}"
+  git -C "$ORIGINAL_SRC" -c http.version=HTTP/1.1 fetch --quiet --no-tags "$REMOTE" "$REF" >"$OUT/fetch.log" 2>&1
+  git -C "$ORIGINAL_SRC" cat-file -e "$BASE^{commit}"
+  git -C "$ORIGINAL_SRC" cat-file -e "$HEAD^{commit}"
 fi
-git -C "$SRC" merge-base --is-ancestor "$BASE" "$HEAD" || {
+git -C "$ORIGINAL_SRC" merge-base --is-ancestor "$BASE" "$HEAD" || {
   echo "FIX_IS_NOT_DESCENDANT_OF_PINNED_BASE"; exit 1;
 }
-git -C "$SRC" diff "$BASE" "$HEAD" -- "${FILES[@]}" >"$OUT/deferred-fix.patch"
+git -C "$ORIGINAL_SRC" diff "$BASE" "$HEAD" -- "${FILES[@]}" >"$OUT/deferred-fix.patch"
 [[ -s "$OUT/deferred-fix.patch" ]] || { echo "EMPTY_PATCH"; exit 1; }
 git -C "$SRC" apply --check "$OUT/deferred-fix.patch" >"$OUT/apply-check.log" 2>&1 || { echo "PATCH_CONTEXT_MISMATCH"; cat "$OUT/apply-check.log"; exit 1; }
 git -C "$SRC" apply "$OUT/deferred-fix.patch"
