@@ -36,6 +36,18 @@ command -v cmake >/dev/null
 command -v python3 >/dev/null
 command -v c++ >/dev/null
 command -v tar >/dev/null
+# Fail before manipulating even the isolated test source when any inline
+# Python module in this runner has a syntax error.
+python3 - "$0" <<'PREFLIGHT_PYTHON'
+import ast, pathlib, sys
+s=pathlib.Path(sys.argv[1]).read_text()
+for marker in ("CHECK", "RESTORE_GIT_METADATA", "PATCH", "PROFILE", "REPORT"):
+    head="<<'"+marker+"'\n"
+    assert s.count(head)==1 and s.count("\n"+marker+"\n")==1, f"HEREDOC_MARKER_ERROR:{marker}"
+    block=s.split(head,1)[1].split("\n"+marker+"\n",1)[0]
+    ast.parse(block,filename=marker)
+print("ALL_FIVE_INLINE_PYTHON_BLOCKS=SYNTAX_PASS")
+PREFLIGHT_PYTHON
 VKR="src/video_core/renderer_vulkan/vk_rasterizer.cpp"
 python3 - "$OLD/$VKR" <<'CHECK'
 import sys
@@ -266,6 +278,19 @@ if :; then
         }
     fi
 fi
+# The previous run stopped at 29% because OpenAL Soft's version_witness
+# depended on a malformed isolated Git path. Build this exact target FIRST,
+# before starting the full compiler workload.
+STAGE=OPENAL_VERSION_WITNESS
+cmake --build "$BUILD" --target alsoft.build_version --parallel 2 > "$OUT/openal-version-build.log" 2>&1 || {
+    echo "OPENAL_VERSION_WITNESS_BUILD=FAILED"
+    tail -90 "$OUT/openal-version-build.log"
+    exit 2
+}
+[[ -f "$BUILD/externals/openal-soft/version_witness.txt" ]] || {
+    echo "OPENAL_VERSION_WITNESS_MISSING_AFTER_SUCCESS"; exit 2;
+}
+echo "OPENAL_VERSION_WITNESS_BUILD=PASS"
 STAGE=ISOLATED_BUILD
 echo "BUILDING_ISOLATED_CANDIDATE=YES; PROVEN_BINARY=NOT_MODIFIED"
 cmake --build "$BUILD" --target shadps4 --parallel 4 > "$OUT/build.log" 2>&1 || {
