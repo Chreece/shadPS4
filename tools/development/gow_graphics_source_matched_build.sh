@@ -120,8 +120,8 @@ python3 - "$SRC" "$OUT" <<'PY'
 import sys, pathlib, hashlib, difflib
 src, out = map(pathlib.Path, sys.argv[1:3])
 spec = {
- "src/video_core/amdgpu/liverpool.cpp": ("c716de99719c2b9960de453ca5703e0decd2e2150577a5e3d103eab190db98da", "1b5090872a27697517c77d10032c0edc01ad89e607927d43b70c41b0bf76e659"),
- "src/video_core/renderer_vulkan/vk_rasterizer.cpp": ("dd2a54cb630d118ea273fc92ac90af611ac2b84e9ec2cca7e65c357101818f58", "7f686d84c3f273506dd6c2752e72a21f74b97370286bef5ae34dc253070e2e58"),
+ "src/video_core/amdgpu/liverpool.cpp": ("c716de99719c2b9960de453ca5703e0decd2e2150577a5e3d103eab190db98da", "37a6212d3e5682c2b535e71d778e09683a11bac6c5fd9be96e3deff735b71e85"),
+ "src/video_core/renderer_vulkan/vk_rasterizer.cpp": ("dd2a54cb630d118ea273fc92ac90af611ac2b84e9ec2cca7e65c357101818f58", "7a35c8544451b2babebc149a65a9409e7928faa7b772e4aec58ada02b4706f82"),
  "src/shader_recompiler/ir/passes/resource_patching_pass.cpp": ("f20a0753f49fe7da02a3beef5f3365ee96bb031528a2447c21f14e7cd329120c", "47c876c014da5586becd297653e2e77ae030804d4cd9b53dda40296d49c1b85b"),
 }
 def once(s,a,b,label):
