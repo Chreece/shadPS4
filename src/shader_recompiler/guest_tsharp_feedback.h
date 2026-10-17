@@ -15,6 +15,16 @@ inline constexpr std::uint32_t GuestTsharpFeedbackWordCount =
 inline constexpr std::uint32_t GuestTsharpFeedbackBytes =
     GuestTsharpFeedbackWordCount * sizeof(std::uint32_t);
 
+// Snapshot only after a shader with the GPU bitset is actually bound.
+// Guest PM4 fence counts before that event cannot contain any texture IDs.
+// At most three GPU waits are performed during this opt-in capture.
+[[nodiscard]] constexpr bool ShouldSnapshotGuestTsharpFeedback(
+    std::uint32_t guest_fences_since_first_bind) noexcept {
+    return guest_fences_since_first_bind == 8u ||
+           guest_fences_since_first_bind == 512u ||
+           guest_fences_since_first_bind == 8192u;
+}
+
 [[nodiscard]] constexpr std::uint32_t GuestTsharpFeedbackClampedId(
     std::uint32_t gpu_id) noexcept {
     return gpu_id < GuestTsharpFeedbackOverflowId
