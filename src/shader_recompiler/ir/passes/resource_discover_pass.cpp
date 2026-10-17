@@ -3,6 +3,8 @@
 
 #include <array>
 #include <cstdlib>
+#include <cstdint>
+#include <cstdlib>
 #include <algorithm>
 #include <span>
 #include <unordered_map>
@@ -12,6 +14,8 @@
 #include "shader_recompiler/ir/passes/image_phi_preflight.h"
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/passes/ir_passes.h"
+#include "shader_recompiler/ir/passes/indexed_image_selector.h"
+#include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 #include "shader_recompiler/ir/passes/resource_pass.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
@@ -775,6 +779,147 @@ static bool SplitImageSampleBySharpPhi(IR::Block& block, IR::Inst& inst,
     return true;
 }
 
+// Dynamic T#/S# tables need a GPU-selected descriptor binding. Before a
+// general bindless table is available, one exact and semantically safe case
+// can be lowered with ordinary Vulkan bindings: a shader SelectU32 choosing
+// between TWO constant descriptor indices into the SAME genuine scalar table.
+// We sample both real guest descriptors and select the result using the
+// original GPU condition. This is the same bounded read-only strategy as
+// SplitImageSampleBySharpPhi, but addresses a Phi/Select in the *index* of
+// eight ReadConstBuffer producers (rather than in descriptor words).
+//
+// Attribute- or loop-dependent selectors whose possible indices cannot be
+// proven are never replaced by CPU guesses. They remain on the original
+// code path for eventual indexed Vulkan resource tables.
+struct IndexedImageTableSource {
+    const IR::Inst* buffer{};
+    const IR::Inst* selector{};
+    std::array<const IR::Inst*, 8> words{};
+    std::array<u32, 8> addends{};
+    bool contiguous{};
+};
+
+static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) {
+    IndexedImageTableSource out{};
+    if (sample.GetOpcode()!=IR::Opcode::ImageSampleRaw) return out;
+    const auto* const image=sample.Arg(0).TryInst();
+    if (!image || image->GetOpcode()!=IR::Opcode::ImageHandle) return out;
+    const auto* const low=image->Arg(0).TryInst();
+    const auto* const high=image->Arg(1).TryInst();
+    if (!low || !high || low->NumArgs()!=4 || high->NumArgs()!=4) return out;
+    std::array<IndexedSharpWord,8> normalized{};
+    for (std::size_t i=0;i<8;++i) {
+        const auto* const read=(i<4?low->Arg(i):high->Arg(i-4)).TryInst();
+        if (!read || read->GetOpcode()!=IR::Opcode::ReadConstBuffer) return out;
+        const auto* const buffer=read->Arg(0).TryInst();
+        if (!buffer || buffer->GetOpcode()!=IR::Opcode::CompositeConstructU32x4) {
+            return out;
+        }
+        if (i==0) out.buffer=buffer;
+        else if (out.buffer!=buffer) return out; // exact same guest S#
+        out.words[i]=read;
+        normalized[i]=AnalyzeIndexedSharpWord(read->Arg(1));
+        if (!normalized[i].valid) return out;
+        out.addends[i]=normalized[i].addend;
+    }
+    const auto* const selector=static_cast<const IR::Inst*>(normalized[0].selector);
+    if (!selector || !AreContiguousIndexedSharpWords(normalized)) return out;
+    out.selector=selector;
+    out.contiguous=true;
+    return out;
+}
+
+static bool IndexedImageAuditEnabled(u64 hash) {
+    static const bool enabled=[] {
+        const char* const v=std::getenv("SHADPS4_INDEXED_IMAGE_AUDIT");
+        return v && v[0]=='1' && v[1]=='\0';
+    }();
+    if (!enabled) return false;
+    static const auto filter=VideoCore::Diagnostics::ParseShaderAuditHashFilter(
+        std::getenv("SHADPS4_INDEXED_IMAGE_AUDIT_HASHES"));
+    return !filter.enabled || (filter.valid && filter.Matches(hash));
+}
+
+static bool SplitImageSampleByIndexedSelect(IR::Block& block, IR::Inst& sample,
+                                            std::size_t& budget,
+                                            const Shader::Info& info) {
+    if (sample.GetOpcode()!=IR::Opcode::ImageSampleRaw) return false;
+    const auto table=AnalyzeIndexedImageTable(sample);
+    if (IndexedImageAuditEnabled(info.pgm_hash)) {
+        static thread_local u32 reports=0;
+        if (reports++<64) {
+            const auto* const index=table.selector;
+            LOG_INFO(Render_Recompiler,
+                     "IndexedTSharpSource: shader={:#x} stage={} matched={} "
+                     "index_op={} dword_start={} base_op={} ",
+                     info.pgm_hash,info.hw_stage,table.contiguous,
+                     index ? IR::NameOf(index->GetOpcode()) : "unmatched",
+                     table.contiguous ? table.addends[0] : 0,
+                     table.buffer ? IR::NameOf(table.buffer->GetOpcode()) : "none");
+        }
+    }
+    if (!table.contiguous || budget<1 ||
+        table.selector->GetOpcode()!=IR::Opcode::SelectU32) return false;
+    const auto* const select=table.selector;
+    if (!select->Arg(1).IsImmediate() || !select->Arg(2).IsImmediate() ||
+        select->Arg(1).Type()!=IR::Type::U32 ||
+        select->Arg(2).Type()!=IR::Type::U32) return false;
+    const auto* const image=sample.Arg(0).TryInst();
+    const auto* const low=image->Arg(0).TryInst();
+    const auto* const high=image->Arg(1).TryInst();
+    const auto* const sampler=sample.Arg(1).TryInst();
+    if (!sampler || sampler->NumArgs()!=4) return false;
+    // Only split when the sampler descriptor is the same host-evaluable
+    // source in both cases. A dynamic sampler needs bindless S# as well.
+    for(std::size_t i=0;i<4;++i) {
+        const IR::Value word=sampler->Arg(i);
+        if (word.IsImmediate()) {
+            if (word.Type()!=IR::Type::U32) return false;
+        } else {
+            const auto* const producer=word.TryInst();
+            if (!producer || !IsSharpSource(producer)) return false;
+        }
+    }
+    const auto pos=IR::Block::InstructionList::s_iterator_to(sample);
+    std::array<IR::Value,2> sampled{};
+    for(std::size_t side=0;side<2;++side) {
+        const u32 index=select->Arg(side+1).U32();
+        std::array<IR::Inst*,8> words{};
+        for(std::size_t i=0;i<words.size();++i) {
+            IR::Inst* const read=&*block.PrependNewInst(pos,*table.words[i]);
+            read->SetArg(1,IR::Value{static_cast<u32>(index+table.addends[i])});
+            words[i]=read;
+        }
+        const auto* const sourceParts[2]{low,high};
+        std::array<IR::Inst*,2> parts{};
+        for(std::size_t half=0;half<2;++half) {
+            auto* const copy=&*block.PrependNewInst(pos,*sourceParts[half]);
+            for(std::size_t word=0;word<4;++word) {
+                copy->SetArg(word,IR::Value{words[half*4+word]});
+            }
+            parts[half]=copy;
+        }
+        auto* const newImage=&*block.PrependNewInst(pos,*image);
+        newImage->SetArg(0,IR::Value{parts[0]});
+        newImage->SetArg(1,IR::Value{parts[1]});
+        auto* const newSample=&*block.PrependNewInst(pos,sample);
+        newSample->SetArg(0,IR::Value{newImage});
+        sampled[side]=IR::Value{newSample};
+    }
+    IR::IREmitter ir{block,pos};
+    const IR::U1 taken{select->Arg(0)};
+    const IR::Value result=SelectSideResult(ir,taken,sampled[0],sampled[1]);
+    sample.ReplaceUsesWithAndRemove(result);
+    --budget;
+    if (IndexedImageAuditEnabled(info.pgm_hash)) {
+        LOG_INFO(Render_Recompiler,
+                 "IndexedTSharpSplit: shader={:#x} stage={} branch_count=2 "
+                 "mode=exact_static_index_candidates",
+                 info.pgm_hash,info.hw_stage);
+    }
+    return true;
+}
+
 ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {
     // Conservative cap: each split replaces one read-only sample with at
     // most three independently bound images/samplers. Already large
@@ -799,7 +944,12 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                 continue;
             }
             if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
-                SplitImageSampleBySharpPhi(*block, inst, image_split_budget, program.info);
+                // Execute at most one resource transformation because either
+                // pass removes the original intrusive-list instruction.
+                if (!SplitImageSampleByIndexedSelect(*block,inst,image_split_budget,
+                                                      program.info)) {
+                    SplitImageSampleBySharpPhi(*block,inst,image_split_budget,program.info);
+                }
             }
         }
     }
