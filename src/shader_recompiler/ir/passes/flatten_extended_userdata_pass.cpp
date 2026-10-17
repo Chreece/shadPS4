@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <limits>
 #include <unordered_map>
+#include <unordered_set>
 #include <functional>
 #include <vector>
 #include <cstdlib>
@@ -296,6 +297,46 @@ static void TraceSrtHostBarriers(
         const u32 key=cause.kind==SrtHostBarrierKind::UnsupportedOpcode
                           ? static_cast<u32>(cause.opcode) : 0xffffffffu;
         ++blocker_histogram[key];
+        // Resolve the first actual unsupported instruction's immediate
+        // surroundings for the opted-in shader only. This is compile-time
+        // evidence, NOT an attempt to execute its divergent control flow.
+        if (samples < 8 && cause.kind == SrtHostBarrierKind::UnsupportedOpcode) {
+            std::vector<const IR::Inst*> todo;
+            std::unordered_set<const IR::Inst*> seen_nodes;
+            if (const auto* root=blocked.TryInst()) todo.push_back(root);
+            while (!todo.empty() && seen_nodes.size() < 192) {
+                const IR::Inst* node=todo.back();
+                todo.pop_back();
+                if (!seen_nodes.insert(node).second) continue;
+                if (node->GetOpcode() == cause.opcode) {
+                    const auto op_name = [&](std::size_t pos) -> std::string_view {
+                        if (pos >= node->NumArgs()) return "none";
+                        const IR::Value v = node->Arg(pos);
+                        if (v.IsImmediate()) return "immediate";
+                        const auto* child = v.TryInst();
+                        return child ? IR::NameOf(child->GetOpcode()) : "missing";
+                    };
+                    const auto imm = [&](std::size_t pos) -> u32 {
+                        if (pos >= node->NumArgs()) return 0;
+                        const IR::Value v = node->Arg(pos);
+                        return v.IsImmediate() && v.Type() == IR::Type::U32 ? v.U32() : 0;
+                    };
+                    LOG_INFO(Render_Recompiler,
+                             "SrtBarrierShape: shader={:#x} stage={} field={} "
+                             "blocker={} incoming={} a0={} a1={} a2={} "
+                             "u32_a0={:#x} u32_a1={:#x} u32_a2={:#x}",
+                             info.pgm_hash, info.hw_stage, field,
+                             IR::NameOf(node->GetOpcode()), node->NumArgs(),
+                             op_name(0),op_name(1),op_name(2),
+                             imm(0),imm(1),imm(2));
+                    break;
+                }
+                for (std::size_t i=node->NumArgs();i!=0;) {
+                    const auto* child=node->Arg(--i).TryInst();
+                    if (child && !seen_nodes.contains(child)) todo.push_back(child);
+                }
+            }
+        }
         if (samples++<16) {
             const IR::Inst* index=read->Arg(1).TryInst();
             LOG_INFO(Render_Recompiler,
