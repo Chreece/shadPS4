@@ -28,6 +28,9 @@ BRANCH="experiment/got-gow-native-memory-perf-20261017"
 RUN="$LOGS/.$NAME.runtime"
 ARCHIVE="$LOGS/$NAME.tar.gz"
 STATUS="STARTED"
+OVERLAY_APPLIED=0
+HEADER_CREATED=0
+CANDIDATE_BUILT=0
 mkdir -p "$RUN/evidence" "$RUN/info" "$RUN/tmp" "$WORK"
 exec 9>"$WORK/.build.lock"
 if ! flock -n 9; then
@@ -37,6 +40,24 @@ fi
 finish() {
     rc=$?
     trap - EXIT
+    set +e
+    # Restore only test-owned changes to the isolated source/build directory.
+    if [ "$OVERLAY_APPLIED" = 1 ] && [ -s "$RUN/info/page-manager.original.cpp" ]; then
+        cp -p -- "$RUN/info/page-manager.original.cpp" "$SOURCE/src/video_core/page_manager.cpp"
+        echo "BASELINE_PAGE_MANAGER_RESTORED=YES" >>"$RUN/info/restore.txt"
+    fi
+    if [ "$HEADER_CREATED" = 1 ]; then
+        rm -f -- "$SOURCE/src/video_core/protection_range_coalescer.h"
+        echo "CANDIDATE_HEADER_REMOVED=YES" >>"$RUN/info/restore.txt"
+    fi
+    if [ "$CANDIDATE_BUILT" = 1 ] && [ -x "$BIN" ]; then
+        mkdir -p "$WORK/bin-backups"
+        cp -p -- "$BIN" "$WORK/bin-backups/shadps4-got-gow-sparse-$CANDIDATE"
+        sha256sum "$WORK/bin-backups/shadps4-got-gow-sparse-$CANDIDATE" \
+            >>"$RUN/info/restore.txt"
+        cp -p -- "$BASEBIN" "$BIN"
+        echo "BASELINE_BINARY_RESTORED=YES" >>"$RUN/info/restore.txt"
+    fi
     printf 'STATUS=%s\nJOB_EXIT=%s\n' "$STATUS" "$rc" | tee "$RUN/info/final.txt"
     if tar -czf "$ARCHIVE" -C "$RUN" evidence info \
         -C "$LOGS" "$NAME.log" "$NAME.worker.sh"; then
@@ -265,33 +286,61 @@ tar -C "$RUN/tmp/W" --exclude='user/log' --exclude='user/logs' \
     tar -C "$RUN/warm-profile" -xf -
 run_phase A "$BASEBIN" 125
 STATUS="APPLYING_GENERAL_PAGE_PROTECTION_CHANGE"
-echo "CHECKOUT_NEW_PERF_SOURCE"
-if [ -n "$(git -C "$SOURCE" status --porcelain --untracked-files=no)" ]; then
-    echo "BASELINE_SOURCE_HAS_MODIFICATIONS_REFUSE_TO_CHECKOUT"
+echo "GIT_FETCH_WITHOUT_SUBMODULE_CHECKOUT"
+# Isolated base clone contains symlinked submodules: never checkout the tree.
+# Overlay only two exact, SHA-verified generic PageManager source files.
+PAGE="$SOURCE/src/video_core/page_manager.cpp"
+HEADER="$SOURCE/src/video_core/protection_range_coalescer.h"
+if [ -e "$HEADER" ]; then
+    echo "PREEXISTING_PROTECTION_HEADER_REFUSE_TO_OVERWRITE"
     exit 2
 fi
+BASE_PAGE_BLOB=$(git -C "$SOURCE" rev-parse "$BASE:src/video_core/page_manager.cpp")
+test "$(git -C "$SOURCE" hash-object "$PAGE")" = "$BASE_PAGE_BLOB" || {
+    echo "BASE_PAGE_MANAGER_MODIFIED_REFUSE_TO_OVERWRITE"
+    exit 2
+}
 if ! git -C "$SOURCE" -c gc.auto=0 -c http.version=HTTP/1.1 \
-    -c fetch.recurseSubmodules=false fetch --depth=24 --no-tags \
+    -c fetch.recurseSubmodules=false fetch --depth=64 --no-tags \
     --no-recurse-submodules https://github.com/Chreece/shadPS4.git \
     "refs/heads/$BRANCH"; then
     echo "GIT_RETRY_WITHOUT_NEGOTIATION"
     git -C "$SOURCE" -c gc.auto=0 -c http.version=HTTP/1.1 \
         -c protocol.version=1 -c fetch.recurseSubmodules=false \
-        fetch --refetch --depth=24 --no-tags --no-recurse-submodules \
+        fetch --refetch --depth=64 --no-tags --no-recurse-submodules \
         https://github.com/Chreece/shadPS4.git "refs/heads/$BRANCH"
 fi
 git -C "$SOURCE" cat-file -e "$CANDIDATE^{commit}"
 git -C "$SOURCE" merge-base --is-ancestor "$CANDIDATE" FETCH_HEAD
 git -C "$SOURCE" merge-base --is-ancestor "$UPSTREAM" "$CANDIDATE"
-unexpected=$(git -C "$SOURCE" diff --name-only "$CANDIDATE" FETCH_HEAD |
-    grep -vx 'scripts/got-gow-native-perf-ab.sh' || true)
-[ -z "$unexpected" ] || { echo "UNEXPECTED_REMOTE_CHANGES=$unexpected"; exit 2; }
-git -C "$SOURCE" checkout --detach "$CANDIDATE"
-test "$(git -C "$SOURCE" rev-parse HEAD)" = "$CANDIDATE"
+test "$(git -C "$SOURCE" rev-parse "$CANDIDATE:src/video_core/page_manager.cpp")" = \
+    "3a7b232e10acb2a9db0507f87ca2c2231c450dd4"
+test "$(git -C "$SOURCE" rev-parse "$CANDIDATE:src/video_core/protection_range_coalescer.h")" = \
+    "0d715461628d5da8afa31f106da4dd9760bd6f05"
+cp -p -- "$PAGE" "$RUN/info/page-manager.original.cpp"
+git -C "$SOURCE" show "$CANDIDATE:src/video_core/page_manager.cpp" \
+    > "$RUN/tmp/candidate-page-manager.cpp"
+git -C "$SOURCE" show "$CANDIDATE:src/video_core/protection_range_coalescer.h" \
+    > "$RUN/tmp/candidate-protection-range.h"
+git -C "$SOURCE" show "$CANDIDATE:tests/page_manager/test_sparse_protection.cpp" \
+    > "$RUN/tmp/test_sparse_protection.cpp"
+test "$(git -C "$SOURCE" hash-object "$RUN/tmp/candidate-page-manager.cpp")" = \
+    "3a7b232e10acb2a9db0507f87ca2c2231c450dd4"
+test "$(git -C "$SOURCE" hash-object "$RUN/tmp/candidate-protection-range.h")" = \
+    "0d715461628d5da8afa31f106da4dd9760bd6f05"
+cp -p "$RUN/tmp/candidate-page-manager.cpp" "$PAGE"
+OVERLAY_APPLIED=1
+cp -p "$RUN/tmp/candidate-protection-range.h" "$HEADER"
+HEADER_CREATED=1
+touch "$PAGE"
+sha256sum "$PAGE" "$HEADER" > "$RUN/info/patched-source-sha256.txt"
+printf 'BASE_GIT_HEAD=%s\nCANDIDATE_SOURCE=%s\nREBASE_PARENT=%s\nMETHOD=SHA_VERIFIED_ONLY_TWO_CORE_FILES_NO_SUBMODULE_CHECKOUT\n' \
+    "$BASE" "$CANDIDATE" "$UPSTREAM" > "$RUN/info/build-provenance.txt"
+echo "SOURCE_OVERLAY=VERIFIED; SUBMODULES=UNTOUCHED; BASELINE_GIT_HEAD=UNCHANGED"
 # Compile the self-contained GoW permission-equivalence test before rebuilding.
 echo "SPARSE_PROTECTION_HOST_TEST=START"
 c++ -std=c++23 -O2 -I"$SOURCE/src" \
-    "$SOURCE/tests/page_manager/test_sparse_protection.cpp" \
+    "$RUN/tmp/test_sparse_protection.cpp" \
     -o "$RUN/info/test-sparse-protection"
 "$RUN/info/test-sparse-protection" | tee "$RUN/info/sparse-protection-result.txt"
 export CCACHE_DIR="$GOT/cache/ccache"
@@ -312,6 +361,7 @@ cmake --build "$BUILD" --target shadps4 --parallel 8 \
     }
 ccache --show-stats >"$RUN/info/ccache-after-build.txt"
 sha256sum "$BIN" > "$RUN/info/candidate-binary.sha256"
+CANDIDATE_BUILT=1
 echo "CANDIDATE_BINARY=$(sha256sum "$BIN" | awk '{print $1}')"
 echo "INCREMENTAL_BUILD=PASS"
 run_phase B "$BIN" 125
