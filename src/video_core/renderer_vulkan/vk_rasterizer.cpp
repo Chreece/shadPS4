@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <type_traits>
 #include <bit>
@@ -1125,6 +1126,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     u32 valid_shapes = 0;
                     u32 valid_2d = 0;
                     u32 usable = 0;
+                    std::unordered_set<u64> distinct_addresses;
+                    std::unordered_set<u64> descriptor_fingerprints;
                     u32 first_usable = entries;
                     u32 last_usable = entries;
                     if (span_mapped) {
@@ -1148,6 +1151,17 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                                 !memory->IsValidGpuMapping(image.Address(), 0)) continue;
                             if (usable == 0) first_usable = id;
                             last_usable = id;
+                            distinct_addresses.insert(static_cast<u64>(image.Address()));
+                            // Raw-descriptor fingerprint, not a texture-cache key.
+                            // Only a census metric; never substitute it for a
+                            // collision-free resource identity in rendering.
+                            u64 fingerprint = 14695981039346656037ull;
+                            const auto* raw = reinterpret_cast<const unsigned char*>(&image);
+                            for (std::size_t k = 0; k < sizeof(image); ++k) {
+                                fingerprint ^= raw[k];
+                                fingerprint *= 1099511628211ull;
+                            }
+                            descriptor_fingerprints.insert(fingerprint);
                             ++usable;
                         }
                     }
@@ -1155,12 +1169,14 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                              "GuestTSharpCensus: shader={:#x} stage={} sample={} "
                              "fetched={} base={:#x} stride={} records={} bytes={} "
                              "entries={} span_mapped={} valid_shapes={} valid_2d={} "
-                             "usable={} first_usable={} last_usable={} read_only=YES",
+                             "usable={} first_usable={} last_usable={} "
+                             "unique_addresses={} descriptor_fingerprints={} read_only=YES",
                              stage.pgm_hash, stage.hw_stage, sample, fetched,
                              static_cast<u64>(source.base_address),
                              static_cast<u32>(source.stride), static_cast<u32>(source.num_records),
                              bytes, entries, span_mapped, valid_shapes, valid_2d,
-                             usable, first_usable, last_usable);
+                             usable, first_usable, last_usable,
+                             distinct_addresses.size(), descriptor_fingerprints.size());
                 }
             }
         }
