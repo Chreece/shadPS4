@@ -75,8 +75,9 @@ fi
 STAGE=RESTORE_ISOLATED_GIT_METADATA
 # The previous snapshot excluded .git from the root AND every submodule.
 # CMake needs the exact ffmpeg-core submodule Git SHA for matching prebuilts.
-# Create read-only Git *pointers* in the isolated snapshot; do not clone,
-# checkout, reset, fetch, or modify Git metadata in the proven source.
+# Create relative-path Git pointers in the isolated snapshot; the OpenAL
+# CMake version target directly concatenates the .git pointer with /index.
+# No checkout, reset, fetch, or metadata writes to the proven source.
 python3 - "$OLD" "$SRC" "$OUT" <<'RESTORE_GIT_METADATA'
 from pathlib import Path
 import os
@@ -121,7 +122,7 @@ for idx, original_dir in enumerate(markers):
             f"EXISTING_ISOLATED_GIT_MISMATCH:{relative}"
         )
     else:
-        expected = f"gitdir: {gitdir}\n"
+        expected = f"gitdir: {os.path.relpath(gitdir, copied_dir)}\n"
         if pointer.is_file() and pointer.read_text() != expected:
             (report / f"replaced-test-git-pointer-{idx}.txt").write_bytes(
                 pointer.read_bytes()
@@ -154,6 +155,20 @@ assert ffmpeg_top in (ff_copy.resolve(), ff_orig.resolve()), (
 assert git(ff_orig, "rev-parse", "HEAD") == git(ff_copy, "rev-parse", "HEAD"), (
     "FFMPEG_PREBUILT_SHA_MISMATCH"
 )
+# OpenAL Soft uses CMake to interpret .git itself, not just git rev-parse.
+# Its CMakeLists.txt resolves: OpenAL_SOURCE_DIR + parsed relative gitdir + /index.
+openal = new / "externals/openal-soft"
+openal_pointer = openal / ".git"
+assert openal_pointer.is_file(), "OPENAL_GITDIR_POINTER_MISSING"
+pointer_text = openal_pointer.read_text().strip()
+assert pointer_text.startswith("gitdir: "), "OPENAL_GITDIR_POINTER_BAD_FORMAT"
+openal_relative = pointer_text[len("gitdir: "):]
+assert not os.path.isabs(openal_relative), "OPENAL_GITDIR_MUST_BE_RELATIVE"
+openal_index = (openal / openal_relative / "index").resolve()
+expected_openal_dir = Path(git(old / "externals/openal-soft", "rev-parse", "--absolute-git-dir")).resolve()
+assert openal_index == expected_openal_dir / "index", "OPENAL_CMAKE_DEPENDENCY_WRONG_DIRECTORY"
+assert openal_index.is_file(), f"OPENAL_CMAKE_INDEX_MISSING:{openal_index}"
+evidence.append(f"OPENAL_CMAKE_VERSION_DEPENDENCY=PASS {openal_index}")
 evidence.append(f"FFMPEG_PREBUILT_GIT_SHA=VERIFIED {git(ff_copy, 'rev-parse', 'HEAD')}")
 (report / "git-metadata-check.txt").write_text("\n".join(evidence) + "\n")
 for line in evidence:
