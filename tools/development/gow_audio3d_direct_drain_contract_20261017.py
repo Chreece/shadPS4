@@ -20,9 +20,9 @@ def scope_of(index, scopes):
 
 
 def main():
-    if len(sys.argv) != 5:
-        raise SystemExit("usage: contract.py ORIGINAL_AUDIO3D.cpp TRIAL_AUDIO3D.cpp RUNNER.sh OBSERVER.py")
-    original, trial, runner, observer = (
+    if len(sys.argv) != 6:
+        raise SystemExit("usage: contract.py ORIGINAL_AUDIO3D.cpp TRIAL_AUDIO3D.cpp RUNNER.sh OBSERVER.py AUDIO3D.h")
+    original, trial, runner, observer, header = (
         Path(x).read_text(encoding="utf-8") for x in sys.argv[1:])
     orig_lines, trial_lines = original.splitlines(True), trial.splitlines(True)
     find = lambda phrase: next((i for i, line in enumerate(orig_lines)
@@ -72,10 +72,10 @@ def main():
           "OPT_IN_FORWARD_NOT_GUARDED_OR_ERRORS_IGNORED")
     check('const OrbisAudio3dPortId port_id' in trial,
           "AUDIO3D_API_SIGNATURE_MISSING")
-    check('std::scoped_lock lock{port.mutex};' in trial
-          and 'std::recursive_mutex mutex;' in Path(sys.argv[1]).parent.joinpath(
-              "unused").read_text() if False else True,
-          "AUDIO3D_MUTEX_CONTRACT")
+    check('mutable std::recursive_mutex mutex;' in header
+          and trial.count('std::scoped_lock lock{port.mutex};')
+              == original.count('std::scoped_lock lock{port.mutex};'),
+          "AUDIO3D_RECURSIVE_MUTEX_CONTRACT")
     # The original Port has a recursive mutex; callers keep that port lock
     # while submitting eagerly, serializing PCM ordering with PortPush.
     check("AUDIO3D_ASSOC operation={}" in trial
