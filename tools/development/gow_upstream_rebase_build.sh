@@ -6,7 +6,7 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=e7e8c028ef5853ef4ef6b4fab35b37ed2616ea55
+FIX=e9d2d15bb430cf5a2fb6bbd8290a26c58c8c5400
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
@@ -52,7 +52,7 @@ finish() {
   [[ ! -f "$OUT/base.txt" ]] || cat "$OUT/base.txt"
   [[ ! -f "$OUT/srt.txt" ]] || cat "$OUT/srt.txt"
   if [[ "$rc" != 0 ]]; then
-    for f in "$OUT/"{source-contract,compile-page-manager,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer}.log; do
+    for f in "$OUT/"{source-contract,observer-unit-tests,compile-page-manager,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer}.log; do
       [[ ! -s "$f" ]] || { echo "ERROR_TAIL=$f"; tail -18 "$f"; }
     done
   fi
@@ -116,6 +116,14 @@ cat "$OUT/source-contract.log"
 git -C "$SRC" -c http.version=HTTP/1.1 submodule update --init --recursive --jobs 4 >"$OUT/submodules.log" 2>&1
 echo "UPSTREAM_MAIN=$UPSTREAM" >"$OUT/commits.txt"
 echo "NATIVE_FIX_COMMIT=$FIX" >>"$OUT/commits.txt"
+STAGE=GAME_OBSERVER_UNIT_TESTS
+python3 "$SRC/tools/development/gow_upstream_gameplay_test.py" \
+  >"$OUT/observer-unit-tests.log" 2>&1 || {
+    echo "GAME_OBSERVER_UNIT_TESTS=FAILED"
+    cat "$OUT/observer-unit-tests.log"
+    exit 1
+  }
+tail -2 "$OUT/observer-unit-tests.log"
 STAGE=PM4_REGRESSION
 CXX_BIN="$(command -v c++ || echo /usr/bin/c++)"
 "$CXX_BIN" -std=c++20 -O2 -Wall -Wextra -Werror -I"$SRC/src" "$SRC/tests/pm4_shader_register_window_test.cpp" -o "$OUT/pm4-test" >"$OUT/pm4-compile.log" 2>&1
@@ -258,7 +266,7 @@ echo "AUTO_GAME_LAUNCH=ENABLED; USER_INPUT=MANUAL_MOONLIGHT"
 STAGE=GAME_LAUNCH_AND_OBSERVATION
 python3 "$OBSERVER" --binary "$SRT" --sha256 "$GAME_SHA" \
   --report "$OUT/gameplay" --cwd "$ORIG" --seconds 180 \
-  > >(tee "$OUT/gameplay-observer.log") 2>&1
+  2>&1 | tee "$OUT/gameplay-observer.log"
 
 STAGE=COMPLETE
 echo "GO_W_UPSTREAM_REBASE_FULL_CHAIN=PASS"
