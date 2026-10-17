@@ -62,7 +62,11 @@ def active_emulators():
 
 def sample_threads(pid):
     results = {}
-    for proc in Path(f"/proc/{pid}/task").iterdir():
+    try:
+        tasks = list(Path(f"/proc/{pid}/task").iterdir())
+    except (FileNotFoundError, ProcessLookupError, PermissionError):
+        return {}
+    for proc in tasks:
         if not proc.name.isdecimal():
             continue
         try:
@@ -141,6 +145,65 @@ def capture_deadlock_stacks(pid, out):
             f"return_code={result.returncode}\n{result.stdout}\n{result.stderr}\n")
     except (OSError, subprocess.TimeoutExpired) as error:
         (out / "gdb-error.txt").write_text(repr(error) + "\n")
+
+
+def capture_crash_metadata(pid, out):
+    """Read existing systemd core metadata, optionally symbolize it; never dump a core to SSD.
+
+    A crashing guest can be multiple GiB. Deliberately never run
+    `coredumpctl dump` or modify coredump limits, sysctl or system services.
+    """
+    if not isinstance(pid, int) or pid < 1:
+        return
+    notes = {"pid": pid, "coredumpctl_available": bool(shutil.which("coredumpctl")),
+             "gdb_available": bool(shutil.which("gdb"))}
+    if shutil.which("coredumpctl"):
+        # systemd-coredump may take a moment to index the just-exited process.
+        # No blanket 'last crash' lookup; only the exact PID is accepted.
+        for attempt in range(3):
+            try:
+                query = subprocess.run(
+                    ["coredumpctl", "--no-pager", "info", str(pid)],
+                    capture_output=True, text=True, errors="replace", timeout=12)
+                (out / "systemd-coredump-info.txt").write_text(
+                    f"exit={query.returncode} attempt={attempt + 1}\n"
+                    f"{query.stdout[:160000]}\n{query.stderr[:8000]}\n")
+                notes["coredump_info_status"] = query.returncode
+                if query.returncode == 0:
+                    break
+            except (OSError, subprocess.TimeoutExpired) as error:
+                notes["coredump_info_error"] = repr(error)
+                break
+            time.sleep(1)
+        if notes.get("coredump_info_status") == 0 and shutil.which("gdb"):
+            try:
+                # Uses an existing core supplied by systemd; does not save or
+                # extract a new core file. Cap debugger runtime.
+                trace = subprocess.run(
+                    ["coredumpctl",
+                     "--debugger-arguments=-batch -ex 'set pagination off'"
+                     " -ex 'thread apply all bt 20' -ex 'info registers'",
+                     "debug", str(pid)],
+                    capture_output=True, text=True, errors="replace", timeout=40)
+                (out / "systemd-core-gdb-stacks.txt").write_text(
+                    f"exit={trace.returncode}\n{trace.stdout[:300000]}\n"
+                    f"{trace.stderr[:25000]}\n")
+                notes["gdb_stack_status"] = trace.returncode
+            except (OSError, subprocess.TimeoutExpired) as error:
+                notes["gdb_stack_error"] = repr(error)
+    if shutil.which("journalctl"):
+        try:
+            log = subprocess.run(
+                ["journalctl", "-k", "--no-pager", "-n", "140"],
+                capture_output=True, text=True, errors="replace", timeout=10)
+            lines = [line for line in log.stdout.splitlines()
+                     if any(x in line.lower() for x in ("shadps4", "segfault", "trap", "fault"))]
+            (out / "kernel-crash-lines.txt").write_text(
+                f"journal_exit={log.returncode}\n" + "\n".join(lines[-75:]) + "\n")
+            notes["kernel_log_status"] = log.returncode
+        except (OSError, subprocess.TimeoutExpired) as error:
+            notes["kernel_log_error"] = repr(error)
+    (out / "crash-metadata.json").write_text(json.dumps(notes, indent=2) + "\n")
 
 
 def main():
@@ -250,6 +313,11 @@ def main():
     finally:
         if console_file is not None:
             console_file.close()
+        if process is not None and process.poll() is not None and process.returncode is not None:
+            if process.returncode < 0:
+                # Guest process exited due to signal; capture crash proof
+                # rather than treating an ELF/module warning as the cause.
+                capture_crash_metadata(process.pid, out)
         report["process_alive_when_reported"] = bool(process and process.poll() is None)
         report["result"] = "OBSERVED_ALIVE" if status == 0 else "FAILED"
         report["thread_samples"] = len(samples)
