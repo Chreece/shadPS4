@@ -39,6 +39,7 @@ LOG_MARKERS = {
     "audio_openal_pcm_route": "OpenAL audio route:",
     "audio_sdl_failure": "SDL audio port has no usable output stream",
     "audio_openal_failure": "OpenAL audio port has no usable source or device",
+    "audio_openal_context_failure": "OpenAL PCM output cannot activate device context",
     "audio_device_intentional_mute": "audio output intentionally disabled",
     "audio_backend_sink_error": "Failed to resume audio stream",
     "audio3d_shutdown": "sceAudio3dTerminate: called",
@@ -404,7 +405,8 @@ def main():
             "pcm_route_observations": c.get("audio_pcm_route", 0) +
                                       c.get("audio_openal_pcm_route", 0),
             "backend_failures": c.get("audio_sdl_failure", 0) +
-                                c.get("audio_openal_failure", 0),
+                                c.get("audio_openal_failure", 0) +
+                                c.get("audio_openal_context_failure", 0),
             "teardown_count": c.get("audio3d_shutdown", 0),
         }
         (out / "gameplay-result.json").write_text(json.dumps(report, indent=2) + "\n")
