@@ -734,6 +734,7 @@ static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
     c.push(rdi); // original SGPR-table pointer / caller's current table
     c.push(rax);
     c.push(r11);
+    c.push(r9);  // scratch NUM_RECORDS for bounds-safe scalar buffer reads
 
     if (!ComputeOffset(c, reg, pass_info, base->Arg(0))) {
         c.setSize(checkpoint);
@@ -746,24 +747,41 @@ static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
         return false;
     }
     if (is_sbuffer) {
-        // S# / V# dword 1 contains just eight address bits in [7:0].
-        // The remaining bits encode buffer metadata, not address bits.
+        // GCN V# stride is bits [29:16] in dword 1 (14 bits).
+        // Keep the stride for bounds clamping before extracting only
+        // the low address eight bits from the same dword.
+        c.mov(r11d, reg);
+        c.shr(r11d, 16);
+        c.and_(r11d, 0x3fffu);
         c.and_(reg, 0xffu);
     }
     c.shl(reg.cvt64(), 32);
     c.or_(rax, reg.cvt64());
 
-    // GCN SMRD indices are dword offsets, not byte offsets.
+    if (is_sbuffer) {
+        // Buffer SMEM uses NUM_RECORDS from descriptor dword 2 for bounds.
+        // Metadata dword 3 does not affect the memory operation.
+        if (!ComputeOffset(c, reg, pass_info, base->Arg(2))) {
+            c.setSize(checkpoint);
+            return false;
+        }
+        c.mov(r9d, reg);
+    }
+    // GCN SMRD IR index is in dwords; compute offset with 32-bit wrapping.
     if (!ComputeOffset(c, reg, pass_info, inst->Arg(1))) {
         c.setSize(checkpoint);
         return false;
     }
     c.mov(r10d, reg);
+    if (is_sbuffer) {
+        SrtCodegen::EmitSBufferClampDwordIndex(c);
+    }
     SrtCodegen::EmitGuestReadDword(
         c, is_sbuffer ? SrtCodegen::SBufferGuestAddressMask
                       : SrtCodegen::ScalarGuestAddressMask); // returns guest dword in r10d
     c.mov(reg, r10d);
 
+    c.pop(r9);
     c.pop(r11);
     c.pop(rax);
     c.pop(rdi);
@@ -955,7 +973,7 @@ static void GenerateSrtProgram(
                          "SrtInlineCandidate: shader={:#x} stage={} eligible={} "
                          "base_op={} lo_op={} hi_op={} index_op={} "
                          "lo_immediate={} hi_immediate={} index_immediate={} "
-                         "index_value={} sbuffer={} address_uniform={} index_uniform={}",
+                         "index_value={} sbuffer={} address_uniform={} record_count_uniform={} index_uniform={}",
                          info.pgm_hash, info.hw_stage, correct_base && uniform,
                          base ? IR::NameOf(base->GetOpcode()) : "immediate",
                          low_inst ? IR::NameOf(low_inst->GetOpcode()) : "immediate",
@@ -968,6 +986,9 @@ static void GenerateSrtProgram(
                          correct_base &&
                              IsHostUniformSrtOffset(base->Arg(0)) &&
                              IsHostUniformSrtOffset(base->Arg(1)),
+                         correct_base &&
+                             (read->GetOpcode() != IR::Opcode::ReadConstBuffer ||
+                              IsHostUniformSrtOffset(base->Arg(2))),
                          IsHostUniformSrtOffset(read->Arg(1)));
             }
         }

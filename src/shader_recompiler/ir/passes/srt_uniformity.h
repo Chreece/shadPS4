@@ -39,17 +39,17 @@ template <typename Value>
         return IsHostUniformSrtOffset(inst->Arg(0), depth + 1) &&
                IsHostUniformSrtOffset(inst->Arg(1), depth + 1);
     case IR::Opcode::ReadConstBuffer: {
-        // S_BUFFER_LOAD uses *only* V# dword 0 and the low eight address
-        // bits of dword 1. Descriptor dwords 2/3 encode record count and
-        // metadata, never guest-address inputs. Their SSA producers may be
-        // dynamically selected without making the resulting scalar load
-        // address lane-divergent. Requiring all four to be host-evaluable
-        // incorrectly drops valid descriptor reads and downstream T#/S#.
+        // Scalar S_BUFFER_LOAD uses V# dwords 0/1 for its base+stride and
+        // dword 2 for NUM_RECORDS clamping. Other V# fields (dword 3)
+        // are ignored by this instruction. Their SSA producers need not
+        // be evaluated by the host, but address, stride, bounds and index
+        // must be wave-uniform. See AMD GCN3 ISA 7.2.3.
         const auto* const descriptor = inst->Arg(0).TryInst();
         if (descriptor &&
             descriptor->GetOpcode() == IR::Opcode::CompositeConstructU32x4) {
             return IsHostUniformSrtOffset(descriptor->Arg(0), depth + 1) &&
                    IsHostUniformSrtOffset(descriptor->Arg(1), depth + 1) &&
+                   IsHostUniformSrtOffset(descriptor->Arg(2), depth + 1) &&
                    IsHostUniformSrtOffset(inst->Arg(1), depth + 1);
         }
         // Other source representations retain the original conservative

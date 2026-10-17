@@ -21,15 +21,47 @@ inline constexpr std::uint64_t SBufferGuestAddressMask = (std::uint64_t{1} << 40
     return (base + std::uint32_t(index << 2)) & ScalarGuestAddressMask;
 }
 
-// S_BUFFER_LOAD_DWORD takes an S# four-dword buffer descriptor. Only eight
-// high-address bits in dword 1 belong to the base; its stride and flags must
-// never leak into address calculation. The GCN offset is in dwords.
+// Scalar SMEM S_BUFFER_LOAD uses four SGPR descriptor dwords, but only
+// base (dw0 + dw1[7:0]), stride (dw1[29:16]), and NUM_RECORDS (dw2).
+// GCN3 ISA 7.2.3: clamp byte OFFSET when stride == 0 and offset >=
+// NUM_RECORDS; otherwise clamp only when offset > stride * NUM_RECORDS.
+// All resulting guest addresses are dword-aligned.
 [[nodiscard]] constexpr std::uint64_t GuestReadSBufferDwordAddress(std::uint32_t lo,
                                                                     std::uint32_t dw1,
+                                                                    std::uint32_t num_records,
                                                                     std::uint32_t index) {
     const std::uint64_t base =
         std::uint64_t(lo) | (std::uint64_t(dw1 & 0xffu) << 32);
-    return (base + std::uint32_t(index << 2)) & SBufferGuestAddressMask;
+    const std::uint64_t stride = (dw1 >> 16) & 0x3fffu;
+    const std::uint64_t maximum = stride == 0 ? num_records : stride * num_records;
+    const std::uint64_t offset = std::uint32_t(index << 2);
+    const std::uint64_t clamped =
+        stride == 0 ? (offset >= maximum ? maximum : offset)
+                    : (offset > maximum ? maximum : offset);
+    return (base + (clamped & ~std::uint64_t{3})) & SBufferGuestAddressMask;
+}
+
+// On entry R10D holds the offset in dwords; R11D has stride and R9D has
+// NUM_RECORDS. Preserve R9/R11 in the caller. Convert to bytes with guest
+// 32-bit wrapping, apply the GCN scalar clamping rule with 64-bit product,
+// then return a dword-aligned index for EmitGuestReadDword.
+inline void EmitSBufferClampDwordIndex(Xbyak::CodeGenerator& c) {
+    using namespace Xbyak::util;
+    Xbyak::Label stride_nonzero, done;
+    c.shl(r10d, 2);
+    c.test(r11d, r11d);
+    c.jnz(stride_nonzero);
+    c.cmp(r10d, r9d);
+    c.jb(done);
+    c.mov(r10d, r9d);
+    c.jmp(done);
+    c.L(stride_nonzero);
+    c.imul(r9, r11);
+    c.cmp(r10, r9);
+    c.jbe(done);
+    c.mov(r10d, r9d);
+    c.L(done);
+    c.shr(r10d, 2);
 }
 
 // On entry RAX is the guest base address, R10D the dword index. RDI becomes

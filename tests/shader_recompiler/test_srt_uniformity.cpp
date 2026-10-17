@@ -76,11 +76,16 @@ int main() {
     // words 2/3, even if those words are produced by divergent SSA.
     const MockInst sbuffer_divergent_metadata{Opcode::CompositeConstructU32x4,
         {MockValue::Ref(uniform), MockValue::Ref(uniform),
-         MockValue::Ref(varying), MockValue::Ref(phi)}, 4};
+         MockValue::Ref(uniform), MockValue::Ref(phi)}, 4};
     const MockInst sbuffer_good{Opcode::ReadConstBuffer,
         {MockValue::Ref(sbuffer_divergent_metadata), MockValue::Imm()}, 2};
     const MockInst sbuffer_dynamic_index{Opcode::ReadConstBuffer,
         {MockValue::Ref(sbuffer_divergent_metadata), MockValue::Ref(varying)}, 2};
+    const MockInst sbuffer_bad_record_count{Opcode::CompositeConstructU32x4,
+        {MockValue::Ref(uniform), MockValue::Ref(uniform),
+         MockValue::Ref(varying), MockValue::Imm()}, 4};
+    const MockInst sbuffer_bad_records_read{Opcode::ReadConstBuffer,
+        {MockValue::Ref(sbuffer_bad_record_count), MockValue::Imm()}, 2};
     const MockInst sbuffer_bad_address{Opcode::CompositeConstructU32x4,
         {MockValue::Ref(varying), MockValue::Ref(uniform),
          MockValue::Imm(), MockValue::Imm()}, 4};
@@ -101,7 +106,7 @@ int main() {
         MockValue value;
         bool expected;
     };
-    const std::array<Case, 25> cases{{
+    const std::array<Case, 26> cases{{
         {"u32-constant", MockValue::Imm(), true},
         {"float-constant", MockValue::Imm(Type::F32), false},
         {"user-data", MockValue::Ref(uniform), true},
@@ -120,7 +125,8 @@ int main() {
         {"uniform-FindILsb32", MockValue::Ref(first_lsb), true},
         {"uniform-descriptor-read", MockValue::Ref(first_const), true},
         {"varying-descriptor-index", MockValue::Ref(nonuniform_const), false},
-        {"uniform-sbuffer-address-with-divergent-metadata", MockValue::Ref(sbuffer_good), true},
+        {"uniform-sbuffer-with-unused-divergent-dword3", MockValue::Ref(sbuffer_good), true},
+        {"divergent-sbuffer-record-count", MockValue::Ref(sbuffer_bad_records_read), false},
         {"divergent-sbuffer-index", MockValue::Ref(sbuffer_dynamic_index), false},
         {"divergent-sbuffer-low-address", MockValue::Ref(sbuffer_bad_pointer), false},
         {"divergent-sbuffer-high-address", MockValue::Ref(sbuffer_bad_hi_pointer), false},
@@ -136,6 +142,6 @@ int main() {
             return 1;
         }
     }
-    std::puts("SRT_UNIFORMITY=PASS cases=25 divergent-address=REJECTED divergent-metadata=IGNORED phi=REJECTED");
+    std::puts("SRT_UNIFORMITY=PASS cases=26 divergent-address=REJECTED divergent-records=REJECTED unused-dword3=IGNORED phi=REJECTED");
     return 0;
 }
