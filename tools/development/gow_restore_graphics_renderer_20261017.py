@@ -2,6 +2,7 @@
 """Reconstruct proven renderer semantics while retaining generic UFFD fixes and current ABI."""
 import difflib
 import hashlib
+import re
 from pathlib import Path
 import sys
 
@@ -76,14 +77,78 @@ def restore(proven, historical, header):
     )
     original = proven
     abi_edits=[]
-    for i,(old,new) in enumerate(pairs):
-        if old in s:
-            s=replace_exact(s,old,new,f'BUFFER_CACHE_ABI_{i}')
+    for i,(legacy,typed) in enumerate(pairs):
+        if s.count(legacy) == 1:
+            s=replace_exact(s, legacy, typed, f'BUFFER_CACHE_ABI_{i}')
             abi_edits.append(i)
-        else:
-            if s.count(new)!=1:
-                raise ValueError(f'BUFFER_CACHE_ABI_MIXED_OR_UNKNOWN: {i}')
-    assert len(abi_edits) in (0,len(pairs)), f'PARTIAL_ABI_PORT: {abi_edits}'
+        elif s.count(legacy) > 1:
+            raise ValueError(f'AMBIGUOUS_LEGACY_BUFFER_CALL: {i}')
+        # A pre-existing typed-flags call is kept verbatim. Its layout can
+        # differ between revisions, especially around the retained GPU probe.
+        # Validate the actual arguments rather than a multiline source block.
+
+    def arguments_of_calls(source, name):
+        result=[]
+        needle='buffer_cache.'+name+'('
+        seek=0
+        while (start := source.find(needle,seek)) >= 0:
+            i=start+len(needle)
+            depth=0
+            begin=i
+            parts=[]
+            while i < len(source):
+                char=source[i]
+                if char == '(':
+                    depth+=1
+                elif char == ')':
+                    if depth == 0:
+                        parts.append(source[begin:i].strip())
+                        break
+                    depth-=1
+                elif char == ',' and depth == 0:
+                    parts.append(source[begin:i].strip())
+                    begin=i+1
+                i+=1
+            else:
+                raise ValueError('UNTERMINATED_'+name+'_CALL')
+            result.append((start,parts))
+            seek=i+1
+        return result
+
+    buffer_calls=arguments_of_calls(s, 'ObtainBuffer')
+    if len(buffer_calls) != 9:
+        raise ValueError(f'UNEXPECTED_BUFFER_CALL_COUNT:{len(buffer_calls)}')
+    typed_flag = re.compile(r'VideoCore::ObtainBufferFlags::(?:None|IsWritten|IsTexelBuffer|IgnoreStreamBuffer|InvalidateTextureCache)')
+    for position,args in buffer_calls:
+        if len(args)==2:
+            continue
+        if len(args)!=3:
+            raise ValueError(f'UNPORTED_BUFFER_BOOL_ARGS:{args}')
+        extra=re.sub(r'\s+', '', args[2])
+        if extra.startswith('flags'):
+            # Keep any flags chosen by the known-good renderer, including
+            # optional texture invalidation; do not replace this block.
+            nearby=s[max(0,position-900):position]
+            if ('VideoCore::ObtainBufferFlags flags' not in nearby or
+                'VideoCore::ObtainBufferFlags::IsWritten' not in nearby or
+                'VideoCore::ObtainBufferFlags::IsTexelBuffer' not in nearby):
+                raise ValueError('RENDERER_BUFFER_FLAGS_SOURCE_UNRECOGNIZED')
+            extra=extra[len('flags'):]
+            if not extra:
+                continue
+            if not extra.startswith('|'):
+                raise ValueError('UNRECOGNIZED_BUFFER_FLAGS_COMPOSITION:'+extra)
+            extra=extra[1:]
+        atoms=extra.split('|')
+        if not atoms or any(not atom or typed_flag.fullmatch(atom) is None for atom in atoms):
+            raise ValueError(f'UNTYPED_OR_UNKNOWN_BUFFER_FLAG_EXPRESSION:{args[2]}')
+
+    read_calls=arguments_of_calls(s, 'ReadMemory')
+    if len(read_calls)!=1:
+        raise ValueError(f'UNEXPECTED_BUFFER_READ_CALL_COUNT:{len(read_calls)}')
+    normal_read=[re.sub(r'\s+', '',a) for a in read_calls[0][1]]
+    if normal_read != ['addr','size','false','false','assume_locks']:
+        raise ValueError(f'BUFFER_READBACK_ASYNC_LOCK_SEMANTICS_MISMATCH:{normal_read}')
     # The proven instrumentation must not run on every clamp. It remains
     # visible, but its scope and the log only run at power-of-two intervals.
     log_source='''                    Common::GpuCpuProbe::Scope log_probe{Common::GpuCpuProbe::Slot::ClampedDescriptorLog};
