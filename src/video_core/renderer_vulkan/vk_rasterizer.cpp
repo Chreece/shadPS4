@@ -1092,6 +1092,78 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
     u32 num_images{};
     for (const auto& image_desc : stage.images) {
+        // Read-only guest T# census for large, rejected GPU-indexed tables.
+        // Do not guess the shader's GPU index or bind a truncated array.
+        // An unmapped span is never dereferenced. The opt-in scan is limited
+        // to 1 MiB and at most three snapshots per shader per session.
+        if (image_desc.oversized_guest_table_probe) {
+            static const bool census_enabled = [] {
+                const char* v = std::getenv("SHADPS4_GUEST_TSHARP_CENSUS");
+                return v && v[0] == '1' && v[1] == '\0';
+            }();
+            if (census_enabled) {
+                static thread_local std::unordered_map<u64, u32> samples;
+                const u64 key = (static_cast<u64>(stage.pgm_hash) << 8) |
+                                static_cast<u8>(stage.hw_stage);
+                const u32 sample = ++samples[key];
+                if (sample == 1 || sample == 64 || sample == 256) {
+                    AmdGpu::Buffer source{};
+                    const bool fetched = image_desc.indexed_table_fetch.Fetch(
+                        stage.flattened_ud_buf.data(), &source);
+                    const u64 bytes = fetched
+                        ? (source.stride == 0 ? static_cast<u64>(source.num_records)
+                                              : static_cast<u64>(source.stride) *
+                                                    source.num_records)
+                        : 0;
+                    const bool size_ok = bytes >= sizeof(AmdGpu::Image) &&
+                        bytes <= 1024u * 1024u && bytes % sizeof(AmdGpu::Image) == 0;
+                    const bool span_mapped = fetched && source.Valid() &&
+                        source.base_address && size_ok &&
+                        memory->IsValidMapping(source.base_address, bytes);
+                    const u32 entries = size_ok
+                        ? static_cast<u32>(bytes / sizeof(AmdGpu::Image)) : 0;
+                    u32 valid_shapes = 0;
+                    u32 valid_2d = 0;
+                    u32 usable = 0;
+                    u32 first_usable = entries;
+                    u32 last_usable = entries;
+                    if (span_mapped) {
+                        for (u32 id = 0; id < entries; ++id) {
+                            AmdGpu::Image image{};
+                            const u64 addr = static_cast<u64>(source.base_address) +
+                                             static_cast<u64>(id) * sizeof(image);
+                            std::memcpy(&image, reinterpret_cast<const void*>(addr),
+                                        sizeof(image));
+                            if (!image.Valid()) continue;
+                            ++valid_shapes;
+                            if (image.GetType() != AmdGpu::ImageType::Color2D) continue;
+                            ++valid_2d;
+                            const auto fmt = image.GetDataFmt();
+                            const auto nfmt = image.GetNumberFmt();
+                            if (!image.Address() ||
+                                fmt == AmdGpu::DataFormat::FormatInvalid ||
+                                !magic_enum::enum_contains(fmt) ||
+                                !magic_enum::enum_contains(nfmt) ||
+                                AmdGpu::IsInteger(nfmt) ||
+                                !memory->IsValidGpuMapping(image.Address(), 0)) continue;
+                            if (usable == 0) first_usable = id;
+                            last_usable = id;
+                            ++usable;
+                        }
+                    }
+                    LOG_INFO(Render_Vulkan,
+                             "GuestTSharpCensus: shader={:#x} stage={} sample={} "
+                             "fetched={} base={:#x} stride={} records={} bytes={} "
+                             "entries={} span_mapped={} valid_shapes={} valid_2d={} "
+                             "usable={} first_usable={} last_usable={} read_only=YES",
+                             stage.pgm_hash, stage.hw_stage, sample, fetched,
+                             static_cast<u64>(source.base_address),
+                             static_cast<u32>(source.stride), source.num_records,
+                             bytes, entries, span_mapped, valid_shapes, valid_2d,
+                             usable, first_usable, last_usable);
+                }
+            }
+        }
         if (image_desc.is_guest_indexed) {
             // Real GCN T# table. Stage specialisation is allowed to declare
             // this array ONLY if all table entries fit, so a GPU id can
