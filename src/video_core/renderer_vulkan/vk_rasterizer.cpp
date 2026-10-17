@@ -13,6 +13,7 @@
 #include "core/emulator_settings.h"
 #include "core/memory.h"
 #include "shader_recompiler/resource.h"
+#include "shader_recompiler/guest_tsharp_array.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
@@ -1107,7 +1108,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 : 0u;
             const bool complete=fetched && source.Valid() &&
                 source.base_address!=0 &&
-                (source.stride==0 || source.stride==sizeof(AmdGpu::Image)) &&
+                Shader::Optimization::CompleteGuestTsharpTableEntries(
+                    static_cast<u32>(source.stride),source.num_records,
+                    Shader::MaxGuestIndexedImageEntries)==count-1u &&
                 guest_size==u64(count-1)*sizeof(AmdGpu::Image) &&
                 memory->IsValidMapping(source.base_address,guest_size);
             u32 valid_slots=0;
