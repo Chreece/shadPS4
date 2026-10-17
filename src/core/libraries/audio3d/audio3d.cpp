@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <cstdlib>
+#include <string_view>
 #include <vector>
 #include <fmt/format.h>
 #include <magic_enum/magic_enum.hpp>
