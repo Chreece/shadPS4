@@ -866,6 +866,42 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
     return out;
 }
 
+// Preserve the matching S# from the SAME GPU-selected material record.
+// The unmodified guest shader controls the record index; never use a
+// host-evaluated index or a default sampler for a divergent S# table.
+struct IndexedSamplerTableSource {
+    u32 offset_bytes{};
+    bool valid{};
+};
+
+static IndexedSamplerTableSource AnalyzeIndexedSamplerTable(
+    const IR::Inst& sample, const IndexedImageTableSource& image) {
+    if (sample.GetOpcode() != IR::Opcode::ImageSampleRaw ||
+        !image.contiguous || image.record_stride_bytes == 0 ||
+        !image.selector || !image.buffer) return {};
+    const auto* const sampler = sample.Arg(1).TryInst();
+    if (!sampler || sampler->GetOpcode() != IR::Opcode::CompositeConstructU32x4 ||
+        sampler->NumArgs() != 4u) return {};
+    std::array<StridedIndexedSharpWord,4> words{};
+    for (u32 i=0;i<4;++i) {
+        const auto* const read = sampler->Arg(i).TryInst();
+        if (!read || read->GetOpcode() != IR::Opcode::ReadConstBuffer) return {};
+        const auto* const buffer = read->Arg(0).TryInst();
+        if (!buffer || buffer->GetOpcode() != IR::Opcode::CompositeConstructU32x4 ||
+            buffer->NumArgs() != 4u) return {};
+        for (u32 j=0;j<4;++j) {
+            if (buffer->Arg(j) != image.buffer->Arg(j)) return {};
+        }
+        words[i] = AnalyzeStridedIndexedSharpWord(read->Arg(1));
+    }
+    if (!AreContiguousStridedSharpWords(words) ||
+        words[0].gpu_record_id != image.selector ||
+        words[0].record_stride_bytes != image.record_stride_bytes ||
+        u64(words[0].offset_dwords)*4u + sizeof(AmdGpu::Sampler) >
+            image.record_stride_bytes) return {};
+    return {words[0].offset_dwords*4u,true};
+}
+
 // The strided material-table lowering remains opt-in until game-facing
 // image and sampler correctness has been validated across GPU vendors.
 static bool StridedGuestTsharpEnabled() {
@@ -1036,7 +1072,18 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                             uniform &= IsHostUniformSrtOffset(value);
                             usage.indexed_table_sharp.dwords[dw]=value;
                         }
-                        if (uniform) {
+                        // A dynamic guest S# is as essential as the
+                        // matching T#. The prior texture-only path paired a
+                        // per-invocation texture with a null/default sampler.
+                        // Reject the new indexed path unless BOTH tables
+                        // share the same GPU SSA record selector.
+                        const auto sampler = table.record_stride_bytes
+                            ? AnalyzeIndexedSamplerTable(inst,table)
+                            : IndexedSamplerTableSource{};
+                        if (uniform && (table.record_stride_bytes == 0 ||
+                                        sampler.valid)) {
+                            usage.indexed_sampler_offset_bytes = sampler.offset_bytes;
+                            usage.has_indexed_sampler_table = sampler.valid;
                             usage.indexed_table_sharp.num_dwords=4;
                             MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
                             usage.indexed_texture_id=IR::Value{
