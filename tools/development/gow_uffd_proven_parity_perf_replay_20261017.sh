@@ -206,6 +206,67 @@ CANDIDATE="$BUILD/shadps4.native-userfaultfd-deferred-$TAG"
 cp -p "$BUILD/shadps4" "$CANDIDATE"
 sha256sum "$CANDIDATE" >"$OUT/candidate-sha256.txt"
 printf 'CANDIDATE=%s\n' "$CANDIDATE" | tee "$OUT/candidate.txt"
+CANDIDATE_A="$CANDIDATE"
+echo "DEFERRED_BASELINE_CANDIDATE=$CANDIDATE_A"
+# Stage B: change only the high-frequency clamp diagnostic, while keeping
+# the exact same newly compiled and linked deferred-UFFD implementation.
+# Preserve candidate A for a source-identical runtime A/B if needed.
+python3 - "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" <<'RATE_LIMIT_PATCH'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1])
+s=p.read_text()
+old='''                if (size != vsharp.GetSize()) {
+                    LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
+                              vsharp.GetSize(), size, stage.pgm_hash);
+                }'''
+new='''                if (size != vsharp.GetSize()) {
+                    // Preserve guest mapping bounds; avoid synchronous error I/O
+                    // on every draw. Report exponentially spaced occurrences.
+                    static thread_local std::unordered_map<u64, u64> clamp_counts;
+                    const u64 seen = ++clamp_counts[stage.pgm_hash];
+                    if ((seen & (seen - 1)) == 0) {
+                        LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x} "
+                                          "(seen {} times on this GPU thread)",
+                                  vsharp.GetSize(), size, stage.pgm_hash, seen);
+                    }
+                }'''
+assert s.count(old)==1, "UNEXPECTED_DEFERRED_RENDERER_BINDING_SOURCE"
+assert s.count('#include "common/debug.h"')==1
+assert '#include <unordered_map>' not in s
+result=s.replace('#include "common/debug.h"',
+                 '#include <unordered_map>\n\n#include "common/debug.h"',1).replace(old,new,1)
+for operation in (
+    "memory->ClampRangeSize(", "buffer_cache.ObtainBuffer(",
+    "texture_cache.InvalidateMemoryFromGPU(",
+    "InvalidateMemoryOnGpuThread("
+):
+    assert result.count(operation)==s.count(operation), "GRAPHICS_SEMANTICS_CHANGED:"+operation
+p.write_text(result)
+assert p.read_text()==result
+print("ONLY_CLAMP_LOGGING_CHANGED; DEFERRED_UFFD_CODE=UNCHANGED")
+RATE_LIMIT_PATCH
+touch -m "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp"
+cmake --build "$BUILD" --target shadps4 --parallel 4 > "$OUT/build-rate-limit.log" 2>&1 || {
+  echo "RATE_LIMIT_LINK_FAILED"
+  tail -85 "$OUT/build-rate-limit.log"
+  exit 1
+}
+grep -F "vk_rasterizer.cpp.o" "$OUT/build-rate-limit.log" > "$OUT/rate-limit-object-build.txt" || {
+  echo "HOTPATH_OBJECT_NOT_REBUILT"
+  exit 1
+}
+nm -C "$BUILD/shadps4" | grep -F "Vulkan::Rasterizer::InvalidateMemoryOnGpuThread" > "$OUT/deferred-symbol-rate-limited.txt" || {
+  echo "DEFERRED_UFFD_SYMBOL_MISSING_AFTER_RATE_LIMIT"
+  exit 1
+}
+CANDIDATE="$BUILD/shadps4.native-uffd-rate-limited-$TAG"
+[[ ! -e "$CANDIDATE" ]] || { echo "RATE_LIMITED_CANDIDATE_EXISTS"; exit 1; }
+cp -p "$BUILD/shadps4" "$CANDIDATE"
+sha256sum "$CANDIDATE" > "$OUT/candidate-rate-limit.sha256"
+echo "DEFERRED_UFFD_AND_RENDERER_RATE_LIMIT=COMPILED_AND_LINKED_PASS"
+echo "A_B_BINARY_A=$CANDIDATE_A"
+echo "A_B_BINARY_B=$CANDIDATE"
 echo "EMULATOR_FIX=GENERAL_LINUX_UFFD_DEFERRED_INVALIDATION_AND_GPU_LIFECYCLE"
 echo "PROVEN_DEFERRED_UFFD_CANDIDATE_BUILT=YES; AUTO_GAMEPLAY_LAUNCH=START"
 [[ -f "$OBSERVER" ]] || { echo "OBSERVER_MISSING"; exit 1; }
