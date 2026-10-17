@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build the deferred Linux UFFD candidate without replacing the proven GoW executable.
+# Compile two isolated deferred-UFFD GoW candidates from SHA-verified source blobs.
+# Neither the proven GoW executable nor its build/source trees are modified.
 set -Eeuo pipefail
 ROOT="$HOME/projects/shadps4/GodOfWarRagnarok/tests/gow-renderer-log-hotpath-20261017"
 ORIGINAL_ROOT="$HOME/projects/shadps4/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014679"
@@ -114,7 +115,6 @@ grep -Fxq "CMAKE_HOME_DIRECTORY:INTERNAL=$SRC" "$BUILD/CMakeCache.txt" || {
 echo "$PROVEN_SHA  $PROVEN" | sha256sum -c - | tee "$OUT/protected-baseline.txt"
 FREE_KIB="$(df -Pk "$BUILD" | awk 'END {print $4}')"
 [[ "$FREE_KIB" =~ ^[0-9]+$ ]] && (( FREE_KIB >= 2097152 )) || { echo "FREE_SSD_UNDER_2_GIB; NO_BUILD_OR_DELETE"; exit 1; }
-command -v patch >/dev/null || { echo "GNU_PATCH_MISSING"; exit 1; }
 command -v nm >/dev/null || { echo "NM_MISSING"; exit 1; }
 # Exact source replay: the original known-good executable was linked with
 # a deferred UFFD overlay while these FIVE sources were temporarily staged.
@@ -229,7 +229,7 @@ grep -Fq "InvalidateMemoryOnGpuThread" "$SRC/src/video_core/renderer_vulkan/vk_r
   echo "DEFERRED_GPU_CALLBACK_NOT_STAGED"; exit 1;
 }
 echo "PINNED_UFFD_FIVE_BLOBS=SHA_MATCHED; ORIGINAL_SOURCE=UNCHANGED"
-echo "PATCH_APPLICATION=PASS; BUILD_START=YES"
+echo "PINNED_SOURCE_REPLAY=PASS; BUILD_START=YES"
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build.log" 2>&1
 [[ -x "$BUILD/shadps4" ]] || { echo "BUILT_TARGET_MISSING"; exit 1; }
 for obj in page_manager.cpp.o vk_rasterizer.cpp.o; do
