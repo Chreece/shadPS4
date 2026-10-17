@@ -129,9 +129,11 @@ enum class MipStorageFallbackMode : u16 {
     ConstantIndex,
 };
 
-// Fixed-array Vulkan push-descriptor budget: at most 15 actual T# entries
-// plus one null slot. Enable only for guest tables fully contained here.
-inline constexpr u32 MaxGuestIndexedImageEntries = 15;
+// Maximum representable complete guest T# table in the opt-in full-array
+// path. Most shaders retain the original 15-entry push-descriptor budget.
+// The actual limit is reduced per GPU using Vulkan device properties.
+inline constexpr u32 LegacyGuestIndexedImageEntries = 15;
+inline constexpr u32 MaxGuestIndexedImageEntries = 32768;
 
 struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
@@ -139,7 +141,7 @@ struct ImageResource {
     // An oversized guest table remains on the unchanged shader path. Keep
     // its real source for the opt-in, read-only runtime table census.
     bool oversized_guest_table_probe{};
-    u8 indexed_guest_entries{};
+    u32 indexed_guest_entries{};
     bool is_guest_indexed{};
     bool is_depth{};
     bool is_atomic{};
