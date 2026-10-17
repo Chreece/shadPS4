@@ -777,19 +777,48 @@ void PatchBufferArgs(IR::Inst& inst, Info& info, const ResourceDiscovery& discov
             gpu_addr = ir.UnpackUint2x32(wrapped);
         }
 
-        // ReadConst uses an offset in dwords, exactly as scalar_memory.cpp
-        // builds S_BUFFER_LOAD_DWORD. Its dynamic path translates the PS4
-        // guest address through Vulkan BDA and reports unmapped accesses via
-        // the existing fault buffer. Never substitute a fake descriptor.
-        const IR::U32 index{inst.Arg(1)};
-        const IR::U32 guest_read = ir.ReadConst(gpu_addr, index);
+        // This is a genuine shader-side S_BUFFER_LOAD fallback. Its
+        // descriptor or offset may depend on Phi/GetAttribute, so all
+        // calculations stay as IR evaluated by the guest GPU invocation.
+        //
+        // GCN3 SMEM: stride=V#[dw1][29:16], NUM_RECORDS=V#[dw2].
+        // Byte offset wraps to 32 bits BEFORE comparing bounds. A stride
+        // of zero clamps at >= NUM_RECORDS; nonzero clamps only at >
+        // stride * NUM_RECORDS, using the full 64-bit multiplication.
+        const IR::U32 dw1{handle->Arg(1)};
+        const IR::U32 stride = ir.BitwiseAnd(
+            ir.ShiftRightLogical(dw1, ir.Imm32(16u)), ir.Imm32(0x3fffu));
+        const IR::U32 num_records{handle->Arg(2)};
+        const IR::U32 raw_bytes = ir.ShiftLeftLogical(
+            IR::U32{inst.Arg(1)}, ir.Imm32(2u));
+        const IR::U64 stride64{ir.UConvert(64, stride)};
+        const IR::U64 records64{ir.UConvert(64, num_records)};
+        const IR::U64 offset64{ir.UConvert(64, raw_bytes)};
+        const IR::U64 stride_limit{ir.IMul(stride64, records64)};
+        const IR::U1 zero_stride = ir.IEqual(stride, ir.Imm32(0u));
+        const IR::U64 limit{ir.Select(zero_stride, records64, stride_limit)};
+        const IR::U1 ge_zero = ir.IGreaterThanEqual(offset64, records64, false);
+        const IR::U1 gt_stride = ir.IGreaterThan(offset64, stride_limit, false);
+        const IR::U1 clamp{ir.Select(zero_stride, ge_zero, gt_stride)};
+        const IR::U64 effective_bytes{ir.Select(clamp, limit, offset64)};
+
+        // Mask the FINAL guest address to 40 bits and align to 4 bytes.
+        // ReadConst's normal 48-bit page reader cannot provide this SMEM
+        // guarantee if given the unbounded base + dword-index separately.
+        // The existing BDA translation/fault path is reused unchanged.
+        const IR::U64 base64 = ir.PackUint2x32(gpu_addr);
+        const IR::U64 address = ir.BitwiseAnd(
+            ir.IAdd(base64, effective_bytes), ir.Imm64(u64{0xfffffffffc}));
+        const IR::U32 guest_read =
+            ir.ReadConst(ir.UnpackUint2x32(address), ir.Imm32(0u));
         // Descriptor metadata captured in resource discovery is not a live
         // IR use-list: postpone producer removal until all shader-side loads
         // have registered real IR uses of those producers.
         pending_dynamic_reads.emplace_back(&inst, guest_read);
         LOG_INFO(Render_Recompiler,
                  "SBufferDynamic: shader={:#x} stage={} source=guest_gpu_memory "
-                 "descriptor_dwords={} post_op={}",
+                 "descriptor_dwords={} post_op={} gpu_smem_bounds=YES "
+                 "offset_wrap=32 stride_product=64 address_bits=40",
                  info.pgm_hash, info.hw_stage, sharp.num_dwords, u32(sharp.post_op));
         return;
     }
