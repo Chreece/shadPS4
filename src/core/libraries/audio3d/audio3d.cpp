@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <cstdlib>
+#include <mutex>
 #include <string_view>
 #include <vector>
 #include <fmt/format.h>
@@ -120,6 +121,14 @@ static AudioOutBufferInfo GetAudioOutBufferInfo(const AudioOut::OrbisAudioOutPar
 }
 
 static s32 DrainAssociatedPorts(Port& port) {
+    // In the direct-drain experiment, serialize all associated PCM drains
+    // (including PortPush and PortFlush) to preserve FIFO delivery across
+    // concurrent producer/push calls. The port mutex is already recursive,
+    // and the original implementation is untouched with the flag unset.
+    std::unique_lock<std::recursive_mutex> serialized(port.mutex, std::defer_lock);
+    if (Audio3dDirectDrainEnabled()) {
+        serialized.lock();
+    }
     while (true) {
         s32 handle = -1;
         std::vector<u8> buffer;
