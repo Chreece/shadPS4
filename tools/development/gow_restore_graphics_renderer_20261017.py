@@ -115,6 +115,9 @@ def restore(proven, historical, header):
             seek=i+1
         return result
 
+    if ('u32 proven_write_size = 0' not in header or
+        'ObtainBufferFlags flags = ObtainBufferFlags::None' not in header):
+        raise ValueError('ACTIVE_BUFFER_CACHE_MISSING_PROVEN_WRITE_SIZE_ABI')
     buffer_calls=arguments_of_calls(s, 'ObtainBuffer')
     if len(buffer_calls) != 9:
         raise ValueError(f'UNEXPECTED_BUFFER_CALL_COUNT:{len(buffer_calls)}')
@@ -122,8 +125,15 @@ def restore(proven, historical, header):
     for position,args in buffer_calls:
         if len(args)==2:
             continue
-        if len(args)!=3:
+        if len(args) not in (3,4):
             raise ValueError(f'UNPORTED_BUFFER_BOOL_ARGS:{args}')
+        if len(args)==4:
+            if re.sub(r'\s+', '', args[3]) != 'static_cast<u32>(tracked_write_size)':
+                raise ValueError(f'UNKNOWN_PROVEN_WRITE_EXTENT:{args[3]}')
+            if (s.count('ComputeProvenWriteSize(desc.write_extent, local, groups)') != 1 or
+                s.count('texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, tracked_write_size)') != 1 or
+                s.count('u64 tracked_write_size = size;') != 1):
+                raise ValueError('PROVEN_WRITE_EXTENT_SEMANTICS_MISSING')
         extra=re.sub(r'\s+', '', args[2])
         if extra.startswith('flags'):
             # Keep any flags chosen by the known-good renderer, including
