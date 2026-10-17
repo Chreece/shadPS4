@@ -6,7 +6,7 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=1b756014040b0d3238ce130001efa4980e2d1499
+FIX=31ecdcd80bd3e20b4ed4a991e89996e0a18e90ca
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
@@ -54,7 +54,7 @@ finish() {
   [[ ! -f "$OUT/base.txt" ]] || cat "$OUT/base.txt"
   [[ ! -f "$OUT/srt.txt" ]] || cat "$OUT/srt.txt"
   if [[ "$rc" != 0 ]]; then
-    for f in "$OUT/"{source-contract,observer-unit-tests,compile-page-manager,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer}.log; do
+    for f in "$OUT/"{python-syntax,source-contract-tests,source-contract,observer-unit-tests,compile-page-manager,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer}.log; do
       [[ ! -s "$f" ]] || { echo "ERROR_TAIL=$f"; tail -18 "$f"; }
     done
   fi
@@ -107,6 +107,26 @@ fi
   echo "ISOLATED_WORKTREE_ADVANCE_FAILED"; exit 1;
 }
 echo "REBASE_WORKTREE_FAST_FORWARD=PASS; OLD=$PREVIOUS_HEAD; NEW=$FIX" | tee "$OUT/worktree-advance.txt"
+STAGE=PYTHON_SOURCE_TOOL_SELFTEST
+# Compile all Python helper sources and run 8 positive/negative test cases
+# BEFORE the real-source gate. No untested regex or parser can silently stop
+# an otherwise compile-ready native source tree again.
+python3 -m py_compile \
+  "$SRC/tools/development/gow_upstream_source_contract.py" \
+  "$SRC/tools/development/gow_upstream_source_contract_test.py" \
+  "$SRC/tools/development/gow_upstream_gameplay.py" \
+  "$SRC/tools/development/gow_upstream_gameplay_test.py" \
+  >"$OUT/python-syntax.log" 2>&1 || {
+    echo "PYTHON_SYNTAX=FAILED"; cat "$OUT/python-syntax.log"; exit 1;
+  }
+echo "PYTHON_SYNTAX=PASS"
+python3 "$SRC/tools/development/gow_upstream_source_contract_test.py" \
+  >"$OUT/source-contract-tests.log" 2>&1 || {
+    echo "SOURCE_CONTRACT_TEST_SUITE=FAILED"
+    cat "$OUT/source-contract-tests.log"
+    exit 1
+  }
+tail -2 "$OUT/source-contract-tests.log"
 STAGE=SOURCE_CONTRACT_PREFLIGHT
 python3 "$SRC/tools/development/gow_upstream_source_contract.py" "$SRC" \
   >"$OUT/source-contract.log" 2>&1 || {
