@@ -24,33 +24,48 @@ def main():
         raise SystemExit("usage: contract.py ORIGINAL_AUDIO3D.cpp TRIAL_AUDIO3D.cpp RUNNER.sh OBSERVER.py AUDIO3D.h")
     original, trial, runner, observer, header = (
         Path(x).read_text(encoding="utf-8") for x in sys.argv[1:])
-    orig_lines, trial_lines = original.splitlines(True), trial.splitlines(True)
-    find = lambda phrase: next((i for i, line in enumerate(orig_lines)
-                                if phrase in line), -1)
+    # Compare the code *outside* four approved scopes byte-for-byte. This
+    # avoids positional diff ambiguity when the user's local source contains
+    # unrelated edits or comments at nearby line numbers.
     scopes = [
-        ("includes_globals", 0, find("struct AudioOutBufferInfo")),
-        ("associated_drain", find("static s32 DrainAssociatedPorts("),
-         find("s32 PS4_SYSV_ABI sceAudio3dAudioOutClose(")),
-        ("associated_enqueue", find("s32 PS4_SYSV_ABI sceAudio3dAudioOutOutput("),
-         find("s32 PS4_SYSV_ABI sceAudio3dAudioOutOutputs(")),
-        ("port_push", find("s32 PS4_SYSV_ABI sceAudio3dPortPush("),
-         find("s32 PS4_SYSV_ABI sceAudio3dPortQueryDebug(")),
+        ("includes_globals", "// SPDX-FileCopyrightText", "struct AudioOutBufferInfo {"),
+        ("associated_drain", "static s32 DrainAssociatedPorts(Port& port) {",
+         "s32 PS4_SYSV_ABI sceAudio3dAudioOutClose("),
+        ("associated_enqueue", "s32 PS4_SYSV_ABI sceAudio3dAudioOutOutput(",
+         "s32 PS4_SYSV_ABI sceAudio3dAudioOutOutputs("),
+        ("port_push", "s32 PS4_SYSV_ABI sceAudio3dPortPush(",
+         "s32 PS4_SYSV_ABI sceAudio3dPortQueryDebug("),
     ]
-    check(all(start >= 0 and end > start for _,start,end in scopes),
-          "ORIGINAL_SOURCE_FUNCTION_ANCHORS_CHANGED")
-    touched = set()
-    for opcode,i1,i2,j1,j2 in difflib.SequenceMatcher(
-            None,orig_lines,trial_lines,autojunk=False).get_opcodes():
-        if opcode == "equal":
-            continue
-        begin_scope = scope_of(i1, scopes)
-        end_scope = scope_of(i2 if i1!=i2 else i1, scopes)
-        check(begin_scope and begin_scope == end_scope,
-              "CHANGE_OUTSIDE_ALLOWED_AUDIO3D_HLE_PATH:"
-              + repr((opcode,i1,i2,j1,j2,begin_scope,end_scope)))
-        touched.add(begin_scope)
-    check(touched == {s[0] for s in scopes},
-          "UNEXPECTED_AUDIO3D_HLE_CHANGE_SCOPES:"+repr(touched))
+
+    def approved_parts(src):
+        regions = []
+        for name, begin, end in scopes:
+            check(src.count(begin) == src.count(end) == 1,
+                  "AUDIO3D_APPROVED_SCOPE_ABI_DRIFT:" + name)
+            i,j = src.index(begin),src.index(end)
+            check(i<j,"AUDIO3D_SCOPE_END_PRECEDES_BEGIN:"+name)
+            regions.append((i,j,name))
+        regions.sort()
+        masked = []
+        previous = 0
+        bodies = {}
+        for i,j,name in regions:
+            check(previous <= i, "AUDIO3D_APPROVED_SCOPES_OVERLAP")
+            masked.append(src[previous:i])
+            masked.append("\n__APPROVED_AUDIO3D_SCOPE_" + name + "__\n")
+            bodies[name]=src[i:j]
+            previous=j
+        masked.append(src[previous:])
+        return "".join(masked),bodies
+
+    original_outside,original_bodies=approved_parts(original)
+    trial_outside,trial_bodies=approved_parts(trial)
+    check(original_outside==trial_outside,
+          "LOCAL_AUDIO3D_CHANGES_OUTSIDE_APPROVED_QUEUE_SCOPES")
+    touched={name for name in original_bodies
+             if original_bodies[name]!=trial_bodies[name]}
+    check(touched=={s[0] for s in scopes},
+          "AUDIO3D_MERGE_MISSING_ONE_OR_MORE_APPROVED_SCOPES:"+repr(touched))
     print("AUDIO3D_SOURCE_DIFF_ONLY_IN_FOUR_APPROVED_HLE_SCOPES=PASS")
 
     check('std::getenv("SHADPS4_AUDIO3D_DIRECT_DRAIN")' in trial
