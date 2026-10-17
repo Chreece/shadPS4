@@ -327,7 +327,7 @@ apply_blob() {
     test "$(git -C "$SOURCE" rev-parse "$CANDIDATE:$rel")" = "$target" || {
         echo "CANDIDATE_BLOB_HASH_MISMATCH=$rel"; exit 2;
     }
-    expected=$(git -C "$SOURCE" rev-parse "$BASE:$rel" 2>/dev/null || true)
+    expected=$(git -C "$SOURCE" rev-parse --verify "$BASE:$rel" 2>/dev/null || true)
     mkdir -p "$RUN/tmp/candidate/$(dirname "$rel")"
     git -C "$SOURCE" show "$CANDIDATE:$rel" >"$RUN/tmp/candidate/$rel"
     test "$(git -C "$SOURCE" hash-object "$RUN/tmp/candidate/$rel")" = "$target" || {
