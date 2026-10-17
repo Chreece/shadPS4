@@ -3,6 +3,7 @@
 #pragma once
 #include <array>
 #include <cstdint>
+#include <type_traits>
 #include "shader_recompiler/ir/opcodes.h"
 
 namespace Shader::Optimization {
@@ -76,7 +77,8 @@ struct StridedIndexedSharpWord {
 template <typename Value>
 [[nodiscard]] StridedIndexedSharpWord AnalyzeStridedIndexedSharpWord(Value index) {
     const auto normalized = AnalyzeIndexedSharpWord(index);
-    const auto* const shift = static_cast<const IR::Inst*>(normalized.selector);
+    using Inst = std::remove_cv_t<std::remove_pointer_t<decltype(index.TryInst())>>;
+    const auto* const shift = static_cast<const Inst*>(normalized.selector);
     if (!normalized.valid || !shift ||
         shift->GetOpcode() != IR::Opcode::ShiftRightLogical32 ||
         !shift->Arg(1).IsImmediate() ||
@@ -123,7 +125,7 @@ template <typename Value>
             std::uint64_t(cur.offset_dwords) !=
                 std::uint64_t(first.offset_dwords) + i) return false;
     }
-    return std::uint64_t(first.offset_dwords + 8u) <=
+    return (std::uint64_t(first.offset_dwords) + 8u) <=
            first.record_stride_bytes / 4u;
 }
 
