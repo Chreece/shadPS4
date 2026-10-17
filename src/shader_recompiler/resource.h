@@ -86,6 +86,8 @@ enum class BufferType : u8 {
     GdsBuffer,
     SharedMemory,
     ClipPlanes,
+    // Test-only GPU atomic bitmap of dynamically selected guest T# indices.
+    GuestTsharpFeedback,
 };
 
 struct BufferResource {
