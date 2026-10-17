@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <memory>
+
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
@@ -172,6 +174,11 @@ private:
     u32 set_write_index{};
     Pipeline::DescriptorWrites set_writes;
     Shader::PushData push_data;
+
+    // Host-visible, opt-in feedback for original GPU-selected guest T# IDs.
+    // Kept separate from the emulator's GPU page-fault buffer.
+    std::unique_ptr<VideoCore::Buffer> guest_tsharp_feedback_buffer;
+    u32 guest_tsharp_feedback_fence_count{};
 
     bool attachment_feedback_loop{};
     bool needs_barrier{};
