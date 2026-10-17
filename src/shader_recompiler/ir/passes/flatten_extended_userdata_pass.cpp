@@ -271,7 +271,7 @@ static void TraceSrtHostBarriers(
             continue;
         }
         const unsigned parts=sbuffer ? 3u : 2u;
-        const char* field="unknown";
+        const char* field=nullptr;
         IR::Value blocked{};
         for (unsigned j=0;j<parts;++j) {
             if (!IsHostUniformSrtOffset(base->Arg(j))) {
@@ -281,12 +281,12 @@ static void TraceSrtHostBarriers(
                 break;
             }
         }
-        if (field==std::string_view{"unknown"} &&
+        if (field==nullptr &&
             !IsHostUniformSrtOffset(read->Arg(1))) {
             field="dword-index";
             blocked=read->Arg(1);
         }
-        if (field==std::string_view{"unknown"}) {
+        if (field==nullptr) {
             ++eligible;
             continue;
         }
