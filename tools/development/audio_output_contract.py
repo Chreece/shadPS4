@@ -42,6 +42,14 @@ def validate(root: Path) -> None:
         require("IsUsable()" in factory and ("make_unique<" + classname) in factory,
                 backend + " factory must validate newly created port instance")
 
+    openal = read("src/core/libraries/audio/openal_audio_out.cpp")
+    openal_volume = openal.partition("void SetVolume(")[2].partition(
+        "u64 GetLastOutputTime()")[0]
+    guarded = openal_volume.find("if (intentionally_disabled || !device_context || !source)")
+    context_use = openal_volume.find("device_context->MakeCurrent(")
+    require(guarded >= 0 and context_use > guarded,
+            "OpenAL muted ports must guard null device_context before SetVolume")
+
     audio3d = read("src/core/libraries/audio3d/audio3d.cpp")
     init = audio3d.partition("sceAudio3dInitialize(")[2].partition(
         "sceAudio3dObjectReserve(")[0]
