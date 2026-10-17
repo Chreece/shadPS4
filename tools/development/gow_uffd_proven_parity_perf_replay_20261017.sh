@@ -7,6 +7,7 @@ ORIGINAL_ROOT="$HOME/projects/shadps4/GodOfWarRagnarok/tests/native-rendered-gfx
 ORIGINAL_SRC="$ORIGINAL_ROOT/source"
 PROVEN="$ORIGINAL_ROOT/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 OBSERVER="${1:?pinned observer path required}"
+COMPAT="${2:?pinned renderer API adapter path required}"
 PROVEN_SHA=e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa
 SRC="$ROOT/source"
 BUILD="$ROOT/build"
@@ -101,9 +102,9 @@ trap 'finish $?' EXIT
 exec 9>"$LOGS/.gow-uffd-deferred-build.lock"
 flock -n 9 || { echo "ANOTHER_UFFD_BUILD_RUNNING"; exit 1; }
 [[ ( -d "$SRC/.git" || -f "$SRC/.git" ) && -d "$BUILD" ]] || { echo "EXACT_TEST_TREE_MISSING"; exit 1; }
-[[ -f "$PROVEN" && -f "$OBSERVER" ]] || { echo "PROVEN_BINARY_OR_OBSERVER_MISSING"; exit 1; }
+[[ -f "$PROVEN" && -f "$OBSERVER" && -f "$COMPAT" ]] || { echo "PROVEN_BINARY_OR_PINNED_TOOLS_MISSING"; exit 1; }
 echo "$PROVEN_SHA  $PROVEN" | sha256sum -c - || { echo "PROVEN_GAMEPLAY_SHA_MISMATCH"; exit 1; }
-python3 -m py_compile "$OBSERVER"
+python3 -m py_compile "$OBSERVER" "$COMPAT"
 [[ "$SRC" != "$ORIGINAL_SRC" ]] && [[ "$BUILD" != "$ORIGINAL_ROOT/build" ]] || { echo "UNSAFE_BUILD_TARGET_EQUALS_PROVEN"; exit 1; }
 [[ -f "$BUILD/shadps4" && ! -L "$BUILD/shadps4" ]] || {
   echo "ORIGINAL_BUILD_TARGET_MISSING_OR_SYMLINKED; REFUSING_TO_REPLACE"; exit 1;
@@ -229,11 +230,46 @@ grep -Fq "InvalidateMemoryOnGpuThread" "$SRC/src/video_core/renderer_vulkan/vk_r
   echo "DEFERRED_GPU_CALLBACK_NOT_STAGED"; exit 1;
 }
 echo "PINNED_UFFD_FIVE_BLOBS=SHA_MATCHED; ORIGINAL_SOURCE=UNCHANGED"
+echo "RENDERER_BUFFER_ABI_COMPATIBILITY_PREFLIGHT=START"
+python3 -B "$COMPAT" "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" "$SRC/src/video_core/buffer_cache/buffer_cache.h" > "$OUT/renderer-abi-adapter.log" 2>&1 || {
+  echo "RENDERER_BUFFER_ABI_PORT_FAILED"
+  cat "$OUT/renderer-abi-adapter.log"
+  exit 1
+}
+cat "$OUT/renderer-abi-adapter.log"
+echo "7ab9db8b940936ae96df2467d91be7ff9b3f3ea13ed0a25056f7eb51ef5c250f  $SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" | sha256sum -c - > "$OUT/renderer-abi-verified.txt"
+touch -m "$SRC/src/video_core/page_manager.cpp" "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" "$SRC/src/core/libraries/gnmdriver/gnmdriver.cpp"
+# Compile all touched production translation units independently BEFORE the
+# expensive full link. This catches active BufferCache ABI drift at once.
+STAGE=EARLY_UFFD_RENDERER_COMPILE
+RULES="$BUILD/CMakeFiles/shadps4.dir/build.make"
+[[ -f "$RULES" ]] || { echo "ISOLATED_CMAKE_BUILD_RULES_MISSING"; exit 1; }
+MAKE_BIN="$(command -v gmake || command -v make)"
+EARLY_OBJECTS=(
+  CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o
+  CMakeFiles/shadps4.dir/src/video_core/page_manager.cpp.o
+  CMakeFiles/shadps4.dir/src/core/libraries/gnmdriver/gnmdriver.cpp.o
+)
+for obj in "${EARLY_OBJECTS[@]}"; do
+  grep -Fq "$obj:" "$RULES" || { echo "ISOLATED_OBJECT_RULE_NOT_FOUND=$obj"; exit 1; }
+done
+"$MAKE_BIN" -C "$BUILD" -f CMakeFiles/shadps4.dir/build.make -j3 "${EARLY_OBJECTS[@]}" > "$OUT/compile-abi-preflight.log" 2>&1 || {
+  echo "EARLY_NATIVE_CPP_COMPILE_FAILED"
+  tail -95 "$OUT/compile-abi-preflight.log"
+  exit 1
+}
+for obj in "${EARLY_OBJECTS[@]}"; do
+  [[ -s "$BUILD/$obj" ]] || { echo "PRECOMPILED_NATIVE_OBJECT_MISSING=$obj"; exit 1; }
+  grep -F "$obj" "$OUT/compile-abi-preflight.log" >> "$OUT/precompiled-object-proof.txt" || {
+    echo "NATIVE_OBJECT_NOT_RECOMPILED=$obj"; exit 1;
+  }
+done
+echo "NATIVE_UFFD_RENDERER_GNMD_CPP_ABI_PREFLIGHT=PASS"
 echo "PINNED_SOURCE_REPLAY=PASS; BUILD_START=YES"
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build.log" 2>&1
 [[ -x "$BUILD/shadps4" ]] || { echo "BUILT_TARGET_MISSING"; exit 1; }
 for obj in page_manager.cpp.o vk_rasterizer.cpp.o; do
-  grep -F "$obj" "$OUT/build.log" > "$OUT/rebuilt-$obj.txt" || { echo "DEFERRED_SOURCE_OBJECT_NOT_COMPILED=$obj"; exit 1; }
+  grep -F "$obj" "$OUT/compile-abi-preflight.log" "$OUT/build.log" > "$OUT/rebuilt-$obj.txt" || { echo "DEFERRED_SOURCE_OBJECT_NOT_COMPILED=$obj"; exit 1; }
 done
 nm -C "$BUILD/shadps4" | grep -F "Vulkan::Rasterizer::InvalidateMemoryOnGpuThread" > "$OUT/deferred-symbol.txt" || { echo "DEFERRED_UFFD_SYMBOL_MISSING_FROM_BINARY"; exit 1; }
 echo "DEFERRED_UFFD_OBJECTS_REBUILT_AND_LINKED=PASS"
@@ -280,15 +316,30 @@ for operation in (
     assert result.count(operation)==s.count(operation), "GRAPHICS_SEMANTICS_CHANGED:"+operation
 p.write_text(result)
 assert p.read_text()==result
-print("ONLY_CLAMP_LOGGING_CHANGED; DEFERRED_UFFD_CODE=UNCHANGED")
+import hashlib
+expected="cbc7c1067b21982f7eaba5cf73493261908d5bc19bd528ae653449dc78151fa1"
+assert hashlib.sha256(result.encode()).hexdigest()==expected, "RATE_LIMITED_RENDERER_SHA_MISMATCH"
+print("ONLY_CLAMP_LOGGING_CHANGED; DEFERRED_UFFD_CODE=UNCHANGED; SHA_VERIFIED")
 RATE_LIMIT_PATCH
 touch -m "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp"
+STAGE=EARLY_RATE_LIMIT_RENDERER_COMPILE
+"$MAKE_BIN" -C "$BUILD" -f CMakeFiles/shadps4.dir/build.make \
+  CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o \
+  > "$OUT/compile-rate-limit-preflight.log" 2>&1 || {
+  echo "RATE_LIMIT_RENDERER_CPP_COMPILE_FAILED"
+  tail -90 "$OUT/compile-rate-limit-preflight.log"
+  exit 1
+}
+grep -F "vk_rasterizer.cpp.o" "$OUT/compile-rate-limit-preflight.log" > "$OUT/rate-limit-precompiled-proof.txt" || {
+  echo "RATE_LIMIT_RENDERER_NOT_RECOMPILED"; exit 1;
+}
+STAGE=BUILD_RATE_LIMIT_CANDIDATE
 cmake --build "$BUILD" --target shadps4 --parallel 4 > "$OUT/build-rate-limit.log" 2>&1 || {
   echo "RATE_LIMIT_LINK_FAILED"
   tail -85 "$OUT/build-rate-limit.log"
   exit 1
 }
-grep -F "vk_rasterizer.cpp.o" "$OUT/build-rate-limit.log" > "$OUT/rate-limit-object-build.txt" || {
+grep -F "vk_rasterizer.cpp.o" "$OUT/compile-rate-limit-preflight.log" "$OUT/build-rate-limit.log" > "$OUT/rate-limit-object-build.txt" || {
   echo "HOTPATH_OBJECT_NOT_REBUILT"
   exit 1
 }
@@ -306,7 +357,7 @@ echo "A_B_BINARY_B=$CANDIDATE"
 echo "EMULATOR_FIX=GENERAL_LINUX_UFFD_DEFERRED_INVALIDATION_AND_GPU_LIFECYCLE"
 echo "PROVEN_DEFERRED_UFFD_CANDIDATE_BUILT=YES; AUTO_GAMEPLAY_LAUNCH=START"
 [[ -f "$OBSERVER" ]] || { echo "OBSERVER_MISSING"; exit 1; }
-python3 -m py_compile "$OBSERVER"
+python3 -m py_compile "$OBSERVER" "$COMPAT"
 if [[ -z "$(printenv DISPLAY || true)" ]]; then export DISPLAY=:0; fi
 if [[ -z "$(printenv XDG_RUNTIME_DIR || true)" ]]; then export XDG_RUNTIME_DIR="/run/user/$(id -u)"; fi
 if [[ -z "$(printenv DBUS_SESSION_BUS_ADDRESS || true)" ]]; then export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"; fi
