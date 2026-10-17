@@ -34,6 +34,68 @@ std::mutex port_allocation_mutex;
 static std::unique_ptr<AudioOutBackend> audio;
 static std::atomic<int> lazy_init{0};
 
+// Passive guest-to-emulator audio deadline telemetry. No pacing, PCM or
+// guest output semantics are modified by these counters.
+static bool GuestAudioProbe() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("SHADPS4_AUDIO_TIMING_PROBE");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    return enabled;
+}
+
+struct GuestAudioCounters {
+    std::atomic<u64> calls{0};
+    std::atomic<u64> previous_entry{0};
+    std::atomic<u64> late_entries{0};
+    std::atomic<u64> max_entry_gap{0};
+    std::atomic<u64> long_waits{0};
+    std::atomic<u64> max_wait{0};
+    std::atomic<u64> null_pcm{0};
+};
+
+static void AudioProbeMax(std::atomic<u64>& field, u64 value) {
+    u64 current = field.load(std::memory_order_relaxed);
+    while (value > current &&
+           !field.compare_exchange_weak(current, value, std::memory_order_relaxed)) {}
+}
+
+static void RecordGuestAudioSubmit(s32 id, u32 frames, u32 rate, u64 begin_us,
+                                   u64 end_us, bool has_pcm) {
+    if (!GuestAudioProbe() || id < 0 || id >= ORBIS_AUDIO_OUT_NUM_PORTS || rate == 0)
+        return;
+    static std::array<GuestAudioCounters, ORBIS_AUDIO_OUT_NUM_PORTS> counters{};
+    auto& c = counters[id];
+    const u64 period = (1000000ULL * frames + rate / 2) / rate;
+    const u64 prior = c.previous_entry.exchange(begin_us, std::memory_order_relaxed);
+    if (prior && begin_us >= prior) {
+        const u64 gap = begin_us - prior;
+        AudioProbeMax(c.max_entry_gap, gap);
+        if (gap > period + period / 2)
+            c.late_entries.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (end_us >= begin_us) {
+        const u64 waited = end_us - begin_us;
+        AudioProbeMax(c.max_wait, waited);
+        if (waited > period)
+            c.long_waits.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (!has_pcm)
+        c.null_pcm.fetch_add(1, std::memory_order_relaxed);
+    const u64 total = c.calls.fetch_add(1, std::memory_order_relaxed) + 1;
+    if ((total & 255) == 0) {
+        LOG_WARNING(Lib_AudioOut,
+                    "AUDIO_GUEST_SUBMIT port={} calls={} period_us={} late_entries={} "
+                    "max_entry_gap_us={} long_waits={} max_wait_us={} null_pcm={}",
+                    id, total, period,
+                    c.late_entries.exchange(0, std::memory_order_relaxed),
+                    c.max_entry_gap.exchange(0, std::memory_order_relaxed),
+                    c.long_waits.exchange(0, std::memory_order_relaxed),
+                    c.max_wait.exchange(0, std::memory_order_relaxed),
+                    c.null_pcm.exchange(0, std::memory_order_relaxed));
+    }
+}
+
 // Port allocation ranges
 constexpr struct PortRange {
     s32 start;
@@ -620,6 +682,7 @@ s32 PS4_SYSV_ABI sceAudioOutOutput(s32 handle, void* ptr) {
         return ORBIS_AUDIO_OUT_ERROR_NOT_OPENED;
     }
 
+    const u64 guest_start = GuestAudioProbe() ? Kernel::sceKernelGetProcessTime() : 0;
     s32 samples_sent = 0;
     {
         std::unique_lock lock{port->mutex};
@@ -637,6 +700,11 @@ s32 PS4_SYSV_ABI sceAudioOutOutput(s32 handle, void* ptr) {
         }
     }
 
+    if (guest_start != 0) {
+        RecordGuestAudioSubmit(port_id, port->buffer_frames, port->sample_rate,
+                               guest_start, Kernel::sceKernelGetProcessTime(),
+                               ptr != nullptr);
+    }
     return samples_sent;
 }
 
@@ -722,6 +790,7 @@ s32 PS4_SYSV_ABI sceAudioOutOutputs(OrbisAudioOutOutputParam* param, u32 num) {
         }
     }
 
+    const u64 batch_start = GuestAudioProbe() ? Kernel::sceKernelGetProcessTime() : 0;
     // This helper releases every other port mutex before waiting for a busy
     // port, then reacquires all locks in stable order before atomic publication.
     // The previous loop could block an output worker while waiting for a
@@ -739,6 +808,31 @@ s32 PS4_SYSV_ABI sceAudioOutOutputs(OrbisAudioOutOutputParam* param, u32 num) {
         }
     }
 
+    locks.clear(); // Publish atomically; never format a log while holding port locks.
+    if (batch_start != 0) {
+        static std::atomic<u64> batch_calls{0};
+        static std::atomic<u64> multiport_calls{0};
+        static std::atomic<u64> long_waits{0};
+        static std::atomic<u64> max_wait_us{0};
+        const u64 n = batch_calls.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (num > 1)
+            multiport_calls.fetch_add(1, std::memory_order_relaxed);
+        const u64 now = Kernel::sceKernelGetProcessTime();
+        const u64 elapsed = now >= batch_start ? now - batch_start : 0;
+        const u64 rate = ports[0]->sample_rate;
+        const u64 period = rate != 0 ? (1000000ULL * buffer_frames + rate / 2) / rate : 0;
+        if (elapsed > period)
+            long_waits.fetch_add(1, std::memory_order_relaxed);
+        AudioProbeMax(max_wait_us, elapsed);
+        if ((n & (n - 1)) == 0 || (n & 511) == 0) {
+            LOG_WARNING(Lib_AudioOut,
+                        "AUDIO_BATCH_SYNC calls={} num={} multiport_calls={} "
+                        "long_waits={} max_wait_us={}",
+                        n, num, multiport_calls.load(std::memory_order_relaxed),
+                        long_waits.exchange(0, std::memory_order_relaxed),
+                        max_wait_us.exchange(0, std::memory_order_relaxed));
+        }
+    }
     return buffer_frames;
 }
 
