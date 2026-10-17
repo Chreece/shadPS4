@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""SHA-pinned, fail-closed gameplay observation after an upstream GoW build.
+
+Launch exactly one candidate, with no automatic game inputs or game termination.
+A user may control the game through their existing Moonlight session.
+"""
+import argparse
+from collections import Counter, deque
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import time
+import traceback
+
+LOG_MARKERS = {
+    "shader_unflattened": "sharp source was not flattened",
+    "legacy_unflattened": "Sharp source was not flatenned",
+    "buffer_clamps": "Clamped size from",
+    "queue_register": "SetQueueReg",
+    "shader_dma": "Enabling DMA for shader",
+    "invalid_texture": "Rejecting invalid T#",
+    "pm4_out_of_range": "out-of-range",
+    "vulkan_fault": "VK_ERROR_DEVICE_LOST",
+}
+THREAD_NAMES = ("GpuComm", "Uffd", "Game:Main", "VideoOut", "Render", "TaskManager")
+SHADER_ID = re.compile(r"(?:stage|shader)\s+(?:0x)?([a-f0-9]{6,16})", re.I)
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def active_emulators():
+    matches = []
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdecimal():
+            continue
+        try:
+            if proc.stat().st_uid != os.getuid():
+                continue
+            args = (proc / "cmdline").read_bytes().rstrip(b"\0").split(b"\0")
+            if not args or not Path(os.fsdecode(args[0])).name.lower().startswith("shadps4"):
+                continue
+            state = (proc / "stat").read_text().rsplit(") ", 1)[1][0]
+            if state not in ("Z", "X"):
+                matches.append({"pid": int(proc.name), "argv0": os.fsdecode(args[0]), "state": state})
+        except (OSError, ValueError, IndexError):
+            continue
+    return matches
+
+
+def sample_threads(pid):
+    results = {}
+    for proc in Path(f"/proc/{pid}/task").iterdir():
+        if not proc.name.isdecimal():
+            continue
+        try:
+            name = (proc / "comm").read_text().strip()
+            if not any(key in name for key in THREAD_NAMES):
+                continue
+            stat = (proc / "stat").read_text().rsplit(") ", 1)[1].split()
+            results[proc.name] = {
+                "name": name,
+                "cpu_ticks": int(stat[11]) + int(stat[12]),
+                "state": stat[0],
+                "wchan": (proc / "wchan").read_text().strip(),
+            }
+        except (OSError, ValueError, IndexError):
+            continue
+    return results
+
+
+def summarize_log(path, out):
+    first, last = [], deque(maxlen=350)
+    shader_ids, category = Counter(), Counter()
+    total_lines = 0
+    if not path.is_file():
+        return {"console_missing": True}
+    try:
+        with path.open("rb", buffering=1024 * 1024) as stream:
+            for raw in stream:
+                total_lines += 1
+                line = raw.decode("utf-8", "replace").rstrip()[:1800]
+                tags = [kind for kind, substring in LOG_MARKERS.items() if substring in line]
+                if " <Error>" in line or " <Warning>" in line or tags:
+                    for tag in tags:
+                        category[tag] += 1
+                    if " <Error>" in line:
+                        category["errors"] += 1
+                    if " <Warning>" in line:
+                        category["warnings"] += 1
+                    if len(first) < 350:
+                        first.append(line)
+                    last.append(line)
+                if tags:
+                    match = SHADER_ID.search(line)
+                    if match:
+                        shader_ids[match.group(1).lower()] += 1
+        (out / "console-diagnostics.txt").write_text(
+            "\n".join(first) + "\n\n... SELECTED DIAGNOSTIC TAIL ...\n\n" +
+            "\n".join(last) + "\n", encoding="utf-8")
+        # Cap upload size. Full growing console remains on the user's server.
+        with path.open("rb") as stream:
+            prefix = stream.read(512 * 1024)
+            if path.stat().st_size > 3 * 1024 * 1024:
+                stream.seek(-2 * 1024 * 1024, 2)
+            suffix = stream.read()
+        (out / "console-excerpt.log").write_bytes(prefix + b"\n...[MIDDLE OMITTED]...\n" + suffix)
+    except OSError as error:
+        return {"console_read_error": str(error)}
+    return {"lines": total_lines, "counts": dict(category),
+            "top_shader_hashes": shader_ids.most_common(32),
+            "full_console_path": str(path), "full_console_bytes": path.stat().st_size}
+
+
+def capture_deadlock_stacks(pid, out):
+    if not shutil.which("gdb") or not shutil.which("timeout"):
+        (out / "gdb-not-present.txt").write_text("GDB or timeout not installed\n")
+        return
+    try:
+        result = subprocess.run(
+            ["timeout", "23s", "gdb", "-nx", "-batch", "-q",
+             "-ex", "set pagination off", "-ex", "set confirm off",
+             "-ex", "info threads", "-ex", "thread apply all bt 18",
+             "-ex", "detach", "-p", str(pid)],
+            capture_output=True, text=True, errors="replace", timeout=28)
+        (out / "deadlock-stacks.txt").write_text(
+            f"return_code={result.returncode}\n{result.stdout}\n{result.stderr}\n")
+    except (OSError, subprocess.TimeoutExpired) as error:
+        (out / "gdb-error.txt").write_text(repr(error) + "\n")
+
+
+def main():
+    arg = argparse.ArgumentParser()
+    arg.add_argument("--binary", type=Path, required=True)
+    arg.add_argument("--sha256", required=True)
+    arg.add_argument("--report", type=Path, required=True)
+    arg.add_argument("--cwd", type=Path, required=True)
+    arg.add_argument("--seconds", type=int, default=180)
+    args = arg.parse_args()
+    if args.seconds < 45 or args.seconds > 360:
+        arg.error("observation --seconds must be between 45 and 360")
+    if not re.fullmatch(r"[a-f0-9]{64}", args.sha256):
+        arg.error("--sha256 must be an exact lowercase SHA-256 hex digest")
+
+    out = args.report
+    out.mkdir(parents=True, exist_ok=False)
+    report = {"game": "CUSA34384", "binary": str(args.binary), "seconds": args.seconds,
+              "game_terminated_by_runner": False, "source_changed": False,
+              "sunshine_x11_changed": False, "ssh_session_changed": False}
+    samples = []
+    process = None
+    status = 1
+    console_file = None
+    try:
+        exe = args.binary.resolve(strict=True)
+        if exe != args.binary or args.binary.is_symlink() or not exe.is_file():
+            raise RuntimeError("CANDIDATE_PATH_MUST_BE_EXACT_REGULAR_FILE")
+        measured = file_sha256(exe)
+        report["binary_sha256"] = measured
+        if measured != args.sha256:
+            raise RuntimeError("GAME_CANDIDATE_SHA256_CHANGED_AFTER_LINK")
+        existing = active_emulators()
+        (out / "existing-emulators.json").write_text(json.dumps(existing, indent=2) + "\n")
+        if existing:
+            raise RuntimeError("EXISTING_SHADPS4_PROCESS_PRESENT; WILL_NOT_LAUNCH_ANOTHER")
+
+        if not args.cwd.is_dir():
+            raise RuntimeError("GAME_LAUNCH_CWD_MISSING")
+        env = os.environ.copy()
+        env.setdefault("DISPLAY", ":0")
+        env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+        env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{os.getuid()}/bus")
+        for key in list(env):
+            if key.startswith(("SHADPS4_GOW_", "SHADPS4_CPU_ID_")):
+                env.pop(key, None)
+        command = [str(exe), "--cpu-id-mode", "builtin", "--userfaultfd",
+                   "--game", "CUSA34384", "--fullscreen", "true", "--show-fps"]
+        (out / "launch-command.json").write_text(json.dumps(command, indent=2) + "\n")
+        console_file = (out / "full-console.log").open("wb", buffering=0)
+        process = subprocess.Popen(
+            command, cwd=args.cwd, env=env, stdin=subprocess.DEVNULL,
+            stdout=console_file, stderr=subprocess.STDOUT, start_new_session=True)
+        report["pid"] = process.pid
+        print(f"GAME_LAUNCHED=YES PID={process.pid} GAME=CUSA34384", flush=True)
+        print("USE_EXISTING_MOONLIGHT_TO_CONTROL_GAME=YES; NO_AUTO_INPUT", flush=True)
+        print("NO_GAME_PROCESS_TERMINATION_BY_RUNNER=YES", flush=True)
+        started = time.monotonic()
+        previous = sample_threads(process.pid)
+        tick_hz = os.sysconf("SC_CLK_TCK")
+        consecutive = 0
+        for elapsed in range(15, args.seconds + 1, 15):
+            target = started + elapsed
+            while time.monotonic() < target:
+                if process.poll() is not None:
+                    break
+                time.sleep(min(0.5, max(0.0, target - time.monotonic())))
+            if process.poll() is not None:
+                report["exit_code"] = process.returncode
+                raise RuntimeError(f"GAME_EXITED_EARLY_WITH_CODE_{process.returncode}")
+            current = sample_threads(process.pid)
+            gpu_fault, uffd_wait = False, False
+            rows = []
+            for tid, item in current.items():
+                before = previous.get(tid)
+                delta = None if not before else max(
+                    0, round((item["cpu_ticks"] - before["cpu_ticks"]) * 1000 / tick_hz))
+                rows.append({"tid": tid, "delta_cpu_ms": delta, **item})
+                gpu_fault |= "GpuComm" in item["name"] and "handle_userfault" in item["wchan"] and delta == 0
+                uffd_wait |= "Uffd" in item["name"] and "futex" in item["wchan"] and delta == 0
+            deadlock_signature = gpu_fault and uffd_wait
+            samples.append({"seconds": elapsed, "threads": rows,
+                            "gpu_userfault": gpu_fault, "uffd_wait": uffd_wait,
+                            "deadlock_signature": deadlock_signature})
+            consecutive = consecutive + 1 if deadlock_signature else 0
+            print(f"GAME_T={elapsed}s GPU_USERFAULT={int(gpu_fault)} UFFD_WAIT={int(uffd_wait)} "
+                  f"DEADLOCK_STREAK={consecutive}", flush=True)
+            if consecutive >= 3:
+                report["old_uffd_deadlock_signature"] = True
+                capture_deadlock_stacks(process.pid, out)
+                raise RuntimeError("OLD_GPU_UFFD_DEADLOCK_REPRODUCED")
+            previous = current
+
+        if process.poll() is not None:
+            raise RuntimeError(f"GAME_EXITED_BEFORE_CAPTURE_COMPLETED_{process.returncode}")
+        report["alive_at_capture_end"] = True
+        report["old_uffd_deadlock_signature"] = False
+        print("GAME_OBSERVATION=COMPLETED_ALIVE; GRAPHICS_VISUAL_CHECK=MANUAL", flush=True)
+        status = 0
+    except Exception as error:
+        report["failure"] = str(error)
+        (out / "observer-error.txt").write_text(traceback.format_exc())
+        print(f"GAME_OBSERVATION=FAILED; REASON={error}", flush=True)
+    finally:
+        if console_file is not None:
+            console_file.close()
+        report["process_alive_when_reported"] = bool(process and process.poll() is None)
+        report["result"] = "OBSERVED_ALIVE" if status == 0 else "FAILED"
+        report["thread_samples"] = len(samples)
+        (out / "thread-samples.json").write_text(json.dumps(samples, indent=2) + "\n")
+        report["console"] = summarize_log(out / "full-console.log", out)
+        (out / "gameplay-result.json").write_text(json.dumps(report, indent=2) + "\n")
+        print(f"GAME_REPORT={out}", flush=True)
+        print(f"GAME_PROCESS_LEFT_RUNNING={report['process_alive_when_reported']}", flush=True)
+        print("SSH_SESSION=UNCHANGED; SUNSHINE_X11=UNCHANGED", flush=True)
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())
