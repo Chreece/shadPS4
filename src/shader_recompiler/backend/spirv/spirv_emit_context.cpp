@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/assert.h"
+#include "common/logging/log.h"
 #include "common/div_ceil.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
@@ -741,6 +742,14 @@ void EmitContext::DefineOutputs() {
             }
             Name(id, fmt::format("frag_color{}", i));
             frag_outputs[i] = GetAttributeInfo(num_format, id, num_components, true);
+            if (runtime_info.hw.fs.color_buffers[i].blend_src_alpha_one) {
+                // Source-code evidence that an actual fragment shader exports
+                // the RGBA value needed by SrcAlpha/ONE MIN/MAX emulation.
+                LOG_INFO(Render_Recompiler,
+                         "SrcAlphaOneShaderExport: shader={:#x} target={} components={} "
+                         "integer={}",
+                         info.pgm_hash, i, num_components, frag_outputs[i].is_integer);
+            }
             ++num_render_targets;
         }
         // Dual source blending allows at most 2 render targets, one for each source.
