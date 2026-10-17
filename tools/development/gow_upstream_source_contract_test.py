@@ -14,6 +14,19 @@ module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
 
 FIXTURE = {
+    "src/core/signals.cpp": """
+SignalDispatch::SignalDispatch() {
+#if defined(__linux__) && defined(ARCH_X86_64)
+    sigaddset(&action.sa_mask, SIGUSR1);
+#endif
+#if defined(__linux__) && defined(ARCH_X86_64)
+    action.sa_flags |= SA_NODEFER;
+    sigaction(SIGSEGV, &action, nullptr);
+    sigaction(SIGILL, &action, nullptr);
+#endif
+}
+void SignalDispatch::RemoveHandlers() {}
+""",
     "src/core/libraries/kernel/module_filename_validation.h":
         "ORBIS_KERNEL_ERROR_EFAULT ORBIS_KERNEL_ERROR_ENOENT",
     "src/core/libraries/kernel/process.cpp": """
@@ -76,6 +89,24 @@ class SourceContractTest(unittest.TestCase):
                                capture_output=True, text=True)
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertIn("UPSTREAM_NATIVE_SOURCE_CONTRACT=PASS", p.stdout)
+
+    def test_missing_nested_cpu_sigsegv_policy_fails(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            populate(root)
+            file = root / "src/core/signals.cpp"
+            file.write_text(file.read_text().replace("action.sa_flags |= SA_NODEFER;", ""))
+            with self.assertRaisesRegex(RuntimeError, "nested SIGSEGV/SIGILL policy lost"):
+                module.validate(root)
+
+    def test_missing_guest_sigusr1_signal_mask_fails(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            populate(root)
+            file = root / "src/core/signals.cpp"
+            file.write_text(file.read_text().replace("sigaddset(&action.sa_mask, SIGUSR1);", ""))
+            with self.assertRaisesRegex(RuntimeError, "guest SIGUSR1 callbacks must be masked"):
+                module.validate(root)
 
     def test_missing_guest_hle_module_validation_fails(self):
         with TemporaryDirectory() as d:
