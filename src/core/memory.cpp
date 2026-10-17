@@ -458,6 +458,7 @@ s32 MemoryManager::PoolCommit(VAddr virtual_addr, u64 size, MemoryProt prot, s32
         handle++;
     }
     ASSERT_MSG(remaining_size == 0, "Failed to commit pooled memory");
+    rasterizer->ProtectMemory(mapped_addr, size, MemoryPermission::ReadWrite);
 
     // Merge this VMA with similar nearby areas
     MergeAdjacent(vma_map, new_vma_handle);
@@ -687,7 +688,10 @@ s32 MemoryManager::MapMemory(void** out_addr, VAddr virtual_addr, u64 size, Memo
 
         lk2.unlock();
 
-        // If this is not a reservation, then map to GPU and address space
+        // Keep guest CPU permissions independent of GPU page watchers.
+        rasterizer->ProtectMemory(mapped_addr, size,
+                                  is_exec && ARCH_X86_64 ? MemoryPermission::ReadWriteExecute
+                                                         : MemoryPermission::ReadWrite);
         if (IsValidGpuMapping(mapped_addr, size)) {
             rasterizer->MapMemory(mapped_addr, size);
         }
@@ -881,6 +885,7 @@ s32 MemoryManager::PoolDecommit(VAddr virtual_addr, u64 size) {
                 phys_handle++;
             }
             ASSERT_MSG(size_to_free == 0, "Failed to decommit pooled memory");
+            rasterizer->ProtectMemory(current_addr, size_in_vma, MemoryPermission::None);
         }
 
         // Mark region as pool reserved and attempt to coalesce it with neighbours.
@@ -994,7 +999,8 @@ u64 MemoryManager::UnmapBytesFromEntry(VAddr virtual_addr, VirtualMemoryArea vma
     MergeAdjacent(vma_map, new_it);
 
     if (vma_type != VMAType::Reserved && vma_type != VMAType::PoolReserved) {
-        // Unmap the memory region.
+        // Drop guest access and update page watch state before unregistering.
+        rasterizer->ProtectMemory(virtual_addr, size_in_vma, MemoryPermission::None);
         u64 size_to_unmap = size_in_vma;
         VAddr unmapped_addr = impl.Unmap(virtual_addr, &size_to_unmap);
         rasterizer->RegisterMemory(unmapped_addr, size_to_unmap);
@@ -1107,7 +1113,7 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
 
     // Perform address-space memory protections if needed.
     if (new_prot != old_prot) {
-        impl.Protect(addr, adjusted_size, perms);
+        rasterizer->ProtectMemory(addr, adjusted_size, perms);
     }
 
     return adjusted_size;
