@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# GoT: exact baseline versus GoW-derived general sparse-mprotect change.
+# GoT: native GCN scalar buffer bounds semantics + GoW universal memory fixes.
 # Standalone, SSH-safe; never touches ES-DE, Sunshine, X11, sysctls or live games.
 set -Eeuo pipefail
 ROOT="$HOME/projects/shadps4"
 LOGS="$ROOT/logs"
-NAME="got-sbuffer-uniform-menu-$(date +%Y%m%d-%H%M%S)"
+NAME="got-sbuffer-bounds-menu-$(date +%Y%m%d-%H%M%S)"
 JOB="$LOGS/$NAME.worker.sh"
 mkdir -p "$LOGS"
 cat > "$JOB" <<'WORKER'
@@ -22,9 +22,9 @@ GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
 BASE_SHA256="948742f5b1ffebf0dfc4d1b452806c2e649bf35d76cffbb576e2b81bb36b5826"
-CANDIDATE="0ef0499cd6d0192b0cefe4a853b8525d1774c96b"
+CANDIDATE="052fd0dc8e895dbc3b4059cdeaf0cf7ccd5eae16"
 UPSTREAM="32021e41bc52f744c80d122e732e24e97496c98d"
-BRANCH="experiment/got-general-sbuffer-address-only-uniform-20261017"
+BRANCH="experiment/got-general-sbuffer-bounds-20261017"
 RUN="$LOGS/.$NAME.runtime"
 ARCHIVE="$LOGS/$NAME.tar.gz"
 STATUS="STARTED"
@@ -117,7 +117,7 @@ find_pid_for_binary() {
 echo "BASE=$BASE"
 echo "CANDIDATE=$CANDIDATE"
 echo "UPSTREAM_MAIN=$UPSTREAM"
-echo "PROVENANCE=UPSTREAM_PLUS_GOW_MEMORY_AND_ADDRESS_ONLY_SBUFFER_UNIFORMITY"
+echo "PROVENANCE=UPSTREAM_PLUS_GOW_MEMORY_AND_BOUNDS_SAFE_SBUFFER_SRT"
 echo "SHADER_AUDITS=TARGETED_RESOURCE_AND_SRT_UNIFORMITY"
 echo "SHADER_CACHE=ENABLED_JSON_CACHE_AND_MATCHED_PROFILES"
 echo "BUILD_CACHE=EXISTING_NINJA_AND_CCACHE"
@@ -356,10 +356,10 @@ apply_blob() {
 }
 apply_blob "src/video_core/page_manager.cpp" "3a7b232e10acb2a9db0507f87ca2c2231c450dd4"
 apply_blob "src/video_core/protection_range_coalescer.h" "0d715461628d5da8afa31f106da4dd9760bd6f05"
-apply_blob "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" "23510f060460632f31de4ab7fb6f85710680471c"
-apply_blob "src/shader_recompiler/ir/passes/srt_inline_read_codegen.h" "d7b54fbecc53d2994b813f20b10c62e041e9d3a2"
-apply_blob "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp" "aec4ac9f569cefd2937168bc42f33e31c96af41a"
-apply_blob "src/shader_recompiler/ir/passes/srt_uniformity.h" "260228fe1e38235c55938a6892750089ad9e91cf"
+apply_blob "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" "4736173eb4efff7decea823a4332e6e78d139813"
+apply_blob "src/shader_recompiler/ir/passes/srt_inline_read_codegen.h" "642f62e5353032ff22a23dbd82f665f0d6b5505d"
+apply_blob "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp" "60b78c6804fcefdb40267a2d84fff3c56a9e2070"
+apply_blob "src/shader_recompiler/ir/passes/srt_uniformity.h" "30b610c15aa5aca4843349f73187c690c26a97d6"
 apply_blob "src/video_core/renderer_vulkan/vk_rasterizer.cpp" "9fc6e76d6ed8e8c646438e0f7efd9373f03a7f10"
 OVERLAY_APPLIED=1
 # Host-only uniformity test covers divergent descriptor metadata and address/index negatives.
@@ -380,7 +380,7 @@ git -C "$SOURCE" show "$CANDIDATE:tests/shader_recompiler/test_srt_sbuffer_guest
 c++ -std=c++23 -O2 "$RUN/tmp/test_sbuffer_address.cpp" \
     -o "$RUN/info/test-sbuffer-address"
 "$RUN/info/test-sbuffer-address" | tee "$RUN/info/sbuffer-address-result.txt"
-printf 'ORIGINAL_HEAD=%s\nUPSTREAM=%s\nGENERAL_SHADER_CANDIDATE=%s\nSHADER_CACHE_VERSION=29\n' \
+printf 'ORIGINAL_HEAD=%s\nUPSTREAM=%s\nGENERAL_SHADER_CANDIDATE=%s\nSHADER_CACHE_VERSION=30\n' \
     "$BASE" "$UPSTREAM" "$CANDIDATE" >"$RUN/info/source-provenance.txt"
 export CCACHE_DIR="$GOT/cache/ccache"
 export CCACHE_MAXSIZE=8G CCACHE_COMPRESS=true CCACHE_BASEDIR="$GOT"
