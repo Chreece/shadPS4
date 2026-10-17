@@ -22,7 +22,7 @@ GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
 BASE_SHA256="948742f5b1ffebf0dfc4d1b452806c2e649bf35d76cffbb576e2b81bb36b5826"
-CANDIDATE="e34bc5b15116357fbed571f94bfabddaa0d15295"
+CANDIDATE="5f64dc60972f52425469ffb0e9ca2b6ca9a593c2"
 UPSTREAM="e6c79a5fe0ea2f3d03fcb9c5c50cf61af063f3f5"
 BRANCH="experiment/got-upstream-phi-world-main-20261017"
 RUN="$LOGS/.$NAME.runtime"
@@ -428,7 +428,7 @@ apply_blob "src/shader_recompiler/ir/passes/srt_uniformity.h" "95bdea6f8db9d0a71
 apply_blob "src/video_core/renderer_vulkan/vk_rasterizer.cpp" "1028033809cf9b93bf850dcc99dd4815340cfe32"
 apply_blob "src/video_core/renderer_vulkan/resource_audit_hash_filter.h" "28cc1c1d76f59386329bf92883acc5e26385b3dc"
 apply_blob "src/shader_recompiler/ir/passes/resource_patching_pass.cpp" "e95c1d8e978542b12a482595cfdced59bc805597"
-apply_blob "src/shader_recompiler/ir/passes/resource_discover_pass.cpp" "13092d551fb14d3c3da07ab4e8f65e2326776b02"
+apply_blob "src/shader_recompiler/ir/passes/resource_discover_pass.cpp" "b35dedf3340008bf39b8a1eebbf1e623bb91f7bd"
 apply_blob "src/shader_recompiler/ir/passes/image_phi_preflight.h" "e54cb2897c2f888c2b2b8322c19615f484588bc1"
 apply_blob "src/shader_recompiler/ir/passes/resource_pass.h" "60f3993724bfae658f19cec71009dd55567b8206"
 apply_blob "src/shader_recompiler/resource.h" "cecfdd6cbece0115c87c23a5122d781c8709bdb9"
@@ -589,6 +589,19 @@ cmake -S "$SOURCE" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_TEST
        tail -100 "$RUN/info/configure.log"; STATUS="CONFIGURE_FAILED"; exit 2;
     }
 ninja -C "$BUILD" -n shadps4 > "$RUN/info/rebuild-plan.txt" || true
+# Compile three high-risk project objects FIRST using the existing CMake
+# flags and ccache. Prior run exposed one diagnostic formatter error at 109/126.
+echo "CRITICAL_OBJECTS_BUILD=START"
+ninja -C "$BUILD" -j4 \
+  CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o \
+  CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/resource_discover_pass.cpp.o \
+  CMakeFiles/shadps4.dir/src/sdl_window.cpp.o \
+  >"$RUN/info/critical-objects-build.log" 2>&1 || {
+    tail -110 "$RUN/info/critical-objects-build.log"
+    STATUS="CRITICAL_GRAPHICS_OR_SDL_COMPILE_FAILED"
+    exit 2
+}
+echo "CRITICAL_OBJECTS_BUILD=PASS"
 echo "INCREMENTAL_BUILD=START"
 cmake --build "$BUILD" --target shadps4 --parallel 8 \
     >"$RUN/info/build.log" 2>&1 || {
