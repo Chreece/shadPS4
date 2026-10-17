@@ -989,6 +989,30 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 }
             }
             if (vsharp.base_address == 0 || vsharp.GetSize() == 0) {
+                // A descriptor can fetch successfully yet yield a null
+                // Vulkan buffer (zero records, bad type, etc.). This bounded
+                // opt-in audit identifies the *actual* guest field values
+                // for shaders with missing world resources, rather than
+                // treating every null as an unresolved flattened sharp.
+                if (audit && (audit->null_buffers <= 4 ||
+                              std::has_single_bit(audit->null_buffers))) {
+                    AmdGpu::Buffer guest{};
+                    const bool flattened =
+                        desc.sharp_fetch.Fetch(stage.flattened_ud_buf.data(), &guest);
+                    const u64 size64 = guest.stride == 0
+                                           ? guest.num_records
+                                           : static_cast<u64>(guest.stride) * guest.num_records;
+                    LOG_INFO(Render_Vulkan,
+                             "ResourceNullBuffer: shader={:#x} stage={} fetched={} "
+                             "summary={} raw_type={} raw_valid={} raw_base={:#x} "
+                             "stride={} num_records={} size_u64={} size_u32={} "
+                             "written={} formatted={}",
+                             stage.pgm_hash, stage.hw_stage, flattened,
+                             u32(desc.sharp_fetch.summary), u32(guest.type),
+                             guest.Valid(), guest.base_address, guest.stride,
+                             guest.num_records, size64, guest.GetSize(),
+                             desc.is_written, desc.is_formatted);
+                }
                 buffer_infos.emplace_back(VK_NULL_HANDLE, 0, VK_WHOLE_SIZE);
             } else {
                 const u64 size = memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize());
