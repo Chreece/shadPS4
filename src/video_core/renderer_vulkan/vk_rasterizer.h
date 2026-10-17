@@ -19,6 +19,7 @@ struct Liverpool;
 
 namespace Core {
 class MemoryManager;
+enum class MemoryPermission : u32;
 }
 
 namespace Vulkan {
