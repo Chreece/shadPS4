@@ -38,4 +38,5 @@ set -e
 echo "RESULT=$RC"
 echo "REPORT=$LOGS/$NAME.tar.gz"
 echo "SSH_SESSION=UNCHANGED"
+exit "$RC"
 )
