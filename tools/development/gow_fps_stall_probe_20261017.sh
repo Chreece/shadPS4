@@ -42,15 +42,20 @@ if [[ -z "$found" ]]; then
   export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
   export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
   for key in ${!SHADPS4_GOW_@} ${!SHADPS4_CPU_ID_@}; do unset "$key"; done
-  (cd "$BASE" && "$BIN" --cpu-id-mode builtin --userfaultfd --game CUSA34384 --fullscreen true --show-fps >"$OUT/game-console.log" 2>&1 </dev/null) &
+  (cd "$BASE" && exec "$BIN" --cpu-id-mode builtin --userfaultfd --game CUSA34384 --fullscreen true --show-fps >"$OUT/game-console.log" 2>&1 </dev/null) &
   found=$!
   echo "AUTO_LAUNCHED_PID=$found"
   sleep 4
+  if [[ "$(readlink -f "/proc/$found/exe" 2>/dev/null || :)" != "$BIN" ]]; then
+    echo "GAME_PID_VALIDATION_FAILED; NOT_PROFILING_WRAPPER"
+    exit 2
+  fi
   if ! kill -0 "$found" 2>/dev/null; then
     echo "GAME_EXITED_EARLY; SEE_GAME_CONSOLE_LOG"
     exit 2
   fi
 fi
+[[ "$(readlink -f "/proc/$found/exe" 2>/dev/null || :)" == "$BIN" ]] || { echo "NOT_A_GOW_PID"; exit 2; }
 echo "PROFILE_PID=$found" | tee "$OUT/pid.txt"
 ps -p "$found" -o pid,ppid,etime,pcpu,pmem,rss,nlwp,args > "$OUT/process.txt"
 if command -v perf >/dev/null 2>&1; then
@@ -71,4 +76,9 @@ for i in $(seq 1 20); do
   done
   sleep 2
 done
-echo "PROFILING_COMPLETE=YES; GAME_LEFT_RUNNING=YES"
+if [[ -d "/proc/$found" ]]; then
+  echo "PROFILING_COMPLETE=YES; GAME_LEFT_RUNNING=YES"
+else
+  echo "GAME_EXITED_DURING_PROFILING=YES; ARCHIVE_CAPTURED"
+  exit 2
+fi
