@@ -10,6 +10,9 @@ using Shader::Optimization::AreContiguousIndexedSharpWords;
 using Shader::Optimization::IndexedSharpWord;
 using Shader::Optimization::IdentifyTsharpSelector;
 using Shader::Optimization::GcnTextureDwordIndex;
+using Shader::Optimization::AnalyzeStridedIndexedSharpWord;
+using Shader::Optimization::AreContiguousStridedSharpWords;
+using Shader::Optimization::StridedIndexedSharpWord;
 using Shader::IR::Opcode;
 struct MockInst;
 struct MockValue {
@@ -60,6 +63,58 @@ int main(){
     words[3].selector=&attr;
     if(AreContiguousIndexedSharpWords(words))return 4;
     words[3]=AnalyzeIndexedSharpWord(MockValue::Ref(offsets[3]));
+    // GoT compute-material descriptor IR, independently observed in both
+    // cs_0x55d17c16 and cs_0x5c4c2b6f:
+    // 4x ((id * 536 + 128) >> 2) + 4..7 dwords
+    // 4x ((id * 536 + 160) >> 2) + 0..3 dwords.
+    MockInst recordId{Opcode::ReadConstBuffer,{},};
+    MockInst mulRecord{Opcode::IMul32,
+                       {MockValue::Ref(recordId),MockValue::Imm(536u)},};
+    MockInst prefixLo{Opcode::IAdd32,
+                      {MockValue::Ref(mulRecord),MockValue::Imm(128u)},};
+    MockInst prefixHi{Opcode::IAdd32,
+                      {MockValue::Ref(mulRecord),MockValue::Imm(160u)},};
+    MockInst dwordsLo{Opcode::ShiftRightLogical32,
+                      {MockValue::Ref(prefixLo),MockValue::Imm(2u)},};
+    MockInst dwordsHi{Opcode::ShiftRightLogical32,
+                      {MockValue::Ref(prefixHi),MockValue::Imm(2u)},};
+    std::array<MockInst,8> materialWords{};
+    std::array<StridedIndexedSharpWord,8> material{};
+    for(unsigned i=0;i<8;++i) {
+        const bool high=i>=4u;
+        materialWords[i]={Opcode::IAdd32,
+            {MockValue::Ref(high?dwordsHi:dwordsLo),
+             MockValue::Imm(high?i-4u:i+4u)},};
+        material[i]=AnalyzeStridedIndexedSharpWord(MockValue::Ref(materialWords[i]));
+    }
+    if(!AreContiguousStridedSharpWords(material) ||
+       material[0].gpu_record_id!=&recordId ||
+       material[0].record_stride_bytes!=536u ||
+       material[0].offset_dwords!=36u ||
+       material[7].offset_dwords!=43u) return 17;
+    for(std::uint32_t id=0;id<100000u;++id) {
+        for(std::uint32_t word=0;word<8u;++word) {
+            const std::uint32_t low=((id*536u+128u)>>2u);
+            const std::uint32_t high=((id*536u+160u)>>2u);
+            const std::uint32_t actual =
+                word<4u ? low+word+4u : high+word-4u;
+            const std::uint32_t predicted =
+                ((id*536u)>>2u)+36u+word;
+            // 32-bit wrap is part of guest GCN arithmetic; only indices
+            // inside the mapped host table are eligible for Vulkan binding.
+            if(id<=10000u && actual!=predicted) return 18;
+        }
+    }
+    material[7].offset_dwords=44u;
+    if(AreContiguousStridedSharpWords(material)) return 19;
+    material[7]=AnalyzeStridedIndexedSharpWord(MockValue::Ref(materialWords[7]));
+    MockInst badStride{Opcode::IMul32,
+                       {MockValue::Ref(recordId),MockValue::Imm(538u)},};
+    MockInst badPrefix{Opcode::IAdd32,
+                       {MockValue::Ref(badStride),MockValue::Imm(128u)},};
+    MockInst badShift{Opcode::ShiftRightLogical32,
+                      {MockValue::Ref(badPrefix),MockValue::Imm(2u)},};
+    if(AnalyzeStridedIndexedSharpWord(MockValue::Ref(badShift)).valid) return 20;
     std::mt19937 gen{0xd3ac17f3u};
     for(unsigned iter=0;iter<100000;++iter){
         const auto start=gen();
@@ -80,6 +135,6 @@ int main(){
     }
     std::puts("INDEXED_TSHARP_SELECTOR=PASS 100000_affine_tables "
               "real_GPU_selector=KEPT gcn_32byte_stride=EXACT "
-              "mismatched_sources=REJECTED");
+              "mismatched_sources=REJECTED strided_536_Tsharp=144");
     return 0;
 }
