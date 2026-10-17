@@ -45,7 +45,7 @@ LOG_MARKERS = {
     "audio3d_shutdown": "sceAudio3dTerminate: called",
     "audio_unload_error": "Failed sceSysmoduleUnloadModule for SCE_SYSMODULE_AUDIO_3D",
 }
-THREAD_NAMES = ("GpuComm", "Uffd", "Game:Main", "VideoOut", "Render", "TaskManager")
+THREAD_NAMES = ("GpuComm", "Uffd", "Game:Main", "VideoOut", "Render", "TaskManager", "AudioOu", "SDL")
 SHADER_ID = re.compile(r"(?:stage|shader)\s+(?:0x)?([a-f0-9]{6,16})", re.I)
 
 
@@ -222,6 +222,23 @@ def capture_crash_metadata(pid, out):
     (out / "crash-metadata.json").write_text(json.dumps(notes, indent=2) + "\n")
 
 
+def capture_pipewire_xruns(out, label, env):
+    """Optional read-only PipeWire node/error snapshot (no tools installed)."""
+    if not shutil.which("pw-top"):
+        return {"available": False}
+    try:
+        result = subprocess.run(
+            ["pw-top", "-b", "-n", "1"], env=env, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, errors="replace", timeout=7)
+        (out / f"pipewire-xruns-{label}.txt").write_text(
+            f"exit={result.returncode}\n" + result.stdout[:64000] +
+            "\nSTDERR:\n" + result.stderr[:4000])
+        return {"exit": result.returncode, "bytes": len(result.stdout)}
+    except (OSError, subprocess.TimeoutExpired) as error:
+        (out / f"pipewire-xruns-{label}.txt").write_text(repr(error) + "\n")
+        return {"error": repr(error)}
+
+
 def capture_audio_route(out, label, env):
     """Record host playback sink selection without changing audio settings.
 
@@ -310,6 +327,7 @@ def main():
                 env.pop(key, None)
         audio_environment = env
         report["host_audio_prelaunch"] = capture_audio_route(out, "prelaunch", env)
+        report["runtime_log_filter"] = env.get("SHADPS4_RUNTIME_LOG_FILTER", "")
         command = [str(exe), "--cpu-id-mode", "builtin", "--userfaultfd",
                    "--game", "CUSA34384", "--fullscreen", "true", "--show-fps"]
         (out / "launch-command.json").write_text(json.dumps(command, indent=2) + "\n")
@@ -337,6 +355,8 @@ def main():
             current = sample_threads(process.pid)
             if elapsed in (15, 60, 120, 180):
                 report[f"host_audio_t{elapsed}"] = capture_audio_route(
+                    out, f"{elapsed}s", audio_environment)
+                report[f"pipewire_t{elapsed}"] = capture_pipewire_xruns(
                     out, f"{elapsed}s", audio_environment)
             gpu_fault, uffd_wait = False, False
             rows = []
