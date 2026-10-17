@@ -123,7 +123,7 @@ def summarize_log(path, out):
     uffd_totals = Counter()
     uffd_maxima = {}
     uffd_elapsed_ms = 0
-    audio_metric_re = re.compile(r"\b([a-z_]+)=(\d+)")
+    audio_metric_re = re.compile(r"\b([a-z_][a-z0-9_]*)=(\d+)")
     total_lines = 0
     if not path.is_file():
         return {"console_missing": True}
