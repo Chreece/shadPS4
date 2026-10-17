@@ -85,6 +85,31 @@ def validate(root: pathlib.Path) -> tuple[int, int]:
     required("new_thread->affinity_mask.store(mask" in pthread,
              "virtual CPU identity mask must be set before guest thread starts")
 
+    # This was omitted in the first upstream port: the combined ReadWrite
+    # mask is an ANY-bit check, so it must never be used as a write test.
+    memory = read("src/core/memory.cpp")
+    permission_body = memory.partition("s64 MemoryManager::ProtectBytes(")[2].partition(
+        "s32 MemoryManager::Protect(")[0]
+    range_body = memory.partition("s32 MemoryManager::Protect(")[2].partition(
+        "s32 MemoryManager::VirtualQuery(")[0]
+    required(bool(permission_body) and bool(range_body),
+             "MemoryManager guest protection functions missing")
+    required("static_assert(GuestPermissionContract()" in memory and
+             "const MemoryPermission perms = GuestEffectivePermissions(prot);" in permission_body,
+             "production guest R/W/X permissions must use verified 64-mask constexpr mapping")
+    required("if (True(prot & MemoryProt::CpuReadWrite))" not in permission_body and
+             "if (True(prot & MemoryProt::GpuReadWrite))" not in permission_body,
+             "read-only guest memory must not pass a combined ReadWrite write check")
+    type_saved = permission_body.find("const VMAType type = vma_base.type;")
+    type_carved = permission_body.find("CarveVMA(addr, adjusted_size)")
+    required(type_saved >= 0 and type_carved > type_saved and
+             "if (type == VMAType::Reserved)" in permission_body,
+             "memory VMA type must be saved before splitting/merging its map entries")
+    required("IsValidMapping(addr, size)" in range_body and
+             "if (addr >= vend)" not in range_body and
+             "SystemManagedVirtualSize()" not in range_body,
+             "guest user memory above 0x1000000000 must not be skipped in mprotect")
+
     kernel = read("src/core/libraries/kernel/process.cpp")
     guest_module_header = read("src/core/libraries/kernel/module_filename_validation.h")
     hle_entry = kernel.partition("sceKernelLoadStartModule(")[2]
