@@ -63,18 +63,18 @@ int main(){
                               MockValue::Imm(42u)},};
     const auto two=AnalyzeFiniteIndexedImageChoices(&texMaskOne);
     const auto four=AnalyzeFiniteIndexedImageChoices(&texMaskThree);
-    const auto selected=AnalyzeFiniteIndexedImageChoices(&exactSelect);
+    const auto finite_selected=AnalyzeFiniteIndexedImageChoices(&exactSelect);
     if (two.count!=2 || two.kind!=IndexedImageChoiceKind::MaskTwo ||
         two.ids[0]!=0 || two.ids[1]!=1) return 12;
     if (four.count!=4 || four.kind!=IndexedImageChoiceKind::MaskFour ||
         four.ids[0]!=0 || four.ids[1]!=1 ||
         four.ids[2]!=2 || four.ids[3]!=3) return 13;
-    if (selected.count!=2 || selected.kind!=IndexedImageChoiceKind::SelectTwo ||
-        selected.ids[0]!=8 || selected.ids[1]!=42) return 14;
+    if (finite_selected.count!=2 || finite_selected.kind!=IndexedImageChoiceKind::SelectTwo ||
+        finite_selected.ids[0]!=8 || finite_selected.ids[1]!=42) return 14;
     if (AnalyzeFiniteIndexedImageChoices(&texMaskUnsafe).count ||
         AnalyzeFiniteIndexedImageChoices(&texId).count ||
         AnalyzeFiniteIndexedImageChoices(&divergentSelect).count ||
-        AnalyzeFiniteIndexedImageChoices(nullptr).count) return 15;
+        AnalyzeFiniteIndexedImageChoices(static_cast<const MockInst*>(nullptr)).count) return 15;
     for (std::uint32_t id=0;id<100000u;++id) {
         if ((id&1u)>=two.count || (id&3u)>=four.count ||
             two.ids[id&1u]!=(id&1u) || four.ids[id&3u]!=(id&3u)) return 16;
