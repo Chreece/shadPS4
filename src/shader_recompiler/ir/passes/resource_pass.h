@@ -33,6 +33,10 @@ struct ResourceDiscovery {
     std::array<SharpReference, 2> sharps;
     SharpReference indexed_table_sharp{};
     IR::Value indexed_texture_id{};
+    // Zero means the existing tightly packed 32-byte image table.
+    // Nonzero means the T# starts at a proven offset in each guest record.
+    u32 indexed_record_stride_bytes{};
+    u32 indexed_descriptor_offset_bytes{};
     bool has_indexed_table{};
     // Keep the raw S# producer handle for shader-side scalar memory reads
     // when host resource-table flattening cannot provide valid Vulkan bindings.
