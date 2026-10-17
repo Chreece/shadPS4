@@ -102,10 +102,13 @@ print("ISOLATED_RENDERER_RATE_LIMIT_PATCH=PASS")
 PATCH
 sha256sum "$OLD/$VKR" "$SRC/$VKR" > "$OUT/renderer-sources.sha256"
 STAGE=ISOLATED_CONFIGURE
-build_type="$(sed -n 's/^CMAKE_BUILD_TYPE:STRING=//p' "$ORIG/build/CMakeCache.txt" 2>/dev/null | head -1)"
-[[ -n "$build_type" ]] || build_type=Release
+build_type=Release
+if [[ -f "$ORIG/build/CMakeCache.txt" ]]; then
+    cached_type="$(sed -n 's/^CMAKE_BUILD_TYPE:STRING=//p' "$ORIG/build/CMakeCache.txt" | head -1)"
+    [[ -z "$cached_type" ]] || build_type="$cached_type"
+fi
 printf 'BUILD_TYPE=%s\n' "$build_type" > "$OUT/build-info.txt"
-if [[ ! -f "$BUILD/CMakeCache.txt" ]]; then
+if [[ ! -f "$BUILD/Makefile" && ! -f "$BUILD/build.ninja" ]]; then
     if command -v ccache >/dev/null; then
         cmake -S "$SRC" -B "$BUILD" -DCMAKE_BUILD_TYPE="$build_type" -DENABLE_TESTS=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache > "$OUT/configure.log" 2>&1 || {
             tail -90 "$OUT/configure.log"; exit 2;
