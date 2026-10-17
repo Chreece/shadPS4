@@ -69,6 +69,30 @@ def main():
             assert 'VideoCore::ObtainBufferFlags::InvalidateTextureCache' in transformed
         print(f'ABI_LAYOUT_{mode.upper()}=PASS ({len(edits)} ported, {len(before_port)} preserved)')
 
+    # Real preserved GoW renderer uses a fourth argument for proven GPU
+    # writes. Verify it is retained and never silently dropped.
+    extent_source = source.replace(
+        'buffer_cache.ObtainBuffer(vsharp.base_address, size, flags)',
+        'buffer_cache.ObtainBuffer(vsharp.base_address, size, flags, static_cast<u32>(tracked_write_size))')
+    extent_source = extent_source.replace(
+        '                const auto [buffer, offset] =',
+        '                u64 tracked_write_size = size;\n'
+        '                const auto proven = ComputeProvenWriteSize(desc.write_extent, local, groups);\n'
+        '                const auto [buffer, offset] =',1)
+    extent_source = extent_source.replace(
+        'texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);',
+        'texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, tracked_write_size);')
+    if extent_source != source:
+        # This synthetic fixture deliberately lacks the real local/groups
+        # calculation; the helper must reject it, not silently alter graphics.
+        try:
+            mod.restore(extent_source, historical, header)
+        except ValueError as exc:
+            assert 'PROVEN_WRITE_EXTENT_SEMANTICS_MISSING' in str(exc)
+            print('INCOMPLETE_WRITE_EXTENT_NEGATIVE=PASS')
+        else:
+            raise AssertionError('Incomplete write-extent fixture was accepted')
+
     bad = source.replace('buffer_cache.ObtainBuffer(arg_address + offset, size, false)',
                          'buffer_cache.ObtainBuffer(arg_address + offset, size, nonsense)', 1)
     try:
