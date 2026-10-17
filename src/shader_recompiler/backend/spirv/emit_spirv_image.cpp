@@ -5,6 +5,7 @@
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/ir/microinstruction.h"
+#include "shader_recompiler/guest_tsharp_array.h"
 
 namespace Shader::Backend::SPIRV {
 
@@ -193,6 +194,7 @@ Id EmitImageSampleImplicitLodIndexed(
     const auto& texture=ctx.images[handle & 0xffffu];
     ASSERT(texture.is_guest_indexed && texture.image_array_size>=2u);
     ASSERT(ctx.profile.supports_sampled_image_nonuniform_indexing);
+    // GuestTsharpIndexOrNull is the CPU model for this exact U32 Select.
     const Id valid=ctx.OpULessThan(ctx.U1[1],gpu_texture_id,
                                    ctx.ConstU32(texture.image_array_size-1));
     const Id bounded=ctx.OpSelect(ctx.U32[1],valid,gpu_texture_id,
