@@ -93,8 +93,10 @@ static u32 GuestTsharpArrayLimit(const Instance& instance) {
         limits.maxPerStageResources,
     });
     // Allow other textures, samplers and storage buffers in the same pipeline.
-    const u32 max_entries = hard_limit > Shader::NUM_IMAGES
-        ? hard_limit - Shader::NUM_IMAGES - 1u : 0u;
+    constexpr u32 reserve_other_resources =
+        Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
+    const u32 max_entries = hard_limit > reserve_other_resources
+        ? hard_limit - reserve_other_resources - 1u : 0u;
     const u32 selected = max_entries >= Shader::LegacyGuestIndexedImageEntries
         ? std::min(max_entries, Shader::MaxGuestIndexedImageEntries)
         : Shader::LegacyGuestIndexedImageEntries;
