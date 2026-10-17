@@ -573,11 +573,13 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         const IR::U32 gpu_id{resource.indexed_texture_id};
         const IR::U32 bounded = ir.UMin(
             gpu_id, ir.Imm32(GuestTsharpFeedbackOverflowId));
-        const IR::U32 byte_offset = ir.ShiftLeftLogical(
-            ir.ShiftRightLogical(bounded, ir.Imm32(5u)), ir.Imm32(2u));
+        // BufferAtomicOr32's SPIR-V backend indexes U32[] elements,
+        // unlike raw GCN byte offsets. Never multiply this index by four.
+        const IR::U32 word_index =
+            ir.ShiftRightLogical(bounded, ir.Imm32(5u));
         const IR::U32 bit = ir.ShiftLeftLogical(
             ir.Imm32(1u), ir.BitwiseAnd(bounded, ir.Imm32(31u)));
-        (void)ir.BufferAtomicOr(ir.Imm32(feedback_binding), byte_offset, bit, {});
+        (void)ir.BufferAtomicOr(ir.Imm32(feedback_binding), word_index, bit, {});
         LOG_INFO(Render_Recompiler,
                  "GuestTsharpFeedbackInserted: shader={:#x} stage={} "
                  "gpu_id_source=original overflow_id={} read_only_guest=YES",
