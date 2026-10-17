@@ -224,6 +224,7 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp, const Info& info)
     SharpFetch<T> sharp_fetch{};
     for (u32 i = 0; i < sharp.num_dwords; i++) {
         auto dword = sharp.dwords[i];
+        sharp_fetch.clear_masks[i] = sharp.clear_masks[i];
         if (dword.IsImmediate()) {
             sharp_fetch.immediates[i] = dword.U32();
         } else {
@@ -240,7 +241,8 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp, const Info& info)
     // accidentally form a consecutive sequence with the other offsets.
     if (sharp_fetch.summary != Summary::Invalid) {
         if (CanCoalesceSharpDwords(sharp_fetch.load_mask, sharp_fetch.offsets,
-                                   sharp.num_dwords)) {
+                                   sharp.num_dwords) &&
+            SharpMasksAreZero(sharp_fetch.clear_masks, sharp.num_dwords)) {
             sharp_fetch.summary = Summary::SingleLoad;
         } else {
             // Opt-in proof of when the previous offsets-only fast path
