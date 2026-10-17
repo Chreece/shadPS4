@@ -111,8 +111,13 @@ public:
             return;
         }
         if (!device_context->MakeCurrent(device_name)) {
+            if (!context_failure_reported.exchange(true, std::memory_order_relaxed)) {
+                LOG_ERROR(Lib_AudioOut, "OpenAL PCM output cannot activate device context '{}'; "
+                                        "audio buffers are not reaching the sink", device_name);
+            }
             return;
         }
+        context_failure_reported.store(false, std::memory_order_relaxed);
 
         UpdateVolumeIfChanged();
         const u64 current_time = Kernel::sceKernelGetProcessTime();
@@ -218,6 +223,8 @@ public:
             return;
         }
         if (!device_context->MakeCurrent(device_name)) {
+            LOG_WARNING(Lib_AudioOut, "OpenAL gain update cannot activate device context '{}'",
+                        device_name);
             return;
         }
 
@@ -1120,6 +1127,7 @@ private:
     std::string device_name;
     bool device_registered;
     bool intentionally_disabled{false};
+    std::atomic<bool> context_failure_reported{false};
 };
 
 std::unique_ptr<PortBackend> OpenALAudioOut::Open(PortOut& port) {
