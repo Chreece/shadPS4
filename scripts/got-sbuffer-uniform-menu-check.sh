@@ -22,7 +22,7 @@ GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
 BASE_SHA256="948742f5b1ffebf0dfc4d1b452806c2e649bf35d76cffbb576e2b81bb36b5826"
-CANDIDATE="d36c39401585eb3d568a81aec9241e5930f95234"
+CANDIDATE="83604b168a873e8a9abb8cabbfbdab89a96595f3"
 UPSTREAM="32021e41bc52f744c80d122e732e24e97496c98d"
 BRANCH="experiment/got-general-sbuffer-bounds-20261017"
 RUN="$LOGS/.$NAME.runtime"
@@ -257,7 +257,7 @@ run_phase() {
     (
         cd "$home"
         export HOME="$home" DISPLAY="$DISPLAY_OK"
-        export SHADPS4_RENDER_AUDIT=0 SHADPS4_RESOURCE_AUDIT=1 SHADPS4_RESOURCE_AUDIT_HASH=0x7eaf40ad
+        export SHADPS4_RENDER_AUDIT=0 SHADPS4_RESOURCE_AUDIT=1 SHADPS4_RESOURCE_AUDIT_HASH=0x7eaf40ad,0x55d17c16,0x5c4c2b6f
         export SHADPS4_SRT_SOURCE_AUDIT=1 SHADPS4_SRT_INLINE_AUDIT=1
         export SHADPS4_SHARP_MIXED_AUDIT=0
         unset RADV_DEBUG VK_DRIVER_FILES VK_ICD_FILENAMES VK_INSTANCE_LAYERS
@@ -391,7 +391,8 @@ apply_blob "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" 
 apply_blob "src/shader_recompiler/ir/passes/srt_inline_read_codegen.h" "642f62e5353032ff22a23dbd82f665f0d6b5505d"
 apply_blob "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp" "60b78c6804fcefdb40267a2d84fff3c56a9e2070"
 apply_blob "src/shader_recompiler/ir/passes/srt_uniformity.h" "30b610c15aa5aca4843349f73187c690c26a97d6"
-apply_blob "src/video_core/renderer_vulkan/vk_rasterizer.cpp" "9fc6e76d6ed8e8c646438e0f7efd9373f03a7f10"
+apply_blob "src/video_core/renderer_vulkan/vk_rasterizer.cpp" "594fd3d2043afbeb6952bbc2eba99c1e7a4b45ef"
+apply_blob "src/video_core/renderer_vulkan/resource_audit_hash_filter.h" "28cc1c1d76f59386329bf92883acc5e26385b3dc"
 OVERLAY_APPLIED=1
 # Host-only uniformity test covers divergent descriptor metadata and address/index negatives.
 git -C "$SOURCE" show "$CANDIDATE:tests/shader_recompiler/test_srt_uniformity.cpp" \
@@ -402,6 +403,20 @@ c++ -std=c++23 -O2 -I"$SOURCE/src" -I"$MAGIC_ENUM_INC" -I"$FMT_INC" \
         tail -90 "$RUN/info/srt-uniformity-build.log"; STATUS="SRT_HOST_TEST_BUILD_FAILED"; exit 2;
     }
 "$RUN/info/test-srt-uniformity" | tee "$RUN/info/srt-uniformity-result.txt"
+# Validate generic multi-shader audit filtering on the actual staged header;
+# this cannot change guest resources or shader compilation.
+git -C "$SOURCE" show "$CANDIDATE:tests/video_core/test_resource_audit_hash_filter.cpp" \
+    > "$RUN/tmp/test_resource_audit_hash_filter.cpp"
+c++ -std=c++23 -O2 -Wall -Wextra -Werror -I"$SOURCE/src" \
+    "$RUN/tmp/test_resource_audit_hash_filter.cpp" \
+    -o "$RUN/info/test-resource-audit-hashes" \
+    >"$RUN/info/resource-audit-host-build.log" 2>&1 || {
+        tail -90 "$RUN/info/resource-audit-host-build.log"
+        STATUS="RESOURCE_AUDIT_HOST_TEST_BUILD_FAILED"
+        exit 2
+    }
+"$RUN/info/test-resource-audit-hashes" | tee "$RUN/info/resource-audit-host-result.txt"
+
 # Execute the actual native host clamping instructions, not only a mirrored
 # reference calculation. Use the exact vendored xbyak headers from this build.
 git -C "$SOURCE" show "$CANDIDATE:tests/shader_recompiler/test_srt_sbuffer_emitter.cpp" \
@@ -467,6 +482,48 @@ echo "SRT_ELIGIBILITY_LINES=$(wc -l <"$RUN/info/srt-eligibility.txt")"
 echo "UNRESOLVED_DESCRIPTOR_LINES=$(wc -l <"$RUN/info/unresolved-descriptors.txt")"
 echo "MENU_SHADER_AUDIT_LINES=$(wc -l <"$RUN/info/menu-shader-resource.txt")"
 
+# Report all three observed targets individually. A zero/absent diagnostic
+# is NEVER treated as proof that visuals have been fixed.
+python3 - "$RUN/evidence/B/game.log" "$RUN/info/three-shader-checkpoints.tsv" <<'PYSHADERS'
+import pathlib, re, sys
+log=pathlib.Path(sys.argv[1]).read_text(errors="replace")
+log=re.sub(r"\x1b\[[0-9;]*m","",log)
+targets=("0x7eaf40ad","0x55d17c16","0x5c4c2b6f")
+srt={}; resource={}
+for line in log.splitlines():
+    if "SrtGlobalDependencyResult:" in line:
+        m=re.search(r"unresolved=(\d+)\s+shader=(0x[0-9a-f]+)",line)
+        if m:
+            srt[m.group(2)]=int(m.group(1))
+    if "ResourceAuditRuntime:" in line:
+        m=re.search(r"shader=(0x[0-9a-f]+)\s+stage=(\w+)\s+(.+)",line)
+        if m:
+            fields=dict((k,int(v)) for k,v in re.findall(r"([a-z_]+)=(\d+)",m.group(3)))
+            old=resource.get(m.group(1))
+            if old is None or fields.get("texture_calls",0)>=old[1].get("texture_calls",0):
+                resource[m.group(1)]=(m.group(2),fields)
+out=["shader\tstage\tsrt_unresolved\tinvalid_images\tnull_images\tnull_buffers\tbinding_samples\tstatus"]
+for h in targets:
+    stage,data=resource.get(h,("-",{}))
+    sr=srt.get(h)
+    invalid=data.get("invalid_image_sharps")
+    null_images=data.get("null_images")
+    null_buffers=data.get("null_buffers")
+    samples=data.get("texture_calls",0)
+    if sr is None and not data:
+        status="NOT_OBSERVED"
+    elif (sr is not None and sr>0) or (invalid is not None and invalid>0):
+        status="UNRESOLVED_EVIDENCE"
+    else:
+        status="NOT_PROVEN_FIXED"
+    fmt=lambda n: "-" if n is None else str(n)
+    out.append("\t".join(map(str,(h,stage,fmt(sr),fmt(invalid),
+                                  fmt(null_images),fmt(null_buffers),samples,status))))
+pathlib.Path(sys.argv[2]).write_text("\n".join(out)+"\n",encoding="utf-8")
+print("THREE_SHADER_REPORT_BEGIN")
+print("\n".join(out))
+print("THREE_SHADER_REPORT_END")
+PYSHADERS
 echo "GRAPHICS_REPORT_READY"
 
 WORKER
