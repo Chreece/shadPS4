@@ -597,13 +597,18 @@ void Rasterizer::OnFence() {
         return;
     }
     const u32 guest_fence = ++guest_tsharp_feedback_fence_count;
-    // These are GCN guest fence events, NOT proof of a completed host GPU
-    // semaphore. Request at most three opt-in snapshots, and finish the
-    // current Vulkan queue before the CPU reads GPU-written atomics.
-    if (guest_fence != 128 && guest_fence != 2048 &&
-        guest_fence != 16384) {
+    // The first tens of thousands of guest PM4 fences happen before GoT
+    // compiles/binds the GPU-indexed menu shader. Never consume the finite
+    // snapshot budget before a real feedback buffer is bound.
+    if (!guest_tsharp_feedback_bound) {
         return;
     }
+    const u32 after_bind = ++guest_tsharp_feedback_fences_since_binding;
+    if (!Shader::Optimization::ShouldSnapshotGuestTsharpFeedback(after_bind)) {
+        return;
+    }
+    // A GCN guest fence is not a completed Vulkan fence; finish the queue
+    // before reading GPU-written atomics. Capture at most three snapshots.
     scheduler.Finish();
     // The finished queue has no outstanding writes to this host mapping.
     // Invalidate noncoherent memory, then retain a cumulative bitmap.
@@ -632,10 +637,10 @@ void Rasterizer::OnFence() {
     const bool overflow =
         (words[Shader::Optimization::GuestTsharpFeedbackOverflowId >> 5u] & 1u) != 0u;
     LOG_INFO(Render_Vulkan,
-             "GuestTsharpGpuIdsObserved: guest_fences={} unique={} first={} "
-             "last={} overflow={} first_48=[{}] gpu_wait=YES "
-             "guest_ids_not_remapped=YES",
-             guest_fence, distinct, first_id, last_id, overflow, first_ids);
+             "GuestTsharpGpuIdsObserved: guest_fences={} fences_since_first_binding={} "
+             "unique={} first={} last={} overflow={} first_48=[{}] "
+             "gpu_wait=YES guest_ids_not_remapped=YES",
+             guest_fence, after_bind, distinct, first_id, last_id, overflow, first_ids);
 }
 
 bool Rasterizer::BindResources(const Pipeline* pipeline) {
@@ -1035,6 +1040,27 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 if (guest_tsharp_feedback_buffer) {
                     const auto* buf = guest_tsharp_feedback_buffer.get();
                     buffer_infos.emplace_back(buf->Handle(), 0, buf->SizeBytes());
+                    if (!guest_tsharp_feedback_bound) {
+                        guest_tsharp_feedback_bound = true;
+                        guest_tsharp_feedback_fences_since_binding = 0;
+                        LOG_INFO(Render_Vulkan,
+                                 "GuestTsharpFeedbackArmed: shader={:#x} stage={} "
+                                 "guest_fences_before_binding={} buffer_bytes={}",
+                                 stage.pgm_hash, stage.hw_stage,
+                                 guest_tsharp_feedback_fence_count, buf->SizeBytes());
+                    }
+                    // Prove the special descriptor is truly bound for
+                    // each shader, not merely inserted in a source-level IR.
+                    static thread_local std::unordered_map<u64, u32> bind_counts;
+                    const u64 key = (u64(stage.pgm_hash) << 8) |
+                                    static_cast<u8>(stage.hw_stage);
+                    const u32 n = ++bind_counts[key];
+                    if (n == 1 || (n <= 256 && std::has_single_bit(n))) {
+                        LOG_INFO(Render_Vulkan,
+                                 "GuestTsharpFeedbackBound: shader={:#x} stage={} "
+                                 "bind_count={} buffer_bytes={} gpu_descriptor=YES",
+                                 stage.pgm_hash, stage.hw_stage, n, buf->SizeBytes());
+                    }
                 } else {
                     // An old cached shader must never be allowed to write an
                     // unowned buffer when the opt-in flag is disabled.
