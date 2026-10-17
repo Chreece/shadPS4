@@ -60,6 +60,10 @@ finish() {
         cp -p -- "$BIN" "$WORK/bin-backups/shadps4-got-gow-sparse-$CANDIDATE"
         sha256sum "$WORK/bin-backups/shadps4-got-gow-sparse-$CANDIDATE" \
             >>"$RUN/info/restore.txt"
+    fi
+    # A failed relink may delete the test executable. Restore baseline even
+    # if the candidate build never completed.
+    if [ "$OVERLAY_APPLIED" = 1 ] && [ -f "$BASEBIN" ]; then
         if cp -p -- "$BASEBIN" "$BIN"; then
             echo "BASELINE_BINARY_RESTORED=YES" >>"$RUN/info/restore.txt"
         else
