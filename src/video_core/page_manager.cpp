@@ -3,6 +3,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <cstdlib>
+#include <fstream>
+#include <string>
+#include <unordered_map>
 #include <utility>
 #include "common/adaptive_mutex.h"
 #include "common/assert.h"
@@ -73,8 +78,7 @@ struct PageManager::Impl {
         }
 
         Core::MemoryPermission Update(PageOp write_op, bool update_write = true,
-                                                PageOp read_op = PageOp::None,
-                                                bool update_read = false) {
+                                      PageOp read_op = PageOp::None, bool update_read = false) {
             if (update_read) {
                 if (read_op == PageOp::Track) {
                     ASSERT_MSG(num_read_watchers == 0, "Too many watchers");
@@ -108,7 +112,6 @@ struct PageManager::Impl {
 
     virtual void OnMap(VAddr address, size_t size) {
         // No-op
-        EnsurePages(address, address + size);
     }
 
     virtual void OnUnmap(VAddr address, size_t size) {
@@ -216,8 +219,9 @@ struct PageManager::Impl {
                 perms = new_perms;
             } else if (range_pages != 0) {
                 ++potential_pages;
-                // Avoid re-protecting large spans of unchanged pages just to
-                // coalesce two distant access-permission transitions.
+                // The current page ALREADY has these permissions; cap only
+                // long runs of unchanged pages merged into a future
+                // mprotect call. This never drops an actual page transition.
                 if (new_perms == old_perms &&
                     ShouldFlushSparseProtectionRange(range_pages, potential_pages)) {
                     release_pending();
@@ -289,6 +293,10 @@ struct PageManager::Impl {
                 release_pending();
                 perms = new_perms;
             } else if (range_pages != 0) {
+                // An unchanged page can bridge a short gap between real
+                // permission updates. Avoid re-protecting long gaps: on
+                // Linux that can cause unnecessary TLB shootdowns and
+                // contention in the process memory-map lock.
                 ++potential_pages;
                 if (new_perms == old_perms &&
                     ShouldFlushSparseProtectionRange(range_pages, potential_pages)) {
@@ -348,6 +356,29 @@ private:
     // queued for cache readback on the GPU command processor.
     std::atomic_size_t pending_gpu_invalidations{0};
     int uffd{-1};
+
+    // Read-only telemetry, opt-in and disabled for normal execution. Counters
+    // may be updated on the GPU processor while the UFFD receiver polls.
+    struct Perf {
+        std::atomic<u64> cpu_faults{0}, gpu_faults{0}, audio_cpu_faults{0};
+        std::atomic<u64> game_cpu_faults{0}, cpu_completed{0};
+        std::atomic<u64> over_21ms{0}, over_100ms{0}, audio_over_21ms{0};
+        std::atomic<u64> total_cpu_wait_us{0}, max_cpu_wait_us{0};
+        std::atomic<u64> max_audio_wait_us{0}, max_gpu_inline_us{0};
+        std::atomic<u64> max_pending{0}, last_slow_tid{0};
+    } perf;
+    const bool perf_enabled = [] {
+        const char* value = std::getenv("SHADPS4_UFFD_PERF_PROBE");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    // Owned exclusively by UffdHandler; never accessed from queued callbacks.
+    std::unordered_map<u32, std::string> fault_thread_names;
+
+    static void PerfMax(std::atomic<u64>& value, u64 observed) {
+        auto old = value.load(std::memory_order_relaxed);
+        while (observed > old &&
+               !value.compare_exchange_weak(old, observed, std::memory_order_relaxed)) {}
+    }
 
 public:
     UffdImpl(Vulkan::Rasterizer* rasterizer_) : Impl() {
@@ -478,7 +509,33 @@ public:
         Common::SetCurrentThreadName("shadPS4:Uffd");
         // Continue receiving GPU-origin faults while queued GPU work is
         // draining during teardown; these faults may otherwise deadlock it.
+        auto last_perf_report = std::chrono::steady_clock::now();
         while (!token.stop_requested() || pending_gpu_invalidations.load() != 0) {
+            if (perf_enabled) {
+                const auto now = std::chrono::steady_clock::now();
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - last_perf_report).count();
+                if (elapsed >= 5000) {
+                    last_perf_report = now;
+                    const u64 completed = perf.cpu_completed.exchange(0);
+                    const u64 sum = perf.total_cpu_wait_us.exchange(0);
+                    LOG_WARNING(Common_Memory,
+                        "UFFD_PERF window_ms={} cpu_faults={} completed={} gpu_faults={} "
+                        "audio_faults={} game_main_faults={} avg_cpu_us={} max_cpu_us={} "
+                        "slow_21ms={} slow_100ms={} audio_slow_21ms={} "
+                        "max_audio_us={} max_gpu_inline_us={} pending={} max_pending={} "
+                        "last_slow_tid={}",
+                        elapsed, perf.cpu_faults.exchange(0), completed,
+                        perf.gpu_faults.exchange(0), perf.audio_cpu_faults.exchange(0),
+                        perf.game_cpu_faults.exchange(0), completed ? sum / completed : 0,
+                        perf.max_cpu_wait_us.exchange(0), perf.over_21ms.exchange(0),
+                        perf.over_100ms.exchange(0), perf.audio_over_21ms.exchange(0),
+                        perf.max_audio_wait_us.exchange(0),
+                        perf.max_gpu_inline_us.exchange(0),
+                        pending_gpu_invalidations.load(), perf.max_pending.exchange(0),
+                        perf.last_slow_tid.load());
+                }
+            }
             pollfd descriptor{};
             descriptor.fd = uffd;
             descriptor.events = POLLIN;
@@ -532,15 +589,67 @@ public:
             if (ptid == rasterizer->GetGpuCommandProcessorThreadId()) {
                 // The GPU processor is paused in this fault. Its own memory
                 // invalidation must execute inline, without posting to itself.
+                const auto start = perf_enabled ? std::chrono::steady_clock::now() :
+                    std::chrono::steady_clock::time_point{};
                 rasterizer->InvalidateMemory(addr, 1, true);
                 WakeFault(addr, ptid);
+                if (perf_enabled) {
+                    perf.gpu_faults.fetch_add(1, std::memory_order_relaxed);
+                    const u64 duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now() - start).count();
+                    PerfMax(perf.max_gpu_inline_us, duration);
+                }
             } else {
                 // Queue the *complete* invalidation on the GPU processor.
                 // Keep the event receiver responsive to faults in that
                 // processor. Never wake the CPU writer before readback.
-                pending_gpu_invalidations.fetch_add(1);
-                rasterizer->InvalidateMemoryOnGpuThread(addr, 1, [this, addr, ptid] {
+                bool from_audio = false;
+                if (perf_enabled) {
+                    const auto [iter, inserted] = fault_thread_names.try_emplace(ptid);
+                    if (inserted) {
+                        std::ifstream name("/proc/self/task/" + std::to_string(ptid) + "/comm");
+                        std::getline(name, iter->second);
+                        if (iter->second.find("Audio") != std::string::npos ||
+                            iter->second.find("Game:Main") != std::string::npos) {
+                            LOG_WARNING(Common_Memory, "UFFD_ORIGIN tid={} name={}",
+                                        ptid, iter->second);
+                        }
+                    }
+                    from_audio = iter->second.find("Audio") != std::string::npos ||
+                                 iter->second.find("AK::") != std::string::npos;
+                    perf.cpu_faults.fetch_add(1, std::memory_order_relaxed);
+                    if (from_audio)
+                        perf.audio_cpu_faults.fetch_add(1, std::memory_order_relaxed);
+                    if (iter->second.find("Game:Main") != std::string::npos)
+                        perf.game_cpu_faults.fetch_add(1, std::memory_order_relaxed);
+                }
+                const auto start = perf_enabled ? std::chrono::steady_clock::now() :
+                    std::chrono::steady_clock::time_point{};
+                const auto pending = pending_gpu_invalidations.fetch_add(1) + 1;
+                if (perf_enabled)
+                    PerfMax(perf.max_pending, pending);
+                rasterizer->InvalidateMemoryOnGpuThread(addr, 1,
+                    [this, addr, ptid, start, from_audio] {
                     WakeFault(addr, ptid);
+                    if (perf_enabled) {
+                        const u64 duration = std::chrono::duration_cast<
+                            std::chrono::microseconds>(
+                                std::chrono::steady_clock::now() - start).count();
+                        perf.cpu_completed.fetch_add(1, std::memory_order_relaxed);
+                        perf.total_cpu_wait_us.fetch_add(duration, std::memory_order_relaxed);
+                        PerfMax(perf.max_cpu_wait_us, duration);
+                        if (duration >= 21333) {
+                            perf.over_21ms.fetch_add(1, std::memory_order_relaxed);
+                            if (from_audio)
+                                perf.audio_over_21ms.fetch_add(1, std::memory_order_relaxed);
+                        }
+                        if (duration >= 100000) {
+                            perf.over_100ms.fetch_add(1, std::memory_order_relaxed);
+                            perf.last_slow_tid.store(ptid, std::memory_order_relaxed);
+                        }
+                        if (from_audio)
+                            PerfMax(perf.max_audio_wait_us, duration);
+                    }
                     pending_gpu_invalidations.fetch_sub(1);
                     pending_gpu_invalidations.notify_all();
                 });
@@ -551,10 +660,7 @@ public:
 #endif // __linux__
 
 struct SignalImpl : public PageManager::Impl {
-    // The Signals dispatcher takes a plain function pointer, so the callback
-    // must resolve the PageManager instance through this registered pointer.
-    // Publish it before RegisterAccessViolationHandler can invoke the callback.
-    inline static SignalImpl* instance{};
+    inline static SignalImpl* instance;
 
     SignalImpl(Vulkan::Rasterizer* rasterizer_) : Impl() {
         rasterizer = rasterizer_;
