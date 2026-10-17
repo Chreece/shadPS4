@@ -1009,8 +1009,9 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                              "written={} formatted={}",
                              stage.pgm_hash, stage.hw_stage, flattened,
                              u32(desc.sharp_fetch.summary), u32(guest.type),
-                             guest.Valid(), guest.base_address, guest.stride,
-                             guest.num_records, size64, guest.GetSize(),
+                             guest.Valid(), static_cast<u64>(guest.base_address),
+                             static_cast<u32>(guest.stride), guest.num_records,
+                             size64, guest.GetSize(),
                              desc.is_written, desc.is_formatted);
                 }
                 buffer_infos.emplace_back(VK_NULL_HANDLE, 0, VK_WHOLE_SIZE);
