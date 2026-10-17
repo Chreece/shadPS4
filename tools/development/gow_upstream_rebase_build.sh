@@ -6,7 +6,7 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=811635a8786796c4a6ae72a2162fe595e29e0fb3
+FIX=f408bbcf433008bf792de73c484101f3ae80cef4
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
@@ -63,7 +63,7 @@ echo "e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa  $PROVEN"
 sha256sum "$PROVEN" >"$OUT/proven-before.sha256"
 git -C "$OLD" cat-file -e "$FIX^{commit}"
 git -C "$OLD" merge-base --is-ancestor "$UPSTREAM" "$FIX" || { echo "UPSTREAM_ANCESTRY_FAILED"; exit 1; }
-[[ "$(git -C "$OLD" rev-list --count "$UPSTREAM..$FIX")" == 12 ]] || { echo "PINNED_COMMIT_COUNT_MISMATCH"; exit 1; }
+[[ "$(git -C "$OLD" rev-list --count "$UPSTREAM..$FIX")" == 15 ]] || { echo "PINNED_COMMIT_COUNT_MISMATCH"; exit 1; }
 FREE="$(df -Pk "$HOME" | awk 'END{print $4}')"
 [[ "$FREE" =~ ^[0-9]+$ ]] && (( FREE >= 2097152 )) || { echo "FREE_SSD_BELOW_2_GIB; NO_DELETION"; exit 1; }
 STAGE=ISOLATED_WORKTREE
@@ -71,8 +71,23 @@ if [[ ! -e "$SRC" ]]; then
   mkdir -p "$TEST"
   git -C "$OLD" worktree add --detach "$SRC" "$FIX" >"$OUT/worktree.log" 2>&1
 fi
-[[ -e "$SRC/.git" && "$(git -C "$SRC" rev-parse HEAD)" == "$FIX" ]] || { echo "ISOLATED_SOURCE_MISMATCH"; exit 1; }
-[[ -z "$(git -C "$SRC" status --porcelain --untracked-files=no)" ]] || { echo "EXISTING_ISOLATED_SOURCE_DIRTY; DO_NOT_RESET"; exit 1; }
+[[ -e "$SRC/.git" ]] || { echo "ISOLATED_GIT_WORKTREE_MISSING"; exit 1; }
+[[ -z "$(git -C "$SRC" status --porcelain --untracked-files=no)" ]] || {
+  echo "EXISTING_ISOLATED_SOURCE_DIRTY; DO_NOT_RESET"; exit 1;
+}
+PREVIOUS_HEAD="$(git -C "$SRC" rev-parse HEAD)"
+if [[ "$PREVIOUS_HEAD" != "$FIX" ]]; then
+  git -C "$SRC" merge-base --is-ancestor "$PREVIOUS_HEAD" "$FIX" || {
+    echo "EXISTING_WORKTREE_NOT_ANCESTOR; REFUSING_RESET"; exit 1;
+  }
+  # Safe detached fast-forward of ONLY the dedicated rebased test worktree.
+  # Never touch the older gameplay source tree or its build directory.
+  git -C "$SRC" -c advice.detachedHead=false switch --detach "$FIX" >"$OUT/worktree-advance.log" 2>&1
+fi
+[[ "$(git -C "$SRC" rev-parse HEAD)" == "$FIX" ]] || {
+  echo "ISOLATED_WORKTREE_ADVANCE_FAILED"; exit 1;
+}
+echo "REBASE_WORKTREE_FAST_FORWARD=PASS; OLD=$PREVIOUS_HEAD; NEW=$FIX" | tee "$OUT/worktree-advance.txt"
 git -C "$SRC" -c http.version=HTTP/1.1 submodule update --init --recursive --jobs 4 >"$OUT/submodules.log" 2>&1
 echo "UPSTREAM_MAIN=$UPSTREAM" >"$OUT/commits.txt"
 echo "NATIVE_FIX_COMMIT=$FIX" >>"$OUT/commits.txt"
@@ -83,11 +98,11 @@ CXX_BIN="$(command -v c++ || echo /usr/bin/c++)"
 cat "$OUT/pm4-result.txt"
 STAGE=CONFIGURE_UPSTREAM
 if command -v ccache >/dev/null 2>&1; then
-  echo "CACHE=CCACHE" >"$OUT/cache.txt"
-  cmake -S "$SRC" -B "$BUILD" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_TESTS=OFF -DENABLE_CPU_ID_TRANSLATION=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache >"$OUT/configure.log" 2>&1
+  echo "CACHE=CCACHE; REUSE_PREVIOUS_OBJECTS=YES" >"$OUT/cache.txt"
+  cmake -S "$SRC" -B "$BUILD" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_TESTS=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache >"$OUT/configure.log" 2>&1
 else
   echo "CACHE=INCREMENTAL_CMAKE" >"$OUT/cache.txt"
-  cmake -S "$SRC" -B "$BUILD" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_TESTS=OFF -DENABLE_CPU_ID_TRANSLATION=OFF >"$OUT/configure.log" 2>&1
+  cmake -S "$SRC" -B "$BUILD" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_TESTS=OFF >"$OUT/configure.log" 2>&1
 fi
 STAGE=BUILD_REBASED_CPU_UFFD_PM4
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build-base.log" 2>&1
@@ -99,6 +114,7 @@ BASE="$BUILD/shadps4.upstream-native-$TAG"
 cp -p "$BUILD/shadps4" "$BASE"; sha256sum "$BASE" >"$OUT/base.sha256"
 echo "BASE_CANDIDATE=$BASE" >"$OUT/base.txt"; BASE_PASS=1
 echo "REBASED_CPU_UFFD_PM4_BUILD=PASS"
+echo "NATIVE_CPU_AFFINITY_INTERFACE=RECONCILED"
 STAGE=STAGE_SOURCE_MATCHED_SRT
 # Keep the separate testing worktree clean even on SRT build failure.
 # Back up the upstream versions before staging anything.
