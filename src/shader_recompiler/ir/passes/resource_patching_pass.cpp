@@ -19,6 +19,7 @@
 #include "shader_recompiler/profile.h"
 #include "shader_recompiler/resource.h"
 #include "video_core/amdgpu/resource.h"
+#include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 
 namespace Shader::Optimization {
 namespace {
@@ -242,8 +243,10 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp, const Info& info)
         const char* const flag=std::getenv("SHADPS4_SHARP_MASK_AUDIT");
         return flag && flag[0]=='1' && flag[1]=='\0';
     }();
-    if (audit_sharp_masks && !SharpMasksAreZero(sharp_fetch.clear_masks,
-                                                sharp.num_dwords)) {
+    static const auto audit_hashes = VideoCore::Diagnostics::ParseShaderAuditHashFilter(
+        std::getenv("SHADPS4_SHARP_MASK_AUDIT_HASHES"));
+    if (audit_sharp_masks && audit_hashes.Matches(info.pgm_hash) &&
+        !SharpMasksAreZero(sharp_fetch.clear_masks, sharp.num_dwords)) {
         static thread_local u32 reports=0;
         if (reports++ < 128) {
             u32 masked_dwords=0;
