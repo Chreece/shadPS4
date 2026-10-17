@@ -136,6 +136,9 @@ inline constexpr u32 MaxGuestIndexedImageEntries = 15;
 struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
     SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};
+    // An oversized guest table remains on the unchanged shader path. Keep
+    // its real source for the opt-in, read-only runtime table census.
+    bool oversized_guest_table_probe{};
     u8 indexed_guest_entries{};
     bool is_guest_indexed{};
     bool is_depth{};
