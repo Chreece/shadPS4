@@ -551,8 +551,14 @@ public:
 #endif // __linux__
 
 struct SignalImpl : public PageManager::Impl {
+    // The Signals dispatcher takes a plain function pointer, so the callback
+    // must resolve the PageManager instance through this registered pointer.
+    // Publish it before RegisterAccessViolationHandler can invoke the callback.
+    inline static SignalImpl* instance{};
+
     SignalImpl(Vulkan::Rasterizer* rasterizer_) : Impl() {
         rasterizer = rasterizer_;
+        instance = this;
 
         // Should be called first.
         constexpr auto priority = std::numeric_limits<u32>::min();
