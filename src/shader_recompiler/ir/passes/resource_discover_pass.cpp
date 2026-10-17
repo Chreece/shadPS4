@@ -982,6 +982,27 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                 DiscoverBufferSharp(*block, inst, sharp_usages);
             } else if (IsImageInstruction(inst)) {
                 DiscoverImageSharp(*block, inst, sharp_usages);
+                if (inst.GetOpcode()==IR::Opcode::ImageSampleRaw &&
+                    profile.supports_sampled_image_nonuniform_indexing) {
+                    const auto table=AnalyzeIndexedImageTable(inst);
+                    if (table.contiguous && table.gpu_texture_id_indexed &&
+                        table.descriptor_stride_words==8u) {
+                        auto& usage=sharp_usages.back();
+                        bool uniform=true;
+                        for (std::size_t dw=0;dw<4;++dw) {
+                            const auto value=table.buffer->Arg(dw);
+                            uniform &= IsHostUniformSrtOffset(value);
+                            usage.indexed_table_sharp.dwords[dw]=value;
+                        }
+                        if (uniform) {
+                            usage.indexed_table_sharp.num_dwords=4;
+                            MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
+                            usage.indexed_texture_id=IR::Value{
+                                const_cast<IR::Inst*>(table.selector)};
+                            usage.has_indexed_table=true;
+                        }
+                    }
+                }
             } else if (IsDataRingInstruction(inst)) {
                 sharp_usages.emplace_back(&inst);
             }
