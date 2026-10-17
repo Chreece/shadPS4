@@ -418,6 +418,16 @@ bool Instance::CreateDevice() {
 
     const auto vk11_features = feature_chain.get<vk::PhysicalDeviceVulkan11Features>();
     vk12_features = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
+    LOG_INFO(Render_Vulkan,
+             "NonuniformSampledImageCapability: supported={} descriptor_indexing={} "
+             "sampled_image_nonuniform={} sampled_image_dynamic={}",
+             Shader::Optimization::CanUseNonuniformSampledImageArray(
+                 bool(vk12_features.descriptorIndexing),
+                 bool(vk12_features.shaderSampledImageArrayNonUniformIndexing),
+                 bool(features.shaderSampledImageArrayDynamicIndexing)),
+             bool(vk12_features.descriptorIndexing),
+             bool(vk12_features.shaderSampledImageArrayNonUniformIndexing),
+             bool(features.shaderSampledImageArrayDynamicIndexing));
     vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();
     vk::StructureChain device_chain = {
         vk::DeviceCreateInfo{
