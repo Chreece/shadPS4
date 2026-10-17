@@ -315,18 +315,21 @@ test "$(git -C "$SOURCE" hash-object "$PAGE")" = "$BASE_PAGE_BLOB" || {
     echo "BASE_PAGE_MANAGER_MODIFIED_REFUSE_TO_OVERWRITE"
     exit 2
 }
-if ! git -C "$SOURCE" -c gc.auto=0 -c http.version=HTTP/1.1 \
-    -c fetch.recurseSubmodules=false fetch --depth=64 --no-tags \
-    --no-recurse-submodules https://github.com/Chreece/shadPS4.git \
-    "refs/heads/$BRANCH"; then
-    echo "GIT_RETRY_WITHOUT_NEGOTIATION"
-    git -C "$SOURCE" -c gc.auto=0 -c http.version=HTTP/1.1 \
-        -c protocol.version=1 -c fetch.recurseSubmodules=false \
-        fetch --refetch --depth=64 --no-tags --no-recurse-submodules \
-        https://github.com/Chreece/shadPS4.git "refs/heads/$BRANCH"
+if git -C "$SOURCE" cat-file -e "$CANDIDATE^{commit}" 2>/dev/null; then
+    echo "GIT_SOURCE_CACHE_HIT=PINNED_CANDIDATE_ALREADY_PRESENT"
+else
+    if ! git -C "$SOURCE" -c gc.auto=0 -c http.version=HTTP/1.1 \
+        -c fetch.recurseSubmodules=false fetch --depth=64 --no-tags \
+        --no-recurse-submodules https://github.com/Chreece/shadPS4.git \
+        "refs/heads/$BRANCH"; then
+        echo "GIT_RETRY_WITHOUT_NEGOTIATION"
+        git -C "$SOURCE" -c gc.auto=0 -c http.version=HTTP/1.1 \
+            -c protocol.version=1 -c fetch.recurseSubmodules=false \
+            fetch --refetch --depth=64 --no-tags --no-recurse-submodules \
+            https://github.com/Chreece/shadPS4.git "refs/heads/$BRANCH"
+    fi
 fi
 git -C "$SOURCE" cat-file -e "$CANDIDATE^{commit}"
-git -C "$SOURCE" merge-base --is-ancestor "$CANDIDATE" FETCH_HEAD
 git -C "$SOURCE" merge-base --is-ancestor "$UPSTREAM" "$CANDIDATE"
 test "$(git -C "$SOURCE" rev-parse "$CANDIDATE:src/video_core/page_manager.cpp")" = \
     "3a7b232e10acb2a9db0507f87ca2c2231c450dd4"
@@ -383,6 +386,14 @@ run_phase B "$BIN" 125
 STATUS="AB_COMPLETE"
 cat "$RUN/evidence/A/result.txt"
 cat "$RUN/evidence/B/result.txt"
+A_CONFIG_HASH=$(cut -d' ' -f1 "$RUN/evidence/A/config-sha256.txt")
+B_CONFIG_HASH=$(cut -d' ' -f1 "$RUN/evidence/B/config-sha256.txt")
+if [ "$A_CONFIG_HASH" != "$B_CONFIG_HASH" ]; then
+    STATUS="A_B_CONFIG_DIFFER"
+    echo "A_B_CONFIG_MATCH=FAIL"
+    exit 2
+fi
+echo "A_B_CONFIG_MATCH=PASS hash=$A_CONFIG_HASH"
 echo "FPS_EVIDENCE=LOOK_AT_TOP_RIGHT_GAME_OVERLAY_IN_A_AND_B_SCREENSHOTS"
 echo "NO_FPS_GAIN_CLAIM_UNTIL_MATCHED_FRAMES_REVIEWED"
 WORKER
