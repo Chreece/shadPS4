@@ -100,6 +100,66 @@ def main():
     else:
         raise AssertionError('Incomplete write-extent fixture was accepted')
 
+    # Reproduce the EXACT real 19-line compute-write calculation found in
+    # the user's 2026-10-17 tracked-write ABI archive. The original 900-char
+    # lookback rejected this valid renderer with 1,092 chars to the call.
+    real_write_extent_call='''VideoCore::ObtainBufferFlags flags = {};
+                if (desc.is_written) {
+                    flags |= VideoCore::ObtainBufferFlags::IsWritten;
+                }
+                if (desc.is_formatted) {
+                    flags |= VideoCore::ObtainBufferFlags::IsTexelBuffer;
+                }
+                u64 tracked_write_size = size;
+                if (desc.is_written && !desc.is_formatted &&
+                    stage.sw_stage == Shader::SwStage::Compute) {
+                    const auto& cs = liverpool->GetCsRegs();
+                    const std::array<u64, 3> local = {
+                        cs.num_thread_x.full, cs.num_thread_y.full, cs.num_thread_z.full};
+                    const std::array<u64, 3> groups = {cs.dim_x, cs.dim_y, cs.dim_z};
+                    if (const auto proven = ComputeProvenWriteSize(desc.write_extent, local, groups);
+                        proven && *proven != 0 && *proven < tracked_write_size) {
+                        tracked_write_size = *proven;
+                    }
+                }
+                const auto [buffer, offset] = buffer_cache.ObtainBuffer(
+                    vsharp.base_address, size, flags, static_cast<u32>(tracked_write_size));'''
+    real_source=source.replace(legacy_call,real_write_extent_call,1)
+    real_source=real_source.replace(
+        'texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);',
+        'texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, tracked_write_size);',1)
+    real_pos=real_source.index('static_cast<u32>(tracked_write_size)')
+    real_flags=real_source.rfind('VideoCore::ObtainBufferFlags flags = {};',0,real_pos)
+    assert real_flags>=0 and real_pos-real_flags>900
+    repaired,edits=mod.restore(real_source,historical,header)
+    assert len(edits)==9,edits
+    assert repaired.count('static_cast<u32>(tracked_write_size)')==1
+    assert repaired.count('ComputeProvenWriteSize(desc.write_extent, local, groups)')==1
+    assert repaired.count('texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, tracked_write_size)')==1
+    assert repaired.count('void Rasterizer::InvalidateMemoryOnGpuThread(')==1
+    print('REAL_UPLOADED_1092_CHAR_COMPUTE_WRITE_LAYOUT=PASS')
+
+    bad=real_source.replace('                VideoCore::ObtainBufferFlags flags = {};',
+        '                auto flags = VideoCore::ObtainBufferFlags::None;',1)
+    try:
+        mod.restore(bad,historical,header)
+    except ValueError as exc:
+        assert 'RENDERER_BUFFER_FLAGS_SOURCE_UNRECOGNIZED' in str(exc),str(exc)
+        print('NO_IN_SCOPE_FLAGS_DECLARATION_NEGATIVE=PASS')
+    else:
+        raise AssertionError('Unscoped buffer flags were accepted')
+
+    bad=real_source.replace(
+        'texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, tracked_write_size);',
+        'texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);',1)
+    try:
+        mod.restore(bad,historical,header)
+    except ValueError as exc:
+        assert 'PROVEN_WRITE_EXTENT_SEMANTICS_MISSING' in str(exc),str(exc)
+        print('TRUNCATED_TEXTURE_INVALIDATION_NEGATIVE=PASS')
+    else:
+        raise AssertionError('Incorrect write-extent texture invalidation was accepted')
+
     bad = source.replace('buffer_cache.ObtainBuffer(arg_address + offset, size, false)',
                          'buffer_cache.ObtainBuffer(arg_address + offset, size, nonsense)', 1)
     try:
