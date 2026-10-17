@@ -18,6 +18,15 @@ def main():
     old_sdl, trial_sdl, old_out, trial_out, runner, observer = [
         Path(x).read_text(encoding="utf-8") for x in sys.argv[1:]
     ]
+    require(
+        hashlib.sha256(old_sdl.encode("utf-8")).hexdigest()
+        == "162717c8391e671f17eb01c15278ec2faac7e3772e9cd7f4027d903a0eafecbb",
+        "ORIGINAL_SDL_MUST_MATCH_USER_2153_ARCHIVE")
+    require(
+        hashlib.sha256(old_out.encode("utf-8")).hexdigest()
+        == "f8a3b71dc015b74632ecc776dfaeac47e43da1883702703c514dce726b056277",
+        "ORIGINAL_AUDIOOUT_MUST_MATCH_USER_2153_ARCHIVE")
+    print("REAL_SERVER_SDL_AUDIO_PREIMAGES=PASS")
     require("SHADPS4_SDL_OUTER_PACING" not in old_sdl, "OLD_SDL_ALREADY_MODIFIED")
     require("SHADPS4_AUDIO_TIMING_PROBE" not in old_out, "OLD_OUTPUT_ALREADY_MODIFIED")
     require(
@@ -28,6 +37,8 @@ def main():
         "outer_only_pacing = pacing && pacing[0] == '1' && pacing[1] == '\\0';"
         in trial_sdl, "OPT_IN_GATE_NOT_EXACT_ONE",
     )
+    require("AudioPeak(" not in trial_sdl and "IsUsable()" not in trial_sdl,
+            "TRIAL_ACCIDENTALLY_IMPORTED_DIFFERENT_AUDIO_HEALTH_BACKEND")
     require(
         "if (!outer_only_pacing) {\n            HandleTiming(current_time);\n        }"
         in trial_sdl, "DEFAULT_BACKEND_PACING_NOT_PRESERVED",
@@ -77,6 +88,9 @@ def main():
     print("AUDIO_PRODUCER_AND_QUEUE_COUNTERS=PASS")
 
     for marker in (
+        "AUDIO_TEST_HEAD=33fca210fbef191880592a4483ff36ffbf0ba46b",
+        "c9a34c805643e225fcab55807849c097f6935bd3",
+        "1c6485d7ea7f052475a56cc0d686ffd757b45952",
         'SHADPS4_RUNTIME_LOG_FILTER="*:warn Lib.AudioOut:info Lib.Audio3d:info"',
         "export SHADPS4_SDL_OUTER_PACING=1",
         "export SHADPS4_AUDIO_TIMING_PROBE=1",
