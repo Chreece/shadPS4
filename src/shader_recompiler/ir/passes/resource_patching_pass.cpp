@@ -446,7 +446,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                 LOG_INFO(Render_Recompiler,
                          "RealIndexedTSharpEnabled: shader={:#x} stage={} entries={} "
                          "stride={} full_guest_table=YES",
-                         info.pgm_hash, info.hw_stage, entries, table.stride);
+                         info.pgm_hash, info.hw_stage, entries, static_cast<u32>(table.stride));
             } else {
                 LOG_INFO(Render_Recompiler,
                          "RealIndexedTSharpUnsupportedSize: shader={:#x} stage={} "
