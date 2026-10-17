@@ -181,6 +181,7 @@ git -C "$ORIGINAL_SRC" merge-base --is-ancestor "$BASE" "$HEAD" || {
   echo "FIX_IS_NOT_DESCENDANT_OF_PINNED_BASE"; exit 1;
 }
 git -C "$ORIGINAL_SRC" diff "$BASE" "$HEAD" -- "${FILES[@]}" >"$OUT/deferred-fix.patch"
+echo "ac174eda286db4e8992d08c9c998381dc083b3f36921ffa230d24b14f1306f23  $OUT/deferred-fix.patch" | sha256sum -c - || { echo "DEFERRED_PATCH_MISMATCH_WITH_PROVEN_BUILD"; exit 1; }
 [[ -s "$OUT/deferred-fix.patch" ]] || { echo "EMPTY_PATCH"; exit 1; }
 git -C "$SRC" apply --check "$OUT/deferred-fix.patch" >"$OUT/apply-check.log" 2>&1 || { echo "PATCH_CONTEXT_MISMATCH"; cat "$OUT/apply-check.log"; exit 1; }
 git -C "$SRC" apply "$OUT/deferred-fix.patch"
