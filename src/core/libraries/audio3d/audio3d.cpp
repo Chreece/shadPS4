@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <array>
+#include <atomic>
+#include <cstdlib>
 #include <vector>
 #include <fmt/format.h>
 #include <magic_enum/magic_enum.hpp>
@@ -29,6 +32,64 @@ static constexpr float DOWNMIX_SURROUND = 0.7071f;
 static constexpr float DOWNMIX_LFE = 0.0f;
 
 static std::unique_ptr<Audio3dState> state;
+
+// The existing associated Audio3D output path queues PCM and normally drains
+// only through PortPush/PortFlush. Test whether waiting for those operations
+// starves audio at low guest frame rates. Unset = byte-for-byte original flow.
+static bool Audio3dDirectDrainEnabled() {
+    static const bool enabled = [] {
+        const char* p = std::getenv("SHADPS4_AUDIO3D_DIRECT_DRAIN");
+        return p && p[0] == '1' && p[1] == '\0';
+    }();
+    return enabled;
+}
+
+static bool Audio3dQueueProbeEnabled() {
+    static const bool enabled = [] {
+        const char* p = std::getenv("SHADPS4_AUDIO3D_QUEUE_PROBE");
+        return p && p[0] == '1' && p[1] == '\0';
+    }();
+    return enabled;
+}
+
+// Counters are per real AudioOut port index, not global: independently
+// distinguish Main(0) and Audio3d(22). Low-rate reporting only.
+static constexpr size_t AudioOutPortSlots = 26;
+static std::array<std::atomic<u64>, AudioOutPortSlots> associated_enqueued{};
+static std::array<std::atomic<u64>, AudioOutPortSlots> associated_forwarded{};
+static std::array<std::atomic<u64>, AudioOutPortSlots> associated_rejected{};
+static std::atomic<u64> audio3d_push_calls{0};
+
+static void ReportAssociatedAudio(s32 handle, std::string_view operation,
+                                  size_t pending_count, u32 queue_depth) {
+    if (!Audio3dQueueProbeEnabled())
+        return;
+    const size_t idx = static_cast<size_t>(handle & 0xFFFF);
+    if (idx >= AudioOutPortSlots)
+        return;
+    std::atomic<u64>* counter = nullptr;
+    if (operation == "enqueue")
+        counter = &associated_enqueued[idx];
+    else if (operation == "forward")
+        counter = &associated_forwarded[idx];
+    else if (operation == "full")
+        counter = &associated_rejected[idx];
+    if (!counter)
+        return;
+    const u64 current = counter->fetch_add(1, std::memory_order_relaxed) + 1;
+    // First sighting, geometric milestones, then one per 256 samples.
+    if (current == 1 || (current & (current - 1)) == 0 || (current & 255) == 0) {
+        LOG_WARNING(Lib_Audio3d,
+                    "AUDIO3D_ASSOC operation={} handle={} port_index={} count={} "
+                    "accepted={} forwarded={} full={} pending={} queue_depth={} eager={}",
+                    operation, handle, idx, current,
+                    associated_enqueued[idx].load(std::memory_order_relaxed),
+                    associated_forwarded[idx].load(std::memory_order_relaxed),
+                    associated_rejected[idx].load(std::memory_order_relaxed),
+                    pending_count, queue_depth, Audio3dDirectDrainEnabled() ? 1 : 0);
+    }
+}
+
 
 struct AudioOutBufferInfo {
     u32 channels;
@@ -78,6 +139,9 @@ static s32 DrainAssociatedPorts(Port& port) {
         if (ret < 0) {
             return ret;
         }
+        // No format conversion, PCM changes, or extra host buffer. The guest
+        // output driver retains its own sample-period pacing.
+        ReportAssociatedAudio(handle, "forward", 0, port.parameters.queue_depth);
     }
 }
 
@@ -164,11 +228,26 @@ s32 PS4_SYSV_ABI sceAudio3dAudioOutOutput(const s32 handle, void* ptr) {
                 }
 
                 if (aout.pending.size() >= port.parameters.queue_depth) {
+                    ReportAssociatedAudio(handle, "full", aout.pending.size(),
+                                          port.parameters.queue_depth);
                     return ORBIS_AUDIO3D_ERROR_NOT_READY;
                 }
 
                 const u8* src = static_cast<const u8*>(ptr);
                 aout.pending.emplace_back(src, src + aout.buffer_bytes);
+                ReportAssociatedAudio(handle, "enqueue", aout.pending.size(),
+                                      port.parameters.queue_depth);
+
+                // If explicitly enabled, flush associated PCM to the same
+                // AudioOut backend now instead of waiting for a later PortPush.
+                // This wrapper already holds the recursive port lock, making
+                // enqueue -> drain ordering stable against concurrent Push.
+                // Default mode has no new waits or scheduling changes.
+                if (Audio3dDirectDrainEnabled()) {
+                    if (const s32 ret = DrainAssociatedPorts(port); ret < 0) {
+                        return ret;
+                    }
+                }
 
                 // Mirror sceAudioOutOutput's return of samples sent.
                 return static_cast<s32>(aout.samples_per_buffer);
@@ -1119,6 +1198,12 @@ s32 PS4_SYSV_ABI sceAudio3dPortPush(const OrbisAudio3dPortId port_id,
                                     const OrbisAudio3dBlocking blocking) {
     LOG_DEBUG(Lib_Audio3d, "called, port_id = {}, blocking = {}", port_id,
               magic_enum::enum_name(blocking));
+    if (Audio3dQueueProbeEnabled()) {
+        const u64 seen = audio3d_push_calls.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (seen == 1 || (seen & (seen - 1)) == 0 || (seen & 255) == 0) {
+            LOG_WARNING(Lib_Audio3d, "AUDIO3D_PUSH count={} port_id={}", seen, port_id);
+        }
+    }
 
     if (!state->ports.contains(port_id)) {
         LOG_ERROR(Lib_Audio3d, "!state->ports.contains(port_id)");
