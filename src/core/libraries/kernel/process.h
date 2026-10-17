@@ -25,6 +25,9 @@ struct OrbisModuleInfoForUnwind {
 
 s32 PS4_SYSV_ABI sceKernelIsNeoMode();
 
+// Guest-visible logical CPU mask derived from sceKernelGetCpumode.
+u64 GetGuestCpuMask();
+
 s32 PS4_SYSV_ABI sceKernelGetCompiledSdkVersion(s32* ver);
 
 s32 PS4_SYSV_ABI sceKernelGetModuleInfoForUnwind(VAddr addr, s32 flags,

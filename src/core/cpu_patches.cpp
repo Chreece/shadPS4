@@ -27,6 +27,9 @@
 #include "common/signal_context.h"
 #include "common/types.h"
 #include "core/signals.h"
+#ifdef __linux__
+#include "core/cpu_id.h"
+#endif
 #include "core/tls.h"
 #include "cpu_patches.h"
 
@@ -772,7 +775,34 @@ static const bool need_tcb_trampoline = true;
 static const bool need_tcb_trampoline = false;
 #endif
 
+#if defined(__linux__)
+static bool FilterCpuId(const ZydisDecodedOperand*) {
+    return true;
+}
+
+static void GenerateCpuid(void*, const ZydisDecodedInstruction&, const ZydisDecodedOperand*,
+                          Xbyak::CodeGenerator& c) {
+    GenerateCpuIdInstruction(c, CpuIdInstruction::Cpuid);
+}
+
+static void GenerateRdtscp(void*, const ZydisDecodedInstruction&, const ZydisDecodedOperand*,
+                           Xbyak::CodeGenerator& c) {
+    GenerateCpuIdInstruction(c, CpuIdInstruction::Rdtscp);
+}
+
+static void GenerateRdpid(void*, const ZydisDecodedInstruction&,
+                          const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
+    GenerateCpuIdInstruction(c, CpuIdInstruction::Rdpid,
+                             ZydisToXbyakRegisterOperand(operands[0]).getIdx());
+}
+#endif
+
 static const std::unordered_map<ZydisMnemonic, std::vector<PatchInfo>> Patches = {
+#if defined(__linux__)
+    {ZYDIS_MNEMONIC_CPUID, {{FilterCpuId, GenerateCpuid, true}}},
+    {ZYDIS_MNEMONIC_RDTSCP, {{FilterCpuId, GenerateRdtscp, true}}},
+    {ZYDIS_MNEMONIC_RDPID, {{FilterCpuId, GenerateRdpid, true}}},
+#endif
     // SSE4a
     {ZYDIS_MNEMONIC_EXTRQ, {{FilterNoSSE4a, GenerateEXTRQ, true}}},
     {ZYDIS_MNEMONIC_INSERTQ, {{FilterNoSSE4a, GenerateINSERTQ, true}}},
@@ -2376,6 +2406,42 @@ static RedZonePatchResult PatchSegmentStatically(u64 segment_addr, u64 segment_s
             record_rewrites(site_span);
             patched_spans.emplace_back(site_span.patch_start, site_span.continuation);
         }
+#if defined(__linux__) && defined(ARCH_X86_64)
+        // Linux cannot trap a supported host RDPID instruction with arch_prctl.
+        // The normal trampoline patcher handles most sites, but four-byte
+        // RDPID instructions inside indirect-branch functions or with no safe
+        // jump relay remain executable with the WRONG host TSC_AUX identity.
+        //
+        // For the opt-in builtin CPU-ID mode, turn ONLY verified instruction
+        // boundaries that could not be relocated into a two-byte UD2. The
+        // signal handler uses the recorded original length/destination to
+        // return the virtual guest CPU number, preserving every other register
+        // and the instruction flags. No external instrumentation is needed.
+        if (IsBuiltinCpuIdMode()) {
+            for (const auto& [site, rewrite] : rewrite_sites) {
+                if (rewrite.cpu_patch == nullptr ||
+                    module->patched.contains(reinterpret_cast<u8*>(site))) {
+                    continue;
+                }
+                const auto& decoded = function.instructions.at(site);
+                if (decoded.instruction.mnemonic != ZYDIS_MNEMONIC_RDPID) {
+                    continue;
+                }
+                ASSERT(decoded.instruction.length >= 4);
+                const u32 destination =
+                    ZydisToXbyakRegisterOperand(decoded.operands[0]).getIdx();
+
+                // Publish immutable metadata BEFORE guest executable bytes are
+                // changed. This lookup is lock-free and signal-handler safe.
+                RegisterBuiltinRdpidTrap(site, decoded.instruction.length, destination);
+                auto* code = reinterpret_cast<u8*>(site);
+                code[0] = 0x0F;
+                code[1] = 0x0B; // UD2 -- SIGILL with unchanged fault RIP.
+                module->patched.insert(code);
+                ++result.patched_cpu_patch_instruction_count;
+            }
+        }
+#endif
     }
     return result;
 }
@@ -2524,6 +2590,9 @@ static bool PatchesIllegalInstructionHandler(void* context) {
 }
 
 static void PatchesInit() {
+#if defined(__linux__)
+    InitializeCpuId();
+#endif
     if (!Patches.empty()) {
         auto* signals = Signals::Instance();
         // Should be called last.
@@ -2552,6 +2621,46 @@ void PrePatchInstructions(u64 segment_addr, u64 segment_size) {
         TryPatchAot(reinterpret_cast<void*>(segment_addr), segment_size);
     }
 #endif
+}
+
+bool FindUnpatchedRdpid(u64 segment_addr, u64 segment_size,
+                        u64& first_unpatched) noexcept {
+#if defined(__linux__) && defined(ARCH_X86_64)
+    const auto* bytes = reinterpret_cast<const u8*>(segment_addr);
+    // RDPID uses F3 0F C7 /7 with ModRM.MOD=11; REX and operand
+    // size prefixes may precede 0F. This check intentionally refuses an
+    // ambiguous raw candidate rather than exposing the host TSC_AUX to the
+    // guest. It runs only once per ELF code segment during builtin startup.
+    for (u64 i = 1; i + 2 < segment_size; ++i) {
+        if (bytes[i] != 0x0F || bytes[i + 1] != 0xC7 ||
+            (bytes[i + 2] & 0xF8) != 0xF8) {
+            continue;
+        }
+        bool saw_f3 = false;
+        for (u64 back = i; back > 0 && i - back < 14;) {
+            const u8 prefix = bytes[--back];
+            if (prefix == 0xF3) {
+                saw_f3 = true;
+                continue;
+            }
+            if ((prefix >= 0x40 && prefix <= 0x4F) || prefix == 0x66 ||
+                prefix == 0x67 || prefix == 0x2E || prefix == 0x3E ||
+                prefix == 0x26 || prefix == 0x36 || prefix == 0x64 ||
+                prefix == 0x65) {
+                continue;
+            }
+            break;
+        }
+        if (saw_f3) {
+            first_unpatched = segment_addr + i;
+            return true;
+        }
+    }
+#else
+    (void)segment_addr;
+    (void)segment_size;
+#endif
+    return false;
 }
 
 } // namespace Core

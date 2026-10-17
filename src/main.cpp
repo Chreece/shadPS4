@@ -26,6 +26,10 @@
 #include "emulator.h"
 #include "imgui/big_picture/big_picture.h"
 
+#if defined(__linux__) && defined(ARCH_X86_64)
+#include "core/cpu_id_translation/launcher.h"
+#endif
+
 #ifdef _WIN32
 #include <windows.h>
 #elif defined(__APPLE__)
@@ -59,6 +63,15 @@ int main(int argc, char* argv[]) {
     std::optional<int> waitPid;
     bool waitForDebugger = false;
     bool userfaultfd = false;
+#if defined(__linux__) && defined(ARCH_X86_64)
+    // No external runtime required by default when compiled without the
+    // optional DynamoRIO bundle.
+#ifdef ENABLE_CPU_ID_TRANSLATION
+    std::string cpuIdMode = "auto";
+#else
+    std::string cpuIdMode = "builtin";
+#endif
+#endif
 
     std::optional<std::string> fullscreenStr;
     bool ignoreGamePatch = false;
@@ -93,6 +106,15 @@ int main(int argc, char* argv[]) {
 
     app.add_flag("--wait-for-debugger", waitForDebugger);
     app.add_option("--wait-for-pid", waitPid);
+#if defined(__linux__) && defined(ARCH_X86_64)
+    app.add_option("--cpu-id-mode", cpuIdMode, "Guest CPU identity execution mode")
+#ifdef ENABLE_CPU_ID_TRANSLATION
+        ->check(CLI::IsMember({"auto", "native", "translated", "builtin"}))
+#else
+        ->check(CLI::IsMember({"auto", "native", "builtin"}))
+#endif
+        ->envname("SHADPS4_CPU_ID_MODE");
+#endif
 #ifdef __linux__
     app.add_flag("--userfaultfd", userfaultfd,
                  "Enable userfaultfd for tracking memory (Linux only)");
@@ -144,6 +166,13 @@ int main(int argc, char* argv[]) {
     } catch (const CLI::ParseError& e) {
         return app.exit(e);
     }
+
+#if defined(__linux__) && defined(ARCH_X86_64)
+    if ((gamePath || bigPicture) &&
+        !Core::StartCpuIdTranslation(argc, argv, cpuIdMode, gamePath.has_value() || sameProcess)) {
+        return 1;
+    }
+#endif
 
     if (waitPid)
         Core::Debugger::WaitForPid(*waitPid);

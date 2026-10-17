@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "core/emulator_settings.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
 
@@ -19,6 +18,22 @@ static void AddFlatbuf(Info& info) {
 
 void Visit(Info& info, const IR::Inst& inst) {
     switch (inst.GetOpcode()) {
+    case IR::Opcode::Phi: {
+        // Phi nodes are SSA merges, not arithmetic opcodes. Their result
+        // types still need SPIR-V scalar/vector capabilities. Account for
+        // FP64 before constructing the SPIR-V type table.
+        switch (inst.Flags<IR::Type>()) {
+        case IR::Type::F64:
+        case IR::Type::F64x2:
+        case IR::Type::F64x3:
+        case IR::Type::F64x4:
+            info.uses_fp64 = true;
+            break;
+        default:
+            break;
+        }
+        break;
+    }
     case IR::Opcode::GetAttribute:
     case IR::Opcode::GetAttributeU1:
     case IR::Opcode::GetAttributeU32:
@@ -144,7 +159,6 @@ void Visit(Info& info, const IR::Inst& inst) {
         break;
     case IR::Opcode::ReadLane:
     case IR::Opcode::ReadFirstLane:
-    case IR::Opcode::WriteLane:
         info.uses_group_ballot = true;
         break;
     case IR::Opcode::Discard:
@@ -185,6 +199,7 @@ void Visit(Info& info, const IR::Inst& inst) {
         info.uses_group_ballot = true;
         [[fallthrough]];
     case IR::Opcode::LaneId:
+    case IR::Opcode::WriteLane:
         info.uses_lane_id = true;
         break;
     case IR::Opcode::Memtime:
@@ -217,11 +232,11 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
         }
     }
 
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled()) {
-        info.uses_dma = false;
-        info.readconst_types = Info::ReadConstType::None;
-    }
-
+    // An unflattened ReadConst still needs real guest-memory backing even
+    // when the global direct-memory-access optimization is disabled.
+    // Silencing DMA here makes the SPIR-V backend read unrelated flatbuf
+    // words (frequently offset zero), corrupting shader data.
+    // Already resolved ReadConst nodes continue to use the flat buffer.
     if (info.uses_dma) {
         info.buffers.push_back({
             .used_types = IR::Type::U64,

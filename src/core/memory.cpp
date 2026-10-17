@@ -15,6 +15,47 @@
 
 namespace Core {
 
+namespace {
+
+// Translating guest CPU/GPU memory permissions is a bitmask operation.
+// A combined 'ReadWrite' mask cannot be tested with a generic any-bit
+// predicate: a read-only mapping would accidentally become writable.
+[[nodiscard]] constexpr MemoryPermission GuestEffectivePermissions(MemoryProt prot) noexcept {
+    MemoryPermission result = MemoryPermission::None;
+    if (True(prot & MemoryProt::CpuRead) || True(prot & MemoryProt::GpuRead)) {
+        result |= MemoryPermission::Read;
+    }
+    if (True(prot & MemoryProt::CpuWrite) || True(prot & MemoryProt::GpuWrite)) {
+        result |= MemoryPermission::ReadWrite;
+    }
+    if (True(prot & MemoryProt::CpuExec)) {
+        result |= MemoryPermission::Execute;
+    }
+    return result;
+}
+
+// Compiler-level regression over all combinations of PS4 CPU/GPU
+// R/W/X protection bits. This checks the actual production mapping, not
+// a second test implementation, and emits no runtime instrumentation.
+[[nodiscard]] consteval bool GuestPermissionContract() {
+    for (u32 bits = 0; bits < 64; ++bits) {
+        const auto permissions = GuestEffectivePermissions(static_cast<MemoryProt>(bits));
+        const bool allow_read = (bits & 0x33u) != 0;
+        const bool allow_write = (bits & 0x22u) != 0;
+        const bool allow_execute = (bits & 0x04u) != 0;
+        if (True(permissions & MemoryPermission::Read) != allow_read ||
+            True(permissions & MemoryPermission::Write) != allow_write ||
+            True(permissions & MemoryPermission::Execute) != allow_execute) {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(GuestPermissionContract(), "PS4 guest protection must not grant read-only write access");
+
+} // namespace
+
+
 MemoryManager::MemoryManager() {
     LOG_INFO(Kernel_Vmm, "Virtual memory space initialized with regions:");
 
@@ -458,6 +499,7 @@ s32 MemoryManager::PoolCommit(VAddr virtual_addr, u64 size, MemoryProt prot, s32
         handle++;
     }
     ASSERT_MSG(remaining_size == 0, "Failed to commit pooled memory");
+    rasterizer->ProtectMemory(mapped_addr, size, MemoryPermission::ReadWrite);
 
     // Merge this VMA with similar nearby areas
     MergeAdjacent(vma_map, new_vma_handle);
@@ -687,7 +729,10 @@ s32 MemoryManager::MapMemory(void** out_addr, VAddr virtual_addr, u64 size, Memo
 
         lk2.unlock();
 
-        // If this is not a reservation, then map to GPU and address space
+        // Keep guest CPU permissions independent of GPU page watchers.
+        rasterizer->ProtectMemory(mapped_addr, size,
+                                  is_exec && ARCH_X86_64 ? MemoryPermission::ReadWriteExecute
+                                                         : MemoryPermission::ReadWrite);
         if (IsValidGpuMapping(mapped_addr, size)) {
             rasterizer->MapMemory(mapped_addr, size);
         }
@@ -881,6 +926,7 @@ s32 MemoryManager::PoolDecommit(VAddr virtual_addr, u64 size) {
                 phys_handle++;
             }
             ASSERT_MSG(size_to_free == 0, "Failed to decommit pooled memory");
+            rasterizer->ProtectMemory(current_addr, size_in_vma, MemoryPermission::None);
         }
 
         // Mark region as pool reserved and attempt to coalesce it with neighbours.
@@ -994,7 +1040,8 @@ u64 MemoryManager::UnmapBytesFromEntry(VAddr virtual_addr, VirtualMemoryArea vma
     MergeAdjacent(vma_map, new_it);
 
     if (vma_type != VMAType::Reserved && vma_type != VMAType::PoolReserved) {
-        // Unmap the memory region.
+        // Drop guest access and update page watch state before unregistering.
+        rasterizer->ProtectMemory(virtual_addr, size_in_vma, MemoryPermission::None);
         u64 size_to_unmap = size_in_vma;
         VAddr unmapped_addr = impl.Unmap(virtual_addr, &size_to_unmap);
         rasterizer->RegisterMemory(unmapped_addr, size_to_unmap);
@@ -1053,6 +1100,9 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
     const auto adjusted_size = std::min<u64>(vma_base.size - start_in_vma, size);
     const MemoryProt old_prot = vma_base.prot;
     const MemoryProt new_prot = prot;
+    // A CarveVMA/MergeAdjacent operation may invalidate the input VMA
+    // reference. Snapshot its type before splitting or coalescing entries.
+    const VMAType type = vma_base.type;
 
     if (vma_base.type == VMAType::Free || vma_base.type == VMAType::PoolReserved) {
         // On PS4, protecting freed memory does nothing.
@@ -1064,30 +1114,11 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
         prot |= MemoryProt::CpuRead;
     }
 
-    // Set permissions
-    Core::MemoryPermission perms{};
+    // The same constexpr mapping is verified for all bit combinations above.
+    const MemoryPermission perms = GuestEffectivePermissions(prot);
 
-    if (True(prot & MemoryProt::CpuRead)) {
-        perms |= Core::MemoryPermission::Read;
-    }
-    if (True(prot & MemoryProt::CpuReadWrite)) {
-        perms |= Core::MemoryPermission::ReadWrite;
-    }
-    if (True(prot & MemoryProt::CpuExec)) {
-        perms |= Core::MemoryPermission::Execute;
-    }
-    if (True(prot & MemoryProt::GpuRead)) {
-        perms |= Core::MemoryPermission::Read;
-    }
-    if (True(prot & MemoryProt::GpuWrite)) {
-        perms |= Core::MemoryPermission::Write;
-    }
-    if (True(prot & MemoryProt::GpuReadWrite)) {
-        perms |= Core::MemoryPermission::ReadWrite;
-    }
-
-    if (vma_base.type == VMAType::Direct || vma_base.type == VMAType::Pooled ||
-        vma_base.type == VMAType::File) {
+    if (type == VMAType::Direct || type == VMAType::Pooled ||
+        type == VMAType::File) {
         // On PS4, execute permissions are hidden from direct memory and file mappings.
         // Tests show that execute permissions still apply, so handle this after reading perms.
         prot &= ~MemoryProt::CpuExec;
@@ -1099,7 +1130,7 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
     new_vma.prot = prot;
     MergeAdjacent(vma_map, new_it);
 
-    if (vma_base.type == VMAType::Reserved) {
+    if (type == VMAType::Reserved) {
         // On PS4, protections change vma_map, but don't apply.
         // Return early to avoid protecting memory that isn't mapped in address space.
         return adjusted_size;
@@ -1107,7 +1138,7 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
 
     // Perform address-space memory protections if needed.
     if (new_prot != old_prot) {
-        impl.Protect(addr, adjusted_size, perms);
+        rasterizer->ProtectMemory(addr, adjusted_size, perms);
     }
 
     return adjusted_size;
@@ -1119,27 +1150,13 @@ s32 MemoryManager::Protect(VAddr addr, u64 size, MemoryProt prot) {
         return ORBIS_OK;
     }
 
-    // Ensure the range to modify is valid
+    // Validate the full guest address space, not only the system-managed
+    // slice. Games map physical/direct user memory above 0x1000000000;
+    // limiting protection to SystemManagedVirtualSize silently ignored all
+    // such requests and returned success with incorrect CPU permissions.
     std::scoped_lock lk{mutex, unmap_mutex};
-
-    const VAddr vbase = impl.SystemManagedVirtualBase();
-    const VAddr vend = vbase + impl.SystemManagedVirtualSize();
-
-    // In the PS4 kernel, invalid pages are ignored and only mapped pages in range are protected.
-    if (addr < vbase) {
-        const u64 skip = vbase - addr;
-        if (skip >= size) {
-            return ORBIS_OK;
-        }
-        addr += skip;
-        size -= skip;
-    }
-    if (addr >= vend) {
-        return ORBIS_OK;
-    }
-    if (addr + size > vend) {
-        size = vend - addr;
-    }
+    ASSERT_MSG(IsValidMapping(addr, size), "Attempted to protect invalid range {:#x}+{:#x}",
+               addr, size);
 
     // Appropriately restrict flags.
     constexpr static MemoryProt flag_mask =

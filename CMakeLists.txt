@@ -997,6 +997,8 @@ set(CORE src/core/aerolib/stubs.cpp
          src/core/platform.h
          src/core/signals.cpp
          src/core/signals.h
+         src/core/cpu_affinity.cpp
+         src/core/cpu_affinity.h
          src/core/thread.cpp
          src/core/thread.h
          src/core/tls.cpp
@@ -1018,6 +1020,9 @@ if (ARCHITECTURE STREQUAL "x86_64")
              src/core/cpu_patches.cpp
              src/core/cpu_patches.h
              ${FIBER_LIB})
+    if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        list(APPEND CORE src/core/cpu_id.cpp src/core/cpu_id.h)
+    endif()
 endif()
 
 set(SHADER_RECOMPILER src/shader_recompiler/profile.h
@@ -1333,6 +1338,11 @@ add_executable(shadps4
 )
 
 create_target_directory_groups(shadps4)
+
+# Builtin guest CPU identity is in-process: no instrumentation dependency.
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND ARCHITECTURE STREQUAL "x86_64")
+    target_sources(shadps4 PRIVATE src/core/cpu_id_translation/launcher.cpp)
+endif()
 
 target_link_libraries(shadps4 PRIVATE spdlog::spdlog)
 target_link_libraries(shadps4 PRIVATE magic_enum::magic_enum fmt::fmt toml11::toml11 tsl::robin_map xbyak::xbyak Tracy::TracyClient RenderDoc::API FFmpeg::ffmpeg Dear_ImGui ImGuiFileDialog gcn half::half ZLIB::ZLIB PNG::PNG minimp3 dr_flac)
