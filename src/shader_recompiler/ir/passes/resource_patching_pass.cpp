@@ -301,12 +301,61 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp, const Info& info)
     return sharp_fetch;
 }
 
+// Read-only provenance for invalid, real guest SHARP descriptors.
+// A CSV hash filter confines this work to shaders the user is investigating;
+// no runtime resource, codegen or descriptor value changes occur here.
+static bool InvalidSharpTraceEnabled(const Info& info) {
+    static const auto hash_filter = VideoCore::Diagnostics::ParseShaderAuditHashFilter(
+        std::getenv("SHADPS4_INVALID_SHARP_TRACE_HASHES"));
+    return hash_filter.enabled && hash_filter.valid &&
+           hash_filter.Matches(info.pgm_hash);
+}
+
+template <typename Fetch>
+static u32 MissingSharpWordMask(const SharpReference& source, const Fetch& fetch) {
+    u32 mask = 0;
+    for (u32 i = 0; i < source.num_dwords; ++i) {
+        if (!source.dwords[i].IsImmediate() && fetch.offsets[i] == UNKNOWN_LOCATION) {
+            mask |= (1u << i);
+        }
+    }
+    return mask;
+}
+
+static std::string_view SharpProducerName(const SharpReference& source, u32 word) {
+    if (word >= source.num_dwords) return "not-present";
+    const IR::Value value = source.dwords[word];
+    if (value.IsImmediate()) return "immediate";
+    const auto* const inst = value.TryInst();
+    return inst ? IR::NameOf(inst->GetOpcode()) : "missing";
+}
+
 void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors& descriptors,
                       const Profile& profile) {
     IR::Inst& inst = *resource.user;
 
+    const auto& source = resource.sharps[0];
+    const auto fetch = ConstructSharpFetch<AmdGpu::Buffer>(source, info);
+    if (InvalidSharpTraceEnabled(info) &&
+        fetch.summary == SharpFetch<AmdGpu::Buffer>::Summary::Invalid) {
+        static thread_local std::unordered_map<u64, u32> per_shader;
+        const u64 shader_key = (static_cast<u64>(info.pgm_hash) << 8) |
+                                static_cast<u8>(info.hw_stage);
+        if (per_shader[shader_key]++ < 48) {
+            const auto flags = inst.Flags<IR::BufferInstInfo>();
+            LOG_INFO(Render_Recompiler,
+                     "InvalidVSharpSource: shader={:#x} stage={} op={} "
+                     "missing_mask={:#x} index_en={} voffset_en={} "
+                     "dw0={} dw1={} dw2={} dw3={}",
+                     info.pgm_hash, info.hw_stage, IR::NameOf(inst.GetOpcode()),
+                     MissingSharpWordMask(source, fetch),
+                     bool(flags.index_enable), bool(flags.voffset_enable),
+                     SharpProducerName(source, 0), SharpProducerName(source, 1),
+                     SharpProducerName(source, 2), SharpProducerName(source, 3));
+        }
+    }
     const u32 buffer_binding = descriptors.Add(BufferResource{
-        .sharp_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.sharps[0], info),
+        .sharp_fetch = fetch,
         .used_types = BufferDataType(inst, profile),
         .buffer_type = BufferType::Guest,
         .is_written = IsBufferStore(inst),
@@ -334,8 +383,28 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     // need fallback (TODO is this 100% true?)
     const bool needs_mip_storage_fallback =
         inst_info.has_lod && is_written && !profile.supports_image_load_store_lod;
+    const auto& source = resource.sharps[0];
+    const auto fetch = ConstructSharpFetch<AmdGpu::Image>(source, info);
+    if (InvalidSharpTraceEnabled(info) &&
+        fetch.summary == SharpFetch<AmdGpu::Image>::Summary::Invalid) {
+        static thread_local std::unordered_map<u64, u32> per_shader;
+        const u64 shader_key = (static_cast<u64>(info.pgm_hash) << 8) |
+                                static_cast<u8>(info.hw_stage);
+        if (per_shader[shader_key]++ < 48) {
+            LOG_INFO(Render_Recompiler,
+                     "InvalidTSharpSource: shader={:#x} stage={} op={} "
+                     "missing_mask={:#x} dw0={} dw1={} dw2={} dw3={} "
+                     "dw4={} dw5={} dw6={} dw7={}",
+                     info.pgm_hash, info.hw_stage, IR::NameOf(inst.GetOpcode()),
+                     MissingSharpWordMask(source, fetch),
+                     SharpProducerName(source, 0), SharpProducerName(source, 1),
+                     SharpProducerName(source, 2), SharpProducerName(source, 3),
+                     SharpProducerName(source, 4), SharpProducerName(source, 5),
+                     SharpProducerName(source, 6), SharpProducerName(source, 7));
+        }
+    }
     ImageResource image_res = {
-        .sharp_fetch = ConstructSharpFetch<AmdGpu::Image>(resource.sharps[0], info),
+        .sharp_fetch = fetch,
         .is_depth = bool(inst_info.is_depth),
         .is_atomic = is_atomic,
         .is_array = bool(inst_info.is_array),
