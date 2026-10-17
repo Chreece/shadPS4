@@ -795,6 +795,8 @@ static bool SplitImageSampleBySharpPhi(IR::Block& block, IR::Inst& inst,
 struct IndexedImageTableSource {
     const IR::Inst* buffer{};
     const IR::Inst* selector{};
+    u32 descriptor_stride_words{1};
+    bool gpu_texture_id_indexed{};
     std::array<const IR::Inst*, 8> words{};
     std::array<u32, 8> addends{};
     bool contiguous{};
@@ -825,7 +827,11 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
     }
     const auto* const selector=static_cast<const IR::Inst*>(normalized[0].selector);
     if (!selector || !AreContiguousIndexedSharpWords(normalized)) return out;
-    out.selector=selector;
+    const auto identity=IdentifyTsharpSelector(selector);
+    if (!identity.source) return out;
+    out.selector=static_cast<const IR::Inst*>(identity.source);
+    out.descriptor_stride_words=identity.descriptor_stride_words;
+    out.gpu_texture_id_indexed=identity.normalized;
     out.contiguous=true;
     return out;
 }
@@ -852,11 +858,13 @@ static bool SplitImageSampleByIndexedSelect(IR::Block& block, IR::Inst& sample,
             const auto* const index=table.selector;
             LOG_INFO(Render_Recompiler,
                      "IndexedTSharpSource: shader={:#x} stage={} matched={} "
-                     "index_op={} dword_start={} base_op={} ",
+                     "index_op={} dword_start={} base_op={} "
+                     "texture_id_indexed={} descriptor_stride_words={} ",
                      info.pgm_hash,info.hw_stage,table.contiguous,
                      index ? IR::NameOf(index->GetOpcode()) : "unmatched",
                      table.contiguous ? table.addends[0] : 0,
-                     table.buffer ? IR::NameOf(table.buffer->GetOpcode()) : "none");
+                     table.buffer ? IR::NameOf(table.buffer->GetOpcode()) : "none",
+                     table.gpu_texture_id_indexed,table.descriptor_stride_words);
         }
     }
     if (!table.contiguous || budget<1 ||
@@ -898,7 +906,9 @@ static bool SplitImageSampleByIndexedSelect(IR::Block& block, IR::Inst& sample,
         std::array<IR::Inst*,8> words{};
         for(std::size_t i=0;i<words.size();++i) {
             IR::Inst* const read=&*block.PrependNewInst(pos,*table.words[i]);
-            read->SetArg(1,IR::Value{static_cast<u32>(index+table.addends[i])});
+            const u32 dword=GcnTextureDwordIndex(index,table.addends[i],
+                                                  table.descriptor_stride_words);
+            read->SetArg(1,IR::Value{dword});
             words[i]=read;
         }
         const std::array<const IR::Inst*, 2> source_parts{low, high};
@@ -925,8 +935,8 @@ static bool SplitImageSampleByIndexedSelect(IR::Block& block, IR::Inst& sample,
     if (IndexedImageAuditEnabled(info.pgm_hash)) {
         LOG_INFO(Render_Recompiler,
                  "IndexedTSharpSplit: shader={:#x} stage={} branch_count=2 "
-                 "mode=exact_static_index_candidates",
-                 info.pgm_hash,info.hw_stage);
+                 "mode=exact_static_index_candidates stride_dwords={}",
+                 info.pgm_hash,info.hw_stage,table.descriptor_stride_words);
     }
     return true;
 }

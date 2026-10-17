@@ -8,6 +8,8 @@
 using Shader::Optimization::AnalyzeIndexedSharpWord;
 using Shader::Optimization::AreContiguousIndexedSharpWords;
 using Shader::Optimization::IndexedSharpWord;
+using Shader::Optimization::IdentifyTsharpSelector;
+using Shader::Optimization::GcnTextureDwordIndex;
 using Shader::IR::Opcode;
 struct MockInst;
 struct MockValue {
@@ -37,6 +39,19 @@ int main(){
         offsets[i]={Opcode::IAdd32,{MockValue::Ref(selected),MockValue::Imm(i)},};
         words[i]=AnalyzeIndexedSharpWord(MockValue::Ref(offsets[i]));
     }
+    MockInst texId{Opcode::ReadConstBuffer,{},};
+    MockInst mulBytes{Opcode::ShiftLeftLogical32,
+                     {MockValue::Ref(texId),MockValue::Imm(5u)},};
+    MockInst toDwords{Opcode::ShiftRightLogical32,
+                      {MockValue::Ref(mulBytes),MockValue::Imm(2u)},};
+    const auto decoding=IdentifyTsharpSelector(&toDwords);
+    if(!decoding.normalized || decoding.source!=&texId ||
+       decoding.descriptor_stride_words!=8u) return 8;
+    MockInst invalidShift{Opcode::ShiftLeftLogical32,
+                          {MockValue::Ref(texId),MockValue::Imm(4u)},};
+    MockInst invalidConvert{Opcode::ShiftRightLogical32,
+                            {MockValue::Ref(invalidShift),MockValue::Imm(2u)},};
+    if(IdentifyTsharpSelector(&invalidConvert).normalized) return 9;
     if(!AreContiguousIndexedSharpWords(words))return 1;
     if(words[0].selector!=&selected || words[7].addend!=7)return 2;
     words[6].addend=55;
@@ -55,10 +70,16 @@ int main(){
         }
         if(!AreContiguousIndexedSharpWords(words))return 5;
         if(words[7].addend!=std::uint32_t(start+7))return 6;
+        for(unsigned d=0;d<8;++d){
+            if(GcnTextureDwordIndex(start,d,8u) !=
+               std::uint32_t((std::uint32_t(start << 5u)>>2u)+d)) return 10;
+        }
+        if(GcnTextureDwordIndex(start,0,1u)!=start) return 11;
         words[gen()%8].selector=&attr;
         if(AreContiguousIndexedSharpWords(words))return 7;
     }
     std::puts("INDEXED_TSHARP_SELECTOR=PASS 100000_affine_tables "
-              "real_GPU_selector=KEPT mismatched_sources=REJECTED");
+              "real_GPU_selector=KEPT gcn_32byte_stride=EXACT "
+              "mismatched_sources=REJECTED");
     return 0;
 }
