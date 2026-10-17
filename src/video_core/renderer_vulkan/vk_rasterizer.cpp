@@ -596,14 +596,17 @@ void Rasterizer::OnFence() {
     if (!guest_tsharp_feedback_buffer) {
         return;
     }
-    const u32 fence = ++guest_tsharp_feedback_fence_count;
-    if (fence != 1 && fence != 16 && fence != 64 &&
-        (fence % 128u) != 0u) {
+    const u32 guest_fence = ++guest_tsharp_feedback_fence_count;
+    // These are GCN guest fence events, NOT proof of a completed host GPU
+    // semaphore. Request at most three opt-in snapshots, and finish the
+    // current Vulkan queue before the CPU reads GPU-written atomics.
+    if (guest_fence != 128 && guest_fence != 2048 &&
+        guest_fence != 16384) {
         return;
     }
-    // OnFence runs only at a completed graphics fence. Invalidate the
-    // host-cached allocation after the GPU finished writing atomic bits.
-    // Keep bits cumulative; no GPU/CPU concurrent clear or lost IDs.
+    scheduler.Finish();
+    // The finished queue has no outstanding writes to this host mapping.
+    // Invalidate noncoherent memory, then retain a cumulative bitmap.
     auto& buffer = *guest_tsharp_feedback_buffer;
     buffer.Invalidate(0, buffer.SizeBytes());
     const auto* const words =
@@ -629,9 +632,10 @@ void Rasterizer::OnFence() {
     const bool overflow =
         (words[Shader::Optimization::GuestTsharpFeedbackOverflowId >> 5u] & 1u) != 0u;
     LOG_INFO(Render_Vulkan,
-             "GuestTsharpGpuIdsObserved: completed_fences={} unique={} first={} "
-             "last={} overflow={} first_48=[{}] guest_ids_not_remapped=YES",
-             fence, distinct, first_id, last_id, overflow, first_ids);
+             "GuestTsharpGpuIdsObserved: guest_fences={} unique={} first={} "
+             "last={} overflow={} first_48=[{}] gpu_wait=YES "
+             "guest_ids_not_remapped=YES",
+             guest_fence, distinct, first_id, last_id, overflow, first_ids);
 }
 
 bool Rasterizer::BindResources(const Pipeline* pipeline) {
