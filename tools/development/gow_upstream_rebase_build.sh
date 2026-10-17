@@ -48,7 +48,7 @@ finish() {
   [[ ! -f "$OUT/base.txt" ]] || cat "$OUT/base.txt"
   [[ ! -f "$OUT/srt.txt" ]] || cat "$OUT/srt.txt"
   if [[ "$rc" != 0 ]]; then
-    for f in "$OUT/"{compile-preflight,submodules,configure,build-base,build-srt,pm4-compile}.log; do
+    for f in "$OUT/"{compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile}.log; do
       [[ ! -s "$f" ]] || { echo "ERROR_TAIL=$f"; tail -18 "$f"; }
     done
   fi
@@ -174,6 +174,22 @@ done <<'PINNED_SRT'
 a8695bab2b6fdbbf42abb24f0d3e75a9c3cd53445d78ffef36c0196cb80167b9 src/shader_recompiler/ir/passes/srt_offset_codegen.h
 4b7b8a6e4422d1620c3c2910e94554bb3fa99a4e05d4ee82bb7ee9a43b88ae1b src/shader_recompiler/ir/passes/srt_offset_preflight.h
 PINNED_SRT
+STAGE=EARLY_NATIVE_SRT_COMPILE_CHECK
+if [[ -f "$BUILD/CMakeFiles/shadps4.dir/build.make" ]]; then
+  SRT_OBJECTS=(
+    CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp.o
+    CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp.o
+  )
+  for obj in "${SRT_OBJECTS[@]}"; do
+    grep -Fq "$obj:" "$BUILD/CMakeFiles/shadps4.dir/build.make" || {
+      echo "SRT_EARLY_TARGET_MISSING=$obj"; exit 1;
+    }
+  done
+  "$MAKE_BIN" -C "$BUILD" -f CMakeFiles/shadps4.dir/build.make -j2 "${SRT_OBJECTS[@]}"     >"$OUT/compile-srt-preflight.log" 2>&1 || {
+      echo "SRT_EARLY_CHECK=FAILED"; tail -65 "$OUT/compile-srt-preflight.log"; exit 1;
+    }
+  echo "SRT_EARLY_CHECK=PASS"
+fi
 STAGE=BUILD_REBASED_NATIVE_SRT
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build-srt.log" 2>&1
 nm -C "$BUILD/shadps4" | grep -F 'Vulkan::Rasterizer::InvalidateMemoryOnGpuThread' >"$OUT/srt-uffd-symbol.txt" || { echo "SRT_BUILD_LOST_UFFD"; exit 1; }
