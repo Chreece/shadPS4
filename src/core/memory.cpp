@@ -1150,27 +1150,13 @@ s32 MemoryManager::Protect(VAddr addr, u64 size, MemoryProt prot) {
         return ORBIS_OK;
     }
 
-    // Ensure the range to modify is valid
+    // Validate the full guest address space, not only the system-managed
+    // slice. Games map physical/direct user memory above 0x1000000000;
+    // limiting protection to SystemManagedVirtualSize silently ignored all
+    // such requests and returned success with incorrect CPU permissions.
     std::scoped_lock lk{mutex, unmap_mutex};
-
-    const VAddr vbase = impl.SystemManagedVirtualBase();
-    const VAddr vend = vbase + impl.SystemManagedVirtualSize();
-
-    // In the PS4 kernel, invalid pages are ignored and only mapped pages in range are protected.
-    if (addr < vbase) {
-        const u64 skip = vbase - addr;
-        if (skip >= size) {
-            return ORBIS_OK;
-        }
-        addr += skip;
-        size -= skip;
-    }
-    if (addr >= vend) {
-        return ORBIS_OK;
-    }
-    if (addr + size > vend) {
-        size = vend - addr;
-    }
+    ASSERT_MSG(IsValidMapping(addr, size), "Attempted to protect invalid range {:#x}+{:#x}",
+               addr, size);
 
     // Appropriately restrict flags.
     constexpr static MemoryProt flag_mask =
