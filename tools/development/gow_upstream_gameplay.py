@@ -111,6 +111,7 @@ def summarize_log(path, out):
     audio_maxima = {}
     audio_modes = Counter()
     audio_windows = Counter()
+    audio_events = []
     audio_metric_re = re.compile(r"\b([a-z_]+)=(\d+)")
     total_lines = 0
     if not path.is_file():
@@ -124,6 +125,7 @@ def summarize_log(path, out):
                 if "audio_producer_probe" in tags or "audio_sdl_probe" in tags:
                     kind = "producer" if "audio_producer_probe" in tags else "sdl"
                     audio_windows[kind] += 1
+                    audio_events.append(line[:1800])
                     if kind == "sdl":
                         match = re.search(r"\bpacing=(outer|dual)", line)
                         audio_modes[match.group(1) if match else "unknown"] += 1
@@ -148,6 +150,8 @@ def summarize_log(path, out):
                     match = SHADER_ID.search(line)
                     if match:
                         shader_ids[match.group(1).lower()] += 1
+        (out / "audio-timing-events.txt").write_text(
+            "\n".join(audio_events) + "\n")
         (out / "audio-timing-summary.json").write_text(
             json.dumps({
                 "windows": dict(audio_windows),
