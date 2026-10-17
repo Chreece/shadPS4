@@ -7,6 +7,7 @@
 #include "core/file_sys/fs.h"
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/process.h"
+#include "core/libraries/kernel/threads/pthread.h"
 #include "core/libraries/libs.h"
 #include "core/linker.h"
 
@@ -75,9 +76,12 @@ s32 PS4_SYSV_ABI sceKernelGetCpumode() {
     return 0;
 }
 
+u64 GetGuestCpuMask() {
+    return sceKernelGetCpumode() == 5 ? 0x7f : 0x3f;
+}
+
 s32 PS4_SYSV_ABI sceKernelGetCurrentCpu() {
-    LOG_DEBUG(Lib_Kernel, "called");
-    return 0;
+    return g_curthread != nullptr ? g_curthread->GetCurrentCpu() : 0;
 }
 
 void* PS4_SYSV_ABI sceKernelGetProcParam() {
