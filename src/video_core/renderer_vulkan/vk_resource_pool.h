@@ -73,7 +73,8 @@ public:
                             u32 descriptor_heap_count = 1024);
     ~DescriptorHeap();
 
-    vk::DescriptorSet Commit(vk::DescriptorSetLayout set_layout);
+    vk::DescriptorSet Commit(vk::DescriptorSetLayout set_layout,
+                             u32 sampled_image_slots = 0);
 
 private:
     void CreateDescriptorPool();
