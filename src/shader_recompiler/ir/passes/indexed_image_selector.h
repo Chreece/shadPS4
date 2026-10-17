@@ -113,8 +113,10 @@ template <typename Value>
             static_cast<std::uint32_t>(offset),true};
 }
 
+template <std::size_t N>
 [[nodiscard]] constexpr bool AreContiguousStridedSharpWords(
-    const std::array<StridedIndexedSharpWord,8>& words) noexcept {
+    const std::array<StridedIndexedSharpWord,N>& words) noexcept {
+    static_assert(N == 4 || N == 8);
     const auto& first = words[0];
     if (!first.valid || !first.gpu_record_id ||
         first.record_stride_bytes < 32u) return false;
@@ -125,7 +127,7 @@ template <typename Value>
             std::uint64_t(cur.offset_dwords) !=
                 std::uint64_t(first.offset_dwords) + i) return false;
     }
-    return (std::uint64_t(first.offset_dwords) + 8u) <=
+    return (std::uint64_t(first.offset_dwords) + N) <=
            first.record_stride_bytes / 4u;
 }
 
