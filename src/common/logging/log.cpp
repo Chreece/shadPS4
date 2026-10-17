@@ -149,7 +149,17 @@ void Setup(std::string_view shadps4_filename) {
 
 void Switch(std::string_view game_filename, bool append_log) {
     UpdateSinks();
-    UpdateLogLevels(EmulatorSettings.GetLogFilter());
+    // Allow launch-specific logging experiments without touching config.json,
+    // shader behavior, GPU synchronization, or the guest environment.
+    // When unset, preserve the normal saved filter exactly.
+    const char* runtime_log_filter = std::getenv("SHADPS4_RUNTIME_LOG_FILTER");
+    if (runtime_log_filter && *runtime_log_filter) {
+        UpdateLogLevels(runtime_log_filter);
+        LOG_WARNING(Config,
+                    "Per-process log filter override active (saved settings unchanged)");
+    } else {
+        UpdateLogLevels(EmulatorSettings.GetLogFilter());
+    }
     UpdateLogFlushLevel(EmulatorSettings.GetLogFlushLevel());
 
     g_shad_file_sink->_size_limit = EmulatorSettings.GetLogSizeLimit();
