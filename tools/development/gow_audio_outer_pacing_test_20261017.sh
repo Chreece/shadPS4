@@ -17,7 +17,7 @@ FULL_GFX_SHA=77b61a953e449e6a31a3a12afa481798a9db78a5f9883f4185777f7982579541
 # Best full-graphics FPS checkpoint (quiet log, before audio pacing experiment).
 BEST_GOW="$HOME/projects/shadps4/GodOfWarRagnarok/tests/gow-renderer-log-hotpath-20261017/build/shadps4.fullgfx-quietlog-gow-fullgfx-logfilter-20261017-212330"
 BEST_SHA=8a3862eeba6399bd03e546642c27229617a81d49972848bd3b8165145ef9d201
-AUDIO_TEST_HEAD=2402b348e389059ef76b6a20af3c144bdd2ce93c
+AUDIO_TEST_HEAD=33fca210fbef191880592a4483ff36ffbf0ba46b
 SRC="$ROOT/source"
 BUILD="$ROOT/build"
 LOGS="$HOME/projects/shadps4/logs"
@@ -319,6 +319,7 @@ f5a661ef28f7b00b5c513da33897a31487990a55f2646f2bb4cab7883c4c7511 src/video_core/
 889759b700915f2076ee95ce4af50c5fc8c0c90fee5901c03ec73bff1b165992 src/video_core/renderer_vulkan/vk_rasterizer.h
 PROVEN_FULL_GRAPHICS_SOURCE
 echo "SOURCE_MATCHES_GRAPHICS_CORRECT_2059_CANDIDATE=PASS"
+echo "REBASED_SDL_FROM_EXACT_MAIN_SOURCE=YES; EXISTING_AUDIO_PATH_PRESERVED=YES"
 
 # Rebuild exactly those same GPU/UFDD/renderer source files and the same
 # runtime log filter as the 21:23 A candidate. Only AUDIO test source differs.
@@ -349,7 +350,7 @@ while read -r original_blob trial_blob file; do
   }
   echo "AUDIO_EXACT_TRIAL_BLOB=PASS $file"
 done <<'PINNED_AUDIO_TRIAL'
-8d679d4a58e4440f31fc918b5401155558007eef a813b9abd253250c84d30fdbb568921f6ef6ce4f src/core/libraries/audio/sdl_audio_out.cpp
+c9a34c805643e225fcab55807849c097f6935bd3 1c6485d7ea7f052475a56cc0d686ffd757b45952 src/core/libraries/audio/sdl_audio_out.cpp
 92fcdbf56bc40e91d588030404316eb0713a05e5 13d20fbdffd4ca58f9a2e117fc7cdaa3ad7a901d src/core/libraries/audio/audioout.cpp
 PINNED_AUDIO_TRIAL
 grep -Fq 'if (!outer_only_pacing)' "$SRC/src/core/libraries/audio/sdl_audio_out.cpp"
