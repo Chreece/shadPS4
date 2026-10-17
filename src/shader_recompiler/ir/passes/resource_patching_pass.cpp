@@ -448,6 +448,11 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                          "stride={} full_guest_table=YES",
                          info.pgm_hash, info.hw_stage, entries, static_cast<u32>(table.stride));
             } else {
+                // Keep the real V# pointer available for a bounded, opt-in
+                // runtime census. This does not mark the table as bound and
+                // does not modify any image selection or Vulkan descriptors.
+                image_res.indexed_table_fetch = table_fetch;
+                image_res.oversized_guest_table_probe = true;
                 LOG_INFO(Render_Recompiler,
                          "RealIndexedTSharpUnsupportedSize: shader={:#x} stage={} "
                          "entries={} full_size={}",
