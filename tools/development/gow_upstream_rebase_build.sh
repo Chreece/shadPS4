@@ -6,7 +6,7 @@ OLD="$ORIG/source"
 TEST="$HOME/projects/shadps4/GodOfWarRagnarok/tests/upstream-rebase-32021e41-20261017"
 SRC="$TEST/source"; BUILD="$TEST/build"; LOGS="$HOME/projects/shadps4/logs"
 UPSTREAM=32021e41bc52f744c80d122e732e24e97496c98d
-FIX=b3ac682a3dc2a880c2ab4cbb3302cb498a25bf97
+FIX=08c4ab84cd97a515abc474c42429992d6f1e84ff
 PROVEN="$ORIG/build/shadps4.native-userfaultfd-deferred-gow-uffd-deferred-build-20261016-235543"
 TAG="gow-upstream-rebase-$(date +%Y%m%d-%H%M%S)"; OUT="$LOGS/$TAG"
 mkdir -p "$OUT"; BASE_PASS=0; SRT_PASS=0; STAGE=PREFLIGHT
@@ -51,13 +51,14 @@ finish() {
     --exclude="$TAG/base-gameplay/full-console.log" \
     --exclude="$TAG/module-filename-test" \
     --exclude="$TAG/linux-nested-signal-test" \
+    --exclude="$TAG/audio-health-test" \
     --exclude="$TAG/srt-original" \
     -C "$LOGS" "$TAG"
   cat "$OUT/result.txt"; echo "ARCHIVE=$LOGS/$TAG.tar.gz"
   [[ ! -f "$OUT/base.txt" ]] || cat "$OUT/base.txt"
   [[ ! -f "$OUT/srt.txt" ]] || cat "$OUT/srt.txt"
   if [[ "$rc" != 0 ]]; then
-    for f in "$OUT/"{python-syntax,source-contract-tests,source-contract,observer-unit-tests,module-filename-compile,linux-nested-signal-build,compile-page-manager,compile-memory-permissions,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer,baseline-gameplay-observer}.log; do
+    for f in "$OUT/"{python-syntax,source-contract-tests,source-contract,audio-contract-tests,audio-contract,observer-unit-tests,audio-health-compile,module-filename-compile,linux-nested-signal-build,compile-page-manager,compile-memory-permissions,compile-audio-backends,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer,baseline-gameplay-observer}.log; do
       [[ ! -s "$f" ]] || { echo "ERROR_TAIL=$f"; tail -18 "$f"; }
     done
   fi
@@ -150,6 +151,24 @@ cat "$OUT/source-contract.log"
 git -C "$SRC" -c http.version=HTTP/1.1 submodule update --init --recursive --jobs 4 >"$OUT/submodules.log" 2>&1
 echo "UPSTREAM_MAIN=$UPSTREAM" >"$OUT/commits.txt"
 echo "NATIVE_FIX_COMMIT=$FIX" >>"$OUT/commits.txt"
+STAGE=AUDIO_OUTPUT_CONTRACT_TESTS
+python3 -m py_compile \
+    "$SRC/tools/development/audio_output_contract.py" \
+    "$SRC/tools/development/audio_output_contract_test.py"
+python3 "$SRC/tools/development/audio_output_contract_test.py" \
+    >"$OUT/audio-contract-tests.log" 2>&1 || {
+      echo "AUDIO_OUTPUT_CONTRACT_TESTS=FAILED"
+      cat "$OUT/audio-contract-tests.log"
+      exit 1
+    }
+tail -2 "$OUT/audio-contract-tests.log"
+python3 "$SRC/tools/development/audio_output_contract.py" "$SRC" \
+    >"$OUT/audio-contract.log" 2>&1 || {
+      echo "AUDIO_OUTPUT_CONTRACT=FAILED"
+      cat "$OUT/audio-contract.log"
+      exit 1
+    }
+cat "$OUT/audio-contract.log"
 STAGE=GAME_OBSERVER_UNIT_TESTS
 python3 "$SRC/tools/development/gow_upstream_gameplay_test.py" \
   >"$OUT/observer-unit-tests.log" 2>&1 || {
@@ -163,6 +182,16 @@ CXX_BIN="$(command -v c++ || echo /usr/bin/c++)"
 "$CXX_BIN" -std=c++20 -O2 -Wall -Wextra -Werror -I"$SRC/src" "$SRC/tests/pm4_shader_register_window_test.cpp" -o "$OUT/pm4-test" >"$OUT/pm4-compile.log" 2>&1
 "$OUT/pm4-test" >"$OUT/pm4-result.txt"
 cat "$OUT/pm4-result.txt"
+STAGE=AUDIO_OUTPUT_HEALTH_UNIT_TEST
+"$CXX_BIN" -std=c++20 -O2 -Wall -Wextra -Werror \
+    -I"$SRC/src" "$SRC/tests/audio_output_health_test.cpp" \
+    -o "$OUT/audio-health-test" >"$OUT/audio-health-compile.log" 2>&1 || {
+      echo "AUDIO_OUTPUT_HEALTH_COMPILE=FAILED"
+      tail -35 "$OUT/audio-health-compile.log"
+      exit 1
+    }
+"$OUT/audio-health-test"
+echo "AUDIO_OUTPUT_HEALTH=PASS; PCM_F32_AND_S16=VERIFIED"
 STAGE=GUEST_MODULE_FILENAME_REGRESSION
 "$CXX_BIN" -std=c++20 -O2 -Wall -Wextra -Werror -I"$SRC/src" \
   "$SRC/tests/module_filename_validation_test.cpp" -o "$OUT/module-filename-test" \
@@ -249,6 +278,26 @@ if [[ -f "$BUILD/CMakeFiles/shadps4.dir/build.make" ]]; then
       exit 1
     }
   echo "GUEST_MEMORY_64_MASK_CONTRACT=COMPILED_PASS"
+  STAGE=EARLY_AUDIO_BACKEND_COMPILE
+  AUDIO_OBJECTS=(
+    CMakeFiles/shadps4.dir/src/core/libraries/audio/audioout.cpp.o
+    CMakeFiles/shadps4.dir/src/core/libraries/audio/sdl_audio_out.cpp.o
+    CMakeFiles/shadps4.dir/src/core/libraries/audio/openal_audio_out.cpp.o
+    CMakeFiles/shadps4.dir/src/core/libraries/audio3d/audio3d.cpp.o
+  )
+  for obj in "${AUDIO_OBJECTS[@]}"; do
+    grep -Fq "$obj:" "$BUILD/CMakeFiles/shadps4.dir/build.make" || {
+      echo "AUDIO_BACKEND_COMPILE_TARGET_MISSING=$obj"
+      exit 1
+    }
+  done
+  "$MAKE_BIN" -C "$BUILD" -f CMakeFiles/shadps4.dir/build.make -j4 \
+    "${AUDIO_OBJECTS[@]}" >"$OUT/compile-audio-backends.log" 2>&1 || {
+      echo "AUDIO_BACKEND_COMPILE=FAILED"
+      tail -75 "$OUT/compile-audio-backends.log"
+      exit 1
+    }
+  echo "AUDIO_BACKEND_COMPILE=PASS; SDL_OPENAL_AUDIO3D=CHECKED"
   STAGE=EARLY_SOURCE_COMPILE_CHECK
   "$MAKE_BIN" -C "$BUILD" -f CMakeFiles/shadps4.dir/build.make -j4 "${OBJECTS[@]}" \
     >"$OUT/compile-preflight.log" 2>&1 || {
