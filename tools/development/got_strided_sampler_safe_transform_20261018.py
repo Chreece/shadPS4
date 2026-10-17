@@ -77,7 +77,22 @@ for path, (oldsha,newsha) in updates.items():
 assert "CANDIDATE_BLOB_HASH_MISMATCH" in s
 assert "BASELINE_BINARY_RESTORED=YES" in s
 assert 'SHADPS4_STRIDED_GUEST_TSHARP=1' in s
-pins = re.findall(r'^apply_blob "([^"\\n]+)" "([0-9a-f]{40})"$',s,re.M)
+pins = re.findall(r'^apply_blob "([^"\n]+)" "([0-9a-f]{40})"
+assert len({path for path,sha in pins}) >= 50
+assert all(path not in ("","/") for path,sha in pins)
+assert s.count("SHADPS4_GUEST_TSHARP_LARGE_ARRAY=1") == 1
+assert s.count('CANDIDATE="4396124edfa75ba575533013dcf0bbc00751d462"')==1
+
+out = Path(dest)
+out.parent.mkdir(parents=True, exist_ok=True)
+out.write_text(s)
+out.chmod(0o700)
+print("GPU_TEXTURE_AND_SAMPLER_PAIR=ENABLED")
+print("SOURCE_PINS_UPDATED=" + str(len(updates)))
+print("TOTAL_PINNED_SOURCE_FILES=" + str(len({path for path,sha in pins})))
+print("TEST_MODE=isolated,no-production-deploy")
+print("OUTPUT_SHA256=" + hashlib.sha256(s.encode()).hexdigest())
+,s,re.M)
 assert len({path for path,sha in pins}) >= 50
 assert all(path not in ("","/") for path,sha in pins)
 assert s.count("SHADPS4_GUEST_TSHARP_LARGE_ARRAY=1") == 1
