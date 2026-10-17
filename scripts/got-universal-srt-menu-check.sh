@@ -354,6 +354,12 @@ apply_blob() {
     touch "$dest"
     echo "APPLIED_GENERAL_FIX=$rel blob=$target"
 }
+apply_blob "src/video_core/page_manager.cpp" "3a7b232e10acb2a9db0507f87ca2c2231c450dd4"
+apply_blob "src/video_core/protection_range_coalescer.h" "0d715461628d5da8afa31f106da4dd9760bd6f05"
+apply_blob "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" "4a5f57d6d32bd2020c02110361a097f6198c096a"
+apply_blob "src/shader_recompiler/ir/passes/srt_inline_read_codegen.h" "d7b54fbecc53d2994b813f20b10c62e041e9d3a2"
+apply_blob "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp" "6897a31de967834b7d38e74178b3f7f160d56ccd"
+OVERLAY_APPLIED=1
 git -C "$SOURCE" show "$CANDIDATE:tests/page_manager/test_sparse_protection.cpp" \
    > "$RUN/tmp/test_sparse_protection.cpp"
 c++ -std=c++23 -O2 -I"$SOURCE/src" "$RUN/tmp/test_sparse_protection.cpp" \
@@ -364,11 +370,6 @@ git -C "$SOURCE" show "$CANDIDATE:tests/shader_recompiler/test_srt_sbuffer_guest
 c++ -std=c++23 -O2 "$RUN/tmp/test_sbuffer_address.cpp" \
     -o "$RUN/info/test-sbuffer-address"
 "$RUN/info/test-sbuffer-address" | tee "$RUN/info/sbuffer-address-result.txt"
-apply_blob "src/video_core/page_manager.cpp" "3a7b232e10acb2a9db0507f87ca2c2231c450dd4"
-apply_blob "src/video_core/protection_range_coalescer.h" "0d715461628d5da8afa31f106da4dd9760bd6f05"
-apply_blob "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" "4a5f57d6d32bd2020c02110361a097f6198c096a"
-apply_blob "src/shader_recompiler/ir/passes/srt_inline_read_codegen.h" "d7b54fbecc53d2994b813f20b10c62e041e9d3a2"
-apply_blob "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp" "6897a31de967834b7d38e74178b3f7f160d56ccd"
 printf 'ORIGINAL_HEAD=%s\nUPSTREAM=%s\nGENERAL_SHADER_CANDIDATE=%s\nSHADER_CACHE_VERSION=28\n' \
     "$BASE" "$UPSTREAM" "$CANDIDATE" >"$RUN/info/source-provenance.txt"
 export CCACHE_DIR="$GOT/cache/ccache"
