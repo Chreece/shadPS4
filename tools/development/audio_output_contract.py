@@ -50,6 +50,10 @@ def validate(root: Path) -> None:
     require(guarded >= 0 and context_use > guarded,
             "OpenAL muted ports must guard null device_context before SetVolume")
 
+    require("OpenAL PCM output cannot activate device context" in openal and
+            "context_failure_reported.exchange(true" in openal,
+            "OpenAL PCM loss must be reported without per-buffer log spam")
+
     audio3d = read("src/core/libraries/audio3d/audio3d.cpp")
     init = audio3d.partition("sceAudio3dInitialize(")[2].partition(
         "sceAudio3dObjectReserve(")[0]
