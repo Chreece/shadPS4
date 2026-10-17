@@ -155,7 +155,7 @@ with (out/"threads.csv").open("w",newline="") as f, (out/"system.csv").open("w",
     for i in range(61):
         elapsed=round(time.monotonic()-started,2)
         if os.path.realpath(f"/proc/{pid}/exe")!=exe:
-            print(f"GAME_EXITED_AT={elapsed}s",flush=True); break
+            print(f"GAME_EXITED_AT={elapsed}s",flush=True); raise SystemExit(2)
         now={}
         for t in pathlib.Path(f"/proc/{pid}/task").glob("[0-9]*"):
             try:
