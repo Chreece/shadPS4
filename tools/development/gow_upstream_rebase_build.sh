@@ -49,6 +49,7 @@ finish() {
     --exclude="$TAG/pm4-test" \
     --exclude="$TAG/gameplay/full-console.log" \
     --exclude="$TAG/base-gameplay/full-console.log" \
+    --exclude="$TAG/proven-gameplay/full-console.log" \
     --exclude="$TAG/module-filename-test" \
     --exclude="$TAG/linux-nested-signal-test" \
     --exclude="$TAG/audio-health-test" \
@@ -58,7 +59,7 @@ finish() {
   [[ ! -f "$OUT/base.txt" ]] || cat "$OUT/base.txt"
   [[ ! -f "$OUT/srt.txt" ]] || cat "$OUT/srt.txt"
   if [[ "$rc" != 0 ]]; then
-    for f in "$OUT/"{python-syntax,source-contract-tests,source-contract,audio-contract-tests,audio-contract,observer-unit-tests,audio-health-compile,module-filename-compile,linux-nested-signal-build,compile-page-manager,compile-memory-permissions,compile-audio-backends,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer,baseline-gameplay-observer}.log; do
+    for f in "$OUT/"{python-syntax,source-contract-tests,source-contract,audio-contract-tests,audio-contract,observer-unit-tests,audio-health-compile,module-filename-compile,linux-nested-signal-build,compile-page-manager,compile-memory-permissions,compile-audio-backends,compile-preflight,compile-srt-preflight,submodules,configure,build-base,build-srt,pm4-compile,gameplay-observer,baseline-gameplay-observer,proven-gameplay-observer}.log; do
       [[ ! -s "$f" ]] || { echo "ERROR_TAIL=$f"; tail -18 "$f"; }
     done
   fi
@@ -72,6 +73,14 @@ print("GAME_PROCESS_LEFT_RUNNING="+str(r.get("process_alive_when_reported",False
 REPORT
   else
     echo "GAME_LAUNCHED=NO; REASON=VERIFICATION_OR_BUILD_NOT_PASSED"
+  fi
+  if [[ -f "$OUT/proven-gameplay/gameplay-result.json" ]]; then
+    python3 - "$OUT/proven-gameplay/gameplay-result.json" <<'PROVEN_REPORT'
+import json,sys
+r=json.load(open(sys.argv[1]))
+print("PROVEN_GAMEPLAY_RESULT="+r.get("result","UNKNOWN"))
+print("PROVEN_GAMEPLAY_RUNNING="+str(r.get("process_alive_when_reported",False)))
+PROVEN_REPORT
   fi
   if [[ -f "$OUT/base-gameplay/gameplay-result.json" ]]; then
     python3 - "$OUT/base-gameplay/gameplay-result.json" <<'BASELINE_REPORT'
@@ -429,8 +438,44 @@ DECIDE
     else
       echo "PRE_SRT_GAMEPLAY=FAILED; COMMON_NATIVE_OR_GAME_STARTUP_REGRESSION=SUSPECTED" \
         | tee -a "$OUT/ab-difference.txt"
+
+      # If *both* new binaries have actually died from SIGSEGV, run the
+      # unchanged, SHA-proven 10+ FPS gameplay executable as a positive
+      # control for HLE startup and read-only host audio-routing snapshots.
+      # We never relaunch if any emulator survived or another was already
+      # running. Old binary/saves/Sunshine/X11/SSH remain untouched.
+      USE_PROVEN_CONTROL="$(python3 - "$OUT/base-gameplay/gameplay-result.json" <<'PROVEN_DECIDE'
+import json,sys
+try:
+    r=json.load(open(sys.argv[1]))
+    ok=(r.get("exit_code") == -11 and
+        r.get("process_alive_when_reported") is False and
+        r.get("pid") is not None)
+    print("YES" if ok else "NO")
+except (OSError, ValueError, TypeError):
+    print("NO")
+PROVEN_DECIDE
+)"
+      if [[ "$USE_PROVEN_CONTROL" == "YES" ]]; then
+        STAGE=PROVEN_GAMEPLAY_AUDIO_CONTROL
+        echo "TWO_NEW_SIGSEGV=CONFIRMED; SHA_PROVEN_GAMEPLAY_AUDIO_CONTROL=START" \
+          | tee -a "$OUT/ab-difference.txt"
+        if python3 "$OBSERVER" --binary "$PROVEN" \
+            --sha256 "e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa" \
+            --report "$OUT/proven-gameplay" --cwd "$ORIG" --seconds 180 \
+            2>&1 | tee "$OUT/proven-gameplay-observer.log"; then
+          echo "PROVEN_GAMEPLAY=ALIVE; NEW_UPSTREAM_REGRESSION=CONFIRMED" \
+            | tee -a "$OUT/ab-difference.txt"
+        else
+          echo "PROVEN_GAMEPLAY=FAILED; HOST_OR_CONFIG_CHANGE_POSSIBLE" \
+            | tee -a "$OUT/ab-difference.txt"
+        fi
+      else
+        echo "PROVEN_CONTROL=SKIPPED; REASON=PRE_SRT_DID_NOT_EXIT_SIGSEGV" \
+          | tee -a "$OUT/ab-difference.txt"
+      fi
     fi
-    # A failed SRT test is still failed: never promote a partial success.
+    # The rebased SRT variant remains FAILED even if proven control runs.
   else
     echo "AB_COMPARISON=SKIPPED; REASON=NO_CONFIRMED_EXITED_SIGSEGV" \
       | tee "$OUT/ab-difference.txt"
