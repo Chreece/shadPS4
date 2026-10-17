@@ -11,12 +11,12 @@ using Kind=Shader::Optimization::SrtHostBarrierKind;
 struct MockInst;
 struct MockValue {
     const MockInst* inst{};
-    Type type{Type::U32};
+    Shader::IR::Type kind{Shader::IR::Type::U32};
     bool immediate{};
     bool IsImmediate() const {return immediate;}
-    Type Type() const {return type;}
+    Shader::IR::Type Type() const {return kind;}
     const MockInst* TryInst() const {return inst;}
-    static MockValue Imm(Type kind=Type::U32){return {nullptr,kind,true};}
+    static MockValue Imm(Shader::IR::Type type=Shader::IR::Type::U32){return {nullptr,type,true};}
     static MockValue Ref(const MockInst& node){return {&node,Type::U32,false};}
 };
 struct MockInst {
