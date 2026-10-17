@@ -119,6 +119,111 @@ def inspect(local: str, base: str, trial: str, merged: str, header: str) -> dict
     }
 
 
+def approved_scope(src: str, name: str) -> str:
+    matches = [(start, end) for key, start, end in SCOPES if key == name]
+    require(len(matches) == 1, "APPROVED_AUDIO3D_SCOPE_NOT_FOUND:" + name)
+    start, end = matches[0]
+    require(src.count(start) == src.count(end) == 1,
+            "NON_UNIQUE_LOCAL_AUDIO3D_SCOPE:" + name)
+    return src[src.index(start):src.index(end)]
+
+
+def scope_add(src: str, name: str, old: str, replacement: str) -> str:
+    # This cannot delete or rewrite an unrelated local function. Only a
+    # verified, unique anchor inside the declared function may be extended.
+    current = approved_scope(src, name)
+    require(current.count(old) == 1,
+            "SAFE_AUDIO3D_ADD_ONLY_ANCHOR_MISSING:" + name +
+            " " + old[:80].replace("\n", " "))
+    newer = current.replace(old, replacement, 1)
+    return src.replace(current, newer, 1)
+
+
+def anchored_add_only_overlay(local: str, base: str, trial: str) -> str:
+    """Fallback if Git's overlapping context hunks conflict.
+
+    This version adds the trial code at exact, unique semantic anchors but
+    preserves all existing lines from the user's local source verbatim.
+    Existing PCM queuing or forwarding code must be intact.
+    """
+    require(mask(base)[0] == mask(trial)[0],
+            "UNAPPROVED_GITHUB_AUDIO3D_TRIAL_DIFF")
+    value = local
+    include_anchor = "#include <algorithm>\n"
+    require(value.count(include_anchor) == 1,
+            "LOCAL_AUDIO3D_INCLUDE_ANCHOR_MISSING")
+    for inc in ("<array>", "<atomic>", "<cstdlib>", "<mutex>", "<string_view>"):
+        include = "#include " + inc + "\n"
+        if include not in value:
+            value = scope_add(value, "audio3d_globals",
+                              include_anchor, include_anchor + include)
+    state = "static std::unique_ptr<Audio3dState> state;"
+    base_middle = base.split(state, 1)[1].split("struct AudioOutBufferInfo {", 1)[0]
+    trial_middle = trial.split(state, 1)[1].split("struct AudioOutBufferInfo {", 1)[0]
+    require(not base_middle.strip() and
+            "Audio3dDirectDrainEnabled()" in trial_middle and
+            "ReportAssociatedAudio(" in trial_middle,
+            "PINNED_AUDIO3D_GLOBAL_INSERTION_NOT_VERIFIED")
+    value = scope_add(value, "audio3d_globals", state,
+                      state + "\n\n" + trial_middle.strip("\n") + "\n")
+
+    drain_head = "static s32 DrainAssociatedPorts(Port& port) {\n"
+    trial_drain = approved_scope(trial, "associated_pcm_drain")
+    split_head = trial_drain.split(drain_head, 1)
+    require(len(split_head) == 2 and "    while (true) {" in split_head[1],
+            "PINNED_DIRECT_DRAIN_HEAD_CHANGED")
+    locking = split_head[1].split("    while (true) {", 1)[0]
+    require("serialized.lock();" in locking and
+            "std::unique_lock<std::recursive_mutex>" in locking,
+            "PINNED_FIFO_LOCK_INSERTION_MISSING")
+    value = scope_add(value, "associated_pcm_drain",
+                      drain_head, drain_head + locking)
+    forward = (
+        "        const s32 ret = AudioOut::sceAudioOutOutput(handle, buffer.data());\n"
+        "        if (ret < 0) {\n"
+        "            return ret;\n"
+        "        }\n"
+    )
+    require('ReportAssociatedAudio(handle, "forward"' in trial_drain,
+            "PINNED_FORWARD_COUNTER_MISSING")
+    value = scope_add(
+        value, "associated_pcm_drain", forward,
+        forward + '        ReportAssociatedAudio(handle, "forward", 0, port.parameters.queue_depth);\n')
+
+    trial_output = approved_scope(trial, "associated_pcm_enqueue")
+    limit = "                if (aout.pending.size() >= port.parameters.queue_depth) {\n"
+    ret = "return ORBIS_AUDIO3D_ERROR_NOT_READY;"
+    require(trial_output.count(limit) == trial_output.count(ret) == 1,
+            "PINNED_AUDIO3D_BACKPRESSURE_HUNK_CHANGED")
+    added_full = trial_output.split(limit, 1)[1].split(ret, 1)[0]
+    require('ReportAssociatedAudio(handle, "full"' in added_full,
+            "PINNED_BACKPRESSURE_COUNT_MISSING")
+    value = scope_add(value, "associated_pcm_enqueue", limit, limit + added_full)
+
+    enq = "aout.pending.emplace_back(src, src + aout.buffer_bytes);"
+    comment = "// Mirror sceAudioOutOutput's return of samples sent."
+    require(trial_output.count(enq) == trial_output.count(comment) == 1,
+            "PINNED_AUDIO3D_PCM_ENQUEUE_HUNK_CHANGED")
+    after_enq = trial_output.split(enq, 1)[1].split(comment, 1)[0]
+    require('ReportAssociatedAudio(handle, "enqueue"' in after_enq
+            and 'if (Audio3dDirectDrainEnabled())' in after_enq,
+            "PINNED_EAGER_DRAIN_INSERTION_MISSING")
+    value = scope_add(value, "associated_pcm_enqueue",
+                      enq, enq + after_enq)
+
+    trial_push = approved_scope(trial, "audio3d_port_push")
+    logend = "              magic_enum::enum_name(blocking));"
+    next_step = "    if (!state->ports.contains(port_id))"
+    require(trial_push.count(logend) == trial_push.count(next_step) == 1,
+            "PINNED_AUDIO3D_PUSH_MARKERS_CHANGED")
+    extra = trial_push.split(logend, 1)[1].split(next_step, 1)[0]
+    require("audio3d_push_calls.fetch_add(" in extra,
+            "PINNED_AUDIO3D_PUSH_COUNTER_MISSING")
+    value = scope_add(value, "audio3d_port_push",
+                      logend, logend + extra)
+    return value
+
+
 def merge_sources(local: str, base: str, trial: str, header: str) -> tuple[str, dict]:
     # Source semantic checks are done before the actual merge to ensure even a
     # clean exit from Git does not justify unrelated source replacement.
@@ -145,18 +250,23 @@ def merge_sources(local: str, base: str, trial: str, header: str) -> tuple[str, 
              str(input_local), str(input_base), str(input_trial)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", timeout=15)
-    if process.returncode != 0:
-        raise ValueError(
-            "LOCAL_AUDIO3D_SOURCE_MERGE_CONFLICT:"
-            + f"status={process.returncode} "
-            + process.stderr[:500].replace("\n", " ") +
-            " (original and executable preserved)")
-    result = process.stdout
+    if process.returncode == 0:
+        result = process.stdout
+        strategy = "CLEAN"
+    elif 1 <= process.returncode <= 127:
+        # Git's context-hunk conflict may be caused by an unrelated local
+        # edit near an insertion. Try only verified add-only insertions;
+        # never drop the local line or resolve a true PCM overlap by guessing.
+        result = anchored_add_only_overlay(local, base, trial)
+        strategy = "CONTEXT_CONFLICT_SAFELY_RESOLVED_BY_EXACT_ADD_ONLY_ANCHORS"
+    else:
+        raise ValueError("GIT_AUDIO3D_MERGE_PROCESS_FAILED:"
+                         + str(process.returncode))
     require(not any(token in result for token in (
         "<<<<<<< LOCAL_PROVEN_AUDIO3D", ">>>>>>> PINNED_AUDIO3D_TRIAL")),
         "CONFLICT_MARKER_IN_TRIAL_OUTPUT")
     details = inspect(local, base, trial, result, header)
-    details["three_way_git_merge"] = "CLEAN"
+    details["three_way_git_merge"] = strategy
     details["merged_hunks"] = len([
         op for op in difflib.SequenceMatcher(
             None, local.splitlines(), result.splitlines(), autojunk=False
