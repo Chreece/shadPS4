@@ -273,6 +273,14 @@ def run(duration: int, period: float) -> int:
         pid = running[0]["pid"]
         print(f"ATTACH_EXISTING_GOW=YES PID={pid}", flush=True)
         game_log = None
+        observed_binary = Path(running[0]["binary"])
+        if observed_binary.is_file() and not observed_binary.is_symlink():
+            attached_sha = sha256(observed_binary)
+        else:
+            attached_sha = None
+        if attached_sha != GOOD_SHA256:
+            print("ATTACHED_BUILD_DIFFERS_FROM_PROVEN_BASELINE=YES; "
+                  "READ_ONLY_OBSERVATION_CONTINUES", flush=True)
     else:
         if not GOOD.is_file() or GOOD.is_symlink():
             print("PINNED_PROVEN_GOW_BINARY_NOT_FOUND; NO_LAUNCH", flush=True)
@@ -280,6 +288,8 @@ def run(duration: int, period: float) -> int:
         if sha256(GOOD) != GOOD_SHA256:
             print("PINNED_PROVEN_GOW_BINARY_SHA256_MISMATCH; NO_LAUNCH", flush=True)
             return 2
+        observed_binary = GOOD
+        attached_sha = GOOD_SHA256
         env = os.environ.copy()
         env.setdefault("DISPLAY", ":0")
         env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
@@ -308,6 +318,9 @@ def run(duration: int, period: float) -> int:
         "pid": pid, "attached_existing": was_running,
         "proven_binary": str(GOOD),
         "proven_binary_sha256": GOOD_SHA256,
+        "actual_observed_binary": str(observed_binary),
+        "actual_observed_sha256": attached_sha,
+        "observed_is_pinned_proven": attached_sha == GOOD_SHA256,
         "game": GAME, "read_only_probe": True,
         "duration_seconds": duration, "period_seconds": period,
     }, indent=2) + "\n")
