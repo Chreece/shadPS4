@@ -22,6 +22,7 @@
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
+#include "video_core/renderer_vulkan/vk_got_menu_stage_probe.h"
 #include "video_core/texture_cache/image.h"
 
 #include <algorithm>
@@ -756,6 +757,12 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
         };
         runtime.DownloadImage(&image, &readback.buffer, std::span{&copy_region, 1});
     }
+
+    // Single read-only, opt-in GPU readback at 30 seconds of the exact
+    // scene/depth/blur/composed buffers, BEFORE host FSR or swapchain effects.
+    // No shader overrides or source/guest memory edits.
+    Diagnostics::MaybeCaptureGotMenuStages(instance, draw_scheduler, runtime,
+                                            texture_cache);
 
     // Continue with host-side passes that draw the displayed (scaled) frame.
 
