@@ -79,6 +79,61 @@ finish() {
             rc=2
         fi
     fi
+    # Resolve RADV's faulting Vulkan GPU address against exactly the sparse
+    # buffer mappings recorded in this run. Never assume it belongs to one
+    # particular compute shader merely because compilation happened nearby.
+    if [ -f "$RUN/evidence/B/game.log" ]; then
+        python3 - "$RUN/evidence/B/game.log" "$RUN/info/gpuvm-address-report.txt" <<'PYGPUVM' || true
+from pathlib import Path
+import collections
+import re
+import sys
+log = re.sub(r'\x1b\[[0-9;]*m', '', Path(sys.argv[1]).read_text(errors='replace'))
+maps = collections.defaultdict(list)
+for line in log.splitlines():
+    for name in ("GPUVM_SPARSE_ARENA", "GPUVM_SPARSE_BIND", "GPUVM_BDA_PAGE_TABLE"):
+        if name + ":" not in line:
+            continue
+        values = dict((k,int(v,16)) for k,v in
+                      re.findall(r'([a-z_]+)=(0x[0-9a-fA-F]+)',line))
+        if all(k in values for k in ("gpu_start","gpu_end","guest_start","guest_end")):
+            maps[name].append(values)
+faults = list(dict.fromkeys(
+    int(v,16) for v in re.findall(
+        r'GPUVM fault detected at address (0x[0-9a-fA-F]+)',log)))
+report = [
+    "GPUVM_FAULT_COUNT="+str(len(faults)),
+    *[name+"_RECORDS="+str(len(maps[name])) for name in
+      ("GPUVM_SPARSE_ARENA","GPUVM_SPARSE_BIND","GPUVM_BDA_PAGE_TABLE")]
+]
+for fault in faults:
+    report.append("FAULT_ADDRESS="+hex(fault))
+    for name in ("GPUVM_SPARSE_ARENA","GPUVM_SPARSE_BIND","GPUVM_BDA_PAGE_TABLE"):
+        hits = [m for m in maps[name] if m["gpu_start"] <= fault < m["gpu_end"]]
+        report.append(name+"_MATCHES="+str(len(hits)))
+        for match in hits[:8]:
+            guest_addr=match["guest_start"]+(fault-match["gpu_start"])
+            report.append(
+                name+"_MATCH guest_addr="+hex(guest_addr)+
+                " guest_range="+hex(match["guest_start"])+":"+hex(match["guest_end"])+
+                " gpu_range="+hex(match["gpu_start"])+":"+hex(match["gpu_end"]))
+    if not any(m["gpu_start"]<=fault<m["gpu_end"]
+               for m in maps["GPUVM_SPARSE_ARENA"]):
+        report.append("FAULT_CLASS=NOT_IN_LOGGED_SPARSE_BUFFER_ARENAS")
+    elif not any(m["gpu_start"]<=fault<m["gpu_end"]
+                 for m in maps["GPUVM_SPARSE_BIND"]):
+        report.append("FAULT_CLASS=SPARSE_ARENA_WITHOUT_LOGGED_RESIDENT_BIND")
+    elif not any(m["gpu_start"]<=fault<m["gpu_end"]
+                 for m in maps["GPUVM_BDA_PAGE_TABLE"]):
+        report.append("FAULT_CLASS=RESIDENT_RANGE_NOT_IN_LOGGED_BDA_TABLE")
+    else:
+        report.append("FAULT_CLASS=SPARSE_BIND_AND_BDA_TABLE_BOTH_RECORDED")
+Path(sys.argv[2]).write_text("\n".join(report)+"\n")
+print("GPUVM_ADDRESS_MAP_BEGIN")
+print("\n".join(report[:32]))
+print("GPUVM_ADDRESS_MAP_END")
+PYGPUVM
+    fi
     printf 'STATUS=%s\nJOB_EXIT=%s\n' "$STATUS" "$rc" | tee "$RUN/info/final.txt"
     if tar -czf "$ARCHIVE" -C "$RUN" evidence info \
         -C "$LOGS" "$NAME.log"; then
