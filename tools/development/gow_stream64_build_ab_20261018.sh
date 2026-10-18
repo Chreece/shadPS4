@@ -13,7 +13,7 @@ READFIRST_CPP="${4:?pinned read-first cpp required}"
 READFIRST_CONTRACT="${5:?pinned read-first source contract required}"
 FRAME_PATCH="${6:?pinned frame telemetry patcher required}"
 GPU_PATCH="${7:?pinned GPU invalidation timing patcher required}"
-STREAM_CPP="${8:?pinned updated buffer_cache.cpp required}"
+STREAM_PATCH="${8:?pinned surgical buffer source patcher required}"
 STREAM_HEADER="${9:?pinned stream read-only policy header required}"
 STREAM_TEST="${10:?pinned stream policy host C++ regression required}"
 STREAM_AB="${11:?pinned paired gameplay A/B required}"
@@ -655,29 +655,40 @@ echo "GRAPHICS_SOURCE_IDENTICAL_AND_AUDIO_TRIAL_SOURCE_PINNED=PASS"
 # Keep the exact already-proven graphics+UFFD+audio sources above unchanged.
 STAGE=STAGE_GENERAL_READONLY_BUFFER_STREAM_64K
 BUFFER_REL="src/video_core/buffer_cache/buffer_cache.cpp"
-[[ -f "$STREAM_CPP" && -f "$STREAM_HEADER" && -f "$STREAM_TEST" &&
-   ! -L "$STREAM_CPP" && ! -L "$STREAM_HEADER" && ! -L "$STREAM_TEST" ]] || {
-  echo "PINNED_STREAM_POLICY_SOURCES_MISSING"; exit 1;
+# Verify the real October 16 source, rather than assuming the newer
+# GitHub branch's buffer_cache.cpp blob matches this protected worktree.
+# Preserve all local graphics/readback changes not related to host streaming.
+ACTUAL_PROVEN_BUFFER_SHA256="2b8d0e35f45e18ecbfc88ef153665d3e9d713638b1fa988e505ef633a8cc71e0"
+[[ -f "$STREAM_PATCH" && -f "$STREAM_HEADER" && -f "$STREAM_TEST" &&
+   ! -L "$STREAM_PATCH" && ! -L "$STREAM_HEADER" && ! -L "$STREAM_TEST" ]] || {
+  echo "PINNED_STREAM_PATCHER_OR_TEST_MISSING"; exit 1;
 }
-[[ "$(git -C "$ORIGINAL_SRC" hash-object "$ORIGINAL_SRC/$BUFFER_REL")" == "94116ce380cd6ec313cee6f73f0961b6dc8ba699" &&
-   "$(git -C "$ORIGINAL_SRC" hash-object "$SRC/$BUFFER_REL")" == "94116ce380cd6ec313cee6f73f0961b6dc8ba699" ]] || {
-  echo "UPSTREAM_BUFFER_CACHE_SOURCE_DIFFERS_FAIL_CLOSED"; exit 1;
+[[ "$(sha256sum "$ORIGINAL_SRC/$BUFFER_REL" | cut -d' ' -f1)" == "$ACTUAL_PROVEN_BUFFER_SHA256" &&
+   "$(sha256sum "$SRC/$BUFFER_REL" | cut -d' ' -f1)" == "$ACTUAL_PROVEN_BUFFER_SHA256" ]] || {
+  echo "ACTUAL_PROVEN_BUFFER_SOURCE_CHANGED_NO_WHOLE_FILE_REPLACEMENT"; exit 1;
 }
 [[ ! -e "$ORIGINAL_SRC/$STREAM_HEADER_REL" && ! -e "$SRC/$STREAM_HEADER_REL" ]] || {
-  echo "EXISTING_READONLY_STREAM_HEADER_NOT_OVERWRITTEN"; exit 1;
+  echo "EXISTING_STREAM_POLICY_HEADER_NOT_OVERWRITTEN"; exit 1;
 }
-[[ "$(git -C "$ORIGINAL_SRC" hash-object "$STREAM_CPP")" == "4c46bdacc4bc881665ed0c1b21e81f30b8b8fdb6" &&
+[[ "$(git -C "$ORIGINAL_SRC" hash-object "$STREAM_PATCH")" == "1c200b808a7eb600b6ffd80d3302f69600746ac3" &&
    "$(git -C "$ORIGINAL_SRC" hash-object "$STREAM_HEADER")" == "$STREAM_HEADER_BLOB" &&
    "$(git -C "$ORIGINAL_SRC" hash-object "$STREAM_TEST")" == "80ffe66793dde30648293ec1e8c9da0d7a72122b" ]] || {
-  echo "PINNED_STREAM_CPP_HEADER_OR_TEST_HASH_MISMATCH"; exit 1;
-}
-[[ -f "$ORIGINAL_SRC/src/video_core/buffer_cache/buffer_cache.h" ]] || {
-  echo "ORIGINAL_BUFFER_CACHE_HEADER_MISSING"; exit 1;
+  echo "PINNED_STREAM_SURGICAL_PATCH_SOURCE_HASH_MISMATCH"; exit 1;
 }
 grep -Fq 'STREAM_THRESHOLD = 16_KB;' "$ORIGINAL_SRC/src/video_core/buffer_cache/buffer_cache.h" || {
-  echo "LEGACY_16K_STREAM_PREIMAGE_NOT_PRESENT"; exit 1;
+  echo "LEGACY_STREAM_HEADER_THRESHOLD_NOT_16K"; exit 1;
 }
-cp -p "$STREAM_CPP" "$SRC/$BUFFER_REL"
+python3 -B "$STREAM_PATCH" --selftest > "$OUT/stream-overlay-selftest.log" 2>&1 || {
+  echo "BUFFER_STREAM_SURGICAL_PATCH_SELFTEST_FAILED"
+  cat "$OUT/stream-overlay-selftest.log"; exit 1;
+}
+cat "$OUT/stream-overlay-selftest.log"
+python3 -B "$STREAM_PATCH" "$SRC/$BUFFER_REL" "$OUT/buffer-stream-64k-surgical-diff.txt" \
+  > "$OUT/stream-overlay.log" 2>&1 || {
+  echo "ACTUAL_PROVEN_BUFFER_SOURCE_NOT_SAFELY_PATCHABLE"
+  cat "$OUT/stream-overlay.log"; exit 1;
+}
+cat "$OUT/stream-overlay.log"
 cp -p "$STREAM_HEADER" "$SRC/$STREAM_HEADER_REL"
 STREAM_HEADER_STAGED=1
 touch -m "$SRC/$BUFFER_REL" "$SRC/$STREAM_HEADER_REL"
