@@ -217,4 +217,110 @@ inline bool MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& sched
     return captured>0;
 }
 
+// Capture the HOST postprocessing output of the SAME exact frame as the
+// 60-second guest-stage snapshots. This is the only valid way to measure
+// the apparent whitening separately from guest shader output. A root-window
+// screenshot taken 20-30s later compared different game scenes and cannot
+// establish the gain. One transfer copy, no host PP/shader changes.
+inline void CaptureGotMenuHostPostprocess(
+    const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
+    vk::Image frame_image, u32 width, u32 height, vk::Format format,
+    float gamma, bool hdr, bool srgb_input) {
+    const bool supported_format=
+        format==vk::Format::eR8G8B8A8Unorm ||
+        format==vk::Format::eB8G8R8A8Unorm;
+    if (!frame_image || !supported_format ||
+        width!=1920 || height!=1080) {
+        LOG_INFO(Render_Vulkan,
+                 "GotMenuHostPP: result=UNSUPPORTED_CAPTURE "
+                 "format={} extent={}x{} gamma={} hdr={} srgb_input={}",
+                 vk::to_string(format),width,height,gamma,hdr,srgb_input);
+        return;
+    }
+    const auto path=Common::FS::GetUserPath(Common::FS::PathType::ShaderDir)/
+        "got-menu-probes"/"host_postprocess.raw";
+    const u64 bytes=u64(width)*u64(height)*4u;
+    auto snapshot=std::make_unique<GotMenuStageReadback>(
+        instance,path,0,bytes,bytes,width,height,format,false);
+    const vk::ImageSubresourceRange subresource{
+        .aspectMask=vk::ImageAspectFlagBits::eColor,
+        .baseMipLevel=0,.levelCount=1,
+        .baseArrayLayer=0,.layerCount=1,
+    };
+    const vk::ImageMemoryBarrier2 enter{
+        .srcStageMask=vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        .srcAccessMask=vk::AccessFlagBits2::eColorAttachmentWrite,
+        .dstStageMask=vk::PipelineStageFlagBits2::eCopy,
+        .dstAccessMask=vk::AccessFlagBits2::eTransferRead,
+        .oldLayout=vk::ImageLayout::eGeneral,
+        .newLayout=vk::ImageLayout::eTransferSrcOptimal,
+        .image=frame_image,
+        .subresourceRange=subresource,
+    };
+    cmdbuf.pipelineBarrier2(vk::DependencyInfo{
+        .imageMemoryBarrierCount=1,
+        .pImageMemoryBarriers=&enter,
+    });
+    const vk::BufferImageCopy copy{
+        .bufferOffset=0,.bufferRowLength=0,.bufferImageHeight=0,
+        .imageSubresource{
+            .aspectMask=vk::ImageAspectFlagBits::eColor,
+            .mipLevel=0,.baseArrayLayer=0,.layerCount=1,
+        },
+        .imageOffset={0,0,0},.imageExtent={width,height,1},
+    };
+    cmdbuf.copyImageToBuffer(frame_image,vk::ImageLayout::eTransferSrcOptimal,
+                             snapshot->buffer.Handle(),std::array{copy});
+    const vk::ImageMemoryBarrier2 restore{
+        .srcStageMask=vk::PipelineStageFlagBits2::eCopy,
+        .srcAccessMask=vk::AccessFlagBits2::eTransferRead,
+        .dstStageMask=vk::PipelineStageFlagBits2::eFragmentShader,
+        .dstAccessMask=vk::AccessFlagBits2::eShaderRead,
+        .oldLayout=vk::ImageLayout::eTransferSrcOptimal,
+        .newLayout=vk::ImageLayout::eGeneral,
+        .image=frame_image,
+        .subresourceRange=subresource,
+    };
+    cmdbuf.pipelineBarrier2(vk::DependencyInfo{
+        .imageMemoryBarrierCount=1,
+        .pImageMemoryBarriers=&restore,
+    });
+    LOG_INFO(Render_Vulkan,
+             "GotMenuHostPP: result=READBACK_SUBMITTED bytes={} "
+             "format={} gamma={} hdr={} srgb_input={} same_frame=YES",
+             bytes,vk::to_string(format),gamma,hdr,srgb_input);
+    scheduler.DeferPriorityOperation(
+        [snapshot=std::move(snapshot),gamma,hdr,srgb_input]() mutable {
+            snapshot->buffer.Invalidate(0,snapshot->valid_bytes);
+            if (snapshot->buffer.mapped_data.size() < snapshot->valid_bytes) {
+                LOG_WARNING(Render_Vulkan,
+                            "GotMenuHostPP: result=UNMAPPED_HOST_BUFFER");
+                return;
+            }
+            std::ofstream raw(snapshot->raw_path,std::ios::binary);
+            if (!raw) {
+                LOG_WARNING(Render_Vulkan,
+                            "GotMenuHostPP: result=CANNOT_SAVE");
+                return;
+            }
+            raw.write(reinterpret_cast<const char*>(
+                          snapshot->buffer.mapped_data.data()),
+                      static_cast<std::streamsize>(snapshot->valid_bytes));
+            raw.close();
+            std::ofstream meta(snapshot->raw_path.string()+".txt");
+            meta<<"width="<<snapshot->width
+                <<"\nheight="<<snapshot->height
+                <<"\nbytes="<<snapshot->valid_bytes
+                <<"\nformat="<<static_cast<u32>(snapshot->pixel_format)
+                <<"\ngamma="<<gamma
+                <<"\nhdr="<<hdr
+                <<"\nsrgb_input="<<srgb_input
+                <<"\n";
+            meta.close();
+            LOG_INFO(Render_Vulkan,
+                     "GotMenuHostPP: result=SAVED bytes={} gamma={}",
+                     snapshot->valid_bytes,gamma);
+        });
+}
+
 } // namespace Vulkan::Diagnostics
