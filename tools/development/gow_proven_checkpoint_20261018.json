@@ -88,9 +88,10 @@
       "branch": "test/gow-uffd-readfirst-20261018",
       "evidence_before_trial": "Prior A/B on 135s gameplay performed 7.389M/7.621M successful nonblocking read() calls with poll-before-every-read; 14.5-15.2M CPU write faults. Nonblocking fd allows read-first to skip poll on already queued events.",
       "code_contract": "Exact fault dispatch, GPU invalidation and UFFD wakeup tail byte-identical; original behavior default; EAGAIN waits in poll() for up to 200ms.",
-      "stage": "SOURCE_STATIC_CONTRACT_COMMITTED; COMPILATION_AND_RUNTIME_TEST_PENDING_ON_USER_HOST",
+      "stage": "135S_A_B_COMPLETED__NO_AUDIO_BENEFIT__OPT_IN_ONLY",
       "next_test": "Build isolated graphics-correct candidate; 135s read-first disabled, 135s enabled on same candidate, record poll_calls and audio production; preserve original binary and source after exit.",
-      "caution": "No audible audio improvement proven; do not promote."
+      "caution": "No audible audio improvement proven; do not promote.",
+      "latest_evidence_archive": "gow-uffd-readfirst-20261018-114207.tar.gz"
     }
   },
   "open_blocker": {
@@ -106,7 +107,7 @@
     "root_cause_hypothesis": "guest PCM production cadence collapses alongside increased scene/GPU workload; investigate Wwise guest audio thread scheduling and task dependencies, not SDL queue",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Investigate high UFFD write-fault frequency and synchronous waits on game-main/guest-worker threads; no speculative audio buffer/pacing changes.",
+    "next": "Measure actual guest flip cadence against audio producer 5s windows on same protected geometry-correct binary; determine whether the cutscene is running at one-third realtime, before touching Wwise/futex scheduling.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -181,6 +182,36 @@
       },
       "conclusion": "Optional callback aggregation retains tested per-page coherence and fewer queue insertions per fault, but produces no meaningful audio-cadence change and did not solve stuttering. Scene alignment and FPS causality unproven; never promote as audio fix.",
       "protected_graphics_binary_sha256_unchanged": true
+    },
+    "2026-10-18_11-42_uffd_readfirst_ab": {
+      "archive": "gow-uffd-readfirst-20261018-114207.tar.gz",
+      "result": "COMPLETE; source restoration and graphics checks PASS",
+      "binary": "shadps4.fullgfx-uffd-readfirst-gow-uffd-readfirst-20261018-114207",
+      "both_gameplay_seconds": 135,
+      "baseline": {
+        "poll_calls": 7716335,
+        "read_calls": 7707972,
+        "cpu_faults": 15023216,
+        "late_audio3d_ready_fraction": 0.2958,
+        "guest_audio3d_max_gap_ms": 2055.385,
+        "gpu_device_lost": 0
+      },
+      "candidate": {
+        "poll_calls": 5964364,
+        "read_calls": 8189758,
+        "cpu_faults": 15509913,
+        "read_eagain": 5964364,
+        "late_audio3d_ready_fraction": 0.2766,
+        "guest_audio3d_max_gap_ms": 1162.801,
+        "gpu_device_lost": 0
+      },
+      "cpu_thread_evidence": {
+        "early_20_50_s": "Wwise futex asleep in every sampled thread snapshot; Game:Main handle_userfault 14/30 OFF and 15/30 ON; guest workers 33/150 OFF, 47/150 ON",
+        "late_85_130_s": "Wwise futex asleep in every sampled thread snapshot; Game:Main handle_userfault 35/45 OFF, 30/45 ON; guest workers 145/225 OFF, 111/225 ON",
+        "interpretation": "FPS and game-progress not yet captured, so cannot infer whether guest slowdown is driving both Wwise wakeups and audio shortage or the converse."
+      },
+      "result_note": "Read-first reduced poll syscalls by 22.7% (1,751,971 fewer) despite 6% more nonblocking read() calls; produced NO meaningful audio improvement and may worsen late audio. Promotion: NO; preserve only as opt-in experiment.",
+      "standalone_audio_backend": "No SDL failures, no GPU device loss, current native audio processing remains microseconds per buffer."
     }
   }
 }
