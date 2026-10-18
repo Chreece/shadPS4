@@ -159,6 +159,25 @@ private:
     // slots. Keep descriptors themselves dynamic, not the shader's resource
     // count (Shader::NUM_IMAGES remains its original 64).
     std::vector<ImageBinding> image_bindings;
+    // A complete dynamic guest T# table can expose >27K descriptors.
+    // Re-resolving them on every draw is not viable. Cache only tables whose
+    // bytes are unchanged and whose image UIDs still belong to live views.
+    // The cache is bounded to four entries and never owns Vulkan objects.
+    struct GuestIndexedBindingCacheEntry {
+        u64 shader_hash{};
+        u64 guest_address{};
+        u64 estimated_bytes{};
+        u32 image_resource_index{};
+        u32 record_stride{};
+        u32 descriptor_offset{};
+        u32 valid_slots{};
+        u32 entries{};
+        std::vector<u8> guest_bytes;
+        std::vector<ImageBinding> bindings;
+        std::vector<u64> image_uids;
+    };
+    std::vector<GuestIndexedBindingCacheEntry> guest_indexed_binding_cache;
+
     std::array<ImageBinding, AmdGpu::NUM_COLOR_BUFFERS> cb_descs;
     ImageBinding db_desc;
 
