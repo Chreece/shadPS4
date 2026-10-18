@@ -333,10 +333,13 @@ run_phase() {
     if [ "$phase" != W ]; then
         cp "$home/game.log" "$RUN/evidence/$phase/game.log"
     fi
-    if [ "$game_rc" -eq 139 ]; then
-        STATUS="GAME_SEGFAULT_$phase"
-        echo "GAME_CRASH=SIGSEGV PHASE=$phase DURATION=$seconds"
-        tail -120 "$home/game.log" >"$RUN/info/segfault-$phase-last120.txt"
+    # Timeout 124 is expected for our bounded graphics capture.
+    # Every other nonzero guest/host exit is a genuine failure, including
+    # SIGSEGV=139 and SIGTRAP=133. Do not silently report crashes as PASS.
+    if [ "$game_rc" -ne 0 ] && [ "$game_rc" -ne 124 ]; then
+        STATUS="GAME_ABNORMAL_EXIT_$phase"
+        echo "GAME_CRASH_OR_ABORT=$game_rc PHASE=$phase DURATION=$seconds"
+        tail -120 "$home/game.log" >"$RUN/info/abnormal-$phase-last120.txt"
         return 2
     fi
     if [ "$samples" -lt 4 ]; then
@@ -745,53 +748,21 @@ echo "CANDIDATE_BINARY=$(sha256sum "$BIN" | awk '{print $1}')"
 echo "INCREMENTAL_BUILD=PASS"
 REPORT_PHASE=B
 CANDIDATE_KIND=full-compute-strided-table-preflight
+# A compute-resource regression is not a controller/SDL problem. Never
+# automatically launch an unrelated fallback after a GPU-driver crash.
 if run_phase B "$BIN" 180; then
     STATUS="GRAPHICS_AND_HOTPLUG_CAPTURED"
 else
-    STATUS="EARLY_FAILURE_TRIGGERING_GRAPHICS_ONLY_FALLBACK"
-    echo "COMBINED_GAME_RUN=FAILED (crash report retained); TRYING_GRAPHICS_ONLY"
-    echo "COMBINED_FAIL_ARCHIVED=YES"
-    cp -p -- "$BIN" "$WORK/bin-backups/shadps4-image-phi-plus-hotplug-$CANDIDATE"
-    sha256sum "$WORK/bin-backups/shadps4-image-phi-plus-hotplug-$CANDIDATE" \
-        >"$RUN/info/full-candidate-binary.sha256"
-    # Disable only the six controller/SDL edits for this fallback. All
-    # GoW native CPU/mprotect + GPU SRT/image Phi shader changes stay active.
-    for rel in src/input/controller.cpp src/input/controller.h \
-        src/input/input_handler.cpp src/sdl_window.cpp src/sdl_window.h; do
-        if [ ! -f "$RUN/tmp/prior/$rel" ]; then
-            STATUS="FALLBACK_UNSAFE_MISSING_ORIGINAL_$rel"
-            echo "FALLBACK_REFUSED_NO_ORIGINAL=$rel"
-            exit 2
-        fi
-        cp -p -- "$RUN/tmp/prior/$rel" "$SOURCE/$rel"
-        touch "$SOURCE/$rel"
-    done
-    if [ -f "$RUN/tmp/prior/src/input/gamepad_hotplug_snapshot.h" ]; then
-        cp -p "$RUN/tmp/prior/src/input/gamepad_hotplug_snapshot.h" \
-            "$SOURCE/src/input/gamepad_hotplug_snapshot.h"
-    else
-        rm -f -- "$SOURCE/src/input/gamepad_hotplug_snapshot.h"
-    fi
-    echo "FALLBACK_BUILD=GRAPHICS_ONLY_CONTROLLER_FILES_RESTORED"
-    CANDIDATE_BUILT=0
-    cmake --build "$BUILD" --target shadps4 --parallel 8 \
-        >"$RUN/info/graphics-fallback-build.log" 2>&1 || {
-            tail -100 "$RUN/info/graphics-fallback-build.log"
-            STATUS="GRAPHICS_FALLBACK_BUILD_FAILED"
-            exit 2
-        }
-    CANDIDATE_BUILT=1
-    REPORT_PHASE=C
-    CANDIDATE_KIND=graphics-only
-    sha256sum "$BIN" >"$RUN/info/graphics-only-binary.sha256"
-    if ! run_phase C "$BIN" 120; then
-        STATUS="GRAPHICS_ONLY_GAME_FAILED"
-        echo "BOTH_GAME_MODES_FAILED_CRASH_LOGS_INCLUDED"
-        exit 2
-    fi
-    STATUS="GRAPHICS_ONLY_FALLBACK_CAPTURED"
+    STATUS="GRAPHICS_RUNTIME_FAILURE_CAPTURED"
+    echo "GAME_RUNTIME_FAILED=YES OUTPUT_ARCHIVED=YES FALLBACK_GAME_LAUNCH=NO"
+    exit 2
 fi
 echo "ACTIVE_GRAPHICS_REPORT_PHASE=$REPORT_PHASE"
+# Full guest material sources must all be representable in each compute
+# permutation; record the exact fail-closed decision rather than guessing.
+grep -a 'GuestTsharpIncompleteProgram:' "$RUN/evidence/$REPORT_PHASE/game.log" \
+    > "$RUN/info/strided-shader-preflight.txt" || true
+echo "STRIDED_SHADER_PREFLIGHT_REJECTIONS=$(wc -l < "$RUN/info/strided-shader-preflight.txt")"
 
 cat "$RUN/evidence/$REPORT_PHASE/result.txt"
 grep -aE 'SrtInlineReadConstResult:|SrtGlobalDependencyResult:|Failed to compute offset for SRT walker|SBufferDynamic:|SrtHostBarrier:|SrtHostBarrierSummary:|SrtHostBarrierGroup:' \
