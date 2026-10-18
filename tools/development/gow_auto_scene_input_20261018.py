@@ -71,7 +71,7 @@ def metrics(raw: bytes) -> dict:
     texture = textured / max(1, n)
     # A pure-white load frame has logo=1, selection=1 and texture=0.
     # Reject it as a menu to avoid accidentally pressing Cross during loading.
-    menu = .020 < logo < .5 and selected_continue > .065 and texture > 1.6
+    menu = .020 < logo < .5 and selected_continue > .065 and texture > .6
     # Snowlit approach preceded the wolf in recorded 20:10 capture.
     # Distinguish it from startup, blue cave and menu with high brightness.
     approach = (not menu and bright > .027 and texture > 5.0 and logo < .015)
@@ -286,7 +286,9 @@ def selftest():
     block(.29, .17, .68, .35, (240, 240, 240))
     block(.42, .52, .62, .57, (245, 245, 245))
     assert metrics(raw)["menu"]
-    print("AUTOMATED_MENU_DETECTOR_SYNTHETIC=PASS")
+    all_white = bytes([255]) * (W * H * 3)
+    assert not metrics(all_white)["menu"]
+    print("AUTOMATED_MENU_DETECTOR_SYNTHETIC=PASS cases=3; all-white-loading=false")
     class FakeKeyboard:
         def __init__(self, fails_on=None):
             self.events, self.down = [], set()
