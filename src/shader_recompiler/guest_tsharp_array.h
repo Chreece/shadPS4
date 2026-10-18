@@ -35,6 +35,14 @@ namespace Shader::Optimization {
     if (entries == 0 || entries > max_entries) return 0;
     return static_cast<std::uint32_t>(entries);
 }
+// Compute permutations must not combine a partial GPU-indexed material
+// table with other valid indexed descriptors. A fully representable table
+// set is required before enabling any indexed material resource.
+[[nodiscard]] constexpr bool CompleteStridedGuestShader(
+    std::uint32_t sources, std::uint32_t missing) noexcept {
+    return missing <= sources && missing == 0u;
+}
+
 [[nodiscard]] constexpr std::uint32_t GuestTsharpIndexOrNull(
     std::uint32_t gpu_index, std::uint32_t valid_entries) noexcept {
     return gpu_index<valid_entries ? gpu_index : valid_entries;
