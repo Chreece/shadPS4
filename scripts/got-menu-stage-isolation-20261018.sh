@@ -292,8 +292,24 @@ assert isinstance(d.setdefault("Vulkan",{}),dict)
 d["Vulkan"]["pipeline_cache_enabled"]=False
 assert isinstance(d.setdefault("GPU",{}),dict)
 d["GPU"]["patch_shaders"]=True
+# The only supported shader patch flag exists at both the global and
+# per-game override layers. These changes are isolated to this trial HOME.
+game_path=p.parent/"custom_configs"/"CUSA11456.json"
+game_path.parent.mkdir(parents=True,exist_ok=True)
+game=json.loads(game_path.read_text()) if game_path.exists() else {}
+if not isinstance(game,dict):
+    raise SystemExit("INVALID_ISOLATED_GAME_CONFIG")
+if "GPU" in game and not isinstance(game["GPU"],dict):
+    raise SystemExit("INVALID_ISOLATED_GAME_GPU_CONFIG")
+game.setdefault("GPU",{})["patch_shaders"]=True
+game_path.write_text(json.dumps(game,indent=2)+"\n")
 p.write_text(json.dumps(d,indent=2)+"\n")
-print("ISOLATED_CONFIG=PASS; PIPELINE_CACHE=OFF_TEST_ONLY; GPU_SHADER_PATCH=ON_TEST_ONLY")
+assert json.loads(p.read_text())["GPU"]["patch_shaders"] is True
+assert json.loads(game_path.read_text())["GPU"]["patch_shaders"] is True
+print("ISOLATED_CONFIG=PASS; PIPELINE_CACHE=OFF_TEST_ONLY; "
+      "GLOBAL_AND_GAME_PATCH_SHADERS=ON_TEST_ONLY")
+print("ISOLATED_PATCH_CONFIG_PATH="+str(p))
+print("ISOLATED_GAME_PATCH_CONFIG_PATH="+str(game_path))
 PY
 
 # One isolated fragment SPIR-V patch. It changes ONLY fs_0x7eaf40ad's
@@ -358,6 +374,28 @@ report.write_text(msg)
 print("MAGENTA_STAGE_ISOLATION_PATCH=PASS")
 print(msg)
 PYSPV
+# Preflight the exact portable patch path that GetUserPath() uses.
+python3 - "$RUN/profile/user/config.json" \
+    "$RUN/profile/user/custom_configs/CUSA11456.json" "$SPV_PATCH" <<'PYPREFLIGHT'
+import hashlib,json,pathlib,sys
+global_path,game_path,patch_path=map(pathlib.Path,sys.argv[1:])
+global_cfg=json.loads(global_path.read_text())
+game_cfg=json.loads(game_path.read_text())
+if global_cfg["GPU"]["patch_shaders"] is not True:
+    raise SystemExit("GLOBAL_PATCH_FLAG_NOT_SET")
+if game_cfg["GPU"]["patch_shaders"] is not True:
+    raise SystemExit("GAME_PATCH_FLAG_NOT_SET")
+if not patch_path.is_file() or patch_path.stat().st_size!=48308:
+    raise SystemExit("PATCH_FILE_MISSING_OR_WRONG_SIZE="+str(patch_path))
+sha=hashlib.sha256(patch_path.read_bytes()).hexdigest()
+if sha!="18f30314b842530d98fef4d80053adb64ffa13f288533e6a22851fc4e43f83c7":
+    raise SystemExit("PATCH_FILE_HASH_MISMATCH="+sha)
+if patch_path.parent.parent.name!="shader" or patch_path.parent.name!="patch":
+    raise SystemExit("PORTABLE_SHADER_PATCH_PATH_MISMATCH")
+print("GLOBAL_AND_GAME_PATCH_FLAGS=PASS")
+print("PORTABLE_SHADER_PATCH_FILE=PASS sha256="+sha)
+print("SHADER_PATCH_RELATIVE_PATH=user/shader/patch/"+patch_path.name)
+PYPREFLIGHT
 STATUS=GAME_RUNNING
 echo "GAME_START duration=${SECONDS_TO_RUN}s DISPLAY=$DISPLAY_OK"
 (
@@ -438,6 +476,9 @@ echo "GAME_EXIT=$GAME_EXIT"
 if ! grep -aq 'Loaded patch for fs shader 0x7eaf40ad' "$RUN/game.log"; then
   STATUS=TARGETED_SPV_PATCH_NOT_LOADED
   echo "TARGETED_SPV_PATCH_NOT_LOADED; visual comparison invalid"
+  echo "SHADER_COMPILED=$(grep -ac 'Compiling fs shader 0x7eaf40ad' "$RUN/game.log" || true)"
+  echo "GAME_SPECIFIC_CONFIG_ACTIVATED=$(grep -ac 'Game-specific config used: true' "$RUN/game.log" || true)"
+  echo "ISOLATED_GAME_CONFIG=$(sed -n '1,30p' "$RUN/profile/user/custom_configs/CUSA11456.json")"
   exit 2
 fi
 if [ "$STATUS" = RUNTIME_VRAM_CRITICAL_ABORT ] || [ "$STATUS" = GPU_FAULT_ABORT ]; then
