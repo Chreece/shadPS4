@@ -9,7 +9,6 @@
 #include "shader_recompiler/ir/passes/indexed_image_selector.h"
 
 using Shader::IR::Opcode;
-using Shader::IR::Type;
 using Shader::Optimization::AnalyzePackedGuestTsharpWord;
 using Shader::Optimization::AreContiguousStridedSharpWords;
 using Shader::Optimization::GuestTsharpIdWrapped27;
@@ -18,15 +17,15 @@ using Shader::Optimization::StridedIndexedSharpWord;
 struct MockInst;
 struct MockValue {
     const MockInst* inst{};
-    Type type{Type::U32};
+    Shader::IR::Type type{Shader::IR::Type::U32};
     bool immediate{};
     std::uint32_t bits{};
     bool IsImmediate() const { return immediate; }
-    Type Type() const { return type; }
+    Shader::IR::Type Type() const { return type; }
     const MockInst* TryInst() const { return inst; }
     std::uint32_t U32() const { return bits; }
-    static MockValue Ref(const MockInst& v) { return {&v, Type::U32,false,0}; }
-    static MockValue Imm(std::uint32_t v) { return {nullptr, Type::U32,true,v}; }
+    static MockValue Ref(const MockInst& v) { return {&v, Shader::IR::Type::U32,false,0}; }
+    static MockValue Imm(std::uint32_t v) { return {nullptr, Shader::IR::Type::U32,true,v}; }
 };
 struct MockInst {
     Opcode opcode{};
