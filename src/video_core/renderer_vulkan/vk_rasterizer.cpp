@@ -24,6 +24,7 @@
 #include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_got_menu_pass_trace.h"
+#include "video_core/renderer_vulkan/vk_got_scene_depth_ab.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -2310,13 +2311,58 @@ void Rasterizer::UpdateDepthStencilState() const {
     const auto& regs = liverpool->regs;
     auto& dynamic_state = scheduler.GetDynamicState();
 
+    // Controlled scene-only A/B: the synchronized GPU readback revealed
+    // completely black RGBA8 scene color and depth=0 in spite of large
+    // indexed draws. Prove whether depth/stencil rejection is suppressing
+    // geometry. This is NOT a production fix: it only runs with an explicit
+    // opt-in and the exact, known GoT render-target pair and real scene
+    // geometry. Fullscreen UI, depth clears, shadow passes and other titles
+    // keep their original state. The A/B leaves guest depth WRITES enabled.
+    static const bool got_scene_depth_ab=[] {
+        const char* const env=std::getenv("SHADPS4_GOT_SCENE_DEPTH_AB");
+        return env && env[0]=='1' && env[1]=='\\0';
+    }();
+    const auto& cb0=regs.color_buffers[0];
+    const auto& db=regs.depth_buffer;
+    const Diagnostics::GotSceneDepthABInput probe{
+        .opted_in=got_scene_depth_ab,
+        .guest_color_address=cb0 ? cb0.Address() : 0ULL,
+        .guest_depth_address=db.DepthValid() ? db.DepthAddress() : 0ULL,
+        .index_count=regs.num_indices,
+        .color_write_mask=regs.color_target_mask.GetMask(0),
+        .depth_test=bool(regs.depth_control.depth_enable),
+        .depth_write=bool(regs.depth_control.depth_write_enable),
+        .depth_clear=bool(regs.depth_render_control.depth_clear_enable),
+        .raster_discard=bool(regs.clipper_control.dx_rasterization_kill),
+    };
+    const bool scene_ab=Diagnostics::ShouldForceGotSceneDepthAlways(probe);
+    if (scene_ab) {
+        static thread_local u64 hits{};
+        const u64 n=++hits;
+        if (n<=12 || n==32 || n==128 || (n%1024)==0) {
+            LOG_INFO(Render_Vulkan,
+                     "GotSceneDepthAB: target={:#x} depth={:#x} "
+                     "indices={} guest_compare={} applied_compare=ALWAYS "
+                     "guest_stencil={} applied_stencil=DISABLED "
+                     "depth_write_preserved=YES draw={} "
+                     "isolated_opt_in=YES",
+                     probe.guest_color_address,probe.guest_depth_address,
+                     probe.index_count,
+                     static_cast<u32>(regs.depth_control.depth_func),
+                     bool(regs.depth_control.stencil_enable),n);
+        }
+    }
+
     const auto depth_test_enabled =
         regs.depth_control.depth_enable && regs.depth_buffer.DepthValid();
     dynamic_state.SetDepthTestEnabled(depth_test_enabled);
     if (depth_test_enabled) {
         dynamic_state.SetDepthWriteEnabled(regs.depth_control.depth_write_enable &&
                                            !regs.depth_render_control.depth_clear_enable);
-        dynamic_state.SetDepthCompareOp(LiverpoolToVK::CompareOp(regs.depth_control.depth_func));
+        const auto compare=scene_ab
+            ? vk::CompareOp::eAlways
+            : LiverpoolToVK::CompareOp(regs.depth_control.depth_func);
+        dynamic_state.SetDepthCompareOp(compare);
     }
 
     const auto depth_bounds_test_enabled = regs.depth_control.depth_bounds_enable;
@@ -2336,7 +2382,7 @@ void Rasterizer::UpdateDepthStencilState() const {
     }
 
     const auto stencil_test_enabled =
-        regs.depth_control.stencil_enable && regs.depth_buffer.StencilValid();
+        regs.depth_control.stencil_enable && regs.depth_buffer.StencilValid() && !scene_ab;
     dynamic_state.SetStencilTestEnabled(stencil_test_enabled);
     if (stencil_test_enabled) {
         const StencilOps front_ops{
