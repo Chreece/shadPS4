@@ -94,5 +94,16 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release."
+  },
+  "diagnostics": {
+    "2026-10-18_10-01_guest_wake_probe": {
+      "archive": "gow-guest-audio-wake-20261018-100122.tar.gz",
+      "recorded_seconds": 0,
+      "scheduler_samples": 0,
+      "startup_status": "PROBE_PREMATURELY_STOPPED_ON_FIRST_EMPTY_SNAPSHOT",
+      "executable_sha256_verified": "8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef",
+      "inference": "No new evidence on cutscene audio; game was launched but not observed.",
+      "correction": "Wait for Wwise + game/GPU thread readiness; mark zero-Wwise observation invalid; include startup-readiness.json."
+    }
   }
 }
