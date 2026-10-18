@@ -268,6 +268,7 @@ def run(duration: int, period: float) -> int:
         (out / "active-processes.json").write_text(json.dumps(running, indent=2) + "\n")
         return 2
     was_running = bool(running)
+    child = None
     if was_running:
         pid = running[0]["pid"]
         print(f"ATTACH_EXISTING_GOW=YES PID={pid}", flush=True)
@@ -310,36 +311,59 @@ def run(duration: int, period: float) -> int:
         "game": GAME, "read_only_probe": True,
         "duration_seconds": duration, "period_seconds": period,
     }, indent=2) + "\n")
+    print("=== WAIT FOR GAME AND WWISE AUDIO THREAD STARTUP ===", flush=True)
+    startup = wait_for_game_threads(pid, timeout_s=90, sample_period_s=period)
+    if child is not None:
+        startup["launcher_return_code"] = child.poll()
+    startup["game_process_live"] = is_live_game_pid(pid)
+    (out / "startup-readiness.json").write_text(
+        json.dumps(startup, indent=2) + "\n")
+    print(f"GOW_STARTUP_STATUS={startup['status']} "
+          f"WAITED={startup['elapsed_s']}s "
+          f"THREADS_FOUND={len(startup['last_threads'])}", flush=True)
+
+    # Start the full observation only AFTER audio and guest threads exist.
+    # The previous probe sampled immediately after Popen and quit at t=0.
     start = time.monotonic()
     prev = {}
     items = []
     with (out / "scheduler-samples.jsonl").open("wt", encoding="utf-8") as dest:
-        while True:
-            elapsed = time.monotonic() - start
-            if elapsed >= duration:
-                break
-            rows = snapshot(pid)
-            if not rows:
-                print(f"GOW_PROCESS_NO_LONGER_ALIVE_AT={elapsed:.1f}s", flush=True)
-                break
-            for sample in rows:
-                key = sample["tid"]
-                old = prev.get(key)
-                if old:
-                    for field, dfield in (
-                        ("cpu_ns", "delta_cpu_ns"),
-                        ("queue_ns", "delta_queue_ns"),
-                        ("voluntary", "delta_voluntary"),
-                        ("involuntary", "delta_involuntary")
-                    ):
-                        sample[dfield] = max(0, sample[field] - old[field])
-                sample["elapsed_s"] = round(elapsed, 3)
-                dest.write(json.dumps(sample, separators=(",", ":")) + "\n")
-                items.append(sample)
-                prev[key] = sample.copy()
-            if int(elapsed // 15) != int((elapsed + period) // 15):
-                print(f"HOST_WAKE_SAMPLING_T={elapsed:.1f}s", flush=True)
-            time.sleep(period)
+        if startup["ready"]:
+            previous_progress = -1
+            while True:
+                elapsed = time.monotonic() - start
+                if elapsed >= duration:
+                    break
+                if not is_live_game_pid(pid):
+                    print(f"GOW_PROCESS_EXITED_DURING_CAPTURE_AT={elapsed:.1f}s",
+                          flush=True)
+                    break
+                rows = snapshot(pid)
+                if not rows:
+                    # A single missing snapshot does not prove game exit.
+                    time.sleep(period)
+                    continue
+                for sample in rows:
+                    key = sample["tid"]
+                    old = prev.get(key)
+                    if old:
+                        for field, dfield in (
+                            ("cpu_ns", "delta_cpu_ns"),
+                            ("queue_ns", "delta_queue_ns"),
+                            ("voluntary", "delta_voluntary"),
+                            ("involuntary", "delta_involuntary")
+                        ):
+                            sample[dfield] = max(0, sample[field] - old[field])
+                    sample["elapsed_s"] = round(elapsed, 3)
+                    dest.write(json.dumps(sample, separators=(",", ":")) + "\n")
+                    items.append(sample)
+                    prev[key] = sample.copy()
+                progress = int(elapsed // 15)
+                if progress != previous_progress:
+                    print(f"HOST_WAKE_SAMPLING_T={elapsed:.1f}s "
+                          f"THREADS={len(rows)}", flush=True)
+                    previous_progress = progress
+                time.sleep(period)
     results = summarize(items)
     result = {
         "threads": results, "samples": len(items),
