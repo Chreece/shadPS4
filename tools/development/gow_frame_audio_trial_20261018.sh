@@ -11,8 +11,7 @@ RESTORER="${2:?pinned source-preserving graphics restoration helper required}"
 SUPPORT="${3:?pinned UFFD support-file helper required}"
 READFIRST_CPP="${4:?pinned read-first cpp required}"
 READFIRST_CONTRACT="${5:?pinned read-first source contract required}"
-READFIRST_AB="${6:?pinned same-binary audio A/B required}"
-FRAME_PATCH="${7:?pinned frame telemetry patcher required}"
+FRAME_PATCH="${6:?pinned frame telemetry patcher required}"
 PROVEN_SHA=e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa
 # The exact fully rendered 20:59 executable is a second, immutable A/B
 # reference. Keep this binary even if the logging experiment fails.
@@ -504,7 +503,7 @@ echo "UFFD_MEMORY_COHERENCE_UNCHANGED; BOUNDED_UP_TO_32_FAULTS_PER_READ=STAGED_A
 # after reconstruction; none of the protected originals are modified.
 STAGE=READFIRST_SOURCE_CONTRACT
 [[ -f "$READFIRST_CPP" && ! -L "$READFIRST_CPP" &&
-   -f "$READFIRST_CONTRACT" && -f "$READFIRST_AB" ]] || {
+   -f "$READFIRST_CONTRACT" ]] || {
   echo "PINNED_READFIRST_TOOL_INPUT_MISSING"; exit 1;
 }
 [[ "$(git -C "$ORIGINAL_SRC" hash-object "$READFIRST_CPP")" == "7186c176b15f4d6f8cab0a03d2ca7189e64e456f" ]] || {
