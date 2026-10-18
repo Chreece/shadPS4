@@ -92,6 +92,14 @@
       "next_test": "Build isolated graphics-correct candidate; 135s read-first disabled, 135s enabled on same candidate, record poll_calls and audio production; preserve original binary and source after exit.",
       "caution": "No audible audio improvement proven; do not promote.",
       "latest_evidence_archive": "gow-uffd-readfirst-20261018-114207.tar.gz"
+    },
+    "GPU_invalidation_phase_profile": {
+      "feature": "SHADPS4_GPU_INVALIDATE_PROBE=1",
+      "status": "CODE_STAGED_FOR_ISOLATED_GFX_BUILD; NOT_YET_COMPILED_OR_TESTED_ON_USER_HOST",
+      "sample_rate": "1 per 256 queued CPU fault GPU invalidations",
+      "measures": "queue wait time before GPU task starts; InvalidateMemory execution time; post-invalidation callback+UFFDIO_WAKE completion time, aligned to FPS/audio/UFFD five-second windows",
+      "preserves": "All source-preimage checks, shader/renderer fixes, default invalidation and wakeup semantics",
+      "purpose": "Choose general Linux GPU-memory bottleneck fix from measured execution cost; not itself an audio fix"
     }
   },
   "open_blocker": {
@@ -107,7 +115,7 @@
     "root_cause_hypothesis": "guest PCM production cadence collapses alongside increased scene/GPU workload; investigate Wwise guest audio thread scheduling and task dependencies, not SDL queue",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Measure actual guest flip cadence against audio producer 5s windows on same protected geometry-correct binary; determine whether the cutscene is running at one-third realtime, before touching Wwise/futex scheduling.",
+    "next": "Run GPU queue/invalidation/wake phase sample and choose targeted general native memory optimization without hiding stutters. Graphics still second phase.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -116,10 +124,10 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "test/gow-audio-frame-cadence-20261018",
-    "next_trial_script": "tools/development/gow_frame_audio_trial_20261018.sh",
+    "current_trial_branch": "test/gow-gpu-invalidate-timing-20261018",
+    "next_trial_script": "tools/development/gow_gpu_invalidate_timing_trial_20261018.sh",
     "next_trial_launcher": "tools/development/gow_frame_audio_launcher_20261018.sh",
-    "expected_capture_archive_prefix": "gow-frame-cadence-",
+    "expected_capture_archive_prefix": "gow-gpu-invalidate-timing-",
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only."
   },
   "diagnostics": {
@@ -224,6 +232,48 @@
       "integration": "Runner isolates build, uses pinned asset hashes, reinstates source and original shadps4, retains archived logs and screenshots for geometry checks.",
       "graphics_status": "PROTECTED_REFERENCE_PRESERVED",
       "audio_status": "STUTTER_NOT_FIXED"
+    },
+    "2026-10-18_12-12_audio_video_flip_correlation": {
+      "archive": "gow-frame-cadence-20261018-121231.tar.gz",
+      "result": "135-second execution completed; frame/audio/UFFD source and original binary restored; no GPU device loss; game still alive.",
+      "graphics_capture": "Frames at t=30,90,120 show rendered forest and cave sequences; missing effects not ruled out; t=60 was near-black transition.",
+      "observed_phase_sequence": [
+        "65-70s: ~29.4-30 game FPS, Audio3D 234-235/235 (~100% ready).",
+        "75-85s: ~14-20 game FPS, Audio3D ~219-224/235 (93-95%).",
+        "95-125s: ~16-21 game FPS, Audio3D ~80-108/235 (roughly 34-46%)."
+      ],
+      "uffd": {
+        "cpu_write_faults_total": 17648781,
+        "game_main_cpu_write_faults": 3460343,
+        "audio_cpu_write_faults": 153730,
+        "cpu_max_fault_wait_us": 393275,
+        "cpu_faults_per_5s_healthy": "~0.55-0.69m",
+        "cpu_faults_per_5s_stutter": "~0.8-0.95m",
+        "cpu_avg_latency_us_healthy": "9-15",
+        "cpu_avg_latency_us_stutter": "15-20",
+        "gpu_callback_batch": 0,
+        "read_first": 0,
+        "bounded_read": 1,
+        "proven_memory_semantics": "unchanged"
+      },
+      "audio": {
+        "total_producer_ready": 8948,
+        "total_producer_missing": 8680,
+        "backend_over_period": 0,
+        "max_backend_processing_us": 109,
+        "max_audio3d_guest_gap_us": 1478705,
+        "audio3d_late_guest_submissions": 704,
+        "sdl_audio3d_max_gap_us": 1450788,
+        "position": "Producer-side starvation, not SDL processing delay; user-confirmed earlier heavy audible stutters."
+      },
+      "other_log_evidence": "SRT walker errors, shader DMA and 'clamped' shader-size warnings spike around 65-80s, coincident with game slowdown. These are not proof of root cause.",
+      "interpretation": "Cutscene frame slowdown precedes guest audio collapse by about 10-20s; do not infer causality from timing alone. Strongest next differentiator is GPU command queue wait vs actual invalidation/readback vs fault completion.",
+      "checks": {
+        "build": "PASS",
+        "source_restore": "PASS",
+        "protected_graphics_sha": "PASS",
+        "no_gpu_device_loss": true
+      }
     }
   }
 }
