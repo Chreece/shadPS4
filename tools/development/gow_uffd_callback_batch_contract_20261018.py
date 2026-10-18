@@ -24,7 +24,7 @@ def verify_source(base: str, trial: str) -> None:
     unchanged = (
         "void WakeFault(VAddr addr, u32 tid) {",
         "UFFDIO_WRITEPROTECT_MODE_DONTWAKE",
-        "UFFDIO_WAKE",
+        "ioctl(uffd, UFFDIO_WAKE, &range);",
         "DrainPendingInvalidations() override",
         "GetGpuCommandProcessorThreadId()",
         "rasterizer->InvalidateMemory(addr, 1, true);",
