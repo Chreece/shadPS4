@@ -127,6 +127,18 @@
       "safety": "1-in-128 sampled 64KiB regions, bounded 64-slot SpaceSaving approximate counts and lower bounds; originally measured fault handler untouched unless opt in; all original GPU/CPU data coherence/wakeup stays intact.",
       "expected_log": "UFFD_HOTREGIONS window_ms=... sampled=... evictions=... r0={addr}:{estimate}:{min_count} ...",
       "next": "One protected full graphics 135s game trace to identify whether a few hot memory regions account for repeated write-protect faults."
+    },
+    "gow_big_buffer_timing_probe": {
+      "status": "REPOSITORY_PATCH_AND_BUILD_RUNNER_PINNED; FULL_EMULATOR_HOST_COMPILE_AND_GAMEPLAY_PENDING",
+      "flag": "SHADPS4_GOW_BIG_BUFFER_PROBE=1",
+      "source_files": [
+        "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
+        "src/video_core/buffer_cache/buffer_cache.cpp"
+      ],
+      "source_contract": "Protected renderer SHA dd2a54...; post-GPU-phase SHA 9dc9f11...; protected BufferCache SHA 2b8d0e...; no buffer size cap.",
+      "tag": "GOW_BIG_BUFFER_BIND / GOW_BIG_BUFFER_SYNC",
+      "build_goal": "Exact isolated 135s GoW run, conditional 8GiB Ollama, full source/binary restore.",
+      "next_decision": "If ObtainBuffer CPU time high and upload bytes near zero: look for unnecessary scan/EnsureResident overhead; if dirty upload bytes high, inspect true dirty ranges and GPU readback; if both negligible, reject oversized-buffer CPU hypothesis."
     }
   },
   "open_blocker": {
@@ -142,7 +154,7 @@
     "root_cause_hypothesis": "Game FPS declines before Audio3D production deteriorates; guest-specific cutscene simulation/resource handling bottleneck is plausible, but causality is NOT established; other games not heavily affected.",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Run one source-pinned UFFD WP hot-region observer, inspect 5s region distributions and compare to 17:13 30s pixel-identical frames and memory load. Only then implement a source-aware memory-coherence correction; preserve native CPU/GPU, all proven audio fixes.",
+    "next": "Execute pinned big-buffer timing launcher and upload gow-big-buffer-*.tar.gz; use timing breakdown to implement a measured correctness-preserving optimization, no audio workarounds.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -151,25 +163,26 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "test/gow-uffd-wp-hotregions-20261018",
-    "next_trial_script": "tools/development/gow_uffd_hotregion_build_trial_20261018.sh",
-    "next_trial_launcher": "tools/development/gow_uffd_hotregion_launcher_20261018.sh",
-    "expected_capture_archive_prefix": "gow-uffd-hotregion-",
+    "current_trial_branch": "test/gow-large-buffer-cpu-timing-20261018",
+    "next_trial_script": "tools/development/gow_large_buffer_cpu_timing_build_20261018.sh",
+    "next_trial_launcher": "tools/development/gow_large_buffer_cpu_timing_launcher_20261018.sh",
+    "expected_capture_archive_prefix": "gow-big-buffer-",
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
     "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
     "target": "Fault thrash localization during pixel-identical stalled scene; bounded sampled write-protected 64 KiB guest memory regions 1/128, approximate counters with error bounds.",
     "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix.",
-    "state": "GO_W_BUG_FIXING_PRIORITIZED_OVER_AUDIO_STUTTER_EXPERIMENTS",
+    "state": "NEXT_COMMAND_READY_BIG_BUFFER_TIMING_PROBE_PINNED",
     "source_capture_contract": "Read actual protected SRT walker, resource_patching, resource_discover, shader_info_collection and relevant GPU/audio C++ sources with SHA-256 fingerprints, no build or services modified.",
     "next_code_change_policy": "Use 15:13 actual protected source and captures; identify a specific unresolved opcode/resource-binding/shader descriptor error, prove patch applies to current source, add regression and precompile before gameplay; do not repeat speculative audio pacing, VRAM-only, already-fixed SRT arithmetic, or GPU UFFD callback experiments.",
-    "ollama_rule": "Only unload Ollama when measured free GPU VRAM <8 GiB; if unloaded, stop test game before reloading prior model state. Otherwise leave Ollama completely untouched.",
+    "ollama_rule": "No Ollama API or stop if >=8GiB VRAM free; below 8GiB unload only Ollama and restore existing models after game. Never stop HA/Sunshine/SSH.",
     "proven_graphics_status": "UNCHANGED_SHA_PROTECTED",
     "code_change": "None in game semantics; isolated PageManager sampler is opt-in, 64 fixed counters, no allocations on the hot fault path, no changes to page invalidation/wake/permissions/SDL/renderer/shaders.",
     "protected_baselines": "Graphics executable sha 8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef; 12:47 diagnostic binary sha 63a00275b2f78ba58ef35577af0bf0b1681ac245a7e1636de1673cb4f65275ce",
     "test_sequence": "Exact 15:13 protected shader SHA precheck; host C++ policy test 20005 cases; isolated SRT and other affected native TU precompile; full link; A/B same compiled binary with SHADPS4_SRT_FORWARD_RETRY 0 then 1; screenshot/FPS/Audio3D/SRT counters; terminate game, restore Ollama only if stopped, restore original binaries/source.",
     "audio_regression_only": "Continue observing audio ready fraction and guest delivery gaps, but audio-specific scheduling/SDL changes are paused until execution/renderer blockers are addressed or a new direct audio root-cause proof emerges.",
     "no_more_audio_tweaks": "Audio is a passive regression metric while targeting demonstrable game progression/memory pressure.",
-    "promotion_gate": "Find hot guest-memory regions correlated with game stall and identify source that repeatedly protects them. Then implement a correctness-preserving reduction in their repeated write-watch behavior. Do not promote instrumentation as performance fix."
+    "promotion_gate": "Instrumentation itself is not a fix. Only change buffer synchronization/sparse residency based on actual CPU cost and true dirty upload count, with preserved GPU/CPU coherence and complete screenshots.",
+    "focus": "Target shader 0xdfd7cccc and >=64 MiB buffer descriptors: measure ObtainBuffer call count, cumulative and max CPU microseconds; BufferCache SynchronizeMemory actual upload bytes, dirty range count, scan and total CPU microseconds."
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -488,6 +501,21 @@
       },
       "protected_binary_unchanged": true,
       "candidate_binary_unchanged": true
+    },
+    "2026-10-18_17-45_large_buffers_next_rootcause": {
+      "source": "gow-uffd-hotregion-20261018-174556.tar.gz",
+      "status": "GOW_LOADED_AND_RAN_135_SECONDS; BIG_DESCRIPTOR_CPU_COST_NOT_YET_MEASURED",
+      "shader": "0xdfd7cccc",
+      "clamped_original_declared_size_bytes": 4294967295,
+      "clamped_effective_size_bytes_early": 779159744,
+      "observed_log_rate_limit_count_at_least": 32768,
+      "note": "Repeated clamping of a ~738MiB descriptor does not imply hundreds of MiB transferred on each BindBuffers call. Must measure true dirty upload ranges, scan time and ObtainBuffer CPU time before optimizing.",
+      "rejected_explanations": [
+        "Small set of UFFD hot 64KiB pages",
+        "SRT multiuse missing duplicate entries",
+        "Forward SRT dependency retries"
+      ],
+      "proven_original_gpu_audio_source": "UNMODIFIED"
     }
   }
 }
