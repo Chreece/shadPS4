@@ -37,7 +37,7 @@ inline u64 WatchedMenuSourceAddress() {
         if (!env || !env[0] || env[0]=='-') return u64{0};
         char* end{};
         const auto parsed=std::strtoull(env,&end,0);
-        return (end && *end=='\\0') ? static_cast<u64>(parsed) : u64{0};
+        return (end && *end=='\0') ? static_cast<u64>(parsed) : u64{0};
     }();
     return address;
 }
