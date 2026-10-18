@@ -212,6 +212,25 @@ class Keyboard:
             self.display = None
 
 
+
+def hold_forward_right(keyboard, forward_key, right_key):
+    """Fail-safe pair of held keyboard axes; roll back forward if right fails."""
+    keyboard.press(forward_key, True)
+    try:
+        keyboard.press(right_key, True)
+    except BaseException:
+        keyboard.press(forward_key, False)
+        raise
+
+
+def release_forward_right(keyboard, forward_key, right_key):
+    """Release both input axes even if one X11 key-up fails."""
+    try:
+        keyboard.press(right_key, False)
+    finally:
+        keyboard.press(forward_key, False)
+
+
 def screenshot(directory: Path, label: str | None = None):
     # In-memory capture only. No frame dumps and no disk I/O in the 95-second
     # measured observation phase after the cutscene candidate is detected.
@@ -261,6 +280,32 @@ def selftest():
     block(.42, .52, .62, .57, (245, 245, 245))
     assert metrics(raw)["menu"]
     print("AUTOMATED_MENU_DETECTOR_SYNTHETIC=PASS")
+    class FakeKeyboard:
+        def __init__(self, fails_on=None):
+            self.events, self.down = [], set()
+            self.fails_on = fails_on
+        def press(self, key, down):
+            if (key, down) == self.fails_on:
+                raise RuntimeError("MOCK_X11_KEY_ERROR")
+            self.events.append((key, down))
+            if down:
+                self.down.add(key)
+            else:
+                self.down.discard(key)
+    k = FakeKeyboard()
+    hold_forward_right(k, "w", "d")
+    assert k.down == {"w", "d"}
+    release_forward_right(k, "w", "d")
+    assert not k.down
+    assert k.events == [("w", True), ("d", True), ("d", False), ("w", False)]
+    k = FakeKeyboard(fails_on=("d", True))
+    try:
+        hold_forward_right(k, "w", "d")
+    except RuntimeError:
+        assert not k.down and k.events == [("w", True), ("w", False)]
+    else:
+        raise AssertionError("Missing partial key failure")
+    print("FORWARD_RIGHT_XTEST_ORDER_AND_ROLLBACK=PASS cases=2")
     print("NO_INPUT_OR_X11_REQUIRED_FOR_SELFTEST=YES")
 
 
@@ -391,8 +436,7 @@ def main():
                     # Holding forward across loading is intentional; movement
                     # begins immediately once the guest starts accepting axes.
                     time.sleep(1.5)
-                    keyboard.press(a.forward_key, True)
-                    keyboard.press(a.right_key, True)
+                    hold_forward_right(keyboard, a.forward_key, a.right_key)
                     record["forward_at"] = round(time.monotonic() - a.launch_monotonic, 2)
                     record["right_at"] = record["forward_at"]
                     record["input_actions"].append({"action": "LEFT_STICK_FORWARD_AND_RIGHT_DOWN", "t": record["forward_at"]})
@@ -420,8 +464,7 @@ def main():
                     wolf_hits = 0
                 if wolf_hits >= 5:
                     record["cutscene_candidate_at"] = elapsed
-                    keyboard.press(a.right_key, False)
-                    keyboard.press(a.forward_key, False)
+                    release_forward_right(keyboard, a.forward_key, a.right_key)
                     record["right_released_at"] = elapsed
                     record["input_actions"].append({"action": "LEFT_STICK_FORWARD_AND_RIGHT_UP", "t": elapsed})
                     record["cutscene_at"] = elapsed
