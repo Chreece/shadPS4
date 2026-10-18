@@ -502,7 +502,7 @@ def main():
             for event in audio.read_windows():
                 event["t"] = elapsed
                 record["audio_windows"].append(event)
-                if (state == "STEER_ROUTE" and route_start is not None and
+                if (record["mode"] == "STEER_ROUTE" and route_start is not None and
                     clock - route_start >= 18 and
                     event["consecutive_low"] >= 2):
                     reached_cutscene_candidate(
