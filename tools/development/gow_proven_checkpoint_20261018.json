@@ -113,6 +113,20 @@
       "promotion_gate": "Actual recovered SRT offsets >0, reduced offset failures, preserved graphics screenshots, repeatable cutscene FPS/audio behavior; no stutter resolution claim before user validates.",
       "host_gameplay_evidence_archive": "gow-srt-forward-20261018-153409.tar.gz",
       "warning": "Do not promote default-on; this change adds 3043 unresolved attempt counts and produces no recovered SRT entries."
+    },
+    "srt_multiuse_ssa_reads": {
+      "status": "REJECT_FOR_GOW_ZERO_COLLISIONS",
+      "experiment": "SRT flat_multimap opt-in multiuse / disabled same binary A/B",
+      "evidence": "17:13 both candidate modes completed 135 sec, zero multi-use collisions, zero retained reads, 42 SRT errors and 61 unflattened sharps in both, FPS 20.75 vs 20.70.",
+      "note": "Do not promote this generic data structure patch for GoW; no observed benefit."
+    },
+    "uffd_hotregion_sampler_20261018": {
+      "status": "NATIVE_STANDALONE_CXX_TEST_PASS; HOST_FULL_GOW_BUILD_AND_GAMEPLAY_PENDING",
+      "source": "src/video_core/uffd_hotregion_sampler.h",
+      "native_test": "500000 synthetic event program compiles and passes g++ C++20 -Wall -Wextra -Werror with local equivalent exact API",
+      "safety": "1-in-128 sampled 64KiB regions, bounded 64-slot SpaceSaving approximate counts and lower bounds; originally measured fault handler untouched unless opt in; all original GPU/CPU data coherence/wakeup stays intact.",
+      "expected_log": "UFFD_HOTREGIONS window_ms=... sampled=... evictions=... r0={addr}:{estimate}:{min_count} ...",
+      "next": "One protected full graphics 135s game trace to identify whether a few hot memory regions account for repeated write-protect faults."
     }
   },
   "open_blocker": {
@@ -128,7 +142,7 @@
     "root_cause_hypothesis": "Game FPS declines before Audio3D production deteriorates; guest-specific cutscene simulation/resource handling bottleneck is plausible, but causality is NOT established; other games not heavily affected.",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Fix real game execution/rendering correctness bugs first; prioritize shader resource descriptors and failing SRT offset opcode paths with exact source and reproducible shader/descriptor; keep Audio3D as passive regression metric only.",
+    "next": "Run one source-pinned UFFD WP hot-region observer, inspect 5s region distributions and compare to 17:13 30s pixel-identical frames and memory load. Only then implement a source-aware memory-coherence correction; preserve native CPU/GPU, all proven audio fixes.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -137,23 +151,25 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "experiment/gow-srt-forward-dependency-20261018",
-    "next_trial_script": null,
-    "next_trial_launcher": null,
-    "expected_capture_archive_prefix": null,
+    "current_trial_branch": "test/gow-uffd-wp-hotregions-20261018",
+    "next_trial_script": "tools/development/gow_uffd_hotregion_build_trial_20261018.sh",
+    "next_trial_launcher": "tools/development/gow_uffd_hotregion_launcher_20261018.sh",
+    "expected_capture_archive_prefix": "gow-uffd-hotregion-",
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
     "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
-    "target": "Linux UFFD CPU/GPU page-coherence performance, not SDL audio buffer workaround",
+    "target": "Fault thrash localization during pixel-identical stalled scene; bounded sampled write-protected 64 KiB guest memory regions 1/128, approximate counters with error bounds.",
     "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix.",
     "state": "GO_W_BUG_FIXING_PRIORITIZED_OVER_AUDIO_STUTTER_EXPERIMENTS",
     "source_capture_contract": "Read actual protected SRT walker, resource_patching, resource_discover, shader_info_collection and relevant GPU/audio C++ sources with SHA-256 fingerprints, no build or services modified.",
     "next_code_change_policy": "Use 15:13 actual protected source and captures; identify a specific unresolved opcode/resource-binding/shader descriptor error, prove patch applies to current source, add regression and precompile before gameplay; do not repeat speculative audio pacing, VRAM-only, already-fixed SRT arithmetic, or GPU UFFD callback experiments.",
-    "ollama_rule": "Free GPU VRAM >=8 GiB: leave Ollama untouched. Below 8 GiB: unload only Ollama, ensure sufficient VRAM before launching, exit game, reload previous models. Passes shown in 15:34 trial.",
+    "ollama_rule": "Only unload Ollama when measured free GPU VRAM <8 GiB; if unloaded, stop test game before reloading prior model state. Otherwise leave Ollama completely untouched.",
     "proven_graphics_status": "UNCHANGED_SHA_PROTECTED",
-    "code_change": "No currently promoted SRT forward-dependency change: A/B recovered zero offsets and did not improve FPS.",
+    "code_change": "None in game semantics; isolated PageManager sampler is opt-in, 64 fixed counters, no allocations on the hot fault path, no changes to page invalidation/wake/permissions/SDL/renderer/shaders.",
     "protected_baselines": "Graphics executable sha 8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef; 12:47 diagnostic binary sha 63a00275b2f78ba58ef35577af0bf0b1681ac245a7e1636de1673cb4f65275ce",
     "test_sequence": "Exact 15:13 protected shader SHA precheck; host C++ policy test 20005 cases; isolated SRT and other affected native TU precompile; full link; A/B same compiled binary with SHADPS4_SRT_FORWARD_RETRY 0 then 1; screenshot/FPS/Audio3D/SRT counters; terminate game, restore Ollama only if stopped, restore original binaries/source.",
-    "audio_regression_only": "Continue observing audio ready fraction and guest delivery gaps, but audio-specific scheduling/SDL changes are paused until execution/renderer blockers are addressed or a new direct audio root-cause proof emerges."
+    "audio_regression_only": "Continue observing audio ready fraction and guest delivery gaps, but audio-specific scheduling/SDL changes are paused until execution/renderer blockers are addressed or a new direct audio root-cause proof emerges.",
+    "no_more_audio_tweaks": "Audio is a passive regression metric while targeting demonstrable game progression/memory pressure.",
+    "promotion_gate": "Find hot guest-memory regions correlated with game stall and identify source that repeatedly protects them. Then implement a correctness-preserving reduction in their repeated write-watch behavior. Do not promote instrumentation as performance fix."
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -413,6 +429,65 @@
       "screenshot_alignment": "NOT_SCENE_MATCHED: at 30s legacy screenshot black/loading while retry screenshot shows rendered cave; cannot infer loading improvement or A/B audio gain due warm caches/scene timing.",
       "interpretation": "Forward-reference hypothesis not supported in this run. 0 recovered with 47 offset errors. The slight 3.4 percentage point rise in audio3d late ready fraction is not evidence for a fix with 20.73 vs 20.70 FPS and non-scene-matched screenshots.",
       "conclusion": "Reject SRT forward-retry from default/proven fixes. Keep branch and logs only as experimental negative evidence."
+    },
+    "2026-10-18_17-13_no_build_multiuse_control": {
+      "archive": "gow-multiuse-startup-control-20261018-171338.tar.gz",
+      "conclusion": "MULTIUSE_NO_BENEFIT_STARTUP_CRASH_NOT_REPRODUCED",
+      "source_changes": false,
+      "protected_baseline": {
+        "duration_seconds": 76.06,
+        "sha256": "63a00275b2f78ba58ef35577af0bf0b1681ac245a7e1636de1673cb4f65275ce",
+        "startup_ok": true,
+        "late_fps": 20.82,
+        "late_audio3d_ready_fraction": 0.9489,
+        "note": "75-second control does not cover late cutscene audio collapse; do not compare 94.89% to 135-second late scene."
+      },
+      "candidate_no_fix": {
+        "duration_seconds": 136.2,
+        "sha256": "40483b615a8953c031451c785c179f4cb9786b7e933e7b1d7b11339d252c2941",
+        "startup_ok": true,
+        "late_fps": 20.75,
+        "late_audio3d_ready_fraction": 0.3702,
+        "srt_offset_errors": 42,
+        "sharp_unflattened": 61,
+        "srt_multiuse_collisions": 0
+      },
+      "candidate_with_fix": {
+        "duration_seconds": 136.05,
+        "startup_ok": true,
+        "late_fps": 20.7,
+        "late_audio3d_ready_fraction": 0.3814,
+        "srt_offset_errors": 42,
+        "sharp_unflattened": 61,
+        "srt_multiuse_collisions": 0,
+        "srt_reads_retained": 0
+      },
+      "previous_async_memory_null_pc_crash": "NOT_REPRODUCED; 16:52 startup crash was transient in this control, cannot attribute to opt-in feature",
+      "visual_evidence": {
+        "off_90s_and_120s_screenshots": "exactly pixel-identical 1920x1080 frames",
+        "on_30s_and_60s_screenshots": "exactly pixel-identical 1920x1080 frames",
+        "interpretation": "A repeated/stale visible frame over 30s is objective. May be scene content staying static or capture/presentation behavior, not definitive emulator deadlock, because game flips still occur.",
+        "flip_rates": "late 20–21 FPS despite the identical observed screenshots"
+      },
+      "uffd_load": {
+        "legacy_early_cpu_faults_per_5s": 575283,
+        "legacy_late_cpu_faults_per_5s": 927006,
+        "multiuse_early_cpu_faults_per_5s": 574768,
+        "multiuse_late_cpu_faults_per_5s": 931254,
+        "increase": 1.61,
+        "multiuse_late_game_main_faults_per_5s_about": 165000,
+        "late_uffd_cpu_faults_per_second_about": 186000,
+        "passive_audio_result": "At 30–45s Audio3D delivery ~100%; after ~65s declines to ~35–40%; SDL output <0.1ms per submit.",
+        "caveat": "Correlation only; cannot assume the page faults cause the visible stalling or audible starvation."
+      },
+      "ollama": {
+        "free_vram_before_gib": 7.854,
+        "free_vram_after_unload_gib": 19.527,
+        "backend_restored": true,
+        "previous_models_restored": true
+      },
+      "protected_binary_unchanged": true,
+      "candidate_binary_unchanged": true
     }
   }
 }
