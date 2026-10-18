@@ -730,6 +730,24 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     Image& image = slot_images[image_id];
     image.tick_accessed_last = scheduler.CurrentTick();
     TouchImage(image);
+    if (IsWatchedMenuImage(info.guest_address) && ShouldTraceWatchedImage()) {
+        LOG_INFO(Render_Vulkan,
+                 "GotMenuDepthImageResolved: guest={:#x} requested_depth={} "
+                 "cached_depth={} req_fmt={} cached_fmt={} "
+                 "requested_samples={} cached_samples={} "
+                 "requested_extent={}x{} cached_extent={}x{} "
+                 "requested_bytes={} cached_bytes={} "
+                 "requested_binding={}",
+                 info.guest_address,info.props.is_depth,
+                 image.info.props.is_depth,
+                 vk::to_string(info.pixel_format),
+                 vk::to_string(image.info.pixel_format),
+                 info.num_samples,image.info.num_samples,
+                 info.size.width,info.size.height,
+                 image.info.size.width,image.info.size.height,
+                 info.guest_size,image.info.guest_size,
+                 static_cast<u32>(desc.type));
+    }
 
     // If the image requested is a subresource of the image from cache record its location.
     if (view_mip > 0) {
