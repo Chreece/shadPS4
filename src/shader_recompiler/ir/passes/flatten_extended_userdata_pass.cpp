@@ -469,16 +469,28 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
         if (in_stack) {
             c.pop(reg.cvt64());
         }
-        c.and_(reg, (1U << inst->Arg(2).U32()) - 1);
+        const u32 bit_width = inst->Arg(2).U32();
+        // A full-width extraction keeps all 32 bits. Shifting 1u by 32
+        // would be undefined in C++ and can incorrectly yield a zero mask.
+        if (bit_width < 32) {
+            c.and_(reg, bit_width == 0 ? 0U : ((1U << bit_width) - 1U));
+        }
     } else {
         if (!in_stack) {
             c.push(reg.cvt64());
         }
         POP_ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(2)));
         c.mov(ecx, reg);
+        // x86 masks variable shifts to five bits. Width >= 32 must not
+        // wrap to width zero: preserve the complete shifted 32-bit word.
+        Xbyak::Label full_width;
+        c.mov(edx, 0xffffffffu);
+        c.cmp(ecx, 32);
+        c.jae(full_width);
         c.mov(edx, 1);
         c.shl(edx, cl);
         c.dec(edx);
+        c.L(full_width);
         c.and_(dword[rsp], edx);
         c.pop(reg.cvt64());
     }
