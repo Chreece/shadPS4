@@ -45,10 +45,16 @@ int main() {
 
     std::mt19937 gen{0x5116e459};
     for(int n=0;n<100000;++n) {
-        GotIndexedIndirectCommand a{gen()%2000,gen()%12,
-                                     gen()%4000,static_cast<std::int32_t>(gen()),gen()%20};
-        GotIndexedIndirectCommand b{gen()%2000,gen()%12,
-                                     gen()%4000,static_cast<std::int32_t>(gen()),gen()%20};
+        // mt19937::result_type may be wider than uint32_t on the host.
+        // Narrow explicitly after each bounded modulo: -Werror=narrowing
+        // must remain enabled to catch genuine layout bugs.
+        const auto u32rand = [&gen](std::uint32_t maximum) {
+            return static_cast<std::uint32_t>(gen() % maximum);
+        };
+        GotIndexedIndirectCommand a{u32rand(2000),u32rand(12),
+                                     u32rand(4000),static_cast<std::int32_t>(gen()),u32rand(20)};
+        GotIndexedIndirectCommand b{u32rand(2000),u32rand(12),
+                                     u32rand(4000),static_cast<std::int32_t>(gen()),u32rand(20)};
         std::memcpy(bytes.data(),&a,sizeof(a));
         std::memcpy(bytes.data()+sizeof(a),&b,sizeof(b));
         const bool avalid=a.index_count && a.instance_count;
