@@ -79,11 +79,12 @@
       "env": "SHADPS4_UFFD_CALLBACK_BATCH=1",
       "proof": "Four callback contract tests passed; 135s gameplay survived; callback queue submits reduced while audio delivery remains <30% of real-time in late cutscene.",
       "promotion_gate": "Only after same-scene A/B improves guest producer cadence and late gap metrics with audible improvement and no graphics regression.",
-      "default": "off"
+      "default": "off",
+      "status": "A_B_NO_AUDIO_BENEFIT__KEEP_OPT_IN_TEST_ONLY"
     }
   },
   "open_blocker": {
-    "audio_status": "STUTTER_PRESENT",
+    "audio_status": "STUTTER_PRESENT_BOTH_CALLBACK_OFF_AND_ON",
     "active_port_pcm_period_ms": 21.333,
     "active_ports": "main Port0 and Audio3d Port126 (guest handle index22); PadSpk Port4 intentionally idle",
     "09_36_late_scene_buffers_per_5s": "70-85 observed versus about 234 required for continuous 48 kHz output",
@@ -94,7 +95,8 @@
     "09_36_audio3d_queue_full": 0,
     "root_cause_hypothesis": "guest PCM production cadence collapses alongside increased scene/GPU workload; investigate Wwise guest audio thread scheduling and task dependencies, not SDL queue",
     "caveat": "No causality established from CPU/thread snapshots alone",
-    "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck"
+    "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
+    "next": "Investigate high UFFD write-fault frequency and synchronous waits on game-main/guest-worker threads; no speculative audio buffer/pacing changes."
   },
   "workflow": {
     "branch_is_a_pinned_development_checkpoint_not_automatically_production_ready": true,
@@ -136,6 +138,36 @@
       "audio_stutters": "UNRESOLVED",
       "inference": "Playback starvation originates before SDL; batching reduced callback queue submissions but this test does not establish an audible improvement or its causality.",
       "next": "Checksum-pinned same-binary A/B: callback batching off/on, read batching and outer audio pacing identical, preserve graphics and collect Wwise scheduler samples."
+    },
+    "2026-10-18_11-16_audio_uffd_ab": {
+      "archive": "gow-audio-uffd-ab-20261018-111640.tar.gz",
+      "status": "A_B_CAPTURE_VALID_BOTH_HEAVY_AUDIBLE_STUTTERS",
+      "duration_seconds_each": 135,
+      "exact_same_binary_sha256": "96648b14d4aea65cc4ddc16a76f23938914f1b715b08e52342f494127b155c88",
+      "off": {
+        "late_scene_audio3d_ready_fraction_median": 0.3085,
+        "audio3d_late_guest_submissions": 944,
+        "max_audio3d_guest_submission_gap_ms": 1319.787,
+        "cpu_write_faults": 14507756,
+        "wwise_futex_observations": "121/121",
+        "game_main_userfault_wait_observations": "76/129",
+        "guest_workers_userfault_wait_observations": "268/635",
+        "audio_output_max_backend_us": 115
+      },
+      "on": {
+        "late_scene_audio3d_ready_fraction_median": 0.3106,
+        "audio3d_late_guest_submissions": 849,
+        "max_audio3d_guest_submission_gap_ms": 1756.871,
+        "cpu_write_faults": 15239311,
+        "gpu_callback_submissions": 4185464,
+        "faults_in_batched_gpu_callbacks": 11798347,
+        "wwise_futex_observations": "127/127",
+        "game_main_userfault_wait_observations": "78/130",
+        "guest_workers_userfault_wait_observations": "250/640",
+        "audio_output_max_backend_us": 105
+      },
+      "conclusion": "Optional callback aggregation retains tested per-page coherence and fewer queue insertions per fault, but produces no meaningful audio-cadence change and did not solve stuttering. Scene alignment and FPS causality unproven; never promote as audio fix.",
+      "protected_graphics_binary_sha256_unchanged": true
     }
   }
 }
