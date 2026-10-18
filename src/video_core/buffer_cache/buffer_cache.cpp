@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <cstdlib>
 #include <magic_enum/magic_enum.hpp>
 #include <xxhash.h>
 
@@ -12,6 +13,7 @@
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/memory_tracker.h"
+#include "video_core/buffer_cache/read_only_stream_policy.h"
 #include "video_core/buffer_cache/region_definitions.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -218,8 +220,17 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     const bool is_written = True(flags & ObtainBufferFlags::IsWritten);
     const bool is_texel_buffer = True(flags & ObtainBufferFlags::IsTexelBuffer);
     const bool skip_stream_buffer = True(flags & ObtainBufferFlags::IgnoreStreamBuffer);
-    // For read-only buffers use device local stream buffer to reduce renderpass breaks.
-    if (!is_written && !skip_stream_buffer && size <= STREAM_THRESHOLD &&
+    // The original stream path is 16 KiB. An optional 64-KiB variant extends
+    // it only to read-only buffers that are not GPU-dirty and have not opted
+    // out through IgnoreStreamBuffer. This is a general resource fix, not a
+    // shader/game-specific size cap or a change to sparse buffer residency.
+    static const u32 readonly_stream_limit = [] {
+        const char* enable = std::getenv("SHADPS4_STREAM_READONLY_64K");
+        const bool extended = enable && enable[0] == '1' && enable[1] == '\0';
+        return ReadOnlyStreamPolicy::Limit(extended);
+    }();
+    if (ReadOnlyStreamPolicy::IsCandidate(size, is_written, skip_stream_buffer,
+                                          readonly_stream_limit) &&
         !IsRegionGpuModified(device_addr, size)) {
         const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
         memory->CopySparseMemory(device_addr, data, size);
