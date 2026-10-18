@@ -136,6 +136,72 @@ def snapshot(pid: int) -> list[dict]:
     return ret
 
 
+def is_live_game_pid(pid: int) -> bool:
+    """Distinguish an alive game from a zombie process."""
+    status = proc_text(Path(f"/proc/{pid}/status"))
+    match = re.search(r"(?m)^State:\s+([A-Z])", status)
+    return bool(match and match.group(1) not in ("Z", "X", "x"))
+
+
+def audio_ready(rows: list[dict]) -> bool:
+    """Startup requires Wwise and a real guest/GPU thread."""
+    groups = {item["group"] for item in rows}
+    return "wwise" in groups and (
+        "game_main" in groups or "gpu_command" in groups)
+
+
+def wait_for_game_threads(pid: int, timeout_s: float, sample_period_s: float,
+                          sampler=None, live_checker=None, now=None,
+                          sleeper=None, report_progress=True) -> dict:
+    """Never interpret the first empty post-Popen snapshot as game death."""
+    sampler = sampler or snapshot
+    live_checker = live_checker or is_live_game_pid
+    now = now or time.monotonic
+    sleeper = sleeper or time.sleep
+    started = now()
+    attempts = 0
+    first_seen = {}
+    last_threads = []
+    last_progress = -1
+    while True:
+        elapsed = now() - started
+        if not live_checker(pid):
+            return {
+                "status": "PROCESS_EXITED_BEFORE_AUDIO_READY",
+                "ready": False, "pid": pid, "elapsed_s": round(elapsed, 3),
+                "attempts": attempts, "last_threads": last_threads,
+                "first_seen_s": first_seen,
+            }
+        rows = sampler(pid)
+        attempts += 1
+        groups = sorted({item["group"] for item in rows})
+        last_threads = [{"name": row["name"], "tid": row["tid"],
+                         "state": row["state"]} for row in rows]
+        for group in groups:
+            first_seen.setdefault(group, round(elapsed, 3))
+        if audio_ready(rows):
+            return {
+                "status": "AUDIO_AND_GAME_THREADS_READY",
+                "ready": True, "pid": pid, "elapsed_s": round(elapsed, 3),
+                "attempts": attempts, "last_threads": last_threads,
+                "first_seen_s": first_seen,
+            }
+        if elapsed >= timeout_s:
+            return {
+                "status": "AUDIO_GAME_THREAD_STARTUP_TIMEOUT",
+                "ready": False, "pid": pid, "elapsed_s": round(elapsed, 3),
+                "attempts": attempts, "last_threads": last_threads,
+                "first_seen_s": first_seen,
+            }
+        progress = int(elapsed // 5)
+        if report_progress and progress != last_progress:
+            print(f"GOW_STARTUP_WAIT={elapsed:.1f}s "
+                  f"SEEN={','.join(groups) or 'no-game-threads-yet'}",
+                  flush=True)
+            last_progress = progress
+        sleeper(sample_period_s)
+
+
 def summarize(records: list[dict]) -> dict:
     windows = {}
     for rec in records:
