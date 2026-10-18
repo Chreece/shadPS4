@@ -1293,6 +1293,39 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                             break;
                         }
                     }
+                    // Previously unmapped guest textures can become
+                    // resident without changing their T# table bytes.
+                    // Revalidate only the initially null slots and fall back
+                    // to the full resolver if any is now a usable resource.
+                    // Keep the final intentional out-of-range slot null.
+                    if (live && entry.valid_slots<count-1u) {
+                        const u32 dim_limit=
+                            instance.GetPhysicalDevice().getProperties().limits.maxImageDimension2D;
+                        for (u32 i=0;i+1u<count;++i) {
+                            if (entry.bindings[i].image_id) continue;
+                            AmdGpu::Image raw{};
+                            const u64 address=source.base_address+
+                                              u64(i)*sizeof(AmdGpu::Image);
+                            std::memcpy(&raw,reinterpret_cast<const void*>(address),
+                                        sizeof(raw));
+                            if (!raw.Valid() ||
+                                raw.GetType()!=AmdGpu::ImageType::Color2D ||
+                                raw.Address()==0 ||
+                                !memory->IsValidGpuMapping(raw.Address(),0)) continue;
+                            const auto fmt=raw.GetDataFmt();
+                            const auto nfmt=raw.GetNumberFmt();
+                            if (fmt!=AmdGpu::DataFormat::FormatInvalid &&
+                                magic_enum::enum_contains(fmt) &&
+                                magic_enum::enum_contains(nfmt) &&
+                                !AmdGpu::IsInteger(nfmt) &&
+                                raw.width<dim_limit && raw.height<dim_limit &&
+                                raw.base_level<=raw.last_level &&
+                                raw.pitch>=raw.width) {
+                                live=false;
+                                break;
+                            }
+                        }
+                    }
                     if (live) {
                         cache_hit=&entry;
                         break;
@@ -1389,7 +1422,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 ++valid_slots;
             }
             image_descriptor_array_sizes.push_back(count);
-            if (eligible && !depth_alias) {
+            if (eligible && !depth_alias && budget_skips==0u) {
                 // Cache IDs only while the exact guest T# table is unchanged.
                 // UIDs reject stale/recycled texture-cache slot identifiers.
                 // The normal image-view/layout pass still runs every draw,
