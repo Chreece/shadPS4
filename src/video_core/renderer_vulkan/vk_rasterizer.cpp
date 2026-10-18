@@ -2146,6 +2146,52 @@ void Rasterizer::UpdateDynamicState(const GraphicsPipeline* pipeline, const bool
     UpdateColorBlendingState(pipeline);
 
     auto& dynamic_state = scheduler.GetDynamicState();
+    const auto& regs=liverpool->regs;
+    const auto& color=regs.color_buffers[0];
+    const bool is_scene_geometry =
+        color && color.Address()==0x15203f8000ULL &&
+        regs.depth_buffer.DepthValid() &&
+        regs.depth_buffer.DepthAddress()==0x1504a08000ULL &&
+        regs.num_indices>=128 && regs.color_target_mask.GetMask(0)!=0;
+    if (is_scene_geometry && Diagnostics::MenuPassTraceEnabled()) {
+        static thread_local u64 observations{};
+        const u64 count=++observations;
+        if (count<=24 || count==32 || count==128 || (count%1024)==0) {
+            const auto vp_count=dynamic_state.viewports.size();
+            const auto sc_count=dynamic_state.scissors.size();
+            if (vp_count && sc_count) {
+                const auto& vp=dynamic_state.viewports.front();
+                const auto& sc=dynamic_state.scissors.front();
+                LOG_INFO(Render_Vulkan,
+                         "GotSceneRasterCoverage: sample={} indexed={} indices={} "
+                         "scissor_x={} scissor_y={} scissor_w={} scissor_h={} "
+                         "viewport_x={} viewport_y={} viewport_w={} viewport_h={} "
+                         "viewport_zmin={} viewport_zmax={} "
+                         "cull={:#x} front_face={} "
+                         "depth_test={} depth_write={} depth_compare={} "
+                         "stencil_test={} raster_discard={} "
+                         "clip_space={} clip_disabled={} num_viewports={} num_scissors={}",
+                         count,is_indexed,regs.num_indices,
+                         sc.offset.x,sc.offset.y,sc.extent.width,sc.extent.height,
+                         vp.x,vp.y,vp.width,vp.height,vp.minDepth,vp.maxDepth,
+                         static_cast<u32>(static_cast<VkCullModeFlags>(dynamic_state.cull_mode)),
+                         static_cast<u32>(dynamic_state.front_face),
+                         dynamic_state.depth_test_enabled,
+                         dynamic_state.depth_write_enabled,
+                         static_cast<u32>(dynamic_state.depth_compare_op),
+                         dynamic_state.stencil_test_enabled,
+                         dynamic_state.rasterizer_discard_enabled,
+                         static_cast<u32>(regs.clipper_control.clip_space),
+                         regs.IsClipDisabled(),
+                         vp_count,sc_count);
+            } else {
+                LOG_WARNING(Render_Vulkan,
+                            "GotSceneRasterCoverage: sample={} missing_viewport_or_scissor "
+                            "viewport_count={} scissor_count={} indices={}",
+                            count,vp_count,sc_count,regs.num_indices);
+            }
+        }
+    }
     dynamic_state.Commit(instance, scheduler.CommandBuffer());
 }
 
@@ -2499,9 +2545,48 @@ void Rasterizer::UpdatePrimitiveState(const bool is_indexed) const {
                                : vk::CullModeFlagBits::eNone;
     const auto front_face = LiverpoolToVK::FrontFace(regs.polygon_control.front_face);
 
+    // Separate A/B from the prior depth/stencil experiment. On the exact
+    // demonstrated scene target/depth pair, force double-sided geometry to
+    // prove whether GCN-to-Vulkan face orientation is wrongly rejecting
+    // the terrain. Never apply to UI fullscreen triangles, shadow buffers,
+    // depth clears, or unrelated games/targets.
+    static const bool got_raster_ab=[] {
+        const char* e=std::getenv("SHADPS4_GOT_SCENE_RASTER_AB");
+        return e && e[0]=='1' && e[1]=='\0';
+    }();
+    const auto& cb0=regs.color_buffers[0];
+    const auto& db=regs.depth_buffer;
+    const Diagnostics::GotSceneDepthABInput selection{
+        .opted_in=got_raster_ab,
+        .guest_color_address=cb0 ? cb0.Address() : 0ULL,
+        .guest_depth_address=db.DepthValid() ? db.DepthAddress() : 0ULL,
+        .index_count=regs.num_indices,
+        .color_write_mask=regs.color_target_mask.GetMask(0),
+        .depth_test=bool(regs.depth_control.depth_enable),
+        .depth_write=bool(regs.depth_control.depth_write_enable),
+        .depth_clear=bool(regs.depth_render_control.depth_clear_enable),
+        .raster_discard=bool(regs.clipper_control.dx_rasterization_kill),
+    };
+    const bool raster_ab=Diagnostics::ShouldForceGotSceneCullNone(selection);
+    if (raster_ab) {
+        static thread_local u64 num_overrides{};
+        const u64 sample=++num_overrides;
+        if (sample<=12 || sample==32 || sample==128 || (sample%1024)==0) {
+            LOG_INFO(Render_Vulkan,
+                     "GotSceneRasterAB: target={:#x} depth={:#x} "
+                     "indices={} old_cull={:#x} new_cull=NONE "
+                     "front_face={} original_raster_discard={} "
+                     "sample={} isolated_opt_in=YES",
+                     selection.guest_color_address,selection.guest_depth_address,
+                     selection.index_count,
+                     static_cast<u32>(static_cast<VkCullModeFlags>(cull_mode)),
+                     static_cast<u32>(front_face),
+                     bool(regs.clipper_control.dx_rasterization_kill),sample);
+        }
+    }
     dynamic_state.SetPrimitiveRestartEnabled(prim_restart);
     dynamic_state.SetRasterizerDiscardEnabled(regs.clipper_control.dx_rasterization_kill);
-    dynamic_state.SetCullMode(cull_mode);
+    dynamic_state.SetCullMode(raster_ab ? vk::CullModeFlags{vk::CullModeFlagBits::eNone} : cull_mode);
     dynamic_state.SetFrontFace(front_face);
 }
 
