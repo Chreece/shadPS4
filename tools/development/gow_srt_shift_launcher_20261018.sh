@@ -9,7 +9,7 @@ PROTECTED="$ROOT/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014
 mkdir -p "$ROOT/scripts" "$ROOT/logs"
 WORK="$(mktemp -d "$ROOT/scripts/.gow-srt-jit.XXXXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
-REF="bba43bbc02257ff141f24cdde9f54501a35f9cb7"
+REF="43a7209e89f9907bd0d2c1f0e5adece5968aa144"
 REPO="https://raw.githubusercontent.com/Chreece/shadPS4"
 while read -r name blob path; do
   echo "VERIFY_PINNED_SOURCE=$path"
@@ -20,7 +20,7 @@ while read -r name blob path; do
     exit 2
   }
 done <<'PINNED'
-runner.sh ee4f55c9b6823fd35178bf983eadc411332133db tools/development/gow_srt_shift_build_ab_20261018.sh
+runner.sh fa3cf2daed497b64f6543a3ecc64cedb5d4199fd tools/development/gow_srt_shift_build_ab_20261018.sh
 observer.py e3163bd7525472da484a4bb707425558255250e9 tools/development/gow_upstream_gameplay.py
 restore.py 0bb5acf3149c53e58fb4739845fc33538ed32ff8 tools/development/gow_restore_graphics_renderer_20261017.py
 support.py 5e8d17492c592421af95413ba8e00610b66aa255 tools/development/gow_preserve_uffd_support_20261017.py
