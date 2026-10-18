@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <cstdlib>
 #include <utility>
 #include <boost/container/small_vector.hpp>
 
@@ -10,6 +11,7 @@
 #include "shader_recompiler/backend/spirv/emit_spirv_quad_rect.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
+#include "video_core/renderer_vulkan/vk_got_scene_depth_clip_trial.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
@@ -90,6 +92,57 @@ GraphicsPipeline::GraphicsPipeline(
         .topology = topology,
     };
 
+    // A/B only for the shader pairs with measured VS>0, clipped
+    // primitives=0 (not for the two intentional 0-index indirect draws).
+    // Disabled by default; requires the physical driver feature AND the
+    // Vulkan extension already enabled by the emulator. If either is
+    // unavailable we preserve the original pipeline unchanged.
+    static const bool request_got_clip_trial=[] {
+        const char* const e=std::getenv("SHADPS4_GOT_SCENE_DEPTH_CLIP_TRIAL");
+        return e && e[0]=='1' && e[1]=='\0';
+    }();
+    const auto* const vs_info=infos[u32(Shader::SwStage::Vertex)];
+    const auto* const fs_info=infos[u32(Shader::SwStage::Fragment)];
+    const Diagnostics::GotSceneDepthClipTrialInput clip_trial_input{
+        .opted_in=request_got_clip_trial && !preloading,
+        .depth_clip_extension_enabled=instance.IsDepthClipEnableSupported(),
+        .depth_clamp_feature_enabled=bool(
+            instance.GetPhysicalDevice().getFeatures().depthClamp),
+        .has_color_attachment=key.num_color_attachments>0u,
+        .has_depth_attachment=key.z_format!=AmdGpu::DepthBuffer::ZFormat::Invalid,
+        .vertex_shader=vs_info ? vs_info->pgm_hash : 0u,
+        .fragment_shader=fs_info ? fs_info->pgm_hash : 0u,
+    };
+    const bool got_clip_trial=Diagnostics::ShouldTestGotSceneDepthClip(
+        clip_trial_input);
+    if(got_clip_trial) {
+        LOG_INFO(Render_Vulkan,
+                 "GotSceneDepthClipTrial: vs={:#x} fs={:#x} "
+                 "original_clip={} original_clamp={} "
+                 "trial_clip=DISABLED trial_clamp=ENABLED "
+                 "depth_feature=true extension=true "
+                 "matches_zero_clip_primitive_shader_pair=YES",
+                 clip_trial_input.vertex_shader,
+                 clip_trial_input.fragment_shader,
+                 bool(key.depth_clip_enable),bool(key.depth_clamp_enable));
+    } else if(request_got_clip_trial && !preloading &&
+              clip_trial_input.has_color_attachment &&
+              clip_trial_input.has_depth_attachment &&
+              clip_trial_input.vertex_shader!=0) {
+        static u32 skipped{};
+        if(++skipped<=5u) {
+            LOG_INFO(Render_Vulkan,
+                     "GotSceneDepthClipBypass: vs={:#x} fs={:#x} "
+                     "ext_enabled={} clamp_feature={} matched={} "
+                     "preserved_original_pipeline=YES",
+                     clip_trial_input.vertex_shader,
+                     clip_trial_input.fragment_shader,
+                     clip_trial_input.depth_clip_extension_enabled,
+                     clip_trial_input.depth_clamp_feature_enabled,
+                     got_clip_trial);
+        }
+    }
+
     const bool is_rect_list = key.prim_type == AmdGpu::PrimitiveType::RectList;
     const bool is_quad_list = key.prim_type == AmdGpu::PrimitiveType::QuadList;
     const vk::PipelineTessellationStateCreateInfo tessellation_state = {
@@ -98,8 +151,9 @@ GraphicsPipeline::GraphicsPipeline(
 
     vk::StructureChain raster_chain = {
         vk::PipelineRasterizationStateCreateInfo{
-            .depthClampEnable = key.depth_clamp_enable &&
-                                (!key.depth_clip_enable || instance.IsDepthClipEnableSupported()),
+            .depthClampEnable = got_clip_trial ||
+                                (key.depth_clamp_enable &&
+                                 (!key.depth_clip_enable || instance.IsDepthClipEnableSupported())),
             .rasterizerDiscardEnable = false,
             .polygonMode = LiverpoolToVK::PolygonMode(key.polygon_mode),
             .lineWidth = 1.0f,
@@ -110,7 +164,7 @@ GraphicsPipeline::GraphicsPipeline(
                                        : vk::ProvokingVertexModeEXT::eLastVertex,
         },
         vk::PipelineRasterizationDepthClipStateCreateInfoEXT{
-            .depthClipEnable = key.depth_clip_enable,
+            .depthClipEnable = !got_clip_trial && bool(key.depth_clip_enable),
         },
     };
 
