@@ -367,7 +367,13 @@ def run(duration: int, period: float) -> int:
     results = summarize(items)
     result = {
         "threads": results, "samples": len(items),
-        "process_alive": Path(f"/proc/{pid}").exists(),
+        "process_alive": is_live_game_pid(pid),
+        "startup": startup,
+        "valid_audio_capture": bool(
+            startup["ready"] and items and
+            any(x["group"] == "wwise" for x in items)),
+        "wwise_thread_samples": sum(x["group"] == "wwise" for x in items),
+        "launcher_exit_code": child.poll() if child is not None else None,
         "attached_existing": was_running,
         "recorded_seconds": round(time.monotonic() - start, 2),
         "game_stopped_by_probe": False,
@@ -379,6 +385,9 @@ def run(duration: int, period: float) -> int:
     (out / "guest-wake-summary.json").write_text(json.dumps(result, indent=2) + "\n")
     (out / "summary-short.txt").write_text(
         "ATTACHED=" + str(was_running) + "\n" +
+        "STARTUP_STATUS=" + startup["status"] + "\n" +
+        "VALID_AUDIO_CAPTURE=" + str(result["valid_audio_capture"]) + "\n" +
+        "WWISE_THREAD_SAMPLES=" + str(result["wwise_thread_samples"]) + "\n" +
         "GOW_ALIVE=" + str(result["process_alive"]) + "\n" +
         "SCHEDSTAT_SUPPORTED=" + str(not result["schedstat_may_be_disabled"]) + "\n" +
         "WINDOWS=" + str(len(results)) + "\n" +
@@ -395,10 +404,11 @@ def run(duration: int, period: float) -> int:
             (out / "console-start-excerpt.log").write_bytes(text)
             archive.add(out / "console-start-excerpt.log",
                         arcname=f"{tag}/console-start-excerpt.log")
-    print(f"GOW_AUDIO_WAKE_RESULT=CAPTURED; PROCESS_ALIVE={result['process_alive']}")
+    outcome = "CAPTURED" if result["valid_audio_capture"] else "NO_GAME_AUDIO_THREADS_OBSERVED"
+    print(f"GOW_AUDIO_WAKE_RESULT={outcome}; PROCESS_ALIVE={result['process_alive']}")
     print(f"ARCHIVE={tar}")
     print("EMULATOR_BINARY=UNCHANGED; SYSCTL=UNCHANGED; SSH=OPEN", flush=True)
-    return 0
+    return 0 if result["valid_audio_capture"] else 2
 
 
 def main() -> int:
