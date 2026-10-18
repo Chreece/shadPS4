@@ -32,7 +32,6 @@ def verify_source(base: str, trial: str) -> None:
         "WakeFault(addr, ptid);",
         "pending_gpu_invalidations.fetch_add(1) + 1;",
         "pending_gpu_invalidations.fetch_sub(1);",
-        "pending_gpu_invalidations.notify_all();",
         "UFFD_PERF window_ms=",
         "read(uffd, messages.data(), requested)",
         "MAX_READ_MESSAGES = 32",
@@ -82,6 +81,9 @@ def verify_source(base: str, trial: str) -> None:
         "pending_gpu_invalidations.fetch_sub(faults.size());" in trial and
         "pending_gpu_invalidations.notify_all();" in trial,
         "EACH_FAULT_MUST_BE_WOKEN_AND_PENDING_DRAINED")
+    require(base.count("pending_gpu_invalidations.notify_all();") == 1 and
+            trial.count("pending_gpu_invalidations.notify_all();") == 2,
+            "EACH_GPU_CALLBACK_PATH_MUST_NOTIFY_DRAIN_WAITERS")
     require("if (batch_callbacks) {\n"
             "                // Also flush valid CPU events before returning on malformed" in trial,
             "VALID_FAULT_PREFIX_NOT_FLUSHED_ON_MALFORMED_LATER_EVENT")
