@@ -10,7 +10,7 @@ PROJECT="$BASE/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-301467
 BUILD="$BASE/GodOfWarRagnarok/tests/gow-renderer-log-hotpath-20261017/build"
 BINARY="$BUILD/shadps4.fullgfx-sparse-cpu-upload-gow-sparse-upload-20261018-201012"
 SHA="7c2104500fe19dab6afe4b0967a0f0e4b568a3273501d2b3ea16970d9744fcfc"
-REF="3e2f4ac47fd2251963f0d52e5afdf580e5c5bb23"
+REF="417bb6e46b8dedcb56f614b26013030b83ae5d51"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF"
 mkdir -p "$SCRIPTS" "$LOGS"
 [[ -e "$PROJECT/source/.git" ]] || {
@@ -31,8 +31,8 @@ while read -r name blob remote_path; do
     exit 2
   }
 done <<'SOURCES'
-gow_auto_scene_input_20261018.py edab90ac0f179e89e7285ac73d4f8698c8ecf953 tools/development/gow_auto_scene_input_20261018.py
-gow_automated_scene_ab_20261018.py 62ef63d6a0f27bdbf2f21f4e87a537e50188e6f5 tools/development/gow_automated_scene_ab_20261018.py
+gow_auto_scene_input_20261018.py 15670741a92dbd5b30be91a209fab17497b8fcc9 tools/development/gow_auto_scene_input_20261018.py
+gow_automated_scene_ab_20261018.py 26346d2b14dac01606d177be924628c081f27ed8 tools/development/gow_automated_scene_ab_20261018.py
 gow_ollama_vram_gameplay_20261018.py 35b9806f7eeae74e95e4738a25d88868b51fc325 tools/development/gow_ollama_vram_gameplay_20261018.py
 SOURCES
 python3 - "$SCRIPTS" <<'PY'
@@ -75,6 +75,6 @@ ret=$?
 set -e
 echo "AUTOMATED_GAMEPLAY_EXIT_CODE=$ret"
 echo "UPLOAD_MAIN_LOG=$LOG"
-grep -E 'ARCHIVE=|AUTO_STAGE=|CUTSCENE_VISUAL|GAME_EXITED_BEFORE_OLLAMA|OLLAMA_MODELS_RELOADED|GOW_SPARSE_CPU_UPLOAD_AB_RESULT' "$LOG" | tail -20 || true
+grep -E 'ARCHIVE=|AUTO_STAGE=|CUTSCENE_VISUAL|GAME_EXITED_BEFORE_OLLAMA|OLLAMA_MODELS_RELOADED|GOW_LOG_TELEMETRY_AB_RESULT|GOW_INPUT_AUTOMATION_RESULT' "$LOG" | tail -20 || true
 echo "SSH_SESSION_NOT_CLOSED=YES"
 exit "$ret"
