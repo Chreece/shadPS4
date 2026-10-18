@@ -73,7 +73,7 @@ ln -s "$TARGET" "$TEMP"
 mv -T "$TEMP" "$CORE"
 if [[ "$(sha256sum "$CORE" | cut -d' ' -f1)" != "$EXPECTED" ]]; then
   echo 'New core failed post-switch checksum; reverting immediately.'
-  REVERT="$CORE.revert.$"
+  REVERT="$CORE.revert.$BASHPID"
   if [[ -n "$OLD_LINK" ]]; then
     ln -s "$OLD_LINK" "$REVERT"
   else
