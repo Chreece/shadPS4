@@ -302,6 +302,11 @@ for dir in "$SOURCE/externals/fmt/include" "$SOURCE/externals/fmt"; do
         break
     fi
 done
+if [ ! -f "$SOURCE/src/shader_recompiler/ir/opcodes.h" ]; then
+    echo "MENU_SELECTOR_OPCODE_HEADER_MISSING=$SOURCE/src/shader_recompiler/ir/opcodes.h"
+    STATUS=MENU_SELECTOR_OPCODE_HEADER_MISSING
+    exit 2
+fi
 if [ -z "$MAGIC_ENUM_INC" ] || [ -z "$FMT_INC" ]; then
     STATUS=MENU_SELECTOR_VENDOR_INCLUDE_MISSING
     echo "MAGIC_ENUM_INC=$MAGIC_ENUM_INC FMT_INC=$FMT_INC"
@@ -314,8 +319,10 @@ for pair in \
     out="$(printf '%s' "$pair" | cut -d: -f2)"
     git -C "$SOURCE" show "$CANDIDATE:tests/shader_recompiler/$name.cpp" \
         > "$RUN/tmp/$name.cpp" || { STATUS=MENU_TEST_SOURCE_MISSING; exit 2; }
+    # Stage overrides take precedence, but unmodified headers remain in
+    # the actual source worktree. Missing -I SOURCE caused the prior failure.
     c++ -std=c++23 -O2 -Wall -Wextra -Werror -I"$RUN/tmp/staged/src" \
-        -I"$MAGIC_ENUM_INC" -I"$FMT_INC" \
+        -I"$SOURCE/src" -I"$MAGIC_ENUM_INC" -I"$FMT_INC" \
         "$RUN/tmp/$name.cpp" -o "$RUN/tmp/$out" \
         >>"$RUN/host-tests.log" 2>&1 || {
             tail -100 "$RUN/host-tests.log"
