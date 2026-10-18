@@ -19,6 +19,7 @@
 #include "shader_recompiler/profile.h"
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/guest_tsharp_array.h"
+#include "shader_recompiler/strided_material_specialization.h"
 #include "video_core/amdgpu/resource.h"
 #include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 
@@ -1313,10 +1314,11 @@ static bool StridedSourceProofEnabled(const Shader::Info& info) {
 }
 
 static bool AllStridedGuestImagesRepresentable(
-    const Shader::Info& info, const ResourceDiscoveryList& resources,
+    Shader::Info& info, const ResourceDiscoveryList& resources,
     const Profile& profile, u32& sources, u32& invalid) {
     sources=0;
     invalid=0;
+    info.strided_material_source_count=0;
     if (info.hw_stage!=HwStage::Compute) return true;
 
     const bool probe=StridedSourceProofEnabled(info);
@@ -1326,6 +1328,16 @@ static bool AllStridedGuestImagesRepresentable(
         ++sources;
         const auto table_fetch=ConstructSharpFetch<AmdGpu::Buffer>(
             usage.indexed_table_sharp,info);
+        if (info.strided_material_source_count >= info.strided_material_sources.size()) {
+            // No silent truncation: without complete provenance this
+            // permutation must never use partial indexed image tables.
+            ++invalid;
+            continue;
+        }
+        auto& witness=info.strided_material_sources[info.strided_material_source_count++];
+        witness.table_fetch=table_fetch;
+        witness.record_stride_bytes=usage.indexed_record_stride_bytes;
+        witness.descriptor_offset_bytes=usage.indexed_descriptor_offset_bytes;
         AmdGpu::Buffer table{};
         const bool flattened =
             table_fetch.summary != SharpFetch<AmdGpu::Buffer>::Summary::Invalid;
@@ -1334,14 +1346,11 @@ static bool AllStridedGuestImagesRepresentable(
                                                       info.flattened_ud_buf.size(), &table);
         const bool valid=fetched && table.Valid();
         const bool has_base=valid && table.base_address!=0;
-        const u32 entries=has_base
-            ? CompleteGuestTsharpRecordEntries(
-                static_cast<u32>(table.stride),
-                static_cast<u32>(table.num_records),
-                usage.indexed_record_stride_bytes,
-                usage.indexed_descriptor_offset_bytes,
-                profile.max_guest_indexed_image_entries)
-            : 0u;
+        const u32 entries=StridedMaterialPermutationEntries(
+            fetched, valid, static_cast<u64>(table.base_address),
+            static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
+            usage.indexed_record_stride_bytes, usage.indexed_descriptor_offset_bytes,
+            profile.max_guest_indexed_image_entries);
         const bool eligible=entries!=0u;
         if (!eligible) ++invalid;
 
