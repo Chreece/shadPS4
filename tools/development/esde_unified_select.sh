@@ -71,7 +71,18 @@ fi
 TEMP="$HOME/Applications/shadps4/.unified-core-$STAMP"
 ln -s "$TARGET" "$TEMP"
 mv -T "$TEMP" "$CORE"
-test "$(sha256sum "$CORE" | cut -d' ' -f1)" = "$EXPECTED"
+if [[ "$(sha256sum "$CORE" | cut -d' ' -f1)" != "$EXPECTED" ]]; then
+  echo 'New core failed post-switch checksum; reverting immediately.'
+  REVERT="$CORE.revert.$"
+  if [[ -n "$OLD_LINK" ]]; then
+    ln -s "$OLD_LINK" "$REVERT"
+  else
+    cp "$BACKUP/shadps4.previous" "$REVERT"
+    chmod 755 "$REVERT"
+  fi
+  mv -T "$REVERT" "$CORE"
+  exit 6
+fi
 
 RESTORE="$BACKUP/restore.sh"
 {
