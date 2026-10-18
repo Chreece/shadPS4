@@ -100,7 +100,8 @@
       "measures": "queue wait time before GPU task starts; InvalidateMemory execution time; post-invalidation callback+UFFDIO_WAKE completion time, aligned to FPS/audio/UFFD five-second windows",
       "preserves": "All source-preimage checks, shader/renderer fixes, default invalidation and wakeup semantics",
       "purpose": "Choose general Linux GPU-memory bottleneck fix from measured execution cost; not itself an audio fix"
-    }
+    },
+    "redundant_srt_arithmetic_bfe_branches": "Historical JIT dynamic-left-shift and BFE32 width bugs already fixed locally; branches cannot be promoted as performance or graphics fixes."
   },
   "open_blocker": {
     "audio_status": "STUTTER_PRESENT_BOTH_CALLBACK_OFF_AND_ON",
@@ -124,14 +125,19 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "test/gow-gpu-invalidate-timing-20261018",
-    "next_trial_script": "tools/development/gow_gpu_invalidate_timing_trial_20261018.sh",
+    "current_trial_branch": "diagnostic/gow-live-srt-source-audit-20261018",
+    "next_trial_script": "tools/development/gow_live_srt_source_audit_20261018.py",
     "next_trial_launcher": "tools/development/gow_gpu_invalidate_timing_launcher_20261018.sh",
     "expected_capture_archive_prefix": "gow-gpu-invalidate-timing-",
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
     "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
     "target": "Linux UFFD CPU/GPU page-coherence performance, not SDL audio buffer workaround",
-    "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix."
+    "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix.",
+    "state": "NO_MORE_EMULATOR_BUILDS_FROM_HISTORICAL_BRANCH_ASSUMPTIONS",
+    "source_capture_contract": "Read actual protected SRT walker, resource_patching, resource_discover, shader_info_collection and relevant GPU/audio C++ sources with SHA-256 fingerprints, no build or services modified.",
+    "next_code_change_policy": "Only patch after inspecting exact source and validating the reported SRT failure path. Prove the diff applies to current local source before compiling or running a game. Preserve known-good binary and VRAM rule.",
+    "ollama_rule": "Do not unload if >=8GiB free GPU VRAM; untouched in read-only audit.",
+    "proven_graphics_status": "UNCHANGED_SHA_PROTECTED"
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -291,6 +297,34 @@
       "main_app_or_host_modified": false,
       "live_game_started": false,
       "next_steps": "Correct exact callback fragment and run an explicit historical-source selftest prior to any isolated compilation; do not call this a gameplay or audio regression."
+    },
+    "2026-10-18_14-59_srt_bfe32_aborted_before_compile": {
+      "archive": "gow-srt-bfe32-20261018-145938.tar.gz",
+      "outcome": "SOURCE_ALREADY_CORRECT_NO_BUILD",
+      "exit_code": 2,
+      "failed_at": "STAGE_SRT_BFE32_REAL_SOURCE_CORRECTION",
+      "actual_console_marker": "SRT_BFE_ACTUAL_SOURCE_NOT_MODIFIED=NO_KNOWN_BUGGY_PATTERN",
+      "actual_protected_srt_sha256": "14130ab04071e93159b074bbbdd6f7b362661eeaa040e20dec91fa54208aa161",
+      "bfe_immediate": "Already uses width<32 guard",
+      "bfe_dynamic": "Already uses SrtCodegen::EmitLowBitMask",
+      "findilsb": "Actual captured function also implements EmitComputeOffsetFindILsb32",
+      "no_build_log": true,
+      "no_emulator_gameplay_launched": true,
+      "old_source_restored": "All nine original and isolated source checks PASS",
+      "original_binary_preserved": true,
+      "audio_sync_host_tests": "PASS 3 cases",
+      "gpu_callback_host_tests": "PASS 4 cases",
+      "conclusion": "Protected source had earlier SRT arithmetic fixes; do not repeat historical source fixes or classify as build/compiler/game regression."
+    },
+    "2026-10-18_12-47_actual_runtime_srt_errors": {
+      "baseline_log": "gow-gpu-invalidate-timing-20261018-124729.tar.gz /gameplay/full-console.log",
+      "occurrences": {
+        "failed_srt_compute_offset": 41,
+        "sharp_source_not_flattened": 60,
+        "clamped_buffer_descriptor_logs": 598,
+        "compute_set_queue_reg_warnings": 455
+      },
+      "caveat": "Log occurrences show genuine unresolved resource walking/flattening paths, but are not proof that these cause frame slowdown or audio starvation."
     }
   }
 }
