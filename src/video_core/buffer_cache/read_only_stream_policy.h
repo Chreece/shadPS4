@@ -20,7 +20,7 @@ struct ReadOnlyStreamPolicy {
     // or a caller explicitly requesting the original sparse buffer.
     static constexpr bool IsCandidate(std::uint32_t size, bool is_written,
                                       bool ignore_stream, std::uint32_t threshold) noexcept {
-        return size > 0 && size <= threshold && !is_written && !ignore_stream;
+        return size <= threshold && !is_written && !ignore_stream;
     }
 };
 static_assert(ReadOnlyStreamPolicy::Limit(false) == 16u * 1024u);
