@@ -100,8 +100,10 @@ def transform(source: str) -> str:
     # Check the sparse-resident path, readback and every following method are
     # completely identical to the proven original.
     sparse_anchor = "    const u64 first_block = device_addr >> block_shift;"
-    if sparse_anchor not in source or updated.split(sparse_anchor, 1)[1] != source.split(
-            sparse_anchor, 1)[1]:
+    sparse_pos = source.find(sparse_anchor, main_method, following_method)
+    patched_sparse_pos = updated.find(sparse_anchor, updated.find("BufferCache::ObtainBuffer("))
+    if (sparse_pos < 0 or patched_sparse_pos < 0 or
+            updated[patched_sparse_pos:] != source[sparse_pos:]):
         raise ValueError("SPARSE_RESIDENCY_OR_FOLLOWING_METHOD_CHANGED")
     if (updated.count("memory->CopySparseMemory(device_addr, data, size)") !=
         source.count("memory->CopySparseMemory(device_addr, data, size)")):
@@ -129,8 +131,6 @@ def selftest() -> None:
         original = fixture_prefix + condition + fixture_suffix
         patched = transform(original)
         assert "READONLY_STREAM_64K_ACTIVE" in patched
-        assert patched.endswith(original.split(
-            "    const u64 first_block = device_addr >> block_shift;", 1)[1]) is False
         assert patched.split("    const u64 first_block = device_addr >> block_shift;", 1)[1] == \
             original.split("    const u64 first_block = device_addr >> block_shift;", 1)[1]
         assert 'readonly_stream_limit' in patched
