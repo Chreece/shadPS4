@@ -74,6 +74,12 @@
     "UFFD_fault_latency_telemetry": {
       "env": "SHADPS4_UFFD_PERF_PROBE=1",
       "state": "instrumentation only, disabled by default"
+    },
+    "UFFD_gpu_callback_batch": {
+      "env": "SHADPS4_UFFD_CALLBACK_BATCH=1",
+      "proof": "Four callback contract tests passed; 135s gameplay survived; callback queue submits reduced while audio delivery remains <30% of real-time in late cutscene.",
+      "promotion_gate": "Only after same-scene A/B improves guest producer cadence and late gap metrics with audible improvement and no graphics regression.",
+      "default": "off"
     }
   },
   "open_blocker": {
@@ -87,13 +93,16 @@
     "09_36_audio3d_accepted": 3584,
     "09_36_audio3d_queue_full": 0,
     "root_cause_hypothesis": "guest PCM production cadence collapses alongside increased scene/GPU workload; investigate Wwise guest audio thread scheduling and task dependencies, not SDL queue",
-    "caveat": "No causality established from CPU/thread snapshots alone"
+    "caveat": "No causality established from CPU/thread snapshots alone",
+    "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck"
   },
   "workflow": {
     "branch_is_a_pinned_development_checkpoint_not_automatically_production_ready": true,
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
-    "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release."
+    "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
+    "current_trial_branch": "test/gow-audio-uffd-ab-20261018",
+    "next_trial_script": "tools/development/gow_audio_uffd_ab_20261018.py"
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -104,6 +113,29 @@
       "executable_sha256_verified": "8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef",
       "inference": "No new evidence on cutscene audio; game was launched but not observed.",
       "correction": "Wait for Wwise + game/GPU thread readiness; mark zero-Wwise observation invalid; include startup-readiness.json."
+    },
+    "2026-10-18_10-53_uffd_callback_batch_trial": {
+      "archive": "gow-uffd-callback-batch-20261018-105338.tar.gz",
+      "observed_seconds": 135,
+      "candidate_sha256": "96648b14d4aea65cc4ddc16a76f23938914f1b715b08e52342f494127b155c88",
+      "source_and_working_binaries_unchanged": true,
+      "deadlock_reproduced": false,
+      "cpu_faults": 15336109,
+      "uffd_read_calls": 7695568,
+      "average_messages_per_read": 2.005,
+      "gpu_callback_submissions": 4213252,
+      "batched_cpu_faults": 11848263,
+      "max_callback_faults_per_bundle": 8,
+      "latest_ten_5s_audio3d_ready_fraction_median": 0.2979,
+      "latest_ten_5s_main_audio_ready_fraction_median": 0.2979,
+      "guest_audio3d_late_entries": 806,
+      "max_guest_audio3d_gap_ms": 1670.393,
+      "max_sdl_audio3d_gap_ms": 1642.798,
+      "max_backend_output_us": 53,
+      "max_audio_fault_us": 33014,
+      "audio_stutters": "UNRESOLVED",
+      "inference": "Playback starvation originates before SDL; batching reduced callback queue submissions but this test does not establish an audible improvement or its causality.",
+      "next": "Checksum-pinned same-binary A/B: callback batching off/on, read batching and outer audio pacing identical, preserve graphics and collect Wwise scheduler samples."
     }
   }
 }
