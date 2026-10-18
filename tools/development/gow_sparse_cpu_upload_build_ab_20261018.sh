@@ -708,7 +708,7 @@ REGION_REL="src/video_core/buffer_cache/region_manager.h"
   echo "SPARSE_WORD_ITERATOR_ALREADY_EXISTS_NO_OVERWRITE"; exit 1;
 }
 [[ "$(git -C "$ORIGINAL_SRC" hash-object "$REGION_PATCHED")" == \
-   "5dda14a21d070656211aff578f38f4d6fcdd8820" &&
+   "1da1738d9daf7f98adc6c489b4b50bae48e7b61a" &&
    "$(git -C "$ORIGINAL_SRC" hash-object "$SPARSE_HEADER")" == \
    "$SPARSE_HEADER_BLOB" &&
    "$(git -C "$ORIGINAL_SRC" hash-object "$SPARSE_TEST")" == \
