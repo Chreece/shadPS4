@@ -113,6 +113,36 @@ inline void TraceMenuDraw(const AmdGpu::Regs& regs,
                  indexed,indirect,state.num_color_attachments,has_target,
                  state.depth_stencil_attachment.image_view!=vk::ImageView{},
                  is_clear,stat.clear0);
+        // This MUST inspect every MRT: in GoT the real 1920x1080 scene
+        // buffer (0x1504a08000) is sampled by tone mapping but never
+        // appeared as color0 in the prior 1,142-edge graph. CB1..CB7 may
+        // contain the missing producer. These are read-only checks of the
+        // exact submitted pipeline state after BeginRendering.
+        const auto& key=pipeline.GetGraphicsKey();
+        for (u32 cb=0; cb<state.num_color_attachments &&
+                     cb<AmdGpu::NUM_COLOR_BUFFERS; ++cb) {
+            const auto& attachment=state.color_attachments[cb];
+            const bool view=attachment.image_view!=vk::ImageView{};
+            const auto& color=regs.color_buffers[cb];
+            const u64 guest_addr=(view && color) ? color.Address() : 0;
+            const u32 guest_write_mask=regs.color_target_mask.GetMask(cb);
+            const auto vk_mask=static_cast<VkColorComponentFlags>(key.write_masks[cb]);
+            const u32 pipeline_mask=static_cast<u32>(vk_mask);
+            const bool shader_export=(key.mrt_mask & (1u<<cb))!=0;
+            const bool can_write=guest_addr!=0 && shader_export &&
+                pipeline_mask!=0 && guest_write_mask!=0;
+            if (!guest_addr && !shader_export) continue;
+            LOG_INFO(Render_Vulkan,
+                     "GotMenuMrtTargetTrace: mono_ms={} fs={:#x} vs={:#x} "
+                     "attachment={} address={:#x} color0={:#x} "
+                     "sh_export={} guest_write_mask={:#x} vk_write_mask={:#x} "
+                     "can_write={} view={} clear={} clear_word0={:#x} "
+                     "fb={}x{} samples={}",
+                     now,hash,vs_hash,cb,guest_addr,address,shader_export,
+                     guest_write_mask,pipeline_mask,can_write,view,
+                     attachment.is_clear,attachment.clear_value[0],
+                     state.width,state.height,stat.total);
+        }
     }
 
     if (now-last_summary<10000) return;
