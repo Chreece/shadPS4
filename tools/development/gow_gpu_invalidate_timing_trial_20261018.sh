@@ -527,6 +527,19 @@ STAGE=STAGE_OPT_IN_GPU_INVALIDATE_PHASE_PROBE
 [[ -f "$GPU_PATCH" && ! -L "$GPU_PATCH" ]] || {
   echo "GPU_INVALIDATE_PINNED_PATCHER_MISSING"; exit 1;
 }
+# Verify the callback fragment directly against the exact historical renderer
+# used by the graphics-reconstruction helper, before modifying any C++ source.
+# This prevents a previously encountered anchor mismatch from reaching build.
+PINNED_HISTORICAL_RENDERER="$OUT/pinned-uffd-sources/src/video_core/renderer_vulkan/vk_rasterizer.cpp"
+[[ -f "$PINNED_HISTORICAL_RENDERER" ]] || {
+  echo "GPU_INVALIDATE_HISTORICAL_RENDERER_NOT_EXTRACTED"; exit 1;
+}
+python3 -B "$GPU_PATCH" --selftest-historical "$PINNED_HISTORICAL_RENDERER"   > "$OUT/gpu-phase-selftest.log" 2>&1 || {
+    echo "GPU_PHASE_HISTORICAL_CALLBACK_SELFTEST_FAILED"
+    cat "$OUT/gpu-phase-selftest.log"
+    exit 1
+  }
+cat "$OUT/gpu-phase-selftest.log"
 RENDERER_REL="src/video_core/renderer_vulkan/vk_rasterizer.cpp"
 printf '%s  %s\n' "bde3553d3c495fff2f34f177982a8f19e7a71542981d5c5194e8032e78328d0a" "$SRC/$RENDERER_REL" |
   sha256sum -c - > "$OUT/gpu-probe-exact-renderer-preimage-check.txt" || {
