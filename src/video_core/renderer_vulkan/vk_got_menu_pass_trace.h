@@ -113,6 +113,33 @@ inline void TraceMenuDraw(const AmdGpu::Regs& regs,
                  indexed,indirect,state.num_color_attachments,has_target,
                  state.depth_stencil_attachment.image_view!=vk::ImageView{},
                  is_clear,stat.clear0);
+        // The R32_FLOAT 1920x1080 source sampled by GoT's menu may be
+        // a depth surface, not a color MRT. Log the guest depth allocation
+        // and hardware writes for the *same submitted draw* as the MRTs.
+        // Do not infer that "no MRT writer" means "image uninitialised".
+        const auto& depth=state.depth_stencil_attachment;
+        const bool depth_view=depth.image_view!=vk::ImageView{};
+        const auto& db=regs.depth_buffer;
+        const bool depth_valid=db.DepthValid();
+        if (depth_view || depth_valid) {
+            LOG_INFO(Render_Vulkan,
+                     "GotMenuDepthTargetTrace: mono_ms={} fs={:#x} vs={:#x} "
+                     "depth_address={:#x} depth_write_address={:#x} "
+                     "depth_view={} depth_valid={} depth_enable={} "
+                     "depth_write={} depth_clear={} depth_clear_raw={:#x} "
+                     "zformat={} samples={} color0={:#x} indices={}",
+                     now,hash,vs_hash,
+                     depth_valid ? db.DepthAddress() : 0u,
+                     depth_valid ? db.DepthWriteAddress() : 0u,
+                     depth_view,depth_valid,
+                     regs.depth_control.depth_enable,
+                     regs.depth_control.depth_write_enable,
+                     depth_view && depth.depth_clear,
+                     depth_view ? depth.clear_value[0] : 0u,
+                     static_cast<u32>(db.z_info.format),
+                     depth_valid ? db.NumSamples() : 0u,
+                     address,regs.num_indices);
+        }
         // This MUST inspect every MRT: in GoT the real 1920x1080 scene
         // buffer (0x1504a08000) is sampled by tone mapping but never
         // appeared as color0 in the prior 1,142-edge graph. CB1..CB7 may
