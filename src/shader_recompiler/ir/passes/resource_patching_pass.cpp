@@ -1324,7 +1324,7 @@ static bool AllStridedGuestImagesRepresentable(
         }
         if (!eligible) ++invalid;
     }
-    return invalid == 0u;
+    return CompleteStridedGuestShader(sources,invalid);
 }
 
 void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resources,
