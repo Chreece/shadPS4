@@ -266,8 +266,9 @@ def main() -> int:
 
     a.out.mkdir(exist_ok=False, parents=True)
     report = {"binary_sha256": a.sha256, "max_seconds_per_mode": a.seconds,
-              "automation": "X11 verified PID -> selected Continue -> Cross -> hold forward -> wolf scene candidate -> 95s capture",
-              "do_not_compare_arbitrary_elapsed_frames": True,
+              "automation": "X11 verified PID -> Continue Cross -> forward+right -> cutscene candidate -> 95s log-only",
+              "no_image_comparison": True,
+              "no_scene_matched_perf_claim": True,
               "tested_flags": ["SHADPS4_GOW_BIG_BUFFER_PROBE=1;SHADPS4_SPARSE_CPU_UPLOAD_WORDS=0",
                                "SHADPS4_GOW_BIG_BUFFER_PROBE=1;SHADPS4_SPARSE_CPU_UPLOAD_WORDS=1"],
               "modes": {}}
@@ -379,17 +380,20 @@ def main() -> int:
         stage = result["auto_input"]
         print(f"AUTO_STAGE={label} MENU={stage.get('menu_seen_at')} "
               f"CONTINUE={stage.get('cross_at')} FORWARD={stage.get('forward_at')} "
-              f"APPROACH={stage.get('approach_at')} CUTSCENE={stage.get('cutscene_at')} "
+              f"RIGHT={stage.get('right_at')} APPROACH={stage.get('approach_at')} "
+              f"CANDIDATE={stage.get('cutscene_at')} "
               f"SUCCESS={stage.get('success')} EXIT={autopilot_exit}", flush=True)
         result["early_exit"] = not (autopilot_exit == 0 and stage.get("success", False))
         result["scene_alignment"] = {
-            "candidate_seen": stage.get("cutscene_at") is not None,
-            "requires_posthoc_visual_frame_matching": True,
+            "navigation_heuristic_candidate_seen": stage.get("cutscene_at") is not None,
+            "forward_right_steering_started": stage.get("right_at") is not None,
             "scene_equivalence_proven": False,
-            "anchor": "cutscene-candidate.png and cutscene-plus-*.png",
+            "performance_basis": "console FPS, Audio3D and buffer-sync counters only",
+            "image_capture_and_image_comparison": "disabled",
+            "manual_controller_interference_not_deterministically_excluded": True,
         }
         result["valid"] = (not result["early_exit"] and
-                           stage.get("approach_at") is not None and
+                           stage.get("right_at") is not None and
                            stage.get("menu_seen_at") is not None and
                            len(result["flip_windows"]) >= 12 and
                            len(result["audio_windows"]) >= 12 and
@@ -403,8 +407,8 @@ def main() -> int:
               f"SYNC_RECORDS={len(result['large_buffer_sync_samples'])}", flush=True)
         if not result["valid"]:
             raise RuntimeError(f"INVALID_AUTOMATED_SCENE_OBSERVATION_{label}__CHECK_AUTO_INPUT_LOG")
-        print(f"AUTOMATED_GAMEPLAY_AT_SAME_STAGE={label}; "
-              "FRAMES_PENDING_CONTENT_MATCH_NOT_TIME_BASED", flush=True)
+        print(f"AUTOMATED_CONTROL_PATH_COMPLETED={label}; "
+              "NO_SCENE_EQUIVALENCE_OR_IMAGE_COMPARISON_CLAIM", flush=True)
         return result
 
     try:
@@ -510,13 +514,15 @@ def main() -> int:
             "menu_continue_automated_both": all(
                 mode["auto_input"].get("cross_at") is not None
                 for mode in (legacy, sparse)),
-            "forward_automated_both": all(
-                mode["auto_input"].get("forward_at") is not None
+            "forward_right_automated_both": all(
+                mode["auto_input"].get("forward_at") is not None and
+                mode["auto_input"].get("right_at") is not None
                 for mode in (legacy, sparse)),
             "wolf_scene_candidates_both": all(
                 mode["auto_input"].get("cutscene_at") is not None
                 for mode in (legacy, sparse)),
-            "requires_visual_frame_validation": True,
+            "image_comparison": "disabled",
+            "scene_equivalence_proven": False,
             "do_not_infer_a_scene_aligned_win_from_late_metrics_alone": True,
         }
         left, right = legacy["buffer_cost"], sparse["buffer_cost"]
@@ -536,9 +542,9 @@ def main() -> int:
             "dense_late_audio_delivery": legacy["late_audio_fraction_avg"],
             "sparse_late_audio_delivery": sparse["late_audio_fraction_avg"],
             "validated_improvement": False,
-            "note": ("This run alone cannot promote an optimization. Compare "
-                     "scene-aligned screen captures and dirty bytes/ranges, "
-                     "then require repeatable CPU timing improvement."),
+            "note": ("Navigation candidate is not proof of scene equality. "
+                     "Use log-only CPU time per sync and repeated controlled workloads; "
+                     "never compare screenshot images or elapsed-from-launch frames."),
         }
         report["fix_note"] = ("Sparse word traversal uses existing CPU dirty "
                               "summary bits; watcher masks, guest uploads, "
@@ -613,7 +619,8 @@ def main() -> int:
                              report.get("ollama_models_restored", False) and
                              report["protected_graphics_sha256_unchanged"] and
                              report["experimental_binary_sha256_unchanged"] and
-                             report.get("scene_compare", {}).get("wolf_scene_candidates_both", False))
+                             report.get("scene_compare", {}).get("wolf_scene_candidates_both", False) and
+                             report.get("scene_compare", {}).get("forward_right_automated_both", False))
         atomic_json(a.out / "report.json", report)
         archive = a.out.parent / f"{a.out.name}.tar.gz"
         with tarfile.open(archive, "w:gz") as tf:
