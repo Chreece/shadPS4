@@ -29,6 +29,19 @@ inline bool MenuPassTraceEnabled() {
     return enabled;
 }
 
+// A single exact guest VA from the previous full render graph. This is
+// diagnostic metadata only; never dereference or update the address.
+inline u64 WatchedMenuSourceAddress() {
+    static const u64 address=[] {
+        const char* const env=std::getenv("SHADPS4_MENU_WATCH_SOURCE");
+        if (!env || !env[0] || env[0]=='-') return u64{0};
+        char* end{};
+        const auto parsed=std::strtoull(env,&end,0);
+        return (end && *end=='\\0') ? static_cast<u64>(parsed) : u64{0};
+    }();
+    return address;
+}
+
 inline u64 MenuPassNowMs() {
     using namespace std::chrono;
     return static_cast<u64>(duration_cast<milliseconds>(
