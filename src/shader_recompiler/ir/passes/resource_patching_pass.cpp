@@ -1298,31 +1298,92 @@ void PatchImageArgs(IR::Inst& inst, Info& info) {
 // when the complete set of strided image sources is representable from the
 // immutable per-program flattened user data. This is independent of any
 // game or shader hash and never fabricates a missing guest V# descriptor.
+// Shader variant discovery may legitimately fail to resolve a strided V#.
+// Capture the exact reason once per compiled permutation without guessing
+// texture IDs, dereferencing guest pointers or changing Vulkan resources.
+static bool StridedSourceProofEnabled(const Shader::Info& info) {
+    static const bool enabled=[] {
+        const char* const flag=std::getenv("SHADPS4_STRIDED_SOURCE_PROOF");
+        return flag && flag[0]=='1' && flag[1]=='\0';
+    }();
+    static const auto filter=VideoCore::Diagnostics::ParseShaderAuditHashFilter(
+        std::getenv("SHADPS4_STRIDED_SOURCE_PROOF_HASHES"));
+    return enabled && (!filter.enabled || (filter.valid && filter.Matches(info.pgm_hash)));
+}
+
 static bool AllStridedGuestImagesRepresentable(
     const Shader::Info& info, const ResourceDiscoveryList& resources,
     const Profile& profile, u32& sources, u32& invalid) {
-    sources = 0;
-    invalid = 0;
-    if (info.hw_stage != HwStage::Compute) return true;
+    sources=0;
+    invalid=0;
+    if (info.hw_stage!=HwStage::Compute) return true;
+
+    const bool probe=StridedSourceProofEnabled(info);
     for (const auto& usage : resources) {
-        if (!usage.has_indexed_table || usage.indexed_record_stride_bytes == 0u)
+        if (!usage.has_indexed_table || usage.indexed_record_stride_bytes==0u)
             continue;
         ++sources;
         const auto table_fetch=ConstructSharpFetch<AmdGpu::Buffer>(
             usage.indexed_table_sharp,info);
         AmdGpu::Buffer table{};
-        bool eligible = false;
-        if (table_fetch.Fetch(info.flattened_ud_buf.data(),&table) &&
-            table.Valid() && table.base_address) {
-            const u32 entries=CompleteGuestTsharpRecordEntries(
+        const bool fetched=table_fetch.Fetch(info.flattened_ud_buf.data(),&table);
+        const bool valid=fetched && table.Valid();
+        const bool has_base=valid && table.base_address!=0;
+        const u32 entries=has_base
+            ? CompleteGuestTsharpRecordEntries(
                 static_cast<u32>(table.stride),
                 static_cast<u32>(table.num_records),
                 usage.indexed_record_stride_bytes,
                 usage.indexed_descriptor_offset_bytes,
-                profile.max_guest_indexed_image_entries);
-            eligible = entries != 0u;
-        }
+                profile.max_guest_indexed_image_entries)
+            : 0u;
+        const bool eligible=entries!=0u;
         if (!eligible) ++invalid;
+
+        if (probe) {
+            const auto reason=!fetched ? "UNFLATTENED_DESCRIPTOR_SOURCE"
+                : !valid ? "INVALID_BUFFER_DESCRIPTOR"
+                : !has_base ? "ZERO_BASE_ADDRESS"
+                : table.num_records==0u ? "ZERO_RECORD_COUNT"
+                : !eligible ? "UNREPRESENTABLE_TABLE_LENGTH"
+                : "PROVEN_COMPLETE";
+            const auto& source=usage.indexed_table_sharp;
+            const u32 missing=MissingSharpWordMask(source,table_fetch);
+            // Raw values are descriptor words, never a guest-memory read.
+            LOG_INFO(Render_Recompiler,
+                     "GuestStridedSourceProof: shader={:#x} stage={} source={} "
+                     "result={} reason={} fetched={} fetch_summary={} "
+                     "descriptor_words={} missing_mask={:#x} load_mask={:#x} "
+                     "flat_offsets={},{},{},{} "
+                     "immediate_words={:#x},{:#x},{:#x},{:#x} "
+                     "raw_base={:#x} raw_stride={} raw_records={} "
+                     "record_stride={} image_offset={} sampler_offset={} "
+                     "entries={} profile_limit={}",
+                     info.pgm_hash,info.hw_stage,sources,
+                     eligible,reason,fetched,static_cast<u32>(table_fetch.summary),
+                     source.num_dwords,missing,static_cast<u32>(table_fetch.load_mask),
+                     static_cast<u32>(table_fetch.offsets[0]),
+                     static_cast<u32>(table_fetch.offsets[1]),
+                     static_cast<u32>(table_fetch.offsets[2]),
+                     static_cast<u32>(table_fetch.offsets[3]),
+                     table_fetch.immediates[0],table_fetch.immediates[1],
+                     table_fetch.immediates[2],table_fetch.immediates[3],
+                     static_cast<u64>(table.base_address),
+                     static_cast<u32>(table.stride),
+                     static_cast<u32>(table.num_records),
+                     usage.indexed_record_stride_bytes,
+                     usage.indexed_descriptor_offset_bytes,
+                     usage.indexed_sampler_offset_bytes,
+                     entries,profile.max_guest_indexed_image_entries);
+        }
+    }
+    if (probe) {
+        LOG_INFO(Render_Recompiler,
+                 "GuestStridedPermutationProof: shader={:#x} stage={} "
+                 "sources={} missing={} complete={} action={}",
+                 info.pgm_hash,info.hw_stage,sources,invalid,
+                 CompleteStridedGuestShader(sources,invalid),
+                 invalid==0u?"INDEXED_ELIGIBLE":"ORIGINAL_RESOURCE_FALLBACK");
     }
     return CompleteStridedGuestShader(sources,invalid);
 }
