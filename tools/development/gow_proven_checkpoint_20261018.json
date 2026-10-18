@@ -95,7 +95,7 @@
     },
     "GPU_invalidation_phase_profile": {
       "feature": "SHADPS4_GPU_INVALIDATE_PROBE=1",
-      "status": "PREVIOUS_TEST_PRELAUNCH_FAILED; EXACT_PINNED_CALLBACK_ANCHOR_CORRECTED; HISTORICAL_SELFTEST_ADDED; HOST_COMPILATION_PENDING",
+      "status": "COMPILED_AND_135S_OBSERVED; READ_ONLY_DIAGNOSTIC; NO_PERFORMANCE_FIX_IDENTIFIED",
       "sample_rate": "1 per 256 queued CPU fault GPU invalidations",
       "measures": "queue wait time before GPU task starts; InvalidateMemory execution time; post-invalidation callback+UFFDIO_WAKE completion time, aligned to FPS/audio/UFFD five-second windows",
       "preserves": "All source-preimage checks, shader/renderer fixes, default invalidation and wakeup semantics",
@@ -115,7 +115,7 @@
     "root_cause_hypothesis": "guest PCM production cadence collapses alongside increased scene/GPU workload; investigate Wwise guest audio thread scheduling and task dependencies, not SDL queue",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Run GPU queue/invalidation/wake phase sample and choose targeted general native memory optimization without hiding stutters. Graphics still second phase.",
+    "next": "Test exact 12:47 binary with Ollama backend truly unloaded to isolate VRAM contention; if FPS/audio recover, diagnose memory-pressure path before modifying CPU/GPU coherence.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -124,14 +124,19 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "test/gow-gpu-invalidate-timing-20261018",
+    "current_trial_branch": "test/gow-ollama-vram-isolation-20261018",
     "next_trial_script": "tools/development/gow_gpu_invalidate_timing_trial_20261018.sh",
-    "next_trial_launcher": "tools/development/gow_gpu_invalidate_timing_launcher_20261018.sh",
+    "next_trial_launcher": "tools/development/gow_ollama_vram_launcher_20261018.sh",
     "expected_capture_archive_prefix": "gow-gpu-invalidate-timing-",
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
     "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
     "target": "Linux UFFD CPU/GPU page-coherence performance, not SDL audio buffer workaround",
-    "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix."
+    "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix.",
+    "experiment_type": "SAME_BINARY_WITH_OLLAMA_VRAM_UNLOADED",
+    "pinned_reference_binary_sha256": "63a00275b2f78ba58ef35577af0bf0b1681ac245a7e1636de1673cb4f65275ce",
+    "archive_prefix": "gow-ollama-vram-",
+    "ollama_safety": "Snapshot loaded model(s) from http://127.0.0.1:7869; stop only backend container bound to 7869 when safely identified (not OpenWebUI); fallback API unload with contamination logging. Confirm VRAM reclaimed, run GoW 135s, exit test's own game, restart backend, reload prior models at measured context. No sudo, SSH kept open.",
+    "baseline_limitation": "Previous 12:47 game run did not snapshot whether Ollama was loaded; only compare game scene and metrics, do not attribute VRAM causality without before-and-after proof."
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -291,6 +296,42 @@
       "main_app_or_host_modified": false,
       "live_game_started": false,
       "next_steps": "Correct exact callback fragment and run an explicit historical-source selftest prior to any isolated compilation; do not call this a gameplay or audio regression."
+    },
+    "2026-10-18_12-47_gpu_invalidation_phase_capture": {
+      "archive": "gow-gpu-invalidate-timing-20261018-124729.tar.gz",
+      "build": "PASS",
+      "observation_seconds": 135,
+      "gameplay_launched": true,
+      "game_alive_at_end": true,
+      "note": "Previous observer left game alive deliberately; next VRAM test will terminate its own game before restoring Ollama.",
+      "tested_binary_sha256": "63a00275b2f78ba58ef35577af0bf0b1681ac245a7e1636de1673cb4f65275ce",
+      "graphics_protected_unchanged": true,
+      "source_restored": true,
+      "gpu_invalidate_phase": {
+        "samples": 63561,
+        "five_second_windows": 24,
+        "gpu_queue_avg_us_excluding_early_initialization": 12.6,
+        "gpu_queue_median_window_mean_us": 12,
+        "gpu_queue_latency_over_21ms_samples": 1,
+        "queue_max_startup_us": 398597,
+        "max_invalidation_us": 7466,
+        "max_completion_callback_us": 1446,
+        "inference": "Neither average callback GPU queue latency nor invalidation/completion processing show a sustained increase matching the late cutscene FPS/audio collapse. Do not optimize this path without new causal evidence."
+      },
+      "uffd_cpu_faults": 16819482,
+      "game_main_cpu_faults": 3400752,
+      "audio_cpu_faults": 129818,
+      "output": {
+        "audio_producer_ready": 9811,
+        "audio_producer_missing": 7112,
+        "audio_guest_max_gap_us": 2651308,
+        "audio_out_backend_over_period": 0,
+        "output_sdl_late_gaps": 500,
+        "game_fps_early": "roughly 25–30",
+        "game_fps_late": "roughly 14–19",
+        "late_audio3d_delivery": "falls below 50% after game slowdown",
+        "audio_status": "UNRESOLVED_STUTTER"
+      }
     }
   }
 }
