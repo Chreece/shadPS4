@@ -25,6 +25,7 @@
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_got_menu_pass_trace.h"
 #include "video_core/renderer_vulkan/vk_got_scene_depth_ab.h"
+#include "video_core/renderer_vulkan/vk_got_scene_gpu_queries.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -377,6 +378,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     pipeline->BindResources(set_writes, push_data);
     UpdateDynamicState(pipeline, is_indexed);
+    const auto scene_gpu_query=Diagnostics::PrepareGotSceneGpuQuery(
+        instance,scheduler,regs,*pipeline,is_indexed,false);
     scheduler.BeginRendering(state);
 
     const auto& vs_info = pipeline->GetStage(Shader::SwStage::Vertex);
@@ -385,6 +388,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
+    Diagnostics::BeginGotSceneGpuQuery(cmdbuf,scene_gpu_query);
 
     if (is_indexed) {
         cmdbuf.drawIndexed(regs.num_indices, regs.num_instances.NumInstances(), 0,
@@ -394,6 +398,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
                     instance_offset);
     }
     DebugState.IncDrawCall();
+    Diagnostics::EndGotSceneGpuQuery(scheduler,cmdbuf,std::move(scene_gpu_query));
     CountSubmittedDraw(regs, state, is_indexed, false);
     Diagnostics::TraceMenuDraw(regs, *pipeline, state, is_indexed, false);
 
@@ -462,10 +467,13 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
     pipeline->BindResources(set_writes, push_data);
     UpdateDynamicState(pipeline, is_indexed);
+    const auto scene_gpu_query=Diagnostics::PrepareGotSceneGpuQuery(
+        instance,scheduler,liverpool->regs,*pipeline,is_indexed,true);
     scheduler.BeginRendering(state);
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
+    Diagnostics::BeginGotSceneGpuQuery(cmdbuf,scene_gpu_query);
 
     if (is_indexed) {
         ASSERT(sizeof(VkDrawIndexedIndirectCommand) == stride);
@@ -489,6 +497,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         DebugState.IncDrawCall();
     }
 
+    Diagnostics::EndGotSceneGpuQuery(scheduler,cmdbuf,std::move(scene_gpu_query));
     CountSubmittedDraw(liverpool->regs, state, is_indexed, true);
     Diagnostics::TraceMenuDraw(liverpool->regs, *pipeline, state, is_indexed, true);
     ResetBindings(false);
