@@ -229,8 +229,9 @@ def main() -> None:
     if git(repo, "diff", "--name-only", "--diff-filter=U").strip():
         raise RuntimeError("Unresolved files remain")
     subprocess.run(["git", "-C", str(repo), "commit", "--no-edit"], check=True)
-    if git(repo, "rev-parse", "--verify", "MERGE_HEAD").strip():
-        raise RuntimeError("Unexpected MERGE_HEAD after commit")
+    parents = git(repo, "rev-list", "--parents", "-n", "1", "HEAD").split()
+    if len(parents) != 3 or parents[1:] != [UPSTREAM_SHA, FORK_MAIN_SHA]:
+        raise RuntimeError(f"Unexpected merge parents after resolution: {parents}")
 
 
 if __name__ == "__main__":
