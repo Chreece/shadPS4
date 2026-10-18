@@ -760,6 +760,61 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     return image_id;
 }
 
+// Diagnostic lookup never touches image residency or creates a replacement.
+// Unlike FindImageFromRange(address, width*height*bpp), this does not reject
+// valid tiled images because their padded guest_size differs from the
+// tightly packed transfer size. Require a genuinely GPU-valid backing.
+ImageId TextureCache::FindGpuImageForStageProbe(
+    VAddr address, vk::Format format, u32 width, u32 height) {
+    static const bool enabled=[] {
+        const char* v=std::getenv("SHADPS4_GOT_MENU_STAGE_PIXELS");
+        return v && v[0]=='1' && v[1]=='\0';
+    }();
+    if (!enabled || !address || width==0 || height==0) return {};
+
+    ImageId best{};
+    u64 newest_tick{};
+    u32 candidates=0;
+    u32 valid_candidates=0;
+    ForEachImageWithAddress(address, [&](ImageId id, Image& image) {
+        if (image.info.guest_address != address) return;
+        ++candidates;
+        const auto& info=image.info;
+        const bool valid=image.HasGpuValidData();
+        const bool shape=info.size.width==width && info.size.height==height &&
+                         info.num_samples==1;
+        const bool matches=format==vk::Format::eUndefined ||
+                           info.pixel_format==format;
+        const bool modified=True(image.flags & ImageFlagBits::GpuModified);
+        const bool dirty=True(image.flags & ImageFlagBits::Dirty);
+        if (valid) ++valid_candidates;
+        if (candidates<=12) {
+            LOG_INFO(Render_Vulkan,
+                     "GotMenuStageCacheCandidate: guest={:#x} candidate={} "
+                     "cached_format={} expected_format={} cached={}x{} "
+                     "padded_guest_bytes={} samples={} gpu_modified={} "
+                     "dirty={} gpu_valid={} shape_match={} format_match={} "
+                     "last_tick={}",
+                     address,candidates,vk::to_string(info.pixel_format),
+                     vk::to_string(format),info.size.width,info.size.height,
+                     info.guest_size,info.num_samples,modified,dirty,valid,
+                     shape,matches,image.tick_accessed_last);
+        }
+        if (valid && shape && matches &&
+            (!best || image.tick_accessed_last > newest_tick)) {
+            best=id;
+            newest_tick=image.tick_accessed_last;
+        }
+    });
+    LOG_INFO(Render_Vulkan,
+             "GotMenuStageCacheLookup: guest={:#x} candidates={} "
+             "gpu_valid_candidates={} selected={} expected_fmt={} "
+             "extent={}x{}",
+             address,candidates,valid_candidates,static_cast<bool>(best),
+             vk::to_string(format),width,height);
+    return best;
+}
+
 ImageId TextureCache::FindImageFromRange(VAddr address, size_t size, bool ensure_valid) {
     SmallVector<ImageId, 4> image_ids;
     ForEachImageWithAddress(address, [&](ImageId image_id, Image& image) {
