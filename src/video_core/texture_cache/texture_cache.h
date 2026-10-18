@@ -179,6 +179,18 @@ public:
                                          AmdGpu::BorderColorBuffer border_color_base,
                                          bool is_depth, bool is_integer);
 
+    // Validate a cached binding without touching an expired slot or
+    // accidentally accepting an ID recycled for an unrelated Vulkan image.
+    // Used by the opt-in indexed guest-table binding cache.
+    [[nodiscard]] bool IsImageUidAlive(ImageId id, u64 expected_uid) const noexcept {
+        if (!id || !slot_images.IsAllocated(id)) {
+            return false;
+        }
+        const Image& image = slot_images[id];
+        return image.image_uid == expected_uid &&
+               True(image.flags & ImageFlagBits::Registered);
+    }
+
     /// Retrieves the image with the specified id.
     [[nodiscard]] Image& GetImage(ImageId id) {
         auto& image = slot_images[id];
