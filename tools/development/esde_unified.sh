@@ -16,7 +16,20 @@ mkdir -p "$ESDE" "$LOGS" "$SCRIPTS"
 exec 9>"$ESDE/.unified-build.lock"
 flock -n 9 || { echo 'An ES-DE unified build is already running.' >&2; exit 2; }
 STAMP="$(date +%Y%m%d-%H%M%S)"
+MODE="fresh"
 RUN="$ESDE/unified-$STAMP"
+if [[ "${1:-}" == "resume" ]]; then
+  test "$#" -eq 2 || { echo 'Usage: esde_unified.sh resume /full/path/to/project/ESDE/unified-YYYYMMDD-HHMMSS'; exit 2; }
+  MODE="resume"
+  RUN="$2"
+  # No traversal outside project, no symlink impersonation.
+  [[ "$RUN" == "$ESDE"/unified-????????-?????? ]] && [[ -d "$RUN/source/.git" ]] &&
+    [[ "$(realpath -e "$RUN")" == "$RUN" ]] ||
+    { echo 'Refusing unexpected resume workspace' >&2; exit 2; }
+elif [[ "$#" -ne 0 ]]; then
+  echo 'Usage: esde_unified.sh [resume /absolute/path/to/unified-workspace]' >&2
+  exit 2
+fi
 SRC="$RUN/source"
 BUILD="$RUN/build"
 LOG="$LOGS/esde-unified-$STAMP.log"
@@ -33,32 +46,52 @@ test "$(uname -m)" = x86_64
 for tool in git python3 sha256sum ldd flock timeout; do
   command -v "$tool" >/dev/null || { echo "Missing tool: $tool"; exit 2; }
 done
-echo STAGE=FETCH_PINNED_REVISIONS
-git -c http.version=HTTP/1.1 clone --no-checkout https://github.com/shadps4-emu/shadPS4.git "$SRC"
-git -C "$SRC" remote add fork https://github.com/Chreece/shadPS4.git
-git -C "$SRC" fetch --no-tags fork \
-  '+refs/heads/main:refs/remotes/fork/main' \
-  '+refs/heads/fix/startup-loading-screen-20261005:refs/remotes/fork/fix/startup-loading-screen-20261005' \
-  '+refs/heads/fix/vulkan11-uniform-storage-16bit:refs/remotes/fork/fix/vulkan11-uniform-storage-16bit'
-test "$(git -C "$SRC" rev-parse origin/main)" = "$UPSTREAM_SHA" ||
-  { echo 'UPSTREAM_MAIN_CHANGED: pin requires re-audit'; exit 3; }
-test "$(git -C "$SRC" rev-parse fork/main)" = "$FORK_SHA"
-test "$(git -C "$SRC" rev-parse fork/fix/startup-loading-screen-20261005)" = "$LOADING_SHA"
-test "$(git -C "$SRC" rev-parse fork/fix/vulkan11-uniform-storage-16bit)" = "$VK16_SHA"
-git -C "$SRC" checkout -b esde-unified "$UPSTREAM_SHA"
-git -C "$SRC" config user.name 'ES-DE integration builder'
-git -C "$SRC" config user.email 'esde-build@users.noreply.github.com'
-echo STAGE=MERGE_FORK_ACCEPTED_MAIN
-if ! git -C "$SRC" merge --no-edit --no-ff fork/main; then
-  echo STAGE=RECONCILE_FOUR_PINNED_MAIN_CONFLICTS
-  test -f "$SCRIPTS/esde_resolve_main_conflicts.py" ||
-    { echo 'Missing SHA-pinned merger in project scripts; default untouched.' >&2; exit 3; }
-  python3 "$SCRIPTS/esde_resolve_main_conflicts.py" "$SRC"
+if [[ "$MODE" == "fresh" ]]; then
+  echo STAGE=FETCH_PINNED_REVISIONS
+  git -c http.version=HTTP/1.1 clone --no-checkout https://github.com/shadps4-emu/shadPS4.git "$SRC"
+  git -C "$SRC" remote add fork https://github.com/Chreece/shadPS4.git
+  git -C "$SRC" fetch --no-tags fork \
+    '+refs/heads/main:refs/remotes/fork/main' \
+    '+refs/heads/fix/startup-loading-screen-20261005:refs/remotes/fork/fix/startup-loading-screen-20261005' \
+    '+refs/heads/fix/vulkan11-uniform-storage-16bit:refs/remotes/fork/fix/vulkan11-uniform-storage-16bit'
+  test "$(git -C "$SRC" rev-parse origin/main)" = "$UPSTREAM_SHA" ||
+    { echo 'UPSTREAM_MAIN_CHANGED: pinned revision must be re-audited'; exit 3; }
+  test "$(git -C "$SRC" rev-parse fork/main)" = "$FORK_SHA"
+  test "$(git -C "$SRC" rev-parse fork/fix/startup-loading-screen-20261005)" = "$LOADING_SHA"
+  test "$(git -C "$SRC" rev-parse fork/fix/vulkan11-uniform-storage-16bit)" = "$VK16_SHA"
+  git -C "$SRC" checkout -b esde-unified "$UPSTREAM_SHA"
+  git -C "$SRC" config user.name 'ES-DE integration builder'
+  git -C "$SRC" config user.email 'esde-build@users.noreply.github.com'
+  echo STAGE=MERGE_FORK_ACCEPTED_MAIN
+  if ! git -C "$SRC" merge --no-edit --no-ff fork/main; then
+    echo STAGE=RECONCILE_FOUR_PINNED_MAIN_CONFLICTS
+    test -f "$SCRIPTS/esde_resolve_main_conflicts.py" ||
+      { echo 'Missing pinned main resolver; default untouched' >&2; exit 3; }
+    python3 "$SCRIPTS/esde_resolve_main_conflicts.py" "$SRC"
+  fi
+else
+  echo STAGE=RESUME_PINNED_GUI_CONFLICT
+  test "$(git -C "$SRC" rev-parse origin/main)" = "$UPSTREAM_SHA"
+  test "$(git -C "$SRC" rev-parse fork/main)" = "$FORK_SHA"
+  test "$(git -C "$SRC" rev-parse fork/fix/startup-loading-screen-20261005)" = "$LOADING_SHA"
+  test "$(git -C "$SRC" rev-parse fork/fix/vulkan11-uniform-storage-16bit)" = "$VK16_SHA"
+  test "$(git -C "$SRC" rev-parse MERGE_HEAD)" = "$LOADING_SHA"
 fi
-echo STAGE=MERGE_LOADING_GUI
-git -C "$SRC" merge --no-edit --no-ff fork/fix/startup-loading-screen-20261005
+
+if [[ "$MODE" == "resume" ]]; then
+  python3 "$SCRIPTS/esde_resolve_feature_conflicts.py" loading "$SRC"
+else
+  echo STAGE=MERGE_LOADING_GUI
+  if ! git -C "$SRC" merge --no-edit --no-ff fork/fix/startup-loading-screen-20261005; then
+    echo STAGE=RECONCILE_PINNED_LOADING_GUI
+    python3 "$SCRIPTS/esde_resolve_feature_conflicts.py" loading "$SRC"
+  fi
+fi
 echo STAGE=MERGE_VULKAN_FEATURE
-git -C "$SRC" merge --no-edit --no-ff fork/fix/vulkan11-uniform-storage-16bit
+if ! git -C "$SRC" merge --no-edit --no-ff fork/fix/vulkan11-uniform-storage-16bit; then
+  echo STAGE=RECONCILE_PINNED_VULKAN_FEATURE
+  python3 "$SCRIPTS/esde_resolve_feature_conflicts.py" vulkan "$SRC"
+fi
 echo STAGE=PROVENANCE_CHECK
 test -f "$SRC/src/core/devtools/quit_dialog.h"
 grep -q SDL_GAMEPAD_BUTTON_GUIDE "$SRC/src/core/devtools/quit_dialog.h"
