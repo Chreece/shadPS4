@@ -104,6 +104,67 @@
       "executable_sha256_verified": "8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef",
       "inference": "No new evidence on cutscene audio; game was launched but not observed.",
       "correction": "Wait for Wwise + game/GPU thread readiness; mark zero-Wwise observation invalid; include startup-readiness.json."
+    },
+    "2026-10-18_10-18_wwise_scheduler_capture": {
+      "archive": "gow-guest-audio-wake-20261018-101850.tar.gz",
+      "capture_status": "VALID_AUDIO_CAPTURE",
+      "pinned_proven_executable_sha256": "8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef",
+      "observation_seconds": 135.15,
+      "thread_samples": 7487,
+      "wwise": {
+        "observed_samples": 535,
+        "sleeping_futex_samples": 535,
+        "total_cpu_ms": 102,
+        "total_runqueue_wait_ms": 36,
+        "qualification": "Wwise mostly waits on futex; a specific wakeup owner/dependency is not yet established."
+      },
+      "gpu_command_processor": {
+        "total_cpu_seconds": 117.977,
+        "total_runqueue_wait_seconds": 0.958
+      },
+      "kernel_uffd_thread": {
+        "total_cpu_seconds": 23.133,
+        "total_runqueue_wait_seconds": 0.167
+      },
+      "guest_main": {
+        "cpu_ms_first_thirty_to_fortyfive_seconds": 10102.61,
+        "cpu_ms_last_hundredfive_to_hundredtwenty_seconds": 3742.61,
+        "qualification": "Scene complexity differs; not a scene-matched benchmark."
+      },
+      "audio": {
+        "main_ready_buffers_last_ten_five_sec_windows": [
+          93,
+          84,
+          90,
+          93,
+          88,
+          89,
+          93,
+          85,
+          105,
+          92
+        ],
+        "audio3d_ready_buffers_last_ten_five_sec_windows": [
+          93,
+          83,
+          91,
+          92,
+          89,
+          89,
+          93,
+          85,
+          105,
+          92
+        ],
+        "expected_per_five_seconds_at_48khz_1024_frames": 234.375,
+        "state": "STUTTER_STILL_PRESENT"
+      },
+      "conclusion": "Not evidence of Linux runnable-queue starvation; host Wwise sleeps waiting on futex. Investigate guest dependence and GPU/UFFD work before changing audio backend.",
+      "next_opt_in_trial": {
+        "branch": "test/gow-uffd-callback-batch-20261018",
+        "flag": "SHADPS4_UFFD_CALLBACK_BATCH=1",
+        "purpose": "Reduce one-GPU-command-per-page overhead while preserving per-page invalidation and wakeup; DO NOT promote without FPS/graphics/audio evidence."
+      }
     }
   }
 }
