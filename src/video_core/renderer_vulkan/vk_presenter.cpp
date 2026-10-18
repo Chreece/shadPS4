@@ -761,8 +761,8 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     // Single read-only, opt-in GPU readback at 30 seconds of the exact
     // scene/depth/blur/composed buffers, BEFORE host FSR or swapchain effects.
     // No shader overrides or source/guest memory edits.
-    Diagnostics::MaybeCaptureGotMenuStages(instance, draw_scheduler, runtime,
-                                            texture_cache);
+    const bool capture_menu_frame=Diagnostics::MaybeCaptureGotMenuStages(
+        instance,draw_scheduler,runtime,texture_cache);
 
     // Continue with host-side passes that draw the displayed (scaled) frame.
 
@@ -778,6 +778,15 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     pp_settings.srgb_input =
         attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb;
     pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings);
+    if (capture_menu_frame) {
+        // The display screenshot at 60s previously got compared to GPU
+        // pixels taken during the logo. Capture guest and host outputs from
+        // this same game frame before the ImGui/swapchain presentation.
+        Diagnostics::CaptureGotMenuHostPostprocess(
+            instance,draw_scheduler,cmdbuf,frame->image,
+            frame->width,frame->height,swapchain.GetSurfaceFormat().format,
+            pp_settings.gamma,pp_settings.hdr!=0u,pp_settings.srgb_input!=0u);
+    }
 
     DebugState.game_resolution = {image_size.width, image_size.height};
     DebugState.output_resolution = {frame->width, frame->height};
