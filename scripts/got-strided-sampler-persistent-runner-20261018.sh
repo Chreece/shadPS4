@@ -419,7 +419,7 @@ apply_blob() {
     echo "APPLIED_GENERAL_FIX=$rel blob=$target"
 }
 # Validate every pinned overlay against this exact Git commit BEFORE
-# touching any source file. The manifest contains 57 applications of 55
+# touching any source file. The manifest contains 58 applications of 56
 # unique blobs and must never contain files from a different experiment.
 if ! python3 - "$SOURCE" "$CANDIDATE" "$RUN/info/overlay-manifest-check.tsv" \
     "$RUN/info/runner.sh" <<'PYMANIFEST'; then
@@ -427,7 +427,7 @@ import pathlib, re, subprocess, sys
 source, commit, report, worker = sys.argv[1:]
 code = pathlib.Path(worker).read_text()
 items = re.findall(r'^apply_blob "([^"\n]+)" "([0-9a-f]{40})"$', code, re.M)
-assert len(items) == 57, f"OVERLAY_MANIFEST_WRONG_COUNT:{len(items)}"
+assert len(items) == 58, f"OVERLAY_MANIFEST_WRONG_COUNT:{len(items)}"
 listed = subprocess.check_output(
     ['git', '-C', source, 'ls-tree', '-r', commit, '--', 'src'], text=True)
 blobs = {}
@@ -445,6 +445,7 @@ if bad:
     for p, want, actual in bad:
         print(f"MANIFEST_BLOB_MISMATCH={p} pinned={want} actual={actual}")
     sys.exit(2)
+assert len(set(p for p,_ in items)) == 56, "OVERLAY_MANIFEST_WRONG_UNIQUE_COUNT"
 print(f"PINNED_OVERLAY_PREFLIGHT=PASS entries={len(items)} unique={len(set(p for p,_ in items))}")
 PYMANIFEST
     STATUS="OVERLAY_MANIFEST_PREFLIGHT_FAILED"
