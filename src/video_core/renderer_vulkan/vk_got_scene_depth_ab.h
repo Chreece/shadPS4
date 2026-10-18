@@ -32,4 +32,12 @@ struct GotSceneDepthABInput {
            !input.depth_clear && !input.raster_discard;
 }
 
+// This has exactly the same strict guest-target scope as the depth A/B,
+// but is controlled by a SEPARATE opt-in. Affects face rejection only:
+// no shader, depth state, texture or color-buffer substitution.
+[[nodiscard]] constexpr bool ShouldForceGotSceneCullNone(
+    const GotSceneDepthABInput& input) noexcept {
+    return ShouldForceGotSceneDepthAlways(input);
+}
+
 } // namespace Vulkan::Diagnostics
