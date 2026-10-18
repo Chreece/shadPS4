@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <unordered_map>
@@ -1119,7 +1120,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
 
     u32 num_images{};
-    for (const auto& image_desc : stage.images) {
+    for (u32 resource_index=0; resource_index<stage.images.size(); ++resource_index) {
+        const auto& image_desc=stage.images[resource_index];
         // Read-only guest T# census for large, rejected GPU-indexed tables.
         // Do not guess the shader's GPU index or bind a truncated array.
         // An unmapped span is never dereferenced. The opt-in scan is limited
@@ -1242,6 +1244,86 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 represented_entries==count-1u &&
                 guest_size==required_bytes &&
                 memory->IsValidMapping(source.base_address,guest_size);
+            // Any immutable >1K-entry guest table may be reused ONLY after
+            // confirming its exact bytes and every live image generation.
+            // This avoids a full TextureCache::FindImage walk for every draw,
+            // which otherwise leaves the GPU idle while the CPU loops.
+            static const bool cache_enabled = [] {
+                const char* const env=std::getenv("SHADPS4_GUEST_TSHARP_CACHE");
+                return env && env[0]=='1' && env[1]=='\0';
+            }();
+            const bool eligible = cache_enabled && complete && count>=1024u &&
+                guest_size<=2u*1024u*1024u &&
+                record_stride==0u && descriptor_offset==0u;
+            const u64 resource_layout_flags =
+                u64(image_desc.is_written) |
+                (u64(image_desc.is_depth)<<1u) |
+                (u64(image_desc.is_atomic)<<2u) |
+                (u64(image_desc.is_array)<<3u) |
+                (u64(image_desc.is_r128)<<4u) |
+                (u64(image_desc.is_atomic_uint_view)<<5u) |
+                (u64(image_desc.constant_mip_index)<<8u) |
+                (u64(image_desc.mip_fallback_mode)<<16u) |
+                (u64(image_desc.post_op)<<24u);
+            const auto cache_key_matches=[&](const GuestIndexedBindingCacheEntry& entry){
+                return entry.shader_hash==stage.pgm_hash &&
+                    entry.shader_stage==static_cast<u32>(stage.hw_stage) &&
+                    entry.image_resource_index==resource_index &&
+                    entry.resource_layout_flags==resource_layout_flags &&
+                    entry.guest_address==source.base_address &&
+                    entry.record_stride==record_stride &&
+                    entry.descriptor_offset==descriptor_offset &&
+                    entry.entries==count;
+            };
+            GuestIndexedBindingCacheEntry* cache_hit=nullptr;
+            if (eligible) {
+                for (auto& entry : guest_indexed_binding_cache) {
+                    if (!cache_key_matches(entry) ||
+                        entry.guest_bytes.size()!=guest_size ||
+                        entry.bindings.size()!=count ||
+                        entry.image_uids.size()!=count ||
+                        std::memcmp(entry.guest_bytes.data(),
+                                    reinterpret_cast<const void*>(source.base_address),
+                                    static_cast<std::size_t>(guest_size))!=0) continue;
+                    bool live=true;
+                    for (u32 i=0;i<count;++i) {
+                        const auto id=entry.bindings[i].image_id;
+                        if (id && !texture_cache.IsImageUidAlive(id,entry.image_uids[i])) {
+                            live=false;
+                            break;
+                        }
+                    }
+                    if (live) {
+                        cache_hit=&entry;
+                        break;
+                    }
+                }
+            }
+            if (cache_hit) {
+                std::copy(cache_hit->bindings.begin(),cache_hit->bindings.end(),
+                          image_bindings.begin()+num_images);
+                for (u32 i=0;i<count;++i) {
+                    const auto id=image_bindings[num_images+i].image_id;
+                    if (!id) continue;
+                    auto& image=texture_cache.GetImage(id);
+                    image.tick_accessed_last=scheduler.CurrentTick();
+                    image.binding.is_bound=1u;
+                }
+                num_images+=count;
+                image_descriptor_array_sizes.push_back(count);
+                static thread_local u64 hits=0;
+                const u64 seen=++hits;
+                if (seen<=4u || std::has_single_bit(seen)) {
+                    LOG_INFO(Render_Vulkan,
+                             "GuestTsharpBindingCache: shader={:#x} stage={} "
+                             "result=HIT entries={} valid={} hit_count={}",
+                             stage.pgm_hash,stage.hw_stage,count-1,
+                             cache_hit->valid_slots,seen);
+                }
+                continue;
+            }
+            const u32 table_start=num_images;
+            bool depth_alias=false;
             u32 valid_slots=0;
             u32 budget_skips=0;
             u64 estimated_resident_bytes=0;
@@ -1299,6 +1381,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 if (desc.type==VideoCore::TextureCache::BindingType::Texture) {
                     if (auto depth=texture_cache.GetAssociatedDepth(*image)) {
                         slot.image_id=depth;
+                        depth_alias=true;
                         image=&texture_cache.GetImage(slot.image_id);
                     }
                 }
@@ -1306,6 +1389,46 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 ++valid_slots;
             }
             image_descriptor_array_sizes.push_back(count);
+            if (eligible && !depth_alias) {
+                // Cache IDs only while the exact guest T# table is unchanged.
+                // UIDs reject stale/recycled texture-cache slot identifiers.
+                // The normal image-view/layout pass still runs every draw,
+                // so descriptor lifetime and synchronization are unchanged.
+                auto old=std::find_if(guest_indexed_binding_cache.begin(),
+                                      guest_indexed_binding_cache.end(),
+                                      cache_key_matches);
+                if (old!=guest_indexed_binding_cache.end()) {
+                    guest_indexed_binding_cache.erase(old);
+                }
+                if (guest_indexed_binding_cache.size()>=4u) {
+                    guest_indexed_binding_cache.erase(
+                        guest_indexed_binding_cache.begin());
+                }
+                GuestIndexedBindingCacheEntry entry{};
+                entry.shader_hash=stage.pgm_hash;
+                entry.shader_stage=static_cast<u32>(stage.hw_stage);
+                entry.image_resource_index=resource_index;
+                entry.resource_layout_flags=resource_layout_flags;
+                entry.guest_address=source.base_address;
+                entry.record_stride=record_stride;
+                entry.descriptor_offset=descriptor_offset;
+                entry.entries=count;
+                entry.valid_slots=valid_slots;
+                entry.estimated_bytes=estimated_resident_bytes;
+                const auto* const bytes=
+                    reinterpret_cast<const u8*>(source.base_address);
+                entry.guest_bytes.assign(bytes,bytes+guest_size);
+                entry.bindings.assign(image_bindings.begin()+table_start,
+                                      image_bindings.begin()+num_images);
+                entry.image_uids.resize(count);
+                for (u32 i=0;i<count;++i) {
+                    const auto id=entry.bindings[i].image_id;
+                    if (id) {
+                        entry.image_uids[i]=texture_cache.GetImage(id).image_uid;
+                    }
+                }
+                guest_indexed_binding_cache.push_back(std::move(entry));
+            }
             if (audit) {
                 static thread_local std::unordered_map<u64,u32> reports;
                 const u64 key=(u64(stage.pgm_hash)<<8)|static_cast<u8>(stage.hw_stage);
