@@ -21,6 +21,8 @@ CANDIDATE_BUILT=0
 ORIGINAL_SHA=""
 mkdir -p "$LOGS" "$GOT/tests/runs" "$RUN/info" "$RUN/tmp"
 touch "$RUN/build.log" "$RUN/host-tests.log" "$RUN/info/restore.txt"
+# Archive the real failure reason, not just the final status code.
+exec > >(tee -a "$RUN/info/console.log") 2>&1
 exec 9>"$WORK/.build.lock"
 if ! flock -n 9; then echo "BUILD_LOCK_HELD_NO_CHANGES"; exit 3; fi
 
