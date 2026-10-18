@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 #include "common/adaptive_mutex.h"
 #include "common/assert.h"
 #include "common/debug.h"
@@ -379,6 +380,13 @@ private:
         const char* value = std::getenv("SHADPS4_UFFD_BATCH_READ");
         return value && value[0] == '1' && value[1] == '\0';
     }();
+    // Batch GPU queue insertion, not memory invalidation or fault wakeups.
+    // Opt-in: normal behavior and standalone userfaultfd read batching stay
+    // exactly as in the 23:14 graphics/FPS checkpoint when unset.
+    const bool cpu_callback_batch_enabled = [] {
+        const char* value = std::getenv("SHADPS4_UFFD_CALLBACK_BATCH");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
     // Owned exclusively by UffdHandler; never accessed from queued callbacks.
     std::unordered_map<u32, std::string> fault_thread_names;
 
@@ -524,6 +532,7 @@ public:
         static constexpr size_t MAX_READ_MESSAGES = 32;
         std::array<uffd_msg, MAX_READ_MESSAGES> messages{};
         u64 read_calls = 0, read_events = 0, multi_reads = 0, largest_batch = 0;
+        u64 gpu_callback_submits = 0, callback_faults_batched = 0, max_callback_faults = 0;
         while (!token.stop_requested() || pending_gpu_invalidations.load() != 0) {
             if (perf_enabled) {
                 const auto now = std::chrono::steady_clock::now();
@@ -539,7 +548,8 @@ public:
                         "slow_21ms={} slow_100ms={} audio_slow_21ms={} "
                         "max_audio_us={} max_gpu_inline_us={} pending={} max_pending={} "
                         "last_slow_tid={} batch_read={} read_calls={} read_events={} "
-                        "multi_reads={} max_read_batch={}",
+                        "multi_reads={} max_read_batch={} gpu_callback_submits={} "
+                        "callback_faults_batched={} max_callback_faults={}",
                         elapsed, perf.cpu_faults.exchange(0), completed,
                         perf.gpu_faults.exchange(0), perf.audio_cpu_faults.exchange(0),
                         perf.game_cpu_faults.exchange(0), completed ? sum / completed : 0,
@@ -550,11 +560,15 @@ public:
                         pending_gpu_invalidations.load(), perf.max_pending.exchange(0),
                         perf.last_slow_tid.load(),
                         batch_reads_enabled ? 1 : 0, read_calls, read_events,
-                        multi_reads, largest_batch);
+                        multi_reads, largest_batch, gpu_callback_submits,
+                        callback_faults_batched, max_callback_faults);
                     read_calls = 0;
                     read_events = 0;
                     multi_reads = 0;
                     largest_batch = 0;
+                    gpu_callback_submits = 0;
+                    callback_faults_batched = 0;
+                    max_callback_faults = 0;
                 }
             }
             pollfd descriptor{};
@@ -611,6 +625,80 @@ public:
                 multi_reads += count > 1;
                 largest_batch = std::max<u64>(largest_batch, count);
             }
+            // The kernel can return multiple independent CPU-origin page
+            // faults in one read. The GPU command queue previously received a
+            // separate SendCommand + notification for every fault. In opt-in
+            // mode, submit consecutive CPU events from this read together;
+            // every page still gets its own original InvalidateMemory and
+            // UFFDIO_WAKE operation, in the same order as before.
+            struct CpuFault {
+                VAddr addr;
+                u32 tid;
+                std::chrono::steady_clock::time_point start;
+                bool from_audio;
+            };
+            const bool batch_callbacks = cpu_callback_batch_enabled &&
+                                         batch_reads_enabled && count > 1;
+            std::vector<CpuFault> cpu_bundle;
+            if (batch_callbacks) {
+                cpu_bundle.reserve(count);
+            }
+            auto submit_cpu_bundle = [&] {
+                if (cpu_bundle.empty()) {
+                    return;
+                }
+                const size_t bundle_size = cpu_bundle.size();
+                const VAddr first = cpu_bundle.front().addr;
+                const auto pending = pending_gpu_invalidations.fetch_add(bundle_size) +
+                                     bundle_size;
+                if (perf_enabled) {
+                    PerfMax(perf.max_pending, pending);
+                    ++gpu_callback_submits;
+                    callback_faults_batched += bundle_size;
+                    max_callback_faults = std::max<u64>(max_callback_faults, bundle_size);
+                }
+                // The renderer invalidates the first page on the GPU thread
+                // before invoking completion. Do each remaining page before
+                // waking its faulting guest. Do not coalesce page ranges.
+                rasterizer->InvalidateMemoryOnGpuThread(
+                    first, 1, [this, faults = std::move(cpu_bundle)]() mutable {
+                    for (size_t j = 0; j < faults.size(); ++j) {
+                        const CpuFault& fault = faults[j];
+                        if (j != 0) {
+                            rasterizer->InvalidateMemory(fault.addr, 1, true);
+                        }
+                        WakeFault(fault.addr, fault.tid);
+                        if (perf_enabled) {
+                            const u64 duration = std::chrono::duration_cast<
+                                std::chrono::microseconds>(
+                                    std::chrono::steady_clock::now() -
+                                    fault.start).count();
+                            perf.cpu_completed.fetch_add(1, std::memory_order_relaxed);
+                            perf.total_cpu_wait_us.fetch_add(
+                                duration, std::memory_order_relaxed);
+                            PerfMax(perf.max_cpu_wait_us, duration);
+                            if (duration >= 21333) {
+                                perf.over_21ms.fetch_add(1, std::memory_order_relaxed);
+                                if (fault.from_audio) {
+                                    perf.audio_over_21ms.fetch_add(
+                                        1, std::memory_order_relaxed);
+                                }
+                            }
+                            if (duration >= 100000) {
+                                perf.over_100ms.fetch_add(1, std::memory_order_relaxed);
+                                perf.last_slow_tid.store(
+                                    fault.tid, std::memory_order_relaxed);
+                            }
+                            if (fault.from_audio) {
+                                PerfMax(perf.max_audio_wait_us, duration);
+                            }
+                        }
+                    }
+                    pending_gpu_invalidations.fetch_sub(faults.size());
+                    pending_gpu_invalidations.notify_all();
+                });
+                cpu_bundle.clear();
+            };
             // Never merge addresses or reorder GPU and CPU write faults:
             // each event retains its original invalidation and wakeup.
             bool malformed = false;
@@ -629,6 +717,12 @@ public:
                 const VAddr addr = msg.arg.pagefault.address;
                 const u32 ptid = msg.arg.pagefault.feat.ptid;
             if (ptid == rasterizer->GetGpuCommandProcessorThreadId()) {
+                // Queue preceding CPU events before servicing a GPU-origin
+                // fault inline. This preserves order and cannot deadlock when
+                // the GPU command processor is itself fault-blocked.
+                if (batch_callbacks) {
+                    submit_cpu_bundle();
+                }
                 // The GPU processor is paused in this fault. Its own memory
                 // invalidation must execute inline, without posting to itself.
                 const auto start = perf_enabled ? std::chrono::steady_clock::now() :
@@ -667,6 +761,9 @@ public:
                 }
                 const auto start = perf_enabled ? std::chrono::steady_clock::now() :
                     std::chrono::steady_clock::time_point{};
+                if (batch_callbacks) {
+                    cpu_bundle.push_back(CpuFault{addr, ptid, start, from_audio});
+                } else {
                 const auto pending = pending_gpu_invalidations.fetch_add(1) + 1;
                 if (perf_enabled)
                     PerfMax(perf.max_pending, pending);
@@ -695,8 +792,14 @@ public:
                     pending_gpu_invalidations.fetch_sub(1);
                     pending_gpu_invalidations.notify_all();
                 });
+                } // original one-fault GPU callback path
             }
             } // Each fault is fully dispatched before handling the next one.
+            if (batch_callbacks) {
+                // Also flush valid CPU events before returning on malformed
+                // message; previous valid faulting threads must not hang.
+                submit_cpu_bundle();
+            }
             if (malformed) {
                 break;
             }
