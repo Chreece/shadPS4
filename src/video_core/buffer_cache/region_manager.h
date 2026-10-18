@@ -140,8 +140,8 @@ public:
         // The sparse loop doesn't touch clean words; watcher masks for any
         // gaps must be explicitly zero rather than uninitialized stack data.
         if (sparse_cpu_upload) {
-            write_prot.data.fill(0);
-            read_prot.data.fill(0);
+            write_prot.Fill(false);
+            read_prot.Fill(false);
         }
         u64 start_page{};
         u64 end_page{};
