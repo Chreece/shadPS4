@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Source-verified one-paste launcher for opt-in UFFD GPU callback batching.
 set -Eeuo pipefail
-PINNED_COMMIT="\${1:?Pass the exact pinned GitHub commit SHA}"
+PINNED_COMMIT="${1:?Pass the exact pinned GitHub commit SHA}"
 [[ "$PINNED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "REVISION_MUST_BE_FULL_SHA"; exit 2; }
 ROOT="$HOME/projects/shadps4"
 SOURCE="$ROOT/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014679/source"
