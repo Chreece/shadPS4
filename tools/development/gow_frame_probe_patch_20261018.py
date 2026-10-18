@@ -18,7 +18,7 @@ def patch(text: str) -> str:
         raise RuntimeError('FRAME_TELEMETRY_ALREADY_PRESENT_NO_DOUBLE_PATCH')
     text = replace_once(text,
         '#include "common/assert.h"',
-        '#include <chrono>\n#include <cstdlib>\n#include "common/assert.h"')
+        '#include <algorithm>\n#include <chrono>\n#include <cstdlib>\n#include "common/assert.h"')
     text = replace_once(text,
         '    Common::AccurateTimer timer{vblank_period};\n\n    const auto receive_request =',
         """    Common::AccurateTimer timer{vblank_period};
