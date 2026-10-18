@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <cstdlib>
 #include <ranges>
 #include <magic_enum/magic_enum.hpp>
 #include <xxhash.h>
@@ -24,6 +25,18 @@
 #include <vk_mem_alloc.h>
 
 namespace VideoCore {
+
+// The RADV GPUVM fault address is a Vulkan buffer device address, not a PS4
+// guest address. This opt-in map records exactly which sparse VkBuffer
+// allocations and resident subranges cover a faulting address. Only logs
+// on arena allocation/sparse binding, NEVER in per-shader or per-frame paths.
+static bool SparseGpuVmMapEnabled() {
+    static const bool enabled = [] {
+        const char* const flag = std::getenv("SHADPS4_GPUVM_SPARSE_MAP");
+        return flag && flag[0]=='1' && flag[1]=='\0';
+    }();
+    return enabled;
+}
 
 static constexpr size_t GDS_BUFFER_SIZE = 64_KB;
 static constexpr size_t NULL_INDEX_BUFFER_SIZE = 16;
@@ -379,6 +392,14 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
                "Overlapping sparse arenas require sparseResidencyAliased");
 
     auto* arena = &arenas.emplace_back(instance, base, size, MemoryType::Sparse);
+    if (SparseGpuVmMapEnabled()) {
+        const u64 gpu_base=arena->BufferDeviceAddress();
+        LOG_INFO(Render_Vulkan,
+                 "GPUVM_SPARSE_ARENA: guest_start={:#x} guest_end={:#x} "
+                 "gpu_start={:#x} gpu_end={:#x} sparse_block={:#x}",
+                 static_cast<u64>(base),static_cast<u64>(base+size),
+                 gpu_base,gpu_base+size,block_size);
+    }
     resident_ranges.ForEachInRange(base_block, end_block,
                                    [&](const Backing& backing) { BindBacking(arena, backing); });
     const u64 last_page = (base + size - 1) >> arena_page_bits;
@@ -396,11 +417,26 @@ void BufferCache::BindBacking(const Buffer* arena, const Backing& backing) {
     if (start >= end) {
         return;
     }
+    const u64 guest_begin=start << block_shift;
+    const u64 guest_end=end << block_shift;
+    const u64 gpu_begin=arena->BufferDeviceAddress()+
+        ((start-base_block) << block_shift);
+    const u64 gpu_end=gpu_begin+(end-start)*block_size;
+    const u64 physical_offset=
+        (backing.offset+start-backing.start)<<block_shift;
+    if (SparseGpuVmMapEnabled()) {
+        LOG_INFO(Render_Vulkan,
+                 "GPUVM_SPARSE_BIND: guest_start={:#x} guest_end={:#x} "
+                 "gpu_start={:#x} gpu_end={:#x} "
+                 "physical_offset={:#x} block_size={:#x}",
+                 guest_begin,guest_end,gpu_begin,gpu_end,
+                 physical_offset,block_size);
+    }
     BindsForArena(arena)->binds.push_back(vk::SparseMemoryBind{
         .resourceOffset = (start - base_block) << block_shift,
         .size = (end - start) << block_shift,
         .memory = backing.memory,
-        .memoryOffset = (backing.offset + start - backing.start) << block_shift,
+        .memoryOffset = physical_offset,
     });
 }
 
@@ -454,6 +490,16 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
         }
         memory_offset += bind.size;
 
+        if (SparseGpuVmMapEnabled()) {
+            const u64 mapped_gpu_begin =
+                arena->BufferDeviceAddress()+bind.resourceOffset;
+            LOG_INFO(Render_Vulkan,
+                     "GPUVM_BDA_PAGE_TABLE: guest_start={:#x} guest_end={:#x} "
+                     "gpu_start={:#x} gpu_end={:#x} block_size={:#x}",
+                     static_cast<u64>(range.start << block_shift),
+                     static_cast<u64>(range.end << block_shift),
+                     mapped_gpu_begin,mapped_gpu_begin+bind.size,block_size);
+        }
         for (u64 block = 0; block < bind.size; block += block_size) {
             *(bda_addrs++) = arena->BufferDeviceAddress() + bind.resourceOffset + block;
         }
