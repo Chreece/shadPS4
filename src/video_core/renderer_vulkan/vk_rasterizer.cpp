@@ -23,6 +23,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/vk_got_menu_pass_trace.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -328,6 +329,7 @@ void Rasterizer::EliminateFastClear() {
 
     ScopeMarkerBegin(fmt::format("EliminateFastClear:MRT={:#x}:M={:#x}", col_buf.Address(),
                                  col_buf.CmaskAddress()));
+    Diagnostics::TraceMenuFastClear(col_buf.Address(), clear_value.color.uint32[0]);
     runtime.ClearImage(&image, desc.view_info.range, clear_value);
     ScopeMarkerEnd();
 }
@@ -392,6 +394,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     }
     DebugState.IncDrawCall();
     CountSubmittedDraw(regs, state, is_indexed, false);
+    Diagnostics::TraceMenuDraw(regs, *pipeline, state, is_indexed, false);
 
     ResetBindings(false);
 }
@@ -486,6 +489,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     }
 
     CountSubmittedDraw(liverpool->regs, state, is_indexed, true);
+    Diagnostics::TraceMenuDraw(liverpool->regs, *pipeline, state, is_indexed, true);
     ResetBindings(false);
 }
 
