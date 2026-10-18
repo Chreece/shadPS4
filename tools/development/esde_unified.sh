@@ -30,7 +30,7 @@ echo "FORK_CURATED_MAIN=$FORK_SHA"
 test "$(id -u)" != 0
 test "$(uname -s)" = Linux
 test "$(uname -m)" = x86_64
-for tool in git cmake ninja ctest sha256sum ldd flock timeout; do
+for tool in git sha256sum ldd flock timeout; do
   command -v "$tool" >/dev/null || { echo "Missing tool: $tool"; exit 2; }
 done
 # Use existing Debian clang-19 builder image when compiler isn't on the host.
@@ -74,6 +74,8 @@ echo STAGE=MERGE_VULKAN_FEATURE
 git -C "$SRC" merge --no-edit --no-ff fork/fix/vulkan11-uniform-storage-16bit
 echo STAGE=PROVENANCE_CHECK
 test -f "$SRC/src/core/devtools/quit_dialog.h"
+grep -q SDL_GAMEPAD_BUTTON_GUIDE "$SRC/src/core/devtools/quit_dialog.h"
+grep -q ProcessQuitEvent "$SRC/src/core/devtools/layer.cpp"
 test -f "$SRC/src/core/startup_progress.h"
 test -f "$SRC/src/imgui/startup_loading.cpp"
 test -f "$SRC/tests/startup_loading/test_startup_loading.cpp"
