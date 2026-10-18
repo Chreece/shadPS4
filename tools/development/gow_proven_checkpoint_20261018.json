@@ -103,18 +103,20 @@
     },
     "redundant_srt_arithmetic_bfe_branches": "Historical JIT dynamic-left-shift and BFE32 width bugs already fixed locally; branches cannot be promoted as performance or graphics fixes.",
     "srt_forward_dependency_retry": {
-      "status": "NATIVE_GENERIC_HOST_TEST_PASS; EXTRACTED_REAL_SOURCE_PATCH_SELFTEST_PASS; HOST_FULL_COMPILE_AND_GAMEPLAY_PENDING",
+      "status": "REJECTED_FOR_GOW_NO_RECOVERED_REFERENCES_AND_NO_FPS_GAIN",
       "real_source_sha256": "14130ab04071e93159b074bbbdd6f7b362661eeaa040e20dec91fa54208aa161",
       "new_staged_source_sha256": "1e2997ae846b55c5280d00e6d7df0635eb1d029170057c8a3b13cc025cc923e5",
       "native_host_contract": "PASS cases=20005",
       "flag": "SHADPS4_SRT_FORWARD_RETRY",
       "default": "0 exact proven walker",
       "candidate": "1 retry producer-dependent entries in up to eight bounded passes; unresolved remain errors",
-      "promotion_gate": "Actual recovered SRT offsets >0, reduced offset failures, preserved graphics screenshots, repeatable cutscene FPS/audio behavior; no stutter resolution claim before user validates."
+      "promotion_gate": "Actual recovered SRT offsets >0, reduced offset failures, preserved graphics screenshots, repeatable cutscene FPS/audio behavior; no stutter resolution claim before user validates.",
+      "host_gameplay_evidence_archive": "gow-srt-forward-20261018-153409.tar.gz",
+      "warning": "Do not promote default-on; this change adds 3043 unresolved attempt counts and produces no recovered SRT entries."
     }
   },
   "open_blocker": {
-    "audio_status": "STUTTER_PRESENT_BOTH_CALLBACK_OFF_AND_ON",
+    "audio_status": "DEFER_AUDIO_SPECIFIC_DEBUGGING_AFTER_FULL_DAY_WITH_NO_MEANINGFUL_IMPROVEMENT",
     "active_port_pcm_period_ms": 21.333,
     "active_ports": "main Port0 and Audio3d Port126 (guest handle index22); PadSpk Port4 intentionally idle",
     "09_36_late_scene_buffers_per_5s": "70-85 observed versus about 234 required for continuous 48 kHz output",
@@ -123,10 +125,10 @@
     "09_36_audio3d_forwarded": 3584,
     "09_36_audio3d_accepted": 3584,
     "09_36_audio3d_queue_full": 0,
-    "root_cause_hypothesis": "guest PCM production cadence collapses alongside increased scene/GPU workload; investigate Wwise guest audio thread scheduling and task dependencies, not SDL queue",
+    "root_cause_hypothesis": "Game FPS declines before Audio3D production deteriorates; guest-specific cutscene simulation/resource handling bottleneck is plausible, but causality is NOT established; other games not heavily affected.",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Run one isolated compile and same-executable SRT retry A/B, inspect actual recovered/unresolved SRT entries plus graphics/audio/FPS; reject candidate if zero recovered or any regression.",
+    "next": "Fix real game execution/rendering correctness bugs first; prioritize shader resource descriptors and failing SRT offset opcode paths with exact source and reproducible shader/descriptor; keep Audio3D as passive regression metric only.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -136,21 +138,22 @@
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
     "current_trial_branch": "experiment/gow-srt-forward-dependency-20261018",
-    "next_trial_script": "tools/development/gow_srt_forward_dependency_build_ab_20261018.sh",
-    "next_trial_launcher": "tools/development/gow_srt_forward_dependency_launcher_20261018.sh",
-    "expected_capture_archive_prefix": "gow-srt-forward-",
+    "next_trial_script": null,
+    "next_trial_launcher": null,
+    "expected_capture_archive_prefix": null,
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
     "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
     "target": "Linux UFFD CPU/GPU page-coherence performance, not SDL audio buffer workaround",
     "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix.",
-    "state": "NO_MORE_EMULATOR_BUILDS_FROM_HISTORICAL_BRANCH_ASSUMPTIONS",
+    "state": "GO_W_BUG_FIXING_PRIORITIZED_OVER_AUDIO_STUTTER_EXPERIMENTS",
     "source_capture_contract": "Read actual protected SRT walker, resource_patching, resource_discover, shader_info_collection and relevant GPU/audio C++ sources with SHA-256 fingerprints, no build or services modified.",
-    "next_code_change_policy": "Only patch after inspecting exact source and validating the reported SRT failure path. Prove the diff applies to current local source before compiling or running a game. Preserve known-good binary and VRAM rule.",
-    "ollama_rule": "No Docker/Ollama API call when RX 7900 XTX free VRAM >=8GiB; unload and restore previously resident model(s) only when VRAM below threshold; stop launched game first.",
+    "next_code_change_policy": "Use 15:13 actual protected source and captures; identify a specific unresolved opcode/resource-binding/shader descriptor error, prove patch applies to current source, add regression and precompile before gameplay; do not repeat speculative audio pacing, VRAM-only, already-fixed SRT arithmetic, or GPU UFFD callback experiments.",
+    "ollama_rule": "Free GPU VRAM >=8 GiB: leave Ollama untouched. Below 8 GiB: unload only Ollama, ensure sufficient VRAM before launching, exit game, reload previous models. Passes shown in 15:34 trial.",
     "proven_graphics_status": "UNCHANGED_SHA_PROTECTED",
-    "code_change": "Opt-in bounded (<=8 passes) retry of dynamically indexed SRT table entries with not-yet-available ReadConst flatbuf offsets. Original walker code preserved and used with flag off; no shader memory mapping, GPU readback or audio code bypass.",
+    "code_change": "No currently promoted SRT forward-dependency change: A/B recovered zero offsets and did not improve FPS.",
     "protected_baselines": "Graphics executable sha 8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef; 12:47 diagnostic binary sha 63a00275b2f78ba58ef35577af0bf0b1681ac245a7e1636de1673cb4f65275ce",
-    "test_sequence": "Exact 15:13 protected shader SHA precheck; host C++ policy test 20005 cases; isolated SRT and other affected native TU precompile; full link; A/B same compiled binary with SHADPS4_SRT_FORWARD_RETRY 0 then 1; screenshot/FPS/Audio3D/SRT counters; terminate game, restore Ollama only if stopped, restore original binaries/source."
+    "test_sequence": "Exact 15:13 protected shader SHA precheck; host C++ policy test 20005 cases; isolated SRT and other affected native TU precompile; full link; A/B same compiled binary with SHADPS4_SRT_FORWARD_RETRY 0 then 1; screenshot/FPS/Audio3D/SRT counters; terminate game, restore Ollama only if stopped, restore original binaries/source.",
+    "audio_regression_only": "Continue observing audio ready fraction and guest delivery gaps, but audio-specific scheduling/SDL changes are paused until execution/renderer blockers are addressed or a new direct audio root-cause proof emerges."
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -372,6 +375,44 @@
         "videoout/driver.cpp"
       ],
       "unchanged_user_source": true
+    },
+    "2026-10-18_15-34_forward_SRT_A_B_real_gameplay": {
+      "archive": "gow-srt-forward-20261018-153409.tar.gz",
+      "status": "COMPILED_PASSED_135S_BOTH_MODES; NO_SRT_BENEFIT",
+      "same_binary_modes": [
+        "A_ORIGINAL_SRT",
+        "B_SRT_FORWARD_RETRY"
+      ],
+      "baseline": {
+        "late_fps_average": 20.73,
+        "late_audio3d_ready_fraction": 0.3681,
+        "srt_offset_errors": 42,
+        "gpu_device_losses": 0,
+        "fatal_audio_backend_errors": 0
+      },
+      "retry": {
+        "late_fps_average": 20.7,
+        "late_audio3d_ready_fraction": 0.4021,
+        "srt_offset_errors": 47,
+        "recovered_forward_references": 0,
+        "unresolved_forward_references": 3043,
+        "gpu_device_losses": 0,
+        "fatal_audio_backend_errors": 0
+      },
+      "vrambefore_gib": 3.729,
+      "vram_after_ollama_stop_gib": 19.55,
+      "ollama_vram_reclaimed_gib": 15.821,
+      "cleanup": {
+        "own_game_stopped": true,
+        "ollama_backend_restored": true,
+        "ollama_previous_models_restored": true,
+        "original_sources_restored": true,
+        "protected_binary_unchanged": true,
+        "exit_code": 0
+      },
+      "screenshot_alignment": "NOT_SCENE_MATCHED: at 30s legacy screenshot black/loading while retry screenshot shows rendered cave; cannot infer loading improvement or A/B audio gain due warm caches/scene timing.",
+      "interpretation": "Forward-reference hypothesis not supported in this run. 0 recovered with 47 offset errors. The slight 3.4 percentage point rise in audio3d late ready fraction is not evidence for a fix with 20.73 vs 20.70 FPS and non-scene-matched screenshots.",
+      "conclusion": "Reject SRT forward-retry from default/proven fixes. Keep branch and logs only as experimental negative evidence."
     }
   }
 }
