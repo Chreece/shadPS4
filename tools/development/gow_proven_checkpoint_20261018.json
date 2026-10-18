@@ -122,9 +122,10 @@
       "default": "SHADPS4_SRT_PRESERVE_MULTIUSE=0 retains original last-wins lookup",
       "candidate": "SHADPS4_SRT_PRESERVE_MULTIUSE=1 retains all equal-index ReadConst SSA consumers and assigns a distinct flattened location for each when emitted.",
       "expected_log": "SRT_MULTIUSE_RESULT shader={} collisions={} retained={} mode={}",
-      "status": "16:34 HOST_TEST_INCLUDE_PATH_FAILURE_CORRECTED_IN_RUNNER; FULL_SHADPS4_COMPILE_AND_GAMEPLAY_NOT_YET_TESTED",
+      "status": "C++ HOST TESTS AND LINK PASS BUT LEGACY-MODE STARTUP CRASH; NO GAMEPLAY EVIDENCE, NO PROMOTION",
       "negative_fallback": "Reject if zero collisions/retained, shader errors unchanged, or any graphics regression.",
-      "local_test_validation": "Equivalent Boost 20,003-case native test compiled & passed in assistant environment with Boost headers available; same trial will use user's exact CMake Boost paths."
+      "local_test_validation": "Equivalent Boost 20,003-case native test compiled & passed in assistant environment with Boost headers available; same trial will use user's exact CMake Boost paths.",
+      "latest_archive": "gow-srt-multiuse-20261018-165221.tar.gz"
     }
   },
   "open_blocker": {
@@ -140,7 +141,7 @@
     "root_cause_hypothesis": "Game FPS declines before Audio3D production deteriorates; guest-specific cutscene simulation/resource handling bottleneck is plausible, but causality is NOT established; other games not heavily affected.",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Re-run pinned multiuse trial using actual CMake include paths; if host and full emulator compilation pass, measure SRT retained reads, shader errors, FPS, graphics and audio in same-binary A/B with 8GiB Ollama threshold.",
+    "next": "Check baseline binary control for null-PC startup in Async MemMapping Worker, then candidate disabled-mode reproducibility. If reliable, compare SRT multiuse enabled mode for reduction of resource-read failures.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -149,18 +150,18 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "test/gow-srt-multiuse-source-fix-20261018",
-    "next_trial_script": "tools/development/gow_srt_multiuse_build_ab_20261018.sh",
-    "next_trial_launcher": "tools/development/gow_srt_multiuse_launcher_20261018.sh",
-    "expected_capture_archive_prefix": "gow-srt-multiuse-",
+    "current_trial_branch": "test/gow-multiuse-existing-binary-isolation-20261018",
+    "next_trial_script": "tools/development/gow_multiuse_existing_binary_control_20261018.py",
+    "next_trial_launcher": "tools/development/gow_multiuse_existing_binary_control_launcher_20261018.sh",
+    "expected_capture_archive_prefix": "gow-multiuse-startup-control-",
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
     "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
     "target": "Linux UFFD CPU/GPU page-coherence performance, not SDL audio buffer workaround",
     "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix.",
     "state": "GO_W_BUG_FIXING_PRIORITIZED_OVER_AUDIO_STUTTER_EXPERIMENTS",
     "source_capture_contract": "Read actual protected SRT walker, resource_patching, resource_discover, shader_info_collection and relevant GPU/audio C++ sources with SHA-256 fingerprints, no build or services modified.",
-    "next_code_change_policy": "Use 15:13 actual protected source and captures; identify a specific unresolved opcode/resource-binding/shader descriptor error, prove patch applies to current source, add regression and precompile before gameplay; do not repeat speculative audio pacing, VRAM-only, already-fixed SRT arithmetic, or GPU UFFD callback experiments.",
-    "ollama_rule": "Only unload when free GPU VRAM below 8 GiB; verify freed memory then run, exit game before restoring previously resident model(s).",
+    "next_code_change_policy": "Do not patch any SRT/GPU/audio source until determining whether 16:52 executable startup crash is transient or specific to candidate; baseline reference must succeed first. Reuse already-built executable; no compiler steps.",
+    "ollama_rule": "Unchanged: ≥8 GiB free GPU VRAM leave Ollama untouched. Below 8 GiB unload only selected Ollama backend, run pinned controls, stop owned games, restore prior model state; no HA/SSH/Sunshine interaction.",
     "proven_graphics_status": "UNCHANGED_SHA_PROTECTED",
     "code_change": "Opt-in same-index SRT multi-consumer preservation: replace single-value flat_map with multimap and preserve all distinct consumers only when SHADPS4_SRT_PRESERVE_MULTIUSE=1; default last-wins semantics remain unchanged.",
     "protected_baselines": "Graphics executable sha 8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef; 12:47 diagnostic binary sha 63a00275b2f78ba58ef35577af0bf0b1681ac245a7e1636de1673cb4f65275ce",
@@ -170,7 +171,10 @@
     "protected_source_sha256": "14130ab04071e93159b074bbbdd6f7b362661eeaa040e20dec91fa54208aa161",
     "promotion_gate": "Full isolated emulator host compile must complete before any gameplay; actual SRT collisions/retention should reduce shader descriptor failures and preserve graphics to accept correction.",
     "pinned_launcher_commit": "48cf89f89fbdd805426357645cd1f4111050f8f8",
-    "test_dependency_resolution": "Use shadps4 CMake target flags.make CXX_INCLUDES for native test; fail before touching shader if Boost unavailable; synthetic include parser test and equivalent C++ 20,003-case flat_multimap test PASS locally."
+    "test_dependency_resolution": "Use shadps4 CMake target flags.make CXX_INCLUDES for native test; fail before touching shader if Boost unavailable; synthetic include parser test and equivalent C++ 20,003-case flat_multimap test PASS locally.",
+    "protected_binary_reference_sha256": "63a00275b2f78ba58ef35577af0bf0b1681ac245a7e1636de1673cb4f65275ce",
+    "candidate_binary_sha256": "40483b615a8953c031451c785c179f4cb9786b7e933e7b1d7b11339d252c2941",
+    "production_status": "UNCHANGED; no SRT fixes promoted."
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -501,6 +505,29 @@
       "source_pretest_snapshots_restored": true,
       "game_launched": false,
       "test_fix": "Parse CXX_INCLUDES from existing CMakeFiles/shadps4.dir/flags.make; replay exact include flags in native Boost test and require header present; do not alter shader, audio, memory or GPU source."
+    },
+    "2026-10-18_16-52_multiuse_candidate_startup_null_pc": {
+      "archive": "gow-srt-multiuse-20261018-165221.tar.gz",
+      "build_pass": true,
+      "host_boost_container_tests": "PASS cases=20003",
+      "full_emulator_compiled_and_linked": true,
+      "compiled_candidate_sha256": "40483b615a8953c031451c785c179f4cb9786b7e933e7b1d7b11339d252c2941",
+      "first_stage": "A_LEGACY_LAST_WINS",
+      "preserve_multiuse_flag": 0,
+      "time_until_early_exit_seconds": 7.5,
+      "observed_game_flips": 0,
+      "audio3d_producer_windows": 0,
+      "srt_collisions_or_failures_before_exit": 0,
+      "fatal": "Async MemMapping Worker / signals.cpp:291 Unreachable code! Unhandled access violation at code address 0x0: Executed from address 0x0.",
+      "client_readonly_diagnosis": "Crash is early game startup before any recorded shader or audio activity; SRT multiuse was disabled; cannot attribute to duplicate-key fix. Several previously successful runs also executed the sceKernelGetPageTableStats stub before continuing, so the stub log is not root cause evidence.",
+      "b_multiuse_run_performed": false,
+      "ollama_rule_enforced": true,
+      "free_vram_before_gib": 7.494,
+      "free_vram_after_ollama_stop_gib": 19.105,
+      "ollama_models_restored": true,
+      "original_sources_restored": true,
+      "protected_graphics_sha_unchanged": true,
+      "next_action": "NO REBUILD: SHA-check 12:47 successful binary, 16:52 candidate; run original baseline first then candidate feature OFF and ON. If both startup attempts with feature off fail, quarantine candidate and capture coredump info when available."
     }
   }
 }
