@@ -387,6 +387,13 @@ private:
         const char* value = std::getenv("SHADPS4_UFFD_CALLBACK_BATCH");
         return value && value[0] == '1' && value[1] == '\0';
     }();
+    // O_NONBLOCK lets us read queued UFFD events without preceding poll(2).
+    // Leave poll-before-read as the default; only skip that redundant syscall
+    // when explicitly enabled. Fault delivery and GPU invalidation are intact.
+    const bool read_first_enabled = [] {
+        const char* value = std::getenv("SHADPS4_UFFD_READ_FIRST");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
     // Owned exclusively by UffdHandler; never accessed from queued callbacks.
     std::unordered_map<u32, std::string> fault_thread_names;
 
@@ -533,6 +540,7 @@ public:
         std::array<uffd_msg, MAX_READ_MESSAGES> messages{};
         u64 read_calls = 0, read_events = 0, multi_reads = 0, largest_batch = 0;
         u64 gpu_callback_submits = 0, callback_faults_batched = 0, max_callback_faults = 0;
+        u64 poll_calls = 0, read_eagain = 0;
         while (!token.stop_requested() || pending_gpu_invalidations.load() != 0) {
             if (perf_enabled) {
                 const auto now = std::chrono::steady_clock::now();
@@ -549,7 +557,8 @@ public:
                         "max_audio_us={} max_gpu_inline_us={} pending={} max_pending={} "
                         "last_slow_tid={} batch_read={} read_calls={} read_events={} "
                         "multi_reads={} max_read_batch={} gpu_callback_submits={} "
-                        "callback_faults_batched={} max_callback_faults={}",
+                        "callback_faults_batched={} max_callback_faults={} "
+                        "read_first={} poll_calls={} read_eagain={}",
                         elapsed, perf.cpu_faults.exchange(0), completed,
                         perf.gpu_faults.exchange(0), perf.audio_cpu_faults.exchange(0),
                         perf.game_cpu_faults.exchange(0), completed ? sum / completed : 0,
@@ -561,7 +570,8 @@ public:
                         perf.last_slow_tid.load(),
                         batch_reads_enabled ? 1 : 0, read_calls, read_events,
                         multi_reads, largest_batch, gpu_callback_submits,
-                        callback_faults_batched, max_callback_faults);
+                        callback_faults_batched, max_callback_faults,
+                        read_first_enabled ? 1 : 0, poll_calls, read_eagain);
                     read_calls = 0;
                     read_events = 0;
                     multi_reads = 0;
@@ -569,14 +579,19 @@ public:
                     gpu_callback_submits = 0;
                     callback_faults_batched = 0;
                     max_callback_faults = 0;
+                    poll_calls = 0;
+                    read_eagain = 0;
                 }
             }
+            // Preserve the original poll-before-read path if opt-in is absent.
+            if (!read_first_enabled) {
             pollfd descriptor{};
             descriptor.fd = uffd;
             descriptor.events = POLLIN;
 
             // A bounded blocking poll is needed for clean jthread teardown.
             // This is a shut-down check, not guest-time polling or busy spin.
+            if (perf_enabled) ++poll_calls;
             const int pollres = poll(&descriptor, 1, 200);
             if (pollres == 0) {
                 continue;
@@ -597,6 +612,7 @@ public:
             if (!(descriptor.revents & POLLIN)) {
                 continue;
             }
+            } // Original poll-before-read path.
 
             // read(2) on userfaultfd fills multiple whole uffd_msg records
             // when available (Linux userfaultfd(2)); no correctness shortcut.
@@ -605,7 +621,32 @@ public:
                                      sizeof(messages[0]);
             const ssize_t bytes = read(uffd, messages.data(), requested);
             if (bytes == -1) {
-                if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    if (read_first_enabled) {
+                        if (perf_enabled) ++read_eagain;
+                        pollfd descriptor{};
+                        descriptor.fd = uffd;
+                        descriptor.events = POLLIN;
+                        if (perf_enabled) ++poll_calls;
+                        // O_NONBLOCK + poll only after EAGAIN; no empty spinning.
+                        // Retain the 200ms destructor stop-check bound.
+                        const int pollres = poll(&descriptor, 1, 200);
+                        if (pollres < 0 && errno != EINTR) {
+                            LOG_ERROR(Common_Memory, "userfaultfd poll failed: {}",
+                                      Common::GetLastErrorMsg());
+                            break;
+                        }
+                        if (pollres > 0 &&
+                            (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+                            LOG_ERROR(Common_Memory,
+                                      "userfaultfd poll reported invalid FD, events={:#x}",
+                                      descriptor.revents);
+                            break;
+                        }
+                    }
+                    continue;
+                }
+                if (errno == EINTR) {
                     continue;
                 }
                 LOG_ERROR(Common_Memory, "userfaultfd read failed: {}",
