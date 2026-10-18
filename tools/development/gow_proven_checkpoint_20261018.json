@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "game": "God of War Ragnarök",
+  "game_id": "CUSA34384",
+  "status": "PROVEN_GRAPHICS_AND_PERFORMANCE_CHECKPOINT__AUDIO_UNRESOLVED",
+  "date": "2026-10-18",
+  "checkpoint_branch_origin": "test/gow-uffd-batched-read-20261017",
+  "baseline_commit": "f909c3abb1ac1e7c8d87de833d3659f7d0b8fc87",
+  "proven_reference": {
+    "full_graphics_executable": {
+      "path": "$HOME/projects/shadps4/GodOfWarRagnarok/tests/gow-renderer-log-hotpath-20261017/build/shadps4.fullgfx-uffd-batched-read-gow-uffd-batched-read-20261017-231412",
+      "sha256": "8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef",
+      "evidence": "gow-uffd-batched-read-20261017-231412.tar.gz",
+      "visual": "full geometry and cutscene; FPS depends on scene; no UFFD deadlock during 135-second observation"
+    },
+    "latest_experimental_audio3d_direct_drain": {
+      "path": "$HOME/projects/shadps4/GodOfWarRagnarok/tests/gow-renderer-log-hotpath-20261017/build/shadps4.fullgfx-audio3d-direct-drain-gow-audio3d-direct-drain-20261018-093643",
+      "sha256": "b2244f150b7a1ea8a0be487cd49b38a951643c6782807dc309d0f99623040e31",
+      "status": "NOT_PROMOTED__GUEST_AUDIO_STUTTER_REMAINS",
+      "evidence": "gow-audio3d-direct-drain-20261018-093643.tar.gz"
+    }
+  },
+  "keep": {
+    "graphics_preservation": {
+      "rasterizer_source_sha256": "bde3553d3c495fff2f34f177982a8f19e7a71542981d5c5194e8032e78328d0a",
+      "proof": "Known-good terrain/character rendering, tracked GPU write extent and invalidation size preserved; 09:36 screenshot still complete",
+      "scope": "renderer + deferred UFFD callbacks and supporting graphics sources"
+    },
+    "opt_in_runtime_logging_filter": {
+      "file": "src/common/logging/log.cpp",
+      "blob": "c0db514053650522588349215738e46408c905e0",
+      "measured_log_line_reduction": "108010 to 1892 per 135-second run (98.2% fewer lines)",
+      "run_only_env": "SHADPS4_RUNTIME_LOG_FILTER",
+      "default": "unchanged when environment variable unset",
+      "scope": "general shadPS4 runtime diagnostics",
+      "note": "User reports faster menus; scene-matched menu loading times were not independently benchmarked"
+    },
+    "userfaultfd_bounded_read": {
+      "file": "src/video_core/page_manager.cpp",
+      "blob": "75ede506fa3a07b01263542af320a3e90535adc4",
+      "feature_env": "SHADPS4_UFFD_BATCH_READ=1",
+      "default": "single-event read with env absent",
+      "09_36_million_events": 17.97,
+      "09_36_million_reads": 9.114,
+      "09_36_mean_events_per_read": 1.972,
+      "evidence": "09:36 archive; all events dispatched in original order; 3 standalone read contract tests passed",
+      "scope": "general Linux userfaultfd"
+    },
+    "deferred_userfaultfd_lifetime": {
+      "evidence": "Repeated full-gameplay runs alive and without historical GpuComm/Uffd deadlock",
+      "scope": "general Linux memory-coherence"
+    },
+    "multiport_audio_locking": {
+      "file": "src/core/libraries/audio/audioout.cpp",
+      "blob": "82e6698b821b452f1b34402a58aee43c2098704c",
+      "sync_header": "src/core/libraries/audio/audioout_sync.h",
+      "sync_header_blob": "8efda58a938100999a248e7fcdbd7b7159ec5658",
+      "evidence": "Three multiport concurrency tests passed (two busy ports, reversed order, closing port)",
+      "qualification": "Game showed no sceAudioOutOutputs batch events, so this is a concurrency fix, NOT an audio stutter fix"
+    }
+  },
+  "experimental_do_not_promote": {
+    "SDL_outer_only_pacing": {
+      "env": "SHADPS4_SDL_OUTER_PACING=1",
+      "state": "Successful playback trials show no backend resync or >0.1 ms submit; no proven audio stutter improvement",
+      "default": "off"
+    },
+    "Audio3D_direct_drain": {
+      "env": "SHADPS4_AUDIO3D_DIRECT_DRAIN=1",
+      "state": "2026-10-18 09:36: 3584 PCM accepted, 3584 forwarded, 0 queue-full; stuttering persisted",
+      "candidate_branch": "test/gow-audio3d-associated-drain-20261017",
+      "default": "off; don't merge into this proven checkpoint"
+    },
+    "UFFD_fault_latency_telemetry": {
+      "env": "SHADPS4_UFFD_PERF_PROBE=1",
+      "state": "instrumentation only, disabled by default"
+    }
+  },
+  "open_blocker": {
+    "audio_status": "STUTTER_PRESENT",
+    "active_port_pcm_period_ms": 21.333,
+    "active_ports": "main Port0 and Audio3d Port126 (guest handle index22); PadSpk Port4 intentionally idle",
+    "09_36_late_scene_buffers_per_5s": "70-85 observed versus about 234 required for continuous 48 kHz output",
+    "09_36_max_audio3d_guest_delivery_gap_ms": 1426.838,
+    "09_36_backend_max_submit_us": 58,
+    "09_36_audio3d_forwarded": 3584,
+    "09_36_audio3d_accepted": 3584,
+    "09_36_audio3d_queue_full": 0,
+    "root_cause_hypothesis": "guest PCM production cadence collapses alongside increased scene/GPU workload; investigate Wwise guest audio thread scheduling and task dependencies, not SDL queue",
+    "caveat": "No causality established from CPU/thread snapshots alone"
+  },
+  "workflow": {
+    "branch_is_a_pinned_development_checkpoint_not_automatically_production_ready": true,
+    "does_not_automatically_modify_main_branch": true,
+    "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
+    "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release."
+  }
+}
