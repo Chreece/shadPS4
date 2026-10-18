@@ -42,7 +42,8 @@ class SlotVector {
 
 public:
     explicit SlotVector() = default;
-    explicit SlotVector(u32 max_entries) {
+    explicit SlotVector(u32 max_entries, const char* pool_name = "unnamed")
+        : pool_name{pool_name} {
         Create(max_entries);
     }
 
@@ -128,7 +129,11 @@ private:
     }
 
     void AddChunk() noexcept {
-        ASSERT_MSG(!small_vector && num_chunks < max_chunks, "Run out of space");
+        ASSERT_MSG(!small_vector && num_chunks < max_chunks,
+                   "SlotVector pool={} exhausted live={} capacity={} chunks={}/{} "
+                   "element_bytes={} small_vector={}",
+                   pool_name, Size(), capacity, num_chunks, max_chunks,
+                   sizeof(T), small_vector);
         auto* const chunk_address = reinterpret_cast<u8*>(values) + num_chunks * CHUNK_SIZE;
         CommitMemoryPages(chunk_address, CHUNK_SIZE);
         ++num_chunks;
@@ -185,6 +190,7 @@ private:
     }
 
     T* values{};
+    const char* pool_name = "unnamed";
     std::vector<u64> stored_bitset;
     std::vector<u32> free_list;
     u32 max_chunks{};
