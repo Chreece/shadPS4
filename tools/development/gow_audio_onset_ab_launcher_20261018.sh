@@ -74,6 +74,13 @@ if [[ -f "$LOGS/$TAG/report.json" ]]; then
     --output "$LOGS/$TAG/audio-onset-comparison.json" \
     2>&1 | tee -a "$LOG" || echo "AUDIO_ANCHOR_ANALYZER_INCOMPLETE=SEE_FULL_LOG"
 fi
+if [[ -f "$LOGS/$TAG/audio-onset-comparison.json" ]]; then
+  # The original emulator archive is retained as a fallback. Make a second
+  # small archive that also contains the completed audio-onset analysis.
+  tar -czf "$LOGS/$TAG-analyzed.tar.gz" -C "$LOGS" "$TAG" &&
+    echo "UPLOAD_ANALYZED_ARCHIVE=$LOGS/$TAG-analyzed.tar.gz" ||
+    echo "ANALYZED_ARCHIVE_FAILED_ORIGINAL_PRESERVED=$LOGS/$TAG.tar.gz"
+fi
 echo "UPLOAD_MAIN_LOG=$LOG"
 echo "UPLOAD_ARCHIVE=$LOGS/$TAG.tar.gz"
 grep -E 'ARCHIVE=|AUDIO_ANCHOR_IN_BOTH|AFTER_ONSET_|AUDIO_ANCHORED|GOW_LOG_TELEMETRY_AB_RESULT|GOW_INPUT_AUTOMATION_RESULT|OLLAMA' "$LOG" | tail -40 || true
