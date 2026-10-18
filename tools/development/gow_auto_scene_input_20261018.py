@@ -370,10 +370,15 @@ def main():
             len({a.cross_key, a.forward_key, a.right_key}) == 3):
         raise SystemExit("INVALID_KEY_CONFIG_NO_INPUT")
     if a.preflight:
-        # Verify libraries, XTest and exact DISPLAY before launching game.
+        # Verify XTest AND in-memory capture in the actual X11 session before
+        # any emulator launch or Ollama change. No files are created.
+        os.environ["DISPLAY"] = a.display
         keyboard = Keyboard(a.display, -1)
         keyboard.close()
+        screenshot(Path("."))
         print("X11_XTEST_KEYBOARD_READY=YES")
+        print("IN_MEMORY_SCREEN_PROBE_READY=YES")
+        print("NO_IMAGES_SAVED_OR_COMPARED=YES")
         return 0
     if (not a.pid or not a.out or a.launch_monotonic is None or
             a.max_seconds < 200 or a.max_seconds > 480):
