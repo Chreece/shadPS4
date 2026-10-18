@@ -270,6 +270,15 @@ while kill -0 "$TEST_PGID" 2>/dev/null; do
     available=$((TOTAL-used))
   else available=-1; fi
   printf '%s,%s,%s,%s\n' "$elapsed" "$used" "$available" "$busy" >> "$RUN/info/gpu-samples.csv"
+  # Extra host-safety guard: do not let the test continue into severe VRAM
+  # depletion even if its launch-time headroom was sufficient.
+  if [ "$available" -ge 0 ] && [ "$available" -lt $((1024*1024*1024)) ]; then
+    echo "RUNTIME_VRAM_CRITICAL_ABORT free_bytes=$available"
+    STATUS=RUNTIME_VRAM_CRITICAL_ABORT
+    kill -TERM -- "-$TEST_PGID" 2>/dev/null || true
+    sleep 2
+    break
+  fi
   if [ $((elapsed-last)) -ge 10 ]; then
     echo "GOT_RUNNING elapsed=${elapsed}s/${SECONDS_TO_RUN}s free_vram=$available gpu_busy=$busy"
     last="$elapsed"
@@ -289,7 +298,9 @@ GAME_EXIT=$?
 set -e
 TEST_PGID=""
 echo "GAME_EXIT=$GAME_EXIT"
-if [ "$GAME_EXIT" -eq 0 ] || [ "$GAME_EXIT" -eq 124 ]; then
+if [ "$STATUS" = RUNTIME_VRAM_CRITICAL_ABORT ]; then
+  exit 2
+elif [ "$GAME_EXIT" -eq 0 ] || [ "$GAME_EXIT" -eq 124 ]; then
   STATUS=CAPTURE_COMPLETE
 else
   STATUS=GAME_ABNORMAL_EXIT
