@@ -32,6 +32,7 @@
 #include <cmath>
 #include <csetjmp>
 #include <cstring>
+#include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -703,6 +704,28 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     view_info.mapping.a = AmdGpu::CompSwizzle::One;
 
     auto& image = texture_cache.GetImage(image_id);
+    // Compare this ACTUAL video-out guest framebuffer address and monotonic
+    // time with the rasterizer's read-only fragment draw + clear log. A
+    // compiled/bound shader need not contribute to the presented surface.
+    static const bool got_menu_present_trace = [] {
+        const char* const v = std::getenv("SHADPS4_MENU_PASS_TRACE");
+        return v && v[0] == '1' && v[1] == '\0';
+    }();
+    if (got_menu_present_trace) {
+        static thread_local u64 count{};
+        const u64 sequence = ++count;
+        if (sequence <= 10 || sequence % 120 == 0) {
+            const u64 monotonic = static_cast<u64>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+            LOG_INFO(Render_Vulkan,
+                     "GotMenuPresentTrace: mono_ms={} frame={} source_addr={:#x} "
+                     "source={}x{} pixel_format={} host_pp_follows=YES",
+                     monotonic, sequence, cpu_address,
+                     image.info.size.width, image.info.size.height,
+                     static_cast<u32>(attribute.attrib.pixel_format));
+        }
+    }
     auto image_view = *image.FindView(view_info).image_view;
     const vk::Extent2D image_size = {image.info.size.width, image.info.size.height};
     expected_ratio = static_cast<float>(image_size.width) / static_cast<float>(image_size.height);
@@ -768,6 +791,19 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 }
 
 Frame* Presenter::PrepareBlankFrame(bool present_thread) {
+    // A sequence of blank-host frames would explain a white presentation
+    // independently of any guest shader. Keep this probe rate-limited.
+    static const bool trace_blank = [] {
+        const char* const v = std::getenv("SHADPS4_MENU_PASS_TRACE");
+        return v && v[0] == '1' && v[1] == '\0';
+    }();
+    if (trace_blank) {
+        static thread_local u64 blanks{};
+        if (++blanks <= 4 || (blanks % 120) == 0) {
+            LOG_INFO(Render_Vulkan, "GotMenuBlankPresent: count={} thread_present={}",
+                     blanks, present_thread);
+        }
+    }
     // Request a free presentation frame.
     Frame* frame = GetRenderFrame();
 
