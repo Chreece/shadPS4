@@ -730,8 +730,8 @@ while i < len(words):
     if not root.is_absolute():
         root = build_root / root
     root = root.resolve()
-    if not root.is_dir():
-        sys.exit("CMAKE_INCLUDE_DIRECTORY_MISSING=" + str(root))
+    # CMake can legitimately list future/generated includes that do not
+    # exist yet; only require the actual Boost header from an existing path.
     roots.append(root)
     args.extend((prefix, str(root)))
 boost = [root / "boost/container/flat_map.hpp" for root in roots
