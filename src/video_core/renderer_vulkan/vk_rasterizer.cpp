@@ -903,8 +903,8 @@ bool Rasterizer::IsComputeImageCopy(const Pipeline* pipeline) {
                      "observation={}",
                      info.pgm_hash,src_image.info.guest_address,
                      dst_image.info.guest_address,src_image.info.guest_size,
-                     src_image.info.props.is_depth,
-                     dst_image.info.props.is_depth,observations);
+                     bool(src_image.info.props.is_depth),
+                     bool(dst_image.info.props.is_depth),observations);
         }
     }
     runtime.CopyColorAndDepth(&src_image, &dst_image);
@@ -977,7 +977,7 @@ bool Rasterizer::IsComputeImageClear(const Pipeline* pipeline) {
                      "GotMenuComputeImageClear: cs={:#x} dst={:#x} "
                      "bytes={} depth={} observed={}",
                      info.pgm_hash,image1.info.guest_address,
-                     image1.info.guest_size,image1.info.props.is_depth,events);
+                     image1.info.guest_size,bool(image1.info.props.is_depth),events);
         }
     }
     runtime.ClearImage(&image1, range, clear);
