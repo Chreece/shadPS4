@@ -35,7 +35,7 @@ struct GotIndirectReadback {
     VideoCore::Buffer target;
     u64 arg_guest{};
     u64 count_guest{};
-    u32 arg_base_offset{};
+    u64 arg_base_offset{};
     u32 stride{};
     u32 max_count{};
     u32 captured_commands{};
@@ -89,7 +89,7 @@ inline void CaptureGotSceneGpuIndirectArguments(
         instance,bytes_to_allocate);
     staged->arg_guest=arg_guest;
     staged->count_guest=count_guest;
-    staged->arg_base_offset=static_cast<u32>(arg_offset);
+    staged->arg_base_offset=arg_offset;
     staged->stride=stride;
     staged->max_count=max_count;
     staged->captured_commands=limited_count;
