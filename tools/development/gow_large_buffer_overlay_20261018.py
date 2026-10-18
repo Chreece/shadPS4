@@ -102,8 +102,10 @@ def once(s,a,b):
     return s.replace(a,b,1)
 
 def patch_r(s):
-    s=once(s,"#include <atomic>\n#include <limits>",
-             "#include <atomic>\n#include <chrono>\n#include <cstdlib>\n#include <limits>")
+    # This stage follows the pinned GPU timing patch, which already adds
+    # chrono and cstdlib. Never duplicate or reorder its source includes.
+    if "#include <chrono>" not in s or "#include <cstdlib>" not in s:
+        raise ValueError("EXPECTED_GPU_PHASE_INCLUDE_PREIMAGE_MISSING")
     return once(s,CALL,TIMED_CALL)
 
 def patch_b(s):
