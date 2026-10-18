@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <map>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -157,6 +158,47 @@ inline void TraceMenuFastClear(u64 address, u32 clear0) {
                  "clear0={:#x} event={}",
                  MenuPassNowMs(),address,clear0,reports);
     }
+}
+
+// First few samples for every exact fragment/output/resource combination,
+// then exponentially sparse refreshes. Shader-bound guest resources can
+// change while the SPIR-V is cached, so do not log only at compile time.
+inline bool ShouldTraceMenuSource(u64 fragment_hash, u64 target, u32 resource_index) {
+    if (!MenuPassTraceEnabled() || target==0) return false;
+    using Key=std::tuple<u64,u64,u32>;
+    static thread_local std::map<Key,u64> observations;
+    const Key key{fragment_hash,target,resource_index};
+    auto it=observations.find(key);
+    if (it==observations.end()) {
+        if (observations.size()>=512) return false;
+        it=observations.emplace(key,0).first;
+    }
+    const u64 seen=++it->second;
+    return seen<=4 || seen==16 || seen==64 || seen==256 ||
+           seen==1024 || (seen%4096)==0;
+}
+
+// This records guest addresses only. No readbacks, image probing, command
+// buffer changes, descriptor replacement or synthesised textures. A source
+// with no matching render-target draw can be a legitimate CPU-uploaded image;
+// the graph is evidence rather than automatic blame.
+inline void TraceMenuSource(u64 fs, u64 output_target, u32 slot,
+                            bool guest_indexed, bool fetched,
+                            u64 guest_texture_or_table, u32 source_stride,
+                            u32 source_records, u32 width, u32 height,
+                            u32 raw_format, u32 raw_number_format,
+                            u32 raw_image_type) {
+    if (!MenuPassTraceEnabled()) return;
+    LOG_INFO(Render_Vulkan,
+             "GotMenuSourceEdge: mono_ms={} fs={:#x} target={:#x} "
+             "resource={} kind={} fetched={} source_addr={:#x} "
+             "stride={} records={} dimensions={}x{} "
+             "data_format={} number_format={} image_type={}",
+             MenuPassNowMs(),fs,output_target,slot,
+             guest_indexed ? "guest_table" : "single_texture",
+             fetched,guest_texture_or_table,source_stride,
+             source_records,width,height,raw_format,raw_number_format,
+             raw_image_type);
 }
 
 } // namespace Vulkan::Diagnostics
