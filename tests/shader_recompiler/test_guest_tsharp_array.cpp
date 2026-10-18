@@ -7,6 +7,7 @@
 #include "shader_recompiler/guest_tsharp_array.h"
 using Shader::Optimization::CompleteGuestTsharpTableEntries;
 using Shader::Optimization::GuestTsharpIndexOrNull;
+using Shader::Optimization::CompleteStridedGuestShader;
 using Shader::Optimization::CompleteGuestTsharpRecordEntries;
 int main() {
     static_assert(CompleteGuestTsharpTableEntries(0,480,15)==15);
@@ -38,6 +39,14 @@ int main() {
     static_assert(CompleteGuestTsharpRecordEntries(0u,53601u,536u,144u,32768u)==0u);
     static_assert(CompleteGuestTsharpRecordEntries(536u,100u,536u,144u,99u)==0u);
     static_assert(CompleteGuestTsharpRecordEntries(536u,100u,0u,144u,32768u)==0u);
+    // Real-world mixed SRT availability must NEVER produce a partly
+    // indexed compute permutation (invalid S# or T# fallback mixed with
+    // genuine 97-entry Vulkan arrays).
+    static_assert(CompleteStridedGuestShader(0,0));
+    static_assert(CompleteStridedGuestShader(5,0));
+    static_assert(!CompleteStridedGuestShader(5,1));
+    static_assert(!CompleteStridedGuestShader(21,10));
+    static_assert(!CompleteStridedGuestShader(10,21));
     std::mt19937 rng{0x1ac05e77u};
     for(unsigned iter=0;iter<100000;++iter) {
         const auto count=1+rng()%15u;
