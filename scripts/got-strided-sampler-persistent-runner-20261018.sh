@@ -12,16 +12,16 @@ GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
 BASE_SHA256="948742f5b1ffebf0dfc4d1b452806c2e649bf35d76cffbb576e2b81bb36b5826"
-CANDIDATE="538fc65527d96086443d14d3227eb9c5daa7397f"
+CANDIDATE="d4041bfb89780e2b53c24201744460f8f64c5585"
 UPSTREAM="e6c79a5fe0ea2f3d03fcb9c5c50cf61af063f3f5"
-BRANCH="fix/got-strided-sampler-indexed-20261018"
+BRANCH="fix/got-indexed-table-cache-20261018"
 RUN="$GOT/tests/runs/$NAME"
 ARCHIVE="$LOGS/$NAME.tar.gz"
 STATUS="STARTED"
 OVERLAY_APPLIED=0
 HEADER_CREATED=0
 CANDIDATE_BUILT=0
-CANDIDATE_KIND=strided-gpu-tsharp-and-sampler
+CANDIDATE_KIND=uid-checked-tsharp-binding-cache
 # Reusable runner and all scratch files belong to GhostOfTsushima/tests.
 # LOGS is disposable OUTPUTS ONLY: the new report and console transcript.
 test -d "$GOT" || { echo "GAME_WORKSPACE_NOT_FOUND=$GOT"; exit 2; }
@@ -266,7 +266,7 @@ run_phase() {
     (
         cd "$home"
         export HOME="$home" DISPLAY="$DISPLAY_OK"
-        export SHADPS4_STRIDED_GUEST_TSHARP=1 SHADPS4_GUEST_TSHARP_LARGE_ARRAY=1 SHADPS4_GUEST_TSHARP_CENSUS=0 SHADPS4_RENDER_AUDIT=0 SHADPS4_RESOURCE_AUDIT=1 SHADPS4_RESOURCE_AUDIT_HASH=0x7eaf40ad,0x55d17c16,0x5c4c2b6f SHADPS4_INVALID_SHARP_TRACE_HASHES=0x7eaf40ad,0x55d17c16,0x5c4c2b6f
+        export SHADPS4_STRIDED_GUEST_TSHARP=1 SHADPS4_GUEST_TSHARP_CACHE=1 SHADPS4_GUEST_TSHARP_LARGE_ARRAY=1 SHADPS4_GUEST_TSHARP_CENSUS=0 SHADPS4_RENDER_AUDIT=0 SHADPS4_RESOURCE_AUDIT=1 SHADPS4_RESOURCE_AUDIT_HASH=0x7eaf40ad,0x55d17c16,0x5c4c2b6f SHADPS4_INVALID_SHARP_TRACE_HASHES=0x7eaf40ad,0x55d17c16,0x5c4c2b6f
         export SHADPS4_SRT_SOURCE_AUDIT=0 SHADPS4_SRT_INLINE_AUDIT=0 SHADPS4_SRT_TRACE_HASHES=0x7eaf40ad,0x55d17c16,0x5c4c2b6f
         export SHADPS4_SHARP_MIXED_AUDIT=0 SHADPS4_SHARP_MASK_AUDIT=0 SHADPS4_GAMEPAD_HOTPLUG_AUDIT=0 SHADPS4_IMAGE_PHI_SPLIT_AUDIT=1 SHADPS4_INDEXED_IMAGE_AUDIT=1 SHADPS4_INDEXED_IMAGE_AUDIT_HASHES=0x7eaf40ad,0x55d17c16,0x5c4c2b6f SHADPS4_TARGET_SHADER_DUMP_HASHES=0x7eaf40ad,0x55d17c16,0x5c4c2b6f
         unset RADV_DEBUG VK_DRIVER_FILES VK_ICD_FILENAMES VK_INSTANCE_LAYERS
@@ -468,8 +468,9 @@ apply_blob "src/video_core/amdgpu/pm4_register_write.h" "dc508d16d2fca12ddf247fd
 apply_blob "src/video_core/amdgpu/regs_depth.h" "23bfcd2530c194722f4a3edb825971092253e08b"
 apply_blob "src/video_core/texture_cache/image_info.cpp" "5b99e73b112824e1c289c25372b481f49eb89fa8"
 apply_blob "src/video_core/texture_cache/texture_cache.cpp" "4ca7ecb7f9857957f02ec3bba6bd2f3655df2033"
+apply_blob "src/video_core/texture_cache/texture_cache.h" "379c201f61a6a04597100039f8d813669fe57f42"
 apply_blob "src/shader_recompiler/ir/passes/srt_uniformity.h" "95bdea6f8db9d0a717bd568fd0ae8e0003442170"
-apply_blob "src/video_core/renderer_vulkan/vk_rasterizer.cpp" "28938bf5a9b188d85556f6ea8728b2b371dbae42"
+apply_blob "src/video_core/renderer_vulkan/vk_rasterizer.cpp" "1e17e7847a5384690dea54f0bde0da30a4e345b9"
 apply_blob "src/video_core/renderer_vulkan/resource_audit_hash_filter.h" "28cc1c1d76f59386329bf92883acc5e26385b3dc"
 apply_blob "src/shader_recompiler/ir/passes/resource_patching_pass.cpp" "6e27c1aad918654ea57432222f353782c6ce1738"
 apply_blob "src/shader_recompiler/ir/passes/resource_discover_pass.cpp" "682c0549755bd77dfa9649174c0d1295250e8174"
@@ -481,7 +482,7 @@ apply_blob "src/video_core/renderer_vulkan/vk_pipeline_common.h" "5179400f0667d3
 apply_blob "src/video_core/renderer_vulkan/vk_pipeline_common.cpp" "4ef906906de2f0823ef269b7c6e41a1a5fa62d2b"
 apply_blob "src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp" "29d21a48c9a675a3c0cab7f60082e7e14c736dad"
 apply_blob "src/video_core/renderer_vulkan/vk_compute_pipeline.cpp" "27566189e5fa0ace05a1a9500f00134215abc223"
-apply_blob "src/video_core/renderer_vulkan/vk_rasterizer.h" "caba62525485731afc673964337fdb6704a3f9df"
+apply_blob "src/video_core/renderer_vulkan/vk_rasterizer.h" "1ba8ce97087e5b5196669eff9c10309ee6a55683"
 apply_blob "src/video_core/renderer_vulkan/vk_instance.cpp" "55171b2db2661ae71349ea7dde1a1f2a9cc892b3"
 apply_blob "src/video_core/renderer_vulkan/vk_instance.h" "3eb28a38876bc4cd5d41c311fe9764159b3281ae"
 apply_blob "src/shader_recompiler/profile.h" "b0e2fcc2dc52b1fbdaf98e35c8ab3e1c75b59921"
@@ -742,7 +743,7 @@ CANDIDATE_BUILT=1
 echo "CANDIDATE_BINARY=$(sha256sum "$BIN" | awk '{print $1}')"
 echo "INCREMENTAL_BUILD=PASS"
 REPORT_PHASE=B
-CANDIDATE_KIND=strided-gpu-tsharp-and-sampler
+CANDIDATE_KIND=uid-checked-tsharp-binding-cache
 if run_phase B "$BIN" 180; then
     STATUS="GRAPHICS_AND_HOTPLUG_CAPTURED"
 else
