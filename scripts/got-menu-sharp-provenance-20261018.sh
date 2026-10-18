@@ -90,6 +90,10 @@ for family in families:
     if family=="SrtHostBarrierGroup":
         result.extend("HOST_BLOCKER="+line.split("SrtHostBarrierGroup:",1)[1].strip()
                       for line in rows[:30])
+if not any("InvalidTSharpSource:" in v for v in lines):
+    result.append("INVALID_IMAGE_PROVENANCE=NOT_CAPTURED_CHECK_COMPILE_AND_CACHE")
+if not any("SrtNativeAudit:" in v or "SrtHostBarrier:" in v for v in lines):
+    result.append("SRT_PROVENANCE=NOT_CAPTURED_CHECK_SHADER_COMPILATION")
 result.append("TARGETED_LOG_PATH=info/menu-provenance-target.log")
 Path(sys.argv[2]).write_text("\n".join(result)+"\n")
 print("\n".join(result))
@@ -269,8 +273,12 @@ assert isinstance(d,dict)
 assert isinstance(d.setdefault("Log",{}),dict)
 d["Log"].update(filter="*:critical Input:info Config:info Render.Recompiler:info Render.Vulkan:info",
                 sync=False,skip_duplicate=True)
+# This test is looking for *compile-time* invalid T# and native SRT causes.
+# Cached SPIR-V would hide them; disable cache ONLY for isolated profile.
+assert isinstance(d.setdefault("Vulkan",{}),dict)
+d["Vulkan"]["pipeline_cache_enabled"]=False
 p.write_text(json.dumps(d,indent=2)+"\n")
-print("ISOLATED_CONFIG=PASS")
+print("ISOLATED_CONFIG=PASS; PIPELINE_CACHE=OFF_TEST_ONLY")
 PY
 
 STATUS=GAME_RUNNING
