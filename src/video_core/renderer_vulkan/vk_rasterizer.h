@@ -165,6 +165,8 @@ private:
     // The cache is bounded to four entries and never owns Vulkan objects.
     struct GuestIndexedBindingCacheEntry {
         u64 shader_hash{};
+        u64 resource_layout_flags{};
+        u32 shader_stage{};
         u64 guest_address{};
         u64 estimated_bytes{};
         u32 image_resource_index{};
