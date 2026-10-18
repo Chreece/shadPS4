@@ -14,7 +14,7 @@ GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 API="http://127.0.0.1:7869"
 MIN_VRAM=$((8*1024*1024*1024))
-SECONDS_TO_RUN=78
+SECONDS_TO_RUN=65
 RUN="$GOT/tests/runs/got-menu-source-runtime-$(date +%Y%m%d-%H%M%S)"
 REPORT="$LOGS/$(basename "$RUN").tar.gz"
 STATUS=PRECHECK
@@ -253,6 +253,8 @@ PY
     echo "MENU_GPU_ATTRIBUTE_MATCHES=$(grep -ac 'GuestAttributeTsharpIndexed:' "$RUN/game.log" || true)"
     echo "MENU_INVALID_IMAGE_EVENTS=$(grep -ac 'InvalidTSharpSource: shader=0x7eaf40ad' "$RUN/game.log" || true)"
     echo "MENU_PRESENT_TRACE_ENABLED=YES"
+    echo "IN_GAME_VRAM_ABORT_THRESHOLD_GIB=2"
+    echo "SOURCE_GRAPH_DIAGNOSTIC_ONLY=YES"
     echo "ACTUAL_COLOR_DRAW_EVENTS=$(grep -ac 'GotMenuDrawTrace:' "$RUN/game.log" || true)"
     echo "ACTUAL_COLOR_PASS_WINDOWS=$(grep -ac 'GotMenuPassWindow:' "$RUN/game.log" || true)"
     echo "ACTUAL_PRESENT_FRAMES=$(grep -ac 'GotMenuPresentTrace:' "$RUN/game.log" || true)"
@@ -475,7 +477,7 @@ while kill -0 "$TEST_PGID" 2>/dev/null; do
   fi
   # Extra host-safety guard: do not let the test continue into severe VRAM
   # depletion even if its launch-time headroom was sufficient.
-  if [ "$available" -ge 0 ] && [ "$available" -lt $((1024*1024*1024)) ]; then
+  if [ "$available" -ge 0 ] && [ "$available" -lt $((2*1024*1024*1024)) ]; then
     echo "RUNTIME_VRAM_CRITICAL_ABORT free_bytes=$available"
     STATUS=RUNTIME_VRAM_CRITICAL_ABORT
     kill -TERM -- "-$TEST_PGID" 2>/dev/null || true
@@ -486,7 +488,7 @@ while kill -0 "$TEST_PGID" 2>/dev/null; do
     echo "GOT_RUNNING elapsed=${elapsed}s/${SECONDS_TO_RUN}s free_vram=$available gpu_busy=$busy"
     last="$elapsed"
   fi
-  for mark in 20 40 70; do
+  for mark in 20 40 60; do
     if [ "$elapsed" -ge "$mark" ] && [ "$elapsed" -lt $((mark+4)) ] &&
        [ ! -f "$RUN/screenshots/$mark.png" ] && command -v import >/dev/null; then
       timeout 6s import -display "$DISPLAY_OK" -window root \
