@@ -215,6 +215,7 @@ def main() -> None:
     p.add_argument("report_dir", type=Path)
     p.add_argument("--apply", action="store_true")
     a = p.parse_args()
+    a.report_dir.mkdir(parents=True, exist_ok=True)
     outputs = []
     for rel in (SRT, RESOURCES, LIVERPOOL):
         src = a.source_dir / rel
@@ -222,6 +223,10 @@ def main() -> None:
             raise SystemExit(f"UNSAFE_OR_MISSING_SOURCE={rel}")
         old = src.read_bytes()
         digest = sha(old)
+        # If the user's local file differs from the previously audited file,
+        # save its exact source for the next diagnosis before failing closed.
+        reference_copy = a.report_dir / ("actual_" + rel.replace("/", "_"))
+        reference_copy.write_bytes(old)
         if rel in EXPECTED and digest != EXPECTED[rel]:
             raise SystemExit(f"AUDITED_LOCAL_SHA_CHANGED={rel} got={digest}")
         if MARKER in old.decode("utf-8"):
@@ -233,7 +238,6 @@ def main() -> None:
         if old == new:
             raise SystemExit(f"NO_SOURCE_CHANGE={rel}")
         outputs.append((src, rel, old, new))
-    a.report_dir.mkdir(parents=True, exist_ok=True)
     # Stage complete diffs and SHA values before any source changes.
     summary = []
     for src, rel, old, new in outputs:
