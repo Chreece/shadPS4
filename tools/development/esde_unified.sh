@@ -33,48 +33,6 @@ test "$(uname -m)" = x86_64
 for tool in git sha256sum ldd flock timeout; do
   command -v "$tool" >/dev/null || { echo "Missing tool: $tool"; exit 2; }
 done
-# Recreate the previously used Debian 13/Clang 19 build container after
-# Docker cache cleanup instead of requiring the user to restore the image.
-IMAGE=shadps4-ngs2-builder:trixie-clang19-v1
-IN_CONTAINER=0
-if ! command -v clang-19 >/dev/null || ! command -v clang++-19 >/dev/null || ! command -v clang-scan-deps-19 >/dev/null; then
-  command -v docker >/dev/null || { echo 'Need a complete Clang-19 toolchain or Docker.' >&2; exit 2; }
-  docker info --format 'DOCKER_SERVER={{.ServerVersion}}'
-  if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    echo 'STAGE=RECREATE_TRIXIE_CLANG19_IMAGE'
-    CONTEXT="$ESDE/docker-context-clang19-v1"
-    mkdir -p "$CONTEXT"
-    cat > "$CONTEXT/Dockerfile" <<'DOCKERFILE'
-FROM debian:trixie-slim
-RUN apt-get -o Acquire::ForceIPv4=true update && \
-    apt-get -o Acquire::ForceIPv4=true install -y --no-install-recommends \
-    ca-certificates git cmake ninja-build build-essential clang-19 clang-tools-19 \
-    llvm-19-dev llvm-19-tools lld-19 ccache pkg-config python3 nasm \
-    libasound2-dev libpulse-dev libopenal-dev libssl-dev zlib1g-dev libedit-dev \
-    libudev-dev libevdev-dev libjack-jackd2-dev libsndio-dev libvulkan-dev \
-    libpng-dev libx11-dev libxext-dev libwayland-dev libdecor-0-dev \
-    libxkbcommon-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
-    libxrandr-dev libxfixes-dev libxinerama-dev libegl1-mesa-dev \
-    libgl1-mesa-dev libgles2-mesa-dev uuid-dev libdbus-1-dev \
-    libglfw3-dev \
-    && test -x /usr/bin/clang-scan-deps-19 \
-    && rm -rf /var/lib/apt/lists/*
-DOCKERFILE
-    docker build --progress=plain -t "$IMAGE" "$CONTEXT"
-  fi
-  docker run --rm "$IMAGE" /usr/bin/clang-scan-deps-19 --version
-  IN_CONTAINER=1
-fi
-build_tool() {
-  if [[ "$IN_CONTAINER" == 1 ]]; then
-    docker run --rm --user "$(id -u):$(id -g)" \
-      --mount "type=bind,src=$ESDE,dst=$ESDE" \
-      --workdir "$RUN" --env "HOME=$RUN" \
-      shadps4-ngs2-builder:trixie-clang19-v1 "$@"
-  else
-    "$@"
-  fi
-}
 echo STAGE=FETCH_PINNED_REVISIONS
 git -c http.version=HTTP/1.1 clone --no-checkout https://github.com/shadps4-emu/shadPS4.git "$SRC"
 git -C "$SRC" remote add fork https://github.com/Chreece/shadPS4.git
@@ -120,6 +78,48 @@ echo STAGE=SUBMODULES
 git -C "$SRC" submodule update --init --recursive --jobs 4
 jobs="$(nproc)"
 if (( jobs > 8 )); then jobs=8; fi
+# Recreate the previously used Debian 13/Clang 19 build container after
+# Docker cache cleanup instead of requiring the user to restore the image.
+IMAGE=shadps4-ngs2-builder:trixie-clang19-v1
+IN_CONTAINER=0
+if ! command -v clang-19 >/dev/null || ! command -v clang++-19 >/dev/null || ! command -v clang-scan-deps-19 >/dev/null; then
+  command -v docker >/dev/null || { echo 'Need a complete Clang-19 toolchain or Docker.' >&2; exit 2; }
+  docker info --format 'DOCKER_SERVER={{.ServerVersion}}'
+  if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    echo 'STAGE=RECREATE_TRIXIE_CLANG19_IMAGE'
+    CONTEXT="$ESDE/docker-context-clang19-v1"
+    mkdir -p "$CONTEXT"
+    cat > "$CONTEXT/Dockerfile" <<'DOCKERFILE'
+FROM debian:trixie-slim
+RUN apt-get -o Acquire::ForceIPv4=true update && \
+    apt-get -o Acquire::ForceIPv4=true install -y --no-install-recommends \
+    ca-certificates git cmake ninja-build build-essential clang-19 clang-tools-19 \
+    llvm-19-dev llvm-19-tools lld-19 ccache pkg-config python3 nasm \
+    libasound2-dev libpulse-dev libopenal-dev libssl-dev zlib1g-dev libedit-dev \
+    libudev-dev libevdev-dev libjack-jackd2-dev libsndio-dev libvulkan-dev \
+    libpng-dev libx11-dev libxext-dev libwayland-dev libdecor-0-dev \
+    libxkbcommon-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
+    libxrandr-dev libxfixes-dev libxinerama-dev libegl1-mesa-dev \
+    libgl1-mesa-dev libgles2-mesa-dev uuid-dev libdbus-1-dev \
+    libglfw3-dev \
+    && test -x /usr/bin/clang-scan-deps-19 \
+    && rm -rf /var/lib/apt/lists/*
+DOCKERFILE
+    docker build --progress=plain -t "$IMAGE" "$CONTEXT"
+  fi
+  docker run --rm "$IMAGE" /usr/bin/clang-scan-deps-19 --version
+  IN_CONTAINER=1
+fi
+build_tool() {
+  if [[ "$IN_CONTAINER" == 1 ]]; then
+    docker run --rm --user "$(id -u):$(id -g)" \
+      --mount "type=bind,src=$ESDE,dst=$ESDE" \
+      --workdir "$RUN" --env "HOME=$RUN" \
+      shadps4-ngs2-builder:trixie-clang19-v1 "$@"
+  else
+    "$@"
+  fi
+}
 echo STAGE=FOCUSED_TESTS
 for suite in startup_loading quit_dialog ngs2_hle userservice occlusion_query image_transfer; do
   if [[ -f "$SRC/tests/$suite/CMakeLists.txt" ]]; then
