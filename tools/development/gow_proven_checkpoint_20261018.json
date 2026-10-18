@@ -139,6 +139,14 @@
       "tag": "GOW_BIG_BUFFER_BIND / GOW_BIG_BUFFER_SYNC",
       "build_goal": "Exact isolated 135s GoW run, conditional 8GiB Ollama, full source/binary restore.",
       "next_decision": "If ObtainBuffer CPU time high and upload bytes near zero: look for unnecessary scan/EnsureResident overhead; if dirty upload bytes high, inspect true dirty ranges and GPU readback; if both negligible, reject oversized-buffer CPU hypothesis."
+    },
+    "sparse_cpu_dirty_upload_summary_fastpath": {
+      "source": "src/video_core/buffer_cache/region_manager.h",
+      "helper": "src/video_core/buffer_cache/sparse_cpu_upload_words.h",
+      "native_test": "tests/video_core/test_sparse_cpu_upload_words_20261018.cpp",
+      "native_behavior": "Equivalent source algorithm reproduced and locally g++-compiled: 200001 randomized/boundary cases pass. Repository regression test contains 200002 cases; still must compile/run on host before emulator build.",
+      "source_status": "Only test branch; opt-in, default old logic.",
+      "performance_status": "TO_BE_MEASURED_ON_USER_SERVER; not promoted."
     }
   },
   "open_blocker": {
@@ -154,7 +162,7 @@
     "root_cause_hypothesis": "Game FPS declines before Audio3D production deteriorates; guest-specific cutscene simulation/resource handling bottleneck is plausible, but causality is NOT established; other games not heavily affected.",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Execute pinned big-buffer timing launcher and upload gow-big-buffer-*.tar.gz; use timing breakdown to implement a measured correctness-preserving optimization, no audio workarounds.",
+    "next": "Run pinned sparse CPU upload launcher, inspect actual scan CPU time and real dirty upload bytes with source/graphics preservation; promote only if equal correctness and repeatable CPU improvement.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -163,18 +171,18 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "test/gow-large-buffer-cpu-timing-20261018",
-    "next_trial_script": "tools/development/gow_large_buffer_cpu_timing_build_20261018.sh",
-    "next_trial_launcher": "tools/development/gow_large_buffer_cpu_timing_launcher_20261018.sh",
-    "expected_capture_archive_prefix": "gow-big-buffer-",
+    "current_trial_branch": "test/gow-sparse-cpu-upload-20261018",
+    "next_trial_script": "tools/development/gow_sparse_cpu_upload_build_ab_20261018.sh",
+    "next_trial_launcher": "tools/development/gow_sparse_cpu_upload_launcher_20261018.sh",
+    "expected_capture_archive_prefix": "gow-sparse-upload-",
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
     "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
-    "target": "Fault thrash localization during pixel-identical stalled scene; bounded sampled write-protected 64 KiB guest memory regions 1/128, approximate counters with error bounds.",
-    "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix.",
-    "state": "CORRECTED_UP_TO_DATE_CMAKE_OBJECT_FALSE_FAILURE; AWAIT_REAL_LINK_AND_GAMEPLAY",
+    "target": "Optimize CPU dirty tracking word visitation only for CPU Clear/GPU None upload range enumeration. Skip words not set in existing RegionBits::set_summary, preserve all modified ranges, protection updates and GPU write transitions.",
+    "promote_only_when": "Native 200002-case dirty-mask/upload-range equivalence + full emulator compiles + both 135s gameplay without regressions + comparable bytes/ranges and graphics + repeatable lower CPU scan time. Do not claim audio fix absent measured improvement.",
+    "state": "NATIVE_POLICY_EQUIVALENCE_TEST_COMMITTED; ISOLATED_EMULATOR_COMPILE_AND_SAME_BINARY_AB_PENDING",
     "source_capture_contract": "Read actual protected SRT walker, resource_patching, resource_discover, shader_info_collection and relevant GPU/audio C++ sources with SHA-256 fingerprints, no build or services modified.",
     "next_code_change_policy": "Use 15:13 actual protected source and captures; identify a specific unresolved opcode/resource-binding/shader descriptor error, prove patch applies to current source, add regression and precompile before gameplay; do not repeat speculative audio pacing, VRAM-only, already-fixed SRT arithmetic, or GPU UFFD callback experiments.",
-    "ollama_rule": "No Ollama API or stop if >=8GiB VRAM free; below 8GiB unload only Ollama and restore existing models after game. Never stop HA/Sunshine/SSH.",
+    "ollama_rule": "When >=8GiB free GPU VRAM leave Ollama entirely untouched; below threshold stop only Ollama and restore models after both games. Never alter SSH/Sunshine/HA.",
     "proven_graphics_status": "UNCHANGED_SHA_PROTECTED",
     "code_change": "None in game semantics; isolated PageManager sampler is opt-in, 64 fixed counters, no allocations on the hot fault path, no changes to page invalidation/wake/permissions/SDL/renderer/shaders.",
     "protected_baselines": "Graphics executable sha 8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef; 12:47 diagnostic binary sha 63a00275b2f78ba58ef35577af0bf0b1681ac245a7e1636de1673cb4f65275ce",
@@ -183,7 +191,9 @@
     "no_more_audio_tweaks": "Audio is a passive regression metric while targeting demonstrable game progression/memory pressure.",
     "promotion_gate": "GPU shader/buffer probe only; do not claim performance improvement until linked binary actually runs and produces GOW_BIG_BUFFER_BIND and GOW_BIG_BUFFER_SYNC cumulative CPU time and dirty upload totals.",
     "focus": "Target shader 0xdfd7cccc and >=64 MiB buffer descriptors: measure ObtainBuffer call count, cumulative and max CPU microseconds; BufferCache SynchronizeMemory actual upload bytes, dirty range count, scan and total CPU microseconds.",
-    "next_launcher_pinned_commit": "a7598e6f8331a894b9c50c76205c033f31b82534"
+    "next_launcher_pinned_commit": "a7598e6f8331a894b9c50c76205c033f31b82534",
+    "flag": "SHADPS4_SPARSE_CPU_UPLOAD_WORDS=1",
+    "control": "SHADPS4_SPARSE_CPU_UPLOAD_WORDS=0 legacy all tracking words; same executable and identical 738MB buffer timing probe in both 135s runs."
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -541,6 +551,35 @@
       "correction": "Keep all 11 object existence checks; require actual compile-log proof only for vk_rasterizer.cpp.o and buffer_cache.cpp.o (the instrumented sources), let unchanged dependency objects be up to date.",
       "proof_from_archive": "Original compile-abi-preflight.log has BOTH changed object 'Building CXX object' entries; Python re-evaluation of updated conditions PASS.",
       "next": "Rerun pinned launcher at a7598e6f8331a894b9c50c76205c033f31b82534 to execute full link + 135 s game and collect real bind/sync timings."
+    },
+    "2026-10-18_18-29_actual_large_shader_buffer_cpu_timings": {
+      "archive": "gow-big-buffer-20261018-182952.tar.gz",
+      "result": "BUILD_LINK_PASS_GAMEPLAY_135S_PASS; SOURCE_AND_BINARIES_RESTORED",
+      "build_sha256": "8676be72357e6659c45f32d88fd9cdb6af28a9657f7ac4b36678bf1aa0bcf078",
+      "protected_restored_sha256": "d765a3ac9d671f524e332d113f8d899ca2648be8f837a059b056450f5b7f55b0",
+      "gameplay_seconds": 136.06,
+      "measured_shader_hash": "0xdfd7cccc",
+      "large_readonly_sync_calls": 919808,
+      "dirty_copy_ranges": 5213846,
+      "dirty_bytes_prepared_for_upload": 68494848000,
+      "cpu_dirty_scan_us": 9971706,
+      "cpu_total_sync_us": 14746695,
+      "max_single_sync_us": 384044,
+      "initial_dirty_bytes": 763924480,
+      "target_shader_obtain_buffer_calls": 41728,
+      "target_shader_obtain_cpu_total_us": 1207794,
+      "target_shader_obtain_cpu_max_us": 384155,
+      "average_large_sync_upload_bytes": 74466.46,
+      "average_dirty_ranges_per_large_sync": 5.668,
+      "average_cpu_dirty_scan_us": 10.841,
+      "late_fps": 20.18,
+      "late_audio3d_ready_fraction": 0.3851,
+      "srt_offset_failures": 42,
+      "gpu_device_losses": 0,
+      "ollama_free_vram_before_gib": 7.839,
+      "ollama_free_vram_after_unload_gib": 19.527,
+      "ollama_restored": true,
+      "conclusion": "Very large repeated whole-resident-range dirty synchronization work was measured. Old ForEachModifiedRange loops all 64 tracking words in a 16MiB region, even for sparse CPU dirty bitsets. Target a summary-based scan skipping clean 64-page words with original watcher and upload semantics retained."
     }
   }
 }
