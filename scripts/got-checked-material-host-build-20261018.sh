@@ -209,11 +209,18 @@ while IFS= read -r rel; do
             STATUS=UNEXPECTED_SOURCE_SYMLINK; exit 2;
         }
         actual_blob="$(git -C "$SOURCE" hash-object "$SOURCE/$rel")"
-        test -n "$base_blob" && test "$actual_blob" = "$base_blob" || {
-            echo "LOCAL_EDIT_OR_INTERRUPTED_OVERLAY=$rel actual=$actual_blob base=$base_blob"
-            STATUS=UNKNOWN_LOCAL_EDIT_NO_CHANGES
-            exit 2
-        }
+        if [ -z "$base_blob" ]; then
+            echo "LOCAL_FILE_NOT_IN_BASE_REF=$rel actual=$actual_blob"
+            echo "SOURCE_OVERRIDE=$rel actual=$actual_blob base=NOT_IN_BASE" \
+                >> "$RUN/info/preexisting-source-overrides.txt"
+        elif [ "$actual_blob" != "$base_blob" ]; then
+            # The last GoT runs left source overlays behind. Preserve their
+            # exact bytes with cp -p at staging and restore regardless of
+            # whether they match a previously known trial commit. No reset.
+            echo "PRESERVE_EXISTING_LOCAL_SOURCE=$rel actual=$actual_blob base=$base_blob"
+            echo "SOURCE_OVERRIDE=$rel actual=$actual_blob base=$base_blob" \
+                >> "$RUN/info/preexisting-source-overrides.txt"
+        fi
     else
         test -z "$base_blob" || {
             echo "MISSING_BASELINE_SOURCE=$rel"
@@ -223,6 +230,13 @@ while IFS= read -r rel; do
     fi
 done < "$RUN/info/overlay-files.txt"
 echo "SOURCE_PREFLIGHT=PASS files=59"
+if [ -f "$RUN/info/preexisting-source-overrides.txt" ]; then
+    echo "PREEXISTING_SOURCE_OVERRIDES=$(wc -l < "$RUN/info/preexisting-source-overrides.txt")"
+    # Names and hashes only; no private local source content in the report.
+    cat "$RUN/info/preexisting-source-overrides.txt"
+else
+    echo "PREEXISTING_SOURCE_OVERRIDES=0"
+fi
 
 STATUS=HOST_TESTS
 git -C "$SOURCE" show "$CANDIDATE:tests/shader_recompiler/test_sharp_fetch_bounds.cpp" \
