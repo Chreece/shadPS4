@@ -695,13 +695,30 @@ done
   tail -95 "$OUT/compile-abi-preflight.log"
   exit 1
 }
+# CMake correctly omits object files that are already up to date.
+# Proof of an object being rebuilt is required ONLY for the two instrumented
+# translation units. The prior trial falsely failed when an unrelated
+# resource_patching_pass.cpp.o existed but needed no rebuild.
 for obj in "${EARLY_OBJECTS[@]}"; do
-  [[ -s "$BUILD/$obj" ]] || { echo "PRECOMPILED_NATIVE_OBJECT_MISSING=$obj"; exit 1; }
-  grep -F "$obj" "$OUT/compile-abi-preflight.log" >> "$OUT/precompiled-object-proof.txt" || {
-    echo "NATIVE_OBJECT_NOT_RECOMPILED=$obj"; exit 1;
+  [[ -s "$BUILD/$obj" ]] || {
+    echo "PRECOMPILED_NATIVE_OBJECT_MISSING=$obj"; exit 1;
+  }
+  if grep -F "$obj" "$OUT/compile-abi-preflight.log"       >> "$OUT/precompiled-object-proof.txt"; then
+    echo "NATIVE_OBJECT_COMPILED_THIS_RUN=$obj"
+  else
+    echo "NATIVE_OBJECT_ALREADY_UP_TO_DATE=$obj"
+  fi
+done
+for changed_obj in \
+  CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o \
+  CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer_cache.cpp.o; do
+  grep -Fq "Building CXX object $changed_obj" "$OUT/compile-abi-preflight.log" || {
+    echo "MODIFIED_CPU_TIMING_TRANSLATION_UNIT_NOT_RECOMPILED=$changed_obj"
+    exit 1;
   }
 done
-echo "NATIVE_UFFD_RENDERER_LOGGER_AND_TWO_AUDIO_CPP_PREFLIGHT=PASS"
+echo "NATIVE_CHANGED_BUFFER_AND_RENDERER_CPP_PREFLIGHT=PASS"
+echo "UNCHANGED_CMAKE_OBJECTS_MAY_BE_UP_TO_DATE=YES"
 STAGE=FULL_LINK
 echo "PINNED_SOURCE_REPLAY=PASS; BUILD_START=YES"
 cmake --build "$BUILD" --target shadps4 --parallel 4 >"$OUT/build.log" 2>&1
