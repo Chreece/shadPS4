@@ -95,7 +95,7 @@
     },
     "GPU_invalidation_phase_profile": {
       "feature": "SHADPS4_GPU_INVALIDATE_PROBE=1",
-      "status": "CODE_STAGED_FOR_ISOLATED_GFX_BUILD; NOT_YET_COMPILED_OR_TESTED_ON_USER_HOST",
+      "status": "PREVIOUS_TEST_PRELAUNCH_FAILED; EXACT_PINNED_CALLBACK_ANCHOR_CORRECTED; HISTORICAL_SELFTEST_ADDED; HOST_COMPILATION_PENDING",
       "sample_rate": "1 per 256 queued CPU fault GPU invalidations",
       "measures": "queue wait time before GPU task starts; InvalidateMemory execution time; post-invalidation callback+UFFDIO_WAKE completion time, aligned to FPS/audio/UFFD five-second windows",
       "preserves": "All source-preimage checks, shader/renderer fixes, default invalidation and wakeup semantics",
@@ -129,7 +129,7 @@
     "next_trial_launcher": "tools/development/gow_gpu_invalidate_timing_launcher_20261018.sh",
     "expected_capture_archive_prefix": "gow-gpu-invalidate-timing-",
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
-    "pinned_gpu_latency_source_commit": "16848dfd4f453f4a68fea1069c79da49421aef38",
+    "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
     "target": "Linux UFFD CPU/GPU page-coherence performance, not SDL audio buffer workaround",
     "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix."
   },
@@ -277,6 +277,20 @@
         "protected_graphics_sha": "PASS",
         "no_gpu_device_loss": true
       }
+    },
+    "2026-10-18_12-31_gpu_phase_probe_prelaunch_failure": {
+      "archive": "gow-gpu-invalidate-timing-20261018-123135.tar.gz",
+      "result": "FAILED_BEFORE_BUILD_OR_GAME_LAUNCH",
+      "exit_code": 1,
+      "final_stage": "STAGE_OPT_IN_GPU_INVALIDATE_PHASE_PROBE",
+      "exact_failure": "GPU_PROBE_FAIL_CLOSED=PINNED_GRAPHICS_PATCH_ANCHOR_NOT_UNIQUE count=0",
+      "root_cause": "Diagnostic patcher used a callback with incorrect indentation and comments; the fully rendered code reconstructed by gow_restore_graphics_renderer_20261017.py uses the historical UFFD callback (from verified SHA256 a86fd050d18d3f5b942756bf4e74b69ccb856183f86d526c9346a07f78ab4feb).",
+      "protected_graphics_binary": "SHA256 verification PASS, unchanged",
+      "original_source": "SHA256 verification PASS, unchanged",
+      "isolated_build_source": "PRETEST_RESTORE_CHECK PASS",
+      "main_app_or_host_modified": false,
+      "live_game_started": false,
+      "next_steps": "Correct exact callback fragment and run an explicit historical-source selftest prior to any isolated compilation; do not call this a gameplay or audio regression."
     }
   }
 }
