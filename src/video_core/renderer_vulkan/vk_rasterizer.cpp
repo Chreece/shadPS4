@@ -2180,7 +2180,7 @@ void Rasterizer::UpdateDynamicState(const GraphicsPipeline* pipeline, const bool
                          dynamic_state.depth_write_enabled,
                          static_cast<u32>(dynamic_state.depth_compare_op),
                          dynamic_state.stencil_test_enabled,
-                         dynamic_state.rasterizer_discard_enabled,
+                         dynamic_state.rasterizer_discard_enable,
                          static_cast<u32>(regs.clipper_control.clip_space),
                          regs.IsClipDisabled(),
                          vp_count,sc_count);
