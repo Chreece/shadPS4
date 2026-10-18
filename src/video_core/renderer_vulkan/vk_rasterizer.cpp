@@ -1138,8 +1138,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 const u32 sample = ++samples[key];
                 if (sample == 1 || sample == 64 || sample == 256) {
                     AmdGpu::Buffer source{};
-                    const bool fetched = image_desc.indexed_table_fetch.Fetch(
-                        stage.flattened_ud_buf.data(), &source);
+                    const bool fetched = image_desc.indexed_table_fetch.FetchChecked(
+                        stage.flattened_ud_buf.data(), stage.flattened_ud_buf.size(), &source);
                     const u64 bytes = fetched
                         ? (source.stride == 0 ? static_cast<u64>(source.num_records)
                                               : static_cast<u64>(source.stride) *
@@ -1217,8 +1217,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             ASSERT(count>=2 && count<=Shader::MaxGuestIndexedImageEntries+1);
             ASSERT(num_images+count<=image_bindings.size());
             AmdGpu::Buffer source{};
-            const bool fetched=image_desc.indexed_table_fetch.Fetch(
-                stage.flattened_ud_buf.data(),&source);
+            const bool fetched=image_desc.indexed_table_fetch.FetchChecked(
+                stage.flattened_ud_buf.data(),stage.flattened_ud_buf.size(),&source);
             const u64 guest_size=fetched
                 ? (source.stride==0 ? static_cast<u64>(source.num_records)
                                      : static_cast<u64>(source.stride)*source.num_records)
@@ -1640,8 +1640,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         if (sampler.is_guest_indexed) {
             const u32 count = sampler.NumBindings(stage);
             AmdGpu::Buffer source{};
-            const bool fetched = sampler.indexed_table_fetch.Fetch(
-                stage.flattened_ud_buf.data(),&source);
+            const bool fetched = sampler.indexed_table_fetch.FetchChecked(
+                stage.flattened_ud_buf.data(),stage.flattened_ud_buf.size(),&source);
             const u32 record_stride = sampler.indexed_record_stride_bytes;
             const u32 descriptor_offset = sampler.indexed_sampler_offset_bytes;
             const u64 bytes = fetched ? (source.stride == 0
