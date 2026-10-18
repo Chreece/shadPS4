@@ -292,7 +292,7 @@ ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, Bindi
                  "req_samples={} old_samples={} req_extent={}x{} old_extent={}x{}",
                  requested_info.guest_address,cache_image.info.guest_address,
                  static_cast<u32>(binding),
-                 requested_info.props.is_depth,cache_image.info.props.is_depth,
+                 bool(requested_info.props.is_depth),bool(cache_image.info.props.is_depth),
                  vk::to_string(requested_info.pixel_format),
                  vk::to_string(cache_image.info.pixel_format),
                  requested_info.num_bits,cache_image.info.num_bits,
@@ -348,8 +348,8 @@ ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, Bindi
                  "binding={} recreate={} stencil_match={} bpp_match={} "
                  "req_depth={} old_depth={} req_layers={} old_layers={}",
                  WatchedMenuDepthSource(),static_cast<u32>(binding),recreate,
-                 stencil_match,bpp_match,requested_info.props.is_depth,
-                 cache_image.info.props.is_depth,
+                 stencil_match,bpp_match,bool(requested_info.props.is_depth),
+                 bool(cache_image.info.props.is_depth),
                  requested_info.resources.layers,cache_image.info.resources.layers);
     }
     if (recreate) {
@@ -378,7 +378,7 @@ ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, Bindi
                      cache_image.info.guest_address,new_image.info.guest_address,
                      vk::to_string(cache_image.info.pixel_format),
                      vk::to_string(new_image.info.pixel_format),
-                     cache_image.info.props.is_depth,new_image.info.props.is_depth,
+                     bool(cache_image.info.props.is_depth),bool(new_image.info.props.is_depth),
                      cache_image.info.num_samples,new_image.info.num_samples);
         }
         runtime.CopyColorAndDepth(&cache_image, &new_image);
@@ -656,7 +656,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
                  "vk_format={} bits={} samples={} extent={}x{} "
                  "guest_bytes={} tile_mode={} exact_format={}",
                  info.guest_address,static_cast<u32>(desc.type),
-                 info.props.is_depth,vk::to_string(info.pixel_format),
+                 bool(info.props.is_depth),vk::to_string(info.pixel_format),
                  info.num_bits,info.num_samples,info.size.width,
                  info.size.height,info.guest_size,
                  static_cast<u32>(info.tile_mode),exact_fmt);
@@ -738,8 +738,8 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
                  "requested_extent={}x{} cached_extent={}x{} "
                  "requested_bytes={} cached_bytes={} "
                  "requested_binding={}",
-                 info.guest_address,info.props.is_depth,
-                 image.info.props.is_depth,
+                 info.guest_address,bool(info.props.is_depth),
+                 bool(image.info.props.is_depth),
                  vk::to_string(info.pixel_format),
                  vk::to_string(image.info.pixel_format),
                  info.num_samples,image.info.num_samples,
