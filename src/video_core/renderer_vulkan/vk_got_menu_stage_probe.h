@@ -53,21 +53,32 @@ inline bool MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& sched
     }();
     if (!enabled) return false;
 
-    // Prior captures triggered while the Sucker Punch logo was still on
-    // screen, then compared its GPU pixels with a LATER, white menu
-    // screenshot. That was not a valid same-frame diagnosis. Defer the
-    // one-shot probe until the menu is visible (60s after first frame).
+    // The 21:02 experimental depth A/B reached the visible white menu at
+    // wall-clock 80s, but captured at +60s during the earlier black phase.
+    // An isolated bounded delay lets the same compiled candidate re-test
+    // the actual menu without rebuilding whenever startup timing shifts.
+    static const long delay_seconds=[] {
+        const char* const env=std::getenv("SHADPS4_GOT_MENU_CAPTURE_DELAY_SEC");
+        if (!env || !env[0]) return 85L;
+        char* end{};
+        const long value=std::strtol(env,&end,10);
+        if (end==env || !end || *end!='\0' || value<65 || value>110)
+            return 85L;
+        return value;
+    }();
     using Clock=std::chrono::steady_clock;
     static const auto first_frame=Clock::now();
     static std::atomic<bool> executed{false};
     const auto elapsed=std::chrono::duration_cast<std::chrono::seconds>(
         Clock::now()-first_frame).count();
-    if (executed.load(std::memory_order_relaxed) || elapsed<60) return false;
+    if (executed.load(std::memory_order_relaxed) ||
+        elapsed<delay_seconds) return false;
     if (executed.exchange(true,std::memory_order_acq_rel)) return false;
     LOG_INFO(Render_Vulkan,
              "GotMenuSynchronizedCapture: since_first_frame_s={} "
+             "requested_delay_s={} menu_expected_visible=YES "
              "sync_guest_and_host_same_frame=YES stage=BEFORE_HOST_POSTPROCESS",
-             elapsed);
+             elapsed,delay_seconds);
 
     struct Spec {const char* name;u64 address;vk::Format expected_format;};
     // Confirmed from the 20:22 source graph:
