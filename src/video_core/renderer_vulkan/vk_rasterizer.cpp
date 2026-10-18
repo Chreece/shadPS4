@@ -26,6 +26,7 @@
 #include "video_core/renderer_vulkan/vk_got_menu_pass_trace.h"
 #include "video_core/renderer_vulkan/vk_got_scene_depth_ab.h"
 #include "video_core/renderer_vulkan/vk_got_scene_gpu_queries.h"
+#include "video_core/renderer_vulkan/vk_got_indirect_gpu_readback.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -452,8 +453,8 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     needs_barrier |= runtime.IsBufferAccessed(buffer, base, size);
     bound_buffers.emplace_back(buffer, base, size, vk::AccessFlagBits2::eIndirectCommandRead);
 
-    const VideoCore::Buffer* count_buffer;
-    u64 count_offset;
+    const VideoCore::Buffer* count_buffer=nullptr;
+    u64 count_offset{};
     if (count_address != 0) {
         std::tie(count_buffer, count_offset) = buffer_cache.ObtainBuffer(count_address, 4);
         needs_barrier |= runtime.IsBufferAccessed(count_buffer, count_offset, 4);
@@ -497,7 +498,21 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         DebugState.IncDrawCall();
     }
 
+    // The earlier hardware counter test proved zero IA/VS/FS invocations
+    // for both indirect draws of fs 0x5116e459 (vs 0xae1cc7b7). Read back
+    // the *actual Vulkan GPU argument bytes* after the draw, not the guest
+    // register hint num_indices or potentially stale CPU mirror.
+    const bool prove_indirect=scene_gpu_query &&
+        scene_gpu_query->fs==0x5116e459u &&
+        scene_gpu_query->vs==0xae1cc7b7u && is_indexed;
     Diagnostics::EndGotSceneGpuQuery(scheduler,cmdbuf,std::move(scene_gpu_query));
+    if (prove_indirect) {
+        Diagnostics::CaptureGotSceneGpuIndirectArguments(
+            instance,scheduler,runtime,buffer,base,arg_address+offset,
+            stride,max_count,count_address ? count_buffer : nullptr,
+            count_offset,count_address,liverpool->regs.num_indices,
+            0x5116e459u,0xae1cc7b7u);
+    }
     CountSubmittedDraw(liverpool->regs, state, is_indexed, true);
     Diagnostics::TraceMenuDraw(liverpool->regs, *pipeline, state, is_indexed, true);
     ResetBindings(false);
