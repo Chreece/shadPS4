@@ -891,6 +891,22 @@ bool Rasterizer::IsComputeImageCopy(const Pipeline* pipeline) {
     // Perform image copy
     VideoCore::Image& src_image = desc0.is_written ? image1 : image0;
     VideoCore::Image& dst_image = desc0.is_written ? image0 : image1;
+    if (Diagnostics::MenuPassTraceEnabled() &&
+        Diagnostics::WatchedMenuSourceAddress() &&
+        (src_image.info.guest_address==Diagnostics::WatchedMenuSourceAddress() ||
+         dst_image.info.guest_address==Diagnostics::WatchedMenuSourceAddress())) {
+        static thread_local u32 observations{};
+        if (++observations<=8 || std::has_single_bit(observations)) {
+            LOG_INFO(Render_Vulkan,
+                     "GotMenuComputeImageCopy: cs={:#x} src={:#x} "
+                     "dst={:#x} bytes={} src_depth={} dst_depth={} "
+                     "observation={}",
+                     info.pgm_hash,src_image.info.guest_address,
+                     dst_image.info.guest_address,src_image.info.guest_size,
+                     src_image.info.props.is_depth,
+                     dst_image.info.props.is_depth,observations);
+        }
+    }
     runtime.CopyColorAndDepth(&src_image, &dst_image);
     return true;
 }
@@ -953,6 +969,17 @@ bool Rasterizer::IsComputeImageClear(const Pipeline* pipeline) {
             },
         .extent = image1.info.resources,
     };
+    if (Diagnostics::MenuPassTraceEnabled() &&
+        image1.info.guest_address==Diagnostics::WatchedMenuSourceAddress()) {
+        static thread_local u32 events{};
+        if (++events<=8 || std::has_single_bit(events)) {
+            LOG_INFO(Render_Vulkan,
+                     "GotMenuComputeImageClear: cs={:#x} dst={:#x} "
+                     "bytes={} depth={} observed={}",
+                     info.pgm_hash,image1.info.guest_address,
+                     image1.info.guest_size,image1.info.props.is_depth,events);
+        }
+    }
     runtime.ClearImage(&image1, range, clear);
     return true;
 }
@@ -1017,6 +1044,24 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             }
         } else {
             const auto vsharp = desc.GetSharp(stage);
+            if (Diagnostics::MenuPassTraceEnabled() &&
+                stage.hw_stage==Shader::HwStage::Compute && desc.is_written) {
+                const u64 watched=Diagnostics::WatchedMenuSourceAddress();
+                const u64 begin=static_cast<u64>(vsharp.base_address);
+                const u64 length=vsharp.GetSize();
+                if (watched && begin && watched>=begin &&
+                    watched-begin<length) {
+                    static thread_local std::unordered_map<u64,u32> counts;
+                    const u32 n=++counts[stage.pgm_hash];
+                    if (n<=4u || std::has_single_bit(n)) {
+                        LOG_INFO(Render_Vulkan,
+                                 "GotMenuComputeBufferWriter: cs={:#x} "
+                                 "buffer_base={:#x} bytes={} watched={:#x} "
+                                 "observations={}",
+                                 stage.pgm_hash,begin,length,watched,n);
+                    }
+                }
+            }
             if (audit) {
                 ++audit->buffer_binds;
                 if (vsharp.base_address == 0 || vsharp.GetSize() == 0) {
@@ -1527,6 +1572,29 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 image_desc.sharp_fetch.summary == Fetch::Summary::Invalid;
         }
         const auto tsharp = image_desc.GetSharp(stage);
+        // A depth R32_FLOAT source might alternatively be written by
+        // compute as a storage image. Track exact writer descriptors only
+        // when tracing and only for the source seen in the preceding run.
+        if (Diagnostics::MenuPassTraceEnabled() &&
+            stage.hw_stage==Shader::HwStage::Compute && image_desc.is_written &&
+            Diagnostics::WatchedMenuSourceAddress()!=0 &&
+            tsharp.Address()==Diagnostics::WatchedMenuSourceAddress()) {
+            static thread_local std::unordered_map<u64,u32> counts;
+            const u64 key=stage.pgm_hash;
+            const u32 n=++counts[key];
+            if (n<=4u || std::has_single_bit(n)) {
+                LOG_INFO(Render_Vulkan,
+                         "GotMenuComputeImageWriter: cs={:#x} "
+                         "address={:#x} shader_write=YES depth_view={} "
+                         "data_fmt={} number_fmt={} dimensions={}x{} "
+                         "observations={}",
+                         stage.pgm_hash,tsharp.Address(),image_desc.is_depth,
+                         static_cast<u32>(tsharp.GetDataFmt()),
+                         static_cast<u32>(tsharp.GetNumberFmt()),
+                         static_cast<u32>(tsharp.width)+1u,
+                         static_cast<u32>(tsharp.height)+1u,n);
+            }
+        }
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
         if (tsharp.Address() == 0 || data_fmt == AmdGpu::DataFormat::FormatInvalid) {
