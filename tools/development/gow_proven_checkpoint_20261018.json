@@ -129,7 +129,7 @@
       "next": "One protected full graphics 135s game trace to identify whether a few hot memory regions account for repeated write-protect faults."
     },
     "gow_big_buffer_timing_probe": {
-      "status": "REPOSITORY_PATCH_AND_BUILD_RUNNER_PINNED; FULL_EMULATOR_HOST_COMPILE_AND_GAMEPLAY_PENDING",
+      "status": "SOURCE_OVERLAY_APPLIES_AND_10_OBJECTS_COMPILED; runner object-proof false error fixed; full link and game not yet run",
       "flag": "SHADPS4_GOW_BIG_BUFFER_PROBE=1",
       "source_files": [
         "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
@@ -171,7 +171,7 @@
     "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
     "target": "Fault thrash localization during pixel-identical stalled scene; bounded sampled write-protected 64 KiB guest memory regions 1/128, approximate counters with error bounds.",
     "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix.",
-    "state": "NEXT_COMMAND_READY_BIG_BUFFER_TIMING_PROBE_PINNED",
+    "state": "CORRECTED_UP_TO_DATE_CMAKE_OBJECT_FALSE_FAILURE; AWAIT_REAL_LINK_AND_GAMEPLAY",
     "source_capture_contract": "Read actual protected SRT walker, resource_patching, resource_discover, shader_info_collection and relevant GPU/audio C++ sources with SHA-256 fingerprints, no build or services modified.",
     "next_code_change_policy": "Use 15:13 actual protected source and captures; identify a specific unresolved opcode/resource-binding/shader descriptor error, prove patch applies to current source, add regression and precompile before gameplay; do not repeat speculative audio pacing, VRAM-only, already-fixed SRT arithmetic, or GPU UFFD callback experiments.",
     "ollama_rule": "No Ollama API or stop if >=8GiB VRAM free; below 8GiB unload only Ollama and restore existing models after game. Never stop HA/Sunshine/SSH.",
@@ -181,8 +181,9 @@
     "test_sequence": "Exact 15:13 protected shader SHA precheck; host C++ policy test 20005 cases; isolated SRT and other affected native TU precompile; full link; A/B same compiled binary with SHADPS4_SRT_FORWARD_RETRY 0 then 1; screenshot/FPS/Audio3D/SRT counters; terminate game, restore Ollama only if stopped, restore original binaries/source.",
     "audio_regression_only": "Continue observing audio ready fraction and guest delivery gaps, but audio-specific scheduling/SDL changes are paused until execution/renderer blockers are addressed or a new direct audio root-cause proof emerges.",
     "no_more_audio_tweaks": "Audio is a passive regression metric while targeting demonstrable game progression/memory pressure.",
-    "promotion_gate": "Instrumentation itself is not a fix. Only change buffer synchronization/sparse residency based on actual CPU cost and true dirty upload count, with preserved GPU/CPU coherence and complete screenshots.",
-    "focus": "Target shader 0xdfd7cccc and >=64 MiB buffer descriptors: measure ObtainBuffer call count, cumulative and max CPU microseconds; BufferCache SynchronizeMemory actual upload bytes, dirty range count, scan and total CPU microseconds."
+    "promotion_gate": "GPU shader/buffer probe only; do not claim performance improvement until linked binary actually runs and produces GOW_BIG_BUFFER_BIND and GOW_BIG_BUFFER_SYNC cumulative CPU time and dirty upload totals.",
+    "focus": "Target shader 0xdfd7cccc and >=64 MiB buffer descriptors: measure ObtainBuffer call count, cumulative and max CPU microseconds; BufferCache SynchronizeMemory actual upload bytes, dirty range count, scan and total CPU microseconds.",
+    "next_launcher_pinned_commit": "a7598e6f8331a894b9c50c76205c033f31b82534"
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -516,6 +517,30 @@
         "Forward SRT dependency retries"
       ],
       "proven_original_gpu_audio_source": "UNMODIFIED"
+    },
+    "2026-10-18_18-22_big_buffer_false_native_compile_failure": {
+      "archive": "gow-big-buffer-20261018-182251.tar.gz",
+      "exit_code": 1,
+      "final_stage": "EARLY_UFFD_RENDERER_COMPILE",
+      "actual_cpp_compile": "PASS: gcc/make returned exit code zero; changed vk_rasterizer.cpp.o and buffer_cache.cpp.o compiled; 10/11 designated CMake objects logged as built.",
+      "incorrectly_expected_object": "CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/resource_patching_pass.cpp.o",
+      "actual_expected_object_status": "Already existed on disk and correctly up-to-date, so CMake did not recompile or print 'Building CXX object'.",
+      "root_cause": "Build verifier confused object existence with object needing recompilation; required grep proof for every dependency, rejecting a correctly incremental CMake build. Not an emulator C++ compile error.",
+      "shader_and_buffer_overlay": "PASS against exact live source; no source changes needed for correction",
+      "audio_sync_host": "PASS cases=3",
+      "uffd_batch_host": "PASS cases=3",
+      "gpu_callback_host": "PASS cases=4",
+      "full_link_started": false,
+      "gameplay_started": false,
+      "large_buffer_measurement": "NOT_CAPTURED",
+      "original_sources_restored": "PASS all 12",
+      "isolated_source_pretest_restored": "PASS",
+      "original_executable_sha256": "d765a3ac9d671f524e332d113f8d899ca2648be8f837a059b056450f5b7f55b0",
+      "after_executable_sha256": "d765a3ac9d671f524e332d113f8d899ca2648be8f837a059b056450f5b7f55b0",
+      "correction_commit": "59ad9fb6b4116eb9a45a10eabe5929340804de96",
+      "correction": "Keep all 11 object existence checks; require actual compile-log proof only for vk_rasterizer.cpp.o and buffer_cache.cpp.o (the instrumented sources), let unchanged dependency objects be up to date.",
+      "proof_from_archive": "Original compile-abi-preflight.log has BOTH changed object 'Building CXX object' entries; Python re-evaluation of updated conditions PASS.",
+      "next": "Rerun pinned launcher at a7598e6f8331a894b9c50c76205c033f31b82534 to execute full link + 135 s game and collect real bind/sync timings."
     }
   }
 }
