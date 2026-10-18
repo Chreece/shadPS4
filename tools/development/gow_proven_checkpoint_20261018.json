@@ -116,9 +116,11 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "test/gow-uffd-readfirst-20261018",
-    "next_trial_script": "tools/development/gow_audio_uffd_ab_20261018.py",
-    "next_trial_launcher": "tools/development/gow_uffd_readfirst_launcher_20261018.sh"
+    "current_trial_branch": "test/gow-audio-frame-cadence-20261018",
+    "next_trial_script": "tools/development/gow_frame_audio_trial_20261018.sh",
+    "next_trial_launcher": "tools/development/gow_frame_audio_launcher_20261018.sh",
+    "expected_capture_archive_prefix": "gow-frame-cadence-",
+    "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only."
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -212,6 +214,16 @@
       },
       "result_note": "Read-first reduced poll syscalls by 22.7% (1,751,971 fewer) despite 6% more nonblocking read() calls; produced NO meaningful audio improvement and may worsen late audio. Promotion: NO; preserve only as opt-in experiment.",
       "standalone_audio_backend": "No SDL failures, no GPU device loss, current native audio processing remains microseconds per buffer."
+    },
+    "2026-10-18_frame_and_audio_cadence_profiling": {
+      "branch": "test/gow-audio-frame-cadence-20261018",
+      "status": "HOST_COMPILE_AND_GAMEPLAY_NOT_RUN_YET",
+      "reason": "A/B showed audio starts near continuous 20–45 s but consistently falls to 26–32% after 70–80s. Guest-main shifts into userfaultfd wait, but Wwise futex wait can be ordinary sleep.",
+      "probe": "Optional read-only VIDEOOUT_FLIP_TIMING records guest flips/5s, effective FPS, missed video flip vblanks, and Present duration. Correlate with existing Audio3D 21.33ms buffers and UFFD window counters.",
+      "promotion_gate": "Do not change Wwise wakeups, SDL pacing or GPU invalidation semantics until actual frame rate is measured and directly compared with late audio cadence.",
+      "integration": "Runner isolates build, uses pinned asset hashes, reinstates source and original shadps4, retains archived logs and screenshots for geometry checks.",
+      "graphics_status": "PROTECTED_REFERENCE_PRESERVED",
+      "audio_status": "STUTTER_NOT_FIXED"
     }
   }
 }
