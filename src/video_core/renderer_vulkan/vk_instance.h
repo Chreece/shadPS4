@@ -107,9 +107,10 @@ public:
 
     // Vulkan 1.2 descriptor indexing + nonuniform sampled image arrays
     // + core dynamic array indexing: all required to index a real T# table.
+    // Vulkan uses the same sampled-image nonuniform indexing feature for
+    // standalone sampler descriptor arrays and sampled-image arrays.
     bool IsSamplerArrayNonUniformIndexingSupported() const {
-        return bool(vk12_features.descriptorIndexing) &&
-               bool(vk12_features.shaderSamplerArrayNonUniformIndexing);
+        return IsSampledImageNonUniformIndexingSupported();
     }
 
     bool IsSampledImageNonUniformIndexingSupported() const {
