@@ -384,7 +384,7 @@ void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors
 }
 
 void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors& descriptors,
-                     const Profile& profile) {
+                     const Profile& profile, bool allow_strided_guest_tables) {
     IR::Inst& inst = *resource.user;
 
     // Read image sharp.
@@ -429,6 +429,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     // truncate or guess the texture ID: an out-of-range GPU ID samples the
     // extra null slot in the sampled-image array.
     if (resource.has_indexed_table &&
+        (resource.indexed_record_stride_bytes == 0u || allow_strided_guest_tables) &&
         profile.supports_sampled_image_nonuniform_indexing &&
         (resource.indexed_record_stride_bytes == 0u ||
          (resource.has_indexed_sampler_table &&
@@ -1287,8 +1288,57 @@ void PatchImageArgs(IR::Inst& inst, Info& info) {
     }
 }
 
+// A compute program can have valid and invalid host-discoverable SRT
+// variants of the SAME strided material record. The incomplete variants
+// would otherwise be lowered as dummy descriptors alongside hundreds of
+// live indexed Vulkan image slots. A mixed permutation has no sound
+// resource model and has triggered GPU-driver failures in real workloads.
+//
+// Fail CLOSED per program: only enable the strided GPU-selected fastpath
+// when the complete set of strided image sources is representable from the
+// immutable per-program flattened user data. This is independent of any
+// game or shader hash and never fabricates a missing guest V# descriptor.
+static bool AllStridedGuestImagesRepresentable(
+    const Shader::Info& info, const ResourceDiscoveryList& resources,
+    const Profile& profile, u32& sources, u32& invalid) {
+    sources = 0;
+    invalid = 0;
+    if (info.hw_stage != HwStage::Compute) return true;
+    for (const auto& usage : resources) {
+        if (!usage.has_indexed_table || usage.indexed_record_stride_bytes == 0u)
+            continue;
+        ++sources;
+        const auto table_fetch=ConstructSharpFetch<AmdGpu::Buffer>(
+            usage.indexed_table_sharp,info);
+        AmdGpu::Buffer table{};
+        bool eligible = false;
+        if (table_fetch.Fetch(info.flattened_ud_buf.data(),&table) &&
+            table.Valid() && table.base_address) {
+            const u32 entries=CompleteGuestTsharpRecordEntries(
+                static_cast<u32>(table.stride),
+                static_cast<u32>(table.num_records),
+                usage.indexed_record_stride_bytes,
+                usage.indexed_descriptor_offset_bytes,
+                profile.max_guest_indexed_image_entries);
+            eligible = entries != 0u;
+        }
+        if (!eligible) ++invalid;
+    }
+    return invalid == 0u;
+}
+
 void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resources,
                           const Profile& profile) {
+    u32 indexed_sources{}, invalid_indexed_sources{};
+    const bool complete=AllStridedGuestImagesRepresentable(
+        info,resources,profile,indexed_sources,invalid_indexed_sources);
+    if (!complete && indexed_sources) {
+        LOG_WARNING(Render_Recompiler,
+                    "GuestTsharpIncompleteProgram: shader={:#x} stage={} "
+                    "strided_sources={} missing={} "
+                    "action=keep_original_resource_path",
+                    info.pgm_hash,info.hw_stage,indexed_sources,invalid_indexed_sources);
+    }
     // Iterate over discovered resources and patch them after finding the sharp.
     // Pass 1: Track resource sharps
     Descriptors descriptors{info};
@@ -1297,7 +1347,7 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         if (IsBufferInstruction(inst)) {
             PatchBufferSharp(usage, info, descriptors, profile);
         } else if (IsImageInstruction(inst)) {
-            PatchImageSharp(usage, info, descriptors, profile);
+            PatchImageSharp(usage, info, descriptors, profile, complete);
         }
     }
 
