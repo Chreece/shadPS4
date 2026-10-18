@@ -188,49 +188,87 @@ def main() -> int:
         return result
 
     try:
+        # Make the free-VRAM decision *before* any Ollama API call, model
+        # unload, or Docker stop. Use raw sysfs byte counts on the largest
+        # discrete GPU, never a rounded GiB display value.
         report["vram_before"] = lib.vram()
-        report["ollama_version_before"] = lib.api("/api/version", timeout=10).get("version")
-        models_before = lib.loaded()
-        owner = lib.backend()
-        atomic_json(a.out / "ollama-before.json", {
-            "models": models_before, "backend": owner})
-        print("OLLAMA_MODELS_BEFORE=" +
-              str([model.get("name") for model in models_before]), flush=True)
-        if owner:
-            attempted_stop = True
-            r = lib.docker("stop", "--time", "12", owner["id"], timeout=45)
-            (a.out / "ollama-stop.log").write_text(r.stdout+r.stderr)
-            if r.returncode or lib.running_container(owner["id"]):
-                raise RuntimeError("OLLAMA_BACKEND_CONTAINER_STOP_FAILED")
-            print("OLLAMA_BACKEND_STOPPED=YES", flush=True)
+        cards = report["vram_before"]["gpus"]
+        if not cards or cards[0]["total"] < 16 * 2**30:
+            raise RuntimeError("UNABLE_TO_IDENTIFY_16GIB_PLUS_DISCRETE_GPU_NO_OLLAMA_CHANGE")
+        card = cards[0]
+        free_bytes = max(0, card["total"] - card["used"])
+        threshold_bytes = 8 * 2**30
+        report["gpu_card"] = card["card"]
+        report["free_vram_before_gib"] = round(free_bytes/2**30, 3)
+        report["ollama_unload_threshold_gib"] = 8
+        need_ollama_unload = free_bytes < threshold_bytes
+        report["ollama_unload_required"] = need_ollama_unload
+        print("GPU_FREE_VRAM_BEFORE_GIB=" +
+              str(report["free_vram_before_gib"]), flush=True)
+        print("OLLAMA_UNLOAD_REQUIRED=" + str(need_ollama_unload), flush=True)
+        if need_ollama_unload:
+            report["ollama_version_before"] = lib.api(
+                "/api/version", timeout=10).get("version")
+            models_before = lib.loaded()
+            owner = lib.backend()
+            atomic_json(a.out / "ollama-before.json", {
+                "models": models_before, "backend": owner})
+            print("OLLAMA_MODELS_BEFORE=" +
+                  str([model.get("name") for model in models_before]), flush=True)
+            if owner:
+                attempted_stop = True
+                r = lib.docker("stop", "--time", "12", owner["id"], timeout=45)
+                (a.out / "ollama-stop.log").write_text(r.stdout+r.stderr)
+                if r.returncode or lib.running_container(owner["id"]):
+                    raise RuntimeError("OLLAMA_BACKEND_CONTAINER_STOP_FAILED")
+                report["ollama_action"] = "BACKEND_STOPPED"
+                print("OLLAMA_BACKEND_STOPPED=YES", flush=True)
+            else:
+                use_api_only = True
+                for item in models_before:
+                    name = item.get("name") or item.get("model")
+                    if name:
+                        lib.api("/api/generate", {"model": name, "prompt": "",
+                                                 "stream": False, "keep_alive": 0},
+                                timeout=40)
+                if lib.loaded():
+                    raise RuntimeError("OLLAMA_MODEL_API_UNLOAD_FAILED")
+                report["ollama_action"] = "API_UNLOADED"
+                print("OLLAMA_API_UNLOADED; MAY_RELOAD_IF_HA_CALLS_IT", flush=True)
+            time.sleep(4)
+            report["vram_after_decision"] = lib.vram()
+            freed_cards = report["vram_after_decision"]["gpus"]
+            freed = None
+            for current in freed_cards:
+                if current["card"] == card["card"] and current["total"] == card["total"]:
+                    freed = (card["used"] - current["used"]) / 2**30
+                    report["free_vram_after_unload_gib"] = round(
+                        (current["total"] - current["used"]) / 2**30, 3)
+                    break
+            report["ollama_vram_reclaimed_gib"] = (
+                round(freed, 3) if freed is not None else None)
+            print("OLLAMA_VRAM_RECLAIMED_GIB=" +
+                  str(report["ollama_vram_reclaimed_gib"]), flush=True)
+            was_using_vram = sum(item.get("size_vram", 0) or 0
+                                 for item in models_before)
+            if freed is not None and was_using_vram > 3 * 2**30 and freed < 1.5:
+                raise RuntimeError("OLLAMA_VRAM_NOT_RECLAIMED_NO_GAME")
+            if owner and lib.running_container(owner["id"]):
+                raise RuntimeError("OLLAMA_RESTARTED_PREMATURELY")
+            if use_api_only and lib.loaded():
+                raise RuntimeError("OLLAMA_RELOADED_BEFORE_GAME")
+            # This is a reservation threshold, not permission to kill other
+            # GPU workloads. If Ollama cannot release enough, fail closed.
+            if freed is None or report["free_vram_after_unload_gib"] < 8:
+                raise RuntimeError("LESS_THAN_8GIB_VRAM_AFTER_OLLAMA_UNLOAD_NO_GAME")
         else:
-            use_api_only = True
-            for item in models_before:
-                name = item.get("name") or item.get("model")
-                if name:
-                    lib.api("/api/generate", {"model": name, "prompt": "",
-                                             "stream": False, "keep_alive": 0},
-                            timeout=40)
-            if lib.loaded():
-                raise RuntimeError("OLLAMA_MODEL_API_UNLOAD_FAILED")
-            print("OLLAMA_API_UNLOADED; MAY_RELOAD_IF_HA_CALLS_IT", flush=True)
-        time.sleep(4)
-        report["vram_after_unload"] = lib.vram()
-        before_cards = report["vram_before"]["gpus"]
-        freed_cards = report["vram_after_unload"]["gpus"]
-        freed = None
-        if before_cards and freed_cards and (
-            before_cards[0]["total"] == freed_cards[0]["total"]
-        ):
-            freed = (before_cards[0]["used"] - freed_cards[0]["used"]) / 2**30
-        report["ollama_vram_reclaimed_gib"] = round(freed, 3) if freed is not None else None
-        print("OLLAMA_VRAM_RECLAIMED_GIB=" +
-              str(report["ollama_vram_reclaimed_gib"]), flush=True)
-        was_using_vram = sum(item.get("size_vram", 0) or 0 for item in models_before)
-        if freed is not None and was_using_vram > 3 * 2**30 and freed < 1.5:
-            raise RuntimeError("OLLAMA_VRAM_NOT_RECLAIMED_NO_GAME")
-        if owner and lib.running_container(owner["id"]):
-            raise RuntimeError("OLLAMA_RESTARTED_PREMATURELY")
+            # No API requests, no Docker operations, no model context changes.
+            report["ollama_action"] = "UNCHANGED_FREE_VRAM_AT_LEAST_8GIB"
+            report["vram_after_decision"] = lib.vram()
+            report["ollama_vram_reclaimed_gib"] = 0.0
+            print("OLLAMA_LEFT_RUNNING_AND_MODELS_UNTOUCHED=YES", flush=True)
+        if lib.active_emulators():
+            raise RuntimeError("ANOTHER_EMULATOR_STARTED_AFTER_VRAM_PREFLIGHT")
         for label, enabled in (("A_LEGACY_16K", False), ("B_EXTENDED_64K", True)):
             report["modes"][label] = play(label, enabled)
         report["comparison"] = {
@@ -276,7 +314,12 @@ def main() -> int:
                 report["ollama_backend_restored"] = False
         else:
             report["ollama_backend_restored"] = True
-        if report["ollama_backend_restored"]:
+        if not attempted_stop and not use_api_only:
+            # Ollama was never touched: do not invoke model loading, because
+            # even a no-op generate can alter residency or context.
+            report["ollama_models_restored"] = True
+            report["ollama_untouched"] = True
+        elif report["ollama_backend_restored"]:
             try:
                 report["ollama_models_restored"] = lib.reload_models(models_before, a.out)
             except Exception as exc:
