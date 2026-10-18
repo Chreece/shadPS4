@@ -9,7 +9,7 @@ PROJECT="$ROOT/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-301467
 BUILD="$ROOT/GodOfWarRagnarok/tests/gow-renderer-log-hotpath-20261017/build"
 BINARY="$BUILD/shadps4.fullgfx-sparse-cpu-upload-gow-sparse-upload-20261018-201012"
 SHA="7c2104500fe19dab6afe4b0967a0f0e4b568a3273501d2b3ea16970d9744fcfc"
-REF="f6917a4fabb08ce49a620e608480471e16a20d08"
+REF="7e7537e21beff18bb42b2d47e9b06c57b1fdefaf"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF"
 mkdir -p "$SCRIPTS" "$LOGS"
 [[ -e "$PROJECT/source/.git" ]] || {
@@ -31,7 +31,7 @@ while read -r name blob remote; do
   }
 done <<'SOURCES'
 gow_route_steering_20261018.py acec83a7655002554994bfdf9c57c7b13ad3510e tools/development/gow_route_steering_20261018.py
-gow_auto_scene_input_20261018.py 043fc59f4db59b641520faa6c45b9b155ef83268 tools/development/gow_auto_scene_input_20261018.py
+gow_auto_scene_input_20261018.py 00396ded70955ef7f06b422f5e00d8fd6cc9b39c tools/development/gow_auto_scene_input_20261018.py
 gow_automated_scene_ab_20261018.py 2a0a68946dd6ff0f052ae18e15911fc1b2a5f748 tools/development/gow_automated_scene_ab_20261018.py
 gow_ollama_vram_gameplay_20261018.py 35b9806f7eeae74e95e4738a25d88868b51fc325 tools/development/gow_ollama_vram_gameplay_20261018.py
 SOURCES
