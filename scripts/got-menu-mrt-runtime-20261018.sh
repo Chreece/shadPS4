@@ -195,73 +195,11 @@ for root in ("0x1504a08000","0x1525478000","0x1504210000"):
         out.append(f"DOWNSTREAM_OF_{root}={fs}@{target} slot={res}")
 if mrt_events==0:
     out.append("MRT_TRACE_MISSING=YES_NOT_EVIDENCE_OF_NO_SCENE_DRAW")
-if not any("0x1504a08000" in (x for x in writer_addresses)
-           for writer_addresses in [writers.keys()]):
+if "0x1504a08000" not in writers:
     out.append("SCENE_COLOR_WRITER=NOT_YET_CAPTURED_CHECK_OTHER_OUTPUT_PATHS")
 path=Path(sys.argv[2])
 path.write_text("\n".join(out)+"\n")
 print("\n".join(out[:100]))
-PYTEXGRAPH
-import re,sys
-from collections import Counter,defaultdict
-from pathlib import Path
-content=Path(sys.argv[1]).read_text(errors="replace")
-content=re.sub(r"\x1b\[[0-9;]*[mK]","",content)
-out=[]
-presents=Counter()
-draws=defaultdict(set)
-sources=defaultdict(Counter)
-info={}
-for line in content.splitlines():
-    def val(name):
-        m=re.search(r"\b"+name+r"=([^\s]+)",line)
-        return m.group(1) if m else ""
-    if "GotMenuPresentTrace:" in line:
-        presents[val("source_addr")]+=1
-    elif "GotMenuDrawTrace:" in line:
-        draws[val("color0")].add(val("fs"))
-    elif "GotMenuSourceEdge:" in line:
-        key=(val("fs"),val("target"),val("resource"))
-        source=val("source_addr")
-        sources[key][source]+=1
-        info[key,source]=(val("kind"),val("fetched"),
-                          val("dimensions"),val("data_format"),
-                          val("number_format"),val("image_type"))
-out.append("PURPOSE=REAL_MENU_FINAL_SHADER_TEXTURE_TO_RENDER_TARGET_GRAPH")
-out.append("PRESENTED_BUFFERS="+",".join(
-    f"{addr}:{n}" for addr,n in presents.most_common(8)))
-out.append("DISTINCT_SHADER_SOURCE_EDGES="+str(len(sources)))
-out.append("REAL_FINAL_FRAGMENT=0x96aa3f2e")
-present_edges=[]
-for (fs,target,res), srcs in sorted(sources.items()):
-    if target not in presents: continue
-    for source,num in srcs.most_common(15):
-        kind,fetched,dims,fmt,nfmt,typ=info[fs,target,res,source]
-        producer=",".join(sorted(draws[source])) or "NOT_SEEN_AS_GUEST_DRAW_TARGET"
-        present_edges.append((fs,target,res,source,num,fetched,dims,kind,producer))
-        out.append(f"PRESENT_SOURCE fs={fs} target={target} slot={res} "
-                   f"source={source} observations={num} "
-                   f"fetched={fetched} dimensions={dims} type={kind} "
-                   f"source_producer_fs={producer}")
-if not present_edges:
-    out.append("NO_PRESENT_SOURCE_TRACES=YES_RESULT_INCOMPLETE")
-for (fs,target,res),srcs in sorted(sources.items()):
-    if fs=="0x96aa3f2e" and target in presents:continue
-    if target=="0x0":continue
-    for source,num in srcs.most_common(2):
-        target_is_presentation=target in presents
-        source_is_draw=source in draws
-        if target_is_presentation or source_is_draw:
-            kind,fetched,dims,fmt,nfmt,typ=info[fs,target,res,source]
-            out.append(f"OFFSCREEN_SOURCE fs={fs} target={target} "
-                       f"slot={res} source={source} "
-                       f"source_drawn_by={','.join(sorted(draws[source])) or 'NOT_SEEN'} "
-                       f"fetched={fetched} type={kind} "
-                       f"dimensions={dims} fmt={fmt} nfmt={nfmt}")
-out.append("ANY_DIRECT_FINAL_TO_GUEST_DRAW_EDGE="+str(any(
-    source in draws for fs,target,res,source,num,*rest in present_edges)))
-Path(sys.argv[2]).write_text("\n".join(out)+"\n")
-print("\n".join(out[:80]))
 PYTEXGRAPH
 
   grep -aE 'shader=0x7eaf40ad' "$RUN/info/menu-provenance-all.log" \
