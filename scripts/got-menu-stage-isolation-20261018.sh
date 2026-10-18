@@ -139,6 +139,8 @@ PY
     echo "MENU_GPU_ATTRIBUTE_MATCHES=$(grep -ac 'GuestAttributeTsharpIndexed:' "$RUN/game.log" || true)"
     echo "MENU_INVALID_IMAGE_EVENTS=$(grep -ac 'InvalidTSharpSource: shader=0x7eaf40ad' "$RUN/game.log" || true)"
     echo "MAGENTA_PATCH_LOADED=$(grep -ac 'Loaded patch for fs shader 0x7eaf40ad' "$RUN/game.log" || true)"
+    echo "LOADER_INFO_ENABLED=YES"
+    echo "PINNED_MENU_PATCH_FILE_VERIFIED=$(test -s "$SPV_PATCH" && echo YES || echo NO)"
     echo "MAGENTA_STAGE_ISOLATION_TEST=VISUAL_ONLY_NOT_A_GAMEPLAY_FIX"
     echo "GPUVM_FAULT_EVENTS=$(grep -aic 'GPUVM fault detected' "$RUN/game.log" || true)"
     echo "EXIT=$rc"
@@ -284,7 +286,7 @@ p=pathlib.Path(sys.argv[1])
 d=json.loads(p.read_text()) if p.exists() else {}
 assert isinstance(d,dict)
 assert isinstance(d.setdefault("Log",{}),dict)
-d["Log"].update(filter="*:critical Input:info Config:info Render.Recompiler:info Render.Vulkan:info",
+d["Log"].update(filter="*:critical Input:info Config:info Loader:info Render.Recompiler:info Render.Vulkan:info",
                 sync=False,skip_duplicate=True)
 # This test is looking for *compile-time* invalid T# and native SRT causes.
 # Cached SPIR-V would hide them; disable cache ONLY for isolated profile.
