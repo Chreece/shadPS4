@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/static_vector.hpp>
+#include <cstdlib>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
@@ -454,6 +455,15 @@ bool Instance::CreateDevice() {
                 .wideLines = features.wideLines,
                 .multiViewport = features.multiViewport,
                 .samplerAnisotropy = features.samplerAnisotropy,
+                // Do not silently use pipeline-statistics queries when the
+                // feature has not been ENABLED on the logical device.
+                // Enable only for the explicitly opted-in, read-only GoT
+                // scene query test; normal emulator behavior is unchanged.
+                .pipelineStatisticsQuery = [&] {
+                    const char* const env=std::getenv("SHADPS4_GOT_SCENE_GPU_QUERY");
+                    const bool requested=env && env[0]=='1' && env[1]=='\0';
+                    return requested ? features.pipelineStatisticsQuery : VkBool32{VK_FALSE};
+                }(),
                 .vertexPipelineStoresAndAtomics = features.vertexPipelineStoresAndAtomics,
                 .fragmentStoresAndAtomics = features.fragmentStoresAndAtomics,
                 .shaderImageGatherExtended = features.shaderImageGatherExtended,
