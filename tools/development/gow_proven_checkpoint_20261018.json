@@ -81,6 +81,16 @@
       "promotion_gate": "Only after same-scene A/B improves guest producer cadence and late gap metrics with audible improvement and no graphics regression.",
       "default": "off",
       "status": "A_B_NO_AUDIO_BENEFIT__KEEP_OPT_IN_TEST_ONLY"
+    },
+    "UFFD_read_first_event_loop": {
+      "environment": "SHADPS4_UFFD_READ_FIRST=1",
+      "source_commit": "a0f3cc7bee52764bdce78465d737db3e62afa035",
+      "branch": "test/gow-uffd-readfirst-20261018",
+      "evidence_before_trial": "Prior A/B on 135s gameplay performed 7.389M/7.621M successful nonblocking read() calls with poll-before-every-read; 14.5-15.2M CPU write faults. Nonblocking fd allows read-first to skip poll on already queued events.",
+      "code_contract": "Exact fault dispatch, GPU invalidation and UFFD wakeup tail byte-identical; original behavior default; EAGAIN waits in poll() for up to 200ms.",
+      "stage": "SOURCE_STATIC_CONTRACT_COMMITTED; COMPILATION_AND_RUNTIME_TEST_PENDING_ON_USER_HOST",
+      "next_test": "Build isolated graphics-correct candidate; 135s read-first disabled, 135s enabled on same candidate, record poll_calls and audio production; preserve original binary and source after exit.",
+      "caution": "No audible audio improvement proven; do not promote."
     }
   },
   "open_blocker": {
@@ -96,15 +106,18 @@
     "root_cause_hypothesis": "guest PCM production cadence collapses alongside increased scene/GPU workload; investigate Wwise guest audio thread scheduling and task dependencies, not SDL queue",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Investigate high UFFD write-fault frequency and synchronous waits on game-main/guest-worker threads; no speculative audio buffer/pacing changes."
+    "next": "Investigate high UFFD write-fault frequency and synchronous waits on game-main/guest-worker threads; no speculative audio buffer/pacing changes.",
+    "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
+    "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
   "workflow": {
     "branch_is_a_pinned_development_checkpoint_not_automatically_production_ready": true,
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "test/gow-audio-uffd-ab-20261018",
-    "next_trial_script": "tools/development/gow_audio_uffd_ab_20261018.py"
+    "current_trial_branch": "test/gow-uffd-readfirst-20261018",
+    "next_trial_script": "tools/development/gow_audio_uffd_ab_20261018.py",
+    "next_trial_launcher": "tools/development/gow_uffd_readfirst_launcher_20261018.sh"
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
