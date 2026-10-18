@@ -10,11 +10,12 @@ import hashlib
 from pathlib import Path
 
 PROVEN_RENDERER_SHA256 = "bde3553d3c495fff2f34f177982a8f19e7a71542981d5c5194e8032e78328d0a"
+HISTORICAL_RENDERER_SHA256 = "a86fd050d18d3f5b942756bf4e74b69ccb856183f86d526c9346a07f78ab4feb"
 
 ORIGINAL = """void Rasterizer::InvalidateMemoryOnGpuThread(VAddr addr, u64 size,
-                                              std::function<void()> on_complete) {
-    // The fault receiver must not synchronously wait on the GPU processor:
-    // that processor may be waiting for this receiver to clear a UFFD fault.
+                                               std::function<void()> on_complete) {
+    // Never synchronously wait for the GPU processor from a userfaultfd
+    // receiver: the processor itself may be sleeping in handle_userfault.
     liverpool->SendCommand([this, addr, size, on_complete = std::move(on_complete)]() mutable {
         InvalidateMemory(addr, size, true);
         on_complete();
@@ -137,11 +138,49 @@ def transform(src: str) -> str:
     return src
 
 
+def selftest_historical(path: Path) -> None:
+    """Verify the exact callback body extracted by the live graphics restorer."""
+    from sys import stderr
+
+    data = path.read_bytes()
+    got = hashlib.sha256(data).hexdigest()
+    if got != HISTORICAL_RENDERER_SHA256:
+        raise SystemExit(f"PINNED_HISTORICAL_RENDERER_CHANGED={got}")
+    source = data.decode()
+    start = "void Rasterizer::InvalidateMemoryOnGpuThread("
+    end = "\\nbool Rasterizer::InvalidateMemory("
+    if source.count(start) != 1 or source.count(end) != 1:
+        raise SystemExit("HISTORICAL_CALLBACK_UNIQUE_BOUNDARIES_FAILED")
+    fragment = source.split(start, 1)[1].split(end, 1)[0].rstrip()
+    fragment = start + fragment
+    if fragment != ORIGINAL:
+        import difflib
+        excerpt = "\\n".join(difflib.unified_diff(
+            ORIGINAL.splitlines(), fragment.splitlines(), fromfile="expected",
+            tofile="actual", lineterm=""))
+        print(excerpt[:4000], file=stderr)
+        raise SystemExit("RESTORER_ACTUAL_CALLBACK_DIFFERS_FROM_PINNED_PATCH_ANCHOR")
+    mini = '#include <unordered_map>\\n\\n' + fragment
+    transformed = transform(mini)
+    if transformed.count("GPU_INVALIDATE_TIMING") != 1 or (
+        transformed.count("on_complete();") != 3
+    ):
+        raise SystemExit("PINNED_GPU_PROBE_TRANSFORM_FAILED")
+    print("HISTORICAL_RESTORER_CALLBACK_ANCHOR=PASS")
+    print("GPU_INVALIDATE_PHASE_PATCH_SELFTEST=PASS")
+
+
 def main() -> None:
     args = argparse.ArgumentParser()
-    args.add_argument("source", type=Path)
-    args.add_argument("report", type=Path)
+    args.add_argument("--selftest-historical", type=Path)
+    args.add_argument("source", nargs="?", type=Path)
+    args.add_argument("report", nargs="?", type=Path)
     p = args.parse_args()
+    if p.selftest_historical is not None:
+        selftest_historical(p.selftest_historical)
+        return
+    if p.source is None or p.report is None:
+        raise SystemExit("SOURCE_AND_REPORT_ARE_REQUIRED")
     if not p.source.is_file() or p.source.is_symlink():
         raise SystemExit("NOT_A_REGULAR_RENDERER_SOURCE")
     before = p.source.read_bytes()
