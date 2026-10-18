@@ -8,14 +8,17 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 
 AUDIO = re.compile(r"AUDIO_PRODUCER_TIMING port=126 .*\bready=(\d+) no_guest_buffer=(\d+)")
@@ -101,6 +104,123 @@ def log_summary(file: Path) -> dict:
     return out
 
 
+
+def copy_selected_profile(source: Path, destination: Path):
+    """Clone only emulator config and title-specific saves; never link live saves.
+
+    shadPS4 uses XDG_DATA_HOME/shadPS4 unless cwd/user portable profile exists.
+    Its General.home_dir can override that, so redirect this field inside the
+    CLONE only and verify original path before cloning.
+    """
+    if not source.is_dir() or source.is_symlink():
+        raise RuntimeError("ORIGINAL_SHADPS4_USER_PROFILE_MISSING_OR_SYMLINK")
+    config = source / "config.json"
+    if not config.is_file() or config.is_symlink():
+        raise RuntimeError("GAME_INSTALL_CONFIGURATION_MISSING_NO_SAVES_TOUCHED")
+    original = json.loads(config.read_text())
+    home_override = original.get("General", {}).get("home_dir", "")
+    if not isinstance(home_override, str):
+        raise RuntimeError("UNEXPECTED_HOME_DIR_CONFIGURATION_FORMAT")
+    original_home = Path(home_override).expanduser() if home_override else source / "home"
+    if not original_home.is_dir() or original_home.is_symlink():
+        raise RuntimeError("LIVE_SAVE_HOME_UNAVAILABLE_OR_SYMLINK")
+    destination.mkdir(parents=True)
+    # Entire profile's potentially huge installed games, caches and screenshots
+    # are deliberately not copied or linked into this temporary A/B test.
+    folders = ("input_config", "custom_configs", "licenses", "patches")
+    for item in source.iterdir():
+        if item.is_symlink():
+            if item.name in ("config.json",) + folders:
+                raise RuntimeError("UNSAFE_SYMLINK_IN_REQUIRED_PROFILE_CONTENT")
+            continue
+        if item.is_file() and item.stat().st_size < 8 * 2**20:
+            shutil.copy2(item, destination / item.name)
+        if item.name in folders and item.is_dir():
+            shutil.copytree(item, destination / item.name, symlinks=True)
+    # Fail if a required folder contains a symlink, rather than risk silently
+    # writing to original user data through one.
+    for folder in folders:
+        chosen = destination / folder
+        if chosen.exists() and any(p.is_symlink() for p in chosen.rglob("*")):
+            raise RuntimeError("CLONED_PROFILE_HAS_SYMLINK_NO_GAME_LAUNCH")
+    copied = 0
+    for user in original_home.iterdir():
+        if not user.is_dir() or user.is_symlink():
+            continue
+        save_root = user / "savedata"
+        game_saves = save_root / "CUSA34384"
+        dest_user = destination / "home" / user.name
+        dest_user.mkdir(parents=True)
+        for small in user.iterdir():
+            if small.is_file() and not small.is_symlink() and small.stat().st_size < 8 * 2**20:
+                shutil.copy2(small, dest_user / small.name)
+        if game_saves.is_dir() and not game_saves.is_symlink():
+            # Preflight size and link safety BEFORE copying any private saves.
+            for base, folders_found, files_found in os.walk(game_saves, followlinks=False):
+                for folder in folders_found:
+                    if (Path(base) / folder).is_symlink():
+                        raise RuntimeError("SAVE_DIRECTORY_HAS_SYMLINK_FAIL_CLOSED")
+                for name in files_found:
+                    p = Path(base) / name
+                    if p.is_symlink():
+                        raise RuntimeError("SAVE_FILE_HAS_SYMLINK_FAIL_CLOSED")
+                    copied += p.stat().st_size
+                    if copied > 1200 * 2**20:
+                        raise RuntimeError("GAME_SAVE_CLONE_EXCEEDS_1200MIB_FAIL_CLOSED")
+            (dest_user / "savedata").mkdir()
+            shutil.copytree(game_saves, dest_user / "savedata" / "CUSA34384",
+                            symlinks=True)
+    if copied == 0:
+        raise RuntimeError("NO_GOW_SAVEDATA_FOUND_CANNOT_REPLAY_CONTINUE")
+    # Force shadPS4 to resolve HomeDir INSIDE the isolated XDG user profile.
+    # Do not edit the original config file, save, or any symlink to either.
+    altered = json.loads((destination / "config.json").read_text())
+    altered.setdefault("General", {})["home_dir"] = ""
+    (destination / "config.json").write_text(json.dumps(altered, indent=2) + "\n")
+    return copied
+
+
+def profile_source_fingerprint(base: Path):
+    sha = hashlib.sha256()
+    for p in sorted((base / "home").glob("*/savedata/CUSA34384/**/*")):
+        if p.is_file():
+            sha.update(str(p.relative_to(base)).encode())
+            with p.open("rb") as file:
+                for part in iter(lambda: file.read(2**20), b""):
+                    sha.update(part)
+    return sha.hexdigest()
+
+
+def prepare_isolated_profiles(cwd: Path, output: Path):
+    if (cwd / "user").exists():
+        raise RuntimeError("PORTABLE_USER_PROFILE_WOULD_OVERRIDE_XDG_ISOLATION")
+    data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
+    original = data_home / "shadPS4"
+    if not original.is_dir():
+        raise RuntimeError("ORIGINAL_XDG_SHADPS4_PROFILE_MISSING")
+    project_tests = cwd.parent
+    private = Path(tempfile.mkdtemp(prefix="gow-auto-private-profiles-", dir=project_tests))
+    try:
+        baseline = private / "baseline" / "shadPS4"
+        bytes_cloned = copy_selected_profile(original, baseline)
+        for label in ("A_DENSE_CPU_UPLOAD", "B_SPARSE_CPU_UPLOAD"):
+            dest = private / label / "shadPS4"
+            dest.parent.mkdir(parents=True)
+            shutil.copytree(baseline, dest, symlinks=False)
+        config = baseline / "config.json"
+        # Original user data stays untouched, including HOME and savedata.
+        return {"root": private, "source": original,
+                "baseline_sha256": profile_source_fingerprint(baseline),
+                "cloned_save_bytes": bytes_cloned,
+                "paths": {
+                    "A_DENSE_CPU_UPLOAD": private / "A_DENSE_CPU_UPLOAD",
+                    "B_SPARSE_CPU_UPLOAD": private / "B_SPARSE_CPU_UPLOAD"
+                }}
+    except BaseException:
+        shutil.rmtree(private)
+        raise
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--ollama-helper", type=Path, required=True)
@@ -152,6 +272,7 @@ def main() -> int:
                                "SHADPS4_GOW_BIG_BUFFER_PROBE=1;SHADPS4_SPARSE_CPU_UPLOAD_WORDS=1"],
               "modes": {}}
     owner = None
+    profiles = None
     models_before = []
     attempted_stop = False
     use_api_only = False
@@ -173,6 +294,9 @@ def main() -> int:
         directory.mkdir()
         env = {k: v for k, v in os.environ.items() if not k.startswith("SHADPS4_")}
         env.setdefault("DISPLAY", ":0")
+        if profiles is None:
+            raise RuntimeError("ISOLATED_GOW_SAVE_PROFILE_NOT_READY")
+        env["XDG_DATA_HOME"] = str(profiles["paths"][label])
         env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
         env.setdefault("DBUS_SESSION_BUS_ADDRESS",
                        "unix:path=" + env["XDG_RUNTIME_DIR"] + "/bus")
@@ -284,6 +408,19 @@ def main() -> int:
         return result
 
     try:
+        # Isolate both game modes from the same exact Continue save snapshot.
+        # Independent XDG profiles also keep test-created autosaves private.
+        profiles = prepare_isolated_profiles(a.cwd, a.out)
+        report["save_isolation"] = {
+            "mode": "separate_XDG_DATA_HOME_profile_clones_A_B",
+            "original_home_user_and_game_saves_untouched": True,
+            "cloned_save_bytes": profiles["cloned_save_bytes"],
+            "baseline_content_sha256": profiles["baseline_sha256"],
+            "source_xdg_profile": str(profiles["source"]),
+            "portable_profile_preflight": "PASS",
+        }
+        print("IDENTICAL_STARTING_SAVE_PROFILES=PASS copied_bytes=" +
+              str(profiles["cloned_save_bytes"]), flush=True)
         # Make the free-VRAM decision *before* any Ollama API call, model
         # unload, or Docker stop. Use raw sysfs byte counts on the largest
         # discrete GPU, never a rounded GiB display value.
@@ -418,6 +555,13 @@ def main() -> int:
         except Exception as exc:
             errors.append("GAME_EXIT_ERROR=" + str(exc))
             report["own_game_stopped"] = False
+        if profiles is not None:
+            try:
+                shutil.rmtree(profiles["root"])
+                report["isolated_private_test_profiles_cleaned"] = True
+            except Exception as error:
+                errors.append("TEMPORARY_USER_PROFILE_CLEANUP_FAILED=" + str(error))
+                report["isolated_private_test_profiles_cleaned"] = False
         if attempted_stop and owner:
             try:
                 if not lib.running_container(owner["id"]):
@@ -464,6 +608,7 @@ def main() -> int:
         report["ollama_model_reloaded_during_game"] = contaminated
         report["errors"] = errors
         report["success"] = (not errors and not contaminated and
+                             report.get("isolated_private_test_profiles_cleaned", False) and
                              report.get("own_game_stopped", False) and
                              report.get("ollama_models_restored", False) and
                              report["protected_graphics_sha256_unchanged"] and
