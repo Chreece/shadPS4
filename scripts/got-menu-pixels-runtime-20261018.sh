@@ -354,6 +354,18 @@ PY
       "$RUN/info/kernel-since-test.log" >"$RUN/info/kernel-gpu-errors.log" || true
     echo "KERNEL_GPU_ERRORS=$(wc -l < "$RUN/info/kernel-gpu-errors.log")"
   fi
+  # Preserve the real compiled SPIR-V of the *final* fullscreen fragment
+  # shader for math/format review. The targeted shader-dump support is
+  # already in this source base; no global dumps or patches are enabled.
+  mkdir -p "$RUN/info/final-fragment-shader"
+  find "$RUN/profile/user/shader/dumps" -maxdepth 1 -type f \
+    -iname '*96aa3f2e*' -size -6M -print0 2>/dev/null |
+    while IFS= read -r -d '' shader; do
+      cp -p -- "$shader" "$RUN/info/final-fragment-shader/$(basename "$shader")" || true
+    done
+  find "$RUN/info/final-fragment-shader" -maxdepth 1 -type f \
+    -printf '%f bytes=%s\n' >"$RUN/info/final-shader-files.txt"
+
   # Convert the *actual* GPU readbacks to small PNG previews without
   # any Python packages. Preserve raw data for exact IEEE-754 inspection.
   python3 - "$RUN/profile/user/shader/got-menu-probes" "$RUN/info" <<'PYSTAGEPIXELS'
@@ -362,7 +374,7 @@ import sys,struct,math,hashlib,zlib,binascii
 folder=Path(sys.argv[1]); dest=Path(sys.argv[2])
 summary=["GOT_MENU_GPU_PIXEL_CHAIN=CAPTURE_OF_REAL_VULKAN_IMAGES",
          "NO_SHADER_OUTPUT_OVERRIDES=YES",
-         "EXPECTED_STAGE_ADDRESSES=0x15203f8000,0x1504a08000,0x1525478000,0x1504210000"]
+         "EXPECTED_STAGE_ADDRESSES=0x15203f8000,0x1504a08000,0x1525478000,0x1504210000,0x1505578000,0x1505d70000"]
 def save_rgb_png(path,width,height,pixels):
     def chunk(name,payload):
         return (struct.pack(">I",len(payload))+name+payload+
@@ -388,7 +400,9 @@ for name,expected_bpp,kind in [
     ("scene_rgba16f",8,"rgba16f"),
     ("scene_depth32",4,"f32"),
     ("depth_blur32",4,"f32"),
-    ("composed_rgba8",4,"rgba8")]:
+    ("composed_rgba8",4,"rgba8"),
+    ("video_frame_a",4,"rgba8"),
+    ("video_frame_b",4,"rgba8")]:
     path=folder/(name+".raw")
     metadata=folder/(name+".raw.txt")
     if not path.is_file() or not metadata.is_file():
@@ -424,7 +438,11 @@ for name,expected_bpp,kind in [
                 channels=rgba[:3]
             elif kind=="rgba8":
                 rgba=raw[pos:pos+4]
-                channels=tuple(v/255 for v in rgba[:3])
+                # Vulkan eB8G8R8A8Unorm/Srgb store B,G,R,A.
+                if kv.get("format") in ("44","50"):
+                    channels=(rgba[2]/255,rgba[1]/255,rgba[0]/255)
+                else:
+                    channels=tuple(v/255 for v in rgba[:3])
             else:
                 channels=(get_float(raw,pos,"<f")[0],)
             valid=all(math.isfinite(v) for v in channels)
@@ -468,6 +486,41 @@ for name,expected_bpp,kind in [
                    f"near_white={near_white}/{n} near_black={near_black}/{n} "
                    f"preview_tonemapped={kind=='rgba16f'}")
     count+=1
+# Test whether the enormous white-menu brightness gain happens in the
+# GUEST's final fs_0x96aa3f2e or after it in the HOST postprocess path.
+composed=folder/"composed_rgba8.raw"
+for last in ("video_frame_a","video_frame_b"):
+    other=folder/(last+".raw")
+    if not composed.exists() or not other.exists():
+        summary.append(f"POSTCOMPOSITOR_COMPARE_{last}=MISSING_REQUIRED_RAW")
+        continue
+    a=composed.read_bytes(); b=other.read_bytes()
+    if len(a)!=1920*1080*4 or len(b)!=len(a):
+        summary.append(f"POSTCOMPOSITOR_COMPARE_{last}=WRONG_SIZE")
+        continue
+    pairs=[]; clamped=0; examined=0
+    for y in range(680,1080,16):
+        for x in range(1100,1900,16):
+            pos=(y*1920+x)*4+1
+            x0=a[pos]; y0=b[pos]
+            examined+=1
+            clamped+=int(y0>=250)
+            if 20<x0<245 and 10<y0<250:
+                pairs.append((x0,y0))
+    if len(pairs)<50:
+        summary.append(f"POSTCOMPOSITOR_COMPARE_{last}=TOO_FEW_UNCLAMPED_SAMPLES "
+                       f"total={examined} eligible={len(pairs)} saturated={clamped}")
+        continue
+    scale=sum(x*y for x,y in pairs)/max(1,sum(x*x for x,y in pairs))
+    intercept=(sum(y for _,y in pairs)-scale*sum(x for x,_ in pairs))/len(pairs)
+    ratios=sorted(y/x for x,y in pairs)
+    median=ratios[len(ratios)//2]
+    summary.append(f"POSTCOMPOSITOR_COMPARE_{last}=PASS "
+                   f"uncapped_samples={len(pairs)} total_samples={examined} "
+                   f"median_output_to_composed_gain={median:.4f} "
+                   f"zero_intercept_gain={scale:.4f} fitted_intercept={intercept:.2f} "
+                   f"saturated_fraction={clamped/examined:.4f}")
+
 summary.append("STAGE_CAPTURED_COUNT="+str(count))
 if not count:summary.append("NO_GPU_STAGE_READBACK_AVAILABLE=YES")
 (dest/"stage-pixel-summary.txt").write_text("\n".join(summary)+"\n")
@@ -498,6 +551,7 @@ PYSTAGEPIXELS
     echo "GPU_SCENE_PIXEL_PROBE_ENABLED=YES"
     echo "GPU_SCENE_READBACK_SUBMISSIONS=$(grep -ac 'GotMenuStagePixels:.*GPU_READBACK_SUBMITTED' "$RUN/game.log" || true)"
     echo "GPU_SCENE_READBACK_SAVED=$(grep -ac 'GotMenuStagePixels:.*result=SAVED' "$RUN/game.log" || true)"
+    echo "FINAL_COMPOSITOR_SHADERS=$(find "$RUN/info/final-fragment-shader" -type f 2>/dev/null | wc -l)"
     echo "DEPTH_DRAW_TRACES=$(grep -ac 'GotMenuDepthTargetTrace:' "$RUN/game.log" || true)"
     echo "DEPTH_CACHE_ALIAS_EVENTS=$(grep -ac 'GotMenuDepthAlias:' "$RUN/game.log" || true)"
     echo "DEPTH_CACHE_REQUESTS=$(grep -ac 'GotMenuDepthImageRequest:' "$RUN/game.log" || true)"
@@ -686,6 +740,7 @@ echo "GAME_START duration=${SECONDS_TO_RUN}s DISPLAY=$DISPLAY_OK"
   export SHADPS4_INDEXED_IMAGE_AUDIT_HASHES="0x7eaf40ad"
   export SHADPS4_MENU_PASS_TRACE=1
   export SHADPS4_GOT_MENU_STAGE_PIXELS=1
+  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x96aa3f2e"
   export SHADPS4_MENU_WATCH_SOURCE=0x1504a08000
   export SHADPS4_RENDER_AUDIT=1
   unset SHADPS4_TARGET_SHADER_DUMP_HASHES
