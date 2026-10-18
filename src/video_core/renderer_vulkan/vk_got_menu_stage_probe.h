@@ -131,8 +131,13 @@ inline void MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& sched
         const u64 gpu_buffer_bytes =
             format==vk::Format::eD32SfloatS8Uint ? data_bytes*2u : data_bytes;
         const auto path=target_dir / (std::string(probe.name)+".raw");
+        // Preserve the full depth/stencil staging buffer: the device may
+        // pack a D32S8 depth-only copy differently from vk::blockSize's
+        // conservative 8-byte accounting. Do not silently truncate evidence.
+        const u64 saved_bytes =
+            format==vk::Format::eD32SfloatS8Uint ? gpu_buffer_bytes : data_bytes;
         auto readback=std::make_unique<GotMenuStageReadback>(
-            instance,path,probe.address,gpu_buffer_bytes,data_bytes,
+            instance,path,probe.address,gpu_buffer_bytes,saved_bytes,
             width,height,format,depth);
         const vk::BufferImageCopy copy{
             .bufferOffset=0,
