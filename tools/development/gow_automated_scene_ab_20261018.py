@@ -383,7 +383,12 @@ def main() -> int:
               f"RIGHT={stage.get('right_at')} APPROACH={stage.get('approach_at')} "
               f"CANDIDATE={stage.get('cutscene_at')} "
               f"SUCCESS={stage.get('success')} EXIT={autopilot_exit}", flush=True)
-        result["early_exit"] = not (autopilot_exit == 0 and stage.get("success", False))
+        result["navigation_completed"] = (autopilot_exit == 0 and
+                                        stage.get("success", False) and
+                                        stage.get("right_at") is not None)
+        # A failed navigation detector must NEVER invalidate already measured
+        # FPS, Audio3D or buffer-cost events (the 20:50 B regression).
+        result["early_exit"] = elapsed < 60 or len(result["flip_windows"]) < 12
         result["scene_alignment"] = {
             "navigation_heuristic_candidate_seen": stage.get("cutscene_at") is not None,
             "forward_right_steering_started": stage.get("right_at") is not None,
@@ -393,21 +398,22 @@ def main() -> int:
             "manual_controller_interference_not_deterministically_excluded": True,
         }
         result["valid"] = (not result["early_exit"] and
-                           stage.get("right_at") is not None and
-                           stage.get("menu_seen_at") is not None and
                            len(result["flip_windows"]) >= 12 and
                            len(result["audio_windows"]) >= 12 and
                            not result["gpu_device_losses"] and
                            not result["audio_backend_errors"])
         atomic_json(directory / "summary.json", result)
-        print(f"RUN_RESULT={label} VALID={result['valid']} "
+        print(f"RUN_RESULT={label} TELEMETRY_VALID={result['valid']} "
+              f"NAVIGATION_COMPLETED={result['navigation_completed']} "
               f"LATE_FPS={result['late_fps_avg']} "
               f"LATE_AUDIO_READY={result['late_audio_fraction_avg']} "
               f"BIG_BUFFER_BINDS={len(result['large_buffer_bind_samples'])} "
               f"SYNC_RECORDS={len(result['large_buffer_sync_samples'])}", flush=True)
         if not result["valid"]:
-            raise RuntimeError(f"INVALID_AUTOMATED_SCENE_OBSERVATION_{label}__CHECK_AUTO_INPUT_LOG")
-        print(f"AUTOMATED_CONTROL_PATH_COMPLETED={label}; "
+            raise RuntimeError(f"INVALID_GAME_TELEMETRY_{label}__CHECK_CONSOLE_LOG")
+        if not result["navigation_completed"]:
+            print(f"WARNING_NAVIGATION_INCOMPLETE_BUT_GAME_LOG_TELEMETRY_VALID={label}", flush=True)
+        print(f"LOG_ONLY_EVIDENCE_RETAINED={label}; "
               "NO_SCENE_EQUIVALENCE_OR_IMAGE_COMPARISON_CLAIM", flush=True)
         return result
 
@@ -511,6 +517,9 @@ def main() -> int:
         legacy = report["modes"]["A_DENSE_CPU_UPLOAD"]
         sparse = report["modes"]["B_SPARSE_CPU_UPLOAD"]
         report["scene_compare"] = {
+            "telemetry_valid_both": legacy["valid"] and sparse["valid"],
+            "navigation_completed_both": (legacy["navigation_completed"] and
+                                          sparse["navigation_completed"]),
             "menu_continue_automated_both": all(
                 mode["auto_input"].get("cross_at") is not None
                 for mode in (legacy, sparse)),
@@ -619,8 +628,12 @@ def main() -> int:
                              report.get("ollama_models_restored", False) and
                              report["protected_graphics_sha256_unchanged"] and
                              report["experimental_binary_sha256_unchanged"] and
-                             report.get("scene_compare", {}).get("wolf_scene_candidates_both", False) and
-                             report.get("scene_compare", {}).get("forward_right_automated_both", False))
+                             report.get("scene_compare", {}).get("telemetry_valid_both", False))
+        report["automation_success"] = report.get("scene_compare", {}).get("navigation_completed_both", False)
+        report["performance_improvement_proven"] = False
+        report["report_interpretation"] = (
+            "success is valid log collection and host restoration, not a scene-matched "
+            "performance win or successful navigation; see automation_success.")
         atomic_json(a.out / "report.json", report)
         archive = a.out.parent / f"{a.out.name}.tar.gz"
         with tarfile.open(archive, "w:gz") as tf:
@@ -629,7 +642,10 @@ def main() -> int:
         print("GAME_EXITED_BEFORE_OLLAMA_RELOAD=" + str(report["own_game_stopped"]), flush=True)
         print("OLLAMA_BACKEND_RESTORED=" + str(report["ollama_backend_restored"]), flush=True)
         print("OLLAMA_MODELS_RELOADED=" + str(report["ollama_models_restored"]), flush=True)
-        print("GOW_SPARSE_CPU_UPLOAD_AB_RESULT=" + ("PASS" if report["success"] else "CHECK_LOGS"), flush=True)
+        print("GOW_LOG_TELEMETRY_AB_RESULT=" +
+              ("PASS" if report["success"] else "CHECK_LOGS"), flush=True)
+        print("GOW_INPUT_AUTOMATION_RESULT=" +
+              ("PASS" if report.get("automation_success", False) else "INCOMPLETE"), flush=True)
         print("SSH_SESSION_PRESERVED=YES", flush=True)
     return 0 if report["success"] else 1
 
