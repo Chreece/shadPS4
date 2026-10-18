@@ -30,7 +30,7 @@ echo "FORK_CURATED_MAIN=$FORK_SHA"
 test "$(id -u)" != 0
 test "$(uname -s)" = Linux
 test "$(uname -m)" = x86_64
-for tool in git sha256sum ldd flock timeout; do
+for tool in git python3 sha256sum ldd flock timeout; do
   command -v "$tool" >/dev/null || { echo "Missing tool: $tool"; exit 2; }
 done
 echo STAGE=FETCH_PINNED_REVISIONS
@@ -49,7 +49,12 @@ git -C "$SRC" checkout -b esde-unified "$UPSTREAM_SHA"
 git -C "$SRC" config user.name 'ES-DE integration builder'
 git -C "$SRC" config user.email 'esde-build@users.noreply.github.com'
 echo STAGE=MERGE_FORK_ACCEPTED_MAIN
-git -C "$SRC" merge --no-edit --no-ff fork/main
+if ! git -C "$SRC" merge --no-edit --no-ff fork/main; then
+  echo STAGE=RECONCILE_FOUR_PINNED_MAIN_CONFLICTS
+  test -f "$SCRIPTS/esde_resolve_main_conflicts.py" ||
+    { echo 'Missing SHA-pinned merger in project scripts; default untouched.' >&2; exit 3; }
+  python3 "$SCRIPTS/esde_resolve_main_conflicts.py" "$SRC"
+fi
 echo STAGE=MERGE_LOADING_GUI
 git -C "$SRC" merge --no-edit --no-ff fork/fix/startup-loading-screen-20261005
 echo STAGE=MERGE_VULKAN_FEATURE
