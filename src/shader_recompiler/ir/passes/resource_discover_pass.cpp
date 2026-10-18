@@ -799,6 +799,7 @@ struct IndexedImageTableSource {
     u32 record_stride_bytes{};
     u32 tsharp_offset_bytes{};
     bool gpu_texture_id_indexed{};
+    bool mask_wrapped_guest_id{};
     std::array<const IR::Inst*, 8> words{};
     std::array<u32, 8> addends{};
     bool contiguous{};
@@ -837,6 +838,26 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
         normalized[i]=AnalyzeIndexedSharpWord(read->Arg(1));
         if (!normalized[i].valid) return out;
         out.addends[i]=normalized[i].addend;
+    }
+    // A complete flat 32-byte T# can be constructed from EIGHT divergent
+    // scalar-buffer dword reads. In menu fragment shaders their GPU record
+    // index derives from BitCastU32F32(GetAttribute); the SRT host walker
+    // must never substitute a per-draw guessed descriptor for it.
+    std::array<StridedIndexedSharpWord,8> packed{};
+    for (std::size_t i=0;i<packed.size();++i) {
+        packed[i]=AnalyzePackedGuestTsharpWord(out.words[i]->Arg(1));
+    }
+    if (AreContiguousStridedSharpWords(packed) &&
+        packed[0].record_stride_bytes==32u &&
+        packed[0].offset_dwords==0u) {
+        out.selector=static_cast<const IR::Inst*>(packed[0].gpu_record_id);
+        out.descriptor_stride_words=8u;
+        out.record_stride_bytes=0u; // One contiguous raw T# array, not AoS.
+        out.tsharp_offset_bytes=0u;
+        out.gpu_texture_id_indexed=true;
+        out.mask_wrapped_guest_id=true;
+        out.contiguous=true;
+        return out;
     }
     if (AreContiguousIndexedSharpWords(normalized)) {
         const auto* const selector=static_cast<const IR::Inst*>(normalized[0].selector);
@@ -1086,8 +1107,29 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                             usage.has_indexed_sampler_table = sampler.valid;
                             usage.indexed_table_sharp.num_dwords=4;
                             MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
-                            usage.indexed_texture_id=IR::Value{
+                            // Preserve the guest GCN 32-bit wrap before
+                            // shifting byte offsets to dwords. This must
+                            // remain GPU IR, because GetAttribute is
+                            // per-fragment and cannot be flattened by SRT.
+                            const IR::Value original_id{
                                 const_cast<IR::Inst*>(table.selector)};
+                            if (table.mask_wrapped_guest_id) {
+                                IR::IREmitter ir{*inst.GetParent(),
+                                    IR::Block::InstructionList::s_iterator_to(inst)};
+                                usage.indexed_texture_id=ir.BitwiseAnd(
+                                    IR::U32{original_id},ir.Imm32(0x07ffffffu));
+                                if (IndexedImageAuditEnabled(program.info.pgm_hash)) {
+                                    LOG_INFO(Render_Recompiler,
+                                             "GuestAttributeTsharpIndexed: shader={:#x} "
+                                             "stage={} source={} count=8 "
+                                             "record_bytes=32 mask=0x7ffffff "
+                                             "guest_gpu_selector=true",
+                                             program.info.pgm_hash,program.info.hw_stage,
+                                             IR::NameOf(table.selector->GetOpcode()));
+                                }
+                            } else {
+                                usage.indexed_texture_id=original_id;
+                            }
                             usage.indexed_record_stride_bytes=table.record_stride_bytes;
                             usage.indexed_descriptor_offset_bytes=table.tsharp_offset_bytes;
                             usage.has_indexed_table=true;
