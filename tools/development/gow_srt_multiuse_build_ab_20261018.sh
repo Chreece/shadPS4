@@ -688,10 +688,75 @@ cat "$OUT/srt-multiuse-source-contract.log"
 # mutating any emulator C++ translation units.
 CXX_SRT="$(command -v g++ || command -v clang++)"
 [[ -n "$CXX_SRT" ]] || { echo "NATIVE_CXX_COMPILER_MISSING"; exit 1; }
+# Import only include-directory arguments from the exact already-configured
+# shadps4 CMake target. Its transitive Boost::headers include path was absent
+# from the earlier standalone unit-test invocation.
+CMAKE_FLAGS="$BUILD/CMakeFiles/shadps4.dir/flags.make"
+[[ -f "$CMAKE_FLAGS" && ! -L "$CMAKE_FLAGS" ]] || {
+  echo "NATIVE_CMAKE_TARGET_INCLUDE_FLAGS_NOT_FOUND"; exit 1;
+}
+python3 - "$CMAKE_FLAGS" "$OUT/srt-cmake-includes.nul" \
+  "$OUT/srt-cmake-include-proof.txt" <<'PY'
+import pathlib, re, shlex, sys
+flags_file, arg_file, proof_file = map(pathlib.Path, sys.argv[1:])
+text = flags_file.read_text()
+match = re.search(r"^CXX_INCLUDES[ \t]*=[ \t]*(.*)$", text, re.M)
+if not match:
+    sys.exit("REAL_CMAKE_TARGET_CXX_INCLUDES_NOT_FOUND")
+words = shlex.split(match.group(1))
+build_root = flags_file.parents[2]
+args, roots = [], []
+i = 0
+while i < len(words):
+    word = words[i]
+    prefix, path = None, None
+    if word in ("-I", "-isystem", "-iquote", "-idirafter"):
+        if i + 1 >= len(words):
+            sys.exit("MALFORMED_CMAKE_INCLUDE_PAIR")
+        prefix, path = word, words[i + 1]
+        i += 2
+    elif word.startswith("-isystem") and len(word) > len("-isystem"):
+        prefix, path = "-isystem", word[len("-isystem"):].lstrip("=")
+        i += 1
+    elif word.startswith("-I") and len(word) > 2:
+        prefix, path = "-I", word[2:]
+        i += 1
+    elif word.startswith("-iquote") and len(word) > len("-iquote"):
+        prefix, path = "-iquote", word[len("-iquote"):].lstrip("=")
+        i += 1
+    else:
+        sys.exit("UNEXPECTED_CMAKE_INCLUDE_ARG=" + word)
+    root = pathlib.Path(path)
+    if not root.is_absolute():
+        root = build_root / root
+    root = root.resolve()
+    if not root.is_dir():
+        sys.exit("CMAKE_INCLUDE_DIRECTORY_MISSING=" + str(root))
+    roots.append(root)
+    args.extend((prefix, str(root)))
+boost = [root / "boost/container/flat_map.hpp" for root in roots
+         if (root / "boost/container/flat_map.hpp").is_file()]
+if not boost:
+    sys.exit("CMAKE_TARGET_BOOST_HEADER_NOT_FOUND")
+arg_file.write_bytes(b"".join(item.encode() + b"\0" for item in args))
+proof_file.write_text(
+    "ACTUAL_CMAKE_TARGET_INCLUDE_DIRS=" + str(len(roots)) + "\n"
+    "BOOST_HEADER=" + str(boost[0]) + "\n"
+    "SRT_HOST_TEST_USE_SAME_INCLUDE_DIRS_AS_EMULATOR=YES\n"
+)
+print("REAL_CMAKE_BOOST_HEADERS_FOUND=YES", flush=True)
+PY
+[[ -s "$OUT/srt-cmake-includes.nul" ]] || {
+  echo "CMAKE_INCLUDE_ARGS_NOT_AVAILABLE"; exit 1;
+}
+mapfile -d '' -t SRT_CMAKE_INCLUDES < "$OUT/srt-cmake-includes.nul"
+cat "$OUT/srt-cmake-include-proof.txt"
+# No modified shader source is compiled before the host regression passes.
 cp -p "$SRT_HEADER" "$SRC/$SRT_MULTIUSE_HEADER_REL"
 SRT_MULTIUSE_HEADER_STAGED=1
 "$CXX_SRT" -std=c++20 -O2 -Wall -Wextra -Werror \
-  -I"$SRC/src" "$SRT_TEST" -o "$OUT/test-srt-multiuse" \
+  "${SRT_CMAKE_INCLUDES[@]}" -I"$SRC/src" \
+  "$SRT_TEST" -o "$OUT/test-srt-multiuse" \
   > "$OUT/srt-multiuse-host-compile.log" 2>&1 || {
     echo "NATIVE_REAL_FLAT_MULTIMAP_TEST_COMPILE_FAILED"
     tail -95 "$OUT/srt-multiuse-host-compile.log"; exit 1;
