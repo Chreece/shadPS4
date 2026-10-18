@@ -2320,7 +2320,7 @@ void Rasterizer::UpdateDepthStencilState() const {
     // keep their original state. The A/B leaves guest depth WRITES enabled.
     static const bool got_scene_depth_ab=[] {
         const char* const env=std::getenv("SHADPS4_GOT_SCENE_DEPTH_AB");
-        return env && env[0]=='1' && env[1]=='\\0';
+        return env && env[0]=='1' && env[1]=='\0';
     }();
     const auto& cb0=regs.color_buffers[0];
     const auto& db=regs.depth_buffer;
