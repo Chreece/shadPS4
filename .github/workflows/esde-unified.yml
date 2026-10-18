@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+# SPDX-License-Identifier: GPL-2.0-or-later
+name: ES-DE Unified Linux Candidate
+on:
+  push:
+    branches:
+      - Pre-release-shadPS4-esde-unified-20261018
+    paths:
+      - tools/development/esde_unified.sh
+      - tools/development/esde_unified_select.sh
+      - .github/workflows/esde-unified.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compose-test-compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shadPS4 Linux dependencies
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" | sudo tee /etc/apt/sources.list.d/llvm-19.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-19 clang-tools-19 lld-19 \
+            cmake ninja-build ccache pkg-config nasm libasound2-dev libpulse-dev \
+            libopenal-dev libudev-dev libx11-dev libxext-dev libwayland-dev \
+            libdecor-0-dev libxkbcommon-dev libxcursor-dev libxi-dev libxss-dev \
+            libxtst-dev libxrandr-dev libxfixes-dev libxinerama-dev libegl1-mesa-dev \
+            libgl1-mesa-dev libgles2-mesa-dev libvulkan-dev libpng-dev libssl-dev \
+            libedit-dev uuid-dev libdbus-1-dev libevdev-dev libjack-jackd2-dev
+      - name: Check script syntax
+        run: |
+          bash -n tools/development/esde_unified.sh
+          bash -n tools/development/esde_unified_select.sh
+      - name: Compose reviewed source and build
+        run: bash tools/development/esde_unified.sh
+      - name: Save candidate binary and exact source provenance
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadps4-esde-unified-linux-x86_64
+          path: esde-package/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Preserve failed integration diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: esde-integration-failure-evidence
+          path: ~/projects/shadps4/logs/
+          if-no-files-found: warn
+          retention-days: 14
