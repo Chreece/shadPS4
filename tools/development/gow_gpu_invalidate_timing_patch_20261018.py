@@ -148,19 +148,19 @@ def selftest_historical(path: Path) -> None:
         raise SystemExit(f"PINNED_HISTORICAL_RENDERER_CHANGED={got}")
     source = data.decode()
     start = "void Rasterizer::InvalidateMemoryOnGpuThread("
-    end = "\\nbool Rasterizer::InvalidateMemory("
+    end = "\nbool Rasterizer::InvalidateMemory("
     if source.count(start) != 1 or source.count(end) != 1:
         raise SystemExit("HISTORICAL_CALLBACK_UNIQUE_BOUNDARIES_FAILED")
     fragment = source.split(start, 1)[1].split(end, 1)[0].rstrip()
     fragment = start + fragment
     if fragment != ORIGINAL:
         import difflib
-        excerpt = "\\n".join(difflib.unified_diff(
+        excerpt = "\n".join(difflib.unified_diff(
             ORIGINAL.splitlines(), fragment.splitlines(), fromfile="expected",
             tofile="actual", lineterm=""))
         print(excerpt[:4000], file=stderr)
         raise SystemExit("RESTORER_ACTUAL_CALLBACK_DIFFERS_FROM_PINNED_PATCH_ANCHOR")
-    mini = '#include <unordered_map>\\n\\n' + fragment
+    mini = '#include <unordered_map>\n\n' + fragment
     transformed = transform(mini)
     if transformed.count("GPU_INVALIDATE_TIMING") != 1 or (
         transformed.count("on_complete();") != 3
