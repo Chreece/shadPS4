@@ -10,7 +10,7 @@ PROTECTED="$ROOT/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014
 mkdir -p "$ROOT/scripts" "$ROOT/logs"
 WORK="$(mktemp -d "$ROOT/scripts/.gow-sparse-upload.XXXXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
-REF="6fc75dc0eadb74a890a1667a238c7ec36c8cb378"
+REF="6b33ee0252316654a68142a40c2c65ce486bdc40"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF"
 while read -r name blob path; do
   curl -4 -fsSL --retry 3 --retry-delay 1 "$URL/$path" -o "$WORK/$name"
@@ -19,7 +19,7 @@ while read -r name blob path; do
     echo "PINNED_GPU_SOURCE_DIFFERENT=$path expected=$blob actual=$got"; exit 2;
   }
 done <<'PINNED'
-runner.sh 8182d5d4d47bf228cfb6b09dc303634d9a6e71ce tools/development/gow_sparse_cpu_upload_build_ab_20261018.sh
+runner.sh 0c0fd978592fe04afc3f8460ce8bbc54f84fc576 tools/development/gow_sparse_cpu_upload_build_ab_20261018.sh
 observer.py e3163bd7525472da484a4bb707425558255250e9 tools/development/gow_upstream_gameplay.py
 restore.py 0bb5acf3149c53e58fb4739845fc33538ed32ff8 tools/development/gow_restore_graphics_renderer_20261017.py
 support.py 5e8d17492c592421af95413ba8e00610b66aa255 tools/development/gow_preserve_uffd_support_20261017.py
@@ -33,12 +33,13 @@ ollama.py 35b9806f7eeae74e95e4738a25d88868b51fc325 tools/development/gow_ollama_
 region.h 1da1738d9daf7f98adc6c489b4b50bae48e7b61a src/video_core/buffer_cache/region_manager.h
 sparse.h 872d020c15d0ba0a1e19470a4f0b2d021ca61b09 src/video_core/buffer_cache/sparse_cpu_upload_words.h
 sparse-test.cpp 5ab8c6ec053e04f063f92dc8e313f9a9c04b5b91 tests/video_core/test_sparse_cpu_upload_words_20261018.cpp
+live-overlay.py 50aaeb9476323cb4205d904044b6e5d09bf4f6de tools/development/gow_sparse_upload_live_region_overlay_20261018.py
 PINNED
 bash -n "$WORK/runner.sh"
 python3 -m py_compile \
   "$WORK/observer.py" "$WORK/restore.py" "$WORK/support.py" \
   "$WORK/readfirst-contract.py" "$WORK/frame.py" "$WORK/gpu.py" \
-  "$WORK/large-patch.py" "$WORK/ab.py" "$WORK/ollama.py"
+  "$WORK/large-patch.py" "$WORK/live-overlay.py" "$WORK/ab.py" "$WORK/ollama.py"
 # Prove the complete 200,002-case native test compiles and passes BEFORE
 # invoking the expensive graphics restoration or host emulator build.
 mkdir -p "$WORK/headers/video_core/buffer_cache"
@@ -57,5 +58,5 @@ bash "$WORK/runner.sh" \
   "$WORK/observer.py" "$WORK/restore.py" "$WORK/support.py" \
   "$WORK/readfirst.cpp" "$WORK/readfirst-contract.py" "$WORK/frame.py" \
   "$WORK/gpu.py" "$WORK/large-patch.py" "$WORK/ab.py" "$WORK/ollama.py" \
-  "$WORK/region.h" "$WORK/sparse.h" "$WORK/sparse-test.cpp"
+  "$WORK/region.h" "$WORK/sparse.h" "$WORK/sparse-test.cpp" "$WORK/live-overlay.py"
 echo "SSH_SESSION_STILL_OPEN=YES"
