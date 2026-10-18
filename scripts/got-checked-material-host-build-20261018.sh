@@ -11,7 +11,6 @@ BIN="$BUILD/shadps4"
 LOGS="$ROOT/logs"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
 CANDIDATE="1cddfe5c715f4a3583a124bb8a87cfd0caa48e7d"
-MANIFEST_COMMIT="eacb35c6d7780c7ba04216ef599a103ac051f937"
 BRANCH="fix/got-indexed-material-flatbuf-bounds-20261018"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 NAME="got-checked-material-host-$STAMP"
@@ -21,6 +20,7 @@ STATUS=STARTED
 CANDIDATE_BUILT=0
 ORIGINAL_SHA=""
 mkdir -p "$LOGS" "$GOT/tests/runs" "$RUN/info" "$RUN/tmp"
+touch "$RUN/build.log" "$RUN/host-tests.log" "$RUN/info/restore.txt"
 exec 9>"$WORK/.build.lock"
 if ! flock -n 9; then echo "BUILD_LOCK_HELD_NO_CHANGES"; exit 3; fi
 
@@ -115,8 +115,7 @@ echo "CURRENT_SOURCE=$BASE" >> "$RUN/info/start.txt"
 echo "PINNED_CANDIDATE=$CANDIDATE" >> "$RUN/info/start.txt"
 
 STATUS=FETCH_PINNED_OBJECTS
-if ! git -C "$SOURCE" cat-file -e "$CANDIDATE^{commit}" 2>/dev/null ||
-   ! git -C "$SOURCE" cat-file -e "$MANIFEST_COMMIT^{commit}" 2>/dev/null; then
+if ! git -C "$SOURCE" cat-file -e "$CANDIDATE^{commit}" 2>/dev/null; then
     git -C "$SOURCE" -c gc.auto=0 -c http.version=HTTP/1.1 \
       -c fetch.recurseSubmodules=false \
       fetch --depth=256 --no-tags --no-recurse-submodules \
@@ -128,16 +127,70 @@ if ! git -C "$SOURCE" cat-file -e "$CANDIDATE^{commit}" 2>/dev/null ||
       }
 fi
 git -C "$SOURCE" cat-file -e "$CANDIDATE^{commit}"
-git -C "$SOURCE" cat-file -e "$MANIFEST_COMMIT^{commit}"
-git -C "$SOURCE" show "$MANIFEST_COMMIT:scripts/got-material-source-proof-20261018.sh" \
-    > "$RUN/info/pinned-manifest-source.sh"
-awk -F'"' '/^apply_blob "/ {print $2}' "$RUN/info/pinned-manifest-source.sh" \
-    | sort -u > "$RUN/info/overlay-files.txt"
-test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 58 || {
-    STATUS=UNEXPECTED_MANIFEST_SIZE; exit 2;
-}
-echo "src/shader_recompiler/sharp_fetch_bounds.h" >> "$RUN/info/overlay-files.txt"
-sort -u -o "$RUN/info/overlay-files.txt" "$RUN/info/overlay-files.txt"
+# Fixed list of all 58 unique pinned source overlays from the original
+# material-source runner, plus the new read-bounds header. No reliance on
+# another diagnostic branch or a previous report.
+cat > "$RUN/info/overlay-files.txt" <<'GOT_PINNED_OVERLAY_FILES'
+src/common/slot_vector.h
+src/core/devtools/widget/reg_popup.cpp
+src/input/controller.cpp
+src/input/controller.h
+src/input/gamepad_hotplug_snapshot.h
+src/input/input_handler.cpp
+src/sdl_window.cpp
+src/sdl_window.h
+src/shader_recompiler/backend/spirv/emit_spirv_image.cpp
+src/shader_recompiler/backend/spirv/emit_spirv_instructions.h
+src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
+src/shader_recompiler/backend/spirv/spirv_emit_context.h
+src/shader_recompiler/frontend/control_flow_graph.cpp
+src/shader_recompiler/frontend/structured_control_flow.cpp
+src/shader_recompiler/guest_tsharp_array.h
+src/shader_recompiler/ir/ir_emitter.cpp
+src/shader_recompiler/ir/ir_emitter.h
+src/shader_recompiler/ir/opcodes.inc
+src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
+src/shader_recompiler/ir/passes/image_phi_preflight.h
+src/shader_recompiler/ir/passes/indexed_image_selector.h
+src/shader_recompiler/ir/passes/phi_simplification_pass.cpp
+src/shader_recompiler/ir/passes/resource_discover_pass.cpp
+src/shader_recompiler/ir/passes/resource_pass.h
+src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+src/shader_recompiler/ir/passes/sharp_dword_mask.h
+src/shader_recompiler/ir/passes/srt_host_barrier.h
+src/shader_recompiler/ir/passes/srt_inline_read_codegen.h
+src/shader_recompiler/ir/passes/srt_offset_preflight.h
+src/shader_recompiler/ir/passes/srt_proven_identity.h
+src/shader_recompiler/ir/passes/srt_uniformity.h
+src/shader_recompiler/ir/program.cpp
+src/shader_recompiler/nonuniform_image_features.h
+src/shader_recompiler/profile.h
+src/shader_recompiler/resource.h
+src/shader_recompiler/sharp_fetch_bounds.h
+src/shader_recompiler/targeted_shader_dump.h
+src/video_core/amdgpu/liverpool.cpp
+src/video_core/amdgpu/pm4_register_write.h
+src/video_core/amdgpu/regs_depth.h
+src/video_core/buffer_cache/buffer_cache.cpp
+src/video_core/page_manager.cpp
+src/video_core/protection_range_coalescer.h
+src/video_core/renderer_vulkan/resource_audit_hash_filter.h
+src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
+src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
+src/video_core/renderer_vulkan/vk_instance.cpp
+src/video_core/renderer_vulkan/vk_instance.h
+src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+src/video_core/renderer_vulkan/vk_pipeline_common.cpp
+src/video_core/renderer_vulkan/vk_pipeline_common.h
+src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+src/video_core/renderer_vulkan/vk_rasterizer.cpp
+src/video_core/renderer_vulkan/vk_rasterizer.h
+src/video_core/renderer_vulkan/vk_resource_pool.cpp
+src/video_core/renderer_vulkan/vk_resource_pool.h
+src/video_core/texture_cache/image_info.cpp
+src/video_core/texture_cache/texture_cache.cpp
+src/video_core/texture_cache/texture_cache.h
+GOT_PINNED_OVERLAY_FILES
 test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 59 || {
     STATUS=UNEXPECTED_CANDIDATE_OVERLAY_SIZE; exit 2;
 }
