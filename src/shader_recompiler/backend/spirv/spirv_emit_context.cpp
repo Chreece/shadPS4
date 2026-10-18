@@ -1063,7 +1063,7 @@ void EmitContext::DefineImagesAndSamplers() {
             ASSERT(profile.supports_sampler_array_nonuniform_indexing);
             ASSERT(count >= 2u);
             AddCapability(spv::Capability::ShaderNonUniform);
-            AddCapability(spv::Capability::SamplerArrayNonUniformIndexing);
+            AddCapability(spv::Capability::SampledImageArrayNonUniformIndexing);
             const Id array_type = TypeArray(sampler_type, ConstU32(count));
             pointer_type = TypePointer(spv::StorageClass::UniformConstant, array_type);
         }
