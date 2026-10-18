@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """GoW automated stage-gated X11 input and image evidence, no game patching.
 
-Uses the game's existing SDL keyboard bindings: N -> PS Cross, W -> left-stick up.
+Uses the game's existing SDL keyboard bindings: N -> PS Cross,
+W -> left-stick up and D -> left-stick right. This corrects the forward-only
+route that got stuck in the 20:50 A/B test.
 Sends XTest input ONLY to an X11 window whose _NET_WM_PID matches the
-test-launched emulator PID. This must run on the existing headless X11 display.
-Screen-state checks are deliberately conservative: unverified scenes FAIL,
-and stage timing is never used as proof of equivalent cutscene frames.
+test-launched emulator PID. Uses an in-memory low-resolution screen signal
+ONLY for control-state transitions, not for comparing A/B images or declaring
+equivalent scene performance. No periodic screenshots are saved.
 """
 from __future__ import annotations
 
@@ -211,32 +213,26 @@ class Keyboard:
 
 
 def screenshot(directory: Path, label: str | None = None):
-    raw_path = directory / "last-screen.png"
-    result = subprocess.run(
+    # In-memory capture only. No frame dumps and no disk I/O in the 95-second
+    # measured observation phase after the cutscene candidate is detected.
+    # Image signal is used to decide when to RELEASE keys, never to compare A/B.
+    if label is not None:
+        raise RuntimeError("SCREENSHOT_FILES_DISABLED_BY_LOG_ONLY_POLICY")
+    capture = subprocess.run(
         ["import", "-display", os.environ.get("DISPLAY", ":0"),
-         "-window", "root", str(raw_path)],
-        capture_output=True, text=True, timeout=8)
-    if result.returncode or not raw_path.is_file():
-        raise RuntimeError("SCREEN_CAPTURE_FAILED_" + result.stderr.strip()[:250])
+         "-window", "root", "png:-"],
+        capture_output=True, timeout=9)
+    if capture.returncode or not capture.stdout:
+        raise RuntimeError("IN_MEMORY_SCREEN_CAPTURE_FAILED_" +
+                           capture.stderr.decode(errors="replace")[-250:])
     output = subprocess.run(
-        ["convert", str(raw_path), "-resize", f"{W}x{H}!",
-         "-depth", "8", "rgb:-"], capture_output=True, timeout=8)
+        ["convert", "png:-", "-resize", f"{W}x{H}!",
+         "-depth", "8", "rgb:-"],
+        input=capture.stdout, capture_output=True, timeout=9)
     if output.returncode:
-        raise RuntimeError("IMAGE_RGB_EXTRACTION_FAILED")
-    observed = metrics(output.stdout)
-    if label:
-        target = directory / label
-        if target.suffix == ".png":
-            shutil.copy2(raw_path, target)
-        else:
-            image = subprocess.run(
-                ["convert", str(raw_path), "-resize", "960x540!",
-                 "-quality", "84", str(target)],
-                capture_output=True, timeout=8)
-            if image.returncode:
-                raise RuntimeError("STAGE_JPEG_CAPTURE_FAILED")
-    return observed
-
+        raise RuntimeError("IMAGE_RGB_EXTRACTION_FAILED_" +
+                           output.stderr.decode(errors="replace")[-250:])
+    return metrics(output.stdout)
 
 def alive(pid):
     try:
@@ -307,6 +303,7 @@ def main():
     p.add_argument("--launch-monotonic", type=float)
     p.add_argument("--cross-key", default="n")
     p.add_argument("--forward-key", default="w")
+    p.add_argument("--right-key", default="d")
     p.add_argument("--max-seconds", type=int, default=350)
     a = p.parse_args()
     if a.self_test:
@@ -321,8 +318,11 @@ def main():
         return 0
     # Fail closed for custom bindings rather than send keystrokes with unknown
     # effect. Caller may set both keys explicitly after checking input_config.
-    if not (len(a.cross_key) == len(a.forward_key) == 1 and
-            a.cross_key.isalpha() and a.forward_key.isalpha()):
+    if not (len(a.cross_key) == len(a.forward_key) ==
+            len(a.right_key) == 1 and
+            a.cross_key.isalpha() and a.forward_key.isalpha() and
+            a.right_key.isalpha() and
+            len({a.cross_key, a.forward_key, a.right_key}) == 3):
         raise SystemExit("INVALID_KEY_CONFIG_NO_INPUT")
     if a.preflight:
         # Verify libraries, XTest and exact DISPLAY before launching game.
@@ -338,12 +338,14 @@ def main():
     status_path = a.out / "auto-progress.json"
     record = {"pid": a.pid, "display": a.display, "mode": "WAIT_MENU",
               "menu_seen_at": None, "cross_at": None, "forward_at": None,
+              "right_at": None, "right_released_at": None,
               "approach_at": None, "cutscene_candidate_at": None,
               "cutscene_at": None, "done_at": None, "success": False,
               "observations": [], "input_actions": [], "error": None,
               "source": "observed X11 frames + XTest keyboard",
-              "gamepad_equivalent": f"cross={a.cross_key}, forward={a.forward_key}",
-              "cutscene_confirmation": "visual heuristic; scene matching after capture required"}
+              "gamepad_equivalent": f"cross={a.cross_key}, forward={a.forward_key}, right={a.right_key}",
+              "cutscene_confirmation": "UNVERIFIED_SCREEN_CANDIDATE; LOG_ONLY_PERFORMANCE",
+              "image_comparison": "DISABLED; no periodic screenshot files"}
     stop = False
     def interrupted(signum, _):
         nonlocal stop
@@ -354,7 +356,6 @@ def main():
     menu_hits = 0
     approach_hits = 0
     wolf_hits = 0
-    next_thumb = 0.0
     try:
         keyboard = Keyboard(a.display, a.pid)
         start = time.monotonic()
@@ -371,20 +372,18 @@ def main():
             elapsed = round(time.monotonic() - a.launch_monotonic, 2)
             if elapsed > a.max_seconds:
                 raise RuntimeError("AUTOPILOT_TIMEOUT_STAGE_" + record["mode"])
-            save_thumb = elapsed >= next_thumb
-            thumb = f"scene-{elapsed:07.2f}s.jpg" if save_thumb else None
-            observed = screenshot(a.out, thumb)
-            if save_thumb:
-                next_thumb = elapsed + 4.0
-            sample = {"t": elapsed, **observed}
-            record["observations"].append(sample)
-            record["observations"] = record["observations"][-260:]
+            # Screen classification ends at the tentative cinematic start.
+            # Once observing, no capture subprocess should run.
+            observed = screenshot(a.out) if record["mode"] != "OBSERVING_CUTSCENE" else None
+            if observed is not None:
+                sample = {"t": elapsed, **observed}
+                record["observations"].append(sample)
+                record["observations"] = record["observations"][-260:]
             state = record["mode"]
             if state == "WAIT_MENU":
                 menu_hits = menu_hits + 1 if observed["menu"] else 0
                 if menu_hits >= 2:
                     record["menu_seen_at"] = elapsed
-                    screenshot(a.out, "menu-confirmed.png")
                     keyboard.tap(a.cross_key)
                     record["cross_at"] = round(time.monotonic() - a.launch_monotonic, 2)
                     record["input_actions"].append({"action": "PLAYSTATION_CROSS_CONTINUE", "t": record["cross_at"]})
@@ -393,52 +392,55 @@ def main():
                     # begins immediately once the guest starts accepting axes.
                     time.sleep(1.5)
                     keyboard.press(a.forward_key, True)
+                    keyboard.press(a.right_key, True)
                     record["forward_at"] = round(time.monotonic() - a.launch_monotonic, 2)
-                    record["input_actions"].append({"action": "LEFT_STICK_FORWARD_DOWN", "t": record["forward_at"]})
-                    record["mode"] = "FORWARD_TO_CUTSCENE"
-            elif state == "FORWARD_TO_CUTSCENE":
+                    record["right_at"] = record["forward_at"]
+                    record["input_actions"].append({"action": "LEFT_STICK_FORWARD_AND_RIGHT_DOWN", "t": record["forward_at"]})
+                    print("AUTO_STEERING=FORWARD_PLUS_RIGHT keys=" +
+                          a.forward_key + "+" + a.right_key, flush=True)
+                    record["mode"] = "FORWARD_RIGHT_TO_CUTSCENE"
+            elif state == "FORWARD_RIGHT_TO_CUTSCENE":
                 if observed["approach"]:
                     approach_hits += 1
                     if approach_hits >= 2 and record["approach_at"] is None:
                         record["approach_at"] = elapsed
-                        screenshot(a.out, "approach-confirmed.png")
-                        print(f"SNOWY_WORLD_APPROACH_CONFIRMED={elapsed}", flush=True)
+                        print(f"WORLD_APPROACH_CANDIDATE={elapsed}", flush=True)
                 elif approach_hits < 2:
                     approach_hits = 0
-                # Do not misclassify a loading screen as the wolf scene.
-                if (record["approach_at"] is not None and
-                    elapsed - record["approach_at"] > 3.0 and
+                # Snowy approach can be missed with different camera movement,
+                # so do not require it as a mandatory gate (20:50 B false fail).
+                # Observe at least 35s after Continue and require 5 consecutive
+                # samples of the candidate visual signature. This is a navigation
+                # heuristic, NOT a semantic match and not a performance win.
+                if (record["cross_at"] is not None and
+                    elapsed - record["cross_at"] >= 35.0 and
                     observed["wolf_candidate"]):
                     wolf_hits += 1
                 else:
                     wolf_hits = 0
-                if wolf_hits >= 2:
+                if wolf_hits >= 5:
                     record["cutscene_candidate_at"] = elapsed
+                    keyboard.press(a.right_key, False)
                     keyboard.press(a.forward_key, False)
-                    record["input_actions"].append({"action": "LEFT_STICK_FORWARD_UP", "t": elapsed})
+                    record["right_released_at"] = elapsed
+                    record["input_actions"].append({"action": "LEFT_STICK_FORWARD_AND_RIGHT_UP", "t": elapsed})
                     record["cutscene_at"] = elapsed
                     record["mode"] = "OBSERVING_CUTSCENE"
-                    screenshot(a.out, "cutscene-candidate.png")
-                    print(f"CUTSCENE_VISUAL_CANDIDATE={elapsed} FORWARD_RELEASED=YES", flush=True)
+                    print(f"CUTSCENE_VISUAL_CANDIDATE_UNVERIFIED={elapsed} ALL_MOVEMENT_RELEASED=YES", flush=True)
             elif state == "OBSERVING_CUTSCENE":
                 elapsed_from_cutscene = elapsed - record["cutscene_at"]
-                for landmark in (20, 45, 70, 90):
-                    key = "cutscene_observation_" + str(landmark)
-                    if elapsed_from_cutscene >= landmark and key not in record:
-                        record[key] = elapsed
-                        screenshot(a.out, f"cutscene-plus-{landmark:02d}.png")
                 if elapsed_from_cutscene >= OBSERVE_AFTER_CUTSCENE:
                     record["done_at"] = elapsed
                     record["mode"] = "COMPLETE"
                     record["success"] = True
-                    print(f"AUTOPILOT_SUCCESS=YES CUTSCENE_RELATIVE_CAPTURE_S={OBSERVE_AFTER_CUTSCENE}", flush=True)
+                    print(f"AUTOPILOT_NAVIGATION_CANDIDATE=YES POST_CANDIDATE_LOG_SECONDS={OBSERVE_AFTER_CUTSCENE} FRAME_COMPARE=DISABLED", flush=True)
                     break
             publish(status_path, record)
             time.sleep(SAMPLE_PERIOD)
         if stop:
             raise RuntimeError("AUTOPILOT_INTERRUPTED")
         if not record["success"]:
-            raise RuntimeError("AUTOPILOT_EXITED_WITHOUT_REACHING_MATCHABLE_CUTSCENE")
+            raise RuntimeError("AUTOPILOT_EXITED_WITHOUT_CUTSCENE_CANDIDATE_NO_SCENE_COMPARISON")
     except Exception as exc:
         record["error"] = f"{type(exc).__name__}: {exc}"
         print("AUTOPILOT_FAILURE=" + record["error"], flush=True)
