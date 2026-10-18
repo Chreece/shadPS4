@@ -424,6 +424,59 @@ def main() -> int:
         assert classify("shadPS4:AudioOu") == "audio_output"
         assert classify("shadPS4:Uffd") == "userfaultfd"
         assert isinstance(snapshot(os.getpid()), list)
+        assert is_live_game_pid(os.getpid())
+        assert not audio_ready([])
+        assert not audio_ready([{"group": "gpu_command"}])
+        assert audio_ready([{"group": "wwise"}, {"group": "game_main"}])
+        assert audio_ready([{"group": "wwise"}, {"group": "gpu_command"}])
+
+        # Reproduce the uploaded 10:01 archive: an alive PID has no game
+        # threads on first reads, then GPU and Wwise appear seconds later.
+        fake_time = [0.0]
+        staged = [
+            [],
+            [],
+            [{"group": "gpu_command", "name": "shadPS4:GpuComm",
+              "tid": 1, "state": "R"}],
+            [{"group": "gpu_command", "name": "shadPS4:GpuComm",
+              "tid": 1, "state": "R"},
+             {"group": "wwise", "name": "AK::AudioOutThr",
+              "tid": 2, "state": "S"}],
+        ]
+        def sample_late(_pid):
+            return staged.pop(0) if staged else []
+        def advance(duration):
+            fake_time[0] += duration
+
+        ready = wait_for_game_threads(
+            42, timeout_s=3, sample_period_s=.25,
+            sampler=sample_late,
+            live_checker=lambda _pid: True,
+            now=lambda: fake_time[0], sleeper=advance,
+            report_progress=False)
+        assert ready["ready"] and ready["attempts"] == 4, ready
+        assert ready["elapsed_s"] == 0.75, ready
+
+        fake_time[0] = 0.0
+        timeout = wait_for_game_threads(
+            42, timeout_s=1, sample_period_s=.25,
+            sampler=lambda _pid: [],
+            live_checker=lambda _pid: True,
+            now=lambda: fake_time[0], sleeper=advance,
+            report_progress=False)
+        assert not timeout["ready"], timeout
+        assert timeout["status"] == "AUDIO_GAME_THREAD_STARTUP_TIMEOUT"
+        assert timeout["attempts"] >= 5, timeout
+
+        dead = wait_for_game_threads(
+            42, timeout_s=1, sample_period_s=.25,
+            sampler=lambda _pid: [],
+            live_checker=lambda _pid: False,
+            now=lambda: fake_time[0], sleeper=advance,
+            report_progress=False)
+        assert not dead["ready"], dead
+        assert dead["status"] == "PROCESS_EXITED_BEFORE_AUDIO_READY"
+        print("STARTUP_RACE_REGRESSION=PASS cases=3")
         print("GOW_AUDIO_WAKE_PROBE_SELFTEST=PASS")
         return 0
     if not 30 <= args.seconds <= 240 or not 100 <= args.sample_ms <= 2000:
