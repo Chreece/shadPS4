@@ -232,6 +232,15 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     if (ReadOnlyStreamPolicy::IsCandidate(size, is_written, skip_stream_buffer,
                                           readonly_stream_limit) &&
         !IsRegionGpuModified(device_addr, size)) {
+        // A few exponentially spaced diagnostic records prove whether GoW
+        // actually exercised the extended range. No logging on legacy path.
+        if (size > STREAM_THRESHOLD) {
+            static thread_local u64 expanded_hits = 0;
+            const u64 hits = ++expanded_hits;
+            if ((hits & (hits - 1)) == 0) {
+                LOG_WARNING(Render, "READONLY_STREAM_64K_ACTIVE hits={} size={}", hits, size);
+            }
+        }
         const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
         memory->CopySparseMemory(device_addr, data, size);
         stream_buffer.Commit();
