@@ -228,11 +228,12 @@ def main() -> int:
     p.add_argument("--sha256", type=str, required=True)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--cwd", type=Path, required=True)
-    p.add_argument("--seconds", type=int, default=360)
+    p.add_argument("--seconds", type=int, default=230)
     p.add_argument("--auto-input", type=Path, required=True)
+    p.add_argument("--navigation-only", action="store_true")
     a = p.parse_args()
 
-    if not 250 <= a.seconds <= 480 or not re.fullmatch(r"[a-f0-9]{64}", a.sha256):
+    if not 165 <= a.seconds <= 480 or not re.fullmatch(r"[a-f0-9]{64}", a.sha256):
         raise SystemExit("INVALID_GAME_PARAMETERS")
     spec = importlib.util.spec_from_file_location("pinned_gow_ollama_helper",
                                                    str(a.ollama_helper))
@@ -269,6 +270,9 @@ def main() -> int:
               "automation": "X11 verified PID -> Continue Cross -> forward+right -> cutscene candidate -> 95s log-only",
               "no_image_comparison": True,
               "no_scene_matched_perf_claim": True,
+              "navigation_only": a.navigation_only,
+              "run_modes": ["A_DENSE_CPU_UPLOAD"] if a.navigation_only
+                           else ["A_DENSE_CPU_UPLOAD", "B_SPARSE_CPU_UPLOAD"],
               "tested_flags": ["SHADPS4_GOW_BIG_BUFFER_PROBE=1;SHADPS4_SPARSE_CPU_UPLOAD_WORDS=0",
                                "SHADPS4_GOW_BIG_BUFFER_PROBE=1;SHADPS4_SPARSE_CPU_UPLOAD_WORDS=1"],
               "modes": {}}
@@ -333,7 +337,8 @@ def main() -> int:
                         [sys.executable, "-B", str(a.auto_input),
                          "--pid", str(candidate.pid), "--display", env["DISPLAY"],
                          "--out", str(directory), "--launch-monotonic", repr(before),
-                         "--max-seconds", str(a.seconds - 8)],
+                         "--max-seconds", str(a.seconds - 8),
+                         "--observe-after", "25" if a.navigation_only else "95"],
                         cwd=a.cwd, env=env, stdin=subprocess.DEVNULL,
                         stdout=controller_log, stderr=subprocess.STDOUT,
                         start_new_session=True)
@@ -512,52 +517,75 @@ def main() -> int:
             print("OLLAMA_LEFT_RUNNING_AND_MODELS_UNTOUCHED=YES", flush=True)
         if lib.active_emulators():
             raise RuntimeError("ANOTHER_EMULATOR_STARTED_AFTER_VRAM_PREFLIGHT")
-        for label, enabled in (("A_DENSE_CPU_UPLOAD", False), ("B_SPARSE_CPU_UPLOAD", True)):
-            report["modes"][label] = play(label, enabled)
-        legacy = report["modes"]["A_DENSE_CPU_UPLOAD"]
-        sparse = report["modes"]["B_SPARSE_CPU_UPLOAD"]
-        report["scene_compare"] = {
-            "telemetry_valid_both": legacy["valid"] and sparse["valid"],
-            "navigation_completed_both": (legacy["navigation_completed"] and
-                                          sparse["navigation_completed"]),
-            "menu_continue_automated_both": all(
-                mode["auto_input"].get("cross_at") is not None
-                for mode in (legacy, sparse)),
-            "forward_right_automated_both": all(
-                mode["auto_input"].get("forward_at") is not None and
-                mode["auto_input"].get("right_at") is not None
-                for mode in (legacy, sparse)),
-            "wolf_scene_candidates_both": all(
-                mode["auto_input"].get("cutscene_at") is not None
-                for mode in (legacy, sparse)),
-            "image_comparison": "disabled",
-            "scene_equivalence_proven": False,
-            "do_not_infer_a_scene_aligned_win_from_late_metrics_alone": True,
-        }
-        left, right = legacy["buffer_cost"], sparse["buffer_cost"]
-        report["comparison"] = {
-            "dense_scan_sum_us": left["dirty_scan_cpu_sum_us"],
-            "sparse_scan_sum_us": right["dirty_scan_cpu_sum_us"],
-            "dense_sync_total_us": left["total_sync_cpu_sum_us"],
-            "sparse_sync_total_us": right["total_sync_cpu_sum_us"],
-            "dense_large_sync_calls": left["measured_large_sync_calls"],
-            "sparse_large_sync_calls": right["measured_large_sync_calls"],
-            "dense_uploaded_bytes": left["actual_upload_bytes"],
-            "sparse_uploaded_bytes": right["actual_upload_bytes"],
-            "dense_dirty_ranges": left["real_dirty_copy_ranges"],
-            "sparse_dirty_ranges": right["real_dirty_copy_ranges"],
-            "dense_late_fps": legacy["late_fps_avg"],
-            "sparse_late_fps": sparse["late_fps_avg"],
-            "dense_late_audio_delivery": legacy["late_audio_fraction_avg"],
-            "sparse_late_audio_delivery": sparse["late_audio_fraction_avg"],
-            "validated_improvement": False,
-            "note": ("Navigation candidate is not proof of scene equality. "
-                     "Use log-only CPU time per sync and repeated controlled workloads; "
-                     "never compare screenshot images or elapsed-from-launch frames."),
-        }
-        report["fix_note"] = ("Sparse word traversal uses existing CPU dirty "
-                              "summary bits; watcher masks, guest uploads, "
-                              "GPU coherence and audio are unchanged.")
+        if a.navigation_only:
+            # Never waste a second 355-second A/B run before steering is
+            # calibrated. The first run carries the same logs/safe restoration.
+            solo = play("A_DENSE_CPU_UPLOAD", False)
+            report["modes"]["A_DENSE_CPU_UPLOAD"] = solo
+            report["navigation_calibration"] = {
+                "success": bool(solo["navigation_completed"]),
+                "telemetry_valid": bool(solo["valid"]),
+                "cutscene_candidate_source": solo["auto_input"].get("cutscene_candidate_source"),
+                "world_ready_at": solo["auto_input"].get("world_ready_at"),
+                "navigation_error": solo["auto_input"].get("error"),
+                "steering_history": solo["auto_input"].get("route_segments", []),
+                "do_not_claim_cutscene_without_external_validation": True,
+            }
+            report["navigation_calibration_success"] = bool(solo["navigation_completed"])
+            report["comparison"] = {
+                "validated_improvement": False,
+                "note": "One navigation calibration only; A/B performance comparison intentionally skipped.",
+            }
+            print("GOW_NAVIGATION_CALIBRATION=" +
+                  ("PASS_CANDIDATE" if solo["navigation_completed"] else "INCOMPLETE") +
+                  " STARTED_W+D_AFTER_WORLD_READY=YES SECOND_RUN_NOT_STARTED=YES", flush=True)
+        else:
+            for label, enabled in (("A_DENSE_CPU_UPLOAD", False), ("B_SPARSE_CPU_UPLOAD", True)):
+                report["modes"][label] = play(label, enabled)
+            legacy = report["modes"]["A_DENSE_CPU_UPLOAD"]
+            sparse = report["modes"]["B_SPARSE_CPU_UPLOAD"]
+            report["scene_compare"] = {
+                "telemetry_valid_both": legacy["valid"] and sparse["valid"],
+                "navigation_completed_both": (legacy["navigation_completed"] and
+                                              sparse["navigation_completed"]),
+                "menu_continue_automated_both": all(
+                    mode["auto_input"].get("cross_at") is not None
+                    for mode in (legacy, sparse)),
+                "forward_right_automated_both": all(
+                    mode["auto_input"].get("forward_at") is not None and
+                    mode["auto_input"].get("right_at") is not None
+                    for mode in (legacy, sparse)),
+                "wolf_scene_candidates_both": all(
+                    mode["auto_input"].get("cutscene_at") is not None
+                    for mode in (legacy, sparse)),
+                "image_comparison": "disabled",
+                "scene_equivalence_proven": False,
+                "do_not_infer_a_scene_aligned_win_from_late_metrics_alone": True,
+            }
+            left, right = legacy["buffer_cost"], sparse["buffer_cost"]
+            report["comparison"] = {
+                "dense_scan_sum_us": left["dirty_scan_cpu_sum_us"],
+                "sparse_scan_sum_us": right["dirty_scan_cpu_sum_us"],
+                "dense_sync_total_us": left["total_sync_cpu_sum_us"],
+                "sparse_sync_total_us": right["total_sync_cpu_sum_us"],
+                "dense_large_sync_calls": left["measured_large_sync_calls"],
+                "sparse_large_sync_calls": right["measured_large_sync_calls"],
+                "dense_uploaded_bytes": left["actual_upload_bytes"],
+                "sparse_uploaded_bytes": right["actual_upload_bytes"],
+                "dense_dirty_ranges": left["real_dirty_copy_ranges"],
+                "sparse_dirty_ranges": right["real_dirty_copy_ranges"],
+                "dense_late_fps": legacy["late_fps_avg"],
+                "sparse_late_fps": sparse["late_fps_avg"],
+                "dense_late_audio_delivery": legacy["late_audio_fraction_avg"],
+                "sparse_late_audio_delivery": sparse["late_audio_fraction_avg"],
+                "validated_improvement": False,
+                "note": ("Navigation candidate is not proof of scene equality. "
+                         "Use log-only CPU time per sync and repeated controlled workloads; "
+                         "never compare screenshot images or elapsed-from-launch frames."),
+            }
+            report["fix_note"] = ("Sparse word traversal uses existing CPU dirty "
+                                  "summary bits; watcher masks, guest uploads, "
+                                  "GPU coherence and audio are unchanged.")
     except BaseException as error:
         errors.append(f"{type(error).__name__}: {error}")
         print("GOW_SPARSE_CPU_UPLOAD_AB_ERROR=" + errors[-1], flush=True)
@@ -628,8 +656,12 @@ def main() -> int:
                              report.get("ollama_models_restored", False) and
                              report["protected_graphics_sha256_unchanged"] and
                              report["experimental_binary_sha256_unchanged"] and
-                             report.get("scene_compare", {}).get("telemetry_valid_both", False))
-        report["automation_success"] = report.get("scene_compare", {}).get("navigation_completed_both", False)
+                             (report.get("navigation_calibration_success", False)
+                              if a.navigation_only else
+                              report.get("scene_compare", {}).get("telemetry_valid_both", False)))
+        report["automation_success"] = (
+            report.get("navigation_calibration_success", False) if a.navigation_only
+            else report.get("scene_compare", {}).get("navigation_completed_both", False))
         report["performance_improvement_proven"] = False
         report["report_interpretation"] = (
             "success is valid log collection and host restoration, not a scene-matched "
@@ -643,7 +675,11 @@ def main() -> int:
         print("OLLAMA_BACKEND_RESTORED=" + str(report["ollama_backend_restored"]), flush=True)
         print("OLLAMA_MODELS_RELOADED=" + str(report["ollama_models_restored"]), flush=True)
         print("GOW_LOG_TELEMETRY_AB_RESULT=" +
-              ("PASS" if report["success"] else "CHECK_LOGS"), flush=True)
+              ("CALIBRATION_ONLY" if a.navigation_only else
+               ("PASS" if report["success"] else "CHECK_LOGS")), flush=True)
+        if a.navigation_only:
+            print("GOW_NAVIGATION_CALIBRATION_RESULT=" +
+                  ("PASS_CANDIDATE" if report["success"] else "INCOMPLETE"), flush=True)
         print("GOW_INPUT_AUTOMATION_RESULT=" +
               ("PASS" if report.get("automation_success", False) else "INCOMPLETE"), flush=True)
         print("SSH_SESSION_PRESERVED=YES", flush=True)
