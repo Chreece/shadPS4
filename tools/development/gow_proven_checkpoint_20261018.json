@@ -111,9 +111,10 @@
       "prior_evidence": "64KiB read-only dense host streaming helped GoW's b398f619 compute workload progress on Oct 13; later upstream main uses 16KiB. Restore as generic opt-in, not a game-ID hack.",
       "semantics": "Expands streaming only for buffers size 16385..65536 that are read-only, not GPU modified and not IgnoreStreamBuffer. Current mappings and sparse behavior unaffected outside this set.",
       "host_policy_regression": "100160 deterministic tests validated for boundary, dirty, write and opt-out; local C++/g++ PASS",
-      "host_emulator_build": "NOT_RUN",
+      "host_emulator_build": "PENDING_RETRY_AFTER_CORRECTING_13_55_SOURCE_PREIMAGE_FAILURE",
       "audible_stutter": "NOT_PROVEN_FIXED",
-      "under_test": "A legacy 16KiB then B expanded 64KiB on same compiled binary, both with Ollama unloaded; game stops and Ollama reloaded before restoring source and binary"
+      "under_test": "A legacy 16KiB then B expanded 64KiB on same compiled binary, both with Ollama unloaded; game stops and Ollama reloaded before restoring source and binary",
+      "latest_surgical_overlay_blob": "46507ee72e8f2ae1e5827412cfbf9c988b8c4638"
     }
   },
   "open_blocker": {
@@ -129,7 +130,7 @@
     "root_cause_hypothesis": "guest PCM production cadence collapses alongside increased scene/GPU workload; investigate Wwise guest audio thread scheduling and task dependencies, not SDL queue",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Build/read-only-stream opt-in path in isolated graphics-correct GoW tree, run same-binary Ollama-free A/B; quantify actual new-path hits, FPS and Audio3D. If no gains reject for current stutter and investigate shader GPU spans.",
+    "next": "Run fixed 64KiB buffer overlay on actual user source; check compile, two gameplay runs and scene-matched FPS/audio; 8GiB conditional Ollama handling.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -151,7 +152,12 @@
     "archive_prefix": "gow-ollama-vram-",
     "ollama_safety": "Snapshot loaded model(s) from http://127.0.0.1:7869; stop only backend container bound to 7869 when safely identified (not OpenWebUI); fallback API unload with contamination logging. Confirm VRAM reclaimed, run GoW 135s, exit test's own game, restart backend, reload prior models at measured context. No sudo, SSH kept open.",
     "baseline_limitation": "Previous 12:47 game run did not snapshot whether Ollama was loaded; only compare game scene and metrics, do not attribute VRAM causality without before-and-after proof.",
-    "production_promotion": "NONE; main branch and installed shadPS4 unchanged."
+    "production_promotion": "NONE; main branch and installed shadPS4 unchanged.",
+    "ollama_rule": "Measure RX 7900 XTX free VRAM before any Ollama calls: >=8 GiB free leave Ollama backend and models completely untouched; <8 GiB attempt to unload model/backend, verify free VRAM, launch A/B, terminate games, and reload only if changed.",
+    "ollama_threshold_free_gib": 8,
+    "ollama_cleanup": "Exception-safe, only restore model when runner stopped or unloaded it; always restore before archiving run",
+    "project_scripts_dir": "~/projects/shadps4/scripts",
+    "project_logs_dir": "~/projects/shadps4/logs"
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -347,6 +353,21 @@
         "late_audio3d_delivery": "falls below 50% after game slowdown",
         "audio_status": "UNRESOLVED_STUTTER"
       }
+    },
+    "2026-10-18_13-55_stream64_preflight_failure": {
+      "archive": "gow-stream64-20261018-135502.tar.gz",
+      "actual_exit_stage": "STAGE_GENERAL_READONLY_BUFFER_STREAM_64K",
+      "exit_code": 1,
+      "compile_started": false,
+      "game_launched": false,
+      "source_restore": "PASS 9/9 pinned files",
+      "original_source_unchanged": "PASS 9/9 pinned files",
+      "protected_graphics_sha": "PASS",
+      "actual_pinned_buffer_cpp_sha256": "2b8d0e35f45e18ecbfc88ef153665d3e9d713638b1fa988e505ef633a8cc71e0",
+      "prior_runner_expected_git_blob": "94116ce380cd6ec313cee6f73f0961b6dc8ba699",
+      "confirmed_distinct_from_remote_file": "GitHub f909c3 buffer CPP SHA256 a7e91fd1d8a8a0c66926b5b6e1a48af6451d5a29c98d21f55d640f08c46a00fe; server original 2b8d0e.",
+      "fix": "Stop overwriting actual original buffer CPP with modern GitHub version. Validate local sha256 exactly and surgically add only clean read-only stream option, keeping existing memory and shader fixes.",
+      "next": "Runner checks actual host source, selftests modern/legacy predicates, builds host C++ tests then isolated emulator; A/B only after compile."
     }
   }
 }
