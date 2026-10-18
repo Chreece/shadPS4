@@ -171,7 +171,7 @@ struct PassInfo {
 
     // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
-    SrtMultiUseStats multiuse_stats{};
+    Optimization::SrtMultiUseStats multiuse_stats{};
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
         auto it = pointer_uses.find(inst);
