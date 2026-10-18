@@ -31,16 +31,18 @@ struct GotMenuStageReadback {
     std::filesystem::path raw_path;
     u64 guest_address{};
     u64 byte_size{};
+    u64 valid_bytes{};
     u32 width{}, height{};
     vk::Format pixel_format{};
     bool is_depth{};
 
     GotMenuStageReadback(const Instance& instance, const std::filesystem::path& path,
-                         u64 guest_addr, u64 size, u32 w, u32 h,
-                         vk::Format format, bool depth)
-        : buffer{instance, 0, size, VideoCore::MemoryType::HostCached},
-          raw_path{path}, guest_address{guest_addr}, byte_size{size},
-          width{w}, height{h}, pixel_format{format}, is_depth{depth} {}
+                         u64 guest_addr, u64 staging_bytes, u64 output_bytes,
+                         u32 w, u32 h, vk::Format format, bool depth)
+        : buffer{instance, 0, staging_bytes, VideoCore::MemoryType::HostCached},
+          raw_path{path}, guest_address{guest_addr}, byte_size{staging_bytes},
+          valid_bytes{output_bytes}, width{w}, height{h},
+          pixel_format{format}, is_depth{depth} {}
 };
 
 inline void MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& scheduler,
@@ -58,13 +60,17 @@ inline void MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& sched
         Clock::now()-first_frame < std::chrono::seconds(30)) return;
     if (executed.exchange(true,std::memory_order_acq_rel)) return;
 
-    struct Spec {const char* name;u64 address;u32 estimated_bytes_per_pixel;};
-    // Scene color, scene depth, first blur and final composed (pre-present).
-    constexpr std::array<Spec,4> targets{{
-        {"scene_rgba16f",0x15203f8000ull,8u},
-        {"scene_depth32",0x1504a08000ull,4u},
-        {"depth_blur32",0x1525478000ull,4u},
-        {"composed_rgba8",0x1504210000ull,4u},
+    struct Spec {const char* name;u64 address;vk::Format expected_format;};
+    // Scene color and depth through postprocessing, PLUS both alternating
+    // final guest video-out buffers. These are exact real game addresses,
+    // never derived from the user profile or invented test placeholders.
+    constexpr std::array<Spec,6> targets{{
+        {"scene_rgba16f",0x15203f8000ull,vk::Format::eR16G16B16A16Sfloat},
+        {"scene_depth32",0x1504a08000ull,vk::Format::eD32SfloatS8Uint},
+        {"depth_blur32",0x1525478000ull,vk::Format::eR32Sfloat},
+        {"composed_rgba8",0x1504210000ull,vk::Format::eR8G8B8A8Unorm},
+        {"video_frame_a",0x1505578000ull,vk::Format::eUndefined},
+        {"video_frame_b",0x1505d70000ull,vk::Format::eUndefined},
     }};
     const auto target_dir=Common::FS::GetUserPath(Common::FS::PathType::ShaderDir) /
                           "got-menu-probes";
@@ -74,13 +80,17 @@ inline void MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& sched
     for (const auto& probe:targets) {
         // The image must already contain valid GPU-produced data. Never
         // create a new image, refresh from stale CPU pages or force a view.
-        const auto id=textures.FindImageFromRange(
-            probe.address,1920ull*1080ull*probe.estimated_bytes_per_pixel,true);
+        // Find by exact guest address + expected VkFormat and dimensions,
+        // NOT width*height*bpp. PS4 tiling pads guest allocations, and that
+        // old lookup silently rejected real, GPU-resident scene textures.
+        const auto id=textures.FindGpuImageForStageProbe(
+            probe.address,probe.expected_format,1920u,1080u);
         if (!id) {
             LOG_INFO(Render_Vulkan,
                      "GotMenuStagePixels: stage={} guest={:#x} "
-                     "result=NO_LIVE_GPU_IMAGE",
-                     probe.name,probe.address);
+                     "result=NO_MATCHING_GPU_VALID_CACHE_IMAGE "
+                     "expected_format={}",
+                     probe.name,probe.address,vk::to_string(probe.expected_format));
             continue;
         }
         auto& image=textures.GetImage(id);
@@ -92,6 +102,7 @@ inline void MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& sched
         switch (format) {
         case vk::Format::eR16G16B16A16Sfloat: bytes_per_pixel=8;break;
         case vk::Format::eD32Sfloat:
+        case vk::Format::eD32SfloatS8Uint:
         case vk::Format::eR32Sfloat:
         case vk::Format::eR8G8B8A8Unorm:
         case vk::Format::eR8G8B8A8Srgb:
@@ -112,9 +123,16 @@ inline void MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& sched
         }
 
         const u64 data_bytes=u64(width)*height*bytes_per_pixel;
+        // Runtime::DownloadImage computes vk::blockSize(D32SfloatS8Uint)
+        // as EIGHT bytes per texel, even for a depth-only aspect copy which
+        // produces FOUR bytes per pixel. Allocate the larger amount for the
+        // existing GPU barrier/range accounting; save only actual D32 depth.
+        const u64 gpu_buffer_bytes =
+            format==vk::Format::eD32SfloatS8Uint ? data_bytes*2u : data_bytes;
         const auto path=target_dir / (std::string(probe.name)+".raw");
         auto readback=std::make_unique<GotMenuStageReadback>(
-            instance,path,probe.address,data_bytes,width,height,format,depth);
+            instance,path,probe.address,gpu_buffer_bytes,data_bytes,
+            width,height,format,depth);
         const vk::BufferImageCopy copy{
             .bufferOffset=0,
             .bufferRowLength=0,
@@ -139,8 +157,9 @@ inline void MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& sched
 
         LOG_INFO(Render_Vulkan,
                  "GotMenuStagePixels: stage={} result=GPU_READBACK_SUBMITTED "
-                 "guest={:#x} format={} depth={} bytes={}",
-                 probe.name,probe.address,vk::to_string(format),depth,data_bytes);
+                 "guest={:#x} format={} depth={} bytes={} gpu_staging_bytes={}",
+                 probe.name,probe.address,vk::to_string(format),depth,
+                 data_bytes,gpu_buffer_bytes);
         ++captured;
         scheduler.DeferPriorityOperation([snapshot=std::move(readback)]() mutable {
             snapshot->buffer.Invalidate(0,snapshot->byte_size);
@@ -159,22 +178,23 @@ inline void MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& sched
             }
             data.write(reinterpret_cast<const char*>(
                            snapshot->buffer.mapped_data.data()),
-                       static_cast<std::streamsize>(snapshot->byte_size));
+                       static_cast<std::streamsize>(snapshot->valid_bytes));
             data.close();
             std::ofstream meta(snapshot->raw_path.string()+".txt");
             meta<<"guest_address="<<std::hex<<snapshot->guest_address<<std::dec
                 <<"\nwidth="<<snapshot->width<<"\nheight="<<snapshot->height
-                <<"\nbytes="<<snapshot->byte_size
+                <<"\nbytes="<<snapshot->valid_bytes
+                <<"\ngpu_buffer_bytes="<<snapshot->byte_size
                 <<"\nformat="<<static_cast<u32>(snapshot->pixel_format)
                 <<"\ndepth="<<snapshot->is_depth<<"\n";
             meta.close();
             LOG_INFO(Render_Vulkan,
                      "GotMenuStagePixels: stage_path={} result=SAVED bytes={}",
-                     snapshot->raw_path.string(),snapshot->byte_size);
+                     snapshot->raw_path.string(),snapshot->valid_bytes);
         });
     }
     LOG_INFO(Render_Vulkan,
-             "GotMenuStagePixels: one_shot=YES submitted={} eligible=4 "
+             "GotMenuStagePixels: one_shot=YES submitted={} eligible=6 "
              "rendering_unchanged=YES",
              captured);
 }
