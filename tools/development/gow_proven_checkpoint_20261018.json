@@ -113,6 +113,13 @@
       "promotion_gate": "Actual recovered SRT offsets >0, reduced offset failures, preserved graphics screenshots, repeatable cutscene FPS/audio behavior; no stutter resolution claim before user validates.",
       "host_gameplay_evidence_archive": "gow-srt-forward-20261018-153409.tar.gz",
       "warning": "Do not promote default-on; this change adds 3043 unresolved attempt counts and produces no recovered SRT entries."
+    },
+    "gow_gpu_resource_packet_trace": {
+      "status": "COMMITTED_SOURCE_CHECKS_AND_HOST_COMPILE_PENDING",
+      "queue_packet": "Record vqid, offset, defer_exec, up to three data words, per-value count at powers of two; no writes simulated or dropped beyond previous behavior.",
+      "sharp": "Record shader hash, opcode and missing flatbuffer offset; retain UNKNOWN_LOCATION handling.",
+      "srt": "Classify missing flatbuffer ReadConst, unsupported IR opcodes, root/member path and cyclic root plan; preserve shader emission/fallback semantics.",
+      "game": "Single 135s test, screenshots, audio/FPS passive health counters, no speculative A/B."
     }
   },
   "open_blocker": {
@@ -128,7 +135,7 @@
     "root_cause_hypothesis": "Game FPS declines before Audio3D production deteriorates; guest-specific cutscene simulation/resource handling bottleneck is plausible, but causality is NOT established; other games not heavily affected.",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Fix real game execution/rendering correctness bugs first; prioritize shader resource descriptors and failing SRT offset opcode paths with exact source and reproducible shader/descriptor; keep Audio3D as passive regression metric only.",
+    "next": "Run one source-exact 135s GoW packet/resource capture, then implement the actual unhandled PM4 queue register semantics or shader descriptor deficiency identified by the real payload/shader hash, without audio-specific changes.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -137,10 +144,10 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "experiment/gow-srt-forward-dependency-20261018",
-    "next_trial_script": null,
-    "next_trial_launcher": null,
-    "expected_capture_archive_prefix": null,
+    "current_trial_branch": "test/gow-queue-resource-rootcause-20261018",
+    "next_trial_script": "tools/development/gow_gpu_resource_capture_build_20261018.sh",
+    "next_trial_launcher": "tools/development/gow_gpu_resource_capture_launcher_20261018.sh",
+    "expected_capture_archive_prefix": "gow-gpu-resource-",
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
     "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
     "target": "Linux UFFD CPU/GPU page-coherence performance, not SDL audio buffer workaround",
@@ -148,12 +155,15 @@
     "state": "GO_W_BUG_FIXING_PRIORITIZED_OVER_AUDIO_STUTTER_EXPERIMENTS",
     "source_capture_contract": "Read actual protected SRT walker, resource_patching, resource_discover, shader_info_collection and relevant GPU/audio C++ sources with SHA-256 fingerprints, no build or services modified.",
     "next_code_change_policy": "Use 15:13 actual protected source and captures; identify a specific unresolved opcode/resource-binding/shader descriptor error, prove patch applies to current source, add regression and precompile before gameplay; do not repeat speculative audio pacing, VRAM-only, already-fixed SRT arithmetic, or GPU UFFD callback experiments.",
-    "ollama_rule": "Free GPU VRAM >=8 GiB: leave Ollama untouched. Below 8 GiB: unload only Ollama, ensure sufficient VRAM before launching, exit game, reload previous models. Passes shown in 15:34 trial.",
+    "ollama_rule": "Keep Ollama loaded if RX 7900 XTX free GPU VRAM >=8 GiB; unload/restore only below; never restart HA/OpenWebUI/Sunshine/SSH.",
     "proven_graphics_status": "UNCHANGED_SHA_PROTECTED",
     "code_change": "No currently promoted SRT forward-dependency change: A/B recovered zero offsets and did not improve FPS.",
     "protected_baselines": "Graphics executable sha 8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef; 12:47 diagnostic binary sha 63a00275b2f78ba58ef35577af0bf0b1681ac245a7e1636de1673cb4f65275ce",
     "test_sequence": "Exact 15:13 protected shader SHA precheck; host C++ policy test 20005 cases; isolated SRT and other affected native TU precompile; full link; A/B same compiled binary with SHADPS4_SRT_FORWARD_RETRY 0 then 1; screenshot/FPS/Audio3D/SRT counters; terminate game, restore Ollama only if stopped, restore original binaries/source.",
-    "audio_regression_only": "Continue observing audio ready fraction and guest delivery gaps, but audio-specific scheduling/SDL changes are paused until execution/renderer blockers are addressed or a new direct audio root-cause proof emerges."
+    "audio_regression_only": "Continue observing audio ready fraction and guest delivery gaps, but audio-specific scheduling/SDL changes are paused until execution/renderer blockers are addressed or a new direct audio root-cause proof emerges.",
+    "work_scope": "Fix real GoW GPU command/resource defects; queue-register payload capture with logarithmic rate limit is the first narrowly safe change; SRT and sharp-source failures labeled with shader IDs for next direct semantic fix.",
+    "protected_code_policy": "Exact SHA preflight on user's audited SRT and resource source; verify actual older Liverpool SetQueueReg block; only touch isolated source, restore all files and binary, record real local source on failed preflight.",
+    "promotion_note": "Current change is non-semantic GPU logging/diagnostics only: reduces repeated SetQueueReg warnings and exposes ignored command payloads. It is not an audio/gameplay fix yet."
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -413,6 +423,25 @@
       "screenshot_alignment": "NOT_SCENE_MATCHED: at 30s legacy screenshot black/loading while retry screenshot shows rendered cave; cannot infer loading improvement or A/B audio gain due warm caches/scene timing.",
       "interpretation": "Forward-reference hypothesis not supported in this run. 0 recovered with 47 offset errors. The slight 3.4 percentage point rise in audio3d late ready fraction is not evidence for a fix with 20.73 vs 20.70 FPS and non-scene-matched screenshots.",
       "conclusion": "Reject SRT forward-retry from default/proven fixes. Keep branch and logs only as experimental negative evidence."
+    },
+    "2026-10-18_15-34_direct_gpu_command_shader_error_counts": {
+      "archive": "gow-srt-forward-20261018-153409.tar.gz",
+      "mode": "A_ORIGINAL_SRT",
+      "issue_summary": {
+        "unsupported_compute_set_queue_reg_packets": 450,
+        "actual_logged_packet": "SetQueueReg vqid=4 reg_offset=0x0b, missing payload values",
+        "SRT_offset_generation_failures": 42,
+        "unflattened_sharp_source_warnings": 61,
+        "missing_texture_image_match_warnings": 3,
+        "readconst_dma_shader_enable_logs": 87,
+        "large_descriptor_clamp_logs": 621
+      },
+      "source_verified": {
+        "protected_srt_sha256": "14130ab04071e93159b074bbbdd6f7b362661eeaa040e20dec91fa54208aa161",
+        "protected_resource_patch_sha256": "f20a0753f49fe7da02a3beef5f3365ee96bb031528a2447c21f14e7cd329120c",
+        "compute_gpu_command_source": "Protected repo HEAD 1fe3e8b626f34f092bb2be37de8d14fe26d45bc2 contains a SetQueueReg case which logs and ignores writes."
+      },
+      "diagnosis": "Unsupported compute queue writes are real but semantics for register 0x0b cannot be assigned without packet payload; unresolved resource locations are proven but lack shader/opcode context. Correct next step: bounded capture of actual values and shader hash, not another audio/ULLFD timing change."
     }
   }
 }
