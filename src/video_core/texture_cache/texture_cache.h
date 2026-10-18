@@ -138,6 +138,14 @@ public:
     /// Retrieves image whose address matches provided
     [[nodiscard]] ImageId FindImageFromRange(VAddr address, size_t size, bool ensure_valid = true);
 
+    // Read-only diagnostic: select an already-live GPU image by exact guest
+    // address/format/dimensions. Do not guess image size from a tightly packed
+    // pixel buffer: a guest tiled render target may have a larger allocation.
+    // Never creates, uploads, frees, or changes an image's residency.
+    [[nodiscard]] ImageId FindGpuImageForStageProbe(
+        VAddr address, vk::Format format, u32 width, u32 height);
+
+
     /// Retrieves an image view with the properties of the specified image id.
     [[nodiscard]] ImageView& FindTexture(ImageId image_id, const ImageDesc& desc);
 
