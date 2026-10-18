@@ -9,7 +9,7 @@ LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
 PIN="59d806d2543741111f4a2c2616b357775a221b1a"
 CANDIDATE="$WORK/bin-backups/shadps4-got-menu-gpu-$PIN"
-HOST_REPORT="${GOT_MENU_GPU_HOST_REPORT:-$LOGS/got-menu-gpu-host-not-built.tar.gz}"
+HOST_REPORT="${GOT_MENU_GPU_HOST_REPORT:-$LOGS/got-menu-gpu-host-20261018-173042.tar.gz}"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 API="http://127.0.0.1:7869"
@@ -133,7 +133,7 @@ PY
     echo "OLLAMA_ACTION=$OLLAMA_ACTION"
     echo "OLLAMA_RESTORE=$OLLAMA_RESTORE"
     echo "ACTIVE_BINARY_UNCHANGED=$([ -z "$BIN_SHA" ] || [ "$(sha256sum "$BIN" 2>/dev/null | awk '{print $1}')" = "$BIN_SHA" ] && echo YES || echo NO)"
-    echo "ISOLATED_SHADPS4_RUN=YES"
+    echo "ISOLATED_SHADPS4_RUN=$GAME_LAUNCHED"
     echo "MATERIAL_SOURCE_PROOFS=$(grep -ac 'GuestStridedSourceProof:' "$RUN/game.log" || true)"
     echo "INDEXED_TSHARP_BINDS=$(grep -ac 'RealIndexedTSharpBound:' "$RUN/game.log" || true)"
     echo "MENU_GPU_ATTRIBUTE_MATCHES=$(grep -ac 'GuestAttributeTsharpIndexed:' "$RUN/game.log" || true)"
@@ -178,10 +178,15 @@ for entry in pathlib.Path("/proc").iterdir():
     except OSError: pass
 PY
 then :; else STATUS=ANOTHER_EMULATOR_RUNNING; exit 2; fi
-[ -x "$BIN" ] && [ -x "$CANDIDATE" ] &&
-[ -f "$HOST_REPORT" ] && [ -f "$GAME" ] && [ -d "$PROFILE/user" ] || {
-  STATUS=MISSING_REQUIRED_INPUT; exit 2;
-}
+# Report the actual missing input instead of an opaque failure.
+# These guards are read-only; never silently select another game's binary.
+inputs_ok=1
+if [ ! -x "$BIN" ]; then echo "MISSING_ACTIVE_EXECUTABLE=$BIN"; inputs_ok=0; fi
+if [ ! -x "$CANDIDATE" ]; then echo "MISSING_PINNED_CANDIDATE=$CANDIDATE"; inputs_ok=0; fi
+if [ ! -f "$HOST_REPORT" ]; then echo "MISSING_HOST_BUILD_ARCHIVE=$HOST_REPORT"; inputs_ok=0; fi
+if [ ! -f "$GAME" ]; then echo "MISSING_GOT_EBOOT=$GAME"; inputs_ok=0; fi
+if [ ! -d "$PROFILE/user" ]; then echo "MISSING_SOURCE_PROFILE=$PROFILE/user"; inputs_ok=0; fi
+if [ "$inputs_ok" -ne 1 ]; then STATUS=MISSING_REQUIRED_INPUT; exit 2; fi
 BIN_SHA="$(sha256sum "$BIN" | awk '{print $1}')"
 EXPECTED="$(tar -xOzf "$HOST_REPORT" info/candidate-preserved.sha256 2>/dev/null | awk 'NR==1 {print $1}')"
 ACTUAL="$(sha256sum "$CANDIDATE" | awk '{print $1}')"
