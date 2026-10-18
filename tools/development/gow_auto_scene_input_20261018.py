@@ -80,12 +80,27 @@ def metrics(raw: bytes) -> dict:
     # revalidated from the retained screenshots before performance claims.
     wolf_candidate = (not menu and warm > .09 and bright < .018 and
                       blue < .065 and texture > 2.0)
-    world_ready = not menu and blue > .075 and texture > 4.5 and logo < .15
+    world_ready = gameplay_visible(menu=menu, blue=blue, texture=texture, logo=logo)
     return dict(logo=round(logo, 4), highlighted_continue=round(selected_continue, 4),
                 warm=round(warm, 4), bright=round(bright, 4),
                 blue=round(blue, 4), texture=round(texture, 3),
                 menu=menu, approach=approach, wolf_candidate=wolf_candidate,
                 world_ready=world_ready)
+
+
+def gameplay_visible(*, menu: bool, blue: float, texture: float, logo: float) -> bool:
+    """Recorded 21:47 numeric signals: loading texture~2.6, world~5.6."""
+    return not menu and blue > .075 and texture > 4.5 and logo < .15
+
+
+def audio_candidate_regression() -> None:
+    assert AUDIO_GUEST.search("AUDIO_PRODUCER_TIMING port=126 period_us=21333 ready=235 no_guest_buffer=0")
+    assert AUDIO_GUEST.search("AUDIO_PRODUCER_TIMING port=126 ready=80 no_guest_buffer=155")
+    assert not gameplay_visible(menu=False, blue=.247, texture=2.6, logo=0)
+    assert gameplay_visible(menu=False, blue=.201, texture=5.6, logo=.002)
+    assert not gameplay_visible(menu=True, blue=.201, texture=5.6, logo=.002)
+    print("ACTUAL_214744_NUMERIC_WORLD_GATE_TEST=PASS two_runs")
+    print("AUDIO3D_CHANGE_SIGNAL_PARSER=PASS")
 
 
 def xlib():
@@ -289,6 +304,7 @@ def selftest():
     all_white = bytes([255]) * (W * H * 3)
     assert not metrics(all_white)["menu"]
     print("AUTOMATED_MENU_DETECTOR_SYNTHETIC=PASS cases=3; all-white-loading=false")
+    audio_candidate_regression()
     class FakeKeyboard:
         def __init__(self, fails_on=None):
             self.events, self.down = [], set()
