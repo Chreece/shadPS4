@@ -126,9 +126,12 @@
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
     "current_trial_branch": "test/gow-gpu-invalidate-timing-20261018",
     "next_trial_script": "tools/development/gow_gpu_invalidate_timing_trial_20261018.sh",
-    "next_trial_launcher": "tools/development/gow_frame_audio_launcher_20261018.sh",
+    "next_trial_launcher": "tools/development/gow_gpu_invalidate_timing_launcher_20261018.sh",
     "expected_capture_archive_prefix": "gow-gpu-invalidate-timing-",
-    "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only."
+    "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
+    "pinned_gpu_latency_source_commit": "16848dfd4f453f4a68fea1069c79da49421aef38",
+    "target": "Linux UFFD CPU/GPU page-coherence performance, not SDL audio buffer workaround",
+    "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix."
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
