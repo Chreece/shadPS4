@@ -25,6 +25,31 @@
 
 namespace VideoCore {
 
+// Observe one actual guest image already identified by the render graph.
+// Opt-in only. Never read image pixels, change memory protection or invoke
+// Vulkan commands; traces are taken from existing ImageInfo/cache metadata.
+static VAddr WatchedMenuDepthSource() {
+    static const VAddr watched = []() -> VAddr {
+        const char* const raw=std::getenv("SHADPS4_MENU_WATCH_SOURCE");
+        if (!raw || !raw[0] || raw[0]=='-') return 0;
+        char* end{};
+        const auto address=std::strtoull(raw,&end,0);
+        if (!end || *end!='\\0' || address==0) return 0;
+        return static_cast<VAddr>(address);
+    }();
+    return watched;
+}
+
+static bool IsWatchedMenuImage(VAddr guest_address) {
+    return guest_address!=0 && guest_address==WatchedMenuDepthSource();
+}
+
+static bool ShouldTraceWatchedImage() {
+    static thread_local u32 count{};
+    const u32 n=++count;
+    return n<=20 || std::has_single_bit(n);
+}
+
 static constexpr u32 MAX_IMAGES = std::numeric_limits<u16>::max();
 static constexpr u32 MAX_IMAGE_VIEWS = std::numeric_limits<u16>::max();
 static constexpr u32 MAX_SAMPLERS = std::numeric_limits<u16>::max();
@@ -256,6 +281,25 @@ void TextureCache::UnmapMemory(VAddr cpu_addr, size_t size) {
 ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, BindingType binding,
                                           ImageId cache_image_id) {
     auto& cache_image = slot_images[cache_image_id];
+    const bool watched_overlap =
+        IsWatchedMenuImage(requested_info.guest_address) ||
+        IsWatchedMenuImage(cache_image.info.guest_address);
+    if (watched_overlap && ShouldTraceWatchedImage()) {
+        LOG_INFO(Render_Vulkan,
+                 "GotMenuDepthAlias: phase=inspect req_addr={:#x} "
+                 "old_addr={:#x} binding={} req_depth={} old_depth={} "
+                 "req_fmt={} old_fmt={} req_bits={} old_bits={} "
+                 "req_samples={} old_samples={} req_extent={}x{} old_extent={}x{}",
+                 requested_info.guest_address,cache_image.info.guest_address,
+                 static_cast<u32>(binding),
+                 requested_info.props.is_depth,cache_image.info.props.is_depth,
+                 vk::to_string(requested_info.pixel_format),
+                 vk::to_string(cache_image.info.pixel_format),
+                 requested_info.num_bits,cache_image.info.num_bits,
+                 requested_info.num_samples,cache_image.info.num_samples,
+                 requested_info.size.width,requested_info.size.height,
+                 cache_image.info.size.width,cache_image.info.size.height);
+    }
 
     if (!cache_image.info.props.is_depth && !requested_info.props.is_depth) {
         return {};
@@ -298,6 +342,16 @@ ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, Bindi
         break;
     }
 
+    if (watched_overlap && ShouldTraceWatchedImage()) {
+        LOG_INFO(Render_Vulkan,
+                 "GotMenuDepthAlias: phase=decision watched_source={:#x} "
+                 "binding={} recreate={} stencil_match={} bpp_match={} "
+                 "req_depth={} old_depth={} req_layers={} old_layers={}",
+                 WatchedMenuDepthSource(),static_cast<u32>(binding),recreate,
+                 stencil_match,bpp_match,requested_info.props.is_depth,
+                 cache_image.info.props.is_depth,
+                 requested_info.resources.layers,cache_image.info.resources.layers);
+    }
     if (recreate) {
         auto new_info = requested_info;
         new_info.resources = std::max(requested_info.resources, cache_image.info.resources);
@@ -316,6 +370,17 @@ ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, Bindi
         new_image.flags &= ~ImageFlagBits::Dirty;
         // When creating a depth buffer through overlap resolution don't clear it on first use.
         new_image.info.meta_info.htile_clear_mask = 0;
+        if (watched_overlap && ShouldTraceWatchedImage()) {
+            LOG_INFO(Render_Vulkan,
+                     "GotMenuDepthAlias: phase=copy_color_depth "
+                     "src={:#x} dst={:#x} old_fmt={} new_fmt={} "
+                     "src_depth={} dst_depth={} src_samples={} dst_samples={}",
+                     cache_image.info.guest_address,new_image.info.guest_address,
+                     vk::to_string(cache_image.info.pixel_format),
+                     vk::to_string(new_image.info.pixel_format),
+                     cache_image.info.props.is_depth,new_image.info.props.is_depth,
+                     cache_image.info.num_samples,new_image.info.num_samples);
+        }
         runtime.CopyColorAndDepth(&cache_image, &new_image);
 
         // Free the cache image.
@@ -585,6 +650,17 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     const auto& info = desc.info;
 
     ASSERT(info.guest_address != 0);
+    if (IsWatchedMenuImage(info.guest_address) && ShouldTraceWatchedImage()) {
+        LOG_INFO(Render_Vulkan,
+                 "GotMenuDepthImageRequest: guest={:#x} binding={} depth={} "
+                 "vk_format={} bits={} samples={} extent={}x{} "
+                 "guest_bytes={} tile_mode={} exact_format={}",
+                 info.guest_address,static_cast<u32>(desc.type),
+                 info.props.is_depth,vk::to_string(info.pixel_format),
+                 info.num_bits,info.num_samples,info.size.width,
+                 info.size.height,info.guest_size,
+                 static_cast<u32>(info.tile_mode),exact_fmt);
+    }
 
     SmallVector<ImageId, 8> image_ids;
     ForEachImageInRegion(info.guest_address, info.guest_size,
