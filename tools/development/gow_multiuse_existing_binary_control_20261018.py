@@ -292,6 +292,7 @@ def main() -> int:
         a = run_game("02_CANDIDATE_MULTIUSE_OFF", opt.candidate,
                      opt.candidate_sha, False, opt.candidate_seconds)
         if not a["startup_ok"] and a["early_exit"] and a["elapsed_seconds"] < 25:
+            report["candidate_legacy_startup_crash_observed"] = True
             print("CANDIDATE_EARLY_EXIT_RETRY_SAME_BINARY_ONCE=YES", flush=True)
             repeat = run_game("02B_CANDIDATE_OFF_RETRY", opt.candidate,
                               opt.candidate_sha, False, opt.candidate_seconds)
@@ -377,6 +378,7 @@ def main() -> int:
         report["no_source_changes"] = True
         report["success"] = (
             not report["exceptions"] and not contaminated and
+            not report.get("candidate_legacy_startup_crash_observed", False) and
             report.get("ollama_models_restored", False) and
             report.get("only_own_game_stopped", False) and
             report["baseline_sha256_unchanged"] and
