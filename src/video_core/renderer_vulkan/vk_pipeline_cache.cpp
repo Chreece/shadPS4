@@ -790,29 +790,37 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
     }
 
     auto& program = it_pgm.value();
-    auto& info = program->info;
-    info.pgm_base = params.Base(); // Needs to be actualized for inline cbuffer address fixup
-    info.user_data = params.user_data;
-    info.RefreshFlatBuf();
-    auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
+    const auto first_binding = binding;
 
-    size_t perm_idx = program->modules.size();
-    u64 perm_hash = HashCombine(params.hash, perm_idx);
+    // Resource discovery and SRT codegen are specific to the permutation
+    // that produced the SPIR-V. Previously only program->info (permutation
+    // zero) was refreshed and returned even after a new, complete indexed
+    // material permutation was compiled. That mismatched the Vulkan
+    // descriptor set layout and made real 97-entry T#/S# tables disappear.
+    //
+    // Refresh each saved permutation from THIS dispatch's user data and
+    // select only a layout-compatible SPIR-V + matching Info pair. Missing
+    // material records -> zero-entry old permutation; once the guest supplies
+    // 97 records the recorded strided-table specialization forces a new one.
+    for (size_t perm_idx = 0; perm_idx < program->modules.size(); ++perm_idx) {
+        auto& saved = program->modules[perm_idx];
+        if (!saved.spec.Valid() || !saved.module) {
+            continue; // Serialization can leave holes in the index sequence.
+        }
+        auto& info = saved.GetInfo(program->info);
+        info.pgm_base = params.Base();
+        info.user_data = params.user_data;
+        info.RefreshFlatBuf();
+        const auto current = Shader::StageSpecialization(
+            info, runtime_info, profile, first_binding);
+        if (!(saved.spec == current)) {
+            continue;
+        }
 
-    vk::ShaderModule module{};
-
-    const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
-    if (it == program->modules.end()) {
-        auto new_info = Shader::Info(hw_stage, sw_stage, params);
-        module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
-
-        RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
-        program->AddPermut(module, std::move(spec));
-    } else {
-        // Account for every allocated image descriptor-array slot when reusing a
-        // shader. Fresh SPIR-V emission and layout construction advance by
-        // NumBindings(info), not by the number of declared images.
-        const u32 first_binding = binding.unified;
+        // Every sampled-image and sampler ARRAY slot contributes a Vulkan
+        // unified binding. A cached compute or graphics module must advance
+        // by the same count as its original SPIR-V compilation.
+        const u32 first_unified = binding.unified;
         u32 image_binding_count{};
         for (const auto& image : info.images) {
             const u32 count = image.NumBindings(info);
@@ -825,25 +833,63 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
             ASSERT_MSG(count != 0, "Cached sampler descriptor array is empty");
             sampler_binding_count += count;
         }
-        const u32 legacy_count = info.buffers.size() + info.images.size() + info.samplers.size();
         binding.buffer += info.buffers.size();
         binding.unified += info.buffers.size() + image_binding_count + sampler_binding_count;
-        if (image_binding_count != info.images.size()) {
-            static thread_local u32 binding_audits{};
-            if (binding_audits++ < 16) {
+
+        if (info.strided_material_source_count != 0) {
+            static thread_local u32 reports{};
+            if (reports++ < 32u) {
                 LOG_INFO(Render_Vulkan,
-                         "GOT40_CACHED_BINDINGS shader={:#x} start={} legacy_end={} corrected_end={}",
-                         info.pgm_hash, first_binding, first_binding + legacy_count, binding.unified);
+                         "LiveMaterialPermutationSelected: shader={:#x} stage={} "
+                         "perm={} sources={} first_entries={} indexed_images={} "
+                         "image_slots={} sampler_slots={} first_binding={} end_binding={} "
+                         "info_matches_spirv=true",
+                         info.pgm_hash,info.hw_stage,perm_idx,
+                         info.strided_material_source_count,
+                         saved.spec.strided_material_entries.empty()
+                             ? 0u : saved.spec.strided_material_entries[0],
+                         std::ranges::count_if(info.images,[](const auto& image) {
+                             return image.is_guest_indexed;
+                         }),
+                         image_binding_count,sampler_binding_count,first_unified,
+                         binding.unified);
             }
         }
-        module = it->module;
-        perm_idx = std::distance(program->modules.begin(), it);
-        perm_hash = HashCombine(params.hash, perm_idx);
+
+        if (auto& fetch = saved.spec.fetch_shader_data; !fetch.Empty()) {
+            fetch_shader = &fetch;
+        }
+        return std::make_tuple(&info, saved.module, HashCombine(params.hash, perm_idx));
     }
+
+    // No compatible specialization exists. A new translation may have a
+    // different number of images or a previously unavailable material V#.
+    // Own its Info for as long as the Vulkan module is cached. Never build
+    // from new_info and then return the first program->info to the rasterizer.
+    auto new_info = std::make_unique<Shader::Info>(hw_stage, sw_stage, params);
+    const size_t perm_idx = program->modules.size();
+    const u64 perm_hash = HashCombine(params.hash, perm_idx);
+    const auto module = CompileModule(*new_info, runtime_info, params.code, perm_idx, binding);
+    auto spec = Shader::StageSpecialization(*new_info, runtime_info, profile, first_binding);
+
+    RegisterShaderMeta(*new_info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
+
+    Shader::Info* selected_info = new_info.get();
+    program->AddPermut(module, std::move(spec), std::move(new_info));
     if (auto& fetch = program->modules[perm_idx].spec.fetch_shader_data; !fetch.Empty()) {
         fetch_shader = &fetch;
     }
-    return std::make_tuple(&program->info, module, perm_hash);
+    if (selected_info->strided_material_source_count != 0) {
+        LOG_INFO(Render_Vulkan,
+                 "LiveMaterialPermutationCompiled: shader={:#x} stage={} perm={} "
+                 "sources={} indexed_images={} retained_info=true",
+                 selected_info->pgm_hash,selected_info->hw_stage,perm_idx,
+                 selected_info->strided_material_source_count,
+                 std::ranges::count_if(selected_info->images,[](const auto& image) {
+                     return image.is_guest_indexed;
+                 }));
+    }
+    return std::make_tuple(selected_info, module, perm_hash);
 }
 
 std::optional<vk::ShaderModule> PipelineCache::ReplaceShader(vk::ShaderModule module,
