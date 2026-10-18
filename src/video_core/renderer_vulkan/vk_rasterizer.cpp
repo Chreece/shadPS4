@@ -1126,6 +1126,42 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     u32 num_images{};
     for (u32 resource_index=0; resource_index<stage.images.size(); ++resource_index) {
         const auto& image_desc=stage.images[resource_index];
+        // Log the REAL guest texture sampled by each submitted fragment
+        // stage and its output color buffer address. The first capture showed
+        // that fs 0x96aa3f2e alone draws to GoT's presented targets; we must
+        // now establish which offscreen shader generated its source.
+        if (stage.hw_stage == Shader::HwStage::Fragment &&
+            Diagnostics::MenuPassTraceEnabled()) {
+            const auto& cb = liverpool->regs.color_buffers[0];
+            const u64 output = cb ? cb.Address() : 0;
+            if (Diagnostics::ShouldTraceMenuSource(stage.pgm_hash, output,
+                                                   resource_index)) {
+                if (image_desc.is_guest_indexed) {
+                    AmdGpu::Buffer table{};
+                    const bool fetched = image_desc.indexed_table_fetch.FetchChecked(
+                        stage.flattened_ud_buf.data(),
+                        stage.flattened_ud_buf.size(), &table);
+                    Diagnostics::TraceMenuSource(
+                        stage.pgm_hash, output, resource_index, true,
+                        fetched && table.Valid(),
+                        static_cast<u64>(table.base_address),
+                        static_cast<u32>(table.stride),
+                        static_cast<u32>(table.num_records),
+                        0u, 0u, 0u, 0u, 0u);
+                } else {
+                    const auto tsharp = image_desc.GetSharp(stage);
+                    Diagnostics::TraceMenuSource(
+                        stage.pgm_hash, output, resource_index, false,
+                        tsharp.Valid() && tsharp.Address() != 0,
+                        tsharp.Address(), 0u, 0u,
+                        static_cast<u32>(tsharp.width) + 1u,
+                        static_cast<u32>(tsharp.height) + 1u,
+                        static_cast<u32>(tsharp.data_format),
+                        static_cast<u32>(tsharp.num_format),
+                        static_cast<u32>(tsharp.type));
+                }
+            }
+        }
         // Read-only guest T# census for large, rejected GPU-indexed tables.
         // Do not guess the shader's GPU index or bind a truncated array.
         // An unmapped span is never dereferenced. The opt-in scan is limited
