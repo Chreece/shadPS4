@@ -61,6 +61,34 @@ general-purpose gameplay fix.** Preserve all development branches and logs for
 future A/B replay; the unified candidate must be reproducible, not an uncontrolled
 merge of every interesting PR.
 
+## October 18 four-file main rebase reconciliation
+
+The first Debian build attempt (`esde-unified-20261018-155409.log`) reached
+`STAGE=MERGE_FORK_ACCEPTED_MAIN` but failed on four overlapping upstream/fork
+files. The exact-source resolver `tools/development/esde_resolve_main_conflicts.py`
+validates the expected upstream and fork main commit IDs, **both staged Git
+blob SHAs for every conflicted file**, and that exactly four expected paths are
+unmerged. It refuses unexpected trees; it does not select an arbitrary merge
+side across the codebase.
+
+- `src/core/devtools/layer.cpp`: fork's Home/PS quit prompt and consumed
+  confirmation input, plus upstream's revised FPS-window pinning.
+- `src/core/libraries/kernel/kernel.cpp`: upstream's new Net integration,
+  stack diagnostics and OpenPsId, plus fork's sanitizer/atexit registration,
+  errno handling and bounded regmgr input trace.
+- `src/video_core/buffer_cache/buffer_cache.cpp`: retain upstream's redesigned
+  async buffer cache and **already-upstream** device-address allocation, plus
+  fork's independently sparse-capable queue submission.
+- `src/video_core/texture_cache/texture_cache.cpp`: retain upstream's new
+  async texture downloads, image GC/tracking and **already-upstream**
+  depth-growth initialization; port only the fork's depth-growth/containment
+  diagnostic events.
+
+The resolver stages exactly these four files, checks all staged whitespace,
+completes the merge and verifies merge parentage. Source anchors are tested
+against the October 18 GitHub content. The combined merge, subsequent frontend
+integration, Linux link and ES-DE runtime are **not** claimed to have passed.
+
 ## Build and selection
 
 Build: `bash ~/projects/shadps4/scripts/esde_unified.sh`.
