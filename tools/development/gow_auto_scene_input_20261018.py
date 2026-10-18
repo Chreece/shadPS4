@@ -16,18 +16,21 @@ import ctypes as C
 import ctypes.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import signal
 import subprocess
 import sys
-import tarfile
 import time
 
+from gow_route_steering_20261018 import RouteDriver, MAX_STEER_SECONDS
+
 W, H = 160, 90
-SAMPLE_PERIOD = 2.0
-MAX_BEFORE_CUTSCENE = 230.0
+SCREEN_CHECK_PERIOD = 3.0
 OBSERVE_AFTER_CUTSCENE = 95.0
+AUDIO_GUEST = re.compile(
+    r'AUDIO_PRODUCER_TIMING port=126.*?ready=(\d+) no_guest_buffer=(\d+)')
 
 
 def metrics(raw: bytes) -> dict:
@@ -66,7 +69,9 @@ def metrics(raw: bytes) -> dict:
     warm /= max(1, n)
     blue /= max(1, n)
     texture = textured / max(1, n)
-    menu = logo > .020 and selected_continue > .065
+    # A pure-white load frame has logo=1, selection=1 and texture=0.
+    # Reject it as a menu to avoid accidentally pressing Cross during loading.
+    menu = .020 < logo < .5 and selected_continue > .065 and texture > 1.6
     # Snowlit approach preceded the wolf in recorded 20:10 capture.
     # Distinguish it from startup, blue cave and menu with high brightness.
     approach = (not menu and bright > .027 and texture > 5.0 and logo < .015)
@@ -75,10 +80,12 @@ def metrics(raw: bytes) -> dict:
     # revalidated from the retained screenshots before performance claims.
     wolf_candidate = (not menu and warm > .09 and bright < .018 and
                       blue < .065 and texture > 2.0)
+    world_ready = not menu and blue > .075 and texture > 4.5 and logo < .15
     return dict(logo=round(logo, 4), highlighted_continue=round(selected_continue, 4),
                 warm=round(warm, 4), bright=round(bright, 4),
                 blue=round(blue, 4), texture=round(texture, 3),
-                menu=menu, approach=approach, wolf_candidate=wolf_candidate)
+                menu=menu, approach=approach, wolf_candidate=wolf_candidate,
+                world_ready=world_ready)
 
 
 def xlib():
@@ -309,39 +316,69 @@ def selftest():
     print("NO_INPUT_OR_X11_REQUIRED_FOR_SELFTEST=YES")
 
 
-def validate_previous_archive(archive):
-    """Use actual user A/B screenshots as regression fixtures; no game or X11."""
-    cases = [
-        ("B_SPARSE_CPU_UPLOAD", 60, "menu"),
-        ("B_SPARSE_CPU_UPLOAD", 120, "approach"),
-        ("A_DENSE_CPU_UPLOAD", 90, "wolf_candidate"),
-        ("A_DENSE_CPU_UPLOAD", 120, "wolf_candidate"),
-    ]
-    with tarfile.open(archive, "r:gz") as tf:
-        for mode, second, expected in cases:
-            match = [member for member in tf.getmembers() if member.name.endswith(
-                f"/sparse-cpu-upload-ab/{mode}/frame-{second}.png")]
-            if len(match) != 1 or match[0].size > 7 * 2**20:
-                raise RuntimeError(f"ARCHIVE_REQUIRED_FRAME_MISSING={mode}:{second}")
-            png = tf.extractfile(match[0]).read()
-            proc = subprocess.run(
-                ["convert", "png:-", "-resize", f"{W}x{H}!",
-                 "-depth", "8", "rgb:-"], input=png,
-                capture_output=True, timeout=12)
-            if proc.returncode:
-                raise RuntimeError(f"ARCHIVE_FRAME_RGB_FAILED={mode}:{second}")
-            row = metrics(proc.stdout)
-            print(f"OLD_SCENE_CLASSIFIER_{mode}_{second}={expected} "
-                  + json.dumps(row, sort_keys=True), flush=True)
-            if not row[expected]:
-                raise RuntimeError(f"OLD_SCENE_CLASSIFIER_REGRESSION_{mode}_{second}")
-    print("PRIOR_REAL_SCENE_DETECTION=PASS cases=4")
+
+class AudioProgress:
+    """One-way incremental log read: never change game/audio scheduling."""
+    def __init__(self, path: Path):
+        self.path = path
+        self.offset = 0
+        self.healthy_ever = False
+        self.low_after_healthy = 0
+        self.latest = None
+
+    def read_windows(self):
+        events = []
+        if not self.path.is_file():
+            return events
+        with self.path.open("rb") as stream:
+            stream.seek(self.offset)
+            lines = stream.readlines()
+            # Do not drop an incomplete logger write between reads.
+            if lines and not lines[-1].endswith(b"\n"):
+                stream.seek(-len(lines[-1]), os.SEEK_CUR)
+                lines.pop()
+            self.offset = stream.tell()
+        for raw in lines:
+            line = raw.decode(errors="replace")
+            match = AUDIO_GUEST.search(line)
+            if not match:
+                continue
+            ready, missing = map(int, match.groups())
+            fraction = ready / max(1, ready + missing)
+            self.latest = fraction
+            if fraction >= .92:
+                self.healthy_ever = True
+                self.low_after_healthy = 0
+            elif self.healthy_ever and fraction <= .65:
+                self.low_after_healthy += 1
+            else:
+                self.low_after_healthy = 0
+            events.append(dict(ready=ready, missing=missing,
+                               fraction=round(fraction, 4),
+                               healthy_seen=self.healthy_ever,
+                               consecutive_low=self.low_after_healthy))
+        return events
+
+
+def reached_cutscene_candidate(record, source, elapsed, driver, keyboard, forward_key, right_key):
+    """Candidate only, never scene equality or a performance outcome."""
+    if driver is not None:
+        driver.release_all(keyboard)
+    record["cutscene_at"] = elapsed
+    record["cutscene_candidate_at"] = elapsed
+    record["cutscene_candidate_source"] = source
+    record["right_released_at"] = elapsed
+    record["mode"] = "OBSERVING_CUTSCENE"
+    record["input_actions"].append(dict(action="ALL_STEERING_RELEASED",
+                                        t=elapsed, reason=source))
+    print(f"CUTSCENE_CANDIDATE_UNVERIFIED={elapsed} SOURCE={source} "
+          "KEYS_RELEASED=YES IMAGE_COMPARISON=DISABLED", flush=True)
+
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--self-test", action="store_true")
     p.add_argument("--preflight", action="store_true")
-    p.add_argument("--validate-old-archive", type=Path)
     p.add_argument("--pid", type=int)
     p.add_argument("--display", default=":0")
     p.add_argument("--out", type=Path)
@@ -349,25 +386,22 @@ def main():
     p.add_argument("--cross-key", default="n")
     p.add_argument("--forward-key", default="w")
     p.add_argument("--right-key", default="d")
-    p.add_argument("--max-seconds", type=int, default=350)
+    p.add_argument("--left-key", default="a")
+    p.add_argument("--observe-after", type=int, default=95)
+    p.add_argument("--max-seconds", type=int, default=230)
     a = p.parse_args()
     if a.self_test:
         selftest()
         return 0
     if not shutil.which("import") or not shutil.which("convert"):
         raise SystemExit("IMAGEMAGICK_IMPORT_AND_CONVERT_REQUIRED_NO_INPUT")
-    if a.validate_old_archive is not None:
-        if not a.validate_old_archive.is_file():
-            raise SystemExit("OLD_CAPTURE_ARCHIVE_NOT_FOUND")
-        validate_previous_archive(a.validate_old_archive)
-        return 0
     # Fail closed for custom bindings rather than send keystrokes with unknown
     # effect. Caller may set both keys explicitly after checking input_config.
     if not (len(a.cross_key) == len(a.forward_key) ==
-            len(a.right_key) == 1 and
-            a.cross_key.isalpha() and a.forward_key.isalpha() and
-            a.right_key.isalpha() and
-            len({a.cross_key, a.forward_key, a.right_key}) == 3):
+            len(a.right_key) == len(a.left_key) == 1 and
+            all(k.isalpha() for k in
+                (a.cross_key, a.forward_key, a.right_key, a.left_key)) and
+            len({a.cross_key, a.forward_key, a.right_key, a.left_key}) == 4):
         raise SystemExit("INVALID_KEY_CONFIG_NO_INPUT")
     if a.preflight:
         # Verify XTest AND in-memory capture in the actual X11 session before
@@ -381,20 +415,23 @@ def main():
         print("NO_IMAGES_SAVED_OR_COMPARED=YES")
         return 0
     if (not a.pid or not a.out or a.launch_monotonic is None or
-            a.max_seconds < 200 or a.max_seconds > 480):
+            a.max_seconds < 150 or a.max_seconds > 480 or
+            not 15 <= a.observe_after <= 120):
         raise SystemExit("INVALID_AUTOPILOT_ARGUMENTS_NO_INPUT")
     a.out.mkdir(parents=True, exist_ok=True)
     os.environ["DISPLAY"] = a.display
     status_path = a.out / "auto-progress.json"
     record = {"pid": a.pid, "display": a.display, "mode": "WAIT_MENU",
               "menu_seen_at": None, "cross_at": None, "forward_at": None,
-              "right_at": None, "right_released_at": None,
+              "right_at": None, "left_at": None, "world_ready_at": None,
+              "right_released_at": None, "audio_windows": [],
+              "route_segments": [],
               "approach_at": None, "cutscene_candidate_at": None,
               "cutscene_at": None, "done_at": None, "success": False,
               "observations": [], "input_actions": [], "error": None,
               "source": "observed X11 frames + XTest keyboard",
-              "gamepad_equivalent": f"cross={a.cross_key}, forward={a.forward_key}, right={a.right_key}",
-              "cutscene_confirmation": "UNVERIFIED_SCREEN_CANDIDATE; LOG_ONLY_PERFORMANCE",
+              "gamepad_equivalent": f"cross={a.cross_key}, forward={a.forward_key}, right={a.right_key}, left={a.left_key}",
+              "cutscene_confirmation": "UNVERIFIED_AUDIO_OR_SCREEN_CANDIDATE; LOG_ONLY_PERFORMANCE",
               "image_comparison": "DISABLED; no periodic screenshot files"}
     stop = False
     def interrupted(signum, _):
@@ -404,8 +441,12 @@ def main():
         signal.signal(signum, interrupted)
     keyboard = None
     menu_hits = 0
-    approach_hits = 0
+    world_hits = 0
     wolf_hits = 0
+    route = None
+    route_start = None
+    next_screen_at = 0.0
+    audio = AudioProgress(a.out / "full-console.log")
     try:
         keyboard = Keyboard(a.display, a.pid)
         start = time.monotonic()
@@ -419,16 +460,63 @@ def main():
         record["window_id"] = hex(keyboard.window)
         print("EXACT_GAME_WINDOW_VERIFIED=" + hex(keyboard.window), flush=True)
         while not stop and alive(a.pid):
-            elapsed = round(time.monotonic() - a.launch_monotonic, 2)
+            clock = time.monotonic()
+            elapsed = round(clock - a.launch_monotonic, 2)
             if elapsed > a.max_seconds:
                 raise RuntimeError("AUTOPILOT_TIMEOUT_STAGE_" + record["mode"])
-            # Screen classification ends at the tentative cinematic start.
-            # Once observing, no capture subprocess should run.
-            observed = screenshot(a.out) if record["mode"] != "OBSERVING_CUTSCENE" else None
-            if observed is not None:
-                sample = {"t": elapsed, **observed}
-                record["observations"].append(sample)
-                record["observations"] = record["observations"][-260:]
+            state = record["mode"]
+
+            # Keep steering cadence independent of expensive ImageMagick
+            # world-state observations. Key phases are limited to 2.5-8 sec,
+            # never another 5-minute W+D hold.
+            if state == "STEER_ROUTE" and route is not None:
+                phase_event = route.update(clock - route_start, keyboard)
+                if phase_event is not None:
+                    event = dict(phase_event, t=elapsed)
+                    record["route_segments"].append(event)
+                    record["input_actions"].append(event)
+                    print(f"AUTO_ROUTE_PHASE={event['phase']} "
+                          f"T={elapsed} KEYS={'+'.join(event['keys'])}", flush=True)
+
+            # Counter-only cutscene proxy: requires two consecutive 5-second
+            # Audio3D shortages after documented healthy output. Not a proof
+            # of the cutscene and never used to infer A/B FPS improvement.
+            for event in audio.read_windows():
+                event["t"] = elapsed
+                record["audio_windows"].append(event)
+                if (state == "STEER_ROUTE" and route_start is not None and
+                    clock - route_start >= 18 and
+                    event["consecutive_low"] >= 2):
+                    reached_cutscene_candidate(
+                        record, "AUDIO3D_PRODUCER_CADENCE_CHANGE",
+                        elapsed, route, keyboard, a.forward_key, a.right_key)
+                    break
+
+            state = record["mode"]
+            if state == "OBSERVING_CUTSCENE":
+                if elapsed - record["cutscene_at"] >= a.observe_after:
+                    record["done_at"] = elapsed
+                    record["mode"] = "COMPLETE"
+                    record["success"] = True
+                    print(f"ROUTE_CANDIDATE_OBSERVED_LOG_SECONDS={a.observe_after} "
+                          "PERFORMANCE_FROM_LOGS_ONLY=YES", flush=True)
+                    publish(status_path, record)
+                    break
+                if clock < next_screen_at:
+                    time.sleep(.16)
+                    continue
+                next_screen_at = clock + SCREEN_CHECK_PERIOD
+                publish(status_path, record)
+                time.sleep(.16)
+                continue
+
+            if clock < next_screen_at:
+                time.sleep(.16)
+                continue
+            next_screen_at = clock + SCREEN_CHECK_PERIOD
+            observed = screenshot(a.out)
+            record["observations"].append({"t": elapsed, **observed})
+            record["observations"] = record["observations"][-240:]
             state = record["mode"]
             if state == "WAIT_MENU":
                 menu_hits = menu_hits + 1 if observed["menu"] else 0
@@ -436,55 +524,40 @@ def main():
                     record["menu_seen_at"] = elapsed
                     keyboard.tap(a.cross_key)
                     record["cross_at"] = round(time.monotonic() - a.launch_monotonic, 2)
-                    record["input_actions"].append({"action": "PLAYSTATION_CROSS_CONTINUE", "t": record["cross_at"]})
-                    print(f"MENU_CONFIRMED_AND_CROSS_SENT={elapsed}", flush=True)
-                    # Holding forward across loading is intentional; movement
-                    # begins immediately once the guest starts accepting axes.
-                    time.sleep(1.5)
-                    hold_forward_right(keyboard, a.forward_key, a.right_key)
-                    record["forward_at"] = round(time.monotonic() - a.launch_monotonic, 2)
-                    record["right_at"] = record["forward_at"]
-                    record["input_actions"].append({"action": "LEFT_STICK_FORWARD_AND_RIGHT_DOWN", "t": record["forward_at"]})
-                    print("AUTO_STEERING=FORWARD_PLUS_RIGHT keys=" +
-                          a.forward_key + "+" + a.right_key, flush=True)
-                    record["mode"] = "FORWARD_RIGHT_TO_CUTSCENE"
-            elif state == "FORWARD_RIGHT_TO_CUTSCENE":
-                if observed["approach"]:
-                    approach_hits += 1
-                    if approach_hits >= 2 and record["approach_at"] is None:
-                        record["approach_at"] = elapsed
-                        print(f"WORLD_APPROACH_CANDIDATE={elapsed}", flush=True)
-                elif approach_hits < 2:
-                    approach_hits = 0
-                # Snowy approach can be missed with different camera movement,
-                # so do not require it as a mandatory gate (20:50 B false fail).
-                # Observe at least 35s after Continue and require 5 consecutive
-                # samples of the candidate visual signature. This is a navigation
-                # heuristic, NOT a semantic match and not a performance win.
-                if (record["cross_at"] is not None and
-                    elapsed - record["cross_at"] >= 35.0 and
+                    record["input_actions"].append(
+                        {"action": "PLAYSTATION_CROSS_CONTINUE", "t": record["cross_at"]})
+                    print(f"MENU_CONFIRMED_AND_CROSS_SENT={elapsed} "
+                          "WAITING_FOR_REAL_GAMEPLAY_BEFORE_STEERING=YES", flush=True)
+                    record["mode"] = "WAIT_WORLD_READY"
+            elif state == "WAIT_WORLD_READY":
+                world_hits = world_hits + 1 if observed["world_ready"] else 0
+                if world_hits >= 2:
+                    record["world_ready_at"] = elapsed
+                    route = RouteDriver(a.forward_key, a.right_key, a.left_key)
+                    route_start = time.monotonic()
+                    event = route.update(0.0, keyboard)
+                    first_event = dict(event, t=elapsed)
+                    record["route_segments"].append(first_event)
+                    record["input_actions"].append(first_event)
+                    record["forward_at"] = elapsed
+                    record["right_at"] = elapsed
+                    record["mode"] = "STEER_ROUTE"
+                    print(f"WORLD_READY={elapsed} STEERING_BEGINS_AFTER_LOAD=YES "
+                          "INITIAL_RIGHT_PULSE_SECONDS=3.0", flush=True)
+            elif state == "STEER_ROUTE":
+                # Legacy wolf-color heuristic is an optional NAVIGATION SIGNAL
+                # only. No images stored and no image comparison performed.
+                if (route_start is not None and clock - route_start > 10 and
                     observed["wolf_candidate"]):
                     wolf_hits += 1
                 else:
                     wolf_hits = 0
-                if wolf_hits >= 5:
-                    record["cutscene_candidate_at"] = elapsed
-                    release_forward_right(keyboard, a.forward_key, a.right_key)
-                    record["right_released_at"] = elapsed
-                    record["input_actions"].append({"action": "LEFT_STICK_FORWARD_AND_RIGHT_UP", "t": elapsed})
-                    record["cutscene_at"] = elapsed
-                    record["mode"] = "OBSERVING_CUTSCENE"
-                    print(f"CUTSCENE_VISUAL_CANDIDATE_UNVERIFIED={elapsed} ALL_MOVEMENT_RELEASED=YES", flush=True)
-            elif state == "OBSERVING_CUTSCENE":
-                elapsed_from_cutscene = elapsed - record["cutscene_at"]
-                if elapsed_from_cutscene >= OBSERVE_AFTER_CUTSCENE:
-                    record["done_at"] = elapsed
-                    record["mode"] = "COMPLETE"
-                    record["success"] = True
-                    print(f"AUTOPILOT_NAVIGATION_CANDIDATE=YES POST_CANDIDATE_LOG_SECONDS={OBSERVE_AFTER_CUTSCENE} FRAME_COMPARE=DISABLED", flush=True)
-                    break
+                if wolf_hits >= 3:
+                    reached_cutscene_candidate(
+                        record, "LIVE_SCREEN_COLOR_SIGNAL",
+                        elapsed, route, keyboard, a.forward_key, a.right_key)
             publish(status_path, record)
-            time.sleep(SAMPLE_PERIOD)
+            time.sleep(.16)
         if stop:
             raise RuntimeError("AUTOPILOT_INTERRUPTED")
         if not record["success"]:
@@ -494,6 +567,11 @@ def main():
         print("AUTOPILOT_FAILURE=" + record["error"], flush=True)
     finally:
         if keyboard:
+            if route is not None:
+                try:
+                    route.release_all(keyboard)
+                except Exception as exc:
+                    print("ROUTE_KEY_RELEASE_ERROR=" + str(exc), flush=True)
             keyboard.close()
         publish(status_path, record)
     return 0 if record["success"] else 1
