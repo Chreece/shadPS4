@@ -443,7 +443,8 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         const auto table_fetch =
             ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp, info);
         AmdGpu::Buffer table{};
-        if (table_fetch.Fetch(info.flattened_ud_buf.data(), &table) &&
+        if (table_fetch.FetchChecked(info.flattened_ud_buf.data(),
+                                    info.flattened_ud_buf.size(), &table) &&
             table.Valid() && table.base_address) {
             const u64 full_size = table.stride==0
                 ? static_cast<u64>(table.num_records)
@@ -1326,7 +1327,11 @@ static bool AllStridedGuestImagesRepresentable(
         const auto table_fetch=ConstructSharpFetch<AmdGpu::Buffer>(
             usage.indexed_table_sharp,info);
         AmdGpu::Buffer table{};
-        const bool fetched=table_fetch.Fetch(info.flattened_ud_buf.data(),&table);
+        const bool flattened =
+            table_fetch.summary != SharpFetch<AmdGpu::Buffer>::Summary::Invalid;
+        const bool in_bounds = table_fetch.ReadOffsetsInBounds(info.flattened_ud_buf.size());
+        const bool fetched = table_fetch.FetchChecked(info.flattened_ud_buf.data(),
+                                                      info.flattened_ud_buf.size(), &table);
         const bool valid=fetched && table.Valid();
         const bool has_base=valid && table.base_address!=0;
         const u32 entries=has_base
@@ -1341,7 +1346,8 @@ static bool AllStridedGuestImagesRepresentable(
         if (!eligible) ++invalid;
 
         if (probe) {
-            const auto reason=!fetched ? "UNFLATTENED_DESCRIPTOR_SOURCE"
+            const auto reason = !flattened ? "UNFLATTENED_DESCRIPTOR_SOURCE"
+                : !in_bounds ? "FLATTENED_SOURCE_OUT_OF_RANGE"
                 : !valid ? "INVALID_BUFFER_DESCRIPTOR"
                 : !has_base ? "ZERO_BASE_ADDRESS"
                 : table.num_records==0u ? "ZERO_RECORD_COUNT"
@@ -1352,7 +1358,7 @@ static bool AllStridedGuestImagesRepresentable(
             // Raw values are descriptor words, never a guest-memory read.
             LOG_INFO(Render_Recompiler,
                      "GuestStridedSourceProof: shader={:#x} stage={} source={} "
-                     "result={} reason={} fetched={} fetch_summary={} "
+                     "result={} reason={} fetched={} fetch_summary={} source_in_bounds={} flatbuf_words={} "
                      "descriptor_words={} missing_mask={:#x} load_mask={:#x} "
                      "flat_offsets={},{},{},{} "
                      "immediate_words={:#x},{:#x},{:#x},{:#x} "
@@ -1361,6 +1367,7 @@ static bool AllStridedGuestImagesRepresentable(
                      "entries={} profile_limit={}",
                      info.pgm_hash,info.hw_stage,sources,
                      eligible,reason,fetched,static_cast<u32>(table_fetch.summary),
+                     in_bounds, info.flattened_ud_buf.size(),
                      source.num_dwords,missing,static_cast<u32>(table_fetch.load_mask),
                      static_cast<u32>(table_fetch.offsets[0]),
                      static_cast<u32>(table_fetch.offsets[1]),
