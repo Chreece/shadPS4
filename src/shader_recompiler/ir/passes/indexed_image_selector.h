@@ -131,6 +131,69 @@ template <std::size_t N>
            first.record_stride_bytes / 4u;
 }
 
+// Flat guest texture-table words are also sometimes loaded as individual
+// scalar-buffer reads with the byte offset applied *before* the >> 2.
+// The selector can be lane-dependent (e.g. BitCastU32F32(GetAttribute)):
+// the GPU must retain that exact source. Only recover an array index when
+// every word proves (id * 32 + 4 * word) >> 2, possibly with literal
+// dword suffixes. This is not a host texture descriptor evaluation.
+//
+// The multiplication and addition are 32-bit guest operations: the effective
+// index is id modulo 2^27. A 27-bit mask on the GPU selector preserves
+// that overflow, including out-of-range null-slot selection.
+template <typename Value>
+[[nodiscard]] StridedIndexedSharpWord AnalyzePackedGuestTsharpWord(Value index) {
+    const auto normalized = AnalyzeIndexedSharpWord(index);
+    using Inst = std::remove_cv_t<std::remove_pointer_t<decltype(index.TryInst())>>;
+    if (!normalized.valid) return {};
+    const auto* const shift = static_cast<const Inst*>(normalized.selector);
+    if (!shift || shift->GetOpcode() != IR::Opcode::ShiftRightLogical32 ||
+        !shift->Arg(1).IsImmediate() || shift->Arg(1).Type() != IR::Type::U32 ||
+        shift->Arg(1).U32() != 2u) return {};
+
+    auto term = shift->Arg(0);
+    std::uint32_t prefix_bytes = 0;
+    if (const auto* const add = term.TryInst();
+        add && add->GetOpcode() == IR::Opcode::IAdd32) {
+        const auto lhs = add->Arg(0);
+        const auto rhs = add->Arg(1);
+        if (lhs.IsImmediate() == rhs.IsImmediate()) return {};
+        const auto literal = lhs.IsImmediate() ? lhs : rhs;
+        if (literal.Type() != IR::Type::U32) return {};
+        prefix_bytes = literal.U32();
+        term = lhs.IsImmediate() ? rhs : lhs;
+    }
+    if (prefix_bytes >= 32u || (prefix_bytes & 3u)) return {};
+
+    const auto* const scaled = term.TryInst();
+    if (!scaled) return {};
+    Value guest_id{};
+    if (scaled->GetOpcode() == IR::Opcode::ShiftLeftLogical32 &&
+        scaled->Arg(1).IsImmediate() &&
+        scaled->Arg(1).Type() == IR::Type::U32 &&
+        scaled->Arg(1).U32() == 5u) {
+        guest_id = scaled->Arg(0);
+    } else if (scaled->GetOpcode() == IR::Opcode::IMul32 &&
+               (scaled->Arg(0).IsImmediate() != scaled->Arg(1).IsImmediate())) {
+        const auto lhs=scaled->Arg(0), rhs=scaled->Arg(1);
+        const auto literal = lhs.IsImmediate() ? lhs : rhs;
+        if (literal.Type() != IR::Type::U32 || literal.U32() != 32u) return {};
+        guest_id = lhs.IsImmediate() ? rhs : lhs;
+    } else {
+        return {};
+    }
+    // Do not replace guest attributes/Phis with CPU-evaluated constants.
+    const auto* const producer=guest_id.TryInst();
+    if (!producer || guest_id.IsImmediate()) return {};
+    const std::uint64_t word = std::uint64_t(prefix_bytes / 4u) + normalized.addend;
+    if (word >= 8u) return {};
+    return {producer, 32u, static_cast<std::uint32_t>(word), true};
+}
+
+[[nodiscard]] constexpr std::uint32_t GuestTsharpIdWrapped27(std::uint32_t id) noexcept {
+    return id & 0x07ffffffu;
+}
+
 // GCN constructs a texture-table dword index with (texture_id << 5) >> 2.
 // The shift-left is 32-bit and wraps before the unsigned shift right.
 // Recover the exact GPU texture-id producer but NEVER evaluate its value.
