@@ -171,7 +171,7 @@ if [ "$FREE" -lt "$MIN_VRAM" ]; then
   python3 - "$RUN/info/containers.jsonl" "$RUN/info/ollama-id.txt" <<'PY'
 import json,pathlib,sys
 rows=[json.loads(s) for s in pathlib.Path(sys.argv[1]).read_text().splitlines() if s]
-match=[r for r in rows if "ollama" in (str(r.get("Image",""))+" "+str(r.get("Names",""))).lower()]
+match=[r for r in rows if r.get("Names")=="ollama" and str(r.get("Image","")).startswith("ollama/ollama:")]
 if len(match)!=1: raise SystemExit("AMBIGUOUS_OLLAMA_CONTAINER="+str(len(match)))
 pathlib.Path(sys.argv[2]).write_text(str(match[0]["ID"])+"\n")
 print("OLLAMA_CONTAINER="+str(match[0].get("Names","")))
