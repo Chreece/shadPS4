@@ -6,6 +6,7 @@
 #include "common/types.h"
 #include "shader_recompiler/ir/type.h"
 #include "shader_recompiler/ir/passes/sharp_dword_mask.h"
+#include "shader_recompiler/sharp_fetch_bounds.h"
 #include "video_core/amdgpu/resource.h"
 
 #include <boost/container/static_vector.hpp>
@@ -40,6 +41,31 @@ struct SharpFetch {
     u8 load_mask{};
 
     bool operator==(const SharpFetch&) const = default;
+
+    // The existing Fetch() API is retained for unrelated callers. Guest
+    // indexed T#/S# tables must fail closed if any host-read descriptor word
+    // would fall outside the actual flattened userdata buffer.
+    template <u32 num_dwords = N>
+        requires(num_dwords <= N)
+    constexpr bool ReadOffsetsInBounds(std::size_t flatbuf_words) const noexcept {
+        return summary != Summary::Invalid &&
+               Optimization::SharpFetchOffsetsInBounds(
+                   flatbuf_words, offsets, load_mask, num_dwords,
+                   summary == Summary::SingleLoad &&
+                       Optimization::SharpMasksAreZero(clear_masks, num_dwords));
+    }
+
+    template <u32 num_dwords = N>
+        requires(num_dwords <= N)
+    constexpr bool FetchChecked(const u32* flatbuf, std::size_t flatbuf_words,
+                                T* out) const {
+        if (!out || !ReadOffsetsInBounds<num_dwords>(flatbuf_words)) return false;
+        // All-immediate descriptors require no flattened-memory read.
+        if (!flatbuf && (summary == Summary::SingleLoad || load_mask != 0)) {
+            return false;
+        }
+        return Fetch<num_dwords>(flatbuf, out);
+    }
 
     template <u32 num_dwords = N>
         requires(num_dwords <= N)
