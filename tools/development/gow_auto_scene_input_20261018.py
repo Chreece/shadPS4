@@ -19,6 +19,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import time
 
 W, H = 160, 90
@@ -267,10 +268,39 @@ def selftest():
     print("NO_INPUT_OR_X11_REQUIRED_FOR_SELFTEST=YES")
 
 
+def validate_previous_archive(archive):
+    """Use actual user A/B screenshots as regression fixtures; no game or X11."""
+    cases = [
+        ("B_SPARSE_CPU_UPLOAD", 60, "menu"),
+        ("B_SPARSE_CPU_UPLOAD", 120, "approach"),
+        ("A_DENSE_CPU_UPLOAD", 90, "wolf_candidate"),
+        ("A_DENSE_CPU_UPLOAD", 120, "wolf_candidate"),
+    ]
+    with tarfile.open(archive, "r:gz") as tf:
+        for mode, second, expected in cases:
+            match = [member for member in tf.getmembers() if member.name.endswith(
+                f"/sparse-cpu-upload-ab/{mode}/frame-{second}.png")]
+            if len(match) != 1 or match[0].size > 7 * 2**20:
+                raise RuntimeError(f"ARCHIVE_REQUIRED_FRAME_MISSING={mode}:{second}")
+            png = tf.extractfile(match[0]).read()
+            proc = subprocess.run(
+                ["convert", "png:-", "-resize", f"{W}x{H}!",
+                 "-depth", "8", "rgb:-"], input=png,
+                capture_output=True, timeout=12)
+            if proc.returncode:
+                raise RuntimeError(f"ARCHIVE_FRAME_RGB_FAILED={mode}:{second}")
+            row = metrics(proc.stdout)
+            print(f"OLD_SCENE_CLASSIFIER_{mode}_{second}={expected} "
+                  + json.dumps(row, sort_keys=True), flush=True)
+            if not row[expected]:
+                raise RuntimeError(f"OLD_SCENE_CLASSIFIER_REGRESSION_{mode}_{second}")
+    print("PRIOR_REAL_SCENE_DETECTION=PASS cases=4")
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--self-test", action="store_true")
     p.add_argument("--preflight", action="store_true")
+    p.add_argument("--validate-old-archive", type=Path)
     p.add_argument("--pid", type=int)
     p.add_argument("--display", default=":0")
     p.add_argument("--out", type=Path)
@@ -284,6 +314,11 @@ def main():
         return 0
     if not shutil.which("import") or not shutil.which("convert"):
         raise SystemExit("IMAGEMAGICK_IMPORT_AND_CONVERT_REQUIRED_NO_INPUT")
+    if a.validate_old_archive is not None:
+        if not a.validate_old_archive.is_file():
+            raise SystemExit("OLD_CAPTURE_ARCHIVE_NOT_FOUND")
+        validate_previous_archive(a.validate_old_archive)
+        return 0
     # Fail closed for custom bindings rather than send keystrokes with unknown
     # effect. Caller may set both keys explicitly after checking input_config.
     if not (len(a.cross_key) == len(a.forward_key) == 1 and
