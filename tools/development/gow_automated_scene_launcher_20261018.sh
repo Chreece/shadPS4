@@ -11,7 +11,7 @@ BUILD="$BASE/GodOfWarRagnarok/tests/gow-renderer-log-hotpath-20261017/build"
 BINARY="$BUILD/shadps4.fullgfx-sparse-cpu-upload-gow-sparse-upload-20261018-201012"
 SHA="7c2104500fe19dab6afe4b0967a0f0e4b568a3273501d2b3ea16970d9744fcfc"
 OLD_CAPTURE="$LOGS/gow-sparse-upload-20261018-201012.tar.gz"
-REF="e15943595cf117a3ce3be91170e3add20dd54059"
+REF="fd2c86b59a941535d1c73a1f11c143aa00d07055"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF"
 mkdir -p "$SCRIPTS" "$LOGS"
 [[ -e "$PROJECT/source/.git" ]] || {
@@ -36,7 +36,7 @@ while read -r name blob remote_path; do
   }
 done <<'SOURCES'
 gow_auto_scene_input_20261018.py d7ceaaaf6ef418427dda2eaff139af9028c9105d tools/development/gow_auto_scene_input_20261018.py
-gow_automated_scene_ab_20261018.py 7b386a8126f36dbb1590a86224f3a49ce96b6d31 tools/development/gow_automated_scene_ab_20261018.py
+gow_automated_scene_ab_20261018.py b2f4fd0183bdacc92dc230899910a0ef41f57045 tools/development/gow_automated_scene_ab_20261018.py
 gow_ollama_vram_gameplay_20261018.py 35b9806f7eeae74e95e4738a25d88868b51fc325 tools/development/gow_ollama_vram_gameplay_20261018.py
 SOURCES
 python3 - "$SCRIPTS" <<'PY'
@@ -63,6 +63,7 @@ echo "GAMEPLAY_INPUT_MODE=AUTOMATED_CROSS_AND_FORWARD"
 echo "RUNS=DENSE_THEN_GPUWRITE_SUMMARY_SAME_BINARY"
 echo "SCENE_PROOF_REQUIRED=BOTH_WOLF_CANDIDATES_PLUS_FRAME_MATCHING"
 echo "AUTOMATED_INPUT_NO_HUMAN_TIMING=YES"
+echo "IDENTICAL_TEMPORARY_PER_RUN_SAVES=YES; ORIGINAL_SAVES_STAY_UNTOUCHED"
 echo "CAN_ABORT=Ctrl-C; owned emulator stops and Ollama restoration runs"
 set +e
 set -o pipefail
