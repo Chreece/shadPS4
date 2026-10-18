@@ -100,6 +100,20 @@
       "measures": "queue wait time before GPU task starts; InvalidateMemory execution time; post-invalidation callback+UFFDIO_WAKE completion time, aligned to FPS/audio/UFFD five-second windows",
       "preserves": "All source-preimage checks, shader/renderer fixes, default invalidation and wakeup semantics",
       "purpose": "Choose general Linux GPU-memory bottleneck fix from measured execution cost; not itself an audio fix"
+    },
+    "readonly_stream_64k_resource_path": {
+      "source_commit": "0643c6bc9d985f7493b81146a0df0406bfcde8a2",
+      "header": "src/video_core/buffer_cache/read_only_stream_policy.h",
+      "source": "src/video_core/buffer_cache/buffer_cache.cpp",
+      "environment": "SHADPS4_STREAM_READONLY_64K=1",
+      "default": "16_KB",
+      "extended": "64_KB",
+      "prior_evidence": "64KiB read-only dense host streaming helped GoW's b398f619 compute workload progress on Oct 13; later upstream main uses 16KiB. Restore as generic opt-in, not a game-ID hack.",
+      "semantics": "Expands streaming only for buffers size 16385..65536 that are read-only, not GPU modified and not IgnoreStreamBuffer. Current mappings and sparse behavior unaffected outside this set.",
+      "host_policy_regression": "100160 deterministic tests validated for boundary, dirty, write and opt-out; local C++/g++ PASS",
+      "host_emulator_build": "NOT_RUN",
+      "audible_stutter": "NOT_PROVEN_FIXED",
+      "under_test": "A legacy 16KiB then B expanded 64KiB on same compiled binary, both with Ollama unloaded; game stops and Ollama reloaded before restoring source and binary"
     }
   },
   "open_blocker": {
@@ -115,7 +129,7 @@
     "root_cause_hypothesis": "guest PCM production cadence collapses alongside increased scene/GPU workload; investigate Wwise guest audio thread scheduling and task dependencies, not SDL queue",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Test exact 12:47 binary with Ollama backend truly unloaded to isolate VRAM contention; if FPS/audio recover, diagnose memory-pressure path before modifying CPU/GPU coherence.",
+    "next": "Build/read-only-stream opt-in path in isolated graphics-correct GoW tree, run same-binary Ollama-free A/B; quantify actual new-path hits, FPS and Audio3D. If no gains reject for current stutter and investigate shader GPU spans.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -124,19 +138,20 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "test/gow-ollama-vram-isolation-20261018",
-    "next_trial_script": "tools/development/gow_gpu_invalidate_timing_trial_20261018.sh",
-    "next_trial_launcher": "tools/development/gow_ollama_vram_launcher_20261018.sh",
-    "expected_capture_archive_prefix": "gow-gpu-invalidate-timing-",
+    "current_trial_branch": "fix/general-readonly-stream-64k-20261018",
+    "next_trial_script": "tools/development/gow_stream64_build_ab_20261018.sh",
+    "next_trial_launcher": "tools/development/gow_stream64_launcher_20261018.sh",
+    "expected_capture_archive_prefix": "gow-stream64-",
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
     "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
     "target": "Linux UFFD CPU/GPU page-coherence performance, not SDL audio buffer workaround",
-    "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix.",
-    "experiment_type": "SAME_BINARY_WITH_OLLAMA_VRAM_UNLOADED",
+    "promote_only_when": "Actual extended clean read-only buffer hits confirmed; host compile and 100160 regression tests pass; match cutscene FPS/audio improvement with same binary, same Ollama-unloaded VRAM, full graphics with no regressions.",
+    "experiment_type": "REAL_BUFFER_CACHE_CODE_CHANGE_WITH_SAME_BINARY_OLLAMA_FREE_A_B",
     "pinned_reference_binary_sha256": "63a00275b2f78ba58ef35577af0bf0b1681ac245a7e1636de1673cb4f65275ce",
     "archive_prefix": "gow-ollama-vram-",
     "ollama_safety": "Snapshot loaded model(s) from http://127.0.0.1:7869; stop only backend container bound to 7869 when safely identified (not OpenWebUI); fallback API unload with contamination logging. Confirm VRAM reclaimed, run GoW 135s, exit test's own game, restart backend, reload prior models at measured context. No sudo, SSH kept open.",
-    "baseline_limitation": "Previous 12:47 game run did not snapshot whether Ollama was loaded; only compare game scene and metrics, do not attribute VRAM causality without before-and-after proof."
+    "baseline_limitation": "Previous 12:47 game run did not snapshot whether Ollama was loaded; only compare game scene and metrics, do not attribute VRAM causality without before-and-after proof.",
+    "production_promotion": "NONE; main branch and installed shadPS4 unchanged."
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
