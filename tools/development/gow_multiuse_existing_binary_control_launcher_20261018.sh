@@ -32,14 +32,14 @@ printf '%s  %s\n' "$CANDIDATE_SHA" "$CANDIDATE" | sha256sum -c - || {
   echo "CANDIDATE_SHA256_DIFFERS_NO_ACTION"; exit 2;
 }
 
-REF="e937c36af7385adaa19f19a2f4a686478af70858"
+REF="920c2a9fc4801415845fbd4cae51093ee12e74b3"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF/tools/development"
 curl -4 -fsSL --retry 3 --retry-delay 1 \
   "$URL/gow_multiuse_existing_binary_control_20261018.py" -o "$WORK/control.py"
 curl -4 -fsSL --retry 3 --retry-delay 1 \
   "$URL/gow_ollama_vram_gameplay_20261018.py" -o "$WORK/ollama.py"
 [[ "$(git -C "$PROTECTED_SOURCE" hash-object "$WORK/control.py")" == \
-  "92972c6fa7ec052519780c127185f5efb9bcf257" ]] || {
+  "79796682eae0c93b424ce8a941a6708d7db91944" ]] || {
   echo "PINNED_STARTUP_CONTROL_SOURCE_CHANGED"; exit 2;
 }
 [[ "$(git -C "$PROTECTED_SOURCE" hash-object "$WORK/ollama.py")" == \
