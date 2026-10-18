@@ -298,12 +298,31 @@ def selftest():
             for x in range(int(x0 * W), int(x1 * W)):
                 p = (y * W + x) * 3
                 raw[p:p+3] = bytes(color)
+    # A solid white rectangle is NOT representative of a menu logo.
+    # It fills 100% of the logo search area and must be rejected, just
+    # like an all-white loading screen.
     block(.29, .17, .68, .35, (240, 240, 240))
     block(.42, .52, .62, .57, (245, 245, 245))
-    assert metrics(raw)["menu"]
+    solid_logo = metrics(raw)
+    assert not solid_logo["menu"] and solid_logo["logo"] > .95, solid_logo
+
+    # Synthetic character strokes occupy only part of the logo region.
+    # This reproduces the production detector's partial-logo condition
+    # without weakening its rejection of blank/loading frames.
+    raw = bytearray(W * H * 3)
+    for x0 in (.29, .38, .47, .56):
+        block(x0, .17, x0 + .025, .35, (240, 240, 240))
+    block(.42, .52, .62, .57, (245, 245, 245))
+    partial_logo = metrics(raw)
+    assert .020 < partial_logo["logo"] < .5, partial_logo
+    assert partial_logo["highlighted_continue"] > .065, partial_logo
+    assert partial_logo["texture"] > .6, partial_logo
+    assert partial_logo["menu"], partial_logo
+
     all_white = bytes([255]) * (W * H * 3)
     assert not metrics(all_white)["menu"]
-    print("AUTOMATED_MENU_DETECTOR_SYNTHETIC=PASS cases=3; all-white-loading=false")
+    print("AUTOMATED_MENU_DETECTOR_SYNTHETIC=PASS cases=4; "
+          "solid-logo-and-all-white-loading-rejected=YES")
     audio_candidate_regression()
     class FakeKeyboard:
         def __init__(self, fails_on=None):
