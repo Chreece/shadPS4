@@ -100,6 +100,20 @@
       "measures": "queue wait time before GPU task starts; InvalidateMemory execution time; post-invalidation callback+UFFDIO_WAKE completion time, aligned to FPS/audio/UFFD five-second windows",
       "preserves": "All source-preimage checks, shader/renderer fixes, default invalidation and wakeup semantics",
       "purpose": "Choose general Linux GPU-memory bottleneck fix from measured execution cost; not itself an audio fix"
+    },
+    "readonly_stream_64k_resource_path": {
+      "status": "REDUNDANT_FOR_EXISTING_GOW_64K_SOURCE_NOT_PROMOTED",
+      "evidence": "eabc3f1 and dafe3c5 buffer_cache.h define 64_KB; latest 14:13 archive original buffer source checksum remains 2b8d0e35."
+    },
+    "SRT_dynamic_constant_lhs_shift_correction": {
+      "source": "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
+      "source_commit": "64e2d3b21a86a8a5fbe0e40d46d73fa61f059306",
+      "diff": "Delete the stray c.shl(reg, inst->Arg(0).U32()) before mov ecx, reg in the constant-left-operand dynamic-shift path.",
+      "old_case": "constant 1 shifted by dynamic count 2 produced 16 instead of 4 in the old emitted code.",
+      "native_test": "tests/shader_recompiler/test_srt_dynamic_left_shift_20261018.cpp, 3584 combinations and negative regression case",
+      "status": "REPO_SOURCE_FIXED_TEST_AND_GAMEPLAY_PENDING",
+      "audio": "STUTTER_UNRESOLVED",
+      "gpu": "PROVEN_FULL_GRAPHICS_AND_UFFD_RETAINED"
     }
   },
   "open_blocker": {
@@ -115,7 +129,7 @@
     "root_cause_hypothesis": "guest PCM production cadence collapses alongside increased scene/GPU workload; investigate Wwise guest audio thread scheduling and task dependencies, not SDL queue",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Run GPU queue/invalidation/wake phase sample and choose targeted general native memory optimization without hiding stutters. Graphics still second phase.",
+    "next": "Native JIT host test plus same-scene GoW baseline/new build comparison, with strict 8GiB VRAM Ollama policy; preserve graphics and other valid fixes.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -124,14 +138,17 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "test/gow-gpu-invalidate-timing-20261018",
-    "next_trial_script": "tools/development/gow_gpu_invalidate_timing_trial_20261018.sh",
-    "next_trial_launcher": "tools/development/gow_gpu_invalidate_timing_launcher_20261018.sh",
-    "expected_capture_archive_prefix": "gow-gpu-invalidate-timing-",
+    "current_trial_branch": "fix/srt-dynamic-left-shift-20261018",
+    "next_trial_script": "tools/development/gow_srt_shift_build_ab_20261018.sh",
+    "next_trial_launcher": "tools/development/gow_srt_shift_launcher_20261018.sh",
+    "expected_capture_archive_prefix": "gow-srt-shift-",
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
     "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
     "target": "Linux UFFD CPU/GPU page-coherence performance, not SDL audio buffer workaround",
-    "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix."
+    "promote_only_when": "3584-case native JIT test, two completed gameplay runs and no graphics regression; FPS/audio parity and SRT code usage checked before claiming improvement.",
+    "vram_rule": "At least 8 GiB free VRAM -> leave Ollama entirely untouched. Below 8 GiB -> unload Ollama, verify free VRAM, run trials, stop games, and reload previous state.",
+    "native_code_change": "One opcode deleted from SRT walker x86-64 Xbyak codegen; constant << dynamic-count no longer shifts the count itself.",
+    "proven_binary_reference_sha256": "63a00275b2f78ba58ef35577af0bf0b1681ac245a7e1636de1673cb4f65275ce"
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -291,6 +308,20 @@
       "main_app_or_host_modified": false,
       "live_game_started": false,
       "next_steps": "Correct exact callback fragment and run an explicit historical-source selftest prior to any isolated compilation; do not call this a gameplay or audio regression."
+    },
+    "2026-10-18_14-13_stream64_preflight": {
+      "archive": "gow-stream64-20261018-141359.tar.gz",
+      "result": "FAILED_BEFORE_COMPILATION_AND_GAMEPLAY",
+      "final_stage": "STAGE_GENERAL_READONLY_BUFFER_STREAM_64K",
+      "exit_code": 1,
+      "actual_proven_buffer_cpp_sha256": "2b8d0e35f45e18ecbfc88ef153665d3e9d713638b1fa988e505ef633a8cc71e0",
+      "historical_header": "The protected source's eabc3f1/dafe3c5 header already defines STREAM_THRESHOLD = 64_KB.",
+      "diagnosis": "The old runner incorrectly required STREAM_THRESHOLD = 16_KB; exact stdout isn't archived, but absence of overlay selftest/build with source-validation stage is consistent with the guard failing.",
+      "source_restored": true,
+      "protected_binary_unchanged": true,
+      "multiport_audio_sync": "PASS 3 tests",
+      "gpu_callback_tests": "PASS 4 tests",
+      "decision": "Do not promote the 64-KiB change as progress; already present in proven GoW source."
     }
   }
 }
