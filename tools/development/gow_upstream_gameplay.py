@@ -147,10 +147,12 @@ def summarize_log(path, out):
                     for key in ("cpu_faults", "completed", "gpu_faults", "audio_faults",
                                 "game_main_faults", "slow_21ms", "slow_100ms",
                                 "audio_slow_21ms", "read_calls", "read_events",
-                                "multi_reads"):
+                                "multi_reads", "gpu_callback_submits",
+                                "callback_faults_batched"):
                         uffd_totals[key] += captures.get(key, 0)
                     for key in ("max_cpu_us", "max_audio_us", "max_gpu_inline_us",
-                                "max_pending", "max_read_batch"):
+                                "max_pending", "max_read_batch",
+                                "max_callback_faults"):
                         uffd_maxima[key] = max(uffd_maxima.get(key, 0),
                                                captures.get(key, 0))
                 if any(kind in tags for kind in (
@@ -219,6 +221,12 @@ def summarize_log(path, out):
                     uffd_totals["read_events"] / max(1, uffd_totals["read_calls"]), 3),
                 "multi_read_fraction": round(
                     uffd_totals["multi_reads"] / max(1, uffd_totals["read_calls"]), 5),
+                "mean_faults_per_batched_gpu_callback": round(
+                    uffd_totals["callback_faults_batched"] /
+                    max(1, uffd_totals["gpu_callback_submits"]), 3),
+                "reduced_gpu_queue_submissions": max(
+                    0, uffd_totals["callback_faults_batched"] -
+                    uffd_totals["gpu_callback_submits"]),
             }, indent=2) + "\n", encoding="utf-8")
         (out / "audio-timing-events.txt").write_text(
             "\n".join(audio_events) + "\n")
@@ -443,6 +451,7 @@ def main():
         report["sdl_outer_pacing"] = env.get("SHADPS4_SDL_OUTER_PACING", "")
         report["audio_timing_probe"] = env.get("SHADPS4_AUDIO_TIMING_PROBE", "")
         report["uffd_perf_probe"] = env.get("SHADPS4_UFFD_PERF_PROBE", "")
+        report["uffd_callback_batch"] = env.get("SHADPS4_UFFD_CALLBACK_BATCH", "")
         command = [str(exe), "--cpu-id-mode", "builtin", "--userfaultfd",
                    "--game", "CUSA34384", "--fullscreen", "true", "--show-fps"]
         (out / "launch-command.json").write_text(json.dumps(command, indent=2) + "\n")
