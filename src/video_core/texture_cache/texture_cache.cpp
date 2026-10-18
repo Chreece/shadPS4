@@ -34,7 +34,7 @@ static VAddr WatchedMenuDepthSource() {
         if (!raw || !raw[0] || raw[0]=='-') return 0;
         char* end{};
         const auto address=std::strtoull(raw,&end,0);
-        if (!end || *end!='\\0' || address==0) return 0;
+        if (!end || *end!='\0' || address==0) return 0;
         return static_cast<VAddr>(address);
     }();
     return watched;
