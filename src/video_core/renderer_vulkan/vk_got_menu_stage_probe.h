@@ -14,6 +14,8 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <span>
+#include <string>
 
 #include "common/logging/log.h"
 #include "common/path_util.h"
