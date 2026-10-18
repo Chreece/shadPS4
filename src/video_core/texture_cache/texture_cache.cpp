@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <bit>
+#include <cstdlib>
 #include <limits>
 #include <xxhash.h>
 
@@ -27,12 +29,34 @@ static constexpr u32 MAX_IMAGES = std::numeric_limits<u16>::max();
 static constexpr u32 MAX_IMAGE_VIEWS = std::numeric_limits<u16>::max();
 static constexpr u32 MAX_SAMPLERS = std::numeric_limits<u16>::max();
 
+// Opt-in until a long-lived game run proves allocation + rendering stability.
+// SlotId uses u32, while these image and view pools historically reserve
+// only 65,535 entries. Enlarging RESERVED virtual address space does not
+// immediately allocate GPU/host image backing memory; only used chunks are
+// committed. Adapt GC to live slot pressure rather than relying solely on
+// device-memory budget, which does not account for image-view exhaustion.
+static bool TextureSlotPressureEnabled() {
+    static const bool enabled=[] {
+        const char* const env=std::getenv("SHADPS4_TEXTURE_SLOT_PRESSURE");
+        return env && env[0]=='1' && env[1]=='\0';
+    }();
+    return enabled;
+}
+
+static constexpr u32 TEST_MAX_IMAGE_SLOTS = MAX_IMAGES * 4u;
+static constexpr u32 SLOT_PRESSURE_START = MAX_IMAGES * 3u / 4u;
+static constexpr u32 SLOT_PRESSURE_CRITICAL = MAX_IMAGES * 7u / 8u;
+
 TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& scheduler_,
                            Vulkan::Runtime& runtime_, AmdGpu::Liverpool* liverpool_,
                            BufferCache& buffer_cache_, PageManager& page_manager_)
     : instance{instance_}, scheduler{scheduler_}, runtime{runtime_}, liverpool{liverpool_},
-      buffer_cache{buffer_cache_}, page_manager{page_manager_}, slot_images{MAX_IMAGES},
-      slot_image_views{MAX_IMAGE_VIEWS}, slot_samplers{MAX_SAMPLERS},
+      buffer_cache{buffer_cache_}, page_manager{page_manager_},
+      slot_images{TextureSlotPressureEnabled() ? TEST_MAX_IMAGE_SLOTS : MAX_IMAGES,
+                  "TextureCache.Images"},
+      slot_image_views{TextureSlotPressureEnabled() ? TEST_MAX_IMAGE_SLOTS : MAX_IMAGE_VIEWS,
+                       "TextureCache.ImageViews"},
+      slot_samplers{MAX_SAMPLERS,"TextureCache.Samplers"},
       blit_helper{instance, scheduler},
       tile_manager{instance, scheduler, runtime, buffer_cache.GetStreamBuffer()},
       readback_linear_images{EmulatorSettings.IsReadbackLinearImagesEnabled()} {
@@ -1024,8 +1048,28 @@ void TextureCache::GarbageCollectImages() {
     if (instance.CanReportMemoryUsage()) {
         total_used_memory = instance.GetDeviceMemoryUsage();
     }
-    if (total_used_memory < trigger_gc_memory) {
+    const auto live_images = slot_images.Size();
+    const auto live_views = slot_image_views.Size();
+    const bool slot_pressure = TextureSlotPressureEnabled() &&
+        (live_images >= SLOT_PRESSURE_START ||
+         live_views >= SLOT_PRESSURE_START);
+    const bool slot_critical = TextureSlotPressureEnabled() &&
+        (live_images >= SLOT_PRESSURE_CRITICAL ||
+         live_views >= SLOT_PRESSURE_CRITICAL);
+    if (total_used_memory < trigger_gc_memory && !slot_pressure) {
         return;
+    }
+    if (slot_pressure) {
+        // Rate limit the high-water mark, but retain the exact pool counts.
+        static u64 pressure_reports=0;
+        const u64 n=++pressure_reports;
+        if (n<=8u || std::has_single_bit(n)) {
+            LOG_INFO(Render_Vulkan,
+                     "TextureSlotPressure: images={} image_views={} samplers={} "
+                     "image_slots_reserved={} memory_used={} critical={} checks={}",
+                     live_images,live_views,slot_samplers.Size(),
+                     TEST_MAX_IMAGE_SLOTS,total_used_memory,slot_critical,n);
+        }
     }
     bool pressured = false;
     bool aggresive = false;
@@ -1035,11 +1079,18 @@ void TextureCache::GarbageCollectImages() {
     boost::container::small_vector<ImageId, 8> maybe_download;
 
     const auto configure = [&](bool allow_aggressive) {
-        pressured = total_used_memory >= pressure_gc_memory;
-        aggresive = allow_aggressive && total_used_memory >= critical_gc_memory;
-        ticks_to_destroy = aggresive ? 160 : pressured ? 80 : 16;
+        pressured = total_used_memory >= pressure_gc_memory || slot_pressure;
+        aggresive = allow_aggressive &&
+            (total_used_memory >= critical_gc_memory || slot_critical);
+        // Never evict the current frame's actively bound textures. When the
+        // count of image views is high, old LRU items may be reclaimed
+        // sooner than the default 80-160 tick retention; GPU destruction
+        // remains scheduler-deferred as before.
+        ticks_to_destroy = slot_pressure ? (aggresive ? 2u : 8u)
+                                         : (aggresive ? 160u : pressured ? 80u : 16u);
         ticks_to_destroy = std::min(ticks_to_destroy, gc_tick);
-        num_deletions = aggresive ? 40 : pressured ? 20 : 10;
+        num_deletions = slot_pressure ? (aggresive ? 512u : 128u)
+                                      : (aggresive ? 40u : pressured ? 20u : 10u);
     };
     const auto clean_up = [&](Image& image) {
         if (num_deletions == 0) {
@@ -1082,8 +1133,8 @@ void TextureCache::GarbageCollectImages() {
     configure(false);
     image_lru_cache.ForEachItemBelow(gc_tick - ticks_to_destroy, clean_up);
 
-    if (total_used_memory >= critical_gc_memory) {
-        // If we are still over the critical limit, run an aggressive GC
+    if (total_used_memory >= critical_gc_memory || slot_critical) {
+        // If memory or slot pressure is critical, try the aggressive GC.
         configure(true);
         image_lru_cache.ForEachItemBelow(gc_tick - ticks_to_destroy, clean_up);
     }
