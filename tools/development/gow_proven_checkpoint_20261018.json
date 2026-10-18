@@ -122,8 +122,9 @@
       "default": "SHADPS4_SRT_PRESERVE_MULTIUSE=0 retains original last-wins lookup",
       "candidate": "SHADPS4_SRT_PRESERVE_MULTIUSE=1 retains all equal-index ReadConst SSA consumers and assigns a distinct flattened location for each when emitted.",
       "expected_log": "SRT_MULTIUSE_RESULT shader={} collisions={} retained={} mode={}",
-      "status": "SOURCE_COMMITTED; REAL_HOST_COMPILE_AND_IN_GAME_A_B_PENDING",
-      "negative_fallback": "Reject if zero collisions/retained, shader errors unchanged, or any graphics regression."
+      "status": "16:34 HOST_TEST_INCLUDE_PATH_FAILURE_CORRECTED_IN_RUNNER; FULL_SHADPS4_COMPILE_AND_GAMEPLAY_NOT_YET_TESTED",
+      "negative_fallback": "Reject if zero collisions/retained, shader errors unchanged, or any graphics regression.",
+      "local_test_validation": "Equivalent Boost 20,003-case native test compiled & passed in assistant environment with Boost headers available; same trial will use user's exact CMake Boost paths."
     }
   },
   "open_blocker": {
@@ -139,7 +140,7 @@
     "root_cause_hypothesis": "Game FPS declines before Audio3D production deteriorates; guest-specific cutscene simulation/resource handling bottleneck is plausible, but causality is NOT established; other games not heavily affected.",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Run pinned fullgfx GoW isolated multiuse 20,003-host-test + same-binary gameplay A/B and examine shader collisions, actual retained offsets, flattened-sharp failures, FPS and audio. Promote only proven corrective source.",
+    "next": "Re-run pinned multiuse trial using actual CMake include paths; if host and full emulator compilation pass, measure SRT retained reads, shader errors, FPS, graphics and audio in same-binary A/B with 8GiB Ollama threshold.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -167,7 +168,9 @@
     "audio_regression_only": "Continue observing audio ready fraction and guest delivery gaps, but audio-specific scheduling/SDL changes are paused until execution/renderer blockers are addressed or a new direct audio root-cause proof emerges.",
     "audio_priority": "Passive regression check; do not change SDL or Wwise timing until game execution bugs improved",
     "protected_source_sha256": "14130ab04071e93159b074bbbdd6f7b362661eeaa040e20dec91fa54208aa161",
-    "promotion_gate": "Actual collisions and retained consumers >0, significant reduction in missing SRT offsets/invalid sharps, no shader/texture regression and acceptable scene-matched FPS/audio. Host policy alone does not prove gameplay."
+    "promotion_gate": "Full isolated emulator host compile must complete before any gameplay; actual SRT collisions/retention should reduce shader descriptor failures and preserve graphics to accept correction.",
+    "pinned_launcher_commit": "48cf89f89fbdd805426357645cd1f4111050f8f8",
+    "test_dependency_resolution": "Use shadps4 CMake target flags.make CXX_INCLUDES for native test; fail before touching shader if Boost unavailable; synthetic include parser test and equivalent C++ 20,003-case flat_multimap test PASS locally."
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -477,6 +480,27 @@
       "late_audio3d_ready_fraction": 0.3755,
       "audio_underrun_status": "UNRESOLVED — remain regression metric only",
       "conclusion": "Real unhandled shader descriptor location loss is the next tested correctness change; preserve proven GPU/CPU/audio fixes."
+    },
+    "2026-10-18_16-34_srt_multiuse_host_test_include_failure": {
+      "archive": "gow-srt-multiuse-20261018-163417.tar.gz",
+      "result": "ABORTED_BEFORE_CPP_EMULATOR_BUILD_OR_GAMEPLAY",
+      "final_stage": "STAGE_GOW_REAL_SRT_MULTIUSE_CORRECTION",
+      "exit_code": 1,
+      "exact_compiler_diagnostic": "fatal error: boost/container/flat_map.hpp: Datei oder Verzeichnis nicht gefunden",
+      "root_cause": "Native standalone regression invocation used -I $SRC/src only, omitting Boost::headers supplied to actual shadps4 CMake target.",
+      "source_preimage_sha256": "14130ab04071e93159b074bbbdd6f7b362661eeaa040e20dec91fa54208aa161",
+      "surgical_source_contract": "PASS; source not yet patched",
+      "preceding_checks": [
+        "graphics reconstruction PASS",
+        "Audio multiport sync PASS cases=3",
+        "UFFD callback batch contract PASS cases=4",
+        "GPU phase patch contract PASS"
+      ],
+      "protected_binaries_unchanged": true,
+      "all_original_sources_restored": true,
+      "source_pretest_snapshots_restored": true,
+      "game_launched": false,
+      "test_fix": "Parse CXX_INCLUDES from existing CMakeFiles/shadps4.dir/flags.make; replay exact include flags in native Boost test and require header present; do not alter shader, audio, memory or GPU source."
     }
   }
 }
