@@ -91,6 +91,17 @@ def read_sched(tid: str, pid: int) -> dict | None:
         cpu_ns, queue_ns, slices = (int(stat[i]) for i in range(3))
     except (IndexError, ValueError):
         cpu_ns, queue_ns, slices = 0, 0, 0
+    # Kernel schedstat accounting may be disabled. The per-TID process stat
+    # still exposes user+system CPU ticks without changing host sysctls.
+    if cpu_ns == 0:
+        raw = proc_text(directory / "stat")
+        rest = raw.rsplit(")", 1)[-1].split()
+        if len(rest) > 12:
+            try:
+                cpu_ns = ((int(rest[11]) + int(rest[12])) *
+                          1_000_000_000 // os.sysconf("SC_CLK_TCK"))
+            except (ValueError, OSError):
+                pass
     # Read state/wchan only for selected threads; the regex excludes
     # changing task comm names and avoids relying on /proc stat parentheses.
     try:
@@ -272,6 +283,7 @@ def run(duration: int, period: float) -> int:
         "game_stopped_by_probe": False,
         "schedstat_may_be_disabled": not any(
             x.get("queue_ns", 0) > 0 for x in items),
+        "cpu_ticks_fallback_supported": True,
         "audio_buffer_output": audio_log_summary(game_log) if game_log else {},
     }
     (out / "guest-wake-summary.json").write_text(json.dumps(result, indent=2) + "\n")
