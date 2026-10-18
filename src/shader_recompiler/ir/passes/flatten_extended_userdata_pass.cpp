@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include <unordered_map>
 #include <boost/container/flat_map.hpp>
 #include <queue>
@@ -18,6 +19,7 @@
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/passes/srt.h"
+#include "shader_recompiler/ir/passes/srt_multiuse_policy.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/ir/srt_gvn_table.h"
@@ -156,7 +158,7 @@ struct PassInfo {
 
     // map offset to inst
     using PtrUserList =
-        boost::container::flat_map<IR::Value, Shader::IR::Inst*, PointerListCompare>;
+        boost::container::flat_multimap<IR::Value, Shader::IR::Inst*, PointerListCompare>;
 
     Optimization::SrtGvnTable gvn_table;
     // keys are GetUserData, ReadConst or ReadConstBuffer instructions that are used as pointers
@@ -169,6 +171,7 @@ struct PassInfo {
 
     // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
+    SrtMultiUseStats multiuse_stats{};
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
         auto it = pointer_uses.find(inst);
@@ -838,7 +841,15 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
         auto ptr_uses_kv = pass_info.pointer_uses.try_emplace(ptr_lo, PassInfo::PtrUserList{});
         PassInfo::PtrUserList& user_list = ptr_uses_kv.first->second;
 
-        user_list[inst->Arg(1)] = inst;
+        // The same SRT word can feed several distinct SSA ReadConst values.
+        // Preserve all only in the opt-in trial; maintain original last-wins
+        // behavior when disabled, without inventing guest descriptors.
+        static const bool preserve_multiuse = [] {
+            const char* flag = std::getenv("SHADPS4_SRT_PRESERVE_MULTIUSE");
+            return flag && flag[0] == '1' && flag[1] == '\0';
+        }();
+        InsertSrtPointerUse(user_list, inst->Arg(1), inst, preserve_multiuse,
+                            pass_info.multiuse_stats);
 
         if (ptr_lo->GetOpcode() == IR::Opcode::GetUserData) {
             IR::ScalarReg ud_reg = ptr_lo->Arg(0).ScalarReg();
@@ -847,6 +858,13 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
     }
 
     GenerateSrtProgram(program.info, pass_info);
+    if (pass_info.multiuse_stats.collisions != 0) {
+        LOG_WARNING(Render_Recompiler,
+                    "SRT_MULTIUSE_RESULT shader={:#x} collisions={} retained={} mode={}",
+                    program.info.pgm_hash, pass_info.multiuse_stats.collisions,
+                    pass_info.multiuse_stats.retained,
+                    pass_info.multiuse_stats.retained ? "preserve" : "legacy");
+    }
 
     // Assign offsets to duplicate readconsts
     for (IR::Inst* readconst : all_readconsts) {
