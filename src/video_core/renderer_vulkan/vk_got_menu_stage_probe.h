@@ -106,7 +106,8 @@ inline void MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& sched
         case vk::Format::eR32Sfloat:
         case vk::Format::eR8G8B8A8Unorm:
         case vk::Format::eR8G8B8A8Srgb:
-        case vk::Format::eB8G8R8A8Unorm: bytes_per_pixel=4;break;
+        case vk::Format::eB8G8R8A8Unorm:
+        case vk::Format::eB8G8R8A8Srgb: bytes_per_pixel=4;break;
         default: break;
         }
         if (info.guest_address!=probe.address ||
