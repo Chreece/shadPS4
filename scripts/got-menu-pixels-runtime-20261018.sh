@@ -417,9 +417,15 @@ for name,expected_bpp,kind in [
     height=int(kv.get("height","0"))
     length=width*height*expected_bpp
     raw=path.read_bytes()
-    if width!=1920 or height!=1080 or len(raw)!=length:
-        summary.append(f"STAGE={name} CAPTURE=INVALID expected={length} actual={len(raw)}")
+    full_depth_stencil_staging=(name=="scene_depth32" and
+                                len(raw)==length*2)
+    if width!=1920 or height!=1080 or (
+        len(raw)!=length and not full_depth_stencil_staging):
+        summary.append(f"STAGE={name} CAPTURE=INVALID expected={length} "
+                       f"actual={len(raw)}")
         continue
+    if full_depth_stencil_staging:
+        summary.append("D32S8_FULL_STAGING_PRESERVED=YES depth_preview_uses_first_4_bytes_per_pixel")
     sha=hashlib.sha256(raw).hexdigest()
     step=8
     outwidth=(width+step-1)//step
