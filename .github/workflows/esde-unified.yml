@@ -8,6 +8,8 @@ on:
     paths:
       - tools/development/esde_unified.sh
       - tools/development/esde_unified_select.sh
+      - tools/development/esde_resolve_main_conflicts.py
+      - tools/development/esde_resolve_feature_conflicts.py
       - .github/workflows/esde-unified.yml
   workflow_dispatch:
 
@@ -36,6 +38,7 @@ jobs:
         run: |
           bash -n tools/development/esde_unified.sh
           bash -n tools/development/esde_unified_select.sh
+          python3 -m py_compile tools/development/esde_resolve_main_conflicts.py tools/development/esde_resolve_feature_conflicts.py
       - name: Compose reviewed source and build
         run: bash tools/development/esde_unified.sh
       - name: Save candidate binary and exact source provenance
