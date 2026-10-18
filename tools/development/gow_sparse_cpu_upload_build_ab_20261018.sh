@@ -17,6 +17,7 @@ LARGE_PATCH="${8:?pinned exact large buffer timing overlay required}"
 REGION_PATCHED="${11:?pinned sparse CPU upload region_manager.h required}"
 SPARSE_HEADER="${12:?pinned sparse dirty-word iterator required}"
 SPARSE_TEST="${13:?pinned native sparse-dirty-word regression test required}"
+LIVE_REGION_OVERLAY="${14:?pinned exact protected RegionManager surgical patch required}"
 GAME_RUNNER="${9:?pinned controlled 135-second GoW runner required}"
 OLLAMA_HELPER="${10:?pinned Ollama state/restore helper required}"
 PROVEN_SHA=e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa
@@ -697,23 +698,29 @@ REGION_REL="src/video_core/buffer_cache/region_manager.h"
    -f "$SRC/$REGION_REL" && ! -L "$SRC/$REGION_REL" ]] || {
   echo "PROTECTED_OR_ISOLATED_REGION_MANAGER_SOURCE_UNSAFE"; exit 1;
 }
-# Never overwrite the user's own RegionManager modifications.
-[[ "$(git -C "$ORIGINAL_SRC" hash-object "$ORIGINAL_SRC/$REGION_REL")" == \
-   "ba82498ec154cdc0c039cf749d6c84676f54aa6d" &&
-   "$(git -C "$ORIGINAL_SRC" hash-object "$SRC/$REGION_REL")" == \
-   "ba82498ec154cdc0c039cf749d6c84676f54aa6d" ]] || {
-  echo "REAL_REGION_MANAGER_PREIMAGE_CHANGED_DO_NOT_REPLACE"; exit 1;
+# Check the actual 19:00 local selective GPU tracking implementation.
+# Never overwrite the user's region manager from an old Git branch.
+[[ "$(sha256sum "$ORIGINAL_SRC/$REGION_REL" | cut -d' ' -f1)" == \
+   "a7d137a352e2239655035bba16c320053b6acb36033dc740892048c7618e97c9" &&
+   "$(sha256sum "$SRC/$REGION_REL" | cut -d' ' -f1)" == \
+   "a7d137a352e2239655035bba16c320053b6acb36033dc740892048c7618e97c9" ]] || {
+  echo "ACTUAL_19_00_REGION_MANAGER_SOURCE_CHANGED_NO_OVERWRITE"; exit 1;
 }
 [[ ! -e "$SRC/$SPARSE_HEADER_REL" && ! -e "$ORIGINAL_SRC/$SPARSE_HEADER_REL" ]] || {
   echo "SPARSE_WORD_ITERATOR_ALREADY_EXISTS_NO_OVERWRITE"; exit 1;
 }
-[[ "$(git -C "$ORIGINAL_SRC" hash-object "$REGION_PATCHED")" == \
-   "1da1738d9daf7f98adc6c489b4b50bae48e7b61a" &&
+[[ -f "$LIVE_REGION_OVERLAY" && ! -L "$LIVE_REGION_OVERLAY" &&
+   "$(git -C "$ORIGINAL_SRC" hash-object "$LIVE_REGION_OVERLAY")" == \
+   "50aaeb9476323cb4205d904044b6e5d09bf4f6de" &&
    "$(git -C "$ORIGINAL_SRC" hash-object "$SPARSE_HEADER")" == \
    "$SPARSE_HEADER_BLOB" &&
    "$(git -C "$ORIGINAL_SRC" hash-object "$SPARSE_TEST")" == \
    "5ab8c6ec053e04f063f92dc8e313f9a9c04b5b91" ]] || {
-  echo "NEW_CPP_SOURCE_OR_200002_NATIVE_TEST_NOT_PINNED"; exit 1;
+  echo "LIVE_REGION_PATCHER_OR_NATIVE_TEST_HASH_MISMATCH"; exit 1;
+}
+python3 -B "$LIVE_REGION_OVERLAY" "$SRC/$REGION_REL" \
+  "$OUT/live-region-surgical-preflight.diff" > "$OUT/live-region-preflight.log" 2>&1 || {
+  cat "$OUT/live-region-preflight.log"; exit 1;
 }
 # Run a real native 200,002-case dirty-region equivalence test before
 # replacing any isolated C++ source. The policy header has no dependencies
@@ -742,7 +749,10 @@ cat "$OUT/sparse-upload-native-results.log"
 # skipped for CPU uploads, behind SHADPS4_SPARSE_CPU_UPLOAD_WORDS=1.
 # Existing callbacks, CPU/GPU page watch state updates and dirty copies
 # remain unchanged.
-cp -p "$REGION_PATCHED" "$SRC/$REGION_REL"
+python3 -B "$LIVE_REGION_OVERLAY" "$SRC/$REGION_REL"   "$OUT/live-region-applied.diff" --apply > "$OUT/live-region-apply.log" 2>&1 || {
+  cat "$OUT/live-region-apply.log"; exit 1;
+}
+cat "$OUT/live-region-apply.log"
 touch -m "$SRC/$REGION_REL"
 echo "CPU_DIRTY_WORD_SUMMARY_FAST_PATH=STAGED_DEFAULT_OFF"
 STAGE=EARLY_UFFD_RENDERER_COMPILE
