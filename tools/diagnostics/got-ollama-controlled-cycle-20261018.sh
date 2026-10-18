@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run GoT with Ollama fully unloaded. Restore original Ollama state on exit.
+# Run GoT with at least 8 GiB free VRAM; unload Ollama only when below threshold.
 # Requires NO previous log file: reusable scripts under GoT, logs only outputs.
 set -Eeuo pipefail
 ROOT="$HOME/projects/shadps4"
@@ -15,6 +15,7 @@ GDBBLOB="795a0f805a308305ecb7bc70e0053f2f99fe7a0b"
 OLLAMA_API="http://127.0.0.1:7869"
 OLLAMA_ID=""
 OLLAMA_TOUCHED=0
+OLLAMA_ACTION=NOT_CHECKED
 RESTORE=NOT_NEEDED
 GAME_PGID=""
 GAME_RC=NOT_RUN
@@ -51,14 +52,15 @@ cleanup() {
         fi
     fi
     {
-        printf 'STATUS=%s\nGAME_RC=%s\nOLLAMA_RESTORE=%s\n' "$STATUS" "$GAME_RC" "$RESTORE"
+        printf 'STATUS=%s\nGAME_RC=%s\nOLLAMA_ACTION=%s\nOLLAMA_RESTORE=%s\n' \
+            "$STATUS" "$GAME_RC" "$OLLAMA_ACTION" "$RESTORE"
         printf 'BASELINE_SOURCE_AND_BINARY_UNCHANGED=YES\nSSH_SESSION=UNCHANGED\n'
         printf 'TEST_COMMAND_EXIT=%s\n' "$rc"
     } >"$RUN/info/final.txt"
     tar -czf "$REPORT" -C "$RUN" info screenshots game-console.log 2>/dev/null || \
       tar -czf "$REPORT" -C "$RUN" info screenshots 2>/dev/null || true
-    printf 'TEST_EXIT=%s\nREPORT=%s\nOLLAMA_RESTORE=%s\nSSH_SESSION=UNCHANGED\n' \
-        "$rc" "$REPORT" "$RESTORE"
+    printf 'TEST_EXIT=%s\nREPORT=%s\nOLLAMA_ACTION=%s\nOLLAMA_RESTORE=%s\nSSH_SESSION=UNCHANGED\n' \
+        "$rc" "$REPORT" "$OLLAMA_ACTION" "$RESTORE"
     if [ "$RESTORE" = RELOAD_FAILED_SERVICE_RUNNING ] || \
        [ "$RESTORE" = DOCKER_RESTART_FAILED ]; then return 3; fi
     return "$rc"
@@ -68,7 +70,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
 
-for cmd in curl docker python3 gdb git bash timeout flock sha256sum xdpyinfo setsid; do
+for cmd in curl python3 gdb git bash timeout flock sha256sum xdpyinfo setsid; do
     command -v "$cmd" >/dev/null || { echo "MISSING_COMMAND=$cmd"; exit 2; }
 done
 for d in "$(printenv DISPLAY || true)" :0 :1 :2; do
@@ -92,7 +94,7 @@ test "$(git hash-object "$GDBRUNNER")" = "$GDBBLOB"
 exec 8>"$RUNNERS/.ollama-got.lock"
 flock -n 8 || { echo 'ANOTHER_GOT_OLLAMA_CYCLE_RUNNING'; exit 2; }
 
-# Local Ollama API: snapshot -> immediate unload -> reload original models.
+# Optional Ollama API helpers. Do not contact Ollama when VRAM is sufficient.
 cat >"$RUN/info/ollama_api.py" <<'PY'
 import json, pathlib, sys, time, urllib.request
 
@@ -139,6 +141,40 @@ else: raise ValueError(mode)
 PY
 python3 -m py_compile "$RUN/info/ollama_api.py"
 
+GPU_DEVICE=""
+for vendor in /sys/class/drm/card[0-9]*/device/vendor; do
+    [ -f "$vendor" ] || continue
+    if [ "$(cat "$vendor")" = 0x1002 ]; then GPU_DEVICE="$(dirname "$vendor")"; break; fi
+done
+# Fail closed if AMD VRAM telemetry is unavailable, without touching Ollama.
+if [ -z "$GPU_DEVICE" ] || [ ! -r "$GPU_DEVICE/mem_info_vram_total" ] || \
+   [ ! -r "$GPU_DEVICE/mem_info_vram_used" ]; then
+    echo 'AMD_VRAM_COUNTERS_UNAVAILABLE_NO_OLLAMA_CHANGE'
+    exit 2
+fi
+TOTAL=$(cat "$GPU_DEVICE/mem_info_vram_total")
+USED_BEFORE=$(cat "$GPU_DEVICE/mem_info_vram_used")
+# Check actual free VRAM before querying or touching Ollama. 8 GiB = 8*1024^3.
+if ! [[ "$TOTAL" =~ ^[0-9]+$ && "$USED_BEFORE" =~ ^[0-9]+$ ]] || \
+   (( USED_BEFORE > TOTAL )); then
+    echo 'INVALID_AMD_VRAM_COUNTERS_NO_OLLAMA_CHANGE'
+    exit 2
+fi
+THRESHOLD=$((8*1024*1024*1024))
+FREE_BEFORE=$((TOTAL-USED_BEFORE))
+{
+    echo "free_vram_before_decision=$FREE_BEFORE"
+    echo "threshold_bytes=$THRESHOLD"
+} >"$RUN/info/vram-before-game.txt"
+echo "VRAM_DECISION free_bytes=$FREE_BEFORE threshold_bytes=$THRESHOLD"
+if (( FREE_BEFORE >= THRESHOLD )); then
+    # Do not even call Docker or Ollama when memory is already sufficient.
+    OLLAMA_ACTION=KEPT_RUNNING_ENOUGH_FREE_VRAM
+    echo 'OLLAMA_ACTION=KEPT_RUNNING_ENOUGH_FREE_VRAM'
+else
+    OLLAMA_ACTION=LOW_VRAM_UNLOAD_REQUESTED
+    echo 'OLLAMA_ACTION=LOW_VRAM_UNLOAD_REQUESTED'
+    command -v docker >/dev/null || { echo 'DOCKER_REQUIRED_BUT_MISSING'; exit 2; }
 # Refuse ambiguous Docker setups instead of stopping the wrong container.
 docker ps --format '{{json .}}' > "$RUN/info/docker-before.jsonl"
 python3 - "$RUN/info/docker-before.jsonl" "$RUN/info/ollama-container.txt" <<'PY'
@@ -159,17 +195,6 @@ test "$(docker inspect -f '{{.State.Running}}' "$OLLAMA_ID")" = true || {
 python3 "$RUN/info/ollama_api.py" snapshot "$OLLAMA_API" "$RUN/info/ollama-before.json" | \
     tee "$RUN/info/ollama-before.txt"
 
-GPU_DEVICE=""
-for vendor in /sys/class/drm/card[0-9]*/device/vendor; do
-    [ -f "$vendor" ] || continue
-    if [ "$(cat "$vendor")" = 0x1002 ]; then GPU_DEVICE="$(dirname "$vendor")"; break; fi
-done
-test -r "$GPU_DEVICE/mem_info_vram_total" && test -r "$GPU_DEVICE/mem_info_vram_used" || {
-    echo 'AMD_VRAM_COUNTER_UNAVAILABLE'; exit 2;
-}
-TOTAL=$(cat "$GPU_DEVICE/mem_info_vram_total")
-USED_BEFORE=$(cat "$GPU_DEVICE/mem_info_vram_used")
-
 # Capture state first, then mark restart required BEFORE the unload action.
 STATUS=UNLOADING_OLLAMA
 OLLAMA_TOUCHED=1
@@ -186,10 +211,14 @@ FREE=$((TOTAL-USED_AFTER))
     printf 'vram_total=%s\nvram_used_before_ollama=%s\n' "$TOTAL" "$USED_BEFORE"
     printf 'vram_used_after_stop=%s\nfree_after_stop=%s\nreleased_bytes=%s\n' \
         "$USED_AFTER" "$FREE" "$((USED_BEFORE-USED_AFTER))"
-} >"$RUN/info/vram-before-game.txt"
+} >>"$RUN/info/vram-before-game.txt"
 echo "VRAM_AFTER_OLLAMA_STOP free_bytes=$FREE released_bytes=$((USED_BEFORE-USED_AFTER))"
 if ((FREE<8*1024*1024*1024)); then
     echo 'INSUFFICIENT_VRAM_AFTER_OLLAMA_STOP_NO_GAME_LAUNCHED'; exit 2
+fi
+
+    OLLAMA_ACTION=UNLOADED_LOW_VRAM
+    echo "OLLAMA_ACTION=UNLOADED_LOW_VRAM"
 fi
 
 STATUS=GAME_RUNNING
@@ -235,5 +264,5 @@ else
 fi
 printf 'SCREENSHOTS=%s\n' "$(find "$RUN/screenshots" -name '*.png' | wc -l)" \
     >>"$RUN/info/game-result.txt"
-STATUS=GAME_EXITED_RESTORING_OLLAMA
-echo 'GAME_EXITED_OLLAMA_RESTORATION_NEXT'
+STATUS=GAME_EXITED
+echo 'GAME_EXITED_CLEANUP_NEXT'
