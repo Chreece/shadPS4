@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <random>
+#include <initializer_list>
+#include <utility>
 #include "video_core/renderer_vulkan/vk_got_scene_depth_clip_trial.h"
 
 using Vulkan::Diagnostics::GotSceneDepthClipTrialInput;
