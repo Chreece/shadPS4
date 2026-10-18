@@ -37,24 +37,39 @@ def exactly_once(s: str, token: str, description: str) -> None:
 def transform(source: str) -> str:
     if EXTENDED_ENV in source or NEW_INCLUDE in source:
         raise ValueError("PATCH_ALREADY_PRESENT")
-    if source.count(MODERN_CONDITION) == 1:
-        condition = MODERN_CONDITION
-        candidate = "size, is_written, skip_stream_buffer"
-        mode = "MODERN_FLAGS"
-    elif source.count(LEGACY_CONDITION) == 1:
-        condition = LEGACY_CONDITION
-        candidate = "size, is_written, false"
-        mode = "LEGACY_BOOLS"
-    else:
-        raise ValueError("ACTUAL_PROTECTED_OBTAIN_BUFFER_CONDITION_NOT_SUPPORTED")
-
-    exactly_once(source, INCLUDE, "MEMORY_TRACKER_INCLUDE")
-    exactly_once(source, LOG_ANCHOR, "STREAM_MAP_ANCHOR")
-    # Do not change the GPU-writable path, arena allocation or sync flags.
+    # The actual host file can retain harmless formatting or local code
+    # changes absent from GitHub. Normalize only the one stream predicate,
+    # and never overwrite/normalize the other methods.
     main_method = source.find("BufferCache::ObtainBuffer(")
     following_method = source.find("BufferCache::ObtainBufferForImage(")
     if not (0 <= main_method < following_method):
         raise ValueError("OBTAIN_BUFFER_METHOD_BOUNDS_CHANGED")
+    body = source[main_method:following_method]
+    if body.count("size <= STREAM_THRESHOLD") != 1:
+        raise ValueError("STREAM_LIMIT_ANCHOR_NOT_UNIQUE_IN_PROVEN_BUFFER_SOURCE")
+    token_at = body.index("size <= STREAM_THRESHOLD")
+    cond_begin = body.rfind("    if (", 0, token_at)
+    cond_end = body.find("{", token_at)
+    if cond_begin < 0 or cond_end < token_at:
+        raise ValueError("UNEXPECTED_READ_ONLY_STREAM_PREDICATE_STRUCTURE")
+    condition = body[cond_begin:cond_end+1]
+    normalized = re.sub(r"\s+", "", condition)
+    modern = re.sub(r"\s+", "", MODERN_CONDITION)
+    legacy = re.sub(r"\s+", "", LEGACY_CONDITION)
+    if normalized == modern:
+        candidate = "size, is_written, skip_stream_buffer"
+        mode = "MODERN_FLAGS"
+    elif normalized == legacy:
+        candidate = "size, is_written, false"
+        mode = "LEGACY_BOOLS"
+    else:
+        raise ValueError(
+            "REAL_BUFFER_STREAM_PREDICATE_NOT_RECOGNIZED:" + condition[:350]
+        )
+
+    exactly_once(source, INCLUDE, "MEMORY_TRACKER_INCLUDE")
+    exactly_once(source, LOG_ANCHOR, "STREAM_MAP_ANCHOR")
+    # Do not change the GPU-writable path, arena allocation or sync flags.
     if source.index(condition) not in range(main_method, following_method):
         raise ValueError("STREAM_CONDITION_NOT_IN_OBTAIN_BUFFER")
     if source.index(LOG_ANCHOR) not in range(main_method, following_method):
