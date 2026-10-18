@@ -45,27 +45,38 @@ struct GotMenuStageReadback {
           pixel_format{format}, is_depth{depth} {}
 };
 
-inline void MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& scheduler,
+inline bool MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& scheduler,
                                       Runtime& runtime, VideoCore::TextureCache& textures) {
     static const bool enabled=[] {
         const char* const flag=std::getenv("SHADPS4_GOT_MENU_STAGE_PIXELS");
         return flag && flag[0]=='1' && flag[1]=='\0';
     }();
-    if (!enabled) return;
+    if (!enabled) return false;
 
+    // Prior captures triggered while the Sucker Punch logo was still on
+    // screen, then compared its GPU pixels with a LATER, white menu
+    // screenshot. That was not a valid same-frame diagnosis. Defer the
+    // one-shot probe until the menu is visible (60s after first frame).
     using Clock=std::chrono::steady_clock;
     static const auto first_frame=Clock::now();
     static std::atomic<bool> executed{false};
-    if (executed.load(std::memory_order_relaxed) ||
-        Clock::now()-first_frame < std::chrono::seconds(30)) return;
-    if (executed.exchange(true,std::memory_order_acq_rel)) return;
+    const auto elapsed=std::chrono::duration_cast<std::chrono::seconds>(
+        Clock::now()-first_frame).count();
+    if (executed.load(std::memory_order_relaxed) || elapsed<60) return false;
+    if (executed.exchange(true,std::memory_order_acq_rel)) return false;
+    LOG_INFO(Render_Vulkan,
+             "GotMenuSynchronizedCapture: since_first_frame_s={} "
+             "sync_guest_and_host_same_frame=YES stage=BEFORE_HOST_POSTPROCESS",
+             elapsed);
 
     struct Spec {const char* name;u64 address;vk::Format expected_format;};
-    // Scene color and depth through postprocessing, PLUS both alternating
-    // final guest video-out buffers. These are exact real game addresses,
-    // never derived from the user profile or invented test placeholders.
-    constexpr std::array<Spec,6> targets{{
-        {"scene_rgba16f",0x15203f8000ull,vk::Format::eR16G16B16A16Sfloat},
+    // Confirmed from the 20:22 source graph:
+    // - 0x1522020000: actual 1920x1080 RGBA16_FLOAT scene HDR buffer
+    // - 0x15203f8000: separate RGBA8 scene/color buffer (NOT RGBA16F)
+    // The prior "scene_rgba16f" address was wrong, hiding valid scene data.
+    constexpr std::array<Spec,7> targets{{
+        {"scene_rgba16f",0x1522020000ull,vk::Format::eR16G16B16A16Sfloat},
+        {"scene_rgba8",0x15203f8000ull,vk::Format::eR8G8B8A8Unorm},
         {"scene_depth32",0x1504a08000ull,vk::Format::eD32SfloatS8Uint},
         {"depth_blur32",0x1525478000ull,vk::Format::eR32Sfloat},
         {"composed_rgba8",0x1504210000ull,vk::Format::eR8G8B8A8Unorm},
@@ -200,9 +211,10 @@ inline void MaybeCaptureGotMenuStages(const Instance& instance, Scheduler& sched
         });
     }
     LOG_INFO(Render_Vulkan,
-             "GotMenuStagePixels: one_shot=YES submitted={} eligible=6 "
-             "rendering_unchanged=YES",
+             "GotMenuStagePixels: one_shot=YES submitted={} eligible=7 "
+             "rendering_unchanged=YES synchronized_capture=YES",
              captured);
+    return captured>0;
 }
 
 } // namespace Vulkan::Diagnostics
