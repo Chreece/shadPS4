@@ -100,6 +100,16 @@
       "measures": "queue wait time before GPU task starts; InvalidateMemory execution time; post-invalidation callback+UFFDIO_WAKE completion time, aligned to FPS/audio/UFFD five-second windows",
       "preserves": "All source-preimage checks, shader/renderer fixes, default invalidation and wakeup semantics",
       "purpose": "Choose general Linux GPU-memory bottleneck fix from measured execution cost; not itself an audio fix"
+    },
+    "srt_bfe_width32": {
+      "original_bug": "C++ (1U << 32) undefined for immediate bitfield width and x86 variable shift count 32 wraps to 0 yielding zero mask; correct is full 32-bit mask.",
+      "repo_patch_commit": "c9ba5d48b1abfc50f7fd8268e48188c81da9a7c8",
+      "preflight": "Look only at user's actual local function, not historical branch; no-op on already fixed/different",
+      "source_change": "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
+      "regression": "131072 width/value combinations with Xbyak and negative old-width32 test",
+      "status": "REPOSITORY_CORRECTION_COMMITTED; LOCAL_SOURCE_APPLICABILITY_AND_NATIVE_GAMEPLAY_NOT_YET_VERIFIED",
+      "audio_status": "UNCHANGED_UNKNOWN",
+      "graphics_status": "NO_CLAIM_OF_IMPROVEMENT"
     }
   },
   "open_blocker": {
@@ -115,7 +125,7 @@
     "root_cause_hypothesis": "guest PCM production cadence collapses alongside increased scene/GPU workload; investigate Wwise guest audio thread scheduling and task dependencies, not SDL queue",
     "caveat": "No causality established from CPU/thread snapshots alone",
     "latest_production_evidence": "10:53 callback batching still produces audible stutters, with Wwise futex-wait context; guest_audio3d_max_gap=1.67s; SDL not bottleneck",
-    "next": "Run GPU queue/invalidation/wake phase sample and choose targeted general native memory optimization without hiding stutters. Graphics still second phase.",
+    "next": "First determine true local SRT BFE branch; if vulnerable, compile only targeted change and compare original/fixed FPS/audio. If already corrected, use archived source evidence to select different actual bottleneck.",
     "latest_producer_ab": "A 30.85% vs B 31.06% late cutscene real-time audio-ready fraction with GPU callback batching; both stutter heavily",
     "observed_host_waits": "Wwise in futex_wait_queue for all sampled observations; Game:Main in handle_userfault 76/129 and 78/130; guest workers 268/635 and 250/640. Not proof of causality."
   },
@@ -124,14 +134,17 @@
     "does_not_automatically_modify_main_branch": true,
     "retain_user_source_and_executables": "never reset/checkout production source, protect SHA, stage only isolated copies",
     "integration_note": "The full graphics source exists in user's protected source tree and is ported by the branch's graphics-retention runner. Branch alone is not a ready standalone generic release.",
-    "current_trial_branch": "test/gow-gpu-invalidate-timing-20261018",
-    "next_trial_script": "tools/development/gow_gpu_invalidate_timing_trial_20261018.sh",
-    "next_trial_launcher": "tools/development/gow_gpu_invalidate_timing_launcher_20261018.sh",
-    "expected_capture_archive_prefix": "gow-gpu-invalidate-timing-",
+    "current_trial_branch": "fix/srt-bfe-width32-20261018",
+    "next_trial_script": "tools/development/gow_srt_bfe_width32_build_ab_20261018.sh",
+    "next_trial_launcher": "tools/development/gow_srt_bfe_width32_launcher_20261018.sh",
+    "expected_capture_archive_prefix": "gow-srt-bfe32-",
     "default_runtime_code_path": "Proven graphics, batched UFFD reads and original audio timing; GPU callback batch=0, UFFD read-first=0. Frame monitor enabled for this run only.",
     "pinned_gpu_latency_source_commit": "9b69c7e6656f996c8da08d31873d75784be6ee2f",
     "target": "Linux UFFD CPU/GPU page-coherence performance, not SDL audio buffer workaround",
-    "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix."
+    "promote_only_when": "Host compilation passes and measured performance improves in scene-matched tests with no graphics regressions; logging instrumentation itself is not a fix.",
+    "ollama_rule": "Free VRAM >=8 GiB: no Ollama API or stop. Free VRAM <8 GiB: unload with verified backend, ensure >=8 GiB before game, restore originally loaded models after terminating test game.",
+    "srt_source_analysis": "Patch archive now includes the actual local BFE function text, exact source checksum, optional two-site patch diff. If local source already correct/different, stop without compilation or game and preserve excerpt for the next actual fix.",
+    "promotion": "SRT BFE source correctness may be retained generically after native 131072-case test; do not describe as GoW audio or graphic fix without game comparison."
   },
   "diagnostics": {
     "2026-10-18_10-01_guest_wake_probe": {
@@ -291,6 +304,20 @@
       "main_app_or_host_modified": false,
       "live_game_started": false,
       "next_steps": "Correct exact callback fragment and run an explicit historical-source selftest prior to any isolated compilation; do not call this a gameplay or audio regression."
+    },
+    "2026-10-18_14-42_previous_srt_trial_failure": {
+      "archive": "gow-srt-shift-20261018-144203.tar.gz",
+      "stage": "STAGE_SRT_DYNAMIC_SHIFT_CORRECTION",
+      "result": "FAILED_BEFORE_NATIVE_COMPILATION_OR_GAMEPLAY",
+      "failure": "SRT_DYNAMIC_SHIFT_PATCH_FAILED=SRT_CONSTANT_LHS_OPCODE_PATTERN_UNRECOGNIZED",
+      "original_shader_cpp_sha256": "14130ab04071e93159b074bbbdd6f7b362661eeaa040e20dec91fa54208aa161",
+      "native_historical_selftest": "PASS_ON_OLD_GITHUB_BLOB_BUT_NOT_ON_USER_LOCAL_SOURCE",
+      "original_source_restore": "PASS_ALL_NINE",
+      "protected_binaries_unchanged": true,
+      "root_cause": "Patcher assumed vulnerable old code was still present in the user's protected locally modified shader source; archive did not capture actual function, so applicability could not be established.",
+      "lesson": "Require local function capture and guarded corrective patch or detect already-fixed; do not stage a source rewrite from historical GitHub file.",
+      "tested_gameplay": false,
+      "new_audio_or_graphics_evidence": false
     }
   }
 }
