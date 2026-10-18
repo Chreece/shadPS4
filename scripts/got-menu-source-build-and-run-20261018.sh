@@ -68,4 +68,4 @@ fi
 # The runtime is bounded, has GPU fault/VRAM guards, conditional Ollama
 # unload and restore, and never replaces the existing executable.
 echo "MENU_SOURCE_GRAPH_RUNTIME=AUTOMATIC_LAUNCH"
-$GOT_MENU_SOURCE_HOST_REPORT="$HOST_REPORT" bash "$RUNTIME_SCRIPT"
+GOT_MENU_SOURCE_HOST_REPORT="$HOST_REPORT" bash "$RUNTIME_SCRIPT"
