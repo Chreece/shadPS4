@@ -168,8 +168,8 @@ def _validate_semantics(file: str, merged: str):
                 raise ValueError("SRT preservation check missing: " + marker)
         # one ReadFirstLane switch implementation with wave-uniform guard;
         # do not mistake other policy helper switch instances for duplicates.
-        start = merged.index("static bool ComputeOffset(")
-        end = merged.index("// Evaluate genuine wave-uniform scalar", start)
+        end = merged.index("// Evaluate genuine wave-uniform scalar")
+        start = merged.rindex("static bool ComputeOffset(", 0, end)
         compute = merged[start:end]
         if compute.count("case IR::Opcode::ReadFirstLane:") != 1 or (
             compute.count("case IR::Opcode::FindILsb32:") != 1
