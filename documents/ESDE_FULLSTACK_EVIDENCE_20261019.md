@@ -158,3 +158,33 @@ compiled or gameplay-validated emulator.
   experimental GPU-indexed image-array implementation. Only its observed
   pre-feedback reference `e9f470b` is the visual regression benchmark;
   it is NOT permission to promote the complete GPU-feedback renderer.
+
+## Immutable snapshots and Oct 19 staged build (implementation status)
+
+The branch includes **exact source bytes** for four GoW checkpoint files
+at `tools/development/proven_sources_20261018/src/...`. GitHub Git blob
+SHA-1 was verified after committing each file (page manager, logging,
+audio output, audioout sync header). The staging tool first searches the
+two protected local source trees for those exact blobs; when missing,
+it retrieves the copies from immutable commit
+`85457c5e19c047bba33fa7ca676bbf5ce365e809`
+into the disposable source audit directory, checks their hash and
+ports their *difference* against the old GoW base, rather than replacing
+a full modern upstream file.
+
+The formerly overlooked SRT dependency is now ported separately: source
+SHA-256 `14130ab04071e93159b074bbbdd6f7b362661eeaa040e20dec91fa54208aa161`
+and verified `EmitConstantLeftShiftByDynamicCount` helper instructions
+must match the protected Oct 16 tree. It is a source-merge gate,
+**not** a claim that all unresolved Ghost T# and GoW SRT dependencies
+are already implemented. The isolated build additionally requires the
+400,000-case native PM4 register-window regression and compiles only when
+all source proof gates pass. It never changes the installed core by itself.
+
+Run `python3 ~/projects/shadps4/scripts/esde_fullstack_preflight_20261019.py --build`
+to perform one read-only provenance audit, isolated merge and a build
+**only if all source gates pass**; report is
+`~/projects/shadps4/logs/esde-fullstack-audit-<timestamp>.tar.gz`.
+A source conflict or incomplete proof is recorded in one archive instead
+of being bypassed through guesswork. GoW sound performance and the
+Ghost white menu remain unresolved until actual A/B game evidence.
