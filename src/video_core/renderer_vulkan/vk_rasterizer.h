@@ -127,6 +127,8 @@ private:
     bool BindResources(const Pipeline* pipeline);
 
     void BindVertexBuffers(const GraphicsPipeline* pipeline);
+
+    void ArmFrameProbePass(const RenderState& state);
     void BindIndexBuffer(u32 index_offset = 0, bool is_indirect = false);
 
     void ResetBindings(bool is_compute);

@@ -394,6 +394,10 @@ public:
         this->on_submit = std::move(on_submit);
     }
 
+    void SetRenderEndCallback(Common::UniqueFunction<void>&& callback) {
+        on_render_end = std::move(callback);
+    }
+
     /// Returns the current render state.
     const RenderState& GetRenderState() const {
         return render_state;
@@ -461,6 +465,7 @@ private:
     DynamicState dynamic_state;
     SessionFunc on_session{};
     SubmitFunc on_submit{};
+    Common::UniqueFunction<void> on_render_end{};
     struct Session {
         vk::CommandBuffer upload{};
         vk::CommandBuffer primary{};

@@ -15,6 +15,7 @@
 #include <span>
 
 #include "common/logging/log.h"
+#include "video_core/renderer_vulkan/vk_frame_probe.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/vk_got_indirect_command_proof.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -46,6 +47,7 @@ struct GotIndirectReadback {
     u32 shader_vs{};
     u32 probe_id{};
     bool has_count{};
+    u32 frame{}, draw{};
 
     GotIndirectReadback(const Instance& instance,u64 bytes)
         :target{instance,0,bytes,VideoCore::MemoryType::HostCached} {}
@@ -62,7 +64,7 @@ inline void CaptureGotSceneGpuIndirectArguments(
     // A shader/target-checked GPU pipeline counter checkpoint selects
     // these calls. This never infers work from guest register num_indices.
     static thread_local u32 probed{};
-    if (probed>=8) return;
+    if (probed >= (FrameProbeEnabled() ? 384u : 8u)) return;
     const u32 probe_id=++probed;
     const u32 limited_count=std::min(max_count,MaxGotIndirectProofCommands);
     const u64 command_bytes=u64(limited_count)*stride;
@@ -99,6 +101,8 @@ inline void CaptureGotSceneGpuIndirectArguments(
     staged->shader_vs=vs_hash;
     staged->probe_id=probe_id;
     staged->has_count=has_count;
+    staged->frame=FrameProbe().frame;
+    staged->draw=FrameProbe().draws;
 
     // Runtime::CopyBuffer ends rendering, handles Vulkan source/destination
     // barriers and preserves the exact GPU contents. Both calls occur after
@@ -162,11 +166,11 @@ inline void CaptureGotSceneGpuIndirectArguments(
                  "fs={:#x} vs={:#x} arg_guest={:#x} count_guest={:#x} "
                  "max_count={} gpu_draw_count={} selected_count={} "
                  "capture_count={} guest_reg_indices={} diagnosis={} "
-                 "gpu_timeline_complete=YES",
+                 "gpu_timeline_complete=YES frame={} draw={}",
                  sample->probe_id,sample->shader_fs,sample->shader_vs,
                  sample->arg_guest,sample->count_guest,sample->max_count,
                  actual_count,selected_count,sample->captured_commands,
-                 sample->guest_register_indices,diagnosis);
+                 sample->guest_register_indices,diagnosis,sample->frame,sample->draw);
         for(u32 i=0;i<sample->captured_commands;++i) {
             const auto cmd=DecodeGotIndexedIndirect(
                 args,u64(i)*sample->stride);

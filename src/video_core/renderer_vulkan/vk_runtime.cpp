@@ -8,6 +8,7 @@
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_buffer_hazard_rules.h"
+#include "video_core/renderer_vulkan/vk_frame_probe.h"
 #include "video_core/renderer_vulkan/vk_got_indirect_producer_trace.h"
 #include "video_core/texture_cache/blit_helper.h"
 #include "video_core/texture_cache/image.h"
@@ -17,6 +18,19 @@
 #include <vulkan/vulkan_format_traits.hpp>
 
 namespace Vulkan {
+
+static void TraceFrameImageOperation(const char* operation, const VideoCore::Image* dst,
+                                     const VideoCore::Image* src = nullptr) {
+    if (!Diagnostics::FrameProbeEnabled()) return;
+    auto& probe = Diagnostics::FrameProbe();
+    if (!probe.frame || probe.image_events++ >= 32768) return;
+    LOG_INFO(Render_Vulkan,
+             "FrameProbeImageOperation: frame={} event={} after_draw={} operation={} "
+             "source={:#x} destination={:#x} size={}x{} format={}",
+             probe.frame, probe.image_events, probe.draws, operation,
+             src ? src->info.guest_address : 0, dst->info.guest_address,
+             dst->info.size.width, dst->info.size.height, u32(dst->info.pixel_format));
+}
 
 static vk::ImageType ConvertImageType(AmdGpu::ImageType type) noexcept {
     switch (type) {
@@ -229,6 +243,7 @@ bool Runtime::Transit(VideoCore::Image* image, vk::ImageLayout dst_layout,
 
 void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
                           std::span<const vk::BufferImageCopy> upload_copies) {
+    TraceFrameImageOperation("CPU_UPLOAD", dst);
     SetBackingSamples(dst, dst->info.num_samples, false);
     scheduler.EndRendering();
 
@@ -284,6 +299,7 @@ void Runtime::DownloadImage(VideoCore::Image* src, const VideoCore::Buffer* dst,
 }
 
 void Runtime::CopyImage(VideoCore::Image* src, VideoCore::Image* dst) {
+    TraceFrameImageOperation("IMAGE_COPY", dst, src);
     const u32 num_mips = std::min(src->info.resources.levels, dst->info.resources.levels);
 
     // Format mismatch warning (safe but useful)
@@ -383,6 +399,7 @@ void Runtime::CopyImage(VideoCore::Image* src, VideoCore::Image* dst) {
 
 void Runtime::CopyImageWithBuffer(VideoCore::Image* src, VideoCore::Image* dst,
                                   const VideoCore::Buffer* buffer, u64 offset) {
+    TraceFrameImageOperation("BUFFER_IMAGE_COPY", dst, src);
     const u32 num_mips = std::min(src->info.resources.levels, dst->info.resources.levels);
     const u32 num_layers = std::min(src->info.resources.layers, dst->info.resources.layers);
 
@@ -508,6 +525,7 @@ void Runtime::CopyMip(VideoCore::Image* src, VideoCore::Image* dst, u32 mip, u32
 }
 
 void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
+    TraceFrameImageOperation("COLOR_DEPTH_COPY", dst, src);
     if (src->info.num_samples == 1 && dst->info.num_samples == 1) {
         if ((instance.IsMaintenance8Supported() ||
              src->info.props.is_depth == dst->info.props.is_depth) &&
@@ -544,6 +562,7 @@ void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
 
 void Runtime::CopyDepthStencil(VideoCore::Image* src, VideoCore::Image* dst,
                                const VideoCore::SubresourceRange& sub_range) {
+    TraceFrameImageOperation("DEPTH_STENCIL_COPY", dst, src);
     scheduler.EndRendering();
 
     bool needs_flush =
@@ -586,6 +605,7 @@ void Runtime::CopyDepthStencil(VideoCore::Image* src, VideoCore::Image* dst,
 void Runtime::ResolveImage(VideoCore::Image* src, VideoCore::Image* dst,
                            const VideoCore::SubresourceRange& src_range,
                            const VideoCore::SubresourceRange& dst_range) {
+    TraceFrameImageOperation("RESOLVE", dst, src);
     SetBackingSamples(dst, 1, false);
     scheduler.EndRendering();
 
@@ -651,6 +671,7 @@ void Runtime::ResolveImage(VideoCore::Image* src, VideoCore::Image* dst,
 
 void Runtime::ClearImage(VideoCore::Image* dst, const VideoCore::SubresourceRange& range,
                          const vk::ClearValue& clear_value) {
+    TraceFrameImageOperation("CLEAR", dst);
     scheduler.EndRendering();
 
     const bool needs_flush =

@@ -27,6 +27,8 @@ def select_shaders(log):
     for raw in log.open(errors="replace"):
         line = ANSI.sub("", raw)
         row = dict(FIELDS.findall(line))
+        if "FrameProbeCompute:" in line:
+            reasons[shader_id("cs", row["shader"])].add("frame_compute")
         if "ResourceAuditCompile:" in line:
             key = shader_id(row["stage"], row["shader"])
             latest[key] = row
@@ -34,9 +36,10 @@ def select_shaders(log):
             draws[shader_id("fs", row["fs"])] += int(row.get("draws", "0"))
         if "GotMenuDrawTrace:" in line and "vs" in row and "fs" in row:
             pairs.add((shader_id("fs", row["fs"]), shader_id("vs", row["vs"])))
-        if "GotSceneGpuInvocations:" in line or "GotSceneIndirectGpuArgs:" in line:
+        if any(tag in line for tag in ("GotSceneGpuInvocations:", "GotSceneIndirectGpuArgs:",
+                                       "FrameProbeDraw:")):
             for stage in ("fs", "vs"):
-                if stage in row:
+                if stage in row and int(row[stage], 16):
                     reasons[shader_id(stage, row[stage])].add("sampled_scene_draw")
     for key, row in latest.items():
         for resource in ("buffers", "images", "samplers"):

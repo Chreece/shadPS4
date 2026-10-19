@@ -89,6 +89,10 @@ void Scheduler::EndRendering() {
     }
     is_rendering = false;
     CommandBuffer().endRendering();
+    if (on_render_end) {
+        auto callback = std::move(on_render_end);
+        callback();
+    }
 }
 
 vk::CommandBuffer Scheduler::UploadCommandBuffer() {

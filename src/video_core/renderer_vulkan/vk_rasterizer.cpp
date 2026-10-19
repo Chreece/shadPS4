@@ -27,6 +27,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 #include "video_core/renderer_vulkan/vk_buffer_hazard_rules.h"
+#include "video_core/renderer_vulkan/vk_frame_probe_images.h"
 #include "video_core/renderer_vulkan/vk_got_dma_origin_probe.h"
 #include "video_core/renderer_vulkan/vk_got_gds_compute_probe.h"
 #include "video_core/renderer_vulkan/vk_got_indirect_gpu_readback.h"
@@ -467,6 +468,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     }
     DebugState.IncDrawCall();
     Diagnostics::EndGotSceneGpuQuery(scheduler,cmdbuf,std::move(scene_gpu_query));
+    ArmFrameProbePass(state);
     CountSubmittedDraw(regs, state, is_indexed, false);
     Diagnostics::TraceMenuDraw(regs, *pipeline, state, is_indexed, false);
 
@@ -611,6 +613,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     const u32 proof_fs=prove_indirect ? scene_gpu_query->fs : 0u;
     const u32 proof_vs=prove_indirect ? scene_gpu_query->vs : 0u;
     Diagnostics::EndGotSceneGpuQuery(scheduler,cmdbuf,std::move(scene_gpu_query));
+    ArmFrameProbePass(state);
     if (prove_indirect) {
         Diagnostics::CaptureGotSceneGpuIndirectArguments(
             instance,scheduler,runtime,buffer,base,arg_address+offset,
@@ -636,7 +639,15 @@ void Rasterizer::DispatchDirect() {
     }
 
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
-    if (ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this)) {
+    const bool handled = ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this);
+    if (Diagnostics::FrameProbeEnabled() && Diagnostics::FrameProbe().frame) {
+        LOG_INFO(Render_Vulkan,
+                 "FrameProbeCompute: frame={} after_draw={} shader={:#x} indirect=false "
+                 "groups={}x{}x{} hle={}",
+                 Diagnostics::FrameProbe().frame, Diagnostics::FrameProbe().draws,
+                 cs.pgm_hash, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z, handled);
+    }
+    if (handled) {
         return;
     }
 
@@ -695,6 +706,12 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatchIndirect(buffer->Handle(), base);
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
+    if (Diagnostics::FrameProbeEnabled() && Diagnostics::FrameProbe().frame) {
+        LOG_INFO(Render_Vulkan,
+                 "FrameProbeCompute: frame={} after_draw={} shader={:#x} indirect=true args={:#x}",
+                 Diagnostics::FrameProbe().frame, Diagnostics::FrameProbe().draws,
+                 cs.pgm_hash, address + offset);
+    }
     TraceGotIndirectComputeDispatch(cs, true, 0, 0, 0);
     DebugState.IncDispatch();
 
@@ -979,6 +996,49 @@ void Rasterizer::BindIndexBuffer(u32 index_offset, bool is_indirect) {
     } else {
         cmdbuf.bindIndexBuffer(index_buffer, buffer_offset, index_type);
     }
+}
+
+void Rasterizer::ArmFrameProbePass(const RenderState& state) {
+    if (!Diagnostics::FrameProbeEnabled() || !Diagnostics::FrameProbe().frame) {
+        return;
+    }
+    auto& probe = Diagnostics::FrameProbe();
+    std::vector<Diagnostics::FrameProbeImage> targets;
+    const auto append = [&](const ImageBinding& binding, const RenderAttachment& attachment,
+                            u32 slot, bool depth) {
+        if (!binding.image_id || !attachment.image_view || !probe.ImagesEnabled()) {
+            return;
+        }
+        const auto& image = texture_cache.GetImage(binding.image_id);
+        if (image.backing->num_samples != 1 || image.info.type == AmdGpu::ImageType::Color3D) {
+            return;
+        }
+        const auto base = binding.desc.view_info.range.base;
+        targets.push_back({
+            .image = image.GetImage(),
+            .layout = attachment.image_layout,
+            .format = image.backing->image.image_ci.format,
+            .barrier_aspects = image.aspect_mask,
+            .guest = image.info.guest_address,
+            .width = std::min<u32>(state.width, std::max(1u, image.info.size.width >> base.level)),
+            .height = std::min<u32>(state.height, std::max(1u, image.info.size.height >> base.level)),
+            .level = base.level,
+            .layer = base.layer,
+            .attachment = slot,
+            .depth = depth,
+        });
+    };
+    for (u32 i = 0; i < state.num_color_attachments; ++i) {
+        append(cb_descs[i], state.color_attachments[i], i, false);
+    }
+    if (state.depth_stencil_attachment.has_depth) {
+        append(db_desc, state.depth_stencil_attachment, 8, true);
+    }
+    scheduler.SetRenderEndCallback(
+        [this, state, targets = std::move(targets), frame = probe.frame, draw = probe.draws]() mutable {
+            Diagnostics::CaptureFrameProbePass(instance, scheduler, state, std::move(targets),
+                                                frame, draw);
+        });
 }
 
 void Rasterizer::ResetBindings(bool is_compute) {
