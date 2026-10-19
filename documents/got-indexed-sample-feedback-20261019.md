@@ -32,4 +32,15 @@ The paired host/runtime scripts build an isolated pinned candidate, restore the 
 
 Inspect `info/indexed-image-feedback-summary.txt`, the exact shader SPIR-V, `info/scene-gpu-invocation-summary.txt`, indirect-argument results, and late screenshots together. A completed capture, successful build, or nonzero texture sample is not a gameplay success criterion. Require an actually rendered world and scene geometry before calling GoT fixed.
 
-Local validation: all four changed C++ translation units compile. A temporary harness calls the actual new SPIR-V emitter; final validation and full-build results are recorded with the published runner checkpoint. No GPU gameplay validation has been performed in this workspace.
+Local validation: all four changed C++ translation units compile. A temporary harness calls the actual new SPIR-V feedback emitter twice in one fragment function, including the null-sentinel and bitmap-overflow boundary values; its generated module passes `spirv-val --target-env vulkan1.3`. This validates the instrumentation structure, not execution of the real game shader. The full Release build and final shadPS4 link also pass locally with Clang 19 and libstdc++ 14 headers. Local dependency/header-path issues were resolved without repository source changes. No GPU gameplay validation has been performed in this workspace.
+
+
+## Published runner checkpoint
+
+- Diagnostic source: `c917fafd138eac21df2fb2a99c5afd21f432986a`.
+- Paired host/runtime scripts: `b38a77d4c37a889302f0ce5fbe2e929af4f8fe94`.
+- Entry point: `scripts/got-indexed-sample-feedback-build-and-run-20261019.sh`.
+- All 80 unique source-overlay paths exist at the source pin. Both runner scripts are required at the script pin before the launcher starts building.
+- All three scripts pass `bash -n`; their embedded Python compiles. The feedback-summary parser was exercised with representative completed-capture data.
+- Outputs: `~/projects/shadps4/logs/got-indexed-sample-feedback-host-*.tar.gz` and `got-indexed-sample-feedback-runtime-*.tar.gz`.
+- Server/GPU execution remains pending. Production is unchanged; white-menu and world-rendering success are not claimed.
