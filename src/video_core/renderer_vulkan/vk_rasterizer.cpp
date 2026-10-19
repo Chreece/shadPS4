@@ -498,20 +498,21 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         DebugState.IncDrawCall();
     }
 
-    // The earlier hardware counter test proved zero IA/VS/FS invocations
-    // for both indirect draws of fs 0x5116e459 (vs 0xae1cc7b7). Read back
-    // the *actual Vulkan GPU argument bytes* after the draw, not the guest
-    // register hint num_indices or potentially stale CPU mirror.
+    // Capture the actual Vulkan argument bytes for BOTH highly active
+    // five-MRT scene pipelines at the GPU-query draw checkpoints. In
+    // particular, the scene renderer 0xc1123f0f previously escaped all
+    // probes because its guest num_indices register was only 3.
     const bool prove_indirect=scene_gpu_query &&
-        scene_gpu_query->fs==0x5116e459u &&
-        scene_gpu_query->vs==0xae1cc7b7u && is_indexed;
+        scene_gpu_query->high_volume && is_indexed;
+    const u32 proof_fs=prove_indirect ? scene_gpu_query->fs : 0u;
+    const u32 proof_vs=prove_indirect ? scene_gpu_query->vs : 0u;
     Diagnostics::EndGotSceneGpuQuery(scheduler,cmdbuf,std::move(scene_gpu_query));
     if (prove_indirect) {
         Diagnostics::CaptureGotSceneGpuIndirectArguments(
             instance,scheduler,runtime,buffer,base,arg_address+offset,
             stride,max_count,count_address ? count_buffer : nullptr,
             count_offset,count_address,liverpool->regs.num_indices,
-            0x5116e459u,0xae1cc7b7u);
+            proof_fs,proof_vs);
     }
     CountSubmittedDraw(liverpool->regs, state, is_indexed, true);
     Diagnostics::TraceMenuDraw(liverpool->regs, *pipeline, state, is_indexed, true);
