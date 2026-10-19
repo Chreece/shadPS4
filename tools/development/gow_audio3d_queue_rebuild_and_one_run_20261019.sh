@@ -62,7 +62,7 @@ AUDIO_TEST_HEAD=8f23d6d51a14c7cba962f88e6e5dae1188387dde
 SRC="$ROOT/source"
 BUILD="$ROOT/build"
 LOGS="$HOME/projects/shadps4/logs"
-TAG="gow-audio3d-lock-$(date +%Y%m%d-%H%M%S)"
+TAG="gow-preserved-gfx-audio3d-srt-$(date +%Y%m%d-%H%M%S)"
 OUT="$LOGS/$TAG"
 mkdir -p "$OUT/original" "$OUT/pretest"
 STAGE=CHECK_SAFE_INPUTS
@@ -882,7 +882,7 @@ echo "EMULATOR_FIX=GENERAL_LINUX_UFFD_DEFERRED_INVALIDATION_AND_GPU_LIFECYCLE"
 # One 135-second run: no speculative A/B, no altered queue-register
 # semantics. Queue packet values, failing shader offsets and descriptors
 # become actionable evidence for implementing the next genuine GPU fix.
-STAGE=GAMEPLAY_SINGLE_AUDIO3D_QUEUE_FIX
+STAGE=GAMEPLAY_SINGLE_GOW_JUSTIFIED_CORRECTIONS
 [[ -f "$GAME_RUNNER" && ! -L "$GAME_RUNNER" &&
    -f "$OLLAMA_HELPER" && ! -L "$OLLAMA_HELPER" &&
    -f "$AUTO_INPUT" && ! -L "$AUTO_INPUT" &&
@@ -914,18 +914,18 @@ python3 -B -u "$GAME_RUNNER" \
   --out "$OUT/audio3d-queue-single-run" --cwd "$ORIGINAL_ROOT" \
   --navigation-only --seconds 230 \
   > "$OUT/audio3d-queue-gameplay-console.log" 2>&1 || {
-    echo "AUDIO3D_QUEUE_GAMEPLAY_NOT_VALIDATED_CHECK_LOG"
+    echo "INTEGRATED_GOW_GAMEPLAY_NOT_VALIDATED_CHECK_LOG"
     tail -100 "$OUT/audio3d-queue-gameplay-console.log"
     exit 2
   }
 tail -70 "$OUT/audio3d-queue-gameplay-console.log"
 [[ -s "$OUT/audio3d-queue-single-run/A_DENSE_CPU_UPLOAD/summary.json" ]] || {
-  echo "AUDIO3D_SINGLE_RUN_TELEMETRY_MISSING"; exit 2;
+  echo "INTEGRATED_SINGLE_RUN_TELEMETRY_MISSING"; exit 2;
 }
 [[ -s "$OUT/audio3d-queue-single-run/report.json" ]] || {
-  echo "AUDIO3D_SINGLE_RUN_REPORT_MISSING"; exit 2;
+  echo "INTEGRATED_SINGLE_RUN_REPORT_MISSING"; exit 2;
 }
-echo "AUDIO3D_QUEUE_GAMEPLAY=COMPLETED; STUTTER_FIX=NOT_YET_PROVEN"
+echo "INTEGRATED_GOW_GAMEPLAY=COMPLETED; AUDIO_AND_GRAPHICS_IMPROVEMENT=NOT_YET_PROVEN"
 echo "NEXT_ACTION=COMPARE_AUDIO_READY_AND_SUBMISSION_GAPS_WITH_PROVEN_BASELINE"
 STAGE=COMPLETE
 
