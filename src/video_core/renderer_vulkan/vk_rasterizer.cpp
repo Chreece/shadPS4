@@ -478,6 +478,19 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     const auto scene_gpu_query=Diagnostics::PrepareGotSceneGpuQuery(
         instance,scheduler,liverpool->regs,*pipeline,is_indexed,true);
     if (scene_gpu_query && scene_gpu_query->high_volume) {
+        // Buffer::mem_type is a five-value enum; the previously referenced
+        // VideoCore::BufferTypeName helper does not exist in this source tree.
+        // Keep readable, bounded GPU-argument provenance without an extra API.
+        const auto backing_type_name = [](VideoCore::MemoryType type) noexcept -> const char* {
+            switch (type) {
+            case VideoCore::MemoryType::DeviceLocal: return "DeviceLocal";
+            case VideoCore::MemoryType::HostUncached: return "HostUncached";
+            case VideoCore::MemoryType::HostCached: return "HostCached";
+            case VideoCore::MemoryType::Stream: return "Stream";
+            case VideoCore::MemoryType::Sparse: return "Sparse";
+            }
+            return "Unknown";
+        };
         LOG_INFO(Render_Vulkan,
                  "GotIndirectArgumentSource: fs={:#x} vs={:#x} "
                  "pair_ordinal={} arg_guest={:#x} bytes={} "
@@ -489,7 +502,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
                  scene_gpu_query->fs,scene_gpu_query->vs,
                  scene_gpu_query->pair_ordinal,arg_address+offset,size,
                  gpu_modified_before_obtain,
-                 VideoCore::BufferTypeName(buffer->mem_type),
+                 backing_type_name(buffer->mem_type),
                  buffer->CpuAddr(),base,
                  buffer->mem_type==VideoCore::MemoryType::Stream,
                  count_address,count_address!=0);
