@@ -380,6 +380,18 @@ PY
   find "$RUN/info/final-fragment-shader" -maxdepth 1 -type f \
     -printf '%f bytes=%s\n' >"$RUN/info/final-shader-files.txt"
 
+  # Shader 0x7eaf40ad repeatedly reports eight unresolved ImageSampleRaw
+  # T# components. Capture only its bounded, exact compilation artifacts
+  # to distinguish a descriptor problem from zero-work scene culling.
+  mkdir -p "$RUN/info/unresolved-image-shader"
+  find "$RUN/profile/user/shader/dumps" -maxdepth 1 -type f \
+    -iname '*7eaf40ad*' -size -6M -print0 2>/dev/null |
+    while IFS= read -r -d '' shader; do
+      cp -p -- "$shader" "$RUN/info/unresolved-image-shader/$(basename "$shader")" || true
+    done
+  find "$RUN/info/unresolved-image-shader" -maxdepth 1 -type f \
+    -printf '%f bytes=%s\n' >"$RUN/info/unresolved-image-shader-files.txt"
+
   cat > "$RUN/info/scene-raster-ab-contract.txt" <<'GOTABCONTRACT'
 EXPERIMENTAL_ONLY=YES
 TEST_MODE=COMBINED_DEPTH_STENCIL_AND_FACE_CULLING
@@ -1119,6 +1131,7 @@ PYSTAGEPIXELS
     echo "GOT_GDS_SHADER_PRODUCER_GPU_SNAPSHOTS=$(grep -ac 'GotGdsComputeProducer: status=GPU_READBACK_PASS' "$RUN/game.log" || true)"
     echo "GOT_GDS_CPU_HOST_READS=$(grep -ac 'GotGdsHostRead:' "$RUN/game.log" || true)"
     echo "GOT_GDS_HOST_READ_COHERENCY_FIX=ENABLED"
+    echo "UNRESOLVED_IMAGE_SHADER_7EAF40AD_DUMPS=$(find "$RUN/info/unresolved-image-shader" -type f 2>/dev/null | wc -l)"
     echo "VULKAN_INDIRECT_WAR_FIX_SOURCE_PIN=3135db0e7d78e7b0cd8a21e56480b172c461a0e9"
     echo "GPU_INDIRECT_ARGUMENT_SOURCE_EVENTS=$(grep -ac 'GotIndirectArgumentSource:' "$RUN/game.log" || true)"
     echo "ACTIVE_MENU_8192_CHECKPOINTS=$(grep -ac 'GotSceneLiveQueryCheckpoint:.*pair_ordinal=8192' "$RUN/game.log" || true)"
@@ -1350,7 +1363,7 @@ echo "GAME_START duration=${SECONDS_TO_RUN}s DISPLAY=$DISPLAY_OK"
   export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x96aa3f2e"
   export SHADPS4_MENU_WATCH_SOURCE=0x1504a08000
   export SHADPS4_RENDER_AUDIT=1
-  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0xc1123f0f,0xc8caf263,0x5116e459,0xae1cc7b7,0x96aa3f2e,0xc0cac3b6,0xb1ec4568"
+  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0xc1123f0f,0xc8caf263,0x5116e459,0xae1cc7b7,0x96aa3f2e,0xc0cac3b6,0xb1ec4568,0x7eaf40ad"
   export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad"
   export SHADPS4_SRT_SOURCE_AUDIT=1
   export SHADPS4_SRT_INLINE_AUDIT=1
