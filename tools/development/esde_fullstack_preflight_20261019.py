@@ -427,7 +427,11 @@ def build_staged_source(report: dict, run: Path):
     run_logged("NATIVE_LINK", common + ["cmake", "--build", str(build),
                                       "--target", "shadps4", "--parallel", "4"])
     exe = build / "shadps4"
-    if not exe.is_file() or exe.is_symlink() or exe.read_bytes()[:5] != b"\x7fELF\x02":
+    if not exe.is_file() or exe.is_symlink():
+        raise RuntimeError("Isolated executable missing or unexpected symlink")
+    with exe.open("rb") as hdr:
+        elf_header = hdr.read(5)
+    if elf_header != b"\x7fELF\x02":
         raise RuntimeError("Isolated executable is not a 64-bit ELF")
     deps = command("ldd", str(exe), check=False)
     if deps.returncode or "not found" in deps.stdout:
