@@ -10,7 +10,7 @@ BUILD="$WORK/build"
 BIN="$BUILD/shadps4"
 LOGS="$ROOT/logs"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
-CANDIDATE="aa775cd9965118910d44e675708e7fc0cc2a62a1"
+CANDIDATE="1b1ca11bfea7025c97bcde4810f892eee81c7227"
 BRANCH="diagnostic/got-indexed-sample-feedback-20261019"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 NAME="got-indexed-sample-feedback-host-$STAMP"
@@ -518,9 +518,9 @@ assert "IsVaryingLocalInvocationComponent(" in lds
 assert "FindDivergentLoops(program.syntax_list, runtime_info)" in lds
 assert "EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth, runtime_info)" in lds
 assert "op == IR::Opcode::InverseBallot || op == IR::Opcode::GetUserData" in phi
-assert "ShaderBinaryVersion = 48u;" in serial
+assert "ShaderBinaryVersion = 49u;" in serial
 print("GOT_SHADER_UPSTREAM_CORRECTNESS_WIRING=PASS "
-      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=48")
+      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=49")
 print("GOT_INDIRECT_PRODUCER_SOURCE_WIRING=PASS exact_watch=8 "
       "buffer_shader=YES compute_dispatch=YES cpu_upload=YES vk_copy=YES")
 # The previous host link failed at rasterizer.cpp:492: an undefined

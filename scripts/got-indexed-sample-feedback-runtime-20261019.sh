@@ -7,7 +7,7 @@ GOT="$ROOT/GhostOfTsushima"
 WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
-PIN="aa775cd9965118910d44e675708e7fc0cc2a62a1"
+PIN="1b1ca11bfea7025c97bcde4810f892eee81c7227"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$PIN"
 HOST_REPORT="${GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT:-$LOGS/got-indexed-sample-feedback-host-not-built.tar.gz}"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
@@ -433,7 +433,7 @@ PY
     done
   find "$RUN/info/material-table-shaders" -maxdepth 1 -type f \
     -printf '%f bytes=%s\n' > "$RUN/info/material-table-shader-files.txt"
-  grep -aE 'LiveMaterialPermutation|GuestStridedSourceProof:|GuestTsharpIncompleteProgram:|RealIndexedTSharpEnabled:|RealIndexedTSharpBound:|StridedSamplerBound:|InvalidTSharpSource:|InvalidVSharpSource:' \
+  grep -aE 'IndexedTableDump:|LiveMaterialPermutation|GuestStridedSourceProof:|GuestTsharpIncompleteProgram:|RealIndexedTSharpEnabled:|RealIndexedTSharpBound:|StridedSamplerBound:|InvalidTSharpSource:|InvalidVSharpSource:' \
     "$RUN/game.log" > "$RUN/info/indexed-table-transitions.log" || true
 
   if command -v spirv-val >/dev/null 2>&1; then
@@ -922,6 +922,9 @@ PYSTAGEPIXELS
     echo "CANDIDATE_SOURCE=$PIN"
     echo "CAPTURE_DURATION_SECONDS=$SECONDS_TO_RUN"
     echo "PACKED_AND_STRIDED_TABLE_SIZE_SPECIALIZATION=ENABLED"
+    echo "INDEXED_TABLE_DUMP_EVENTS=$(grep -ac 'IndexedTableDump:' "$RUN/game.log" || true)"
+    echo "INDEXED_UNIFORM_SAMPLER_TABLES=ENABLED"
+    echo "INDEXED_EXPLICIT_LOD=ENABLED"
     echo "BOUNDED_POINTER_IMAGE_LOWERINGS=$(grep -ac 'BoundedPointerImage:' "$RUN/game.log" || true)"
     echo "BOUNDED_POINTER_IMAGE_SHADER=0x5c4c2b6f_EXPECTED_WHEN_COUNT_4"
     echo "BOUNDED_POINTER_COUNT_SPECIALIZATION=ENABLED"
@@ -1121,8 +1124,8 @@ echo "ENTER_GAMEPLAY_WITH_YOUR_CONTROLLER; capture stops automatically after fiv
   export SHADPS4_TEXTURE_SLOT_PRESSURE=0
   export SHADPS4_GPUVM_SPARSE_MAP=0
   export SHADPS4_RESOURCE_AUDIT=1
-  export SHADPS4_RESOURCE_AUDIT_HASH="0x7eaf40ad,0x55d17c16,0x5c4c2b6f"
-  export SHADPS4_INDEXED_IMAGE_FEEDBACK_HASHES="0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f"
+  export SHADPS4_RESOURCE_AUDIT_HASH="0x7eaf40ad,0x55d17c16,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
+  export SHADPS4_INDEXED_IMAGE_FEEDBACK_HASHES="0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
   export SHADPS4_INDEXED_IMAGE_AUDIT=1
   export SHADPS4_INDEXED_IMAGE_AUDIT_HASHES="0x7eaf40ad"
   export SHADPS4_MENU_PASS_TRACE=1
@@ -1138,14 +1141,14 @@ echo "ENTER_GAMEPLAY_WITH_YOUR_CONTROLLER; capture stops automatically after fiv
   export SHADPS4_GOT_SCENE_DEPTH_AB=0
   export SHADPS4_GOT_SCENE_RASTER_AB=0
   export SHADPS4_GOT_MENU_CAPTURE_DELAY_SEC="${GOT_CAPTURE_DELAY_SEC:-85}"
-  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x96aa3f2e"
   export SHADPS4_MENU_WATCH_SOURCE=0x1504a08000
   export SHADPS4_RENDER_AUDIT=1
-  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0xc1123f0f,0xc8caf263,0x5116e459,0xae1cc7b7,0x96aa3f2e,0xc0cac3b6,0xb1ec4568,0x7eaf40ad,0xb5c898c7,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
-  export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad,0xb5c898c7,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
+  export SHADPS4_INDEXED_TABLE_DUMP=1
+  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
+  export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
   export SHADPS4_SRT_SOURCE_AUDIT=1
   export SHADPS4_SRT_INLINE_AUDIT=1
-  export SHADPS4_SRT_TRACE_HASHES="0x7eaf40ad,0xb5c898c7,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
+  export SHADPS4_SRT_TRACE_HASHES="0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
   export SHADPS4_SHARP_MASK_AUDIT=1
   export SHADPS4_SHARP_MASK_AUDIT_HASHES="0x7eaf40ad"
   unset RADV_DEBUG VK_DRIVER_FILES VK_ICD_FILENAMES VK_INSTANCE_LAYERS
