@@ -1,5 +1,7 @@
 # Recovered shader-resource repairs, 2026-10-19
 
+Follow-up: [bounded GPU-selected buffer loads and stores](got-bounded-buffer-tables-20261019.md). The next gameplay capture confirms zero unresolved final image/sampler fetches across 949 distinct shaders, but graphics remain broken. The report below records the earlier image/sampler candidate and its validation; its source and runner pins are historical.
+
 All 82 shader binaries flagged with unresolved images or samplers in the recovered capture now compile with zero unresolved image/sampler fetches in local replay. All 82 emitted SPIR-V modules validate for Vulkan 1.3. This is compiler/resource-path progress; the white menu, scene geometry, terrain and horses have not been visually verified with this candidate.
 
 Source: `84117bbd1e356f6440c4c7dcfc239d950f144d1d`. Host/runtime scripts: `b88c112b123c68e9db57bc67b352dba6300b962e`.
