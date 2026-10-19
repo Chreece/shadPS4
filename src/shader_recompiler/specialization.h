@@ -190,7 +190,14 @@ struct StageSpecialization {
     }
 
     bool operator==(const StageSpecialization& other) const {
-        if (!Valid()) {
+        // Different resource layouts must never be compared element-by-element:
+        // a serialized shader permutation can have fewer descriptors than a
+        // previously loaded variation, and the loops below index both lists.
+        // Also reject invalid placeholder permutation slots symmetrically.
+        if (!Valid() || !other.Valid() ||
+            buffers.size() != other.buffers.size() ||
+            images.size() != other.images.size() ||
+            samplers.size() != other.samplers.size()) {
             return false;
         }
 
