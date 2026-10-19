@@ -20,7 +20,7 @@ if (( $# == 0 )); then
     echo "DETACH_COMMANDS_MISSING_NO_BUILD"; exit 2;
   }
   curl -4 -fLsS --retry 3 --retry-delay 2 \
-     "$URL/tools/development/gow_audio3d_queue_isolated_launcher_20261019.sh" \
+     "$URL/tools/development/gow_srt_flatbuf_probe_launcher_20261019.sh" \
      -o "$BUILD_SCRIPT"
   [[ -f "$BUILD_SCRIPT" && ! -L "$BUILD_SCRIPT" &&
      "$(git hash-object "$BUILD_SCRIPT")" == "91d83ca2abbe63164399551e122d3746e91e23dc" ]] || {
@@ -34,7 +34,7 @@ if (( $# == 0 )); then
   # an Audio3D object-list entry had no trailing shell continuation.
   RUNNER_PREFLIGHT="$SCRIPTS/gow_srt_flatbuf_probe_build_20261019.sh"
   curl -4 -fLsS --retry 3 --retry-delay 2 \
-    "$URL/tools/development/gow_audio3d_queue_rebuild_and_one_run_20261019.sh" \
+    "$URL/tools/development/gow_srt_flatbuf_probe_build_20261019.sh" \
     -o "$RUNNER_PREFLIGHT"
   [[ -f "$RUNNER_PREFLIGHT" && ! -L "$RUNNER_PREFLIGHT" &&
      "$(git hash-object "$RUNNER_PREFLIGHT")" == "58ed341721ab498539a42868c5c7169b16071f3e" ]] || {
