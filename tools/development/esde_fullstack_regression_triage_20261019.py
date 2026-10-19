@@ -168,6 +168,144 @@ def check_missing_proven_gpu_contracts():
                 "rasterizer_header":"889759b700915f2076ee95ce4af50c5fc8c0c90fee5901c03ec73bff1b165992",
             }}
 
+def reconstruct_renderer_from_proven_sources(tag):
+    """Replay exact Oct17 working GoW graphics+UFFD files, but never install.
+
+    Its already-vetted restoration helper is bundled by Git SHA.
+    All four 3-way ports are computed in memory/plan files only.
+    """
+    run = ESDE / ("fullgfx-recovery-" + tag)
+    run.mkdir(parents=True, exist_ok=True)
+    before_path = (GOW_ROOT /
+        "tests/native-rendered-gfx-20261016-152535-3014679/source/" / RENDERER)
+    header = (GOW_ROOT /
+        "tests/gow-renderer-log-hotpath-20261017/source/"
+        "src/video_core/buffer_cache/buffer_cache.h")
+    expected_old = "dd2a54cb630d118ea273fc92ac90af611ac2b84e9ec2cca7e65c357101818f58"
+    if sha(before_path) != expected_old:
+        return {"status":"ORIGINAL_PROVEN_GRAPHICS_PREIMAGE_DIFFERENT",
+                "found":sha(before_path), "expected":expected_old}
+    if not header.is_file() or header.is_symlink():
+        return {"status":"ORIGINAL_BUFFER_HEADER_NOT_AVAILABLE"}
+    # Three exact Git blobs from the vetted Oct19 preservation runner,
+    # committed here without alteration and rechecked on this host.
+    inputs = {
+      "historical-renderer.cpp":(
+        "tools/development/proven_sources_20261019/src/video_core/renderer_vulkan/vk_rasterizer_uffd_historical.cpp",
+        "2c8cbda6454aaadd76c060158342e017d60d8127"),
+      "restore.py":(
+        "tools/development/proven_sources_20261019/tools/gow_restore_graphics_renderer_20261017.py",
+        "0bb5acf3149c53e58fb4739845fc33538ed32ff8"),
+      "support.py":(
+        "tools/development/proven_sources_20261019/tools/gow_preserve_uffd_support_20261017.py",
+        "5e8d17492c592421af95413ba8e00610b66aa255"),
+    }
+    commit = "e0cde5a0fb33ab29ac8f7e0ccaef01f8939f3c09"
+    paths={}
+    for name,(relative,blob) in inputs.items():
+        url = "https://raw.githubusercontent.com/Chreece/shadPS4/" + commit + "/" + relative
+        received=execute("curl","-4","-fLsS","--retry","3",
+                         "--connect-timeout","20","--max-time","90",url,
+                         timeout=105).stdout.encode("utf-8")
+        observed=hashlib.sha1(("blob "+str(len(received))+"\0").encode()+received).hexdigest()
+        if observed!=blob:
+            raise RuntimeError("PROVEN_RECOVERY_BLOB_MISMATCH:"+name)
+        loc=run/name
+        loc.write_bytes(received)
+        paths[name]=loc
+    if sha(paths["historical-renderer.cpp"]) != (
+        "a86fd050d18d3f5b942756bf4e74b69ccb856183f86d526c9346a07f78ab4feb"):
+        raise RuntimeError("HISTORICAL_UFFD_RENDERER_HASH_MISMATCH")
+    output=run/"reconstructed-fullgfx-renderer.cpp"
+    out=execute(sys.executable,"-B",paths["restore.py"],
+                before_path,paths["historical-renderer.cpp"],header,output,
+                check=False,timeout=90)
+    (run/"reconstruction.log").write_text(out.stdout+out.stderr)
+    if out.returncode or sha(output)!=RENDERER_SHA:
+        return {"status":"SOURCE_RECONSTRUCTION_REJECTED",
+                "reason":(out.stdout+out.stderr)[-7000:],
+                "recovered_sha":sha(output),
+                "workdir":str(run)}
+    support_before={
+        "src/core/libraries/gnmdriver/gnmdriver.cpp":
+            "3760577a5851bb068e55db2e14346dfa1e62b65af60d3af68fd8458f8919d6a0",
+        "src/video_core/page_manager.h":
+            "e8e8bdb9bb8330e70a3d753ba626e781df34da5864cc537d078509fe044c0965",
+        "src/video_core/renderer_vulkan/vk_rasterizer.h":
+            "34703c31672f73dd93ede2a04577365f780fc0d5cd86fc8f8001ba282a3e571e",
+    }
+    support_after={
+        "src/core/libraries/gnmdriver/gnmdriver.cpp":
+            "12ae19b6effe8e020e9c5a1f47b886dbc790818d1610566be6c28facd572f62e",
+        "src/video_core/page_manager.h":
+            "f5a661ef28f7b00b5c513da33897a31487990a55f2646f2bb4cab7883c4c7511",
+        "src/video_core/renderer_vulkan/vk_rasterizer.h":
+            "889759b700915f2076ee95ce4af50c5fc8c0c90fee5901c03ec73bff1b165992",
+    }
+    original_root=GOW_ROOT/"tests/native-rendered-gfx-20261016-152535-3014679/source"
+    before_run=run/"original"
+    after_run=run/"preserved"
+    for rel,want in support_before.items():
+        src=original_root/rel
+        if sha(src)!=want:
+            return {"status":"PROVEN_UFFD_SUPPORT_PREIMAGE_CHANGED",
+                    "path":rel,"found":sha(src),"expected":want,
+                    "recovered_fullgfx_renderer":str(output)}
+        for base in (before_run,after_run):
+            dest=base/rel
+            dest.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(src,dest)
+    patched=execute(sys.executable,"-B",paths["support.py"],before_run,after_run,
+                    run/"support-evidence.json",check=False,timeout=80)
+    (run/"support-reconstruction.log").write_text(patched.stdout+patched.stderr)
+    if patched.returncode:
+        return {"status":"PROVEN_UFFD_SUPPORT_RECONSTRUCTION_FAILED",
+                "reason":(patched.stdout+patched.stderr)[-4500:]}
+    for rel,expected in support_after.items():
+        if sha(after_run/rel)!=expected:
+            raise RuntimeError("VERIFIED_UFFD_SUPPORT_POSTIMAGE_MISMATCH:"+rel)
+    expected_ports={RENDERER:(before_path,output)}
+    for rel in support_before:
+        expected_ports[rel]=(before_run/rel,after_run/rel)
+    records={}
+    planned_root=run/"merged-source-proposals"
+    for rel,(base_file,new_file) in expected_ports.items():
+        current=SRC/rel
+        if not current.is_file() or current.is_symlink():
+            records[rel]={"status":"CURRENT_UPSTREAM_TARGET_MISSING"}
+            continue
+        ours=run/("ours-"+Path(rel).name)
+        shutil.copyfile(current,ours)
+        result=execute("git","merge-file","-p",ours,base_file,new_file,
+                       check=False,timeout=80)
+        merge=result.stdout
+        item={
+            "merge_rc":result.returncode,
+            "current_sha256":sha(current),
+            "old_sha256":sha(base_file),
+            "proven_sha256":sha(new_file),
+            "changed":merge.encode()!=current.read_bytes(),
+        }
+        if result.returncode or "<<<<<<<" in merge:
+            item["status"]="THREEWAY_CONFLICT_NEEDS_EXACT_RECONCILIATION"
+            item["conflict_excerpt"]=merge[-15000:]
+        else:
+            proposal=planned_root/rel
+            proposal.parent.mkdir(parents=True,exist_ok=True)
+            proposal.write_text(merge)
+            item["status"]="PREVIEW_CLEAN_NOT_APPLIED"
+            item["proposal_sha256"]=sha(proposal)
+            item["proposal_path"]=str(proposal)
+        records[rel]=item
+    return {"status":"RECONSTRUCTED_VERIFIED_GO_W_RENDERER",
+            "reconstructed_renderer_sha256":sha(output),
+            "recovery_dir":str(run),
+            "port_proposals":records,
+            "all_proposals_clean":all(v["status"]=="PREVIEW_CLEAN_NOT_APPLIED"
+                                      for v in records.values()),
+            "compiled_candidate_changed":False,
+            "full_graphics_source_exact":True}
+
 def ghost_merge_preview():
     """Fetch pinned reference and preview conflicts; never merge source."""
     if not (SRC / ".git").exists():
@@ -280,6 +418,7 @@ def main():
     result = 0
     try:
         report["goW_proven_gpu_contract_parity"] = check_missing_proven_gpu_contracts()
+        report["goW_exact_fullgfx_renderer_recovery"] = reconstruct_renderer_from_proven_sources(stamp)
         found,status = renderer_from_workspaces()
         report["renderer_search"] = {"local":found, "status":status}
         found_git,stats = renderer_from_git_history()
