@@ -127,6 +127,25 @@ for old, relative in files:
     new = destination / relative
     new.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(old, new)
+# The real profile may point its guest HOME and firmware directories at
+# absolute paths. Clear those overrides ONLY in the isolated copy, so
+# original saves/configuration are never written by the test process.
+config = destination / "config.json"
+if config.is_file():
+    import json
+    settings = json.loads(config.read_text())
+    if not isinstance(settings, dict):
+        raise SystemExit("INVALID_SOURCE_CONFIG_JSON")
+    general = settings.get("General")
+    if general is not None and not isinstance(general, dict):
+        raise SystemExit("INVALID_SOURCE_GENERAL_CONFIG")
+    if general is not None:
+        for name in ("home_dir", "sys_modules_dir", "font_dir", "addon_install_dir"):
+            if name in general:
+                if not isinstance(general[name], str):
+                    raise SystemExit("UNEXPECTED_GENERAL_PATH_SETTING_" + name)
+                general[name] = ""
+        config.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n")
 print(f"ISOLATED_PROFILE=PASS files={len(files)} bytes={total} skipped_symlinks={skipped_symlinks}")
 print("SAVES_AND_ORIGINAL_PROFILE=UNCHANGED")
 PYPROFILE
