@@ -114,3 +114,32 @@ Validation completed before publication:
 - All three shell scripts pass syntax checking; all embedded Python compiles. A runtime-cleanup fixture preserves exit 133, the new lowering summary, and all added shader dumps. No tests or replay fixtures were added to the repository.
 
 The five-minute runner retains the verified synchronization, LDS/Phi, table-size specialization and view-capacity changes. It also collects fragment shaders `0x836253ca`, `0x22d378cd` and `0x5116e459`, which appear in active scene records and still report unresolved resources. The next bundle is `got-bounded-pointer-images-evidence-*.tar.gz`. Check the `BoundedPointerImage` log, populated per-permutation descriptor contents and resource audit, actual geometry/query results, and screenshots together. GPU validation of this candidate is pending; restored world graphics remain the acceptance criterion.
+
+
+## Confirmed pointer lowering and GPU-indexed fragment tables
+
+Inspected bundle: `got-bounded-pointer-images-evidence-20261019-175254.tar.gz`. Its host report confirms the complete build passed and the baseline executable was restored. The runtime completed the 300-second window (`CAPTURE_COMPLETE`, timeout 124), recorded no GPUVM faults or texture-pool exhaustion, preserved the active executable, and restored Ollama. The late screenshot still shows a largely absent world. All six sampled high-volume indirect draws produce no geometry: two have index count zero, and four have instance count zero. This is not proof that every scene draw is empty.
+
+The bounded pointer path is now confirmed on the user's GPU: 29 shader compilations use the lowering, and populated variants 4, 5 and 6 of `0x5c4c2b6f` report 24 images, 7 samplers and zero unresolved image or sampler sources. All 31 captured SPIR-V modules validate for Vulkan 1.3. Completed indexed feedback records 305 samples (226 from `0x04950cf6`, 79 from `0x5c4c2b6f`), all nonzero including alpha, with no recorded out-of-range or nonfinite results. The captured `0x7eaf40ad` samples remain unexecuted. These are compiler/execution observations, not visual acceptance.
+
+Three newly captured fragment shaders still have one unresolved image resource each and no unresolved sampler resources. Their texture descriptors come from GPU-indexed records, while their actual sampler is host-uniform. The previous strided resource path incorrectly requires an indexed sampler from the same record. It also rejects descriptors at record offset zero, returns from contiguous-word analysis before trying strided analysis, and excludes explicit LOD and level-zero instructions.
+
+Candidate source: `1b1ca11bfea7025c97bcde4810f892eee81c7227`. Paired host/runtime scripts: `dc625bea187590cdf2335e1ca8a6a26dc405be2b`.
+
+The generic fix recognizes the zero-offset affine expression and continues record analysis when a contiguous-word selector is not a normalized packed-table ID. It accepts a resolvable uniform sampler, retaining its descriptor rather than creating an indexed/default sampler. Matching dynamic samplers continue to use their original GPU selector. Explicit LOD and level-zero instructions now use the indexed SPIR-V emission path, including the existing unsigned bounds check and explicit null slot. Unsupported sampler coordinate/degamma modes remain excluded from the new strided uniform-sampler path. Shader cache version 49 invalidates old compiled layouts. No game hash or fixed record layout affects emulation behavior.
+
+Local replay uses the three actual guest shader binaries, captured flattened constants, and captured SRT programs to reconstruct the known scalar memory. No missing texture-record contents are fabricated for these fragment replays. Fragment input/export configuration is a validation fixture; the archive does not contain the complete original register state. The check establishes resource lowering and valid shader generation, not pixel equivalence to PS4 hardware.
+
+| Captured fragment | GPU-indexed bindings | Recorded layouts | Invalid image/sampler sources after replay |
+| --- | ---: | --- | --- |
+| `0x836253ca` | 3 | 236-byte records, 49 entries, offsets 0/32/64 | 0 / 0 |
+| `0x22d378cd` | 5 | 340-byte records × 53 and 60-byte records × 49 | 0 / 0 |
+| `0x5116e459` | 8 | 340-byte records × 24 and 60-byte records × 49 | 0 / 0 |
+
+All three generated modules pass `spirv-val --target-env vulkan1.3`, including implicit LOD, explicit LOD/level zero, and gradient samples. The earlier bounded-pointer compute replay still resolves 24 images and 7 samplers with zero invalid sources and valid SPIR-V (its previously uncaptured pointer records remain explicit fixtures). The complete Release emulator build and all existing host preflight checks pass. No tests were added to the repository. OpenOrbis hardware comparison and GPU rendering of this candidate have not been performed.
+
+The runner previously supplied 9 and 16 hashes to filters with an eight-entry limit. Those filters failed closed, disabling targeted/invalid-source traces; global shader dumping still supplied the inspected binaries. The new target, SRT, invalid-source and feedback lists contain eight hashes, including all three fragment shaders. Resource audits also include them.
+
+An opt-in `SHADPS4_INDEXED_TABLE_DUMP=1` capture saves actual mapped record-table bytes at binding observations 1, 32 and 256, only for targeted shaders. Each table is limited to 64 KiB; at most 64 shader/resource keys and 128 capture attempts are retained per binding thread. Filenames record shader, resource, stride, offset and count. This makes actual descriptor types and contents reviewable alongside resource-binding validity, executed GPU indices and screenshots. It does not invent descriptors or modify their selection.
+
+All 82 source-overlay paths remain present. Shell syntax, embedded Python and filter lengths pass validation. A cleanup fixture confirms abnormal exit 133, nonzero launcher status and the table binary survive archiving. The next five-minute run produces `got-uniform-sampler-tables-evidence-*.tar.gz`. Existing production/source/profile restoration and VRAM-conditioned Ollama handling remain in place. Synchronization, LDS/Phi, table-size specialization and view-capacity improvements are retained. Visible world geometry remains the acceptance criterion; this candidate is not yet a demonstrated white-menu or gameplay fix.
