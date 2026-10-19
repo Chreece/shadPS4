@@ -671,6 +671,22 @@ def main():
         conflicts=workdir/"conflicts"
         if conflicts.is_dir():
             tf.add(conflicts,arcname="conflicts")
+        host=workdir/"host-tests"
+        if host.is_dir():
+            for item in host.glob("*.log"):
+                if item.is_file() and item.stat().st_size < 2_000_000:
+                    tf.add(item,arcname="host-tests/"+item.name)
+        # A bounded patch captures the exact new generic source work, so a
+        # compiler conflict can be reconciled without a speculative reset.
+        if report.get("source_applied"):
+            diff=git("diff","--","src/shader_recompiler","src/video_core",
+                     check=False)
+            if diff.returncode==0 and len(diff.stdout)<=8_000_000:
+                from io import BytesIO
+                import tarfile as _tar
+                info=_tar.TarInfo("applied-source-diff.patch")
+                info.size=len(diff.stdout)
+                tf.addfile(info,BytesIO(diff.stdout))
     print("ENGINE_INTEGRATION_STATUS="+report["status"])
     print("GHOST_SHADER_GPU_FILES_SELECTED="+str(report.get("selected_compiler_paths",0)))
     print("SOURCE_CONFLICTS="+str(len(report.get("all_conflicts",{}))))
