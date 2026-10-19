@@ -24,6 +24,8 @@
 #include <string>
 #include <utility>
 
+#include <fmt/format.h>
+
 #include "common/logging/log.h"
 #include "common/path_util.h"
 #include "video_core/buffer_cache/buffer.h"
