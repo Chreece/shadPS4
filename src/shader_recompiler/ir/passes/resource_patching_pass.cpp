@@ -9,6 +9,9 @@
 #include <limits>
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
+#include "shader_recompiler/frontend/control_flow_graph.h"
+#include "shader_recompiler/ir/passes/indexed_image_selector.h"
+#include "shader_recompiler/ir/passes/srt_uniformity.h"
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/passes/sharp_fetch_coalesce.h"
 #include "shader_recompiler/ir/opcodes.h"
@@ -313,6 +316,304 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp, const Info& info)
         }
     }
     return sharp_fetch;
+}
+
+namespace {
+
+IR::Inst* MatchOpcode(IR::Value value, IR::Opcode opcode) {
+    auto* inst = value.TryInst();
+    return inst && inst->GetOpcode() == opcode ? inst : nullptr;
+}
+
+bool IsZero(IR::Value value) {
+    return value.IsImmediate() && ((value.Type() == IR::Type::U32 && value.U32() == 0) ||
+                                   (value.Type() == IR::Type::U64 && value.U64() == 0));
+}
+
+IR::Inst* MatchBoundGuard(IR::Value condition) {
+    if (auto* ref = MatchOpcode(condition, IR::Opcode::ConditionRef)) {
+        condition = ref->Arg(0);
+    }
+    auto* negated = MatchOpcode(condition, IR::Opcode::LogicalNot);
+    if (!negated)
+        return nullptr;
+    if (auto* cmp = MatchOpcode(negated->Arg(0), IR::Opcode::ULessThan32))
+        return cmp;
+    auto* inverse = MatchOpcode(negated->Arg(0), IR::Opcode::InverseBallot);
+    if (!inverse)
+        return nullptr;
+    auto* masked = MatchOpcode(inverse->Arg(0), IR::Opcode::BitwiseAnd64);
+    if (!masked)
+        return nullptr;
+    for (u32 side = 0; side < 2; ++side) {
+        auto* active = MatchOpcode(masked->Arg(side), IR::Opcode::Ballot);
+        auto* combined = MatchOpcode(masked->Arg(1 - side), IR::Opcode::BitwiseOr64);
+        if (!active || !combined)
+            continue;
+        for (u32 part = 0; part < 2; ++part) {
+            auto* selected = MatchOpcode(combined->Arg(part), IR::Opcode::SelectU64);
+            auto* inverted = MatchOpcode(combined->Arg(1 - part), IR::Opcode::BitwiseNot64);
+            if (!selected || !inverted || !IsZero(selected->Arg(2)))
+                continue;
+            auto* included = MatchOpcode(selected->Arg(1), IR::Opcode::Ballot);
+            auto* excluded = MatchOpcode(inverted->Arg(0), IR::Opcode::Ballot);
+            if (included && excluded && included->Arg(0) == active->Arg(0) &&
+                excluded->Arg(0) == active->Arg(0)) {
+                return MatchOpcode(selected->Arg(0), IR::Opcode::ULessThan32);
+            }
+        }
+    }
+    return nullptr;
+}
+
+bool DominatesPointerSample(IR::Block* body, IR::Block* sample) {
+    std::vector<IR::Block*> pending{sample}, visited;
+    bool reached_body = false;
+    while (!pending.empty()) {
+        auto* block = pending.back();
+        pending.pop_back();
+        if (block == body) {
+            reached_body = true;
+            continue;
+        }
+        if (std::ranges::find(visited, block) != visited.end())
+            continue;
+        visited.push_back(block);
+        if (block->ImmPredecessors().empty())
+            return false;
+        for (auto* predecessor : block->ImmPredecessors())
+            pending.push_back(predecessor);
+    }
+    return reached_body;
+}
+
+struct PointerImageWord {
+    IR::Value base;
+    IR::Value selector;
+    u32 stride_bytes{};
+    u32 offset_dwords{};
+};
+
+std::optional<PointerImageWord> MatchPointerImageWord(IR::Value value) {
+    auto* read = MatchOpcode(value, IR::Opcode::ReadConst);
+    if (!read || read->Flags<SharpLocation>() != 0)
+        return {};
+    auto* base = MatchOpcode(read->Arg(0), IR::Opcode::CompositeConstructU32x2);
+    if (!base || !IsHostUniformSrtOffset(base->Arg(0)) || !IsHostUniformSrtOffset(base->Arg(1)))
+        return {};
+    const auto word = AnalyzeIndexedSharpWord(read->Arg(1));
+    if (!word.valid || !word.selector)
+        return {};
+    const auto* shift = static_cast<const IR::Inst*>(word.selector);
+    if (shift->GetOpcode() != IR::Opcode::ShiftRightLogical32 || shift->Arg(1) != IR::Value{2u})
+        return {};
+    auto* add = MatchOpcode(shift->Arg(0), IR::Opcode::IAdd32);
+    if (!add)
+        return {};
+    for (u32 side = 0; side < 2; ++side) {
+        const auto offset = add->Arg(side);
+        auto* mul = MatchOpcode(add->Arg(1 - side), IR::Opcode::IMul32);
+        if (!offset.IsImmediate() || offset.Type() != IR::Type::U32 || offset.U32() % 4 || !mul)
+            continue;
+        for (u32 part = 0; part < 2; ++part) {
+            const auto stride = mul->Arg(part);
+            const auto selector = mul->Arg(1 - part);
+            if (!stride.IsImmediate() || stride.Type() != IR::Type::U32 || stride.U32() == 0 ||
+                stride.U32() % 4 || !selector.TryInst())
+                continue;
+            const u64 dword_offset = u64(offset.U32() / 4) + word.addend;
+            if (dword_offset > std::numeric_limits<u32>::max() / 4)
+                continue;
+            return PointerImageWord{read->Arg(0), selector, stride.U32(), u32(dword_offset)};
+        }
+    }
+    return {};
+}
+
+SharpFetch<u32> FetchBound(IR::Value bound, const Info& info) {
+    if (!bound.IsImmediate()) {
+        const auto op = bound.Inst()->GetOpcode();
+        if (op != IR::Opcode::GetUserData && op != IR::Opcode::ReadConst &&
+            op != IR::Opcode::ReadConstBuffer) {
+            SharpFetch<u32> invalid{};
+            invalid.summary = SharpFetch<u32>::Summary::Invalid;
+            return invalid;
+        }
+    }
+    SharpReference source{};
+    source.num_dwords = 1;
+    source.dwords[0] = bound;
+    return ConstructSharpFetch<u32>(source, info);
+}
+
+u32 SamplerExpansionBudget(const Info& info, const ResourceDiscoveryList& resources) {
+    struct Key {
+        SharpFetch<AmdGpu::Sampler> fetch;
+        SharpFetch<AmdGpu::Buffer> table;
+        SharpFetchPostOp post_op{};
+        SharpLocation lod_offset{};
+        u32 stride{}, offset{};
+        bool depth{};
+        bool operator==(const Key&) const = default;
+    };
+    std::vector<Key> keys;
+    for (const auto& usage : resources) {
+        if (usage.user->GetOpcode() != IR::Opcode::ImageSampleRaw)
+            continue;
+        const auto& source = usage.sharps[1];
+        Key key{ConstructSharpFetch<AmdGpu::Sampler>(source, info), {}, source.post_op};
+        key.depth = usage.user->Flags<IR::TextureInstInfo>().is_depth;
+        if (source.post_op == SharpFetchPostOp::DisableAnisoIfSingleLod &&
+            !source.post_op_data.lod_prod.IsEmpty()) {
+            key.lod_offset = SharpLocationFromSource(source.post_op_data.lod_prod.Inst(), info, 3);
+        }
+        if (usage.has_indexed_sampler_table) {
+            key.table = ConstructSharpFetch<AmdGpu::Buffer>(usage.indexed_table_sharp, info);
+            key.stride = usage.indexed_record_stride_bytes;
+            key.offset = usage.indexed_sampler_offset_bytes;
+        }
+        if (std::ranges::find(keys, key) == keys.end())
+            keys.push_back(key);
+    }
+    // Each source can require separate integer and floating-point samplers.
+    return keys.size() * 2 < NUM_SAMPLERS ? NUM_SAMPLERS / 2 - u32(keys.size()) : 0;
+}
+
+} // namespace
+
+std::vector<IR::Value> ExpandBoundedPointerImages(IR::Program& program,
+                                                  const ResourceDiscoveryList& resources) {
+    std::vector<IR::Value> bounds;
+    std::optional<u32> sampler_budget;
+    u32 image_count = std::ranges::count_if(
+        resources, [](const auto& usage) { return IsImageInstruction(*usage.user); });
+    for (const auto& usage : resources) {
+        auto& sample = *usage.user;
+        if (sample.GetOpcode() != IR::Opcode::ImageSampleRaw ||
+            usage.sharps[0].post_op != SharpFetchPostOp::None ||
+            usage.sharps[1].post_op != SharpFetchPostOp::None)
+            continue;
+        const auto flags = sample.Flags<IR::TextureInstInfo>();
+        if (!flags.force_level0 || flags.has_derivatives || flags.has_lod || flags.has_bias ||
+            flags.has_lod_clamp || flags.is_gather)
+            continue;
+        auto* handle = MatchOpcode(sample.Arg(0), IR::Opcode::ImageHandle);
+        if (!handle)
+            continue;
+        std::array<IR::Inst*, 3> pieces{
+            MatchOpcode(handle->Arg(0), IR::Opcode::CompositeConstructU32x4),
+            MatchOpcode(handle->Arg(1), IR::Opcode::CompositeConstructU32x4),
+            MatchOpcode(sample.Arg(1), IR::Opcode::CompositeConstructU32x4)};
+        if (std::ranges::find(pieces, nullptr) != pieces.end())
+            continue;
+        std::array<PointerImageWord, 12> words{};
+        bool valid = true;
+        for (u32 i = 0; i < words.size(); ++i) {
+            const auto word = MatchPointerImageWord(pieces[i / 4]->Arg(i % 4));
+            if (!word) {
+                valid = false;
+                break;
+            }
+            words[i] = *word;
+            if (i != 0) {
+                valid &= word->selector == words[0].selector &&
+                         word->stride_bytes == words[0].stride_bytes &&
+                         word->base.Inst()->Arg(0) == words[0].base.Inst()->Arg(0) &&
+                         word->base.Inst()->Arg(1) == words[0].base.Inst()->Arg(1);
+            }
+        }
+        if (!valid)
+            continue;
+        for (u32 i = 1; i < 8; ++i)
+            valid &= words[i].offset_dwords == words[0].offset_dwords + i;
+        for (u32 i = 9; i < 12; ++i)
+            valid &= words[i].offset_dwords == words[8].offset_dwords + i - 8;
+        if (!valid)
+            continue;
+
+        IR::Value bound;
+        for (auto* guard : program.blocks) {
+            if (!guard->cfg_block || !guard->cfg_block->branch_false)
+                continue;
+            auto* body = guard->cfg_block->branch_false->ir_block;
+            auto* cmp = MatchBoundGuard(guard->branch_cond);
+            if (!cmp || cmp->Arg(0) != words[0].selector || body->ImmPredecessors().size() != 1 ||
+                body->ImmPredecessors()[0] != guard ||
+                !DominatesPointerSample(body, sample.GetParent()) ||
+                !IsHostUniformSrtOffset(cmp->Arg(1)))
+                continue;
+            bound = cmp->Arg(1);
+            break;
+        }
+        if (bound.IsEmpty())
+            continue;
+        u32 count{};
+        if (!FetchBound(bound, program.info)
+                 .FetchChecked(program.info.flattened_ud_buf.data(),
+                               program.info.flattened_ud_buf.size(), &count))
+            continue;
+        if (std::ranges::find(bounds, bound) == bounds.end()) {
+            if (bounds.size() == program.info.bounded_image_counts.size())
+                continue;
+            bounds.push_back(bound);
+        }
+        if (!sampler_budget)
+            sampler_budget = SamplerExpansionBudget(program.info, resources);
+        if (count == 0 || count > *sampler_budget || count > NUM_IMAGES ||
+            image_count + count - 1 > NUM_IMAGES)
+            continue;
+        for (const auto& word : words) {
+            valid &= u64(count - 1) * word.stride_bytes + u64(word.offset_dwords) * 4 <=
+                     std::numeric_limits<u32>::max() - 3u;
+        }
+        if (!valid)
+            continue;
+
+        auto& block = *sample.GetParent();
+        const auto pos = IR::Block::InstructionList::s_iterator_to(sample);
+        IR::IREmitter ir{block, pos};
+        IR::Value result =
+            ir.CompositeConstruct(ir.Imm32(0.0f), ir.Imm32(0.0f), ir.Imm32(0.0f), ir.Imm32(0.0f));
+        for (u32 index = 0; index < count; ++index) {
+            std::array<IR::Value, 12> loaded;
+            for (u32 i = 0; i < loaded.size(); ++i) {
+                loaded[i] =
+                    ir.ReadConst(words[i].base, ir.Imm32(index * (words[i].stride_bytes / 4) +
+                                                         words[i].offset_dwords));
+            }
+            const auto low = ir.CompositeConstruct(std::span{loaded}.first<4>());
+            const auto high = ir.CompositeConstruct(std::span{loaded}.subspan<4, 4>());
+            const auto sampler = ir.CompositeConstruct(std::span{loaded}.last<4>());
+            const auto image_handle = ir.ImageHandle(low, high);
+            auto* copy = &*block.PrependNewInst(pos, sample);
+            copy->SetArg(0, image_handle);
+            copy->SetArg(1, sampler);
+            const auto selected = ir.IEqual(IR::U32{words[0].selector}, ir.Imm32(index));
+            std::array<IR::Value, 4> components;
+            for (u32 component = 0; component < 4; ++component) {
+                components[component] =
+                    ir.Select(selected, ir.CompositeExtract(IR::Value{copy}, component),
+                              ir.CompositeExtract(result, component));
+            }
+            result = ir.CompositeConstruct(components);
+        }
+        sample.ReplaceUsesWithAndRemove(result);
+        *sampler_budget -= count;
+        image_count += count - 1;
+        LOG_INFO(Render_Recompiler,
+                 "BoundedPointerImage: shader={:#x} stage={} entries={} stride={} "
+                 "image_offset={} sampler_offset={} gpu_selector=YES guard_proven=YES",
+                 program.info.pgm_hash, program.info.hw_stage, count, words[0].stride_bytes,
+                 words[0].offset_dwords * 4, words[8].offset_dwords * 4);
+    }
+    return bounds;
+}
+
+void RecordBoundedImageCounts(Info& info, std::span<const IR::Value> bounds) {
+    ASSERT(bounds.size() <= info.bounded_image_counts.size());
+    info.bounded_image_count_count = bounds.size();
+    for (u32 i = 0; i < bounds.size(); ++i)
+        info.bounded_image_counts[i] = FetchBound(bounds[i], info);
 }
 
 // Read-only provenance for invalid, real guest SHARP descriptors.

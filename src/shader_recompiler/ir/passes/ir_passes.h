@@ -27,6 +27,9 @@ void ConstantPropagationPass(IR::BlockList& program);
 void FlattenExtendedUserdataPass(IR::Program& program);
 void ReadLaneEliminationPass(IR::Program& program);
 ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile);
+std::vector<IR::Value> ExpandBoundedPointerImages(IR::Program& program,
+                                                  const ResourceDiscoveryList& resources);
+void RecordBoundedImageCounts(Info& info, std::span<const IR::Value> bounds);
 void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& sharp_usages,
                           const Profile& profile);
 void CollectShaderInfoPass(IR::Program& program, const Profile& profile);

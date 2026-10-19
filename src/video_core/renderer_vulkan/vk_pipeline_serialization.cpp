@@ -15,7 +15,7 @@ namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
 // Trial schema revisions avoid reusing shader caches produced by other
 // experimental upstream branches that changed lowering with versions 10-12.
-static constexpr u32 ShaderBinaryVersion = 47u;
+static constexpr u32 ShaderBinaryVersion = 48u;
 static constexpr u32 ShaderMetaVersion = 23u;
 static constexpr u32 PipelineKeyVersion = 5u;
 } // namespace Serialization
@@ -494,6 +494,7 @@ void StageSpecialization::Serialize(Serialization::Archive& ar) const {
     spec.Write(fmasks);
     spec.Write(samplers);
     spec.Write(indexed_image_entries);
+    spec.Write(bounded_image_counts);
 }
 
 bool StageSpecialization::Deserialize(Serialization::Archive& ar) {
@@ -521,6 +522,7 @@ bool StageSpecialization::Deserialize(Serialization::Archive& ar) {
     spec.Read(fmasks);
     spec.Read(samplers);
     spec.Read(indexed_image_entries);
+    spec.Read(bounded_image_counts);
 
     return true;
 }

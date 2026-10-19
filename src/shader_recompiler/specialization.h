@@ -90,6 +90,7 @@ struct StageSpecialization {
     SmallVector<FMaskSpecialization, 8> fmasks;
     SmallVector<SamplerSpecialization, 16> samplers;
     SmallVector<u32, 16> indexed_image_entries;
+    SmallVector<u32, 4> bounded_image_counts;
     Backend::Bindings start{};
 
     StageSpecialization() = default;
@@ -114,6 +115,12 @@ struct StageSpecialization {
                           static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
                           witness.record_stride_bytes, witness.descriptor_offset_bytes,
                           profile_.max_guest_indexed_image_entries));
+        }
+        for (u32 i = 0; i < info_.bounded_image_count_count; ++i) {
+            u32 count{};
+            info_.bounded_image_counts[i].FetchChecked(
+                info_.flattened_ud_buf.data(), info_.flattened_ud_buf.size(), &count);
+            bounded_image_counts.push_back(count);
         }
         if (info_.sw_stage == SwStage::Vertex && Gcn::ParseFetchShader(info_, fetch_shader_data)) {
             // Specialize shader on VS input number types to follow spec.
@@ -212,6 +219,9 @@ struct StageSpecialization {
 
     bool operator==(const StageSpecialization& other) const {
         if (!Valid()) {
+            return false;
+        }
+        if (bounded_image_counts != other.bounded_image_counts) {
             return false;
         }
         if (indexed_image_entries != other.indexed_image_entries) {

@@ -108,6 +108,24 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
     Shader::IR::DumpProgram(program, info, "pre-res-discover.");
     auto resources = Shader::Optimization::ResourceDiscoverPass(program, profile);
     Shader::Optimization::FlattenExtendedUserdataPass(program);
+    const auto image_bounds = Shader::Optimization::ExpandBoundedPointerImages(program, resources);
+    if (!image_bounds.empty()) {
+        info.srt_info = {};
+        for (auto* block : program.blocks) {
+            for (auto& inst : block->Instructions()) {
+                if (inst.GetOpcode() == IR::Opcode::ReadConst) {
+                    inst.SetFlags(0u);
+                } else if (inst.GetOpcode() == IR::Opcode::ReadConstBuffer) {
+                    auto flags = inst.Flags<IR::BufferInstInfo>();
+                    flags.flatbuf_off_dw.Assign(0u);
+                    inst.SetFlags(flags);
+                }
+            }
+        }
+        resources = Shader::Optimization::ResourceDiscoverPass(program, profile);
+        Shader::Optimization::FlattenExtendedUserdataPass(program);
+    }
+    Shader::Optimization::RecordBoundedImageCounts(info, image_bounds);
     Shader::IR::DumpProgram(program, info, "pre-res-patch.");
     Shader::Optimization::ResourcePatchingPass(program.info, resources, profile);
     Shader::Optimization::LowerBufferFormatToRaw(program);

@@ -52,6 +52,8 @@ struct InfoPersistent {
     };
     std::array<IndexedImageTableSource, NUM_IMAGES> indexed_image_sources{};
     u32 indexed_image_source_count{};
+    std::array<SharpFetch<u32>, NUM_IMAGES> bounded_image_counts{};
+    u32 bounded_image_count_count{};
 
     u32 fetch_shader_sgpr_base{};
     u32 shared_memory_scratch_size{};
