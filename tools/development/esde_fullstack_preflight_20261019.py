@@ -464,10 +464,10 @@ def build_staged_source(report: dict, run: Path):
     smoke = command("timeout", "30", str(exe), "--help", cwd=run, check=False)
     if smoke.returncode:
         raise RuntimeError("Candidate CLI smoke failed: " + (smoke.stdout + smoke.stderr)[-1800:])
-    report["build"] = {"status": "PASS_COMPILED_NOT_GAMEPLAY_TESTED",
-                       "sha256": digest(exe),
-                       "binary": str(exe),
-                       "build_log": str(log)}
+    report["build"].update({"status": "PASS_COMPILED_NOT_GAMEPLAY_TESTED",
+                            "sha256": digest(exe),
+                            "binary": str(exe),
+                            "build_log": str(log)})
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
