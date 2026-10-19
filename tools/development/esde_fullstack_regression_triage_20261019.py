@@ -14,10 +14,12 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import shutil
 import subprocess
 import sys
 import tarfile
+import time
 
 ROOT = Path.home() / "projects/shadps4"
 ESDE = ROOT / "ESDE"
@@ -407,10 +409,217 @@ def capture_old_gow(report, tag):
             report["reference_result"] = {"observer_rc":rc}
     return rc
 
+
+def capture_old_got(report: dict, stamp: str):
+    """Use the known horse-visible Oct 17 binary, but only if archive proves its SHA.
+
+    This baseline predates --cpu-id-mode. Reusing the GoW observer's hardcoded
+    --cpu-id-mode builtin would be an invalid comparison.
+    """
+    got = ROOT / "GhostOfTsushima"
+    commit = "e9f470b359845a456139a865aa1d7b3001f0dbfd"
+    binary = (got / "tests/got-upstream-menu-main-20261017-cached/bin-backups" /
+              ("shadps4-got-graphics-and-hotplug-" + commit))
+    evidence = LOGS / "got-gow-shreg-table-20261017-205408.tar.gz"
+    game = Path("/mnt/roms-all/ps4-games/CUSA11456/eboot.bin")
+    result = {"binary": str(binary), "archive": str(evidence), "commit": commit}
+    report["ghost_reference"] = result
+    if not evidence.is_file() or evidence.is_symlink():
+        raise RuntimeError("HORSE_VISIBLE_OCT17_ARCHIVE_MISSING; no unverified binary fallback")
+    # The old runner wrote sha256sum of its saved executable to info/restore.txt.
+    # Inspect archived checksums, never execute archived shell programs.
+    proofs = set()
+    runner_pin = False
+    with tarfile.open(evidence, "r:gz") as archive:
+        for entry in archive:
+            if not entry.isfile() or entry.size > 4_000_000:
+                continue
+            name = Path(entry.name).name
+            if name not in ("restore.txt", "final.txt", "source-check.txt") and not name.endswith("worker.sh"):
+                continue
+            stream = archive.extractfile(entry)
+            if stream is None:
+                continue
+            body = stream.read().decode("utf-8", "replace")
+            if name.endswith("worker.sh") and commit in body:
+                runner_pin = True
+            for line in body.splitlines():
+                if binary.name in line:
+                    proofs.update(re.findall(r"\b[0-9a-f]{64}\b", line))
+    result["archived_sha256_proofs"] = sorted(proofs)
+    result["runner_commit_verified"] = runner_pin
+    result["backup_exists"] = binary.is_file() and not binary.is_symlink()
+    if not runner_pin:
+        raise RuntimeError("OCT17_ARCHIVED_GHOST_RUNNER_DOES_NOT_PIN_EXPECTED_COMMIT")
+    if not result["backup_exists"] or not os.access(binary, os.X_OK):
+        raise RuntimeError("OCT17_HORSE_VISIBLE_EXECUTABLE_NOT_SAVED_AT_EXPECTED_BACKUP_PATH")
+    actual = sha(binary)
+    result["actual_sha256"] = actual
+    if len(proofs) != 1 or actual not in proofs:
+        raise RuntimeError("OCT17_BACKUP_SHA_DOES_NOT_MATCH_ARCHIVED_EXECUTABLE_PROOF")
+    with binary.open("rb") as handle:
+        if handle.read(5) != b"\x7fELF\x02":
+            raise RuntimeError("OCT17_GHOST_BACKUP_IS_NOT_64BIT_ELF")
+    result["binary_archive_provenance"] = "PASS"
+    if not game.is_file() or game.is_symlink():
+        raise RuntimeError("GHOST_CUSA11456_EBOOT_MISSING")
+    if execute("pgrep", "-u", os.getuid(), "-x", "shadps4", check=False).returncode == 0:
+        raise RuntimeError("ANOTHER_EMULATOR_RUNNING; do not disturb")
+    # Safety based on the user's previous Ghost GPU hang/host-freeze logs.
+    candidates = []
+    for vendor in Path("/sys/class/drm").glob("card[0-9]*/device/vendor"):
+        try:
+            if vendor.read_text().strip() != "0x1002":
+                continue
+            d = vendor.parent
+            candidates.append((int((d/"mem_info_vram_total").read_text()),
+                               int((d/"mem_info_vram_used").read_text())))
+        except (OSError, ValueError):
+            continue
+    if not candidates:
+        raise RuntimeError("AMD_VRAM_TELEMETRY_UNAVAILABLE")
+    total,used = max(candidates, key=lambda pair:pair[0])
+    result["free_vram_gib"] = round((total-used)/1024**3,2)
+    if total-used < 8*1024**3:
+        raise RuntimeError("GHOST_REFERENCE_NEEDS_8_GIB_FREE_VRAM; OLLAMA_UNCHANGED")
+    if shutil.disk_usage(ESDE).free < 3*1024**3:
+        raise RuntimeError("GHOST_REFERENCE_NEEDS_3_GIB_FREE_DISK")
+    display = None
+    for d in dict.fromkeys([os.environ.get("DISPLAY"), ":0", ":1", ":2"]):
+        if d and execute("timeout","5","xdpyinfo","-display",d,check=False).returncode==0:
+            display=d
+            break
+    if not display:
+        raise RuntimeError("NO_WORKING_X11_DISPLAY")
+    # Reuse the old horse-visible run's profile; the source is never edited.
+    source = got/"play/np-init-affinity-main-20261015-195552/user"
+    if not source.is_dir() or source.is_symlink():
+        source = ESDE/"playtest-CUSA11456-20261019-185128/user"
+    if not source.is_dir() or source.is_symlink():
+        raise RuntimeError("NO_KNOWN_GHOST_USER_PROFILE_TO_COPY")
+    trial = ESDE/("got-horse-visible-reference-"+stamp)
+    trial.mkdir()
+    dest=trial/"user"
+    dest.mkdir()
+    count=bytes_total=0
+    excluded={"log","logs","screenshots","captures","dumps","download","tmp"}
+    for base, dirs, filenames in os.walk(source,followlinks=False):
+        base=Path(base)
+        dirs[:]=[name for name in dirs
+                 if not (base/name).is_symlink()
+                 and not (base==source and name.lower() in excluded)
+                 and name not in (".git",".cache")]
+        for filename in filenames:
+            old=base/filename
+            if not old.is_file() or old.is_symlink():
+                continue
+            count+=1
+            bytes_total+=old.stat().st_size
+            if count>100_000 or bytes_total>2*1024**3:
+                raise RuntimeError("COPIED_PROFILE_SIZE_LIMIT_2GIB_REACHED")
+            new=dest/old.relative_to(source)
+            new.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(old,new)
+    # Clear only cloned config's absolute guest HOME/firmware overrides.
+    cfg=dest/"config.json"
+    if cfg.is_file():
+        config=json.loads(cfg.read_text())
+        if not isinstance(config,dict) or not isinstance(config.get("General",{}),dict):
+            raise RuntimeError("INVALID_GHOST_CONFIG_IN_CLONE")
+        for key in ("home_dir","sys_modules_dir","font_dir","addon_install_dir"):
+            if key in config.get("General",{}):
+                if not isinstance(config["General"][key],str):
+                    raise RuntimeError("UNKNOWN_ABSOLUTE_GHOST_CONFIG_PATH_TYPE")
+                config["General"][key]=""
+        if isinstance(config.get("Input",{}),dict):
+            config.setdefault("Input",{})["background_controller_input"]=True
+        cfg.write_text(json.dumps(config,ensure_ascii=False,indent=2)+"\n")
+    result["isolated_profile"]={"source":str(source),"copy":str(dest),
+                                 "files":count,"size_bytes":bytes_total}
+    env=os.environ.copy()
+    env["HOME"]=str(trial)
+    env["DISPLAY"]=display
+    env.setdefault("XDG_RUNTIME_DIR",f"/run/user/{os.getuid()}")
+    env.setdefault("DBUS_SESSION_BUS_ADDRESS",f"unix:path=/run/user/{os.getuid()}/bus")
+    env.update({"SHADPS4_GUEST_TSHARP_FEEDBACK":"1",
+                "SHADPS4_GUEST_TSHARP_CENSUS":"1",
+                "SHADPS4_RENDER_AUDIT":"0",
+                "SHADPS4_RESOURCE_AUDIT":"1",
+                "SHADPS4_IMAGE_PHI_SPLIT_AUDIT":"1",
+                "SHADPS4_INDEXED_IMAGE_AUDIT":"1"})
+    for name in ("VK_DRIVER_FILES","VK_ICD_FILENAMES","VK_INSTANCE_LAYERS","RADV_DEBUG"):
+        env.pop(name,None)
+    # October17 Ghost lacks --cpu-id-mode. Use its original launch form.
+    command=[str(binary),"--game",str(game),"--fullscreen","true","--show-fps"]
+    result["launch_command"]=command
+    out=LOGS/("esde-reference-got-"+stamp)
+    out.mkdir(exist_ok=False)
+    (out/"launch-command.json").write_text(json.dumps(command,indent=2)+"\n")
+    screenshots=out/"screenshots"
+    screenshots.mkdir()
+    recorded=set()
+    started=time.monotonic()
+    print("GOT_REFERENCE_BINARY_SHA256="+actual,flush=True)
+    print("GOT_REFERENCE_SOURCE=e9f470b_PARTIAL_WORLD",flush=True)
+    print("MANUAL_CONTROLLER=ENTER_WORLD_AND_CHECK_HORSE",flush=True)
+    with (out/"full-console.log").open("wb",buffering=0) as log:
+        process=subprocess.Popen(command,cwd=trial,env=env,stdin=subprocess.DEVNULL,
+                                 stdout=log,stderr=subprocess.STDOUT,
+                                 start_new_session=True)
+        result["pid"]=process.pid
+        for elapsed in range(135):
+            if process.poll() is not None:
+                break
+            if elapsed in (30,60,90,120) and elapsed not in recorded:
+                recorded.add(elapsed)
+                if shutil.which("xdotool") and shutil.which("import"):
+                    windows=execute("xdotool","search","--onlyvisible","--pid",
+                                    process.pid,check=False)
+                    ids=[x for x in windows.stdout.splitlines() if x.isdigit()]
+                    if ids:
+                        execute("timeout","8","import","-display",display,
+                                "-window",ids[-1],screenshots/(str(elapsed)+".png"),
+                                check=False)
+            # Stop only THIS exact spawned process group if the GPU reports
+            # device loss. Never signal other emulators, Sunshine, or Ollama.
+            if elapsed%3==0:
+                try:
+                    with (out/"full-console.log").open("rb") as current:
+                        current.seek(0,2)
+                        current.seek(max(0,current.tell()-20000))
+                        tail=current.read().lower()
+                    if any(marker in tail for marker in
+                           (b"gpuvm fault detected",b"vk_error_device_lost",
+                            b"gpu hang detected",b"amdgpu ring timeout")):
+                        result["gpu_guard"]="DEVICE_LOST_TERMINATE_OWN_TEST_PROCESS"
+                        os.killpg(process.pid,signal.SIGTERM)
+                        break
+                except (FileNotFoundError,ProcessLookupError):
+                    break
+            time.sleep(1)
+    result["process_alive_after_capture"]=process.poll() is None
+    result["game_exit"]=process.poll()
+    result["capture_seconds"]=round(time.monotonic()-started,2)
+    result["screenshots"]=sorted(p.name for p in screenshots.glob("*.png"))
+    result["visual_state"]="MANUAL_USER_ASSESSMENT_REQUIRED"
+    archive=LOGS/("esde-reference-got-"+stamp+".tar.gz")
+    with tarfile.open(archive,"w:gz") as tf:
+        for member in ("full-console.log","launch-command.json"):
+            tf.add(out/member,arcname=member)
+        for shot in screenshots.glob("*.png"):
+            tf.add(shot,arcname="screenshots/"+shot.name)
+    print("UPLOAD_GOT_REFERENCE="+str(archive),flush=True)
+    if result["process_alive_after_capture"]:
+        print("REFERENCE_PROCESS_STILL_RUNNING_USE_HOME_PS_TO_EXIT",flush=True)
+    print("GOT_MANUAL_VISUAL_CHECK=HORSE_WORLD_VS_BLACK_SCREEN",flush=True)
+    return 0
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--reference-gow", action="store_true",
                         help="Run SHA-pinned proven GoW ELF using the failed build's cloned profile")
+    parser.add_argument("--reference-got", action="store_true",
+                        help="Run Oct17 horse-visible Ghost ELF only if original archive verifies its SHA")
     args = parser.parse_args()
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     LOGS.mkdir(parents=True, exist_ok=True)
@@ -420,27 +629,30 @@ def main():
               "missing_proven_renderer_sha256":RENDERER_SHA}
     result = 0
     try:
-        report["goW_proven_gpu_contract_parity"] = check_missing_proven_gpu_contracts()
-        recovery = reconstruct_renderer_from_proven_sources(stamp)
-        report["goW_exact_fullgfx_renderer_recovery"] = recovery
-        if recovery.get("status") == "RECONSTRUCTED_VERIFIED_GO_W_RENDERER":
-            # The SHA-pinned historical/restorer replay is stronger proof than
-            # hunting uncommitted/overwritten local worktrees. No slow scan.
-            report["renderer_search"] = {
-                "local": [recovery.get("recovery_dir","") +
-                          "/reconstructed-fullgfx-renderer.cpp"],
-                "status": "EXACT_CHECKSUM_RECONSTRUCTED_NO_HISTORY_SCAN",
-                "git": [], "git_stats": [],
-            }
+        if args.reference_got:
+            result=capture_old_got(report,stamp)
         else:
-            found,status = renderer_from_workspaces()
-            report["renderer_search"] = {"local":found, "status":status}
-            found_git,stats = renderer_from_git_history()
-            report["renderer_search"]["git"] = found_git
-            report["renderer_search"]["git_stats"] = stats
-        report["ghost_merge_preview"] = ghost_merge_preview()
-        if args.reference_gow:
-            result = capture_old_gow(report, stamp)
+            report["goW_proven_gpu_contract_parity"] = check_missing_proven_gpu_contracts()
+            recovery = reconstruct_renderer_from_proven_sources(stamp)
+            report["goW_exact_fullgfx_renderer_recovery"] = recovery
+            if recovery.get("status") == "RECONSTRUCTED_VERIFIED_GO_W_RENDERER":
+                # The SHA-pinned historical/restorer replay is stronger proof than
+                # hunting uncommitted/overwritten local worktrees. No slow scan.
+                report["renderer_search"] = {
+                    "local": [recovery.get("recovery_dir","") +
+                              "/reconstructed-fullgfx-renderer.cpp"],
+                    "status": "EXACT_CHECKSUM_RECONSTRUCTED_NO_HISTORY_SCAN",
+                    "git": [], "git_stats": [],
+                }
+            else:
+                found,status = renderer_from_workspaces()
+                report["renderer_search"] = {"local":found, "status":status}
+                found_git,stats = renderer_from_git_history()
+                report["renderer_search"]["git"] = found_git
+                report["renderer_search"]["git_stats"] = stats
+            report["ghost_merge_preview"] = ghost_merge_preview()
+            if args.reference_gow:
+                result = capture_old_gow(report, stamp)
     except Exception as e:
         result = 2
         report["error"] = str(e)
