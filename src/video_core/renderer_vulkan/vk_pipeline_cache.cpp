@@ -735,7 +735,7 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
         }
         if (PermutationTraceEnabled() && perm_idx > 0) {
             const u32 seen = permutation_trace_reuse.fetch_add(1, std::memory_order_relaxed);
-            if (seen < 40) {
+            if (seen < 40 || (seen >= 40 && seen % 512 == 0)) {
                 LOG_WARNING(Render_Vulkan,
                             "PERM_TRACE_REUSED shader={:#018x} stage={} permutation={} "
                             "buffers={} images={} samplers={} slot_delta={} sampled={}",
@@ -758,7 +758,7 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
     RegisterShaderMeta(*new_info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
     if (PermutationTraceEnabled()) {
         const u32 seen = permutation_trace_new.fetch_add(1, std::memory_order_relaxed);
-        if (seen < 160) {
+        if (seen < 160 || (seen >= 160 && seen % 128 == 0)) {
             const auto& first = program->info;
             const bool different_counts = first.buffers.size() != new_info->buffers.size() ||
                                           first.images.size() != new_info->images.size() ||
