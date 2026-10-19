@@ -183,6 +183,25 @@ def stage_preflight(report: dict, run: Path):
     command("git", "-C", str(staging), "config", "user.name", "ES-DE Source Audit")
     command("git", "-C", str(staging), "config", "user.email",
             "esde-fullstack@users.noreply.github.com")
+    # Preserve the previous unified front-end and runtime stack, but advance
+    # the isolated candidate to the EXACT Oct 19 official upstream main first.
+    # An upstream conflict is surfaced as a complete path list; never choose
+    # "ours" or "theirs" wholesale.
+    git(staging, "-c", "http.version=HTTP/1.1", "fetch", "--no-tags",
+        "https://github.com/shadps4-emu/shadPS4.git", UPSTREAM_SHA)
+    upstream_head = git(staging, "rev-parse", "FETCH_HEAD").stdout.strip()
+    if upstream_head != UPSTREAM_SHA:
+        raise RuntimeError("Official upstream pin mismatch, refusing unexpected source")
+    baseline = git(staging, "merge", "--no-ff", "--no-edit", UPSTREAM_SHA, check=False)
+    if baseline.returncode:
+        conflicts = git(staging, "diff", "--name-only", "--diff-filter=U")
+        report["stage"] = {**report.get("stage", {}),
+                           "status": "LATEST_UPSTREAM_MERGE_CONFLICT_NO_BUILD",
+                           "upstream_conflicts": conflicts.stdout.splitlines(),
+                           "conflict_diff": git(staging, "diff", "--cc", check=False).stdout[:300_000],
+                           "upstream_output": (baseline.stdout + baseline.stderr)[-8000:],
+                           "path": str(staging)}
+        return
     # The Oct 16 protected working tree is OLDER than the Oct 17
     # full-graphics UFFD checkpoint. Merging its HEAD would silently omit
     # subsequent patches. Import the exact pinned Oct 17 GoW revision.
