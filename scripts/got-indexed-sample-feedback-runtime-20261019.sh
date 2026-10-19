@@ -7,8 +7,8 @@ GOT="$ROOT/GhostOfTsushima"
 WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
-PIN="ad7320c7111d466c7a44a68d544bcddc3d3e855a"
-SHADER_COLLECTOR_PIN="6223d8df521183f80f08762674a9faf8090f5088"
+PIN="9c10c2fab44dc718962910e5fd318cc9f730d979"
+SHADER_COLLECTOR_PIN="9c10c2fab44dc718962910e5fd318cc9f730d979"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$PIN"
 HOST_REPORT="${GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT:-$LOGS/got-indexed-sample-feedback-host-not-built.tar.gz}"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
@@ -28,7 +28,7 @@ TEST_PGID=""
 BIN_SHA=""
 GAME_LAUNCHED=NO
 START_ISO="$(date -Is)"
-mkdir -p "$RUN/info" "$RUN/screenshots" "$RUN/profile/user/shader/got-menu-probes" "$RUN/remaining-shaders" "$LOGS"
+mkdir -p "$RUN/info" "$RUN/screenshots" "$RUN/profile/user/shader/got-menu-probes" "$RUN/profile/user/shader/frame-probes" "$RUN/remaining-shaders" "$LOGS"
 touch "$RUN/info/console.log" "$RUN/game.log"
 exec > >(tee -a "$RUN/info/console.log") 2>&1
 
@@ -958,7 +958,10 @@ PYSTAGEPIXELS
     echo "INDEXED_FEEDBACK_COMPLETED_ROWS=$(grep -ac 'IndexedImageFeedback:.*timeline_complete=YES' "$RUN/game.log" || true)"
     echo "INDEXED_TSHARP_BINDS=$(grep -ac 'RealIndexedTSharpBound:' "$RUN/game.log" || true)"
     echo "MENU_INVALID_IMAGE_EVENTS=$(grep -ac 'InvalidTSharpSource: shader=0x7eaf40ad' "$RUN/game.log" || true)"
-    echo "GPU_QUERY_RESULTS=$(grep -ac 'GotSceneGpuInvocations:' "$RUN/game.log" || true)"
+    echo "FRAME_PROBE_FRAMES=$(grep -ac 'FrameProbeEnd:' "$RUN/game.log" || true)"
+    echo "FRAME_PROBE_QUERY_RESULTS=$(grep -ac 'FrameProbeQuery:' "$RUN/game.log" || true)"
+    echo "FRAME_PROBE_PASS_IMAGES=$(grep -ac 'FrameProbeImage: result=SAVED' "$RUN/game.log" || true)"
+    echo "GPU_QUERY_RESULTS=$(grep -aEc 'GotSceneGpuInvocations:|FrameProbeQuery:' "$RUN/game.log" || true)"
     echo "ACTIVE_MENU_LATE_QUERIES=$(grep -ac 'GotSceneGpuInvocations:.*high_volume=true' "$RUN/game.log" || true)"
     echo "GPU_INDIRECT_ARG_READBACKS=$(grep -ac 'GotSceneIndirectGpuArgs:.*GPU_READBACK_PASS' "$RUN/game.log" || true)"
     echo "VERIFIED_LDS_PHI_AND_SYNCHRONIZATION_FIXES=RETAINED"
@@ -971,7 +974,12 @@ PYSTAGEPIXELS
     echo "EXIT=$rc"
     echo "SSH_SESSION=OPEN"
   } > "$RUN/info/final.txt"
-  tar -czf "$REPORT" -C "$RUN" info screenshots game.log remaining-shaders profile/user/shader/got-menu-probes 2>/dev/null || {
+  if git -C "$WORK/source" show "$PIN:scripts/got-analyze-frame-probes-20261019.py" \
+      > "$RUN/info/analyze-frame-probes.py"; then
+    python3 "$RUN/info/analyze-frame-probes.py" "$RUN" \
+      > "$RUN/info/frame-analysis.log" 2>&1 || echo "FRAME_ANALYSIS_FAILED; raw evidence retained"
+  fi
+  tar -czf "$REPORT" -C "$RUN" info screenshots game.log remaining-shaders profile/user/shader/got-menu-probes profile/user/shader/frame-probes 2>/dev/null || {
     echo "ARCHIVE_ERROR keep=$RUN"; exit 3;
   }
   echo "STATUS=$STATUS GAME_EXIT=$GAME_EXIT EXIT=$rc"
@@ -1143,7 +1151,7 @@ PY
 mkdir -p "$RUN/profile/user/shader/got-menu-probes"
 STATUS=GAME_RUNNING
 echo "GAME_START duration=${SECONDS_TO_RUN}s DISPLAY=$DISPLAY_OK"
-echo "ENTER_GAMEPLAY_WITH_YOUR_CONTROLLER; capture stops automatically after five minutes"
+echo "STAY_AT_MENU_UNTIL_150_SECONDS, then enter gameplay; capture stops after five minutes"
 (
   cd "$RUN/profile"
   test -d "$RUN/profile/user"
@@ -1163,6 +1171,7 @@ echo "ENTER_GAMEPLAY_WITH_YOUR_CONTROLLER; capture stops automatically after fiv
   export SHADPS4_MENU_PASS_TRACE=1
   export SHADPS4_GOT_MENU_STAGE_PIXELS=1
   export SHADPS4_GOT_SCENE_GPU_QUERY=1
+  export SHADPS4_FRAME_PROBE=1
   export SHADPS4_INDIRECT_WAR_AUDIT=0
   # Keep the previous indirect-producer and GDS/DMA experiments disabled.
   export SHADPS4_GOT_INDIRECT_PRODUCERS=0
