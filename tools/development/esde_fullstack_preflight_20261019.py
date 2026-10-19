@@ -295,19 +295,24 @@ def stage_preflight(report: dict, run: Path):
     # from EXACT blob-hash matches. Their provenance is stronger than a
     # mutable branch name. Unknown/missing blobs stop before compiling.
     report["stage"]["pinned_gow_blob_ports"] = {}
+    discovered = {}
+    missing = []
     for rel, expected_blob in GOW_PROVEN_BLOBS.items():
-        selected_root = None
         for root in (GOW_HOTPATH_SOURCE, GOW_SOURCE):
             candidate = root / rel
             if candidate.is_file() and not candidate.is_symlink():
                 h = git(root, "hash-object", str(candidate), check=False)
                 if h.returncode == 0 and h.stdout.strip() == expected_blob:
-                    selected_root = root
+                    discovered[rel] = root
                     break
-        if selected_root is None:
-            report["stage"]["status"] = "GOW_PINNED_SOURCE_BLOB_MISSING_NO_BUILD"
-            report["stage"]["missing_proof_blob"] = rel
-            return
+        if rel not in discovered:
+            missing.append({"file": rel, "expected_git_blob": expected_blob})
+    if missing:
+        report["stage"]["status"] = "GOW_PINNED_SOURCE_BLOBS_MISSING_NO_BUILD"
+        report["stage"]["all_missing_proof_blobs"] = missing
+        return
+    source_conflicts = {}
+    for rel, selected_root in discovered.items():
         proven = selected_root / rel
         base = git(selected_root, "show", "HEAD:" + rel, check=False)
         current_file = staging / rel
@@ -329,13 +334,16 @@ def stage_preflight(report: dict, run: Path):
         outcome = command("git", "merge-file", "-p", str(ours_path),
                           str(base_path), str(new_path), check=False)
         if outcome.returncode or "<<<<<<<" in outcome.stdout:
-            report["stage"]["status"] = "GOW_PROVEN_SOURCE_THREEWAY_CONFLICT_NO_BUILD"
-            report["stage"]["pinned_conflict_file"] = rel
-            report["stage"]["pinned_conflict_excerpt"] = outcome.stdout[-100_000:]
-            return
+            source_conflicts[rel] = outcome.stdout[-100_000:]
+            report["stage"]["pinned_gow_blob_ports"][rel] = "THREEWAY_CONFLICT_NO_OVERWRITE"
+            continue
         current_file.write_text(outcome.stdout)
         git(staging, "add", "--", rel)
         report["stage"]["pinned_gow_blob_ports"][rel] = "PORTED_EXACT_PROVEN_SOURCE_DELTA"
+    if source_conflicts:
+        report["stage"]["status"] = "GOW_PROVEN_SOURCE_THREEWAY_CONFLICTS_NO_BUILD"
+        report["stage"]["all_pinned_source_conflicts"] = source_conflicts
+        return
 
     # Port exactly the previously source-hash-proven v51 stencil correction.
     # This is a three-way source merge and may conflict with the newer GoW
