@@ -19,6 +19,7 @@
 #include "core/emulator_settings.h"
 #include "core/libraries/audio/audioout.h"
 #include "core/libraries/audio/audioout_backend.h"
+#include "core/libraries/audio/audioout_clock_policy.h"
 #include "core/libraries/audio/audioout_sync.h"
 #include "core/libraries/audio/audioout_error.h"
 #include "core/libraries/kernel/time.h"
@@ -244,6 +245,16 @@ static void AudioOutputThread(std::shared_ptr<PortOut> port, const std::stop_tok
     const char* probe_env = std::getenv("SHADPS4_AUDIO_TIMING_PROBE");
     const bool probe_enabled =
         probe_env != nullptr && probe_env[0] == '1' && probe_env[1] == '\0';
+    // Experimental and OFF by default. The physical output device clock
+    // advances even when a game's Audio3D PCM producer misses its deadline.
+    // This opt-in models that clock without creating silent PCM, altering
+    // guest wakeups, or touching any non-Audio3D audio output ports.
+    static const bool idle_clock_opt_in = [] {
+        const char* v = std::getenv("SHADPS4_GOW_AUDIO_IDLE_CLOCK");
+        return v && v[0] == '1' && v[1] == '\0';
+    }();
+    const bool model_audio3d_silent_clock =
+        idle_clock_opt_in && port->type == OrbisAudioOutPort::Audio3d;
     const u64 expected_period_us =
         (1000000ULL * port->buffer_frames + port->sample_rate / 2) / port->sample_rate;
     u64 last_probe_report_us = Kernel::sceKernelGetProcessTime();
@@ -261,6 +272,7 @@ static void AudioOutputThread(std::shared_ptr<PortOut> port, const std::stop_tok
                 break;
             }
 
+            const bool had_guest_pcm = port->output_ready;
             if (port->output_ready) {
                 const u64 begin_us =
                     probe_enabled ? Kernel::sceKernelGetProcessTime() : 0;
@@ -275,10 +287,13 @@ static void AudioOutputThread(std::shared_ptr<PortOut> port, const std::stop_tok
                     }
                 }
                 port->output_ready = false;
-                port->last_output_time =
-                    Kernel::sceKernelGetProcessTime(); // moved from sceAudioOutOutput TOOD recheck
             } else if (probe_enabled) {
                 ++missing_buffers;
+            }
+            if (had_guest_pcm || model_audio3d_silent_clock) {
+                port->last_output_time = Detail::OutputTimestampAtTick(
+                    port->last_output_time, Kernel::sceKernelGetProcessTime(),
+                    had_guest_pcm, model_audio3d_silent_clock);
             }
         }
 
@@ -567,9 +582,34 @@ s32 PS4_SYSV_ABI sceAudioOutGetLastOutputTime(s32 handle, u64* output_time) {
         return ORBIS_AUDIO_OUT_ERROR_NOT_OPENED;
     }
 
-    std::unique_lock lock{port->mutex};
-    *output_time = port->last_output_time;
-
+    u64 observed_output_time{};
+    bool observed_pcm_ready{};
+    {
+        std::unique_lock lock{port->mutex};
+        observed_output_time = port->last_output_time;
+        observed_pcm_ready = port->output_ready;
+        *output_time = observed_output_time;
+    }
+    // Opt-in TRACE ONLY: establish whether GoW actually queries this clock.
+    // If the game never calls this function, idle-clock advancement cannot
+    // explain its audio starvation and the candidate must be rejected.
+    static const bool trace_clock_reads = [] {
+        const char* v = std::getenv("SHADPS4_GOW_AUDIO_CLOCK_TRACE");
+        return v && v[0] == '1' && v[1] == '\0';
+    }();
+    if (trace_clock_reads && port->type == OrbisAudioOutPort::Audio3d) {
+        static std::atomic<u64> total_reads{0};
+        const u64 calls = total_reads.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (calls == 1 || (calls & 255) == 0) {
+            const u64 now = Kernel::sceKernelGetProcessTime();
+            const u64 age = now >= observed_output_time ? now - observed_output_time : 0;
+            LOG_WARNING(Lib_AudioOut,
+                        "GOW_AUDIO_CLOCK_QUERY calls={} port={} last_output_us={} "
+                        "age_us={} buffer_ready={}",
+                        calls, static_cast<int>(port->type),
+                        observed_output_time, age, observed_pcm_ready);
+        }
+    }
     return ORBIS_OK;
 }
 
