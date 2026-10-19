@@ -496,6 +496,48 @@ def apply_changes(proposals, report, plan_dir):
                 dst.unlink()
         raise
 
+def focused_native_regressions(report, plan_dir):
+    """Compile actual source-aware C++ tests before the full emulator relink."""
+    cpp=shutil.which("g++") or shutil.which("clang++") or shutil.which("c++")
+    if not cpp:
+        raise RuntimeError("Native C++ compiler unavailable for regression tests")
+    tests = (
+        "tests/pm4_shader_register_window_test.cpp",
+        "tests/shader_recompiler/test_guest_tsharp_array.cpp",
+        "tests/shader_recompiler/test_indexed_image_selector.cpp",
+        "tests/shader_recompiler/test_strided_material_specialization.cpp",
+        "tests/shader_recompiler/test_srt_proven_identity.cpp",
+    )
+    dirs = [SOURCE/"src",SOURCE/"externals/magic_enum/include",
+            SOURCE/"externals/fmt/include",BUILD/"_deps/fmt-src/include"]
+    opts=[f"-I{d}" for d in dirs if d.is_dir()]
+    report["focused_native_regressions"]={}
+    root=plan_dir/"host-tests"
+    root.mkdir(exist_ok=True)
+    for i,rel in enumerate(tests):
+        blob=git_data(GOT_LATE,rel)
+        if blob is None:
+            raise RuntimeError("Pinned native regression source missing: "+rel)
+        source=root/("test-"+str(i)+".cpp")
+        exe=root/("test-"+str(i))
+        source.write_bytes(blob)
+        argv=[cpp,"-std=c++23","-O2","-Wall","-Wextra","-Werror",
+              *opts,source,"-o",exe]
+        built=run(*argv,check=False,timeout=180)
+        (root/("test-"+str(i)+".compile.log")).write_bytes(
+            built.stdout+built.stderr)
+        if built.returncode:
+            report["focused_native_regressions"][rel]="COMPILE_FAILED"
+            raise RuntimeError("C++ regression compile failed: "+rel)
+        result=run(exe,check=False,timeout=90)
+        (root/("test-"+str(i)+".run.log")).write_bytes(
+            result.stdout+result.stderr)
+        if result.returncode:
+            report["focused_native_regressions"][rel]="BEHAVIOR_FAILED"
+            raise RuntimeError("C++ regression behavior failed: "+rel)
+        report["focused_native_regressions"][rel]="PASS"
+    print("GENERIC_SHADER_GPU_NATIVE_REGRESSIONS=PASS count="+str(len(tests)))
+
 def build(report, plan_dir):
     # An isolated CMake build only; never install it or launch any game.
     if run("pgrep","-u",str(os.getuid()),"-x","shadps4",
@@ -610,6 +652,7 @@ def main():
             elif args.build:
                 apply_changes(proposals,report,workdir)
                 report["status"]="SOURCE_APPLIED_NOT_YET_RUNTIME_TESTED"
+                focused_native_regressions(report,workdir)
                 build(report,workdir)
                 report["status"]="CANDIDATE_NATIVE_BUILD_PASS_GAMEPLAY_PENDING"
             else:
