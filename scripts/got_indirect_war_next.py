@@ -232,6 +232,8 @@ def main() -> int:
                                          "GPU_INDIRECT_ARG_READBACKS",
                                          "GPU_SCENE_READBACK_SAVED")))
                 print("BASELINE_SCREENSHOT_FILES=" + str(len(previous_images)))
+                print_head("BEFORE SCREENSHOT PIXELS", "Sampling late screenshot, if available")
+                snapshot_image(prior_path, previous_images)
             else:
                 print("PREVIOUS_RUNTIME_ARCHIVE=NOT_FOUND_NO_COMPARISON_CLAIM")
 
@@ -251,6 +253,7 @@ def main() -> int:
                 }[name]
                 print_head(name, "\n".join(metric_lines(r.get(path, ""), *keys,
                                                        limit=24)))
+            print_head("AFTER SCREENSHOT PIXELS", "Sampling late screenshot, if available")
             snapshot_image(current_path, images)
             classification = classifications(r)
             mode, reason = choose_next_mode(classification)
@@ -266,7 +269,9 @@ def main() -> int:
                     and rf.get("OLLAMA_RESTORE") != "FAILED"
                     and num(rf, "GPUVM_FAULT_EVENTS") == 0
                     and num(rf, "GPU_INDIRECT_ARG_READBACKS") > 0
-                    and num(rf, "VULKAN_INDIRECT_READ_TRACKED") > 0)
+                    and num(rf, "VULKAN_INDIRECT_READ_TRACKED") > 0
+                    and num(rf, "ACTIVE_MENU_8192_CHECKPOINTS") > 0
+                    and num(rf, "GPU_QUERY_RESULTS") > 0)
             if not args.run_safe_followup:
                 print("FOLLOWUP_LAUNCH=NOT_REQUESTED_OFFLINE_ONLY")
             elif not safe or not mode:
