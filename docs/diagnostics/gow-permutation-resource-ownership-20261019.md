@@ -61,6 +61,30 @@ instrumented scene with
 must be observed *within the failing scene* and compared with the original
 protected executable before claiming visual improvement.
 
+
+## 20:34 CEST: full-link candidate staging update
+
+Uploaded `gow-permutation-scene-resume-20261019-203432.tar.gz` confirms that
+all 45 copied submodule Git directories were initialized successfully and
+their pinned references were readable. The FFmpeg prebuilt
+`ffmpeg-94dde08.zip` was reused with matching SHA-256. CMake then failed
+because **tracked files were physically absent from the copied submodules**:
+SDL3 `include/build_config/SDL_build_config.h.cmake` and
+`include/build_config/SDL_revision.h.cmake`, and Zstd
+`build/cmake/CMakeLists.txt`. The `libzstd_static` missing ALIAS is a
+secondary consequence. No full build or game run completed; the protected
+shadPS4 binary SHA remained unchanged.
+
+The next script,
+`scripts/gow_permutation_scene_tracked_restore_20261019.py`, checks every
+staged Git submodule against its pinned HEAD tree and restores **only**
+missing tracked paths with Git object data available through read-only
+`objects/info/alternates`. It fails closed for absent blobs, changed pins,
+insufficient disk, or unexpected CMake source, and then resumes the same
+isolated CMake/Ninja build. This does **not** use dummy generated headers,
+switch main branches, or alter the original dependencies.
+
+
 ## Required further gates (no loop)
 
 1. **Native behavioral replay: PASS** — both original and patched C++ compile; baseline demonstrably returns mismatched resource metadata; patched variation and cache reuse return correctly matching layout and slots.
