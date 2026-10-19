@@ -23,6 +23,9 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from esde_general_semantic_resolver_20261019 import (
+    resolve_reviewed, preserve_verified_srt_header,
+)
 
 ROOT = Path.home() / "projects/shadps4"
 ESDE = ROOT / "ESDE"
@@ -154,6 +157,7 @@ VULKAN_FILES = {
     "vk_instance.cpp", "vk_instance.h", "vk_runtime.cpp",
     "vk_presenter.cpp", "vk_presenter.h",
     "resource_audit_hash_filter.h", "vk_buffer_hazard_rules.h",
+    "minmax_alpha_scale.h", "minmax_src_alpha_one.h",
 }
 UNSAFE_CPP_MARKERS = re.compile(
     r"(?:\bCUSA\d{5}\b|\bSHADPS4_(?:GOW|GOT|GHOST)_[A-Z0-9_]*\b|"
@@ -450,6 +454,22 @@ def collect_change_plan(plan_dir, report):
         tmp = plan_dir / ("merge" + str(i))
         tmp.mkdir()
         candidate, error = merged_bytes(old, ancestor, newer, COMMON, rel, tmp)
+        if error == "SOURCE_OVERLAP_NEEDS_SEMANTIC_REVIEW" and candidate is not None:
+            # Exact-Git-preview, 22:21 archive-proven general C++ port.
+            reviewed = resolve_reviewed(rel, candidate)
+            if reviewed is not None:
+                candidate, error = reviewed, None
+                report.setdefault("semantically_resolved",{})[rel] = (
+                    "REVIEWED_CONFLICT_SHA_AND_ENGINE_INVARIANTS_PASS"
+                )
+        elif error == "INDEPENDENT_ADDED_HEADER_CONFLICT":
+            if old is not None and newer is not None:
+                reviewed = preserve_verified_srt_header(rel, old, newer)
+                if reviewed is not None:
+                    candidate, error = reviewed, None
+                    report.setdefault("semantically_resolved",{})[rel] = (
+                        "KEEP_PREVIOUS_NATIVE_COMPILED_GOW_SRT_HEADER"
+                    )
         if error:
             conflicts[rel] = error
             if candidate and b"<<<<<<<" in candidate:
@@ -528,7 +548,8 @@ def collect_change_plan(plan_dir, report):
     report["proposals_count"] = len(proposals)
     report["all_conflicts"] = conflicts
     report["selected_compiler_paths"] = len(selected)
-    report["merge_strategy"] = "GIT_3WAY_SEMANTIC_CONFLICTS_FAIL_CLOSED"
+    report["merge_strategy"] = "GIT_3WAY_PINNED_REVIEWED_COMBINATIONS_FAIL_CLOSED"
+    report["source_merges_reviewed"] = len(report.get("semantically_resolved", {}))
     report["source_merged_no_title_switches"] = not any(
         str(reason).startswith("GAME_OR_SHADER_SPECIFIC") for reason in conflicts.values())
     for rel,blob in proposals.items():
