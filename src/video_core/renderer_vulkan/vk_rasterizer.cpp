@@ -2,36 +2,39 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <bit>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#include <type_traits>
-#include <bit>
 
 #include "common/debug.h"
+#include "common/path_util.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
-#include "shader_recompiler/resource.h"
 #include "shader_recompiler/guest_tsharp_array.h"
 #include "shader_recompiler/indexed_image_feedback.h"
+#include "shader_recompiler/resource.h"
 #include "shader_recompiler/runtime_info.h"
+#include "shader_recompiler/targeted_shader_dump.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
-#include "video_core/renderer_vulkan/vk_instance.h"
-#include "video_core/renderer_vulkan/vk_got_menu_pass_trace.h"
 #include "video_core/renderer_vulkan/vk_buffer_hazard_rules.h"
-#include "video_core/renderer_vulkan/vk_got_scene_depth_ab.h"
-#include "video_core/renderer_vulkan/vk_got_scene_gpu_queries.h"
-#include "video_core/renderer_vulkan/vk_got_indirect_producer_trace.h"
 #include "video_core/renderer_vulkan/vk_got_dma_origin_probe.h"
 #include "video_core/renderer_vulkan/vk_got_gds_compute_probe.h"
 #include "video_core/renderer_vulkan/vk_got_indirect_gpu_readback.h"
+#include "video_core/renderer_vulkan/vk_got_indirect_producer_trace.h"
+#include "video_core/renderer_vulkan/vk_got_menu_pass_trace.h"
+#include "video_core/renderer_vulkan/vk_got_scene_depth_ab.h"
+#include "video_core/renderer_vulkan/vk_got_scene_gpu_queries.h"
+#include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -1545,6 +1548,47 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 represented_entries==count-1u &&
                 guest_size==required_bytes &&
                 memory->IsValidMapping(source.base_address,guest_size);
+            static const bool dump_tables = [] {
+                const char* const env = std::getenv("SHADPS4_INDEXED_TABLE_DUMP");
+                return env && env[0] == '1' && env[1] == '\0';
+            }();
+            if (dump_tables && complete && record_stride && guest_size <= 65536u &&
+                Shader::ShaderDumpTargets().Matches(stage.pgm_hash)) {
+                static thread_local std::unordered_map<std::string, u32> observations;
+                static thread_local u32 captures{};
+                const auto key = fmt::format("{}_{:#018x}.resource{}", stage.hw_stage,
+                                             stage.pgm_hash, resource_index);
+                if (captures < 128u && (observations.contains(key) || observations.size() < 64u)) {
+                    auto& observed = observations[key];
+                    if (observed < 256u) {
+                        ++observed;
+                        if (observed == 1u || observed == 32u || observed == 256u) {
+                            ++captures;
+                            const auto dir =
+                                Common::FS::GetUserPath(Common::FS::PathType::ShaderDir) / "dumps";
+                            std::error_code error;
+                            std::filesystem::create_directories(dir, error);
+                            if (!error) {
+                                const auto name = fmt::format(
+                                    "{}.sample{}.stride{}.offset{}.count{}.table.bin", key,
+                                    observed, record_stride, descriptor_offset, count - 1);
+                                std::ofstream file(dir / name, std::ios::binary);
+                                file.write(reinterpret_cast<const char*>(
+                                               static_cast<uintptr_t>(source.base_address)),
+                                           guest_size);
+                                if (file) {
+                                    LOG_INFO(Render_Vulkan,
+                                             "IndexedTableDump: shader={:#x} stage={} resource={} "
+                                             "sample={} base={:#x} bytes={} file={}",
+                                             stage.pgm_hash, stage.hw_stage, resource_index,
+                                             observed, static_cast<u64>(source.base_address),
+                                             guest_size, name);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             // Any immutable >1K-entry guest table may be reused ONLY after
             // confirming its exact bytes and every live image generation.
             // This avoids a full TextureCache::FindImage walk for every draw,

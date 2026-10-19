@@ -303,6 +303,35 @@ Id EmitImageSampleImplicitLodIndexed(
     return result;
 }
 
+Id EmitImageSampleExplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,
+                                     Id lod, const IR::Value& offset, Id gpu_texture_id) {
+    const auto& texture = ctx.images[handle & 0xffffu];
+    ASSERT(texture.is_guest_indexed && texture.image_array_size >= 2u);
+    ASSERT(ctx.profile.supports_sampled_image_nonuniform_indexing);
+    const Id valid =
+        ctx.OpULessThan(ctx.U1[1], gpu_texture_id, ctx.ConstU32(texture.image_array_size - 1));
+    const Id bounded =
+        ctx.OpSelect(ctx.U32[1], valid, gpu_texture_id, ctx.ConstU32(texture.image_array_size - 1));
+    ctx.Decorate(bounded, spv::Decoration::NonUniform);
+    const Id pointer_type = ctx.TypePointer(spv::StorageClass::UniformConstant, texture.image_type);
+    const Id pointer = ctx.OpAccessChain(pointer_type, texture.id, std::array{bounded});
+    ctx.Decorate(pointer, spv::Decoration::NonUniform);
+    const Id img = ctx.OpLoad(texture.image_type, pointer);
+    ctx.Decorate(img, spv::Decoration::NonUniform);
+    const Id sampler = LoadIndexedGuestSampler(ctx, handle, bounded, texture.image_array_size);
+    const Id sampled = ctx.OpSampledImage(texture.sampled_type, img, sampler);
+    ctx.Decorate(sampled, spv::Decoration::NonUniform);
+    const Id coords_fixed = FixImageCoords<true>(ctx, coords, texture.view_type);
+    ImageOperands ops{};
+    ops.Add(spv::ImageOperandsMask::Lod, lod);
+    ops.AddOffset(ctx, texture.view_type, offset);
+    const Id raw = ctx.OpImageSampleExplicitLod(texture.data_types->Get(4), sampled, coords_fixed,
+                                                ops.mask, ops.operands);
+    const Id result = texture.is_integer ? ctx.OpBitcast(ctx.F32[4], raw) : raw;
+    RecordIndexedImageSample(ctx, handle & 0xffffu, gpu_texture_id, result);
+    return result;
+}
+
 Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
                               const IR::Value& offset) {
     const auto& texture = ctx.images[handle & 0xFFFF];

@@ -710,6 +710,16 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         .post_op = resource.sharps[0].post_op,
     };
 
+    AmdGpu::Sampler uniform_sampler{};
+    const bool has_uniform_sampler =
+        resource.has_indexed_table && !resource.has_indexed_sampler_table &&
+        inst.GetOpcode() == IR::Opcode::ImageSampleRaw &&
+        resource.sharps[1].post_op == SharpFetchPostOp::None &&
+        ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1], info)
+            .FetchChecked(info.flattened_ud_buf.data(), info.flattened_ud_buf.size(),
+                          &uniform_sampler) &&
+        !uniform_sampler.force_unnormalized && !uniform_sampler.force_degamma;
+
     // Only a fully represented *actual guest table* is eligible. Do not
     // truncate or guess the texture ID: an out-of-range GPU ID samples the
     // extra null slot in the sampled-image array.
@@ -719,12 +729,10 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         (resource.indexed_record_stride_bytes == 0u ||
          (resource.has_indexed_sampler_table &&
           profile.supports_sampler_array_nonuniform_indexing &&
-          resource.sharps[1].post_op == SharpFetchPostOp::None)) &&
-        !is_written && !inst_info.is_depth && !inst_info.is_array &&
-        !inst_info.is_gather &&
-        !inst_info.has_lod && !inst_info.force_level0 &&
-        !inst_info.has_lod_clamp && !inst_info.is_r128 &&
-        !inst_info.is_unnormalized) {
+          resource.sharps[1].post_op == SharpFetchPostOp::None) ||
+         (!resource.has_indexed_sampler_table && has_uniform_sampler)) &&
+        !is_written && !inst_info.is_depth && !inst_info.is_array && !inst_info.is_gather &&
+        !inst_info.has_lod_clamp && !inst_info.is_r128 && !inst_info.is_unnormalized) {
         const auto table_fetch =
             ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp, info);
         AmdGpu::Buffer table{};
@@ -887,11 +895,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             .is_depth = bool(inst_info.is_depth),
             .is_integer = AmdGpu::IsInteger(image.GetNumberFmt()),
         };
-        if (image_res.is_guest_indexed &&
-            image_res.indexed_record_stride_bytes != 0u) {
-            // T# and S# use the SAME original GPU record selector, with
-            // byte-accurate offsets. Do not bind default S# for a live table.
-            ASSERT(resource.has_indexed_sampler_table);
+        if (image_res.is_guest_indexed && resource.has_indexed_sampler_table) {
             sampler_res.is_guest_indexed = true;
             sampler_res.indexed_table_fetch = image_res.indexed_table_fetch;
             sampler_res.indexed_guest_entries = image_res.indexed_guest_entries;
@@ -1479,6 +1483,10 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
             return ir.ImageSampleDrefImplicitLod(handle, coords, dref, bias, offset, inst_info);
         }
         if (explicit_lod) {
+            if (image_res.is_guest_indexed) {
+                return ir.ImageSampleExplicitLodIndexed(handle, coords, lod, offset,
+                                                        IR::U32{inst.Arg(1)}, inst_info);
+            }
             return ir.ImageSampleExplicitLod(handle, coords, lod, offset, inst_info);
         }
         if (image_res.is_guest_indexed) {

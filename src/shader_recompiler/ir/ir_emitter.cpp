@@ -2127,6 +2127,13 @@ Value IREmitter::ImageSampleImplicitLodIndexed(
                 handle, coords, bias, offset, gpu_texture_id);
 }
 
+Value IREmitter::ImageSampleExplicitLodIndexed(const Value& handle, const Value& coords,
+                                               const F32& lod, const Value& offset,
+                                               const U32& gpu_texture_id, TextureInstInfo info) {
+    return Inst(Opcode::ImageSampleExplicitLodIndexed, Flags{info}, handle, coords, lod, offset,
+                gpu_texture_id);
+}
+
 Value IREmitter::ImageSampleExplicitLod(const Value& handle, const Value& coords, const F32& lod,
                                         const Value& offset, TextureInstInfo info) {
     return Inst(Opcode::ImageSampleExplicitLod, Flags{info}, handle, coords, lod, offset);

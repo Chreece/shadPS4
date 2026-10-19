@@ -85,15 +85,20 @@ template <typename Value>
         shift->Arg(1).Type() != IR::Type::U32 ||
         shift->Arg(1).U32() != 2u) return {};
 
-    const auto* const add = shift->Arg(0).TryInst();
-    if (!add || add->GetOpcode() != IR::Opcode::IAdd32) return {};
-    const auto a = add->Arg(0);
-    const auto b = add->Arg(1);
-    if (a.IsImmediate() == b.IsImmediate()) return {};
-    const auto literal = a.IsImmediate() ? a : b;
-    const auto expression = a.IsImmediate() ? b : a;
-    if (literal.Type() != IR::Type::U32) return {};
-    const std::uint32_t prefix = literal.U32();
+    auto expression = shift->Arg(0);
+    std::uint32_t prefix = 0;
+    if (const auto* const add = expression.TryInst();
+        add && add->GetOpcode() == IR::Opcode::IAdd32) {
+        const auto a = add->Arg(0);
+        const auto b = add->Arg(1);
+        if (a.IsImmediate() == b.IsImmediate())
+            return {};
+        const auto literal = a.IsImmediate() ? a : b;
+        if (literal.Type() != IR::Type::U32)
+            return {};
+        prefix = literal.U32();
+        expression = a.IsImmediate() ? b : a;
+    }
     if (prefix % 4u != 0u) return {};
     const auto* const mul = expression.TryInst();
     if (!mul || mul->GetOpcode() != IR::Opcode::IMul32) return {};

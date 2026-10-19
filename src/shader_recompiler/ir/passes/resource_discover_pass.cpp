@@ -867,7 +867,8 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
         out.descriptor_stride_words=identity.descriptor_stride_words;
         out.gpu_texture_id_indexed=identity.normalized;
         out.contiguous=true;
-        return out;
+        if (identity.normalized)
+            return out;
     }
     // A genuine T# can also live within an array-of-structs: the two halves
     // use different, but provably equivalent, 536-byte affine expressions.
@@ -1093,16 +1094,18 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                             uniform &= IsHostUniformSrtOffset(value);
                             usage.indexed_table_sharp.dwords[dw]=value;
                         }
-                        // A dynamic guest S# is as essential as the
-                        // matching T#. The prior texture-only path paired a
-                        // per-invocation texture with a null/default sampler.
-                        // Reject the new indexed path unless BOTH tables
-                        // share the same GPU SSA record selector.
                         const auto sampler = table.record_stride_bytes
                             ? AnalyzeIndexedSamplerTable(inst,table)
                             : IndexedSamplerTableSource{};
-                        if (uniform && (table.record_stride_bytes == 0 ||
-                                        sampler.valid)) {
+                        const auto& sampler_source = usage.sharps[1];
+                        const bool uniform_sampler =
+                            sampler_source.num_dwords == 4 &&
+                            sampler_source.post_op == SharpFetchPostOp::None &&
+                            std::ranges::all_of(
+                                std::span{sampler_source.dwords}.first<4>(),
+                                [](const auto& word) { return IsHostUniformSrtOffset(word); });
+                        if (uniform &&
+                            (table.record_stride_bytes == 0 || sampler.valid || uniform_sampler)) {
                             usage.indexed_sampler_offset_bytes = sampler.offset_bytes;
                             usage.has_indexed_sampler_table = sampler.valid;
                             usage.indexed_table_sharp.num_dwords=4;
