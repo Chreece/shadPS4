@@ -27,7 +27,7 @@ TEST_PGID=""
 BIN_SHA=""
 GAME_LAUNCHED=NO
 START_ISO="$(date -Is)"
-mkdir -p "$RUN/info" "$RUN/screenshots" "$RUN/profile" "$LOGS"
+mkdir -p "$RUN/info" "$RUN/screenshots" "$RUN/profile/user/shader/got-menu-probes" "$LOGS"
 touch "$RUN/info/console.log" "$RUN/game.log"
 exec > >(tee -a "$RUN/info/console.log") 2>&1
 
@@ -1242,6 +1242,11 @@ GAME_EXIT=$?
 set -e
 TEST_PGID=""
 echo "GAME_EXIT=$GAME_EXIT"
+# Preserve the actual GPU-fault or low-VRAM abort as the root cause. Missing
+# later shader/query evidence is expected after an intentionally early stop.
+if [ "$STATUS" = GPU_FAULT_ABORT ] || [ "$STATUS" = RUNTIME_VRAM_CRITICAL_ABORT ]; then
+  exit 2
+fi
 if ! grep -aq 'GotIndirectReadTracked:.*draw_indirect_stage=true' "$RUN/game.log"; then
   STATUS=INDIRECT_BUFFER_READ_STAGE_NOT_VERIFIED
   echo "INDIRECT_BUFFER_WAR_FIX_WAS_NOT_EXERCISED; cannot claim runtime fix"
@@ -1281,9 +1286,7 @@ case "${GOT_SCENE_AB_MODE:-native}" in
        STATUS=GOT_SCENE_RASTER_AB_NOT_ACTIVATED;exit 2
     fi ;;
 esac
-if [ "$STATUS" = RUNTIME_VRAM_CRITICAL_ABORT ] || [ "$STATUS" = GPU_FAULT_ABORT ]; then
-  exit 2
-elif [ "$GAME_EXIT" -eq 0 ] || [ "$GAME_EXIT" -eq 124 ]; then
+if [ "$GAME_EXIT" -eq 0 ] || [ "$GAME_EXIT" -eq 124 ]; then
   STATUS=CAPTURE_COMPLETE
 else
   STATUS=GAME_ABNORMAL_EXIT
