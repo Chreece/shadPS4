@@ -506,7 +506,7 @@ for kind,n in paths.most_common():out.append(f"PATH_{kind}={n}")
 for bit in range(1,9):
     out.append(f"WATCH_COMMAND_{bit}_OVERLAP_EVENTS={hits[bit]}")
     for event in last[bit]: out.append(f"WATCH_COMMAND_{bit}_LAST="+event)
-if not paths:out.append("RESULT=NO_MATCHED_WRITER_OBSERVED_IN_TRACED_PATHS")
+if not paths:out.append("RESULT=LEGACY_EXACT_ADDRESS_TRACER_DISABLED_CHECK_DMA_GPU_WORDS")
 elif "COMPUTE_DISPATCH_SUBMITTED" in paths:
     out.append("RESULT=COMPUTE_PRODUCER_CANDIDATES_PRESENT_NOT_YET_PROVEN_STORES")
 else:
@@ -1056,7 +1056,7 @@ PYSTAGEPIXELS
     echo "ACTIVE_MENU_LATE_QUERIES=$(grep -ac 'GotSceneGpuInvocations:.*high_volume=true' "$RUN/game.log" || true)"
     echo "VULKAN_INDIRECT_READ_TRACKED=$(grep -ac 'GotIndirectReadTracked:' "$RUN/game.log" || true)"
     echo "VULKAN_INDIRECT_WAR_OVERLAP_EVENTS=$(grep -ac 'GotBufferWAR:' "$RUN/game.log" || true)"
-    echo "GOT_INDIRECT_PRODUCER_TRACE=ENABLED_EXACT_8_COMMANDS"
+    echo "GOT_INDIRECT_PRODUCER_TRACE=DISABLED_PRIOR_RUN_ADDRESSES_STALE"
     echo "GOT_INDIRECT_PRODUCER_EVENT_COUNT=$(grep -ac 'GotIndirectProducer:' "$RUN/game.log" || true)"
     echo "GOT_DMA_WORD_GPU_READBACKS=$(grep -ac 'GotDmaGpuWord: status=GPU_READBACK_PASS' "$RUN/game.log" || true)"
     echo "GOT_DMA_GDS_SOURCE_READBACKS=$(grep -ac 'GotDmaGpuWord: status=GPU_READBACK_PASS.*class=1' "$RUN/game.log" || true)"
@@ -1268,7 +1268,9 @@ echo "GAME_START duration=${SECONDS_TO_RUN}s DISPLAY=$DISPLAY_OK"
   export SHADPS4_GOT_MENU_STAGE_PIXELS=1
   export SHADPS4_GOT_SCENE_GPU_QUERY=1
   export SHADPS4_INDIRECT_WAR_AUDIT=1
-  export SHADPS4_GOT_INDIRECT_PRODUCERS=1
+  # The original eight hardcoded addresses drifted across launches.
+  # Disable that stale tracer for the GPU source/destination comparison.
+  export SHADPS4_GOT_INDIRECT_PRODUCERS=0
   export SHADPS4_GOT_DMA_WORD_PROBE=1
   export SHADPS4_GOT_INDIRECT_GPU_ARGUMENTS=1
   # Depth-only, raster-only, or COMBINED non-production A/B can be
