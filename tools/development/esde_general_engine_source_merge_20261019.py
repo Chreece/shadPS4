@@ -122,7 +122,10 @@ VULKAN_FILES = {
 }
 UNSAFE_CPP_MARKERS = re.compile(
     r"(?:\bCUSA\d{5}\b|\bSHADPS4_(?:GOW|GOT|GHOST)_[A-Z0-9_]*\b|"
-    r"\b0x(?:7eaf40ad|5c4c2b6f|55d17c16|52b6e003|4950cf6)\b)",
+    r"\bSHADPS4_INDEXED_IMAGE_FEEDBACK[A-Z0-9_]*\b|"
+    r"\bIndexedImageFeedback\b|"
+    r"\b0x(?:7eaf40ad|5c4c2b6f|55d17c16|52b6e003|4950cf6)\b|"
+    r"\bif\s*\([^;\n]*(?:pgm_hash|shader_hash|shaderHash)\s*(?:==|!=)\s*0x[0-9a-f]{6,8}\b)",
     re.I,
 )
 INCLUDES = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.M)
@@ -608,12 +611,14 @@ def self_test():
     assert guarded_delta(b"",b"if (id == CUSA11456) return 1;\n","x.cpp")
     assert guarded_delta(b"",b"if (hash == 0x7eaf40ad) return 1;\n","x.cpp")
     assert guarded_delta(b"",b"if (SHADPS4_GOW_SPECIAL) return 1;\n","x.cpp")
+    assert guarded_delta(b"",b"if (shader_hash == 0x12345678) return 1;\n","x.cpp")
+    assert guarded_delta(b"",b"IndexedImageFeedback counters;\n","x.cpp")
     assert guarded_delta(b"",b"auto v = RealBufferDescriptor(index);\n","x.cpp") is None
     assert eligible("src/shader_recompiler/ir/passes/resource_discover_pass.cpp")
     assert eligible("src/video_core/renderer_vulkan/vk_rasterizer.cpp")
     assert eligible("src/video_core/renderer_vulkan/resource_audit_hash_filter.h")
     assert not eligible("src/video_core/renderer_vulkan/vk_got_scene_special.h")
-    print("GENERAL_ENGINE_MERGE_SELFTEST=PASS cases=10")
+    print("GENERAL_ENGINE_MERGE_SELFTEST=PASS cases=12")
     return 0
 
 def main():
