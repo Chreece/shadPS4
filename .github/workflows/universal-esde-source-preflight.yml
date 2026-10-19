@@ -1,0 +1,46 @@
+name: Universal ES-DE source preflight
+
+on:
+  push:
+    branches:
+      - integration/universal-esde-core-20261019
+    paths:
+      - 'tools/development/universal_esde_integrator_20261019.py'
+      - 'tools/development/esde_fullstack_regression_triage_20261019.py'
+      - 'tools/development/test_universal_esde_integrator_20261019.py'
+      - '.github/workflows/universal-esde-source-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax-and-source-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Python syntax
+        run: |
+          python3 -m py_compile \
+            tools/development/universal_esde_integrator_20261019.py \
+            tools/development/esde_fullstack_regression_triage_20261019.py
+      - name: Source integration contract checks
+        run: |
+          python3 -B tools/development/universal_esde_integrator_20261019.py --self-test
+      - name: No game-specific runtime rules introduced
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('tools/development/universal_esde_integrator_20261019.py').read_text()
+          assert 'MERGE_PRE_FEEDBACK_GHOST_SHADER_ENGINE' in s
+          assert 'PROVEN_GRAPHICS_UFFD_RECONCILIATION' in s
+          assert 'GENERIC_NATIVE_REGRESSIONS' in s
+          assert 'CUSA34384' not in s and 'CUSA11456' not in s
+          assert 'if pgm_hash ==' not in s
+          assert 'git reset --hard' not in s
+          assert 'pkill' not in s
+          print('GENERAL_ENGINE_NO_GAME_ID_WORKAROUNDS=PASS')
+          PY
