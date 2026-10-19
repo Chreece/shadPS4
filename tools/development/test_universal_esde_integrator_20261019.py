@@ -91,6 +91,7 @@ class SourceAssemblerSafetyTests(unittest.TestCase):
         committed = git(self.builder.source, "rev-parse", "HEAD")
         # Detached worktree has its own source checkpoint; on the original,
         # create a disjoint independent commit from the older ancestor.
+        (self.orig / "src/foo.cpp").write_text("int foo(){return 3;}\n")
         git(self.orig, "add", "src/foo.cpp")
         git(self.orig, "commit", "-m", "competing source")
         alt = git(self.orig, "rev-parse", "HEAD")
