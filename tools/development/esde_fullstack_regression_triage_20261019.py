@@ -421,12 +421,23 @@ def main():
     result = 0
     try:
         report["goW_proven_gpu_contract_parity"] = check_missing_proven_gpu_contracts()
-        report["goW_exact_fullgfx_renderer_recovery"] = reconstruct_renderer_from_proven_sources(stamp)
-        found,status = renderer_from_workspaces()
-        report["renderer_search"] = {"local":found, "status":status}
-        found_git,stats = renderer_from_git_history()
-        report["renderer_search"]["git"] = found_git
-        report["renderer_search"]["git_stats"] = stats
+        recovery = reconstruct_renderer_from_proven_sources(stamp)
+        report["goW_exact_fullgfx_renderer_recovery"] = recovery
+        if recovery.get("status") == "RECONSTRUCTED_VERIFIED_GO_W_RENDERER":
+            # The SHA-pinned historical/restorer replay is stronger proof than
+            # hunting uncommitted/overwritten local worktrees. No slow scan.
+            report["renderer_search"] = {
+                "local": [recovery.get("recovery_dir","") +
+                          "/reconstructed-fullgfx-renderer.cpp"],
+                "status": "EXACT_CHECKSUM_RECONSTRUCTED_NO_HISTORY_SCAN",
+                "git": [], "git_stats": [],
+            }
+        else:
+            found,status = renderer_from_workspaces()
+            report["renderer_search"] = {"local":found, "status":status}
+            found_git,stats = renderer_from_git_history()
+            report["renderer_search"]["git"] = found_git
+            report["renderer_search"]["git_stats"] = stats
         report["ghost_merge_preview"] = ghost_merge_preview()
         if args.reference_gow:
             result = capture_old_gow(report, stamp)
