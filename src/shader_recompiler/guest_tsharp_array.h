@@ -23,10 +23,9 @@ namespace Shader::Optimization {
     std::uint32_t vsharp_stride, std::uint32_t records,
     std::uint32_t record_stride_bytes, std::uint32_t descriptor_offset_bytes,
     std::uint32_t max_entries) noexcept {
-    if (record_stride_bytes < 32u || record_stride_bytes % 4u ||
-        descriptor_offset_bytes % 4u ||
-        std::uint64_t(descriptor_offset_bytes) + 32u > record_stride_bytes ||
-        (vsharp_stride != 0 && vsharp_stride != record_stride_bytes)) return 0;
+    if (record_stride_bytes < 32u || record_stride_bytes % 4u || descriptor_offset_bytes % 4u ||
+        std::uint64_t(descriptor_offset_bytes) + 32u > record_stride_bytes)
+        return 0;
     const std::uint64_t full_bytes = vsharp_stride == 0
         ? std::uint64_t(records)
         : std::uint64_t(vsharp_stride) * records;

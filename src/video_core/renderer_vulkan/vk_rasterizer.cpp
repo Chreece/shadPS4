@@ -47,6 +47,40 @@ namespace Vulkan {
 
 namespace {
 
+template <typename T>
+bool ReadIndexedDescriptor(Core::MemoryManager* memory, u64 address, bool indirect,
+                           u32 pointee_offset, T& descriptor) {
+    const auto readable = [&](u64 start, u64 size) {
+        if (!memory->IsValidMapping(start, size))
+            return false;
+        while (size) {
+            void* end{};
+            u32 protection{};
+            if (memory->QueryProtection(start, nullptr, &end, &protection) != 0 ||
+                !(protection & u32(Core::MemoryProt::CpuRead)) || u64(end) <= start)
+                return false;
+            const u64 length = std::min(size, u64(end) - start);
+            start += length;
+            size -= length;
+        }
+        return true;
+    };
+    if (indirect) {
+        if (!readable(address, sizeof(u64)))
+            return false;
+        u64 pointer{};
+        std::memcpy(&pointer, reinterpret_cast<const void*>(address), sizeof(pointer));
+        pointer &= 0x0000ffffffffffffull;
+        if (pointer == 0)
+            return false;
+        address = pointer + pointee_offset;
+    }
+    if (!(indirect ? readable(address, sizeof(T)) : memory->IsValidMapping(address, sizeof(T))))
+        return false;
+    std::memcpy(&descriptor, reinterpret_cast<const void*>(address), sizeof(T));
+    return true;
+}
+
 // Confirm that a shader with a watched writable descriptor actually reached
 // Vulkan dispatch; this still does not prove the shader executed a store.
 void TraceGotIndirectComputeDispatch(const Shader::Info& cs, bool indirect,
@@ -1576,6 +1610,23 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                                 file.write(reinterpret_cast<const char*>(
                                                static_cast<uintptr_t>(source.base_address)),
                                            guest_size);
+                                if (image_desc.indexed_is_pointer_table) {
+                                    std::ofstream pointees(dir / (name + ".pointees.bin"),
+                                                           std::ios::binary);
+                                    for (u32 i = 0; i + 1 < count; ++i) {
+                                        AmdGpu::Image raw{};
+                                        const u64 address = u64(source.base_address) +
+                                                            u64(i) * record_stride +
+                                                            descriptor_offset;
+                                        const u32 readable = ReadIndexedDescriptor(
+                                            memory, address, true,
+                                            image_desc.indexed_pointee_offset_bytes, raw);
+                                        pointees.write(reinterpret_cast<const char*>(&readable),
+                                                       sizeof(readable));
+                                        pointees.write(reinterpret_cast<const char*>(&raw),
+                                                       sizeof(raw));
+                                    }
+                                }
                                 if (file) {
                                     LOG_INFO(Render_Vulkan,
                                              "IndexedTableDump: shader={:#x} stage={} resource={} "
@@ -1720,10 +1771,10 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 const u64 entry_addr=source.base_address +
                     u64(i)*(record_stride ? record_stride : sizeof(AmdGpu::Image)) +
                     descriptor_offset;
-                if (!memory->IsValidMapping(entry_addr,sizeof(AmdGpu::Image))) continue;
                 AmdGpu::Image raw{};
-                std::memcpy(&raw,reinterpret_cast<const void*>(entry_addr),
-                            sizeof(AmdGpu::Image));
+                if (!ReadIndexedDescriptor(memory, entry_addr, image_desc.indexed_is_pointer_table,
+                                           image_desc.indexed_pointee_offset_bytes, raw))
+                    continue;
                 if (!raw.Valid() ||
                     raw.GetType()!=AmdGpu::ImageType::Color2D ||
                     raw.Address()==0 ||
@@ -2032,9 +2083,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 if (complete && i+1u < count) {
                     const u64 guest_address = u64(source.base_address) +
                         u64(i)*record_stride + descriptor_offset;
-                    if (memory->IsValidMapping(guest_address,sizeof(AmdGpu::Sampler))) {
-                        std::memcpy(&ssharp,reinterpret_cast<const void*>(guest_address),
-                                    sizeof(AmdGpu::Sampler));
+                    if (ReadIndexedDescriptor(memory, guest_address,
+                                              sampler.indexed_is_pointer_table,
+                                              sampler.indexed_pointee_offset_bytes, ssharp)) {
                         if (ssharp.Valid() &&
                             (ssharp.border_color_type.Value()!=AmdGpu::BorderColor::Custom ||
                              liverpool->regs.ta_bc_base.Address()!=0)) {

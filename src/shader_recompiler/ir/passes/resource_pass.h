@@ -38,6 +38,9 @@ struct ResourceDiscovery {
     u32 indexed_record_stride_bytes{};
     u32 indexed_descriptor_offset_bytes{};
     u32 indexed_sampler_offset_bytes{};
+    u32 indexed_image_pointee_offset_bytes{};
+    u32 indexed_sampler_pointee_offset_bytes{};
+    bool indexed_is_pointer_table{};
     bool has_indexed_sampler_table{};
     bool has_indexed_table{};
     // Keep the raw S# producer handle for shader-side scalar memory reads

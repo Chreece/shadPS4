@@ -167,6 +167,8 @@ struct ImageResource {
     SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};
     u32 indexed_record_stride_bytes{};
     u32 indexed_descriptor_offset_bytes{};
+    u32 indexed_pointee_offset_bytes{};
+    bool indexed_is_pointer_table{};
     // An oversized guest table remains on the unchanged shader path. Keep
     // its real source for the opt-in, read-only runtime table census.
     bool oversized_guest_table_probe{};
@@ -236,6 +238,8 @@ struct SamplerResource {
     u32 indexed_guest_entries{};
     u32 indexed_record_stride_bytes{};
     u32 indexed_sampler_offset_bytes{};
+    u32 indexed_pointee_offset_bytes{};
+    bool indexed_is_pointer_table{};
     bool is_guest_indexed{};
     SharpFetchPostOp post_op{};
     SharpLocation post_op_tsharp_dw3_off{};

@@ -135,8 +135,11 @@ public:
                    desc.oversized_guest_table_probe == existing.oversized_guest_table_probe &&
                    desc.indexed_guest_entries == existing.indexed_guest_entries &&
                    desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
-                   desc.indexed_descriptor_offset_bytes == existing.indexed_descriptor_offset_bytes &&
-                   desc.indexed_table_fetch == existing.indexed_table_fetch;
+                   desc.indexed_descriptor_offset_bytes ==
+                       existing.indexed_descriptor_offset_bytes &&
+                   desc.indexed_table_fetch == existing.indexed_table_fetch &&
+                   desc.indexed_is_pointer_table == existing.indexed_is_pointer_table &&
+                   desc.indexed_pointee_offset_bytes == existing.indexed_pointee_offset_bytes;
         })};
         auto& image = image_resources[index];
         image.is_atomic |= desc.is_atomic;
@@ -148,13 +151,14 @@ public:
         const u32 index{Add(sampler_resources, desc, [this, &desc](const auto& existing) {
             return desc.sharp_fetch == existing.sharp_fetch && desc.post_op == existing.post_op &&
                    desc.post_op_tsharp_dw3_off == existing.post_op_tsharp_dw3_off &&
-                   desc.is_depth == existing.is_depth &&
-                   desc.is_integer == existing.is_integer &&
+                   desc.is_depth == existing.is_depth && desc.is_integer == existing.is_integer &&
                    desc.is_guest_indexed == existing.is_guest_indexed &&
                    desc.indexed_guest_entries == existing.indexed_guest_entries &&
                    desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
                    desc.indexed_sampler_offset_bytes == existing.indexed_sampler_offset_bytes &&
-                   desc.indexed_table_fetch == existing.indexed_table_fetch;
+                   desc.indexed_table_fetch == existing.indexed_table_fetch &&
+                   desc.indexed_is_pointer_table == existing.indexed_is_pointer_table &&
+                   desc.indexed_pointee_offset_bytes == existing.indexed_pointee_offset_bytes;
         })};
         return index;
     }
@@ -339,6 +343,8 @@ IR::Inst* MatchBoundGuard(IR::Value condition) {
         return nullptr;
     if (auto* cmp = MatchOpcode(negated->Arg(0), IR::Opcode::ULessThan32))
         return cmp;
+    if (auto* cmp = MatchOpcode(negated->Arg(0), IR::Opcode::SLessThan32))
+        return cmp;
     auto* inverse = MatchOpcode(negated->Arg(0), IR::Opcode::InverseBallot);
     if (!inverse)
         return nullptr;
@@ -407,27 +413,43 @@ std::optional<PointerImageWord> MatchPointerImageWord(IR::Value value) {
     const auto* shift = static_cast<const IR::Inst*>(word.selector);
     if (shift->GetOpcode() != IR::Opcode::ShiftRightLogical32 || shift->Arg(1) != IR::Value{2u})
         return {};
-    auto* add = MatchOpcode(shift->Arg(0), IR::Opcode::IAdd32);
-    if (!add)
-        return {};
-    for (u32 side = 0; side < 2; ++side) {
-        const auto offset = add->Arg(side);
-        auto* mul = MatchOpcode(add->Arg(1 - side), IR::Opcode::IMul32);
-        if (!offset.IsImmediate() || offset.Type() != IR::Type::U32 || offset.U32() % 4 || !mul)
-            continue;
-        for (u32 part = 0; part < 2; ++part) {
-            const auto stride = mul->Arg(part);
-            const auto selector = mul->Arg(1 - part);
-            if (!stride.IsImmediate() || stride.Type() != IR::Type::U32 || stride.U32() == 0 ||
-                stride.U32() % 4 || !selector.TryInst())
-                continue;
-            const u64 dword_offset = u64(offset.U32() / 4) + word.addend;
-            if (dword_offset > std::numeric_limits<u32>::max() / 4)
-                continue;
-            return PointerImageWord{read->Arg(0), selector, stride.U32(), u32(dword_offset)};
-        }
+    auto expression = shift->Arg(0);
+    u32 prefix{};
+    if (auto* add = MatchOpcode(expression, IR::Opcode::IAdd32)) {
+        const auto lhs = add->Arg(0);
+        const auto rhs = add->Arg(1);
+        if (lhs.IsImmediate() == rhs.IsImmediate())
+            return {};
+        const auto offset = lhs.IsImmediate() ? lhs : rhs;
+        if (offset.Type() != IR::Type::U32 || offset.U32() % 4)
+            return {};
+        prefix = offset.U32();
+        expression = lhs.IsImmediate() ? rhs : lhs;
     }
-    return {};
+    IR::Value selector;
+    u32 stride{};
+    if (auto* mul = MatchOpcode(expression, IR::Opcode::IMul32)) {
+        const auto lhs = mul->Arg(0);
+        const auto rhs = mul->Arg(1);
+        if (lhs.IsImmediate() == rhs.IsImmediate())
+            return {};
+        const auto literal = lhs.IsImmediate() ? lhs : rhs;
+        if (literal.Type() != IR::Type::U32)
+            return {};
+        stride = literal.U32();
+        selector = lhs.IsImmediate() ? rhs : lhs;
+    } else if (auto* left = MatchOpcode(expression, IR::Opcode::ShiftLeftLogical32)) {
+        const auto amount = left->Arg(1);
+        if (!amount.IsImmediate() || amount.Type() != IR::Type::U32 || amount.U32() >= 32)
+            return {};
+        stride = 1u << amount.U32();
+        selector = left->Arg(0);
+    }
+    const u64 offset = u64(prefix / 4) + word.addend;
+    if (stride == 0 || stride % 4 || !selector.TryInst() ||
+        offset > std::numeric_limits<u32>::max() / 4)
+        return {};
+    return PointerImageWord{read->Arg(0), selector, stride, u32(offset)};
 }
 
 SharpFetch<u32> FetchBound(IR::Value bound, const Info& info) {
@@ -446,6 +468,51 @@ SharpFetch<u32> FetchBound(IR::Value bound, const Info& info) {
     return ConstructSharpFetch<u32>(source, info);
 }
 
+IR::Inst* ZeroBasedCounterStep(IR::Value selector) {
+    auto* phi = MatchOpcode(selector, IR::Opcode::Phi);
+    if (!phi || phi->NumArgs() != 2)
+        return nullptr;
+    for (u32 side = 0; side < 2; ++side) {
+        if (phi->Arg(side) != IR::Value{0u})
+            continue;
+        auto* step = MatchOpcode(phi->Arg(1 - side), IR::Opcode::IAdd32);
+        if (step &&
+            ((step->Arg(0) == selector && step->Arg(1) == IR::Value{1u}) ||
+             (step->Arg(1) == selector && step->Arg(0) == IR::Value{1u})) &&
+            step->GetParent() == phi->PhiBlock(1 - side))
+            return step;
+    }
+    return nullptr;
+}
+
+IR::Value ConstantLoopImageBound(IR::Value selector) {
+    auto* step = ZeroBasedCounterStep(selector);
+    if (!step)
+        return {};
+    auto* latch = step->GetParent();
+    auto* header = selector.Inst()->GetParent();
+    if (!latch->cfg_block || !latch->cfg_block->branch_true ||
+        latch->cfg_block->branch_true->ir_block != header || !latch->cfg_block->branch_false ||
+        latch->cfg_block->branch_false->ir_block == header)
+        return {};
+    IR::Value condition = latch->branch_cond;
+    if (auto* ref = MatchOpcode(condition, IR::Opcode::ConditionRef))
+        condition = ref->Arg(0);
+    auto* cmp = MatchOpcode(condition, IR::Opcode::SLessThan32);
+    if (!cmp)
+        cmp = MatchOpcode(condition, IR::Opcode::ULessThan32);
+    if (!cmp || !cmp->Arg(1).IsImmediate() || cmp->Arg(1).Type() != IR::Type::U32)
+        return {};
+    const u32 limit = cmp->Arg(1).U32();
+    if (limit >= u32(std::numeric_limits<s32>::max()))
+        return {};
+    if (cmp->Arg(0) == selector)
+        return IR::Value{limit + 1};
+    if (cmp->Arg(0) == IR::Value{step})
+        return IR::Value{std::max(1u, limit)};
+    return {};
+}
+
 u32 SamplerExpansionBudget(const Info& info, const ResourceDiscoveryList& resources) {
     struct Key {
         SharpFetch<AmdGpu::Sampler> fetch;
@@ -453,7 +520,7 @@ u32 SamplerExpansionBudget(const Info& info, const ResourceDiscoveryList& resour
         SharpFetchPostOp post_op{};
         SharpLocation lod_offset{};
         u32 stride{}, offset{};
-        bool depth{};
+        bool depth{}, integer{};
         bool operator==(const Key&) const = default;
     };
     std::vector<Key> keys;
@@ -472,43 +539,72 @@ u32 SamplerExpansionBudget(const Info& info, const ResourceDiscoveryList& resour
             key.stride = usage.indexed_record_stride_bytes;
             key.offset = usage.indexed_sampler_offset_bytes;
         }
-        if (std::ranges::find(keys, key) == keys.end())
-            keys.push_back(key);
+        AmdGpu::Image image{};
+        const bool known_image =
+            usage.sharps[0].post_op == SharpFetchPostOp::None &&
+            ConstructSharpFetch<AmdGpu::Image>(usage.sharps[0], info)
+                .FetchChecked(info.flattened_ud_buf.data(), info.flattened_ud_buf.size(), &image) &&
+            image.Valid();
+        for (bool integer : {false, true}) {
+            if (known_image && integer != AmdGpu::IsInteger(image.GetNumberFmt()))
+                continue;
+            key.integer = integer;
+            if (std::ranges::find(keys, key) == keys.end())
+                keys.push_back(key);
+        }
     }
     // Each source can require separate integer and floating-point samplers.
-    return keys.size() * 2 < NUM_SAMPLERS ? NUM_SAMPLERS / 2 - u32(keys.size()) : 0;
+    return keys.size() < NUM_SAMPLERS ? (NUM_SAMPLERS - u32(keys.size())) / 2 : 0;
 }
 
 } // namespace
 
 std::vector<IR::Value> ExpandBoundedPointerImages(IR::Program& program,
                                                   const ResourceDiscoveryList& resources) {
+    struct ExpandedSampler {
+        IR::Value base_lo, base_hi;
+        u32 stride, offset, count;
+        bool depth;
+        bool operator==(const ExpandedSampler&) const = default;
+    };
+    std::vector<ExpandedSampler> expanded_samplers;
     std::vector<IR::Value> bounds;
     std::optional<u32> sampler_budget;
     u32 image_count = std::ranges::count_if(
         resources, [](const auto& usage) { return IsImageInstruction(*usage.user); });
     for (const auto& usage : resources) {
         auto& sample = *usage.user;
-        if (sample.GetOpcode() != IR::Opcode::ImageSampleRaw ||
+        const bool has_sampler = sample.GetOpcode() == IR::Opcode::ImageSampleRaw;
+        if ((!has_sampler && sample.GetOpcode() != IR::Opcode::ImageRead) ||
             usage.sharps[0].post_op != SharpFetchPostOp::None ||
-            usage.sharps[1].post_op != SharpFetchPostOp::None)
+            (has_sampler && usage.sharps[1].post_op != SharpFetchPostOp::None))
             continue;
         const auto flags = sample.Flags<IR::TextureInstInfo>();
-        if (!flags.force_level0 || flags.has_derivatives || flags.has_lod || flags.has_bias ||
-            flags.has_lod_clamp || flags.is_gather)
+        if (has_sampler && (!flags.force_level0 || flags.has_derivatives || flags.has_lod ||
+                            flags.has_bias || flags.has_lod_clamp || flags.is_gather))
             continue;
         auto* handle = MatchOpcode(sample.Arg(0), IR::Opcode::ImageHandle);
         if (!handle)
             continue;
+        AmdGpu::Sampler uniform_sampler{};
+        const bool has_uniform_sampler =
+            has_sampler &&
+            ConstructSharpFetch<AmdGpu::Sampler>(usage.sharps[1], program.info)
+                .FetchChecked(program.info.flattened_ud_buf.data(),
+                              program.info.flattened_ud_buf.size(), &uniform_sampler);
+        const bool indexed_sampler = has_sampler && !has_uniform_sampler;
+        const u32 word_count = indexed_sampler ? 12 : 8;
         std::array<IR::Inst*, 3> pieces{
             MatchOpcode(handle->Arg(0), IR::Opcode::CompositeConstructU32x4),
             MatchOpcode(handle->Arg(1), IR::Opcode::CompositeConstructU32x4),
-            MatchOpcode(sample.Arg(1), IR::Opcode::CompositeConstructU32x4)};
-        if (std::ranges::find(pieces, nullptr) != pieces.end())
+            indexed_sampler ? MatchOpcode(sample.Arg(1), IR::Opcode::CompositeConstructU32x4)
+                            : nullptr};
+        const auto used_pieces = std::span{pieces}.first(word_count / 4);
+        if (std::ranges::find(used_pieces, nullptr) != used_pieces.end())
             continue;
         std::array<PointerImageWord, 12> words{};
         bool valid = true;
-        for (u32 i = 0; i < words.size(); ++i) {
+        for (u32 i = 0; i < word_count; ++i) {
             const auto word = MatchPointerImageWord(pieces[i / 4]->Arg(i % 4));
             if (!word) {
                 valid = false;
@@ -526,12 +622,13 @@ std::vector<IR::Value> ExpandBoundedPointerImages(IR::Program& program,
             continue;
         for (u32 i = 1; i < 8; ++i)
             valid &= words[i].offset_dwords == words[0].offset_dwords + i;
-        for (u32 i = 9; i < 12; ++i)
+        for (u32 i = 9; i < word_count; ++i)
             valid &= words[i].offset_dwords == words[8].offset_dwords + i - 8;
         if (!valid)
             continue;
 
         IR::Value bound;
+        bool signed_bound{};
         for (auto* guard : program.blocks) {
             if (!guard->cfg_block || !guard->cfg_block->branch_false)
                 continue;
@@ -542,9 +639,17 @@ std::vector<IR::Value> ExpandBoundedPointerImages(IR::Program& program,
                 !DominatesPointerSample(body, sample.GetParent()) ||
                 !IsHostUniformSrtOffset(cmp->Arg(1)))
                 continue;
+            signed_bound = cmp->GetOpcode() == IR::Opcode::SLessThan32;
+            if (signed_bound) {
+                auto* step = ZeroBasedCounterStep(words[0].selector);
+                if (!step || !DominatesPointerSample(body, step->GetParent()))
+                    continue;
+            }
             bound = cmp->Arg(1);
             break;
         }
+        if (bound.IsEmpty())
+            bound = ConstantLoopImageBound(words[0].selector);
         if (bound.IsEmpty())
             continue;
         u32 count{};
@@ -557,12 +662,24 @@ std::vector<IR::Value> ExpandBoundedPointerImages(IR::Program& program,
                 continue;
             bounds.push_back(bound);
         }
+        if (signed_bound && count > u32(std::numeric_limits<s32>::max()))
+            continue;
         if (!sampler_budget)
             sampler_budget = SamplerExpansionBudget(program.info, resources);
-        if (count == 0 || count > *sampler_budget || count > NUM_IMAGES ||
+        const ExpandedSampler sampler_key{
+            indexed_sampler ? words[8].base.Inst()->Arg(0) : IR::Value{},
+            indexed_sampler ? words[8].base.Inst()->Arg(1) : IR::Value{},
+            words[8].stride_bytes,
+            words[8].offset_dwords,
+            count,
+            bool(flags.is_depth)};
+        const bool sampler_reused =
+            std::ranges::find(expanded_samplers, sampler_key) != expanded_samplers.end();
+        const u32 sampler_cost = !indexed_sampler || sampler_reused ? 0 : count;
+        if (count == 0 || sampler_cost > *sampler_budget || count > NUM_IMAGES ||
             image_count + count - 1 > NUM_IMAGES)
             continue;
-        for (const auto& word : words) {
+        for (const auto& word : std::span{words}.first(word_count)) {
             valid &= u64(count - 1) * word.stride_bytes + u64(word.offset_dwords) * 4 <=
                      std::numeric_limits<u32>::max() - 3u;
         }
@@ -576,18 +693,20 @@ std::vector<IR::Value> ExpandBoundedPointerImages(IR::Program& program,
             ir.CompositeConstruct(ir.Imm32(0.0f), ir.Imm32(0.0f), ir.Imm32(0.0f), ir.Imm32(0.0f));
         for (u32 index = 0; index < count; ++index) {
             std::array<IR::Value, 12> loaded;
-            for (u32 i = 0; i < loaded.size(); ++i) {
+            for (u32 i = 0; i < word_count; ++i) {
                 loaded[i] =
                     ir.ReadConst(words[i].base, ir.Imm32(index * (words[i].stride_bytes / 4) +
                                                          words[i].offset_dwords));
             }
             const auto low = ir.CompositeConstruct(std::span{loaded}.first<4>());
             const auto high = ir.CompositeConstruct(std::span{loaded}.subspan<4, 4>());
-            const auto sampler = ir.CompositeConstruct(std::span{loaded}.last<4>());
+            const auto sampler =
+                indexed_sampler ? ir.CompositeConstruct(std::span{loaded}.last<4>()) : IR::Value{};
             const auto image_handle = ir.ImageHandle(low, high);
             auto* copy = &*block.PrependNewInst(pos, sample);
             copy->SetArg(0, image_handle);
-            copy->SetArg(1, sampler);
+            if (indexed_sampler)
+                copy->SetArg(1, sampler);
             const auto selected = ir.IEqual(IR::U32{words[0].selector}, ir.Imm32(index));
             std::array<IR::Value, 4> components;
             for (u32 component = 0; component < 4; ++component) {
@@ -598,7 +717,9 @@ std::vector<IR::Value> ExpandBoundedPointerImages(IR::Program& program,
             result = ir.CompositeConstruct(components);
         }
         sample.ReplaceUsesWithAndRemove(result);
-        *sampler_budget -= count;
+        *sampler_budget -= sampler_cost;
+        if (indexed_sampler && !sampler_reused)
+            expanded_samplers.push_back(sampler_key);
         image_count += count - 1;
         LOG_INFO(Render_Recompiler,
                  "BoundedPointerImage: shader={:#x} stage={} entries={} stride={} "
@@ -756,6 +877,9 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                 image_res.indexed_guest_entries=entries;
                 image_res.indexed_record_stride_bytes=record_stride;
                 image_res.indexed_descriptor_offset_bytes=record_offset;
+                image_res.indexed_is_pointer_table = resource.indexed_is_pointer_table;
+                image_res.indexed_pointee_offset_bytes =
+                    resource.indexed_image_pointee_offset_bytes;
                 image_res.is_guest_indexed=true;
                 LOG_INFO(Render_Recompiler,
                          "RealIndexedTSharpEnabled: shader={:#x} stage={} entries={} "
@@ -899,6 +1023,9 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             sampler_res.is_guest_indexed = true;
             sampler_res.indexed_table_fetch = image_res.indexed_table_fetch;
             sampler_res.indexed_guest_entries = image_res.indexed_guest_entries;
+            sampler_res.indexed_is_pointer_table = resource.indexed_is_pointer_table;
+            sampler_res.indexed_pointee_offset_bytes =
+                resource.indexed_sampler_pointee_offset_bytes;
             sampler_res.indexed_record_stride_bytes =
                 image_res.indexed_record_stride_bytes;
             sampler_res.indexed_sampler_offset_bytes =

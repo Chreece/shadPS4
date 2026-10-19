@@ -798,6 +798,9 @@ struct IndexedImageTableSource {
     u32 descriptor_stride_words{1};
     u32 record_stride_bytes{};
     u32 tsharp_offset_bytes{};
+    u32 image_pointee_offset_bytes{};
+    u32 sampler_pointee_offset_bytes{};
+    bool is_pointer_table{};
     bool gpu_texture_id_indexed{};
     bool mask_wrapped_guest_id{};
     std::array<const IR::Inst*, 8> words{};
@@ -805,7 +808,7 @@ struct IndexedImageTableSource {
     bool contiguous{};
 };
 
-static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) {
+static IndexedImageTableSource AnalyzeDirectIndexedImageTable(const IR::Inst& sample) {
     IndexedImageTableSource out{};
     if (sample.GetOpcode()!=IR::Opcode::ImageSampleRaw) return out;
     const auto* const image=sample.Arg(0).TryInst();
@@ -888,6 +891,82 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
     return out;
 }
 
+static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) {
+    auto direct = AnalyzeDirectIndexedImageTable(sample);
+    if (direct.contiguous || sample.GetOpcode() != IR::Opcode::ImageSampleRaw)
+        return direct;
+    const auto* handle = sample.Arg(0).TryInst();
+    const auto* sampler = sample.Arg(1).TryInst();
+    if (!handle || handle->GetOpcode() != IR::Opcode::ImageHandle || !sampler ||
+        sampler->GetOpcode() != IR::Opcode::CompositeConstructU32x4)
+        return {};
+    const std::array<const IR::Inst*, 3> pieces{handle->Arg(0).TryInst(), handle->Arg(1).TryInst(),
+                                                sampler};
+    const IR::Inst* pointer{};
+    std::array<u32, 12> offsets{};
+    for (u32 i = 0; i < offsets.size(); ++i) {
+        const auto* piece = pieces[i / 4];
+        if (!piece || piece->GetOpcode() != IR::Opcode::CompositeConstructU32x4)
+            return {};
+        const auto* word = piece->Arg(i % 4).TryInst();
+        if (!word || word->GetOpcode() != IR::Opcode::ReadConst)
+            return {};
+        const auto index = word->Arg(1);
+        const auto* base = word->Arg(0).TryInst();
+        if (!index.IsImmediate() || index.Type() != IR::Type::U32 ||
+            index.U32() > (std::numeric_limits<u32>::max() - 3) / 4 || !base ||
+            base->GetOpcode() != IR::Opcode::CompositeConstructU32x2)
+            return {};
+        offsets[i] = index.U32() * 4;
+        if (!pointer)
+            pointer = base;
+        else if (base->Arg(0) != pointer->Arg(0) || base->Arg(1) != pointer->Arg(1))
+            return {};
+    }
+    for (u32 i = 1; i < 8; ++i)
+        if (u64(offsets[i]) != u64(offsets[0]) + i * 4)
+            return {};
+    for (u32 i = 9; i < 12; ++i)
+        if (u64(offsets[i]) != u64(offsets[8]) + (i - 8) * 4)
+            return {};
+    const IR::Inst* buffer{};
+    std::array<StridedIndexedSharpWord, 2> pointer_words{};
+    for (u32 i = 0; i < 2; ++i) {
+        const auto* word = pointer->Arg(i).TryInst();
+        if (!word || word->GetOpcode() != IR::Opcode::ReadConstBuffer)
+            return {};
+        const auto* source = word->Arg(0).TryInst();
+        if (!source || source->GetOpcode() != IR::Opcode::CompositeConstructU32x4)
+            return {};
+        if (!buffer)
+            buffer = source;
+        else
+            for (u32 j = 0; j < 4; ++j)
+                if (buffer->Arg(j) != source->Arg(j))
+                    return {};
+        pointer_words[i] = AnalyzeStridedIndexedSharpWord(word->Arg(1));
+    }
+    const auto& first = pointer_words[0];
+    const auto& second = pointer_words[1];
+    if (!first.valid || !second.valid || first.gpu_record_id != second.gpu_record_id ||
+        first.record_stride_bytes != second.record_stride_bytes ||
+        u64(first.offset_dwords) + 1 != second.offset_dwords ||
+        (u64(first.offset_dwords) + 8) * 4 > first.record_stride_bytes)
+        return {};
+    IndexedImageTableSource out{};
+    out.buffer = buffer;
+    out.selector = static_cast<const IR::Inst*>(first.gpu_record_id);
+    out.record_stride_bytes = first.record_stride_bytes;
+    out.descriptor_stride_words = first.record_stride_bytes / 4;
+    out.tsharp_offset_bytes = first.offset_dwords * 4;
+    out.image_pointee_offset_bytes = offsets[0];
+    out.sampler_pointee_offset_bytes = offsets[8];
+    out.is_pointer_table = true;
+    out.contiguous = true;
+    out.gpu_texture_id_indexed = true;
+    return out;
+}
+
 // Preserve the matching S# from the SAME GPU-selected material record.
 // The unmodified guest shader controls the record index; never use a
 // host-evaluated index or a default sampler for a divergent S# table.
@@ -901,6 +980,8 @@ static IndexedSamplerTableSource AnalyzeIndexedSamplerTable(
     if (sample.GetOpcode() != IR::Opcode::ImageSampleRaw ||
         !image.contiguous || image.record_stride_bytes == 0 ||
         !image.selector || !image.buffer) return {};
+    if (image.is_pointer_table)
+        return {image.tsharp_offset_bytes, true};
     const auto* const sampler = sample.Arg(1).TryInst();
     if (!sampler || sampler->GetOpcode() != IR::Opcode::CompositeConstructU32x4 ||
         sampler->NumArgs() != 4u) return {};
@@ -965,8 +1046,9 @@ static bool SplitImageSampleByIndexedSelect(IR::Block& block, IR::Inst& sample,
                      table.gpu_texture_id_indexed,table.descriptor_stride_words);
         }
     }
-    if (!table.contiguous || budget<1 ||
-        table.selector->GetOpcode()!=IR::Opcode::SelectU32) return false;
+    if (!table.contiguous || table.is_pointer_table || budget < 1 ||
+        table.selector->GetOpcode() != IR::Opcode::SelectU32)
+        return false;
     const auto* const select=table.selector;
     // Only the index is GPU-dependent. The descriptor table itself must
     // have a stable, host-evaluable base/stride/count across invocations.
@@ -1107,6 +1189,11 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                         if (uniform &&
                             (table.record_stride_bytes == 0 || sampler.valid || uniform_sampler)) {
                             usage.indexed_sampler_offset_bytes = sampler.offset_bytes;
+                            usage.indexed_is_pointer_table = table.is_pointer_table;
+                            usage.indexed_image_pointee_offset_bytes =
+                                table.image_pointee_offset_bytes;
+                            usage.indexed_sampler_pointee_offset_bytes =
+                                table.sampler_pointee_offset_bytes;
                             usage.has_indexed_sampler_table = sampler.valid;
                             usage.indexed_table_sharp.num_dwords=4;
                             MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
