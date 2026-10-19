@@ -1,5 +1,7 @@
 # GoT: executed indexed-image sample feedback, 2026-10-19
 
+Current candidate: [all 82 recovered shader-resource paths compile and validate](got-unresolved-shaders-20261019.md), source `84117bbd1e356f6440c4c7dcfc239d950f144d1d`. Four replays require explicit missing-descriptor fixtures. Gameplay rendering remains unverified. Earlier evidence and pins below are historical.
+
 Gameplay graphics remain unverified. This branch retains the verified LDS/Phi and Vulkan synchronization work, adds opt-in sample feedback, and repairs indexed texture-table specialization. It does not yet claim a white-menu or scene-geometry fix.
 
 ## Evidence that changes the next step
