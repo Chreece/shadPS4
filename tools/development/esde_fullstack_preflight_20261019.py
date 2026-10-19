@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -308,10 +309,76 @@ def stage_preflight(report: dict, run: Path):
     # Do NOT merge the experimental Ghost 27k-table GPU-feedback branch.
 
 
+
+def build_staged_source(report: dict, run: Path):
+    """Compile the isolated candidate only after every pinned source merge succeeds.
+
+    The binary stays in project/ESDE; no ES-DE symlink or live emulator is
+    changed, and no game/process is launched.
+    """
+    stage = report.get("stage", {})
+    if stage.get("status") != "GOW_SOURCE_PLUS_GOT_V51_STENCIL_STAGED_NO_BUILD":
+        report["build"] = {"status": "SKIPPED_SOURCE_PREFLIGHT_NOT_PASSED"}
+        return
+    if shutil.which("docker") is None:
+        raise RuntimeError("Docker unavailable; do not modify host toolchain")
+    image = "shadps4-ngs2-builder:trixie-clang19-v1"
+    if command("docker", "image", "inspect", image, check=False).returncode:
+        raise RuntimeError("Pinned Debian 13/Clang 19 builder image not installed")
+    source = run / "source"
+    build = run / "build"
+    log = LOGS / ("esde-fullstack-build-" + run.name + ".log")
+    report["build"] = {"status": "STARTED", "build_log": str(log)}
+    # Existing source worktree has native git and submodules; never touch
+    # original GoW/GoT or installed ES-DE source/binaries.
+    def run_logged(label, argv):
+        with log.open("a") as out:
+            out.write("\nSTAGE=" + label + "\n")
+            out.flush()
+            p = subprocess.run(list(map(str, argv)), cwd=run, stdout=out,
+                               stderr=subprocess.STDOUT)
+        if p.returncode:
+            with log.open("rb") as inp:
+                inp.seek(max(0, log.stat().st_size - 24_000))
+                report["build"]["failure_tail"] = inp.read().decode("utf-8", "replace")
+            raise RuntimeError(f"Isolated build stage {label} failed, code={p.returncode}")
+    run_logged("SUBMODULES",
+               ["git", "-C", str(source), "submodule", "update", "--init",
+                "--recursive", "--jobs", "4"])
+    common = ["docker", "run", "--rm",
+              "--user", f"{os.getuid()}:{os.getgid()}",
+              "--mount", f"type=bind,src={ESDE},dst={ESDE}",
+              "--workdir", str(run), "--env", "HOME=" + str(run),
+              image]
+    cmake_args = ["cmake", "-S", str(source), "-B", str(build),
+                  "-G", "Ninja", "-DCMAKE_C_COMPILER=clang-19",
+                  "-DCMAKE_CXX_COMPILER=clang++-19",
+                  "-DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS=/usr/bin/clang-scan-deps-19",
+                  "-DCMAKE_BUILD_TYPE=Release", "-DENABLE_TESTS=OFF",
+                  "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF"]
+    run_logged("CMAKE_CONFIGURE", common + cmake_args)
+    run_logged("NATIVE_LINK", common + ["cmake", "--build", str(build),
+                                      "--target", "shadps4", "--parallel", "4"])
+    exe = build / "shadps4"
+    if not exe.is_file() or exe.is_symlink() or exe.read_bytes()[:5] != b"\x7fELF\x02":
+        raise RuntimeError("Isolated executable is not a 64-bit ELF")
+    deps = command("ldd", str(exe), check=False)
+    if deps.returncode or "not found" in deps.stdout:
+        raise RuntimeError("Isolated emulator is missing runtime libraries")
+    smoke = command("timeout", "30", str(exe), "--help", cwd=run, check=False)
+    if smoke.returncode:
+        raise RuntimeError("Candidate CLI smoke failed: " + (smoke.stdout + smoke.stderr)[-1800:])
+    report["build"] = {"status": "PASS_COMPILED_NOT_GAMEPLAY_TESTED",
+                       "sha256": digest(exe),
+                       "binary": str(exe),
+                       "build_log": str(log)}
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--stage", action="store_true",
-                    help="Also try a source-only GoW merge in a NEW disposable worktree")
+                    help="Also try an isolated GoW + Ghost source merge and conflict census")
+    ap.add_argument("--build", action="store_true",
+                    help="After conflict-free staging, compile one isolated binary, never install")
     args = ap.parse_args()
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     LOGS.mkdir(parents=True, exist_ok=True)
@@ -346,13 +413,15 @@ def main():
         "unified_lacks_guest_affinity_source":
             report["source"]["unified"].get("sha", {}).get("src/core/cpu_affinity.cpp") is None,
     }
-    if args.stage:
+    if args.stage or args.build:
         try:
             stage_preflight(report, run)
+            if args.build:
+                build_staged_source(report, run)
         except Exception as e:
-            report["stage"] = {**report.get("stage", {}),
-                               "status": "STOPPED_WITHOUT_INSTALLING",
-                               "exception": str(e)}
+            if "stage" not in report or "status" not in report["stage"]:
+                report["stage"] = {"status": "STOPPED_WITHOUT_INSTALLING"}
+            report["error"] = str(e)
     record.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     # Only bounded audit evidence, not saved games, full source trees or config.
     with tarfile.open(archive, "w:gz") as tf:
@@ -361,9 +430,13 @@ def main():
     print("FULLSTACK_ARCHIVE="+str(archive))
     for key, ok in report["checks"].items():
         print(key.upper()+"="+str(ok))
-    if args.stage:
+    if args.stage or args.build:
         print("STAGE_STATUS="+report.get("stage", {}).get("status", "NOT_STARTED"))
         print("STAGE_CONFLICT_COUNT="+str(len(report.get("stage", {}).get("conflicts", []))))
+    if args.build:
+        print("BUILD_STATUS="+report.get("build", {}).get("status", "SKIPPED"))
+        if report.get("build", {}).get("binary"):
+            print("CANDIDATE_BINARY="+report["build"]["binary"])
     print("INSTALLED_EMULATOR_UNCHANGED=YES")
     print("SUNSHINE_SSH_SAVES_CONFIG_DRIVER_UNCHANGED=YES")
 
