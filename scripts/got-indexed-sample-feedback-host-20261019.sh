@@ -10,7 +10,7 @@ BUILD="$WORK/build"
 BIN="$BUILD/shadps4"
 LOGS="$ROOT/logs"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
-CANDIDATE="a75e0223dd17feb655e08e7356940c2e9c6d187d"
+CANDIDATE="ad7320c7111d466c7a44a68d544bcddc3d3e855a"
 BRANCH="diagnostic/got-indexed-sample-feedback-20261019"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 NAME="got-indexed-sample-feedback-host-$STAMP"
@@ -206,6 +206,7 @@ src/video_core/renderer_vulkan/vk_got_indirect_producer_trace.h
 src/video_core/renderer_vulkan/vk_got_dma_origin_probe.h
 src/video_core/renderer_vulkan/vk_got_gds_compute_probe.h
 src/video_core/renderer_vulkan/vk_runtime.cpp
+src/video_core/renderer_vulkan/vk_runtime.h
 src/video_core/renderer_vulkan/vk_presenter.cpp
 src/video_core/renderer_vulkan/vk_rasterizer.cpp
 src/video_core/renderer_vulkan/vk_rasterizer.h
@@ -219,7 +220,7 @@ src/shader_recompiler/ir/operand_helper.h
 src/shader_recompiler/ir/reg.h
 src/shader_recompiler/ir/passes/lower_buffer_format_to_raw.cpp
 GOT_PINNED_OVERLAY_FILES
-test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 87 || {
+test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 88 || {
     STATUS=UNEXPECTED_CANDIDATE_OVERLAY_SIZE; exit 2;
 }
 
@@ -257,7 +258,7 @@ while IFS= read -r rel; do
         }
     fi
 done < "$RUN/info/overlay-files.txt"
-echo "SOURCE_PREFLIGHT=PASS files=87"
+echo "SOURCE_PREFLIGHT=PASS files=88"
 if [ -f "$RUN/info/preexisting-source-overrides.txt" ]; then
     echo "PREEXISTING_SOURCE_OVERRIDES=$(wc -l < "$RUN/info/preexisting-source-overrides.txt")"
     # Names and hashes only; no private local source content in the report.
@@ -591,7 +592,7 @@ echo "GOT_UPSTREAM_SHADER_SEMANTICS_TEST=PASS" | tee -a "$RUN/host-tests.log"
 
 echo "HOST_ONLY_TESTS=PASS" | tee -a "$RUN/host-tests.log"
 
-# Stage only verified content. All 87 file checks completed before the first write.
+# Stage only verified content. All 88 file checks completed before the first write.
 STATUS=STAGING_CANDIDATE
 while IFS= read -r rel; do
     if [ -e "$SOURCE/$rel" ]; then
