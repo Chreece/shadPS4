@@ -79,3 +79,81 @@ for Ghost. The launcher:
 The general-purpose executable has **not** yet passed either game's
 live visual acceptance. An audio-log line, process-alive status or
 shader-pipeline count alone is insufficient for promotion.
+
+## October 19 18:51 / 18:50 attached runtime evidence — regression
+
+Both files were inspected locally from their uploaded tar archives, including
+`full-console.log`, `gameplay-result.json`, and the observer errors:
+
+**CUSA34384 GoW Ragnarök**
+
+- Current unified ELF SHA-256 `48ae4ac2ec8f42e2155425521c8699359b466dd6459905948762de539865b5bc`.
+- Exact command: `--cpu-id-mode builtin --userfaultfd --game CUSA34384`.
+- `Game:Main` SIGSEGV, exit `-11`, writing `0xac` at guest code address
+  `0x154d284`. The process exited before the first 15-second sample.
+- Prior to the failure, numerous `Root` named 2-MiB direct-memory mappings,
+  then `sceAudio3dTerminate` and unsupported `sceSysmoduleUnloadModule`
+  for audio3D. That teardown may be a consequence of earlier failure, rather
+  than the primary defect. No faulting C++ call stack was captured.
+- The log also reports missing `sys_files.texpack.toc` and
+  `sys_files.lodpack.toc` lookups, and a dummy
+  `__sys_regmgr_call` which leaves its output unchanged. Neither is
+  independently proven causal.
+- No Vulkan device-lost condition is reported. Do not target GoW's renderer
+  or sound backend as a proven cause of this *early* fault.
+- **Source provenance gap:** the previous audit marked the last
+  fully rendered GoW renderer source fingerprint
+  `bde3553d3c495fff2f34f177982a8f19e7a71542981d5c5194e8032e78328d0a`
+  missing from both currently modified local worktrees, but then allowed
+  a non-proven renderer into the combined build. That explicit omission must
+  be investigated separately from early CPU/HLE abort.
+- First controlled falsification: launch the SHA-pinned previously rendered
+  GoW executable `8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef`
+  with the **same isolated user/config copy** that crashed with new unified.
+  If it also faults, investigate profile/assets and host changes; if it
+  reaches its old scene, this is a binary/source regression.
+
+**CUSA11456 Ghost of Tsushima**
+
+- Full process stayed alive beyond 120 seconds and ultimately exited with
+  code 0 after the Home/PS exit was accepted (the observer erroneously reports
+  `GAME_EXITED_EARLY_WITH_CODE_0` as failure because its full observation
+  period was not completed).
+- The game's soundtrack and shaders advanced, but the user saw a black
+  screen after logos; no evidence of Vulkan device loss or segfault.
+- Material compute shader `0x5c4c2b6f` still reports failed
+  SRT walker offset calculations and GPU/DMA fallback. Other DMA fallback
+  shaders include `0x2ba74851`, `0xa4f19a`, and `0x8ced785b`.
+  The log also has repeated ~4GiB descriptor size clamps.
+- The last earlier Ghost source producing visible horse/rider and partial
+  world is `e9f470b359845a456139a865aa1d7b3001f0dbfd`, documented
+  in `docs/diagnostics/got-visual-baseline-20261017.md`.
+  Its GPU-indexed sampled images/real guest T# table and binding
+  improvements are not simply equivalent to the limited SRT helper
+  and shader modules in the general merged GoW branch. However,
+  later fragment-feedback instrumentation caused visual regressions,
+  so do **not** promote the whole newer experimental branch.
+
+### Source-proof recovery procedure
+
+`tools/development/esde_fullstack_regression_triage_20261019.py` is
+the paired, read-only audit. It:
+1. Searches only existing local GoW project source files and reachable
+   Git history for the exact missing renderer SHA, without overwriting any
+   working tree or guessing a source replacement.
+2. Fetches the pinned **pre-feedback** Ghost world-visible Git object
+   into the existing isolated source's object database and runs a
+   Git `merge-tree --write-tree` conflict preview, **not** a merge.
+   The source tree, installed core and executable remain unchanged.
+3. With `--reference-gow`, tests the already saved GoW
+   `8b0cbcba...` binary with a new copy of the same portable
+   user configuration used for the failed unified GoW run. It refuses
+   to start with under 8 GiB free RX 7900 XTX VRAM, any active emulator,
+   missing X11, or altered binary SHA; never stops Ollama.
+   The existing generic observer records process exit and UFFD/GPU
+   observations. Manual gameplay/visual comparison still matters.
+
+This is a **regression isolation and source recovery gate**; it does not
+yet establish that either missing implementation can be transplanted into
+a single upstream main build without breaking the other title. There has
+been no new native build, and neither game's runtime issue is claimed fixed.
