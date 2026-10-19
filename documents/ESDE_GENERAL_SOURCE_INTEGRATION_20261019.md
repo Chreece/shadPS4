@@ -192,3 +192,23 @@ The following run must still replay the 84 later generic fixes and expose
 any new genuine source conflicts; do not promote the old compile-only
 candidate until GoW, Ghost, unrelated titles and ES-DE exit work on the
 same new ELF.
+
+## Failed-candidate restoration
+
+The general-engine build now keeps two strictly separate scopes:
+
+- On source conflict, **no source or ELF bytes are changed**. Every
+  conflict is archived, with its original GoW and Ghost sides.
+- If source merging succeeds but one of the eight native C++ regressions,
+  compilation, ELF dependency checks, or CLI smoke tests fails, the
+  builder restores only the isolated staged C++ source files from
+  exact project-workspace backups and restores the SHA-pinned previous
+  candidate executable. Every restored source file's SHA-256 is verified.
+  The proposed merged code and test/compiler evidence remain under
+  \`ESDE/general-engine-merge-<timestamp>/\` for deliberate reconciliation.
+
+The semantic resolver consumes precisely the **nine 22:21 conflict
+preview bytes**. It does not use the nine-file handling as a host runtime
+hook, title selector, or shader hash fallback. If the Git source changed
+after that report, the resolver refuses an unexpected preimage and
+emits the new C++ conflict for review.
