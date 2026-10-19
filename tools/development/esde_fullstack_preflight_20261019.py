@@ -40,6 +40,8 @@ GOW_BIN_SHA = "8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef"
 
 # SHA-1 Git blobs from the Oct 18 GoW checkpoint's exact source manifest.
 GOW_PROVEN_BLOBS = {
+    "src/common/logging/log.cpp":
+        "c0db514053650522588349215738e46408c905e0",
     "src/video_core/page_manager.cpp":
         "75ede506fa3a07b01263542af320a3e90535adc4",
     "src/core/libraries/audio/audioout.cpp":
