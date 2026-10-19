@@ -8,6 +8,7 @@ WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
 PIN="1b1ca11bfea7025c97bcde4810f892eee81c7227"
+SHADER_COLLECTOR_PIN="6223d8df521183f80f08762674a9faf8090f5088"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$PIN"
 HOST_REPORT="${GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT:-$LOGS/got-indexed-sample-feedback-host-not-built.tar.gz}"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
@@ -27,7 +28,7 @@ TEST_PGID=""
 BIN_SHA=""
 GAME_LAUNCHED=NO
 START_ISO="$(date -Is)"
-mkdir -p "$RUN/info" "$RUN/screenshots" "$RUN/profile/user/shader/got-menu-probes" "$LOGS"
+mkdir -p "$RUN/info" "$RUN/screenshots" "$RUN/profile/user/shader/got-menu-probes" "$RUN/remaining-shaders" "$LOGS"
 touch "$RUN/info/console.log" "$RUN/game.log"
 exec > >(tee -a "$RUN/info/console.log") 2>&1
 
@@ -433,6 +434,19 @@ PY
     done
   find "$RUN/info/material-table-shaders" -maxdepth 1 -type f \
     -printf '%f bytes=%s\n' > "$RUN/info/material-table-shader-files.txt"
+  SHADER_EVIDENCE_STATUS=COLLECTOR_UNAVAILABLE
+  if git -C "$WORK/source" show \
+      "$SHADER_COLLECTOR_PIN:scripts/got-collect-unresolved-shaders-20261019.py" \
+      > "$RUN/info/collect-unresolved-shaders.py" 2> "$RUN/info/shader-collector-load.log"; then
+    if python3 "$RUN/info/collect-unresolved-shaders.py" --run "$RUN" \
+        --output "$RUN/remaining-shaders/unresolved-shaders.tar.gz" \
+        > "$RUN/info/shader-collector.log" 2>&1; then
+      SHADER_EVIDENCE_STATUS="$(sed -n 's/^STATUS=//p' "$RUN/info/shader-collector.log" | head -1)"
+    else
+      SHADER_EVIDENCE_STATUS=COLLECTION_FAILED
+    fi
+  fi
+  echo "SHADER_EVIDENCE_STATUS=$SHADER_EVIDENCE_STATUS"
   grep -aE 'IndexedTableDump:|LiveMaterialPermutation|GuestStridedSourceProof:|GuestTsharpIncompleteProgram:|RealIndexedTSharpEnabled:|RealIndexedTSharpBound:|StridedSamplerBound:|InvalidTSharpSource:|InvalidVSharpSource:' \
     "$RUN/game.log" > "$RUN/info/indexed-table-transitions.log" || true
 
@@ -922,13 +936,14 @@ PYSTAGEPIXELS
     echo "CANDIDATE_SOURCE=$PIN"
     echo "CAPTURE_DURATION_SECONDS=$SECONDS_TO_RUN"
     echo "PACKED_AND_STRIDED_TABLE_SIZE_SPECIALIZATION=ENABLED"
+    echo "SHADER_EVIDENCE_STATUS=$SHADER_EVIDENCE_STATUS"
     echo "INDEXED_TABLE_DUMP_EVENTS=$(grep -ac 'IndexedTableDump:' "$RUN/game.log" || true)"
     echo "INDEXED_UNIFORM_SAMPLER_TABLES=ENABLED"
     echo "INDEXED_EXPLICIT_LOD=ENABLED"
     echo "BOUNDED_POINTER_IMAGE_LOWERINGS=$(grep -ac 'BoundedPointerImage:' "$RUN/game.log" || true)"
     echo "BOUNDED_POINTER_IMAGE_SHADER=0x5c4c2b6f_EXPECTED_WHEN_COUNT_4"
     echo "BOUNDED_POINTER_COUNT_SPECIALIZATION=ENABLED"
-    echo "INDEXED_FEEDBACK_SHADERS=0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f"
+    echo "INDEXED_FEEDBACK_SHADERS=0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
     echo "INDEXED_FEEDBACK_CAPTURE_BINDINGS=1,32,256"
     echo "INDEXED_FEEDBACK_COMPLETED_ROWS=$(grep -ac 'IndexedImageFeedback:.*timeline_complete=YES' "$RUN/game.log" || true)"
     echo "INDEXED_TSHARP_BINDS=$(grep -ac 'RealIndexedTSharpBound:' "$RUN/game.log" || true)"
@@ -946,7 +961,7 @@ PYSTAGEPIXELS
     echo "EXIT=$rc"
     echo "SSH_SESSION=OPEN"
   } > "$RUN/info/final.txt"
-  tar -czf "$REPORT" -C "$RUN" info screenshots game.log profile/user/shader/got-menu-probes 2>/dev/null || {
+  tar -czf "$REPORT" -C "$RUN" info screenshots game.log remaining-shaders profile/user/shader/got-menu-probes 2>/dev/null || {
     echo "ARCHIVE_ERROR keep=$RUN"; exit 3;
   }
   echo "STATUS=$STATUS GAME_EXIT=$GAME_EXIT EXIT=$rc"
