@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build indexed-table specialization repair and bounded feedback. No game, Vulkan init, service changes,
+# Build image-view capacity repair and bounded material feedback. No game, Vulkan init, service changes,
 # Git checkout, submodule update, profile writes, or SSH exit.
 set -Eeuo pipefail
 ROOT="$HOME/projects/shadps4"
@@ -10,7 +10,7 @@ BUILD="$WORK/build"
 BIN="$BUILD/shadps4"
 LOGS="$ROOT/logs"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
-CANDIDATE="c8121ad971408e5fb28b2da28de09625fa53efe0"
+CANDIDATE="b18cfc312904d8eaf01ed7788b85a97bcd114121"
 BRANCH="diagnostic/got-indexed-sample-feedback-20261019"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 NAME="got-indexed-sample-feedback-host-$STAMP"

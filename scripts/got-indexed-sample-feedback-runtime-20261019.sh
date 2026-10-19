@@ -7,7 +7,7 @@ GOT="$ROOT/GhostOfTsushima"
 WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
-PIN="c8121ad971408e5fb28b2da28de09625fa53efe0"
+PIN="b18cfc312904d8eaf01ed7788b85a97bcd114121"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$PIN"
 HOST_REPORT="${GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT:-$LOGS/got-indexed-sample-feedback-host-not-built.tar.gz}"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
@@ -62,6 +62,8 @@ cleanup() {
     if [ "$AFTER" != "$BIN_SHA" ]; then rc=3; fi
     echo "ACTIVE_BINARY_UNCHANGED=$([ "$AFTER" = "$BIN_SHA" ] && echo PASS || echo FAIL)"
   fi
+  grep -aE 'TextureCacheSlots:|TextureSlotPressure:|SlotVector pool=|Assertion Failed!' \
+    "$RUN/game.log" > "$RUN/info/texture-cache-slots.log" || true
   grep -aE 'GuestStridedSourceProof:|GuestStridedPermutationProof:|GuestTsharpIncompleteProgram:|RealIndexedTSharp(Enabled|Bound|UnsupportedSize):|ResourceNullBuffer:|GPUVM fault detected|GPU hang detected' \
     "$RUN/game.log" > "$RUN/info/graphics-evidence.log" || true
   grep -aE 'IndexedImageFeedback(Submitted)?:' "$RUN/game.log" \
@@ -82,6 +84,11 @@ out=["PURPOSE=OBSERVE_EXECUTED_GPU_TEXTURE_IDS_AND_SAMPLE_VALUES",
      f"COMPLETED_RESOURCE_ROWS={len(rows)}"]
 for key in ["samples","out_of_range","nonzero_samples","nonfinite_samples"]:
     out.append(key.upper()+"="+str(sum(value(r,key) for r in rows)))
+for shader in sorted(set(re.search(r"shader=(\S+)", row)[1] for row in rows)):
+    matching=[r for r in rows if re.search(r"shader=(\S+)",r)[1]==shader]
+    out.append("SHADER="+shader+" COMPLETED_ROWS="+str(len(matching))+" "+
+               " ".join(k.upper()+"="+str(sum(value(r,k) for r in matching))
+                        for k in ["samples","out_of_range","nonzero_samples","nonfinite_samples"]))
 out.extend(rows)
 if not rows: out.append("RESULT=NO_COMPLETED_GPU_CAPTURE")
 elif not sum(value(r,"samples") for r in rows): out.append("RESULT=NO_EXECUTED_SAMPLES_IN_CAPTURED_DRAWS")
@@ -914,7 +921,7 @@ PYSTAGEPIXELS
     echo "CANDIDATE_SOURCE=$PIN"
     echo "CAPTURE_DURATION_SECONDS=$SECONDS_TO_RUN"
     echo "PACKED_AND_STRIDED_TABLE_SIZE_SPECIALIZATION=ENABLED"
-    echo "INDEXED_FEEDBACK_SHADER=0x7eaf40ad"
+    echo "INDEXED_FEEDBACK_SHADERS=0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f"
     echo "INDEXED_FEEDBACK_CAPTURE_BINDINGS=1,32,256"
     echo "INDEXED_FEEDBACK_COMPLETED_ROWS=$(grep -ac 'IndexedImageFeedback:.*timeline_complete=YES' "$RUN/game.log" || true)"
     echo "INDEXED_TSHARP_BINDS=$(grep -ac 'RealIndexedTSharpBound:' "$RUN/game.log" || true)"
@@ -927,6 +934,7 @@ PYSTAGEPIXELS
     echo "DIAGNOSTIC_SHADER_INSTRUMENTATION=SEPARATE_BUFFER_ONLY"
     echo "SHADER_DISK_CACHE=DISABLED_FOR_DIAGNOSTIC_RUN"
     echo "WHITE_MENU_FIX=NOT_CLAIMED_REVIEW_SCREENSHOTS_AND_SCENE_QUERIES"
+    echo "TEXTURE_POOL_EXHAUSTION_EVENTS=$(grep -ac 'SlotVector pool=.*exhausted' "$RUN/game.log" || true)"
     echo "GPUVM_FAULT_EVENTS=$(grep -aic 'GPUVM fault detected' "$RUN/game.log" || true)"
     echo "EXIT=$rc"
     echo "SSH_SESSION=OPEN"
@@ -1110,7 +1118,7 @@ echo "ENTER_GAMEPLAY_WITH_YOUR_CONTROLLER; capture stops automatically after fiv
   export SHADPS4_GPUVM_SPARSE_MAP=0
   export SHADPS4_RESOURCE_AUDIT=1
   export SHADPS4_RESOURCE_AUDIT_HASH="0x7eaf40ad,0x55d17c16,0x5c4c2b6f"
-  export SHADPS4_INDEXED_IMAGE_FEEDBACK_HASHES="0x7eaf40ad"
+  export SHADPS4_INDEXED_IMAGE_FEEDBACK_HASHES="0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f"
   export SHADPS4_INDEXED_IMAGE_AUDIT=1
   export SHADPS4_INDEXED_IMAGE_AUDIT_HASHES="0x7eaf40ad"
   export SHADPS4_MENU_PASS_TRACE=1
@@ -1144,6 +1152,7 @@ TEST_PGID=$!
 GAME_LAUNCHED=YES
 start="$(date +%s)"
 last=-20
+next_screenshot=10
 echo "elapsed,vram_used_bytes,vram_free_bytes,gpu_busy" > "$RUN/info/gpu-samples.csv"
 while kill -0 "$TEST_PGID" 2>/dev/null; do
   elapsed=$(( $(date +%s)-start ))
@@ -1176,13 +1185,11 @@ while kill -0 "$TEST_PGID" 2>/dev/null; do
     echo "GOT_RUNNING elapsed=${elapsed}s/${SECONDS_TO_RUN}s free_vram=$available gpu_busy=$busy"
     last="$elapsed"
   fi
-  for mark in 20 40 80 95 110 116 150 180 210 240 270 295; do
-    if [ "$elapsed" -ge "$mark" ] && [ "$elapsed" -lt $((mark+4)) ] &&
-       [ ! -f "$RUN/screenshots/$mark.png" ] && command -v import >/dev/null; then
-      timeout 6s import -display "$DISPLAY_OK" -window root \
-        "$RUN/screenshots/$mark.png" >/dev/null 2>&1 || true
-    fi
-  done
+  if [ "$elapsed" -ge "$next_screenshot" ] && command -v import >/dev/null; then
+    timeout 6s import -display "$DISPLAY_OK" -window root \
+      "$RUN/screenshots/$elapsed.png" >/dev/null 2>&1 || true
+    next_screenshot=$((elapsed+10))
+  fi
   sleep 3
 done
 set +e
