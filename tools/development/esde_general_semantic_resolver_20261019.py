@@ -11,6 +11,8 @@ Any changed preimage, unknown C++ conflict, or broken postimage stops.
 from __future__ import annotations
 import hashlib
 import re
+import tarfile
+from pathlib import Path
 
 # Exact Git merge-file -p previews produced by the user's combined upstream
 # Oct19 + generic Oct17 GPU/SRT source. Keyed by FULL relative source path.
@@ -244,3 +246,21 @@ def preserve_verified_srt_header(file: str, current: bytes, incoming: bytes) -> 
     # than overwrite the header with a different historical snapshot.
     # Subsequent source/ABI changes still need their native regression tests.
     return current
+
+
+def check_archived_conflict_evidence(archive: Path) -> dict[str, str]:
+    """Review all nine uploaded 22:21 source previews without editing any tree."""
+    results = {}
+    with tarfile.open(archive, "r:gz") as tf:
+        for file, (_, expected_post_sha, _) in REVIEWED.items():
+            member = tf.extractfile("conflicts/" + file)
+            if member is None:
+                raise ValueError("Audited merge preview absent from archive: " + file)
+            preview = member.read()
+            output = resolve_reviewed(file, preview)
+            if output is None or digest(output) != expected_post_sha:
+                raise ValueError("Audited C++ semantic resolution incomplete: " + file)
+            results[file] = expected_post_sha
+    if len(results) != 9:
+        raise ValueError("Audited nine-file source review unexpectedly incomplete")
+    return results
