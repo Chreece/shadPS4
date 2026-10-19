@@ -108,7 +108,8 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
     Shader::IR::DumpProgram(program, info, "pre-res-discover.");
     auto resources = Shader::Optimization::ResourceDiscoverPass(program, profile);
     Shader::Optimization::FlattenExtendedUserdataPass(program);
-    const auto image_bounds = Shader::Optimization::ExpandBoundedPointerImages(program, resources);
+    auto image_bounds = Shader::Optimization::ExpandBoundedPointerImages(program, resources);
+    Shader::Optimization::ExpandBoundedBufferTables(program, resources, profile, image_bounds);
     if (!image_bounds.empty()) {
         info.srt_info = {};
         for (auto* block : program.blocks) {

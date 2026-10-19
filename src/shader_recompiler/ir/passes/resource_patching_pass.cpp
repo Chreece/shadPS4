@@ -1,10 +1,11 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include <cstdlib>
-#include <vector>
 #include <bit>
+#include <cstdlib>
+#include <tuple>
 #include <unordered_map>
+#include <vector>
 
 #include <limits>
 #include "shader_recompiler/info.h"
@@ -730,6 +731,290 @@ std::vector<IR::Value> ExpandBoundedPointerImages(IR::Program& program,
     return bounds;
 }
 
+static std::optional<u32> ConstantSelectorMaximum(IR::Value value, u32 depth = 0) {
+    if (depth == 32)
+        return {};
+    if (value.IsImmediate()) {
+        if (value.Type() == IR::Type::U32)
+            return value.U32();
+        if (value.Type() == IR::Type::F32)
+            return std::bit_cast<u32>(value.F32());
+        return {};
+    }
+    auto* inst = value.TryInst();
+    if (!inst)
+        return {};
+    switch (inst->GetOpcode()) {
+    case IR::Opcode::ReadFirstLane:
+    case IR::Opcode::ReadLane:
+    case IR::Opcode::BitCastU32F32:
+    case IR::Opcode::BitCastF32U32:
+        return ConstantSelectorMaximum(inst->Arg(0), depth + 1);
+    case IR::Opcode::Phi:
+    case IR::Opcode::SelectU32:
+    case IR::Opcode::SelectF32: {
+        u32 maximum{};
+        const u32 start = inst->GetOpcode() == IR::Opcode::Phi ? 0 : 1;
+        for (u32 i = start; i < inst->NumArgs(); ++i) {
+            const auto part = ConstantSelectorMaximum(inst->Arg(i), depth + 1);
+            if (!part)
+                return {};
+            maximum = std::max(maximum, *part);
+        }
+        return maximum;
+    }
+    default:
+        return {};
+    }
+}
+
+void ExpandBoundedBufferTables(IR::Program& program, const ResourceDiscoveryList& resources,
+                               const Profile& profile, std::vector<IR::Value>& bounds) {
+    if (program.info.hw_stage != HwStage::Compute)
+        return;
+    struct Table {
+        std::array<IR::Value, 4> descriptor;
+        u32 stride, offset, count;
+        bool pointer{};
+        bool operator==(const Table&) const = default;
+    };
+    std::vector<Table> expanded;
+    using BufferKey = std::tuple<SharpFetch<AmdGpu::Buffer>, SharpFetchPostOp, u32>;
+    std::vector<BufferKey> existing;
+    for (const auto& usage : resources) {
+        if (!IsBufferInstruction(*usage.user))
+            continue;
+        const auto& sharp = usage.sharps[0];
+        const BufferKey key{ConstructSharpFetch<AmdGpu::Buffer>(sharp, program.info), sharp.post_op,
+                            sharp.post_op_data.dw1_mask};
+        if (std::ranges::find(existing, key) == existing.end())
+            existing.push_back(key);
+    }
+    const u32 limit = std::min(NUM_BUFFERS, profile.max_storage_buffer_bindings);
+    u32 reserved = u32(existing.size()) + 8;
+    for (const auto& usage : resources) {
+        auto& inst = *usage.user;
+        if (!IsBufferInstruction(inst) || IsBufferAtomic(inst) ||
+            inst.GetOpcode() == IR::Opcode::ReadConstBuffer ||
+            inst.GetOpcode() == IR::Opcode::LoadBufferU8 ||
+            inst.GetOpcode() == IR::Opcode::LoadBufferU16 ||
+            usage.sharps[0].post_op != SharpFetchPostOp::None ||
+            ConstructSharpFetch<AmdGpu::Buffer>(usage.sharps[0], program.info).summary !=
+                SharpFetch<AmdGpu::Buffer>::Summary::Invalid)
+            continue;
+        auto* handle =
+            MatchOpcode(usage.original_buffer_handle, IR::Opcode::CompositeConstructU32x4);
+        if (!handle)
+            continue;
+        Table table{};
+        IR::Value selector_value;
+        IR::Inst* table_handle{};
+        bool valid = true;
+        if (MatchOpcode(handle->Arg(0), IR::Opcode::ReadConstBuffer)) {
+            std::array<StridedIndexedSharpWord, 4> words{};
+            for (u32 i = 0; i < 4; ++i) {
+                auto* read = MatchOpcode(handle->Arg(i), IR::Opcode::ReadConstBuffer);
+                auto* source =
+                    read ? MatchOpcode(read->Arg(0), IR::Opcode::CompositeConstructU32x4) : nullptr;
+                if (!source) {
+                    valid = false;
+                    break;
+                }
+                if (!table_handle)
+                    table_handle = source;
+                for (u32 word = 0; word < 4; ++word)
+                    valid &= source->Arg(word) == table_handle->Arg(word) &&
+                             IsHostUniformSrtOffset(source->Arg(word));
+                words[i] = AnalyzeStridedIndexedSharpWord(read->Arg(1));
+            }
+            if (!valid || !AreContiguousStridedSharpWords(words))
+                continue;
+            SharpReference source{};
+            source.num_dwords = 4;
+            for (u32 i = 0; i < 4; ++i)
+                table.descriptor[i] = source.dwords[i] = table_handle->Arg(i);
+            AmdGpu::Buffer sharp{};
+            if (!ConstructSharpFetch<AmdGpu::Buffer>(source, program.info)
+                     .FetchChecked(program.info.flattened_ud_buf.data(),
+                                   program.info.flattened_ud_buf.size(), &sharp))
+                continue;
+            for (u32 word : {1u, 2u}) {
+                const auto witness = table.descriptor[word];
+                if (std::ranges::find(bounds, witness) == bounds.end()) {
+                    if (bounds.size() == program.info.bounded_image_counts.size()) {
+                        valid = false;
+                        break;
+                    }
+                    bounds.push_back(witness);
+                }
+            }
+            table.stride = words[0].record_stride_bytes;
+            table.offset = words[0].offset_dwords;
+            selector_value = IR::Value{
+                const_cast<IR::Inst*>(static_cast<const IR::Inst*>(words[0].gpu_record_id))};
+            const u64 bytes =
+                sharp.stride ? u64(sharp.stride) * sharp.num_records : sharp.num_records;
+            if (!valid || !sharp.Valid() || sharp.base_address == 0 || bytes == 0 ||
+                bytes > std::numeric_limits<u32>::max() || bytes % table.stride != 0 ||
+                bytes / table.stride > limit)
+                continue;
+            table.count = bytes / table.stride;
+        } else {
+            std::array<PointerImageWord, 4> words{};
+            for (u32 i = 0; i < 4; ++i) {
+                const auto word = MatchPointerImageWord(handle->Arg(i));
+                if (!word) {
+                    valid = false;
+                    break;
+                }
+                words[i] = *word;
+                valid &= word->selector == words[0].selector &&
+                         word->stride_bytes == words[0].stride_bytes &&
+                         word->offset_dwords == words[0].offset_dwords + i &&
+                         word->base.Inst()->Arg(0) == words[0].base.Inst()->Arg(0) &&
+                         word->base.Inst()->Arg(1) == words[0].base.Inst()->Arg(1);
+            }
+            if (!valid)
+                continue;
+            selector_value = words[0].selector;
+            IR::Value bound;
+            bool signed_bound{};
+            for (auto* guard : program.blocks) {
+                if (!guard->cfg_block || !guard->cfg_block->branch_false)
+                    continue;
+                auto* body = guard->cfg_block->branch_false->ir_block;
+                auto* cmp = MatchBoundGuard(guard->branch_cond);
+                if (!cmp || cmp->Arg(0) != selector_value || body->ImmPredecessors().size() != 1 ||
+                    body->ImmPredecessors()[0] != guard ||
+                    !DominatesPointerSample(body, inst.GetParent()) ||
+                    !IsHostUniformSrtOffset(cmp->Arg(1)))
+                    continue;
+                signed_bound = cmp->GetOpcode() == IR::Opcode::SLessThan32;
+                if (signed_bound) {
+                    auto* step = ZeroBasedCounterStep(selector_value);
+                    if (!step || !DominatesPointerSample(body, step->GetParent()))
+                        continue;
+                }
+                bound = cmp->Arg(1);
+                break;
+            }
+            if (bound.IsEmpty())
+                bound = ConstantLoopImageBound(selector_value);
+            if (bound.IsEmpty()) {
+                const auto maximum = ConstantSelectorMaximum(selector_value);
+                if (maximum && *maximum < limit)
+                    bound = IR::Value{*maximum + 1};
+            }
+            if (bound.IsEmpty() ||
+                !FetchBound(bound, program.info)
+                     .FetchChecked(program.info.flattened_ud_buf.data(),
+                                   program.info.flattened_ud_buf.size(), &table.count))
+                continue;
+            if (std::ranges::find(bounds, bound) == bounds.end()) {
+                if (bounds.size() == program.info.bounded_image_counts.size())
+                    continue;
+                bounds.push_back(bound);
+            }
+            if (table.count == 0 || table.count > limit ||
+                (signed_bound && table.count > u32(std::numeric_limits<s32>::max())))
+                continue;
+            table.pointer = true;
+            table_handle = words[0].base.Inst();
+            table.descriptor[0] = table_handle->Arg(0);
+            table.descriptor[1] = table_handle->Arg(1);
+            table.stride = words[0].stride_bytes;
+            table.offset = words[0].offset_dwords;
+            if (u64(table.count - 1) * table.stride + u64(table.offset) * 4 + 15 >
+                std::numeric_limits<u32>::max())
+                continue;
+        }
+        const bool reused = std::ranges::find(expanded, table) != expanded.end();
+        if (!reused && (reserved > limit || table.count > limit - reserved))
+            continue;
+        if (!reused) {
+            expanded.push_back(table);
+            reserved += table.count;
+        }
+        auto& block = *inst.GetParent();
+        const auto pos = IR::Block::InstructionList::s_iterator_to(inst);
+        IR::IREmitter ir{block, pos};
+        const IR::U32 selector{selector_value};
+        IR::Value result;
+        for (u32 index = 0; index < table.count; ++index) {
+            std::array<IR::Value, 4> descriptor;
+            for (u32 word = 0; word < 4; ++word) {
+                const auto offset = ir.Imm32(index * (table.stride / 4) + table.offset + word);
+                descriptor[word] = table.pointer
+                                       ? ir.ReadConst(IR::Value{table_handle}, offset)
+                                       : ir.ReadConstBuffer(IR::Value{table_handle}, offset, {});
+            }
+            const auto selected = ir.IEqual(selector, ir.Imm32(index));
+            const auto enabled = ir.Select(selected, ir.Imm32(1u), ir.Imm32(0u));
+            auto* address = inst.Arg(1).Inst();
+            const auto guarded_address =
+                ir.CompositeConstruct(address->Arg(0), address->Arg(1), address->Arg(2), enabled);
+            const auto new_handle = ir.CompositeConstruct(descriptor);
+            auto* copy = &*block.PrependNewInst(pos, inst);
+            copy->SetArg(0, new_handle);
+            copy->SetArg(1, guarded_address);
+            auto flags = inst.Flags<IR::BufferInstInfo>();
+            flags.is_predicated.Assign(1);
+            copy->SetFlags(flags);
+            if (IsBufferStore(inst))
+                continue;
+            const IR::Value loaded{copy};
+            if (result.IsEmpty()) {
+                result = loaded;
+                continue;
+            }
+            const auto type = inst.Type();
+            const u32 components = type == IR::Type::U32x2 || type == IR::Type::F32x2   ? 2
+                                   : type == IR::Type::U32x3 || type == IR::Type::F32x3 ? 3
+                                   : type == IR::Type::U32x4 || type == IR::Type::F32x4 ? 4
+                                                                                        : 1;
+            if (components == 1) {
+                result = ir.Select(selected, loaded, result);
+            } else {
+                std::array<IR::Value, 4> values;
+                for (u32 component = 0; component < components; ++component)
+                    values[component] = ir.Select(selected, ir.CompositeExtract(loaded, component),
+                                                  ir.CompositeExtract(result, component));
+                result = ir.CompositeConstruct(std::span{values}.first(components));
+            }
+        }
+        if (IsBufferStore(inst)) {
+            inst.Invalidate();
+        } else {
+            const auto in_range = ir.ILessThan(selector, ir.Imm32(table.count), false);
+            const auto type = inst.Type();
+            const u32 components = type == IR::Type::U32x2 || type == IR::Type::F32x2   ? 2
+                                   : type == IR::Type::U32x3 || type == IR::Type::F32x3 ? 3
+                                   : type == IR::Type::U32x4 || type == IR::Type::F32x4 ? 4
+                                                                                        : 1;
+            if (components == 1) {
+                const IR::Value zero = type == IR::Type::U64   ? IR::Value{ir.Imm64(u64{0})}
+                                       : type == IR::Type::F32 ? IR::Value{ir.Imm32(0.f)}
+                                                               : IR::Value{ir.Imm32(0u)};
+                result = ir.Select(in_range, result, zero);
+            } else {
+                std::array<IR::Value, 4> values;
+                for (u32 component = 0; component < components; ++component) {
+                    const auto value = ir.CompositeExtract(result, component);
+                    const auto zero = value.Type() == IR::Type::F32 ? IR::Value{ir.Imm32(0.f)}
+                                                                    : IR::Value{ir.Imm32(0u)};
+                    values[component] = ir.Select(in_range, value, zero);
+                }
+                result = ir.CompositeConstruct(std::span{values}.first(components));
+            }
+            inst.ReplaceUsesWithAndRemove(result);
+        }
+        LOG_INFO(Render_Recompiler,
+                 "BoundedBufferTable: shader={:#x} entries={} stride={} offset={} "
+                 "gpu_selector=YES inactive_access=SKIPPED",
+                 program.info.pgm_hash, table.count, table.stride, table.offset * 4);
+    }
+}
+
 void RecordBoundedImageCounts(Info& info, std::span<const IR::Value> bounds) {
     ASSERT(bounds.size() <= info.bounded_image_counts.size());
     info.bounded_image_count_count = bounds.size();
@@ -1419,8 +1704,12 @@ void PatchBufferArgs(IR::Inst& inst, Info& info, const ResourceDiscovery& discov
     }
 
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
-    inst.SetArg(IR::LoadBufferArgs::Address,
-                CalculateBufferAddress(ir, inst, info, buffer, buffer.stride));
+    const auto predicate =
+        inst.Flags<IR::BufferInstInfo>().is_predicated ? inst.Arg(1).Inst()->Arg(3) : IR::Value{};
+    const auto address = CalculateBufferAddress(ir, inst, info, buffer, buffer.stride);
+    inst.SetArg(IR::LoadBufferArgs::Address, predicate.IsEmpty()
+                                                 ? IR::Value{address}
+                                                 : ir.CompositeConstruct(address, predicate));
 }
 
 void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image_res,

@@ -399,6 +399,11 @@ public:
     }
 
     /// Returns the maximum number of push descriptors.
+    u32 MaxStorageBufferBindings() const {
+        return std::min(properties.limits.maxPerStageDescriptorStorageBuffers,
+                        properties.limits.maxDescriptorSetStorageBuffers);
+    }
+
     u32 MaxPushDescriptors() const {
         return push_descriptor_props.maxPushDescriptors;
     }

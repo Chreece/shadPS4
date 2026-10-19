@@ -26,8 +26,9 @@ static bool IsBufferFormatStore(const IR::Inst& inst) {
     return inst.GetOpcode() == IR::Opcode::StoreBufferFormatF32;
 }
 
-static IR::Value LoadBufferFormat(IR::IREmitter& ir, const IR::Value handle, const IR::U32 address,
-                                  const IR::BufferInstInfo info, const FormatInfo& format_info) {
+static IR::Value LoadBufferFormat(IR::IREmitter& ir, const IR::Value handle,
+                                  const IR::Value address, const IR::BufferInstInfo info,
+                                  const FormatInfo& format_info) {
     IR::Value interpreted;
     switch (format_info.data_format) {
     case AmdGpu::DataFormat::FormatInvalid:
@@ -106,7 +107,7 @@ static IR::Value LoadBufferFormat(IR::IREmitter& ir, const IR::Value handle, con
     return swizzled;
 }
 
-static void StoreBufferFormat(IR::IREmitter& ir, const IR::Value handle, const IR::U32 address,
+static void StoreBufferFormat(IR::IREmitter& ir, const IR::Value handle, const IR::Value address,
                               const IR::Value& value, const IR::BufferInstInfo info,
                               const FormatInfo& format_info) {
     // Extract actual number of components and apply additional modifications.
@@ -224,11 +225,10 @@ static void LowerBufferFormatInst(IR::Block& block, IR::Inst& inst, Info& info) 
     }
 
     if (IsBufferFormatLoad(inst)) {
-        const auto interpreted =
-            LoadBufferFormat(ir, inst.Arg(0), IR::U32{inst.Arg(1)}, flags, format_info);
+        const auto interpreted = LoadBufferFormat(ir, inst.Arg(0), inst.Arg(1), flags, format_info);
         inst.ReplaceUsesWithAndRemove(interpreted);
     } else if (IsBufferFormatStore(inst)) {
-        StoreBufferFormat(ir, inst.Arg(0), IR::U32{inst.Arg(1)}, inst.Arg(2), flags, format_info);
+        StoreBufferFormat(ir, inst.Arg(0), inst.Arg(1), inst.Arg(2), flags, format_info);
         inst.Invalidate();
     }
 }

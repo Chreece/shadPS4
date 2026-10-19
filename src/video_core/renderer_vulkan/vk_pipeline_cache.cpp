@@ -356,6 +356,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .subgroup_size = instance.SubgroupSize(),
         .sparse_page_shift = sparse_page_shift,
         .max_guest_indexed_image_entries = GuestTsharpArrayLimit(instance),
+        .max_storage_buffer_bindings = instance.MaxStorageBufferBindings(),
         .support_int8 = instance.IsShaderInt8Supported(),
         .support_int16 = instance.IsShaderInt16Supported(),
         .support_int64 = instance.IsShaderInt64Supported(),
@@ -381,8 +382,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .support_fp64_signed_zero_inf_nan_preserve =
             bool(vk12_props.shaderSignedZeroInfNanPreserveFloat64),
         .supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),
-        .supports_shader_image_gather_extended =
-            instance_.IsShaderImageGatherExtendedSupported(),
+        .supports_shader_image_gather_extended = instance_.IsShaderImageGatherExtendedSupported(),
         .supports_sampled_image_nonuniform_indexing =
             instance_.IsSampledImageNonUniformIndexingSupported(),
         .supports_sampler_array_nonuniform_indexing =

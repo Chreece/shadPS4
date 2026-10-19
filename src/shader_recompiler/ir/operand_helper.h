@@ -29,7 +29,8 @@ static_assert(LoadBufferArgs::Address == StoreBufferArgs::Address);
 // We keep components separate as u32x3, before combining after sharp tracking
 static inline IR::U32 GetBufferAddressComponent(const Inst* buffer_inst, u32 comp) {
     Inst* address = buffer_inst->Arg(1).Inst();
-    ASSERT(address->GetOpcode() == IR::Opcode::CompositeConstructU32x3);
+    ASSERT(address->GetOpcode() == IR::Opcode::CompositeConstructU32x3 ||
+           address->GetOpcode() == IR::Opcode::CompositeConstructU32x4);
     return IR::U32{address->Arg(comp)};
 }
 
