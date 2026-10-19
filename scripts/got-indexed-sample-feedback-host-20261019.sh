@@ -10,7 +10,7 @@ BUILD="$WORK/build"
 BIN="$BUILD/shadps4"
 LOGS="$ROOT/logs"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
-CANDIDATE="84117bbd1e356f6440c4c7dcfc239d950f144d1d"
+CANDIDATE="e255fa8f608c3af98397436e13b6b5a89ec3128f"
 BRANCH="diagnostic/got-indexed-sample-feedback-20261019"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 NAME="got-indexed-sample-feedback-host-$STAMP"
@@ -213,8 +213,12 @@ src/video_core/renderer_vulkan/vk_resource_pool.h
 src/video_core/texture_cache/image_info.cpp
 src/video_core/texture_cache/texture_cache.cpp
 src/video_core/texture_cache/texture_cache.h
+src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp
+src/shader_recompiler/ir/operand_helper.h
+src/shader_recompiler/ir/reg.h
+src/shader_recompiler/ir/passes/lower_buffer_format_to_raw.cpp
 GOT_PINNED_OVERLAY_FILES
-test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 82 || {
+test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 86 || {
     STATUS=UNEXPECTED_CANDIDATE_OVERLAY_SIZE; exit 2;
 }
 
@@ -518,9 +522,9 @@ assert "IsVaryingLocalInvocationComponent(" in lds
 assert "FindDivergentLoops(program.syntax_list, runtime_info)" in lds
 assert "EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth, runtime_info)" in lds
 assert "op == IR::Opcode::InverseBallot || op == IR::Opcode::GetUserData" in phi
-assert "ShaderBinaryVersion = 50u;" in serial
+assert "ShaderBinaryVersion = 51u;" in serial
 print("GOT_SHADER_UPSTREAM_CORRECTNESS_WIRING=PASS "
-      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=50")
+      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=51")
 print("GOT_INDIRECT_PRODUCER_SOURCE_WIRING=PASS exact_watch=8 "
       "buffer_shader=YES compute_dispatch=YES cpu_upload=YES vk_copy=YES")
 # The previous host link failed at rasterizer.cpp:492: an undefined
