@@ -37,6 +37,17 @@ GOW_RENDERER_SHA = "bde3553d3c495fff2f34f177982a8f19e7a71542981d5c5194e8032e7832
 GOW_BIN = GOW / ("tests/gow-renderer-log-hotpath-20261017/build/"
                  "shadps4.fullgfx-uffd-batched-read-gow-uffd-batched-read-20261017-231412")
 GOW_BIN_SHA = "8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef"
+
+# SHA-1 Git blobs from the Oct 18 GoW checkpoint's exact source manifest.
+GOW_PROVEN_BLOBS = {
+    "src/video_core/page_manager.cpp":
+        "75ede506fa3a07b01263542af320a3e90535adc4",
+    "src/core/libraries/audio/audioout.cpp":
+        "82e6698b821b452f1b34402a58aee43c2098704c",
+    "src/core/libraries/audio/audioout_sync.h":
+        "8efda58a938100999a248e7fcdbd7b7159ec5658",
+}
+
 GOT_V51_PARENT = "02be53c70ac824ca42b1df41af93163f0e4bdfe5b1666f270193f51fd58f155d"
 GOT_V51_RESULT = "814677f63524610ba23932fd4ebbe062be299d641ac4699c390d62fe1cc1b03b"
 WATCH_FILES = (
@@ -277,6 +288,52 @@ def stage_preflight(report: dict, run: Path):
     else:
         report["stage"]["gow_exact_renderer_source_ported"] = False
         report["stage"]["gow_renderer_already_git_tracked"] = True
+
+    # Recover additional preserved UFFD/page and AudioOut source files only
+    # from EXACT blob-hash matches. Their provenance is stronger than a
+    # mutable branch name. Unknown/missing blobs stop before compiling.
+    report["stage"]["pinned_gow_blob_ports"] = {}
+    for rel, expected_blob in GOW_PROVEN_BLOBS.items():
+        selected_root = None
+        for root in (GOW_HOTPATH_SOURCE, GOW_SOURCE):
+            candidate = root / rel
+            if candidate.is_file() and not candidate.is_symlink():
+                h = git(root, "hash-object", str(candidate), check=False)
+                if h.returncode == 0 and h.stdout.strip() == expected_blob:
+                    selected_root = root
+                    break
+        if selected_root is None:
+            report["stage"]["status"] = "GOW_PINNED_SOURCE_BLOB_MISSING_NO_BUILD"
+            report["stage"]["missing_proof_blob"] = rel
+            return
+        proven = selected_root / rel
+        base = git(selected_root, "show", "HEAD:" + rel, check=False)
+        current_file = staging / rel
+        if not current_file.is_file() or base.returncode:
+            report["stage"]["status"] = "GOW_PINNED_SOURCE_NO_THREEWAY_BASE_NO_BUILD"
+            report["stage"]["missing_merge_base"] = rel
+            return
+        before = current_file.read_text()
+        new_content = proven.read_text()
+        if before == new_content or new_content == base.stdout:
+            report["stage"]["pinned_gow_blob_ports"][rel] = "ALREADY_PRESENT_OR_NO_LOCAL_DELTA"
+            continue
+        ours_path = run / ("gow-ours-" + Path(rel).name)
+        base_path = run / ("gow-base-" + Path(rel).name)
+        new_path = run / ("gow-proof-" + Path(rel).name)
+        ours_path.write_text(before)
+        base_path.write_text(base.stdout)
+        new_path.write_text(new_content)
+        outcome = command("git", "merge-file", "-p", str(ours_path),
+                          str(base_path), str(new_path), check=False)
+        if outcome.returncode or "<<<<<<<" in outcome.stdout:
+            report["stage"]["status"] = "GOW_PROVEN_SOURCE_THREEWAY_CONFLICT_NO_BUILD"
+            report["stage"]["pinned_conflict_file"] = rel
+            report["stage"]["pinned_conflict_excerpt"] = outcome.stdout[-100_000:]
+            return
+        current_file.write_text(outcome.stdout)
+        git(staging, "add", "--", rel)
+        report["stage"]["pinned_gow_blob_ports"][rel] = "PORTED_EXACT_PROVEN_SOURCE_DELTA"
 
     # Port exactly the previously source-hash-proven v51 stencil correction.
     # This is a three-way source merge and may conflict with the newer GoW
