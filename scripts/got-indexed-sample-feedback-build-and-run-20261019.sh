@@ -9,8 +9,8 @@ WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 SCRIPTS="$ROOT/scripts"
 BRANCH="diagnostic/got-indexed-sample-feedback-20261019"
-PIN="5228e7c2eafb057216b69498c0f065e9327e2353"
-CANDIDATE_COMMIT="c8121ad971408e5fb28b2da28de09625fa53efe0"
+PIN="cd6f400af39c5649ecd03109174a2cfbca96efc1"
+CANDIDATE_COMMIT="b18cfc312904d8eaf01ed7788b85a97bcd114121"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$CANDIDATE_COMMIT"
 BUILD_SCRIPT="$SCRIPTS/got-indexed-sample-feedback-host-20261019.sh"
 RUNTIME_SCRIPT="$SCRIPTS/got-indexed-sample-feedback-runtime-20261019.sh"
@@ -89,7 +89,7 @@ RUNTIME_REPORT="$(find "$LOGS" -maxdepth 1 -type f \
 if [ -n "$RUNTIME_REPORT" ] &&
    tar -xOzf "$RUNTIME_REPORT" info/final.txt 2>/dev/null |
        grep -qx "CANDIDATE_SOURCE=$CANDIDATE_COMMIT"; then
-    BUNDLE="$LOGS/got-indexed-table-resize-evidence-$(date +%Y%m%d-%H%M%S).tar.gz"
+    BUNDLE="$LOGS/got-material-view-capacity-evidence-$(date +%Y%m%d-%H%M%S).tar.gz"
     tar -czf "$BUNDLE" -C "$LOGS" "$(basename "$HOST_REPORT")" "$(basename "$RUNTIME_REPORT")"
     echo "UPLOAD_THIS=$BUNDLE"
 else
