@@ -638,6 +638,9 @@ def focused_native_regressions(report, plan_dir):
         "tests/shader_recompiler/test_indexed_image_selector.cpp",
         "tests/shader_recompiler/test_strided_material_specialization.cpp",
         "tests/shader_recompiler/test_srt_proven_identity.cpp",
+        "tests/shader_recompiler/test_srt_dependency_schedule.cpp",
+        "tests/shader_recompiler/test_srt_host_barrier.cpp",
+        "tests/shader_recompiler/test_srt_uniformity.cpp",
     )
     dirs = [SOURCE/"src",SOURCE/"externals/magic_enum/include",
             SOURCE/"externals/fmt/include",BUILD/"_deps/fmt-src/include"]
