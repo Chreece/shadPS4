@@ -78,7 +78,7 @@ NECESSARY_SYMBOLS = {
     "src/video_core/renderer_vulkan/vk_rasterizer.cpp":
         ["InvalidateMemoryOnGpuThread", "InvalidateMemoryFromGPU"],
     "src/video_core/page_manager.cpp": ["pending_gpu_invalidations"],
-    "src/shader_recompiler/ir/passes/resource_discover_pass.cpp": ["GetSharp"],
+    "src/shader_recompiler/ir/passes/resource_discover_pass.cpp": ["ReadConst", "ImageSample", "Indexed"],
     "src/shader_recompiler/ir/passes/resource_patching_pass.cpp": ["Image"],
     "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp": ["Srt"],
 }
@@ -267,6 +267,7 @@ class Builder:
             "rc": preview.returncode,
             "conflict_lines": [x for x in (preview.stdout + preview.stderr).splitlines()
                                if x.startswith("CONFLICT")][:200],
+            "source_excerpt": (preview.stdout + preview.stderr)[-180000:],
         }
         if preview.returncode:
             self.fail_conflicts("SOURCE_MERGE_PREVIEW_CONFLICT_" + name)
