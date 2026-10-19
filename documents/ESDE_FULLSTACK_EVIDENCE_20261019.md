@@ -188,3 +188,55 @@ to perform one read-only provenance audit, isolated merge and a build
 A source conflict or incomplete proof is recorded in one archive instead
 of being bypassed through guesswork. GoW sound performance and the
 Ghost white menu remain unresolved until actual A/B game evidence.
+
+## Actual October 19 16:25 full-stack audit: false source gate, real Ghost fault
+
+The archive `esde-fullstack-audit-20261019-162528.tar.gz` was inspected.
+It stopped **before** any source staging or CMake compilation because the
+tool compared the current on-disk GoW renderer SHA-256 against an older
+renderer fingerprint. The preserved, actually gameplay-tested GoW executable
+**still matches** `8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef`.
+The selected October 18 ES-DE ELF **still matches**
+`d8ef5b2ae1b12464a5d4ca83d8e5e9c3b0f2f0053148c531eda7457c9c21117d`.
+Both GoT v51 pre- and post-stencil sources were located and SHA verified.
+
+The two GoW project source trees each have numerous uncommitted changes,
+both at Git HEAD `1fe3e8b626f34f092bb2be37de8d14fe26d45bc2`, and neither
+of their current rasterizer files equals the older expected
+`bde3553d...` source SHA. A mutable game worktree is **not a trustworthy
+reconstruction of the already-verified executable's compiled object inputs**.
+The fixed audit therefore warns about renderer-source provenance, retains
+the independently verified executable and does NOT overwrite or label
+either changed current renderer as proven. It can continue exploring
+the pinned upstream-based GoW source branch as a distinct test candidate.
+A candidate with this source gap must not be promoted without visual A/B.
+
+The current ES-DE build contains none of:
+`src/core/cpu_id.cpp`, `src/core/cpu_affinity.cpp`, or
+`src/core/cpu_id_translation/launcher.cpp`.
+The historical GoW gameplay commands used both
+`--cpu-id-mode builtin` and `--userfaultfd`; the universal ES-DE
+launcher used neither. The unified source also lacked
+`force_align_arg_pointer` at `sceKernelLoadStartModule`, a previously
+runtime-backed corrective change preserved at commit
+`c76e11c0fa4e60338acc427457599fad8e0d4863` and present in the
+pinned GoW f909 source tree.
+
+The actual latest user-profile Ghost log
+`~/.local/share/shadPS4/log/CUSA11456.log` ends after
+`Loading libSceMsgDialog` with a `Game:Main` host code access
+violation **reading address 0x0**. This strongly motivates a first
+A/B around host/guest module-start stack alignment and CPU/HLE
+initialisation; it is **not proof of the exact crashing C++ function**
+without symbolicated stacks. Other titles retain recorded working
+controller Home/PS exit, so the quit behavior should be preserved.
+
+The audit's previous source-hash hard-stop was corrected. When
+current renderer source no longer matches the old provenance,
+the script now captures both SHA-256 values and marks the resulting
+isolated candidate as `COMPILED_WITH_UNVERIFIED_RENDERER_PROVENANCE`
+rather than claiming an A/B-proven GoW full-graphics executable.
+Next run explicitly prioritizes latest Ghost/GoW game logs over
+unrelated titles and requires native CPU source files and guest-module
+stack alignment before accepting any new full-stack compile.
+No installed binary was changed.
