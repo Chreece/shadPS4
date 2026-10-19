@@ -64,6 +64,9 @@ def link_dependencies(repo: Path, ref: str, snapshot: Path):
         if not installed.is_dir():
             print(f"SUBMODULE_NOT_INSTALLED={relative}", flush=True)
             continue
+        # git archive may leave an empty directory for a gitlink.
+        if staged.is_dir() and not staged.is_symlink() and not any(staged.iterdir()):
+            staged.rmdir()
         if staged.exists() or staged.is_symlink():
             continue
         staged.parent.mkdir(parents=True, exist_ok=True)
