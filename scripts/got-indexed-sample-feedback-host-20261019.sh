@@ -219,7 +219,7 @@ src/shader_recompiler/ir/operand_helper.h
 src/shader_recompiler/ir/reg.h
 src/shader_recompiler/ir/passes/lower_buffer_format_to_raw.cpp
 GOT_PINNED_OVERLAY_FILES
-test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 86 || {
+test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 87 || {
     STATUS=UNEXPECTED_CANDIDATE_OVERLAY_SIZE; exit 2;
 }
 
@@ -257,7 +257,7 @@ while IFS= read -r rel; do
         }
     fi
 done < "$RUN/info/overlay-files.txt"
-echo "SOURCE_PREFLIGHT=PASS files=82"
+echo "SOURCE_PREFLIGHT=PASS files=87"
 if [ -f "$RUN/info/preexisting-source-overrides.txt" ]; then
     echo "PREEXISTING_SOURCE_OVERRIDES=$(wc -l < "$RUN/info/preexisting-source-overrides.txt")"
     # Names and hashes only; no private local source content in the report.
@@ -591,7 +591,7 @@ echo "GOT_UPSTREAM_SHADER_SEMANTICS_TEST=PASS" | tee -a "$RUN/host-tests.log"
 
 echo "HOST_ONLY_TESTS=PASS" | tee -a "$RUN/host-tests.log"
 
-# Stage only verified content. All 82 file checks completed before the first write.
+# Stage only verified content. All 87 file checks completed before the first write.
 STATUS=STAGING_CANDIDATE
 while IFS= read -r rel; do
     if [ -e "$SOURCE/$rel" ]; then

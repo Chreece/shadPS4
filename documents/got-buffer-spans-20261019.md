@@ -49,6 +49,9 @@ The [OpenOrbis probe](homebrew/bounded-buffers/README.md) now includes 1,773 rec
 
 ## Latest attempted run
 
+The subsequent host archive `got-indexed-sample-feedback-host-20261019-211654.tar.gz` also stopped before staging or building. Its pinned overlay has 87 files, but the host preflight still required 86; the original executable was restored unchanged. The overlay count and report text now match 87.
+
+
 The uploaded runtime archive `got-indexed-sample-feedback-runtime-20261019-211037.tar.gz` did not launch the game. It ended at `MISSING_REQUIRED_INPUT`, with no shader collection, binding, GPU query, or screenshot evidence. The runtime script expected candidate source `a75e0223dd17feb655e08e7356940c2e9c6d187d`; the paired outer launcher still named the older executable checkpoint, so it could select a stale host report/binary. The launcher now pins the matching candidate and verifies the host report's candidate pin before reuse. Missing preflight files will be named in `info/missing-inputs.txt`.
 
 ## Next native run
