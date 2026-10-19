@@ -332,6 +332,14 @@ def apply_changes(proposals, report, plan_dir):
         report["missing_required_gow_contracts"] = [
             k for k,v in report["gow_contracts_after"].items() if not v
         ]
+        # GoT source must never silently remove a previously working GoW
+        # GPU/UFFD ownership or lifetime guarantee.
+        previous_contracts = report.get("gow_contracts_before", {})
+        lost = [key for key, was_ok in previous_contracts.items()
+                if was_ok and not report["gow_contracts_after"].get(key, False)]
+        report["regressed_proven_gow_contracts"] = lost
+        if lost:
+            raise RuntimeError("GoW GPU/UFFD contract regression: " + ",".join(lost))
         # Stage no actual Git commit; preserve the original history for review.
     except Exception:
         for rel in proposals:
