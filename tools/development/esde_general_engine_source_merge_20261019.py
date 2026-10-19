@@ -659,7 +659,10 @@ def main():
                 report["status"]="SOURCE_APPLIED_NOT_YET_RUNTIME_TESTED"
                 focused_native_regressions(report,workdir)
                 build(report,workdir)
-                report["status"]="CANDIDATE_NATIVE_BUILD_PASS_GAMEPLAY_PENDING"
+                if report.get("missing_required_gow_contracts"):
+                    report["status"]="COMPILED_UNVERIFIED_GOW_GRAPHICS_CONTRACTS_AND_GAMEPLAY"
+                else:
+                    report["status"]="CANDIDATE_NATIVE_BUILD_PASS_GAMEPLAY_PENDING"
             else:
                 report["status"]="SOURCE_PLAN_CLEAN_NOT_APPLIED"
     except Exception as exc:
