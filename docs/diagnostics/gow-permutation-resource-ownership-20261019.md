@@ -36,6 +36,31 @@ The local C++ adaptation of this source-control-flow case compiled and reproduce
 
 Source review uncovered a separate out-of-range comparison risk in `StageSpecialization::operator==`: it indexed `other.buffers[i]`, `other.images[i]`, and `other.samplers[i]` without ensuring the two resource lists had equal lengths. This becomes particularly relevant when comparing serialized shader variations with distinct layouts. The candidate now rejects invalid specialization slots and mismatched resource-list lengths before element access. The first real translation-unit build must include this header.
 
+
+
+## 19:33 CEST: read-only cache scan returned zero locations
+
+User-provided `gow-permutation-cache-20261019-193322.tar.gz` has
+`CACHE_LOCATIONS=0`, `GAMEPLAY_RUNS=ZERO` and a JSON report containing
+`"caches": []`. No shader permutation data was inspected in that scan.
+The original locator pruned directory names `source` and `build`, which
+could exclude portable profiles. More significantly,
+`src/core/emulator_settings.h` initializes
+`pipeline_cache_enabled{false}` and `pipeline_cache_archived{false}` by default.
+Thus no persistent cache is expected unless the profile explicitly enables it.
+**A zero-cache scan is not proof there are no runtime shader variations.**
+
+An expanded offline locator exists as
+`scripts/gow_permutation_cache_discovery_20261019.py`, but do not repeat
+blind cache searches when the feature is disabled. Instead run one isolated
+instrumented scene with
+`SHADPS4_PERMUTATION_TRACE=1`. The diagnostic-only branch
+`diagnostic/gow-permutation-scene-proof-20261019` adds bounded warning-level
+`PERM_TRACE_ACTIVE`, `PERM_TRACE_CREATED`, and
+`PERM_TRACE_REUSED` events to the proven-compile candidate. These markers
+must be observed *within the failing scene* and compared with the original
+protected executable before claiming visual improvement.
+
 ## Required further gates (no loop)
 
 1. **Native behavioral replay: PASS** — both original and patched C++ compile; baseline demonstrably returns mismatched resource metadata; patched variation and cache reuse return correctly matching layout and slots.
