@@ -542,6 +542,14 @@ def main() -> int:
         else:
             for label, enabled in (("A_DENSE_CPU_UPLOAD", False), ("B_SPARSE_CPU_UPLOAD", True)):
                 report["modes"][label] = play(label, enabled)
+                # Fail CLOSED before launching B if A did not finish its own
+                # automated navigation. In the 05:26 archive a human had to
+                # press Continue in A; no valid scene-aligned A/B is possible.
+                if label == "A_DENSE_CPU_UPLOAD" and not report["modes"][label]["navigation_completed"]:
+                    report["ab_comparison_skipped"] = True
+                    report["ab_skip_reason"] = "DENSE_AUTOMATED_NAVIGATION_NOT_COMPLETED"
+                    print("STOP_BEFORE_B_INVALID_DENSE_INPUT_NO_AB_RETRY=YES", flush=True)
+                    raise RuntimeError("DENSE_AUTOMATED_NAVIGATION_UNCONFIRMED_NO_B_TEST")
             legacy = report["modes"]["A_DENSE_CPU_UPLOAD"]
             sparse = report["modes"]["B_SPARSE_CPU_UPLOAD"]
             report["scene_compare"] = {
