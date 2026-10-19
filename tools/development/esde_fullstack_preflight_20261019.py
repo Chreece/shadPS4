@@ -528,24 +528,74 @@ def stage_preflight(report: dict, run: Path, resume: bool = False):
     srt_stage = staging / srt_rel
     srt_stage.write_text(merged_srt.stdout)
     git(staging, "add", "--", srt_rel)
-    headers = [helper_rel]
-    for extra in ("src/shader_recompiler/ir/passes/srt_offset_preflight.h",):
-        if ('#include "' + extra + '"') in srt_text:
-            headers.append(extra)
-    for rel in headers:
-        preimage = GOW_SOURCE / rel
-        installed = staging / rel
-        if not preimage.is_file() or preimage.is_symlink():
-            report["stage"]["status"] = "GOW_SRT_REQUIRED_HEADER_MISSING_NO_BUILD"
-            report["stage"]["missing_header"] = rel
-            return
-        if installed.exists() and installed.read_bytes() != preimage.read_bytes():
-            report["stage"]["status"] = "GOW_SRT_REQUIRED_HEADER_CONFLICT_NO_BUILD"
-            report["stage"]["conflicting_header"] = rel
-            return
-        installed.parent.mkdir(parents=True, exist_ok=True)
-        installed.write_bytes(preimage.read_bytes())
-        git(staging, "add", "--", rel)
+    # Resolve the project's actual #include syntax ("shader_recompiler/...",
+    # NOT "src/shader_recompiler/..."). Walk transitive dependencies BEFORE
+    # CMake compile; this prevents the 2556/2637-stage missing-header failure.
+    header_pins = {
+        "srt_offset_preflight.h": "667744445a209b0a74197cc6ee8f28e2a1486b63",
+        "srt_uniformity.h": "95bdea6f8db9d0a717bd568fd0ae8e0003442170",
+        "srt_proven_identity.h": "c9f1f099f93c1a6ab78c32eed0b6f1ba816cdb39",
+        "srt_host_barrier.h": "da91f2ca882474ff990ebe4344bda1ff30354dbf",
+        "srt_dependency_schedule.h": "7fa273e9ce2e0a4e598f8caf964a02d6d9f4b943",
+        "srt_inline_read_codegen.h": "642f62e5353032ff22a23dbd82f665f0d6b5505d",
+        "srt_offset_codegen.h": "46ecf54cb408600570c4f84869c20b3fe7faac3d",
+    }
+    includes = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.M)
+    pending_headers = [srt_rel]
+    seen_headers = set()
+    missing_dependencies = []
+    header_provenance = {}
+    while pending_headers:
+        current = pending_headers.pop()
+        if current in seen_headers:
+            continue
+        seen_headers.add(current)
+        path = staging / current
+        if not path.is_file() or path.is_symlink():
+            raise RuntimeError("SRT staged include target missing or unsafe: " + current)
+        for include in includes.findall(path.read_text()):
+            if not include.startswith("shader_recompiler/"):
+                continue
+            target_rel = "src/" + include
+            target = staging / target_rel
+            if target.is_symlink():
+                raise RuntimeError("Unexpected SRT dependency symlink: " + target_rel)
+            if not target.exists():
+                # Only restore vetted SRT support headers; never substitute
+                # guessed resource or shader code from an unrelated revision.
+                name = Path(target_rel).name
+                if name not in header_pins or not target_rel.startswith(
+                        "src/shader_recompiler/ir/passes/srt_"):
+                    missing_dependencies.append(target_rel)
+                    continue
+                protected = GOW_SOURCE / target_rel
+                if protected.is_file() and not protected.is_symlink():
+                    data = protected.read_bytes()
+                    origin = "PROTECTED_GOW_LOCAL_SOURCE"
+                else:
+                    url = ("https://raw.githubusercontent.com/Chreece/shadPS4/" +
+                           "d3d17052ec606ac483e8a48a4f62b35d7243a7fd/" +
+                           "tools/development/proven_sources_20261019/" + target_rel)
+                    received = command("curl", "-4", "-fLsS", "--retry", "3",
+                                       "--connect-timeout", "20", "--max-time", "90",
+                                       url)
+                    data = received.stdout.encode()  # ensure binary-safe Git blob
+                    git_blob = hashlib.sha1(
+                        ("blob " + str(len(data)) + "\0").encode() + data
+                    ).hexdigest()
+                    if git_blob != header_pins[name]:
+                        raise RuntimeError("Pinned SRT snapshot Git blob differs: " + name)
+                    origin = "VERIFIED_OCT17_GOT_GIT_BLOB"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+                git(staging, "add", "--", target_rel)
+                header_provenance[target_rel] = origin
+            pending_headers.append(target_rel)
+    if missing_dependencies:
+        report["stage"]["missing_srt_dependencies"] = sorted(set(missing_dependencies))
+        report["stage"]["status"] = "GOW_SRT_DEPENDENCY_PRECHECK_FAILED_NO_BUILD"
+        return
+    report["stage"]["srt_header_provenance"] = header_provenance
     report["stage"]["protected_srt_source_port"] = "THREEWAY_SOURCE_AND_HELPER_STAGED"
     # This gates arithmetic source semantics only; root dependency
     # resolution in GoT indexed images still requires live rendering proof.
