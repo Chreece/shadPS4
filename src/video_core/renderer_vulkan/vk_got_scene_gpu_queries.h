@@ -18,6 +18,7 @@
 #include "common/logging/log.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/renderer_vulkan/vk_got_scene_depth_ab.h"
+#include "video_core/renderer_vulkan/vk_got_active_menu_draws.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -35,21 +36,6 @@ inline bool GotSceneQueryEnabled() {
     return enabled;
 }
 
-inline GotSceneDepthABInput GuestSceneQueryInput(const AmdGpu::Regs& regs) {
-    const auto& cb=regs.color_buffers[0];
-    const auto& db=regs.depth_buffer;
-    return GotSceneDepthABInput{
-        .opted_in=GotSceneQueryEnabled(),
-        .guest_color_address=cb ? cb.Address() : 0,
-        .guest_depth_address=db.DepthValid() ? db.DepthAddress() : 0,
-        .index_count=regs.num_indices,
-        .color_write_mask=regs.color_target_mask.GetMask(0),
-        .depth_test=bool(regs.depth_control.depth_enable),
-        .depth_write=bool(regs.depth_control.depth_write_enable),
-        .depth_clear=bool(regs.depth_render_control.depth_clear_enable),
-        .raster_discard=bool(regs.clipper_control.dx_rasterization_kill),
-    };
-}
 
 // Bits are defined by Vulkan, results returned in bit-order:
 // IA vertices, VS invocations, clipping invocations, clipping primitives,
@@ -96,47 +82,88 @@ struct GotSceneQueryState {
 
 struct GotSceneQueryToken {
     std::shared_ptr<GotSceneQueryState> state;
-    u32 slot{},fs{},vs{},index_count{};
+    u32 slot{},fs{},vs{},index_count{},pair_ordinal{};
     bool indirect{};
     bool indexed{};
+    bool high_volume{};
 };
 
 inline std::optional<GotSceneQueryToken> PrepareGotSceneGpuQuery(
     const Instance& instance, Scheduler& scheduler, const AmdGpu::Regs& regs,
     const GraphicsPipeline& pipeline, bool indexed, bool indirect) {
-    if (!ShouldForceGotSceneDepthAlways(GuestSceneQueryInput(regs))) {
-        return std::nullopt;
-    }
+    if (!GotSceneQueryEnabled()) return std::nullopt;
     const auto& stages=pipeline.GetStages();
     const auto* const fragment=stages[static_cast<u32>(Shader::SwStage::Fragment)];
     const auto* const vertex=stages[static_cast<u32>(Shader::SwStage::Vertex)];
     if (!fragment || !vertex) return std::nullopt;
 
     const u32 fs=fragment->pgm_hash,vs=vertex->pgm_hash;
-    const u64 key=(u64(fs)<<32) | vs;
+    const auto& cb0=regs.color_buffers[0];
+    const auto& db=regs.depth_buffer;
+    const GotActiveMenuSceneDraw scene{
+        .enabled=true,
+        .indexed=indexed,
+        .indirect=indirect,
+        .color_attached=bool(cb0),
+        .depth_attached=db.DepthValid(),
+        .guest_depth_test=bool(regs.depth_control.depth_enable),
+        .guest_depth_write=bool(regs.depth_control.depth_write_enable),
+        .guest_depth_clear=bool(regs.depth_render_control.depth_clear_enable),
+        .rasterizer_discard=bool(regs.clipper_control.dx_rasterization_kill),
+        .color_write_mask=regs.color_target_mask.GetMask(0),
+        .color_address=cb0 ? cb0.Address() : 0,
+        .depth_address=db.DepthValid() ? db.DepthAddress() : 0,
+        .fragment_shader=fs,
+        .vertex_shader=vs,
+        .guest_register_indices=regs.num_indices,
+    };
+    const auto kind=ClassifyGotActiveMenuDraw(scene);
+    if (kind==GotActiveMenuDrawKind::Unrelated) return std::nullopt;
+
+    // Count every submitted matching draw, not only previously selected
+    // queries. The old >=128 guest register index gate discarded the most
+    // frequent scene pipelines (guest register=3, GPU indirect args separate).
+    const u64 key=(u64(fs)<<32)|vs;
+    static thread_local std::unordered_map<u64,u32> observations;
+    const u32 ordinal=++observations[key];
+    if (!ShouldCaptureGotActiveMenuDraw(kind,ordinal)) return std::nullopt;
+
     static thread_local std::shared_ptr<GotSceneQueryState> shared;
     if (!shared) {
         shared=std::make_shared<GotSceneQueryState>(instance);
-        // Upload buffers are executed before the primary command buffer
-        // of the same scheduler session. Reset ONCE, outside rendering.
+        // Reset once before the first rendering query, using the scheduler
+        // upload command buffer which executes ahead of its primary stream.
         auto cmd=scheduler.UploadCommandBuffer();
         cmd.resetQueryPool(shared->pool.get(),0,MaxGotSceneQueryDraws);
         if (shared->pipeline_stats_enabled) {
             cmd.resetQueryPool(shared->stats.get(),0,MaxGotSceneQueryDraws);
         }
     }
-    auto& seen=shared->seen_pairs[key];
-    if (seen>=2 || shared->next_slot>=MaxGotSceneQueryDraws) return std::nullopt;
-    ++seen;
+    if (shared->next_slot>=MaxGotSceneQueryDraws) {
+        LOG_WARNING(Render_Vulkan,
+                    "GotSceneLiveQueryCheckpoint: fs={:#x} vs={:#x} "
+                    "pair_ordinal={} result=QUERY_BUDGET_EXHAUSTED",
+                    fs,vs,ordinal);
+        return std::nullopt;
+    }
+    const bool high_volume=kind==GotActiveMenuDrawKind::FrequentSceneIndirect;
     const u32 slot=shared->next_slot++;
+    LOG_INFO(Render_Vulkan,
+             "GotSceneLiveQueryCheckpoint: fs={:#x} vs={:#x} "
+             "pair_ordinal={} stage={} "
+             "gpu_arguments_are_authoritative=YES count_from_guest_register={} "
+             "query_slot={}",
+             fs,vs,ordinal,high_volume?"active_indirect":"direct_control",
+             regs.num_indices,slot);
     LOG_INFO(Render_Vulkan,
              "GotSceneGpuQuerySelected: slot={} fs={:#x} vs={:#x} "
              "indices={} indirect={} indexed={} exact_target=YES "
+             "pair_ordinal={} high_volume={} "
              "pipeline_stats_supported={}",
-             slot,fs,vs,regs.num_indices,indirect,indexed,
-             shared->pipeline_stats_enabled);
+             slot,fs,vs,regs.num_indices,indirect,indexed,ordinal,
+             high_volume,shared->pipeline_stats_enabled);
     return GotSceneQueryToken{
-        shared,slot,fs,vs,regs.num_indices,indirect,indexed};
+        shared,slot,fs,vs,regs.num_indices,ordinal,indirect,indexed,high_volume};
 }
 
 inline void BeginGotSceneGpuQuery(vk::CommandBuffer cmd,
@@ -174,6 +201,7 @@ inline void EndGotSceneGpuQuery(Scheduler& scheduler, vk::CommandBuffer cmd,
         LOG_INFO(Render_Vulkan,
                  "GotSceneGpuInvocations: fs={:#x} vs={:#x} query={} "
                  "draw_indices={} indexed={} indirect={} "
+                 "pair_ordinal={} high_volume={} "
                  "occlusion_status={} passed_samples={} "
                  "stats_supported={} stats_status={} "
                  "ia_vertices={} vs_invocations={} "
@@ -181,7 +209,8 @@ inline void EndGotSceneGpuQuery(Scheduler& scheduler, vk::CommandBuffer cmd,
                  "fs_invocations={} "
                  "gpu_timeline_complete=YES",
                  saved.fs,saved.vs,saved.slot,saved.index_count,
-                 saved.indexed,saved.indirect,
+                 saved.indexed,saved.indirect,saved.pair_ordinal,
+                 saved.high_volume,
                  vk::to_string(occlusion_result),occlusion[0],
                  state.pipeline_stats_enabled,vk::to_string(stats_result),
                  pipeline[0],pipeline[1],pipeline[2],pipeline[3],pipeline[4]);
