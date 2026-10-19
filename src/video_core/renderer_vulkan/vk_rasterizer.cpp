@@ -26,6 +26,8 @@
 #include "video_core/renderer_vulkan/vk_got_menu_pass_trace.h"
 #include "video_core/renderer_vulkan/vk_got_scene_depth_ab.h"
 #include "video_core/renderer_vulkan/vk_got_scene_gpu_queries.h"
+#include "video_core/renderer_vulkan/vk_got_immediate_scene_gate.h"
+#include "video_core/renderer_vulkan/vk_got_scene_immediate_pixels.h"
 #include "video_core/renderer_vulkan/vk_got_indirect_gpu_readback.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -399,7 +401,51 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
                     instance_offset);
     }
     DebugState.IncDrawCall();
+    // A GPU counter already proved that these three real, indexed scene
+    // draws have VS and FS invocations and thousands of passed samples.
+    // The +85s framebuffer capture was zero, but may have been cleared
+    // after this draw. Snapshot the ACTUAL attachment now, before any
+    // later clears or postprocessing; do not change shader output or masks.
+    const bool immediate_scene=scene_gpu_query && Diagnostics::IsGotImmediateSceneDraw({
+        .opted_in=Diagnostics::GotSceneImmediatePixelsEnabled(),
+        .indexed=is_indexed,
+        .indirect=false,
+        .guest_color0=(regs.color_buffers[0] ?
+                       regs.color_buffers[0].Address() : 0ULL),
+        .guest_depth=(regs.depth_buffer.DepthValid() ?
+                      regs.depth_buffer.DepthAddress() : 0ULL),
+        .vs_hash=scene_gpu_query->vs,
+        .fs_hash=scene_gpu_query->fs,
+        .draw_indices=regs.num_indices,
+        .color0_can_write=regs.color_target_mask.GetMask(0)!=0,
+    });
+    const u32 scene_fs=immediate_scene ? scene_gpu_query->fs : 0u;
+    const u32 scene_vs=immediate_scene ? scene_gpu_query->vs : 0u;
     Diagnostics::EndGotSceneGpuQuery(scheduler,cmdbuf,std::move(scene_gpu_query));
+    if(immediate_scene) {
+        const u32 slot=scene_fs==0x5abc2be8u ? 0u :
+                       scene_fs==0xd8fb6100u ? 1u : 2u;
+        Diagnostics::SnapshotGotSceneTargetAfterDraw(
+            instance,scheduler,runtime,texture_cache,cb_descs[0].image_id,
+            0x15203f8000ULL,state.color_attachments[0].image_layout,
+            scene_vs,scene_fs,regs.num_indices,0u,slot,false);
+        // The 13104-index shader also writes MRT2, later sampled by the
+        // final compositor. Capture it BEFORE the next rendering pass.
+        if(scene_fs==0xd8fb6100u && state.num_color_attachments>2u &&
+           state.color_attachments[2].image_view!=vk::ImageView{}) {
+            Diagnostics::SnapshotGotSceneTargetAfterDraw(
+                instance,scheduler,runtime,texture_cache,cb_descs[2].image_id,
+                0x1504210000ULL,state.color_attachments[2].image_layout,
+                scene_vs,scene_fs,regs.num_indices,2u,3u,false);
+        }
+        if(scene_fs==0xd8fb6100u &&
+           state.depth_stencil_attachment.image_view!=vk::ImageView{}) {
+            Diagnostics::SnapshotGotSceneTargetAfterDraw(
+                instance,scheduler,runtime,texture_cache,db_desc.image_id,
+                0x1504a08000ULL,state.depth_stencil_attachment.image_layout,
+                scene_vs,scene_fs,regs.num_indices,8u,4u,true);
+        }
+    }
     CountSubmittedDraw(regs, state, is_indexed, false);
     Diagnostics::TraceMenuDraw(regs, *pipeline, state, is_indexed, false);
 
