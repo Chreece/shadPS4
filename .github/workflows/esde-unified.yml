@@ -8,6 +8,7 @@ on:
     paths:
       - tools/development/esde_unified.sh
       - tools/development/esde_general_engine_source_merge_20261019.py
+      - tools/development/esde_general_semantic_resolver_20261019.py
       - documents/ESDE_GENERAL_SOURCE_INTEGRATION_20261019.md
       - .github/workflows/esde-unified.yml
   workflow_dispatch:
@@ -24,9 +25,25 @@ jobs:
       - name: Syntax of new general integration entry point
         run: |
           bash -n tools/development/esde_unified.sh
-          python3 -m py_compile tools/development/esde_general_engine_source_merge_20261019.py
+          python3 -m py_compile tools/development/esde_general_engine_source_merge_20261019.py tools/development/esde_general_semantic_resolver_20261019.py
       - name: Offline general source merge nonregression
         run: python3 -B tools/development/esde_general_engine_source_merge_20261019.py --self-test
+      - name: Reconciler SHA source fixture contract
+        run: |
+          python3 - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          p=Path("tools/development/esde_general_semantic_resolver_20261019.py")
+          spec=importlib.util.spec_from_file_location("resolver",p)
+          mod=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          assert len(mod.REVIEWED)==9
+          assert sum(item[2] for item in mod.REVIEWED.values())==39
+          assert all(len(item[0])==len(item[1])==64 for item in mod.REVIEWED.values())
+          assert mod.resolve_reviewed("unverified.cpp",b"left\n=======\nright") is None
+          print("NINE_FILE_GENERAL_RECONCILIATION_CONTRACT=PASS")
+          print("HOST_ARCHIVE_FIXTURE=CHECKED_WHEN_PRESENT_ON_USER_SERVER")
+          PY
       - name: Exact upstream / GPU source pin audit
         run: |
           python3 - <<'PY'
