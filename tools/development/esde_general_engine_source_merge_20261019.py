@@ -90,6 +90,39 @@ GENERAL_LATE_COMMITS = (
     "84117bbd1e35",  # generic GPU descriptor paths
     "e255fa8f608c",  # GPU-selected buffer loads and stores
     "71faef4a8d76",  # cached buffer-table bounds
+    "989e0507db82",  # initial bounded full guest T# capability
+    "7635be96513a",  # large sampled-image descriptor constraints
+    "37a957d2a67f",  # GPU-indexed array capability safety
+    "75c15f42ce4c",  # Vulkan physical sampled-image limits
+    "5568da00029a",  # single allocation large descriptor pool
+    "c6f721296e74",  # descriptor pool allocation API
+    "6d97d6818550",  # descriptor pool reuse
+    "f74a01cb704c",  # large descriptor resource count
+    "6b6d462d1d1f",  # stable descriptor memory
+    "29983ea0417a",  # single indexed descriptor allocation
+    "9e30254c86b5",  # dynamic indexed descriptor writes
+    "db7a92900988",  # cache generation 32-bit descriptor count
+    "95c8e5bddb64",  # exact strided material T# source indices
+    "476f8b83e3c7",  # overflow safe strided record matcher
+    "15ec6ede7034",  # retain selected record source
+    "02c22fd61253",  # full guest record table validation
+    "a61c10ff0059",  # indexed gradient op IR prerequisites
+    "e6b7acce13db",  # indexed gradient opcode prerequisites
+    "2718fe1101bc",  # indexed gradient operation plumbing
+    "5610f50a6239",  # indexed gradient preservation
+    "ed84b34b91a3",  # gradient/material shader cache metadata
+    "24565892d51c",  # nonuniform sampler array capability
+    "1c57c6e225a4",  # sampler feature negotiation
+    "131768ecb02a",  # sampler feature validation
+    "ec6f257ed685",  # sampler descriptor slot preservation
+    "ba7f618fe468",  # indexed sampler descriptor sizing
+    "630f51ecf3c8",  # sampler descriptor layout
+    "bfa0d918e33f",  # complete descriptor count bounds
+    "069cedfea2ee",  # indexed sampler shader cache version
+    "76c3225babcb",  # indexed sampler shader cache metadata
+    "34a46b656f75",  # standard nonuniform sampler capability
+    "cbbcc969156f",  # Vulkan sampled-image declaration
+    "d72990fbd8fe",  # sampler array Vulkan validation
 )
 COMMON = "32021e41bc52f744c80d122e732e24e97496c98d"
 REMOTE = "https://github.com/Chreece/shadPS4.git"
