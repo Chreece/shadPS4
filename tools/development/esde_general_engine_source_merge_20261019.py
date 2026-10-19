@@ -699,6 +699,11 @@ def main():
                 report["status"]="SOURCE_CONFLICTS_NOT_APPLIED"
                 rc=2
             elif args.build:
+                # Don't mutate even this disposable worktree while ES-DE
+                # currently has a PS4 game using the host/GPU.
+                if run("pgrep","-u",str(os.getuid()),"-x","shadps4",
+                       check=False).returncode == 0:
+                    raise RuntimeError("ACTIVE_EMULATOR_SOURCE_STAGE_REFUSED")
                 apply_changes(proposals,report,workdir)
                 report["status"]="SOURCE_APPLIED_NOT_YET_RUNTIME_TESTED"
                 focused_native_regressions(report,workdir)
