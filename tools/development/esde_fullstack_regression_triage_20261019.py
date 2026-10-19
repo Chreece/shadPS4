@@ -217,6 +217,9 @@ def reconstruct_renderer_from_proven_sources(tag):
         "a86fd050d18d3f5b942756bf4e74b69ccb856183f86d526c9346a07f78ab4feb"):
         raise RuntimeError("HISTORICAL_UFFD_RENDERER_HASH_MISMATCH")
     output=run/"reconstructed-fullgfx-renderer.cpp"
+    # The original verified helper intentionally requires an existing isolated
+    # output file; never pass a path from any protected source tree.
+    output.touch(exist_ok=False)
     out=execute(sys.executable,"-B",paths["restore.py"],
                 before_path,paths["historical-renderer.cpp"],header,output,
                 check=False,timeout=90)
