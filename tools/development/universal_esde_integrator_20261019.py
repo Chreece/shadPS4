@@ -313,6 +313,58 @@ class Builder:
         # We cannot certify specific game rendering from source tokens.
         self.report["binary_or_game_proven_from_contracts"] = False
 
+    def locate_exact_proven_page_manager(self):
+        """Find the exact GoW page-manager code from preserved local sources/Git.
+
+        A matching compiled ELF does NOT prove this source is still on disk.
+        Never assume that a later debug branch has equivalent lifetime rules.
+        """
+        relative = "src/video_core/page_manager.cpp"
+        expected = PROVEN_GPU_FILES[relative]
+        roots = [
+            PROJECT / "GodOfWarRagnarok/tests/gow-renderer-log-hotpath-20261017/source",
+            PROJECT / "GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014679/source",
+            self.source,
+            EXISTING,
+        ]
+        for root in roots:
+            target = root / relative
+            if digest(target) == expected:
+                return target, "EXACT_LOCAL_SOURCE"
+        for root in roots[:2]:
+            if not (root / ".git").exists():
+                continue
+            commits = self.capture("git", "-C", root, "log",
+                                   "--all", "--format=%H", "--", relative,
+                                   timeout=45)
+            if commits.returncode:
+                continue
+            blobs = set()
+            for commit in commits.stdout.splitlines()[:360]:
+                candidate = self.capture("git", "-C", root, "rev-parse",
+                                         commit + ":" + relative)
+                if candidate.returncode:
+                    continue
+                blob = candidate.stdout.strip()
+                if blob in blobs:
+                    continue
+                blobs.add(blob)
+                size = self.capture("git", "-C", root, "cat-file", "-s", blob)
+                if size.returncode or not size.stdout.strip().isdigit():
+                    continue
+                if int(size.stdout.strip()) > 1500000:
+                    continue
+                value = subprocess.run(
+                    ["git", "-C", str(root), "cat-file", "blob", blob],
+                    capture_output=True, check=False)
+                if value.returncode:
+                    continue
+                if hashlib.sha256(value.stdout).hexdigest() == expected:
+                    out = self.run / "recovered-proven-page-manager.cpp"
+                    out.write_bytes(value.stdout)
+                    return out, "SHA_PINNED_LOCAL_GIT_BLOB"
+        return None, "EXACT_PROVEN_SOURCE_NOT_IN_CURRENT_CHECKOUT_OR_GIT_HISTORY"
+
     def proven_graphics_plan(self):
         self.step = "PROVEN_GRAPHICS_UFFD_RECONCILIATION"
         helper = SCRIPTS / "esde_fullstack_regression_triage_20261019.py"
@@ -362,20 +414,55 @@ class Builder:
                 proposal.parent.mkdir(parents=True, exist_ok=True)
                 proposal.write_text(outcome.stdout)
                 proposals[rel] = {"status":"CLEAN_THREE_WAY", "file":str(proposal)}
-        # The actual GoW page-manager UFFD code has an independent
-        # historical read-first/batched patch. Verify its invariants and
-        # SHA, do not silently substitute another revision.
-        page_path = self.source / "src/video_core/page_manager.cpp"
-        page_code = read(page_path)
-        page_requirements = (
-            "pending_gpu_invalidations", "DrainPendingInvalidations",
-            "InvalidateMemoryOnGpuThread",
-        )
-        page_missing = [k for k in page_requirements if k not in page_code]
-        if page_missing:
-            conflicts["src/video_core/page_manager.cpp"] = (
-                "Missing deferred page-fault semantics: " + ", ".join(page_missing)
+        # The fifth reference file must also be *exact*. Never declare
+        # all proven fixes integrated merely because a few tokens match.
+        page_rel = "src/video_core/page_manager.cpp"
+        page, origin = self.locate_exact_proven_page_manager()
+        self.report["proven_page_manager_recovery"] = {
+            "status": origin,
+            "path": str(page) if page is not None else None,
+        }
+        if page is None:
+            conflicts[page_rel] = (
+                "Missing SHA-256 " + PROVEN_GPU_FILES[page_rel] +
+                ". Cannot certify complete UFFD GPU fault delivery."
             )
+        elif digest(self.source / page_rel) != PROVEN_GPU_FILES[page_rel]:
+            # Recover the old exact base without trusting a mutable source.
+            old_path = (PROJECT /
+                "GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014679/source"
+                / page_rel)
+            baseline = None
+            if digest(old_path) == (
+                    "40bf7f4983541d61b50ef18282bb2787107f0a4df19aa11bfcc7547b0f990ed7"):
+                baseline = old_path
+            else:
+                old_commit = "eabc3f127b58585811d4a7fbdb4308beac99894c"
+                old_data = subprocess.run(
+                    ["git", "-C", str(old_path.parents[3]),
+                     "show", old_commit + ":" + page_rel],
+                    capture_output=True, check=False)
+                if (old_data.returncode == 0 and
+                        hashlib.sha256(old_data.stdout).hexdigest() ==
+                        "40bf7f4983541d61b50ef18282bb2787107f0a4df19aa11bfcc7547b0f990ed7"):
+                    baseline = self.run / "page-manager-baseline.cpp"
+                    baseline.write_bytes(old_data.stdout)
+            if baseline is None:
+                conflicts[page_rel] = "No SHA-verified page-manager base for 3-way port"
+            else:
+                current = self.run / "preview-page-manager-current.cpp"
+                current.write_bytes((self.source / page_rel).read_bytes())
+                merged_page = self.capture("git", "merge-file", "-p", current, baseline, page)
+                if merged_page.returncode or "<<<<<<<" in merged_page.stdout:
+                    conflicts[page_rel] = merged_page.stdout[-90000:]
+                else:
+                    destination = self.run / "gpu-proposals" / page_rel
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_text(merged_page.stdout)
+                    proposals[page_rel] = {
+                        "status": "CLEAN_THREE_WAY", "file": str(destination),
+                        "proven_old_sha256": PROVEN_GPU_FILES[page_rel],
+                    }
         self.report["gpu_reconciliation"] = {
             "proposals": proposals,
             "conflicts": list(conflicts),
