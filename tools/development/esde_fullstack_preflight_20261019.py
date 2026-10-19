@@ -196,7 +196,12 @@ def stage_preflight(report: dict, run: Path):
     if not report["checks"]["gow_binary_matches_proven_sha"]:
         raise RuntimeError("Proven GoW full-graphics executable missing/modified; no staging")
     if not report["checks"]["gow_renderer_matches_proven_sha"]:
-        raise RuntimeError("Proven GoW source rasterizer mismatch; no staging")
+        report["source_warning"] = (
+            "Saved GoW full-graphics ELF is verified, but BOTH current protected "
+            "rasterizer files have changed since its original source checkpoint. "
+            "Do not label either current source as proven or overwrite it; "
+            "proceed to compare pinned Git ancestry and stage known fixes only."
+        )
     if not report["checks"]["got_v51_both_source_versions_found"]:
         raise RuntimeError("GoT v51 source ancestry not available; no staged overlay")
 
@@ -280,31 +285,38 @@ def stage_preflight(report: dict, run: Path):
     renderer_root = next((root for root in (GOW_SOURCE, GOW_HOTPATH_SOURCE)
                           if digest(root / GOW_RENDERER) == GOW_RENDERER_SHA), None)
     if renderer_root is None:
-        raise RuntimeError("No exact proven GoW renderer source available")
-    tested_renderer = renderer_root / GOW_RENDERER
-    baseline = git(renderer_root, "show", "HEAD:" + GOW_RENDERER, check=False)
-    if baseline.returncode:
-        raise RuntimeError("Proven renderer has no Git base for safe 3-way port")
-    local_overlay = tested_renderer.read_text()
-    if local_overlay != baseline.stdout:
-        ours = run / "renderer-before-gow.cpp"
-        old = run / "renderer-original-gow.cpp"
-        new = run / "renderer-proven-gow.cpp"
-        ours.write_bytes((staging / GOW_RENDERER).read_bytes())
-        old.write_text(baseline.stdout)
-        new.write_text(local_overlay)
-        overlay = command("git", "merge-file", "-p", str(ours), str(old), str(new), check=False)
-        report["stage"]["gow_renderer_overlay_rc"] = overlay.returncode
-        if overlay.returncode or "<<<<<<<" in overlay.stdout:
-            report["stage"]["gow_renderer_conflict"] = overlay.stdout[-120_000:]
-            report["stage"]["status"] = "GOW_RENDERER_PROVEN_OVERLAY_CONFLICT_NO_BUILD"
-            return
-        (staging / GOW_RENDERER).write_text(overlay.stdout)
-        git(staging, "add", "--", GOW_RENDERER)
-        report["stage"]["gow_exact_renderer_source_ported"] = True
+        report["stage"]["fullgfx_renderer_source"] = "MISSING_HISTORICAL_SHA_LOCAL_SOURCE_NOT_PORTED"
+        report["stage"]["fullgfx_renderer_binary_sha_verified"] = True
+        report["stage"]["unresolved_compiled_source_provenance"] = True
+        report["stage"]["current_renderer_shas"] = {
+            str(root): digest(root / GOW_RENDERER)
+            for root in (GOW_SOURCE, GOW_HOTPATH_SOURCE)
+        }
     else:
-        report["stage"]["gow_exact_renderer_source_ported"] = False
-        report["stage"]["gow_renderer_already_git_tracked"] = True
+        tested_renderer = renderer_root / GOW_RENDERER
+        baseline = git(renderer_root, "show", "HEAD:" + GOW_RENDERER, check=False)
+        if baseline.returncode:
+            raise RuntimeError("Proven renderer has no Git base for safe 3-way port")
+        local_overlay = tested_renderer.read_text()
+        if local_overlay != baseline.stdout:
+            ours = run / "renderer-before-gow.cpp"
+            old = run / "renderer-original-gow.cpp"
+            new = run / "renderer-proven-gow.cpp"
+            ours.write_bytes((staging / GOW_RENDERER).read_bytes())
+            old.write_text(baseline.stdout)
+            new.write_text(local_overlay)
+            overlay = command("git", "merge-file", "-p", str(ours), str(old), str(new), check=False)
+            report["stage"]["gow_renderer_overlay_rc"] = overlay.returncode
+            if overlay.returncode or "<<<<<<<" in overlay.stdout:
+                report["stage"]["gow_renderer_conflict"] = overlay.stdout[-120_000:]
+                report["stage"]["status"] = "GOW_RENDERER_PROVEN_OVERLAY_CONFLICT_NO_BUILD"
+                return
+            (staging / GOW_RENDERER).write_text(overlay.stdout)
+            git(staging, "add", "--", GOW_RENDERER)
+            report["stage"]["gow_exact_renderer_source_ported"] = True
+        else:
+            report["stage"]["gow_exact_renderer_source_ported"] = False
+            report["stage"]["gow_renderer_already_git_tracked"] = True
 
     # Recover additional preserved UFFD/page and AudioOut source files only
     # from EXACT blob-hash matches. Their provenance is stronger than a
@@ -481,7 +493,11 @@ def stage_preflight(report: dict, run: Path):
     check = git(staging, "diff", "--cached", "--check", check=False)
     if check.returncode:
         raise RuntimeError("Compiled-source whitespace/merge checks failed")
-    report["stage"]["status"] = "GOW_SOURCE_PLUS_GOT_V51_STENCIL_STAGED_NO_BUILD"
+    report["stage"]["status"] = (
+        "GOW_GOT_STAGED_RENDERER_PROVENANCE_INCOMPLETE"
+        if report["stage"].get("unresolved_compiled_source_provenance")
+        else "GOW_SOURCE_PLUS_GOT_V51_STENCIL_STAGED_NO_BUILD"
+    )
     report["stage"]["remaining"] = (
         "Confirm exact fullgfx object/source fingerprints, then port other "
         "verified GoT GPU bindings and validate both games in an isolated build. "
@@ -498,7 +514,10 @@ def build_staged_source(report: dict, run: Path):
     changed, and no game/process is launched.
     """
     stage = report.get("stage", {})
-    if stage.get("status") != "GOW_SOURCE_PLUS_GOT_V51_STENCIL_STAGED_NO_BUILD":
+    if stage.get("status") not in (
+        "GOW_SOURCE_PLUS_GOT_V51_STENCIL_STAGED_NO_BUILD",
+        "GOW_GOT_STAGED_RENDERER_PROVENANCE_INCOMPLETE",
+    ):
         report["build"] = {"status": "SKIPPED_SOURCE_PREFLIGHT_NOT_PASSED"}
         return
     if shutil.which("docker") is None:
@@ -564,7 +583,10 @@ def build_staged_source(report: dict, run: Path):
     smoke = command("timeout", "30", str(exe), "--help", cwd=run, check=False)
     if smoke.returncode:
         raise RuntimeError("Candidate CLI smoke failed: " + (smoke.stdout + smoke.stderr)[-1800:])
-    report["build"].update({"status": "PASS_COMPILED_NOT_GAMEPLAY_TESTED",
+    report["build"].update({"status": (
+                               "COMPILED_WITH_UNVERIFIED_RENDERER_PROVENANCE"
+                               if report["stage"].get("unresolved_compiled_source_provenance")
+                               else "PASS_COMPILED_NOT_GAMEPLAY_TESTED"),
                             "sha256": digest(exe),
                             "binary": str(exe),
                             "build_log": str(log)})
