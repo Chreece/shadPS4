@@ -213,3 +213,39 @@ at least 8 GiB free GPU VRAM before launch. This can distinguish
 binary/source regression from profile or assets without modifying ES-DE.
 
 No new compiled or playable universal emulator is claimed here.
+
+## October 19: GoW reference visually accepted; Ghost reference next
+
+The user reports the previous SHA-pinned GoW full-graphics executable
+"looks ok" when run in the controlled reference comparison. That is
+evidence of a **new-unified-binary regression**, not that the older
+GoW reference is complete, fast, or free of audio stutter.
+
+The next check uses the **original October 17 Ghost partial-world
+baseline** \`e9f470b359845a456139a865aa1d7b3001f0dbfd\`,
+associated with \`got-gow-shreg-table-20261017-205408.tar.gz\`.
+That record reached the horse/rider and some terrain, but did not
+fix the white menu or full world resources.
+
+Do not use the universal GoW observer's hardcoded
+\`--cpu-id-mode builtin\` flags for this old Ghost binary. Its pinned
+\`src/main.cpp\` has no \`--cpu-id-mode\` CLI option. Its archived test
+used \`--game /mnt/roms-all/ps4-games/CUSA11456/eboot.bin\`,
+\`--fullscreen true --show-fps\`.
+
+The new \`--reference-got\` flow in
+\`tools/development/esde_fullstack_regression_triage_20261019.py\`
+requires both the historical saved binary and the archive's saved
+SHA-256 for that **same exact executable filename**, verifies the Git
+commit in the archived worker script, and refuses unverified binaries.
+It clones the pre-existing Ghost run's \`user/\` profile into a
+fresh per-run folder under \`~/projects/shadps4/ESDE/\`.
+It does not change ES-DE, use a private driver, stop Ollama,
+or rebuild anything. It requires 8 GiB of free AMD VRAM,
+records bounded output and selected window screenshots, and stops
+only its own process when a device-lost/GPUVM fault appears.
+
+If the archived executable is no longer present, the procedure
+prints a fail-closed evidence archive instead of guessing which
+recent experimental binary to execute. A visually comparable
+horse/rider/world scene is the next acceptance gate.
