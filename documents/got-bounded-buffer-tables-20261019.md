@@ -1,5 +1,7 @@
 # GoT bounded GPU-selected buffer repair, 2026-10-19
 
+Current candidate: [resource-table lifetime and empty-table repair](got-table-guard-20261019.md). The run described below built successfully but its subsequent capture crashed; the new report contains the diagnosis and next candidate. Earlier evidence and pins below are historical.
+
 The latest capture confirms that the earlier image/sampler repair is active, but the menu and world still render incorrectly. It also exposes three compute shaders whose GPU-selected **buffer** accesses were not preserved. This candidate repairs those accesses generically. It has passed a full build and shader validation; **visual recovery is not yet proven**.
 
 Source: `e255fa8f608c3af98397436e13b6b5a89ec3128f`. Paired host/runtime scripts: `7ee9f617aaad1e25c09f7c9e742c308d5442d75e`. Branch: `diagnostic/got-indexed-sample-feedback-20261019`.

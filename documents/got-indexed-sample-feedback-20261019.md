@@ -1,6 +1,6 @@
 # GoT: executed indexed-image sample feedback, 2026-10-19
 
-Current candidate: [bounded GPU-selected buffer loads and stores](got-bounded-buffer-tables-20261019.md), source `e255fa8f608c3af98397436e13b6b5a89ec3128f`. The latest gameplay capture verifies the previous image/sampler repair but still shows broken world rendering. The new buffer candidate has passed compilation and shader validation; its gameplay result remains unverified. Earlier evidence and pins below are historical.
+Current candidate: [resource-table lifetime and empty-table repair](got-table-guard-20261019.md). The latest capture crashed before completing gameplay. A matching local failure is corrected and local validation passes; menu/world recovery remains unverified. Earlier evidence and pins below are historical.
 
 Gameplay graphics remain unverified. This branch retains the verified LDS/Phi and Vulkan synchronization work, adds opt-in sample feedback, and repairs indexed texture-table specialization. It does not yet claim a white-menu or scene-geometry fix.
 
