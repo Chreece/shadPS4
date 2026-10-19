@@ -41,7 +41,8 @@ static bool IsCompositeExtract(IR::Opcode opcode) {
 }
 
 static bool IsDisallowedOp(IR::Opcode op) {
-    return op == IR::Opcode::InverseBallot;
+    // GetUserData takes a fixed ScalarReg, not a Phi-generated SSA value.
+    return op == IR::Opcode::InverseBallot || op == IR::Opcode::GetUserData;
 }
 
 using InstList = boost::container::small_vector<IR::Inst*, 4>;
