@@ -228,7 +228,7 @@ def ensure_git_history(report):
                 "--depth=512", REMOTE, commit, timeout=240)
         if git("cat-file", "-e", f"{commit}^{{commit}}", check=False).returncode:
             raise RuntimeError("Pinned GoT/base Git history incomplete: " + commit)
-    # A cached shallow branch tip is insufficient: 51 generic C++ fixes
+    # A cached shallow branch tip is insufficient: 84 generic C++ fixes
     # span hundreds of commits. The replay must see their real first parents.
     missing_ancestry = [
         prefix for prefix in GENERAL_LATE_COMMITS
