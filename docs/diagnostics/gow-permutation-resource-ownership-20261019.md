@@ -30,12 +30,16 @@ Initial read-only test `gow_permutation_info_native_proof_20261019.py`:
 
 Stronger read-only test: `gow_permutation_behavior_replay_20261019.py`, with launcher `gow_permutation_behavior_launcher_20261019.sh`. It extracts the original and corrected **actual** `Program` struct and `PipelineCache::GetProgram` control-flow sources, builds both under the same small C++ Shader::Info/Vulkan-module mock, then requests two resource variants with **1 and 97 image-binding slots**. Both must compile. The expected old behavior is: second SPIR-V module requires 97 image slots but GoW's returned `Info` describes 1; subsequent cached reuse advances 1 binding instead of 97. The corrected path must return the owned 97-slot layout with 97 binding slots. This specifically tests the actual source control flow while synthetic mock inputs replace real game resources.
 
-The local C++ adaptation of this source-control-flow case compiled and reproduced **old: 1/97 mismatch, reuse 1; corrected: 97/97, reuse 97**. The fully pinned on-server replay is pending.
+The local C++ adaptation of this source-control-flow case compiled and reproduced **old: 1/97 mismatch, reuse 1; corrected: 97/97, reuse 97**. The on-server actual-source C++ replay passed on 2026-10-19 at 19:00 CEST using baseline `2608d5501307378a0816a05b9cca39b6bb2a874f` and candidate `c9af381aef9efd07afdc8f22738a81d87f5a3d35`. Both actual `GetProgram` source blocks compiled with identical mock dependencies. Original: `SECOND_METADATA=1`, `SECOND_ACTUAL=97`, `REUSE_BINDING_SLOTS=1`; corrected: `97/97` and `97` on reuse, with `SAME_CACHED_MODULE=YES` in both runs. Evidence archive: `gow-permutation-replay-20261019-190058.tar.gz` (user-provided server output). This is real source control flow under synthetic resources, **not yet a real emulator compilation or gameplay measurement**.
+
+## Additional cached-specialization safety fix
+
+Source review uncovered a separate out-of-range comparison risk in `StageSpecialization::operator==`: it indexed `other.buffers[i]`, `other.images[i]`, and `other.samplers[i]` without ensuring the two resource lists had equal lengths. This becomes particularly relevant when comparing serialized shader variations with distinct layouts. The candidate now rejects invalid specialization slots and mismatched resource-list lengths before element access. The first real translation-unit build must include this header.
 
 ## Required further gates (no loop)
 
-1. **Native behavioral replay:** both original and patched C++ compile; baseline demonstrably returns mismatched resource metadata; patched variation and cache reuse return correctly matching layout and slots.
-2. **Full C++ ABI-only compile:** stage the three changed source files in an isolated GoW build, compile translation units with the established CMake flags, prove source/object restore without modifying the protected executable.
+1. **Native behavioral replay: PASS** — both original and patched C++ compile; baseline demonstrably returns mismatched resource metadata; patched variation and cache reuse return correctly matching layout and slots.
+2. **Full C++ ABI-only compile: PENDING** — stage the corrected renderer sources and specialization header in an isolated GoW build, compile translation units with the established CMake flags, prove source/object restore without modifying the protected executable.
 3. **GoW scene relevance:** show a shader with hash/variation whose cached SPIR-V descriptor count or layout differs from returned runtime `Info` in the *failing scene*. Preserve exact log filter and per-variation IDs.
 4. **Only then, one game run:** compare the identical save/scene visually, including missing resources, frame pacing, and audio. Compiling is not a gameplay breakthrough.
 5. A neutral result means the candidate remains isolated; do not return to rejected SRT/audio/CPU-scanning variants without new proof.
