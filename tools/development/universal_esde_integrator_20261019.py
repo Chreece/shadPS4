@@ -136,7 +136,11 @@ class Builder:
         return proc.returncode
 
     def git(self, *argv, check=True, timeout=1800):
-        return self.run_cmd(["git", "-C", self.source, *argv], check=check, timeout=timeout)
+        # Linked worktrees share .git/config; never alter it.
+        return self.run_cmd(["git", "-C", self.source,
+                             "-c", "user.name=Universal ES-DE integration",
+                             "-c", "user.email=esde-universal@users.noreply.github.com",
+                             *argv], check=check, timeout=timeout)
 
     def capture(self, *argv, directory=None, timeout=120):
         return subprocess.run(list(map(str, argv)), cwd=directory or self.run,
@@ -194,8 +198,6 @@ class Builder:
         self.step = "SNAPSHOT_EXISTING_COMPILABLE_SOURCE"
         self.run_cmd(["git", "-C", EXISTING, "worktree", "add", "--detach",
                       self.source, self.report["existing_head"]])
-        self.git("config", "user.name", "Universal ES-DE integration")
-        self.git("config", "user.email", "esde-universal@users.noreply.github.com")
         # Both cached and uncached tracked changes are included by HEAD diff.
         patch = self.capture("git", "-C", EXISTING, "diff",
                              "--binary", "HEAD", "--", "src", "tests", "CMakeLists.txt",
@@ -236,14 +238,14 @@ class Builder:
 
     def fetch_history(self):
         self.step = "PINNED_ENGINE_HISTORY"
-        self.git("remote", "add", "universal-upstream", "https://github.com/shadps4-emu/shadPS4.git")
-        self.git("remote", "universal-fork", "https://github.com/Chreece/shadPS4.git")
+        # Use URL-only fetches; no new remotes leak into original worktrees.
         self.git("-c", "http.version=HTTP/1.1", "fetch", "--no-tags",
-                 "universal-upstream", UPSTREAM)
+                 "https://github.com/shadps4-emu/shadPS4.git", UPSTREAM)
         if self.git_out("rev-parse", "FETCH_HEAD") != UPSTREAM:
             raise RuntimeError("UPSTREAM_PIN_CHANGED")
         self.git("-c", "http.version=HTTP/1.1", "fetch", "--no-tags",
-                 "universal-fork", GHOST_BRANCH, GHOST_LATEST_BRANCH)
+                 "https://github.com/Chreece/shadPS4.git",
+                 GHOST_BRANCH, GHOST_LATEST_BRANCH)
         if self.git_out("rev-parse", "FETCH_HEAD") != GHOST_LATEST:
             # With multiple refspecs FETCH_HEAD may expose only the first.
             test = self.capture("git", "-C", self.source, "cat-file", "-e", GHOST_LATEST + "^{commit}")
