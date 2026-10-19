@@ -126,3 +126,69 @@ merge regressions for this integration branch on push. It does **not**
 claim CI native gameplay or an installed executable; the latter
 requires the user's Debian/AMD test host. No release is claimed from the
 22:03 log or from these source-wrapper changes.
+
+## October 19 22:21: actual nine-source semantic C++ reconciliation
+
+User archive: \`esde-general-engine-merge-20261019-222123.tar.gz\`.
+The first general-source run correctly did **not** modify sources: no native
+compilation, \`SOURCE_CONFLICTS_NOT_APPLIED\`. Official upstream's five
+reviewed commits merged cleanly. The October 17 Ghost overlay reported
+eleven C++/SRT merge conflicts (nine files, **39 individual Git conflict
+hunks**), two independently added SRT headers, and two filtered-out
+general Vulkan alpha-blending headers. The 84 later changes were not yet
+replayed because the baseline overlaps stopped staging.
+
+The new
+\`tools/development/esde_general_semantic_resolver_20261019.py\` resolves
+only those **exact nine** uploaded conflict previews, each pinned to
+the complete pre-merge SHA-256 and exact expected merged SHA-256.
+Any source drift fails closed; **no** blanket \`-X ours\`/\`-X theirs\`.
+
+Reviewed choices and invariants:
+
+- **SRT:** preserve GoW's dependency graph/root ordering *and* the Ghost
+  bounded fixed-point traversal of real guest pointers, structural
+  ReadConst checks and late native scalar reads. The merged code uses
+  \`roots[root_plan.order[i]]\` in \`ScheduleSrtAcrossRoots\`.
+  Ensure the ReadConst case closes before \`ReadFirstLane\`; apply
+  wave-uniformity validation; keep one existing \`FindILsb32\` case.
+  Crucially, callbacks return \`false\` on deferred offset computation
+  instead of an invalid \`continue\`; \`PushPtr\` preserves balanced
+  pointer stack pushes with rollback on unsuccessful offset generation.
+- **Descriptor patching:** retain the Info/word-aware real guest SHARP
+  lookup and reuse already evaluated resource fetches. No replacement
+  SHARP values are fabricated.
+- **GPU:** keep Liverpool graphics diagnostics; preserve true UFFD
+  pending-invalidation queue and page permissions; complete actual
+  Vulkan occlusion queries **and** existing draw accounting; rate-limit
+  buffer clamp logs without losing the real overflow/descriptor
+  instrumentation. Keep stencil reference mask selection.
+- **Vulkan queue:** retain one sparse-queue-found variable (two would
+  not compile), preserve sparse-binding capability checks and diagnostics.
+- **Pipeline cache:** use an independently versioned shader/resource
+  cache to avoid loading incompatible earlier metadata.
+- **SRT headers:** preserve the GoW compiled/source-proven
+  \`srt_offset_preflight.h\` only if its actual SHA-256 remains
+  \`4b7b8a6e4422d1620c3c2910e94554bb3fa99a4e05d4ee82bb7ee9a43b88ae1b\`
+  and the old Ghost source blob matches the expected SHA-1.
+  Preserve the correct constant-left/dynamic-count shift helper with
+  analogous incoming Git blob checks. Do not overwrite by timestamp.
+- **Generic alpha:** include \`minmax_alpha_scale.h\` and
+  \`minmax_src_alpha_one.h\` from the real Ghost source instead of
+  mislabeling them title-only dependencies.
+
+The local review of all nine uploaded conflict previews produced the
+exact proposed hashes without unresolved markers or C++ brace imbalance.
+The host-side \`--self-test\` additionally replays the **actual uploaded
+22:21 archive** if it remains in the project \`logs/\` path, and checks
+all nine expected postimages before continuing.
+
+The integration's native acceptance gate was extended to eight focused
+PM4, GPU image/sampler, SRT uniformity, SRT root dependency scheduling
+and SRT host-barrier tests prior to full Clang19 linking.
+
+This is a **reviewed source merge**, not a runtime compatibility pass.
+The following run must still replay the 84 later generic fixes and expose
+any new genuine source conflicts; do not promote the old compile-only
+candidate until GoW, Ghost, unrelated titles and ES-DE exit work on the
+same new ELF.
