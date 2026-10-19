@@ -249,6 +249,75 @@ def guarded_delta(old, new, rel):
         return "GAME_OR_SHADER_SPECIFIC_NEW_LOGIC: " + repr(violations[:5])
     return None
 
+def replay_later_general_fixes(proposals, conflicts, plan_dir, report):
+    """Replay only reviewed generic SOURCE diffs after the horse-visible branch.
+
+    Each commit retains its actual first-parent base, never a fake replay
+    against Oct 17. No diagnostic-only commit, title/shader selector or
+    arbitrary Vulkan descriptor value is silently chosen as a resolution.
+    """
+    if conflicts:
+        report["later_generic_commits"] = "WAITING_FOR_BASELINE_SEMANTIC_CONFLICTS"
+        return
+    history = git("rev-list", "--reverse", f"{GOT}..{GOT_LATE}").stdout.decode().splitlines()
+    by_prefix = {}
+    for prefix in GENERAL_LATE_COMMITS:
+        candidates = [h for h in history if h.startswith(prefix)]
+        if len(candidates) != 1:
+            raise RuntimeError(f"Ambiguous or missing pinned general commit {prefix}: {candidates}")
+        by_prefix[candidates[0]] = prefix
+    report["later_generic_commits_expected"] = len(GENERAL_LATE_COMMITS)
+    report["later_generic_commits_pinned"] = list(by_prefix)
+    report["later_generic_commits_skipped_already_upstream"] = []
+    report["later_generic_change_replayed"] = {}
+    reviewed = 0
+    for sha_commit in history:
+        if sha_commit not in by_prefix:
+            continue
+        if git("merge-base", "--is-ancestor", sha_commit, "HEAD",
+               check=False).returncode == 0:
+            report["later_generic_commits_skipped_already_upstream"].append(sha_commit)
+            continue
+        parents = git("rev-list", "--parents", "-n", "1", sha_commit).stdout.decode().split()
+        if len(parents) != 2 or parents[0] != sha_commit:
+            raise RuntimeError("Unexpected merge-commit dependency: " + sha_commit)
+        parent = parents[1]
+        delta = git("diff", "--name-only", parent, sha_commit,
+                    "--", "src/shader_recompiler", "src/video_core").stdout
+        paths = sorted(set(delta.decode().splitlines()))
+        for idx,rel in enumerate(paths):
+            if not eligible(rel):
+                continue
+            local = SOURCE / rel
+            if local.is_symlink() or (local.exists() and not local.is_file()):
+                conflicts[sha_commit[:12]+":"+rel] = "UNSAFE_LOCAL_FILE_TYPE"
+                continue
+            old = proposals.get(rel, local.read_bytes() if local.is_file() else None)
+            prev = git_data(parent,rel)
+            incoming = git_data(sha_commit,rel)
+            temp = plan_dir / ("late-"+sha_commit[:12]+"-"+str(idx))
+            temp.mkdir(exist_ok=False)
+            merged, error = merged_bytes(old,prev,incoming,parent,rel,temp)
+            if error:
+                conflicts[sha_commit[:12]+":"+rel] = error
+                if merged and b"<<<<<<<" in merged:
+                    target = plan_dir/"conflicts"/"later"/sha_commit[:12]/rel
+                    target.parent.mkdir(parents=True,exist_ok=True)
+                    target.write_bytes(merged)
+                continue
+            policy = guarded_delta(old,merged,rel)
+            if policy:
+                conflicts[sha_commit[:12]+":"+rel] = policy
+                continue
+            if old != merged:
+                proposals[rel] = merged
+                report["later_generic_change_replayed"].setdefault(
+                    sha_commit,[]).append(rel)
+        reviewed += 1
+    report["later_generic_commits_reviewed"]=reviewed
+    report["later_generic_source_edits"]=sum(
+        len(x) for x in report["later_generic_change_replayed"].values())
+
 def collect_change_plan(plan_dir, report):
     changes = git("diff", "--name-only", COMMON, GOT,
                   "--", "src/shader_recompiler", "src/video_core").stdout
@@ -290,6 +359,12 @@ def collect_change_plan(plan_dir, report):
         if old == candidate:
             continue
         proposals[rel] = candidate
+
+    # A second, separate, commit-by-commit replay covers later *general*
+    # table bounds, strided images/samplers, indexed buffers, cache lifetimes,
+    # shader Phi/LDS, and indirect GPU hazards. Pure test/diagnostic commits
+    # are deliberately not replayed.
+    replay_later_general_fixes(proposals,conflicts,plan_dir,report)
 
     # Inspect the COMPLETE changed subsystem for missing project-local headers.
     # Sources outside the vetted subsystem must not be manufactured.
@@ -509,6 +584,7 @@ def main():
             "protected_gow_got_sources_changed":False,
             "no_game_or_shader_specific_runtime_changes":True,
             "source_pin_ghost_world_visible":GOT,
+            "source_pin_ghost_later_general_source":GOT_LATE,
             "source_pin_gow_generic":GOW,
             "common_ancestor":COMMON}
     rc=0
