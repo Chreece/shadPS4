@@ -219,6 +219,21 @@ def stage_preflight(report: dict, run: Path):
     upstream_head = git(staging, "rev-parse", "FETCH_HEAD").stdout.strip()
     if upstream_head != UPSTREAM_SHA:
         raise RuntimeError("Official upstream pin mismatch, refusing unexpected source")
+    # Fetch both sources first, and report pairwise conflict previews for
+    # BOTH revisions before changing the disposable checkout.
+    git(staging, "-c", "http.version=HTTP/1.1", "fetch", "--no-tags",
+        "https://github.com/Chreece/shadPS4.git", GOW_REF)
+    if git(staging, "rev-parse", "FETCH_HEAD").stdout.strip() != GOW_REF:
+        raise RuntimeError("GoW proof ref changed during preflight")
+    head_before_merges = git(staging, "rev-parse", "HEAD").stdout.strip()
+    report["pairwise_conflicts"] = {}
+    for label, target in (("latest_upstream", UPSTREAM_SHA), ("gow_proof", GOW_REF)):
+        probe = git(staging, "merge-tree", "--write-tree", head_before_merges,
+                    target, check=False)
+        report["pairwise_conflicts"][label] = {
+            "returncode": probe.returncode,
+            "output": (probe.stdout + probe.stderr)[-80_000:],
+        }
     baseline = git(staging, "merge", "--no-ff", "--no-edit", UPSTREAM_SHA, check=False)
     if baseline.returncode:
         conflicts = git(staging, "diff", "--name-only", "--diff-filter=U")
@@ -232,9 +247,8 @@ def stage_preflight(report: dict, run: Path):
     # The Oct 16 protected working tree is OLDER than the Oct 17
     # full-graphics UFFD checkpoint. Merging its HEAD would silently omit
     # subsequent patches. Import the exact pinned Oct 17 GoW revision.
-    git(staging, "-c", "http.version=HTTP/1.1", "fetch", "--no-tags",
-        "https://github.com/Chreece/shadPS4.git", GOW_REF)
-    proven_head = git(staging, "rev-parse", "FETCH_HEAD").stdout.strip()
+    proven_head = GOW_REF
+    git(staging, "cat-file", "-e", proven_head + "^{commit}")
     if proven_head != GOW_REF:
         raise RuntimeError("GoW pinned commit resolved to unexpected SHA")
     local_head = git(proof_git, "rev-parse", "HEAD").stdout.strip()
