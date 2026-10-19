@@ -28,6 +28,7 @@
 #include "video_core/renderer_vulkan/vk_got_scene_depth_ab.h"
 #include "video_core/renderer_vulkan/vk_got_scene_gpu_queries.h"
 #include "video_core/renderer_vulkan/vk_got_indirect_producer_trace.h"
+#include "video_core/renderer_vulkan/vk_got_dma_origin_probe.h"
 #include "video_core/renderer_vulkan/vk_got_indirect_gpu_readback.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -2216,6 +2217,9 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         .size = num_bytes,
     };
     runtime.CopyBuffer(src_buffer, dst_buffer, std::span{&copy, 1});
+    Diagnostics::CaptureGotDmaGpuWords(
+        instance,scheduler,runtime,src_buffer,src_offset,
+        dst_buffer,dst_offset,src,dst,num_bytes,src_gds,dst_gds);
 }
 
 u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {

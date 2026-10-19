@@ -47,6 +47,49 @@ inline constexpr std::uint64_t GotIndirectCommandBytes = 20;
     return enabled;
 }
 
+// The observed GDS DMA sources live at 0x980..0x9ff, but the guest
+// destination addresses moved between runs. Select bounded address
+// families, never the stale eight literal pointer values.
+enum class GotDmaWordCandidate : std::uint8_t {
+    None,
+    GdsIndexCountCandidate,
+    GuestInstanceCountCandidate,
+};
+
+[[nodiscard]] constexpr GotDmaWordCandidate SelectGotDmaWordCandidate(
+    std::uint64_t source, std::uint64_t destination, std::uint32_t bytes,
+    bool src_gds, bool dst_gds) noexcept {
+    if (bytes != 4 || dst_gds) return GotDmaWordCandidate::None;
+    if (src_gds) {
+        if (source >= 0x980 && source < 0xa00 &&
+            destination >= 0x1500000000ULL &&
+            destination < 0x1502000000ULL) {
+            return GotDmaWordCandidate::GdsIndexCountCandidate;
+        }
+    } else if ((destination & 31ULL) == 4 &&
+               ((destination >= 0x1546000000ULL &&
+                 destination < 0x1547000000ULL) ||
+                (destination >= 0x1548000000ULL &&
+                 destination < 0x1549000000ULL))) {
+        return GotDmaWordCandidate::GuestInstanceCountCandidate;
+    }
+    return GotDmaWordCandidate::None;
+}
+
+[[nodiscard]] constexpr bool ShouldSampleGotDmaWord(
+    std::uint32_t count) noexcept {
+    return count != 0 && (count <= 8 ||
+            (count <= 2048 && std::has_single_bit(count)));
+}
+
+[[nodiscard]] inline bool GotDmaWordProbeEnabled() noexcept {
+    static const bool enabled = [] {
+        const char* env = std::getenv("SHADPS4_GOT_DMA_WORD_PROBE");
+        return env && env[0] == '1' && env[1] == '\0';
+    }();
+    return enabled;
+}
+
 [[nodiscard]] constexpr bool ShouldReportIndirectProducer(std::uint32_t n) noexcept {
     return n <= 16 || std::has_single_bit(n);
 }

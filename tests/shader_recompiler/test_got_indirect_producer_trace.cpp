@@ -28,6 +28,38 @@ static_assert(ShouldReportIndirectProducer(1024));
 static_assert(!ShouldReportIndirectProducer(1023));
 
 int main() {
+    // The previous eight exact addresses drifted across native runs.
+    // Classify candidate GPU DMA field writes by stable family and 4-byte size.
+    static_assert(SelectGotDmaWordCandidate(
+        0x998,0x1501330500ULL,4,true,false) ==
+        GotDmaWordCandidate::GdsIndexCountCandidate);
+    static_assert(SelectGotDmaWordCandidate(
+        0x988,0x1500030540ULL,4,true,false) ==
+        GotDmaWordCandidate::GdsIndexCountCandidate);
+    static_assert(SelectGotDmaWordCandidate(
+        0x1546e2460cULL,0x1546e71104ULL,4,false,false) ==
+        GotDmaWordCandidate::GuestInstanceCountCandidate);
+    static_assert(SelectGotDmaWordCandidate(
+        0x1548c00000ULL,0x1548cc3a04ULL,4,false,false) ==
+        GotDmaWordCandidate::GuestInstanceCountCandidate);
+    static_assert(SelectGotDmaWordCandidate(
+        0x998,0x1501330500ULL,8,true,false) ==
+        GotDmaWordCandidate::None);
+    static_assert(SelectGotDmaWordCandidate(
+        0x998,0x1501330500ULL,4,true,true) ==
+        GotDmaWordCandidate::None);
+    static_assert(SelectGotDmaWordCandidate(
+        0x998,0x1546e71104ULL,4,true,false) ==
+        GotDmaWordCandidate::None);
+    static_assert(SelectGotDmaWordCandidate(
+        0x1546e2460cULL,0x1546e71100ULL,4,false,false) ==
+        GotDmaWordCandidate::None);
+    static_assert(!ShouldSampleGotDmaWord(0));
+    static_assert(ShouldSampleGotDmaWord(8));
+    static_assert(ShouldSampleGotDmaWord(1024));
+    static_assert(!ShouldSampleGotDmaWord(1025));
+    static_assert(!ShouldSampleGotDmaWord(4096));
+
     for (std::uint32_t i = 0; i < GotIndirectWatchAddresses.size(); ++i) {
         const auto address = GotIndirectWatchAddresses[i];
         const auto bit = std::uint32_t{1} << i;
@@ -49,5 +81,7 @@ int main() {
         ++cases;
     }
     std::printf("GOT_INDIRECT_PRODUCER_ADDRESS_TEST=PASS cases=%u exact_20_bytes=YES "
+                "dynamic_dma_selector=PASS bounded_sample=PASS "
+
                 "overflow_fail_closed=YES no_guest_or_gpu_changes=YES\n",cases);
 }
