@@ -25,6 +25,7 @@ import tarfile
 import tempfile
 from esde_general_semantic_resolver_20261019 import (
     resolve_reviewed, preserve_verified_srt_header,
+    check_archived_conflict_evidence,
 )
 
 ROOT = Path.home() / "projects/shadps4"
@@ -745,6 +746,12 @@ def self_test():
     assert eligible("src/video_core/renderer_vulkan/vk_rasterizer.cpp")
     assert eligible("src/video_core/renderer_vulkan/resource_audit_hash_filter.h")
     assert not eligible("src/video_core/renderer_vulkan/vk_got_scene_special.h")
+    fixture = LOGS / "esde-general-engine-merge-20261019-222123.tar.gz"
+    if fixture.is_file() and not fixture.is_symlink():
+        proofs = check_archived_conflict_evidence(fixture)
+        print("NINE_UPLOADED_CPP_SEMANTIC_MERGES=PASS count="+str(len(proofs)))
+    else:
+        print("NINE_UPLOADED_CPP_SEMANTIC_MERGES=ARCHIVE_NOT_ON_HOST")
     print("GENERAL_ENGINE_MERGE_SELFTEST=PASS cases=12")
     return 0
 
