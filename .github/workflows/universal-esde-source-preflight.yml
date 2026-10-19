@@ -30,6 +30,9 @@ jobs:
       - name: Source integration contract checks
         run: |
           python3 -B tools/development/universal_esde_integrator_20261019.py --self-test
+      - name: Synthetic Git merge and source snapshot safety
+        run: |
+          python3 -B tools/development/test_universal_esde_integrator_20261019.py
       - name: No game-specific runtime rules introduced
         run: |
           python3 - <<'PY'
