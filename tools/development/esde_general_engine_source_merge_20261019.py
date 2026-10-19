@@ -32,6 +32,8 @@ SOURCE = WORK / "source"
 BUILD = WORK / "build"
 OLD_ELF = "48ae4ac2ec8f42e2155425521c8699359b466dd6459905948762de539865b5bc"
 UPSTREAM = "d615b3887ba29025a59242e1a26f5b68bb176158"
+UPSTREAM_REVIEWED = "f68923fe807f657348e6719ce658bcbd0a2b1c72"
+OFFICIAL_REMOTE = "https://github.com/shadps4-emu/shadPS4.git"
 GOW = "f909c3abb1ac1e7c8d87de833d3659f7d0b8fc87"
 GOT = "e9f470b359845a456139a865aa1d7b3001f0dbfd"
 GOT_LATE = "71faef4a8d76282a1931445198571082f0e3c70e"
@@ -221,6 +223,22 @@ def ensure_git_history(report):
     if sha_file(old) != OLD_ELF:
         raise RuntimeError("Compiled source baseline ELF no longer matches Oct19 SHA")
     report["previous_binary_sha"] = sha_file(old)
+    # Five newer upstream commits were reviewed on Oct 19: #5433 texture
+    # subresources, #5429 singleton LDS, #5427 Phi folding, #5421 Voice HLE,
+    # #5437 networking. Bring their REAL source diffs into the same candidate;
+    # do not just change the stale old esde_unified.sh SHA.
+    if git("cat-file", "-e", f"{UPSTREAM_REVIEWED}^{{commit}}",
+           check=False).returncode:
+        run("git", "-C", SOURCE, "-c", "http.version=HTTP/1.1",
+            "fetch", "--no-tags", "--no-recurse-submodules",
+            OFFICIAL_REMOTE, UPSTREAM_REVIEWED, timeout=240)
+    if git("cat-file", "-e", f"{UPSTREAM_REVIEWED}^{{commit}}",
+           check=False).returncode:
+        raise RuntimeError("Reviewed upstream main commit unavailable")
+    if git("merge-base", "--is-ancestor", UPSTREAM, UPSTREAM_REVIEWED,
+           check=False).returncode:
+        raise RuntimeError("New upstream review pin not descendant of source base")
+    report["reviewed_official_upstream_head"] = UPSTREAM_REVIEWED
     for commit in (GOT, GOT_LATE, COMMON):
         if git("cat-file", "-e", f"{commit}^{{commit}}", check=False).returncode:
             run("git", "-C", SOURCE, "-c", "http.version=HTTP/1.1",
@@ -364,6 +382,49 @@ def replay_later_general_fixes(proposals, conflicts, plan_dir, report):
     report["later_generic_source_edits"]=sum(
         len(x) for x in report["later_generic_change_replayed"].values())
 
+def reviewed_upstream_changes(plan_dir, report):
+    """Stage all five reviewed upstream commits via real C++ three-way merges.
+
+    This integrates newer code without resetting the user's GoW/ESDE tree.
+    No file is actually written to SOURCE before all conflicts are evaluated.
+    """
+    delta = git("diff", "--name-only", UPSTREAM, UPSTREAM_REVIEWED).stdout
+    changed = sorted(set(delta.decode("utf8").splitlines()))
+    report["official_upstream_reviewed_changes"] = changed
+    if not changed or len(changed) > 40:
+        raise RuntimeError("Reviewed upstream five-commit diff has changed scope")
+    proposals = {}
+    conflicts = {}
+    for idx,rel in enumerate(changed):
+        file = SOURCE / rel
+        if file.is_symlink() or (file.exists() and not file.is_file()):
+            conflicts["upstream:"+rel] = "UNSAFE_LOCAL_PATH"
+            continue
+        current = file.read_bytes() if file.is_file() else None
+        ancestor = git_data(UPSTREAM,rel)
+        upstream = git_data(UPSTREAM_REVIEWED,rel)
+        directory = plan_dir/("upstream-"+str(idx))
+        directory.mkdir()
+        candidate,error = merged_bytes(
+            current,ancestor,upstream,UPSTREAM,rel,directory)
+        if error:
+            conflicts["upstream:"+rel] = error
+            if candidate and b"<<<<<<<" in candidate:
+                dest = plan_dir/"conflicts"/"official-upstream"/rel
+                dest.parent.mkdir(parents=True,exist_ok=True)
+                dest.write_bytes(candidate)
+            continue
+        violation = guarded_delta(current,candidate,rel)
+        if violation:
+            conflicts["upstream:"+rel] = violation
+            continue
+        if current != candidate:
+            proposals[rel] = candidate
+    report["official_upstream_staged_files"] = sorted(proposals)
+    report["official_upstream_conflicts"] = sorted(conflicts)
+    return proposals,conflicts
+
+
 def collect_change_plan(plan_dir, report):
     changes = git("diff", "--name-only", COMMON, GOT,
                   "--", "src/shader_recompiler", "src/video_core").stdout
@@ -375,14 +436,15 @@ def collect_change_plan(plan_dir, report):
     report["changed_paths_from_GOT"] = len(options)
     report["selected_paths"] = selected
     report["excluded_paths"] = [p for p in options if p not in selected]
-    proposals = {}
-    conflicts = {}
+    # Compose the actually reviewed current upstream delta FIRST, then
+    # integrate the original Ghost source and all later general corrections.
+    proposals,conflicts = reviewed_upstream_changes(plan_dir,report)
     for i,rel in enumerate(selected):
         target = SOURCE / rel
         if target.is_symlink() or (target.exists() and not target.is_file()):
             conflicts[rel] = "SUSPICIOUS_LOCAL_SOURCE_FILE_TYPE"
             continue
-        old = target.read_bytes() if target.is_file() else None
+        old = proposals.get(rel, target.read_bytes() if target.is_file() else None)
         ancestor = git_data(COMMON, rel)
         newer = git_data(GOT, rel)
         tmp = plan_dir / ("merge" + str(i))
@@ -684,6 +746,7 @@ def main():
             "source_root":str(SOURCE),"installed_esde_changed":False,
             "protected_gow_got_sources_changed":False,
             "no_game_or_shader_specific_runtime_changes":True,
+            "source_pin_official_upstream_20261019":UPSTREAM_REVIEWED,
             "source_pin_ghost_world_visible":GOT,
             "source_pin_ghost_later_general_source":GOT_LATE,
             "source_pin_gow_generic":GOW,
