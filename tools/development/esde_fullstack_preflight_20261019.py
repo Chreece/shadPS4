@@ -186,6 +186,79 @@ def recent_game_logs():
     return found
 
 
+
+def resolve_resume_liverpool(report: dict, run: Path, staging: Path, state: dict, proof_git: Path):
+    """Resume ONLY the observed Oct 19 16:57:23 single-header merge conflict."""
+    if not (staging / ".git").exists():
+        raise RuntimeError("RESUME_GIT_WORKTREE_MISSING")
+    prior = run / "audit.json"
+    if not prior.is_file():
+        raise RuntimeError("RESUME_ORIGINAL_AUDIT_MISSING")
+    old_report = json.loads(prior.read_text())
+    old_stage = old_report.get("stage", {})
+    if (old_stage.get("conflicts") != ["src/video_core/amdgpu/liverpool.cpp"] or
+            old_stage.get("goW_pinned_upstream_based_commit") != GOW_REF or
+            old_stage.get("source_head") !=
+            "fc9d61d9a538c46cac54a9e6d8ca6d917f08ad2f"):
+        raise RuntimeError("RESUME_UNRECOGNIZED_CHECKPOINT")
+    if git(staging, "rev-parse", "MERGE_HEAD").stdout.strip() != GOW_REF:
+        raise RuntimeError("RESUME_MERGE_HEAD_MOVED")
+    for ancestor in (UPSTREAM_SHA, state["head"]):
+        if git(staging, "merge-base", "--is-ancestor", ancestor, "HEAD",
+               check=False).returncode:
+            raise RuntimeError("RESUME_RECORDED_ANCESTRY_MISSING")
+    rel = "src/video_core/amdgpu/liverpool.cpp"
+    conflicts = git(staging, "diff", "--name-only", "--diff-filter=U").stdout.splitlines()
+    if conflicts != [rel]:
+        raise RuntimeError("RESUME_UNEXPECTED_CONFLICTS: " + repr(conflicts))
+    stage2 = git(staging, "rev-parse", ":2:" + rel).stdout.strip()
+    stage3 = git(staging, "rev-parse", ":3:" + rel).stdout.strip()
+    if (stage2, stage3) != (
+            "ae70c448c56a4cd9bf17dbb443f6084a6c3d49d5",
+            "9ff98d1db7cd472a46a0e307806e092e4eb74a6c"):
+        raise RuntimeError("RESUME_LIVERPOOL_STAGE_BLOBS_CHANGED")
+    target = staging / rel
+    content = target.read_text()
+    marker = ('<<<<<<< HEAD\n'
+              '#include "video_core/graphics_diagnostics.h"\n'
+              '=======\n'
+              '#include "video_core/amdgpu/pm4_register_write.h"\n'
+              '>>>>>>> ' + GOW_REF + '\n')
+    combined = ('#include "video_core/amdgpu/pm4_register_write.h"\n'
+                '#include "video_core/graphics_diagnostics.h"\n')
+    if (content.count(marker) != 1 or content.count("<<<<<<<") != 1 or
+            content.count("=======") != 1 or content.count(">>>>>>>") != 1):
+        raise RuntimeError("RESUME_UNEXPECTED_CONFLICT_MARKERS")
+    result = content.replace(marker, combined, 1)
+    for required in ('#include "video_core/amdgpu/pm4_register_write.h"',
+                     '#include "video_core/graphics_diagnostics.h"',
+                     '#include "video_core/renderer_vulkan/vk_occlusion_query.h"',
+                     "PM4::WriteShaderRegisters"):
+        if required not in result:
+            raise RuntimeError("RESUME_REQUIRED_GPU_CODE_MISSING: " + required)
+    previous = git(staging, "rev-parse", "HEAD").stdout.strip()
+    target.write_text(result)
+    git(staging, "add", "--", rel)
+    git(staging, "diff", "--cached", "--check")
+    git(staging, "commit", "--no-edit")
+    parents = git(staging, "rev-list", "--parents", "-n", "1", "HEAD").stdout.split()
+    if len(parents) != 3 or parents[1:] != [previous, GOW_REF]:
+        raise RuntimeError("RESUME_MERGE_PARENTAGE_FAILED")
+    report["pairwise_conflicts"] = old_report.get("pairwise_conflicts", {})
+    report["stage"] = {
+        "path": str(staging), "source_head": state["head"],
+        "goW_pinned_upstream_based_commit": GOW_REF,
+        "protected_oct16_source_head":
+            git(proof_git, "rev-parse", "HEAD").stdout.strip(),
+        "runtime_proof_binary_sha256": GOW_BIN_SHA,
+        "gow_merge_rc": 0, "conflicts": [],
+        "conflict_resolved": rel,
+        "conflict_resolution": "BOTH_PM4_AND_GPU_DIAGNOSTICS_HEADERS_RETAINED",
+        "source_object_proof_note":
+            "The saved fullgfx ELF is SHA verified; current test renderers "
+            "are no longer source-byte-identical and cannot be called proven.",
+    }
+
 def stage_preflight(report: dict, run: Path, resume: bool = False):
     # Git's merge engine computes and reports ALL conflicts in one pass.
     # This staging repo is disposable; do not change existing user sources,
