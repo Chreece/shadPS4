@@ -526,6 +526,22 @@ def build_staged_source(report: dict, run: Path):
     if command("docker", "image", "inspect", image, check=False).returncode:
         raise RuntimeError("Pinned Debian 13/Clang 19 builder image not installed")
     source = run / "source"
+    # Refuse another 'successful' GUI-only build that silently omits the
+    # CPU stack or the proven guest-module entry-point alignment correction.
+    for required in (
+        "src/core/cpu_id.cpp",
+        "src/core/cpu_affinity.cpp",
+        "src/core/cpu_id_guest.h",
+        "src/video_core/page_manager.cpp",
+        "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
+        "src/shader_recompiler/ir/passes/srt_offset_codegen.h",
+    ):
+        if not (source / required).is_file():
+            raise RuntimeError("Missing required full-stack source: " + required)
+    process_source = (source / "src/core/libraries/kernel/process.cpp").read_text()
+    entry = process_source.find("sceKernelLoadStartModule(")
+    if entry < 0 or "force_align_arg_pointer" not in process_source[max(0, entry-450):entry]:
+        raise RuntimeError("Missing proven guest module-stack alignment at sceKernelLoadStartModule")
     build = run / "build"
     log = LOGS / ("esde-fullstack-build-" + run.name + ".log")
     report["build"] = {"status": "STARTED", "build_log": str(log)}
@@ -632,6 +648,33 @@ def main():
             report["source"]["unified"].get("sha", {}).get("src/core/cpu_id.cpp") is None,
         "unified_lacks_guest_affinity_source":
             report["source"]["unified"].get("sha", {}).get("src/core/cpu_affinity.cpp") is None,
+    }
+    # Guest-module stack realignment was a previously confirmed fix for
+    # libSceMsgDialog startup. The Oct18 unified binary's source lacks it;
+    # the pinned f909 GoW CPU/HLE ancestry includes it. Track explicitly.
+    try:
+        unified_proc = (UNIFIED_SOURCE / "src/core/libraries/kernel/process.cpp").read_text()
+    except OSError:
+        unified_proc = ""
+    report["crash_hypotheses"] = {
+        "ghost": {
+            "observed": "NULL access on Game:Main after libSceMsgDialog load",
+            "origin": "CUSA11456.log in current user profile",
+            "guest_stack_realignment_missing_from_unified":
+                "force_align_arg_pointer" not in unified_proc,
+            "proven_stack_realign_commit":
+                "c76e11c0fa4e60338acc427457599fad8e0d4863",
+            "cause_proven": False,
+        },
+        "gow": {
+            "observed": "User reports direct startup crash; game-specific fault"
+                        " backtrace not yet provided in this archive",
+            "prior_working_launch_flags": ["--cpu-id-mode", "builtin", "--userfaultfd"],
+            "current_unified_lacks_guest_cpu_sources":
+                report["checks"]["unified_lacks_guest_cpuid_source"]
+                and report["checks"]["unified_lacks_guest_affinity_source"],
+            "cause_proven": False,
+        },
     }
     if args.stage or args.build:
         try:
