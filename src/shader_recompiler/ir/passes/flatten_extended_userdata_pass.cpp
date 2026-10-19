@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <limits>
 #include <unordered_map>
 #include <boost/container/flat_map.hpp>
 #include <queue>
@@ -18,6 +20,8 @@
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/passes/srt.h"
+#include "shader_recompiler/ir/passes/srt_uniformity.h"
+#include "shader_recompiler/ir/passes/srt_inline_read_codegen.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/ir/srt_gvn_table.h"
@@ -169,6 +173,7 @@ struct PassInfo {
 
     // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
+    u32 inline_native_read_count{};
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
         auto it = pointer_uses.find(inst);
@@ -217,6 +222,24 @@ static inline void SetFlatbufOffset(IR::Inst* inst, u16 offset) {
     UNREACHABLE_MSG("Instruction not supported");
 }
 
+static bool CanInlineScalarRead(const IR::Inst* inst) {
+    const IR::Opcode opcode = inst->GetOpcode();
+    if (opcode != IR::Opcode::ReadConst && opcode != IR::Opcode::ReadConstBuffer) {
+        return false;
+    }
+    if (GetFlatbufOffset(inst) != 0) {
+        return false;
+    }
+    const IR::Inst* const base = inst->Arg(0).TryInst();
+    const IR::Opcode expected = opcode == IR::Opcode::ReadConst
+                                    ? IR::Opcode::CompositeConstructU32x2
+                                    : IR::Opcode::CompositeConstructU32x4;
+    return base && base->GetOpcode() == expected &&
+           IsHostUniformSrtOffset(IR::Value{const_cast<IR::Inst*>(inst)});
+}
+
+static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
+                                 PassInfo& pass_info, IR::Inst* inst);
 static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
                           const IR::Value& off_dw);
 
@@ -522,6 +545,13 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
             c.mov(reg, ptr[rsi + (offset << 2)]);
             return true;
         }
+        if (CanInlineScalarRead(inst)) {
+            const std::size_t checkpoint = c.getSize();
+            if (EmitInlineReadConst(c, reg, pass_info, inst)) {
+                return true;
+            }
+            c.setSize(checkpoint);
+        }
         return false;
     case IR::Opcode::IAdd32:
         ABORT_ON_FAILURE(EmitComputeOffsetIAdd32(c, reg, pass_info, inst));
@@ -564,6 +594,81 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
                   magic_enum::enum_name(inst->GetOpcode()));
         return false;
     }
+}
+
+// Evaluate genuine wave-uniform scalar S_LOAD and S_BUFFER_LOAD from the
+// original guest pointer, using the existing fault-recoverable SRT walker.
+// Nested scalar dependencies are supported; divergent and cyclic expressions
+// remain on the GPU path without guessed values.
+static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
+                                PassInfo& pass_info, IR::Inst* inst) {
+    const bool is_sbuffer = inst->GetOpcode() == IR::Opcode::ReadConstBuffer;
+    ASSERT(inst->GetOpcode() == IR::Opcode::ReadConst || is_sbuffer);
+    IR::Inst* const base = inst->Arg(0).TryInst();
+    const IR::Opcode expected = is_sbuffer ? IR::Opcode::CompositeConstructU32x4
+                                          : IR::Opcode::CompositeConstructU32x2;
+    if (!base || base->GetOpcode() != expected ||
+        !IsHostUniformSrtOffset(IR::Value{inst})) {
+        return false;
+    }
+
+    const std::size_t checkpoint = c.getSize();
+    c.push(rdi); // original SGPR-table pointer / caller's current table
+    c.push(rax);
+    c.push(r11);
+    c.push(r9);  // scratch NUM_RECORDS for bounds-safe scalar buffer reads
+
+    if (!ComputeOffset(c, reg, pass_info, base->Arg(0))) {
+        c.setSize(checkpoint);
+        return false;
+    }
+    c.mov(eax, reg); // low 32 bits of the guest virtual address
+
+    if (!ComputeOffset(c, reg, pass_info, base->Arg(1))) {
+        c.setSize(checkpoint);
+        return false;
+    }
+    if (is_sbuffer) {
+        // GCN V# stride is bits [29:16] in dword 1 (14 bits).
+        // Keep the stride for bounds clamping before extracting only
+        // the low address eight bits from the same dword.
+        c.mov(r11d, reg);
+        c.shr(r11d, 16);
+        c.and_(r11d, 0x3fffu);
+        c.and_(reg, 0xffu);
+    }
+    c.shl(reg.cvt64(), 32);
+    c.or_(rax, reg.cvt64());
+
+    if (is_sbuffer) {
+        // Buffer SMEM uses NUM_RECORDS from descriptor dword 2 for bounds.
+        // Metadata dword 3 does not affect the memory operation.
+        if (!ComputeOffset(c, reg, pass_info, base->Arg(2))) {
+            c.setSize(checkpoint);
+            return false;
+        }
+        c.mov(r9d, reg);
+    }
+    // GCN SMRD IR index is in dwords; compute offset with 32-bit wrapping.
+    if (!ComputeOffset(c, reg, pass_info, inst->Arg(1))) {
+        c.setSize(checkpoint);
+        return false;
+    }
+    c.mov(r10d, reg);
+    if (is_sbuffer) {
+        SrtCodegen::EmitSBufferClampDwordIndex(c);
+    }
+    SrtCodegen::EmitGuestReadDword(
+        c, is_sbuffer ? SrtCodegen::SBufferGuestAddressMask
+                      : SrtCodegen::ScalarGuestAddressMask); // returns guest dword in r10d
+    c.mov(reg, r10d);
+
+    c.pop(r9);
+    c.pop(r11);
+    c.pop(rax);
+    c.pop(rdi);
+    ++pass_info.inline_native_read_count;
+    return true;
 }
 
 static inline bool PushPtr(Xbyak::CodeGenerator& c, PassInfo& pass_info, const IR::Value& off_dw) {
@@ -633,10 +738,13 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
     PopPtr(c);
 }
 
-static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
+static void GenerateSrtProgram(Info& info, PassInfo& pass_info,
+                               const boost::container::small_vector<IR::Inst*, 32>& all_readconsts) {
     Xbyak::CodeGenerator& c = g_srt_codegen;
 
-    if (pass_info.srt_roots.empty()) {
+    const bool has_host_uniform_scalar_reads = std::ranges::any_of(
+        all_readconsts, [](IR::Inst* read) { return CanInlineScalarRead(read); });
+    if (pass_info.srt_roots.empty() && !has_host_uniform_scalar_reads) {
         return;
     }
 
@@ -655,6 +763,38 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
 
     for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
         VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
+    }
+
+    u32 late_reads{};
+    for (IR::Inst* read : all_readconsts) {
+        if (!CanInlineScalarRead(read)) {
+            continue;
+        }
+        IR::Inst* const canonical = pass_info.DeduplicateInstruction(read);
+        if (const u16 prior = GetFlatbufOffset(canonical); prior != 0) {
+            SetFlatbufOffset(read, prior);
+            continue;
+        }
+        if (pass_info.dst_off_dw == std::numeric_limits<u16>::max()) {
+            break;
+        }
+        if (!EmitInlineReadConst(c, r10d, pass_info, read)) {
+            continue;
+        }
+        const u16 flatbuf_slot = pass_info.dst_off_dw++;
+        c.mov(dword[rsi + (flatbuf_slot << 2)], r10d);
+        SetFlatbufOffset(read, flatbuf_slot);
+        if (canonical != read) {
+            SetFlatbufOffset(canonical, flatbuf_slot);
+        }
+        ++late_reads;
+    }
+    if (late_reads != 0 || pass_info.inline_native_read_count != 0) {
+        LOG_INFO(Render_Recompiler,
+                 "SrtInlineReadConstResult: shader={:#x} late_flattened={} "
+                 "native_read_expressions={} final_flatbuf_words={}",
+                 info.pgm_hash, late_reads, pass_info.inline_native_read_count,
+                 pass_info.dst_off_dw);
     }
 
     c.ret();
@@ -846,7 +986,7 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
         }
     }
 
-    GenerateSrtProgram(program.info, pass_info);
+    GenerateSrtProgram(program.info, pass_info, all_readconsts);
 
     // Assign offsets to duplicate readconsts
     for (IR::Inst* readconst : all_readconsts) {
