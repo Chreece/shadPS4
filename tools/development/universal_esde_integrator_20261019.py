@@ -439,7 +439,7 @@ class Builder:
             else:
                 old_commit = "eabc3f127b58585811d4a7fbdb4308beac99894c"
                 old_data = subprocess.run(
-                    ["git", "-C", str(old_path.parents[3]),
+                    ["git", "-C", str(old_path.parents[2]),
                      "show", old_commit + ":" + page_rel],
                     capture_output=True, check=False)
                 if (old_data.returncode == 0 and
