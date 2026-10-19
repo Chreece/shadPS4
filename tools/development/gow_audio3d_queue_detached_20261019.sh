@@ -44,7 +44,7 @@ if (( $# == 0 )); then
     echo "FULL_RUNNER_SHELL_SYNTAX_INVALID_NO_BUILD"; exit 2;
   }
   echo "FULL_RUNNER_SYNTAX_CHECK=PASS_BEFORE_DETACH"
-  TAG="gow-audio3d-build-worker-$(date +%Y%m%d-%H%M%S)-$"
+  TAG="gow-audio3d-build-worker-$(date +%Y%m%d-%H%M%S)-$$"
   LOG="$LOGS/$TAG.log"
   [[ ! -e "$LOG" ]] || { echo "LOG_COLLISION_NO_BUILD"; exit 2; }
   nohup setsid -w bash "$SELF" --worker "$TAG" </dev/null >"$LOG" 2>&1 &
