@@ -6,7 +6,7 @@ set -Eeuo pipefail
 ROOT="$HOME/projects/shadps4"
 SCRIPTS="$ROOT/scripts"
 LOGS="$ROOT/logs"
-REF="ae651d3a47663b77d63e25ae18aeee3a49dd57a8"
+REF="e230ce1b2231ea96f83635f58308de933007427a"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF"
 SAMPLER="$SCRIPTS/gow_audio_host_scheduler_probe_20261019.py"
 CALIBRATION="$SCRIPTS/gow_ssh_independent_calibration_20261019.sh"
@@ -22,7 +22,7 @@ flock -n 9 || { echo "ANOTHER_SCHEDULER_INVESTIGATION_LAUNCH_ACTIVE"; exit 2; }
 curl -4 -fLsS --retry 3 --retry-delay 2 \
   "$URL/tools/development/gow_audio_host_scheduler_probe_20261019.py" \
   -o "$SAMPLER"
-[[ "$(git hash-object "$SAMPLER")" == "2fc0576398f19753a5a1d610c0727830a5a67ebe" ]] || {
+[[ "$(git hash-object "$SAMPLER")" == "cb5687f8ab16840210ee1f0a46881a3716ecd5bb" ]] || {
   echo "SCHEDULER_PROBE_BLOB_HASH_CHANGED_NO_GAME"; exit 2;
 }
 # Existing proven detached single-run launcher with corrected Continue detector
