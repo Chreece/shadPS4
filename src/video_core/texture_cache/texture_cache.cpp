@@ -51,11 +51,11 @@ static bool ShouldTraceWatchedImage() {
 }
 
 static constexpr u32 MAX_IMAGES = std::numeric_limits<u16>::max();
-static constexpr u32 MAX_IMAGE_VIEWS = std::numeric_limits<u16>::max();
+static constexpr u32 MAX_IMAGE_VIEWS = 1u << 20;
 static constexpr u32 MAX_SAMPLERS = std::numeric_limits<u16>::max();
 
 // Opt-in until a long-lived game run proves allocation + rendering stability.
-// SlotId uses u32, while these image and view pools historically reserve
+// SlotId uses u32, while the image pool historically reserves
 // only 65,535 entries. Enlarging RESERVED virtual address space does not
 // immediately allocate GPU/host image backing memory; only used chunks are
 // committed. Adapt GC to live slot pressure rather than relying solely on
@@ -79,8 +79,7 @@ TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler&
       buffer_cache{buffer_cache_}, page_manager{page_manager_},
       slot_images{TextureSlotPressureEnabled() ? TEST_MAX_IMAGE_SLOTS : MAX_IMAGES,
                   "TextureCache.Images"},
-      slot_image_views{TextureSlotPressureEnabled() ? TEST_MAX_IMAGE_SLOTS : MAX_IMAGE_VIEWS,
-                       "TextureCache.ImageViews"},
+      slot_image_views{MAX_IMAGE_VIEWS, "TextureCache.ImageViews"},
       slot_samplers{MAX_SAMPLERS,"TextureCache.Samplers"},
       blit_helper{instance, scheduler},
       tile_manager{instance, scheduler, runtime, buffer_cache.GetStreamBuffer()},
@@ -1199,6 +1198,14 @@ void TextureCache::GarbageCollectImages() {
     }
     const auto live_images = slot_images.Size();
     const auto live_views = slot_image_views.Size();
+    if (live_views >= reported_image_views + 4096u) {
+        reported_image_views = live_views;
+        LOG_INFO(Render_Vulkan,
+                 "TextureCacheSlots: images={} image_views={} view_slots_reserved={} "
+                 "memory_used={} gc_tick={} slot_pressure_gc={}",
+                 live_images, live_views, MAX_IMAGE_VIEWS, total_used_memory, gc_tick,
+                 TextureSlotPressureEnabled());
+    }
     const bool slot_pressure = TextureSlotPressureEnabled() &&
         (live_images >= SLOT_PRESSURE_START ||
          live_views >= SLOT_PRESSURE_START);

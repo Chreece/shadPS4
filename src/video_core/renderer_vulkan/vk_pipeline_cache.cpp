@@ -13,6 +13,7 @@
 #include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
 #include "shader_recompiler/info.h"
+#include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/recompiler.h"
 #include "shader_recompiler/targeted_shader_dump.h"
 #include "shader_recompiler/runtime_info.h"
@@ -718,6 +719,8 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
 
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
+    Shader::IR::DumpProgram(ir_program, info, fmt::format("perm{}.", perm_idx));
+    DumpShader(info.flattened_ud_buf, info.pgm_hash, info.hw_stage, perm_idx, "ud.bin");
     if (ResourceAuditEnabled()) {
         u32 invalid_buffers{};
         u32 invalid_images{};
@@ -726,18 +729,18 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
             invalid_buffers += !resource.IsSpecial() && HasInvalidSharp(resource);
         }
         for (const auto& resource : info.images) {
-            invalid_images += HasInvalidSharp(resource);
+            invalid_images += !resource.is_guest_indexed && HasInvalidSharp(resource);
         }
         for (const auto& resource : info.samplers) {
-            invalid_samplers += HasInvalidSharp(resource);
+            invalid_samplers += !resource.is_guest_indexed && HasInvalidSharp(resource);
         }
         LOG_INFO(Render_Vulkan,
                  "ResourceAuditCompile: shader={:#x} stage={} buffers={} images={} samplers={} "
                  "bad_buffers={} bad_images={} bad_samplers={} flatbuf_words={} dma={} "
-                 "translation_failed={}",
+                 "translation_failed={} permutation={}",
                  info.pgm_hash, info.hw_stage, info.buffers.size(), info.images.size(),
                  info.samplers.size(), invalid_buffers, invalid_images, invalid_samplers,
-                 info.flattened_ud_buf.size(), info.uses_dma, info.translation_failed);
+                 info.flattened_ud_buf.size(), info.uses_dma, info.translation_failed, perm_idx);
     }
     const u32 got40_first_binding = binding.unified;
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
