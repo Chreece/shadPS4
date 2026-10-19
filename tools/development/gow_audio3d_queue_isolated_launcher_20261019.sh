@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# GoW Ragnarök: proven graphics + one surgical Audio3D Advance queue mutex.
+# GoW Ragnarök: retain proven graphics/UFFD with both justified source fixes:
+# synchronized Audio3D PortAdvance and corrected SRT dynamic shift.
 # Compile in reversible isolated test worktree. Run ONE candidate, never B.
 # Protected graphics binaries, game saves, services, Sunshine/SSH unchanged.
 set -Eeuo pipefail
@@ -9,7 +10,7 @@ PROTECTED="$ROOT/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014
 mkdir -p "$ROOT/scripts" "$ROOT/logs"
 WORK="$(mktemp -d "$ROOT/scripts/.gow-audio3d-lock.XXXXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
-REF="a90e688f58550bf925f01ccf813ed0d08451f01d"
+REF="2450ccf44a59ad4efc0268ff3ee0abfa89e00ae7"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF"
 while read -r name blob path; do
   curl -4 -fsSL --retry 3 --retry-delay 1 "$URL/$path" -o "$WORK/$name"
@@ -18,7 +19,7 @@ while read -r name blob path; do
     echo "PINNED_GPU_SOURCE_DIFFERENT=$path expected=$blob actual=$got"; exit 2;
   }
 done <<'PINNED'
-runner.sh bb7642d37222b1b54b85c4037d5df5baf029b1ab tools/development/gow_audio3d_queue_rebuild_and_one_run_20261019.sh
+runner.sh e8510cca41667537afb80ac84491927a967595ab tools/development/gow_audio3d_queue_rebuild_and_one_run_20261019.sh
 observer.py e3163bd7525472da484a4bb707425558255250e9 tools/development/gow_upstream_gameplay.py
 restore.py 0bb5acf3149c53e58fb4739845fc33538ed32ff8 tools/development/gow_restore_graphics_renderer_20261017.py
 support.py 5e8d17492c592421af95413ba8e00610b66aa255 tools/development/gow_preserve_uffd_support_20261017.py
@@ -34,6 +35,7 @@ sparse.h 872d020c15d0ba0a1e19470a4f0b2d021ca61b09 src/video_core/buffer_cache/sp
 sparse-test.cpp 5ab8c6ec053e04f063f92dc8e313f9a9c04b5b91 tests/video_core/test_sparse_cpu_upload_words_20261018.cpp
 live-overlay.py 50aaeb9476323cb4205d904044b6e5d09bf4f6de tools/development/gow_sparse_upload_live_region_overlay_20261018.py
 audio3d-overlay.py aaf050a31c0ae06671a449c80d2f3589b3483d96 tools/development/gow_audio3d_portadvance_surgical_overlay_20261019.py
+srt-shift-overlay.py 1eceb2f7f82fcfc1c847bfc6529513db0aa3fb99 tools/development/gow_srt_shift_surgical_overlay_20261019.py
 auto.py 01bc98787caa6ee69fcbfca1c97da1ed4e90ea01 tools/development/gow_auto_scene_input_20261018.py
 gow_route_steering_20261018.py acec83a7655002554994bfdf9c57c7b13ad3510e tools/development/gow_route_steering_20261018.py
 PINNED
@@ -41,7 +43,7 @@ bash -n "$WORK/runner.sh"
 python3 -m py_compile \
   "$WORK/observer.py" "$WORK/restore.py" "$WORK/support.py" \
   "$WORK/readfirst-contract.py" "$WORK/frame.py" "$WORK/gpu.py" \
-  "$WORK/large-patch.py" "$WORK/live-overlay.py" "$WORK/ab.py" "$WORK/ollama.py" "$WORK/audio3d-overlay.py" "$WORK/auto.py" "$WORK/gow_route_steering_20261018.py"
+  "$WORK/large-patch.py" "$WORK/live-overlay.py" "$WORK/ab.py" "$WORK/ollama.py" "$WORK/audio3d-overlay.py" "$WORK/srt-shift-overlay.py" "$WORK/auto.py" "$WORK/gow_route_steering_20261018.py"
 # Prove the complete 200,002-case native test compiles and passes BEFORE
 # invoking the expensive graphics restoration or host emulator build.
 mkdir -p "$WORK/headers/video_core/buffer_cache"
@@ -63,12 +65,22 @@ python3 -B "$WORK/audio3d-overlay.py"  "$ISOLATED/src/core/libraries/audio3d/aud
   echo "AUDIO3D_MUTEX_PRECHECK_FAILED_NO_BUILD"; exit 2;
 }
 echo "AUDIO3D_MUTEX_EXACT_REVERSIBLE_PRECHECK=PASS"
-echo "SINGLE_AUDIO3D_MUTEX_SOURCE_FIX_NO_AB_BENCHMARK=YES"
+[[ -f "$ISOLATED/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" ]] || {
+ echo "TEST_SRT_SOURCE_MISSING_NO_BUILD"; exit 2;
+}
+python3 -B "$WORK/srt-shift-overlay.py" --self-test
+python3 -B "$WORK/srt-shift-overlay.py" \
+ "$ISOLATED/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" \
+ "$WORK/srt-shift-preflight.diff" || {
+ echo "SRT_SHIFT_PRECHECK_FAILED_NO_BUILD"; exit 2;
+}
+echo "SRT_DYNAMIC_SHIFT_EXACT_REVERSIBLE_PRECHECK=PASS"
+echo "TWO_RELEVANT_SOURCE_CORRECTIONS_STAGED; ONLY_ONE_CANDIDATE_GAME_RUN_NO_AB=YES"
 echo "OLLAMA_UNLOAD_ONLY_WHEN_FREE_GPU_VRAM_BELOW_8_GIB=YES"
 bash "$WORK/runner.sh" \
   "$WORK/observer.py" "$WORK/restore.py" "$WORK/support.py" \
   "$WORK/readfirst.cpp" "$WORK/readfirst-contract.py" "$WORK/frame.py" \
   "$WORK/gpu.py" "$WORK/large-patch.py" "$WORK/ab.py" "$WORK/ollama.py" \
   "$WORK/region.h" "$WORK/sparse.h" "$WORK/sparse-test.cpp" "$WORK/live-overlay.py" \
-  "$WORK/audio3d-overlay.py" "$WORK/auto.py" "$WORK/gow_route_steering_20261018.py"
+  "$WORK/audio3d-overlay.py" "$WORK/auto.py" "$WORK/gow_route_steering_20261018.py" "$WORK/srt-shift-overlay.py"
 echo "SSH_SESSION_STILL_OPEN=YES"
