@@ -15,8 +15,12 @@ LOGS="$ROOT/logs"
 SCRIPTS="$ROOT/scripts"
 PY="$SCRIPTS/esde_general_engine_source_merge_20261019.py"
 
-MERGER_REF="0a083de1793131515754eca124c3577c502fb1b8"
-MERGER_GIT_BLOB="8f61d8374c6cc4b16ef46432db9ec82358e508f9"
+MERGER_REF="d11f67ccdd9a5e6147bc2d6cac16f54e1fc02ee6"
+MERGER_GIT_BLOB="e4285029e3a8dbab46471026a84025e23f69cfe8"
+RESOLVER="$SCRIPTS/esde_general_semantic_resolver_20261019.py"
+RESOLVER_REF="840b719aaf4d870e1e6b69e4d04c55224356597a"
+RESOLVER_GIT_BLOB="9b6472f0d062b1e23d0e3376a9255ff4f7f8107c"
+RESOLVER_URL="https://raw.githubusercontent.com/Chreece/shadPS4/$RESOLVER_REF/tools/development/esde_general_semantic_resolver_20261019.py"
 MERGER_URL="https://raw.githubusercontent.com/Chreece/shadPS4/$MERGER_REF/tools/development/esde_general_engine_source_merge_20261019.py"
 
 if [[ $# -gt 1 ]]; then
@@ -71,7 +75,22 @@ if [[ ! -f "$PY" ]] ||
     TMP=""
 fi
 
-python3 -m py_compile "$PY"
+if [[ ! -f "$RESOLVER" ]] ||
+   [[ "$(git hash-object "$RESOLVER" 2>/dev/null || true)" != "$RESOLVER_GIT_BLOB" ]]; then
+    echo "STAGE=FETCH_SHA_AUDITED_GENERIC_CPP_RESOLVER"
+    TMP="$(mktemp "$SCRIPTS/.esde-generic-resolver-XXXXXXXX")"
+    curl -4fLsS --retry 3 --connect-timeout 15 --max-time 180 \
+        "$RESOLVER_URL" -o "$TMP"
+    HASH="$(git hash-object "$TMP")"
+    [[ "$HASH" == "$RESOLVER_GIT_BLOB" ]] || {
+        echo "PINNED_SEMANTIC_RESOLVER_GIT_BLOB_MISMATCH=$HASH" >&2
+        exit 3
+    }
+    mv -f -- "$TMP" "$RESOLVER"
+    TMP=""
+fi
+
+python3 -m py_compile "$PY" "$RESOLVER"
 echo "STAGE=MERGE_SEMANTICS_SELF_TEST"
 python3 -B "$PY" --self-test
 
