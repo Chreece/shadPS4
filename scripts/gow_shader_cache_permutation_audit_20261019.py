@@ -31,8 +31,16 @@ def discover(home: Path, root: Path):
         home / ".local/share/shadPS4",
         home / ".config/shadPS4",
         root / "GodOfWarRagnarok",
+        root / "GodOfWarRagnarok/build/user",
+        root / "GodOfWarRagnarok/source/user",
         root / "ESDE",
     ]
+    # Portable mode may store a profile under a test/build source folder.
+    gow = root / "GodOfWarRagnarok"
+    if gow.is_dir():
+        bases.extend(gow.glob("*/source/user"))
+        bases.extend(gow.glob("*/build/user"))
+        bases.extend(gow.glob("*/user"))
     seen = set()
     results = []
     for base in bases:
