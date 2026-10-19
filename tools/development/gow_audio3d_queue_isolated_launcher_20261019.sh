@@ -10,7 +10,7 @@ PROTECTED="$ROOT/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014
 mkdir -p "$ROOT/scripts" "$ROOT/logs"
 WORK="$(mktemp -d "$ROOT/scripts/.gow-audio3d-lock.XXXXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
-REF="2450ccf44a59ad4efc0268ff3ee0abfa89e00ae7"
+REF="bbcfe404684d9254136516c73f5c6524cb14a945"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF"
 while read -r name blob path; do
   curl -4 -fsSL --retry 3 --retry-delay 1 "$URL/$path" -o "$WORK/$name"
@@ -19,7 +19,7 @@ while read -r name blob path; do
     echo "PINNED_GPU_SOURCE_DIFFERENT=$path expected=$blob actual=$got"; exit 2;
   }
 done <<'PINNED'
-runner.sh e8510cca41667537afb80ac84491927a967595ab tools/development/gow_audio3d_queue_rebuild_and_one_run_20261019.sh
+runner.sh 1c9af7bd524905abe3bea82a94ed28c0f7605a64 tools/development/gow_audio3d_queue_rebuild_and_one_run_20261019.sh
 observer.py e3163bd7525472da484a4bb707425558255250e9 tools/development/gow_upstream_gameplay.py
 restore.py 0bb5acf3149c53e58fb4739845fc33538ed32ff8 tools/development/gow_restore_graphics_renderer_20261017.py
 support.py 5e8d17492c592421af95413ba8e00610b66aa255 tools/development/gow_preserve_uffd_support_20261017.py
