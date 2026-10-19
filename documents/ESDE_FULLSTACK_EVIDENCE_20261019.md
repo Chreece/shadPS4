@@ -240,3 +240,36 @@ Next run explicitly prioritizes latest Ghost/GoW game logs over
 unrelated titles and requires native CPU source files and guest-module
 stack alignment before accepting any new full-stack compile.
 No installed binary was changed.
+
+## October 19 16:57 pinned GoW source merge checkpoint
+
+Uploaded archive: \`esde-fullstack-audit-20261019-165723.tar.gz\`. It verifies
+the SHA-pinned October 18 release, preserved GoW 135-second visual executable
+and Ghost v51 before/after source unchanged. The October 19 upstream merge
+**passed**. Only one GoW source merge path conflicted:
+\`src/video_core/amdgpu/liverpool.cpp\`.
+
+The conflict is **header-only**. The combined tree needs **both**
+\`graphics_diagnostics.h\` (unified branch diagnostics) and
+\`pm4_register_write.h\` (GoW generic PM4 test-backed correction); choosing
+Git \`--ours\` or \`--theirs\` wholesale could discard working graphics
+semantics. Staged Git blobs:
+\`ae70c448c56a4cd9bf17dbb443f6084a6c3d49d5\` (combined upstream/ES-DE)
+and \`9ff98d1db7cd472a46a0e307806e092e4eb74a6c\` (GoW).
+The repair preserves occlusion-query and PM4 calls and validates exact
+source ancestry before completing the merge.
+
+The builder supports \`--resume-audit\` with an existing audited worktree.
+For this exact checkpoint, use:
+
+\`\`\`bash
+python3 -B ~/projects/shadps4/scripts/esde_fullstack_preflight_20261019.py \
+  --resume-audit ~/projects/shadps4/ESDE/fullstack-audit-20261019-165723 \
+  --build
+\`\`\`
+
+It does not re-clone/fetch upstream and does not install to ES-DE.
+The old audit is kept; new results are written to a separate
+\`audit-resume-*.json\` and \`logs/esde-fullstack-audit-*.tar.gz\`.
+Do not claim a passing compilation or gameplay until the actual host
+build and game-specific runtime tests establish them.
