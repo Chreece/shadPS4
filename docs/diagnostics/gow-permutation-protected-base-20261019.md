@@ -35,3 +35,35 @@ Protected executable SHA-256: `8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0
 No claim is made that the local source HEAD necessarily corresponds byte-for-byte to every patch in the previously built protected executable. A scene-matched runtime gate is still required before promotion.
 
 **Evidence status:** source bug reproducible in mocks; prior four C++ translation units and full link passed on the different candidate base; this new four-file base compilation has NOT yet been performed.
+
+
+## 22:04 CEST: protected-base isolated build evidence
+
+User-uploaded \`gow-permutation-protected-build-20261019-220440.tar.gz\` confirms
+\`3965a497...\` original HEAD and SHA-256
+\`8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e\`
+of the protected executable were unchanged. The candidate pin remained
+\`e6ca28e7386faa0624c1421a5dc0585eeb028532\`, exactly four source files
+differ, and **45 primary Git submodules were staged at exact commits**.
+Git archive restored excluded tracked files (libusb 4, protobuf 33, zlib-ng 18).
+SDL3, Zstd and FFmpeg were present. No game was started.
+
+**The full build is not yet complete.** CMake failed at
+\`externals/sirit/CMakeLists.txt:90 (add_subdirectory)\`, because nested path
+\`externals/sirit/externals/SPIRV-Headers\` lacked \`CMakeLists.txt\`.
+This is the gitlink omitted by archived *nested* submodules, not a shader source
+compile failure. External Sirit HEAD \`fc2b42d5e57ee2f638676c0c02f7fd71934b596a\`
+declares \`externals/SPIRV-Headers\` at exact commit
+\`2acb319af38d43be3ea76bfabf3998e5281d8d12\`.
+The latter has a tracked CMakeLists.txt and no further gitlinks.
+
+Resumption script:
+\`scripts/gow_permutation_protected_nested_resume_20261019.py\`.
+It requires both the original and staged pinned commits, verifies the
+protected executable, reconstructs only that exact nested gitlink inside
+the isolated worktree (prefer existing pinned object database, otherwise
+fetch exactly the SHA), verifies the restored Git index/content and
+resumes CMake and Ninja without touching the working emulator.
+
+Next gate: **isolated full CMake configure/link**, followed by one
+scene-matched trial only when it builds and the trace behaves correctly.
