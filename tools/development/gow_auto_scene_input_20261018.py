@@ -567,6 +567,15 @@ def main():
             if elapsed > a.max_seconds:
                 raise RuntimeError("AUTOPILOT_TIMEOUT_STAGE_" + record["mode"])
             state = record["mode"]
+            # Avoid another multi-minute run with no successful Continue.
+            # The actual interactive menu appeared at 31-34 seconds in
+            # BOTH 05:26 test cases; 95 seconds is a conservative ceiling.
+            if state == "WAIT_MENU" and elapsed >= 95:
+                raise RuntimeError("REAL_CONTINUE_MENU_NOT_CONFIRMED_WITHIN_95S")
+            if (state == "WAIT_WORLD_READY" and
+                record["last_cross_at"] is not None and
+                elapsed - record["last_cross_at"] > 95):
+                raise RuntimeError("CONTINUE_SENT_BUT_GAMEPLAY_NOT_CONFIRMED_WITHIN_95S")
 
             # Keep steering cadence independent of expensive ImageMagick
             # world-state observations. Key phases are limited to 2.5-8 sec,
