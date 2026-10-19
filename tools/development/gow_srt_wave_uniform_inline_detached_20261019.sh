@@ -8,7 +8,7 @@ SCRIPTS="$ROOT/scripts"
 LOGS="$ROOT/logs"
 SELF="$SCRIPTS/gow_srt_wave_uniform_inline_detached_20261019.sh"
 BUILD_SCRIPT="$SCRIPTS/gow_srt_wave_uniform_inline_launcher_20261019.sh"
-REF="2cd34c31c9d659b7052c8c0ec1455c2264f340b2"
+REF="f5341d17d480a366b54cedaad5d3dd4014053f9a"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF"
 mkdir -p "$SCRIPTS" "$LOGS"
 
@@ -23,7 +23,7 @@ if (( $# == 0 )); then
      "$URL/tools/development/gow_srt_wave_uniform_inline_launcher_20261019.sh" \
      -o "$BUILD_SCRIPT"
   [[ -f "$BUILD_SCRIPT" && ! -L "$BUILD_SCRIPT" &&
-     "$(git hash-object "$BUILD_SCRIPT")" == "5cfd6ac65fa436000d3c321d0b9dcb8fd550b4e0" ]] || {
+     "$(git hash-object "$BUILD_SCRIPT")" == "ebcb7489ddf6eefeea0d1a78e0e5f58c3b20e552" ]] || {
     echo "BUILD_LAUNCHER_BLOB_HASH_MISMATCH_NO_BUILD"; exit 2;
   }
   bash -n "$BUILD_SCRIPT" || {
@@ -37,7 +37,7 @@ if (( $# == 0 )); then
     "$URL/tools/development/gow_srt_wave_uniform_inline_build_20261019.sh" \
     -o "$RUNNER_PREFLIGHT"
   [[ -f "$RUNNER_PREFLIGHT" && ! -L "$RUNNER_PREFLIGHT" &&
-     "$(git hash-object "$RUNNER_PREFLIGHT")" == "f7e65d45121f131a045afdff7955ade4cdf87c3c" ]] || {
+     "$(git hash-object "$RUNNER_PREFLIGHT")" == "f53a8c4373489da8bb715d9287f040b728d7ee87" ]] || {
     echo "FULL_RUNNER_PINNED_BLOB_MISMATCH_NO_BUILD"; exit 2;
   }
   bash -n "$RUNNER_PREFLIGHT" || {
