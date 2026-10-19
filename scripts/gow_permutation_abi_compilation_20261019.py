@@ -88,7 +88,10 @@ def find_commands(root: Path):
     search_at = root / "GodOfWarRagnarok"
     proc = subprocess.run(
         ["find", str(search_at), "-maxdepth", "12",
-         "(", "-name", "compile_commands.json", "-o", "-name", "build.ninja", ")", "-print"],
+         "(", "-type", "d", "(", "-name", ".git", "-o", "-name", "CMakeFiles",
+          "-o", "-name", "_deps", "-o", "-name", ".cache",
+          "-o", "-name", "node_modules", ")", "-prune", ")",
+         "-o", "(", "-name", "compile_commands.json", "-o", "-name", "build.ninja", ")", "-print"],
         text=True, capture_output=True, check=False)
     if proc.returncode:
         raise RuntimeError(f"Failed to search build metadata: {proc.stderr}")
