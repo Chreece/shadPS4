@@ -517,6 +517,100 @@ Path(sys.argv[2]).write_text("\n".join(out)+"\n")
 print("\n".join(out))
 PYGOTQUERY
 
+  python3 - "$RUN/info/scene-gpu-query-events.log" \
+    "$RUN/info/scene-indirect-gpu-arguments.log" \
+    "$RUN/info/active-menu-hardware-summary.txt" <<'PYACTIVESCENE'
+from pathlib import Path
+import re,sys
+results=Path(sys.argv[1]).read_text(errors="replace")
+args=Path(sys.argv[2]).read_text(errors="replace")
+def clean(text):
+    return re.sub(r"\x1b\[[0-9;]*[mK]","",text)
+results=clean(results)
+args=clean(args)
+def field(line,key):
+    match=re.search(r"\b"+re.escape(key)+r"=([^\s]+)",line)
+    return match.group(1) if match else ""
+out=["EXPERIMENT=GPU_COUNTERS_ON_ACTUAL_HI_VOLUME_FIVE_MRT_MENU_DRAWS",
+     "NATIVE_RENDERING_DEFAULT=YES",
+     "CPU_REGISTER_NUM_INDICES_NOT_A_GPU_INDIRECT_COUNT=YES",
+     "TARGET_COLOR=0x15203f8000",
+     "TARGET_DEPTH=0x1504a08000",
+     "ACTIVE_PAIR_A=FS_0x5116e459_VS_0xae1cc7b7",
+     "ACTIVE_PAIR_B=FS_0xc1123f0f_VS_0xc8caf263",
+     "EXPECTED_CHECKPOINTS=4096,4097,8192,8193"]
+main=[]
+controls=[]
+selected=[]
+for line in results.splitlines():
+    if "GotSceneGpuQuerySelected:" in line:
+        selected.append(line.split("GotSceneGpuQuerySelected:",1)[1].strip())
+    if "GotSceneGpuInvocations:" not in line:
+        continue
+    raw=line.split("GotSceneGpuInvocations:",1)[1].strip()
+    if field(raw,"high_volume")=="true":
+        main.append(raw)
+    else:
+        controls.append(raw)
+out.append(f"HARDWARE_QUERIES_TOTAL={len(main)+len(controls)}")
+out.append(f"ACTIVE_INDIRECT_HARDWARE_RESULTS={len(main)}")
+out.append(f"DIRECT_CONTROL_RESULTS={len(controls)}")
+completed=0
+last_checkpoints=0
+for item in main:
+    fs,vs=field(item,"fs"),field(item,"vs")
+    ordinal=field(item,"pair_ordinal")
+    status=field(item,"stats_status")
+    occ=field(item,"occlusion_status")
+    out.append("ACTIVE_INDIRECT_GPU_RESULT="+item)
+    if ordinal=="8192":
+        last_checkpoints+=1
+    if status!="Success" or occ!="Success":
+        out.append("DIAGNOSIS=QUERY_NOT_READY_NO_RENDERING_INFERENCE")
+        continue
+    completed+=1
+    def n(key):
+        try:return int(field(item,key))
+        except ValueError:return -1
+    ia=n("ia_vertices")
+    vs_n=n("vs_invocations")
+    cp=n("clip_primitives")
+    frag=n("fs_invocations")
+    passed=n("passed_samples")
+    if ia==0 and vs_n==0:
+        diagnosis="GPU_INDIRECT_DRAW_EXECUTES_NO_GEOMETRY_CHECK_GPU_ARGS"
+    elif vs_n>0 and cp==0:
+        diagnosis="VERTEX_OUTPUT_DISCARDED_BEFORE_PRIMITIVE_RASTERIZATION"
+    elif cp>0 and frag==0:
+        diagnosis="CLIPPED_PRIMITIVES_BUT_NO_FRAGMENT_COVERAGE"
+    elif frag>0 and passed==0:
+        diagnosis="FRAGMENT_SHADER_EXECUTES_WITH_ZERO_VISIBLE_SAMPLES"
+    elif frag>0 and passed>0:
+        diagnosis="REAL_SCENE_FRAGMENT_AND_COVERAGE_WORK_CONFIRMED"
+    else:
+        diagnosis="COUNTERS_INCONCLUSIVE"
+    out.append(f"ACTIVE_GPU_CLASSIFICATION fs={fs} vs={vs} ordinal={ordinal} "
+               f"ia={ia} vs_invocations={vs_n} clipped_primitives={cp} "
+               f"fragments={frag} passed_samples={passed} RESULT={diagnosis}")
+out.append(f"ACTIVE_COMPLETE_COUNTERS={completed}")
+out.append(f"ACTIVE_8192_CHECKPOINT_RESULTS={last_checkpoints}")
+for item in controls:
+    out.append("DIRECT_REFERENCE_RESULT="+item)
+arg_lines=[l for l in args.splitlines() if "GotSceneIndirectGpuArgs:" in l and
+           "status=GPU_READBACK_PASS" in l]
+out.append(f"INDIRECT_GPU_ARG_SNAPSHOTS={len(arg_lines)}")
+for line in arg_lines[:12]:
+    out.append("GPU_ARGS="+line.split("GotSceneIndirectGpuArgs:",1)[1].strip())
+if not main:
+    out.append("RESULT=ACTIVE_MENU_QUERY_NEVER_ACTIVATED_INVALID_TEST")
+elif not last_checkpoints:
+    out.append("RESULT=ACTIVE_MENU_8192_NOT_REACHED_PARTIAL_EVIDENCE")
+else:
+    out.append("RESULT=ACTIVE_MENU_LATE_HARDWARE_WORK_MEASURED")
+Path(sys.argv[3]).write_text("\n".join(out)+"\n")
+print("\n".join(out[:55]))
+PYACTIVESCENE
+
   grep -a 'GotSceneRasterCoverage:' "$RUN/game.log" \
     > "$RUN/info/scene-raster-viewport-scissor.log" || true
   # Snapshot actual Vulkan raster state for the same scene draws.
@@ -1082,6 +1176,11 @@ GAME_EXIT=$?
 set -e
 TEST_PGID=""
 echo "GAME_EXIT=$GAME_EXIT"
+if ! grep -aq 'GotSceneGpuInvocations:.*high_volume=true' "$RUN/game.log"; then
+  STATUS=GOT_ACTIVE_MENU_INDIRECT_HARDWARE_QUERY_NOT_REACHED
+  echo "ACTIVE_MENU_GPU_QUERY=NOT_ACTIVATED; do not reuse stale shader evidence"
+  exit 2
+fi
 if ! grep -aq 'GotSceneIndirectGpuArgs:.*GPU_READBACK_PASS' "$RUN/game.log"; then
   STATUS=GOT_INDIRECT_GPU_ARG_READBACK_NOT_COMPLETED
   echo "GPU_INDIRECT_ARGUMENT_PROOF_MISSING; do not infer cause of zero GPU invocations"
