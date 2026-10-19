@@ -926,7 +926,57 @@ tail -70 "$OUT/audio3d-queue-gameplay-console.log"
   echo "INTEGRATED_SINGLE_RUN_REPORT_MISSING"; exit 2;
 }
 echo "INTEGRATED_GOW_GAMEPLAY=COMPLETED; AUDIO_AND_GRAPHICS_IMPROVEMENT=NOT_YET_PROVEN"
-echo "NEXT_ACTION=COMPARE_AUDIO_READY_AND_SUBMISSION_GAPS_WITH_PROVEN_BASELINE"
+STAGE=COMPARE_GOW_EVIDENCE_WITH_PROTECTED_LOG_BASELINES
+python3 - "$OUT" "$LOGS" <<'PY_REPORT'
+import json
+from pathlib import Path
+import sys
+out,logs=map(Path,sys.argv[1:])
+candidate=out/"audio3d-queue-single-run/A_DENSE_CPU_UPLOAD/summary.json"
+prior_paths=[
+  logs/"gow-ssh-safe-20261019-085204-2331337/A_DENSE_CPU_UPLOAD/summary.json",
+  logs/"gow-audio3d-lock-20261019-103258/audio3d-queue-single-run/A_DENSE_CPU_UPLOAD/summary.json",
+]
+def extract(path):
+    if not path.is_file():
+        return None
+    data=json.loads(path.read_text())
+    return {
+        "source":str(path),
+        "navigation_completed":bool(data.get("navigation_completed")),
+        "srt_offset_failures":data.get("srt_offset_failures"),
+        "gpu_device_losses":data.get("gpu_device_losses"),
+        "audio_backend_errors":data.get("audio_backend_errors"),
+        "late_fps":data.get("late_fps_avg"),
+        "late_audio_ready":data.get("late_audio_fraction_avg"),
+        "audio_windows":len(data.get("audio_windows",[])),
+        "scene_equivalence_proven":bool(data.get("scene_alignment",{}).get(
+            "scene_equivalence_proven",False)),
+    }
+baseline=[entry for path in prior_paths if (entry:=extract(path))]
+current=extract(candidate)
+assert current and current["navigation_completed"], "CANDIDATE_NAVIGATION_NOT_COMPLETED"
+report={
+  "candidate":current,
+  "available_baselines":baseline,
+  "preserved_fixes":["verified_GoW_graphics_UFFD_runtime",
+                      "Audio3D_PortAdvance_mutex",
+                      "SRT_constant_left_dynamic_shift_correctness",
+                      "SSH_safe_owned_game_shutdown"],
+  "deliberately_excluded":["experimental_idle_audio_clock",
+                           "host_guest_audio_priority_override",
+                           "unknown_compute_SetQueueReg_register_semantics"],
+  "result":"OBSERVATION_ONLY_NO_CAUSALITY_OR_SCENE_EQUIVALENCE_PROVEN",
+  "promotion_status":"NOT_PROMOTED_PENDING_GRAPHICS_AND_AUDIO_REVIEW",
+}
+(out/"integrated-impact.json").write_text(json.dumps(report,indent=2)+"\n")
+print("INTEGRATED_GOW_EVIDENCE="+json.dumps(current,sort_keys=True))
+for b in baseline:
+    print("BASELINE_GOW_EVIDENCE="+json.dumps(b,sort_keys=True))
+print("INTEGRATED_IMPACT_REPORT="+str(out/"integrated-impact.json"))
+print("SCENE_EQUIVALENCE_NOT_PROVEN_NO_AUTOMATIC_PROMOTION=YES")
+PY_REPORT
+echo "NEXT_ACTION=REVIEW_SHADER_SRT_FAILURE_COUNT_GRAPHICS_FPS_AND_AUDIO_READY_BEFORE_PROMOTION"
 STAGE=COMPLETE
 
 echo "AUDIO3D_ADVANCE_MUTEX_FIX_BUILT=YES"
