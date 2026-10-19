@@ -9,7 +9,7 @@ PROTECTED="$ROOT/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014
 mkdir -p "$ROOT/scripts" "$ROOT/logs"
 WORK="$(mktemp -d "$ROOT/scripts/.gow-srt-wave-uniform.XXXXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
-REF="40b029c1f1949455fa6c8d00db600c45601f130a"
+REF="5913a208e03a04b0a81ed1c9635e1db091a02a6c"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF"
 while read -r name blob path; do
   curl -4 -fsSL --retry 3 --retry-delay 1 "$URL/$path" -o "$WORK/$name"
@@ -18,7 +18,7 @@ while read -r name blob path; do
     echo "PINNED_GPU_SOURCE_DIFFERENT=$path expected=$blob actual=$got"; exit 2;
   }
 done <<'PINNED'
-runner.sh f7e65d45121f131a045afdff7955ade4cdf87c3c tools/development/gow_srt_wave_uniform_inline_build_20261019.sh
+runner.sh f53a8c4373489da8bb715d9287f040b728d7ee87 tools/development/gow_srt_wave_uniform_inline_build_20261019.sh
 observer.py e3163bd7525472da484a4bb707425558255250e9 tools/development/gow_upstream_gameplay.py
 restore.py 0bb5acf3149c53e58fb4739845fc33538ed32ff8 tools/development/gow_restore_graphics_renderer_20261017.py
 support.py 5e8d17492c592421af95413ba8e00610b66aa255 tools/development/gow_preserve_uffd_support_20261017.py
