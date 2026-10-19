@@ -10,7 +10,7 @@ PROTECTED="$ROOT/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014
 mkdir -p "$ROOT/scripts" "$ROOT/logs"
 WORK="$(mktemp -d "$ROOT/scripts/.gow-audio3d-lock.XXXXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
-REF="bbcfe404684d9254136516c73f5c6524cb14a945"
+REF="7157bfe04109561e0831aa0b73e7600d07113a8c"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF"
 while read -r name blob path; do
   curl -4 -fsSL --retry 3 --retry-delay 1 "$URL/$path" -o "$WORK/$name"
@@ -19,7 +19,7 @@ while read -r name blob path; do
     echo "PINNED_GPU_SOURCE_DIFFERENT=$path expected=$blob actual=$got"; exit 2;
   }
 done <<'PINNED'
-runner.sh 1c9af7bd524905abe3bea82a94ed28c0f7605a64 tools/development/gow_audio3d_queue_rebuild_and_one_run_20261019.sh
+runner.sh 0cab4b6ae060e29b2954b3dafbdd7b712850ee8b tools/development/gow_audio3d_queue_rebuild_and_one_run_20261019.sh
 observer.py e3163bd7525472da484a4bb707425558255250e9 tools/development/gow_upstream_gameplay.py
 restore.py 0bb5acf3149c53e58fb4739845fc33538ed32ff8 tools/development/gow_restore_graphics_renderer_20261017.py
 support.py 5e8d17492c592421af95413ba8e00610b66aa255 tools/development/gow_preserve_uffd_support_20261017.py
@@ -35,7 +35,7 @@ sparse.h 872d020c15d0ba0a1e19470a4f0b2d021ca61b09 src/video_core/buffer_cache/sp
 sparse-test.cpp 5ab8c6ec053e04f063f92dc8e313f9a9c04b5b91 tests/video_core/test_sparse_cpu_upload_words_20261018.cpp
 live-overlay.py 50aaeb9476323cb4205d904044b6e5d09bf4f6de tools/development/gow_sparse_upload_live_region_overlay_20261018.py
 audio3d-overlay.py aaf050a31c0ae06671a449c80d2f3589b3483d96 tools/development/gow_audio3d_portadvance_surgical_overlay_20261019.py
-srt-shift-overlay.py 1eceb2f7f82fcfc1c847bfc6529513db0aa3fb99 tools/development/gow_srt_shift_surgical_overlay_20261019.py
+srt-shift-overlay.py dceb223513dc99631c1c93fab2b420da128721b7 tools/development/gow_srt_shift_surgical_overlay_20261019.py
 auto.py 01bc98787caa6ee69fcbfca1c97da1ed4e90ea01 tools/development/gow_auto_scene_input_20261018.py
 gow_route_steering_20261018.py acec83a7655002554994bfdf9c57c7b13ad3510e tools/development/gow_route_steering_20261018.py
 PINNED
@@ -65,16 +65,20 @@ python3 -B "$WORK/audio3d-overlay.py"  "$ISOLATED/src/core/libraries/audio3d/aud
   echo "AUDIO3D_MUTEX_PRECHECK_FAILED_NO_BUILD"; exit 2;
 }
 echo "AUDIO3D_MUTEX_EXACT_REVERSIBLE_PRECHECK=PASS"
-[[ -f "$ISOLATED/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" ]] || {
- echo "TEST_SRT_SOURCE_MISSING_NO_BUILD"; exit 2;
+# The builder replays the protected original SRT source over the disposable
+# worktree at STAGE=SNAPSHOT_ISOLATED_GRAPHICS_AND_AUDIO. Preflight the SAME
+# source the build will actually use, rather than the stale isolated copy.
+[[ -f "$PROTECTED/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" &&
+   ! -L "$PROTECTED/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" ]] || {
+ echo "PROTECTED_SRT_REPLAY_PREIMAGE_MISSING_NO_BUILD"; exit 2;
 }
 python3 -B "$WORK/srt-shift-overlay.py" --self-test
 python3 -B "$WORK/srt-shift-overlay.py" \
- "$ISOLATED/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" \
+ "$PROTECTED/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp" \
  "$WORK/srt-shift-preflight.diff" || {
  echo "SRT_SHIFT_PRECHECK_FAILED_NO_BUILD"; exit 2;
 }
-echo "SRT_DYNAMIC_SHIFT_EXACT_REVERSIBLE_PRECHECK=PASS"
+echo "SRT_PROTECTED_REPLAY_PREIMAGE_VERIFIED=PASS\nSRT_ALREADY_CORRECT_ALLOWED=YES"
 echo "TWO_RELEVANT_SOURCE_CORRECTIONS_STAGED; ONLY_ONE_CANDIDATE_GAME_RUN_NO_AB=YES"
 echo "OLLAMA_UNLOAD_ONLY_WHEN_FREE_GPU_VRAM_BELOW_8_GIB=YES"
 bash "$WORK/runner.sh" \
