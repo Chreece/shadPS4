@@ -186,7 +186,7 @@ def recent_game_logs():
     return found
 
 
-def stage_preflight(report: dict, run: Path):
+def stage_preflight(report: dict, run: Path, resume: bool = False):
     # Git's merge engine computes and reports ALL conflicts in one pass.
     # This staging repo is disposable; do not change existing user sources,
     # the live launcher, or either game's protected trees.
@@ -215,73 +215,76 @@ def stage_preflight(report: dict, run: Path):
     # Read-only local transport: record which proof branch and path actually
     # changed; merging a branch is NOT enough to certify the compiled overlay.
     staging = run / "source"
-    git(source, "worktree", "add", "--detach", str(staging), state["head"])
-    command("git", "-C", str(staging), "config", "user.name", "ES-DE Source Audit")
-    command("git", "-C", str(staging), "config", "user.email",
-            "esde-fullstack@users.noreply.github.com")
-    # Preserve the previous unified front-end and runtime stack, but advance
-    # the isolated candidate to the EXACT Oct 19 official upstream main first.
-    # An upstream conflict is surfaced as a complete path list; never choose
-    # "ours" or "theirs" wholesale.
-    git(staging, "-c", "http.version=HTTP/1.1", "fetch", "--no-tags",
-        "https://github.com/shadps4-emu/shadPS4.git", UPSTREAM_SHA)
-    upstream_head = git(staging, "rev-parse", "FETCH_HEAD").stdout.strip()
-    if upstream_head != UPSTREAM_SHA:
-        raise RuntimeError("Official upstream pin mismatch, refusing unexpected source")
-    # Fetch both sources first, and report pairwise conflict previews for
-    # BOTH revisions before changing the disposable checkout.
-    git(staging, "-c", "http.version=HTTP/1.1", "fetch", "--no-tags",
-        "https://github.com/Chreece/shadPS4.git", GOW_REF)
-    if git(staging, "rev-parse", "FETCH_HEAD").stdout.strip() != GOW_REF:
-        raise RuntimeError("GoW proof ref changed during preflight")
-    head_before_merges = git(staging, "rev-parse", "HEAD").stdout.strip()
-    report["pairwise_conflicts"] = {}
-    for label, target in (("latest_upstream", UPSTREAM_SHA), ("gow_proof", GOW_REF)):
-        probe = git(staging, "merge-tree", "--write-tree", head_before_merges,
-                    target, check=False)
-        report["pairwise_conflicts"][label] = {
-            "returncode": probe.returncode,
-            "output": (probe.stdout + probe.stderr)[-80_000:],
-        }
-    baseline = git(staging, "merge", "--no-ff", "--no-edit", UPSTREAM_SHA, check=False)
-    if baseline.returncode:
+    if not resume:
+        git(source, "worktree", "add", "--detach", str(staging), state["head"])
+        command("git", "-C", str(staging), "config", "user.name", "ES-DE Source Audit")
+        command("git", "-C", str(staging), "config", "user.email",
+                "esde-fullstack@users.noreply.github.com")
+        # Preserve the previous unified front-end and runtime stack, but advance
+        # the isolated candidate to the EXACT Oct 19 official upstream main first.
+        # An upstream conflict is surfaced as a complete path list; never choose
+        # "ours" or "theirs" wholesale.
+        git(staging, "-c", "http.version=HTTP/1.1", "fetch", "--no-tags",
+            "https://github.com/shadps4-emu/shadPS4.git", UPSTREAM_SHA)
+        upstream_head = git(staging, "rev-parse", "FETCH_HEAD").stdout.strip()
+        if upstream_head != UPSTREAM_SHA:
+            raise RuntimeError("Official upstream pin mismatch, refusing unexpected source")
+        # Fetch both sources first, and report pairwise conflict previews for
+        # BOTH revisions before changing the disposable checkout.
+        git(staging, "-c", "http.version=HTTP/1.1", "fetch", "--no-tags",
+            "https://github.com/Chreece/shadPS4.git", GOW_REF)
+        if git(staging, "rev-parse", "FETCH_HEAD").stdout.strip() != GOW_REF:
+            raise RuntimeError("GoW proof ref changed during preflight")
+        head_before_merges = git(staging, "rev-parse", "HEAD").stdout.strip()
+        report["pairwise_conflicts"] = {}
+        for label, target in (("latest_upstream", UPSTREAM_SHA), ("gow_proof", GOW_REF)):
+            probe = git(staging, "merge-tree", "--write-tree", head_before_merges,
+                        target, check=False)
+            report["pairwise_conflicts"][label] = {
+                "returncode": probe.returncode,
+                "output": (probe.stdout + probe.stderr)[-80_000:],
+            }
+        baseline = git(staging, "merge", "--no-ff", "--no-edit", UPSTREAM_SHA, check=False)
+        if baseline.returncode:
+            conflicts = git(staging, "diff", "--name-only", "--diff-filter=U")
+            report["stage"] = {**report.get("stage", {}),
+                               "status": "LATEST_UPSTREAM_MERGE_CONFLICT_NO_BUILD",
+                               "upstream_conflicts": conflicts.stdout.splitlines(),
+                               "conflict_diff": git(staging, "diff", "--cc", check=False).stdout[:300_000],
+                               "upstream_output": (baseline.stdout + baseline.stderr)[-8000:],
+                               "path": str(staging)}
+            return
+        # The Oct 16 protected working tree is OLDER than the Oct 17
+        # full-graphics UFFD checkpoint. Merging its HEAD would silently omit
+        # subsequent patches. Import the exact pinned Oct 17 GoW revision.
+        proven_head = GOW_REF
+        git(staging, "cat-file", "-e", proven_head + "^{commit}")
+        if proven_head != GOW_REF:
+            raise RuntimeError("GoW pinned commit resolved to unexpected SHA")
+        local_head = git(proof_git, "rev-parse", "HEAD").stdout.strip()
+        report["stage"] = {"path": str(staging), "source_head": state["head"],
+                           "goW_pinned_upstream_based_commit": proven_head,
+                           "protected_oct16_source_head": local_head,
+                           "runtime_proof_binary_sha256": GOW_BIN_SHA,
+                           "source_object_proof_note":
+                               "The f909 Git snapshot must still be reconciled with "
+                               "the checksum-pinned local Oct 17 fullgfx source overlays."}
+        # Stage the relevant generic GoW source ancestry. No game is launched
+        # and we refuse to pretend that this alone equals the saved fullgfx ELF.
+        merged = git(staging, "merge", "--no-commit", "--no-ff",
+                     proven_head, check=False)
         conflicts = git(staging, "diff", "--name-only", "--diff-filter=U")
-        report["stage"] = {**report.get("stage", {}),
-                           "status": "LATEST_UPSTREAM_MERGE_CONFLICT_NO_BUILD",
-                           "upstream_conflicts": conflicts.stdout.splitlines(),
-                           "conflict_diff": git(staging, "diff", "--cc", check=False).stdout[:300_000],
-                           "upstream_output": (baseline.stdout + baseline.stderr)[-8000:],
-                           "path": str(staging)}
-        return
-    # The Oct 16 protected working tree is OLDER than the Oct 17
-    # full-graphics UFFD checkpoint. Merging its HEAD would silently omit
-    # subsequent patches. Import the exact pinned Oct 17 GoW revision.
-    proven_head = GOW_REF
-    git(staging, "cat-file", "-e", proven_head + "^{commit}")
-    if proven_head != GOW_REF:
-        raise RuntimeError("GoW pinned commit resolved to unexpected SHA")
-    local_head = git(proof_git, "rev-parse", "HEAD").stdout.strip()
-    report["stage"] = {"path": str(staging), "source_head": state["head"],
-                       "goW_pinned_upstream_based_commit": proven_head,
-                       "protected_oct16_source_head": local_head,
-                       "runtime_proof_binary_sha256": GOW_BIN_SHA,
-                       "source_object_proof_note":
-                           "The f909 Git snapshot must still be reconciled with "
-                           "the checksum-pinned local Oct 17 fullgfx source overlays."}
-    # Stage the relevant generic GoW source ancestry. No game is launched
-    # and we refuse to pretend that this alone equals the saved fullgfx ELF.
-    merged = git(staging, "merge", "--no-commit", "--no-ff",
-                 proven_head, check=False)
-    conflicts = git(staging, "diff", "--name-only", "--diff-filter=U")
-    report["stage"]["gow_merge_rc"] = merged.returncode
-    report["stage"]["conflicts"] = conflicts.stdout.splitlines()
-    report["stage"]["merge_output"] = (merged.stdout + merged.stderr)[-8000:]
-    report["stage"]["conflict_diff"] = git(staging, "diff", "--cc", check=False).stdout[:300_000]
-    # No "ours"/"theirs" conflict auto-choice, no source replacement.
-    # Avoid launching an emulator from unverified hardware semantics.
-    if merged.returncode or conflicts.stdout.strip():
-        report["stage"]["status"] = "REQUIRES_EXPLICIT_SOURCE_RECONCILIATION_NO_BUILD"
-        return
+        report["stage"]["gow_merge_rc"] = merged.returncode
+        report["stage"]["conflicts"] = conflicts.stdout.splitlines()
+        report["stage"]["merge_output"] = (merged.stdout + merged.stderr)[-8000:]
+        report["stage"]["conflict_diff"] = git(staging, "diff", "--cc", check=False).stdout[:300_000]
+        # No "ours"/"theirs" conflict auto-choice, no source replacement.
+        # Avoid launching an emulator from unverified hardware semantics.
+        if merged.returncode or conflicts.stdout.strip():
+            report["stage"]["status"] = "REQUIRES_EXPLICIT_SOURCE_RECONCILIATION_NO_BUILD"
+            return
+    else:
+        raise RuntimeError('RESUME_CONFLICT_RESOLVER_NOT_INSTALLED')
     # The proof's local renderer was compiled from a bounded full-graphics
     # overlay. If its disk version differs from Git HEAD, port THAT exact
     # delta using three-way merging rather than overwriting modern GPU code.
