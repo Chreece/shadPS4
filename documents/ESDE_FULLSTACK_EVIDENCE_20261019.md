@@ -140,3 +140,21 @@ This replaces repeated speculative CMake/build attempts with a single
 source/conflict/root-cause gate. Do not use the staged source as an ES-DE
 binary or delete any protected branch. A staged source is **not** a
 compiled or gameplay-validated emulator.
+
+## Upstream PR reconciliation, checked October 19
+
+- Guest affinity #5287, guest CPU identity #5304, Jaguar guest feature filtering
+  #5314 and SSE4a #5315 are **closed without merging upstream**. Their
+  validated Linux test code is not automatically present in the official
+  main branch. Those changes must be ported from pinned source, not assumed
+  merged because their PRs are closed.
+- Shader CFG fallthrough #5365 and Phi-dedup ordering #5364 are **merged
+  upstream**. The October 19 source pin already carries them; don't
+  reintroduce older or duplicated shader CFG code.
+- Texture-cache CPU-write coherence #5410 and repeated no-op transition
+  optimization #5411 remain open. They are useful review candidates,
+  **not independently demonstrated to cure either user's crash**.
+- The head of `proof/got-world-visible-pm4-tsharp-20261017` contains
+  experimental GPU-indexed image-array implementation. Only its observed
+  pre-feedback reference `e9f470b` is the visual regression benchmark;
+  it is NOT permission to promote the complete GPU-feedback renderer.
