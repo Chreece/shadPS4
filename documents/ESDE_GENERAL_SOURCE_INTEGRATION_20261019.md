@@ -25,7 +25,7 @@ It composes sources using **real Git three-way merging**, never wholesale
    This stages proper resource discovery, nonuniform image IR,
    shader compiler, guest T# arrays, general texture cache and
    Vulkan bindings—not per-title engine branches.
-2. Separately replay **51 identified later general engine commits**,
+2. Separately replay **84 identified later general engine commits**,
    first-parent-delta-by-first-parent-delta, from the early world-visible
    branch through the bounded-table source head
    `71faef4a8d76282a1931445198571082f0e3c70e`.
