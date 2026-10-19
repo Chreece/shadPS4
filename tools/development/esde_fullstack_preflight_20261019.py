@@ -104,9 +104,14 @@ def find_got_stencil_files():
 
 def recent_game_logs():
     roots = [Path.home() / "Applications/shadps4/user/log",
+             Path.home() / ".local/share/shadPS4/user/log",
              Path.home() / ".local/share/shadPS4/log",
+             Path.home() / "user/log",
              ROOT / "ESDE/unified-20261018-160757/source/user/log",
              ROOT / "ESDE/unified-20261018-160757/build/user/log"]
+    releases = Path.home() / "Applications/shadps4/releases"
+    if releases.is_dir():
+        roots += [p for p in releases.glob("*/user/log") if p.is_dir()][:25]
     # This is limited to log directories rather than recursively walking
     # the user's large emulation/video/save libraries.
     for game in (GOW, GOT):
