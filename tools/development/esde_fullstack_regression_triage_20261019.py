@@ -155,6 +155,26 @@ def capture_old_gow(report, tag):
         raise RuntimeError("Pinned generic observer not available")
     if not INPUT_PROFILE.is_dir() or INPUT_PROFILE.is_symlink():
         raise RuntimeError("Original failed GoW portable profile is missing")
+    # Historical GPUVM hangs make a reference run unsafe without enough VRAM.
+    # Never stop Ollama or modify system services to create headroom.
+    amd_gpu = []
+    for vendor in Path("/sys/class/drm").glob("card[0-9]*/device/vendor"):
+        if vendor.is_file() and vendor.read_text().strip() == "0x1002":
+            root = vendor.parent
+            total = root / "mem_info_vram_total"
+            used = root / "mem_info_vram_used"
+            if total.is_file() and used.is_file():
+                amd_gpu.append((int(total.read_text()), int(used.read_text())))
+    if not amd_gpu or all(total - used < 8 * 1024**3 for total, used in amd_gpu):
+        raise RuntimeError("REFERENCE_TRIAL_REQUIRES_8_GIB_FREE_AMD_VRAM_NO_OLLAMA_STOP")
+    # Recheck display without mutating Sunshine or running a headless game.
+    preferred = os.environ.get("DISPLAY") or ":0"
+    displays = [preferred, ":0", ":1", ":2"]
+    display = next((d for d in dict.fromkeys(displays)
+                    if execute("timeout", "4", "xdpyinfo", "-display", d,
+                               check=False).returncode == 0), None)
+    if not display:
+        raise RuntimeError("NO_X11_DISPLAY_AVAILABLE_REFERENCE_TRIAL_SKIPPED")
     if execute("pgrep", "-u", os.getuid(), "-x", "shadps4",
                check=False).returncode == 0:
         raise RuntimeError("Another emulator is active; do not interrupt it")
@@ -163,10 +183,12 @@ def capture_old_gow(report, tag):
     trial.mkdir()
     # This is a new isolated copy of the SAME config the failed new candidate
     # used, so a difference is more attributable to the binary.
-    skip = shutil.ignore_patterns("shader", "log", "logs", "captures",
-                                  "screenshots", "cache", "dumps")
-    shutil.copytree(INPUT_PROFILE, tmp_user, symlinks=False, ignore=skip)
-    display = os.environ.get("DISPLAY") or ":0"
+    excluded = {"shader", "log", "logs", "captures", "screenshots", "cache", "dumps"}
+    def ignore(directory, names):
+        base = Path(directory)
+        return [name for name in names
+                if (base / name).is_symlink() or name in excluded]
+    shutil.copytree(INPUT_PROFILE, tmp_user, symlinks=False, ignore=ignore)
     env = os.environ.copy()
     env["DISPLAY"] = display
     report_dir = LOGS / ("esde-reference-gow-" + tag)
