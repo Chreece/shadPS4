@@ -90,6 +90,13 @@ enum class GotDmaWordCandidate : std::uint8_t {
     return enabled;
 }
 
+// Limit synchronous capture traffic: eight initial GDS writer dispatches,
+// then powers of two up to 16384. No shader-side mutation is performed.
+[[nodiscard]] constexpr bool ShouldSampleGotGdsProducer(
+    std::uint32_t n) noexcept {
+    return n > 0 && (n <= 8 || (n <= 16384 && std::has_single_bit(n)));
+}
+
 [[nodiscard]] constexpr bool ShouldReportIndirectProducer(std::uint32_t n) noexcept {
     return n <= 16 || std::has_single_bit(n);
 }

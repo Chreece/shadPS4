@@ -29,6 +29,7 @@
 #include "video_core/renderer_vulkan/vk_got_scene_gpu_queries.h"
 #include "video_core/renderer_vulkan/vk_got_indirect_producer_trace.h"
 #include "video_core/renderer_vulkan/vk_got_dma_origin_probe.h"
+#include "video_core/renderer_vulkan/vk_got_gds_compute_probe.h"
 #include "video_core/renderer_vulkan/vk_got_indirect_gpu_readback.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -618,6 +619,9 @@ void Rasterizer::DispatchDirect() {
     DebugState.IncDispatch();
 
     ResetBindings(true);
+    Diagnostics::CaptureGotGdsComputeProducer(
+        instance,scheduler,runtime,buffer_cache.GetGdsBuffer(),cs,
+        false,cs_program.dim_x,cs_program.dim_y,cs_program.dim_z);
 }
 
 void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
@@ -654,6 +658,9 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     DebugState.IncDispatch();
 
     ResetBindings(true);
+    Diagnostics::CaptureGotGdsComputeProducer(
+        instance,scheduler,runtime,buffer_cache.GetGdsBuffer(),cs,
+        true,0,0,0);
 }
 
 u64 Rasterizer::Flush() {
@@ -2224,8 +2231,16 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
 
 u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
     auto* gds_buf = buffer_cache.GetGdsBuffer();
-    u32 value;
-    std::memcpy(&value, gds_buf->mapped_data.data() + gds_offset, sizeof(u32));
+    // The caller waits for GPU completion before a GDS EOS host read, but
+    // VMA stream allocations are not guaranteed HOST_COHERENT. Invalidate
+    // the mapped range before interpreting a GPU-written counter on the CPU.
+    const auto mapped_size = gds_buf->mapped_data.size();
+    ASSERT_MSG(mapped_size >= sizeof(u32) &&
+                   gds_offset <= mapped_size - sizeof(u32),
+               "GDS counter offset {} exceeds mapped buffer size {}", gds_offset, mapped_size);
+    gds_buf->Invalidate(gds_offset, sizeof(u32));
+    u32 value{};
+    std::memcpy(&value, gds_buf->mapped_data.data() + gds_offset, sizeof(value));
     return value;
 }
 

@@ -28,6 +28,13 @@ static_assert(ShouldReportIndirectProducer(1024));
 static_assert(!ShouldReportIndirectProducer(1023));
 
 int main() {
+    static_assert(!ShouldSampleGotGdsProducer(0));
+    static_assert(ShouldSampleGotGdsProducer(1));
+    static_assert(ShouldSampleGotGdsProducer(8));
+    static_assert(!ShouldSampleGotGdsProducer(9));
+    static_assert(ShouldSampleGotGdsProducer(4096));
+    static_assert(!ShouldSampleGotGdsProducer(4095));
+    static_assert(!ShouldSampleGotGdsProducer(16385));
     // The previous eight exact addresses drifted across native runs.
     // Classify candidate GPU DMA field writes by stable family and 4-byte size.
     static_assert(SelectGotDmaWordCandidate(
