@@ -62,6 +62,19 @@ def digest(path: Path) -> str | None:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def installed_digest() -> str | None:
+    # Existing ES-DE selector creates an intentional symlink from the default
+    # core to a versioned release; reject arbitrary external symlink targets.
+    try:
+        release_root = Path.home() / "Applications/shadps4/releases"
+        resolved = UNIFIED_BIN.resolve(strict=True)
+        if not resolved.is_relative_to(release_root.resolve(strict=True)):
+            return None
+        return digest(resolved)
+    except (OSError, RuntimeError):
+        return None
+
+
 def command(*args: str, cwd: Path | None = None, check: bool = True):
     p = subprocess.run([str(a) for a in args], cwd=cwd, capture_output=True, text=True)
     if check and p.returncode:
@@ -308,7 +321,7 @@ def main():
     archive = LOGS / ("esde-fullstack-audit-" + stamp + ".tar.gz")
     report = {
         "date": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "installed_binary": {"path": str(UNIFIED_BIN), "sha256": digest(UNIFIED_BIN)},
+        "installed_binary": {"path": str(UNIFIED_BIN), "sha256": installed_digest()},
         "goW_proven_binary": {"path": str(GOW_BIN), "sha256": digest(GOW_BIN)},
         "source": {"unified": source_status(UNIFIED_SOURCE),
                    "gow": source_status(GOW_SOURCE),
@@ -321,7 +334,7 @@ def main():
         "note": "No game was launched; binary/source proof is not a diagnosis of the current crash."
     }
     report["checks"] = {
-        "installed_unified_matches_known_sha": digest(UNIFIED_BIN) == UNIFIED_SHA,
+        "installed_unified_matches_known_sha": installed_digest() == UNIFIED_SHA,
         "gow_binary_matches_proven_sha": digest(GOW_BIN) == GOW_BIN_SHA,
         "gow_renderer_matches_proven_sha":
             any(digest(root / GOW_RENDERER) == GOW_RENDERER_SHA
