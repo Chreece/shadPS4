@@ -305,11 +305,25 @@ class Builder:
             # instrumentation scripts or game-ID-specific source code.
             if any(not p.startswith(("src/", "tests/")) for p in changed):
                 raise RuntimeError("FEATURE_CHANGES_OUTSIDE_GENERAL_ENGINE " + commit)
-            if self.git("cherry-pick", "-x", commit, check=False):
-                self.fail_conflicts("GENERIC_CORRECTNESS_PORT_CONFLICT_" + description)
+            patch = self.capture("git", "-C", self.source, "show",
+                                 "--format=", "--binary", commit, timeout=80)
+            if patch.returncode or not patch.stdout:
+                raise RuntimeError("MISSING_GENERIC_FIX_PATCH " + commit)
+            patch_path = self.run / ("generic-change-" + str(index+1) + ".patch")
+            patch_path.write_text(patch.stdout)
+            # Preserve previously integrated generic corrections by content;
+            # never cherry-pick a duplicate merely to count a patch twice.
+            already = self.capture("git", "-C", self.source, "apply",
+                                   "--reverse", "--check", patch_path).returncode == 0
+            if already:
+                status = "ALREADY_PRESENT_BY_EXACT_SOURCE_DIFF"
+            else:
+                if self.git("cherry-pick", "-x", commit, check=False):
+                    self.fail_conflicts("GENERIC_CORRECTNESS_PORT_CONFLICT_" + description)
+                status = "CHERRY_PICKED"
             self.report.setdefault("applied_generic_fixes", []).append({
                 "description": description, "commit": commit,
-                "source_paths": changed,
+                "source_paths": changed, "status": status,
             })
 
     def prove_runtime_contracts(self):
