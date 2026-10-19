@@ -419,6 +419,7 @@ def main():
     samples = []
     process = None
     status = 1
+    clean_user_quit = False
     console_file = None
     audio_environment = os.environ.copy()
     try:
@@ -476,6 +477,19 @@ def main():
                 time.sleep(min(0.5, max(0.0, target - time.monotonic())))
             if process.poll() is not None:
                 report["exit_code"] = process.returncode
+                if process.returncode == 0:
+                    with (out / "full-console.log").open("rb") as stopped_log:
+                        stopped_log.seek(0, 2)
+                        size = stopped_log.tell()
+                        stopped_log.seek(max(0, size - 16384))
+                        final_bytes = stopped_log.read()
+                    if b"HOST_QUIT action=accepted" in final_bytes:
+                        clean_user_quit = True
+                        report["exit_reason"] = "USER_ACCEPTED_HOME_QUIT"
+                        report["alive_at_capture_end"] = False
+                        report["visual_acceptance"] = "NOT_ASSESSED_FROM_PROCESS_EXIT"
+                        status = 0
+                        break
                 raise RuntimeError(f"GAME_EXITED_EARLY_WITH_CODE_{process.returncode}")
             current = sample_threads(process.pid)
             if elapsed in (15, 60, 120, 180):
@@ -505,12 +519,15 @@ def main():
                 raise RuntimeError("OLD_GPU_UFFD_DEADLOCK_REPRODUCED")
             previous = current
 
-        if process.poll() is not None:
-            raise RuntimeError(f"GAME_EXITED_BEFORE_CAPTURE_COMPLETED_{process.returncode}")
-        report["alive_at_capture_end"] = True
-        report["old_uffd_deadlock_signature"] = False
-        print("GAME_OBSERVATION=COMPLETED_ALIVE; GRAPHICS_VISUAL_CHECK=MANUAL", flush=True)
-        status = 0
+        if clean_user_quit:
+            print("GAME_OBSERVATION=USER_QUIT_NO_GAMEPLAY_PASS_CLAIM", flush=True)
+        else:
+            if process.poll() is not None:
+                raise RuntimeError(f"GAME_EXITED_BEFORE_CAPTURE_COMPLETED_{process.returncode}")
+            report["alive_at_capture_end"] = True
+            report["old_uffd_deadlock_signature"] = False
+            print("GAME_OBSERVATION=COMPLETED_ALIVE; GRAPHICS_VISUAL_CHECK=MANUAL", flush=True)
+            status = 0
     except Exception as error:
         report["failure"] = str(error)
         (out / "observer-error.txt").write_text(traceback.format_exc())
@@ -535,7 +552,8 @@ def main():
                 (out / "audio-route-capture-error.txt").write_text(
                     repr(audio_error) + "\n")
         report["process_alive_when_reported"] = bool(process and process.poll() is None)
-        report["result"] = "OBSERVED_ALIVE" if status == 0 else "FAILED"
+        report["result"] = ("OBSERVED_USER_QUIT" if clean_user_quit else
+                            "OBSERVED_ALIVE" if status == 0 else "FAILED")
         report["thread_samples"] = len(samples)
         (out / "thread-samples.json").write_text(json.dumps(samples, indent=2) + "\n")
         report["console"] = summarize_log(out / "full-console.log", out)
