@@ -826,7 +826,7 @@ for obj in "${EARLY_OBJECTS[@]}"; do
 done
 for changed_obj in \
   CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o \
-  CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer_cache.cpp.o
+  CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer_cache.cpp.o \
   CMakeFiles/shadps4.dir/src/core/libraries/audio3d/audio3d.cpp.o; do
   grep -Fq "Building CXX object $changed_obj" "$OUT/compile-abi-preflight.log" || {
     echo "MODIFIED_CPU_TIMING_TRANSLATION_UNIT_NOT_RECOMPILED=$changed_obj"
