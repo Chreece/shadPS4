@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 
 ROOT = Path.home() / "projects/shadps4"
 ESDE = ROOT / "ESDE"
@@ -389,11 +390,46 @@ def build(report, plan_dir):
     print("ISOLATED_GENERAL_CANDIDATE="+str(candidate))
     print("ISOLATED_GENERAL_SHA256="+report["candidate"]["sha256"])
 
+
+def self_test():
+    """Native three-way source contract: retain nonoverlap, stop overlaps/hacks."""
+    ESDE.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".general-engine-selftest-",dir=ESDE) as d:
+        p=Path(d)
+        base=b"int first=0;\nint second=0;\n"
+        ours=b"int first=1;\nint second=0;\n"
+        got=b"int first=0;\nint second=1;\n"
+        merged,error=merged_bytes(ours,base,got,COMMON,"test.cpp",p)
+        assert error is None and merged is not None
+        assert b"int first=1;" in merged and b"int second=1;" in merged
+    with tempfile.TemporaryDirectory(prefix=".general-engine-selftest-",dir=ESDE) as d:
+        p=Path(d)
+        first=b"int first=0;\n"
+        ours=b"int first=1;\n"
+        got=b"int first=2;\n"
+        merged,error=merged_bytes(ours,first,got,COMMON,"test.cpp",p)
+        assert error=="SOURCE_OVERLAP_NEEDS_SEMANTIC_REVIEW"
+        assert merged is not None and b"<<<<<<<" in merged
+    assert guarded_delta(b"",b"if (id == CUSA11456) return 1;\n","x.cpp")
+    assert guarded_delta(b"",b"if (hash == 0x7eaf40ad) return 1;\n","x.cpp")
+    assert guarded_delta(b"",b"if (SHADPS4_GOW_SPECIAL) return 1;\n","x.cpp")
+    assert guarded_delta(b"",b"auto v = RealBufferDescriptor(index);\n","x.cpp") is None
+    assert eligible("src/shader_recompiler/ir/passes/resource_discover_pass.cpp")
+    assert eligible("src/video_core/renderer_vulkan/vk_rasterizer.cpp")
+    assert eligible("src/video_core/renderer_vulkan/resource_audit_hash_filter.h")
+    assert not eligible("src/video_core/renderer_vulkan/vk_got_scene_special.h")
+    print("GENERAL_ENGINE_MERGE_SELFTEST=PASS cases=10")
+    return 0
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--build",action="store_true",
                    help="Apply clean general source changes and compile isolated candidate")
+    p.add_argument("--self-test",action="store_true",
+                   help="Run offline native three-way merger and policy regression tests")
     args=p.parse_args()
+    if args.self_test:
+        return self_test()
     stamp=dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     LOGS.mkdir(parents=True,exist_ok=True)
     workdir=ESDE/("general-engine-merge-"+stamp)
