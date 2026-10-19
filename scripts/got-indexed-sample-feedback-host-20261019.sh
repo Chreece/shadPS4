@@ -458,8 +458,10 @@ c++ -std=c++23 -O2 -Wall -Wextra -Werror -pedantic \
 # Structural preflight: both production callers MUST use the tested mask
 # and draw-indirect stage; never accept a header test disconnected from
 # the code that actually makes Vulkan barriers.
-python3 - "$RUN/tmp/staged/src" <<'PYWARPROOF'
+STATUS=PRODUCTION_SOURCE_PREFLIGHT
+if python3 - "$RUN/tmp/staged/src" > "$RUN/info/source-preflight.log" 2>&1 <<'PYWARPROOF'
 from pathlib import Path
+import re
 import sys
 root=Path(sys.argv[1])/"video_core"/"renderer_vulkan"
 runtime=(root/"vk_runtime.cpp").read_text()
@@ -496,7 +498,14 @@ assert "Buffer* GetGdsBuffer() noexcept" in cache_header
 assert "const Buffer* GetGdsBuffer() const noexcept" in cache_header
 assert "SHADPS4_GOT_GDS_PRODUCER_PROBE" in gds_src
 assert "runtime.CopyBuffer(gds,&sample->staging" in gds_src
-assert "ResetBindings(true);\n    Diagnostics::CaptureGotGdsComputeProducer(" in rasterizer
+for name in ("DispatchDirect", "DispatchIndirect"):
+    start=rasterizer.index("void Rasterizer::"+name+"(")
+    body=rasterizer[start:rasterizer.index("\n}", start)]
+    reset=list(re.finditer(r"^\s+ResetBindings\s*\(\s*true\s*\)\s*;", body, re.M))
+    capture=list(re.finditer(r"^\s+Diagnostics::CaptureGotGdsComputeProducer\s*\(", body, re.M))
+    assert len(reset) == 1, name+": expected one ResetBindings(true) call"
+    assert len(capture) == 1, name+": expected one GDS capture call"
+    assert reset[0].start() < capture[0].start(), name+": GDS capture must follow ResetBindings(true)"
 print("GOT_GDS_HOST_COHERENCE_AND_LIVE_PRODUCER_WIRING=PASS "
       "bounds_check=YES cache_invalidate_before_read=YES "
       "dispatch_readback_after_shader_access_recorded=YES")
@@ -525,6 +534,14 @@ print("GOT_INDIRECT_WAR_PRODUCTION_WIRING=PASS "
       "rasterizer_draw_indirect_stage=PASS "
       "actual_vulkan_bits_tested=PASS")
 PYWARPROOF
+then
+    cat "$RUN/info/source-preflight.log" | tee -a "$RUN/host-tests.log"
+else
+    cat "$RUN/info/source-preflight.log" | tee -a "$RUN/host-tests.log"
+    STATUS=PRODUCTION_SOURCE_PREFLIGHT_FAILED
+    exit 2
+fi
+STATUS=HOST_TESTS
 echo "GOT_INDIRECT_WAR_HOST_TEST=PASS" | tee -a "$RUN/host-tests.log"
 
 # Exact eight real 20-byte GPU argument records, 100,000 deterministic
