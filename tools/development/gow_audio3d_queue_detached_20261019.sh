@@ -8,7 +8,7 @@ SCRIPTS="$ROOT/scripts"
 LOGS="$ROOT/logs"
 SELF="$SCRIPTS/gow_audio3d_queue_detached_20261019.sh"
 BUILD_SCRIPT="$SCRIPTS/gow_audio3d_queue_isolated_launcher_20261019.sh"
-REF="ba408c8c575705d8a48725b20fdd517d9ef849c5"
+REF="64d593036c78883a7044401ea7325ddfbf7c8987"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF"
 mkdir -p "$SCRIPTS" "$LOGS"
 
@@ -23,7 +23,7 @@ if (( $# == 0 )); then
      "$URL/tools/development/gow_audio3d_queue_isolated_launcher_20261019.sh" \
      -o "$BUILD_SCRIPT"
   [[ -f "$BUILD_SCRIPT" && ! -L "$BUILD_SCRIPT" &&
-     "$(git hash-object "$BUILD_SCRIPT")" == "ba8c5cb88a48b17d5a3162a8b8f2b210fe4aefcf" ]] || {
+     "$(git hash-object "$BUILD_SCRIPT")" == "f8a2a5ebe56921308577504de12a3c0012bdf8b0" ]] || {
     echo "BUILD_LAUNCHER_BLOB_HASH_MISMATCH_NO_BUILD"; exit 2;
   }
   bash -n "$BUILD_SCRIPT" || {
