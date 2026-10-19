@@ -508,6 +508,19 @@ cmake -S "$SOURCE" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
         tail -120 "$RUN/info/configure.log"
         STATUS=CONFIGURE_FAILED; exit 2;
     }
+# Fail fast on the exact source file that failed at 141/143 in the
+# previous run, without waiting for the other shader/compiler objects.
+# Ninja's object path is taken from that run's actual build log.
+STATUS=BUILDING_VK_RASTERIZER_OBJECT_FIRST
+nice -n 10 cmake --build "$BUILD" \
+    --target CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o \
+    --parallel 2 > "$RUN/info/vk-rasterizer-object-build.log" 2>&1 || {
+        tail -120 "$RUN/info/vk-rasterizer-object-build.log"
+        STATUS=VK_RASTERIZER_OBJECT_BUILD_FAILED
+        exit 2
+    }
+echo "VK_RASTERIZER_OBJECT_BUILD=PASS" | tee -a "$RUN/host-tests.log"
+
 STATUS=BUILDING_JOBS_2
 nice -n 10 cmake --build "$BUILD" --target shadps4 --parallel 2 \
     > "$RUN/build.log" 2>&1 || {
