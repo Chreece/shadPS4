@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
-// Diagnostic-only GPU readback of the EXACT Vulkan indirect argument buffer
-// consumed by the two GoT draws which showed zero vertex invocations.
+// Diagnostic-only GPU readback of exact Vulkan indirect arguments consumed
+// by the two 5-MRT scene shaders at ordinal 4096/8192 checkpoints.
 // Avoid stale guest CPU mirrors: copy from the actual Vulkan buffer AFTER its
 // draw, using the renderer's normal transfer barriers. Never substitute draw
 // arguments, touch the guest allocation, or change GPU buffer residency.
@@ -59,11 +59,10 @@ inline void CaptureGotSceneGpuIndirectArguments(
     u32 fs_hash, u32 vs_hash) {
     if (!GotIndirectGpuArgumentsEnabled()) return;
 
-    // Only these exact scene indirect draws had zero VS/FS invocations in
-    // the 22:04 GPU queries. Their shader hash and render targets have
-    // already been checked at the call site.
+    // A shader/target-checked GPU pipeline counter checkpoint selects
+    // these calls. This never infers work from guest register num_indices.
     static thread_local u32 probed{};
-    if (probed>=4) return;
+    if (probed>=8) return;
     const u32 probe_id=++probed;
     const u32 limited_count=std::min(max_count,MaxGotIndirectProofCommands);
     const u64 command_bytes=u64(limited_count)*stride;
