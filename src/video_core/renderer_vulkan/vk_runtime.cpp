@@ -11,6 +11,7 @@
 #include "video_core/texture_cache/blit_helper.h"
 #include "video_core/texture_cache/image.h"
 
+#include <cstdlib>
 #include <vulkan/vulkan_format_traits.hpp>
 
 namespace Vulkan {
@@ -704,7 +705,25 @@ bool Runtime::IsBufferAccessed(const VideoCore::Buffer* handle, u64 offset, u64 
     MakeCurrent(handle);
     bool has_access = resource->write_ranges.Overlaps(offset, offset + size);
     if (check_read_access && !has_access) {
-        has_access |= resource->read_ranges.Overlaps(offset, offset + size);
+        const bool prior_read=resource->read_ranges.Overlaps(offset,offset+size);
+        static const bool audit=[] {
+            const char* e=std::getenv("SHADPS4_INDIRECT_WAR_AUDIT");
+            return e && e[0]=='1' && e[1]=='\0';
+        }();
+        if (audit && prior_read) {
+            // Includes indirect-command reads after the fix, but can also
+            // include ordinary buffer reads. Do not overstate provenance.
+            static thread_local u64 n{};
+            ++n;
+            if (n<=16 || n%1024==0) {
+                LOG_INFO(Render_Vulkan,
+                         "GotBufferWAR: kind=WRITE_AFTER_TRACKED_READ "
+                         "counter={} guest_base={:#x} offset={} bytes={} "
+                         "barrier_required=YES",
+                         n,handle->CpuAddr(),offset,size);
+            }
+        }
+        has_access |= prior_read;
     }
     return has_access;
 }
@@ -733,6 +752,25 @@ void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size
     }
     if (src_access & READ_MASK) {
         resource->read_ranges.Add(range);
+    }
+    if (src_access & vk::AccessFlagBits2::eIndirectCommandRead) {
+        static const bool audit=[] {
+            const char* e=std::getenv("SHADPS4_INDIRECT_WAR_AUDIT");
+            return e && e[0]=='1' && e[1]=='\0';
+        }();
+        if (audit) {
+            static thread_local u64 n{};
+            ++n;
+            if (n<=16 || n%4096==0) {
+                const bool correctly_staged=static_cast<bool>(
+                    src_stage & vk::PipelineStageFlagBits2::eDrawIndirect);
+                LOG_INFO(Render_Vulkan,
+                         "GotIndirectReadTracked: count={} guest_base={:#x} "
+                         "offset={} bytes={} "
+                         "draw_indirect_stage={} read_range_registered=YES",
+                         n,handle->CpuAddr(),offset,size,correctly_staged);
+            }
+        }
     }
 
     memory_barrier.srcStageMask |= src_stage;
