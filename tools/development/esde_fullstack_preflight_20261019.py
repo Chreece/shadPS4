@@ -135,7 +135,9 @@ def recent_game_logs():
         used.add(str(p))
         # Keep only bounded tail and fault-centric lines, no games/saves or
         # user config copied. Sources are never included in the upload archive.
-        raw = p.read_bytes()[-220_000:].decode("utf-8", "replace")
+        with p.open("rb") as handle:
+            handle.seek(max(0, p.stat().st_size - 220_000))
+            raw = handle.read().decode("utf-8", "replace")
         lines = raw.splitlines()
         fault = [x for x in lines if re.search(
             r"SIGSEGV|SIGILL|SIGABRT|SIGTRAP|VUID-|Device.?Lost|FAULT|critical|"
@@ -197,10 +199,35 @@ def stage_preflight(report: dict, run: Path):
     if merged.returncode or conflicts.stdout.strip():
         report["stage"]["status"] = "REQUIRES_EXPLICIT_SOURCE_RECONCILIATION_NO_BUILD"
         return
-    report["stage"]["status"] = "GOW_GIT_ANCESTRY_MERGED_ONLY_LOCAL_OVERLAYS_NOT_YET_VERIFIED"
+    # Port exactly the previously source-hash-proven v51 stencil correction.
+    # This is a three-way source merge and may conflict with the newer GoW
+    # rasterizer. A conflict is an explicit stop, never an "ours" override.
+    pre = Path(report["ghost_v51"][GOT_V51_PARENT])
+    post = Path(report["ghost_v51"][GOT_V51_RESULT])
+    raster = staging / GOW_RENDERER
+    current = run / "renderer-current.cpp"
+    current.write_bytes(raster.read_bytes())
+    overlay = command("git", "merge-file", "-p", str(current), str(pre), str(post),
+                      check=False)
+    report["stage"]["ghost_stencil_merge_rc"] = overlay.returncode
+    report["stage"]["ghost_stencil_diff"] = overlay.stdout[-120_000:]
+    if overlay.returncode or "<<<<<<<" in overlay.stdout:
+        report["stage"]["status"] = "GOW_MERGED_GOT_STENCIL_CONFLICT_NO_BUILD"
+        return
+    # A successful 3-way port is *staged only*; it still requires a native
+    # build and runtime validation before being installed.
+    raster.write_text(overlay.stdout)
+    git(staging, "add", "--", GOW_RENDERER)
+    check = git(staging, "diff", "--cached", "--check", check=False)
+    if check.returncode:
+        raise RuntimeError("Compiled-source whitespace/merge checks failed")
+    report["stage"]["status"] = "GOW_SOURCE_PLUS_GOT_V51_STENCIL_STAGED_NO_BUILD"
+    report["stage"]["remaining"] = (
+        "Confirm exact fullgfx object/source fingerprints, then port other "
+        "verified GoT GPU bindings and validate both games in an isolated build. "
+        "Unproven 27K GPU-indexed image feedback deliberately excluded."
+    )
     # Do NOT merge the experimental Ghost 27k-table GPU-feedback branch.
-    # Its last world-visible reference is recorded in report for a focused
-    # stencil/resource port after GoW's exact source+object proof.
 
 
 def main():
