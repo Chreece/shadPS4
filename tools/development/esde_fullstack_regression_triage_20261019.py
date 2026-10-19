@@ -120,6 +120,54 @@ def renderer_from_git_history():
                          "blobs_checked":len(seen)})
     return matches, searches
 
+def check_missing_proven_gpu_contracts():
+    """The old *rendered* build had five checksummed GPU/UFFD files.
+
+    Source evidence: preserved gow-audio3d-build-worker-20261019-103251 log.
+    A contract comparison is not proof that old code works unchanged with
+    upstream's newer C++ API; missing requirements are an actionable port list.
+    """
+    def exists(relative):
+        path = SRC / relative
+        return path.read_text(errors="replace") if path.is_file() else ""
+    raster = exists("src/video_core/renderer_vulkan/vk_rasterizer.cpp")
+    raster_h = exists("src/video_core/renderer_vulkan/vk_rasterizer.h")
+    page = exists("src/video_core/page_manager.cpp")
+    page_h = exists("src/video_core/page_manager.h")
+    gnm = exists("src/core/libraries/gnmdriver/gnmdriver.cpp")
+    keys = {
+        "gpu_deferred_invalidate_method":
+            "Rasterizer::InvalidateMemoryOnGpuThread" in raster,
+        "gpu_deferred_invalidate_decl":
+            "InvalidateMemoryOnGpuThread(" in raster_h,
+        "gpu_pending_invalidate_drain":
+            "page_manager.DrainPendingInvalidations();" in raster,
+        "gpu_drain_api_declaration":
+            "void DrainPendingInvalidations();" in page_h,
+        "gpu_pending_invalidate_memory_state":
+            "pending_gpu_invalidations" in page,
+        "gpu_lifetime_liverpool_before_presenter":
+            (gnm.find("std::unique_ptr<AmdGpu::Liverpool> liverpool;") >= 0 and
+             gnm.find("std::unique_ptr<Vulkan::Presenter> presenter;") >= 0 and
+             gnm.find("std::unique_ptr<AmdGpu::Liverpool> liverpool;") <
+             gnm.find("std::unique_ptr<Vulkan::Presenter> presenter;")),
+        "shader_proven_write_extent":
+            "ComputeProvenWriteSize(" in raster,
+        "texture_gpu_dirty_tracking":
+            "texture_cache.InvalidateMemoryFromGPU(" in raster,
+    }
+    return {"required_contracts":keys,
+            "missing":sorted(k for k,v in keys.items() if not v),
+            "renderer_current_sha256":sha(SRC/"src/video_core/renderer_vulkan/vk_rasterizer.cpp"),
+            "historical_fullgfx_renderer_sha256":RENDERER_SHA,
+            "historical_five_file_sources":{
+                "renderer":"bde3553d3c495fff2f34f177982a8f19e7a71542981d5c5194e8032e78328d0a",
+                "page_manager":"8ddd21535bd66135f98fe8a855528e2e409048873a0fdcc41bcc5312f929ce21",
+                "gnmdriver":"12ae19b6effe8e020e9c5a1f47b886dbc790818d1610566be6c28facd572f62e",
+                "page_manager_header":"f5a661ef28f7b00b5c513da33897a31487990a55f2646f2bb4cab7883c4c7511",
+                "rasterizer_header":"889759b700915f2076ee95ce4af50c5fc8c0c90fee5901c03ec73bff1b165992",
+            }}
+
 def ghost_merge_preview():
     """Fetch pinned reference and preview conflicts; never merge source."""
     if not (SRC / ".git").exists():
@@ -231,6 +279,7 @@ def main():
               "missing_proven_renderer_sha256":RENDERER_SHA}
     result = 0
     try:
+        report["goW_proven_gpu_contract_parity"] = check_missing_proven_gpu_contracts()
         found,status = renderer_from_workspaces()
         report["renderer_search"] = {"local":found, "status":status}
         found_git,stats = renderer_from_git_history()
