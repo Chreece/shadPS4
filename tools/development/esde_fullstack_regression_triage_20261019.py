@@ -612,6 +612,12 @@ def capture_old_got(report: dict, stamp: str):
     if result["process_alive_after_capture"]:
         print("REFERENCE_PROCESS_STILL_RUNNING_USE_HOME_PS_TO_EXIT",flush=True)
     print("GOT_MANUAL_VISUAL_CHECK=HORSE_WORLD_VS_BLACK_SCREEN",flush=True)
+    if result.get("gpu_guard"):
+        result["status"]="GPU_DEVICE_LOST_TEST_ABORTED"
+        return 2
+    result["status"]=("GAME_STILL_RUNNING_NEEDS_MANUAL_HOME_QUIT"
+                      if result["process_alive_after_capture"]
+                      else "GAME_EXITED_VERIFY_VISUALS")
     return 0
 
 def main():
