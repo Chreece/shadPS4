@@ -627,6 +627,38 @@ def apply_changes(proposals, report, plan_dir):
                 dst.unlink()
         raise
 
+def restore_failed_source_trial(report, plan_dir):
+    """Revert only known staged source files after an unsuccessful validation.
+
+    The complete candidate source proposals remain separately in
+    general-engine-merge-<timestamp>/merged/, and failed compiler logs remain.
+    Do not reset Git, user files, game saves or any installed binary.
+    """
+    paths=report.get("source_applied",[])
+    created=set(report.get("newly_added",[]))
+    restored=[]
+    for rel in paths:
+        dst=SOURCE/rel
+        prior=plan_dir/"before"/rel
+        if prior.is_file() and not prior.is_symlink():
+            data=prior.read_bytes()
+            if not dst.is_file() or dst.is_symlink():
+                raise RuntimeError("FAILED_STAGE_RESTORE_TARGET_CHANGED:"+rel)
+            dst.write_bytes(data)
+            os.utime(dst,None)
+            if sha_file(dst)!=sha(data):
+                raise RuntimeError("FAILED_STAGE_RESTORE_VERIFICATION_FAILED:"+rel)
+            restored.append(rel)
+        elif rel in created:
+            if dst.is_file() and not dst.is_symlink():
+                dst.unlink()
+                restored.append(rel)
+        else:
+            raise RuntimeError("FAILED_STAGE_MISSING_ORIGINAL_SNAPSHOT:"+rel)
+    report["source_restored_after_failure"]=restored
+    if len(restored)!=len(paths):
+        raise RuntimeError("FAILED_STAGE_SOURCE_RESTORE_INCOMPLETE")
+
 def focused_native_regressions(report, plan_dir):
     """Compile actual source-aware C++ tests before the full emulator relink."""
     cpp=shutil.which("g++") or shutil.which("clang++") or shutil.which("c++")
@@ -800,8 +832,12 @@ def main():
                     raise RuntimeError("ACTIVE_EMULATOR_SOURCE_STAGE_REFUSED")
                 apply_changes(proposals,report,workdir)
                 report["status"]="SOURCE_APPLIED_NOT_YET_RUNTIME_TESTED"
-                focused_native_regressions(report,workdir)
-                build(report,workdir)
+                try:
+                    focused_native_regressions(report,workdir)
+                    build(report,workdir)
+                except Exception:
+                    restore_failed_source_trial(report,workdir)
+                    raise
                 if report.get("missing_required_gow_contracts"):
                     report["status"]="COMPILED_UNVERIFIED_GOW_GRAPHICS_CONTRACTS_AND_GAMEPLAY"
                 else:
