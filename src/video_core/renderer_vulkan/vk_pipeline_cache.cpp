@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+#include <cstdlib>
 #include <ranges>
 
 #include "common/hash.h"
@@ -27,6 +29,29 @@ using Shader::Output;
 using Shader::SwStage;
 
 constexpr static auto SpirvVersion1_6 = 0x00010600U;
+
+static bool PermutationTraceEnabled() {
+    static const bool enabled = [] {
+        const char* setting = std::getenv("SHADPS4_PERMUTATION_TRACE");
+        return setting && setting[0] == '1' && setting[1] == '\0';
+    }();
+    return enabled;
+}
+
+static std::atomic<u32> permutation_trace_starts{0};
+static std::atomic<u32> permutation_trace_new{0};
+static std::atomic<u32> permutation_trace_reuse{0};
+
+static void TracePermutationEnabled() {
+    if (PermutationTraceEnabled() &&
+        permutation_trace_starts.fetch_add(1, std::memory_order_relaxed) == 0) {
+        LOG_WARNING(Render_Vulkan,
+                    "PERM_TRACE_ACTIVE mode=bounded hash-stage-permutation-layout "
+                    "created_limit=160 reuse_limit=40");
+    }
+}
+
+
 
 constexpr static std::array DescriptorHeapSizes = {
     vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 512},
@@ -656,6 +681,7 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
 PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_stage,
                                                 const Shader::ShaderParams& params,
                                                 Shader::Backend::Bindings& binding) {
+    TracePermutationEnabled();
     auto runtime_info = BuildRuntimeInfo(hw_stage, sw_stage);
     auto [it_pgm, new_program] = program_cache.try_emplace(params.hash);
     if (new_program) {
@@ -675,34 +701,87 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
     }
 
     auto& program = it_pgm.value();
-    auto& info = program->info;
-    info.pgm_base = params.Base(); // Needs to be actualized for inline cbuffer address fixup
-    info.user_data = params.user_data;
-    info.RefreshFlatBuf();
-    auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
+    const auto first_binding = binding;
 
-    size_t perm_idx = program->modules.size();
-    u64 perm_hash = HashCombine(params.hash, perm_idx);
+    // Check every saved shader variation using the Info that produced its
+    // exact SPIR-V module. An incompatible permutation can contain different
+    // buffers, images, image arrays and SRT walker code. The old GoW path
+    // checked only permutation zero's Info and returned it even after
+    // compiling a new shader against a temporary, different Info.
+    for (size_t perm_idx = 0; perm_idx < program->modules.size(); ++perm_idx) {
+        auto& saved = program->modules[perm_idx];
+        if (!saved.spec.Valid() || !saved.module) {
+            continue; // A serialized cache can contain empty index slots.
+        }
+        auto& info = saved.GetInfo(program->info);
+        info.pgm_base = params.Base();
+        info.user_data = params.user_data;
+        info.RefreshFlatBuf();
+        auto current = Shader::StageSpecialization(info, runtime_info, profile, first_binding);
+        if (!(saved.spec == current)) {
+            continue;
+        }
 
-    vk::ShaderModule module{};
-
-    const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
-    if (it == program->modules.end()) {
-        auto new_info = Shader::Info(hw_stage, sw_stage, params);
-        module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
-
-        RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
-        program->AddPermut(module, std::move(spec));
-    } else {
-        info.AddBindings(binding);
-        module = it->module;
-        perm_idx = std::distance(program->modules.begin(), it);
-        perm_hash = HashCombine(params.hash, perm_idx);
+        // The Vulkan binding sequence must match the one that was emitted
+        // for this exact module. Mip-indexed images can consume >1 slot,
+        // unlike Info::AddBindings' ordinary images.size() accounting.
+        binding.buffer += info.buffers.size();
+        binding.unified += info.buffers.size() + info.samplers.size();
+        for (const auto& image : info.images) {
+            binding.unified += image.NumBindings(info);
+        }
+        if (auto& fetch = saved.spec.fetch_shader_data; !fetch.Empty()) {
+            fetch_shader = &fetch;
+        }
+        if (PermutationTraceEnabled() && perm_idx > 0) {
+            const u32 seen = permutation_trace_reuse.fetch_add(1, std::memory_order_relaxed);
+            if (seen < 40 || (seen >= 40 && seen % 512 == 0)) {
+                LOG_WARNING(Render_Vulkan,
+                            "PERM_TRACE_REUSED shader={:#018x} stage={} permutation={} "
+                            "buffers={} images={} samplers={} slot_delta={} sampled={}",
+                            params.hash, u32(sw_stage), perm_idx, info.buffers.size(),
+                            info.images.size(), info.samplers.size(),
+                            binding.unified - first_binding.unified, seen + 1);
+            }
+        }
+        return std::make_tuple(&info, saved.module, HashCombine(params.hash, perm_idx));
     }
+
+    // Compile a new variation using metadata that stays alive for its
+    // module's lifetime. The StageSpecialization is constructed *after*
+    // compilation against that same Info, never against the first program.
+    auto new_info = std::make_unique<Shader::Info>(hw_stage, sw_stage, params);
+    const size_t perm_idx = program->modules.size();
+    const u64 perm_hash = HashCombine(params.hash, perm_idx);
+    const auto module = CompileModule(*new_info, runtime_info, params.code, perm_idx, binding);
+    auto spec = Shader::StageSpecialization(*new_info, runtime_info, profile, first_binding);
+    RegisterShaderMeta(*new_info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
+    if (PermutationTraceEnabled()) {
+        const u32 seen = permutation_trace_new.fetch_add(1, std::memory_order_relaxed);
+        if (seen < 160 || (seen >= 160 && seen % 128 == 0)) {
+            const auto& first = program->info;
+            const bool different_counts = first.buffers.size() != new_info->buffers.size() ||
+                                          first.images.size() != new_info->images.size() ||
+                                          first.samplers.size() != new_info->samplers.size() ||
+                                          first.fmasks.size() != new_info->fmasks.size();
+            LOG_WARNING(Render_Vulkan,
+                        "PERM_TRACE_CREATED shader={:#018x} stage={} permutation={} "
+                        "root_buffers={} root_images={} root_samplers={} root_fmasks={} "
+                        "selected_buffers={} selected_images={} selected_samplers={} "
+                        "selected_fmasks={} different_counts={} compiled_slot_delta={} sampled={}",
+                        params.hash, u32(sw_stage), perm_idx,
+                        first.buffers.size(), first.images.size(), first.samplers.size(),
+                        first.fmasks.size(), new_info->buffers.size(), new_info->images.size(),
+                        new_info->samplers.size(), new_info->fmasks.size(), different_counts,
+                        binding.unified - first_binding.unified, seen + 1);
+        }
+    }
+    Shader::Info* selected_info = new_info.get();
+    program->AddPermut(module, std::move(spec), std::move(new_info));
     if (auto& fetch = program->modules[perm_idx].spec.fetch_shader_data; !fetch.Empty()) {
         fetch_shader = &fetch;
     }
-    return std::make_tuple(&program->info, module, perm_hash);
+    return std::make_tuple(selected_info, module, perm_hash);
 }
 
 std::optional<vk::ShaderModule> PipelineCache::ReplaceShader(vk::ShaderModule module,
