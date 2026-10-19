@@ -450,6 +450,12 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     }
 
     const auto size = stride * max_count;
+    // Snapshot the cache's provenance BEFORE obtaining the indirect argument:
+    // a small read-only buffer may otherwise be mirrored from guest CPU
+    // memory into a stream buffer. The GPU work counters proved zero work;
+    // we must distinguish a genuine GPU-written zero from a stale CPU copy.
+    const bool gpu_modified_before_obtain=
+        buffer_cache.IsRegionGpuModified(arg_address+offset,size);
     const auto [buffer, base] = buffer_cache.ObtainBuffer(arg_address + offset, size);
     needs_barrier |= runtime.IsBufferAccessed(buffer, base, size);
     bound_buffers.emplace_back(buffer, base, size, vk::AccessFlagBits2::eIndirectCommandRead);
@@ -471,6 +477,23 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     UpdateDynamicState(pipeline, is_indexed);
     const auto scene_gpu_query=Diagnostics::PrepareGotSceneGpuQuery(
         instance,scheduler,liverpool->regs,*pipeline,is_indexed,true);
+    if (scene_gpu_query && scene_gpu_query->high_volume) {
+        LOG_INFO(Render_Vulkan,
+                 "GotIndirectArgumentSource: fs={:#x} vs={:#x} "
+                 "pair_ordinal={} arg_guest={:#x} bytes={} "
+                 "gpu_modified_before_obtain={} "
+                 "returned_buffer_type={} returned_cpu_addr={:#x} "
+                 "arena_offset={} stream_buffer={} "
+                 "count_guest={:#x} count_buffer_present={} "
+                 "no_argument_substitution=YES",
+                 scene_gpu_query->fs,scene_gpu_query->vs,
+                 scene_gpu_query->pair_ordinal,arg_address+offset,size,
+                 gpu_modified_before_obtain,
+                 VideoCore::BufferTypeName(buffer->mem_type),
+                 buffer->CpuAddr(),base,
+                 buffer->mem_type==VideoCore::MemoryType::Stream,
+                 count_address,count_address!=0);
+    }
     scheduler.BeginRendering(state);
 
     const auto cmdbuf = scheduler.CommandBuffer();
