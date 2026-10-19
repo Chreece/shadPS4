@@ -157,3 +157,59 @@ This is a **regression isolation and source recovery gate**; it does not
 yet establish that either missing implementation can be transplanted into
 a single upstream main build without breaking the other title. There has
 been no new native build, and neither game's runtime issue is claimed fixed.
+
+## Full-graphics UFFD source reconstruction recovered, October 19
+
+The `gow-audio3d-build-worker-20261019-103251-3738817.log` source
+proof was reviewed with its original scripted restorer. This reveals
+that the merged source audit **did not fully replay** the 20:59–23:14
+runtime-proven GoW UFFD/renderer stack.
+
+Exact five-file post-snapshot SHA-256 values, from that actual compiled
+proof:
+
+| File | Runtime-backed source SHA-256 |
+| --- | --- |
+| `src/video_core/renderer_vulkan/vk_rasterizer.cpp` | `bde3553d3c495fff2f34f177982a8f19e7a71542981d5c5194e8032e78328d0a` |
+| `src/video_core/page_manager.cpp` | `8ddd21535bd66135f98fe8a855528e2e409048873a0fdcc41bcc5312f929ce21` |
+| `src/core/libraries/gnmdriver/gnmdriver.cpp` | `12ae19b6effe8e020e9c5a1f47b886dbc790818d1610566be6c28facd572f62e` |
+| `src/video_core/page_manager.h` | `f5a661ef28f7b00b5c513da33897a31487990a55f2646f2bb4cab7883c4c7511` |
+| `src/video_core/renderer_vulkan/vk_rasterizer.h` | `889759b700915f2076ee95ce4af50c5fc8c0c90fee5901c03ec73bff1b165992` |
+
+**Restoring this renderer does not itself establish that GoW's early
+0xac fault is a GPU error.** That fault occurs before any reported
+device loss and the native game is potentially aborting initialization.
+A controlled A/B against the SHA-pinned older GoW executable remains
+the strongest first discriminator.
+
+Recovery is now reproducible without guessing a missing `bde355`
+file from the user's currently modified worktrees:
+
+- Original protected renderer: SHA-256 `dd2a54cb630d118ea273fc92ac90af611ac2b84e9ec2cca7e65c357101818f58`.
+- Historical deferred-UFFD renderer: SHA-256 `a86fd050d18d3f5b942756bf4e74b69ccb856183f86d526c9346a07f78ab4feb`,
+  exact Git blob `2c8cbda6454aaadd76c060158342e017d60d8127`.
+- Verified restoration script: Git blob
+  `0bb5acf3149c53e58fb4739845fc33538ed32ff8`.
+- Three UFFD/lifetime-support file restorations: helper blob
+  `5e8d17492c592421af95413ba8e00610b66aa255`.
+
+These files are bundled under
+`tools/development/proven_sources_20261019` on the integration
+branch. `esde_fullstack_regression_triage_20261019.py` checksum-verifies
+both old inputs, reconstructs `bde355...`, stages all three support
+changes in an **isolated recovery directory**, and generates
+four independent three-way `git merge-file` previews against the
+newer universal code. Unresolved overlaps remain conflict reports;
+none are overwritten by selecting the old source wholesale. The
+verified page-manager CPP remains a separate recovery dependency,
+not automatically claimed fixed.
+
+The same tool previews the pinned, last horse-visible Ghost source
+commit `e9f470b`, **excluding** the later GPU feedback regression
+and experimental image-table variants. With `--reference-gow`,
+it also runs the SHA-pinned previously rendered GoW ELF against a new
+copy of the precise failed unified run's portable user profile, checking
+at least 8 GiB free GPU VRAM before launch. This can distinguish
+binary/source regression from profile or assets without modifying ES-DE.
+
+No new compiled or playable universal emulator is claimed here.
