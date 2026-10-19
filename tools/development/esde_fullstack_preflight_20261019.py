@@ -357,7 +357,7 @@ def stage_preflight(report: dict, run: Path, resume: bool = False):
             report["stage"]["status"] = "REQUIRES_EXPLICIT_SOURCE_RECONCILIATION_NO_BUILD"
             return
     else:
-        raise RuntimeError('RESUME_CONFLICT_RESOLVER_NOT_INSTALLED')
+        resolve_resume_liverpool(report, run, staging, state, proof_git)
     # The proof's local renderer was compiled from a bounded full-graphics
     # overlay. If its disk version differs from Git HEAD, port THAT exact
     # delta using three-way merging rather than overwriting modern GPU code.
@@ -692,12 +692,23 @@ def main():
                     help="Also try an isolated GoW + Ghost source merge and conflict census")
     ap.add_argument("--build", action="store_true",
                     help="After conflict-free staging, compile one isolated binary, never install")
+    ap.add_argument("--resume-audit", type=Path,
+                    help="Reuse existing failed audit worktree after verifying exact GoW merge state")
     args = ap.parse_args()
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     LOGS.mkdir(parents=True, exist_ok=True)
-    run = ESDE / ("fullstack-audit-" + stamp)
-    run.mkdir(parents=True)
-    record = run / "audit.json"
+    if args.resume_audit is None:
+        run = ESDE / ("fullstack-audit-" + stamp)
+        run.mkdir(parents=True)
+        record = run / "audit.json"
+    else:
+        run = args.resume_audit.expanduser().resolve(strict=True)
+        if (run.parent != ESDE or
+                not re.fullmatch(r"fullstack-audit-\d{8}-\d{6}", run.name) or
+                not (run / "source" / ".git").exists() or
+                not (run / "audit.json").is_file()):
+            raise RuntimeError("RESUME_PATH_IS_NOT_EXACT_EXISTING_PROJECT_CHECKPOINT")
+        record = run / ("audit-resume-" + stamp + ".json")
     archive = LOGS / ("esde-fullstack-audit-" + stamp + ".tar.gz")
     report = {
         "date": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -755,9 +766,9 @@ def main():
             "cause_proven": False,
         },
     }
-    if args.stage or args.build:
+    if args.stage or args.build or args.resume_audit:
         try:
-            stage_preflight(report, run)
+            stage_preflight(report, run, resume=args.resume_audit is not None)
             if args.build:
                 build_staged_source(report, run)
         except Exception as e:
@@ -772,7 +783,7 @@ def main():
     print("FULLSTACK_ARCHIVE="+str(archive))
     for key, ok in report["checks"].items():
         print(key.upper()+"="+str(ok))
-    if args.stage or args.build:
+    if args.stage or args.build or args.resume_audit:
         stage = report.get("stage", {})
         conflicts = (len(stage.get("upstream_conflicts", []))
                      + len(stage.get("conflicts", []))
