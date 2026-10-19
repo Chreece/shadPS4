@@ -189,9 +189,19 @@ def ensure_git_history(report):
         if git("cat-file", "-e", f"{commit}^{{commit}}", check=False).returncode:
             run("git", "-C", SOURCE, "-c", "http.version=HTTP/1.1",
                 "fetch", "--no-tags", "--no-recurse-submodules",
-                "--depth=256", REMOTE, commit, timeout=220)
+                "--depth=512", REMOTE, commit, timeout=240)
         if git("cat-file", "-e", f"{commit}^{{commit}}", check=False).returncode:
             raise RuntimeError("Pinned GoT/base Git history incomplete: " + commit)
+    # A cached shallow branch tip is insufficient: 51 generic C++ fixes
+    # span hundreds of commits. The replay must see their real first parents.
+    missing_ancestry = [
+        prefix for prefix in GENERAL_LATE_COMMITS
+        if git("rev-parse", "--verify", prefix+"^{commit}", check=False).returncode
+    ]
+    if missing_ancestry:
+        run("git", "-C", SOURCE, "-c", "http.version=HTTP/1.1",
+            "fetch", "--no-tags", "--no-recurse-submodules", "--depth=512",
+            REMOTE, GOT_LATE, timeout=300)
     if git("merge-base", "--is-ancestor", GOT, GOT_LATE,
            check=False).returncode:
         raise RuntimeError("Later general GPU source is not descendant of horse-visible baseline")
