@@ -591,9 +591,9 @@ def self_test():
     ESDE.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".general-engine-selftest-",dir=ESDE) as d:
         p=Path(d)
-        base=b"int first=0;\nint second=0;\n"
-        ours=b"int first=1;\nint second=0;\n"
-        got=b"int first=0;\nint second=1;\n"
+        base=b"int first=0;\nint keep=0;\nint second=0;\n"
+        ours=b"int first=1;\nint keep=0;\nint second=0;\n"
+        got=b"int first=0;\nint keep=0;\nint second=1;\n"
         merged,error=merged_bytes(ours,base,got,COMMON,"test.cpp",p)
         assert error is None and merged is not None
         assert b"int first=1;" in merged and b"int second=1;" in merged
