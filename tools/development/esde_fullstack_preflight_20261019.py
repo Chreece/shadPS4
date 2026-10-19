@@ -431,6 +431,17 @@ def build_staged_source(report: dict, run: Path):
               "--mount", f"type=bind,src={ESDE},dst={ESDE}",
               "--workdir", str(run), "--env", "HOME=" + str(run),
               image]
+    pm4_test = source / "tests/pm4_shader_register_window_test.cpp"
+    if pm4_test.is_file() and not pm4_test.is_symlink():
+        run_logged("PM4_WINDOW_400K_COMPILE",
+                   common + ["clang++-19", "-std=c++20", "-O2",
+                             "-Wall", "-Wextra", "-Werror",
+                             "-I", str(source / "src"), str(pm4_test),
+                             "-o", str(run / "pm4_window_test")])
+        run_logged("PM4_WINDOW_400K_RUN", common + [str(run / "pm4_window_test")])
+        report["build"]["pm4_regression"] = "PASS_400000_CASES"
+    else:
+        raise RuntimeError("Missing pinned PM4 shader-register window regression test")
     cmake_args = ["cmake", "-S", str(source), "-B", str(build),
                   "-G", "Ninja", "-DCMAKE_C_COMPILER=clang-19",
                   "-DCMAKE_CXX_COMPILER=clang++-19",
