@@ -7,14 +7,14 @@ GOT="$ROOT/GhostOfTsushima"
 WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
-PIN="c917fafd138eac21df2fb2a99c5afd21f432986a"
+PIN="c8121ad971408e5fb28b2da28de09625fa53efe0"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$PIN"
 HOST_REPORT="${GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT:-$LOGS/got-indexed-sample-feedback-host-not-built.tar.gz}"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 API="http://127.0.0.1:7869"
 MIN_VRAM=$((8*1024*1024*1024))
-SECONDS_TO_RUN=120
+SECONDS_TO_RUN=300
 RUN="$GOT/tests/runs/got-indexed-sample-feedback-runtime-$(date +%Y%m%d-%H%M%S)"
 REPORT="$LOGS/$(basename "$RUN").tar.gz"
 STATUS=PRECHECK
@@ -415,6 +415,19 @@ PY
   find "$RUN/info/unresolved-image-shader" -maxdepth 1 -type f \
     -printf '%f bytes=%s\n' >"$RUN/info/unresolved-image-shader-files.txt"
 
+  mkdir -p "$RUN/info/material-table-shaders"
+  find "$RUN/profile/user/shader/dumps" -maxdepth 1 -type f \
+    \( -iname '*4950cf6*' -o -iname '*55d17c16*' -o -iname '*52b6e003*' \
+       -o -iname '*5c4c2b6f*' -o -iname '*b5c898c7*' \) \
+    -size -6M -print0 2>/dev/null |
+    while IFS= read -r -d '' shader; do
+      cp -p -- "$shader" "$RUN/info/material-table-shaders/$(basename "$shader")" || true
+    done
+  find "$RUN/info/material-table-shaders" -maxdepth 1 -type f \
+    -printf '%f bytes=%s\n' > "$RUN/info/material-table-shader-files.txt"
+  grep -aE 'LiveMaterialPermutation|GuestStridedSourceProof:|GuestTsharpIncompleteProgram:|RealIndexedTSharpEnabled:|RealIndexedTSharpBound:|StridedSamplerBound:|InvalidTSharpSource:|InvalidVSharpSource:' \
+    "$RUN/game.log" > "$RUN/info/indexed-table-transitions.log" || true
+
   if command -v spirv-val >/dev/null 2>&1; then
     validation_files=0
     validation_failures=0
@@ -424,7 +437,8 @@ PY
       if ! spirv-val --target-env vulkan1.3 "$shader" >> "$RUN/info/indexed-shader-validation.log" 2>&1; then
         validation_failures=$((validation_failures+1))
       fi
-    done < <(find "$RUN/info/unresolved-image-shader" -type f -name '*.spv' -print0)
+    done < <(find "$RUN/info/unresolved-image-shader" "$RUN/info/material-table-shaders" \
+      -type f -name '*.spv' -print0)
     echo "SPIRV_FILES=$validation_files FAILURES=$validation_failures" >> "$RUN/info/indexed-shader-validation.log"
     if [ "$validation_failures" -gt 0 ]; then
       STATUS=INDEXED_SHADER_SPIRV_VALIDATION_FAILED
@@ -898,6 +912,8 @@ PYSTAGEPIXELS
     echo "ACTIVE_BINARY_UNCHANGED=$([ -z "$BIN_SHA" ] || [ "$(sha256sum "$BIN" 2>/dev/null | awk '{print $1}')" = "$BIN_SHA" ] && echo YES || echo NO)"
     echo "ISOLATED_SHADPS4_RUN=YES"
     echo "CANDIDATE_SOURCE=$PIN"
+    echo "CAPTURE_DURATION_SECONDS=$SECONDS_TO_RUN"
+    echo "PACKED_AND_STRIDED_TABLE_SIZE_SPECIALIZATION=ENABLED"
     echo "INDEXED_FEEDBACK_SHADER=0x7eaf40ad"
     echo "INDEXED_FEEDBACK_CAPTURE_BINDINGS=1,32,256"
     echo "INDEXED_FEEDBACK_COMPLETED_ROWS=$(grep -ac 'IndexedImageFeedback:.*timeline_complete=YES' "$RUN/game.log" || true)"
@@ -954,6 +970,9 @@ then :; else STATUS=ANOTHER_EMULATOR_RUNNING; exit 2; fi
   STATUS=MISSING_REQUIRED_INPUT; exit 2;
 }
 BIN_SHA="$(sha256sum "$BIN" | awk '{print $1}')"
+find "$WORK/bin-backups" -maxdepth 1 -type f -name 'shadps4*' \
+  -printf '%TY-%Tm-%Td %TH:%TM:%TS bytes=%s %f\n' | sort \
+  > "$RUN/info/available-checkpoints.txt"
 EXPECTED="$(tar -xOzf "$HOST_REPORT" info/candidate-preserved.sha256 2>/dev/null | awk 'NR==1 {print $1}')"
 ACTUAL="$(sha256sum "$CANDIDATE" | awk '{print $1}')"
 if [[ ! "$EXPECTED" =~ ^[0-9a-f]{64}$ ]] || [ "$EXPECTED" != "$ACTUAL" ]; then
@@ -1077,12 +1096,13 @@ PY
 mkdir -p "$RUN/profile/user/shader/got-menu-probes"
 STATUS=GAME_RUNNING
 echo "GAME_START duration=${SECONDS_TO_RUN}s DISPLAY=$DISPLAY_OK"
+echo "ENTER_GAMEPLAY_WITH_YOUR_CONTROLLER; capture stops automatically after five minutes"
 (
   cd "$RUN/profile"
   test -d "$RUN/profile/user"
   export DISPLAY="$DISPLAY_OK"
-  export SHADPS4_STRIDED_SOURCE_PROOF=0
-  export SHADPS4_STRIDED_SOURCE_PROOF_HASHES="0x55d17c16,0x5c4c2b6f"
+  export SHADPS4_STRIDED_SOURCE_PROOF=1
+  export SHADPS4_STRIDED_SOURCE_PROOF_HASHES="0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f"
   export SHADPS4_STRIDED_GUEST_TSHARP=1
   export SHADPS4_GUEST_TSHARP_LARGE_ARRAY=1
   export SHADPS4_GUEST_TSHARP_CACHE=0
@@ -1109,11 +1129,11 @@ echo "GAME_START duration=${SECONDS_TO_RUN}s DISPLAY=$DISPLAY_OK"
   export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x96aa3f2e"
   export SHADPS4_MENU_WATCH_SOURCE=0x1504a08000
   export SHADPS4_RENDER_AUDIT=1
-  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0xc1123f0f,0xc8caf263,0x5116e459,0xae1cc7b7,0x96aa3f2e,0xc0cac3b6,0xb1ec4568,0x7eaf40ad"
-  export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad"
+  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0xc1123f0f,0xc8caf263,0x5116e459,0xae1cc7b7,0x96aa3f2e,0xc0cac3b6,0xb1ec4568,0x7eaf40ad,0xb5c898c7,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f"
+  export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad,0xb5c898c7,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f"
   export SHADPS4_SRT_SOURCE_AUDIT=1
   export SHADPS4_SRT_INLINE_AUDIT=1
-  export SHADPS4_SRT_TRACE_HASHES="0x7eaf40ad"
+  export SHADPS4_SRT_TRACE_HASHES="0x7eaf40ad,0xb5c898c7,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f"
   export SHADPS4_SHARP_MASK_AUDIT=1
   export SHADPS4_SHARP_MASK_AUDIT_HASHES="0x7eaf40ad"
   unset RADV_DEBUG VK_DRIVER_FILES VK_ICD_FILENAMES VK_INSTANCE_LAYERS
@@ -1156,7 +1176,7 @@ while kill -0 "$TEST_PGID" 2>/dev/null; do
     echo "GOT_RUNNING elapsed=${elapsed}s/${SECONDS_TO_RUN}s free_vram=$available gpu_busy=$busy"
     last="$elapsed"
   fi
-  for mark in 20 40 80 95 110 116; do
+  for mark in 20 40 80 95 110 116 150 180 210 240 270 295; do
     if [ "$elapsed" -ge "$mark" ] && [ "$elapsed" -lt $((mark+4)) ] &&
        [ ! -f "$RUN/screenshots/$mark.png" ] && command -v import >/dev/null; then
       timeout 6s import -display "$DISPLAY_OK" -window root \
@@ -1177,24 +1197,13 @@ if [ "$STATUS" = GPU_FAULT_ABORT ] || [ "$STATUS" = RUNTIME_VRAM_CRITICAL_ABORT 
   exit 2
 fi
 if ! grep -aq 'IndexedImageFeedback: shader=0x7eaf40ad.*timeline_complete=YES' "$RUN/game.log"; then
-  STATUS=INDEXED_SAMPLE_FEEDBACK_NOT_COMPLETED
-  echo "NO_COMPLETED_FEEDBACK; no executed-index or sample-value claim"
-  exit 2
+  echo "INDEXED_SAMPLE_FEEDBACK=NOT_CAPTURED; no executed-index or sample-value claim"
 fi
 if ! grep -aq 'GotSceneGpuInvocations:.*high_volume=true' "$RUN/game.log"; then
-  STATUS=GOT_ACTIVE_MENU_INDIRECT_HARDWARE_QUERY_NOT_REACHED
-  echo "ACTIVE_MENU_GPU_QUERY=NOT_ACTIVATED; do not reuse stale shader evidence"
-  exit 2
+  echo "ACTIVE_MENU_GPU_QUERY=NOT_CAPTURED; gameplay may use different pipelines"
 fi
 if ! grep -aq 'GotSceneIndirectGpuArgs:.*GPU_READBACK_PASS' "$RUN/game.log"; then
-  STATUS=GOT_INDIRECT_GPU_ARG_READBACK_NOT_COMPLETED
-  echo "GPU_INDIRECT_ARGUMENT_PROOF_MISSING; do not infer cause of zero GPU invocations"
-  exit 2
-fi
-if ! grep -aq 'GotSceneGpuInvocations:' "$RUN/game.log"; then
-  STATUS=GOT_GPU_QUERY_NO_COMPLETED_RESULTS
-  echo "GPU_QUERY_RESULT_NOT_FOUND; framebuffer interpretation deferred"
-  exit 2
+  echo "GPU_INDIRECT_ARGUMENTS=NOT_CAPTURED; no geometry-count claim"
 fi
 echo "NATIVE_GUEST_RASTER_AND_DEPTH_STATE=UNCHANGED"
 if [ "$GAME_EXIT" -eq 0 ] || [ "$GAME_EXIT" -eq 124 ]; then

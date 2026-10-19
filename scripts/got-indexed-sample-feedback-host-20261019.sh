@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build bounded indexed-image feedback on the verified shader/synchronization base. No game, Vulkan init, service changes,
+# Build indexed-table specialization repair and bounded feedback. No game, Vulkan init, service changes,
 # Git checkout, submodule update, profile writes, or SSH exit.
 set -Eeuo pipefail
 ROOT="$HOME/projects/shadps4"
@@ -10,7 +10,7 @@ BUILD="$WORK/build"
 BIN="$BUILD/shadps4"
 LOGS="$ROOT/logs"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
-CANDIDATE="c917fafd138eac21df2fb2a99c5afd21f432986a"
+CANDIDATE="c8121ad971408e5fb28b2da28de09625fa53efe0"
 BRANCH="diagnostic/got-indexed-sample-feedback-20261019"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 NAME="got-indexed-sample-feedback-host-$STAMP"
@@ -516,9 +516,9 @@ assert "IsVaryingLocalInvocationComponent(" in lds
 assert "FindDivergentLoops(program.syntax_list, runtime_info)" in lds
 assert "EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth, runtime_info)" in lds
 assert "op == IR::Opcode::InverseBallot || op == IR::Opcode::GetUserData" in phi
-assert "ShaderBinaryVersion = 46u;" in serial
+assert "ShaderBinaryVersion = 47u;" in serial
 print("GOT_SHADER_UPSTREAM_CORRECTNESS_WIRING=PASS "
-      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=46")
+      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=47")
 print("GOT_INDIRECT_PRODUCER_SOURCE_WIRING=PASS exact_watch=8 "
       "buffer_shader=YES compute_dispatch=YES cpu_upload=YES vk_copy=YES")
 # The previous host link failed at rasterizer.cpp:492: an undefined
