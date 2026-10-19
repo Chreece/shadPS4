@@ -30,6 +30,7 @@ GOT_VISUAL_REF = "e9f470b359845a456139a865aa1d7b3001f0dbfd"
 GOW = ROOT / "GodOfWarRagnarok"
 GOT = ROOT / "GhostOfTsushima"
 GOW_SOURCE = GOW / "tests/native-rendered-gfx-20261016-152535-3014679/source"
+GOW_HOTPATH_SOURCE = GOW / "tests/gow-renderer-log-hotpath-20261017/source"
 GOW_RENDERER = "src/video_core/renderer_vulkan/vk_rasterizer.cpp"
 GOW_RENDERER_SHA = "bde3553d3c495fff2f34f177982a8f19e7a71542981d5c5194e8032e78328d0a"
 GOW_BIN = GOW / ("tests/gow-renderer-log-hotpath-20261017/build/"
@@ -212,6 +213,38 @@ def stage_preflight(report: dict, run: Path):
     if merged.returncode or conflicts.stdout.strip():
         report["stage"]["status"] = "REQUIRES_EXPLICIT_SOURCE_RECONCILIATION_NO_BUILD"
         return
+    # The proof's local renderer was compiled from a bounded full-graphics
+    # overlay. If its disk version differs from Git HEAD, port THAT exact
+    # delta using three-way merging rather than overwriting modern GPU code.
+    renderer_root = next((root for root in (GOW_SOURCE, GOW_HOTPATH_SOURCE)
+                          if digest(root / GOW_RENDERER) == GOW_RENDERER_SHA), None)
+    if renderer_root is None:
+        raise RuntimeError("No exact proven GoW renderer source available")
+    tested_renderer = renderer_root / GOW_RENDERER
+    baseline = git(renderer_root, "show", "HEAD:" + GOW_RENDERER, check=False)
+    if baseline.returncode:
+        raise RuntimeError("Proven renderer has no Git base for safe 3-way port")
+    local_overlay = tested_renderer.read_text()
+    if local_overlay != baseline.stdout:
+        ours = run / "renderer-before-gow.cpp"
+        old = run / "renderer-original-gow.cpp"
+        new = run / "renderer-proven-gow.cpp"
+        ours.write_bytes((staging / GOW_RENDERER).read_bytes())
+        old.write_text(baseline.stdout)
+        new.write_text(local_overlay)
+        overlay = command("git", "merge-file", "-p", str(ours), str(old), str(new), check=False)
+        report["stage"]["gow_renderer_overlay_rc"] = overlay.returncode
+        if overlay.returncode or "<<<<<<<" in overlay.stdout:
+            report["stage"]["gow_renderer_conflict"] = overlay.stdout[-120_000:]
+            report["stage"]["status"] = "GOW_RENDERER_PROVEN_OVERLAY_CONFLICT_NO_BUILD"
+            return
+        (staging / GOW_RENDERER).write_text(overlay.stdout)
+        git(staging, "add", "--", GOW_RENDERER)
+        report["stage"]["gow_exact_renderer_source_ported"] = True
+    else:
+        report["stage"]["gow_exact_renderer_source_ported"] = False
+        report["stage"]["gow_renderer_already_git_tracked"] = True
+
     # Port exactly the previously source-hash-proven v51 stencil correction.
     # This is a three-way source merge and may conflict with the newer GoW
     # rasterizer. A conflict is an explicit stop, never an "ours" override.
@@ -259,7 +292,8 @@ def main():
         "installed_binary": {"path": str(UNIFIED_BIN), "sha256": digest(UNIFIED_BIN)},
         "goW_proven_binary": {"path": str(GOW_BIN), "sha256": digest(GOW_BIN)},
         "source": {"unified": source_status(UNIFIED_SOURCE),
-                   "gow": source_status(GOW_SOURCE)},
+                   "gow": source_status(GOW_SOURCE),
+                   "gow_hotpath": source_status(GOW_HOTPATH_SOURCE)},
         "ghost_v51": find_got_stencil_files(),
         "goW_checkpoint": GOW_REF, "goT_world_visible": GOT_VISUAL_REF,
         "official_upstream_20261019": UPSTREAM_SHA,
@@ -271,7 +305,8 @@ def main():
         "installed_unified_matches_known_sha": digest(UNIFIED_BIN) == UNIFIED_SHA,
         "gow_binary_matches_proven_sha": digest(GOW_BIN) == GOW_BIN_SHA,
         "gow_renderer_matches_proven_sha":
-            digest(GOW_SOURCE / GOW_RENDERER) == GOW_RENDERER_SHA,
+            any(digest(root / GOW_RENDERER) == GOW_RENDERER_SHA
+                for root in (GOW_SOURCE, GOW_HOTPATH_SOURCE)),
         "got_v51_both_source_versions_found":
             all(h in report["ghost_v51"] for h in (GOT_V51_PARENT, GOT_V51_RESULT)),
         "unified_lacks_guest_cpuid_source":
