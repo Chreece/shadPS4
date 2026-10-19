@@ -50,3 +50,32 @@ Only after at least one comparable live scene in BOTH titles should
 the new core be considered for selection by
 `esde_unified_select.sh`. Keep the previous launcher, backup, saved
 game builds, and never replace a live process.
+
+## Pinned isolated test launcher
+
+`tools/development/esde_fullstack_game_playtest_20261019.sh` can be
+downloaded together with the generic observer from the integration
+branch at commit `0e871e3edf115d9cbb89f97c52ed97ae81673407`.
+
+Run `bash .../esde_fullstack_game_playtest_20261019.sh CUSA34384 180`
+for GoW first, and only after it exits and its game process is closed,
+`bash .../esde_fullstack_game_playtest_20261019.sh CUSA11456 180`
+for Ghost. The launcher:
+- Checks the built candidate SHA-256 before execution.
+- Refuses another active emulator/ES-DE or an unavailable X11 display.
+- Requires 8 GiB currently free VRAM on the AMD GPU; **does not stop Ollama**.
+- Clones the existing user profile to
+  `~/projects/shadps4/ESDE/playtest-<CUSA>-<timestamp>/user/`,
+  skipping stale shader caches and logs. No symlinks are copied; a
+  strict 2 GiB copied-profile limit prevents unexpectedly large clones.
+- Clears guest home, firmware/font and add-on override directories in
+  the **cloned** `config.json`, leaving original saves and settings alone.
+- Preserves the original process if it's still live at the end of the
+  observation; it never kills a game to start another test. Use Home/PS
+  to quit normally.
+- Writes runtime evidence under the project `logs/` folder and prints
+  `UPLOAD_THIS=...tar.gz`.
+
+The general-purpose executable has **not** yet passed either game's
+live visual acceptance. An audio-log line, process-alive status or
+shader-pipeline count alone is insufficient for promotion.
