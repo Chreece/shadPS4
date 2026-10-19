@@ -1,0 +1,1262 @@
+{
+  "schema": 1,
+  "description": "GitHub compare inventory of runtime changes; not an inclusion or gameplay certification",
+  "source": "GitHub compare from exact 2026-10-19 upstream SHA",
+  "base": "d615b3887ba29025a59242e1a26f5b68bb176158",
+  "groups": [
+    {
+      "key": "gow_general",
+      "ref": "f909c3abb1ac1e7c8d87de833d3659f7d0b8fc87",
+      "source": "2016-10-17 GoW UFFD full-graphics source ancestry; local overlays require SHA proof",
+      "status": "diverged",
+      "ahead_by": 155,
+      "behind_by": 11,
+      "merge_base": "32021e41bc52f744c80d122e732e24e97496c98d",
+      "files": [
+        {
+          "path": "CMakeLists.txt",
+          "status": "modified",
+          "changes": 10
+        },
+        {
+          "path": "src/common/logging/log.cpp",
+          "status": "modified",
+          "changes": 12
+        },
+        {
+          "path": "src/core/address_space.cpp",
+          "status": "modified",
+          "changes": 8
+        },
+        {
+          "path": "src/core/cpu_affinity.cpp",
+          "status": "added",
+          "changes": 221
+        },
+        {
+          "path": "src/core/cpu_affinity.h",
+          "status": "added",
+          "changes": 22
+        },
+        {
+          "path": "src/core/cpu_id.cpp",
+          "status": "added",
+          "changes": 387
+        },
+        {
+          "path": "src/core/cpu_id.h",
+          "status": "added",
+          "changes": 34
+        },
+        {
+          "path": "src/core/cpu_id_guest.h",
+          "status": "added",
+          "changes": 99
+        },
+        {
+          "path": "src/core/cpu_id_guest_ranges.h",
+          "status": "added",
+          "changes": 63
+        },
+        {
+          "path": "src/core/cpu_id_translation/launcher.cpp",
+          "status": "added",
+          "changes": 146
+        },
+        {
+          "path": "src/core/cpu_id_translation/launcher.h",
+          "status": "added",
+          "changes": 12
+        },
+        {
+          "path": "src/core/cpu_id_trap_table.h",
+          "status": "added",
+          "changes": 92
+        },
+        {
+          "path": "src/core/cpu_patches.cpp",
+          "status": "modified",
+          "changes": 109
+        },
+        {
+          "path": "src/core/cpu_patches.h",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/core/libraries/audio/audioout.cpp",
+          "status": "modified",
+          "changes": 162
+        },
+        {
+          "path": "src/core/libraries/audio/audioout_health.h",
+          "status": "added",
+          "changes": 50
+        },
+        {
+          "path": "src/core/libraries/audio/audioout_sync.h",
+          "status": "added",
+          "changes": 60
+        },
+        {
+          "path": "src/core/libraries/audio/openal_audio_out.cpp",
+          "status": "modified",
+          "changes": 76
+        },
+        {
+          "path": "src/core/libraries/audio/sdl_audio_out.cpp",
+          "status": "modified",
+          "changes": 76
+        },
+        {
+          "path": "src/core/libraries/audio3d/audio3d.cpp",
+          "status": "modified",
+          "changes": 4
+        },
+        {
+          "path": "src/core/libraries/gnmdriver/gnmdriver.cpp",
+          "status": "modified",
+          "changes": 4
+        },
+        {
+          "path": "src/core/libraries/kernel/module_filename_validation.h",
+          "status": "added",
+          "changes": 24
+        },
+        {
+          "path": "src/core/libraries/kernel/process.cpp",
+          "status": "modified",
+          "changes": 23
+        },
+        {
+          "path": "src/core/libraries/kernel/process.h",
+          "status": "modified",
+          "changes": 3
+        },
+        {
+          "path": "src/core/libraries/kernel/threads/pthread.cpp",
+          "status": "modified",
+          "changes": 165
+        },
+        {
+          "path": "src/core/libraries/kernel/threads/pthread.h",
+          "status": "modified",
+          "changes": 6
+        },
+        {
+          "path": "src/core/memory.cpp",
+          "status": "modified",
+          "changes": 111
+        },
+        {
+          "path": "src/core/module.cpp",
+          "status": "modified",
+          "changes": 20
+        },
+        {
+          "path": "src/core/signals.cpp",
+          "status": "modified",
+          "changes": 29
+        },
+        {
+          "path": "src/core/thread.cpp",
+          "status": "modified",
+          "changes": 73
+        },
+        {
+          "path": "src/core/thread.h",
+          "status": "modified",
+          "changes": 11
+        },
+        {
+          "path": "src/main.cpp",
+          "status": "modified",
+          "changes": 29
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/resource_patching_pass.cpp",
+          "status": "modified",
+          "changes": 20
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp",
+          "status": "modified",
+          "changes": 29
+        },
+        {
+          "path": "src/video_core/amdgpu/liverpool.cpp",
+          "status": "modified",
+          "changes": 86
+        },
+        {
+          "path": "src/video_core/amdgpu/pm4_register_write.h",
+          "status": "added",
+          "changes": 49
+        },
+        {
+          "path": "src/video_core/page_manager.cpp",
+          "status": "modified",
+          "changes": 495
+        },
+        {
+          "path": "src/video_core/page_manager.h",
+          "status": "modified",
+          "changes": 12
+        },
+        {
+          "path": "src/video_core/protection_range_coalescer.h",
+          "status": "added",
+          "changes": 23
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
+          "status": "modified",
+          "changes": 33
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_rasterizer.h",
+          "status": "modified",
+          "changes": 6
+        },
+        {
+          "path": "src/video_core/uffd_range.h",
+          "status": "added",
+          "changes": 36
+        }
+      ]
+    },
+    {
+      "key": "got_visual",
+      "ref": "e9f470b359845a456139a865aa1d7b3001f0dbfd",
+      "source": "Oct17 Ghost world-visible partial graphics branch; experimental GPU-indexed renderer not wholesale promoted",
+      "status": "diverged",
+      "ahead_by": 49,
+      "behind_by": 6,
+      "merge_base": "e6c79a5fe0ea2f3d03fcb9c5c50cf61af063f3f5",
+      "files": [
+        {
+          "path": "CMakeLists.txt",
+          "status": "modified",
+          "changes": 3
+        },
+        {
+          "path": "src/core/address_space.cpp",
+          "status": "modified",
+          "changes": 8
+        },
+        {
+          "path": "src/core/cpu_id.cpp",
+          "status": "added",
+          "changes": 429
+        },
+        {
+          "path": "src/core/cpu_id.h",
+          "status": "added",
+          "changes": 25
+        },
+        {
+          "path": "src/core/cpu_patches.cpp",
+          "status": "modified",
+          "changes": 147
+        },
+        {
+          "path": "src/core/guest_cpu_selection.h",
+          "status": "added",
+          "changes": 76
+        },
+        {
+          "path": "src/core/libraries/kernel/process.cpp",
+          "status": "modified",
+          "changes": 39
+        },
+        {
+          "path": "src/core/libraries/kernel/process.h",
+          "status": "modified",
+          "changes": 4
+        },
+        {
+          "path": "src/core/libraries/kernel/threads/pthread.cpp",
+          "status": "modified",
+          "changes": 73
+        },
+        {
+          "path": "src/core/libraries/kernel/threads/pthread.h",
+          "status": "modified",
+          "changes": 5
+        },
+        {
+          "path": "src/core/libraries/kernel/threads/thread_state.cpp",
+          "status": "modified",
+          "changes": 4
+        },
+        {
+          "path": "src/core/libraries/libc_internal/cxa_guard_registry.h",
+          "status": "added",
+          "changes": 72
+        },
+        {
+          "path": "src/core/libraries/libc_internal/libc_internal_memory.cpp",
+          "status": "modified",
+          "changes": 119
+        },
+        {
+          "path": "src/core/libraries/libc_internal/libc_internal_threads.cpp",
+          "status": "modified",
+          "changes": 20
+        },
+        {
+          "path": "src/core/libraries/libc_internal/mspace_allocator.h",
+          "status": "added",
+          "changes": 272
+        },
+        {
+          "path": "src/core/linux_guest_tsc.h",
+          "status": "added",
+          "changes": 21
+        },
+        {
+          "path": "src/core/signals.cpp",
+          "status": "modified",
+          "changes": 11
+        },
+        {
+          "path": "src/core/thread.cpp",
+          "status": "modified",
+          "changes": 6
+        },
+        {
+          "path": "src/input/controller.cpp",
+          "status": "modified",
+          "changes": 84
+        },
+        {
+          "path": "src/input/controller.h",
+          "status": "modified",
+          "changes": 7
+        },
+        {
+          "path": "src/input/gamepad_hotplug_snapshot.h",
+          "status": "added",
+          "changes": 55
+        },
+        {
+          "path": "src/input/input_handler.cpp",
+          "status": "modified",
+          "changes": 17
+        },
+        {
+          "path": "src/sdl_window.cpp",
+          "status": "modified",
+          "changes": 111
+        },
+        {
+          "path": "src/sdl_window.h",
+          "status": "modified",
+          "changes": 4
+        },
+        {
+          "path": "src/shader_recompiler/backend/spirv/emit_spirv.cpp",
+          "status": "modified",
+          "changes": 44
+        },
+        {
+          "path": "src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp",
+          "status": "modified",
+          "changes": 105
+        },
+        {
+          "path": "src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp",
+          "status": "modified",
+          "changes": 21
+        },
+        {
+          "path": "src/shader_recompiler/backend/spirv/emit_spirv_image.cpp",
+          "status": "modified",
+          "changes": 69
+        },
+        {
+          "path": "src/shader_recompiler/backend/spirv/emit_spirv_instructions.h",
+          "status": "modified",
+          "changes": 4
+        },
+        {
+          "path": "src/shader_recompiler/backend/spirv/emit_spirv_integer.cpp",
+          "status": "modified",
+          "changes": 17
+        },
+        {
+          "path": "src/shader_recompiler/backend/spirv/emit_spirv_warp.cpp",
+          "status": "modified",
+          "changes": 5
+        },
+        {
+          "path": "src/shader_recompiler/backend/spirv/spirv_emit_context.cpp",
+          "status": "modified",
+          "changes": 29
+        },
+        {
+          "path": "src/shader_recompiler/backend/spirv/spirv_emit_context.h",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/shader_recompiler/frontend/translate/scalar_alu.cpp",
+          "status": "modified",
+          "changes": 39
+        },
+        {
+          "path": "src/shader_recompiler/guest_tsharp_array.h",
+          "status": "added",
+          "changes": 23
+        },
+        {
+          "path": "src/shader_recompiler/info.h",
+          "status": "modified",
+          "changes": 1
+        },
+        {
+          "path": "src/shader_recompiler/ir/ir_emitter.cpp",
+          "status": "modified",
+          "changes": 11
+        },
+        {
+          "path": "src/shader_recompiler/ir/ir_emitter.h",
+          "status": "modified",
+          "changes": 5
+        },
+        {
+          "path": "src/shader_recompiler/ir/opcodes.inc",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
+          "status": "modified",
+          "changes": 699
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/image_phi_preflight.h",
+          "status": "added",
+          "changes": 14
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/indexed_image_selector.h",
+          "status": "added",
+          "changes": 101
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/ir_passes.h",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/lower_hardware_intrinsics.cpp",
+          "status": "modified",
+          "changes": 87
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/resource_discover_pass.cpp",
+          "status": "modified",
+          "changes": 607
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/resource_pass.h",
+          "status": "modified",
+          "changes": 7
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/resource_patching_pass.cpp",
+          "status": "modified",
+          "changes": 366
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/sbuffer_guest_address.h",
+          "status": "added",
+          "changes": 30
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp",
+          "status": "modified",
+          "changes": 13
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/sharp_dword_mask.h",
+          "status": "added",
+          "changes": 22
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/sharp_fetch_coalesce.h",
+          "status": "added",
+          "changes": 37
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/srt_dependency_schedule.h",
+          "status": "added",
+          "changes": 70
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/srt_host_barrier.h",
+          "status": "added",
+          "changes": 126
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/srt_inline_read_codegen.h",
+          "status": "added",
+          "changes": 83
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/srt_offset_codegen.h",
+          "status": "added",
+          "changes": 62
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/srt_offset_preflight.h",
+          "status": "added",
+          "changes": 144
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/srt_proven_identity.h",
+          "status": "added",
+          "changes": 82
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/srt_uniformity.h",
+          "status": "added",
+          "changes": 102
+        },
+        {
+          "path": "src/shader_recompiler/ir/program.cpp",
+          "status": "modified",
+          "changes": 3
+        },
+        {
+          "path": "src/shader_recompiler/nonuniform_image_features.h",
+          "status": "added",
+          "changes": 13
+        },
+        {
+          "path": "src/shader_recompiler/profile.h",
+          "status": "modified",
+          "changes": 3
+        },
+        {
+          "path": "src/shader_recompiler/recompiler.cpp",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/shader_recompiler/resource.h",
+          "status": "modified",
+          "changes": 33
+        },
+        {
+          "path": "src/shader_recompiler/runtime_info.h",
+          "status": "modified",
+          "changes": 5
+        },
+        {
+          "path": "src/shader_recompiler/targeted_shader_dump.h",
+          "status": "added",
+          "changes": 23
+        },
+        {
+          "path": "src/video_core/amdgpu/liverpool.cpp",
+          "status": "modified",
+          "changes": 61
+        },
+        {
+          "path": "src/video_core/amdgpu/pixel_format.h",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/video_core/amdgpu/pm4_cmds.h",
+          "status": "modified",
+          "changes": 20
+        },
+        {
+          "path": "src/video_core/amdgpu/pm4_register_write.h",
+          "status": "added",
+          "changes": 49
+        },
+        {
+          "path": "src/video_core/buffer_cache/buffer.cpp",
+          "status": "modified",
+          "changes": 3
+        },
+        {
+          "path": "src/video_core/buffer_cache/buffer_cache.cpp",
+          "status": "modified",
+          "changes": 154
+        },
+        {
+          "path": "src/video_core/buffer_cache/buffer_cache.h",
+          "status": "modified",
+          "changes": 18
+        },
+        {
+          "path": "src/video_core/buffer_cache/sparse_arena_policy.h",
+          "status": "added",
+          "changes": 64
+        },
+        {
+          "path": "src/video_core/page_manager.cpp",
+          "status": "modified",
+          "changes": 14
+        },
+        {
+          "path": "src/video_core/protection_range_coalescer.h",
+          "status": "added",
+          "changes": 23
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/minmax_alpha_scale.h",
+          "status": "added",
+          "changes": 35
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/minmax_src_alpha_one.h",
+          "status": "added",
+          "changes": 40
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/resource_audit_hash_filter.h",
+          "status": "added",
+          "changes": 56
+        }
+      ]
+    },
+    {
+      "key": "goW_oct19",
+      "ref": "e04fc8ab8c1ca6323fcf8af98f21e294128edbdd",
+      "source": "Oct19 GoW latest development branch, added diagnostics and unverified variants",
+      "status": "diverged",
+      "ahead_by": 317,
+      "behind_by": 11,
+      "merge_base": "32021e41bc52f744c80d122e732e24e97496c98d",
+      "files": [
+        {
+          "path": "CMakeLists.txt",
+          "status": "modified",
+          "changes": 10
+        },
+        {
+          "path": "src/common/logging/log.cpp",
+          "status": "modified",
+          "changes": 12
+        },
+        {
+          "path": "src/core/address_space.cpp",
+          "status": "modified",
+          "changes": 8
+        },
+        {
+          "path": "src/core/cpu_affinity.cpp",
+          "status": "added",
+          "changes": 221
+        },
+        {
+          "path": "src/core/cpu_affinity.h",
+          "status": "added",
+          "changes": 22
+        },
+        {
+          "path": "src/core/cpu_id.cpp",
+          "status": "added",
+          "changes": 387
+        },
+        {
+          "path": "src/core/cpu_id.h",
+          "status": "added",
+          "changes": 34
+        },
+        {
+          "path": "src/core/cpu_id_guest.h",
+          "status": "added",
+          "changes": 99
+        },
+        {
+          "path": "src/core/cpu_id_guest_ranges.h",
+          "status": "added",
+          "changes": 63
+        },
+        {
+          "path": "src/core/cpu_id_translation/launcher.cpp",
+          "status": "added",
+          "changes": 146
+        },
+        {
+          "path": "src/core/cpu_id_translation/launcher.h",
+          "status": "added",
+          "changes": 12
+        },
+        {
+          "path": "src/core/cpu_id_trap_table.h",
+          "status": "added",
+          "changes": 92
+        },
+        {
+          "path": "src/core/cpu_patches.cpp",
+          "status": "modified",
+          "changes": 109
+        },
+        {
+          "path": "src/core/cpu_patches.h",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/core/libraries/audio/audioout.cpp",
+          "status": "modified",
+          "changes": 162
+        },
+        {
+          "path": "src/core/libraries/audio/audioout_health.h",
+          "status": "added",
+          "changes": 50
+        },
+        {
+          "path": "src/core/libraries/audio/audioout_sync.h",
+          "status": "added",
+          "changes": 60
+        },
+        {
+          "path": "src/core/libraries/audio/openal_audio_out.cpp",
+          "status": "modified",
+          "changes": 76
+        },
+        {
+          "path": "src/core/libraries/audio/sdl_audio_out.cpp",
+          "status": "modified",
+          "changes": 76
+        },
+        {
+          "path": "src/core/libraries/audio3d/audio3d.cpp",
+          "status": "modified",
+          "changes": 10
+        },
+        {
+          "path": "src/core/libraries/gnmdriver/gnmdriver.cpp",
+          "status": "modified",
+          "changes": 4
+        },
+        {
+          "path": "src/core/libraries/kernel/module_filename_validation.h",
+          "status": "added",
+          "changes": 24
+        },
+        {
+          "path": "src/core/libraries/kernel/process.cpp",
+          "status": "modified",
+          "changes": 23
+        },
+        {
+          "path": "src/core/libraries/kernel/process.h",
+          "status": "modified",
+          "changes": 3
+        },
+        {
+          "path": "src/core/libraries/kernel/threads/pthread.cpp",
+          "status": "modified",
+          "changes": 165
+        },
+        {
+          "path": "src/core/libraries/kernel/threads/pthread.h",
+          "status": "modified",
+          "changes": 6
+        },
+        {
+          "path": "src/core/memory.cpp",
+          "status": "modified",
+          "changes": 111
+        },
+        {
+          "path": "src/core/module.cpp",
+          "status": "modified",
+          "changes": 20
+        },
+        {
+          "path": "src/core/signals.cpp",
+          "status": "modified",
+          "changes": 29
+        },
+        {
+          "path": "src/core/thread.cpp",
+          "status": "modified",
+          "changes": 73
+        },
+        {
+          "path": "src/core/thread.h",
+          "status": "modified",
+          "changes": 11
+        },
+        {
+          "path": "src/main.cpp",
+          "status": "modified",
+          "changes": 29
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
+          "status": "modified",
+          "changes": 4
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/resource_patching_pass.cpp",
+          "status": "modified",
+          "changes": 20
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp",
+          "status": "modified",
+          "changes": 29
+        },
+        {
+          "path": "src/shader_recompiler/ir/passes/srt_dependency_retry.h",
+          "status": "added",
+          "changes": 66
+        },
+        {
+          "path": "src/video_core/amdgpu/liverpool.cpp",
+          "status": "modified",
+          "changes": 86
+        },
+        {
+          "path": "src/video_core/amdgpu/pm4_register_write.h",
+          "status": "added",
+          "changes": 49
+        },
+        {
+          "path": "src/video_core/buffer_cache/region_manager.h",
+          "status": "modified",
+          "changes": 46
+        },
+        {
+          "path": "src/video_core/buffer_cache/sparse_cpu_upload_words.h",
+          "status": "added",
+          "changes": 34
+        },
+        {
+          "path": "src/video_core/page_manager.cpp",
+          "status": "modified",
+          "changes": 639
+        },
+        {
+          "path": "src/video_core/page_manager.h",
+          "status": "modified",
+          "changes": 12
+        },
+        {
+          "path": "src/video_core/protection_range_coalescer.h",
+          "status": "added",
+          "changes": 23
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
+          "status": "modified",
+          "changes": 33
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_rasterizer.h",
+          "status": "modified",
+          "changes": 6
+        },
+        {
+          "path": "src/video_core/uffd_hotregion_sampler.h",
+          "status": "added",
+          "changes": 92
+        },
+        {
+          "path": "src/video_core/uffd_range.h",
+          "status": "added",
+          "changes": 36
+        }
+      ]
+    },
+    {
+      "key": "old_unified",
+      "ref": "Pre-release-shadPS4-esde-unified-20261018",
+      "source": "Oct18 installed unified feature branch; pin source installation by local binary SHA",
+      "status": "diverged",
+      "ahead_by": 98,
+      "behind_by": 100,
+      "merge_base": "c7e065d1b415be16c23e260a21f1dd8bbfc4cb57",
+      "files": [
+        {
+          "path": "CMakeLists.txt",
+          "status": "modified",
+          "changes": 26
+        },
+        {
+          "path": "cmake/LibAtrac9.cmake",
+          "status": "added",
+          "changes": 34
+        },
+        {
+          "path": "src/common/atrac9_lock.h",
+          "status": "added",
+          "changes": 17
+        },
+        {
+          "path": "src/common/io_file.cpp",
+          "status": "modified",
+          "changes": 21
+        },
+        {
+          "path": "src/common/io_file.h",
+          "status": "modified",
+          "changes": 4
+        },
+        {
+          "path": "src/core/devtools/layer.cpp",
+          "status": "modified",
+          "changes": 60
+        },
+        {
+          "path": "src/core/devtools/layer.h",
+          "status": "modified",
+          "changes": 4
+        },
+        {
+          "path": "src/core/devtools/quit_dialog.h",
+          "status": "added",
+          "changes": 119
+        },
+        {
+          "path": "src/core/libraries/ajm/ajm_at9.cpp",
+          "status": "modified",
+          "changes": 5
+        },
+        {
+          "path": "src/core/libraries/kernel/file_system.cpp",
+          "status": "modified",
+          "changes": 37
+        },
+        {
+          "path": "src/core/libraries/kernel/kernel.cpp",
+          "status": "modified",
+          "changes": 28
+        },
+        {
+          "path": "src/core/libraries/kernel/sanitizer.cpp",
+          "status": "added",
+          "changes": 32
+        },
+        {
+          "path": "src/core/libraries/kernel/sanitizer.h",
+          "status": "added",
+          "changes": 19
+        },
+        {
+          "path": "src/core/libraries/kernel/thread_atexit.cpp",
+          "status": "added",
+          "changes": 71
+        },
+        {
+          "path": "src/core/libraries/kernel/thread_atexit.h",
+          "status": "added",
+          "changes": 37
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/decoder.cpp",
+          "status": "added",
+          "changes": 205
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/decoder.h",
+          "status": "added",
+          "changes": 61
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/diagnostics.h",
+          "status": "added",
+          "changes": 92
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/direct_filter.h",
+          "status": "added",
+          "changes": 53
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/guest_memory.cpp",
+          "status": "added",
+          "changes": 12
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/guest_memory.h",
+          "status": "added",
+          "changes": 35
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/handles.cpp",
+          "status": "added",
+          "changes": 183
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/handles.h",
+          "status": "added",
+          "changes": 83
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/lfe_diagnostics.h",
+          "status": "added",
+          "changes": 91
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/playback.cpp",
+          "status": "added",
+          "changes": 238
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/playback.h",
+          "status": "added",
+          "changes": 89
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/runtime.h",
+          "status": "added",
+          "changes": 47
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/voice.cpp",
+          "status": "added",
+          "changes": 1333
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/waveform.cpp",
+          "status": "added",
+          "changes": 237
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/waveform.h",
+          "status": "added",
+          "changes": 89
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/waveform_abi.cpp",
+          "status": "added",
+          "changes": 190
+        },
+        {
+          "path": "src/core/libraries/ngs2/hle/waveform_abi.h",
+          "status": "added",
+          "changes": 21
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2.cpp",
+          "status": "modified",
+          "changes": 286
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2.h",
+          "status": "modified",
+          "changes": 89
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2_custom.cpp",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2_eq.cpp",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2_geom.cpp",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2_impl.cpp",
+          "status": "modified",
+          "changes": 700
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2_impl.h",
+          "status": "modified",
+          "changes": 102
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2_mastering.cpp",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2_pan.cpp",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2_report.cpp",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2_reverb.cpp",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2_sampler.cpp",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/core/libraries/ngs2/ngs2_submixer.cpp",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/core/libraries/system/userservice.cpp",
+          "status": "modified",
+          "changes": 11
+        },
+        {
+          "path": "src/core/libraries/system/userservice_user_color.cpp",
+          "status": "added",
+          "changes": 28
+        },
+        {
+          "path": "src/core/linker.cpp",
+          "status": "modified",
+          "changes": 10
+        },
+        {
+          "path": "src/core/linker_thread_atexit.cpp",
+          "status": "added",
+          "changes": 28
+        },
+        {
+          "path": "src/core/memory.cpp",
+          "status": "modified",
+          "changes": 8
+        },
+        {
+          "path": "src/core/memory.h",
+          "status": "modified",
+          "changes": 3
+        },
+        {
+          "path": "src/core/memory_access.h",
+          "status": "added",
+          "changes": 39
+        },
+        {
+          "path": "src/core/module.h",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/core/module_thread_atexit.h",
+          "status": "added",
+          "changes": 51
+        },
+        {
+          "path": "src/imgui/notifications_layer.cpp",
+          "status": "modified",
+          "changes": 1
+        },
+        {
+          "path": "src/imgui/renderer/imgui_core.cpp",
+          "status": "modified",
+          "changes": 3
+        },
+        {
+          "path": "src/sdl_window.cpp",
+          "status": "modified",
+          "changes": 5
+        },
+        {
+          "path": "src/video_core/amdgpu/liverpool.cpp",
+          "status": "modified",
+          "changes": 32
+        },
+        {
+          "path": "src/video_core/amdgpu/regs.cpp",
+          "status": "modified",
+          "changes": 1
+        },
+        {
+          "path": "src/video_core/amdgpu/regs.h",
+          "status": "modified",
+          "changes": 2
+        },
+        {
+          "path": "src/video_core/buffer_cache/buffer_cache.cpp",
+          "status": "modified",
+          "changes": 8
+        },
+        {
+          "path": "src/video_core/graphics_diagnostics.h",
+          "status": "added",
+          "changes": 79
+        },
+        {
+          "path": "src/video_core/occlusion_counter.h",
+          "status": "added",
+          "changes": 62
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_image_transfer.h",
+          "status": "added",
+          "changes": 46
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_instance.cpp",
+          "status": "modified",
+          "changes": 45
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_instance.h",
+          "status": "modified",
+          "changes": 18
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_occlusion_query.cpp",
+          "status": "added",
+          "changes": 218
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_occlusion_query.h",
+          "status": "added",
+          "changes": 47
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_presenter.cpp",
+          "status": "modified",
+          "changes": 7
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
+          "status": "modified",
+          "changes": 35
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_rasterizer.h",
+          "status": "modified",
+          "changes": 4
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_runtime.cpp",
+          "status": "modified",
+          "changes": 85
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_runtime.h",
+          "status": "modified",
+          "changes": 3
+        },
+        {
+          "path": "src/video_core/renderer_vulkan/vk_scheduler.cpp",
+          "status": "modified",
+          "changes": 7
+        },
+        {
+          "path": "src/video_core/texture_cache/texture_cache.cpp",
+          "status": "modified",
+          "changes": 32
+        }
+      ]
+    }
+  ]
+}
