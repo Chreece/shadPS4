@@ -7,7 +7,7 @@ GOT="$ROOT/GhostOfTsushima"
 WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
-PIN="71faef4a8d76282a1931445198571082f0e3c70e"
+PIN="a75e0223dd17feb655e08e7356940c2e9c6d187d"
 SHADER_COLLECTOR_PIN="6223d8df521183f80f08762674a9faf8090f5088"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$PIN"
 HOST_REPORT="${GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT:-$LOGS/got-indexed-sample-feedback-host-not-built.tar.gz}"
@@ -65,7 +65,7 @@ cleanup() {
   fi
   grep -aE 'TextureCacheSlots:|TextureSlotPressure:|SlotVector pool=|Assertion Failed!' \
     "$RUN/game.log" > "$RUN/info/texture-cache-slots.log" || true
-  grep -aE 'ResourceTableBoundsChanged:|BoundedBufferTable:|BoundedPointerImage:|GuestStridedSourceProof:|GuestStridedPermutationProof:|GuestTsharpIncompleteProgram:|RealIndexedTSharp(Enabled|Bound|UnsupportedSize):|ResourceNullBuffer:|GPUVM fault detected|GPU hang detected' \
+  grep -aE 'BufferTableSpan(Bound)?:|ResourceTableBoundsChanged:|BoundedBufferTable:|BoundedPointerImage:|GuestStridedSourceProof:|GuestStridedPermutationProof:|GuestTsharpIncompleteProgram:|RealIndexedTSharp(Enabled|Bound|UnsupportedSize):|ResourceNullBuffer:|GPUVM fault detected|GPU hang detected' \
     "$RUN/game.log" > "$RUN/info/graphics-evidence.log" || true
   grep -aE 'IndexedImageFeedback(Submitted)?:' "$RUN/game.log" \
     > "$RUN/info/indexed-image-feedback.log" || true
@@ -99,7 +99,7 @@ print("\n".join(out))
 PYFEEDBACK
   # Extract resource-selection records independently of
   # large texture binding successes. Preserve the full game log as well.
-  grep -aE 'ResourceTableBoundsChanged:|BoundedBufferTable:|BoundedPointerImage:|SrtGlobalDependencyResult:|SrtHostBarrier:|SrtBarrierShape:|SrtHostBarrierShape:|SrtHostBarrierSummary:|SrtHostBarrierGroup:|SrtNativeAudit:|SrtSourceAudit:|SrtPlanSkip:|SrtPlanCollision:|SrtInlineCandidate:|SrtInlineEligibility:|InvalidTSharpSource:|InvalidVSharpSource:|SharpMaskPreserved:|ResourceAuditCompile:|RealIndexedTSharpBound:|GuestAttributeTsharpIndexed:|IndexedTSharpSource:' \
+  grep -aE 'BufferTableSpan(Bound)?:|ResourceTableBoundsChanged:|BoundedBufferTable:|BoundedPointerImage:|SrtGlobalDependencyResult:|SrtHostBarrier:|SrtBarrierShape:|SrtHostBarrierShape:|SrtHostBarrierSummary:|SrtHostBarrierGroup:|SrtNativeAudit:|SrtSourceAudit:|SrtPlanSkip:|SrtPlanCollision:|SrtInlineCandidate:|SrtInlineEligibility:|InvalidTSharpSource:|InvalidVSharpSource:|SharpMaskPreserved:|ResourceAuditCompile:|RealIndexedTSharpBound:|GuestAttributeTsharpIndexed:|IndexedTSharpSource:' \
     "$RUN/game.log" >"$RUN/info/menu-provenance-all.log" || true
   # Correlate submitted guest shader draws and actual video-out sources.
   # Every event uses steady_clock monotonic milliseconds across threads.
@@ -451,7 +451,7 @@ PY
     fi
   fi
   echo "SHADER_EVIDENCE_STATUS=$SHADER_EVIDENCE_STATUS"
-  grep -aE 'IndexedTableDump:|LiveMaterialPermutation|GuestStridedSourceProof:|GuestTsharpIncompleteProgram:|RealIndexedTSharpEnabled:|RealIndexedTSharpBound:|StridedSamplerBound:|InvalidTSharpSource:|InvalidVSharpSource:' \
+  grep -aE 'BufferTableSpan(Bound)?:|IndexedTableDump:|LiveMaterialPermutation|GuestStridedSourceProof:|GuestTsharpIncompleteProgram:|RealIndexedTSharpEnabled:|RealIndexedTSharpBound:|StridedSamplerBound:|InvalidTSharpSource:|InvalidVSharpSource:' \
     "$RUN/game.log" > "$RUN/info/indexed-table-transitions.log" || true
 
   if command -v spirv-val >/dev/null 2>&1; then
@@ -946,6 +946,8 @@ PYSTAGEPIXELS
     echo "INDEXED_EXPLICIT_LOD=ENABLED"
     echo "BOUNDED_POINTER_IMAGE_LOWERINGS=$(grep -ac 'BoundedPointerImage:' "$RUN/game.log" || true)"
     echo "RESOURCE_TABLE_BOUND_REJECTIONS=$(grep -ac 'ResourceTableBoundsChanged:' "$RUN/game.log" || true)"
+    echo "BUFFER_TABLE_SPAN_LOWERINGS=$(grep -ac 'BufferTableSpan:' "$RUN/game.log" || true)"
+    echo "BUFFER_TABLE_SPAN_BINDINGS=$(grep -ac 'BufferTableSpanBound:' "$RUN/game.log" || true)"
     echo "BOUNDED_BUFFER_TABLE_LOWERINGS=$(grep -ac 'BoundedBufferTable:' "$RUN/game.log" || true)"
     echo "GPU_SELECTED_BUFFER_STORES=GUARDED_COMPLETE_TABLES"
     echo "BOUNDED_POINTER_IMAGE_LOWERING=GUARDED_AND_COUNTED_LOOPS"

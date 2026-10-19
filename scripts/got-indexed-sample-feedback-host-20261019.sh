@@ -10,7 +10,7 @@ BUILD="$WORK/build"
 BIN="$BUILD/shadps4"
 LOGS="$ROOT/logs"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
-CANDIDATE="71faef4a8d76282a1931445198571082f0e3c70e"
+CANDIDATE="a75e0223dd17feb655e08e7356940c2e9c6d187d"
 BRANCH="diagnostic/got-indexed-sample-feedback-20261019"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 NAME="got-indexed-sample-feedback-host-$STAMP"
@@ -146,6 +146,7 @@ src/shader_recompiler/backend/spirv/spirv_emit_context.h
 src/shader_recompiler/frontend/control_flow_graph.cpp
 src/shader_recompiler/frontend/structured_control_flow.cpp
 src/shader_recompiler/guest_tsharp_array.h
+src/shader_recompiler/buffer_table_span.h
 src/shader_recompiler/indexed_image_feedback.h
 src/shader_recompiler/ir/ir_emitter.cpp
 src/shader_recompiler/ir/ir_emitter.h
@@ -522,9 +523,9 @@ assert "IsVaryingLocalInvocationComponent(" in lds
 assert "FindDivergentLoops(program.syntax_list, runtime_info)" in lds
 assert "EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth, runtime_info)" in lds
 assert "op == IR::Opcode::InverseBallot || op == IR::Opcode::GetUserData" in phi
-assert "ShaderBinaryVersion = 52u;" in serial
+assert "ShaderBinaryVersion = 53u;" in serial
 print("GOT_SHADER_UPSTREAM_CORRECTNESS_WIRING=PASS "
-      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=52")
+      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=53")
 print("GOT_INDIRECT_PRODUCER_SOURCE_WIRING=PASS exact_watch=8 "
       "buffer_shader=YES compute_dispatch=YES cpu_upload=YES vk_copy=YES")
 # The previous host link failed at rasterizer.cpp:492: an undefined
