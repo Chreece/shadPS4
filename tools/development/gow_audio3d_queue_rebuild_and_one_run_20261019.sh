@@ -23,6 +23,7 @@ LIVE_REGION_OVERLAY="${14:?pinned exact protected RegionManager surgical patch r
 AUDIO3D_OVERLAY="${15:?pinned surgical Audio3D queue locking patcher required}"
 AUTO_INPUT="${16:?pinned corrected automatic GoW navigation required}"
 ROUTE_STEERING="${17:?pinned bounded steering helper required}"
+SRT_OVERLAY="${18:?pinned shader SRT dynamic shift correction overlay required}"
 GAME_RUNNER="${9:?pinned controlled 135-second GoW runner required}"
 OLLAMA_HELPER="${10:?pinned Ollama state/restore helper required}"
 PROVEN_SHA=e413ab1d953793f50c5500d528b43aae73fc3ab7ceb966d8d3ab9da275310ffa
@@ -784,6 +785,31 @@ python3 -B "$AUDIO3D_OVERLAY" "$SRC/$AUDIO3D_REL" \
 touch -m "$SRC/$AUDIO3D_REL"
 cat "$OUT/audio3d-portadvance-applied.log"
 echo "PORT_ADVANCE_QUEUE_MUTEX=STAGED_ISOLATED_ONLY; OTHER_AUDIO_SOURCE_PRESERVED"
+STAGE=STAGE_EXACT_SRT_SHIFT_ARITHMETIC_CORRECTION
+SRT_REL="src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp"
+SRT_OVERLAY_BLOB="1eceb2f7f82fcfc1c847bfc6529513db0aa3fb99"
+[[ -f "$SRT_OVERLAY" && ! -L "$SRT_OVERLAY" &&
+   -f "$SRC/$SRT_REL" && ! -L "$SRC/$SRT_REL" ]] || {
+  echo "SRT_SURGICAL_OVERLAY_OR_DISPOSABLE_SOURCE_MISSING"; exit 2;
+}
+[[ "$(git -C "$ORIGINAL_SRC" hash-object "$SRT_OVERLAY")" == "$SRT_OVERLAY_BLOB" ]] || {
+  echo "SRT_OVERLAY_EXACT_HASH_VERIFICATION_FAILED"; exit 2;
+}
+python3 -B "$SRT_OVERLAY" --self-test || {
+  echo "SRT_SHIFT_REVERSIBILITY_ARITHMETIC_TEST_FAILED"; exit 2;
+}
+python3 -B "$SRT_OVERLAY" "$SRC/$SRT_REL" "$OUT/srt-shift-preflight.diff" \
+  > "$OUT/srt-shift-preflight.log" 2>&1 || {
+  cat "$OUT/srt-shift-preflight.log"; exit 2;
+}
+python3 -B "$SRT_OVERLAY" "$SRC/$SRT_REL" "$OUT/srt-shift-applied.diff" \
+  --apply > "$OUT/srt-shift-applied.log" 2>&1 || {
+  cat "$OUT/srt-shift-applied.log"; exit 2;
+}
+touch -m "$SRC/$SRT_REL"
+cat "$OUT/srt-shift-applied.log"
+echo "SRT_DYNAMIC_SHIFT=FIX_APPLIED_TO_DISPOSABLE_SOURCE_ONLY"
+echo "STAGED_CORRECTIONS=PROVEN_GFX_UFFD_AND_AUDIO3D_QUEUE_MUTEX_AND_SRT_SHIFT"
 STAGE=EARLY_UFFD_RENDERER_COMPILE
 RULES="$BUILD/CMakeFiles/shadps4.dir/build.make"
 [[ -f "$RULES" ]] || { echo "ISOLATED_CMAKE_BUILD_RULES_MISSING"; exit 1; }
@@ -827,7 +853,8 @@ done
 for changed_obj in \
   CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o \
   CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer_cache.cpp.o \
-  CMakeFiles/shadps4.dir/src/core/libraries/audio3d/audio3d.cpp.o; do
+  CMakeFiles/shadps4.dir/src/core/libraries/audio3d/audio3d.cpp.o \
+  CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp.o; do
   grep -Fq "Building CXX object $changed_obj" "$OUT/compile-abi-preflight.log" || {
     echo "MODIFIED_CPU_TIMING_TRANSLATION_UNIT_NOT_RECOMPILED=$changed_obj"
     exit 1;
@@ -844,7 +871,7 @@ for obj in page_manager.cpp.o vk_rasterizer.cpp.o; do
 done
 nm -C "$BUILD/shadps4" | grep -F "Vulkan::Rasterizer::InvalidateMemoryOnGpuThread" > "$OUT/deferred-symbol.txt" || { echo "DEFERRED_UFFD_SYMBOL_MISSING_FROM_BINARY"; exit 1; }
 echo "DEFERRED_UFFD_OBJECTS_REBUILT_AND_LINKED=PASS"
-CANDIDATE="$BUILD/shadps4.fullgfx-audio3d-queue-$TAG"
+CANDIDATE="$BUILD/shadps4.fullgfx-audio3d-srt-$TAG"
 [[ ! -e "$CANDIDATE" ]] || { echo "CANDIDATE_EXISTS"; exit 1; }
 cp -p "$BUILD/shadps4" "$CANDIDATE"
 sha256sum "$CANDIDATE" >"$OUT/candidate-sha256.txt"
@@ -877,9 +904,9 @@ if [[ -z "$(printenv DBUS_SESSION_BUS_ADDRESS || true)" ]]; then
   export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 fi
 CANDIDATE_SHA="$(sha256sum "$CANDIDATE" | cut -d' ' -f1)"
-echo "AUDIO3D_MUTEX_CANDIDATE_SHA256=$CANDIDATE_SHA"
+echo "AUDIO3D_AND_SRT_CANDIDATE_SHA256=$CANDIDATE_SHA"
 echo "SINGLE_RUN_CANDIDATE=YES; DENSE_CPU_UPLOAD_ONLY=YES"
-echo "TESTED_GAME_SOURCE_FIX=PORT_ADVANCE_QUEUE_MUTEX"
+echo "TESTED_GAME_SOURCE_FIXES=PORT_ADVANCE_QUEUE_MUTEX_AND_SRT_DYNAMIC_SHIFT"
 python3 -B -u "$GAME_RUNNER" \
   --ollama-helper "$OLLAMA_HELPER" \
   --auto-input "$AUTO_INPUT" \
@@ -903,5 +930,7 @@ echo "NEXT_ACTION=COMPARE_AUDIO_READY_AND_SUBMISSION_GAPS_WITH_PROVEN_BASELINE"
 STAGE=COMPLETE
 
 echo "AUDIO3D_ADVANCE_MUTEX_FIX_BUILT=YES"
+echo "SRT_DYNAMIC_SHIFT_SOURCE_FIX_BUILT=YES"
+echo "COMPUTE_SETQUEUEREG=UNCHANGED_UNPROVEN_SEMANTICS"
 echo "ONLY_ONE_AUDIO3D_QUEUE_GAMEPLAY_CANDIDATE_TESTED=YES"
 echo "ORIGINAL_SOURCE_BINARY_AUDIO_OLLAMA_RESTORED_AND_SSH_OPEN=YES"
