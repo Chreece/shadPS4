@@ -104,7 +104,7 @@ class Builder:
         self.run = ESDE / ("universal-" + stamp)
         self.source = self.run / "source"
         self.build = self.run / "build"
-        self.log = self.run / "build.log"
+        self.log = LOGS / ("universal-" + stamp + ".build.log")
         self.report: dict = {
             "schema": 1,
             "purpose": "SINGLE_GENERAL_SHADPS4_NO_GAME_OR_SHADER_HASH_CASES",
@@ -124,6 +124,7 @@ class Builder:
     def run_cmd(self, argv, *, directory=None, check=True, timeout=1800):
         args = list(map(str, argv))
         self.report["last_command"] = args
+        print("UNIVERSAL_STAGE=" + self.step, flush=True)
         with self.log.open("a") as output:
             output.write("\nSTAGE=" + self.step + "\nCOMMAND=" + " ".join(args) + "\n")
             output.flush()
@@ -143,7 +144,10 @@ class Builder:
                              *argv], check=check, timeout=timeout)
 
     def capture(self, *argv, directory=None, timeout=120):
-        return subprocess.run(list(map(str, argv)), cwd=directory or self.run,
+        # During preflight self.run intentionally does not exist yet.
+        cwd = directory if directory is not None else (
+            self.run if self.run.is_dir() else ESDE)
+        return subprocess.run(list(map(str, argv)), cwd=cwd,
                               capture_output=True, text=True,
                               timeout=timeout, check=False)
 
@@ -168,6 +172,7 @@ class Builder:
 
     def preflight(self):
         self.step = "VERIFY_SOURCE_AND_EXISTING_EXECUTABLE"
+        LOGS.mkdir(parents=True, exist_ok=True)
         for executable,expected in (
             (EXISTING_ELF, NEW_BASE_SHA), (PROVEN_GOW, GOW_ELF_SHA)):
             actual = digest(executable)
@@ -563,6 +568,7 @@ class Builder:
         }
 
     def package(self):
+        LOGS.mkdir(parents=True, exist_ok=True)
         record = LOGS / (self.run.name + ".json")
         archive = LOGS / (self.run.name + ".tar.gz")
         record.write_text(json.dumps(self.report,indent=2,ensure_ascii=False)+"\n")
