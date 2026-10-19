@@ -936,6 +936,7 @@ PYSTAGEPIXELS
     echo "OLLAMA_ACTION=$OLLAMA_ACTION"
     echo "OLLAMA_RESTORE=$OLLAMA_RESTORE"
     echo "ACTIVE_BINARY_UNCHANGED=$([ -z "$BIN_SHA" ] || [ "$(sha256sum "$BIN" 2>/dev/null | awk '{print $1}')" = "$BIN_SHA" ] && echo YES || echo NO)"
+    if [ -s "$RUN/info/missing-inputs.txt" ]; then cat "$RUN/info/missing-inputs.txt"; fi
     echo "ISOLATED_SHADPS4_RUN=YES"
     echo "CANDIDATE_SOURCE=$PIN"
     echo "CAPTURE_DURATION_SECONDS=$SECONDS_TO_RUN"
@@ -1004,10 +1005,17 @@ for entry in pathlib.Path("/proc").iterdir():
     except OSError: pass
 PY
 then :; else STATUS=ANOTHER_EMULATOR_RUNNING; exit 2; fi
-[ -x "$BIN" ] && [ -x "$CANDIDATE" ] &&
-[ -f "$HOST_REPORT" ] && [ -f "$GAME" ] && [ -d "$PROFILE/user" ] || {
-  STATUS=MISSING_REQUIRED_INPUT; exit 2;
-}
+MISSING_INPUTS=()
+[ -x "$BIN" ] || MISSING_INPUTS+=("ACTIVE_BINARY:$BIN")
+[ -x "$CANDIDATE" ] || MISSING_INPUTS+=("CANDIDATE_BINARY:$CANDIDATE")
+[ -f "$HOST_REPORT" ] || MISSING_INPUTS+=("HOST_REPORT:$HOST_REPORT")
+[ -f "$GAME" ] || MISSING_INPUTS+=("GAME_IMAGE:$GAME")
+[ -d "$PROFILE/user" ] || MISSING_INPUTS+=("PROFILE_USER_DIR:$PROFILE/user")
+if [ "${#MISSING_INPUTS[@]}" -gt 0 ]; then
+  STATUS=MISSING_REQUIRED_INPUT
+  printf 'MISSING_INPUT=%s\n' "${MISSING_INPUTS[@]}" | tee "$RUN/info/missing-inputs.txt"
+  exit 2
+fi
 BIN_SHA="$(sha256sum "$BIN" | awk '{print $1}')"
 find "$WORK/bin-backups" -maxdepth 1 -type f -name 'shadps4*' \
   -printf '%TY-%Tm-%Td %TH:%TM:%TS bytes=%s %f\n' | sort \

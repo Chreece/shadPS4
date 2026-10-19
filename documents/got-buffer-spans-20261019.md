@@ -47,6 +47,10 @@ This is generic emulation behavior, with no game or shader-hash condition. The i
 
 The [OpenOrbis probe](homebrew/bounded-buffers/README.md) now includes 1,773 records, first/middle/last/out-of-range selectors, stride variation and sentinel checks over every record. Its GCN assembly is unchanged from the assembled Bonaire version. The OpenOrbis application has not been linked or run on PS4 here. No native Vulkan device/gameplay session is available in this workspace.
 
+## Latest attempted run
+
+The uploaded runtime archive `got-indexed-sample-feedback-runtime-20261019-211037.tar.gz` did not launch the game. It ended at `MISSING_REQUIRED_INPUT`, with no shader collection, binding, GPU query, or screenshot evidence. The runtime script expected candidate source `a75e0223dd17feb655e08e7356940c2e9c6d187d`; the paired outer launcher still named the older executable checkpoint, so it could select a stale host report/binary. The launcher now pins the matching candidate and verifies the host report's candidate pin before reuse. Missing preflight files will be named in `info/missing-inputs.txt`.
+
 ## Next native run
 
 The isolated launcher builds this pinned candidate, restores the previous source/executable, and captures 300 seconds with a copied profile. Conditional Ollama unloading below 8 GiB free VRAM and restoration are retained. Production is unchanged; GDS, DMA, depth and raster experiments remain disabled.

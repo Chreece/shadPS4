@@ -10,7 +10,7 @@ LOGS="$ROOT/logs"
 SCRIPTS="$ROOT/scripts"
 BRANCH="diagnostic/got-indexed-sample-feedback-20261019"
 PIN="f2b2ef3555cc822021ba7ffec737f2637dd02ed5"
-CANDIDATE_COMMIT="71faef4a8d76282a1931445198571082f0e3c70e"
+CANDIDATE_COMMIT="a75e0223dd17feb655e08e7356940c2e9c6d187d"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$CANDIDATE_COMMIT"
 BUILD_SCRIPT="$SCRIPTS/got-indexed-sample-feedback-host-20261019.sh"
 RUNTIME_SCRIPT="$SCRIPTS/got-indexed-sample-feedback-runtime-20261019.sh"
@@ -48,6 +48,8 @@ verify_host_archive() {
        CANDIDATE_BUILT=1 BASELINE_EXECUTABLE_RESTORED=1; do
         grep -qx "$expected_line" <<<"$status" || return 1
     done
+    tar -xOzf "$file" info/start.txt 2>/dev/null | \
+        grep -qx "PINNED_CANDIDATE=$CANDIDATE_COMMIT" || return 1
     expected="$(tar -xOzf "$file" info/candidate-preserved.sha256 2>/dev/null |
         awk 'NR==1 {print $1}')" || return 1
     [[ "$expected" =~ ^[a-f0-9]{64}$ ]] || return 1
