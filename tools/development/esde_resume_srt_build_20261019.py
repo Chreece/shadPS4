@@ -248,7 +248,54 @@ def build(report, log):
     print("CANDIDATE_SHA256=" + report["candidate"]["sha256"])
 
 
+def self_test():
+    """No Git/network/compiler: reproduce the exact missing transitive includes."""
+    import tempfile
+    global SOURCE, PROTECTED
+    old_source, old_protected = SOURCE, PROTECTED
+    try:
+        with tempfile.TemporaryDirectory(prefix="shadps4-srt-deps-") as d:
+            SOURCE = Path(d) / "source"
+            PROTECTED = Path(d) / "protected"
+            cpp = SOURCE / SOURCE_CPP
+            cpp.parent.mkdir(parents=True)
+            cpp.write_text(
+                '#include "shader_recompiler/ir/passes/srt_offset_preflight.h"\n'
+            )
+            names = (
+                "srt_offset_preflight.h", "srt_uniformity.h", "srt_proven_identity.h"
+            )
+            for i, name in enumerate(names):
+                f = (PROTECTED / "src/shader_recompiler/ir/passes" / name)
+                f.parent.mkdir(parents=True, exist_ok=True)
+                if i + 1 < len(names):
+                    f.write_text(
+                        '#include "shader_recompiler/ir/passes/' +
+                        names[i + 1] + '"\n'
+                    )
+                else:
+                    f.write_text("#pragma once\n")
+            report = {}
+            plan = plan_headers(report)
+            if len(plan) != 3 or not all(
+                ("src/shader_recompiler/ir/passes/" + name) in plan
+                for name in names
+            ):
+                raise RuntimeError("Transitive SRT include closure incomplete")
+            if any(v["origin"] != "PROTECTED_GOW_LOCAL_SOURCE"
+                   for v in report["header_plan"].values()):
+                raise RuntimeError("SRT dependency source order changed")
+    finally:
+        SOURCE, PROTECTED = old_source, old_protected
+    print("SRT_HEADER_DEPENDENCY_SELFTEST=PASS cases=3")
+    return 0
+
+
 def main():
+    if len(sys.argv) == 2 and sys.argv[1] == "--self-test":
+        return self_test()
+    if len(sys.argv) != 1:
+        raise RuntimeError("Usage: esde_resume_srt_build_20261019.py [--self-test]")
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     LOGS.mkdir(parents=True, exist_ok=True)
     RUN.mkdir(parents=True, exist_ok=True)
