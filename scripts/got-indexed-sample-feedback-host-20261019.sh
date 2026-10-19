@@ -10,7 +10,7 @@ BUILD="$WORK/build"
 BIN="$BUILD/shadps4"
 LOGS="$ROOT/logs"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
-CANDIDATE="b18cfc312904d8eaf01ed7788b85a97bcd114121"
+CANDIDATE="aa775cd9965118910d44e675708e7fc0cc2a62a1"
 BRANCH="diagnostic/got-indexed-sample-feedback-20261019"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 NAME="got-indexed-sample-feedback-host-$STAMP"
@@ -152,6 +152,7 @@ src/shader_recompiler/ir/ir_emitter.h
 src/shader_recompiler/ir/opcodes.inc
 src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
 src/shader_recompiler/ir/passes/image_phi_preflight.h
+src/shader_recompiler/ir/passes/ir_passes.h
 src/shader_recompiler/ir/passes/indexed_image_selector.h
 src/shader_recompiler/ir/passes/phi_simplification_pass.cpp
 src/shader_recompiler/ir/passes/lds_singleton_divergence.h
@@ -169,6 +170,7 @@ src/shader_recompiler/ir/program.cpp
 src/shader_recompiler/nonuniform_image_features.h
 src/shader_recompiler/profile.h
 src/shader_recompiler/resource.h
+src/shader_recompiler/recompiler.cpp
 src/shader_recompiler/sharp_fetch_bounds.h
 src/shader_recompiler/info.h
 src/shader_recompiler/specialization.h
@@ -212,7 +214,7 @@ src/video_core/texture_cache/image_info.cpp
 src/video_core/texture_cache/texture_cache.cpp
 src/video_core/texture_cache/texture_cache.h
 GOT_PINNED_OVERLAY_FILES
-test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 80 || {
+test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 82 || {
     STATUS=UNEXPECTED_CANDIDATE_OVERLAY_SIZE; exit 2;
 }
 
@@ -250,7 +252,7 @@ while IFS= read -r rel; do
         }
     fi
 done < "$RUN/info/overlay-files.txt"
-echo "SOURCE_PREFLIGHT=PASS files=80"
+echo "SOURCE_PREFLIGHT=PASS files=82"
 if [ -f "$RUN/info/preexisting-source-overrides.txt" ]; then
     echo "PREEXISTING_SOURCE_OVERRIDES=$(wc -l < "$RUN/info/preexisting-source-overrides.txt")"
     # Names and hashes only; no private local source content in the report.
@@ -516,9 +518,9 @@ assert "IsVaryingLocalInvocationComponent(" in lds
 assert "FindDivergentLoops(program.syntax_list, runtime_info)" in lds
 assert "EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth, runtime_info)" in lds
 assert "op == IR::Opcode::InverseBallot || op == IR::Opcode::GetUserData" in phi
-assert "ShaderBinaryVersion = 47u;" in serial
+assert "ShaderBinaryVersion = 48u;" in serial
 print("GOT_SHADER_UPSTREAM_CORRECTNESS_WIRING=PASS "
-      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=47")
+      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=48")
 print("GOT_INDIRECT_PRODUCER_SOURCE_WIRING=PASS exact_watch=8 "
       "buffer_shader=YES compute_dispatch=YES cpu_upload=YES vk_copy=YES")
 # The previous host link failed at rasterizer.cpp:492: an undefined
@@ -584,7 +586,7 @@ echo "GOT_UPSTREAM_SHADER_SEMANTICS_TEST=PASS" | tee -a "$RUN/host-tests.log"
 
 echo "HOST_ONLY_TESTS=PASS" | tee -a "$RUN/host-tests.log"
 
-# Stage only verified content. All 80 file checks completed before the first write.
+# Stage only verified content. All 82 file checks completed before the first write.
 STATUS=STAGING_CANDIDATE
 while IFS= read -r rel; do
     if [ -e "$SOURCE/$rel" ]; then
