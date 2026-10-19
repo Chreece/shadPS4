@@ -2241,6 +2241,16 @@ u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
     gds_buf->Invalidate(gds_offset, sizeof(u32));
     u32 value{};
     std::memcpy(&value, gds_buf->mapped_data.data() + gds_offset, sizeof(value));
+    if (Diagnostics::GotGdsComputeProducerProbeEnabled()) {
+        static thread_local u32 reads{};
+        const u32 observed=++reads;
+        if (Diagnostics::ShouldSampleGotGdsProducer(observed)) {
+            LOG_INFO(Render_Vulkan,
+                     "GotGdsHostRead: offset={:#x} value={} host_coherent={} "
+                     "invalidate_before_read=YES observed={}",
+                     gds_offset,value,gds_buf->is_coherent,observed);
+        }
+    }
     return value;
 }
 
