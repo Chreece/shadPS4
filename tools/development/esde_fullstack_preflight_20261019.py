@@ -390,6 +390,74 @@ def stage_preflight(report: dict, run: Path):
         report["stage"]["all_pinned_source_conflicts"] = source_conflicts
         return
 
+    # The Oct 19 GoW source audit establishes a correct, non-upstream
+    # SRT constant-left dynamic shift helper in the PROTECTED replay tree.
+    # Port this checksum-pinned shader (and required headers) as one unit;
+    # do not claim the stale upstream flatten pass contains this behavior.
+    srt_rel = "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp"
+    srt_source = GOW_SOURCE / srt_rel
+    helper_rel = "src/shader_recompiler/ir/passes/srt_offset_codegen.h"
+    helper_source = GOW_SOURCE / helper_rel
+    expected_srt = "14130ab04071e93159b074bbbdd6f7b362661eeaa040e20dec91fa54208aa161"
+    srt_text = srt_source.read_text() if srt_source.is_file() and not srt_source.is_symlink() else ""
+    helper_text = helper_source.read_text() if helper_source.is_file() and not helper_source.is_symlink() else ""
+    required_emitter = (
+        "SrtCodegen::EmitConstantLeftShiftByDynamicCount(c, reg, inst->Arg(0).U32());",
+    )
+    required_helper = (
+        "c.mov(Xbyak::util::ecx, destination);",
+        "c.mov(destination, left_operand);",
+        "c.shl(destination, Xbyak::util::cl);",
+    )
+    report["stage"]["protected_srt_sha256"] = digest(srt_source)
+    if (digest(srt_source) != expected_srt or
+            not all(x in srt_text for x in required_emitter) or
+            not all(x in helper_text for x in required_helper)):
+        report["stage"]["status"] = "GOW_SRT_PROVEN_SOURCE_DIFFERS_NO_BUILD"
+        return
+    # Compare exact protected source to its own Git HEAD and replay only
+    # the delta, with a real three-way conflict gate against modern upstream.
+    baseline_srt = git(GOW_SOURCE, "show", "HEAD:" + srt_rel, check=False)
+    if baseline_srt.returncode:
+        report["stage"]["status"] = "GOW_SRT_GIT_PREIMAGE_UNAVAILABLE_NO_BUILD"
+        return
+    srt_ours = run / "srt-ours.cpp"
+    srt_base = run / "srt-base.cpp"
+    srt_new = run / "srt-proven.cpp"
+    srt_ours.write_bytes((staging / srt_rel).read_bytes())
+    srt_base.write_text(baseline_srt.stdout)
+    srt_new.write_text(srt_text)
+    merged_srt = command("git", "merge-file", "-p", str(srt_ours),
+                         str(srt_base), str(srt_new), check=False)
+    if merged_srt.returncode or "<<<<<<<" in merged_srt.stdout:
+        report["stage"]["status"] = "GOW_PROVEN_SRT_THREEWAY_CONFLICT_NO_BUILD"
+        report["stage"]["srt_conflict"] = merged_srt.stdout[-180_000:]
+        return
+    srt_stage = staging / srt_rel
+    srt_stage.write_text(merged_srt.stdout)
+    git(staging, "add", "--", srt_rel)
+    headers = [helper_rel]
+    for extra in ("src/shader_recompiler/ir/passes/srt_offset_preflight.h",):
+        if ('#include "' + extra + '"') in srt_text:
+            headers.append(extra)
+    for rel in headers:
+        preimage = GOW_SOURCE / rel
+        installed = staging / rel
+        if not preimage.is_file() or preimage.is_symlink():
+            report["stage"]["status"] = "GOW_SRT_REQUIRED_HEADER_MISSING_NO_BUILD"
+            report["stage"]["missing_header"] = rel
+            return
+        if installed.exists() and installed.read_bytes() != preimage.read_bytes():
+            report["stage"]["status"] = "GOW_SRT_REQUIRED_HEADER_CONFLICT_NO_BUILD"
+            report["stage"]["conflicting_header"] = rel
+            return
+        installed.parent.mkdir(parents=True, exist_ok=True)
+        installed.write_bytes(preimage.read_bytes())
+        git(staging, "add", "--", rel)
+    report["stage"]["protected_srt_source_port"] = "THREEWAY_SOURCE_AND_HELPER_STAGED"
+    # This gates arithmetic source semantics only; root dependency
+    # resolution in GoT indexed images still requires live rendering proof.
+
     # Port exactly the previously source-hash-proven v51 stencil correction.
     # This is a three-way source merge and may conflict with the newer GoW
     # rasterizer. A conflict is an explicit stop, never an "ours" override.
