@@ -439,7 +439,13 @@ def collect_change_plan(plan_dir, report):
             dep = "src/" + include
             location = SOURCE / dep
             if dep not in proposals and not location.is_file():
+                # New general headers may be introduced in the later vetted
+                # source chain rather than in the Oct17 horse-visible tree.
                 from_got = git_data(GOT, dep)
+                source_ref = GOT
+                if from_got is None:
+                    from_got = git_data(GOT_LATE, dep)
+                    source_ref = GOT_LATE
                 if from_got is None or not eligible(dep):
                     errors[dep] = f"UNVERIFIED_TRANSITIVE_SOURCE_DEPENDENCY from {rel}"
                     continue
@@ -447,7 +453,12 @@ def collect_change_plan(plan_dir, report):
                 if prior is not None:
                     errors[dep] = "MISSING_EXISTING_ANCESTOR_HEADER"
                     continue
+                violation = guarded_delta(None,from_got,dep)
+                if violation:
+                    errors[dep] = "UNSAFE_TRANSITIVE_HEADER: " + violation
+                    continue
                 proposals[dep] = from_got
+                report.setdefault("transitive_source_headers",{})[dep] = source_ref
             if dep not in seen:
                 queued.append(dep)
     conflicts.update(errors)
