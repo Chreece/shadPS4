@@ -160,7 +160,10 @@ def recent_game_logs():
                 if item.stat().st_size > 100_000_000:
                     continue
                 choices.append(item)
-    choices.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    # Always inspect both target-game logs first, even when dozens of
+    # newer unrelated playtests would otherwise consume the twelve-file cap.
+    games = {"CUSA11456.log", "CUSA34384.log"}
+    choices.sort(key=lambda p: (p.name in games, p.stat().st_mtime), reverse=True)
     used = set()
     found = []
     for p in choices:
