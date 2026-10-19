@@ -294,8 +294,10 @@ static bool EmitComputeOffsetShiftLeftLogical32(Xbyak::CodeGenerator& c, Xbyak::
                                                 PassInfo& pass_info, IR::Inst* inst) {
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
+        // x << dynamic_shift: ComputeOffset left the shift count in reg.
+        // Do not shift the count by x: the old extra SHL corrupted ECX
+        // and produced x << (dynamic_shift << x) instead of x << dynamic_shift.
         ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
-        c.shl(reg, inst->Arg(0).U32());
         c.mov(ecx, reg);
         c.mov(reg, inst->Arg(0).U32());
         c.shl(reg, cl);
