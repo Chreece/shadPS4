@@ -59,13 +59,13 @@ if (( $# == 0 )); then
   python3 -B "$SRT_DIAGNOSTIC" --self-test || {
     echo "SRT_OVERLAY_SELFTEST_FAILED_NO_BUILD"; exit 2;
   }
-  SRT_PREFLIGHT_DIFF="$LOGS/gow-srt-replay-preflight-$(date +%Y%m%d-%H%M%S)-$.diff"
+  SRT_PREFLIGHT_DIFF="$LOGS/gow-srt-replay-preflight-$(date +%Y%m%d-%H%M%S)-$$.diff"
   python3 -B "$SRT_DIAGNOSTIC" "$SRT_SOURCE" "$SRT_PREFLIGHT_DIFF" || {
     echo "SRT_PROTECTED_REPLAY_SOURCE_NOT_RECOGNIZED_NO_BUILD"; exit 2;
   }
   echo "SRT_PROTECTED_REPLAY_PREFLIGHT=PASS_BEFORE_DETACH"
   echo "SRT_PREFLIGHT_EVIDENCE=$SRT_PREFLIGHT_DIFF"
-  TAG="gow-preserved-audio3d-srt-worker-$(date +%Y%m%d-%H%M%S)-$"
+  TAG="gow-preserved-audio3d-srt-worker-$(date +%Y%m%d-%H%M%S)-$$"
   LOG="$LOGS/$TAG.log"
   [[ ! -e "$LOG" ]] || { echo "LOG_COLLISION_NO_BUILD"; exit 2; }
   nohup setsid -w bash "$SELF" --worker "$TAG" </dev/null >"$LOG" 2>&1 &
