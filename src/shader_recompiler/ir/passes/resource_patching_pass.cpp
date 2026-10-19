@@ -1319,26 +1319,30 @@ static bool AllStridedGuestImagesRepresentable(
     const Profile& profile, u32& sources, u32& invalid) {
     sources=0;
     invalid=0;
-    info.strided_material_source_count=0;
-    if (info.hw_stage!=HwStage::Compute) return true;
-
+    info.indexed_image_source_count = 0;
     const bool probe=StridedSourceProofEnabled(info);
     for (const auto& usage : resources) {
-        if (!usage.has_indexed_table || usage.indexed_record_stride_bytes==0u)
+        if (!usage.has_indexed_table)
             continue;
-        ++sources;
         const auto table_fetch=ConstructSharpFetch<AmdGpu::Buffer>(
             usage.indexed_table_sharp,info);
-        if (info.strided_material_source_count >= info.strided_material_sources.size()) {
-            // No silent truncation: without complete provenance this
-            // permutation must never use partial indexed image tables.
-            ++invalid;
-            continue;
+        const auto witnesses =
+            std::span{info.indexed_image_sources}.first(info.indexed_image_source_count);
+        if (std::ranges::none_of(witnesses, [&](const auto& source) {
+                return source.table_fetch == table_fetch &&
+                       source.record_stride_bytes == usage.indexed_record_stride_bytes &&
+                       source.descriptor_offset_bytes == usage.indexed_descriptor_offset_bytes;
+            })) {
+            ASSERT_MSG(info.indexed_image_source_count < info.indexed_image_sources.size(),
+                       "Too many indexed image table sources");
+            auto& witness = info.indexed_image_sources[info.indexed_image_source_count++];
+            witness.table_fetch = table_fetch;
+            witness.record_stride_bytes = usage.indexed_record_stride_bytes;
+            witness.descriptor_offset_bytes = usage.indexed_descriptor_offset_bytes;
         }
-        auto& witness=info.strided_material_sources[info.strided_material_source_count++];
-        witness.table_fetch=table_fetch;
-        witness.record_stride_bytes=usage.indexed_record_stride_bytes;
-        witness.descriptor_offset_bytes=usage.indexed_descriptor_offset_bytes;
+        if (info.hw_stage != HwStage::Compute || usage.indexed_record_stride_bytes == 0u)
+            continue;
+        ++sources;
         AmdGpu::Buffer table{};
         const bool flattened =
             table_fetch.summary != SharpFetch<AmdGpu::Buffer>::Summary::Invalid;

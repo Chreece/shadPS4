@@ -44,18 +44,14 @@ struct InfoPersistent {
     SamplerResourceList samplers;
     FMaskResourceList fmasks;
 
-    // Immutable evidence of every strided material source observed while
-    // compiling a shader. These flattened V# offsets are re-evaluated from
-    // the CURRENT dispatch's user data when selecting a cached permutation.
-    // Fixed-capacity storage keeps InfoPersistent's existing raw serialization
-    // contract (no pointers, no dynamic allocation) and covers NUM_IMAGES.
-    struct StridedMaterialSource {
+    // Track even empty indexed tables so later draws can select a new layout.
+    struct IndexedImageTableSource {
         SharpFetch<AmdGpu::Buffer> table_fetch{};
         u32 record_stride_bytes{};
         u32 descriptor_offset_bytes{};
     };
-    std::array<StridedMaterialSource, NUM_IMAGES> strided_material_sources{};
-    u32 strided_material_source_count{};
+    std::array<IndexedImageTableSource, NUM_IMAGES> indexed_image_sources{};
+    u32 indexed_image_source_count{};
 
     u32 fetch_shader_sgpr_base{};
     u32 shared_memory_scratch_size{};

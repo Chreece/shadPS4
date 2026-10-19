@@ -836,7 +836,7 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
         binding.buffer += info.buffers.size();
         binding.unified += info.buffers.size() + image_binding_count + sampler_binding_count;
 
-        if (info.strided_material_source_count != 0) {
+        if (info.indexed_image_source_count != 0) {
             static thread_local u32 reports{};
             if (reports++ < 32u) {
                 LOG_INFO(Render_Vulkan,
@@ -845,9 +845,9 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
                          "image_slots={} sampler_slots={} first_binding={} end_binding={} "
                          "info_matches_spirv=true",
                          info.pgm_hash,info.hw_stage,perm_idx,
-                         info.strided_material_source_count,
-                         saved.spec.strided_material_entries.empty()
-                             ? 0u : saved.spec.strided_material_entries[0],
+                         info.indexed_image_source_count,
+                         saved.spec.indexed_image_entries.empty()
+                             ? 0u : saved.spec.indexed_image_entries[0],
                          std::ranges::count_if(info.images,[](const auto& image) {
                              return image.is_guest_indexed;
                          }),
@@ -879,12 +879,12 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
     if (auto& fetch = program->modules[perm_idx].spec.fetch_shader_data; !fetch.Empty()) {
         fetch_shader = &fetch;
     }
-    if (selected_info->strided_material_source_count != 0) {
+    if (selected_info->indexed_image_source_count != 0) {
         LOG_INFO(Render_Vulkan,
                  "LiveMaterialPermutationCompiled: shader={:#x} stage={} perm={} "
                  "sources={} indexed_images={} retained_info=true",
                  selected_info->pgm_hash,selected_info->hw_stage,perm_idx,
-                 selected_info->strided_material_source_count,
+                 selected_info->indexed_image_source_count,
                  std::ranges::count_if(selected_info->images,[](const auto& image) {
                      return image.is_guest_indexed;
                  }));

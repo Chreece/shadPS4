@@ -89,29 +89,31 @@ struct StageSpecialization {
     SmallVector<ImageSpecialization, 16> images;
     SmallVector<FMaskSpecialization, 8> fmasks;
     SmallVector<SamplerSpecialization, 16> samplers;
-    // Complete table entry counts, including zero, from the CURRENT dispatch.
-    // A zero-record V# and a later 97-record V# must be different shader
-    // permutations even though both use the exact same GCN program hash.
-    SmallVector<u32, 16> strided_material_entries;
+    SmallVector<u32, 16> indexed_image_entries;
     Backend::Bindings start{};
 
     StageSpecialization() = default;
     StageSpecialization(const Info& info_, RuntimeInfo runtime_info_, const Profile& profile_,
                         Backend::Bindings start_)
         : info{&info_}, runtime_info{runtime_info_}, start{start_} {
-        for (u32 i=0;i<info_.strided_material_source_count;++i) {
-            const auto& witness=info_.strided_material_sources[i];
+        for (u32 i = 0; i < info_.indexed_image_source_count; ++i) {
+            const auto& witness = info_.indexed_image_sources[i];
             AmdGpu::Buffer table{};
             const bool fetched=witness.table_fetch.FetchChecked(
                 info_.flattened_ud_buf.data(),info_.flattened_ud_buf.size(),&table);
-            strided_material_entries.push_back(
-                Optimization::StridedMaterialPermutationEntries(
-                    fetched,fetched && table.Valid(),
-                    static_cast<u64>(table.base_address),
-                    static_cast<u32>(table.stride),
-                    static_cast<u32>(table.num_records),
-                    witness.record_stride_bytes,witness.descriptor_offset_bytes,
-                    profile_.max_guest_indexed_image_entries));
+            const bool available = fetched && table.Valid() && table.base_address != 0;
+            indexed_image_entries.push_back(
+                witness.record_stride_bytes == 0
+                    ? (available ? Optimization::CompleteGuestTsharpTableEntries(
+                                       static_cast<u32>(table.stride),
+                                       static_cast<u32>(table.num_records),
+                                       profile_.max_guest_indexed_image_entries)
+                                 : 0u)
+                    : Optimization::StridedMaterialPermutationEntries(
+                          fetched, fetched && table.Valid(), static_cast<u64>(table.base_address),
+                          static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
+                          witness.record_stride_bytes, witness.descriptor_offset_bytes,
+                          profile_.max_guest_indexed_image_entries));
         }
         if (info_.sw_stage == SwStage::Vertex && Gcn::ParseFetchShader(info_, fetch_shader_data)) {
             // Specialize shader on VS input number types to follow spec.
@@ -212,7 +214,7 @@ struct StageSpecialization {
         if (!Valid()) {
             return false;
         }
-        if (strided_material_entries != other.strided_material_entries) {
+        if (indexed_image_entries != other.indexed_image_entries) {
             return false;
         }
 
