@@ -101,7 +101,7 @@ class SourceAssemblerSafetyTests(unittest.TestCase):
             self.builder.merge("SYNTHETIC_SEMANTIC_CONFLICT", alt)
             self.fail("Conflicting source should have failed closed")
         except RuntimeError as err:
-            self.assertIn("SOURCE_MERGE_PREVIEW_CONFLICT", str(err))
+            self.assertIn("SEMANTIC_ENGINE_MERGE_REQUIRES_REVIEW", str(err))
         self.assertEqual(git(self.builder.source, "rev-parse", "HEAD"), before)
         self.assertIn("SYNTHETIC_SEMANTIC_CONFLICT",
                       self.builder.report["merge_previews"])
