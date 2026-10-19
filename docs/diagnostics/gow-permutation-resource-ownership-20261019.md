@@ -85,6 +85,30 @@ isolated CMake/Ninja build. This does **not** use dummy generated headers,
 switch main branches, or alter the original dependencies.
 
 
+
+## 20:44 CEST: full isolated diagnostic executable successfully linked
+
+User-provided \`gow-permutation-scene-repair-20261019-204443.tar.gz\` confirms:
+174 missing tracked files across eight pinned submodules were restored
+using exact Git HEAD data; SDL3 and Zstd were recovered, all 45 submodules
+remained at validated revisions, CMake configured, and the final full
+shadPS4 link succeeded (\`[2626/2627] Linking CXX executable shadps4\`).
+The isolated diagnostic binary is
+\`~/projects/shadps4/GodOfWarRagnarok/tests/permutation-scene-20261019-201332/build/shadps4\`
+with SHA-256
+\`a6d600dac85bea7487025fa6d7d2838c69e713e37be4ea303ee8175b413cb00f\`.
+Protected executable and original source-head hashes remained unchanged.
+No game was launched. The full-build blocker is now cleared.
+
+Next: a **single detached candidate scene run**, not another compiler
+gate. \`diagnostic/gow-permutation-scene-proof-20261019\` contains
+\`scripts/gow_permutation_scene_runtime_20261019.sh\`; it uses the earlier
+hash-verified X11 navigation and cloned-save/conditional-Ollama helper,
+adds \`SHADPS4_PERMUTATION_TRACE=1\` to the actual game environment,
+and collects warning-level created/reused permutation markers.
+An automated candidate scene detection is **not verified scene equivalence**.
+Do not promote graphics fix on a trace counter alone.
+
 ## Required further gates (no loop)
 
 1. **Native behavioral replay: PASS** — both original and patched C++ compile; baseline demonstrably returns mismatched resource metadata; patched variation and cache reuse return correctly matching layout and slots.
