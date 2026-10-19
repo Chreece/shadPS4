@@ -495,6 +495,107 @@ Path(sys.argv[2]).write_text("\n".join(summ)+"\n")
 print("\n".join(summ))
 PYRASTERCOVERAGE
 
+  # Immediate GPU readbacks are on the same timeline as the exact
+  # fragment-producing draw, before all following clear, blur and
+  # compositor passes. Their RGB statistics come from ALL 2.07M pixels,
+  # not from small sparse thumbnails.
+  mkdir -p "$RUN/info/scene-immediate-shaders"
+  find "$RUN/profile/user/shader/dumps" -maxdepth 1 -type f \
+    \( -iname '*d0723f15*' -o -iname '*14054a7a*' \
+       -o -iname '*2dd14541*' -o -iname '*5abc2be8*' \
+       -o -iname '*d8fb6100*' -o -iname '*e301aa17*' \) \
+    -size -6M -print0 2>/dev/null |
+    while IFS= read -r -d '' shader; do
+      cp -p -- "$shader" \
+        "$RUN/info/scene-immediate-shaders/$(basename "$shader")" || true
+    done
+  grep -a 'GotSceneImmediatePixels:' "$RUN/game.log" \
+    >"$RUN/info/scene-immediate-gpu-events.log" || true
+  python3 - "$RUN/profile/user/shader/got-scene-immediate" \
+       "$RUN/info/scene-immediate-output-summary.txt" \
+       "$RUN/info" <<'PYIMMEDIATESCENE'
+from pathlib import Path
+import sys,struct,zlib,binascii
+folder=Path(sys.argv[1]);report=Path(sys.argv[2]);info=Path(sys.argv[3])
+results=[
+"GOAL=IS_SCENE_RGBA8_ALREADY_ZERO_IMMEDIATELY_AFTER_REAL_FS_INVOCATIONS",
+"CAPTURE_TIMING=IMMEDIATELY_AFTER_SCENE_DRAW_BEFORE_LATER_CLEAR",
+"COLOR_TARGET=0x15203f8000",
+"DEPTH_TARGET=0x1504a08000",
+"MAIN_SCENE_INDICES=13104",
+"GPU_CULLING_INDIRECT_DRAWS_UNTOUCHED=YES",
+"RASTER_AND_DEPTH_EXPERIMENTS_DEFAULT=DISABLED",
+]
+captured=[];scene_color=[]
+def png(path,w,h,pixels):
+    def ch(tag,payload):
+        return (struct.pack(">I",len(payload))+tag+payload+
+                struct.pack(">I",binascii.crc32(tag+payload)&0xffffffff))
+    rows=bytearray()
+    for y in range(h):
+        rows.append(0)
+        rows.extend(pixels[y*w*3:(y+1)*w*3])
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n" +
+        ch(b"IHDR",struct.pack(">IIBBBBB",w,h,8,2,0,0,0))+
+        ch(b"IDAT",zlib.compress(rows,6))+ch(b"IEND",b""))
+for metafile in sorted(folder.glob("*.raw.txt")):
+    entry={}
+    for line in metafile.read_text().splitlines():
+        if "=" in line:
+            k,v=line.split("=",1)
+            entry[k]=v
+    rawfile=Path(str(metafile)[:-4])
+    name=rawfile.stem
+    if not rawfile.exists():
+        results.append(f"IMMEDIATE_DRAW={name} RESULT=MISSING_RAW_DATA")
+        continue
+    raw=rawfile.read_bytes()
+    indices=int(entry.get("indices",0))
+    slot=int(entry.get("attachment",-1))
+    rgb=int(entry.get("rgb_nonzero_pixels",-1))
+    alpha=int(entry.get("alpha_nonzero_pixels",-1))
+    count=int(entry.get("nonzero_bytes",-1))
+    expected=int(entry.get("bytes",-1))
+    if len(raw)!=expected:
+        results.append(f"IMMEDIATE_DRAW={name} RESULT=SIZE_MISMATCH "
+                       f"expected={expected} actual={len(raw)}")
+        continue
+    captured.append(name)
+    if slot==0:
+        scene_color.append((name,rgb))
+    results.append(f"IMMEDIATE_DRAW={name} RESULT=GPU_READBACK_PASS "
+                   f"shader_fs={entry.get('fs')} vs={entry.get('vs')} "
+                   f"indices={indices} mrt={slot} "
+                   f"rgb_nonzero_pixels={rgb} "
+                   f"alpha_nonzero_pixels={alpha} "
+                   f"nonzero_bytes={count} raw_bytes={len(raw)}")
+    if slot not in (0,2) or expected!=1920*1080*4:
+        continue
+    # Pure stdlib contact-sheet preview; raw GPU bytes remain authoritative.
+    width=240;height=135;preview=bytearray()
+    bgra=entry.get("format") in ("44","50")
+    for y in range(height):
+        for x in range(width):
+            p=((y*8)*1920+x*8)*4
+            color=raw[p:p+4]
+            if len(color)!=4:color=b"\x00\x00\x00\xff"
+            if bgra:preview.extend((color[2],color[1],color[0]))
+            else:preview.extend(color[:3])
+    png(info/(name+"-preview.png"),width,height,preview)
+results.append("GPU_COLOR_MRT0_SNAPSHOTS="+str(len(scene_color)))
+results.append("GPU_TOTAL_SNAPSHOTS="+str(len(captured)))
+if scene_color and all(rgb==0 for _,rgb in scene_color):
+    results.append("NEXT_CONCLUSION=SCENE_MRT0_HAS_ZERO_RGB_DIRECTLY_AFTER_REAL_FS_DRAWS")
+elif any(rgb>0 for _,rgb in scene_color):
+    results.append("NEXT_CONCLUSION=SCENE_MRT0_CONTAINS_NONZERO_RGB_IMMEDIATELY_AFTER_DRAW")
+    results.append("LATER_ZERO_SNAPSHOT_IMPLIES_IMAGE_WAS_OVERWRITTEN_OR_DISCARDED")
+else:
+    results.append("NEXT_CONCLUSION=NO_USABLE_IMMEDIATE_SCENE_IMAGE_PROOF")
+report.write_text("\n".join(results)+"\n")
+print("\n".join(results))
+PYIMMEDIATESCENE
+
   # Convert the *actual* GPU readbacks to small PNG previews without
   # any Python packages. Preserve raw data for exact IEEE-754 inspection.
   python3 - "$RUN/profile/user/shader/got-menu-probes" "$RUN/info" <<'PYSTAGEPIXELS'
@@ -734,6 +835,10 @@ PYSTAGEPIXELS
     echo "GOT_SCENE_RASTER_COVERAGE_EVENTS=$(grep -ac 'GotSceneRasterCoverage:' "$RUN/game.log" || true)"
     echo "GPU_QUERY_SELECTED=$(grep -ac 'GotSceneGpuQuerySelected:' "$RUN/game.log" || true)"
     echo "GPU_QUERY_RESULTS=$(grep -ac 'GotSceneGpuInvocations:' "$RUN/game.log" || true)"
+    echo "IMMEDIATE_GPU_SCENE_READBACKS=$(grep -ac 'GotSceneImmediatePixels: result=GPU_READBACK_PASS' "$RUN/game.log" || true)"
+    echo "IMMEDIATE_GPU_SCENE_REQUESTS=$(grep -ac 'GotSceneImmediatePixels:.*GPU_COPY_SUBMITTED' "$RUN/game.log" || true)"
+    echo "GPU_IMMEDIATE_READBACK_RENDERER_OPT_IN=YES"
+    echo "GPU_INDIRECT_COMMAND_READBACK=DISABLED_NOT_RELEVANT_TO_PRESENT_PROBLEM"
 
 
 
