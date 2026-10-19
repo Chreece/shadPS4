@@ -139,10 +139,12 @@ def main():
     args.diff.write_text(
         "ORIGINAL_SHA256="+hashlib.sha256(source).hexdigest()+"\n"+
         "PATCHED_SHA256="+hashlib.sha256(candidate).hexdigest()+"\n"+diff)
-    if args.apply:
+    if args.apply and status == "PATCHED_EXACT_ONE_INSTRUCTION":
         args.source.write_bytes(candidate)
-    print("SRT_DYNAMIC_SHIFT_SOURCE_FIX="+("APPLIED" if args.apply else "PREFLIGHT_ONLY"))
-    print("SRT_ONLY_ONE_ARITHMETIC_ARM_CHANGED=YES")
+    print("SRT_DYNAMIC_SHIFT_SOURCE_FIX="+status+
+          ("_APPLIED" if args.apply and status == "PATCHED_EXACT_ONE_INSTRUCTION"
+           else "_VERIFIED" if args.apply else "_PREFLIGHT"))
+    print("SRT_TARGET_ARM=VERIFIED_CORRECT_OR_EXACT_SINGLE_INSTRUCTION_REMOVED")
     print("SRT_REVERSE_EXACT_AND_PROTECTED_SOURCE_UNTOUCHED=YES")
 
 if __name__=="__main__":
