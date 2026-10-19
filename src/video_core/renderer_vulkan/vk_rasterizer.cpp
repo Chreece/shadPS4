@@ -24,6 +24,7 @@
 #include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_got_menu_pass_trace.h"
+#include "video_core/renderer_vulkan/vk_buffer_hazard_rules.h"
 #include "video_core/renderer_vulkan/vk_got_scene_depth_ab.h"
 #include "video_core/renderer_vulkan/vk_got_scene_gpu_queries.h"
 #include "video_core/renderer_vulkan/vk_got_indirect_gpu_readback.h"
@@ -818,9 +819,11 @@ void Rasterizer::ResetBindings(bool is_compute) {
         texture_cache.GetImage(image_id).binding = {};
     }
     for (const auto [buffer, offset, size, src_access] : bound_buffers) {
-        const auto dst_stage = is_compute ? vk::PipelineStageFlagBits2::eComputeShader
-                                          : vk::PipelineStageFlagBits2::eAllGraphics;
-        runtime.AccessBuffer(buffer, offset, size, dst_stage, src_access);
+        // The indirect argument fetch is a DRAW_INDIRECT pipeline read, not
+        // a vertex/fragment shader read. Keep the correct stage when recording
+        // ranges, so GPU-generated command writes are ordered after reads.
+        const auto src_stage=BufferHazards::StageForBoundBuffer(src_access,is_compute);
+        runtime.AccessBuffer(buffer, offset, size, src_stage, src_access);
     }
     bound_images.clear();
     bound_buffers.clear();
