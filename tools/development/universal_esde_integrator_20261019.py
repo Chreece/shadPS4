@@ -392,6 +392,28 @@ class Builder:
         self.report["missing_general_source_contracts"] = missing
         if missing:
             raise RuntimeError("GENERAL_ENGINE_SOURCE_CONTRACTS_INCOMPLETE")
+        # Reject newly introduced emulator-code title exceptions and direct
+        # hardcoded shader-identity tests. Diagnostic evidence belongs in
+        # external test scripts, not implicit production game behavior.
+        source_diff = self.capture(
+            "git", "-C", self.source, "diff", "--unified=0",
+            self.report["source_checkpoint"], "HEAD", "--", "src",
+            timeout=100,
+        )
+        if source_diff.returncode:
+            raise RuntimeError("CANNOT_VALIDATE_NO_SPECIAL_CASE_SOURCE_DIFF")
+        violations = []
+        for line in source_diff.stdout.splitlines():
+            if not line.startswith("+") or line.startswith("+++"):
+                continue
+            body = line[1:]
+            if re.search(r"\bCUSA[0-9]{5}\b", body, re.I) or re.search(
+                    r"\b(?:pgm_hash|shader_hash|code_hash)\s*==\s*0x[0-9a-f]+\b",
+                    body, re.I):
+                violations.append(body[:250])
+        self.report["new_native_title_or_hash_special_cases"] = violations[:90]
+        if violations:
+            raise RuntimeError("GAME_TITLE_OR_SHADER_HASH_RUNTIME_SPECIAL_CASES_REJECTED")
         # We cannot certify specific game rendering from source tokens.
         self.report["binary_or_game_proven_from_contracts"] = False
 
