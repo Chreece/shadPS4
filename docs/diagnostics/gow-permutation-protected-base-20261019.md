@@ -67,3 +67,33 @@ resumes CMake and Ninja without touching the working emulator.
 
 Next gate: **isolated full CMake configure/link**, followed by one
 scene-matched trial only when it builds and the trace behaves correctly.
+
+
+## 22:14 CEST: Sirit SPIRV-Headers fixed; next nested RapidJSON gap
+
+Uploaded \`gow-permutation-protected-resume-20261019-221438.tar.gz\` confirms the
+Sirit HEAD \`fc2b42d5e57ee2f638676c0c02f7fd71934b596a\` gitlink to
+\`SPIRV-Headers\` SHA \`2acb319af38d43be3ea76bfabf3998e5281d8d12\` was repaired
+using the original Git objects read-only. Both commit and tracked CMake content
+checks passed. **CMake configure then passed.** Ninja reached 1825/2634
+scheduled steps, then stopped because \`externals/discord-rpc\` failed to
+include \`rapidjson/document.h\` in both \`rpc_connection.cpp\` and
+\`discord_rpc.cpp\`. No separate candidate executable was linked.
+
+Source of the next missing pinned dependency:
+\`externals/discord-rpc\` HEAD
+\`19f66e6dcabb2268965f453db9e5774ede43238f\`
+declares \`thirdparty/rapidjson\` commit
+\`d621dc9e9c77f81e5c8a35b8dcc16dcd63351321\`.
+Exact \`include/rapidjson/document.h\` Git blob:
+\`4b2d723224833d70208512881091a068f2d075c6\`.
+The repair script \`scripts/gow_permutation_protected_rapidjson_resume_20261019.py\`
+restores this source **only within the isolated test checkout** and resumes
+existing Ninja without reconfiguring or touching production. It reports
+remaining missing nested gitlinks but does not silently download optional
+third-party test dependencies. The RapidJSON checkout has a nested
+\`thirdparty/gtest\` gitlink that is *not* required by Discord RPC's normal
+header-only RapidJSON use; no test dependencies should be fetched blindly.
+
+Protected source and executable were unchanged in the 22:14 report.
+**Shader behavior in the actual game remains unmeasured.**
