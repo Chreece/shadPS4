@@ -9,7 +9,7 @@ WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 SCRIPTS="$ROOT/scripts"
 BRANCH="diagnostic/got-indexed-sample-feedback-20261019"
-PIN="b76637bc5f55f9dde664a859b0fcb9a9c4d5862e"
+PIN="f2b2ef3555cc822021ba7ffec737f2637dd02ed5"
 CANDIDATE_COMMIT="71faef4a8d76282a1931445198571082f0e3c70e"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$CANDIDATE_COMMIT"
 BUILD_SCRIPT="$SCRIPTS/got-indexed-sample-feedback-host-20261019.sh"
@@ -89,7 +89,7 @@ RUNTIME_REPORT="$(find "$LOGS" -maxdepth 1 -type f \
 if [ -n "$RUNTIME_REPORT" ] &&
    tar -xOzf "$RUNTIME_REPORT" info/final.txt 2>/dev/null |
        grep -qx "CANDIDATE_SOURCE=$CANDIDATE_COMMIT"; then
-    BUNDLE="$LOGS/got-table-guard-evidence-$(date +%Y%m%d-%H%M%S).tar.gz"
+    BUNDLE="$LOGS/got-buffer-span-evidence-$(date +%Y%m%d-%H%M%S).tar.gz"
     tar -czf "$BUNDLE" -C "$LOGS" "$(basename "$HOST_REPORT")" "$(basename "$RUNTIME_REPORT")"
     echo "UPLOAD_THIS=$BUNDLE"
 else

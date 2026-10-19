@@ -1,6 +1,6 @@
 # GoT: executed indexed-image sample feedback, 2026-10-19
 
-Current candidate: [resource-table lifetime and empty-table repair](got-table-guard-20261019.md). The latest capture crashed before completing gameplay. A matching local failure is corrected and local validation passes; menu/world recovery remains unverified. Earlier evidence and pins below are historical.
+Current candidate: [large GPU-selected buffer-table repair](got-buffer-spans-20261019.md). The latest native run completes without the previous crash, but the menu remains white and the world missing. The new candidate preserves a confirmed missing compute write at large table counts; local checks pass, native visual recovery remains unverified. Earlier evidence and pins below are historical.
 
 Gameplay graphics remain unverified. This branch retains the verified LDS/Phi and Vulkan synchronization work, adds opt-in sample feedback, and repairs indexed texture-table specialization. It does not yet claim a white-menu or scene-geometry fix.
 

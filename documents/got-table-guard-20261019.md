@@ -1,5 +1,7 @@
 # GoT resource-table lifetime repair, 2026-10-19
 
+Current candidate: [large GPU-selected buffer-table repair](got-buffer-spans-20261019.md). The latest native run completes without the previous crash, but the menu remains white and the world missing. The new candidate preserves a confirmed missing compute write at large table counts; local checks pass, native visual recovery remains unverified. Earlier evidence and pins below are historical.
+
 The new capture **crashed before completing gameplay**. A local reproduction now matches its fatal descriptor-format error, and the candidate prevents stale table layouts from reading retired records. It also resolves four captured zero-record image/sampler cases. The full build and local shader checks pass. **Menu and world rendering remain unverified.**
 
 Source: `71faef4a8d76282a1931445198571082f0e3c70e`. Paired host/runtime scripts: `b76637bc5f55f9dde664a859b0fcb9a9c4d5862e`. Branch: `diagnostic/got-indexed-sample-feedback-20261019`.
