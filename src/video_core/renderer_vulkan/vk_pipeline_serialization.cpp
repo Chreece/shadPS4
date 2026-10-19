@@ -5,6 +5,7 @@
 #include "core/emulator_settings.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
 #include "shader_recompiler/info.h"
+#include "shader_recompiler/indexed_image_feedback.h"
 #include "video_core/cache_storage.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
@@ -23,7 +24,8 @@ namespace Vulkan {
 
 void RegisterPipelineData(const ComputePipelineKey& key,
                           ComputePipeline::SerializationSupport& sdata) {
-    if (!Storage::DataBase::Instance().IsOpened()) {
+    if (!Storage::DataBase::Instance().IsOpened() ||
+        Shader::Diagnostics::IndexedImageFeedbackEnabled()) {
         return;
     }
 
@@ -42,7 +44,8 @@ void RegisterPipelineData(const ComputePipelineKey& key,
 
 void RegisterPipelineData(const GraphicsPipelineKey& key, u64 hash,
                           GraphicsPipeline::SerializationSupport& sdata) {
-    if (!Storage::DataBase::Instance().IsOpened()) {
+    if (!Storage::DataBase::Instance().IsOpened() ||
+        Shader::Diagnostics::IndexedImageFeedbackEnabled()) {
         return;
     }
 
@@ -63,7 +66,8 @@ void RegisterShaderMeta(const Shader::Info& info,
                         const std::optional<Shader::Gcn::FetchShaderData>& fetch_shader_data,
                         const Shader::StageSpecialization& spec, size_t perm_hash,
                         size_t perm_idx) {
-    if (!Storage::DataBase::Instance().IsOpened()) {
+    if (!Storage::DataBase::Instance().IsOpened() ||
+        Shader::Diagnostics::IndexedImageFeedbackEnabled()) {
         return;
     }
 
@@ -84,7 +88,8 @@ void RegisterShaderMeta(const Shader::Info& info,
 }
 
 void RegisterShaderBinary(std::vector<u32>&& spv, u64 pgm_hash, size_t perm_idx) {
-    if (!Storage::DataBase::Instance().IsOpened()) {
+    if (!Storage::DataBase::Instance().IsOpened() ||
+        Shader::Diagnostics::IndexedImageFeedbackEnabled()) {
         return;
     }
 
@@ -95,6 +100,9 @@ void RegisterShaderBinary(std::vector<u32>&& spv, u64 pgm_hash, size_t perm_idx)
 
 bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
                     Shader::StageSpecialization& spec, size_t& perm_idx) {
+    if (Shader::Diagnostics::IndexedImageFeedbackEnabled()) {
+        return false;
+    }
     Serialization::Reader meta{ar};
 
     u32 meta_version{};

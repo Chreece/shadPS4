@@ -19,6 +19,7 @@
 #include "shader_recompiler/profile.h"
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/guest_tsharp_array.h"
+#include "shader_recompiler/indexed_image_feedback.h"
 #include "shader_recompiler/strided_material_specialization.h"
 #include "video_core/amdgpu/resource.h"
 #include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
@@ -398,24 +399,6 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         inst_info.has_lod && is_written && !profile.supports_image_load_store_lod;
     const auto& source = resource.sharps[0];
     const auto fetch = ConstructSharpFetch<AmdGpu::Image>(source, info);
-    if (InvalidSharpTraceEnabled(info) &&
-        fetch.summary == SharpFetch<AmdGpu::Image>::Summary::Invalid) {
-        static thread_local std::unordered_map<u64, u32> per_shader;
-        const u64 shader_key = (static_cast<u64>(info.pgm_hash) << 8) |
-                                static_cast<u8>(info.hw_stage);
-        if (per_shader[shader_key]++ < 48) {
-            LOG_INFO(Render_Recompiler,
-                     "InvalidTSharpSource: shader={:#x} stage={} op={} "
-                     "missing_mask={:#x} dw0={} dw1={} dw2={} dw3={} "
-                     "dw4={} dw5={} dw6={} dw7={}",
-                     info.pgm_hash, info.hw_stage, IR::NameOf(inst.GetOpcode()),
-                     MissingSharpWordMask(source, fetch),
-                     SharpProducerName(source, 0), SharpProducerName(source, 1),
-                     SharpProducerName(source, 2), SharpProducerName(source, 3),
-                     SharpProducerName(source, 4), SharpProducerName(source, 5),
-                     SharpProducerName(source, 6), SharpProducerName(source, 7));
-        }
-    }
     ImageResource image_res = {
         .sharp_fetch = fetch,
         .is_depth = bool(inst_info.is_depth),
@@ -486,6 +469,24 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         }
     }
 
+    if (!image_res.is_guest_indexed && InvalidSharpTraceEnabled(info) &&
+        fetch.summary == SharpFetch<AmdGpu::Image>::Summary::Invalid) {
+        static thread_local std::unordered_map<u64, u32> per_shader;
+        const u64 shader_key = (static_cast<u64>(info.pgm_hash) << 8) |
+                                static_cast<u8>(info.hw_stage);
+        if (per_shader[shader_key]++ < 48) {
+            LOG_INFO(Render_Recompiler,
+                     "InvalidTSharpSource: shader={:#x} stage={} op={} "
+                     "missing_mask={:#x} dw0={} dw1={} dw2={} dw3={} "
+                     "dw4={} dw5={} dw6={} dw7={}",
+                     info.pgm_hash, info.hw_stage, IR::NameOf(inst.GetOpcode()),
+                     MissingSharpWordMask(source, fetch),
+                     SharpProducerName(source, 0), SharpProducerName(source, 1),
+                     SharpProducerName(source, 2), SharpProducerName(source, 3),
+                     SharpProducerName(source, 4), SharpProducerName(source, 5),
+                     SharpProducerName(source, 6), SharpProducerName(source, 7));
+        }
+    }
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
 
@@ -1426,6 +1427,16 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         } else if (IsImageInstruction(inst)) {
             PatchImageSharp(usage, info, descriptors, profile, complete);
         }
+    }
+
+    if (Diagnostics::IndexedImageFeedbackEnabled(info.pgm_hash) &&
+        (info.hw_stage == HwStage::Fragment || info.hw_stage == HwStage::Compute) &&
+        std::ranges::any_of(info.images, [](const auto& image) { return image.is_guest_indexed; })) {
+        descriptors.Add(BufferResource{
+            .used_types = IR::Type::U32,
+            .buffer_type = BufferType::IndexedImageFeedback,
+            .is_written = true,
+        });
     }
 
     // Pass 2: patch resource users, keeping old scalar descriptor producers

@@ -6,6 +6,7 @@
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/ir/microinstruction.h"
 #include "shader_recompiler/guest_tsharp_array.h"
+#include "shader_recompiler/indexed_image_feedback.h"
 
 namespace Shader::Backend::SPIRV {
 
@@ -184,6 +185,63 @@ Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id c
     return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
 }
 
+static void RecordIndexedImageSample(EmitContext& ctx, u32 image_index, Id gpu_id, Id sample) {
+    const auto found = std::ranges::find(ctx.info.buffers, BufferType::IndexedImageFeedback,
+                                         &BufferResource::buffer_type);
+    if (found == ctx.info.buffers.end()) {
+        return;
+    }
+    using namespace Shader::Diagnostics;
+    const u32 buffer_index = std::distance(ctx.info.buffers.begin(), found);
+    const auto [buffer, pointer_type] =
+        ctx.buffers[buffer_index].Alias(EmitContext::PointerType::U32);
+    const u32 base = 1u + image_index * IndexedImageFeedbackWordsPerImage;
+    const auto pointer = [&](Id word) {
+        return ctx.OpAccessChain(pointer_type, buffer, ctx.u32_zero_value, word);
+    };
+    const Id enabled = ctx.OpINotEqual(
+        ctx.U1[1], ctx.OpLoad(ctx.U32[1], pointer(ctx.u32_zero_value)), ctx.u32_zero_value);
+    const Id record_label = ctx.OpLabel();
+    const Id merge_label = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge_label, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(enabled, record_label, merge_label);
+    ctx.AddLabel(record_label);
+    const auto increment = [&](u32 word, Id value) {
+        ctx.OpAtomicIAdd(ctx.U32[1], pointer(ctx.ConstU32(base + word)),
+                         ctx.ConstU32(u32(spv::Scope::Device)), ctx.u32_zero_value, value);
+    };
+    increment(0, ctx.ConstU32(1u));
+    const Id out_of_range = ctx.OpUGreaterThanEqual(
+        ctx.U1[1], gpu_id, ctx.ConstU32(ctx.images[image_index].image_array_size - 1));
+    increment(1, ctx.OpSelect(ctx.U32[1], out_of_range, ctx.ConstU32(1u), ctx.u32_zero_value));
+    Id nonzero = ctx.false_value;
+    Id nonfinite = ctx.false_value;
+    for (u32 component = 0; component < 4; ++component) {
+        const Id value = ctx.OpCompositeExtract(ctx.F32[1], sample, component);
+        const Id bits = ctx.OpBitwiseAnd(ctx.U32[1], ctx.OpBitcast(ctx.U32[1], value),
+                                         ctx.ConstU32(0x7fffffffu));
+        nonzero = ctx.OpLogicalOr(ctx.U1[1], nonzero,
+                                  ctx.OpINotEqual(ctx.U1[1], bits, ctx.u32_zero_value));
+        nonfinite =
+            ctx.OpLogicalOr(ctx.U1[1], nonfinite,
+                            ctx.OpUGreaterThanEqual(ctx.U1[1], bits, ctx.ConstU32(0x7f800000u)));
+    }
+    increment(2, ctx.OpSelect(ctx.U32[1], nonzero, ctx.ConstU32(1u), ctx.u32_zero_value));
+    increment(3, ctx.OpSelect(ctx.U32[1], nonfinite, ctx.ConstU32(1u), ctx.u32_zero_value));
+    const Id in_window =
+        ctx.OpULessThan(ctx.U1[1], gpu_id, ctx.ConstU32(IndexedImageFeedbackOverflow));
+    const Id observed =
+        ctx.OpSelect(ctx.U32[1], in_window, gpu_id, ctx.ConstU32(IndexedImageFeedbackOverflow));
+    const Id word = ctx.OpIAdd(ctx.U32[1], ctx.ConstU32(base + IndexedImageFeedbackHeaderWords),
+                               ctx.OpShiftRightLogical(ctx.U32[1], observed, ctx.ConstU32(5u)));
+    const Id bit = ctx.OpShiftLeftLogical(
+        ctx.U32[1], ctx.ConstU32(1u), ctx.OpBitwiseAnd(ctx.U32[1], observed, ctx.ConstU32(31u)));
+    ctx.OpAtomicOr(ctx.U32[1], pointer(word), ctx.ConstU32(u32(spv::Scope::Device)),
+                   ctx.u32_zero_value, bit);
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(merge_label);
+}
+
 // The same nonuniform GPU record ID selects both T# and S#. An indexed
 // texture must never sample using an unrelated host default sampler.
 static Id LoadIndexedGuestSampler(EmitContext& ctx, u32 handle, Id bounded,
@@ -240,7 +298,9 @@ Id EmitImageSampleImplicitLodIndexed(
     const Id raw=ctx.OpImageSampleImplicitLod(texture.data_types->Get(4),
                                               sampled,coords_fixed,
                                               ops.mask,ops.operands);
-    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4],raw) : raw;
+    const Id result = texture.is_integer ? ctx.OpBitcast(ctx.F32[4], raw) : raw;
+    RecordIndexedImageSample(ctx, handle & 0xffffu, gpu_texture_id, result);
+    return result;
 }
 
 Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
@@ -417,7 +477,9 @@ Id EmitImageGradientIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coo
     const Id raw = ctx.OpImageSampleExplicitLod(
         texture.data_types->Get(4),sampled,fixed_coords,
         operands.mask,operands.operands);
-    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4],raw) : raw;
+    const Id result = texture.is_integer ? ctx.OpBitcast(ctx.F32[4], raw) : raw;
+    RecordIndexedImageSample(ctx, handle & 0xffffu, gpu_texture_id, result);
+    return result;
 }
 
 Id EmitImageRead(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod, Id ms) {

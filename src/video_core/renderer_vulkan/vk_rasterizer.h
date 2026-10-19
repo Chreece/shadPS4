@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <map>
 #include <vector>
 
 #include "common/recursive_lock.h"
@@ -198,6 +199,16 @@ private:
     u32 set_write_index{};
     Pipeline::DescriptorWrites set_writes;
     Shader::PushData push_data;
+
+    struct IndexedImageFeedback {
+        std::unique_ptr<VideoCore::Buffer> buffer;
+        std::array<u32, Shader::NUM_IMAGES> entries{};
+        u32 bindings{};
+        bool capture{};
+    };
+    std::map<std::pair<u64, u32>, IndexedImageFeedback> indexed_image_feedback;
+    std::unique_ptr<VideoCore::Buffer> indexed_image_feedback_disabled;
+    void CaptureIndexedImageFeedback();
 
     bool attachment_feedback_loop{};
     bool needs_barrier{};

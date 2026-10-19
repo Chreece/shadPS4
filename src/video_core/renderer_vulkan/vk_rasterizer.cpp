@@ -16,6 +16,7 @@
 #include "core/memory.h"
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/guest_tsharp_array.h"
+#include "shader_recompiler/indexed_image_feedback.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
@@ -433,6 +434,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     Diagnostics::TraceMenuDraw(regs, *pipeline, state, is_indexed, false);
 
     ResetBindings(false);
+    CaptureIndexedImageFeedback();
 }
 
 void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 stride,
@@ -582,6 +584,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     CountSubmittedDraw(liverpool->regs, state, is_indexed, true);
     Diagnostics::TraceMenuDraw(liverpool->regs, *pipeline, state, is_indexed, true);
     ResetBindings(false);
+    CaptureIndexedImageFeedback();
 }
 
 void Rasterizer::DispatchDirect() {
@@ -619,6 +622,7 @@ void Rasterizer::DispatchDirect() {
     DebugState.IncDispatch();
 
     ResetBindings(true);
+    CaptureIndexedImageFeedback();
     Diagnostics::CaptureGotGdsComputeProducer(
         instance,scheduler,runtime,buffer_cache.GetGdsBuffer(),cs,
         false,cs_program.dim_x,cs_program.dim_y,cs_program.dim_z);
@@ -658,6 +662,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     DebugState.IncDispatch();
 
     ResetBindings(true);
+    CaptureIndexedImageFeedback();
     Diagnostics::CaptureGotGdsComputeProducer(
         instance,scheduler,runtime,buffer_cache.GetGdsBuffer(),cs,
         true,0,0,0);
@@ -672,6 +677,57 @@ u64 Rasterizer::Flush() {
 
 void Rasterizer::Finish() {
     scheduler.Finish();
+}
+
+void Rasterizer::CaptureIndexedImageFeedback() {
+    using namespace Shader::Diagnostics;
+    for (auto& [key, feedback] : indexed_image_feedback) {
+        if (!std::exchange(feedback.capture, false)) {
+            continue;
+        }
+        const u64 bytes = feedback.buffer->SizeBytes();
+        auto snapshot = std::make_unique<VideoCore::Buffer>(instance, 0, bytes,
+                                                            VideoCore::MemoryType::HostCached);
+        const vk::BufferCopy copy{.srcOffset = 0, .dstOffset = 0, .size = bytes};
+        runtime.CopyBuffer(feedback.buffer.get(), snapshot.get(), std::span{&copy, 1});
+        LOG_INFO(Render_Vulkan,
+                 "IndexedImageFeedbackSubmitted: shader={:#x} stage={} binding={} bytes={}",
+                 key.first, key.second, feedback.bindings, bytes);
+        scheduler.DeferPriorityOperation(
+            [snapshot = std::move(snapshot), source = std::move(feedback.buffer), key,
+             sequence = feedback.bindings, entries = feedback.entries]() {
+                ASSERT(source);
+                snapshot->Invalidate(0, snapshot->SizeBytes());
+                const auto* data = reinterpret_cast<const u32*>(snapshot->mapped_data.data());
+                for (u32 resource = 0; resource < entries.size(); ++resource) {
+                    if (!entries[resource]) {
+                        continue;
+                    }
+                    const auto* row = data + 1u + resource * IndexedImageFeedbackWordsPerImage;
+                    u32 distinct = 0;
+                    std::string ids;
+                    for (u32 id = 0; id < IndexedImageFeedbackOverflow; ++id) {
+                        if (!(row[IndexedImageFeedbackHeaderWords + id / 32] & (1u << (id % 32)))) {
+                            continue;
+                        }
+                        if (distinct < 48) {
+                            if (!ids.empty())
+                                ids += ",";
+                            ids += std::to_string(id);
+                        }
+                        ++distinct;
+                    }
+                    LOG_INFO(Render_Vulkan,
+                             "IndexedImageFeedback: shader={:#x} stage={} binding={} resource={} "
+                             "entries={} samples={} out_of_range={} nonzero_samples={} "
+                             "nonfinite_samples={} distinct_ids={} overflow={} first_48=[{}] "
+                             "cumulative=NO timeline_complete=YES",
+                             key.first, key.second, sequence, resource, entries[resource], row[0],
+                             row[1], row[2], row[3], distinct,
+                             (row[IndexedImageFeedbackWordsPerImage - 1] & 1u) != 0, ids);
+                }
+            });
+    }
 }
 
 void Rasterizer::OnSubmit() {
@@ -1134,6 +1190,43 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             } else if (desc.buffer_type == Shader::BufferType::FaultBuffer) {
                 const auto* fault_buffer = buffer_cache.GetFaultBuffer();
                 buffer_infos.emplace_back(fault_buffer->Handle(), 0, fault_buffer->SizeBytes());
+            } else if (desc.buffer_type == Shader::BufferType::IndexedImageFeedback) {
+                const auto key = std::pair{u64(stage.pgm_hash), u32(stage.hw_stage)};
+                auto& feedback = indexed_image_feedback[key];
+                constexpr u32 bytes =
+                    (1u +
+                     Shader::NUM_IMAGES * Shader::Diagnostics::IndexedImageFeedbackWordsPerImage) *
+                    sizeof(u32);
+                feedback.capture =
+                    Shader::Diagnostics::CaptureIndexedImageFeedback(++feedback.bindings);
+                if (feedback.capture) {
+                    feedback.buffer = std::make_unique<VideoCore::Buffer>(
+                        instance, 0, bytes, VideoCore::MemoryType::HostCached);
+                    ASSERT(feedback.buffer->mapped_data.size() >= bytes);
+                    std::memset(feedback.buffer->mapped_data.data(), 0, bytes);
+                    const u32 enabled = 1;
+                    std::memcpy(feedback.buffer->mapped_data.data(), &enabled, sizeof(enabled));
+                    feedback.buffer->Flush(0, bytes);
+                    feedback.entries.fill(0);
+                    for (u32 i = 0; i < stage.images.size(); ++i) {
+                        if (stage.images[i].is_guest_indexed) {
+                            feedback.entries[i] = stage.images[i].indexed_guest_entries;
+                        }
+                    }
+                    const auto* buffer = feedback.buffer.get();
+                    buffer_infos.emplace_back(buffer->Handle(), 0, bytes);
+                    bound_buffers.emplace_back(buffer, 0, bytes, src_access);
+                } else {
+                    if (!indexed_image_feedback_disabled) {
+                        indexed_image_feedback_disabled = std::make_unique<VideoCore::Buffer>(
+                            instance, 0, sizeof(u32), VideoCore::MemoryType::HostCached);
+                        std::memset(indexed_image_feedback_disabled->mapped_data.data(), 0,
+                                    sizeof(u32));
+                        indexed_image_feedback_disabled->Flush(0, sizeof(u32));
+                    }
+                    buffer_infos.emplace_back(indexed_image_feedback_disabled->Handle(), 0,
+                                              sizeof(u32));
+                }
             } else if (desc.buffer_type == Shader::BufferType::SharedMemory) {
                 auto& lds_buffer = buffer_cache.GetStreamBuffer();
                 const auto& cs_program = liverpool->GetCsRegs();
