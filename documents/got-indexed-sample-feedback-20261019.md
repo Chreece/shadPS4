@@ -38,9 +38,17 @@ Local validation: all four changed C++ translation units compile. A temporary ha
 ## Published runner checkpoint
 
 - Diagnostic source: `c917fafd138eac21df2fb2a99c5afd21f432986a`.
-- Paired host/runtime scripts: `b38a77d4c37a889302f0ce5fbe2e929af4f8fe94`.
+- Paired host/runtime scripts: `c29a3f0e29af8949603d563f1beb2a42d464f52e`.
 - Entry point: `scripts/got-indexed-sample-feedback-build-and-run-20261019.sh`.
 - All 80 unique source-overlay paths exist at the source pin. Both runner scripts are required at the script pin before the launcher starts building.
 - All three scripts pass `bash -n`; their embedded Python compiles. The feedback-summary parser was exercised with representative completed-capture data.
 - Outputs: `~/projects/shadps4/logs/got-indexed-sample-feedback-host-*.tar.gz` and `got-indexed-sample-feedback-runtime-*.tar.gz`.
-- Server/GPU execution remains pending. Production is unchanged; white-menu and world-rendering success are not claimed.
+- The corrected server build and GPU capture remain pending. Production is unchanged; white-menu and world-rendering success are not claimed.
+
+## Host preflight repair
+
+The server archive `got-indexed-sample-feedback-host-20261019-160205.tar.gz` stopped with `STATUS=HOST_TESTS`, `EXIT=1`, and an empty `build.log`. Compilation had not started. Its final report confirms `CANDIDATE_BUILT=0`, `BASELINE_EXECUTABLE_RESTORED=1`, `GAME_LAUNCHED=NO`, and `OLLAMA_CHANGED=NO`.
+
+The runner's stale source assertion required the GDS capture call immediately after `ResetBindings(true)`. The feedback capture now sits between those calls, so the assertion rejected valid ordering. The repaired guard checks both `DispatchDirect` and `DispatchIndirect` independently, requiring exactly one reset and one GDS capture in each function, with reset first. It permits intervening statements. Failures now report `PRODUCTION_SOURCE_PREFLIGHT_FAILED` and preserve the traceback in both `info/source-preflight.log` and `host-tests.log`.
+
+Local validation executed the runner's complete source-preflight and host-test block against all 80 pinned source blobs, ending with `HOST_ONLY_TESTS=PASS`. This includes the producer-address and LDS singleton checks that the server never reached. Temporary negative cases confirmed that removing the reset or placing it after capture fails in either dispatch function; the actual intervening feedback call passes. No emulator source changed in this repair. The source pin and previously successful full Release build remain the same; a successful server run and rendered world are still unverified.
