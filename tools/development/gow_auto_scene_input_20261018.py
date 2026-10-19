@@ -69,9 +69,12 @@ def metrics(raw: bytes) -> dict:
     warm /= max(1, n)
     blue /= max(1, n)
     texture = textured / max(1, n)
-    # A pure-white load frame has logo=1, selection=1 and texture=0.
-    # Reject it as a menu to avoid accidentally pressing Cross during loading.
-    menu = .020 < logo < .5 and selected_continue > .065 and texture > .6
+    # The preliminary logo at 18-22s in the 05:26 dense run looked like
+    # Continue but was NOT the interactive Continue screen. It had
+    # logo=.033, blue=.007 and texture=3.82. The real menu at 34-37s had
+    # logo=.066, blue=.111 and texture=5.85-5.97, in BOTH test modes.
+    menu = real_continue_menu(logo=logo, selected_continue=selected_continue,
+                              texture=texture, blue=blue, warm=warm)
     # Snowlit approach preceded the wolf in recorded 20:10 capture.
     # Distinguish it from startup, blue cave and menu with high brightness.
     approach = (not menu and bright > .027 and texture > 5.0 and logo < .015)
@@ -87,6 +90,40 @@ def metrics(raw: bytes) -> dict:
                 menu=menu, approach=approach, wolf_candidate=wolf_candidate,
                 world_ready=world_ready)
 
+
+
+def real_continue_menu(*, logo: float, selected_continue: float,
+                       texture: float, blue: float, warm: float) -> bool:
+    """Conservative GoW-only 05:26 real Continue signature; no image comparison."""
+    return (.045 < logo < .40 and .12 < selected_continue < .60
+            and .055 < blue < .25 and texture >= 5.2 and warm < .075)
+
+
+class ContinueGate:
+    """Two real-menu samples for Cross; verify menu doesn't remain indefinitely.
+
+    This gate still watches for the real menu after its first Cross. If the
+    same real menu persists, retry at most two additional times, >=8 sec apart,
+    then STOP instead of waiting for manual input or making a false A/B claim.
+    """
+    MAX_ATTEMPTS = 3
+    RETRY_AFTER_SECONDS = 8.0
+
+    def __init__(self):
+        self.streak = 0
+        self.attempts = 0
+        self.last_at = -1e9
+
+    def observe(self, elapsed: float, menu: bool) -> bool:
+        self.streak = self.streak + 1 if menu else 0
+        if self.streak < 2 or elapsed - self.last_at < self.RETRY_AFTER_SECONDS:
+            return False
+        if self.attempts >= self.MAX_ATTEMPTS:
+            raise RuntimeError("REAL_CONTINUE_MENU_UNRESPONSIVE_AFTER_3_X_PRESSES")
+        self.attempts += 1
+        self.last_at = elapsed
+        self.streak = 0
+        return True
 
 def gameplay_visible(*, menu: bool, blue: float, texture: float, logo: float) -> bool:
     """Recorded 21:47 numeric signals: loading texture~2.6, world~5.6."""
@@ -317,12 +354,38 @@ def selftest():
     assert .020 < partial_logo["logo"] < .5, partial_logo
     assert partial_logo["highlighted_continue"] > .065, partial_logo
     assert partial_logo["texture"] > .6, partial_logo
-    assert partial_logo["menu"], partial_logo
+    # The old synthetic black background and solid selection rectangle
+    # deliberately lack the real-menu background/context signature.
+    assert not partial_logo["menu"], partial_logo
+    assert real_continue_menu(logo=.066, selected_continue=.200,
+                              texture=5.88, blue=.111, warm=.006)
+    assert not real_continue_menu(logo=.033, selected_continue=.181,
+                                  texture=3.82, blue=.007, warm=0.0)
+    assert not real_continue_menu(logo=.081, selected_continue=.963,
+                                  texture=8.47, blue=.015, warm=.105)
 
     all_white = bytes([255]) * (W * H * 3)
     assert not metrics(all_white)["menu"]
-    print("AUTOMATED_MENU_DETECTOR_SYNTHETIC=PASS cases=4; "
-          "solid-logo-and-all-white-loading-rejected=YES")
+    print("AUTOMATED_MENU_DETECTOR_SYNTHETIC=PASS cases=7; "
+          "real-continue-positive, preliminary-and-ingame-false-positives-rejected=YES")
+    gate = ContinueGate()
+    assert not gate.observe(18.88, False)
+    assert not gate.observe(21.93, False)
+    assert not gate.observe(34.12, True)
+    assert gate.observe(37.24, True) and gate.attempts == 1
+    assert not gate.observe(40.29, True)
+    assert not gate.observe(43.38, True)
+    assert gate.observe(46.52, True) and gate.attempts == 2
+    assert not gate.observe(49.55, True)
+    assert gate.observe(55.73, True) and gate.attempts == 3
+    try:
+        gate.observe(65.0, True)
+        gate.observe(68.0, True)
+    except RuntimeError as exc:
+        assert "UNRESPONSIVE_AFTER_3_X_PRESSES" in str(exc)
+    else:
+        raise AssertionError("PERSISTENT_CONTINUE_NOT_REJECTED")
+    print("CONTINUE_RETRY_GATE=PASS max_presses=3 fail_closed=YES")
     audio_candidate_regression()
     class FakeKeyboard:
         def __init__(self, fails_on=None):
@@ -459,7 +522,9 @@ def main():
     os.environ["DISPLAY"] = a.display
     status_path = a.out / "auto-progress.json"
     record = {"pid": a.pid, "display": a.display, "mode": "WAIT_MENU",
-              "menu_seen_at": None, "cross_at": None, "forward_at": None,
+              "menu_seen_at": None, "cross_at": None, "cross_attempts": [],
+              "last_cross_at": None, "real_menu_reappeared": False,
+              "forward_at": None,
               "right_at": None, "left_at": None, "world_ready_at": None,
               "right_released_at": None, "audio_windows": [],
               "route_segments": [],
@@ -477,7 +542,7 @@ def main():
     for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(signum, interrupted)
     keyboard = None
-    menu_hits = 0
+    continue_gate = ContinueGate()
     world_hits = 0
     wolf_hits = 0
     route = None
@@ -555,20 +620,31 @@ def main():
             record["observations"].append({"t": elapsed, **observed})
             record["observations"] = record["observations"][-240:]
             state = record["mode"]
-            if state == "WAIT_MENU":
-                menu_hits = menu_hits + 1 if observed["menu"] else 0
-                if menu_hits >= 2:
-                    record["menu_seen_at"] = elapsed
+            if state in ("WAIT_MENU", "WAIT_WORLD_READY"):
+                # Continue must be confirmed using the real interactive menu,
+                # not the logo displayed earlier in startup. Re-arm the same
+                # detector if a real Continue menu persists or reappears.
+                if continue_gate.observe(elapsed, observed["menu"]):
+                    attempt = continue_gate.attempts
                     keyboard.tap(a.cross_key)
-                    record["cross_at"] = round(time.monotonic() - a.launch_monotonic, 2)
+                    at = round(time.monotonic() - a.launch_monotonic, 2)
+                    record["cross_at"] = record["cross_at"] or at
+                    record["last_cross_at"] = at
+                    record["menu_seen_at"] = record["menu_seen_at"] or elapsed
+                    record["real_menu_reappeared"] = attempt > 1
+                    record["cross_attempts"].append({"attempt": attempt, "t": at})
                     record["input_actions"].append(
-                        {"action": "PLAYSTATION_CROSS_CONTINUE", "t": record["cross_at"]})
-                    print(f"MENU_CONFIRMED_AND_CROSS_SENT={elapsed} "
-                          "WAITING_FOR_REAL_GAMEPLAY_BEFORE_STEERING=YES", flush=True)
+                        {"action": "PLAYSTATION_CROSS_CONTINUE_REAL_MENU",
+                         "attempt": attempt, "t": at})
+                    print(f"REAL_CONTINUE_CONFIRMED_AND_X_SENT={elapsed} "
+                          f"ATTEMPT={attempt} MAX=3", flush=True)
                     record["mode"] = "WAIT_WORLD_READY"
-            elif state == "WAIT_WORLD_READY":
-                world_hits = world_hits + 1 if observed["world_ready"] else 0
-                if world_hits >= 2:
+                    world_hits = 0
+                elif state == "WAIT_WORLD_READY" and observed["world_ready"]:
+                    world_hits += 1
+                elif state == "WAIT_WORLD_READY":
+                    world_hits = 0
+                if record["mode"] == "WAIT_WORLD_READY" and world_hits >= 2:
                     record["world_ready_at"] = elapsed
                     route = RouteDriver(a.forward_key, a.right_key, a.left_key)
                     route_start = time.monotonic()
