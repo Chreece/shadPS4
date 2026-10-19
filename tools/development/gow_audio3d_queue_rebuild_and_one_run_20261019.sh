@@ -20,7 +20,7 @@ REGION_PATCHED="${11:?pinned sparse CPU upload region_manager.h required}"
 SPARSE_HEADER="${12:?pinned sparse dirty-word iterator required}"
 SPARSE_TEST="${13:?pinned native sparse-dirty-word regression test required}"
 LIVE_REGION_OVERLAY="${14:?pinned exact protected RegionManager surgical patch required}"
-AUDIO3D_PATCHED="${15:?pinned Audio3D queue-locked source required}"
+AUDIO3D_OVERLAY="${15:?pinned surgical Audio3D queue locking patcher required}"
 AUTO_INPUT="${16:?pinned corrected automatic GoW navigation required}"
 ROUTE_STEERING="${17:?pinned bounded steering helper required}"
 GAME_RUNNER="${9:?pinned controlled 135-second GoW runner required}"
@@ -265,7 +265,7 @@ dd2a54cb630d118ea273fc92ac90af611ac2b84e9ec2cca7e65c357101818f58 src/video_core/
 3760577a5851bb068e55db2e14346dfa1e62b65af60d3af68fd8458f8919d6a0 src/core/libraries/gnmdriver/gnmdriver.cpp
 PINNED_SOURCE
 STAGE=SNAPSHOT_ISOLATED_GRAPHICS_AND_AUDIO
-for file in src/video_core/page_manager.cpp src/video_core/page_manager.h src/video_core/renderer_vulkan/vk_rasterizer.cpp src/video_core/renderer_vulkan/vk_rasterizer.h src/core/libraries/gnmdriver/gnmdriver.cpp src/common/logging/log.cpp src/core/libraries/audio/sdl_audio_out.cpp src/core/libraries/audio/audioout.cpp src/core/libraries/audio3d/audio3d.cpp src/video_core/amdgpu/liverpool.cpp src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp src/shader_recompiler/ir/passes/resource_patching_pass.cpp src/video_core/buffer_cache/buffer_cache.cpp src/video_core/buffer_cache/region_manager.h; do
+for file in src/video_core/page_manager.cpp src/video_core/page_manager.h src/video_core/renderer_vulkan/vk_rasterizer.cpp src/video_core/renderer_vulkan/vk_rasterizer.h src/core/libraries/gnmdriver/gnmdriver.cpp src/common/logging/log.cpp src/core/libraries/audio/sdl_audio_out.cpp src/core/libraries/audio/audioout.cpp src/video_core/amdgpu/liverpool.cpp src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp src/shader_recompiler/ir/passes/resource_patching_pass.cpp src/video_core/buffer_cache/buffer_cache.cpp src/video_core/buffer_cache/region_manager.h; do
     [[ -f "$SRC/$file" && ! -L "$SRC/$file" && -f "$ORIGINAL_SRC/$file" && ! -L "$ORIGINAL_SRC/$file" ]] || {
         echo "UNSAFE_ISOLATED_ORIGINAL_FILE=$file"; exit 1;
     }
@@ -762,34 +762,28 @@ touch -m "$SRC/$REGION_REL"
 echo "CPU_DIRTY_WORD_SUMMARY_FAST_PATH=STAGED_DEFAULT_OFF"
 STAGE=STAGE_EXACT_AUDIO3D_PCM_QUEUE_MUTEX_CORRECTION
 AUDIO3D_REL="src/core/libraries/audio3d/audio3d.cpp"
-AUDIO3D_ORIGINAL_BLOB="b1b1445eda8823f07b4f66c07afcb175f7ee04b9"
-AUDIO3D_PATCHED_BLOB="45320f60d1565ace053b794335bd48c2e1a10edf"
-[[ -f "$AUDIO3D_PATCHED" && ! -L "$AUDIO3D_PATCHED" &&
-   -f "$ORIGINAL_SRC/$AUDIO3D_REL" && ! -L "$ORIGINAL_SRC/$AUDIO3D_REL" &&
+AUDIO3D_OVERLAY_BLOB="REPLACE_WITH_PINNED_OVERLAY_BLOB"
+[[ -f "$AUDIO3D_OVERLAY" && ! -L "$AUDIO3D_OVERLAY" &&
    -f "$SRC/$AUDIO3D_REL" && ! -L "$SRC/$AUDIO3D_REL" ]] || {
-  echo "AUDIO3D_QUEUE_SOURCE_MISSING_OR_UNSAFE"; exit 2;
+  echo "SURGICAL_AUDIO3D_QUEUE_OVERLAY_OR_LOCAL_SOURCE_MISSING"; exit 2;
 }
-[[ "$(git -C "$ORIGINAL_SRC" hash-object "$ORIGINAL_SRC/$AUDIO3D_REL")" == "$AUDIO3D_ORIGINAL_BLOB" &&
-   "$(git -C "$ORIGINAL_SRC" hash-object "$SRC/$AUDIO3D_REL")" == "$AUDIO3D_ORIGINAL_BLOB" &&
-   "$(git -C "$ORIGINAL_SRC" hash-object "$AUDIO3D_PATCHED")" == "$AUDIO3D_PATCHED_BLOB" ]] || {
-  echo "AUDIO3D_PROVEN_PREIMAGE_OR_PATCHED_GIT_BLOB_CHANGED; NO_OVERWRITE"; exit 2;
+[[ "$(git -C "$ORIGINAL_SRC" hash-object "$AUDIO3D_OVERLAY")" == "$AUDIO3D_OVERLAY_BLOB" ]] || {
+  echo "AUDIO3D_QUEUE_PATCHER_HASH_MISMATCH_NO_OVERWRITE"; exit 2;
 }
-python3 - "$AUDIO3D_PATCHED" <<'PY_FIX'
-from pathlib import Path
-import sys
-src=Path(sys.argv[1]).read_text()
-a=src.index("s32 PS4_SYSV_ABI sceAudio3dPortAdvance(")
-b=src.index("s32 PS4_SYSV_ABI sceAudio3dPortClose(",a)
-body=src[a:b]
-assert body.count("std::scoped_lock lock{port.mutex};")==1
-assert body.index("std::scoped_lock lock{port.mutex};") < body.index("port.mixed_queue.size()")
-assert body.index("std::scoped_lock lock{port.mutex};") < body.index("ProcessMixQueue(port)")
-print("SOURCE_FIX_PRECONDITION=PASS exact_port_mutex_shared_queue")
-PY_FIX
-cp -p -- "$AUDIO3D_PATCHED" "$SRC/$AUDIO3D_REL"
+# Do not replace audio3d.cpp with an old copy from GitHub or protected source.
+# Patch ONLY PortAdvance in the existing disposable source, retaining the
+# user's actual working Audio3D HLE code, even when it diverges from main.
+python3 -B "$AUDIO3D_OVERLAY" "$SRC/$AUDIO3D_REL" \
+   "$OUT/audio3d-portadvance-preflight.diff" >"$OUT/audio3d-portadvance-preflight.log" 2>&1 || {
+  cat "$OUT/audio3d-portadvance-preflight.log"; exit 2;
+}
+python3 -B "$AUDIO3D_OVERLAY" "$SRC/$AUDIO3D_REL" \
+   "$OUT/audio3d-portadvance-applied.diff" --apply >"$OUT/audio3d-portadvance-applied.log" 2>&1 || {
+  cat "$OUT/audio3d-portadvance-applied.log"; exit 2;
+}
 touch -m "$SRC/$AUDIO3D_REL"
-echo "AUDIO3D_QUEUE_MUTEX_FIX=STAGED_ONLY_IN_RESTORABLE_TEST_SOURCE"
-echo "PROTECTED_SOURCE_AND_BASELINE_BINARIES_UNTOUCHED=YES"
+cat "$OUT/audio3d-portadvance-applied.log"
+echo "PORT_ADVANCE_QUEUE_MUTEX=STAGED_ISOLATED_ONLY; OTHER_AUDIO_SOURCE_PRESERVED"
 STAGE=EARLY_UFFD_RENDERER_COMPILE
 RULES="$BUILD/CMakeFiles/shadps4.dir/build.make"
 [[ -f "$RULES" ]] || { echo "ISOLATED_CMAKE_BUILD_RULES_MISSING"; exit 1; }
@@ -908,6 +902,6 @@ echo "AUDIO3D_QUEUE_GAMEPLAY=COMPLETED; STUTTER_FIX=NOT_YET_PROVEN"
 echo "NEXT_ACTION=COMPARE_AUDIO_READY_AND_SUBMISSION_GAPS_WITH_PROVEN_BASELINE"
 STAGE=COMPLETE
 
-echo "SPARSE_CPU_UPLOAD_A_B_COMPARED=YES"
-echo "DIRTY_BYTES_AND_SHADER_RENDERING_REQUIRE_COMPARISON_BEFORE_PROMOTION"
+echo "AUDIO3D_ADVANCE_MUTEX_FIX_BUILT=YES"
+echo "ONLY_ONE_AUDIO3D_QUEUE_GAMEPLAY_CANDIDATE_TESTED=YES"
 echo "ORIGINAL_SOURCE_BINARY_AUDIO_OLLAMA_RESTORED_AND_SSH_OPEN=YES"
