@@ -177,16 +177,24 @@ def stage_preflight(report: dict, run: Path):
     command("git", "-C", str(staging), "config", "user.name", "ES-DE Source Audit")
     command("git", "-C", str(staging), "config", "user.email",
             "esde-fullstack@users.noreply.github.com")
-    # Import local, potentially unpushed Git objects into the isolated
-    # worktree's object store, never push/fetch over untrusted remote.
-    git(staging, "fetch", "--no-tags", str(proof_git), "HEAD")
+    # The Oct 16 protected working tree is OLDER than the Oct 17
+    # full-graphics UFFD checkpoint. Merging its HEAD would silently omit
+    # subsequent patches. Import the exact pinned Oct 17 GoW revision.
+    git(staging, "-c", "http.version=HTTP/1.1", "fetch", "--no-tags",
+        "https://github.com/Chreece/shadPS4.git", GOW_REF)
     proven_head = git(staging, "rev-parse", "FETCH_HEAD").stdout.strip()
+    if proven_head != GOW_REF:
+        raise RuntimeError("GoW pinned commit resolved to unexpected SHA")
+    local_head = git(proof_git, "rev-parse", "HEAD").stdout.strip()
     report["stage"] = {"path": str(staging), "source_head": state["head"],
-                       "local_proof_head": proven_head,
-                       "runtime_proof_binary_sha256": GOW_BIN_SHA}
-    git(staging, "merge-base", "--is-ancestor", GOW_REF, proven_head)
-    # Stage the protected local GoW *source ancestry*; the post-merge proof
-    # still requires source-object hashes and compiled runtime A/B.
+                       "goW_pinned_upstream_based_commit": proven_head,
+                       "protected_oct16_source_head": local_head,
+                       "runtime_proof_binary_sha256": GOW_BIN_SHA,
+                       "source_object_proof_note":
+                           "The f909 Git snapshot must still be reconciled with "
+                           "the checksum-pinned local Oct 17 fullgfx source overlays."}
+    # Stage the relevant generic GoW source ancestry. No game is launched
+    # and we refuse to pretend that this alone equals the saved fullgfx ELF.
     merged = git(staging, "merge", "--no-commit", "--no-ff",
                  proven_head, check=False)
     conflicts = git(staging, "diff", "--name-only", "--diff-filter=U")
