@@ -1552,7 +1552,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             // this array ONLY if all table entries fit, so a GPU id can
             // choose exactly its own guest image (or the explicit null slot).
             const u32 count=image_desc.NumBindings(stage);
-            ASSERT(count>=2 && count<=Shader::MaxGuestIndexedImageEntries+1);
+            ASSERT(count >= 1 && count <= Shader::MaxGuestIndexedImageEntries + 1);
             ASSERT(num_images+count<=image_bindings.size());
             AmdGpu::Buffer source{};
             const bool fetched=image_desc.indexed_table_fetch.FetchChecked(
@@ -1577,17 +1577,17 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 : 0u;
             const u64 required_bytes = u64(count-1) *
                 (record_stride ? record_stride : sizeof(AmdGpu::Image));
-            const bool complete=fetched && source.Valid() &&
-                source.base_address!=0 &&
-                represented_entries==count-1u &&
-                guest_size==required_bytes &&
-                memory->IsValidMapping(source.base_address,guest_size);
+            const bool complete =
+                fetched && source.Valid() && represented_entries == count - 1u &&
+                guest_size == required_bytes &&
+                (guest_size == 0 || (source.base_address != 0 &&
+                                     memory->IsValidMapping(source.base_address, guest_size)));
             static const bool dump_tables = [] {
                 const char* const env = std::getenv("SHADPS4_INDEXED_TABLE_DUMP");
                 return env && env[0] == '1' && env[1] == '\0';
             }();
-            if (dump_tables && complete && record_stride && guest_size <= 65536u &&
-                Shader::ShaderDumpTargets().Matches(stage.pgm_hash)) {
+            if (dump_tables && complete && record_stride && guest_size != 0 &&
+                guest_size <= 65536u && Shader::ShaderDumpTargets().Matches(stage.pgm_hash)) {
                 static thread_local std::unordered_map<std::string, u32> observations;
                 static thread_local u32 captures{};
                 const auto key = fmt::format("{}_{:#018x}.resource{}", stage.hw_stage,
@@ -2066,13 +2066,15 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             const u64 bytes = fetched ? (source.stride == 0
                 ? static_cast<u64>(source.num_records)
                 : static_cast<u64>(source.stride)*source.num_records) : 0u;
-            const bool complete = fetched && source.Valid() && source.base_address &&
+            const bool complete =
+                fetched && source.Valid() &&
                 Shader::Optimization::CompleteGuestTsharpRecordEntries(
-                    static_cast<u32>(source.stride),static_cast<u32>(source.num_records),
-                    record_stride,descriptor_offset,
+                    static_cast<u32>(source.stride), static_cast<u32>(source.num_records),
+                    record_stride, descriptor_offset,
                     Shader::MaxGuestIndexedImageEntries) == count - 1u &&
-                bytes == u64(count-1u)*record_stride &&
-                memory->IsValidMapping(source.base_address,bytes);
+                bytes == u64(count - 1u) * record_stride &&
+                (bytes == 0 ||
+                 (source.base_address != 0 && memory->IsValidMapping(source.base_address, bytes)));
             const u32 first_sampler = static_cast<u32>(image_infos.size());
             u32 valid_samplers = 0u;
             // Bind exactly one Vulkan S# per real guest material-record ID.

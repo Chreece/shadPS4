@@ -74,7 +74,7 @@ int main(void) {
         fprintf(log, "ALLOCATION_FAILED\n"); fclose(log); return 1;
     }
     memcpy(arena, probe_shader, sizeof(probe_shader));
-    const uint32_t counts[] = {0, 1, 4, 13, 4};
+    const uint32_t counts[] = {0, 1, 4, 13, 10, 11, 0, 5, 13, 4};
     unsigned failures = 0;
     for (unsigned c = 0; c < sizeof(counts)/sizeof(counts[0]); ++c) {
         uint32_t count = counts[c];
@@ -83,7 +83,9 @@ int main(void) {
             for (unsigned i = 0; i < 13; ++i) {
                 uint32_t stride = i & 1 ? 8 : 4;
                 uint8_t *data = arena+0x30000+i*256;
-                descriptor((uint32_t *)(arena+0x20000+i*32), data, stride, 4);
+                uint32_t *record = (uint32_t *)(arena+0x20000+i*32);
+                descriptor(record, data, stride, 4);
+                if (i >= count) record[3] = (record[3] & ~0x7f000u) | (11u << 15) | (6u << 12);
                 float initial = (float)i+1.25f;
                 memcpy(data+stride, &initial, 4);
             }

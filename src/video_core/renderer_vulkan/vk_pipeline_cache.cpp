@@ -813,7 +813,16 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
         auto& info = saved.GetInfo(program->info);
         info.pgm_base = params.Base();
         info.user_data = params.user_data;
-        info.RefreshFlatBuf();
+        if (!info.RefreshFlatBufForSpecialization()) {
+            static thread_local u32 reports{};
+            if (reports++ < 32u) {
+                LOG_INFO(Render_Vulkan,
+                         "ResourceTableBoundsChanged: shader={:#x} stage={} perm={} "
+                         "expanded_descriptor_reads=SKIPPED",
+                         info.pgm_hash, info.hw_stage, perm_idx);
+            }
+            continue;
+        }
         const auto current = Shader::StageSpecialization(
             info, runtime_info, profile, first_binding);
         if (!(saved.spec == current)) {

@@ -111,6 +111,15 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
     auto image_bounds = Shader::Optimization::ExpandBoundedPointerImages(program, resources);
     Shader::Optimization::ExpandBoundedBufferTables(program, resources, profile, image_bounds);
     if (!image_bounds.empty()) {
+        Shader::Optimization::RecordBoundedImageCounts(info, image_bounds);
+        info.bounds_srt_info = info.srt_info;
+        info.srt_bound_count = info.bounded_image_count_count;
+        for (u32 i = 0; i < info.srt_bound_count; ++i) {
+            auto& bound = info.srt_bounds[i];
+            bound.fetch = info.bounded_image_counts[i];
+            bound.fetch.FetchChecked(info.flattened_ud_buf.data(), info.flattened_ud_buf.size(),
+                                     &bound.value);
+        }
         info.srt_info = {};
         for (auto* block : program.blocks) {
             for (auto& inst : block->Instructions()) {

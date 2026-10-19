@@ -54,6 +54,12 @@ struct InfoPersistent {
     u32 indexed_image_source_count{};
     std::array<SharpFetch<u32>, NUM_IMAGES> bounded_image_counts{};
     u32 bounded_image_count_count{};
+    struct SrtBound {
+        SharpFetch<u32> fetch{};
+        u32 value{};
+    };
+    std::array<SrtBound, NUM_IMAGES> srt_bounds{};
+    u32 srt_bound_count{};
 
     u32 fetch_shader_sgpr_base{};
     u32 shared_memory_scratch_size{};
@@ -114,6 +120,7 @@ struct Info : InfoPersistent {
     std::span<const u32> user_data;
     std::vector<u32> flattened_ud_buf;
     PersistentSrtInfo srt_info;
+    PersistentSrtInfo bounds_srt_info;
 
     AttributeFlags loads{};
     AttributeFlags stores{};
@@ -183,6 +190,27 @@ struct Info : InfoPersistent {
         if (srt_info.walker_func) {
             srt_info.walker_func(user_data.data(), flattened_ud_buf.data());
         }
+    }
+
+    [[nodiscard]] bool RefreshFlatBufForSpecialization() {
+        if (srt_bound_count != 0) {
+            flattened_ud_buf.assign(bounds_srt_info.flattened_bufsize_dw, 0);
+            ASSERT(user_data.size() <= NUM_USER_DATA_REGS);
+            std::memcpy(flattened_ud_buf.data(), user_data.data(), user_data.size_bytes());
+            if (bounds_srt_info.walker_func) {
+                bounds_srt_info.walker_func(user_data.data(), flattened_ud_buf.data());
+            }
+            for (u32 i = 0; i < srt_bound_count; ++i) {
+                u32 value{};
+                if (!srt_bounds[i].fetch.FetchChecked(flattened_ud_buf.data(),
+                                                      flattened_ud_buf.size(), &value) ||
+                    value != srt_bounds[i].value) {
+                    return false;
+                }
+            }
+        }
+        RefreshFlatBuf();
+        return true;
     }
 
     void ReadTessConstantBuffer(TessellationDataConstantBuffer& tess_constants) const {

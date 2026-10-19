@@ -15,8 +15,8 @@ namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
 // Trial schema revisions avoid reusing shader caches produced by other
 // experimental upstream branches that changed lowering with versions 10-12.
-static constexpr u32 ShaderBinaryVersion = 51u;
-static constexpr u32 ShaderMetaVersion = 25u;
+static constexpr u32 ShaderBinaryVersion = 52u;
+static constexpr u32 ShaderMetaVersion = 26u;
 static constexpr u32 PipelineKeyVersion = 5u;
 } // namespace Serialization
 
@@ -419,6 +419,7 @@ void Info::Serialize(Serialization::Archive& ar) const {
     info.Write(this, sizeof(InfoPersistent));
     info.Write(flattened_ud_buf);
     srt_info.Serialize(ar);
+    bounds_srt_info.Serialize(ar);
 }
 
 bool Info::Deserialize(Serialization::Archive& ar) {
@@ -427,7 +428,7 @@ bool Info::Deserialize(Serialization::Archive& ar) {
     info.Read(this, sizeof(Shader::InfoPersistent));
     info.Read(flattened_ud_buf);
 
-    return srt_info.Deserialize(ar);
+    return srt_info.Deserialize(ar) && bounds_srt_info.Deserialize(ar);
 }
 
 void Gcn::FetchShaderData::Serialize(Serialization::Archive& ar) const {

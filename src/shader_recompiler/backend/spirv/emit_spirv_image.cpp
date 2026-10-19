@@ -249,7 +249,7 @@ static Id LoadIndexedGuestSampler(EmitContext& ctx, u32 handle, Id bounded,
     const u32 sampler_index = handle >> 16;
     ASSERT(sampler_index < ctx.samplers.size());
     const u32 sampler_count = ctx.sampler_array_sizes[sampler_index];
-    if (sampler_count == 1u) {
+    if (!ctx.info.samplers[sampler_index].is_guest_indexed) {
         // Existing packed T# arrays may use one genuinely uniform S#.
         return ctx.OpLoad(ctx.sampler_type,ctx.samplers[sampler_index]);
     }
@@ -273,7 +273,7 @@ Id EmitImageSampleImplicitLodIndexed(
     EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id bias,
     const IR::Value& offset, Id gpu_texture_id) {
     const auto& texture=ctx.images[handle & 0xffffu];
-    ASSERT(texture.is_guest_indexed && texture.image_array_size>=2u);
+    ASSERT(texture.is_guest_indexed && texture.image_array_size >= 1u);
     ASSERT(ctx.profile.supports_sampled_image_nonuniform_indexing);
     // GuestTsharpIndexOrNull is the CPU model for this exact U32 Select.
     const Id valid=ctx.OpULessThan(ctx.U1[1],gpu_texture_id,
@@ -306,7 +306,7 @@ Id EmitImageSampleImplicitLodIndexed(
 Id EmitImageSampleExplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,
                                      Id lod, const IR::Value& offset, Id gpu_texture_id) {
     const auto& texture = ctx.images[handle & 0xffffu];
-    ASSERT(texture.is_guest_indexed && texture.image_array_size >= 2u);
+    ASSERT(texture.is_guest_indexed && texture.image_array_size >= 1u);
     ASSERT(ctx.profile.supports_sampled_image_nonuniform_indexing);
     const Id valid =
         ctx.OpULessThan(ctx.U1[1], gpu_texture_id, ctx.ConstU32(texture.image_array_size - 1));
@@ -481,7 +481,7 @@ Id EmitImageGradientIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coo
                             Id derivatives_dx, Id derivatives_dy,
                             const IR::Value& offset, Id gpu_texture_id) {
     const auto& texture = ctx.images[handle & 0xffffu];
-    ASSERT(texture.is_guest_indexed && texture.image_array_size >= 2u);
+    ASSERT(texture.is_guest_indexed && texture.image_array_size >= 1u);
     ASSERT(ctx.profile.supports_sampled_image_nonuniform_indexing);
     const Id valid = ctx.OpULessThan(
         ctx.U1[1],gpu_texture_id,ctx.ConstU32(texture.image_array_size - 1u));

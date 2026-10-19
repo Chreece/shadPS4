@@ -1142,9 +1142,9 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         const auto table_fetch =
             ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp, info);
         AmdGpu::Buffer table{};
-        if (table_fetch.FetchChecked(info.flattened_ud_buf.data(),
-                                    info.flattened_ud_buf.size(), &table) &&
-            table.Valid() && table.base_address) {
+        if (table_fetch.FetchChecked(info.flattened_ud_buf.data(), info.flattened_ud_buf.size(),
+                                     &table) &&
+            table.Valid() && (table.base_address || table.num_records == 0)) {
             const u64 full_size = table.stride==0
                 ? static_cast<u64>(table.num_records)
                 : static_cast<u64>(table.stride)*table.num_records;
@@ -1157,7 +1157,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                 : CompleteGuestTsharpTableEntries(
                     static_cast<u32>(table.stride),static_cast<u32>(table.num_records),
                     profile.max_guest_indexed_image_entries);
-            if (entries != 0u) {
+            if (entries != 0u || full_size == 0u) {
                 image_res.indexed_table_fetch=table_fetch;
                 image_res.indexed_guest_entries=entries;
                 image_res.indexed_record_stride_bytes=record_stride;
@@ -2081,7 +2081,7 @@ static bool AllStridedGuestImagesRepresentable(
             static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
             usage.indexed_record_stride_bytes, usage.indexed_descriptor_offset_bytes,
             profile.max_guest_indexed_image_entries);
-        const bool eligible=entries!=0u;
+        const bool eligible = entries != 0u || (valid && table.num_records == 0u);
         if (!eligible) ++invalid;
 
         if (probe) {
