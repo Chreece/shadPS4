@@ -97,3 +97,31 @@ header-only RapidJSON use; no test dependencies should be fetched blindly.
 
 Protected source and executable were unchanged in the 22:14 report.
 **Shader behavior in the actual game remains unmeasured.**
+
+## 22:40 CEST: clean protected-source build successfully linked
+
+User-uploaded `gow-permutation-protected-rapidjson-20261019-224027.tar.gz`
+records exact Discord RPC RapidJSON gitlink `d621dc9e9c77f81e5c8a35b8dcc16dcd63351321`
+and `document.h` blob `4b2d723224833d70208512881091a068f2d075c6` as PASS.
+Ninja resumed for 817 steps and completed the final
+`[816/817] Linking CXX executable shadps4`. C++ units
+`vk_pipeline_cache.cpp` and `vk_pipeline_serialization.cpp` compiled.
+The resulting standalone executable is
+`~/projects/shadps4/GodOfWarRagnarok/tests/permutation-protected-20261019-220440/build/shadps4`
+with SHA-256
+`2205aeeebc139bab4f2048882799da42447f93b8338583ec26afa87673b34af7`.
+Original executable/source hashes remained unchanged. No gameplay run occurred.
+
+Five additional nested gitlinks were listed as unpopulated
+(freetype/dlg, mesa-kosmickrisp/mesa, and three toml11 docs/tests)
+but did not prevent the full linked binary. Do not restore optional
+dependencies solely to remove this count.
+
+Next source-grounded gate: one detached real GoW scene run with this *exact*
+four-file candidate, preserving the original source and protected executable.
+`scripts/gow_permutation_protected_scene_20261019.sh` reuses the existing
+successful X11 input / cloned-save / conditional Ollama management helper,
+enables `SHADPS4_PERMUTATION_TRACE=1` in the actual candidate process,
+and writes `PERM_TRACE_ACTIVE/CREATED/REUSED` observations at warning level.
+The automated cutscene heuristic is not scene-equivalence proof.
+Do not claim graphics improvement from logging alone.
