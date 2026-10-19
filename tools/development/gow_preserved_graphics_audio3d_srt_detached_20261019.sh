@@ -8,7 +8,7 @@ SCRIPTS="$ROOT/scripts"
 LOGS="$ROOT/logs"
 SELF="$SCRIPTS/gow_preserved_graphics_audio3d_srt_detached_20261019.sh"
 BUILD_SCRIPT="$SCRIPTS/gow_preserved_graphics_audio3d_srt_builder_20261019.sh"
-REF="8fe666936127f33026de33bfb90e4f2fa6f2ecb7"
+REF="5502a97dd18bc60e0d1331d8f0912749951e619f"
 URL="https://raw.githubusercontent.com/Chreece/shadPS4/$REF"
 mkdir -p "$SCRIPTS" "$LOGS"
 
@@ -23,7 +23,7 @@ if (( $# == 0 )); then
      "$URL/tools/development/gow_audio3d_queue_isolated_launcher_20261019.sh" \
      -o "$BUILD_SCRIPT"
   [[ -f "$BUILD_SCRIPT" && ! -L "$BUILD_SCRIPT" &&
-     "$(git hash-object "$BUILD_SCRIPT")" == "2d6072644086589c8f1b5a790edd285836f20811" ]] || {
+     "$(git hash-object "$BUILD_SCRIPT")" == "ca5d1719693ecadf8c5c26082ccf3ee51fd883ea" ]] || {
     echo "BUILD_LAUNCHER_BLOB_HASH_MISMATCH_NO_BUILD"; exit 2;
   }
   bash -n "$BUILD_SCRIPT" || {
@@ -37,14 +37,35 @@ if (( $# == 0 )); then
     "$URL/tools/development/gow_audio3d_queue_rebuild_and_one_run_20261019.sh" \
     -o "$RUNNER_PREFLIGHT"
   [[ -f "$RUNNER_PREFLIGHT" && ! -L "$RUNNER_PREFLIGHT" &&
-     "$(git hash-object "$RUNNER_PREFLIGHT")" == "1c9af7bd524905abe3bea82a94ed28c0f7605a64" ]] || {
+     "$(git hash-object "$RUNNER_PREFLIGHT")" == "ba824a9fbfc7610d01af47c4c73683279240e5ed" ]] || {
     echo "FULL_RUNNER_PINNED_BLOB_MISMATCH_NO_BUILD"; exit 2;
   }
   bash -n "$RUNNER_PREFLIGHT" || {
     echo "FULL_RUNNER_SHELL_SYNTAX_INVALID_NO_BUILD"; exit 2;
   }
   echo "FULL_RUNNER_SYNTAX_CHECK=PASS_BEFORE_DETACH"
-  TAG="gow-preserved-audio3d-srt-worker-$(date +%Y%m%d-%H%M%S)-$$"
+  # Before any detached worker/build exists, validate SRT on the protected
+  # source that runner.sh later copies into the disposable test worktree.
+  SRT_SOURCE="$ROOT/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014679/source/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp"
+  SRT_DIAGNOSTIC="$SCRIPTS/gow_srt_shift_surgical_overlay_20261019.py"
+  curl -4 -fLsS --retry 3 --retry-delay 2 \
+    "$URL/tools/development/gow_srt_shift_surgical_overlay_20261019.py" \
+    -o "$SRT_DIAGNOSTIC"
+  [[ -f "$SRT_DIAGNOSTIC" && ! -L "$SRT_DIAGNOSTIC" &&
+     "$(git hash-object "$SRT_DIAGNOSTIC")" == "6ce589a3346a34326f1a46de5d44ec05f75802e8" &&
+     -f "$SRT_SOURCE" && ! -L "$SRT_SOURCE" ]] || {
+    echo "SRT_PROTECTED_SOURCE_OR_PINNED_OVERLAY_UNSAFE_NO_BUILD"; exit 2;
+  }
+  python3 -B "$SRT_DIAGNOSTIC" --self-test || {
+    echo "SRT_OVERLAY_SELFTEST_FAILED_NO_BUILD"; exit 2;
+  }
+  SRT_PREFLIGHT_DIFF="$LOGS/gow-srt-replay-preflight-$(date +%Y%m%d-%H%M%S)-$.diff"
+  python3 -B "$SRT_DIAGNOSTIC" "$SRT_SOURCE" "$SRT_PREFLIGHT_DIFF" || {
+    echo "SRT_PROTECTED_REPLAY_SOURCE_NOT_RECOGNIZED_NO_BUILD"; exit 2;
+  }
+  echo "SRT_PROTECTED_REPLAY_PREFLIGHT=PASS_BEFORE_DETACH"
+  echo "SRT_PREFLIGHT_EVIDENCE=$SRT_PREFLIGHT_DIFF"
+  TAG="gow-preserved-audio3d-srt-worker-$(date +%Y%m%d-%H%M%S)-$"
   LOG="$LOGS/$TAG.log"
   [[ ! -e "$LOG" ]] || { echo "LOG_COLLISION_NO_BUILD"; exit 2; }
   nohup setsid -w bash "$SELF" --worker "$TAG" </dev/null >"$LOG" 2>&1 &
