@@ -10,7 +10,7 @@ BUILD="$WORK/build"
 BIN="$BUILD/shadps4"
 LOGS="$ROOT/logs"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
-CANDIDATE="7adff520dff204f5d8c375631e3549782fce3464"
+CANDIDATE="08b1769773fc84931057d5b529f24ca700499a19"
 BRANCH="fix/indirect-buffer-read-hazards-20261019"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 NAME="got-indirect-war-fix-host-$STAMP"
@@ -466,6 +466,14 @@ assert "resource->read_ranges.Overlaps(offset,offset+size)" in runtime
 assert "BufferHazards::StageForBoundBuffer(src_access,is_compute)" in rasterizer
 assert "vk::AccessFlagBits2::eIndirectCommandRead" in rules
 assert "vk::PipelineStageFlagBits2::eDrawIndirect" in rules
+# The previous host link failed at rasterizer.cpp:492: an undefined
+# VideoCore::BufferTypeName diagnostic helper. Reject that regression
+# before compilation while preserving readable buffer-backend labels.
+assert "VideoCore::BufferTypeName(" not in rasterizer
+assert "backing_type_name(buffer->mem_type)" in rasterizer
+for name in ("DeviceLocal", "HostUncached", "HostCached", "Stream", "Sparse"):
+    assert "case VideoCore::MemoryType::"+name+":" in rasterizer
+print("GOT_INDIRECT_BACKING_LOGGER_SOURCE=PASS five_enum_names=YES undefined_helper=NO")
 print("GOT_INDIRECT_WAR_PRODUCTION_WIRING=PASS "
       "runtime_read_tracking=PASS "
       "rasterizer_draw_indirect_stage=PASS "
@@ -475,7 +483,7 @@ echo "GOT_INDIRECT_WAR_HOST_TEST=PASS" | tee -a "$RUN/host-tests.log"
 
 echo "HOST_ONLY_TESTS=PASS" | tee -a "$RUN/host-tests.log"
 
-# Stage only verified content. All 70 file checks completed before the first write.
+# Stage only verified content. All 73 file checks completed before the first write.
 STATUS=STAGING_CANDIDATE
 while IFS= read -r rel; do
     if [ -e "$SOURCE/$rel" ]; then
