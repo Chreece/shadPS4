@@ -24,9 +24,12 @@ Table dumps and GPU feedback take another bounded checkpoint when table size gro
 
 - Complete Release shadPS4 compilation and link passed.
 - Source-extracted hazard regression: old code fails cross-arena read-after-write; new code passes 13 checks covering RAW, WAR, WAW, indirect reads, overlap endpoints, flush clearing, unrelated ranges, ordinary buffers and interval growth. Vulkan command submission is stubbed in that host regression; it is not a GPU run.
+- The full launcher passed isolated build and verified-candidate reuse paths. All 88 source files, the original executable and profile returned to their original hashes. Existing host regressions ran; build commands, display/VRAM telemetry and the game process were stubbed for this launcher check. The real full build is the separate result above. All 16 embedded Python blocks and Bash syntax pass.
 - Actual child-range normalization preserves adjacent/overlapping children and different sizes at one base, while removing exact duplicates.
 - An [OpenOrbis overlapping-buffer probe](homebrew/aliased-buffers/README.md) is supplied. Its GCN assembled for Bonaire with LLVM 19. The application has not been linked or executed on PS4 here. The small homebrew allocation checks guest overlap semantics; it does not force separate Vulkan sparse arenas.
 
 The Vulkan specification requires memory dependencies between accesses to aliased sparse resources: https://docs.vulkan.org/spec/latest/chapters/sparsemem.html . Image destruction remains deferred until submitted uses complete: https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyImage.html . The upstream image expansion discussion at https://github.com/shadps4-emu/shadPS4/pull/5282 was reviewed, but its proposed change is not included: this capture does not establish that particular mip-loss case.
 
 The remaining white menu and absent world require native verification. No GDS, clipping, depth or raster-state experiment is enabled by this candidate.
+
+Source candidate: `ad7320c7111d466c7a44a68d544bcddc3d3e855a`. Paired host/runtime scripts: `652ad367ec8ffa3ac2cd70ccb80730e9be0404fd`. The outer launcher verifies both scripts at that exact commit and verifies the candidate hash and source pin before reuse.
