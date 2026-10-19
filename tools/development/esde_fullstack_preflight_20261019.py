@@ -321,14 +321,45 @@ def stage_preflight(report: dict, run: Path):
                     break
         if rel not in discovered:
             missing.append({"file": rel, "expected_git_blob": expected_blob})
-    if missing:
-        report["stage"]["status"] = "GOW_PINNED_SOURCE_BLOBS_MISSING_NO_BUILD"
-        report["stage"]["all_missing_proof_blobs"] = missing
-        return
+    # A GitHub copy of each immutable local source snapshot is bundled in
+    # this integration branch. Recover missing blobs to THIS DISPOSABLE AUDIT
+    # ONLY (never rewrite protected source). Validate Git blob SHA before use.
+    # Pin the exact commit containing all four verified snapshots.
+    snapshot_commit = "85457c5e19c047bba33fa7ca676bbf5ce365e809"
+    for item in missing:
+        rel = item["file"]
+        bundle = run / "pinned_sources" / rel
+        bundle.parent.mkdir(parents=True, exist_ok=True)
+        url = ("https://raw.githubusercontent.com/Chreece/shadPS4/" +
+               snapshot_commit + "/tools/development/proven_sources_20261018/" + rel)
+        fetch = command("curl", "-4", "-fLsS", "--retry", "3",
+                        "--connect-timeout", "20", "--max-time", "90",
+                        url, "-o", str(bundle), check=False)
+        if fetch.returncode:
+            report["stage"]["status"] = "GOW_VERIFIED_BUNDLE_DOWNLOAD_FAILED_NO_BUILD"
+            report["stage"]["missing_download"] = rel
+            return
+        blob = git(staging, "hash-object", str(bundle)).stdout.strip()
+        if blob != item["expected_git_blob"]:
+            report["stage"]["status"] = "GOW_VERIFIED_BUNDLE_BLOB_MISMATCH_NO_BUILD"
+            report["stage"]["mismatched_bundle"] = rel
+            return
+        discovered[rel] = None
+        report["stage"].setdefault("recovered_bundles", {})[rel] = {
+            "git_blob": blob, "bundle_source": snapshot_commit
+        }
+
     source_conflicts = {}
     for rel, selected_root in discovered.items():
-        proven = selected_root / rel
-        base = git(selected_root, "show", "HEAD:" + rel, check=False)
+        if selected_root is None:
+            proven = run / "pinned_sources" / rel
+            # f909 is the pinned ancestor that precedes these Oct 18 source
+            # snapshots; applying only their delta is safer than replacing
+            # the new main implementation as a whole.
+            base = git(staging, "show", GOW_REF + ":" + rel, check=False)
+        else:
+            proven = selected_root / rel
+            base = git(selected_root, "show", "HEAD:" + rel, check=False)
         current_file = staging / rel
         if not current_file.is_file() or base.returncode:
             report["stage"]["status"] = "GOW_PINNED_SOURCE_NO_THREEWAY_BASE_NO_BUILD"
