@@ -363,7 +363,37 @@ class Builder:
                     out = self.run / "recovered-proven-page-manager.cpp"
                     out.write_bytes(value.stdout)
                     return out, "SHA_PINNED_LOCAL_GIT_BLOB"
-        return None, "EXACT_PROVEN_SOURCE_NOT_IN_CURRENT_CHECKOUT_OR_GIT_HISTORY"
+        # Last resort: retained source snapshots from the user's own
+        # verified graphics build evidence. Never execute archived scripts.
+        names = [
+            "gow-uffd-batched-read-20261017-231412.tar.gz",
+            "gow-graphics-retention-20261017-205952.tar.gz",
+            "gow-audio3d-lock-20261019-103258.tar.gz",
+            "gow-srt-flatbuf-20261019-142301.tar.gz",
+        ]
+        for name in names:
+            archive = LOGS / name
+            if not archive.is_file() or archive.is_symlink() or archive.stat().st_size > 150_000_000:
+                continue
+            try:
+                with tarfile.open(archive, "r:gz") as tf:
+                    for member in tf:
+                        if (not member.isfile() or member.size < 10000 or member.size > 1500000 or
+                            not (member.name.endswith("/src/video_core/page_manager.cpp") or
+                                 member.name.endswith("/page_manager.cpp"))):
+                            continue
+                        opened = tf.extractfile(member)
+                        if opened is None:
+                            continue
+                        data = opened.read()
+                        if hashlib.sha256(data).hexdigest() == expected:
+                            target = self.run / "recovered-page-manager-from-proven-archive.cpp"
+                            target.write_bytes(data)
+                            self.report["recovered_page_manager_archive"] = str(archive)
+                            return target, "SHA_VERIFIED_ARCHIVED_PROVEN_GOW_SOURCE"
+            except (OSError, tarfile.TarError):
+                continue
+        return None, "EXACT_PROVEN_SOURCE_NOT_RECOVERED_FROM_CHECKOUT_GIT_OR_ARCHIVES"
 
     def proven_graphics_plan(self):
         self.step = "PROVEN_GRAPHICS_UFFD_RECONCILIATION"
