@@ -273,6 +273,57 @@ class Builder:
         # for all semantic merges; no assumptions about local branch names.
         self.report["pins_verified"] = True
 
+    def resolve_include_only_conflicts(self, operation):
+        """Merge independent #include lines, never source logic or attributes.
+
+        This applies broadly to any C++ header conflict. Semantic conflicts
+        are archived and stopped, without choosing a branch wholesale.
+        """
+        paths = self.git_out("diff", "--name-only", "--diff-filter=U").splitlines()
+        if not paths:
+            raise RuntimeError(operation + "_FAILED_WITHOUT_TEXT_CONFLICTS")
+        solved = []
+        expr = re.compile(
+            r"^<<<<<<< [^\n]*\n(.*?)^=======\n(.*?)^>>>>>>> [^\n]*\n",
+            re.M | re.S,
+        )
+        def only_includes(block):
+            rows = [row.strip() for row in block.splitlines() if row.strip()]
+            return (bool(rows) and all(
+                re.fullmatch(r'#\s*include\s*[<"][^>"]+[>"]', row)
+                for row in rows))
+        for rel in paths:
+            target = self.source / rel
+            if not rel.startswith("src/") or not target.is_file() or target.is_symlink():
+                continue
+            raw = target.read_text(errors="replace")
+            found = list(expr.finditer(raw))
+            if not found or len(found) != raw.count("<<<<<<<"):
+                continue
+            if any(not only_includes(m.group(1)) or
+                   not only_includes(m.group(2)) for m in found):
+                continue
+            def join(m):
+                ours = [x for x in m.group(1).splitlines() if x.strip()]
+                theirs = [x for x in m.group(2).splitlines() if x.strip()]
+                return "\n".join(dict.fromkeys(ours + theirs)) + "\n"
+            fixed = expr.sub(join, raw)
+            if any(x in fixed for x in ("<<<<<<<", "=======", ">>>>>>>")):
+                continue
+            target.write_text(fixed)
+            self.git("add", "--", rel)
+            solved.append(rel)
+        self.report.setdefault("header_only_resolutions", {})[operation] = solved
+        unresolved = self.git_out("diff", "--name-only", "--diff-filter=U").splitlines()
+        if unresolved:
+            self.fail_conflicts("SEMANTIC_ENGINE_MERGE_REQUIRES_REVIEW_" + operation)
+        self.git("diff", "--cached", "--check")
+        if operation == "CHERRY_PICK":
+            self.git("cherry-pick", "--continue")
+        else:
+            self.git("commit", "--no-edit")
+        self.report.setdefault("auto_resolved_include_only", []).extend(solved)
+
     def merge(self, name: str, ref: str):
         self.step = name
         # Collect the entire conflict set in advance, not one correction
@@ -285,10 +336,13 @@ class Builder:
                                if x.startswith("CONFLICT")][:200],
             "source_excerpt": (preview.stdout + preview.stderr)[-180000:],
         }
-        if preview.returncode:
-            self.fail_conflicts("SOURCE_MERGE_PREVIEW_CONFLICT_" + name)
-        if self.git("merge", "--no-ff", "--no-edit", ref, check=False):
-            self.fail_conflicts("SOURCE_MERGE_CONFLICT_" + name)
+        if preview.returncode and not self.report["merge_previews"][name]["conflict_lines"]:
+            raise RuntimeError("SOURCE_MERGE_PREVIEW_FAILED_WITHOUT_CONFLICT " + name)
+        rc = self.git("merge", "--no-ff", "--no-edit", ref, check=False)
+        if rc:
+            # After Git's own 3-way merge, resolve only trivial independent
+            # header additions. Never auto-select conflicting GPU logic.
+            self.resolve_include_only_conflicts("MERGE_" + name)
         self.report["merge_previews"][name]["merge_commit"] = self.git_out("rev-parse", "HEAD")
 
     def cherry_picks(self):
@@ -319,7 +373,7 @@ class Builder:
                 status = "ALREADY_PRESENT_BY_EXACT_SOURCE_DIFF"
             else:
                 if self.git("cherry-pick", "-x", commit, check=False):
-                    self.fail_conflicts("GENERIC_CORRECTNESS_PORT_CONFLICT_" + description)
+                    self.resolve_include_only_conflicts("CHERRY_PICK")
                 status = "CHERRY_PICKED"
             self.report.setdefault("applied_generic_fixes", []).append({
                 "description": description, "commit": commit,
