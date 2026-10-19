@@ -697,8 +697,20 @@ def main():
     for key, ok in report["checks"].items():
         print(key.upper()+"="+str(ok))
     if args.stage or args.build:
-        print("STAGE_STATUS="+report.get("stage", {}).get("status", "NOT_STARTED"))
-        print("STAGE_CONFLICT_COUNT="+str(len(report.get("stage", {}).get("conflicts", []))))
+        stage = report.get("stage", {})
+        conflicts = (len(stage.get("upstream_conflicts", []))
+                     + len(stage.get("conflicts", []))
+                     + len(stage.get("all_pinned_source_conflicts", {})))
+        for key in ("gow_renderer_conflict", "srt_conflict", "ghost_stencil_diff"):
+            if key in stage and (key != "ghost_stencil_diff"
+                                 or stage.get("ghost_stencil_merge_rc", 0) != 0):
+                conflicts += 1
+        print("STAGE_STATUS="+stage.get("status", "NOT_STARTED"))
+        print("STAGE_CONFLICT_COUNT="+str(conflicts))
+        if report.get("source_warning"):
+            print("SOURCE_WARNING="+report["source_warning"])
+        if report.get("error"):
+            print("AUDIT_ERROR="+report["error"])
     if args.build:
         print("BUILD_STATUS="+report.get("build", {}).get("status", "SKIPPED"))
         if report.get("build", {}).get("binary"):
