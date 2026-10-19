@@ -760,6 +760,9 @@ void Runtime::SetBackingSamples(VideoCore::Image* image, u32 num_samples, bool c
 bool Runtime::IsBufferAccessed(const VideoCore::Buffer* handle, u64 offset, u64 size,
                                bool check_read_access) {
     MakeCurrent(handle);
+    if (handle->mem_type == VideoCore::MemoryType::Sparse) {
+        offset += handle->CpuAddr();
+    }
     bool has_access = resource->write_ranges.Overlaps(offset, offset + size);
     if (check_read_access && !has_access) {
         const bool prior_read=resource->read_ranges.Overlaps(offset,offset+size);
@@ -788,6 +791,9 @@ bool Runtime::IsBufferAccessed(const VideoCore::Buffer* handle, u64 offset, u64 
 void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size,
                            vk::PipelineStageFlags2 src_stage, vk::AccessFlags2 src_access) {
     MakeCurrent(handle);
+    if (handle->mem_type == VideoCore::MemoryType::Sparse) {
+        offset += handle->CpuAddr();
+    }
 
     const Interval range = {
         .start = offset,
@@ -863,10 +869,16 @@ void Runtime::FlushBarriers() {
         resource.write_ranges.Clear();
     }
     resources.clear();
+    sparse_resource.read_ranges.Clear();
+    sparse_resource.write_ranges.Clear();
     resource = nullptr;
 }
 
 void Runtime::MakeCurrent(const VideoCore::Buffer* handle) {
+    if (handle->mem_type == VideoCore::MemoryType::Sparse) {
+        resource = &sparse_resource;
+        return;
+    }
     if (resource && resource->handle == handle) {
         return;
     }

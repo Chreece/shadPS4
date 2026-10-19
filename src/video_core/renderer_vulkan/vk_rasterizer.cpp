@@ -1236,7 +1236,19 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                     sizeof(u32);
                 feedback.capture =
                     Shader::Diagnostics::CaptureIndexedImageFeedback(++feedback.bindings);
+                u32 largest_table{};
+                for (const auto& image : stage.images) {
+                    if (image.is_guest_indexed) {
+                        largest_table = std::max(largest_table, image.indexed_guest_entries);
+                    }
+                }
+                if (feedback.growth_captures < 16 &&
+                    largest_table >= std::max(32u, feedback.largest_table * 2u)) {
+                    feedback.capture = true;
+                    ++feedback.growth_captures;
+                }
                 if (feedback.capture) {
+                    feedback.largest_table = std::max(feedback.largest_table, largest_table);
                     feedback.buffer = std::make_unique<VideoCore::Buffer>(
                         instance, 0, bytes, VideoCore::MemoryType::HostCached);
                     ASSERT(feedback.buffer->mapped_data.size() >= bytes);
@@ -1625,19 +1637,29 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 const char* const env = std::getenv("SHADPS4_INDEXED_TABLE_DUMP");
                 return env && env[0] == '1' && env[1] == '\0';
             }();
-            if (dump_tables && complete && record_stride && guest_size != 0 &&
+            if (dump_tables && complete && guest_size != 0 &&
                 guest_size <= 8u * 1024u * 1024u &&
                 Shader::ShaderDumpTargets().Matches(stage.pgm_hash)) {
-                static thread_local std::unordered_map<std::string, u32> observations;
+                struct TableObservation {
+                    u32 samples{};
+                    u32 largest_table{};
+                };
+                static thread_local std::unordered_map<std::string, TableObservation> observations;
                 static thread_local u32 captures{};
+                static thread_local u64 captured_bytes{};
                 const auto key = fmt::format("{}_{:#018x}.resource{}", stage.hw_stage,
                                              stage.pgm_hash, resource_index);
-                if (captures < 128u && (observations.contains(key) || observations.size() < 64u)) {
-                    auto& observed = observations[key];
-                    if (observed < 256u) {
+                if (captures < 128u && captured_bytes + guest_size <= 64u * 1024u * 1024u &&
+                    (observations.contains(key) || observations.size() < 64u)) {
+                    auto& observation = observations[key];
+                    auto& observed = observation.samples;
+                    if (observed < std::numeric_limits<u32>::max()) {
                         ++observed;
-                        if (observed == 1u || observed == 32u || observed == 256u) {
+                        if (observed == 1u || observed == 32u || observed == 256u ||
+                            count - 1 >= std::max(32u, observation.largest_table * 2u)) {
                             ++captures;
+                            captured_bytes += guest_size;
+                            observation.largest_table = std::max(observation.largest_table, count - 1);
                             const auto dir =
                                 Common::FS::GetUserPath(Common::FS::PathType::ShaderDir) / "dumps";
                             std::error_code error;
@@ -1645,7 +1667,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                             if (!error) {
                                 const auto name = fmt::format(
                                     "{}.sample{}.stride{}.offset{}.count{}.table.bin", key,
-                                    observed, record_stride, descriptor_offset, count - 1);
+                                    observed, record_stride ? record_stride : sizeof(AmdGpu::Image),
+                                    descriptor_offset, count - 1);
                                 std::ofstream file(dir / name, std::ios::binary);
                                 file.write(reinterpret_cast<const char*>(
                                                static_cast<uintptr_t>(source.base_address)),

@@ -204,6 +204,8 @@ private:
         std::unique_ptr<VideoCore::Buffer> buffer;
         std::array<u32, Shader::NUM_IMAGES> entries{};
         u32 bindings{};
+        u32 largest_table{};
+        u32 growth_captures{};
         bool capture{};
     };
     std::map<std::pair<u64, u32>, IndexedImageFeedback> indexed_image_feedback;

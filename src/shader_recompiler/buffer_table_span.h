@@ -27,6 +27,8 @@ inline constexpr u32 MaxBufferTableRecords = 32768;
 struct BufferTableRange {
     u64 address{};
     u32 size{};
+
+    auto operator<=>(const BufferTableRange&) const = default;
 };
 
 inline bool BuildBufferTableSpan(std::span<const u8> table, const BufferTableSpan& layout,

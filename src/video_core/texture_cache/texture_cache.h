@@ -439,6 +439,9 @@ private:
     u64 critical_gc_samplers = 0;
     u64 gc_tick = 0;
     size_t reported_image_views = 0;
+    u64 created_images{};
+    u64 reclaimed_images{};
+    u32 pending_image_deletions{};
     Common::LRUCache<Image> image_lru_cache;
     Common::LRUCache<Sampler> sampler_lru_cache;
     const bool readback_linear_images;

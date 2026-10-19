@@ -67,19 +67,9 @@ void Info::RefreshBufferTableSpans() {
                 }
             }
         }
-        std::ranges::sort(ranges, {}, &BufferTableRange::address);
-        size_t output{};
-        for (const auto range : ranges) {
-            if (output && range.address <= ranges[output - 1].address + ranges[output - 1].size) {
-                auto& previous = ranges[output - 1];
-                previous.size = static_cast<u32>(
-                    std::max(previous.address + previous.size, range.address + range.size) -
-                    previous.address);
-            } else {
-                ranges[output++] = range;
-            }
-        }
-        ranges.resize(output);
+        std::ranges::sort(ranges);
+        const auto duplicates = std::ranges::unique(ranges);
+        ranges.erase(duplicates.begin(), duplicates.end());
         std::fill_n(flattened_ud_buf.data() + layout.metadata_offset, BufferTableSpanWords, 0);
         std::memcpy(flattened_ud_buf.data() + layout.metadata_offset, &span, sizeof(span));
         flattened_ud_buf[layout.metadata_offset + 4] = records;

@@ -91,6 +91,7 @@ private:
         AccessList write_ranges;
     };
     BufferBarriers* resource{};
+    BufferBarriers sparse_resource{};
     std::vector<BufferBarriers> resources;
     VideoCore::Image::Barriers image_barriers;
     vk::MemoryBarrier2 memory_barrier{};

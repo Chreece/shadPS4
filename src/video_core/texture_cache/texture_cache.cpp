@@ -68,7 +68,7 @@ static bool TextureSlotPressureEnabled() {
     return enabled;
 }
 
-static constexpr u32 TEST_MAX_IMAGE_SLOTS = MAX_IMAGES * 4u;
+static constexpr u32 TEST_MAX_IMAGE_SLOTS = 1u << 20;
 static constexpr u32 SLOT_PRESSURE_START = MAX_IMAGES * 3u / 4u;
 static constexpr u32 SLOT_PRESSURE_CRITICAL = MAX_IMAGES * 7u / 8u;
 
@@ -1075,6 +1075,7 @@ vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sharp,
 }
 
 void TextureCache::RegisterImage(ImageId image_id) {
+    ++created_images;
     Image& image = slot_images[image_id];
     ASSERT_MSG(False(image.flags & ImageFlagBits::Registered),
                "Trying to register an already registered image");
@@ -1202,9 +1203,12 @@ void TextureCache::GarbageCollectImages() {
         reported_image_views = live_views;
         LOG_INFO(Render_Vulkan,
                  "TextureCacheSlots: images={} image_views={} view_slots_reserved={} "
-                 "memory_used={} gc_tick={} slot_pressure_gc={}",
+                 "memory_used={} gc_tick={} slot_pressure_gc={} created={} reclaimed={} "
+                 "pending_delete={} image_slots_reserved={}",
                  live_images, live_views, MAX_IMAGE_VIEWS, total_used_memory, gc_tick,
-                 TextureSlotPressureEnabled());
+                 TextureSlotPressureEnabled(), created_images, reclaimed_images,
+                 pending_image_deletions,
+                 TextureSlotPressureEnabled() ? TEST_MAX_IMAGE_SLOTS : MAX_IMAGES);
     }
     const bool slot_pressure = TextureSlotPressureEnabled() &&
         (live_images >= SLOT_PRESSURE_START ||
@@ -1247,6 +1251,11 @@ void TextureCache::GarbageCollectImages() {
         ticks_to_destroy = std::min(ticks_to_destroy, gc_tick);
         num_deletions = slot_pressure ? (aggresive ? 512u : 128u)
                                       : (aggresive ? 40u : pressured ? 20u : 10u);
+        if (slot_pressure) {
+            const size_t excess = std::max(live_images, live_views) - SLOT_PRESSURE_START + 1u;
+            num_deletions = std::max(num_deletions,
+                                    std::min(excess, aggresive ? size_t{32768} : size_t{8192}));
+        }
     };
     const auto clean_up = [&](Image& image) {
         if (num_deletions == 0) {
@@ -1271,13 +1280,13 @@ void TextureCache::GarbageCollectImages() {
         } else {
             FreeImage(image_id);
         }
-        if (total_used_memory < critical_gc_memory) {
+        if (!slot_critical && total_used_memory < critical_gc_memory) {
             if (aggresive) {
                 num_deletions >>= 2;
                 aggresive = false;
                 return false;
             }
-            if (pressured && total_used_memory < pressure_gc_memory) {
+            if (pressured && !slot_pressure && total_used_memory < pressure_gc_memory) {
                 num_deletions >>= 1;
                 pressured = false;
             }
@@ -1411,6 +1420,7 @@ void TextureCache::DeleteImage(ImageId image_id) {
     }
 
     // Reclaim image and any image views it references.
+    ++pending_image_deletions;
     scheduler.DeferOperation([this, image_id] {
         Image& image = slot_images[image_id];
         for (auto& backing : image.backing_images) {
@@ -1419,6 +1429,8 @@ void TextureCache::DeleteImage(ImageId image_id) {
             }
         }
         slot_images.Erase(image_id);
+        --pending_image_deletions;
+        ++reclaimed_images;
     });
 }
 
