@@ -87,13 +87,17 @@ def staging():
     if not (BASE / ".git").exists():
         raise RuntimeError("ORIGINAL_GIT_METADATA_MISSING")
     remote_args=["git","-C",BASE,"-c","gc.auto=0","-c","http.version=HTTP/1.1",
-                 "fetch","--no-tags","--depth=1","--no-recurse-submodules",
+                 "fetch","--no-tags","--depth=12","--no-recurse-submodules",
                  REPO_URL,"+refs/heads/diagnostic/gow-permutation-protected-base-20261019:"+REF]
     note("FETCHING_PROTECTED_BASE_FOUR_FILE_CANDIDATE")
     run(remote_args)
-    pinned=git(BASE,"rev-parse",REF+"^{commit}")
-    if pinned!=PATCH_PIN:
-        raise RuntimeError("CANDIDATE_PIN_MOVED expected="+PATCH_PIN+" actual="+pinned)
+    branch_tip=git(BASE,"rev-parse",REF+"^{commit}")
+    if run(["git","-C",BASE,"cat-file","-e",PATCH_PIN+"^{commit}"],fail=False).returncode:
+        raise RuntimeError("EXACT_FOUR_FILE_CANDIDATE_COMMIT_MISSING="+PATCH_PIN)
+    if run(["git","-C",BASE,"merge-base","--is-ancestor",PATCH_PIN,branch_tip],
+           fail=False).returncode:
+        raise RuntimeError("EXACT_PATCH_COMMIT_NOT_ANCESTOR_OF_FETCHED_BRANCH")
+    note("EXACT_FOUR_FILE_PATCH_PIN="+PATCH_PIN)
     changes=set(git(BASE,"diff","--name-only",BASE_PIN,PATCH_PIN).splitlines())
     if changes!=TARGETS:
         raise RuntimeError("FOUR_FILE_DIFF_CONTRACT_FAILED="+repr(sorted(changes)))
