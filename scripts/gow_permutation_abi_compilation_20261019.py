@@ -38,7 +38,8 @@ def archive_snapshot(repo: Path, ref: str, dest: Path) -> None:
         extractor = subprocess.run(["tar", "-xf", "-", "-C", str(dest)],
                                    stdin=producer.stdout, capture_output=True, text=True)
         producer.stdout.close()
-        _, stderr = producer.communicate()
+        stderr = producer.stderr.read().decode(errors="replace")
+        producer.wait()
         if producer.returncode or extractor.returncode:
             raise RuntimeError(f"archive={producer.returncode}, tar={extractor.returncode}: {stderr} {extractor.stderr}")
     finally:
