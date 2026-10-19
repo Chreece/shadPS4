@@ -25,6 +25,7 @@ LOGS = ROOT / "logs"
 UNIFIED_SOURCE = ESDE / "unified-20261018-160757/source"
 UNIFIED_BIN = Path.home() / "Applications/shadps4/shadps4"
 UNIFIED_SHA = "d8ef5b2ae1b12464a5d4ca83d8e5e9c3b0f2f0053148c531eda7457c9c21117d"
+UNIFIED_RELEASE = Path.home() / "Applications/shadps4/releases" / ("esde-unified-" + UNIFIED_SHA) / "shadps4"
 UPSTREAM_SHA = "d615b3887ba29025a59242e1a26f5b68bb176158"
 GOW_REF = "f909c3abb1ac1e7c8d87de833d3659f7d0b8fc87"
 GOT_VISUAL_REF = "e9f470b359845a456139a865aa1d7b3001f0dbfd"
@@ -190,7 +191,7 @@ def stage_preflight(report: dict, run: Path):
     state = report["source"]["unified"]
     if not state.get("exists") or state.get("tracked_dirty"):
         raise RuntimeError("Existing ES-DE source is missing or dirty; no staging")
-    if not report["checks"]["installed_unified_matches_known_sha"]:
+    if not report["checks"]["previous_unified_release_matches_known_sha"]:
         raise RuntimeError("Installed core changed; refusing to stage against an unverified base")
     if not report["checks"]["gow_binary_matches_proven_sha"]:
         raise RuntimeError("Proven GoW full-graphics executable missing/modified; no staging")
@@ -584,6 +585,7 @@ def main():
     report = {
         "date": dt.datetime.now(dt.timezone.utc).isoformat(),
         "installed_binary": {"path": str(UNIFIED_BIN), "sha256": installed_digest()},
+        "oct18_unified_release": {"path": str(UNIFIED_RELEASE), "sha256": digest(UNIFIED_RELEASE)},
         "goW_proven_binary": {"path": str(GOW_BIN), "sha256": digest(GOW_BIN)},
         "source": {"unified": source_status(UNIFIED_SOURCE),
                    "gow": source_status(GOW_SOURCE),
@@ -597,6 +599,7 @@ def main():
     }
     report["checks"] = {
         "installed_unified_matches_known_sha": installed_digest() == UNIFIED_SHA,
+        "previous_unified_release_matches_known_sha": digest(UNIFIED_RELEASE) == UNIFIED_SHA,
         "gow_binary_matches_proven_sha": digest(GOW_BIN) == GOW_BIN_SHA,
         "gow_renderer_matches_proven_sha":
             any(digest(root / GOW_RENDERER) == GOW_RENDERER_SHA
