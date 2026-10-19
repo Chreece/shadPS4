@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import statistics
 import time
 
 GAME = (Path.home() / "projects/shadps4/GodOfWarRagnarok/tests/"
@@ -128,6 +129,7 @@ def main():
     accum_run=accum_wait=largest_wait=0
     boundary=begin;last_audio_pct=None;last_guest_gap_ms=None
     saw_audio=False
+    last_sched_state={}
     with opts.out.open("w") as out:
         while alive(pid) and time.monotonic()-begin<opts.max_seconds:
             now=time.monotonic()
@@ -155,6 +157,8 @@ def main():
                     accum_wait+=dw
                     largest_wait=max(largest_wait,dw)
                 last[tid]=info
+                last_sched_state={key: info[key] for key in
+                                  ("tid","name","policy","nice","allowed","state","cpu","wchan")}
                 states[info["state"]]+=1
                 wchans[info["wchan"]]+=1
                 out.write(json.dumps(dict(kind="thread",elapsed_s=round(now-begin,2),**info))+"\n")
@@ -170,7 +174,26 @@ def main():
                 accum_run=accum_wait=largest_wait=0;boundary=now
             time.sleep(.20)
         out.flush()
+    healthy=[w for w in summary if w["audio_ready_pct"] is not None and
+             w["audio_ready_pct"]>=90]
+    starved=[w for w in summary if w["audio_ready_pct"] is not None and
+             w["audio_ready_pct"]<=65]
+    def median_ms(windows,key):
+        return round(statistics.median([w[key] for w in windows]),3) if windows else None
+    rq_total=sum(w["host_runnable_wait_ms"] for w in summary)
+    comparison=dict(
+        healthy_windows=len(healthy),starved_windows=len(starved),
+        healthy_median_host_rq_wait_ms_per_5s=median_ms(healthy,"host_runnable_wait_ms"),
+        starved_median_host_rq_wait_ms_per_5s=median_ms(starved,"host_runnable_wait_ms"),
+        starved_max_single_sample_rq_wait_ms=max(
+            (w["max_single_sample_wait_ms"] for w in starved),default=None),
+        interpretation=(
+            "SCHEDSTAT_ZERO_OR_DISABLED_CANNOT_EXCLUDE_HOST_SCHED_STARVATION"
+            if rq_total == 0 else
+            "READ_PER_WINDOW_RQ_WAIT_AND_WCHAN; DO_NOT_INFER_CAUSALITY_FROM_ONE_RUN"))
     result=dict(pid=pid,observed_AK_AudioOutThread=saw_audio,
+                last_audio_thread_host_state=last_sched_state,
+                starvation_vs_healthy=comparison,
                 windows=summary,thread_states=dict(states),
                 top_wait_channels=dict(wchans.most_common(12)),
                 last_audio_ready_pct=last_audio_pct,
