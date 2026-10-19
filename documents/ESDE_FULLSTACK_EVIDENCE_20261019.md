@@ -117,3 +117,26 @@ Ollama, Xorg, Sunshine, saves, system packages or SSH state.
 Host-side files that have not been uploaded or committed cannot be certified
 from GitHub alone. The accompanying audit script records their exact hashes
 without modifying them.
+
+## Implemented host-side full-stack preflight
+
+`tools/development/esde_fullstack_preflight_20261019.py` is a standard-library
+Python forensic/audit tool, not a replacement emulator. It reads the already
+selected Oct 18 SHA, saved Oct 17 GoW fullgfx ELF, both protected GoW source
+locations, exact GoT v51 before/after rasterizer source and recent CUSA crash
+logs. It emits one bounded `.tar.gz` report under the project `logs/` folder;
+it doesn't copy ROMs, saves, credentials or full profile contents.
+
+With `--stage`, it additionally creates an isolated Git worktree from the
+current source, fetches the pinned generic GoW UFFD branch commit `f909c3abb`,
+attempts **one** Git merge that surfaces all conflicts at once, and ports the
+exact renderer and Ghost v51 stencil source corrections via 3-way merges only
+when their preimage checksums match. This still cannot certify the final
+fullgfx executable's 79/79 GCN/object-source provenance or completion of
+GPU-indexed T# materials. Its final status will explicitly state whether
+source integration is blocked or staged but not built.
+
+This replaces repeated speculative CMake/build attempts with a single
+source/conflict/root-cause gate. Do not use the staged source as an ES-DE
+binary or delete any protected branch. A staged source is **not** a
+compiled or gameplay-validated emulator.
