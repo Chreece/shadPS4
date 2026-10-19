@@ -2,7 +2,7 @@
 
 The latest native capture completes without the previous crash, but the menu remains white and the world is missing. It exposes a remaining live shader defect: large GPU-selected buffer tables exceed the bounded-expansion binding budget, dropping vector loads and a formatted byte store. The candidate preserves those operations through shared buffer spans. Local compilation, address checks and shader replay pass; visual recovery is not established.
 
-Source: `a75e0223dd17feb655e08e7356940c2e9c6d187d`. Paired host/runtime scripts: `f2b2ef3555cc822021ba7ffec737f2637dd02ed5`. Branch: `diagnostic/got-indexed-sample-feedback-20261019`.
+Source: `a75e0223dd17feb655e08e7356940c2e9c6d187d`. Runtime script: `f2b2ef3555cc822021ba7ffec737f2637dd02ed5`; corrected host script: `eb57b9bff761109ae876380f08fdf0953356b286`. Branch: `diagnostic/got-indexed-sample-feedback-20261019`.
 
 ## Latest native evidence
 
