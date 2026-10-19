@@ -29,7 +29,22 @@ if (( $# == 0 )); then
   bash -n "$BUILD_SCRIPT" || {
     echo "BUILD_LAUNCHER_SHELL_SYNTAX_INVALID_NO_BUILD"; exit 2;
   }
-  TAG="gow-audio3d-build-worker-$(date +%Y%m%d-%H%M%S)-$$"
+  # Catch errors in the full ~900-line build runner BEFORE detaching or
+  # touching any test source. The previous 10:20 trial failed here because
+  # an Audio3D object-list entry had no trailing shell continuation.
+  RUNNER_PREFLIGHT="$SCRIPTS/gow_audio3d_queue_rebuild_and_one_run_20261019.sh"
+  curl -4 -fLsS --retry 3 --retry-delay 2 \
+    "$URL/tools/development/gow_audio3d_queue_rebuild_and_one_run_20261019.sh" \
+    -o "$RUNNER_PREFLIGHT"
+  [[ -f "$RUNNER_PREFLIGHT" && ! -L "$RUNNER_PREFLIGHT" &&
+     "$(git hash-object "$RUNNER_PREFLIGHT")" == "bb7642d37222b1b54b85c4037d5df5baf029b1ab" ]] || {
+    echo "FULL_RUNNER_PINNED_BLOB_MISMATCH_NO_BUILD"; exit 2;
+  }
+  bash -n "$RUNNER_PREFLIGHT" || {
+    echo "FULL_RUNNER_SHELL_SYNTAX_INVALID_NO_BUILD"; exit 2;
+  }
+  echo "FULL_RUNNER_SYNTAX_CHECK=PASS_BEFORE_DETACH"
+  TAG="gow-audio3d-build-worker-$(date +%Y%m%d-%H%M%S)-$"
   LOG="$LOGS/$TAG.log"
   [[ ! -e "$LOG" ]] || { echo "LOG_COLLISION_NO_BUILD"; exit 2; }
   nohup setsid -w bash "$SELF" --worker "$TAG" </dev/null >"$LOG" 2>&1 &
