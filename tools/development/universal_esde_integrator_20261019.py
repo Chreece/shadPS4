@@ -38,6 +38,7 @@ GOW = "f909c3abb1ac1e7c8d87de833d3659f7d0b8fc87"
 GHOST = "e9f470b359845a456139a865aa1d7b3001f0dbfd"
 GHOST_BRANCH = "refs/heads/experiment/got-gow-shreg-and-table-identity-20261017"
 GHOST_LATEST_BRANCH = "refs/heads/diagnostic/got-indexed-sample-feedback-20261019"
+GOW_LATEST_BRANCH = "refs/heads/test/gow-preserved-graphics-audio3d-srt-20261019"
 GHOST_LATEST = "a1e49687f9e1fe25abb2c6e55450dc575850ccf2"
 NEW_BASE_SHA = "48ae4ac2ec8f42e2155425521c8699359b466dd6459905948762de539865b5bc"
 GOW_ELF_SHA = "8b0cbcba030859291e8573bc2003878184ce820908c63334d72e811e552740ef"
@@ -47,9 +48,11 @@ IMAGE = "shadps4-ngs2-builder:trixie-clang19-v1"
 # per-shader/scene diagnostic probes, and GPU-selected uncertain resource
 # experiments are NOT silently merged as finished runtime fixes.
 GENERIC_COMMITS = [
+    ("GPU dirty-word watcher initialization", "27bc4e1ef8d885376fa177999ebb176619c144e4"),
     ("Vulkan indirect-read hazard tracking", "645d6cf9586eb577ab92a1869c925e7cc6305617"),
     ("Vulkan indirect argument stage tracking", "69c3c02d2aa5d31e3d2d4ee92c8a26bbeaa6263c"),
     ("Vulkan DRAW_INDIRECT consumption", "c036336bf4b92ff3ac11e1422ba73341c5bb2a9a"),
+    ("Audio3D per-port queue consumption synchronization", "81e560f89212b3fd8b2cc6c19257294ef0e70460"),
     ("LDS singleton and Phi safety", "baceadf44d0a040384a6d0db3b8e89abef4a824a"),
     ("Shader packed and strided table size witnesses", "c8121ad971408e5fb28b2da28de09625fa53efe0"),
     ("Texture image-view independent capacity", "b18cfc312904d8eaf01ed7788b85a97bcd114121"),
@@ -80,7 +83,13 @@ NECESSARY_SYMBOLS = {
     "src/video_core/page_manager.cpp": ["pending_gpu_invalidations"],
     "src/shader_recompiler/ir/passes/resource_discover_pass.cpp": ["ReadConst", "ImageSample", "Indexed"],
     "src/shader_recompiler/ir/passes/resource_patching_pass.cpp": ["Image"],
-    "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp": ["Srt"],
+    "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp":
+        ["SrtCodegen::EmitConstantLeftShiftByDynamicCount"],
+    "src/shader_recompiler/ir/passes/srt_offset_codegen.h":
+        ["c.mov(Xbyak::util::ecx, destination)", "c.shl(destination, Xbyak::util::cl)"],
+    "src/core/devtools/layer.cpp": ["ProcessQuitEvent", "quit_dialog.IsVisible()"],
+    "src/core/startup_progress.h": ["progress"],
+    "src/video_core/renderer_vulkan/vk_instance.cpp": ["uniformAndStorageBuffer16BitAccess"],
 }
 
 def digest(p: Path) -> str | None:
@@ -250,7 +259,7 @@ class Builder:
             raise RuntimeError("UPSTREAM_PIN_CHANGED")
         self.git("-c", "http.version=HTTP/1.1", "fetch", "--no-tags",
                  "https://github.com/Chreece/shadPS4.git",
-                 GHOST_BRANCH, GHOST_LATEST_BRANCH)
+                 GHOST_BRANCH, GHOST_LATEST_BRANCH, GOW_LATEST_BRANCH)
         if self.git_out("rev-parse", "FETCH_HEAD") != GHOST_LATEST:
             # With multiple refspecs FETCH_HEAD may expose only the first.
             test = self.capture("git", "-C", self.source, "cat-file", "-e", GHOST_LATEST + "^{commit}")
