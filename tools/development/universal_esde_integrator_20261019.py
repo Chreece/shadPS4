@@ -48,7 +48,7 @@ IMAGE = "shadps4-ngs2-builder:trixie-clang19-v1"
 # experiments are NOT silently merged as finished runtime fixes.
 GENERIC_COMMITS = [
     ("Vulkan indirect-read hazard tracking", "645d6cf9586eb577ab92a1869c925e7cc6305617"),
-    ("Vulkan indirect argument stage tracking", "69c3c02d2aa"),
+    ("Vulkan indirect argument stage tracking", "69c3c02d2aa5d31e3d2d4ee92c8a26bbeaa6263c"),
     ("Vulkan DRAW_INDIRECT consumption", "c036336bf4b92ff3ac11e1422ba73341c5bb2a9a"),
     ("LDS singleton and Phi safety", "baceadf44d0a040384a6d0db3b8e89abef4a824a"),
     ("Shader packed and strided table size witnesses", "c8121ad971408e5fb28b2da28de09625fa53efe0"),
@@ -253,11 +253,8 @@ class Builder:
             if self.capture("git", "-C", self.source, "cat-file",
                             "-e", ref + "^{commit}").returncode:
                 raise RuntimeError("HISTORICAL_ENGINE_REF_NOT_FETCHED " + ref)
-        if self.git_out("rev-parse", GHOST_BRANCH) != GHOST:
-            # A branch is not necessarily installed as a local ref from a fetch.
-            expected = self.capture("git", "-C", self.source, "rev-parse",
-                                    "FETCH_HEAD").stdout
-            self.report["ghost_branch_note"] = "Verified commit object; branch ref unavailable"
+        # The two fetched SHA-pinned commits are the immutable refs used
+        # for all semantic merges; no assumptions about local branch names.
         self.report["pins_verified"] = True
 
     def merge(self, name: str, ref: str):
