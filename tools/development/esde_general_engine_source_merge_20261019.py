@@ -60,6 +60,7 @@ VULKAN_FILES = {
     "vk_resource_pool.cpp", "vk_resource_pool.h",
     "vk_instance.cpp", "vk_instance.h", "vk_runtime.cpp",
     "vk_presenter.cpp", "vk_presenter.h",
+    "resource_audit_hash_filter.h",
 }
 UNSAFE_CPP_MARKERS = re.compile(
     r"(?:\bCUSA\d{5}\b|\bSHADPS4_(?:GOW|GOT|GHOST)_[A-Z0-9_]*\b|"
@@ -99,8 +100,7 @@ def eligible(rel):
     if not rel.startswith("src/") or not rel.endswith((".cpp",".h",".inc")):
         return False
     if rel.startswith("src/shader_recompiler/"):
-        return not any(k in rel for k in ("targeted_shader_dump",
-                                          "diagnostics", "got_", "gow_"))
+        return not any(k in rel for k in ("diagnostics", "got_", "gow_"))
     if rel in GPU_SOURCE_PATHS:
         return True
     if rel.startswith("src/video_core/renderer_vulkan/"):
