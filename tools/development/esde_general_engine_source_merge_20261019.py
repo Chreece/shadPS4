@@ -34,6 +34,63 @@ OLD_ELF = "48ae4ac2ec8f42e2155425521c8699359b466dd6459905948762de539865b5bc"
 UPSTREAM = "d615b3887ba29025a59242e1a26f5b68bb176158"
 GOW = "f909c3abb1ac1e7c8d87de833d3659f7d0b8fc87"
 GOT = "e9f470b359845a456139a865aa1d7b3001f0dbfd"
+GOT_LATE = "71faef4a8d76282a1931445198571082f0e3c70e"
+# Chronological general correctness improvements after the last horse-visible
+# baseline. No per-shader feedback counters, game IDs, or GDS debug probes.
+# A commit is replayed at source-delta level with its exact first parent.
+GENERAL_LATE_COMMITS = (
+    "16ab0edbd70e",  # dynamic image descriptor bindings
+    "2ba9963f228a",  # descriptor resource capacity
+    "e6af55857bc0",  # bounded large table budget
+    "be463d8d361a",  # strided T# real SSA indices
+    "0dc9a1dff77d",  # guest record and offset provenance
+    "5cf2cf619302",  # real Vulkan binding layout
+    "f336b0dbfc20",  # complete strided material specialization
+    "b29106a5c6b6",  # bind real strided guest images
+    "f2169f2fb9a4",  # indexed gradient IR opcode
+    "39d58e288e25",  # GPU gradient SPIR-V
+    "760b73d3e641",  # paired sampler and texture discovery
+    "0cecd34d1760",  # matching S# record provenance
+    "20ec7bfbb7a1",  # same GPU selector for S# and T#
+    "69e7892b1c72",  # sampler nonuniform descriptor capability
+    "8b75cb119781",  # complete selected sampler array
+    "9b4d6ebd6523",  # reject unsupported sampler/texture pair
+    "dd00aa320c9e",  # preserve descriptor and SPIR-V slots
+    "3edc91cd2175",  # preserve original GPU index
+    "6c9cfc0c1f23",  # sampler array descriptor count
+    "6ff828d3a06b",  # full S# arrays with real T# arrays
+    "538fc65527d9",  # standard Vulkan sampled-image capability
+    "69792c1c37bf",  # texture-cache UID residency
+    "c7ac9ac753b7",  # bounded table cache
+    "e8063a04b9f0",  # shader stage and layout key
+    "d4041bfb8978",  # unchanged table reuse and lifetime
+    "ea945f704902",  # refresh previously absent image
+    "11b81a8698f6",  # fail closed on partial compute descriptors
+    "c741c64707d3",  # invalidate incompatible shader cache
+    "a3a1097bd56a",  # overflow-safe buffer read
+    "92327b967857",  # validated descriptor flatbuffer range
+    "f77e3c74f6bf",  # out-of-range V# fail closed
+    "1cddfe5c715f",  # indexed GPU table read bounds
+    "47eda1e41d37",  # live material table witness
+    "5b7939573657",  # provenance for all guest-material V#
+    "b913874ce5a9",  # live material specialization cache
+    "c41c07769062",  # owned shader Info per permutation
+    "deab626789e3",  # matching material resource binding
+    "d27ec61bbad7",  # metadata-permutation cache deserialization
+    "f2a88f76ed02",  # real GPU attribute T# selector
+    "2c03de7f77b3",  # full 27K table from guest resource
+    "645d6cf9586e",  # indirect buffer hazard
+    "69c3c02d2aa5",  # indirect argument GPU read
+    "c036336bf4b9",  # draw indirect correct access stage
+    "baceadf44d0a",  # singleton LDS and Phi fold correction
+    "c8121ad97140",  # packed table size changes invalidate specialization
+    "b18cfc312904",  # independent stable image-view capacity
+    "aa775cd99651",  # bounded pointer-selected descriptors
+    "1b1ca11bfea7",  # uniform samplers + explicit LOD
+    "84117bbd1e35",  # generic GPU descriptor paths
+    "e255fa8f608c",  # GPU-selected buffer loads and stores
+    "71faef4a8d76",  # cached buffer-table bounds
+)
 COMMON = "32021e41bc52f744c80d122e732e24e97496c98d"
 REMOTE = "https://github.com/Chreece/shadPS4.git"
 IMAGE = "shadps4-ngs2-builder:trixie-clang19-v1"
@@ -61,7 +118,7 @@ VULKAN_FILES = {
     "vk_resource_pool.cpp", "vk_resource_pool.h",
     "vk_instance.cpp", "vk_instance.h", "vk_runtime.cpp",
     "vk_presenter.cpp", "vk_presenter.h",
-    "resource_audit_hash_filter.h",
+    "resource_audit_hash_filter.h", "vk_buffer_hazard_rules.h",
 }
 UNSAFE_CPP_MARKERS = re.compile(
     r"(?:\bCUSA\d{5}\b|\bSHADPS4_(?:GOW|GOT|GHOST)_[A-Z0-9_]*\b|"
@@ -128,13 +185,16 @@ def ensure_git_history(report):
     if sha_file(old) != OLD_ELF:
         raise RuntimeError("Compiled source baseline ELF no longer matches Oct19 SHA")
     report["previous_binary_sha"] = sha_file(old)
-    for commit in (GOT, COMMON):
+    for commit in (GOT, GOT_LATE, COMMON):
         if git("cat-file", "-e", f"{commit}^{{commit}}", check=False).returncode:
             run("git", "-C", SOURCE, "-c", "http.version=HTTP/1.1",
                 "fetch", "--no-tags", "--no-recurse-submodules",
                 "--depth=256", REMOTE, commit, timeout=220)
         if git("cat-file", "-e", f"{commit}^{{commit}}", check=False).returncode:
             raise RuntimeError("Pinned GoT/base Git history incomplete: " + commit)
+    if git("merge-base", "--is-ancestor", GOT, GOT_LATE,
+           check=False).returncode:
+        raise RuntimeError("Later general GPU source is not descendant of horse-visible baseline")
     if git("merge-base", "--is-ancestor", COMMON, GOT,
            check=False).returncode:
         raise RuntimeError("GoT source not descended from audited common base")
