@@ -27,6 +27,7 @@
 #include "video_core/renderer_vulkan/vk_buffer_hazard_rules.h"
 #include "video_core/renderer_vulkan/vk_got_scene_depth_ab.h"
 #include "video_core/renderer_vulkan/vk_got_scene_gpu_queries.h"
+#include "video_core/renderer_vulkan/vk_got_indirect_producer_trace.h"
 #include "video_core/renderer_vulkan/vk_got_indirect_gpu_readback.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -40,6 +41,31 @@ namespace Vulkan {
 
 namespace {
 
+// Confirm that a shader with a watched writable descriptor actually reached
+// Vulkan dispatch; this still does not prove the shader executed a store.
+void TraceGotIndirectComputeDispatch(const Shader::Info& cs, bool indirect,
+                                     u32 dim_x, u32 dim_y, u32 dim_z) {
+    if (!Diagnostics::GotIndirectProducerTraceEnabled()) return;
+    for (const auto& desc : cs.buffers) {
+        if (desc.IsSpecial() || !desc.is_written) continue;
+        const auto sharp = desc.GetSharp(cs);
+        const u32 hits = Diagnostics::GotIndirectProducerHits(
+            sharp.base_address, sharp.GetSize());
+        if (!hits) continue;
+        static thread_local u32 events{};
+        const u32 observed = ++events;
+        if (Diagnostics::ShouldReportIndirectProducer(observed)) {
+            LOG_INFO(Render_Vulkan,
+                     "GotIndirectProducer: path=COMPUTE_DISPATCH_SUBMITTED "
+                     "shader={:#x} hits_mask={:#x} descriptor_base={:#x} "
+                     "descriptor_bytes={} indirect={} dim_x={} dim_y={} dim_z={} "
+                     "confirmed_store=NO observed={}",
+                     cs.pgm_hash,hits,static_cast<u64>(sharp.base_address),
+                     sharp.GetSize(),indirect,dim_x,dim_y,dim_z,observed);
+        }
+        break;
+    }
+}
 
 struct ResourceAuditCounts {
     u64 buffer_binds{};
@@ -586,6 +612,8 @@ void Rasterizer::DispatchDirect() {
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+    TraceGotIndirectComputeDispatch(cs, false, cs_program.dim_x, cs_program.dim_y,
+                                    cs_program.dim_z);
     DebugState.IncDispatch();
 
     ResetBindings(true);
@@ -620,6 +648,8 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatchIndirect(buffer->Handle(), base);
+    const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
+    TraceGotIndirectComputeDispatch(cs, true, 0, 0, 0);
     DebugState.IncDispatch();
 
     ResetBindings(true);
@@ -1162,6 +1192,26 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 buffer_infos.emplace_back(VK_NULL_HANDLE, 0, VK_WHOLE_SIZE);
             } else {
                 const u64 size = memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize());
+                if (desc.is_written && Diagnostics::GotIndirectProducerTraceEnabled()) {
+                    const u32 hits = Diagnostics::GotIndirectProducerHits(
+                        vsharp.base_address, size);
+                    if (hits) {
+                        static thread_local u32 events{};
+                        const u32 observed = ++events;
+                        if (Diagnostics::ShouldReportIndirectProducer(observed)) {
+                            LOG_INFO(Render_Vulkan,
+                                     "GotIndirectProducer: path=WRITABLE_SHADER_BIND "
+                                     "shader={:#x} stage={} hits_mask={:#x} "
+                                     "descriptor_base={:#x} descriptor_bytes={} "
+                                     "stride={} records={} clamped={} "
+                                     "confirmed_store=NO observed={}",
+                                     stage.pgm_hash,stage.hw_stage,hits,
+                                     static_cast<u64>(vsharp.base_address),size,
+                                     vsharp.stride,vsharp.num_records,
+                                     size!=vsharp.GetSize(),observed);
+                        }
+                    }
+                }
                 if (size != vsharp.GetSize()) {
                     LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
                               vsharp.GetSize(), size, stage.pgm_hash);
@@ -2087,6 +2137,19 @@ void Rasterizer::DepthStencilCopy(bool is_depth, bool is_stencil) {
 }
 
 void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds) {
+    if (!is_gds && Diagnostics::GotIndirectProducerTraceEnabled()) {
+        const u32 hits = Diagnostics::GotIndirectProducerHits(address,num_bytes);
+        if (hits) {
+            static thread_local u32 observations{};
+            if (Diagnostics::ShouldReportIndirectProducer(++observations)) {
+                LOG_INFO(Render_Vulkan,
+                         "GotIndirectProducer: path=FILL_REQUEST hits_mask={:#x} "
+                         "destination={:#x} bytes={} value={:#x} "
+                         "host_or_gpu_path=NOT_YET_CHOSEN observed={}",
+                         hits,static_cast<u64>(address),num_bytes,value,observations);
+            }
+        }
+    }
     ASSERT_MSG(address % 4 == 0 && num_bytes % 4 == 0,
                "FillBuffer address and size must be a multiple of 4 bytes");
     if (!is_gds) {
@@ -2108,6 +2171,20 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
 }
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
+    if (!dst_gds && Diagnostics::GotIndirectProducerTraceEnabled()) {
+        const u32 hits = Diagnostics::GotIndirectProducerHits(dst,num_bytes);
+        if (hits) {
+            static thread_local u32 observations{};
+            if (Diagnostics::ShouldReportIndirectProducer(++observations)) {
+                LOG_INFO(Render_Vulkan,
+                         "GotIndirectProducer: path=DMA_COPY_REQUEST hits_mask={:#x} "
+                         "source={:#x} destination={:#x} bytes={} src_gds={} "
+                         "host_or_gpu_path=NOT_YET_CHOSEN observed={}",
+                         hits,static_cast<u64>(src),static_cast<u64>(dst),
+                         num_bytes,src_gds,observations);
+            }
+        }
+    }
     if (!dst_gds && !buffer_cache.IsRegionGpuModified(dst, num_bytes)) {
         if (!src_gds && !buffer_cache.IsRegionGpuModified(src, num_bytes) &&
             !texture_cache.FindImageFromRange(src, num_bytes)) {

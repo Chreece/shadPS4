@@ -8,10 +8,12 @@
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_buffer_hazard_rules.h"
+#include "video_core/renderer_vulkan/vk_got_indirect_producer_trace.h"
 #include "video_core/texture_cache/blit_helper.h"
 #include "video_core/texture_cache/image.h"
 
 #include <cstdlib>
+#include <limits>
 #include <vulkan/vulkan_format_traits.hpp>
 
 namespace Vulkan {
@@ -126,6 +128,28 @@ void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.copyBuffer(src->Handle(), dst->Handle(), copies);
 
+    if (Diagnostics::GotIndirectProducerTraceEnabled() &&
+        dst->mem_type == VideoCore::MemoryType::Sparse) {
+        for (const auto& copy : copies) {
+            if (copy.dstOffset > dst->SizeBytes() ||
+                dst->CpuAddr() > std::numeric_limits<u64>::max() - copy.dstOffset) continue;
+            const u64 guest = dst->CpuAddr() + copy.dstOffset;
+            const u32 hits = Diagnostics::GotIndirectProducerHits(guest,copy.size);
+            if (!hits) continue;
+            static thread_local u32 events{};
+            const u32 observed = ++events;
+            if (Diagnostics::ShouldReportIndirectProducer(observed)) {
+                LOG_INFO(Render_Vulkan,
+                         "GotIndirectProducer: path=VULKAN_COPY_SUBMITTED "
+                         "hits_mask={:#x} source_type={} src_cpu={:#x} "
+                         "dst_cpu={:#x} src_offset={} dst_offset={} bytes={} "
+                         "observed={}",
+                         hits,static_cast<u32>(src->mem_type),src->CpuAddr(),
+                         dst->CpuAddr(),copy.srcOffset,copy.dstOffset,copy.size,observed);
+            }
+        }
+    }
+
     for (const auto& copy : copies) {
         AccessBuffer(src, copy.srcOffset, copy.size, vk::PipelineStageFlagBits2::eCopy,
                      vk::AccessFlagBits2::eTransferRead);
@@ -143,6 +167,22 @@ void Runtime::FillBuffer(const VideoCore::Buffer* dst, u64 offset, u64 size, u32
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.fillBuffer(dst->Handle(), offset, size, value);
+    if (Diagnostics::GotIndirectProducerTraceEnabled() &&
+        dst->mem_type == VideoCore::MemoryType::Sparse &&
+        offset <= std::numeric_limits<u64>::max() - dst->CpuAddr()) {
+        const u32 hits = Diagnostics::GotIndirectProducerHits(dst->CpuAddr()+offset,size);
+        if (hits) {
+            static thread_local u32 events{};
+            const u32 observed=++events;
+            if (Diagnostics::ShouldReportIndirectProducer(observed)) {
+                LOG_INFO(Render_Vulkan,
+                         "GotIndirectProducer: path=VULKAN_FILL_SUBMITTED "
+                         "hits_mask={:#x} destination={:#x} bytes={} value={:#x} "
+                         "observed={}",
+                         hits,dst->CpuAddr()+offset,size,value,observed);
+            }
+        }
+    }
 
     AccessBuffer(dst, offset, size, vk::PipelineStageFlagBits2::eClear,
                  vk::AccessFlagBits2::eTransferWrite);
@@ -157,6 +197,23 @@ void Runtime::InlineData(VideoCore::Buffer* dst, u64 offset, u32 value) {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.updateBuffer(dst->Handle(), offset, sizeof(value), &value);
+    if (Diagnostics::GotIndirectProducerTraceEnabled() &&
+        dst->mem_type == VideoCore::MemoryType::Sparse &&
+        offset <= std::numeric_limits<u64>::max() - dst->CpuAddr()) {
+        const u32 hits = Diagnostics::GotIndirectProducerHits(
+            dst->CpuAddr()+offset,sizeof(value));
+        if (hits) {
+            static thread_local u32 events{};
+            const u32 observed=++events;
+            if (Diagnostics::ShouldReportIndirectProducer(observed)) {
+                LOG_INFO(Render_Vulkan,
+                         "GotIndirectProducer: path=VULKAN_INLINE_SUBMITTED "
+                         "hits_mask={:#x} destination={:#x} value={:#x} "
+                         "observed={}",
+                         hits,dst->CpuAddr()+offset,value,observed);
+            }
+        }
+    }
 
     AccessBuffer(dst, offset, sizeof(value), vk::PipelineStageFlagBits2::eCopy,
                  vk::AccessFlagBits2::eTransferWrite);

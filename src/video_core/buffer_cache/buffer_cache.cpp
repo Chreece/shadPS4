@@ -19,6 +19,7 @@
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
+#include "video_core/renderer_vulkan/vk_got_indirect_producer_trace.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/texture_cache/texture_cache.h"
 
@@ -255,6 +256,20 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     const auto* arena = GetArena(first_block, last_block);
     EnsureResident(arena, first_block, last_block);
     if (is_written) {
+        if (Vulkan::Diagnostics::GotIndirectProducerTraceEnabled()) {
+            const u32 hits=Vulkan::Diagnostics::GotIndirectProducerHits(device_addr,size);
+            if (hits) {
+                static thread_local u32 events{};
+                const u32 observed=++events;
+                if (Vulkan::Diagnostics::ShouldReportIndirectProducer(observed)) {
+                    LOG_INFO(Render_Vulkan,
+                             "GotIndirectProducer: path=WRITABLE_BUFFER_OBTAIN "
+                             "hits_mask={:#x} guest_address={:#x} bytes={} "
+                             "confirmed_store=NO observed={}",
+                             hits,static_cast<u64>(device_addr),size,observed);
+                }
+            }
+        }
         texture_cache.MarkAsMaybeGpuDirty(device_addr, size);
     }
     SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);
@@ -284,6 +299,19 @@ bool BufferCache::IsRegionGpuModified(VAddr addr, size_t size) {
 }
 
 void BufferCache::MarkRegionAsGpuModified(VAddr addr, size_t size) {
+    if (Vulkan::Diagnostics::GotIndirectProducerTraceEnabled()) {
+        const u32 hits=Vulkan::Diagnostics::GotIndirectProducerHits(addr,size);
+        if (hits) {
+            static thread_local u32 events{};
+            const u32 observed=++events;
+            if (Vulkan::Diagnostics::ShouldReportIndirectProducer(observed)) {
+                LOG_INFO(Render_Vulkan,
+                         "GotIndirectProducer: path=GPU_DIRTY_MARK hits_mask={:#x} "
+                         "guest_address={:#x} bytes={} confirmed_store=NO observed={}",
+                         hits,static_cast<u64>(addr),size,observed);
+            }
+        }
+    }
     texture_cache.MarkAsMaybeGpuDirty(addr, size);
     memory_tracker->MarkRegionAsGpuModified(addr, size);
     gpu_modified_ranges.Add(addr, size);
@@ -517,6 +545,20 @@ bool BufferCache::SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 
     boost::container::small_vector<vk::BufferCopy, 4> copies;
     size_t total_size_bytes{};
     memory_tracker->ForEachUploadRange(device_addr, size, is_written, [&](u64 addr, u64 size) {
+        if (Vulkan::Diagnostics::GotIndirectProducerTraceEnabled()) {
+            const u32 hits=Vulkan::Diagnostics::GotIndirectProducerHits(addr,size);
+            if (hits) {
+                static thread_local u32 events{};
+                const u32 observed=++events;
+                if (Vulkan::Diagnostics::ShouldReportIndirectProducer(observed)) {
+                    LOG_INFO(Render_Vulkan,
+                             "GotIndirectProducer: path=CPU_TO_GPU_UPLOAD_RANGE "
+                             "hits_mask={:#x} guest_address={:#x} bytes={} "
+                             "write_intent={} observed={}",
+                             hits,addr,size,is_written,observed);
+                }
+            }
+        }
         copies.emplace_back(total_size_bytes, addr, size);
         total_size_bytes += size;
     });
