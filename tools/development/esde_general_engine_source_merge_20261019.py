@@ -723,33 +723,39 @@ def build(report, plan_dir):
               "--workdir",str(WORK),"--env","HOME="+str(WORK),IMAGE]
     cmd = common+["cmake","--build",str(BUILD),"--target","shadps4",
                   "--parallel","4"]
-    with log.open("wb") as out:
-        proc=subprocess.run(cmd,stdout=out,stderr=subprocess.STDOUT,cwd=WORK)
-    report["build_exit"]=proc.returncode
-    if proc.returncode:
-        # Keep source proposals and full CMake diagnostics for the next actual
-        # source-resolution iteration, but restore the previous known ELF.
-        shutil.copy2(backup,previous)
-        raise RuntimeError("Isolated source candidate did not compile/link")
-    compiled=BUILD/"shadps4"
-    if not compiled.is_file() or compiled.is_symlink():
-        raise RuntimeError("No regular emulator binary after link")
-    with compiled.open("rb") as file:
-        if file.read(5)!=b"\x7fELF\x02":
-            raise RuntimeError("Native result is not x86-64 ELF")
-    ldd = run("ldd",compiled,check=False)
-    if ldd.returncode or b"not found" in ldd.stdout:
-        raise RuntimeError("Missing ELF dependency; candidate not accepted")
-    smoke=run("timeout","30",compiled,"--help",check=False,cwd=WORK)
-    if smoke.returncode:
-        raise RuntimeError("CLI smoke failed: "+smoke.stderr.decode(errors="replace")[-1200:])
-    candidate=plan_dir/"shadps4-general-candidate"
-    shutil.copy2(compiled,candidate)
-    report["candidate"]={"path":str(candidate),
-                         "sha256":sha_file(candidate),
-                         "state":"LINKED_AND_CLI_CHECKED_NOT_GAMEPLAY_VALIDATED"}
-    print("ISOLATED_GENERAL_CANDIDATE="+str(candidate))
-    print("ISOLATED_GENERAL_SHA256="+report["candidate"]["sha256"])
+    try:
+        with log.open("wb") as out:
+            proc=subprocess.run(cmd,stdout=out,stderr=subprocess.STDOUT,cwd=WORK)
+        report["build_exit"]=proc.returncode
+        if proc.returncode:
+            raise RuntimeError("Isolated source candidate did not compile/link")
+        compiled=BUILD/"shadps4"
+        if not compiled.is_file() or compiled.is_symlink():
+            raise RuntimeError("No regular emulator binary after link")
+        with compiled.open("rb") as file:
+            if file.read(5)!=b"\x7fELF\x02":
+                raise RuntimeError("Native result is not x86-64 ELF")
+        ldd = run("ldd",compiled,check=False)
+        if ldd.returncode or b"not found" in ldd.stdout:
+            raise RuntimeError("Missing ELF dependency; candidate not accepted")
+        smoke=run("timeout","30",compiled,"--help",check=False,cwd=WORK)
+        if smoke.returncode:
+            raise RuntimeError("CLI smoke failed: "+smoke.stderr.decode(errors="replace")[-1200:])
+        candidate=plan_dir/"shadps4-general-candidate"
+        shutil.copy2(compiled,candidate)
+        report["candidate"]={"path":str(candidate),
+                             "sha256":sha_file(candidate),
+                             "state":"LINKED_AND_CLI_CHECKED_NOT_GAMEPLAY_VALIDATED"}
+        print("ISOLATED_GENERAL_CANDIDATE="+str(candidate))
+        print("ISOLATED_GENERAL_SHA256="+report["candidate"]["sha256"])
+    except Exception:
+        # Even if native link succeeded but ELF/ldd/smoke later rejected it,
+        # the previously compiled binary remains the exact reusable baseline.
+        shutil.copy2(backup, previous)
+        report["previous_candidate_restored_sha256"]=sha_file(previous)
+        if report["previous_candidate_restored_sha256"] != report["previous_candidate_backup_sha256"]:
+            raise RuntimeError("NATIVE_BINARY_ROLLBACK_SHA_MISMATCH")
+        raise
 
 
 def self_test():
