@@ -273,3 +273,36 @@ The old audit is kept; new results are written to a separate
 \`audit-resume-*.json\` and \`logs/esde-fullstack-audit-*.tar.gz\`.
 Do not claim a passing compilation or gameplay until the actual host
 build and game-specific runtime tests establish them.
+
+## October 19 17:xx full-stack Clang19 compiler stop: missing SRT header
+
+The attached text build excerpt reports 2,556 of 2,637 Ninja steps reached,
+then `flatten_extended_userdata_pass.cpp:23:10` failed to find
+`shader_recompiler/ir/passes/srt_offset_preflight.h`. It is a compile
+error, **not** a runtime shader/GPU failure, and the complete link never ran.
+
+The root cause was an exact string mismatch in the earlier integration helper:
+it checked `#include "src/shader_recompiler/..."`, while the source uses
+`#include "shader_recompiler/..."`. The fix handles the actual paths
+and recursively walks the transitive SRT header dependencies (preflight,
+uniformity, identity, codegen, optional dependency scheduling and inline
+read helpers). It preserves existing headers and protected user's local
+changes; if local headers are missing it falls back only to individually
+verified Oct 17 Git blobs bundled in
+`tools/development/proven_sources_20261019/src/shader_recompiler/ir/passes/`.
+
+For the existing
+`~/projects/shadps4/ESDE/fullstack-audit-20261019-165723` source
+and Ninja build, the isolated
+`tools/development/esde_resume_srt_build_20261019.py` verifies merge
+ancestry and the previously protected full-graphics ELF SHA-256, plans the
+entire missing dependency closure before writing any file, then compiles
+**only the formerly failing SRT object**. If that succeeds, it incrementally
+links the full emulator using the same Debian 13/Clang19 builder image.
+It never selects a new ES-DE core or launches a game. A successful
+compile is marked `PASS_COMPILED_ONLY`, never playable or graphics-fixed.
+
+A self-contained, no-network/no-server-source test runs via
+`python3 -B .../esde_resume_srt_build_20261019.py --self-test`
+and reproduces a three-level SRT include dependency chain. The real
+host compile and gameplay acceptance remain pending.
