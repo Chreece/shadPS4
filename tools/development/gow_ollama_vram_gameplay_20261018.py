@@ -183,20 +183,35 @@ def screenshot(folder, seconds, display):
 
 
 def stop_game(game):
+    """Always signal the owned emulator BEFORE attempting terminal output.
+
+    In the 06:52 GoW test, SSH disconnected (SIGHUP) and stdout was a broken
+    pipe. Previously the diagnostic print raised BrokenPipeError BEFORE
+    os.killpg(SIGTERM), leaving an orphan game process after Ollama restored.
+    No stdout/stderr, logging, or SSH operation may block emulator cleanup.
+    """
     if game is None:
         return
     if game.poll() is not None:
         return
-    print(f"STOPPING_ONLY_OWN_GAME_PID={game.pid}", flush=True)
+    pid = game.pid
     try:
-        os.killpg(game.pid, signal.SIGTERM)
+        os.killpg(pid, signal.SIGTERM)
     except ProcessLookupError:
         pass
     try:
         game.wait(timeout=15)
     except subprocess.TimeoutExpired:
-        os.killpg(game.pid, signal.SIGKILL)
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         game.wait(timeout=10)
+    # Best-effort message only AFTER game exit is confirmed.
+    try:
+        print(f"STOPPED_ONLY_OWN_GAME_PID={pid}", flush=True)
+    except (BrokenPipeError, OSError):
+        pass
 
 
 def main():
