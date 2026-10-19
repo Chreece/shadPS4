@@ -99,8 +99,8 @@ def _pick(file: str, index: int, ours: str, theirs: str) -> str:
             assert "MakeSrtRootDependencyPlan" in ours
             assert theirs.count("roots[i]") == 1
             return (
-                "    // Order root dependencies before bounded fixed-point "
-                "evaluation of actual guest SRT reads.\n"
+                "    // Preserve GoW root dependency ordering while retaining the\n"
+                "    // generic fixed-point recovery of guest descriptor reads.\n"
                 "    const auto root_plan = MakeSrtRootDependencyPlan(pass_info);\n"
                 + theirs.replace("roots[i]", "roots[root_plan.order[i]]")
             )
