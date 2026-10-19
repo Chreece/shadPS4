@@ -10,6 +10,7 @@ import argparse
 import difflib
 import hashlib
 from pathlib import Path
+import re
 
 FIRST = "static bool EmitComputeOffsetShiftLeftLogical32("
 LAST = "static bool EmitComputeOffsetShiftRightLogical32("
@@ -41,7 +42,34 @@ def _shift_arm(text: str) -> tuple[int, int, int, int, str]:
     return begin, end, if_begin, if_end, text[if_begin:if_end]
 
 
-def patch_bytes(raw: bytes) -> tuple[bytes, str]:
+def verify_correct_dynamic_shift_helper(code: str, header: str | None) -> None:
+    """Verify older proven SRT helper emits precisely the correct x86 instructions.
+
+    The protected GoW shader source can use SrtCodegen::EmitConstantLeftShift-
+    ByDynamicCount instead of four inline c.* instructions. Never replace that
+    working helper with an unrelated source preimage.
+    """
+    include = '#include "shader_recompiler/ir/passes/srt_offset_codegen.h"'
+    if include not in code or header is None:
+        raise ValueError("SRT_DYNAMIC_SHIFT_HELPER_HEADER_NOT_PRESENT")
+    if "namespace Shader::Optimization::SrtCodegen {" not in header:
+        raise ValueError("SRT_DYNAMIC_SHIFT_HELPER_NAMESPACE_CHANGED")
+    pattern = re.search(
+        r"inline\s+void\s+EmitConstantLeftShiftByDynamicCount\s*\([^)]*\)\s*\{([^}]*)\}",
+        header, flags=re.DOTALL)
+    if pattern is None:
+        raise ValueError("SRT_DYNAMIC_SHIFT_HELPER_BODY_MISSING")
+    instructions = [line.strip() for line in pattern.group(1).splitlines()
+                    if line.strip().startswith("c.")]
+    expected = ["c.mov(Xbyak::util::ecx, destination);",
+                "c.mov(destination, left_operand);",
+                "c.shl(destination, Xbyak::util::cl);"]
+    if instructions != expected:
+        raise ValueError("SRT_DYNAMIC_SHIFT_HELPER_EMISSION_UNVERIFIED=" +
+                         repr(instructions))
+
+
+def patch_bytes(raw: bytes, helper_header: str | None = None) -> tuple[bytes, str]:
     text = raw.decode("utf8")
     _, _, start, end, arm = _shift_arm(text)
     # Compare executable code, not comments/whitespace. The local source in
@@ -61,6 +89,10 @@ def patch_bytes(raw: bytes) -> tuple[bytes, str]:
     broken = [fixed[0], "c.shl(reg, inst->Arg(0).U32());", *fixed[1:]]
     if instructions == fixed:
         return raw, "ALREADY_FIXED_VERIFIED"
+    helper_call = "SrtCodegen::EmitConstantLeftShiftByDynamicCount(c, reg, inst->Arg(0).U32());"
+    if instructions == [fixed[0]] and arm.count(helper_call) == 1:
+        verify_correct_dynamic_shift_helper(text, helper_header)
+        return raw, "ALREADY_FIXED_VIA_VERIFIED_SRT_HELPER"
     if instructions != broken:
         raise ValueError("SRT_DYNAMIC_SHIFT_ARM_UNRECOGNIZED=" + repr(instructions))
     # Surgical deletion: remove only the redundant C++ emitter instruction.
@@ -92,6 +124,36 @@ def selftest():
                                                          "        // existing verified fix\n        c.mov(ecx, reg);")
     same, status = patch_bytes(independently_fixed.encode())
     assert same == independently_fixed.encode() and status == "ALREADY_FIXED_VERIFIED"
+    helper_code = ("#include \"shader_recompiler/ir/passes/srt_offset_codegen.h\"\n"+
+                  synthetic.replace(OLD, OLD.splitlines()[0]+"\n"+
+                  "        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));\n"+
+                  "        SrtCodegen::EmitConstantLeftShiftByDynamicCount(c, reg, inst->Arg(0).U32());\n"+
+                  "    } else if (inst->Arg(1).IsImmediate()) {"))
+    helper_header = """namespace Shader::Optimization::SrtCodegen {
+inline void EmitConstantLeftShiftByDynamicCount(Xbyak::CodeGenerator& c,
+                                                 const Xbyak::Reg32& destination,
+                                                 std::uint32_t left_operand) {
+    c.mov(Xbyak::util::ecx, destination);
+    c.mov(destination, left_operand);
+    c.shl(destination, Xbyak::util::cl);
+}
+}"""
+    helper_result, helper_status = patch_bytes(helper_code.encode(), helper_header)
+    assert helper_result == helper_code.encode()
+    assert helper_status == "ALREADY_FIXED_VIA_VERIFIED_SRT_HELPER"
+    try:
+        patch_bytes(helper_code.encode(), helper_header.replace(
+            "c.mov(destination, left_operand);", "c.mov(destination, 0);"))
+    except ValueError as exc:
+        assert "HELPER_EMISSION_UNVERIFIED" in str(exc)
+    else:
+        raise AssertionError("UNSAFE_SRT_HELPER_WAS_ACCEPTED")
+    try:
+        patch_bytes(helper_code.encode())
+    except ValueError as exc:
+        assert "HELPER_HEADER_NOT_PRESENT" in str(exc)
+    else:
+        raise AssertionError("MISSING_SRT_HELPER_HEADER_WAS_ACCEPTED")
     unknown = synthetic.replace("        c.mov(ecx, reg);", "        c.mov(ebx, reg);")
     try:
         patch_bytes(unknown.encode())
@@ -105,7 +167,7 @@ def selftest():
     assert all(good(x,n)==((x << (n & 31)) & 0xffffffff)
                for x in (0,3,0xffffffff) for n in range(64))
     print("SRT_SHIFT_OVERLAY_SELFTEST=PASS "
-          "reversible=True already_fixed_safe=True "
+          "reversible=True already_fixed_safe=True helper_variant_safe=True "
           "source_drift_fails_closed=True arithmetic=True")
 
 def main():
@@ -124,7 +186,12 @@ def main():
         raise SystemExit("SRT_SOURCE_UNSAFE_FAIL_CLOSED")
     source=args.source.read_bytes()
     try:
-        candidate, status=patch_bytes(source)
+        # Inspect helper in the same directory as the protected source:
+        # the generated C++ translation unit includes that exact header.
+        header = args.source.parent / "srt_offset_codegen.h"
+        helper_text = (header.read_text() if header.is_file() and
+                       not header.is_symlink() else None)
+        candidate, status=patch_bytes(source, helper_text)
     except (ValueError,UnicodeDecodeError) as exc:
         raise SystemExit("SRT_SHIFT_PREIMAGE_CHECK_FAILED="+str(exc))
     diff="".join(difflib.unified_diff(source.decode().splitlines(True),
