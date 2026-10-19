@@ -27,8 +27,8 @@ static void descriptor(uint32_t *dst, void *ptr, uint32_t stride, uint32_t recor
 static int dispatch(uint8_t *arena, uint32_t selected, uint32_t count) {
     uint32_t *cmd = (uint32_t *)(arena + 0x10000);
     uint32_t *table = (uint32_t *)(arena + 0x20000);
-    uint32_t *selector = (uint32_t *)(arena + 0x21000);
-    volatile uint32_t *done = (uint32_t *)(arena + 0x22000);
+    uint32_t *selector = (uint32_t *)(arena + 0x40000);
+    volatile uint32_t *done = (uint32_t *)(arena + 0x41000);
     *selector = selected;
     *done = 0;
     uint32_t ud[9];
@@ -50,14 +50,14 @@ static int dispatch(uint8_t *arena, uint32_t selected, uint32_t count) {
     cmd[n++] = (uintptr_t)done;
     cmd[n++] = ((uintptr_t)done >> 32) | (1 << 29);
     cmd[n++] = 1; cmd[n++] = 0;
-    flush(arena, 0x40000);
+    flush(arena, 0x200000);
     void *buffers[] = {cmd}; uint32_t sizes[] = {n * 4};
     int rc = sceGnmSubmitCommandBuffers(1, buffers, sizes, 0, 0);
     if (rc < 0) return rc;
     sceGnmSubmitDone();
     for (unsigned i = 0; i < 5000; ++i) {
         flush((void *)done, 4);
-        if (*done == 1) {flush(arena + 0x30000, 0x10000); return 0;}
+        if (*done == 1) {flush(arena + 0x50000, 0x80000); return 0;}
         sceKernelUsleep(1000);
     }
     return -4;
@@ -67,22 +67,24 @@ int main(void) {
     uint8_t *arena = 0;
     FILE *log = fopen("/data/bounded-buffer-probe.txt", "w");
     if (!log) log = stdout;
-    if (sceKernelAllocateDirectMemory(0, sceKernelGetDirectMemorySize(), 0x40000, 0x4000,
+    if (sceKernelAllocateDirectMemory(0, sceKernelGetDirectMemorySize(), 0x200000, 0x4000,
                                      ORBIS_KERNEL_WB_ONION, &physical) < 0 ||
-        sceKernelMapDirectMemory((void **)&arena, 0x40000,
+        sceKernelMapDirectMemory((void **)&arena, 0x200000,
             ORBIS_KERNEL_PROT_CPU_RW | ORBIS_KERNEL_PROT_GPU_RW, 0, physical, 0x4000) < 0) {
         fprintf(log, "ALLOCATION_FAILED\n"); fclose(log); return 1;
     }
     memcpy(arena, probe_shader, sizeof(probe_shader));
-    const uint32_t counts[] = {0, 1, 4, 13, 10, 11, 0, 5, 13, 4};
+    const uint32_t counts[] = {0, 1, 4, 13, 10, 1773, 11, 0, 5, 13, 4};
     unsigned failures = 0;
     for (unsigned c = 0; c < sizeof(counts)/sizeof(counts[0]); ++c) {
         uint32_t count = counts[c];
-        for (uint32_t selected = 0; selected <= count; ++selected) {
-            memset(arena+0x30000, 0xa5, 0x10000);
-            for (unsigned i = 0; i < 13; ++i) {
+        const uint32_t selectors[] = {0, count / 2, count ? count - 1 : 0, count};
+        for (unsigned selection = 0; selection < 4; ++selection) {
+            const uint32_t selected = selectors[selection];
+            memset(arena+0x50000, 0xa5, 0x80000);
+            for (unsigned i = 0; i < 1773; ++i) {
                 uint32_t stride = i & 1 ? 8 : 4;
-                uint8_t *data = arena+0x30000+i*256;
+                uint8_t *data = arena+0x50000+i*256;
                 uint32_t *record = (uint32_t *)(arena+0x20000+i*32);
                 descriptor(record, data, stride, 4);
                 if (i >= count) record[3] = (record[3] & ~0x7f000u) | (11u << 15) | (6u << 12);
@@ -96,7 +98,7 @@ int main(void) {
                 // Keep GPU-visible memory alive after an uncertain completion.
                 for (;;) sceKernelUsleep(1000000);
             }
-            for (unsigned i = 0; i < 13; ++i) {
+            for (unsigned i = 0; i < 1773; ++i) {
                 uint32_t stride = i & 1 ? 8 : 4;
                 float expected = (float)i+1.25f;
                 uint32_t bits; memcpy(&bits, &expected, 4);
@@ -104,7 +106,7 @@ int main(void) {
                     bits += 256; memcpy(&expected, &bits, 4); expected += 1.0f;
                     memcpy(&bits, &expected, 4);
                 }
-                const uint8_t *data = arena+0x30000+i*256;
+                const uint8_t *data = arena+0x50000+i*256;
                 uint32_t actual; memcpy(&actual, data+stride, 4);
                 if (actual != bits) ++failures;
                 for (unsigned j = 0; j < 256; ++j)
@@ -115,6 +117,6 @@ int main(void) {
         }
     }
     fprintf(log, "RESULT=%s\n", failures ? "FAIL" : "PASS"); fclose(log);
-    sceKernelMunmap(arena, 0x40000); sceKernelReleaseDirectMemory(physical, 0x40000);
+    sceKernelMunmap(arena, 0x200000); sceKernelReleaseDirectMemory(physical, 0x200000);
     return failures != 0;
 }

@@ -404,6 +404,10 @@ public:
                         properties.limits.maxDescriptorSetStorageBuffers);
     }
 
+    u32 MaxStorageBufferRange() const {
+        return properties.limits.maxStorageBufferRange;
+    }
+
     u32 MaxPushDescriptors() const {
         return push_descriptor_props.maxPushDescriptors;
     }

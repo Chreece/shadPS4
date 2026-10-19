@@ -116,6 +116,7 @@ enum class BufferType : u8 {
 };
 
 struct BufferResource {
+    u32 table_span_index{~0u};
     SharpFetch<AmdGpu::Buffer> sharp_fetch{};
     IR::Type used_types{};
     BufferType buffer_type{};

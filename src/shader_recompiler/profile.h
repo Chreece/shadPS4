@@ -16,6 +16,7 @@ struct Profile {
     u32 sparse_page_shift{};
     u32 max_guest_indexed_image_entries{15};
     u32 max_storage_buffer_bindings{4};
+    u32 max_storage_buffer_range{0};
     bool support_int8{};
     bool support_int16{};
     bool support_int64{};

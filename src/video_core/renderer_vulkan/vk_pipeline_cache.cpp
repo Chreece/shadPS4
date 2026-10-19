@@ -357,6 +357,8 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .sparse_page_shift = sparse_page_shift,
         .max_guest_indexed_image_entries = GuestTsharpArrayLimit(instance),
         .max_storage_buffer_bindings = instance.MaxStorageBufferBindings(),
+        .max_storage_buffer_range =
+            static_cast<u32>(instance.MaxStorageBufferRange() - instance.StorageMinAlignment()),
         .support_int8 = instance.IsShaderInt8Supported(),
         .support_int16 = instance.IsShaderInt16Supported(),
         .support_int64 = instance.IsShaderInt64Supported(),

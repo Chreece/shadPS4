@@ -114,7 +114,8 @@ public:
 
     u32 Add(const BufferResource& desc) {
         const u32 index{Add(buffer_resources, desc, [&desc](const auto& existing) {
-            return desc.sharp_fetch == existing.sharp_fetch && desc.post_op == existing.post_op &&
+            return desc.table_span_index == existing.table_span_index &&
+                   desc.sharp_fetch == existing.sharp_fetch && desc.post_op == existing.post_op &&
                    desc.post_op_dw1_mask == existing.post_op_dw1_mask &&
                    desc.buffer_type == existing.buffer_type;
         })};
@@ -1051,12 +1052,223 @@ static std::string_view SharpProducerName(const SharpReference& source, u32 word
     return inst ? IR::NameOf(inst->GetOpcode()) : "missing";
 }
 
+struct BufferSpanUse {
+    u32 span_index{};
+    IR::Value selector;
+};
+
+static bool IsSpanBufferOperation(IR::Opcode op) {
+    switch (op) {
+    case IR::Opcode::LoadBufferU32:
+    case IR::Opcode::LoadBufferU32x2:
+    case IR::Opcode::LoadBufferU32x3:
+    case IR::Opcode::LoadBufferU32x4:
+    case IR::Opcode::StoreBufferU32:
+    case IR::Opcode::StoreBufferU32x2:
+    case IR::Opcode::StoreBufferU32x3:
+    case IR::Opcode::StoreBufferU32x4:
+    case IR::Opcode::LoadBufferFormatF32:
+    case IR::Opcode::StoreBufferFormatF32:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static std::optional<BufferSpanUse> FindBufferTableSpan(const ResourceDiscovery& usage, Info& info,
+                                                        const Profile& profile) {
+    if (!profile.support_int64 || profile.max_storage_buffer_range == 0 ||
+        info.hw_stage != HwStage::Compute ||
+        !IsSpanBufferOperation(usage.user->GetOpcode()) ||
+        usage.sharps[0].post_op != SharpFetchPostOp::None ||
+        ConstructSharpFetch<AmdGpu::Buffer>(usage.sharps[0], info).summary !=
+            SharpFetch<AmdGpu::Buffer>::Summary::Invalid) {
+        return std::nullopt;
+    }
+    const auto scalar_offset = IR::GetBufferSOffsetArg(usage.user);
+    if (!scalar_offset.IsImmediate() || scalar_offset.U32() != 0) {
+        return std::nullopt;
+    }
+    auto* handle = MatchOpcode(usage.original_buffer_handle, IR::Opcode::CompositeConstructU32x4);
+    if (!handle) {
+        return std::nullopt;
+    }
+    std::array<StridedIndexedSharpWord, 4> words{};
+    IR::Inst* table{};
+    SharpReference source{};
+    source.num_dwords = 4;
+    for (u32 i = 0; i < 4; ++i) {
+        auto* read = MatchOpcode(handle->Arg(i), IR::Opcode::ReadConstBuffer);
+        auto* input =
+            read ? MatchOpcode(read->Arg(0), IR::Opcode::CompositeConstructU32x4) : nullptr;
+        if (!input) {
+            return std::nullopt;
+        }
+        if (!table) {
+            table = input;
+        }
+        for (u32 j = 0; j < 4; ++j) {
+            if (input->Arg(j) != table->Arg(j) || !IsHostUniformSrtOffset(input->Arg(j))) {
+                return std::nullopt;
+            }
+            source.dwords[j] = input->Arg(j);
+        }
+        words[i] = AnalyzeStridedIndexedSharpWord(read->Arg(1));
+    }
+    if (!AreContiguousStridedSharpWords(words)) {
+        return std::nullopt;
+    }
+    BufferTableSpan layout{
+        .source = ConstructSharpFetch<AmdGpu::Buffer>(source, info),
+        .record_stride = words[0].record_stride_bytes,
+        .descriptor_offset = words[0].offset_dwords * 4,
+        .max_bytes = profile.max_storage_buffer_range,
+    };
+    if (layout.source.summary == SharpFetch<AmdGpu::Buffer>::Summary::Invalid ||
+        layout.record_stride < sizeof(AmdGpu::Buffer) ||
+        layout.descriptor_offset > layout.record_stride - sizeof(AmdGpu::Buffer)) {
+        return std::nullopt;
+    }
+    u32 index{};
+    for (; index < info.buffer_table_span_count; ++index) {
+        const auto& prior = info.buffer_table_spans[index];
+        if (prior.source == layout.source && prior.record_stride == layout.record_stride &&
+            prior.descriptor_offset == layout.descriptor_offset) {
+            break;
+        }
+    }
+    if (index == info.buffer_table_span_count) {
+        const u32 offset = info.srt_info.flattened_bufsize_dw + index * BufferTableSpanWords;
+        if (index == info.buffer_table_spans.size() ||
+            offset + BufferTableSpanWords >= UNKNOWN_LOCATION) {
+            return std::nullopt;
+        }
+        layout.metadata_offset = offset;
+        info.buffer_table_spans[info.buffer_table_span_count++] = layout;
+    }
+    return BufferSpanUse{index, IR::Value{const_cast<IR::Inst*>(
+                                    static_cast<const IR::Inst*>(words[0].gpu_record_id))}};
+}
+
+static void PatchBufferSpanArgs(IR::Inst& inst, Info& info, const ResourceDiscovery& usage,
+                                const BufferSpanUse& use, u32 flat_binding) {
+    const auto& span = info.buffer_table_spans[use.span_index];
+    const auto resource = info.buffers[inst.Arg(0).U32()].GetSharp(info);
+    IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
+    const auto* descriptor = usage.original_buffer_handle.Inst();
+    auto flags = inst.Flags<IR::BufferInstInfo>();
+    const auto metadata = [&](u32 word) {
+        return ir.ReadConstBuffer(ir.Imm32(flat_binding), ir.Imm32(span.metadata_offset + word),
+                                  {});
+    };
+    const IR::U32 dw1{descriptor->Arg(1)};
+    const IR::U32 records{descriptor->Arg(2)};
+    const IR::U32 dw3{descriptor->Arg(3)};
+    const auto stride = ir.BitFieldExtract(dw1, ir.Imm32(16u), ir.Imm32(14u), false);
+    const auto index = flags.index_enable ? IR::GetBufferIndexArg(&inst) : ir.Imm32(0u);
+    auto offset = ir.Imm32(static_cast<u32>(flags.inst_offset.Value()));
+    if (flags.voffset_enable) {
+        offset = ir.IAdd(offset, IR::GetBufferVOffsetArg(&inst));
+    }
+    const auto scalar_offset = IR::GetBufferSOffsetArg(&inst);
+    const auto base = ir.PackUint2x32(
+        ir.CompositeConstruct(descriptor->Arg(0), ir.BitwiseAnd(dw1, ir.Imm32(0xffu))));
+    const auto span_base = ir.PackUint2x32(ir.CompositeConstruct(metadata(0), metadata(1)));
+    const auto span_bytes = IR::U64{ir.UConvert(64, metadata(2))};
+    auto valid = ir.ILessThan(IR::U32{use.selector}, metadata(4), false);
+    valid = ir.LogicalAnd(valid, ir.IEqual(dw3, metadata(3)));
+    valid =
+        ir.LogicalAnd(valid, ir.IEqual(ir.BitwiseAnd(dw1, ir.Imm32(0x80000000u)), ir.Imm32(0u)));
+    const bool formatted = inst.GetOpcode() == IR::Opcode::LoadBufferFormatF32 ||
+                           inst.GetOpcode() == IR::Opcode::StoreBufferFormatF32;
+    const auto data_format = flags.inst_data_fmt != AmdGpu::DataFormat::FormatInvalid
+                                 ? AmdGpu::RemapDataFormat(flags.inst_data_fmt.Value())
+                                 : resource.GetDataFmt();
+    const u32 shift = BufferAddressShift(inst, data_format);
+    const u32 payload = formatted ? AmdGpu::NumBitsPerBlock(data_format) / 8 : 4u;
+    const auto address_for = [&](u32 component) {
+        const auto component_offset = ir.IAdd(offset, ir.Imm32(component * 4));
+        const auto byte_offset = ir.IAdd(ir.IMul(index, stride), component_offset);
+        const auto zero_stride = ir.IEqual(stride, ir.Imm32(0u));
+        auto strided_valid = ir.ILessThan(index, records, false);
+        if (flags.index_enable) {
+            strided_valid =
+                ir.LogicalAnd(strided_valid, ir.ILessThan(component_offset, stride, false));
+        }
+        const auto linear_end = ir.IAdd(
+            ir.IAdd(IR::U64{ir.UConvert(64, byte_offset)}, IR::U64{ir.UConvert(64, scalar_offset)}),
+            ir.Imm64(u64(payload)));
+        const auto linear_valid =
+            ir.ILessThanEqual(linear_end, IR::U64{ir.UConvert(64, records)}, false);
+        auto enabled =
+            ir.LogicalAnd(valid, IR::U1{ir.Select(zero_stride, linear_valid, strided_valid)});
+        const auto child_bytes = IR::U64{ir.Select(
+            zero_stride, IR::U64{ir.UConvert(64, records)},
+            ir.IMul(IR::U64{ir.UConvert(64, stride)}, IR::U64{ir.UConvert(64, records)}))};
+        enabled = ir.LogicalAnd(enabled, ir.ILessThanEqual(linear_end, child_bytes, false));
+        const auto address = ir.IAdd(base, ir.IAdd(IR::U64{ir.UConvert(64, byte_offset)},
+                                                   IR::U64{ir.UConvert(64, scalar_offset)}));
+        const auto relative = ir.ISub(address, span_base);
+        enabled = ir.LogicalAnd(enabled, ir.IGreaterThanEqual(address, span_base, false));
+        enabled =
+            ir.LogicalAnd(enabled, ir.ILessThanEqual(ir.IAdd(relative, ir.Imm64(u64(payload))),
+                                                     span_bytes, false));
+        const auto aligned = ir.ShiftRightLogical(
+            IR::U32{ir.CompositeExtract(ir.UnpackUint2x32(relative), 0)}, ir.Imm32(shift));
+        return ir.CompositeConstruct(aligned, ir.Select(enabled, ir.Imm32(1u), ir.Imm32(0u)));
+    };
+    flags.is_predicated.Assign(1);
+    if (formatted) {
+        inst.SetArg(1, address_for(0));
+        inst.SetFlags(flags);
+        return;
+    }
+    u32 components = 1;
+    switch (inst.GetOpcode()) {
+    case IR::Opcode::LoadBufferU32x2:
+    case IR::Opcode::StoreBufferU32x2:
+        components = 2;
+        break;
+    case IR::Opcode::LoadBufferU32x3:
+    case IR::Opcode::StoreBufferU32x3:
+        components = 3;
+        break;
+    case IR::Opcode::LoadBufferU32x4:
+    case IR::Opcode::StoreBufferU32x4:
+        components = 4;
+        break;
+    default:
+        break;
+    }
+    boost::container::static_vector<IR::Value, 4> values;
+    for (u32 i = 0; i < components; ++i) {
+        if (IsBufferStore(inst)) {
+            const auto value = components == 1 ? inst.Arg(2) : ir.CompositeExtract(inst.Arg(2), i);
+            ir.StoreBufferU32(1, inst.Arg(0), address_for(i), value, flags);
+        } else {
+            values.push_back(ir.LoadBufferU32(1, inst.Arg(0), address_for(i), flags));
+        }
+    }
+    if (IsBufferStore(inst)) {
+        inst.Invalidate();
+    } else {
+        inst.ReplaceUsesWithAndRemove(components == 1 ? values[0] : ir.CompositeConstruct(values));
+    }
+}
+
 void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors& descriptors,
-                      const Profile& profile) {
+                      const Profile& profile, const BufferSpanUse* span_use) {
     IR::Inst& inst = *resource.user;
 
     const auto& source = resource.sharps[0];
-    const auto fetch = ConstructSharpFetch<AmdGpu::Buffer>(source, info);
+    auto fetch = ConstructSharpFetch<AmdGpu::Buffer>(source, info);
+    if (span_use) {
+        fetch = {};
+        fetch.load_mask = 0xf;
+        for (u32 i = 0; i < 4; ++i) {
+            fetch.offsets[i] = info.buffer_table_spans[span_use->span_index].metadata_offset + i;
+        }
+    }
     if (InvalidSharpTraceEnabled(info) &&
         fetch.summary == SharpFetch<AmdGpu::Buffer>::Summary::Invalid) {
         static thread_local std::unordered_map<u64, u32> per_shader;
@@ -1076,6 +1288,7 @@ void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors
         }
     }
     const u32 buffer_binding = descriptors.Add(BufferResource{
+        .table_span_index = span_use ? span_use->span_index : ~0u,
         .sharp_fetch = fetch,
         .used_types = BufferDataType(inst, profile),
         .buffer_type = BufferType::Guest,
@@ -2146,13 +2359,31 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
                     "action=keep_original_resource_path",
                     info.pgm_hash,info.hw_stage,indexed_sources,invalid_indexed_sources);
     }
+    std::unordered_map<const IR::Inst*, BufferSpanUse> span_uses;
+    for (const auto& usage : resources) {
+        if (const auto span = FindBufferTableSpan(usage, info, profile)) {
+            span_uses.emplace(usage.user, *span);
+        }
+    }
+    info.RefreshBufferTableSpans();
+    for (u32 i = 0; i < info.buffer_table_span_count; ++i) {
+        const auto& layout = info.buffer_table_spans[i];
+        LOG_INFO(Render_Recompiler,
+                 "BufferTableSpan: shader={:#x} span={} stride={} offset={} records={} bytes={} "
+                 "gpu_descriptor=YES gpu_bounds=YES",
+                 info.pgm_hash, i, layout.record_stride, layout.descriptor_offset,
+                 info.flattened_ud_buf[layout.metadata_offset + 4],
+                 info.flattened_ud_buf[layout.metadata_offset + 2]);
+    }
     // Iterate over discovered resources and patch them after finding the sharp.
     // Pass 1: Track resource sharps
     Descriptors descriptors{info};
     for (const auto& usage : resources) {
         IR::Inst& inst = *usage.user;
         if (IsBufferInstruction(inst)) {
-            PatchBufferSharp(usage, info, descriptors, profile);
+            const auto span = span_uses.find(&inst);
+            PatchBufferSharp(usage, info, descriptors, profile,
+                             span == span_uses.end() ? nullptr : &span->second);
         } else if (IsImageInstruction(inst)) {
             PatchImageSharp(usage, info, descriptors, profile, complete);
         }
@@ -2168,13 +2399,26 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         });
     }
 
+    u32 span_flat_binding{};
+    if (!span_uses.empty()) {
+        span_flat_binding = descriptors.Add(BufferResource{
+            .used_types = IR::Type::U32,
+            .buffer_type = BufferType::Flatbuf,
+        });
+        info.has_flatbuf = true;
+    }
+
     // Pass 2: patch resource users, keeping old scalar descriptor producers
     // alive until all fallback read expressions have been constructed.
     std::vector<std::pair<IR::Inst*, IR::Value>> pending_dynamic_reads;
     for (const auto& usage : resources) {
         IR::Inst& inst = *usage.user;
         if (IsBufferInstruction(inst)) {
-            PatchBufferArgs(inst, info, usage, pending_dynamic_reads);
+            if (const auto span = span_uses.find(&inst); span != span_uses.end()) {
+                PatchBufferSpanArgs(inst, info, usage, span->second, span_flat_binding);
+            } else {
+                PatchBufferArgs(inst, info, usage, pending_dynamic_reads);
+            }
         } else if (IsImageInstruction(inst)) {
             PatchImageArgs(inst, info);
         } else if (IsDataRingInstruction(inst)) {

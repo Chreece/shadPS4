@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/logging/classes.h"
+#include "core/libraries/kernel/memory.h"
+#include "core/memory.h"
 #include "shader_recompiler/frontend/control_flow_graph.h"
 #include "shader_recompiler/frontend/decode.h"
 #include "shader_recompiler/frontend/structured_control_flow.h"
@@ -13,6 +15,76 @@
 #include "shader_recompiler/recompiler.h"
 
 namespace Shader {
+
+static bool BufferTableRangeMapped(Core::MemoryManager& memory, u64 address, u64 size,
+                                   bool cpu_read) {
+    if (address == 0 || size == 0 || address >= (u64{1} << 40) || size > (u64{1} << 40) - address) {
+        return false;
+    }
+    const auto end = address + size;
+    while (address < end) {
+        Libraries::Kernel::OrbisVirtualQueryInfo mapping{};
+        if (memory.VirtualQuery(address, 0, &mapping) != 0 || !mapping.is_committed ||
+            mapping.start > address || mapping.end <= address ||
+            (cpu_read && (mapping.protection & 1) == 0)) {
+            return false;
+        }
+        address = mapping.end;
+    }
+    return true;
+}
+
+void Info::RefreshBufferTableSpans() {
+    if (buffer_table_span_count == 0) {
+        return;
+    }
+    flattened_ud_buf.resize(srt_info.flattened_bufsize_dw +
+                            buffer_table_span_count * BufferTableSpanWords);
+    auto* memory = Core::Memory::Instance();
+    for (u32 i = 0; i < buffer_table_span_count; ++i) {
+        const auto& layout = buffer_table_spans[i];
+        auto& ranges = buffer_table_ranges[i];
+        ranges.clear();
+        AmdGpu::Buffer source{};
+        AmdGpu::Buffer span{};
+        u32 records{};
+        if (layout.source.FetchChecked(flattened_ud_buf.data(), flattened_ud_buf.size(), &source) &&
+            source.Valid() && layout.record_stride != 0) {
+            const u64 bytes =
+                source.stride ? u64(source.stride) * source.num_records : source.num_records;
+            if (source.base_address && bytes && bytes % layout.record_stride == 0 &&
+                bytes / layout.record_stride <= MaxBufferTableRecords &&
+                BufferTableRangeMapped(*memory, source.base_address, bytes, true)) {
+                const auto data = std::span{reinterpret_cast<const u8*>(source.base_address),
+                                            static_cast<size_t>(bytes)};
+                if (BuildBufferTableSpan(data, layout, span, &ranges) &&
+                    (span.num_records == 0 ||
+                     BufferTableRangeMapped(*memory, span.base_address, span.num_records, false))) {
+                    records = bytes / layout.record_stride;
+                } else {
+                    span = {};
+                    ranges.clear();
+                }
+            }
+        }
+        std::ranges::sort(ranges, {}, &BufferTableRange::address);
+        size_t output{};
+        for (const auto range : ranges) {
+            if (output && range.address <= ranges[output - 1].address + ranges[output - 1].size) {
+                auto& previous = ranges[output - 1];
+                previous.size = static_cast<u32>(
+                    std::max(previous.address + previous.size, range.address + range.size) -
+                    previous.address);
+            } else {
+                ranges[output++] = range;
+            }
+        }
+        ranges.resize(output);
+        std::fill_n(flattened_ud_buf.data() + layout.metadata_offset, BufferTableSpanWords, 0);
+        std::memcpy(flattened_ud_buf.data() + layout.metadata_offset, &span, sizeof(span));
+        flattened_ud_buf[layout.metadata_offset + 4] = records;
+    }
+}
 
 IR::BlockList GenerateBlocks(const IR::AbstractSyntaxList& syntax_list) {
     size_t num_syntax_blocks{};

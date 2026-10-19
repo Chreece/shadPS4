@@ -9,6 +9,7 @@
 #include "common/assert.h"
 #include "common/types.h"
 #include "shader_recompiler/backend/bindings.h"
+#include "shader_recompiler/buffer_table_span.h"
 #include "shader_recompiler/frontend/copy_shader.h"
 #include "shader_recompiler/frontend/tessellation.h"
 #include "shader_recompiler/ir/attribute.h"
@@ -60,6 +61,8 @@ struct InfoPersistent {
     };
     std::array<SrtBound, NUM_IMAGES> srt_bounds{};
     u32 srt_bound_count{};
+    std::array<BufferTableSpan, NUM_BUFFERS> buffer_table_spans{};
+    u32 buffer_table_span_count{};
 
     u32 fetch_shader_sgpr_base{};
     u32 shared_memory_scratch_size{};
@@ -121,6 +124,7 @@ struct Info : InfoPersistent {
     std::vector<u32> flattened_ud_buf;
     PersistentSrtInfo srt_info;
     PersistentSrtInfo bounds_srt_info;
+    std::array<std::vector<BufferTableRange>, NUM_BUFFERS> buffer_table_ranges;
 
     AttributeFlags loads{};
     AttributeFlags stores{};
@@ -183,6 +187,8 @@ struct Info : InfoPersistent {
         bnd.unified += buffers.size() + images.size() + samplers.size();
     }
 
+    void RefreshBufferTableSpans();
+
     void RefreshFlatBuf() {
         flattened_ud_buf.resize(srt_info.flattened_bufsize_dw);
         ASSERT(user_data.size() <= NUM_USER_DATA_REGS);
@@ -190,6 +196,7 @@ struct Info : InfoPersistent {
         if (srt_info.walker_func) {
             srt_info.walker_func(user_data.data(), flattened_ud_buf.data());
         }
+        RefreshBufferTableSpans();
     }
 
     [[nodiscard]] bool RefreshFlatBufForSpecialization() {

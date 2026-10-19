@@ -1277,6 +1277,28 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             }
         } else {
             const auto vsharp = desc.GetSharp(stage);
+            if (audit && desc.table_span_index != ~0u) {
+                static thread_local std::unordered_map<std::string, u32> observations;
+                const auto key =
+                    fmt::format("{}:{}:{}", stage.hw_stage, stage.pgm_hash, desc.table_span_index);
+                if (observations.contains(key) || observations.size() < 256u) {
+                    auto& observed = observations[key];
+                    if (observed < 256u) {
+                        ++observed;
+                        if (observed == 1u || observed == 32u || observed == 256u) {
+                            const auto& layout = stage.buffer_table_spans[desc.table_span_index];
+                            LOG_INFO(Render_Vulkan,
+                                     "BufferTableSpanBound: shader={:#x} span={} sample={} "
+                                     "records={} bytes={} ranges={} written={} formatted={}",
+                                     stage.pgm_hash, desc.table_span_index, observed,
+                                     stage.flattened_ud_buf[layout.metadata_offset + 4],
+                                     vsharp.GetSize(),
+                                     stage.buffer_table_ranges[desc.table_span_index].size(),
+                                     desc.is_written, desc.is_formatted);
+                        }
+                    }
+                }
+            }
             if (Diagnostics::MenuPassTraceEnabled() &&
                 stage.hw_stage==Shader::HwStage::Compute && desc.is_written) {
                 const u64 watched=Diagnostics::WatchedMenuSourceAddress();
@@ -1381,8 +1403,11 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 if (desc.is_formatted) {
                     flags |= VideoCore::ObtainBufferFlags::IsTexelBuffer;
                 }
-                const auto [buffer, offset] =
-                    buffer_cache.ObtainBuffer(vsharp.base_address, size, flags);
+                const auto [buffer, offset] = buffer_cache.ObtainBuffer(
+                    vsharp.base_address, size,
+                    desc.table_span_index == ~0u
+                        ? flags
+                        : VideoCore::ObtainBufferFlags::IgnoreStreamBuffer);
                 const u64 offset_aligned = Common::AlignDown(offset, alignment);
                 const u64 adjust = offset - offset_aligned;
                 if (adjust % 4 != 0) {
@@ -1391,12 +1416,26 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 }
                 push_data.AddOffset(binding.buffer, adjust);
                 buffer_infos.emplace_back(buffer->Handle(), offset_aligned, size + adjust);
-                bound_buffers.emplace_back(buffer, offset, size, src_access);
-                if (desc.is_written) {
-                    // Raw storage-buffer writes can also make an aliased cached image stale.
-                    texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);
+                if (desc.table_span_index != ~0u) {
+                    flags |= VideoCore::ObtainBufferFlags::IgnoreStreamBuffer;
+                    for (const auto& range : stage.buffer_table_ranges[desc.table_span_index]) {
+                        (void)buffer_cache.ObtainBuffer(range.address, range.size, flags);
+                        const auto range_offset = offset + range.address - vsharp.base_address;
+                        bound_buffers.emplace_back(buffer, range_offset, range.size, src_access);
+                        needs_barrier |= runtime.IsBufferAccessed(buffer, range_offset, range.size,
+                                                                  desc.is_written);
+                        if (desc.is_written) {
+                            texture_cache.InvalidateMemoryFromGPU(range.address, range.size);
+                        }
+                    }
+                } else {
+                    bound_buffers.emplace_back(buffer, offset, size, src_access);
+                    if (desc.is_written) {
+                        texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);
+                    }
+                    needs_barrier |=
+                        runtime.IsBufferAccessed(buffer, offset, size, desc.is_written);
                 }
-                needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size, desc.is_written);
             }
         }
 
@@ -1587,7 +1626,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 return env && env[0] == '1' && env[1] == '\0';
             }();
             if (dump_tables && complete && record_stride && guest_size != 0 &&
-                guest_size <= 65536u && Shader::ShaderDumpTargets().Matches(stage.pgm_hash)) {
+                guest_size <= 8u * 1024u * 1024u &&
+                Shader::ShaderDumpTargets().Matches(stage.pgm_hash)) {
                 static thread_local std::unordered_map<std::string, u32> observations;
                 static thread_local u32 captures{};
                 const auto key = fmt::format("{}_{:#018x}.resource{}", stage.hw_stage,
