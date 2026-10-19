@@ -86,3 +86,43 @@ should be added**.
 This is an **unreleased integration candidate**, not a promise that all
 previous experimental changes are correct or complete. Only general,
 validated semantics belong in production.
+
+## 22:03 regression: retired old entry point, reconciled latest upstream
+
+The uploaded `esde-unified-20261019-220318.log` shows that the October 18
+`tools/development/esde_unified.sh` stopped at
+`UPSTREAM_MAIN_CHANGED`. Its only proposed source was official
+`cd3cc8022aef5be7766443f694e79d270544eaf4` with fork main from
+October 5, which **omitted** later proven general CPU/UFFD/renderer fixes.
+No merge, compile, or install occurred in that log.
+
+The historical entry point has been retired on the integration branch.
+Running `tools/development/esde_unified.sh` now downloads a
+SHA-verified exact version of
+`esde_general_engine_source_merge_20261019.py`, runs its offline
+merge-policy selftests, and enters the general engine source integration
+workspace. It does not create another obsolete October 18 clone.
+
+Official upstream at the last confirmed October 19 check was commit
+`f68923fe807f657348e6719ce658bcbd0a2b1c72`.
+It is five commits beyond the earlier compiled general-source baseline
+`d615b3887ba29025a59242e1a26f5b68bb176158`, containing:
+
+- `#5433` texture-cache parent/subresource preservation;
+- `#5429` singleton LDS workgroup barrier correction;
+- `#5427` avoid treating `GetUserData` as a Phi-folding common expression;
+- `#5421` `libSceVoice` disconnected microphone HLE behavior;
+- `#5437` `sceNetGetSockInfo` receive queue length.
+
+The general engine stage fetches exactly that reviewed official
+revision and uses source-level three-way merges against its real earlier
+upstream parent. Its changed files are reconciled **before** the
+October 17 Ghost general resources and the 84 subsequent reviewed
+GPU/compiler commits. Every unresolved overlap must be reviewed,
+not resolved by choosing the entire old or new file.
+
+GitHub Actions was also changed to run syntax, source pins and offline
+merge regressions for this integration branch on push. It does **not**
+claim CI native gameplay or an installed executable; the latter
+requires the user's Debian/AMD test host. No release is claimed from the
+22:03 log or from these source-wrapper changes.
