@@ -9,8 +9,8 @@ WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 SCRIPTS="$ROOT/scripts"
 BRANCH="diagnostic/got-indexed-sample-feedback-20261019"
-PIN="c29a3f0e29af8949603d563f1beb2a42d464f52e"
-CANDIDATE_COMMIT="c917fafd138eac21df2fb2a99c5afd21f432986a"
+PIN="5228e7c2eafb057216b69498c0f065e9327e2353"
+CANDIDATE_COMMIT="c8121ad971408e5fb28b2da28de09625fa53efe0"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$CANDIDATE_COMMIT"
 BUILD_SCRIPT="$SCRIPTS/got-indexed-sample-feedback-host-20261019.sh"
 RUNTIME_SCRIPT="$SCRIPTS/got-indexed-sample-feedback-runtime-20261019.sh"
@@ -80,4 +80,20 @@ fi
 # The runtime is bounded, has GPU fault/VRAM guards, conditional Ollama
 # unload and restore, and never replaces the existing executable.
 echo "GOT_INDEXED_SAMPLE_FEEDBACK_RUNTIME=AUTOMATIC_LAUNCH"
-GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT="$HOST_REPORT" bash "$RUNTIME_SCRIPT"
+CAPTURE_START="$(date +%s)"
+RUNTIME_STATUS=0
+GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT="$HOST_REPORT" bash "$RUNTIME_SCRIPT" || RUNTIME_STATUS=$?
+RUNTIME_REPORT="$(find "$LOGS" -maxdepth 1 -type f \
+    -name 'got-indexed-sample-feedback-runtime-*.tar.gz' -newermt "@$CAPTURE_START" \
+    -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)"
+if [ -n "$RUNTIME_REPORT" ] &&
+   tar -xOzf "$RUNTIME_REPORT" info/final.txt 2>/dev/null |
+       grep -qx "CANDIDATE_SOURCE=$CANDIDATE_COMMIT"; then
+    BUNDLE="$LOGS/got-indexed-table-resize-evidence-$(date +%Y%m%d-%H%M%S).tar.gz"
+    tar -czf "$BUNDLE" -C "$LOGS" "$(basename "$HOST_REPORT")" "$(basename "$RUNTIME_REPORT")"
+    echo "UPLOAD_THIS=$BUNDLE"
+else
+    echo "RUNTIME_ARCHIVE_NOT_FOUND; HOST_REPORT=$HOST_REPORT"
+    [ "$RUNTIME_STATUS" -ne 0 ] || RUNTIME_STATUS=2
+fi
+exit "$RUNTIME_STATUS"

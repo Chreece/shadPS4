@@ -1,6 +1,6 @@
 # GoT: executed indexed-image sample feedback, 2026-10-19
 
-Gameplay graphics remain broken. This branch retains the verified LDS/Phi and Vulkan synchronization work and adds an opt-in diagnostic; it does not claim a white-menu or scene-geometry fix.
+Gameplay graphics remain unverified. This branch retains the verified LDS/Phi and Vulkan synchronization work, adds opt-in sample feedback, and repairs indexed texture-table specialization. It does not yet claim a white-menu or scene-geometry fix.
 
 ## Evidence that changes the next step
 
@@ -35,7 +35,7 @@ Inspect `info/indexed-image-feedback-summary.txt`, the exact shader SPIR-V, `inf
 Local validation: all four changed C++ translation units compile. A temporary harness calls the actual new SPIR-V feedback emitter twice in one fragment function, including the null-sentinel and bitmap-overflow boundary values; its generated module passes `spirv-val --target-env vulkan1.3`. This validates the instrumentation structure, not execution of the real game shader. The full Release build and final shadPS4 link also pass locally with Clang 19 and libstdc++ 14 headers. Local dependency/header-path issues were resolved without repository source changes. No GPU gameplay validation has been performed in this workspace.
 
 
-## Published runner checkpoint
+## Initial feedback runner checkpoint
 
 - Diagnostic source: `c917fafd138eac21df2fb2a99c5afd21f432986a`.
 - Paired host/runtime scripts: `c29a3f0e29af8949603d563f1beb2a42d464f52e`.
@@ -52,3 +52,19 @@ The server archive `got-indexed-sample-feedback-host-20261019-160205.tar.gz` sto
 The runner's stale source assertion required the GDS capture call immediately after `ResetBindings(true)`. The feedback capture now sits between those calls, so the assertion rejected valid ordering. The repaired guard checks both `DispatchDirect` and `DispatchIndirect` independently, requiring exactly one reset and one GDS capture in each function, with reset first. It permits intervening statements. Failures now report `PRODUCTION_SOURCE_PREFLIGHT_FAILED` and preserve the traceback in both `info/source-preflight.log` and `host-tests.log`.
 
 Local validation executed the runner's complete source-preflight and host-test block against all 80 pinned source blobs, ending with `HOST_ONLY_TESTS=PASS`. This includes the producer-address and LDS singleton checks that the server never reached. Temporary negative cases confirmed that removing the reset or placing it after capture fails in either dispatch function; the actual intervening feedback call passes. No emulator source changed in this repair. The source pin and previously successful full Release build remain the same; a successful server run and rendered world are still unverified.
+
+## Packed texture-table layout repair
+
+Candidate source: `c8121ad971408e5fb28b2da28de09625fa53efe0`. Paired host/runtime scripts: `5228e7c2eafb057216b69498c0f065e9327e2353`.
+
+The subsequent server archive `got-indexed-sample-feedback-host-20261019-161026.tar.gz` confirms `HOST_ONLY_BUILD_PASS`, all host checks, the complete emulator link, and restoration of the original executable. Both attachments in this follow-up are host archives; neither contains a runtime capture. The user's in-game regression and earlier horse-visible build are therefore not yet tied to exact executable hashes. The retrieved earlier screenshot has no associated commit, so it is not a safe rollback target.
+
+The resource audit identified a reproducible cache defect. Table-size witnesses were recorded only for strided compute material tables. Packed tables, including fragment tables used by `0x7eaf40ad`, had none. Indexed images return a null compile-time T# to establish their SPIR-V type, so ordinary image specialization also skips them. When a packed guest table changed length, shader selection could reuse the old fixed array layout. Binding then rejected the size mismatch and supplied null images for the whole table.
+
+This change records distinct table sources for packed and strided tables in all shader stages, including empty tables. Specialization compares their current complete entry counts and selects a new variant when the represented size changes. Address-only changes retain reuse. The existing GPU selector, bounds/null-sentinel behavior, sampler pairing, compute all-or-none rule, LDS/Phi fixes, and synchronization remain. Shader cache version 47 prevents reuse of metadata that lacks these witnesses. No game or shader identity affects the fix.
+
+A temporary executable calls the actual resource-patching witness collector and `StageSpecialization`. Before the change, both fragment and compute shaders incorrectly reused a 16-entry layout for tables of 0, 17, 27,651, and 32,769 entries. Afterward, all four transitions reject reuse. Further checks passed 80 transitions covering packed/strided layouts, raw-byte/record-count V#, empty/populated initial tables, and both stages; 16 address-only cases retain reuse. The complete Release emulator build and all existing host preflight checks also pass. No tests were added to the repository.
+
+The corrected runtime allows five minutes for manual entry into gameplay and captures later screenshots, the affected material compute shaders, and table-selection events. Missing menu-specific queries are recorded as missing evidence because gameplay can use different pipelines. The launcher combines the host and runtime archives into one `got-indexed-table-resize-evidence-*.tar.gz` upload, including abnormal-runtime results. Fixture validation exercised dump collection, archive creation, and preservation of the runtime failure exit code.
+
+This fixes a verified missing-texture failure mechanism. The current captures do not prove that a table-size transition caused the white menu or the horse regression. Restored world graphics remain a GPU acceptance requirement.
