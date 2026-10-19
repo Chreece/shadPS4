@@ -7,7 +7,7 @@ GOT="$ROOT/GhostOfTsushima"
 WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
-PIN="1b1ca11bfea7025c97bcde4810f892eee81c7227"
+PIN="84117bbd1e356f6440c4c7dcfc239d950f144d1d"
 SHADER_COLLECTOR_PIN="6223d8df521183f80f08762674a9faf8090f5088"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$PIN"
 HOST_REPORT="${GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT:-$LOGS/got-indexed-sample-feedback-host-not-built.tar.gz}"
@@ -427,7 +427,10 @@ PY
   find "$RUN/profile/user/shader/dumps" -maxdepth 1 -type f \
     \( -iname '*4950cf6*' -o -iname '*55d17c16*' -o -iname '*52b6e003*' \
        -o -iname '*836253ca*' -o -iname '*22d378cd*' -o -iname '*5116e459*' \
-       -o -iname '*5c4c2b6f*' -o -iname '*b5c898c7*' \) \
+       -o -iname '*5c4c2b6f*' -o -iname '*b5c898c7*' \
+       -o -iname '*33a001dc*' -o -iname '*5065ed7b*' -o -iname '*12759a5e*' \
+       -o -iname '*142dead8*' -o -iname '*58f22286*' -o -iname '*c7542465*' \
+       -o -iname '*ee963aae*' \) \
     -size -6M -print0 2>/dev/null |
     while IFS= read -r -d '' shader; do
       cp -p -- "$shader" "$RUN/info/material-table-shaders/$(basename "$shader")" || true
@@ -941,9 +944,9 @@ PYSTAGEPIXELS
     echo "INDEXED_UNIFORM_SAMPLER_TABLES=ENABLED"
     echo "INDEXED_EXPLICIT_LOD=ENABLED"
     echo "BOUNDED_POINTER_IMAGE_LOWERINGS=$(grep -ac 'BoundedPointerImage:' "$RUN/game.log" || true)"
-    echo "BOUNDED_POINTER_IMAGE_SHADER=0x5c4c2b6f_EXPECTED_WHEN_COUNT_4"
+    echo "BOUNDED_POINTER_IMAGE_LOWERING=GUARDED_AND_COUNTED_LOOPS"
     echo "BOUNDED_POINTER_COUNT_SPECIALIZATION=ENABLED"
-    echo "INDEXED_FEEDBACK_SHADERS=0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
+    echo "INDEXED_FEEDBACK_SHADERS=0x7eaf40ad,0x33a001dc,0x5065ed7b,0x12759a5e,0x142dead8,0x58f22286,0xc7542465,0xee963aae"
     echo "INDEXED_FEEDBACK_CAPTURE_BINDINGS=1,32,256"
     echo "INDEXED_FEEDBACK_COMPLETED_ROWS=$(grep -ac 'IndexedImageFeedback:.*timeline_complete=YES' "$RUN/game.log" || true)"
     echo "INDEXED_TSHARP_BINDS=$(grep -ac 'RealIndexedTSharpBound:' "$RUN/game.log" || true)"
@@ -1132,15 +1135,15 @@ echo "ENTER_GAMEPLAY_WITH_YOUR_CONTROLLER; capture stops automatically after fiv
   test -d "$RUN/profile/user"
   export DISPLAY="$DISPLAY_OK"
   export SHADPS4_STRIDED_SOURCE_PROOF=1
-  export SHADPS4_STRIDED_SOURCE_PROOF_HASHES="0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f"
+  export SHADPS4_STRIDED_SOURCE_PROOF_HASHES="0x33a001dc,0x5065ed7b"
   export SHADPS4_STRIDED_GUEST_TSHARP=1
   export SHADPS4_GUEST_TSHARP_LARGE_ARRAY=1
   export SHADPS4_GUEST_TSHARP_CACHE=0
   export SHADPS4_TEXTURE_SLOT_PRESSURE=0
   export SHADPS4_GPUVM_SPARSE_MAP=0
   export SHADPS4_RESOURCE_AUDIT=1
-  export SHADPS4_RESOURCE_AUDIT_HASH="0x7eaf40ad,0x55d17c16,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
-  export SHADPS4_INDEXED_IMAGE_FEEDBACK_HASHES="0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
+  export SHADPS4_RESOURCE_AUDIT_HASH="0x7eaf40ad,0x33a001dc,0x5065ed7b,0x12759a5e,0x142dead8,0x58f22286,0xc7542465,0xee963aae"
+  export SHADPS4_INDEXED_IMAGE_FEEDBACK_HASHES="0x7eaf40ad,0x33a001dc,0x5065ed7b,0x12759a5e,0x142dead8,0x58f22286,0xc7542465,0xee963aae"
   export SHADPS4_INDEXED_IMAGE_AUDIT=1
   export SHADPS4_INDEXED_IMAGE_AUDIT_HASHES="0x7eaf40ad"
   export SHADPS4_MENU_PASS_TRACE=1
@@ -1159,11 +1162,11 @@ echo "ENTER_GAMEPLAY_WITH_YOUR_CONTROLLER; capture stops automatically after fiv
   export SHADPS4_MENU_WATCH_SOURCE=0x1504a08000
   export SHADPS4_RENDER_AUDIT=1
   export SHADPS4_INDEXED_TABLE_DUMP=1
-  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
-  export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
+  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x7eaf40ad,0x33a001dc,0x5065ed7b,0x12759a5e,0x142dead8,0x58f22286,0xc7542465,0xee963aae"
+  export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad,0x33a001dc,0x5065ed7b,0x12759a5e,0x142dead8,0x58f22286,0xc7542465,0xee963aae"
   export SHADPS4_SRT_SOURCE_AUDIT=1
   export SHADPS4_SRT_INLINE_AUDIT=1
-  export SHADPS4_SRT_TRACE_HASHES="0x7eaf40ad,0x4950cf6,0x55d17c16,0x52b6e003,0x5c4c2b6f,0x836253ca,0x22d378cd,0x5116e459"
+  export SHADPS4_SRT_TRACE_HASHES="0x7eaf40ad,0x33a001dc,0x5065ed7b,0x12759a5e,0x142dead8,0x58f22286,0xc7542465,0xee963aae"
   export SHADPS4_SHARP_MASK_AUDIT=1
   export SHADPS4_SHARP_MASK_AUDIT_HASHES="0x7eaf40ad"
   unset RADV_DEBUG VK_DRIVER_FILES VK_ICD_FILENAMES VK_INSTANCE_LAYERS
