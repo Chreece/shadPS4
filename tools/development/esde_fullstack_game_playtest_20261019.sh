@@ -39,10 +39,10 @@ test -f "$OBSERVER" && test ! -L "$OBSERVER" ||
   { echo "MISSING_OBSERVER=$OBSERVER" >&2; exit 2; }
 python3 -m py_compile "$OBSERVER"
 
-# Don't launch over ES-DE or another PS4 title. No process is signalled here.
-if pgrep -u "$(id -u)" -x shadps4 >/dev/null 2>&1 ||
-   pgrep -u "$(id -u)" -f '[e]mulationstation' >/dev/null 2>&1; then
-    echo "CLOSE_EXISTING_PS4_GAME_OR_ESDE_FIRST" >&2
+# ES-DE/Sunshine may remain running; never stop or alter them.
+# Refuse only a second PS4 emulator process. The observer repeats this guard.
+if pgrep -u "$(id -u)" -x shadps4 >/dev/null 2>&1; then
+    echo "CLOSE_EXISTING_PS4_GAME_FIRST" >&2
     exit 2
 fi
 
