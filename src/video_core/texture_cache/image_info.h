@@ -66,6 +66,8 @@ struct ImageInfo {
         s32 htile_clear_mask = -1;
         bool htile_linear{};
         bool htile_stencil{};
+        bool htile_direct_layout{};
+        u16 htile_layers{};
     } meta_info{};
 
     ImageProperties props;

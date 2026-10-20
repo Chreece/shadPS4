@@ -152,9 +152,9 @@ vk::Pipeline TileManager::GetHtilePipeline(bool multisampled) {
 
 bool TileManager::SummarizeHtile(Image& image, const Buffer* out_buffer, u64 out_offset, u32 size) {
     const auto& info = image.info;
-    if (info.meta_info.htile_stencil || !image.HasGpuValidData() ||
-        !(image.aspect_mask & vk::ImageAspectFlagBits::eDepth) || size < sizeof(u32) ||
-        out_offset % sizeof(u32) != 0) {
+    if (info.meta_info.htile_stencil || !info.meta_info.htile_direct_layout ||
+        !image.HasGpuValidData() || !(image.aspect_mask & vk::ImageAspectFlagBits::eDepth) ||
+        size < sizeof(u32) || out_offset % sizeof(u32) != 0) {
         return false;
     }
     const auto pipe = info.alt_tile ? AmdGpu::GetAltPipeConfig(info.tile_mode)
@@ -191,7 +191,7 @@ bool TileManager::SummarizeHtile(Image& image, const Buffer* out_buffer, u64 out
     ImageViewInfo view_info;
     view_info.type = AmdGpu::ImageType::Color2DArray;
     view_info.format = vk::Format::eR32Sfloat;
-    view_info.range.extent.layers = info.resources.layers;
+    view_info.range.extent.layers = info.meta_info.htile_layers;
     const auto& view = image.FindView(view_info, false);
     const auto pipeline = GetHtilePipeline(image.backing->num_samples > 1);
     scheduler.EndRendering();
@@ -228,7 +228,8 @@ bool TileManager::SummarizeHtile(Image& image, const Buffer* out_buffer, u64 out
     cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, *htile_pl_layout, 0, writes);
     cmdbuf.pushConstants(*htile_pl_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(params),
                          &params);
-    cmdbuf.dispatch((params.pitch + 63) / 64, (params.height + 63) / 64, info.resources.layers);
+    cmdbuf.dispatch((params.pitch + 63) / 64, (params.height + 63) / 64,
+                    info.meta_info.htile_layers);
     runtime.AccessBuffer(out_buffer, out_offset, size, vk::PipelineStageFlagBits2::eComputeShader,
                          vk::AccessFlagBits2::eShaderWrite);
     return true;

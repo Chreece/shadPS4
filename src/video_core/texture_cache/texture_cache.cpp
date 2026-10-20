@@ -935,6 +935,12 @@ ImageView& TextureCache::FindDepthTarget(ImageId image_id, const ImageDesc& desc
     const VAddr htile_addr = desc.info.meta_info.htile_addr;
     image.info.meta_info.htile_linear = desc.info.meta_info.htile_linear;
     image.info.meta_info.htile_stencil = desc.info.meta_info.htile_stencil;
+    image.info.meta_info.htile_direct_layout =
+        desc.view_info.range.base.level == 0 &&
+        image.info.guest_address == desc.info.guest_address &&
+        image.info.pitch == desc.info.pitch && image.info.tile_mode == desc.info.tile_mode &&
+        image.info.mips_layout[0].height == desc.info.mips_layout[0].height;
+    image.info.meta_info.htile_layers = desc.info.resources.layers;
     if (image.info.meta_info.htile_addr != htile_addr) {
         UnregisterMeta(image.info.meta_info.htile_addr, image.image_uid);
         image.info.meta_info.htile_addr = htile_addr;
