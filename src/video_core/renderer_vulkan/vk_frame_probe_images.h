@@ -29,15 +29,30 @@ inline void CaptureFrameProbeScalars(const Instance& instance, Scheduler& schedu
         return;
     }
     static thread_local u32 last_frame{};
-    static thread_local std::unordered_set<u64> captured;
+    static thread_local u32 captures{};
+    static thread_local u64 captured_bytes{};
+    static thread_local bool limit_reported{};
     if (last_frame != frame) {
-        captured.clear();
+        captures = 0;
+        captured_bytes = 0;
+        limit_reported = false;
         last_frame = frame;
     }
     const auto bytes = stage.flattened_ud_buf.size() * sizeof(u32);
-    if (captured.size() >= 128 || bytes > 256_KB || !captured.insert(stage.pgm_hash).second) {
+    if (!bytes || offset > source.SizeBytes() || bytes > source.SizeBytes() - offset) {
         return;
     }
+    if (captures >= 4096 || bytes > 256_KB || bytes > 16_MB - captured_bytes) {
+        if (!limit_reported) {
+            LOG_WARNING(Render_Vulkan,
+                        "FrameProbeScalarLimit: frame={} after_draw={} captures={} bytes={} "
+                        "coverage=INCOMPLETE", frame, FrameProbe().draws, captures, captured_bytes);
+            limit_reported = true;
+        }
+        return;
+    }
+    const u32 sequence = ++captures;
+    captured_bytes += bytes;
     auto snapshot =
         std::make_unique<VideoCore::Buffer>(instance, 0, bytes, VideoCore::MemoryType::HostCached);
     const vk::BufferCopy copy{offset, 0, bytes};
@@ -45,14 +60,15 @@ inline void CaptureFrameProbeScalars(const Instance& instance, Scheduler& schedu
     scheduler.DeferPriorityOperation([snapshot = std::move(snapshot), cpu = stage.flattened_ud_buf,
                                       origins = stage.flattened_ud_sources, frame,
                                       draw = FrameProbe().draws, shader = stage.pgm_hash,
-                                      bytes]() mutable {
+                                      bytes, sequence]() mutable {
         snapshot->Invalidate(0, bytes);
         if (Shader::Diagnostics::VertexOutputFeedbackEnabled()) {
             const auto dir = Common::FS::GetUserPath(Common::FS::PathType::ShaderDir) / "frame-probes";
             std::error_code error;
             std::filesystem::create_directories(dir, error);
             if (!error) {
-                const auto path = dir / fmt::format("f{}-d{}-{:#x}.flatbuf.bin", frame, draw, shader);
+                const auto path = dir / fmt::format("f{}-d{}-{:#x}-s{}.flatbuf.bin", frame, draw,
+                                                    shader, sequence);
                 std::ofstream output(path, std::ios::binary);
                 output.write(reinterpret_cast<const char*>(snapshot->mapped_data.data()), bytes);
                 std::ofstream addresses(path.string() + ".origins.bin", std::ios::binary);
@@ -77,8 +93,8 @@ inline void CaptureFrameProbeScalars(const Instance& instance, Scheduler& schedu
         }
         LOG_INFO(Render_Vulkan,
                  "FrameProbeScalarReadback: frame={} after_draw={} shader={:#x} "
-                 "words={} differences={} status=COMPLETE",
-                 frame, draw, shader, cpu.size(), differences);
+                 "sequence={} words={} differences={} status=COMPLETE",
+                 frame, draw, shader, sequence, cpu.size(), differences);
     });
 }
 
@@ -99,20 +115,34 @@ inline void CaptureFrameProbeBuffer(const Instance& instance, Scheduler& schedul
     }
     static thread_local u32 last_frame{};
     static thread_local u64 captured_bytes{};
+    static thread_local bool limit_reported{};
     static thread_local std::unordered_set<std::string> captured;
     if (last_frame != frame) {
         captured.clear();
         captured_bytes = 0;
+        limit_reported = false;
         last_frame = frame;
     }
     const auto key = fmt::format("{}-{:#x}-{}", stage.hw_stage, stage.pgm_hash, resource);
-    if (captured.contains(key)) {
+    const auto binding_key = fmt::format("{}-{}-{}-{}-{}", key, u64(sharp.base_address), bytes,
+                                         u32(sharp.stride), sharp.num_records);
+    if (captured.contains(binding_key)) {
         return;
     }
-    if (!bytes || bytes > 4_MB || captured.size() >= 256 || bytes > 64_MB - captured_bytes) {
+    if (!bytes || offset > source.SizeBytes() || bytes > source.SizeBytes() - offset) {
         return;
     }
-    captured.insert(key);
+    if (bytes > 4_MB || captured.size() >= 256 || bytes > 64_MB - captured_bytes) {
+        if (!limit_reported) {
+            LOG_WARNING(Render_Vulkan,
+                        "FrameProbeBufferLimit: frame={} after_draw={} captures={} bytes={} "
+                        "coverage=INCOMPLETE", frame, FrameProbe().draws, captured.size(),
+                        captured_bytes);
+            limit_reported = true;
+        }
+        return;
+    }
+    captured.insert(binding_key);
     captured_bytes += bytes;
     auto snapshot =
         std::make_unique<VideoCore::Buffer>(instance, 0, bytes, VideoCore::MemoryType::HostCached);
