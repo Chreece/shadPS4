@@ -11,6 +11,7 @@
 #include <vector>
 #include "common/path_util.h"
 #include "shader_recompiler/info.h"
+#include "shader_recompiler/targeted_shader_dump.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/vk_frame_probe.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -67,6 +68,67 @@ inline void CaptureFrameProbeScalars(const Instance& instance, Scheduler& schedu
     });
 }
 
+inline void CaptureFrameProbeBuffer(const Instance& instance, Scheduler& scheduler,
+                                    Runtime& runtime, const VideoCore::Buffer& source, u64 offset,
+                                    u64 bytes, const Shader::Info& stage, u32 resource,
+                                    const AmdGpu::Buffer& sharp) {
+    static const bool enabled = [] {
+        const char* value = std::getenv("SHADPS4_FRAME_PROBE_BUFFERS");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    const auto frame = FrameProbe().frame;
+    if (!enabled || !FrameProbeEnabled() || !frame ||
+        !Shader::ShaderDumpTargets().Matches(stage.pgm_hash)) {
+        return;
+    }
+    static thread_local u32 last_frame{};
+    static thread_local u64 captured_bytes{};
+    static thread_local std::unordered_set<std::string> captured;
+    if (last_frame != frame) {
+        captured.clear();
+        captured_bytes = 0;
+        last_frame = frame;
+    }
+    const auto key = fmt::format("{}-{:#x}-{}", stage.hw_stage, stage.pgm_hash, resource);
+    if (captured.contains(key)) {
+        return;
+    }
+    if (!bytes || bytes > 4_MB || captured.size() >= 64 || bytes > 64_MB - captured_bytes) {
+        return;
+    }
+    captured.insert(key);
+    captured_bytes += bytes;
+    auto snapshot =
+        std::make_unique<VideoCore::Buffer>(instance, 0, bytes, VideoCore::MemoryType::HostCached);
+    const vk::BufferCopy copy{offset, 0, bytes};
+    runtime.CopyBuffer(&source, snapshot.get(), std::span{&copy, 1});
+    scheduler.DeferPriorityOperation([snapshot = std::move(snapshot), frame,
+                                      draw = FrameProbe().draws, key, sharp, bytes]() {
+        snapshot->Invalidate(0, bytes);
+        const auto dir = Common::FS::GetUserPath(Common::FS::PathType::ShaderDir) / "frame-probes";
+        std::error_code error;
+        std::filesystem::create_directories(dir, error);
+        if (error) {
+            return;
+        }
+        const auto path = dir / fmt::format("f{}-d{}-{}.buffer.bin", frame, draw, key);
+        std::ofstream output(path, std::ios::binary);
+        output.write(reinterpret_cast<const char*>(snapshot->mapped_data.data()), bytes);
+        output.close();
+        std::ofstream metadata(path.string() + ".txt");
+        metadata << fmt::format("frame={}\nafter_draw={}\nresource={}\nguest={}\nbytes={}\n"
+                                "stride={}\nrecords={}\n",
+                                frame, draw, key, u64(sharp.base_address), bytes, u32(sharp.stride),
+                                sharp.num_records);
+        metadata.close();
+        LOG_INFO(Render_Vulkan,
+                 "FrameProbeBuffer: frame={} after_draw={} resource={} bytes={} "
+                 "status={} path={}",
+                 frame, draw, key, bytes, output && metadata ? "SAVED" : "WRITE_FAILED",
+                 path.string());
+    });
+}
+
 struct FrameProbeImage {
     vk::Image image;
     vk::ImageLayout layout;
@@ -100,6 +162,7 @@ inline void CaptureFrameProbePass(const Instance& instance, Scheduler& scheduler
     for (const auto& target : targets) {
         u32 bpp{};
         switch (target.format) {
+        case vk::Format::eR16G16B16A16Unorm:
         case vk::Format::eR16G16B16A16Sfloat:
             bpp = 8;
             break;
@@ -115,6 +178,9 @@ inline void CaptureFrameProbePass(const Instance& instance, Scheduler& scheduler
         case vk::Format::eB8G8R8A8Srgb:
             bpp = 4;
             break;
+        case vk::Format::eR8G8Unorm:
+            bpp = 2;
+            break;
         default:
             break;
         }
@@ -127,7 +193,7 @@ inline void CaptureFrameProbePass(const Instance& instance, Scheduler& scheduler
         constexpr u32 row_step = 8;
         const u32 rows = (target.height + row_step - 1) / row_step;
         const u64 bytes = u64(target.width) * rows * bpp;
-        if (probe.images >= 96 || bytes > 64_MB - probe.bytes) {
+        if (probe.images >= 128 || bytes > 128_MB - probe.bytes) {
             LOG_INFO(Render_Vulkan, "FrameProbeImageSkip: frame={} pass={} reason=BUDGET", frame,
                      pass);
             continue;

@@ -72,6 +72,11 @@ def analyze(run):
             pixels = [tuple(data[i:i + 3]) for i in range(0, len(data), 4)]
             if fmt in (44, 50):
                 pixels = [p[::-1] for p in pixels]
+        elif fmt == 16:
+            pixels = [(data[i], data[i + 1], 0) for i in range(0, len(data), 2)]
+        elif fmt == 91:
+            pixels = [tuple(round(v * 255 / 65535) for v in texel[:3])
+                      for texel in struct.iter_unpack("<4H", data)]
         elif fmt in (100, 126, 130):
             values = [x[0] for x in struct.iter_unpack("<f", data)]
             finite = [x for x in values if math.isfinite(x)]

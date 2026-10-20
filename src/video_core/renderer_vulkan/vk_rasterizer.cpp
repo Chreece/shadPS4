@@ -1530,6 +1530,11 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                     desc.table_span_index == ~0u
                         ? flags
                         : VideoCore::ObtainBufferFlags::IgnoreStreamBuffer);
+                if (!desc.is_written) {
+                    Diagnostics::CaptureFrameProbeBuffer(
+                        instance, scheduler, runtime, *buffer, offset, size, stage,
+                        static_cast<u32>(&desc - stage.buffers.data()), vsharp);
+                }
                 const u64 offset_aligned = Common::AlignDown(offset, alignment);
                 const u64 adjust = offset - offset_aligned;
                 if (adjust % 4 != 0) {
