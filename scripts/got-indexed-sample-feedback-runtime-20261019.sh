@@ -7,15 +7,15 @@ GOT="$ROOT/GhostOfTsushima"
 WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
-PIN="a8df590551a5aa74960648d07c02d468d109317f"
-SHADER_COLLECTOR_PIN="a8df590551a5aa74960648d07c02d468d109317f"
+PIN="0688e77dfeb60172858ef5a35519e5edc874c6da"
+SHADER_COLLECTOR_PIN="0688e77dfeb60172858ef5a35519e5edc874c6da"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$PIN"
 HOST_REPORT="${GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT:-$LOGS/got-indexed-sample-feedback-host-not-built.tar.gz}"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 API="http://127.0.0.1:7869"
 MIN_VRAM=$((8*1024*1024*1024))
-SECONDS_TO_RUN=175
+SECONDS_TO_RUN=210
 FRAME_PROBE_LIMIT=1
 CAPTURE_STOP=TIME_LIMIT
 PROBES_COMPLETED_AT=-1
@@ -996,6 +996,9 @@ PYSTAGEPIXELS
     echo "CAPTURE_STOP=$CAPTURE_STOP"
     echo "FRAME_PROBE_CHECKPOINTS=$FRAME_PROBE_CHECKPOINTS"
     echo "FRAME_PROBE_LIMIT=$FRAME_PROBE_LIMIT"
+    echo "CAPTURE_TRIGGER=SUBMITTED_VERTEX_SHADERS_STABLE_20_SECONDS"
+    echo "CAPTURE_TRIGGER_OBSERVED=$(grep -ac 'FrameProbeTrigger:' "$RUN/game.log" || true)"
+    echo "GAMEPLAY_VISUAL_STATE=REQUIRES_SCREENSHOT_REVIEW"
     echo "SCALAR_CAPTURE_SCOPE=PER_BINDING_SEQUENCE"
     echo "PASS_IMAGE_CAPTURE=DISABLED"
     echo "LEGACY_MENU_PROBES=DISABLED"
@@ -1271,6 +1274,8 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_FRAME_PROBE_COMPUTE_BUFFERS_ONLY=0
   export SHADPS4_FRAME_PROBE_FRAME_LIMIT="$FRAME_PROBE_LIMIT"
   export SHADPS4_FRAME_PROBE_CHECKPOINTS="$FRAME_PROBE_CHECKPOINTS"
+  export SHADPS4_FRAME_PROBE_TRIGGER_VS_HASHES="0xfb6a3c83,0x0e018b82"
+  export SHADPS4_FRAME_PROBE_TRIGGER_STABLE_SECONDS=20
   export SHADPS4_FRAME_PROBE_BUFFERS=0
   export SHADPS4_FRAME_PROBE_TARGET_BINDINGS_ONLY=1
   export SHADPS4_VERTEX_OUTPUT_FEEDBACK=0
@@ -1376,7 +1381,7 @@ while kill -0 "$TEST_PGID" 2>/dev/null; do
   if [ "$CONTINUE_INPUT" = KEY_SENT ] &&
      [ "$(grep -ac 'FrameProbeEnd:' "$RUN/game.log" || true)" -ge "$FRAME_PROBE_LIMIT" ]; then
     CAPTURE_STOP=PROBES_COMPLETE
-    echo "GAMEPLAY_PROBES_COMPLETE_STOPPING elapsed=${elapsed}s"
+    echo "TRIGGERED_FRAME_CAPTURE_COMPLETE_STOPPING elapsed=${elapsed}s"
     kill -TERM -- "-$TEST_PGID" 2>/dev/null || true
     break
   fi
@@ -1400,7 +1405,8 @@ if ! grep -aEq 'GPU readbacksMode: 2([^0-9]|$)' "$RUN/game.log"; then
   exit 2
 fi
 if [ "$CONTINUE_INPUT" != KEY_SENT ] ||
-   ! grep -aq "FrameProbeEnd: frame=$FRAME_PROBE_LIMIT " "$RUN/game.log"; then
+   ! grep -aq "FrameProbeEnd: frame=$FRAME_PROBE_LIMIT " "$RUN/game.log" ||
+   ! grep -aq 'FrameProbeTrigger:' "$RUN/game.log"; then
   STATUS=GAMEPLAY_CAPTURE_INCOMPLETE
   echo "GAMEPLAY_CAPTURE_INCOMPLETE continue_input=$CONTINUE_INPUT; see info/final.txt"
   exit 2
