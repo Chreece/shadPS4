@@ -58,7 +58,7 @@ def analyze_vertices(run, draws, queries):
     print(f"VERTEX_OUTPUT_DRAWS={len(rows)} sample_limit=64 full_mesh_bounds=NO")
 
 
-def analyze(run):
+def analyze(run, make_previews=True):
     info = run / "info"
     info.mkdir(exist_ok=True)
     draws, queries, ends = {}, {}, {}
@@ -106,7 +106,8 @@ def analyze(run):
                        f"selected={captured} stats_complete={complete} "
                        f"coverage={ends.get(frame, {}).get('coverage', 'FRAME_NOT_ENDED')}")
     previews = info / "frame-previews"
-    previews.mkdir(exist_ok=True)
+    if make_previews:
+        previews.mkdir(exist_ok=True)
     try:
         from PIL import Image
     except ImportError:
@@ -114,6 +115,8 @@ def analyze(run):
     for raw in sorted((run / "profile/user/shader/frame-probes").glob("*.raw")):
         meta = dict(line.split("=", 1) for line in Path(str(raw) + ".txt").read_text().splitlines())
         width, rows, fmt = (int(meta[name]) for name in ("width", "rows", "format"))
+        if not make_previews and fmt not in (100, 126, 130):
+            continue
         data = raw.read_bytes()
         if fmt in (37, 43, 44, 50):
             pixels = [tuple(data[i:i + 3]) for i in range(0, len(data), 4)]
@@ -138,6 +141,8 @@ def analyze(run):
             pixels = [tuple(display(x) for x in p[:3]) for p in struct.iter_unpack("<4e", data)]
         else:
             continue
+        if not make_previews:
+            continue
         if len(pixels) != width * rows:
             summary.append(f"{raw.name} INVALID_BYTE_COUNT")
             continue
@@ -156,4 +161,4 @@ def analyze(run):
 
 
 if __name__ == "__main__":
-    analyze(Path(sys.argv[1]))
+    analyze(Path(sys.argv[1]), make_previews="--no-previews" not in sys.argv[2:])

@@ -1003,12 +1003,14 @@ PYSTAGEPIXELS
   } > "$RUN/info/final.txt"
   if git -C "$WORK/source" show "$PIN:scripts/got-analyze-frame-probes-20261019.py" \
       > "$RUN/info/analyze-frame-probes.py"; then
-    python3 "$RUN/info/analyze-frame-probes.py" "$RUN" \
+    python3 "$RUN/info/analyze-frame-probes.py" "$RUN" --no-previews \
       > "$RUN/info/frame-analysis.log" 2>&1 || echo "FRAME_ANALYSIS_FAILED; raw evidence retained"
   fi
-  tar -czf "$REPORT" -C "$RUN" info screenshots game.log remaining-shaders profile/user/shader/got-menu-probes profile/user/shader/frame-probes 2>/dev/null || {
+  if ! git -C "$WORK/source" show "$PIN:scripts/got-pack-frame-evidence-20261020.py" \
+      > "$RUN/info/pack-frame-evidence.py" ||
+     ! python3 "$RUN/info/pack-frame-evidence.py" --run "$RUN" --output "$REPORT"; then
     echo "ARCHIVE_ERROR keep=$RUN"; exit 3;
-  }
+  fi
   echo "STATUS=$STATUS GAME_EXIT=$GAME_EXIT EXIT=$rc"
   echo "OLLAMA_RESTORE=$OLLAMA_RESTORE"
   echo "REPORT=$REPORT"
@@ -1220,13 +1222,13 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_GOT_SCENE_RASTER_AB=0
   export SHADPS4_GOT_MENU_CAPTURE_DELAY_SEC="${GOT_CAPTURE_DELAY_SEC:-85}"
   export SHADPS4_MENU_WATCH_SOURCE=0x1504a08000
-  export SHADPS4_RENDER_AUDIT=1
+  export SHADPS4_RENDER_AUDIT=0
   export SHADPS4_INDEXED_TABLE_DUMP=1
   export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
   export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
-  export SHADPS4_SRT_SOURCE_AUDIT=1
-  export SHADPS4_SRT_INLINE_AUDIT=1
-  export SHADPS4_SRT_TRACE_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
+  export SHADPS4_SRT_SOURCE_AUDIT=0
+  export SHADPS4_SRT_INLINE_AUDIT=0
+  unset SHADPS4_SRT_TRACE_HASHES
   export SHADPS4_SHARP_MASK_AUDIT=1
   export SHADPS4_SHARP_MASK_AUDIT_HASHES="0x7eaf40ad"
   python3 - "$WORK/source" "$PIN" <<'PYFILTERPREFLIGHT'

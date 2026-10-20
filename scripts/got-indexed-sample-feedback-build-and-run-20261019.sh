@@ -29,7 +29,9 @@ git -C "$SRC" cat-file -e "$PIN^{commit}"
 for required in \
     scripts/got-indexed-sample-feedback-host-20261019.sh \
     scripts/got-indexed-sample-feedback-runtime-20261019.sh \
-    scripts/got-menu-gameplay-input-20261020.py; do
+    scripts/got-menu-gameplay-input-20261020.py \
+    scripts/got-analyze-frame-probes-20261019.py \
+    scripts/got-pack-frame-evidence-20261020.py; do
     if ! git -C "$SRC" cat-file -e "$PIN:$required" 2>/dev/null; then
         echo "MISSING_PINNED_SCRIPT=$PIN:$required"
         exit 2
