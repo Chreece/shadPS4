@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
+#include "video_core/renderer_vulkan/vk_got_indirect_producer_trace.h"
 
 // Diagnostic-only GPU readback of exact Vulkan indirect arguments consumed
 // by the two 5-MRT scene shaders at ordinal 4096/8192 checkpoints.
@@ -174,6 +175,13 @@ inline void CaptureGotSceneGpuIndirectArguments(
         for(u32 i=0;i<sample->captured_commands;++i) {
             const auto cmd=DecodeGotIndexedIndirect(
                 args,u64(i)*sample->stride);
+            if (i < selected_count && (!cmd.index_count || !cmd.instance_count)) {
+                const u64 address = sample->arg_guest + u64(i) * sample->stride;
+                const u32 mask = ObserveZeroIndirectAddress(address);
+                LOG_INFO(Render_Vulkan,
+                         "ObservedZeroIndirect: frame={} draw={} guest={:#x} watch_mask={:#x}",
+                         sample->frame, sample->draw, address, mask);
+            }
             if(i<16 || (cmd.index_count && cmd.instance_count)) {
                 LOG_INFO(Render_Vulkan,
                          "GotSceneIndirectGpuCommand: probe={} command={} "

@@ -18,6 +18,7 @@
 #include "core/memory.h"
 #include "shader_recompiler/guest_tsharp_array.h"
 #include "shader_recompiler/indexed_image_feedback.h"
+#include "shader_recompiler/vertex_output_feedback.h"
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/runtime_info.h"
 #include "shader_recompiler/targeted_shader_dump.h"
@@ -90,7 +91,7 @@ void TraceGotIndirectComputeDispatch(const Shader::Info& cs, bool indirect,
     for (const auto& desc : cs.buffers) {
         if (desc.IsSpecial() || !desc.is_written) continue;
         const auto sharp = desc.GetSharp(cs);
-        const u32 hits = Diagnostics::GotIndirectProducerHits(
+        const u32 hits = Diagnostics::ObservedIndirectProducerHits(
             sharp.base_address, sharp.GetSize());
         if (!hits) continue;
         static thread_local u32 events{};
@@ -473,6 +474,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     Diagnostics::TraceMenuDraw(regs, *pipeline, state, is_indexed, false);
 
     ResetBindings(false);
+    CaptureVertexOutput();
     CaptureIndexedImageFeedback();
 }
 
@@ -624,6 +626,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     CountSubmittedDraw(liverpool->regs, state, is_indexed, true);
     Diagnostics::TraceMenuDraw(liverpool->regs, *pipeline, state, is_indexed, true);
     ResetBindings(false);
+    CaptureVertexOutput();
     CaptureIndexedImageFeedback();
 }
 
@@ -734,6 +737,52 @@ u64 Rasterizer::Flush() {
 
 void Rasterizer::Finish() {
     scheduler.Finish();
+}
+
+void Rasterizer::CaptureVertexOutput() {
+    if (!vertex_output_feedback) {
+        return;
+    }
+    const u64 bytes = vertex_output_feedback->SizeBytes();
+    auto snapshot = std::make_unique<VideoCore::Buffer>(
+        instance, 0, bytes, VideoCore::MemoryType::HostCached);
+    const vk::BufferCopy copy{.srcOffset = 0, .dstOffset = 0, .size = bytes};
+    runtime.CopyBuffer(vertex_output_feedback.get(), snapshot.get(), std::span{&copy, 1});
+    const vk::BufferMemoryBarrier2 host_barrier = {
+        .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+        .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eHost,
+        .dstAccessMask = vk::AccessFlagBits2::eHostRead,
+        .buffer = snapshot->Handle(),
+        .offset = 0,
+        .size = bytes,
+    };
+    scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+        .bufferMemoryBarrierCount = 1,
+        .pBufferMemoryBarriers = &host_barrier,
+    });
+    scheduler.DeferPriorityOperation(
+        [snapshot = std::move(snapshot), source = std::move(vertex_output_feedback),
+         frame = Diagnostics::FrameProbe().frame, draw = Diagnostics::FrameProbe().draws,
+         shader = vertex_output_shader, bytes]() {
+            snapshot->Invalidate(0, bytes);
+            const auto* data = reinterpret_cast<const u32*>(snapshot->mapped_data.data());
+            const auto dir = Common::FS::GetUserPath(Common::FS::PathType::ShaderDir) / "frame-probes";
+            std::error_code error;
+            std::filesystem::create_directories(dir, error);
+            if (error) {
+                LOG_ERROR(Render_Vulkan, "VertexOutputFeedback: failed to create output directory");
+                return;
+            }
+            const auto path = dir / fmt::format("f{}-d{}-vs-{:#x}.vertices.bin", frame, draw, shader);
+            std::ofstream output(path, std::ios::binary);
+            output.write(reinterpret_cast<const char*>(data), bytes);
+            LOG_INFO(Render_Vulkan,
+                     "VertexOutputFeedback: frame={} draw={} shader={:#x} invocations={} "
+                     "samples={} saved={} guest_mutation=NO",
+                     frame, draw, shader, data[1],
+                     std::min(data[1], Shader::Diagnostics::VertexOutputSamples), bool(output));
+        });
 }
 
 void Rasterizer::CaptureIndexedImageFeedback() {
@@ -922,6 +971,25 @@ void Rasterizer::BindVertexBuffers(const GraphicsPipeline* pipeline) {
         needs_barrier |= runtime.IsBufferAccessed(range.buffer, range.offset, size);
         bound_buffers.emplace_back(range.buffer, range.offset, size,
                                    vk::AccessFlagBits2::eVertexAttributeRead);
+    }
+
+    if (Shader::Diagnostics::VertexOutputFeedbackEnabled()) {
+        const auto& stage = pipeline->GetStage(Shader::SwStage::Vertex);
+        for (u32 i = 0; i < guest_buffers.size(); ++i) {
+            const auto& sharp = guest_buffers[i];
+            const auto found = std::ranges::find_if(ranges_merged, [&](const auto& range) {
+                return sharp.base_address >= range.base_address &&
+                       sharp.base_address < range.end_address;
+            });
+            if (found != ranges_merged.end()) {
+                const u64 size = std::min<u64>(sharp.GetSize(),
+                                               found->end_address - sharp.base_address);
+                Diagnostics::CaptureFrameProbeBuffer(
+                    instance, scheduler, runtime, *found->buffer,
+                    found->offset + sharp.base_address - found->base_address,
+                    size, stage, 0x1000u + i, sharp);
+            }
+        }
     }
 
     // Bind vertex buffers
@@ -1312,6 +1380,11 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                     Diagnostics::CaptureFrameProbeScalars(instance, scheduler, runtime, vk_buffer,
                                                           offset, stage);
                 }
+                if (!refreshed_words && Shader::Diagnostics::VertexOutputFeedbackEnabled() &&
+                    stage.hw_stage == Shader::HwStage::Vertex) {
+                    Diagnostics::CaptureFrameProbeScalars(instance, scheduler, runtime, vk_buffer,
+                                                          offset, stage);
+                }
                 needs_barrier |= runtime.IsBufferAccessed(&vk_buffer, offset, ubo_size);
                 bound_buffers.emplace_back(&vk_buffer, offset, ubo_size, src_access);
                 buffer_infos.emplace_back(vk_buffer.Handle(), offset, ubo_size);
@@ -1340,6 +1413,30 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             } else if (desc.buffer_type == Shader::BufferType::FaultBuffer) {
                 const auto* fault_buffer = buffer_cache.GetFaultBuffer();
                 buffer_infos.emplace_back(fault_buffer->Handle(), 0, fault_buffer->SizeBytes());
+            } else if (desc.buffer_type == Shader::BufferType::VertexOutputFeedback) {
+                const auto frame = Diagnostics::FrameProbe().frame;
+                if (Diagnostics::FrameProbeEnabled() && frame &&
+                    Diagnostics::FrameProbe().draws < 2048) {
+                    constexpr u32 bytes = Shader::Diagnostics::VertexOutputWords * sizeof(u32);
+                    vertex_output_feedback = std::make_unique<VideoCore::Buffer>(
+                        instance, 0, bytes, VideoCore::MemoryType::HostCached);
+                    std::memset(vertex_output_feedback->mapped_data.data(), 0, bytes);
+                    const u32 enabled = 1;
+                    std::memcpy(vertex_output_feedback->mapped_data.data(), &enabled, sizeof(u32));
+                    vertex_output_feedback->Flush(0, bytes);
+                    vertex_output_shader = stage.pgm_hash;
+                    const auto* buffer = vertex_output_feedback.get();
+                    buffer_infos.emplace_back(buffer->Handle(), 0, bytes);
+                    bound_buffers.emplace_back(buffer, 0, bytes, src_access);
+                } else {
+                    if (!vertex_output_disabled) {
+                        vertex_output_disabled = std::make_unique<VideoCore::Buffer>(
+                            instance, 0, sizeof(u32), VideoCore::MemoryType::HostCached);
+                        std::memset(vertex_output_disabled->mapped_data.data(), 0, sizeof(u32));
+                        vertex_output_disabled->Flush(0, sizeof(u32));
+                    }
+                    buffer_infos.emplace_back(vertex_output_disabled->Handle(), 0, sizeof(u32));
+                }
             } else if (desc.buffer_type == Shader::BufferType::IndexedImageFeedback) {
                 const auto key = std::pair{u64(stage.pgm_hash), u32(stage.hw_stage)};
                 auto& feedback = indexed_image_feedback[key];
@@ -1480,7 +1577,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             } else {
                 const u64 size = memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize());
                 if (desc.is_written && Diagnostics::GotIndirectProducerTraceEnabled()) {
-                    const u32 hits = Diagnostics::GotIndirectProducerHits(
+                    const u32 hits = Diagnostics::ObservedIndirectProducerHits(
                         vsharp.base_address, size);
                     if (hits) {
                         static thread_local u32 events{};
@@ -2524,7 +2621,7 @@ void Rasterizer::DepthStencilCopy(bool is_depth, bool is_stencil) {
 
 void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds) {
     if (!is_gds && Diagnostics::GotIndirectProducerTraceEnabled()) {
-        const u32 hits = Diagnostics::GotIndirectProducerHits(address,num_bytes);
+        const u32 hits = Diagnostics::ObservedIndirectProducerHits(address,num_bytes);
         if (hits) {
             static thread_local u32 observations{};
             if (Diagnostics::ShouldReportIndirectProducer(++observations)) {
@@ -2558,7 +2655,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
     if (!dst_gds && Diagnostics::GotIndirectProducerTraceEnabled()) {
-        const u32 hits = Diagnostics::GotIndirectProducerHits(dst,num_bytes);
+        const u32 hits = Diagnostics::ObservedIndirectProducerHits(dst,num_bytes);
         if (hits) {
             static thread_local u32 observations{};
             if (Diagnostics::ShouldReportIndirectProducer(++observations)) {

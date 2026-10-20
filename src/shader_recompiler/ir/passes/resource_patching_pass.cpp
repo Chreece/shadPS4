@@ -24,6 +24,7 @@
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/guest_tsharp_array.h"
 #include "shader_recompiler/indexed_image_feedback.h"
+#include "shader_recompiler/vertex_output_feedback.h"
 #include "shader_recompiler/strided_material_specialization.h"
 #include "video_core/amdgpu/resource.h"
 #include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
@@ -2395,6 +2396,15 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         descriptors.Add(BufferResource{
             .used_types = IR::Type::U32,
             .buffer_type = BufferType::IndexedImageFeedback,
+            .is_written = true,
+        });
+    }
+
+    if (Diagnostics::VertexOutputFeedbackEnabled() && info.hw_stage == HwStage::Vertex &&
+        info.sw_stage == SwStage::Vertex) {
+        descriptors.Add(BufferResource{
+            .used_types = IR::Type::U32,
+            .buffer_type = BufferType::VertexOutputFeedback,
             .is_written = true,
         });
     }

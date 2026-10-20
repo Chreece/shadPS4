@@ -214,6 +214,11 @@ private:
     std::unique_ptr<VideoCore::Buffer> indexed_image_feedback_disabled;
     void CaptureIndexedImageFeedback();
 
+    std::unique_ptr<VideoCore::Buffer> vertex_output_feedback;
+    std::unique_ptr<VideoCore::Buffer> vertex_output_disabled;
+    u64 vertex_output_shader{};
+    void CaptureVertexOutput();
+
     bool attachment_feedback_loop{};
     bool needs_barrier{};
 };

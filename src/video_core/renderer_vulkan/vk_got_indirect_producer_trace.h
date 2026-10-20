@@ -6,6 +6,7 @@
 // addresses come from the eight actual Vulkan GPU argument readbacks in
 // GoT CUSA11456 on 2026-10-19; they are NOT patches to guest data.
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cstdint>
 #include <cstdlib>
@@ -45,6 +46,38 @@ inline constexpr std::uint64_t GotIndirectCommandBytes = 20;
         return env && env[0] == '1' && env[1] == '\0';
     }();
     return enabled;
+}
+
+inline std::array<std::atomic<std::uint64_t>, 32> observed_indirect_addresses{};
+
+inline std::uint32_t ObserveZeroIndirectAddress(std::uint64_t address) {
+    if (!GotIndirectProducerTraceEnabled() || !address ||
+        address > std::numeric_limits<std::uint64_t>::max() - GotIndirectCommandBytes) {
+        return 0;
+    }
+    for (std::uint32_t i = 0; i < observed_indirect_addresses.size(); ++i) {
+        auto expected = std::uint64_t{};
+        if (observed_indirect_addresses[i].compare_exchange_strong(expected, address) ||
+            expected == address) {
+            return std::uint32_t{1} << i;
+        }
+    }
+    return 0;
+}
+
+inline std::uint32_t ObservedIndirectProducerHits(std::uint64_t start, std::uint64_t length) {
+    if (!length || start > std::numeric_limits<std::uint64_t>::max() - length) {
+        return 0;
+    }
+    std::uint32_t hits{};
+    for (std::uint32_t i = 0; i < observed_indirect_addresses.size(); ++i) {
+        const auto address = observed_indirect_addresses[i].load();
+        if (address && ((start <= address && address - start < length) ||
+                        (start > address && start - address < GotIndirectCommandBytes))) {
+            hits |= std::uint32_t{1} << i;
+        }
+    }
+    return hits;
 }
 
 // The observed GDS DMA sources live at 0x980..0x9ff, but the guest

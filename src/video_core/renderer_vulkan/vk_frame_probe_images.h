@@ -12,6 +12,7 @@
 #include "common/path_util.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/targeted_shader_dump.h"
+#include "shader_recompiler/vertex_output_feedback.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/vk_frame_probe.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -46,6 +47,19 @@ inline void CaptureFrameProbeScalars(const Instance& instance, Scheduler& schedu
                                       draw = FrameProbe().draws, shader = stage.pgm_hash,
                                       bytes]() mutable {
         snapshot->Invalidate(0, bytes);
+        if (Shader::Diagnostics::VertexOutputFeedbackEnabled()) {
+            const auto dir = Common::FS::GetUserPath(Common::FS::PathType::ShaderDir) / "frame-probes";
+            std::error_code error;
+            std::filesystem::create_directories(dir, error);
+            if (!error) {
+                const auto path = dir / fmt::format("f{}-d{}-{:#x}.flatbuf.bin", frame, draw, shader);
+                std::ofstream output(path, std::ios::binary);
+                output.write(reinterpret_cast<const char*>(snapshot->mapped_data.data()), bytes);
+                std::ofstream addresses(path.string() + ".origins.bin", std::ios::binary);
+                addresses.write(reinterpret_cast<const char*>(origins.data()),
+                                origins.size() * sizeof(origins[0]));
+            }
+        }
         u32 differences{}, reported{};
         for (size_t i = 0; i < cpu.size(); ++i) {
             u32 gpu{};
@@ -78,7 +92,9 @@ inline void CaptureFrameProbeBuffer(const Instance& instance, Scheduler& schedul
     }();
     const auto frame = FrameProbe().frame;
     if (!enabled || !FrameProbeEnabled() || !frame ||
-        !Shader::ShaderDumpTargets().Matches(stage.pgm_hash)) {
+        (!Shader::ShaderDumpTargets().Matches(stage.pgm_hash) &&
+         !(Shader::Diagnostics::VertexOutputFeedbackEnabled() &&
+           stage.hw_stage == Shader::HwStage::Vertex))) {
         return;
     }
     static thread_local u32 last_frame{};
@@ -93,7 +109,7 @@ inline void CaptureFrameProbeBuffer(const Instance& instance, Scheduler& schedul
     if (captured.contains(key)) {
         return;
     }
-    if (!bytes || bytes > 4_MB || captured.size() >= 64 || bytes > 64_MB - captured_bytes) {
+    if (!bytes || bytes > 4_MB || captured.size() >= 256 || bytes > 64_MB - captured_bytes) {
         return;
     }
     captured.insert(key);

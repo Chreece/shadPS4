@@ -113,6 +113,7 @@ enum class BufferType : u8 {
     SharedMemory,
     ClipPlanes,
     IndexedImageFeedback,
+    VertexOutputFeedback,
 };
 
 struct BufferResource {

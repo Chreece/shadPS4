@@ -272,7 +272,7 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     EnsureResident(arena, first_block, last_block);
     if (is_written) {
         if (Vulkan::Diagnostics::GotIndirectProducerTraceEnabled()) {
-            const u32 hits=Vulkan::Diagnostics::GotIndirectProducerHits(device_addr,size);
+            const u32 hits=Vulkan::Diagnostics::ObservedIndirectProducerHits(device_addr,size);
             if (hits) {
                 static thread_local u32 events{};
                 const u32 observed=++events;
@@ -315,7 +315,7 @@ bool BufferCache::IsRegionGpuModified(VAddr addr, size_t size) {
 
 void BufferCache::MarkRegionAsGpuModified(VAddr addr, size_t size) {
     if (Vulkan::Diagnostics::GotIndirectProducerTraceEnabled()) {
-        const u32 hits=Vulkan::Diagnostics::GotIndirectProducerHits(addr,size);
+        const u32 hits=Vulkan::Diagnostics::ObservedIndirectProducerHits(addr,size);
         if (hits) {
             static thread_local u32 events{};
             const u32 observed=++events;
@@ -561,7 +561,7 @@ bool BufferCache::SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 
     size_t total_size_bytes{};
     memory_tracker->ForEachUploadRange(device_addr, size, is_written, [&](u64 addr, u64 size) {
         if (Vulkan::Diagnostics::GotIndirectProducerTraceEnabled()) {
-            const u32 hits=Vulkan::Diagnostics::GotIndirectProducerHits(addr,size);
+            const u32 hits=Vulkan::Diagnostics::ObservedIndirectProducerHits(addr,size);
             if (hits) {
                 static thread_local u32 events{};
                 const u32 observed=++events;

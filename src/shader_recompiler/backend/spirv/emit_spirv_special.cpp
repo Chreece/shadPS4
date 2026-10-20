@@ -5,6 +5,7 @@
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/ir/debug_print.h"
 #include "shader_recompiler/ir/microinstruction.h"
+#include "shader_recompiler/vertex_output_feedback.h"
 
 namespace Shader::Backend::SPIRV {
 
@@ -66,6 +67,51 @@ void ConvertPositionToClipSpace(EmitContext& ctx) {
     ctx.OpStore(ctx.output_position, vector);
 }
 
+static void RecordVertexOutput(EmitContext& ctx) {
+    const auto found = std::ranges::find(ctx.info.buffers, BufferType::VertexOutputFeedback,
+                                         &BufferResource::buffer_type);
+    if (found == ctx.info.buffers.end() || !Sirit::ValidId(ctx.output_position)) {
+        return;
+    }
+    const u32 index = std::distance(ctx.info.buffers.begin(), found);
+    const auto [buffer, pointer_type] = ctx.buffers[index].Alias(EmitContext::PointerType::U32);
+    const auto pointer = [&](Id word) {
+        return ctx.OpAccessChain(pointer_type, buffer, ctx.u32_zero_value, word);
+    };
+    const Id active = ctx.OpINotEqual(ctx.U1[1],
+        ctx.OpLoad(ctx.U32[1], pointer(ctx.u32_zero_value)), ctx.u32_zero_value);
+    const Id record = ctx.OpLabel();
+    const Id end = ctx.OpLabel();
+    ctx.OpSelectionMerge(end, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(active, record, end);
+    ctx.AddLabel(record);
+    const Id slot = ctx.OpAtomicIAdd(ctx.U32[1], pointer(ctx.ConstU32(1u)),
+        ctx.ConstU32(u32(spv::Scope::Device)), ctx.u32_zero_value, ctx.ConstU32(1u));
+    const Id store = ctx.OpLabel();
+    const Id merge = ctx.OpLabel();
+    const Id in_bounds = ctx.OpULessThan(ctx.U1[1], slot,
+        ctx.ConstU32(Shader::Diagnostics::VertexOutputSamples));
+    ctx.OpSelectionMerge(merge, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(in_bounds, store, merge);
+    ctx.AddLabel(store);
+    const Id base = ctx.OpIAdd(ctx.U32[1], ctx.ConstU32(2u),
+        ctx.OpIMul(ctx.U32[1], slot, ctx.ConstU32(6u)));
+    const auto save = [&](u32 word, Id value) {
+        ctx.OpStore(pointer(ctx.OpIAdd(ctx.U32[1], base, ctx.ConstU32(word))), value);
+    };
+    save(0, ctx.OpLoad(ctx.U32[1], ctx.vertex_index));
+    save(1, ctx.OpLoad(ctx.U32[1], ctx.instance_id));
+    const Id position = ctx.OpLoad(ctx.F32[4], ctx.output_position);
+    for (u32 component = 0; component < 4; ++component) {
+        save(2 + component, ctx.OpBitcast(ctx.U32[1],
+            ctx.OpCompositeExtract(ctx.F32[1], position, component)));
+    }
+    ctx.OpBranch(merge);
+    ctx.AddLabel(merge);
+    ctx.OpBranch(end);
+    ctx.AddLabel(end);
+}
+
 void EmitEpilogue(EmitContext& ctx) {
     if (ctx.hw_stage == HwStage::Vertex &&
         ctx.runtime_info.hw.vs.emulate_depth_negative_one_to_one) {
@@ -74,6 +120,7 @@ void EmitEpilogue(EmitContext& ctx) {
     if (ctx.hw_stage == HwStage::Vertex && ctx.runtime_info.hw.vs.clip_disable) {
         ConvertPositionToClipSpace(ctx);
     }
+    RecordVertexOutput(ctx);
 }
 
 void EmitDiscard(EmitContext& ctx) {

@@ -1191,9 +1191,10 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_GOT_SCENE_GPU_QUERY=1
   export SHADPS4_FRAME_PROBE=1
   export SHADPS4_FRAME_PROBE_BUFFERS=1
+  export SHADPS4_VERTEX_OUTPUT_FEEDBACK=1
   export SHADPS4_INDIRECT_WAR_AUDIT=0
   # Keep the previous indirect-producer and GDS/DMA experiments disabled.
-  export SHADPS4_GOT_INDIRECT_PRODUCERS=0
+  export SHADPS4_GOT_INDIRECT_PRODUCERS=1
   export SHADPS4_GOT_DMA_WORD_PROBE=0
   export SHADPS4_GOT_GDS_PRODUCER_PROBE=0
   export SHADPS4_GOT_INDIRECT_GPU_ARGUMENTS=1

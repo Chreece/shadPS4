@@ -12,6 +12,52 @@ def fields(line):
     return dict(re.findall(r"([a-zA-Z_][a-zA-Z_0-9]*)=([^\s]+)", line))
 
 
+def analyze_vertices(run, draws, queries):
+    columns = ["frame", "draw", "vs", "fs", "indirect", "ia", "vs_calls", "fs_calls",
+               "invocations", "sampled_vertices", "nonfinite", "zero_w", "negative_w",
+               "sampled_inside_clip", "ndc_x_min", "ndc_x_max", "ndc_y_min", "ndc_y_max",
+               "ndc_z_min", "ndc_z_max", "path"]
+    rows = []
+    for path in sorted((run / "profile/user/shader/frame-probes").glob("*.vertices.bin")):
+        match = re.fullmatch(r"f(\d+)-d(\d+)-vs-(0x[0-9a-f]+)\.vertices\.bin", path.name)
+        if not match:
+            continue
+        frame, draw, shader = match.groups()
+        raw = path.read_bytes()
+        if len(raw) != (2 + 64 * 6) * 4:
+            raise ValueError(f"Invalid vertex feedback size: {path}")
+        enabled, invocations = struct.unpack_from("<II", raw)
+        if enabled != 1:
+            raise ValueError(f"Disabled vertex feedback saved: {path}")
+        samples = min(invocations, 64)
+        finite, nonfinite, zero_w, negative_w, inside = [], 0, 0, 0, 0
+        for i in range(samples):
+            vertex, instance, x, y, z, w = struct.unpack_from("<II4f", raw, 8 + i * 24)
+            if not all(math.isfinite(v) for v in (x, y, z, w)):
+                nonfinite += 1
+                continue
+            zero_w += w == 0
+            negative_w += w < 0
+            inside += w > 0 and -w <= x <= w and -w <= y <= w and 0 <= z <= w
+            if w != 0:
+                finite.append((x / w, y / w, z / w))
+        key = (frame, draw)
+        row = {**draws.get(key, {}), **queries.get(key, {})}
+        row.update(frame=frame, draw=draw, vs=shader, invocations=invocations,
+                   sampled_vertices=samples, nonfinite=nonfinite, zero_w=zero_w,
+                   negative_w=negative_w, sampled_inside_clip=inside,
+                   path=str(path.relative_to(run)))
+        for axis, name in enumerate("xyz"):
+            row[f"ndc_{name}_min"] = min((p[axis] for p in finite), default="")
+            row[f"ndc_{name}_max"] = max((p[axis] for p in finite), default="")
+        rows.append(row)
+    with (run / "info/vertex-output-summary.csv").open("w") as output:
+        writer = csv.DictWriter(output, columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"VERTEX_OUTPUT_DRAWS={len(rows)} sample_limit=64 full_mesh_bounds=NO")
+
+
 def analyze(run):
     info = run / "info"
     info.mkdir(exist_ok=True)
@@ -27,6 +73,7 @@ def analyze(run):
         elif "FrameProbeEnd:" in line:
             row = fields(line)
             ends[row["frame"]] = row
+    analyze_vertices(run, draws, queries)
     groups = collections.defaultdict(collections.Counter)
     for key, draw in draws.items():
         query = queries.get(key, {})

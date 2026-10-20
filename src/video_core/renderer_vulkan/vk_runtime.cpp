@@ -148,7 +148,7 @@ void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* 
             if (copy.dstOffset > dst->SizeBytes() ||
                 dst->CpuAddr() > std::numeric_limits<u64>::max() - copy.dstOffset) continue;
             const u64 guest = dst->CpuAddr() + copy.dstOffset;
-            const u32 hits = Diagnostics::GotIndirectProducerHits(guest,copy.size);
+            const u32 hits = Diagnostics::ObservedIndirectProducerHits(guest,copy.size);
             if (!hits) continue;
             static thread_local u32 events{};
             const u32 observed = ++events;
@@ -184,7 +184,7 @@ void Runtime::FillBuffer(const VideoCore::Buffer* dst, u64 offset, u64 size, u32
     if (Diagnostics::GotIndirectProducerTraceEnabled() &&
         dst->mem_type == VideoCore::MemoryType::Sparse &&
         offset <= std::numeric_limits<u64>::max() - dst->CpuAddr()) {
-        const u32 hits = Diagnostics::GotIndirectProducerHits(dst->CpuAddr()+offset,size);
+        const u32 hits = Diagnostics::ObservedIndirectProducerHits(dst->CpuAddr()+offset,size);
         if (hits) {
             static thread_local u32 events{};
             const u32 observed=++events;
@@ -214,7 +214,7 @@ void Runtime::InlineData(VideoCore::Buffer* dst, u64 offset, u32 value) {
     if (Diagnostics::GotIndirectProducerTraceEnabled() &&
         dst->mem_type == VideoCore::MemoryType::Sparse &&
         offset <= std::numeric_limits<u64>::max() - dst->CpuAddr()) {
-        const u32 hits = Diagnostics::GotIndirectProducerHits(
+        const u32 hits = Diagnostics::ObservedIndirectProducerHits(
             dst->CpuAddr()+offset,sizeof(value));
         if (hits) {
             static thread_local u32 events{};

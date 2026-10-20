@@ -229,8 +229,10 @@ src/shader_recompiler/frontend/translate/vector_interpolation.cpp
 src/shader_recompiler/frontend/translate/scalar_alu.cpp
 src/video_core/buffer_cache/fault_manager.cpp
 src/video_core/host_shaders/fault_buffer_process.comp
+src/shader_recompiler/backend/spirv/emit_spirv_special.cpp
+src/shader_recompiler/vertex_output_feedback.h
 GOT_PINNED_OVERLAY_FILES
-test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 98 || {
+test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 100 || {
     STATUS=UNEXPECTED_CANDIDATE_OVERLAY_SIZE; exit 2;
 }
 
@@ -493,7 +495,9 @@ assert "vk::AccessFlagBits2::eIndirectCommandRead" in rules
 assert "vk::PipelineStageFlagBits2::eDrawIndirect" in rules
 producer=(root/"vk_got_indirect_producer_trace.h").read_text()
 cache=(Path(sys.argv[1])/"video_core"/"buffer_cache"/"buffer_cache.cpp").read_text()
-assert "GotIndirectProducerHits" in producer
+assert "ObserveZeroIndirectAddress" in producer
+assert "ObservedIndirectProducerHits" in rasterizer
+assert "observed_indirect_addresses" in producer
 assert "SHADPS4_GOT_INDIRECT_PRODUCERS" in producer
 assert "GotIndirectProducer: path=COMPUTE_DISPATCH_SUBMITTED" in rasterizer
 assert "GotIndirectProducer: path=WRITABLE_SHADER_BIND" in rasterizer
@@ -534,7 +538,7 @@ assert "IsVaryingLocalInvocationComponent(" in lds
 assert "FindDivergentLoops(program.syntax_list, runtime_info)" in lds
 assert "EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth, runtime_info)" in lds
 assert "op == IR::Opcode::InverseBallot || op == IR::Opcode::GetUserData" in phi
-assert "ShaderBinaryVersion = 59u;" in serial
+assert "ShaderBinaryVersion = 60u;" in serial
 scalar = (Path(sys.argv[1]) / "shader_recompiler/frontend/translate/scalar_alu.cpp").read_text()
 assert "ir.SetScc(ir.InverseBallot(result));" not in scalar
 for name in ("S_AND_B64", "S_OR_B64", "S_NOT_B64", "S_SAVEEXEC_B64"):
@@ -553,6 +557,10 @@ assert "runtime.FillBuffer(fault_buffer, 0u, fault_buffer->SizeBytes(), 0u)" in 
 assert "if (stage.uses_dma)" in rasterizer
 assert "fault_init_barrier" in buffer_cache
 print("GOT_DYNAMIC_RESOURCE_RESIDENCY=PASS persistent_fault_pages=YES bounded_readback=YES")
+vertex_output = (Path(sys.argv[1]) / "shader_recompiler/backend/spirv/emit_spirv_special.cpp").read_text()
+assert "RecordVertexOutput(ctx)" in vertex_output
+assert "CaptureVertexOutput();" in rasterizer
+print("VERTEX_OUTPUT_CAPTURE_WIRING=PASS bounded_samples=64 guest_mutation=NO")
 interpolation = (Path(sys.argv[1]) / "shader_recompiler/frontend/translate/vector_interpolation.cpp").read_text()
 spirv_context = (Path(sys.argv[1]) / "shader_recompiler/backend/spirv/spirv_emit_context.cpp").read_text()
 assert "OpAtomicOr(U32[1], fault_ptr" in spirv_context
@@ -563,8 +571,8 @@ assert "const Id pointer = param.id;" in spirv_context
 assert "OpInterpolateAtVertexAMD(F32[param.num_components], pointer, ConstU32(vertex))" in spirv_context
 print("GOT_COMPONENT_INTERPOLATION_WIRING=PASS per_component=YES mixed_inputs=YES")
 print("GOT_SHADER_UPSTREAM_CORRECTNESS_WIRING=PASS "
-      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=59")
-print("GOT_INDIRECT_PRODUCER_SOURCE_WIRING=PASS exact_watch=8 "
+      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=60")
+print("GOT_INDIRECT_PRODUCER_SOURCE_WIRING=PASS observed_zero_commands=32 "
       "buffer_shader=YES compute_dispatch=YES cpu_upload=YES vk_copy=YES")
 # The previous host link failed at rasterizer.cpp:492: an undefined
 # VideoCore::BufferTypeName diagnostic helper. Reject that regression
