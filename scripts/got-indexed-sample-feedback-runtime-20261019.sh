@@ -16,7 +16,10 @@ PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 API="http://127.0.0.1:7869"
 MIN_VRAM=$((8*1024*1024*1024))
 SECONDS_TO_RUN=300
-CONTINUE_AFTER_SECONDS=150
+CONTINUE_AFTER_SECONDS="${GOT_CONTINUE_AFTER_SECONDS:-45}"
+if [[ ! "$CONTINUE_AFTER_SECONDS" =~ ^[0-9]+$ ]]; then
+  echo "INVALID_CONTINUE_DELAY"; exit 2
+fi
 CONTINUE_INPUT=NOT_ATTEMPTED
 INPUT_HELPER="$ROOT/scripts/got-menu-gameplay-input-20261020.py"
 RUN="$GOT/tests/runs/got-indexed-sample-feedback-runtime-$(date +%Y%m%d-%H%M%S)"
@@ -958,6 +961,11 @@ PYSTAGEPIXELS
     echo "SCALAR_CAPTURE_LIMIT_EVENTS=$(grep -ac 'FrameProbeScalarLimit:' "$RUN/game.log" || true)"
     echo "BUFFER_CAPTURE_LIMIT_EVENTS=$(grep -ac 'FrameProbeBufferLimit:' "$RUN/game.log" || true)"
     echo "CONTINUE_AFTER_SECONDS=$CONTINUE_AFTER_SECONDS"
+    echo "CAPTURE_FOCUS=GAMEPLAY_WORLD_COUNT_PRODUCERS"
+    echo "VERTEX_FEEDBACK=DISABLED_TO_RESERVE_BUFFER_BUDGET_FOR_COMPUTE_INPUTS"
+    echo "SCALAR_BINARY_DUMPS=DISABLED_WITH_VERTEX_FEEDBACK_COMPARISON_LOGS_RETAINED"
+    echo "WORLD_COUNT_INPUT_FILTER=ae3b2e07,f1632d27,486c5b88,62ffd078,bd2dcc80,a820e215,b961cd7a,7116dee2,4cdc7449"
+    echo "WORLD_COUNT_PRODUCER_BUFFERS_SAVED=$(grep -aEc 'FrameProbeBuffer:.*resource=cs-0x(ae3b2e07|f1632d27|486c5b88|62ffd078|bd2dcc80|a820e215|b961cd7a|7116dee2|4cdc7449)-.*status=SAVED' "$RUN/game.log" || true)"
     echo "CONTINUE_INPUT=$CONTINUE_INPUT"
     echo "PACKED_AND_STRIDED_TABLE_SIZE_SPECIALIZATION=ENABLED"
     echo "SHADER_EVIDENCE_STATUS=$SHADER_EVIDENCE_STATUS"
@@ -975,13 +983,12 @@ PYSTAGEPIXELS
     echo "INDEXED_FEEDBACK_SHADERS=0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
     echo "INDEXED_FEEDBACK_CAPTURE_BINDINGS=1,32,256"
     echo "INDEXED_FEEDBACK_COMPLETED_ROWS=$(grep -ac 'IndexedImageFeedback:.*timeline_complete=YES' "$RUN/game.log" || true)"
-    if grep -aq 'IndexedImageFeedback: shader=0x836253ca.*timeline_complete=YES' "$RUN/game.log" &&
-       grep -aq 'FrameProbeBuffer: .*resource=fs-0x836253ca-.*status=SAVED' "$RUN/game.log"; then
-      echo "MENU_MATERIAL_EVIDENCE=COMPLETE"
+    if grep -aq 'FrameProbeBuffer:.*resource=cs-0x\(ae3b2e07\|f1632d27\|486c5b88\|62ffd078\|bd2dcc80\|a820e215\|b961cd7a\|7116dee2\|4cdc7449\)-.*status=SAVED' "$RUN/game.log"; then
+      echo "WORLD_PRODUCER_BUFFER_EVIDENCE=PRESENT_REVIEW_COVERAGE"
     else
-      echo "MENU_MATERIAL_EVIDENCE=INCOMPLETE_REVIEW_FILTER_AND_BINDINGS"
+      echo "WORLD_PRODUCER_BUFFER_EVIDENCE=MISSING"
     fi
-    echo "DISPATCH_INITIATOR_TRACE=ENABLED_MAX_16_PER_DIRECTION"
+    echo "DISPATCH_INITIATOR_TRACE=DISABLED_AFTER_ZERO_TRANSITIONS_BASELINE"
     echo "DISPATCH_PREVIOUSLY_SKIPPED_REPORTED=$(grep -ac 'DispatchInitiatorTransition:.*previous_enabled=0 packet_enabled=1' "$RUN/game.log" || true)"
     echo "DISPATCH_PREVIOUSLY_UNWANTED_REPORTED=$(grep -ac 'DispatchInitiatorTransition:.*previous_enabled=1 packet_enabled=0' "$RUN/game.log" || true)"
     echo "INDIRECT_COMPUTE_ARGUMENT_READBACKS=$(grep -ac 'FrameProbeDispatchArguments:' "$RUN/game.log" || true)"
@@ -1161,7 +1168,7 @@ p=pathlib.Path(sys.argv[1])
 d=json.loads(p.read_text()) if p.exists() else {}
 assert isinstance(d,dict)
 assert isinstance(d.setdefault("Log",{}),dict)
-d["Log"].update(filter="*:critical Input:info Config:info Render:info Render.Recompiler:info Render.Vulkan:info",
+d["Log"].update(filter="*:critical Input:info Config:info Render.Recompiler:info Render.Vulkan:info",
                 sync=False,skip_duplicate=True)
 # Compile the instrumented shader in the isolated portable profile.
 assert isinstance(d.setdefault("Vulkan",{}),dict)
@@ -1211,10 +1218,10 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_MENU_PASS_TRACE=1
   export SHADPS4_GOT_MENU_STAGE_PIXELS=1
   export SHADPS4_GOT_SCENE_GPU_QUERY=1
-  export SHADPS4_TRACE_DISPATCH_INITIATOR=1
+  export SHADPS4_TRACE_DISPATCH_INITIATOR=0
   export SHADPS4_FRAME_PROBE=1
   export SHADPS4_FRAME_PROBE_BUFFERS=1
-  export SHADPS4_VERTEX_OUTPUT_FEEDBACK=1
+  export SHADPS4_VERTEX_OUTPUT_FEEDBACK=0
   export SHADPS4_INDIRECT_WAR_AUDIT=0
   # Keep the previous indirect-producer and GDS/DMA experiments disabled.
   export SHADPS4_GOT_INDIRECT_PRODUCERS=1
@@ -1228,7 +1235,7 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_MENU_WATCH_SOURCE=0x1504a08000
   export SHADPS4_RENDER_AUDIT=0
   export SHADPS4_INDEXED_TABLE_DUMP=1
-  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
+  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0xae3b2e07,0xf1632d27,0x486c5b88,0x62ffd078,0xbd2dcc80,0xa820e215,0xb961cd7a,0x7116dee2,0x4cdc7449,0x22d378cd"
   export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
   export SHADPS4_SRT_SOURCE_AUDIT=0
   export SHADPS4_SRT_INLINE_AUDIT=0
