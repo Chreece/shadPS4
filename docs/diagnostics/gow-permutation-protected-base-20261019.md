@@ -125,3 +125,42 @@ enables `SHADPS4_PERMUTATION_TRACE=1` in the actual candidate process,
 and writes `PERM_TRACE_ACTIVE/CREATED/REUSED` observations at warning level.
 The automated cutscene heuristic is not scene-equivalence proof.
 Do not claim graphics improvement from logging alone.
+
+
+## 2026-10-20 05:44: protected-base game test stopped at CLI parsing
+
+User-provided archive \`gow-permutation-protected-scene-20261020-054453-3170940.tar.gz\`
+contains only 93 bytes in \`full-console.log\`:
+
+\`\`\`
+--cpu-id-mode: builtin not in {auto,native,translated}
+Run with --help for more information.
+\`\`\`
+
+The original pinned GoW X11 automation used \`--cpu-id-mode builtin\` from an
+incompatible emulator branch. The **clean protected-source candidate** only
+accepts \`auto\`, \`native\`, \`translated\` (verified in
+\`src/main.cpp\`). Consequently the candidate quit after about **0.5 seconds**,
+before any game window, guest code, Vulkan shader compilation, or source-level
+PERM_TRACE marker. Autopilot failed with
+\`GAME_EXITED_BEFORE_OWN_WINDOW\`; there was no guest access violation, no
+Vulkan device loss, and no gameplay performance measurement.
+
+The cloned saves were cleaned, the original and candidate executables retained
+their verified SHA-256 hashes, and Ollama was untouched (19.527 GiB free).
+**This run says nothing about the shader-permutation fix's efficacy.**
+
+New script \`scripts/gow_permutation_protected_scene_20261020.sh\`
+uses the *same binary* SHA
+\`2205aeeebc139bab4f2048882799da42447f93b8338583ec26afa87673b34af7\`,
+verifies the candidate's actual \`--help\` before any game/Ollama changes, and
+patches only the temporary, verified GoW navigation helper to choose
+\`--cpu-id-mode native\`. It retains \`--userfaultfd\`, X11/autopilot,
+cloned-save protection, env-gated shader permutation trace, conditional
+Ollama handling, SSH-independent cleanup, and all hash checks.
+On this branch \`native\` deliberately bypasses the optional CPU-ID translation
+runtime; as upstream source warns, native coverage of dynamically generated
+instructions is more limited. If a subsequent guest crash occurs, inspect
+that distinction before attributing it to the permutation fix.
+
+Next gate: one valid startup+gameplay observation, not another rebuild.
