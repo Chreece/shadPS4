@@ -692,6 +692,9 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     }
 
     const auto [buffer, base] = buffer_cache.ObtainBuffer(address + offset, size);
+    Diagnostics::CaptureFrameProbeDispatch(
+        instance, scheduler, runtime, *buffer, base, address + offset,
+        pipeline->GetStage(Shader::SwStage::Compute).pgm_hash);
     needs_barrier |= runtime.IsBufferAccessed(buffer, base, size);
     bound_buffers.emplace_back(buffer, base, size, vk::AccessFlagBits2::eIndirectCommandRead);
 
@@ -1399,6 +1402,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             }
         } else {
             const auto vsharp = desc.GetSharp(stage);
+            Diagnostics::TraceFrameProbeBufferBinding(
+                stage, static_cast<u32>(&desc - stage.buffers.data()), vsharp, desc.is_written);
             if (audit && desc.table_span_index != ~0u) {
                 static thread_local std::unordered_map<std::string, u32> observations;
                 const auto key =
@@ -2061,6 +2066,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 image_desc.sharp_fetch.summary == Fetch::Summary::Invalid;
         }
         const auto tsharp = image_desc.GetSharp(stage);
+        Diagnostics::TraceFrameProbeImageBinding(stage, resource_index, tsharp,
+                                                 image_desc.is_written);
         // A depth R32_FLOAT source might alternatively be written by
         // compute as a storage image. Track exact writer descriptors only
         // when tracing and only for the source seen in the preceding run.

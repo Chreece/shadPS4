@@ -10,8 +10,10 @@
 namespace VideoCore::Diagnostics {
 // Optional generic shader-resource audit filter. Empty means all shaders;
 // invalid configuration fails closed instead of flooding the log.
+inline constexpr std::size_t MaxShaderAuditHashes = 64;
+
 struct ShaderAuditHashFilter {
-    std::array<std::uint64_t, 8> hashes{};
+    std::array<std::uint64_t, MaxShaderAuditHashes> hashes{};
     std::size_t count{};
     bool enabled{};
     bool valid{true};

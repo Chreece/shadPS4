@@ -953,9 +953,17 @@ PYSTAGEPIXELS
     echo "GPU_SELECTED_BUFFER_STORES=GUARDED_COMPLETE_TABLES"
     echo "BOUNDED_POINTER_IMAGE_LOWERING=GUARDED_AND_COUNTED_LOOPS"
     echo "BOUNDED_POINTER_COUNT_SPECIALIZATION=ENABLED"
-    echo "INDEXED_FEEDBACK_SHADERS=0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00"
+    echo "INDEXED_FEEDBACK_SHADERS=0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
     echo "INDEXED_FEEDBACK_CAPTURE_BINDINGS=1,32,256"
     echo "INDEXED_FEEDBACK_COMPLETED_ROWS=$(grep -ac 'IndexedImageFeedback:.*timeline_complete=YES' "$RUN/game.log" || true)"
+    if grep -aq 'IndexedImageFeedback: shader=0x836253ca.*timeline_complete=YES' "$RUN/game.log" &&
+       grep -aq 'FrameProbeBuffer: .*resource=fs-0x836253ca-.*status=SAVED' "$RUN/game.log"; then
+      echo "MENU_MATERIAL_EVIDENCE=COMPLETE"
+    else
+      echo "MENU_MATERIAL_EVIDENCE=INCOMPLETE_REVIEW_FILTER_AND_BINDINGS"
+    fi
+    echo "INDIRECT_COMPUTE_ARGUMENT_READBACKS=$(grep -ac 'FrameProbeDispatchArguments:' "$RUN/game.log" || true)"
+
     echo "INDEXED_TSHARP_BINDS=$(grep -ac 'RealIndexedTSharpBound:' "$RUN/game.log" || true)"
     echo "MENU_INVALID_IMAGE_EVENTS=$(grep -ac 'InvalidTSharpSource: shader=0x7eaf40ad' "$RUN/game.log" || true)"
     echo "FRAME_PROBE_FRAMES=$(grep -ac 'FrameProbeEnd:' "$RUN/game.log" || true)"
@@ -1157,15 +1165,15 @@ echo "STAY_AT_MENU for the full five-minute capture; this run isolates remaining
   test -d "$RUN/profile/user"
   export DISPLAY="$DISPLAY_OK"
   export SHADPS4_STRIDED_SOURCE_PROOF=1
-  export SHADPS4_STRIDED_SOURCE_PROOF_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00"
+  export SHADPS4_STRIDED_SOURCE_PROOF_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
   export SHADPS4_STRIDED_GUEST_TSHARP=1
   export SHADPS4_GUEST_TSHARP_LARGE_ARRAY=1
   export SHADPS4_GUEST_TSHARP_CACHE=0
   export SHADPS4_TEXTURE_SLOT_PRESSURE=1
   export SHADPS4_GPUVM_SPARSE_MAP=0
   export SHADPS4_RESOURCE_AUDIT=1
-  export SHADPS4_RESOURCE_AUDIT_HASH="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00"
-  export SHADPS4_INDEXED_IMAGE_FEEDBACK_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00"
+  export SHADPS4_RESOURCE_AUDIT_HASH="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
+  export SHADPS4_INDEXED_IMAGE_FEEDBACK_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
   export SHADPS4_INDEXED_IMAGE_AUDIT=1
   export SHADPS4_INDEXED_IMAGE_AUDIT_HASHES="0x7eaf40ad"
   export SHADPS4_MENU_PASS_TRACE=1
@@ -1186,13 +1194,32 @@ echo "STAY_AT_MENU for the full five-minute capture; this run isolates remaining
   export SHADPS4_MENU_WATCH_SOURCE=0x1504a08000
   export SHADPS4_RENDER_AUDIT=1
   export SHADPS4_INDEXED_TABLE_DUMP=1
-  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00"
-  export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00"
+  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
+  export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
   export SHADPS4_SRT_SOURCE_AUDIT=1
   export SHADPS4_SRT_INLINE_AUDIT=1
-  export SHADPS4_SRT_TRACE_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00"
+  export SHADPS4_SRT_TRACE_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
   export SHADPS4_SHARP_MASK_AUDIT=1
   export SHADPS4_SHARP_MASK_AUDIT_HASHES="0x7eaf40ad"
+  python3 - "$WORK/source" "$PIN" <<'PYFILTERPREFLIGHT'
+import os, re, subprocess, sys
+header = subprocess.check_output([
+    "git", "-C", sys.argv[1], "show",
+    sys.argv[2] + ":src/video_core/renderer_vulkan/resource_audit_hash_filter.h"
+], text=True)
+match = re.search(r"MaxShaderAuditHashes = (\d+)", header)
+if not match:
+    raise SystemExit("DIAGNOSTIC_FILTER_PREFLIGHT=FAIL missing capacity declaration")
+capacity = int(match[1])
+for key, value in os.environ.items():
+    if not key.startswith("SHADPS4_") or not key.endswith(("_HASH", "_HASHES")):
+        continue
+    words = value.split(",")
+    if len(words) > capacity or any(not re.fullmatch(r"0x[0-9a-fA-F]+|[0-9]+", word)
+                                    or int(word, 0) > 0xffffffffffffffff for word in words):
+        raise SystemExit(f"DIAGNOSTIC_FILTER_PREFLIGHT=FAIL name={key} entries={len(words)} capacity={capacity}")
+    print(f"DIAGNOSTIC_FILTER_PREFLIGHT=PASS name={key} entries={len(words)} capacity={capacity}", flush=True)
+PYFILTERPREFLIGHT
   unset RADV_DEBUG VK_DRIVER_FILES VK_ICD_FILENAMES VK_INSTANCE_LAYERS
   exec setsid timeout -s TERM -k 8s "${SECONDS_TO_RUN}s" "$CANDIDATE" \
     --game "$GAME" --fullscreen true --show-fps

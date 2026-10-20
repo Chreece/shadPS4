@@ -129,6 +129,89 @@ inline void CaptureFrameProbeBuffer(const Instance& instance, Scheduler& schedul
     });
 }
 
+inline void CaptureFrameProbeDispatch(const Instance& instance, Scheduler& scheduler,
+                                      Runtime& runtime, const VideoCore::Buffer& source, u64 offset,
+                                      u64 guest, u64 shader) {
+    const auto frame = FrameProbe().frame;
+    if (!FrameProbeEnabled() || !frame) {
+        return;
+    }
+    static thread_local u32 last_frame{}, sequence{};
+    if (last_frame != frame) {
+        last_frame = frame;
+        sequence = 0;
+    }
+    if (sequence >= 256) {
+        return;
+    }
+    const u32 ordinal = ++sequence;
+    constexpr u64 bytes = sizeof(vk::DispatchIndirectCommand);
+    if (offset > source.SizeBytes() || bytes > source.SizeBytes() - offset) {
+        return;
+    }
+    auto snapshot =
+        std::make_unique<VideoCore::Buffer>(instance, 0, bytes, VideoCore::MemoryType::HostCached);
+    const vk::BufferCopy copy{offset, 0, bytes};
+    runtime.CopyBuffer(&source, snapshot.get(), std::span{&copy, 1});
+    scheduler.DeferPriorityOperation([snapshot = std::move(snapshot), frame, ordinal,
+                                      draw = FrameProbe().draws, guest, shader]() {
+        snapshot->Invalidate(0, sizeof(vk::DispatchIndirectCommand));
+        vk::DispatchIndirectCommand command{};
+        std::memcpy(&command, snapshot->mapped_data.data(), sizeof(command));
+        LOG_INFO(Render_Vulkan,
+                 "FrameProbeDispatchArguments: frame={} after_draw={} ordinal={} "
+                 "shader={:#x} guest={:#x} groups={}x{}x{} timeline_complete=YES",
+                 frame, draw, ordinal, shader, guest, command.x, command.y, command.z);
+    });
+}
+
+inline void TraceFrameProbeBufferBinding(const Shader::Info& stage, u32 resource,
+                                         const AmdGpu::Buffer& sharp, bool written) {
+    const auto frame = FrameProbe().frame;
+    if (!FrameProbeEnabled() || !frame) {
+        return;
+    }
+    static thread_local u32 last_frame{}, events{};
+    if (last_frame != frame) {
+        last_frame = frame;
+        events = 0;
+    }
+    if (events++ >= 8192) {
+        return;
+    }
+    const u64 bytes = sharp.stride ? u64(sharp.stride) * sharp.num_records : sharp.num_records;
+    LOG_INFO(Render_Vulkan,
+             "FrameProbeBufferBinding: frame={} after_draw={} shader={:#x} stage={} "
+             "resource={} guest={:#x} bytes={} stride={} records={} written={} valid={} "
+             "confirmed_store=NO",
+             frame, FrameProbe().draws, stage.pgm_hash, stage.hw_stage, resource,
+             u64(sharp.base_address), bytes, u32(sharp.stride), sharp.num_records, written,
+             sharp.Valid());
+}
+
+inline void TraceFrameProbeImageBinding(const Shader::Info& stage, u32 resource,
+                                        const AmdGpu::Image& sharp, bool written) {
+    const auto frame = FrameProbe().frame;
+    if (!FrameProbeEnabled() || !frame) {
+        return;
+    }
+    static thread_local u32 last_frame{}, events{};
+    if (last_frame != frame) {
+        last_frame = frame;
+        events = 0;
+    }
+    if (events++ >= 8192) {
+        return;
+    }
+    LOG_INFO(Render_Vulkan,
+             "FrameProbeImageBinding: frame={} after_draw={} shader={:#x} stage={} "
+             "resource={} guest={:#x} width={} height={} data_format={} number_format={} "
+             "written={} valid={}",
+             frame, FrameProbe().draws, stage.pgm_hash, stage.hw_stage, resource, sharp.Address(),
+             u32(sharp.width) + 1, u32(sharp.height) + 1, u32(sharp.GetDataFmt()),
+             u32(sharp.GetNumberFmt()), written, sharp.Valid());
+}
+
 struct FrameProbeImage {
     vk::Image image;
     vk::ImageLayout layout;
