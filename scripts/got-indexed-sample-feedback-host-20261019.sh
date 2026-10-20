@@ -163,6 +163,7 @@ src/shader_recompiler/ir/passes/resource_discover_pass.cpp
 src/shader_recompiler/ir/passes/resource_pass.h
 src/shader_recompiler/ir/passes/resource_patching_pass.cpp
 src/shader_recompiler/ir/passes/sharp_dword_mask.h
+src/shader_recompiler/ir/passes/srt.h
 src/shader_recompiler/ir/passes/srt_host_barrier.h
 src/shader_recompiler/ir/passes/srt_inline_read_codegen.h
 src/shader_recompiler/ir/passes/srt_offset_preflight.h
@@ -225,7 +226,7 @@ src/shader_recompiler/ir/operand_helper.h
 src/shader_recompiler/ir/reg.h
 src/shader_recompiler/ir/passes/lower_buffer_format_to_raw.cpp
 GOT_PINNED_OVERLAY_FILES
-test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 93 || {
+test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 94 || {
     STATUS=UNEXPECTED_CANDIDATE_OVERLAY_SIZE; exit 2;
 }
 
@@ -529,9 +530,9 @@ assert "IsVaryingLocalInvocationComponent(" in lds
 assert "FindDivergentLoops(program.syntax_list, runtime_info)" in lds
 assert "EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth, runtime_info)" in lds
 assert "op == IR::Opcode::InverseBallot || op == IR::Opcode::GetUserData" in phi
-assert "ShaderBinaryVersion = 54u;" in serial
+assert "ShaderBinaryVersion = 55u;" in serial
 print("GOT_SHADER_UPSTREAM_CORRECTNESS_WIRING=PASS "
-      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=54")
+      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=55")
 print("GOT_INDIRECT_PRODUCER_SOURCE_WIRING=PASS exact_watch=8 "
       "buffer_shader=YES compute_dispatch=YES cpu_upload=YES vk_copy=YES")
 # The previous host link failed at rasterizer.cpp:492: an undefined

@@ -1261,6 +1261,56 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 const u32 ubo_size = stage.flattened_ud_buf.size() * sizeof(u32);
                 const u64 offset =
                     vk_buffer.Copy(stage.flattened_ud_buf.data(), ubo_size, alignment);
+                const VideoCore::Buffer* source_buffer{};
+                u32 refreshed_words{};
+                u32 first_refreshed{};
+                std::vector<vk::BufferCopy> copies;
+                const auto flush_copies = [&] {
+                    if (!copies.empty()) {
+                        runtime.CopyBuffer(source_buffer, &vk_buffer, copies);
+                        copies.clear();
+                    }
+                };
+                for (u32 i = 0; i < stage.flattened_ud_sources.size(); ++i) {
+                    const VAddr address = stage.flattened_ud_sources[i];
+                    if (address == 0 || (address & 3) != 0 ||
+                        address > (u64{1} << 40) - sizeof(u32) ||
+                        !buffer_cache.IsRegionGpuModified(address, sizeof(u32))) {
+                        continue;
+                    }
+                    if (refreshed_words++ == 0) {
+                        first_refreshed = i;
+                    }
+                    const auto [source, source_offset] = buffer_cache.ObtainBuffer(
+                        address, sizeof(u32), VideoCore::ObtainBufferFlags::IgnoreStreamBuffer);
+                    if (source != source_buffer) {
+                        flush_copies();
+                        source_buffer = source;
+                    }
+                    const u64 destination = offset + i * sizeof(u32);
+                    if (!copies.empty() &&
+                        copies.back().srcOffset + copies.back().size == source_offset &&
+                        copies.back().dstOffset + copies.back().size == destination) {
+                        copies.back().size += sizeof(u32);
+                    } else {
+                        copies.emplace_back(source_offset, destination, sizeof(u32));
+                    }
+                }
+                flush_copies();
+                if (refreshed_words && Diagnostics::FrameProbeEnabled() &&
+                    Diagnostics::FrameProbe().frame) {
+                    LOG_INFO(Render_Vulkan,
+                             "FrameProbeScalarRefresh: frame={} after_draw={} shader={:#x} "
+                             "words={} first_slot={} first_guest={:#x} first_cpu_value={:#x}",
+                             Diagnostics::FrameProbe().frame, Diagnostics::FrameProbe().draws,
+                             stage.pgm_hash, refreshed_words, first_refreshed,
+                             stage.flattened_ud_sources[first_refreshed],
+                             stage.flattened_ud_buf[first_refreshed]);
+                    Diagnostics::CaptureFrameProbeScalars(instance, scheduler, runtime, vk_buffer,
+                                                          offset, stage);
+                }
+                needs_barrier |= runtime.IsBufferAccessed(&vk_buffer, offset, ubo_size);
+                bound_buffers.emplace_back(&vk_buffer, offset, ubo_size, src_access);
                 buffer_infos.emplace_back(vk_buffer.Handle(), offset, ubo_size);
             } else if (desc.buffer_type == Shader::BufferType::ClipPlanes) {
                 // Permutations compiled without enabled planes never read the buffer, so the

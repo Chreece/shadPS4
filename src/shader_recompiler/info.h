@@ -122,6 +122,7 @@ struct Info : InfoPersistent {
 
     std::span<const u32> user_data;
     std::vector<u32> flattened_ud_buf;
+    std::vector<u64> flattened_ud_sources;
     PersistentSrtInfo srt_info;
     PersistentSrtInfo bounds_srt_info;
     std::array<std::vector<BufferTableRange>, NUM_BUFFERS> buffer_table_ranges;
@@ -191,10 +192,12 @@ struct Info : InfoPersistent {
 
     void RefreshFlatBuf() {
         flattened_ud_buf.resize(srt_info.flattened_bufsize_dw);
+        flattened_ud_sources.assign(srt_info.flattened_bufsize_dw, 0);
         ASSERT(user_data.size() <= NUM_USER_DATA_REGS);
         std::memcpy(flattened_ud_buf.data(), user_data.data(), user_data.size_bytes());
         if (srt_info.walker_func) {
-            srt_info.walker_func(user_data.data(), flattened_ud_buf.data());
+            srt_info.walker_func(user_data.data(), flattened_ud_buf.data(),
+                                 flattened_ud_sources.data());
         }
         RefreshBufferTableSpans();
     }
@@ -202,10 +205,12 @@ struct Info : InfoPersistent {
     [[nodiscard]] bool RefreshFlatBufForSpecialization() {
         if (srt_bound_count != 0) {
             flattened_ud_buf.assign(bounds_srt_info.flattened_bufsize_dw, 0);
+            flattened_ud_sources.assign(bounds_srt_info.flattened_bufsize_dw, 0);
             ASSERT(user_data.size() <= NUM_USER_DATA_REGS);
             std::memcpy(flattened_ud_buf.data(), user_data.data(), user_data.size_bytes());
             if (bounds_srt_info.walker_func) {
-                bounds_srt_info.walker_func(user_data.data(), flattened_ud_buf.data());
+                bounds_srt_info.walker_func(user_data.data(), flattened_ud_buf.data(),
+                                            flattened_ud_sources.data());
             }
             for (u32 i = 0; i < srt_bound_count; ++i) {
                 u32 value{};

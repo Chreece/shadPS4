@@ -412,8 +412,8 @@ static bool CanInlineScalarRead(const IR::Inst* inst) {
 
 static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
                           const IR::Value& off_dw);
-static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
-                                PassInfo& pass_info, IR::Inst* inst);
+static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
+                                IR::Inst* inst, u32 source_slot = 0);
 
 #define ABORT_ON_FAILURE(expr)                                                                     \
     if (!(expr)) {                                                                                 \
@@ -860,8 +860,8 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
 // original guest pointer, using the existing fault-recoverable SRT walker.
 // Nested scalar dependencies are supported; divergent and cyclic expressions
 // remain on the GPU path without guessed values.
-static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
-                                PassInfo& pass_info, IR::Inst* inst) {
+static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
+                                IR::Inst* inst, u32 source_slot) {
     const bool is_sbuffer = inst->GetOpcode() == IR::Opcode::ReadConstBuffer;
     ASSERT(inst->GetOpcode() == IR::Opcode::ReadConst || is_sbuffer);
     IR::Inst* const base = inst->Arg(0).TryInst();
@@ -921,6 +921,9 @@ static bool EmitInlineReadConst(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
     SrtCodegen::EmitGuestReadDword(
         c, is_sbuffer ? SrtCodegen::SBufferGuestAddressMask
                       : SrtCodegen::ScalarGuestAddressMask); // returns guest dword in r10d
+    if (source_slot != 0) {
+        c.mov(qword[r8 + source_slot * sizeof(u64)], rdi);
+    }
     c.mov(reg, r10d);
 
     c.pop(r9);
@@ -1008,6 +1011,10 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         }
 
         if (src_off_dw.IsImmediate()) {
+            c.push(rax);
+            c.lea(rax, ptr[rdi + (src_off_dw.U32() << 2)]);
+            c.mov(qword[r8 + pass_info.dst_off_dw * sizeof(u64)], rax);
+            c.pop(rax);
             c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
         } else {
             if (!CanLowerSrtOffsetStructurally(src_off_dw, pass_info.offset_support_cache)) {
@@ -1021,6 +1028,10 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
             }
             c.shl(r10d, 2);
             c.mov(r10d, r10d);
+            c.push(rax);
+            c.lea(rax, ptr[rdi + r10]);
+            c.mov(qword[r8 + pass_info.dst_off_dw * sizeof(u64)], rax);
+            c.pop(rax);
             c.mov(r10d, dword[rdi + r10]);
         }
         const u16 offset = pass_info.dst_off_dw;
@@ -1159,6 +1170,7 @@ static void GenerateSrtProgram(
     }
 
     info.srt_info.walker_func = c.getCurr<PFN_SrtWalker>();
+    c.mov(r8, rdx);
     pass_info.dst_off_dw = NUM_USER_DATA_REGS;
     ASSERT(pass_info.dst_off_dw == info.srt_info.flattened_bufsize_dw);
 
@@ -1219,7 +1231,7 @@ static void GenerateSrtProgram(
         if (pass_info.dst_off_dw == std::numeric_limits<u16>::max()) {
             break;
         }
-        if (!EmitInlineReadConst(c, r10d, pass_info, read)) {
+        if (!EmitInlineReadConst(c, r10d, pass_info, read, pass_info.dst_off_dw)) {
             continue;
         }
         const u16 flatbuf_slot = pass_info.dst_off_dw++;
