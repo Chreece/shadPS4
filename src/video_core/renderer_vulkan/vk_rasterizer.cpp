@@ -470,6 +470,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     }
     DebugState.IncDrawCall();
     Diagnostics::EndGotSceneGpuQuery(scheduler,cmdbuf,std::move(scene_gpu_query));
+    Diagnostics::FrameProbe().ObserveVertexShader(
+        pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash);
     ArmFrameProbePass(state);
     CountSubmittedDraw(regs, state, is_indexed, false);
     Diagnostics::TraceMenuDraw(regs, *pipeline, state, is_indexed, false);
@@ -616,6 +618,8 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     const u32 proof_fs=prove_indirect ? scene_gpu_query->fs : 0u;
     const u32 proof_vs=prove_indirect ? scene_gpu_query->vs : 0u;
     Diagnostics::EndGotSceneGpuQuery(scheduler,cmdbuf,std::move(scene_gpu_query));
+    Diagnostics::FrameProbe().ObserveVertexShader(
+        pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash);
     ArmFrameProbePass(state);
     if (prove_indirect) {
         Diagnostics::CaptureGotSceneGpuIndirectArguments(

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <chrono>
@@ -12,6 +13,7 @@
 #include <unordered_map>
 #include "common/logging/log.h"
 #include "common/types.h"
+#include "video_core/renderer_vulkan/resource_audit_hash_filter.h"
 
 namespace Vulkan::Diagnostics {
 
@@ -94,7 +96,31 @@ inline u32 FrameProbeFrameLimit() {
     return limit;
 }
 
+inline const auto& FrameProbeTriggerFilter() {
+    static const auto filter = VideoCore::Diagnostics::ParseShaderAuditHashFilter(
+        std::getenv("SHADPS4_FRAME_PROBE_TRIGGER_VS_HASHES"));
+    return filter;
+}
+
+inline u32 FrameProbeTriggerStableSeconds() {
+    static const u32 seconds = [] {
+        const char* value = std::getenv("SHADPS4_FRAME_PROBE_TRIGGER_STABLE_SECONDS");
+        if (!value) {
+            return 0u;
+        }
+        const std::string_view text{value};
+        u32 parsed{};
+        const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), parsed);
+        return error == std::errc{} && end == text.data() + text.size() && parsed <= 120
+                   ? parsed
+                   : 120u;
+    }();
+    return seconds;
+}
+
 struct FrameProbeState {
+    bool trigger_seen{};
+    std::optional<u64> trigger_since;
     u32 frame{};
     u32 completed{};
     u32 draws{};
@@ -109,12 +135,26 @@ struct FrameProbeState {
     u32 image_budget_skips{};
     std::unordered_map<u64, u32> argument_pairs;
 
+    void ObserveVertexShader(u64 hash) {
+        if (FrameProbeEnabled() && FrameProbeTriggerFilter().enabled &&
+            FrameProbeTriggerFilter().Matches(hash)) {
+            trigger_seen = true;
+        }
+    }
+
     bool ImagesEnabled() const {
         return FrameProbeImagesEnabled() && frame && frame % 2 == 0;
     }
 
     void Present(u64 seconds) {
         const auto& checkpoints = FrameProbeCheckpoints();
+        const bool matched = trigger_seen;
+        trigger_seen = false;
+        if (!matched || seconds < checkpoints[std::min(completed / 2, 2u)]) {
+            trigger_since.reset();
+        } else if (!trigger_since) {
+            trigger_since = seconds;
+        }
         if (frame) {
             if (FrameProbeImagesEnabled() && frame % 2 != 0) {
                 image_row_step = 8;
@@ -139,6 +179,15 @@ struct FrameProbeState {
         }
         if (completed >= FrameProbeFrameLimit() || seconds < checkpoints[completed / 2]) {
             return;
+        }
+        if (FrameProbeTriggerFilter().enabled) {
+            if (!FrameProbeTriggerFilter().valid || !trigger_since ||
+                seconds - *trigger_since < FrameProbeTriggerStableSeconds()) {
+                return;
+            }
+            LOG_INFO(Render_Vulkan,
+                     "FrameProbeTrigger: elapsed_s={} stable_s={} source=SUBMITTED_VERTEX_SHADER",
+                     seconds, seconds - *trigger_since);
         }
         frame = completed + 1;
         draws = passes = images = argument_copies = image_events = 0;
