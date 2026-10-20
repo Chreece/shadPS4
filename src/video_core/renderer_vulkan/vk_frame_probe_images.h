@@ -116,6 +116,13 @@ inline void CaptureFrameProbeBuffer(const Instance& instance, Scheduler& schedul
            stage.hw_stage == Shader::HwStage::Vertex))) {
         return;
     }
+    static const bool compute_only = [] {
+        const char* value = std::getenv("SHADPS4_FRAME_PROBE_COMPUTE_BUFFERS_ONLY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (compute_only && stage.hw_stage != Shader::HwStage::Compute) {
+        return;
+    }
     static thread_local u32 last_frame{};
     static thread_local u64 captured_bytes{};
     static thread_local bool limit_reported{};
@@ -334,7 +341,8 @@ inline void CaptureFrameProbePass(const Instance& instance, Scheduler& scheduler
              render_state.depth_stencil_attachment.has_depth,
              render_state.depth_stencil_attachment.depth_clear,
              render_state.depth_stencil_attachment.stencil_clear);
-    if (targets.empty() || render_state.width < 640 || render_state.height < 360) {
+    if (!FrameProbeImagesEnabled() || targets.empty() || render_state.width < 640 ||
+        render_state.height < 360) {
         return;
     }
     if (!probe.ImagesEnabled()) {

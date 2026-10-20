@@ -1924,17 +1924,10 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     }
                 }
             }
-            // Any immutable >1K-entry guest table may be reused ONLY after
-            // confirming its exact bytes and every live image generation.
-            // This avoids a full TextureCache::FindImage walk for every draw,
-            // which otherwise leaves the GPU idle while the CPU loops.
-            static const bool cache_enabled = [] {
-                const char* const env=std::getenv("SHADPS4_GUEST_TSHARP_CACHE");
-                return env && env[0]=='1' && env[1]=='\0';
-            }();
-            const bool eligible = cache_enabled && complete && count>=1024u &&
-                guest_size<=2u*1024u*1024u &&
-                record_stride==0u && descriptor_offset==0u;
+            const bool eligible = complete && count >= 1024u && guest_size <= 2u * 1024u * 1024u &&
+                                  record_stride == 0u && descriptor_offset == 0u &&
+                                  !image_desc.is_written && !image_desc.is_depth &&
+                                  !image_desc.indexed_is_pointer_table;
             const u64 resource_layout_flags =
                 u64(image_desc.is_written) |
                 (u64(image_desc.is_depth)<<1u) |
@@ -1968,7 +1961,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     bool live=true;
                     for (u32 i=0;i<count;++i) {
                         const auto id=entry.bindings[i].image_id;
-                        if (id && !texture_cache.IsImageUidAlive(id,entry.image_uids[i])) {
+                        if (id && !texture_cache.CanReuseImageBinding(id, entry.image_uids[i])) {
                             live=false;
                             break;
                         }

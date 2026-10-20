@@ -69,6 +69,14 @@ inline bool FrameProbeEnabled() {
     return enabled;
 }
 
+inline bool FrameProbeImagesEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("SHADPS4_FRAME_PROBE_IMAGES");
+        return !value || std::string_view(value) != "0";
+    }();
+    return enabled;
+}
+
 struct FrameProbeState {
     u32 frame{};
     u32 completed{};
@@ -85,13 +93,13 @@ struct FrameProbeState {
     std::unordered_map<u64, u32> argument_pairs;
 
     bool ImagesEnabled() const {
-        return frame && frame % 2 == 0;
+        return FrameProbeImagesEnabled() && frame && frame % 2 == 0;
     }
 
     void Present(u64 seconds) {
         const auto& checkpoints = FrameProbeCheckpoints();
         if (frame) {
-            if (!ImagesEnabled()) {
+            if (FrameProbeImagesEnabled() && frame % 2 != 0) {
                 image_row_step = 8;
                 while (image_row_step < 16384 &&
                        image_full_bytes / image_row_step + image_row_bytes > 96_MB) {
@@ -124,11 +132,12 @@ struct FrameProbeState {
         LOG_INFO(Render_Vulkan,
                  "FrameProbeBegin: frame={} elapsed_s={} mode={} shader_filter=NONE "
                  "target_filter=NONE draw_register_gate=NONE",
-                 frame, seconds, ImagesEnabled() ? "PASS_IMAGES" : "INDIRECT_ARGUMENTS");
+                 frame, seconds, ImagesEnabled() ? "PASS_IMAGES"
+                               : FrameProbeImagesEnabled() ? "INDIRECT_ARGUMENTS" : "DRAW_CENSUS");
     }
 
     bool CaptureArguments(u64 pair) {
-        if (!frame || ImagesEnabled() || argument_copies >= 128) {
+        if (!frame || frame % 2 == 0 || argument_copies >= 128) {
             return false;
         }
         if (argument_pairs[pair]++ >= 2) {
