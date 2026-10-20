@@ -655,6 +655,7 @@ void Rasterizer::DispatchDirect() {
         return;
     }
 
+    Diagnostics::BeginComputeCapture(cs);
     if (!BindResources(pipeline)) {
         return;
     }
@@ -674,6 +675,8 @@ void Rasterizer::DispatchDirect() {
     DebugState.IncDispatch();
 
     ResetBindings(true);
+    Diagnostics::EndComputeCapture(instance, scheduler, runtime, cs_program.dim_x,
+                                   cs_program.dim_y, cs_program.dim_z, false);
     CaptureIndexedImageFeedback();
     Diagnostics::CaptureGotGdsComputeProducer(
         instance,scheduler,runtime,buffer_cache.GetGdsBuffer(),cs,
@@ -691,6 +694,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
         return;
     }
 
+    Diagnostics::BeginComputeCapture(pipeline->GetStage(Shader::SwStage::Compute));
     if (!BindResources(pipeline)) {
         return;
     }
@@ -723,6 +727,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     DebugState.IncDispatch();
 
     ResetBindings(true);
+    Diagnostics::EndComputeCapture(instance, scheduler, runtime, 0, 0, 0, true);
     CaptureIndexedImageFeedback();
     Diagnostics::CaptureGotGdsComputeProducer(
         instance,scheduler,runtime,buffer_cache.GetGdsBuffer(),cs,
@@ -1388,6 +1393,9 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                     Diagnostics::CaptureFrameProbeScalars(instance, scheduler, runtime, vk_buffer,
                                                           offset, stage);
                 }
+                Diagnostics::CaptureComputeBuffer(
+                    instance, scheduler, runtime, vk_buffer, offset, ubo_size, stage,
+                    static_cast<u32>(&desc - stage.buffers.data()), {}, false);
                 needs_barrier |= runtime.IsBufferAccessed(&vk_buffer, offset, ubo_size);
                 bound_buffers.emplace_back(&vk_buffer, offset, ubo_size, src_access);
                 buffer_infos.emplace_back(vk_buffer.Handle(), offset, ubo_size);
@@ -1643,6 +1651,9 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                         instance, scheduler, runtime, *buffer, offset, size, stage,
                         static_cast<u32>(&desc - stage.buffers.data()), vsharp);
                 }
+                Diagnostics::CaptureComputeBuffer(
+                    instance, scheduler, runtime, *buffer, offset, size, stage,
+                    static_cast<u32>(&desc - stage.buffers.data()), vsharp, desc.is_written);
                 const u64 offset_aligned = Common::AlignDown(offset, alignment);
                 const u64 adjust = offset - offset_aligned;
                 if (adjust % 4 != 0) {

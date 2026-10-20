@@ -24,6 +24,138 @@
 
 namespace Vulkan::Diagnostics {
 
+struct ComputeBufferSnapshot {
+    const VideoCore::Buffer* buffer{};
+    u64 offset{};
+    u64 bytes{};
+    u32 resource{};
+    AmdGpu::Buffer sharp{};
+    bool written{};
+};
+
+struct ComputeCaptureState {
+    u32 frame{};
+    u32 ordinal{};
+    u64 shader{};
+    u64 bytes{};
+    u32 snapshots{};
+    bool active{};
+    std::vector<ComputeBufferSnapshot> outputs;
+};
+
+inline ComputeCaptureState& ComputeCapture() {
+    static thread_local ComputeCaptureState state;
+    return state;
+}
+
+inline void BeginComputeCapture(const Shader::Info& stage) {
+    auto& state = ComputeCapture();
+    state.active = false;
+    state.outputs.clear();
+    static const auto filter = VideoCore::Diagnostics::ParseShaderAuditHashFilter(
+        std::getenv("SHADPS4_COMPUTE_BUFFER_CAPTURE_HASHES"));
+    const auto frame = FrameProbe().frame;
+    if (!filter.enabled || !filter.Matches(stage.pgm_hash) || !FrameProbeEnabled() || !frame) {
+        return;
+    }
+    if (state.frame != frame) {
+        state = {};
+        state.frame = frame;
+    }
+    state.shader = stage.pgm_hash;
+    state.active = ++state.ordinal <= 256;
+    if (!state.active) {
+        LOG_WARNING(Render_Vulkan, "ComputeBufferCapture: frame={} dispatch={} status=DISPATCH_LIMIT",
+                    frame, state.ordinal);
+    }
+}
+
+inline void SaveComputeBuffer(const Instance& instance, Scheduler& scheduler, Runtime& runtime,
+                              const ComputeBufferSnapshot& input, bool after) {
+    const auto& state = ComputeCapture();
+    auto snapshot = std::make_unique<VideoCore::Buffer>(
+        instance, 0, input.bytes, VideoCore::MemoryType::HostCached);
+    const vk::BufferCopy copy{input.offset, 0, input.bytes};
+    runtime.CopyBuffer(input.buffer, snapshot.get(), std::span{&copy, 1});
+    scheduler.DeferPriorityOperation([snapshot = std::move(snapshot), input, after,
+                                      frame = state.frame, ordinal = state.ordinal,
+                                      shader = state.shader, draw = FrameProbe().draws]() {
+        snapshot->Invalidate(0, input.bytes);
+        const auto dir = Common::FS::GetUserPath(Common::FS::PathType::ShaderDir) / "frame-probes";
+        std::error_code error;
+        std::filesystem::create_directories(dir, error);
+        if (error) {
+            LOG_ERROR(Render_Vulkan, "ComputeBufferCapture: status=DIRECTORY_FAILED");
+            return;
+        }
+        const auto path = dir / fmt::format("f{}-c{}-cs-{:#x}-r{}-{}.buffer.bin", frame, ordinal,
+                                            shader, input.resource, after ? "after" : "before");
+        std::ofstream output(path, std::ios::binary);
+        output.write(reinterpret_cast<const char*>(snapshot->mapped_data.data()), input.bytes);
+        output.close();
+        const auto words = std::bit_cast<std::array<u32, 4>>(input.sharp);
+        std::ofstream metadata(path.string() + ".txt");
+        metadata << fmt::format(
+            "frame={}\ndispatch={}\nafter_draw={}\nshader={:#x}\nresource={}\nphase={}\n"
+            "guest={}\nbytes={}\nwritten={}\ndescriptor={:#x},{:#x},{:#x},{:#x}\n",
+            frame, ordinal, draw, shader, input.resource, after ? "after" : "before",
+            u64(input.sharp.base_address), input.bytes, input.written,
+            words[0], words[1], words[2], words[3]);
+        metadata.close();
+        LOG_INFO(Render_Vulkan,
+                 "ComputeBufferCapture: frame={} dispatch={} shader={:#x} resource={} "
+                 "phase={} bytes={} status={}",
+                 frame, ordinal, shader, input.resource, after ? "after" : "before",
+                 input.bytes, output && metadata ? "SAVED" : "WRITE_FAILED");
+    });
+}
+
+inline void CaptureComputeBuffer(const Instance& instance, Scheduler& scheduler, Runtime& runtime,
+                                 const VideoCore::Buffer& buffer, u64 offset, u64 bytes,
+                                 const Shader::Info& stage, u32 resource,
+                                 const AmdGpu::Buffer& sharp, bool written) {
+    auto& state = ComputeCapture();
+    if (!state.active || stage.hw_stage != Shader::HwStage::Compute ||
+        state.shader != stage.pgm_hash) {
+        return;
+    }
+    const u64 reserved = bytes * (written ? 2 : 1);
+    if (!bytes || bytes > 4_MB || offset > buffer.SizeBytes() ||
+        bytes > buffer.SizeBytes() - offset || state.snapshots >= 2048 ||
+        reserved > 64_MB - state.bytes) {
+        LOG_WARNING(Render_Vulkan,
+                    "ComputeBufferCapture: frame={} dispatch={} shader={:#x} resource={} "
+                    "bytes={} status=INCOMPLETE",
+                    state.frame, state.ordinal, state.shader, resource, bytes);
+        return;
+    }
+    state.bytes += reserved;
+    ++state.snapshots;
+    const ComputeBufferSnapshot input{&buffer, offset, bytes, resource, sharp, written};
+    SaveComputeBuffer(instance, scheduler, runtime, input, false);
+    if (written) {
+        state.outputs.push_back(input);
+    }
+}
+
+inline void EndComputeCapture(const Instance& instance, Scheduler& scheduler, Runtime& runtime,
+                              u32 x, u32 y, u32 z, bool indirect) {
+    auto& state = ComputeCapture();
+    if (!state.active) {
+        return;
+    }
+    for (const auto& output : state.outputs) {
+        SaveComputeBuffer(instance, scheduler, runtime, output, true);
+    }
+    LOG_INFO(Render_Vulkan,
+             "ComputeBufferDispatch: frame={} dispatch={} shader={:#x} groups={}x{}x{} "
+             "indirect={} outputs={} capture_bytes={}",
+             state.frame, state.ordinal, state.shader, x, y, z, indirect,
+             state.outputs.size(), state.bytes);
+    state.active = false;
+    state.outputs.clear();
+}
+
 inline void CaptureFrameProbeScalars(const Instance& instance, Scheduler& scheduler,
                                      Runtime& runtime, const VideoCore::Buffer& source, u64 offset,
                                      const Shader::Info& stage) {
