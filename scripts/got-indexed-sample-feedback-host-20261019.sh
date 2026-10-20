@@ -10,8 +10,8 @@ BUILD="$WORK/build"
 BIN="$BUILD/shadps4"
 LOGS="$ROOT/logs"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
-CANDIDATE="9a141e842c48f9e8872139e7d4dfc809441749f3"
-BRANCH="fix/gcn-legacy-reciprocal-code-20261020"
+CANDIDATE="8902f5e58763a76ad6e7c65db641aef15aca75ad"
+BRANCH="fix/gcn-depth-htile-20261020"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 NAME="got-indexed-sample-feedback-host-$STAMP"
 RUN="$GOT/tests/runs/$NAME"
@@ -233,8 +233,15 @@ src/video_core/buffer_cache/fault_manager.cpp
 src/video_core/host_shaders/fault_buffer_process.comp
 src/shader_recompiler/backend/spirv/emit_spirv_special.cpp
 src/shader_recompiler/vertex_output_feedback.h
+src/video_core/amdgpu/regs.cpp
+src/video_core/amdgpu/regs.h
+src/video_core/host_shaders/CMakeLists.txt
+src/video_core/host_shaders/htile.comp
+src/video_core/texture_cache/image_info.h
+src/video_core/texture_cache/tile_manager.cpp
+src/video_core/texture_cache/tile_manager.h
 GOT_PINNED_OVERLAY_FILES
-test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 102 || {
+test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 109 || {
     STATUS=UNEXPECTED_CANDIDATE_OVERLAY_SIZE; exit 2;
 }
 

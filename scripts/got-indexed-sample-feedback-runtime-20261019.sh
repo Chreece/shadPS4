@@ -7,8 +7,8 @@ GOT="$ROOT/GhostOfTsushima"
 WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
-PIN="9a141e842c48f9e8872139e7d4dfc809441749f3"
-SHADER_COLLECTOR_PIN="9a141e842c48f9e8872139e7d4dfc809441749f3"
+PIN="8902f5e58763a76ad6e7c65db641aef15aca75ad"
+SHADER_COLLECTOR_PIN="8902f5e58763a76ad6e7c65db641aef15aca75ad"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$PIN"
 HOST_REPORT="${GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT:-$LOGS/got-indexed-sample-feedback-host-not-built.tar.gz}"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
@@ -967,7 +967,10 @@ PYSTAGEPIXELS
     echo "SCALAR_CAPTURE_LIMIT_EVENTS=$(grep -ac 'FrameProbeScalarLimit:' "$RUN/game.log" || true)"
     echo "BUFFER_CAPTURE_LIMIT_EVENTS=$(grep -ac 'FrameProbeBufferLimit:' "$RUN/game.log" || true)"
     echo "CONTINUE_AFTER_SECONDS=$CONTINUE_AFTER_SECONDS"
-    echo "CAPTURE_FOCUS=GAMEPLAY_WORLD_COUNT_PRODUCERS"
+    echo "CAPTURE_FOCUS=GAMEPLAY_DEPTH_METADATA_AND_WORLD_DRAWS"
+    echo "BINDING_TRACE_SCOPE=TARGET_SHADERS_ONLY"
+    echo "HTILE_SUMMARY_PIPELINES=$(grep -ac 'Creating HTile summary pipeline' "$RUN/game.log" || true)"
+    echo "HTILE_INPUT_BUFFERS=$(grep -aEc 'FrameProbeBuffer:.*resource=cs-0x(30ec076|8ced785b)-.*status=SAVED' "$RUN/game.log" || true)"
     echo "VERTEX_FEEDBACK=DISABLED_TO_RESERVE_BUFFER_BUDGET_FOR_COMPUTE_INPUTS"
     echo "SCALAR_BINARY_DUMPS=DISABLED_WITH_VERTEX_FEEDBACK_COMPARISON_LOGS_RETAINED"
     echo "WORLD_COUNT_INPUT_FILTER=ae3b2e07,f1632d27,486c5b88,62ffd078,bd2dcc80,a820e215,b961cd7a,7116dee2,4cdc7449"
@@ -1228,6 +1231,7 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_FRAME_PROBE=1
   export SHADPS4_FRAME_PROBE_CHECKPOINTS="$FRAME_PROBE_CHECKPOINTS"
   export SHADPS4_FRAME_PROBE_BUFFERS=1
+  export SHADPS4_FRAME_PROBE_TARGET_BINDINGS_ONLY=1
   export SHADPS4_VERTEX_OUTPUT_FEEDBACK=0
   export SHADPS4_INDIRECT_WAR_AUDIT=0
   # Keep the previous indirect-producer and GDS/DMA experiments disabled.
@@ -1242,7 +1246,7 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_MENU_WATCH_SOURCE=0x1504a08000
   export SHADPS4_RENDER_AUDIT=0
   export SHADPS4_INDEXED_TABLE_DUMP=1
-  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x230e5389,0xae3b2e07,0xf1632d27,0x486c5b88,0x62ffd078,0xbd2dcc80,0xa820e215,0xb961cd7a,0x7116dee2,0x4cdc7449,0x22d378cd"
+  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x030ec076,0x8ced785b,0x00a4f19a,0x22d378cd,0x6e42be5f,0x7472760d,0x836253ca,0x3b1b9d8b,0x6b20c8e1"
   export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
   export SHADPS4_SRT_SOURCE_AUDIT=0
   export SHADPS4_SRT_INLINE_AUDIT=0
