@@ -40,7 +40,7 @@ SOURCE = WORK / "source"
 BUILD = WORK / "build"
 OLD_ELF = "48ae4ac2ec8f42e2155425521c8699359b466dd6459905948762de539865b5bc"
 UPSTREAM = "d615b3887ba29025a59242e1a26f5b68bb176158"
-UPSTREAM_REVIEWED = "f68923fe807f657348e6719ce658bcbd0a2b1c72"
+UPSTREAM_REVIEWED = "a808e7626e3c7de8d0f0fda6a91f620b42f6c762"
 OFFICIAL_REMOTE = "https://github.com/shadps4-emu/shadPS4.git"
 GOW = "f909c3abb1ac1e7c8d87de833d3659f7d0b8fc87"
 GOT = "e9f470b359845a456139a865aa1d7b3001f0dbfd"
@@ -233,9 +233,9 @@ def ensure_git_history(report):
     if sha_file(old) != OLD_ELF:
         raise RuntimeError("Compiled source baseline ELF no longer matches Oct19 SHA")
     report["previous_binary_sha"] = sha_file(old)
-    # Five newer upstream commits were reviewed on Oct 19: #5433 texture
+    # Seven newer upstream commits were reviewed through Oct 20: #5433 texture
     # subresources, #5429 singleton LDS, #5427 Phi folding, #5421 Voice HLE,
-    # #5437 networking. Bring their REAL source diffs into the same candidate;
+    # #5437 networking, #5309 stable file identity and #5445 S_SLEEP. Bring their REAL source diffs into the same candidate;
     # do not just change the stale old esde_unified.sh SHA.
     if git("cat-file", "-e", f"{UPSTREAM_REVIEWED}^{{commit}}",
            check=False).returncode:
@@ -416,7 +416,7 @@ def replay_later_general_fixes(proposals, conflicts, plan_dir, report):
         len(x) for x in report["later_generic_change_replayed"].values())
 
 def reviewed_upstream_changes(plan_dir, report):
-    """Stage all five reviewed upstream commits via real C++ three-way merges.
+    """Stage all seven reviewed upstream commits via real C++ three-way merges.
 
     This integrates newer code without resetting the user's GoW/ESDE tree.
     No file is actually written to SOURCE before all conflicts are evaluated.
@@ -425,7 +425,7 @@ def reviewed_upstream_changes(plan_dir, report):
     changed = sorted(set(delta.decode("utf8").splitlines()))
     report["official_upstream_reviewed_changes"] = changed
     if not changed or len(changed) > 40:
-        raise RuntimeError("Reviewed upstream five-commit diff has changed scope")
+        raise RuntimeError("Reviewed upstream seven-commit diff has changed scope")
     proposals = {}
     conflicts = {}
     for idx,rel in enumerate(changed):
