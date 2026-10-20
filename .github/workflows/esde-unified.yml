@@ -9,6 +9,7 @@ on:
       - tools/development/esde_unified.sh
       - tools/development/esde_general_engine_source_merge_20261019.py
       - tools/development/esde_general_semantic_resolver_20261019.py
+      - tools/development/esde_general_late_semantic_resolver_20261020.py
       - documents/ESDE_GENERAL_SOURCE_INTEGRATION_20261019.md
       - .github/workflows/esde-unified.yml
   workflow_dispatch:
@@ -25,7 +26,7 @@ jobs:
       - name: Syntax of new general integration entry point
         run: |
           bash -n tools/development/esde_unified.sh
-          python3 -m py_compile tools/development/esde_general_engine_source_merge_20261019.py tools/development/esde_general_semantic_resolver_20261019.py
+          python3 -m py_compile tools/development/esde_general_engine_source_merge_20261019.py tools/development/esde_general_semantic_resolver_20261019.py tools/development/esde_general_late_semantic_resolver_20261020.py
       - name: Offline general source merge nonregression
         run: python3 -B tools/development/esde_general_engine_source_merge_20261019.py --self-test
       - name: Reconciler SHA source fixture contract
@@ -44,6 +45,23 @@ jobs:
           print("NINE_FILE_GENERAL_RECONCILIATION_CONTRACT=PASS")
           print("HOST_ARCHIVE_FIXTURE=CHECKED_WHEN_PRESENT_ON_USER_SERVER")
           PY
+      - name: Later generic shader/Vulkan merge review integrity
+        run: |
+          python3 - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          p=Path("tools/development/esde_general_late_semantic_resolver_20261020.py")
+          spec=importlib.util.spec_from_file_location("late",p)
+          mod=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(mod)
+          assert len(mod.CASES)==19
+          assert all(len(pairs)==2 and all(len(h)==64 for h in pairs)
+                     for pairs in mod.CASES.values())
+          assert mod.resolve("not-a-commit","not-a-file",b"") is None
+          assert not any("b18cfc312904" in key for key in mod.CASES)
+          print("LATER_REVIEWED_SOURCE_HUNKS=PASS count=19")
+          print("UNPROVEN_TEXTURE_SLOT_PRESSURE_OPT_IN=NOT_PROMOTED")
+          PY
       - name: Exact upstream / GPU source pin audit
         run: |
           python3 - <<'PY'
@@ -61,8 +79,8 @@ jobs:
                       }:
                           values[dst.id]=ast.literal_eval(node.value)
           assert values["UPSTREAM"]=="d615b3887ba29025a59242e1a26f5b68bb176158"
-          assert values["UPSTREAM_REVIEWED"]=="f68923fe807f657348e6719ce658bcbd0a2b1c72"
-          assert len(values["GENERAL_LATE_COMMITS"])==84
+          assert values["UPSTREAM_REVIEWED"]=="a808e7626e3c7de8d0f0fda6a91f620b42f6c762"
+          assert len(values["GENERAL_LATE_COMMITS"])==83
           assert len(values["GENERAL_LATE_COMMITS"])==len(set(values["GENERAL_LATE_COMMITS"]))
           assert all(len(s)==12 for s in values["GENERAL_LATE_COMMITS"])
           assert len({values["GOW"],values["GOT"],values["GOT_LATE"],values["COMMON"]})==4
