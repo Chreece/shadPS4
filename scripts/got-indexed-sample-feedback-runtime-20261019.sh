@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bounded gameplay draw census and compute inputs without per-sample instrumentation.
+# Two gameplay frames with filtered vertex outputs and matching transform inputs.
 # No rebuild, global graphics config changes, or active executable writes.
 set -Eeuo pipefail
 ROOT="$HOME/projects/shadps4"
@@ -7,15 +7,16 @@ GOT="$ROOT/GhostOfTsushima"
 WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
-PIN="8ddf53eb78a39502883eb7ca60d510b513bb7886"
-SHADER_COLLECTOR_PIN="8ddf53eb78a39502883eb7ca60d510b513bb7886"
+PIN="27037226dca6c2754938c6a1ec4eaa6bb5f53e00"
+SHADER_COLLECTOR_PIN="27037226dca6c2754938c6a1ec4eaa6bb5f53e00"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$PIN"
 HOST_REPORT="${GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT:-$LOGS/got-indexed-sample-feedback-host-not-built.tar.gz}"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 API="http://127.0.0.1:7869"
 MIN_VRAM=$((8*1024*1024*1024))
-SECONDS_TO_RUN=210
+SECONDS_TO_RUN=180
+FRAME_PROBE_LIMIT=2
 CAPTURE_STOP=TIME_LIMIT
 PROBES_COMPLETED_AT=-1
 FRAME_PROBE_CHECKPOINTS="160,165,170"
@@ -958,24 +959,28 @@ PYSTAGEPIXELS
     echo "CAPTURE_MAX_SECONDS=$SECONDS_TO_RUN"
     echo "CAPTURE_STOP=$CAPTURE_STOP"
     echo "FRAME_PROBE_CHECKPOINTS=$FRAME_PROBE_CHECKPOINTS"
+    echo "FRAME_PROBE_LIMIT=$FRAME_PROBE_LIMIT"
     echo "SCALAR_CAPTURE_SCOPE=PER_BINDING_SEQUENCE"
     echo "PASS_IMAGE_CAPTURE=DISABLED"
     echo "LEGACY_MENU_PROBES=DISABLED"
     echo "BINDING_CACHE=AUTOMATIC_READONLY_TABLES"
     echo "BINDING_CACHE_HIT_REPORTS=$(grep -ac 'GuestTsharpBindingCache:.*result=HIT' "$RUN/game.log" || true)"
     echo "IMAGE_CAPTURE_BUDGET_SKIPS=$(grep -ac 'FrameProbeImageSkip:.*reason=BUDGET' "$RUN/game.log" || true)"
-    echo "BUFFER_CAPTURE_SCOPE=TARGET_COMPUTE_FIRST_USE_OF_EACH_DISTINCT_BINDING"
+    echo "BUFFER_CAPTURE_SCOPE=TARGET_VERTEX_INPUTS_WITH_RAW_DESCRIPTORS"
     echo "SCALAR_CAPTURE_COMPLETED=$(grep -ac 'FrameProbeScalarReadback:.*status=COMPLETE' "$RUN/game.log" || true)"
     echo "SCALAR_CAPTURE_LIMIT_EVENTS=$(grep -ac 'FrameProbeScalarLimit:' "$RUN/game.log" || true)"
     echo "BUFFER_CAPTURE_LIMIT_EVENTS=$(grep -ac 'FrameProbeBufferLimit:' "$RUN/game.log" || true)"
     echo "CONTINUE_AFTER_SECONDS=$CONTINUE_AFTER_SECONDS"
-    echo "CAPTURE_FOCUS=GAMEPLAY_DRAW_COUNTS_AND_COMPUTE_INPUTS"
+    echo "CAPTURE_FOCUS=CLIPPED_WORLD_VERTEX_OUTPUTS_AND_TRANSFORM_INPUTS"
     echo "BINDING_TRACE_SCOPE=TARGET_SHADERS_ONLY"
     echo "HTILE_SUMMARY_PIPELINES=$(grep -ac 'Creating HTile summary pipeline' "$RUN/game.log" || true)"
     echo "HTILE_INPUT_BUFFERS=$(grep -aEc 'FrameProbeBuffer:.*resource=cs-0x(30ec076|8ced785b)-.*status=SAVED' "$RUN/game.log" || true)"
-    echo "VERTEX_FEEDBACK=DISABLED_TO_RESERVE_BUFFER_BUDGET_FOR_COMPUTE_INPUTS"
-    echo "SCALAR_BINARY_DUMPS=DISABLED_WITH_VERTEX_FEEDBACK_COMPARISON_LOGS_RETAINED"
-    echo "COMPUTE_INPUT_FILTER=030ec076,8ced785b,00a4f19a,3b1b9d8b,6b20c8e1"
+    echo "VERTEX_FEEDBACK=FILTERED_SIX_WORLD_VERTEX_SHADERS_64_SAMPLES_PER_DRAW"
+    echo "SCALAR_BINARY_DUMPS=TARGET_VERTEX_SHADERS_WITH_CPU_AND_GPU_VALUES"
+    echo "VERTEX_INPUT_FILTER=fb6a3c83,b658698a,8d787bab,44f93f63,784d4999,0e018b82"
+    echo "VERTEX_OUTPUT_CAPTURES=$(grep -ac 'VertexOutputFeedback:.*saved=true' "$RUN/game.log" || true)"
+    echo "VERTEX_INPUT_BUFFERS=$(grep -ac 'FrameProbeBuffer:.*resource=vs-.*status=SAVED' "$RUN/game.log" || true)"
+    echo "VERTEX_STATE_RECORDS=$(grep -ac 'FrameProbeVertexState:' "$RUN/game.log" || true)"
     echo "COMPUTE_INPUT_BUFFERS_SAVED=$(grep -aEc 'FrameProbeBuffer:.*resource=cs-0x(30ec076|8ced785b|a4f19a|3b1b9d8b|6b20c8e1)-.*status=SAVED' "$RUN/game.log" || true)"
     echo "CONTINUE_INPUT=$CONTINUE_INPUT"
     echo "PACKED_AND_STRIDED_TABLE_SIZE_SPECIALIZATION=ENABLED"
@@ -1022,7 +1027,7 @@ PYSTAGEPIXELS
   fi
   if ! git -C "$WORK/source" show "$PIN:scripts/got-pack-frame-evidence-20261020.py" \
       > "$RUN/info/pack-frame-evidence.py" ||
-     ! python3 "$RUN/info/pack-frame-evidence.py" --run "$RUN" --output "$REPORT" --compact; then
+     ! python3 "$RUN/info/pack-frame-evidence.py" --run "$RUN" --output "$REPORT" --compact --keep-graphics-buffers; then
     echo "ARCHIVE_ERROR keep=$RUN"; exit 3;
   fi
   echo "STATUS=$STATUS GAME_EXIT=$GAME_EXIT EXIT=$rc"
@@ -1224,11 +1229,13 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_TRACE_DISPATCH_INITIATOR=0
   export SHADPS4_FRAME_PROBE=1
   export SHADPS4_FRAME_PROBE_IMAGES=0
-  export SHADPS4_FRAME_PROBE_COMPUTE_BUFFERS_ONLY=1
+  export SHADPS4_FRAME_PROBE_COMPUTE_BUFFERS_ONLY=0
+  export SHADPS4_FRAME_PROBE_FRAME_LIMIT="$FRAME_PROBE_LIMIT"
   export SHADPS4_FRAME_PROBE_CHECKPOINTS="$FRAME_PROBE_CHECKPOINTS"
   export SHADPS4_FRAME_PROBE_BUFFERS=1
   export SHADPS4_FRAME_PROBE_TARGET_BINDINGS_ONLY=1
-  export SHADPS4_VERTEX_OUTPUT_FEEDBACK=0
+  export SHADPS4_VERTEX_OUTPUT_FEEDBACK=1
+  export SHADPS4_VERTEX_OUTPUT_FEEDBACK_HASHES="0xfb6a3c83,0xb658698a,0x8d787bab,0x44f93f63,0x784d4999,0x0e018b82"
   export SHADPS4_INDIRECT_WAR_AUDIT=0
   # The frame census includes indirect arguments; older menu probes stay disabled.
   export SHADPS4_GOT_INDIRECT_PRODUCERS=0
@@ -1241,8 +1248,8 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_GOT_MENU_CAPTURE_DELAY_SEC="${GOT_CAPTURE_DELAY_SEC:-160}"
   export SHADPS4_MENU_WATCH_SOURCE=0x1504a08000
   export SHADPS4_RENDER_AUDIT=0
-  export SHADPS4_INDEXED_TABLE_DUMP=1
-  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x030ec076,0x8ced785b,0x00a4f19a,0x22d378cd,0x6e42be5f,0x7472760d,0x836253ca,0x3b1b9d8b,0x6b20c8e1"
+  export SHADPS4_INDEXED_TABLE_DUMP=0
+  export SHADPS4_TARGET_SHADER_DUMP_HASHES="$SHADPS4_VERTEX_OUTPUT_FEEDBACK_HASHES"
   export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
   export SHADPS4_SRT_SOURCE_AUDIT=0
   export SHADPS4_SRT_INLINE_AUDIT=0
@@ -1327,15 +1334,11 @@ while kill -0 "$TEST_PGID" 2>/dev/null; do
     next_screenshot=$((elapsed+10))
   fi
   if [ "$CONTINUE_INPUT" = KEY_SENT ] &&
-     [ "$(grep -ac 'FrameProbeEnd:' "$RUN/game.log" || true)" -ge 6 ]; then
-    if [ "$PROBES_COMPLETED_AT" -lt 0 ]; then
-      PROBES_COMPLETED_AT="$elapsed"
-    elif [ $((elapsed-PROBES_COMPLETED_AT)) -ge 10 ]; then
-      CAPTURE_STOP=PROBES_COMPLETE
-      echo "GAMEPLAY_PROBES_COMPLETE_STOPPING elapsed=${elapsed}s"
-      kill -TERM -- "-$TEST_PGID" 2>/dev/null || true
-      break
-    fi
+     [ "$(grep -ac 'FrameProbeEnd:' "$RUN/game.log" || true)" -ge "$FRAME_PROBE_LIMIT" ]; then
+    CAPTURE_STOP=PROBES_COMPLETE
+    echo "GAMEPLAY_PROBES_COMPLETE_STOPPING elapsed=${elapsed}s"
+    kill -TERM -- "-$TEST_PGID" 2>/dev/null || true
+    break
   fi
   sleep 3
 done
@@ -1356,12 +1359,17 @@ if ! grep -aEq 'GPU readbacksMode: 2([^0-9]|$)' "$RUN/game.log"; then
   exit 2
 fi
 if [ "$CONTINUE_INPUT" != KEY_SENT ] ||
-   ! grep -aq 'FrameProbeEnd: frame=6 ' "$RUN/game.log"; then
+   ! grep -aq "FrameProbeEnd: frame=$FRAME_PROBE_LIMIT " "$RUN/game.log"; then
   STATUS=GAMEPLAY_CAPTURE_INCOMPLETE
   echo "GAMEPLAY_CAPTURE_INCOMPLETE continue_input=$CONTINUE_INPUT; see info/final.txt"
   exit 2
 fi
-echo "LEAN_CAPTURE=NO_SAMPLE_ATOMICS_NO_PASS_IMAGES_NO_GRAPHICS_BUFFER_COPIES"
+if ! grep -aq 'VertexOutputFeedback:.*saved=true' "$RUN/game.log"; then
+  STATUS=TARGET_WORLD_DRAWS_NOT_CAPTURED
+  echo "TARGET_WORLD_DRAWS_NOT_CAPTURED; no vertex-input comparison claim"
+  exit 2
+fi
+echo "WORLD_CAPTURE=FILTERED_VERTEX_OUTPUTS_AND_INPUT_BUFFERS_NO_TEXTURE_SAMPLE_ATOMICS_NO_PASS_IMAGES"
 echo "NATIVE_GUEST_RASTER_AND_DEPTH_STATE=UNCHANGED"
 if [ "$GAME_EXIT" -eq 0 ] || [ "$GAME_EXIT" -eq 124 ] ||
    { [ "$GAME_EXIT" -eq 143 ] && [ "$CAPTURE_STOP" = PROBES_COMPLETE ]; }; then
