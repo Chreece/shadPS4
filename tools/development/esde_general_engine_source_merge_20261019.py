@@ -27,6 +27,10 @@ from esde_general_semantic_resolver_20261019 import (
     resolve_reviewed, preserve_verified_srt_header,
     check_archived_conflict_evidence,
 )
+from esde_general_late_semantic_resolver_20261020 import (
+    resolve as resolve_late_reviewed,
+    check_fixture as check_later_conflict_fixture,
+)
 
 ROOT = Path.home() / "projects/shadps4"
 ESDE = ROOT / "ESDE"
@@ -90,7 +94,6 @@ GENERAL_LATE_COMMITS = (
     "c036336bf4b9",  # draw indirect correct access stage
     "baceadf44d0a",  # singleton LDS and Phi fold correction
     "c8121ad97140",  # packed table size changes invalidate specialization
-    "b18cfc312904",  # independent stable image-view capacity
     "aa775cd99651",  # bounded pointer-selected descriptors
     "1b1ca11bfea7",  # uniform samplers + explicit LOD
     "84117bbd1e35",  # generic GPU descriptor paths
@@ -163,6 +166,8 @@ VULKAN_FILES = {
 UNSAFE_CPP_MARKERS = re.compile(
     r"(?:\bCUSA\d{5}\b|\bSHADPS4_(?:GOW|GOT|GHOST)_[A-Z0-9_]*\b|"
     r"\bSHADPS4_INDEXED_IMAGE_FEEDBACK[A-Z0-9_]*\b|"
+    r"\bSHADPS4_(?:STRIDED_GUEST_TSHARP|TEXTURE_SLOT_PRESSURE)\b|"
+    r"\"(?:shader_recompiler/indexed_image_feedback|video_core/renderer_vulkan/vk_got_[^\"]+)\"|"
     r"\bIndexedImageFeedback\b|"
     r"\b0x(?:7eaf40ad|5c4c2b6f|55d17c16|52b6e003|4950cf6)\b|"
     r"\bif\s*\([^;\n]*(?:pgm_hash|shader_hash|shaderHash)\s*(?:==|!=)\s*0x[0-9a-f]{6,8}\b)",
@@ -339,6 +344,9 @@ def replay_later_general_fixes(proposals, conflicts, plan_dir, report):
     report["later_generic_commits_pinned"] = list(by_prefix)
     report["later_generic_commits_skipped_already_upstream"] = []
     report["later_generic_change_replayed"] = {}
+    report["later_semantically_resolved"] = {}
+    report["later_blocked_dependency_chain"] = {}
+    blocked = {}
     reviewed = 0
     for sha_commit in history:
         if sha_commit not in by_prefix:
@@ -357,6 +365,13 @@ def replay_later_general_fixes(proposals, conflicts, plan_dir, report):
         for idx,rel in enumerate(paths):
             if not eligible(rel):
                 continue
+            if rel in blocked:
+                report["later_blocked_dependency_chain"].setdefault(
+                    rel, []).append({
+                        "blocked_by": blocked[rel],
+                        "skipped_commit": sha_commit,
+                    })
+                continue
             local = SOURCE / rel
             if local.is_symlink() or (local.exists() and not local.is_file()):
                 conflicts[sha_commit[:12]+":"+rel] = "UNSAFE_LOCAL_FILE_TYPE"
@@ -367,8 +382,16 @@ def replay_later_general_fixes(proposals, conflicts, plan_dir, report):
             temp = plan_dir / ("late-"+sha_commit[:12]+"-"+str(idx))
             temp.mkdir(exist_ok=False)
             merged, error = merged_bytes(old,prev,incoming,parent,rel,temp)
+            if error == "SOURCE_OVERLAP_NEEDS_SEMANTIC_REVIEW" and merged:
+                reviewed_merge = resolve_late_reviewed(sha_commit[:12],rel,merged)
+                if reviewed_merge is not None:
+                    merged, error = reviewed_merge, None
+                    report["later_semantically_resolved"][
+                        sha_commit[:12]+":"+rel
+                    ] = "AUDITED_SOURCE_AND_SEMANTIC_POSTIMAGE_VERIFIED"
             if error:
                 conflicts[sha_commit[:12]+":"+rel] = error
+                blocked[rel] = sha_commit
                 if merged and b"<<<<<<<" in merged:
                     target = plan_dir/"conflicts"/"later"/sha_commit[:12]/rel
                     target.parent.mkdir(parents=True,exist_ok=True)
@@ -377,6 +400,7 @@ def replay_later_general_fixes(proposals, conflicts, plan_dir, report):
             policy = guarded_delta(old,merged,rel)
             if policy:
                 conflicts[sha_commit[:12]+":"+rel] = policy
+                blocked[rel] = sha_commit
                 continue
             if old != merged:
                 proposals[rel] = merged
@@ -384,6 +408,10 @@ def replay_later_general_fixes(proposals, conflicts, plan_dir, report):
                     sha_commit,[]).append(rel)
         reviewed += 1
     report["later_generic_commits_reviewed"]=reviewed
+    report["later_first_blocking_commits"]=blocked
+    report["later_unapplied_dependent_edits"]=sum(
+        len(v) for v in report["later_blocked_dependency_chain"].values()
+    )
     report["later_generic_source_edits"]=sum(
         len(x) for x in report["later_generic_change_replayed"].values())
 
@@ -793,6 +821,12 @@ def self_test():
         print("NINE_UPLOADED_CPP_SEMANTIC_MERGES=PASS count="+str(len(proofs)))
     else:
         print("NINE_UPLOADED_CPP_SEMANTIC_MERGES=ARCHIVE_NOT_ON_HOST")
+    later_fixture = LOGS / "esde-general-engine-merge-20261020-054547.tar.gz"
+    if later_fixture.is_file() and not later_fixture.is_symlink():
+        proofs = check_later_conflict_fixture(later_fixture)
+        print("LATER_REVIEWED_SEMANTIC_PREVIEWS=PASS count="+str(proofs))
+    else:
+        print("LATER_REVIEWED_SEMANTIC_PREVIEWS=ARCHIVE_NOT_ON_HOST")
     print("GENERAL_ENGINE_MERGE_SELFTEST=PASS cases=12")
     return 0
 
