@@ -77,6 +77,23 @@ inline bool FrameProbeImagesEnabled() {
     return enabled;
 }
 
+inline u32 FrameProbeFrameLimit() {
+    static const u32 limit = [] {
+        const char* value = std::getenv("SHADPS4_FRAME_PROBE_FRAME_LIMIT");
+        if (!value) {
+            return FrameProbeCount;
+        }
+        const std::string_view text{value};
+        u32 parsed{};
+        const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), parsed);
+        return error == std::errc{} && end == text.data() + text.size() && parsed > 0 &&
+                       parsed <= FrameProbeCount
+                   ? parsed
+                   : FrameProbeCount;
+    }();
+    return limit;
+}
+
 struct FrameProbeState {
     u32 frame{};
     u32 completed{};
@@ -120,7 +137,7 @@ struct FrameProbeState {
             completed = frame;
             frame = 0;
         }
-        if (completed >= FrameProbeCount || seconds < checkpoints[completed / 2]) {
+        if (completed >= FrameProbeFrameLimit() || seconds < checkpoints[completed / 2]) {
             return;
         }
         frame = completed + 1;

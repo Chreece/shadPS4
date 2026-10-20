@@ -65,7 +65,7 @@ inline void CaptureFrameProbeScalars(const Instance& instance, Scheduler& schedu
                                       draw = FrameProbe().draws, shader = stage.pgm_hash,
                                       bytes, sequence]() mutable {
         snapshot->Invalidate(0, bytes);
-        if (Shader::Diagnostics::VertexOutputFeedbackEnabled()) {
+        if (Shader::Diagnostics::VertexOutputFeedbackEnabled(shader)) {
             const auto dir = Common::FS::GetUserPath(Common::FS::PathType::ShaderDir) / "frame-probes";
             std::error_code error;
             std::filesystem::create_directories(dir, error);
@@ -112,7 +112,7 @@ inline void CaptureFrameProbeBuffer(const Instance& instance, Scheduler& schedul
     const auto frame = FrameProbe().frame;
     if (!enabled || !FrameProbeEnabled() || !frame ||
         (!Shader::ShaderDumpTargets().Matches(stage.pgm_hash) &&
-         !(Shader::Diagnostics::VertexOutputFeedbackEnabled() &&
+         !(Shader::Diagnostics::VertexOutputFeedbackEnabled(stage.pgm_hash) &&
            stage.hw_stage == Shader::HwStage::Vertex))) {
         return;
     }
@@ -178,6 +178,9 @@ inline void CaptureFrameProbeBuffer(const Instance& instance, Scheduler& schedul
                                 "stride={}\nrecords={}\n",
                                 frame, draw, key, u64(sharp.base_address), bytes, u32(sharp.stride),
                                 sharp.num_records);
+        const auto words = std::bit_cast<std::array<u32, 4>>(sharp);
+        metadata << fmt::format("descriptor={:#x},{:#x},{:#x},{:#x}\n", words[0], words[1],
+                                words[2], words[3]);
         metadata.close();
         LOG_INFO(Render_Vulkan,
                  "FrameProbeBuffer: frame={} after_draw={} resource={} bytes={} "

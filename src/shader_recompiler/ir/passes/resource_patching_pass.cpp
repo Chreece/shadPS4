@@ -2400,7 +2400,7 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         });
     }
 
-    if (Diagnostics::VertexOutputFeedbackEnabled() && info.hw_stage == HwStage::Vertex &&
+    if (Diagnostics::VertexOutputFeedbackEnabled(info.pgm_hash) && info.hw_stage == HwStage::Vertex &&
         info.sw_stage == SwStage::Vertex) {
         descriptors.Add(BufferResource{
             .used_types = IR::Type::U32,

@@ -974,7 +974,8 @@ void Rasterizer::BindVertexBuffers(const GraphicsPipeline* pipeline) {
                                    vk::AccessFlagBits2::eVertexAttributeRead);
     }
 
-    if (Shader::Diagnostics::VertexOutputFeedbackEnabled()) {
+    if (Shader::Diagnostics::VertexOutputFeedbackEnabled(
+            pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash)) {
         const auto& stage = pipeline->GetStage(Shader::SwStage::Vertex);
         for (u32 i = 0; i < guest_buffers.size(); ++i) {
             const auto& sharp = guest_buffers[i];
@@ -1381,7 +1382,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                     Diagnostics::CaptureFrameProbeScalars(instance, scheduler, runtime, vk_buffer,
                                                           offset, stage);
                 }
-                if (!refreshed_words && Shader::Diagnostics::VertexOutputFeedbackEnabled() &&
+                if (!refreshed_words &&
+                    Shader::Diagnostics::VertexOutputFeedbackEnabled(stage.pgm_hash) &&
                     stage.hw_stage == Shader::HwStage::Vertex) {
                     Diagnostics::CaptureFrameProbeScalars(instance, scheduler, runtime, vk_buffer,
                                                           offset, stage);

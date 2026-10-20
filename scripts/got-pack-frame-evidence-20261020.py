@@ -10,7 +10,7 @@ import tarfile
 import tempfile
 
 
-def omission_reason(name, compact):
+def omission_reason(name, compact, keep_graphics_buffers=False):
     if name == "info/evidence-manifest.json":
         return "replaced_manifest"
     if name.startswith("info/frame-previews/"):
@@ -22,14 +22,15 @@ def omission_reason(name, compact):
     if name.startswith("profile/user/shader/frame-probes/"):
         if ".raw" in name:
             return "render_pass_image"
-        if ".buffer.bin" in name and not re.search(r"-cs-0x[0-9a-f]+-", name):
+        if (not keep_graphics_buffers and ".buffer.bin" in name and
+                not re.search(r"-cs-0x[0-9a-f]+-", name)):
             return "graphics_buffer"
     if name.endswith(".asl.txt") or re.search(r"\.pre-[^/]+\.irprogram\.txt$", name):
         return "shader_intermediate"
     return None
 
 
-def pack(run, output, compact=False):
+def pack(run, output, compact=False, keep_graphics_buffers=False):
     roots = ("info", "screenshots", "game.log", "remaining-shaders",
              "profile/user/shader/got-menu-probes", "profile/user/shader/frame-probes")
     files = sorted({p for root in roots for p in
@@ -53,7 +54,7 @@ def pack(run, output, compact=False):
                     nonlocal source_bytes, unique_bytes
                     digest = hashlib.sha256(data).hexdigest()
                     source_bytes += len(data)
-                    reason = omission_reason(name, compact)
+                    reason = omission_reason(name, compact, keep_graphics_buffers)
                     if reason:
                         omitted.append({"path": name, "bytes": len(data), "sha256": digest,
                                         "reason": reason})
@@ -93,6 +94,7 @@ def pack(run, output, compact=False):
                 manifest = {
                     "format": "deduplicated-frame-evidence-v2",
                     "compact": compact,
+                    "graphics_buffers_retained": keep_graphics_buffers or not compact,
                     "raw_evidence_preserved": not compact,
                     "game_log_preserved_verbatim": True,
                     "source_bytes": source_bytes,
@@ -127,5 +129,6 @@ if __name__ == "__main__":
     parser.add_argument("--run", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--compact", action="store_true")
+    parser.add_argument("--keep-graphics-buffers", action="store_true")
     args = parser.parse_args()
-    pack(args.run.resolve(), args.output.absolute(), args.compact)
+    pack(args.run.resolve(), args.output.absolute(), args.compact, args.keep_graphics_buffers)

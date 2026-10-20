@@ -11,6 +11,7 @@
 #include <unordered_map>
 
 #include "common/logging/log.h"
+#include "shader_recompiler/vertex_output_feedback.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/renderer_vulkan/vk_got_scene_depth_ab.h"
 #include "video_core/renderer_vulkan/vk_got_active_menu_draws.h"
@@ -182,6 +183,21 @@ inline std::optional<GotSceneQueryToken> PrepareGotSceneGpuQuery(
                  u32(dynamic.depth_compare_op), dynamic.stencil_test_enabled,
                  u32(dynamic.cull_mode), dynamic.rasterizer_discard_enable,
                  pipeline.GetGraphicsKey().mrt_mask);
+        if (Shader::Diagnostics::VertexOutputFeedbackEnabled(vs) &&
+            !dynamic.viewports.empty() && !dynamic.scissors.empty()) {
+            const auto& viewport = dynamic.viewports.front();
+            const auto& scissor = dynamic.scissors.front();
+            LOG_INFO(Render_Vulkan,
+                     "FrameProbeVertexState: frame={} draw={} vs={:#x} index_offset={} "
+                     "clip_disabled={} clip_space={} user_clip_planes={:#x} front_face={} "
+                     "viewport={},{},{},{},{},{} scissor={},{},{},{}",
+                     frame.frame, frame.draws, vs, regs.index_offset, regs.IsClipDisabled(),
+                     u32(regs.clipper_control.clip_space),
+                     u32(regs.clipper_control.user_clip_plane_enable), u32(dynamic.front_face),
+                     viewport.x, viewport.y, viewport.width, viewport.height, viewport.minDepth,
+                     viewport.maxDepth, scissor.offset.x, scissor.offset.y, scissor.extent.width,
+                     scissor.extent.height);
+        }
     }
     return GotSceneQueryToken{
         shared,slot,fs,vs,regs.num_indices,ordinal,indirect,indexed,high_volume,
