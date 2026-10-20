@@ -16,6 +16,9 @@ PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 API="http://127.0.0.1:7869"
 MIN_VRAM=$((8*1024*1024*1024))
 SECONDS_TO_RUN=300
+CONTINUE_AFTER_SECONDS=150
+CONTINUE_INPUT=NOT_ATTEMPTED
+INPUT_HELPER="$ROOT/scripts/got-menu-gameplay-input-20261020.py"
 RUN="$GOT/tests/runs/got-indexed-sample-feedback-runtime-$(date +%Y%m%d-%H%M%S)"
 REPORT="$LOGS/$(basename "$RUN").tar.gz"
 STATUS=PRECHECK
@@ -940,6 +943,8 @@ PYSTAGEPIXELS
     echo "ISOLATED_SHADPS4_RUN=YES"
     echo "CANDIDATE_SOURCE=$PIN"
     echo "CAPTURE_DURATION_SECONDS=$SECONDS_TO_RUN"
+    echo "CONTINUE_AFTER_SECONDS=$CONTINUE_AFTER_SECONDS"
+    echo "CONTINUE_INPUT=$CONTINUE_INPUT"
     echo "PACKED_AND_STRIDED_TABLE_SIZE_SPECIALIZATION=ENABLED"
     echo "SHADER_EVIDENCE_STATUS=$SHADER_EVIDENCE_STATUS"
     echo "INDEXED_TABLE_DUMP_EVENTS=$(grep -ac 'IndexedTableDump:' "$RUN/game.log" || true)"
@@ -1055,6 +1060,11 @@ for value in "${DISPLAY:-}" :0 :1 :2; do
   fi
 done
 [ -n "$DISPLAY_OK" ] || { STATUS=NO_X11_DISPLAY; exit 2; }
+if ! DISPLAY="$DISPLAY_OK" timeout 6s python3 "$INPUT_HELPER" --check     > "$RUN/info/input-preflight.log" 2>&1; then
+  STATUS=INPUT_PREFLIGHT_FAILED
+  cat "$RUN/info/input-preflight.log"
+  exit 2
+fi
 GPU=""
 for f in /sys/class/drm/card[0-9]*/device/vendor; do
   if [ -f "$f" ] && [ "$(cat "$f")" = 0x1002 ]; then GPU="$(dirname "$f")"; break; fi
@@ -1159,7 +1169,7 @@ PY
 mkdir -p "$RUN/profile/user/shader/got-menu-probes"
 STATUS=GAME_RUNNING
 echo "GAME_START duration=${SECONDS_TO_RUN}s DISPLAY=$DISPLAY_OK"
-echo "STAY_AT_MENU for the full five-minute capture; this run isolates remaining menu rendering defects"
+echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled after 150 seconds. Do not press it manually."
 (
   cd "$RUN/profile"
   test -d "$RUN/profile/user"
@@ -1229,6 +1239,7 @@ GAME_LAUNCHED=YES
 start="$(date +%s)"
 last=-20
 next_screenshot=10
+continue_attempted=0
 echo "elapsed,vram_used_bytes,vram_free_bytes,gpu_busy" > "$RUN/info/gpu-samples.csv"
 while kill -0 "$TEST_PGID" 2>/dev/null; do
   elapsed=$(( $(date +%s)-start ))
@@ -1256,6 +1267,17 @@ while kill -0 "$TEST_PGID" 2>/dev/null; do
     kill -TERM -- "-$TEST_PGID" 2>/dev/null || true
     sleep 2
     break
+  fi
+  if [ "$continue_attempted" = 0 ] && [ "$elapsed" -ge "$CONTINUE_AFTER_SECONDS" ]; then
+    continue_attempted=1
+    printf 'elapsed=%s requested_key=n\n' "$elapsed" > "$RUN/info/continue-input.log"
+    if DISPLAY="$DISPLAY_OK" timeout -k 2s 6s python3 "$INPUT_HELPER" \
+        --group "$TEST_PGID" --exe "$CANDIDATE" >> "$RUN/info/continue-input.log" 2>&1; then
+      CONTINUE_INPUT=KEY_SENT
+    else
+      CONTINUE_INPUT=FAILED
+    fi
+    echo "CONTINUE_INPUT=$CONTINUE_INPUT elapsed=${elapsed}s; see info/continue-input.log"
   fi
   if [ $((elapsed-last)) -ge 10 ]; then
     echo "GOT_RUNNING elapsed=${elapsed}s/${SECONDS_TO_RUN}s free_vram=$available gpu_busy=$busy"

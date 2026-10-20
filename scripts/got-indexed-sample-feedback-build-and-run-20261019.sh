@@ -28,7 +28,8 @@ git -C "$SRC" cat-file -e "$PIN^{commit}"
 # the isolated source overlay; never repeat the missing-script failure.
 for required in \
     scripts/got-indexed-sample-feedback-host-20261019.sh \
-    scripts/got-indexed-sample-feedback-runtime-20261019.sh; do
+    scripts/got-indexed-sample-feedback-runtime-20261019.sh \
+    scripts/got-menu-gameplay-input-20261020.py; do
     if ! git -C "$SRC" cat-file -e "$PIN:$required" 2>/dev/null; then
         echo "MISSING_PINNED_SCRIPT=$PIN:$required"
         exit 2
@@ -37,6 +38,12 @@ done
 echo "PINNED_BUILD_AND_RUNTIME_SCRIPTS=PASS"
 git -C "$SRC" show "$PIN:scripts/got-indexed-sample-feedback-host-20261019.sh" > "$BUILD_SCRIPT"
 git -C "$SRC" show "$PIN:scripts/got-indexed-sample-feedback-runtime-20261019.sh" > "$RUNTIME_SCRIPT"
+git -C "$SRC" show "$PIN:scripts/got-menu-gameplay-input-20261020.py" > "$SCRIPTS/got-menu-gameplay-input-20261020.py"
+python3 - "$SCRIPTS/got-menu-gameplay-input-20261020.py" <<'PYINPUT'
+import ast, sys
+from pathlib import Path
+ast.parse(Path(sys.argv[1]).read_text())
+PYINPUT
 bash -n "$BUILD_SCRIPT"
 bash -n "$RUNTIME_SCRIPT"
 

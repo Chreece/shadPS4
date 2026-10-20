@@ -228,9 +228,13 @@ inline void CaptureFrameProbePass(const Instance& instance, Scheduler& scheduler
     auto& probe = FrameProbe();
     const u32 pass = probe.passes++;
     LOG_INFO(Render_Vulkan,
-             "FrameProbePassEnd: frame={} pass={} last_draw={} size={}x{} targets={}", frame, pass,
-             last_draw, render_state.width, render_state.height, targets.size());
-    if (!probe.ImagesEnabled() || !render_state.num_color_attachments || render_state.width < 640 ||
+             "FrameProbePassEnd: frame={} pass={} last_draw={} size={}x{} targets={} "
+             "depth_present={} depth_clear={} stencil_clear={}", frame, pass,
+             last_draw, render_state.width, render_state.height, targets.size(),
+             render_state.depth_stencil_attachment.has_depth,
+             render_state.depth_stencil_attachment.depth_clear,
+             render_state.depth_stencil_attachment.stencil_clear);
+    if (!probe.ImagesEnabled() || targets.empty() || render_state.width < 640 ||
         render_state.height < 360) {
         return;
     }
