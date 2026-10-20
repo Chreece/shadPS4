@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bounded executed texture-index and sampled-value feedback, with scene GPU queries.
+# Bounded gameplay draw census and compute inputs without per-sample instrumentation.
 # No rebuild, global graphics config changes, or active executable writes.
 set -Eeuo pipefail
 ROOT="$HOME/projects/shadps4"
@@ -7,8 +7,8 @@ GOT="$ROOT/GhostOfTsushima"
 WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
-PIN="8902f5e58763a76ad6e7c65db641aef15aca75ad"
-SHADER_COLLECTOR_PIN="8902f5e58763a76ad6e7c65db641aef15aca75ad"
+PIN="8ddf53eb78a39502883eb7ca60d510b513bb7886"
+SHADER_COLLECTOR_PIN="8ddf53eb78a39502883eb7ca60d510b513bb7886"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$PIN"
 HOST_REPORT="${GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT:-$LOGS/got-indexed-sample-feedback-host-not-built.tar.gz}"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
@@ -88,7 +88,7 @@ def value(row,key):
     m=re.search(r"\b"+key+r"=(\d+)",row)
     return int(m[1]) if m else 0
 out=["PURPOSE=OBSERVE_EXECUTED_GPU_TEXTURE_IDS_AND_SAMPLE_VALUES",
-     "DRAW_BINDINGS=1,32,256_AND_BOUNDED_TABLE_GROWTH EACH_CAPTURE_RESET=YES",
+     "TEXTURE_SAMPLE_INSTRUMENTATION=DISABLED_FOR_LEAN_CAPTURE",
      "NONZERO_COUNTS_INCLUDE_ALPHA_AND_DO_NOT_PROVE_CORRECT_COLOR=YES",
      "ZERO_SAMPLES_DO_NOT_PROVE_INVALID_DESCRIPTORS=YES",
      f"COMPLETED_RESOURCE_ROWS={len(rows)}"]
@@ -100,7 +100,7 @@ for shader in sorted(set(re.search(r"shader=(\S+)", row)[1] for row in rows)):
                " ".join(k.upper()+"="+str(sum(value(r,k) for r in matching))
                         for k in ["samples","out_of_range","nonzero_samples","nonfinite_samples"]))
 out.extend(rows)
-if not rows: out.append("RESULT=NO_COMPLETED_GPU_CAPTURE")
+if not rows: out.append("RESULT=DISABLED_FOR_LEAN_CAPTURE")
 elif not sum(value(r,"samples") for r in rows): out.append("RESULT=NO_EXECUTED_SAMPLES_IN_CAPTURED_DRAWS")
 else: out.append("RESULT=EXECUTED_SAMPLE_EVIDENCE_CAPTURED_NOT_A_GRAPHICS_FIX")
 Path(sys.argv[2]).write_text("\n".join(out)+"\n")
@@ -959,22 +959,24 @@ PYSTAGEPIXELS
     echo "CAPTURE_STOP=$CAPTURE_STOP"
     echo "FRAME_PROBE_CHECKPOINTS=$FRAME_PROBE_CHECKPOINTS"
     echo "SCALAR_CAPTURE_SCOPE=PER_BINDING_SEQUENCE"
-    echo "IMAGE_CAPTURE_ROW_STEP=ADAPTED_FROM_PRECEDING_FRAME"
-    echo "IMAGE_CAPTURE_MEMORY_LIMIT_MIB=128"
+    echo "PASS_IMAGE_CAPTURE=DISABLED"
+    echo "LEGACY_MENU_PROBES=DISABLED"
+    echo "BINDING_CACHE=AUTOMATIC_READONLY_TABLES"
+    echo "BINDING_CACHE_HIT_REPORTS=$(grep -ac 'GuestTsharpBindingCache:.*result=HIT' "$RUN/game.log" || true)"
     echo "IMAGE_CAPTURE_BUDGET_SKIPS=$(grep -ac 'FrameProbeImageSkip:.*reason=BUDGET' "$RUN/game.log" || true)"
-    echo "BUFFER_CAPTURE_SCOPE=FIRST_USE_OF_EACH_DISTINCT_BINDING"
+    echo "BUFFER_CAPTURE_SCOPE=TARGET_COMPUTE_FIRST_USE_OF_EACH_DISTINCT_BINDING"
     echo "SCALAR_CAPTURE_COMPLETED=$(grep -ac 'FrameProbeScalarReadback:.*status=COMPLETE' "$RUN/game.log" || true)"
     echo "SCALAR_CAPTURE_LIMIT_EVENTS=$(grep -ac 'FrameProbeScalarLimit:' "$RUN/game.log" || true)"
     echo "BUFFER_CAPTURE_LIMIT_EVENTS=$(grep -ac 'FrameProbeBufferLimit:' "$RUN/game.log" || true)"
     echo "CONTINUE_AFTER_SECONDS=$CONTINUE_AFTER_SECONDS"
-    echo "CAPTURE_FOCUS=GAMEPLAY_DEPTH_METADATA_AND_WORLD_DRAWS"
+    echo "CAPTURE_FOCUS=GAMEPLAY_DRAW_COUNTS_AND_COMPUTE_INPUTS"
     echo "BINDING_TRACE_SCOPE=TARGET_SHADERS_ONLY"
     echo "HTILE_SUMMARY_PIPELINES=$(grep -ac 'Creating HTile summary pipeline' "$RUN/game.log" || true)"
     echo "HTILE_INPUT_BUFFERS=$(grep -aEc 'FrameProbeBuffer:.*resource=cs-0x(30ec076|8ced785b)-.*status=SAVED' "$RUN/game.log" || true)"
     echo "VERTEX_FEEDBACK=DISABLED_TO_RESERVE_BUFFER_BUDGET_FOR_COMPUTE_INPUTS"
     echo "SCALAR_BINARY_DUMPS=DISABLED_WITH_VERTEX_FEEDBACK_COMPARISON_LOGS_RETAINED"
-    echo "WORLD_COUNT_INPUT_FILTER=ae3b2e07,f1632d27,486c5b88,62ffd078,bd2dcc80,a820e215,b961cd7a,7116dee2,4cdc7449"
-    echo "WORLD_COUNT_PRODUCER_BUFFERS_SAVED=$(grep -aEc 'FrameProbeBuffer:.*resource=cs-0x(ae3b2e07|f1632d27|486c5b88|62ffd078|bd2dcc80|a820e215|b961cd7a|7116dee2|4cdc7449)-.*status=SAVED' "$RUN/game.log" || true)"
+    echo "COMPUTE_INPUT_FILTER=030ec076,8ced785b,00a4f19a,3b1b9d8b,6b20c8e1"
+    echo "COMPUTE_INPUT_BUFFERS_SAVED=$(grep -aEc 'FrameProbeBuffer:.*resource=cs-0x(30ec076|8ced785b|a4f19a|3b1b9d8b|6b20c8e1)-.*status=SAVED' "$RUN/game.log" || true)"
     echo "CONTINUE_INPUT=$CONTINUE_INPUT"
     echo "PACKED_AND_STRIDED_TABLE_SIZE_SPECIALIZATION=ENABLED"
     echo "SHADER_EVIDENCE_STATUS=$SHADER_EVIDENCE_STATUS"
@@ -989,14 +991,7 @@ PYSTAGEPIXELS
     echo "GPU_SELECTED_BUFFER_STORES=GUARDED_COMPLETE_TABLES"
     echo "BOUNDED_POINTER_IMAGE_LOWERING=GUARDED_AND_COUNTED_LOOPS"
     echo "BOUNDED_POINTER_COUNT_SPECIALIZATION=ENABLED"
-    echo "INDEXED_FEEDBACK_SHADERS=0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
-    echo "INDEXED_FEEDBACK_CAPTURE_BINDINGS=1,32,256"
-    echo "INDEXED_FEEDBACK_COMPLETED_ROWS=$(grep -ac 'IndexedImageFeedback:.*timeline_complete=YES' "$RUN/game.log" || true)"
-    if grep -aq 'FrameProbeBuffer:.*resource=cs-0x\(ae3b2e07\|f1632d27\|486c5b88\|62ffd078\|bd2dcc80\|a820e215\|b961cd7a\|7116dee2\|4cdc7449\)-.*status=SAVED' "$RUN/game.log"; then
-      echo "WORLD_PRODUCER_BUFFER_EVIDENCE=PRESENT_REVIEW_COVERAGE"
-    else
-      echo "WORLD_PRODUCER_BUFFER_EVIDENCE=MISSING"
-    fi
+    echo "INDEXED_SAMPLE_FEEDBACK=DISABLED_FOR_LEAN_CAPTURE"
     echo "DISPATCH_INITIATOR_TRACE=DISABLED_AFTER_ZERO_TRANSITIONS_BASELINE"
     echo "DISPATCH_PREVIOUSLY_SKIPPED_REPORTED=$(grep -ac 'DispatchInitiatorTransition:.*previous_enabled=0 packet_enabled=1' "$RUN/game.log" || true)"
     echo "DISPATCH_PREVIOUSLY_UNWANTED_REPORTED=$(grep -ac 'DispatchInitiatorTransition:.*previous_enabled=1 packet_enabled=0' "$RUN/game.log" || true)"
@@ -1027,7 +1022,7 @@ PYSTAGEPIXELS
   fi
   if ! git -C "$WORK/source" show "$PIN:scripts/got-pack-frame-evidence-20261020.py" \
       > "$RUN/info/pack-frame-evidence.py" ||
-     ! python3 "$RUN/info/pack-frame-evidence.py" --run "$RUN" --output "$REPORT"; then
+     ! python3 "$RUN/info/pack-frame-evidence.py" --run "$RUN" --output "$REPORT" --compact; then
     echo "ARCHIVE_ERROR keep=$RUN"; exit 3;
   fi
   echo "STATUS=$STATUS GAME_EXIT=$GAME_EXIT EXIT=$rc"
@@ -1212,33 +1207,34 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   cd "$RUN/profile"
   test -d "$RUN/profile/user"
   export DISPLAY="$DISPLAY_OK"
-  export SHADPS4_STRIDED_SOURCE_PROOF=1
+  export SHADPS4_STRIDED_SOURCE_PROOF=0
   export SHADPS4_STRIDED_SOURCE_PROOF_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
   export SHADPS4_STRIDED_GUEST_TSHARP=1
   export SHADPS4_GUEST_TSHARP_LARGE_ARRAY=1
-  export SHADPS4_GUEST_TSHARP_CACHE=0
   export SHADPS4_TEXTURE_SLOT_PRESSURE=1
   export SHADPS4_GPUVM_SPARSE_MAP=0
-  export SHADPS4_RESOURCE_AUDIT=1
+  export SHADPS4_RESOURCE_AUDIT=0
   export SHADPS4_RESOURCE_AUDIT_HASH="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
-  export SHADPS4_INDEXED_IMAGE_FEEDBACK_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
-  export SHADPS4_INDEXED_IMAGE_AUDIT=1
+  unset SHADPS4_INDEXED_IMAGE_FEEDBACK_HASHES
+  export SHADPS4_INDEXED_IMAGE_AUDIT=0
   export SHADPS4_INDEXED_IMAGE_AUDIT_HASHES="0x7eaf40ad"
-  export SHADPS4_MENU_PASS_TRACE=1
-  export SHADPS4_GOT_MENU_STAGE_PIXELS=1
-  export SHADPS4_GOT_SCENE_GPU_QUERY=1
+  export SHADPS4_MENU_PASS_TRACE=0
+  export SHADPS4_GOT_MENU_STAGE_PIXELS=0
+  export SHADPS4_GOT_SCENE_GPU_QUERY=0
   export SHADPS4_TRACE_DISPATCH_INITIATOR=0
   export SHADPS4_FRAME_PROBE=1
+  export SHADPS4_FRAME_PROBE_IMAGES=0
+  export SHADPS4_FRAME_PROBE_COMPUTE_BUFFERS_ONLY=1
   export SHADPS4_FRAME_PROBE_CHECKPOINTS="$FRAME_PROBE_CHECKPOINTS"
   export SHADPS4_FRAME_PROBE_BUFFERS=1
   export SHADPS4_FRAME_PROBE_TARGET_BINDINGS_ONLY=1
   export SHADPS4_VERTEX_OUTPUT_FEEDBACK=0
   export SHADPS4_INDIRECT_WAR_AUDIT=0
-  # Keep the previous indirect-producer and GDS/DMA experiments disabled.
-  export SHADPS4_GOT_INDIRECT_PRODUCERS=1
+  # The frame census includes indirect arguments; older menu probes stay disabled.
+  export SHADPS4_GOT_INDIRECT_PRODUCERS=0
   export SHADPS4_GOT_DMA_WORD_PROBE=0
   export SHADPS4_GOT_GDS_PRODUCER_PROBE=0
-  export SHADPS4_GOT_INDIRECT_GPU_ARGUMENTS=1
+  export SHADPS4_GOT_INDIRECT_GPU_ARGUMENTS=0
   # Preserve native depth and raster state for the indexed-sample capture.
   export SHADPS4_GOT_SCENE_DEPTH_AB=0
   export SHADPS4_GOT_SCENE_RASTER_AB=0
@@ -1251,7 +1247,7 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_SRT_SOURCE_AUDIT=0
   export SHADPS4_SRT_INLINE_AUDIT=0
   unset SHADPS4_SRT_TRACE_HASHES
-  export SHADPS4_SHARP_MASK_AUDIT=1
+  export SHADPS4_SHARP_MASK_AUDIT=0
   export SHADPS4_SHARP_MASK_AUDIT_HASHES="0x7eaf40ad"
   python3 - "$WORK/source" "$PIN" <<'PYFILTERPREFLIGHT'
 import os, re, subprocess, sys
@@ -1365,15 +1361,7 @@ if [ "$CONTINUE_INPUT" != KEY_SENT ] ||
   echo "GAMEPLAY_CAPTURE_INCOMPLETE continue_input=$CONTINUE_INPUT; see info/final.txt"
   exit 2
 fi
-if ! grep -aq 'IndexedImageFeedback: shader=0x7eaf40ad.*timeline_complete=YES' "$RUN/game.log"; then
-  echo "INDEXED_SAMPLE_FEEDBACK=NOT_CAPTURED; no executed-index or sample-value claim"
-fi
-if ! grep -aq 'GotSceneGpuInvocations:.*high_volume=true' "$RUN/game.log"; then
-  echo "ACTIVE_MENU_GPU_QUERY=NOT_CAPTURED; gameplay may use different pipelines"
-fi
-if ! grep -aq 'GotSceneIndirectGpuArgs:.*GPU_READBACK_PASS' "$RUN/game.log"; then
-  echo "GPU_INDIRECT_ARGUMENTS=NOT_CAPTURED; no geometry-count claim"
-fi
+echo "LEAN_CAPTURE=NO_SAMPLE_ATOMICS_NO_PASS_IMAGES_NO_GRAPHICS_BUFFER_COPIES"
 echo "NATIVE_GUEST_RASTER_AND_DEPTH_STATE=UNCHANGED"
 if [ "$GAME_EXIT" -eq 0 ] || [ "$GAME_EXIT" -eq 124 ] ||
    { [ "$GAME_EXIT" -eq 143 ] && [ "$CAPTURE_STOP" = PROBES_COMPLETE ]; }; then
