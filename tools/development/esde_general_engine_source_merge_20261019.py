@@ -573,6 +573,8 @@ def collect_change_plan(plan_dir, report):
             if dep not in seen:
                 queued.append(dep)
     conflicts.update(errors)
+    if not conflicts:
+        finalize_shader_cache_schema(proposals,report)
     report["dependency_files_walked"] = count
     report["proposals_count"] = len(proposals)
     report["all_conflicts"] = conflicts
@@ -586,6 +588,46 @@ def collect_change_plan(plan_dir, report):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(blob)
     return proposals
+
+def finalize_shader_cache_schema(proposals, report):
+    """Bump shader/pipeline ABI ONCE after all generic resource edits merge.
+
+    Historical experimental commits bumped 43/21/4 to many intermediate
+    numbers. Replaying each version as a source conflict is incorrect.
+    Final release cache namespace must exceed every examined schema and
+    include matching specialization serialization/deserialization fields.
+    """
+    rel="src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp"
+    file=SOURCE/rel
+    before=proposals.get(rel,file.read_bytes() if file.is_file() else None)
+    if before is None:
+        raise RuntimeError("Missing pipeline serializer after source merge")
+    text=before.decode("utf-8")
+    new_values={
+        "ShaderBinaryVersion":53,
+        "ShaderMetaVersion":27,
+        "PipelineKeyVersion":6,
+    }
+    old={}
+    for token,new_value in new_values.items():
+        pattern=re.compile(r"(?m)^(static constexpr u32 "+token+r" = )([0-9]+)u;$")
+        matches=list(pattern.finditer(text))
+        if len(matches)!=1:
+            raise RuntimeError("Unrecognized pipeline schema definition: "+token)
+        old_value=int(matches[0].group(2))
+        if old_value>new_value:
+            raise RuntimeError("Pipeline cache already uses later unreviewed schema: "+token)
+        old[token]=old_value
+        text=pattern.sub(lambda m:m.group(1)+str(new_value)+"u;",text,count=1)
+    for item in ("indexed_image_entries","bounded_image_counts"):
+        written=text.count("spec.Write("+item+");")
+        read=text.count("spec.Read("+item+");")
+        if written!=read or written>1:
+            raise RuntimeError("Unmatched material specialization pipeline ABI: "+item)
+    proposals[rel]=text.encode("utf-8")
+    report["final_cache_schema"]={"old":old,"new":new_values,
+                                 "reused_old_shader_cache":False}
+
 
 def existing_gow_contract():
     def read(rel):
