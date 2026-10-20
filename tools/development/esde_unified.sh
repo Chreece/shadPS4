@@ -15,12 +15,16 @@ LOGS="$ROOT/logs"
 SCRIPTS="$ROOT/scripts"
 PY="$SCRIPTS/esde_general_engine_source_merge_20261019.py"
 
-MERGER_REF="6c9e59081798425129a8ca72ab1b2891394c597f"
-MERGER_GIT_BLOB="7713a377e44635ff17201b283b905f87de60ca47"
+MERGER_REF="717ecc4ec65d15ade039ee6498f7595b5336b8df"
+MERGER_GIT_BLOB="f74a023f57e5a9984326349e84695566c3108dd1"
 RESOLVER="$SCRIPTS/esde_general_semantic_resolver_20261019.py"
 RESOLVER_REF="840b719aaf4d870e1e6b69e4d04c55224356597a"
 RESOLVER_GIT_BLOB="9b6472f0d062b1e23d0e3376a9255ff4f7f8107c"
 RESOLVER_URL="https://raw.githubusercontent.com/Chreece/shadPS4/$RESOLVER_REF/tools/development/esde_general_semantic_resolver_20261019.py"
+LATE_RESOLVER="$SCRIPTS/esde_general_late_semantic_resolver_20261020.py"
+LATE_REF="52ee4edbc14ebb68c95825de077e1b32884dd53c"
+LATE_GIT_BLOB="0159933b0c5f6d64ac34207b4bf6cd02f81be99e"
+LATE_URL="https://raw.githubusercontent.com/Chreece/shadPS4/$LATE_REF/tools/development/esde_general_late_semantic_resolver_20261020.py"
 MERGER_URL="https://raw.githubusercontent.com/Chreece/shadPS4/$MERGER_REF/tools/development/esde_general_engine_source_merge_20261019.py"
 
 if [[ $# -gt 1 ]]; then
@@ -55,7 +59,7 @@ exec > >(tee -a "$ENTRYLOG") 2>&1
 echo "ESDE_GENERAL_ENTRY_LOG=$ENTRYLOG"
 echo "GENERIC_ENGINE_BUILD=YES"
 echo "OBSOLETE_OCT18_UPSTREAM_SHA=RETIRED"
-echo "REVIEWED_OFFICIAL_UPSTREAM=f68923fe807f657348e6719ce658bcbd0a2b1c72"
+echo "REVIEWED_OFFICIAL_UPSTREAM=a808e7626e3c7de8d0f0fda6a91f620b42f6c762"
 echo "ESDE_CORE_INSTALL=NOT_REQUESTED"
 
 TMP=""
@@ -90,7 +94,22 @@ if [[ ! -f "$RESOLVER" ]] ||
     TMP=""
 fi
 
-python3 -m py_compile "$PY" "$RESOLVER"
+if [[ ! -f "$LATE_RESOLVER" ]] ||
+   [[ "$(git hash-object "$LATE_RESOLVER" 2>/dev/null || true)" != "$LATE_GIT_BLOB" ]]; then
+    echo "STAGE=FETCH_SHA_VERIFIED_LATER_GENERAL_CPP_RESOLVER"
+    TMP="$(mktemp "$SCRIPTS/.esde-late-semantic-XXXXXXXX")"
+    curl -4fLsS --retry 3 --connect-timeout 15 --max-time 180 \
+        "$LATE_URL" -o "$TMP"
+    HASH="$(git hash-object "$TMP")"
+    [[ "$HASH" == "$LATE_GIT_BLOB" ]] || {
+        echo "PINNED_LATE_CPP_RESOLVER_GIT_BLOB_MISMATCH=$HASH" >&2
+        exit 3
+    }
+    mv -f -- "$TMP" "$LATE_RESOLVER"
+    TMP=""
+fi
+
+python3 -m py_compile "$PY" "$RESOLVER" "$LATE_RESOLVER"
 echo "STAGE=MERGE_SEMANTICS_SELF_TEST"
 python3 -B "$PY" --self-test
 
