@@ -933,6 +933,8 @@ ImageView& TextureCache::FindDepthTarget(ImageId image_id, const ImageDesc& desc
 
     // Register meta data for this depth buffer
     const VAddr htile_addr = desc.info.meta_info.htile_addr;
+    image.info.meta_info.htile_linear = desc.info.meta_info.htile_linear;
+    image.info.meta_info.htile_stencil = desc.info.meta_info.htile_stencil;
     if (image.info.meta_info.htile_addr != htile_addr) {
         UnregisterMeta(image.info.meta_info.htile_addr, image.image_uid);
         image.info.meta_info.htile_addr = htile_addr;

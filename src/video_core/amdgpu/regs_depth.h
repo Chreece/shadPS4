@@ -124,6 +124,13 @@ struct DepthView {
     }
 };
 
+struct HtileSurface {
+    u32 linear : 1;
+    u32 full_cache : 1;
+    u32 : 14;
+    u32 dst_outside_zero_to_one : 1;
+};
+
 enum class ForceEnable : u32 {
     Off = 0,
     Enable = 1,
@@ -211,6 +218,8 @@ struct DepthBuffer {
     } z_info;
     struct {
         StencilFormat format : 1;
+        u32 : 28;
+        u32 tile_stencil_disable : 1;
     } stencil_info;
     u32 z_read_base;
     u32 stencil_read_base;

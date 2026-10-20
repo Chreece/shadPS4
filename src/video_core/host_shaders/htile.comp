@@ -1,0 +1,126 @@
+// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#version 450 core
+#extension GL_EXT_samplerless_texture_functions : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+#ifdef SRC_MSAA
+layout(set = 0, binding = 0) uniform texture2DMSArray depth_image;
+#else
+layout(set = 0, binding = 0) uniform texture2DArray depth_image;
+#endif
+layout(set = 0, binding = 1, std430) writeonly buffer Metadata {
+    uint words[];
+};
+layout(push_constant) uniform Params {
+    uint pitch;
+    uint height;
+    uint macro_width;
+    uint macro_height;
+    uint pipe_config;
+    uint num_pipes;
+    uint linear;
+    uint num_words;
+    uint output_word;
+} params;
+
+uint htile_address(uvec3 tile) {
+    uint x = tile.x;
+    uint y = tile.y;
+    uint x1 = (x >> 1) & 1;
+    uint shift = params.num_pipes == 2 ? 3 : params.num_pipes == 8 ? 1 : 0;
+    uint element;
+    uint element_bits;
+    uint pipe;
+    if (params.pipe_config == 0) {
+        element = ((x1 ^ y) & 1) | (((x1 ^ (y >> 1)) & 1) << 1) | (x1 << 2);
+        element_bits = 3;
+        pipe = (x ^ y) & 1;
+    } else if (params.pipe_config == 10) {
+        element = ((x1 ^ (y >> 1)) & 1) | (x1 << 1);
+        element_bits = 2;
+        pipe = (((x >> 1) ^ y ^ (x >> 2)) & 1) |
+               (((x ^ (y >> 1)) & 1) << 1) |
+               ((((x >> 2) ^ (y >> 2)) & 1) << 2);
+    } else if (params.pipe_config == 12) {
+        element = ((x1 ^ y) & 1) | (x1 << 1);
+        element_bits = 2;
+        pipe = ((x ^ y ^ (x >> 1)) & 1) |
+               ((((x >> 1) ^ (y >> 1)) & 1) << 1) |
+               ((((x >> 2) ^ (y >> 2)) & 1) << 2);
+    } else {
+        element = ((x1 ^ (y >> 1)) & 1) | (x1 << 1);
+        element_bits = 2;
+        pipe = (((x >> 1) ^ y) & 1) | (((x ^ (y >> 1)) & 1) << 1) |
+               ((((x >> 2) ^ (y >> 3)) & 1) << 2) |
+               ((((x >> 3) ^ (y >> 2)) & 1) << 3);
+    }
+    uint micro;
+    uint macro;
+    if (params.linear != 0) {
+        micro = ((x / 4) + (y / 4) * (params.pitch / 32)) << shift;
+        uint slice_words = params.pitch * params.height / (64 * params.num_pipes);
+        slice_words = (slice_words + 63) & ~63u;
+        macro = tile.z * slice_words;
+    } else {
+        uint mx = params.macro_width / 8;
+        uint my = params.macro_height / 8;
+        uint macro_pitch = params.pitch / params.macro_width;
+        uint macro_rows = params.height / params.macro_height;
+        micro = (((x % mx) / 4) + ((y % my) / 4) * (mx / 4)) << shift;
+        macro = ((x / mx) + (y / my) * macro_pitch + tile.z * macro_pitch * macro_rows) * 512;
+    }
+    micro = (micro & ~((1u << element_bits) - 1)) | element;
+    uint offset = macro + micro;
+    return (offset & 63) | (pipe << 6) | ((offset >> 6) * params.num_pipes * 64);
+}
+
+void main() {
+    uvec3 tile = gl_GlobalInvocationID;
+    if (tile.x >= params.pitch / 8 || tile.y >= params.height / 8) {
+        return;
+    }
+    uint address = htile_address(tile);
+    if (address >= params.num_words) {
+        return;
+    }
+#ifdef SRC_MSAA
+    ivec3 extent = textureSize(depth_image);
+    int samples = textureSamples(depth_image);
+#else
+    ivec3 extent = textureSize(depth_image, 0);
+    int samples = 1;
+#endif
+    float minimum = 1.0;
+    float maximum = 0.0;
+    bool valid = false;
+    for (uint y = 0; y < 8; ++y) {
+        for (uint x = 0; x < 8; ++x) {
+            ivec3 coord = ivec3(tile.xy * 8 + uvec2(x, y), tile.z);
+            if (any(greaterThanEqual(coord, extent))) {
+                continue;
+            }
+            for (int sample_index = 0; sample_index < samples; ++sample_index) {
+#ifdef SRC_MSAA
+                float z = texelFetch(depth_image, coord, sample_index).r;
+#else
+                float z = texelFetch(depth_image, coord, 0).r;
+#endif
+                if (isnan(z)) {
+                    minimum = 0.0;
+                    maximum = 1.0;
+                } else {
+                    z = clamp(z, 0.0, 1.0);
+                    minimum = min(minimum, z);
+                    maximum = max(maximum, z);
+                }
+                valid = true;
+            }
+        }
+    }
+    uint minz = valid ? uint(floor(minimum * 16383.0)) : 0;
+    uint maxz = valid ? uint(ceil(maximum * 16383.0)) : 16383;
+    words[params.output_word + address] = 15 | (minz << 4) | (maxz << 18);
+}

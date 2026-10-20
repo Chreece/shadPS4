@@ -10,6 +10,8 @@
 #include "video_core/texture_cache/image_view.h"
 #include "video_core/texture_cache/tile_manager.h"
 
+#include "video_core/host_shaders/htile_comp.h"
+#include "video_core/host_shaders/htile_msaa_comp.h"
 #include "video_core/host_shaders/tiling_macro_128_comp.h"
 #include "video_core/host_shaders/tiling_macro_16_comp.h"
 #include "video_core/host_shaders/tiling_macro_32_comp.h"
@@ -85,6 +87,152 @@ TileManager::TileManager(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
 }
 
 TileManager::~TileManager() = default;
+
+struct HtileParams {
+    u32 pitch;
+    u32 height;
+    u32 macro_width;
+    u32 macro_height;
+    u32 pipe_config;
+    u32 num_pipes;
+    u32 linear;
+    u32 num_words;
+    u32 output_word;
+};
+
+vk::Pipeline TileManager::GetHtilePipeline(bool multisampled) {
+    if (htile_pipelines[multisampled]) {
+        return *htile_pipelines[multisampled];
+    }
+    const auto device = instance.GetDevice();
+    if (!htile_pl_layout) {
+        const std::array<vk::DescriptorSetLayoutBinding, 2> bindings{{
+            {0, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute},
+            {1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute},
+        }};
+        const vk::DescriptorSetLayoutCreateInfo desc_ci{
+            .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
+            .bindingCount = bindings.size(),
+            .pBindings = bindings.data(),
+        };
+        auto [desc_result, layout] = device.createDescriptorSetLayoutUnique(desc_ci);
+        ASSERT(desc_result == vk::Result::eSuccess);
+        htile_desc_layout = std::move(layout);
+        const vk::PushConstantRange constants{vk::ShaderStageFlagBits::eCompute, 0,
+                                              sizeof(HtileParams)};
+        const vk::DescriptorSetLayout set_layout = *htile_desc_layout;
+        const vk::PipelineLayoutCreateInfo layout_ci{
+            .setLayoutCount = 1,
+            .pSetLayouts = &set_layout,
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges = &constants,
+        };
+        auto [result, pipeline_layout] = device.createPipelineLayoutUnique(layout_ci);
+        ASSERT(result == vk::Result::eSuccess);
+        htile_pl_layout = std::move(pipeline_layout);
+    }
+    const auto code =
+        multisampled ? std::span<const u32>{HTILE_MSAA_COMP} : std::span<const u32>{HTILE_COMP};
+    const auto module = Vulkan::CompileSPV(code, device);
+    LOG_INFO(Render_Vulkan, "Creating HTile summary pipeline: multisampled={}", multisampled);
+    const vk::ComputePipelineCreateInfo pipeline_ci{
+        .stage{
+            .stage = vk::ShaderStageFlagBits::eCompute,
+            .module = module,
+            .pName = "main",
+        },
+        .layout = *htile_pl_layout,
+    };
+    auto [result, pipeline] = device.createComputePipelineUnique(VK_NULL_HANDLE, pipeline_ci);
+    ASSERT(result == vk::Result::eSuccess);
+    htile_pipelines[multisampled] = std::move(pipeline);
+    device.destroyShaderModule(module);
+    return *htile_pipelines[multisampled];
+}
+
+bool TileManager::SummarizeHtile(Image& image, const Buffer* out_buffer, u64 out_offset, u32 size) {
+    const auto& info = image.info;
+    if (info.meta_info.htile_stencil || !image.HasGpuValidData() ||
+        !(image.aspect_mask & vk::ImageAspectFlagBits::eDepth) || size < sizeof(u32) ||
+        out_offset % sizeof(u32) != 0) {
+        return false;
+    }
+    const auto pipe = info.alt_tile ? AmdGpu::GetAltPipeConfig(info.tile_mode)
+                                    : AmdGpu::GetPipeConfig(info.tile_mode);
+    if (pipe != AmdGpu::PipeConfig::P2 && pipe != AmdGpu::PipeConfig::P8_32x32_8x16 &&
+        pipe != AmdGpu::PipeConfig::P8_32x32_16x16 && pipe != AmdGpu::PipeConfig::P16_32x32_8x16) {
+        return false;
+    }
+    const u32 pipes = AmdGpu::GetPipeCount(pipe);
+    u32 macro_width = 512;
+    u32 macro_height = 1;
+    while (macro_width > macro_height * 2 * pipes) {
+        macro_width /= 2;
+        macro_height *= 2;
+    }
+    macro_width *= 8;
+    macro_height *= 8 * pipes;
+    const bool linear = info.meta_info.htile_linear;
+    const u32 linear_align =
+        pipe == AmdGpu::PipeConfig::P2 || pipe == AmdGpu::PipeConfig::P8_32x32_8x16 ? 32 : 64;
+    const u64 aligned_offset = Common::AlignDown(out_offset, instance.StorageMinAlignment());
+    const HtileParams params{
+        .pitch = Common::AlignUp(info.pitch, linear ? linear_align : macro_width),
+        .height =
+            Common::AlignUp(u32(info.mips_layout[0].height), linear ? linear_align : macro_height),
+        .macro_width = macro_width,
+        .macro_height = macro_height,
+        .pipe_config = u32(pipe),
+        .num_pipes = pipes,
+        .linear = linear,
+        .num_words = size / u32(sizeof(u32)),
+        .output_word = u32((out_offset - aligned_offset) / sizeof(u32)),
+    };
+    ImageViewInfo view_info;
+    view_info.type = AmdGpu::ImageType::Color2DArray;
+    view_info.format = vk::Format::eR32Sfloat;
+    view_info.range.extent.layers = info.resources.layers;
+    const auto& view = image.FindView(view_info, false);
+    const auto pipeline = GetHtilePipeline(image.backing->num_samples > 1);
+    scheduler.EndRendering();
+    runtime.Transit(&image, vk::ImageLayout::eShaderReadOnlyOptimal,
+                    vk::PipelineStageFlagBits2::eComputeShader,
+                    vk::AccessFlagBits2::eShaderSampledRead, view_info.range);
+    runtime.IsBufferAccessed(out_buffer, out_offset, size, true);
+    runtime.FlushBarriers();
+    const vk::DescriptorImageInfo image_binding{
+        .imageView = *view.image_view,
+        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal,
+    };
+    const vk::DescriptorBufferInfo buffer_binding{
+        .buffer = out_buffer->Handle(),
+        .offset = aligned_offset,
+        .range = size + out_offset - aligned_offset,
+    };
+    const std::array<vk::WriteDescriptorSet, 2> writes{{
+        {
+            .dstBinding = 0,
+            .descriptorCount = 1,
+            .descriptorType = vk::DescriptorType::eSampledImage,
+            .pImageInfo = &image_binding,
+        },
+        {
+            .dstBinding = 1,
+            .descriptorCount = 1,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .pBufferInfo = &buffer_binding,
+        },
+    }};
+    const auto cmdbuf = scheduler.CommandBuffer();
+    cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
+    cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, *htile_pl_layout, 0, writes);
+    cmdbuf.pushConstants(*htile_pl_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(params),
+                         &params);
+    cmdbuf.dispatch((params.pitch + 63) / 64, (params.height + 63) / 64, info.resources.layers);
+    runtime.AccessBuffer(out_buffer, out_offset, size, vk::PipelineStageFlagBits2::eComputeShader,
+                         vk::AccessFlagBits2::eShaderWrite);
+    return true;
+}
 
 vk::Pipeline TileManager::GetTilingPipeline(const ImageInfo& info, bool is_tiler) {
     const TilingKey key{

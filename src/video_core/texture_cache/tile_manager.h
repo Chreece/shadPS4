@@ -49,11 +49,14 @@ public:
     void TileImage(Image& in_image, std::span<vk::BufferImageCopy> buffer_copies,
                    const VideoCore::Buffer* out_buffer, u64 out_offset);
 
+    bool SummarizeHtile(Image& image, const Buffer* out_buffer, u64 out_offset, u32 size);
+
     std::pair<const Buffer*, u64> DetileImage(const VideoCore::Buffer* in_buffer, u64 in_offset,
                                               const ImageInfo& info);
 
 private:
     vk::Pipeline GetTilingPipeline(const ImageInfo& info, bool is_tiler);
+    vk::Pipeline GetHtilePipeline(bool multisampled);
 
 private:
     const Vulkan::Instance& instance;
@@ -63,6 +66,9 @@ private:
     vk::UniqueDescriptorSetLayout desc_layout;
     vk::UniquePipelineLayout pl_layout;
     std::unordered_map<TilingKey, vk::UniquePipeline, TilingKey::Hash> tiling_pipelines;
+    vk::UniqueDescriptorSetLayout htile_desc_layout;
+    vk::UniquePipelineLayout htile_pl_layout;
+    std::array<vk::UniquePipeline, 2> htile_pipelines;
 };
 
 } // namespace VideoCore

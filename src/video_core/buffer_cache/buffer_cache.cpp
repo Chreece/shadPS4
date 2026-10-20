@@ -260,7 +260,7 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     const bool skip_stream_buffer = True(flags & ObtainBufferFlags::IgnoreStreamBuffer);
     // For read-only buffers use device local stream buffer to reduce renderpass breaks.
     if (!is_written && !skip_stream_buffer && size <= STREAM_THRESHOLD &&
-        !IsRegionGpuModified(device_addr, size)) {
+        !IsRegionGpuModified(device_addr, size) && !texture_cache.GetMetaInfo(device_addr)) {
         const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
         memory->CopySparseMemory(device_addr, data, size);
         stream_buffer.Commit();
@@ -586,6 +586,17 @@ bool BufferCache::SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 
         }
         staging.Flush();
         runtime.CopyBuffer(staging.buffer, arena, copies);
+    }
+    if (!is_written) {
+        if (const auto meta = texture_cache.GetMetaInfo(device_addr);
+            meta && meta->type == TextureCache::MetaType::HTile) {
+            auto& image = texture_cache.GetImage(meta->owner_id);
+            if (texture_cache.GetTileManager().SummarizeHtile(image, arena,
+                                                              arena->Offset(device_addr), size)) {
+                MarkRegionAsGpuModified(device_addr, size);
+                return true;
+            }
+        }
     }
     if (is_texel_buffer && !is_written) {
         return SynchronizeMemoryFromImage(arena, device_addr, size);

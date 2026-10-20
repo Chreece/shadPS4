@@ -109,6 +109,7 @@ ImageInfo::ImageInfo(const AmdGpu::DepthBuffer& buffer, u32 num_slices, VAddr ht
     pitch = buffer.Pitch();
     resources.layers = num_slices;
     meta_info.htile_addr = buffer.z_info.tile_surface_enable ? htile_address : 0;
+    meta_info.htile_stencil = !buffer.stencil_info.tile_stencil_disable;
 
     stencil_addr = write_buffer ? buffer.StencilWriteAddress() : buffer.StencilAddress();
     if (props.has_stencil) {

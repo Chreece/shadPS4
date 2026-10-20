@@ -359,6 +359,7 @@ void Rasterizer::PrepareRenderState(const GraphicsPipeline* pipeline) {
         auto& [image_id, desc] = db_desc;
         std::construct_at(&desc, regs.depth_buffer, regs.depth_view, regs.depth_control,
                           htile_address, hint);
+        desc.info.meta_info.htile_linear = regs.depth_htile_surface.linear;
         image_id = bound_images.emplace_back(texture_cache.FindImage(desc));
         auto& image = texture_cache.GetImage(image_id);
         image.binding.is_target = 1u;
