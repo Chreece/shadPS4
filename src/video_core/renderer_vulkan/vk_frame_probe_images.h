@@ -3,10 +3,13 @@
 
 #pragma once
 
+#include <array>
+#include <bit>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include "common/path_util.h"
@@ -211,25 +214,52 @@ inline void CaptureFrameProbeDispatch(const Instance& instance, Scheduler& sched
     });
 }
 
-inline void TraceFrameProbeBufferBinding(const Shader::Info& stage, u32 resource,
-                                         const AmdGpu::Buffer& sharp, bool written) {
+template <typename Sharp>
+inline bool FrameProbeBindingChanged(const Shader::Info& stage, u32 resource, const Sharp& sharp,
+                                     bool written) {
     const auto frame = FrameProbe().frame;
     if (!FrameProbeEnabled() || !frame) {
-        return;
+        return false;
     }
+    using Words = std::array<u32, sizeof(Sharp) / sizeof(u32)>;
+    using State = std::pair<Words, bool>;
+    static thread_local std::unordered_map<std::string, State> bindings;
     static thread_local u32 last_frame{}, events{};
     if (last_frame != frame) {
         last_frame = frame;
         events = 0;
+        bindings.clear();
+    }
+    const auto key = fmt::format("{}-{:#x}-{}", stage.hw_stage, stage.pgm_hash, resource);
+    const State state{std::bit_cast<Words>(sharp), written};
+    const auto found = bindings.find(key);
+    if (found != bindings.end() && found->second == state) {
+        return false;
     }
     if (events++ >= 8192) {
+        if (events == 8193) {
+            LOG_WARNING(Render_Vulkan,
+                        "FrameProbeBindingLimit: frame={} after_draw={} descriptor_words={} "
+                        "changes=8192 coverage=INCOMPLETE",
+                        frame, FrameProbe().draws, Words{}.size());
+        }
+        return false;
+    }
+    bindings.insert_or_assign(key, state);
+    return true;
+}
+
+inline void TraceFrameProbeBufferBinding(const Shader::Info& stage, u32 resource,
+                                         const AmdGpu::Buffer& sharp, bool written) {
+    if (!FrameProbeBindingChanged(stage, resource, sharp, written)) {
         return;
     }
+    const auto frame = FrameProbe().frame;
     const u64 bytes = sharp.stride ? u64(sharp.stride) * sharp.num_records : sharp.num_records;
     LOG_INFO(Render_Vulkan,
              "FrameProbeBufferBinding: frame={} after_draw={} shader={:#x} stage={} "
              "resource={} guest={:#x} bytes={} stride={} records={} written={} valid={} "
-             "confirmed_store=NO",
+             "confirmed_store=NO trace_scope=CHANGES_PER_SHADER_RESOURCE",
              frame, FrameProbe().draws, stage.pgm_hash, stage.hw_stage, resource,
              u64(sharp.base_address), bytes, u32(sharp.stride), sharp.num_records, written,
              sharp.Valid());
@@ -237,22 +267,14 @@ inline void TraceFrameProbeBufferBinding(const Shader::Info& stage, u32 resource
 
 inline void TraceFrameProbeImageBinding(const Shader::Info& stage, u32 resource,
                                         const AmdGpu::Image& sharp, bool written) {
+    if (!FrameProbeBindingChanged(stage, resource, sharp, written)) {
+        return;
+    }
     const auto frame = FrameProbe().frame;
-    if (!FrameProbeEnabled() || !frame) {
-        return;
-    }
-    static thread_local u32 last_frame{}, events{};
-    if (last_frame != frame) {
-        last_frame = frame;
-        events = 0;
-    }
-    if (events++ >= 8192) {
-        return;
-    }
     LOG_INFO(Render_Vulkan,
              "FrameProbeImageBinding: frame={} after_draw={} shader={:#x} stage={} "
              "resource={} guest={:#x} width={} height={} data_format={} number_format={} "
-             "written={} valid={}",
+             "written={} valid={} trace_scope=CHANGES_PER_SHADER_RESOURCE",
              frame, FrameProbe().draws, stage.pgm_hash, stage.hw_stage, resource, sharp.Address(),
              u32(sharp.width) + 1, u32(sharp.height) + 1, u32(sharp.GetDataFmt()),
              u32(sharp.GetNumberFmt()), written, sharp.Valid());
