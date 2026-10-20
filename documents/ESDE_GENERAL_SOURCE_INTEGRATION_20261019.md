@@ -212,3 +212,60 @@ preview bytes**. It does not use the nine-file handling as a host runtime
 hook, title selector, or shader hash fallback. If the Git source changed
 after that report, the resolver refuses an unexpected preimage and
 emits the new C++ conflict for review.
+
+## October 20 05:45 — later source-conflict reconciliation
+
+The attached \`esde-general-engine-merge-20261020-054547.tar.gz\`
+was inspected in full. The upstream and initial GoW/Ghost merge gates pass.
+The merge planner **attempted** all 84 selected subsequent revisions, recording
+82 candidate C++ sources and 26 conflicts, then stopped safely before any
+native build. It did not mutate the installed ES-DE core. The previously
+compiled candidate remained SHA-256
+\`48ae4ac2ec8f42e2155425521c8699359b466dd6459905948762de539865b5bc\`.
+
+**Important correction:** the original replay loop kept attempting edits to
+a file even after an earlier commit's same-file merge failed. This produced
+false follow-on conflicts — repeated literal cache versions 45–52, overlapping
+table-cache declarations and reintroduced experimental headers.
+
+Changes committed:
+
+- \`esde_general_late_semantic_resolver_20261020.py\` handles **19**
+  identified safe/source-reviewed conflict previews, each restricted to the
+  original uploaded whole-file SHA-256 and verified postimage SHA-256.
+  It retains both general header dependencies and the audited Vulkan indexed
+  image cache layout, plus real bounds-checked source selection.
+- Intermediate shader-cache numeric version conflicts are resolved by keeping
+  the current cache definition *during* source integration; after the entire
+  final shader ABI merges cleanly, the serializer is bumped **once** to
+  \`ShaderBinaryVersion=53\`, \`ShaderMetaVersion=27\` and
+  \`PipelineKeyVersion=6\`. Specialization read/write field symmetry is
+  checked before the final bump. No stale intermediate cache is reused.
+- The unused experimental \`SHADPS4_STRIDED_GUEST_TSHARP\` switch is
+  excluded from the vetted sampler source port. The unverified
+  \`b18cfc312904\` texture-slot-pressure opt-in commit is explicitly
+  **not promoted** as a default engine behavior; the selected later
+  general commit list is now **83**. Future promotion requires evidence of
+  safe allocation and lifetime behavior, not an environment variable.
+- Each first unresolved change now blocks subsequent commits that edit the
+  *same file*. The report records all skipped dependent edits without
+  pretending they were integrated. Other reviewed files can still be
+  examined, but any unresolved source blocks the *entire* candidate from
+  being applied.
+- New GPU/texture code is rejected if it introduces title-dependent
+  \`CUSA\`, \`vk_got_*\`, sampled-image feedback, or hardcoded shader-hash
+  branches. Diagnostic-only table dumps for a specific shader are not
+  silently promoted.
+- The pinned official upstream was reviewed through
+  \`a808e7626e3c7de8d0f0fda6a91f620b42f6c762\` (2026-10-20):
+  \`#5309\` stable file identity and \`#5445\` S_SLEEP scheduling hint
+  join the previous five general fixes.
+- The new self-test checks the actual nineteen 05:45 conflict previews
+  when their log archive is present, not just synthetic cases. CI verifies
+  the source-review registry and pins, without claiming gameplay.
+
+**Status:** corrections are committed; the changed integration logic has
+NOT yet run a full native build or game test. A new run may report fewer
+but more meaningful C++ conflicts because dependent changes are now
+blocked instead of being replayed on stale source. GoW gameplay and Ghost
+graphics acceptance remain mandatory before ES-DE selection.
