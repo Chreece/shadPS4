@@ -1067,16 +1067,17 @@ void Translator::V_RCP_F32(const GcnInst& inst) {
 
 void Translator::V_RCP_LEGACY_F32(const GcnInst& inst) {
     const IR::F32 src0{GetSrc<IR::F32>(inst.src[0])};
-    const auto result = ir.FPRecip(src0);
+    const IR::F32 result{ir.FPRecip(src0)};
     const auto inf = ir.FPIsInf(result);
 
-    const auto raw_result = ir.ConvertFToU(32, result);
+    const auto raw_result = ir.BitCast<IR::U32>(result);
     const auto sign_bit = ir.ShiftRightLogical(raw_result, ir.Imm32(31u));
     const auto sign_bit_set = ir.INotEqual(sign_bit, ir.Imm32(0u));
     const IR::F32 inf_result{ir.Select(sign_bit_set, ir.Imm32(-0.0f), ir.Imm32(0.0f))};
     const IR::F32 val{ir.Select(inf, inf_result, result)};
 
-    SetDst(inst.dst[0], val);
+    const IR::F32 zero{ir.Imm32(0.0f)};
+    SetDst(inst.dst[0], IR::F32{ir.Select(ir.FPEqual(src0, zero), zero, val)});
 }
 
 void Translator::V_RCP_F64(const GcnInst& inst) {
