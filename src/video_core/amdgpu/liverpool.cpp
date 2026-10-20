@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/preprocessor/stringize.hpp>
+#include <cstdlib>
 
 #include "common/assert.h"
 #include "common/debug.h"
@@ -23,6 +24,26 @@ namespace AmdGpu {
 
 static const char* dcb_task_name{"DCB_TASK"};
 static const char* ccb_task_name{"CCB_TASK"};
+
+static void TraceDispatchInitiator(u32 queue, u32 previous, u32 current) {
+    static const bool enabled = [] {
+        const char* value = std::getenv("SHADPS4_TRACE_DISPATCH_INITIATOR");
+        return value && value[0] == '1';
+    }();
+    if (!enabled || ((previous ^ current) & 1) == 0) {
+        return;
+    }
+    static thread_local std::array<u32, 2> reported{};
+    auto& count = reported[current & 1];
+    if (count >= 16) {
+        return;
+    }
+    ++count;
+    LOG_INFO(Render,
+             "DispatchInitiatorTransition: queue={} previous={:#x} packet={:#x} "
+             "previous_enabled={} packet_enabled={} reported={} per_direction_limit=16",
+             queue, previous, current, previous & 1, current & 1, count);
+}
 
 #define MAX_NAMES 56
 static_assert(Liverpool::NumComputeRings <= MAX_NAMES);
@@ -624,6 +645,8 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 auto& cs_program = GetCsRegs();
                 const auto offset = dispatch_indirect->data_offset;
                 const auto size = sizeof(PM4CmdDispatchIndirect::GroupDimensions);
+                TraceDispatchInitiator(0, cs_program.dispatch_initiator,
+                                       dispatch_indirect->dispatch_initiator);
                 cs_program.dispatch_initiator = dispatch_indirect->dispatch_initiator;
                 if (DebugState.DumpingCurrentReg()) {
                     DebugState.PushRegsDumpCompute(base_addr, reinterpret_cast<uintptr_t>(header),
@@ -1083,6 +1106,8 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             auto& cs_program = GetCsRegs();
             const auto ib_address = dispatch_indirect->Address<VAddr>();
             const auto size = sizeof(PM4CmdDispatchIndirect::GroupDimensions);
+            TraceDispatchInitiator(vqid + 1, cs_program.dispatch_initiator,
+                                   dispatch_indirect->dispatch_initiator);
             cs_program.dispatch_initiator = dispatch_indirect->dispatch_initiator;
             if (DebugState.DumpingCurrentReg()) {
                 DebugState.PushRegsDumpCompute(base_addr, reinterpret_cast<uintptr_t>(header),

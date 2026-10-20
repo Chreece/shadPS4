@@ -676,6 +676,16 @@ nice -n 10 cmake --build "$BUILD" \
     }
 echo "VK_RASTERIZER_OBJECT_BUILD=PASS" | tee -a "$RUN/host-tests.log"
 
+STATUS=COMPILE_DISPATCH_AND_COLLECTION_OBJECTS
+nice -n 10 ninja -C "$BUILD" -j 2 \
+  CMakeFiles/shadps4.dir/src/video_core/amdgpu/liverpool.cpp.o \
+  CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp.o \
+  > "$RUN/info/dispatch-collection-objects.log" 2>&1 || {
+    tail -100 "$RUN/info/dispatch-collection-objects.log"
+    STATUS=DISPATCH_COLLECTION_OBJECTS_FAILED; exit 2;
+  }
+echo "DISPATCH_COLLECTION_OBJECTS=PASS" | tee -a "$RUN/host-tests.log"
+
 STATUS=COMPILE_INDEXED_FEEDBACK_OBJECTS
 nice -n 10 ninja -C "$BUILD" -j 2 \
   CMakeFiles/shadps4.dir/src/shader_recompiler/frontend/translate/vector_memory.cpp.o \

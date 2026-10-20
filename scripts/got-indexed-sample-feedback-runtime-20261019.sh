@@ -981,6 +981,9 @@ PYSTAGEPIXELS
     else
       echo "MENU_MATERIAL_EVIDENCE=INCOMPLETE_REVIEW_FILTER_AND_BINDINGS"
     fi
+    echo "DISPATCH_INITIATOR_TRACE=ENABLED_MAX_16_PER_DIRECTION"
+    echo "DISPATCH_PREVIOUSLY_SKIPPED_REPORTED=$(grep -ac 'DispatchInitiatorTransition:.*previous_enabled=0 packet_enabled=1' "$RUN/game.log" || true)"
+    echo "DISPATCH_PREVIOUSLY_UNWANTED_REPORTED=$(grep -ac 'DispatchInitiatorTransition:.*previous_enabled=1 packet_enabled=0' "$RUN/game.log" || true)"
     echo "INDIRECT_COMPUTE_ARGUMENT_READBACKS=$(grep -ac 'FrameProbeDispatchArguments:' "$RUN/game.log" || true)"
 
     echo "INDEXED_TSHARP_BINDS=$(grep -ac 'RealIndexedTSharpBound:' "$RUN/game.log" || true)"
@@ -1158,7 +1161,7 @@ p=pathlib.Path(sys.argv[1])
 d=json.loads(p.read_text()) if p.exists() else {}
 assert isinstance(d,dict)
 assert isinstance(d.setdefault("Log",{}),dict)
-d["Log"].update(filter="*:critical Input:info Config:info Render.Recompiler:info Render.Vulkan:info",
+d["Log"].update(filter="*:critical Input:info Config:info Render:info Render.Recompiler:info Render.Vulkan:info",
                 sync=False,skip_duplicate=True)
 # Compile the instrumented shader in the isolated portable profile.
 assert isinstance(d.setdefault("Vulkan",{}),dict)
@@ -1208,6 +1211,7 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_MENU_PASS_TRACE=1
   export SHADPS4_GOT_MENU_STAGE_PIXELS=1
   export SHADPS4_GOT_SCENE_GPU_QUERY=1
+  export SHADPS4_TRACE_DISPATCH_INITIATOR=1
   export SHADPS4_FRAME_PROBE=1
   export SHADPS4_FRAME_PROBE_BUFFERS=1
   export SHADPS4_VERTEX_OUTPUT_FEEDBACK=1
