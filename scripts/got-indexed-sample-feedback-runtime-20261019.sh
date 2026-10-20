@@ -942,6 +942,12 @@ PYSTAGEPIXELS
     if [ -s "$RUN/info/missing-inputs.txt" ]; then cat "$RUN/info/missing-inputs.txt"; fi
     echo "ISOLATED_SHADPS4_RUN=YES"
     echo "CANDIDATE_SOURCE=$PIN"
+    echo "GPU_READBACKS_REQUIRED=2_PRECISE"
+    if grep -aEq 'GPU readbacksMode: 2([^0-9]|$)' "$RUN/game.log"; then
+      echo "GPU_READBACKS_VERIFIED=PASS"
+    else
+      echo "GPU_READBACKS_VERIFIED=FAIL"
+    fi
     echo "CAPTURE_DURATION_SECONDS=$SECONDS_TO_RUN"
     echo "CONTINUE_AFTER_SECONDS=$CONTINUE_AFTER_SECONDS"
     echo "CONTINUE_INPUT=$CONTINUE_INPUT"
@@ -1151,6 +1157,7 @@ d["Vulkan"]["pipeline_cache_enabled"]=False
 # output trace. Both settings live inside the isolated copied profile.
 assert isinstance(d.setdefault("GPU",{}),dict)
 d["GPU"]["patch_shaders"]=False
+d["GPU"]["readbacks_mode"]=2
 game_file=p.parent/"custom_configs"/"CUSA11456.json"
 if game_file.is_file():
     game_cfg=json.loads(game_file.read_text())
@@ -1159,10 +1166,12 @@ if game_file.is_file():
     if "GPU" in game_cfg and not isinstance(game_cfg["GPU"],dict):
         raise SystemExit("INVALID_ISOLATED_GAME_GPU_OVERRIDE")
     game_cfg.setdefault("GPU",{})["patch_shaders"]=False
+    game_cfg["GPU"]["readbacks_mode"]=2
     game_file.write_text(json.dumps(game_cfg,indent=2)+"\n")
 
 p.write_text(json.dumps(d,indent=2)+"\n")
 print("ISOLATED_CONFIG=PASS; PIPELINE_CACHE=OFF_TEST_ONLY")
+print("ISOLATED_GPU_READBACKS=2_PRECISE; GLOBAL_AND_GAME_OVERRIDE_CHECKED")
 PY
 
 # Isolated portable directory only. No probing files on the primary profile.
@@ -1300,6 +1309,11 @@ echo "GAME_EXIT=$GAME_EXIT"
 # Preserve the actual GPU-fault or low-VRAM abort as the root cause. Missing
 # later shader/query evidence is expected after an intentionally early stop.
 if [ "$STATUS" = GPU_FAULT_ABORT ] || [ "$STATUS" = RUNTIME_VRAM_CRITICAL_ABORT ]; then
+  exit 2
+fi
+if ! grep -aEq 'GPU readbacksMode: 2([^0-9]|$)' "$RUN/game.log"; then
+  STATUS=GPU_READBACKS_NOT_PRECISE
+  echo "GPU_READBACKS_VERIFICATION=FAILED; coherency capture is not valid"
   exit 2
 fi
 if ! grep -aq 'IndexedImageFeedback: shader=0x7eaf40ad.*timeline_complete=YES' "$RUN/game.log"; then
