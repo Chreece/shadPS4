@@ -10,8 +10,8 @@ BUILD="$WORK/build"
 BIN="$BUILD/shadps4"
 LOGS="$ROOT/logs"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
-CANDIDATE="756fdacd00d0f1d0dd8fd3104f0a47ce7a73b665"
-BRANCH="diagnostic/got-indexed-sample-feedback-20261019"
+CANDIDATE="9a141e842c48f9e8872139e7d4dfc809441749f3"
+BRANCH="fix/gcn-legacy-reciprocal-code-20261020"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 NAME="got-indexed-sample-feedback-host-$STAMP"
 RUN="$GOT/tests/runs/$NAME"
@@ -147,6 +147,7 @@ src/shader_recompiler/frontend/control_flow_graph.cpp
 src/shader_recompiler/frontend/structured_control_flow.cpp
 src/shader_recompiler/frontend/translate/data_share.cpp
 src/shader_recompiler/frontend/translate/vector_memory.cpp
+src/shader_recompiler/frontend/translate/vector_alu.cpp
 src/shader_recompiler/guest_tsharp_array.h
 src/shader_recompiler/buffer_table_span.h
 src/shader_recompiler/indexed_image_feedback.h
@@ -233,7 +234,7 @@ src/video_core/host_shaders/fault_buffer_process.comp
 src/shader_recompiler/backend/spirv/emit_spirv_special.cpp
 src/shader_recompiler/vertex_output_feedback.h
 GOT_PINNED_OVERLAY_FILES
-test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 101 || {
+test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 102 || {
     STATUS=UNEXPECTED_CANDIDATE_OVERLAY_SIZE; exit 2;
 }
 
@@ -539,7 +540,7 @@ assert "IsVaryingLocalInvocationComponent(" in lds
 assert "FindDivergentLoops(program.syntax_list, runtime_info)" in lds
 assert "EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth, runtime_info)" in lds
 assert "op == IR::Opcode::InverseBallot || op == IR::Opcode::GetUserData" in phi
-assert "ShaderBinaryVersion = 61u;" in serial
+assert "ShaderBinaryVersion = 62u;" in serial
 scalar = (Path(sys.argv[1]) / "shader_recompiler/frontend/translate/scalar_alu.cpp").read_text()
 assert "ir.SetScc(ir.InverseBallot(result));" not in scalar
 for name in ("S_AND_B64", "S_OR_B64", "S_NOT_B64", "S_SAVEEXEC_B64"):
@@ -572,7 +573,7 @@ assert "const Id pointer = param.id;" in spirv_context
 assert "OpInterpolateAtVertexAMD(F32[param.num_components], pointer, ConstU32(vertex))" in spirv_context
 print("GOT_COMPONENT_INTERPOLATION_WIRING=PASS per_component=YES mixed_inputs=YES")
 print("GOT_SHADER_UPSTREAM_CORRECTNESS_WIRING=PASS "
-      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=61")
+      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=62")
 print("GOT_INDIRECT_PRODUCER_SOURCE_WIRING=PASS observed_zero_commands=32 "
       "buffer_shader=YES compute_dispatch=YES cpu_upload=YES vk_copy=YES")
 # The previous host link failed at rasterizer.cpp:492: an undefined

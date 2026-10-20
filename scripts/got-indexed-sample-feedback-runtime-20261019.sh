@@ -7,17 +7,20 @@ GOT="$ROOT/GhostOfTsushima"
 WORK="$GOT/tests/got-upstream-menu-main-20261017-cached"
 LOGS="$ROOT/logs"
 BIN="$WORK/build/shadps4"
-PIN="756fdacd00d0f1d0dd8fd3104f0a47ce7a73b665"
-SHADER_COLLECTOR_PIN="756fdacd00d0f1d0dd8fd3104f0a47ce7a73b665"
+PIN="9a141e842c48f9e8872139e7d4dfc809441749f3"
+SHADER_COLLECTOR_PIN="9a141e842c48f9e8872139e7d4dfc809441749f3"
 CANDIDATE="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$PIN"
 HOST_REPORT="${GOT_INDEXED_SAMPLE_FEEDBACK_HOST_REPORT:-$LOGS/got-indexed-sample-feedback-host-not-built.tar.gz}"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 PROFILE="$GOT/play/np-init-affinity-main-20261015-195552"
 API="http://127.0.0.1:7869"
 MIN_VRAM=$((8*1024*1024*1024))
-SECONDS_TO_RUN=300
-CONTINUE_AFTER_SECONDS="${GOT_CONTINUE_AFTER_SECONDS:-45}"
-if [[ ! "$CONTINUE_AFTER_SECONDS" =~ ^[0-9]+$ ]]; then
+SECONDS_TO_RUN=210
+CAPTURE_STOP=TIME_LIMIT
+PROBES_COMPLETED_AT=-1
+FRAME_PROBE_CHECKPOINTS="160,165,170"
+CONTINUE_AFTER_SECONDS="${GOT_CONTINUE_AFTER_SECONDS:-150}"
+if [[ ! "$CONTINUE_AFTER_SECONDS" =~ ^[0-9]{1,3}$ ]] || (( 10#$CONTINUE_AFTER_SECONDS > 150 )); then
   echo "INVALID_CONTINUE_DELAY"; exit 2
 fi
 CONTINUE_INPUT=NOT_ATTEMPTED
@@ -951,7 +954,10 @@ PYSTAGEPIXELS
     else
       echo "GPU_READBACKS_VERIFIED=FAIL"
     fi
-    echo "CAPTURE_DURATION_SECONDS=$SECONDS_TO_RUN"
+    echo "CAPTURE_DURATION_SECONDS=${elapsed:-0}"
+    echo "CAPTURE_MAX_SECONDS=$SECONDS_TO_RUN"
+    echo "CAPTURE_STOP=$CAPTURE_STOP"
+    echo "FRAME_PROBE_CHECKPOINTS=$FRAME_PROBE_CHECKPOINTS"
     echo "SCALAR_CAPTURE_SCOPE=PER_BINDING_SEQUENCE"
     echo "IMAGE_CAPTURE_ROW_STEP=ADAPTED_FROM_PRECEDING_FRAME"
     echo "IMAGE_CAPTURE_MEMORY_LIMIT_MIB=128"
@@ -1198,7 +1204,7 @@ PY
 mkdir -p "$RUN/profile/user/shader/got-menu-probes"
 STATUS=GAME_RUNNING
 echo "GAME_START duration=${SECONDS_TO_RUN}s DISPLAY=$DISPLAY_OK"
-echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled after 150 seconds. Do not press it manually."
+echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled after ${CONTINUE_AFTER_SECONDS} seconds. Do not press it manually."
 (
   cd "$RUN/profile"
   test -d "$RUN/profile/user"
@@ -1220,6 +1226,7 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_GOT_SCENE_GPU_QUERY=1
   export SHADPS4_TRACE_DISPATCH_INITIATOR=0
   export SHADPS4_FRAME_PROBE=1
+  export SHADPS4_FRAME_PROBE_CHECKPOINTS="$FRAME_PROBE_CHECKPOINTS"
   export SHADPS4_FRAME_PROBE_BUFFERS=1
   export SHADPS4_VERTEX_OUTPUT_FEEDBACK=0
   export SHADPS4_INDIRECT_WAR_AUDIT=0
@@ -1231,11 +1238,11 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   # Preserve native depth and raster state for the indexed-sample capture.
   export SHADPS4_GOT_SCENE_DEPTH_AB=0
   export SHADPS4_GOT_SCENE_RASTER_AB=0
-  export SHADPS4_GOT_MENU_CAPTURE_DELAY_SEC="${GOT_CAPTURE_DELAY_SEC:-85}"
+  export SHADPS4_GOT_MENU_CAPTURE_DELAY_SEC="${GOT_CAPTURE_DELAY_SEC:-160}"
   export SHADPS4_MENU_WATCH_SOURCE=0x1504a08000
   export SHADPS4_RENDER_AUDIT=0
   export SHADPS4_INDEXED_TABLE_DUMP=1
-  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0xae3b2e07,0xf1632d27,0x486c5b88,0x62ffd078,0xbd2dcc80,0xa820e215,0xb961cd7a,0x7116dee2,0x4cdc7449,0x22d378cd"
+  export SHADPS4_TARGET_SHADER_DUMP_HASHES="0x230e5389,0xae3b2e07,0xf1632d27,0x486c5b88,0x62ffd078,0xbd2dcc80,0xa820e215,0xb961cd7a,0x7116dee2,0x4cdc7449,0x22d378cd"
   export SHADPS4_INVALID_SHARP_TRACE_HASHES="0x7eaf40ad,0x5065ed7b,0x00a4f19a,0x8ced785b,0x04950cf6,0x52b6e003,0x55d17c16,0x5c4c2b6f,0x836253ca,0x7472760d,0x9d9a6bd6,0x5116e459,0xc1123f0f,0xd0355f00,0xc8caf263,0xb0f0dc90,0xf27da132,0x438dda67,0x7a13da58,0xeb5093c3"
   export SHADPS4_SRT_SOURCE_AUDIT=0
   export SHADPS4_SRT_INLINE_AUDIT=0
@@ -1319,6 +1326,17 @@ while kill -0 "$TEST_PGID" 2>/dev/null; do
       "$RUN/screenshots/$elapsed.png" >/dev/null 2>&1 || true
     next_screenshot=$((elapsed+10))
   fi
+  if [ "$CONTINUE_INPUT" = KEY_SENT ] &&
+     [ "$(grep -ac 'FrameProbeEnd:' "$RUN/game.log" || true)" -ge 6 ]; then
+    if [ "$PROBES_COMPLETED_AT" -lt 0 ]; then
+      PROBES_COMPLETED_AT="$elapsed"
+    elif [ $((elapsed-PROBES_COMPLETED_AT)) -ge 10 ]; then
+      CAPTURE_STOP=PROBES_COMPLETE
+      echo "GAMEPLAY_PROBES_COMPLETE_STOPPING elapsed=${elapsed}s"
+      kill -TERM -- "-$TEST_PGID" 2>/dev/null || true
+      break
+    fi
+  fi
   sleep 3
 done
 set +e
@@ -1337,6 +1355,12 @@ if ! grep -aEq 'GPU readbacksMode: 2([^0-9]|$)' "$RUN/game.log"; then
   echo "GPU_READBACKS_VERIFICATION=FAILED; coherency capture is not valid"
   exit 2
 fi
+if [ "$CONTINUE_INPUT" != KEY_SENT ] ||
+   ! grep -aq 'FrameProbeEnd: frame=6 ' "$RUN/game.log"; then
+  STATUS=GAMEPLAY_CAPTURE_INCOMPLETE
+  echo "GAMEPLAY_CAPTURE_INCOMPLETE continue_input=$CONTINUE_INPUT; see info/final.txt"
+  exit 2
+fi
 if ! grep -aq 'IndexedImageFeedback: shader=0x7eaf40ad.*timeline_complete=YES' "$RUN/game.log"; then
   echo "INDEXED_SAMPLE_FEEDBACK=NOT_CAPTURED; no executed-index or sample-value claim"
 fi
@@ -1347,7 +1371,8 @@ if ! grep -aq 'GotSceneIndirectGpuArgs:.*GPU_READBACK_PASS' "$RUN/game.log"; the
   echo "GPU_INDIRECT_ARGUMENTS=NOT_CAPTURED; no geometry-count claim"
 fi
 echo "NATIVE_GUEST_RASTER_AND_DEPTH_STATE=UNCHANGED"
-if [ "$GAME_EXIT" -eq 0 ] || [ "$GAME_EXIT" -eq 124 ]; then
+if [ "$GAME_EXIT" -eq 0 ] || [ "$GAME_EXIT" -eq 124 ] ||
+   { [ "$GAME_EXIT" -eq 143 ] && [ "$CAPTURE_STOP" = PROBES_COMPLETE ]; }; then
   STATUS=CAPTURE_COMPLETE
 else
   STATUS=GAME_ABNORMAL_EXIT
