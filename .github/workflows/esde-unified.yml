@@ -54,12 +54,12 @@ jobs:
           spec=importlib.util.spec_from_file_location("late",p)
           mod=importlib.util.module_from_spec(spec)
           spec.loader.exec_module(mod)
-          assert len(mod.CASES)==19
+          assert len(mod.CASES)==21
           assert all(len(pairs)==2 and all(len(h)==64 for h in pairs)
                      for pairs in mod.CASES.values())
           assert mod.resolve("not-a-commit","not-a-file",b"") is None
           assert not any("b18cfc312904" in key for key in mod.CASES)
-          print("LATER_REVIEWED_SOURCE_HUNKS=PASS count=19")
+          print("LATER_REVIEWED_SOURCE_HUNKS=PASS count=21")
           print("UNPROVEN_TEXTURE_SLOT_PRESSURE_OPT_IN=NOT_PROMOTED")
           PY
       - name: Exact upstream / GPU source pin audit
