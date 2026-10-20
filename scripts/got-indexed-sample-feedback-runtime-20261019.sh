@@ -19,7 +19,7 @@ SECONDS_TO_RUN=175
 FRAME_PROBE_LIMIT=1
 CAPTURE_STOP=TIME_LIMIT
 PROBES_COMPLETED_AT=-1
-FRAME_PROBE_CHECKPOINTS="160"
+FRAME_PROBE_CHECKPOINTS="160,165,170"
 CONTINUE_AFTER_SECONDS="${GOT_CONTINUE_AFTER_SECONDS:-150}"
 if [[ ! "$CONTINUE_AFTER_SECONDS" =~ ^[0-9]{1,3}$ ]] || (( 10#$CONTINUE_AFTER_SECONDS > 150 )); then
   echo "INVALID_CONTINUE_DELAY"; exit 2
@@ -41,6 +41,38 @@ START_ISO="$(date -Is)"
 mkdir -p "$RUN/info" "$RUN/screenshots" "$RUN/profile/user/shader/got-menu-probes" "$RUN/profile/user/shader/frame-probes" "$RUN/remaining-shaders" "$LOGS"
 touch "$RUN/info/console.log" "$RUN/game.log"
 exec > >(tee -a "$RUN/info/console.log") 2>&1
+
+analyze_compute_pairs() {
+  python3 - "$RUN" <<'PYCOMPUTEPAIRS'
+import hashlib,json,pathlib,re,sys
+run=pathlib.Path(sys.argv[1]); root=run/"profile/user/shader/frame-probes"
+rows=[]; errors=[]
+for before in root.glob("*-before.buffer.bin"):
+    meta=pathlib.Path(str(before)+".txt")
+    if not meta.is_file():
+        errors.append("missing metadata: "+before.name); continue
+    fields=dict(line.split("=",1) for line in meta.read_text().splitlines())
+    if fields.get("written")=="true" and not before.with_name(before.name.replace("-before.buffer.bin","-after.buffer.bin")).is_file():
+        errors.append("missing output: "+before.name)
+for after in sorted(root.glob("*-after.buffer.bin")):
+    before=after.with_name(after.name.replace("-after.buffer.bin","-before.buffer.bin"))
+    if not before.is_file():
+        errors.append("missing input: "+after.name); continue
+    a=before.read_bytes(); b=after.read_bytes()
+    if len(a)!=len(b): errors.append("length mismatch: "+after.name)
+    rows.append(dict(file=after.name,bytes=len(b),changed_bytes=sum(x!=y for x,y in zip(a,b)),
+                     before_sha256=hashlib.sha256(a).hexdigest(),after_sha256=hashlib.sha256(b).hexdigest()))
+log_path=run/"game.log"
+log=log_path.read_text(errors="replace") if log_path.is_file() else ""
+for line in log.splitlines():
+    if "ComputeBufferCapture:" in line and "status=SAVED" not in line:
+        errors.append(line)
+if not rows: errors.append("no output pairs")
+(run/"info/compute-buffer-pairs.json").write_text(json.dumps(dict(pairs=rows,errors=errors),indent=2))
+print(f"COMPUTE_OUTPUT_PAIRS={len(rows)} CHANGED_PAIRS={sum(r['changed_bytes']>0 for r in rows)} ERRORS={len(errors)}")
+if errors: raise SystemExit(2)
+PYCOMPUTEPAIRS
+}
 
 cleanup() {
   rc=$?
@@ -939,6 +971,10 @@ if not count:summary.append("NO_GPU_STAGE_READBACK_AVAILABLE=YES")
 print("\n".join(summary))
 PYSTAGEPIXELS
 
+  if [ ! -f "$RUN/info/compute-buffer-pairs.json" ]; then
+    analyze_compute_pairs > "$RUN/info/compute-buffer-pairs.log" 2>&1
+  fi
+
   {
     echo "STATUS=$STATUS"
     echo "GAME_EXIT=$GAME_EXIT"
@@ -977,7 +1013,7 @@ PYSTAGEPIXELS
     echo "HTILE_INPUT_BUFFERS=$(grep -aEc 'FrameProbeBuffer:.*resource=cs-0x(30ec076|8ced785b)-.*status=SAVED' "$RUN/game.log" || true)"
     echo "VERTEX_FEEDBACK=DISABLED"
     echo "SCALAR_BINARY_DUMPS=ACTUAL_BOUND_COMPUTE_FLATBUF"
-    echo "COMPUTE_CAPTURE_FILTER=bf804101,dc49d825"
+    echo "COMPUTE_CAPTURE_FILTER=bf804101"
     echo "COMPUTE_INPUT_SNAPSHOTS=$(grep -ac 'ComputeBufferCapture:.*phase=before.*status=SAVED' "$RUN/game.log" || true)"
     echo "COMPUTE_OUTPUT_SNAPSHOTS=$(grep -ac 'ComputeBufferCapture:.*phase=after.*status=SAVED' "$RUN/game.log" || true)"
     echo "COMPUTE_DISPATCHES=$(grep -ac 'ComputeBufferDispatch:' "$RUN/game.log" || true)"
@@ -1239,7 +1275,7 @@ echo "MENU_THEN_GAMEPLAY: leave Continue selected; one N press is scheduled afte
   export SHADPS4_FRAME_PROBE_TARGET_BINDINGS_ONLY=1
   export SHADPS4_VERTEX_OUTPUT_FEEDBACK=0
   unset SHADPS4_VERTEX_OUTPUT_FEEDBACK_HASHES
-  export SHADPS4_COMPUTE_BUFFER_CAPTURE_HASHES="0xbf804101,0xdc49d825"
+  export SHADPS4_COMPUTE_BUFFER_CAPTURE_HASHES="0xbf804101"
   export SHADPS4_INDIRECT_WAR_AUDIT=0
   # The frame census includes indirect arguments; older menu probes stay disabled.
   export SHADPS4_GOT_INDIRECT_PRODUCERS=0
@@ -1352,6 +1388,7 @@ GAME_EXIT=$?
 set -e
 TEST_PGID=""
 echo "GAME_EXIT=$GAME_EXIT"
+analyze_compute_pairs > "$RUN/info/compute-buffer-pairs.log" 2>&1 || true
 # Preserve the actual GPU-fault or low-VRAM abort as the root cause. Missing
 # later shader/query evidence is expected after an intentionally early stop.
 if [ "$STATUS" = GPU_FAULT_ABORT ] || [ "$STATUS" = RUNTIME_VRAM_CRITICAL_ABORT ]; then
@@ -1368,34 +1405,12 @@ if [ "$CONTINUE_INPUT" != KEY_SENT ] ||
   echo "GAMEPLAY_CAPTURE_INCOMPLETE continue_input=$CONTINUE_INPUT; see info/final.txt"
   exit 2
 fi
-if ! python3 - "$RUN" <<'PYCOMPUTEPAIRS'
-import hashlib,json,pathlib,re,sys
-run=pathlib.Path(sys.argv[1]); root=run/"profile/user/shader/frame-probes"
-rows=[]; errors=[]
-for before in root.glob("*-before.buffer.bin"):
-    meta=pathlib.Path(str(before)+".txt")
-    if not meta.is_file():
-        errors.append("missing metadata: "+before.name); continue
-    fields=dict(line.split("=",1) for line in meta.read_text().splitlines())
-    if fields.get("written")=="true" and not before.with_name(before.name.replace("-before.buffer.bin","-after.buffer.bin")).is_file():
-        errors.append("missing output: "+before.name)
-for after in sorted(root.glob("*-after.buffer.bin")):
-    before=after.with_name(after.name.replace("-after.buffer.bin","-before.buffer.bin"))
-    if not before.is_file():
-        errors.append("missing input: "+after.name); continue
-    a=before.read_bytes(); b=after.read_bytes()
-    if len(a)!=len(b): errors.append("length mismatch: "+after.name)
-    rows.append(dict(file=after.name,bytes=len(b),changed_bytes=sum(x!=y for x,y in zip(a,b)),
-                     before_sha256=hashlib.sha256(a).hexdigest(),after_sha256=hashlib.sha256(b).hexdigest()))
-log=(run/"game.log").read_text(errors="replace")
-for line in log.splitlines():
-    if "ComputeBufferCapture:" in line and "status=SAVED" not in line:
-        errors.append(line)
-if not rows: errors.append("no output pairs")
-(run/"info/compute-buffer-pairs.json").write_text(json.dumps(dict(pairs=rows,errors=errors),indent=2))
-print(f"COMPUTE_OUTPUT_PAIRS={len(rows)} CHANGED_PAIRS={sum(r['changed_bytes']>0 for r in rows)} ERRORS={len(errors)}")
-if errors: raise SystemExit(2)
-PYCOMPUTEPAIRS
+if [ ! -f "$RUN/info/compute-buffer-pairs.json" ] ||
+   ! python3 - "$RUN/info/compute-buffer-pairs.json" <<'PYPAIRSTATUS'
+import json,sys
+result=json.load(open(sys.argv[1]))
+raise SystemExit(0 if result["pairs"] and not result["errors"] else 2)
+PYPAIRSTATUS
 then
   STATUS=COMPUTE_CAPTURE_INCOMPLETE
   exit 2
