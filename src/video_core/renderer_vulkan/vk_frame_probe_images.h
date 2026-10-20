@@ -268,6 +268,29 @@ struct FrameProbeImage {
     bool depth{};
 };
 
+inline u32 FrameProbePixelBytes(vk::Format format) {
+    switch (format) {
+    case vk::Format::eR16G16B16A16Unorm:
+    case vk::Format::eR16G16B16A16Sfloat:
+        return 8;
+    case vk::Format::eR16G16Sfloat:
+    case vk::Format::eR16G16Snorm:
+    case vk::Format::eR16G16Unorm:
+    case vk::Format::eR32Sfloat:
+    case vk::Format::eD32Sfloat:
+    case vk::Format::eD32SfloatS8Uint:
+    case vk::Format::eR8G8B8A8Unorm:
+    case vk::Format::eR8G8B8A8Srgb:
+    case vk::Format::eB8G8R8A8Unorm:
+    case vk::Format::eB8G8R8A8Srgb:
+        return 4;
+    case vk::Format::eR8G8Unorm:
+        return 2;
+    default:
+        return 0;
+    }
+}
+
 inline void CaptureFrameProbePass(const Instance& instance, Scheduler& scheduler,
                                   const RenderState& render_state,
                                   std::vector<FrameProbeImage> targets, u32 frame, u32 last_draw) {
@@ -280,8 +303,18 @@ inline void CaptureFrameProbePass(const Instance& instance, Scheduler& scheduler
              render_state.depth_stencil_attachment.has_depth,
              render_state.depth_stencil_attachment.depth_clear,
              render_state.depth_stencil_attachment.stencil_clear);
-    if (!probe.ImagesEnabled() || targets.empty() || render_state.width < 640 ||
-        render_state.height < 360) {
+    if (targets.empty() || render_state.width < 640 || render_state.height < 360) {
+        return;
+    }
+    if (!probe.ImagesEnabled()) {
+        for (const auto& target : targets) {
+            if (target.layout == vk::ImageLayout::eUndefined) {
+                continue;
+            }
+            const u64 row_bytes = u64(target.width) * FrameProbePixelBytes(target.format);
+            probe.image_full_bytes += row_bytes * target.height;
+            probe.image_row_bytes += row_bytes;
+        }
         return;
     }
     const auto directory =
@@ -293,40 +326,18 @@ inline void CaptureFrameProbePass(const Instance& instance, Scheduler& scheduler
         return;
     }
     for (const auto& target : targets) {
-        u32 bpp{};
-        switch (target.format) {
-        case vk::Format::eR16G16B16A16Unorm:
-        case vk::Format::eR16G16B16A16Sfloat:
-            bpp = 8;
-            break;
-        case vk::Format::eR16G16Sfloat:
-        case vk::Format::eR16G16Snorm:
-        case vk::Format::eR16G16Unorm:
-        case vk::Format::eR32Sfloat:
-        case vk::Format::eD32Sfloat:
-        case vk::Format::eD32SfloatS8Uint:
-        case vk::Format::eR8G8B8A8Unorm:
-        case vk::Format::eR8G8B8A8Srgb:
-        case vk::Format::eB8G8R8A8Unorm:
-        case vk::Format::eB8G8R8A8Srgb:
-            bpp = 4;
-            break;
-        case vk::Format::eR8G8Unorm:
-            bpp = 2;
-            break;
-        default:
-            break;
-        }
+        const u32 bpp = FrameProbePixelBytes(target.format);
         if (!bpp || !target.width || !target.height ||
             target.layout == vk::ImageLayout::eUndefined) {
             LOG_INFO(Render_Vulkan, "FrameProbeImageSkip: frame={} pass={} attachment={} format={}",
                      frame, pass, target.attachment, u32(target.format));
             continue;
         }
-        constexpr u32 row_step = 8;
+        const u32 row_step = probe.image_row_step;
         const u32 rows = (target.height + row_step - 1) / row_step;
         const u64 bytes = u64(target.width) * rows * bpp;
-        if (probe.images >= 128 || bytes > 128_MB - probe.bytes) {
+        if (bytes > 128_MB - probe.bytes) {
+            ++probe.image_budget_skips;
             LOG_INFO(Render_Vulkan, "FrameProbeImageSkip: frame={} pass={} reason=BUDGET", frame,
                      pass);
             continue;
@@ -385,7 +396,8 @@ inline void CaptureFrameProbePass(const Instance& instance, Scheduler& scheduler
         const auto path =
             directory / fmt::format("f{}-p{}-a{}.raw", frame, pass, target.attachment);
         scheduler.DeferPriorityOperation(
-            [buffer = std::move(buffer), path, target, bytes, rows, frame, pass, last_draw]() {
+            [buffer = std::move(buffer), path, target, bytes, rows, frame, pass, last_draw,
+             row_step]() {
                 buffer->Invalidate(0, bytes);
                 std::ofstream output(path, std::ios::binary);
                 if (buffer->mapped_data.size() < bytes || !output) {
@@ -397,7 +409,8 @@ inline void CaptureFrameProbePass(const Instance& instance, Scheduler& scheduler
                 std::ofstream metadata(path.string() + ".txt");
                 metadata << "frame=" << frame << "\npass=" << pass << "\nlast_draw=" << last_draw
                          << "\nguest=" << target.guest << "\nwidth=" << target.width
-                         << "\nheight=" << target.height << "\nrows=" << rows << "\nrow_step=8"
+                         << "\nheight=" << target.height << "\nrows=" << rows
+                         << "\nrow_step=" << row_step
                          << "\nformat=" << u32(target.format) << "\ndepth=" << target.depth
                          << "\nlevel=" << target.level << "\nlayer=" << target.layer << "\n";
                 output.flush();

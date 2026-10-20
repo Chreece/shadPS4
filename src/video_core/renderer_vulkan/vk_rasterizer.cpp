@@ -1077,7 +1077,7 @@ void Rasterizer::ArmFrameProbePass(const RenderState& state) {
     std::vector<Diagnostics::FrameProbeImage> targets;
     const auto append = [&](const ImageBinding& binding, const RenderAttachment& attachment,
                             u32 slot, bool depth) {
-        if (!binding.image_id || !attachment.image_view || !probe.ImagesEnabled()) {
+        if (!binding.image_id || !attachment.image_view) {
             return;
         }
         const auto& image = texture_cache.GetImage(binding.image_id);

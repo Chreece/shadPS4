@@ -32,6 +32,10 @@ struct FrameProbeState {
     u32 argument_copies{};
     u32 image_events{};
     u64 bytes{};
+    u64 image_full_bytes{};
+    u64 image_row_bytes{};
+    u32 image_row_step{8};
+    u32 image_budget_skips{};
     std::unordered_map<u64, u32> argument_pairs;
 
     bool ImagesEnabled() const {
@@ -41,10 +45,23 @@ struct FrameProbeState {
     void Present(u64 seconds) {
         constexpr std::array<u64, 3> checkpoints{60, 120, 210};
         if (frame) {
+            if (!ImagesEnabled()) {
+                image_row_step = 8;
+                while (image_row_step < 16384 &&
+                       image_full_bytes / image_row_step + image_row_bytes > 96_MB) {
+                    image_row_step *= 2;
+                }
+                LOG_INFO(Render_Vulkan,
+                         "FrameProbeImagePlan: frame={} next_frame={} row_step={} "
+                         "full_bytes={} row_bytes={} budget_bytes={}",
+                         frame, frame + 1, image_row_step, image_full_bytes, image_row_bytes,
+                         128_MB);
+            }
             LOG_INFO(Render_Vulkan,
                      "FrameProbeEnd: frame={} draws={} query_limit={} passes={} images={} "
-                     "image_bytes={} argument_copies={} coverage={}",
-                     frame, draws, FrameProbeDrawLimit, passes, images, bytes, argument_copies,
+                     "image_bytes={} image_budget_skips={} argument_copies={} coverage={}",
+                     frame, draws, FrameProbeDrawLimit, passes, images, bytes, image_budget_skips,
+                     argument_copies,
                      draws <= FrameProbeDrawLimit ? "ALL_SUBMITTED_DRAWS" : "QUERY_LIMIT_REACHED");
             completed = frame;
             frame = 0;
@@ -55,6 +72,8 @@ struct FrameProbeState {
         frame = completed + 1;
         draws = passes = images = argument_copies = image_events = 0;
         bytes = 0;
+        image_full_bytes = image_row_bytes = 0;
+        image_budget_skips = 0;
         argument_pairs.clear();
         LOG_INFO(Render_Vulkan,
                  "FrameProbeBegin: frame={} elapsed_s={} mode={} shader_filter=NONE "

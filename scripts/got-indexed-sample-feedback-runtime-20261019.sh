@@ -950,6 +950,9 @@ PYSTAGEPIXELS
     fi
     echo "CAPTURE_DURATION_SECONDS=$SECONDS_TO_RUN"
     echo "SCALAR_CAPTURE_SCOPE=PER_BINDING_SEQUENCE"
+    echo "IMAGE_CAPTURE_ROW_STEP=ADAPTED_FROM_PRECEDING_FRAME"
+    echo "IMAGE_CAPTURE_MEMORY_LIMIT_MIB=128"
+    echo "IMAGE_CAPTURE_BUDGET_SKIPS=$(grep -ac 'FrameProbeImageSkip:.*reason=BUDGET' "$RUN/game.log" || true)"
     echo "BUFFER_CAPTURE_SCOPE=FIRST_USE_OF_EACH_DISTINCT_BINDING"
     echo "SCALAR_CAPTURE_COMPLETED=$(grep -ac 'FrameProbeScalarReadback:.*status=COMPLETE' "$RUN/game.log" || true)"
     echo "SCALAR_CAPTURE_LIMIT_EVENTS=$(grep -ac 'FrameProbeScalarLimit:' "$RUN/game.log" || true)"
