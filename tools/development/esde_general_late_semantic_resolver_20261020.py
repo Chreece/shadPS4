@@ -35,6 +35,8 @@ CASES = {
 "1b1ca11bfea7:src/shader_recompiler/ir/passes/resource_discover_pass.cpp":("b1bf010aad1b146653fd3681141051007972e95c27c8080acbf969f07b584e79","9d0ca9f9f6ce3d5e2f0c8ff576873ab69c6ea76cd519069c331b13b6ea4d9599"),
 "71faef4a8d76:src/shader_recompiler/ir/passes/resource_patching_pass.cpp":("4594bb812bdbdc643eb1e449c2bef61c690ba041f4acb866424f8e66da81ac93","4be050220279e0049ebf468d930661bcbe58b0dfe31406309b71e6f52bf60b95"),
 "71faef4a8d76:src/video_core/renderer_vulkan/vk_rasterizer.cpp":("68785613144d109d8fbbd085b18974e8c19b63d71dc0f6e136df7b832dc6fa1c","d746d2cef76be2602d171aa95e94b313573927212b798e3e8517030f255e97f3"),
+"c036336bf4b9:src/video_core/renderer_vulkan/vk_rasterizer.cpp":("0eb7a0564a59a10bcbe4af05764f3950e550929c4da3dcc8d730fdf3cc0a16ee","a8afbbbd946677d530e9288f53746bf22239b7c9a9a46d33bfc87171aa33391d"),
+"1b1ca11bfea7:src/video_core/renderer_vulkan/vk_rasterizer.cpp":("c7a34bf850e4ba0e044eeaea9c411666aea1a8172d4c4d7826c31ec37defc818","99c3802db848823f27d7f259a4f4e298c7280be3721d155f48a29b44032e20b5"),
 }
 PATTERN = re.compile(
     r"(?ms)^<<<<<<< current-GoW-upstream\n(.*?)^=======\n(.*?)^>>>>>>> generic-GoT\n"
@@ -52,6 +54,24 @@ def resolve(commit12: str, rel: str, preview: bytes) -> bytes | None:
     def choose(match):
         seen[0] += 1
         ours, theirs = match.group(1), match.group(2)
+        if rel.endswith("vk_rasterizer.cpp") and commit12 in (
+                "c036336bf4b9", "1b1ca11bfea7"):
+            if commit12 == "c036336bf4b9":
+                assert seen[0] == 1
+                assert "vk_occlusion_query.h" in ours
+                assert "vk_buffer_hazard_rules.h" in theirs
+                # Real draw-indirect hazard rules, without Ghost-only GPU
+                # screenshots or scene-specific diagnostic include paths.
+                return ('#include "video_core/renderer_vulkan/vk_buffer_hazard_rules.h"\\n'.replace('\\n','\n') + ours)
+            if seen[0] == 1:
+                assert not ours.strip()
+                assert "indexed_image_feedback.h" in theirs
+                assert "shader_recompiler/resource.h" in theirs
+                return '#include "shader_recompiler/resource.h"\\n'.replace('\\n','\n')
+            assert seen[0] == 2
+            assert "vk_occlusion_query.h" in ours
+            assert "vk_buffer_hazard_rules.h" in theirs
+            return ('#include "video_core/renderer_vulkan/vk_buffer_hazard_rules.h"\\n'.replace('\\n','\n') + ours)
         if commit12 == "16ab0edbd70e":
             assert seen[0] == 1 and "#include <functional>" in ours
             assert "#include <vector>" in theirs
