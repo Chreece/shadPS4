@@ -285,9 +285,10 @@ void EmitContext::DefineAmdPerVertexAttribs() {
             continue;
         }
         const auto load_vertices = [&](SpirvAttribute& param) {
+            const Id pointer = param.id;
             for (u32 vertex = 0; vertex < 3; ++vertex) {
                 param.id_array[vertex] =
-                    OpInterpolateAtVertexAMD(F32[param.num_components], param.id, ConstU32(vertex));
+                    OpInterpolateAtVertexAMD(F32[param.num_components], pointer, ConstU32(vertex));
             }
             param.is_loaded = true;
         };

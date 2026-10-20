@@ -23,3 +23,13 @@ OpenOrbis hardware probe source is in documents/homebrew/component-interpolation
 The four indirect compute commands for 04950cf6, 55d17c16, 52b6e003 and 5c4c2b6f contain group dimensions (0, 1, 1) at captured checkpoints. These dispatches execute no work. Previously recorded downstream draws also have zero instance counts. This starts before rasterization and is independent evidence from the material interpolation defect. It does not establish that every empty command should produce visible geometry or identify which command belongs to the missing sword.
 
 The sword-bearing normal attachment and its later fullscreen reconstruction still do not prove a fresh sword draw reaches the main colour/depth attachments. No forced counts, clipping/depth changes, texture overrides or title-specific rendering conditions are introduced. The native follow-up must check material selector feedback, grass colour and missing elements separately; a successful build alone does not establish that the menu or gameplay is fixed.
+
+## Native regression and correction (075928 archive)
+
+The first candidate built successfully but exited with signal status 133 while creating graphics pipeline 5faeb78a31c7898b, before any checkpoint menu frames. It did not complete a five-minute menu capture. The crash follows compilation of the grass fragment/vertex pair. No GPU fault was reported.
+
+The captured fragment SPIR-V exposes a regression in DefineAmdPerVertexAttribs. SpirvAttribute.id shares a union with id_array. Assigning id_array[0] replaces id. The new loop reread that overwritten field for vertices 1 and 2, emitting InterpolateAtVertexAMD with the first interpolated float as its input operand instead of an Input pointer. This affects generic AMD explicit interpolation, not a particular game. Copying the pointer before any array assignment fixes all three reads. Cache version 57 invalidates previously emitted modules.
+
+The captured bad module passes spirv-val, demonstrating a limitation of that validation check for this AMD instruction. A separate operand audit rejects its two value-as-pointer operands. Replaying the shader after the correction emits three valid Input-variable operands. AMD, KHR, flat fallback and manual KHR modules pass validation, and the full emulator builds and starts its CLI. These are compilation checks; a successful native pipeline and complete menu capture still need verification. The existing OpenOrbis probe source remains applicable and hardware-unrun.
+
+No new visual or missing-geometry conclusions can be drawn from this aborted run. The previously observed zero indirect dispatch dimensions and zero-instance draws remain unresolved. Production was reported unchanged by the host runner.

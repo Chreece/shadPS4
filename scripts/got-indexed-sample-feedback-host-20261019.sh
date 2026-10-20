@@ -531,15 +531,17 @@ assert "IsVaryingLocalInvocationComponent(" in lds
 assert "FindDivergentLoops(program.syntax_list, runtime_info)" in lds
 assert "EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth, runtime_info)" in lds
 assert "op == IR::Opcode::InverseBallot || op == IR::Opcode::GetUserData" in phi
-assert "ShaderBinaryVersion = 56u;" in serial
+assert "ShaderBinaryVersion = 57u;" in serial
 interpolation = (Path(sys.argv[1]) / "shader_recompiler/frontend/translate/vector_interpolation.cpp").read_text()
 spirv_context = (Path(sys.argv[1]) / "shader_recompiler/backend/spirv/spirv_emit_context.cpp").read_text()
 assert interpolation.count("fs_interpolation[attr_index][inst.control.vintrp.chan]") == 2
 assert "spv::Decoration::Component" in spirv_context
 assert "fragment_input_components[i][component]" in spirv_context
+assert "const Id pointer = param.id;" in spirv_context
+assert "OpInterpolateAtVertexAMD(F32[param.num_components], pointer, ConstU32(vertex))" in spirv_context
 print("GOT_COMPONENT_INTERPOLATION_WIRING=PASS per_component=YES mixed_inputs=YES")
 print("GOT_SHADER_UPSTREAM_CORRECTNESS_WIRING=PASS "
-      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=56")
+      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=57")
 print("GOT_INDIRECT_PRODUCER_SOURCE_WIRING=PASS exact_watch=8 "
       "buffer_shader=YES compute_dispatch=YES cpu_upload=YES vk_copy=YES")
 # The previous host link failed at rasterizer.cpp:492: an undefined
