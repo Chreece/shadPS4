@@ -79,6 +79,17 @@ Id EmitReadConstBuffer(EmitContext& ctx, u32 handle, Id index) {
 Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
     if (IR::IsParam(attr)) {
         const u32 param_index{u32(attr) - u32(IR::Attribute::Param0)};
+        const auto& component = ctx.fragment_input_components.at(param_index).at(comp);
+        if (Sirit::ValidId(component.id)) {
+            if (component.is_loaded) {
+                return component.id_array[index];
+            }
+            const Id pointer =
+                component.is_array
+                    ? ctx.OpAccessChain(component.pointer_type, component.id, ctx.ConstU32(index))
+                    : component.id;
+            return ctx.OpLoad(ctx.F32[1], pointer);
+        }
         const auto& param{ctx.input_params.at(param_index)};
         const Id value = [&] {
             if (param.is_array) {

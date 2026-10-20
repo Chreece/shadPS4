@@ -281,18 +281,27 @@ void EmitContext::DefineAmdPerVertexAttribs() {
     }
     for (s32 i = 0; i < runtime_info.hw.fs.num_inputs; i++) {
         const auto& input = runtime_info.hw.fs.inputs[i];
-        if (input.IsDefault() || info.fs_interpolation[i].primary != Qualifier::PerVertex) {
+        if (input.IsDefault()) {
             continue;
         }
-        auto& param = input_params[i];
-        const Id pointer = param.id;
-        param.id_array[0] =
-            OpInterpolateAtVertexAMD(F32[param.num_components], pointer, ConstU32(0U));
-        param.id_array[1] =
-            OpInterpolateAtVertexAMD(F32[param.num_components], pointer, ConstU32(1U));
-        param.id_array[2] =
-            OpInterpolateAtVertexAMD(F32[param.num_components], pointer, ConstU32(2U));
-        param.is_loaded = true;
+        const auto load_vertices = [&](SpirvAttribute& param) {
+            for (u32 vertex = 0; vertex < 3; ++vertex) {
+                param.id_array[vertex] =
+                    OpInterpolateAtVertexAMD(F32[param.num_components], param.id, ConstU32(vertex));
+            }
+            param.is_loaded = true;
+        };
+        if (Sirit::ValidId(input_params[i].id) &&
+            info.fs_interpolation[i][0].primary == Qualifier::PerVertex) {
+            load_vertices(input_params[i]);
+        }
+        for (u32 component = 0; component < 4; ++component) {
+            auto& param = fragment_input_components[i][component];
+            if (Sirit::ValidId(param.id) &&
+                info.fs_interpolation[i][component].primary == Qualifier::PerVertex) {
+                load_vertices(param);
+            }
+        }
     }
 }
 
@@ -456,31 +465,52 @@ void EmitContext::DefineInputs() {
             }
             const IR::Attribute param = IR::Attribute::Param0 + i;
             const u32 num_components = info.loads.NumComponents(param);
-            const auto [primary, auxiliary] = info.fs_interpolation[i];
-            const Id type = F32[num_components];
-            const Id attr_id = [&] {
+            const auto define_param = [&](Info::Interpolation interpolation, u32 components,
+                                          std::optional<u32> component) {
+                const auto [primary, auxiliary] = interpolation;
+                const Id type = F32[components];
                 const auto bind_location = input.param_index + (has_clip_distance_inputs ? 1 : 0);
-                if (primary == Qualifier::PerVertex &&
-                    profile.supports_fragment_shader_barycentric) {
-                    return Name(DefineInput(TypeArray(type, ConstU32(3U)), bind_location),
-                                fmt::format("fs_in_attr{}_p", i));
+                const bool per_vertex = primary == Qualifier::PerVertex;
+                const Id attr_id =
+                    Name(DefineInput(per_vertex && profile.supports_fragment_shader_barycentric
+                                         ? TypeArray(type, ConstU32(3U))
+                                         : type,
+                                     bind_location),
+                         fmt::format("fs_in_attr{}_{}", i,
+                                     component ? std::to_string(*component) : "v"));
+                if (component) {
+                    Decorate(attr_id, spv::Decoration::Component, *component);
                 }
-                return Name(DefineInput(type, bind_location), fmt::format("fs_in_attr{}", i));
-            }();
-            if (primary == Qualifier::PerVertex) {
-                Decorate(attr_id, profile.supports_amd_shader_explicit_vertex_parameter
-                                      ? spv::Decoration::ExplicitInterpAMD
-                                      : spv::Decoration::PerVertexKHR);
-            } else if (primary != Qualifier::Smooth) {
-                Decorate(attr_id, primary == Qualifier::Flat ? spv::Decoration::Flat
-                                                             : spv::Decoration::NoPerspective);
+                if (per_vertex) {
+                    Decorate(attr_id, profile.supports_amd_shader_explicit_vertex_parameter
+                                          ? spv::Decoration::ExplicitInterpAMD
+                                          : spv::Decoration::PerVertexKHR);
+                } else if (primary != Qualifier::Smooth) {
+                    Decorate(attr_id, primary == Qualifier::Flat ? spv::Decoration::Flat
+                                                                 : spv::Decoration::NoPerspective);
+                }
+                if (!per_vertex && primary != Qualifier::Flat && auxiliary != Qualifier::None) {
+                    Decorate(attr_id, auxiliary == Qualifier::Centroid ? spv::Decoration::Centroid
+                                                                       : spv::Decoration::Sample);
+                }
+                return GetAttributeInfo(AmdGpu::NumberFormat::Float, attr_id, components, false,
+                                        false, per_vertex);
+            };
+            const auto first = info.fs_interpolation[i][0];
+            bool uniform = true;
+            for (u32 component = 1; component < num_components; ++component) {
+                const auto interpolation = info.fs_interpolation[i][component];
+                uniform &= interpolation.primary == first.primary &&
+                           interpolation.auxiliary == first.auxiliary;
             }
-            if (auxiliary != Qualifier::None) {
-                Decorate(attr_id, auxiliary == Qualifier::Centroid ? spv::Decoration::Centroid
-                                                                   : spv::Decoration::Sample);
+            if (uniform) {
+                input_params[i] = define_param(first, num_components, std::nullopt);
+            } else {
+                for (u32 component = 0; component < num_components; ++component) {
+                    fragment_input_components[i][component] =
+                        define_param(info.fs_interpolation[i][component], 1, component);
+                }
             }
-            input_params[i] = GetAttributeInfo(AmdGpu::NumberFormat::Float, attr_id, num_components,
-                                               false, false, primary == Qualifier::PerVertex);
         }
 
         if (has_clip_distance_inputs) {

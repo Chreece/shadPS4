@@ -74,7 +74,7 @@ void Translator::V_INTERP_P2_F32(const GcnInst& inst) {
     const u32 attr_index = inst.control.vintrp.attr;
     const IR::Attribute attrib = IR::Attribute::Param0 + attr_index;
     const auto& attr = runtime_info.hw.fs.inputs[attr_index];
-    auto& interp = info.fs_interpolation[attr_index];
+    auto& interp = info.fs_interpolation[attr_index][inst.control.vintrp.chan];
     if (attr.IsDefault()) {
         SetDst(inst.dst[0],
                ir.Imm32(DefaultValTable[attr.default_value][inst.control.vintrp.chan]));
@@ -99,7 +99,7 @@ void Translator::V_INTERP_MOV_F32(const GcnInst& inst) {
     const u32 attr_index = inst.control.vintrp.attr;
     const IR::Attribute attrib = IR::Attribute::Param0 + attr_index;
     const auto& attr = runtime_info.hw.fs.inputs[attr_index];
-    auto& interp = info.fs_interpolation[attr_index];
+    auto& interp = info.fs_interpolation[attr_index][inst.control.vintrp.chan];
     const u32 src_select = inst.src[0].code;
     ASSERT_MSG(src_select < 3, "Invalid V_INTERP_MOV_F32 selector {}", src_select);
     ASSERT(attr.is_flat || src_select == 2 ||

@@ -159,7 +159,7 @@ struct Info : InfoPersistent {
     bool stores_tess_level_inner{};
     bool translation_failed{};
 
-    std::array<Interpolation, IR::NumParams> fs_interpolation{};
+    std::array<std::array<Interpolation, 4>, IR::NumParams> fs_interpolation{};
 
     Info() = default;
     Info(HwStage stage_, SwStage l_stage_, ShaderParams params)

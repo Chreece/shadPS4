@@ -383,6 +383,7 @@ public:
     Id input_attr_array;
     Id output_attr_array;
     std::array<SpirvAttribute, IR::NumParams> input_params{};
+    std::array<std::array<SpirvAttribute, 4>, IR::NumParams> fragment_input_components{};
     std::array<SpirvAttribute, IR::NumParams> output_params{};
     std::array<SpirvAttribute, IR::NumRenderTargets> frag_outputs{};
 
