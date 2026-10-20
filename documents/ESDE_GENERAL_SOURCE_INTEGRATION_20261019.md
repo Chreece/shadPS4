@@ -230,7 +230,7 @@ table-cache declarations and reintroduced experimental headers.
 
 Changes committed:
 
-- \`esde_general_late_semantic_resolver_20261020.py\` handles **19**
+- \`esde_general_late_semantic_resolver_20261020.py\` handles **21**
   identified safe/source-reviewed conflict previews, each restricted to the
   original uploaded whole-file SHA-256 and verified postimage SHA-256.
   It retains both general header dependencies and the audited Vulkan indexed
@@ -260,7 +260,7 @@ Changes committed:
   \`a808e7626e3c7de8d0f0fda6a91f620b42f6c762\` (2026-10-20):
   \`#5309\` stable file identity and \`#5445\` S_SLEEP scheduling hint
   join the previous five general fixes.
-- The new self-test checks the actual nineteen 05:45 conflict previews
+- The new self-test checks the actual twenty-one 05:45 conflict previews
   when their log archive is present, not just synthetic cases. CI verifies
   the source-review registry and pins, without claiming gameplay.
 
@@ -269,3 +269,10 @@ NOT yet run a full native build or game test. A new run may report fewer
 but more meaningful C++ conflicts because dependent changes are now
 blocked instead of being replayed on stale source. GoW gameplay and Ghost
 graphics acceptance remain mandatory before ES-DE selection.
+
+The reviewed Vulkan include reconciliation also preserves generic DRAW_INDIRECT
+hazard tracking and Vulkan occlusion queries while deliberately excluding
+`vk_got_*` scene probes and `indexed_image_feedback.h`. The complete
+05:45 archive is the preimage evidence; a different later source preview
+remains a blocker rather than being guessed away. No host compilation or
+gameplay was performed by this source-review update.
