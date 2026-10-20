@@ -4,8 +4,11 @@
 #pragma once
 
 #include <array>
+#include <charconv>
 #include <chrono>
 #include <cstdlib>
+#include <optional>
+#include <string_view>
 #include <unordered_map>
 #include "common/logging/log.h"
 #include "common/types.h"
@@ -14,6 +17,49 @@ namespace Vulkan::Diagnostics {
 
 inline constexpr u32 FrameProbeDrawLimit = 4096;
 inline constexpr u32 FrameProbeCount = 6;
+
+inline std::optional<std::array<u64, 3>> ParseFrameProbeCheckpoints(std::string_view text) {
+    std::array<u64, 3> checkpoints{};
+    for (size_t i = 0; i < checkpoints.size(); ++i) {
+        if (text.empty()) {
+            return std::nullopt;
+        }
+        const auto [end, error] =
+            std::from_chars(text.data(), text.data() + text.size(), checkpoints[i]);
+        if (error != std::errc{} || checkpoints[i] > 3600 ||
+            (i && checkpoints[i] <= checkpoints[i - 1])) {
+            return std::nullopt;
+        }
+        text.remove_prefix(end - text.data());
+        if (i + 1 == checkpoints.size()) {
+            if (!text.empty()) {
+                return std::nullopt;
+            }
+        } else {
+            if (text.empty() || text.front() != ',') {
+                return std::nullopt;
+            }
+            text.remove_prefix(1);
+        }
+    }
+    return checkpoints;
+}
+
+inline const std::array<u64, 3>& FrameProbeCheckpoints() {
+    static const auto checkpoints = [] {
+        const std::array<u64, 3> defaults{60, 120, 210};
+        const char* value = std::getenv("SHADPS4_FRAME_PROBE_CHECKPOINTS");
+        if (!value) {
+            return defaults;
+        }
+        if (const auto parsed = ParseFrameProbeCheckpoints(value)) {
+            return *parsed;
+        }
+        LOG_WARNING(Render_Vulkan, "Invalid frame-probe checkpoints; using 60,120,210");
+        return defaults;
+    }();
+    return checkpoints;
+}
 
 inline bool FrameProbeEnabled() {
     static const bool enabled = [] {
@@ -43,7 +89,7 @@ struct FrameProbeState {
     }
 
     void Present(u64 seconds) {
-        constexpr std::array<u64, 3> checkpoints{60, 120, 210};
+        const auto& checkpoints = FrameProbeCheckpoints();
         if (frame) {
             if (!ImagesEnabled()) {
                 image_row_step = 8;
