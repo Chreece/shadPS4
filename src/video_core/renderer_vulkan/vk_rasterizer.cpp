@@ -1530,6 +1530,9 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 if (desc.is_formatted) {
                     flags |= VideoCore::ObtainBufferFlags::IsTexelBuffer;
                 }
+                if (stage.uses_dma) {
+                    flags |= VideoCore::ObtainBufferFlags::IgnoreStreamBuffer;
+                }
                 const auto [buffer, offset] = buffer_cache.ObtainBuffer(
                     vsharp.base_address, size,
                     desc.table_span_index == ~0u

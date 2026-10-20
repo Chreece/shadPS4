@@ -227,8 +227,10 @@ src/shader_recompiler/ir/reg.h
 src/shader_recompiler/ir/passes/lower_buffer_format_to_raw.cpp
 src/shader_recompiler/frontend/translate/vector_interpolation.cpp
 src/shader_recompiler/frontend/translate/scalar_alu.cpp
+src/video_core/buffer_cache/fault_manager.cpp
+src/video_core/host_shaders/fault_buffer_process.comp
 GOT_PINNED_OVERLAY_FILES
-test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 96 || {
+test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 98 || {
     STATUS=UNEXPECTED_CANDIDATE_OVERLAY_SIZE; exit 2;
 }
 
@@ -532,15 +534,28 @@ assert "IsVaryingLocalInvocationComponent(" in lds
 assert "FindDivergentLoops(program.syntax_list, runtime_info)" in lds
 assert "EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth, runtime_info)" in lds
 assert "op == IR::Opcode::InverseBallot || op == IR::Opcode::GetUserData" in phi
-assert "ShaderBinaryVersion = 58u;" in serial
+assert "ShaderBinaryVersion = 59u;" in serial
 scalar = (Path(sys.argv[1]) / "shader_recompiler/frontend/translate/scalar_alu.cpp").read_text()
 assert "ir.SetScc(ir.InverseBallot(result));" not in scalar
 for name in ("S_AND_B64", "S_OR_B64", "S_NOT_B64", "S_SAVEEXEC_B64"):
     body = scalar.split("void Translator::" + name + "(", 1)[1].split("\n}", 1)[0]
     assert "ir.SetScc(ir.INotEqual(result, ir.Imm64(u64(0))));" in body, name
 print("GOT_SCALAR_CONDITION_WIRING=PASS whole_result_nonzero=YES")
+fault = (Path(sys.argv[1]) / "video_core/buffer_cache/fault_manager.cpp").read_text()
+fault_parser = (Path(sys.argv[1]) / "video_core/host_shaders/fault_buffer_process.comp").read_text()
+buffer_cache = (Path(sys.argv[1]) / "video_core/buffer_cache/buffer_cache.cpp").read_text()
+assert "ObtainBufferFlags::IgnoreStreamBuffer" in fault
+assert "download_buffer.Flush(offset, PageFaultAreaSize)" in fault
+assert "download_buffer.Invalidate(offset, PageFaultAreaSize)" in fault
+assert "std::min<u64>(fault_buf[0], MaxPageFaults - 1)" in fault
+assert "atomicOr(fault_buffer[id], word)" in fault_parser
+assert "runtime.FillBuffer(fault_buffer, 0u, fault_buffer->SizeBytes(), 0u)" in buffer_cache
+assert "if (stage.uses_dma)" in rasterizer
+assert "fault_init_barrier" in buffer_cache
+print("GOT_DYNAMIC_RESOURCE_RESIDENCY=PASS persistent_fault_pages=YES bounded_readback=YES")
 interpolation = (Path(sys.argv[1]) / "shader_recompiler/frontend/translate/vector_interpolation.cpp").read_text()
 spirv_context = (Path(sys.argv[1]) / "shader_recompiler/backend/spirv/spirv_emit_context.cpp").read_text()
+assert "OpAtomicOr(U32[1], fault_ptr" in spirv_context
 assert interpolation.count("fs_interpolation[attr_index][inst.control.vintrp.chan]") == 2
 assert "spv::Decoration::Component" in spirv_context
 assert "fragment_input_components[i][component]" in spirv_context
@@ -548,7 +563,7 @@ assert "const Id pointer = param.id;" in spirv_context
 assert "OpInterpolateAtVertexAMD(F32[param.num_components], pointer, ConstU32(vertex))" in spirv_context
 print("GOT_COMPONENT_INTERPOLATION_WIRING=PASS per_component=YES mixed_inputs=YES")
 print("GOT_SHADER_UPSTREAM_CORRECTNESS_WIRING=PASS "
-      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=58")
+      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=59")
 print("GOT_INDIRECT_PRODUCER_SOURCE_WIRING=PASS exact_watch=8 "
       "buffer_shader=YES compute_dispatch=YES cpu_upload=YES vk_copy=YES")
 # The previous host link failed at rasterizer.cpp:492: an undefined

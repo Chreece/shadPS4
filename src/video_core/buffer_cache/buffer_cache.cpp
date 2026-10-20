@@ -127,6 +127,21 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     const u64 bda_pagetable_size = num_blocks * sizeof(vk::DeviceAddress);
     fault_manager =
         std::make_unique<FaultManager>(instance, scheduler, *this, block_shift, num_blocks);
+    auto* fault_buffer = fault_manager->GetFaultBuffer();
+    runtime.FillBuffer(fault_buffer, 0u, fault_buffer->SizeBytes(), 0u);
+    const vk::BufferMemoryBarrier2 fault_init_barrier = {
+        .srcStageMask = vk::PipelineStageFlagBits2::eClear,
+        .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+        .buffer = fault_buffer->Handle(),
+        .offset = 0,
+        .size = fault_buffer->SizeBytes(),
+    };
+    scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+        .bufferMemoryBarrierCount = 1,
+        .pBufferMemoryBarriers = &fault_init_barrier,
+    });
     bda_pagetable_buffer = std::make_unique<Buffer>(
         instance, 0, bda_pagetable_size, MemoryType::DeviceLocal, "BDA Page Table Buffer");
     runtime.FillBuffer(bda_pagetable_buffer.get(), 0u, bda_pagetable_size, 0u);
