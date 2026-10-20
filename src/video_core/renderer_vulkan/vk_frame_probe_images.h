@@ -146,13 +146,14 @@ inline void CaptureFrameProbeBuffer(const Instance& instance, Scheduler& schedul
         return;
     }
     captured.insert(binding_key);
+    const auto sequence = captured.size();
     captured_bytes += bytes;
     auto snapshot =
         std::make_unique<VideoCore::Buffer>(instance, 0, bytes, VideoCore::MemoryType::HostCached);
     const vk::BufferCopy copy{offset, 0, bytes};
     runtime.CopyBuffer(&source, snapshot.get(), std::span{&copy, 1});
     scheduler.DeferPriorityOperation([snapshot = std::move(snapshot), frame,
-                                      draw = FrameProbe().draws, key, sharp, bytes]() {
+                                      draw = FrameProbe().draws, key, sharp, bytes, sequence]() {
         snapshot->Invalidate(0, bytes);
         const auto dir = Common::FS::GetUserPath(Common::FS::PathType::ShaderDir) / "frame-probes";
         std::error_code error;
@@ -160,7 +161,8 @@ inline void CaptureFrameProbeBuffer(const Instance& instance, Scheduler& schedul
         if (error) {
             return;
         }
-        const auto path = dir / fmt::format("f{}-d{}-{}.buffer.bin", frame, draw, key);
+        const auto path =
+            dir / fmt::format("f{}-d{}-{}-s{}.buffer.bin", frame, draw, key, sequence);
         std::ofstream output(path, std::ios::binary);
         output.write(reinterpret_cast<const char*>(snapshot->mapped_data.data()), bytes);
         output.close();
@@ -219,6 +221,13 @@ inline bool FrameProbeBindingChanged(const Shader::Info& stage, u32 resource, co
                                      bool written) {
     const auto frame = FrameProbe().frame;
     if (!FrameProbeEnabled() || !frame) {
+        return false;
+    }
+    static const bool targets_only = [] {
+        const char* value = std::getenv("SHADPS4_FRAME_PROBE_TARGET_BINDINGS_ONLY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (targets_only && !Shader::ShaderDumpTargets().Matches(stage.pgm_hash)) {
         return false;
     }
     using Words = std::array<u32, sizeof(Sharp) / sizeof(u32)>;
