@@ -1,0 +1,65 @@
+name: Generic rebase Linux validation
+on:
+  push:
+    branches: [Pre-release-shadPS4-generic-ci-20261021]
+    paths: [.github/workflows/generic-rebase-validation.yml]
+permissions:
+  contents: read
+concurrency:
+  group: generic-rebase-linux-validation
+  cancel-in-progress: false
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      SOURCE_REV: 472c0c665bd0fa3c83d3d78b84a66ff2d2db4809
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af6837
+        with:
+          ref: 472c0c665bd0fa3c83d3d78b84a66ff2d2db4809
+          fetch-depth: 1
+          submodules: recursive
+          persist-credentials: false
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-19 g++-14 ninja-build pkg-config libx11-dev libxext-dev libwayland-dev libdecor-0-dev libxkbcommon-dev libglfw3-dev libgles2-mesa-dev libasound2-dev libpulse-dev libopenal-dev libudev-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev libxrandr-dev libxfixes-dev uuid-dev
+      - name: Record exact source
+        run: |
+          set -euo pipefail
+          mkdir -p validation
+          test "$(git rev-parse HEAD)" = "$SOURCE_REV"
+          git status --porcelain --untracked-files=no > validation/source-status.txt
+          test ! -s validation/source-status.txt
+          git rev-parse HEAD HEAD^{tree} > validation/source.txt
+          git submodule status --recursive > validation/submodules.txt
+          clang++-19 --version > validation/compiler.txt
+      - name: Configure and compile full emulator
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON 2>&1 | tee validation/configure.log
+          cmake --build build --target shadps4 --parallel 2 2>&1 | tee validation/build.log
+          sha256sum build/shadps4 > validation/binary.sha256
+          git diff --exit-code
+          echo FULL_EMULATOR_BUILD=PASS | tee validation/result.txt
+      - name: Quit-dialog regression
+        run: |
+          set -euo pipefail
+          cmake -S tests/quit_dialog -B build-quit -G Ninja -DCMAKE_CXX_COMPILER=clang++-19 2>&1 | tee validation/quit-configure.log
+          cmake --build build-quit --parallel 2 2>&1 | tee validation/quit-build.log
+          ctest --test-dir build-quit --output-on-failure --no-tests=error 2>&1 | tee validation/quit-tests.log
+      - name: Isolated command-line startup
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/shad-cli/home" "$RUNNER_TEMP/shad-cli/config" "$RUNNER_TEMP/shad-cli/data"
+          cd "$RUNNER_TEMP/shad-cli"
+          HOME="$RUNNER_TEMP/shad-cli/home" XDG_CONFIG_HOME="$RUNNER_TEMP/shad-cli/config" XDG_DATA_HOME="$RUNNER_TEMP/shad-cli/data" timeout 30 "$GITHUB_WORKSPACE/build/shadps4" --help > "$GITHUB_WORKSPACE/validation/cli.log" 2>&1
+          echo CLI_STARTUP=PASS >> "$GITHUB_WORKSPACE/validation/result.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: generic-rebase-linux-validation
+          path: validation/
+          retention-days: 7
+          if-no-files-found: warn
