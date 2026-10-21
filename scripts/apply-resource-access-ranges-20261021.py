@@ -46,10 +46,12 @@ def transform(path: str, text: str) -> str:
                     '                ir.IAdd(ir.IMul(index, ir.Imm32(stride >> shift)),\n'
                     '                        ir.Imm32(total_offset >> shift));\n'
                     '            // Preserve the 32-bit byte wrap of the unsimplified path.\n'
-                    '            return shift == 0\n'
-                    '                       ? shifted\n'
-                    '                       : ir.BitwiseAnd(shifted, ir.Imm32(\n'
-                    '                             BufferAccess::ScaledAddressMask(shift)));')
+                    '            // BitwiseAnd returns U32U64; keep this address explicitly U32.\n'
+                    '            if (shift == 0) {\n'
+                    '                return shifted;\n'
+                    '            }\n'
+                    '            return IR::U32{ir.BitwiseAnd(\n'
+                    '                shifted, ir.Imm32(BufferAccess::ScaledAddressMask(shift)))};')
     if path.endswith("/vk_pipeline_serialization.cpp"):
         text = once(text, 'ShaderBinaryVersion = 63u;', 'ShaderBinaryVersion = 64u;')
         return once(text, 'ShaderMetaVersion = 28u;', 'ShaderMetaVersion = 29u;')

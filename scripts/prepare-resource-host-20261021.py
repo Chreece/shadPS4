@@ -49,7 +49,7 @@ c++ -std=c++23 -O2 -Wall -Wextra -Werror -I"$RUN/tmp/staged/src" \\
 "$RUN/tmp/test-buffer-access-range" | tee -a "$RUN/host-tests.log" || {
     STATUS=BUFFER_ACCESS_RANGE_TEST_FAILED; exit 2;
 }
-python3 - "$RUN/tmp/staged" "$RUN/info/resource-correction.json" <<'PYRESOURCECHECK'
+python3 - "$RUN/tmp/staged" "$RUN/info/resource-correction.json" <<'PYRESOURCECHECK' | tee -a "$RUN/host-tests.log"
 import hashlib
 import json
 from pathlib import Path
@@ -63,6 +63,22 @@ PYRESOURCECHECK
 '''
     anchor = 'echo "HOST_ONLY_TESTS=PASS" | tee -a "$RUN/host-tests.log"'
     text = once(text, anchor, new_test + '\n' + anchor)
+    # Compile the real transformed pass and its final-IR consumer before the
+    # renderer objects. Arithmetic-only helper tests do not type-check these.
+    anchor = 'STATUS=BUILDING_VK_RASTERIZER_OBJECT_FIRST'
+    compile_first = '''STATUS=COMPILE_RESOURCE_CORRECTION_OBJECTS
+nice -n 10 ninja -C "$BUILD" -j 2 \\
+    CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/resource_patching_pass.cpp.o \\
+    CMakeFiles/shadps4.dir/src/shader_recompiler/recompiler.cpp.o \\
+    > "$RUN/info/resource-correction-objects.log" 2>&1 || {
+        tail -120 "$RUN/info/resource-correction-objects.log"
+        STATUS=RESOURCE_CORRECTION_OBJECTS_FAILED
+        exit 2
+    }
+echo "RESOURCE_CORRECTION_OBJECTS=PASS" | tee -a "$RUN/host-tests.log"
+
+'''
+    text = once(text, anchor, compile_first + anchor)
     return text
 
 def prepare_runtime(data: bytes) -> str:
