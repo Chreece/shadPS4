@@ -10,7 +10,7 @@
 #include "common/singleton.h"
 #include "core/emulator_settings.h"
 #include "core/libraries/libs.h"
-#include "core/libraries/np/np_handler.h"
+#include "core/libraries/np/np_handler/np_handler.h"
 #include "core/libraries/np/np_manager.h"
 #include "core/libraries/system/userservice.h"
 #include "core/libraries/system/userservice_error.h"
@@ -1066,6 +1066,17 @@ int PS4_SYSV_ABI sceUserServiceGetTopMenuTutorialFlag() {
 
 int PS4_SYSV_ABI sceUserServiceGetTraditionalChineseInputType() {
     LOG_ERROR(Lib_UserService, "(STUBBED) called");
+    return ORBIS_OK;
+}
+
+s32 PS4_SYSV_ABI sceUserServiceGetUserColor(int user_id, OrbisUserServiceUserColor* color) {
+    // TODO fix me better
+    LOG_DEBUG(Lib_UserService, "called user_id = {}", user_id);
+    if (color == nullptr) {
+        LOG_ERROR(Lib_UserService, "color is null");
+        return ORBIS_USER_SERVICE_ERROR_INVALID_ARGUMENT;
+    }
+    *color = (OrbisUserServiceUserColor)UserManagement.GetUserByID(user_id)->user_color;
     return ORBIS_OK;
 }
 

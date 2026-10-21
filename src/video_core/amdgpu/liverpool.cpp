@@ -6,6 +6,7 @@
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/polyfill_thread.h"
+#include "common/scope_exit.h"
 #include "common/thread.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -15,9 +16,7 @@
 #include "core/platform.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/pm4_cmds.h"
-#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderdoc.h"
-#include "video_core/renderer_vulkan/vk_occlusion_query.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
 namespace AmdGpu {
@@ -69,14 +68,43 @@ static std::span<const u32> NextPacket(std::span<const u32> span, size_t offset)
 
 Liverpool::Liverpool() : guest_markers_enabled{EmulatorSettings.IsVkGuestMarkersEnabled()} {
     num_counter_pairs = Libraries::Kernel::sceKernelIsNeoMode() ? 16 : 8;
-    VideoCore::GraphicsDiagnostics::Emit(VideoCore::GraphicsDiagnostics::Event::Startup,
-                                        "counter-pairs=%u", num_counter_pairs);
     process_thread = std::jthread{std::bind_front(&Liverpool::Process, this)};
 }
 
 Liverpool::~Liverpool() {
     process_thread.request_stop();
     process_thread.join();
+    while (!ce_submits.empty()) {
+        ce_submits.front().destroy();
+        ce_submits.pop();
+    }
+    for (auto& queue : mapped_queues) {
+        while (!queue.submits.empty()) {
+            queue.submits.front().destroy();
+            queue.submits.pop();
+        }
+    }
+}
+
+void Liverpool::ProcessCeQueue() {
+    auto& queue = mapped_queues[GfxQueueId];
+    Task::Handle task{};
+    {
+        std::scoped_lock lock{queue.m_access};
+        if (ce_submits.empty()) {
+            return;
+        }
+        task = ce_submits.front();
+    }
+    task.resume();
+    if (task.done()) {
+        task.destroy();
+        std::scoped_lock lock{queue.m_access};
+        ce_submits.pop();
+        --num_submits;
+        std::scoped_lock lock2{submit_mutex};
+        submit_cv.notify_all();
+    }
 }
 
 void Liverpool::ProcessCommands() {
@@ -114,8 +142,9 @@ void Liverpool::Process(std::stop_token stoken) {
 
         curr_qid = -1;
 
-        while (num_submits || num_commands) {
+        while ((num_submits || num_commands) && !stoken.stop_requested()) {
             ProcessCommands();
+            ProcessCeQueue();
 
             curr_qid = (curr_qid + 1) % num_mapped_queues;
 
@@ -194,7 +223,8 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
         }
         case PM4ItOpcode::WaitOnDeCounterDiff: {
             const auto diff = it_body[0];
-            while ((cblock.de_count - cblock.ce_count) >= diff) {
+            while (cblock.ce_count >= cblock.de_count &&
+                   (cblock.ce_count - cblock.de_count) >= diff) {
                 YIELD_CE();
             }
             break;
@@ -203,6 +233,9 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
             const auto* indirect_buffer = reinterpret_cast<const PM4CmdIndirectBuffer*>(header);
             auto task =
                 ProcessCeUpdate({indirect_buffer->Address<const u32>(), indirect_buffer->ib_size});
+            SCOPE_EXIT {
+                task.handle.destroy();
+            };
             RESUME_CE(task);
 
             while (!task.handle.done()) {
@@ -222,20 +255,8 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
     FIBER_EXIT;
 }
 
-Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<const u32> ccb) {
+Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb) {
     FIBER_ENTER(dcb_task_name);
-
-    cblock.Reset();
-
-    // TODO: potentially, ASCs also can depend on CE and in this case the
-    // CE task should be moved into more global scope
-    Task ce_task{};
-
-    if (!ccb.empty()) {
-        // In case of CCB provided kick off CE asap to have the constant heap ready to use
-        ce_task = ProcessCeUpdate(ccb);
-        RESUME_GFX(ce_task);
-    }
 
     const auto base_addr = reinterpret_cast<uintptr_t>(dcb.data());
     while (!dcb.empty()) {
@@ -414,8 +435,6 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break;
             }
             case PM4ItOpcode::SetPredication: {
-                VideoCore::GraphicsDiagnostics::Emit(
-                    VideoCore::GraphicsDiagnostics::Event::Predication, "packet-count=%u", count);
                 LOG_WARNING(Render, "Unimplemented IT_SET_PREDICATION");
                 break;
             }
@@ -494,6 +513,27 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     });
                 break;
             }
+            case PM4ItOpcode::DrawIndirectCountMulti: {
+                const auto* draw_indirect =
+                    reinterpret_cast<const PM4CmdDrawIndirectCountMulti*>(header);
+                const auto offset = draw_indirect->data_offset;
+                const auto stride = sizeof(DrawIndirectArgs);
+                if (DebugState.DumpingCurrentReg()) {
+                    DebugState.PushRegsDump(base_addr, reinterpret_cast<uintptr_t>(header), regs);
+                }
+                if (!rasterizer) {
+                    break;
+                }
+                const auto cmd_address = reinterpret_cast<const void*>(header);
+                rasterizer->ScopeMarker(
+                    "gfx:{}:DrawIndirectCountMulti", fmt::make_format_args(cmd_address), [&] {
+                        rasterizer->DrawIndirect(
+                            false, indirect_args_addr, offset, draw_indirect->stride,
+                            draw_indirect->count, draw_indirect->count_addr,
+                            draw_indirect->base_vtx_loc, draw_indirect->start_inst_loc);
+                    });
+                break;
+            }
             case PM4ItOpcode::DrawIndirectMulti: {
                 const auto* draw_indirect =
                     reinterpret_cast<const PM4CmdDrawIndirectMulti*>(header);
@@ -519,6 +559,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     reinterpret_cast<const PM4CmdDrawIndexIndirect*>(header);
                 const auto offset = draw_index_indirect->data_offset;
                 const auto stride = sizeof(DrawIndexedIndirectArgs);
+                regs.max_index_size = index_buffer_num_indices;
                 if (DebugState.DumpingCurrentReg()) {
                     DebugState.PushRegsDump(base_addr, reinterpret_cast<uintptr_t>(header), regs);
                 }
@@ -538,6 +579,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 const auto* draw_index_indirect =
                     reinterpret_cast<const PM4CmdDrawIndexIndirectMulti*>(header);
                 const auto offset = draw_index_indirect->data_offset;
+                regs.max_index_size = index_buffer_num_indices;
                 if (DebugState.DumpingCurrentReg()) {
                     DebugState.PushRegsDump(base_addr, reinterpret_cast<uintptr_t>(header), regs);
                 }
@@ -558,6 +600,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 const auto* draw_index_indirect =
                     reinterpret_cast<const PM4CmdDrawIndexIndirectCountMulti*>(header);
                 const auto offset = draw_index_indirect->data_offset;
+                regs.max_index_size = index_buffer_num_indices;
                 if (DebugState.DumpingCurrentReg()) {
                     DebugState.PushRegsDump(base_addr, reinterpret_cast<uintptr_t>(header), regs);
                 }
@@ -628,7 +671,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::IndexBufferSize: {
                 const auto* index_size = reinterpret_cast<const PM4CmdDrawIndexBufferSize*>(header);
-                regs.num_indices = index_size->num_indices;
+                index_buffer_num_indices = index_size->num_indices;
                 break;
             }
             case PM4ItOpcode::SetBase: {
@@ -646,30 +689,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     // TODO: handle proper synchronization, for now signal that update is done
                     // immediately
                     regs.cp_strmout_cntl.offset_update_done = 1;
-                } else if (event->event_type.Value() == EventType::PixelPipeStatControl) {
-                    if (rasterizer && header->type3.count.Value() >= 2) {
-                        rasterizer->GetOcclusionQuery().Control(
-                            event->address[0], event->address[1], regs.depth_count_control);
-                    }
-                } else if (event->event_type.Value() == EventType::PixelPipeStatReset) {
-                    if (rasterizer) {
-                        rasterizer->GetOcclusionQuery().Reset();
-                    }
                 } else if (event->event_index.Value() == EventIndex::ZpassDone) {
                     if (event->event_type.Value() == EventType::PixelPipeStatDump) {
-                        if (rasterizer) {
-                            rasterizer->GetOcclusionQuery().Dump(event->Address<VAddr>(),
-                                                                num_counter_pairs);
-                            break;
-                        }
                         static constexpr u64 OcclusionCounterValidMask = 0x8000000000000000ULL;
                         static constexpr u64 OcclusionCounterStep = 0x2FFFFFFULL;
                         u64* results = event->Address<u64*>();
-                        VideoCore::GraphicsDiagnostics::Emit(
-                            VideoCore::GraphicsDiagnostics::Event::PixelPipe,
-                            "address=%llx counter=%llu pairs=%u",
-                            static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(results)),
-                            static_cast<unsigned long long>(pixel_counter), num_counter_pairs);
                         for (s32 i = 0; i < num_counter_pairs; ++i, results += 2) {
                             *results = pixel_counter | OcclusionCounterValidMask;
                         }
@@ -811,9 +835,6 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array); });
                     break;
                 }
-                if (rasterizer && !wait_reg_mem->Test(regs.reg_array)) {
-                    rasterizer->SubmitPendingQueries();
-                }
                 while (!wait_reg_mem->Test(regs.reg_array)) {
                     YIELD_GFX();
                 }
@@ -822,7 +843,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             case PM4ItOpcode::IndirectBuffer: {
                 const auto* indirect_buffer = reinterpret_cast<const PM4CmdIndirectBuffer*>(header);
                 auto task = ProcessGraphics(
-                    {indirect_buffer->Address<const u32>(), indirect_buffer->ib_size}, {});
+                    {indirect_buffer->Address<const u32>(), indirect_buffer->ib_size});
+                SCOPE_EXIT {
+                    task.handle.destroy();
+                };
                 RESUME_GFX(task);
 
                 while (!task.handle.done()) {
@@ -836,8 +860,8 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break;
             }
             case PM4ItOpcode::WaitOnCeCounter: {
-                while (cblock.ce_count <= cblock.de_count && !ce_task.handle.done()) {
-                    RESUME_GFX(ce_task);
+                while (cblock.ce_count <= cblock.de_count) {
+                    YIELD_GFX();
                 }
                 break;
             }
@@ -864,10 +888,6 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     LOG_WARNING(Render, "IT_COND_EXEC used a reserved command");
                 }
                 const auto skip = *cond_exec->Address() == false;
-                VideoCore::GraphicsDiagnostics::Emit(
-                    VideoCore::GraphicsDiagnostics::Event::ConditionalExec,
-                    "skip=%u exec-count=%u", static_cast<unsigned>(skip),
-                    cond_exec->exec_count.Value());
                 if (skip) {
                     dcb = NextPacket(dcb,
                                      header->type3.NumWords() + 1 + cond_exec->exec_count.Value());
@@ -882,13 +902,6 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             dcb = NextPacket(dcb, header->type3.NumWords() + 1);
             break;
         }
-    }
-
-    if (ce_task.handle) {
-        while (!ce_task.handle.done()) {
-            RESUME_GFX(ce_task);
-        }
-        ce_task.handle.destroy();
     }
 
     FIBER_EXIT;
@@ -961,6 +974,9 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             const auto* indirect_buffer = reinterpret_cast<const PM4CmdIndirectBuffer*>(header);
             auto task = ProcessCompute<true>(
                 {indirect_buffer->Address<const u32>(), indirect_buffer->ib_size}, vqid);
+            SCOPE_EXIT {
+                task.handle.destroy();
+            };
             RESUME_ASC(task, vqid);
 
             while (!task.handle.done()) {
@@ -1203,15 +1219,17 @@ void Liverpool::SubmitGfx(std::span<const u32> dcb, std::span<const u32> ccb) {
         std::tie(dcb, ccb) = CopyCmdBuffers(dcb, ccb);
     }
 
-    auto task = ProcessGraphics(dcb, ccb);
+    auto task = ProcessGraphics(dcb);
     {
-        std::scoped_lock lock{queue.m_access};
+        std::scoped_lock lock{submit_mutex, queue.m_access};
+        if (!ccb.empty()) {
+            ce_submits.emplace(ProcessCeUpdate(ccb).handle);
+            ++num_submits;
+        }
         queue.submits.emplace(task.handle);
+        ++num_submits;
+        submit_cv.notify_one();
     }
-
-    std::scoped_lock lk{submit_mutex};
-    ++num_submits;
-    submit_cv.notify_one();
 }
 
 void Liverpool::SubmitAsc(u32 gnm_vqid, std::span<const u32> acb) {
