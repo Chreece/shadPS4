@@ -4,7 +4,6 @@
 #pragma once
 
 #include "common/types.h"
-#include "core/cpu_affinity.h"
 
 namespace Libraries::Kernel {
 struct PthreadAttr;
@@ -22,9 +21,8 @@ public:
     NativeThread();
     ~NativeThread();
 
-    int Create(ThreadFunc func, void* arg, u64 affinity_mask, CpuAffinity affinity = {});
+    int Create(ThreadFunc func, void* arg);
     void Exit();
-    void Join();
 
     void Initialize();
 
@@ -36,12 +34,7 @@ public:
         return tid;
     }
 
-    CpuAffinity& GetCpuAffinity() {
-        return cpu_affinity;
-    }
-
 private:
-    CpuAffinity cpu_affinity;
 #ifdef _WIN64
     void* native_handle;
 #else

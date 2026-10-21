@@ -11,9 +11,6 @@
 #include "common/string_util.h"
 #include "core/aerolib/aerolib.h"
 #include "core/cpu_patches.h"
-#if defined(__linux__) && defined(ARCH_X86_64)
-#include "core/cpu_id.h"
-#endif
 #include "core/libraries/error_codes.h"
 #include "core/loader/dwarf.h"
 #include "core/memory.h"
@@ -217,16 +214,6 @@ void Module::LoadModuleToMemory(u32& max_tls_index) {
             add_segment(elf_pheader[i]);
 #ifdef ARCH_X86_64
             if (elf_pheader[i].p_flags & PF_EXEC) {
-#if defined(__linux__)
-                if (IsBuiltinCpuIdMode()) {
-                    // Publish verified executable guest memory before any
-                    // CPUID/RDTSCP instruction can fault. Trampolines and HLE
-                    // are host code and must retain native host identity.
-                    ASSERT_MSG(RegisterGuestExecutableRange(segment_addr, segment_memory_size),
-                               "Invalid guest executable range [{:#x}, {:#x})",
-                               segment_addr, segment_addr + segment_memory_size);
-                }
-#endif
                 PrePatchInstructions(segment_addr, segment_file_size);
                 if (use_static_patching) {
                     executable_segments.emplace_back(segment_addr, segment_file_size);
@@ -265,6 +252,9 @@ void Module::LoadModuleToMemory(u32& max_tls_index) {
             break;
         case PT_SCE_PROCPARAM:
             proc_param_virtual_addr = elf_pheader[i].p_vaddr + base_virtual_addr;
+            break;
+        case PT_SCE_MODULE_PARAM:
+            module_param_virtual_addr = elf_pheader[i].p_vaddr + base_virtual_addr;
             break;
         case PT_GNU_EH_FRAME: {
             eh_frame_hdr_addr = elf_pheader[i].p_vaddr;
@@ -321,20 +311,6 @@ void Module::LoadModuleToMemory(u32& max_tls_index) {
                     ? PatchRedZoneMemoryInstructions(segment_addr, segment_size, function_starts)
                     : PatchCpuInstructionsStatically(segment_addr, segment_size, function_starts);
         }
-#if defined(__linux__) && defined(ARCH_X86_64)
-        if (IsBuiltinCpuIdMode()) {
-            // A short RDPID outside known function boundaries cannot safely
-            // execute natively on Intel CPUs: its TSC_AUX is a host ID.
-            // Never silently accept such a guest instruction. The fallback
-            // must cover it before builtin mode can become the default.
-            for (const auto& [segment_addr, segment_size] : executable_segments) {
-                u64 unpatched{};
-                ASSERT_MSG(!FindUnpatchedRdpid(segment_addr, segment_size, unpatched),
-                           "Builtin CPU identity: uncovered guest RDPID at {:#x} in {}",
-                           unpatched, name);
-            }
-        }
-#endif
         if (total.function_count == 0) {
             if (!executable_segments.empty()) {
                 LOG_WARNING(Core_Linker,
@@ -383,22 +359,6 @@ void Module::LoadModuleToMemory(u32& max_tls_index) {
                      total.unsupported_cpu_patch_instruction_count,
                      total.uncovered_inplace_cpu_patch_instruction_count,
                      total.uncovered_unsupported_cpu_patch_instruction_count);
-#if defined(__linux__) && defined(ARCH_X86_64)
-            if (IsBuiltinCpuIdMode()) {
-                LOG_INFO(Core_Linker,
-                         "In-process guest CPU identity for {}: {} short RDPID instructions "
-                         "handled by verified UD2 traps; {} other CPU patches still unsupported",
-                         name, total.builtin_rdpid_trap_count,
-                         total.unsupported_cpu_patch_instruction_count);
-                if (total.unsupported_cpu_patch_instruction_count != 0) {
-                    LOG_INFO(Core_Linker,
-                             "CPU deferred static sites for {}: CPUID={}, RDTSCP={}, "
-                             "RDPID={}, other={}; these counts are not executed faults",
-                             name, total.deferred_cpuid_sites, total.deferred_rdtscp_sites,
-                             total.deferred_rdpid_sites, total.deferred_other_cpu_sites);
-                }
-            }
-#endif
         }
     }
 #endif
@@ -689,8 +649,19 @@ const LibraryInfo* Module::FindLibrary(std::string_view id) {
 void* Module::FindByName(std::string_view name) {
     const auto nid_str = StringToNid(name);
     const auto symbols = export_sym.GetSymbols();
+    const auto it = std::ranges::find_if(symbols, [&](const Loader::SymbolRecord& record) {
+        return record.symbol.name == nid_str || record.symbol.nidName == name;
+    });
+    if (it != symbols.end()) {
+        return reinterpret_cast<void*>(it->virtual_address);
+    }
+    return nullptr;
+}
+
+void* Module::FindByNid(std::string_view nid) {
+    const auto symbols = export_sym.GetSymbols();
     const auto it = std::ranges::find_if(
-        symbols, [&](const Loader::SymbolRecord& record) { return record.symbol.name == nid_str; });
+        symbols, [&](const Loader::SymbolRecord& record) { return record.symbol.name == nid; });
     if (it != symbols.end()) {
         return reinterpret_cast<void*>(it->virtual_address);
     }

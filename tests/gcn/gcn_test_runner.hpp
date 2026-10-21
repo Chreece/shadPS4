@@ -48,16 +48,14 @@ public:
         std::span<const std::uint32_t> spirv,
         std::span<const std::byte> push_constants,
         std::span<std::byte> output,
-        DispatchSize dispatch = {},
-        std::span<std::byte> gds = {}
+        DispatchSize dispatch = {}
     );
 
     template <typename OutputT, typename PushT>
     std::expected<OutputT, ErrorInfo> run(
         std::span<const std::uint32_t> spirv,
         const PushT& push,
-        DispatchSize dispatch = {},
-        std::span<std::byte> gds = {}
+        DispatchSize dispatch = {}
     ) {
         static_assert(std::is_trivially_copyable_v<PushT>);
         static_assert(std::is_trivially_copyable_v<OutputT>);
@@ -66,8 +64,7 @@ public:
             spirv,
             {reinterpret_cast<const std::byte*>(&push), sizeof(PushT)},
             {reinterpret_cast<std::byte*>(&result), sizeof(OutputT)},
-            dispatch,
-            gds
+            dispatch
         );
         if (!r) return std::unexpected(r.error());
         return result;

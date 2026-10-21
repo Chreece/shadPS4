@@ -30,7 +30,7 @@
 #include "core/tls.h"
 #include "cpu_patches.h"
 
-#if defined(__linux__)
+#if defined(__linux__) && defined(ARCH_X86_64)
 #include "core/cpu_id.h"
 #endif
 
@@ -113,12 +113,17 @@ static Xbyak::Reg ZydisToXbyakRegisterOperand(const ZydisDecodedOperand& operand
     return ZydisToXbyakRegister(operand.reg.value);
 }
 
-static Xbyak::Address ZydisToXbyakMemoryOperand(const ZydisDecodedOperand& operand) {
+static Xbyak::Address ZydisToXbyakMemoryOperand(void* address,
+                                                const ZydisDecodedInstruction& instruction,
+                                                const ZydisDecodedOperand& operand) {
     ASSERT_MSG(operand.type == ZYDIS_OPERAND_TYPE_MEMORY, "Expected memory operand, got type: {}",
                static_cast<u32>(operand.type));
 
-    if (operand.mem.base == ZYDIS_REGISTER_RIP) {
-        return ptr[rip + operand.mem.disp.value];
+    if (operand.mem.base == ZYDIS_REGISTER_RIP || operand.mem.base == ZYDIS_REGISTER_EIP) {
+        ZyanU64 target{};
+        ASSERT(ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&instruction, &operand,
+                                                     reinterpret_cast<ZyanU64>(address), &target)));
+        return ptr[rip + reinterpret_cast<const void*>(target)];
     }
 
     Xbyak::RegExp expression{};
@@ -179,14 +184,14 @@ static void RetrieveTcbPointer(Xbyak::Reg dst, Xbyak::CodeGenerator& c, ZyanI64 
 }
 #endif
 
-static void GenerateTcbAccess(void* /* address */, const ZydisDecodedInstruction&,
+static void GenerateTcbAccess(void* address, const ZydisDecodedInstruction& instruction,
                               const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
     const auto dst = ZydisToXbyakRegisterOperand(operands[0]);
 
 #if defined(_WIN32)
     RetrieveTcbPointer(dst, c, operands[1].mem.disp.value);
 #else
-    const auto src = ZydisToXbyakMemoryOperand(operands[1]);
+    const auto src = ZydisToXbyakMemoryOperand(address, instruction, operands[1]);
 
     // Replace fs read with gs read.
     c.putSeg(gs);
@@ -194,7 +199,7 @@ static void GenerateTcbAccess(void* /* address */, const ZydisDecodedInstruction
 #endif
 }
 
-static void GenerateTcbCompare(void* /* address */, const ZydisDecodedInstruction&,
+static void GenerateTcbCompare(void* address, const ZydisDecodedInstruction& instruction,
                                const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
     const auto dst = ZydisToXbyakRegisterOperand(operands[0]);
 
@@ -218,7 +223,7 @@ static void GenerateTcbCompare(void* /* address */, const ZydisDecodedInstructio
     c.popfq();
     c.lea(rsp, ptr[rsp + 128]);
 #else
-    const auto src = ZydisToXbyakMemoryOperand(operands[1]);
+    const auto src = ZydisToXbyakMemoryOperand(address, instruction, operands[1]);
 
     // Replace fs compare with gs compare.
     c.putSeg(gs);
@@ -226,7 +231,7 @@ static void GenerateTcbCompare(void* /* address */, const ZydisDecodedInstructio
 #endif
 }
 
-static void GenerateTcbExclusiveOr(void* /* address */, const ZydisDecodedInstruction&,
+static void GenerateTcbExclusiveOr(void* address, const ZydisDecodedInstruction& instruction,
                                    const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
     const auto dst = ZydisToXbyakRegisterOperand(operands[0]);
 
@@ -250,7 +255,7 @@ static void GenerateTcbExclusiveOr(void* /* address */, const ZydisDecodedInstru
     c.popfq();
     c.lea(rsp, ptr[rsp + 128]);
 #else
-    const auto src = ZydisToXbyakMemoryOperand(operands[1]);
+    const auto src = ZydisToXbyakMemoryOperand(address, instruction, operands[1]);
 
     // Replace fs xor with gs xor.
     c.putSeg(gs);
@@ -276,7 +281,8 @@ static bool FilterIntelCPU(const ZydisDecodedOperand*) {
 
 static void GenerateReciprocalInstruction(void* address, const ZydisDecodedInstruction& instruction,
                                           const ZydisDecodedOperand* operands,
-                                          Xbyak::CodeGenerator& c, bool rsqrt, bool vex) {
+                                          Xbyak::CodeGenerator& c, bool rsqrt, bool vex,
+                                          bool scalar = false) {
     bool table_loaded = InitializeIndexTables();
     ASSERT_MSG(table_loaded, "Failed to load RCP index table");
 
@@ -285,14 +291,22 @@ static void GenerateReciprocalInstruction(void* address, const ZydisDecodedInstr
     const auto dst = ZydisToXbyakRegisterOperand(operands[0]);
 
     ASSERT_MSG(dst.isXMM() || dst.isYMM(), "operand 0 must be an XMM or YMM register");
-    bool is_src_mem = operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY;
+    // Scalar VEX forms have an independent upper-lane merge operand.
+    const auto& source = operands[scalar && vex ? 2 : 1];
+    const bool is_src_mem = source.type == ZYDIS_OPERAND_TYPE_MEMORY;
 
     std::array<bool, 16> taken_vecs = {};
     Xbyak::Xmm dst_reg;
     Xbyak::Xmm src_reg;
+    Xbyak::Xmm merge_reg;
+
+    if (scalar && vex) {
+        merge_reg = Xbyak::Xmm(ZydisToXbyakRegisterOperand(operands[1]).getIdx());
+        taken_vecs[merge_reg.getIdx()] = true;
+    }
 
     if (!is_src_mem) {
-        const auto src = ZydisToXbyakRegisterOperand(operands[1]);
+        const auto src = ZydisToXbyakRegisterOperand(source);
         src_reg = Xbyak::Xmm(src.getKind(), src.getIdx());
         taken_vecs[src_reg.getIdx()] = true;
     }
@@ -329,18 +343,25 @@ static void GenerateReciprocalInstruction(void* address, const ZydisDecodedInstr
     c.push(scratch2);
 
     if (is_src_mem) {
-        if (operands[1].mem.base == ZYDIS_REGISTER_RIP) {
-            const u64 target = (u64)address + instruction.length + operands[1].mem.disp.value;
+        const auto load_source = [&](const Xbyak::Address& memory) {
+            if (scalar) {
+                c.vmovss(src_storage, memory);
+            } else {
+                c.vmovups(src_storage, memory);
+            }
+        };
+        if (source.mem.base == ZYDIS_REGISTER_RIP) {
+            const u64 target = (u64)address + instruction.length + source.mem.disp.value;
             c.mov(rax, target);
-            c.vmovups(src_storage, ptr[rax]);
+            load_source(ptr[rax]);
         } else {
-            ZydisDecodedOperand operand = operands[1];
-            if (operands[1].mem.base == ZYDIS_REGISTER_RSP) { // rsp can't be index
+            ZydisDecodedOperand operand = source;
+            if (source.mem.base == ZYDIS_REGISTER_RSP) { // rsp can't be index
                 operand.mem.disp.size = 32;
                 operand.mem.disp.value += rsp_disp + 8 * 3; // Account for what we pushed
             }
-            Xbyak::Address mem = ZydisToXbyakMemoryOperand(operand);
-            c.vmovups(src_storage, mem);
+            Xbyak::Address mem = ZydisToXbyakMemoryOperand(address, instruction, operand);
+            load_source(mem);
         }
         src_reg = src_storage;
     }
@@ -362,23 +383,46 @@ static void GenerateReciprocalInstruction(void* address, const ZydisDecodedInstr
     // Load XOR values using those indices
     c.vpcmpeqd(xmm_scratch2, xmm_scratch2, xmm_scratch2); // vgather sets to zero
     c.vgatherdps(xmm_scratch3, ptr[scratch2 + xmm_scratch1 * 4], xmm_scratch2);
-    if (dst_reg == src_reg) {
-        // The RCP would modify our source reg so we wouldn't be able to use it for NaN merging
-        c.vmovaps(xmm_scratch1, src_reg);
-        src_reg = xmm_scratch1;
-    }
-    if (vex) {
-        auto func = rsqrt ? &Xbyak::CodeGenerator::vrsqrtps : &Xbyak::CodeGenerator::vrcpps;
-        (c.*func)(dst_reg, src_reg);
-        c.vxorps(dst_reg, dst_reg, xmm_scratch3);
+    if (scalar) {
+        // Only the low lane of a scalar reciprocal can be corrected.
+        c.vpslldq(xmm_scratch3, xmm_scratch3, 12);
+        c.vpsrldq(xmm_scratch3, xmm_scratch3, 12);
+        c.vpandn(xmm_scratch3, nan_mask, xmm_scratch3);
+        if (vex) {
+            if (rsqrt) {
+                c.vrsqrtss(dst_reg, merge_reg, src_reg);
+            } else {
+                c.vrcpss(dst_reg, merge_reg, src_reg);
+            }
+            c.vxorps(dst_reg, dst_reg, xmm_scratch3);
+        } else {
+            if (rsqrt) {
+                c.rsqrtss(dst_reg, src_reg);
+            } else {
+                c.rcpss(dst_reg, src_reg);
+            }
+            c.xorps(dst_reg, xmm_scratch3);
+        }
     } else {
-        // Preserve top bits
-        auto func = rsqrt ? &Xbyak::CodeGenerator::rsqrtps : &Xbyak::CodeGenerator::rcpps;
-        (c.*func)(dst_reg, src_reg);
-        c.xorps(dst_reg, xmm_scratch3);
+        // Packed operations retain upstream behavior, including NaN merging.
+        if (dst_reg == src_reg) {
+            // The RCP would modify our source reg so we wouldn't be able to use it for NaN merging
+            c.vmovaps(xmm_scratch1, src_reg);
+            src_reg = xmm_scratch1;
+        }
+        if (vex) {
+            auto func = rsqrt ? &Xbyak::CodeGenerator::vrsqrtps : &Xbyak::CodeGenerator::vrcpps;
+            (c.*func)(dst_reg, src_reg);
+            c.vxorps(dst_reg, dst_reg, xmm_scratch3);
+        } else {
+            // Preserve top bits
+            auto func = rsqrt ? &Xbyak::CodeGenerator::rsqrtps : &Xbyak::CodeGenerator::rcpps;
+            (c.*func)(dst_reg, src_reg);
+            c.xorps(dst_reg, xmm_scratch3);
+        }
+        // Merge NaNs back into dst
+        c.vblendvps(dst_reg.cvt256(), dst_reg.cvt256(), src_reg.cvt256(), nan_mask);
     }
-    // Merge NaNs back into dst
-    c.vblendvps(dst_reg.cvt256(), dst_reg.cvt256(), src_reg.cvt256(), nan_mask);
 
     c.pop(scratch2);
     c.pop(scratch1);
@@ -411,6 +455,26 @@ static void GenerateRCPPS(void* address, const ZydisDecodedInstruction& instruct
 static void GenerateVRCPPS(void* address, const ZydisDecodedInstruction& instruction,
                            const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
     GenerateReciprocalInstruction(address, instruction, operands, c, false, true);
+}
+
+static void GenerateRCPSS(void* address, const ZydisDecodedInstruction& instruction,
+                          const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
+    GenerateReciprocalInstruction(address, instruction, operands, c, false, false, true);
+}
+
+static void GenerateVRCPSS(void* address, const ZydisDecodedInstruction& instruction,
+                           const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
+    GenerateReciprocalInstruction(address, instruction, operands, c, false, true, true);
+}
+
+static void GenerateRSQRTSS(void* address, const ZydisDecodedInstruction& instruction,
+                            const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
+    GenerateReciprocalInstruction(address, instruction, operands, c, true, false, true);
+}
+
+static void GenerateVRSQRTSS(void* address, const ZydisDecodedInstruction& instruction,
+                             const ZydisDecodedOperand* operands, Xbyak::CodeGenerator& c) {
+    GenerateReciprocalInstruction(address, instruction, operands, c, true, true, true);
 }
 
 static void GenerateEXTRQ(void* /* address */, const ZydisDecodedInstruction&,
@@ -715,6 +779,40 @@ static void ReplaceMOVNTSD(void* address, const ZydisDecodedInstruction&,
     ReplaceMOVNT(address, 0xF2);
 }
 
+#if defined(__APPLE__)
+// Rosetta 2 mistranslates VCMPSS with NEQ, NLT or NLE: if the destination is then reloaded by a
+// full width VEX load, later scalar reads of it still return the compare mask.
+static bool FilterNegatedScalarCompare(const ZydisDecodedOperand* operands) {
+    // NEQ, NLT and NLE are 4 to 6, and 20 to 22 are the same predicates with bit 4 set.
+    const u64 predicate = operands[3].imm.value.u & ~0x10ULL;
+    return predicate >= 4 && predicate <= 6;
+}
+
+// Compares with the non-negated predicate and flips lane 0, which gives the same bits.
+static void GenerateNegatedScalarCompare(void* address, const ZydisDecodedInstruction& instruction,
+                                         const ZydisDecodedOperand* operands,
+                                         Xbyak::CodeGenerator& c) {
+    const auto dst = ZydisToXbyakRegisterOperand(operands[0]);
+    const auto src1 = ZydisToXbyakRegisterOperand(operands[1]);
+    const auto& xmm_dst = *reinterpret_cast<const Xbyak::Xmm*>(&dst);
+    const auto& xmm_src1 = *reinterpret_cast<const Xbyak::Xmm*>(&src1);
+    const u8 predicate = operands[3].imm.value.u & 3;
+    if (operands[2].type == ZYDIS_OPERAND_TYPE_REGISTER) {
+        c.vcmpss(xmm_dst, xmm_src1, ZydisToXbyakRegisterOperand(operands[2]), predicate);
+    } else {
+        c.vcmpss(xmm_dst, xmm_src1, ZydisToXbyakMemoryOperand(address, instruction, operands[2]),
+                 predicate);
+    }
+    Xbyak::Label lane0_mask, done;
+    c.vxorps(xmm_dst, xmm_dst, ptr[rip + lane0_mask]);
+    c.jmp(done);
+    c.L(lane0_mask);
+    c.dq(0xFFFFFFFF);
+    c.dq(0);
+    c.L(done);
+}
+#endif
+
 using PatchFilter = bool (*)(const ZydisDecodedOperand*);
 using InstructionGenerator = void (*)(void*, const ZydisDecodedInstruction&,
                                       const ZydisDecodedOperand*, Xbyak::CodeGenerator&);
@@ -737,6 +835,7 @@ static const bool need_tcb_trampoline = true;
 static const bool need_tcb_trampoline = false;
 #endif
 
+// Guest CPU identity applies to all titles, independent of host CPUID model.
 #if defined(__linux__)
 static bool FilterCpuId(const ZydisDecodedOperand*) {
     return true;
@@ -759,8 +858,9 @@ static void GenerateRdpid(void*, const ZydisDecodedInstruction&,
 }
 #endif
 
+
 static const std::unordered_map<ZydisMnemonic, std::vector<PatchInfo>> Patches = {
-#if defined(__linux__)
+#if defined(__linux__) && defined(ARCH_X86_64)
     {ZYDIS_MNEMONIC_CPUID, {{FilterCpuId, GenerateCpuid, true}}},
     {ZYDIS_MNEMONIC_RDTSCP, {{FilterCpuId, GenerateRdtscp, true}}},
     {ZYDIS_MNEMONIC_RDPID, {{FilterCpuId, GenerateRdpid, true}}},
@@ -774,8 +874,15 @@ static const std::unordered_map<ZydisMnemonic, std::vector<PatchInfo>> Patches =
     {ZYDIS_MNEMONIC_VRSQRTPS, {{FilterIntelCPU, GenerateVRSQRTPS, true}}},
     {ZYDIS_MNEMONIC_RCPPS, {{FilterIntelCPU, GenerateRCPPS, true}}},
     {ZYDIS_MNEMONIC_VRCPPS, {{FilterIntelCPU, GenerateVRCPPS, true}}},
+    {ZYDIS_MNEMONIC_RCPSS, {{FilterIntelCPU, GenerateRCPSS, true}}},
+    {ZYDIS_MNEMONIC_VRCPSS, {{FilterIntelCPU, GenerateVRCPSS, true}}},
+    {ZYDIS_MNEMONIC_RSQRTSS, {{FilterIntelCPU, GenerateRSQRTSS, true}}},
+    {ZYDIS_MNEMONIC_VRSQRTSS, {{FilterIntelCPU, GenerateVRSQRTSS, true}}},
 
-#if !defined(__APPLE__)
+#if defined(__APPLE__)
+    // Rosetta 2
+    {ZYDIS_MNEMONIC_VCMPSS, {{FilterNegatedScalarCompare, GenerateNegatedScalarCompare, true}}},
+#else
     // FS segment patches
     // For most of these, Windows needs a trampoline while other platforms do not.
     {ZYDIS_MNEMONIC_XOR, {{FilterTcbAccess, GenerateTcbExclusiveOr, need_tcb_trampoline}}},
@@ -1023,7 +1130,7 @@ static bool TryExecuteIllegalInstruction(void* ctx, void* code_address) {
 
 static bool TryPatchJit(void* code_address) {
     auto* code = static_cast<u8*>(code_address);
-    auto* module = GetModule(code);
+    auto* module = GetContainingModule(code);
     if (module == nullptr) {
         return false;
     }
@@ -2026,20 +2133,6 @@ static RedZonePatchResult PatchSegmentStatically(u64 segment_addr, u64 segment_s
             const auto& rewrite = rewrite_sites.at(site);
             if (rewrite.cpu_patch != nullptr) {
                 ++result.unsupported_cpu_patch_instruction_count;
-                switch (function.instructions.at(site).instruction.mnemonic) {
-                case ZYDIS_MNEMONIC_CPUID:
-                    ++result.deferred_cpuid_sites;
-                    break;
-                case ZYDIS_MNEMONIC_RDTSCP:
-                    ++result.deferred_rdtscp_sites;
-                    break;
-                case ZYDIS_MNEMONIC_RDPID:
-                    ++result.deferred_rdpid_sites;
-                    break;
-                default:
-                    ++result.deferred_other_cpu_sites;
-                    break;
-                }
             }
             if (rewrite.protect_red_zone) {
                 ++result.unrelocatable_memory_instruction_count;
@@ -2280,48 +2373,6 @@ static RedZonePatchResult PatchSegmentStatically(u64 segment_addr, u64 segment_s
             record_rewrites(site_span);
             patched_spans.emplace_back(site_span.patch_start, site_span.continuation);
         }
-
-#if defined(__linux__) && defined(ARCH_X86_64)
-        // Linux cannot trap a supported host RDPID instruction with arch_prctl.
-        // The normal trampoline patcher handles most sites, but four-byte
-        // RDPID instructions inside indirect-branch functions or with no safe
-        // jump relay remain executable with the WRONG host TSC_AUX identity.
-        //
-        // For the opt-in builtin CPU-ID mode, turn ONLY verified instruction
-        // boundaries that could not be relocated into a two-byte UD2. The
-        // signal handler uses the recorded original length/destination to
-        // return the virtual guest CPU number, preserving every other register
-        // and the instruction flags. No external instrumentation is needed.
-        if (IsBuiltinCpuIdMode()) {
-            for (const auto& [site, rewrite] : rewrite_sites) {
-                if (rewrite.cpu_patch == nullptr ||
-                    module->patched.contains(reinterpret_cast<u8*>(site))) {
-                    continue;
-                }
-                const auto& decoded = function.instructions.at(site);
-                if (decoded.instruction.mnemonic != ZYDIS_MNEMONIC_RDPID) {
-                    continue;
-                }
-                ASSERT(decoded.instruction.length >= 4);
-                const u32 destination =
-                    ZydisToXbyakRegisterOperand(decoded.operands[0]).getIdx();
-
-                // Publish immutable metadata BEFORE guest executable bytes are
-                // changed. This lookup is lock-free and signal-handler safe.
-                RegisterBuiltinRdpidTrap(site, decoded.instruction.length, destination);
-                auto* code = reinterpret_cast<u8*>(site);
-                code[0] = 0x0F;
-                code[1] = 0x0B; // UD2 -- SIGILL with unchanged fault RIP.
-                module->patched.insert(code);
-                ++result.builtin_rdpid_trap_count;
-                ++result.patched_cpu_patch_instruction_count;
-                ASSERT(result.unsupported_cpu_patch_instruction_count != 0);
-                --result.unsupported_cpu_patch_instruction_count;
-                ASSERT(result.deferred_rdpid_sites > 0);
-                --result.deferred_rdpid_sites;
-            }
-        }
-#endif
     }
     return result;
 }
@@ -2343,10 +2394,30 @@ static u8* FindSSE4aInstructionStart(u8* opcode, const u8* lower_bound) {
     return start;
 }
 
-/// Patches the SSE4a instructions between covered_ranges in place, without relocating any.
+#if defined(__APPLE__)
+/// Returns the start of the VEX encoded VCMPSS whose opcode is at the given address, or null if
+/// the bytes before it are not its VEX prefix.
+static u8* FindScalarCompareInstructionStart(u8* opcode, const u8* lower_bound) {
+    if (opcode[0] != 0xC2) {
+        return nullptr;
+    }
+    // Two byte VEX with L = 0 and the F3 implied prefix.
+    if (opcode - 2 >= lower_bound && opcode[-2] == 0xC5 && (opcode[-1] & 0x7) == 0x2) {
+        return opcode - 2;
+    }
+    // Three byte VEX in the 0F map with L = 0 and the F3 implied prefix.
+    if (opcode - 3 >= lower_bound && opcode[-3] == 0xC4 && (opcode[-2] & 0x1F) == 0x1 &&
+        (opcode[-1] & 0x7) == 0x2) {
+        return opcode - 3;
+    }
+    return nullptr;
+}
+#endif
+
+/// Patches the CPU instructions between covered_ranges in place, without relocating any.
 /// The bytes after the last range are skipped, as they hold read-only data.
-static void PatchUncoveredSSE4aInstructions(u64 segment_addr, const AddressRanges& covered_ranges,
-                                            RedZonePatchResult& result) {
+static void PatchUncoveredCpuInstructions(u64 segment_addr, const AddressRanges& covered_ranges,
+                                          RedZonePatchResult& result) {
     auto* module = GetContainingModule(reinterpret_cast<void*>(segment_addr));
     if (module == nullptr) {
         return;
@@ -2356,8 +2427,13 @@ static void PatchUncoveredSSE4aInstructions(u64 segment_addr, const AddressRange
     const auto patch_gap = [&](uintptr_t gap_start, uintptr_t gap_end) {
         auto* const lower_bound = reinterpret_cast<u8*>(gap_start);
         for (uintptr_t address = gap_start; address + 2 <= gap_end; ++address) {
-            u8* const start =
-                FindSSE4aInstructionStart(reinterpret_cast<u8*>(address), lower_bound);
+            u8* start = FindSSE4aInstructionStart(reinterpret_cast<u8*>(address), lower_bound);
+#if defined(__APPLE__)
+            if (start == nullptr) {
+                start =
+                    FindScalarCompareInstructionStart(reinterpret_cast<u8*>(address), lower_bound);
+            }
+#endif
             if (start == nullptr) {
                 continue;
             }
@@ -2394,7 +2470,7 @@ RedZonePatchResult PatchCpuInstructionsStatically(u64 segment_addr, u64 segment_
     auto result =
         PatchSegmentStatically(segment_addr, segment_size, function_starts, false, &covered_ranges);
     // The EH frame search table does not list every function of every module.
-    PatchUncoveredSSE4aInstructions(segment_addr, covered_ranges, result);
+    PatchUncoveredCpuInstructions(segment_addr, covered_ranges, result);
     return result;
 }
 
@@ -2403,9 +2479,6 @@ RedZonePatchResult PatchCpuInstructionsStatically(u64 segment_addr, u64 segment_
 // ============================================================================
 
 static bool PatchesAccessViolationHandler(void* context, void* /* fault_address */) {
-    if (Common::IsExecuteError(context)) {
-        return false;
-    }
     return TryPatchJit(Common::GetRip(context));
 }
 
@@ -2445,7 +2518,7 @@ static bool PatchesIllegalInstructionHandler(void* context) {
 }
 
 static void PatchesInit() {
-#if defined(__linux__)
+#if defined(__linux__) && defined(ARCH_X86_64)
     InitializeCpuId();
 #endif
     if (!Patches.empty()) {
@@ -2476,46 +2549,6 @@ void PrePatchInstructions(u64 segment_addr, u64 segment_size) {
         TryPatchAot(reinterpret_cast<void*>(segment_addr), segment_size);
     }
 #endif
-}
-
-bool FindUnpatchedRdpid(u64 segment_addr, u64 segment_size,
-                        u64& first_unpatched) noexcept {
-#if defined(__linux__) && defined(ARCH_X86_64)
-    const auto* bytes = reinterpret_cast<const u8*>(segment_addr);
-    // RDPID uses F3 0F C7 /7 with ModRM.MOD=11; REX and operand
-    // size prefixes may precede 0F. This check intentionally refuses an
-    // ambiguous raw candidate rather than exposing the host TSC_AUX to the
-    // guest. It runs only once per ELF code segment during builtin startup.
-    for (u64 i = 1; i + 2 < segment_size; ++i) {
-        if (bytes[i] != 0x0F || bytes[i + 1] != 0xC7 ||
-            (bytes[i + 2] & 0xF8) != 0xF8) {
-            continue;
-        }
-        bool saw_f3 = false;
-        for (u64 back = i; back > 0 && i - back < 14;) {
-            const u8 prefix = bytes[--back];
-            if (prefix == 0xF3) {
-                saw_f3 = true;
-                continue;
-            }
-            if ((prefix >= 0x40 && prefix <= 0x4F) || prefix == 0x66 ||
-                prefix == 0x67 || prefix == 0x2E || prefix == 0x3E ||
-                prefix == 0x26 || prefix == 0x36 || prefix == 0x64 ||
-                prefix == 0x65) {
-                continue;
-            }
-            break;
-        }
-        if (saw_f3) {
-            first_unpatched = segment_addr + i;
-            return true;
-        }
-    }
-#else
-    (void)segment_addr;
-    (void)segment_size;
-#endif
-    return false;
 }
 
 } // namespace Core

@@ -5,6 +5,7 @@
 #include "common/alignment.h"
 #include "common/scope_exit.h"
 #include "core/libraries/kernel/posix_error.h"
+#include "core/libraries/kernel/process.h"
 #include "core/libraries/kernel/threads/pthread.h"
 #include "core/libraries/kernel/threads/sleepq.h"
 #include "core/libraries/kernel/threads/thread_state.h"
@@ -41,13 +42,12 @@ void ThreadState::Collect(Pthread* curthread) {
                 ++it;
                 continue;
             }
+            FreeStack(&td->attr);
             work_list.push_back(td);
             it = gc_list.erase(it);
         }
     }
     for (Pthread* td : work_list) {
-        td->native_thr->Join();
-        FreeStack(&td->attr);
         Free(curthread, td);
     }
 }
@@ -108,6 +108,9 @@ Pthread* ThreadState::Alloc(Pthread* curthread) {
         // immediately after.
         std::memset(static_cast<void*>(thread), 0, sizeof(Pthread));
         std::construct_at(thread);
+        // The original thread has no parent; do not expose the two
+        // hardware cores that Orbis reserves from application scheduling.
+        thread->guest_affinity_mask.store(GetGuestCpuMask(), std::memory_order_relaxed);
         thread->tcb = tcb;
         thread->sleepqueue = new SleepQueue{};
     } else {
@@ -119,7 +122,6 @@ Pthread* ThreadState::Alloc(Pthread* curthread) {
 }
 
 void ThreadState::Free(Pthread* curthread, Pthread* thread) {
-    thread->native_thr.reset();
     if (curthread != nullptr) {
         std::scoped_lock lk{tcb_lock};
         TcbDtor(thread->tcb);

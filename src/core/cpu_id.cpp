@@ -7,6 +7,7 @@
 #include <cerrno>
 #include <csignal>
 #include <memory>
+#include <sched.h>
 #include <asm/prctl.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
@@ -16,9 +17,8 @@
 #include <xbyak/xbyak_util.h>
 #include "common/assert.h"
 #include "core/cpu_id.h"
-#include "core/cpu_id_guest.h"
-#include "core/cpu_id_guest_ranges.h"
-#include "core/cpu_id_trap_table.h"
+#include "core/linux_guest_tsc.h"
+#include "core/guest_cpu_selection.h"
 #include "core/libraries/kernel/threads/pthread.h"
 
 #ifdef ENABLE_CPU_ID_TRANSLATION
@@ -36,6 +36,7 @@ extern "C" __attribute__((noinline, visibility("default"))) void ShadCpuIdTransl
 namespace Core {
 namespace {
 
+constexpr u32 GuestCpuCount = GuestCpuSlots;
 constexpr size_t RedZoneSize = 128;
 constexpr size_t RegisterFrameSize = 17 * sizeof(u64);
 constexpr size_t FaultStackSize = RedZoneSize + sizeof(u64);
@@ -45,27 +46,102 @@ static_assert(std::atomic<uintptr_t>::is_always_lock_free);
 std::atomic<uintptr_t> guest_begin{};
 std::atomic<uintptr_t> guest_end{};
 std::array<std::unique_ptr<Xbyak::CodeGenerator>, 2> fault_trampolines;
-std::atomic<bool> builtin_cpu_id_mode{};
-CpuId::RdpidTrapTable builtin_rdpid_traps;
-CpuId::GuestExecutableRanges guest_executable_ranges;
+// The host's schedulable CPUs are mapped to eight virtual guest slots once,
+// before guest instructions execute. No malloc, locking, or affinity writes in
+// the signal handler. Guest affinity further restricts the chosen virtual slot.
+std::array<u8, CPU_SETSIZE> host_to_virtual{};
+std::array<bool, CPU_SETSIZE> host_cpu_known{};
 
 std::array<u32, 4> GuestCpuid(u32 leaf, u32 subleaf, u32 cpu) {
-    std::array<u32, 4> host_result{};
-    Xbyak::util::Cpu::getCpuidEx(leaf, subleaf, host_result.data());
-    return CpuIdentity::QueryGuestCpuid(leaf, subleaf, cpu, host_max_basic, host_max_extended,
-                                       host_result);
+    const u32 apic_id = GuestCpuCount - 1 - cpu;
+    std::array<u32, 4> result{};
+    Xbyak::util::Cpu::getCpuidEx(leaf, subleaf, result.data());
+    if (leaf > host_max_basic && (leaf < 0x80000000 || leaf > host_max_extended)) {
+        result = {};
+    }
+    auto& [eax, ebx, ecx, edx] = result;
+    switch (leaf) {
+    case 0:
+        eax = std::max(host_max_basic, 0x1fu);
+        break;
+    case 1:
+        ebx = (ebx & 0xffff) | (GuestCpuCount << 16) | (apic_id << 24);
+        edx |= 1u << 28;
+        break;
+    case 4:
+    case 0x8000001d: {
+        constexpr std::array<std::array<u32, 4>, 3> caches{{
+            {0x00000121, 0x01c0003f, 0x0000003f, 0},
+            {0x00000122, 0x0040003f, 0x000000ff, 0},
+            {0x0000c143, 0x03c0003f, 0x000007ff, 2},
+        }};
+        result = subleaf < caches.size() ? caches[subleaf] : std::array<u32, 4>{};
+        if (leaf == 4 && eax != 0) {
+            eax |= (GuestCpuCount - 1) << 26;
+        }
+        break;
+    }
+    case 7:
+        if (subleaf == 0) {
+            ecx &= ~(1u << 22);
+            edx &= ~(1u << 15);
+        }
+        break;
+    case 0xb:
+    case 0x1f:
+        eax = subleaf == 1 ? 3 : 0;
+        ebx = subleaf == 0 ? 1 : subleaf == 1 ? GuestCpuCount : 0;
+        ecx = (subleaf & 0xff) | (subleaf < 2 ? (subleaf + 1) << 8 : 0);
+        edx = apic_id;
+        break;
+    case 0x1a:
+        result = {};
+        break;
+    case 0x80000000:
+        eax = std::max(host_max_extended, 0x8000001eu);
+        break;
+    case 0x80000001:
+        ecx |= 1u << 22;
+        break;
+    case 0x80000005:
+        result = {0xff08ff08, 0xff28ff20, 0x20080140, 0x20020140};
+        break;
+    case 0x80000006:
+        result = {0x21000000, 0x42004200, 0x08008140, 0};
+        break;
+    case 0x80000008:
+        ecx = (ecx & ~0xf0ffu) | (3u << 12) | (GuestCpuCount - 1);
+        break;
+    case 0x8000001e:
+        result = {apic_id, apic_id, 0, 0};
+        break;
+    case 0x80000026:
+        result = {};
+        break;
+    default:
+        break;
+    }
+    return result;
 }
 
-u32 CurrentGuestCpu() {
+u32 CurrentGuestCpuImpl() {
     auto* thread = Libraries::Kernel::g_curthread;
     ASSERT(thread != nullptr);
-    const s32 cpu = thread->GetCurrentCpu();
-    ASSERT_MSG(cpu >= 0 && cpu < CpuIdentity::GuestCpuCount, "Cannot resolve guest CPU identity: {}", cpu);
-    return cpu;
+    unsigned host_cpu{};
+    const long ret = syscall(SYS_getcpu, &host_cpu, nullptr, nullptr);
+    ASSERT_MSG(ret == 0, "Cannot read native CPU scheduler ID: {}", errno);
+    const unsigned scheduler_slot =
+        host_cpu < host_to_virtual.size() && host_cpu_known[host_cpu]
+            ? host_to_virtual[host_cpu]
+            : host_cpu % GuestCpuCount;
+    const u64 allowed = thread->guest_affinity_mask.load(std::memory_order_relaxed);
+    const int cpu = SelectGuestCpu(scheduler_slot, allowed);
+    ASSERT_MSG(cpu >= 0 && cpu < GuestCpuCount, "Invalid guest CPU affinity mask: {:#x}", allowed);
+    return static_cast<u32>(cpu);
 }
 
 void PS4_SYSV_ABI ExecuteCpuId(u64* registers, CpuIdInstruction instruction, u32 destination) {
-    const u32 cpu = CurrentGuestCpu();
+    const u32 cpu = CurrentGuestCpuImpl();
     switch (instruction) {
     case CpuIdInstruction::Cpuid: {
         const auto result = GuestCpuid(static_cast<u32>(registers[0]),
@@ -138,55 +214,6 @@ size_t FaultInstructionLength(const u8* code, FaultInstruction& instruction, u32
 
 } // namespace
 
-bool RegisterGuestExecutableRange(uintptr_t start, size_t size) {
-    return guest_executable_ranges.Register(start, size);
-}
-
-void SetBuiltinCpuIdMode(bool enabled) noexcept {
-    builtin_cpu_id_mode.store(enabled, std::memory_order_release);
-}
-
-bool IsBuiltinCpuIdMode() noexcept {
-    return builtin_cpu_id_mode.load(std::memory_order_acquire);
-}
-
-void RegisterBuiltinRdpidTrap(uintptr_t guest_ip, u32 length, u32 destination) {
-    ASSERT_MSG(IsBuiltinCpuIdMode(),
-               "Unexpected in-process RDPID trap outside builtin CPU-ID execution");
-    ASSERT_MSG(builtin_rdpid_traps.Register(guest_ip, length, destination),
-               "Duplicate or invalid in-process RDPID trap at {:#x}", guest_ip);
-}
-
-bool HandleBuiltinRdpidTrap(void* context) {
-    if (!IsBuiltinCpuIdMode() || context == nullptr) {
-        return false;
-    }
-    auto& registers = static_cast<ucontext_t*>(context)->uc_mcontext.gregs;
-    if (registers[REG_TRAPNO] != 6) { // UD2: #UD
-        return false;
-    }
-    const auto ip = static_cast<uintptr_t>(registers[REG_RIP]);
-    const CpuId::RdpidTrapTable::Site* site = builtin_rdpid_traps.Lookup(ip);
-    if (site == nullptr || Libraries::Kernel::g_curthread == nullptr) {
-        return false;
-    }
-    // A recorded site is valid only while the original patched instruction
-    // still contains UD2. Never consume an unrelated application exception.
-    const auto* opcode = reinterpret_cast<const u8*>(ip);
-    if (opcode[0] != 0x0F || opcode[1] != 0x0B) {
-        return false;
-    }
-
-    static constexpr std::array HostRegisters{
-        REG_RAX, REG_RCX, REG_RDX, REG_RBX, REG_RSP, REG_RBP, REG_RSI, REG_RDI,
-        REG_R8,  REG_R9,  REG_R10, REG_R11, REG_R12, REG_R13, REG_R14, REG_R15};
-    // RDPID returns IA32_TSC_AUX in r32/r64, zero-extending the result.
-    // The PS4 virtual CPU number replaces the host's physical TSC_AUX.
-    registers[HostRegisters[site->destination]] = CurrentGuestCpu();
-    registers[REG_RIP] += site->size;
-    return true;
-}
-
 bool HandleCpuIdFault(void* context, void* fault_address) {
     auto& registers = static_cast<ucontext_t*>(context)->uc_mcontext.gregs;
     const bool illegal = registers[REG_TRAPNO] == 6;
@@ -201,14 +228,9 @@ bool HandleCpuIdFault(void* context, void* fault_address) {
     if (length == 0) {
         return false;
     }
-    // Distinguish guest code from native HLE/host-library code by actual
-    // executable ELF mappings. The old global range was not populated by
-    // the module loader, so deferred CPUID/RDTSCP sites could leak host IDs.
-    const bool is_guest =
-        guest_executable_ranges.Contains(address) ||
-        (address >= guest_begin.load(std::memory_order_relaxed) &&
-         address < guest_end.load(std::memory_order_relaxed));
-    if (instruction != FaultInstruction::Rdtsc && is_guest &&
+    if (instruction != FaultInstruction::Rdtsc &&
+        address >= guest_begin.load(std::memory_order_relaxed) &&
+        address < guest_end.load(std::memory_order_relaxed) &&
         Libraries::Kernel::g_curthread != nullptr) {
         if (instruction == FaultInstruction::Rdpid) {
             static constexpr std::array HostRegisters{
@@ -334,7 +356,24 @@ void GenerateCpuIdInstruction(Xbyak::CodeGenerator& c, CpuIdInstruction instruct
     }
 }
 
+u32 CurrentGuestCpu() {
+    return CurrentGuestCpuImpl();
+}
+
 void InitializeCpuId() {
+    cpu_set_t host_allowed{};
+    if (sched_getaffinity(0, sizeof(host_allowed), &host_allowed) == 0) {
+        unsigned rank = 0;
+        for (unsigned i = 0; i < CPU_SETSIZE; ++i) {
+            if (CPU_ISSET(i, &host_allowed)) {
+                host_to_virtual[i] = static_cast<u8>(rank++ % GuestCpuCount);
+                host_cpu_known[i] = true;
+            }
+        }
+        LOG_INFO(Core, "Mapped {} host CPUs to {} virtual PS4 CPU slots", rank, GuestCpuCount);
+    } else {
+        LOG_WARNING(Core, "Unable to capture host CPU affinity: {}. Using scheduler indices.", errno);
+    }
     u32 data[4];
     Xbyak::util::Cpu::getCpuid(0, data);
     host_max_basic = data[0];
@@ -349,6 +388,19 @@ void InitializeCpuId() {
 }
 
 void EnableCpuIdFaulting() {
+    // PR_SET_TSC is inherited by host worker threads created from guest threads.
+    // Faulting on native RDTSC breaks unrelated audio/clock/media libraries.
+    // The guest's RDTSC already uses the native counter, and guest RDTSCP/RDPID
+    // are translated in loaded guest modules by generic CPU instruction patches.
+    // Do not turn on process-wide timing faults to emulate guest CPU identity.
+    // Also clear inherited restrictions if a caller previously enabled them.
+    if (RestoreHostNativeTsc() != 0) {
+        static std::atomic warned{false};
+        if (!warned.exchange(true)) {
+            LOG_WARNING(Core, "Cannot restore host timestamp-counter access on guest thread: {}",
+                        errno);
+        }
+    }
 #ifdef ENABLE_CPU_ID_TRANSLATION
     if (ShadCpuIdTranslationActive()) {
         static std::atomic announced{false};
@@ -358,17 +410,7 @@ void EnableCpuIdFaulting() {
         return;
     }
 #endif
-    if (prctl(PR_SET_TSC, PR_TSC_SIGSEGV) != 0) {
-        ASSERT_MSG(!IsBuiltinCpuIdMode(),
-                   "Built-in CPU identity requires Linux TSC faulting to emulate RDTSCP");
-        static std::atomic warned{false};
-        if (!warned.exchange(true)) {
-            LOG_WARNING(Core, "TSC faulting unavailable; RDTSCP identity requires static patches");
-        }
-    }
     if (syscall(SYS_arch_prctl, ARCH_SET_CPUID, 0) != 0) {
-        ASSERT_MSG(!IsBuiltinCpuIdMode(),
-                   "Built-in CPU identity requires Linux CPUID faulting for guest identity");
         static std::atomic warned{false};
         if (!warned.exchange(true)) {
             LOG_WARNING(Core, "CPUID faulting unavailable; CPU identity requires static patches");

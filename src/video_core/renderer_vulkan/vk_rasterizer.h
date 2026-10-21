@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <functional>
-
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
@@ -75,14 +73,10 @@ public:
     void CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds);
     u32 ReadDataFromGds(u32 gsd_offset);
     bool InvalidateMemory(VAddr addr, u64 size, bool assume_locks = false);
-    // Queue an invalidation on the GPU processor and signal completion only after
-    // cache readback and memory tracking have completed.
-    void InvalidateMemoryOnGpuThread(VAddr addr, u64 size, std::function<void()> on_complete);
     bool ReadMemory(VAddr addr, u64 size, bool assume_locks = false);
     bool IsMapped(VAddr addr, u64 size);
     void MapMemory(VAddr addr, u64 size);
     void RegisterMemory(VAddr addr, u64 size);
-    void ProtectMemory(VAddr addr, u64 size, Core::MemoryPermission perms);
     void UnmapMemory(VAddr addr, u64 size);
 
     u64 Flush();
@@ -133,7 +127,6 @@ private:
     void BindIndexBuffer(u32 index_offset = 0, bool is_indirect = false);
 
     void ResetBindings(bool is_compute);
-    void ResetOrderedCount(const Shader::Info& stage);
 
     bool IsComputeMetaClear(const Pipeline* pipeline);
     bool IsComputeImageCopy(const Pipeline* pipeline);

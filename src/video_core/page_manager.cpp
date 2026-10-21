@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
-#include <atomic>
 #include <utility>
 #include "common/adaptive_mutex.h"
 #include "common/assert.h"
@@ -16,7 +15,6 @@
 #include "core/memory.h"
 #include "core/signals.h"
 #include "video_core/page_manager.h"
-#include "video_core/protection_range_coalescer.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
 #ifndef _WIN64
@@ -33,8 +31,6 @@
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
-#include <unistd.h>
-#include "video_core/uffd_range.h"
 #else
 #include "common/spin_lock.h"
 #endif
@@ -45,8 +41,6 @@ struct PageManager::Impl {
     struct PageState {
         u8 num_write_watchers;
         u8 num_read_watchers;
-        std::atomic<Core::MemoryPermission> guest_perms{Core::MemoryPermission::None};
-        std::atomic<Core::MemoryPermission> watched_perms{Core::MemoryPermission::None};
 
         Core::MemoryPermission WritePerm() const noexcept {
             return num_write_watchers == 0 ? Core::MemoryPermission::Write
@@ -59,8 +53,7 @@ struct PageManager::Impl {
         }
 
         Core::MemoryPermission Perms() const noexcept {
-            return guest_perms.load(std::memory_order_relaxed) &
-                   (ReadPerm() | WritePerm() | Core::MemoryPermission::Execute);
+            return ReadPerm() | WritePerm();
         }
 
         template <bool is_read>
@@ -72,8 +65,9 @@ struct PageManager::Impl {
             }
         }
 
-        Core::MemoryPermission Update(PageOp write_op, bool update_write = true,
-                                      PageOp read_op = PageOp::None, bool update_read = false) {
+        constexpr Core::MemoryPermission Update(PageOp write_op, bool update_write = true,
+                                                PageOp read_op = PageOp::None,
+                                                bool update_read = false) {
             if (update_read) {
                 if (read_op == PageOp::Track) {
                     ASSERT_MSG(num_read_watchers == 0, "Too many watchers");
@@ -90,8 +84,6 @@ struct PageManager::Impl {
                 }
                 num_write_watchers += std::to_underlying(write_op);
             }
-            watched_perms.store(Core::MemoryPermission::ReadWrite & ~(ReadPerm() | WritePerm()),
-                                std::memory_order_release);
             return Perms();
         }
     };
@@ -103,10 +95,10 @@ struct PageManager::Impl {
 
     Impl() = default;
     virtual ~Impl() = default;
-    virtual void DrainPendingInvalidations() {}
 
     virtual void OnMap(VAddr address, size_t size) {
         // No-op
+        EnsurePages(address, address + size);
     }
 
     virtual void OnUnmap(VAddr address, size_t size) {
@@ -115,55 +107,12 @@ struct PageManager::Impl {
 
     virtual void Protect(VAddr address, size_t size, Core::MemoryPermission perms) = 0;
 
-    virtual void ProtectGuest(VAddr address, size_t size, Core::MemoryPermission guest_perms,
-                              Core::MemoryPermission effective_perms) {
-        Core::Memory::Instance()->GetAddressSpace().Protect(address, size, guest_perms);
-        Protect(address, size, effective_perms);
-    }
-
     void EnsurePages(VAddr begin, VAddr end) {
-        end = std::min(end, VAddr{1} << ADDRESS_BITS);
-        if (begin >= end) {
-            return;
-        }
+        end = std::min(end, VAddr{1} << ADDRESS_BITS) - 1;
         const size_t start_page = begin >> PM_PAGE_BITS;
-        const size_t end_page = (end - 1) >> PM_PAGE_BITS;
+        const size_t end_page = end >> PM_PAGE_BITS;
         cached_pages.reserve(start_page, end_page);
         locks.reserve(start_page, end_page);
-    }
-
-    void ProtectMemory(VAddr address, size_t size, Core::MemoryPermission guest_perms) {
-        const VAddr end = address + size;
-        const VAddr tracked_end = std::min(end, VAddr{1} << ADDRESS_BITS);
-        EnsurePages(address, tracked_end);
-        VAddr range_begin = address;
-        Core::MemoryPermission range_perms{};
-        for (VAddr page_addr = address; page_addr < tracked_end;
-             page_addr += PageManager::PM_PAGE_SIZE) {
-            const auto page = page_addr >> PM_PAGE_BITS;
-            locks[page].lock();
-            auto& state = cached_pages[page];
-            state.guest_perms.store(guest_perms, std::memory_order_release);
-            const auto perms = state.Perms();
-            if (page_addr == address) {
-                range_perms = perms;
-            } else if (perms != range_perms) {
-                ProtectGuest(range_begin, page_addr - range_begin, guest_perms, range_perms);
-                range_begin = page_addr;
-                range_perms = perms;
-            }
-        }
-        if (range_begin < tracked_end) {
-            ProtectGuest(range_begin, tracked_end - range_begin, guest_perms, range_perms);
-        }
-        for (VAddr page_addr = address; page_addr < tracked_end;
-             page_addr += PageManager::PM_PAGE_SIZE) {
-            locks[page_addr >> PM_PAGE_BITS].unlock();
-        }
-        if (end > tracked_end) {
-            const auto begin = std::max(address, tracked_end);
-            Core::Memory::Instance()->GetAddressSpace().Protect(begin, end - begin, guest_perms);
-        }
     }
 
     void UpdatePageWatchers(VAddr addr, u64 size, PageOp write_op) {
@@ -214,13 +163,6 @@ struct PageManager::Impl {
                 perms = new_perms;
             } else if (range_pages != 0) {
                 ++potential_pages;
-                // The current page ALREADY has these permissions; cap only
-                // long runs of unchanged pages merged into a future
-                // mprotect call. This never drops an actual page transition.
-                if (new_perms == old_perms &&
-                    ShouldFlushSparseProtectionRange(range_pages, potential_pages)) {
-                    release_pending();
-                }
             }
 
             // If the page must be (un)protected
@@ -288,15 +230,8 @@ struct PageManager::Impl {
                 release_pending();
                 perms = new_perms;
             } else if (range_pages != 0) {
-                // An unchanged page can bridge a short gap between real
-                // permission updates. Avoid re-protecting long gaps: on
-                // Linux that can cause unnecessary TLB shootdowns and
-                // contention in the process memory-map lock.
+                // If the protection did not change, extend the potential range
                 ++potential_pages;
-                if (new_perms == old_perms &&
-                    ShouldFlushSparseProtectionRange(range_pages, potential_pages)) {
-                    release_pending();
-                }
             }
 
             // If the page must be (un)protected
@@ -347,10 +282,7 @@ struct PageManager::Impl {
 struct UffdImpl : public PageManager::Impl {
 private:
     std::jthread ufd_thread;
-    // GPU-origin faults must remain serviceable while a CPU-origin fault is
-    // queued for cache readback on the GPU command processor.
-    std::atomic_size_t pending_gpu_invalidations{0};
-    int uffd{-1};
+    int uffd;
 
 public:
     UffdImpl(Vulkan::Rasterizer* rasterizer_) : Impl() {
@@ -363,202 +295,126 @@ public:
             throw std::runtime_error("userfaultfd");
         }
 
-        try {
-            // This backend needs the faulting Linux TID to distinguish GPU
-            // command processor faults from faults on other guest threads.
-            uffdio_api api{};
-            api.api = UFFD_API;
-            api.features = UFFD_FEATURE_THREAD_ID;
-            if (ioctl(uffd, UFFDIO_API, &api) != 0 ||
-                (api.features & UFFD_FEATURE_THREAD_ID) == 0) {
-                LOG_ERROR(Common_Memory,
-                          "userfaultfd thread-ID feature negotiation failed: {}",
-                          Common::GetLastErrorMsg());
-                throw std::runtime_error("uffdio_api");
-            }
-
-            // Register ALL existing reserved VMAs before publishing the fault
-            // handler or allowing GPU memory watches. Registration needs a
-            // start and LENGTH; boost::icl's upper() is an ending address.
-            // If any registration fails, close the FD and safely use the
-            // existing signal backend instead of leaving a partial tracker.
-            const auto regions = Core::Memory::Instance()->GetAddressSpace().GetUsableRegions();
-            size_t count = 0;
-            for (const auto& region : regions) {
-                const auto range =
-                    UffdRegistrationRange(region.lower(), region.upper(), PageManager::PM_PAGE_SIZE);
-                if (!range || !RegisterRange(range->start, range->len)) {
-                    LOG_ERROR(Common_Memory,
-                              "Failed to register userfaultfd VM interval [{:#x}, {:#x}): {}",
-                              region.lower(), region.upper(), Common::GetLastErrorMsg());
-                    throw std::runtime_error("uffdio_register");
-                }
-                ++count;
-            }
-            LOG_INFO(Common_Memory,
-                     "registered {} reserved VM ranges with userfaultfd (exact bounds)",
-                     count);
-            // The handler now runs with its registrations already complete.
-            ufd_thread = std::jthread([this](std::stop_token token) { UffdHandler(token); });
-        } catch (...) {
-            close(uffd); // releases any partially registered WP ranges
-            uffd = -1;
-            throw;
+        // Request uffdio features from kernel.
+        uffdio_api api;
+        api.api = UFFD_API;
+        api.features = UFFD_FEATURE_THREAD_ID;
+        const int ret = ioctl(uffd, UFFDIO_API, &api);
+        if (ret != 0) {
+            LOG_ERROR(Common_Memory,
+                      "uffdio_api call failed: {}, falling back to signal implementation",
+                      Common::GetLastErrorMsg());
+            throw std::runtime_error("uffdio_api");
         }
+
+        // Create uffd handler thread
+        ufd_thread = std::jthread([&](std::stop_token token) { UffdHandler(token); });
     }
 
-    ~UffdImpl() override {
-        // poll(-1) previously prevented std::jthread from joining. The event
-        // loop now wakes periodically to observe request_stop, then the FD
-        // is closed only after the handler thread has finished using it.
-        ufd_thread.request_stop();
-        if (ufd_thread.joinable()) {
-            ufd_thread.join();
-        }
-        if (uffd >= 0) {
-            close(uffd);
-        }
-    }
-
-    bool RegisterRange(VAddr address, size_t size) {
-        uffdio_register reg{};
-        reg.range.start = address;
-        reg.range.len = size;
-        reg.mode = UFFDIO_REGISTER_MODE_WP;
-        return ioctl(uffd, UFFDIO_REGISTER, &reg) == 0;
-    }
+    ~UffdImpl() = default;
 
     void OnMap(VAddr address, size_t size) override {
         PageManager::Impl::OnMap(address, size);
-        ASSERT_MSG(RegisterRange(address, size),
-                   "Uffdio register failed at {:#x} length {:#x}: {}",
-                   address, size, Common::GetLastErrorMsg());
+        uffdio_register reg;
+        reg.range.start = address;
+        reg.range.len = size;
+        reg.mode = UFFDIO_REGISTER_MODE_WP;
+        const int ret = ioctl(uffd, UFFDIO_REGISTER, &reg);
+        ASSERT_MSG(ret != -1, "Uffdio register failed with error: {}", Common::GetLastErrorMsg());
     }
 
     void OnUnmap(VAddr address, size_t size) override {
-        uffdio_range range{};
+        uffdio_range range;
         range.start = address;
         range.len = size;
         const int ret = ioctl(uffd, UFFDIO_UNREGISTER, &range);
-        ASSERT_MSG(ret != -1, "Uffdio unregister failed with error: {}",
-                   Common::GetLastErrorMsg());
+        ASSERT_MSG(ret != -1, "Uffdio unregister failed with error: {}", Common::GetLastErrorMsg());
     }
 
     void Protect(VAddr address, size_t size, Core::MemoryPermission perms) override {
-        const bool allow_write = True(perms & Core::MemoryPermission::Write);
-        uffdio_writeprotect wp{};
+        bool allow_write = True(perms & Core::MemoryPermission::Write);
+        uffdio_writeprotect wp;
         wp.range.start = address;
         wp.range.len = size;
-        wp.mode = allow_write ? UFFDIO_WRITEPROTECT_MODE_DONTWAKE
-                              : UFFDIO_WRITEPROTECT_MODE_WP;
+        wp.mode = allow_write ? UFFDIO_WRITEPROTECT_MODE_DONTWAKE : UFFDIO_WRITEPROTECT_MODE_WP;
         const int ret = ioctl(uffd, UFFDIO_WRITEPROTECT, &wp);
         ASSERT_MSG(ret != -1, "Uffdio writeprotect failed with error: {}",
                    Common::GetLastErrorMsg());
     }
 
-    void DrainPendingInvalidations() override {
-        // C++20 atomic wait avoids polling and cannot miss a completion wakeup.
-        for (auto pending = pending_gpu_invalidations.load(); pending != 0;
-             pending = pending_gpu_invalidations.load()) {
-            pending_gpu_invalidations.wait(pending);
-        }
-    }
-
-    void WakeFault(VAddr addr, u32 tid) {
-        // Wake only *after* the corresponding GPU/CPU data is coherent and
-        // the page's write protection has been removed by memory tracking.
-        const auto wake = UffdFaultWakeRange(addr, PageManager::PM_PAGE_SIZE);
-        ASSERT(wake.has_value());
-        uffdio_range range{};
-        range.start = wake->start;
-        range.len = wake->len;
-        const int ret = ioctl(uffd, UFFDIO_WAKE, &range);
-        ASSERT_MSG(ret != -1, "Waking userfaultfd thread {} failed: {}",
-                   tid, Common::GetLastErrorMsg());
-    }
-
     void UffdHandler(std::stop_token token) {
         Common::SetCurrentThreadName("shadPS4:Uffd");
-        // Continue receiving GPU-origin faults while queued GPU work is
-        // draining during teardown; these faults may otherwise deadlock it.
-        while (!token.stop_requested() || pending_gpu_invalidations.load() != 0) {
-            pollfd descriptor{};
-            descriptor.fd = uffd;
-            descriptor.events = POLLIN;
 
-            // A bounded blocking poll is needed for clean jthread teardown.
-            // This is a shut-down check, not guest-time polling or busy spin.
-            const int pollres = poll(&descriptor, 1, 200);
-            if (pollres == 0) {
+        auto regions = Core::Memory::Instance()->GetAddressSpace().GetUsableRegions();
+        for (auto& region : regions) {
+            OnMap(region.lower(), region.upper());
+        }
+        LOG_INFO(Common_Memory, "registered reserved memory with userfaultfd");
+
+        while (!token.stop_requested()) {
+            pollfd pollfd;
+            pollfd.fd = uffd;
+            pollfd.events = POLLIN;
+
+            // Block until the descriptor is ready for data reads.
+            const int pollres = poll(&pollfd, 1, -1);
+            switch (pollres) {
+            case -1:
+                perror("Poll userfaultfd");
+                continue;
+                break;
+            case 0:
+                continue;
+            case 1:
+                break;
+            default:
+                UNREACHABLE_MSG("Unexpected number of descriptors {} out of poll", pollres);
+            }
+
+            // We don't want an error condition to have occured.
+            ASSERT_MSG(!(pollfd.revents & POLLERR), "POLLERR on userfaultfd");
+
+            // We waited until there is data to read, we don't care about anything else.
+            if (!(pollfd.revents & POLLIN)) {
                 continue;
             }
-            if (pollres < 0) {
-                if (errno == EINTR) {
+
+            // Read message from kernel.
+            uffd_msg msg;
+            const int readret = read(uffd, &msg, sizeof(msg));
+            if (readret == -1) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
                     continue;
                 }
-                LOG_ERROR(Common_Memory, "userfaultfd poll failed: {}",
+                LOG_ERROR(Common_Memory, "Unexpected result of uffd read: {}",
                           Common::GetLastErrorMsg());
                 break;
             }
-            if (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-                LOG_ERROR(Common_Memory, "userfaultfd poll reported invalid FD, events={:#x}",
-                          descriptor.revents);
-                break;
-            }
-            if (!(descriptor.revents & POLLIN)) {
-                continue;
-            }
+            ASSERT_MSG(readret == sizeof(msg), "Unexpected short read, exiting");
+            ASSERT(msg.arg.pagefault.flags & UFFD_PAGEFAULT_FLAG_WP);
 
-            uffd_msg msg{};
-            const ssize_t bytes = read(uffd, &msg, sizeof(msg));
-            if (bytes == -1) {
-                if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
-                    continue;
-                }
-                LOG_ERROR(Common_Memory, "userfaultfd read failed: {}",
-                          Common::GetLastErrorMsg());
-                break;
-            }
-            // uffd_msg is packed. fmt/spdlog arguments must not bind a
-            // reference directly to its unaligned bitfield members.
-            const u64 fault_flags = msg.arg.pagefault.flags;
-            if (bytes != sizeof(msg) || msg.event != UFFD_EVENT_PAGEFAULT ||
-                !(fault_flags & UFFD_PAGEFAULT_FLAG_WP)) {
-                LOG_ERROR(Common_Memory,
-                          "Unexpected userfaultfd message: bytes={}, event={}, fault_flags={:#x}",
-                          bytes, msg.event, fault_flags);
-                break;
-            }
-
+            // Notify rasterizer about the fault.
             const VAddr addr = msg.arg.pagefault.address;
-            const u32 ptid = msg.arg.pagefault.feat.ptid;
-            if (ptid == rasterizer->GetGpuCommandProcessorThreadId()) {
-                // The GPU processor is paused in this fault. Its own memory
-                // invalidation must execute inline, without posting to itself.
-                rasterizer->InvalidateMemory(addr, 1, true);
-                WakeFault(addr, ptid);
-            } else {
-                // Queue the *complete* invalidation on the GPU processor.
-                // Keep the event receiver responsive to faults in that
-                // processor. Never wake the CPU writer before readback.
-                pending_gpu_invalidations.fetch_add(1);
-                rasterizer->InvalidateMemoryOnGpuThread(addr, 1, [this, addr, ptid] {
-                    WakeFault(addr, ptid);
-                    pending_gpu_invalidations.fetch_sub(1);
-                    pending_gpu_invalidations.notify_all();
-                });
-            }
+            const auto ptid = msg.arg.pagefault.feat.ptid;
+            rasterizer->InvalidateMemory(addr, 1,
+                                         ptid == rasterizer->GetGpuCommandProcessorThreadId());
+
+            // Some calls to InvalidateMemory never reach the UFFDIO_WRITEPROTECT ioctl in
+            // ::Protect, therefore we use MODE_DONTWAKE and wake the thread with UFFDIO_WAKE here
+            uffdio_range wake;
+            wake.start = msg.arg.pagefault.address;
+            wake.len = PageManager::PM_PAGE_SIZE;
+            const int ret = ioctl(uffd, UFFDIO_WAKE, &wake);
+            ASSERT_MSG(ret != -1, "Waking thread {} failed with: {}", ptid,
+                       Common::GetLastErrorMsg());
         }
     }
 };
 #endif // __linux__
 
 struct SignalImpl : public PageManager::Impl {
-    inline static SignalImpl* instance;
-
     SignalImpl(Vulkan::Rasterizer* rasterizer_) : Impl() {
         rasterizer = rasterizer_;
-        instance = this;
 
         // Should be called first.
         constexpr auto priority = std::numeric_limits<u32>::min();
@@ -575,28 +431,9 @@ struct SignalImpl : public PageManager::Impl {
         impl.Protect(address, size, perms);
     }
 
-    void ProtectGuest(VAddr address, size_t size, Core::MemoryPermission guest_perms,
-                      Core::MemoryPermission effective_perms) override {
-        Protect(address, size, effective_perms);
-    }
-
     static bool GuestFaultSignalHandler(void* context, void* fault_address) {
         const auto addr = reinterpret_cast<VAddr>(fault_address);
         const auto size = std::min<u64>(8, PageManager::GetNextPageAddr(addr) - addr);
-        if (addr >= (VAddr{1} << ADDRESS_BITS) || Common::IsExecuteError(context) ||
-            !rasterizer->IsMapped(addr, size)) {
-            return false;
-        }
-        const auto* state = instance->cached_pages.find(addr >> PageManager::PM_PAGE_BITS);
-        const auto access = Common::IsWriteError(context) ? Core::MemoryPermission::Write
-                                                          : Core::MemoryPermission::Read;
-        if (!state || False(state->guest_perms.load(std::memory_order_acquire) & access)) {
-            return false;
-        }
-        if (False(state->watched_perms.load(std::memory_order_acquire) & access)) {
-            // Another thread may have already removed the GPU watch for this fault.
-            return true;
-        }
         const auto is_gpu_thread =
             std::this_thread::get_id() == rasterizer->GetGpuCommandProcessorThread();
         if (Common::IsWriteError(context)) {
@@ -626,20 +463,8 @@ PageManager::PageManager(Vulkan::Rasterizer* rasterizer_) {
 
 PageManager::~PageManager() = default;
 
-void PageManager::DrainPendingInvalidations() {
-    impl->DrainPendingInvalidations();
-}
-
 void PageManager::OnGpuMap(VAddr address, size_t size) {
     impl->OnMap(address, size);
-}
-
-void PageManager::MapMemory(VAddr address, size_t size) {
-    impl->EnsurePages(address, address + size);
-}
-
-void PageManager::ProtectMemory(VAddr address, size_t size, Core::MemoryPermission perms) {
-    impl->ProtectMemory(address, size, perms);
 }
 
 void PageManager::OnGpuUnmap(VAddr address, size_t size) {

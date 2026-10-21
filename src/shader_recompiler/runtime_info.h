@@ -73,6 +73,7 @@ struct SwVertexRuntimeInfo {
     u32 step_rate_1;
     u16 vertex_sgpr_offset{};
     u16 instance_sgpr_offset{};
+    bool is_indirect{};
     bool tess_emulated_primitive{};
 
     bool operator==(const SwVertexRuntimeInfo& other) const noexcept = default;
@@ -229,12 +230,9 @@ struct HwComputeRuntimeInfo {
     u32 shared_memory_size;
     std::array<u32, 3> workgroup_size;
     std::array<bool, 3> tgid_enable;
-    bool tg_size_enable;
-    bool ordered_append;
 
     bool operator==(const HwComputeRuntimeInfo& other) const noexcept {
-        return workgroup_size == other.workgroup_size && tgid_enable == other.tgid_enable &&
-               tg_size_enable == other.tg_size_enable && ordered_append == other.ordered_append;
+        return workgroup_size == other.workgroup_size && tgid_enable == other.tgid_enable;
     }
 };
 

@@ -92,6 +92,44 @@ void Visit(Info& info, const IR::Inst& inst) {
         break;
     case IR::Opcode::PackDouble2x32:
     case IR::Opcode::UnpackDouble2x32:
+    case IR::Opcode::FPAbs64:
+    case IR::Opcode::FPAdd64:
+    case IR::Opcode::FPFma64:
+    case IR::Opcode::FPMax64:
+    case IR::Opcode::FPMin64:
+    case IR::Opcode::FPMul64:
+    case IR::Opcode::FPDiv64:
+    case IR::Opcode::FPNeg64:
+    case IR::Opcode::FPRecip64:
+    case IR::Opcode::FPRecipSqrt64:
+    case IR::Opcode::FPSaturate64:
+    case IR::Opcode::FPClamp64:
+    case IR::Opcode::FPRoundEven64:
+    case IR::Opcode::FPFloor64:
+    case IR::Opcode::FPCeil64:
+    case IR::Opcode::FPTrunc64:
+    case IR::Opcode::FPFract64:
+    case IR::Opcode::FPFrexpSig64:
+    case IR::Opcode::FPFrexpExp64:
+    case IR::Opcode::FPOrdEqual64:
+    case IR::Opcode::FPUnordEqual64:
+    case IR::Opcode::FPOrdNotEqual64:
+    case IR::Opcode::FPUnordNotEqual64:
+    case IR::Opcode::FPOrdLessThan64:
+    case IR::Opcode::FPUnordLessThan64:
+    case IR::Opcode::FPOrdGreaterThan64:
+    case IR::Opcode::FPUnordGreaterThan64:
+    case IR::Opcode::FPOrdLessThanEqual64:
+    case IR::Opcode::FPUnordLessThanEqual64:
+    case IR::Opcode::FPOrdGreaterThanEqual64:
+    case IR::Opcode::FPUnordGreaterThanEqual64:
+    case IR::Opcode::FPIsNan64:
+    case IR::Opcode::FPIsInf64:
+    case IR::Opcode::ConvertS32F64:
+    case IR::Opcode::ConvertF32F64:
+    case IR::Opcode::ConvertF64F32:
+    case IR::Opcode::ConvertF64S32:
+    case IR::Opcode::ConvertF64U32:
         info.uses_fp64 = true;
         break;
     case IR::Opcode::ImageWrite:
@@ -106,6 +144,7 @@ void Visit(Info& info, const IR::Inst& inst) {
         break;
     case IR::Opcode::ReadLane:
     case IR::Opcode::ReadFirstLane:
+    case IR::Opcode::WriteLane:
         info.uses_group_ballot = true;
         break;
     case IR::Opcode::Discard:
@@ -140,17 +179,12 @@ void Visit(Info& info, const IR::Inst& inst) {
         break;
     case IR::Opcode::DataAppend:
     case IR::Opcode::DataConsume:
-    case IR::Opcode::GdsOrderedCount:
-    case IR::Opcode::GdsOrderedSignal:
-    case IR::Opcode::BufferOrderedCount:
-    case IR::Opcode::BufferOrderedSignal:
     case IR::Opcode::Ballot:
     case IR::Opcode::InverseBallot:
     case IR::Opcode::BallotFindLsb:
         info.uses_group_ballot = true;
         [[fallthrough]];
     case IR::Opcode::LaneId:
-    case IR::Opcode::WriteLane:
         info.uses_lane_id = true;
         break;
     case IR::Opcode::Memtime:

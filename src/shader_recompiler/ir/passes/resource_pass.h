@@ -16,6 +16,7 @@ namespace Shader::Optimization {
 
 union PostOpData {
     u32 dw1_mask;
+    u32 dw2_shift;
     IR::Value lod_prod{};
 };
 
@@ -85,8 +86,6 @@ inline bool IsDataRingInstruction(const IR::Inst& inst) {
     switch (inst.GetOpcode()) {
     case IR::Opcode::DataAppend:
     case IR::Opcode::DataConsume:
-    case IR::Opcode::GdsOrderedCount:
-    case IR::Opcode::GdsOrderedSignal:
         return true;
     case IR::Opcode::LoadSharedU16:
     case IR::Opcode::LoadSharedU32:

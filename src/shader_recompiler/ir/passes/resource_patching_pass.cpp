@@ -162,7 +162,7 @@ private:
 
 using SharpSources = boost::container::small_vector<const IR::Inst*, 4>;
 
-SharpLocation SharpLocationFromSource(const IR::Inst* inst, u64 pgm_hash) {
+SharpLocation SharpLocationFromSource(const IR::Inst* inst) {
     SharpLocation location{};
     if (inst->GetOpcode() == IR::Opcode::GetUserData) {
         return static_cast<SharpLocation>(inst->Arg(0).ScalarReg());
@@ -172,16 +172,14 @@ SharpLocation SharpLocationFromSource(const IR::Inst* inst, u64 pgm_hash) {
         location = inst->Flags<SharpLocation>();
     }
     if (location == 0) {
-        LOG_WARNING(Render_Recompiler,
-                    "Shader {:#x}: sharp source was not flattened (opcode={})",
-                    pgm_hash, static_cast<u32>(inst->GetOpcode()));
+        LOG_WARNING(Render_Recompiler, "Sharp source was not flatenned");
         return UNKNOWN_LOCATION;
     }
     return location;
 }
 
 template <typename T>
-SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp, const Info& info) {
+SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
     using Summary = SharpFetch<T>::Summary;
     SharpFetch<T> sharp_fetch{};
     for (u32 i = 0; i < sharp.num_dwords; i++) {
@@ -189,7 +187,7 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp, const Info& info)
         if (dword.IsImmediate()) {
             sharp_fetch.immediates[i] = dword.U32();
         } else {
-            sharp_fetch.offsets[i] = SharpLocationFromSource(dword.Inst(), info.pgm_hash);
+            sharp_fetch.offsets[i] = SharpLocationFromSource(dword.Inst());
             sharp_fetch.load_mask |= (1 << i);
             if (sharp_fetch.offsets[i] == UNKNOWN_LOCATION) {
                 sharp_fetch.summary = Summary::Invalid;
@@ -213,7 +211,7 @@ void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors
     IR::Inst& inst = *resource.user;
 
     const u32 buffer_binding = descriptors.Add(BufferResource{
-        .sharp_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.sharps[0], info),
+        .sharp_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.sharps[0]),
         .used_types = BufferDataType(inst, profile),
         .buffer_type = BufferType::Guest,
         .is_written = IsBufferStore(inst),
@@ -221,6 +219,7 @@ void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors
                         inst.GetOpcode() == IR::Opcode::StoreBufferFormatF32,
         .post_op = resource.sharps[0].post_op,
         .post_op_dw1_mask = resource.sharps[0].post_op_data.dw1_mask,
+        .post_op_dw2_shift = resource.sharps[0].post_op_data.dw2_shift,
     });
 
     // Replace handle with binding index in buffer resource list.
@@ -241,7 +240,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     const bool needs_mip_storage_fallback =
         inst_info.has_lod && is_written && !profile.supports_image_load_store_lod;
     ImageResource image_res = {
-        .sharp_fetch = ConstructSharpFetch<AmdGpu::Image>(resource.sharps[0], info),
+        .sharp_fetch = ConstructSharpFetch<AmdGpu::Image>(resource.sharps[0]),
         .is_depth = bool(inst_info.is_depth),
         .is_atomic = is_atomic,
         .is_array = bool(inst_info.is_array),
@@ -310,7 +309,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
 
             // Track FMask resource to do specialization.
             descriptors.Add(FMaskResource{
-                .sharp_idx = SharpLocationFromSource(resource.sharps[0].dwords[0].Inst(), info.pgm_hash),
+                .sharp_idx = SharpLocationFromSource(resource.sharps[0].dwords[0].Inst()),
             });
             return;
         }
@@ -326,10 +325,10 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
         auto& lod_prod = resource.sharps[1].post_op_data.lod_prod;
         const u32 sampler_binding = descriptors.Add(SamplerResource{
-            .sharp_fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1], info),
+            .sharp_fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1]),
             .post_op = resource.sharps[1].post_op,
             .post_op_tsharp_dw3_off =
-                lod_prod.IsEmpty() ? UNKNOWN_LOCATION : SharpLocationFromSource(lod_prod.Inst(), info.pgm_hash),
+                lod_prod.IsEmpty() ? UNKNOWN_LOCATION : SharpLocationFromSource(lod_prod.Inst()),
             .is_depth = bool(inst_info.is_depth), // true for the _C (compare) opcodes
         });
         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
@@ -451,19 +450,6 @@ void PatchGlobalDataShareAccess(IR::Inst& inst, Info& info, Descriptors& descrip
     });
 
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
-
-    if (inst.GetOpcode() == IR::Opcode::GdsOrderedCount) {
-        const IR::Value replacement =
-            ir.BufferOrderedCount(ir.Imm32(binding), inst.Arg(0), IR::U32{inst.Arg(1)},
-                                  IR::U32{inst.Arg(2)}, inst.Flags<u32>());
-        inst.ReplaceUsesWithAndRemove(replacement);
-        return;
-    }
-    if (inst.GetOpcode() == IR::Opcode::GdsOrderedSignal) {
-        ir.BufferOrderedSignal(ir.Imm32(binding), IR::U32{inst.Arg(0)});
-        inst.Invalidate();
-        return;
-    }
 
     if (inst.GetOpcode() == IR::Opcode::DataAppend || inst.GetOpcode() == IR::Opcode::DataConsume) {
         RemoveAppendBufferLaneOffset(inst);

@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "common/div_ceil.h"
 #include "common/io_file.h"
 #include "common/path_util.h"
 #include "core/emulator_settings.h"
@@ -82,22 +81,6 @@ Translator::Translator(Info& info_, const RuntimeInfo& runtime_info_, const Prof
     });
 }
 
-u32 Translator::WavesPerGroup() const {
-    const auto& [size_x, size_y, size_z] = runtime_info.hw.cs.workgroup_size;
-    return Common::DivCeil(std::max(size_x * size_y * size_z, 1u), 64u);
-}
-
-IR::U32 Translator::LocalWaveIndex() {
-    return ir.ShiftRightLogical(ir.GetAttributeU32(IR::Attribute::LocalInvocationIndex),
-                                ir.Imm32(6u));
-}
-
-IR::U32 Translator::OrderedWaveIndex() {
-    const IR::U32 group_base =
-        ir.IMul(ir.GetAttributeU32(IR::Attribute::WorkgroupIndex), ir.Imm32(WavesPerGroup()));
-    return ir.IAdd(group_base, LocalWaveIndex());
-}
-
 void Translator::EmitPrologue(IR::Block* first_block) {
     ir = IR::IREmitter(*first_block, first_block->begin());
 
@@ -127,24 +110,22 @@ void Translator::EmitPrologue(IR::Block* first_block) {
                             ir.GetAttributeU32(IR::Attribute::BaseInstance));
         }
 
+        const bool is_indirect = runtime_info.sw.vs.is_indirect;
+
         IR::U32 vertex_id = ir.GetAttributeU32(IR::Attribute::VertexId);
-        if (base_vertex_sgpr != -1) {
-            if (fetch_data.Empty() || fetch_data.vertex_offset_sgpr == -1) {
-                vertex_id = ir.ISub(vertex_id, ir.GetAttributeU32(IR::Attribute::BaseVertex));
-            } else {
-                ASSERT_MSG(fetch_data.vertex_offset_sgpr == base_vertex_sgpr,
-                           "Fetch shader in indirect draw uses wrong base vertex");
-            }
+        if (is_indirect && (fetch_data.Empty() || fetch_data.vertex_offset_sgpr == -1)) {
+            vertex_id = ir.ISub(vertex_id, ir.GetAttributeU32(IR::Attribute::BaseVertex));
+        } else if (base_vertex_sgpr != -1) {
+            ASSERT_MSG(fetch_data.vertex_offset_sgpr == base_vertex_sgpr,
+                       "Fetch shader in indirect draw uses wrong base vertex");
         }
 
         IR::U32 instance_id = ir.GetAttributeU32(IR::Attribute::InstanceId);
-        if (base_instance_sgpr != -1) {
-            if (fetch_data.Empty() || fetch_data.instance_offset_sgpr == -1) {
-                instance_id = ir.ISub(instance_id, ir.GetAttributeU32(IR::Attribute::BaseInstance));
-            } else {
-                ASSERT_MSG(fetch_data.instance_offset_sgpr == base_instance_sgpr,
-                           "Fetch shader in indirect draw uses wrong base instance");
-            }
+        if (is_indirect && (fetch_data.Empty() || fetch_data.instance_offset_sgpr == -1)) {
+            instance_id = ir.ISub(instance_id, ir.GetAttributeU32(IR::Attribute::BaseInstance));
+        } else if (base_instance_sgpr != -1) {
+            ASSERT_MSG(fetch_data.instance_offset_sgpr == base_instance_sgpr,
+                       "Fetch shader in indirect draw uses wrong base instance");
         }
 
         // v0: vertex ID, always present
@@ -307,21 +288,6 @@ void Translator::EmitPrologue(IR::Block* first_block) {
         }
         if (runtime_info.hw.cs.tgid_enable[2]) {
             ir.SetScalarReg(dst_sreg++, ir.GetAttributeU32(IR::Attribute::WorkgroupId, 2));
-        }
-        if (runtime_info.hw.cs.tg_size_enable) {
-            // Bits 6 and up hold the wave's ordered-append term when the dispatch enables ordered
-            // append, otherwise the wave's index in its thread group.
-            const IR::U32 wave_id =
-                runtime_info.hw.cs.ordered_append
-                    ? IR::U32{ir.BitwiseAnd(OrderedWaveIndex(), ir.Imm32(0x7ffu))}
-                    : LocalWaveIndex();
-            const IR::U32 first_wave = IR::U32{ir.Select(ir.IEqual(LocalWaveIndex(), ir.Imm32(0u)),
-                                                         ir.Imm32(1u << 31), ir.Imm32(0u))};
-            const IR::U32 wave_count = ir.Imm32(WavesPerGroup() & 0x3fu);
-            ir.SetScalarReg(
-                dst_sreg++,
-                ir.BitwiseOr(ir.BitwiseOr(wave_count, ir.ShiftLeftLogical(wave_id, ir.Imm32(6u))),
-                             first_wave));
         }
         break;
     case SwStage::Geometry:

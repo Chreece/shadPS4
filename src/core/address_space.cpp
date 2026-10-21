@@ -735,11 +735,6 @@ struct AddressSpace::Impl {
         LOG_INFO(Kernel_Vmm, "User virtual memory region: {} - {}", fmt::ptr(user_base),
                  fmt::ptr(user_base + user_size - 1));
 
-#if defined(__linux__) && defined(ARCH_X86_64)
-        SetCpuIdGuestAddressRange(reinterpret_cast<VAddr>(system_managed_base),
-                                  reinterpret_cast<VAddr>(user_base) + user_size);
-#endif
-
 #ifdef __APPLE__
         const auto shm_path = fmt::format("/BackingDmem{}", getpid());
         backing_fd = shm_open(shm_path.c_str(), O_RDWR | O_CREAT | O_EXCL, 0600);
@@ -846,6 +841,11 @@ AddressSpace::AddressSpace() : impl{std::make_unique<Impl>()} {
     system_reserved_size = impl->system_reserved_size;
     user_base = impl->user_base;
     user_size = impl->user_size;
+#if defined(__linux__) && defined(ARCH_X86_64)
+    // Only guest address space receives PS4 CPU identity; host code retains native CPUID.
+    SetCpuIdGuestAddressRange(reinterpret_cast<VAddr>(system_managed_base),
+                              reinterpret_cast<VAddr>(user_base) + user_size);
+#endif
 }
 
 AddressSpace::~AddressSpace() = default;
