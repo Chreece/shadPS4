@@ -364,9 +364,11 @@ bool Instance::CreateDevice() {
     }
 
     bool graphics_queue_found = false;
+    bool sparse_queue_found = false;
     for (std::size_t i = 0; i < family_properties.size(); i++) {
         const u32 index = static_cast<u32>(i);
-        if (family_properties[i].queueFlags & vk::QueueFlagBits::eGraphics) {
+        const auto flags = family_properties[i].queueFlags;
+        if (flags & vk::QueueFlagBits::eGraphics) {
             queue_family_index = index;
             graphics_queue_found = true;
         }
@@ -377,15 +379,13 @@ bool Instance::CreateDevice() {
         return false;
     }
 
-    // vkQueueBindSparse requires VK_QUEUE_SPARSE_BINDING_BIT. Do not
-    // assume a Vulkan graphics family supports sparse binding. Reuse it if
-    // capable; otherwise create a queue from a dedicated sparse family.
-    bool sparse_queue_found = false;
+    // Prefer the graphics family when it supports sparse binding. Otherwise use a
+    // dedicated sparse-capable family. vkQueueBindSparse requires eSparseBinding.
     if (family_properties[queue_family_index].queueFlags & vk::QueueFlagBits::eSparseBinding) {
         sparse_queue_family_index = queue_family_index;
         sparse_queue_found = true;
     } else {
-        for (std::size_t i = 0; i < family_properties.size(); ++i) {
+        for (std::size_t i = 0; i < family_properties.size(); i++) {
             if (family_properties[i].queueFlags & vk::QueueFlagBits::eSparseBinding) {
                 sparse_queue_family_index = static_cast<u32>(i);
                 sparse_queue_found = true;
@@ -393,10 +393,12 @@ bool Instance::CreateDevice() {
             }
         }
     }
+
     if (!sparse_queue_found) {
-        LOG_CRITICAL(Render_Vulkan, "Unable to find a Vulkan sparse-binding queue family.");
+        LOG_CRITICAL(Render_Vulkan, "Unable to find a sparse-binding queue.");
         return false;
     }
+
     LOG_INFO(Render_Vulkan, "Graphics queue family: {}, sparse queue family: {}",
              queue_family_index, sparse_queue_family_index);
 
@@ -458,6 +460,8 @@ bool Instance::CreateDevice() {
         },
         vk::PhysicalDeviceVulkan11Features{
             .storageBuffer16BitAccess = vk11_features.storageBuffer16BitAccess,
+            .uniformAndStorageBuffer16BitAccess =
+                vk11_features.uniformAndStorageBuffer16BitAccess,
             .shaderDrawParameters = vk11_features.shaderDrawParameters,
         },
         vk::PhysicalDeviceVulkan12Features{

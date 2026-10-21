@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/assert.h"
+#include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/ir/attribute.h"
@@ -53,16 +54,14 @@ Id EmitGetUserData(EmitContext& ctx, IR::ScalarReg reg) {
 
 Id EmitReadConst(EmitContext& ctx, IR::Inst* inst, Id addr, Id offset) {
     const u32 flatbuf_off_dw = inst->Flags<u32>();
-    if (flatbuf_off_dw == 0) {
-        // Offset zero means the SRT walker did not flatten this read. It
-        // contains no valid shader constant: the guest address and dynamic
-        // index must instead be evaluated by the GPU page-table reader.
-        // Optional global DMA acceleration must not override this requirement.
-        ASSERT_MSG(ctx.info.uses_dma && Sirit::ValidId(ctx.read_const_dynamic),
-                   "Unflattened ReadConst requires an initialized dynamic guest-memory reader");
-        return ctx.OpFunctionCall(ctx.U32[1], ctx.read_const_dynamic, addr, offset);
+    if (!EmulatorSettings.IsDirectMemoryAccessEnabled()) {
+        return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
     }
-    return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
+    if (flatbuf_off_dw == 0) {
+        return ctx.OpFunctionCall(ctx.U32[1], ctx.read_const_dynamic, addr, offset);
+    } else {
+        return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
+    }
 }
 
 Id EmitReadConstBuffer(EmitContext& ctx, u32 handle, Id index) {

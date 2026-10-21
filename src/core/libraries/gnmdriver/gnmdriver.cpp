@@ -25,8 +25,10 @@
 #include "video_core/renderer_vulkan/vk_presenter.h"
 
 extern Frontend::WindowSDL* g_window;
-std::unique_ptr<Vulkan::Presenter> presenter;
+// Statically destroyed in reverse order: keep Liverpool alive while Presenter
+// destroys Rasterizer and drains all pending userfaultfd invalidations.
 std::unique_ptr<AmdGpu::Liverpool> liverpool;
+std::unique_ptr<Vulkan::Presenter> presenter;
 
 namespace Libraries::GnmDriver {
 
@@ -1264,6 +1266,7 @@ int PS4_SYSV_ABI sceGnmMapComputeQueue(u32 pipe_id, u32 queue_id, VAddr ring_bas
 
     const auto& queue = liverpool->asc_queues[vqid];
     *queue.read_addr = 0u;
+    asc_next_offs_dw[vqid.index] = 0;
 
     return gnm_vqid;
 }

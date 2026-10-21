@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "core/emulator_settings.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
 
@@ -18,6 +19,22 @@ static void AddFlatbuf(Info& info) {
 
 void Visit(Info& info, const IR::Inst& inst) {
     switch (inst.GetOpcode()) {
+    case IR::Opcode::Phi: {
+        // SSA merges have no arithmetic opcode, but their result types still
+        // require SPIR-V scalar/vector types and device capabilities.
+        // Detect this before constructing the SPIR-V emitter's type table.
+        switch (inst.Flags<IR::Type>()) {
+        case IR::Type::F64:
+        case IR::Type::F64x2:
+        case IR::Type::F64x3:
+        case IR::Type::F64x4:
+            info.uses_fp64 = true;
+            break;
+        default:
+            break;
+        }
+        break;
+    }
     case IR::Opcode::GetAttribute:
     case IR::Opcode::GetAttributeU1:
     case IR::Opcode::GetAttributeU32:
@@ -216,10 +233,11 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
         }
     }
 
-    // ReadConst values whose SRT offsets cannot be flattened require guest
-    // GPU-address translation. Suppressing those reads when the optional DMA
-    // setting is disabled leaves valid guest instructions without an equivalent
-    // memory source. The page-table path is required by these shaders.
+    if (!EmulatorSettings.IsDirectMemoryAccessEnabled()) {
+        info.uses_dma = false;
+        info.readconst_types = Info::ReadConstType::None;
+    }
+
     if (info.uses_dma) {
         info.buffers.push_back({
             .used_types = IR::Type::U64,

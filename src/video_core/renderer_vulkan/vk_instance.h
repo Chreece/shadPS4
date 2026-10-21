@@ -67,7 +67,6 @@ public:
         return queue_family_index;
     }
 
-    /// Queue family that explicitly supports Vulkan sparse resource binding.
     u32 GetSparseQueueFamilyIndex() const {
         return sparse_queue_family_index;
     }
@@ -80,7 +79,6 @@ public:
         return present_queue;
     }
 
-    /// Binding sparse device-memory pages must use a sparse-capable queue.
     vk::Queue GetSparseQueue() const {
         return sparse_queue;
     }
