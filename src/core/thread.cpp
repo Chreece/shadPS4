@@ -5,6 +5,9 @@
 #include "common/arch.h"
 #include "core/libraries/kernel/threads/pthread.h"
 #include "thread.h"
+#if defined(__linux__) && defined(ARCH_X86_64)
+#include "core/cpu_id.h"
+#endif
 #ifdef _WIN64
 #include <windows.h>
 #include "common/ntapi.h"
@@ -86,6 +89,9 @@ void NativeThread::Initialize() {
     sig_stack.ss_size = sig_stack_size;
     sig_stack.ss_flags = 0;
     ASSERT_MSG(sigaltstack(&sig_stack, nullptr) == 0, "Failed to set signal stack: {}", errno);
+#endif
+#if defined(__linux__) && defined(ARCH_X86_64)
+    EnableCpuIdFaulting();
 #endif
 }
 

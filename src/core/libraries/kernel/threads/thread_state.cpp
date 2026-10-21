@@ -5,6 +5,7 @@
 #include "common/alignment.h"
 #include "common/scope_exit.h"
 #include "core/libraries/kernel/posix_error.h"
+#include "core/libraries/kernel/process.h"
 #include "core/libraries/kernel/threads/pthread.h"
 #include "core/libraries/kernel/threads/sleepq.h"
 #include "core/libraries/kernel/threads/thread_state.h"
@@ -107,6 +108,9 @@ Pthread* ThreadState::Alloc(Pthread* curthread) {
         // immediately after.
         std::memset(static_cast<void*>(thread), 0, sizeof(Pthread));
         std::construct_at(thread);
+        // The original thread has no parent; do not expose the two
+        // hardware cores that Orbis reserves from application scheduling.
+        thread->guest_affinity_mask.store(GetGuestCpuMask(), std::memory_order_relaxed);
         thread->tcb = tcb;
         thread->sleepqueue = new SleepQueue{};
     } else {

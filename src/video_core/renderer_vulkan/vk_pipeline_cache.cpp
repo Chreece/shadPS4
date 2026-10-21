@@ -327,6 +327,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .needs_unorm_fixup = instance.GetDriverID() == vk::DriverId::eMesaKosmickrisp,
         .needs_clip_distance_emulation = instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
         .supports_shader_stencil_export = instance_.IsShaderStencilExportSupported(),
+        .fast_shader_math = EmulatorSettings.IsFastShaderMath(),
     };
     WarmUp();
 
@@ -676,34 +677,56 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
     }
 
     auto& program = it_pgm.value();
-    auto& info = program->info;
-    info.pgm_base = params.Base(); // Needs to be actualized for inline cbuffer address fixup
-    info.user_data = params.user_data;
-    info.RefreshFlatBuf();
-    auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
+    const auto first_binding = binding;
 
-    size_t perm_idx = program->modules.size();
-    u64 perm_hash = HashCombine(params.hash, perm_idx);
+    // Check every saved shader variation using the Info that produced its
+    // exact SPIR-V module. An incompatible permutation can contain different
+    // buffers, images, image arrays and SRT walker code. The old GoW path
+    // checked only permutation zero's Info and returned it even after
+    // compiling a new shader against a temporary, different Info.
+    for (size_t perm_idx = 0; perm_idx < program->modules.size(); ++perm_idx) {
+        auto& saved = program->modules[perm_idx];
+        if (!saved.spec.Valid() || !saved.module) {
+            continue; // A serialized cache can contain empty index slots.
+        }
+        auto& info = saved.GetInfo(program->info);
+        info.pgm_base = params.Base();
+        info.user_data = params.user_data;
+        info.RefreshFlatBuf();
+        auto current = Shader::StageSpecialization(info, runtime_info, profile, first_binding);
+        if (!(saved.spec == current)) {
+            continue;
+        }
 
-    vk::ShaderModule module{};
-
-    const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
-    if (it == program->modules.end()) {
-        auto new_info = Shader::Info(hw_stage, sw_stage, params);
-        module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
-
-        RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
-        program->AddPermut(module, std::move(spec));
-    } else {
-        info.AddBindings(binding);
-        module = it->module;
-        perm_idx = std::distance(program->modules.begin(), it);
-        perm_hash = HashCombine(params.hash, perm_idx);
+        // The Vulkan binding sequence must match the one that was emitted
+        // for this exact module. Mip-indexed images can consume >1 slot,
+        // unlike Info::AddBindings' ordinary images.size() accounting.
+        binding.buffer += info.buffers.size();
+        binding.unified += info.buffers.size() + info.samplers.size();
+        for (const auto& image : info.images) {
+            binding.unified += image.NumBindings(info);
+        }
+        if (auto& fetch = saved.spec.fetch_shader_data; !fetch.Empty()) {
+            fetch_shader = &fetch;
+        }
+        return std::make_tuple(&info, saved.module, HashCombine(params.hash, perm_idx));
     }
+
+    // Compile a new variation using metadata that stays alive for its
+    // module's lifetime. The StageSpecialization is constructed *after*
+    // compilation against that same Info, never against the first program.
+    auto new_info = std::make_unique<Shader::Info>(hw_stage, sw_stage, params);
+    const size_t perm_idx = program->modules.size();
+    const u64 perm_hash = HashCombine(params.hash, perm_idx);
+    const auto module = CompileModule(*new_info, runtime_info, params.code, perm_idx, binding);
+    auto spec = Shader::StageSpecialization(*new_info, runtime_info, profile, first_binding);
+    RegisterShaderMeta(*new_info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
+    Shader::Info* selected_info = new_info.get();
+    program->AddPermut(module, std::move(spec), std::move(new_info));
     if (auto& fetch = program->modules[perm_idx].spec.fetch_shader_data; !fetch.Empty()) {
         fetch_shader = &fetch;
     }
-    return std::make_tuple(&program->info, module, perm_hash);
+    return std::make_tuple(selected_info, module, perm_hash);
 }
 
 std::optional<vk::ShaderModule> PipelineCache::ReplaceShader(vk::ShaderModule module,
