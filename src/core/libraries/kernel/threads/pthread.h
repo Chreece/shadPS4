@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <forward_list>
 #include <list>
+#include <memory>
 #include <mutex>
 #include <shared_mutex>
 
@@ -28,6 +29,7 @@ class SymbolsResolver;
 namespace Libraries::Kernel {
 
 constexpr int PthreadInheritSched = 4;
+constexpr s32 PthreadBarrierSerialThread = -1;
 
 constexpr int ORBIS_KERNEL_PRIO_FIFO_DEFAULT = 700;
 constexpr int ORBIS_KERNEL_PRIO_FIFO_LOWEST = 256;
@@ -40,6 +42,23 @@ constexpr int ORBIS_KERNEL_PRIO_RR_LOWEST = 256;
 constexpr int ORBIS_KERNEL_PRIO_RR_HIGHEST = 767;
 
 struct Pthread;
+
+struct PthreadBarrier {
+    struct State {
+        std::mutex mutex;
+        std::condition_variable cv;
+        u32 count;
+        u32 arrived{};
+        u64 generation{};
+    };
+    std::shared_ptr<State> state;
+};
+using PthreadBarrierT = PthreadBarrier*;
+
+struct PthreadBarrierAttr {
+    s32 pshared;
+};
+using PthreadBarrierAttrT = PthreadBarrierAttr*;
 
 enum class PthreadMutexFlags : u32 {
     TypeMask = 0xff,
@@ -212,6 +231,7 @@ using PthreadRwlockAttrT = PthreadRwlockAttr*;
 struct PthreadRwlock {
     Common::SharedFirstMutex lock;
     Pthread* owner;
+    std::string name;
 
     int Wrlock(const OrbisKernelTimespec* abstime);
     int Rdlock(const OrbisKernelTimespec* abstime);
@@ -336,6 +356,8 @@ struct Pthread {
     std::atomic_bool sigsuspend_interrupted{};
     Sigset sigwait_set{};
     OrbisKernelExceptionHandlerStack sigaltstack{};
+    Mcontext suspended_context{};
+    std::atomic_bool is_suspended_in_signal{false};
 
     bool IsSignalBlocked(s32 sig) const;
     void QueueSignal(s32 sig);
@@ -425,11 +447,12 @@ struct Pthread {
         }
     }
 
-    s32 GetCurrentCpu() const;
-    int SetAffinity(u64 mask);
+    int SetAffinity(const Cpuset* cpuset);
 
-    std::atomic<u64> affinity_mask{};
-    mutable std::mutex affinity_mutex;
+    // Internal state appended to preserve existing Pthread field offsets.
+    // Temporary PthreadAttr objects own Cpuset*, so a guest thread retains
+    // the mask value instead of borrowing their pointer.
+    std::atomic<u64> guest_affinity_mask{0u};
 };
 // fym static assertion expression is not an integral constant expression
 // static_assert(offsetof(Pthread, specific) == 0x1c8);
@@ -445,6 +468,7 @@ bool IsPthreadCancelSignal(int native_signal) noexcept;
 #endif
 void PS4_SYSV_ABI posix_pthread_exit(void* status);
 
+void RegisterBarrier(Core::Loader::SymbolsResolver* sym);
 void RegisterMutex(Core::Loader::SymbolsResolver* sym);
 void RegisterCond(Core::Loader::SymbolsResolver* sym);
 void RegisterRwlock(Core::Loader::SymbolsResolver* sym);

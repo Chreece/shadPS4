@@ -40,8 +40,17 @@ class ShaderCache;
 
 struct Program {
     struct Module {
-        vk::ShaderModule module;
-        Shader::StageSpecialization spec;
+        vk::ShaderModule module{};
+        Shader::StageSpecialization spec{};
+        // A shader variation may use a completely different resource layout
+        // and generated SRT walker from permutation zero. Own its Info for
+        // the lifetime of the cached SPIR-V module, not a temporary compiler
+        // local. This also prevents stale StageSpecialization::info pointers.
+        std::unique_ptr<Shader::Info> own_info{};
+
+        Shader::Info& GetInfo(Shader::Info& root_info) const {
+            return own_info ? *own_info : root_info;
+        }
     };
     static constexpr size_t MaxPermutations = 8;
     using ModuleList = boost::container::small_vector<Module, MaxPermutations>;
@@ -53,20 +62,22 @@ struct Program {
     Program(Shader::HwStage stage, Shader::SwStage l_stage, Shader::ShaderParams params)
         : info{stage, l_stage, params} {}
 
-    void AddPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec) {
-        modules.emplace_back(module, std::move(spec));
+    void AddPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec,
+                   std::unique_ptr<Shader::Info> own_info = {}) {
+        modules.emplace_back(Module{module, std::move(spec), std::move(own_info)});
     }
 
     void InsertPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec,
-                      size_t perm_idx) {
-        modules.resize(std::max(modules.size(), perm_idx + 1)); // <-- beware of realloc
-        modules[perm_idx] = {module, std::move(spec)};
+                      size_t perm_idx, std::unique_ptr<Shader::Info> own_info = {}) {
+        modules.resize(std::max(modules.size(), perm_idx + 1));
+        modules[perm_idx] = Module{module, std::move(spec), std::move(own_info)};
     }
 };
 
 struct DrawIndirectParams {
     u16 vertex_sgpr_offset;
     u32 instance_sgpr_offset;
+    bool is_indirect;
 };
 
 class PipelineCache {

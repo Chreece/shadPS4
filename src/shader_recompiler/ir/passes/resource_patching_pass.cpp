@@ -219,6 +219,7 @@ void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors
                         inst.GetOpcode() == IR::Opcode::StoreBufferFormatF32,
         .post_op = resource.sharps[0].post_op,
         .post_op_dw1_mask = resource.sharps[0].post_op_data.dw1_mask,
+        .post_op_dw2_shift = resource.sharps[0].post_op_data.dw2_shift,
     });
 
     // Replace handle with binding index in buffer resource list.
@@ -449,19 +450,6 @@ void PatchGlobalDataShareAccess(IR::Inst& inst, Info& info, Descriptors& descrip
     });
 
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
-
-    if (inst.GetOpcode() == IR::Opcode::GdsOrderedCount) {
-        const IR::Value replacement =
-            ir.BufferOrderedCount(ir.Imm32(binding), inst.Arg(0), IR::U32{inst.Arg(1)},
-                                  IR::U32{inst.Arg(2)}, inst.Flags<u32>());
-        inst.ReplaceUsesWithAndRemove(replacement);
-        return;
-    }
-    if (inst.GetOpcode() == IR::Opcode::GdsOrderedSignal) {
-        ir.BufferOrderedSignal(ir.Imm32(binding), IR::U32{inst.Arg(0)});
-        inst.Invalidate();
-        return;
-    }
 
     if (inst.GetOpcode() == IR::Opcode::DataAppend || inst.GetOpcode() == IR::Opcode::DataConsume) {
         RemoveAppendBufferLaneOffset(inst);

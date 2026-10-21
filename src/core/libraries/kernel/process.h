@@ -27,11 +27,15 @@ s32 PS4_SYSV_ABI sceKernelIsNeoMode();
 
 s32 PS4_SYSV_ABI sceKernelGetCompiledSdkVersion(s32* ver);
 
-s32 PS4_SYSV_ABI sceKernelGetCpumode();
+// Available guest application processors, consistent with the Orbis CPU mode.
+// Both thread affinity and guest CPUID/RDTSCP/RDPID consume this mask.
 u64 GetGuestCpuMask();
 
 s32 PS4_SYSV_ABI sceKernelGetModuleInfoForUnwind(VAddr addr, s32 flags,
                                                  OrbisModuleInfoForUnwind* info);
+
+s32 PS4_SYSV_ABI sceKernelStopUnloadModule(s32 handle, u64 args, const void* argp, u32 flags,
+                                           const void* pOpt, s32* pRes);
 
 void RegisterProcess(Core::Loader::SymbolsResolver* sym);
 
