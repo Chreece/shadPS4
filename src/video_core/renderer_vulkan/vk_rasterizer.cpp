@@ -37,6 +37,7 @@
 #include "video_core/renderer_vulkan/vk_got_scene_depth_ab.h"
 #include "video_core/renderer_vulkan/vk_got_scene_gpu_queries.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/vk_indirect_argument_snapshot.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -226,6 +227,7 @@ void CountDrawAttempt(const AmdGpu::Regs& regs, bool indirect) {
 
 void CountSubmittedDraw(const AmdGpu::Regs& regs, const RenderState& state, bool indexed,
                         bool indirect) {
+    Diagnostics::IndirectSnapshotDrawSubmitted();
     if (!RenderAuditEnabled()) {
         return;
     }
@@ -536,6 +538,8 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
     const VideoCore::Buffer* count_buffer=nullptr;
     u64 count_offset{};
+    const bool count_gpu_modified_before_obtain =
+        count_address && buffer_cache.IsRegionGpuModified(count_address, sizeof(u32));
     if (count_address != 0) {
         std::tie(count_buffer, count_offset) = buffer_cache.ObtainBuffer(count_address, 4);
         needs_barrier |= runtime.IsBufferAccessed(count_buffer, count_offset, 4);
@@ -544,6 +548,13 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     }
 
     if (needs_barrier) {
+        runtime.FlushBarriers();
+    }
+
+    if (Diagnostics::CaptureIndirectArguments(
+            instance, runtime, *pipeline, is_indexed, buffer, base, arg_address + offset, stride,
+            max_count, gpu_modified_before_obtain, count_buffer, count_offset, count_address,
+            count_gpu_modified_before_obtain)) {
         runtime.FlushBarriers();
     }
 
@@ -912,7 +923,14 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     }
 
     if (uses_dma) {
-        buffer_cache.SynchronizeDmaBuffers();
+        for (const auto& [buffer, offset, size] : buffer_cache.SynchronizeDmaBuffers()) {
+            needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size);
+            bound_buffers.emplace_back(buffer, offset, size, vk::AccessFlagBits2::eShaderRead);
+        }
+        const auto* page_table = buffer_cache.GetBdaPageTableBuffer();
+        needs_barrier |= runtime.IsBufferAccessed(page_table, 0, page_table->SizeBytes());
+        bound_buffers.emplace_back(page_table, 0, page_table->SizeBytes(),
+                                   vk::AccessFlagBits2::eShaderRead);
     }
 
     return true;

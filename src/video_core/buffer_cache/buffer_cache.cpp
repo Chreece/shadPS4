@@ -116,7 +116,6 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     ASSERT_MSG(block_size <= arena_page_size, "Sparse block exceeds Vulkan max buffer size");
     max_arena_size = Common::AlignDown(u64{instance.MaxBufferSize()}, u64{block_size});
     arena_page_bits = std::bit_width(arena_page_size) - 1;
-    blocks_per_arena_page_shift = arena_page_bits - block_shift;
     address_space.resize(u64{1} << (ADDRESS_SPACE_BITS - arena_page_bits));
     arena_memory_type_index =
         FindMemoryType(instance.GetMemoryProperties(), vk::MemoryPropertyFlagBits::eDeviceLocal,
@@ -385,24 +384,38 @@ void BufferCache::ReadEdgeImagePages(const Image& image) {
         });
 }
 
-void BufferCache::SynchronizeDmaBuffers() {
+std::span<const BufferCache::DmaBufferRange> BufferCache::SynchronizeDmaBuffers() {
     fault_process_pending = true;
+    dma_ranges.clear();
     for (const auto& range : resident_ranges) {
         u64 start = range.start;
         while (start < range.end) {
-            const auto* arena = GetArena(start, start);
+            const VAddr address = start << block_shift;
+            const auto* arena = FindArena(address, block_size);
+            ASSERT(arena);
             const u64 arena_end = (arena->cpu_addr + arena->size_bytes) >> block_shift;
             const u64 max_blocks = std::numeric_limits<u32>::max() >> block_shift;
             const u64 end = std::min({range.end, arena_end, start + max_blocks});
-            SynchronizeMemory(arena, start << block_shift, (end - start) << block_shift, false,
-                              false);
+            const u32 size = static_cast<u32>((end - start) << block_shift);
+            SynchronizeMemory(arena, address, size, false, false);
+            dma_ranges.emplace_back(arena, arena->Offset(address), size);
             start = end;
         }
     }
+    return dma_ranges;
+}
+
+const Buffer* BufferCache::FindArena(VAddr device_addr, u64 size) const {
+    const u64 first_page = device_addr >> arena_page_bits;
+    for (const auto* arena : std::views::reverse(address_space[first_page])) {
+        if (arena->IsInBounds(device_addr, size)) {
+            return arena;
+        }
+    }
+    return nullptr;
 }
 
 const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
-    const u64 first_page = first_block >> blocks_per_arena_page_shift;
     const VAddr first_addr = first_block << block_shift;
     const u64 request_size = (last_block - first_block + 1) << block_shift;
     ASSERT_MSG(first_block <= last_block &&
@@ -411,10 +424,8 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
     ASSERT_MSG(request_size <= max_arena_size, "Buffer request {} exceeds device limit {}",
                request_size, max_arena_size);
 
-    for (const auto* arena : std::views::reverse(address_space[first_page])) {
-        if (arena->IsInBounds(first_addr, request_size)) {
-            return arena;
-        }
+    if (const auto* arena = FindArena(first_addr, request_size)) {
+        return arena;
     }
 
     const auto window =

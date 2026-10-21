@@ -3,6 +3,7 @@
 
 import argparse
 import collections
+import csv
 import datetime
 import fcntl
 import hashlib
@@ -87,6 +88,7 @@ class GameLog:
         self.tail = collections.deque()
         self.tail_size = self.discarded = 0
         self.errors = collections.deque(maxlen=500)
+        self.resource_diagnostics = collections.deque(maxlen=512)
         self.partial = ""
         self.fault = threading.Event()
         self.precise = threading.Event()
@@ -115,6 +117,8 @@ class GameLog:
             for line in lines:
                 if re.search(r"<(?:Error|Critical|Warning)>|Assertion Failed|GPUVM fault", line):
                     self.errors.append(line[:4096])
+                if re.search(r"ResourceBindingDiagnostics|ResourceBindingBdaFault|IndirectArgumentSnapshot", line):
+                    self.resource_diagnostics.append(line[:4096])
         if self.partial and re.search(r"error|fatal|assert|fault", self.partial, re.I):
             self.errors.append(self.partial[:4096])
 
@@ -126,6 +130,7 @@ class GameLog:
             for block in self.tail:
                 stream.write(block)
         (run / "info/game-errors.log").write_text("\n".join(self.errors) + "\n")
+        (run / "info/resource-bindings.log").write_text("\n".join(self.resource_diagnostics) + "\n")
 
 
 class Runtime:
@@ -149,6 +154,7 @@ class Runtime:
         self.ollama_id = None
         self.models = []
         self.ollama_touched = False
+        self.vram_recovery = None
         self.log = GameLog()
         self.started = None
         self.started_iso = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
@@ -159,6 +165,9 @@ class Runtime:
             "ORIGINAL_SAVES": "ISOLATED_COPY_ONLY", "RENDER_STATE": "NATIVE",
             "EXPENSIVE_DIAGNOSTICS": "OFF", "SHADER_HASH_FILTERS": "NONE",
             "SCREENSHOT_LIMIT": "15", "SSH_SESSION": "OPEN",
+            "VRAM_RECLAIM_THRESHOLD_GIB": "8", "VRAM_ABORT_THRESHOLD_GIB": "2",
+            "INDIRECT_ARGUMENT_CAPTURE": "PENDING_ONE_FRAME_AT_60_SECONDS",
+            "INDIRECT_ARGUMENT_BINARY_LIMIT": str(1024 * 1024),
         }
         self.active_sha = None
         self.config_sha = None
@@ -272,6 +281,18 @@ class Runtime:
         if free >= 8 * GIB:
             self.meta["OLLAMA_ACTION"] = "KEPT_RUNNING_SUFFICIENT_VRAM"
             return
+        self.suspend_ollama("PRELAUNCH")
+        for _ in range(10):
+            self.check_stop()
+            _, free = self.vram()
+            if free >= 8 * GIB:
+                break
+            time.sleep(1)
+        self.meta["FREE_VRAM_AFTER_OLLAMA_STOP"] = str(free)
+        if free < 8 * GIB:
+            raise RuntimeError("STILL_LOW_VRAM_GAME_NOT_LAUNCHED")
+
+    def suspend_ollama(self, phase):
         if not shutil.which("docker"):
             raise RuntimeError("LOW_VRAM_DOCKER_UNAVAILABLE")
         rows = json.loads(self.command(["docker", "inspect", "ollama"]))
@@ -295,22 +316,50 @@ class Runtime:
         self.models = snapshot["models"]
         if any(not isinstance(m, dict) or not (m.get("name") or m.get("model")) for m in self.models):
             raise RuntimeError("INVALID_OLLAMA_MODEL_ENTRY")
+        if not self.models or all(m.get("size_vram") == 0 for m in self.models):
+            raise RuntimeError("NO_RELEASABLE_OLLAMA_MODELS")
         self.ollama_id = container["Id"]
         (self.run / "info/ollama-before.json").write_text(json.dumps(snapshot, indent=2) + "\n")
         self.check_stop()
+        _, free = self.vram()
+        if free >= 8 * GIB:
+            self.meta["OLLAMA_ACTION"] = "KEPT_RUNNING_VRAM_RECOVERED"
+            return False
+        self.meta["OLLAMA_VRAM_TRIGGER_PHASE"] = phase
+        self.meta["FREE_VRAM_AT_OLLAMA_STOP"] = str(free)
         self.ollama_touched = True
-        self.say("VRAM_LOW: temporarily stopping the verified Ollama container; loaded models will be restored.")
+        self.meta["OLLAMA_RESTORE"] = "PENDING"
+        self.say(f"VRAM_LOW_{phase}: temporarily stopping the verified Ollama container; loaded models will be restored.")
         self.command(["docker", "stop", "--time", "20", self.ollama_id], timeout=35)
-        self.meta["OLLAMA_ACTION"] = "STOPPED_LOW_VRAM"
-        for _ in range(10):
-            self.check_stop()
+        self.meta["OLLAMA_ACTION"] = ("STOPPED_LOW_VRAM" if phase == "PRELAUNCH"
+                                      else "STOPPED_RUNTIME_LOW_VRAM")
+        return True
+
+    def recover_runtime_vram(self):
+        try:
+            stopped = self.suspend_ollama("RUNTIME")
             _, free = self.vram()
-            if free >= 8 * GIB:
-                break
-            time.sleep(1)
-        self.meta["FREE_VRAM_AFTER_OLLAMA_STOP"] = str(free)
-        if free < 8 * GIB:
-            raise RuntimeError("STILL_LOW_VRAM_GAME_NOT_LAUNCHED")
+            self.meta["RUNTIME_VRAM_RECLAIM"] = "OLLAMA_STOPPED" if stopped else "NOT_NEEDED"
+            self.meta["FREE_VRAM_AFTER_RUNTIME_RECLAIM"] = str(free)
+            self.say(f"RUNTIME_VRAM_RECLAIM={self.meta['RUNTIME_VRAM_RECLAIM']} FREE_VRAM={free / GIB:.2f}GiB")
+        except Exception as error:
+            self.meta["RUNTIME_VRAM_RECLAIM"] = "UNAVAILABLE_OR_FAILED"
+            self.meta["RUNTIME_VRAM_RECLAIM_ERROR"] = str(error).replace("\n", " ")[:400]
+            self.say("RUNTIME_VRAM_RECLAIM_ERROR=" + str(error))
+
+    def monitor_vram(self, elapsed, free):
+        if (self.vram_recovery is not None and not self.vram_recovery.is_alive()
+                and self.meta.get("RUNTIME_VRAM_RECLAIM") == "NOT_NEEDED"):
+            self.vram_recovery = None
+        if free < 8 * GIB and not self.ollama_touched and self.vram_recovery is None:
+            self.meta["RUNTIME_VRAM_RECLAIM_STARTED_SECONDS"] = str(elapsed)
+            self.meta["FREE_VRAM_AT_RUNTIME_RECLAIM"] = str(free)
+            self.meta["RUNTIME_VRAM_RECLAIM"] = "IN_PROGRESS"
+            self.say(f"RUNTIME_VRAM_BELOW_8GIB={elapsed}s FREE_VRAM={free / GIB:.2f}GiB")
+            self.vram_recovery = threading.Thread(target=self.recover_runtime_vram)
+            self.vram_recovery.start()
+        if free < 2 * GIB and self.vram()[1] < 2 * GIB:
+            raise RuntimeError("RUNTIME_VRAM_CRITICAL_ABORT")
 
     def clone_profile(self):
         destination = self.run / "profile/user"
@@ -349,10 +398,57 @@ class Runtime:
             env.pop(key, None)
         env.update(BASELINE_ENV)
         env.update({"SHADPS4_" + name: "0" for name in DIAGNOSTICS_OFF})
+        env["SHADPS4_INDIRECT_ARGUMENT_SNAPSHOT_SECONDS"] = "60"
+        env["SHADPS4_RESOURCE_BINDING_DIAGNOSTICS"] = "1"
         env["DISPLAY"] = self.display
         (self.run / "info/render-environment.json").write_text(json.dumps(
             {key: value for key, value in env.items() if key.startswith("SHADPS4_")}, indent=2) + "\n")
         return env
+
+    def collect_indirect_snapshot(self):
+        source = self.run / "profile/user/shader/indirect-arguments"
+        if not source.is_dir() or not (source / "summary.txt").is_file():
+            self.meta["INDIRECT_ARGUMENT_CAPTURE"] = "NOT_COMPLETED"
+            return
+        limits = {"summary.txt": 65536, "draws.csv": 4 * 1024 * 1024,
+                  "submitted.bin": 1024 * 1024, "cpu.bin": 1024 * 1024}
+        for name, limit in limits.items():
+            path = source / name
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > limit:
+                raise RuntimeError("INVALID_INDIRECT_SNAPSHOT_FILE=" + name)
+        summary = fields((source / "summary.txt").read_text())
+        if any(summary.get(key) != value for key, value in {
+            "STATUS": "COMPLETE", "CAPTURE_FRAMES": "1", "SHADER_FILTERS": "NONE",
+            "ARGUMENTS_CHANGED": "NO", "PIPELINE_QUERIES": "NONE",
+            "SNAPSHOT_POINT": "BEFORE_DRAW",
+        }.items()):
+            raise RuntimeError("INVALID_INDIRECT_SNAPSHOT_SUMMARY")
+        size = int(summary["BYTES_PER_BINARY"])
+        if not 0 <= size <= 1024 * 1024 or any(
+                (source / name).stat().st_size != size for name in ("submitted.bin", "cpu.bin")):
+            raise RuntimeError("INVALID_INDIRECT_SNAPSHOT_SIZE")
+        with (source / "draws.csv").open(newline="") as stream:
+            records = list(csv.DictReader(stream))
+        if len(records) > 4096 or len(records) != int(summary["RECORDS"]):
+            raise RuntimeError("INVALID_INDIRECT_SNAPSHOT_RECORDS")
+        for record in records:
+            if record["status"] not in ("CAPTURED", "TRUNCATED"):
+                continue
+            start, length = int(record["data_offset"]), int(record["arg_bytes"])
+            if start < 0 or length < 0 or start + length > size:
+                raise RuntimeError("INVALID_INDIRECT_SNAPSHOT_RANGE")
+            if int(record["count_guest"]):
+                offset = int(record["count_data_offset"])
+                if offset < 0 or offset + 4 > size:
+                    raise RuntimeError("INVALID_INDIRECT_COUNT_RANGE")
+        destination = self.run / "indirect-arguments"
+        destination.mkdir(exist_ok=True)
+        for name in limits:
+            shutil.copyfile(source / name, destination / name)
+        self.meta["INDIRECT_ARGUMENT_CAPTURE"] = "COMPLETE"
+        self.meta["INDIRECT_ARGUMENT_COVERAGE"] = summary["COVERAGE"]
+        self.meta["INDIRECT_ARGUMENT_RECORDS"] = str(len(records))
+        self.meta["INDIRECT_ARGUMENT_GPU_COPIES"] = summary["GPU_COPIES"]
 
     def screenshot(self, elapsed, env):
         path = self.run / "screenshots" / f"{elapsed:03d}.png"
@@ -397,8 +493,7 @@ class Runtime:
                 telemetry.write(f"{elapsed},{used},{free},{busy}\n")
                 if self.log.fault.is_set():
                     raise RuntimeError("GPU_FAULT_ABORT")
-                if free < 2 * GIB:
-                    raise RuntimeError("RUNTIME_VRAM_CRITICAL_ABORT")
+                self.monitor_vram(elapsed, free)
                 if elapsed >= next_shot and shots < 15:
                     self.screenshot(elapsed, env)
                     shots += 1
@@ -438,6 +533,13 @@ class Runtime:
                 raise RuntimeError("GAME_LOG_READER_DID_NOT_FINISH")
 
     def restore_ollama(self):
+        if self.vram_recovery is not None:
+            waits = 0
+            while self.vram_recovery.is_alive():
+                self.vram_recovery.join(timeout=2)
+                waits += 1
+                if waits % 5 == 0:
+                    self.say("WAITING_FOR_OLLAMA_VRAM_ACTION_BEFORE_RESTORE")
         if not self.ollama_touched:
             return
         self.say("Restoring the original Ollama container and previously loaded models.")
@@ -485,6 +587,12 @@ class Runtime:
                 self.say(f"{label}_ERROR={error}")
                 code = 3
         self.log.save(self.run)
+        try:
+            self.collect_indirect_snapshot()
+        except Exception as error:
+            self.meta["INDIRECT_ARGUMENT_CAPTURE"] = "INVALID"
+            self.say("INDIRECT_ARGUMENT_CAPTURE_ERROR=" + str(error))
+            code = max(code, 2)
         self.meta["BOUNDED_LOG_DISCARDED_BYTES"] = str(self.log.discarded)
         self.meta["SCREENSHOTS"] = str(len(list((self.run / "screenshots").glob("*.png"))))
         self.meta["GPU_READBACKS_VERIFIED"] = "PASS" if self.log.precise.is_set() else "NOT_OBSERVED"
@@ -528,8 +636,11 @@ class Runtime:
         with tarfile.open(self.report, "w:gz", compresslevel=6) as archive:
             for name in ("info", "screenshots", "game.log"):
                 archive.add(self.run / name, arcname=name, recursive=True)
+            if (self.run / "indirect-arguments").is_dir():
+                archive.add(self.run / "indirect-arguments", arcname="indirect-arguments")
         self.say("STATUS=" + self.meta["STATUS"])
         self.say("OLLAMA_RESTORE=" + self.meta["OLLAMA_RESTORE"])
+        self.say("INDIRECT_ARGUMENT_CAPTURE=" + self.meta["INDIRECT_ARGUMENT_CAPTURE"])
         self.say("REPORT=" + str(self.report))
         self.say("UPLOAD_THIS=" + str(self.report))
         self.say("SSH_SESSION=OPEN")

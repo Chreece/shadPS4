@@ -248,6 +248,7 @@ src/video_core/renderer_vulkan/vk_scheduler.h
 src/video_core/renderer_vulkan/vk_scheduler.cpp
 src/video_core/renderer_vulkan/vk_frame_probe.h
 src/video_core/renderer_vulkan/vk_frame_probe_images.h
+src/video_core/renderer_vulkan/vk_indirect_argument_snapshot.h
 src/video_core/renderer_vulkan/vk_presenter.cpp
 src/video_core/renderer_vulkan/vk_rasterizer.cpp
 src/video_core/renderer_vulkan/vk_rasterizer.h
@@ -274,7 +275,7 @@ src/video_core/texture_cache/image_info.h
 src/video_core/texture_cache/tile_manager.cpp
 src/video_core/texture_cache/tile_manager.h
 GOT_PINNED_OVERLAY_FILES
-test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 109 || {
+test "$(wc -l < "$RUN/info/overlay-files.txt")" -eq 110 || {
     STATUS=UNEXPECTED_CANDIDATE_OVERLAY_SIZE; exit 2;
 }
 

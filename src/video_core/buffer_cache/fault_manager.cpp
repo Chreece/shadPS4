@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2025 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
+#include <mutex>
+
 #include "common/div_ceil.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/fault_manager.h"
@@ -15,6 +18,27 @@ namespace VideoCore {
 
 static constexpr size_t MaxPageFaults = 1024;
 static constexpr size_t PageFaultAreaSize = MaxPageFaults * sizeof(u64);
+
+static void DiagnoseBdaFault(VAddr address, u64 page_size, u32 batch_pages) {
+    static const bool enabled = [] {
+        const char* const env = std::getenv("SHADPS4_RESOURCE_BINDING_DIAGNOSTICS");
+        return env && env[0] == '1' && env[1] == '\0';
+    }();
+    if (!enabled) {
+        return;
+    }
+    static std::mutex report_mutex;
+    static u32 reports{};
+    std::scoped_lock lock{report_mutex};
+    if (reports >= 32) {
+        return;
+    }
+    const u32 report = ++reports;
+    LOG_WARNING(Render_Vulkan,
+                "ResourceBindingBdaFault: guest_page={:#x} bytes={} report={} limit=32 "
+                "batch_pages={} source=SOFTWARE_BDA_MISSING_PAGE",
+                address, page_size, report, batch_pages);
+}
 
 FaultManager::FaultManager(const Vulkan::Instance& instance, Vulkan::Scheduler& scheduler_,
                            BufferCache& buffer_cache_, u32 sparse_pagebits, u64 sparse_num_pages_)
@@ -182,6 +206,7 @@ void FaultManager::ProcessFaultBuffer() {
         for (u32 i = 1; i <= fault_count; ++i) {
             fault_ranges.Add(fault_buf[i], sparse_pagesize);
             LOG_INFO(Render_Vulkan, "Accessed non-GPU cached memory at {:#x}", fault_buf[i]);
+            DiagnoseBdaFault(fault_buf[i], sparse_pagesize, fault_count);
         }
         fault_ranges.ForEach([&](VAddr start, VAddr end) {
             ASSERT_MSG((end - start) <= std::numeric_limits<u32>::max(),

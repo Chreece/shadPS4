@@ -4,6 +4,8 @@
 #pragma once
 
 #include <deque>
+#include <span>
+#include <vector>
 #include <boost/container/small_vector.hpp>
 
 #include "common/enum.h"
@@ -124,8 +126,14 @@ public:
     /// Mark region as modified from the GPU
     void MarkRegionAsGpuModified(VAddr addr, size_t size);
 
+    struct DmaBufferRange {
+        const Buffer* buffer;
+        u64 offset;
+        u32 size;
+    };
+
     /// Synchronizes all buffers needed for DMA.
-    void SynchronizeDmaBuffers();
+    [[nodiscard]] std::span<const DmaBufferRange> SynchronizeDmaBuffers();
 
     /// Commits pending sparse buffer memory binds. Must be called before every scheduler submit.
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);
@@ -145,6 +153,8 @@ private:
         }
         return &pending_binds.emplace_back(arena);
     }
+
+    const Buffer* FindArena(VAddr device_addr, u64 size) const;
 
     const Buffer* GetArena(u64 first_block, u64 last_block);
 
@@ -177,6 +187,7 @@ private:
     std::unique_ptr<FaultManager> fault_manager;
     std::unique_ptr<Buffer> bda_pagetable_buffer;
     bool fault_process_pending{};
+    std::vector<DmaBufferRange> dma_ranges;
 
     // Multiple overlapping sparse VkBuffers may cover the same guest VA
     // window. All get the same device-memory bindings when aliasing is valid.
@@ -203,7 +214,6 @@ private:
     u64 max_arena_size{};
     u64 arena_page_size{};
     u32 arena_page_bits{};
-    u32 blocks_per_arena_page_shift{};
 };
 
 } // namespace VideoCore

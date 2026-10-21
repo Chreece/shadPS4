@@ -24,6 +24,7 @@
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_got_menu_stage_probe.h"
 #include "video_core/renderer_vulkan/vk_frame_probe.h"
+#include "video_core/renderer_vulkan/vk_indirect_argument_snapshot.h"
 #include "video_core/texture_cache/image.h"
 
 #include <algorithm>
@@ -668,6 +669,7 @@ static vk::Format GetFrameViewFormat(const Libraries::VideoOut::PixelFormat form
 
 Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& attribute,
                                VAddr cpu_address) {
+    Diagnostics::IndirectSnapshotPresent(draw_scheduler);
     if (Diagnostics::FrameProbeEnabled()) {
         draw_scheduler.EndRendering();
         Diagnostics::FrameProbePresent();

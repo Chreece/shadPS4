@@ -2,9 +2,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
+#include <mutex>
 #include <ranges>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 #include "common/hash.h"
 #include "common/io_file.h"
@@ -13,6 +17,7 @@
 #include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
 #include "shader_recompiler/info.h"
+#include "shader_recompiler/ir/passes/resource_pass.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/recompiler.h"
 #include "shader_recompiler/targeted_shader_dump.h"
@@ -48,6 +53,104 @@ template <typename Resource>
 static bool HasInvalidSharp(const Resource& resource) {
     using Fetch = std::remove_cvref_t<decltype(resource.sharp_fetch)>;
     return resource.sharp_fetch.summary == Fetch::Summary::Invalid;
+}
+
+static void DiagnoseResourceBindings(const Shader::IR::Program& program, size_t permutation) {
+    static const bool enabled = [] {
+        const char* const env = std::getenv("SHADPS4_RESOURCE_BINDING_DIAGNOSTICS");
+        return env && env[0] == '1' && env[1] == '\0';
+    }();
+    if (!enabled) {
+        return;
+    }
+
+    const auto& info = program.info;
+    const auto invalid_buffer_count = std::ranges::count_if(info.buffers, [](const auto& buffer) {
+        return !buffer.IsSpecial() && HasInvalidSharp(buffer);
+    });
+    const auto invalid_image_count = std::ranges::count_if(info.images, [](const auto& image) {
+        return !image.is_guest_indexed && HasInvalidSharp(image);
+    });
+    const auto invalid_sampler_count = std::ranges::count_if(info.samplers, [](const auto& sampler) {
+        return !sampler.is_guest_indexed && HasInvalidSharp(sampler);
+    });
+    if (!invalid_buffer_count && !invalid_image_count && !invalid_sampler_count) {
+        return;
+    }
+
+    std::vector<bool> live_invalid(info.buffers.size());
+    u32 live_invalid_count{};
+    u32 live_invalid_instructions{};
+    s32 first_binding = -1;
+    std::string_view first_opcode = "NONE";
+    for (const auto* block : program.blocks) {
+        for (const auto& inst : block->Instructions()) {
+            if (!Shader::Optimization::IsBufferInstruction(inst) || !inst.Arg(0).IsImmediate()) {
+                continue;
+            }
+            const u32 binding = inst.Arg(0).U32();
+            if (binding >= info.buffers.size() || info.buffers[binding].IsSpecial() ||
+                !HasInvalidSharp(info.buffers[binding])) {
+                continue;
+            }
+            ++live_invalid_instructions;
+            if (!live_invalid[binding]) {
+                live_invalid[binding] = true;
+                ++live_invalid_count;
+            }
+            if (first_binding == -1) {
+                first_binding = static_cast<s32>(binding);
+                first_opcode = Shader::IR::NameOf(inst.GetOpcode());
+            }
+        }
+    }
+
+    struct ReportedShader {
+        std::pair<u64, HwStage> key;
+        bool live_failure{};
+    };
+    static constexpr u32 WarningLimit = 256;
+    static std::mutex report_mutex;
+    static std::array<ReportedShader, WarningLimit> reported{};
+    static size_t report_count{};
+    static u32 warnings{};
+    bool severity_upgrade{};
+    {
+        std::scoped_lock lock{report_mutex};
+        const std::pair key{info.pgm_hash, info.hw_stage};
+        const auto previous = std::span{reported}.first(report_count);
+        const auto found = std::ranges::find(previous, key, &ReportedShader::key);
+        severity_upgrade = found != previous.end() && live_invalid_count && !found->live_failure;
+        if (found != previous.end() && !severity_upgrade) {
+            return;
+        }
+        if (warnings >= WarningLimit - 1) {
+            if (warnings == WarningLimit - 1) {
+                ++warnings;
+                LOG_WARNING(Render_Vulkan,
+                            "ResourceBindingDiagnostics: status=REPORT_LIMIT_REACHED limit={} "
+                            "further_reports_suppressed=YES",
+                            WarningLimit);
+            }
+            return;
+        }
+        if (found == previous.end()) {
+            reported[report_count++] = {key, live_invalid_count != 0};
+        } else {
+            found->live_failure = true;
+        }
+        ++warnings;
+    }
+    LOG_WARNING(Render_Vulkan,
+                "ResourceBindingDiagnostics: shader={:#x} stage={} permutation={} dma={} "
+                "live_bad_buffers={} unused_bad_buffers={} live_bad_buffer_instructions={} "
+                "first_binding={} first_opcode={} declared_bad_images={} declared_bad_samplers={} "
+                "status={} report={}",
+                info.pgm_hash, info.hw_stage, permutation, info.uses_dma, live_invalid_count,
+                invalid_buffer_count - live_invalid_count, live_invalid_instructions,
+                first_binding, first_opcode, invalid_image_count, invalid_sampler_count,
+                live_invalid_count ? "UNRESOLVED_LIVE_BUFFER" : "NO_LIVE_UNRESOLVED_BUFFER",
+                severity_upgrade ? "LIVE_FAILURE_UPGRADE" : "FIRST_SUMMARY");
 }
 
 constexpr static std::array DescriptorHeapSizes = {
@@ -721,6 +824,7 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
 
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
+    DiagnoseResourceBindings(ir_program, perm_idx);
     Shader::IR::DumpProgram(ir_program, info, fmt::format("perm{}.", perm_idx));
     DumpShader(info.flattened_ud_buf, info.pgm_hash, info.hw_stage, perm_idx, "ud.bin");
     if (ResourceAuditEnabled()) {
