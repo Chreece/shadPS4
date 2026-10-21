@@ -10,8 +10,9 @@ BUILD="$WORK/build"
 BIN="$BUILD/shadps4"
 LOGS="$ROOT/logs"
 BASE="0b648a826f86fd4ec981872ee482c3fc2ae57699"
-CANDIDATE="a8df590551a5aa74960648d07c02d468d109317f"
-BRANCH="diagnostic/world-compute-buffers-20261020"
+CANDIDATE="${SHADPS4_HOST_CANDIDATE:-a8df590551a5aa74960648d07c02d468d109317f}"
+BRANCH="${SHADPS4_HOST_BRANCH:-diagnostic/world-compute-buffers-20261020}"
+[[ "$CANDIDATE" =~ ^[0-9a-f]{40}$ ]] || { echo "INVALID_CANDIDATE_REVISION"; exit 2; }
 STAMP="$(date +%Y%m%d-%H%M%S)"
 NAME="got-indexed-sample-feedback-host-$STAMP"
 RUN="$GOT/tests/runs/$NAME"
@@ -28,6 +29,7 @@ if ! flock -n 9; then echo "BUILD_LOCK_HELD_NO_CHANGES"; exit 3; fi
 
 finish() {
     local rc=$?
+    local preserve_run=0
     trap - EXIT INT TERM HUP
     set +e
     # Restore exactly the prior source bytes: no git checkout or reset.
@@ -36,30 +38,57 @@ finish() {
             case "$operation" in
                 RESTORE)
                     mkdir -p "$(dirname "$SOURCE/$rel")"
-                    cp -p -- "$RUN/tmp/original/$rel" "$SOURCE/$rel"
-                    test $? -eq 0 || rc=2
-                    touch "$SOURCE/$rel"
+                    if ! cp -p -- "$RUN/tmp/original/$rel" "$SOURCE/$rel"; then
+                        rc=2
+                        preserve_run=1
+                        echo "SOURCE_RESTORE_FAILED=$rel" >> "$RUN/info/restore.txt"
+                    else
+                        touch "$SOURCE/$rel"
+                    fi
                     ;;
                 REMOVE)
-                    rm -f -- "$SOURCE/$rel"
-                    test $? -eq 0 || rc=2
+                    if ! rm -f -- "$SOURCE/$rel"; then
+                        rc=2
+                        preserve_run=1
+                        echo "SOURCE_REMOVE_FAILED=$rel" >> "$RUN/info/restore.txt"
+                    fi
                     ;;
             esac
         done < "$RUN/info/restore-operations.txt"
     fi
     # Preserve the new build as a candidate, not the active emulator.
-    if [ "$CANDIDATE_BUILT" = 1 ] && [ -x "$BIN" ]; then
-        mkdir -p "$WORK/bin-backups"
-        cp -p -- "$BIN" "$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$CANDIDATE"
-        sha256sum "$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$CANDIDATE" \
-          > "$RUN/info/candidate-preserved.sha256"
+    if [ "$CANDIDATE_BUILT" = 1 ]; then
+        local candidate_path="$WORK/bin-backups/shadps4-got-indexed-sample-feedback-$CANDIDATE"
+        local candidate_tmp="" built_sha preserved_sha
+        built_sha="$(awk 'NR == 1 {print $1}' "$RUN/info/candidate-binary.sha256")"
+        if [ -x "$BIN" ] && [[ "$built_sha" =~ ^[0-9a-f]{64}$ ]] &&
+           mkdir -p "$WORK/bin-backups" &&
+           candidate_tmp="$(mktemp "$candidate_path.tmp.XXXXXX")" &&
+           cp -p -- "$BIN" "$candidate_tmp" &&
+           preserved_sha="$(sha256sum "$candidate_tmp" | awk '{print $1}')" &&
+           [ "$preserved_sha" = "$built_sha" ] &&
+           mv -f -- "$candidate_tmp" "$candidate_path" &&
+           printf '%s  %s\n' "$preserved_sha" "$candidate_path" \
+               > "$RUN/info/candidate-preserved.sha256"; then
+            candidate_tmp=""
+        else
+            rc=2
+            preserve_run=1
+            STATUS=CANDIDATE_PRESERVE_FAILED
+            echo "CANDIDATE_PRESERVE_FAILED" >> "$RUN/info/restore.txt"
+        fi
+        if [ -n "$candidate_tmp" ]; then
+            rm -f -- "$candidate_tmp"
+        fi
     fi
     if [ -f "$RUN/tmp/original-shadps4" ]; then
         if ! cp -p -- "$RUN/tmp/original-shadps4" "$BIN"; then
             rc=2
+            preserve_run=1
             echo "ORIGINAL_BINARY_RESTORE_FAILED" >> "$RUN/info/restore.txt"
         elif [ "$(sha256sum "$BIN" | awk '{print $1}')" != "$ORIGINAL_SHA" ]; then
             rc=2
+            preserve_run=1
             echo "ORIGINAL_BINARY_HASH_MISMATCH" >> "$RUN/info/restore.txt"
         else
             echo "ORIGINAL_BINARY_RESTORED=PASS hash=$ORIGINAL_SHA" >> "$RUN/info/restore.txt"
@@ -78,7 +107,11 @@ finish() {
         --exclude=original-shadps4 --exclude='*.o' \
         -C "$RUN" build.log host-tests.log 2>/dev/null; then
         echo "REPORT=$ARCHIVE"
-        rm -rf -- "$RUN"
+        if [ "$preserve_run" = 1 ]; then
+            echo "RECOVERY_FILES_PRESERVED=$RUN"
+        else
+            rm -rf -- "$RUN"
+        fi
     else
         echo "ARCHIVE_FAILED_WORKDIR=$RUN"
         rc=2
@@ -547,7 +580,7 @@ assert "IsVaryingLocalInvocationComponent(" in lds
 assert "FindDivergentLoops(program.syntax_list, runtime_info)" in lds
 assert "EmitBarrierInMergeBlock(node.data, divergence_end, divergence_depth, runtime_info)" in lds
 assert "op == IR::Opcode::InverseBallot || op == IR::Opcode::GetUserData" in phi
-assert "ShaderBinaryVersion = 62u;" in serial
+assert int(re.search(r"ShaderBinaryVersion\s*=\s*(\d+)u;", serial)[1]) >= 62
 scalar = (Path(sys.argv[1]) / "shader_recompiler/frontend/translate/scalar_alu.cpp").read_text()
 assert "ir.SetScc(ir.InverseBallot(result));" not in scalar
 for name in ("S_AND_B64", "S_OR_B64", "S_NOT_B64", "S_SAVEEXEC_B64"):
@@ -580,7 +613,8 @@ assert "const Id pointer = param.id;" in spirv_context
 assert "OpInterpolateAtVertexAMD(F32[param.num_components], pointer, ConstU32(vertex))" in spirv_context
 print("GOT_COMPONENT_INTERPOLATION_WIRING=PASS per_component=YES mixed_inputs=YES")
 print("GOT_SHADER_UPSTREAM_CORRECTNESS_WIRING=PASS "
-      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=62")
+      "lds_singleton_axis=YES userdata_phi_guard=YES cache_version=" +
+      re.search(r"ShaderBinaryVersion\s*=\s*(\d+)u;", serial)[1])
 print("GOT_INDIRECT_PRODUCER_SOURCE_WIRING=PASS observed_zero_commands=32 "
       "buffer_shader=YES compute_dispatch=YES cpu_upload=YES vk_copy=YES")
 # The previous host link failed at rasterizer.cpp:492: an undefined
