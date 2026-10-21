@@ -3,14 +3,12 @@
 
 #pragma once
 
-#include <cstdlib>
 #include <utility>
 
 #include "common/adaptive_mutex.h"
 #include "common/types.h"
 #include "core/emulator_settings.h"
 #include "video_core/buffer_cache/region_definitions.h"
-#include "video_core/buffer_cache/sparse_cpu_upload_words.h"
 #include "video_core/page_manager.h"
 
 namespace VideoCore {
@@ -120,54 +118,16 @@ public:
             return;
         }
         auto& state = GetRegionBits<type>();
-        // Only a CPU upload scan with CPU=Clear, GPU=None may skip clean
-        // tracking words. GPU write tracking and download semantics continue
-        // through the original full-region iteration, byte for byte.
-        const bool sparse_cpu_upload = [] {
-            if constexpr (type == Type::CPU && cpu_op == StateOp::Clear &&
-                          gpu_op == StateOp::None) {
-                static const bool enabled = [] {
-                    const char* value = std::getenv("SHADPS4_SPARSE_CPU_UPLOAD_WORDS");
-                    return value && value[0] == '1' && value[1] == '\0';
-                }();
-                return enabled;
-            }
-            return false;
-        }();
         bool update_watchers{};
         RegionBits write_prot;
         RegionBits read_prot;
-        // The sparse loop doesn't touch clean words; watcher masks for any
-        // gaps must be explicitly zero rather than uninitialized stack data.
-        if (sparse_cpu_upload) {
-            write_prot.Fill(false);
-            read_prot.Fill(false);
-        }
         u64 start_page{};
         u64 end_page{};
         Bounds watcher_bounds = MIN_BOUNDS;
         if constexpr (locked) {
             mutex.lock();
         }
-        // Snapshot summary words for each traversal. UpdateState clears the
-        // live summary during the second pass, so its input must be copied.
-        const auto for_each_candidate_word = [&](auto&& visit) {
-            if (sparse_cpu_upload) {
-                const auto [first_mask, last_mask] =
-                    GetMasks(bounds.start_page, bounds.end_page);
-                Detail::ForEachCpuDirtySummaryWord(
-                    state.set_summary, bounds.start_word, bounds.end_word,
-                    [&](u64 index) {
-                        u64 mask = ~u64{0};
-                        if (index == bounds.start_word) mask &= first_mask;
-                        if (index == bounds.end_word) mask &= last_mask;
-                        if (state[index] & mask) visit(index, mask);
-                    });
-                return;
-            }
-            IterateWords(bounds, visit);
-        };
-        for_each_candidate_word([&](u64 index, u64 mask) {
+        IterateWords(bounds, [&](u64 index, u64 mask) {
             const u64 base_page = index * PAGES_PER_WORD;
             const u64 word = state[index] & mask;
             update_watchers |= UpdateProtection<cpu_op, gpu_op>(write_prot, read_prot,
@@ -195,8 +155,8 @@ public:
             tracker->UpdatePageWatchersForRegion(cpu_addr, watcher_bounds, write_prot, read_prot,
                                                  write_op, read_op);
         }
-        for_each_candidate_word(
-            [&](u64 index, u64 mask) { UpdateState<cpu_op, gpu_op>(index, mask); });
+        IterateWords(bounds,
+                     [&](u64 index, u64 mask) { UpdateState<cpu_op, gpu_op>(index, mask); });
         if constexpr (locked) {
             mutex.unlock();
         }

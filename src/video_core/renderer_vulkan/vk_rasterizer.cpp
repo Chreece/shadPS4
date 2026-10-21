@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include <unordered_map>
-
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -55,10 +53,7 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     });
 }
 
-Rasterizer::~Rasterizer() {
-    // Callback readbacks must not outlive the GPU caches they touch.
-    page_manager.DrainPendingInvalidations();
-}
+Rasterizer::~Rasterizer() = default;
 
 bool Rasterizer::FilterDraw() {
     const auto& regs = liverpool->regs;
@@ -821,15 +816,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             } else {
                 const u64 size = memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize());
                 if (size != vsharp.GetSize()) {
-                    // Keep true guest mapping bounds while reducing repeated
-                    // log I/O on extremely common unbounded buffer descriptors.
-                    static thread_local std::unordered_map<u64, u64> clamp_counts;
-                    const u64 seen = ++clamp_counts[stage.pgm_hash];
-                    if ((seen & (seen - 1)) == 0) {
-                        LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x} "
-                                          "(seen {} times on this GPU thread)",
-                                  vsharp.GetSize(), size, stage.pgm_hash, seen);
-                    }
+                    LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
+                              vsharp.GetSize(), size, stage.pgm_hash);
                 }
                 VideoCore::ObtainBufferFlags flags = {};
                 if (desc.is_written) {
@@ -1276,16 +1264,6 @@ u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {
     return value;
 }
 
-void Rasterizer::InvalidateMemoryOnGpuThread(VAddr addr, u64 size,
-                                              std::function<void()> on_complete) {
-    // The fault receiver must not synchronously wait on the GPU processor:
-    // that processor may be waiting for this receiver to clear a UFFD fault.
-    liverpool->SendCommand([this, addr, size, on_complete = std::move(on_complete)]() mutable {
-        InvalidateMemory(addr, size, true);
-        on_complete();
-    });
-}
-
 bool Rasterizer::InvalidateMemory(VAddr addr, u64 size, bool assume_locks) {
     if (!IsMapped(addr, size)) {
         // Not GPU mapped memory, can skip invalidation logic entirely.
@@ -1321,7 +1299,6 @@ bool Rasterizer::IsMapped(VAddr addr, u64 size) {
 }
 
 void Rasterizer::MapMemory(VAddr addr, u64 size) {
-    page_manager.MapMemory(addr, size);
     {
         std::scoped_lock lock{mapped_ranges_mutex};
         mapped_ranges += decltype(mapped_ranges)::interval_type::right_open(addr, addr + size);
@@ -1330,10 +1307,6 @@ void Rasterizer::MapMemory(VAddr addr, u64 size) {
 
 void Rasterizer::RegisterMemory(VAddr addr, u64 size) {
     page_manager.OnGpuMap(addr, size);
-}
-
-void Rasterizer::ProtectMemory(VAddr addr, u64 size, Core::MemoryPermission perms) {
-    page_manager.ProtectMemory(addr, size, perms);
 }
 
 void Rasterizer::UnmapMemory(VAddr addr, u64 size) {

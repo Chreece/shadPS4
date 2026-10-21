@@ -11,9 +11,6 @@
 #include "common/elf_info.h"
 #include "common/error.h"
 #include "core/address_space.h"
-#if defined(__linux__) && defined(ARCH_X86_64)
-#include "core/cpu_id.h"
-#endif
 #include "core/emulator_settings.h"
 #include "core/libraries/kernel/memory.h"
 #include "core/memory.h"
@@ -734,11 +731,6 @@ struct AddressSpace::Impl {
                  fmt::ptr(system_reserved_base + system_reserved_size - 1));
         LOG_INFO(Kernel_Vmm, "User virtual memory region: {} - {}", fmt::ptr(user_base),
                  fmt::ptr(user_base + user_size - 1));
-
-#if defined(__linux__) && defined(ARCH_X86_64)
-        SetCpuIdGuestAddressRange(reinterpret_cast<VAddr>(system_managed_base),
-                                  reinterpret_cast<VAddr>(user_base) + user_size);
-#endif
 
 #ifdef __APPLE__
         const auto shm_path = fmt::format("/BackingDmem{}", getpid());

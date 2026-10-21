@@ -9,12 +9,6 @@
 #include "common/types.h"
 #include "video_core/buffer_cache/region_definitions.h"
 
-namespace Core {
-// Match the canonical definition in core/address_space.h without importing
-// the full memory manager into this public GPU-page-management header.
-enum class MemoryPermission : u32;
-}
-
 namespace Vulkan {
 class Rasterizer;
 }
@@ -38,17 +32,11 @@ public:
     explicit PageManager(Vulkan::Rasterizer* rasterizer);
     ~PageManager();
 
-    // Drain completed GPU invalidations before renderer cache destruction.
-    void DrainPendingInvalidations();
-
     /// Register a range of mapped gpu memory.
     void OnGpuMap(VAddr address, size_t size);
 
     /// Unregister a range of gpu memory that was unmapped.
     void OnGpuUnmap(VAddr address, size_t size);
-
-    void MapMemory(VAddr address, size_t size);
-    void ProtectMemory(VAddr address, size_t size, Core::MemoryPermission perms);
 
     /// Updates watches in the pages touching the specified region.
     void UpdatePageWatchers(VAddr addr, u64 size, PageOp write_op) const;

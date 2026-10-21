@@ -30,7 +30,6 @@
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
 #include "core/libraries/audio/audioout.h"
-#include "core/libraries/audio/audioout_health.h"
 #include "core/libraries/audio/audioout_backend.h"
 #include "core/libraries/audio/openal_manager.h"
 #include "core/libraries/kernel/threads.h"
@@ -80,27 +79,18 @@ public:
           num_channels(port.format_info.num_channels), is_float(port.format_info.is_float),
           is_std(port.format_info.is_std), channel_layout(port.format_info.channel_layout),
           device_registered(false), device_name(GetDeviceName(port.type)) {
-        intentionally_disabled = IsDisabledAudioDevice(device_name);
-        if (intentionally_disabled) {
-            LOG_INFO(Lib_AudioOut, "OpenAL audio output intentionally disabled for device '{}'",
-                     device_name);
-        } else if (!Initialize(port.type)) {
+
+        if (!Initialize(port.type)) {
             LOG_ERROR(Lib_AudioOut, "Failed to initialize OpenAL audio backend");
         }
     }
 
-    [[nodiscard]] bool IsUsable() const noexcept {
-        return intentionally_disabled || (device_registered && device_context &&
-                                          source != 0 && convert);
-    }
-
     ~OpenALPortBackend() override {
-        // Release AL objects while the device context is still registered.
-        // UnregisterPort may destroy the last context for the device.
-        Cleanup();
+        // Unregister port before cleanup
         if (device_registered) {
             OpenALDevice::GetInstance().UnregisterPort(device_name);
         }
+        Cleanup();
     }
 
     void Output(void* ptr) override {
@@ -111,13 +101,8 @@ public:
             return;
         }
         if (!device_context->MakeCurrent(device_name)) {
-            if (!context_failure_reported.exchange(true, std::memory_order_relaxed)) {
-                LOG_ERROR(Lib_AudioOut, "OpenAL PCM output cannot activate device context '{}'; "
-                                        "audio buffers are not reaching the sink", device_name);
-            }
             return;
         }
-        context_failure_reported.store(false, std::memory_order_relaxed);
 
         UpdateVolumeIfChanged();
         const u64 current_time = Kernel::sceKernelGetProcessTime();
@@ -163,36 +148,6 @@ public:
             alSourceQueueBuffers(source, 1, &buffer_id);
         }
 
-        // Sample only one output in sixteen to diagnose game PCM vs host
-        // sink silence without a per-buffer logging/performance penalty.
-        if ((output_count & 0xF) == 0) {
-            const float peak = use_native_float
-                                   ? AudioPeak(al_buffer_float.data(), al_buffer_float.size())
-                                   : AudioPeakS16(al_buffer_s16.data(), al_buffer_s16.size());
-            sampled_peak = std::max(sampled_peak, peak);
-            if (peak > 0.0001f) {
-                ++non_silent_probes;
-                if (!first_pcm_seen) {
-                    first_pcm_seen = true;
-                    LOG_INFO(Lib_AudioOut,
-                             "OpenAL audio: first non-silent PCM for device '{}' "
-                             "(peak={:.5f}, gain={:.3f})",
-                             device_name, peak, current_gain.load(std::memory_order_acquire));
-                }
-            }
-            ++pcm_probes;
-            if (pcm_probes >= 16) {
-                LOG_INFO(Lib_AudioOut,
-                         "OpenAL audio route: device='{}', output_buffers={}, non_silent="
-                         "{}/{} probes, peak={:.5f}, gain={:.3f}",
-                         device_name, output_count, non_silent_probes, pcm_probes, sampled_peak,
-                         current_gain.load(std::memory_order_acquire));
-                pcm_probes = 0;
-                non_silent_probes = 0;
-                sampled_peak = 0.0f;
-            }
-        }
-
         // Check state and queue health
         ALint state = 0;
         ALint queued = 0;
@@ -216,15 +171,11 @@ public:
         output_count++;
     }
     void SetVolume(const std::array<int, 8>& ch_volumes) override {
-        // Explicitly disabled output ports intentionally own no OpenAL context.
-        // sceAudioOutOpen calls SetVolume even on those silent ports, so never
-        // dereference an uninitialized device_context.
-        if (intentionally_disabled || !device_context || !source) [[unlikely]] {
+        if (!device_context->MakeCurrent(device_name)) {
             return;
         }
-        if (!device_context->MakeCurrent(device_name)) {
-            LOG_WARNING(Lib_AudioOut, "OpenAL gain update cannot activate device context '{}'",
-                        device_name);
+
+        if (!source) [[unlikely]] {
             return;
         }
 
@@ -1093,10 +1044,6 @@ private:
     u64 next_output_time{0};
     u64 last_volume_check_time{0};
     u32 output_count{0};
-    u32 pcm_probes{0};
-    u32 non_silent_probes{0};
-    float sampled_peak{0.0f};
-    bool first_pcm_seen{false};
 
     // OpenAL objects
     OpenALDevice* device_context{nullptr};
@@ -1126,17 +1073,10 @@ private:
 
     std::string device_name;
     bool device_registered;
-    bool intentionally_disabled{false};
-    std::atomic<bool> context_failure_reported{false};
 };
 
 std::unique_ptr<PortBackend> OpenALAudioOut::Open(PortOut& port) {
-    auto backend = std::make_unique<OpenALPortBackend>(port);
-    if (!backend->IsUsable()) {
-        LOG_ERROR(Lib_AudioOut, "OpenAL audio port has no usable source or device");
-        return {};
-    }
-    return backend;
+    return std::make_unique<OpenALPortBackend>(port);
 }
 
 } // namespace Libraries::AudioOut

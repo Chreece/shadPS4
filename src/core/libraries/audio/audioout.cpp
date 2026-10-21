@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include <algorithm>
-#include <array>
-#include <atomic>
-#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -19,7 +15,6 @@
 #include "core/emulator_settings.h"
 #include "core/libraries/audio/audioout.h"
 #include "core/libraries/audio/audioout_backend.h"
-#include "core/libraries/audio/audioout_sync.h"
 #include "core/libraries/audio/audioout_error.h"
 #include "core/libraries/kernel/time.h"
 #include "core/libraries/libs.h"
@@ -33,68 +28,6 @@ std::mutex port_allocation_mutex;
 
 static std::unique_ptr<AudioOutBackend> audio;
 static std::atomic<int> lazy_init{0};
-
-// Passive guest-to-emulator audio deadline telemetry. No pacing, PCM or
-// guest output semantics are modified by these counters.
-static bool GuestAudioProbe() {
-    static const bool enabled = [] {
-        const char* value = std::getenv("SHADPS4_AUDIO_TIMING_PROBE");
-        return value && value[0] == '1' && value[1] == '\0';
-    }();
-    return enabled;
-}
-
-struct GuestAudioCounters {
-    std::atomic<u64> calls{0};
-    std::atomic<u64> previous_entry{0};
-    std::atomic<u64> late_entries{0};
-    std::atomic<u64> max_entry_gap{0};
-    std::atomic<u64> long_waits{0};
-    std::atomic<u64> max_wait{0};
-    std::atomic<u64> null_pcm{0};
-};
-
-static void AudioProbeMax(std::atomic<u64>& field, u64 value) {
-    u64 current = field.load(std::memory_order_relaxed);
-    while (value > current &&
-           !field.compare_exchange_weak(current, value, std::memory_order_relaxed)) {}
-}
-
-static void RecordGuestAudioSubmit(s32 id, u32 frames, u32 rate, u64 begin_us,
-                                   u64 end_us, bool has_pcm) {
-    if (!GuestAudioProbe() || id < 0 || id >= ORBIS_AUDIO_OUT_NUM_PORTS || rate == 0)
-        return;
-    static std::array<GuestAudioCounters, ORBIS_AUDIO_OUT_NUM_PORTS> counters{};
-    auto& c = counters[id];
-    const u64 period = (1000000ULL * frames + rate / 2) / rate;
-    const u64 prior = c.previous_entry.exchange(begin_us, std::memory_order_relaxed);
-    if (prior && begin_us >= prior) {
-        const u64 gap = begin_us - prior;
-        AudioProbeMax(c.max_entry_gap, gap);
-        if (gap > period + period / 2)
-            c.late_entries.fetch_add(1, std::memory_order_relaxed);
-    }
-    if (end_us >= begin_us) {
-        const u64 waited = end_us - begin_us;
-        AudioProbeMax(c.max_wait, waited);
-        if (waited > period)
-            c.long_waits.fetch_add(1, std::memory_order_relaxed);
-    }
-    if (!has_pcm)
-        c.null_pcm.fetch_add(1, std::memory_order_relaxed);
-    const u64 total = c.calls.fetch_add(1, std::memory_order_relaxed) + 1;
-    if ((total & 255) == 0) {
-        LOG_WARNING(Lib_AudioOut,
-                    "AUDIO_GUEST_SUBMIT port={} calls={} period_us={} late_entries={} "
-                    "max_entry_gap_us={} long_waits={} max_wait_us={} null_pcm={}",
-                    id, total, period,
-                    c.late_entries.exchange(0, std::memory_order_relaxed),
-                    c.max_entry_gap.exchange(0, std::memory_order_relaxed),
-                    c.long_waits.exchange(0, std::memory_order_relaxed),
-                    c.max_wait.exchange(0, std::memory_order_relaxed),
-                    c.null_pcm.exchange(0, std::memory_order_relaxed));
-    }
-}
 
 // Port allocation ranges
 constexpr struct PortRange {
@@ -238,20 +171,6 @@ static void AudioOutputThread(std::shared_ptr<PortOut> port, const std::stop_tok
     Common::AccurateTimer timer(
         std::chrono::nanoseconds(1000000000ULL * port->buffer_frames / port->sample_rate));
 
-    // This clock is independent of SDL's backend clock. A throttled GPU/guest
-    // can leave ready buffers empty; measure this without altering guest
-    // sceAudioOutOutput wakeups, scheduling, or the mutex ownership.
-    const char* probe_env = std::getenv("SHADPS4_AUDIO_TIMING_PROBE");
-    const bool probe_enabled =
-        probe_env != nullptr && probe_env[0] == '1' && probe_env[1] == '\0';
-    const u64 expected_period_us =
-        (1000000ULL * port->buffer_frames + port->sample_rate / 2) / port->sample_rate;
-    u64 last_probe_report_us = Kernel::sceKernelGetProcessTime();
-    u64 submitted_buffers = 0;
-    u64 missing_buffers = 0;
-    u64 backend_blocked_periods = 0;
-    u64 longest_backend_us = 0;
-
     while (true) {
         timer.Start();
 
@@ -262,46 +181,14 @@ static void AudioOutputThread(std::shared_ptr<PortOut> port, const std::stop_tok
             }
 
             if (port->output_ready) {
-                const u64 begin_us =
-                    probe_enabled ? Kernel::sceKernelGetProcessTime() : 0;
                 port->impl->Output(port->output_buffer);
-                if (probe_enabled) {
-                    ++submitted_buffers;
-                    const u64 end_us = Kernel::sceKernelGetProcessTime();
-                    const u64 duration_us = end_us >= begin_us ? end_us - begin_us : 0;
-                    longest_backend_us = std::max(longest_backend_us, duration_us);
-                    if (duration_us >= expected_period_us) {
-                        ++backend_blocked_periods;
-                    }
-                }
                 port->output_ready = false;
                 port->last_output_time =
                     Kernel::sceKernelGetProcessTime(); // moved from sceAudioOutOutput TOOD recheck
-            } else if (probe_enabled) {
-                ++missing_buffers;
             }
         }
 
         port->output_cv.notify_all();
-
-        if (probe_enabled) {
-            const u64 now_us = Kernel::sceKernelGetProcessTime();
-            if (now_us >= last_probe_report_us &&
-                now_us - last_probe_report_us >= 5'000'000) {
-                LOG_WARNING(Lib_AudioOut,
-                            "AUDIO_PRODUCER_TIMING port={} period_us={} "
-                            "ready={} no_guest_buffer={} backend_over_period={} "
-                            "max_backend_us={}",
-                            static_cast<int>(port->type), expected_period_us,
-                            submitted_buffers, missing_buffers,
-                            backend_blocked_periods, longest_backend_us);
-                last_probe_report_us = now_us;
-                submitted_buffers = 0;
-                missing_buffers = 0;
-                backend_blocked_periods = 0;
-                longest_backend_us = 0;
-            }
-        }
 
         if (stop.stop_requested()) {
             break;
@@ -682,7 +569,6 @@ s32 PS4_SYSV_ABI sceAudioOutOutput(s32 handle, void* ptr) {
         return ORBIS_AUDIO_OUT_ERROR_NOT_OPENED;
     }
 
-    const u64 guest_start = GuestAudioProbe() ? Kernel::sceKernelGetProcessTime() : 0;
     s32 samples_sent = 0;
     {
         std::unique_lock lock{port->mutex};
@@ -700,11 +586,6 @@ s32 PS4_SYSV_ABI sceAudioOutOutput(s32 handle, void* ptr) {
         }
     }
 
-    if (guest_start != 0) {
-        RecordGuestAudioSubmit(port_id, port->buffer_frames, port->sample_rate,
-                               guest_start, Kernel::sceKernelGetProcessTime(),
-                               ptr != nullptr);
-    }
     return samples_sent;
 }
 
@@ -779,6 +660,7 @@ s32 PS4_SYSV_ABI sceAudioOutOutputs(OrbisAudioOutOutputParam* param, u32 num) {
             }
 
             ports.push_back(port);
+            locks.emplace_back(port->mutex);
 
             // Check consistent buffer size
             if (i == 0) {
@@ -790,14 +672,15 @@ s32 PS4_SYSV_ABI sceAudioOutOutputs(OrbisAudioOutOutputParam* param, u32 num) {
         }
     }
 
-    const u64 batch_start = GuestAudioProbe() ? Kernel::sceKernelGetProcessTime() : 0;
-    // This helper releases every other port mutex before waiting for a busy
-    // port, then reacquires all locks in stable order before atomic publication.
-    // The previous loop could block an output worker while waiting for a
-    // different port, delaying both guest producers and physical playback.
-    if (!WaitForAudioPortsReady(ports, locks)) {
-        LOG_DEBUG(Lib_AudioOut, "Port closed while waiting for drain");
-        return ORBIS_AUDIO_OUT_ERROR_NOT_OPENED;
+    // Wait for all ports to be ready
+    for (u32 i = 0; i < num; i++) {
+        ports[i]->output_cv.wait(locks[i],
+                                 [&] { return !ports[i]->output_ready || ports[i]->closing; });
+
+        if (ports[i]->closing) {
+            LOG_DEBUG(Lib_AudioOut, "Port closed while waiting for drain");
+            return ORBIS_AUDIO_OUT_ERROR_NOT_OPENED;
+        }
     }
 
     // Copy data to all ports
@@ -808,31 +691,6 @@ s32 PS4_SYSV_ABI sceAudioOutOutputs(OrbisAudioOutOutputParam* param, u32 num) {
         }
     }
 
-    locks.clear(); // Publish atomically; never format a log while holding port locks.
-    if (batch_start != 0) {
-        static std::atomic<u64> batch_calls{0};
-        static std::atomic<u64> multiport_calls{0};
-        static std::atomic<u64> long_waits{0};
-        static std::atomic<u64> max_wait_us{0};
-        const u64 n = batch_calls.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (num > 1)
-            multiport_calls.fetch_add(1, std::memory_order_relaxed);
-        const u64 now = Kernel::sceKernelGetProcessTime();
-        const u64 elapsed = now >= batch_start ? now - batch_start : 0;
-        const u64 rate = ports[0]->sample_rate;
-        const u64 period = rate != 0 ? (1000000ULL * buffer_frames + rate / 2) / rate : 0;
-        if (elapsed > period)
-            long_waits.fetch_add(1, std::memory_order_relaxed);
-        AudioProbeMax(max_wait_us, elapsed);
-        if ((n & (n - 1)) == 0 || (n & 511) == 0) {
-            LOG_WARNING(Lib_AudioOut,
-                        "AUDIO_BATCH_SYNC calls={} num={} multiport_calls={} "
-                        "long_waits={} max_wait_us={}",
-                        n, num, multiport_calls.load(std::memory_order_relaxed),
-                        long_waits.exchange(0, std::memory_order_relaxed),
-                        max_wait_us.exchange(0, std::memory_order_relaxed));
-        }
-    }
     return buffer_frames;
 }
 

@@ -363,10 +363,6 @@ s32 PS4_SYSV_ABI sceAudio3dInitialize(const s64 reserved) {
 
     if (const auto init_ret = AudioOut::sceAudioOutInit();
         init_ret < 0 && init_ret != ORBIS_AUDIO_OUT_ERROR_ALREADY_INIT) {
-        // Audio3D must not remain marked initialized when the real host
-        // audio backend could not be started. A subsequent retry otherwise
-        // incorrectly fails as "already initialized".
-        state.reset();
         return init_ret;
     }
 
@@ -739,12 +735,6 @@ s32 PS4_SYSV_ABI sceAudio3dPortAdvance(const OrbisAudio3dPortId port_id) {
     }
 
     auto& port = state->ports[port_id];
-    // ObjectSetAttributes/BedWrite and PortPush use port.mutex to protect
-    // PCM queues and the mixed queue. ProcessMixQueue consumes and erases
-    // those same containers, so the entire Advance check/mix/queue operation
-    // must be atomic with respect to those producers and the push consumer.
-    // There are no host AudioOut calls inside ProcessMixQueue.
-    std::scoped_lock lock{port.mutex};
 
     if (port.parameters.buffer_mode == OrbisAudio3dBufferMode::ORBIS_AUDIO3D_BUFFER_NO_ADVANCE) {
         LOG_ERROR(Lib_Audio3d, "port doesn't have advance capability");
