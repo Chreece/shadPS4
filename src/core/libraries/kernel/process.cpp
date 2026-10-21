@@ -4,6 +4,10 @@
 #include "common/elf_info.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
+#include "core/guest_cpu_selection.h"
+#if defined(__linux__) && defined(ARCH_X86_64)
+#include "core/cpu_id.h"
+#endif
 #include "core/file_sys/fs.h"
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/process.h"
@@ -62,22 +66,24 @@ s32 PS4_SYSV_ABI sceKernelGetCompiledSdkVersion(s32* ver) {
 }
 
 s32 PS4_SYSV_ABI sceKernelGetCpumode() {
-    LOG_DEBUG(Lib_Kernel, "called");
-    auto& attrs = Common::ElfInfo::Instance().GetPSFAttributes();
-    u32 is_cpu6 = attrs.six_cpu_mode.Value();
-    u32 is_cpu7 = attrs.seven_cpu_mode.Value();
-    if (is_cpu6 == 1 && is_cpu7 == 1) {
-        return 2;
-    }
-    if (is_cpu7 == 1) {
-        return 5;
-    }
-    return 0;
+    const auto& info = Common::ElfInfo::Instance();
+    const auto& attrs = info.GetPSFAttributes();
+    return static_cast<s32>(Core::GuestCpuModeFromPsf(
+        info.CompiledSdkVer(), Common::ElfInfo::FW_300,
+        attrs.six_cpu_mode.Value() != 0, attrs.seven_cpu_mode.Value() != 0));
+}
+
+u64 GetGuestCpuMask() {
+    return Core::GuestCpuMaskFromMode(static_cast<u32>(sceKernelGetCpumode()));
 }
 
 s32 PS4_SYSV_ABI sceKernelGetCurrentCpu() {
-    LOG_DEBUG(Lib_Kernel, "called");
+#if defined(__linux__) && defined(ARCH_X86_64)
+    return static_cast<s32>(Core::CurrentGuestCpu());
+#else
+    // CPU identity translation is currently implemented for Linux x86-64.
     return 0;
+#endif
 }
 
 void* PS4_SYSV_ABI sceKernelGetProcParam() {
@@ -85,8 +91,17 @@ void* PS4_SYSV_ABI sceKernelGetProcParam() {
     return linker->GetProcParam();
 }
 
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+__attribute__((force_align_arg_pointer))
+#endif
 s32 PS4_SYSV_ABI sceKernelLoadStartModule(const char* moduleFileName, u64 args, const void* argp,
                                           u32 flags, const void* pOpt, s32* pRes) {
+    if (moduleFileName == nullptr) {
+        return ORBIS_KERNEL_ERROR_EFAULT;
+    }
+    if (moduleFileName[0] == '\0') {
+        return ORBIS_KERNEL_ERROR_EINVAL;
+    }
     LOG_INFO(Lib_Kernel, "called filename = {}, args = {}", moduleFileName, args);
     ASSERT(flags == 0);
 
@@ -120,6 +135,15 @@ s32 PS4_SYSV_ABI sceKernelLoadStartModule(const char* moduleFileName, u64 args, 
     return ORBIS_KERNEL_ERROR_ENOENT;
 }
 
+s32 PS4_SYSV_ABI sceKernelStopUnloadModule(s32 handle, u64 args, const void* argp, u32 flags,
+                                           const void* pOpt, s32* pRes) {
+    LOG_ERROR(Lib_Kernel, "(STUBBED) handle = {:#x}", handle);
+    if (pRes) {
+        *pRes = 0;
+    }
+    return ORBIS_OK;
+}
+
 s32 PS4_SYSV_ABI sceKernelDlsym(s32 handle, const char* symbol, void** addrp) {
     auto* linker = Common::Singleton<Core::Linker>::Instance();
     auto* module = linker->GetModule(handle);
@@ -127,6 +151,11 @@ s32 PS4_SYSV_ABI sceKernelDlsym(s32 handle, const char* symbol, void** addrp) {
         return ORBIS_KERNEL_ERROR_ESRCH;
     }
     *addrp = module->FindByName(symbol);
+    if (*addrp == nullptr) {
+        *addrp = module->FindByNid(symbol);
+    }
+    LOG_DEBUG(Lib_Kernel, "handle = {}, symbol = '{}', resolved = {}", handle,
+              symbol ? symbol : "null", fmt::ptr(*addrp));
     if (*addrp == nullptr) {
         return ORBIS_KERNEL_ERROR_ESRCH;
     }
@@ -176,7 +205,9 @@ s32 PS4_SYSV_ABI sceKernelGetModuleInfoFromAddr(VAddr addr, s32 flags,
         return ORBIS_KERNEL_ERROR_EFAULT;
     }
 
-    LOG_INFO(Lib_Kernel, "called addr = {:#x}, flags = {:#x}", addr, flags);
+    LOG_DEBUG(Lib_Kernel,
+              "called addr = {:#x}, flags = {:#x}, caller = {:p}, info = {:p}, st_size = {:#x}",
+              addr, flags, __builtin_return_address(0), static_cast<void*>(info), info->st_size);
     auto* linker = Common::Singleton<Core::Linker>::Instance();
     auto* module = linker->FindByAddress(addr);
     if (!module) {
@@ -297,7 +328,15 @@ s32 PS4_SYSV_ABI exit(s32 status) {
     return 0;
 }
 
+s32 PS4_SYSV_ABI sceKernelSetProcessProperty(u32 prop_type, const void* prop_data, size_t prop_size,
+                                             u64 unk1, u64 unk2) {
+    LOG_ERROR(Lib_Kernel, "(STUBBED) type = {:#x}, size = {}", prop_type, prop_size);
+    return ORBIS_OK;
+}
+
 void RegisterProcess(Core::Loader::SymbolsResolver* sym) {
+    LIB_FUNCTION("-W4xI5aVI8w", "libkernel", 1, "libkernel", sceKernelSetProcessProperty);
+    LIB_FUNCTION("-W4xI5aVI8w", "libkernel_psmkit", 1, "libkernel", sceKernelSetProcessProperty);
     LIB_FUNCTION("xeu-pV8wkKs", "libkernel", 1, "libkernel", sceKernelIsInSandbox);
     LIB_FUNCTION("WB66evu8bsU", "libkernel", 1, "libkernel", sceKernelGetCompiledSdkVersion);
     LIB_FUNCTION("WslcK1FQcGI", "libkernel", 1, "libkernel", sceKernelIsNeoMode);
@@ -311,6 +350,7 @@ void RegisterProcess(Core::Loader::SymbolsResolver* sym) {
     LIB_FUNCTION("g0VTBxfJyu0", "libkernel", 1, "libkernel", sceKernelGetCurrentCpu);
     LIB_FUNCTION("959qrazPIrg", "libkernel", 1, "libkernel", sceKernelGetProcParam);
     LIB_FUNCTION("wzvqT4UqKX8", "libkernel", 1, "libkernel", sceKernelLoadStartModule);
+    LIB_FUNCTION("QKd0qM58Qes", "libkernel", 1, "libkernel", sceKernelStopUnloadModule);
     LIB_FUNCTION("LwG8g3niqwA", "libkernel", 1, "libkernel", sceKernelDlsym);
     LIB_FUNCTION("RpQJJVKTiFM", "libkernel", 1, "libkernel", sceKernelGetModuleInfoForUnwind);
     LIB_FUNCTION("f7KBOafysXo", "libkernel", 1, "libkernel", sceKernelGetModuleInfoFromAddr);

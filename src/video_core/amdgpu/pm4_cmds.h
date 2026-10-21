@@ -951,6 +951,8 @@ struct PM4CmdReleaseMem {
 
     void SignalFence(auto&& signal_irq, auto&& gds_to_mem) const {
         switch (data_sel.Value()) {
+        case DataSelect::None:
+            break;
         case DataSelect::Data32Low: {
             *Address<u32*>() = DataDWord();
             break;
@@ -977,19 +979,21 @@ struct PM4CmdReleaseMem {
         }
 
         switch (int_sel.Value()) {
-        case InterruptSelect::None: {
-            // No interrupt
+        case InterruptSelect::None:
             break;
-        }
-        case InterruptSelect::IrqUndocumented:
-            [[fallthrough]];
-        case InterruptSelect::IrqWhenWriteConfirm: {
+        case InterruptSelect::IrqOnly:
+            ASSERT(data_sel == DataSelect::None);
             signal_irq();
             break;
-        }
-        default: {
+        case InterruptSelect::IrqUndocumented:
+            // Completion-only notification for RELEASE_MEM data writes.
+            // The memory operation above must complete without a CPU IRQ.
+            break;
+        case InterruptSelect::IrqWhenWriteConfirm:
+            signal_irq();
+            break;
+        default:
             UNREACHABLE();
-        }
         }
     }
 };
@@ -1063,6 +1067,33 @@ struct PM4CmdDrawIndirect {
         BitField<0, 16, u32> start_inst_loc; ///< Offset where the CP will write the
                                              ///< StartInstanceLocation it fetched from memory
     };
+    u32 draw_initiator; ///< Draw Initiator Register
+};
+
+struct PM4CmdDrawIndirectCountMulti {
+    PM4Type3Header header; ///< header
+    u32 data_offset;       ///< Byte aligned offset where the required data structure starts
+    union {
+        u32 dw2;
+        BitField<0, 16, u32> base_vtx_loc; ///< Offset where the CP will write the
+                                           ///< BaseVertexLocation it fetched from memory
+    };
+    union {
+        u32 dw3;
+        BitField<0, 16, u32> start_inst_loc; ///< Offset where the CP will write the
+                                             ///< StartInstanceLocation it fetched from memory
+    };
+    union {
+        u32 dw4;
+        BitField<0, 16, u32> draw_index_loc; ///< register offset to write the Draw Index count
+        BitField<30, 1, u32>
+            count_indirect_enable; ///< Indicates the data structure count is in memory
+        BitField<31, 1, u32>
+            draw_index_enable; ///< Enables writing of Draw Index count to DRAW_INDEX_LOC
+    };
+    u32 count;          ///< Count of data structures to loop through before going to next packet
+    u64 count_addr;     ///< DWord aligned Address[31:2]; Valid if countIndirectEnable is set
+    u32 stride;         ///< Stride in memory from one data structure to the next
     u32 draw_initiator; ///< Draw Initiator Register
 };
 

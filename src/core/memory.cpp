@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include <shared_mutex>
-
 #include "common/alignment.h"
 #include "common/assert.h"
 #include "common/debug.h"
@@ -13,7 +11,6 @@
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/process.h"
 #include "core/memory.h"
-#include "core/memory_access.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
 namespace Core {
@@ -100,11 +97,6 @@ void MemoryManager::SetupMemoryRegions(u64 flexible_size, bool use_extended_mem1
 
     LOG_INFO(Kernel_Vmm, "Configured memory regions: flexible size = {:#x}, direct size = {:#x}",
              total_flexible_size, total_direct_size);
-}
-
-bool MemoryManager::IsAccessibleRange(VAddr address, u64 size, MemoryProt required) {
-    std::shared_lock lk{mutex};
-    return Detail::IsAccessibleRange(vma_map, address, size, static_cast<u32>(required));
 }
 
 u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
@@ -201,6 +193,7 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
             u8* backing = impl.BackingBase() + phys_handle->second.base + start_in_dma;
             u64 copy_size = std::min<u64>(size, phys_handle->second.size - start_in_dma);
             memcpy(backing, data, copy_size);
+            data = static_cast<const u8*>(data) + copy_size;
             size -= copy_size;
         }
     }
@@ -342,7 +335,9 @@ s32 MemoryManager::Free(PAddr phys_addr, u64 size, bool is_checked) {
                 const u64 phys_offset =
                     std::max<u64>(phys_mapping.base, phys_addr) - phys_mapping.base;
                 const VAddr addr_in_vma = mapping.base + offset_in_vma + phys_offset;
-                const u64 unmap_size = std::min<u64>(phys_mapping.size - phys_offset, size);
+                const u64 unmap_size =
+                    std::min<u64>(phys_mapping.base + phys_mapping.size, phys_addr + size) -
+                    (phys_mapping.base + phys_offset);
 
                 // Unmapping might erase from vma_map. We can't do it here.
                 remove_list.emplace_back(addr_in_vma, unmap_size);
@@ -1128,7 +1123,25 @@ s32 MemoryManager::Protect(VAddr addr, u64 size, MemoryProt prot) {
 
     // Ensure the range to modify is valid
     std::scoped_lock lk{mutex, unmap_mutex};
-    ASSERT_MSG(IsValidMapping(addr, size), "Attempted to access invalid address {:#x}", addr);
+
+    const VAddr vbase = impl.SystemManagedVirtualBase();
+    const VAddr vend = vbase + impl.SystemManagedVirtualSize();
+
+    // In the PS4 kernel, invalid pages are ignored and only mapped pages in range are protected.
+    if (addr < vbase) {
+        const u64 skip = vbase - addr;
+        if (skip >= size) {
+            return ORBIS_OK;
+        }
+        addr += skip;
+        size -= skip;
+    }
+    if (addr >= vend) {
+        return ORBIS_OK;
+    }
+    if (addr + size > vend) {
+        size = vend - addr;
+    }
 
     // Appropriately restrict flags.
     constexpr static MemoryProt flag_mask =
@@ -1139,15 +1152,24 @@ s32 MemoryManager::Protect(VAddr addr, u64 size, MemoryProt prot) {
     s64 protected_bytes = 0;
     while (protected_bytes < size) {
         auto it = FindVMA(addr + protected_bytes);
+        if (it == vma_map.end()) {
+            break;
+        }
         auto& vma_base = it->second;
         if (vma_base.base > addr + protected_bytes) {
             // Account for potential gaps in memory map.
             protected_bytes += vma_base.base - (addr + protected_bytes);
+            if (protected_bytes >= size) {
+                break;
+            }
         }
         auto result = ProtectBytes(addr + protected_bytes, vma_base, size - protected_bytes, prot);
         if (result < 0) {
             // ProtectBytes returned an error, return it
             return result;
+        }
+        if (result == 0) {
+            break;
         }
         protected_bytes += result;
     }

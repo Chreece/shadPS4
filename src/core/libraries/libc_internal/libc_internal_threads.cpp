@@ -3,6 +3,7 @@
 
 #include "core/libraries/kernel/threads.h"
 #include "core/libraries/libc_internal/libc_internal_threads.h"
+#include "core/libraries/libc_internal/cxa_guard_registry.h"
 #include "core/libraries/libs.h"
 
 namespace Libraries::LibcInternal {
@@ -55,7 +56,26 @@ s32 PS4_SYSV_ABI internal__Mtxdst(Libraries::Kernel::PthreadMutexT* mtx) {
     return result != 0;
 }
 
+static CxaGuard::Registry g_cxa_guard_registry;
+
+s32 PS4_SYSV_ABI internal_cxa_guard_acquire(u64* guard) {
+    return g_cxa_guard_registry.Acquire(guard);
+}
+
+void PS4_SYSV_ABI internal_cxa_guard_release(u64* guard) {
+    g_cxa_guard_registry.Release(guard);
+}
+
+void PS4_SYSV_ABI internal_cxa_guard_abort(u64* guard) {
+    g_cxa_guard_registry.Abort(guard);
+}
+
 void RegisterlibSceLibcInternalThreads(Core::Loader::SymbolsResolver* sym) {
+    LIB_FUNCTION("3GPpjQdAMTw", "libSceLibcInternal", 1, "libSceLibcInternal", internal_cxa_guard_acquire);
+    LIB_FUNCTION("9rAeANT2tyE", "libSceLibcInternal", 1, "libSceLibcInternal", internal_cxa_guard_release);
+    LIB_FUNCTION("2emaaluWzUw", "libSceLibcInternal", 1, "libSceLibcInternal", internal_cxa_guard_abort);
+
+
     LIB_FUNCTION("z7STeF6abuU", "libSceLibcInternal", 1, "libSceLibcInternal", internal__Mtxinit);
     LIB_FUNCTION("pE4Ot3CffW0", "libSceLibcInternal", 1, "libSceLibcInternal", internal__Mtxlock);
     LIB_FUNCTION("cMwgSSmpE5o", "libSceLibcInternal", 1, "libSceLibcInternal", internal__Mtxunlock);
