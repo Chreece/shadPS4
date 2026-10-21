@@ -4,6 +4,10 @@
 #include "common/elf_info.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
+#include "core/guest_cpu_selection.h"
+#if defined(__linux__) && defined(ARCH_X86_64)
+#include "core/cpu_id.h"
+#endif
 #include "core/file_sys/fs.h"
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/process.h"
@@ -62,22 +66,24 @@ s32 PS4_SYSV_ABI sceKernelGetCompiledSdkVersion(s32* ver) {
 }
 
 s32 PS4_SYSV_ABI sceKernelGetCpumode() {
-    LOG_DEBUG(Lib_Kernel, "called");
-    auto& attrs = Common::ElfInfo::Instance().GetPSFAttributes();
-    u32 is_cpu6 = attrs.six_cpu_mode.Value();
-    u32 is_cpu7 = attrs.seven_cpu_mode.Value();
-    if (is_cpu6 == 1 && is_cpu7 == 1) {
-        return 2;
-    }
-    if (is_cpu7 == 1) {
-        return 5;
-    }
-    return 0;
+    const auto& info = Common::ElfInfo::Instance();
+    const auto& attrs = info.GetPSFAttributes();
+    return static_cast<s32>(Core::GuestCpuModeFromPsf(
+        info.CompiledSdkVer(), Common::ElfInfo::FW_300,
+        attrs.six_cpu_mode.Value() != 0, attrs.seven_cpu_mode.Value() != 0));
+}
+
+u64 GetGuestCpuMask() {
+    return Core::GuestCpuMaskFromMode(static_cast<u32>(sceKernelGetCpumode()));
 }
 
 s32 PS4_SYSV_ABI sceKernelGetCurrentCpu() {
-    LOG_DEBUG(Lib_Kernel, "called");
+#if defined(__linux__) && defined(ARCH_X86_64)
+    return static_cast<s32>(Core::CurrentGuestCpu());
+#else
+    // CPU identity translation is currently implemented for Linux x86-64.
     return 0;
+#endif
 }
 
 void* PS4_SYSV_ABI sceKernelGetProcParam() {
@@ -85,8 +91,17 @@ void* PS4_SYSV_ABI sceKernelGetProcParam() {
     return linker->GetProcParam();
 }
 
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+__attribute__((force_align_arg_pointer))
+#endif
 s32 PS4_SYSV_ABI sceKernelLoadStartModule(const char* moduleFileName, u64 args, const void* argp,
                                           u32 flags, const void* pOpt, s32* pRes) {
+    if (moduleFileName == nullptr) {
+        return ORBIS_KERNEL_ERROR_EFAULT;
+    }
+    if (moduleFileName[0] == '\0') {
+        return ORBIS_KERNEL_ERROR_EINVAL;
+    }
     LOG_INFO(Lib_Kernel, "called filename = {}, args = {}", moduleFileName, args);
     ASSERT(flags == 0);
 
