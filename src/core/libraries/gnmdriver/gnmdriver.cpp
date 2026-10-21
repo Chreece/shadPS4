@@ -25,8 +25,10 @@
 #include "video_core/renderer_vulkan/vk_presenter.h"
 
 extern Frontend::WindowSDL* g_window;
-std::unique_ptr<Vulkan::Presenter> presenter;
+// Statically destroyed in reverse order: keep Liverpool alive while Presenter
+// destroys Rasterizer and drains all pending userfaultfd invalidations.
 std::unique_ptr<AmdGpu::Liverpool> liverpool;
+std::unique_ptr<Vulkan::Presenter> presenter;
 
 namespace Libraries::GnmDriver {
 
