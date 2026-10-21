@@ -1,0 +1,36 @@
+name: Resource correction source bundle
+on:
+  push:
+    branches: ['fix/shader-resource-ranges-20261021']
+    paths: ['.github/workflows/resource-correction-source.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af6837
+        with:
+          ref: 94ed29b7c5767718ead87164558d6ec7523bcc9a
+          submodules: recursive
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Package public source and pinned dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 94ed29b7c5767718ead87164558d6ec7523bcc9a
+          git submodule status --recursive > "$RUNNER_TEMP/resource-source-submodules.txt"
+          tar --exclude=.git --exclude=.github --exclude='*.pkg' --exclude='*.pup' \
+            -czf "$RUNNER_TEMP/resource-source-94ed29b7.tar.gz" .
+          sha256sum "$RUNNER_TEMP/resource-source-94ed29b7.tar.gz" > "$RUNNER_TEMP/resource-source.sha256"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: resource-source-94ed29b7
+          path: |
+            ${{ runner.temp }}/resource-source-94ed29b7.tar.gz
+            ${{ runner.temp }}/resource-source-submodules.txt
+            ${{ runner.temp }}/resource-source.sha256
+          retention-days: 2
+          if-no-files-found: error
