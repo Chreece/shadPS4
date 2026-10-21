@@ -188,22 +188,7 @@ Id EmitBitFieldInsert32(EmitContext& ctx, Id base, Id insert, Id offset, Id coun
 }
 
 Id EmitBitFieldInsert64(EmitContext& ctx, Id base, Id insert, Id offset, Id count) {
-    // Without VK_KHR_maintenance9, OpBitFieldInsert requires a 32-bit base.
-    // Use defined 64-bit shifts and masks, including the count=64 boundary.
-    const Id shift_mask{ctx.ConstU32(63u)};
-    const Id safe_count{ctx.OpBitwiseAnd(ctx.U32[1], count, shift_mask)};
-    const Id safe_offset{ctx.OpBitwiseAnd(ctx.U32[1], offset, shift_mask)};
-    const Id all_bits{ctx.OpNot(ctx.U64, ctx.u64_zero_value)};
-    const Id partial_mask{ctx.OpISub(
-        ctx.U64, ctx.OpShiftLeftLogical(ctx.U64, ctx.u64_one_value, safe_count),
-        ctx.u64_one_value)};
-    const Id full_width{ctx.OpIEqual(ctx.U1[1], count, ctx.ConstU32(64u))};
-    const Id low_mask{ctx.OpSelect(ctx.U64, full_width, all_bits, partial_mask)};
-    const Id field_mask{ctx.OpShiftLeftLogical(ctx.U64, low_mask, safe_offset)};
-    const Id preserved{ctx.OpBitwiseAnd(ctx.U64, base, ctx.OpNot(ctx.U64, field_mask))};
-    const Id replacement{ctx.OpBitwiseAnd(
-        ctx.U64, ctx.OpShiftLeftLogical(ctx.U64, insert, safe_offset), field_mask)};
-    return ctx.OpBitwiseOr(ctx.U64, preserved, replacement);
+    return ctx.OpBitFieldInsert(ctx.U64, base, insert, offset, count);
 }
 
 Id EmitBitFieldSExtract(EmitContext& ctx, IR::Inst* inst, Id base, Id offset, Id count) {

@@ -951,8 +951,6 @@ struct PM4CmdReleaseMem {
 
     void SignalFence(auto&& signal_irq, auto&& gds_to_mem) const {
         switch (data_sel.Value()) {
-        case DataSelect::None:
-            break;
         case DataSelect::Data32Low: {
             *Address<u32*>() = DataDWord();
             break;
@@ -979,21 +977,19 @@ struct PM4CmdReleaseMem {
         }
 
         switch (int_sel.Value()) {
-        case InterruptSelect::None:
+        case InterruptSelect::None: {
+            // No interrupt
             break;
-        case InterruptSelect::IrqOnly:
-            ASSERT(data_sel == DataSelect::None);
-            signal_irq();
-            break;
+        }
         case InterruptSelect::IrqUndocumented:
-            // Completion-only notification for RELEASE_MEM data writes.
-            // The memory operation above must complete without a CPU IRQ.
-            break;
-        case InterruptSelect::IrqWhenWriteConfirm:
+            [[fallthrough]];
+        case InterruptSelect::IrqWhenWriteConfirm: {
             signal_irq();
             break;
-        default:
+        }
+        default: {
             UNREACHABLE();
+        }
         }
     }
 };

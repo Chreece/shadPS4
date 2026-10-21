@@ -18,8 +18,6 @@
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/passes/srt.h"
-#include "shader_recompiler/ir/passes/srt_offset_preflight.h"
-#include "shader_recompiler/ir/passes/srt_offset_codegen.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/ir/srt_gvn_table.h"
@@ -171,10 +169,6 @@ struct PassInfo {
 
     // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
-    // Preserve control-flow-dependent pointer reads when the native SRT JIT
-    // cannot implement their offsets. Do not emit a partial native walker.
-    u32 dynamic_offsets_deferred{};
-    std::unordered_map<const IR::Inst*, bool> offset_support_cache;
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
         auto it = pointer_uses.find(inst);
@@ -300,10 +294,12 @@ static bool EmitComputeOffsetShiftLeftLogical32(Xbyak::CodeGenerator& c, Xbyak::
                                                 PassInfo& pass_info, IR::Inst* inst) {
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
+        // The left operand is a constant; the right operand is the runtime
+        // shift count. Preserve that count before loading the constant.
         ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
-        // The computed register is the runtime shift COUNT, not the left operand.
-        // Preserve its value before loading the constant left operand.
-        SrtCodegen::EmitConstantLeftShiftByDynamicCount(c, reg, inst->Arg(0).U32());
+        c.mov(ecx, reg);
+        c.mov(reg, inst->Arg(0).U32());
+        c.shl(reg, cl);
     } else if (inst->Arg(1).IsImmediate()) {
         ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
         c.shl(reg, inst->Arg(1).U32());
@@ -453,7 +449,8 @@ static bool EmitComputeOffsetUMax32(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, P
 
 static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
                                               PassInfo& pass_info, IR::Inst* inst) {
-    // We asume that the count is always less than 32, Is this correct?
+    // SPIR-V-style bitfield extraction: extract bits [offset, offset+width).
+    // In particular width=32 denotes the full shifted word, not width=0.
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
         c.mov(reg, inst->Arg(0).U32());
@@ -472,21 +469,30 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
     }
     if (inst->Arg(2).IsImmediate()) {
         if (in_stack) {
+            // The dynamic shift updated the low word on the stack. Pop the
+            // shifted value, not the original pre-shift register value.
             c.pop(reg.cvt64());
         }
         const u32 width = inst->Arg(2).U32();
-        // Bitfield width 32 preserves all bits. Never shift 1u by 32.
         if (width < 32) {
-            c.and_(reg, width == 0 ? 0u : (1u << width) - 1u);
+            c.and_(reg, (1U << width) - 1);
         }
     } else {
         if (!in_stack) {
             c.push(reg.cvt64());
         }
         POP_ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(2)));
-        // x86 variable shift counts wrap mod 32, but BFE widths >= 32
-        // require the full 32-bit mask, not a wrapped narrow mask.
-        SrtCodegen::EmitLowBitMask(c, reg, edx);
+        c.mov(ecx, reg);
+        // x86 shifts mask CL to five bits. Width 32 would otherwise build
+        // a zero mask, so keep all bits when width is at least 32.
+        Xbyak::Label full_width;
+        c.mov(edx, 0xffffffffu);
+        c.cmp(ecx, 32);
+        c.jae(full_width);
+        c.mov(edx, 1);
+        c.shl(edx, cl);
+        c.dec(edx);
+        c.L(full_width);
         c.and_(dword[rsp], edx);
         c.pop(reg.cvt64());
     }
@@ -575,17 +581,11 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
 }
 
 static inline bool PushPtr(Xbyak::CodeGenerator& c, PassInfo& pass_info, const IR::Value& off_dw) {
-    // Failed offset generation must not leave an unmatched push or a partially
-    // emitted expression in the SRT walker's executable buffer.
-    const size_t checkpoint = c.getSize();
     c.push(rdi);
     if (off_dw.IsImmediate()) {
         c.mov(rdi, ptr[rdi + (off_dw.U32() << 2)]);
     } else {
-        if (!ComputeOffset(c, r10d, pass_info, off_dw)) {
-            c.setSize(checkpoint);
-            return false;
-        }
+        ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));
         c.shl(r10d, 2);
         c.mov(r10d, r10d);
         c.mov(rdi, ptr[rdi + r10]);
@@ -607,13 +607,6 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         return;
     }
 
-    // Native SRT pointer codegen must be structurally legal before it emits
-    // any x86 instructions. Unsupported expressions remain on the guest
-    // resource path rather than creating an incomplete flattened copy.
-    if (!CanLowerSrtOffsetStructurally(off_dw, pass_info.offset_support_cache)) {
-        ++pass_info.dynamic_offsets_deferred;
-        return;
-    }
     if (!PushPtr(c, pass_info, off_dw)) {
         LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
         return;
@@ -630,13 +623,7 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         if (src_off_dw.IsImmediate()) {
             c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
         } else {
-            if (!CanLowerSrtOffsetStructurally(src_off_dw, pass_info.offset_support_cache)) {
-                ++pass_info.dynamic_offsets_deferred;
-                continue;
-            }
-            const size_t checkpoint = c.getSize();
             if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
-                c.setSize(checkpoint);
                 LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
                 continue;
             }
@@ -696,11 +683,6 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
     }
 
     info.srt_info.flattened_bufsize_dw = pass_info.dst_off_dw;
-    if (pass_info.dynamic_offsets_deferred != 0) {
-        LOG_DEBUG(Render_Recompiler,
-                  "SRT unsupported dynamic offsets retained for guest-memory evaluation: {} in shader {:#x}",
-                  pass_info.dynamic_offsets_deferred, info.pgm_hash);
-    }
 }
 
 static bool IsReadConstSource(const IR::Value base) {
