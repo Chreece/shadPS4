@@ -135,6 +135,9 @@ def job_class(native, parent):
             print('SRT_DEPENDENCY_DELTA=APPLIED existing_fixes=PRESERVED',flush=True)
 
         def verify_native_library(self):
+            # prepare() intentionally skips the old patch stack, which used to
+            # create this directory for the inherited Sirit emitter checks.
+            (self.run/'native-tests').mkdir(exist_ok=True)
             # Execute real generated machine code from the exact checked-out source.
             result=self.command([sys.executable,'-B',PACKAGE/'verify_srt_dependencies.py',
                          '--compiler',self.compiler,'--output',self.run/'srt-native-tests',
