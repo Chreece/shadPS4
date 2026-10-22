@@ -1,0 +1,38 @@
+name: Offline SPIR-V validation tools
+on:
+  push:
+    branches: [diagnostics/offline-spirv-validator-20261022]
+    paths: [.github/workflows/offline-spirv-validator.yml]
+permissions:
+  contents: read
+jobs:
+  tools:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Build exact upstream validation tools
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git init -q tools
+          git -C tools -c http.version=HTTP/1.1 fetch -4 --depth=1 https://github.com/KhronosGroup/SPIRV-Tools.git 7651d9234622041b3f1b09e5c684c7c6eb352d08
+          git -C tools checkout -q --detach FETCH_HEAD
+          test "$(git -C tools rev-parse HEAD)" = 7651d9234622041b3f1b09e5c684c7c6eb352d08
+          git init -q headers
+          git -C headers -c http.version=HTTP/1.1 fetch -4 --depth=1 https://github.com/KhronosGroup/SPIRV-Headers.git 86f980c731e62ae4eaf383d320449d71687936bf
+          git -C headers checkout -q --detach FETCH_HEAD
+          test "$(git -C headers rev-parse HEAD)" = 86f980c731e62ae4eaf383d320449d71687936bf
+          cmake -S tools -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSPIRV-Headers_SOURCE_DIR="$PWD/headers" -DSPIRV_SKIP_TESTS=ON -DSPIRV_SKIP_EXECUTABLES=OFF -DSPIRV_BUILD_FUZZER=OFF -DSPIRV_TOOLS_USE_MIMALLOC=OFF -DSPIRV_WERROR=OFF
+          cmake --build build --target spirv-val spirv-dis --parallel 2
+          mkdir validation-tools
+          cp build/tools/spirv-val build/tools/spirv-dis validation-tools/
+          build/tools/spirv-val --version > validation-tools/version.txt
+          printf 'SPIRV_TOOLS=%s\nSPIRV_HEADERS=%s\n' "$(git -C tools rev-parse HEAD)" "$(git -C headers rev-parse HEAD)" > validation-tools/provenance.txt
+          (cd validation-tools && sha256sum spirv-val spirv-dis > SHA256SUMS)
+      - name: Preserve tools only, no game data
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: offline-spirv-tools-7651d923
+          path: validation-tools/
+          retention-days: 2
+          if-no-files-found: error
