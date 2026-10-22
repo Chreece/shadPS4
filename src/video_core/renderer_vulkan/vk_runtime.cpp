@@ -78,18 +78,24 @@ static std::pair<u32, u32> SanitizeCopyLayers(const VideoCore::ImageInfo& src_in
     return std::make_pair(src_layers, dst_layers);
 }
 
-static u32 BufferImageCopySize(const vk::BufferImageCopy& copy, const vk::Format pixel_format) {
-    const u32 row_length = copy.bufferRowLength ? copy.bufferRowLength : copy.imageExtent.width;
-    const u32 height = copy.bufferImageHeight ? copy.bufferImageHeight : copy.imageExtent.height;
+static u64 BufferImageCopySize(const vk::BufferImageCopy& copy, const vk::Format pixel_format) {
+    // bufferRowLength/bufferImageHeight are texel dimensions, not block counts.
+    // An implicit pitch can end in a partial compressed block; floor division
+    // silently underestimates the transfer range and misses buffer hazards.
+    const u64 row_length = copy.bufferRowLength ? copy.bufferRowLength : copy.imageExtent.width;
+    const u64 height = copy.bufferImageHeight ? copy.bufferImageHeight : copy.imageExtent.height;
 
     const auto block = vk::blockExtent(pixel_format);
-    const u32 block_size = vk::blockSize(pixel_format);
-    const u32 row_pitch = (row_length / block[0]) * block_size;
-    const u32 slice_pitch = (height / block[1]) * row_pitch;
+    const u64 block_size = vk::blockSize(pixel_format);
+    const u64 row_pitch = ((row_length + block[0] - 1) / block[0]) * block_size;
+    const u64 slice_pitch = ((height + block[1] - 1) / block[1]) * row_pitch;
 
-    const u32 width_in_blocks = (copy.imageExtent.width + block[0] - 1) / block[0];
-    const u32 height_in_blocks = (copy.imageExtent.height + block[1] - 1) / block[1];
-    const u32 num_slices = copy.imageExtent.depth * copy.imageSubresource.layerCount;
+    const u64 width_in_blocks = (u64{copy.imageExtent.width} + block[0] - 1) / block[0];
+    const u64 height_in_blocks = (u64{copy.imageExtent.height} + block[1] - 1) / block[1];
+    const u64 num_slices = ((u64{copy.imageExtent.depth} + block[2] - 1) / block[2]) *
+                           copy.imageSubresource.layerCount;
+    ASSERT_MSG(num_slices != 0 && height_in_blocks != 0 && width_in_blocks != 0,
+               "Buffer-image copy cannot have an empty region");
 
     return (num_slices - 1) * slice_pitch + (height_in_blocks - 1) * row_pitch +
            width_in_blocks * block_size;
