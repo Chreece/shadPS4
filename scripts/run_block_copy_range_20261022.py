@@ -58,7 +58,7 @@ def class_factory(native,parent,validator):
             dest.write_bytes(fixed)
             self.git('update-ref','refs/heads/local/copy-range-'+revision[:12],revision)
             self.revision=revision
-            self.report.update(revision=revision,tree=tree,
+            self.report.update(revision=revision,tree=tree,source_parent=old_revision,
                 manifest_sha256=native.base.digest(manifest_file),
                 block_copy='CEIL_BLOCK_PITCH_AND_U64')
             test=self.git('show',TEST+':scripts/validate_block_copy_range_20261022.py')
