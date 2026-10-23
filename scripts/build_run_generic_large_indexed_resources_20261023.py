@@ -627,6 +627,10 @@ def apply_patch_commit(idx,sha):
         raise RuntimeError('PATCH_COMMIT_MISSING='+sha)
 
     e=env({'GIT_INDEX_FILE':str(idx)})
+    pre_tree=git('write-tree',e=e).decode().strip()
+
+    def restore():
+        git('read-tree',pre_tree,e=e)
 
     def attempt(patch):
         if not patch.strip():
@@ -636,33 +640,40 @@ def apply_patch_commit(idx,sha):
              'apply','--3way','--cached','--whitespace=nowarn','-'],
             env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
 
+    def reverse_check(patch):
+        return subprocess.run(
+            ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
+             'apply','--reverse','--check','--cached','--whitespace=nowarn','-'],
+            env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
+
     patch=_patch_for_commit(sha)
     q=attempt(patch)
     if q is None or q.returncode==0:
         return
 
-    reverse=subprocess.run(
-        ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
-         'apply','--reverse','--check','--cached','--whitespace=nowarn','-'],
-        env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
+    err=(q.stderr or b'').decode(errors='replace')
+    restore()
+
+    # Idempotency: a replayed commit may already be represented by the
+    # verified parent or an earlier generic transform.
+    reverse=reverse_check(patch)
     if reverse.returncode==0:
         return
 
-    err=(q.stderr or b'').decode(errors='replace')
     cache_path='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
     if cache_path in err and _pure_cache_version_patch(sha):
-        # A previous generic fix may already have changed the schema number.
-        # Roll back this failed 3-way attempt, then replay every substantive
-        # path from the commit while leaving final cache invalidation to the
-        # composer below.
-        git('reset','--mixed',e=e,check=True)
-        git('read-tree',':',e=e,check=False)
-        # Restore alternate index from its current tree after failed apply.
-        # git apply --3way --cached leaves unmerged entries, so clear only
-        # those by re-reading HEAD is unsafe. Instead remove unmerged stages
-        # via checkout-index is unavailable for an alternate in-memory tree.
-        # Reconstruct from the pre-attempt tree captured below on retry.
-        raise RuntimeError('CACHE_VERSION_RETRY_REQUIRES_INDEX_SNAPSHOT='+sha)
+        reduced=_patch_for_commit(sha,skip_cache_version=True)
+        q2=attempt(reduced)
+        if q2 is None or q2.returncode==0:
+            return
+        err2=(q2.stderr or b'').decode(errors='replace')
+        restore()
+        reverse2=reverse_check(reduced)
+        if reverse2.returncode==0:
+            return
+        raise RuntimeError(
+            'GENERIC_PATCH_APPLY_FAILED_AFTER_CACHE_VERSION_SKIP='+sha+' '+err2[-4000:]
+        )
 
     raise RuntimeError('GENERIC_PATCH_APPLY_FAILED='+sha+' '+err[-4000:])
 
