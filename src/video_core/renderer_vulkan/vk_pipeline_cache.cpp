@@ -750,9 +750,12 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
         // for this exact module. Mip-indexed images can consume >1 slot,
         // unlike Info::AddBindings' ordinary images.size() accounting.
         binding.buffer += info.buffers.size();
-        binding.unified += info.buffers.size() + info.samplers.size();
+        binding.unified += info.buffers.size();
         for (const auto& image : info.images) {
             binding.unified += image.NumBindings(info);
+        }
+        for (const auto& sampler : info.samplers) {
+            binding.unified += sampler.NumBindings(info);
         }
         if (auto& fetch = saved.spec.fetch_shader_data; !fetch.Empty()) {
             fetch_shader = &fetch;
