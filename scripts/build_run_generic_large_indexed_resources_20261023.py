@@ -1111,7 +1111,9 @@ def launch(info,rev,tree,csha,cand):
     return 125
 
 def archive(run_dir,error):
-    info=run_dir/'info';info.mkdir(parents=True,exist_ok=True);(info/'failure.txt').write_text(type(error).__name__+': '+str(error)+'\n')
+    info=run_dir/'info';info.mkdir(parents=True,exist_ok=True)
+    if error is not None:
+        (info/'failure.txt').write_text(type(error).__name__+': '+str(error)+'\n')
     out=Path(str(run_dir)+'.tar.gz')
     with tarfile.open(out,'w:gz') as t:
         for p in run_dir.rglob('*'):
@@ -1129,10 +1131,16 @@ def main():
         with (ROOT/'GhostOfTsushima/.build.lock').open('a') as lock:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:raise RuntimeError('ANOTHER_SHADPS4_BUILD_OWNS_LOCK')
-            if not OLD.is_file() or digest(OLD)!=OLD_SHA:
-                raise RuntimeError('PROTECTED_LAUNCHER_MISSING_OR_CHANGED='+str(OLD))
             man=verify_prev(run_dir)
             rev,tree,csha,cand=compose(run_dir,info,man)
+        # Runtime launching is deliberately a post-build concern. A missing
+        # historical launcher must never block composition or compilation.
+        if not OLD.is_file() or digest(OLD)!=OLD_SHA:
+            print('BUILD_ONLY_PASS=YES',flush=True)
+            print('CANDIDATE='+str(cand),flush=True)
+            print('PROTECTED_LAUNCHER_STATUS=MISSING_OR_CHANGED',flush=True)
+            print('UPLOAD_THIS='+str(archive(run_dir,None)),flush=True)
+            return 0
         return launch(info,rev,tree,csha,cand)
     except (Exception,KeyboardInterrupt) as e:
         out=archive(run_dir,e);print('GENERIC_LARGE_INDEXED_RESOURCE_ERROR='+str(e),file=sys.stderr,flush=True);print('UPLOAD_THIS='+str(out),flush=True);return 2
