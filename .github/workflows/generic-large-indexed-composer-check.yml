@@ -156,6 +156,8 @@ jobs:
           assert "def _pure_cache_version_patch(" not in s
           assert "PATCH_PATHS" not in s
           assert "replayed_generic_commits':[]" in s
+          assert "CACHE_VERSION_NOT_SINGLE_BUMP" in s
+          assert "cache_versions_single_bump" in s
           assert "GENERIC_BASE_TRANSFORM_MISSING" in s
           assert "INTEGER_SAMPLER_EXTRA_TRANSFORM_MISSING" in s
           assert "for p in EXTRA_FILES:" in s
