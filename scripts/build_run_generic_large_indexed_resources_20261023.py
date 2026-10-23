@@ -1083,16 +1083,35 @@ def fresh_paths(rev):
             shutil.rmtree(p)
     return work,build
 
-def add_fresh_source(work,rev):
-    # Use an independent local clone instead of a linked worktree. This keeps
-    # the user's GoT checkout, index, submodule worktrees and config completely
-    # outside the build source tree.
+def add_fresh_source(work,rev,temp_ref):
+    # Use an independent local clone instead of a linked worktree. Synthetic
+    # composition commits live under a temporary non-head ref, so explicitly
+    # fetch that ref into the clone before checkout; ordinary clone refspecs
+    # are not required to advertise/copy it.
     q=run(['git','clone','--no-hardlinks','--no-checkout',SRC,work],
           check=False,timeout=600)
     if q.returncode:
         raise RuntimeError(
             'FRESH_SOURCE_CLONE_FAILED='+
             (q.stderr or b'').decode(errors='replace')[-3000:]
+        )
+    q=run([
+        'git','-C',work,'fetch','--no-tags',str(SRC),
+        temp_ref+':refs/remotes/composer/candidate'
+    ],check=False,timeout=300)
+    if q.returncode:
+        raise RuntimeError(
+            'FRESH_SOURCE_COMPOSER_REF_FETCH_FAILED='+
+            (q.stderr or b'').decode(errors='replace')[-3000:]
+        )
+    fetched=run(
+        ['git','-C',work,'rev-parse','refs/remotes/composer/candidate'],
+        check=False,timeout=30)
+    fetched_rev=(fetched.stdout or b'').decode().strip()
+    if fetched.returncode or fetched_rev!=rev:
+        raise RuntimeError(
+            'FRESH_SOURCE_COMPOSER_REV_MISMATCH expected='+rev+
+            ' got='+fetched_rev
         )
     q=run(['git','-C',work,'checkout','--detach',rev],check=False,timeout=60)
     if q.returncode:
@@ -1298,7 +1317,7 @@ def compose(run_dir,info,manifest):
     work,d=fresh_paths(rev)
     cand=None;csha=''
     try:
-        add_fresh_source(work,rev)
+        add_fresh_source(work,rev,temp_ref)
         if temp_ref:
             git('update-ref','-d',temp_ref,check=False)
         submodules_at(work)
