@@ -32,5 +32,13 @@ jobs:
           assert "def add_worktree(" in s
           assert "def remove_worktree(" in s
           assert "def submodules_at(" in s
+          assert "def ensure_required_refs(" in s
+          assert "def recovered_parent_ref(" in s
+          assert "RECOVERY_PARTS" in s
+          assert "base64.b64decode" in s
+          assert "gzip.decompress" in s
+          assert "RECOVERED_PARENT_TREE_NOT_REPRODUCED" in s
+          assert "PARENT_TREE='d921f3f51c546aa8b9dfe7e230aaefeaf0b3c446'" in s
+          assert "SOURCE_REMOTE='https://github.com/Chreece/shadPS4.git'" in s
           print("COMPOSER_STATIC_CHECK=PASS")
           PY
