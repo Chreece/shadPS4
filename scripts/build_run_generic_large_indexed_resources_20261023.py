@@ -318,7 +318,7 @@ LOOP=r'''                if (inst.GetOpcode()==IR::Opcode::ImageSampleRaw &&
                         }
                         if(bindable) {
                             usage.indexed_table_sharp.num_dwords=4;
-                            MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
+                            MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);
                             usage.indexed_texture_id=IR::Value{const_cast<IR::Inst*>(table.selector)};
                             usage.has_indexed_table=true;
                         }
@@ -344,11 +344,16 @@ def discover(s):
             raise RuntimeError('DISCOVER_IMAGE_CALL_NOT_FOUND excerpt='+tail[:5000].replace('\\n',' | '))
         insert_at=start+m.end()
         indent=m.group('indent')
+        loop_lines=LOOP.splitlines()
+        first=next((line for line in loop_lines if line.strip()),'')
+        base_indent=len(first)-len(first.lstrip())
         loop='\\n'.join(
-            (indent+line.lstrip()) if line.strip() else line
-            for line in LOOP.splitlines()
+            (indent+line[base_indent:]) if line.strip() else line
+            for line in loop_lines
         )+'\\n'
         s=s[:insert_at]+loop+s[insert_at:]
+    if 'MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);' not in s:
+        raise RuntimeError('DISCOVER_MARK_API_NOT_ADAPTED')
     return s
 
 ELIG=r'''    if (resource.has_indexed_table && profile.supports_sampled_image_nonuniform_indexing &&
