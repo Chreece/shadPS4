@@ -332,8 +332,23 @@ def discover(s):
         a='ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {'
         s=one(s,a,HELPER+'\n'+a,'DISCOVER_HELPER')
     if 'usage.has_indexed_table=true;' not in s and 'usage.has_indexed_table = true;' not in s:
-        a='                DiscoverImageSharp(*block, inst, sharp_usages);\n'
-        s=one(s,a,a+LOOP,'DISCOVER_LOOP')
+        # The verified parent has already evolved this call (image-Phi and
+        # masked-sharp work changed its signature/formatting). Match the call
+        # structurally instead of pinning one obsolete source line.
+        start=s.find('ResourceDiscoveryList ResourceDiscoverPass(')
+        if start<0:
+            raise RuntimeError('DISCOVER_FUNCTION_NOT_FOUND')
+        tail=s[start:]
+        m=re.search(r'(?ms)^(?P<indent>[ \\t]*)DiscoverImageSharp\\([^;]*?\\);[ \\t]*\\n',tail)
+        if not m:
+            raise RuntimeError('DISCOVER_IMAGE_CALL_NOT_FOUND excerpt='+tail[:5000].replace('\\n',' | '))
+        insert_at=start+m.end()
+        indent=m.group('indent')
+        loop='\\n'.join(
+            (indent+line.lstrip()) if line.strip() else line
+            for line in LOOP.splitlines()
+        )+'\\n'
+        s=s[:insert_at]+loop+s[insert_at:]
     return s
 
 ELIG=r'''    if (resource.has_indexed_table && profile.supports_sampled_image_nonuniform_indexing &&
