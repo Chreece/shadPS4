@@ -431,27 +431,33 @@ def resource_h(s):
         raise RuntimeError('IMAGE_RESOURCE_STRUCT_NOT_FOUND')
     body=s[start:end]
 
-    if 'indexed_table_fetch' not in body:
-        a='    SharpFetch<AmdGpu::Image> sharp_fetch{};\n'
-        if body.count(a)!=1:
-            raise RuntimeError('RESOURCE_FIELDS_ANCHOR_COUNT='+str(body.count(a)))
-        body=body.replace(
-            a,
-            a+'    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n'
-              '    u32 indexed_guest_entries{};\n'
-              '    bool is_guest_indexed{};\n',
-            1)
-
+    image_anchor='    SharpFetch<AmdGpu::Image> sharp_fetch{};\n'
+    if body.count(image_anchor)!=1:
+        raise RuntimeError('RESOURCE_FIELDS_ANCHOR_COUNT='+str(body.count(image_anchor)))
     body=body.replace('    u8 indexed_guest_entries{};','    u32 indexed_guest_entries{};')
-    if 'indexed_record_stride_bytes' not in body:
-        a='    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n'
-        if body.count(a)!=1:
-            raise RuntimeError('RESOURCE_STRIDED_FIELDS_ANCHOR_COUNT='+str(body.count(a)))
-        body=body.replace(
-            a,
-            a+'    u32 indexed_record_stride_bytes{};\n'
-              '    u32 indexed_descriptor_offset_bytes{};\n',
-            1)
+    ordered_image_fields=(
+        ('    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n',
+         'RESOURCE_INDEXED_TABLE_FETCH'),
+        ('    u32 indexed_guest_entries{};\n',
+         'RESOURCE_INDEXED_GUEST_ENTRIES'),
+        ('    u32 indexed_record_stride_bytes{};\n',
+         'RESOURCE_INDEXED_RECORD_STRIDE'),
+        ('    u32 indexed_descriptor_offset_bytes{};\n',
+         'RESOURCE_INDEXED_DESCRIPTOR_OFFSET'),
+        ('    bool is_guest_indexed{};\n',
+         'RESOURCE_INDEXED_FLAG'),
+    )
+    insert_at=body.find(image_anchor)+len(image_anchor)
+    for declaration,label in ordered_image_fields:
+        if declaration not in body:
+            body=body[:insert_at]+declaration+body[insert_at:]
+            insert_at+=len(declaration)
+        else:
+            pos=body.find(declaration)
+            insert_at=max(insert_at,pos+len(declaration))
+    for declaration,label in ordered_image_fields:
+        if body.count(declaration)!=1:
+            raise RuntimeError(label+'_DECL_COUNT='+str(body.count(declaration)))
 
     if 'return AmdGpu::Image::Null(false);' not in body:
         a='    constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {\n'
