@@ -4,7 +4,7 @@ import fcntl, hashlib, importlib.util, json, os, re, shutil, stat, subprocess, s
 from pathlib import Path
 
 ROOT=Path.home()/'projects/shadps4'
-SRC=ROOT/'clean-rebase-verified/source'
+SRC=ROOT/'GhostOfTsushima/source'
 BASE='04d891dc33bb1c8c89789b5ff039049901f95a41'
 PARENT='975ee9812d93fb0e8094e0581640fb705c336d68'
 PARENT_TREE='d921f3f51c546aa8b9dfe7e230aaefeaf0b3c446'
@@ -772,12 +772,14 @@ def verify_prev():
     # cleaned. The immutable source gate is the pinned parent commit+tree.
     # Derive overlap from that verified Git tree rather than from transient
     # JSON files in the logs directory.
+    if not SRC.is_dir() or not (SRC/'.git').exists():
+        raise RuntimeError('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC))
     if not exists(PARENT+'^{commit}'):
-        raise RuntimeError('PREVIOUS_PARENT_COMMIT_MISSING='+PARENT)
+        raise RuntimeError('VERIFIED_GRAPHICS_PARENT_NOT_IN_GOT_REPO='+PARENT)
     if git('rev-parse',PARENT+'^{tree}').decode().strip()!=PARENT_TREE:
         raise RuntimeError('PREVIOUS_PARENT_TREE_CHANGED')
-    if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():
-        raise RuntimeError('SOURCE_NOT_RESTORED')
+    if git('status','--porcelain').strip():
+        raise RuntimeError('GOT_SOURCE_HAS_UNCOMMITTED_CHANGES')
 
     changed=tuple(
         p for p in git('diff','--name-only',BASE,PARENT,'--','src').decode().splitlines()
@@ -808,7 +810,7 @@ def verify_prev():
 def fresh_builddir(run_dir,rev):
     # Always configure from zero. Never search for or reuse an old build,
     # test build, CMake cache, object directory or previous candidate tree.
-    root=ROOT/'clean-rebase-verified'/'fresh-builds'
+    root=ROOT/'GhostOfTsushima'/'fresh-builds'
     root.mkdir(parents=True,exist_ok=True)
     d=root/f'{rev[:12]}-{os.getpid()}'
     if d.exists():
@@ -921,7 +923,7 @@ def compose(run_dir,info,manifest):
         built=exe(d)
         if not built:raise RuntimeError('NEW_BUILD_EXECUTABLE_NOT_FOUND')
         csha=digest(built)
-        cand=ROOT/'clean-rebase-verified/candidates'/f'{rev}-{csha}'/'shadps4'
+        cand=ROOT/'GhostOfTsushima/candidates'/f'{rev}-{csha}'/'shadps4'
         cand.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(built,cand)
         cand.chmod(cand.stat().st_mode|stat.S_IXUSR|stat.S_IXGRP|stat.S_IXOTH)
@@ -933,7 +935,8 @@ def compose(run_dir,info,manifest):
             restored=git('rev-parse','HEAD').decode().strip()==BASE and not git('status','--porcelain').strip()
         except Exception:
             pass
-        shutil.rmtree(d,ignore_errors=True)
+        if cand is not None and cand.is_file():
+            shutil.rmtree(d,ignore_errors=True)
     if not restored:raise RuntimeError('SOURCE_OR_BUILD_RESTORE_FAILED')
     if not sirit:raise RuntimeError('SIRIT_RESTORE_FAILED')
     if not cand or digest(cand)!=csha:raise RuntimeError('CANDIDATE_COPY_FAILED')
@@ -999,11 +1002,18 @@ def archive(run_dir,error):
     return out
 
 def main():
+    global BASE
+    if not SRC.is_dir() or not (SRC/'.git').exists():
+        print('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC),file=sys.stderr,flush=True)
+        return 2
+    BASE=git('rev-parse','HEAD').decode().strip()
     (ROOT/'logs').mkdir(parents=True,exist_ok=True);run_dir=Path(tempfile.mkdtemp(prefix='generic-large-indexed-resource-'+time.strftime('%Y%m%d-%H%M%S')+'-',dir=ROOT/'logs'));info=run_dir/'info';info.mkdir()
     try:
         with (ROOT/'clean-rebase-verified/.build.lock').open('a') as lock:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:raise RuntimeError('ANOTHER_SHADPS4_BUILD_OWNS_LOCK')
+            if not OLD.is_file() or digest(OLD)!=OLD_SHA:
+                raise RuntimeError('PROTECTED_LAUNCHER_MISSING_OR_CHANGED='+str(OLD))
             man=verify_prev()
             if PREV.is_dir():
                 for p in PREV.iterdir():
