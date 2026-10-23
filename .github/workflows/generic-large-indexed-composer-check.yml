@@ -1,0 +1,33 @@
+name: Generic indexed composer checks
+on:
+  push:
+    branches:
+      - fix/generic-large-indexed-images-20261023
+    paths:
+      - scripts/build_run_generic_large_indexed_resources_20261023.py
+      - .github/workflows/generic-large-indexed-composer-check.yml
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate composer syntax and safety invariants
+        run: |
+          python3 -m py_compile scripts/build_run_generic_large_indexed_resources_20261023.py
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path("scripts/build_run_generic_large_indexed_resources_20261023.py")
+          s=p.read_text()
+          tree=ast.parse(s)
+          funcs={n.name for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          for name in ("compose","verify_prev","fresh_builddir","apply_patch_commit","finish_generic_large","launch","main"):
+              assert name in funcs, name
+          assert "GhostOfTsushima/source" in s
+          assert "clean-rebase-verified/source" not in s
+          assert "def builddir():" not in s
+          assert "'-DENABLE_TESTS=OFF'" in s
+          assert "GOT_SOURCE_REPOSITORY_MISSING" in s
+          print("COMPOSER_STATIC_CHECK=PASS")
+          PY
