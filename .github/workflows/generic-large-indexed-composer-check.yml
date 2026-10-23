@@ -135,6 +135,7 @@ jobs:
           assert "indexed_record_stride_bytes" in s
           assert "CompleteGuestTsharpRecordEntries" in s
           assert "record_stride,record_offset,indexed_limit" in s
+          assert "INDEXED_IMAGE_SAMPLER_SHARED_LIMIT_NOT_APPLIED" in s
           assert "(limits.maxPerStageResources-total_reserve)/2u-1u" in s
           assert "PAIRED_DESCRIPTOR_TOTAL_RESOURCE_LIMIT_MISSING" in s
           assert "AnalyzeIndexedSamplerTable" in s
