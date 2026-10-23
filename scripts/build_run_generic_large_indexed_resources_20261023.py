@@ -855,6 +855,29 @@ def finish_generic_large(idx):
     t=index_text(idx,p)
     if 'RuntimeDescriptorHeapSizes(instance)' not in t or 'GuestIndexedImageLimit' not in t:
         raise RuntimeError('DYNAMIC_DESCRIPTOR_POOL_LIMIT_MISSING')
+
+    # Normalize any earlier cached implementation to a per-Instance value.
+    # DescriptorHeap owns a copy of this array, so returning by value is both
+    # lifetime-safe and correct when more than one Vulkan device is created.
+    cached_re=re.compile(
+        r'static const auto& RuntimeDescriptorHeapSizes\(const Instance& instance\) \{'
+        r'.*?\n\}',
+        re.S)
+    m=cached_re.search(t)
+    if m:
+        replacement='''static auto RuntimeDescriptorHeapSizes(const Instance& instance) {
+    auto result=DescriptorHeapSizes;
+    result[2].descriptorCount=std::max(result[2].descriptorCount,
+        GuestIndexedImageLimit(instance)+Shader::NUM_IMAGES+1024u);
+    result[4].descriptorCount=std::max(result[4].descriptorCount,
+        GuestIndexedSamplerLimit(instance)+Shader::NUM_SAMPLERS+1024u);
+    return result;
+}'''
+        t=t[:m.start()]+replacement+t[m.end():]
+    if 'static const auto& RuntimeDescriptorHeapSizes' in t:
+        raise RuntimeError('STATIC_DESCRIPTOR_HEAP_LIMIT_CACHE_RETAINED')
+    if 'static auto RuntimeDescriptorHeapSizes(const Instance& instance)' not in t:
+        raise RuntimeError('PER_INSTANCE_DESCRIPTOR_HEAP_LIMIT_MISSING')
     update_index_text(idx,p,t)
 
     # Invalidate shader binaries/metadata for the new descriptor-array ABI.
