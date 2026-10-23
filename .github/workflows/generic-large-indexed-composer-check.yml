@@ -138,6 +138,11 @@ jobs:
           assert "AnalyzeIndexedSamplerTable" in s
           assert "sampler_array_sizes" in s
           assert "LoadIndexedGuestSampler" in s
+          assert "TextureDefinition" in s
+          assert "ImageDefinition" in s
+          assert "SPIRV_TEXTURE_DEFINITION_STRUCT_NOT_FOUND" in s
+          assert "INVALID_SPIRV_SAMPLER_ARRAY_CAPABILITY_RETAINED" in s
+          assert "INDEXED_SAMPLER_BINDING_CONTRACT_MISSING" in s
           assert "sampler.NumBindings(*stage)" in s
           assert "sampler.NumBindings(*info)" in s
           assert "INTEGER_SAMPLER_EXTRA_TRANSFORM_MISSING" in s
