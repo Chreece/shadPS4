@@ -603,7 +603,7 @@ def _pure_cache_version_patch(sha):
     if not changed:
         return False
     version_re=re.compile(
-        r'static constexpr u32 (ShaderBinaryVersion|ShaderMetaVersion|PipelineKeyVersion)\\s*=\\s*'
+        r'static constexpr u32 (ShaderBinaryVersion|ShaderMetaVersion|PipelineKeyVersion)\s*=\s*'
         r'(0x[0-9A-Fa-f]+|[0-9]+)u?;'
     )
     return all(version_re.fullmatch(line) for line in changed)
