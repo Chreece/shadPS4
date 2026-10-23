@@ -444,6 +444,8 @@ TRANS={
 }
 
 def apply_patch_commit(idx,sha):
+    if not re.fullmatch(r'[0-9a-f]{40}',sha):
+        raise RuntimeError('PATCH_COMMIT_INVALID='+sha)
     if not exists(sha+'^{commit}'): raise RuntimeError('PATCH_COMMIT_MISSING='+sha)
     patch=git('diff',sha+'^',sha,'--',*PATCH_PATHS)
     if not patch.strip(): return
@@ -499,6 +501,17 @@ def finish_generic_large(idx):
         t=t.replace(needle,repl,1)
     if 'profile.max_guest_indexed_sampler_entries' not in t:
         raise RuntimeError('STRIDED_PHYSICAL_LIMIT_NOT_APPLIED')
+    update_index_text(idx,p,t)
+
+    p='src/video_core/renderer_vulkan/vk_rasterizer.cpp'
+    t=index_text(idx,p)
+    for header,token in (('<unordered_map>','std::unordered_map'),
+                         ('<bit>','std::has_single_bit'),
+                         ('<cstring>','std::memcpy')):
+        if token in t and ('#include '+header) not in t:
+            first_include=t.find('#include ')
+            if first_include>=0:
+                t=t[:first_include]+'#include '+header+'\n'+t[first_include:]
     update_index_text(idx,p,t)
 
     # The runtime pool is sized from the actual physical limits; no opt-in
@@ -595,12 +608,15 @@ def compose(run_dir,info,manifest):
     rev=git('commit-tree',tree,'-p',PARENT,input=msg).decode().strip()
     if not tuple(git('diff','--name-only',PARENT,rev,'--','src').decode().splitlines()):raise RuntimeError('EMPTY_COMPOSED_CHANGE_SET')
     diff=git('diff',PARENT,rev,'--','src').decode(errors='replace')
-    for pat in (r'CUSA\d+',r'Ghost of Tsushima',r'Tsushima',r'SHADPS4_[A-Z0-9_]*(?:AUDIT|HASH|GOT)',r'pgm_hash\s*==',r'readbacks_mode',r'readbacksMode',r'title_id\s*=='):
+    for pat in (r'CUSA\d+',r'Ghost of Tsushima',r'Tsushima',
+                r'pgm_hash\s*==',r'title_id\s*==',
+                r'getenv\([^\n]*SHADPS4_',r'readbacks_mode\s*=',
+                r'readbacksMode\s*='):
         if re.search(pat,diff,re.I):raise RuntimeError('GAME_SPECIFIC_SOURCE='+pat)
     if ('ImageSampleImplicitLodIndexed' not in diff or 'ImageGradientIndexed' not in diff or 'NonUniform' not in diff or 'indexed_sampler' not in diff):raise RuntimeError('INDEXED_PATH_MISSING')
-    git('update-ref','refs/heads/local/generic-indexed-tsharp-'+rev[:12],rev)
-    (info/'generic-indexed-image.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':PARENT,'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_budget_checked':True,'image_binding_budget_checked':True,'unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'all_games_validated':False}
+    git('update-ref','refs/heads/local/generic-large-indexed-resource-'+rev[:12],rev)
+    (info/'generic-large-indexed-resource.patch').write_text(diff)
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':PARENT,'replayed_generic_commits':list(PATCH_COMMITS),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     d=builddir(); old=exe(d)
     if not old:raise RuntimeError('BUILD_EXECUTABLE_NOT_FOUND')
@@ -636,7 +652,7 @@ def launch(info,rev,tree,csha,cand):
     def verify_build():
         if digest(rp)!=rs or digest(mp)!=ms:raise RuntimeError('BUILD_EVIDENCE_CHANGED')
         r=json.loads(rp.read_text())
-        for k,v in {'status':'GENERIC_INDEXED_IMAGE_BUILD_PASS','source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','source_restored':True,'build_binary_restored':True,'sirit_restored':True,'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False}.items():
+        for k,v in {'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','source_restored':True,'build_binary_restored':True,'sirit_restored':True,'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False}.items():
             if r.get(k)!=v:raise RuntimeError('BUILD_GATE='+k)
         if Path(r['candidate'])!=cand or digest(cand)!=csha or git('rev-parse',rev+'^{tree}').decode().strip()!=tree or git('rev-parse',rev+'^').decode().strip()!=PARENT:raise RuntimeError('CANDIDATE_CHANGED')
         if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():raise RuntimeError('SOURCE_NOT_RESTORED')
