@@ -5,6 +5,7 @@
 
 #include "common/types.h"
 #include "shader_recompiler/ir/type.h"
+#include "shader_recompiler/ir/passes/sharp_dword_mask.h"
 #include "video_core/amdgpu/resource.h"
 
 #include <boost/container/static_vector.hpp>
@@ -33,16 +34,18 @@ struct SharpFetch {
     };
 
     Summary summary{Summary::MultiLoad};
-    std::array<u32, N> immediates;
-    std::array<SharpLocation, N> offsets;
-    u8 load_mask;
+    std::array<u32, N> immediates{};
+    std::array<SharpLocation, N> offsets{};
+    std::array<u32, N> clear_masks{};
+    u8 load_mask{};
 
     bool operator==(const SharpFetch&) const = default;
 
     template <u32 num_dwords = N>
         requires(num_dwords <= N)
     constexpr bool Fetch(const u32* flatbuf, T* out) const {
-        if (summary == Summary::SingleLoad) [[likely]] {
+        if (summary == Summary::SingleLoad &&
+            Optimization::SharpMasksAreZero(clear_masks, num_dwords)) [[likely]] {
             std::memcpy(out, flatbuf + offsets[0], num_dwords * sizeof(u32));
             return true;
         } else if (summary == Summary::Invalid) [[unlikely]] {
@@ -51,7 +54,8 @@ struct SharpFetch {
         u8 mask = load_mask;
         std::array<u32, num_dwords> out_dw;
         for (u32 i = 0; i < num_dwords; i++) {
-            out_dw[i] = (mask & 1) ? flatbuf[offsets[i]] : immediates[i];
+            const u32 value = (mask & 1) ? flatbuf[offsets[i]] : immediates[i];
+            out_dw[i] = Optimization::ApplySharpWordMask(value, clear_masks[i]);
             mask >>= 1;
         }
         std::memcpy(out, out_dw.data(), sizeof(out_dw));
@@ -138,6 +142,7 @@ struct ImageResource {
     bool is_guest_indexed{};
     bool is_depth{};
     bool is_atomic{};
+    bool is_atomic_uint_view{};
     bool is_array{};
     bool is_written{};
     bool is_r128{};
