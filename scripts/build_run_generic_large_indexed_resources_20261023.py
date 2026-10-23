@@ -11,6 +11,8 @@ PARENT_TREE='d921f3f51c546aa8b9dfe7e230aaefeaf0b3c446'
 RECOVERY_BASE='4bc7df9c1370b0eb10c84f385b8c2d041e791945'
 RECOVERY_REF='refs/remotes/chreece/generic-large-indexed-images-20261023'
 SOURCE_REMOTE='https://github.com/Chreece/shadPS4.git'
+UPSTREAM_REMOTE='https://github.com/shadps4-emu/shadPS4.git'
+UPSTREAM_MAIN='91e6afa69b0a64b0afaa0281b80f8fbb0cd88136'
 PARENT_REF=PARENT
 BASE_STATUS=b''
 RECOVERY_PARTS=tuple(f'patches/verified-975.patch.gz.b64.part{i:02d}' for i in range(1,9))
@@ -106,11 +108,15 @@ def git(*a,input=None,e=None,check=True):
     r=subprocess.run(['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),*a],
                      env=e or env(),input=input,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=check)
     return r.stdout
-def commit_tree(tree,parent,message):
-    parent_time=git('show','-s','--format=%ct',parent).decode().strip()
-    if not parent_time.isdigit():
-        raise RuntimeError('PARENT_COMMIT_TIME_INVALID='+parent)
-    stamp=parent_time+' +0000'
+def commit_tree(tree,parent,message,additional_parents=()):
+    parents=(parent,*tuple(additional_parents))
+    times=[]
+    for p in parents:
+        value=git('show','-s','--format=%ct',p).decode().strip()
+        if not value.isdigit():
+            raise RuntimeError('PARENT_COMMIT_TIME_INVALID='+p)
+        times.append(int(value))
+    stamp=str(max(times))+' +0000'
     ce=env({
         'GIT_AUTHOR_NAME':'shadPS4 generic composer',
         'GIT_AUTHOR_EMAIL':'composer@localhost',
@@ -119,7 +125,10 @@ def commit_tree(tree,parent,message):
         'GIT_AUTHOR_DATE':stamp,
         'GIT_COMMITTER_DATE':stamp,
     })
-    return git('commit-tree',tree,'-p',parent,input=message,e=ce).decode().strip()
+    args=['commit-tree',tree]
+    for p in parents:
+        args += ['-p',p]
+    return git(*args,input=message,e=ce).decode().strip()
 def show(rev,p): return git('show',f'{rev}:{p}')
 def exists(spec): return run(['git','-C',SRC,'cat-file','-e',spec],check=False).returncode==0
 def digest(p):
@@ -878,6 +887,15 @@ def ensure_required_refs():
                 (q.stderr or b'').decode(errors='replace')[-2000:]
             )
 
+    if not exists(UPSTREAM_MAIN+'^{commit}'):
+        q=run(['git','-C',SRC,'fetch','--no-tags',UPSTREAM_REMOTE,UPSTREAM_MAIN],
+              check=False,timeout=180)
+        if q.returncode or not exists(UPSTREAM_MAIN+'^{commit}'):
+            raise RuntimeError(
+                'UPSTREAM_MAIN_FETCH_FAILED='+UPSTREAM_MAIN+' '+
+                (q.stderr or b'').decode(errors='replace')[-2000:]
+            )
+
 def recovered_parent_ref(run_dir):
     global PARENT_REF
     if exists(PARENT+'^{commit}'):
@@ -892,7 +910,7 @@ def recovered_parent_ref(run_dir):
     # present in the object database. In that case no patch replay is needed
     # at all: wrap the verified tree in a local synthetic commit.
     if exists(PARENT_TREE+'^{tree}'):
-        base=BASE if exists(BASE+'^{commit}') else RECOVERY_BASE
+        base=RECOVERY_BASE if exists(RECOVERY_BASE+'^{commit}') else BASE
         if not exists(base+'^{commit}'):
             raise RuntimeError('NO_SYNTHETIC_PARENT_BASE_AVAILABLE')
         msg=b'Wrapped exact verified graphics parent tree for local composition only\n'
@@ -949,6 +967,35 @@ def recovered_parent_ref(run_dir):
         ' attempts='+' || '.join(errors)
     )
 
+def merge_verified_parent_with_upstream(parent):
+    if not exists(parent+'^{commit}'):
+        raise RuntimeError('VERIFIED_PARENT_MISSING_BEFORE_UPSTREAM_MERGE')
+    if not exists(UPSTREAM_MAIN+'^{commit}'):
+        raise RuntimeError('UPSTREAM_MAIN_MISSING_BEFORE_MERGE')
+
+    q=run(['git','-C',SRC,'merge-tree','--write-tree',parent,UPSTREAM_MAIN],
+          check=False,timeout=120)
+    stdout=(q.stdout or b'').decode(errors='replace').strip()
+    stderr=(q.stderr or b'').decode(errors='replace').strip()
+    if q.returncode:
+        raise RuntimeError(
+            'UPSTREAM_MERGE_CONFLICT parent='+parent+
+            ' upstream='+UPSTREAM_MAIN+' details='+(stdout+' '+stderr)[-6000:]
+        )
+    tree=stdout.splitlines()[0].strip() if stdout else ''
+    if not re.fullmatch(r'[0-9a-f]{40}',tree) or not exists(tree+'^{tree}'):
+        raise RuntimeError('UPSTREAM_MERGE_TREE_INVALID='+stdout[-2000:])
+
+    # A merge tree must contain both lineages. Materialize it as a deterministic
+    # local merge commit so the subsequent indexed-resource commit has a stable,
+    # auditable parent.
+    msg=(b'Merge pinned upstream main into verified generic graphics parent\n\n'
+         b'No conflict resolution or game-specific preference was permitted.\n')
+    merged=commit_tree(tree,parent,msg,(UPSTREAM_MAIN,))
+    if git('rev-parse',merged+'^{tree}').decode().strip()!=tree:
+        raise RuntimeError('UPSTREAM_MERGE_COMMIT_TREE_CHANGED')
+    return merged,tree
+
 def verify_prev(run_dir):
     ensure_required_refs()
     # PARENT_REF is either the original verified commit or a locally
@@ -956,14 +1003,19 @@ def verify_prev(run_dir):
     if not SRC.is_dir() or not (SRC/'.git').exists():
         raise RuntimeError('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC))
     validate_source_status(BASE_STATUS)
-    parent=recovered_parent_ref(run_dir)
-    if git('rev-parse',parent+'^{tree}').decode().strip()!=PARENT_TREE:
+    verified_parent=recovered_parent_ref(run_dir)
+    if git('rev-parse',verified_parent+'^{tree}').decode().strip()!=PARENT_TREE:
         raise RuntimeError('VERIFIED_GRAPHICS_PARENT_TREE_CHANGED')
+    parent,parent_tree=merge_verified_parent_with_upstream(verified_parent)
     return {
         'previous_parent':parent,
-        'previous_parent_original':PARENT,
-        'previous_parent_tree':PARENT_TREE,
-        'parent_reconstructed':parent!=PARENT,
+        'previous_parent_tree':parent_tree,
+        'verified_parent':verified_parent,
+        'verified_parent_original':PARENT,
+        'verified_parent_tree':PARENT_TREE,
+        'parent_reconstructed':verified_parent!=PARENT,
+        'upstream_main':UPSTREAM_MAIN,
+        'upstream_merge_conflicts':False,
         'previous_evidence_logs':'NOT_REQUIRED',
         'files':{},
     }
@@ -1031,7 +1083,7 @@ def tee(a,p):
     if rc:raise RuntimeError(f'BUILD_FAILED={rc} log={p}')
 
 def compose(run_dir,info,manifest):
-    parent=PARENT_REF
+    parent=manifest['previous_parent']
     if git('rev-parse','HEAD').decode().strip()!=BASE:
         raise RuntimeError('ORIGINAL_GOT_SOURCE_HEAD_CHANGED')
     assert_source_unchanged()
@@ -1211,7 +1263,7 @@ def compose(run_dir,info,manifest):
     assert_source_unchanged()
     if not cand or digest(cand)!=csha:raise RuntimeError('CANDIDATE_COPY_FAILED')
     ms=digest(mp)
-    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT_REF,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_source_clone':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'original_submodules_untouched':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
+    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':parent,'source_parent_tree':git('rev-parse',parent+'^{tree}').decode().strip(),'verified_parent':manifest['verified_parent'],'verified_parent_tree':PARENT_TREE,'upstream_main':UPSTREAM_MAIN,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_source_clone':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'original_submodules_untouched':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
     (info/'build-result.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
     return rev,tree,csha,cand
 
@@ -1313,7 +1365,8 @@ def main():
         print('BUILD_ONLY_PASS=YES',flush=True)
         print('CANDIDATE='+str(cand),flush=True)
         print('COMPOSED_REVISION='+rev,flush=True)
-        print('SOURCE_PARENT='+PARENT_REF,flush=True)
+        print('SOURCE_PARENT='+man['previous_parent'],flush=True)
+        print('UPSTREAM_MAIN='+UPSTREAM_MAIN,flush=True)
         print('VERIFIED_PARENT_TREE='+PARENT_TREE,flush=True)
         if not args.launch:
             print('GAME_LAUNCHED=NO',flush=True)
