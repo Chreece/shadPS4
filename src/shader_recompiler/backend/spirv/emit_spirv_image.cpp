@@ -161,6 +161,26 @@ Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id c
 }
 
 
+static Id LoadIndexedGuestSampler(EmitContext& ctx, u32 handle, Id bounded,
+                                  u32 expected_count) {
+    const u32 sampler_index = handle >> 16;
+    ASSERT(sampler_index < ctx.samplers.size());
+    const u32 sampler_count = ctx.sampler_array_sizes[sampler_index];
+    if (sampler_count == 1u) {
+        return ctx.OpLoad(ctx.sampler_type, ctx.samplers[sampler_index]);
+    }
+    ASSERT(ctx.profile.supports_sampler_array_nonuniform_indexing);
+    ASSERT(sampler_count == expected_count);
+    const Id pointer_type =
+        ctx.TypePointer(spv::StorageClass::UniformConstant, ctx.sampler_type);
+    const Id pointer =
+        ctx.OpAccessChain(pointer_type, ctx.samplers[sampler_index], std::array{bounded});
+    ctx.Decorate(pointer, spv::Decoration::NonUniform);
+    const Id value = ctx.OpLoad(ctx.sampler_type, pointer);
+    ctx.Decorate(value, spv::Decoration::NonUniform);
+    return value;
+}
+
 Id EmitImageSampleImplicitLodIndexed(
     EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id bias,
     const IR::Value& offset, Id gpu_texture_id) {
@@ -181,7 +201,8 @@ Id EmitImageSampleImplicitLodIndexed(
     const Id image = ctx.OpLoad(texture.image_type, pointer);
     ctx.Decorate(image, spv::Decoration::NonUniform);
 
-    const Id sampler = ctx.OpLoad(ctx.sampler_type, ctx.samplers[handle >> 16]);
+    const Id sampler =
+        LoadIndexedGuestSampler(ctx, handle, bounded, texture.image_array_size);
     const Id sampled_image = ctx.OpSampledImage(texture.sampled_type, image, sampler);
     ctx.Decorate(sampled_image, spv::Decoration::NonUniform);
 
@@ -358,7 +379,8 @@ Id EmitImageGradientIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coo
     ctx.Decorate(pointer,spv::Decoration::NonUniform);
     const Id image = ctx.OpLoad(texture.image_type,pointer);
     ctx.Decorate(image,spv::Decoration::NonUniform);
-    const Id sampler = ctx.OpLoad(ctx.sampler_type,ctx.samplers[handle >> 16]);
+    const Id sampler =
+        LoadIndexedGuestSampler(ctx, handle, bounded, texture.image_array_size);
     const Id sampled = ctx.OpSampledImage(texture.sampled_type,image,sampler);
     ctx.Decorate(sampled,spv::Decoration::NonUniform);
     const Id fixed_coords = FixImageCoords<true>(ctx,coords,texture.view_type);
