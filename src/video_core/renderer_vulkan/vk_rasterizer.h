@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <vector>
+
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
@@ -153,11 +155,14 @@ private:
         VideoCore::ImageId image_id;
         VideoCore::TextureCache::ImageDesc desc;
     };
-    std::array<ImageBinding, Shader::NUM_IMAGES> image_bindings;
+    // One T# resource can expose tens of thousands of Vulkan descriptor
+    // slots. Keep descriptors themselves dynamic, not the shader's resource
+    // count (Shader::NUM_IMAGES remains its original 64).
+    std::vector<ImageBinding> image_bindings;
     std::array<ImageBinding, AmdGpu::NUM_COLOR_BUFFERS> cb_descs;
     ImageBinding db_desc;
 
-    boost::container::static_vector<vk::DescriptorImageInfo, Shader::NUM_IMAGES> image_infos;
+    std::vector<vk::DescriptorImageInfo> image_infos;
     boost::container::static_vector<vk::DescriptorBufferInfo, Shader::NUM_BUFFERS> buffer_infos;
 
     struct BoundBuffer {
