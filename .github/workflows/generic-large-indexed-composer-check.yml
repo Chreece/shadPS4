@@ -29,9 +29,10 @@ jobs:
           assert "def builddir():" not in s
           assert "'-DENABLE_TESTS=OFF'" in s
           assert "GOT_SOURCE_REPOSITORY_MISSING" in s
-          assert "def add_worktree(" in s
-          assert "def remove_worktree(" in s
+          assert "def add_fresh_source(" in s
+          assert "def remove_fresh_source(" in s
           assert "def submodules_at(" in s
+          assert "clone\',\'--no-hardlinks\',\'--no-checkout" in s
           assert "def commit_tree(" in s
           assert "parser.add_argument('--launch'" in s
           assert "BUILD_ONLY_PASS=YES" in s
