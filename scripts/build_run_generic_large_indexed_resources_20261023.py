@@ -727,7 +727,34 @@ def launch(info,rev,tree,csha,cand):
         return r,cand
     m.verify_build=verify_build
     print('GENERIC_LARGE_INDEXED_RESOURCE_CANDIDATE='+rev+' FULLSCREEN=ON FPS=ON REBUILD=DONE',flush=True)
-    return int(m.main())
+
+    # The protected runtime launcher predates the SSH-safe runner contract and
+    # may terminate its own process group during cleanup. Never let it share
+    # the SSH shell's process group. Fork once, create a new session in the
+    # child, and keep the build/composer parent attached to the caller.
+    pid=os.fork()
+    if pid==0:
+        try:
+            os.setsid()
+            rc=int(m.main())
+        except BaseException:
+            import traceback
+            traceback.print_exc()
+            rc=125
+        os._exit(rc & 0xff)
+    while True:
+        try:
+            _,status=os.waitpid(pid,0)
+            break
+        except InterruptedError:
+            continue
+    if os.WIFEXITED(status):
+        return os.WEXITSTATUS(status)
+    if os.WIFSIGNALED(status):
+        sig=os.WTERMSIG(status)
+        print('ISOLATED_RUNTIME_SIGNAL='+str(sig),file=sys.stderr,flush=True)
+        return 128+sig
+    return 125
 
 def archive(run_dir,error):
     info=run_dir/'info';info.mkdir(parents=True,exist_ok=True);(info/'failure.txt').write_text(type(error).__name__+': '+str(error)+'\n')
