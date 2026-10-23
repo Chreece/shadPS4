@@ -213,10 +213,18 @@ public:
 
     /// Returns true only when all Vulkan features required for a GPU-selected
     /// sampled-image descriptor array are available.
+    bool IsShaderImageGatherExtendedSupported() const {
+        return features.shaderImageGatherExtended;
+    }
+
     bool IsSampledImageNonUniformIndexingSupported() const {
         return bool(vk12_features.descriptorIndexing) &&
                bool(vk12_features.shaderSampledImageArrayNonUniformIndexing) &&
                bool(features.shaderSampledImageArrayDynamicIndexing);
+    }
+
+    bool IsSamplerArrayNonUniformIndexingSupported() const {
+        return IsSampledImageNonUniformIndexingSupported();
     }
 
     /// Returns true when VK_AMD_gcn_shader is supported.
