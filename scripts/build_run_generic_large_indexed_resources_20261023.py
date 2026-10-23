@@ -111,6 +111,10 @@ PATCH_COMMITS=(
 
 def env(extra=None):
     e={k:v for k,v in os.environ.items() if k not in ('GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_COMMON_DIR')}
+    # This host is intentionally IPv4-only behind its VPN. Keep Git and
+    # recursive submodule fetches on IPv4 so network selection cannot stall
+    # a source-correct build before compilation begins.
+    e.setdefault('GIT_CURL_IPRESOLVE','4')
     if extra:e.update(extra)
     return e
 def run(a,check=True,capture=True,input=None,timeout=None):
