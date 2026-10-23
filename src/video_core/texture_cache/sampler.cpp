@@ -5,6 +5,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/texture_cache/sampler.h"
+#include "video_core/texture_cache/sampler_filter_policy.h"
 
 namespace VideoCore {
 
