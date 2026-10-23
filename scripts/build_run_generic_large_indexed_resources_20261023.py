@@ -462,13 +462,34 @@ def spirv_decl(s):
     x='Id EmitImageSampleImplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,\n                                     Id bias, const IR::Value& offset, Id gpu_texture_id);\n'
     return s[:m.end()]+x+s[m.end():]
 def spirv_context(s):
-    if 'image_desc.is_guest_indexed' not in s:
+    fn_start=s.find('void EmitContext::DefineImagesAndSamplers()')
+    if fn_start<0:
+        raise RuntimeError('SPIRV_IMAGE_SAMPLER_FUNCTION_NOT_FOUND')
+    fn_end=s.find('\nvoid EmitContext::DefineSharedMemory()',fn_start)
+    if fn_end<0:
+        raise RuntimeError('SPIRV_IMAGE_SAMPLER_FUNCTION_END_NOT_FOUND')
+    body=s[fn_start:fn_end]
+
+    if 'image_desc.is_guest_indexed' not in body:
         a='        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex) {\n            pointee_type = TypeArray(pointee_type, ConstU32(num_bindings));\n        }\n'
+        if body.count(a)!=1:
+            raise RuntimeError('SPIRV_ARRAY_FUNCTION_ANCHOR_COUNT='+str(body.count(a)))
         b='        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex ||\n            image_desc.is_guest_indexed) {\n            pointee_type = TypeArray(pointee_type, ConstU32(num_bindings));\n        }\n        if (image_desc.is_guest_indexed) {\n            ASSERT(profile.supports_sampled_image_nonuniform_indexing);\n            AddCapability(spv::Capability::ShaderNonUniform);\n            AddCapability(spv::Capability::SampledImageArrayDynamicIndexing);\n            AddCapability(spv::Capability::SampledImageArrayNonUniformIndexing);\n        }\n'
-        s=one(s,a,b,'SPIRV_ARRAY')
-    if '.is_guest_indexed = image_desc.is_guest_indexed' not in s:
-        s=after(s,'            .mip_fallback_mode = mip_fallback_mode,\n','            .image_array_size = num_bindings,\n            .is_guest_indexed = image_desc.is_guest_indexed,\n','.is_guest_indexed = image_desc.is_guest_indexed','SPIRV_META')
+        body=body.replace(a,b,1)
+
+    if '.is_guest_indexed = image_desc.is_guest_indexed' not in body:
+        a='            .mip_fallback_mode = mip_fallback_mode,\n'
+        if body.count(a)!=1:
+            raise RuntimeError('SPIRV_META_FUNCTION_ANCHOR_COUNT='+str(body.count(a)))
+        body=body.replace(
+            a,
+            a+'            .image_array_size = num_bindings,\n'
+              '            .is_guest_indexed = image_desc.is_guest_indexed,\n',
+            1)
+
+    s=s[:fn_start]+body+s[fn_end:]
     return s
+
 def cache(s):
     for k in ('ShaderBinaryVersion','ShaderMetaVersion'):
         m=re.search(rf'(static constexpr u32 {k}\s*=\s*)(0x[0-9A-Fa-f]+|\d+)(u?;)',s)
