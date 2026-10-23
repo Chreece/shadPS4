@@ -30,6 +30,10 @@ jobs:
           assert "'-DENABLE_TESTS=OFF'" in s
           assert "GOT_SOURCE_REPOSITORY_MISSING" in s
           assert "def add_fresh_source(" in s
+          assert "FRESH_SOURCE_COMPOSER_REF_FETCH_FAILED" in s
+          assert "refs/remotes/composer/candidate" in s
+          assert "DISCOVER_LOOP_API_NOT_ADAPTED" in s
+          assert "MarkReadConstBufferSharpSources(usage.indexed_table_sharp);" in s
           assert "def remove_fresh_source(" in s
           assert "def submodules_at(" in s
           assert "clone\',\'--no-hardlinks\',\'--no-checkout" in s
