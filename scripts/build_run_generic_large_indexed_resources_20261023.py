@@ -1350,7 +1350,7 @@ RBIND=r'''        if (image_desc.is_guest_indexed) {
                    !memory->IsValidGpuMapping(raw.Address(),0)) continue;
                 const auto fmt=raw.GetDataFmt(); const auto nfmt=raw.GetNumberFmt();
                 if(!magic_enum::enum_contains(fmt) || !magic_enum::enum_contains(nfmt) ||
-                   fmt==AmdGpu::DataFormat::FormatInvalid ||
+                   fmt==AmdGpu::DataFormat::FormatInvalid || AmdGpu::IsInteger(nfmt) ||
                    raw.width>=max_dim || raw.height>=max_dim || raw.base_level>raw.last_level ||
                    raw.pitch<raw.width) continue;
                 const u64 est=(u64(raw.width)+1u)*(u64(raw.height)+1u)*4u;
