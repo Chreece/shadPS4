@@ -589,6 +589,109 @@ def spirv_context(s):
     s=s[:fn_start]+body+s[fn_end:]
     return s
 
+def spirv_context_h(s):
+    start=s.find('    struct ImageDefinition {')
+    if start<0:
+        raise RuntimeError('SPIRV_IMAGE_DEFINITION_STRUCT_NOT_FOUND')
+    end=s.find('    };',start)
+    if end<0:
+        raise RuntimeError('SPIRV_IMAGE_DEFINITION_STRUCT_END_NOT_FOUND')
+    end+=7
+    body=s[start:end]
+    if 'u32 image_array_size{1};' not in body:
+        anchor='        MipStorageFallbackMode mip_fallback_mode{};\n'
+        if body.count(anchor)!=1:
+            raise RuntimeError('SPIRV_IMAGE_DEFINITION_ANCHOR_COUNT='+str(body.count(anchor)))
+        body=body.replace(
+            anchor,
+            anchor+'        u32 image_array_size{1};\n'
+                   '        bool is_guest_indexed{};\n',
+            1)
+    s=s[:start]+body+s[end:]
+    return s
+
+def ir_emitter_h(s):
+    if 'ImageSampleImplicitLodIndexed(' in s:
+        return s
+    m=re.search(
+        r'(\[\[nodiscard\]\] Value ImageSampleImplicitLod\([^;]+;\n)',
+        s,re.S)
+    if not m:
+        raise RuntimeError('IR_EMITTER_INDEXED_DECL_ANCHOR')
+    decl=(
+        '    [[nodiscard]] Value ImageSampleImplicitLodIndexed(\n'
+        '        const Value& handle, const Value& body, const F32& bias,\n'
+        '        const Value& offset, const U32& gpu_texture_id, TextureInstInfo info);\n\n'
+    )
+    return s[:m.end()]+decl+s[m.end():]
+
+def ir_emitter_cpp(s):
+    if 'IREmitter::ImageSampleImplicitLodIndexed(' in s:
+        return s
+    marker='Value IREmitter::ImageSampleImplicitLod('
+    start=s.find(marker)
+    if start<0:
+        raise RuntimeError('IR_EMITTER_INDEXED_IMPL_START')
+    nxt=s.find('\nValue IREmitter::ImageSampleExplicitLod(',start)
+    if nxt<0:
+        raise RuntimeError('IR_EMITTER_INDEXED_IMPL_END')
+    impl=(
+        '\nValue IREmitter::ImageSampleImplicitLodIndexed(\n'
+        '    const Value& handle, const Value& coords, const F32& bias,\n'
+        '    const Value& offset, const U32& gpu_texture_id, TextureInstInfo info) {\n'
+        '    return Inst(Opcode::ImageSampleImplicitLodIndexed, Flags{info}, handle, coords,\n'
+        '                bias, offset, gpu_texture_id);\n'
+        '}\n'
+    )
+    return s[:nxt]+impl+s[nxt:]
+
+def emit_spirv_image(s):
+    if 'Id EmitImageSampleImplicitLodIndexed(' in s:
+        return s
+    marker='Id EmitImageSampleImplicitLod(EmitContext& ctx'
+    start=s.find(marker)
+    if start<0:
+        raise RuntimeError('SPIRV_INDEXED_SAMPLE_BASE_NOT_FOUND')
+    nxt=s.find('\nId EmitImageSampleExplicitLod(',start)
+    if nxt<0:
+        raise RuntimeError('SPIRV_INDEXED_SAMPLE_INSERT_POINT')
+    impl=r'''
+Id EmitImageSampleImplicitLodIndexed(
+    EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id bias,
+    const IR::Value& offset, Id gpu_texture_id) {
+    const auto& texture = ctx.images[handle & 0xFFFFu];
+    ASSERT(texture.is_guest_indexed && texture.image_array_size >= 2u);
+    ASSERT(ctx.profile.supports_sampled_image_nonuniform_indexing);
+
+    const Id valid = ctx.OpULessThan(ctx.U1[1], gpu_texture_id,
+                                     ctx.ConstU32(texture.image_array_size - 1));
+    const Id bounded = ctx.OpSelect(ctx.U32[1], valid, gpu_texture_id,
+                                    ctx.ConstU32(texture.image_array_size - 1));
+    ctx.Decorate(bounded, spv::Decoration::NonUniform);
+
+    const Id pointer_type =
+        ctx.TypePointer(spv::StorageClass::UniformConstant, texture.image_type);
+    const Id pointer = ctx.OpAccessChain(pointer_type, texture.id, std::array{bounded});
+    ctx.Decorate(pointer, spv::Decoration::NonUniform);
+    const Id image = ctx.OpLoad(texture.image_type, pointer);
+    ctx.Decorate(image, spv::Decoration::NonUniform);
+
+    const Id sampler = ctx.OpLoad(ctx.sampler_type, ctx.samplers[handle >> 16]);
+    const Id sampled_image = ctx.OpSampledImage(texture.sampled_type, image, sampler);
+    ctx.Decorate(sampled_image, spv::Decoration::NonUniform);
+
+    const Id fixed_coords = FixImageCoords<true>(ctx, coords, texture.view_type);
+    ImageOperands operands;
+    operands.Add(spv::ImageOperandsMask::Bias, bias);
+    operands.AddOffset(ctx, texture.view_type, offset);
+    const Id sample =
+        ctx.OpImageSampleImplicitLod(texture.data_types->Get(4), sampled_image,
+                                     fixed_coords, operands.mask, operands.operands);
+    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
+}
+'''
+    return s[:nxt]+impl+s[nxt:]
+
 def cache(s):
     for k in ('ShaderBinaryVersion','ShaderMetaVersion'):
         m=re.search(rf'(static constexpr u32 {k}\s*=\s*)(0x[0-9A-Fa-f]+|\d+)(u?;)',s)
@@ -684,6 +787,10 @@ TRANS={
 'src/shader_recompiler/ir/opcodes.inc':opcodes,
 'src/shader_recompiler/backend/spirv/emit_spirv_instructions.h':spirv_decl,
 'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp':spirv_context,
+'src/shader_recompiler/backend/spirv/spirv_emit_context.h':spirv_context_h,
+'src/shader_recompiler/backend/spirv/emit_spirv_image.cpp':emit_spirv_image,
+'src/shader_recompiler/ir/ir_emitter.h':ir_emitter_h,
+'src/shader_recompiler/ir/ir_emitter.cpp':ir_emitter_cpp,
 'src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp':cache,
 'src/video_core/renderer_vulkan/vk_rasterizer.cpp':raster,
 }
@@ -1229,6 +1336,8 @@ def compose(run_dir,info,manifest):
     e=env({'GIT_INDEX_FILE':str(idx)})
     git('read-tree',parent,e=e)
     for p in GEN_FILES:
+        if p=='src/shader_recompiler/ir/passes/indexed_image_selector.h':
+            continue
         fn=TRANS.get(p)
         if fn:
             content=fn(show(parent,p).decode()).encode()
