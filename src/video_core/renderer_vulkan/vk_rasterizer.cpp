@@ -432,7 +432,10 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             stage_images += image.NumBindings(*stage);
         }
         max_stage_images = std::max(max_stage_images, stage_images);
-        required_infos += stage_images + stage->samplers.size();
+        required_infos += stage_images;
+        for (const auto& sampler : stage->samplers) {
+            required_infos += sampler.NumBindings(*stage);
+        }
     }
     if (max_stage_images > Shader::MaxGuestIndexedImageEntries +
                             Shader::NUM_IMAGES * 64u) {
@@ -1134,6 +1137,61 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     }
 
     for (const auto& sampler : stage.samplers) {
+        if (sampler.is_guest_indexed) {
+            const u32 count = sampler.NumBindings(stage);
+            AmdGpu::Buffer source{};
+            const bool fetched =
+                sampler.indexed_table_fetch.Fetch(stage.flattened_ud_buf.data(), &source);
+            const u32 record_stride = sampler.indexed_record_stride_bytes;
+            const u32 descriptor_offset = sampler.indexed_sampler_offset_bytes;
+            const u64 bytes =
+                fetched ? (source.stride == 0 ? static_cast<u64>(source.num_records)
+                                              : static_cast<u64>(source.stride) *
+                                                    source.num_records)
+                        : 0u;
+            const bool complete =
+                fetched && source.Valid() && source.base_address &&
+                Shader::Optimization::CompleteGuestTsharpRecordEntries(
+                    static_cast<u32>(source.stride),
+                    static_cast<u32>(source.num_records),
+                    record_stride, descriptor_offset,
+                    Shader::MaxGuestIndexedImageEntries) == count - 1u &&
+                bytes == u64(count - 1u) * record_stride &&
+                memory->IsValidMapping(source.base_address, bytes);
+
+            const u32 first_sampler = static_cast<u32>(image_infos.size());
+            for (u32 i = 0; i < count; ++i) {
+                AmdGpu::Sampler ssharp{};
+                if (complete && i + 1u < count) {
+                    const u64 guest_address =
+                        u64(source.base_address) + u64(i) * record_stride + descriptor_offset;
+                    if (memory->IsValidMapping(guest_address, sizeof(AmdGpu::Sampler))) {
+                        std::memcpy(&ssharp, reinterpret_cast<const void*>(guest_address),
+                                    sizeof(AmdGpu::Sampler));
+                        if (!ssharp.Valid() ||
+                            (ssharp.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
+                             liverpool->regs.ta_bc_base.Address() == 0)) {
+                            ssharp = AmdGpu::Sampler{};
+                        }
+                    }
+                }
+                const auto vk_sampler =
+                    texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base,
+                                             sampler.is_depth, sampler.is_integer);
+                image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
+            }
+
+            auto& write = set_writes[set_write_index++];
+            write.dstSet = VK_NULL_HANDLE;
+            write.dstBinding = binding.unified;
+            write.dstArrayElement = 0;
+            write.descriptorCount = count;
+            write.descriptorType = vk::DescriptorType::eSampler;
+            write.pImageInfo = &image_infos[first_sampler];
+            binding.unified += count;
+            continue;
+        }
+
         auto ssharp = sampler.GetSharp(stage);
         if (!ssharp.Valid() || (ssharp.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
                                 liverpool->regs.ta_bc_base.Address() == 0)) {
