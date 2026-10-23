@@ -195,6 +195,9 @@ struct SamplerResource {
     SharpFetchPostOp post_op{};
     SharpLocation post_op_tsharp_dw3_off{};
     bool is_depth{};
+    // Integer-format images cannot use Vulkan's linear sampler filtering.
+    // A guest S# reused for floating and integer T# needs distinct samplers.
+    bool is_integer{};
 
     constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {
         AmdGpu::Sampler sampler{};
