@@ -46,6 +46,11 @@ EXTRA_FILES=(
 'src/video_core/renderer_vulkan/vk_resource_pool.cpp',
 'src/video_core/renderer_vulkan/vk_resource_pool.h',
 'src/video_core/renderer_vulkan/vk_rasterizer.h',
+'src/video_core/texture_cache/sampler.cpp',
+'src/video_core/texture_cache/sampler.h',
+'src/video_core/texture_cache/sampler_filter_policy.h',
+'src/video_core/texture_cache/texture_cache.cpp',
+'src/video_core/texture_cache/texture_cache.h',
 )
 FILES=GEN_FILES+EXTRA_FILES
 PATCH_COMMITS=(
@@ -57,6 +62,7 @@ PATCH_COMMITS=(
 '29983ea0417a920db38c0b0854f610eb482050a1',
 '16ab0edbd70e1912ec3de581466788f89c11b39c',
 '9e30254c86b532eb7c5921a3268dcb2a00e7d48d',
+'aab1275779c989f0624cd6dcb9582410d5534381',
 '95c8e5bddb645077da4af6f53507bd07037448d8',
 '476f8b83e3c7d61fd83869e97a513e6474d1bf76',
 'be463d8d361a23d66ec60147ed268389a58b1f22',
@@ -85,7 +91,7 @@ PATCH_COMMITS=(
 '6ff828d3a06b2222597c89c596ff500863c4a18f',
 '34a46b656f75a7fdd215086d5be2b1c6042016b4',
 )
-PATCH_PATHS=('src/shader_recompiler','src/video_core/renderer_vulkan')
+PATCH_PATHS=('src/shader_recompiler','src/video_core/renderer_vulkan','src/video_core/texture_cache')
 
 def env(extra=None):
     e={k:v for k,v in os.environ.items() if k not in ('GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_COMMON_DIR')}
@@ -455,6 +461,12 @@ def apply_patch_commit(idx,sha):
          'apply','--3way','--cached','--whitespace=nowarn','-'],
         env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
     if q.returncode:
+        reverse=subprocess.run(
+            ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
+             'apply','--reverse','--check','--cached','--whitespace=nowarn','-'],
+            env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
+        if reverse.returncode==0:
+            return
         raise RuntimeError('GENERIC_PATCH_APPLY_FAILED='+sha+' '+(q.stderr or b'').decode(errors='replace')[-4000:])
 
 def index_text(idx,p):
