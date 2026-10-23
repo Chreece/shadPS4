@@ -2081,7 +2081,9 @@ def finish_generic_large(idx):
 
     p='src/video_core/renderer_vulkan/vk_rasterizer.cpp'
     t=index_text(idx,p)
-    for header,token in (('<unordered_map>','std::unordered_map'),
+    for header,token in (('<algorithm>','std::max'),
+                         ('<memory>','std::construct_at'),
+                         ('<unordered_map>','std::unordered_map'),
                          ('<bit>','std::has_single_bit'),
                          ('<cstring>','std::memcpy')):
         if token in t and ('#include '+header) not in t:
