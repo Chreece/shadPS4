@@ -1520,12 +1520,22 @@ def compose(run_dir,info,manifest):
         ):
             continue
         fn=TRANS.get(p)
-        if fn:
-            content=fn(show(parent,p).decode()).encode()
-            oid=git('hash-object','-w','--stdin',input=content).decode().strip()
-            git('update-index','--add','--cacheinfo',f'100644,{oid},{p}',e=e)
-        else:
-            apply_range_file(idx,GEN_BASE,GEN,p,'GENERIC_BASE')
+        if not fn:
+            raise RuntimeError('GENERIC_BASE_TRANSFORM_MISSING='+p)
+        content=fn(show(parent,p).decode()).encode()
+        oid=git('hash-object','-w','--stdin',input=content).decode().strip()
+        git('update-index','--add','--cacheinfo',f'100644,{oid},{p}',e=e)
+
+    # Deterministic fixes outside the original 464e32 file set. Only files
+    # explicitly registered in TRANS are changed here; everything else stays
+    # at the merged verified/upstream parent until its audited replay commit.
+    for p in EXTRA_FILES:
+        fn=TRANS.get(p)
+        if not fn:
+            continue
+        content=fn(index_text(idx,p)).encode()
+        oid=git('hash-object','-w','--stdin',input=content).decode().strip()
+        git('update-index','--add','--cacheinfo',f'100644,{oid},{p}',e=e)
 
     # Seed the final generic indexed-selector helper directly. The three
     # historical commits that progressively built this header are superseded
@@ -1557,6 +1567,17 @@ def compose(run_dir,info,manifest):
             raise RuntimeError('FINAL_GUEST_TSHARP_HELPER_MISSING='+marker)
     oid=git('hash-object','-w','--stdin',input=guest_table).decode().strip()
     git('update-index','--add','--cacheinfo',f'100644,{oid},{guest_table_path}',e=e)
+
+    for p,marker in (
+        ('src/video_core/texture_cache/sampler.h','bool is_integer'),
+        ('src/video_core/texture_cache/sampler.cpp','ImageSamplerFilter('),
+        ('src/video_core/texture_cache/texture_cache.h','bool is_depth, bool is_integer'),
+        ('src/video_core/texture_cache/texture_cache.cpp','is_depth, is_integer'),
+    ):
+        if marker not in index_text(idx,p):
+            raise RuntimeError(
+                'INTEGER_SAMPLER_EXTRA_TRANSFORM_MISSING path='+p+' marker='+marker
+            )
 
     sampler_policy_path='src/video_core/texture_cache/sampler_filter_policy.h'
     sampler_policy=show(INTEGER_SAMPLER_FINAL,sampler_policy_path)
