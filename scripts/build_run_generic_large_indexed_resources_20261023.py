@@ -71,7 +71,6 @@ PATCH_COMMITS=(
 'be463d8d361a23d66ec60147ed268389a58b1f22',
 '15ec6ede7034701b9c63e6e47203b6eb352c9377',
 '0dc9a1dff77d7f6148e70e47ab5c6b43da66999a',
-'02c22fd61253b072a9bc4017e67f9c39fa0d4fa9',
 '5cf2cf61930223824024c058cfe72a819f56048e',
 'f336b0dbfc20d35d83642472269cac77c0299ac4',
 'b29106a5c6b6231a9ffb787f9277ef10c31e9182',
@@ -1336,7 +1335,10 @@ def compose(run_dir,info,manifest):
     e=env({'GIT_INDEX_FILE':str(idx)})
     git('read-tree',parent,e=e)
     for p in GEN_FILES:
-        if p=='src/shader_recompiler/ir/passes/indexed_image_selector.h':
+        if p in (
+            'src/shader_recompiler/ir/passes/indexed_image_selector.h',
+            'src/shader_recompiler/guest_tsharp_array.h',
+        ):
             continue
         fn=TRANS.get(p)
         if fn:
@@ -1363,6 +1365,19 @@ def compose(run_dir,info,manifest):
             raise RuntimeError('STRIDED_SELECTOR_FINAL_MISSING='+marker)
     oid=git('hash-object','-w','--stdin',input=selector).decode().strip()
     git('update-index','--add','--cacheinfo',f'100644,{oid},{selector_path}',e=e)
+
+    guest_table_path='src/shader_recompiler/guest_tsharp_array.h'
+    guest_table=show('02c22fd61253b072a9bc4017e67f9c39fa0d4fa9',guest_table_path)
+    guest_text=guest_table.decode()
+    for marker in (
+        'CompleteGuestTsharpTableEntries',
+        'CompleteGuestTsharpRecordEntries',
+        'GuestTsharpIndexOrNull',
+    ):
+        if marker not in guest_text:
+            raise RuntimeError('FINAL_GUEST_TSHARP_HELPER_MISSING='+marker)
+    oid=git('hash-object','-w','--stdin',input=guest_table).decode().strip()
+    git('update-index','--add','--cacheinfo',f'100644,{oid},{guest_table_path}',e=e)
 
     for sha in PATCH_COMMITS:
         apply_patch_commit(idx,sha)
