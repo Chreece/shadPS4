@@ -431,6 +431,7 @@ OPCODE(ImageGatherDref,                                     F32x4,          Opaq
 OPCODE(ImageQueryDimensions,                                U32x4,          Opaque,         U32,            U1,                                             )
 OPCODE(ImageQueryLod,                                       F32x4,          Opaque,         Opaque,                                                         )
 OPCODE(ImageGradient,                                       F32x4,          Opaque,         Opaque,         Opaque,         Opaque,         Opaque,         F32,          )
+OPCODE(ImageGradientIndexed,                                F32x4,          Opaque,         Opaque,         Opaque,         Opaque,         Opaque,         U32,          )
 OPCODE(ImageRead,                                           F32x4,          Opaque,         Opaque,         U32,            U32,                            )
 OPCODE(ImageWrite,                                          Void,           Opaque,         Opaque,         U32,            U32,            F32x4,          )
 
@@ -470,6 +471,7 @@ OPCODE(BallotFindLsb,                                       U32,            U64,
 OPCODE(InverseBallot,                                       U1,             U64,                                                                            )
 OPCODE(DataAppend,                                          U32,            U32,            U1                                                              )
 OPCODE(DataConsume,                                         U32,            U32,            U1                                                              )
+OPCODE(GroupUMin,                                           U32,            U32,                                                                            )
 OPCODE(GroupAny,                                            U1,             U1,                                                                             )
 
 // Time operations
