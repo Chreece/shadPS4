@@ -22,12 +22,15 @@ jobs:
           s=p.read_text()
           tree=ast.parse(s)
           funcs={n.name for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
-          for name in ("compose","verify_prev","fresh_builddir","apply_patch_commit","finish_generic_large","launch","main"):
+          for name in ("compose","verify_prev","fresh_paths","apply_patch_commit","finish_generic_large","launch","main"):
               assert name in funcs, name
           assert "GhostOfTsushima/source" in s
           assert "clean-rebase-verified/source" not in s
           assert "def builddir():" not in s
           assert "'-DENABLE_TESTS=OFF'" in s
           assert "GOT_SOURCE_REPOSITORY_MISSING" in s
+          assert "def add_worktree(" in s
+          assert "def remove_worktree(" in s
+          assert "def submodules_at(" in s
           print("COMPOSER_STATIC_CHECK=PASS")
           PY
