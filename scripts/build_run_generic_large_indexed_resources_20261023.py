@@ -20,6 +20,7 @@ GEN_BASE='9f4c2da6107cb2b31578cc4b35f5e4ed85637dab'
 GEN='464e32e92b7f36fede81f0d65ca0e81934051d1e'
 STRIDED_SELECTOR_FINAL='d72990fbd8fe6483a921fa2c015e1d65b1e1f336'
 GUEST_TSHARP_FINAL='02c22fd61253b072a9bc4017e67f9c39fa0d4fa9'
+INTEGER_SAMPLER_FINAL='aab1275779c989f0624cd6dcb9582410d5534381'
 OLD=ROOT/'scripts/shadps4-buffer-phi-launch-20261023.py'
 OLD_SHA='d6c0c858a6f60d16a42248cff3589fb33cdd4f8897780eda4ad07437a771b44c'
 GEN_FILES=(
@@ -68,7 +69,6 @@ PATCH_COMMITS=(
 '29983ea0417a920db38c0b0854f610eb482050a1',
 '16ab0edbd70e1912ec3de581466788f89c11b39c',
 '9e30254c86b532eb7c5921a3268dcb2a00e7d48d',
-'aab1275779c989f0624cd6dcb9582410d5534381',
 'be463d8d361a23d66ec60147ed268389a58b1f22',
 '15ec6ede7034701b9c63e6e47203b6eb352c9377',
 '0dc9a1dff77d7f6148e70e47ab5c6b43da66999a',
@@ -377,6 +377,22 @@ def resource_h(s):
     s=s[:start]+body+s[end:]
     if 'return AmdGpu::Image::Null(false);' not in s[start:start+len(body)]:
         raise RuntimeError('RESOURCE_IMAGE_INDEXED_SHARP_NOT_INSERTED')
+
+    sampler_start=s.find('struct SamplerResource {')
+    sampler_end=s.find('using SamplerResourceList',sampler_start)
+    if sampler_start<0 or sampler_end<0:
+        raise RuntimeError('SAMPLER_RESOURCE_STRUCT_NOT_FOUND')
+    sampler=s[sampler_start:sampler_end]
+    if 'bool is_integer{};' not in sampler:
+        anchor='    bool is_depth{};\n'
+        if sampler.count(anchor)!=1:
+            raise RuntimeError('SAMPLER_INTEGER_FIELD_ANCHOR_COUNT='+str(sampler.count(anchor)))
+        sampler=sampler.replace(
+            anchor,
+            anchor+'    // Integer-format images require nearest filtering and no anisotropy.\n'
+                   '    bool is_integer{};\n',
+            1)
+    s=s[:sampler_start]+sampler+s[sampler_end:]
     return s
 
 HELPER=r'''
@@ -535,6 +551,41 @@ def patching(s):
             raise RuntimeError('PATCH_ID_FUNCTION_ANCHOR_COUNT='+str(body.count(a)))
         body=body.replace(a,a+'        if (image_res.is_guest_indexed) {\n            inst.SetArg(1, resource.indexed_texture_id);\n        }\n',1)
         s=s[:fn_start]+body+s[fn_end:]
+    # Numeric image format is part of Vulkan sampler identity.
+    add_start=s.find('u32 Add(const SamplerResource& desc)')
+    if add_start<0:
+        raise RuntimeError('SAMPLER_DESCRIPTOR_ADD_NOT_FOUND')
+    add_end=s.find('\n    }',add_start)
+    if add_end<0:
+        raise RuntimeError('SAMPLER_DESCRIPTOR_ADD_END_NOT_FOUND')
+    add_body=s[add_start:add_end]
+    if 'desc.is_integer == existing.is_integer' not in add_body:
+        anchor='desc.is_depth == existing.is_depth'
+        if add_body.count(anchor)!=1:
+            raise RuntimeError('SAMPLER_INTEGER_DEDUP_ANCHOR_COUNT='+str(add_body.count(anchor)))
+        add_body=add_body.replace(
+            anchor,
+            anchor+' &&\n                   desc.is_integer == existing.is_integer',
+            1)
+        s=s[:add_start]+add_body+s[add_end:]
+
+    fn_start=s.find('void PatchImageSharp(')
+    fn_end=s.find('\nstatic IR::Value IsMbcntWithExec',fn_start)
+    if fn_end<0:
+        fn_end=s.find('\nstatic ',fn_start+1)
+    if fn_start<0 or fn_end<0:
+        raise RuntimeError('PATCH_IMAGE_INTEGER_FUNCTION_RANGE')
+    body=s[fn_start:fn_end]
+    if '.is_integer = AmdGpu::IsInteger(image.GetNumberFmt())' not in body:
+        anchor='            .is_depth = bool(inst_info.is_depth), // true for the _C (compare) opcodes\n'
+        if body.count(anchor)!=1:
+            raise RuntimeError('PATCH_IMAGE_INTEGER_ANCHOR_COUNT='+str(body.count(anchor)))
+        body=body.replace(
+            anchor,
+            anchor+'            .is_integer = AmdGpu::IsInteger(image.GetNumberFmt()),\n',
+            1)
+        s=s[:fn_start]+body+s[fn_end:]
+
     if 'ImageSampleImplicitLodIndexed' not in s:
         fn_start=s.find('void PatchImageSampleArgs(')
         if fn_start<0:
@@ -771,7 +822,113 @@ def raster(s):
     elif 'bool is_storage = image_id && desc.type' not in body:
         raise RuntimeError('RASTER_NULL_GUARD')
 
+    old_call='texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base, sampler.is_depth)'
+    if old_call in body:
+        body=body.replace(
+            old_call,
+            'texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base, '
+            'sampler.is_depth, sampler.is_integer)',
+            1)
+    elif ('texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base,' in body and
+          'sampler.is_integer' not in body):
+        raise RuntimeError('RASTER_INTEGER_SAMPLER_CALL_NOT_ADAPTED')
+
     s=s[:fn_start]+body+s[fn_end:]
+    return s
+
+def sampler_h(s):
+    if 'bool is_integer' in s:
+        return s
+    old='''    explicit Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sampler,
+                     const AmdGpu::BorderColorBuffer border_color_base, bool is_depth);'''
+    new='''    explicit Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sampler,
+                     const AmdGpu::BorderColorBuffer border_color_base, bool is_depth,
+                     bool is_integer);'''
+    return one(s,old,new,'SAMPLER_INTEGER_DECL')
+
+def sampler_cpp(s):
+    if 'sampler_filter_policy.h' not in s:
+        s=after(
+            s,
+            '#include "video_core/texture_cache/sampler.h"\n',
+            '#include "video_core/texture_cache/sampler_filter_policy.h"\n',
+            'sampler_filter_policy.h','SAMPLER_FILTER_POLICY_INCLUDE')
+    old_sig='''Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sampler,
+                 const AmdGpu::BorderColorBuffer border_color_base, const bool is_depth) {'''
+    new_sig='''Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sampler,
+                 const AmdGpu::BorderColorBuffer border_color_base, const bool is_depth,
+                 const bool is_integer) {'''
+    if old_sig in s:
+        s=s.replace(old_sig,new_sig,1)
+    if 'const bool is_integer)' not in s:
+        raise RuntimeError('SAMPLER_INTEGER_CTOR_SIGNATURE_MISSING')
+
+    old_aniso='''    const bool anisotropy_enable = instance.IsAnisotropicFilteringSupported() &&
+                                   (AmdGpu::IsAnisoFilter(sampler.xy_mag_filter) ||
+                                    AmdGpu::IsAnisoFilter(sampler.xy_min_filter));'''
+    if old_aniso in s:
+        new_aniso='''    const bool anisotropy_enable =
+        SamplerAnisotropyAllowed(
+            instance.IsAnisotropicFilteringSupported() &&
+                (AmdGpu::IsAnisoFilter(sampler.xy_mag_filter) ||
+                 AmdGpu::IsAnisoFilter(sampler.xy_min_filter)),
+            is_integer);'''
+        s=s.replace(old_aniso,new_aniso,1)
+    if 'SamplerAnisotropyAllowed(' not in s:
+        raise RuntimeError('SAMPLER_INTEGER_ANISO_POLICY_MISSING')
+
+    s=s.replace(
+        '.magFilter = LiverpoolToVK::Filter(sampler.xy_mag_filter),',
+        '.magFilter = ImageSamplerFilter(LiverpoolToVK::Filter(sampler.xy_mag_filter), is_integer),')
+    s=s.replace(
+        '.minFilter = LiverpoolToVK::Filter(sampler.xy_min_filter),',
+        '.minFilter = ImageSamplerFilter(LiverpoolToVK::Filter(sampler.xy_min_filter), is_integer),')
+    s=s.replace(
+        '.mipmapMode = LiverpoolToVK::MipFilter(sampler.mip_filter),',
+        '.mipmapMode =\n            ImageSamplerMipmapMode(LiverpoolToVK::MipFilter(sampler.mip_filter), is_integer),')
+    for marker in ('ImageSamplerFilter(','ImageSamplerMipmapMode('):
+        if marker not in s:
+            raise RuntimeError('SAMPLER_INTEGER_FILTER_POLICY_MISSING='+marker)
+    return s
+
+def texture_cache_h(s):
+    if 'bool is_depth, bool is_integer' in s:
+        return s
+    old='''    [[nodiscard]] vk::Sampler GetSampler(const AmdGpu::Sampler& sampler,
+                                         AmdGpu::BorderColorBuffer border_color_base,
+                                         bool is_depth);'''
+    new='''    [[nodiscard]] vk::Sampler GetSampler(const AmdGpu::Sampler& sampler,
+                                         AmdGpu::BorderColorBuffer border_color_base,
+                                         bool is_depth, bool is_integer);'''
+    return one(s,old,new,'TEXTURE_CACHE_INTEGER_DECL')
+
+def texture_cache_cpp(s):
+    old_sig='''vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sharp,
+                                     AmdGpu::BorderColorBuffer border_color_base,
+                                     const bool is_depth) {'''
+    new_sig='''vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sharp,
+                                     AmdGpu::BorderColorBuffer border_color_base,
+                                     const bool is_depth, const bool is_integer) {'''
+    if old_sig in s:
+        s=s.replace(old_sig,new_sig,1)
+    if 'const bool is_integer)' not in s:
+        raise RuntimeError('TEXTURE_CACHE_INTEGER_SIGNATURE_MISSING')
+    old_hash='''    const u64 hash = HashCombine(XXH3_64bits(&sharp, sizeof(sharp)), is_depth);'''
+    if old_hash in s:
+        s=s.replace(
+            old_hash,
+            '''    const u64 hash = HashCombine(
+        HashCombine(XXH3_64bits(&sharp, sizeof(sharp)), is_depth), is_integer);''',
+            1)
+    old_insert='slot_samplers.Insert(instance, sharp, border_color_base, is_depth)'
+    if old_insert in s:
+        s=s.replace(
+            old_insert,
+            'slot_samplers.Insert(instance, sharp, border_color_base, is_depth, is_integer)',
+            1)
+    for marker in ('is_integer);','is_depth, is_integer)'):
+        if marker not in s:
+            raise RuntimeError('TEXTURE_CACHE_INTEGER_POLICY_MISSING='+marker)
     return s
 
 
@@ -793,6 +950,10 @@ TRANS={
 'src/shader_recompiler/ir/ir_emitter.cpp':ir_emitter_cpp,
 'src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp':cache,
 'src/video_core/renderer_vulkan/vk_rasterizer.cpp':raster,
+'src/video_core/texture_cache/sampler.h':sampler_h,
+'src/video_core/texture_cache/sampler.cpp':sampler_cpp,
+'src/video_core/texture_cache/texture_cache.h':texture_cache_h,
+'src/video_core/texture_cache/texture_cache.cpp':texture_cache_cpp,
 }
 
 def _pure_cache_version_patch(sha):
@@ -1079,7 +1240,7 @@ def ensure_required_refs():
         if not exists(dst+'^{commit}'):
             raise RuntimeError('REQUIRED_REF_MISSING_AFTER_FETCH='+dst)
 
-    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,GUEST_TSHARP_FINAL,*PATCH_COMMITS)
+    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,GUEST_TSHARP_FINAL,INTEGER_SAMPLER_FINAL,*PATCH_COMMITS)
     for sha in required:
         if exists(sha+'^{commit}'):
             continue
@@ -1379,6 +1540,15 @@ def compose(run_dir,info,manifest):
             raise RuntimeError('FINAL_GUEST_TSHARP_HELPER_MISSING='+marker)
     oid=git('hash-object','-w','--stdin',input=guest_table).decode().strip()
     git('update-index','--add','--cacheinfo',f'100644,{oid},{guest_table_path}',e=e)
+
+    sampler_policy_path='src/video_core/texture_cache/sampler_filter_policy.h'
+    sampler_policy=show(INTEGER_SAMPLER_FINAL,sampler_policy_path)
+    sampler_policy_text=sampler_policy.decode()
+    for marker in ('ImageSamplerFilter','ImageSamplerMipmapMode','SamplerAnisotropyAllowed'):
+        if marker not in sampler_policy_text:
+            raise RuntimeError('INTEGER_SAMPLER_POLICY_MISSING='+marker)
+    oid=git('hash-object','-w','--stdin',input=sampler_policy).decode().strip()
+    git('update-index','--add','--cacheinfo',f'100644,{oid},{sampler_policy_path}',e=e)
 
     for sha in PATCH_COMMITS:
         apply_patch_commit(idx,sha)
