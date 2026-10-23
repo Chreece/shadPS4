@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <limits>
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
@@ -283,13 +284,17 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             table.Valid() && table.base_address != 0) {
             const u32 record_stride = resource.indexed_record_stride_bytes;
             const u32 record_offset = resource.indexed_descriptor_offset_bytes;
+            const u32 indexed_limit = record_stride != 0u
+                ? std::min(profile.max_guest_indexed_image_entries,
+                           profile.max_guest_indexed_sampler_entries)
+                : profile.max_guest_indexed_image_entries;
             const u32 entries = record_stride != 0u
                 ? CompleteGuestTsharpRecordEntries(
                       static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
-                      record_stride, record_offset, profile.max_guest_indexed_image_entries)
+                      record_stride, record_offset, indexed_limit)
                 : CompleteGuestTsharpTableEntries(
                       static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
-                      profile.max_guest_indexed_image_entries);
+                      indexed_limit);
             if (entries != 0u) {
                 image_res.indexed_table_fetch = table_fetch;
                 image_res.indexed_guest_entries = entries;
