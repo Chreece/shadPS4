@@ -32,6 +32,10 @@ struct ResourceDiscovery {
     std::array<SharpReference, 2> sharps;
     SharpReference indexed_table_sharp{};
     IR::Value indexed_texture_id{};
+    // Zero means the tightly packed 32-byte image table.
+    // Nonzero means a T# at a proven byte offset inside each guest record.
+    u32 indexed_record_stride_bytes{};
+    u32 indexed_descriptor_offset_bytes{};
     bool has_indexed_table{};
 };
 using ResourceDiscoveryList = boost::container::small_vector<ResourceDiscovery, 32>;
