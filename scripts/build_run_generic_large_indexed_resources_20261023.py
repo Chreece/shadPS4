@@ -1145,11 +1145,16 @@ def compose(run_dir,info,manifest):
     rev=commit_tree(tree,parent,msg)
     if not tuple(git('diff','--name-only',parent,rev,'--','src').decode().splitlines()):raise RuntimeError('EMPTY_COMPOSED_CHANGE_SET')
     diff=git('diff',parent,rev,'--','src').decode(errors='replace')
+    added='\n'.join(
+        line[1:] for line in diff.splitlines()
+        if line.startswith('+') and not line.startswith('+++')
+    )
     for pat in (r'CUSA\d+',r'Ghost of Tsushima',r'Tsushima',
                 r'pgm_hash\s*==',r'title_id\s*==',
                 r'getenv\([^\n]*SHADPS4_',r'readbacks_mode\s*=',
                 r'readbacksMode\s*='):
-        if re.search(pat,diff,re.I):raise RuntimeError('GAME_SPECIFIC_SOURCE='+pat)
+        if re.search(pat,added,re.I):
+            raise RuntimeError('GAME_SPECIFIC_SOURCE_ADDITION='+pat)
     if ('ImageSampleImplicitLodIndexed' not in diff or 'ImageGradientIndexed' not in diff or
         'NonUniform' not in diff or 'indexed_sampler' not in diff or
         'ImageGatherExtended' not in diff):raise RuntimeError('INDEXED_PATH_MISSING')
