@@ -120,6 +120,8 @@ public:
                    desc.post_op == existing.post_op &&
                    desc.is_guest_indexed == existing.is_guest_indexed &&
                    desc.indexed_guest_entries == existing.indexed_guest_entries &&
+                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
+                   desc.indexed_descriptor_offset_bytes == existing.indexed_descriptor_offset_bytes &&
                    desc.indexed_table_fetch == existing.indexed_table_fetch;
         })};
         auto& image = image_resources[index];
@@ -258,38 +260,33 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         .post_op = resource.sharps[0].post_op,
     };
 
-    // Preserve a complete guest T# table and its real GPU selector. Unsupported
-    // forms stay on the ordinary resource path instead of guessing a texture.
+    // Preserve a complete guest T# table and its real GPU selector. Packed
+    // and strided array-of-structs forms are accepted only when the complete
+    // table is representable; never truncate a prefix or CPU-evaluate the ID.
     if (resource.has_indexed_table && profile.supports_sampled_image_nonuniform_indexing &&
         !is_written && !inst_info.is_depth && !inst_info.is_array &&
-        !inst_info.is_gather && !inst_info.has_derivatives && !inst_info.has_lod &&
-        !inst_info.force_level0 && !inst_info.has_lod_clamp && !inst_info.is_r128 &&
-        !inst_info.is_unnormalized) {
+        !inst_info.is_gather && !inst_info.has_lod && !inst_info.force_level0 &&
+        !inst_info.has_lod_clamp && !inst_info.is_r128 && !inst_info.is_unnormalized) {
         const auto table_fetch =
             ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp);
         AmdGpu::Buffer table{};
-        if (table_fetch.Fetch(info.flattened_ud_buf.data(), &table) && table.Valid() &&
-            table.base_address != 0) {
-            const u32 entries = CompleteGuestTsharpTableEntries(
-                static_cast<u32>(table.stride), table.num_records,
-                MaxGuestIndexedImageEntries);
+        if (table_fetch.Fetch(info.flattened_ud_buf.data(), &table) &&
+            table.Valid() && table.base_address != 0) {
+            const u32 record_stride = resource.indexed_record_stride_bytes;
+            const u32 record_offset = resource.indexed_descriptor_offset_bytes;
+            const u32 entries = record_stride != 0u
+                ? CompleteGuestTsharpRecordEntries(
+                      static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
+                      record_stride, record_offset, profile.max_guest_indexed_image_entries)
+                : CompleteGuestTsharpTableEntries(
+                      static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
+                      profile.max_guest_indexed_image_entries);
             if (entries != 0u) {
-                u32 image_bindings_used = 0;
-                for (const auto& existing : info.images) {
-                    image_bindings_used += existing.NumBindings(info);
-                }
-                const u32 new_image_bindings = entries + 1u;
-                const u32 push_descriptors_used =
-                    static_cast<u32>(info.buffers.size() + info.samplers.size()) +
-                    image_bindings_used;
-                // One sampler will also be added for this ImageSampleRaw.
-                if (image_bindings_used + new_image_bindings <= NUM_IMAGES &&
-                    push_descriptors_used + new_image_bindings + 1u <=
-                        profile.max_push_descriptors) {
-                    image_res.indexed_table_fetch = table_fetch;
-                    image_res.indexed_guest_entries = static_cast<u8>(entries);
-                    image_res.is_guest_indexed = true;
-                }
+                image_res.indexed_table_fetch = table_fetch;
+                image_res.indexed_guest_entries = entries;
+                image_res.indexed_record_stride_bytes = record_stride;
+                image_res.indexed_descriptor_offset_bytes = record_offset;
+                image_res.is_guest_indexed = true;
             }
         }
     }
