@@ -332,28 +332,10 @@ def discover(s):
         a='ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {'
         s=one(s,a,HELPER+'\n'+a,'DISCOVER_HELPER')
     if 'usage.has_indexed_table=true;' not in s and 'usage.has_indexed_table = true;' not in s:
-        # The verified parent has already evolved this call (image-Phi and
-        # masked-sharp work changed its signature/formatting). Match the call
-        # structurally instead of pinning one obsolete source line.
-        start=s.find('ResourceDiscoveryList ResourceDiscoverPass(')
-        if start<0:
-            raise RuntimeError('DISCOVER_FUNCTION_NOT_FOUND')
-        tail=s[start:]
-        if 'DiscoverImageSharp(*block, inst, sharp_usages, program);' not in tail:
-            raise RuntimeError('DISCOVER_PARENT_SIGNATURE_CHANGED excerpt='+tail[:3000].replace('\n',' | '))
-        m=re.search(r'(?m)^(?P<indent>[ \t]*)DiscoverImageSharp\([^;]*?\);[ \t]*\n',tail)
-        if not m:
-            raise RuntimeError('DISCOVER_IMAGE_CALL_NOT_FOUND excerpt='+tail[:5000].replace('\n',' | '))
-        insert_at=start+m.end()
-        indent=m.group('indent')
-        loop_lines=LOOP.splitlines()
-        first=next((line for line in loop_lines if line.strip()),'')
-        base_indent=len(first)-len(first.lstrip())
-        loop='\n'.join(
-            (indent+line[base_indent:]) if line.strip() else line
-            for line in loop_lines
-        )+'\n'
-        s=s[:insert_at]+loop+s[insert_at:]
+        # Exact verified 975ee981 image-discovery API from the retained
+        # image-resource-correctness candidate.
+        a='                DiscoverImageSharp(*block, inst, sharp_usages, program);\n'
+        s=one(s,a,a+LOOP,'DISCOVER_LOOP')
     if 'MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);' not in s:
         raise RuntimeError('DISCOVER_MARK_API_NOT_ADAPTED')
     return s
