@@ -28,9 +28,9 @@ jobs:
               if isinstance(n,ast.Assign)
               and len(n.targets)==1
               and isinstance(n.targets[0],ast.Name)
-              and n.targets[0].id in {"PATCH_COMMITS","VULKAN_INDEXING_FEATURE_FIXES","DESCRIPTOR_SET_SCALING_FIXES","DYNAMIC_IMAGE_BINDING_FIXES"}
+              and n.targets[0].id in {"PATCH_COMMITS","VULKAN_INDEXING_FEATURE_FIXES","DESCRIPTOR_SET_SCALING_FIXES","DYNAMIC_IMAGE_BINDING_FIXES","STRIDED_TSHARP_FIXES"}
           }
-          assert len(assigns["PATCH_COMMITS"]) == 23
+          assert len(assigns["PATCH_COMMITS"]) == 17
           assert "cbbcc969156f9258633914409ca88e6458bbad2c" not in assigns["PATCH_COMMITS"]
           assert "538fc65527d96086443d14d3227eb9c5daa7397f" not in assigns["PATCH_COMMITS"]
           assert assigns["VULKAN_INDEXING_FEATURE_FIXES"] == (
@@ -48,6 +48,14 @@ jobs:
           assert assigns["DYNAMIC_IMAGE_BINDING_FIXES"] == (
               "16ab0edbd70e1912ec3de581466788f89c11b39c",
               "9e30254c86b532eb7c5921a3268dcb2a00e7d48d",
+          )
+          assert assigns["STRIDED_TSHARP_FIXES"] == (
+              "be463d8d361a23d66ec60147ed268389a58b1f22",
+              "15ec6ede7034701b9c63e6e47203b6eb352c9377",
+              "0dc9a1dff77d7f6148e70e47ab5c6b43da66999a",
+              "5cf2cf61930223824024c058cfe72a819f56048e",
+              "f336b0dbfc20d35d83642472269cac77c0299ac4",
+              "b29106a5c6b6231a9ffb787f9277ef10c31e9182",
           )
           for name in ("compose","verify_prev","fresh_paths","apply_patch_commit","finish_generic_large","launch","main"):
               assert name in funcs, name
@@ -102,6 +110,10 @@ jobs:
           assert "def graphics_pipeline(" in s
           assert "def compute_pipeline(" in s
           assert "batch_count = sampled_image_slots > 1024u ? 1u : DescriptorSetBatch" in s
+          assert "AnalyzeStridedIndexedSharpWord" in s
+          assert "indexed_record_stride_bytes" in s
+          assert "CompleteGuestTsharpRecordEntries" in s
+          assert "record_stride,record_offset,indexed_limit" in s
           assert "538fc65527d96086443d14d3227eb9c5daa7397f" in s
           assert "cbbcc969156f9258633914409ca88e6458bbad2c" in s
           assert "clean-rebase-verified" not in s
