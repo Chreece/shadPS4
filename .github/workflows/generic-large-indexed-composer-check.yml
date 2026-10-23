@@ -131,6 +131,7 @@ jobs:
           assert "def graphics_pipeline(" in s
           assert "def compute_pipeline(" in s
           assert "batch_count = sampled_image_slots > 1024u ? 1u : DescriptorSetBatch" in s
+          assert "desc.descriptorType == vk::DescriptorType::eSampler" in s
           assert "AnalyzeStridedIndexedSharpWord" in s
           assert "indexed_record_stride_bytes" in s
           assert "CompleteGuestTsharpRecordEntries" in s
