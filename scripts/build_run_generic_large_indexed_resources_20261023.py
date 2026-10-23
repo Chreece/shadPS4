@@ -19,6 +19,7 @@ RECOVERY_PARTS=tuple(f'patches/verified-975.patch.gz.b64.part{i:02d}' for i in r
 GEN_BASE='9f4c2da6107cb2b31578cc4b35f5e4ed85637dab'
 GEN='464e32e92b7f36fede81f0d65ca0e81934051d1e'
 STRIDED_SELECTOR_FINAL='d72990fbd8fe6483a921fa2c015e1d65b1e1f336'
+GUEST_TSHARP_FINAL='02c22fd61253b072a9bc4017e67f9c39fa0d4fa9'
 OLD=ROOT/'scripts/shadps4-buffer-phi-launch-20261023.py'
 OLD_SHA='d6c0c858a6f60d16a42248cff3589fb33cdd4f8897780eda4ad07437a771b44c'
 GEN_FILES=(
@@ -1078,7 +1079,7 @@ def ensure_required_refs():
         if not exists(dst+'^{commit}'):
             raise RuntimeError('REQUIRED_REF_MISSING_AFTER_FETCH='+dst)
 
-    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,*PATCH_COMMITS)
+    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,GUEST_TSHARP_FINAL,*PATCH_COMMITS)
     for sha in required:
         if exists(sha+'^{commit}'):
             continue
@@ -1367,7 +1368,7 @@ def compose(run_dir,info,manifest):
     git('update-index','--add','--cacheinfo',f'100644,{oid},{selector_path}',e=e)
 
     guest_table_path='src/shader_recompiler/guest_tsharp_array.h'
-    guest_table=show('02c22fd61253b072a9bc4017e67f9c39fa0d4fa9',guest_table_path)
+    guest_table=show(GUEST_TSHARP_FINAL,guest_table_path)
     guest_text=guest_table.decode()
     for marker in (
         'CompleteGuestTsharpTableEntries',
