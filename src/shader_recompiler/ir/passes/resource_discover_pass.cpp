@@ -395,6 +395,8 @@ struct IndexedImageTableSource {
     const IR::Inst* buffer{};
     const IR::Inst* selector{};
     u32 descriptor_stride_words{1};
+    u32 record_stride_bytes{};
+    u32 tsharp_offset_bytes{};
     bool gpu_texture_id_indexed{};
     std::array<const IR::Inst*, 8> words{};
     std::array<u32, 8> addends{};
@@ -428,7 +430,14 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
         if (i == 0) {
             out.buffer = buffer;
         } else if (out.buffer != buffer) {
-            return out;
+            // Low/high halves may reconstruct the same V# separately.
+            bool identical = true;
+            for (u32 dw = 0; dw < 4; ++dw) {
+                identical &= out.buffer->Arg(dw) == buffer->Arg(dw);
+            }
+            if (!identical) {
+                return out;
+            }
         }
         out.words[i] = read;
         normalized[i] = AnalyzeIndexedSharpWord(read->Arg(1));
@@ -437,17 +446,33 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
         }
         out.addends[i] = normalized[i].addend;
     }
-    const auto* selector = static_cast<const IR::Inst*>(normalized[0].selector);
-    if (!selector || !AreContiguousIndexedSharpWords(normalized)) {
+
+    if (AreContiguousIndexedSharpWords(normalized)) {
+        const auto* selector = static_cast<const IR::Inst*>(normalized[0].selector);
+        const auto identity = IdentifyTsharpSelector(selector);
+        if (!identity.source) {
+            return out;
+        }
+        out.selector = static_cast<const IR::Inst*>(identity.source);
+        out.descriptor_stride_words = identity.descriptor_stride_words;
+        out.gpu_texture_id_indexed = identity.normalized;
+        out.contiguous = true;
         return out;
     }
-    const auto identity = IdentifyTsharpSelector(selector);
-    if (!identity.source) {
+
+    // Array-of-structs material record: preserve the original GPU record id.
+    std::array<StridedIndexedSharpWord, 8> strided{};
+    for (std::size_t i = 0; i < strided.size(); ++i) {
+        strided[i] = AnalyzeStridedIndexedSharpWord(out.words[i]->Arg(1));
+    }
+    if (!AreContiguousStridedSharpWords(strided)) {
         return out;
     }
-    out.selector = static_cast<const IR::Inst*>(identity.source);
-    out.descriptor_stride_words = identity.descriptor_stride_words;
-    out.gpu_texture_id_indexed = identity.normalized;
+    out.selector = static_cast<const IR::Inst*>(strided[0].gpu_record_id);
+    out.record_stride_bytes = strided[0].record_stride_bytes;
+    out.tsharp_offset_bytes = strided[0].offset_dwords * 4u;
+    out.descriptor_stride_words = out.record_stride_bytes / 4u;
+    out.gpu_texture_id_indexed = true;
     out.contiguous = true;
     return out;
 }
@@ -465,7 +490,8 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                     profile.supports_sampled_image_nonuniform_indexing) {
                     const auto table = AnalyzeIndexedImageTable(inst);
                     if (table.contiguous && table.gpu_texture_id_indexed &&
-                        table.descriptor_stride_words == 8u) {
+                        (table.descriptor_stride_words == 8u ||
+                         table.record_stride_bytes != 0u)) {
                         auto& usage = sharp_usages.back();
                         bool bindable = true;
                         for (std::size_t dw = 0; dw < 4; ++dw) {
@@ -481,6 +507,8 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                             MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
                             usage.indexed_texture_id =
                                 IR::Value{const_cast<IR::Inst*>(table.selector)};
+                            usage.indexed_record_stride_bytes = table.record_stride_bytes;
+                            usage.indexed_descriptor_offset_bytes = table.tsharp_offset_bytes;
                             usage.has_indexed_table = true;
                         }
                     }
