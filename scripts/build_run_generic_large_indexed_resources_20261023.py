@@ -965,20 +965,37 @@ def fresh_paths(rev):
             shutil.rmtree(p)
     return work,build
 
-def add_worktree(work,rev):
-    q=run(['git','-C',SRC,'worktree','add','--detach',work,rev],check=False)
+def add_fresh_source(work,rev):
+    # Use an independent local clone instead of a linked worktree. This keeps
+    # the user's GoT checkout, index, submodule worktrees and config completely
+    # outside the build source tree.
+    q=run(['git','clone','--no-hardlinks','--no-checkout',SRC,work],
+          check=False,timeout=180)
     if q.returncode:
-        raise RuntimeError('WORKTREE_ADD_FAILED='+(q.stderr or b'').decode(errors='replace')[-3000:])
+        raise RuntimeError(
+            'FRESH_SOURCE_CLONE_FAILED='+
+            (q.stderr or b'').decode(errors='replace')[-3000:]
+        )
+    q=run(['git','-C',work,'checkout','--detach',rev],check=False,timeout=60)
+    if q.returncode:
+        raise RuntimeError(
+            'FRESH_SOURCE_CHECKOUT_FAILED='+
+            (q.stderr or b'').decode(errors='replace')[-3000:]
+        )
 
-def remove_worktree(work):
-    run(['git','-C',SRC,'worktree','remove','--force',work],check=False)
+def remove_fresh_source(work):
     if work.exists():
         shutil.rmtree(work,ignore_errors=True)
 
 def submodules_at(work):
-    q=run(['git','-C',work,'submodule','update','--init','--recursive','--force'],check=False,timeout=180)
+    q=run(['git','-C',work,'submodule','update','--init','--recursive','--force'],
+          check=False,timeout=300)
     if q.returncode:
-        raise RuntimeError('SUBMODULE_UPDATE_FAILED='+(q.stderr or b'').decode(errors='replace')[-3000:])
+        raise RuntimeError(
+            'SUBMODULE_UPDATE_FAILED='+
+            (q.stderr or b'').decode(errors='replace')[-3000:]
+        )
+
 
 def exe(d):
     for p in (d/'shadps4',d/'bin/shadps4'):
@@ -1074,14 +1091,14 @@ def compose(run_dir,info,manifest):
         'ImageGatherExtended' not in diff):raise RuntimeError('INDEXED_PATH_MISSING')
     git('update-ref','refs/heads/local/generic-large-indexed-resource-'+rev[:12],rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     work,d=fresh_paths(rev)
     cand=None;csha=''
     try:
-        add_worktree(work,rev)
+        add_fresh_source(work,rev)
         submodules_at(work)
-        print('FRESH_SOURCE_WORKTREE='+str(work),flush=True)
+        print('FRESH_SOURCE_CLONE='+str(work),flush=True)
         print('FRESH_BUILD_DIRECTORY='+str(d),flush=True)
         print('COMPOSED_REVISION='+rev,flush=True)
         tee([
@@ -1105,14 +1122,14 @@ def compose(run_dir,info,manifest):
     finally:
         # Original GoT source checkout is never checked out or reset.
         if cand is not None and cand.is_file():
-            remove_worktree(work)
+            remove_fresh_source(work)
             shutil.rmtree(d,ignore_errors=True)
     if git('rev-parse','HEAD').decode().strip()!=BASE:
         raise RuntimeError('ORIGINAL_GOT_SOURCE_HEAD_CHANGED_AFTER_BUILD')
     assert_source_unchanged()
     if not cand or digest(cand)!=csha:raise RuntimeError('CANDIDATE_COPY_FAILED')
     ms=digest(mp)
-    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT_REF,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'original_submodules_untouched':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
+    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT_REF,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_source_clone':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'original_submodules_untouched':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
     (info/'build-result.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
     return rev,tree,csha,cand
 
@@ -1127,7 +1144,7 @@ def launch(info,rev,tree,csha,cand):
         expected={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS',
                   'generic_source_commit':GEN,'revision':rev,'tree':tree,
                   'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS',
-                  'source_untouched':True,'fresh_build_from_zero':True,
+                  'source_untouched':True,'fresh_source_clone':True,'fresh_build_from_zero':True,
                   'legacy_builds_searched':False,'tests_enabled':False,
                   'original_submodules_untouched':True,
                   'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP',
