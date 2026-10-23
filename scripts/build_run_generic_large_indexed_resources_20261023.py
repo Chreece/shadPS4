@@ -824,6 +824,19 @@ def recovered_parent_ref(run_dir):
 
     ensure_required_refs()
 
+    # The commit object may have been pruned while its exact tree is still
+    # present in the object database. In that case no patch replay is needed
+    # at all: wrap the verified tree in a local synthetic commit.
+    if exists(PARENT_TREE+'^{tree}'):
+        base=BASE if exists(BASE+'^{commit}') else RECOVERY_BASE
+        if not exists(base+'^{commit}'):
+            raise RuntimeError('NO_SYNTHETIC_PARENT_BASE_AVAILABLE')
+        msg=b'Wrapped exact verified graphics parent tree for local composition only\n'
+        PARENT_REF=git('commit-tree',PARENT_TREE,'-p',base,input=msg).decode().strip()
+        if git('rev-parse',PARENT_REF+'^{tree}').decode().strip()!=PARENT_TREE:
+            raise RuntimeError('EXACT_PARENT_TREE_WRAP_FAILED')
+        return PARENT_REF
+
     encoded=b''
     for part in RECOVERY_PARTS:
         spec=f'{RECOVERY_REF}:{part}'
