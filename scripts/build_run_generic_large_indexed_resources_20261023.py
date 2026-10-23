@@ -25,6 +25,14 @@ VULKAN_INDEXING_FEATURE_FIXES=(
     'cbbcc969156f9258633914409ca88e6458bbad2c',
     '538fc65527d96086443d14d3227eb9c5daa7397f',
 )
+DESCRIPTOR_SET_SCALING_FIXES=(
+    '5568da00029a865a77f6bf8df6510750473cc97a',
+    'c6f721296e7442062a176cacabf8579968ecfbbb',
+    '6d97d6818550e1e0f296f78351db0acdf2e21518',
+    'f74a01cb704cb6f25450a578613968f6dc94798b',
+    '6b6d462d1d1fcbdbd488af8fbfe7eb323f7480a7',
+    '29983ea0417a920db38c0b0854f610eb482050a1',
+)
 OLD=ROOT/'scripts/shadps4-buffer-phi-launch-20261023.py'
 OLD_SHA='d6c0c858a6f60d16a42248cff3589fb33cdd4f8897780eda4ad07437a771b44c'
 GEN_FILES=(
@@ -64,12 +72,6 @@ EXTRA_FILES=(
 )
 FILES=GEN_FILES+EXTRA_FILES
 PATCH_COMMITS=(
-'5568da00029a865a77f6bf8df6510750473cc97a',
-'c6f721296e7442062a176cacabf8579968ecfbbb',
-'6d97d6818550e1e0f296f78351db0acdf2e21518',
-'f74a01cb704cb6f25450a578613968f6dc94798b',
-'6b6d462d1d1fcbdbd488af8fbfe7eb323f7480a7',
-'29983ea0417a920db38c0b0854f610eb482050a1',
 '16ab0edbd70e1912ec3de581466788f89c11b39c',
 '9e30254c86b532eb7c5921a3268dcb2a00e7d48d',
 'be463d8d361a23d66ec60147ed268389a58b1f22',
@@ -837,6 +839,89 @@ def raster(s):
     s=s[:fn_start]+body+s[fn_end:]
     return s
 
+def resource_pool_h(s):
+    old='vk::DescriptorSet Commit(vk::DescriptorSetLayout set_layout);'
+    new='vk::DescriptorSet Commit(vk::DescriptorSetLayout set_layout, u32 sampled_image_slots = 0);'
+    if old in s:
+        s=s.replace(old,new,1)
+    if 'sampled_image_slots = 0' not in s:
+        raise RuntimeError('RESOURCE_POOL_LARGE_SET_DECL_MISSING')
+    return s
+
+def resource_pool_cpp(s):
+    old='vk::DescriptorSet DescriptorHeap::Commit(vk::DescriptorSetLayout set_layout) {'
+    new=('vk::DescriptorSet DescriptorHeap::Commit(vk::DescriptorSetLayout set_layout,\n'
+         '                                          u32 sampled_image_slots) {')
+    if old in s:
+        s=s.replace(old,new,1)
+    if 'u32 sampled_image_slots)' not in s:
+        raise RuntimeError('RESOURCE_POOL_LARGE_SET_IMPL_SIGNATURE_MISSING')
+
+    old_decl='    DescSetBatch desc_sets(DescriptorSetBatch);\n'
+    if old_decl in s:
+        repl=(
+            '    // Large descriptor arrays are allocated singly to avoid 32x\n'
+            '    // amplification while retaining the existing fence-owned pool lifecycle.\n'
+            '    const u32 batch_count = sampled_image_slots > 1024u ? 1u : DescriptorSetBatch;\n'
+            '    DescSetBatch desc_sets(batch_count);\n')
+        s=s.replace(old_decl,repl,1)
+    s=s.replace(
+        '        .descriptorSetCount = DescriptorSetBatch,',
+        '        .descriptorSetCount = batch_count,',
+        1)
+    for marker in ('batch_count = sampled_image_slots > 1024u ? 1u : DescriptorSetBatch',
+                   '.descriptorSetCount = batch_count'):
+        if marker not in s:
+            raise RuntimeError('RESOURCE_POOL_LARGE_SET_POLICY_MISSING='+marker)
+    return s
+
+def pipeline_common_h(s):
+    if 'u32 sampled_image_descriptors{};' in s:
+        return s
+    anchor='    std::array<const Shader::Info*, Shader::MaxStageTypes> stages{};\n'
+    if s.count(anchor)!=1:
+        raise RuntimeError('PIPELINE_COMMON_DESCRIPTOR_COUNT_ANCHOR='+str(s.count(anchor)))
+    return s.replace(anchor,anchor+'    u32 sampled_image_descriptors{};\n',1)
+
+def pipeline_common_cpp(s):
+    old='const auto desc_set = desc_heap.Commit(*desc_layout);'
+    new='const auto desc_set = desc_heap.Commit(*desc_layout, sampled_image_descriptors);'
+    if old in s:
+        s=s.replace(old,new,1)
+    if new not in s:
+        raise RuntimeError('PIPELINE_COMMON_LARGE_SET_COMMIT_MISSING')
+    return s
+
+def graphics_pipeline(s):
+    if 'sampled_image_descriptors = 0;' in s:
+        return s
+    anchor='    uses_push_descriptors = binding < instance.MaxPushDescriptors();\n'
+    if s.count(anchor)!=1:
+        raise RuntimeError('GRAPHICS_PIPELINE_DESCRIPTOR_COUNT_ANCHOR='+str(s.count(anchor)))
+    block=(
+        '    sampled_image_descriptors = 0;\n'
+        '    for (const auto& desc : bindings) {\n'
+        '        if (desc.descriptorType == vk::DescriptorType::eSampledImage) {\n'
+        '            sampled_image_descriptors += desc.descriptorCount;\n'
+        '        }\n'
+        '    }\n')
+    return s.replace(anchor,block+anchor,1)
+
+def compute_pipeline(s):
+    if 'sampled_image_descriptors = 0;' in s:
+        return s
+    anchor='    uses_push_descriptors = binding < instance.MaxPushDescriptors();\n'
+    if s.count(anchor)!=1:
+        raise RuntimeError('COMPUTE_PIPELINE_DESCRIPTOR_COUNT_ANCHOR='+str(s.count(anchor)))
+    block=(
+        '    sampled_image_descriptors = 0;\n'
+        '    for (const auto& desc : bindings) {\n'
+        '        if (desc.descriptorType == vk::DescriptorType::eSampledImage) {\n'
+        '            sampled_image_descriptors += desc.descriptorCount;\n'
+        '        }\n'
+        '    }\n')
+    return s.replace(anchor,block+anchor,1)
+
 def sampler_h(s):
     if 'bool is_integer' in s:
         return s
@@ -951,6 +1036,12 @@ TRANS={
 'src/shader_recompiler/ir/ir_emitter.cpp':ir_emitter_cpp,
 'src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp':cache,
 'src/video_core/renderer_vulkan/vk_rasterizer.cpp':raster,
+'src/video_core/renderer_vulkan/vk_resource_pool.h':resource_pool_h,
+'src/video_core/renderer_vulkan/vk_resource_pool.cpp':resource_pool_cpp,
+'src/video_core/renderer_vulkan/vk_pipeline_common.h':pipeline_common_h,
+'src/video_core/renderer_vulkan/vk_pipeline_common.cpp':pipeline_common_cpp,
+'src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp':graphics_pipeline,
+'src/video_core/renderer_vulkan/vk_compute_pipeline.cpp':compute_pipeline,
 'src/video_core/texture_cache/sampler.h':sampler_h,
 'src/video_core/texture_cache/sampler.cpp':sampler_cpp,
 'src/video_core/texture_cache/texture_cache.h':texture_cache_h,
@@ -1676,7 +1767,7 @@ def compose(run_dir,info,manifest):
     temp_ref='refs/shadps4-composer/generic-large-indexed-resource-'+rev[:12]
     git('update-ref',temp_ref,rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     work,d=fresh_paths(rev)
     cand=None;csha=''
