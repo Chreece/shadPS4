@@ -776,6 +776,28 @@ def finish_generic_large(idx):
         raise RuntimeError('STRIDED_PHYSICAL_LIMIT_NOT_APPLIED')
     update_index_text(idx,p,t)
 
+    p='src/video_core/renderer_vulkan/vk_resource_pool.h'
+    t=index_text(idx,p)
+    old_member='    std::span<const vk::DescriptorPoolSize> pool_sizes;'
+    if old_member in t:
+        t=t.replace(old_member,'    std::vector<vk::DescriptorPoolSize> pool_sizes;',1)
+    if 'std::vector<vk::DescriptorPoolSize> pool_sizes;' not in t:
+        raise RuntimeError('DESCRIPTOR_POOL_SIZE_OWNERSHIP_NOT_APPLIED')
+    update_index_text(idx,p,t)
+
+    p='src/video_core/renderer_vulkan/vk_resource_pool.cpp'
+    t=index_text(idx,p)
+    old_init='      descriptor_heap_count{descriptor_heap_count_}, pool_sizes{pool_sizes_} {'
+    if old_init in t:
+        t=t.replace(
+            old_init,
+            '      descriptor_heap_count{descriptor_heap_count_},\n'
+            '      pool_sizes{pool_sizes_.begin(), pool_sizes_.end()} {',
+            1)
+    if 'pool_sizes{pool_sizes_.begin(), pool_sizes_.end()}' not in t:
+        raise RuntimeError('DESCRIPTOR_POOL_SIZE_COPY_NOT_APPLIED')
+    update_index_text(idx,p,t)
+
     p='src/video_core/renderer_vulkan/vk_rasterizer.cpp'
     t=index_text(idx,p)
     for header,token in (('<unordered_map>','std::unordered_map'),
@@ -1175,6 +1197,10 @@ def compose(run_dir,info,manifest):
         ),
         'src/video_core/renderer_vulkan/vk_resource_pool.cpp':(
             'sampled_image_slots',
+            'pool_sizes_.begin()',
+        ),
+        'src/video_core/renderer_vulkan/vk_resource_pool.h':(
+            'std::vector<vk::DescriptorPoolSize> pool_sizes;',
         ),
         'src/video_core/texture_cache/sampler.cpp':(
             'is_integer',
