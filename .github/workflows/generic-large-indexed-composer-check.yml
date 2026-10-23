@@ -28,9 +28,9 @@ jobs:
               if isinstance(n,ast.Assign)
               and len(n.targets)==1
               and isinstance(n.targets[0],ast.Name)
-              and n.targets[0].id in {"PATCH_COMMITS","VULKAN_INDEXING_FEATURE_FIXES","DESCRIPTOR_SET_SCALING_FIXES","DYNAMIC_IMAGE_BINDING_FIXES","STRIDED_TSHARP_FIXES"}
+              and n.targets[0].id in {"PATCH_COMMITS","VULKAN_INDEXING_FEATURE_FIXES","DESCRIPTOR_SET_SCALING_FIXES","DYNAMIC_IMAGE_BINDING_FIXES","STRIDED_TSHARP_FIXES","EXPLICIT_GRADIENT_INDEXING_FIXES","PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES","PAIRED_INDEXED_SAMPLER_BACKEND_FIXES"}
           }
-          assert len(assigns["PATCH_COMMITS"]) == 17
+          assert assigns["PATCH_COMMITS"] == ()
           assert "cbbcc969156f9258633914409ca88e6458bbad2c" not in assigns["PATCH_COMMITS"]
           assert "538fc65527d96086443d14d3227eb9c5daa7397f" not in assigns["PATCH_COMMITS"]
           assert assigns["VULKAN_INDEXING_FEATURE_FIXES"] == (
@@ -101,8 +101,6 @@ jobs:
           assert "INSTANCE_DYNAMIC_INDEX" in s
           assert "INSTANCE_NONUNIFORM_INDEX" in s
           assert "INVALID_VULKAN_SAMPLER_NONUNIFORM_FEATURE_RETAINED" in s
-          assert "PATCH_COMMIT_NOT_SINGLE_FILE" in s
-          assert "PATCH_COMMIT_OUTSIDE_GENERIC_SOURCE" in s
           assert "def resource_pool_h(" in s
           assert "def resource_pool_cpp(" in s
           assert "def pipeline_common_h(" in s
@@ -120,6 +118,10 @@ jobs:
           assert "rglob('build.ninja')" not in s
           assert "def builddir(" not in s
           assert "def apply_range_file(" not in s
+          assert "def apply_patch_commit(" not in s
+          assert "def _pure_cache_version_patch(" not in s
+          assert "PATCH_PATHS" not in s
+          assert "replayed_generic_commits':[]" in s
           assert "GENERIC_BASE_TRANSFORM_MISSING" in s
           assert "INTEGER_SAMPLER_EXTRA_TRANSFORM_MISSING" in s
           assert "for p in EXTRA_FILES:" in s
