@@ -22,6 +22,21 @@ jobs:
           s=p.read_text()
           tree=ast.parse(s)
           funcs={n.name for n in tree.body if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))}
+          assigns={
+              n.targets[0].id: ast.literal_eval(n.value)
+              for n in tree.body
+              if isinstance(n,ast.Assign)
+              and len(n.targets)==1
+              and isinstance(n.targets[0],ast.Name)
+              and n.targets[0].id in {"PATCH_COMMITS","VULKAN_INDEXING_FEATURE_FIXES"}
+          }
+          assert len(assigns["PATCH_COMMITS"]) == 31
+          assert "cbbcc969156f9258633914409ca88e6458bbad2c" not in assigns["PATCH_COMMITS"]
+          assert "538fc65527d96086443d14d3227eb9c5daa7397f" not in assigns["PATCH_COMMITS"]
+          assert assigns["VULKAN_INDEXING_FEATURE_FIXES"] == (
+              "cbbcc969156f9258633914409ca88e6458bbad2c",
+              "538fc65527d96086443d14d3227eb9c5daa7397f",
+          )
           for name in ("compose","verify_prev","fresh_paths","apply_patch_commit","finish_generic_large","launch","main"):
               assert name in funcs, name
           assert "GhostOfTsushima/source" in s
@@ -66,6 +81,8 @@ jobs:
           assert "INSTANCE_DYNAMIC_INDEX" in s
           assert "INSTANCE_NONUNIFORM_INDEX" in s
           assert "INVALID_VULKAN_SAMPLER_NONUNIFORM_FEATURE_RETAINED" in s
+          assert "PATCH_COMMIT_NOT_SINGLE_FILE" in s
+          assert "PATCH_COMMIT_OUTSIDE_GENERIC_SOURCE" in s
           assert "538fc65527d96086443d14d3227eb9c5daa7397f" in s
           assert "cbbcc969156f9258633914409ca88e6458bbad2c" in s
           assert "clean-rebase-verified" not in s
