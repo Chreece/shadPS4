@@ -637,34 +637,67 @@ ELIG=r'''    if (resource.has_indexed_table && profile.supports_sampled_image_no
 def patching(s):
     if 'guest_tsharp_array.h' not in s:
         s=after(s,'#include "shader_recompiler/resource.h"\n','#include "shader_recompiler/guest_tsharp_array.h"\n','guest_tsharp_array.h','PATCH_INCLUDE')
-    if 'desc.is_guest_indexed == existing.is_guest_indexed' not in s:
-        a=s.find('u32 Add(const ImageResource& desc)')
-        b=s.find('u32 Add(const SamplerResource& desc)',a)
-        if a<0 or b<0: raise RuntimeError('PATCH_DEDUP_FUNCTION')
-        p=s.find('desc.post_op == existing.post_op',a,b)
-        if p<0: raise RuntimeError('PATCH_DEDUP_ANCHOR')
+    # Normalize image-resource dedup so packed and strided tables are distinct.
+    a=s.find('u32 Add(const ImageResource& desc)')
+    b=s.find('u32 Add(const SamplerResource& desc)',a)
+    if a<0 or b<0:
+        raise RuntimeError('PATCH_DEDUP_FUNCTION')
+    image_add=s[a:b]
+    if 'desc.is_guest_indexed == existing.is_guest_indexed' not in image_add:
+        p=image_add.find('desc.post_op == existing.post_op')
+        if p<0:
+            raise RuntimeError('PATCH_DEDUP_ANCHOR')
         p+=len('desc.post_op == existing.post_op')
-        x=' &&\n                   desc.is_guest_indexed == existing.is_guest_indexed &&\n                   desc.indexed_guest_entries == existing.indexed_guest_entries &&\n                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&\n                   desc.indexed_descriptor_offset_bytes == existing.indexed_descriptor_offset_bytes &&\n                   desc.indexed_table_fetch == existing.indexed_table_fetch'
-        s=s[:p]+x+s[p:]
-    if 'image_res.indexed_table_fetch=table_fetch;' not in s and 'image_res.indexed_table_fetch = table_fetch;' not in s:
-        use_info=bool(re.search(r'ConstructSharpFetch\s*\(\s*const SharpReference&\s+sharp\s*,\s*const Info&\s+info',s))
-        call='ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp, info)' if use_info else 'ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp)'
-        fn_start=s.find('void PatchImageSharp(')
-        if fn_start<0:
-            raise RuntimeError('PATCH_IMAGE_FUNCTION_NOT_FOUND')
-        fn_end=s.find('\nstatic IR::Value IsMbcntWithExec',fn_start)
-        if fn_end<0:
-            fn_end=s.find('\nstatic ',fn_start+1)
-        if fn_end<0:
-            raise RuntimeError('PATCH_IMAGE_FUNCTION_END_NOT_FOUND')
-        body=s[fn_start:fn_end]
-        anchor='    auto image = image_res.GetSharp(info);\n'
-        if body.count(anchor)!=1:
-            raise RuntimeError('PATCH_ELIG_FUNCTION_ANCHOR_COUNT='+str(body.count(anchor)))
-        body=body.replace(anchor,ELIG.replace('__FETCH__',call)+anchor,1)
-        s=s[:fn_start]+body+s[fn_end:]
-    if 'image_res.indexed_table_fetch' not in s[s.find('void PatchImageSharp('):]:
-        raise RuntimeError('PATCH_ELIG_NOT_INSERTED')
+        x=' &&\n                   desc.is_guest_indexed == existing.is_guest_indexed &&\n' \
+          '                   desc.indexed_guest_entries == existing.indexed_guest_entries &&\n' \
+          '                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&\n' \
+          '                   desc.indexed_descriptor_offset_bytes == existing.indexed_descriptor_offset_bytes &&\n' \
+          '                   desc.indexed_table_fetch == existing.indexed_table_fetch'
+        image_add=image_add[:p]+x+image_add[p:]
+    else:
+        if 'desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes' not in image_add:
+            anchor='desc.indexed_guest_entries == existing.indexed_guest_entries &&'
+            if anchor not in image_add:
+                raise RuntimeError('PATCH_STRIDED_DEDUP_ANCHOR')
+            image_add=image_add.replace(
+                anchor,
+                anchor+'\n                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&\n'
+                       '                   desc.indexed_descriptor_offset_bytes == existing.indexed_descriptor_offset_bytes &&',
+                1)
+    s=s[:a]+image_add+s[b:]
+
+    # Normalize the entire custom indexed-image eligibility block, even when
+    # the verified parent already contains the earlier packed-only form.
+    use_info=bool(re.search(
+        r'ConstructSharpFetch\s*\(\s*const SharpReference&\s+sharp\s*,\s*const Info&\s+info',
+        s))
+    call=('ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp, info)'
+          if use_info else
+          'ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp)')
+    fn_start=s.find('void PatchImageSharp(')
+    if fn_start<0:
+        raise RuntimeError('PATCH_IMAGE_FUNCTION_NOT_FOUND')
+    fn_end=s.find('\nstatic IR::Value IsMbcntWithExec',fn_start)
+    if fn_end<0:
+        fn_end=s.find('\nstatic ',fn_start+1)
+    if fn_end<0:
+        raise RuntimeError('PATCH_IMAGE_FUNCTION_END_NOT_FOUND')
+    body=s[fn_start:fn_end]
+    anchor='    auto image = image_res.GetSharp(info);\n'
+    if body.count(anchor)!=1:
+        raise RuntimeError('PATCH_ELIG_FUNCTION_ANCHOR_COUNT='+str(body.count(anchor)))
+    indexed_start=body.find('    if (resource.has_indexed_table')
+    normalized=ELIG.replace('__FETCH__',call)
+    if indexed_start>=0:
+        anchor_pos=body.find(anchor,indexed_start)
+        if anchor_pos<0:
+            raise RuntimeError('PATCH_EXISTING_INDEXED_BLOCK_END_MISSING')
+        body=body[:indexed_start]+normalized+body[anchor_pos:]
+    else:
+        body=body.replace(anchor,normalized+anchor,1)
+    s=s[:fn_start]+body+s[fn_end:]
+    if 'image_res.indexed_record_stride_bytes=record_stride;' not in s[fn_start:fn_start+len(body)]:
+        raise RuntimeError('PATCH_STRIDED_ELIG_NOT_NORMALIZED')
     if 'inst.SetArg(1, resource.indexed_texture_id);' not in s:
         fn_start=s.find('void PatchImageSharp(')
         fn_end=s.find('\nstatic IR::Value IsMbcntWithExec',fn_start)
@@ -1019,11 +1052,33 @@ def raster(s):
         raise RuntimeError('RASTER_BIND_TEXTURES_END_NOT_FOUND')
     body=s[fn_start:fn_end]
 
-    if 'MaxEstimatedIndexedImageBytes' not in body:
+    # Normalize the custom indexed-image binding block even when the parent
+    # already contains the earlier packed-only implementation.
+    custom_start=body.find('        if (image_desc.is_guest_indexed) {')
+    if custom_start>=0:
+        brace=body.find('{',custom_start)
+        depth=0
+        custom_end=None
+        for i in range(brace,len(body)):
+            depth += (body[i]=='{')-(body[i]=='}')
+            if depth==0:
+                custom_end=i+1
+                break
+        if custom_end is None:
+            raise RuntimeError('RASTER_INDEXED_BLOCK_UNBALANCED')
+        body=body[:custom_start]+RBIND+body[custom_end:]
+    else:
         a='    for (const auto& image_desc : stage.images) {\n'
         if body.count(a)!=1:
             raise RuntimeError('RASTER_IMAGE_LOOP_COUNT='+str(body.count(a)))
         body=body.replace(a,a+RBIND,1)
+    for marker in (
+        'image_desc.indexed_record_stride_bytes',
+        'CompleteGuestTsharpRecordEntries',
+        'descriptor_offset',
+    ):
+        if marker not in body:
+            raise RuntimeError('RASTER_STRIDED_BIND_NORMALIZATION_MISSING='+marker)
 
     a='        bool is_storage = desc.type == VideoCore::TextureCache::BindingType::Storage;\n'
     if a in body:
