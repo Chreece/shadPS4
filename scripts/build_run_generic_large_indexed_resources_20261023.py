@@ -358,7 +358,8 @@ def patching(s):
     if 'guest_tsharp_array.h' not in s:
         s=after(s,'#include "shader_recompiler/resource.h"\n','#include "shader_recompiler/guest_tsharp_array.h"\n','guest_tsharp_array.h','PATCH_INCLUDE')
     if 'desc.is_guest_indexed == existing.is_guest_indexed' not in s:
-        a=s.find('u32 Add(const ImageResource& desc)'), b=s.find('u32 Add(const SamplerResource& desc)',a)
+        a=s.find('u32 Add(const ImageResource& desc)')
+        b=s.find('u32 Add(const SamplerResource& desc)',a)
         if a<0 or b<0: raise RuntimeError('PATCH_DEDUP_FUNCTION')
         p=s.find('desc.post_op == existing.post_op',a,b)
         if p<0: raise RuntimeError('PATCH_DEDUP_ANCHOR')
