@@ -241,16 +241,13 @@ static u32 GuestIndexedSamplerLimit(const Instance& instance) {
     constexpr u32 reserve=Shader::NUM_IMAGES+Shader::NUM_BUFFERS+Shader::NUM_SAMPLERS+32u;
     return hard>reserve+1u?std::min(Shader::MaxGuestIndexedImageEntries,hard-reserve-1u):0u;
 }
-static const auto& RuntimeDescriptorHeapSizes(const Instance& instance) {
-    static const auto sizes=[&instance] {
-        auto result=DescriptorHeapSizes;
-        result[2].descriptorCount=std::max(result[2].descriptorCount,
-            GuestIndexedImageLimit(instance)+Shader::NUM_IMAGES+1024u);
-        result[4].descriptorCount=std::max(result[4].descriptorCount,
-            GuestIndexedSamplerLimit(instance)+Shader::NUM_SAMPLERS+1024u);
-        return result;
-    }();
-    return sizes;
+static auto RuntimeDescriptorHeapSizes(const Instance& instance) {
+    auto result=DescriptorHeapSizes;
+    result[2].descriptorCount=std::max(result[2].descriptorCount,
+        GuestIndexedImageLimit(instance)+Shader::NUM_IMAGES+1024u);
+    result[4].descriptorCount=std::max(result[4].descriptorCount,
+        GuestIndexedSamplerLimit(instance)+Shader::NUM_SAMPLERS+1024u);
+    return result;
 }
 '''
         s=one(s,a,a+x,'PIPELINE_LIMIT_HELPERS')
