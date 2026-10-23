@@ -28,14 +28,22 @@ jobs:
               if isinstance(n,ast.Assign)
               and len(n.targets)==1
               and isinstance(n.targets[0],ast.Name)
-              and n.targets[0].id in {"PATCH_COMMITS","VULKAN_INDEXING_FEATURE_FIXES"}
+              and n.targets[0].id in {"PATCH_COMMITS","VULKAN_INDEXING_FEATURE_FIXES","DESCRIPTOR_SET_SCALING_FIXES"}
           }
-          assert len(assigns["PATCH_COMMITS"]) == 31
+          assert len(assigns["PATCH_COMMITS"]) == 25
           assert "cbbcc969156f9258633914409ca88e6458bbad2c" not in assigns["PATCH_COMMITS"]
           assert "538fc65527d96086443d14d3227eb9c5daa7397f" not in assigns["PATCH_COMMITS"]
           assert assigns["VULKAN_INDEXING_FEATURE_FIXES"] == (
               "cbbcc969156f9258633914409ca88e6458bbad2c",
               "538fc65527d96086443d14d3227eb9c5daa7397f",
+          )
+          assert assigns["DESCRIPTOR_SET_SCALING_FIXES"] == (
+              "5568da00029a865a77f6bf8df6510750473cc97a",
+              "c6f721296e7442062a176cacabf8579968ecfbbb",
+              "6d97d6818550e1e0f296f78351db0acdf2e21518",
+              "f74a01cb704cb6f25450a578613968f6dc94798b",
+              "6b6d462d1d1fcbdbd488af8fbfe7eb323f7480a7",
+              "29983ea0417a920db38c0b0854f610eb482050a1",
           )
           for name in ("compose","verify_prev","fresh_paths","apply_patch_commit","finish_generic_large","launch","main"):
               assert name in funcs, name
@@ -83,6 +91,13 @@ jobs:
           assert "INVALID_VULKAN_SAMPLER_NONUNIFORM_FEATURE_RETAINED" in s
           assert "PATCH_COMMIT_NOT_SINGLE_FILE" in s
           assert "PATCH_COMMIT_OUTSIDE_GENERIC_SOURCE" in s
+          assert "def resource_pool_h(" in s
+          assert "def resource_pool_cpp(" in s
+          assert "def pipeline_common_h(" in s
+          assert "def pipeline_common_cpp(" in s
+          assert "def graphics_pipeline(" in s
+          assert "def compute_pipeline(" in s
+          assert "batch_count = sampled_image_slots > 1024u ? 1u : DescriptorSetBatch" in s
           assert "538fc65527d96086443d14d3227eb9c5daa7397f" in s
           assert "cbbcc969156f9258633914409ca88e6458bbad2c" in s
           assert "clean-rebase-verified" not in s
