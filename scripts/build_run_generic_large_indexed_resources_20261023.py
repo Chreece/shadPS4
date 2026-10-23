@@ -1731,7 +1731,7 @@ def graphics_pipeline(s):
     block=(
         '    sampled_image_descriptors = 0;\n'
         '    for (const auto& desc : bindings) {\n'
-        '        if (desc.descriptorType == vk::DescriptorType::eSampledImage) {\n'
+        '        if (desc.descriptorType == vk::DescriptorType::eSampledImage ||\n'\n        '            desc.descriptorType == vk::DescriptorType::eSampler) {\n'
         '            sampled_image_descriptors += desc.descriptorCount;\n'
         '        }\n'
         '    }\n')
@@ -1785,7 +1785,7 @@ def compute_pipeline(s):
     block=(
         '    sampled_image_descriptors = 0;\n'
         '    for (const auto& desc : bindings) {\n'
-        '        if (desc.descriptorType == vk::DescriptorType::eSampledImage) {\n'
+        '        if (desc.descriptorType == vk::DescriptorType::eSampledImage ||\n'\n        '            desc.descriptorType == vk::DescriptorType::eSampler) {\n'
         '            sampled_image_descriptors += desc.descriptorCount;\n'
         '        }\n'
         '    }\n')
