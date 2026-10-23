@@ -118,7 +118,8 @@ DescriptorHeap::~DescriptorHeap() {
     }
 }
 
-vk::DescriptorSet DescriptorHeap::Commit(vk::DescriptorSetLayout set_layout) {
+vk::DescriptorSet DescriptorHeap::Commit(vk::DescriptorSetLayout set_layout,
+                                          u32 sampled_image_slots) {
     const u64 set_key = std::bit_cast<u64>(set_layout);
     const auto [it, _] = descriptor_sets.try_emplace(set_key);
 
@@ -129,13 +130,16 @@ vk::DescriptorSet DescriptorHeap::Commit(vk::DescriptorSetLayout set_layout) {
         return desc_set;
     }
 
-    DescSetBatch desc_sets(DescriptorSetBatch);
+    // Large arrays must never preallocate 32 x 27K descriptors. Allocate
+    // one set at a time while retaining the existing fence-owned pool logic.
+    const u32 batch_count = sampled_image_slots > 1024u ? 1u : DescriptorSetBatch;
+    DescSetBatch desc_sets(batch_count);
     std::array<vk::DescriptorSetLayout, DescriptorSetBatch> layouts;
     layouts.fill(set_layout);
 
     vk::DescriptorSetAllocateInfo alloc_info = {
         .descriptorPool = curr_pool,
-        .descriptorSetCount = DescriptorSetBatch,
+        .descriptorSetCount = batch_count,
         .pSetLayouts = layouts.data(),
     };
 
