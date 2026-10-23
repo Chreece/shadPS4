@@ -45,6 +45,14 @@ STRIDED_TSHARP_FIXES=(
     'f336b0dbfc20d35d83642472269cac77c0299ac4',
     'b29106a5c6b6231a9ffb787f9277ef10c31e9182',
 )
+EXPLICIT_GRADIENT_INDEXING_FIXES=(
+    'f2169f2fb9a4902b4dbb752c90c8fa037f6bb8cf',
+    'a61c10ff0059b03db7437807fa4c9b17208f4f8b',
+    'e6b7acce13db1c2ca3fe5189a19458290d5bc74f',
+    '2718fe1101bc24eb8cd57b09f9dd22f3ac3b4e2b',
+    '39d58e288e254877be1cfb307293b8f26be0a195',
+    '5610f50a6239f82b70bf154c2c1ee6fbe8477def',
+)
 OLD=ROOT/'scripts/shadps4-buffer-phi-launch-20261023.py'
 OLD_SHA='d6c0c858a6f60d16a42248cff3589fb33cdd4f8897780eda4ad07437a771b44c'
 GEN_FILES=(
@@ -84,12 +92,6 @@ EXTRA_FILES=(
 )
 FILES=GEN_FILES+EXTRA_FILES
 PATCH_COMMITS=(
-'f2169f2fb9a4902b4dbb752c90c8fa037f6bb8cf',
-'a61c10ff0059b03db7437807fa4c9b17208f4f8b',
-'e6b7acce13db1c2ca3fe5189a19458290d5bc74f',
-'2718fe1101bc24eb8cd57b09f9dd22f3ac3b4e2b',
-'39d58e288e254877be1cfb307293b8f26be0a195',
-'5610f50a6239f82b70bf154c2c1ee6fbe8477def',
 '0cecd34d1760fdd5720408bbd9661aaa6ea828c4',
 '20ec7bfbb7a1ee18dac78d3c9bdeed29274580c2',
 '8b75cb1197818094d2a31ca4879bc62c842b1134',
@@ -764,17 +766,55 @@ def patching(s):
         x='        if (image_res.is_guest_indexed) {\n            return ir.ImageSampleImplicitLodIndexed(handle, coords, bias, offset, IR::U32{inst.Arg(1)}, inst_info);\n        }\n'
         body=body.replace(a,x+a,1)
         s=s[:fn_start]+body+s[fn_end:]
+    if 'ir.ImageGradientIndexed(' not in s:
+        fn_start=s.find('void PatchImageSampleArgs(')
+        fn_end=s.find('\nvoid PatchImageArgs(',fn_start)
+        if fn_start<0 or fn_end<0:
+            raise RuntimeError('PATCH_GRADIENT_FUNCTION_RANGE')
+        body=s[fn_start:fn_end]
+        anchor='''        if (inst_info.has_derivatives) {
+            return ir.ImageGradient(handle, coords, derivatives_dx, derivatives_dy, offset,
+                                    lod_clamp, inst_info);
+        }'''
+        if anchor not in body:
+            raise RuntimeError('PATCH_GRADIENT_INDEXED_ANCHOR')
+        repl='''        if (inst_info.has_derivatives) {
+            if (image_res.is_guest_indexed) {
+                return ir.ImageGradientIndexed(
+                    handle, coords, derivatives_dx, derivatives_dy, offset,
+                    IR::U32{inst.Arg(1)}, inst_info);
+            }
+            return ir.ImageGradient(handle, coords, derivatives_dx, derivatives_dy, offset,
+                                    lod_clamp, inst_info);
+        }'''
+        body=body.replace(anchor,repl,1)
+        s=s[:fn_start]+body+s[fn_end:]
     return s
 def opcodes(s):
-    if 'OPCODE(ImageSampleImplicitLodIndexed' in s:return s
-    a='OPCODE(ImageSampleImplicitLod,                              F32x4,          Opaque,         F32x4,          F32,            Opaque,                         )\n'
-    return after(s,a,'OPCODE(ImageSampleImplicitLodIndexed,                       F32x4,          Opaque,         F32x4,          F32,            Opaque,         U32,            )\n','OPCODE(ImageSampleImplicitLodIndexed','OPCODE')
+    if 'OPCODE(ImageSampleImplicitLodIndexed' not in s:
+        a='OPCODE(ImageSampleImplicitLod,                              F32x4,          Opaque,         F32x4,          F32,            Opaque,                         )\n'
+        s=after(s,a,'OPCODE(ImageSampleImplicitLodIndexed,                       F32x4,          Opaque,         F32x4,          F32,            Opaque,         U32,            )\n','OPCODE(ImageSampleImplicitLodIndexed','OPCODE')
+    if 'OPCODE(ImageGradientIndexed' not in s:
+        a='OPCODE(ImageGradient,                                       F32x4,          Opaque,         Opaque,         Opaque,         Opaque,         Opaque,         F32,          )\n'
+        s=after(s,a,'OPCODE(ImageGradientIndexed,                                F32x4,          Opaque,         Opaque,         Opaque,         Opaque,         Opaque,         U32,          )\n','OPCODE(ImageGradientIndexed','OPCODE_GRADIENT')
+    return s
 def spirv_decl(s):
     if 'EmitImageSampleImplicitLodIndexed' in s:return s
     m=re.search(r'(Id EmitImageSampleImplicitLod\(EmitContext& ctx, IR::Inst\* inst, u32 handle, Id coords, Id bias,\n\s+const IR::Value& offset\);\n)',s)
     if not m:raise RuntimeError('SPIRV_DECL')
     x='Id EmitImageSampleImplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,\n                                     Id bias, const IR::Value& offset, Id gpu_texture_id);\n'
-    return s[:m.end()]+x+s[m.end():]
+    s=s[:m.end()]+x+s[m.end():]
+    if 'EmitImageGradientIndexed' not in s:
+        m=re.search(
+            r'(Id EmitImageQueryLod\(EmitContext& ctx, IR::Inst\* inst, u32 handle, Id coords\);\n)',
+            s)
+        if not m:
+            raise RuntimeError('SPIRV_GRADIENT_DECL_ANCHOR')
+        x=('Id EmitImageGradientIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,\n'
+           '                            Id derivatives_dx, Id derivatives_dy,\n'
+           '                            const IR::Value& offset, Id gpu_texture_id);\n')
+        s=s[:m.end()]+x+s[m.end():]
+    return s
 def spirv_context(s):
     fn_start=s.find('void EmitContext::DefineImagesAndSamplers()')
     if fn_start<0:
@@ -838,7 +878,24 @@ def ir_emitter_h(s):
         '        const Value& handle, const Value& body, const F32& bias,\n'
         '        const Value& offset, const U32& gpu_texture_id, TextureInstInfo info);\n\n'
     )
-    return s[:m.end()]+decl+s[m.end():]
+    s=s[:m.end()]+decl+s[m.end():]
+    if 'ImageGradientIndexed(' not in s:
+        marker='    [[nodiscard]] Value ImageGradient('
+        start=s.find(marker)
+        if start<0:
+            raise RuntimeError('IR_EMITTER_GRADIENT_DECL_START')
+        end=s.find(';\n',start)
+        if end<0:
+            raise RuntimeError('IR_EMITTER_GRADIENT_DECL_END')
+        end+=2
+        decl=(
+            '    [[nodiscard]] Value ImageGradientIndexed(const Value& handle, const Value& coords,\n'
+            '                                             const Value& derivatives_dx, const Value& derivatives_dy,\n'
+            '                                             const Value& offset, const U32& gpu_texture_id,\n'
+            '                                             TextureInstInfo info);\n'
+        )
+        s=s[:end]+decl+s[end:]
+    return s
 
 def ir_emitter_cpp(s):
     if 'IREmitter::ImageSampleImplicitLodIndexed(' in s:
@@ -858,7 +915,26 @@ def ir_emitter_cpp(s):
         '                bias, offset, gpu_texture_id);\n'
         '}\n'
     )
-    return s[:nxt]+impl+s[nxt:]
+    s=s[:nxt]+impl+s[nxt:]
+    if 'IREmitter::ImageGradientIndexed(' not in s:
+        marker='Value IREmitter::ImageGradient('
+        start=s.find(marker)
+        if start<0:
+            raise RuntimeError('IR_EMITTER_GRADIENT_IMPL_START')
+        nxt=s.find('\nValue IREmitter::ImageRead(',start)
+        if nxt<0:
+            raise RuntimeError('IR_EMITTER_GRADIENT_IMPL_END')
+        impl=(
+            '\nValue IREmitter::ImageGradientIndexed(const Value& handle, const Value& coords,\n'
+            '                                      const Value& derivatives_dx, const Value& derivatives_dy,\n'
+            '                                      const Value& offset, const U32& gpu_texture_id,\n'
+            '                                      TextureInstInfo info) {\n'
+            '    return Inst(Opcode::ImageGradientIndexed, Flags{info}, handle, coords,\n'
+            '                derivatives_dx, derivatives_dy, offset, gpu_texture_id);\n'
+            '}\n'
+        )
+        s=s[:nxt]+impl+s[nxt:]
+    return s
 
 def emit_spirv_image(s):
     if 'Id EmitImageSampleImplicitLodIndexed(' in s:
@@ -905,7 +981,49 @@ Id EmitImageSampleImplicitLodIndexed(
     return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
 }
 '''
-    return s[:nxt]+impl+s[nxt:]
+    s=s[:nxt]+impl+s[nxt:]
+    if 'Id EmitImageGradientIndexed(' not in s:
+        marker='Id EmitImageGradient(EmitContext& ctx'
+        start=s.find(marker)
+        if start<0:
+            raise RuntimeError('SPIRV_GRADIENT_BASE_NOT_FOUND')
+        nxt=s.find('\nId EmitImageRead(',start)
+        if nxt<0:
+            raise RuntimeError('SPIRV_GRADIENT_INSERT_POINT')
+        impl=r'''
+Id EmitImageGradientIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,
+                            Id derivatives_dx, Id derivatives_dy,
+                            const IR::Value& offset, Id gpu_texture_id) {
+    const auto& texture = ctx.images[handle & 0xffffu];
+    ASSERT(texture.is_guest_indexed && texture.image_array_size >= 2u);
+    ASSERT(ctx.profile.supports_sampled_image_nonuniform_indexing);
+    const Id valid = ctx.OpULessThan(
+        ctx.U1[1], gpu_texture_id, ctx.ConstU32(texture.image_array_size - 1u));
+    const Id bounded = ctx.OpSelect(
+        ctx.U32[1], valid, gpu_texture_id, ctx.ConstU32(texture.image_array_size - 1u));
+    ctx.Decorate(bounded, spv::Decoration::NonUniform);
+    const Id pointer_type =
+        ctx.TypePointer(spv::StorageClass::UniformConstant, texture.image_type);
+    const Id pointer =
+        ctx.OpAccessChain(pointer_type, texture.id, std::array{bounded});
+    ctx.Decorate(pointer, spv::Decoration::NonUniform);
+    const Id image = ctx.OpLoad(texture.image_type, pointer);
+    ctx.Decorate(image, spv::Decoration::NonUniform);
+    const Id sampler = ctx.OpLoad(ctx.sampler_type, ctx.samplers[handle >> 16]);
+    const Id sampled = ctx.OpSampledImage(texture.sampled_type, image, sampler);
+    ctx.Decorate(sampled, spv::Decoration::NonUniform);
+    const Id fixed_coords = FixImageCoords<true>(ctx, coords, texture.view_type);
+    ImageOperands operands;
+    operands.AddDerivatives(ctx, texture.view_type, derivatives_dx, derivatives_dy);
+    operands.AddOffset(ctx, texture.view_type, offset);
+    const Id raw = ctx.OpImageSampleExplicitLod(
+        texture.data_types->Get(4), sampled, fixed_coords,
+        operands.mask, operands.operands);
+    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], raw) : raw;
+}
+'''
+        s=s[:nxt]+impl+s[nxt:]
+    return s
 
 def cache(s):
     for k in ('ShaderBinaryVersion','ShaderMetaVersion'):
@@ -2038,7 +2156,7 @@ def compose(run_dir,info,manifest):
     temp_ref='refs/shadps4-composer/generic-large-indexed-resource-'+rev[:12]
     git('update-ref',temp_ref,rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'explicit_gradient_indexing_fixes':list(EXPLICIT_GRADIENT_INDEXING_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     work,d=fresh_paths(rev)
     cand=None;csha=''
