@@ -266,19 +266,42 @@ def pipeline(s):
         x=r'''
 static u32 GuestIndexedImageLimit(const Instance& instance) {
     const auto limits=instance.GetPhysicalDevice().getProperties().limits;
-    const u32 hard=std::min({Shader::MaxGuestIndexedImageEntries+1u,
-        limits.maxDescriptorSetSampledImages,limits.maxPerStageDescriptorSampledImages,
-        limits.maxPerStageResources});
-    constexpr u32 reserve=Shader::NUM_IMAGES+Shader::NUM_BUFFERS+Shader::NUM_SAMPLERS+32u;
-    return hard>reserve+1u?std::min(Shader::MaxGuestIndexedImageEntries,hard-reserve-1u):0u;
+    constexpr u32 type_reserve=Shader::NUM_IMAGES+32u;
+    constexpr u32 total_reserve=
+        Shader::NUM_IMAGES+Shader::NUM_BUFFERS+Shader::NUM_SAMPLERS+32u;
+    const u32 type_hard=std::min(
+        limits.maxDescriptorSetSampledImages,
+        limits.maxPerStageDescriptorSampledImages);
+    const u32 type_real=type_hard>type_reserve+1u
+        ? std::min(Shader::MaxGuestIndexedImageEntries,type_hard-type_reserve-1u)
+        : 0u;
+    const u32 total_real=limits.maxPerStageResources>total_reserve+1u
+        ? std::min(Shader::MaxGuestIndexedImageEntries,
+                   limits.maxPerStageResources-total_reserve-1u)
+        : 0u;
+    return std::min(type_real,total_real);
 }
 static u32 GuestIndexedSamplerLimit(const Instance& instance) {
     const auto limits=instance.GetPhysicalDevice().getProperties().limits;
-    const u32 hard=std::min({Shader::MaxGuestIndexedImageEntries+1u,
-        limits.maxDescriptorSetSamplers,limits.maxPerStageDescriptorSamplers,
-        limits.maxPerStageResources});
-    constexpr u32 reserve=Shader::NUM_IMAGES+Shader::NUM_BUFFERS+Shader::NUM_SAMPLERS+32u;
-    return hard>reserve+1u?std::min(Shader::MaxGuestIndexedImageEntries,hard-reserve-1u):0u;
+    constexpr u32 type_reserve=Shader::NUM_SAMPLERS+32u;
+    constexpr u32 total_reserve=
+        Shader::NUM_IMAGES+Shader::NUM_BUFFERS+Shader::NUM_SAMPLERS+32u;
+    const u32 type_hard=std::min(
+        limits.maxDescriptorSetSamplers,
+        limits.maxPerStageDescriptorSamplers);
+    const u32 type_real=type_hard>type_reserve+1u
+        ? std::min(Shader::MaxGuestIndexedImageEntries,type_hard-type_reserve-1u)
+        : 0u;
+
+    // Strided material records bind a sampled-image array and a sampler array
+    // of the same count (including one null/default slot each). Reserve total
+    // per-stage resources for BOTH arrays, not each one independently.
+    const u32 pair_real=limits.maxPerStageResources>total_reserve+2u
+        ? std::min(
+            Shader::MaxGuestIndexedImageEntries,
+            (limits.maxPerStageResources-total_reserve)/2u-1u)
+        : 0u;
+    return std::min(type_real,pair_real);
 }
 static auto RuntimeDescriptorHeapSizes(const Instance& instance) {
     auto result=DescriptorHeapSizes;
@@ -1917,6 +1940,10 @@ def finish_generic_large(idx):
         'profile.max_guest_indexed_sampler_entries' not in t or
         'record_stride,record_offset,indexed_limit' not in t):
         raise RuntimeError('STRIDED_PHYSICAL_LIMIT_NOT_APPLIED')
+    pipeline_text=index_text(idx,'src/video_core/renderer_vulkan/vk_pipeline_cache.cpp')
+    if ('(limits.maxPerStageResources-total_reserve)/2u-1u' not in pipeline_text or
+        'return std::min(type_real,pair_real);' not in pipeline_text):
+        raise RuntimeError('PAIRED_DESCRIPTOR_TOTAL_RESOURCE_LIMIT_MISSING')
     update_index_text(idx,p,t)
 
     p='src/video_core/renderer_vulkan/vk_resource_pool.h'
