@@ -409,6 +409,10 @@ public:
                                       const Value& derivatives_dx, const Value& derivatives_dy,
                                       const Value& offset, const F32& lod_clamp,
                                       TextureInstInfo info);
+    [[nodiscard]] Value ImageGradientIndexed(const Value& handle, const Value& coords,
+                                             const Value& derivatives_dx, const Value& derivatives_dy,
+                                             const Value& offset, const U32& gpu_texture_id,
+                                             TextureInstInfo info);
     [[nodiscard]] Value ImageRead(const Value& handle, const Value& coords, const U32& lod,
                                   const U32& multisampling, TextureInstInfo info);
     void ImageWrite(const Value& handle, const Value& coords, const U32& lod,
