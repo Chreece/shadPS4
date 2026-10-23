@@ -517,6 +517,12 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
             });
         }
     }
+    sampled_image_descriptors = 0;
+    for (const auto& desc : bindings) {
+        if (desc.descriptorType == vk::DescriptorType::eSampledImage) {
+            sampled_image_descriptors += desc.descriptorCount;
+        }
+    }
     uses_push_descriptors = binding < instance.MaxPushDescriptors();
     const auto flags = uses_push_descriptors
                            ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR
