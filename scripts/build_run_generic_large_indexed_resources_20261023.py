@@ -975,11 +975,15 @@ def opcodes(s):
         s=after(s,a,'OPCODE(ImageGradientIndexed,                                F32x4,          Opaque,         Opaque,         Opaque,         Opaque,         Opaque,         U32,          )\n','OPCODE(ImageGradientIndexed','OPCODE_GRADIENT')
     return s
 def spirv_decl(s):
-    if 'EmitImageSampleImplicitLodIndexed' in s:return s
-    m=re.search(r'(Id EmitImageSampleImplicitLod\(EmitContext& ctx, IR::Inst\* inst, u32 handle, Id coords, Id bias,\n\s+const IR::Value& offset\);\n)',s)
-    if not m:raise RuntimeError('SPIRV_DECL')
-    x='Id EmitImageSampleImplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,\n                                     Id bias, const IR::Value& offset, Id gpu_texture_id);\n'
-    s=s[:m.end()]+x+s[m.end():]
+    if 'EmitImageSampleImplicitLodIndexed' not in s:
+        m=re.search(
+            r'(Id EmitImageSampleImplicitLod\(EmitContext& ctx, IR::Inst\* inst, u32 handle, Id coords, Id bias,\n\s+const IR::Value& offset\);\n)',
+            s)
+        if not m:
+            raise RuntimeError('SPIRV_DECL')
+        x=('Id EmitImageSampleImplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,\n'
+           '                                     Id bias, const IR::Value& offset, Id gpu_texture_id);\n')
+        s=s[:m.end()]+x+s[m.end():]
     if 'EmitImageGradientIndexed' not in s:
         m=re.search(
             r'(Id EmitImageQueryLod\(EmitContext& ctx, IR::Inst\* inst, u32 handle, Id coords\);\n)',
@@ -991,6 +995,7 @@ def spirv_decl(s):
            '                            const IR::Value& offset, Id gpu_texture_id);\n')
         s=s[:m.end()]+x+s[m.end():]
     return s
+
 def spirv_context(s):
     fn_start=s.find('void EmitContext::DefineImagesAndSamplers()')
     if fn_start<0:
@@ -1042,19 +1047,18 @@ def spirv_context_h(s):
     return s
 
 def ir_emitter_h(s):
-    if 'ImageSampleImplicitLodIndexed(' in s:
-        return s
-    m=re.search(
-        r'(\[\[nodiscard\]\] Value ImageSampleImplicitLod\([^;]+;\n)',
-        s,re.S)
-    if not m:
-        raise RuntimeError('IR_EMITTER_INDEXED_DECL_ANCHOR')
-    decl=(
-        '    [[nodiscard]] Value ImageSampleImplicitLodIndexed(\n'
-        '        const Value& handle, const Value& body, const F32& bias,\n'
-        '        const Value& offset, const U32& gpu_texture_id, TextureInstInfo info);\n\n'
-    )
-    s=s[:m.end()]+decl+s[m.end():]
+    if 'ImageSampleImplicitLodIndexed(' not in s:
+        m=re.search(
+            r'(\[\[nodiscard\]\] Value ImageSampleImplicitLod\([^;]+;\n)',
+            s,re.S)
+        if not m:
+            raise RuntimeError('IR_EMITTER_INDEXED_DECL_ANCHOR')
+        decl=(
+            '    [[nodiscard]] Value ImageSampleImplicitLodIndexed(\n'
+            '        const Value& handle, const Value& body, const F32& bias,\n'
+            '        const Value& offset, const U32& gpu_texture_id, TextureInstInfo info);\n\n'
+        )
+        s=s[:m.end()]+decl+s[m.end():]
     if 'ImageGradientIndexed(' not in s:
         marker='    [[nodiscard]] Value ImageGradient('
         start=s.find(marker)
@@ -1074,24 +1078,23 @@ def ir_emitter_h(s):
     return s
 
 def ir_emitter_cpp(s):
-    if 'IREmitter::ImageSampleImplicitLodIndexed(' in s:
-        return s
-    marker='Value IREmitter::ImageSampleImplicitLod('
-    start=s.find(marker)
-    if start<0:
-        raise RuntimeError('IR_EMITTER_INDEXED_IMPL_START')
-    nxt=s.find('\nValue IREmitter::ImageSampleExplicitLod(',start)
-    if nxt<0:
-        raise RuntimeError('IR_EMITTER_INDEXED_IMPL_END')
-    impl=(
-        '\nValue IREmitter::ImageSampleImplicitLodIndexed(\n'
-        '    const Value& handle, const Value& coords, const F32& bias,\n'
-        '    const Value& offset, const U32& gpu_texture_id, TextureInstInfo info) {\n'
-        '    return Inst(Opcode::ImageSampleImplicitLodIndexed, Flags{info}, handle, coords,\n'
-        '                bias, offset, gpu_texture_id);\n'
-        '}\n'
-    )
-    s=s[:nxt]+impl+s[nxt:]
+    if 'IREmitter::ImageSampleImplicitLodIndexed(' not in s:
+        marker='Value IREmitter::ImageSampleImplicitLod('
+        start=s.find(marker)
+        if start<0:
+            raise RuntimeError('IR_EMITTER_INDEXED_IMPL_START')
+        nxt=s.find('\nValue IREmitter::ImageSampleExplicitLod(',start)
+        if nxt<0:
+            raise RuntimeError('IR_EMITTER_INDEXED_IMPL_END')
+        impl=(
+            '\nValue IREmitter::ImageSampleImplicitLodIndexed(\n'
+            '    const Value& handle, const Value& coords, const F32& bias,\n'
+            '    const Value& offset, const U32& gpu_texture_id, TextureInstInfo info) {\n'
+            '    return Inst(Opcode::ImageSampleImplicitLodIndexed, Flags{info}, handle, coords,\n'
+            '                bias, offset, gpu_texture_id);\n'
+            '}\n'
+        )
+        s=s[:nxt]+impl+s[nxt:]
     if 'IREmitter::ImageGradientIndexed(' not in s:
         marker='Value IREmitter::ImageGradient('
         start=s.find(marker)
@@ -1113,8 +1116,6 @@ def ir_emitter_cpp(s):
     return s
 
 def emit_spirv_image(s):
-    if 'Id EmitImageSampleImplicitLodIndexed(' in s:
-        return s
     marker='Id EmitImageSampleImplicitLod(EmitContext& ctx'
     start=s.find(marker)
     if start<0:
