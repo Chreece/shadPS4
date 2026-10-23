@@ -855,6 +855,13 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
             return ir.ImageGather(handle, coords, offset, inst_info);
         }
         if (inst_info.has_derivatives) {
+            if (image_res.is_guest_indexed) {
+                // Explicit gradient is required for the compute shaders:
+                // implicit LOD would not preserve the original PS4 opcode.
+                return ir.ImageGradientIndexed(
+                    handle, coords, derivatives_dx, derivatives_dy, offset,
+                    IR::U32{inst.Arg(1)}, inst_info);
+            }
             return ir.ImageGradient(handle, coords, derivatives_dx, derivatives_dy, offset,
                                     lod_clamp, inst_info);
         }
