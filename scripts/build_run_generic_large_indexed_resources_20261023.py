@@ -339,7 +339,14 @@ static auto RuntimeDescriptorHeapSizes(const Instance& instance) {
                 '            instance_.IsShaderImageGatherExtendedSupported(),\n',
                 'supports_shader_image_gather_extended =','PIPELINE_DYNAMIC_OFFSET')
     if 'supports_sampled_image_nonuniform_indexing =' not in s:
-        s=after(s,'        .supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),\n',
+        anchor=(
+            '        .supports_shader_image_gather_extended =\n'
+            '            instance_.IsShaderImageGatherExtendedSupported(),\n'
+            if 'supports_shader_image_gather_extended =' in s
+            else
+            '        .supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),\n'
+        )
+        s=after(s,anchor,
                 '        .supports_sampled_image_nonuniform_indexing =\n'
                 '            instance_.IsSampledImageNonUniformIndexingSupported(),\n',
                 'supports_sampled_image_nonuniform_indexing =','PIPELINE_INDEX')
