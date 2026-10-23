@@ -22,7 +22,9 @@ STRIDED_SELECTOR_FINAL='d72990fbd8fe6483a921fa2c015e1d65b1e1f336'
 GUEST_TSHARP_FINAL='02c22fd61253b072a9bc4017e67f9c39fa0d4fa9'
 INTEGER_SAMPLER_FINAL='aab1275779c989f0624cd6dcb9582410d5534381'
 VULKAN_INDEXING_FEATURE_FIXES=(
-        )
+    'cbbcc969156f9258633914409ca88e6458bbad2c',
+    '538fc65527d96086443d14d3227eb9c5daa7397f',
+)
 OLD=ROOT/'scripts/shadps4-buffer-phi-launch-20261023.py'
 OLD_SHA='d6c0c858a6f60d16a42248cff3589fb33cdd4f8897780eda4ad07437a771b44c'
 GEN_FILES=(
@@ -48,7 +50,6 @@ GEN_FILES=(
 )
 EXTRA_FILES=(
 'src/video_core/renderer_vulkan/vk_compute_pipeline.cpp',
-'src/video_core/renderer_vulkan/vk_instance.cpp',
 'src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp',
 'src/video_core/renderer_vulkan/vk_pipeline_common.cpp',
 'src/video_core/renderer_vulkan/vk_pipeline_common.h',
@@ -94,8 +95,6 @@ PATCH_COMMITS=(
 'bfa0d918e33f1364b052e953812aa662f2ad2275',
 '6ff828d3a06b2222597c89c596ff500863c4a18f',
 '34a46b656f75a7fdd215086d5be2b1c6042016b4',
-'cbbcc969156f9258633914409ca88e6458bbad2c',
-'538fc65527d96086443d14d3227eb9c5daa7397f',
 )
 PATCH_PATHS=('src/shader_recompiler','src/video_core/renderer_vulkan','src/video_core/texture_cache')
 
@@ -1261,6 +1260,22 @@ def ensure_required_refs():
             raise RuntimeError(
                 'UPSTREAM_MAIN_FETCH_FAILED='+UPSTREAM_MAIN+' '+
                 (q.stderr or b'').decode(errors='replace')[-2000:]
+            )
+
+    for sha in PATCH_COMMITS:
+        changed=git('diff','--name-only',sha+'^',sha).decode().splitlines()
+        if len(changed)!=1:
+            raise RuntimeError(
+                'PATCH_COMMIT_NOT_SINGLE_FILE='+sha+
+                ' paths='+','.join(changed)
+            )
+        path=changed[0]
+        if not any(
+            path==prefix or path.startswith(prefix+'/')
+            for prefix in PATCH_PATHS
+        ):
+            raise RuntimeError(
+                'PATCH_COMMIT_OUTSIDE_GENERIC_SOURCE='+sha+' path='+path
             )
 
 def recovered_parent_ref(run_dir):
