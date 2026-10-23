@@ -509,28 +509,30 @@ def resource_h(s):
     if sampler.count(field_anchor)!=1:
         raise RuntimeError('SAMPLER_INDEXED_FIELDS_ANCHOR_COUNT='+str(sampler.count(field_anchor)))
     ordered_fields=(
-        ('indexed_table_fetch',
-         '    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n'),
-        ('indexed_guest_entries',
-         '    u32 indexed_guest_entries{};\n'),
-        ('indexed_record_stride_bytes',
-         '    u32 indexed_record_stride_bytes{};\n'),
-        ('indexed_image_offset_bytes',
-         '    u32 indexed_image_offset_bytes{};\n'),
-        ('indexed_sampler_offset_bytes',
-         '    u32 indexed_sampler_offset_bytes{};\n'),
-        ('is_guest_indexed',
-         '    bool is_guest_indexed{};\n'),
+        ('    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n',
+         'SAMPLER_INDEXED_TABLE_FETCH'),
+        ('    u32 indexed_guest_entries{};\n',
+         'SAMPLER_INDEXED_GUEST_ENTRIES'),
+        ('    u32 indexed_record_stride_bytes{};\n',
+         'SAMPLER_INDEXED_RECORD_STRIDE'),
+        ('    u32 indexed_image_offset_bytes{};\n',
+         'SAMPLER_INDEXED_IMAGE_OFFSET'),
+        ('    u32 indexed_sampler_offset_bytes{};\n',
+         'SAMPLER_INDEXED_SAMPLER_OFFSET'),
+        ('    bool is_guest_indexed{};\n',
+         'SAMPLER_INDEXED_FLAG'),
     )
     insert_at=sampler.find(field_anchor)+len(field_anchor)
-    for marker,declaration in ordered_fields:
-        if marker not in sampler:
+    for declaration,label in ordered_fields:
+        if declaration not in sampler:
             sampler=sampler[:insert_at]+declaration+sampler[insert_at:]
             insert_at+=len(declaration)
         else:
             pos=sampler.find(declaration)
-            if pos>=0:
-                insert_at=max(insert_at,pos+len(declaration))
+            insert_at=max(insert_at,pos+len(declaration))
+    for declaration,label in ordered_fields:
+        if sampler.count(declaration)!=1:
+            raise RuntimeError(label+'_DECL_COUNT='+str(sampler.count(declaration)))
     get_anchor='    constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {\n'
     if 'if (is_guest_indexed && indexed_record_stride_bytes != 0u)' not in sampler:
         if sampler.count(get_anchor)!=1:
