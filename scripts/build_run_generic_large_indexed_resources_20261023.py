@@ -608,17 +608,9 @@ def _pure_cache_version_patch(sha):
     )
     return all(version_re.fullmatch(line) for line in changed)
 
-def _patch_for_commit(sha,skip_cache_version=False):
-    paths=list(PATCH_PATHS)
-    if skip_cache_version:
-        # Build the patch per directory and exclude only the known schema
-        # counter file. Real serialization changes are never silently dropped.
-        names=git('diff','--name-only',sha+'^',sha,'--',*PATCH_PATHS).decode().splitlines()
-        names=[p for p in names if p!='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp']
-        if not names:
-            return b''
-        return git('diff',sha+'^',sha,'--',*names)
-    return git('diff',sha+'^',sha,'--',*paths)
+def _changed_patch_paths(sha):
+    names=git('diff','--name-only',sha+'^',sha,'--',*PATCH_PATHS).decode().splitlines()
+    return [p for p in names if p]
 
 def apply_patch_commit(idx,sha):
     if not re.fullmatch(r'[0-9a-f]{40}',sha):
@@ -627,55 +619,48 @@ def apply_patch_commit(idx,sha):
         raise RuntimeError('PATCH_COMMIT_MISSING='+sha)
 
     e=env({'GIT_INDEX_FILE':str(idx)})
-    pre_tree=git('write-tree',e=e).decode().strip()
+    commit_tree=git('write-tree',e=e).decode().strip()
+    paths=_changed_patch_paths(sha)
+    if not paths:
+        return
 
-    def restore():
-        git('read-tree',pre_tree,e=e)
+    for path in paths:
+        # Cache-version counters are intentionally regenerated once from the
+        # final composed ABI. They carry no runtime behavior by themselves.
+        if (path=='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp' and
+            _pure_cache_version_patch(sha)):
+            continue
 
-    def attempt(patch):
+        patch=git('diff',sha+'^',sha,'--',path)
         if not patch.strip():
-            return None
-        return subprocess.run(
+            continue
+
+        file_tree=git('write-tree',e=e).decode().strip()
+        q=subprocess.run(
             ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
              'apply','--3way','--cached','--whitespace=nowarn','-'],
             env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
+        if q.returncode==0:
+            continue
 
-    def reverse_check(patch):
-        return subprocess.run(
+        err=(q.stderr or b'').decode(errors='replace')
+        git('read-tree',file_tree,e=e)
+
+        # If this exact file change is already represented by the verified
+        # parent or by an earlier generic replay, treat it as idempotent.
+        reverse=subprocess.run(
             ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
              'apply','--reverse','--check','--cached','--whitespace=nowarn','-'],
             env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
+        if reverse.returncode==0:
+            continue
 
-    patch=_patch_for_commit(sha)
-    q=attempt(patch)
-    if q is None or q.returncode==0:
-        return
-
-    err=(q.stderr or b'').decode(errors='replace')
-    restore()
-
-    # Idempotency: a replayed commit may already be represented by the
-    # verified parent or an earlier generic transform.
-    reverse=reverse_check(patch)
-    if reverse.returncode==0:
-        return
-
-    cache_path='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
-    if cache_path in err and _pure_cache_version_patch(sha):
-        reduced=_patch_for_commit(sha,skip_cache_version=True)
-        q2=attempt(reduced)
-        if q2 is None or q2.returncode==0:
-            return
-        err2=(q2.stderr or b'').decode(errors='replace')
-        restore()
-        reverse2=reverse_check(reduced)
-        if reverse2.returncode==0:
-            return
+        # Keep failure evidence deterministic: discard any earlier files from
+        # this one commit before reporting the unresolved path.
+        git('read-tree',commit_tree,e=e)
         raise RuntimeError(
-            'GENERIC_PATCH_APPLY_FAILED_AFTER_CACHE_VERSION_SKIP='+sha+' '+err2[-4000:]
+            'GENERIC_PATCH_FILE_APPLY_FAILED='+sha+' path='+path+' '+err[-4000:]
         )
-
-    raise RuntimeError('GENERIC_PATCH_APPLY_FAILED='+sha+' '+err[-4000:])
 
 def index_text(idx,p):
     e=env({'GIT_INDEX_FILE':str(idx)})
