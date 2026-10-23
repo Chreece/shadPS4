@@ -59,6 +59,15 @@ PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES=(
     '8b75cb1197818094d2a31ca4879bc62c842b1134',
     '9b4d6ebd6523b8f28d543da0ebaa841733cfdf7f',
 )
+PAIRED_INDEXED_SAMPLER_BACKEND_FIXES=(
+    'dd00aa320c9eb86c70584f36dce808c2483246a0',
+    'ec6f257ed6852478a915d96c514f54d290c112a2',
+    '3edc91cd217563acb9206772e4773c4ca1cf73d8',
+    '630f51ecf3c8a7bb8afac698a435ca27e8b23fad',
+    'bfa0d918e33f1364b052e953812aa662f2ad2275',
+    '6ff828d3a06b2222597c89c596ff500863c4a18f',
+    '34a46b656f75a7fdd215086d5be2b1c6042016b4',
+)
 OLD=ROOT/'scripts/shadps4-buffer-phi-launch-20261023.py'
 OLD_SHA='d6c0c858a6f60d16a42248cff3589fb33cdd4f8897780eda4ad07437a771b44c'
 GEN_FILES=(
@@ -98,13 +107,6 @@ EXTRA_FILES=(
 )
 FILES=GEN_FILES+EXTRA_FILES
 PATCH_COMMITS=(
-'dd00aa320c9eb86c70584f36dce808c2483246a0',
-'ec6f257ed6852478a915d96c514f54d290c112a2',
-'3edc91cd217563acb9206772e4773c4ca1cf73d8',
-'630f51ecf3c8a7bb8afac698a435ca27e8b23fad',
-'bfa0d918e33f1364b052e953812aa662f2ad2275',
-'6ff828d3a06b2222597c89c596ff500863c4a18f',
-'34a46b656f75a7fdd215086d5be2b1c6042016b4',
 )
 PATCH_PATHS=('src/shader_recompiler','src/video_core/renderer_vulkan','src/video_core/texture_cache')
 
@@ -1022,6 +1024,43 @@ def spirv_context(s):
               '            .is_guest_indexed = image_desc.is_guest_indexed,\n',
             1)
 
+    sampler_start=body.find('    sampler_type = TypeSampler();')
+    if sampler_start<0:
+        raise RuntimeError('SPIRV_SAMPLER_LOOP_START')
+    sampler_end=body.rfind('\n}')
+    if sampler_end<sampler_start:
+        raise RuntimeError('SPIRV_SAMPLER_LOOP_END')
+    sampler_block='''    sampler_type = TypeSampler();
+    sampler_pointer_type = TypePointer(spv::StorageClass::UniformConstant, sampler_type);
+    for (const auto& samp_desc : info.samplers) {
+        const u32 count = samp_desc.NumBindings(info);
+        Id pointer_type = sampler_pointer_type;
+        if (samp_desc.is_guest_indexed) {
+            ASSERT(profile.supports_sampler_array_nonuniform_indexing);
+            ASSERT(count >= 2u);
+            AddCapability(spv::Capability::ShaderNonUniform);
+            AddCapability(spv::Capability::SampledImageArrayNonUniformIndexing);
+            const Id array_type = TypeArray(sampler_type, ConstU32(count));
+            pointer_type = TypePointer(spv::StorageClass::UniformConstant, array_type);
+        }
+        const Id id{AddGlobalVariable(pointer_type, spv::StorageClass::UniformConstant)};
+        Decorate(id, spv::Decoration::Binding, binding.unified);
+        binding.unified += count;
+        Decorate(id, spv::Decoration::DescriptorSet, 0U);
+        Name(id, fmt::format("{}_{}{}", hw_stage, "samp", samplers.size()));
+        samplers.push_back(id);
+        sampler_array_sizes.push_back(count);
+        interfaces.push_back(id);
+    }'''
+    body=body[:sampler_start]+sampler_block+body[sampler_end:]
+    for marker in (
+        'samp_desc.NumBindings(info)',
+        'sampler_array_sizes.push_back(count)',
+        'SampledImageArrayNonUniformIndexing',
+    ):
+        if marker not in body:
+            raise RuntimeError('SPIRV_INDEXED_SAMPLER_DECL_MISSING='+marker)
+
     s=s[:fn_start]+body+s[fn_end:]
     return s
 
@@ -1044,6 +1083,14 @@ def spirv_context_h(s):
                    '        bool is_guest_indexed{};\n',
             1)
     s=s[:start]+body+s[end:]
+    if 'sampler_array_sizes' not in s:
+        anchor='    boost::container::small_vector<Id, 4> samplers;\n'
+        if anchor not in s:
+            raise RuntimeError('SPIRV_SAMPLER_ARRAY_SIZES_ANCHOR')
+        s=s.replace(
+            anchor,
+            anchor+'    boost::container::small_vector<u32, 4> sampler_array_sizes;\n',
+            1)
     return s
 
 def ir_emitter_h(s):
@@ -1200,6 +1247,54 @@ Id EmitImageGradientIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coo
 }
 '''
         s=s[:nxt]+impl+s[nxt:]
+    if 'static Id LoadIndexedGuestSampler(' not in s:
+        marker='Id EmitImageSampleImplicitLodIndexed('
+        pos=s.find(marker)
+        if pos<0:
+            raise RuntimeError('SPIRV_INDEXED_SAMPLER_HELPER_INSERT')
+        helper=r'''static Id LoadIndexedGuestSampler(EmitContext& ctx, u32 handle, Id bounded,
+                                  u32 expected_count) {
+    const u32 sampler_index = handle >> 16;
+    ASSERT(sampler_index < ctx.samplers.size());
+    const u32 sampler_count = ctx.sampler_array_sizes[sampler_index];
+    if (sampler_count == 1u) {
+        return ctx.OpLoad(ctx.sampler_type, ctx.samplers[sampler_index]);
+    }
+    ASSERT(ctx.profile.supports_sampler_array_nonuniform_indexing);
+    ASSERT(sampler_count == expected_count);
+    const Id pointer_type =
+        ctx.TypePointer(spv::StorageClass::UniformConstant, ctx.sampler_type);
+    const Id pointer =
+        ctx.OpAccessChain(pointer_type, ctx.samplers[sampler_index], std::array{bounded});
+    ctx.Decorate(pointer, spv::Decoration::NonUniform);
+    const Id value = ctx.OpLoad(ctx.sampler_type, pointer);
+    ctx.Decorate(value, spv::Decoration::NonUniform);
+    return value;
+}
+
+'''
+        s=s[:pos]+helper+s[pos:]
+
+    for marker in ('Id EmitImageSampleImplicitLodIndexed(',
+                   'Id EmitImageGradientIndexed('):
+        start=s.find(marker)
+        if start<0:
+            raise RuntimeError('SPIRV_INDEXED_SAMPLER_TARGET_MISSING='+marker)
+        next_id=s.find('\nId ',start+3)
+        if next_id<0:
+            next_id=len(s)
+        body=s[start:next_id]
+        body,count=re.subn(
+            r'const Id sampler\s*=\s*ctx\.OpLoad\(ctx\.sampler_type,\s*ctx\.samplers\[handle >> 16\]\);',
+            'const Id sampler = LoadIndexedGuestSampler(\n'
+            '        ctx, handle, bounded, texture.image_array_size);',
+            body,count=1)
+        if count==0 and 'LoadIndexedGuestSampler(' not in body:
+            raise RuntimeError('SPIRV_INDEXED_SAMPLER_LOAD_NOT_ADAPTED='+marker)
+        s=s[:start]+body+s[next_id:]
+    if 'ctx.sampler_array_sizes[sampler_index]' not in s:
+        raise RuntimeError('SPIRV_INDEXED_SAMPLER_HELPER_INCOMPLETE')
+
     return s
 
 def cache(s):
@@ -1400,6 +1495,94 @@ def raster(s):
         raise RuntimeError('RASTER_INTEGER_SAMPLER_CALL_NOT_ADAPTED')
 
     s=s[:fn_start]+body+s[fn_end:]
+    # Descriptor image-info storage must include every element of sampler arrays.
+    bind_start=s.find('bool Rasterizer::BindResources(const Pipeline* pipeline)')
+    bind_end=s.find('\nvoid Rasterizer::BindVertexBuffers',bind_start)
+    if bind_start<0 or bind_end<0:
+        raise RuntimeError('RASTER_BIND_RESOURCES_RANGE')
+    bind_body=s[bind_start:bind_end]
+    old='required_infos += stage_images + stage->samplers.size();'
+    if old in bind_body:
+        bind_body=bind_body.replace(
+            old,
+            'required_infos += stage_images;\n'
+            '        for (const auto& sampler : stage->samplers) {\n'
+            '            required_infos += sampler.NumBindings(*stage);\n'
+            '        }',
+            1)
+    elif 'required_infos += sampler.NumBindings(*stage);' not in bind_body:
+        raise RuntimeError('RASTER_SAMPLER_RESERVE_NOT_ADAPTED')
+    s=s[:bind_start]+bind_body+s[bind_end:]
+
+    fn_start=s.find('void Rasterizer::BindTextures(')
+    fn_end=s.find('\nRenderState Rasterizer::BeginRendering',fn_start)
+    if fn_start<0 or fn_end<0:
+        raise RuntimeError('RASTER_BIND_TEXTURES_RANGE_FOR_SAMPLER')
+    body=s[fn_start:fn_end]
+    loop_anchor='    for (const auto& sampler : stage.samplers) {\n'
+    if 'if (sampler.is_guest_indexed)' not in body:
+        if body.count(loop_anchor)!=1:
+            raise RuntimeError('RASTER_INDEXED_SAMPLER_LOOP_ANCHOR='+str(body.count(loop_anchor)))
+        indexed=r'''        if (sampler.is_guest_indexed) {
+            const u32 count = sampler.NumBindings(stage);
+            AmdGpu::Buffer source{};
+            const bool fetched =
+                sampler.indexed_table_fetch.Fetch(stage.flattened_ud_buf.data(), &source);
+            const u32 record_stride = sampler.indexed_record_stride_bytes;
+            const u32 descriptor_offset = sampler.indexed_sampler_offset_bytes;
+            const u64 bytes = fetched
+                ? (source.stride == 0 ? static_cast<u64>(source.num_records)
+                                      : static_cast<u64>(source.stride) * source.num_records)
+                : 0u;
+            const bool complete = fetched && source.Valid() && source.base_address &&
+                Shader::Optimization::CompleteGuestTsharpRecordEntries(
+                    static_cast<u32>(source.stride),
+                    static_cast<u32>(source.num_records),
+                    record_stride, descriptor_offset,
+                    Shader::MaxGuestIndexedImageEntries) == count - 1u &&
+                bytes == u64(count - 1u) * record_stride &&
+                memory->IsValidMapping(source.base_address, bytes);
+            const u32 first_sampler = static_cast<u32>(image_infos.size());
+            for (u32 i = 0; i < count; ++i) {
+                AmdGpu::Sampler ssharp{};
+                if (complete && i + 1u < count) {
+                    const u64 guest_address = u64(source.base_address) +
+                        u64(i) * record_stride + descriptor_offset;
+                    if (memory->IsValidMapping(guest_address, sizeof(AmdGpu::Sampler))) {
+                        std::memcpy(&ssharp,
+                                    reinterpret_cast<const void*>(guest_address),
+                                    sizeof(AmdGpu::Sampler));
+                        if (!ssharp.Valid() ||
+                            (ssharp.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
+                             liverpool->regs.ta_bc_base.Address() == 0)) {
+                            ssharp = AmdGpu::Sampler{};
+                        }
+                    }
+                }
+                const auto vk_sampler = texture_cache.GetSampler(
+                    ssharp, liverpool->regs.ta_bc_base,
+                    sampler.is_depth, sampler.is_integer);
+                image_infos.emplace_back(
+                    vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
+            }
+            auto& write = set_writes[set_write_index++];
+            write.dstSet = VK_NULL_HANDLE;
+            write.dstBinding = binding.unified;
+            write.dstArrayElement = 0;
+            write.descriptorCount = count;
+            write.descriptorType = vk::DescriptorType::eSampler;
+            write.pImageInfo = &image_infos[first_sampler];
+            binding.unified += count;
+            continue;
+        }
+'''
+        body=body.replace(loop_anchor,loop_anchor+indexed,1)
+    if ('sampler.NumBindings(stage)' not in body or
+        'sampler.indexed_sampler_offset_bytes' not in body or
+        'write.descriptorCount = count' not in body):
+        raise RuntimeError('RASTER_INDEXED_SAMPLER_BINDING_INCOMPLETE')
+    s=s[:fn_start]+body+s[fn_end:]
+
     return s
 
 def resource_pool_h(s):
@@ -1468,6 +1651,38 @@ def graphics_pipeline(s):
         '            sampled_image_descriptors += desc.descriptorCount;\n'
         '        }\n'
         '    }\n')
+    fn_start=s.find('void GraphicsPipeline::BuildDescSetLayout(')
+    if fn_start<0:
+        raise RuntimeError('GRAPHICS_SAMPLER_LAYOUT_FUNCTION')
+    fn_end=s.find('\n}',fn_start)
+    if fn_end<0:
+        raise RuntimeError('GRAPHICS_SAMPLER_LAYOUT_END')
+    body=s[fn_start:fn_end]
+    start=body.find('        for (const auto& sampler : stage->samplers) {')
+    if start<0:
+        raise RuntimeError('GRAPHICS_SAMPLER_LOOP_START')
+    brace=body.find('{',start)
+    depth=0
+    end=None
+    for i in range(brace,len(body)):
+        depth += (body[i]=='{')-(body[i]=='}')
+        if depth==0:
+            end=i+1
+            break
+    if end is None:
+        raise RuntimeError('GRAPHICS_SAMPLER_LOOP_UNBALANCED')
+    loop='''        for (const auto& sampler : stage->samplers) {
+            const u32 count = sampler.NumBindings(*stage);
+            bindings.push_back({
+                .binding = binding,
+                .descriptorType = vk::DescriptorType::eSampler,
+                .descriptorCount = count,
+                .stageFlags = stage_bit,
+            });
+            binding += count;
+        }'''
+    body=body[:start]+loop+body[end:]
+    s=s[:fn_start]+body+s[fn_end:]
     return s.replace(anchor,block+anchor,1)
 
 def compute_pipeline(s):
@@ -1483,6 +1698,30 @@ def compute_pipeline(s):
         '            sampled_image_descriptors += desc.descriptorCount;\n'
         '        }\n'
         '    }\n')
+    start=s.find('    for (const auto& sampler : info->samplers) {')
+    if start<0:
+        raise RuntimeError('COMPUTE_SAMPLER_LOOP_START')
+    brace=s.find('{',start)
+    depth=0
+    end=None
+    for i in range(brace,len(s)):
+        depth += (s[i]=='{')-(s[i]=='}')
+        if depth==0:
+            end=i+1
+            break
+    if end is None:
+        raise RuntimeError('COMPUTE_SAMPLER_LOOP_UNBALANCED')
+    loop='''    for (const auto& sampler : info->samplers) {
+        const u32 count = sampler.NumBindings(*info);
+        bindings.push_back({
+            .binding = binding,
+            .descriptorType = vk::DescriptorType::eSampler,
+            .descriptorCount = count,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        });
+        binding += count;
+    }'''
+    s=s[:start]+loop+s[end:]
     return s.replace(anchor,block+anchor,1)
 
 def sampler_h(s):
@@ -2333,7 +2572,7 @@ def compose(run_dir,info,manifest):
     temp_ref='refs/shadps4-composer/generic-large-indexed-resource-'+rev[:12]
     git('update-ref',temp_ref,rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'explicit_gradient_indexing_fixes':list(EXPLICIT_GRADIENT_INDEXING_FIXES),'paired_indexed_sampler_frontend_fixes':list(PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'explicit_gradient_indexing_fixes':list(EXPLICIT_GRADIENT_INDEXING_FIXES),'paired_indexed_sampler_frontend_fixes':list(PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES),'paired_indexed_sampler_backend_fixes':list(PAIRED_INDEXED_SAMPLER_BACKEND_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     work,d=fresh_paths(rev)
     cand=None;csha=''
