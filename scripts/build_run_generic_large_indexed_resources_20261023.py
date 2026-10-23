@@ -770,10 +770,9 @@ ELIG=r'''    if (resource.has_indexed_table &&
         if(table_fetch.Fetch(info.flattened_ud_buf.data(),&table) && table.Valid() && table.base_address!=0) {
             const u32 record_stride=resource.indexed_record_stride_bytes;
             const u32 record_offset=resource.indexed_descriptor_offset_bytes;
-            const u32 indexed_limit=record_stride!=0u
-                ? std::min(profile.max_guest_indexed_image_entries,
-                           profile.max_guest_indexed_sampler_entries)
-                : profile.max_guest_indexed_image_entries;
+            const u32 indexed_limit=
+                std::min(profile.max_guest_indexed_image_entries,
+                         profile.max_guest_indexed_sampler_entries);
             const u32 entries=record_stride!=0u
                 ? CompleteGuestTsharpRecordEntries(
                     static_cast<u32>(table.stride),static_cast<u32>(table.num_records),
@@ -1985,10 +1984,11 @@ def finish_generic_large(idx):
                     indexed_limit);
 '''
         t=t.replace(needle,repl,1)
-    if ('std::min(profile.max_guest_indexed_image_entries,' not in t or
+    if ('const u32 indexed_limit=' not in t or
+        'std::min(profile.max_guest_indexed_image_entries,' not in t or
         'profile.max_guest_indexed_sampler_entries' not in t or
         'record_stride,record_offset,indexed_limit' not in t):
-        raise RuntimeError('STRIDED_PHYSICAL_LIMIT_NOT_APPLIED')
+        raise RuntimeError('INDEXED_IMAGE_SAMPLER_SHARED_LIMIT_NOT_APPLIED')
     pipeline_text=index_text(idx,'src/video_core/renderer_vulkan/vk_pipeline_cache.cpp')
     if ('(limits.maxPerStageResources-total_reserve)/2u-1u' not in pipeline_text or
         'return std::min(type_real,pair_real);' not in pipeline_text):
