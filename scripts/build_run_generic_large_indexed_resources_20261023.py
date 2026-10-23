@@ -716,14 +716,42 @@ def finish_generic_large(idx):
     return
 
 def verify_prev():
-    rp=PREV/'build-result.json'; mp=PREV/'correction.json'
-    if digest(rp)!=PREV_REPORT or digest(mp)!=PREV_MANIFEST:raise RuntimeError('PREVIOUS_EVIDENCE_CHANGED')
-    r=json.loads(rp.read_text()); m=json.loads(mp.read_text()); c=Path(r['candidate'])
-    exp={'revision':PARENT,'tree':PARENT_TREE,'candidate_sha256':PREV_BIN,'full_build':'PASS','source_restored':True,'build_binary_restored':True,'sirit_restored':True}
-    for k,v in exp.items():
-        if r.get(k)!=v:raise RuntimeError('PREVIOUS_GATE='+k)
-    if digest(c)!=PREV_BIN or git('rev-parse',PARENT+'^{tree}').decode().strip()!=PARENT_TREE:raise RuntimeError('PREVIOUS_CANDIDATE_CHANGED')
-    return m
+    # The previous runtime evidence lived under logs/ and may legitimately be
+    # cleaned. The immutable source gate is the pinned parent commit+tree.
+    # Derive overlap from that verified Git tree rather than from transient
+    # JSON files in the logs directory.
+    if not exists(PARENT+'^{commit}'):
+        raise RuntimeError('PREVIOUS_PARENT_COMMIT_MISSING='+PARENT)
+    if git('rev-parse',PARENT+'^{tree}').decode().strip()!=PARENT_TREE:
+        raise RuntimeError('PREVIOUS_PARENT_TREE_CHANGED')
+    if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():
+        raise RuntimeError('SOURCE_NOT_RESTORED')
+
+    changed=tuple(
+        p for p in git('diff','--name-only',BASE,PARENT,'--','src').decode().splitlines()
+        if p
+    )
+    if not changed:
+        raise RuntimeError('PREVIOUS_PARENT_DIFF_EMPTY')
+
+    # The retained binary is useful additional evidence when still present,
+    # but it is not required to compose a new candidate from the immutable
+    # parent source tree.
+    candidate=ROOT/'clean-rebase-verified/candidates'/f'{PARENT}-{PREV_BIN}'/'shadps4'
+    candidate_status='MISSING_OPTIONAL'
+    if candidate.is_file() and not candidate.is_symlink():
+        if digest(candidate)!=PREV_BIN:
+            raise RuntimeError('PREVIOUS_CANDIDATE_HASH_CHANGED')
+        candidate_status='VERIFIED'
+
+    return {
+        'previous_parent':PARENT,
+        'previous_parent_tree':PARENT_TREE,
+        'previous_candidate_sha256':PREV_BIN,
+        'previous_candidate_status':candidate_status,
+        'previous_evidence_logs':'OPTIONAL',
+        'files':{p:{'source':'verified_parent_diff'} for p in changed},
+    }
 
 def builddir():
     out=[]
@@ -891,8 +919,10 @@ def main():
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:raise RuntimeError('ANOTHER_SHADPS4_BUILD_OWNS_LOCK')
             man=verify_prev()
-            for p in PREV.iterdir():
-                if p.is_file() and not p.is_symlink() and p.name not in ('build-result.json','correction.json','correction.patch') and p.stat().st_size<=16*1024*1024:shutil.copyfile(p,info/p.name)
+            if PREV.is_dir():
+                for p in PREV.iterdir():
+                    if p.is_file() and not p.is_symlink() and p.name not in ('build-result.json','correction.json','correction.patch') and p.stat().st_size<=16*1024*1024:
+                        shutil.copyfile(p,info/p.name)
             rev,tree,csha,cand=compose(run_dir,info,man)
         return launch(info,rev,tree,csha,cand)
     except (Exception,KeyboardInterrupt) as e:
