@@ -10,6 +10,7 @@ PARENT='975ee9812d93fb0e8094e0581640fb705c336d68'
 PARENT_TREE='d921f3f51c546aa8b9dfe7e230aaefeaf0b3c446'
 RECOVERY_BASE='4bc7df9c1370b0eb10c84f385b8c2d041e791945'
 RECOVERY_REF='refs/remotes/chreece/generic-large-indexed-images-20261023'
+SOURCE_REMOTE='https://github.com/Chreece/shadPS4.git'
 PARENT_REF=PARENT
 RECOVERY_PARTS=tuple(f'patches/verified-975.patch.gz.b64.part{i:02d}' for i in range(1,9))
 GEN_BASE='9f4c2da6107cb2b31578cc4b35f5e4ed85637dab'
@@ -793,6 +794,29 @@ def finish_generic_large(idx):
 
     return
 
+def ensure_required_refs():
+    specs=(
+        ('fix/generic-large-indexed-images-20261023',
+         'refs/remotes/chreece/generic-large-indexed-images-20261023'),
+        ('fix/got-strided-sampler-indexed-20261018',
+         'refs/remotes/chreece/got-strided-sampler-indexed-20261018'),
+        ('fix/general-vulkan-integer-sampler-20261016',
+         'refs/remotes/chreece/general-vulkan-integer-sampler-20261016'),
+    )
+    missing=[(src,dst) for src,dst in specs if not exists(dst+'^{commit}')]
+    if not missing:
+        return
+    args=['git','-C',SRC,'fetch','--no-tags','--depth=300',SOURCE_REMOTE]
+    args += [f'+refs/heads/{src}:{dst}' for src,dst in missing]
+    q=run(args,check=False,timeout=180)
+    if q.returncode:
+        raise RuntimeError(
+            'REQUIRED_REF_FETCH_FAILED='+(q.stderr or b'').decode(errors='replace')[-4000:]
+        )
+    for _,dst in specs:
+        if not exists(dst+'^{commit}'):
+            raise RuntimeError('REQUIRED_REF_MISSING_AFTER_FETCH='+dst)
+
 def recovered_parent_ref(run_dir):
     global PARENT_REF
     if exists(PARENT+'^{commit}'):
@@ -801,10 +825,7 @@ def recovered_parent_ref(run_dir):
         PARENT_REF=PARENT
         return PARENT_REF
 
-    if not exists(RECOVERY_BASE+'^{commit}'):
-        raise RuntimeError('RECOVERY_BASE_MISSING='+RECOVERY_BASE)
-    if not exists(RECOVERY_REF+'^{commit}'):
-        raise RuntimeError('RECOVERY_REF_MISSING='+RECOVERY_REF)
+    ensure_required_refs()
 
     encoded=b''
     for part in RECOVERY_PARTS:
@@ -817,35 +838,45 @@ def recovered_parent_ref(run_dir):
         patch=gzip.decompress(base64.b64decode(encoded,validate=True))
     except Exception as e:
         raise RuntimeError('RECOVERY_PATCH_DECODE_FAILED='+str(e))
-
     if not patch.startswith(b'diff --git '):
         raise RuntimeError('RECOVERY_PATCH_FORMAT_INVALID')
 
-    idx=run_dir/'verified-parent-recovery.index'
-    e=env({'GIT_INDEX_FILE':str(idx)})
-    git('read-tree',RECOVERY_BASE,e=e)
-    q=subprocess.run(
-        ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
-         'apply','--cached','--whitespace=nowarn','-'],
-        env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
-    if q.returncode:
-        raise RuntimeError(
-            'RECOVERY_PATCH_APPLY_FAILED='+(q.stderr or b'').decode(errors='replace')[-4000:]
-        )
+    candidates=[]
+    for base in (RECOVERY_BASE,BASE):
+        if base not in candidates and exists(base+'^{commit}'):
+            candidates.append(base)
+    if not candidates:
+        raise RuntimeError('NO_RECOVERY_BASE_OBJECT_AVAILABLE')
 
-    tree=git('write-tree',e=e).decode().strip()
-    if tree!=PARENT_TREE:
-        raise RuntimeError(
-            'RECOVERED_PARENT_TREE_MISMATCH expected='+PARENT_TREE+' got='+tree
-        )
+    errors=[]
+    for base in candidates:
+        idx=run_dir/f'verified-parent-recovery-{base[:12]}.index'
+        e=env({'GIT_INDEX_FILE':str(idx)})
+        git('read-tree',base,e=e)
+        q=subprocess.run(
+            ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
+             'apply','--3way','--cached','--whitespace=nowarn','-'],
+            env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
+        if q.returncode:
+            errors.append(base+':apply:'+(q.stderr or b'').decode(errors='replace')[-800:])
+            continue
+        tree=git('write-tree',e=e).decode().strip()
+        if tree!=PARENT_TREE:
+            errors.append(base+':tree:'+tree)
+            continue
+        msg=b'Reconstructed verified graphics parent tree for local composition only\n'
+        PARENT_REF=git('commit-tree',tree,'-p',base,input=msg).decode().strip()
+        if git('rev-parse',PARENT_REF+'^{tree}').decode().strip()!=PARENT_TREE:
+            raise RuntimeError('RECOVERED_PARENT_COMMIT_TREE_CHANGED')
+        return PARENT_REF
 
-    msg=b'Reconstructed verified graphics parent tree for local composition only\n'
-    PARENT_REF=git('commit-tree',tree,'-p',RECOVERY_BASE,input=msg).decode().strip()
-    if git('rev-parse',PARENT_REF+'^{tree}').decode().strip()!=PARENT_TREE:
-        raise RuntimeError('RECOVERED_PARENT_COMMIT_TREE_CHANGED')
-    return PARENT_REF
+    raise RuntimeError(
+        'RECOVERED_PARENT_TREE_NOT_REPRODUCED expected='+PARENT_TREE+
+        ' attempts='+' || '.join(errors)
+    )
 
 def verify_prev(run_dir):
+    ensure_required_refs()
     # PARENT_REF is either the original verified commit or a locally
     # reconstructed commit with the exact same verified tree.
     if not SRC.is_dir() or not (SRC/'.git').exists():
