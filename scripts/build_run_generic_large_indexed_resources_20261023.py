@@ -800,15 +800,20 @@ def ensure_required_refs():
         ('fix/general-vulkan-integer-sampler-20261016',
          'refs/remotes/chreece/general-vulkan-integer-sampler-20261016'),
     )
-    missing=[(src,dst) for src,dst in specs if not exists(dst+'^{commit}')]
-    if missing:
-        args=['git','-C',SRC,'fetch','--no-tags','--depth=300',SOURCE_REMOTE]
-        args += [f'+refs/heads/{src}:{dst}' for src,dst in missing]
-        q=run(args,check=False,timeout=180)
-        if q.returncode:
-            raise RuntimeError(
-                'REQUIRED_REF_FETCH_FAILED='+(q.stderr or b'').decode(errors='replace')[-4000:]
-            )
+
+    # Always refresh the integration refs. An existing remote-tracking ref can
+    # be stale even though it technically "exists", which previously allowed
+    # the composer to combine an older branch snapshot with newer hard-coded
+    # commit expectations.
+    args=['git','-C',SRC,'fetch','--no-tags','--depth=300',SOURCE_REMOTE]
+    args += [f'+refs/heads/{src}:{dst}' for src,dst in specs]
+    q=run(args,check=False,timeout=180)
+    if q.returncode:
+        raise RuntimeError(
+            'REQUIRED_REF_REFRESH_FAILED='+
+            (q.stderr or b'').decode(errors='replace')[-4000:]
+        )
+
     for _,dst in specs:
         if not exists(dst+'^{commit}'):
             raise RuntimeError('REQUIRED_REF_MISSING_AFTER_FETCH='+dst)
