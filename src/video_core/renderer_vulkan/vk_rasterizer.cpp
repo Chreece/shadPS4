@@ -1130,7 +1130,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             ssharp = AmdGpu::Sampler{};
         }
         const auto vk_sampler =
-            texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base, sampler.is_depth);
+            texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base,
+                                     sampler.is_depth, sampler.is_integer);
         image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
         auto& set_write = set_writes[set_write_index++];
         set_write.dstSet = VK_NULL_HANDLE;
