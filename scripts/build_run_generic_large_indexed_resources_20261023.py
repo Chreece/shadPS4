@@ -1638,8 +1638,6 @@ def pipeline_common_cpp(s):
     return s
 
 def graphics_pipeline(s):
-    if 'sampled_image_descriptors = 0;' in s:
-        return s
     anchor='    uses_push_descriptors = binding < instance.MaxPushDescriptors();\n'
     if s.count(anchor)!=1:
         raise RuntimeError('GRAPHICS_PIPELINE_DESCRIPTOR_COUNT_ANCHOR='+str(s.count(anchor)))
@@ -1682,11 +1680,18 @@ def graphics_pipeline(s):
         }'''
     body=body[:start]+loop+body[end:]
     s=s[:fn_start]+body+s[fn_end:]
-    return s.replace(anchor,block+anchor,1)
+    if 'sampled_image_descriptors = 0;' not in s:
+        s=s.replace(anchor,block+anchor,1)
+    for marker in (
+        'const u32 count = sampler.NumBindings(*stage);',
+        '.descriptorCount = count',
+        'sampled_image_descriptors = 0;',
+    ):
+        if marker not in s:
+            raise RuntimeError('GRAPHICS_PIPELINE_INDEXED_DESCRIPTOR_MISSING='+marker)
+    return s
 
 def compute_pipeline(s):
-    if 'sampled_image_descriptors = 0;' in s:
-        return s
     anchor='    uses_push_descriptors = binding < instance.MaxPushDescriptors();\n'
     if s.count(anchor)!=1:
         raise RuntimeError('COMPUTE_PIPELINE_DESCRIPTOR_COUNT_ANCHOR='+str(s.count(anchor)))
@@ -1721,7 +1726,16 @@ def compute_pipeline(s):
         binding += count;
     }'''
     s=s[:start]+loop+s[end:]
-    return s.replace(anchor,block+anchor,1)
+    if 'sampled_image_descriptors = 0;' not in s:
+        s=s.replace(anchor,block+anchor,1)
+    for marker in (
+        'const u32 count = sampler.NumBindings(*info);',
+        '.descriptorCount = count',
+        'sampled_image_descriptors = 0;',
+    ):
+        if marker not in s:
+            raise RuntimeError('COMPUTE_PIPELINE_INDEXED_DESCRIPTOR_MISSING='+marker)
+    return s
 
 def sampler_h(s):
     if 'bool is_integer' in s:
