@@ -5,6 +5,8 @@
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
+#include <cstring>
+#include "shader_recompiler/guest_tsharp_array.h"
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/liverpool.h"
@@ -863,6 +865,92 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
     u32 num_images{};
     for (const auto& image_desc : stage.images) {
+        if (image_desc.is_guest_indexed) {
+            const u32 count = image_desc.NumBindings(stage);
+            ASSERT(count >= 2 && count <= Shader::MaxGuestIndexedImageEntries + 1);
+            ASSERT(num_images + count <= image_bindings.size());
+
+            AmdGpu::Buffer source{};
+            const bool fetched =
+                image_desc.indexed_table_fetch.Fetch(stage.flattened_ud_buf.data(), &source);
+            const u64 guest_size =
+                fetched ? (source.stride == 0 ? static_cast<u64>(source.num_records)
+                                              : static_cast<u64>(source.stride) *
+                                                    source.num_records)
+                        : 0u;
+            const bool complete =
+                fetched && source.Valid() && source.base_address != 0 &&
+                Shader::Optimization::CompleteGuestTsharpTableEntries(
+                    static_cast<u32>(source.stride), source.num_records,
+                    Shader::MaxGuestIndexedImageEntries) == count - 1u &&
+                guest_size == u64(count - 1) * sizeof(AmdGpu::Image) &&
+                memory->IsValidMapping(source.base_address, guest_size);
+
+            u64 estimated_resident_bytes = 0;
+            constexpr u64 MaxEstimatedIndexedImageBytes = 4ull << 30;
+            const u32 max_dimension =
+                instance.GetPhysicalDevice().getProperties().limits.maxImageDimension2D;
+            for (u32 i = 0; i < count; ++i) {
+                auto& slot = image_bindings[num_images++];
+                slot.image_id = {};
+                // The final entry is an intentional null descriptor for
+                // out-of-range GPU indices. Invalid entries also remain null.
+                if (!complete || i + 1 == count) {
+                    continue;
+                }
+
+                const u64 entry_addr =
+                    source.base_address + u64(i) * sizeof(AmdGpu::Image);
+                if (!memory->IsValidMapping(entry_addr, sizeof(AmdGpu::Image))) {
+                    continue;
+                }
+                AmdGpu::Image raw{};
+                std::memcpy(&raw, reinterpret_cast<const void*>(entry_addr),
+                            sizeof(AmdGpu::Image));
+                if (!raw.Valid() || raw.GetType() != AmdGpu::ImageType::Color2D ||
+                    raw.Address() == 0 || !memory->IsValidGpuMapping(raw.Address(), 0)) {
+                    continue;
+                }
+
+                const auto data_fmt = raw.GetDataFmt();
+                const auto num_fmt = raw.GetNumberFmt();
+                if (!magic_enum::enum_contains(data_fmt) ||
+                    !magic_enum::enum_contains(num_fmt) ||
+                    data_fmt == AmdGpu::DataFormat::FormatInvalid ||
+                    AmdGpu::IsInteger(num_fmt) || raw.width >= max_dimension ||
+                    raw.height >= max_dimension || raw.base_level > raw.last_level ||
+                    raw.pitch < raw.width) {
+                    continue;
+                }
+
+                // Refuse malformed tables that would manufacture unreasonable
+                // host allocations. Rejected entries remain the null slot.
+                const u64 estimated_bytes =
+                    (static_cast<u64>(raw.width) + 1u) *
+                    (static_cast<u64>(raw.height) + 1u) * 4u;
+                if (estimated_bytes >
+                    MaxEstimatedIndexedImageBytes - estimated_resident_bytes) {
+                    continue;
+                }
+                estimated_resident_bytes += estimated_bytes;
+
+                auto& desc = slot.desc;
+                std::construct_at(&desc, raw, image_desc);
+                slot.image_id = texture_cache.FindImage(desc);
+                auto* image = &texture_cache.GetImage(slot.image_id);
+                if (desc.type == VideoCore::TextureCache::BindingType::Texture) {
+                    if (auto depth_image_id = texture_cache.GetAssociatedDepth(*image)) {
+                        slot.image_id = depth_image_id;
+                        image = &texture_cache.GetImage(slot.image_id);
+                    }
+                }
+                image->binding.is_bound = 1u;
+            }
+
+            image_descriptor_array_sizes.push_back(count);
+            continue;
+        }
+
         const auto tsharp = image_desc.GetSharp(stage);
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
@@ -927,7 +1015,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     // Second pass to re-bind images that were updated after binding
     for (u32 i = 0; i < num_images; ++i) {
         auto& [image_id, desc] = image_bindings[i];
-        bool is_storage = desc.type == VideoCore::TextureCache::BindingType::Storage;
+        bool is_storage = image_id && desc.type == VideoCore::TextureCache::BindingType::Storage;
         if (!image_id) {
             image_infos.emplace_back(VK_NULL_HANDLE, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
         } else {

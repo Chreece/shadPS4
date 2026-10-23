@@ -125,8 +125,13 @@ enum class MipStorageFallbackMode : u16 {
     ConstantIndex,
 };
 
+inline constexpr u32 MaxGuestIndexedImageEntries = 15;
+
 struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
+    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};
+    u8 indexed_guest_entries{};
+    bool is_guest_indexed{};
     bool is_depth{};
     bool is_atomic{};
     bool is_array{};
@@ -137,6 +142,9 @@ struct ImageResource {
     SharpFetchPostOp post_op{};
 
     constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {
+        if (is_guest_indexed) {
+            return AmdGpu::Image::Null(false);
+        }
         AmdGpu::Image image{};
         if (!Fetch(info.flattened_ud_buf.data(), &image)) {
             return AmdGpu::Image::Null(is_depth);
@@ -171,6 +179,9 @@ struct ImageResource {
     }
 
     u32 NumBindings(const auto& info) const {
+        if (is_guest_indexed) {
+            return u32(indexed_guest_entries) + 1u;
+        }
         const AmdGpu::Image tsharp = GetSharp(info);
         return (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex)
                    ? (tsharp.last_level - tsharp.base_level + 1)

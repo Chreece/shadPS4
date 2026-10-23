@@ -306,6 +306,9 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .support_fp64_signed_zero_inf_nan_preserve =
             bool(vk12_props.shaderSignedZeroInfNanPreserveFloat64),
         .supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),
+        .supports_sampled_image_nonuniform_indexing =
+            instance_.IsSampledImageNonUniformIndexingSupported(),
+        .max_push_descriptors = instance_.MaxPushDescriptors(),
         .supports_native_cube_calc = instance_.IsAmdGcnShaderSupported(),
         .supports_trinary_minmax = instance_.IsAmdShaderTrinaryMinMaxSupported(),
         .supports_buffer_fp32_atomic_min_max =

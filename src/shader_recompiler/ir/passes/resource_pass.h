@@ -30,6 +30,9 @@ struct SharpReference {
 struct ResourceDiscovery {
     IR::Inst* user{};
     std::array<SharpReference, 2> sharps;
+    SharpReference indexed_table_sharp{};
+    IR::Value indexed_texture_id{};
+    bool has_indexed_table{};
 };
 using ResourceDiscoveryList = boost::container::small_vector<ResourceDiscovery, 32>;
 

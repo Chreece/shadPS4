@@ -12,6 +12,7 @@
 #include "shader_recompiler/ir/reinterpret.h"
 #include "shader_recompiler/profile.h"
 #include "shader_recompiler/resource.h"
+#include "shader_recompiler/guest_tsharp_array.h"
 #include "video_core/amdgpu/resource.h"
 
 namespace Shader::Optimization {
@@ -116,7 +117,10 @@ public:
             return desc.sharp_fetch == existing.sharp_fetch && desc.is_array == existing.is_array &&
                    desc.mip_fallback_mode == existing.mip_fallback_mode &&
                    desc.constant_mip_index == existing.constant_mip_index &&
-                   desc.post_op == existing.post_op;
+                   desc.post_op == existing.post_op &&
+                   desc.is_guest_indexed == existing.is_guest_indexed &&
+                   desc.indexed_guest_entries == existing.indexed_guest_entries &&
+                   desc.indexed_table_fetch == existing.indexed_table_fetch;
         })};
         auto& image = image_resources[index];
         image.is_atomic |= desc.is_atomic;
@@ -249,6 +253,42 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         .post_op = resource.sharps[0].post_op,
     };
 
+    // Preserve a complete guest T# table and its real GPU selector. Unsupported
+    // forms stay on the ordinary resource path instead of guessing a texture.
+    if (resource.has_indexed_table && profile.supports_sampled_image_nonuniform_indexing &&
+        !is_written && !inst_info.is_depth && !inst_info.is_array &&
+        !inst_info.is_gather && !inst_info.has_derivatives && !inst_info.has_lod &&
+        !inst_info.force_level0 && !inst_info.has_lod_clamp && !inst_info.is_r128 &&
+        !inst_info.is_unnormalized) {
+        const auto table_fetch =
+            ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp);
+        AmdGpu::Buffer table{};
+        if (table_fetch.Fetch(info.flattened_ud_buf.data(), &table) && table.Valid() &&
+            table.base_address != 0) {
+            const u32 entries = CompleteGuestTsharpTableEntries(
+                static_cast<u32>(table.stride), table.num_records,
+                MaxGuestIndexedImageEntries);
+            if (entries != 0u) {
+                u32 image_bindings_used = 0;
+                for (const auto& existing : info.images) {
+                    image_bindings_used += existing.NumBindings(info);
+                }
+                const u32 new_image_bindings = entries + 1u;
+                const u32 push_descriptors_used =
+                    static_cast<u32>(info.buffers.size() + info.samplers.size()) +
+                    image_bindings_used;
+                // One sampler will also be added for this ImageSampleRaw.
+                if (image_bindings_used + new_image_bindings <= NUM_IMAGES &&
+                    push_descriptors_used + new_image_bindings + 1u <=
+                        profile.max_push_descriptors) {
+                    image_res.indexed_table_fetch = table_fetch;
+                    image_res.indexed_guest_entries = static_cast<u8>(entries);
+                    image_res.is_guest_indexed = true;
+                }
+            }
+        }
+    }
+
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
 
@@ -332,6 +372,11 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             .is_depth = bool(inst_info.is_depth), // true for the _C (compare) opcodes
         });
         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
+        if (image_res.is_guest_indexed) {
+            // The combined image/sampler binding is now in Arg(0); preserve the
+            // per-invocation GPU texture id in the otherwise-dead Arg(1).
+            inst.SetArg(1, resource.indexed_texture_id);
+        }
     } else {
         inst.SetArg(0, ir.Imm32(image_binding));
     }
@@ -818,6 +863,10 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
         }
         if (explicit_lod) {
             return ir.ImageSampleExplicitLod(handle, coords, lod, offset, inst_info);
+        }
+        if (image_res.is_guest_indexed) {
+            return ir.ImageSampleImplicitLodIndexed(
+                handle, coords, bias, offset, IR::U32{inst.Arg(1)}, inst_info);
         }
         return ir.ImageSampleImplicitLod(handle, coords, bias, offset, inst_info);
     }();

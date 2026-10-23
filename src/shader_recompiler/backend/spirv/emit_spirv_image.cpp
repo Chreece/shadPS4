@@ -160,6 +160,41 @@ Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id c
     return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
 }
 
+
+Id EmitImageSampleImplicitLodIndexed(
+    EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id bias,
+    const IR::Value& offset, Id gpu_texture_id) {
+    const auto& texture = ctx.images[handle & 0xFFFFu];
+    ASSERT(texture.is_guest_indexed && texture.image_array_size >= 2u);
+    ASSERT(ctx.profile.supports_sampled_image_nonuniform_indexing);
+
+    const Id valid = ctx.OpULessThan(ctx.U1[1], gpu_texture_id,
+                                     ctx.ConstU32(texture.image_array_size - 1));
+    const Id bounded = ctx.OpSelect(ctx.U32[1], valid, gpu_texture_id,
+                                    ctx.ConstU32(texture.image_array_size - 1));
+    ctx.Decorate(bounded, spv::Decoration::NonUniform);
+
+    const Id pointer_type =
+        ctx.TypePointer(spv::StorageClass::UniformConstant, texture.image_type);
+    const Id pointer = ctx.OpAccessChain(pointer_type, texture.id, std::array{bounded});
+    ctx.Decorate(pointer, spv::Decoration::NonUniform);
+    const Id image = ctx.OpLoad(texture.image_type, pointer);
+    ctx.Decorate(image, spv::Decoration::NonUniform);
+
+    const Id sampler = ctx.OpLoad(ctx.sampler_type, ctx.samplers[handle >> 16]);
+    const Id sampled_image = ctx.OpSampledImage(texture.sampled_type, image, sampler);
+    ctx.Decorate(sampled_image, spv::Decoration::NonUniform);
+
+    const Id fixed_coords = FixImageCoords<true>(ctx, coords, texture.view_type);
+    ImageOperands operands;
+    operands.Add(spv::ImageOperandsMask::Bias, bias);
+    operands.AddOffset(ctx, texture.view_type, offset);
+    const Id sample =
+        ctx.OpImageSampleImplicitLod(texture.data_types->Get(4), sampled_image,
+                                     fixed_coords, operands.mask, operands.operands);
+    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
+}
+
 Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
                               const IR::Value& offset) {
     const auto& texture = ctx.images[handle & 0xFFFF];

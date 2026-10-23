@@ -3,6 +3,7 @@
 
 #include "common/assert.h"
 #include "shader_recompiler/ir/passes/ir_passes.h"
+#include "shader_recompiler/ir/passes/indexed_image_selector.h"
 #include "shader_recompiler/ir/passes/resource_pass.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
@@ -389,6 +390,68 @@ void DiscoverImageSharp(IR::Block& block, IR::Inst& inst, ResourceDiscoveryList&
     MarkReadConstBufferSharpSources(ssharp);
 }
 
+
+struct IndexedImageTableSource {
+    const IR::Inst* buffer{};
+    const IR::Inst* selector{};
+    u32 descriptor_stride_words{1};
+    bool gpu_texture_id_indexed{};
+    std::array<const IR::Inst*, 8> words{};
+    std::array<u32, 8> addends{};
+    bool contiguous{};
+};
+
+static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) {
+    IndexedImageTableSource out{};
+    if (sample.GetOpcode() != IR::Opcode::ImageSampleRaw) {
+        return out;
+    }
+    const auto* image = sample.Arg(0).TryInst();
+    if (!image || image->GetOpcode() != IR::Opcode::ImageHandle) {
+        return out;
+    }
+    const auto* low = image->Arg(0).TryInst();
+    const auto* high = image->Arg(1).TryInst();
+    if (!low || !high || low->NumArgs() != 4 || high->NumArgs() != 4) {
+        return out;
+    }
+    std::array<IndexedSharpWord, 8> normalized{};
+    for (std::size_t i = 0; i < 8; ++i) {
+        const auto* read = (i < 4 ? low->Arg(i) : high->Arg(i - 4)).TryInst();
+        if (!read || read->GetOpcode() != IR::Opcode::ReadConstBuffer) {
+            return out;
+        }
+        const auto* buffer = read->Arg(0).TryInst();
+        if (!buffer || buffer->GetOpcode() != IR::Opcode::CompositeConstructU32x4) {
+            return out;
+        }
+        if (i == 0) {
+            out.buffer = buffer;
+        } else if (out.buffer != buffer) {
+            return out;
+        }
+        out.words[i] = read;
+        normalized[i] = AnalyzeIndexedSharpWord(read->Arg(1));
+        if (!normalized[i].valid) {
+            return out;
+        }
+        out.addends[i] = normalized[i].addend;
+    }
+    const auto* selector = static_cast<const IR::Inst*>(normalized[0].selector);
+    if (!selector || !AreContiguousIndexedSharpWords(normalized)) {
+        return out;
+    }
+    const auto identity = IdentifyTsharpSelector(selector);
+    if (!identity.source) {
+        return out;
+    }
+    out.selector = static_cast<const IR::Inst*>(identity.source);
+    out.descriptor_stride_words = identity.descriptor_stride_words;
+    out.gpu_texture_id_indexed = identity.normalized;
+    out.contiguous = true;
+    return out;
+}
+
 ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {
     ResourceDiscoveryList sharp_usages;
 
@@ -398,6 +461,30 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                 DiscoverBufferSharp(*block, inst, sharp_usages);
             } else if (IsImageInstruction(inst)) {
                 DiscoverImageSharp(*block, inst, sharp_usages);
+                if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw &&
+                    profile.supports_sampled_image_nonuniform_indexing) {
+                    const auto table = AnalyzeIndexedImageTable(inst);
+                    if (table.contiguous && table.gpu_texture_id_indexed &&
+                        table.descriptor_stride_words == 8u) {
+                        auto& usage = sharp_usages.back();
+                        bool bindable = true;
+                        for (std::size_t dw = 0; dw < 4; ++dw) {
+                            const IR::Value value = table.buffer->Arg(dw);
+                            if (!value.IsImmediate()) {
+                                const auto* producer = value.TryInst();
+                                bindable &= producer && IsSharpSource(producer);
+                            }
+                            usage.indexed_table_sharp.dwords[dw] = value;
+                        }
+                        if (bindable) {
+                            usage.indexed_table_sharp.num_dwords = 4;
+                            MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
+                            usage.indexed_texture_id =
+                                IR::Value{const_cast<IR::Inst*>(table.selector)};
+                            usage.has_indexed_table = true;
+                        }
+                    }
+                }
             } else if (IsDataRingInstruction(inst)) {
                 sharp_usages.emplace_back(&inst);
             }
