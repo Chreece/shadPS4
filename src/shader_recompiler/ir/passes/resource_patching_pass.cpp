@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <limits>
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
@@ -269,7 +270,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
           profile.supports_sampler_array_nonuniform_indexing &&
           resource.sharps[1].post_op == SharpFetchPostOp::None)) &&
         !is_written && !inst_info.is_depth && !inst_info.is_array &&
-        !inst_info.is_gather && !inst_info.has_derivatives && !inst_info.has_lod &&
+        !inst_info.is_gather && !inst_info.has_lod &&
         !inst_info.force_level0 && !inst_info.has_lod_clamp && !inst_info.is_r128 &&
         !inst_info.is_unnormalized) {
         const auto table_fetch =
@@ -279,35 +280,26 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             table.base_address != 0) {
             const u32 record_stride = resource.indexed_record_stride_bytes;
             const u32 record_offset = resource.indexed_descriptor_offset_bytes;
+            const u32 indexed_limit =
+                record_stride != 0u
+                    ? std::min(profile.max_guest_indexed_image_entries,
+                               profile.max_guest_indexed_sampler_entries)
+                    : profile.max_guest_indexed_image_entries;
             const u32 entries = record_stride != 0u
                 ? CompleteGuestTsharpRecordEntries(
                       static_cast<u32>(table.stride),
                       static_cast<u32>(table.num_records),
-                      record_stride, record_offset,
-                      MaxGuestIndexedImageEntries)
+                      record_stride, record_offset, indexed_limit)
                 : CompleteGuestTsharpTableEntries(
                       static_cast<u32>(table.stride),
                       static_cast<u32>(table.num_records),
-                      MaxGuestIndexedImageEntries);
+                      indexed_limit);
             if (entries != 0u) {
-                u32 image_bindings_used = 0;
-                for (const auto& existing : info.images) {
-                    image_bindings_used += existing.NumBindings(info);
-                }
-                const u32 new_image_bindings = entries + 1u;
-                const u32 push_descriptors_used =
-                    static_cast<u32>(info.buffers.size() + info.samplers.size()) +
-                    image_bindings_used;
-                // One sampler will also be added for this ImageSampleRaw.
-                if (image_bindings_used + new_image_bindings <= NUM_IMAGES &&
-                    push_descriptors_used + new_image_bindings + 1u <=
-                        profile.max_push_descriptors) {
-                    image_res.indexed_table_fetch = table_fetch;
-                    image_res.indexed_guest_entries = entries;
-                    image_res.indexed_record_stride_bytes = record_stride;
-                    image_res.indexed_descriptor_offset_bytes = record_offset;
-                    image_res.is_guest_indexed = true;
-                }
+                image_res.indexed_table_fetch = table_fetch;
+                image_res.indexed_guest_entries = entries;
+                image_res.indexed_record_stride_bytes = record_stride;
+                image_res.indexed_descriptor_offset_bytes = record_offset;
+                image_res.is_guest_indexed = true;
             }
         }
     }
