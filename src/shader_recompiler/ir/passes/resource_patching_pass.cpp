@@ -120,6 +120,8 @@ public:
                    desc.post_op == existing.post_op &&
                    desc.is_guest_indexed == existing.is_guest_indexed &&
                    desc.indexed_guest_entries == existing.indexed_guest_entries &&
+                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
+                   desc.indexed_descriptor_offset_bytes == existing.indexed_descriptor_offset_bytes &&
                    desc.indexed_table_fetch == existing.indexed_table_fetch;
         })};
         auto& image = image_resources[index];
@@ -266,9 +268,18 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         AmdGpu::Buffer table{};
         if (table_fetch.Fetch(info.flattened_ud_buf.data(), &table) && table.Valid() &&
             table.base_address != 0) {
-            const u32 entries = CompleteGuestTsharpTableEntries(
-                static_cast<u32>(table.stride), table.num_records,
-                MaxGuestIndexedImageEntries);
+            const u32 record_stride = resource.indexed_record_stride_bytes;
+            const u32 record_offset = resource.indexed_descriptor_offset_bytes;
+            const u32 entries = record_stride != 0u
+                ? CompleteGuestTsharpRecordEntries(
+                      static_cast<u32>(table.stride),
+                      static_cast<u32>(table.num_records),
+                      record_stride, record_offset,
+                      MaxGuestIndexedImageEntries)
+                : CompleteGuestTsharpTableEntries(
+                      static_cast<u32>(table.stride),
+                      static_cast<u32>(table.num_records),
+                      MaxGuestIndexedImageEntries);
             if (entries != 0u) {
                 u32 image_bindings_used = 0;
                 for (const auto& existing : info.images) {
@@ -283,7 +294,9 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                     push_descriptors_used + new_image_bindings + 1u <=
                         profile.max_push_descriptors) {
                     image_res.indexed_table_fetch = table_fetch;
-                    image_res.indexed_guest_entries = static_cast<u8>(entries);
+                    image_res.indexed_guest_entries = entries;
+                    image_res.indexed_record_stride_bytes = record_stride;
+                    image_res.indexed_descriptor_offset_bytes = record_offset;
                     image_res.is_guest_indexed = true;
                 }
             }
