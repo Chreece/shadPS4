@@ -233,7 +233,10 @@ def instance_h(s):
     return s
 def instance_cpp(s):
     if '.shaderSampledImageArrayDynamicIndexing =' not in s:
-        anchor='                .shaderImageGatherExtended = features.shaderImageGatherExtended,\n'
+        # VkPhysicalDeviceFeatures declares sampled-image dynamic indexing
+        # after the storage-image feature block and before shaderClipDistance.
+        # C++ designated initializers must follow declaration order.
+        anchor='                .shaderStorageImageMultisample = features.shaderStorageImageMultisample,\n'
         insert=(
             '                .shaderSampledImageArrayDynamicIndexing =\n'
             '                    features.shaderSampledImageArrayDynamicIndexing,\n')
