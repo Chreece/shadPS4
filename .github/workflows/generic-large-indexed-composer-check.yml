@@ -44,6 +44,12 @@ jobs:
           assert "RECOVERED_PARENT_TREE_NOT_REPRODUCED" in s
           assert "PARENT_TREE='d921f3f51c546aa8b9dfe7e230aaefeaf0b3c446'" in s
           assert "SOURCE_REMOTE='https://github.com/Chreece/shadPS4.git'" in s
+          assert "UPSTREAM_REMOTE='https://github.com/shadps4-emu/shadPS4.git'" in s
+          assert "UPSTREAM_MAIN='91e6afa69b0a64b0afaa0281b80f8fbb0cd88136'" in s
+          assert "def merge_verified_parent_with_upstream(" in s
+          assert "'merge-tree','--write-tree'" in s
+          assert "UPSTREAM_MERGE_CONFLICT" in s
+          assert "UPSTREAM_MERGE_PARENTAGE_MISMATCH" in s
           assert "clean-rebase-verified" not in s
           assert "rglob('build.ninja')" not in s
           assert "def builddir(" not in s
