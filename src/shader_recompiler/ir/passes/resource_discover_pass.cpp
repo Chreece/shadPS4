@@ -1,8 +1,12 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <span>
+#include <unordered_map>
 #include "common/assert.h"
+#include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/passes/ir_passes.h"
+#include "shader_recompiler/ir/passes/image_phi_preflight.h"
 #include "shader_recompiler/ir/passes/indexed_image_selector.h"
 #include "shader_recompiler/ir/passes/resource_pass.h"
 #include "shader_recompiler/ir/program.h"
@@ -279,6 +283,38 @@ IR::Inst* FindSharpSource(IR::Inst* handle) {
     return handle;
 }
 
+// Preserve exact guest AND masks on descriptor words. Only peel a chain when it
+// terminates in a real static sharp source; Phi/attribute/dynamic expressions remain untouched.
+static void PeelSharpDwordMasks(SharpReference& sharp) {
+    for (size_t i = 0; i < sharp.num_dwords; ++i) {
+        IR::Value producer = sharp.dwords[i];
+        u32 cleared = 0;
+        bool had_mask = false;
+        IR::Inst* node = producer.TryInst();
+        for (unsigned depth = 0; node && depth < 32; ++depth) {
+            if (node->GetOpcode() != IR::Opcode::BitwiseAnd32) break;
+            const IR::Value left = node->Arg(0), right = node->Arg(1);
+            if (left.IsImmediate() == right.IsImmediate()) break;
+            const IR::Value constant = left.IsImmediate() ? left : right;
+            const IR::Value other = left.IsImmediate() ? right : left;
+            if (constant.Type() != IR::Type::U32) break;
+            auto* next = other.TryInst();
+            if (!next) break;
+            if (!IsSharpSource(next) && next->GetOpcode() != IR::Opcode::BitwiseAnd32) break;
+            cleared |= ~constant.U32();
+            producer = other;
+            node = next;
+            had_mask = true;
+        }
+        if (had_mask && node && IsSharpSource(node)) {
+            sharp.dwords[i] = producer;
+            sharp.clear_masks[i] |= cleared;
+        }
+    }
+}
+
+#include "shader_recompiler/ir/passes/image_phi_selection.inc"
+
 void MarkReadConstBufferSharpSources(const SharpReference& sharp) {
     // In cases of bindless sharp fetches mark all producer instructions
     // so the extended userdata flattening pass will include them.
@@ -329,6 +365,7 @@ void DiscoverBufferSharp(IR::Block& block, IR::Inst& inst, ResourceDiscoveryList
         vsharp.dwords[2] = dword2;
     }
 
+    PeelSharpDwordMasks(vsharp);
     MarkReadConstBufferSharpSources(vsharp);
 }
 
@@ -357,6 +394,7 @@ void DiscoverImageSharp(IR::Block& block, IR::Inst& inst, ResourceDiscoveryList&
         tsharp.dwords[4] = tsharp_dw4;
     }
 
+    PeelSharpDwordMasks(tsharp);
     MarkReadConstBufferSharpSources(tsharp);
 
     if (inst.GetOpcode() != IR::Opcode::ImageSampleRaw) {
@@ -387,6 +425,7 @@ void DiscoverImageSharp(IR::Block& block, IR::Inst& inst, ResourceDiscoveryList&
         ssharp.dwords[0] = ssharp_dw0;
     }
 
+    PeelSharpDwordMasks(ssharp);
     MarkReadConstBufferSharpSources(ssharp);
 }
 
@@ -453,6 +492,25 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
 }
 
 ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {
+    // Finite control-flow descriptor choices are lowered to exact static
+    // alternatives while the original GPU Phi selects the sampled result.
+    std::size_t original_samples = 0;
+    for (const IR::Block* const block : program.blocks) {
+        for (const IR::Inst& inst : block->Instructions()) {
+            original_samples += inst.GetOpcode() == IR::Opcode::ImageSampleRaw;
+        }
+    }
+    const std::size_t resource_cap = std::min<std::size_t>(NUM_IMAGES, NUM_SAMPLERS);
+    std::size_t image_split_budget =
+        original_samples < resource_cap ? resource_cap - original_samples : 0;
+    for (IR::Block* const block : program.blocks) {
+        for (auto it = block->begin(); it != block->end();) {
+            IR::Inst& inst = *it++;
+            if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
+                SplitImageSampleBySharpPhi(*block, inst, image_split_budget);
+            }
+        }
+    }
     ResourceDiscoveryList sharp_usages;
 
     for (IR::Block* const block : program.blocks) {
