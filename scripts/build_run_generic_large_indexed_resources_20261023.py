@@ -1064,18 +1064,24 @@ def spirv_context(s):
     return s
 
 def spirv_context_h(s):
-    start=s.find('    struct ImageDefinition {')
-    if start<0:
-        raise RuntimeError('SPIRV_IMAGE_DEFINITION_STRUCT_NOT_FOUND')
+    struct_name=None
+    for candidate in ('TextureDefinition','ImageDefinition'):
+        marker='    struct '+candidate+' {'
+        if marker in s:
+            struct_name=candidate
+            break
+    if struct_name is None:
+        raise RuntimeError('SPIRV_TEXTURE_DEFINITION_STRUCT_NOT_FOUND')
+    start=s.find('    struct '+struct_name+' {')
     end=s.find('    };',start)
     if end<0:
-        raise RuntimeError('SPIRV_IMAGE_DEFINITION_STRUCT_END_NOT_FOUND')
+        raise RuntimeError('SPIRV_TEXTURE_DEFINITION_STRUCT_END_NOT_FOUND')
     end+=7
     body=s[start:end]
     if 'u32 image_array_size{1};' not in body:
         anchor='        MipStorageFallbackMode mip_fallback_mode{};\n'
         if body.count(anchor)!=1:
-            raise RuntimeError('SPIRV_IMAGE_DEFINITION_ANCHOR_COUNT='+str(body.count(anchor)))
+            raise RuntimeError('SPIRV_TEXTURE_DEFINITION_ANCHOR_COUNT='+str(body.count(anchor)))
         body=body.replace(
             anchor,
             anchor+'        u32 image_array_size{1};\n'
@@ -1090,6 +1096,9 @@ def spirv_context_h(s):
             anchor,
             anchor+'    boost::container::small_vector<u32, 4> sampler_array_sizes;\n',
             1)
+    for marker in ('image_array_size{1}','is_guest_indexed{}','sampler_array_sizes'):
+        if marker not in s:
+            raise RuntimeError('SPIRV_CONTEXT_HEADER_NORMALIZATION_MISSING='+marker)
     return s
 
 def ir_emitter_h(s):
