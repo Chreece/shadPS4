@@ -53,6 +53,12 @@ EXPLICIT_GRADIENT_INDEXING_FIXES=(
     '39d58e288e254877be1cfb307293b8f26be0a195',
     '5610f50a6239f82b70bf154c2c1ee6fbe8477def',
 )
+PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES=(
+    '0cecd34d1760fdd5720408bbd9661aaa6ea828c4',
+    '20ec7bfbb7a1ee18dac78d3c9bdeed29274580c2',
+    '8b75cb1197818094d2a31ca4879bc62c842b1134',
+    '9b4d6ebd6523b8f28d543da0ebaa841733cfdf7f',
+)
 OLD=ROOT/'scripts/shadps4-buffer-phi-launch-20261023.py'
 OLD_SHA='d6c0c858a6f60d16a42248cff3589fb33cdd4f8897780eda4ad07437a771b44c'
 GEN_FILES=(
@@ -92,10 +98,6 @@ EXTRA_FILES=(
 )
 FILES=GEN_FILES+EXTRA_FILES
 PATCH_COMMITS=(
-'0cecd34d1760fdd5720408bbd9661aaa6ea828c4',
-'20ec7bfbb7a1ee18dac78d3c9bdeed29274580c2',
-'8b75cb1197818094d2a31ca4879bc62c842b1134',
-'9b4d6ebd6523b8f28d543da0ebaa841733cfdf7f',
 'dd00aa320c9eb86c70584f36dce808c2483246a0',
 'ec6f257ed6852478a915d96c514f54d290c112a2',
 '3edc91cd217563acb9206772e4773c4ca1cf73d8',
@@ -424,6 +426,41 @@ def resource_h(s):
                    '    bool is_integer{};\n',
             1)
     s=s[:sampler_start]+sampler+s[sampler_end:]
+    sampler_start=s.find('struct SamplerResource {')
+    sampler_end=s.find('using SamplerResourceList',sampler_start)
+    if sampler_start<0 or sampler_end<0:
+        raise RuntimeError('SAMPLER_RESOURCE_STRUCT_NOT_FOUND')
+    sampler=s[sampler_start:sampler_end]
+    if 'indexed_table_fetch' not in sampler:
+        anchor='    SharpFetch<AmdGpu::Sampler> sharp_fetch{};\n'
+        if sampler.count(anchor)!=1:
+            raise RuntimeError('SAMPLER_INDEXED_FIELDS_ANCHOR_COUNT='+str(sampler.count(anchor)))
+        sampler=sampler.replace(
+            anchor,
+            anchor+'    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n'
+                   '    u32 indexed_guest_entries{};\n'
+                   '    u32 indexed_record_stride_bytes{};\n'
+                   '    u32 indexed_sampler_offset_bytes{};\n'
+                   '    bool is_guest_indexed{};\n',
+            1)
+    get_anchor='    constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {\n'
+    if 'if (is_guest_indexed) return AmdGpu::Sampler{};' not in sampler:
+        if sampler.count(get_anchor)!=1:
+            raise RuntimeError('SAMPLER_INDEXED_GETSHARP_ANCHOR')
+        sampler=sampler.replace(
+            get_anchor,
+            get_anchor+'        if (is_guest_indexed) return AmdGpu::Sampler{};\n',
+            1)
+    if 'u32 NumBindings(const auto& info) const' not in sampler:
+        close=sampler.rfind('};')
+        if close<0:
+            raise RuntimeError('SAMPLER_INDEXED_NUM_BINDINGS_END')
+        num='''    u32 NumBindings(const auto& info) const {
+        return is_guest_indexed ? indexed_guest_entries + 1u : 1u;
+    }
+'''
+        sampler=sampler[:close]+num+sampler[close:]
+    s=s[:sampler_start]+sampler+s[sampler_end:]
     return s
 
 HELPER=r'''
@@ -489,6 +526,40 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
     out.contiguous=true;
     return out;
 }
+
+struct IndexedSamplerTableSource {
+    u32 offset_bytes{};
+    bool valid{};
+};
+
+static IndexedSamplerTableSource AnalyzeIndexedSamplerTable(
+    const IR::Inst& sample, const IndexedImageTableSource& image) {
+    if (sample.GetOpcode()!=IR::Opcode::ImageSampleRaw ||
+        !image.contiguous || image.record_stride_bytes==0 ||
+        !image.selector || !image.buffer) return {};
+    const auto* sampler=sample.Arg(1).TryInst();
+    if (!sampler || sampler->GetOpcode()!=IR::Opcode::CompositeConstructU32x4 ||
+        sampler->NumArgs()!=4u) return {};
+    std::array<StridedIndexedSharpWord,4> words{};
+    for(u32 i=0;i<4;++i) {
+        const auto* read=sampler->Arg(i).TryInst();
+        if(!read || read->GetOpcode()!=IR::Opcode::ReadConstBuffer) return {};
+        const auto* buffer=read->Arg(0).TryInst();
+        if(!buffer || buffer->GetOpcode()!=IR::Opcode::CompositeConstructU32x4 ||
+           buffer->NumArgs()!=4u) return {};
+        for(u32 j=0;j<4;++j) {
+            if(buffer->Arg(j)!=image.buffer->Arg(j)) return {};
+        }
+        words[i]=AnalyzeStridedIndexedSharpWord(read->Arg(1));
+    }
+    if(!AreContiguousStridedSharpWords(words) ||
+       words[0].gpu_record_id!=image.selector ||
+       words[0].record_stride_bytes!=image.record_stride_bytes ||
+       u64(words[0].offset_dwords)*4u+sizeof(AmdGpu::Sampler)>image.record_stride_bytes) {
+        return {};
+    }
+    return {words[0].offset_dwords*4u,true};
+}
 '''
 LOOP=r'''                if (inst.GetOpcode()==IR::Opcode::ImageSampleRaw &&
                     profile.supports_sampled_image_nonuniform_indexing) {
@@ -504,7 +575,12 @@ LOOP=r'''                if (inst.GetOpcode()==IR::Opcode::ImageSampleRaw &&
                             }
                             usage.indexed_table_sharp.dwords[dw]=v;
                         }
-                        if(bindable) {
+                        const auto sampler=table.record_stride_bytes
+                            ? AnalyzeIndexedSamplerTable(inst,table)
+                            : IndexedSamplerTableSource{};
+                        if(bindable && (table.record_stride_bytes==0u || sampler.valid)) {
+                            usage.indexed_sampler_offset_bytes=sampler.offset_bytes;
+                            usage.has_indexed_sampler_table=sampler.valid;
                             usage.indexed_table_sharp.num_dwords=4;
                             MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);
                             usage.indexed_texture_id=IR::Value{const_cast<IR::Inst*>(table.selector)};
@@ -610,6 +686,10 @@ def discover(s):
     return s
 
 ELIG=r'''    if (resource.has_indexed_table && profile.supports_sampled_image_nonuniform_indexing &&
+        (resource.indexed_record_stride_bytes==0u ||
+         (resource.has_indexed_sampler_table &&
+          profile.supports_sampler_array_nonuniform_indexing &&
+          resource.sharps[1].post_op==SharpFetchPostOp::None)) &&
         !is_written && !inst_info.is_depth && !inst_info.is_array && !inst_info.is_gather &&
         !inst_info.has_lod && !inst_info.force_level0 &&
         !inst_info.has_lod_clamp && !inst_info.is_r128 && !inst_info.is_unnormalized) {
@@ -733,6 +813,25 @@ def patching(s):
             anchor,
             anchor+' &&\n                   desc.is_integer == existing.is_integer',
             1)
+    # Paired indexed samplers must not deduplicate against uniform samplers
+    # or another record layout.
+    add_start=s.find('u32 Add(const SamplerResource& desc)')
+    add_end=s.find('\n    }',add_start)
+    add_body=s[add_start:add_end]
+    if 'desc.is_guest_indexed == existing.is_guest_indexed' not in add_body:
+        anchor='desc.is_integer == existing.is_integer'
+        if add_body.count(anchor)!=1:
+            raise RuntimeError('SAMPLER_INDEXED_DEDUP_ANCHOR')
+        add_body=add_body.replace(
+            anchor,
+            anchor+' &&\n'
+                   '                   desc.is_guest_indexed == existing.is_guest_indexed &&\n'
+                   '                   desc.indexed_guest_entries == existing.indexed_guest_entries &&\n'
+                   '                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&\n'
+                   '                   desc.indexed_sampler_offset_bytes == existing.indexed_sampler_offset_bytes &&\n'
+                   '                   desc.indexed_table_fetch == existing.indexed_table_fetch',
+            1)
+        s=s[:add_start]+add_body+s[add_end:]
         s=s[:add_start]+add_body+s[add_end:]
 
     fn_start=s.find('void PatchImageSharp(')
@@ -751,6 +850,45 @@ def patching(s):
             anchor+'            .is_integer = AmdGpu::IsInteger(image.GetNumberFmt()),\n',
             1)
         s=s[:fn_start]+body+s[fn_end:]
+
+    fn_start=s.find('void PatchImageSharp(')
+    fn_end=s.find('\nstatic IR::Value IsMbcntWithExec',fn_start)
+    if fn_end<0:
+        fn_end=s.find('\nstatic ',fn_start+1)
+    body=s[fn_start:fn_end]
+    if 'sampler_res.is_guest_indexed = true;' not in body:
+        old='''        const u32 sampler_binding = descriptors.Add(SamplerResource{
+'''
+        if old in body:
+            init_start=body.find(old)
+            init_end=body.find('        });\n',init_start)
+            if init_end<0:
+                raise RuntimeError('PATCH_SAMPLER_AGGREGATE_END')
+            init_end+=len('        });\n')
+            aggregate=body[init_start:init_end]
+            inner=aggregate.replace(
+                '        const u32 sampler_binding = descriptors.Add(SamplerResource{',
+                '        SamplerResource sampler_res{',1)
+            inner=inner.replace('        });\n','        };\n',1)
+            extra='''        if (image_res.is_guest_indexed &&
+            image_res.indexed_record_stride_bytes != 0u) {
+            ASSERT(resource.has_indexed_sampler_table);
+            sampler_res.is_guest_indexed = true;
+            sampler_res.indexed_table_fetch = image_res.indexed_table_fetch;
+            sampler_res.indexed_guest_entries = image_res.indexed_guest_entries;
+            sampler_res.indexed_record_stride_bytes =
+                image_res.indexed_record_stride_bytes;
+            sampler_res.indexed_sampler_offset_bytes =
+                resource.indexed_sampler_offset_bytes;
+        }
+        const u32 sampler_binding = descriptors.Add(sampler_res);
+'''
+            body=body[:init_start]+inner+extra+body[init_end:]
+        else:
+            raise RuntimeError('PATCH_SAMPLER_AGGREGATE_START')
+        s=s[:fn_start]+body+s[fn_end:]
+    if 'sampler_res.indexed_sampler_offset_bytes' not in s[fn_start:fn_start+len(body)]:
+        raise RuntimeError('PATCH_INDEXED_SAMPLER_NORMALIZATION_MISSING')
 
     if 'ImageSampleImplicitLodIndexed' not in s:
         fn_start=s.find('void PatchImageSampleArgs(')
@@ -2156,7 +2294,7 @@ def compose(run_dir,info,manifest):
     temp_ref='refs/shadps4-composer/generic-large-indexed-resource-'+rev[:12]
     git('update-ref',temp_ref,rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'explicit_gradient_indexing_fixes':list(EXPLICIT_GRADIENT_INDEXING_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'explicit_gradient_indexing_fixes':list(EXPLICIT_GRADIENT_INDEXING_FIXES),'paired_indexed_sampler_frontend_fixes':list(PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     work,d=fresh_paths(rev)
     cand=None;csha=''
