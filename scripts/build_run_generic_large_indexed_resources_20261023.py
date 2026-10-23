@@ -65,7 +65,7 @@ PATCH_COMMITS=(
 '02c22fd61253b072a9bc4017e67f9c39fa0d4fa9',
 '5cf2cf61930223824024c058cfe72a819f56048e',
 'f336b0dbfc20d35d83642472269cac77c0299ac4',
-'b29106a5c6b6231a9bc4017e67f9c39fa0d4fa9',
+'b29106a5c6b6231a9ffb787f9277ef10c31e9182',
 'f2169f2fb9a4902b4dbb752c90c8fa037f6bb8cf',
 'a61c10ff0059b03db7437807fa4c9b17208f4f8b',
 'e6b7acce13db1c2ca3fe5189a19458290d5bc74f',
@@ -328,6 +328,7 @@ ELIG=r'''    if (resource.has_indexed_table && profile.supports_sampled_image_no
         }
     }
 
+'''
 def patching(s):
     if 'guest_tsharp_array.h' not in s:
         s=after(s,'#include "shader_recompiler/resource.h"\n','#include "shader_recompiler/guest_tsharp_array.h"\n','guest_tsharp_array.h','PATCH_INCLUDE')
@@ -447,8 +448,10 @@ def apply_patch_commit(idx,sha):
     patch=git('diff',sha+'^',sha,'--',*PATCH_PATHS)
     if not patch.strip(): return
     e=env({'GIT_INDEX_FILE':str(idx)})
-    q=run(['git','-C',SRC,'apply','--3way','--cached','--whitespace=nowarn','-'],
-          check=False,input=patch)
+    q=subprocess.run(
+        ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
+         'apply','--3way','--cached','--whitespace=nowarn','-'],
+        env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
     if q.returncode:
         raise RuntimeError('GENERIC_PATCH_APPLY_FAILED='+sha+' '+(q.stderr or b'').decode(errors='replace')[-4000:])
 
@@ -468,6 +471,10 @@ def finish_generic_large(idx):
     # must fit both sampled-image and sampler physical limits.
     p='src/shader_recompiler/ir/passes/resource_patching_pass.cpp'
     t=index_text(idx,p)
+    if '#include <algorithm>' not in t:
+        first_include=t.find('#include ')
+        if first_include>=0:
+            t=t[:first_include]+'#include <algorithm>\n'+t[first_include:]
     needle='''            const u32 entries = record_stride != 0u
                 ? CompleteGuestTsharpRecordEntries(
                     static_cast<u32>(table.stride),static_cast<u32>(table.num_records),
