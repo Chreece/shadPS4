@@ -390,12 +390,32 @@ def patching(s):
     if 'image_res.indexed_table_fetch' not in s[s.find('void PatchImageSharp('):]:
         raise RuntimeError('PATCH_ELIG_NOT_INSERTED')
     if 'inst.SetArg(1, resource.indexed_texture_id);' not in s:
+        fn_start=s.find('void PatchImageSharp(')
+        fn_end=s.find('\nstatic IR::Value IsMbcntWithExec',fn_start)
+        if fn_end<0:
+            fn_end=s.find('\nstatic ',fn_start+1)
+        if fn_start<0 or fn_end<0:
+            raise RuntimeError('PATCH_ID_FUNCTION_RANGE')
+        body=s[fn_start:fn_end]
         a='        inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));\n'
-        s=one(s,a,a+'        if (image_res.is_guest_indexed) {\n            inst.SetArg(1, resource.indexed_texture_id);\n        }\n','PATCH_ID')
+        if body.count(a)!=1:
+            raise RuntimeError('PATCH_ID_FUNCTION_ANCHOR_COUNT='+str(body.count(a)))
+        body=body.replace(a,a+'        if (image_res.is_guest_indexed) {\n            inst.SetArg(1, resource.indexed_texture_id);\n        }\n',1)
+        s=s[:fn_start]+body+s[fn_end:]
     if 'ImageSampleImplicitLodIndexed' not in s:
+        fn_start=s.find('void PatchImageSampleArgs(')
+        if fn_start<0:
+            raise RuntimeError('PATCH_LOWER_FUNCTION_NOT_FOUND')
+        fn_end=s.find('\nvoid PatchImageArgs(',fn_start)
+        if fn_end<0:
+            raise RuntimeError('PATCH_LOWER_FUNCTION_END_NOT_FOUND')
+        body=s[fn_start:fn_end]
         a='        return ir.ImageSampleImplicitLod(handle, coords, bias, offset, inst_info);\n'
+        if body.count(a)!=1:
+            raise RuntimeError('PATCH_LOWER_FUNCTION_ANCHOR_COUNT='+str(body.count(a)))
         x='        if (image_res.is_guest_indexed) {\n            return ir.ImageSampleImplicitLodIndexed(handle, coords, bias, offset, IR::U32{inst.Arg(1)}, inst_info);\n        }\n'
-        s=one(s,a,x+a,'PATCH_LOWER')
+        body=body.replace(a,x+a,1)
+        s=s[:fn_start]+body+s[fn_end:]
     return s
 def opcodes(s):
     if 'OPCODE(ImageSampleImplicitLodIndexed' in s:return s
