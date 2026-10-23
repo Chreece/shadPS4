@@ -780,33 +780,42 @@ def finish_generic_large(idx):
 
     p='src/shader_recompiler/backend/spirv/emit_spirv_image.cpp'
     t=index_text(idx,p)
-    old='''            if (!can_use_runtime_offsets) {
-                LOG_WARNING(Render_Vulkan,
-                            "Runtime offset provided to unsupported image sample instruction");
-                return;
-            }
-            op_mask = spv::ImageOperandsMask::Offset;
-            value = ctx.Def(offset);
-'''
-    new='''            if (!can_use_runtime_offsets || image_type == AmdGpu::ImageType::Cube) {
-                LOG_WARNING(Render_Vulkan,
-                            "Runtime offset provided to unsupported image sample instruction");
-                return;
-            }
-            ctx.AddCapability(spv::Capability::ImageGatherExtended);
-            op_mask = spv::ImageOperandsMask::Offset;
-            value = ctx.Def(offset);
-'''
-    if old in t:
-        t=t.replace(old,new,1)
-    if 'ctx.AddCapability(spv::Capability::ImageGatherExtended);' not in t:
-        raise RuntimeError('DYNAMIC_OFFSET_CAPABILITY_PATCH_MISSING')
-    t=t.replace('operands.AddOffset(ctx, texture.view_type, offset, true);',
-                'operands.AddOffset(ctx, texture.view_type, offset, '
-                'ctx.profile.supports_shader_image_gather_extended);')
-    t=t.replace('operands.AddOffset(ctx, texture.view_type, offset);',
-                'operands.AddOffset(ctx, texture.view_type, offset, '
-                'ctx.profile.supports_shader_image_gather_extended);')
+
+    # Reuse the later proven generic dynamic-offset implementation verbatim
+    # instead of approximating it. It preserves signed texel displacement,
+    # gates dynamic Offset on shaderImageGatherExtended, and emits the required
+    # SPIR-V capability without any title/shader selector.
+    latest=show(STRIDED_SELECTOR_FINAL,p).decode()
+    def function_slice(text,start_marker,end_marker,label):
+        start=text.find(start_marker)
+        end=text.find(end_marker,start)
+        if start<0 or end<0 or end<=start:
+            raise RuntimeError(label+'_FUNCTION_RANGE')
+        return text[start:end]
+    latest_add_offset=function_slice(
+        latest,
+        '    void AddOffset(EmitContext& ctx, AmdGpu::ImageType image_type, const IR::Value& offset,',
+        '    void AddDerivatives(EmitContext& ctx, AmdGpu::ImageType image_type,',
+        'LATEST_DYNAMIC_OFFSET')
+    current_start=t.find(
+        '    void AddOffset(EmitContext& ctx, AmdGpu::ImageType image_type, const IR::Value& offset,')
+    current_end=t.find(
+        '    void AddDerivatives(EmitContext& ctx, AmdGpu::ImageType image_type,',
+        current_start)
+    if current_start<0 or current_end<0:
+        raise RuntimeError('CURRENT_DYNAMIC_OFFSET_FUNCTION_RANGE')
+    t=t[:current_start]+latest_add_offset+t[current_end:]
+
+    for marker in (
+        'ctx.profile.supports_shader_image_gather_extended',
+        'spv::Capability::ImageGatherExtended',
+        'ctx.OpBitcast(ctx.S32[1], raw)',
+        'ctx.OpBitcast(ctx.S32[2], raw)',
+        'ctx.OpBitcast(ctx.S32[3], raw)',
+    ):
+        if marker not in t:
+            raise RuntimeError('DYNAMIC_OFFSET_LATEST_MARKER_MISSING='+marker)
+
     update_index_text(idx,p,t)
 
     # The runtime pool is sized from the actual physical limits; no opt-in
