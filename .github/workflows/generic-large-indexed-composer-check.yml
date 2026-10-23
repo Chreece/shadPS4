@@ -57,6 +57,10 @@ jobs:
           assert "ctx.OpBitcast(ctx.S32[1], raw)" in s
           assert "ctx.OpBitcast(ctx.S32[2], raw)" in s
           assert "ctx.OpBitcast(ctx.S32[3], raw)" in s
+          assert "def instance_cpp(" in s
+          assert "INSTANCE_DYNAMIC_INDEX" in s
+          assert "INSTANCE_NONUNIFORM_INDEX" in s
+          assert "INVALID_VULKAN_SAMPLER_NONUNIFORM_FEATURE_RETAINED" in s
           assert "538fc65527d96086443d14d3227eb9c5daa7397f" in s
           assert "cbbcc969156f9258633914409ca88e6458bbad2c" in s
           assert "clean-rebase-verified" not in s
