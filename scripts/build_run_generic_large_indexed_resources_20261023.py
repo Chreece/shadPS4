@@ -107,11 +107,17 @@ def git(*a,input=None,e=None,check=True):
                      env=e or env(),input=input,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=check)
     return r.stdout
 def commit_tree(tree,parent,message):
+    parent_time=git('show','-s','--format=%ct',parent).decode().strip()
+    if not parent_time.isdigit():
+        raise RuntimeError('PARENT_COMMIT_TIME_INVALID='+parent)
+    stamp=parent_time+' +0000'
     ce=env({
         'GIT_AUTHOR_NAME':'shadPS4 generic composer',
         'GIT_AUTHOR_EMAIL':'composer@localhost',
         'GIT_COMMITTER_NAME':'shadPS4 generic composer',
         'GIT_COMMITTER_EMAIL':'composer@localhost',
+        'GIT_AUTHOR_DATE':stamp,
+        'GIT_COMMITTER_DATE':stamp,
     })
     return git('commit-tree',tree,'-p',parent,input=message,e=ce).decode().strip()
 def show(rev,p): return git('show',f'{rev}:{p}')
