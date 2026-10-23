@@ -17,10 +17,8 @@ RECOVERY_PARTS=tuple(f'patches/verified-975.patch.gz.b64.part{i:02d}' for i in r
 GEN_BASE='9f4c2da6107cb2b31578cc4b35f5e4ed85637dab'
 GEN='464e32e92b7f36fede81f0d65ca0e81934051d1e'
 STRIDED_SELECTOR_FINAL='d72990fbd8fe6483a921fa2c015e1d65b1e1f336'
-PREV_BIN='fb5d18e8342cd6701ef31831d389e99f5b9b877de1214e42f1655658d25cb7fb'
 OLD=ROOT/'scripts/shadps4-buffer-phi-launch-20261023.py'
 OLD_SHA='d6c0c858a6f60d16a42248cff3589fb33cdd4f8897780eda4ad07437a771b44c'
-SIRIT_BASE='fc2b42d5e57ee2f638676c0c02f7fd71934b596a'
 GEN_FILES=(
 'src/shader_recompiler/backend/spirv/emit_spirv_image.cpp',
 'src/shader_recompiler/backend/spirv/emit_spirv_instructions.h',
