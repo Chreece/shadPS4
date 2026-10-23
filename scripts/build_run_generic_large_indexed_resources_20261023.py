@@ -1281,15 +1281,26 @@ def launch(info,rev,tree,csha,cand):
                   'source_untouched':True,'fresh_source_clone':True,'fresh_build_from_zero':True,
                   'legacy_builds_searched':False,'tests_enabled':False,
                   'original_submodules_untouched':True,
+                  'verified_parent_tree':PARENT_TREE,'upstream_main':UPSTREAM_MAIN,
                   'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP',
                   'game_specific_options':False}
         for k,v in expected.items():
             if r.get(k)!=v:raise RuntimeError('BUILD_GATE='+k)
+        verified_parent=r.get('verified_parent')
+        if not verified_parent or not exists(verified_parent+'^{commit}'):
+            raise RuntimeError('VERIFIED_BUILD_PARENT_MISSING')
+        if git('rev-parse',verified_parent+'^{tree}').decode().strip()!=PARENT_TREE:
+            raise RuntimeError('VERIFIED_BUILD_PARENT_TREE_MISMATCH')
+
         source_parent=r.get('source_parent')
         if not source_parent or not exists(source_parent+'^{commit}'):
             raise RuntimeError('BUILD_PARENT_MISSING')
-        if git('rev-parse',source_parent+'^{tree}').decode().strip()!=PARENT_TREE:
+        source_parent_tree=git('rev-parse',source_parent+'^{tree}').decode().strip()
+        if source_parent_tree!=r.get('source_parent_tree'):
             raise RuntimeError('BUILD_PARENT_TREE_MISMATCH')
+        parent_line=git('rev-list','--parents','-n','1',source_parent).decode().split()
+        if len(parent_line)!=3 or parent_line[1]!=verified_parent or parent_line[2]!=UPSTREAM_MAIN:
+            raise RuntimeError('UPSTREAM_MERGE_PARENTAGE_MISMATCH')
         if (Path(r['candidate'])!=cand or digest(cand)!=csha or
             git('rev-parse',rev+'^{tree}').decode().strip()!=tree or
             git('rev-parse',rev+'^').decode().strip()!=source_parent):
