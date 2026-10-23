@@ -122,8 +122,13 @@ def profile(s):
         s=after(s,'    u32 sparse_page_shift{};\n',
                 '    u32 max_guest_indexed_image_entries{15};\n    u32 max_guest_indexed_sampler_entries{15};\n',
                 'max_guest_indexed_image_entries','PROFILE_LIMITS')
-    if 'supports_sampled_image_nonuniform_indexing' not in s:
+    if 'supports_shader_image_gather_extended' not in s:
         s=after(s,'    bool supports_image_load_store_lod{};\n',
+                '    bool supports_shader_image_gather_extended{};\n',
+                'supports_shader_image_gather_extended','PROFILE_DYNAMIC_OFFSET')
+    if 'supports_sampled_image_nonuniform_indexing' not in s:
+        anchor='    bool supports_shader_image_gather_extended{};\n' if 'supports_shader_image_gather_extended' in s else '    bool supports_image_load_store_lod{};\n'
+        s=after(s,anchor,
                 '    bool supports_sampled_image_nonuniform_indexing{};\n',
                 'supports_sampled_image_nonuniform_indexing','PROFILE_INDEX')
     if 'supports_sampler_array_nonuniform_indexing' not in s:
@@ -140,6 +145,15 @@ def instance_h(s):
         if not m: raise RuntimeError('INSTANCE_GATE_ANCHOR')
         x='''\n    bool IsSampledImageNonUniformIndexingSupported() const {\n        return bool(vk12_features.descriptorIndexing) &&\n               bool(vk12_features.shaderSampledImageArrayNonUniformIndexing) &&\n               bool(features.shaderSampledImageArrayDynamicIndexing);\n    }\n'''
         s=s[:m.end()]+x+s[m.end():]
+    if 'IsShaderImageGatherExtendedSupported' not in s:
+        marker='    bool IsSampledImageNonUniformIndexingSupported() const {\n'
+        p=s.find(marker)
+        if p<0: raise RuntimeError('INSTANCE_GATHER_GATE_ANCHOR')
+        s=s[:p]+'''    bool IsShaderImageGatherExtendedSupported() const {
+        return features.shaderImageGatherExtended;
+    }
+
+'''+s[p:]
     if 'IsSamplerArrayNonUniformIndexingSupported' not in s:
         a='''    bool IsSampledImageNonUniformIndexingSupported() const {\n'''
         p=s.find(a)
@@ -198,6 +212,11 @@ static const auto& RuntimeDescriptorHeapSizes(const Instance& instance) {
                 '        .max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),\n'
                 '        .max_guest_indexed_sampler_entries = GuestIndexedSamplerLimit(instance),\n',
                 '.max_guest_indexed_image_entries =','PIPELINE_LIMIT_PROFILE')
+    if 'supports_shader_image_gather_extended =' not in s:
+        s=after(s,'        .supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),\n',
+                '        .supports_shader_image_gather_extended =\n'
+                '            instance_.IsShaderImageGatherExtendedSupported(),\n',
+                'supports_shader_image_gather_extended =','PIPELINE_DYNAMIC_OFFSET')
     if 'supports_sampled_image_nonuniform_indexing =' not in s:
         s=after(s,'        .supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),\n',
                 '        .supports_sampled_image_nonuniform_indexing =\n'
@@ -526,6 +545,37 @@ def finish_generic_large(idx):
                 t=t[:first_include]+'#include '+header+'\n'+t[first_include:]
     update_index_text(idx,p,t)
 
+    p='src/shader_recompiler/backend/spirv/emit_spirv_image.cpp'
+    t=index_text(idx,p)
+    old='''            if (!can_use_runtime_offsets) {
+                LOG_WARNING(Render_Vulkan,
+                            "Runtime offset provided to unsupported image sample instruction");
+                return;
+            }
+            op_mask = spv::ImageOperandsMask::Offset;
+            value = ctx.Def(offset);
+'''
+    new='''            if (!can_use_runtime_offsets || image_type == AmdGpu::ImageType::Cube) {
+                LOG_WARNING(Render_Vulkan,
+                            "Runtime offset provided to unsupported image sample instruction");
+                return;
+            }
+            ctx.AddCapability(spv::Capability::ImageGatherExtended);
+            op_mask = spv::ImageOperandsMask::Offset;
+            value = ctx.Def(offset);
+'''
+    if old in t:
+        t=t.replace(old,new,1)
+    if 'ctx.AddCapability(spv::Capability::ImageGatherExtended);' not in t:
+        raise RuntimeError('DYNAMIC_OFFSET_CAPABILITY_PATCH_MISSING')
+    t=t.replace('operands.AddOffset(ctx, texture.view_type, offset, true);',
+                'operands.AddOffset(ctx, texture.view_type, offset, '
+                'ctx.profile.supports_shader_image_gather_extended);')
+    t=t.replace('operands.AddOffset(ctx, texture.view_type, offset);',
+                'operands.AddOffset(ctx, texture.view_type, offset, '
+                'ctx.profile.supports_shader_image_gather_extended);')
+    update_index_text(idx,p,t)
+
     # The runtime pool is sized from the actual physical limits; no opt-in
     # environment switch and no title/game selector is permitted.
     p='src/video_core/renderer_vulkan/vk_pipeline_cache.cpp'
@@ -625,10 +675,12 @@ def compose(run_dir,info,manifest):
                 r'getenv\([^\n]*SHADPS4_',r'readbacks_mode\s*=',
                 r'readbacksMode\s*='):
         if re.search(pat,diff,re.I):raise RuntimeError('GAME_SPECIFIC_SOURCE='+pat)
-    if ('ImageSampleImplicitLodIndexed' not in diff or 'ImageGradientIndexed' not in diff or 'NonUniform' not in diff or 'indexed_sampler' not in diff):raise RuntimeError('INDEXED_PATH_MISSING')
+    if ('ImageSampleImplicitLodIndexed' not in diff or 'ImageGradientIndexed' not in diff or
+        'NonUniform' not in diff or 'indexed_sampler' not in diff or
+        'ImageGatherExtended' not in diff):raise RuntimeError('INDEXED_PATH_MISSING')
     git('update-ref','refs/heads/local/generic-large-indexed-resource-'+rev[:12],rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':PARENT,'replayed_generic_commits':list(PATCH_COMMITS),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':PARENT,'replayed_generic_commits':list(PATCH_COMMITS),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     d=builddir(); old=exe(d)
     if not old:raise RuntimeError('BUILD_EXECUTABLE_NOT_FOUND')
@@ -652,7 +704,7 @@ def compose(run_dir,info,manifest):
     if not sirit:raise RuntimeError('SIRIT_RESTORE_FAILED')
     if not cand or digest(cand)!=csha:raise RuntimeError('CANDIDATE_COPY_FAILED')
     ms=digest(mp)
-    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_restored':True,'build_binary_restored':True,'sirit_restored':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
+    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_restored':True,'build_binary_restored':True,'sirit_restored':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
     (info/'build-result.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
     return rev,tree,csha,cand
 
