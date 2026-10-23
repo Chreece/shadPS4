@@ -212,6 +212,33 @@ def instance_h(s):
         e+=6
         s=s[:e]+'''\n    bool IsSamplerArrayNonUniformIndexingSupported() const {\n        return IsSampledImageNonUniformIndexingSupported();\n    }\n'''+s[e:]
     return s
+def instance_cpp(s):
+    if '.shaderSampledImageArrayDynamicIndexing =' not in s:
+        anchor='                .shaderImageGatherExtended = features.shaderImageGatherExtended,\n'
+        insert=(
+            '                .shaderSampledImageArrayDynamicIndexing =\n'
+            '                    features.shaderSampledImageArrayDynamicIndexing,\n')
+        s=after(s,anchor,insert,'shaderSampledImageArrayDynamicIndexing','INSTANCE_DYNAMIC_INDEX')
+
+    if '.descriptorIndexing = vk12_features.descriptorIndexing,' not in s:
+        anchor='            .shaderInt8 = vk12_features.shaderInt8,\n'
+        insert=(
+            '            .descriptorIndexing = vk12_features.descriptorIndexing,\n'
+            '            .shaderSampledImageArrayNonUniformIndexing =\n'
+            '                vk12_features.shaderSampledImageArrayNonUniformIndexing,\n')
+        s=after(s,anchor,insert,'descriptorIndexing = vk12_features.descriptorIndexing','INSTANCE_NONUNIFORM_INDEX')
+
+    # Vulkan has no separate shaderSamplerArrayNonUniformIndexing feature in
+    # this path; standalone sampler arrays use sampled-image nonuniform support.
+    lines=[
+        line for line in s.splitlines(True)
+        if 'shaderSamplerArrayNonUniformIndexing' not in line
+    ]
+    s=''.join(lines)
+    if 'shaderSamplerArrayNonUniformIndexing' in s:
+        raise RuntimeError('INVALID_VULKAN_SAMPLER_NONUNIFORM_FEATURE_RETAINED')
+    return s
+
 def pipeline(s):
     if '#include <algorithm>' not in s:
         s=s.replace('#include <ranges>\n','#include <algorithm>\n#include <ranges>\n',1)
@@ -648,6 +675,7 @@ def raster(s):
 TRANS={
 'src/shader_recompiler/profile.h':profile,
 'src/video_core/renderer_vulkan/vk_instance.h':instance_h,
+'src/video_core/renderer_vulkan/vk_instance.cpp':instance_cpp,
 'src/video_core/renderer_vulkan/vk_pipeline_cache.cpp':pipeline,
 'src/shader_recompiler/ir/passes/resource_pass.h':pass_h,
 'src/shader_recompiler/resource.h':resource_h,
