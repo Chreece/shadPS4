@@ -182,6 +182,7 @@ public:
     [[nodiscard]] U64 Ballot(const U1& bit);
     [[nodiscard]] U32 BallotFindLsb(const U64& mask);
     [[nodiscard]] U1 InverseBallot(const U64& mask);
+    [[nodiscard]] U32 GroupUMin(const U32& value);
     [[nodiscard]] U1 GroupAny(const U1& bit);
 
     [[nodiscard]] Value CompositeConstruct(const Value& e1, const Value& e2);
@@ -409,6 +410,10 @@ public:
                                       const Value& derivatives_dx, const Value& derivatives_dy,
                                       const Value& offset, const F32& lod_clamp,
                                       TextureInstInfo info);
+    [[nodiscard]] Value ImageGradientIndexed(const Value& handle, const Value& coords,
+                                             const Value& derivatives_dx, const Value& derivatives_dy,
+                                             const Value& offset, const U32& gpu_texture_id,
+                                             TextureInstInfo info);
     [[nodiscard]] Value ImageRead(const Value& handle, const Value& coords, const U32& lod,
                                   const U32& multisampling, TextureInstInfo info);
     void ImageWrite(const Value& handle, const Value& coords, const U32& lod,
