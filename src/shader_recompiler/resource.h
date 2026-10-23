@@ -232,6 +232,10 @@ struct SamplerResource {
         }
         return sampler;
     }
+
+    u32 NumBindings(const auto& info) const {
+        return is_guest_indexed ? indexed_guest_entries + 1u : 1u;
+    }
 };
 using SamplerResourceList = boost::container::static_vector<SamplerResource, NUM_SAMPLERS>;
 
