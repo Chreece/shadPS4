@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import fcntl, hashlib, importlib.util, json, os, re, shutil, stat, subprocess, sys, tarfile, tempfile, time
+import base64, fcntl, gzip, hashlib, importlib.util, json, os, re, shutil, stat, subprocess, sys, tarfile, tempfile, time
 from pathlib import Path
 
 ROOT=Path.home()/'projects/shadps4'
@@ -8,6 +8,10 @@ SRC=ROOT/'GhostOfTsushima/source'
 BASE='04d891dc33bb1c8c89789b5ff039049901f95a41'
 PARENT='975ee9812d93fb0e8094e0581640fb705c336d68'
 PARENT_TREE='d921f3f51c546aa8b9dfe7e230aaefeaf0b3c446'
+RECOVERY_BASE='4bc7df9c1370b0eb10c84f385b8c2d041e791945'
+RECOVERY_REF='refs/remotes/chreece/generic-large-indexed-images-20261023'
+PARENT_REF=PARENT
+RECOVERY_PARTS=tuple(f'patches/verified-975.patch.gz.b64.part{i:02d}' for i in range(1,9))
 GEN_BASE='9f4c2da6107cb2b31578cc4b35f5e4ed85637dab'
 GEN='464e32e92b7f36fede81f0d65ca0e81934051d1e'
 STRIDED_SELECTOR_FINAL='d72990fbd8fe6483a921fa2c015e1d65b1e1f336'
@@ -789,20 +793,73 @@ def finish_generic_large(idx):
 
     return
 
-def verify_prev():
-    # PARENT is the verified all-fixes source checkpoint. Transient logs and
-    # previous binaries are never required to compose the next candidate.
+def recovered_parent_ref(run_dir):
+    global PARENT_REF
+    if exists(PARENT+'^{commit}'):
+        if git('rev-parse',PARENT+'^{tree}').decode().strip()!=PARENT_TREE:
+            raise RuntimeError('VERIFIED_GRAPHICS_PARENT_TREE_CHANGED')
+        PARENT_REF=PARENT
+        return PARENT_REF
+
+    if not exists(RECOVERY_BASE+'^{commit}'):
+        raise RuntimeError('RECOVERY_BASE_MISSING='+RECOVERY_BASE)
+    if not exists(RECOVERY_REF+'^{commit}'):
+        raise RuntimeError('RECOVERY_REF_MISSING='+RECOVERY_REF)
+
+    encoded=b''
+    for part in RECOVERY_PARTS:
+        spec=f'{RECOVERY_REF}:{part}'
+        if not exists(spec):
+            raise RuntimeError('RECOVERY_PATCH_PART_MISSING='+part)
+        encoded+=show(RECOVERY_REF,part).strip()
+
+    try:
+        patch=gzip.decompress(base64.b64decode(encoded,validate=True))
+    except Exception as e:
+        raise RuntimeError('RECOVERY_PATCH_DECODE_FAILED='+str(e))
+
+    if not patch.startswith(b'diff --git '):
+        raise RuntimeError('RECOVERY_PATCH_FORMAT_INVALID')
+
+    idx=run_dir/'verified-parent-recovery.index'
+    e=env({'GIT_INDEX_FILE':str(idx)})
+    git('read-tree',RECOVERY_BASE,e=e)
+    q=subprocess.run(
+        ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
+         'apply','--cached','--whitespace=nowarn','-'],
+        env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
+    if q.returncode:
+        raise RuntimeError(
+            'RECOVERY_PATCH_APPLY_FAILED='+(q.stderr or b'').decode(errors='replace')[-4000:]
+        )
+
+    tree=git('write-tree',e=e).decode().strip()
+    if tree!=PARENT_TREE:
+        raise RuntimeError(
+            'RECOVERED_PARENT_TREE_MISMATCH expected='+PARENT_TREE+' got='+tree
+        )
+
+    msg=b'Reconstructed verified graphics parent tree for local composition only\n'
+    PARENT_REF=git('commit-tree',tree,'-p',RECOVERY_BASE,input=msg).decode().strip()
+    if git('rev-parse',PARENT_REF+'^{tree}').decode().strip()!=PARENT_TREE:
+        raise RuntimeError('RECOVERED_PARENT_COMMIT_TREE_CHANGED')
+    return PARENT_REF
+
+def verify_prev(run_dir):
+    # PARENT_REF is either the original verified commit or a locally
+    # reconstructed commit with the exact same verified tree.
     if not SRC.is_dir() or not (SRC/'.git').exists():
         raise RuntimeError('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC))
     if git('status','--porcelain').strip():
         raise RuntimeError('GOT_SOURCE_HAS_UNCOMMITTED_CHANGES')
-    if not exists(PARENT+'^{commit}'):
-        raise RuntimeError('VERIFIED_GRAPHICS_PARENT_NOT_IN_GOT_REPO='+PARENT)
-    if git('rev-parse',PARENT+'^{tree}').decode().strip()!=PARENT_TREE:
+    parent=recovered_parent_ref(run_dir)
+    if git('rev-parse',parent+'^{tree}').decode().strip()!=PARENT_TREE:
         raise RuntimeError('VERIFIED_GRAPHICS_PARENT_TREE_CHANGED')
     return {
-        'previous_parent':PARENT,
+        'previous_parent':parent,
+        'previous_parent_original':PARENT,
         'previous_parent_tree':PARENT_TREE,
+        'parent_reconstructed':parent!=PARENT,
         'previous_evidence_logs':'NOT_REQUIRED',
         'files':{},
     }
@@ -853,8 +910,9 @@ def tee(a,p):
     if rc:raise RuntimeError(f'BUILD_FAILED={rc} log={p}')
 
 def compose(run_dir,info,manifest):
+    parent=PARENT_REF
     if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():raise RuntimeError('ORIGINAL_GOT_SOURCE_CHANGED')
-    for x in (PARENT+'^{commit}',GEN_BASE+'^{commit}',GEN+'^{commit}',STRIDED_SELECTOR_FINAL+'^{commit}'):
+    for x in (parent+'^{commit}',GEN_BASE+'^{commit}',GEN+'^{commit}',STRIDED_SELECTOR_FINAL+'^{commit}'):
         if not exists(x):raise RuntimeError('OBJECT_MISSING='+x)
     names=tuple(git('diff','--name-only',GEN_BASE,GEN,'--','src').decode().splitlines())
     if names!=GEN_FILES:raise RuntimeError('GENERIC_CHANGE_SET_CHANGED')
@@ -864,11 +922,11 @@ def compose(run_dir,info,manifest):
     # exact per-file delta onto PARENT.
     idx=run_dir/'index'
     e=env({'GIT_INDEX_FILE':str(idx)})
-    git('read-tree',PARENT,e=e)
+    git('read-tree',parent,e=e)
     for p in GEN_FILES:
         fn=TRANS.get(p)
         if fn:
-            content=fn(show(PARENT,p).decode()).encode()
+            content=fn(show(parent,p).decode()).encode()
             oid=git('hash-object','-w','--stdin',input=content).decode().strip()
             git('update-index','--add','--cacheinfo',f'100644,{oid},{p}',e=e)
         else:
@@ -896,19 +954,19 @@ def compose(run_dir,info,manifest):
         apply_patch_commit(idx,sha)
     finish_generic_large(idx)
     tree=git('write-tree',e=e).decode().strip()
-    changed=tuple(git('diff','--name-only',PARENT,tree,'--','src').decode().splitlines())
+    changed=tuple(git('diff','--name-only',parent,tree,'--','src').decode().splitlines())
     allowed=set(FILES)
     extra=[p for p in changed if p not in allowed]
     if extra: raise RuntimeError('UNEXPECTED_CHANGED_PATHS='+','.join(extra))
     for p in changed:
         b=git('show',tree+':'+p)
         oid=git('rev-parse',tree+':'+p).decode().strip()
-        original=git('rev-parse',f'{PARENT}:{p}').decode().strip() if exists(f'{PARENT}:{p}') else None
+        original=git('rev-parse',f'{parent}:{p}').decode().strip() if exists(f'{parent}:{p}') else None
         manifest['files'][p]={'original_blob':original,'corrected_blob':oid,'sha256':hashlib.sha256(b).hexdigest()}
     msg=b'Complete generic GPU-indexed image and sampler tables on verified candidate\n\nPreserve complete packed and strided guest descriptor tables with GPU-side selection, physical Vulkan limits and ordinary descriptor-set fallback. No title IDs, shader-hash branches, forced readbacks, forced draws or rendering presets.\n'
-    rev=git('commit-tree',tree,'-p',PARENT,input=msg).decode().strip()
-    if not tuple(git('diff','--name-only',PARENT,rev,'--','src').decode().splitlines()):raise RuntimeError('EMPTY_COMPOSED_CHANGE_SET')
-    diff=git('diff',PARENT,rev,'--','src').decode(errors='replace')
+    rev=git('commit-tree',tree,'-p',parent,input=msg).decode().strip()
+    if not tuple(git('diff','--name-only',parent,rev,'--','src').decode().splitlines()):raise RuntimeError('EMPTY_COMPOSED_CHANGE_SET')
+    diff=git('diff',parent,rev,'--','src').decode(errors='replace')
     for pat in (r'CUSA\d+',r'Ghost of Tsushima',r'Tsushima',
                 r'pgm_hash\s*==',r'title_id\s*==',
                 r'getenv\([^\n]*SHADPS4_',r'readbacks_mode\s*=',
@@ -919,7 +977,7 @@ def compose(run_dir,info,manifest):
         'ImageGatherExtended' not in diff):raise RuntimeError('INDEXED_PATH_MISSING')
     git('update-ref','refs/heads/local/generic-large-indexed-resource-'+rev[:12],rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':PARENT,'replayed_generic_commits':list(PATCH_COMMITS),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     work,d=fresh_paths(rev)
     cand=None;csha=''
@@ -956,7 +1014,7 @@ def compose(run_dir,info,manifest):
         raise RuntimeError('ORIGINAL_GOT_SOURCE_CHANGED')
     if not cand or digest(cand)!=csha:raise RuntimeError('CANDIDATE_COPY_FAILED')
     ms=digest(mp)
-    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'sirit_restored':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
+    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT_REF,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'sirit_restored':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
     (info/'build-result.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
     return rev,tree,csha,cand
 
@@ -964,13 +1022,13 @@ def launch(info,rev,tree,csha,cand):
     if digest(OLD)!=OLD_SHA:raise RuntimeError('PROTECTED_LAUNCHER_CHANGED_OR_MISSING')
     spec=importlib.util.spec_from_file_location('generic_indexed_runtime',OLD);m=importlib.util.module_from_spec(spec);sys.modules[spec.name]=m;spec.loader.exec_module(m)
     rp=info/'build-result.json';mp=info/'correction.json';rs=digest(rp);ms=digest(mp)
-    m.INFO=info;m.REV=rev;m.TREE=tree;m.PARENT=PARENT;m.BIN_SHA=csha;m.REPORT_SHA=rs;m.MANIFEST_SHA=ms;m.SESSION='got-generic-large-indexed-'+rev[:12]
+    m.INFO=info;m.REV=rev;m.TREE=tree;m.PARENT=json.loads(rp.read_text())['source_parent'];m.BIN_SHA=csha;m.REPORT_SHA=rs;m.MANIFEST_SHA=ms;m.SESSION='got-generic-large-indexed-'+rev[:12]
     def verify_build():
         if digest(rp)!=rs or digest(mp)!=ms:raise RuntimeError('BUILD_EVIDENCE_CHANGED')
         r=json.loads(rp.read_text())
         for k,v in {'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','source_untouched':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'sirit_restored':True,'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False}.items():
             if r.get(k)!=v:raise RuntimeError('BUILD_GATE='+k)
-        if Path(r['candidate'])!=cand or digest(cand)!=csha or git('rev-parse',rev+'^{tree}').decode().strip()!=tree or git('rev-parse',rev+'^').decode().strip()!=PARENT:raise RuntimeError('CANDIDATE_CHANGED')
+        if Path(r['candidate'])!=cand or digest(cand)!=csha or git('rev-parse',rev+'^{tree}').decode().strip()!=tree or git('rev-parse',rev+'^').decode().strip()!=r['source_parent']:raise RuntimeError('CANDIDATE_CHANGED')
         if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():raise RuntimeError('SOURCE_NOT_RESTORED')
         man=json.loads(mp.read_text())
         for p,x in man['files'].items():
@@ -1029,7 +1087,7 @@ def main():
             except BlockingIOError:raise RuntimeError('ANOTHER_SHADPS4_BUILD_OWNS_LOCK')
             if not OLD.is_file() or digest(OLD)!=OLD_SHA:
                 raise RuntimeError('PROTECTED_LAUNCHER_MISSING_OR_CHANGED='+str(OLD))
-            man=verify_prev()
+            man=verify_prev(run_dir)
             rev,tree,csha,cand=compose(run_dir,info,man)
         return launch(info,rev,tree,csha,cand)
     except (Exception,KeyboardInterrupt) as e:
