@@ -337,21 +337,45 @@ static auto RuntimeDescriptorHeapSizes(const Instance& instance) {
     return s
 def pass_h(s):
     if 'has_indexed_table' not in s:
-        s=after(s,'    std::array<SharpReference, 2> sharps;\n',
+        s=after(
+            s,
+            '    std::array<SharpReference, 2> sharps;\n',
             '    SharpReference indexed_table_sharp{};\n'
             '    IR::Value indexed_texture_id{};\n'
             '    u32 indexed_record_stride_bytes{};\n'
             '    u32 indexed_descriptor_offset_bytes{};\n'
+            '    u32 indexed_sampler_offset_bytes{};\n'
+            '    bool has_indexed_sampler_table{};\n'
             '    bool has_indexed_table{};\n',
             'has_indexed_table','PASS_FIELDS')
     else:
         anchor='    IR::Value indexed_texture_id{};\n'
         if 'indexed_record_stride_bytes' not in s:
-            s=after(s,anchor,
+            s=after(
+                s,anchor,
                 '    u32 indexed_record_stride_bytes{};\n'
                 '    u32 indexed_descriptor_offset_bytes{};\n',
                 'indexed_record_stride_bytes','PASS_STRIDED_FIELDS')
+        if 'indexed_sampler_offset_bytes' not in s:
+            anchor='    u32 indexed_descriptor_offset_bytes{};\n'
+            if anchor not in s:
+                raise RuntimeError('PASS_INDEXED_SAMPLER_FIELDS_ANCHOR')
+            s=s.replace(
+                anchor,
+                anchor+'    u32 indexed_sampler_offset_bytes{};\n'
+                       '    bool has_indexed_sampler_table{};\n',
+                1)
+    for marker in (
+        'indexed_record_stride_bytes',
+        'indexed_descriptor_offset_bytes',
+        'indexed_sampler_offset_bytes',
+        'has_indexed_sampler_table',
+        'has_indexed_table',
+    ):
+        if marker not in s:
+            raise RuntimeError('PASS_INDEXED_FIELD_MISSING='+marker)
     return s
+
 def resource_h(s):
     if 'MaxGuestIndexedImageEntries' not in s:
         a='enum class MipStorageFallbackMode : u16 {\n    None,\n    DynamicIndex,\n    ConstantIndex,\n};\n'
@@ -593,12 +617,12 @@ LOOP=r'''                if (inst.GetOpcode()==IR::Opcode::ImageSampleRaw &&
 '''
 def discover(s):
     if 'indexed_image_selector.h' not in s:
-        s=after(s,'#include "shader_recompiler/ir/passes/ir_passes.h"\n',
-                '#include "shader_recompiler/ir/passes/indexed_image_selector.h"\n',
-                'indexed_image_selector.h','DISCOVER_INCLUDE')
+        s=after(
+            s,
+            '#include "shader_recompiler/ir/passes/ir_passes.h"\n',
+            '#include "shader_recompiler/ir/passes/indexed_image_selector.h"\n',
+            'indexed_image_selector.h','DISCOVER_INCLUDE')
 
-    # Normalize the custom indexed-image analyzer even when the verified parent
-    # already contains the earlier packed-table implementation.
     helper_start=s.find('struct IndexedImageTableSource {')
     if helper_start>=0:
         fn_start=s.find('static IndexedImageTableSource AnalyzeIndexedImageTable(',helper_start)
@@ -616,7 +640,28 @@ def discover(s):
                 break
         if fn_end is None:
             raise RuntimeError('DISCOVER_INDEXED_ANALYZER_UNBALANCED')
-        s=s[:helper_start]+HELPER+s[fn_end:]
+
+        # If an older paired sampler analyzer already follows, remove it too;
+        # HELPER below supplies the canonical current version exactly once.
+        sampler_start=s.find('struct IndexedSamplerTableSource {',fn_end)
+        resource_pass=s.find('ResourceDiscoveryList ResourceDiscoverPass',fn_end)
+        replace_end=fn_end
+        if sampler_start>=0 and resource_pass>=0 and sampler_start<resource_pass:
+            sampler_fn=s.find('static IndexedSamplerTableSource AnalyzeIndexedSamplerTable(',sampler_start)
+            if sampler_fn<0:
+                raise RuntimeError('DISCOVER_SAMPLER_ANALYZER_START_MISSING')
+            brace=s.find('{',sampler_fn)
+            depth=0
+            sampler_end=None
+            for i in range(brace,len(s)):
+                depth += (s[i]=='{')-(s[i]=='}')
+                if depth==0:
+                    sampler_end=i+1
+                    break
+            if sampler_end is None:
+                raise RuntimeError('DISCOVER_SAMPLER_ANALYZER_UNBALANCED')
+            replace_end=sampler_end
+        s=s[:helper_start]+HELPER+s[replace_end:]
     else:
         a='ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {'
         s=one(s,a,HELPER+'\n'+a,'DISCOVER_HELPER')
@@ -627,62 +672,61 @@ def discover(s):
             'MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);',
             'MarkReadConstBufferSharpSources(usage.indexed_table_sharp);')
     elif ('MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);'
-          not in s and
-          'void MarkReadConstBufferSharpSources(' not in s):
+          not in s and 'void MarkReadConstBufferSharpSources(' not in s):
         raise RuntimeError('DISCOVER_MARK_API_UNKNOWN')
 
-    if 'usage.has_indexed_table=true;' not in s and 'usage.has_indexed_table = true;' not in s:
+    # Normalize the entire custom indexed discovery block in ResourceDiscoverPass.
+    rp=s.find('ResourceDiscoveryList ResourceDiscoverPass(')
+    if rp<0:
+        raise RuntimeError('RESOURCE_DISCOVER_PASS_NOT_FOUND')
+    rp_end=s.find('\n    return sharp_usages;',rp)
+    if rp_end<0:
+        raise RuntimeError('RESOURCE_DISCOVER_PASS_END_NOT_FOUND')
+    body=s[rp:rp_end]
+    custom_start=body.find(
+        '                if (inst.GetOpcode()==IR::Opcode::ImageSampleRaw &&')
+    if custom_start<0:
+        custom_start=body.find(
+            '                if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw &&')
+    if custom_start>=0:
+        brace=body.find('{',custom_start)
+        depth=0
+        custom_end=None
+        for i in range(brace,len(body)):
+            depth += (body[i]=='{')-(body[i]=='}')
+            if depth==0:
+                custom_end=i+1
+                break
+        if custom_end is None:
+            raise RuntimeError('DISCOVER_INDEXED_LOOP_UNBALANCED')
+        body=body[:custom_start]+loop.rstrip('\n')+body[custom_end:]
+    else:
         anchors=(
             '                DiscoverImageSharp(*block, inst, sharp_usages, program);\n',
             '                DiscoverImageSharp(*block, inst, sharp_usages);\n',
         )
         selected=None
         for anchor in anchors:
-            if s.count(anchor)==1:
+            if body.count(anchor)==1:
                 selected=anchor
                 break
         if selected is None:
             raise RuntimeError(
-                'DISCOVER_LOOP_API_NOT_ADAPTED old_count='+str(s.count(anchors[0]))+
-                ' new_count='+str(s.count(anchors[1])))
-        s=s.replace(selected,selected+loop,1)
-    else:
-        # Upgrade the earlier packed-table loop in place.
-        packed='table.descriptor_stride_words==8u)'
-        if packed in s and 'table.record_stride_bytes!=0u' not in s:
-            s=s.replace(
-                packed,
-                '(table.descriptor_stride_words==8u ||\n'
-                '                         table.record_stride_bytes!=0u))',
-                1)
-        if 'usage.indexed_record_stride_bytes=table.record_stride_bytes;' not in s:
-            anchor='usage.indexed_texture_id=IR::Value{const_cast<IR::Inst*>(table.selector)};'
-            if anchor not in s:
-                anchor='usage.indexed_texture_id = IR::Value{const_cast<IR::Inst*>(table.selector)};'
-            if anchor not in s:
-                raise RuntimeError('DISCOVER_STRIDED_METADATA_ANCHOR_MISSING')
-            s=s.replace(
-                anchor,
-                anchor+'\n'
-                '                            usage.indexed_record_stride_bytes=table.record_stride_bytes;\n'
-                '                            usage.indexed_descriptor_offset_bytes=table.tsharp_offset_bytes;',
-                1)
+                'DISCOVER_LOOP_API_NOT_ADAPTED old_count='+str(body.count(anchors[0]))+
+                ' new_count='+str(body.count(anchors[1])))
+        body=body.replace(selected,selected+loop,1)
+    s=s[:rp]+body+s[rp_end:]
 
-    valid_marks=(
-        'MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);',
-        'MarkReadConstBufferSharpSources(usage.indexed_table_sharp);',
-    )
-    if not any(mark in s for mark in valid_marks):
-        raise RuntimeError('DISCOVER_MARK_API_NOT_ADAPTED')
     for marker in (
-        'record_stride_bytes',
-        'tsharp_offset_bytes',
         'AnalyzeStridedIndexedSharpWord',
+        'AnalyzeIndexedSamplerTable',
         'usage.indexed_record_stride_bytes=table.record_stride_bytes;',
         'usage.indexed_descriptor_offset_bytes=table.tsharp_offset_bytes;',
+        'usage.indexed_sampler_offset_bytes=sampler.offset_bytes;',
+        'usage.has_indexed_sampler_table=sampler.valid;',
     ):
         if marker not in s:
-            raise RuntimeError('DISCOVER_STRIDED_NORMALIZATION_MISSING='+marker)
+            raise RuntimeError('DISCOVER_INDEXED_NORMALIZATION_MISSING='+marker)
     return s
 
 ELIG=r'''    if (resource.has_indexed_table && profile.supports_sampled_image_nonuniform_indexing &&
@@ -797,7 +841,7 @@ def patching(s):
             raise RuntimeError('PATCH_ID_FUNCTION_ANCHOR_COUNT='+str(body.count(a)))
         body=body.replace(a,a+'        if (image_res.is_guest_indexed) {\n            inst.SetArg(1, resource.indexed_texture_id);\n        }\n',1)
         s=s[:fn_start]+body+s[fn_end:]
-    # Numeric image format is part of Vulkan sampler identity.
+    # Numeric format and indexed-table layout are part of Vulkan sampler identity.
     add_start=s.find('u32 Add(const SamplerResource& desc)')
     if add_start<0:
         raise RuntimeError('SAMPLER_DESCRIPTOR_ADD_NOT_FOUND')
@@ -813,11 +857,6 @@ def patching(s):
             anchor,
             anchor+' &&\n                   desc.is_integer == existing.is_integer',
             1)
-    # Paired indexed samplers must not deduplicate against uniform samplers
-    # or another record layout.
-    add_start=s.find('u32 Add(const SamplerResource& desc)')
-    add_end=s.find('\n    }',add_start)
-    add_body=s[add_start:add_end]
     if 'desc.is_guest_indexed == existing.is_guest_indexed' not in add_body:
         anchor='desc.is_integer == existing.is_integer'
         if add_body.count(anchor)!=1:
@@ -831,8 +870,7 @@ def patching(s):
                    '                   desc.indexed_sampler_offset_bytes == existing.indexed_sampler_offset_bytes &&\n'
                    '                   desc.indexed_table_fetch == existing.indexed_table_fetch',
             1)
-        s=s[:add_start]+add_body+s[add_end:]
-        s=s[:add_start]+add_body+s[add_end:]
+    s=s[:add_start]+add_body+s[add_end:]
 
     fn_start=s.find('void PatchImageSharp(')
     fn_end=s.find('\nstatic IR::Value IsMbcntWithExec',fn_start)
