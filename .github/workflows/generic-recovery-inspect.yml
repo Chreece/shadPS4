@@ -1,0 +1,54 @@
+name: Generic recovery inspect
+
+on:
+  push:
+    branches:
+      - fix/generic-recovery-ci-20261023
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-typed-atomic:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: false
+      - name: Decode original typed-float package
+        shell: bash
+        run: |
+          set -euo pipefail
+          REV=8329755a6da9c1827c3153de4f82d0638ee19ff8
+          git fetch --no-tags origin "refs/heads/fix/typed-float-atomic-emulation-20261022:refs/remotes/origin/typed-atomic"
+          git show "$REV:tools/packages/typed-float-atomics-20261022/install.py" >/tmp/install.py
+          python3 /tmp/install.py "$GITHUB_WORKSPACE" "$REV" /tmp/atomic_runner.py
+          python3 -m py_compile /tmp/atomic_runner.py
+          python3 - <<'PY'
+          import ast, hashlib, pathlib
+          p=pathlib.Path('/tmp/atomic_runner.py')
+          s=p.read_text()
+          tree=ast.parse(s)
+          print('ATOMIC_RUNNER_SHA256='+hashlib.sha256(p.read_bytes()).hexdigest())
+          wanted={'BASE','PARENT','TREE','SIRIT','FILES','EXPECTED','SOURCE_PARENT','PATCH_FILES'}
+          for n in tree.body:
+              if isinstance(n,(ast.Assign,ast.AnnAssign)):
+                  if isinstance(n,ast.Assign):
+                      names=[t.id for t in n.targets if isinstance(t,ast.Name)]
+                      value=n.value
+                  else:
+                      names=[n.target.id] if isinstance(n.target,ast.Name) else []
+                      value=n.value
+                  for name in names:
+                      if name in wanted:
+                          try: print(f'{name}={ast.literal_eval(value)!r}')
+                          except Exception: pass
+          for n in tree.body:
+              if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name in {
+                  'install_delta','transform','transform_text','updates','job_class','main','verify_candidate'
+              }:
+                  print(f'---FUNCTION {n.name}---')
+                  print(ast.get_source_segment(s,n))
+          PY
