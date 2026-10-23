@@ -28,9 +28,9 @@ jobs:
               if isinstance(n,ast.Assign)
               and len(n.targets)==1
               and isinstance(n.targets[0],ast.Name)
-              and n.targets[0].id in {"PATCH_COMMITS","VULKAN_INDEXING_FEATURE_FIXES","DESCRIPTOR_SET_SCALING_FIXES"}
+              and n.targets[0].id in {"PATCH_COMMITS","VULKAN_INDEXING_FEATURE_FIXES","DESCRIPTOR_SET_SCALING_FIXES","DYNAMIC_IMAGE_BINDING_FIXES"}
           }
-          assert len(assigns["PATCH_COMMITS"]) == 25
+          assert len(assigns["PATCH_COMMITS"]) == 23
           assert "cbbcc969156f9258633914409ca88e6458bbad2c" not in assigns["PATCH_COMMITS"]
           assert "538fc65527d96086443d14d3227eb9c5daa7397f" not in assigns["PATCH_COMMITS"]
           assert assigns["VULKAN_INDEXING_FEATURE_FIXES"] == (
@@ -44,6 +44,10 @@ jobs:
               "f74a01cb704cb6f25450a578613968f6dc94798b",
               "6b6d462d1d1fcbdbd488af8fbfe7eb323f7480a7",
               "29983ea0417a920db38c0b0854f610eb482050a1",
+          )
+          assert assigns["DYNAMIC_IMAGE_BINDING_FIXES"] == (
+              "16ab0edbd70e1912ec3de581466788f89c11b39c",
+              "9e30254c86b532eb7c5921a3268dcb2a00e7d48d",
           )
           for name in ("compose","verify_prev","fresh_paths","apply_patch_commit","finish_generic_large","launch","main"):
               assert name in funcs, name
