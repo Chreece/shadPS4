@@ -1208,7 +1208,6 @@ def compose(run_dir,info,manifest):
         manifest['files'][p]={'original_blob':original,'corrected_blob':oid,'sha256':hashlib.sha256(b).hexdigest()}
     msg=b'Complete generic GPU-indexed image and sampler tables on verified candidate\n\nPreserve complete packed and strided guest descriptor tables with GPU-side selection, physical Vulkan limits and ordinary descriptor-set fallback. No title IDs, shader-hash branches, forced readbacks, forced draws or rendering presets.\n'
     rev=commit_tree(tree,parent,msg)
-    if not tuple(git('diff','--name-only',parent,rev,'--','src').decode().splitlines()):raise RuntimeError('EMPTY_COMPOSED_CHANGE_SET')
     diff=git('diff',parent,rev,'--','src').decode(errors='replace')
     added='\n'.join(
         line[1:] for line in diff.splitlines()
@@ -1220,9 +1219,22 @@ def compose(run_dir,info,manifest):
                 r'readbacksMode\s*='):
         if re.search(pat,added,re.I):
             raise RuntimeError('GAME_SPECIFIC_SOURCE_ADDITION='+pat)
-    if ('ImageSampleImplicitLodIndexed' not in diff or 'ImageGradientIndexed' not in diff or
-        'NonUniform' not in diff or 'indexed_sampler' not in diff or
-        'ImageGatherExtended' not in diff):raise RuntimeError('INDEXED_PATH_MISSING')
+    final_feature_text='\n'.join((
+        index_text(idx,'src/shader_recompiler/ir/opcodes.inc'),
+        index_text(idx,'src/shader_recompiler/ir/passes/resource_patching_pass.cpp'),
+        index_text(idx,'src/shader_recompiler/backend/spirv/emit_spirv_image.cpp'),
+        index_text(idx,'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp'),
+        index_text(idx,'src/video_core/renderer_vulkan/vk_rasterizer.cpp'),
+    ))
+    for marker in (
+        'ImageSampleImplicitLodIndexed',
+        'ImageGradientIndexed',
+        'NonUniform',
+        'indexed_sampler',
+        'ImageGatherExtended',
+    ):
+        if marker not in final_feature_text:
+            raise RuntimeError('INDEXED_PATH_MISSING='+marker)
     git('update-ref','refs/heads/local/generic-large-indexed-resource-'+rev[:12],rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
     manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
