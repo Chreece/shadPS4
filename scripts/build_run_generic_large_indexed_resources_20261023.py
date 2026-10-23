@@ -339,18 +339,20 @@ def discover(s):
         if start<0:
             raise RuntimeError('DISCOVER_FUNCTION_NOT_FOUND')
         tail=s[start:]
-        m=re.search(r'(?ms)^(?P<indent>[ \\t]*)DiscoverImageSharp\\([^;]*?\\);[ \\t]*\\n',tail)
+        if 'DiscoverImageSharp(*block, inst, sharp_usages, program);' not in tail:
+            raise RuntimeError('DISCOVER_PARENT_SIGNATURE_CHANGED excerpt='+tail[:3000].replace('\n',' | '))
+        m=re.search(r'(?m)^(?P<indent>[ \t]*)DiscoverImageSharp\([^;]*?\);[ \t]*\n',tail)
         if not m:
-            raise RuntimeError('DISCOVER_IMAGE_CALL_NOT_FOUND excerpt='+tail[:5000].replace('\\n',' | '))
+            raise RuntimeError('DISCOVER_IMAGE_CALL_NOT_FOUND excerpt='+tail[:5000].replace('\n',' | '))
         insert_at=start+m.end()
         indent=m.group('indent')
         loop_lines=LOOP.splitlines()
         first=next((line for line in loop_lines if line.strip()),'')
         base_indent=len(first)-len(first.lstrip())
-        loop='\\n'.join(
+        loop='\n'.join(
             (indent+line[base_indent:]) if line.strip() else line
             for line in loop_lines
-        )+'\\n'
+        )+'\n'
         s=s[:insert_at]+loop+s[insert_at:]
     if 'MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);' not in s:
         raise RuntimeError('DISCOVER_MARK_API_NOT_ADAPTED')
