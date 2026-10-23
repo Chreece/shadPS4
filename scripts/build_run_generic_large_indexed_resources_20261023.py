@@ -181,8 +181,15 @@ def assert_source_unchanged():
 def profile(s):
     if 'max_guest_indexed_image_entries' not in s:
         s=after(s,'    u32 sparse_page_shift{};\n',
-                '    u32 max_guest_indexed_image_entries{15};\n    u32 max_guest_indexed_sampler_entries{15};\n',
-                'max_guest_indexed_image_entries','PROFILE_LIMITS')
+                '    u32 max_guest_indexed_image_entries{15};\n',
+                'max_guest_indexed_image_entries','PROFILE_IMAGE_LIMIT')
+    if 'max_guest_indexed_sampler_entries' not in s:
+        anchor='    u32 max_guest_indexed_image_entries{15};\n'
+        if anchor not in s:
+            raise RuntimeError('PROFILE_SAMPLER_LIMIT_ANCHOR')
+        s=after(s,anchor,
+                '    u32 max_guest_indexed_sampler_entries{15};\n',
+                'max_guest_indexed_sampler_entries','PROFILE_SAMPLER_LIMIT')
     if 'supports_shader_image_gather_extended' not in s:
         s=after(s,'    bool supports_image_load_store_lod{};\n',
                 '    bool supports_shader_image_gather_extended{};\n',
@@ -317,9 +324,15 @@ static auto RuntimeDescriptorHeapSizes(const Instance& instance) {
                 'desc_heap{instance, scheduler.GetWorkSemaphore(), RuntimeDescriptorHeapSizes(instance)}')
     if '.max_guest_indexed_image_entries =' not in s:
         s=after(s,'        .sparse_page_shift = sparse_page_shift,\n',
-                '        .max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),\n'
+                '        .max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),\n',
+                '.max_guest_indexed_image_entries =','PIPELINE_IMAGE_LIMIT_PROFILE')
+    if '.max_guest_indexed_sampler_entries =' not in s:
+        anchor='        .max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),\n'
+        if anchor not in s:
+            raise RuntimeError('PIPELINE_SAMPLER_LIMIT_ANCHOR')
+        s=after(s,anchor,
                 '        .max_guest_indexed_sampler_entries = GuestIndexedSamplerLimit(instance),\n',
-                '.max_guest_indexed_image_entries =','PIPELINE_LIMIT_PROFILE')
+                '.max_guest_indexed_sampler_entries =','PIPELINE_SAMPLER_LIMIT_PROFILE')
     if 'supports_shader_image_gather_extended =' not in s:
         s=after(s,'        .supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),\n',
                 '        .supports_shader_image_gather_extended =\n'
