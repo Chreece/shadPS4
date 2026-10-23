@@ -12,6 +12,7 @@ RECOVERY_BASE='4bc7df9c1370b0eb10c84f385b8c2d041e791945'
 RECOVERY_REF='refs/remotes/chreece/generic-large-indexed-images-20261023'
 SOURCE_REMOTE='https://github.com/Chreece/shadPS4.git'
 PARENT_REF=PARENT
+BASE_STATUS=b''
 RECOVERY_PARTS=tuple(f'patches/verified-975.patch.gz.b64.part{i:02d}' for i in range(1,9))
 GEN_BASE='9f4c2da6107cb2b31578cc4b35f5e4ed85637dab'
 GEN='464e32e92b7f36fede81f0d65ca0e81934051d1e'
@@ -124,6 +125,30 @@ def one(s,a,b,n):
     return s.replace(a,b,1)
 def after(s,a,x,marker,n):
     return s if marker in s else one(s,a,a+x,n)
+
+def source_status():
+    return git('status','--porcelain=v1','--untracked-files=all')
+
+def validate_source_status(status):
+    # The user intentionally removed the local tests tree. The candidate is
+    # composed from immutable Git objects and configured with ENABLE_TESTS=OFF,
+    # so those deletions are irrelevant. Refuse every other pre-existing edit.
+    bad=[]
+    for raw in status.decode(errors='replace').splitlines():
+        if not raw:
+            continue
+        code=raw[:2]
+        path=raw[3:]
+        if code.strip()=='D' and (path=='tests' or path.startswith('tests/')):
+            continue
+        bad.append(raw)
+    if bad:
+        raise RuntimeError('GOT_SOURCE_HAS_UNSUPPORTED_LOCAL_CHANGES='+' | '.join(bad[:40]))
+
+def assert_source_unchanged():
+    now=source_status()
+    if now!=BASE_STATUS:
+        raise RuntimeError('ORIGINAL_GOT_SOURCE_STATUS_CHANGED_DURING_BUILD')
 
 def profile(s):
     if 'max_guest_indexed_image_entries' not in s:
@@ -915,8 +940,7 @@ def verify_prev(run_dir):
     # reconstructed commit with the exact same verified tree.
     if not SRC.is_dir() or not (SRC/'.git').exists():
         raise RuntimeError('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC))
-    if git('status','--porcelain').strip():
-        raise RuntimeError('GOT_SOURCE_HAS_UNCOMMITTED_CHANGES')
+    validate_source_status(BASE_STATUS)
     parent=recovered_parent_ref(run_dir)
     if git('rev-parse',parent+'^{tree}').decode().strip()!=PARENT_TREE:
         raise RuntimeError('VERIFIED_GRAPHICS_PARENT_TREE_CHANGED')
@@ -976,7 +1000,9 @@ def tee(a,p):
 
 def compose(run_dir,info,manifest):
     parent=PARENT_REF
-    if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():raise RuntimeError('ORIGINAL_GOT_SOURCE_CHANGED')
+    if git('rev-parse','HEAD').decode().strip()!=BASE:
+        raise RuntimeError('ORIGINAL_GOT_SOURCE_HEAD_CHANGED')
+    assert_source_unchanged()
     for x in (parent+'^{commit}',GEN_BASE+'^{commit}',GEN+'^{commit}',STRIDED_SELECTOR_FINAL+'^{commit}'):
         if not exists(x):raise RuntimeError('OBJECT_MISSING='+x)
     names=tuple(git('diff','--name-only',GEN_BASE,GEN,'--','src').decode().splitlines())
@@ -1081,8 +1107,9 @@ def compose(run_dir,info,manifest):
         if cand is not None and cand.is_file():
             remove_worktree(work)
             shutil.rmtree(d,ignore_errors=True)
-    if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():
-        raise RuntimeError('ORIGINAL_GOT_SOURCE_CHANGED')
+    if git('rev-parse','HEAD').decode().strip()!=BASE:
+        raise RuntimeError('ORIGINAL_GOT_SOURCE_HEAD_CHANGED_AFTER_BUILD')
+    assert_source_unchanged()
     if not cand or digest(cand)!=csha:raise RuntimeError('CANDIDATE_COPY_FAILED')
     ms=digest(mp)
     report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT_REF,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'original_submodules_untouched':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
@@ -1116,7 +1143,9 @@ def launch(info,rev,tree,csha,cand):
             git('rev-parse',rev+'^{tree}').decode().strip()!=tree or
             git('rev-parse',rev+'^').decode().strip()!=source_parent):
             raise RuntimeError('CANDIDATE_CHANGED')
-        if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():raise RuntimeError('ORIGINAL_GOT_SOURCE_CHANGED_AFTER_BUILD')
+        if git('rev-parse','HEAD').decode().strip()!=BASE:
+            raise RuntimeError('ORIGINAL_GOT_SOURCE_HEAD_CHANGED_AFTER_BUILD')
+        assert_source_unchanged()
         man=json.loads(mp.read_text())
         for p,x in man['files'].items():
             b=x.get('corrected_blob')
@@ -1164,7 +1193,7 @@ def archive(run_dir,error):
     return out
 
 def main():
-    global BASE
+    global BASE, BASE_STATUS
     parser=argparse.ArgumentParser()
     parser.add_argument('--launch',action='store_true',
         help='Launch the built candidate after a successful fresh build.')
@@ -1173,6 +1202,8 @@ def main():
         print('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC),file=sys.stderr,flush=True)
         return 2
     BASE=git('rev-parse','HEAD').decode().strip()
+    BASE_STATUS=source_status()
+    validate_source_status(BASE_STATUS)
     (ROOT/'logs').mkdir(parents=True,exist_ok=True);run_dir=Path(tempfile.mkdtemp(prefix='generic-large-indexed-resource-'+time.strftime('%Y%m%d-%H%M%S')+'-',dir=ROOT/'logs'));info=run_dir/'info';info.mkdir()
     try:
         with (ROOT/'GhostOfTsushima/.build.lock').open('a') as lock:
