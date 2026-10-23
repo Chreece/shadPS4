@@ -50,6 +50,11 @@ jobs:
           assert "'merge-tree','--write-tree'" in s
           assert "UPSTREAM_MERGE_CONFLICT" in s
           assert "UPSTREAM_MERGE_PARENTAGE_MISMATCH" in s
+          assert "ctx.OpBitcast(ctx.S32[1], raw)" in s
+          assert "ctx.OpBitcast(ctx.S32[2], raw)" in s
+          assert "ctx.OpBitcast(ctx.S32[3], raw)" in s
+          assert "538fc65527d96086443d14d3227eb9c5daa7397f" in s
+          assert "cbbcc969156f9258633914409ca88e6458bbad2c" in s
           assert "clean-rebase-verified" not in s
           assert "rglob('build.ninja')" not in s
           assert "def builddir(" not in s
