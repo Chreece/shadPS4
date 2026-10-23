@@ -199,6 +199,7 @@ struct SamplerResource {
     SharpFetchPostOp post_op{};
     SharpLocation post_op_tsharp_dw3_off{};
     bool is_depth{};
+    bool is_integer{};
 
     constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {
         AmdGpu::Sampler sampler{};
