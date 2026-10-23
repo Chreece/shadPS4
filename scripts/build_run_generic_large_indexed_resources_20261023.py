@@ -108,7 +108,6 @@ EXTRA_FILES=(
 FILES=GEN_FILES+EXTRA_FILES
 PATCH_COMMITS=(
 )
-PATCH_PATHS=('src/shader_recompiler','src/video_core/renderer_vulkan','src/video_core/texture_cache')
 
 def env(extra=None):
     e={k:v for k,v in os.environ.items() if k not in ('GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_COMMON_DIR')}
@@ -1851,80 +1850,6 @@ TRANS={
 'src/video_core/texture_cache/texture_cache.cpp':texture_cache_cpp,
 }
 
-def _pure_cache_version_patch(sha):
-    p='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
-    diff=git('diff',sha+'^',sha,'--',p).decode(errors='replace')
-    if not diff.strip():
-        return False
-    changed=[]
-    for line in diff.splitlines():
-        if not line or line.startswith(('+++','---','@@')):
-            continue
-        if line[0] not in '+-':
-            continue
-        changed.append(line[1:].strip())
-    if not changed:
-        return False
-    version_re=re.compile(
-        r'static constexpr u32 (ShaderBinaryVersion|ShaderMetaVersion|PipelineKeyVersion)\s*=\s*'
-        r'(0x[0-9A-Fa-f]+|[0-9]+)u?;'
-    )
-    return all(version_re.fullmatch(line) for line in changed)
-
-def _changed_patch_paths(sha):
-    names=git('diff','--name-only',sha+'^',sha,'--',*PATCH_PATHS).decode().splitlines()
-    return [p for p in names if p]
-
-def apply_patch_commit(idx,sha):
-    if not re.fullmatch(r'[0-9a-f]{40}',sha):
-        raise RuntimeError('PATCH_COMMIT_INVALID='+sha)
-    if not exists(sha+'^{commit}'):
-        raise RuntimeError('PATCH_COMMIT_MISSING='+sha)
-
-    e=env({'GIT_INDEX_FILE':str(idx)})
-    commit_tree=git('write-tree',e=e).decode().strip()
-    paths=_changed_patch_paths(sha)
-    if not paths:
-        return
-
-    for path in paths:
-        # Cache-version counters are intentionally regenerated once from the
-        # final composed ABI. They carry no runtime behavior by themselves.
-        if (path=='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp' and
-            _pure_cache_version_patch(sha)):
-            continue
-
-        patch=git('diff',sha+'^',sha,'--',path)
-        if not patch.strip():
-            continue
-
-        file_tree=git('write-tree',e=e).decode().strip()
-        q=subprocess.run(
-            ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
-             'apply','--3way','--cached','--whitespace=nowarn','-'],
-            env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
-        if q.returncode==0:
-            continue
-
-        err=(q.stderr or b'').decode(errors='replace')
-        git('read-tree',file_tree,e=e)
-
-        # If this exact file change is already represented by the verified
-        # parent or by an earlier generic replay, treat it as idempotent.
-        reverse=subprocess.run(
-            ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
-             'apply','--reverse','--check','--cached','--whitespace=nowarn','-'],
-            env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
-        if reverse.returncode==0:
-            continue
-
-        # Keep failure evidence deterministic: discard any earlier files from
-        # this one commit before reporting the unresolved path.
-        git('read-tree',commit_tree,e=e)
-        raise RuntimeError(
-            'GENERIC_PATCH_FILE_APPLY_FAILED='+sha+' path='+path+' '+err[-4000:]
-        )
-
 def index_text(idx,p):
     e=env({'GIT_INDEX_FILE':str(idx)})
     return git('show',':'+p,e=e).decode()
@@ -2115,7 +2040,7 @@ def ensure_required_refs():
         if not exists(dst+'^{commit}'):
             raise RuntimeError('REQUIRED_REF_MISSING_AFTER_FETCH='+dst)
 
-    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,GUEST_TSHARP_FINAL,INTEGER_SAMPLER_FINAL,*PATCH_COMMITS)
+    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,GUEST_TSHARP_FINAL,INTEGER_SAMPLER_FINAL)
     for sha in required:
         if exists(sha+'^{commit}'):
             continue
@@ -2136,21 +2061,6 @@ def ensure_required_refs():
                 (q.stderr or b'').decode(errors='replace')[-2000:]
             )
 
-    for sha in PATCH_COMMITS:
-        changed=git('diff','--name-only',sha+'^',sha).decode().splitlines()
-        if len(changed)!=1:
-            raise RuntimeError(
-                'PATCH_COMMIT_NOT_SINGLE_FILE='+sha+
-                ' paths='+','.join(changed)
-            )
-        path=changed[0]
-        if not any(
-            path==prefix or path.startswith(prefix+'/')
-            for prefix in PATCH_PATHS
-        ):
-            raise RuntimeError(
-                'PATCH_COMMIT_OUTSIDE_GENERIC_SOURCE='+sha+' path='+path
-            )
 
 def recovered_parent_ref(run_dir):
     global PARENT_REF
@@ -2461,8 +2371,6 @@ def compose(run_dir,info,manifest):
     oid=git('hash-object','-w','--stdin',input=sampler_policy).decode().strip()
     git('update-index','--add','--cacheinfo',f'100644,{oid},{sampler_policy_path}',e=e)
 
-    for sha in PATCH_COMMITS:
-        apply_patch_commit(idx,sha)
     finish_generic_large(idx)
 
     # Cross-file dependency gate: the selected historical commits are
@@ -2572,7 +2480,7 @@ def compose(run_dir,info,manifest):
     temp_ref='refs/shadps4-composer/generic-large-indexed-resource-'+rev[:12]
     git('update-ref',temp_ref,rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'explicit_gradient_indexing_fixes':list(EXPLICIT_GRADIENT_INDEXING_FIXES),'paired_indexed_sampler_frontend_fixes':list(PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES),'paired_indexed_sampler_backend_fixes':list(PAIRED_INDEXED_SAMPLER_BACKEND_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':[],'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'explicit_gradient_indexing_fixes':list(EXPLICIT_GRADIENT_INDEXING_FIXES),'paired_indexed_sampler_frontend_fixes':list(PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES),'paired_indexed_sampler_backend_fixes':list(PAIRED_INDEXED_SAMPLER_BACKEND_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     work,d=fresh_paths(rev)
     cand=None;csha=''
