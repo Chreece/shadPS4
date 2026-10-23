@@ -36,6 +36,8 @@ struct ResourceDiscovery {
     // Nonzero means a T# at a proven byte offset inside each guest record.
     u32 indexed_record_stride_bytes{};
     u32 indexed_descriptor_offset_bytes{};
+    u32 indexed_sampler_offset_bytes{};
+    bool has_indexed_sampler_table{};
     bool has_indexed_table{};
 };
 using ResourceDiscoveryList = boost::container::small_vector<ResourceDiscovery, 32>;
