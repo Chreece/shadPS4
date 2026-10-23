@@ -57,7 +57,30 @@ jobs:
               "f336b0dbfc20d35d83642472269cac77c0299ac4",
               "b29106a5c6b6231a9ffb787f9277ef10c31e9182",
           )
-          for name in ("compose","verify_prev","fresh_paths","apply_patch_commit","finish_generic_large","launch","main"):
+          assert assigns["EXPLICIT_GRADIENT_INDEXING_FIXES"] == (
+              "f2169f2fb9a4902b4dbb752c90c8fa037f6bb8cf",
+              "a61c10ff0059b03db7437807fa4c9b17208f4f8b",
+              "e6b7acce13db1c2ca3fe5189a19458290d5bc74f",
+              "2718fe1101bc24eb8cd57b09f9dd22f3ac3b4e2b",
+              "39d58e288e254877be1cfb307293b8f26be0a195",
+              "5610f50a6239f82b70bf154c2c1ee6fbe8477def",
+          )
+          assert assigns["PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES"] == (
+              "0cecd34d1760fdd5720408bbd9661aaa6ea828c4",
+              "20ec7bfbb7a1ee18dac78d3c9bdeed29274580c2",
+              "8b75cb1197818094d2a31ca4879bc62c842b1134",
+              "9b4d6ebd6523b8f28d543da0ebaa841733cfdf7f",
+          )
+          assert assigns["PAIRED_INDEXED_SAMPLER_BACKEND_FIXES"] == (
+              "dd00aa320c9eb86c70584f36dce808c2483246a0",
+              "ec6f257ed6852478a915d96c514f54d290c112a2",
+              "3edc91cd217563acb9206772e4773c4ca1cf73d8",
+              "630f51ecf3c8a7bb8afac698a435ca27e8b23fad",
+              "bfa0d918e33f1364b052e953812aa662f2ad2275",
+              "6ff828d3a06b2222597c89c596ff500863c4a18f",
+              "34a46b656f75a7fdd215086d5be2b1c6042016b4",
+          )
+          for name in ("compose","verify_prev","fresh_paths","finish_generic_large","launch","main"):
               assert name in funcs, name
           assert "GhostOfTsushima/source" in s
           assert "clean-rebase-verified/source" not in s
@@ -112,6 +135,12 @@ jobs:
           assert "indexed_record_stride_bytes" in s
           assert "CompleteGuestTsharpRecordEntries" in s
           assert "record_stride,record_offset,indexed_limit" in s
+          assert "AnalyzeIndexedSamplerTable" in s
+          assert "sampler_array_sizes" in s
+          assert "LoadIndexedGuestSampler" in s
+          assert "sampler.NumBindings(*stage)" in s
+          assert "sampler.NumBindings(*info)" in s
+          assert "INTEGER_SAMPLER_EXTRA_TRANSFORM_MISSING" in s
           assert "538fc65527d96086443d14d3227eb9c5daa7397f" in s
           assert "cbbcc969156f9258633914409ca88e6458bbad2c" in s
           assert "clean-rebase-verified" not in s
