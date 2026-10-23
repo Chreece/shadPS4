@@ -5,6 +5,7 @@
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/ir/microinstruction.h"
+#include "shader_recompiler/guest_tsharp_array.h"
 
 namespace Shader::Backend::SPIRV {
 
@@ -53,8 +54,8 @@ static Id FixImageCoords(EmitContext& ctx, Id coords, AmdGpu::ImageType image_ty
 template <bool is_float>
 static Id PadImageOperand(EmitContext& ctx, Id operand, AmdGpu::ImageType image_type) {
     if (image_type == AmdGpu::ImageType::Color1D || image_type == AmdGpu::ImageType::Color1DArray) {
-        const auto coord_type = is_float ? ctx.F32 : ctx.U32;
-        const auto zero = is_float ? ctx.f32_zero_value : ctx.u32_zero_value;
+        const auto coord_type = is_float ? ctx.F32 : ctx.S32;
+        const auto zero = is_float ? ctx.f32_zero_value : ctx.ConstS32(0);
         return ctx.OpCompositeConstruct(coord_type[2], operand, zero);
     }
     return operand;
@@ -78,6 +79,7 @@ struct ImageOperands {
 
     void AddOffset(EmitContext& ctx, AmdGpu::ImageType image_type, const IR::Value& offset,
                    bool can_use_runtime_offsets = false) {
+        (void)can_use_runtime_offsets;
         if (offset.IsEmpty()) {
             return;
         }
@@ -108,13 +110,35 @@ struct ImageOperands {
         }
 
         if (op_mask != spv::ImageOperandsMask::ConstOffset) {
-            if (!can_use_runtime_offsets) {
+            // A dynamic texel offset is a genuine shader operand; dropping it
+            // changes sampling coordinates. Vulkan requires the
+            // shaderImageGatherExtended feature / ImageGatherExtended SPIR-V
+            // capability for dynamic ImageOperands Offset, including samples.
+            // Do not emit unsupported SPIR-V on a GPU lacking that feature.
+            if (!ctx.profile.supports_shader_image_gather_extended) {
                 LOG_WARNING(Render_Vulkan,
-                            "Runtime offset provided to unsupported image sample instruction");
+                            "Dynamic sample/gather offset requires shaderImageGatherExtended");
                 return;
             }
+            ctx.AddCapability(spv::Capability::ImageGatherExtended);
             op_mask = spv::ImageOperandsMask::Offset;
-            value = ctx.Def(offset);
+            // GCN texture offsets are represented as unsigned IR bit
+            // patterns, but Vulkan's signed image offset applies the same
+            // bits as a signed texel displacement (including negatives).
+            const Id raw = ctx.Def(offset);
+            switch (offset.Type()) {
+            case IR::Type::U32:
+                value = ctx.OpBitcast(ctx.S32[1], raw);
+                break;
+            case IR::Type::U32x2:
+                value = ctx.OpBitcast(ctx.S32[2], raw);
+                break;
+            case IR::Type::U32x3:
+                value = ctx.OpBitcast(ctx.S32[3], raw);
+                break;
+            default:
+                UNREACHABLE_MSG("Unsupported dynamic texel offset type {}", offset.Type());
+            }
         }
 
         value = PadImageOperand<false>(ctx, value, image_type);
@@ -160,39 +184,63 @@ Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id c
     return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
 }
 
+// The same nonuniform GPU record ID selects both T# and S#. An indexed
+// texture must never sample using an unrelated host default sampler.
+static Id LoadIndexedGuestSampler(EmitContext& ctx, u32 handle, Id bounded,
+                                  u32 expected_count) {
+    const u32 sampler_index = handle >> 16;
+    ASSERT(sampler_index < ctx.samplers.size());
+    const u32 sampler_count = ctx.sampler_array_sizes[sampler_index];
+    if (sampler_count == 1u) {
+        // Existing packed T# arrays may use one genuinely uniform S#.
+        return ctx.OpLoad(ctx.sampler_type,ctx.samplers[sampler_index]);
+    }
+    ASSERT(ctx.profile.supports_sampler_array_nonuniform_indexing);
+    ASSERT(sampler_count == expected_count);
+    const Id pointer_type = ctx.TypePointer(spv::StorageClass::UniformConstant,
+                                             ctx.sampler_type);
+    const Id pointer = ctx.OpAccessChain(pointer_type,ctx.samplers[sampler_index],
+                                         std::array{bounded});
+    ctx.Decorate(pointer,spv::Decoration::NonUniform);
+    const Id value = ctx.OpLoad(ctx.sampler_type,pointer);
+    ctx.Decorate(value,spv::Decoration::NonUniform);
+    return value;
+}
 
+// Genuine GPU-controlled image array. Each bound slot is decoded from the
+// actual guest 32-byte T# descriptor table by Rasterizer::BindTextures.
+// A shader ID outside the fully bound table chooses the extra Vulkan null
+// slot rather than clamping to a different real guest texture.
 Id EmitImageSampleImplicitLodIndexed(
     EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id bias,
     const IR::Value& offset, Id gpu_texture_id) {
-    const auto& texture = ctx.images[handle & 0xFFFFu];
-    ASSERT(texture.is_guest_indexed && texture.image_array_size >= 2u);
+    const auto& texture=ctx.images[handle & 0xffffu];
+    ASSERT(texture.is_guest_indexed && texture.image_array_size>=2u);
     ASSERT(ctx.profile.supports_sampled_image_nonuniform_indexing);
-
-    const Id valid = ctx.OpULessThan(ctx.U1[1], gpu_texture_id,
-                                     ctx.ConstU32(texture.image_array_size - 1));
-    const Id bounded = ctx.OpSelect(ctx.U32[1], valid, gpu_texture_id,
-                                    ctx.ConstU32(texture.image_array_size - 1));
-    ctx.Decorate(bounded, spv::Decoration::NonUniform);
-
-    const Id pointer_type =
-        ctx.TypePointer(spv::StorageClass::UniformConstant, texture.image_type);
-    const Id pointer = ctx.OpAccessChain(pointer_type, texture.id, std::array{bounded});
-    ctx.Decorate(pointer, spv::Decoration::NonUniform);
-    const Id image = ctx.OpLoad(texture.image_type, pointer);
-    ctx.Decorate(image, spv::Decoration::NonUniform);
-
-    const Id sampler = ctx.OpLoad(ctx.sampler_type, ctx.samplers[handle >> 16]);
-    const Id sampled_image = ctx.OpSampledImage(texture.sampled_type, image, sampler);
-    ctx.Decorate(sampled_image, spv::Decoration::NonUniform);
-
-    const Id fixed_coords = FixImageCoords<true>(ctx, coords, texture.view_type);
-    ImageOperands operands;
-    operands.Add(spv::ImageOperandsMask::Bias, bias);
-    operands.AddOffset(ctx, texture.view_type, offset);
-    const Id sample =
-        ctx.OpImageSampleImplicitLod(texture.data_types->Get(4), sampled_image,
-                                     fixed_coords, operands.mask, operands.operands);
-    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
+    // GuestTsharpIndexOrNull is the CPU model for this exact U32 Select.
+    const Id valid=ctx.OpULessThan(ctx.U1[1],gpu_texture_id,
+                                   ctx.ConstU32(texture.image_array_size-1));
+    const Id bounded=ctx.OpSelect(ctx.U32[1],valid,gpu_texture_id,
+                                  ctx.ConstU32(texture.image_array_size-1));
+    ctx.Decorate(bounded,spv::Decoration::NonUniform);
+    const Id pointer_type=ctx.TypePointer(spv::StorageClass::UniformConstant,
+                                          texture.image_type);
+    const Id pointer=ctx.OpAccessChain(pointer_type,texture.id,std::array{bounded});
+    ctx.Decorate(pointer,spv::Decoration::NonUniform);
+    const Id img=ctx.OpLoad(texture.image_type,pointer);
+    ctx.Decorate(img,spv::Decoration::NonUniform);
+    const Id sampler=LoadIndexedGuestSampler(
+        ctx,handle,bounded,texture.image_array_size);
+    const Id sampled=ctx.OpSampledImage(texture.sampled_type,img,sampler);
+    ctx.Decorate(sampled,spv::Decoration::NonUniform);
+    const Id coords_fixed=FixImageCoords<true>(ctx,coords,texture.view_type);
+    ImageOperands ops{};
+    ops.Add(spv::ImageOperandsMask::Bias,bias);
+    ops.AddOffset(ctx,texture.view_type,offset);
+    const Id raw=ctx.OpImageSampleImplicitLod(texture.data_types->Get(4),
+                                              sampled,coords_fixed,
+                                              ops.mask,ops.operands);
+    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4],raw) : raw;
 }
 
 Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
@@ -334,6 +382,42 @@ Id EmitImageGradient(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id
     const Id sample = ctx.OpImageSampleExplicitLod(result_type, sampled_image, fixed_coords,
                                                    operands.mask, operands.operands);
     return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
+}
+
+// Resolve the original per-invocation PS4 material-record ID through the
+// complete resident Vulkan T# array. Gradient operands remain explicit,
+// including in compute shaders; never replace per-invocation derivatives
+// with a CPU value or implicit LOD.
+Id EmitImageGradientIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,
+                            Id derivatives_dx, Id derivatives_dy,
+                            const IR::Value& offset, Id gpu_texture_id) {
+    const auto& texture = ctx.images[handle & 0xffffu];
+    ASSERT(texture.is_guest_indexed && texture.image_array_size >= 2u);
+    ASSERT(ctx.profile.supports_sampled_image_nonuniform_indexing);
+    const Id valid = ctx.OpULessThan(
+        ctx.U1[1],gpu_texture_id,ctx.ConstU32(texture.image_array_size - 1u));
+    const Id bounded = ctx.OpSelect(
+        ctx.U32[1],valid,gpu_texture_id,ctx.ConstU32(texture.image_array_size - 1u));
+    ctx.Decorate(bounded, spv::Decoration::NonUniform);
+    const Id pointer_type = ctx.TypePointer(
+        spv::StorageClass::UniformConstant,texture.image_type);
+    const Id pointer = ctx.OpAccessChain(
+        pointer_type,texture.id,std::array{bounded});
+    ctx.Decorate(pointer,spv::Decoration::NonUniform);
+    const Id image = ctx.OpLoad(texture.image_type,pointer);
+    ctx.Decorate(image,spv::Decoration::NonUniform);
+    const Id sampler = LoadIndexedGuestSampler(
+        ctx,handle,bounded,texture.image_array_size);
+    const Id sampled = ctx.OpSampledImage(texture.sampled_type,image,sampler);
+    ctx.Decorate(sampled,spv::Decoration::NonUniform);
+    const Id fixed_coords = FixImageCoords<true>(ctx,coords,texture.view_type);
+    ImageOperands operands;
+    operands.AddDerivatives(ctx,texture.view_type,derivatives_dx,derivatives_dy);
+    operands.AddOffset(ctx,texture.view_type,offset);
+    const Id raw = ctx.OpImageSampleExplicitLod(
+        texture.data_types->Get(4),sampled,fixed_coords,
+        operands.mask,operands.operands);
+    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4],raw) : raw;
 }
 
 Id EmitImageRead(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod, Id ms) {
