@@ -219,6 +219,16 @@ public:
                bool(features.shaderSampledImageArrayDynamicIndexing);
     }
 
+    /// Returns true when dynamic image offsets are supported by core features.
+    bool IsShaderImageGatherExtendedSupported() const {
+        return bool(features.shaderImageGatherExtended);
+    }
+
+    /// Sampler arrays share the same descriptor-indexing requirements here.
+    bool IsSamplerArrayNonUniformIndexingSupported() const {
+        return IsSampledImageNonUniformIndexingSupported();
+    }
+
     /// Returns true when VK_AMD_gcn_shader is supported.
     bool IsAmdGcnShaderSupported() const {
         return amd_gcn_shader;
