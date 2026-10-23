@@ -477,6 +477,52 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
     return out;
 }
 
+// Preserve the S# from the same GPU-selected material record as T#.
+struct IndexedSamplerTableSource {
+    u32 offset_bytes{};
+    bool valid{};
+};
+
+static IndexedSamplerTableSource AnalyzeIndexedSamplerTable(
+    const IR::Inst& sample, const IndexedImageTableSource& image) {
+    if (sample.GetOpcode() != IR::Opcode::ImageSampleRaw ||
+        !image.contiguous || image.record_stride_bytes == 0 ||
+        !image.selector || !image.buffer) {
+        return {};
+    }
+    const auto* sampler = sample.Arg(1).TryInst();
+    if (!sampler || sampler->GetOpcode() != IR::Opcode::CompositeConstructU32x4 ||
+        sampler->NumArgs() != 4u) {
+        return {};
+    }
+    std::array<StridedIndexedSharpWord, 4> words{};
+    for (u32 i = 0; i < 4; ++i) {
+        const auto* read = sampler->Arg(i).TryInst();
+        if (!read || read->GetOpcode() != IR::Opcode::ReadConstBuffer) {
+            return {};
+        }
+        const auto* buffer = read->Arg(0).TryInst();
+        if (!buffer || buffer->GetOpcode() != IR::Opcode::CompositeConstructU32x4 ||
+            buffer->NumArgs() != 4u) {
+            return {};
+        }
+        for (u32 j = 0; j < 4; ++j) {
+            if (buffer->Arg(j) != image.buffer->Arg(j)) {
+                return {};
+            }
+        }
+        words[i] = AnalyzeStridedIndexedSharpWord(read->Arg(1));
+    }
+    if (!AreContiguousStridedSharpWords(words) ||
+        words[0].gpu_record_id != image.selector ||
+        words[0].record_stride_bytes != image.record_stride_bytes ||
+        u64(words[0].offset_dwords) * 4u + sizeof(AmdGpu::Sampler) >
+            image.record_stride_bytes) {
+        return {};
+    }
+    return {words[0].offset_dwords * 4u, true};
+}
+
 ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {
     ResourceDiscoveryList sharp_usages;
 
@@ -502,7 +548,14 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                             }
                             usage.indexed_table_sharp.dwords[dw] = value;
                         }
-                        if (bindable) {
+                        const auto sampler =
+                            table.record_stride_bytes != 0u
+                                ? AnalyzeIndexedSamplerTable(inst, table)
+                                : IndexedSamplerTableSource{};
+                        if (bindable &&
+                            (table.record_stride_bytes == 0u || sampler.valid)) {
+                            usage.indexed_sampler_offset_bytes = sampler.offset_bytes;
+                            usage.has_indexed_sampler_table = sampler.valid;
                             usage.indexed_table_sharp.num_dwords = 4;
                             MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
                             usage.indexed_texture_id =
