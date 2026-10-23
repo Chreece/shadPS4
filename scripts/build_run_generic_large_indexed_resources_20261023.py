@@ -2694,6 +2694,66 @@ def compose(run_dir,info,manifest):
     if 'fmt==AmdGpu::DataFormat::FormatInvalid || AmdGpu::IsInteger(nfmt)' in raster_text:
         raise RuntimeError('INDEXED_INTEGER_IMAGE_REJECTION_RETAINED')
 
+    def require_order(text, markers, label):
+        positions=[text.find(marker) for marker in markers]
+        if any(pos<0 for pos in positions) or positions!=sorted(positions):
+            raise RuntimeError(
+                label+'_ORDER_INVALID positions='+','.join(map(str,positions))
+            )
+
+    profile_text=index_text(idx,'src/shader_recompiler/profile.h')
+    require_order(
+        profile_text,
+        (
+            'u32 sparse_page_shift{};',
+            'u32 max_guest_indexed_image_entries{15};',
+            'u32 max_guest_indexed_sampler_entries{15};',
+            'bool support_int8{};',
+            'bool supports_image_load_store_lod{};',
+            'bool supports_shader_image_gather_extended{};',
+            'bool supports_sampled_image_nonuniform_indexing{};',
+            'bool supports_sampler_array_nonuniform_indexing{};',
+            'u32 max_push_descriptors{};',
+            'bool supports_native_cube_calc{};',
+        ),
+        'PROFILE_DECLARATION')
+
+    pipeline_text=index_text(idx,'src/video_core/renderer_vulkan/vk_pipeline_cache.cpp')
+    require_order(
+        pipeline_text,
+        (
+            '.sparse_page_shift = sparse_page_shift,',
+            '.max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),',
+            '.max_guest_indexed_sampler_entries = GuestIndexedSamplerLimit(instance),',
+            '.support_int8 = instance.IsShaderInt8Supported(),',
+            '.supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),',
+            '.supports_shader_image_gather_extended =',
+            '.supports_sampled_image_nonuniform_indexing =',
+            '.supports_sampler_array_nonuniform_indexing =',
+            '.max_push_descriptors = instance_.MaxPushDescriptors(),',
+            '.supports_native_cube_calc = instance_.IsAmdGcnShaderSupported(),',
+        ),
+        'PROFILE_INITIALIZER')
+
+    require_order(
+        instance_cpp,
+        (
+            '.shaderImageGatherExtended = features.shaderImageGatherExtended,',
+            '.shaderStorageImageMultisample = features.shaderStorageImageMultisample,',
+            '.shaderSampledImageArrayDynamicIndexing =',
+            '.shaderClipDistance = features.shaderClipDistance,',
+        ),
+        'VK_FEATURES_INITIALIZER')
+    require_order(
+        instance_cpp,
+        (
+            '.shaderInt8 = vk12_features.shaderInt8,',
+            '.descriptorIndexing = vk12_features.descriptorIndexing,',
+            '.shaderSampledImageArrayNonUniformIndexing =',
+            '.scalarBlockLayout = vk12_features.scalarBlockLayout,',
+        ),
+        'VK12_FEATURES_INITIALIZER')
+
     tree=git('write-tree',e=e).decode().strip()
     changed=tuple(git('diff','--name-only',parent,tree,'--','src').decode().splitlines())
     allowed=set(FILES)
