@@ -58,6 +58,11 @@ jobs:
           assert "ctx.OpBitcast(ctx.S32[2], raw)" in s
           assert "ctx.OpBitcast(ctx.S32[3], raw)" in s
           assert "def instance_cpp(" in s
+          assert "GUEST_TSHARP_FINAL='02c22fd61253b072a9bc4017e67f9c39fa0d4fa9'" in s
+          assert "FINAL_GUEST_TSHARP_HELPER_MISSING" in s
+          assert "if p in (" in s
+          assert "indexed_image_selector.h" in s
+          assert "guest_tsharp_array.h" in s
           assert "INSTANCE_DYNAMIC_INDEX" in s
           assert "INSTANCE_NONUNIFORM_INDEX" in s
           assert "INVALID_VULKAN_SAMPLER_NONUNIFORM_FEATURE_RETAINED" in s
