@@ -518,14 +518,39 @@ RBIND=r'''        if (image_desc.is_guest_indexed) {
 
 '''
 def raster(s):
-    if '#include <cstring>' not in s:s=after(s,'#include "core/memory.h"\n','#include <cstring>\n','#include <cstring>','RASTER_CSTR')
-    if 'guest_tsharp_array.h' not in s:s=after(s,'#include <cstring>\n','#include "shader_recompiler/guest_tsharp_array.h"\n','guest_tsharp_array.h','RASTER_HDR')
-    if 'MaxEstimatedIndexedImageBytes' not in s:
-        a='    for (const auto& image_desc : stage.images) {\n'; s=one(s,a,a+RBIND,'RASTER_LOOP')
+    if '#include <cstring>' not in s:
+        s=after(s,'#include "core/memory.h"\n','#include <cstring>\n','#include <cstring>','RASTER_CSTR')
+    if 'guest_tsharp_array.h' not in s:
+        s=after(s,'#include <cstring>\n','#include "shader_recompiler/guest_tsharp_array.h"\n','guest_tsharp_array.h','RASTER_HDR')
+
+    fn_start=s.find('void Rasterizer::BindTextures(')
+    if fn_start<0:
+        raise RuntimeError('RASTER_BIND_TEXTURES_NOT_FOUND')
+    fn_end=s.find('\nRenderState Rasterizer::BeginRendering',fn_start)
+    if fn_end<0:
+        fn_end=s.find('\nvoid Rasterizer::',fn_start+1)
+    if fn_end<0:
+        raise RuntimeError('RASTER_BIND_TEXTURES_END_NOT_FOUND')
+    body=s[fn_start:fn_end]
+
+    if 'MaxEstimatedIndexedImageBytes' not in body:
+        a='    for (const auto& image_desc : stage.images) {\n'
+        if body.count(a)!=1:
+            raise RuntimeError('RASTER_IMAGE_LOOP_COUNT='+str(body.count(a)))
+        body=body.replace(a,a+RBIND,1)
+
     a='        bool is_storage = desc.type == VideoCore::TextureCache::BindingType::Storage;\n'
-    if a in s:s=s.replace(a,'        bool is_storage = image_id && desc.type == VideoCore::TextureCache::BindingType::Storage;\n',1)
-    elif 'bool is_storage = image_id && desc.type' not in s:raise RuntimeError('RASTER_NULL_GUARD')
+    if a in body:
+        body=body.replace(
+            a,
+            '        bool is_storage = image_id && desc.type == VideoCore::TextureCache::BindingType::Storage;\n',
+            1)
+    elif 'bool is_storage = image_id && desc.type' not in body:
+        raise RuntimeError('RASTER_NULL_GUARD')
+
+    s=s[:fn_start]+body+s[fn_end:]
     return s
+
 
 TRANS={
 'src/shader_recompiler/profile.h':profile,
