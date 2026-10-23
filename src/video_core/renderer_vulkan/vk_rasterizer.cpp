@@ -902,12 +902,28 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                                               : static_cast<u64>(source.stride) *
                                                     source.num_records)
                         : 0u;
+            const u32 record_stride = image_desc.indexed_record_stride_bytes;
+            const u32 descriptor_offset = image_desc.indexed_descriptor_offset_bytes;
+            const u32 represented_entries =
+                fetched && source.Valid()
+                    ? (record_stride
+                           ? Shader::Optimization::CompleteGuestTsharpRecordEntries(
+                                 static_cast<u32>(source.stride),
+                                 static_cast<u32>(source.num_records),
+                                 record_stride, descriptor_offset,
+                                 Shader::MaxGuestIndexedImageEntries)
+                           : Shader::Optimization::CompleteGuestTsharpTableEntries(
+                                 static_cast<u32>(source.stride),
+                                 static_cast<u32>(source.num_records),
+                                 Shader::MaxGuestIndexedImageEntries))
+                    : 0u;
+            const u64 required_bytes =
+                u64(count - 1) *
+                (record_stride ? record_stride : sizeof(AmdGpu::Image));
             const bool complete =
                 fetched && source.Valid() && source.base_address != 0 &&
-                Shader::Optimization::CompleteGuestTsharpTableEntries(
-                    static_cast<u32>(source.stride), source.num_records,
-                    Shader::MaxGuestIndexedImageEntries) == count - 1u &&
-                guest_size == u64(count - 1) * sizeof(AmdGpu::Image) &&
+                represented_entries == count - 1u &&
+                guest_size == required_bytes &&
                 memory->IsValidMapping(source.base_address, guest_size);
 
             u64 estimated_resident_bytes = 0;
@@ -924,7 +940,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 }
 
                 const u64 entry_addr =
-                    source.base_address + u64(i) * sizeof(AmdGpu::Image);
+                    source.base_address +
+                    u64(i) * (record_stride ? record_stride : sizeof(AmdGpu::Image)) +
+                    descriptor_offset;
                 if (!memory->IsValidMapping(entry_addr, sizeof(AmdGpu::Image))) {
                     continue;
                 }
