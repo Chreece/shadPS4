@@ -420,6 +420,30 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     buffer_infos.clear();
     image_infos.clear();
 
+    // Reserve across ALL shader stages before creating VkWriteDescriptorSet
+    // pointers into image_infos. Later vector reallocations would otherwise
+    // leave descriptor writes pointing into freed memory.
+    std::size_t required_infos = 0;
+    std::size_t max_stage_images = 0;
+    for (const auto* stage : pipeline->GetStages()) {
+        if (!stage) continue;
+        std::size_t stage_images = 0;
+        for (const auto& image : stage->images) {
+            stage_images += image.NumBindings(*stage);
+        }
+        max_stage_images = std::max(max_stage_images, stage_images);
+        required_infos += stage_images + stage->samplers.size();
+    }
+    if (max_stage_images > Shader::MaxGuestIndexedImageEntries +
+                            Shader::NUM_IMAGES * 64u) {
+        LOG_ERROR(Render_Vulkan, "Rejecting excessive guest image descriptor count {}",
+                  max_stage_images);
+        return false;
+    }
+    image_infos.reserve(required_infos);
+    image_bindings.resize(std::max(max_stage_images,
+                                   std::size_t{Shader::NUM_IMAGES}));
+
     bool uses_dma = false;
 
     // Bind resource buffers and textures.
