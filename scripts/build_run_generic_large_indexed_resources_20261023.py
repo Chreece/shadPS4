@@ -411,12 +411,38 @@ def discover(s):
     if 'struct IndexedImageTableSource' not in s:
         a='ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {'
         s=one(s,a,HELPER+'\n'+a,'DISCOVER_HELPER')
+
     if 'usage.has_indexed_table=true;' not in s and 'usage.has_indexed_table = true;' not in s:
-        # Exact verified 975ee981 image-discovery API from the retained
-        # image-resource-correctness candidate.
-        a='                DiscoverImageSharp(*block, inst, sharp_usages, program);\n'
-        s=one(s,a,a+LOOP,'DISCOVER_LOOP')
-    if 'MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);' not in s:
+        loop=LOOP
+        if 'void MarkReadConstBufferSharpSources(const SharpReference& sharp)' in s:
+            loop=loop.replace(
+                'MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);',
+                'MarkReadConstBufferSharpSources(usage.indexed_table_sharp);')
+        elif ('MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);'
+              not in s and
+              'void MarkReadConstBufferSharpSources(' not in s):
+            raise RuntimeError('DISCOVER_MARK_API_UNKNOWN')
+
+        anchors=(
+            '                DiscoverImageSharp(*block, inst, sharp_usages, program);\n',
+            '                DiscoverImageSharp(*block, inst, sharp_usages);\n',
+        )
+        selected=None
+        for anchor in anchors:
+            if s.count(anchor)==1:
+                selected=anchor
+                break
+        if selected is None:
+            raise RuntimeError(
+                'DISCOVER_LOOP_API_NOT_ADAPTED old_count='+str(s.count(anchors[0]))+
+                ' new_count='+str(s.count(anchors[1])))
+        s=s.replace(selected,selected+loop,1)
+
+    valid_marks=(
+        'MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);',
+        'MarkReadConstBufferSharpSources(usage.indexed_table_sharp);',
+    )
+    if not any(mark in s for mark in valid_marks):
         raise RuntimeError('DISCOVER_MARK_API_NOT_ADAPTED')
     return s
 
