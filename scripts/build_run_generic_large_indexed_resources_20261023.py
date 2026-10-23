@@ -396,11 +396,18 @@ def pass_h(s):
         if 'indexed_sampler_offset_bytes' not in s:
             anchor='    u32 indexed_descriptor_offset_bytes{};\n'
             if anchor not in s:
-                raise RuntimeError('PASS_INDEXED_SAMPLER_FIELDS_ANCHOR')
+                raise RuntimeError('PASS_INDEXED_SAMPLER_OFFSET_ANCHOR')
             s=s.replace(
                 anchor,
-                anchor+'    u32 indexed_sampler_offset_bytes{};\n'
-                       '    bool has_indexed_sampler_table{};\n',
+                anchor+'    u32 indexed_sampler_offset_bytes{};\n',
+                1)
+        if 'has_indexed_sampler_table' not in s:
+            anchor='    u32 indexed_sampler_offset_bytes{};\n'
+            if anchor not in s:
+                raise RuntimeError('PASS_INDEXED_SAMPLER_FLAG_ANCHOR')
+            s=s.replace(
+                anchor,
+                anchor+'    bool has_indexed_sampler_table{};\n',
                 1)
     for marker in (
         'indexed_record_stride_bytes',
@@ -492,19 +499,32 @@ def resource_h(s):
     if sampler_start<0 or sampler_end<0:
         raise RuntimeError('SAMPLER_RESOURCE_STRUCT_NOT_FOUND')
     sampler=s[sampler_start:sampler_end]
-    if 'indexed_table_fetch' not in sampler:
-        anchor='    SharpFetch<AmdGpu::Sampler> sharp_fetch{};\n'
-        if sampler.count(anchor)!=1:
-            raise RuntimeError('SAMPLER_INDEXED_FIELDS_ANCHOR_COUNT='+str(sampler.count(anchor)))
-        sampler=sampler.replace(
-            anchor,
-            anchor+'    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n'
-                   '    u32 indexed_guest_entries{};\n'
-                   '    u32 indexed_record_stride_bytes{};\n'
-                   '    u32 indexed_image_offset_bytes{};\n'
-                   '    u32 indexed_sampler_offset_bytes{};\n'
-                   '    bool is_guest_indexed{};\n',
-            1)
+    field_anchor='    SharpFetch<AmdGpu::Sampler> sharp_fetch{};\n'
+    if sampler.count(field_anchor)!=1:
+        raise RuntimeError('SAMPLER_INDEXED_FIELDS_ANCHOR_COUNT='+str(sampler.count(field_anchor)))
+    ordered_fields=(
+        ('indexed_table_fetch',
+         '    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n'),
+        ('indexed_guest_entries',
+         '    u32 indexed_guest_entries{};\n'),
+        ('indexed_record_stride_bytes',
+         '    u32 indexed_record_stride_bytes{};\n'),
+        ('indexed_image_offset_bytes',
+         '    u32 indexed_image_offset_bytes{};\n'),
+        ('indexed_sampler_offset_bytes',
+         '    u32 indexed_sampler_offset_bytes{};\n'),
+        ('is_guest_indexed',
+         '    bool is_guest_indexed{};\n'),
+    )
+    insert_at=sampler.find(field_anchor)+len(field_anchor)
+    for marker,declaration in ordered_fields:
+        if marker not in sampler:
+            sampler=sampler[:insert_at]+declaration+sampler[insert_at:]
+            insert_at+=len(declaration)
+        else:
+            pos=sampler.find(declaration)
+            if pos>=0:
+                insert_at=max(insert_at,pos+len(declaration))
     get_anchor='    constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {\n'
     if 'if (is_guest_indexed && indexed_record_stride_bytes != 0u)' not in sampler:
         if sampler.count(get_anchor)!=1:
