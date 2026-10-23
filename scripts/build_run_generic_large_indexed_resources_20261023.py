@@ -89,6 +89,8 @@ PATCH_COMMITS=(
 'bfa0d918e33f1364b052e953812aa662f2ad2275',
 '6ff828d3a06b2222597c89c596ff500863c4a18f',
 '34a46b656f75a7fdd215086d5be2b1c6042016b4',
+'cbbcc969156f9258633914409ca88e6458bbad2c',
+'538fc65527d96086443d14d3227eb9c5daa7397f',
 )
 PATCH_PATHS=('src/shader_recompiler','src/video_core/renderer_vulkan','src/video_core/texture_cache')
 
@@ -1137,6 +1139,10 @@ def compose(run_dir,info,manifest):
                     'GENERIC_FEATURE_DEPENDENCY_MISSING path='+path+
                     ' marker='+marker
                 )
+
+    instance_cpp=index_text(idx,'src/video_core/renderer_vulkan/vk_instance.cpp')
+    if 'shaderSamplerArrayNonUniformIndexing' in instance_cpp:
+        raise RuntimeError('INVALID_VULKAN_SAMPLER_NONUNIFORM_FEATURE_RETAINED')
 
     tree=git('write-tree',e=e).decode().strip()
     changed=tuple(git('diff','--name-only',parent,tree,'--','src').decode().splitlines())
