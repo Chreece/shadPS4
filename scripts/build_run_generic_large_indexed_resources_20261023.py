@@ -435,9 +435,26 @@ def pass_h(s):
     return s
 
 def resource_h(s):
-    if 'MaxGuestIndexedImageEntries' not in s:
+    max_re=re.compile(r'inline constexpr u32 MaxGuestIndexedImageEntries\s*=\s*\d+\s*;')
+    m=max_re.search(s)
+    if m:
+        s=s[:m.start()]+'inline constexpr u32 MaxGuestIndexedImageEntries = 32768;'+s[m.end():]
+    else:
         a='enum class MipStorageFallbackMode : u16 {\n    None,\n    DynamicIndex,\n    ConstantIndex,\n};\n'
-        s=one(s,a,a+'\ninline constexpr u32 LegacyGuestIndexedImageEntries = 15;\ninline constexpr u32 MaxGuestIndexedImageEntries = 32768;\n','RESOURCE_MAX')
+        s=one(
+            s,a,
+            a+'\ninline constexpr u32 MaxGuestIndexedImageEntries = 32768;\n',
+            'RESOURCE_MAX')
+    if 'LegacyGuestIndexedImageEntries' not in s:
+        anchor='inline constexpr u32 MaxGuestIndexedImageEntries = 32768;\n'
+        if anchor not in s:
+            raise RuntimeError('RESOURCE_LEGACY_LIMIT_ANCHOR')
+        s=s.replace(
+            anchor,
+            'inline constexpr u32 LegacyGuestIndexedImageEntries = 15;\n'+anchor,
+            1)
+    if 'inline constexpr u32 MaxGuestIndexedImageEntries = 32768;' not in s:
+        raise RuntimeError('RESOURCE_MAX_LIMIT_NOT_NORMALIZED')
 
     start=s.find('struct ImageResource {')
     end=s.find('using ImageResourceList',start)
