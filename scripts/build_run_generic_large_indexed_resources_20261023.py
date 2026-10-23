@@ -1084,9 +1084,9 @@ def compose(run_dir,info,manifest):
             'indexed_sampler_offset_bytes',
         ),
         'src/shader_recompiler/resource.h':(
-            'max_guest_indexed',
             'is_guest_indexed',
             'indexed_guest_entries',
+            'indexed_sampler',
             'is_integer',
         ),
         'src/shader_recompiler/ir/passes/resource_patching_pass.cpp':(
@@ -1103,8 +1103,9 @@ def compose(run_dir,info,manifest):
             'ImageGatherExtended',
         ),
         'src/video_core/renderer_vulkan/vk_rasterizer.cpp':(
-            'indexed_guest_entries',
+            'is_guest_indexed',
             'indexed_sampler',
+            'NumBindings(stage)',
             'GetSampler(',
         ),
         'src/video_core/renderer_vulkan/vk_resource_pool.cpp':(
