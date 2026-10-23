@@ -40,5 +40,29 @@ jobs:
           assert "RECOVERED_PARENT_TREE_NOT_REPRODUCED" in s
           assert "PARENT_TREE='d921f3f51c546aa8b9dfe7e230aaefeaf0b3c446'" in s
           assert "SOURCE_REMOTE='https://github.com/Chreece/shadPS4.git'" in s
+          assert "clean-rebase-verified" not in s
+          assert "rglob('build.ninja')" not in s
+          assert "def builddir(" not in s
           print("COMPOSER_STATIC_CHECK=PASS")
+          PY
+      - name: Validate recovered verified-parent artifact
+        run: |
+          python3 - <<'PY'
+          import base64, gzip
+          from pathlib import Path
+          parts=[
+              Path(f"patches/verified-975.patch.gz.b64.part{i:02d}")
+              for i in range(1,9)
+          ]
+          for p in parts:
+              assert p.is_file() and p.stat().st_size > 0, p
+          encoded=b"".join(p.read_bytes().strip() for p in parts)
+          raw=base64.b64decode(encoded, validate=True)
+          assert raw[:2] == b"\x1f\x8b"
+          patch=gzip.decompress(raw)
+          assert patch.startswith(b"diff --git ")
+          assert b"src/shader_recompiler/" in patch
+          assert b"src/video_core/" in patch
+          assert patch.count(b"diff --git ") >= 5
+          print("RECOVERED_PARENT_BUNDLE=PASS", len(patch))
           PY
