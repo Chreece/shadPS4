@@ -1567,39 +1567,77 @@ def raster(s):
             const bool fetched =
                 sampler.indexed_table_fetch.Fetch(stage.flattened_ud_buf.data(), &source);
             const u32 record_stride = sampler.indexed_record_stride_bytes;
-            const u32 descriptor_offset = sampler.indexed_sampler_offset_bytes;
+            const u32 image_offset = sampler.indexed_image_offset_bytes;
+            const u32 sampler_offset = sampler.indexed_sampler_offset_bytes;
             const u64 bytes = fetched
                 ? (source.stride == 0 ? static_cast<u64>(source.num_records)
                                       : static_cast<u64>(source.stride) * source.num_records)
                 : 0u;
+            const u32 represented_entries = fetched && source.Valid()
+                ? (record_stride
+                    ? Shader::Optimization::CompleteGuestTsharpRecordEntries(
+                        static_cast<u32>(source.stride),
+                        static_cast<u32>(source.num_records),
+                        record_stride, image_offset,
+                        Shader::MaxGuestIndexedImageEntries)
+                    : Shader::Optimization::CompleteGuestTsharpTableEntries(
+                        static_cast<u32>(source.stride),
+                        static_cast<u32>(source.num_records),
+                        Shader::MaxGuestIndexedImageEntries))
+                : 0u;
+            const u64 required_bytes = u64(count - 1u) *
+                (record_stride ? record_stride : sizeof(AmdGpu::Image));
             const bool complete = fetched && source.Valid() && source.base_address &&
-                Shader::Optimization::CompleteGuestTsharpRecordEntries(
-                    static_cast<u32>(source.stride),
-                    static_cast<u32>(source.num_records),
-                    record_stride, descriptor_offset,
-                    Shader::MaxGuestIndexedImageEntries) == count - 1u &&
-                bytes == u64(count - 1u) * record_stride &&
+                represented_entries == count - 1u &&
+                bytes == required_bytes &&
                 memory->IsValidMapping(source.base_address, bytes);
+
+            AmdGpu::Sampler uniform_sampler{};
+            if (record_stride == 0u) {
+                uniform_sampler = sampler.GetSharp(stage);
+                if (!uniform_sampler.Valid() ||
+                    (uniform_sampler.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
+                     liverpool->regs.ta_bc_base.Address() == 0)) {
+                    uniform_sampler = AmdGpu::Sampler{};
+                }
+            }
+
             const u32 first_sampler = static_cast<u32>(image_infos.size());
             for (u32 i = 0; i < count; ++i) {
-                AmdGpu::Sampler ssharp{};
+                AmdGpu::Sampler ssharp = uniform_sampler;
+                bool is_integer = false;
                 if (complete && i + 1u < count) {
-                    const u64 guest_address = u64(source.base_address) +
-                        u64(i) * record_stride + descriptor_offset;
-                    if (memory->IsValidMapping(guest_address, sizeof(AmdGpu::Sampler))) {
-                        std::memcpy(&ssharp,
-                                    reinterpret_cast<const void*>(guest_address),
-                                    sizeof(AmdGpu::Sampler));
-                        if (!ssharp.Valid() ||
-                            (ssharp.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
-                             liverpool->regs.ta_bc_base.Address() == 0)) {
-                            ssharp = AmdGpu::Sampler{};
+                    const u64 record_address = u64(source.base_address) +
+                        u64(i) * (record_stride ? record_stride : sizeof(AmdGpu::Image));
+                    const u64 image_address = record_address + image_offset;
+                    if (memory->IsValidMapping(image_address, sizeof(AmdGpu::Image))) {
+                        AmdGpu::Image raw_image{};
+                        std::memcpy(&raw_image,
+                                    reinterpret_cast<const void*>(image_address),
+                                    sizeof(AmdGpu::Image));
+                        if (raw_image.Valid()) {
+                            is_integer = AmdGpu::IsInteger(raw_image.GetNumberFmt());
+                        }
+                    }
+
+                    if (record_stride != 0u) {
+                        const u64 sampler_address = record_address + sampler_offset;
+                        ssharp = AmdGpu::Sampler{};
+                        if (memory->IsValidMapping(sampler_address, sizeof(AmdGpu::Sampler))) {
+                            std::memcpy(&ssharp,
+                                        reinterpret_cast<const void*>(sampler_address),
+                                        sizeof(AmdGpu::Sampler));
+                            if (!ssharp.Valid() ||
+                                (ssharp.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
+                                 liverpool->regs.ta_bc_base.Address() == 0)) {
+                                ssharp = AmdGpu::Sampler{};
+                            }
                         }
                     }
                 }
                 const auto vk_sampler = texture_cache.GetSampler(
                     ssharp, liverpool->regs.ta_bc_base,
-                    sampler.is_depth, sampler.is_integer);
+                    sampler.is_depth, is_integer);
                 image_infos.emplace_back(
                     vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
             }
@@ -1616,7 +1654,9 @@ def raster(s):
 '''
         body=body.replace(loop_anchor,loop_anchor+indexed,1)
     if ('sampler.NumBindings(stage)' not in body or
+        'sampler.indexed_image_offset_bytes' not in body or
         'sampler.indexed_sampler_offset_bytes' not in body or
+        'AmdGpu::IsInteger(raw_image.GetNumberFmt())' not in body or
         'write.descriptorCount = count' not in body):
         raise RuntimeError('RASTER_INDEXED_SAMPLER_BINDING_INCOMPLETE')
     s=s[:fn_start]+body+s[fn_end:]
@@ -2518,6 +2558,7 @@ def compose(run_dir,info,manifest):
     sampler_contract={
         'src/shader_recompiler/resource.h':(
             'return is_guest_indexed ? indexed_guest_entries + 1u : 1u;',
+            'indexed_image_offset_bytes',
             'indexed_sampler_offset_bytes',
         ),
         'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp':(
@@ -2544,7 +2585,9 @@ def compose(run_dir,info,manifest):
             'const u32 count = sampler.NumBindings(stage);',
             'write.descriptorCount = count;',
             'binding.unified += count;',
+            'sampler.indexed_image_offset_bytes',
             'sampler.indexed_sampler_offset_bytes',
+            'AmdGpu::IsInteger(raw_image.GetNumberFmt())',
         ),
     }
     for path,markers in sampler_contract.items():
