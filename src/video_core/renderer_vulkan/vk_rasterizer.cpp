@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <unordered_map>
+#include <bit>
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -432,7 +434,10 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             stage_images += image.NumBindings(*stage);
         }
         max_stage_images = std::max(max_stage_images, stage_images);
-        required_infos += stage_images + stage->samplers.size();
+        required_infos += stage_images;
+        for (const auto& sampler : stage->samplers) {
+            required_infos += sampler.NumBindings(*stage);
+        }
     }
     if (max_stage_images > Shader::MaxGuestIndexedImageEntries +
                             Shader::NUM_IMAGES * 64u) {
@@ -1132,9 +1137,80 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     }
 
     for (const auto& sampler : stage.samplers) {
+        if (sampler.is_guest_indexed) {
+            const u32 count = sampler.NumBindings(stage);
+            ASSERT(count >= 2u);
+            AmdGpu::Buffer source{};
+            const bool fetched =
+                sampler.indexed_table_fetch.Fetch(stage.flattened_ud_buf.data(), &source);
+            const u32 record_stride = sampler.indexed_record_stride_bytes;
+            const u32 descriptor_offset = sampler.indexed_sampler_offset_bytes;
+            const u64 bytes = fetched
+                ? (source.stride == 0 ? static_cast<u64>(source.num_records)
+                                      : static_cast<u64>(source.stride) * source.num_records)
+                : 0u;
+            const bool complete =
+                fetched && source.Valid() && source.base_address != 0 &&
+                Shader::Optimization::CompleteGuestTsharpRecordEntries(
+                    static_cast<u32>(source.stride),
+                    static_cast<u32>(source.num_records),
+                    record_stride, descriptor_offset,
+                    Shader::MaxGuestIndexedImageEntries) == count - 1u &&
+                bytes == u64(count - 1u) * record_stride &&
+                memory->IsValidMapping(source.base_address, bytes);
+
+            const u32 first_sampler = static_cast<u32>(image_infos.size());
+            u32 valid_samplers = 0u;
+            for (u32 i = 0; i < count; ++i) {
+                AmdGpu::Sampler ssharp{};
+                if (complete && i + 1u < count) {
+                    const u64 guest_address = u64(source.base_address) +
+                        u64(i) * record_stride + descriptor_offset;
+                    if (memory->IsValidMapping(guest_address, sizeof(AmdGpu::Sampler))) {
+                        std::memcpy(&ssharp, reinterpret_cast<const void*>(guest_address),
+                                    sizeof(AmdGpu::Sampler));
+                        if (ssharp.Valid() &&
+                            (ssharp.border_color_type.Value() != AmdGpu::BorderColor::Custom ||
+                             liverpool->regs.ta_bc_base.Address() != 0)) {
+                            ++valid_samplers;
+                        } else {
+                            ssharp = AmdGpu::Sampler{};
+                        }
+                    }
+                }
+                const auto vk_sampler =
+                    texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base,
+                                             sampler.is_depth, sampler.is_integer);
+                image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE,
+                                         vk::ImageLayout::eGeneral);
+            }
+
+            auto& write = set_writes[set_write_index++];
+            write.dstSet = VK_NULL_HANDLE;
+            write.dstBinding = binding.unified;
+            write.dstArrayElement = 0;
+            write.descriptorCount = count;
+            write.descriptorType = vk::DescriptorType::eSampler;
+            write.pImageInfo = &image_infos[first_sampler];
+            binding.unified += count;
+
+            static thread_local std::unordered_map<u64, u32> reports;
+            const u64 key = (u64(stage.pgm_hash) << 8) | static_cast<u8>(stage.hw_stage);
+            const u32 report = ++reports[key];
+            if (report <= 4u || std::has_single_bit(report)) {
+                LOG_INFO(Render_Vulkan,
+                         "StridedSamplerBound: shader={:#x} stage={} entries={} "
+                         "valid={} table_complete={} record_stride={} offset={}",
+                         stage.pgm_hash, stage.hw_stage, count - 1u, valid_samplers,
+                         complete, record_stride, descriptor_offset);
+            }
+            continue;
+        }
+
         auto ssharp = sampler.GetSharp(stage);
-        if (!ssharp.Valid() || (ssharp.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
-                                liverpool->regs.ta_bc_base.Address() == 0)) {
+        if (!ssharp.Valid() ||
+            (ssharp.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
+             liverpool->regs.ta_bc_base.Address() == 0)) {
             LOG_WARNING(Render_Vulkan,
                         "Rejecting invalid S# max_aniso={}, filter_mode={}, mip_filter={}, "
                         "border_color_type={}, border_color_base={:#x}",
@@ -1146,7 +1222,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             ssharp = AmdGpu::Sampler{};
         }
         const auto vk_sampler =
-            texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base,\n                                     sampler.is_depth, sampler.is_integer);
+            texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base,
+                                     sampler.is_depth, sampler.is_integer);
         image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
         auto& set_write = set_writes[set_write_index++];
         set_write.dstSet = VK_NULL_HANDLE;
@@ -1155,6 +1232,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         set_write.descriptorCount = 1;
         set_write.descriptorType = vk::DescriptorType::eSampler;
         set_write.pImageInfo = &image_infos.back();
+
     }
 }
 
