@@ -198,12 +198,18 @@ using ImageResourceList = boost::container::static_vector<ImageResource, NUM_IMA
 
 struct SamplerResource {
     SharpFetch<AmdGpu::Sampler> sharp_fetch{};
+    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};
+    u32 indexed_guest_entries{};
+    u32 indexed_record_stride_bytes{};
+    u32 indexed_sampler_offset_bytes{};
+    bool is_guest_indexed{};
     SharpFetchPostOp post_op{};
     SharpLocation post_op_tsharp_dw3_off{};
     bool is_depth{};
     bool is_integer{};
 
     constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {
+        if (is_guest_indexed) return AmdGpu::Sampler{};
         AmdGpu::Sampler sampler{};
         sharp_fetch.Fetch(info.flattened_ud_buf.data(), &sampler);
         if (post_op == SharpFetchPostOp::DisableAnisoIfSingleLod) {
