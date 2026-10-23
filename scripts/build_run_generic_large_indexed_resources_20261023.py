@@ -1026,9 +1026,25 @@ def launch(info,rev,tree,csha,cand):
     def verify_build():
         if digest(rp)!=rs or digest(mp)!=ms:raise RuntimeError('BUILD_EVIDENCE_CHANGED')
         r=json.loads(rp.read_text())
-        for k,v in {'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','source_untouched':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'sirit_restored':True,'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False}.items():
+        expected={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS',
+                  'generic_source_commit':GEN,'revision':rev,'tree':tree,
+                  'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS',
+                  'source_untouched':True,'fresh_build_from_zero':True,
+                  'legacy_builds_searched':False,'tests_enabled':False,
+                  'sirit_restored':True,
+                  'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP',
+                  'game_specific_options':False}
+        for k,v in expected.items():
             if r.get(k)!=v:raise RuntimeError('BUILD_GATE='+k)
-        if Path(r['candidate'])!=cand or digest(cand)!=csha or git('rev-parse',rev+'^{tree}').decode().strip()!=tree or git('rev-parse',rev+'^').decode().strip()!=r['source_parent']:raise RuntimeError('CANDIDATE_CHANGED')
+        source_parent=r.get('source_parent')
+        if not source_parent or not exists(source_parent+'^{commit}'):
+            raise RuntimeError('BUILD_PARENT_MISSING')
+        if git('rev-parse',source_parent+'^{tree}').decode().strip()!=PARENT_TREE:
+            raise RuntimeError('BUILD_PARENT_TREE_MISMATCH')
+        if (Path(r['candidate'])!=cand or digest(cand)!=csha or
+            git('rev-parse',rev+'^{tree}').decode().strip()!=tree or
+            git('rev-parse',rev+'^').decode().strip()!=source_parent):
+            raise RuntimeError('CANDIDATE_CHANGED')
         if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():raise RuntimeError('SOURCE_NOT_RESTORED')
         man=json.loads(mp.read_text())
         for p,x in man['files'].items():
