@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/assert.h"
+#include "common/logging/log.h"
 #include "common/div_ceil.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
@@ -741,6 +742,14 @@ void EmitContext::DefineOutputs() {
             }
             Name(id, fmt::format("frag_color{}", i));
             frag_outputs[i] = GetAttributeInfo(num_format, id, num_components, true);
+            if (runtime_info.hw.fs.color_buffers[i].blend_src_alpha_one) {
+                // Source-code evidence that an actual fragment shader exports
+                // the RGBA value needed by SrcAlpha/ONE MIN/MAX emulation.
+                LOG_INFO(Render_Recompiler,
+                         "SrcAlphaOneShaderExport: shader={:#x} target={} components={} "
+                         "integer={}",
+                         info.pgm_hash, i, num_components, frag_outputs[i].is_integer);
+            }
             ++num_render_targets;
         }
         // Dual source blending allows at most 2 render targets, one for each source.
@@ -967,7 +976,9 @@ spv::ImageFormat GetFormat(const AmdGpu::Image& image) {
 
 Id ImageType(EmitContext& ctx, const ImageResource& desc, Id sampled_type) {
     const auto image = desc.GetSharp(ctx.info);
-    const auto format = desc.is_atomic ? GetFormat(image) : spv::ImageFormat::Unknown;
+    const auto format = desc.is_atomic_uint_view
+                            ? spv::ImageFormat::R32ui
+                            : (desc.is_atomic ? GetFormat(image) : spv::ImageFormat::Unknown);
     const auto type = image.GetViewType(desc.is_array);
     const u32 sampled = desc.is_written ? 2 : 1;
     switch (type) {
@@ -991,7 +1002,8 @@ Id ImageType(EmitContext& ctx, const ImageResource& desc, Id sampled_type) {
 void EmitContext::DefineImagesAndSamplers() {
     for (const auto& image_desc : info.images) {
         const auto sharp = image_desc.GetSharp(info);
-        const auto nfmt = sharp.GetNumberFmt();
+        const auto nfmt = image_desc.is_atomic_uint_view ? AmdGpu::NumberFormat::Uint
+                                                        : sharp.GetNumberFmt();
         const bool is_integer = AmdGpu::IsInteger(nfmt);
         const bool is_storage = image_desc.is_written;
         const MipStorageFallbackMode mip_fallback_mode = image_desc.mip_fallback_mode;
@@ -1006,6 +1018,8 @@ void EmitContext::DefineImagesAndSamplers() {
             pointee_type = TypeArray(pointee_type, ConstU32(num_bindings));
         }
         if (image_desc.is_guest_indexed) {
+            // The VkDevice enables the matching Vulkan 1.2 features only
+            // when supported; never emit this capability on older GPUs.
             ASSERT(profile.supports_sampled_image_nonuniform_indexing);
             AddCapability(spv::Capability::ShaderNonUniform);
             AddCapability(spv::Capability::SampledImageArrayDynamicIndexing);
@@ -1043,11 +1057,23 @@ void EmitContext::DefineImagesAndSamplers() {
     sampler_type = TypeSampler();
     sampler_pointer_type = TypePointer(spv::StorageClass::UniformConstant, sampler_type);
     for (const auto& samp_desc : info.samplers) {
-        const Id id{AddGlobalVariable(sampler_pointer_type, spv::StorageClass::UniformConstant)};
-        Decorate(id, spv::Decoration::Binding, binding.unified++);
+        const u32 count = samp_desc.NumBindings(info);
+        Id pointer_type = sampler_pointer_type;
+        if (samp_desc.is_guest_indexed) {
+            ASSERT(profile.supports_sampler_array_nonuniform_indexing);
+            ASSERT(count >= 2u);
+            AddCapability(spv::Capability::ShaderNonUniform);
+            AddCapability(spv::Capability::SampledImageArrayNonUniformIndexing);
+            const Id array_type = TypeArray(sampler_type, ConstU32(count));
+            pointer_type = TypePointer(spv::StorageClass::UniformConstant, array_type);
+        }
+        const Id id{AddGlobalVariable(pointer_type, spv::StorageClass::UniformConstant)};
+        Decorate(id, spv::Decoration::Binding, binding.unified);
+        binding.unified += count;
         Decorate(id, spv::Decoration::DescriptorSet, 0U);
         Name(id, fmt::format("{}_{}{}", hw_stage, "samp", samplers.size()));
         samplers.push_back(id);
+        sampler_array_sizes.push_back(count);
         interfaces.push_back(id);
     }
 }
