@@ -129,7 +129,8 @@ enum class MipStorageFallbackMode : u16 {
     ConstantIndex,
 };
 
-inline constexpr u32 LegacyGuestIndexedImageEntries = 15;\ninline constexpr u32 MaxGuestIndexedImageEntries = 32768;
+inline constexpr u32 LegacyGuestIndexedImageEntries = 15;
+inline constexpr u32 MaxGuestIndexedImageEntries = 32768;
 
 struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
