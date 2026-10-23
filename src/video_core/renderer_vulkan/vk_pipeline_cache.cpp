@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <ranges>
 
 #include "common/hash.h"
@@ -35,6 +36,56 @@ constexpr static std::array DescriptorHeapSizes = {
     vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, 1024},
     vk::DescriptorPoolSize{vk::DescriptorType::eSampler, 1024},
 };
+
+static u32 GuestIndexedImageLimit(const Instance& instance) {
+    if (!instance.IsSampledImageNonUniformIndexingSupported()) {
+        return Shader::LegacyGuestIndexedImageEntries;
+    }
+    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+    const u32 hard = std::min({Shader::MaxGuestIndexedImageEntries + 1u,
+                               limits.maxDescriptorSetSampledImages,
+                               limits.maxPerStageDescriptorSampledImages,
+                               limits.maxPerStageResources});
+    constexpr u32 reserve =
+        Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
+    if (hard <= reserve + 1u) {
+        return Shader::LegacyGuestIndexedImageEntries;
+    }
+    return std::max(Shader::LegacyGuestIndexedImageEntries,
+                    std::min(Shader::MaxGuestIndexedImageEntries, hard - reserve - 1u));
+}
+
+static u32 GuestIndexedSamplerLimit(const Instance& instance) {
+    if (!instance.IsSamplerArrayNonUniformIndexingSupported()) {
+        return Shader::LegacyGuestIndexedImageEntries;
+    }
+    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+    const u32 hard = std::min({Shader::MaxGuestIndexedImageEntries + 1u,
+                               limits.maxDescriptorSetSamplers,
+                               limits.maxPerStageDescriptorSamplers,
+                               limits.maxPerStageResources});
+    constexpr u32 reserve =
+        Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
+    if (hard <= reserve + 1u) {
+        return Shader::LegacyGuestIndexedImageEntries;
+    }
+    return std::max(Shader::LegacyGuestIndexedImageEntries,
+                    std::min(Shader::MaxGuestIndexedImageEntries, hard - reserve - 1u));
+}
+
+static const auto& RuntimeDescriptorHeapSizes(const Instance& instance) {
+    static const auto sizes = [&instance] {
+        auto result = DescriptorHeapSizes;
+        result[2].descriptorCount =
+            std::max(result[2].descriptorCount,
+                     GuestIndexedImageLimit(instance) + Shader::NUM_IMAGES + 1024u);
+        result[4].descriptorCount =
+            std::max(result[4].descriptorCount,
+                     GuestIndexedSamplerLimit(instance) + Shader::NUM_SAMPLERS + 1024u);
+        return result;
+    }();
+    return sizes;
+}
 
 static u32 MapOutputs(std::span<Shader::OutputMap, 3> outputs, const AmdGpu::VsOutputControl& ctl) {
     u32 num_outputs = 0;
@@ -272,7 +323,7 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(HwStage stage, SwStag
 PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
                              AmdGpu::Liverpool* liverpool_, u32 sparse_page_shift)
     : instance{instance_}, scheduler{scheduler_}, liverpool{liverpool_},
-      desc_heap{instance, scheduler.GetWorkSemaphore(), DescriptorHeapSizes} {
+      desc_heap{instance, scheduler.GetWorkSemaphore(), RuntimeDescriptorHeapSizes(instance)} {
     const auto& vk12_props = instance.GetVk12Properties();
     profile = Shader::Profile{
         .max_viewport_width = instance.GetMaxViewportWidth(),
@@ -281,6 +332,8 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supported_spirv = SpirvVersion1_6,
         .subgroup_size = instance.SubgroupSize(),
         .sparse_page_shift = sparse_page_shift,
+        .max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),
+        .max_guest_indexed_sampler_entries = GuestIndexedSamplerLimit(instance),
         .support_int8 = instance.IsShaderInt8Supported(),
         .support_int16 = instance.IsShaderInt16Supported(),
         .support_int64 = instance.IsShaderInt64Supported(),
@@ -306,8 +359,12 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .support_fp64_signed_zero_inf_nan_preserve =
             bool(vk12_props.shaderSignedZeroInfNanPreserveFloat64),
         .supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),
+        .supports_shader_image_gather_extended =
+            instance_.IsShaderImageGatherExtendedSupported(),
         .supports_sampled_image_nonuniform_indexing =
             instance_.IsSampledImageNonUniformIndexingSupported(),
+        .supports_sampler_array_nonuniform_indexing =
+            instance_.IsSamplerArrayNonUniformIndexingSupported(),
         .max_push_descriptors = instance_.MaxPushDescriptors(),
         .supports_native_cube_calc = instance_.IsAmdGcnShaderSupported(),
         .supports_trinary_minmax = instance_.IsAmdShaderTrinaryMinMaxSupported(),
