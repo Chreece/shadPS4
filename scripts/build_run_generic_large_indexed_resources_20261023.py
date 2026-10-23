@@ -515,22 +515,45 @@ LOOP=r'''                if (inst.GetOpcode()==IR::Opcode::ImageSampleRaw &&
 '''
 def discover(s):
     if 'indexed_image_selector.h' not in s:
-        s=after(s,'#include "shader_recompiler/ir/passes/ir_passes.h"\n','#include "shader_recompiler/ir/passes/indexed_image_selector.h"\n','indexed_image_selector.h','DISCOVER_INCLUDE')
-    if 'struct IndexedImageTableSource' not in s:
+        s=after(s,'#include "shader_recompiler/ir/passes/ir_passes.h"\n',
+                '#include "shader_recompiler/ir/passes/indexed_image_selector.h"\n',
+                'indexed_image_selector.h','DISCOVER_INCLUDE')
+
+    # Normalize the custom indexed-image analyzer even when the verified parent
+    # already contains the earlier packed-table implementation.
+    helper_start=s.find('struct IndexedImageTableSource {')
+    if helper_start>=0:
+        fn_start=s.find('static IndexedImageTableSource AnalyzeIndexedImageTable(',helper_start)
+        if fn_start<0:
+            raise RuntimeError('DISCOVER_INDEXED_ANALYZER_START_MISSING')
+        brace=s.find('{',fn_start)
+        if brace<0:
+            raise RuntimeError('DISCOVER_INDEXED_ANALYZER_BRACE_MISSING')
+        depth=0
+        fn_end=None
+        for i in range(brace,len(s)):
+            depth += (s[i]=='{')-(s[i]=='}')
+            if depth==0:
+                fn_end=i+1
+                break
+        if fn_end is None:
+            raise RuntimeError('DISCOVER_INDEXED_ANALYZER_UNBALANCED')
+        s=s[:helper_start]+HELPER+s[fn_end:]
+    else:
         a='ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {'
         s=one(s,a,HELPER+'\n'+a,'DISCOVER_HELPER')
 
-    if 'usage.has_indexed_table=true;' not in s and 'usage.has_indexed_table = true;' not in s:
-        loop=LOOP
-        if 'void MarkReadConstBufferSharpSources(const SharpReference& sharp)' in s:
-            loop=loop.replace(
-                'MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);',
-                'MarkReadConstBufferSharpSources(usage.indexed_table_sharp);')
-        elif ('MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);'
-              not in s and
-              'void MarkReadConstBufferSharpSources(' not in s):
-            raise RuntimeError('DISCOVER_MARK_API_UNKNOWN')
+    loop=LOOP
+    if 'void MarkReadConstBufferSharpSources(const SharpReference& sharp)' in s:
+        loop=loop.replace(
+            'MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);',
+            'MarkReadConstBufferSharpSources(usage.indexed_table_sharp);')
+    elif ('MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);'
+          not in s and
+          'void MarkReadConstBufferSharpSources(' not in s):
+        raise RuntimeError('DISCOVER_MARK_API_UNKNOWN')
 
+    if 'usage.has_indexed_table=true;' not in s and 'usage.has_indexed_table = true;' not in s:
         anchors=(
             '                DiscoverImageSharp(*block, inst, sharp_usages, program);\n',
             '                DiscoverImageSharp(*block, inst, sharp_usages);\n',
@@ -545,6 +568,27 @@ def discover(s):
                 'DISCOVER_LOOP_API_NOT_ADAPTED old_count='+str(s.count(anchors[0]))+
                 ' new_count='+str(s.count(anchors[1])))
         s=s.replace(selected,selected+loop,1)
+    else:
+        # Upgrade the earlier packed-table loop in place.
+        packed='table.descriptor_stride_words==8u)'
+        if packed in s and 'table.record_stride_bytes!=0u' not in s:
+            s=s.replace(
+                packed,
+                '(table.descriptor_stride_words==8u ||\n'
+                '                         table.record_stride_bytes!=0u))',
+                1)
+        if 'usage.indexed_record_stride_bytes=table.record_stride_bytes;' not in s:
+            anchor='usage.indexed_texture_id=IR::Value{const_cast<IR::Inst*>(table.selector)};'
+            if anchor not in s:
+                anchor='usage.indexed_texture_id = IR::Value{const_cast<IR::Inst*>(table.selector)};'
+            if anchor not in s:
+                raise RuntimeError('DISCOVER_STRIDED_METADATA_ANCHOR_MISSING')
+            s=s.replace(
+                anchor,
+                anchor+'\n'
+                '                            usage.indexed_record_stride_bytes=table.record_stride_bytes;\n'
+                '                            usage.indexed_descriptor_offset_bytes=table.tsharp_offset_bytes;',
+                1)
 
     valid_marks=(
         'MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);',
@@ -552,6 +596,15 @@ def discover(s):
     )
     if not any(mark in s for mark in valid_marks):
         raise RuntimeError('DISCOVER_MARK_API_NOT_ADAPTED')
+    for marker in (
+        'record_stride_bytes',
+        'tsharp_offset_bytes',
+        'AnalyzeStridedIndexedSharpWord',
+        'usage.indexed_record_stride_bytes=table.record_stride_bytes;',
+        'usage.indexed_descriptor_offset_bytes=table.tsharp_offset_bytes;',
+    ):
+        if marker not in s:
+            raise RuntimeError('DISCOVER_STRIDED_NORMALIZATION_MISSING='+marker)
     return s
 
 ELIG=r'''    if (resource.has_indexed_table && profile.supports_sampled_image_nonuniform_indexing &&
