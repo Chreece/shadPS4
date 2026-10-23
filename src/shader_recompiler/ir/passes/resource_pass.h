@@ -22,6 +22,7 @@ union PostOpData {
 
 struct SharpReference {
     std::array<IR::Value, 8> dwords{};
+    std::array<u32, 8> clear_masks{};
     u32 num_dwords{};
     SharpFetchPostOp post_op{};
     PostOpData post_op_data;
@@ -32,7 +33,16 @@ struct ResourceDiscovery {
     std::array<SharpReference, 2> sharps;
     SharpReference indexed_table_sharp{};
     IR::Value indexed_texture_id{};
+    // Zero means the existing tightly packed 32-byte image table.
+    // Nonzero means the T# starts at a proven offset in each guest record.
+    u32 indexed_record_stride_bytes{};
+    u32 indexed_descriptor_offset_bytes{};
+    u32 indexed_sampler_offset_bytes{};
+    bool has_indexed_sampler_table{};
     bool has_indexed_table{};
+    // Keep the raw S# producer handle for shader-side scalar memory reads
+    // when host resource-table flattening cannot provide valid Vulkan bindings.
+    IR::Value original_buffer_handle{};
 };
 using ResourceDiscoveryList = boost::container::small_vector<ResourceDiscovery, 32>;
 
