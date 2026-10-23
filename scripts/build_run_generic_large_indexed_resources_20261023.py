@@ -2462,6 +2462,53 @@ def compose(run_dir,info,manifest):
     if 'shaderSamplerArrayNonUniformIndexing' in instance_cpp:
         raise RuntimeError('INVALID_VULKAN_SAMPLER_NONUNIFORM_FEATURE_RETAINED')
 
+    # Cross-layer descriptor binding contract. The same SamplerResource count
+    # must drive SPIR-V bindings, Vulkan set layouts and runtime writes.
+    sampler_contract={
+        'src/shader_recompiler/resource.h':(
+            'return is_guest_indexed ? indexed_guest_entries + 1u : 1u;',
+            'indexed_sampler_offset_bytes',
+        ),
+        'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp':(
+            'const u32 count = samp_desc.NumBindings(info);',
+            'binding.unified += count;',
+            'sampler_array_sizes.push_back(count)',
+            'spv::Capability::SampledImageArrayNonUniformIndexing',
+        ),
+        'src/shader_recompiler/backend/spirv/emit_spirv_image.cpp':(
+            'LoadIndexedGuestSampler',
+            'sampler_count == expected_count',
+        ),
+        'src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp':(
+            'const u32 count = sampler.NumBindings(*stage);',
+            '.descriptorCount = count',
+            'binding += count;',
+        ),
+        'src/video_core/renderer_vulkan/vk_compute_pipeline.cpp':(
+            'const u32 count = sampler.NumBindings(*info);',
+            '.descriptorCount = count',
+            'binding += count;',
+        ),
+        'src/video_core/renderer_vulkan/vk_rasterizer.cpp':(
+            'const u32 count = sampler.NumBindings(stage);',
+            'write.descriptorCount = count;',
+            'binding.unified += count;',
+            'sampler.indexed_sampler_offset_bytes',
+        ),
+    }
+    for path,markers in sampler_contract.items():
+        text=index_text(idx,path)
+        for marker in markers:
+            if marker not in text:
+                raise RuntimeError(
+                    'INDEXED_SAMPLER_BINDING_CONTRACT_MISSING path='+path+
+                    ' marker='+marker
+                )
+    spirv_context_text=index_text(
+        idx,'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp')
+    if 'spv::Capability::SamplerArrayNonUniformIndexing' in spirv_context_text:
+        raise RuntimeError('INVALID_SPIRV_SAMPLER_ARRAY_CAPABILITY_RETAINED')
+
     tree=git('write-tree',e=e).decode().strip()
     changed=tuple(git('diff','--name-only',parent,tree,'--','src').decode().splitlines())
     allowed=set(FILES)
