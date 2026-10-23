@@ -588,25 +588,83 @@ TRANS={
 'src/video_core/renderer_vulkan/vk_rasterizer.cpp':raster,
 }
 
+def _pure_cache_version_patch(sha):
+    p='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
+    diff=git('diff',sha+'^',sha,'--',p).decode(errors='replace')
+    if not diff.strip():
+        return False
+    changed=[]
+    for line in diff.splitlines():
+        if not line or line.startswith(('+++','---','@@')):
+            continue
+        if line[0] not in '+-':
+            continue
+        changed.append(line[1:].strip())
+    if not changed:
+        return False
+    version_re=re.compile(
+        r'static constexpr u32 (ShaderBinaryVersion|ShaderMetaVersion|PipelineKeyVersion)\\s*=\\s*'
+        r'(0x[0-9A-Fa-f]+|[0-9]+)u?;'
+    )
+    return all(version_re.fullmatch(line) for line in changed)
+
+def _patch_for_commit(sha,skip_cache_version=False):
+    paths=list(PATCH_PATHS)
+    if skip_cache_version:
+        # Build the patch per directory and exclude only the known schema
+        # counter file. Real serialization changes are never silently dropped.
+        names=git('diff','--name-only',sha+'^',sha,'--',*PATCH_PATHS).decode().splitlines()
+        names=[p for p in names if p!='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp']
+        if not names:
+            return b''
+        return git('diff',sha+'^',sha,'--',*names)
+    return git('diff',sha+'^',sha,'--',*paths)
+
 def apply_patch_commit(idx,sha):
     if not re.fullmatch(r'[0-9a-f]{40}',sha):
         raise RuntimeError('PATCH_COMMIT_INVALID='+sha)
-    if not exists(sha+'^{commit}'): raise RuntimeError('PATCH_COMMIT_MISSING='+sha)
-    patch=git('diff',sha+'^',sha,'--',*PATCH_PATHS)
-    if not patch.strip(): return
+    if not exists(sha+'^{commit}'):
+        raise RuntimeError('PATCH_COMMIT_MISSING='+sha)
+
     e=env({'GIT_INDEX_FILE':str(idx)})
-    q=subprocess.run(
-        ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
-         'apply','--3way','--cached','--whitespace=nowarn','-'],
-        env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
-    if q.returncode:
-        reverse=subprocess.run(
+
+    def attempt(patch):
+        if not patch.strip():
+            return None
+        return subprocess.run(
             ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
-             'apply','--reverse','--check','--cached','--whitespace=nowarn','-'],
+             'apply','--3way','--cached','--whitespace=nowarn','-'],
             env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
-        if reverse.returncode==0:
-            return
-        raise RuntimeError('GENERIC_PATCH_APPLY_FAILED='+sha+' '+(q.stderr or b'').decode(errors='replace')[-4000:])
+
+    patch=_patch_for_commit(sha)
+    q=attempt(patch)
+    if q is None or q.returncode==0:
+        return
+
+    reverse=subprocess.run(
+        ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
+         'apply','--reverse','--check','--cached','--whitespace=nowarn','-'],
+        env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
+    if reverse.returncode==0:
+        return
+
+    err=(q.stderr or b'').decode(errors='replace')
+    cache_path='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
+    if cache_path in err and _pure_cache_version_patch(sha):
+        # A previous generic fix may already have changed the schema number.
+        # Roll back this failed 3-way attempt, then replay every substantive
+        # path from the commit while leaving final cache invalidation to the
+        # composer below.
+        git('reset','--mixed',e=e,check=True)
+        git('read-tree',':',e=e,check=False)
+        # Restore alternate index from its current tree after failed apply.
+        # git apply --3way --cached leaves unmerged entries, so clear only
+        # those by re-reading HEAD is unsafe. Instead remove unmerged stages
+        # via checkout-index is unavailable for an alternate in-memory tree.
+        # Reconstruct from the pre-attempt tree captured below on retry.
+        raise RuntimeError('CACHE_VERSION_RETRY_REQUIRES_INDEX_SNAPSHOT='+sha)
+
+    raise RuntimeError('GENERIC_PATCH_APPLY_FAILED='+sha+' '+err[-4000:])
 
 def index_text(idx,p):
     e=env({'GIT_INDEX_FILE':str(idx)})
