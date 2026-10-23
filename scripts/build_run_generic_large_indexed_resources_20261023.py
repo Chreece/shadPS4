@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import base64, fcntl, gzip, hashlib, importlib.util, json, os, re, shutil, stat, subprocess, sys, tarfile, tempfile, time
+import argparse, base64, fcntl, gzip, hashlib, importlib.util, json, os, re, shutil, stat, subprocess, sys, tarfile, tempfile, time
 from pathlib import Path
 
 ROOT=Path.home()/'projects/shadps4'
@@ -1151,6 +1151,10 @@ def archive(run_dir,error):
 
 def main():
     global BASE
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--launch',action='store_true',
+        help='Launch the built candidate after a successful fresh build.')
+    args=parser.parse_args()
     if not SRC.is_dir() or not (SRC/'.git').exists():
         print('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC),file=sys.stderr,flush=True)
         return 2
@@ -1162,14 +1166,17 @@ def main():
             except BlockingIOError:raise RuntimeError('ANOTHER_SHADPS4_BUILD_OWNS_LOCK')
             man=verify_prev(run_dir)
             rev,tree,csha,cand=compose(run_dir,info,man)
-        # Runtime launching is deliberately a post-build concern. A missing
-        # historical launcher must never block composition or compilation.
-        if not OLD.is_file() or digest(OLD)!=OLD_SHA:
-            print('BUILD_ONLY_PASS=YES',flush=True)
-            print('CANDIDATE='+str(cand),flush=True)
-            print('PROTECTED_LAUNCHER_STATUS=MISSING_OR_CHANGED',flush=True)
+        print('BUILD_ONLY_PASS=YES',flush=True)
+        print('CANDIDATE='+str(cand),flush=True)
+        print('COMPOSED_REVISION='+rev,flush=True)
+        print('SOURCE_PARENT='+PARENT_REF,flush=True)
+        print('VERIFIED_PARENT_TREE='+PARENT_TREE,flush=True)
+        if not args.launch:
+            print('GAME_LAUNCHED=NO',flush=True)
             print('UPLOAD_THIS='+str(archive(run_dir,None)),flush=True)
             return 0
+        if not OLD.is_file() or digest(OLD)!=OLD_SHA:
+            raise RuntimeError('PROTECTED_LAUNCHER_MISSING_OR_CHANGED='+str(OLD))
         return launch(info,rev,tree,csha,cand)
     except (Exception,KeyboardInterrupt) as e:
         out=archive(run_dir,e);print('GENERIC_LARGE_INDEXED_RESOURCE_ERROR='+str(e),file=sys.stderr,flush=True);print('UPLOAD_THIS='+str(out),flush=True);return 2
