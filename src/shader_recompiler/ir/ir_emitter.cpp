@@ -685,6 +685,10 @@ U1 IREmitter::InverseBallot(const U64& mask) {
     return Inst<U1>(Opcode::InverseBallot, mask);
 }
 
+U32 IREmitter::GroupUMin(const U32& value) {
+    return Inst<U32>(Opcode::GroupUMin, value);
+}
+
 U1 IREmitter::GroupAny(const U1& bit) {
     return Inst<U1>(Opcode::GroupAny, bit);
 }
@@ -2119,8 +2123,8 @@ Value IREmitter::ImageSampleImplicitLod(const Value& handle, const Value& coords
 Value IREmitter::ImageSampleImplicitLodIndexed(
     const Value& handle, const Value& coords, const F32& bias,
     const Value& offset, const U32& gpu_texture_id, TextureInstInfo info) {
-    return Inst(Opcode::ImageSampleImplicitLodIndexed, Flags{info}, handle, coords,
-                bias, offset, gpu_texture_id);
+    return Inst(Opcode::ImageSampleImplicitLodIndexed, Flags{info},
+                handle, coords, bias, offset, gpu_texture_id);
 }
 
 Value IREmitter::ImageSampleExplicitLod(const Value& handle, const Value& coords, const F32& lod,
@@ -2165,6 +2169,14 @@ Value IREmitter::ImageGradient(const Value& handle, const Value& coords,
                                const Value& offset, const F32& lod_clamp, TextureInstInfo info) {
     return Inst(Opcode::ImageGradient, Flags{info}, handle, coords, derivatives_dx, derivatives_dy,
                 offset, lod_clamp);
+}
+
+Value IREmitter::ImageGradientIndexed(const Value& handle, const Value& coords,
+                                      const Value& derivatives_dx, const Value& derivatives_dy,
+                                      const Value& offset, const U32& gpu_texture_id,
+                                      TextureInstInfo info) {
+    return Inst(Opcode::ImageGradientIndexed, Flags{info}, handle, coords,
+                derivatives_dx, derivatives_dy, offset, gpu_texture_id);
 }
 
 Value IREmitter::ImageRead(const Value& handle, const Value& coords, const U32& lod,
