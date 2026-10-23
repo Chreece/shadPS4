@@ -44,6 +44,7 @@ GEN_FILES=(
 )
 EXTRA_FILES=(
 'src/video_core/renderer_vulkan/vk_compute_pipeline.cpp',
+'src/video_core/renderer_vulkan/vk_instance.cpp',
 'src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp',
 'src/video_core/renderer_vulkan/vk_pipeline_common.cpp',
 'src/video_core/renderer_vulkan/vk_pipeline_common.h',
