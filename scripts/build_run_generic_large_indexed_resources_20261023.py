@@ -1344,11 +1344,14 @@ def compose(run_dir,info,manifest):
         cand.chmod(cand.stat().st_mode|stat.S_IXUSR|stat.S_IXGRP|stat.S_IXOTH)
     finally:
         # Original GoT source checkout is never checked out or reset. Remove
-        # the temporary reachability ref even when configure/build fails.
+        # the temporary reachability ref and disposable source clone even when
+        # configure/build fails. Preserve a failed build directory because the
+        # compiler output there can still be useful; successful builds are
+        # copied to candidates and their build directory is discarded.
         if temp_ref:
             git('update-ref','-d',temp_ref,check=False)
+        remove_fresh_source(work)
         if cand is not None and cand.is_file():
-            remove_fresh_source(work)
             shutil.rmtree(d,ignore_errors=True)
     if git('rev-parse','HEAD').decode().strip()!=BASE:
         raise RuntimeError('ORIGINAL_GOT_SOURCE_HEAD_CHANGED_AFTER_BUILD')
