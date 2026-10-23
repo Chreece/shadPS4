@@ -33,6 +33,10 @@ DESCRIPTOR_SET_SCALING_FIXES=(
     '6b6d462d1d1fcbdbd488af8fbfe7eb323f7480a7',
     '29983ea0417a920db38c0b0854f610eb482050a1',
 )
+DYNAMIC_IMAGE_BINDING_FIXES=(
+    '16ab0edbd70e1912ec3de581466788f89c11b39c',
+    '9e30254c86b532eb7c5921a3268dcb2a00e7d48d',
+)
 OLD=ROOT/'scripts/shadps4-buffer-phi-launch-20261023.py'
 OLD_SHA='d6c0c858a6f60d16a42248cff3589fb33cdd4f8897780eda4ad07437a771b44c'
 GEN_FILES=(
@@ -72,8 +76,6 @@ EXTRA_FILES=(
 )
 FILES=GEN_FILES+EXTRA_FILES
 PATCH_COMMITS=(
-'16ab0edbd70e1912ec3de581466788f89c11b39c',
-'9e30254c86b532eb7c5921a3268dcb2a00e7d48d',
 'be463d8d361a23d66ec60147ed268389a58b1f22',
 '15ec6ede7034701b9c63e6e47203b6eb352c9377',
 '0dc9a1dff77d7f6148e70e47ab5c6b43da66999a',
@@ -794,11 +796,79 @@ RBIND=r'''        if (image_desc.is_guest_indexed) {
         }
 
 '''
+def rasterizer_h(s):
+    if '#include <vector>' not in s:
+        first_include=s.find('#include ')
+        if first_include<0:
+            raise RuntimeError('RASTERIZER_VECTOR_INCLUDE_ANCHOR')
+        s=s[:first_include]+'#include <vector>\n'+s[first_include:]
+    s=s.replace(
+        '    std::array<ImageBinding, Shader::NUM_IMAGES> image_bindings;\n',
+        '    std::vector<ImageBinding> image_bindings;\n',
+        1)
+    s=s.replace(
+        '    boost::container::static_vector<vk::DescriptorImageInfo, Shader::NUM_IMAGES> image_infos;\n',
+        '    std::vector<vk::DescriptorImageInfo> image_infos;\n',
+        1)
+    for marker in (
+        'std::vector<ImageBinding> image_bindings;',
+        'std::vector<vk::DescriptorImageInfo> image_infos;',
+    ):
+        if marker not in s:
+            raise RuntimeError('RASTERIZER_DYNAMIC_IMAGE_STORAGE_MISSING='+marker)
+    return s
+
 def raster(s):
     if '#include <cstring>' not in s:
         s=after(s,'#include "core/memory.h"\n','#include <cstring>\n','#include <cstring>','RASTER_CSTR')
     if 'guest_tsharp_array.h' not in s:
         s=after(s,'#include <cstring>\n','#include "shader_recompiler/guest_tsharp_array.h"\n','guest_tsharp_array.h','RASTER_HDR')
+
+    bind_start=s.find('bool Rasterizer::BindResources(const Pipeline* pipeline)')
+    if bind_start<0:
+        raise RuntimeError('RASTER_BIND_RESOURCES_NOT_FOUND')
+    bind_end=s.find('\nvoid Rasterizer::BindVertexBuffers',bind_start)
+    if bind_end<0:
+        raise RuntimeError('RASTER_BIND_RESOURCES_END_NOT_FOUND')
+    bind_body=s[bind_start:bind_end]
+    if 'required_infos = 0;' not in bind_body:
+        anchor='''    buffer_infos.clear();
+    image_infos.clear();
+
+'''
+        if bind_body.count(anchor)!=1:
+            raise RuntimeError('RASTER_BIND_RESERVE_ANCHOR_COUNT='+str(bind_body.count(anchor)))
+        block='''    buffer_infos.clear();
+    image_infos.clear();
+
+    // Reserve across all shader stages before any VkWriteDescriptorSet points
+    // into image_infos. Later vector growth must not invalidate those pointers.
+    std::size_t required_infos = 0;
+    std::size_t max_stage_images = 0;
+    for (const auto* stage : pipeline->GetStages()) {
+        if (!stage) {
+            continue;
+        }
+        std::size_t stage_images = 0;
+        for (const auto& image : stage->images) {
+            stage_images += image.NumBindings(*stage);
+        }
+        max_stage_images = std::max(max_stage_images, stage_images);
+        required_infos += stage_images + stage->samplers.size();
+    }
+    if (max_stage_images >
+        Shader::MaxGuestIndexedImageEntries + Shader::NUM_IMAGES * 64u) {
+        LOG_ERROR(Render_Vulkan, "Rejecting excessive guest image descriptor count {}",
+                  max_stage_images);
+        return false;
+    }
+    image_infos.reserve(required_infos);
+    image_bindings.resize(
+        std::max(max_stage_images, std::size_t{Shader::NUM_IMAGES}));
+
+'''
+        bind_body=bind_body.replace(anchor,block,1)
+        s=s[:bind_start]+bind_body+s[bind_end:]
 
     fn_start=s.find('void Rasterizer::BindTextures(')
     if fn_start<0:
@@ -1036,6 +1106,7 @@ TRANS={
 'src/shader_recompiler/ir/ir_emitter.cpp':ir_emitter_cpp,
 'src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp':cache,
 'src/video_core/renderer_vulkan/vk_rasterizer.cpp':raster,
+'src/video_core/renderer_vulkan/vk_rasterizer.h':rasterizer_h,
 'src/video_core/renderer_vulkan/vk_resource_pool.h':resource_pool_h,
 'src/video_core/renderer_vulkan/vk_resource_pool.cpp':resource_pool_cpp,
 'src/video_core/renderer_vulkan/vk_pipeline_common.h':pipeline_common_h,
@@ -1767,7 +1838,7 @@ def compose(run_dir,info,manifest):
     temp_ref='refs/shadps4-composer/generic-large-indexed-resource-'+rev[:12]
     git('update-ref',temp_ref,rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     work,d=fresh_paths(rev)
     cand=None;csha=''
