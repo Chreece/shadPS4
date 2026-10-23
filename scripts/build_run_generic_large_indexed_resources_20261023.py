@@ -801,18 +801,29 @@ def ensure_required_refs():
          'refs/remotes/chreece/general-vulkan-integer-sampler-20261016'),
     )
     missing=[(src,dst) for src,dst in specs if not exists(dst+'^{commit}')]
-    if not missing:
-        return
-    args=['git','-C',SRC,'fetch','--no-tags','--depth=300',SOURCE_REMOTE]
-    args += [f'+refs/heads/{src}:{dst}' for src,dst in missing]
-    q=run(args,check=False,timeout=180)
-    if q.returncode:
-        raise RuntimeError(
-            'REQUIRED_REF_FETCH_FAILED='+(q.stderr or b'').decode(errors='replace')[-4000:]
-        )
+    if missing:
+        args=['git','-C',SRC,'fetch','--no-tags','--depth=300',SOURCE_REMOTE]
+        args += [f'+refs/heads/{src}:{dst}' for src,dst in missing]
+        q=run(args,check=False,timeout=180)
+        if q.returncode:
+            raise RuntimeError(
+                'REQUIRED_REF_FETCH_FAILED='+(q.stderr or b'').decode(errors='replace')[-4000:]
+            )
     for _,dst in specs:
         if not exists(dst+'^{commit}'):
             raise RuntimeError('REQUIRED_REF_MISSING_AFTER_FETCH='+dst)
+
+    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,*PATCH_COMMITS)
+    for sha in required:
+        if exists(sha+'^{commit}'):
+            continue
+        q=run(['git','-C',SRC,'fetch','--no-tags',SOURCE_REMOTE,sha],
+              check=False,timeout=180)
+        if q.returncode or not exists(sha+'^{commit}'):
+            raise RuntimeError(
+                'REQUIRED_COMMIT_FETCH_FAILED='+sha+' '+
+                (q.stderr or b'').decode(errors='replace')[-2000:]
+            )
 
 def recovered_parent_ref(run_dir):
     global PARENT_REF
