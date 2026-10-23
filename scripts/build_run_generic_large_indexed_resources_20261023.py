@@ -1014,6 +1014,14 @@ def merge_verified_parent_with_upstream(parent):
     merged=commit_tree(tree,parent,msg,(UPSTREAM_MAIN,))
     if git('rev-parse',merged+'^{tree}').decode().strip()!=tree:
         raise RuntimeError('UPSTREAM_MERGE_COMMIT_TREE_CHANGED')
+
+    verified_sirit=git('rev-parse',parent+':externals/sirit').decode().strip()
+    merged_sirit=git('rev-parse',merged+':externals/sirit').decode().strip()
+    if merged_sirit!=verified_sirit:
+        raise RuntimeError(
+            'UPSTREAM_MERGE_CHANGED_VERIFIED_SIRIT expected='+
+            verified_sirit+' got='+merged_sirit
+        )
     return merged,tree
 
 def verify_prev(run_dir):
