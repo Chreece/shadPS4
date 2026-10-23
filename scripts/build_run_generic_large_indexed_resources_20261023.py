@@ -1381,7 +1381,7 @@ RBIND=r'''        if (image_desc.is_guest_indexed) {
                    !memory->IsValidGpuMapping(raw.Address(),0)) continue;
                 const auto fmt=raw.GetDataFmt(); const auto nfmt=raw.GetNumberFmt();
                 if(!magic_enum::enum_contains(fmt) || !magic_enum::enum_contains(nfmt) ||
-                   fmt==AmdGpu::DataFormat::FormatInvalid || AmdGpu::IsInteger(nfmt) ||
+                   fmt==AmdGpu::DataFormat::FormatInvalid ||
                    raw.width>=max_dim || raw.height>=max_dim || raw.base_level>raw.last_level ||
                    raw.pitch<raw.width) continue;
                 const u64 est=(u64(raw.width)+1u)*(u64(raw.height)+1u)*4u;
@@ -2583,6 +2583,7 @@ def compose(run_dir,info,manifest):
         ),
         'src/video_core/renderer_vulkan/vk_rasterizer.cpp':(
             'const u32 count = sampler.NumBindings(stage);',
+            'AmdGpu::IsInteger(raw_image.GetNumberFmt())',
             'write.descriptorCount = count;',
             'binding.unified += count;',
             'sampler.indexed_image_offset_bytes',
@@ -2602,6 +2603,9 @@ def compose(run_dir,info,manifest):
         idx,'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp')
     if 'spv::Capability::SamplerArrayNonUniformIndexing' in spirv_context_text:
         raise RuntimeError('INVALID_SPIRV_SAMPLER_ARRAY_CAPABILITY_RETAINED')
+    raster_text=index_text(idx,'src/video_core/renderer_vulkan/vk_rasterizer.cpp')
+    if 'fmt==AmdGpu::DataFormat::FormatInvalid || AmdGpu::IsInteger(nfmt)' in raster_text:
+        raise RuntimeError('INDEXED_INTEGER_IMAGE_REJECTION_RETAINED')
 
     tree=git('write-tree',e=e).decode().strip()
     changed=tuple(git('diff','--name-only',parent,tree,'--','src').decode().splitlines())
