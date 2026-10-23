@@ -981,28 +981,6 @@ def _changed_patch_paths(sha):
     names=git('diff','--name-only',sha+'^',sha,'--',*PATCH_PATHS).decode().splitlines()
     return [p for p in names if p]
 
-def apply_range_file(idx,base,head,path,label):
-    patch=git('diff',base,head,'--',path)
-    if not patch.strip():
-        return
-    e=env({'GIT_INDEX_FILE':str(idx)})
-    before=git('write-tree',e=e).decode().strip()
-    q=subprocess.run(
-        ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
-         'apply','--3way','--cached','--whitespace=nowarn','-'],
-        env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
-    if q.returncode==0:
-        return
-    err=(q.stderr or b'').decode(errors='replace')
-    git('read-tree',before,e=e)
-    reverse=subprocess.run(
-        ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
-         'apply','--reverse','--check','--cached','--whitespace=nowarn','-'],
-        env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
-    if reverse.returncode==0:
-        return
-    raise RuntimeError(label+'_FILE_APPLY_FAILED path='+path+' '+err[-4000:])
-
 def apply_patch_commit(idx,sha):
     if not re.fullmatch(r'[0-9a-f]{40}',sha):
         raise RuntimeError('PATCH_COMMIT_INVALID='+sha)
@@ -1506,10 +1484,9 @@ def compose(run_dir,info,manifest):
             'GENERIC_CHANGE_SET_CHANGED missing='+','.join(missing)+
             ' extra='+','.join(extra)
         )
-    # PARENT is always authoritative. Never replace a parent file wholesale
-    # with an older generic-branch blob. For files with known API overlap,
-    # transform the verified parent. For the rest, 3-way apply only GEN's
-    # exact per-file delta onto PARENT.
+    # The merged verified/upstream parent is authoritative. Existing generic
+    # source files are transformed structurally; the two helper headers below
+    # are seeded from pinned final blobs. No generic-base 3-way replay remains.
     idx=run_dir/'index'
     e=env({'GIT_INDEX_FILE':str(idx)})
     git('read-tree',parent,e=e)
