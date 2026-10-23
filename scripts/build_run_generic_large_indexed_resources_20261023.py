@@ -373,7 +373,22 @@ def patching(s):
     if 'image_res.indexed_table_fetch=table_fetch;' not in s and 'image_res.indexed_table_fetch = table_fetch;' not in s:
         use_info=bool(re.search(r'ConstructSharpFetch\s*\(\s*const SharpReference&\s+sharp\s*,\s*const Info&\s+info',s))
         call='ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp, info)' if use_info else 'ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp)'
-        s=one(s,'    auto image = image_res.GetSharp(info);\n',ELIG.replace('__FETCH__',call)+'    auto image = image_res.GetSharp(info);\n','PATCH_ELIG')
+        fn_start=s.find('void PatchImageSharp(')
+        if fn_start<0:
+            raise RuntimeError('PATCH_IMAGE_FUNCTION_NOT_FOUND')
+        fn_end=s.find('\nstatic IR::Value IsMbcntWithExec',fn_start)
+        if fn_end<0:
+            fn_end=s.find('\nstatic ',fn_start+1)
+        if fn_end<0:
+            raise RuntimeError('PATCH_IMAGE_FUNCTION_END_NOT_FOUND')
+        body=s[fn_start:fn_end]
+        anchor='    auto image = image_res.GetSharp(info);\n'
+        if body.count(anchor)!=1:
+            raise RuntimeError('PATCH_ELIG_FUNCTION_ANCHOR_COUNT='+str(body.count(anchor)))
+        body=body.replace(anchor,ELIG.replace('__FETCH__',call)+anchor,1)
+        s=s[:fn_start]+body+s[fn_end:]
+    if 'image_res.indexed_table_fetch' not in s[s.find('void PatchImageSharp('):]:
+        raise RuntimeError('PATCH_ELIG_NOT_INSERTED')
     if 'inst.SetArg(1, resource.indexed_texture_id);' not in s:
         a='        inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));\n'
         s=one(s,a,a+'        if (image_res.is_guest_indexed) {\n            inst.SetArg(1, resource.indexed_texture_id);\n        }\n','PATCH_ID')
