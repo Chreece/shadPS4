@@ -10,6 +10,7 @@ PARENT='975ee9812d93fb0e8094e0581640fb705c336d68'
 PARENT_TREE='d921f3f51c546aa8b9dfe7e230aaefeaf0b3c446'
 GEN_BASE='9f4c2da6107cb2b31578cc4b35f5e4ed85637dab'
 GEN='464e32e92b7f36fede81f0d65ca0e81934051d1e'
+STRIDED_SELECTOR_FINAL='d72990fbd8fe6483a921fa2c015e1d65b1e1f336'
 PREV=ROOT/'logs/masked-wave-build-20261023-130845-3042481/info'
 PREV_BIN='fb5d18e8342cd6701ef31831d389e99f5b9b877de1214e42f1655658d25cb7fb'
 PREV_REPORT='0c0a96188e02f1c86be6f6e1e26f280e0f4bf3c06445a2e563a742d66cd82590'
@@ -63,8 +64,6 @@ PATCH_COMMITS=(
 '16ab0edbd70e1912ec3de581466788f89c11b39c',
 '9e30254c86b532eb7c5921a3268dcb2a00e7d48d',
 'aab1275779c989f0624cd6dcb9582410d5534381',
-'95c8e5bddb645077da4af6f53507bd07037448d8',
-'476f8b83e3c7d61fd83869e97a513e6474d1bf76',
 'be463d8d361a23d66ec60147ed268389a58b1f22',
 '15ec6ede7034701b9c63e6e47203b6eb352c9377',
 '0dc9a1dff77d7f6148e70e47ab5c6b43da66999a',
@@ -78,7 +77,6 @@ PATCH_COMMITS=(
 '2718fe1101bc24eb8cd57b09f9dd22f3ac3b4e2b',
 '39d58e288e254877be1cfb307293b8f26be0a195',
 '5610f50a6239f82b70bf154c2c1ee6fbe8477def',
-'760b73d3e6416a837ba751af32387bdb0e93478a',
 '0cecd34d1760fdd5720408bbd9661aaa6ea828c4',
 '20ec7bfbb7a1ee18dac78d3c9bdeed29274580c2',
 '8b75cb1197818094d2a31ca4879bc62c842b1134',
@@ -807,16 +805,17 @@ def verify_prev():
         'files':{p:{'source':'verified_parent_diff'} for p in changed},
     }
 
-def builddir():
-    out=[]
-    for n in (ROOT/'clean-rebase-verified').rglob('build.ninja'):
-        d=n.parent; cm=d/'CMakeCache.txt'
-        if not cm.is_file() or str(SRC) not in cm.read_text(errors='replace'):continue
-        q=run(['ninja','-C',d,'-t','targets','all'],check=False)
-        if q.returncode or not any(x.startswith('shadps4:') for x in q.stdout.decode(errors='replace').splitlines()):continue
-        x=exe(d); score=max(n.stat().st_mtime,cm.stat().st_mtime,x.stat().st_mtime if x else 0); out.append((score,d))
-    if not out:raise RuntimeError('NINJA_BUILD_DIRECTORY_NOT_FOUND')
-    return max(out)[1]
+def fresh_builddir(run_dir,rev):
+    # Always configure from zero. Never search for or reuse an old build,
+    # test build, CMake cache, object directory or previous candidate tree.
+    root=ROOT/'clean-rebase-verified'/'fresh-builds'
+    root.mkdir(parents=True,exist_ok=True)
+    d=root/f'{rev[:12]}-{os.getpid()}'
+    if d.exists():
+        shutil.rmtree(d)
+    d.mkdir(parents=True)
+    return d
+
 def exe(d):
     for p in (d/'shadps4',d/'bin/shadps4'):
         if p.is_file() and not p.is_symlink() and os.access(p,os.X_OK):return p
@@ -840,7 +839,7 @@ def tee(a,p):
 
 def compose(run_dir,info,manifest):
     if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():raise RuntimeError('SOURCE_NOT_RESTORED')
-    for x in (PARENT+'^{commit}',GEN_BASE+'^{commit}',GEN+'^{commit}'):
+    for x in (PARENT+'^{commit}',GEN_BASE+'^{commit}',GEN+'^{commit}',STRIDED_SELECTOR_FINAL+'^{commit}'):
         if not exists(x):raise RuntimeError('OBJECT_MISSING='+x)
     names=tuple(git('diff','--name-only',GEN_BASE,GEN,'--','src').decode().splitlines())
     if names!=GEN_FILES:raise RuntimeError('GENERIC_CHANGE_SET_CHANGED')
@@ -855,6 +854,25 @@ def compose(run_dir,info,manifest):
     for p,b in data.items():
         oid=git('hash-object','-w','--stdin',input=b).decode().strip()
         git('update-index','--add','--cacheinfo',f'100644,{oid},{p}',e=e)
+
+    # Seed the final generic indexed-selector helper directly. The three
+    # historical commits that progressively built this header are superseded
+    # by this exact later generic version; replaying their old intermediate
+    # hunks onto the newer packed-selector base only creates false conflicts.
+    selector_path='src/shader_recompiler/ir/passes/indexed_image_selector.h'
+    selector=show(STRIDED_SELECTOR_FINAL,selector_path)
+    selector_text=selector.decode()
+    for marker in (
+        'AnalyzeStridedIndexedSharpWord',
+        'template <std::size_t N>',
+        'GcnTextureDwordIndex',
+        'static_assert(N == 4 || N == 8)',
+    ):
+        if marker not in selector_text:
+            raise RuntimeError('STRIDED_SELECTOR_FINAL_MISSING='+marker)
+    oid=git('hash-object','-w','--stdin',input=selector).decode().strip()
+    git('update-index','--add','--cacheinfo',f'100644,{oid},{selector_path}',e=e)
+
     for sha in PATCH_COMMITS:
         apply_patch_commit(idx,sha)
     finish_generic_large(idx)
@@ -884,29 +902,43 @@ def compose(run_dir,info,manifest):
     (info/'generic-large-indexed-resource.patch').write_text(diff)
     manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':PARENT,'replayed_generic_commits':list(PATCH_COMMITS),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
-    d=builddir(); old=exe(d)
-    if not old:raise RuntimeError('BUILD_EXECUTABLE_NOT_FOUND')
-    backup=run_dir/'private-binary';shutil.copy2(old,backup);oldsha=digest(old)
+    d=fresh_builddir(run_dir,rev)
     restored=False;sirit=False;cand=None;csha=''
     try:
         git('checkout','--detach',rev);submodules()
-        print('BUILD_DIRECTORY='+str(d),flush=True);print('COMPOSED_REVISION='+rev,flush=True)
-        tee(['nice','-n','10','cmake','--build',d,'--target','shadps4','--parallel','2'],info/'full-build.log')
+        print('FRESH_BUILD_DIRECTORY='+str(d),flush=True)
+        print('COMPOSED_REVISION='+rev,flush=True)
+        tee([
+            'cmake','--fresh','-S',SRC,'-B',d,'-G','Ninja',
+            '-DCMAKE_BUILD_TYPE=Release',
+            '-DENABLE_TESTS=OFF',
+            '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON',
+        ],info/'configure.log')
+        tee([
+            'nice','-n','10','cmake','--build',d,
+            '--target','shadps4','--parallel','2',
+        ],info/'full-build.log')
         built=exe(d)
         if not built:raise RuntimeError('NEW_BUILD_EXECUTABLE_NOT_FOUND')
-        csha=digest(built);cand=ROOT/'clean-rebase-verified/candidates'/f'{rev}-{csha}'/'shadps4';cand.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(built,cand);cand.chmod(cand.stat().st_mode|stat.S_IXUSR|stat.S_IXGRP|stat.S_IXOTH)
+        csha=digest(built)
+        cand=ROOT/'clean-rebase-verified/candidates'/f'{rev}-{csha}'/'shadps4'
+        cand.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(built,cand)
+        cand.chmod(cand.stat().st_mode|stat.S_IXUSR|stat.S_IXGRP|stat.S_IXOTH)
     finally:
-        if backup.is_file():shutil.copy2(backup,old);backup.unlink(missing_ok=True)
         try:
             git('checkout','--detach',BASE);submodules()
-            sp=SRC/'externals/sirit';sirit=(not sp.exists()) or run(['git','-C',sp,'rev-parse','HEAD']).stdout.decode().strip()==SIRIT_BASE
-            restored=git('rev-parse','HEAD').decode().strip()==BASE and not git('status','--porcelain').strip() and digest(old)==oldsha
-        except Exception:pass
+            sp=SRC/'externals/sirit'
+            sirit=(not sp.exists()) or run(['git','-C',sp,'rev-parse','HEAD']).stdout.decode().strip()==SIRIT_BASE
+            restored=git('rev-parse','HEAD').decode().strip()==BASE and not git('status','--porcelain').strip()
+        except Exception:
+            pass
+        shutil.rmtree(d,ignore_errors=True)
     if not restored:raise RuntimeError('SOURCE_OR_BUILD_RESTORE_FAILED')
     if not sirit:raise RuntimeError('SIRIT_RESTORE_FAILED')
     if not cand or digest(cand)!=csha:raise RuntimeError('CANDIDATE_COPY_FAILED')
     ms=digest(mp)
-    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_restored':True,'build_binary_restored':True,'sirit_restored':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
+    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_restored':True,'build_binary_restored':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'sirit_restored':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
     (info/'build-result.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
     return rev,tree,csha,cand
 
@@ -918,7 +950,7 @@ def launch(info,rev,tree,csha,cand):
     def verify_build():
         if digest(rp)!=rs or digest(mp)!=ms:raise RuntimeError('BUILD_EVIDENCE_CHANGED')
         r=json.loads(rp.read_text())
-        for k,v in {'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','source_restored':True,'build_binary_restored':True,'sirit_restored':True,'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False}.items():
+        for k,v in {'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','source_restored':True,'build_binary_restored':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'sirit_restored':True,'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False}.items():
             if r.get(k)!=v:raise RuntimeError('BUILD_GATE='+k)
         if Path(r['candidate'])!=cand or digest(cand)!=csha or git('rev-parse',rev+'^{tree}').decode().strip()!=tree or git('rev-parse',rev+'^').decode().strip()!=PARENT:raise RuntimeError('CANDIDATE_CHANGED')
         if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():raise RuntimeError('SOURCE_NOT_RESTORED')
