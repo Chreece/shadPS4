@@ -1592,18 +1592,19 @@ def raster(s):
                 memory->IsValidMapping(source.base_address, bytes);
 
             AmdGpu::Sampler uniform_sampler{};
+            bool uniform_sampler_valid = false;
             if (record_stride == 0u) {
                 uniform_sampler = sampler.GetSharp(stage);
-                if (!uniform_sampler.Valid() ||
-                    (uniform_sampler.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
-                     liverpool->regs.ta_bc_base.Address() == 0)) {
-                    uniform_sampler = AmdGpu::Sampler{};
-                }
+                uniform_sampler_valid =
+                    uniform_sampler.Valid() &&
+                    (uniform_sampler.border_color_type.Value() != AmdGpu::BorderColor::Custom ||
+                     liverpool->regs.ta_bc_base.Address() != 0);
             }
 
             const u32 first_sampler = static_cast<u32>(image_infos.size());
             for (u32 i = 0; i < count; ++i) {
                 AmdGpu::Sampler ssharp = uniform_sampler;
+                bool sampler_valid = record_stride == 0u ? uniform_sampler_valid : false;
                 bool is_integer = false;
                 if (complete && i + 1u < count) {
                     const u64 record_address = u64(source.base_address) +
@@ -1622,21 +1623,27 @@ def raster(s):
                     if (record_stride != 0u) {
                         const u64 sampler_address = record_address + sampler_offset;
                         ssharp = AmdGpu::Sampler{};
+                        sampler_valid = false;
                         if (memory->IsValidMapping(sampler_address, sizeof(AmdGpu::Sampler))) {
                             std::memcpy(&ssharp,
                                         reinterpret_cast<const void*>(sampler_address),
                                         sizeof(AmdGpu::Sampler));
-                            if (!ssharp.Valid() ||
-                                (ssharp.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
-                                 liverpool->regs.ta_bc_base.Address() == 0)) {
-                                ssharp = AmdGpu::Sampler{};
-                            }
+                            sampler_valid =
+                                ssharp.Valid() &&
+                                (ssharp.border_color_type.Value() != AmdGpu::BorderColor::Custom ||
+                                 liverpool->regs.ta_bc_base.Address() != 0);
                         }
                     }
+                } else {
+                    // Explicit null sampler pairs with the explicit null image slot.
+                    sampler_valid = false;
                 }
-                const auto vk_sampler = texture_cache.GetSampler(
-                    ssharp, liverpool->regs.ta_bc_base,
-                    sampler.is_depth, is_integer);
+                vk::Sampler vk_sampler{};
+                if (sampler_valid) {
+                    vk_sampler = texture_cache.GetSampler(
+                        ssharp, liverpool->regs.ta_bc_base,
+                        sampler.is_depth, is_integer);
+                }
                 image_infos.emplace_back(
                     vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
             }
@@ -1656,6 +1663,8 @@ def raster(s):
         'sampler.indexed_image_offset_bytes' not in body or
         'sampler.indexed_sampler_offset_bytes' not in body or
         'AmdGpu::IsInteger(raw_image.GetNumberFmt())' not in body or
+        'vk::Sampler vk_sampler{};' not in body or
+        'sampler_valid = false;' not in body or
         'write.descriptorCount = count' not in body):
         raise RuntimeError('RASTER_INDEXED_SAMPLER_BINDING_INCOMPLETE')
     s=s[:fn_start]+body+s[fn_end:]
@@ -2589,6 +2598,8 @@ def compose(run_dir,info,manifest):
             'sampler.indexed_image_offset_bytes',
             'sampler.indexed_sampler_offset_bytes',
             'AmdGpu::IsInteger(raw_image.GetNumberFmt())',
+            'vk::Sampler vk_sampler{};',
+            'sampler_valid = false;',
         ),
     }
     for path,markers in sampler_contract.items():
