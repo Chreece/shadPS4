@@ -105,6 +105,14 @@ def git(*a,input=None,e=None,check=True):
     r=subprocess.run(['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),*a],
                      env=e or env(),input=input,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=check)
     return r.stdout
+def commit_tree(tree,parent,message):
+    ce=env({
+        'GIT_AUTHOR_NAME':'shadPS4 generic composer',
+        'GIT_AUTHOR_EMAIL':'composer@localhost',
+        'GIT_COMMITTER_NAME':'shadPS4 generic composer',
+        'GIT_COMMITTER_EMAIL':'composer@localhost',
+    })
+    return git('commit-tree',tree,'-p',parent,input=message,e=ce).decode().strip()
 def show(rev,p): return git('show',f'{rev}:{p}')
 def exists(spec): return run(['git','-C',SRC,'cat-file','-e',spec],check=False).returncode==0
 def digest(p):
@@ -848,7 +856,7 @@ def recovered_parent_ref(run_dir):
         if not exists(base+'^{commit}'):
             raise RuntimeError('NO_SYNTHETIC_PARENT_BASE_AVAILABLE')
         msg=b'Wrapped exact verified graphics parent tree for local composition only\n'
-        PARENT_REF=git('commit-tree',PARENT_TREE,'-p',base,input=msg).decode().strip()
+        PARENT_REF=commit_tree(PARENT_TREE,base,msg)
         if git('rev-parse',PARENT_REF+'^{tree}').decode().strip()!=PARENT_TREE:
             raise RuntimeError('EXACT_PARENT_TREE_WRAP_FAILED')
         return PARENT_REF
@@ -891,7 +899,7 @@ def recovered_parent_ref(run_dir):
             errors.append(base+':tree:'+tree)
             continue
         msg=b'Reconstructed verified graphics parent tree for local composition only\n'
-        PARENT_REF=git('commit-tree',tree,'-p',base,input=msg).decode().strip()
+        PARENT_REF=commit_tree(tree,base,msg)
         if git('rev-parse',PARENT_REF+'^{tree}').decode().strip()!=PARENT_TREE:
             raise RuntimeError('RECOVERED_PARENT_COMMIT_TREE_CHANGED')
         return PARENT_REF
@@ -972,7 +980,13 @@ def compose(run_dir,info,manifest):
     for x in (parent+'^{commit}',GEN_BASE+'^{commit}',GEN+'^{commit}',STRIDED_SELECTOR_FINAL+'^{commit}'):
         if not exists(x):raise RuntimeError('OBJECT_MISSING='+x)
     names=tuple(git('diff','--name-only',GEN_BASE,GEN,'--','src').decode().splitlines())
-    if names!=GEN_FILES:raise RuntimeError('GENERIC_CHANGE_SET_CHANGED')
+    if set(names)!=set(GEN_FILES):
+        missing=sorted(set(GEN_FILES)-set(names))
+        extra=sorted(set(names)-set(GEN_FILES))
+        raise RuntimeError(
+            'GENERIC_CHANGE_SET_CHANGED missing='+','.join(missing)+
+            ' extra='+','.join(extra)
+        )
     # PARENT is always authoritative. Never replace a parent file wholesale
     # with an older generic-branch blob. For files with known API overlap,
     # transform the verified parent. For the rest, 3-way apply only GEN's
@@ -1021,7 +1035,7 @@ def compose(run_dir,info,manifest):
         original=git('rev-parse',f'{parent}:{p}').decode().strip() if exists(f'{parent}:{p}') else None
         manifest['files'][p]={'original_blob':original,'corrected_blob':oid,'sha256':hashlib.sha256(b).hexdigest()}
     msg=b'Complete generic GPU-indexed image and sampler tables on verified candidate\n\nPreserve complete packed and strided guest descriptor tables with GPU-side selection, physical Vulkan limits and ordinary descriptor-set fallback. No title IDs, shader-hash branches, forced readbacks, forced draws or rendering presets.\n'
-    rev=git('commit-tree',tree,'-p',parent,input=msg).decode().strip()
+    rev=commit_tree(tree,parent,msg)
     if not tuple(git('diff','--name-only',parent,rev,'--','src').decode().splitlines()):raise RuntimeError('EMPTY_COMPOSED_CHANGE_SET')
     diff=git('diff',parent,rev,'--','src').decode(errors='replace')
     for pat in (r'CUSA\d+',r'Ghost of Tsushima',r'Tsushima',
