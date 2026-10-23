@@ -488,16 +488,19 @@ def resource_h(s):
             anchor+'    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n'
                    '    u32 indexed_guest_entries{};\n'
                    '    u32 indexed_record_stride_bytes{};\n'
+                   '    u32 indexed_image_offset_bytes{};\n'
                    '    u32 indexed_sampler_offset_bytes{};\n'
                    '    bool is_guest_indexed{};\n',
             1)
     get_anchor='    constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {\n'
-    if 'if (is_guest_indexed) return AmdGpu::Sampler{};' not in sampler:
+    if 'if (is_guest_indexed && indexed_record_stride_bytes != 0u)' not in sampler:
         if sampler.count(get_anchor)!=1:
             raise RuntimeError('SAMPLER_INDEXED_GETSHARP_ANCHOR')
         sampler=sampler.replace(
             get_anchor,
-            get_anchor+'        if (is_guest_indexed) return AmdGpu::Sampler{};\n',
+            get_anchor+'        if (is_guest_indexed && indexed_record_stride_bytes != 0u) {\n'
+                       '            return AmdGpu::Sampler{};\n'
+                       '        }\n',
             1)
     if 'u32 NumBindings(const auto& info) const' not in sampler:
         close=sampler.rfind('};')
@@ -753,10 +756,11 @@ def discover(s):
             raise RuntimeError('DISCOVER_INDEXED_NORMALIZATION_MISSING='+marker)
     return s
 
-ELIG=r'''    if (resource.has_indexed_table && profile.supports_sampled_image_nonuniform_indexing &&
+ELIG=r'''    if (resource.has_indexed_table &&
+        profile.supports_sampled_image_nonuniform_indexing &&
+        profile.supports_sampler_array_nonuniform_indexing &&
         (resource.indexed_record_stride_bytes==0u ||
          (resource.has_indexed_sampler_table &&
-          profile.supports_sampler_array_nonuniform_indexing &&
           resource.sharps[1].post_op==SharpFetchPostOp::None)) &&
         !is_written && !inst_info.is_depth && !inst_info.is_array && !inst_info.is_gather &&
         !inst_info.has_lod && !inst_info.force_level0 &&
@@ -891,6 +895,7 @@ def patching(s):
                    '                   desc.is_guest_indexed == existing.is_guest_indexed &&\n'
                    '                   desc.indexed_guest_entries == existing.indexed_guest_entries &&\n'
                    '                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&\n'
+                   '                   desc.indexed_image_offset_bytes == existing.indexed_image_offset_bytes &&\n'
                    '                   desc.indexed_sampler_offset_bytes == existing.indexed_sampler_offset_bytes &&\n'
                    '                   desc.indexed_table_fetch == existing.indexed_table_fetch',
             1)
@@ -932,14 +937,17 @@ def patching(s):
                 '        const u32 sampler_binding = descriptors.Add(SamplerResource{',
                 '        SamplerResource sampler_res{',1)
             inner=inner.replace('        });\n','        };\n',1)
-            extra='''        if (image_res.is_guest_indexed &&
-            image_res.indexed_record_stride_bytes != 0u) {
-            ASSERT(resource.has_indexed_sampler_table);
+            extra='''        if (image_res.is_guest_indexed) {
+            if (image_res.indexed_record_stride_bytes != 0u) {
+                ASSERT(resource.has_indexed_sampler_table);
+            }
             sampler_res.is_guest_indexed = true;
             sampler_res.indexed_table_fetch = image_res.indexed_table_fetch;
             sampler_res.indexed_guest_entries = image_res.indexed_guest_entries;
             sampler_res.indexed_record_stride_bytes =
                 image_res.indexed_record_stride_bytes;
+            sampler_res.indexed_image_offset_bytes =
+                image_res.indexed_descriptor_offset_bytes;
             sampler_res.indexed_sampler_offset_bytes =
                 resource.indexed_sampler_offset_bytes;
         }
@@ -949,7 +957,8 @@ def patching(s):
         else:
             raise RuntimeError('PATCH_SAMPLER_AGGREGATE_START')
         s=s[:fn_start]+body+s[fn_end:]
-    if 'sampler_res.indexed_sampler_offset_bytes' not in s[fn_start:fn_start+len(body)]:
+    if ('sampler_res.indexed_sampler_offset_bytes' not in s[fn_start:fn_start+len(body)] or
+        'sampler_res.indexed_image_offset_bytes' not in s[fn_start:fn_start+len(body)]):
         raise RuntimeError('PATCH_INDEXED_SAMPLER_NORMALIZATION_MISSING')
 
     if 'ImageSampleImplicitLodIndexed' not in s:
