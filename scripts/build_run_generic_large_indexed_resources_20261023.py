@@ -37,6 +37,14 @@ DYNAMIC_IMAGE_BINDING_FIXES=(
     '16ab0edbd70e1912ec3de581466788f89c11b39c',
     '9e30254c86b532eb7c5921a3268dcb2a00e7d48d',
 )
+STRIDED_TSHARP_FIXES=(
+    'be463d8d361a23d66ec60147ed268389a58b1f22',
+    '15ec6ede7034701b9c63e6e47203b6eb352c9377',
+    '0dc9a1dff77d7f6148e70e47ab5c6b43da66999a',
+    '5cf2cf61930223824024c058cfe72a819f56048e',
+    'f336b0dbfc20d35d83642472269cac77c0299ac4',
+    'b29106a5c6b6231a9ffb787f9277ef10c31e9182',
+)
 OLD=ROOT/'scripts/shadps4-buffer-phi-launch-20261023.py'
 OLD_SHA='d6c0c858a6f60d16a42248cff3589fb33cdd4f8897780eda4ad07437a771b44c'
 GEN_FILES=(
@@ -76,12 +84,6 @@ EXTRA_FILES=(
 )
 FILES=GEN_FILES+EXTRA_FILES
 PATCH_COMMITS=(
-'be463d8d361a23d66ec60147ed268389a58b1f22',
-'15ec6ede7034701b9c63e6e47203b6eb352c9377',
-'0dc9a1dff77d7f6148e70e47ab5c6b43da66999a',
-'5cf2cf61930223824024c058cfe72a819f56048e',
-'f336b0dbfc20d35d83642472269cac77c0299ac4',
-'b29106a5c6b6231a9ffb787f9277ef10c31e9182',
 'f2169f2fb9a4902b4dbb752c90c8fa037f6bb8cf',
 'a61c10ff0059b03db7437807fa4c9b17208f4f8b',
 'e6b7acce13db1c2ca3fe5189a19458290d5bc74f',
@@ -330,9 +332,22 @@ static auto RuntimeDescriptorHeapSizes(const Instance& instance) {
         s=s.replace(old,new,1)
     return s
 def pass_h(s):
-    return s if 'has_indexed_table' in s else after(s,'    std::array<SharpReference, 2> sharps;\n',
-        '    SharpReference indexed_table_sharp{};\n    IR::Value indexed_texture_id{};\n    bool has_indexed_table{};\n',
-        'has_indexed_table','PASS_FIELDS')
+    if 'has_indexed_table' not in s:
+        s=after(s,'    std::array<SharpReference, 2> sharps;\n',
+            '    SharpReference indexed_table_sharp{};\n'
+            '    IR::Value indexed_texture_id{};\n'
+            '    u32 indexed_record_stride_bytes{};\n'
+            '    u32 indexed_descriptor_offset_bytes{};\n'
+            '    bool has_indexed_table{};\n',
+            'has_indexed_table','PASS_FIELDS')
+    else:
+        anchor='    IR::Value indexed_texture_id{};\n'
+        if 'indexed_record_stride_bytes' not in s:
+            s=after(s,anchor,
+                '    u32 indexed_record_stride_bytes{};\n'
+                '    u32 indexed_descriptor_offset_bytes{};\n',
+                'indexed_record_stride_bytes','PASS_STRIDED_FIELDS')
+    return s
 def resource_h(s):
     if 'MaxGuestIndexedImageEntries' not in s:
         a='enum class MipStorageFallbackMode : u16 {\n    None,\n    DynamicIndex,\n    ConstantIndex,\n};\n'
@@ -356,6 +371,15 @@ def resource_h(s):
             1)
 
     body=body.replace('    u8 indexed_guest_entries{};','    u32 indexed_guest_entries{};')
+    if 'indexed_record_stride_bytes' not in body:
+        a='    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n'
+        if body.count(a)!=1:
+            raise RuntimeError('RESOURCE_STRIDED_FIELDS_ANCHOR_COUNT='+str(body.count(a)))
+        body=body.replace(
+            a,
+            a+'    u32 indexed_record_stride_bytes{};\n'
+              '    u32 indexed_descriptor_offset_bytes{};\n',
+            1)
 
     if 'return AmdGpu::Image::Null(false);' not in body:
         a='    constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {\n'
@@ -402,16 +426,23 @@ def resource_h(s):
 
 HELPER=r'''
 struct IndexedImageTableSource {
-    const IR::Inst* buffer{}; const IR::Inst* selector{};
-    u32 descriptor_stride_words{1}; bool gpu_texture_id_indexed{};
-    std::array<const IR::Inst*, 8> words{}; std::array<u32, 8> addends{}; bool contiguous{};
+    const IR::Inst* buffer{};
+    const IR::Inst* selector{};
+    u32 descriptor_stride_words{1};
+    u32 record_stride_bytes{};
+    u32 tsharp_offset_bytes{};
+    bool gpu_texture_id_indexed{};
+    std::array<const IR::Inst*, 8> words{};
+    std::array<u32, 8> addends{};
+    bool contiguous{};
 };
 static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) {
     IndexedImageTableSource out{};
     if (sample.GetOpcode()!=IR::Opcode::ImageSampleRaw) return out;
     const auto* image=sample.Arg(0).TryInst();
     if (!image || image->GetOpcode()!=IR::Opcode::ImageHandle) return out;
-    const auto* low=image->Arg(0).TryInst(); const auto* high=image->Arg(1).TryInst();
+    const auto* low=image->Arg(0).TryInst();
+    const auto* high=image->Arg(1).TryInst();
     if (!low || !high || low->NumArgs()!=4 || high->NumArgs()!=4) return out;
     std::array<IndexedSharpWord,8> norm{};
     for(std::size_t i=0;i<8;++i) {
@@ -419,23 +450,50 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
         if(!read || read->GetOpcode()!=IR::Opcode::ReadConstBuffer) return out;
         const auto* buffer=read->Arg(0).TryInst();
         if(!buffer || buffer->GetOpcode()!=IR::Opcode::CompositeConstructU32x4) return out;
-        if(i==0) out.buffer=buffer; else if(out.buffer!=buffer) return out;
-        out.words[i]=read; norm[i]=AnalyzeIndexedSharpWord(read->Arg(1));
-        if(!norm[i].valid) return out; out.addends[i]=norm[i].addend;
+        if(i==0) {
+            out.buffer=buffer;
+        } else if(out.buffer!=buffer) {
+            bool identical=true;
+            for(u32 dw=0;dw<4;++dw) {
+                identical &= out.buffer->Arg(dw)==buffer->Arg(dw);
+            }
+            if(!identical) return out;
+        }
+        out.words[i]=read;
+        norm[i]=AnalyzeIndexedSharpWord(read->Arg(1));
+        if(!norm[i].valid) return out;
+        out.addends[i]=norm[i].addend;
     }
-    const auto* selector=static_cast<const IR::Inst*>(norm[0].selector);
-    if(!selector || !AreContiguousIndexedSharpWords(norm)) return out;
-    const auto id=IdentifyTsharpSelector(selector); if(!id.source) return out;
-    out.selector=static_cast<const IR::Inst*>(id.source);
-    out.descriptor_stride_words=id.descriptor_stride_words;
-    out.gpu_texture_id_indexed=id.normalized; out.contiguous=true; return out;
+    if(AreContiguousIndexedSharpWords(norm)) {
+        const auto* selector=static_cast<const IR::Inst*>(norm[0].selector);
+        const auto id=IdentifyTsharpSelector(selector);
+        if(!id.source) return out;
+        out.selector=static_cast<const IR::Inst*>(id.source);
+        out.descriptor_stride_words=id.descriptor_stride_words;
+        out.gpu_texture_id_indexed=id.normalized;
+        out.contiguous=true;
+        return out;
+    }
+    std::array<StridedIndexedSharpWord,8> strided{};
+    for(std::size_t i=0;i<strided.size();++i) {
+        strided[i]=AnalyzeStridedIndexedSharpWord(out.words[i]->Arg(1));
+    }
+    if(!AreContiguousStridedSharpWords(strided)) return out;
+    out.selector=static_cast<const IR::Inst*>(strided[0].gpu_record_id);
+    out.record_stride_bytes=strided[0].record_stride_bytes;
+    out.tsharp_offset_bytes=strided[0].offset_dwords*4u;
+    out.descriptor_stride_words=out.record_stride_bytes/4u;
+    out.gpu_texture_id_indexed=true;
+    out.contiguous=true;
+    return out;
 }
 '''
 LOOP=r'''                if (inst.GetOpcode()==IR::Opcode::ImageSampleRaw &&
                     profile.supports_sampled_image_nonuniform_indexing) {
                     const auto table=AnalyzeIndexedImageTable(inst);
                     if(table.contiguous && table.gpu_texture_id_indexed &&
-                       table.descriptor_stride_words==8u) {
+                       (table.descriptor_stride_words==8u ||
+                        table.record_stride_bytes!=0u)) {
                         auto& usage=sharp_usages.back(); bool bindable=true;
                         for(std::size_t dw=0;dw<4;++dw) {
                             const IR::Value v=table.buffer->Arg(dw);
@@ -448,6 +506,8 @@ LOOP=r'''                if (inst.GetOpcode()==IR::Opcode::ImageSampleRaw &&
                             usage.indexed_table_sharp.num_dwords=4;
                             MarkReadConstBufferSharpSources(usage.indexed_table_sharp, program, inst);
                             usage.indexed_texture_id=IR::Value{const_cast<IR::Inst*>(table.selector)};
+                            usage.indexed_record_stride_bytes=table.record_stride_bytes;
+                            usage.indexed_descriptor_offset_bytes=table.tsharp_offset_bytes;
                             usage.has_indexed_table=true;
                         }
                     }
@@ -501,11 +561,20 @@ ELIG=r'''    if (resource.has_indexed_table && profile.supports_sampled_image_no
         const auto table_fetch=__FETCH__;
         AmdGpu::Buffer table{};
         if(table_fetch.Fetch(info.flattened_ud_buf.data(),&table) && table.Valid() && table.base_address!=0) {
-            const u32 entries=CompleteGuestTsharpTableEntries(static_cast<u32>(table.stride),
-                table.num_records,profile.max_guest_indexed_image_entries);
+            const u32 record_stride=resource.indexed_record_stride_bytes;
+            const u32 record_offset=resource.indexed_descriptor_offset_bytes;
+            const u32 entries=record_stride!=0u
+                ? CompleteGuestTsharpRecordEntries(
+                    static_cast<u32>(table.stride),static_cast<u32>(table.num_records),
+                    record_stride,record_offset,profile.max_guest_indexed_image_entries)
+                : CompleteGuestTsharpTableEntries(
+                    static_cast<u32>(table.stride),static_cast<u32>(table.num_records),
+                    profile.max_guest_indexed_image_entries);
             if(entries!=0u) {
                 image_res.indexed_table_fetch=table_fetch;
                 image_res.indexed_guest_entries=entries;
+                image_res.indexed_record_stride_bytes=record_stride;
+                image_res.indexed_descriptor_offset_bytes=record_offset;
                 image_res.is_guest_indexed=true;
             }
         }
@@ -522,7 +591,7 @@ def patching(s):
         p=s.find('desc.post_op == existing.post_op',a,b)
         if p<0: raise RuntimeError('PATCH_DEDUP_ANCHOR')
         p+=len('desc.post_op == existing.post_op')
-        x=' &&\n                   desc.is_guest_indexed == existing.is_guest_indexed &&\n                   desc.indexed_guest_entries == existing.indexed_guest_entries &&\n                   desc.indexed_table_fetch == existing.indexed_table_fetch'
+        x=' &&\n                   desc.is_guest_indexed == existing.is_guest_indexed &&\n                   desc.indexed_guest_entries == existing.indexed_guest_entries &&\n                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&\n                   desc.indexed_descriptor_offset_bytes == existing.indexed_descriptor_offset_bytes &&\n                   desc.indexed_table_fetch == existing.indexed_table_fetch'
         s=s[:p]+x+s[p:]
     if 'image_res.indexed_table_fetch=table_fetch;' not in s and 'image_res.indexed_table_fetch = table_fetch;' not in s:
         use_info=bool(re.search(r'ConstructSharpFetch\s*\(\s*const SharpReference&\s+sharp\s*,\s*const Info&\s+info',s))
@@ -762,16 +831,33 @@ RBIND=r'''        if (image_desc.is_guest_indexed) {
             AmdGpu::Buffer source{};
             const bool fetched=image_desc.indexed_table_fetch.Fetch(stage.flattened_ud_buf.data(),&source);
             const u64 bytes=fetched?(source.stride==0?static_cast<u64>(source.num_records):static_cast<u64>(source.stride)*source.num_records):0u;
+            const u32 record_stride=image_desc.indexed_record_stride_bytes;
+            const u32 descriptor_offset=image_desc.indexed_descriptor_offset_bytes;
+            const u32 represented_entries=fetched && source.Valid()
+                ? (record_stride
+                    ? Shader::Optimization::CompleteGuestTsharpRecordEntries(
+                        static_cast<u32>(source.stride),
+                        static_cast<u32>(source.num_records),
+                        record_stride,descriptor_offset,
+                        Shader::MaxGuestIndexedImageEntries)
+                    : Shader::Optimization::CompleteGuestTsharpTableEntries(
+                        static_cast<u32>(source.stride),
+                        static_cast<u32>(source.num_records),
+                        Shader::MaxGuestIndexedImageEntries))
+                : 0u;
+            const u64 required_bytes=u64(count-1)*
+                (record_stride ? record_stride : sizeof(AmdGpu::Image));
             const bool complete=fetched && source.Valid() && source.base_address!=0 &&
-                Shader::Optimization::CompleteGuestTsharpTableEntries(static_cast<u32>(source.stride),
-                    source.num_records,Shader::MaxGuestIndexedImageEntries)==count-1u &&
-                bytes==u64(count-1)*sizeof(AmdGpu::Image) && memory->IsValidMapping(source.base_address,bytes);
+                represented_entries==count-1u && bytes==required_bytes &&
+                memory->IsValidMapping(source.base_address,bytes);
             u64 estimated=0; constexpr u64 MaxEstimatedIndexedImageBytes=4ull<<30;
             const u32 max_dim=instance.GetPhysicalDevice().getProperties().limits.maxImageDimension2D;
             for(u32 i=0;i<count;++i) {
                 auto& slot=image_bindings[num_images++]; slot.image_id={};
                 if(!complete || i+1==count) continue;
-                const u64 addr=source.base_address+u64(i)*sizeof(AmdGpu::Image);
+                const u64 addr=source.base_address+
+                    u64(i)*(record_stride ? record_stride : sizeof(AmdGpu::Image))+
+                    descriptor_offset;
                 if(!memory->IsValidMapping(addr,sizeof(AmdGpu::Image))) continue;
                 AmdGpu::Image raw{}; std::memcpy(&raw,reinterpret_cast<const void*>(addr),sizeof(raw));
                 if(!raw.Valid() || raw.GetType()!=AmdGpu::ImageType::Color2D || raw.Address()==0 ||
@@ -1838,7 +1924,7 @@ def compose(run_dir,info,manifest):
     temp_ref='refs/shadps4-composer/generic-large-indexed-resource-'+rev[:12]
     git('update-ref',temp_ref,rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     work,d=fresh_paths(rev)
     cand=None;csha=''
