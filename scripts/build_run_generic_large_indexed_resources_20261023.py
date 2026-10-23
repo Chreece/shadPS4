@@ -1306,10 +1306,8 @@ Id EmitImageGradientIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coo
     return s
 
 def cache(s):
-    for k in ('ShaderBinaryVersion','ShaderMetaVersion'):
-        m=re.search(rf'(static constexpr u32 {k}\s*=\s*)(0x[0-9A-Fa-f]+|\d+)(u?;)',s)
-        if not m:raise RuntimeError('CACHE_VERSION='+k)
-        s=s[:m.start()]+m.group(1)+hex(int(m.group(2),0)+1)+'u;'+s[m.end():]
+    # Cache ABI versions are bumped exactly once after every deterministic
+    # graphics/resource transform has been applied.
     return s
 
 RBIND=r'''        if (image_desc.is_guest_indexed) {
@@ -2396,6 +2394,23 @@ def compose(run_dir,info,manifest):
 
     finish_generic_large(idx)
 
+    # The composed descriptor/shader ABI invalidates binary + metadata caches
+    # exactly once relative to the merged verified/upstream parent.
+    cache_path='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
+    parent_cache=show(parent,cache_path).decode()
+    final_cache=index_text(idx,cache_path)
+    for key in ('ShaderBinaryVersion','ShaderMetaVersion'):
+        rx=rf'static constexpr u32 {key}\s*=\s*(0x[0-9A-Fa-f]+|\d+)u?;'
+        pm=re.search(rx,parent_cache)
+        fm=re.search(rx,final_cache)
+        if not pm or not fm:
+            raise RuntimeError('CACHE_VERSION_PARSE_FAILED='+key)
+        if int(fm.group(1),0)!=int(pm.group(1),0)+1:
+            raise RuntimeError(
+                'CACHE_VERSION_NOT_SINGLE_BUMP='+key+
+                ' parent='+pm.group(1)+' final='+fm.group(1)
+            )
+
     # Cross-file dependency gate: the selected historical commits are
     # intentionally narrower than the old experimental branch. Verify the
     # complete generic feature chain is present before creating/building a
@@ -2551,7 +2566,7 @@ def compose(run_dir,info,manifest):
     temp_ref='refs/shadps4-composer/generic-large-indexed-resource-'+rev[:12]
     git('update-ref',temp_ref,rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':[],'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'explicit_gradient_indexing_fixes':list(EXPLICIT_GRADIENT_INDEXING_FIXES),'paired_indexed_sampler_frontend_fixes':list(PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES),'paired_indexed_sampler_backend_fixes':list(PAIRED_INDEXED_SAMPLER_BACKEND_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':[],'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'explicit_gradient_indexing_fixes':list(EXPLICIT_GRADIENT_INDEXING_FIXES),'paired_indexed_sampler_frontend_fixes':list(PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES),'paired_indexed_sampler_backend_fixes':list(PAIRED_INDEXED_SAMPLER_BACKEND_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'cache_versions_single_bump':True,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     work,d=fresh_paths(rev)
     cand=None;csha=''
