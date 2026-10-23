@@ -146,6 +146,7 @@ jobs:
           assert "SPIRV_TEXTURE_DEFINITION_STRUCT_NOT_FOUND" in s
           assert "INVALID_SPIRV_SAMPLER_ARRAY_CAPABILITY_RETAINED" in s
           assert "INDEXED_SAMPLER_BINDING_CONTRACT_MISSING" in s
+          assert "INDEXED_INTEGER_IMAGE_REJECTION_RETAINED" in s
           assert "indexed_image_offset_bytes" in s
           assert "AmdGpu::IsInteger(raw_image.GetNumberFmt())" in s
           assert "profile.supports_sampler_array_nonuniform_indexing" in s
