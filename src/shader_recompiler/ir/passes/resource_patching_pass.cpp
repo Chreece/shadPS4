@@ -188,6 +188,7 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
     SharpFetch<T> sharp_fetch{};
     for (u32 i = 0; i < sharp.num_dwords; i++) {
         auto dword = sharp.dwords[i];
+        sharp_fetch.clear_masks[i] = sharp.clear_masks[i];
         if (dword.IsImmediate()) {
             sharp_fetch.immediates[i] = dword.U32();
         } else {
@@ -199,6 +200,9 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
         }
     }
     if (sharp_fetch.summary != Summary::Invalid) {
+        if (!SharpMasksAreZero(sharp_fetch.clear_masks, sharp.num_dwords)) {
+            return sharp_fetch;
+        }
         const u32 base = sharp_fetch.offsets[0];
         for (u32 i = 1; i < sharp.num_dwords; ++i) {
             if (sharp_fetch.offsets[i] - base != i) {
