@@ -259,17 +259,51 @@ def resource_h(s):
     if 'MaxGuestIndexedImageEntries' not in s:
         a='enum class MipStorageFallbackMode : u16 {\n    None,\n    DynamicIndex,\n    ConstantIndex,\n};\n'
         s=one(s,a,a+'\ninline constexpr u32 LegacyGuestIndexedImageEntries = 15;\ninline constexpr u32 MaxGuestIndexedImageEntries = 32768;\n','RESOURCE_MAX')
-    if 'indexed_table_fetch' not in s:
-        s=after(s,'    SharpFetch<AmdGpu::Image> sharp_fetch{};\n',
-                '    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n    u32 indexed_guest_entries{};\n    bool is_guest_indexed{};\n',
-                'indexed_table_fetch','RESOURCE_FIELDS')
-    s=s.replace('    u8 indexed_guest_entries{};','    u32 indexed_guest_entries{};')
-    if 'return AmdGpu::Image::Null(false);' not in s:
-        s=one(s,'    constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {\n',
-              '    constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {\n        if (is_guest_indexed) {\n            return AmdGpu::Image::Null(false);\n        }\n','RESOURCE_SHARP')
-    if 'return u32(indexed_guest_entries) + 1u;' not in s:
-        s=one(s,'    u32 NumBindings(const auto& info) const {\n',
-              '    u32 NumBindings(const auto& info) const {\n        if (is_guest_indexed) {\n            return u32(indexed_guest_entries) + 1u;\n        }\n','RESOURCE_BINDINGS')
+
+    start=s.find('struct ImageResource {')
+    end=s.find('using ImageResourceList',start)
+    if start<0 or end<0:
+        raise RuntimeError('IMAGE_RESOURCE_STRUCT_NOT_FOUND')
+    body=s[start:end]
+
+    if 'indexed_table_fetch' not in body:
+        a='    SharpFetch<AmdGpu::Image> sharp_fetch{};\n'
+        if body.count(a)!=1:
+            raise RuntimeError('RESOURCE_FIELDS_ANCHOR_COUNT='+str(body.count(a)))
+        body=body.replace(
+            a,
+            a+'    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n'
+              '    u32 indexed_guest_entries{};\n'
+              '    bool is_guest_indexed{};\n',
+            1)
+
+    body=body.replace('    u8 indexed_guest_entries{};','    u32 indexed_guest_entries{};')
+
+    if 'return AmdGpu::Image::Null(false);' not in body:
+        a='    constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {\n'
+        if body.count(a)!=1:
+            raise RuntimeError('RESOURCE_SHARP_IMAGE_ANCHOR_COUNT='+str(body.count(a)))
+        body=body.replace(
+            a,
+            a+'        if (is_guest_indexed) {\n'
+              '            return AmdGpu::Image::Null(false);\n'
+              '        }\n',
+            1)
+
+    if 'return u32(indexed_guest_entries) + 1u;' not in body:
+        a='    u32 NumBindings(const auto& info) const {\n'
+        if body.count(a)!=1:
+            raise RuntimeError('RESOURCE_BINDINGS_IMAGE_ANCHOR_COUNT='+str(body.count(a)))
+        body=body.replace(
+            a,
+            a+'        if (is_guest_indexed) {\n'
+              '            return u32(indexed_guest_entries) + 1u;\n'
+              '        }\n',
+            1)
+
+    s=s[:start]+body+s[end:]
+    if 'return AmdGpu::Image::Null(false);' not in s[start:start+len(body)]:
+        raise RuntimeError('RESOURCE_IMAGE_INDEXED_SHARP_NOT_INSERTED')
     return s
 
 HELPER=r'''
