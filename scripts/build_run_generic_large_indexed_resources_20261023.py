@@ -905,7 +905,7 @@ def ensure_required_refs():
     # be stale even though it technically "exists", which previously allowed
     # the composer to combine an older branch snapshot with newer hard-coded
     # commit expectations.
-    args=['git','-C',SRC,'fetch','--no-tags','--depth=300',SOURCE_REMOTE]
+    args=['git','-C',SRC,'fetch','--no-tags',SOURCE_REMOTE]
     args += [f'+refs/heads/{src}:{dst}' for src,dst in specs]
     q=run(args,check=False,timeout=600)
     if q.returncode:
