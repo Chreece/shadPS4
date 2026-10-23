@@ -1042,7 +1042,7 @@ def compose(run_dir,info,manifest):
         raise RuntimeError('ORIGINAL_GOT_SOURCE_CHANGED')
     if not cand or digest(cand)!=csha:raise RuntimeError('CANDIDATE_COPY_FAILED')
     ms=digest(mp)
-    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT_REF,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'sirit_restored':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
+    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT_REF,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'original_submodules_untouched':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
     (info/'build-result.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
     return rev,tree,csha,cand
 
@@ -1059,7 +1059,7 @@ def launch(info,rev,tree,csha,cand):
                   'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS',
                   'source_untouched':True,'fresh_build_from_zero':True,
                   'legacy_builds_searched':False,'tests_enabled':False,
-                  'sirit_restored':True,
+                  'original_submodules_untouched':True,
                   'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP',
                   'game_specific_options':False}
         for k,v in expected.items():
@@ -1073,7 +1073,7 @@ def launch(info,rev,tree,csha,cand):
             git('rev-parse',rev+'^{tree}').decode().strip()!=tree or
             git('rev-parse',rev+'^').decode().strip()!=source_parent):
             raise RuntimeError('CANDIDATE_CHANGED')
-        if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():raise RuntimeError('SOURCE_NOT_RESTORED')
+        if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():raise RuntimeError('ORIGINAL_GOT_SOURCE_CHANGED_AFTER_BUILD')
         man=json.loads(mp.read_text())
         for p,x in man['files'].items():
             b=x.get('corrected_blob')
