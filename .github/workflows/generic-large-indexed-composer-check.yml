@@ -135,6 +135,8 @@ jobs:
           assert "indexed_record_stride_bytes" in s
           assert "CompleteGuestTsharpRecordEntries" in s
           assert "record_stride,record_offset,indexed_limit" in s
+          assert "(limits.maxPerStageResources-total_reserve)/2u-1u" in s
+          assert "PAIRED_DESCRIPTOR_TOTAL_RESOURCE_LIMIT_MISSING" in s
           assert "AnalyzeIndexedSamplerTable" in s
           assert "sampler_array_sizes" in s
           assert "LoadIndexedGuestSampler" in s
