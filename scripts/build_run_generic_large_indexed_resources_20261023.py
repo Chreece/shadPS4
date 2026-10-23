@@ -1067,6 +1067,63 @@ def compose(run_dir,info,manifest):
     for sha in PATCH_COMMITS:
         apply_patch_commit(idx,sha)
     finish_generic_large(idx)
+
+    # Cross-file dependency gate: the selected historical commits are
+    # intentionally narrower than the old experimental branch. Verify the
+    # complete generic feature chain is present before creating/building a
+    # candidate so omissions fail here, not as opaque C++ errors later.
+    required_markers={
+        'src/shader_recompiler/ir/passes/indexed_image_selector.h':(
+            'AnalyzeStridedIndexedSharpWord',
+            'template <std::size_t N>',
+            'GcnTextureDwordIndex',
+        ),
+        'src/shader_recompiler/ir/passes/resource_pass.h':(
+            'has_indexed_sampler_table',
+            'indexed_record_stride_bytes',
+            'indexed_sampler_offset_bytes',
+        ),
+        'src/shader_recompiler/resource.h':(
+            'max_guest_indexed',
+            'is_guest_indexed',
+            'indexed_guest_entries',
+            'is_integer',
+        ),
+        'src/shader_recompiler/ir/passes/resource_patching_pass.cpp':(
+            'ImageGradientIndexed',
+            'indexed_sampler',
+            'max_guest_indexed_sampler_entries',
+        ),
+        'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp':(
+            'supports_sampler_array_nonuniform_indexing',
+            'SampledImageArrayNonUniformIndexing',
+        ),
+        'src/shader_recompiler/backend/spirv/emit_spirv_image.cpp':(
+            'ImageGradientIndexed',
+            'ImageGatherExtended',
+        ),
+        'src/video_core/renderer_vulkan/vk_rasterizer.cpp':(
+            'indexed_guest_entries',
+            'indexed_sampler',
+            'GetSampler(',
+        ),
+        'src/video_core/renderer_vulkan/vk_resource_pool.cpp':(
+            'sampled_image_slots',
+        ),
+        'src/video_core/texture_cache/sampler.cpp':(
+            'is_integer',
+            'ImageSamplerFilter',
+        ),
+    }
+    for path,markers in required_markers.items():
+        text=index_text(idx,path)
+        for marker in markers:
+            if marker not in text:
+                raise RuntimeError(
+                    'GENERIC_FEATURE_DEPENDENCY_MISSING path='+path+
+                    ' marker='+marker
+                )
+
     tree=git('write-tree',e=e).decode().strip()
     changed=tuple(git('diff','--name-only',parent,tree,'--','src').decode().splitlines())
     allowed=set(FILES)
