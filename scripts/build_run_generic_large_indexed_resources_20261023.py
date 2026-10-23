@@ -864,7 +864,7 @@ def ensure_required_refs():
     # commit expectations.
     args=['git','-C',SRC,'fetch','--no-tags','--depth=300',SOURCE_REMOTE]
     args += [f'+refs/heads/{src}:{dst}' for src,dst in specs]
-    q=run(args,check=False,timeout=180)
+    q=run(args,check=False,timeout=600)
     if q.returncode:
         raise RuntimeError(
             'REQUIRED_REF_REFRESH_FAILED='+
@@ -880,7 +880,7 @@ def ensure_required_refs():
         if exists(sha+'^{commit}'):
             continue
         q=run(['git','-C',SRC,'fetch','--no-tags',SOURCE_REMOTE,sha],
-              check=False,timeout=180)
+              check=False,timeout=600)
         if q.returncode or not exists(sha+'^{commit}'):
             raise RuntimeError(
                 'REQUIRED_COMMIT_FETCH_FAILED='+sha+' '+
@@ -889,7 +889,7 @@ def ensure_required_refs():
 
     if not exists(UPSTREAM_MAIN+'^{commit}'):
         q=run(['git','-C',SRC,'fetch','--no-tags',UPSTREAM_REMOTE,UPSTREAM_MAIN],
-              check=False,timeout=180)
+              check=False,timeout=600)
         if q.returncode or not exists(UPSTREAM_MAIN+'^{commit}'):
             raise RuntimeError(
                 'UPSTREAM_MAIN_FETCH_FAILED='+UPSTREAM_MAIN+' '+
@@ -1037,7 +1037,7 @@ def add_fresh_source(work,rev):
     # the user's GoT checkout, index, submodule worktrees and config completely
     # outside the build source tree.
     q=run(['git','clone','--no-hardlinks','--no-checkout',SRC,work],
-          check=False,timeout=180)
+          check=False,timeout=600)
     if q.returncode:
         raise RuntimeError(
             'FRESH_SOURCE_CLONE_FAILED='+
@@ -1056,7 +1056,7 @@ def remove_fresh_source(work):
 
 def submodules_at(work):
     q=run(['git','-C',work,'submodule','update','--init','--recursive','--force'],
-          check=False,timeout=300)
+          check=False,timeout=900)
     if q.returncode:
         raise RuntimeError(
             'SUBMODULE_UPDATE_FAILED='+
