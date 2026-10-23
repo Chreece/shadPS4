@@ -48,6 +48,44 @@ EXTRA_FILES=(
 'src/video_core/renderer_vulkan/vk_rasterizer.h',
 )
 FILES=GEN_FILES+EXTRA_FILES
+PATCH_COMMITS=(
+'5568da00029a865a77f6bf8df6510750473cc97a',
+'c6f721296e7442062a176cacabf8579968ecfbbb',
+'6d97d6818550e1e0f296f78351db0acdf2e21518',
+'f74a01cb704cb6f25450a578613968f6dc94798b',
+'6b6d462d1d1fcbdbd488af8fbfe7eb323f7480a7',
+'29983ea0417a920db38c0b0854f610eb482050a1',
+'16ab0edbd70e1912ec3de581466788f89c11b39c',
+'9e30254c86b532eb7c5921a3268dcb2a00e7d48d',
+'95c8e5bddb645077da4af6f53507bd07037448d8',
+'476f8b83e3c7d61fd83869e97a513e6474d1bf76',
+'be463d8d361a23d66ec60147ed268389a58b1f22',
+'15ec6ede7034701b9c63e6e47203b6eb352c9377',
+'0dc9a1dff77d7f6148e70e47ab5c6b43da66999a',
+'02c22fd61253b072a9bc4017e67f9c39fa0d4fa9',
+'5cf2cf61930223824024c058cfe72a819f56048e',
+'f336b0dbfc20d35d83642472269cac77c0299ac4',
+'b29106a5c6b6231a9bc4017e67f9c39fa0d4fa9',
+'f2169f2fb9a4902b4dbb752c90c8fa037f6bb8cf',
+'a61c10ff0059b03db7437807fa4c9b17208f4f8b',
+'e6b7acce13db1c2ca3fe5189a19458290d5bc74f',
+'2718fe1101bc24eb8cd57b09f9dd22f3ac3b4e2b',
+'39d58e288e254877be1cfb307293b8f26be0a195',
+'5610f50a6239f82b70bf154c2c1ee6fbe8477def',
+'760b73d3e6416a837ba751af32387bdb0e93478a',
+'0cecd34d1760fdd5720408bbd9661aaa6ea828c4',
+'20ec7bfbb7a1ee18dac78d3c9bdeed29274580c2',
+'8b75cb1197818094d2a31ca4879bc62c842b1134',
+'9b4d6ebd6523b8f28d543da0ebaa841733cfdf7f',
+'dd00aa320c9eb86c70584f36dce808c2483246a0',
+'ec6f257ed6852478a915d96c514f54d290c112a2',
+'3edc91cd217563acb9206772e4773c4ca1cf73d8',
+'630f51ecf3c8a7bb8afac698a435ca27e8b23fad',
+'bfa0d918e33f1364b052e953812aa662f2ad2275',
+'6ff828d3a06b2222597c89c596ff500863c4a18f',
+'34a46b656f75a7fdd215086d5be2b1c6042016b4',
+)
+PATCH_PATHS=('src/shader_recompiler','src/video_core/renderer_vulkan')
 
 def env(extra=None):
     e={k:v for k,v in os.environ.items() if k not in ('GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_COMMON_DIR')}
@@ -74,25 +112,119 @@ def after(s,a,x,marker,n):
     return s if marker in s else one(s,a,a+x,n)
 
 def profile(s):
+    if 'max_guest_indexed_image_entries' not in s:
+        s=after(s,'    u32 sparse_page_shift{};\n',
+                '    u32 max_guest_indexed_image_entries{15};\n    u32 max_guest_indexed_sampler_entries{15};\n',
+                'max_guest_indexed_image_entries','PROFILE_LIMITS')
     if 'supports_sampled_image_nonuniform_indexing' not in s:
-        s=after(s,'    bool supports_image_load_store_lod{};\n','    bool supports_sampled_image_nonuniform_indexing{};\n','supports_sampled_image_nonuniform_indexing','PROFILE_INDEX')
+        s=after(s,'    bool supports_image_load_store_lod{};\n',
+                '    bool supports_sampled_image_nonuniform_indexing{};\n',
+                'supports_sampled_image_nonuniform_indexing','PROFILE_INDEX')
+    if 'supports_sampler_array_nonuniform_indexing' not in s:
+        s=after(s,'    bool supports_sampled_image_nonuniform_indexing{};\n',
+                '    bool supports_sampler_array_nonuniform_indexing{};\n',
+                'supports_sampler_array_nonuniform_indexing','PROFILE_SAMPLER_INDEX')
     if 'max_push_descriptors' not in s:
-        s=after(s,'    bool supports_sampled_image_nonuniform_indexing{};\n','    u32 max_push_descriptors{};\n','max_push_descriptors','PROFILE_BUDGET')
+        s=after(s,'    bool supports_sampler_array_nonuniform_indexing{};\n',
+                '    u32 max_push_descriptors{};\n','max_push_descriptors','PROFILE_BUDGET')
     return s
 def instance_h(s):
-    if 'IsSampledImageNonUniformIndexingSupported' in s:return s
-    m=re.search(r'(    bool IsImageLoadStoreLodSupported\(\) const \{\n        return image_load_store_lod;\n    \}\n)',s)
-    if not m: raise RuntimeError('INSTANCE_GATE_ANCHOR')
-    x='''\n    bool IsSampledImageNonUniformIndexingSupported() const {\n        return bool(vk12_features.descriptorIndexing) &&\n               bool(vk12_features.shaderSampledImageArrayNonUniformIndexing) &&\n               bool(features.shaderSampledImageArrayDynamicIndexing);\n    }\n'''
-    return s[:m.end()]+x+s[m.end():]
+    if 'IsSampledImageNonUniformIndexingSupported' not in s:
+        m=re.search(r'(    bool IsImageLoadStoreLodSupported\(\) const \{\n        return image_load_store_lod;\n    \}\n)',s)
+        if not m: raise RuntimeError('INSTANCE_GATE_ANCHOR')
+        x='''\n    bool IsSampledImageNonUniformIndexingSupported() const {\n        return bool(vk12_features.descriptorIndexing) &&\n               bool(vk12_features.shaderSampledImageArrayNonUniformIndexing) &&\n               bool(features.shaderSampledImageArrayDynamicIndexing);\n    }\n'''
+        s=s[:m.end()]+x+s[m.end():]
+    if 'IsSamplerArrayNonUniformIndexingSupported' not in s:
+        a='''    bool IsSampledImageNonUniformIndexingSupported() const {\n'''
+        p=s.find(a)
+        if p<0: raise RuntimeError('INSTANCE_SAMPLER_GATE_ANCHOR')
+        e=s.find('    }\n',p)
+        if e<0: raise RuntimeError('INSTANCE_SAMPLER_GATE_END')
+        e+=6
+        s=s[:e]+'''\n    bool IsSamplerArrayNonUniformIndexingSupported() const {\n        return IsSampledImageNonUniformIndexingSupported();\n    }\n'''+s[e:]
+    return s
 def pipeline(s):
+    if '#include <algorithm>' not in s:
+        s=s.replace('#include <ranges>\n','#include <algorithm>\n#include <ranges>\n',1)
+    if 'GuestIndexedImageLimit' not in s:
+        a='''constexpr static std::array DescriptorHeapSizes = {
+    vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 512},
+    vk::DescriptorPoolSize{vk::DescriptorType::eStorageBuffer, 8192},
+    vk::DescriptorPoolSize{vk::DescriptorType::eSampledImage, 8192},
+    vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, 1024},
+    vk::DescriptorPoolSize{vk::DescriptorType::eSampler, 1024},
+};
+'''
+        x=r'''
+static u32 GuestIndexedImageLimit(const Instance& instance) {
+    const auto limits=instance.GetPhysicalDevice().getProperties().limits;
+    const u32 hard=std::min({Shader::MaxGuestIndexedImageEntries+1u,
+        limits.maxDescriptorSetSampledImages,limits.maxPerStageDescriptorSampledImages,
+        limits.maxPerStageResources});
+    constexpr u32 reserve=Shader::NUM_IMAGES+Shader::NUM_BUFFERS+Shader::NUM_SAMPLERS+32u;
+    return hard>reserve+1u?std::min(Shader::MaxGuestIndexedImageEntries,hard-reserve-1u):0u;
+}
+static u32 GuestIndexedSamplerLimit(const Instance& instance) {
+    const auto limits=instance.GetPhysicalDevice().getProperties().limits;
+    const u32 hard=std::min({Shader::MaxGuestIndexedImageEntries+1u,
+        limits.maxDescriptorSetSamplers,limits.maxPerStageDescriptorSamplers,
+        limits.maxPerStageResources});
+    constexpr u32 reserve=Shader::NUM_IMAGES+Shader::NUM_BUFFERS+Shader::NUM_SAMPLERS+32u;
+    return hard>reserve+1u?std::min(Shader::MaxGuestIndexedImageEntries,hard-reserve-1u):0u;
+}
+static const auto& RuntimeDescriptorHeapSizes(const Instance& instance) {
+    static const auto sizes=[&instance] {
+        auto result=DescriptorHeapSizes;
+        result[2].descriptorCount=std::max(result[2].descriptorCount,
+            GuestIndexedImageLimit(instance)+Shader::NUM_IMAGES+1024u);
+        result[4].descriptorCount=std::max(result[4].descriptorCount,
+            GuestIndexedSamplerLimit(instance)+Shader::NUM_SAMPLERS+1024u);
+        return result;
+    }();
+    return sizes;
+}
+'''
+        s=one(s,a,a+x,'PIPELINE_LIMIT_HELPERS')
+    s=s.replace('desc_heap{instance, scheduler.GetWorkSemaphore(), DescriptorHeapSizes}',
+                'desc_heap{instance, scheduler.GetWorkSemaphore(), RuntimeDescriptorHeapSizes(instance)}')
+    if '.max_guest_indexed_image_entries =' not in s:
+        s=after(s,'        .sparse_page_shift = sparse_page_shift,\n',
+                '        .max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),\n'
+                '        .max_guest_indexed_sampler_entries = GuestIndexedSamplerLimit(instance),\n',
+                '.max_guest_indexed_image_entries =','PIPELINE_LIMIT_PROFILE')
     if 'supports_sampled_image_nonuniform_indexing =' not in s:
         s=after(s,'        .supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),\n',
-                '        .supports_sampled_image_nonuniform_indexing =\n            instance_.IsSampledImageNonUniformIndexingSupported(),\n',
+                '        .supports_sampled_image_nonuniform_indexing =\n'
+                '            instance_.IsSampledImageNonUniformIndexingSupported(),\n',
                 'supports_sampled_image_nonuniform_indexing =','PIPELINE_INDEX')
+    if 'supports_sampler_array_nonuniform_indexing =' not in s:
+        s=after(s,'        .supports_sampled_image_nonuniform_indexing =\n'
+                  '            instance_.IsSampledImageNonUniformIndexingSupported(),\n',
+                '        .supports_sampler_array_nonuniform_indexing =\n'
+                '            instance_.IsSamplerArrayNonUniformIndexingSupported(),\n',
+                'supports_sampler_array_nonuniform_indexing =','PIPELINE_SAMPLER_INDEX')
     if '.max_push_descriptors =' not in s:
-        s=after(s,'        .supports_sampled_image_nonuniform_indexing =\n            instance_.IsSampledImageNonUniformIndexingSupported(),\n',
-                '        .max_push_descriptors = instance_.MaxPushDescriptors(),\n','.max_push_descriptors =','PIPELINE_BUDGET')
+        s=after(s,'        .supports_sampler_array_nonuniform_indexing =\n'
+                  '            instance_.IsSamplerArrayNonUniformIndexingSupported(),\n',
+                '        .max_push_descriptors = instance_.MaxPushDescriptors(),\n',
+                '.max_push_descriptors =','PIPELINE_BUDGET')
+    old='''        binding.buffer += info.buffers.size();
+        binding.unified += info.buffers.size() + info.samplers.size();
+        for (const auto& image : info.images) {
+            binding.unified += image.NumBindings(info);
+        }
+'''
+    if old in s:
+        new='''        binding.buffer += info.buffers.size();
+        binding.unified += info.buffers.size();
+        for (const auto& image : info.images) {
+            binding.unified += image.NumBindings(info);
+        }
+        for (const auto& sampler : info.samplers) {
+            binding.unified += sampler.NumBindings(info);
+        }
+'''
+        s=s.replace(old,new,1)
     return s
 def pass_h(s):
     return s if 'has_indexed_table' in s else after(s,'    std::array<SharpReference, 2> sharps;\n',
@@ -101,11 +233,12 @@ def pass_h(s):
 def resource_h(s):
     if 'MaxGuestIndexedImageEntries' not in s:
         a='enum class MipStorageFallbackMode : u16 {\n    None,\n    DynamicIndex,\n    ConstantIndex,\n};\n'
-        s=one(s,a,a+'\ninline constexpr u32 MaxGuestIndexedImageEntries = 15;\n','RESOURCE_MAX')
+        s=one(s,a,a+'\ninline constexpr u32 LegacyGuestIndexedImageEntries = 15;\ninline constexpr u32 MaxGuestIndexedImageEntries = 32768;\n','RESOURCE_MAX')
     if 'indexed_table_fetch' not in s:
         s=after(s,'    SharpFetch<AmdGpu::Image> sharp_fetch{};\n',
-                '    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n    u8 indexed_guest_entries{};\n    bool is_guest_indexed{};\n',
+                '    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};\n    u32 indexed_guest_entries{};\n    bool is_guest_indexed{};\n',
                 'indexed_table_fetch','RESOURCE_FIELDS')
+    s=s.replace('    u8 indexed_guest_entries{};','    u32 indexed_guest_entries{};')
     if 'return AmdGpu::Image::Null(false);' not in s:
         s=one(s,'    constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {\n',
               '    constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {\n        if (is_guest_indexed) {\n            return AmdGpu::Image::Null(false);\n        }\n','RESOURCE_SHARP')
@@ -180,28 +313,21 @@ def discover(s):
 
 ELIG=r'''    if (resource.has_indexed_table && profile.supports_sampled_image_nonuniform_indexing &&
         !is_written && !inst_info.is_depth && !inst_info.is_array && !inst_info.is_gather &&
-        !inst_info.has_derivatives && !inst_info.has_lod && !inst_info.force_level0 &&
+        !inst_info.has_lod && !inst_info.force_level0 &&
         !inst_info.has_lod_clamp && !inst_info.is_r128 && !inst_info.is_unnormalized) {
         const auto table_fetch=__FETCH__;
         AmdGpu::Buffer table{};
         if(table_fetch.Fetch(info.flattened_ud_buf.data(),&table) && table.Valid() && table.base_address!=0) {
             const u32 entries=CompleteGuestTsharpTableEntries(static_cast<u32>(table.stride),
-                table.num_records,MaxGuestIndexedImageEntries);
+                table.num_records,profile.max_guest_indexed_image_entries);
             if(entries!=0u) {
-                u32 image_used=0; for(const auto& old:info.images) image_used+=old.NumBindings(info);
-                const u32 new_images=entries+1u;
-                const u32 push_used=static_cast<u32>(info.buffers.size()+info.samplers.size())+image_used;
-                if(image_used+new_images<=NUM_IMAGES &&
-                   push_used+new_images+1u<=profile.max_push_descriptors) {
-                    image_res.indexed_table_fetch=table_fetch;
-                    image_res.indexed_guest_entries=static_cast<u8>(entries);
-                    image_res.is_guest_indexed=true;
-                }
+                image_res.indexed_table_fetch=table_fetch;
+                image_res.indexed_guest_entries=entries;
+                image_res.is_guest_indexed=true;
             }
         }
     }
 
-'''
 def patching(s):
     if 'guest_tsharp_array.h' not in s:
         s=after(s,'#include "shader_recompiler/resource.h"\n','#include "shader_recompiler/guest_tsharp_array.h"\n','guest_tsharp_array.h','PATCH_INCLUDE')
@@ -316,6 +442,77 @@ TRANS={
 'src/video_core/renderer_vulkan/vk_rasterizer.cpp':raster,
 }
 
+def apply_patch_commit(idx,sha):
+    if not exists(sha+'^{commit}'): raise RuntimeError('PATCH_COMMIT_MISSING='+sha)
+    patch=git('diff',sha+'^',sha,'--',*PATCH_PATHS)
+    if not patch.strip(): return
+    e=env({'GIT_INDEX_FILE':str(idx)})
+    q=run(['git','-C',SRC,'apply','--3way','--cached','--whitespace=nowarn','-'],
+          check=False,input=patch)
+    if q.returncode:
+        raise RuntimeError('GENERIC_PATCH_APPLY_FAILED='+sha+' '+(q.stderr or b'').decode(errors='replace')[-4000:])
+
+def index_text(idx,p):
+    e=env({'GIT_INDEX_FILE':str(idx)})
+    return git('show',':'+p,e=e).decode()
+
+def update_index_text(idx,p,content):
+    e=env({'GIT_INDEX_FILE':str(idx)})
+    b=content.encode()
+    oid=git('hash-object','-w','--stdin',input=b).decode().strip()
+    git('update-index','--add','--cacheinfo',f'100644,{oid},{p}',e=e)
+    return oid,b
+
+def finish_generic_large(idx):
+    # Strided T#/S# tables share a GPU record selector. Their complete table
+    # must fit both sampled-image and sampler physical limits.
+    p='src/shader_recompiler/ir/passes/resource_patching_pass.cpp'
+    t=index_text(idx,p)
+    needle='''            const u32 entries = record_stride != 0u
+                ? CompleteGuestTsharpRecordEntries(
+                    static_cast<u32>(table.stride),static_cast<u32>(table.num_records),
+                    record_stride,record_offset,profile.max_guest_indexed_image_entries)
+                : CompleteGuestTsharpTableEntries(
+                    static_cast<u32>(table.stride),static_cast<u32>(table.num_records),
+                    profile.max_guest_indexed_image_entries);
+'''
+    if needle in t:
+        repl='''            const u32 indexed_limit = record_stride != 0u
+                ? std::min(profile.max_guest_indexed_image_entries,
+                           profile.max_guest_indexed_sampler_entries)
+                : profile.max_guest_indexed_image_entries;
+            const u32 entries = record_stride != 0u
+                ? CompleteGuestTsharpRecordEntries(
+                    static_cast<u32>(table.stride),static_cast<u32>(table.num_records),
+                    record_stride,record_offset,indexed_limit)
+                : CompleteGuestTsharpTableEntries(
+                    static_cast<u32>(table.stride),static_cast<u32>(table.num_records),
+                    indexed_limit);
+'''
+        t=t.replace(needle,repl,1)
+    if 'profile.max_guest_indexed_sampler_entries' not in t:
+        raise RuntimeError('STRIDED_PHYSICAL_LIMIT_NOT_APPLIED')
+    update_index_text(idx,p,t)
+
+    # The runtime pool is sized from the actual physical limits; no opt-in
+    # environment switch and no title/game selector is permitted.
+    p='src/video_core/renderer_vulkan/vk_pipeline_cache.cpp'
+    t=index_text(idx,p)
+    if 'RuntimeDescriptorHeapSizes(instance)' not in t or 'GuestIndexedImageLimit' not in t:
+        raise RuntimeError('DYNAMIC_DESCRIPTOR_POOL_LIMIT_MISSING')
+    update_index_text(idx,p,t)
+
+    # Invalidate shader binaries/metadata for the new descriptor-array ABI.
+    p='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
+    t=index_text(idx,p)
+    for k in ('ShaderBinaryVersion','ShaderMetaVersion'):
+        m=re.search(rf'(static constexpr u32 {k}\s*=\s*)(0x[0-9A-Fa-f]+|\d+)(u?;)',t)
+        if not m: raise RuntimeError('CACHE_VERSION='+k)
+        t=t[:m.start()]+m.group(1)+hex(int(m.group(2),0)+1)+'u;'+t[m.end():]
+    update_index_text(idx,p,t)
+
+    return
+
 def verify_prev():
     rp=PREV/'build-result.json'; mp=PREV/'correction.json'
     if digest(rp)!=PREV_REPORT or digest(mp)!=PREV_MANIFEST:raise RuntimeError('PREVIOUS_EVIDENCE_CHANGED')
@@ -362,9 +559,9 @@ def compose(run_dir,info,manifest):
     for x in (PARENT+'^{commit}',GEN_BASE+'^{commit}',GEN+'^{commit}'):
         if not exists(x):raise RuntimeError('OBJECT_MISSING='+x)
     names=tuple(git('diff','--name-only',GEN_BASE,GEN,'--','src').decode().splitlines())
-    if names!=FILES:raise RuntimeError('GENERIC_CHANGE_SET_CHANGED')
+    if names!=GEN_FILES:raise RuntimeError('GENERIC_CHANGE_SET_CHANGED')
     overlap=set(manifest['files']); data={}
-    for p in FILES:
+    for p in GEN_FILES:
         if p in overlap:
             fn=TRANS.get(p)
             if not fn:raise RuntimeError('NO_SAFE_TRANSFORM='+p)
@@ -374,19 +571,29 @@ def compose(run_dir,info,manifest):
     for p,b in data.items():
         oid=git('hash-object','-w','--stdin',input=b).decode().strip()
         git('update-index','--add','--cacheinfo',f'100644,{oid},{p}',e=e)
+    for sha in PATCH_COMMITS:
+        apply_patch_commit(idx,sha)
+    finish_generic_large(idx)
+    tree=git('write-tree',e=e).decode().strip()
+    changed=tuple(git('diff','--name-only',PARENT,tree,'--','src').decode().splitlines())
+    allowed=set(FILES)
+    extra=[p for p in changed if p not in allowed]
+    if extra: raise RuntimeError('UNEXPECTED_CHANGED_PATHS='+','.join(extra))
+    for p in changed:
+        b=git('show',tree+':'+p)
+        oid=git('rev-parse',tree+':'+p).decode().strip()
         original=git('rev-parse',f'{PARENT}:{p}').decode().strip() if exists(f'{PARENT}:{p}') else None
         manifest['files'][p]={'original_blob':original,'corrected_blob':oid,'sha256':hashlib.sha256(b).hexdigest()}
-    tree=git('write-tree',e=e).decode().strip()
-    msg=b'Preserve GPU-indexed guest image tables on verified candidate\n\nGeneric Vulkan non-uniform T# arrays only; retain all parent fixes. No title IDs, shader hashes, readback overrides, forced draws or rendering presets.\n'
+    msg=b'Complete generic GPU-indexed image and sampler tables on verified candidate\n\nPreserve complete packed and strided guest descriptor tables with GPU-side selection, physical Vulkan limits and ordinary descriptor-set fallback. No title IDs, shader-hash branches, forced readbacks, forced draws or rendering presets.\n'
     rev=git('commit-tree',tree,'-p',PARENT,input=msg).decode().strip()
-    if tuple(git('diff','--name-only',PARENT,rev,'--','src').decode().splitlines())!=FILES:raise RuntimeError('COMPOSED_CHANGE_SET_MISMATCH')
-    diff=git('diff',PARENT,rev,'--',*FILES).decode(errors='replace')
+    if not tuple(git('diff','--name-only',PARENT,rev,'--','src').decode().splitlines()):raise RuntimeError('EMPTY_COMPOSED_CHANGE_SET')
+    diff=git('diff',PARENT,rev,'--','src').decode(errors='replace')
     for pat in (r'CUSA\d+',r'Ghost of Tsushima',r'Tsushima',r'SHADPS4_[A-Z0-9_]*(?:AUDIT|HASH|GOT)',r'pgm_hash\s*==',r'readbacks_mode',r'readbacksMode',r'title_id\s*=='):
         if re.search(pat,diff,re.I):raise RuntimeError('GAME_SPECIFIC_SOURCE='+pat)
-    if 'ImageSampleImplicitLodIndexed' not in diff or 'NonUniform' not in diff:raise RuntimeError('INDEXED_PATH_MISSING')
+    if ('ImageSampleImplicitLodIndexed' not in diff or 'ImageGradientIndexed' not in diff or 'NonUniform' not in diff or 'indexed_sampler' not in diff):raise RuntimeError('INDEXED_PATH_MISSING')
     git('update-ref','refs/heads/local/generic-indexed-tsharp-'+rev[:12],rev)
     (info/'generic-indexed-image.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':PARENT,'exact_guest_descriptor_bytes':32,'max_guest_entries':15,'explicit_null_slot':True,'push_descriptor_budget_checked':True,'image_binding_budget_checked':True,'unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':PARENT,'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_budget_checked':True,'image_binding_budget_checked':True,'unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     d=builddir(); old=exe(d)
     if not old:raise RuntimeError('BUILD_EXECUTABLE_NOT_FOUND')
@@ -410,7 +617,7 @@ def compose(run_dir,info,manifest):
     if not sirit:raise RuntimeError('SIRIT_RESTORE_FAILED')
     if not cand or digest(cand)!=csha:raise RuntimeError('CANDIDATE_COPY_FAILED')
     ms=digest(mp)
-    report={'status':'GENERIC_INDEXED_IMAGE_BUILD_PASS','base':BASE,'source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_restored':True,'build_binary_restored':True,'sirit_restored':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP','game_specific_options':False,'all_games_validated':False}
+    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_restored':True,'build_binary_restored':True,'sirit_restored':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
     (info/'build-result.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
     return rev,tree,csha,cand
 
@@ -418,11 +625,11 @@ def launch(info,rev,tree,csha,cand):
     if digest(OLD)!=OLD_SHA:raise RuntimeError('PROTECTED_LAUNCHER_CHANGED_OR_MISSING')
     spec=importlib.util.spec_from_file_location('generic_indexed_runtime',OLD);m=importlib.util.module_from_spec(spec);sys.modules[spec.name]=m;spec.loader.exec_module(m)
     rp=info/'build-result.json';mp=info/'correction.json';rs=digest(rp);ms=digest(mp)
-    m.INFO=info;m.REV=rev;m.TREE=tree;m.PARENT=PARENT;m.BIN_SHA=csha;m.REPORT_SHA=rs;m.MANIFEST_SHA=ms;m.SESSION='got-generic-indexed-'+rev[:12]
+    m.INFO=info;m.REV=rev;m.TREE=tree;m.PARENT=PARENT;m.BIN_SHA=csha;m.REPORT_SHA=rs;m.MANIFEST_SHA=ms;m.SESSION='got-generic-large-indexed-'+rev[:12]
     def verify_build():
         if digest(rp)!=rs or digest(mp)!=ms:raise RuntimeError('BUILD_EVIDENCE_CHANGED')
         r=json.loads(rp.read_text())
-        for k,v in {'status':'GENERIC_INDEXED_IMAGE_BUILD_PASS','source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','source_restored':True,'build_binary_restored':True,'sirit_restored':True,'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP','game_specific_options':False}.items():
+        for k,v in {'status':'GENERIC_INDEXED_IMAGE_BUILD_PASS','source_parent':PARENT,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','source_restored':True,'build_binary_restored':True,'sirit_restored':True,'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False}.items():
             if r.get(k)!=v:raise RuntimeError('BUILD_GATE='+k)
         if Path(r['candidate'])!=cand or digest(cand)!=csha or git('rev-parse',rev+'^{tree}').decode().strip()!=tree or git('rev-parse',rev+'^').decode().strip()!=PARENT:raise RuntimeError('CANDIDATE_CHANGED')
         if git('rev-parse','HEAD').decode().strip()!=BASE or git('status','--porcelain').strip():raise RuntimeError('SOURCE_NOT_RESTORED')
@@ -432,7 +639,7 @@ def launch(info,rev,tree,csha,cand):
             if b and git('rev-parse',rev+':'+p).decode().strip()!=b:raise RuntimeError('SOURCE_BLOB='+p)
         return r,cand
     m.verify_build=verify_build
-    print('GENERIC_INDEXED_TSHARP_CANDIDATE='+rev+' FULLSCREEN=ON FPS=ON REBUILD=DONE',flush=True)
+    print('GENERIC_LARGE_INDEXED_RESOURCE_CANDIDATE='+rev+' FULLSCREEN=ON FPS=ON REBUILD=DONE',flush=True)
     return int(m.main())
 
 def archive(run_dir,error):
@@ -444,7 +651,7 @@ def archive(run_dir,error):
     return out
 
 def main():
-    (ROOT/'logs').mkdir(parents=True,exist_ok=True);run_dir=Path(tempfile.mkdtemp(prefix='generic-indexed-image-'+time.strftime('%Y%m%d-%H%M%S')+'-',dir=ROOT/'logs'));info=run_dir/'info';info.mkdir()
+    (ROOT/'logs').mkdir(parents=True,exist_ok=True);run_dir=Path(tempfile.mkdtemp(prefix='generic-large-indexed-resource-'+time.strftime('%Y%m%d-%H%M%S')+'-',dir=ROOT/'logs'));info=run_dir/'info';info.mkdir()
     try:
         with (ROOT/'clean-rebase-verified/.build.lock').open('a') as lock:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -455,5 +662,5 @@ def main():
             rev,tree,csha,cand=compose(run_dir,info,man)
         return launch(info,rev,tree,csha,cand)
     except (Exception,KeyboardInterrupt) as e:
-        out=archive(run_dir,e);print('GENERIC_INDEXED_IMAGE_ERROR='+str(e),file=sys.stderr,flush=True);print('UPLOAD_THIS='+str(out),flush=True);return 2
+        out=archive(run_dir,e);print('GENERIC_LARGE_INDEXED_RESOURCE_ERROR='+str(e),file=sys.stderr,flush=True);print('UPLOAD_THIS='+str(out),flush=True);return 2
 if __name__=='__main__':raise SystemExit(main())
