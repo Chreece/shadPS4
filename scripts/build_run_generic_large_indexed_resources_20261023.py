@@ -1292,7 +1292,6 @@ def compose(run_dir,info,manifest):
             raise RuntimeError('INDEXED_PATH_MISSING='+marker)
     temp_ref='refs/shadps4-composer/generic-large-indexed-resource-'+rev[:12]
     git('update-ref',temp_ref,rev)
-    manifest['temporary_source_ref']=temp_ref
     (info/'generic-large-indexed-resource.patch').write_text(diff)
     manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':list(PATCH_COMMITS),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
@@ -1300,10 +1299,8 @@ def compose(run_dir,info,manifest):
     cand=None;csha=''
     try:
         add_fresh_source(work,rev)
-        temp_ref=manifest.get('temporary_source_ref')
         if temp_ref:
             git('update-ref','-d',temp_ref,check=False)
-            manifest['temporary_source_ref_removed']=True
         submodules_at(work)
         print('FRESH_SOURCE_CLONE='+str(work),flush=True)
         print('FRESH_BUILD_DIRECTORY='+str(d),flush=True)
@@ -1329,10 +1326,8 @@ def compose(run_dir,info,manifest):
     finally:
         # Original GoT source checkout is never checked out or reset. Remove
         # the temporary reachability ref even when configure/build fails.
-        temp_ref=manifest.get('temporary_source_ref')
         if temp_ref:
             git('update-ref','-d',temp_ref,check=False)
-            manifest['temporary_source_ref_removed']=True
         if cand is not None and cand.is_file():
             remove_fresh_source(work)
             shutil.rmtree(d,ignore_errors=True)
