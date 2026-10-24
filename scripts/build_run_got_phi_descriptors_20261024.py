@@ -26,7 +26,7 @@ COMPOSER_BLOB="eac62a2550104a7493be5464f73cc3b188780580"
 NATIVE=ROOT/"scripts/build_run_got_upstream_native_20261024.py"
 NATIVE_BLOB="96c6b84bde950513c237a9daec6177999fb3ef92"
 PORT=ROOT/"scripts/restore_native_phi_descriptors_20261024.py"
-PORT_BLOB="b9a283292e38c772d5f1b4b2fb99b1392b208705"
+PORT_BLOB="dcbbba55566b2e37dbf3e922ef7f0a58a562430f"
 REMOTE="https://github.com/Chreece/shadPS4.git"
 
 def git_blob(path):
