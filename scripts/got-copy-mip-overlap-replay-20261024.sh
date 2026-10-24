@@ -29,7 +29,7 @@ if [[ "${BASE_BLOB}" != "${EXPECTED_RUNTIME_BLOB}" ]]; then
   exit 2
 fi
 echo "GOT_MIP_REPLAY_STAGE=FETCH_SINGLE_GENERIC_FIX"
-git -C "${SRC}" -c protocol.version=2 fetch -4 --no-tags origin "refs/heads/${BRANCH}"
+git -C "${SRC}" -c protocol.version=2 fetch -4 --no-tags https://github.com/Chreece/shadPS4.git "refs/heads/${BRANCH}"
 if ! git -C "${SRC}" merge-base --is-ancestor "${FIX}" FETCH_HEAD; then
   echo "FAIL: fetched branch does not contain the exact generic fix commit" >&2
   exit 3
