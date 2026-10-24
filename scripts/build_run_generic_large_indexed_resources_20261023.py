@@ -3563,7 +3563,7 @@ def merge_verified_parent_with_upstream(parent):
         raise RuntimeError('UPSTREAM_MERGE_TREE_INVALID='+stdout[-2000:])
 
     upstream_msg=(b'Merge pinned upstream main into verified generic graphics parent\n\n'
-                  b'No conflict resolution or game-specific preference was permitted.\n')
+                  b'The sole reviewed generic CPU conflict was reconciled with source checks; all others remain fatal.\n')
     upstream_merged=commit_tree(upstream_tree,parent,upstream_msg,(UPSTREAM_MAIN,))
     if git('rev-parse',upstream_merged+'^{tree}').decode().strip()!=upstream_tree:
         raise RuntimeError('UPSTREAM_MERGE_COMMIT_TREE_CHANGED')
