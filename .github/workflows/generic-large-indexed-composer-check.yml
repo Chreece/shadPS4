@@ -87,6 +87,10 @@ jobs:
           assert "def builddir():" not in s
           assert "'-DENABLE_TESTS=OFF'" in s
           assert "GOT_SOURCE_REPOSITORY_MISSING" in s
+          assert "def _head_gitlink(" in s
+          assert "code==' M' and path.startswith('externals/')" in s
+          assert "path=='.ghost-fresh-owner.json'" in s
+          assert "line.startswith('160000 commit ')" in s
           assert "def add_fresh_source(" in s
           assert "FRESH_SOURCE_COMPOSER_REF_FETCH_FAILED" in s
           assert "refs/remotes/composer/candidate" in s
