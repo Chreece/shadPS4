@@ -223,10 +223,9 @@ raster.write_text(s)
 texture.write_text(t)
 PY
 
-# Rasterizer is archived from the actual successful test; its exact
-# post-patch bytes are independently verified. The texture cache is checked
-# against *its own* local committed source and the precise semantic diff.
-RASTER_PATCH_SHA="6a1f72ee6694f6d4448d859180bfb39148efb849"
+# Reproduced both post-patch Git SHA1 hashes against source backups from
+# the user-uploaded 01:07 failure archive; both are checked before Ninja.
+RASTER_PATCH_SHA="828eab0a3ebfb8fdc20bbf7b0784e497d6e32a9e"
 if [[ "$(git hash-object "${RASTER}")" != "${RASTER_PATCH_SHA}" ]]; then
   echo "FAIL: renderer patch differs from verified 120s coherence correction" >&2
   exit 3
