@@ -28,9 +28,22 @@ jobs:
               if isinstance(n,ast.Assign)
               and len(n.targets)==1
               and isinstance(n.targets[0],ast.Name)
-              and n.targets[0].id in {"PATCH_COMMITS","VULKAN_INDEXING_FEATURE_FIXES","DESCRIPTOR_SET_SCALING_FIXES","DYNAMIC_IMAGE_BINDING_FIXES","STRIDED_TSHARP_FIXES","EXPLICIT_GRADIENT_INDEXING_FIXES","PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES","PAIRED_INDEXED_SAMPLER_BACKEND_FIXES"}
+              and n.targets[0].id in {"PATCH_COMMITS","PROVEN_SOURCE_COMMITS","VULKAN_INDEXING_FEATURE_FIXES","DESCRIPTOR_SET_SCALING_FIXES","DYNAMIC_IMAGE_BINDING_FIXES","STRIDED_TSHARP_FIXES","EXPLICIT_GRADIENT_INDEXING_FIXES","PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES","PAIRED_INDEXED_SAMPLER_BACKEND_FIXES"}
           }
           assert assigns["PATCH_COMMITS"] == ()
+          assert assigns["PROVEN_SOURCE_COMMITS"] == (
+              "a12c8c8c5c95c2acccb8c5bedc10a466fef0feba",
+              "bfb0d71c6b68a036fc18046398a7369c3908d0e8",
+              "1a7789b7f5c633d4f4c6cbe331758d2f1d5897f7",
+              "7ace685062a2c97870b61738a4b184a7882a5f6a",
+              "21f5b3179dbedb26718da44c38a9b3c56909a034",
+              "fb8171791b387b2980e2a3aa20c317a3022bf0a9",
+              "7edfa0c5b420bffeab70576e2b0da6d635bb0866",
+              "ffd19ac832130e2165388a7110d46c0fa6f6e4e9",
+              "12a07a6d83007f76012f762e68fedb5954aa0f8a",
+              "f94c4f09e6111c0f9ff9fd1c5125c762ae88eb07",
+              "822a68d8aae409b5a29759de462eb43329e52753",
+          )
           assert "cbbcc969156f9258633914409ca88e6458bbad2c" not in assigns["PATCH_COMMITS"]
           assert "538fc65527d96086443d14d3227eb9c5daa7397f" not in assigns["PATCH_COMMITS"]
           assert assigns["VULKAN_INDEXING_FEATURE_FIXES"] == (
@@ -107,6 +120,22 @@ jobs:
           assert "BUILD_ONLY_PASS=YES" in s
           assert "def ensure_required_refs(" in s
           assert "def recovered_parent_ref(" in s
+          assert "PROVEN_FIX_CHECKS=(" in s
+          assert "PROVEN_SOURCE_POSTCHECKS=(" in s
+          assert "def verify_proven_fix_base(" in s
+          assert "def verify_proven_source_parent(" in s
+          assert "def complete_proven_source_parent(" in s
+          assert "PROVEN_SOURCE_APPLY_FAILED" in s
+          assert "semantic-proven-fix-local-head" in s
+          assert "+public-source-replay" in s
+          assert "automatic_demand_coherence_policy" in s
+          assert "shared_srt_dependency_schedule" in s
+          assert "native_masked_wave_minimum" in s
+          assert "bounded_atomic_fault_feedback" in s
+          assert "implicit_dma_dependencies" in s
+          assert "buffer_phi_inverse_ballot_guard" in s
+          assert "GetSparseQueue().bindSparse" in s
+          assert "quit_input_capture" in s
           assert "RECOVERY_PARTS" in s
           assert "base64.b64decode" in s
           assert "gzip.decompress" in s
@@ -133,6 +162,9 @@ jobs:
           assert "if 'Id EmitImageSampleImplicitLodIndexed(' not in s:" in s
           assert "def instance_cpp(" in s
           assert "GUEST_TSHARP_FINAL='02c22fd61253b072a9bc4017e67f9c39fa0d4fa9'" in s
+          assert "PM4_BOUNDARY_SOURCE='ffd19ac832130e2165388a7110d46c0fa6f6e4e9'" in s
+          assert "def liverpool_pm4_boundaries(" in s
+          assert "PM4_REGISTER_BOUNDARY_TRANSFORM_MISSING" in s
           assert "FINAL_GUEST_TSHARP_HELPER_MISSING" in s
           assert "if p in (" in s
           assert "indexed_image_selector.h" in s
