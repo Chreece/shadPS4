@@ -23,6 +23,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import threading
 import tarfile
 import tempfile
 import time
@@ -271,6 +272,41 @@ def archive(folder):
                 tar.add(p,arcname=str(p.relative_to(folder)))
     return out
 
+def run_game_with_early_screenshots(native,candidate,info,folder,seconds):
+    # Capture the actual menu/frame before the prior ~52-second crash without
+    # ptrace, modifying renderer flags, or injecting controller input.
+    finished=threading.Event()
+    def snapshots():
+        try:
+            env=native.prepare_display()
+            started=time.monotonic()
+            for when in (20,40,65,110):
+                if finished.wait(max(0,when-(time.monotonic()-started))):
+                    return
+                path=folder/("game-frame-"+str(when)+"s.png")
+                for args in (["scrot","-o",str(path)],
+                             ["import","-window","root",str(path)]):
+                    if not shutil.which(args[0]):
+                        continue
+                    try:
+                        out=subprocess.run(args,env=env,stdout=subprocess.DEVNULL,
+                                           stderr=subprocess.DEVNULL,timeout=9)
+                        if out.returncode==0 and path.is_file() and path.stat().st_size>1024:
+                            print("EARLY_GAME_SCREENSHOT="+str(path),flush=True)
+                            break
+                    except (OSError,subprocess.TimeoutExpired):
+                        pass
+        except Exception as exc:
+            print("EARLY_SCREENSHOT_WARNING="+str(exc),flush=True)
+    thread=threading.Thread(target=snapshots,name="got-menu-evidence",
+                            daemon=True)
+    thread.start()
+    try:
+        return native.run_game(candidate,info,folder,seconds)
+    finally:
+        finished.set()
+        thread.join(timeout=2)
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--seconds",type=int,default=420)
@@ -301,7 +337,7 @@ def main():
             print("GAME_TEST=GHOST_OF_TSUSHIMA_NATIVE_CPU",flush=True)
             print("At GoT menu, press controller X (keyboard N) to enter the world.",flush=True)
             print("DYNAMORIO=REJECTED ES_DE=UNCHANGED",flush=True)
-            rc=native.run_game(candidate,info,folder,args.seconds)
+            rc=run_game_with_early_screenshots(native,candidate,info,folder,args.seconds)
             exitcode=0 if rc==0 else 2
     except BaseException as error:
         traceback.print_exc()
