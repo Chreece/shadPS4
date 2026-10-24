@@ -1769,12 +1769,19 @@ def raster(s):
                     // Explicit null sampler pairs with the explicit null image slot.
                     sampler_valid = false;
                 }
-                vk::Sampler vk_sampler{};
-                if (sampler_valid) {
-                    vk_sampler = texture_cache.GetSampler(
-                        ssharp, liverpool->regs.ta_bc_base,
-                        sampler.is_depth, is_integer);
-                }
+                // Even an unused or invalid guest S# table slot needs a
+                // real Vulkan sampler in an eSampler descriptor array.
+                // VK_NULL_HANDLE is not a legal mutable sampler descriptor.
+                // Preserve a valid guest S# when available; otherwise use
+                // the same cached canonical sampler as the older verified
+                // generic renderer. Never send a null sampler to RADV.
+                const AmdGpu::Sampler resolved_guest_sampler =
+                    sampler_valid ? ssharp : AmdGpu::Sampler{};
+                const vk::Sampler vk_sampler = texture_cache.GetSampler(
+                    resolved_guest_sampler, liverpool->regs.ta_bc_base,
+                    sampler.is_depth, is_integer);
+                ASSERT_MSG(static_cast<VkSampler>(vk_sampler) != VK_NULL_HANDLE,
+                           "Indexed sampler descriptor must have a real Vulkan sampler");
                 image_infos.emplace_back(
                     vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
             }
