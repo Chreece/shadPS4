@@ -210,7 +210,14 @@ struct SamplerResource {
     bool is_integer{};
 
     constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {
-        if (is_guest_indexed) return AmdGpu::Sampler{};
+        // A packed T# table uses one ordinary guest S# shared by every
+        // indexed image. Only an array-of-records table carries a separate
+        // indexed S# in each record, which is decoded by the Vulkan binder.
+        // Never discard the real shared sampler merely because the IMAGE
+        // handle itself is dynamically indexed.
+        if (is_guest_indexed && indexed_record_stride_bytes != 0) {
+            return AmdGpu::Sampler{};
+        }
         AmdGpu::Sampler sampler{};
         sharp_fetch.Fetch(info.flattened_ud_buf.data(), &sampler);
         if (post_op == SharpFetchPostOp::DisableAnisoIfSingleLod) {
