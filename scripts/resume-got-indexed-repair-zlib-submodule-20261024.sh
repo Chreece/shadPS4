@@ -79,11 +79,12 @@ if ! zlib_ready; then
   echo "ZLIB_STATUS=MISSING_OR_WRONG; restoring only ${ZLIB_REL}"
   echo "ZLIB_EXPECTED_COMMIT=${ZLIB_SHA}" > "${ZLIB_LOG}"
 
-  if git -C "${ZLIB_OLD}" cat-file -e "${ZLIB_SHA}^{commit}" 2>/dev/null; then
+  if [[ "$(git -C "${ZLIB_OLD}" rev-parse --show-toplevel 2>/dev/null || true)" == "${ZLIB_OLD}" ]] &&
+     git -C "${ZLIB_OLD}" cat-file -e "${ZLIB_SHA}^{commit}" 2>/dev/null; then
     echo "ZLIB_RECOVERY=TRY_LOCAL_OBJECTS"
     if git -C "${WORK}" -c protocol.file.allow=always -c http.version=HTTP/1.1 \
          submodule update --init --checkout --jobs 1 \
-         --reference-if-able "${ZLIB_OLD}" -- "${ZLIB_REL}" \
+         --reference "${ZLIB_OLD}" -- "${ZLIB_REL}" \
          >> "${ZLIB_LOG}" 2>&1; then
       echo "ZLIB_RECOVERY=LOCAL_REFERENCE_ATTEMPT_COMPLETED"
     fi
