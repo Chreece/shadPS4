@@ -1,0 +1,24 @@
+--- a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+@@ -102,10 +102,11 @@
+ 
+     u32 Add(const BufferResource& desc) {
+         const u32 index{Add(buffer_resources, desc, [&desc](const auto& existing) {
+             return desc.sharp_fetch == existing.sharp_fetch && desc.post_op == existing.post_op &&
+                    desc.post_op_dw1_mask == existing.post_op_dw1_mask &&
++                   desc.post_op_dw2_shift == existing.post_op_dw2_shift &&
+                    desc.buffer_type == existing.buffer_type;
+         })};
+         auto& buffer = buffer_resources[index];
+         buffer.used_types |= desc.used_types;
+         buffer.is_written |= desc.is_written;
+@@ -114,10 +115,11 @@
+     }
+ 
+     u32 Add(const ImageResource& desc) {
+         const u32 index{Add(image_resources, desc, [&desc](const auto& existing) {
+             return desc.sharp_fetch == existing.sharp_fetch && desc.is_array == existing.is_array &&
++                   desc.is_depth == existing.is_depth && desc.is_r128 == existing.is_r128 &&
+                    desc.mip_fallback_mode == existing.mip_fallback_mode &&
+                    desc.constant_mip_index == existing.constant_mip_index &&
+                    desc.post_op == existing.post_op &&
