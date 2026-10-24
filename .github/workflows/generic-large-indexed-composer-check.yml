@@ -217,6 +217,13 @@ jobs:
           assert "GENERIC_BASE_TRANSFORM_MISSING" in s
           assert "INTEGER_SAMPLER_EXTRA_TRANSFORM_MISSING" in s
           assert "for p in EXTRA_FILES:" in s
+          assert "CPU_ID_EXTRACTION_SOURCE='7edfa0c5b420bffeab70576e2b0da6d635bb0866'" in s
+          assert "def _apply_cpu_identity_overlay(" in s
+          assert "STRUCTURAL_CPU_ID_OVERLAY" in s
+          assert "CurrentGuestCpuImpl(" in s
+          assert "SelectGuestCpu(" in s
+          assert "RestoreHostNativeTsc()" in s
+          assert "GuestCpuCount = GuestCpuSlots" in s
           print("COMPOSER_STATIC_CHECK=PASS")
           PY
       - name: Validate recovered verified-parent artifact
