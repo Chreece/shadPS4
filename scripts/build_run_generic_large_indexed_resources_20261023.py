@@ -3418,6 +3418,881 @@ def recovered_parent_ref(run_dir):
     PARENT_TREE_ACTUAL=PARENT_TREE
     return PARENT_REF
 
+
+def _resolve_upstream_cpu_conflict(parent, message):
+    """Reconcile the exact generic CPU conflict evidenced on 2026-10-24."""
+    path='src/core/cpu_patches.cpp'
+    entries=re.findall(r'^100644 ([0-9a-f]{40}) ([123])\t([^\n]+)
+    if not exists(parent+'^{commit}'):
+        raise RuntimeError('VERIFIED_PARENT_MISSING_BEFORE_UPSTREAM_MERGE')
+    if not exists(UPSTREAM_MAIN+'^{commit}'):
+        raise RuntimeError('UPSTREAM_MAIN_MISSING_BEFORE_MERGE')
+    if not exists(PR_5492_HEAD+'^{commit}'):
+        raise RuntimeError('PR_5492_HEAD_MISSING_BEFORE_MERGE')
+    # GitHub independently confirms this exact immutable ancestor for the
+    # source/upstream pair. --merge-base avoids the shallow-history false
+    # "unrelated histories" error and retains Git's full conflict detection.
+    if not exists(PUBLIC_UPSTREAM_MERGE_BASE+'^{commit}'):
+        raise RuntimeError('UPSTREAM_MERGE_BASE_OBJECT_MISSING')
+    print('UPSTREAM_MERGE_BASE='+PUBLIC_UPSTREAM_MERGE_BASE,flush=True)
+    q=run(['git','-C',SRC,'merge-tree','--write-tree',
+           '--merge-base='+PUBLIC_UPSTREAM_MERGE_BASE,parent,UPSTREAM_MAIN],
+          check=False,timeout=120)
+    stdout=(q.stdout or b'').decode(errors='replace').strip()
+    stderr=(q.stderr or b'').decode(errors='replace').strip()
+    if q.returncode:
+        upstream_tree=_resolve_upstream_cpu_conflict(parent,stdout)
+    else:
+        upstream_tree=stdout.splitlines()[0].strip() if stdout else ''
+    if not re.fullmatch(r'[0-9a-f]{40}',upstream_tree) or not exists(upstream_tree+'^{tree}'):
+        raise RuntimeError('UPSTREAM_MERGE_TREE_INVALID='+stdout[-2000:])
+
+    upstream_msg=(b'Merge pinned upstream main into verified generic graphics parent\n\n'
+                  b'No conflict resolution or game-specific preference was permitted.\n')
+    upstream_merged=commit_tree(upstream_tree,parent,upstream_msg,(UPSTREAM_MAIN,))
+    if git('rev-parse',upstream_merged+'^{tree}').decode().strip()!=upstream_tree:
+        raise RuntimeError('UPSTREAM_MERGE_COMMIT_TREE_CHANGED')
+
+    verified_sirit=git('rev-parse',parent+':externals/sirit').decode().strip()
+    merged_sirit=git('rev-parse',upstream_merged+':externals/sirit').decode().strip()
+    if merged_sirit!=verified_sirit:
+        raise RuntimeError(
+            'UPSTREAM_MERGE_CHANGED_VERIFIED_SIRIT expected='+
+            verified_sirit+' got='+merged_sirit
+        )
+
+    # PR #5492 is still open, so merge its pinned head explicitly on top of
+    # current upstream. Refuse any conflict instead of silently preferring a side.
+    # PR 5492 is a one-commit branch from the verified base below. Passing
+    # the exact base is necessary when the local object graph is shallow.
+    if not exists(PUBLIC_PR_MERGE_BASE+'^{commit}'):
+        raise RuntimeError('PR_5492_MERGE_BASE_OBJECT_MISSING')
+    print('PR_5492_MERGE_BASE='+PUBLIC_PR_MERGE_BASE,flush=True)
+    q=run(['git','-C',SRC,'merge-tree','--write-tree',
+           '--merge-base='+PUBLIC_PR_MERGE_BASE,upstream_merged,PR_5492_HEAD],
+          check=False,timeout=120)
+    stdout=(q.stdout or b'').decode(errors='replace').strip()
+    stderr=(q.stderr or b'').decode(errors='replace').strip()
+    if q.returncode:
+        raise RuntimeError(
+            'PR_5492_MERGE_CONFLICT parent='+upstream_merged+
+            ' pr_head='+PR_5492_HEAD+' details='+(stdout+' '+stderr)[-6000:]
+        )
+    final_tree=stdout.splitlines()[0].strip() if stdout else ''
+    if not re.fullmatch(r'[0-9a-f]{40}',final_tree) or not exists(final_tree+'^{tree}'):
+        raise RuntimeError('PR_5492_MERGE_TREE_INVALID='+stdout[-2000:])
+
+    pr_msg=(b'Merge shadPS4 PR #5492 Audio3D feeder-thread change\n\n'
+            b'Pinned open PR head; no conflict resolution was permitted.\n')
+    # Merge latest upstream and PR first, then apply the complete generic
+    # fault-recovery fix to their flag-based BufferCache API. Applying the
+    # recovery call earlier creates an API mismatch and an avoidable textual
+    # merge conflict on the same ObtainBuffer invocation.
+    with tempfile.TemporaryDirectory(
+            prefix='shadps4-merged-fault-index-',dir=ROOT/'logs') as tmp:
+        idx=Path(tmp)/'fault.index'
+        e=env({'GIT_INDEX_FILE':str(idx)})
+        git('read-tree',final_tree,e=e)
+        source_api=index_text(idx,'src/video_core/buffer_cache/buffer_cache.h')
+        if ('enum class ObtainBufferFlags' not in source_api or
+            'IgnoreStreamBuffer = ' not in source_api):
+            raise RuntimeError('MERGED_UPSTREAM_FAULT_FLAGS_API_MISSING')
+        _apply_atomic_fault_feedback(idx)
+        final_tree=git('write-tree',e=e).decode().strip()
+
+    final_parent=commit_tree(final_tree,upstream_merged,pr_msg,(PR_5492_HEAD,))
+    if git('rev-parse',final_parent+'^{tree}').decode().strip()!=final_tree:
+        raise RuntimeError('PR_5492_MERGE_COMMIT_TREE_CHANGED')
+    # Verify the actual final composed source, not only the intermediate parent.
+    verify_proven_fix_base(final_parent,require_atomic=True)
+
+    return final_parent,final_tree,upstream_merged,upstream_tree
+
+def verify_prev(run_dir):
+    global PARENT_MODE
+    stage('fetch_required_refs')
+    ensure_required_refs()
+    if not SRC.is_dir() or not (SRC/'.git').exists():
+        raise RuntimeError('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC))
+    validate_source_status(BASE_STATUS)
+
+    stage('select_public_reconstruction_base')
+    retained_base=recovered_parent_ref(run_dir)
+
+    stage('complete_public_proven_source_fixes')
+    public_parent,public_tree,source_replay,source_evidence = \
+        complete_proven_source_parent(run_dir,retained_base)
+    # Runtime validation requires the verified provenance marker to describe
+    # the *actual* public-source replay used by this composition.
+    if not PARENT_MODE.endswith('+public-source-replay'):
+        PARENT_MODE += '+public-source-replay'
+
+    stage('complete_package_only_proven_fixes')
+    verified_parent,verified_tree,package_paths,package_evidence = \
+        complete_package_source_parent(run_dir,public_parent)
+
+    # Verify both groups before latest upstream is merged.
+    source_evidence=verify_proven_source_parent(verified_parent)
+    package_evidence=verify_proven_fix_base(verified_parent,require_atomic=False)
+
+    stage('merge_latest_upstream_and_pr_5492')
+    parent,parent_tree,upstream_parent,upstream_parent_tree = \
+        merge_verified_parent_with_upstream(verified_parent)
+    return {
+        'previous_parent':parent,
+        'previous_parent_tree':parent_tree,
+        'verified_parent':verified_parent,
+        'verified_parent_original':PARENT,
+        'verified_parent_tree':verified_tree,
+        'verified_parent_mode':PARENT_MODE,
+        'proven_fix_evidence':package_evidence,
+        'proven_source_evidence':source_evidence,
+        'proven_source_replay':source_replay,
+        'package_source_paths':package_paths,
+        'public_source_parent':public_parent,
+        'public_source_parent_tree':public_tree,
+        'parent_reconstructed':verified_parent!=PARENT,
+        'upstream_main':UPSTREAM_MAIN,
+        'upstream_parent':upstream_parent,
+        'upstream_parent_tree':upstream_parent_tree,
+        'pr_5492_head':PR_5492_HEAD,
+        'upstream_merge_conflicts':False,
+        'pr_5492_merge_conflicts':False,
+        'previous_evidence_logs':'NOT_REQUIRED',
+        'files':{},
+    }
+
+def fresh_paths(rev):
+    root=ROOT/'GhostOfTsushima'
+    stamp=f'{rev[:12]}-{os.getpid()}'
+    work=root/'fresh-source'/stamp
+    build=root/'fresh-builds'/stamp
+    work.parent.mkdir(parents=True,exist_ok=True)
+    build.parent.mkdir(parents=True,exist_ok=True)
+    for p in (work,build):
+        if p.exists():
+            shutil.rmtree(p)
+    return work,build
+
+def add_fresh_source(work,rev,temp_ref):
+    # Use an independent local clone instead of a linked worktree. Synthetic
+    # composition commits live under a temporary non-head ref, so explicitly
+    # fetch that ref into the clone before checkout; ordinary clone refspecs
+    # are not required to advertise/copy it.
+    q=run(['git','clone','--no-hardlinks','--no-checkout',SRC,work],
+          check=False,timeout=600)
+    if q.returncode:
+        raise RuntimeError(
+            'FRESH_SOURCE_CLONE_FAILED='+
+            (q.stderr or b'').decode(errors='replace')[-3000:]
+        )
+    q=run([
+        'git','-c','fetch.recurseSubmodules=false','-c','submodule.recurse=false',
+        '-C',work,'fetch','--no-tags','--recurse-submodules=no',str(SRC),
+        temp_ref+':refs/remotes/composer/candidate'
+    ],check=False,timeout=300)
+    if q.returncode:
+        raise RuntimeError(
+            'FRESH_SOURCE_COMPOSER_REF_FETCH_FAILED='+
+            (q.stderr or b'').decode(errors='replace')[-3000:]
+        )
+    fetched=run(
+        ['git','-C',work,'rev-parse','refs/remotes/composer/candidate'],
+        check=False,timeout=30)
+    fetched_rev=(fetched.stdout or b'').decode().strip()
+    if fetched.returncode or fetched_rev!=rev:
+        raise RuntimeError(
+            'FRESH_SOURCE_COMPOSER_REV_MISMATCH expected='+rev+
+            ' got='+fetched_rev
+        )
+    q=run(['git','-C',work,'checkout','--detach',rev],check=False,timeout=60)
+    if q.returncode:
+        raise RuntimeError(
+            'FRESH_SOURCE_CHECKOUT_FAILED='+
+            (q.stderr or b'').decode(errors='replace')[-3000:]
+        )
+
+def remove_fresh_source(work):
+    if work.exists():
+        shutil.rmtree(work,ignore_errors=True)
+
+def submodules_at(work):
+    q=run(['git','-C',work,'submodule','update','--init','--recursive','--force'],
+          check=False,timeout=900)
+    if q.returncode:
+        raise RuntimeError(
+            'SUBMODULE_UPDATE_FAILED='+
+            (q.stderr or b'').decode(errors='replace')[-3000:]
+        )
+
+
+def exe(d):
+    for p in (d/'shadps4',d/'bin/shadps4'):
+        if p.is_file() and not p.is_symlink() and os.access(p,os.X_OK):return p
+    a=[]
+    for p in d.rglob('shadps4'):
+        try:
+            if p.is_file() and not p.is_symlink() and os.access(p,os.X_OK):a.append((p.stat().st_mtime,p))
+        except OSError:pass
+    return max(a)[1] if a else None
+def tee(a,p):
+    with p.open('wb') as f:
+        q=subprocess.Popen([str(x) for x in a],env=env(),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+        for b in iter(q.stdout.readline,b''):
+            if not b:break
+            sys.stdout.buffer.write(b);sys.stdout.buffer.flush();f.write(b);f.flush()
+        rc=q.wait()
+    if rc:raise RuntimeError(f'BUILD_FAILED={rc} log={p}')
+
+def compose(run_dir,info,manifest):
+    stage('compose_generic_gpu_fix_stack')
+    parent=manifest['previous_parent']
+    if git('rev-parse','HEAD').decode().strip()!=BASE:
+        raise RuntimeError('ORIGINAL_GOT_SOURCE_HEAD_CHANGED')
+    assert_source_unchanged()
+    for x in (parent+'^{commit}',GEN_BASE+'^{commit}',GEN+'^{commit}',STRIDED_SELECTOR_FINAL+'^{commit}'):
+        if not exists(x):raise RuntimeError('OBJECT_MISSING='+x)
+    names=tuple(git('diff','--name-only',GEN_BASE,GEN,'--','src').decode().splitlines())
+    if set(names)!=set(GEN_FILES):
+        missing=sorted(set(GEN_FILES)-set(names))
+        extra=sorted(set(names)-set(GEN_FILES))
+        raise RuntimeError(
+            'GENERIC_CHANGE_SET_CHANGED missing='+','.join(missing)+
+            ' extra='+','.join(extra)
+        )
+    # The merged verified/upstream parent is authoritative. Existing generic
+    # source files are transformed structurally; the two helper headers below
+    # are seeded from pinned final blobs. No generic-base 3-way replay remains.
+    idx=run_dir/'index'
+    e=env({'GIT_INDEX_FILE':str(idx)})
+    git('read-tree',parent,e=e)
+    for p in GEN_FILES:
+        if p in (
+            'src/shader_recompiler/ir/passes/indexed_image_selector.h',
+            'src/shader_recompiler/guest_tsharp_array.h',
+        ):
+            continue
+        fn=TRANS.get(p)
+        if not fn:
+            raise RuntimeError('GENERIC_BASE_TRANSFORM_MISSING='+p)
+        content=fn(show(parent,p).decode()).encode()
+        oid=git('hash-object','-w','--stdin',input=content).decode().strip()
+        git('update-index','--add','--cacheinfo',f'100644,{oid},{p}',e=e)
+
+    # Deterministic fixes outside the original 464e32 file set. Only files
+    # explicitly registered in TRANS are changed here; everything else stays
+    # at the merged verified/upstream parent until its audited replay commit.
+    for p in EXTRA_FILES:
+        if p=='src/video_core/amdgpu/pm4_register_write.h':
+            continue
+        fn=TRANS.get(p)
+        if not fn:
+            continue
+        content=fn(index_text(idx,p)).encode()
+        oid=git('hash-object','-w','--stdin',input=content).decode().strip()
+        git('update-index','--add','--cacheinfo',f'100644,{oid},{p}',e=e)
+
+    pm4_path='src/video_core/amdgpu/pm4_register_write.h'
+    pm4_header=show(PM4_BOUNDARY_SOURCE,pm4_path)
+    pm4_text=pm4_header.decode()
+    if 'WriteShaderRegisters(' not in pm4_text:
+        raise RuntimeError('PM4_REGISTER_HELPER_SOURCE_INVALID')
+    oid=git('hash-object','-w','--stdin',input=pm4_header).decode().strip()
+    git('update-index','--add','--cacheinfo',f'100644,{oid},{pm4_path}',e=e)
+    if 'PM4::WriteShaderRegisters(' not in index_text(idx,'src/video_core/amdgpu/liverpool.cpp'):
+        raise RuntimeError('PM4_REGISTER_BOUNDARY_TRANSFORM_MISSING')
+
+    # Seed the final generic indexed-selector helper directly. The three
+    # historical commits that progressively built this header are superseded
+    # by this exact later generic version; replaying their old intermediate
+    # hunks onto the newer packed-selector base only creates false conflicts.
+    selector_path='src/shader_recompiler/ir/passes/indexed_image_selector.h'
+    selector=show(STRIDED_SELECTOR_FINAL,selector_path)
+    selector_text=selector.decode()
+    for marker in (
+        'AnalyzeStridedIndexedSharpWord',
+        'template <std::size_t N>',
+        'GcnTextureDwordIndex',
+        'static_assert(N == 4 || N == 8)',
+    ):
+        if marker not in selector_text:
+            raise RuntimeError('STRIDED_SELECTOR_FINAL_MISSING='+marker)
+    oid=git('hash-object','-w','--stdin',input=selector).decode().strip()
+    git('update-index','--add','--cacheinfo',f'100644,{oid},{selector_path}',e=e)
+
+    guest_table_path='src/shader_recompiler/guest_tsharp_array.h'
+    guest_table=show(GUEST_TSHARP_FINAL,guest_table_path)
+    guest_text=guest_table.decode()
+    for marker in (
+        'CompleteGuestTsharpTableEntries',
+        'CompleteGuestTsharpRecordEntries',
+        'GuestTsharpIndexOrNull',
+    ):
+        if marker not in guest_text:
+            raise RuntimeError('FINAL_GUEST_TSHARP_HELPER_MISSING='+marker)
+    oid=git('hash-object','-w','--stdin',input=guest_table).decode().strip()
+    git('update-index','--add','--cacheinfo',f'100644,{oid},{guest_table_path}',e=e)
+
+    for p,marker in (
+        ('src/video_core/texture_cache/sampler.h','bool is_integer'),
+        ('src/video_core/texture_cache/sampler.cpp','ImageSamplerFilter('),
+        ('src/video_core/texture_cache/texture_cache.h','bool is_depth, bool is_integer'),
+        ('src/video_core/texture_cache/texture_cache.cpp','is_depth, is_integer'),
+    ):
+        if marker not in index_text(idx,p):
+            raise RuntimeError(
+                'INTEGER_SAMPLER_EXTRA_TRANSFORM_MISSING path='+p+' marker='+marker
+            )
+
+    sampler_policy_path='src/video_core/texture_cache/sampler_filter_policy.h'
+    sampler_policy=show(INTEGER_SAMPLER_FINAL,sampler_policy_path)
+    sampler_policy_text=sampler_policy.decode()
+    for marker in ('ImageSamplerFilter','ImageSamplerMipmapMode','SamplerAnisotropyAllowed'):
+        if marker not in sampler_policy_text:
+            raise RuntimeError('INTEGER_SAMPLER_POLICY_MISSING='+marker)
+    oid=git('hash-object','-w','--stdin',input=sampler_policy).decode().strip()
+    git('update-index','--add','--cacheinfo',f'100644,{oid},{sampler_policy_path}',e=e)
+
+    finish_generic_large(idx)
+
+    # The composed descriptor/shader ABI invalidates binary + metadata caches
+    # exactly once relative to the merged verified/upstream parent.
+    cache_path='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
+    parent_cache=show(parent,cache_path).decode()
+    final_cache=index_text(idx,cache_path)
+    for key in ('ShaderBinaryVersion','ShaderMetaVersion'):
+        rx=rf'static constexpr u32 {key}\s*=\s*(0x[0-9A-Fa-f]+|\d+)u?;'
+        pm=re.search(rx,parent_cache)
+        fm=re.search(rx,final_cache)
+        if not pm or not fm:
+            raise RuntimeError('CACHE_VERSION_PARSE_FAILED='+key)
+        if int(fm.group(1),0)!=int(pm.group(1),0)+1:
+            raise RuntimeError(
+                'CACHE_VERSION_NOT_SINGLE_BUMP='+key+
+                ' parent='+pm.group(1)+' final='+fm.group(1)
+            )
+
+    # Cross-file dependency gate: the selected historical commits are
+    # intentionally narrower than the old experimental branch. Verify the
+    # complete generic feature chain is present before creating/building a
+    # candidate so omissions fail here, not as opaque C++ errors later.
+    required_markers={
+        'src/shader_recompiler/ir/passes/indexed_image_selector.h':(
+            'AnalyzeStridedIndexedSharpWord',
+            'template <std::size_t N>',
+            'GcnTextureDwordIndex',
+        ),
+        'src/shader_recompiler/ir/passes/resource_pass.h':(
+            'has_indexed_sampler_table',
+            'indexed_record_stride_bytes',
+            'indexed_sampler_offset_bytes',
+        ),
+        'src/shader_recompiler/resource.h':(
+            'is_guest_indexed',
+            'indexed_guest_entries',
+            'indexed_sampler',
+            'is_integer',
+        ),
+        'src/shader_recompiler/ir/passes/resource_patching_pass.cpp':(
+            'ImageGradientIndexed',
+            'indexed_sampler',
+            'max_guest_indexed_sampler_entries',
+        ),
+        'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp':(
+            'supports_sampler_array_nonuniform_indexing',
+            'SampledImageArrayNonUniformIndexing',
+        ),
+        'src/shader_recompiler/backend/spirv/emit_spirv_image.cpp':(
+            'ImageGradientIndexed',
+            'ImageGatherExtended',
+        ),
+        'src/video_core/renderer_vulkan/vk_rasterizer.cpp':(
+            'is_guest_indexed',
+            'indexed_sampler',
+            'NumBindings(stage)',
+            'GetSampler(',
+        ),
+        'src/video_core/renderer_vulkan/vk_resource_pool.cpp':(
+            'sampled_image_slots',
+            'pool_sizes_.begin()',
+        ),
+        'src/video_core/renderer_vulkan/vk_resource_pool.h':(
+            'std::vector<vk::DescriptorPoolSize> pool_sizes;',
+        ),
+        'src/video_core/texture_cache/sampler.cpp':(
+            'is_integer',
+            'ImageSamplerFilter',
+            'SamplerAnisotropyAllowed',
+        ),
+    }
+    for path,markers in required_markers.items():
+        text=index_text(idx,path)
+        for marker in markers:
+            if marker not in text:
+                raise RuntimeError(
+                    'GENERIC_FEATURE_DEPENDENCY_MISSING path='+path+
+                    ' marker='+marker
+                )
+
+    instance_cpp=index_text(idx,'src/video_core/renderer_vulkan/vk_instance.cpp')
+    if 'shaderSamplerArrayNonUniformIndexing' in instance_cpp:
+        raise RuntimeError('INVALID_VULKAN_SAMPLER_NONUNIFORM_FEATURE_RETAINED')
+
+    # Cross-layer descriptor binding contract. The same SamplerResource count
+    # must drive SPIR-V bindings, Vulkan set layouts and runtime writes.
+    sampler_contract={
+        'src/shader_recompiler/resource.h':(
+            'return is_guest_indexed ? indexed_guest_entries + 1u : 1u;',
+            'indexed_image_offset_bytes',
+            'indexed_sampler_offset_bytes',
+        ),
+        'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp':(
+            'const u32 count = samp_desc.NumBindings(info);',
+            'binding.unified += count;',
+            'sampler_array_sizes.push_back(count)',
+            'spv::Capability::SampledImageArrayNonUniformIndexing',
+        ),
+        'src/shader_recompiler/backend/spirv/emit_spirv_image.cpp':(
+            'LoadIndexedGuestSampler',
+            'sampler_count == expected_count',
+        ),
+        'src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp':(
+            'const u32 count = sampler.NumBindings(*stage);',
+            '.descriptorCount = count',
+            'binding += count;',
+        ),
+        'src/video_core/renderer_vulkan/vk_compute_pipeline.cpp':(
+            'const u32 count = sampler.NumBindings(*info);',
+            '.descriptorCount = count',
+            'binding += count;',
+        ),
+        'src/video_core/renderer_vulkan/vk_rasterizer.cpp':(
+            'const u32 count = sampler.NumBindings(stage);',
+            'AmdGpu::IsInteger(raw_image.GetNumberFmt())',
+            'write.descriptorCount = count;',
+            'binding.unified += count;',
+            'sampler.indexed_image_offset_bytes',
+            'sampler.indexed_sampler_offset_bytes',
+            'AmdGpu::IsInteger(raw_image.GetNumberFmt())',
+            'vk::Sampler vk_sampler{};',
+            'sampler_valid = false;',
+        ),
+    }
+    for path,markers in sampler_contract.items():
+        text=index_text(idx,path)
+        for marker in markers:
+            if marker not in text:
+                raise RuntimeError(
+                    'INDEXED_SAMPLER_BINDING_CONTRACT_MISSING path='+path+
+                    ' marker='+marker
+                )
+    spirv_context_text=index_text(
+        idx,'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp')
+    if 'spv::Capability::SamplerArrayNonUniformIndexing' in spirv_context_text:
+        raise RuntimeError('INVALID_SPIRV_SAMPLER_ARRAY_CAPABILITY_RETAINED')
+    raster_text=index_text(idx,'src/video_core/renderer_vulkan/vk_rasterizer.cpp')
+    if 'fmt==AmdGpu::DataFormat::FormatInvalid || AmdGpu::IsInteger(nfmt)' in raster_text:
+        raise RuntimeError('INDEXED_INTEGER_IMAGE_REJECTION_RETAINED')
+
+    def require_order(text, markers, label):
+        positions=[text.find(marker) for marker in markers]
+        if any(pos<0 for pos in positions) or positions!=sorted(positions):
+            raise RuntimeError(
+                label+'_ORDER_INVALID positions='+','.join(map(str,positions))
+            )
+
+    profile_text=index_text(idx,'src/shader_recompiler/profile.h')
+    require_order(
+        profile_text,
+        (
+            'u32 sparse_page_shift{};',
+            'u32 max_guest_indexed_image_entries{15};',
+            'u32 max_guest_indexed_sampler_entries{15};',
+            'bool support_int8{};',
+            'bool supports_image_load_store_lod{};',
+            'bool supports_shader_image_gather_extended{};',
+            'bool supports_sampled_image_nonuniform_indexing{};',
+            'bool supports_sampler_array_nonuniform_indexing{};',
+            'u32 max_push_descriptors{};',
+            'bool supports_native_cube_calc{};',
+        ),
+        'PROFILE_DECLARATION')
+
+    pipeline_text=index_text(idx,'src/video_core/renderer_vulkan/vk_pipeline_cache.cpp')
+    require_order(
+        pipeline_text,
+        (
+            '.sparse_page_shift = sparse_page_shift,',
+            '.max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),',
+            '.max_guest_indexed_sampler_entries = GuestIndexedSamplerLimit(instance),',
+            '.support_int8 = instance.IsShaderInt8Supported(),',
+            '.supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),',
+            '.supports_shader_image_gather_extended =',
+            '.supports_sampled_image_nonuniform_indexing =',
+            '.supports_sampler_array_nonuniform_indexing =',
+            '.max_push_descriptors = instance_.MaxPushDescriptors(),',
+            '.supports_native_cube_calc = instance_.IsAmdGcnShaderSupported(),',
+        ),
+        'PROFILE_INITIALIZER')
+
+    require_order(
+        instance_cpp,
+        (
+            '.shaderImageGatherExtended = features.shaderImageGatherExtended,',
+            '.shaderStorageImageMultisample = features.shaderStorageImageMultisample,',
+            '.shaderSampledImageArrayDynamicIndexing =',
+            '.shaderClipDistance = features.shaderClipDistance,',
+        ),
+        'VK_FEATURES_INITIALIZER')
+    require_order(
+        instance_cpp,
+        (
+            '.shaderInt8 = vk12_features.shaderInt8,',
+            '.descriptorIndexing = vk12_features.descriptorIndexing,',
+            '.shaderSampledImageArrayNonUniformIndexing =',
+            '.scalarBlockLayout = vk12_features.scalarBlockLayout,',
+        ),
+        'VK12_FEATURES_INITIALIZER')
+
+    tree=git('write-tree',e=e).decode().strip()
+    changed=tuple(git('diff','--name-only',parent,tree,'--','src').decode().splitlines())
+    allowed=set(FILES)
+    extra=[p for p in changed if p not in allowed]
+    if extra: raise RuntimeError('UNEXPECTED_CHANGED_PATHS='+','.join(extra))
+    for p in changed:
+        b=git('show',tree+':'+p)
+        oid=git('rev-parse',tree+':'+p).decode().strip()
+        original=git('rev-parse',f'{parent}:{p}').decode().strip() if exists(f'{parent}:{p}') else None
+        manifest['files'][p]={'original_blob':original,'corrected_blob':oid,'sha256':hashlib.sha256(b).hexdigest()}
+    msg=b'Complete generic GPU-indexed image and sampler tables on verified candidate\n\nPreserve complete packed and strided guest descriptor tables with GPU-side selection, physical Vulkan limits and ordinary descriptor-set fallback. No title IDs, shader-hash branches, forced readbacks, forced draws or rendering presets.\n'
+    rev=commit_tree(tree,parent,msg)
+    diff=git('diff',parent,rev,'--','src').decode(errors='replace')
+    added='\n'.join(
+        line[1:] for line in diff.splitlines()
+        if line.startswith('+') and not line.startswith('+++')
+    )
+    for pat in (r'CUSA\d+',r'Ghost of Tsushima',r'Tsushima',
+                r'pgm_hash\s*==',r'title_id\s*==',
+                r'getenv\([^\n]*SHADPS4_',r'readbacks_mode\s*=',
+                r'readbacksMode\s*='):
+        if re.search(pat,added,re.I):
+            raise RuntimeError('GAME_SPECIFIC_SOURCE_ADDITION='+pat)
+    final_feature_text='\n'.join((
+        index_text(idx,'src/shader_recompiler/ir/opcodes.inc'),
+        index_text(idx,'src/shader_recompiler/ir/passes/resource_patching_pass.cpp'),
+        index_text(idx,'src/shader_recompiler/backend/spirv/emit_spirv_image.cpp'),
+        index_text(idx,'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp'),
+        index_text(idx,'src/video_core/renderer_vulkan/vk_rasterizer.cpp'),
+    ))
+    for marker in (
+        'ImageSampleImplicitLodIndexed',
+        'ImageGradientIndexed',
+        'NonUniform',
+        'indexed_sampler',
+        'ImageGatherExtended',
+    ):
+        if marker not in final_feature_text:
+            raise RuntimeError('INDEXED_PATH_MISSING='+marker)
+    temp_ref='refs/shadps4-composer/generic-large-indexed-resource-'+rev[:12]
+    git('update-ref',temp_ref,rev)
+    (info/'generic-large-indexed-resource.patch').write_text(diff)
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':[],'integer_sampler_source':INTEGER_SAMPLER_FINAL,'pm4_boundary_source':PM4_BOUNDARY_SOURCE,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'explicit_gradient_indexing_fixes':list(EXPLICIT_GRADIENT_INDEXING_FIXES),'paired_indexed_sampler_frontend_fixes':list(PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES),'paired_indexed_sampler_backend_fixes':list(PAIRED_INDEXED_SAMPLER_BACKEND_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'cache_versions_single_bump':True,'all_games_validated':False}
+    mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+    work,d=fresh_paths(rev)
+    cand=None;csha=''
+    try:
+        stage('create_fresh_source_clone')
+        add_fresh_source(work,rev,temp_ref)
+        if temp_ref:
+            git('update-ref','-d',temp_ref,check=False)
+        stage('initialize_fresh_submodules')
+        submodules_at(work)
+        print('FRESH_SOURCE_CLONE='+str(work),flush=True)
+        print('FRESH_BUILD_DIRECTORY='+str(d),flush=True)
+        print('COMPOSED_REVISION='+rev,flush=True)
+        stage('configure_release_build')
+        tee([
+            'cmake','--fresh','-S',work,'-B',d,'-G','Ninja',
+            '-DCMAKE_BUILD_TYPE=Release',
+            '-DENABLE_TESTS=OFF',
+            '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON',
+        ],info/'configure.log')
+        stage('compile_shadps4')
+        tee([
+            'nice','-n','10','cmake','--build',d,
+            '--target','shadps4','--parallel','2',
+        ],info/'full-build.log')
+        stage('verify_built_candidate')
+        built=exe(d)
+        if not built:
+            raise RuntimeError('NEW_BUILD_EXECUTABLE_NOT_FOUND')
+        csha=digest(built)
+        cand=ROOT/'GhostOfTsushima/candidates'/f'{rev}-{csha}'/'shadps4'
+        cand.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(built,cand)
+        cand.chmod(cand.stat().st_mode|stat.S_IXUSR|stat.S_IXGRP|stat.S_IXOTH)
+    finally:
+        # Original GoT source checkout is never checked out or reset. Remove
+        # the temporary reachability ref and disposable source clone even when
+        # configure/build fails. Preserve a failed build directory because the
+        # compiler output there can still be useful; successful builds are
+        # copied to candidates and their build directory is discarded.
+        if temp_ref:
+            git('update-ref','-d',temp_ref,check=False)
+        remove_fresh_source(work)
+        if cand is not None and cand.is_file():
+            shutil.rmtree(d,ignore_errors=True)
+    if git('rev-parse','HEAD').decode().strip()!=BASE:
+        raise RuntimeError('ORIGINAL_GOT_SOURCE_HEAD_CHANGED_AFTER_BUILD')
+    assert_source_unchanged()
+    if not cand or digest(cand)!=csha:raise RuntimeError('CANDIDATE_COPY_FAILED')
+    ms=digest(mp)
+    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':parent,'source_parent_tree':git('rev-parse',parent+'^{tree}').decode().strip(),'verified_parent':manifest['verified_parent'],'verified_parent_tree':manifest['verified_parent_tree'],'verified_parent_mode':manifest['verified_parent_mode'],'upstream_main':UPSTREAM_MAIN,'upstream_parent':manifest['upstream_parent'],'upstream_parent_tree':manifest['upstream_parent_tree'],'pr_5492_head':PR_5492_HEAD,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_source_clone':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'original_submodules_untouched':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
+    (info/'build-result.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+    return rev,tree,csha,cand
+
+def launch(info,rev,tree,csha,cand):
+    if digest(OLD)!=OLD_SHA:raise RuntimeError('PROTECTED_LAUNCHER_CHANGED_OR_MISSING')
+    spec=importlib.util.spec_from_file_location('generic_indexed_runtime',OLD);m=importlib.util.module_from_spec(spec);sys.modules[spec.name]=m;spec.loader.exec_module(m)
+    rp=info/'build-result.json';mp=info/'correction.json';rs=digest(rp);ms=digest(mp)
+    m.INFO=info;m.REV=rev;m.TREE=tree;m.PARENT=json.loads(rp.read_text())['source_parent'];m.BIN_SHA=csha;m.REPORT_SHA=rs;m.MANIFEST_SHA=ms;m.SESSION='got-generic-large-indexed-'+rev[:12]
+    def verify_build():
+        if digest(rp)!=rs or digest(mp)!=ms:raise RuntimeError('BUILD_EVIDENCE_CHANGED')
+        r=json.loads(rp.read_text())
+        expected={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS',
+                  'generic_source_commit':GEN,'revision':rev,'tree':tree,
+                  'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS',
+                  'source_untouched':True,'fresh_source_clone':True,'fresh_build_from_zero':True,
+                  'legacy_builds_searched':False,'tests_enabled':False,
+                  'original_submodules_untouched':True,
+                  'upstream_main':UPSTREAM_MAIN,
+                  'pr_5492_head':PR_5492_HEAD,
+                  'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP',
+                  'game_specific_options':False}
+        for k,v in expected.items():
+            if r.get(k)!=v:raise RuntimeError('BUILD_GATE='+k)
+        verified_parent=r.get('verified_parent')
+        if not verified_parent or not exists(verified_parent+'^{commit}'):
+            raise RuntimeError('VERIFIED_BUILD_PARENT_MISSING')
+        verified_tree=git('rev-parse',verified_parent+'^{tree}').decode().strip()
+        if verified_tree!=r.get('verified_parent_tree'):
+            raise RuntimeError('VERIFIED_BUILD_PARENT_TREE_MISMATCH')
+        mode=r.get('verified_parent_mode','')
+        if not mode.endswith('+public-source-replay'):
+            raise RuntimeError('VERIFIED_BUILD_PARENT_MODE_INVALID')
+
+        source_parent=r.get('source_parent')
+        if not source_parent or not exists(source_parent+'^{commit}'):
+            raise RuntimeError('BUILD_PARENT_MISSING')
+        source_parent_tree=git('rev-parse',source_parent+'^{tree}').decode().strip()
+        if source_parent_tree!=r.get('source_parent_tree'):
+            raise RuntimeError('BUILD_PARENT_TREE_MISMATCH')
+        upstream_parent=r.get('upstream_parent')
+        if not upstream_parent or not exists(upstream_parent+'^{commit}'):
+            raise RuntimeError('UPSTREAM_PARENT_MISSING')
+        if git('rev-parse',upstream_parent+'^{tree}').decode().strip()!=r.get('upstream_parent_tree'):
+            raise RuntimeError('UPSTREAM_PARENT_TREE_MISMATCH')
+
+        parent_line=git('rev-list','--parents','-n','1',source_parent).decode().split()
+        if len(parent_line)!=3 or parent_line[1]!=upstream_parent or parent_line[2]!=PR_5492_HEAD:
+            raise RuntimeError('PR_5492_MERGE_PARENTAGE_MISMATCH')
+        upstream_line=git('rev-list','--parents','-n','1',upstream_parent).decode().split()
+        if len(upstream_line)!=3 or upstream_line[1]!=verified_parent or upstream_line[2]!=UPSTREAM_MAIN:
+            raise RuntimeError('UPSTREAM_MERGE_PARENTAGE_MISMATCH')
+        if (Path(r['candidate'])!=cand or digest(cand)!=csha or
+            git('rev-parse',rev+'^{tree}').decode().strip()!=tree or
+            git('rev-parse',rev+'^').decode().strip()!=source_parent):
+            raise RuntimeError('CANDIDATE_CHANGED')
+        if git('rev-parse','HEAD').decode().strip()!=BASE:
+            raise RuntimeError('ORIGINAL_GOT_SOURCE_HEAD_CHANGED_AFTER_BUILD')
+        assert_source_unchanged()
+        man=json.loads(mp.read_text())
+        for p,x in man['files'].items():
+            b=x.get('corrected_blob')
+            if b and git('rev-parse',rev+':'+p).decode().strip()!=b:raise RuntimeError('SOURCE_BLOB='+p)
+        return r,cand
+    m.verify_build=verify_build
+    print('GENERIC_LARGE_INDEXED_RESOURCE_CANDIDATE='+rev+' FULLSCREEN=ON FPS=ON REBUILD=DONE',flush=True)
+
+    # The protected runtime launcher predates the SSH-safe runner contract and
+    # may terminate its own process group during cleanup. Never let it share
+    # the SSH shell's process group. Fork once, create a new session in the
+    # child, and keep the build/composer parent attached to the caller.
+    pid=os.fork()
+    if pid==0:
+        try:
+            os.setsid()
+            rc=int(m.main())
+        except BaseException:
+            import traceback
+            traceback.print_exc()
+            rc=125
+        os._exit(rc & 0xff)
+    while True:
+        try:
+            _,status=os.waitpid(pid,0)
+            break
+        except InterruptedError:
+            continue
+    if os.WIFEXITED(status):
+        return os.WEXITSTATUS(status)
+    if os.WIFSIGNALED(status):
+        sig=os.WTERMSIG(status)
+        print('ISOLATED_RUNTIME_SIGNAL='+str(sig),file=sys.stderr,flush=True)
+        return 128+sig
+    return 125
+
+def archive(run_dir,error):
+    info=run_dir/'info';info.mkdir(parents=True,exist_ok=True)
+    if error is not None:
+        (info/'failure.txt').write_text(type(error).__name__+': '+str(error)+'\n')
+    out=Path(str(run_dir)+'.tar.gz')
+    with tarfile.open(out,'w:gz') as t:
+        for p in run_dir.rglob('*'):
+            if p.is_file() and p.name!='private-binary':t.add(p,arcname=p.relative_to(run_dir))
+    return out
+
+def main():
+    global BASE, BASE_STATUS
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--launch',action='store_true',
+        help='Launch the built candidate after a successful fresh build.')
+    args=parser.parse_args()
+    if not SRC.is_dir() or not (SRC/'.git').exists():
+        print('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC),file=sys.stderr,flush=True)
+        return 2
+    BASE=git('rev-parse','HEAD').decode().strip()
+    BASE_STATUS=source_status()
+    validate_source_status(BASE_STATUS)
+    (ROOT/'logs').mkdir(parents=True,exist_ok=True);run_dir=Path(tempfile.mkdtemp(prefix='generic-large-indexed-resource-'+time.strftime('%Y%m%d-%H%M%S')+'-',dir=ROOT/'logs'));info=run_dir/'info';info.mkdir()
+    try:
+        with (ROOT/'GhostOfTsushima/.build.lock').open('a') as lock:
+            try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            except BlockingIOError:raise RuntimeError('ANOTHER_SHADPS4_BUILD_OWNS_LOCK')
+            man=verify_prev(run_dir)
+            rev,tree,csha,cand=compose(run_dir,info,man)
+        print('BUILD_ONLY_PASS=YES',flush=True)
+        print('CANDIDATE='+str(cand),flush=True)
+        print('COMPOSED_REVISION='+rev,flush=True)
+        print('SOURCE_PARENT='+man['previous_parent'],flush=True)
+        print('UPSTREAM_MAIN='+UPSTREAM_MAIN,flush=True)
+        print('PR_5492_HEAD='+PR_5492_HEAD,flush=True)
+        print('VERIFIED_PARENT_TREE='+man['verified_parent_tree'],flush=True)
+        print('VERIFIED_PARENT_MODE='+man['verified_parent_mode'],flush=True)
+        if not args.launch:
+            print('GAME_LAUNCHED=NO',flush=True)
+            print('UPLOAD_THIS='+str(archive(run_dir,None)),flush=True)
+            return 0
+        if not OLD.is_file() or digest(OLD)!=OLD_SHA:
+            raise RuntimeError('PROTECTED_LAUNCHER_MISSING_OR_CHANGED='+str(OLD))
+        stage('launch_got_candidate')
+        return launch(info,rev,tree,csha,cand)
+    except (Exception,KeyboardInterrupt) as e:
+        out=archive(run_dir,e);print('GENERIC_LARGE_INDEXED_RESOURCE_ERROR='+str(e),file=sys.stderr,flush=True);print('UPLOAD_THIS='+str(out),flush=True);return 2
+if __name__=='__main__':raise SystemExit(main())
+,message,re.M)
+    if len(entries)!=3 or any(p!=path for _,_,p in entries):
+        raise RuntimeError('UNREVIEWED_UPSTREAM_CONFLICTS')
+    stages={stage:oid for oid,stage,_ in entries}
+    if (set(stages)!={'1','2','3'} or
+        stages['1']!='605fcf36928fb0f64bdb80e9e887f7561af83283' or
+        stages['3']!='85cf66c7d67c11cd686079423a9dddf13a745a56' or
+        stages['2']!=git('rev-parse',parent+':'+path).decode().strip()):
+        raise RuntimeError('CPU_CONFLICT_BLOBS_DIFFER_FROM_REVIEWED_SOURCE')
+    conflicts=[x for x in message.splitlines() if
+               x.startswith('CONFLICT ') or x.startswith('KONFLIKT ')]
+    if len(conflicts)!=1 or path not in conflicts[0]:
+        raise RuntimeError('CPU_PATCH_CONFLICT_HAS_OTHER_PATHS')
+    stage('merge_exact_cpu_overlap_structurally')
+    q=run(['git','-C',SRC,'merge-tree','--write-tree',
+           '--merge-base='+PUBLIC_UPSTREAM_MERGE_BASE,
+           '-Xours',parent,UPSTREAM_MAIN],check=False,timeout=120)
+    if q.returncode:
+        raise RuntimeError('SCOPED_CPU_CONFLICT_RESOLUTION_FAILED='+
+                           (q.stderr or b'').decode(errors='replace')[-2000:])
+    tentative=(q.stdout or b'').decode(errors='replace').splitlines()[0].strip()
+    if not re.fullmatch(r'[0-9a-f]{40}',tentative) or not exists(tentative+'^{tree}'):
+        raise RuntimeError('SCOPED_CPU_TREE_INVALID')
+    with tempfile.TemporaryDirectory(prefix='shadps4-cpu-audit-',dir=ROOT/'logs') as tmp:
+        index=Path(tmp)/'index'
+        e=env({'GIT_INDEX_FILE':str(index)})
+        git('read-tree',tentative,e=e)
+        t=index_text(index,path)
+        upstream=show(UPSTREAM_MAIN,path).decode()
+        # Recompiler/Jaguar CPU instructions must survive unchanged.
+        for marker in ('TryExecuteIllegalInstruction(', 'ZYDIS_MNEMONIC_CPUID',
+                       'ZYDIS_MNEMONIC_RCPSS', 'ZYDIS_MNEMONIC_VRSQRTSS',
+                       'ZydisCalcAbsoluteAddress(', 'InitializeCpuId();'):
+            if marker not in t:
+                raise RuntimeError('RETAINED_CPU_FIX_LOST='+marker)
+        fn=_cpp_function(t,'static bool TryPatchJit(', 'CPU_JIT')
+        updated=fn.replace('auto* module = GetModule(code);',
+                           'auto* module = GetContainingModule(code);')
+        if 'auto* module = GetContainingModule(code);' not in updated:
+            raise RuntimeError('CPU_JIT_UPSTREAM_BOUNDS_MISSING')
+        t=t.replace(fn,updated,1)
+        # Use the pinned upstream's independent macOS scalar compare functions.
+        if 'static bool FilterNegatedScalarCompare(' not in t:
+            a='#if defined(__APPLE__)\n// Rosetta 2 mistranslates VCMPSS'
+            i=upstream.find(a)
+            j=upstream.find('\n#endif',i)
+            if i<0 or j<0:raise RuntimeError('UPSTREAM_ROSETTA_GENERATOR_MISSING')
+            anchor='using PatchFilter = bool (*)(const ZydisDecodedOperand*);'
+            t=one(t,anchor,upstream[i:j+len('\n#endif')]+'\n\n'+anchor,'ROSETTA_GEN')
+        if 'ZYDIS_MNEMONIC_VCMPSS' not in t:
+            old='#if !defined(__APPLE__)\n    // FS segment patches'
+            new=('#if defined(__APPLE__)\n    // Rosetta 2\n'
+                 '    {ZYDIS_MNEMONIC_VCMPSS, {{FilterNegatedScalarCompare, GenerateNegatedScalarCompare, true}}},\n'
+                 '#else\n    // FS segment patches')
+            t=one(t,old,new,'ROSETTA_DISPATCH')
+        if 'PatchUncoveredCpuInstructions(' not in t:
+            if t.count('PatchUncoveredSSE4aInstructions(')!=2:
+                raise RuntimeError('STATIC_CPU_PATCH_RENAME_UNSAFE')
+            t=t.replace('PatchUncoveredSSE4aInstructions(', 'PatchUncoveredCpuInstructions(')
+        elif 'PatchUncoveredSSE4aInstructions(' in t:
+            raise RuntimeError('MIXED_STATIC_CPU_PATCH_NAMES')
+        if 'static u8* FindScalarCompareInstructionStart(' not in t:
+            a='#if defined(__APPLE__)\n/// Returns the start of the VEX'
+            i=upstream.find(a)
+            j=upstream.find('\n#endif',i)
+            if i<0 or j<0:raise RuntimeError('UPSTREAM_ROSETTA_FINDER_MISSING')
+            anchor='static void PatchUncoveredCpuInstructions('
+            t=one(t,anchor,upstream[i:j+len('\n#endif')]+'\n\n'+anchor,
+                  'ROSETTA_FINDER')
+        fn=_cpp_function(t,'static void PatchUncoveredCpuInstructions(', 'STATIC_CPU')
+        if 'FindScalarCompareInstructionStart(' not in fn:
+            a='''            u8* const start =
+                FindSSE4aInstructionStart(reinterpret_cast<u8*>(address), lower_bound);'''
+            b='''            u8* start = FindSSE4aInstructionStart(reinterpret_cast<u8*>(address), lower_bound);'''
+            candidates=[v for v in (a,b) if v in fn]
+            if len(candidates)!=1:
+                raise RuntimeError('ROSETTA_STATIC_COMPARE_INSERT_UNSAFE')
+            replacement='''            u8* start = FindSSE4aInstructionStart(reinterpret_cast<u8*>(address), lower_bound);
+#if defined(__APPLE__)
+            if (start == nullptr) {
+                start =
+                    FindScalarCompareInstructionStart(reinterpret_cast<u8*>(address), lower_bound);
+            }
+#endif'''
+            t=t.replace(fn,fn.replace(candidates[0],replacement,1),1)
+        # Require both sides' complete generic contracts, not a selected side.
+        for marker in ('ZYDIS_MNEMONIC_CPUID', 'ZYDIS_MNEMONIC_RCPSS',
+                       'ZYDIS_MNEMONIC_VRSQRTSS','ZYDIS_MNEMONIC_VCMPSS',
+                       'FilterNegatedScalarCompare(', 'GenerateNegatedScalarCompare(',
+                       'GetContainingModule(code);', 'FindScalarCompareInstructionStart(',
+                       'PatchUncoveredCpuInstructions(segment_addr, covered_ranges, result);'):
+            if marker not in t:
+                raise RuntimeError('CPU_UPSTREAM_AND_GUEST_UNION_MISSING='+marker)
+        if t.count('PatchUncoveredCpuInstructions(')!=2 or '<<<<<<<' in t or '>>>>>>>' in t:
+            raise RuntimeError('CPU_UNION_STRUCTURAL_VERIFICATION_FAILED')
+        update_index_text(index,path,t)
+        result=git('write-tree',e=e).decode().strip()
+    changed=git('diff','--name-only',tentative,result).decode().splitlines()
+    if changed!=[path]:
+        raise RuntimeError('CPU_RESOLUTION_CHANGED_UNRELATED_PATHS='+repr(changed))
+    print('CPU_MERGE_RESOLUTION=VERIFIED_GENERIC_CPU_JAGUAR_AND_UPSTREAM',flush=True)
+    return result
+
 def merge_verified_parent_with_upstream(parent):
     if not exists(parent+'^{commit}'):
         raise RuntimeError('VERIFIED_PARENT_MISSING_BEFORE_UPSTREAM_MERGE')
