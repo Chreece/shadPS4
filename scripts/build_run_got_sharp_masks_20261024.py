@@ -42,7 +42,7 @@ COMPOSER_BLOB="eac62a2550104a7493be5464f73cc3b188780580"
 NATIVE=ROOT/"scripts/build_run_got_upstream_native_20261024.py"
 NATIVE_BLOB="96c6b84bde950513c237a9daec6177999fb3ef92"
 PATCH=ROOT/"scripts/patches/generic-sharp-mask-recovery-20261024.patch"
-PATCH_BLOB="e1312dbf6acf895f32a7a9aefe2ba0f695ee4877"
+PATCH_BLOB="ebf4a7759148127f1b07df6ad7ebe8ab0d3c4d98"
 TEST=ROOT/"scripts/test_proven_sharp_masks_20261024.py"
 TEST_BLOB="6acd7c47d31b4b3787274357c10153a37e5c889b"
 SOURCE_BLOBS={
@@ -54,6 +54,8 @@ SOURCE_BLOBS={
   ("f7ee878953c884803bc7ced888b549e41949d6c3","45e63856a6b896d593a2b7d57b2e258a88197ea0"),
  "src/shader_recompiler/resource.h":
   ("00ab609901c98fbd314d6ae424e05454a3287aee","313b4743de07de317fdea9312aaac195e0f109d4"),
+ "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp":
+  ("8a801147c89eead5344a8934941a9115f5e1c4de","e94a3b23e7083dc584ce383b79bade399f308275"),
 }
 GAME=Path("/mnt/roms-all/ps4-games/CUSA11456/eboot.bin")
 SESSION=ROOT/"test-profiles/got-generic-world-20261024"
@@ -149,6 +151,7 @@ def compose(composer,test,info,folder):
         "parent":BASE_REV,"parent_tree":BASE_TREE,
         "revision":rev,"tree":tree,"changed_files":changed,
         "masked_descriptor_words_preserved":True,
+        "incompatible_shader_caches_invalidated":True,
         "unrecognized_dynamic_sources_still_rejected":True,
         "masked_and_immediate_words_no_bulk_load":True,
         "sampler_and_native_abi_fixes_preserved":True,
@@ -287,7 +290,7 @@ def main():
                 fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:
                 raise RuntimeError("ANOTHER_SHADPS4_BUILD_OWNS_LOCK")
-            composer.stage("compose_exact_four_file_sharp_mask_recovery")
+            composer.stage("compose_exact_shader_mask_and_cache_epoch_recovery")
             rev,tree=compose(composer,test,info,folder)
             print("SHARP_MASK_SOURCE_REVISION="+rev,flush=True)
             checkout(composer,rev)
