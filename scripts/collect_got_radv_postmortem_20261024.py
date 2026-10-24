@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Collect existing native GoT crash stack and Mesa build identity.
 
-No game relaunch, ptrace, compiler, source modification, Vulkan override,
+No game relaunch, ptrace, compilation, source modification, Vulkan override,
 DynamoRIO, driver installation, ES-DE change, or raw core upload.
 """
 from __future__ import annotations
@@ -61,6 +61,52 @@ def driver(folder):
         ("MATCH" if matched else "UNVERIFIED_OR_DRIVER_CHANGED")+"\n")
     print("RADV_INSTRUCTION="+("MATCH" if matched else "UNVERIFIED"),flush=True)
 
+def resolve_radv_source_line(folder):
+    """Look up the exact userspace driver's source at the known crash PC."""
+    note=folder/"radv-build-id.txt"
+    if not note.is_file():return
+    m=re.search(r"Build ID:\s*([0-9a-f]{16,64})",note.read_text(errors="replace"),re.I)
+    if not m:
+        print("RADV_DEBUG_SYMBOLS=BUILD_ID_UNKNOWN",flush=True)
+        return
+    buildid=m.group(1).lower()
+    (folder/"driver-build-id.txt").write_text(buildid+"\n")
+    local=Path("/usr/lib/debug/.build-id")/buildid[:2]/(buildid[2:]+".debug")
+    symbol_file=local if local.is_file() else None
+    downloaded=folder/"temporary-driver-debug-elf"
+    if symbol_file is None and shutil.which("curl"):
+        address="https://debuginfod.debian.net/buildid/"+buildid+"/debuginfo"
+        # Debug symbols are passive data only, never executed. Enforce a
+        # network timeout and 300 MB maximum to protect a small root FS.
+        rc,_=capture(["curl","-4","-fLsS","--retry","2",
+             "--connect-timeout","15","--max-time","180",
+             "--max-filesize","300000000","-o",str(downloaded),address],
+             folder/"debuginfod-result.txt",timeout=205)
+        if rc==0 and downloaded.is_file() and downloaded.stat().st_size<300000001:
+            symbol_file=downloaded
+    if symbol_file is None:
+        print("RADV_DEBUG_SYMBOLS=NOT_AVAILABLE",flush=True)
+        return
+    try:
+        rc,debug_notes=capture(["readelf","-n",str(symbol_file)],
+                               folder/"debug-build-id.txt",timeout=35)
+        if rc or not re.search(r"Build ID:\s*"+re.escape(buildid)+r"\b",
+                               debug_notes,re.I):
+            print("RADV_DEBUG_SYMBOLS=BUILD_ID_MISMATCH",flush=True)
+            return
+        rc,line=capture(["addr2line","-f","-i","-C","-e",
+                         str(symbol_file),"0x106da8"],
+                        folder/"radv-crash-source.txt",timeout=60)
+        if rc==0 and "??:0" not in line:
+            print("RADV_CRASH_SOURCE=RESOLVED",flush=True)
+            print("RADV_FUNCTION_AND_LINE="+
+                  " | ".join(line.splitlines()[1:6]),flush=True)
+        else:
+            print("RADV_CRASH_SOURCE=DEBUG_INFO_INCOMPLETE",flush=True)
+    finally:
+        if downloaded.is_file():downloaded.unlink()
+
+
 def existing_core(folder):
     if not shutil.which("coredumpctl"):
         print("EXISTING_CORE=COREDUMPCTL_MISSING",flush=True)
@@ -116,6 +162,7 @@ def main():
     try:
         verify(folder)
         driver(folder)
+        resolve_radv_source_line(folder)
         existing_core(folder)
         gpu_journal(folder)
     except BaseException:
