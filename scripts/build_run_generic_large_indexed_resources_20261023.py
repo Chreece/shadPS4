@@ -2423,7 +2423,9 @@ PROVEN_FIX_CHECKS=(
     ('shared_srt_dependency_schedule',
         ('src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp',
          'src/shader_recompiler/ir/passes/srt_dependency_schedule.h'),
-        ('ScheduleSrtRoots(', 'srt_dependency_schedule.h')),
+        ('ScheduleSrtRoots(', 'srt_dependency_schedule.h',
+         'static bool IsHostUniformSrtOffset(', 'active.insert(inst).second')),
+
     ('native_masked_wave_minimum',
         ('src/shader_recompiler/backend/spirv/emit_spirv.cpp',
          'src/shader_recompiler/backend/spirv/emit_spirv_warp.cpp',
@@ -3029,6 +3031,57 @@ def _apply_shared_srt(idx):
         text=transform_flat(index_text(idx,flat))
     except Exception as error:
         raise RuntimeError('SHARED_SRT_TRANSFORM_FAILED='+str(error))
+    # The retained schedule package calls IsHostUniformSrtOffset() from its
+    # generated include, but the package does not define the helper. Validate
+    # the entire IR expression graph: only scalar user data, flattened SRT
+    # reads, constants, and operations understood by ComputeOffset are safe.
+    # Unsupported per-lane values and cyclic graphs must not be JIT-walked.
+    codegen_include='#include "shader_recompiler/ir/passes/srt_dependency_codegen.inc"'
+    if text.count(codegen_include)!=1:
+        raise RuntimeError('SRT_CODEGEN_INCLUDE_MISSING_OR_DUPLICATED')
+    if text.count('static bool IsAllowedOffsetInstruction(')!=1:
+        raise RuntimeError('SRT_HOST_UNIFORM_OPCODE_GATE_MISSING')
+    if text.index('static bool IsAllowedOffsetInstruction(')>text.index(codegen_include):
+        raise RuntimeError('SRT_HOST_UNIFORM_OPCODE_GATE_AFTER_CODEGEN')
+    helper=r'''static bool IsHostUniformSrtOffset(const IR::Value& off_dw) {
+    std::unordered_set<const IR::Inst*> active;
+    const auto check = [&active](const auto& self, const IR::Value& value) -> bool {
+        if (value.IsImmediate()) {
+            return true;
+        }
+        const IR::Inst* inst = value.TryInst();
+        if (inst == nullptr || !IsAllowedOffsetInstruction(inst) ||
+            !active.insert(inst).second) {
+            return false;
+        }
+        bool uniform = true;
+        switch (inst->GetOpcode()) {
+        case IR::Opcode::GetUserData:
+        case IR::Opcode::ReadConst:
+        case IR::Opcode::ReadConstBuffer:
+            // A host scalar root or a previously flattened SRT read.
+            break;
+        default:
+            // Arithmetic/bit operations must themselves derive only from
+            // scalar guest inputs, never lane-varying GPU instructions.
+            for (std::size_t i = 0; i < inst->NumArgs(); ++i) {
+                if (!self(self, inst->Arg(i))) {
+                    uniform = false;
+                    break;
+                }
+            }
+            break;
+        }
+        active.erase(inst);
+        return uniform;
+    };
+    return check(check, off_dw);
+}
+
+'''
+    text=text.replace(codegen_include,helper+codegen_include,1)
+    if text.count('static bool IsHostUniformSrtOffset(')!=1:
+        raise RuntimeError('SRT_HOST_UNIFORM_GATE_NOT_INSERTED')
     update_index_text(idx,flat,text)
     for path,name in (
         ('src/shader_recompiler/ir/passes/srt_dependency_schedule.h',
