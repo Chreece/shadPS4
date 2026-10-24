@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <bit>
+#include <atomic>
 #include <limits>
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
@@ -416,6 +417,14 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                 const IR::U32 normalized_id{
                     ir.BitwiseAnd(guest_id, ir.Imm32(valid_id_mask))};
                 inst.SetArg(1, normalized_id);
+                // The normalized record index remains GPU-driven, preserving
+                // all per-invocation material choices and original texel data.
+                static std::atomic<u32> reports{0};
+                if (reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
+                    LOG_INFO(Render_Recompiler,
+                             "IndexedSelectorWrap: shader={:#x} stride={} mask={:#x}",
+                             info.pgm_hash, stride, valid_id_mask);
+                }
             } else {
                 inst.SetArg(1, resource.indexed_texture_id);
             }
