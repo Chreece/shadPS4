@@ -1,0 +1,169 @@
+--- a/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
+@@ -279,6 +279,47 @@
+     return handle;
+ }
+ 
++// A guest descriptor word can be a scalar source with one or more constant
++// bitwise ANDs. Track the source and exact bit clears separately. Only peel
++// a complete chain that terminates in an actual scalar descriptor producer;
++// unknown Phi, VGPR and GPU-dependent expressions are never approximated.
++static void PeelSharpDwordMasks(SharpReference& sharp) {
++    for (u32 i = 0; i < sharp.num_dwords; ++i) {
++        IR::Value producer = sharp.dwords[i];
++        u32 cleared = 0;
++        bool masked = false;
++        IR::Inst* node = producer.TryInst();
++        for (u32 depth = 0; node && depth < 32; ++depth) {
++            if (node->GetOpcode() != IR::Opcode::BitwiseAnd32) {
++                break;
++            }
++            const IR::Value left = node->Arg(0);
++            const IR::Value right = node->Arg(1);
++            if (left.IsImmediate() == right.IsImmediate()) {
++                break;
++            }
++            const IR::Value constant = left.IsImmediate() ? left : right;
++            const IR::Value other = left.IsImmediate() ? right : left;
++            if (constant.Type() != IR::Type::U32) {
++                break;
++            }
++            IR::Inst* next = other.TryInst();
++            if (!next || (!IsSharpSource(next) &&
++                          next->GetOpcode() != IR::Opcode::BitwiseAnd32)) {
++                break;
++            }
++            cleared |= ~constant.U32();
++            producer = other;
++            node = next;
++            masked = true;
++        }
++        if (masked && node && IsSharpSource(node)) {
++            sharp.dwords[i] = producer;
++            sharp.clear_masks[i] |= cleared;
++        }
++    }
++}
++
+ void MarkReadConstBufferSharpSources(const SharpReference& sharp) {
+     // In cases of bindless sharp fetches mark all producer instructions
+     // so the extended userdata flattening pass will include them.
+@@ -287,7 +328,9 @@
+         if (!source) {
+             continue;
+         }
+-        ASSERT(IsSharpSource(source));
++        ASSERT_MSG(IsSharpSource(source),
++                   "Unsupported descriptor producer opcode={} at dword={}",
++                   static_cast<u32>(source->GetOpcode()), i);
+         if (source->GetOpcode() == IR::Opcode::ReadConstBuffer) {
+             auto flags = source->Flags<IR::BufferInstInfo>();
+             flags.sharp_source.Assign(1u);
+@@ -329,6 +372,7 @@
+         vsharp.dwords[2] = dword2;
+     }
+ 
++    PeelSharpDwordMasks(vsharp);
+     MarkReadConstBufferSharpSources(vsharp);
+ }
+ 
+@@ -357,6 +401,7 @@
+         tsharp.dwords[4] = tsharp_dw4;
+     }
+ 
++    PeelSharpDwordMasks(tsharp);
+     MarkReadConstBufferSharpSources(tsharp);
+ 
+     if (inst.GetOpcode() != IR::Opcode::ImageSampleRaw) {
+@@ -387,6 +432,7 @@
+         ssharp.dwords[0] = ssharp_dw0;
+     }
+ 
++    PeelSharpDwordMasks(ssharp);
+     MarkReadConstBufferSharpSources(ssharp);
+ }
+ 
+@@ -518,6 +564,7 @@
+                             usage.indexed_sampler_offset_bytes=sampler.offset_bytes;
+                             usage.has_indexed_sampler_table=sampler.valid;
+                             usage.indexed_table_sharp.num_dwords=4;
++                            PeelSharpDwordMasks(usage.indexed_table_sharp);
+                             MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
+                             usage.indexed_texture_id=IR::Value{const_cast<IR::Inst*>(table.selector)};
+                             usage.indexed_record_stride_bytes=table.record_stride_bytes;
+--- a/src/shader_recompiler/ir/passes/resource_pass.h
++++ b/src/shader_recompiler/ir/passes/resource_pass.h
+@@ -22,6 +22,7 @@
+ 
+ struct SharpReference {
+     std::array<IR::Value, 8> dwords{};
++    std::array<u32, 8> clear_masks{};
+     u32 num_dwords{};
+     SharpFetchPostOp post_op{};
+     PostOpData post_op_data;
+--- a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+@@ -182,8 +182,12 @@
+         return static_cast<SharpLocation>(inst->Arg(0).ScalarReg());
+     } else if (inst->GetOpcode() == IR::Opcode::ReadConstBuffer) {
+         location = inst->Flags<IR::BufferInstInfo>().flatbuf_off_dw;
++    } else if (inst->GetOpcode() == IR::Opcode::ReadConst) {
++        location = inst->Flags<SharpLocation>();
+     } else {
+-        location = inst->Flags<SharpLocation>();
++        // Unrecognised descriptor producers have no valid CPU SHARP offset.
++        // Never interpret arbitrary IR instruction metadata as an address.
++        return UNKNOWN_LOCATION;
+     }
+     if (location == 0) {
+         LOG_WARNING(Render_Recompiler, "Sharp source was not flatenned");
+@@ -198,6 +202,7 @@
+     SharpFetch<T> sharp_fetch{};
+     for (u32 i = 0; i < sharp.num_dwords; i++) {
+         auto dword = sharp.dwords[i];
++        sharp_fetch.clear_masks[i] = sharp.clear_masks[i];
+         if (dword.IsImmediate()) {
+             sharp_fetch.immediates[i] = dword.U32();
+         } else {
+@@ -208,10 +213,17 @@
+             }
+         }
+     }
+-    if (sharp_fetch.summary != Summary::Invalid) {
++    // One bulk load is safe only for full contiguous flat-buffer reads.
++    // A masked descriptor, immediate word, or unresolved source must use
++    // the per-word fetch to retain the guest's original value.
++    const u32 full_mask = (1u << sharp.num_dwords) - 1u;
++    if (sharp_fetch.summary != Summary::Invalid &&
++        sharp_fetch.load_mask == full_mask &&
++        std::ranges::all_of(sharp_fetch.clear_masks,
++                            [](u32 bits) { return bits == 0; })) {
+         const u32 base = sharp_fetch.offsets[0];
+         for (u32 i = 1; i < sharp.num_dwords; ++i) {
+-            if (sharp_fetch.offsets[i] - base != i) {
++            if (u32(sharp_fetch.offsets[i] - base) != i) {
+                 return sharp_fetch;
+             }
+         }
+--- a/src/shader_recompiler/resource.h
++++ b/src/shader_recompiler/resource.h
+@@ -35,6 +35,9 @@
+     Summary summary{Summary::MultiLoad};
+     std::array<u32, N> immediates;
+     std::array<SharpLocation, N> offsets;
++    // Preserve exact constant AND masks from guest descriptor IR after
++    // loading the scalar source; this applies to immediate and loaded words.
++    std::array<u32, N> clear_masks{};
+     u8 load_mask;
+ 
+     bool operator==(const SharpFetch&) const = default;
+@@ -51,7 +54,8 @@
+         u8 mask = load_mask;
+         std::array<u32, num_dwords> out_dw;
+         for (u32 i = 0; i < num_dwords; i++) {
+-            out_dw[i] = (mask & 1) ? flatbuf[offsets[i]] : immediates[i];
++            const u32 raw = (mask & 1) ? flatbuf[offsets[i]] : immediates[i];
++            out_dw[i] = raw & ~clear_masks[i];
+             mask >>= 1;
+         }
+         std::memcpy(out, out_dw.data(), sizeof(out_dw));
