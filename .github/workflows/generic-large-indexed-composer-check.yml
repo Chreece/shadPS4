@@ -115,6 +115,9 @@ jobs:
           assert "ctx.OpBitcast(ctx.S32[1], raw)" in s
           assert "ctx.OpBitcast(ctx.S32[2], raw)" in s
           assert "ctx.OpBitcast(ctx.S32[3], raw)" in s
+          assert "def _insert_indexed_spirv_sample(" in s
+          assert "def _finish_indexed_spirv_image(" in s
+          assert "if 'Id EmitImageSampleImplicitLodIndexed(' not in s:" in s
           assert "def instance_cpp(" in s
           assert "GUEST_TSHARP_FINAL='02c22fd61253b072a9bc4017e67f9c39fa0d4fa9'" in s
           assert "FINAL_GUEST_TSHARP_HELPER_MISSING" in s
