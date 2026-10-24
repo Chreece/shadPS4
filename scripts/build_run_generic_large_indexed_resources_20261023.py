@@ -3343,30 +3343,55 @@ def complete_proven_source_parent(run_dir,base):
 
 def recovered_parent_ref(run_dir):
     global PARENT_REF, PARENT_TREE_ACTUAL, PARENT_MODE
-    if exists(PARENT+'^{commit}') and \
-       git('rev-parse',PARENT+'^{tree}').decode().strip()==PARENT_TREE:
-        PARENT_REF=PARENT
-        PARENT_TREE_ACTUAL=PARENT_TREE
-        PARENT_MODE='exact-verified-commit'
-        return PARENT_REF
-    if exists(PARENT_TREE+'^{tree}'):
-        base=RECONSTRUCTION_BASE
-        if not exists(base+'^{commit}'):
-            raise RuntimeError('PUBLIC_RECONSTRUCTION_BASE_MISSING='+base)
-        PARENT_REF=commit_tree(
-            PARENT_TREE,base,
-            b'Wrapped exact verified graphics parent tree for local composition only\n')
-        PARENT_TREE_ACTUAL=PARENT_TREE
-        PARENT_MODE='exact-verified-tree-wrap'
-        return PARENT_REF
 
-    # Reconstruct from a fixed public source commit instead of depending on
-    # the user's checkout or pruned local-only objects.
+    # The locally verified graphics parent may be a snapshot commit with no
+    # shared Git ancestry with pinned upstream, even though the tree itself is
+    # exact. Refusing this history is correct: --allow-unrelated-histories
+    # would create broad add/add conflicts. If necessary, attach the *exact*
+    # verified tree to a pinned public reconstruction ancestor for composition.
     if not exists(RECONSTRUCTION_BASE+'^{commit}'):
         raise RuntimeError('PUBLIC_RECONSTRUCTION_BASE_MISSING='+RECONSTRUCTION_BASE)
-    PARENT_REF=RECONSTRUCTION_BASE
-    PARENT_TREE_ACTUAL=git('rev-parse',PARENT_REF+'^{tree}').decode().strip()
-    PARENT_MODE='public-proven-fix-reconstruction-base'
+    common=git('merge-base',RECONSTRUCTION_BASE,UPSTREAM_MAIN,check=False).decode().strip()
+    if not re.fullmatch(r'[0-9a-f]{40}',common):
+        raise RuntimeError('PUBLIC_RECONSTRUCTION_BASE_NO_COMMON_UPSTREAM_ANCESTOR')
+
+    exact_parent=(
+        exists(PARENT+'^{commit}') and
+        git('rev-parse',PARENT+'^{tree}').decode().strip()==PARENT_TREE
+    )
+    if exact_parent:
+        native_common=git('merge-base',PARENT,UPSTREAM_MAIN,check=False).decode().strip()
+        if re.fullmatch(r'[0-9a-f]{40}',native_common):
+            PARENT_REF=PARENT
+            PARENT_TREE_ACTUAL=PARENT_TREE
+            PARENT_MODE='exact-verified-commit'
+            return PARENT_REF
+
+        stage('reanchor_unrelated_verified_tree_on_public_ancestor')
+        PARENT_MODE='exact-verified-tree-public-ancestry-wrap'
+    elif exists(PARENT_TREE+'^{tree}'):
+        PARENT_MODE='exact-verified-tree-wrap'
+    else:
+        # No verified local tree object. Fall back to the pinned public source
+        # reconstruction and replay only reviewed generic source fixes.
+        PARENT_REF=RECONSTRUCTION_BASE
+        PARENT_TREE_ACTUAL=git('rev-parse',PARENT_REF+'^{tree}').decode().strip()
+        PARENT_MODE='public-proven-fix-reconstruction-base'
+        return PARENT_REF
+
+    # All wrapping changes only the synthetic commit parent. The source tree
+    # content remains byte-identical to the verified local graphics tree.
+    if not exists(PARENT_TREE+'^{tree}'):
+        raise RuntimeError('VERIFIED_PARENT_TREE_MISSING_FOR_PUBLIC_ANCESTRY_WRAP')
+    PARENT_REF=commit_tree(
+        PARENT_TREE,RECONSTRUCTION_BASE,
+        b'Attach exact verified generic graphics tree to public history for composition\n'
+    )
+    if git('rev-parse',PARENT_REF+'^{tree}').decode().strip()!=PARENT_TREE:
+        raise RuntimeError('VERIFIED_GRAPHICS_TREE_CHANGED_BY_ANCESTRY_WRAP')
+    if not git('merge-base',PARENT_REF,UPSTREAM_MAIN,check=False).strip():
+        raise RuntimeError('WRAPPED_GRAPHICS_TREE_STILL_UNRELATED_TO_UPSTREAM')
+    PARENT_TREE_ACTUAL=PARENT_TREE
     return PARENT_REF
 
 def merge_verified_parent_with_upstream(parent):
@@ -3376,6 +3401,10 @@ def merge_verified_parent_with_upstream(parent):
         raise RuntimeError('UPSTREAM_MAIN_MISSING_BEFORE_MERGE')
     if not exists(PR_5492_HEAD+'^{commit}'):
         raise RuntimeError('PR_5492_HEAD_MISSING_BEFORE_MERGE')
+    shared=git('merge-base',parent,UPSTREAM_MAIN,check=False).decode().strip()
+    if not re.fullmatch(r'[0-9a-f]{40}',shared):
+        raise RuntimeError('UPSTREAM_PARENT_HAS_NO_SHARED_ANCESTOR_AFTER_WRAP')
+    print('UPSTREAM_MERGE_BASE='+shared,flush=True)
 
     q=run(['git','-C',SRC,'merge-tree','--write-tree',parent,UPSTREAM_MAIN],
           check=False,timeout=120)
@@ -3446,6 +3475,7 @@ def merge_verified_parent_with_upstream(parent):
     return final_parent,final_tree,upstream_merged,upstream_tree
 
 def verify_prev(run_dir):
+    global PARENT_MODE
     stage('fetch_required_refs')
     ensure_required_refs()
     if not SRC.is_dir() or not (SRC/'.git').exists():
@@ -3458,6 +3488,10 @@ def verify_prev(run_dir):
     stage('complete_public_proven_source_fixes')
     public_parent,public_tree,source_replay,source_evidence = \
         complete_proven_source_parent(run_dir,retained_base)
+    # Runtime validation requires the verified provenance marker to describe
+    # the *actual* public-source replay used by this composition.
+    if not PARENT_MODE.endswith('+public-source-replay'):
+        PARENT_MODE += '+public-source-replay'
 
     stage('complete_package_only_proven_fixes')
     verified_parent,verified_tree,package_paths,package_evidence = \
