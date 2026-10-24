@@ -18,6 +18,21 @@ SUB="${WORK}/${VULKAN_PATH}"
 PREVIOUS_SUB="${OLD}/${VULKAN_PATH}"
 
 mkdir -p "${CAPTURE}/info" "${LOGROOT}"
+# Package diagnostic evidence even when a dependency or build check fails.
+resume_exit_report() {
+  local result=$?
+  if (( result != 0 )); then
+    trap - EXIT
+    printf '%s\n' "$result" > "${CAPTURE}/info/resume-exit-code.txt"
+    local archive="${LOGROOT}/got-indexed-capacity-${RUN}-recovery-failed.tar.gz"
+    if tar -C "${CAPTURE}" -czf "${archive}" .; then
+      echo "GOT_INDEXED_RESUME=FAIL exit=${result}"
+      echo "UPLOAD_THIS=${archive}"
+    fi
+  fi
+}
+trap resume_exit_report EXIT
+
 echo "GOT_INDEXED_RESUME_STAGE=VERIFY_EXISTING_PATCHED_SOURCE"
 if ! git -C "${WORK}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "FAIL: existing patched worktree not found: ${WORK}" >&2
@@ -49,7 +64,7 @@ fi
 echo "GOT_INDEXED_RESUME_REVISION=${REV}"
 
 echo "GOT_INDEXED_RESUME_STAGE=FULL_SUBMODULE_SOURCE_AUDIT"
-python3 - "${WORK}" "${CAPTURE}/info/submodule-file-audit.json" "${CAPTURE}/info/submodule-fetch.log" <<'PY'
+python3 - "${WORK}" "${CAPTURE}/info/submodule-file-audit.json" "${CAPTURE}/info/submodule-fetch.log" <<'PY' 2>&1 | tee "${CAPTURE}/info/submodule-audit-console.log"
 from __future__ import annotations
 import json
 import os
