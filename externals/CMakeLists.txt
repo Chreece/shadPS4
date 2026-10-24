@@ -59,22 +59,6 @@ if (NOT TARGET ZLIB::ZLIB)
         OVERRIDE_FIND_PACKAGE
     )
     FetchContent_MakeAvailable(ZLIB)
-    # An earlier FetchContent population may mark ZLIB as available without
-    # registering its build target (for example when reconfiguring after an
-    # interrupted external dependency setup). In that case, include the
-    # already-checked-out bundled project in the same binary directory.
-    # Do not substitute the host's zlib: every dependency must use the
-    # pinned zlib-ng source in compatibility mode.
-    if (NOT TARGET zlib)
-        if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/zlib-ng/CMakeLists.txt")
-            message(FATAL_ERROR "Bundled zlib-ng checkout is incomplete")
-        endif()
-        message(STATUS "zlib-ng: restoring missing local zlib CMake target")
-        add_subdirectory(zlib-ng "${FETCHCONTENT_BASE_DIR}/zlib-build")
-    endif()
-    if (NOT TARGET zlib)
-        message(FATAL_ERROR "Bundled zlib-ng failed to register its zlib target")
-    endif()
     add_library(ZLIB::ZLIB ALIAS zlib)
     # libpng expects this variable to exist after its find_package(ZLIB)
     set(ZLIB_INCLUDE_DIRS "${FETCHCONTENT_BASE_DIR}/zlib-build")
