@@ -32,6 +32,9 @@ NATIVE_SHA='2b617a7148be38e1e653093e7f83ce1ab725a050135ee14f85c8aa53353106aa'
 NATIVE_REPORT=ROOT/'logs/got-upstream-native-20261024-135431-xieq3ph7/info/build-result.json'
 NATIVE_CANDIDATE=ROOT/'GhostOfTsushima/candidates'/(NATIVE_REV+'-'+NATIVE_SHA)/'shadps4'
 ABI_SOURCE='274616ad38992c250e3e21c5bbf468d8a71472c4'
+ABI_TEST_SOURCE='a98d65baddccf9a8668bf3ca56d8874ef5d56b19'
+ABI_TEST_PATH='tests/cpu_id/test_native_hle_stack_alignment_20261024.cpp'
+ABI_TEST_BLOB='ce42ede291c12c7582a511457735e50bfb23895f'
 ABI_PATH='src/common/types.h'
 BEFORE_BLOB='c2b7bd35ea2767287a80b84dc756394c72a7af03'
 AFTER_BLOB='7ad311777652b21609f64283c1e216af5ffb6ec2'
@@ -89,12 +92,14 @@ def ensure_inputs():
     return module,r,report
 
 def fetch_abi_fix(r):
-    if r.exists(ABI_SOURCE+'^{commit}'):return
-    q=r.run(['git','-C',SRC,'fetch','--no-tags','--recurse-submodules=no',
-             SOURCE_REMOTE,ABI_SOURCE],check=False,timeout=600)
-    if q.returncode or not r.exists(ABI_SOURCE+'^{commit}'):
-        raise RuntimeError('VERIFIED_GENERIC_ABI_FIX_FETCH_FAILED='+
-                           (q.stderr or b'').decode(errors='replace')[-1700:])
+    for revision in (ABI_SOURCE,ABI_TEST_SOURCE):
+        if r.exists(revision+'^{commit}'):
+            continue
+        q=r.run(['git','-C',SRC,'fetch','--no-tags','--recurse-submodules=no',
+                 SOURCE_REMOTE,revision],check=False,timeout=600)
+        if q.returncode or not r.exists(revision+'^{commit}'):
+            raise RuntimeError('VERIFIED_GENERIC_ABI_SOURCE_FETCH_FAILED='+revision+
+                               (q.stderr or b'').decode(errors='replace')[-1700:])
 
 def compose_abi_candidate(r,info,run):
     if r.git('rev-parse',NATIVE_REV+':'+ABI_PATH).decode().strip()!=BEFORE_BLOB:
@@ -178,6 +183,40 @@ def checkout_verified_candidate(r,revision):
     # required, initialise it in the disposable source directory only.
     missing=not (WORK/'externals/sirit').is_dir()
     if missing:r.submodules_at(WORK)
+
+def preflight_guest_hle_abi(r,run,info):
+    """Execute the same native misaligned guest -> host SIMD regression."""
+    if r.git('rev-parse',ABI_TEST_SOURCE+':'+ABI_TEST_PATH).decode().strip()!=ABI_TEST_BLOB:
+        raise RuntimeError('PINNED_GENERIC_HLE_STACK_REGRESSION_CHANGED')
+    test=run/'guest-hle-abi-test.cpp'
+    test.write_bytes(r.show(ABI_TEST_SOURCE,ABI_TEST_PATH))
+    compilers=[c for c in (shutil.which('g++'),shutil.which('clang++')) if c]
+    if not compilers:
+        raise RuntimeError('NO_CXX_COMPILER_FOR_NATIVE_ABI_PREFLIGHT')
+    lines=[]
+    for compiler in compilers:
+        label=Path(compiler).name
+        executable=run/('hle-abi-'+label)
+        compile_cmd=[compiler,'-std=c++20','-O2','-mavx2',
+                     '-I'+str(WORK/'src'),str(test),'-o',str(executable)]
+        compile=subprocess.run(compile_cmd,stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT,timeout=180)
+        lines.append('COMPILER='+compiler+' EXIT='+str(compile.returncode))
+        lines.append(compile.stdout.decode(errors='replace')[-10000:])
+        if compile.returncode!=0:
+            (info/'native-abi-preflight.log').write_text('\n'.join(lines))
+            raise RuntimeError('GENERIC_HLE_ABI_PRETEST_COMPILATION_FAILED='+label)
+        execution=subprocess.run([str(executable)],stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT,timeout=25)
+        output=execution.stdout.decode(errors='replace')
+        lines.append('RUN='+label+' EXIT='+str(execution.returncode)+' '+output)
+        if execution.returncode!=0 or 'NATIVE_HLE_STACK_ALIGNMENT_TEST=PASS' not in output:
+            (info/'native-abi-preflight.log').write_text('\n'.join(lines))
+            raise RuntimeError('GENERIC_HLE_ABI_PRETEST_FAILED='+label)
+        print('NATIVE_HLE_ABI_PREFLIGHT_'+label.upper().replace('+','P')+'=PASS',flush=True)
+    (info/'native-abi-preflight.log').write_text('\n'.join(lines))
+    print('NATIVE_HLE_ABI_PREFLIGHT=PASS',flush=True)
+
 
 def build_native_abi(r,revision,tree,run,info):
     print('NATIVE_ABI_SOURCE='+revision,flush=True)
@@ -272,6 +311,8 @@ def main():
             revision,tree=compose_abi_candidate(r,info,run)
             r.stage('restore_disposable_checkout_preserving_original_source')
             checkout_verified_candidate(r,revision)
+            r.stage('native_guest_to_host_alignment_regression')
+            preflight_guest_hle_abi(r,run,info)
             candidate,report=build_native_abi(r,revision,tree,run,info)
         if args.build_only:
             print('GAMEPLAY_TEST=NOT_RUN',flush=True);result=0
