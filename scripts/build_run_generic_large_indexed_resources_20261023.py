@@ -3217,13 +3217,29 @@ void main() {
     if 'Invalid fault queue count' not in t:
         raise RuntimeError('FAULT_COUNT_VALIDATION_NOT_APPLIED')
 
-    old_obtain='''            (void)buffer_cache.ObtainBuffer(start, end - start);'''
+    # Reconstruct the fault-recovery call against both verified generations:
+    # the older public tree used ObtainBuffer(addr, size, false), while the
+    # retained DMA/stream-buffer API uses ObtainBuffer(addr, size) with flags.
+    # Only rewrite the single recovery callback; do not change normal reads.
+    old_obtains=(
+        '            (void)buffer_cache.ObtainBuffer(start, end - start);',
+        '            (void)buffer_cache.ObtainBuffer(start, end - start, false);',
+    )
     new_obtain='''            (void)buffer_cache.ObtainBuffer(
                 start, end - start, ObtainBufferFlags::IgnoreStreamBuffer);'''
-    if old_obtain in t:
-        t=t.replace(old_obtain,new_obtain,1)
-    if 'ObtainBufferFlags::IgnoreStreamBuffer' not in t:
+    if new_obtain not in t:
+        candidates=[form for form in old_obtains if t.count(form)==1]
+        if len(candidates)!=1:
+            raise RuntimeError(
+                'FAULT_REAL_BACKING_CALL_VERSION_UNRECOGNISED'
+                +' forms='+str([t.count(form) for form in old_obtains]))
+        t=t.replace(candidates[0],new_obtain,1)
+    if t.count(new_obtain)!=1:
         raise RuntimeError('FAULT_REAL_BACKING_NOT_APPLIED')
+    flags_api=index_text(idx,'src/video_core/buffer_cache/buffer_cache.h')
+    if ('enum class ObtainBufferFlags' not in flags_api or
+        'IgnoreStreamBuffer = ' not in flags_api):
+        raise RuntimeError('FAULT_REAL_BACKING_FLAGS_API_MISSING')
     update_index_text(idx,p,t)
 
     # Initialize the device-local fault bitmap through the existing Runtime
