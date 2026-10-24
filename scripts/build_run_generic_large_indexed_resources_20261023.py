@@ -3531,9 +3531,16 @@ def _resolve_cpu_patch_conflict(parent, merge_output):
         update_index_text(index,path,t)
         result=git('write-tree',e=e).decode().strip()
     paths=git('diff','--name-only',original,result).decode().splitlines()
-    if paths!=[path]:
+    # The -Xours three-way merge can already contain every audited upstream
+    # CPU change in its clean, nonconflicting hunks. An empty diff is success
+    # after the strict CPU union checks above, not a new merge conflict.
+    # Only the exact CPU path is permitted when changes are required.
+    if paths not in ([], [path]):
         raise RuntimeError('CPU_MERGE_CHANGED_UNRELATED_FILES='+repr(paths))
+    if not paths and result!=original:
+        raise RuntimeError('CPU_MERGE_IDENTICAL_DIFF_TREE_MISMATCH')
     print('GENERIC_CPU_UNION=JAGUAR_CPUID_PLUS_UPSTREAM',flush=True)
+    print('CPU_UNION_ADDITIONAL_SOURCE_CHANGES='+str(len(paths)),flush=True)
     return result
 
 
