@@ -33,8 +33,12 @@ jobs:
           assert assigns["PATCH_COMMITS"] == ()
           assert "NATIVE_UMIN_SOURCE='a81ff9b7cdb62efb51513fd6428218761054c42e'" in s
           assert "DMA_HAZARD_SOURCE='94ed29b7c5767718ead87164558d6ec7523bcc9a'" in s
+          assert "def _strip_historical_cache_version_hunks(" in s
           assert "SKIPPED_STALE_CACHE_VERSION_HUNK" in s
-          assert "path!='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'" in s
+          assert "APPLIED_WITH_CACHE_VERSION_HUNK_STRIPPED" in s
+          assert "ALREADY_PRESENT_WITH_CACHE_VERSION_HUNK_STRIPPED" in s
+          assert "ShaderBinaryVersion" in s
+          assert "ShaderMetaVersion" in s
           assert "cbbcc969156f9258633914409ca88e6458bbad2c" not in assigns["PATCH_COMMITS"]
           assert "538fc65527d96086443d14d3227eb9c5daa7397f" not in assigns["PATCH_COMMITS"]
           assert assigns["VULKAN_INDEXING_FEATURE_FIXES"] == (
