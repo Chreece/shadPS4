@@ -12,7 +12,9 @@ RECOVERY_BASE='4bc7df9c1370b0eb10c84f385b8c2d041e791945'
 RECOVERY_REF='refs/remotes/chreece/generic-large-indexed-images-20261023'
 SOURCE_REMOTE='https://github.com/Chreece/shadPS4.git'
 UPSTREAM_REMOTE='https://github.com/shadps4-emu/shadPS4.git'
-UPSTREAM_MAIN='bab374ba8ea1a1892a965020b0fc59f67553e108'
+UPSTREAM_MAIN='396c2a09a38d22eaa02aab32c1967263dceab95f'
+PR_5492_REMOTE='https://github.com/johulk/shadPS4.git'
+PR_5492_HEAD='9f55474ad45778f8ac08e923574f214d492997f2'
 PARENT_REF=PARENT
 BASE_STATUS=b''
 RECOVERY_PARTS=tuple(f'patches/verified-975.patch.gz.b64.part{i:02d}' for i in range(1,9))
@@ -2251,6 +2253,15 @@ def ensure_required_refs():
                 (q.stderr or b'').decode(errors='replace')[-2000:]
             )
 
+    if not exists(PR_5492_HEAD+'^{commit}'):
+        q=run(['git','-C',SRC,'fetch','--no-tags',PR_5492_REMOTE,PR_5492_HEAD],
+              check=False,timeout=600)
+        if q.returncode or not exists(PR_5492_HEAD+'^{commit}'):
+            raise RuntimeError(
+                'PR_5492_FETCH_FAILED='+PR_5492_HEAD+' '+
+                (q.stderr or b'').decode(errors='replace')[-2000:]
+            )
+
 
 def recovered_parent_ref(run_dir):
     global PARENT_REF
@@ -2328,6 +2339,8 @@ def merge_verified_parent_with_upstream(parent):
         raise RuntimeError('VERIFIED_PARENT_MISSING_BEFORE_UPSTREAM_MERGE')
     if not exists(UPSTREAM_MAIN+'^{commit}'):
         raise RuntimeError('UPSTREAM_MAIN_MISSING_BEFORE_MERGE')
+    if not exists(PR_5492_HEAD+'^{commit}'):
+        raise RuntimeError('PR_5492_HEAD_MISSING_BEFORE_MERGE')
 
     q=run(['git','-C',SRC,'merge-tree','--write-tree',parent,UPSTREAM_MAIN],
           check=False,timeout=120)
@@ -2338,27 +2351,46 @@ def merge_verified_parent_with_upstream(parent):
             'UPSTREAM_MERGE_CONFLICT parent='+parent+
             ' upstream='+UPSTREAM_MAIN+' details='+(stdout+' '+stderr)[-6000:]
         )
-    tree=stdout.splitlines()[0].strip() if stdout else ''
-    if not re.fullmatch(r'[0-9a-f]{40}',tree) or not exists(tree+'^{tree}'):
+    upstream_tree=stdout.splitlines()[0].strip() if stdout else ''
+    if not re.fullmatch(r'[0-9a-f]{40}',upstream_tree) or not exists(upstream_tree+'^{tree}'):
         raise RuntimeError('UPSTREAM_MERGE_TREE_INVALID='+stdout[-2000:])
 
-    # A merge tree must contain both lineages. Materialize it as a deterministic
-    # local merge commit so the subsequent indexed-resource commit has a stable,
-    # auditable parent.
-    msg=(b'Merge pinned upstream main into verified generic graphics parent\n\n'
-         b'No conflict resolution or game-specific preference was permitted.\n')
-    merged=commit_tree(tree,parent,msg,(UPSTREAM_MAIN,))
-    if git('rev-parse',merged+'^{tree}').decode().strip()!=tree:
+    upstream_msg=(b'Merge pinned upstream main into verified generic graphics parent\n\n'
+                  b'No conflict resolution or game-specific preference was permitted.\n')
+    upstream_merged=commit_tree(upstream_tree,parent,upstream_msg,(UPSTREAM_MAIN,))
+    if git('rev-parse',upstream_merged+'^{tree}').decode().strip()!=upstream_tree:
         raise RuntimeError('UPSTREAM_MERGE_COMMIT_TREE_CHANGED')
 
     verified_sirit=git('rev-parse',parent+':externals/sirit').decode().strip()
-    merged_sirit=git('rev-parse',merged+':externals/sirit').decode().strip()
+    merged_sirit=git('rev-parse',upstream_merged+':externals/sirit').decode().strip()
     if merged_sirit!=verified_sirit:
         raise RuntimeError(
             'UPSTREAM_MERGE_CHANGED_VERIFIED_SIRIT expected='+
             verified_sirit+' got='+merged_sirit
         )
-    return merged,tree
+
+    # PR #5492 is still open, so merge its pinned head explicitly on top of
+    # current upstream. Refuse any conflict instead of silently preferring a side.
+    q=run(['git','-C',SRC,'merge-tree','--write-tree',upstream_merged,PR_5492_HEAD],
+          check=False,timeout=120)
+    stdout=(q.stdout or b'').decode(errors='replace').strip()
+    stderr=(q.stderr or b'').decode(errors='replace').strip()
+    if q.returncode:
+        raise RuntimeError(
+            'PR_5492_MERGE_CONFLICT parent='+upstream_merged+
+            ' pr_head='+PR_5492_HEAD+' details='+(stdout+' '+stderr)[-6000:]
+        )
+    final_tree=stdout.splitlines()[0].strip() if stdout else ''
+    if not re.fullmatch(r'[0-9a-f]{40}',final_tree) or not exists(final_tree+'^{tree}'):
+        raise RuntimeError('PR_5492_MERGE_TREE_INVALID='+stdout[-2000:])
+
+    pr_msg=(b'Merge shadPS4 PR #5492 Audio3D feeder-thread change\n\n'
+            b'Pinned open PR head; no conflict resolution was permitted.\n')
+    final_parent=commit_tree(final_tree,upstream_merged,pr_msg,(PR_5492_HEAD,))
+    if git('rev-parse',final_parent+'^{tree}').decode().strip()!=final_tree:
+        raise RuntimeError('PR_5492_MERGE_COMMIT_TREE_CHANGED')
+
+    return final_parent,final_tree,upstream_merged,upstream_tree
 
 def verify_prev(run_dir):
     ensure_required_refs()
@@ -2370,7 +2402,8 @@ def verify_prev(run_dir):
     verified_parent=recovered_parent_ref(run_dir)
     if git('rev-parse',verified_parent+'^{tree}').decode().strip()!=PARENT_TREE:
         raise RuntimeError('VERIFIED_GRAPHICS_PARENT_TREE_CHANGED')
-    parent,parent_tree=merge_verified_parent_with_upstream(verified_parent)
+    parent,parent_tree,upstream_parent,upstream_parent_tree = \
+        merge_verified_parent_with_upstream(verified_parent)
     return {
         'previous_parent':parent,
         'previous_parent_tree':parent_tree,
@@ -2379,7 +2412,11 @@ def verify_prev(run_dir):
         'verified_parent_tree':PARENT_TREE,
         'parent_reconstructed':verified_parent!=PARENT,
         'upstream_main':UPSTREAM_MAIN,
+        'upstream_parent':upstream_parent,
+        'upstream_parent_tree':upstream_parent_tree,
+        'pr_5492_head':PR_5492_HEAD,
         'upstream_merge_conflicts':False,
+        'pr_5492_merge_conflicts':False,
         'previous_evidence_logs':'NOT_REQUIRED',
         'files':{},
     }
@@ -2850,7 +2887,7 @@ def compose(run_dir,info,manifest):
     assert_source_unchanged()
     if not cand or digest(cand)!=csha:raise RuntimeError('CANDIDATE_COPY_FAILED')
     ms=digest(mp)
-    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':parent,'source_parent_tree':git('rev-parse',parent+'^{tree}').decode().strip(),'verified_parent':manifest['verified_parent'],'verified_parent_tree':PARENT_TREE,'upstream_main':UPSTREAM_MAIN,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_source_clone':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'original_submodules_untouched':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
+    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':parent,'source_parent_tree':git('rev-parse',parent+'^{tree}').decode().strip(),'verified_parent':manifest['verified_parent'],'verified_parent_tree':PARENT_TREE,'upstream_main':UPSTREAM_MAIN,'upstream_parent':manifest['upstream_parent'],'upstream_parent_tree':manifest['upstream_parent_tree'],'pr_5492_head':PR_5492_HEAD,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_source_clone':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'original_submodules_untouched':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
     (info/'build-result.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
     return rev,tree,csha,cand
 
@@ -2869,6 +2906,7 @@ def launch(info,rev,tree,csha,cand):
                   'legacy_builds_searched':False,'tests_enabled':False,
                   'original_submodules_untouched':True,
                   'verified_parent_tree':PARENT_TREE,'upstream_main':UPSTREAM_MAIN,
+                  'pr_5492_head':PR_5492_HEAD,
                   'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP',
                   'game_specific_options':False}
         for k,v in expected.items():
@@ -2885,8 +2923,17 @@ def launch(info,rev,tree,csha,cand):
         source_parent_tree=git('rev-parse',source_parent+'^{tree}').decode().strip()
         if source_parent_tree!=r.get('source_parent_tree'):
             raise RuntimeError('BUILD_PARENT_TREE_MISMATCH')
+        upstream_parent=r.get('upstream_parent')
+        if not upstream_parent or not exists(upstream_parent+'^{commit}'):
+            raise RuntimeError('UPSTREAM_PARENT_MISSING')
+        if git('rev-parse',upstream_parent+'^{tree}').decode().strip()!=r.get('upstream_parent_tree'):
+            raise RuntimeError('UPSTREAM_PARENT_TREE_MISMATCH')
+
         parent_line=git('rev-list','--parents','-n','1',source_parent).decode().split()
-        if len(parent_line)!=3 or parent_line[1]!=verified_parent or parent_line[2]!=UPSTREAM_MAIN:
+        if len(parent_line)!=3 or parent_line[1]!=upstream_parent or parent_line[2]!=PR_5492_HEAD:
+            raise RuntimeError('PR_5492_MERGE_PARENTAGE_MISMATCH')
+        upstream_line=git('rev-list','--parents','-n','1',upstream_parent).decode().split()
+        if len(upstream_line)!=3 or upstream_line[1]!=verified_parent or upstream_line[2]!=UPSTREAM_MAIN:
             raise RuntimeError('UPSTREAM_MERGE_PARENTAGE_MISMATCH')
         if (Path(r['candidate'])!=cand or digest(cand)!=csha or
             git('rev-parse',rev+'^{tree}').decode().strip()!=tree or
@@ -2965,6 +3012,7 @@ def main():
         print('COMPOSED_REVISION='+rev,flush=True)
         print('SOURCE_PARENT='+man['previous_parent'],flush=True)
         print('UPSTREAM_MAIN='+UPSTREAM_MAIN,flush=True)
+        print('PR_5492_HEAD='+PR_5492_HEAD,flush=True)
         print('VERIFIED_PARENT_TREE='+PARENT_TREE,flush=True)
         if not args.launch:
             print('GAME_LAUNCHED=NO',flush=True)
