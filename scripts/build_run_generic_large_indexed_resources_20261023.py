@@ -2232,7 +2232,8 @@ def ensure_required_refs():
     # be stale even though it technically "exists", which previously allowed
     # the composer to combine an older branch snapshot with newer hard-coded
     # commit expectations.
-    args=['git','-C',SRC,'fetch','--no-tags',SOURCE_REMOTE]
+    args=['git','-c','fetch.recurseSubmodules=false','-c','submodule.recurse=false',
+          '-C',SRC,'fetch','--no-tags','--recurse-submodules=no',SOURCE_REMOTE]
     args += [f'+refs/heads/{src}:{dst}' for src,dst in specs]
     q=run(args,check=False,timeout=600)
     if q.returncode:
@@ -2249,7 +2250,8 @@ def ensure_required_refs():
     for sha in required:
         if exists(sha+'^{commit}'):
             continue
-        q=run(['git','-C',SRC,'fetch','--no-tags',SOURCE_REMOTE,sha],
+        q=run(['git','-c','fetch.recurseSubmodules=false','-c','submodule.recurse=false',
+               '-C',SRC,'fetch','--no-tags','--recurse-submodules=no',SOURCE_REMOTE,sha],
               check=False,timeout=600)
         if q.returncode or not exists(sha+'^{commit}'):
             raise RuntimeError(
@@ -2258,7 +2260,8 @@ def ensure_required_refs():
             )
 
     if not exists(UPSTREAM_MAIN+'^{commit}'):
-        q=run(['git','-C',SRC,'fetch','--no-tags',UPSTREAM_REMOTE,UPSTREAM_MAIN],
+        q=run(['git','-c','fetch.recurseSubmodules=false','-c','submodule.recurse=false',
+               '-C',SRC,'fetch','--no-tags','--recurse-submodules=no',UPSTREAM_REMOTE,UPSTREAM_MAIN],
               check=False,timeout=600)
         if q.returncode or not exists(UPSTREAM_MAIN+'^{commit}'):
             raise RuntimeError(
@@ -2267,7 +2270,8 @@ def ensure_required_refs():
             )
 
     if not exists(PR_5492_HEAD+'^{commit}'):
-        q=run(['git','-C',SRC,'fetch','--no-tags',PR_5492_REMOTE,PR_5492_HEAD],
+        q=run(['git','-c','fetch.recurseSubmodules=false','-c','submodule.recurse=false',
+               '-C',SRC,'fetch','--no-tags','--recurse-submodules=no',PR_5492_REMOTE,PR_5492_HEAD],
               check=False,timeout=600)
         if q.returncode or not exists(PR_5492_HEAD+'^{commit}'):
             raise RuntimeError(
@@ -2459,7 +2463,8 @@ def add_fresh_source(work,rev,temp_ref):
             (q.stderr or b'').decode(errors='replace')[-3000:]
         )
     q=run([
-        'git','-C',work,'fetch','--no-tags',str(SRC),
+        'git','-c','fetch.recurseSubmodules=false','-c','submodule.recurse=false',
+        '-C',work,'fetch','--no-tags','--recurse-submodules=no',str(SRC),
         temp_ref+':refs/remotes/composer/candidate'
     ],check=False,timeout=300)
     if q.returncode:
