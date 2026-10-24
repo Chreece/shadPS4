@@ -26,7 +26,7 @@ COMPOSER_BLOB="eac62a2550104a7493be5464f73cc3b188780580"
 NATIVE=ROOT/"scripts/build_run_got_upstream_native_20261024.py"
 NATIVE_BLOB="96c6b84bde950513c237a9daec6177999fb3ef92"
 PORT=ROOT/"scripts/restore_native_phi_descriptors_20261024.py"
-PORT_BLOB="dcbbba55566b2e37dbf3e922ef7f0a58a562430f"
+PORT_BLOB="483f92f063ae230d67afd6d4c21ca15dbf43d5cc"
 REMOTE="https://github.com/Chreece/shadPS4.git"
 
 def git_blob(path):
@@ -52,6 +52,9 @@ def load_baseline():
     c=module(COMPOSER,COMPOSER_BLOB,"got_generic_native_composer")
     n=module(NATIVE,NATIVE_BLOB,"got_generic_native_runner")
     p=module(PORT,PORT_BLOB,"got_shader_phi_restore")
+    # Execute the *actual* source transformation against the immutable
+    # prior compiled Git commit, before any checkout or compiler work.
+    p.validate_exact_source(SRC)
     c.BASE=c.git("rev-parse","HEAD").decode().strip()
     c.BASE_STATUS=c.source_status()
     c.validate_source_status(c.BASE_STATUS)
