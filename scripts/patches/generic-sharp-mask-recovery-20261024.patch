@@ -167,3 +167,16 @@
              mask >>= 1;
          }
          std::memcpy(out, out_dw.data(), sizeof(out_dw));
+--- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+@@ -12,8 +12,8 @@
+ 
+ namespace Serialization {
+ /* You should increment versions below once corresponding serialization scheme is changed. */
+-static constexpr u32 ShaderBinaryVersion = 0xdu;
+-static constexpr u32 ShaderMetaVersion = 0x8u;
++static constexpr u32 ShaderBinaryVersion = 0xeu;
++static constexpr u32 ShaderMetaVersion = 0x9u;
+ static constexpr u32 PipelineKeyVersion = 3u;
+ } // namespace Serialization
+ 
