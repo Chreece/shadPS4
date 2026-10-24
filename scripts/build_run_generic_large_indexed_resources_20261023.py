@@ -3418,6 +3418,125 @@ def recovered_parent_ref(run_dir):
     PARENT_TREE_ACTUAL=PARENT_TREE
     return PARENT_REF
 
+
+def _resolve_cpu_patch_conflict(parent, merge_output):
+    path='src/core/cpu_patches.cpp'
+    records=re.findall(r'^100644 ([0-9a-f]{40}) ([123])\t([^\n]+)$',
+                       merge_output,re.M)
+    if len(records)!=3 or any(p!=path for _,_,p in records):
+        raise RuntimeError('UNREVIEWED_MERGE_CONFLICT_FILES')
+    stages={num:oid for oid,num,_ in records}
+    if (set(stages)!={'1','2','3'} or
+        stages['1']!='605fcf36928fb0f64bdb80e9e887f7561af83283' or
+        stages['3']!='85cf66c7d67c11cd686079423a9dddf13a745a56' or
+        stages['2']!=git('rev-parse',parent+':'+path).decode().strip()):
+        raise RuntimeError('CPU_CONFLICT_BLOB_MISMATCH')
+    notices=[x for x in merge_output.splitlines()
+             if x.startswith('CONFLICT ') or x.startswith('KONFLIKT ')]
+    if len(notices)!=1 or path not in notices[0]:
+        raise RuntimeError('UNREVIEWED_EXTRA_MERGE_CONFLICTS')
+    stage('resolve_audited_upstream_cpu_overlap')
+    # Git's ordinary merge handles every other file. Resolve the *single*
+    # verified overlapping CPU file with a scoped strategy, then restore and
+    # verify the upstream changes independently from its pinned source blob.
+    q=run(['git','-C',SRC,'merge-tree','--write-tree',
+           '--merge-base='+PUBLIC_UPSTREAM_MERGE_BASE,'-Xours',
+           parent,UPSTREAM_MAIN],check=False,timeout=120)
+    if q.returncode:
+        raise RuntimeError('SCOPED_CPU_MERGE_FAILED='+
+                           (q.stderr or b'').decode(errors='replace')[-1500:])
+    original=(q.stdout or b'').decode(errors='replace').splitlines()[0].strip()
+    if not re.fullmatch(r'[0-9a-f]{40}',original) or not exists(original+'^{tree}'):
+        raise RuntimeError('SCOPED_CPU_TREE_NOT_FOUND')
+    with tempfile.TemporaryDirectory(prefix='shadps4-cpu-merge-',dir=ROOT/'logs') as tmp:
+        index=Path(tmp)/'index'
+        e=env({'GIT_INDEX_FILE':str(index)})
+        git('read-tree',original,e=e)
+        t=index_text(index,path)
+        newer=show(UPSTREAM_MAIN,path).decode()
+        for name in ('ZYDIS_MNEMONIC_CPUID','ZYDIS_MNEMONIC_RCPSS',
+                     'ZYDIS_MNEMONIC_VRSQRTSS','TryExecuteIllegalInstruction(',
+                     'InitializeCpuId();','ZydisCalcAbsoluteAddress('):
+            if name not in t:
+                raise RuntimeError('RETAINED_GENERIC_CPU_CODE_MISSING='+name)
+
+        # Keep upstream's bounds-checked JIT module lookup.
+        old=_cpp_function(t,'static bool TryPatchJit(', 'CPU_JIT_LOOKUP')
+        new=old.replace('auto* module = GetModule(code);',
+                        'auto* module = GetContainingModule(code);')
+        if 'auto* module = GetContainingModule(code);' not in new:
+            raise RuntimeError('UPSTREAM_CPU_JIT_BOUNDS_MISSING')
+        t=t.replace(old,new,1)
+
+        # Preserve the upstream generic Apple/Rosetta fix without changing
+        # the Linux Jaguar guest CPU-ID and reciprocal-instruction patches.
+        if 'static bool FilterNegatedScalarCompare(' not in t:
+            anchor='#if defined(__APPLE__)\n// Rosetta 2 mistranslates VCMPSS'
+            i=newer.find(anchor)
+            j=newer.find('\n#endif',i)
+            if i<0 or j<0:raise RuntimeError('UPSTREAM_ROSETTA_GENERATOR_NOT_FOUND')
+            t=one(t,'using PatchFilter = bool (*)(const ZydisDecodedOperand*);',
+                    newer[i:j+len('\n#endif')]+'\n\n'
+                    +'using PatchFilter = bool (*)(const ZydisDecodedOperand*);',
+                    'ROSETTA_GENERATOR')
+        if 'ZYDIS_MNEMONIC_VCMPSS' not in t:
+            t=one(t,'#if !defined(__APPLE__)\n    // FS segment patches',
+                  '#if defined(__APPLE__)\n'
+                  '    // Rosetta 2\n'
+                  '    {ZYDIS_MNEMONIC_VCMPSS, {{FilterNegatedScalarCompare, GenerateNegatedScalarCompare, true}}},\n'
+                  '#else\n    // FS segment patches','ROSETTA_DISPATCH')
+
+        if 'PatchUncoveredCpuInstructions(' not in t:
+            if t.count('PatchUncoveredSSE4aInstructions(')!=2:
+                raise RuntimeError('CPU_STATIC_PATCH_NAME_UNEXPECTED')
+            t=t.replace('PatchUncoveredSSE4aInstructions(',
+                        'PatchUncoveredCpuInstructions(')
+        elif 'PatchUncoveredSSE4aInstructions(' in t:
+            raise RuntimeError('CPU_STATIC_PATCH_NAME_INCONSISTENT')
+        if 'static u8* FindScalarCompareInstructionStart(' not in t:
+            i=newer.find('#if defined(__APPLE__)\n/// Returns the start of the VEX')
+            j=newer.find('\n#endif',i)
+            if i<0 or j<0:raise RuntimeError('UPSTREAM_ROSETTA_SCAN_NOT_FOUND')
+            t=one(t,'static void PatchUncoveredCpuInstructions(',
+                  newer[i:j+len('\n#endif')]+'\n\n'
+                  'static void PatchUncoveredCpuInstructions(','ROSETTA_SCAN')
+        fn=_cpp_function(t,'static void PatchUncoveredCpuInstructions(','CPU_PATCH_SCAN')
+        if 'FindScalarCompareInstructionStart(' not in fn:
+            variants=[
+                '            u8* const start =\n'
+                '                FindSSE4aInstructionStart(reinterpret_cast<u8*>(address), lower_bound);',
+                '            u8* start = FindSSE4aInstructionStart(reinterpret_cast<u8*>(address), lower_bound);'
+            ]
+            matches=[v for v in variants if v in fn]
+            if len(matches)!=1:
+                raise RuntimeError('ROSETTA_SCAN_CALL_NOT_FOUND')
+            updated='''            u8* start = FindSSE4aInstructionStart(reinterpret_cast<u8*>(address), lower_bound);
+#if defined(__APPLE__)
+            if (start == nullptr) {
+                start =
+                    FindScalarCompareInstructionStart(reinterpret_cast<u8*>(address), lower_bound);
+            }
+#endif'''
+            t=t.replace(fn,fn.replace(matches[0],updated,1),1)
+        for name in ('ZYDIS_MNEMONIC_CPUID','ZYDIS_MNEMONIC_RCPSS',
+                     'ZYDIS_MNEMONIC_VRSQRTSS','ZYDIS_MNEMONIC_VCMPSS',
+                     'FilterNegatedScalarCompare(','GenerateNegatedScalarCompare(',
+                     'FindScalarCompareInstructionStart(',
+                     'PatchUncoveredCpuInstructions(segment_addr, covered_ranges, result);',
+                     'GetContainingModule(code);'):
+            if name not in t:
+                raise RuntimeError('GENERIC_CPU_UNION_MISSING='+name)
+        if t.count('PatchUncoveredCpuInstructions(')!=2 or '<<<<<<<' in t or '>>>>>>>' in t:
+            raise RuntimeError('CPU_CONFLICT_RESOLUTION_NOT_COMPLETE')
+        update_index_text(index,path,t)
+        result=git('write-tree',e=e).decode().strip()
+    paths=git('diff','--name-only',original,result).decode().splitlines()
+    if paths!=[path]:
+        raise RuntimeError('CPU_MERGE_CHANGED_UNRELATED_FILES='+repr(paths))
+    print('GENERIC_CPU_UNION=JAGUAR_CPUID_PLUS_UPSTREAM',flush=True)
+    return result
+
+
 def merge_verified_parent_with_upstream(parent):
     if not exists(parent+'^{commit}'):
         raise RuntimeError('VERIFIED_PARENT_MISSING_BEFORE_UPSTREAM_MERGE')
@@ -3437,11 +3556,9 @@ def merge_verified_parent_with_upstream(parent):
     stdout=(q.stdout or b'').decode(errors='replace').strip()
     stderr=(q.stderr or b'').decode(errors='replace').strip()
     if q.returncode:
-        raise RuntimeError(
-            'UPSTREAM_MERGE_CONFLICT parent='+parent+
-            ' upstream='+UPSTREAM_MAIN+' details='+(stdout+' '+stderr)[-6000:]
-        )
-    upstream_tree=stdout.splitlines()[0].strip() if stdout else ''
+        upstream_tree=_resolve_cpu_patch_conflict(parent,stdout)
+    else:
+        upstream_tree=stdout.splitlines()[0].strip() if stdout else ''
     if not re.fullmatch(r'[0-9a-f]{40}',upstream_tree) or not exists(upstream_tree+'^{tree}'):
         raise RuntimeError('UPSTREAM_MERGE_TREE_INVALID='+stdout[-2000:])
 
