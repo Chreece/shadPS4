@@ -41,6 +41,7 @@ private:
         switch (inst->GetOpcode()) {
         case IR::Opcode::GetUserData:
         case IR::Opcode::CompositeConstructU32x2:
+        case IR::Opcode::CompositeConstructU32x4:
         case IR::Opcode::ReadConst:
         case IR::Opcode::ReadConstBuffer:
         case IR::Opcode::IAdd32:
