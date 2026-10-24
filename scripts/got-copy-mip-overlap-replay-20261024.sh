@@ -30,8 +30,8 @@ if [[ "${BASE_BLOB}" != "${EXPECTED_RUNTIME_BLOB}" ]]; then
 fi
 echo "GOT_MIP_REPLAY_STAGE=FETCH_SINGLE_GENERIC_FIX"
 git -C "${SRC}" -c protocol.version=2 fetch -4 --no-tags origin "refs/heads/${BRANCH}"
-if [[ "$(git -C "${SRC}" rev-parse FETCH_HEAD)" != "${FIX}" ]]; then
-  echo "FAIL: remote generic fix revision has changed" >&2
+if ! git -C "${SRC}" merge-base --is-ancestor "${FIX}" FETCH_HEAD; then
+  echo "FAIL: fetched branch does not contain the exact generic fix commit" >&2
   exit 3
 fi
 echo "GOT_MIP_REPLAY_STAGE=CREATE_ISOLATED_WORKTREE"
