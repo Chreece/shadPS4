@@ -2705,12 +2705,38 @@ def _apply_cpu_reconstruction_overlay(idx):
     previous=_cpp_function(older,marker,'CPU_RCP_PREVIOUS')
     current=_cpp_function(t,marker,'CPU_RCP_RECONSTRUCTED')
     updated=_cpp_function(newer,marker,'CPU_RCP_LATER')
+    recovered=_cpp_function(show(RECONSTRUCTION_BASE,p).decode(),
+                            marker,'CPU_RCP_PUBLIC_RECONSTRUCTION')
     if current!=updated:
-        # A distinct implementation must not be overwritten without checking
-        # that it is the prior proven generic version.
-        if current!=previous:
+        # The recovered public tree predates a generic Zydis absolute-address
+        # helper fix. This is an audited difference from the historical parent,
+        # not a licence to discard arbitrary source changes.
+        if current not in (previous,recovered):
             raise RuntimeError('CPU_RCP_RECONSTRUCTION_DIVERGED_FROM_PROVEN_PARENT')
         t=t.replace(current,updated,1)
+
+    # The old reconstruction calls this helper with an operand only. The
+    # scalar-aware generator expects correct RIP/EIP absolute-address handling
+    # introduced in the retained parent. Upgrade the helper and all existing
+    # generic TCB callers together, rather than mixing incompatible signatures.
+    helper='static Xbyak::Address ZydisToXbyakMemoryOperand('
+    native_helper=_cpp_function(t,helper,'CPU_ZYDIS_RECONSTRUCTED_HELPER')
+    source_helper=_cpp_function(newer,helper,'CPU_ZYDIS_PROVEN_HELPER')
+    if native_helper!=source_helper:
+        recovered_helper=_cpp_function(show(RECONSTRUCTION_BASE,p).decode(),
+                                       helper,'CPU_ZYDIS_PUBLIC_HELPER')
+        parent_helper=_cpp_function(older,helper,'CPU_ZYDIS_PARENT_HELPER')
+        if native_helper not in (recovered_helper,parent_helper):
+            raise RuntimeError('CPU_ZYDIS_HELPER_UNEXPECTED_VERSION')
+        t=t.replace(native_helper,source_helper,1)
+    old_call='ZydisToXbyakMemoryOperand(operands[1])'
+    new_call='ZydisToXbyakMemoryOperand(address, instruction, operands[1])'
+    if old_call in t:
+        if t.count(old_call)!=3:
+            raise RuntimeError('CPU_ZYDIS_TCB_CALL_COUNT_CHANGED')
+        t=t.replace(old_call,new_call)
+    elif t.count(new_call)<3:
+        raise RuntimeError('CPU_ZYDIS_TCB_CALLS_MISSING')
     scalar_names=('GenerateRCPSS','GenerateVRCPSS',
                   'GenerateRSQRTSS','GenerateVRSQRTSS')
     for name in scalar_names:
