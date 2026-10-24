@@ -87,8 +87,8 @@ segment=s[a:b]
 old='        if (is_guest_indexed) return AmdGpu::Sampler{};'
 if segment.count(old) != 1 or 'indexed_record_stride_bytes' not in segment:
     raise SystemExit('FAIL: sampler resource structure/guard differs from tested expectation')
-new=('        // Packed indexed T# tables share the real guest S#; only strided\\n'
-     '        // material records defer S# decoding to the Vulkan binder.\\n'
+new=('        // Packed indexed T# tables share the real guest S#; only strided\n'
+     '        // material records defer S# decoding to the Vulkan binder.\n'
      '        if (is_guest_indexed && indexed_record_stride_bytes != 0u) '
      'return AmdGpu::Sampler{};')
 p.write_text(s[:a]+segment.replace(old,new)+s[b:])
