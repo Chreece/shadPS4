@@ -8,7 +8,7 @@
 #include <nlohmann/json.hpp>
 #include "common/types.h"
 
-struct User {
+struct ShadPS4User {
     s32 user_id = -1;
     std::string user_name = "";
     u32 user_color = 1;
@@ -26,6 +26,10 @@ struct User {
     u8 np_age = 30;                              // 0..127
     std::string np_date_of_birth = "1994-01-01"; // ISO 8601 date "YYYY-MM-DD"
 };
+
+// Avoid colliding with the unrelated global struct User in discord-rpc.
+// Keep the existing source-facing alias and JSON field names unchanged.
+using User = ShadPS4User;
 
 struct Users {
     std::vector<User> user{};
