@@ -165,7 +165,7 @@ echo "GOT_STENCIL_REFERENCE_EXIT=${EXIT}"
 # Preserve important shader/descriptor errors across the ENTIRE run, not just log boundaries.
 if command -v perl >/dev/null 2>&1; then
   perl -pe 's/\e\[[0-9;]*m//g' "${CAPTURE}/game-console.log" |
-    grep -Ei 'SRT|Sharp source|PhiDescriptor|BindBuffers|Clamped size|shader_info_collection_pass|Invalid T#|CopyMip|DMA|GPU fault|GraphicsPipeline:|Validation' |
+    grep -Ei 'SRT|Sharp source|PhiDescriptor|BindBuffers|Clamped size|shader_info_collection_pass|Invalid T#|CopyMip|DMA|GPU fault|GraphicsPipeline:|Stencil reference conflict|UpdateDepthStencilState|Validation' |
     awk '!seen[$0]++ {print; if (NR > 50000) exit}' |
     head -c 10000000 > "${CAPTURE}/graphics-events.txt" || true
 fi
