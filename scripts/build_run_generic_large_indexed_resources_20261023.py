@@ -32,6 +32,7 @@ SHARED_SRT_PACKAGE='8f0ccf7c3195f5ac5ef0faef16f005dd0e680eca'
 NATIVE_UMIN_SOURCE='a81ff9b7cdb62efb51513fd6428218761054c42e'
 NATIVE_UMIN_SIRIT='adf61937d466fbcfa103ff1e3935bd7718101fd8'
 IMPLICIT_DMA_PACKAGE='0bde46afaa33b29051b9d8a2c1b31f9c0f6876d6'
+CPU_ID_EXTRACTION_SOURCE='7edfa0c5b420bffeab70576e2b0da6d635bb0866'
 PROVEN_SOURCE_COMMITS=(
     'a12c8c8c5c95c2acccb8c5bedc10a466fef0feba',
     NATIVE_UMIN_SOURCE,
@@ -40,7 +41,7 @@ PROVEN_SOURCE_COMMITS=(
     '7ace685062a2c97870b61738a4b184a7882a5f6a',
     '21f5b3179dbedb26718da44c38a9b3c56909a034',
     'fb8171791b387b2980e2a3aa20c317a3022bf0a9',
-    '7edfa0c5b420bffeab70576e2b0da6d635bb0866',
+    CPU_ID_EXTRACTION_SOURCE,
     'ffd19ac832130e2165388a7110d46c0fa6f6e4e9',
     '12a07a6d83007f76012f762e68fedb5954aa0f8a',
     'f94c4f09e6111c0f9ff9fd1c5125c762ae88eb07',
@@ -2435,7 +2436,9 @@ PROVEN_SOURCE_POSTCHECKS=(
          'src/sdl_window.cpp'),
         ('ProcessQuitEvent(', 'IsQuitInputCaptured()', 'quit_dialog.CapturesGamepad()')),
     ('cpu_identity_address',('src/core/address_space.cpp',),('SetCpuIdGuestAddressRange(',)),
-    ('cpu_identity_core',('src/core/cpu_id.cpp',),('GuestCpuid(', 'CurrentGuestCpu(')),
+    ('cpu_identity_core',('src/core/cpu_id.cpp',),
+        ('GuestCpuid(', 'CurrentGuestCpu(', 'CurrentGuestCpuImpl(',
+         'SelectGuestCpu(', 'RestoreHostNativeTsc()', 'GuestCpuCount = GuestCpuSlots')),
     ('cpu_identity_kernel',('src/core/libraries/kernel/process.cpp',),
         ('GuestCpuModeFromPsf(', 'CurrentGuestCpu()')),
     ('libc_mspace_bootstrap',('src/core/libraries/libc_internal/libc_internal_memory.cpp',),
@@ -2519,12 +2522,140 @@ def verify_proven_source_parent(rev):
         raise RuntimeError('PROVEN_SOURCE_FIX_MISSING='+' || '.join(missing))
     return evidence
 
+def _cpp_function(text,marker,label):
+    start=text.find(marker)
+    if start<0:
+        raise RuntimeError(label+'_START_MISSING')
+    brace=text.find('{',start)
+    if brace<0:
+        raise RuntimeError(label+'_BRACE_MISSING')
+    depth=0
+    for i in range(brace,len(text)):
+        depth += (text[i]=='{')-(text[i]=='}')
+        if depth==0:
+            return text[start:i+1]
+    raise RuntimeError(label+'_UNBALANCED')
+
+def _apply_cpu_identity_overlay(idx):
+    # The reconstruction base already carries an older CPU-ID implementation.
+    # The later retained extraction records cpu_id.cpp/.h as newly added files,
+    # so a literal add/add replay cannot work. Merge only its later generic
+    # scheduler/guest-affinity/native-TSC behavior while preserving the base's
+    # PS4/Jaguar CPUID feature masks.
+    p='src/core/cpu_id.cpp'
+    t=index_text(idx,p)
+    later=show(CPU_ID_EXTRACTION_SOURCE,p).decode()
+
+    if '#include <sched.h>' not in t:
+        anchor='#include <memory>\n'
+        if anchor not in t:
+            raise RuntimeError('CPU_ID_SCHED_INCLUDE_ANCHOR_MISSING')
+        t=t.replace(anchor,anchor+'#include <sched.h>\n',1)
+
+    if '#include "core/linux_guest_tsc.h"' not in t:
+        anchor='#include "core/cpu_id.h"\n'
+        if anchor not in t:
+            raise RuntimeError('CPU_ID_GENERIC_INCLUDE_ANCHOR_MISSING')
+        t=t.replace(
+            anchor,
+            anchor+'#include "core/linux_guest_tsc.h"\n'
+                   '#include "core/guest_cpu_selection.h"\n',
+            1)
+
+    if 'constexpr u32 GuestCpuCount = 8;' in t:
+        t=t.replace(
+            'constexpr u32 GuestCpuCount = 8;',
+            'constexpr u32 GuestCpuCount = GuestCpuSlots;',
+            1)
+
+    if 'host_to_virtual' not in t:
+        anchor='std::array<std::unique_ptr<Xbyak::CodeGenerator>, 2> fault_trampolines;'
+        if anchor not in t:
+            raise RuntimeError('CPU_ID_HOST_MAP_ANCHOR_MISSING')
+        block='''// Map host scheduler CPUs onto the eight virtual PS4 CPU slots.
+std::array<u8, CPU_SETSIZE> host_to_virtual{};
+std::array<bool, CPU_SETSIZE> host_cpu_known{};'''
+        t=t.replace(anchor,anchor+'\n'+block,1)
+
+    later_current=_cpp_function(
+        later,'u32 CurrentGuestCpuImpl() {','CPU_ID_LATER_CURRENT')
+    if 'u32 CurrentGuestCpuImpl() {' in t:
+        current=_cpp_function(
+            t,'u32 CurrentGuestCpuImpl() {','CPU_ID_EXISTING_CURRENT')
+    else:
+        current=_cpp_function(t,'u32 CurrentGuestCpu() {','CPU_ID_BASE_CURRENT')
+    t=t.replace(current,later_current,1)
+
+    exec_start=t.find('void PS4_SYSV_ABI ExecuteCpuId(')
+    exec_end=t.find('\nenum class FaultInstruction',exec_start)
+    if exec_start<0 or exec_end<0:
+        raise RuntimeError('CPU_ID_EXECUTE_RANGE_MISSING')
+    body=t[exec_start:exec_end]
+    body=body.replace(
+        'const u32 cpu = CurrentGuestCpu();',
+        'const u32 cpu = CurrentGuestCpuImpl();',
+        1)
+    t=t[:exec_start]+body+t[exec_end:]
+
+    later_init=_cpp_function(later,'void InitializeCpuId() {','CPU_ID_LATER_INIT')
+    current_init=_cpp_function(t,'void InitializeCpuId() {','CPU_ID_BASE_INIT')
+    t=t.replace(current_init,later_init,1)
+
+    later_fault=_cpp_function(
+        later,'void EnableCpuIdFaulting() {','CPU_ID_LATER_FAULTING')
+    current_fault=_cpp_function(
+        t,'void EnableCpuIdFaulting() {','CPU_ID_BASE_FAULTING')
+    t=t.replace(current_fault,later_fault,1)
+
+    if '\nu32 CurrentGuestCpu() {' not in t:
+        init_pos=t.find('void InitializeCpuId() {')
+        if init_pos<0:
+            raise RuntimeError('CPU_ID_PUBLIC_WRAPPER_ANCHOR_MISSING')
+        wrapper='''u32 CurrentGuestCpu() {
+    return CurrentGuestCpuImpl();
+}
+
+'''
+        t=t[:init_pos]+wrapper+t[init_pos:]
+
+    for marker in (
+        'GuestCpuCount = GuestCpuSlots',
+        'SelectGuestCpu(',
+        'host_to_virtual',
+        'u32 CurrentGuestCpuImpl()',
+        'u32 CurrentGuestCpu()',
+        'RestoreHostNativeTsc()',
+    ):
+        if marker not in t:
+            raise RuntimeError('CPU_ID_OVERLAY_MISSING='+marker)
+    update_index_text(idx,p,t)
+
+    p='src/core/cpu_id.h'
+    t=index_text(idx,p)
+    if 'u32 CurrentGuestCpu();' not in t:
+        anchor='enum class CpuIdInstruction : u32 { Cpuid, Rdtscp, Rdpid };\n'
+        if anchor not in t:
+            raise RuntimeError('CPU_ID_HEADER_CURRENT_ANCHOR_MISSING')
+        t=t.replace(
+            anchor,
+            anchor+'\n// Shared guest CPU identity for CPU instructions and kernel current-CPU.\n'
+                   'u32 CurrentGuestCpu();\n',
+            1)
+    update_index_text(idx,p,t)
+    return ['src/core/cpu_id.cpp','src/core/cpu_id.h']
+
 def _proven_commit_paths(sha):
     paths=git('diff','--name-only',sha+'^',sha).decode().splitlines()
-    return [
+    selected=[
         path for path in paths
         if path=='CMakeLists.txt' or path.startswith('src/')
     ]
+    if sha==CPU_ID_EXTRACTION_SOURCE:
+        selected=[
+            path for path in selected
+            if path not in ('src/core/cpu_id.cpp','src/core/cpu_id.h')
+        ]
+    return selected
 
 def _strip_historical_cache_version_hunks(patch):
     # Historical retained-fix commits may combine real serialization logic
@@ -2919,6 +3050,13 @@ def complete_proven_source_parent(run_dir,base):
                 'path':path,
                 'result':_apply_proven_file(idx,sha,path),
             })
+        if sha==CPU_ID_EXTRACTION_SOURCE:
+            for path in _apply_cpu_identity_overlay(idx):
+                results.append({
+                    'commit':sha,
+                    'path':path,
+                    'result':'STRUCTURAL_CPU_ID_OVERLAY',
+                })
     tree=git('write-tree',e=e).decode().strip()
     base_tree=git('rev-parse',base+'^{tree}').decode().strip()
     if tree==base_tree:
