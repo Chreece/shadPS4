@@ -2520,10 +2520,22 @@ def verify_proven_source_parent(rev):
 
 def _proven_commit_paths(sha):
     paths=git('diff','--name-only',sha+'^',sha).decode().splitlines()
-    return [
+    selected=[
         path for path in paths
         if path=='CMakeLists.txt' or path.startswith('src/')
     ]
+    # a81ff9b7's shader-cache version change was only an invalidation marker
+    # tied to that historical branch. Replaying its literal 15->16 hunk onto
+    # the newer retained source is both unnecessary and conflict-prone. The
+    # final composer bumps current ShaderBinaryVersion/ShaderMetaVersion once
+    # relative to its actual merged parent, so keep every semantic UMin source
+    # change and exclude only this stale numeric cache-version hunk.
+    if sha==NATIVE_UMIN_SOURCE:
+        selected=[
+            path for path in selected
+            if path!='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
+        ]
+    return selected
 
 def _apply_proven_file(idx,sha,path):
     e=env({'GIT_INDEX_FILE':str(idx)})
@@ -2839,6 +2851,12 @@ def complete_proven_source_parent(run_dir,base):
                 'commit':sha,
                 'path':path,
                 'result':_apply_proven_file(idx,sha,path),
+            })
+        if sha==NATIVE_UMIN_SOURCE:
+            results.append({
+                'commit':sha,
+                'path':'src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp',
+                'result':'SKIPPED_STALE_CACHE_VERSION_HUNK',
             })
     tree=git('write-tree',e=e).decode().strip()
     base_tree=git('rev-parse',base+'^{tree}').decode().strip()
