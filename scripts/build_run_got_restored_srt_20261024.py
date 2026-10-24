@@ -23,7 +23,7 @@ COMPOSER_BLOB='4d4db01296af760928806720b57ffcf17a510537'
 NATIVE=ROOT/'scripts/build_run_got_upstream_native_20261024.py'
 NATIVE_BLOB='96c6b84bde950513c237a9daec6177999fb3ef92'
 PORT=ROOT/'scripts/restore_proven_srt_resources_20261024.py'
-PORT_BLOB='__PORT_BLOB__'
+PORT_BLOB='bb86d2baaa750c51acb10fe21ec7214b619dd3c2'
 CACHE='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
 
 def blob(path):
