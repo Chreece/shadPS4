@@ -94,8 +94,10 @@ for file in \
   src/shader_recompiler/ir/passes/resource_discover_pass.cpp \
   src/video_core/renderer_vulkan/vk_runtime.cpp \
   src/video_core/renderer_vulkan/vk_rasterizer.cpp; do
-  mkdir -p "${CAPTURE}/source/$(dirname "${file}")"
-  cp -p "${WORK}/${file}" "${CAPTURE}/source/${file}"
+  if [[ -f "${WORK}/${file}" ]]; then
+    mkdir -p "${CAPTURE}/source/$(dirname "${file}")"
+    cp -p "${WORK}/${file}" "${CAPTURE}/source/${file}"
+  fi
 done
 echo "GOT_UNIFORM_SRT_CANDIDATE=${CANDIDATE}/shadps4"
 echo "GOT_UNIFORM_SRT_STAGE=RUN_GAME_MANUAL_INPUT"
@@ -140,7 +142,7 @@ tail -c 4194304 "${CAPTURE}/game-console.log" > "${CAPTURE}/game-console.log.tai
 head -c 100000 "${CAPTURE}/full-build.log" > "${CAPTURE}/full-build.log.head" || true
 tail -c 150000 "${CAPTURE}/full-build.log" > "${CAPTURE}/full-build.log.tail" || true
 rm -f "${CAPTURE}/game-console.log" "${CAPTURE}/full-build.log"
-ARCHIVE="${LOGBASE}/got-mip-overlap-${RUNID}.tar.gz"
+ARCHIVE="${LOGBASE}/got-uniform-srt-${RUNID}.tar.gz"
 tar -C "${CAPTURE}" -czf "${ARCHIVE}" .
 echo "GOT_UNIFORM_SRT_STAGE=DONE"
 echo "UPLOAD_THIS=${ARCHIVE}"
