@@ -91,6 +91,9 @@ jobs:
           assert "code==' M' and path.startswith('externals/')" in s
           assert "path=='.ghost-fresh-owner.json'" in s
           assert "line.startswith('160000 commit ')" in s
+          assert s.count("'--recurse-submodules=no'") >= 5
+          assert s.count("'fetch.recurseSubmodules=false'") >= 5
+          assert s.count("'submodule.recurse=false'") >= 5
           assert "def add_fresh_source(" in s
           assert "FRESH_SOURCE_COMPOSER_REF_FETCH_FAILED" in s
           assert "refs/remotes/composer/candidate" in s
