@@ -1,0 +1,68 @@
+--- a/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
++++ b/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
+@@ -645,10 +645,23 @@
+             // SGPR user data is scalar for every GPU lane.
+             break;
+         case IR::Opcode::ReadConst:
+-        case IR::Opcode::ReadConstBuffer:
+-            // A scalar load is uniform only if its pointer and index are.
+-            uniform = self(self, inst->Arg(0)) && self(self, inst->Arg(1));
++        case IR::Opcode::ReadConstBuffer: {
++            // Scalar descriptor reads use a constructed pointer/buffer handle.
++            // The handle itself is not an arithmetic offset instruction; prove
++            // every handle word and the read index uniform independently.
++            const IR::Inst* const handle = inst->Arg(0).TryInst();
++            if (!handle ||
++                (handle->GetOpcode() != IR::Opcode::CompositeConstructU32x2 &&
++                 handle->GetOpcode() != IR::Opcode::CompositeConstructU32x4)) {
++                uniform = false;
++                break;
++            }
++            uniform = self(self, inst->Arg(1));
++            for (size_t word = 0; word < handle->NumArgs() && uniform; ++word) {
++                uniform = self(self, handle->Arg(word));
++            }
+             break;
++        }
+         case IR::Opcode::ReadLane:
+         case IR::Opcode::ReadFirstLane:
+             // A lane read may be evaluated by the host only when its source
+@@ -887,14 +900,32 @@
+         }
+ 
+         IR::Inst* base = inst->Arg(0).Inst();
+-        if (auto* inst = base->Arg(0).TryInst();
+-            inst && inst->GetOpcode() == IR::Opcode::ReadFirstLane) {
++        IR::Value ptr_low = base->Arg(0);
++        IR::Value ptr_high = base->Arg(1);
++        // ReadFirstLane of a proven wave-uniform descriptor address is the
++        // same value as its producer. Keeping the lane wrapper as a root
++        // used to silently drop the entire host-side descriptor fetch.
++        // Never substitute host values for divergent lane reads.
++        const auto unwrap_uniform_lane_read = [](IR::Value& value) {
++            while (IR::Inst* lane = value.TryInst()) {
++                if (lane->GetOpcode() != IR::Opcode::ReadFirstLane) {
++                    break;
++                }
++                if (!IsHostUniformSrtOffset(lane->Arg(0))) {
++                    return false;
++                }
++                value = lane->Arg(0);
++            }
++            return true;
++        };
++        if (!unwrap_uniform_lane_read(ptr_low) ||
++            !unwrap_uniform_lane_read(ptr_high)) {
+             continue;
+         }
+-        ASSERT_MSG(IsReadConstSource(base->Arg(0)), "ReadConst base low not from constant memory");
+-        ASSERT_MSG(IsReadConstSource(base->Arg(1)), "ReadConst base high not from constant memory");
+-
+-        IR::Inst* ptr_lo = base->Arg(0).Inst();
++        ASSERT_MSG(IsReadConstSource(ptr_low), "ReadConst base low not from constant memory");
++        ASSERT_MSG(IsReadConstSource(ptr_high), "ReadConst base high not from constant memory");
++
++        IR::Inst* ptr_lo = ptr_low.Inst();
+         ptr_lo = pass_info.DeduplicateInstruction(ptr_lo);
+ 
+         auto ptr_uses_kv = pass_info.pointer_uses.try_emplace(ptr_lo, PassInfo::PtrUserList{});
