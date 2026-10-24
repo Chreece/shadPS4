@@ -16,6 +16,8 @@ UPSTREAM_MAIN='396c2a09a38d22eaa02aab32c1967263dceab95f'
 PR_5492_REMOTE='https://github.com/johulk/shadPS4.git'
 PR_5492_HEAD='9f55474ad45778f8ac08e923574f214d492997f2'
 PARENT_REF=PARENT
+PARENT_TREE_ACTUAL=PARENT_TREE
+PARENT_MODE='exact-verified-tree'
 BASE_STATUS=b''
 RECOVERY_PARTS=tuple(f'patches/verified-975.patch.gz.b64.part{i:02d}' for i in range(1,9))
 GEN_BASE='9f4c2da6107cb2b31578cc4b35f5e4ed85637dab'
@@ -2280,12 +2282,103 @@ def ensure_required_refs():
             )
 
 
+PROVEN_FIX_CHECKS=(
+    ('cpu_identity_address',('src/core/address_space.cpp',),('SetCpuIdGuestAddressRange(',)),
+    ('cpu_identity_core',('src/core/cpu_id.cpp',),('GuestCpuid(', 'CurrentGuestCpuImpl(')),
+    ('cpu_identity_kernel',('src/core/libraries/kernel/process.cpp',),
+        ('GuestCpuModeFromPsf(', 'CurrentGuestCpu()')),
+    ('libc_mspace_bootstrap',('src/core/libraries/libc_internal/libc_internal_memory.cpp',),
+        ('internal_mspace_create(', 'g_mspace_registry')),
+    ('sse4a_and_scalar_reciprocal',('src/core/cpu_patches.cpp',),
+        ('GenerateRCPSS(', 'TryExecuteIllegalInstruction(', 'c.movq(xmm_dst')),
+    ('release_mem_semantics',('src/video_core/amdgpu/pm4_cmds.h',),
+        ('case DataSelect::None:', 'case InterruptSelect::IrqOnly:')),
+    ('legal_64bit_bitfield_insert',
+        ('src/shader_recompiler/backend/spirv/emit_spirv_integer.cpp',),
+        ('const Id full_width', 'ctx.ConstU32(64u)')),
+    ('image_binding_storage_guard',('src/video_core/renderer_vulkan/vk_rasterizer.cpp',),
+        ('desc.type == VideoCore::TextureCache::BindingType::Texture',
+         'stage.images[image_index].is_written')),
+    ('pm4_register_boundaries',('src/video_core/amdgpu/pm4_register_write.h',),
+        ('WriteShaderRegisters(',)),
+    ('fp64_phi_types',('src/shader_recompiler/backend/spirv/emit_spirv.cpp',),
+        ('case IR::Type::F64:', 'case IR::Type::F64x4:')),
+    ('srt_arithmetic_full_width',
+        ('src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp',),
+        ('c.jae(full_width)',)),
+    ('permutation_owned_metadata',
+        ('src/video_core/renderer_vulkan/vk_pipeline_cache.h',),
+        ('std::unique_ptr<Shader::Info> own_info', 'GetInfo(Shader::Info& root_info)')),
+    ('scalar_logical_bitcompare',
+        ('src/shader_recompiler/frontend/translate/scalar_alu.cpp',),
+        ('ir.INotEqual(result, ir.Imm64(u64(0)))', 'ir.IEqual(bit, ir.Imm64')),
+    ('buffer_16bit_access',('src/video_core/renderer_vulkan/vk_instance.cpp',),
+        ('uniformAndStorageBuffer16BitAccess',)),
+    ('compressed_copy_hazard_64bit',
+        ('src/video_core/renderer_vulkan/vk_runtime.cpp',),
+        ('static u64 BufferImageCopySize', 'row_length + block[0] - 1')),
+    ('ubnorm_nz_restore',('src/video_core/amdgpu/pixel_format.h',),
+        ('case NumberFormat::UbnormNz:',)),
+    ('automatic_demand_coherence_policy',('src/core/emulator_settings.h',),
+        ('return GpuReadbacksMode::Precise;',)),
+    ('automatic_demand_coherence_backend',('src/video_core/page_manager.cpp',),
+        ('needs_read_faults',)),
+    ('shared_srt_dependency_schedule',
+        ('src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp',
+         'src/shader_recompiler/ir/passes/srt_dependency_schedule.h'),
+        ('ScheduleSrtRoots(', 'srt_dependency_schedule.h')),
+    ('native_masked_wave_minimum',
+        ('src/shader_recompiler/backend/spirv/emit_spirv.cpp',
+         'src/shader_recompiler/backend/spirv/emit_spirv_warp.cpp',
+         'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp'),
+        ('OpGroupNonUniformUMin',)),
+    ('bounded_atomic_fault_feedback',
+        ('src/shader_recompiler/backend/spirv/spirv_emit_context.cpp',
+         'src/video_core/host_shaders/fault_buffer_process.comp',
+         'src/video_core/buffer_cache/fault_manager.cpp'),
+        ('OpAtomicOr', 'atomicCompSwap', 'IgnoreStreamBuffer')),
+    ('implicit_dma_dependencies',
+        ('src/video_core/buffer_cache/buffer_cache.h',
+         'src/video_core/renderer_vulkan/vk_rasterizer.cpp'),
+        ('ForEachDmaBuffer', 'PrepareDmaReads')),
+)
+
+def _revision_texts(rev,paths):
+    chunks=[]
+    for path in paths:
+        spec=rev+':'+path
+        if exists(spec):
+            chunks.append(show(rev,path).decode(errors='replace'))
+    return '\n'.join(chunks)
+
+def verify_proven_fix_base(rev):
+    missing=[]
+    evidence={}
+    for label,paths,markers in PROVEN_FIX_CHECKS:
+        text=_revision_texts(rev,paths)
+        absent=[marker for marker in markers if marker not in text]
+        evidence[label]={
+            'paths':list(paths),
+            'markers':list(markers),
+            'present':not absent,
+            'missing':absent,
+        }
+        if absent:
+            missing.append(label+':'+'|'.join(absent))
+    if missing:
+        raise RuntimeError(
+            'CURRENT_HEAD_MISSING_PROVEN_FIXES='+' || '.join(missing)
+        )
+    return evidence
+
 def recovered_parent_ref(run_dir):
-    global PARENT_REF
+    global PARENT_REF, PARENT_TREE_ACTUAL, PARENT_MODE
     if exists(PARENT+'^{commit}'):
         if git('rev-parse',PARENT+'^{tree}').decode().strip()!=PARENT_TREE:
             raise RuntimeError('VERIFIED_GRAPHICS_PARENT_TREE_CHANGED')
         PARENT_REF=PARENT
+        PARENT_TREE_ACTUAL=PARENT_TREE
+        PARENT_MODE='exact-verified-commit'
         return PARENT_REF
 
     ensure_required_refs()
@@ -2301,6 +2394,21 @@ def recovered_parent_ref(run_dir):
         PARENT_REF=commit_tree(PARENT_TREE,base,msg)
         if git('rev-parse',PARENT_REF+'^{tree}').decode().strip()!=PARENT_TREE:
             raise RuntimeError('EXACT_PARENT_TREE_WRAP_FAILED')
+        PARENT_TREE_ACTUAL=PARENT_TREE
+        PARENT_MODE='exact-verified-tree-wrap'
+        return PARENT_REF
+
+    # The historical exact commit/tree can be pruned from the user's object
+    # database. In that case, accept the current local all-fixes HEAD only
+    # after proving every retained generic GoW/GoT correction semantically.
+    try:
+        evidence=verify_proven_fix_base(BASE)
+    except RuntimeError:
+        evidence=None
+    if evidence is not None:
+        PARENT_REF=BASE
+        PARENT_TREE_ACTUAL=git('rev-parse',BASE+'^{tree}').decode().strip()
+        PARENT_MODE='semantic-proven-fix-local-head'
         return PARENT_REF
 
     encoded=b''
@@ -2344,6 +2452,8 @@ def recovered_parent_ref(run_dir):
         PARENT_REF=commit_tree(tree,base,msg)
         if git('rev-parse',PARENT_REF+'^{tree}').decode().strip()!=PARENT_TREE:
             raise RuntimeError('RECOVERED_PARENT_COMMIT_TREE_CHANGED')
+        PARENT_TREE_ACTUAL=PARENT_TREE
+        PARENT_MODE='exact-verified-patch-recovery'
         return PARENT_REF
 
     raise RuntimeError(
@@ -2417,8 +2527,10 @@ def verify_prev(run_dir):
         raise RuntimeError('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC))
     validate_source_status(BASE_STATUS)
     verified_parent=recovered_parent_ref(run_dir)
-    if git('rev-parse',verified_parent+'^{tree}').decode().strip()!=PARENT_TREE:
+    verified_tree=git('rev-parse',verified_parent+'^{tree}').decode().strip()
+    if verified_tree!=PARENT_TREE_ACTUAL:
         raise RuntimeError('VERIFIED_GRAPHICS_PARENT_TREE_CHANGED')
+    proven_evidence=verify_proven_fix_base(verified_parent)
     parent,parent_tree,upstream_parent,upstream_parent_tree = \
         merge_verified_parent_with_upstream(verified_parent)
     return {
@@ -2426,7 +2538,9 @@ def verify_prev(run_dir):
         'previous_parent_tree':parent_tree,
         'verified_parent':verified_parent,
         'verified_parent_original':PARENT,
-        'verified_parent_tree':PARENT_TREE,
+        'verified_parent_tree':verified_tree,
+        'verified_parent_mode':PARENT_MODE,
+        'proven_fix_evidence':proven_evidence,
         'parent_reconstructed':verified_parent!=PARENT,
         'upstream_main':UPSTREAM_MAIN,
         'upstream_parent':upstream_parent,
@@ -2905,7 +3019,7 @@ def compose(run_dir,info,manifest):
     assert_source_unchanged()
     if not cand or digest(cand)!=csha:raise RuntimeError('CANDIDATE_COPY_FAILED')
     ms=digest(mp)
-    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':parent,'source_parent_tree':git('rev-parse',parent+'^{tree}').decode().strip(),'verified_parent':manifest['verified_parent'],'verified_parent_tree':PARENT_TREE,'upstream_main':UPSTREAM_MAIN,'upstream_parent':manifest['upstream_parent'],'upstream_parent_tree':manifest['upstream_parent_tree'],'pr_5492_head':PR_5492_HEAD,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_source_clone':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'original_submodules_untouched':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
+    report={'status':'GENERIC_LARGE_INDEXED_RESOURCE_BUILD_PASS','base':BASE,'source_parent':parent,'source_parent_tree':git('rev-parse',parent+'^{tree}').decode().strip(),'verified_parent':manifest['verified_parent'],'verified_parent_tree':manifest['verified_parent_tree'],'verified_parent_mode':manifest['verified_parent_mode'],'upstream_main':UPSTREAM_MAIN,'upstream_parent':manifest['upstream_parent'],'upstream_parent_tree':manifest['upstream_parent_tree'],'pr_5492_head':PR_5492_HEAD,'generic_source_commit':GEN,'revision':rev,'tree':tree,'candidate':str(cand),'candidate_sha256':csha,'manifest_sha256':ms,'full_build':'PASS','game_started':False,'source_untouched':True,'fresh_source_clone':True,'fresh_build_from_zero':True,'legacy_builds_searched':False,'tests_enabled':False,'original_submodules_untouched':True,'automatic_coherence':'RETAINED','srt_dependencies':'RETAINED','runtime_masked_reduction':'RETAINED','buffer_phi_selection':'RETAINED','image_resource_correctness':'RETAINED','runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP','game_specific_options':False,'all_games_validated':False}
     (info/'build-result.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
     return rev,tree,csha,cand
 
@@ -2923,7 +3037,7 @@ def launch(info,rev,tree,csha,cand):
                   'source_untouched':True,'fresh_source_clone':True,'fresh_build_from_zero':True,
                   'legacy_builds_searched':False,'tests_enabled':False,
                   'original_submodules_untouched':True,
-                  'verified_parent_tree':PARENT_TREE,'upstream_main':UPSTREAM_MAIN,
+                  'upstream_main':UPSTREAM_MAIN,
                   'pr_5492_head':PR_5492_HEAD,
                   'generic_indexed_image_tables':'GPU_NONUNIFORM_COMPLETE_TSHARP_SSHARP',
                   'game_specific_options':False}
@@ -2932,8 +3046,13 @@ def launch(info,rev,tree,csha,cand):
         verified_parent=r.get('verified_parent')
         if not verified_parent or not exists(verified_parent+'^{commit}'):
             raise RuntimeError('VERIFIED_BUILD_PARENT_MISSING')
-        if git('rev-parse',verified_parent+'^{tree}').decode().strip()!=PARENT_TREE:
+        verified_tree=git('rev-parse',verified_parent+'^{tree}').decode().strip()
+        if verified_tree!=r.get('verified_parent_tree'):
             raise RuntimeError('VERIFIED_BUILD_PARENT_TREE_MISMATCH')
+        if r.get('verified_parent_mode') not in {
+            'exact-verified-commit','exact-verified-tree-wrap',
+            'exact-verified-patch-recovery','semantic-proven-fix-local-head'}:
+            raise RuntimeError('VERIFIED_BUILD_PARENT_MODE_INVALID')
 
         source_parent=r.get('source_parent')
         if not source_parent or not exists(source_parent+'^{commit}'):
@@ -3031,7 +3150,8 @@ def main():
         print('SOURCE_PARENT='+man['previous_parent'],flush=True)
         print('UPSTREAM_MAIN='+UPSTREAM_MAIN,flush=True)
         print('PR_5492_HEAD='+PR_5492_HEAD,flush=True)
-        print('VERIFIED_PARENT_TREE='+PARENT_TREE,flush=True)
+        print('VERIFIED_PARENT_TREE='+man['verified_parent_tree'],flush=True)
+        print('VERIFIED_PARENT_MODE='+man['verified_parent_mode'],flush=True)
         if not args.launch:
             print('GAME_LAUNCHED=NO',flush=True)
             print('UPLOAD_THIS='+str(archive(run_dir,None)),flush=True)
