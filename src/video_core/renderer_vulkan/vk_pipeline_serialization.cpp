@@ -12,8 +12,9 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 0x43520003u;
-static constexpr u32 ShaderMetaVersion = 0x43520003u;
+// Shader runtime metadata now includes CB_SHADER_MASK and packed EXP_MRT mapping.
+static constexpr u32 ShaderBinaryVersion = 0x43520004u;
+static constexpr u32 ShaderMetaVersion = 0x43520004u;
 static constexpr u32 PipelineKeyVersion = 3u;
 } // namespace Serialization
 
