@@ -80,6 +80,13 @@ change(gvn,
   "        case IR::Opcode::CompositeConstructU32x2:\n",
   "        case IR::Opcode::CompositeConstructU32x2:\n"
   "        case IR::Opcode::CompositeConstructU32x4:\n")
+# Report the stalled shader's identity rather than another anonymous warning.
+change(flat,
+  '                  "SRT dependency resolution stalled after {} rounds: {} unresolved reads",\n'
+  '                  schedule.rounds, schedule.pending);',
+  '                  "SRT dependency resolution stalled shader={:#x} after {} rounds: {} unresolved reads ({} dynamic)",\n'
+  '                  info.pgm_hash, schedule.rounds, schedule.pending, pass_info.dynamic_srt_reads);')
+
 assert "flat_multimap<" in flat.read_text()
 assert "CompositeConstructU32x4" in gvn.read_text()
 PY
