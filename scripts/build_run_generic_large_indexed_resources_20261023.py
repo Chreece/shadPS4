@@ -3144,7 +3144,7 @@ def apply_upstream_native_cpu_policy(idx):
     required=('SOURCE_PATHS','removed_paths','transform_source','assert_native_tree')
     if any(not hasattr(policy.get(k),'__call__') for k in required[1:]):
         raise RuntimeError('NATIVE_CPU_POLICY_API_CHANGED')
-    before=tuple(git('ls-files','--cached','--name-only',e=e).decode().splitlines())
+    before=tuple(git('ls-files','--cached',e=e).decode().splitlines())
     eliminated=policy['removed_paths'](before)
     changed=[]
     for path in policy['SOURCE_PATHS']:
@@ -3156,7 +3156,7 @@ def apply_upstream_native_cpu_policy(idx):
         changed.append(path)
     for path in eliminated:
         git('update-index','--force-remove','--',path,e=e)
-    remaining=set(git('ls-files','--cached','--name-only',e=e).decode().splitlines())
+    remaining=set(git('ls-files','--cached',e=e).decode().splitlines())
     policy['assert_native_tree'](lambda p:index_text(idx,p),lambda p:p in remaining)
     unexpected=[p for p in remaining if p.startswith('src/core/cpu_id_translation/')]
     if unexpected:
