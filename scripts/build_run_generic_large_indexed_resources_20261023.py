@@ -3019,18 +3019,7 @@ def _apply_automatic_coherence(idx):
         changed.append(path)
     return changed
 
-def _apply_shared_srt(idx):
-    prefix='tools/packages/shared-srt-dependencies-20261022'
-    script=prefix+'/patch_srt_dependencies.py'
-    module=_package_module(SHARED_SRT_PACKAGE,script,'_shared_srt_package')
-    transform_flat=module.get('transform_flat')
-    if not callable(transform_flat):
-        raise RuntimeError('SHARED_SRT_PACKAGE_API_CHANGED')
-    flat='src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp'
-    try:
-        text=transform_flat(index_text(idx,flat))
-    except Exception as error:
-        raise RuntimeError('SHARED_SRT_TRANSFORM_FAILED='+str(error))
+def insert_host_uniform_srt_gate(text):
     # The retained schedule package calls IsHostUniformSrtOffset() from its
     # generated include, but the package does not define the helper. Validate
     # the entire IR expression graph: only scalar user data, flattened SRT
@@ -3082,6 +3071,21 @@ def _apply_shared_srt(idx):
     text=text.replace(codegen_include,helper+codegen_include,1)
     if text.count('static bool IsHostUniformSrtOffset(')!=1:
         raise RuntimeError('SRT_HOST_UNIFORM_GATE_NOT_INSERTED')
+    return text
+
+def _apply_shared_srt(idx):
+    prefix='tools/packages/shared-srt-dependencies-20261022'
+    script=prefix+'/patch_srt_dependencies.py'
+    module=_package_module(SHARED_SRT_PACKAGE,script,'_shared_srt_package')
+    transform_flat=module.get('transform_flat')
+    if not callable(transform_flat):
+        raise RuntimeError('SHARED_SRT_PACKAGE_API_CHANGED')
+    flat='src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp'
+    try:
+        text=transform_flat(index_text(idx,flat))
+    except Exception as error:
+        raise RuntimeError('SHARED_SRT_TRANSFORM_FAILED='+str(error))
+    text=insert_host_uniform_srt_gate(text)
     update_index_text(idx,flat,text)
     for path,name in (
         ('src/shader_recompiler/ir/passes/srt_dependency_schedule.h',
