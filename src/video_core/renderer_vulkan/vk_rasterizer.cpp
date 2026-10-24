@@ -1741,18 +1741,57 @@ void Rasterizer::UpdateDepthStencilState() const {
             regs.depth_control.backface_enable
                 ? uses_op_val(sc.stencil_fail_back, sc.stencil_zpass_back, sc.stencil_zfail_back)
                 : front_op;
-        const auto ref_conflict = [](AmdGpu::CompareFunc func, const AmdGpu::StencilRefMask& ref) {
-            return func != AmdGpu::CompareFunc::Always && func != AmdGpu::CompareFunc::Never &&
-                   ref.stencil_test_val != ref.stencil_op_val;
+        // The guest has separate compare/test and REPLACE/write reference
+        // values, but Vulkan only accepts one reference per face. If the
+        // compare and write masks have no contradictory overlapping bits,
+        // both guest operations can be represented exactly by one combined
+        // reference, without altering the draw or its render passes.
+        static std::atomic<u32> exact_reference_reports{0};
+        static std::atomic<u32> unrepresentable_reference_reports{0};
+        const auto stencil_reference = [&](const AmdGpu::StencilRefMask& ref,
+                                           AmdGpu::CompareFunc compare,
+                                           bool uses_replace) -> u32 {
+            const u32 test_val = ref.stencil_test_val;
+            const u32 op_val = ref.stencil_op_val;
+            if (!uses_replace || stencil_clear) {
+                return test_val;
+            }
+            if (compare == AmdGpu::CompareFunc::Always ||
+                compare == AmdGpu::CompareFunc::Never) {
+                return op_val;
+            }
+            const u32 compare_mask = ref.stencil_mask;
+            const u32 write_mask = ref.stencil_write_mask;
+            const u32 overlap_conflict = (test_val ^ op_val) & compare_mask & write_mask;
+            if (overlap_conflict == 0) {
+                const u32 reference =
+                    (test_val & compare_mask) | (op_val & write_mask & ~compare_mask);
+                if (test_val != op_val &&
+                    exact_reference_reports.fetch_add(1, std::memory_order_relaxed) < 24u) {
+                    LOG_INFO(Render_Vulkan,
+                             "StencilReferenceExactMerged: test={:#x} op={:#x} "
+                             "compare_mask={:#x} write_mask={:#x} reference={:#x}",
+                             test_val, op_val, compare_mask, write_mask, reference);
+                }
+                return reference;
+            }
+            if (unrepresentable_reference_reports.fetch_add(1, std::memory_order_relaxed) < 24u) {
+                LOG_WARNING(Render_Vulkan,
+                            "StencilReferenceUnrepresentable: test={:#x} op={:#x} "
+                            "compare_mask={:#x} write_mask={:#x} conflicting_bits={:#x}",
+                            test_val, op_val, compare_mask, write_mask, overlap_conflict);
+            }
+            // A shared Vulkan reference cannot preserve genuinely conflicting
+            // compare+replace bits. Retain prior REPLACE semantics; never
+            // fake a successful stencil test or suppress geometry.
+            return op_val;
         };
-        if ((front_op && ref_conflict(regs.depth_control.stencil_ref_func, front)) ||
-            (back_op && regs.depth_control.backface_enable &&
-             ref_conflict(regs.depth_control.stencil_bf_func, back))) {
-            LOG_WARNING(Render_Vulkan, "Stencil test requires test_val while ReplaceOp requires "
-                                       "op_val; the stencil test will use op_val");
-        }
-        dynamic_state.SetStencilReferences(front_op ? front.stencil_op_val : front.stencil_test_val,
-                                           back_op ? back.stencil_op_val : back.stencil_test_val);
+        dynamic_state.SetStencilReferences(
+            stencil_reference(front, regs.depth_control.stencil_ref_func, front_op),
+            stencil_reference(back, regs.depth_control.backface_enable
+                                        ? regs.depth_control.stencil_bf_func
+                                        : regs.depth_control.stencil_ref_func,
+                              back_op));
         dynamic_state.SetStencilWriteMasks(!stencil_clear ? front.stencil_write_mask : 0U,
                                            !stencil_clear ? back.stencil_write_mask : 0U);
         dynamic_state.SetStencilCompareMasks(front.stencil_mask, back.stencil_mask);
