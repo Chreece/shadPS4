@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2025 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+
 #include "common/alignment.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
@@ -403,15 +405,46 @@ void Runtime::CopyImageWithBuffer(VideoCore::Image* src, VideoCore::Image* dst,
 }
 
 void Runtime::CopyMip(VideoCore::Image* src, VideoCore::Image* dst, u32 mip, u32 slice) {
-    const auto dst_dim = dst->info.props.is_block ? 2 : 0;
-    const auto mip_block_w = std::max(dst->info.size.width >> (mip + dst_dim), 1u);
-    const auto mip_block_h = std::max(dst->info.size.height >> (mip + dst_dim), 1u);
-    const auto mip_block_p = std::max<u32>(dst->info.mips_layout[mip].pitch >> dst_dim, 1u);
+    ASSERT_MSG(mip < dst->info.resources.levels,
+               "Invalid destination mip {} of {} levels", mip, dst->info.resources.levels);
+    ASSERT_MSG(slice < dst->info.resources.layers,
+               "Invalid destination slice {} of {} layers", slice, dst->info.resources.layers);
 
-    const auto src_dim = src->info.props.is_block ? 2 : 0;
-    ASSERT(mip_block_w == (src->info.size.width >> src_dim));
-    ASSERT(mip_block_h == (src->info.size.height >> src_dim));
-    ASSERT(mip_block_p == (src->info.pitch >> src_dim));
+    // Mip overlap copies are expressed in texels, not in the guest row pitch.
+    // A texture descriptor may cover only part of a cache image's mip. Such a
+    // subresource is a valid partial image copy, not a reason to abort the GPU
+    // worker. Copy the exact common rectangle, preserving the destination
+    // outside the overlap.
+    const vk::Extent3D dst_mip_extent{
+        std::max(dst->info.size.width >> mip, 1u),
+        std::max(dst->info.size.height >> mip, 1u),
+        std::max(dst->info.size.depth >> mip, 1u),
+    };
+    const vk::Extent3D copy_extent{
+        std::min(src->info.size.width, dst_mip_extent.width),
+        std::min(src->info.size.height, dst_mip_extent.height),
+        std::min(src->info.size.depth, dst_mip_extent.depth),
+    };
+    ASSERT_MSG(copy_extent.width && copy_extent.height && copy_extent.depth,
+               "Empty mip overlap at level {} slice {}", mip, slice);
+
+    if (copy_extent.width != src->info.size.width ||
+        copy_extent.height != src->info.size.height ||
+        copy_extent.depth != src->info.size.depth ||
+        dst_mip_extent.width != src->info.size.width ||
+        dst_mip_extent.height != src->info.size.height ||
+        dst_mip_extent.depth != src->info.size.depth) {
+        // Bound the warning output for workloads that alias a mip each frame.
+        static std::atomic<u32> reported{0};
+        if (reported.fetch_add(1, std::memory_order_relaxed) < 16) {
+            LOG_WARNING(Render_Vulkan,
+                        "CopyMip partial overlap: src={}x{}x{} dst-mip={}x{}x{} "
+                        "copy={}x{}x{} level={} slice={}",
+                        src->info.size.width, src->info.size.height, src->info.size.depth,
+                        dst_mip_extent.width, dst_mip_extent.height, dst_mip_extent.depth,
+                        copy_extent.width, copy_extent.height, copy_extent.depth, mip, slice);
+        }
+    }
 
     const auto [src_layers, dst_layers] =
         SanitizeCopyLayers(src->info, dst->info, src->info.size.depth);
@@ -429,7 +462,7 @@ void Runtime::CopyMip(VideoCore::Image* src, VideoCore::Image* dst, u32 mip, u32
             .baseArrayLayer = slice,
             .layerCount = dst_layers,
         },
-        .extent = {src->info.size.width, src->info.size.height, src->info.size.depth},
+        .extent = copy_extent,
     };
 
     SetBackingSamples(dst, dst->info.num_samples);
