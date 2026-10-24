@@ -87,6 +87,8 @@ def self_test() -> None:
     required_infos += sampler.NumBindings(*stage);
     image_infos.reserve(required_infos);
 }
+void Rasterizer::BindVertexBuffers(const GraphicsPipeline* pipeline) {
+}
 void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindings& binding) {
     if (sampler.is_guest_indexed) {
 """ + BEFORE + """
@@ -100,6 +102,16 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
     after=transform(before)
     assert AFTER in after and BEFORE not in after
     assert verify(after)
+    # Ensure the original production contract is still strict: a missing
+    # cross-stage descriptor-array reservation must fail the regression.
+    without_reserve = before.replace(
+        "    image_infos.reserve(required_infos);\n", "")
+    try:
+        transform(without_reserve)
+    except ValueError as e:
+        assert "SAMPLE_ARRAY_RESERVATION_INCOMPLETE" in str(e)
+    else:
+        raise AssertionError("Missing descriptor reservation must be rejected")
     try:
         transform(after)
     except ValueError as e:
