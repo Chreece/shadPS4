@@ -31,7 +31,7 @@ AUTOMATIC_COHERENCE_PACKAGE='e226327408b202c1c115d3a7f2dc5e405e2c6683'
 SHARED_SRT_PACKAGE='8f0ccf7c3195f5ac5ef0faef16f005dd0e680eca'
 NATIVE_UMIN_SOURCE='a81ff9b7cdb62efb51513fd6428218761054c42e'
 NATIVE_UMIN_SIRIT='adf61937d466fbcfa103ff1e3935bd7718101fd8'
-DMA_HAZARD_SOURCE='94ed29b7c5767718ead87164558d6ec7523bcc9a'
+IMPLICIT_DMA_PACKAGE='0bde46afaa33b29051b9d8a2c1b31f9c0f6876d6'
 PROVEN_SOURCE_COMMITS=(
     'a12c8c8c5c95c2acccb8c5bedc10a466fef0feba',
     NATIVE_UMIN_SOURCE,
@@ -45,7 +45,6 @@ PROVEN_SOURCE_COMMITS=(
     '12a07a6d83007f76012f762e68fedb5954aa0f8a',
     'f94c4f09e6111c0f9ff9fd1c5125c762ae88eb07',
     '822a68d8aae409b5a29759de462eb43329e52753',
-    DMA_HAZARD_SOURCE,
 )
 VULKAN_INDEXING_FEATURE_FIXES=(
     'cbbcc969156f9258633914409ca88e6458bbad2c',
@@ -2359,7 +2358,9 @@ def ensure_required_refs():
         if not exists(dst+'^{commit}'):
             raise RuntimeError('REQUIRED_REF_MISSING_AFTER_FETCH='+dst)
 
-    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,GUEST_TSHARP_FINAL,INTEGER_SAMPLER_FINAL,PM4_BOUNDARY_SOURCE,*PROVEN_SOURCE_COMMITS)
+    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,GUEST_TSHARP_FINAL,INTEGER_SAMPLER_FINAL,
+              PM4_BOUNDARY_SOURCE,RECONSTRUCTION_BASE,AUTOMATIC_COHERENCE_PACKAGE,
+              SHARED_SRT_PACKAGE,IMPLICIT_DMA_PACKAGE,*PROVEN_SOURCE_COMMITS)
     for sha in required:
         if exists(sha+'^{commit}'):
             continue
@@ -2619,6 +2620,26 @@ def _apply_shared_srt(idx):
         'src/shader_recompiler/ir/passes/srt_dependency_codegen.inc',
     ]
 
+def _apply_implicit_dma_dependencies(idx):
+    script='scripts/implicit_memory_dependencies_20261022.py'
+    module=_package_module(IMPLICIT_DMA_PACKAGE,script,'_implicit_dma_package')
+    transform=module.get('transform')
+    expected=module.get('EXPECTED')
+    if not callable(transform) or not isinstance(expected,dict) or len(expected)!=4:
+        raise RuntimeError('IMPLICIT_DMA_PACKAGE_API_CHANGED')
+    changed=[]
+    for path in expected:
+        text=index_text(idx,path)
+        # The package transform deliberately performs only source-anchor
+        # checks; its historical blob checks lived in the host workflow.
+        try:
+            new=transform(path,text)
+        except Exception as error:
+            raise RuntimeError('IMPLICIT_DMA_TRANSFORM_FAILED path='+path+' '+str(error))
+        update_index_text(idx,path,new)
+        changed.append(path)
+    return changed
+
 def _apply_final_native_umin_sirit(idx):
     # The sealed native-minimum package requires the immediate upstream Sirit
     # child that adds OpGroupNonUniformUMin. The source lowering itself comes
@@ -2644,7 +2665,8 @@ def _apply_atomic_fault_feedback(idx):
     (void)OpAtomicOr(U32[1], fault_ptr, fault_scope, fault_semantics, page_mask);'''
     if old in t:
         t=t.replace(old,new,1)
-    if 'OpAtomicOr(U32[1], fault_ptr, fault_scope, fault_semantics, page_mask)' not in t:
+    if ('OpAtomicOr(U32[1], fault_ptr, fault_scope, fault_semantics, page_mask)' not in t and
+        'OpAtomicOr(U32[1], fault_ptr, ConstU32(u32(spv::Scope::Device))' not in t):
         raise RuntimeError('ATOMIC_FAULT_RECORDING_NOT_APPLIED')
     update_index_text(idx,p,t)
 
@@ -2744,7 +2766,8 @@ void main() {
         .offset = offset,
         .size = PageFaultAreaSize,
     };'''
-    if 'download_barrier' not in t:
+    if ('download_barrier' not in t and
+        not ('post_barriers.data()' in t and 'vk::AccessFlagBits2::eHostRead' in t)):
         if old_post not in t:
             raise RuntimeError('FAULT_POST_BARRIER_ANCHOR')
         t=t.replace(old_post,new_post,1)
@@ -2761,7 +2784,7 @@ void main() {
     });'''
     if old_dep in t:
         t=t.replace(old_dep,new_dep,1)
-    if 'post_barriers.data()' not in t:
+    if 'post_barriers.data()' not in t or 'vk::AccessFlagBits2::eHostRead' not in t:
         raise RuntimeError('FAULT_HOST_READ_BARRIER_NOT_APPLIED')
 
     if 'download_buffer.Invalidate(offset, PageFaultAreaSize);' not in t:
@@ -2778,6 +2801,8 @@ void main() {
 
     old_count='''        const u32 fault_count = fault_buf[0];
         for (u32 i = 1; i <= fault_count; ++i) {'''
+    clamped_count='''        const u32 fault_count = std::min<u64>(fault_buf[0], MaxPageFaults - 1);
+        for (u32 i = 1; i <= fault_count; ++i) {'''
     new_count='''        const u32 fault_count = fault_buf[0];
         if (fault_count >= MaxPageFaults) {
             LOG_ERROR(Render_Vulkan, "Invalid fault queue count {}", fault_count);
@@ -2787,6 +2812,8 @@ void main() {
         for (u32 i = 1; i <= fault_count; ++i) {'''
     if old_count in t:
         t=t.replace(old_count,new_count,1)
+    elif clamped_count in t:
+        t=t.replace(clamped_count,new_count,1)
     if 'Invalid fault queue count' not in t:
         raise RuntimeError('FAULT_COUNT_VALIDATION_NOT_APPLIED')
 
@@ -2812,9 +2839,25 @@ void main() {
             raise RuntimeError('FAULT_BITMAP_INIT_ANCHOR')
         t=t.replace(
             anchor,
-            anchor+'''    runtime.FillBuffer(fault_manager->GetFaultBuffer(), 0u,
-                       fault_manager->GetFaultBuffer()->SizeBytes(), 0u);
+            anchor+'''    auto* fault_buffer = fault_manager->GetFaultBuffer();
+    runtime.FillBuffer(fault_buffer, 0u, fault_buffer->SizeBytes(), 0u);
+    const vk::BufferMemoryBarrier2 fault_init_barrier = {
+        .srcStageMask = vk::PipelineStageFlagBits2::eClear,
+        .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+        .buffer = fault_buffer->Handle(),
+        .offset = 0,
+        .size = fault_buffer->SizeBytes(),
+    };
+    scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+        .bufferMemoryBarrierCount = 1,
+        .pBufferMemoryBarriers = &fault_init_barrier,
+    });
 ''',1)
+    if ('runtime.FillBuffer(fault_buffer' not in t and
+        'runtime.FillBuffer(fault_manager->GetFaultBuffer()' not in t):
+        raise RuntimeError('FAULT_BITMAP_INIT_NOT_APPLIED')
     update_index_text(idx,p,t)
     return [
         'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp',
@@ -2829,6 +2872,7 @@ def complete_package_source_parent(run_dir,base):
     git('read-tree',base,e=e)
     changed=[]
     changed += _apply_final_native_umin_sirit(idx)
+    changed += _apply_implicit_dma_dependencies(idx)
     changed += _apply_atomic_fault_feedback(idx)
     changed += _apply_shared_srt(idx)
     changed += _apply_automatic_coherence(idx)
