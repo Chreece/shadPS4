@@ -178,6 +178,9 @@ def one(s,a,b,n):
 def after(s,a,x,marker,n):
     return s if marker in s else one(s,a,a+x,n)
 
+def stage(message):
+    print('STAGE='+message,flush=True)
+
 def source_status():
     return git('status','--porcelain=v1','--untracked-files=all')
 
@@ -2724,19 +2727,23 @@ def merge_verified_parent_with_upstream(parent):
     return final_parent,final_tree,upstream_merged,upstream_tree
 
 def verify_prev(run_dir):
+    stage('fetch_required_refs')
     ensure_required_refs()
     # PARENT_REF is either the original verified commit or a locally
     # reconstructed commit with the exact same verified tree.
     if not SRC.is_dir() or not (SRC/'.git').exists():
         raise RuntimeError('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC))
     validate_source_status(BASE_STATUS)
+    stage('verify_retained_proven_fix_base')
     retained_base=recovered_parent_ref(run_dir)
     retained_tree=git('rev-parse',retained_base+'^{tree}').decode().strip()
     if retained_tree!=PARENT_TREE_ACTUAL:
         raise RuntimeError('VERIFIED_GRAPHICS_PARENT_TREE_CHANGED')
     package_evidence=verify_proven_fix_base(retained_base)
+    stage('complete_public_proven_source_fixes')
     verified_parent,verified_tree,source_replay,source_evidence = \
         complete_proven_source_parent(run_dir,retained_base)
+    stage('merge_latest_upstream_and_pr_5492')
     parent,parent_tree,upstream_parent,upstream_parent_tree = \
         merge_verified_parent_with_upstream(verified_parent)
     return {
@@ -2845,6 +2852,7 @@ def tee(a,p):
     if rc:raise RuntimeError(f'BUILD_FAILED={rc} log={p}')
 
 def compose(run_dir,info,manifest):
+    stage('compose_generic_gpu_fix_stack')
     parent=manifest['previous_parent']
     if git('rev-parse','HEAD').decode().strip()!=BASE:
         raise RuntimeError('ORIGINAL_GOT_SOURCE_HEAD_CHANGED')
@@ -3200,23 +3208,28 @@ def compose(run_dir,info,manifest):
     work,d=fresh_paths(rev)
     cand=None;csha=''
     try:
+        stage('create_fresh_source_clone')
         add_fresh_source(work,rev,temp_ref)
         if temp_ref:
             git('update-ref','-d',temp_ref,check=False)
+        stage('initialize_fresh_submodules')
         submodules_at(work)
         print('FRESH_SOURCE_CLONE='+str(work),flush=True)
         print('FRESH_BUILD_DIRECTORY='+str(d),flush=True)
         print('COMPOSED_REVISION='+rev,flush=True)
+        stage('configure_release_build')
         tee([
             'cmake','--fresh','-S',work,'-B',d,'-G','Ninja',
             '-DCMAKE_BUILD_TYPE=Release',
             '-DENABLE_TESTS=OFF',
             '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON',
         ],info/'configure.log')
+        stage('compile_shadps4')
         tee([
             'nice','-n','10','cmake','--build',d,
             '--target','shadps4','--parallel','2',
         ],info/'full-build.log')
+        stage('verify_built_candidate')
         built=exe(d)
         if not built:
             raise RuntimeError('NEW_BUILD_EXECUTABLE_NOT_FOUND')
@@ -3379,6 +3392,7 @@ def main():
             return 0
         if not OLD.is_file() or digest(OLD)!=OLD_SHA:
             raise RuntimeError('PROTECTED_LAUNCHER_MISSING_OR_CHANGED='+str(OLD))
+        stage('launch_got_candidate')
         return launch(info,rev,tree,csha,cand)
     except (Exception,KeyboardInterrupt) as e:
         out=archive(run_dir,e);print('GENERIC_LARGE_INDEXED_RESOURCE_ERROR='+str(e),file=sys.stderr,flush=True);print('UPLOAD_THIS='+str(out),flush=True);return 2
