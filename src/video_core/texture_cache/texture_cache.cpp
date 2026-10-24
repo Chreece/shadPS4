@@ -852,6 +852,10 @@ void TextureCache::RefreshImage(Image& image) {
         image.cpu_hash = hash;
     }
 
+    // Hash the guest GPU memory once per genuine refresh, not on every
+    // cache access; this is the generic upstream fix merged as #5504.
+    image.gpu_hash = 0;
+
     const u32 num_layers = image.info.resources.layers;
     const u32 num_mips = image.info.resources.levels;
     const bool is_gpu_modified = True(image.flags & ImageFlagBits::GpuModified);
@@ -1190,7 +1194,6 @@ void TextureCache::TouchImage(Image& image) {
 
     // Image is still valid
     image.flags &= ~ImageFlagBits::MaybeGpuDirty;
-    image.gpu_hash = 0;
 }
 
 void TextureCache::DeleteImage(ImageId image_id) {
