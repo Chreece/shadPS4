@@ -2445,6 +2445,15 @@ PROVEN_SOURCE_POSTCHECKS=(
         ('internal_mspace_create(', 'g_mspace_registry')),
     ('sse4a_zero_upper',('src/core/cpu_patches.cpp',),
         ('TryExecuteIllegalInstruction(', 'c.movq(xmm_dst')),
+    ('scalar_reciprocal_and_guest_cpuid',('src/core/cpu_patches.cpp',),
+        ('GenerateRCPSS(', 'GenerateVRCPSS(', 'GenerateRSQRTSS(',
+         'GenerateVRSQRTSS(', 'scalar && vex ? 2 : 1',
+         'ZYDIS_MNEMONIC_VRSQRTSS', 'InitializeCpuId();')),
+    ('single_guest_affinity_authority',
+        ('src/core/cpu_id.cpp', 'src/core/libraries/kernel/threads/pthread.cpp',
+         'src/core/libraries/kernel/threads/thread_state.cpp'),
+        ('thread->affinity_mask.load(', 'new_thread->affinity_mask.store(',
+         'thread->affinity_mask.store(GetGuestCpuMask()', 'SelectGuestCpu(')),
     ('release_mem_semantics',('src/video_core/amdgpu/pm4_cmds.h',),
         ('case DataSelect::None:', 'case InterruptSelect::IrqOnly:')),
     ('legal_64bit_bitfield_insert',
@@ -2579,6 +2588,13 @@ std::array<bool, CPU_SETSIZE> host_cpu_known{};'''
 
     later_current=_cpp_function(
         later,'u32 CurrentGuestCpuImpl() {','CPU_ID_LATER_CURRENT')
+    # Keep the already-proven atomic affinity authority from the reconstruction
+    # base. Duplicating it as guest_affinity_mask would let the CPU instruction
+    # emulation and native pthread scheduling disagree.
+    if later_current.count('thread->guest_affinity_mask.load(')!=1:
+        raise RuntimeError('CPU_ID_LATER_GUEST_AFFINITY_ANCHOR_CHANGED')
+    later_current=later_current.replace(
+        'thread->guest_affinity_mask.load(', 'thread->affinity_mask.load(', 1)
     if 'u32 CurrentGuestCpuImpl() {' in t:
         current=_cpp_function(
             t,'u32 CurrentGuestCpuImpl() {','CPU_ID_EXISTING_CURRENT')
@@ -2644,6 +2660,196 @@ std::array<bool, CPU_SETSIZE> host_cpu_known{};'''
     update_index_text(idx,p,t)
     return ['src/core/cpu_id.cpp','src/core/cpu_id.h']
 
+
+def _apply_cpu_reconstruction_overlay(idx):
+    # The public reconstruction already contains a generic CPUID fault path,
+    # complete guest address-range registration, and native pthread affinity.
+    # Retain these instead of replaying duplicate hunks or installing a second
+    # unsynchronised guest-affinity field.
+    checks = {
+        'CMakeLists.txt': ('list(APPEND CORE src/core/cpu_id.cpp src/core/cpu_id.h)',),
+        'src/core/address_space.cpp': (
+            'SetCpuIdGuestAddressRange(reinterpret_cast<VAddr>(system_managed_base)',
+            'reinterpret_cast<VAddr>(user_base) + user_size);',
+        ),
+        'src/core/thread.cpp': ('EnableCpuIdFaulting();',),
+        'src/core/libraries/kernel/process.h': ('u64 GetGuestCpuMask();',),
+        'src/core/libraries/kernel/threads/pthread.h': (
+            'std::atomic<u64> affinity_mask',
+            'int SetAffinity(u64 mask);',
+        ),
+        'src/core/libraries/kernel/threads/pthread.cpp': (
+            'new_thread->affinity_mask.store(mask, std::memory_order_release);',
+            'affinity_mask.store(mask, std::memory_order_release);',
+            'thread->SetAffinity(mask)',
+            'thread->affinity_mask.load(std::memory_order_acquire)',
+        ),
+    }
+    results=[]
+    for path, markers in checks.items():
+        body=index_text(idx,path)
+        for marker in markers:
+            if marker not in body:
+                raise RuntimeError('CPU_RECONSTRUCTION_INVARIANT='+path+':'+marker)
+        results.append(path)
+
+    # The retained extraction contains both scalar RCP/RSQRT repairs and
+    # duplicate CPUID hooks. Keep the original upstream/Jaguar-compatible file
+    # and replace only the reciprocal generator with the proven scalar-aware
+    # version, while leaving unrelated SSE4a and platform patches untouched.
+    p='src/core/cpu_patches.cpp'
+    t=index_text(idx,p)
+    newer=show(CPU_ID_EXTRACTION_SOURCE,p).decode()
+    older=show(CPU_ID_EXTRACTION_SOURCE+'^',p).decode()
+    marker='static void GenerateReciprocalInstruction('
+    previous=_cpp_function(older,marker,'CPU_RCP_PREVIOUS')
+    current=_cpp_function(t,marker,'CPU_RCP_RECONSTRUCTED')
+    updated=_cpp_function(newer,marker,'CPU_RCP_LATER')
+    if current!=updated:
+        # A distinct implementation must not be overwritten without checking
+        # that it is the prior proven generic version.
+        if current!=previous:
+            raise RuntimeError('CPU_RCP_RECONSTRUCTION_DIVERGED_FROM_PROVEN_PARENT')
+        t=t.replace(current,updated,1)
+    scalar_names=('GenerateRCPSS','GenerateVRCPSS',
+                  'GenerateRSQRTSS','GenerateVRSQRTSS')
+    for name in scalar_names:
+        src_fn=_cpp_function(newer,'static void '+name+'(',name)
+        if 'static void '+name+'(' not in t:
+            anchor='static void GenerateEXTRQ('
+            if t.count(anchor)!=1:
+                raise RuntimeError('CPU_RCP_GENERATOR_INSERT_ANCHOR='+name)
+            t=t.replace(anchor,src_fn+'\n\n'+anchor,1)
+        elif _cpp_function(t,'static void '+name+'(',name)!=src_fn:
+            raise RuntimeError('CPU_RCP_GENERATOR_CONFLICT='+name)
+
+    packed='{ZYDIS_MNEMONIC_VRCPPS, {{FilterIntelCPU, GenerateVRCPPS, true}}},\n'
+    scalar_entries=''.join(
+        '    {ZYDIS_MNEMONIC_'+m+', {{FilterIntelCPU, '+f+', true}}},\n'
+        for m,f in (('RCPSS','GenerateRCPSS'),('VRCPSS','GenerateVRCPSS'),
+                    ('RSQRTSS','GenerateRSQRTSS'),('VRSQRTSS','GenerateVRSQRTSS'))
+    )
+    if 'ZYDIS_MNEMONIC_VRSQRTSS' not in t:
+        if t.count(packed)!=1:
+            raise RuntimeError('CPU_RCP_DISPATCH_INSERT_ANCHOR')
+        t=t.replace(packed,packed+scalar_entries,1)
+    elif scalar_entries not in t:
+        raise RuntimeError('CPU_RCP_DISPATCH_PARTIAL')
+
+    guarded=('#if defined(__linux__) && defined(ARCH_X86_64)')
+    old_include='#if defined(__linux__)\n#include "core/cpu_id.h"\n#endif'
+    new_include=guarded+'\n#include "core/cpu_id.h"\n#endif'
+    if old_include in t:
+        t=t.replace(old_include,new_include,1)
+    elif new_include not in t:
+        raise RuntimeError('CPU_PATCHES_CPUID_INCLUDE_UNRECOGNISED')
+    for old,new in (
+        ('#if defined(__linux__)\nstatic bool FilterCpuId(',
+         guarded+'\nstatic bool FilterCpuId('),
+        ('#if defined(__linux__)\n    {ZYDIS_MNEMONIC_CPUID',
+         guarded+'\n    {ZYDIS_MNEMONIC_CPUID'),
+        ('static void PatchesInit() {\n#if defined(__linux__)\n',
+         'static void PatchesInit() {\n'+guarded+'\n'),
+    ):
+        if old in t:
+            t=t.replace(old,new,1)
+        elif new not in t:
+            raise RuntimeError('CPU_PATCHES_ARCH_GUARD_MISSING='+old)
+    for marker in ('scalar && vex ? 2 : 1','ZYDIS_MNEMONIC_RCPSS',
+                   'ZYDIS_MNEMONIC_VRCPSS','ZYDIS_MNEMONIC_RSQRTSS',
+                   'ZYDIS_MNEMONIC_VRSQRTSS','InitializeCpuId();'):
+        if marker not in t:
+            raise RuntimeError('CPU_PATCHES_SCALAR_MISSING='+marker)
+    update_index_text(idx,p,t)
+    results.append(p)
+
+    # Upstream's CPUID callbacks are already registered. The recovered signal
+    # handler must also tolerate a null siginfo_t, without a second callback.
+    p='src/core/signals.cpp'
+    t=index_text(idx,p)
+    old='if ((sig == SIGSEGV || sig == SIGILL) && HandleCpuIdFault(raw_context, info->si_addr)) {'
+    new='if (info != nullptr && (sig == SIGSEGV || sig == SIGILL) &&\n        HandleCpuIdFault(raw_context, info->si_addr)) {'
+    if old in t:
+        t=t.replace(old,new,1)
+    elif new not in t:
+        raise RuntimeError('CPU_SIGNAL_HANDLER_BASE_MISSING')
+    if '#include "core/cpu_id.h"' not in t:
+        raise RuntimeError('CPU_SIGNAL_HEADER_MISSING')
+    update_index_text(idx,p,t)
+    results.append(p)
+
+    # Preserve PSF compatibility and API behaviour while joining CPUID,
+    # affinity, and kernel current-CPU onto the same eight guest CPU slots.
+    p='src/core/libraries/kernel/process.cpp'
+    t=index_text(idx,p)
+    newer=show(CPU_ID_EXTRACTION_SOURCE,p).decode()
+    anchor='#include "core/emulator_settings.h"\n'
+    if '#include "core/guest_cpu_selection.h"' not in t:
+        if t.count(anchor)!=1:
+            raise RuntimeError('CPU_PROCESS_GUEST_HELPER_INCLUDE_ANCHOR')
+        t=t.replace(anchor,anchor+'#include "core/guest_cpu_selection.h"\n',1)
+    include='#if defined(__linux__) && defined(ARCH_X86_64)\n#include "core/cpu_id.h"\n#endif\n'
+    if include not in t:
+        anchor='#include "core/guest_cpu_selection.h"\n'
+        t=t.replace(anchor,anchor+include,1)
+    for name in ('sceKernelGetCpumode','GetGuestCpuMask','sceKernelGetCurrentCpu'):
+        signature=(
+            ('u64 GetGuestCpuMask()' if name=='GetGuestCpuMask' else
+             's32 PS4_SYSV_ABI '+name+'()')
+        )
+        source_fn=_cpp_function(newer,signature,name+'_LATER')
+        target_fn=_cpp_function(t,signature,name+'_RECONSTRUCTED')
+        if source_fn!=target_fn:
+            t=t.replace(target_fn,source_fn,1)
+    start='s32 PS4_SYSV_ABI sceKernelLoadStartModule('
+    alignment='#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))\n__attribute__((force_align_arg_pointer))\n#endif\n'
+    if alignment not in t:
+        if t.count(start)!=1:
+            raise RuntimeError('CPU_PROCESS_ALIGNMENT_ANCHOR')
+        t=t.replace(start,alignment+start,1)
+    module=_cpp_function(t,start,'CPU_PROCESS_MODULE')
+    if 'if (moduleFileName == nullptr)' not in module:
+        opening=module.find('{')
+        validation=(
+            '\n    if (moduleFileName == nullptr) {\n'
+            '        return ORBIS_KERNEL_ERROR_EFAULT;\n'
+            '    }\n'
+            "    if (moduleFileName[0] == '\\0') {\n"
+            '        return ORBIS_KERNEL_ERROR_EINVAL;\n'
+            '    }\n'
+        )
+        module_fixed=module[:opening+1]+validation+module[opening+1:]
+        t=t.replace(module,module_fixed,1)
+    for marker in ('Core::GuestCpuModeFromPsf(', 'Core::GuestCpuMaskFromMode(',
+                   'Core::CurrentGuestCpu()', 'force_align_arg_pointer',
+                   'if (moduleFileName == nullptr)'):
+        if marker not in t:
+            raise RuntimeError('CPU_PROCESS_STRUCTURAL_MISSING='+marker)
+    update_index_text(idx,p,t)
+    results.append(p)
+
+    # The very first guest pthread has no parent from whom to inherit a mask.
+    # Initialise the EXISTING atomic field, not a redundant second field.
+    p='src/core/libraries/kernel/threads/thread_state.cpp'
+    t=index_text(idx,p)
+    anchor='#include "core/libraries/kernel/posix_error.h"\n'
+    if '#include "core/libraries/kernel/process.h"' not in t:
+        if t.count(anchor)!=1:
+            raise RuntimeError('CPU_THREAD_STATE_INCLUDE_ANCHOR')
+        t=t.replace(anchor,anchor+'#include "core/libraries/kernel/process.h"\n',1)
+    init='        std::construct_at(thread);\n'
+    if 'thread->affinity_mask.store(GetGuestCpuMask(), std::memory_order_relaxed);' not in t:
+        if t.count(init)!=1:
+            raise RuntimeError('CPU_THREAD_STATE_INIT_ANCHOR')
+        t=t.replace(
+            init,init+
+            '        // The original guest thread has no parent affinity to inherit.\n'
+            '        thread->affinity_mask.store(GetGuestCpuMask(), std::memory_order_relaxed);\n',1)
+    update_index_text(idx,p,t)
+    results.append(p)
+    return results
+
+
 def _proven_commit_paths(sha):
     paths=git('diff','--name-only',sha+'^',sha).decode().splitlines()
     selected=[
@@ -2651,10 +2857,24 @@ def _proven_commit_paths(sha):
         if path=='CMakeLists.txt' or path.startswith('src/')
     ]
     if sha==CPU_ID_EXTRACTION_SOURCE:
-        selected=[
-            path for path in selected
-            if path not in ('src/core/cpu_id.cpp','src/core/cpu_id.h')
-        ]
+        # These paths overlap a complete, earlier public CPU/affinity
+        # implementation. Replay their confirmed semantic changes below, not
+        # conflicting add/add and duplicate hunks.
+        structural={
+            'CMakeLists.txt',
+            'src/core/address_space.cpp',
+            'src/core/cpu_id.cpp',
+            'src/core/cpu_id.h',
+            'src/core/cpu_patches.cpp',
+            'src/core/libraries/kernel/process.cpp',
+            'src/core/libraries/kernel/process.h',
+            'src/core/libraries/kernel/threads/pthread.cpp',
+            'src/core/libraries/kernel/threads/pthread.h',
+            'src/core/libraries/kernel/threads/thread_state.cpp',
+            'src/core/signals.cpp',
+            'src/core/thread.cpp',
+        }
+        selected=[path for path in selected if path not in structural]
     return selected
 
 def _strip_historical_cache_version_hunks(patch):
@@ -3051,6 +3271,12 @@ def complete_proven_source_parent(run_dir,base):
                 'result':_apply_proven_file(idx,sha,path),
             })
         if sha==CPU_ID_EXTRACTION_SOURCE:
+            for path in _apply_cpu_reconstruction_overlay(idx):
+                results.append({
+                    'commit':sha,
+                    'path':path,
+                    'result':'STRUCTURAL_CPU_RECONSTRUCTION_OVERLAY',
+                })
             for path in _apply_cpu_identity_overlay(idx):
                 results.append({
                     'commit':sha,
