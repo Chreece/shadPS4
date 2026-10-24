@@ -1,0 +1,163 @@
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+@@ -1,6 +1,8 @@
+ // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <atomic>
++#include <limits>
+ #include <memory>
+ #include <algorithm>
+ #include "common/debug.h"
+@@ -946,20 +948,30 @@
+                         static_cast<u32>(source.num_records),
+                         Shader::MaxGuestIndexedImageEntries))
+                 : 0u;
+-            const u64 required_bytes=u64(count-1)*
+-                (record_stride ? record_stride : sizeof(AmdGpu::Image));
+-            const bool complete=fetched && source.Valid() && source.base_address!=0 &&
+-                represented_entries==count-1u && bytes==required_bytes &&
+-                memory->IsValidMapping(source.base_address,bytes);
++            // Shader compilation fixes the descriptor-array count, but the guest
++            // can enlarge or partially unmap its source table between draws.
++            // Accept each runtime record independently instead of turning the
++            // entire array into null descriptors on a capacity mismatch.
++            const u64 record_bytes = record_stride ? record_stride : sizeof(AmdGpu::Image);
++            const bool table_layout_valid = record_stride
++                ? descriptor_offset <= record_stride &&
++                      sizeof(AmdGpu::Image) <= record_stride - descriptor_offset
++                : descriptor_offset == 0;
++            const bool table_available = fetched && source.Valid() &&
++                source.base_address != 0 && table_layout_valid;
++            u32 valid_indexed_images = 0;
+             u64 estimated=0; constexpr u64 MaxEstimatedIndexedImageBytes=4ull<<30;
+             const u32 max_dim=instance.GetPhysicalDevice().getProperties().limits.maxImageDimension2D;
+             for(u32 i=0;i<count;++i) {
+                 auto& slot=image_bindings[num_images++]; slot.image_id={};
+-                if(!complete || i+1==count) continue;
+-                const u64 addr=source.base_address+
+-                    u64(i)*(record_stride ? record_stride : sizeof(AmdGpu::Image))+
+-                    descriptor_offset;
+-                if(!memory->IsValidMapping(addr,sizeof(AmdGpu::Image))) continue;
++                if (!table_available || i + 1 == count || i >= represented_entries) continue;
++                const u64 record_offset_bytes = u64(i) * record_bytes + descriptor_offset;
++                if (record_offset_bytes > bytes ||
++                    sizeof(AmdGpu::Image) > bytes - record_offset_bytes) continue;
++                const u64 addr = source.base_address + record_offset_bytes;
++                if (addr < source.base_address ||
++                    addr > std::numeric_limits<u64>::max() - (sizeof(AmdGpu::Image) - 1) ||
++                    !memory->IsValidMapping(addr, sizeof(AmdGpu::Image))) continue;
+                 AmdGpu::Image raw{}; std::memcpy(&raw,reinterpret_cast<const void*>(addr),sizeof(raw));
+                 if(!raw.Valid() || raw.GetType()!=AmdGpu::ImageType::Color2D || raw.Address()==0 ||
+                    !memory->IsValidGpuMapping(raw.Address(),0)) continue;
+@@ -978,6 +990,17 @@
+                     }
+                 }
+                 image->binding.is_bound=1u;
++                ++valid_indexed_images;
++            }
++            if (valid_indexed_images != count - 1 || represented_entries != count - 1) {
++                static std::atomic<u32> reports{0};
++                if (reports.fetch_add(1, std::memory_order_relaxed) < 24) {
++                    LOG_WARNING(Render_Vulkan,
++                                "Indexed image table: shader={:#x} slots={} available={} "
++                                "bound={} bytes={} record_stride={} descriptor_offset={}",
++                                stage.pgm_hash, count - 1, represented_entries,
++                                valid_indexed_images, bytes, record_stride, descriptor_offset);
++                }
+             }
+             image_descriptor_array_sizes.push_back(count); continue;
+         }
+@@ -1147,12 +1170,15 @@
+                         static_cast<u32>(source.num_records),
+                         Shader::MaxGuestIndexedImageEntries))
+                 : 0u;
+-            const u64 required_bytes = u64(count - 1u) *
+-                (record_stride ? record_stride : sizeof(AmdGpu::Image));
+-            const bool complete = fetched && source.Valid() && source.base_address &&
+-                represented_entries == count - 1u &&
+-                bytes == required_bytes &&
+-                memory->IsValidMapping(source.base_address, bytes);
++            const u64 record_bytes = record_stride ? record_stride : sizeof(AmdGpu::Image);
++            const bool table_layout_valid = record_stride
++                ? image_offset <= record_stride &&
++                      sizeof(AmdGpu::Image) <= record_stride - image_offset &&
++                      sampler_offset <= record_stride &&
++                      sizeof(AmdGpu::Sampler) <= record_stride - sampler_offset
++                : image_offset == 0;
++            const bool table_available = fetched && source.Valid() &&
++                source.base_address != 0 && table_layout_valid;
+ 
+             AmdGpu::Sampler uniform_sampler{};
+             bool uniform_sampler_valid = false;
+@@ -1165,15 +1191,23 @@
+             }
+ 
+             const u32 first_sampler = static_cast<u32>(image_infos.size());
++            u32 valid_indexed_samplers = 0;
+             for (u32 i = 0; i < count; ++i) {
+                 AmdGpu::Sampler ssharp = uniform_sampler;
+                 bool sampler_valid = record_stride == 0u ? uniform_sampler_valid : false;
+                 bool is_integer = false;
+-                if (complete && i + 1u < count) {
+-                    const u64 record_address = u64(source.base_address) +
+-                        u64(i) * (record_stride ? record_stride : sizeof(AmdGpu::Image));
++                if (table_available && i + 1u < count && i < represented_entries &&
++                    u64(i) * record_bytes <= bytes) {
++                    const u64 record_offset_bytes = u64(i) * record_bytes;
++                    const u64 record_address = source.base_address + record_offset_bytes;
+                     const u64 image_address = record_address + image_offset;
+-                    if (memory->IsValidMapping(image_address, sizeof(AmdGpu::Image))) {
++                    if (record_address >= source.base_address &&
++                        image_offset <= bytes - record_offset_bytes &&
++                        sizeof(AmdGpu::Image) <= bytes - record_offset_bytes - image_offset &&
++                        image_address >= record_address &&
++                        image_address <= std::numeric_limits<u64>::max() -
++                                             (sizeof(AmdGpu::Image) - 1) &&
++                        memory->IsValidMapping(image_address, sizeof(AmdGpu::Image))) {
+                         AmdGpu::Image raw_image{};
+                         std::memcpy(&raw_image,
+                                     reinterpret_cast<const void*>(image_address),
+@@ -1187,7 +1221,12 @@
+                         const u64 sampler_address = record_address + sampler_offset;
+                         ssharp = AmdGpu::Sampler{};
+                         sampler_valid = false;
+-                        if (memory->IsValidMapping(sampler_address, sizeof(AmdGpu::Sampler))) {
++                        if (sampler_offset <= bytes - record_offset_bytes &&
++                            sizeof(AmdGpu::Sampler) <= bytes - record_offset_bytes - sampler_offset &&
++                            sampler_address >= record_address &&
++                            sampler_address <= std::numeric_limits<u64>::max() -
++                                                   (sizeof(AmdGpu::Sampler) - 1) &&
++                            memory->IsValidMapping(sampler_address, sizeof(AmdGpu::Sampler))) {
+                             std::memcpy(&ssharp,
+                                         reinterpret_cast<const void*>(sampler_address),
+                                         sizeof(AmdGpu::Sampler));
+@@ -1198,9 +1237,10 @@
+                         }
+                     }
+                 } else {
+-                    // Explicit null sampler pairs with the explicit null image slot.
++                    // Missing and out-of-range guest entries remain null slots.
+                     sampler_valid = false;
+                 }
++                if (sampler_valid) ++valid_indexed_samplers;
+                 // VK_DESCRIPTOR_TYPE_SAMPLER cannot bind VK_NULL_HANDLE.
+                 // Use actual valid guest sampler data when present. Missing
+                 // guest table slots use the renderer's real cached default
+@@ -1214,6 +1254,16 @@
+                            "Vulkan sampler descriptor requires a valid VkSampler");
+                 image_infos.emplace_back(
+                     vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
++            }
++            if (valid_indexed_samplers != count - 1 || represented_entries != count - 1) {
++                static std::atomic<u32> reports{0};
++                if (reports.fetch_add(1, std::memory_order_relaxed) < 24) {
++                    LOG_WARNING(Render_Vulkan,
++                                "Indexed sampler table: shader={:#x} slots={} available={} "
++                                "valid={} bytes={} record_stride={}",
++                                stage.pgm_hash, count - 1, represented_entries,
++                                valid_indexed_samplers, bytes, record_stride);
++                }
+             }
+             auto& write = set_writes[set_write_index++];
+             write.dstSet = VK_NULL_HANDLE;
