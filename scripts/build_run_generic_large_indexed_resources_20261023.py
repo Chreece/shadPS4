@@ -25,6 +25,7 @@ GEN='464e32e92b7f36fede81f0d65ca0e81934051d1e'
 STRIDED_SELECTOR_FINAL='d72990fbd8fe6483a921fa2c015e1d65b1e1f336'
 GUEST_TSHARP_FINAL='02c22fd61253b072a9bc4017e67f9c39fa0d4fa9'
 INTEGER_SAMPLER_FINAL='aab1275779c989f0624cd6dcb9582410d5534381'
+PM4_BOUNDARY_SOURCE='ffd19ac832130e2165388a7110d46c0fa6f6e4e9'
 VULKAN_INDEXING_FEATURE_FIXES=(
     'cbbcc969156f9258633914409ca88e6458bbad2c',
     '538fc65527d96086443d14d3227eb9c5daa7397f',
@@ -96,6 +97,8 @@ GEN_FILES=(
 'src/video_core/renderer_vulkan/vk_rasterizer.cpp',
 )
 EXTRA_FILES=(
+'src/video_core/amdgpu/liverpool.cpp',
+'src/video_core/amdgpu/pm4_register_write.h',
 'src/video_core/renderer_vulkan/vk_compute_pipeline.cpp',
 'src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp',
 'src/video_core/renderer_vulkan/vk_pipeline_common.cpp',
@@ -2019,7 +2022,91 @@ def texture_cache_cpp(s):
     return s
 
 
+
+def liverpool_pm4_boundaries(s):
+    include='#include "video_core/amdgpu/pm4_register_write.h"\n'
+    if include not in s:
+        anchor='#include "video_core/amdgpu/pm4_cmds.h"\n'
+        if anchor not in s:
+            raise RuntimeError('PM4_REGISTER_INCLUDE_ANCHOR_MISSING')
+        s=s.replace(anchor,anchor+include,1)
+
+    def replace_set_sh_reg(text,function_name,replacement):
+        start=text.find(function_name)
+        if start<0:
+            raise RuntimeError('PM4_FUNCTION_NOT_FOUND='+function_name)
+        opening=text.find('{',start)
+        if opening<0:
+            raise RuntimeError('PM4_FUNCTION_BRACE_MISSING='+function_name)
+        depth=0
+        end=None
+        for i in range(opening,len(text)):
+            depth += (text[i]=='{')-(text[i]=='}')
+            if depth==0:
+                end=i+1
+                break
+        if end is None:
+            raise RuntimeError('PM4_FUNCTION_UNBALANCED='+function_name)
+        body=text[start:end]
+        case_start=body.find('        case PM4ItOpcode::SetShReg: {')
+        if case_start<0:
+            raise RuntimeError('PM4_SET_SH_REG_CASE_MISSING='+function_name)
+        brace=body.find('{',case_start)
+        depth=0
+        case_end=None
+        for i in range(brace,len(body)):
+            depth += (body[i]=='{')-(body[i]=='}')
+            if depth==0:
+                case_end=i+1
+                break
+        if case_end is None:
+            raise RuntimeError('PM4_SET_SH_REG_CASE_UNBALANCED='+function_name)
+        body=body[:case_start]+replacement+body[case_end:]
+        return text[:start]+body+text[end:]
+
+    graphics=r'''        case PM4ItOpcode::SetShReg: {
+            const auto* set_data = reinterpret_cast<const PM4CmdSetData*>(header);
+            static_assert(sizeof(ComputeProgram) % sizeof(u32) == 0);
+            auto* queue_words = reinterpret_cast<u32*>(&mapped_queues[GfxQueueId].cs_state);
+            const auto* payload = reinterpret_cast<const u32*>(header + 2);
+            const u32 words = count - 1;
+            const bool valid = PM4::WriteShaderRegisters(
+                std::span<u32>{regs.reg_array},
+                std::span<u32>{queue_words, sizeof(ComputeProgram) / sizeof(u32)},
+                Regs::ShRegWordOffset, 0x200, set_data->reg_offset.Value(),
+                std::span<const u32>{payload, words});
+            if (!valid) {
+                LOG_ERROR(Render, "Ignoring out-of-range graphics SET_SH_REG offset={:#x} words={}",
+                          set_data->reg_offset.Value(), words);
+            }
+            break;
+        }'''
+    compute=r'''        case PM4ItOpcode::SetShReg: {
+            const auto* set_data = reinterpret_cast<const PM4CmdSetData*>(header);
+            static_assert(sizeof(ComputeProgram) % sizeof(u32) == 0);
+            auto* queue_words = reinterpret_cast<u32*>(&mapped_queues[vqid + 1].cs_state);
+            const auto* payload = reinterpret_cast<const u32*>(header + 2);
+            const u32 words = header->type3.NumWords() - 1;
+            const bool valid = PM4::WriteShaderRegisters(
+                std::span<u32>{regs.reg_array},
+                std::span<u32>{queue_words, sizeof(ComputeProgram) / sizeof(u32)},
+                Regs::ShRegWordOffset, 0x200, set_data->reg_offset.Value(),
+                std::span<const u32>{payload, words});
+            if (!valid) {
+                LOG_ERROR(Render, "Ignoring out-of-range compute SET_SH_REG offset={:#x} words={}",
+                          set_data->reg_offset.Value(), words);
+            }
+            break;
+        }'''
+    if s.count('PM4::WriteShaderRegisters(')<2:
+        s=replace_set_sh_reg(s,'Liverpool::Task Liverpool::ProcessGraphics(',graphics)
+        s=replace_set_sh_reg(s,'Liverpool::Task Liverpool::ProcessCompute(',compute)
+    if s.count('PM4::WriteShaderRegisters(')<2:
+        raise RuntimeError('PM4_REGISTER_BOUNDARY_TRANSFORM_INCOMPLETE')
+    return s
+
 TRANS={
+'src/video_core/amdgpu/liverpool.cpp':liverpool_pm4_boundaries,
 'src/shader_recompiler/profile.h':profile,
 'src/video_core/renderer_vulkan/vk_instance.h':instance_h,
 'src/video_core/renderer_vulkan/vk_instance.cpp':instance_cpp,
@@ -2248,7 +2335,7 @@ def ensure_required_refs():
         if not exists(dst+'^{commit}'):
             raise RuntimeError('REQUIRED_REF_MISSING_AFTER_FETCH='+dst)
 
-    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,GUEST_TSHARP_FINAL,INTEGER_SAMPLER_FINAL)
+    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,GUEST_TSHARP_FINAL,INTEGER_SAMPLER_FINAL,PM4_BOUNDARY_SOURCE)
     for sha in required:
         if exists(sha+'^{commit}'):
             continue
@@ -2299,8 +2386,6 @@ PROVEN_FIX_CHECKS=(
     ('image_binding_storage_guard',('src/video_core/renderer_vulkan/vk_rasterizer.cpp',),
         ('desc.type == VideoCore::TextureCache::BindingType::Texture',
          'stage.images[image_index].is_written')),
-    ('pm4_register_boundaries',('src/video_core/amdgpu/pm4_register_write.h',),
-        ('WriteShaderRegisters(',)),
     ('fp64_phi_types',('src/shader_recompiler/backend/spirv/emit_spirv.cpp',),
         ('case IR::Type::F64:', 'case IR::Type::F64x4:')),
     ('srt_arithmetic_full_width',
@@ -2681,12 +2766,24 @@ def compose(run_dir,info,manifest):
     # explicitly registered in TRANS are changed here; everything else stays
     # at the merged verified/upstream parent until its audited replay commit.
     for p in EXTRA_FILES:
+        if p=='src/video_core/amdgpu/pm4_register_write.h':
+            continue
         fn=TRANS.get(p)
         if not fn:
             continue
         content=fn(index_text(idx,p)).encode()
         oid=git('hash-object','-w','--stdin',input=content).decode().strip()
         git('update-index','--add','--cacheinfo',f'100644,{oid},{p}',e=e)
+
+    pm4_path='src/video_core/amdgpu/pm4_register_write.h'
+    pm4_header=show(PM4_BOUNDARY_SOURCE,pm4_path)
+    pm4_text=pm4_header.decode()
+    if 'WriteShaderRegisters(' not in pm4_text:
+        raise RuntimeError('PM4_REGISTER_HELPER_SOURCE_INVALID')
+    oid=git('hash-object','-w','--stdin',input=pm4_header).decode().strip()
+    git('update-index','--add','--cacheinfo',f'100644,{oid},{pm4_path}',e=e)
+    if 'PM4::WriteShaderRegisters(' not in index_text(idx,'src/video_core/amdgpu/liverpool.cpp'):
+        raise RuntimeError('PM4_REGISTER_BOUNDARY_TRANSFORM_MISSING')
 
     # Seed the final generic indexed-selector helper directly. The three
     # historical commits that progressively built this header are superseded
@@ -2982,7 +3079,7 @@ def compose(run_dir,info,manifest):
     temp_ref='refs/shadps4-composer/generic-large-indexed-resource-'+rev[:12]
     git('update-ref',temp_ref,rev)
     (info/'generic-large-indexed-resource.patch').write_text(diff)
-    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':[],'integer_sampler_source':INTEGER_SAMPLER_FINAL,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'explicit_gradient_indexing_fixes':list(EXPLICIT_GRADIENT_INDEXING_FIXES),'paired_indexed_sampler_frontend_fixes':list(PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES),'paired_indexed_sampler_backend_fixes':list(PAIRED_INDEXED_SAMPLER_BACKEND_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'cache_versions_single_bump':True,'all_games_validated':False}
+    manifest['generic_indexed_image_tables']={'source_commit':GEN,'source_base':GEN_BASE,'composed_parent':parent,'replayed_generic_commits':[],'integer_sampler_source':INTEGER_SAMPLER_FINAL,'pm4_boundary_source':PM4_BOUNDARY_SOURCE,'vulkan_indexing_feature_fixes':list(VULKAN_INDEXING_FEATURE_FIXES),'descriptor_set_scaling_fixes':list(DESCRIPTOR_SET_SCALING_FIXES),'dynamic_image_binding_fixes':list(DYNAMIC_IMAGE_BINDING_FIXES),'strided_tsharp_fixes':list(STRIDED_TSHARP_FIXES),'explicit_gradient_indexing_fixes':list(EXPLICIT_GRADIENT_INDEXING_FIXES),'paired_indexed_sampler_frontend_fixes':list(PAIRED_INDEXED_SAMPLER_FRONTEND_FIXES),'paired_indexed_sampler_backend_fixes':list(PAIRED_INDEXED_SAMPLER_BACKEND_FIXES),'exact_guest_descriptor_bytes':32,'max_guest_entries':32768,'explicit_null_slot':True,'push_descriptor_fallback_to_descriptor_set':True,'physical_descriptor_limits_checked':True,'runtime_image_offsets':'CAPABILITY_GATED_IMAGE_GATHER_EXTENDED','unsupported_forms_use_existing_path':True,'game_or_title_selectors':False,'shader_hash_selectors':False,'readback_override':False,'forced_draw_state':False,'static_texture_substitution':False,'parent_fixes_preserved':True,'original_source_untouched':True,'fresh_source_clone':True,'cache_versions_single_bump':True,'all_games_validated':False}
     mp=info/'correction.json';mp.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
     work,d=fresh_paths(rev)
     cand=None;csha=''
