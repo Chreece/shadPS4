@@ -38,6 +38,8 @@ NATIVE_UMIN_SOURCE='a81ff9b7cdb62efb51513fd6428218761054c42e'
 NATIVE_UMIN_SIRIT='adf61937d466fbcfa103ff1e3935bd7718101fd8'
 IMPLICIT_DMA_PACKAGE='0bde46afaa33b29051b9d8a2c1b31f9c0f6876d6'
 CPU_ID_EXTRACTION_SOURCE='7edfa0c5b420bffeab70576e2b0da6d635bb0866'
+# Upstream-native policy: external DynamoRIO translation is forbidden.
+NATIVE_CPU_POLICY_SOURCE='c106b69baacc53cfb4452bb4fd0e201495759ac1'
 PROVEN_SOURCE_COMMITS=(
     'a12c8c8c5c95c2acccb8c5bedc10a466fef0feba',
     NATIVE_UMIN_SOURCE,
@@ -2366,7 +2368,7 @@ def ensure_required_refs():
 
     required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,GUEST_TSHARP_FINAL,INTEGER_SAMPLER_FINAL,
               PM4_BOUNDARY_SOURCE,RECONSTRUCTION_BASE,AUTOMATIC_COHERENCE_PACKAGE,
-              SHARED_SRT_PACKAGE,IMPLICIT_DMA_PACKAGE,*PROVEN_SOURCE_COMMITS)
+              SHARED_SRT_PACKAGE,IMPLICIT_DMA_PACKAGE,NATIVE_CPU_POLICY_SOURCE,*PROVEN_SOURCE_COMMITS)
     for sha in required:
         if exists(sha+'^{commit}'):
             continue
@@ -3132,6 +3134,39 @@ def _apply_final_native_umin_sirit(idx):
         raise RuntimeError('NATIVE_UMIN_SOURCE_LOWERING_MISSING')
     return ['externals/sirit']
 
+def apply_upstream_native_cpu_policy(idx):
+    """Source-only removal of third-party whole-process CPU translation."""
+    policy=_package_module(
+        NATIVE_CPU_POLICY_SOURCE,
+        'scripts/native_upstream_cpu_policy_20261024.py',
+        '_upstream_native_cpu_policy')
+    e=env({'GIT_INDEX_FILE':str(idx)})
+    required=('SOURCE_PATHS','removed_paths','transform_source','assert_native_tree')
+    if any(not hasattr(policy.get(k),'__call__') for k in required[1:]):
+        raise RuntimeError('NATIVE_CPU_POLICY_API_CHANGED')
+    before=tuple(git('ls-files','--cached','--name-only',e=e).decode().splitlines())
+    eliminated=policy['removed_paths'](before)
+    changed=[]
+    for path in policy['SOURCE_PATHS']:
+        original=index_text(idx,path)
+        corrected=policy['transform_source'](path,original)
+        if corrected==original:
+            raise RuntimeError('NATIVE_CPU_POLICY_NO_SOURCE_CHANGE='+path)
+        update_index_text(idx,path,corrected)
+        changed.append(path)
+    for path in eliminated:
+        git('update-index','--force-remove','--',path,e=e)
+    remaining=set(git('ls-files','--cached','--name-only',e=e).decode().splitlines())
+    policy['assert_native_tree'](lambda p:index_text(idx,p),lambda p:p in remaining)
+    unexpected=[p for p in remaining if p.startswith('src/core/cpu_id_translation/')]
+    if unexpected:
+        raise RuntimeError('DYNAMORIO_SOURCE_REMAINS='+','.join(unexpected))
+    print('UPSTREAM_NATIVE_CPU_EXECUTION=ENFORCED',flush=True)
+    print('DYNAMORIO_COMPILED=NO',flush=True)
+    print('DYNAMORIO_SOURCE_PATHS_REMOVED='+str(len(eliminated)),flush=True)
+    return changed+eliminated
+
+
 def _apply_atomic_fault_feedback(idx):
     # 1) Concurrent shaders set fault bits atomically. Device scope + zero
     # memory semantics is the existing relaxed SPIR-V atomic convention.
@@ -3677,6 +3712,9 @@ def merge_verified_parent_with_upstream(parent):
             'IgnoreStreamBuffer = ' not in source_api):
             raise RuntimeError('MERGED_UPSTREAM_FAULT_FLAGS_API_MISSING')
         _apply_atomic_fault_feedback(idx)
+        # Never reintroduce the retired external CPU translator. Native
+        # Linux CPUID/TSC interception and generic CPU patches are retained.
+        apply_upstream_native_cpu_policy(idx)
         final_tree=git('write-tree',e=e).decode().strip()
 
     final_parent=commit_tree(final_tree,upstream_merged,pr_msg,(PR_5492_HEAD,))
