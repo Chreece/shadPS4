@@ -42,7 +42,7 @@ COMPOSER_BLOB="eac62a2550104a7493be5464f73cc3b188780580"
 NATIVE=ROOT/"scripts/build_run_got_upstream_native_20261024.py"
 NATIVE_BLOB="96c6b84bde950513c237a9daec6177999fb3ef92"
 REPAIR=ROOT/"scripts/repair_null_sampler_descriptors_20261024.py"
-REPAIR_BLOB="bd8fff85ee3cbd39d7bcc23bd325e13c61b80ba8"
+REPAIR_BLOB="57ae365772e91b9576b680f8a945b25fb6bcf101"
 GAME=Path("/mnt/roms-all/ps4-games/CUSA11456/eboot.bin")
 SESSION=ROOT/"test-profiles/got-generic-world-20261024"
 
