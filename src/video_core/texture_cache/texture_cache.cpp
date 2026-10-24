@@ -900,12 +900,13 @@ void TextureCache::RefreshImage(Image& image) {
 
 vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sharp,
                                      AmdGpu::BorderColorBuffer border_color_base,
-                                     const bool is_depth) {
-    // Compare and plain uses of one S# need separate samplers.
-    const u64 hash = HashCombine(XXH3_64bits(&sharp, sizeof(sharp)), is_depth);
+                                     const bool is_depth, const bool is_integer) {
+    // Numeric format and compare state are part of Vulkan sampler identity.
+    const u64 hash = HashCombine(
+        HashCombine(XXH3_64bits(&sharp, sizeof(sharp)), is_depth), is_integer);
     const auto [it, new_sampler] = samplers.try_emplace(hash);
     if (new_sampler) {
-        it->second = slot_samplers.Insert(instance, sharp, border_color_base, is_depth);
+        it->second = slot_samplers.Insert(instance, sharp, border_color_base, is_depth, is_integer);
         Sampler& sampler = slot_samplers[it->second];
         sampler.hash = hash;
         sampler_lru_cache.Insert(sampler, gc_tick);

@@ -5,6 +5,7 @@
 
 #include "common/types.h"
 #include "shader_recompiler/ir/type.h"
+#include "shader_recompiler/ir/passes/sharp_dword_mask.h"
 #include "video_core/amdgpu/resource.h"
 
 #include <boost/container/static_vector.hpp>
@@ -33,16 +34,18 @@ struct SharpFetch {
     };
 
     Summary summary{Summary::MultiLoad};
-    std::array<u32, N> immediates;
-    std::array<SharpLocation, N> offsets;
-    u8 load_mask;
+    std::array<u32, N> immediates{};
+    std::array<SharpLocation, N> offsets{};
+    std::array<u32, N> clear_masks{};
+    u8 load_mask{};
 
     bool operator==(const SharpFetch&) const = default;
 
     template <u32 num_dwords = N>
         requires(num_dwords <= N)
     constexpr bool Fetch(const u32* flatbuf, T* out) const {
-        if (summary == Summary::SingleLoad) [[likely]] {
+        if (summary == Summary::SingleLoad &&
+            Optimization::SharpMasksAreZero(clear_masks, num_dwords)) [[likely]] {
             std::memcpy(out, flatbuf + offsets[0], num_dwords * sizeof(u32));
             return true;
         } else if (summary == Summary::Invalid) [[unlikely]] {
@@ -51,7 +54,8 @@ struct SharpFetch {
         u8 mask = load_mask;
         std::array<u32, num_dwords> out_dw;
         for (u32 i = 0; i < num_dwords; i++) {
-            out_dw[i] = (mask & 1) ? flatbuf[offsets[i]] : immediates[i];
+            const u32 value = (mask & 1) ? flatbuf[offsets[i]] : immediates[i];
+            out_dw[i] = Optimization::ApplySharpWordMask(value, clear_masks[i]);
             mask >>= 1;
         }
         std::memcpy(out, out_dw.data(), sizeof(out_dw));
@@ -125,12 +129,15 @@ enum class MipStorageFallbackMode : u16 {
     ConstantIndex,
 };
 
-inline constexpr u32 MaxGuestIndexedImageEntries = 15;
+inline constexpr u32 LegacyGuestIndexedImageEntries = 15;
+inline constexpr u32 MaxGuestIndexedImageEntries = 32768;
 
 struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
     SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};
-    u8 indexed_guest_entries{};
+    u32 indexed_record_stride_bytes{};
+    u32 indexed_descriptor_offset_bytes{};
+    u32 indexed_guest_entries{};
     bool is_guest_indexed{};
     bool is_depth{};
     bool is_atomic{};
@@ -192,11 +199,18 @@ using ImageResourceList = boost::container::static_vector<ImageResource, NUM_IMA
 
 struct SamplerResource {
     SharpFetch<AmdGpu::Sampler> sharp_fetch{};
+    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};
+    u32 indexed_guest_entries{};
+    u32 indexed_record_stride_bytes{};
+    u32 indexed_sampler_offset_bytes{};
+    bool is_guest_indexed{};
     SharpFetchPostOp post_op{};
     SharpLocation post_op_tsharp_dw3_off{};
     bool is_depth{};
+    bool is_integer{};
 
     constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {
+        if (is_guest_indexed) return AmdGpu::Sampler{};
         AmdGpu::Sampler sampler{};
         sharp_fetch.Fetch(info.flattened_ud_buf.data(), &sampler);
         if (post_op == SharpFetchPostOp::DisableAnisoIfSingleLod) {
@@ -217,6 +231,10 @@ struct SamplerResource {
             sampler.aniso_threshold.Assign(0);
         }
         return sampler;
+    }
+
+    u32 NumBindings(const auto& info) const {
+        return is_guest_indexed ? indexed_guest_entries + 1u : 1u;
     }
 };
 using SamplerResourceList = boost::container::static_vector<SamplerResource, NUM_SAMPLERS>;

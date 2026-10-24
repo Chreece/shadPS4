@@ -357,6 +357,7 @@ public:
     boost::container::small_vector<BufferDefinition, 16> buffers;
     boost::container::small_vector<TextureDefinition, 8> images;
     boost::container::small_vector<Id, 4> samplers;
+    boost::container::small_vector<u32, 4> sampler_array_sizes;
     std::unordered_map<u32, Id> first_to_last_label_map;
 
     size_t flatbuf_index{};
