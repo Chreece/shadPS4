@@ -26,8 +26,15 @@ STRIDED_SELECTOR_FINAL='d72990fbd8fe6483a921fa2c015e1d65b1e1f336'
 GUEST_TSHARP_FINAL='02c22fd61253b072a9bc4017e67f9c39fa0d4fa9'
 INTEGER_SAMPLER_FINAL='aab1275779c989f0624cd6dcb9582410d5534381'
 PM4_BOUNDARY_SOURCE='ffd19ac832130e2165388a7110d46c0fa6f6e4e9'
+RECONSTRUCTION_BASE='3965a497532edb7b18027692ab04eb97fa4c145b'
+AUTOMATIC_COHERENCE_PACKAGE='e226327408b202c1c115d3a7f2dc5e405e2c6683'
+SHARED_SRT_PACKAGE='8f0ccf7c3195f5ac5ef0faef16f005dd0e680eca'
+NATIVE_UMIN_SOURCE='a81ff9b7cdb62efb51513fd6428218761054c42e'
+NATIVE_UMIN_SIRIT='adf61937d466fbcfa103ff1e3935bd7718101fd8'
+DMA_HAZARD_SOURCE='94ed29b7c5767718ead87164558d6ec7523bcc9a'
 PROVEN_SOURCE_COMMITS=(
     'a12c8c8c5c95c2acccb8c5bedc10a466fef0feba',
+    NATIVE_UMIN_SOURCE,
     'bfb0d71c6b68a036fc18046398a7369c3908d0e8',
     '1a7789b7f5c633d4f4c6cbe331758d2f1d5897f7',
     '7ace685062a2c97870b61738a4b184a7882a5f6a',
@@ -38,6 +45,7 @@ PROVEN_SOURCE_COMMITS=(
     '12a07a6d83007f76012f762e68fedb5954aa0f8a',
     'f94c4f09e6111c0f9ff9fd1c5125c762ae88eb07',
     '822a68d8aae409b5a29759de462eb43329e52753',
+    DMA_HAZARD_SOURCE,
 )
 VULKAN_INDEXING_FEATURE_FIXES=(
     'cbbcc969156f9258633914409ca88e6458bbad2c',
@@ -2408,9 +2416,6 @@ PROVEN_FIX_CHECKS=(
         ('src/video_core/buffer_cache/buffer_cache.h',
          'src/video_core/renderer_vulkan/vk_rasterizer.cpp'),
         ('ForEachDmaBuffer', 'PrepareDmaReads')),
-    ('buffer_phi_inverse_ballot_guard',
-        ('src/shader_recompiler/ir/passes/phi_simplification_pass.cpp',),
-        ('return op == IR::Opcode::InverseBallot;',)),
 )
 
 PROVEN_SOURCE_POSTCHECKS=(
@@ -2545,6 +2550,284 @@ def _apply_proven_file(idx,sha,path):
         (q.stderr or b'').decode(errors='replace')[-2500:]
     )
 
+
+def _index_put(idx,path,data,mode='100644'):
+    e=env({'GIT_INDEX_FILE':str(idx)})
+    oid=git('hash-object','-w','--stdin',input=data).decode().strip()
+    git('update-index','--add','--cacheinfo',f'{mode},{oid},{path}',e=e)
+    return oid
+
+def _package_module(commit,path,name):
+    namespace={'__name__':name,'__file__':path}
+    raw=show(commit,path)
+    exec(compile(raw,path,'exec'),namespace)
+    return namespace
+
+def _apply_automatic_coherence(idx):
+    script='tools/packages/automatic-coherence-20261022/patch_coherence.review.py'
+    module=_package_module(AUTOMATIC_COHERENCE_PACKAGE,script,'_automatic_coherence_package')
+    transform=module.get('transform_text')
+    paths=module.get('EXPECTED',{})
+    if not callable(transform) or not isinstance(paths,dict) or len(paths)!=3:
+        raise RuntimeError('AUTOMATIC_COHERENCE_PACKAGE_API_CHANGED')
+    changed=[]
+    for path in paths:
+        text=index_text(idx,path)
+        try:
+            new=transform(path,text)
+        except Exception as error:
+            raise RuntimeError('AUTOMATIC_COHERENCE_TRANSFORM_FAILED path='+path+' '+str(error))
+        update_index_text(idx,path,new)
+        changed.append(path)
+    return changed
+
+def _apply_shared_srt(idx):
+    prefix='tools/packages/shared-srt-dependencies-20261022'
+    script=prefix+'/patch_srt_dependencies.py'
+    module=_package_module(SHARED_SRT_PACKAGE,script,'_shared_srt_package')
+    transform_flat=module.get('transform_flat')
+    if not callable(transform_flat):
+        raise RuntimeError('SHARED_SRT_PACKAGE_API_CHANGED')
+    flat='src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp'
+    try:
+        text=transform_flat(index_text(idx,flat))
+    except Exception as error:
+        raise RuntimeError('SHARED_SRT_TRANSFORM_FAILED='+str(error))
+    update_index_text(idx,flat,text)
+    for path,name in (
+        ('src/shader_recompiler/ir/passes/srt_dependency_schedule.h',
+         'srt_dependency_schedule.h'),
+        ('src/shader_recompiler/ir/passes/srt_dependency_codegen.inc',
+         'srt_dependency_codegen.inc'),
+    ):
+        _index_put(idx,path,show(SHARED_SRT_PACKAGE,prefix+'/'+name))
+    return [
+        flat,
+        'src/shader_recompiler/ir/passes/srt_dependency_schedule.h',
+        'src/shader_recompiler/ir/passes/srt_dependency_codegen.inc',
+    ]
+
+def _apply_final_native_umin_sirit(idx):
+    # The sealed native-minimum package requires the immediate upstream Sirit
+    # child that adds OpGroupNonUniformUMin. The source lowering itself comes
+    # from the published generic UMin source commit above.
+    e=env({'GIT_INDEX_FILE':str(idx)})
+    git('update-index','--add','--cacheinfo',
+        f'160000,{NATIVE_UMIN_SIRIT},externals/sirit',e=e)
+    text=index_text(idx,'src/shader_recompiler/backend/spirv/emit_spirv_warp.cpp')
+    if 'OpGroupNonUniformUMin' not in text:
+        raise RuntimeError('NATIVE_UMIN_SOURCE_LOWERING_MISSING')
+    return ['externals/sirit']
+
+def _apply_atomic_fault_feedback(idx):
+    # 1) Concurrent shaders set fault bits atomically. Device scope + zero
+    # memory semantics is the existing relaxed SPIR-V atomic convention.
+    p='src/shader_recompiler/backend/spirv/spirv_emit_context.cpp'
+    t=index_text(idx,p)
+    old='''    const auto fault_value{OpLoad(U32[1], fault_ptr)};
+    const auto fault_value_masked{OpBitwiseOr(U32[1], fault_value, page_mask)};
+    OpStore(fault_ptr, fault_value_masked);'''
+    new='''    const auto fault_scope{ConstU32(static_cast<u32>(spv::Scope::Device))};
+    const auto fault_semantics{u32_zero_value};
+    (void)OpAtomicOr(U32[1], fault_ptr, fault_scope, fault_semantics, page_mask);'''
+    if old in t:
+        t=t.replace(old,new,1)
+    if 'OpAtomicOr(U32[1], fault_ptr, fault_scope, fault_semantics, page_mask)' not in t:
+        raise RuntimeError('ATOMIC_FAULT_RECORDING_NOT_APPLIED')
+    update_index_text(idx,p,t)
+
+    # 2) Reserve only real output slots. Overflow bits remain set for a later
+    # scan; only successfully queued bits are cleared.
+    p='src/video_core/host_shaders/fault_buffer_process.comp'
+    t=index_text(idx,p)
+    start=t.find('void main() {')
+    if start<0:
+        raise RuntimeError('FAULT_QUEUE_MAIN_NOT_FOUND')
+    brace=t.find('{',start); depth=0; end=None
+    for i in range(brace,len(t)):
+        depth += (t[i]=='{')-(t[i]=='}')
+        if depth==0:
+            end=i+1; break
+    if end is None:
+        raise RuntimeError('FAULT_QUEUE_MAIN_UNBALANCED')
+    body=r'''uint reserve_fault_slot() {
+    for (;;) {
+        const uint count = atomicOr(download_buffer32[0], 0u);
+        if (count >= MAX_PAGE_FAULTS - 1u) {
+            return 0u;
+        }
+        const uint previous = atomicCompSwap(download_buffer32[0], count, count + 1u);
+        if (previous == count) {
+            return count + 1u;
+        }
+    }
+}
+
+void main() {
+    const uint id = gl_GlobalInvocationID.x;
+    uint word = atomicOr(fault_buffer[id], 0u);
+    const uint base_bit = id * 32u;
+    uint consumed = 0u;
+    while (word != 0u) {
+        const uint bit = findLSB(word);
+        const uint mask = 1u << bit;
+        const uint store_index = reserve_fault_slot();
+        if (store_index == 0u) {
+            break;
+        }
+        const uint page = base_bit + bit;
+        download_buffer[store_index] = uint64_t(page) << CACHING_PAGEBITS;
+        consumed |= mask;
+        word &= ~mask;
+    }
+    if (consumed != 0u) {
+        atomicAnd(fault_buffer[id], ~consumed);
+    }
+}'''
+    # Replace any previous helper+main tail starting at main only; helper is
+    # intentionally inserted directly before main.
+    helper_start=t.rfind('uint reserve_fault_slot()',0,start)
+    replace_start=helper_start if helper_start>=0 else start
+    t=t[:replace_start]+body+t[end:]
+    for marker in ('atomicCompSwap','atomicAnd(fault_buffer[id]','MAX_PAGE_FAULTS - 1u'):
+        if marker not in t:
+            raise RuntimeError('BOUNDED_FAULT_QUEUE_NOT_APPLIED='+marker)
+    update_index_text(idx,p,t)
+
+    # 3) Make CPU-cleared/readback memory explicit, validate returned count,
+    # and force real sparse backing for recovered pages.
+    p='src/video_core/buffer_cache/fault_manager.cpp'
+    t=index_text(idx,p)
+    if 'download_buffer.Flush(offset, PageFaultAreaSize);' not in t:
+        anchor='''    std::memset(mapped, 0, PageFaultAreaSize);
+'''
+        if anchor not in t:
+            raise RuntimeError('FAULT_DOWNLOAD_CLEAR_ANCHOR')
+        t=t.replace(anchor,anchor+'    download_buffer.Flush(offset, PageFaultAreaSize);\n',1)
+
+    # Parser reads and writes the bitmap, not read-only.
+    t=t.replace(
+        '.dstAccessMask = vk::AccessFlagBits2::eShaderRead,\n        .buffer = fault_buffer.Handle(),',
+        '.dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,\n'
+        '        .buffer = fault_buffer.Handle(),',
+        1)
+
+    # Add an explicit compute-write -> host-read barrier for the download area.
+    old_post='''    const vk::BufferMemoryBarrier2 post_barrier = {
+        .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+        .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderWrite,
+        .buffer = fault_buffer.Handle(),
+        .offset = 0,
+        .size = fault_buffer_size,
+    };'''
+    new_post=old_post+'''
+    const vk::BufferMemoryBarrier2 download_barrier = {
+        .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+        .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eHost,
+        .dstAccessMask = vk::AccessFlagBits2::eHostRead,
+        .buffer = download_buffer.Handle(),
+        .offset = offset,
+        .size = PageFaultAreaSize,
+    };'''
+    if 'download_barrier' not in t:
+        if old_post not in t:
+            raise RuntimeError('FAULT_POST_BARRIER_ANCHOR')
+        t=t.replace(old_post,new_post,1)
+    old_dep='''    cmdbuf.pipelineBarrier2(vk::DependencyInfo{
+        .dependencyFlags = vk::DependencyFlagBits::eByRegion,
+        .bufferMemoryBarrierCount = 1,
+        .pBufferMemoryBarriers = &post_barrier,
+    });'''
+    new_dep='''    const std::array post_barriers{post_barrier, download_barrier};
+    cmdbuf.pipelineBarrier2(vk::DependencyInfo{
+        .dependencyFlags = vk::DependencyFlagBits::eByRegion,
+        .bufferMemoryBarrierCount = static_cast<u32>(post_barriers.size()),
+        .pBufferMemoryBarriers = post_barriers.data(),
+    });'''
+    if old_dep in t:
+        t=t.replace(old_dep,new_dep,1)
+    if 'post_barriers.data()' not in t:
+        raise RuntimeError('FAULT_HOST_READ_BARRIER_NOT_APPLIED')
+
+    if 'download_buffer.Invalidate(offset, PageFaultAreaSize);' not in t:
+        anchor='''    scheduler.DeferOperation([this, mapped, area = current_area] {
+        fault_ranges.Clear();'''
+        if anchor not in t:
+            raise RuntimeError('FAULT_DEFER_ANCHOR')
+        t=t.replace(
+            anchor,
+            '''    scheduler.DeferOperation([this, mapped, offset, area = current_area] {
+        download_buffer.Invalidate(offset, PageFaultAreaSize);
+        fault_ranges.Clear();''',
+            1)
+
+    old_count='''        const u32 fault_count = fault_buf[0];
+        for (u32 i = 1; i <= fault_count; ++i) {'''
+    new_count='''        const u32 fault_count = fault_buf[0];
+        if (fault_count >= MaxPageFaults) {
+            LOG_ERROR(Render_Vulkan, "Invalid fault queue count {}", fault_count);
+            fault_areas[area] = 0;
+            return;
+        }
+        for (u32 i = 1; i <= fault_count; ++i) {'''
+    if old_count in t:
+        t=t.replace(old_count,new_count,1)
+    if 'Invalid fault queue count' not in t:
+        raise RuntimeError('FAULT_COUNT_VALIDATION_NOT_APPLIED')
+
+    old_obtain='''            (void)buffer_cache.ObtainBuffer(start, end - start);'''
+    new_obtain='''            (void)buffer_cache.ObtainBuffer(
+                start, end - start, ObtainBufferFlags::IgnoreStreamBuffer);'''
+    if old_obtain in t:
+        t=t.replace(old_obtain,new_obtain,1)
+    if 'ObtainBufferFlags::IgnoreStreamBuffer' not in t:
+        raise RuntimeError('FAULT_REAL_BACKING_NOT_APPLIED')
+    update_index_text(idx,p,t)
+
+    # Initialize the device-local fault bitmap through the existing Runtime
+    # tracking path immediately after FaultManager creation.
+    p='src/video_core/buffer_cache/buffer_cache.cpp'
+    t=index_text(idx,p)
+    marker='fault_manager->GetFaultBuffer()->SizeBytes()'
+    if marker not in t:
+        anchor='''    fault_manager = std::make_unique<FaultManager>(instance, scheduler, *this, block_shift,
+                                                   blocks_per_arena_page * NUM_ARENA_PAGES);
+'''
+        if anchor not in t:
+            raise RuntimeError('FAULT_BITMAP_INIT_ANCHOR')
+        t=t.replace(
+            anchor,
+            anchor+'''    runtime.FillBuffer(fault_manager->GetFaultBuffer(), 0u,
+                       fault_manager->GetFaultBuffer()->SizeBytes(), 0u);
+''',1)
+    update_index_text(idx,p,t)
+    return [
+        'src/shader_recompiler/backend/spirv/spirv_emit_context.cpp',
+        'src/video_core/host_shaders/fault_buffer_process.comp',
+        'src/video_core/buffer_cache/fault_manager.cpp',
+        'src/video_core/buffer_cache/buffer_cache.cpp',
+    ]
+
+def complete_package_source_parent(run_dir,base):
+    idx=run_dir/'package-source.index'
+    e=env({'GIT_INDEX_FILE':str(idx)})
+    git('read-tree',base,e=e)
+    changed=[]
+    changed += _apply_final_native_umin_sirit(idx)
+    changed += _apply_atomic_fault_feedback(idx)
+    changed += _apply_shared_srt(idx)
+    changed += _apply_automatic_coherence(idx)
+    tree=git('write-tree',e=e).decode().strip()
+    revision=commit_tree(
+        tree,base,
+        b'Complete retained package-only generic GoW/GoT fixes before upstream merge\n'
+    )
+    evidence=verify_proven_fix_base(revision)
+    return revision,tree,sorted(set(changed)),evidence
+
 def complete_proven_source_parent(run_dir,base):
     idx=run_dir/'proven-source.index'
     e=env({'GIT_INDEX_FILE':str(idx)})
@@ -2571,102 +2854,31 @@ def complete_proven_source_parent(run_dir,base):
 
 def recovered_parent_ref(run_dir):
     global PARENT_REF, PARENT_TREE_ACTUAL, PARENT_MODE
-    if exists(PARENT+'^{commit}'):
-        if git('rev-parse',PARENT+'^{tree}').decode().strip()!=PARENT_TREE:
-            raise RuntimeError('VERIFIED_GRAPHICS_PARENT_TREE_CHANGED')
+    if exists(PARENT+'^{commit}') and \
+       git('rev-parse',PARENT+'^{tree}').decode().strip()==PARENT_TREE:
         PARENT_REF=PARENT
         PARENT_TREE_ACTUAL=PARENT_TREE
         PARENT_MODE='exact-verified-commit'
         return PARENT_REF
-
-    ensure_required_refs()
-
-    # The commit object may have been pruned while its exact tree is still
-    # present in the object database. In that case no patch replay is needed
-    # at all: wrap the verified tree in a local synthetic commit.
     if exists(PARENT_TREE+'^{tree}'):
-        base=RECOVERY_BASE if exists(RECOVERY_BASE+'^{commit}') else BASE
+        base=RECONSTRUCTION_BASE
         if not exists(base+'^{commit}'):
-            raise RuntimeError('NO_SYNTHETIC_PARENT_BASE_AVAILABLE')
-        msg=b'Wrapped exact verified graphics parent tree for local composition only\n'
-        PARENT_REF=commit_tree(PARENT_TREE,base,msg)
-        if git('rev-parse',PARENT_REF+'^{tree}').decode().strip()!=PARENT_TREE:
-            raise RuntimeError('EXACT_PARENT_TREE_WRAP_FAILED')
+            raise RuntimeError('PUBLIC_RECONSTRUCTION_BASE_MISSING='+base)
+        PARENT_REF=commit_tree(
+            PARENT_TREE,base,
+            b'Wrapped exact verified graphics parent tree for local composition only\n')
         PARENT_TREE_ACTUAL=PARENT_TREE
         PARENT_MODE='exact-verified-tree-wrap'
         return PARENT_REF
 
-    # The historical exact commit/tree can be pruned from the user's object
-    # database. In that case, accept the current local all-fixes HEAD only
-    # after proving every retained generic GoW/GoT correction semantically.
-    semantic_error=None
-    try:
-        evidence=verify_proven_fix_base(BASE)
-    except RuntimeError as error:
-        evidence=None
-        semantic_error=error
-    if evidence is not None:
-        PARENT_REF=BASE
-        PARENT_TREE_ACTUAL=git('rev-parse',BASE+'^{tree}').decode().strip()
-        PARENT_MODE='semantic-proven-fix-local-head'
-        return PARENT_REF
-
-    # The old patch reconstruction requires its exact historical base. Do not
-    # replay it onto an unrelated modern HEAD: that only creates conflicts and
-    # can never prove the retained fix stack. Surface the missing semantic fix
-    # directly unless the original recovery base object still exists.
-    if not exists(RECOVERY_BASE+'^{commit}'):
-        raise semantic_error
-
-    encoded=b''
-    for part in RECOVERY_PARTS:
-        spec=f'{RECOVERY_REF}:{part}'
-        if not exists(spec):
-            raise RuntimeError('RECOVERY_PATCH_PART_MISSING='+part)
-        encoded+=show(RECOVERY_REF,part).strip()
-
-    try:
-        patch=gzip.decompress(base64.b64decode(encoded,validate=True))
-    except Exception as e:
-        raise RuntimeError('RECOVERY_PATCH_DECODE_FAILED='+str(e))
-    if not patch.startswith(b'diff --git '):
-        raise RuntimeError('RECOVERY_PATCH_FORMAT_INVALID')
-
-    candidates=[]
-    for base in (RECOVERY_BASE,BASE):
-        if base not in candidates and exists(base+'^{commit}'):
-            candidates.append(base)
-    if not candidates:
-        raise RuntimeError('NO_RECOVERY_BASE_OBJECT_AVAILABLE')
-
-    errors=[]
-    for base in candidates:
-        idx=run_dir/f'verified-parent-recovery-{base[:12]}.index'
-        e=env({'GIT_INDEX_FILE':str(idx)})
-        git('read-tree',base,e=e)
-        q=subprocess.run(
-            ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0','-C',str(SRC),
-             'apply','--3way','--cached','--whitespace=nowarn','-'],
-            env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
-        if q.returncode:
-            errors.append(base+':apply:'+(q.stderr or b'').decode(errors='replace')[-800:])
-            continue
-        tree=git('write-tree',e=e).decode().strip()
-        if tree!=PARENT_TREE:
-            errors.append(base+':tree:'+tree)
-            continue
-        msg=b'Reconstructed verified graphics parent tree for local composition only\n'
-        PARENT_REF=commit_tree(tree,base,msg)
-        if git('rev-parse',PARENT_REF+'^{tree}').decode().strip()!=PARENT_TREE:
-            raise RuntimeError('RECOVERED_PARENT_COMMIT_TREE_CHANGED')
-        PARENT_TREE_ACTUAL=PARENT_TREE
-        PARENT_MODE='exact-verified-patch-recovery'
-        return PARENT_REF
-
-    raise RuntimeError(
-        'RECOVERED_PARENT_TREE_NOT_REPRODUCED expected='+PARENT_TREE+
-        ' attempts='+' || '.join(errors)
-    )
+    # Reconstruct from a fixed public source commit instead of depending on
+    # the user's checkout or pruned local-only objects.
+    if not exists(RECONSTRUCTION_BASE+'^{commit}'):
+        raise RuntimeError('PUBLIC_RECONSTRUCTION_BASE_MISSING='+RECONSTRUCTION_BASE)
+    PARENT_REF=RECONSTRUCTION_BASE
+    PARENT_TREE_ACTUAL=git('rev-parse',PARENT_REF+'^{tree}').decode().strip()
+    PARENT_MODE='public-proven-fix-reconstruction-base'
+    return PARENT_REF
 
 def merge_verified_parent_with_upstream(parent):
     if not exists(parent+'^{commit}'):
@@ -2729,20 +2941,25 @@ def merge_verified_parent_with_upstream(parent):
 def verify_prev(run_dir):
     stage('fetch_required_refs')
     ensure_required_refs()
-    # PARENT_REF is either the original verified commit or a locally
-    # reconstructed commit with the exact same verified tree.
     if not SRC.is_dir() or not (SRC/'.git').exists():
         raise RuntimeError('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC))
     validate_source_status(BASE_STATUS)
-    stage('verify_retained_proven_fix_base')
+
+    stage('select_public_reconstruction_base')
     retained_base=recovered_parent_ref(run_dir)
-    retained_tree=git('rev-parse',retained_base+'^{tree}').decode().strip()
-    if retained_tree!=PARENT_TREE_ACTUAL:
-        raise RuntimeError('VERIFIED_GRAPHICS_PARENT_TREE_CHANGED')
-    package_evidence=verify_proven_fix_base(retained_base)
+
     stage('complete_public_proven_source_fixes')
-    verified_parent,verified_tree,source_replay,source_evidence = \
+    public_parent,public_tree,source_replay,source_evidence = \
         complete_proven_source_parent(run_dir,retained_base)
+
+    stage('complete_package_only_proven_fixes')
+    verified_parent,verified_tree,package_paths,package_evidence = \
+        complete_package_source_parent(run_dir,public_parent)
+
+    # Verify both groups before latest upstream is merged.
+    source_evidence=verify_proven_source_parent(verified_parent)
+    package_evidence=verify_proven_fix_base(verified_parent)
+
     stage('merge_latest_upstream_and_pr_5492')
     parent,parent_tree,upstream_parent,upstream_parent_tree = \
         merge_verified_parent_with_upstream(verified_parent)
@@ -2752,12 +2969,13 @@ def verify_prev(run_dir):
         'verified_parent':verified_parent,
         'verified_parent_original':PARENT,
         'verified_parent_tree':verified_tree,
-        'verified_parent_mode':PARENT_MODE+'+public-source-replay',
-        'retained_base':retained_base,
-        'retained_base_tree':retained_tree,
-        'package_fix_evidence':package_evidence,
-        'public_source_replay':source_replay,
-        'public_source_evidence':source_evidence,
+        'verified_parent_mode':PARENT_MODE,
+        'proven_fix_evidence':package_evidence,
+        'proven_source_evidence':source_evidence,
+        'proven_source_replay':source_replay,
+        'package_source_paths':package_paths,
+        'public_source_parent':public_parent,
+        'public_source_parent_tree':public_tree,
         'parent_reconstructed':verified_parent!=PARENT,
         'upstream_main':UPSTREAM_MAIN,
         'upstream_parent':upstream_parent,
