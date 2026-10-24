@@ -79,14 +79,30 @@ if ! zlib_ready; then
   echo "ZLIB_STATUS=MISSING_OR_WRONG; restoring only ${ZLIB_REL}"
   echo "ZLIB_EXPECTED_COMMIT=${ZLIB_SHA}" > "${ZLIB_LOG}"
 
-  if [[ "$(git -C "${ZLIB_OLD}" rev-parse --show-toplevel 2>/dev/null || true)" == "${ZLIB_OLD}" ]] &&
+  # If HEAD is already correct but the tracked CMakeLists was lost,
+  # restore only that one tracked file without touching any local edits.
+  if [[ ! -e "${ZLIB_SUB}/CMakeLists.txt" &&
+        ! -L "${ZLIB_SUB}/CMakeLists.txt" &&
+        "$(git -C "${ZLIB_SUB}" rev-parse --show-toplevel 2>/dev/null || true)" == "${ZLIB_SUB}" &&
+        "$(git -C "${ZLIB_SUB}" rev-parse --verify HEAD 2>/dev/null || true)" == "${ZLIB_SHA}" ]]; then
+    git -C "${ZLIB_SUB}" restore --source=HEAD --worktree -- CMakeLists.txt \
+      >> "${ZLIB_LOG}" 2>&1 || true
+  fi
+
+  if ! zlib_ready &&
+     [[ "$(git -C "${ZLIB_OLD}" rev-parse --show-toplevel 2>/dev/null || true)" == "${ZLIB_OLD}" ]] &&
      git -C "${ZLIB_OLD}" cat-file -e "${ZLIB_SHA}^{commit}" 2>/dev/null; then
-    echo "ZLIB_RECOVERY=TRY_LOCAL_OBJECTS"
-    if git -C "${WORK}" -c protocol.file.allow=always -c http.version=HTTP/1.1 \
-         submodule update --init --checkout --jobs 1 \
-         --reference "${ZLIB_OLD}" -- "${ZLIB_REL}" \
-         >> "${ZLIB_LOG}" 2>&1; then
-      echo "ZLIB_RECOVERY=LOCAL_REFERENCE_ATTEMPT_COMPLETED"
+    # Git only sees a temporary command-scoped rewrite. No local or
+    # remote repository configuration is changed.
+    ZLIB_URL="$(git -C "${WORK}" config -f .gitmodules --get submodule.externals/zlib-ng.url)"
+    if [[ "${ZLIB_URL}" == "https://github.com/shadps4-emu/ext-zlib-ng.git" ]]; then
+      echo "ZLIB_RECOVERY=LOCAL_GIT_OBJECTS_NO_NETWORK"
+      if git -C "${WORK}" -c protocol.file.allow=always \
+           -c "url.file://${ZLIB_OLD}.insteadOf=${ZLIB_URL}" \
+           submodule update --init --checkout --jobs 1 -- "${ZLIB_REL}" \
+           >> "${ZLIB_LOG}" 2>&1; then
+        echo "ZLIB_RECOVERY=LOCAL_SOURCE_ATTEMPT_COMPLETED"
+      fi
     fi
   fi
 
