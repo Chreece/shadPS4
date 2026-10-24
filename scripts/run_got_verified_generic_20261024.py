@@ -36,7 +36,7 @@ SESSION = ROOT / "test-profiles/got-generic-world-20261024"
 PROFILE = SESSION / "user"
 EXCLUDED = {"shader", "cache", "log", "logs", "screenshots", "captures",
             "temp", "custom_configs"}
-MAX_LOG_BYTES = 20 * 1024 * 1024
+MAX_LOG_BYTES = 8 * 1024 * 1024
 MAX_ARCHIVE_FILE = 12 * 1024 * 1024
 
 
@@ -277,6 +277,12 @@ def preserve_tail(source, destination, limit=MAX_LOG_BYTES):
     destination.write_bytes(data)
 
 
+def preserve_head(source, destination, limit=1024*1024):
+    if source.is_file():
+        with source.open("rb") as handle:
+            destination.write_bytes(handle.read(limit))
+
+
 def summarize_log(info, files):
     categories = Counter()
     samples = {}
@@ -371,6 +377,7 @@ def main():
         with console.open("wb") as log:
             proc = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
                                     cwd=SESSION, env=env, start_new_session=True)
+            start = time.monotonic()
             captures_done = 0
             next_capture = 70
             next_status = 20
@@ -405,12 +412,15 @@ def main():
     finally:
         try:
             preserve_tail(run / "console.full.log", run / "console.tail.log")
+            preserve_head(run / "console.full.log", run / "console.head.log")
             # shadPS4 uses a portable 'user' folder under the test session.
             native_log = PROFILE / "log" / "shadps4.log"
             if not native_log.exists():
                 native_log = PROFILE / "log" / "shad_log.txt"
             preserve_tail(native_log, run / "game.tail.log")
-            summarize_log(info, [run / "console.tail.log", run / "game.tail.log"])
+            preserve_head(native_log, run / "game.head.log")
+            summarize_log(info, [run / "console.head.log", run / "console.tail.log",
+                                 run / "game.head.log", run / "game.tail.log"])
             (info / "runtime-result.json").write_text(json.dumps({
                 "return_code": rc, "elapsed_seconds": round(time.monotonic() - start),
                 "binary_sha256_after": digest(CANDIDATE),
