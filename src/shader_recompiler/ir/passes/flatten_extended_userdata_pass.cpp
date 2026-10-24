@@ -156,7 +156,7 @@ struct PassInfo {
 
     // map offset to inst
     using PtrUserList =
-        boost::container::flat_map<IR::Value, Shader::IR::Inst*, PointerListCompare>;
+        boost::container::flat_multimap<IR::Value, Shader::IR::Inst*, PointerListCompare>;
 
     Optimization::SrtGvnTable gvn_table;
     // keys are GetUserData, ReadConst or ReadConstBuffer instructions that are used as pointers
@@ -169,6 +169,7 @@ struct PassInfo {
 
     // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
+    size_t preserved_same_offset_reads{};
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
         auto it = pointer_uses.find(inst);
@@ -852,7 +853,13 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
         auto ptr_uses_kv = pass_info.pointer_uses.try_emplace(ptr_lo, PassInfo::PtrUserList{});
         PassInfo::PtrUserList& user_list = ptr_uses_kv.first->second;
 
-        user_list[inst->Arg(1)] = inst;
+        // Preserve every distinct scalar read sharing the same pointer/offset.
+        // flat_map::operator[] silently overwrote earlier SHARP producers.
+        const IR::Value offset = inst->Arg(1);
+        if (user_list.find(offset) != user_list.end()) {
+            ++pass_info.preserved_same_offset_reads;
+        }
+        user_list.emplace(offset, inst);
 
         if (ptr_lo->GetOpcode() == IR::Opcode::GetUserData) {
             IR::ScalarReg ud_reg = ptr_lo->Arg(0).ScalarReg();
@@ -861,6 +868,11 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
     }
 
     GenerateSrtProgram(program.info, pass_info);
+    if (pass_info.preserved_same_offset_reads) {
+        LOG_INFO(Render_Recompiler,
+                 "SRT retained {} same-offset descriptor reads for shader {:#x}",
+                 pass_info.preserved_same_offset_reads, program.info.pgm_hash);
+    }
 
     // Assign offsets to duplicate readconsts
     for (IR::Inst* readconst : all_readconsts) {
