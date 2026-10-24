@@ -1274,6 +1274,11 @@ def ir_emitter_cpp(s):
     return s
 
 def emit_spirv_image(s):
+    if 'Id EmitImageSampleImplicitLodIndexed(' not in s:
+        return _insert_indexed_spirv_sample(s)
+    return _finish_indexed_spirv_image(s)
+
+def _insert_indexed_spirv_sample(s):
     marker='Id EmitImageSampleImplicitLod(EmitContext& ctx'
     start=s.find(marker)
     if start<0:
@@ -1317,6 +1322,9 @@ Id EmitImageSampleImplicitLodIndexed(
 }
 '''
     s=s[:nxt]+impl+s[nxt:]
+    return _finish_indexed_spirv_image(s)
+
+def _finish_indexed_spirv_image(s):
     if 'Id EmitImageGradientIndexed(' not in s:
         marker='Id EmitImageGradient(EmitContext& ctx'
         start=s.find(marker)
