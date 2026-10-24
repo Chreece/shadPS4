@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <unordered_map>
 #include <bit>
 #include "common/debug.h"
@@ -1726,35 +1727,56 @@ void Rasterizer::UpdateDepthStencilState() const {
         const auto front = regs.stencil_ref_front;
         const auto back =
             regs.depth_control.backface_enable ? regs.stencil_ref_back : regs.stencil_ref_front;
-        // GCN REPLACE_OP writes DB_STENCILREFMASK.STENCILOPVAL, so a face whose stencil ops
-        // include ReplaceOp takes its Vulkan reference from op_val.
+        // GCN uses separate stencil test and replacement values; Vulkan has one
+        // reference per face. A disabled/masked-out stencil write cannot perform
+        // ReplaceOp, so using op_val for the comparison was incorrect. Keep
+        // read-only stencil passes faithful to the guest reference instead.
         const auto& sc = regs.stencil_control;
+        const u32 front_write_mask = stencil_clear ? 0u : front.stencil_write_mask;
+        const u32 back_write_mask = stencil_clear ? 0u : back.stencil_write_mask;
         const auto uses_op_val = [](AmdGpu::StencilFunc fail, AmdGpu::StencilFunc zpass,
-                                    AmdGpu::StencilFunc zfail) {
-            return fail == AmdGpu::StencilFunc::ReplaceOp ||
-                   zpass == AmdGpu::StencilFunc::ReplaceOp ||
-                   zfail == AmdGpu::StencilFunc::ReplaceOp;
+                                    AmdGpu::StencilFunc zfail, AmdGpu::CompareFunc compare,
+                                    bool depth_test) {
+            // Stencil fails cannot occur with ALWAYS, nor passes with NEVER.
+            // Depth-fail actions are unreachable when depth testing is off.
+            const bool can_stencil_fail = compare != AmdGpu::CompareFunc::Always;
+            const bool can_stencil_pass = compare != AmdGpu::CompareFunc::Never;
+            return (can_stencil_fail && fail == AmdGpu::StencilFunc::ReplaceOp) ||
+                   (can_stencil_pass && zpass == AmdGpu::StencilFunc::ReplaceOp) ||
+                   (can_stencil_pass && depth_test && zfail == AmdGpu::StencilFunc::ReplaceOp);
         };
-        const bool front_op =
-            uses_op_val(sc.stencil_fail_front, sc.stencil_zpass_front, sc.stencil_zfail_front);
-        const bool back_op =
-            regs.depth_control.backface_enable
-                ? uses_op_val(sc.stencil_fail_back, sc.stencil_zpass_back, sc.stencil_zfail_back)
-                : front_op;
+        const bool front_op = front_write_mask != 0 &&
+            uses_op_val(sc.stencil_fail_front, sc.stencil_zpass_front, sc.stencil_zfail_front,
+                        regs.depth_control.stencil_ref_func, depth_test_enabled);
+        const bool back_op = back_write_mask != 0 &&
+            (regs.depth_control.backface_enable
+                 ? uses_op_val(sc.stencil_fail_back, sc.stencil_zpass_back,
+                               sc.stencil_zfail_back, regs.depth_control.stencil_bf_func,
+                               depth_test_enabled)
+                 : front_op);
         const auto ref_conflict = [](AmdGpu::CompareFunc func, const AmdGpu::StencilRefMask& ref) {
             return func != AmdGpu::CompareFunc::Always && func != AmdGpu::CompareFunc::Never &&
-                   ref.stencil_test_val != ref.stencil_op_val;
+                   ((ref.stencil_test_val ^ ref.stencil_op_val) & ref.stencil_mask) != 0;
         };
         if ((front_op && ref_conflict(regs.depth_control.stencil_ref_func, front)) ||
             (back_op && regs.depth_control.backface_enable &&
              ref_conflict(regs.depth_control.stencil_bf_func, back))) {
-            LOG_WARNING(Render_Vulkan, "Stencil test requires test_val while ReplaceOp requires "
-                                       "op_val; the stencil test will use op_val");
+            // Remaining read/write conflicts cannot be represented with one
+            // Vulkan fixed-function reference; log them without flooding.
+            static std::atomic<u32> reports{0};
+            if (reports.fetch_add(1, std::memory_order_relaxed) < 16u) {
+                LOG_WARNING(Render_Vulkan,
+                            "Stencil compare/ReplaceOp reference conflict: front_test={} "
+                            "front_op={} front_compare_mask={:#x} front_write_mask={:#x} "
+                            "back_test={} back_op={} back_compare_mask={:#x} back_write_mask={:#x}",
+                            front.stencil_test_val, front.stencil_op_val, front.stencil_mask,
+                            front_write_mask, back.stencil_test_val, back.stencil_op_val,
+                            back.stencil_mask, back_write_mask);
+            }
         }
         dynamic_state.SetStencilReferences(front_op ? front.stencil_op_val : front.stencil_test_val,
                                            back_op ? back.stencil_op_val : back.stencil_test_val);
-        dynamic_state.SetStencilWriteMasks(!stencil_clear ? front.stencil_write_mask : 0U,
-                                           !stencil_clear ? back.stencil_write_mask : 0U);
+        dynamic_state.SetStencilWriteMasks(front_write_mask, back_write_mask);
         dynamic_state.SetStencilCompareMasks(front.stencil_mask, back.stencil_mask);
     }
 }
