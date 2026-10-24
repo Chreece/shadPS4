@@ -370,7 +370,10 @@ s32 PS4_SYSV_ABI sceNpIntIsValidOnlineId(const OrbisNpOnlineId* id) {
         return 0;
     }
 
-    const size_t len = strnlen(id->data, ORBIS_NP_ONLINEID_MAX_LENGTH + 1);
+    // The online-id character array has exactly MAX_LENGTH bytes. The
+    // terminator is stored separately in id->term (checked above), so
+    // scanning MAX_LENGTH+1 would read beyond the character array.
+    const size_t len = strnlen(id->data, ORBIS_NP_ONLINEID_MAX_LENGTH);
     if (len < 3 || len > ORBIS_NP_ONLINEID_MAX_LENGTH) {
         return 0;
     }
