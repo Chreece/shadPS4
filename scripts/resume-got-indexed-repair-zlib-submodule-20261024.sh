@@ -131,6 +131,110 @@ else
   echo "ZLIB_STATUS=ALREADY_CORRECT"
 fi
 echo "ZLIB_SUBMODULE=READY_AT_${ZLIB_SHA}"
+
+echo "GOT_INDEXED_RESUME_STAGE=RESTORE_AND_VERIFY_ZLIB_SOURCE_FILES"
+# A correct HEAD and CMakeLists.txt are NOT enough: the zlib-ng checkout
+# can be incomplete after an interrupted clone or partial Git checkout.
+# Restore missing files from their exact pinned Git tree, never overwrite
+# existing files or any tracked modifications.
+python3 - "${ZLIB_SUB}" "${ZLIB_SHA}" "${CAPTURE}/info/zlib-missing-tracked-files.txt" "${CAPTURE}/info/zlib-tracked-restore.log" <<'PY'
+from pathlib import Path
+import os
+import subprocess
+import sys
+
+repo, revision, manifest, recovery_log = (
+    Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3]), Path(sys.argv[4])
+)
+
+def git_bytes(*args):
+    return subprocess.check_output(
+        ["git", "-C", str(repo), *args],
+        stderr=subprocess.STDOUT,
+    )
+
+entries = git_bytes("ls-tree", "-r", "-z", revision)
+tracked = {}
+for entry in entries.split(b"\0"):
+    if not entry:
+        continue
+    metadata, name = entry.split(b"\t", 1)
+    mode, kind, blob = metadata.split(b" ")
+    if kind == b"blob":
+        tracked[os.fsdecode(name)] = (mode, blob.decode("ascii"))
+
+required = (
+    "CMakeLists.txt",
+    "zlib.h.in",
+    "zconf.h.in",
+    "zlib.pc.cmakein",
+    "gzread.c.in",
+    "zlib_name_mangling.h.empty",
+    "cmake/detect-arch.cmake",
+    "cmake/detect-install-dirs.cmake",
+    "cmake/detect-coverage.cmake",
+    "cmake/detect-intrinsics.cmake",
+    "cmake/detect-sanitizer.cmake",
+    "cmake/fallback-macros.cmake",
+)
+
+if len(tracked) < 100 or any(name not in tracked for name in required):
+    raise SystemExit(
+        f"FAIL: pinned zlib-ng git tree unexpectedly incomplete: "
+        f"{len(tracked)} tracked blobs; missing required tree entries: "
+        f"{[name for name in required if name not in tracked]}"
+    )
+
+def missing_files():
+    return [
+        name for name in tracked
+        if not os.path.lexists(repo / name)
+    ]
+
+missing = missing_files()
+manifest.write_text("\n".join(missing) + ("\n" if missing else ""))
+print(f"ZLIB_TRACKED_FILES={len(tracked)}")
+print(f"ZLIB_MISSING_TRACKED_FILES_BEFORE={len(missing)}")
+
+if missing:
+    with recovery_log.open("w") as out:
+        for index in range(0, len(missing), 50):
+            batch = missing[index:index + 50]
+            result = subprocess.run(
+                ["git", "-C", str(repo), "restore",
+                 "--ignore-skip-worktree-bits", "--source=" + revision,
+                 "--worktree", "--", *batch],
+                stdout=out, stderr=subprocess.STDOUT,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise SystemExit(
+                    f"FAIL: restoring tracked zlib-ng files returned "
+                    f"{result.returncode}; see {recovery_log}"
+                )
+    remaining = missing_files()
+    if remaining:
+        raise SystemExit(
+            f"FAIL: {len(remaining)} tracked zlib-ng files still absent "
+            f"after restore (first ten: {remaining[:10]})"
+        )
+
+# Integrity-check the essential inputs, not just their existence. A correct
+# checkout path with corrupted/placeholder files must not pass configuration.
+for name in required:
+    path = repo / name
+    if not path.is_file():
+        raise SystemExit(f"FAIL: zlib-ng required source absent: {path}")
+    actual = subprocess.check_output(
+        ["git", "-C", str(repo), "hash-object", "--", name],
+        text=True,
+    ).strip()
+    if actual != tracked[name][1]:
+        raise SystemExit(
+            f"FAIL: zlib-ng required source has modified/corrupt content: {name}"
+        )
+print("ZLIB_SOURCE_INTEGRITY=PASS")
+PY
 if [[ "$(git -C "${SUB}" rev-parse HEAD 2>/dev/null || true)" != "${VULKAN_HEADERS_SHA}" ]]; then
   echo "FAIL: restored Vulkan-Headers revision is incorrect" >&2
   exit 5
