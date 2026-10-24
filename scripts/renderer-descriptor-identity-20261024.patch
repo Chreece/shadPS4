@@ -22,3 +22,5 @@
                     desc.mip_fallback_mode == existing.mip_fallback_mode &&
                     desc.constant_mip_index == existing.constant_mip_index &&
                     desc.post_op == existing.post_op &&
+                    desc.is_guest_indexed == existing.is_guest_indexed &&
+                    desc.indexed_guest_entries == existing.indexed_guest_entries &&
