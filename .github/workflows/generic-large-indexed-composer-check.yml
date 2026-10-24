@@ -107,11 +107,17 @@ jobs:
           assert "PARENT_TREE='d921f3f51c546aa8b9dfe7e230aaefeaf0b3c446'" in s
           assert "SOURCE_REMOTE='https://github.com/Chreece/shadPS4.git'" in s
           assert "UPSTREAM_REMOTE='https://github.com/shadps4-emu/shadPS4.git'" in s
-          assert "UPSTREAM_MAIN='bab374ba8ea1a1892a965020b0fc59f67553e108'" in s
+          assert "UPSTREAM_MAIN='396c2a09a38d22eaa02aab32c1967263dceab95f'" in s
+          assert "PR_5492_REMOTE='https://github.com/johulk/shadPS4.git'" in s
+          assert "PR_5492_HEAD='9f55474ad45778f8ac08e923574f214d492997f2'" in s
           assert "def merge_verified_parent_with_upstream(" in s
           assert "'merge-tree','--write-tree'" in s
           assert "UPSTREAM_MERGE_CONFLICT" in s
           assert "UPSTREAM_MERGE_PARENTAGE_MISMATCH" in s
+          assert "PR_5492_FETCH_FAILED" in s
+          assert "PR_5492_MERGE_CONFLICT" in s
+          assert "PR_5492_MERGE_PARENTAGE_MISMATCH" in s
+          assert "'pr_5492_head':PR_5492_HEAD" in s
           assert "ctx.OpBitcast(ctx.S32[1], raw)" in s
           assert "ctx.OpBitcast(ctx.S32[2], raw)" in s
           assert "ctx.OpBitcast(ctx.S32[3], raw)" in s
