@@ -76,7 +76,7 @@ def transform(discover:str,cache:str,original:str,header:str):
     for required in (
         "SplitBufferLoadBySharpPhi(", "SplitImageSampleBySharpPhi(",
         "CanRebuildSharpValue(", "SelectSideResult(",
-        "CanSplitSharpImagePhi(", "remaining_budget -= branches",
+        "CanSplitSharpImagePhi(", "remaining_budget-=branches-1;",
         "ReplaceUsesWithAndRemove(result)",
     ):
         if required not in bridge:
@@ -158,9 +158,54 @@ def self_test():
     assert "return AmdGpu::Image::Null(" not in PASS_NEW
     print("GENERIC_PHI_RESTORE_SOURCE_TEST=PASS",flush=True)
 
+def validate_exact_source(source_repo):
+    """Test the production transform against the immutable prior compiled tree."""
+    import pathlib
+    import subprocess
+    repo=pathlib.Path(source_repo).expanduser().resolve(strict=True)
+    BASE_REV="8780b183634e6a3a67c3bdab3c684a9ecf263668"
+    def show(rev,path):
+        return subprocess.check_output(
+            ["git","-C",str(repo),"show",rev+":"+path],
+            timeout=45).decode("utf-8")
+    old_discover=show(BASE_REV,DISCOVER)
+    old_cache=show(BASE_REV,CACHE)
+    ref_discover=show(ORIGINAL_REF,DISCOVER)
+    ref_header=show(ORIGINAL_REF,PREFLIGHT)
+    output=transform(old_discover,old_cache,ref_discover,ref_header)
+    if tuple(output.keys())!=OUT_PATHS:
+        raise RuntimeError("EXACT_NATIVE_PHI_SOURCE_OUTPUT_PATHS_CHANGED")
+    new_discover=output[DISCOVER]
+    for marker in (
+        "static void SplitBufferLoadBySharpPhi(",
+        "static bool SplitImageSampleBySharpPhi(",
+        "SplitBufferLoadBySharpPhi(*block, inst);",
+        "SplitImageSampleBySharpPhi(*block, inst, image_split_budget, program.info);",
+        "UnresolvedShaderPhiDescriptor:",
+        "MarkReadConstBufferSharpSources(",
+        "PeelSharpDwordMasks(",
+        "AnalyzeIndexedImageTable(",
+    ):
+        if marker not in new_discover:
+            raise RuntimeError("VERIFIED_NATIVE_PHI_OUTPUT_MISSING="+marker)
+    if "static constexpr u32 ShaderBinaryVersion = 0xfu;" not in output[CACHE]:
+        raise RuntimeError("PHI_SHADER_BINARY_CACHE_EPOCH_NOT_BUMPED")
+    if "static constexpr u32 ShaderMetaVersion = 0xau;" not in output[CACHE]:
+        raise RuntimeError("PHI_SHADER_METADATA_CACHE_EPOCH_NOT_BUMPED")
+    if blob(output[PREFLIGHT].encode()) != ORIGINAL_HEADER_BLOB:
+        raise RuntimeError("PHI_CAPACITY_HEADER_CHANGED")
+    print("VERIFIED_NATIVE_PHI_EXACT_SOURCE_TRANSFORM=PASS",flush=True)
+    for path in OUT_PATHS:
+        print("NATIVE_PHI_SOURCE_BLOB="+path+" "+blob(output[path].encode()),
+              flush=True)
+
+
 if __name__=="__main__":
     import sys
     if sys.argv[1:]==["--self-test"]:
         self_test()
+    elif len(sys.argv)==3 and sys.argv[1]=="--validate-exact":
+        self_test()
+        validate_exact_source(sys.argv[2])
     else:
-        raise SystemExit("Usage: --self-test")
+        raise SystemExit("Usage: --self-test OR --validate-exact /path/to/source/repo")
