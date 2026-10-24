@@ -25,7 +25,16 @@ static_assert(sizeof(u128) == 16, "u128 must be 128 bits wide");
 using VAddr = uintptr_t;
 using PAddr = uintptr_t;
 
+// A PS4 guest can enter an HLE export with a stack offset that does not
+// satisfy the host System V ABI. Re-align at the guest/host function boundary
+// rather than weakening aligned host SIMD instructions or adding per-title
+// workarounds. force_align_arg_pointer has been tested with GCC and Clang
+// on x86-64; other hosts retain the original ABI decoration.
+#if defined(__linux__) && defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+#define PS4_SYSV_ABI __attribute__((sysv_abi, force_align_arg_pointer))
+#else
 #define PS4_SYSV_ABI __attribute__((sysv_abi))
+#endif
 
 // UDLs for memory size values
 constexpr unsigned long long operator""_KB(unsigned long long x) {
