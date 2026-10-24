@@ -26,6 +26,19 @@ STRIDED_SELECTOR_FINAL='d72990fbd8fe6483a921fa2c015e1d65b1e1f336'
 GUEST_TSHARP_FINAL='02c22fd61253b072a9bc4017e67f9c39fa0d4fa9'
 INTEGER_SAMPLER_FINAL='aab1275779c989f0624cd6dcb9582410d5534381'
 PM4_BOUNDARY_SOURCE='ffd19ac832130e2165388a7110d46c0fa6f6e4e9'
+PROVEN_SOURCE_COMMITS=(
+    'a12c8c8c5c95c2acccb8c5bedc10a466fef0feba',
+    'bfb0d71c6b68a036fc18046398a7369c3908d0e8',
+    '1a7789b7f5c633d4f4c6cbe331758d2f1d5897f7',
+    '7ace685062a2c97870b61738a4b184a7882a5f6a',
+    '21f5b3179dbedb26718da44c38a9b3c56909a034',
+    'fb8171791b387b2980e2a3aa20c317a3022bf0a9',
+    '7edfa0c5b420bffeab70576e2b0da6d635bb0866',
+    'ffd19ac832130e2165388a7110d46c0fa6f6e4e9',
+    '12a07a6d83007f76012f762e68fedb5954aa0f8a',
+    'f94c4f09e6111c0f9ff9fd1c5125c762ae88eb07',
+    '822a68d8aae409b5a29759de462eb43329e52753',
+)
 VULKAN_INDEXING_FEATURE_FIXES=(
     'cbbcc969156f9258633914409ca88e6458bbad2c',
     '538fc65527d96086443d14d3227eb9c5daa7397f',
@@ -2335,7 +2348,7 @@ def ensure_required_refs():
         if not exists(dst+'^{commit}'):
             raise RuntimeError('REQUIRED_REF_MISSING_AFTER_FETCH='+dst)
 
-    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,GUEST_TSHARP_FINAL,INTEGER_SAMPLER_FINAL,PM4_BOUNDARY_SOURCE)
+    required=(GEN_BASE,GEN,STRIDED_SELECTOR_FINAL,GUEST_TSHARP_FINAL,INTEGER_SAMPLER_FINAL,PM4_BOUNDARY_SOURCE,*PROVEN_SOURCE_COMMITS)
     for sha in required:
         if exists(sha+'^{commit}'):
             continue
@@ -2370,40 +2383,6 @@ def ensure_required_refs():
 
 
 PROVEN_FIX_CHECKS=(
-    ('cpu_identity_address',('src/core/address_space.cpp',),('SetCpuIdGuestAddressRange(',)),
-    ('cpu_identity_core',('src/core/cpu_id.cpp',),('GuestCpuid(', 'CurrentGuestCpuImpl(')),
-    ('cpu_identity_kernel',('src/core/libraries/kernel/process.cpp',),
-        ('GuestCpuModeFromPsf(', 'CurrentGuestCpu()')),
-    ('libc_mspace_bootstrap',('src/core/libraries/libc_internal/libc_internal_memory.cpp',),
-        ('internal_mspace_create(', 'g_mspace_registry')),
-    ('sse4a_and_scalar_reciprocal',('src/core/cpu_patches.cpp',),
-        ('GenerateRCPSS(', 'TryExecuteIllegalInstruction(', 'c.movq(xmm_dst')),
-    ('release_mem_semantics',('src/video_core/amdgpu/pm4_cmds.h',),
-        ('case DataSelect::None:', 'case InterruptSelect::IrqOnly:')),
-    ('legal_64bit_bitfield_insert',
-        ('src/shader_recompiler/backend/spirv/emit_spirv_integer.cpp',),
-        ('const Id full_width', 'ctx.ConstU32(64u)')),
-    ('image_binding_storage_guard',('src/video_core/renderer_vulkan/vk_rasterizer.cpp',),
-        ('desc.type == VideoCore::TextureCache::BindingType::Texture',
-         'stage.images[image_index].is_written')),
-    ('fp64_phi_types',('src/shader_recompiler/backend/spirv/emit_spirv.cpp',),
-        ('case IR::Type::F64:', 'case IR::Type::F64x4:')),
-    ('srt_arithmetic_full_width',
-        ('src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp',),
-        ('c.jae(full_width)',)),
-    ('permutation_owned_metadata',
-        ('src/video_core/renderer_vulkan/vk_pipeline_cache.h',),
-        ('std::unique_ptr<Shader::Info> own_info', 'GetInfo(Shader::Info& root_info)')),
-    ('scalar_logical_bitcompare',
-        ('src/shader_recompiler/frontend/translate/scalar_alu.cpp',),
-        ('ir.INotEqual(result, ir.Imm64(u64(0)))', 'ir.IEqual(bit, ir.Imm64')),
-    ('buffer_16bit_access',('src/video_core/renderer_vulkan/vk_instance.cpp',),
-        ('uniformAndStorageBuffer16BitAccess',)),
-    ('compressed_copy_hazard_64bit',
-        ('src/video_core/renderer_vulkan/vk_runtime.cpp',),
-        ('static u64 BufferImageCopySize', 'row_length + block[0] - 1')),
-    ('ubnorm_nz_restore',('src/video_core/amdgpu/pixel_format.h',),
-        ('case NumberFormat::UbnormNz:',)),
     ('automatic_demand_coherence_policy',('src/core/emulator_settings.h',),
         ('return GpuReadbacksMode::Precise;',)),
     ('automatic_demand_coherence_backend',('src/video_core/page_manager.cpp',),
@@ -2426,6 +2405,52 @@ PROVEN_FIX_CHECKS=(
         ('src/video_core/buffer_cache/buffer_cache.h',
          'src/video_core/renderer_vulkan/vk_rasterizer.cpp'),
         ('ForEachDmaBuffer', 'PrepareDmaReads')),
+    ('buffer_phi_inverse_ballot_guard',
+        ('src/shader_recompiler/ir/passes/phi_simplification_pass.cpp',),
+        ('return op == IR::Opcode::InverseBallot;',)),
+)
+
+PROVEN_SOURCE_POSTCHECKS=(
+    ('sparse_capable_queue',
+        ('src/video_core/renderer_vulkan/vk_instance.cpp',
+         'src/video_core/buffer_cache/buffer_cache.cpp'),
+        ('sparse',)),
+    ('cpu_identity_address',('src/core/address_space.cpp',),('SetCpuIdGuestAddressRange(',)),
+    ('cpu_identity_core',('src/core/cpu_id.cpp',),('GuestCpuid(', 'CurrentGuestCpu(')),
+    ('cpu_identity_kernel',('src/core/libraries/kernel/process.cpp',),
+        ('GuestCpuModeFromPsf(', 'CurrentGuestCpu()')),
+    ('libc_mspace_bootstrap',('src/core/libraries/libc_internal/libc_internal_memory.cpp',),
+        ('internal_mspace_create(', 'g_mspace_registry')),
+    ('sse4a_zero_upper',('src/core/cpu_patches.cpp',),
+        ('TryExecuteIllegalInstruction(', 'c.movq(xmm_dst')),
+    ('release_mem_semantics',('src/video_core/amdgpu/pm4_cmds.h',),
+        ('case DataSelect::None:', 'case InterruptSelect::IrqOnly:')),
+    ('legal_64bit_bitfield_insert',
+        ('src/shader_recompiler/backend/spirv/emit_spirv_integer.cpp',),
+        ('const Id full_width', 'ctx.ConstU32(64u)')),
+    ('image_binding_storage_guard',('src/video_core/renderer_vulkan/vk_rasterizer.cpp',),
+        ('desc.type == VideoCore::TextureCache::BindingType::Texture',
+         'stage.images[image_index].is_written')),
+    ('pm4_register_boundaries',('src/video_core/amdgpu/pm4_register_write.h',),
+        ('WriteShaderRegisters(',)),
+    ('fp64_phi_types',('src/shader_recompiler/backend/spirv/emit_spirv.cpp',),
+        ('case IR::Type::F64:', 'case IR::Type::F64x4:')),
+    ('srt_arithmetic_full_width',
+        ('src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp',),
+        ('c.jae(full_width)',)),
+    ('permutation_owned_metadata',
+        ('src/video_core/renderer_vulkan/vk_pipeline_cache.h',),
+        ('std::unique_ptr<Shader::Info> own_info', 'GetInfo(Shader::Info& root_info)')),
+    ('scalar_logical_bitcompare',
+        ('src/shader_recompiler/frontend/translate/scalar_alu.cpp',),
+        ('ir.INotEqual(result, ir.Imm64(u64(0)))', 'ir.IEqual(bit, ir.Imm64')),
+    ('buffer_16bit_access',('src/video_core/renderer_vulkan/vk_instance.cpp',),
+        ('uniformAndStorageBuffer16BitAccess',)),
+    ('compressed_copy_hazard_64bit',
+        ('src/video_core/renderer_vulkan/vk_runtime.cpp',),
+        ('static u64 BufferImageCopySize', 'row_length + block[0] - 1')),
+    ('ubnorm_nz_restore',('src/video_core/amdgpu/pixel_format.h',),
+        ('case NumberFormat::UbnormNz:',)),
 )
 
 def _revision_texts(rev,paths):
@@ -2455,6 +2480,81 @@ def verify_proven_fix_base(rev):
             'CURRENT_HEAD_MISSING_PROVEN_FIXES='+' || '.join(missing)
         )
     return evidence
+
+
+def verify_proven_source_parent(rev):
+    missing=[]
+    evidence={}
+    for label,paths,markers in PROVEN_SOURCE_POSTCHECKS:
+        text=_revision_texts(rev,paths)
+        absent=[marker for marker in markers if marker not in text]
+        evidence[label]={
+            'paths':list(paths),
+            'markers':list(markers),
+            'present':not absent,
+            'missing':absent,
+        }
+        if absent:
+            missing.append(label+':'+'|'.join(absent))
+    if missing:
+        raise RuntimeError('PROVEN_SOURCE_FIX_MISSING='+' || '.join(missing))
+    return evidence
+
+def _proven_commit_paths(sha):
+    paths=git('diff','--name-only',sha+'^',sha).decode().splitlines()
+    return [
+        path for path in paths
+        if path=='CMakeLists.txt' or path.startswith('src/')
+    ]
+
+def _apply_proven_file(idx,sha,path):
+    e=env({'GIT_INDEX_FILE':str(idx)})
+    patch=git('diff','--binary',sha+'^',sha,'--',path)
+    if not patch:
+        return 'EMPTY'
+    before=git('write-tree',e=e).decode().strip()
+    q=subprocess.run(
+        ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0',
+         '-C',str(SRC),'apply','--3way','--cached','--whitespace=nowarn','-'],
+        env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
+    if q.returncode==0:
+        return 'APPLIED'
+    git('read-tree',before,e=e)
+    reverse=subprocess.run(
+        ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0',
+         '-C',str(SRC),'apply','--reverse','--check','--cached',
+         '--whitespace=nowarn','-'],
+        env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
+    if reverse.returncode==0:
+        return 'ALREADY_PRESENT'
+    raise RuntimeError(
+        'PROVEN_SOURCE_APPLY_FAILED commit='+sha+' path='+path+' details='+
+        (q.stderr or b'').decode(errors='replace')[-2500:]
+    )
+
+def complete_proven_source_parent(run_dir,base):
+    idx=run_dir/'proven-source.index'
+    e=env({'GIT_INDEX_FILE':str(idx)})
+    git('read-tree',base,e=e)
+    results=[]
+    for sha in PROVEN_SOURCE_COMMITS:
+        for path in _proven_commit_paths(sha):
+            results.append({
+                'commit':sha,
+                'path':path,
+                'result':_apply_proven_file(idx,sha,path),
+            })
+    tree=git('write-tree',e=e).decode().strip()
+    base_tree=git('rev-parse',base+'^{tree}').decode().strip()
+    if tree==base_tree:
+        revision=base
+    else:
+        revision=commit_tree(
+            tree,base,
+            b'Complete retained generic GoW/GoT source fixes before upstream merge\n'
+        )
+    evidence=verify_proven_source_parent(revision)
+    return revision,tree,results,evidence
 
 def recovered_parent_ref(run_dir):
     global PARENT_REF, PARENT_TREE_ACTUAL, PARENT_MODE
@@ -2620,11 +2720,13 @@ def verify_prev(run_dir):
     if not SRC.is_dir() or not (SRC/'.git').exists():
         raise RuntimeError('GOT_SOURCE_REPOSITORY_MISSING='+str(SRC))
     validate_source_status(BASE_STATUS)
-    verified_parent=recovered_parent_ref(run_dir)
-    verified_tree=git('rev-parse',verified_parent+'^{tree}').decode().strip()
-    if verified_tree!=PARENT_TREE_ACTUAL:
+    retained_base=recovered_parent_ref(run_dir)
+    retained_tree=git('rev-parse',retained_base+'^{tree}').decode().strip()
+    if retained_tree!=PARENT_TREE_ACTUAL:
         raise RuntimeError('VERIFIED_GRAPHICS_PARENT_TREE_CHANGED')
-    proven_evidence=verify_proven_fix_base(verified_parent)
+    package_evidence=verify_proven_fix_base(retained_base)
+    verified_parent,verified_tree,source_replay,source_evidence = \
+        complete_proven_source_parent(run_dir,retained_base)
     parent,parent_tree,upstream_parent,upstream_parent_tree = \
         merge_verified_parent_with_upstream(verified_parent)
     return {
@@ -2633,8 +2735,12 @@ def verify_prev(run_dir):
         'verified_parent':verified_parent,
         'verified_parent_original':PARENT,
         'verified_parent_tree':verified_tree,
-        'verified_parent_mode':PARENT_MODE,
-        'proven_fix_evidence':proven_evidence,
+        'verified_parent_mode':PARENT_MODE+'+public-source-replay',
+        'retained_base':retained_base,
+        'retained_base_tree':retained_tree,
+        'package_fix_evidence':package_evidence,
+        'public_source_replay':source_replay,
+        'public_source_evidence':source_evidence,
         'parent_reconstructed':verified_parent!=PARENT,
         'upstream_main':UPSTREAM_MAIN,
         'upstream_parent':upstream_parent,
@@ -3155,9 +3261,8 @@ def launch(info,rev,tree,csha,cand):
         verified_tree=git('rev-parse',verified_parent+'^{tree}').decode().strip()
         if verified_tree!=r.get('verified_parent_tree'):
             raise RuntimeError('VERIFIED_BUILD_PARENT_TREE_MISMATCH')
-        if r.get('verified_parent_mode') not in {
-            'exact-verified-commit','exact-verified-tree-wrap',
-            'exact-verified-patch-recovery','semantic-proven-fix-local-head'}:
+        mode=r.get('verified_parent_mode','')
+        if not mode.endswith('+public-source-replay'):
             raise RuntimeError('VERIFIED_BUILD_PARENT_MODE_INVALID')
 
         source_parent=r.get('source_parent')
