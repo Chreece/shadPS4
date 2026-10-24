@@ -2401,15 +2401,24 @@ def recovered_parent_ref(run_dir):
     # The historical exact commit/tree can be pruned from the user's object
     # database. In that case, accept the current local all-fixes HEAD only
     # after proving every retained generic GoW/GoT correction semantically.
+    semantic_error=None
     try:
         evidence=verify_proven_fix_base(BASE)
-    except RuntimeError:
+    except RuntimeError as error:
         evidence=None
+        semantic_error=error
     if evidence is not None:
         PARENT_REF=BASE
         PARENT_TREE_ACTUAL=git('rev-parse',BASE+'^{tree}').decode().strip()
         PARENT_MODE='semantic-proven-fix-local-head'
         return PARENT_REF
+
+    # The old patch reconstruction requires its exact historical base. Do not
+    # replay it onto an unrelated modern HEAD: that only creates conflicts and
+    # can never prove the retained fix stack. Surface the missing semantic fix
+    # directly unless the original recovery base object still exists.
+    if not exists(RECOVERY_BASE+'^{commit}'):
+        raise semantic_error
 
     encoded=b''
     for part in RECOVERY_PARTS:
