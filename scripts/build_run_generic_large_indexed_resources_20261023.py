@@ -1801,7 +1801,7 @@ def raster(s):
         'sampler.indexed_image_offset_bytes' not in body or
         'sampler.indexed_sampler_offset_bytes' not in body or
         'AmdGpu::IsInteger(raw_image.GetNumberFmt())' not in body or
-        'vk::Sampler vk_sampler{};' not in body or
+        'const vk::Sampler vk_sampler = texture_cache.GetSampler(' not in body or
         'sampler_valid = false;' not in body or
         'write.descriptorCount = count' not in body):
         raise RuntimeError('RASTER_INDEXED_SAMPLER_BINDING_INCOMPLETE')
@@ -4098,7 +4098,7 @@ def compose(run_dir,info,manifest):
             'sampler.indexed_image_offset_bytes',
             'sampler.indexed_sampler_offset_bytes',
             'AmdGpu::IsInteger(raw_image.GetNumberFmt())',
-            'vk::Sampler vk_sampler{};',
+            'const vk::Sampler vk_sampler = texture_cache.GetSampler(',
             'sampler_valid = false;',
         ),
     }
