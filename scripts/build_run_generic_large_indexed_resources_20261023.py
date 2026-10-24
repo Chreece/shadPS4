@@ -2492,10 +2492,13 @@ def _revision_texts(rev,paths):
             chunks.append(show(rev,path).decode(errors='replace'))
     return '\n'.join(chunks)
 
-def verify_proven_fix_base(rev):
+def verify_proven_fix_base(rev, *, require_atomic=True):
     missing=[]
     evidence={}
     for label,paths,markers in PROVEN_FIX_CHECKS:
+        if label=='bounded_atomic_fault_feedback' and not require_atomic:
+            # Check after pinned upstream merge, where ObtainBufferFlags exists.
+            continue
         text=_revision_texts(rev,paths)
         absent=[marker for marker in markers if marker not in text]
         evidence[label]={
@@ -3289,7 +3292,8 @@ def complete_package_source_parent(run_dir,base):
     changed=[]
     changed += _apply_final_native_umin_sirit(idx)
     changed += _apply_implicit_dma_dependencies(idx)
-    changed += _apply_atomic_fault_feedback(idx)
+    # Fault replay requires the upstream flag-based BufferCache API, absent
+    # in the reconstructed pre-merge parent. Apply after the upstream merge.
     changed += _apply_shared_srt(idx)
     changed += _apply_automatic_coherence(idx)
     tree=git('write-tree',e=e).decode().strip()
@@ -3297,7 +3301,7 @@ def complete_package_source_parent(run_dir,base):
         tree,base,
         b'Complete retained package-only generic GoW/GoT fixes before upstream merge\n'
     )
-    evidence=verify_proven_fix_base(revision)
+    evidence=verify_proven_fix_base(revision,require_atomic=False)
     return revision,tree,sorted(set(changed)),evidence
 
 def complete_proven_source_parent(run_dir,base):
@@ -3417,9 +3421,27 @@ def merge_verified_parent_with_upstream(parent):
 
     pr_msg=(b'Merge shadPS4 PR #5492 Audio3D feeder-thread change\n\n'
             b'Pinned open PR head; no conflict resolution was permitted.\n')
+    # Merge latest upstream and PR first, then apply the complete generic
+    # fault-recovery fix to their flag-based BufferCache API. Applying the
+    # recovery call earlier creates an API mismatch and an avoidable textual
+    # merge conflict on the same ObtainBuffer invocation.
+    with tempfile.TemporaryDirectory(
+            prefix='shadps4-merged-fault-index-',dir=ROOT/'logs') as tmp:
+        idx=Path(tmp)/'fault.index'
+        e=env({'GIT_INDEX_FILE':str(idx)})
+        git('read-tree',final_tree,e=e)
+        source_api=index_text(idx,'src/video_core/buffer_cache/buffer_cache.h')
+        if ('enum class ObtainBufferFlags' not in source_api or
+            'IgnoreStreamBuffer = ' not in source_api):
+            raise RuntimeError('MERGED_UPSTREAM_FAULT_FLAGS_API_MISSING')
+        _apply_atomic_fault_feedback(idx)
+        final_tree=git('write-tree',e=e).decode().strip()
+
     final_parent=commit_tree(final_tree,upstream_merged,pr_msg,(PR_5492_HEAD,))
     if git('rev-parse',final_parent+'^{tree}').decode().strip()!=final_tree:
         raise RuntimeError('PR_5492_MERGE_COMMIT_TREE_CHANGED')
+    # Verify the actual final composed source, not only the intermediate parent.
+    verify_proven_fix_base(final_parent,require_atomic=True)
 
     return final_parent,final_tree,upstream_merged,upstream_tree
 
@@ -3443,7 +3465,7 @@ def verify_prev(run_dir):
 
     # Verify both groups before latest upstream is merged.
     source_evidence=verify_proven_source_parent(verified_parent)
-    package_evidence=verify_proven_fix_base(verified_parent)
+    package_evidence=verify_proven_fix_base(verified_parent,require_atomic=False)
 
     stage('merge_latest_upstream_and_pr_5492')
     parent,parent_tree,upstream_parent,upstream_parent_tree = \
