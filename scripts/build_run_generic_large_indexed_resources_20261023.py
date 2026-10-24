@@ -2521,35 +2521,57 @@ def verify_proven_source_parent(rev):
 
 def _proven_commit_paths(sha):
     paths=git('diff','--name-only',sha+'^',sha).decode().splitlines()
-    selected=[
+    return [
         path for path in paths
         if path=='CMakeLists.txt' or path.startswith('src/')
     ]
-    # a81ff9b7's shader-cache version change was only an invalidation marker
-    # tied to that historical branch. Replaying its literal 15->16 hunk onto
-    # the newer retained source is both unnecessary and conflict-prone. The
-    # final composer bumps current ShaderBinaryVersion/ShaderMetaVersion once
-    # relative to its actual merged parent, so keep every semantic UMin source
-    # change and exclude only this stale numeric cache-version hunk.
-    if sha==NATIVE_UMIN_SOURCE:
-        selected=[
-            path for path in selected
-            if path!='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp'
-        ]
-    return selected
+
+def _strip_historical_cache_version_hunks(patch):
+    # Historical retained-fix commits may combine real serialization logic
+    # changes with branch-local ShaderBinaryVersion/ShaderMetaVersion bumps.
+    # Preserve every semantic hunk and drop only hunks that touch those
+    # numeric cache epochs. The final composer performs one current cache bump
+    # relative to the actual merged parent.
+    if not patch or b'@@' not in patch:
+        return patch,False
+    text=patch.decode(errors='replace')
+    first=text.find('@@')
+    if first<0:
+        return patch,False
+    header=text[:first]
+    hunks=re.split(r'(?=^@@ )',text[first:],flags=re.M)
+    kept=[]
+    stripped=False
+    for hunk in hunks:
+        if not hunk:
+            continue
+        if 'ShaderBinaryVersion' in hunk or 'ShaderMetaVersion' in hunk:
+            stripped=True
+            continue
+        kept.append(hunk)
+    if not stripped:
+        return patch,False
+    if not kept:
+        return b'',True
+    return (header+''.join(kept)).encode(),True
 
 def _apply_proven_file(idx,sha,path):
     e=env({'GIT_INDEX_FILE':str(idx)})
     patch=git('diff','--binary',sha+'^',sha,'--',path)
+    stripped_cache_epoch=False
+    if path=='src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp':
+        patch,stripped_cache_epoch=_strip_historical_cache_version_hunks(patch)
     if not patch:
-        return 'EMPTY'
+        return ('SKIPPED_STALE_CACHE_VERSION_HUNK'
+                if stripped_cache_epoch else 'EMPTY')
     before=git('write-tree',e=e).decode().strip()
     q=subprocess.run(
         ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0',
          '-C',str(SRC),'apply','--3way','--cached','--whitespace=nowarn','-'],
         env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
     if q.returncode==0:
-        return 'APPLIED'
+        return ('APPLIED_WITH_CACHE_VERSION_HUNK_STRIPPED'
+                if stripped_cache_epoch else 'APPLIED')
     git('read-tree',before,e=e)
     reverse=subprocess.run(
         ['git','-c','core.hooksPath=/dev/null','-c','gc.auto=0',
@@ -2557,7 +2579,8 @@ def _apply_proven_file(idx,sha,path):
          '--whitespace=nowarn','-'],
         env=e,input=patch,stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=False)
     if reverse.returncode==0:
-        return 'ALREADY_PRESENT'
+        return ('ALREADY_PRESENT_WITH_CACHE_VERSION_HUNK_STRIPPED'
+                if stripped_cache_epoch else 'ALREADY_PRESENT')
     raise RuntimeError(
         'PROVEN_SOURCE_APPLY_FAILED commit='+sha+' path='+path+' details='+
         (q.stderr or b'').decode(errors='replace')[-2500:]
@@ -2895,12 +2918,6 @@ def complete_proven_source_parent(run_dir,base):
                 'commit':sha,
                 'path':path,
                 'result':_apply_proven_file(idx,sha,path),
-            })
-        if sha==NATIVE_UMIN_SOURCE:
-            results.append({
-                'commit':sha,
-                'path':'src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp',
-                'result':'SKIPPED_STALE_CACHE_VERSION_HUNK',
             })
     tree=git('write-tree',e=e).decode().strip()
     base_tree=git('rev-parse',base+'^{tree}').decode().strip()
