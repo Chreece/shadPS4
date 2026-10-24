@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <bit>
 #include <limits>
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
@@ -397,7 +398,27 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         const u32 sampler_binding = descriptors.Add(sampler_res);
         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
         if (image_res.is_guest_indexed) {
-            inst.SetArg(1, resource.indexed_texture_id);
+            const u32 record_stride = image_res.indexed_record_stride_bytes;
+            // The original GCN T# index uses 32-bit arithmetic. For packed
+            // descriptors the sequence (id << 5) >> 2 discards the upper
+            // five bits of id. For power-of-two material records, the
+            // multiplication id * record_stride also wraps at 32 bits.
+            // The Vulkan descriptor array is indexed by the record ID,
+            // not by an unbounded original 32-bit selector value.
+            //
+            // Normalize only the bits provably discarded by the original
+            // arithmetic. Non-power-of-two strides cannot be reduced with
+            // this mask and retain their original GPU selector unchanged.
+            const u32 stride = record_stride == 0u ? sizeof(AmdGpu::Image) : record_stride;
+            if (std::has_single_bit(stride) && stride >= sizeof(u32)) {
+                const u32 valid_id_mask = std::numeric_limits<u32>::max() / stride;
+                const IR::U32 guest_id{resource.indexed_texture_id};
+                const IR::U32 normalized_id{
+                    ir.BitwiseAnd(guest_id, ir.Imm32(valid_id_mask))};
+                inst.SetArg(1, normalized_id);
+            } else {
+                inst.SetArg(1, resource.indexed_texture_id);
+            }
         }
     } else {
         inst.SetArg(0, ir.Imm32(image_binding));
