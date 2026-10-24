@@ -410,7 +410,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             // Normalize only the bits provably discarded by the original
             // arithmetic. Non-power-of-two strides cannot be reduced with
             // this mask and retain their original GPU selector unchanged.
-            const u32 stride = record_stride == 0u ? sizeof(AmdGpu::Image) : record_stride;
+            const u32 stride = record_stride == 0u ? u32(sizeof(AmdGpu::Image)) : record_stride;
             if (std::has_single_bit(stride) && stride >= sizeof(u32)) {
                 const u32 valid_id_mask = std::numeric_limits<u32>::max() / stride;
                 const IR::U32 guest_id{resource.indexed_texture_id};
