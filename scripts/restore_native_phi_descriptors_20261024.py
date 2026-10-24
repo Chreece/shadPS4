@@ -102,6 +102,29 @@ def transform(discover:str,cache:str,original:str,header:str):
             discover=discover.replace(anchor,directive+anchor,1)
     discover=discover.replace(BIND_ANCHOR,bridge+BIND_ANCHOR,1)
     discover=discover.replace(PASS_ANCHOR,PASS_NEW,1)
+    # A genuinely dynamic Phi can still exceed the safe static-split rules.
+    # Keep the assertion, but record its actual incoming opcodes first so
+    # it is never confused with the unrelated masked-descriptor regression.
+    unsupported='''        ASSERT_MSG(IsSharpSource(source),
+                   "Unsupported descriptor producer opcode={} at dword={}",
+                   static_cast<u32>(source->GetOpcode()), i);'''
+    detailed='''        if (source->GetOpcode() == IR::Opcode::Phi) {
+            const auto incoming_opcode = [&](std::size_t side) -> s32 {
+                const IR::Inst* const incoming = source->Arg(side).TryInst();
+                return incoming ? static_cast<s32>(incoming->GetOpcode()) : -1;
+            };
+            LOG_ERROR(Render_Recompiler,
+                      "UnresolvedShaderPhiDescriptor: dword={} alternatives={} "
+                      "incoming0={} incoming1={} incoming2={}",
+                      i, source->NumArgs(),
+                      source->NumArgs() > 0 ? incoming_opcode(0) : -2,
+                      source->NumArgs() > 1 ? incoming_opcode(1) : -2,
+                      source->NumArgs() > 2 ? incoming_opcode(2) : -2);
+        }
+''' + unsupported
+    if discover.count(unsupported)!=1:
+        raise RuntimeError("PHI_ASSERT_PROVENANCE_ANCHOR_CHANGED")
+    discover=discover.replace(unsupported,detailed,1)
     for required in ("SplitImageSampleBySharpPhi(*block, inst, image_split_budget, program.info)",
                      "SplitBufferLoadBySharpPhi(*block, inst)",
                      "IsSelectableBufferLoad(inst)", "auto it = block->begin()",
