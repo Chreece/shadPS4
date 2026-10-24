@@ -15,6 +15,11 @@ UPSTREAM_REMOTE='https://github.com/shadps4-emu/shadPS4.git'
 UPSTREAM_MAIN='396c2a09a38d22eaa02aab32c1967263dceab95f'
 PR_5492_REMOTE='https://github.com/johulk/shadPS4.git'
 PR_5492_HEAD='9f55474ad45778f8ac08e923574f214d492997f2'
+# Confirmed immutable merge-base SHAs from GitHub compare endpoints:
+# public reconstruction vs upstream pinned main, and upstream vs PR #5492.
+# Explicit bases allow conflict-checked merges even in incomplete local history.
+PUBLIC_UPSTREAM_MERGE_BASE='437dc7eb8f6eeeb143ca0238366bb3aef9e95f03'
+PUBLIC_PR_MERGE_BASE='8a48cd014406986c7bbf49e83e96c4ec8fa8938a'
 PARENT_REF=PARENT
 PARENT_TREE_ACTUAL=PARENT_TREE
 PARENT_MODE='exact-verified-tree'
@@ -2394,6 +2399,21 @@ def ensure_required_refs():
                 (q.stderr or b'').decode(errors='replace')[-2000:]
             )
 
+    # In shallow/partial clones, the endpoint commits can exist while Git
+    # lacks the historical objects needed to discover their common ancestor.
+    # Fetch both independently verified merge-base objects directly.
+    for base in (PUBLIC_UPSTREAM_MERGE_BASE,PUBLIC_PR_MERGE_BASE):
+        if exists(base+'^{commit}'):
+            continue
+        q=run(['git','-c','fetch.recurseSubmodules=false','-c','submodule.recurse=false',
+               '-C',SRC,'fetch','--no-tags','--recurse-submodules=no',
+               UPSTREAM_REMOTE,base],check=False,timeout=600)
+        if q.returncode or not exists(base+'^{commit}'):
+            raise RuntimeError(
+                'VERIFIED_MERGE_BASE_FETCH_FAILED='+base+' '+
+                (q.stderr or b'').decode(errors='replace')[-2000:]
+            )
+
 
 PROVEN_FIX_CHECKS=(
     ('automatic_demand_coherence_policy',('src/core/emulator_settings.h',),
@@ -3351,9 +3371,11 @@ def recovered_parent_ref(run_dir):
     # verified tree to a pinned public reconstruction ancestor for composition.
     if not exists(RECONSTRUCTION_BASE+'^{commit}'):
         raise RuntimeError('PUBLIC_RECONSTRUCTION_BASE_MISSING='+RECONSTRUCTION_BASE)
+    if not exists(PUBLIC_UPSTREAM_MERGE_BASE+'^{commit}'):
+        raise RuntimeError('VERIFIED_PUBLIC_UPSTREAM_MERGE_BASE_MISSING')
     common=git('merge-base',RECONSTRUCTION_BASE,UPSTREAM_MAIN,check=False).decode().strip()
     if not re.fullmatch(r'[0-9a-f]{40}',common):
-        raise RuntimeError('PUBLIC_RECONSTRUCTION_BASE_NO_COMMON_UPSTREAM_ANCESTOR')
+        stage('use_verified_public_merge_base_for_incomplete_local_history')
 
     exact_parent=(
         exists(PARENT+'^{commit}') and
@@ -3389,8 +3411,10 @@ def recovered_parent_ref(run_dir):
     )
     if git('rev-parse',PARENT_REF+'^{tree}').decode().strip()!=PARENT_TREE:
         raise RuntimeError('VERIFIED_GRAPHICS_TREE_CHANGED_BY_ANCESTRY_WRAP')
-    if not git('merge-base',PARENT_REF,UPSTREAM_MAIN,check=False).strip():
-        raise RuntimeError('WRAPPED_GRAPHICS_TREE_STILL_UNRELATED_TO_UPSTREAM')
+    # Synthetic parentage is verified locally; the proven public merge-base
+    # is supplied explicitly at merge time, independent of shallow history.
+    if git('rev-parse',PARENT_REF+'^').decode().strip()!=RECONSTRUCTION_BASE:
+        raise RuntimeError('WRAPPED_GRAPHICS_TREE_PARENT_CHANGED')
     PARENT_TREE_ACTUAL=PARENT_TREE
     return PARENT_REF
 
@@ -3401,12 +3425,14 @@ def merge_verified_parent_with_upstream(parent):
         raise RuntimeError('UPSTREAM_MAIN_MISSING_BEFORE_MERGE')
     if not exists(PR_5492_HEAD+'^{commit}'):
         raise RuntimeError('PR_5492_HEAD_MISSING_BEFORE_MERGE')
-    shared=git('merge-base',parent,UPSTREAM_MAIN,check=False).decode().strip()
-    if not re.fullmatch(r'[0-9a-f]{40}',shared):
-        raise RuntimeError('UPSTREAM_PARENT_HAS_NO_SHARED_ANCESTOR_AFTER_WRAP')
-    print('UPSTREAM_MERGE_BASE='+shared,flush=True)
-
-    q=run(['git','-C',SRC,'merge-tree','--write-tree',parent,UPSTREAM_MAIN],
+    # GitHub independently confirms this exact immutable ancestor for the
+    # source/upstream pair. --merge-base avoids the shallow-history false
+    # "unrelated histories" error and retains Git's full conflict detection.
+    if not exists(PUBLIC_UPSTREAM_MERGE_BASE+'^{commit}'):
+        raise RuntimeError('UPSTREAM_MERGE_BASE_OBJECT_MISSING')
+    print('UPSTREAM_MERGE_BASE='+PUBLIC_UPSTREAM_MERGE_BASE,flush=True)
+    q=run(['git','-C',SRC,'merge-tree','--write-tree',
+           '--merge-base='+PUBLIC_UPSTREAM_MERGE_BASE,parent,UPSTREAM_MAIN],
           check=False,timeout=120)
     stdout=(q.stdout or b'').decode(errors='replace').strip()
     stderr=(q.stderr or b'').decode(errors='replace').strip()
@@ -3435,7 +3461,13 @@ def merge_verified_parent_with_upstream(parent):
 
     # PR #5492 is still open, so merge its pinned head explicitly on top of
     # current upstream. Refuse any conflict instead of silently preferring a side.
-    q=run(['git','-C',SRC,'merge-tree','--write-tree',upstream_merged,PR_5492_HEAD],
+    # PR 5492 is a one-commit branch from the verified base below. Passing
+    # the exact base is necessary when the local object graph is shallow.
+    if not exists(PUBLIC_PR_MERGE_BASE+'^{commit}'):
+        raise RuntimeError('PR_5492_MERGE_BASE_OBJECT_MISSING')
+    print('PR_5492_MERGE_BASE='+PUBLIC_PR_MERGE_BASE,flush=True)
+    q=run(['git','-C',SRC,'merge-tree','--write-tree',
+           '--merge-base='+PUBLIC_PR_MERGE_BASE,upstream_merged,PR_5492_HEAD],
           check=False,timeout=120)
     stdout=(q.stdout or b'').decode(errors='replace').strip()
     stderr=(q.stderr or b'').decode(errors='replace').strip()
