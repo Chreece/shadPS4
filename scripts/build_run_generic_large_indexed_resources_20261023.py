@@ -163,10 +163,19 @@ def after(s,a,x,marker,n):
 def source_status():
     return git('status','--porcelain=v1','--untracked-files=all')
 
+def _head_gitlink(path):
+    q=run(['git','-C',SRC,'ls-tree','HEAD','--',path],check=False,timeout=30)
+    if q.returncode:
+        return False
+    line=(q.stdout or b'').decode(errors='replace').strip()
+    return line.startswith('160000 commit ')
+
 def validate_source_status(status):
-    # The user intentionally removed the local tests tree. The candidate is
-    # composed from immutable Git objects and configured with ENABLE_TESTS=OFF,
-    # so those deletions are irrelevant. Refuse every other pre-existing edit.
+    # Composition reads immutable Git objects and builds in an independent
+    # fresh clone. Allow only known local state that cannot affect that source:
+    # deleted tests (tests are disabled), dirty submodule worktrees whose
+    # top-level gitlink itself is unchanged, and the local fresh-owner marker.
+    # Indexed/staged submodule changes or ordinary source edits remain fatal.
     bad=[]
     for raw in status.decode(errors='replace').splitlines():
         if not raw:
@@ -174,6 +183,10 @@ def validate_source_status(status):
         code=raw[:2]
         path=raw[3:]
         if code.strip()=='D' and (path=='tests' or path.startswith('tests/')):
+            continue
+        if code=='??' and path=='.ghost-fresh-owner.json':
+            continue
+        if code==' M' and path.startswith('externals/') and _head_gitlink(path):
             continue
         bad.append(raw)
     if bad:
