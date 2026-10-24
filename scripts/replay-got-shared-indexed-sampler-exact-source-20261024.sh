@@ -16,6 +16,8 @@ LOGROOT="${HOME}/projects/shadps4/logs"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 CAPTURE="${LOGROOT}/got-shared-indexed-sampler-${STAMP}"
 mkdir -p "${CAPTURE}/info" "${CAPTURE}/source" "${ROOT}/candidates"
+# Preserve progress and failure-stage evidence inside the uploaded archive.
+printf '%s\n' "TEST_LAUNCH_REVISION=${REV}" > "${CAPTURE}/info/test-preflight.log"
 BACK_H="${CAPTURE}/info/resource.h.before"
 BACK_R="${CAPTURE}/info/vk_rasterizer.cpp.before"
 H_EDITED=0
@@ -42,7 +44,17 @@ on_exit() {
 }
 trap on_exit EXIT
 
-echo "TEST_STAGE=VERIFY_REUSABLE_NATIVE_BUILD"
+echo "TEST_STAGE=VERIFY_REUSABLE_NATIVE_BUILD" | tee -a "${CAPTURE}/info/test-preflight.log"
+# Record what actually exists *before* any early failure can occur.
+{
+  for p in "${WORK}/CMakeLists.txt" "${BUILD}/CMakeCache.txt" "${HDR}" "${RASTER}"; do
+    if [[ -f "${p}" ]]; then
+      printf 'EXISTS %s\n' "${p}"
+    else
+      printf 'MISSING %s\n' "${p}"
+    fi
+  done
+} >> "${CAPTURE}/info/test-preflight.log"
 [[ -f "${WORK}/CMakeLists.txt" && -f "${BUILD}/CMakeCache.txt" &&
    -f "${HDR}" && -f "${RASTER}" ]] || {
   echo "FAIL: previously completed source/build missing, refusing fresh checkout" >&2
@@ -69,7 +81,7 @@ echo "RESOURCE_HEADER_BLOB=${ACTUAL_HDR_BLOB}"
 cp -p -- "${HDR}" "${BACK_H}"
 cp -p -- "${RASTER}" "${BACK_R}"
 
-echo "TEST_STAGE=PATCH_EXACT_TESTED_SAMPLER_SOURCE_ONLY"
+echo "TEST_STAGE=PATCH_EXACT_TESTED_SAMPLER_SOURCE_ONLY" | tee -a "${CAPTURE}/info/test-preflight.log"
 # The earlier runner incorrectly fetched a whole resource.h from a different
 # GitHub branch. The exact user-tested source has extra indexed-image fields.
 # Preserve every original byte except the one generic sampler condition.
@@ -96,7 +108,7 @@ PY
 FIXED_SAMPLER_BLOB="$(git hash-object "${HDR}")"
 echo "TEST_SAMPLER_HEADER_SHA=${FIXED_SAMPLER_BLOB}"
 
-echo "TEST_STAGE=ADD_BOUNDED_PACKED_SAMPLER_DIAGNOSTIC"
+echo "TEST_STAGE=ADD_BOUNDED_PACKED_SAMPLER_DIAGNOSTIC" | tee -a "${CAPTURE}/info/test-preflight.log"
 R_EDITED=1
 python3 - "${RASTER}" <<'PY'
 from pathlib import Path
@@ -132,7 +144,6 @@ if s.count(old) != 1:
     raise SystemExit("FAIL: original indexed sampler binder did not match the captured source")
 p.write_text(s.replace(old,new))
 PY
-R_EDITED=1
 git -C "${WORK}" diff --check
 git -C "${WORK}" diff -- \
   src/shader_recompiler/resource.h \
@@ -144,7 +155,7 @@ fi
 cp -p "${HDR}" "${CAPTURE}/source/resource.h"
 cp -p "${RASTER}" "${CAPTURE}/source/vk_rasterizer.cpp"
 
-echo "TEST_STAGE=INCREMENTAL_NATIVE_BUILD"
+echo "TEST_STAGE=INCREMENTAL_NATIVE_BUILD" | tee -a "${CAPTURE}/info/test-preflight.log"
 # DO NOT configure or initialize submodules again. The successful prior
 # CMake/Ninja build is reused, and only affected objects are rebuilt.
 if ! cmake --build "${BUILD}" --parallel 8 \
@@ -168,7 +179,7 @@ printf '%s\n' "${CANDIDATE}/shadps4" > "${CAPTURE}/info/candidate-path.txt"
 printf '%s\n' "${FIXED_SAMPLER_BLOB}" > "${CAPTURE}/info/test-sampler-source-blob.txt"
 echo "TEST_CANDIDATE=${CANDIDATE}/shadps4"
 
-echo "TEST_STAGE=RUN_GAME_MANUAL_INPUT"
+echo "TEST_STAGE=RUN_GAME_MANUAL_INPUT" | tee -a "${CAPTURE}/info/test-preflight.log"
 if [[ -z "${DISPLAY:-}" && -d /tmp/.X11-unix ]]; then
   XSOCKET="$(find /tmp/.X11-unix -maxdepth 1 -name 'X*' -printf '%f\n' | sort -V | head -1)"
   [[ -z "${XSOCKET}" ]] || export DISPLAY=":${XSOCKET#X}"
@@ -197,7 +208,7 @@ wait "${PID}" || EXIT=$?
 printf '%s\n' "${EXIT}" > "${CAPTURE}/info/game-exit-code.txt"
 echo "TEST_GAME_EXIT=${EXIT}"
 
-echo "TEST_STAGE=COLLECT_COMPLETE_LOGS"
+echo "TEST_STAGE=COLLECT_COMPLETE_LOGS" | tee -a "${CAPTURE}/info/test-preflight.log"
 if command -v journalctl >/dev/null 2>&1; then
   journalctl -k --since "10 minutes ago" --no-pager -o short-iso 2>/dev/null |
     grep -Eai 'amdgpu|GPU reset|ring.*timeout|drm.*(fault|hang)' |
@@ -213,7 +224,7 @@ gzip -1 -f "${CAPTURE}/game-console.log"
 gzip -1 -f "${CAPTURE}/build.log"
 ARCHIVE="${LOGROOT}/got-shared-indexed-sampler-${STAMP}.tar.gz"
 tar -C "${CAPTURE}" -czf "${ARCHIVE}" .
-echo "TEST_STAGE=DONE"
+echo "TEST_STAGE=DONE" | tee -a "${CAPTURE}/info/test-preflight.log"
 echo "UPLOAD_THIS=${ARCHIVE}"
 echo "Existing ES-DE binary and existing tested sources are unchanged after this command."
 echo "SSH remains open."
