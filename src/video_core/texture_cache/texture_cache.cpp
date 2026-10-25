@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <atomic>
 #include <limits>
 #include <xxhash.h>
 
@@ -35,8 +36,17 @@ TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler&
       slot_image_views{MAX_IMAGE_VIEWS}, slot_samplers{MAX_SAMPLERS},
       blit_helper{instance, scheduler},
       tile_manager{instance, scheduler, runtime, buffer_cache.GetStreamBuffer()},
-      readback_linear_images{EmulatorSettings.IsReadbackLinearImagesEnabled()} {
+      // Precise mode historically preserved GPU-produced linear image data
+      // for later CPU consumers. Native demand coherence currently covers
+      // buffers, but must not silently drop the corresponding image path.
+      readback_linear_images{EmulatorSettings.IsReadbackLinearImagesEnabled() ||
+                             EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise} {
 
+    LOG_INFO(Render_Vulkan,
+             "AutoLinearImageReadbackMode: config={} precise={} effective={}",
+             EmulatorSettings.IsReadbackLinearImagesEnabled(),
+             EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise,
+             readback_linear_images);
     u32 max_samplers = instance.GetMaxSamplerAllocationCount();
     trigger_gc_samplers = max_samplers * 3 / 4;
     pressure_gc_samplers = max_samplers * 7 / 8;
@@ -130,6 +140,14 @@ void TextureCache::DownloadImageMemory(ImageId image_id, DownloadMemoryFlags fla
         download.Invalidate();
         Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(image_addr), download.mapped,
                                                   copy_size);
+        // Count completed image-to-guest transfers, not only queued images.
+        static std::atomic<u32> download_reports{0};
+        if (download_reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
+            LOG_INFO(Render_Vulkan,
+                     "AutoLinearImageReadbackCopy: guest={:#x} bytes={} "
+                     "sync={} discard_buffer={}",
+                     image_addr, copy_size, is_sync, discard_buffer_cache);
+        }
         if (discard_buffer_cache) {
             buffer_cache.UnmarkRegionAsGpuModified(image_addr, copy_size, true);
         }
