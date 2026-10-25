@@ -156,8 +156,8 @@ void TextureCache::DownloadImageMemory(ImageId image_id, DownloadMemoryFlags fla
         if (download_reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
             LOG_INFO(Render_Vulkan,
                      "AutoLinearImageReadbackCopy: guest={:#x} bytes={} "
-                     "sync={} discard_buffer={}",
-                     image_addr, copy_size, is_sync, discard_buffer_cache);
+                     "sync={} discard_buffer={} backing_found={}",
+                     image_addr, copy_size, is_sync, discard_buffer_cache, backing_found);
         }
         if (discard_buffer_cache) {
             buffer_cache.UnmarkRegionAsGpuModified(image_addr, copy_size, true);
@@ -738,7 +738,9 @@ ImageView& TextureCache::FindTexture(ImageId image_id, const ImageDesc& desc) {
     // Conservatively test Precise readback for GPU-produced tiled images
     // the older linear-only queue deliberately excludes. The image must
     // pass the cache's format/sample/valid-data checks first.
-    if (readback_linear_images &&
+    // Only storage bindings produce GPU writes; sampled bindings must not
+    // trigger a download whenever a material is read.
+    if (desc.type == BindingType::Storage && readback_linear_images &&
         EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise &&
         image.info.props.is_tiled && image.info.size.width > 8u &&
         image.info.guest_address != 0 && image.CanBeDownloaded()) {
