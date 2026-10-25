@@ -42,7 +42,7 @@ finish() {
   fi
 }
 trap finish EXIT
-stage() { echo "LINEAR_IMAGE_STAGE=$1" | tee -a "${CAPTURE}/info/progress.log"; }
+stage() { echo "TILED_IMAGE_STAGE=$1" | tee -a "${CAPTURE}/info/progress.log"; }
 
 stage VERIFY_USER_TESTED_COMMIT_AND_SOURCES
 for p in "${WORK}/CMakeLists.txt" "${BUILD}/CMakeCache.txt" \
@@ -316,6 +316,8 @@ for kind in ('tiled_queued','tiled_cpu_copy',
 (root/'info'/'runtime-event-counts.json').write_text(json.dumps(dict(cnt),indent=2)+'\n')
 print('PRECISE_TILED_IMAGE_EVENTS='+json.dumps(dict(cnt)),flush=True)
 PY
+# Fail before starting the game if the evidence collector is malformed.
+python3 -m py_compile "${CAPTURE}/info/compact-log.py"
 
 stage GAME_MAXIMUM_120_SECONDS
 if [[ -z "${DISPLAY:-}" && -d /tmp/.X11-unix ]]; then
@@ -345,6 +347,10 @@ GAME_EXIT=0
 wait "${PID}" || GAME_EXIT=$?
 printf '%s\n' "${GAME_EXIT}" > "${CAPTURE}/info/game-exit-code.txt"
 echo "GAME_EXIT=${GAME_EXIT}"
+if [[ -s "${CAPTURE}/info/shader-failure-coverage.json" ]]; then
+  echo "SHARP_SRT_CAPTURE_COVERAGE:"
+  cat "${CAPTURE}/info/shader-failure-coverage.json"
+fi
 if command -v journalctl >/dev/null 2>&1; then
  journalctl -k --since '3 minutes ago' --no-pager -o short-iso 2>/dev/null |
   grep -Eai 'amdgpu|GPU reset|ring.*timeout|drm.*(fault|hang)' |
