@@ -17,6 +17,7 @@ DURATION=240
 PROTECTED="$ROOT/GodOfWarRagnarok/build/shadps4"
 PROTECTED_SHA=8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e
 OBSERVER_SHA=db2cb4bade906145689a09fa34eafc75cd0194e1
+OLLAMA_HELPER_SHA=966b002b38d225290daa3a87a3b34bed619e1dc6
 
 mkdir -p "$ESDE" "$LOGS" "$SCRIPTS"
 if (( $# <= 1 )) && [[ "${1-}" != "--worker" ]]; then
@@ -62,6 +63,8 @@ WORK="$ESDE/playtest-$STAMP"
 REPORT="$LOGS/$TAG-report"
 ARCHIVE="$LOGS/$TAG.tar.gz"
 OBSERVER="$WORK/observer-generic.py"
+OLLAMA_HELPER="$WORK/ollama-vram-session.py"
+OLLAMA_STATE="$LOGS/$TAG-ollama-state.json"
 BEFORE_PROTECTED=missing
 [[ ! -f "$PROTECTED" ]] || BEFORE_PROTECTED="$(sha256sum "$PROTECTED" | awk '{print $1}')"
 finish() {
@@ -75,6 +78,7 @@ finish() {
     fi
     printf '%s\n' "$rc" > "$LOGS/$TAG.exit"
     local entries=("$TAG.log" "$TAG.exit")
+    [[ ! -f "$OLLAMA_STATE" ]] || entries+=("$(basename "$OLLAMA_STATE")")
     [[ ! -d "$REPORT" ]] || entries+=("$(basename "$REPORT")")
     # The complete console stays on the server; upload bounded observer excerpts.
     if tar -czf "$ARCHIVE" -C "$LOGS"       --exclude="$(basename "$REPORT")/full-console.log" "${entries[@]}"; then
@@ -128,6 +132,25 @@ for component in bin64/drrun lib64/release/libdynamorio.so libshadps4_cpu_id.so;
     }
 done
 echo "AUTOMATIC_CPU_ID_RUNTIME_PACKAGE=PASS"
+echo "STAGE=PINNED_OLLAMA_VRAM_LIFECYCLE_HELPER"
+curl -4fLsS --retry 3 \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/6ea6af5f573fb1db999f3ce9941545b81952b66f/tools/development/shadps4_ollama_vram_session_20261025.py" \
+  -o "$OLLAMA_HELPER"
+[[ "$(git hash-object "$OLLAMA_HELPER")" == "$OLLAMA_HELPER_SHA" ]] || {
+    echo "OLLAMA_HELPER_SHA_MISMATCH_NO_GAME" >&2; exit 2;
+}
+python3 -B - "$OLLAMA_HELPER" <<'PYVERIFY'
+from pathlib import Path
+import ast
+import sys
+code=Path(sys.argv[1]).read_text()
+ast.parse(code)
+assert "http://127.0.0.1:7869" in code
+assert "active_candidate_processes(args.binary)" in code
+assert "request_json('/api/generate'" in code
+assert "OLLAMA_MODELS_RESTORED=" in code
+print("OLLAMA_CONDITIONAL_VRAM_UNLOAD_AND_RESTORE=READY",flush=True)
+PYVERIFY
 # ES-DE/Sunshine may remain running; never stop or alter them.
 # Refuse only a second PS4 emulator process. The observer repeats this guard.
 if pgrep -u "$(id -u)" -x shadps4 >/dev/null 2>&1; then
@@ -135,27 +158,12 @@ if pgrep -u "$(id -u)" -x shadps4 >/dev/null 2>&1; then
     exit 2
 fi
 
-# Retain RX 7900 XTX headroom without stopping Ollama or other services.
-GPU=""
-for vendor in /sys/class/drm/card[0-9]*/device/vendor; do
-    [[ -f "$vendor" ]] || continue
-    [[ "$(cat "$vendor")" == 0x1002 ]] || continue
-    candidate="$(dirname "$vendor")"
-    if [[ -r "$candidate/mem_info_vram_total" &&
-          -r "$candidate/mem_info_vram_used" ]]; then
-        GPU="$candidate"
-        break
-    fi
-done
-[[ -n "$GPU" ]] || { echo "GPU_VRAM_TELEMETRY_UNAVAILABLE" >&2; exit 2; }
-TOTAL="$(cat "$GPU/mem_info_vram_total")"
-USED="$(cat "$GPU/mem_info_vram_used")"
-[[ "$TOTAL" =~ ^[0-9]+$ && "$USED" =~ ^[0-9]+$ ]] ||
-    { echo "VRAM_TELEMETRY_NONNUMERIC" >&2; exit 2; }
-FREE=$((TOTAL-USED))
-echo "FREE_VRAM_GIB=$((FREE/1024/1024/1024))"
-(( FREE >= 8*1024*1024*1024 )) ||
-    { echo "LESS_THAN_8_GIB_GPU_VRAM_FREE_NO_GAME_NO_OLLAMA_CHANGE" >&2; exit 2; }
+# The standalone host-side helper checks AMD VRAM and, only below 8 GiB,
+# unloads previously loaded Ollama models through its local API. The Ollama
+# server/container remains running. The exact models and contexts are restored
+# only after the actual game process exits (not merely after observation).
+echo "GPU_VRAM_POLICY=MINIMUM_8_GIB_OLLAMA_API_UNLOAD_IF_NEEDED"
+echo "OLLAMA_RESTORE_POLICY=AFTER_MANUAL_GAME_EXIT"
 
 # Same global profile selection for every title. The protected profile
 # remains a read-only fallback copy if neither global path exists.
@@ -255,8 +263,10 @@ echo "DISPLAY=$DISPLAY_OK"
 echo "ENTER_GAMEPLAY_MANUALLY_AND_USE_HOME_TO_EXIT"
 export DISPLAY="$DISPLAY_OK"
 set +e
-python3 -B "$OBSERVER" --binary "$BIN" --sha256 "$EXPECTED" \
-    --game "$GAME" --cwd "$WORK" --report "$REPORT" --seconds "$DURATION"
+python3 -B "$OLLAMA_HELPER" --observer "$OBSERVER" \
+    --binary "$BIN" --sha256 "$EXPECTED" --game "$GAME" \
+    --cwd "$WORK" --report "$REPORT" --seconds "$DURATION" \
+    --state "$OLLAMA_STATE" --minimum-gib 8
 RESULT=$?
 set -e
 
