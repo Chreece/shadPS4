@@ -232,6 +232,13 @@ struct SamplerResource {
         }
         return sampler;
     }
+
+    // The Vulkan descriptor layout, SPIR-V binding offsets, and runtime
+    // sampler array all reserve one extra null entry for GPU-selected S#.
+    // A conventional sampler still owns exactly one descriptor.
+    constexpr u32 NumBindings(const auto&) const noexcept {
+        return is_guest_indexed ? indexed_guest_entries + 1u : 1u;
+    }
 };
 using SamplerResourceList = boost::container::static_vector<SamplerResource, NUM_SAMPLERS>;
 
