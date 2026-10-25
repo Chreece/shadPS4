@@ -484,6 +484,23 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
         }
         out.addends[i] = normalized[i].addend;
     }
+    // Try the stricter record-stride representation first. The common GCN
+    // pattern ((id * stride) >> 2) + literal_word looks like an ordinary
+    // contiguous selector, but is actually a GPU-selected material record.
+    // Returning early from the packed matcher would silently lose that T#.
+    std::array<StridedIndexedSharpWord, 8> strided{};
+    for (std::size_t i = 0; i < strided.size(); ++i) {
+        strided[i] = AnalyzeStridedIndexedSharpWord(out.words[i]->Arg(1));
+    }
+    if (AreContiguousStridedSharpWords(strided)) {
+        out.selector = static_cast<const IR::Inst*>(strided[0].gpu_record_id);
+        out.record_stride_bytes = strided[0].record_stride_bytes;
+        out.tsharp_offset_bytes = strided[0].offset_dwords * 4u;
+        out.descriptor_stride_words = out.record_stride_bytes / 4u;
+        out.gpu_texture_id_indexed = true;
+        out.contiguous = true;
+        return out;
+    }
     if (AreContiguousIndexedSharpWords(normalized)) {
         const auto* selector = static_cast<const IR::Inst*>(normalized[0].selector);
         const auto identity = IdentifyTsharpSelector(selector);
@@ -496,20 +513,6 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample) 
         out.contiguous = true;
         return out;
     }
-
-    std::array<StridedIndexedSharpWord, 8> strided{};
-    for (std::size_t i = 0; i < strided.size(); ++i) {
-        strided[i] = AnalyzeStridedIndexedSharpWord(out.words[i]->Arg(1));
-    }
-    if (!AreContiguousStridedSharpWords(strided)) {
-        return out;
-    }
-    out.selector = static_cast<const IR::Inst*>(strided[0].gpu_record_id);
-    out.record_stride_bytes = strided[0].record_stride_bytes;
-    out.tsharp_offset_bytes = strided[0].offset_dwords * 4u;
-    out.descriptor_stride_words = out.record_stride_bytes / 4u;
-    out.gpu_texture_id_indexed = true;
-    out.contiguous = true;
     return out;
 }
 
