@@ -14,6 +14,9 @@ struct Profile {
     u32 supported_spirv{0x00010000};
     u32 subgroup_size{};
     u32 sparse_page_shift{};
+    // Device-derived descriptor array capacities, excluding their null slots.
+    u32 max_guest_indexed_image_entries{};
+    u32 max_guest_indexed_sampler_entries{};
     bool support_int8{};
     bool support_int16{};
     bool support_int64{};
@@ -34,7 +37,9 @@ struct Profile {
     bool support_fp32_signed_zero_inf_nan_preserve{};
     bool support_fp64_signed_zero_inf_nan_preserve{};
     bool supports_image_load_store_lod{};
+    bool supports_shader_image_gather_extended{};
     bool supports_sampled_image_nonuniform_indexing{};
+    bool supports_sampler_array_nonuniform_indexing{};
     u32 max_push_descriptors{};
     bool supports_native_cube_calc{};
     bool supports_trinary_minmax{};

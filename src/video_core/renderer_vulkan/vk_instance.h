@@ -211,6 +211,12 @@ public:
         return image_load_store_lod;
     }
 
+    // Runtime image offsets require the core shaderImageGatherExtended feature.
+    // Read the actual enabled physical-device feature, never assume support.
+    bool IsShaderImageGatherExtendedSupported() const {
+        return bool(features.shaderImageGatherExtended);
+    }
+
     /// Returns true only when all Vulkan features required for a GPU-selected
     /// sampled-image descriptor array are available.
     bool IsSampledImageNonUniformIndexingSupported() const {
