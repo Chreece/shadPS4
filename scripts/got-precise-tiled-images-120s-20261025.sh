@@ -271,10 +271,30 @@ limits={'tiled_queued':24,'tiled_cpu_copy':32,
         'sharp_unflattened':8,'buffer_clamp':5,'stencil':5,
         'driver_lost':10,'compile':16,'fatal':8}
 ansi=re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
-with (root/'shader-events.txt').open('w') as out:
+# Preserve the complete bounded SHARP/SRT stream separately, not only eight
+# early samples. These failures can occur late in gameplay after world loading.
+sharp_re=re.compile(r'Sharp source was not flatenned|SharpMissing',re.I)
+srt_re=re.compile(r'SRT dependency resolution stalled|Failed to compute offset for SRT walker',re.I)
+failure_totals=collections.Counter()
+failure_saved=collections.Counter()
+failure_bytes=collections.Counter()
+failure_limits={'sharp':350000,'srt':120000}
+with (root/'shader-events.txt').open('w') as out, \
+     (root/'sharp-failures-all.txt').open('w') as sharp_out, \
+     (root/'srt-failures-all.txt').open('w') as srt_out:
     for raw in sys.stdin:
         line=ansi.sub('',raw.rstrip('\n'))
         last.append(line[:350])
+        for kind,matcher,stream in (
+            ('sharp',sharp_re,sharp_out),('srt',srt_re,srt_out)):
+            if matcher.search(line):
+                failure_totals[kind]+=1
+                entry=line[:1800]+'\n'
+                cost=len(entry.encode('utf-8',errors='replace'))
+                if failure_bytes[kind]+cost <= failure_limits[kind]:
+                    stream.write(entry)
+                    failure_saved[kind]+=1
+                    failure_bytes[kind]+=cost
         for name,p in rules:
             if p.search(line):
                 cnt[name]+=1
@@ -283,6 +303,12 @@ with (root/'shader-events.txt').open('w') as out:
                 break
 (root/'info'/'runtime-event-counts.json').write_text(json.dumps(dict(cnt),indent=2)+'\n')
 (root/'console-tail.txt').write_text('\n'.join(last)+'\n')
+(root/'info'/'shader-failure-coverage.json').write_text(json.dumps({
+    'events_seen':dict(failure_totals),
+    'events_retained':dict(failure_saved),
+    'truncated':{k:failure_saved[k]<failure_totals[k] for k in failure_limits},
+    'byte_limits':failure_limits,
+},indent=2)+'\n')
 for kind in ('tiled_queued','tiled_cpu_copy',
              'image_readback_mode','image_queued','image_cpu_copy',
              'strided_recognized','srt_stall','driver_lost'):
