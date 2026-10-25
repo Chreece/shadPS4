@@ -195,6 +195,7 @@ def run(args: argparse.Namespace) -> int:
             for model in state['original_loaded_models']:
                 changed.append(model)
                 unload(model)
+            state['unloaded'] = True
             save('unloaded', 'Ollama models requested to unload')
             print('OLLAMA_SERVER_STOPPED=NO', flush=True)
             deadline = time.monotonic() + 70
@@ -248,10 +249,20 @@ def run(args: argparse.Namespace) -> int:
             save('restoring', 'Game fully exited, restoring original Ollama models')
             errors = []
             for model in changed:
-                try:
-                    restore(model)
-                except Exception as error:
-                    errors.append(f'{model["name"]}: {type(error).__name__}: {error}')
+                last_error = None
+                for attempt in range(1, 4):
+                    try:
+                        restore(model)
+                        last_error = None
+                        break
+                    except Exception as error:
+                        last_error = error
+                        print(f'OLLAMA_RESTORE_ATTEMPT_FAILED={model["name"]} '
+                              f'ATTEMPT={attempt}: {type(error).__name__}: {error}', flush=True)
+                        if attempt < 3:
+                            time.sleep(3)
+                if last_error is not None:
+                    errors.append(f'{model["name"]}: {type(last_error).__name__}: {last_error}')
             try:
                 loaded_now = {x.get('name') or x.get('model') for x in models_loaded()}
                 errors.extend(f'Missing restored model {m["name"]}' for m in changed
