@@ -57,7 +57,7 @@ once('''            std::unique_lock lk{download_images_mutex};
                 LOG_INFO(Render_Vulkan,
                          "AutoLinearImageReadbackQueued: type=storage guest={:#x} bytes={} "
                          "tiled={}", image.info.guest_address, image.info.guest_size,
-                         image.info.props.is_tiled);
+                         static_cast<bool>(image.info.props.is_tiled));
             }
         }
     }
@@ -74,7 +74,7 @@ once('''        std::unique_lock lk{download_images_mutex};
             LOG_INFO(Render_Vulkan,
                      "AutoLinearImageReadbackQueued: type=target guest={:#x} bytes={} "
                      "tiled={}", image.info.guest_address, image.info.guest_size,
-                     image.info.props.is_tiled);
+                     static_cast<bool>(image.info.props.is_tiled));
         }
     }
     image.usage.render_target = 1u;''','render-target image readback queue')
