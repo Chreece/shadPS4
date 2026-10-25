@@ -476,11 +476,25 @@ def main():
         previous = sample_threads(process.pid)
         tick_hz = os.sysconf("SC_CLK_TCK")
         consecutive = 0
+        last_mappings = 0.0
         for elapsed in range(15, args.seconds + 1, 15):
             target = started + elapsed
             while time.monotonic() < target:
                 if process.poll() is not None:
                     break
+                # Read-only host mappings: distinguish guest code, emulator,
+                # shared libraries and DynamoRIO's translated code cache if
+                # a fatal access violation terminates the process early.
+                # Keep only one bounded, newest snapshot, not a large trace.
+                now = time.monotonic()
+                if now - last_mappings >= 1.0:
+                    try:
+                        maps = Path(f"/proc/{process.pid}/maps").read_text()
+                        if len(maps) <= 1024 * 1024:
+                            (out / "last-process-mappings.txt").write_text(maps)
+                            last_mappings = now
+                    except (OSError, UnicodeError):
+                        pass
                 time.sleep(min(0.5, max(0.0, target - time.monotonic())))
             if process.poll() is not None:
                 report["exit_code"] = process.returncode
@@ -564,6 +578,28 @@ def main():
         report["thread_samples"] = len(samples)
         (out / "thread-samples.json").write_text(json.dumps(samples, indent=2) + "\n")
         report["console"] = summarize_log(out / "full-console.log", out)
+        # The address alone is not a native stack. Identify which host
+        # executable/library/cache range owned the faulting RIP, if possible.
+        try:
+            excerpt = (out / "console-excerpt.log").read_text(errors="replace")
+            match = re.search(
+                r"Unhandled access violation at code address (0x[0-9a-fA-F]+)", excerpt)
+            mappings = out / "last-process-mappings.txt"
+            if match and mappings.is_file():
+                rip = int(match.group(1), 16)
+                mapped = None
+                for line in mappings.read_text().splitlines():
+                    region = line.split(None, 1)[0]
+                    if "-" in region:
+                        begin, end = (int(n, 16) for n in region.split("-", 1))
+                        if begin <= rip < end:
+                            mapped = line
+                            break
+                report["native_fault_mapping"] = {"rip": match.group(1), "mapping": mapped}
+                (out / "native-fault-mapping.json").write_text(
+                    json.dumps(report["native_fault_mapping"], indent=2) + "\n")
+        except (OSError, ValueError):
+            pass
         c = report["console"].get("counts", {})
         report["audio_pipeline"] = {
             "initialization_reached": bool(c.get("guest_audio_initialized")),
