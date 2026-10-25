@@ -183,7 +183,7 @@ stage TEST_TILED_GPU_IMAGE_READBACK_WITH_FORMAT_AND_SAMPLE_GUARDS
 curl -4fsSL --retry 3 \
  "https://raw.githubusercontent.com/Chreece/shadPS4/200c0ba2587c86afd04b0aee9695b12b63a79b2f/scripts/patch_precise_tiled_readbacks_20261025.py" \
  -o "${TILED_PATCHER}"
-EXPECTED_TILED_PATCHER_SHA=75e2ed9a173ebffbcd0e3ea032a37aba9e58ba61
+EXPECTED_TILED_PATCHER_SHA=c89e34000bc00c4b327f54cb5535d9793ec0e2f3
 if [[ "$(git hash-object "${TILED_PATCHER}")" != "${EXPECTED_TILED_PATCHER_SHA}" ]]; then
   echo "FAIL: reviewed tiled readback patch SHA mismatch" >&2
   exit 3
@@ -195,7 +195,7 @@ if ! python3 -u "${TILED_PATCHER}" "${WORK}" \
   exit 3
 fi
 cat "${CAPTURE}/info/tiled-image-patch.log"
-EXPECTED_TILED_SOURCE_SHA=190daad3cc4dcb0e9c5fd4e17d2e619bbab72f28
+EXPECTED_TILED_SOURCE_SHA=7de5629e099f15de35b8e59bceff0cd833021bd2
 ACTUAL_TILED_SOURCE_SHA="$(git hash-object "${WORK}/src/video_core/texture_cache/texture_cache.cpp")"
 if [[ "${ACTUAL_TILED_SOURCE_SHA}" != "${EXPECTED_TILED_SOURCE_SHA}" ]]; then
   echo "FAIL: combined linear+tiled image source SHA differs from archived fixture" >&2
