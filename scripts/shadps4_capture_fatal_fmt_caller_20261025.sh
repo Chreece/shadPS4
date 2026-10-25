@@ -28,7 +28,11 @@ if (( $# <= 1 )) && [[ "${1-}" != "--worker" ]]; then
     command -v nohup >/dev/null && command -v setsid >/dev/null || {
         echo "REQUIRES_NOHUP_AND_SETSID" >&2; exit 2;
     }
-    TAG="shadps4-fmt-backtrace-$(date +%Y%m%d-%H%M%S)-$"
+    TAG="shadps4-fmt-backtrace-$(date +%Y%m%d-%H%M%S)-$BASHPID"
+    # Validate before detaching so a malformed run ID never silently dies.
+    [[ "$TAG" =~ ^shadps4-fmt-backtrace-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || {
+        echo "INVALID_LAUNCH_RUN_ID=$TAG" >&2; exit 2;
+    }
     OUT="$LOGS/$TAG.log"
     (set -C; : > "$OUT") || { echo "REFUSING_EXISTING_LOG=$OUT"; exit 2; }
     nohup setsid -w bash "$0" --worker "$TAG" "$GAME" </dev/null >"$OUT" 2>&1 &
@@ -36,7 +40,7 @@ if (( $# <= 1 )) && [[ "${1-}" != "--worker" ]]; then
     disown "$PID" 2>/dev/null || true
     echo "GENERIC_FATAL_CALL_STACK_TEST=$TAG"
     echo "HARD_PROCESS_RUNTIME_LIMIT=120_SECONDS"
-    echo "DEBUGGER=GDB_STATIC_ELF_SYMBOLS_WITH_AUTO_CPU_ID"
+    echo "DEBUGGER=GDB_LIVE_FATAL_CALL_STACK_WITH_AUTO_CPU_ID"
     echo "GAME_SELECTOR=$GAME"
     echo "CPU_ID_MODE=auto (emulator default)"
     echo "DISPLAY_FLAGS=fullscreen,show-fps"
@@ -104,6 +108,9 @@ ACTUAL="$(sha256sum "$BIN" | awk '{print $1}')"
 [[ "$ACTUAL" == "$EXPECTED" ]] || { echo "CANDIDATE_SHA_MISMATCH=$ACTUAL" >&2; exit 2; }
 mkdir -p "$WORK"
 echo "STAGE=PINNED_FATAL_CALL_STACK_OBSERVER"
+command -v gdb >/dev/null || {
+    echo "GDB_MISSING_NO_GAME_LAUNCHED" >&2; exit 2;
+}
 curl -4fLsS --retry 3 \
   "https://raw.githubusercontent.com/Chreece/shadPS4/dfd91b2659f573f390fc27221afcd645115fde90/tools/development/shadps4_gdb_fatal_observer_20261025.py" \
   -o "$OBSERVER"
