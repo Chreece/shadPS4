@@ -54,14 +54,17 @@ Id EmitGetUserData(EmitContext& ctx, IR::ScalarReg reg) {
 
 Id EmitReadConst(EmitContext& ctx, IR::Inst* inst, Id addr, Id offset) {
     const u32 flatbuf_off_dw = inst->Flags<u32>();
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled()) {
-        return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
-    }
+    // A zero flattened offset means the host SRT walker did NOT resolve the
+    // original guest memory read. Slot zero is user data, not a substitute
+    // descriptor. Preserve the shader's original GPU-selected guest address
+    // through the bounded virtual page-table reader even if optional global
+    // DMA acceleration is disabled.
     if (flatbuf_off_dw == 0) {
+        ASSERT_MSG(Sirit::ValidId(ctx.read_const_dynamic),
+                   "Unflattened ReadConst must have a GPU virtual-address reader");
         return ctx.OpFunctionCall(ctx.U32[1], ctx.read_const_dynamic, addr, offset);
-    } else {
-        return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
     }
+    return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
 }
 
 Id EmitReadConstBuffer(EmitContext& ctx, u32 handle, Id index) {
