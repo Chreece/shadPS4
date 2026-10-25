@@ -458,11 +458,11 @@ def main():
         report["audio_timing_probe"] = env.get("SHADPS4_AUDIO_TIMING_PROBE", "")
         report["uffd_perf_probe"] = env.get("SHADPS4_UFFD_PERF_PROBE", "")
         report["uffd_callback_batch"] = env.get("SHADPS4_UFFD_CALLBACK_BATCH", "")
-        # Standard emulator invocation. The single positional value selects a
-        # game; CPU identity defaults to auto, while GPU memory tracking comes
-        # from the emulator's normal global configuration and host capabilities.
-        # Never force per-game CPU, GPU, memory, audio, or display switches.
-        command = [str(exe), args.game]
+        # All titles use the same emulator defaults. The positional argument
+        # selects the game, and the two UI flags are our standard presentation
+        # preferences. CPU-ID remains auto; GPU/memory/audio come from the
+        # ordinary global configuration and hardware capabilities.
+        command = [str(exe), args.game, "--fullscreen", "true", "--show-fps"]
         (out / "launch-command.json").write_text(json.dumps(command, indent=2) + "\n")
         console_file = (out / "full-console.log").open("wb", buffering=0)
         process = subprocess.Popen(
