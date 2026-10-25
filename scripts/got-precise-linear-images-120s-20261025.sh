@@ -148,9 +148,9 @@ echo "MATCHER_FIX=VERIFIED"
 stage RECREATE_PRECISE_LINEAR_IMAGE_DOWNLOAD_PATH
 # The image test uses an immutable 4.3KiB patcher, never a new Git checkout.
 curl -4fsSL --retry 3 \
-  "https://raw.githubusercontent.com/Chreece/shadPS4/cb1cc237fc3c1b3158ab4430440b410e28b26432/scripts/patch_precise_image_readback_20261025.py" \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/48cd09d53d9ed83af1e7b9a05dc045de2ca7e666/scripts/patch_precise_image_readback_20261025.py" \
   -o "${IMAGE_PATCHER}"
-IMAGE_PATCHER_SHA=9723593d2ffd2bc5de851a1bf0a5802a48e2635d
+IMAGE_PATCHER_SHA=03a1cdee354715dbc40cb5a95b058ee2b2d5f634
 [[ "$(git hash-object "${IMAGE_PATCHER}")" == "${IMAGE_PATCHER_SHA}" ]] || {
   echo "FAIL: downloaded image-readback patch differs from reviewed source" >&2;exit 3
 }
@@ -161,13 +161,21 @@ if ! python3 -u "${IMAGE_PATCHER}" "${WORK}" \
   exit 3
 fi
 cat "${CAPTURE}/info/image-patch.log"
-EXPECTED_TEXTURE_PATCH_SHA=95687b608f31e805fadc5b1482d0db3c4dc178cf
+EXPECTED_TEXTURE_PATCH_SHA=6faefd632534c61dc0fe6ed1327c2b30ce6e477e
 TEXTURE_PATCH_SHA="$(git hash-object "${WORK}/src/video_core/texture_cache/texture_cache.cpp")"
 if [[ "${TEXTURE_PATCH_SHA}" != "${EXPECTED_TEXTURE_PATCH_SHA}" ]]; then
   echo "FAIL: exact image readback patch hash mismatch: ${TEXTURE_PATCH_SHA}" >&2
   exit 3
 fi
 echo "PRECISE_LINEAR_IMAGE_PATCH_SHA=${TEXTURE_PATCH_SHA}"
+# Both image-tile diagnostic arguments are native C++ bit-fields. fmt/spdlog
+# accepts a materialized bool, not a bit-field forwarded by reference.
+# Abort here if the compile-safe conversion was omitted.
+if [[ "$(grep -Fc 'static_cast<bool>(image.info.props.is_tiled)' "${WORK}/src/video_core/texture_cache/texture_cache.cpp")" != 2 ]]; then
+  echo "FAIL: image tile logs must materialize both bit-field values" >&2
+  exit 3
+fi
+echo "PRECISE_IMAGE_LOG_BITFIELD_COMPILE_GUARD=PASS"
 echo "PERSISTENT_GPU_SETTINGS_CHANGED=NO"
 git -C "${WORK}" diff --check -- "${FILES[@]}"
 git -C "${WORK}" diff -- "${FILES[@]}" \
