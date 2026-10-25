@@ -76,8 +76,8 @@ one('''    if (total_size_bytes == 0) {
         }
         LOG_INFO(Render,
                  "AutoReadbackGpuCopy: address={:#x} requested={} "
-                 "copied={} copies={} cpu_write={} async={}",
-                 device_addr, size, actual_bytes, copies.size(), is_write, async);
+                 "copied={} copies={} async={}",
+                 device_addr, size, actual_bytes, copies.size(), async);
     }
     const auto download =
         staging_pool.Request(total_size_bytes, VideoCore::MemoryType::HostCached, 16, async);''',
