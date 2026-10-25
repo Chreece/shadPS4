@@ -71,6 +71,7 @@ protected:
     vk::UniquePipelineLayout pipeline_layout;
     vk::UniqueDescriptorSetLayout desc_layout;
     std::array<const Shader::Info*, Shader::MaxStageTypes> stages{};
+    u32 sampled_image_descriptors{};
     bool uses_push_descriptors{};
     bool is_compute;
 };

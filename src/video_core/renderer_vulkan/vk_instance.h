@@ -67,12 +67,20 @@ public:
         return queue_family_index;
     }
 
+    u32 GetSparseQueueFamilyIndex() const {
+        return sparse_queue_family_index;
+    }
+
     vk::Queue GetGraphicsQueue() const {
         return graphics_queue;
     }
 
     vk::Queue GetPresentQueue() const {
         return present_queue;
+    }
+
+    vk::Queue GetSparseQueue() const {
+        return sparse_queue;
     }
 
     TracyVkCtx GetProfilerContext() const {
@@ -201,6 +209,18 @@ public:
     /// Returns true when VK_AMD_shader_image_load_store_lod is supported.
     bool IsImageLoadStoreLodSupported() const {
         return image_load_store_lod;
+    }
+
+    /// Returns true only when all Vulkan features required for a GPU-selected
+    /// sampled-image descriptor array are available.
+    bool IsSampledImageNonUniformIndexingSupported() const {
+        return bool(vk12_features.descriptorIndexing) &&
+               bool(vk12_features.shaderSampledImageArrayNonUniformIndexing) &&
+               bool(features.shaderSampledImageArrayDynamicIndexing);
+    }
+
+    bool IsSamplerArrayNonUniformIndexingSupported() const {
+        return IsSampledImageNonUniformIndexingSupported();
     }
 
     /// Returns true when VK_AMD_gcn_shader is supported.
@@ -511,11 +531,13 @@ private:
     VmaAllocator allocator{};
     vk::Queue present_queue;
     vk::Queue graphics_queue;
+    vk::Queue sparse_queue;
     std::vector<vk::PhysicalDevice> physical_devices;
     std::vector<std::string> available_extensions;
     std::unordered_map<vk::Format, vk::FormatProperties3> format_properties;
     TracyVkCtx profiler_context{};
     u32 queue_family_index{0};
+    u32 sparse_queue_family_index{0};
     bool custom_border_color{};
     bool fragment_shader_barycentric{};
     bool amd_shader_explicit_vertex_parameter{};

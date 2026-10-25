@@ -12,8 +12,8 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 11u;
-static constexpr u32 ShaderMetaVersion = 6u;
+static constexpr u32 ShaderBinaryVersion = 0x43520003u;
+static constexpr u32 ShaderMetaVersion = 0x43520003u;
 static constexpr u32 PipelineKeyVersion = 3u;
 } // namespace Serialization
 
@@ -262,42 +262,55 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
         return false;
     }
 
-    // Permutation hash depends on shader variation index. To prevent collisions, we need insert it
-    // at the exact position rather than append
-
     vk::ShaderModule module{};
-
+    Shader::Info* selected_info{};
     auto [it_pgm, new_program] = program_cache.try_emplace(program->info.pgm_hash);
     if (new_program) {
         module = CompileSPV(spv, instance.GetDevice());
         it_pgm.value() = std::move(program);
+        selected_info = &it_pgm.value()->info;
+        it_pgm.value()->InsertPermut(module, std::move(spec), perm_idx);
     } else {
-        const auto& it = std::ranges::find(it_pgm.value()->modules, spec, &Program::Module::spec);
-        if (it != it_pgm.value()->modules.end()) {
-            // A matching permutation is valid only at its original index. A different index means
-            // the store holds entries from more than one cache generation, so this pipeline is
-            // left to compile at runtime.
-            const auto idx = std::distance(it_pgm.value()->modules.begin(), it);
+        auto& resident_program = *it_pgm.value();
+        const auto it = std::ranges::find(resident_program.modules, spec,
+                                          &Program::Module::spec);
+        if (it != resident_program.modules.end()) {
+            const auto idx = std::distance(resident_program.modules.begin(), it);
             if (perm_idx != idx) {
                 LOG_WARNING(Render_Vulkan,
-                            "Cached permutation {} of {}_{:x} conflicts with index {}, skipping "
-                            "preload",
+                            "Cached shader permutation {} of {}_{:x} conflicts with "
+                            "index {}, compiling at runtime",
                             perm_idx, program->info.hw_stage, program->info.pgm_hash, idx);
                 return false;
             }
             module = it->module;
+            selected_info = &it->GetInfo(resident_program.info);
         } else {
+            // Do not overwrite another compiled permutation occupying this
+            // index. It can have a different resource layout and SRT walker.
+            if (perm_idx < resident_program.modules.size() &&
+                resident_program.modules[perm_idx].spec.Valid()) {
+                LOG_WARNING(Render_Vulkan,
+                            "Cached shader permutation {} already occupied by "
+                            "an incompatible resource layout; compiling at runtime",
+                            perm_idx);
+                return false;
+            }
             module = CompileSPV(spv, instance.GetDevice());
+            auto own_info = std::make_unique<Shader::Info>(std::move(program->info));
+            spec.info = own_info.get();
+            selected_info = own_info.get();
+            resident_program.InsertPermut(module, std::move(spec), perm_idx,
+                                          std::move(own_info));
         }
     }
-    it_pgm.value()->InsertPermut(module, std::move(spec), perm_idx);
 
-    infos[stage] = &it_pgm.value()->info;
+    ASSERT(selected_info != nullptr);
+    infos[stage] = selected_info;
     modules[stage] = module;
     if (auto& fetch = it_pgm.value()->modules[perm_idx].spec.fetch_shader_data; !fetch.Empty()) {
         fetch_shader = &fetch;
     }
-
     return true;
 }
 

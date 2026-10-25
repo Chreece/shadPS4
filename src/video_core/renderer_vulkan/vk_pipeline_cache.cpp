@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <ranges>
 
 #include "common/hash.h"
@@ -35,6 +36,44 @@ constexpr static std::array DescriptorHeapSizes = {
     vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, 1024},
     vk::DescriptorPoolSize{vk::DescriptorType::eSampler, 1024},
 };
+
+static u32 GuestIndexedImageLimit(const Instance& instance) {
+    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+    const u32 hard = std::min({Shader::MaxGuestIndexedImageEntries + 1u,
+                               limits.maxDescriptorSetSampledImages,
+                               limits.maxPerStageDescriptorSampledImages,
+                               limits.maxPerStageResources});
+    constexpr u32 reserve = Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
+    return hard > reserve + 1u
+        ? std::min(Shader::MaxGuestIndexedImageEntries, hard - reserve - 1u)
+        : 0u;
+}
+
+static u32 GuestIndexedSamplerLimit(const Instance& instance) {
+    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+    const u32 hard = std::min({Shader::MaxGuestIndexedImageEntries + 1u,
+                               limits.maxDescriptorSetSamplers,
+                               limits.maxPerStageDescriptorSamplers,
+                               limits.maxPerStageResources});
+    constexpr u32 reserve = Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
+    return hard > reserve + 1u
+        ? std::min(Shader::MaxGuestIndexedImageEntries, hard - reserve - 1u)
+        : 0u;
+}
+
+static const auto& RuntimeDescriptorHeapSizes(const Instance& instance) {
+    static const auto sizes = [&instance] {
+        auto result = DescriptorHeapSizes;
+        result[2].descriptorCount =
+            std::max(result[2].descriptorCount,
+                     GuestIndexedImageLimit(instance) + Shader::NUM_IMAGES + 1024u);
+        result[4].descriptorCount =
+            std::max(result[4].descriptorCount,
+                     GuestIndexedSamplerLimit(instance) + Shader::NUM_SAMPLERS + 1024u);
+        return result;
+    }();
+    return sizes;
+}
 
 static u32 MapOutputs(std::span<Shader::OutputMap, 3> outputs, const AmdGpu::VsOutputControl& ctl) {
     u32 num_outputs = 0;
@@ -272,7 +311,7 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(HwStage stage, SwStag
 PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
                              AmdGpu::Liverpool* liverpool_, u32 sparse_page_shift)
     : instance{instance_}, scheduler{scheduler_}, liverpool{liverpool_},
-      desc_heap{instance, scheduler.GetWorkSemaphore(), DescriptorHeapSizes} {
+      desc_heap{instance, scheduler.GetWorkSemaphore(), RuntimeDescriptorHeapSizes(instance)} {
     const auto& vk12_props = instance.GetVk12Properties();
     profile = Shader::Profile{
         .max_viewport_width = instance.GetMaxViewportWidth(),
@@ -281,6 +320,8 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supported_spirv = SpirvVersion1_6,
         .subgroup_size = instance.SubgroupSize(),
         .sparse_page_shift = sparse_page_shift,
+        .max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),
+        .max_guest_indexed_sampler_entries = GuestIndexedSamplerLimit(instance),
         .support_int8 = instance.IsShaderInt8Supported(),
         .support_int16 = instance.IsShaderInt16Supported(),
         .support_int64 = instance.IsShaderInt64Supported(),
@@ -306,6 +347,13 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .support_fp64_signed_zero_inf_nan_preserve =
             bool(vk12_props.shaderSignedZeroInfNanPreserveFloat64),
         .supports_image_load_store_lod = instance_.IsImageLoadStoreLodSupported(),
+        .supports_shader_image_gather_extended =
+            instance_.IsShaderImageGatherExtendedSupported(),
+        .supports_sampled_image_nonuniform_indexing =
+            instance_.IsSampledImageNonUniformIndexingSupported(),
+        .supports_sampler_array_nonuniform_indexing =
+            instance_.IsSamplerArrayNonUniformIndexingSupported(),
+        .max_push_descriptors = instance_.MaxPushDescriptors(),
         .supports_native_cube_calc = instance_.IsAmdGcnShaderSupported(),
         .supports_trinary_minmax = instance_.IsAmdShaderTrinaryMinMaxSupported(),
         .supports_buffer_fp32_atomic_min_max =
@@ -677,34 +725,59 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
     }
 
     auto& program = it_pgm.value();
-    auto& info = program->info;
-    info.pgm_base = params.Base(); // Needs to be actualized for inline cbuffer address fixup
-    info.user_data = params.user_data;
-    info.RefreshFlatBuf();
-    auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
+    const auto first_binding = binding;
 
-    size_t perm_idx = program->modules.size();
-    u64 perm_hash = HashCombine(params.hash, perm_idx);
+    // Check every saved shader variation using the Info that produced its
+    // exact SPIR-V module. An incompatible permutation can contain different
+    // buffers, images, image arrays and SRT walker code. The old GoW path
+    // checked only permutation zero's Info and returned it even after
+    // compiling a new shader against a temporary, different Info.
+    for (size_t perm_idx = 0; perm_idx < program->modules.size(); ++perm_idx) {
+        auto& saved = program->modules[perm_idx];
+        if (!saved.spec.Valid() || !saved.module) {
+            continue; // A serialized cache can contain empty index slots.
+        }
+        auto& info = saved.GetInfo(program->info);
+        info.pgm_base = params.Base();
+        info.user_data = params.user_data;
+        info.RefreshFlatBuf();
+        auto current = Shader::StageSpecialization(info, runtime_info, profile, first_binding);
+        if (!(saved.spec == current)) {
+            continue;
+        }
 
-    vk::ShaderModule module{};
-
-    const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
-    if (it == program->modules.end()) {
-        auto new_info = Shader::Info(hw_stage, sw_stage, params);
-        module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
-
-        RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
-        program->AddPermut(module, std::move(spec));
-    } else {
-        info.AddBindings(binding);
-        module = it->module;
-        perm_idx = std::distance(program->modules.begin(), it);
-        perm_hash = HashCombine(params.hash, perm_idx);
+        // The Vulkan binding sequence must match the one that was emitted
+        // for this exact module. Mip-indexed images can consume >1 slot,
+        // unlike Info::AddBindings' ordinary images.size() accounting.
+        binding.buffer += info.buffers.size();
+        binding.unified += info.buffers.size();
+        for (const auto& image : info.images) {
+            binding.unified += image.NumBindings(info);
+        }
+        for (const auto& sampler : info.samplers) {
+            binding.unified += sampler.NumBindings(info);
+        }
+        if (auto& fetch = saved.spec.fetch_shader_data; !fetch.Empty()) {
+            fetch_shader = &fetch;
+        }
+        return std::make_tuple(&info, saved.module, HashCombine(params.hash, perm_idx));
     }
+
+    // Compile a new variation using metadata that stays alive for its
+    // module's lifetime. The StageSpecialization is constructed *after*
+    // compilation against that same Info, never against the first program.
+    auto new_info = std::make_unique<Shader::Info>(hw_stage, sw_stage, params);
+    const size_t perm_idx = program->modules.size();
+    const u64 perm_hash = HashCombine(params.hash, perm_idx);
+    const auto module = CompileModule(*new_info, runtime_info, params.code, perm_idx, binding);
+    auto spec = Shader::StageSpecialization(*new_info, runtime_info, profile, first_binding);
+    RegisterShaderMeta(*new_info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
+    Shader::Info* selected_info = new_info.get();
+    program->AddPermut(module, std::move(spec), std::move(new_info));
     if (auto& fetch = program->modules[perm_idx].spec.fetch_shader_data; !fetch.Empty()) {
         fetch_shader = &fetch;
     }
-    return std::make_tuple(&program->info, module, perm_hash);
+    return std::make_tuple(selected_info, module, perm_hash);
 }
 
 std::optional<vk::ShaderModule> PipelineCache::ReplaceShader(vk::ShaderModule module,

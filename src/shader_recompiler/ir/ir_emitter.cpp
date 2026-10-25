@@ -2116,6 +2116,13 @@ Value IREmitter::ImageSampleImplicitLod(const Value& handle, const Value& coords
     return Inst(Opcode::ImageSampleImplicitLod, Flags{info}, handle, coords, bias, offset);
 }
 
+Value IREmitter::ImageSampleImplicitLodIndexed(
+    const Value& handle, const Value& coords, const F32& bias,
+    const Value& offset, const U32& gpu_texture_id, TextureInstInfo info) {
+    return Inst(Opcode::ImageSampleImplicitLodIndexed, Flags{info}, handle, coords,
+                bias, offset, gpu_texture_id);
+}
+
 Value IREmitter::ImageSampleExplicitLod(const Value& handle, const Value& coords, const F32& lod,
                                         const Value& offset, TextureInstInfo info) {
     return Inst(Opcode::ImageSampleExplicitLod, Flags{info}, handle, coords, lod, offset);
@@ -2158,6 +2165,14 @@ Value IREmitter::ImageGradient(const Value& handle, const Value& coords,
                                const Value& offset, const F32& lod_clamp, TextureInstInfo info) {
     return Inst(Opcode::ImageGradient, Flags{info}, handle, coords, derivatives_dx, derivatives_dy,
                 offset, lod_clamp);
+}
+
+Value IREmitter::ImageGradientIndexed(const Value& handle, const Value& coords,
+                                      const Value& derivatives_dx, const Value& derivatives_dy,
+                                      const Value& offset, const U32& gpu_texture_id,
+                                      TextureInstInfo info) {
+    return Inst(Opcode::ImageGradientIndexed, Flags{info}, handle, coords,
+                derivatives_dx, derivatives_dy, offset, gpu_texture_id);
 }
 
 Value IREmitter::ImageRead(const Value& handle, const Value& coords, const U32& lod,

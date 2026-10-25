@@ -422,6 +422,7 @@ OPCODE(ConvertS32S16,                                       U32,            U16,
 OPCODE(ImageHandle,                                         Opaque,         U32x4,          U32x4,                                                          )
 OPCODE(ImageSampleRaw,                                      F32x4,          Opaque,         Opaque,         F32x4,          F32x4,          F32x4,          F32,           )
 OPCODE(ImageSampleImplicitLod,                              F32x4,          Opaque,         F32x4,          F32,            Opaque,                         )
+OPCODE(ImageSampleImplicitLodIndexed,                       F32x4,          Opaque,         F32x4,          F32,            Opaque,         U32,            )
 OPCODE(ImageSampleExplicitLod,                              F32x4,          Opaque,         Opaque,         F32,            Opaque,                         )
 OPCODE(ImageSampleDrefImplicitLod,                          F32x4,          Opaque,         Opaque,         F32,            F32,            Opaque,         )
 OPCODE(ImageSampleDrefExplicitLod,                          F32x4,          Opaque,         Opaque,         F32,            F32,            Opaque,         )
@@ -430,6 +431,7 @@ OPCODE(ImageGatherDref,                                     F32x4,          Opaq
 OPCODE(ImageQueryDimensions,                                U32x4,          Opaque,         U32,            U1,                                             )
 OPCODE(ImageQueryLod,                                       F32x4,          Opaque,         Opaque,                                                         )
 OPCODE(ImageGradient,                                       F32x4,          Opaque,         Opaque,         Opaque,         Opaque,         Opaque,         F32,          )
+OPCODE(ImageGradientIndexed,                                F32x4,          Opaque,         Opaque,         Opaque,         Opaque,         Opaque,         U32,          )
 OPCODE(ImageRead,                                           F32x4,          Opaque,         Opaque,         U32,            U32,                            )
 OPCODE(ImageWrite,                                          Void,           Opaque,         Opaque,         U32,            U32,            F32x4,          )
 

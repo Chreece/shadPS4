@@ -1001,8 +1001,15 @@ void EmitContext::DefineImagesAndSamplers() {
 
         const u32 num_bindings = image_desc.NumBindings(info);
         Id pointee_type = image_type;
-        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex) {
+        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex ||
+            image_desc.is_guest_indexed) {
             pointee_type = TypeArray(pointee_type, ConstU32(num_bindings));
+        }
+        if (image_desc.is_guest_indexed) {
+            ASSERT(profile.supports_sampled_image_nonuniform_indexing);
+            AddCapability(spv::Capability::ShaderNonUniform);
+            AddCapability(spv::Capability::SampledImageArrayDynamicIndexing);
+            AddCapability(spv::Capability::SampledImageArrayNonUniformIndexing);
         }
 
         const Id pointer_type{TypePointer(spv::StorageClass::UniformConstant, pointee_type)};
@@ -1020,6 +1027,8 @@ void EmitContext::DefineImagesAndSamplers() {
             .is_integer = is_integer,
             .is_storage = is_storage,
             .mip_fallback_mode = mip_fallback_mode,
+            .image_array_size = num_bindings,
+            .is_guest_indexed = image_desc.is_guest_indexed,
         });
         interfaces.push_back(id);
     }
@@ -1034,11 +1043,23 @@ void EmitContext::DefineImagesAndSamplers() {
     sampler_type = TypeSampler();
     sampler_pointer_type = TypePointer(spv::StorageClass::UniformConstant, sampler_type);
     for (const auto& samp_desc : info.samplers) {
-        const Id id{AddGlobalVariable(sampler_pointer_type, spv::StorageClass::UniformConstant)};
-        Decorate(id, spv::Decoration::Binding, binding.unified++);
+        const u32 count = samp_desc.NumBindings(info);
+        Id pointer_type = sampler_pointer_type;
+        if (samp_desc.is_guest_indexed) {
+            ASSERT(profile.supports_sampler_array_nonuniform_indexing);
+            ASSERT(count >= 2u);
+            AddCapability(spv::Capability::ShaderNonUniform);
+            AddCapability(spv::Capability::SampledImageArrayNonUniformIndexing);
+            const Id array_type = TypeArray(sampler_type, ConstU32(count));
+            pointer_type = TypePointer(spv::StorageClass::UniformConstant, array_type);
+        }
+        const Id id{AddGlobalVariable(pointer_type, spv::StorageClass::UniformConstant)};
+        Decorate(id, spv::Decoration::Binding, binding.unified);
+        binding.unified += count;
         Decorate(id, spv::Decoration::DescriptorSet, 0U);
         Name(id, fmt::format("{}_{}{}", hw_stage, "samp", samplers.size()));
         samplers.push_back(id);
+        sampler_array_sizes.push_back(count);
         interfaces.push_back(id);
     }
 }
