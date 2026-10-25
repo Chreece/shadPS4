@@ -16,7 +16,7 @@ GAME="CUSA34384"
 DURATION=120
 PROTECTED="$ROOT/GodOfWarRagnarok/build/shadps4"
 PROTECTED_SHA=8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e
-OBSERVER_SHA=54c542935c39b9aa98d2505c47e6ca472297ee7f
+OBSERVER_SHA=c0789e4afe9f46d78ed3fe1586080e6ab0ef9399
 OLLAMA_HELPER_SHA=9623031ffc736c270ccce0cad247b52d5b3dd30a
 
 mkdir -p "$ESDE" "$LOGS" "$SCRIPTS"
@@ -112,7 +112,7 @@ command -v gdb >/dev/null || {
     echo "GDB_MISSING_NO_GAME_LAUNCHED" >&2; exit 2;
 }
 curl -4fLsS --retry 3 \
-  "https://raw.githubusercontent.com/Chreece/shadPS4/dfd91b2659f573f390fc27221afcd645115fde90/tools/development/shadps4_gdb_fatal_observer_20261025.py" \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/f08b8a85fffd956b703022b2f1d374dface0fa72/tools/development/shadps4_gdb_fatal_observer_20261025.py" \
   -o "$OBSERVER"
 [[ "$(git hash-object "$OBSERVER")" == "$OBSERVER_SHA" ]] || {
     echo "OBSERVER_SOURCE_SHA_MISMATCH"; exit 2;
@@ -132,7 +132,15 @@ assert ast.unparse(v[1])=="args.game"
 assert [ast.literal_eval(x) for x in v[2:]]==["--fullscreen","true","--show-fps"]
 assert "'--cpu-id-mode'" not in source and '"--cpu-id-mode"' not in source
 assert "'--userfaultfd'" not in source and '"--userfaultfd"' not in source
-assert "break unreachable_impl" in source
+# CPU-ID auto changes the executable to DynamoRIO. Only signal catchpoints
+# and the observed final SIGTRAP are reliable across this exec.
+assert "break unreachable_impl" not in source
+assert "catch signal SIGSEGV" in source
+assert "$_siginfo._sifields._sigfault.si_addr == 0" in source
+assert "FATAL_SIGTRAP_STACK_BEGIN" in source
+assert "FATAL_SIGTRAP_STACK_END" in source
+assert "info proc mappings" in source
+assert "bt full 48" in source
 assert "timeout=args.seconds" in source and "args.seconds != 120" in source
 print("DEBUGGER_AUTO_CPU_ID_GLOBAL_GPU_FULLSCREEN_FPS_ONLY=PASS",flush=True)
 print("CRASH_BACKTRACE_WITH_HARD_120_SECOND_LIMIT=PASS",flush=True)
