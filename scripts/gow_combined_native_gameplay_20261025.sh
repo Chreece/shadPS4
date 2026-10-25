@@ -17,7 +17,7 @@ DURATION=240
 PROTECTED="$ROOT/GodOfWarRagnarok/build/shadps4"
 PROTECTED_SHA=8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e
 OBSERVER_SHA=db2cb4bade906145689a09fa34eafc75cd0194e1
-OLLAMA_HELPER_SHA=966b002b38d225290daa3a87a3b34bed619e1dc6
+OLLAMA_HELPER_SHA=9623031ffc736c270ccce0cad247b52d5b3dd30a
 
 mkdir -p "$ESDE" "$LOGS" "$SCRIPTS"
 if (( $# <= 1 )) && [[ "${1-}" != "--worker" ]]; then
@@ -134,7 +134,7 @@ done
 echo "AUTOMATIC_CPU_ID_RUNTIME_PACKAGE=PASS"
 echo "STAGE=PINNED_OLLAMA_VRAM_LIFECYCLE_HELPER"
 curl -4fLsS --retry 3 \
-  "https://raw.githubusercontent.com/Chreece/shadPS4/6ea6af5f573fb1db999f3ce9941545b81952b66f/tools/development/shadps4_ollama_vram_session_20261025.py" \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/764d90aab5cf658fbabc23921632b0d2cda4cd1a/tools/development/shadps4_ollama_vram_session_20261025.py" \
   -o "$OLLAMA_HELPER"
 [[ "$(git hash-object "$OLLAMA_HELPER")" == "$OLLAMA_HELPER_SHA" ]] || {
     echo "OLLAMA_HELPER_SHA_MISMATCH_NO_GAME" >&2; exit 2;
