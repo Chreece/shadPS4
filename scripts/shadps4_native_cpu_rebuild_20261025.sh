@@ -153,7 +153,11 @@ for name in ("InitializeCpuId","EnableCpuIdFaulting","HandleCpuIdFault",
              "SetCpuIdGuestAddressRange","GenerateCpuIdInstruction"):
     assert name in cpu
 assert "HandleCpuIdFault(raw_context, info->si_addr)" in signals
-assert not (root/"src/core/cpu_id_translation").exists()
+# Untracked build caches may remain in old source directories. Verify
+# rejection by absent code, entry points and targets instead of directory name.
+for removed in ("launcher.cpp", "launcher.h", "client.c",
+                "CMakeLists.txt", "build.py", "package.cmake", "dynamorio.patch"):
+    assert not (root/"src/core/cpu_id_translation"/removed).exists(), removed
 assert not (root/"cmake/CpuIdTranslation.cmake").exists()
 print("NATIVE_CPUID_RDTSCP_RDPID_HANDLING_INTACT=PASS",flush=True)
 print("DYNAMORIO_SOURCE_LAUNCHER_AND_CMAKE=ABSENT",flush=True)
