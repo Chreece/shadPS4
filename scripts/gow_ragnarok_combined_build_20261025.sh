@@ -6,7 +6,7 @@ export GIT_TERMINAL_PROMPT=0
 ROOT="$HOME/projects/shadps4"
 SCRIPTS="$ROOT/scripts"
 LOGS="$ROOT/logs"
-REV="99ad960f99dac2fe24a8791f9f759a9971220f7a"
+REV="b0b6dcb254031f72eda14bb693e839e7e1f52264"
 UPSTREAM="30f4170896ce974353a6f6486d0ecec179aec54b"
 PROTECTED_SOURCE="3965a497532edb7b18027692ab04eb97fa4c145b"
 PROTECTED_BIN="$ROOT/GodOfWarRagnarok/build/shadps4"
@@ -141,6 +141,9 @@ grep -Fq 'return is_guest_indexed ? indexed_guest_entries + 1u : 1u;' \
 grep -q 'FeedPort(' "$SRC/src/core/libraries/audio3d/audio3d.cpp"
 grep -q 'DrainAssociatedPorts(port)' "$SRC/src/core/libraries/audio3d/audio3d.cpp"
 echo "ENGINE_SOURCE_FEATURES=PASS"
+
+grep -Fq '#include "video_core/texture_cache/sampler_filter_policy.h"' "$SRC/src/video_core/texture_cache/sampler.cpp"
+echo "SAMPLER_POLICY_DECLARATIONS_IMPORTED=PASS"
 
 echo "BUILD_STAGE=SHADER_PROFILE_CAPABILITY_REGRESSION"
 python3 - "$SRC" <<'PYPROFILE'
