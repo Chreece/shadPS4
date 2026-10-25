@@ -181,7 +181,7 @@ stage TEST_TILED_GPU_IMAGE_READBACK_WITH_FORMAT_AND_SAMPLE_GUARDS
 # The previously successful linear-image patch is byte-verified above.
 # Layer a separate, exact-source tiled A/B patch without replacing it.
 curl -4fsSL --retry 3 \
- "https://raw.githubusercontent.com/Chreece/shadPS4/200c0ba2587c86afd04b0aee9695b12b63a79b2f/scripts/patch_precise_tiled_readbacks_20261025.py" \
+ "https://raw.githubusercontent.com/Chreece/shadPS4/59de9872308a4971f377fae5aed0b362aea4e175/scripts/patch_precise_tiled_readbacks_20261025.py" \
  -o "${TILED_PATCHER}"
 EXPECTED_TILED_PATCHER_SHA=c89e34000bc00c4b327f54cb5535d9793ec0e2f3
 if [[ "$(git hash-object "${TILED_PATCHER}")" != "${EXPECTED_TILED_PATCHER_SHA}" ]]; then
