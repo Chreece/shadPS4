@@ -292,7 +292,7 @@ declare -A EXPECTED_PATCHED_BLOBS=(
   [src/shader_recompiler/runtime_info.h]=e45180a6eff71723e26cb528e540f317204348a4
   [src/video_core/amdgpu/regs_color.h]=2af0f47ad4b6e272c42d52925b8e7f9629435a78
   [src/video_core/renderer_vulkan/vk_pipeline_cache.cpp]=6109ea169276955e6a7f1a41e5ce99bab2577714
-  [src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp]=aa6f87018d303d4b37c6a3a72c2b6559d87d4fb0
+  [src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp]=86871f4e6c5b90fbe2594de57d255e0b143c345a
 )
 for rel in "${SOURCES[@]}"; do
   actual="$(git hash-object "${WORK}/${rel}")"
