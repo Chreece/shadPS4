@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Isolated GoW/Ghost runtime acceptance. Existing ES-DE launcher/saves untouched.
+# Generic game observation: same core behavior for every title; ES-DE/saves untouched.
 set -Eeuo pipefail
 umask 077
 
@@ -16,20 +16,27 @@ GAME="CUSA34384"
 DURATION=240
 PROTECTED="$ROOT/GodOfWarRagnarok/build/shadps4"
 PROTECTED_SHA=8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e
-OBSERVER_SHA=21dc26c674544088fee141ff8b37d7b223eb9786
+OBSERVER_SHA=db2cb4bade906145689a09fa34eafc75cd0194e1
 
 mkdir -p "$ESDE" "$LOGS" "$SCRIPTS"
-if (( $# == 0 )); then
+if (( $# <= 1 )) && [[ "${1-}" != "--worker" ]]; then
+    GAME="${1:-CUSA34384}"
+    [[ -n "$GAME" && "$GAME" != -* && "$GAME" != *$'\n'* ]] || {
+        echo "INVALID_GAME_SELECTOR"; exit 2;
+    }
     command -v nohup >/dev/null && command -v setsid >/dev/null || {
         echo "REQUIRES_NOHUP_AND_SETSID" >&2; exit 2;
     }
     TAG="gow-combined-gameplay-$(date +%Y%m%d-%H%M%S)-$$"
     OUT="$LOGS/$TAG.log"
     (set -C; : > "$OUT") || { echo "REFUSING_EXISTING_LOG=$OUT"; exit 2; }
-    nohup setsid -w bash "$0" --worker "$TAG" </dev/null >"$OUT" 2>&1 &
+    nohup setsid -w bash "$0" --worker "$TAG" "$GAME" </dev/null >"$OUT" 2>&1 &
     PID=$!
     disown "$PID" 2>/dev/null || true
-    echo "GOW_CANDIDATE_GAMEPLAY_TEST=$TAG"
+    echo "SHADPS4_GENERIC_PLAYTEST=$TAG"
+    echo "GAME_SELECTOR=$GAME"
+    echo "CPU_ID_MODE=auto (emulator default)"
+    echo "DISPLAY_FLAGS=fullscreen,show-fps"
     echo "CANDIDATE_SHA256=$EXPECTED"
     echo "MONITOR=tail -f $OUT"
     echo "PID=$PID"
@@ -37,18 +44,24 @@ if (( $# == 0 )); then
     echo "SSH_SHELL_REMAINS_OPEN=YES"
     exit 0
 fi
-[[ $# == 2 && "$1" == "--worker" ]] || { echo "Usage: bash $0" >&2; exit 2; }
+[[ $# == 3 && "$1" == "--worker" ]] || {
+    echo "Usage: bash $0 [game-id-or-path]"; exit 2;
+}
 TAG="$2"
+GAME="$3"
+[[ -n "$GAME" && "$GAME" != -* && "$GAME" != *$'\n'* ]] || {
+    echo "INVALID_GAME_SELECTOR"; exit 2;
+}
 [[ "$TAG" =~ ^gow-combined-gameplay-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || {
     echo "INVALID_RUN_ID" >&2; exit 2;
 }
 exec 9>"$LOGS/gow-combined-gameplay.lock"
 flock -n 9 || { echo "ANOTHER_GOW_PLAYTEST_RUNNING" >&2; exit 2; }
 STAMP="$TAG"
-WORK="$ESDE/playtest-$GAME-$STAMP"
+WORK="$ESDE/playtest-$STAMP"
 REPORT="$LOGS/$TAG-report"
 ARCHIVE="$LOGS/$TAG.tar.gz"
-OBSERVER="$WORK/observer-native.py"
+OBSERVER="$WORK/observer-generic.py"
 BEFORE_PROTECTED=missing
 [[ ! -f "$PROTECTED" ]] || BEFORE_PROTECTED="$(sha256sum "$PROTECTED" | awk '{print $1}')"
 finish() {
@@ -84,24 +97,37 @@ test -f "$BIN" && test ! -L "$BIN" && test -x "$BIN" ||
 ACTUAL="$(sha256sum "$BIN" | awk '{print $1}')"
 [[ "$ACTUAL" == "$EXPECTED" ]] || { echo "CANDIDATE_SHA_MISMATCH=$ACTUAL" >&2; exit 2; }
 mkdir -p "$WORK"
-echo "STAGE=FETCH_AND_PIN_GAMEPLAY_OBSERVER"
-curl -4fLsS --retry 3   "https://raw.githubusercontent.com/Chreece/shadPS4/a2c0393bb6b2894045c922b8a3870f462c292480/tools/development/esde_unified_game_observer_20261019.py"   -o "$WORK/observer-original.py"
-[[ "$(git hash-object "$WORK/observer-original.py")" == "$OBSERVER_SHA" ]] || {
-  echo "OBSERVER_SOURCE_HASH_MISMATCH_NO_GAME" >&2; exit 2;
+echo "STAGE=PINNED_GENERIC_OBSERVER"
+curl -4fLsS --retry 3 \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/cb9c0e93fa8c1b27f88fe20edd98e27e53224c77/tools/development/shadps4_default_game_observer_20261025.py" \
+  -o "$OBSERVER"
+[[ "$(git hash-object "$OBSERVER")" == "$OBSERVER_SHA" ]] || {
+    echo "OBSERVER_SOURCE_SHA_MISMATCH"; exit 2;
 }
-python3 -B - "$WORK/observer-original.py" "$OBSERVER" <<'PYOB'
+python3 -B - "$OBSERVER" <<'PYOB'
+import ast
 from pathlib import Path
 import sys
-before=Path(sys.argv[1]).read_text()
-old='command = [str(exe), "--cpu-id-mode", "builtin", "--userfaultfd",'
-new='command = [str(exe), "--cpu-id-mode", "native", "--userfaultfd",'
-if before.count(old) != 1 or new in before:
-    raise SystemExit("OBSERVER_CLI_ORIGINAL_UNKNOWN_NO_GAME")
-Path(sys.argv[2]).write_text(before.replace(old,new))
-compile(Path(sys.argv[2]).read_bytes(),str(sys.argv[2]),"exec")
-print("REAL_BINARY_CLI_CPU_ID_MODE_NATIVE=PASS",flush=True)
-PYOB
 
+tree=ast.parse(Path(sys.argv[1]).read_text())
+assignments=[n.value for n in ast.walk(tree) if isinstance(n,ast.Assign)
+             and any(isinstance(t,ast.Name) and t.id=="command" for t in n.targets)]
+assert len(assignments)==1 and isinstance(assignments[0],ast.List)
+items=assignments[0].elts
+assert len(items)==5
+assert ast.unparse(items[0])=="str(exe)"
+assert ast.unparse(items[1])=="args.game"
+assert [ast.literal_eval(x) for x in items[2:]]==["--fullscreen","true","--show-fps"]
+print("GAME_SELECTION=POSITIONAL; CPU_ID_DEFAULT=auto; GPU_CONFIG=global",flush=True)
+print("FULLSCREEN_AND_FPS=ENABLED_FOR_ALL_TITLES",flush=True)
+PYOB
+BUNDLE="$(dirname "$BIN")/cpu-id-runtime"
+for component in bin64/drrun lib64/release/libdynamorio.so libshadps4_cpu_id.so; do
+    [[ -f "$BUNDLE/$component" ]] || {
+        echo "AUTOMATIC_CPU_ID_RUNTIME_MISSING=$component" >&2; exit 2;
+    }
+done
+echo "AUTOMATIC_CPU_ID_RUNTIME_PACKAGE=PASS"
 # ES-DE/Sunshine may remain running; never stop or alter them.
 # Refuse only a second PS4 emulator process. The observer repeats this guard.
 if pgrep -u "$(id -u)" -x shadps4 >/dev/null 2>&1; then
@@ -131,25 +157,16 @@ echo "FREE_VRAM_GIB=$((FREE/1024/1024/1024))"
 (( FREE >= 8*1024*1024*1024 )) ||
     { echo "LESS_THAN_8_GIB_GPU_VRAM_FREE_NO_GAME_NO_OLLAMA_CHANGE" >&2; exit 2; }
 
-# Use the same proven GoT baseline profile when available, otherwise the
-# existing ES-DE profile. Copy it, do not symlink, edit or run inside it.
+# Same global profile selection for every title. The protected profile
+# remains a read-only fallback copy if neither global path exists.
 PROFILE_SOURCE=""
-if [[ "$GAME" == CUSA11456 ]]; then
-    got_profile="$ROOT/GhostOfTsushima/play/np-init-affinity-main-20261015-195552/user"
-    [[ ! -d "$got_profile" ]] || PROFILE_SOURCE="$got_profile"
-fi
-if [[ -z "$PROFILE_SOURCE" ]]; then
-    gow_profile="$ROOT/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014679/user"
-    if [[ -f "$gow_profile/config.json" && ! -L "$gow_profile" ]]; then
-        PROFILE_SOURCE="$gow_profile"
+for candidate in "$HOME/user" "$HOME/.local/share/shadPS4" \
+    "$ROOT/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014679/user"; do
+    if [[ -d "$candidate" && ! -L "$candidate" && -f "$candidate/config.json" ]]; then
+        PROFILE_SOURCE="$candidate"
+        break
     fi
-fi
-if [[ -z "$PROFILE_SOURCE" && -d "$HOME/user" ]]; then
-    PROFILE_SOURCE="$HOME/user"
-fi
-if [[ -z "$PROFILE_SOURCE" && -d "$HOME/.local/share/shadPS4" ]]; then
-    PROFILE_SOURCE="$HOME/.local/share/shadPS4"
-fi
+done
 [[ -n "$PROFILE_SOURCE" && ! -L "$PROFILE_SOURCE" ]] ||
     { echo "NO_SAFE_USER_PROFILE_TO_COPY" >&2; exit 2; }
 FREE_DISK_KIB="$(df -Pk "$ESDE" | awk 'END {print $4}')"
