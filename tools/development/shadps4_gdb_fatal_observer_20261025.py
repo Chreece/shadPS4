@@ -63,28 +63,52 @@ set print frame-arguments all
 set print elements 80
 set print repeats 3
 set debuginfod enabled off
-set breakpoint pending on
 set follow-exec-mode same
 set follow-fork-mode child
 set detach-on-fork off
-handle SIGSEGV nostop noprint pass
+# Automatic CPU-ID execs DynamoRIO, invalidating address-based breakpoints.
+# The SIGSEGV catchpoint is independent of a specific executable.
+handle SIGSEGV stop noprint pass
 handle SIGBUS nostop noprint pass
 handle SIGILL nostop noprint pass
 handle SIGSYS nostop noprint pass
-break unreachable_impl
+catch signal SIGSEGV
 commands
   silent
-  printf "\\n=== REAL_FATAL_CALL_STACK_BEGIN ===\\n"
-  bt full 48
-  printf "\\n=== ALL_THREADS_BACKTRACE_BEGIN ===\\n"
-  thread apply all bt 8
-  printf "\\n=== FATAL_REGISTER_CONTEXT ===\\n"
-  info registers
-  printf "\\n=== REAL_FATAL_CALL_STACK_END ===\\n"
-  quit 0
+  # Filter legitimate memory-protection faults; capture only NULL reads.
+  if $_siginfo._sifields._sigfault.si_addr == 0
+    printf "\\n=== REAL_NULL_SIGSEGV_STACK_BEGIN ===\\n"
+    info program
+    bt full 48
+    printf "\\n=== ALL_THREADS_BACKTRACE_BEGIN ===\\n"
+    thread apply all bt 8
+    printf "\\n=== FATAL_REGISTER_CONTEXT ===\\n"
+    info registers
+    printf "\\n=== HOST_MAPPING_FOR_SYMBOLIZATION ===\\n"
+    info proc mappings
+    printf "\\n=== RAW_CALL_STACK_ADDRESS_WINDOW ===\\n"
+    x/32gx $rsp
+    printf "\\n=== REAL_NULL_SIGSEGV_STACK_END ===\\n"
+    quit 0
+  end
+  continue
 end
 run
-printf "\\n=== DEBUGGED_PROCESS_EXITED_WITHOUT_FATAL_BREAKPOINT ===\\n"
+# The previous real run stopped at the fatal SIGTRAP after the CPU-ID exec.
+# Capture this fallback stack even when GDB cannot retain the catchpoint.
+printf "\\n=== FATAL_SIGTRAP_STACK_BEGIN ===\\n"
+info program
+bt full 48
+printf "\\n=== ALL_THREADS_BACKTRACE_BEGIN ===\\n"
+thread apply all bt 8
+printf "\\n=== FATAL_REGISTER_CONTEXT ===\\n"
+info registers
+printf "\\n=== HOST_MAPPING_FOR_SYMBOLIZATION ===\\n"
+info proc mappings
+printf "\\n=== RAW_CALL_STACK_ADDRESS_WINDOW ===\\n"
+x/32gx $rsp
+printf "\\n=== FATAL_SIGTRAP_STACK_END ===\\n"
+quit 0
 '''
 
 
@@ -197,17 +221,31 @@ def main() -> int:
               'hard_limit_seconds': 120}
     if log_file.is_file():
         raw = log_file.read_bytes()
-        result['fatal_breakpoint_reached'] = b'REAL_FATAL_CALL_STACK_BEGIN' in raw
-        result['fatal_stack_complete'] = b'REAL_FATAL_CALL_STACK_END' in raw
+        result['null_segv_captured'] = (b'REAL_NULL_SIGSEGV_STACK_BEGIN' in raw and
+                                        b'REAL_NULL_SIGSEGV_STACK_END' in raw)
+        result['fatal_sigtrap_captured'] = (b'FATAL_SIGTRAP_STACK_BEGIN' in raw and
+                                            b'FATAL_SIGTRAP_STACK_END' in raw)
+        result['true_fatal_event'] = (
+            result['null_segv_captured'] or
+            (result['fatal_sigtrap_captured'] and
+             b'Unhandled access violation' in raw and
+             b'received signal SIGTRAP' in raw))
+        result['fatal_stack_complete'] = result['true_fatal_event']
+        result['fatal_event_capture_method'] = (
+            'null-sigsegv-before-handler' if result['null_segv_captured'] else
+            'sigtrap-after-fatal-handler' if result['true_fatal_event'] else
+            'not-captured')
         result['debugger_trace_bytes'] = len(raw)
         interesting = []
         lines = raw.decode('utf-8','replace').splitlines()
         for index,line in enumerate(lines):
-            if any(item in line for item in ('REAL_FATAL_CALL_STACK_BEGIN', 'REAL_FATAL_CALL_STACK_END',
-                                           'shadps4.cpp:', 'fmt::', 'SignalHandler',
-                                           'unreachable_impl', 'SIGSEGV', 'No symbol table',
-                                           'Could not insert breakpoint', 'ptrace:',
-                                           'Warning:', 'warning:')):
+            if any(item in line for item in ('REAL_NULL_SIGSEGV_STACK_BEGIN',
+                                           'REAL_NULL_SIGSEGV_STACK_END',
+                                           'FATAL_SIGTRAP_STACK_BEGIN',
+                                           'FATAL_SIGTRAP_STACK_END',
+                                           'fmt::', 'SignalHandler', 'SIGTRAP',
+                                           'SIGSEGV', 'Catchpoint', 'No symbol table',
+                                           'ptrace:', 'Warning:', 'warning:')):
                 interesting.append(line[:500])
         (out/'gdb-selected-stack-lines.txt').write_text(
             '\n'.join(interesting[:150]) + '\n', encoding='utf-8')
@@ -218,6 +256,8 @@ def main() -> int:
     save(out/'fatal-result.json', result)
     print('FATAL_BACKTRACE_CAPTURED=' +
           ('YES' if result.get('fatal_stack_complete') else 'NO'), flush=True)
+    print('BACKTRACE_METHOD=' +
+          str(result.get('fatal_event_capture_method','not-captured')), flush=True)
     print(f'GDB_REPORT={out}', flush=True)
     print('GDB_RETURN_CODE=' + str(result['debugger_returncode']), flush=True)
     print('EMULATOR_PROCESS_GROUP_CLEANED_UP=YES', flush=True)
