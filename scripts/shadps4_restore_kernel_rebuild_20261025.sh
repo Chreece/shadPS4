@@ -141,7 +141,7 @@ adapter=(source/"src/core/linker_thread_atexit.cpp").read_text()
 definition="Module* Linker::FindByAddress(VAddr address)"
 assert linker.count(definition)==1, "Linker::FindByAddress not unique in main linker"
 assert definition not in adapter, "Duplicate Linker::FindByAddress in HLE adapter"
-assert "std::scoped_lock lock{mutex};" in linker.split(definition,1)[1].split("\\n}",1)[0], (
+assert "std::scoped_lock lock{mutex};" in linker.split(definition,1)[1][:650], (
     "Module-address lookups lost synchronized loading safety")
 assert "address - base < module->aligned_base_size" in linker, (
     "Module address arithmetic no longer avoids overflow")
