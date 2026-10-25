@@ -96,9 +96,9 @@ done
 echo "SOURCE_IDENTITY=PASS"
 stage FETCH_VERIFIED_6KB_LOCAL_SOURCE_PATCH
 curl -4fsSL --retry 3 \
-  "https://raw.githubusercontent.com/Chreece/shadPS4/c18a6a1ebf0c7dd96848b40a8545f3d74f2b995a/scripts/patch_exact_strided_materials_20261025.py" \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/2d85b527b5eb3bd793a95c40fc01380f1080d3ff/scripts/patch_exact_strided_materials_20261025.py" \
   -o "${PATCHER}"
-PATCHER_SHA=5e5e3ecd9872eb637a0fa6a135bb4db26066fca0
+PATCHER_SHA=7d49235878c2495791414c2f37ef6e669e55db64
 [[ "$(git hash-object "${PATCHER}")" == "${PATCHER_SHA}" ]] || {
   echo "FAIL: downloaded patch differs from reviewed SHA" >&2; exit 3
 }
