@@ -23,7 +23,7 @@ if (( $# == 0 )); then
     command -v nohup >/dev/null && command -v setsid >/dev/null || {
         echo "REQUIRES_NOHUP_AND_SETSID" >&2; exit 2;
     }
-    TAG="gow-combined-gameplay-$(date +%Y%m%d-%H%M%S)-$"
+    TAG="gow-combined-gameplay-$(date +%Y%m%d-%H%M%S)-$$"
     OUT="$LOGS/$TAG.log"
     (set -C; : > "$OUT") || { echo "REFUSING_EXISTING_LOG=$OUT"; exit 2; }
     nohup setsid -w bash "$0" --worker "$TAG" </dev/null >"$OUT" 2>&1 &
