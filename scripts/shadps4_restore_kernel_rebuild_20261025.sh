@@ -54,9 +54,12 @@ finish() {
         echo "RESULT=$rc"
         [[ ! -f "$BIN" ]] || sha256sum "$BIN"
     } >"$RUN/summary.txt"
-    tar -czf "$OUTPUT" -C "$LOGS" "$TAG.log" "$TAG.exit" \
-        -C "$RUN" "summary.txt" 2>/dev/null || true
-    echo "BUILD_UPLOAD_THIS=$OUTPUT"
+    if tar -czf "$OUTPUT" -C "$LOGS" "$TAG.log" "$TAG.exit" \
+        -C "$RUN" "summary.txt"; then
+        echo "BUILD_UPLOAD_THIS=$OUTPUT"
+    else
+        echo "BUILD_ARCHIVE_CREATION_FAILED=$OUTPUT" >&2
+    fi
     echo "BUILD_RESULT=$rc"
     echo "ESDE_SAVES_SUNSHINE_UNCHANGED=YES"
     exit "$rc"
