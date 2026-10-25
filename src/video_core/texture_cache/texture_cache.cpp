@@ -136,10 +136,21 @@ void TextureCache::DownloadImageMemory(ImageId image_id, DownloadMemoryFlags fla
 
     tile_manager.TileImage(image, buffer_copies, download.buffer, download.offset);
 
-    const auto write_data = [this, image_addr, copy_size, download, discard_buffer_cache, is_sync] {
+    const bool tiled_download = static_cast<bool>(image.info.props.is_tiled);
+    const auto write_data = [this, image_addr, copy_size, download, discard_buffer_cache, is_sync,
+                             tiled_download] {
         download.Invalidate();
-        Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(image_addr), download.mapped,
-                                                  copy_size);
+        const bool backing_found = Core::Memory::Instance()->TryWriteBacking(
+            std::bit_cast<u8*>(image_addr), download.mapped, copy_size);
+        if (tiled_download) {
+            static std::atomic<u32> tiled_copy_reports{0};
+            if (tiled_copy_reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
+                LOG_INFO(Render_Vulkan,
+                         "PreciseTiledImageCpuCopy: guest={:#x} bytes={} backing_found={} "
+                         "sync={} discard_buffer={}", image_addr, copy_size, backing_found,
+                         is_sync, discard_buffer_cache);
+            }
+        }
         // Count completed image-to-guest transfers, not only queued images.
         static std::atomic<u32> download_reports{0};
         if (download_reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
@@ -724,6 +735,22 @@ ImageView& TextureCache::FindTexture(ImageId image_id, const ImageDesc& desc) {
         }
     }
     UpdateImage(image_id);
+    // Conservatively test Precise readback for GPU-produced tiled images
+    // the older linear-only queue deliberately excludes. The image must
+    // pass the cache's format/sample/valid-data checks first.
+    if (readback_linear_images &&
+        EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise &&
+        image.info.props.is_tiled && image.info.size.width > 8u &&
+        image.info.guest_address != 0 && image.CanBeDownloaded()) {
+        std::unique_lock lk{download_images_mutex};
+        download_images.emplace(image_id);
+        static std::atomic<u32> tiled_storage_reports{0};
+        if (tiled_storage_reports.fetch_add(1, std::memory_order_relaxed) < 24u) {
+            LOG_INFO(Render_Vulkan,
+                     "PreciseTiledImageQueued: kind=storage guest={:#x} bytes={} samples={}",
+                     image.info.guest_address, image.info.guest_size, image.info.num_samples);
+        }
+    }
     return image.FindView(desc.view_info);
 }
 
@@ -768,6 +795,19 @@ ImageView& TextureCache::FindRenderTarget(ImageId image_id, const ImageDesc& des
     }
     image.usage.render_target = 1u;
     UpdateImage(image_id);
+    if (readback_linear_images &&
+        EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise &&
+        image.info.props.is_tiled && image.info.size.width > 8u &&
+        image.info.guest_address != 0 && image.CanBeDownloaded()) {
+        std::unique_lock lk{download_images_mutex};
+        download_images.emplace(image_id);
+        static std::atomic<u32> tiled_target_reports{0};
+        if (tiled_target_reports.fetch_add(1, std::memory_order_relaxed) < 24u) {
+            LOG_INFO(Render_Vulkan,
+                     "PreciseTiledImageQueued: kind=target guest={:#x} bytes={} samples={}",
+                     image.info.guest_address, image.info.guest_size, image.info.num_samples);
+        }
+    }
 
     // Register meta data for this color buffer
     const VAddr cmask_addr = desc.info.meta_info.cmask_addr;
