@@ -25,7 +25,9 @@ one('''    UpdateImage(image_id);
     // linear or tiny images. Test the missing tiled path using the SAME
     // existing TileManager::TileImage downloader, and only when the image
     // passes the cache's general format/sample/validity checks.
-    if (readback_linear_images &&
+    // Only storage bindings are GPU writes; ordinary sampled reads must
+    // not trigger extra GPU-to-CPU traffic on every material lookup.
+    if (desc.type == BindingType::Storage && readback_linear_images &&
         EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise &&
         image.info.props.is_tiled && image.info.size.width > 8u &&
         image.info.guest_address != 0 && image.CanBeDownloaded()) {
@@ -80,6 +82,14 @@ one('''    const auto write_data = [this, image_addr, copy_size, download, disca
                          is_sync, discard_buffer_cache);
             }
         }''', 'existing image readback write to CPU backing')
+
+# Record whether CPU backing was really found for every image readback,
+# including the preserved linear path. Do not change the transfer itself.
+one('''                     "sync={} discard_buffer={}",
+                     image_addr, copy_size, is_sync, discard_buffer_cache);''',
+    '''                     "sync={} discard_buffer={} backing_found={}",
+                     image_addr, copy_size, is_sync, discard_buffer_cache, backing_found);''',
+    'sampled linear and tiled image backing-write result')
 
 p.write_text(s)
 print('PRECISE_TILED_IMAGE_A_B=APPLIED',p.relative_to(root),flush=True)
