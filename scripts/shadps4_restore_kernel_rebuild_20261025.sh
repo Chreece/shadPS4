@@ -132,6 +132,23 @@ if [[ "$OLD_HEAD" != "$FIX" ]]; then
     git -C "$SRC" checkout --quiet --detach "$FIX"
 fi
 echo "GENERIC_KERNEL_FIX_SOURCE=PASS"
+python3 - "$SRC" <<'PYLINK'
+from pathlib import Path
+import sys
+source=Path(sys.argv[1])
+linker=(source/"src/core/linker.cpp").read_text()
+adapter=(source/"src/core/linker_thread_atexit.cpp").read_text()
+definition="Module* Linker::FindByAddress(VAddr address)"
+assert linker.count(definition)==1, "Linker::FindByAddress not unique in main linker"
+assert definition not in adapter, "Duplicate Linker::FindByAddress in HLE adapter"
+assert "std::scoped_lock lock{mutex};" in linker.split(definition,1)[1].split("\\n}",1)[0], (
+    "Module-address lookups lost synchronized loading safety")
+assert "address - base < module->aligned_base_size" in linker, (
+    "Module address arithmetic no longer avoids overflow")
+assert "FindModuleThreadAtexitRefs(VAddr address)" in adapter
+assert "->FindByAddress(address)" in adapter
+print("SINGLE_LOCKED_GENERIC_MODULE_ADDRESS_RESOLVER=PASS",flush=True)
+PYLINK
 
 cmake -S "$SRC/tests/kernel_sanitizer" -B "$RUN/sanitizer" \
   -G Ninja -DCMAKE_BUILD_TYPE=Release
