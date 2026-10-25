@@ -32,10 +32,12 @@ old='''    const auto* const add = shift->Arg(0).TryInst();
     if (prefix % 4u != 0u) return {};
     const auto* const mul = expression.TryInst();
     if (!mul || mul->GetOpcode() != IR::Opcode::IMul32) return {};'''
-new='''    // The guest may build equivalent dword offsets in either layout:
-    //   ((gpu_record * stride + byte_prefix) >> 2) + word
-    //   ((gpu_record * stride) >> 2) + prefix_word + word
-    // Preserve the GPU record index; never evaluate per-lane IDs on the CPU.
+new='''    // Both GCN layouts have identical descriptor-word indices:
+    // ((gpu_record * stride + byte_prefix) >> 2) + word
+    // ((gpu_record * stride) >> 2) + prefix_word + word
+    // Previous code only recognized the first and discarded real strided
+    // material tables when the byte prefix was absent inside the shift.
+    // Keep the original GPU record selector, never CPU-evaluate it.
     auto scaled = shift->Arg(0);
     std::uint32_t prefix_bytes = 0;
     if (const auto* add = scaled.TryInst();
