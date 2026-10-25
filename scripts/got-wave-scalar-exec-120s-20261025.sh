@@ -9,16 +9,25 @@ BUILD="${ROOT}/fresh-build/got-indexed-capacity-20261024-213908"
 BASE="c925523b49ef39434024b16b2b014d120471ee1a"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
 CFG="${WORK}/src/shader_recompiler/frontend/control_flow_graph.cpp"
+SERIAL="${WORK}/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp"
 LOGROOT="${HOME}/projects/shadps4/logs"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 CAPTURE="${LOGROOT}/got-wave-scalar-120s-${STAMP}"
 BACKUP="${CAPTURE}/info/control_flow_graph.cpp.before"
+SERIAL_BACKUP="${CAPTURE}/info/vk_pipeline_serialization.cpp.before"
 PATCHFILE="${CAPTURE}/info/gcn-wave-scalar-exec-scope.patch"
 CFG_EDITED=0
+SERIAL_EDITED=0
 mkdir -p "${CAPTURE}/info" "${CAPTURE}/source" "${ROOT}/candidates"
 finish() {
   local result=$?
   trap - EXIT
+  if (( SERIAL_EDITED )); then
+    if ! cp -p -- "${SERIAL_BACKUP}" "${SERIAL}"; then
+      echo "CRITICAL: restore shader serialization from ${SERIAL_BACKUP}" >&2
+      result=11
+    fi
+  fi
   if (( CFG_EDITED )); then
     if ! cp -p -- "${BACKUP}" "${CFG}"; then
       echo "CRITICAL: restore original CFG manually from ${BACKUP}" >&2
@@ -44,7 +53,7 @@ stage VERIFY_EXACT_COMPLETED_SOURCE_AND_NINJA
     printf 'ACTUAL_WORKTREE_HEAD=%s\n' "$(git -C "${WORK}" rev-parse HEAD)"
   fi
   for path in "${WORK}/CMakeLists.txt" "${BUILD}/CMakeCache.txt" \
-              "${BUILD}/build.ninja" "${GAME}" "${CFG}"; do
+              "${BUILD}/build.ninja" "${GAME}" "${CFG}" "${SERIAL}"; do
     [[ -f "${path}" ]] && echo "PRESENT=${path}" || echo "MISSING=${path}"
   done
   for name in \
@@ -70,7 +79,7 @@ stage VERIFY_EXACT_COMPLETED_SOURCE_AND_NINJA
     head -n 20 || true
 } | tee "${CAPTURE}/info/local-preflight.log"
 for f in "${WORK}/CMakeLists.txt" "${BUILD}/CMakeCache.txt" \
-         "${BUILD}/build.ninja" "${GAME}" "${CFG}"; do
+         "${BUILD}/build.ninja" "${GAME}" "${CFG}" "${SERIAL}"; do
   [[ -f "${f}" ]] || { echo "FAIL: required build or source missing: ${f}" >&2; exit 2; }
 done
 if [[ "$(git -C "${WORK}" rev-parse HEAD)" != "${BASE}" ]]; then
@@ -114,7 +123,16 @@ for rel in \
     exit 2
   }
 done
+# The user's real, completed detached source uses 0xfu / 0xau for these
+# cache versions. Never assume the public fork's numbers match.
+SERIAL_ORIGINAL="$(git -C "${WORK}" rev-parse HEAD:src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp)"
+if [[ "${SERIAL_ORIGINAL}" != "4910cb001ace5ce75f7ca29310b2641633f627ef" ]] ||
+   [[ "$(git hash-object "${SERIAL}")" != "${SERIAL_ORIGINAL}" ]]; then
+  echo "FAIL: user's shader cache version source differs from verified baseline" >&2
+  exit 2
+fi
 cp -p -- "${CFG}" "${BACKUP}"
+cp -p -- "${SERIAL}" "${SERIAL_BACKUP}"
 
 stage VERIFY_PROVEN_WAVE_SCALAR_CORRECTION
 # The patch is from the independently tested issue #5466 / Uncharted-port PR
@@ -158,6 +176,41 @@ cp -p "${CFG}" "${CAPTURE}/source/control_flow_graph.cpp"
 printf 'ORIGINAL_CFG_SHA=%s\nPATCHED_CFG_SHA=%s\n' "${CFG_ORIGINAL}" \
   "$(git hash-object "${CFG}")" > "${CAPTURE}/info/source-shas.txt"
 echo "WAVE_SCALAR_CFG_PATCH=VERIFIED"
+
+stage BUMP_SHADER_BINARY_VERSION_FOR_FRESH_TRANSLATION
+# Current user-local cache is 0xf; the previous packed-export test used 0x10.
+# Use a distinct binary version so this trial *cannot* load stale shader
+# representations from either path. The meta format itself is unchanged.
+SERIAL_EDITED=1
+python3 - "${SERIAL}" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1]); s=p.read_text()
+old='static constexpr u32 ShaderBinaryVersion = 0xfu;'
+new=('// Invalidate shader IR/SPIR-V caches for wave-scalar EXEC semantic correction.\n'
+     'static constexpr u32 ShaderBinaryVersion = 0x11u;')
+if s.count(old)!=1:
+    raise SystemExit('FAIL: exact user-local ShaderBinaryVersion anchor changed')
+p.write_text(s.replace(old,new))
+PY
+SERIAL_SHA="$(git hash-object "${SERIAL}")"
+if [[ "${SERIAL_SHA}" != "01143c42de3a7a2e30daf8cb6f8223db38a4fdc5" ]]; then
+  echo "FAIL: shader cache version update differs from tested exact source" >&2
+  exit 3
+fi
+git -C "${WORK}" diff --check -- \
+  src/shader_recompiler/frontend/control_flow_graph.cpp \
+  src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+git -C "${WORK}" diff -- \
+  src/shader_recompiler/frontend/control_flow_graph.cpp \
+  src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp \
+  > "${CAPTURE}/info/actual-wave-scalar-and-cache-version.patch"
+cp -p "${SERIAL}" "${CAPTURE}/source/vk_pipeline_serialization.cpp"
+printf 'CFG_SOURCE_SHA=%s\nSERIAL_SOURCE_SHA=%s\n' \
+  "$(git hash-object "${CFG}")" "${SERIAL_SHA}" \
+  > "${CAPTURE}/info/verified-translations.txt"
+echo "SHADER_BINARY_CACHE_VERSION=0x11"
+echo "WAVE_SCALAR_SOURCE_AND_CACHE_VERSION=VERIFIED"
 
 stage REBUILD_ORIGINAL_SHADER_AND_RENDERER_OBJECTS
 # Previous test scripts restored source bytes but left the old test objects
