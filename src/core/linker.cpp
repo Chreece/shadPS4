@@ -288,9 +288,12 @@ s32 Linker::LoadAndStartModule(const std::filesystem::path& path, u64 args, cons
 }
 
 Module* Linker::FindByAddress(VAddr address) {
+    // Thread-exit hooks may query modules while another thread loads one.
+    // Module objects remain live after this lock: unloading is unsupported.
+    std::scoped_lock lock{mutex};
     for (auto& module : m_modules) {
         const VAddr base = module->GetBaseAddress();
-        if (address >= base && address < base + module->aligned_base_size) {
+        if (address >= base && address - base < module->aligned_base_size) {
             return module.get();
         }
     }
