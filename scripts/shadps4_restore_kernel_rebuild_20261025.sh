@@ -6,7 +6,8 @@ export GIT_TERMINAL_PROMPT=0
 ROOT="$HOME/projects/shadps4"
 LOGS="$ROOT/logs"
 BASE="b0b6dcb254031f72eda14bb693e839e7e1f52264"
-FIX="ed2c09ecfc400fcd52308123c620ebe9fc4584fd"
+FAILED="ed2c09ecfc400fcd52308123c620ebe9fc4584fd"
+FIX="104cec069b7f53a69d9f8d9760d3adc5bcae892b"
 STAGE="$ROOT/GodOfWarRagnarok/tests/gow-upstream-got-20261025-145442-451241"
 SRC="$STAGE/source"
 BUILD="$STAGE/build"
@@ -73,11 +74,13 @@ flock -n 9 || { echo "ANOTHER_BUILD_IN_PROGRESS"; exit 2; }
 [[ "$ORIGINAL_SHA" == "$PROTECTED_SHA" ]] || {
     echo "ORIGINAL_GAMEPLAY_ELF_HASH_MISMATCH"; exit 3;
 }
-[[ -x "$BIN" && -f "$BUILD/build.ninja" && -f "$BUILD/CMakeCache.txt" ]] || {
-    echo "COMBINED_SOURCE_OR_COMPILED_BUILD_MISSING"; exit 3;
+[[ -f "$BUILD/build.ninja" && -f "$BUILD/CMakeCache.txt" ]] || {
+    echo "COMBINED_NINJA_BUILD_MISSING"; exit 3;
 }
+# A failed link may delete $BIN; preserve the previously saved successful
+# baseline instead of requiring a broken output file to exist.
 OLD_HEAD="$(git -C "$SRC" rev-parse HEAD)"
-[[ "$OLD_HEAD" == "$BASE" || "$OLD_HEAD" == "$FIX" ]] || {
+[[ "$OLD_HEAD" == "$BASE" || "$OLD_HEAD" == "$FAILED" || "$OLD_HEAD" == "$FIX" ]] || {
     echo "SOURCE_REVISION_UNEXPECTED=$OLD_HEAD"; exit 3;
 }
 [[ -z "$(git -C "$SRC" status --porcelain --untracked-files=no)" ]] || {
@@ -96,6 +99,15 @@ if [[ "$OLD_HEAD" == "$BASE" ]]; then
         cp -p "$BIN" "$BACKUP"
     fi
     echo "PREVIOUS_LINKED_BINARY_PRESERVED=$BACKUP"
+fi
+# For a resumed failed linker run, the old object file and the verified
+# backup are authoritative. GNU ld can remove build/shadps4 on failure.
+[[ -f "$BACKUP" ]] &&
+[[ "$(sha256sum "$BACKUP" | cut -d' ' -f1)" == "$OLD_SHA" ]] || {
+    echo "PRESERVED_BASELINE_MISSING_OR_HASH_MISMATCH"; exit 3;
+}
+echo "PREVIOUS_LINKED_BASELINE_SHA_VERIFIED=YES"
+if [[ "$OLD_HEAD" != "$FIX" ]]; then
     git -C "$SRC" -c http.version=HTTP/1.1 fetch --no-tags --no-recurse-submodules \
       https://github.com/Chreece/shadPS4.git \
       refs/heads/fix/restore-generic-kernel-hooks-20261025
@@ -109,6 +121,7 @@ if [[ "$OLD_HEAD" == "$BASE" ]]; then
       src/core/libraries/kernel/sanitizer.h \
       src/core/libraries/kernel/thread_atexit.cpp \
       src/core/libraries/kernel/thread_atexit.h \
+      src/core/linker.cpp \
       src/core/linker_thread_atexit.cpp \
       src/core/module.h \
       src/core/module_thread_atexit.h | sort)"
