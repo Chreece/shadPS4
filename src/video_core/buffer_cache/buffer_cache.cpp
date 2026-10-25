@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <atomic>
 #include <magic_enum/magic_enum.hpp>
 #include <xxhash.h>
 
@@ -180,6 +181,19 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
     if (total_size_bytes == 0) {
         return;
     }
+    // Runtime proof of real GPU->CPU transfers (not merely a marked page).
+    // Count and report the actual copied bytes, with only bounded events.
+    static std::atomic<u32> readback_reports{0};
+    if (readback_reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
+        u64 copied_bytes = 0;
+        for (const auto& copy : copies) {
+            copied_bytes += copy.size;
+        }
+        LOG_INFO(Render,
+                 "AutoReadbackGpuCopy: address={:#x} requested={} "
+                 "copied={} copies={} cpu_write={} async={}",
+                 device_addr, size, copied_bytes, copies.size(), is_write, async);
+    }
     const auto download =
         staging_pool.Request(total_size_bytes, VideoCore::MemoryType::HostCached, 16, async);
     for (auto& copy : copies) {
@@ -235,7 +249,30 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     }
     SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);
     if (is_written) {
+        // Both GPU-owned range representations must agree. Previously the
+        // exact gpu_modified_ranges tree was updated, but the page tracker
+        // only marked pages that had needed an earlier CPU upload. A compute
+        // or graphics shader can write other pages without that upload;
+        // a subsequent CPU read fault then sees GPU=false and skips the
+        // GPU->CPU download even though that range was written on the GPU.
+        //
+        // Conservatively mark the same guest range in the page tracker.
+        // This is the existing automatic/precise readback mechanism, not
+        // a larger descriptor range, fake data, or a game-specific switch.
+        static std::atomic<u32> write_reports{0};
+        const bool report =
+            write_reports.fetch_add(1, std::memory_order_relaxed) < 32u;
+        const bool already_tracked =
+            report && memory_tracker->IsRegionGpuModified(device_addr, size);
+        memory_tracker->MarkRegionAsGpuModified(device_addr, size);
         gpu_modified_ranges.Add(device_addr, size);
+        if (report) {
+            LOG_INFO(Render,
+                     "AutoReadbackWritableRange: address={:#x} bytes={} "
+                     "was_page_dirty={} now_page_dirty={}",
+                     device_addr, size, already_tracked,
+                     memory_tracker->IsRegionGpuModified(device_addr, size));
+        }
     }
     return {arena, arena->Offset(device_addr)};
 }
