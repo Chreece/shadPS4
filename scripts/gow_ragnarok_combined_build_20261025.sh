@@ -6,7 +6,7 @@ export GIT_TERMINAL_PROMPT=0
 ROOT="$HOME/projects/shadps4"
 SCRIPTS="$ROOT/scripts"
 LOGS="$ROOT/logs"
-REV="62dd7a33a338c9aaf5ff57adda8387d77d8713a5"
+REV="c842cb65f8483d957f6c3b7003e076486b118b7e"
 UPSTREAM="30f4170896ce974353a6f6486d0ecec179aec54b"
 PROTECTED_SOURCE="3965a497532edb7b18027692ab04eb97fa4c145b"
 PROTECTED_BIN="$ROOT/GodOfWarRagnarok/build/shadps4"
@@ -139,6 +139,23 @@ grep -q 'DrawStartupLoading' "$SRC/src/video_core/renderer_vulkan/vk_presenter.c
 grep -q 'FeedPort(' "$SRC/src/core/libraries/audio3d/audio3d.cpp"
 grep -q 'DrainAssociatedPorts(port)' "$SRC/src/core/libraries/audio3d/audio3d.cpp"
 echo "ENGINE_SOURCE_FEATURES=PASS"
+
+echo "BUILD_STAGE=SHADER_PROFILE_CAPABILITY_REGRESSION"
+python3 - "$SRC" <<'PYPROFILE'
+from pathlib import Path
+import re, sys
+root=Path(sys.argv[1])
+profile=(root/"src/shader_recompiler/profile.h").read_text()
+pipeline=(root/"src/video_core/renderer_vulkan/vk_pipeline_cache.cpp").read_text()
+instance=(root/"src/video_core/renderer_vulkan/vk_instance.h").read_text()
+fields=[m.group(1) for m in re.finditer(r"(?m)^\s*(?:u32|bool)\s+(\w+)\s*(?:\{|;)",profile)]
+initializer=pipeline.split("profile = Shader::Profile{",1)[1].split("    WarmUp();",1)[0]
+given=[m.group(1) for m in re.finditer(r"(?m)^\s*\.(\w+)\s*=",initializer)]
+assert len(given)==49 and all(k in fields for k in given), "Missing shader profile fields"
+assert [fields.index(k) for k in given]==sorted(fields.index(k) for k in given), "Profile field order differs"
+assert "bool(features.shaderImageGatherExtended)" in instance, "Gather extension not device-derived"
+print("SHADER_PROFILE_49_FIELDS_VULKAN_DEVICE_GATE=PASS",flush=True)
+PYPROFILE
 
 echo "BUILD_STAGE=STARTUP_UI_REGRESSION_TESTS"
 cmake -S "$SRC/tests/startup_loading" -B "$STAGE/startup-tests" -G Ninja \
