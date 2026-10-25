@@ -855,14 +855,23 @@ s32 PS4_SYSV_ABI sceAudio3dPortFlush(const OrbisAudio3dPortId port_id) {
     }
 
     auto& port = state->ports[port_id];
-    std::scoped_lock lock{port.mutex};
 
-    if (!port.audioout_ports.empty()) {
+    // DrainAssociatedPorts takes port.mutex internally. Never invoke it while
+    // holding that same non-recursive mutex, or Audio3D flush will deadlock.
+    std::vector<s32> associated_handles;
+    {
+        std::scoped_lock lock{port.mutex};
+        associated_handles.reserve(port.audioout_ports.size());
+        for (const auto& aout : port.audioout_ports) {
+            associated_handles.push_back(aout.handle);
+        }
+    }
+    if (!associated_handles.empty()) {
         if (const s32 ret = DrainAssociatedPorts(port); ret < 0) {
             return ret;
         }
-        for (const auto& aout : port.audioout_ports) {
-            const s32 ret = AudioOut::sceAudioOutOutput(aout.handle, nullptr);
+        for (const s32 handle : associated_handles) {
+            const s32 ret = AudioOut::sceAudioOutOutput(handle, nullptr);
             if (ret < 0) {
                 return ret;
             }
@@ -870,6 +879,7 @@ s32 PS4_SYSV_ABI sceAudio3dPortFlush(const OrbisAudio3dPortId port_id) {
         return ORBIS_OK;
     }
 
+    std::scoped_lock lock{port.mutex};
     if (port.mixed_queue.empty()) {
         // Only mix if there's actually something to mix.
         if (!port.bed_queue.empty() ||
