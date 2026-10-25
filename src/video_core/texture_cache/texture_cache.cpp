@@ -714,6 +714,13 @@ ImageView& TextureCache::FindTexture(ImageId image_id, const ImageDesc& desc) {
             image.info.guest_address != 0) {
             std::unique_lock lk{download_images_mutex};
             download_images.emplace(image_id);
+            static std::atomic<u32> queued_storage_reports{0};
+            if (queued_storage_reports.fetch_add(1, std::memory_order_relaxed) < 16u) {
+                LOG_INFO(Render_Vulkan,
+                         "AutoLinearImageReadbackQueued: type=storage guest={:#x} bytes={} "
+                         "tiled={}", image.info.guest_address, image.info.guest_size,
+                         static_cast<bool>(image.info.props.is_tiled));
+            }
         }
     }
     UpdateImage(image_id);
@@ -751,6 +758,13 @@ ImageView& TextureCache::FindRenderTarget(ImageId image_id, const ImageDesc& des
     if (readback_linear_images && (!image.info.props.is_tiled || image.info.size.width <= 8)) {
         std::unique_lock lk{download_images_mutex};
         download_images.emplace(image_id);
+        static std::atomic<u32> queued_target_reports{0};
+        if (queued_target_reports.fetch_add(1, std::memory_order_relaxed) < 16u) {
+            LOG_INFO(Render_Vulkan,
+                     "AutoLinearImageReadbackQueued: type=target guest={:#x} bytes={} "
+                     "tiled={}", image.info.guest_address, image.info.guest_size,
+                     static_cast<bool>(image.info.props.is_tiled));
+        }
     }
     image.usage.render_target = 1u;
     UpdateImage(image_id);
