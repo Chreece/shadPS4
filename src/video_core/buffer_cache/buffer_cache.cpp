@@ -191,8 +191,8 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
         }
         LOG_INFO(Render,
                  "AutoReadbackGpuCopy: address={:#x} requested={} "
-                 "copied={} copies={} cpu_write={} async={}",
-                 device_addr, size, copied_bytes, copies.size(), is_write, async);
+                 "copied={} copies={} async={}",
+                 device_addr, size, copied_bytes, copies.size(), async);
     }
     const auto download =
         staging_pool.Request(total_size_bytes, VideoCore::MemoryType::HostCached, 16, async);
