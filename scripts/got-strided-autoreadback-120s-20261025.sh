@@ -95,6 +95,17 @@ for rel in "${FILES[@]}"; do
   mkdir -p "${BACKUP}/$(dirname "${rel}")"
   cp -p -- "${WORK}/${rel}" "${BACKUP}/${rel}"
 done
+# Original buffer-cache implementation was recovered byte-for-byte from
+# the 14:42 compiler-failure archive. Do not accept a guessed public-tree
+# signature: local DownloadMemory has NO is_write parameter.
+BUFFER_ORIGINAL_GIT_SHA=2a7b68c7c93a703ec01922feec871a2a08196c18
+buffer_source="${WORK}/src/video_core/buffer_cache/buffer_cache.cpp"
+actual_buffer_git_sha="$(git hash-object "${buffer_source}")"
+[[ "${actual_buffer_git_sha}" == "${BUFFER_ORIGINAL_GIT_SHA}" ]] || {
+  echo "FAIL: native buffer cache does not match exact tested original: ${actual_buffer_git_sha}" >&2
+  exit 2
+}
+echo "EXACT_BUFFER_CACHE_SOURCE=VERIFIED"
 echo "SOURCE_IDENTITY=PASS"
 stage FETCH_VERIFIED_STRIDED_AND_NATIVE_COHERENCE_PATCHERS
 curl -4fsSL --retry 3 \
@@ -107,9 +118,9 @@ PATCHER_SHA=7d49235878c2495791414c2f37ef6e669e55db64
 python3 -m py_compile "${PATCHER}"
 # Download ONLY a 3.7KiB source-guarded readback patch. No Git dependency fetch.
 curl -4fsSL --retry 3 \
-  "https://raw.githubusercontent.com/Chreece/shadPS4/34dcaaa02704f4ba40ab407cb00113822aa30e68/scripts/patch_local_auto_readback_20261025.py" \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/d446403e766c52441662a10c08a4a66769fd116c/scripts/patch_local_auto_readback_20261025.py" \
   -o "${BUFFER_PATCHER}"
-BUFFER_PATCH_SHA=5a3fe3b0b51973f97ac42fabf2bd01688e5c2cbc
+BUFFER_PATCH_SHA=320945b6a1942a08a43b218b1acf2f02ed853968
 [[ "$(git hash-object "${BUFFER_PATCHER}")" == "${BUFFER_PATCH_SHA}" ]] || {
   echo "FAIL: native demand-coherence patch does not match reviewed source" >&2
   exit 3
@@ -163,9 +174,19 @@ for marker in 'AutoReadbackWritableRange:' 'AutoReadbackGpuCopy:' \
     exit 3
   }
 done
+# Validate the ENTIRE transformed local buffer cache, not just presence of
+# log markers. Hash computed by applying the revised diagnostic-only source
+# correction to the ORIGINAL user-provided 2a7b... buffer-cache bytes.
+EXPECTED_NATIVE_BUFFER_GIT_SHA=cdcf954c5ee47356b05c115974c4c04f0fbc4be0
+actual_native_buffer_git_sha="$(git hash-object "${BUFFER_SRC}")"
+[[ "${actual_native_buffer_git_sha}" == "${EXPECTED_NATIVE_BUFFER_GIT_SHA}" ]] || {
+  echo "FAIL: readback patch differs from exact archived source: ${actual_native_buffer_git_sha}" >&2
+  exit 3
+}
 echo "NATIVE_AUTO_READBACK_TRACKING=VERIFIED"
+echo "NATIVE_BUFFER_PATCHED_BLOB=${actual_native_buffer_git_sha}"
 printf 'PATCHED_NATIVE_BUFFER_CACHE_SHA=%s\n' \
-  "$(git hash-object "${BUFFER_SRC}")" \
+  "${actual_native_buffer_git_sha}" \
   >> "${CAPTURE}/info/verified-source-hashes.txt"
 
 stage REBUILD_RENDERER_AND_SHADER_OBJECTS_FROM_BASELINE
