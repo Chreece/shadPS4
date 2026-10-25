@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include "core/emulator_settings.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
@@ -233,7 +234,20 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
         }
     }
 
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled()) {
+    // The global direct-memory-access option controls optional fast-path
+    // guest memory access, not whether unresolved shader resource table
+    // reads return valid data. The SRT walker gives an unflattenable
+    // ReadConst a flat-buffer slot of zero. With the old global gate,
+    // that instruction instead read user-data word zero, yielding a
+    // completely unrelated guest address and invalid T#/V# resources.
+    //
+    // A dynamic ReadConst requires the existing GPU virtual-address page
+    // table even when optional global DMA is off. The page-table reader
+    // preserves the original address and performs its usual bounds/fault
+    // handling, without inventing any constant descriptor bytes.
+    const bool needs_dynamic_readconst =
+        True(info.readconst_types & Info::ReadConstType::Dynamic);
+    if (!EmulatorSettings.IsDirectMemoryAccessEnabled() && !needs_dynamic_readconst) {
         info.uses_dma = false;
         info.readconst_types = Info::ReadConstType::None;
     }
@@ -249,7 +263,17 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
             .buffer_type = BufferType::FaultBuffer,
             .is_written = true,
         });
-        LOG_ERROR(Render, "Enabling DMA for shader {:#x}", info.pgm_hash);
+        if (!EmulatorSettings.IsDirectMemoryAccessEnabled() && needs_dynamic_readconst) {
+            static std::atomic<u32> reported{0};
+            if (reported.fetch_add(1, std::memory_order_relaxed) < 48u) {
+                LOG_INFO(Render_Recompiler,
+                         "DynamicReadConstRecovery: shader={:#x} readconst_types={} "
+                         "original_guest_address=true",
+                         info.pgm_hash, static_cast<u32>(info.readconst_types));
+            }
+        } else {
+            LOG_ERROR(Render, "Enabling DMA for shader {:#x}", info.pgm_hash);
+        }
     }
 }
 
