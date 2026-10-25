@@ -85,17 +85,26 @@ template <typename Value>
         shift->Arg(1).Type() != IR::Type::U32 ||
         shift->Arg(1).U32() != 2u) return {};
 
-    const auto* const add = shift->Arg(0).TryInst();
-    if (!add || add->GetOpcode() != IR::Opcode::IAdd32) return {};
-    const auto a = add->Arg(0);
-    const auto b = add->Arg(1);
-    if (a.IsImmediate() == b.IsImmediate()) return {};
-    const auto literal = a.IsImmediate() ? a : b;
-    const auto expression = a.IsImmediate() ? b : a;
-    if (literal.Type() != IR::Type::U32) return {};
-    const std::uint32_t prefix = literal.U32();
-    if (prefix % 4u != 0u) return {};
-    const auto* const mul = expression.TryInst();
+    // Both GCN layouts have identical descriptor-word indices:
+    // ((gpu_record * stride + byte_prefix) >> 2) + word
+    // ((gpu_record * stride) >> 2) + prefix_word + word
+    // Previous code only recognized the first and discarded real strided
+    // material tables when the byte prefix was absent inside the shift.
+    // Keep the original GPU record selector, never CPU-evaluate it.
+    auto scaled = shift->Arg(0);
+    std::uint32_t prefix_bytes = 0;
+    if (const auto* add = scaled.TryInst();
+        add && add->GetOpcode() == IR::Opcode::IAdd32) {
+        const auto a = add->Arg(0);
+        const auto b = add->Arg(1);
+        if (a.IsImmediate() == b.IsImmediate()) return {};
+        const auto literal = a.IsImmediate() ? a : b;
+        scaled = a.IsImmediate() ? b : a;
+        if (literal.Type() != IR::Type::U32) return {};
+        prefix_bytes = literal.U32();
+    }
+    if (prefix_bytes % 4u != 0u) return {};
+    const auto* const mul = scaled.TryInst();
     if (!mul || mul->GetOpcode() != IR::Opcode::IMul32) return {};
     const auto lhs = mul->Arg(0);
     const auto rhs = mul->Arg(1);
@@ -106,7 +115,7 @@ template <typename Value>
         stride.U32() < 32u || stride.U32() % 4u ||
         stride.U32() > 65536u) return {};
     const std::uint64_t offset =
-        std::uint64_t(prefix / 4u) + normalized.addend;
+        std::uint64_t(prefix_bytes / 4u) + normalized.addend;
     // The complete 32-byte T# must lie inside exactly one guest record.
     if (offset > std::uint64_t(stride.U32() / 4u)) return {};
     return {gpu_id.TryInst(),stride.U32(),
