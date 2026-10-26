@@ -39,13 +39,24 @@ constexpr static std::array DescriptorHeapSizes = {
 
 static u32 GuestIndexedImageLimit(const Instance& instance) {
     const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+    const u32 hard = std::min({Shader::MaxGuestIndexedImageEntries + 1u,
+                               limits.maxDescriptorSetSampledImages,
+                               limits.maxPerStageDescriptorSampledImages,
+                               limits.maxPerStageResources});
+    constexpr u32 reserve = Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
+    return hard > reserve + 1u
+        ? std::min(Shader::MaxGuestIndexedImageEntries, hard - reserve - 1u)
+        : 0u;
+}
+
+static u32 GuestMixedIndexedImageLimit(const Instance& instance) {
+    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
     const u32 hard = std::min({limits.maxDescriptorSetSampledImages,
                                limits.maxPerStageDescriptorSampledImages,
                                limits.maxPerStageResources});
-    // Each dynamically typed guest image table has separate 2D, 3D and
-    // cube sampled descriptor arrays. Respect the real Vulkan per-stage
-    // descriptor budget rather than assuming all three fit automatically.
     constexpr u32 reserve = Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
+    // A typed array needs three descriptor bindings. Retain the existing
+    // single 2D image array on hardware that cannot accommodate all three.
     return hard > reserve + 3u
         ? std::min(Shader::MaxGuestIndexedImageEntries, (hard - reserve) / 3u - 1u)
         : 0u;
@@ -66,10 +77,12 @@ static u32 GuestIndexedSamplerLimit(const Instance& instance) {
 static const auto& RuntimeDescriptorHeapSizes(const Instance& instance) {
     static const auto sizes = [&instance] {
         auto result = DescriptorHeapSizes;
-        result[2].descriptorCount =
-            std::max(result[2].descriptorCount,
-                     3u * (GuestIndexedImageLimit(instance) + 1u) +
-                         Shader::NUM_IMAGES + 1024u);
+        result[2].descriptorCount = std::max({
+            result[2].descriptorCount,
+            GuestIndexedImageLimit(instance) + Shader::NUM_IMAGES + 1024u,
+            3u * (GuestMixedIndexedImageLimit(instance) + 1u) +
+                Shader::NUM_IMAGES + 1024u,
+        });
         result[4].descriptorCount =
             std::max(result[4].descriptorCount,
                      GuestIndexedSamplerLimit(instance) + Shader::NUM_SAMPLERS + 1024u);
@@ -324,6 +337,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .subgroup_size = instance.SubgroupSize(),
         .sparse_page_shift = sparse_page_shift,
         .max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),
+        .max_guest_mixed_indexed_image_entries = GuestMixedIndexedImageLimit(instance),
         .max_guest_indexed_sampler_entries = GuestIndexedSamplerLimit(instance),
         .support_int8 = instance.IsShaderInt8Supported(),
         .support_int16 = instance.IsShaderInt16Supported(),
@@ -756,7 +770,7 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
         binding.unified += info.buffers.size();
         for (const auto& image : info.images) {
             binding.unified += image.NumBindings(info) *
-                (image.is_guest_indexed ? 3u : 1u);
+                (image.is_guest_mixed_indexed ? 3u : 1u);
         }
         for (const auto& sampler : info.samplers) {
             binding.unified += sampler.NumBindings(info);
