@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <limits>
+#include <unordered_map>
+#include "common/logging/log.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/ir_emitter.h"
@@ -268,6 +271,21 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         .post_op = resource.sharps[0].post_op,
     };
 
+    // A strided guest material T# can use a single real, unmodified S#.
+    // All four sampler descriptor words must be host-evaluable, and the
+    // resulting actual guest sampler must validate before allowing the path.
+    bool verified_uniform_sampler = false;
+    if (resource.has_indexed_table && resource.indexed_record_stride_bytes != 0u &&
+        !resource.has_indexed_sampler_table &&
+        resource.sharps[1].post_op == SharpFetchPostOp::None &&
+        resource.sharps[1].num_dwords == 4u) {
+        const auto sampler_fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1]);
+        AmdGpu::Sampler real_sampler{};
+        verified_uniform_sampler =
+            sampler_fetch.Fetch(info.flattened_ud_buf.data(), &real_sampler) &&
+            real_sampler.Valid();
+    }
+
     // Preserve a complete guest T# table and its real GPU selector. Packed
     // and strided array-of-structs forms are accepted only when the complete
     // table is representable; never truncate a prefix or CPU-evaluate the ID.
@@ -275,7 +293,8 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         (resource.indexed_record_stride_bytes == 0u ||
          (resource.has_indexed_sampler_table &&
           profile.supports_sampler_array_nonuniform_indexing &&
-          resource.sharps[1].post_op == SharpFetchPostOp::None)) &&
+          resource.sharps[1].post_op == SharpFetchPostOp::None) ||
+         verified_uniform_sampler) &&
         !is_written && !inst_info.is_depth && !inst_info.is_array &&
         !inst_info.is_gather && !inst_info.has_lod && !inst_info.force_level0 &&
         !inst_info.has_lod_clamp && !inst_info.is_r128 && !inst_info.is_unnormalized) {
@@ -286,13 +305,17 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             table.Valid() && table.base_address != 0) {
             const u32 record_stride = resource.indexed_record_stride_bytes;
             const u32 record_offset = resource.indexed_descriptor_offset_bytes;
+            const u32 indexed_limit = verified_uniform_sampler
+                ? profile.max_guest_indexed_image_entries
+                : std::min(profile.max_guest_indexed_image_entries,
+                           profile.max_guest_indexed_sampler_entries);
             const u32 entries = record_stride != 0u
                 ? CompleteGuestTsharpRecordEntries(
                       static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
-                      record_stride, record_offset, profile.max_guest_indexed_image_entries)
+                      record_stride, record_offset, indexed_limit)
                 : CompleteGuestTsharpTableEntries(
                       static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
-                      profile.max_guest_indexed_image_entries);
+                      indexed_limit);
             if (entries != 0u) {
                 image_res.indexed_table_fetch = table_fetch;
                 image_res.indexed_guest_entries = entries;
@@ -388,7 +411,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             .is_depth = bool(inst_info.is_depth),
             .is_integer = AmdGpu::IsInteger(image.GetNumberFmt()),
         };
-        if (image_res.is_guest_indexed &&
+        if (image_res.is_guest_indexed && !verified_uniform_sampler &&
             image_res.indexed_record_stride_bytes != 0u) {
             ASSERT(resource.has_indexed_sampler_table);
             sampler_res.is_guest_indexed = true;
@@ -396,6 +419,20 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             sampler_res.indexed_guest_entries = image_res.indexed_guest_entries;
             sampler_res.indexed_record_stride_bytes = image_res.indexed_record_stride_bytes;
             sampler_res.indexed_sampler_offset_bytes = resource.indexed_sampler_offset_bytes;
+        }
+        if (image_res.is_guest_indexed && verified_uniform_sampler) {
+            static thread_local std::unordered_map<u64, u32> reports;
+            const u64 shader = info.pgm_hash;
+            if (reports.size() < 96u || reports.contains(shader)) {
+                u32& count = reports[shader];
+                if (count++ < 2u) {
+                    LOG_INFO(Render_Recompiler,
+                             "IndexedUniformSamplerBound: shader={:#x} "
+                             "record_stride={} entries={}",
+                             shader, image_res.indexed_record_stride_bytes,
+                             image_res.indexed_guest_entries);
+                }
+            }
         }
         const u32 sampler_binding = descriptors.Add(sampler_res);
         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
