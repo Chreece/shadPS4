@@ -298,6 +298,8 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                 image_res.indexed_record_stride_bytes = record_stride;
                 image_res.indexed_descriptor_offset_bytes = record_offset;
                 image_res.is_guest_indexed = true;
+                image_res.is_guest_mixed_indexed =
+                    entries <= profile.max_guest_mixed_indexed_image_entries;
             }
         }
     }
@@ -899,7 +901,7 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
         }
         if (image_res.is_guest_indexed) {
             IR::Value sampled_coords = coords;
-            if (!inst_info.has_offset) {
+            if (image_res.is_guest_mixed_indexed && !inst_info.has_offset) {
                 // T# dword 3 carries bits [31:28] = genuine guest image type.
                 // Retain its GPU-selected value in coords.w. The unused z
                 // coordinate has no effect on Color2D samples, but is
