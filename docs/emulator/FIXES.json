@@ -81,15 +81,15 @@
     {
       "id": "gpu-indexed-uniform-sampler",
       "subsystem": "shader-resources",
-      "status": "KEEP_PROVEN_GOT_PR77_NATIVE_RETEST_PENDING",
+      "status": "KEEP_GENUINE_SAMPLER_CAPABILITY_PR77_NATIVE_RUNTIME_GPU_LOSS",
       "related_prs": [
         64,
         77
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "Earlier GoT native PR64: 13 valid uniform S# binds over 7 shader hashes, 12 in later menu-visible native A/B. PR75 native full build passed but public source omitted this known-good uniform sampler path; its 12:50 test had zero uniform binding events and regressed to four identical almost-black loading screens. PR77 restores the exact generic four-word source proof and actual Valid() sampler gate, preserving GPU texture index; PR77 combined native/visual result still pending.",
-      "negative_result_or_prohibition": "Do not merge the full divergent GoT ancestry or accept a 3D/Cube claim without positive GPU typed binds. Never fabricate an S#, CPU-select a GPU texture ID, bind 3D/Cube as 2D, or call the PR75 12:50 black-screen candidate graphics-good.",
-      "next_test": "Native test PR77 on isolated incremental build; require IndexedUniformSamplerBound positive plus restored visible GoT menu/particles without context loss; keep all negative results in universal diary and run GoW cross-title regression before main promotion. 35 Color3D and four Cube slots in 27,651-record table still require capacity-safe heterogeneous image remapping if triple-full arrays exceed device descriptor budget."
+      "observed_game_effects": "Earlier PR64 native proved 13 valid uniform S# binds and visible menu. New controlled PR77 native A/B 2026-10-26 17:01:43 built and linked but emitted only two scalar S# binds and two 2D-only image table binds, reached black loading at 40s, then GPU context lost/ErrorDeviceLost and exit 139; PR78 experienced exactly same ordered 103 compute shader compilation hashes and device loss. PR77 itself is NOT visually accepted.",
+      "negative_result_or_prohibition": "Do not mistake native build/sampler binding for menu/game success, do not attribute the GPU loss uniquely to compact PR78. Never fabricate GPU material ID/sampler/descriptor.",
+      "next_test": "Restore and verify the last menu-positive GPU precise-linear-readback baseline (previous SHA256 260ed43a...) without replacing installed GoW/GoT; compare shared compute/buffer descriptor handling and GPU fault evidence. Fix generic source only with proved fault, then repeat GoT/GoW controlled regression."
     },
     {
       "id": "tiled-eager-readbacks",
@@ -325,7 +325,7 @@
     {
       "id": "gpu-indexed-heterogeneous-compact-images",
       "subsystem": "shader-vulkan-texture-binding",
-      "status": "CXX_SOURCE_IMPLEMENTED_NATIVE_VALIDATION_PENDING",
+      "status": "NATIVE_BUILD_PASS_FIXTURE_PASS_RUNTIME_GPU_LOSS_SHARED_WITH_PR77",
       "related_prs": [
         64,
         75,
@@ -333,9 +333,9 @@
         78
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "Native GoT 26 October evidence: GPU guest material table has 27,651 entries, with 27,612 valid Color2D, 35 Color3D and 4 Cube; a homogeneous Vulkan 2D sampled array excludes non-2D entries. The old PR75 typed approach with 3 full arrays compiled but did not bind the large table and regressed to a black loading screen; PR77 reestablished 8 real uniform-sampler binding events but only small 24-entry tables rendered. New PR78 uses unchanged 27,652-slot 2D array plus compact 257-slot 3D and 129-slot cube arrays and one GPU-visible guest-ID->typed-slot map, preserving correct Vulkan descriptor types and real per-invocation GPU selected IDs. Newly committed release-mode mapping test prevents the original assertion-side-effect issue. No current native GoT visual test of PR78.",
-      "negative_result_or_prohibition": "Never allocate three full 27,652-entry Vulkan arrays when descriptor hardware budget is insufficient. Never manufacture GPU guest index on CPU, fake textures or coerce a 3D/Cube VkImageView to the 2D array. Bounded compact arrays have null sentinels and explicit overflow evidence; overflowed images remain unavailable, not misbound. Avoid eager tiled image readback and don't call a C++ header fixture native SPIR-V/Vulkan proof.",
-      "next_test": "Pin latest exact PR78 source; compile actual compact mapping test with -O2 -DNDEBUG -Wall -Wextra -Werror and full emulator Ninja -k0, link, validate runtime shader/descriptor map and actual >0 3D/cube bindings for a 27,651-record table on RX7900XTX; capture menu effects/ground geometry/FPS, GoW cross-title regression, append true test result to canonical docs/emulator/TRIALS.jsonl, promote only then."
+      "observed_game_effects": "PR78 17:03:36 source bfe756fa native full build PASS, compact NDEBUG mapping fixture PASS, two 24-entry 2D-only mixed bindings (0 3D, 0 Cube); RADV context lost and SIGSEGV 139. PR77 control without compact map also context lost at identical 103rd compute shader 0x17c90240 and same extreme stage 0x5e89a8b4 buffer range signatures. No menu screenshot for PR78 and no actual typed texture bindings. PR remains unmerged experimental.",
+      "negative_result_or_prohibition": "No evidence of 27,651 image table exercised or actual 3D/Cube binding. Do not blame compact mapping uniquely or promote; 0xFFFFFFEC SRD range is not automatically invalid. Avoid title/shader filters or arbitrary size caps.",
+      "next_test": "Do not repeat same unmodified PR77/78 crash. Use known-good menu-visible native baseline and shared compute/buffer path differential evidence; capture real descriptor data/faulting dispatch before code changes. Re-test 3D and Cube only when menu reaches stable graphics and cross-check GoW."
     }
   ]
 }
