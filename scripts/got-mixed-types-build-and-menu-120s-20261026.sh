@@ -4,8 +4,9 @@
 set -Eeuo pipefail
 export GIT_TERMINAL_PROMPT=0
 BASE="$HOME/projects/shadps4/GhostOfTsushima/fresh-source/got-indexed-capacity-20261024-213908"
-PIN="52350d53f6613fbfe3b70378a35174f02525b8d4"
+PIN="404dc672286deb016c1438fbe9e822790ba983db"
 PREVIOUS_PIN="82cc0cdd2e996cc747106b0a0bb9a6ebc5f4a104"
+LAST_TESTED_PIN="52350d53f6613fbfe3b70378a35174f02525b8d4"
 # Reuse the previous isolated worktree and ~2535 Ninja objects / FFmpeg cache.
 # Original game source, installed game binaries, saves and SSH are untouched.
 ROOT="$HOME/projects/shadps4/GhostOfTsushima/experiments/mixed-types-$PREVIOUS_PIN"
@@ -67,11 +68,12 @@ if [[ -e "$SOURCE" ]]; then
  [[ -d "$SOURCE" && -e "$SOURCE/.git" ]] ||
   fail "Experiment path in use by another project"
  CURRENT_PIN="$(git -C "$SOURCE" rev-parse HEAD)"
- [[ "$CURRENT_PIN" == "$PIN" || "$CURRENT_PIN" == "$PREVIOUS_PIN" ]] ||
+ [[ "$CURRENT_PIN" == "$PIN" || "$CURRENT_PIN" == "$PREVIOUS_PIN" ||
+    "$CURRENT_PIN" == "$LAST_TESTED_PIN" ]] ||
   fail "Unexpected experiment HEAD $CURRENT_PIN; preserving this separate worktree"
  [[ -z "$(git -C "$SOURCE" status --porcelain --untracked-files=no)" ]] ||
   fail "Existing experiment has uncommitted changes - preserving"
- if [[ "$CURRENT_PIN" == "$PREVIOUS_PIN" ]]; then
+ if [[ "$CURRENT_PIN" != "$PIN" ]]; then
   stage FAST_FORWARD_EXISTING_ISOLATED_WORKTREE
   git -C "$SOURCE" checkout --detach "$PIN" \
     > "$CAPTURE/info/verified-worktree-update.log" 2>&1 || {
@@ -179,6 +181,36 @@ if [[ ! -f "$FFMPEG_ZIP" ]]; then
 fi
 valid_zip "$FFMPEG_ZIP" || fail "FFmpeg archive checksum/contents failed"
 echo "FFMPEG_RELEASE_ASSET_SHA256=$FFMPEG_ASSET_SHA256" | tee -a "$CAPTURE/info/progress.log"
+
+stage PREFLIGHT_VULKAN_FEATURE_DECLARATION_ORDER
+# Compile the *actual* C++23 VkPhysicalDeviceFeatures2 initializer against
+# the pinned Vulkan headers and host compiler before running Ninja.
+python3 - "$SOURCE/src/video_core/renderer_vulkan/vk_instance.cpp" \
+  "$CAPTURE/info/vulkan-features-preflight.cpp" <<'PY'
+from pathlib import Path
+import sys
+s=Path(sys.argv[1]).read_text()
+begin=s.index("vk::PhysicalDeviceFeatures2{")
+begin=s.index(".features{",begin)+len(".features{")
+end=s.index("\n            },",begin)
+initializer=s[begin:end]
+assert ".shaderImageGatherExtended =" in initializer
+assert ".shaderSampledImageArrayDynamicIndexing =" in initializer
+Path(sys.argv[2]).write_text(
+    "#include <vulkan/vulkan.hpp>\n"
+    "int main() {\n"
+    "  vk::PhysicalDeviceFeatures features{};\n"
+    "  vk::PhysicalDeviceFeatures enabled{\n"
+    + initializer + "\n  };\n  (void)enabled;\n  return 0;\n}\n")
+PY
+c++ -std=gnu++23 -fsyntax-only \
+  -I "$SOURCE/externals/vulkan-headers/include" \
+  "$CAPTURE/info/vulkan-features-preflight.cpp" \
+  > "$CAPTURE/info/vulkan-features-preflight.log" 2>&1 || {
+    cat "$CAPTURE/info/vulkan-features-preflight.log" >&2
+    fail "Vulkan designated initializer failed exact-header compilation preflight"
+  }
+echo "VULKAN_DESIGNATOR_ORDER_PINNED_HEADER=PASS" | tee -a "$CAPTURE/info/progress.log"
 
 stage CONFIGURE_CMAKE
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
