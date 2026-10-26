@@ -325,7 +325,7 @@
     {
       "id": "gpu-indexed-heterogeneous-compact-images",
       "subsystem": "shader-vulkan-texture-binding",
-      "status": "NATIVE_BUILD_PASS_FIXTURE_PASS_RUNTIME_GPU_LOSS_SHARED_WITH_PR77",
+      "status": "EMULATOR_WIDE_SOURCE_AND_FIXTURE_PRESENT_NO_GPU_3D_CUBE_BINDING",
       "related_prs": [
         64,
         75,
@@ -335,7 +335,23 @@
       "main_merge_sha": null,
       "observed_game_effects": "PR78 17:03:36 source bfe756fa native full build PASS, compact NDEBUG mapping fixture PASS, two 24-entry 2D-only mixed bindings (0 3D, 0 Cube); RADV context lost and SIGSEGV 139. PR77 control without compact map also context lost at identical 103rd compute shader 0x17c90240 and same extreme stage 0x5e89a8b4 buffer range signatures. No menu screenshot for PR78 and no actual typed texture bindings. PR remains unmerged experimental.",
       "negative_result_or_prohibition": "No evidence of 27,651 image table exercised or actual 3D/Cube binding. Do not blame compact mapping uniquely or promote; 0xFFFFFFEC SRD range is not automatically invalid. Avoid title/shader filters or arbitrary size caps.",
-      "next_test": "Do not repeat same unmodified PR77/78 crash. Use known-good menu-visible native baseline and shared compute/buffer path differential evidence; capture real descriptor data/faulting dispatch before code changes. Re-test 3D and Cube only when menu reaches stable graphics and cross-check GoW."
+      "next_test": "After isolating shared Vulkan GPU context loss, exercise large 27651-entry table with real 35 Color3D and 4 Cube descriptors; confirm bound_3d>0/bound_cube>0, actual GPU selected IDs and valid SPIR-V type derivatives, menu/cinematic visuals and GoW. Keep PR78 draft/unmerged until then."
+    },
+    {
+      "id": "gpu-huge-guest-raw-buffer-residency",
+      "subsystem": "gpu-buffer-cache-and-vulkan",
+      "status": "ROOT_CAUSE_NOT_YET_ISOLATED_SOURCE_DIAGNOSIS_ACTIVE",
+      "related_prs": [
+        52,
+        57,
+        72,
+        77,
+        78
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "Native visually capable old GoT SHA 260ed43... reaches menu and animated 55s cinematic but same 85s and 112s image; audio/CPU AJM continue after RADV GPU soft context loss. Old baseline has 1047 huge raw V# requests 0xFFFFFFEC tied to stage 0x5e89a8b4 and 5514 sparse residency events; PR77 and PR78 also clamp this descriptor and GPU-context fail before menu. Huge raw descriptor present in all three, not a unique new PR78 regression.",
+      "negative_result_or_prohibition": "GCN V# STRIDE=0 means NUM_RECORDS is byte count; 0xFFFFFFEC not automatically corruption. Never replace with arbitrary size, hardcode shader/game ID, null resource, skip GPU dispatch, or conflate last compiled compute hash with executed faulting command. Vulkan robustBufferAccess2 and nullDescriptor are already enabled.",
+      "next_test": "Run pinned no-build known-good 118s RADV_DEBUG=hang capture (script scripts/got-radv-hang-fault-20261026.sh, commit 72a4872b) to expose actual in-flight pipeline, BO allocation/VA and SPIR-V. Preserve original shaders/binaries, then develop generic evidence-based buffer cache residency/range fix; compare GoT visuals/FPS/audio, then GoW."
     }
   ]
 }
