@@ -24,6 +24,7 @@ from pathlib import Path
 import re
 import sys
 import tarfile
+import uuid
 
 SHA = re.compile(r"^[0-9a-f]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -178,7 +179,10 @@ def main() -> int:
     related_prs = list(dict.fromkeys(args.pr))
     entry = {
         "schema_version": 2,
-        "record_id": "archive-" + evidence_sha[:24],
+        # Corrections must have a distinct durable identity even when they
+        # intentionally refer to the same archived bytes. No old line changes.
+        "record_id": (("correction-" + uuid.uuid4().hex)
+                      if args.revision_of else "archive-" + evidence_sha[:24]),
         "recorded_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "record_type": "CORRECTION" if args.revision_of else "TRIAL",
         "scope": "universal shadPS4",
