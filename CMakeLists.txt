@@ -1006,6 +1006,7 @@ set(CORE src/core/startup_progress.h
          src/core/module_thread_atexit.h
          src/core/memory.cpp
          src/core/memory.h
+         src/core/mapped_guest_range.h
          src/core/module.cpp
          src/core/module.h
          src/core/platform.h
