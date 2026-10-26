@@ -4,7 +4,8 @@
 set -Eeuo pipefail
 export GIT_TERMINAL_PROMPT=0
 BASE="$HOME/projects/shadps4/GhostOfTsushima/fresh-source/got-indexed-capacity-20261024-213908"
-PIN="d014d268c016f24e61b046f1129ffe422b41e076"
+PIN="bfe756faeec1231e51ae43728c20ce964d92c954"
+LATEST_COMPACT_PIN="d014d268c016f24e61b046f1129ffe422b41e076"
 PREVIOUS_PIN="82cc0cdd2e996cc747106b0a0bb9a6ebc5f4a104"
 LAST_TESTED_PIN="ecbbdfebd394e17c33cfebf7b07c4bb89ab5e146"
 EARLIER_PIN="73f1ee423fa7daecdfdb1fc62e52c6291e2a4f41"
@@ -71,8 +72,9 @@ if [[ -e "$SOURCE" ]]; then
  [[ -d "$SOURCE" && -e "$SOURCE/.git" ]] ||
   fail "Experiment path in use by another project"
  CURRENT_PIN="$(git -C "$SOURCE" rev-parse HEAD)"
- [[ "$CURRENT_PIN" == "$PIN" || "$CURRENT_PIN" == "$PREVIOUS_PIN" ||
-    "$CURRENT_PIN" == "$LAST_TESTED_PIN" || "$CURRENT_PIN" == "$EARLIER_PIN" ||
+ [[ "$CURRENT_PIN" == "$PIN" || "$CURRENT_PIN" == "$LATEST_COMPACT_PIN" ||
+    "$CURRENT_PIN" == "$PREVIOUS_PIN" || "$CURRENT_PIN" == "$LAST_TESTED_PIN" ||
+    "$CURRENT_PIN" == "$EARLIER_PIN" ||
     "$CURRENT_PIN" == "$OLDEST_PIN" || "$CURRENT_PIN" == "$ANCIENT_PIN" ]] ||
   fail "Unexpected experiment HEAD $CURRENT_PIN; preserving this separate worktree"
  [[ -z "$(git -C "$SOURCE" status --porcelain --untracked-files=no)" ]] ||
@@ -133,6 +135,15 @@ grep -Fq 'image_index_maps.emplace_back'  "$SOURCE/src/video_core/renderer_vulka
  fail "Renderer per-draw remap upload missing"
 grep -Fq 'buffer_infos.reserve(required_buffer_infos)'  "$SOURCE/src/video_core/renderer_vulkan/vk_rasterizer.cpp" ||
  fail "Stable descriptor buffer pointers not reserved"
+grep -Fq 'Shader::CompactImageIndices::Assign(' \
+  "$SOURCE/src/video_core/renderer_vulkan/vk_rasterizer.cpp" ||
+  fail "Missing actual compact ordinal assignment in renderer"
+grep -Fq 'const bool mapped = Shader::CompactImageIndices::Assign(' \
+  "$SOURCE/src/video_core/renderer_vulkan/vk_rasterizer.cpp" ||
+  fail "Compact mapping assignment must execute outside ASSERT in Release"
+grep -Fq 'std::vector<vk::DescriptorBufferInfo> buffer_infos' \
+  "$SOURCE/src/video_core/renderer_vulkan/vk_rasterizer.h" ||
+  fail "Renderer BufferInfo list must stay expandable for remap SSBO"
 grep -Fq "std::vector<vk::DescriptorBufferInfo> buffer_infos" "$SOURCE/src/video_core/renderer_vulkan/vk_rasterizer.h" ||
  fail "Vulkan buffer descriptors still use fixed-size static_vector"
 grep -Fq "compact_index_map" "$SOURCE/src/shader_recompiler/backend/spirv/spirv_emit_context.h" ||
@@ -157,6 +168,24 @@ c++ -std=c++23 -Wall -Wextra -Werror -pedantic   -I "$SOURCE/src"   "$SOURCE/scr
 "$CAPTURE/info/compact-image-map-test" > "$CAPTURE/info/compact-fixture-output.txt" ||
  fail "Compact guest image mapping fixture failed 2D/3D/Cube bound/null tests"
 cat "$CAPTURE/info/compact-fixture-output.txt"
+
+stage VERIFY_RELEASE_MODE_COMPACT_IMAGE_INDICES
+# Regression safeguard: assigning the real guest ID must work with NDEBUG.
+# The old fixture uses assert(), so it does not prove Release-mode
+# side effects. This one uses explicit error returns, the production header,
+# all 27,651 T# records and 35/4 compact slots.
+c++ -std=c++23 -O2 -DNDEBUG -Wall -Wextra -Werror -pedantic \
+  -I "$SOURCE/src" \
+  "$SOURCE/tests/compact_image_indices_test.cpp" \
+  -o "$CAPTURE/info/compact-map-release-test" \
+  > "$CAPTURE/info/compact-map-release-build.log" 2>&1 || {
+  cat "$CAPTURE/info/compact-map-release-build.log" >&2
+  fail "Actual compact remap helper does not compile under Release/NDEBUG"
+}
+"$CAPTURE/info/compact-map-release-test" ||
+  fail "Real GPU index->typed slot remap failed when assertions are disabled"
+echo "COMPACT_IMAGE_REMAP_RELEASE_NDEBUG=PASS" |
+ tee -a "$CAPTURE/info/progress.log"
 
 stage PREFETCH_VERIFIED_FFMPEG
 # The exact FFmpeg-core submodule commit has a published Linux x64 asset.
