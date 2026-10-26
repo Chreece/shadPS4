@@ -143,8 +143,14 @@ tests/sparse_allocation_ranges_test.cpp $PATCH_TEST_BLOB
 EOF
 
 stage VERIFY_COMPILED_PACKED_GAP_FIXTURE
+# The test includes the real new helper by its repository-relative path.
+# Compile before mutating the source tree by mirroring the include hierarchy.
+mkdir -p "$OUT/test-include/video_core/buffer_cache"
+cp -p -- "$OUT/input/sparse_allocation_ranges.h" \
+  "$OUT/test-include/video_core/buffer_cache/sparse_allocation_ranges.h"
 c++ -std=c++20 -O2 -DNDEBUG -Wall -Wextra -Werror -pedantic \
- -I "$SRC/src" "$OUT/input/sparse_allocation_ranges_test.cpp" \
+ -I "$OUT/test-include" -I "$SRC/src" \
+ "$OUT/input/sparse_allocation_ranges_test.cpp" \
  -o "$OUT/info/packed-gap-fixture" > "$OUT/info/fixture-build.log" 2>&1 || die "Fixture compiler failure"
 "$OUT/info/packed-gap-fixture" > "$OUT/info/fixture-result.txt" 2>&1 || die "Packed sparse coverage failed"
 
