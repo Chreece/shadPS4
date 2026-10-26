@@ -14,6 +14,7 @@
 #include <spirv/unified1/spirv.hpp11>
 
 #include <numbers>
+#include <utility>
 #include <string_view>
 
 namespace Shader::Backend::SPIRV {
