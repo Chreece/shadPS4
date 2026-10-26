@@ -1040,7 +1040,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 std::construct_at(&desc, raw, image_desc);
                 slot.image_id = texture_cache.FindImage(desc);
                 auto* image = &texture_cache.GetImage(slot.image_id);
-                if (desc.type == VideoCore::TextureCache::BindingType::Texture) {
+                if (type == AmdGpu::ImageType::Color2D &&
+                    desc.type == VideoCore::TextureCache::BindingType::Texture) {
                     if (auto depth_image_id = texture_cache.GetAssociatedDepth(*image)) {
                         slot.image_id = depth_image_id;
                         image = &texture_cache.GetImage(slot.image_id);
