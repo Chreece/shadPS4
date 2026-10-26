@@ -4,6 +4,7 @@
 #include "common/div_ceil.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/fault_manager.h"
+#include "video_core/buffer_cache/fault_list_limits.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -13,8 +14,8 @@
 
 namespace VideoCore {
 
-static constexpr size_t MaxPageFaults = 1024;
-static constexpr size_t PageFaultAreaSize = MaxPageFaults * sizeof(u64);
+static constexpr size_t MaxPageFaults = MaxGpuFaultListWords;
+static constexpr size_t PageFaultAreaSize = GpuFaultListBytes;
 
 FaultManager::FaultManager(const Vulkan::Instance& instance, Vulkan::Scheduler& scheduler_,
                            BufferCache& buffer_cache_, u32 sparse_pagebits, u64 sparse_num_pages_)
@@ -93,6 +94,9 @@ void FaultManager::ProcessFaultBuffer() {
     const u32 offset = current_area * PageFaultAreaSize;
     u8* mapped = download_buffer.mapped_data.data() + offset;
     std::memset(mapped, 0, PageFaultAreaSize);
+    // HostCached VMA memory need not be HOST_COHERENT. The GPU must see the
+    // reset counter, not a stale prior submission's completed fault count.
+    download_buffer.Flush(offset, PageFaultAreaSize);
 
     const vk::BufferMemoryBarrier2 pre_barrier = {
         .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
@@ -161,11 +165,19 @@ void FaultManager::ProcessFaultBuffer() {
         .pBufferMemoryBarriers = &post_barrier,
     });
 
-    scheduler.DeferOperation([this, mapped, area = current_area] {
+    scheduler.DeferOperation([this, mapped, offset, area = current_area] {
+        // Invalidate CPU caches after this GPU submission completes. Otherwise
+        // the reported page addresses can be stale even with correct GPU writes.
+        download_buffer.Invalidate(offset, PageFaultAreaSize);
         fault_ranges.Clear();
         const u64* fault_buf = std::bit_cast<const u64*>(mapped);
-        const u32 fault_count = fault_buf[0];
-        for (u32 i = 1; i <= fault_count; ++i) {
+        const size_t fault_count = ClampGpuFaultCount(fault_buf[0]);
+        if (fault_buf[0] > MaxGpuFaultAddresses) {
+            LOG_ERROR(Render_Vulkan,
+                      "Fault parser returned {} entries, clamped to safe capacity {}",
+                      fault_buf[0], MaxGpuFaultAddresses);
+        }
+        for (size_t i = 1; i <= fault_count; ++i) {
             fault_ranges.Add(fault_buf[i], sparse_pagesize);
             LOG_INFO(Render_Vulkan, "Accessed non-GPU cached memory at {:#x}", fault_buf[i]);
         }
