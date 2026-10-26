@@ -52,6 +52,22 @@
       "kind": "hard-test-timeout",
       "status": "merged-main",
       "sha": "3b49eed54c9dee97b649b8d7ac8b9a1f5dbc33c4"
+    },
+    {
+      "id": "PR-66",
+      "kind": "SRT host machine-code rollback",
+      "status": "merged-main-native-main-test-pending",
+      "pr": "https://github.com/Chreece/shadPS4/pull/66",
+      "sha": "8869651a2b3b1943fc7ab077074bdfbe5875a141",
+      "note": "Exact local GoT scheduler already used checkpoint technique; main forward-port now merged; no claim of world graphics repair."
+    },
+    {
+      "id": "PR-67",
+      "kind": "diagnostic SRT pending parent sources",
+      "status": "diagnostic-native-test-pending",
+      "pr": "https://github.com/Chreece/shadPS4/pull/67",
+      "parent_source_sha": "1447a450ca062fa98595ceda766604758a155fe9",
+      "expected_diagnostic_source_sha": "718188fa69808844ae674638244b4292b8889ced"
     }
   ],
   "rejected": [
@@ -81,5 +97,6 @@
     "timeout_118_TERM_2_KILL",
     "preserve_SSH"
   ],
-  "next_root_cause": "SRT dependency resolution / GPU-dynamic resource addresses; no proven terrain fix yet"
+  "next_root_cause": "SRT dependency resolution / GPU-dynamic resource addresses; no proven terrain fix yet",
+  "latest_merged_generic_main_fix": "8869651a2b3b1943fc7ab077074bdfbe5875a141"
 }
