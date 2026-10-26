@@ -4,8 +4,11 @@
 set -Eeuo pipefail
 export GIT_TERMINAL_PROMPT=0
 BASE="$HOME/projects/shadps4/GhostOfTsushima/fresh-source/got-indexed-capacity-20261024-213908"
-PIN="82cc0cdd2e996cc747106b0a0bb9a6ebc5f4a104"
-ROOT="$HOME/projects/shadps4/GhostOfTsushima/experiments/mixed-types-$PIN"
+PIN="06e54ce793e7cc483980c8424ec2674c43486e80"
+PREVIOUS_PIN="82cc0cdd2e996cc747106b0a0bb9a6ebc5f4a104"
+# Reuse the previous isolated worktree and ~2535 Ninja objects / FFmpeg cache.
+# Original game source, installed game binaries, saves and SSH are untouched.
+ROOT="$HOME/projects/shadps4/GhostOfTsushima/experiments/mixed-types-$PREVIOUS_PIN"
 SOURCE="$ROOT/source"
 BUILD="$ROOT/build"
 GAME="/mnt/roms-all/ps4-games/CUSA11456/eboot.bin"
@@ -61,11 +64,22 @@ git -C "$BASE" -c http.version=HTTP/1.1 fetch --no-tags \
 git -C "$BASE" merge-base --is-ancestor "$PIN" FETCH_HEAD ||
  fail "Reviewed typed-image source is not an ancestor of fetched branch"
 if [[ -e "$SOURCE" ]]; then
- [[ -d "$SOURCE" && -e "$SOURCE/.git" ]] || fail "Experiment path in use by another project"
- [[ "$(git -C "$SOURCE" rev-parse HEAD)" == "$PIN" ]] ||
-  fail "Existing experiment has different HEAD - preserving its contents"
+ [[ -d "$SOURCE" && -e "$SOURCE/.git" ]] ||
+  fail "Experiment path in use by another project"
+ CURRENT_PIN="$(git -C "$SOURCE" rev-parse HEAD)"
+ [[ "$CURRENT_PIN" == "$PIN" || "$CURRENT_PIN" == "$PREVIOUS_PIN" ]] ||
+  fail "Unexpected experiment HEAD $CURRENT_PIN; preserving this separate worktree"
  [[ -z "$(git -C "$SOURCE" status --porcelain --untracked-files=no)" ]] ||
   fail "Existing experiment has uncommitted changes - preserving"
+ if [[ "$CURRENT_PIN" == "$PREVIOUS_PIN" ]]; then
+  stage FAST_FORWARD_EXISTING_ISOLATED_WORKTREE
+  git -C "$SOURCE" checkout --detach "$PIN" \
+    > "$CAPTURE/info/verified-worktree-update.log" 2>&1 || {
+    cat "$CAPTURE/info/verified-worktree-update.log" >&2
+    exit 3
+  }
+  echo "INCREMENTAL_CMAKE_BUILD_CACHE=REUSED" >> "$CAPTURE/info/source.txt"
+ fi
 else
  git -C "$BASE" worktree add --detach "$SOURCE" "$PIN" \
  > "$CAPTURE/info/worktree.log" 2>&1 || {
@@ -88,6 +102,9 @@ grep -Fq 'GpuDescriptorTableCpuCoherence:' \
 grep -Fq 'image_id_3d' \
  "$SOURCE/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp" ||
  fail "Typed SPIR-V sampling path absent"
+grep -Fq 'u32 NumBindings(const auto& info) const noexcept' \
+ "$SOURCE/src/shader_recompiler/resource.h" ||
+ fail "SamplerResource::NumBindings native compiler repair missing"
 grep -Fq 'max_guest_mixed_indexed_image_entries' \
  "$SOURCE/src/shader_recompiler/profile.h" ||
  fail "Capacity-safe fallback profile fields absent"
