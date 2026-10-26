@@ -63,13 +63,13 @@ static std::string EncodeId(u64 nVal) {
 static std::string StringToNid(std::string_view symbol) {
     static constexpr std::array<u8, 16> Salt = {0x51, 0x8D, 0x64, 0xA6, 0x35, 0xDE, 0xD8, 0xC1,
                                                 0xE6, 0xB0, 0x39, 0xB1, 0xC3, 0xE5, 0x52, 0x30};
-    std::vector<u8> input(symbol.size() + Salt.size());
-    std::memcpy(input.data(), symbol.data(), symbol.size());
-    std::memcpy(input.data() + symbol.size(), Salt.data(), Salt.size());
-
+    // SHA-1 is incremental. Hash the same symbol||salt byte stream without
+    // computing a possibly overflowing combined allocation length, and
+    // without copying untrusted symbol data into a temporary vector.
     sha1::SHA1::digest8_t hash;
     sha1::SHA1 sha;
-    sha.processBytes(input.data(), input.size());
+    sha.processBytes(symbol.data(), symbol.size());
+    sha.processBytes(Salt.data(), Salt.size());
     sha.getDigestBytes(hash);
 
     u64 digest;
