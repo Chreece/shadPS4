@@ -321,6 +321,21 @@
       "observed_game_effects": "In GoW latest upstream 803bb426 source, guest shader resources frequently declare u32-max 0xffffffff buffer lengths and get clamped to mapped extents ~774-783MB. The existing Core::MemoryManager::ClampRangeSize aggregates neighboring vma_map iterators without checking VMA address continuity; its constructor seeds map from disjoint guest usable regions. Concrete generic range-logic flaw, but no specific observed bind yet proven to cross an actual gap. Source patch commit da528b540fdbe09e3642570f8d953077adaba691 in PR76; 10 standalone native C++ fixture cases pass locally. Gameplay effect unknown.",
       "negative_result_or_prohibition": "Never arbitrary clamp 4GiB to a guessed small descriptor size, zero a guest shader index, skip rendering or use game-ID exceptions. Preserve real mapped spans and CPU/GPU configuration; source logic verified, full shadPS4 link & hardware still required.",
       "next_test": "Run tests/guest_mapped_range/ CMake/CTest and full native candidate; compare actual buffer clamp ranges, screen frames and SRT warnings against protected old 120s ELF, then cross-check GoT. Merge on main only with generic correctness/regression review."
+    },
+    {
+      "id": "gpu-indexed-heterogeneous-compact-images",
+      "subsystem": "shader-vulkan-texture-binding",
+      "status": "CXX_SOURCE_IMPLEMENTED_NATIVE_VALIDATION_PENDING",
+      "related_prs": [
+        64,
+        75,
+        77,
+        78
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "Native GoT 26 October evidence: GPU guest material table has 27,651 entries, with 27,612 valid Color2D, 35 Color3D and 4 Cube; a homogeneous Vulkan 2D sampled array excludes non-2D entries. The old PR75 typed approach with 3 full arrays compiled but did not bind the large table and regressed to a black loading screen; PR77 reestablished 8 real uniform-sampler binding events but only small 24-entry tables rendered. New PR78 uses unchanged 27,652-slot 2D array plus compact 257-slot 3D and 129-slot cube arrays and one GPU-visible guest-ID->typed-slot map, preserving correct Vulkan descriptor types and real per-invocation GPU selected IDs. Newly committed release-mode mapping test prevents the original assertion-side-effect issue. No current native GoT visual test of PR78.",
+      "negative_result_or_prohibition": "Never allocate three full 27,652-entry Vulkan arrays when descriptor hardware budget is insufficient. Never manufacture GPU guest index on CPU, fake textures or coerce a 3D/Cube VkImageView to the 2D array. Bounded compact arrays have null sentinels and explicit overflow evidence; overflowed images remain unavailable, not misbound. Avoid eager tiled image readback and don't call a C++ header fixture native SPIR-V/Vulkan proof.",
+      "next_test": "Pin latest exact PR78 source; compile actual compact mapping test with -O2 -DNDEBUG -Wall -Wextra -Werror and full emulator Ninja -k0, link, validate runtime shader/descriptor map and actual >0 3D/cube bindings for a 27,651-record table on RX7900XTX; capture menu effects/ground geometry/FPS, GoW cross-title regression, append true test result to canonical docs/emulator/TRIALS.jsonl, promote only then."
     }
   ]
 }
