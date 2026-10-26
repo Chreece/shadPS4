@@ -581,11 +581,17 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
 }
 
 static inline bool PushPtr(Xbyak::CodeGenerator& c, PassInfo& pass_info, const IR::Value& off_dw) {
+    // A rejected GPU-dynamic offset must not leave an unmatched push in the
+    // generated host walker. Roll back emitted bytes, not the guest index.
+    const size_t checkpoint = c.getSize();
     c.push(rdi);
     if (off_dw.IsImmediate()) {
         c.mov(rdi, ptr[rdi + (off_dw.U32() << 2)]);
     } else {
-        ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));
+        if (!ComputeOffset(c, r10d, pass_info, off_dw)) {
+            c.setSize(checkpoint);
+            return false;
+        }
         c.shl(r10d, 2);
         c.mov(r10d, r10d);
         c.mov(rdi, ptr[rdi + r10]);
@@ -623,7 +629,11 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         if (src_off_dw.IsImmediate()) {
             c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
         } else {
+            // ComputeOffset may emit partial expressions before discovering
+            // an unsupported GPU-dependent opcode. Do not execute that code.
+            const size_t checkpoint = c.getSize();
             if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
+                c.setSize(checkpoint);
                 LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
                 continue;
             }

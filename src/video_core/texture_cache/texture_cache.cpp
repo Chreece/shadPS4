@@ -57,7 +57,11 @@ TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler&
       slot_image_views{MAX_IMAGE_VIEWS}, slot_samplers{MAX_SAMPLERS},
       blit_helper{instance, scheduler},
       tile_manager{instance, scheduler, runtime, buffer_cache.GetStreamBuffer()},
-      readback_linear_images{EmulatorSettings.IsReadbackLinearImagesEnabled()} {
+      // Precise GPU-readback mode must make eligible GPU-written linear
+      // images visible to later CPU reads. No global config mutation, no
+      // eager tiled render-target downloads and no game-title overrides.
+      readback_linear_images{EmulatorSettings.IsReadbackLinearImagesEnabled() ||
+                             EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise} {
 
     u32 max_samplers = instance.GetMaxSamplerAllocationCount();
     trigger_gc_samplers = max_samplers * 3 / 4;
