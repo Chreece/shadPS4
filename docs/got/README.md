@@ -4,6 +4,7 @@ This directory is the **canonical experiment diary** for the general shadPS4 emu
 
 - [EXPERIMENT_DIARY.md](EXPERIMENT_DIARY.md): successful and failed experiments with emulator effect, native proof, game appearance, performance, retained code and exact evidence.
 - [BASELINES.json](BASELINES.json): machine-readable hashes and promotion status.
+- [PENDING_MAIN_FORWARDPORTS.md](PENDING_MAIN_FORWARDPORTS.md): proven resource changes still awaiting isolated C++ forward-port and main build regression, plus exact accepted and rejected provenance.
 - [PROMOTION_POLICY.md](PROMOTION_POLICY.md): rules for going from local exact-source validation to the GoT tree, a main-targeted PR, and safe general-engine promotion.
 
 **Development branches**: the last experimentally validated PR #52 + PR #57 baseline is `test/generic-precise-linear-image-coherence-20261025`; the separate proven-resource-capability candidate is PR #64; the consolidated GoT development branch is `got/proven-progress-20261026`. These differ from GitHub `main` by hundreds of commits; **do not merge the full experimental ancestry into main**. Main promotion must be a small, reviewed and build-validated forward-port of the specific proven generic change.
