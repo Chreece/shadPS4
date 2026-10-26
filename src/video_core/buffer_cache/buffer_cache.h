@@ -9,6 +9,7 @@
 #include "common/enum.h"
 #include "common/interval_set.h"
 #include "common/types.h"
+#include "video_core/buffer_cache/bda_address_space.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/fault_manager.h"
 #include "video_core/buffer_cache/range_set.h"
@@ -47,7 +48,7 @@ enum class ObtainBufferFlags {
 DECLARE_ENUM_FLAG_OPERATORS(ObtainBufferFlags)
 
 class BufferCache {
-    static constexpr u64 ADDRESS_SPACE_BITS = 40;
+    static constexpr u64 ADDRESS_SPACE_BITS = GuestGpuAddressSpaceBits;
     static constexpr u64 ARENA_PAGE_BITS = 32;
     static constexpr u64 ARENA_PAGE_SIZE = u64{1} << ARENA_PAGE_BITS;
     static constexpr u64 NUM_ARENA_PAGES = u64{1} << (ADDRESS_SPACE_BITS - ARENA_PAGE_BITS);
