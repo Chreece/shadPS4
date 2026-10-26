@@ -1112,8 +1112,16 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 }
             }
 
-            static std::atomic<u32> mixed_bind_reports{0};
-            if (mixed_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 32u) {
+            // Keep a separate bounded evidence window for large guest
+            // material tables, so the many early 24-entry shader draws do not
+            // hide whether compact 3D/Cube resources were really bound.
+            static std::atomic<u32> small_bind_reports{0};
+            static std::atomic<u32> large_bind_reports{0};
+            const bool large = count > 1024u;
+            const bool should_report = large
+                ? large_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 24u
+                : small_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 32u;
+            if (should_report) {
                 LOG_INFO(Render_Vulkan,
                          "GuestIndexedImageDimensions: stage={:#x} entries={} "
                          "bound_2d={} bound_3d={} bound_cube={} "
