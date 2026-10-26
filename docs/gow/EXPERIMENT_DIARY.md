@@ -42,3 +42,13 @@ A later fix to the tests **does not erase** the earlier failure. Every record mu
 4. Rebase verified generic stack onto latest upstream in isolated worktree, not a production install; release only proven modifications through main-targeted PRs.
 
 In this game notebook, `PASS_BUILD` means code compilation/link only; a gameplay result always requires independently collected run evidence.
+
+## 2026-10-26 08:23 — native-only baseline crash and next verified diagnostic
+
+* **Evidence:** `shadps4-native-universal-20261026-082312-3381759.tar.gz`, SHA256 `0841f4d6845bd353961e2b4e3e93495b547c9c15f6f98997db3b074aeb7acab7`. This run is also recorded in the single [universal emulator diary](https://github.com/Chreece/shadPS4/blob/main/docs/emulator/TRIALS.jsonl), which is authoritative across all games.
+* **Exact source/binary:** `a82db5964bd8a48305213171862d23268602a50c`, ELF SHA256 `3e5c8c3f15d29313f20db584673c10fd52d581ed1f370ecf62fb8bc5dfbc3947` (native CPUID/RDTSCP/RDPID, **no DynamoRIO**).
+* **Emulator evidence:** launched using only the normal `CUSA34384 --fullscreen true --show-fps`; exited with **SIGSEGV -11 after 4.804 seconds**, after logging `Loading libSceMsgDialog`. Fault read address `0x0`, native program RIP `0x55bf345a65c6`, owning main-executable ELF virtual address `0x10095c6`. Previous translated binary reported a similar fmt parse crash at shifted ELF offset `0x100f5c6`; this proves DynamoRIO is **not necessary** to reproduce it, but **does not prove the actual caller or source defect**.
+* **Environment:** Ollama `qwen3.8-greek:latest` unloaded only after low VRAM (`7.839 -> 19.560 GiB` free) and restored successfully with original 8192 context. Isolated profile had **no dumped system fonts** warning; potential test fidelity limitation, not a proven fault cause.
+* **Game outcome:** no gameplay, visuals, FPS or audio were observed. Do not infer any renderer change. Protected earlier gameplay-capable GoW ELF SHA256 `8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e` remains reference.
+* **Decision:** **KEEP DIAGNOSTIC / GAMEPLAY BLOCKED.** Universal fault class `native-startup-null-fault` now in shared FIXES registry. The new generic native GDB script captures actual C++ caller/threads/ELF mappings at `unreachable_impl`, without code or GPU changes. Fix only a causally established shared emulator defect, then cross-test GoW and GoT, keeping all rejected attempts in the universal ledger.
+
