@@ -316,9 +316,9 @@ stage APPLY_ON_DEMAND_GPU_DIRTY_DESCRIPTOR_TABLE_COHERENCE
 # The preceding stage has restored the exact previously native-tested masked
 # stencil source. Only one new rendering change is layered on that source.
 curl -4fsSL --retry 3 \
-  "https://raw.githubusercontent.com/Chreece/shadPS4/6b83c088bc36a11e856ccfae6e542f85d8d1b2d7/scripts/patch_gpu_dirty_guest_image_tables_20261026.py" \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/6c9d9edc98ecd97ad39e5510a49f9505540b88f3/scripts/patch_gpu_dirty_guest_image_tables_20261026.py" \
   -o "${COHERENCE_PATCHER}"
-[[ "$(git hash-object "${COHERENCE_PATCHER}")" == "58b90443b81f7d9aa3a5efe99006b7e33faf440a" ]] || {
+[[ "$(git hash-object "${COHERENCE_PATCHER}")" == "e62aa4a18401faa8121f9b174e5dc55188fc8fac" ]] || {
   echo "FAIL: exact renderer coherence patcher SHA mismatch" >&2
   exit 3
 }
@@ -329,7 +329,7 @@ if ! python3 -u "${COHERENCE_PATCHER}" "${WORK}" \
   exit 3
 fi
 cat "${CAPTURE}/info/table-demand-coherence-patch.log"
-[[ "$(git hash-object "${WORK}/${FILES[7]}")" == "878631ba74d315bc7d30a36772abc042c2c0da9b" ]] || {
+[[ "$(git hash-object "${WORK}/${FILES[7]}")" == "3ae2ce3f8e2f9992971e9426033ea8c55314e667" ]] || {
   echo "FAIL: patched C++ differs from the reviewed exact native source" >&2
   exit 3
 }
