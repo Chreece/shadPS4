@@ -183,8 +183,10 @@ valid_zip "$FFMPEG_ZIP" || fail "FFmpeg archive checksum/contents failed"
 echo "FFMPEG_RELEASE_ASSET_SHA256=$FFMPEG_ASSET_SHA256" | tee -a "$CAPTURE/info/progress.log"
 
 stage PREFLIGHT_VULKAN_FEATURE_DECLARATION_ORDER
-# Compile the *actual* C++23 VkPhysicalDeviceFeatures2 initializer against
-# the pinned Vulkan headers and host compiler before running Ninja.
+# Verify the actual C++23 feature designators extracted from vk_instance.cpp
+# against *VkPhysicalDeviceFeatures*, the aggregate C declaration in the
+# pinned Vulkan headers. Vulkan-Hpp vk::PhysicalDeviceFeatures is NOT an
+# aggregate and must not be used as an isolated designated-initializer test.
 python3 - "$SOURCE/src/video_core/renderer_vulkan/vk_instance.cpp" \
   "$CAPTURE/info/vulkan-features-preflight.cpp" <<'PY'
 from pathlib import Path
@@ -198,9 +200,11 @@ assert ".shaderImageGatherExtended =" in initializer
 assert ".shaderSampledImageArrayDynamicIndexing =" in initializer
 Path(sys.argv[2]).write_text(
     "#include <vulkan/vulkan.hpp>\n"
+    "#include <type_traits>\n"
+    "static_assert(std::is_aggregate_v<VkPhysicalDeviceFeatures>);\n"
     "int main() {\n"
-    "  vk::PhysicalDeviceFeatures features{};\n"
-    "  vk::PhysicalDeviceFeatures enabled{\n"
+    "  VkPhysicalDeviceFeatures features{};\n"
+    "  VkPhysicalDeviceFeatures enabled{\n"
     + initializer + "\n  };\n  (void)enabled;\n  return 0;\n}\n")
 PY
 c++ -std=gnu++23 -fsyntax-only \
