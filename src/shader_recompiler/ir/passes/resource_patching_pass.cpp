@@ -121,6 +121,7 @@ public:
                    desc.constant_mip_index == existing.constant_mip_index &&
                    desc.post_op == existing.post_op &&
                    desc.is_guest_indexed == existing.is_guest_indexed &&
+                   desc.is_guest_mixed_indexed == existing.is_guest_mixed_indexed &&
                    desc.indexed_guest_entries == existing.indexed_guest_entries &&
                    desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
                    desc.indexed_descriptor_offset_bytes == existing.indexed_descriptor_offset_bytes &&
