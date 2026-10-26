@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "game": "God of War Ragnarök",
+  "game_id": "CUSA34384",
+  "recorded": "2026-10-26",
+  "canonical_branch": "gow/proven-progress-20261026",
+  "source_commit": "a82db5964bd8a48305213171862d23268602a50c",
+  "source_last_upstream": "30f4170896ce974353a6f6486d0ecec179aec54b",
+  "current_upstream_snapshot": "2cdefaa1298c6e4ece6c74bd84e90f3906282d51",
+  "proven_gameplay_binary_sha256": "8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e",
+  "protected_combined_previous_sha256": "793a76912b4647677bc7c6c2b5087ae1f1b1c530c5664aaae623d689cdc6e847",
+  "current_native_binary_sha256": "3e5c8c3f15d29313f20db584673c10fd52d581ed1f370ecf62fb8bc5dfbc3947",
+  "status": {
+    "build": "PASS",
+    "runtime": "NOT_TESTED",
+    "visual": "NOT_TESTED",
+    "audio": "NOT_TESTED",
+    "cross_game": "NOT_TESTED",
+    "dynamorio": "REMOVED"
+  },
+  "mandatory": {
+    "max_game_runtime_seconds": 120,
+    "signal_at_seconds": 118,
+    "kill_after_seconds": 2,
+    "fullscreen": true,
+    "show_fps": true,
+    "gamepad_guide_quit": true,
+    "loading_splash": true,
+    "min_free_vram_gib": 8,
+    "no_title_hacks": true
+  },
+  "open_prs": [
+    60,
+    63
+  ],
+  "history_count": 12,
+  "source_archive": "shadps4-native-rebuild-20261026-070115-2184798.tar.gz",
+  "archive_sha256": "9bc75a05116ab093d9184ae5bfd464a533d6ba869e81a0451b8530609efbf5e4"
+}
