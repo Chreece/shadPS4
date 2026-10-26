@@ -13,7 +13,7 @@ root = Path(sys.argv[1]).resolve()
 relative = "src/video_core/renderer_vulkan/vk_rasterizer.cpp"
 p = root / relative
 original = "42842a8b833fa7dcc880c9358f9efaaff24191fd"
-expected = "878631ba74d315bc7d30a36772abc042c2c0da9b"
+expected = "3ae2ce3f8e2f9992971e9426033ea8c55314e667"
 
 def blob(p):
     return subprocess.check_output(["git", "hash-object", str(p)], text=True).strip()
@@ -38,7 +38,8 @@ image_new = """            const bool table_available = fetched && source.Valid(
                     LOG_INFO(Render_Vulkan,
                              "GpuDescriptorTableCpuCoherence: kind=image shader={:#x} "
                              "addr={:#x} bytes={} records={}",
-                             stage.pgm_hash, source.base_address, bytes, represented_entries);
+                             stage.pgm_hash, static_cast<u64>(source.base_address), bytes,
+                             represented_entries);
                 }
             }
             u32 valid_indexed_images = 0;"""
@@ -59,7 +60,8 @@ sampler_new = """            const bool table_available = fetched && source.Vali
                     LOG_INFO(Render_Vulkan,
                              "GpuDescriptorTableCpuCoherence: kind=sampler shader={:#x} "
                              "addr={:#x} bytes={} records={}",
-                             stage.pgm_hash, source.base_address, bytes, represented_entries);
+                             stage.pgm_hash, static_cast<u64>(source.base_address), bytes,
+                             represented_entries);
                 }
             }
 
