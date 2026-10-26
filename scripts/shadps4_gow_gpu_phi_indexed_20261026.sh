@@ -180,7 +180,7 @@ curl -4fsSL --retry 3 --retry-delay 2 \
     echo "UNIVERSAL_DIARY_WRITER_HASH_MISMATCH"; exit 3;
 }
 # Prior failures already recorded with their original SHA; avoid duplicate entries.
-echo "STAGE=FETCH_PINNED_LOGGER_TYPE_FIX"
+echo "STAGE=FETCH_PINNED_GPU_PHI_RESOURCE_FIX"
 if ! git -C "$BASE_SOURCE" cat-file -e "$SOURCE_REV^{commit}" 2>/dev/null; then
     git -c http.version=HTTP/1.1 -C "$BASE_SOURCE" fetch -q --no-tags --no-recurse-submodules \
         https://github.com/Chreece/shadPS4.git "$SOURCE_REV"
@@ -198,8 +198,8 @@ grep -Fqx 'class Logger final : public BaseDevice {' "$SRC/src/core/file_sys/dev
 grep -Fq 'std::is_convertible_v<Devices::Logger*, Devices::BaseDevice*>' "$SRC/src/core/file_sys/fs.cpp" || {
     echo "LOGGER_COMPILE_TIME_CONVERSION_TEST_MISSING"; exit 4;
 }
-echo "SOURCE_SWITCH_OLD_TO_FIXED_WITH_CACHED_OBJECTS=PASS"
-echo "ORIGINAL_FAILED_ARCHIVE_AND_DIARY_UNCHANGED=YES"
+echo "SOURCE_SWITCH_120S_FINDILSB_TO_GPU_PHI_CACHED=PASS"
+echo "ORIGINAL_TRIAL_ARCHIVES_AND_DIARY_UNCHANGED=YES"
 echo "STAGE=VERIFY_CACHED_SUBMODULES"
 git -C "$SRC" submodule status --recursive > "$REPORT/submodules.txt"
 if grep -Eq '^[-+U]' "$REPORT/submodules.txt"; then
@@ -326,11 +326,14 @@ cmake -S "$SRC" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=O
     > "$REPORT/configure-native.log" 2>&1 || {
     tail -120 "$REPORT/configure-native.log"; exit 7;
 }
+grep -Fq 'GPU-indexed Phi sharp selection lowered' "$SRC/src/shader_recompiler/ir/passes/image_phi_selection.inc" || {
+    echo "GPU_PHI_RESOURCE_SOURCE_NOT_PINNED"; exit 7;
+}
 echo "STAGE=COMPILE_NEW_INDEXED_GPU_PHI_RESOURCE_FIRST"
-echo "FS_CPP_PRECHECK_LOG=$REPORT/preflight-fs-object.log"
+echo "GPU_PHI_RESOURCE_PRECHECK_LOG=$REPORT/preflight-resource-discover.log"
 nice -n 10 ninja -C "$BUILD" -j 2 CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/resource_discover_pass.cpp.o \
-    > "$REPORT/preflight-fs-object.log" 2>&1 || {
-    echo "GPU_PHI_RESOURCE_COMPILE_PRECHECK_FAILED"; tail -120 "$REPORT/preflight-fs-object.log"; exit 7;
+    > "$REPORT/preflight-resource-discover.log" 2>&1 || {
+    echo "GPU_PHI_RESOURCE_COMPILE_PRECHECK_FAILED"; tail -120 "$REPORT/preflight-resource-discover.log"; exit 7;
 }
 echo "GPU_PHI_RESOURCE_COMPILE_PRECHECK=PASS"
 echo "STAGE=COMPLETE_INCREMENTAL_NATIVE_GPU_PHI_BUILD"
