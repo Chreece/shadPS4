@@ -21,7 +21,7 @@ RUNNER_REV="448c20c756accf1b9148acde0622bf7db4a48b63"
 RUNNER_BLOB="223a8e6ef7916e06bfd4f0ccefc90c92d5b097a0"
 mkdir -p "$LOGS" "$TESTS"
 
-if [[ "$1" != "--worker" ]]; then
+if (( $# == 0 )) || [[ "$1" != "--worker" ]]; then
     [[ $# -le 1 ]] || { echo "USAGE: bash $0 [game-id-or-path]" >&2; exit 2; }
     GAME="CUSA34384"
     if (( $# == 1 )); then GAME="$1"; fi
