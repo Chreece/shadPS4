@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <vector>
 #include <unordered_map>
 #include <bit>
 #include "common/debug.h"
@@ -1016,6 +1017,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     if (!image_desc.is_guest_mixed_indexed) {
                         continue;
                     }
+                    if (bound_3d >= Shader::CompactIndexed3DImageEntries) {
+                        continue;
+                    }
                     type_array = 1;
                     dimension_limit = limits.maxImageDimension3D;
                     volume_layers = u64(raw.depth) + 1u;
@@ -1025,6 +1029,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     break;
                 case AmdGpu::ImageType::Cube:
                     if (!image_desc.is_guest_mixed_indexed) {
+                        continue;
+                    }
+                    if (bound_cube >= Shader::CompactIndexedCubeImageEntries) {
                         continue;
                     }
                     type_array = 2;
@@ -1062,7 +1069,13 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 }
                 estimated_resident_bytes += estimated_bytes;
 
-                auto& slot = image_bindings[image_base + type_array * count + i];
+                const u32 slot_index = type_array == 0u
+                    ? image_base + i
+                    : type_array == 1u
+                        ? image_base + count + bound_3d
+                        : image_base + count +
+                          Shader::CompactIndexed3DImageBindings + bound_cube;
+                auto& slot = image_bindings[slot_index];
                 auto& desc = slot.desc;
                 std::construct_at(&desc, raw, image_desc);
                 slot.image_id = texture_cache.FindImage(desc);
@@ -1078,9 +1091,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 if (type_array == 0u) {
                     ++bound_2d;
                 } else if (type_array == 1u) {
-                    ++bound_3d;
+                    compact_map[i] = bound_3d++;
                 } else {
-                    ++bound_cube;
+                    compact_map[i] = bound_cube++;
                 }
             }
 
@@ -1095,9 +1108,18 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                          image_desc.is_guest_mixed_indexed, record_stride);
             }
 
-            for (u32 type = 0; type < dimension_arrays; ++type) {
-                image_descriptor_array_sizes.push_back(count);
+            image_descriptor_array_sizes.push_back(count);
+            image_descriptor_is_storage.push_back(false);
+            if (image_desc.is_guest_mixed_indexed) {
+                image_descriptor_array_sizes.push_back(Shader::CompactIndexed3DImageBindings);
                 image_descriptor_is_storage.push_back(false);
+                image_descriptor_array_sizes.push_back(Shader::CompactIndexedCubeImageBindings);
+                image_descriptor_is_storage.push_back(false);
+                // A zero-sized entry in the binding sequence means one
+                // storage-buffer descriptor, not an image descriptor.
+                image_descriptor_array_sizes.push_back(0u);
+                image_descriptor_is_storage.push_back(false);
+                image_index_maps.emplace_back(std::move(compact_map));
             }
             continue;
         }
