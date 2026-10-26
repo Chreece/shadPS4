@@ -18,7 +18,7 @@ PROTECTED="$ROOT/GodOfWarRagnarok/build/shadps4"
 PROTECTED_SHA=8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e
 SOURCE_REV="a82db5964bd8a48305213171862d23268602a50c"
 OBSERVER_SHA=e9d436bae75452ca2c59bc6a07d4d5701f6cc934
-RECORDER_SHA=c8e7faf100a9988da1952dbbcf999cd1b62e79b7
+RECORDER_SHA=1593a0f720d1e7ab0d2392746693839b67162959
 OLLAMA_HELPER_SHA=9623031ffc736c270ccce0cad247b52d5b3dd30a
 
 mkdir -p "$ESDE" "$LOGS" "$SCRIPTS"
@@ -38,7 +38,7 @@ if (( $# <= 1 )) && [[ "${1-}" != "--worker" ]]; then
     disown "$PID" 2>/dev/null || true
     echo "SHADPS4_GENERIC_PLAYTEST=$TAG"
     echo "GAME_SELECTOR=$GAME"
-    echo "CPU_ID_MODE=auto (emulator default)"
+    echo "CPU_ID=EMULATOR_NATIVE_NO_EXTERNAL_TRANSLATION"
     echo "DISPLAY_FLAGS=fullscreen,show-fps"
     echo "CANDIDATE_SHA256=$EXPECTED"
     echo "MONITOR=tail -f $OUT"
@@ -154,7 +154,7 @@ curl -4fsSL --retry 3 \
     echo "NATIVE_OBSERVER_SHA_MISMATCH"; exit 2;
 }
 curl -4fsSL --retry 3 \
-  "https://raw.githubusercontent.com/Chreece/shadPS4/c2818c58c0de5ddbb60328aeecbcb0931da34ae7/tools/development/record_emulator_trial.py" \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/178376d393051d8026319bc0154d3b36d0fcc087/tools/development/record_emulator_trial.py" \
   -o "$RECORDER"
 [[ "$(git hash-object "$RECORDER")" == "$RECORDER_SHA" ]] || {
     echo "NATIVE_DIARY_RECORDER_SHA_MISMATCH"; exit 2;
@@ -310,6 +310,7 @@ echo "PROTECTED_GAME_SOURCE_AND_INSTALLATION=UNCHANGED"
     echo "CANDIDATE_SHA_CHANGED_AFTER_GAME_OBSERVATION" >&2; exit 11;
 }
 echo "SSH_SESSION=OPEN"
-# The observer deliberately doesn't kill a still-running game.
-# Quit with controller Home/PS before any second game test.
+# Universal observer owns only its game process group and caps runtime at
+# 118s SIGTERM +2s SIGKILL. Manual gamepad quit before that remains supported.
+# Do not close SSH or manually kill other running processes.
 exit "$RESULT"
