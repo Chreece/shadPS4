@@ -5,6 +5,7 @@
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/fault_manager.h"
 #include "video_core/buffer_cache/fault_list_limits.h"
+#include "video_core/buffer_cache/fault_ring_reuse.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -85,10 +86,27 @@ FaultManager::FaultManager(const Vulkan::Instance& instance, Vulkan::Scheduler& 
     device.destroyShaderModule(module);
 }
 
-void FaultManager::ProcessFaultBuffer() {
-    if (u64 wait_tick = fault_areas[current_area]) {
-        scheduler.Wait(wait_tick);
-        scheduler.PopPendingOperations();
+bool FaultManager::ProcessFaultBuffer() {
+    // Rasterizer::OnSubmit invokes this while Scheduler::submit_mutex is held,
+    // BEFORE the queue submission is completed. Blocking on a recycled ring
+    // slot here can stop the very Vulkan work needed to signal that slot.
+    // A slot is released only by its deferred GPU-completion callback.
+    if (!CanReuseGpuFaultReadbackSlot(fault_areas[current_area])) {
+        ++deferred_slot_submissions;
+        if (deferred_slot_submissions == 1 ||
+            (deferred_slot_submissions % 256) == 0) {
+            LOG_WARNING(Render_Vulkan,
+                        "Fault readback ring saturated: defer submission without a GPU wait "
+                        "(slot={}, pending_tick={}, retries={})",
+                        current_area, fault_areas[current_area], deferred_slot_submissions);
+        }
+        return false;
+    }
+    if (deferred_slot_submissions != 0) {
+        LOG_INFO(Render_Vulkan,
+                 "Fault readback ring recovered after {} deferred submissions",
+                 deferred_slot_submissions);
+        deferred_slot_submissions = 0;
     }
 
     const u32 offset = current_area * PageFaultAreaSize;
@@ -219,6 +237,7 @@ void FaultManager::ProcessFaultBuffer() {
 
     fault_areas[current_area++] = scheduler.CurrentTick();
     current_area %= MaxPendingFaults;
+    return true;
 }
 
 } // namespace VideoCore
