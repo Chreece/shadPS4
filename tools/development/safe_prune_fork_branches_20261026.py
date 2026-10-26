@@ -80,6 +80,42 @@ def current_pr_branches():
     return protected,entries
 
 
+def local_worktree_branches():
+    # Never delete a remote branch checked out anywhere in the known project
+    # worktrees. Scan only Git metadata, not large games/build artifacts.
+    bases=[Path.home()/"projects/shadps4", Path.home()/"Applications"]
+    excluded={"build","logs","externals","node_modules","cache","shader",
+              "shaders","captures","screenshots","CMakeFiles","roms","vendor"}
+    found=set()
+    for base in bases:
+        if not base.is_dir():
+            continue
+        for parent,dirs,names in os.walk(base,followlinks=False):
+            root=Path(parent)
+            try:
+                depth=len(root.relative_to(base).parts)
+            except ValueError:
+                continue
+            if depth>7:
+                dirs[:]=[]
+                continue
+            if ".git" in dirs or ".git" in names:
+                try:
+                    r=command("git","-C",root,"worktree","list","--porcelain",
+                              check=False)
+                    if r.returncode==0:
+                        for line in r.stdout.splitlines():
+                            if line.startswith("branch refs/heads/"):
+                                found.add(line.removeprefix("branch refs/heads/"))
+                except Exception:
+                    pass
+                if ".git" in dirs:
+                    dirs.remove(".git")
+            dirs[:]=[d for d in dirs if d not in excluded and
+                     not (root/d).is_symlink()]
+    return found
+
+
 def remote_refs():
     data=command("git","ls-remote","--heads",REMOTE).stdout
     refs={}
@@ -119,6 +155,8 @@ def main():
     if len(pinned)!=len(manifest["branches"]):
         raise RuntimeError("Duplicate refs in archive snapshot")
     protected,open_prs=current_pr_branches()
+    local_active=local_worktree_branches()
+    protected.update(local_active)
     current=remote_refs()
     required={"main","got/proven-progress-20261026","gow/proven-progress-20261026"}
     if not required.issubset(current):
@@ -129,7 +167,8 @@ def main():
     report=args.output/f"shadps4-fork-prune-{stamp}.json"
     audit={"timestamp":stamp,"mode":"APPLY" if args.apply else "DRY_RUN",
            "initial_remote_refs":current,"open_prs":open_prs,
-           "protected_by_open_pr":sorted(protected),
+           "protected_by_pr_or_active_worktree":sorted(protected),
+           "active_local_worktree_branches":sorted(local_active),
            "immutable_manifest":str(args.manifest),"eligible":[],
            "skipped":{},"operations":[]}
     # Need complete Git ancestry rather than comparing short names/dates.
@@ -145,7 +184,7 @@ def main():
             if name in PERMANENT or name.startswith(PERMANENT_PREFIX):
                 reason="canonical/protected branch"
             elif name in protected:
-                reason="open PR head/base"
+                reason="open PR head/base or active local worktree"
             elif not name.startswith(CANDIDATE_PREFIX):
                 reason="outside conservative cleanup prefixes"
             elif name not in pinned:
@@ -175,8 +214,9 @@ def main():
         for candidate in audit["eligible"]:
             name,sha=candidate["name"],candidate["sha"]
             live_prs,_=current_pr_branches()
+            live_active=local_worktree_branches()
             live_refs=remote_refs()
-            if name in live_prs or live_refs.get(name)!=sha:
+            if name in live_prs or name in live_active or live_refs.get(name)!=sha:
                 audit["operations"].append({"name":name,"result":"SKIPPED_LIVE_REF_OR_PR_CHANGED"})
                 continue
             tag="fork-archive/"+stamp+"/"+name
