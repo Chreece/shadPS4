@@ -18,6 +18,7 @@
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/passes/srt.h"
+#include "shader_recompiler/ir/passes/srt_phi.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/ir/srt_gvn_table.h"
@@ -516,6 +517,7 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     case IR::Opcode::UMin32:
     case IR::Opcode::UMax32:
     case IR::Opcode::BitFieldUExtract:
+    case IR::Opcode::Phi:
         return true;
     default:
         return false;
@@ -525,6 +527,10 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
 static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
                           const IR::Value& off_dw) {
     ASSERT(reg != ecx && reg != edx);
+    if (off_dw.IsImmediate()) {
+        c.mov(reg, off_dw.U32());
+        return true;
+    }
     auto inst = off_dw.Inst();
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
@@ -573,6 +579,15 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
     case IR::Opcode::BitFieldUExtract:
         ABORT_ON_FAILURE(EmitComputeOffsetBitFieldUExtract(c, reg, pass_info, inst));
         return true;
+    case IR::Opcode::Phi: {
+        const IR::Value invariant = ResolveInvariantSrtPhi(off_dw, pass_info.gvn_table);
+        if (invariant.IsEmpty()) {
+            LOG_ERROR(Render_Recompiler,
+                      "SRT offset Phi depends on execution flow; host walker cannot flatten it");
+            return false;
+        }
+        return ComputeOffset(c, reg, pass_info, invariant);
+    }
     default:
         LOG_ERROR(Render_Recompiler, "Unexpected instruction for offset computation, {}",
                   magic_enum::enum_name(inst->GetOpcode()));
