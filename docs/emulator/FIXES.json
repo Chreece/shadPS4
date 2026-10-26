@@ -268,14 +268,14 @@
     {
       "id": "gpu-indexed-table-invalid-slots",
       "subsystem": "gpu-resource-binding",
-      "status": "DIAGNOSTIC_NATIVE_TEST_PENDING",
+      "status": "DIAGNOSTIC_NATIVE_PASS_TYPE_GAP_PROVEN",
       "related_prs": [
         72
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "Current GoT menu shaders 0xb5c898c7 and 0x7eaf40ad each have 27651 eligible indexed T# table records with 27612 bound, 39 rejected/unavailable, plus a separate out-of-range null sentinel. Particles/textures missing; correlation to omitted slots not yet proven.",
-      "negative_result_or_prohibition": "Do not force unknown invalid textures, coerce unsupported image types to 2D, reduce total guest table count, cap GPU buffer range arbitrarily, or re-enable per-bind eager tiled readbacks. Existing rejects guard real malformed descriptors.",
-      "next_test": "Run exact-source bounded descriptor rejection reason audit (PR72) on existing PR52+PR57+PR64+PR69 GoT menu; decide generic source-level fix only if actual reason and GPU memory provenance support it."
+      "observed_game_effects": "GoT native 2026-10-26 09:12 menu: particles/thunder observed but filled scene materials missing. In each 27651-entry guest T# table, 27612 Color2D descriptors bound and 39 omitted solely by strict 2D type gate: 35 Color3D and 4 Cube. Shader 0xb5c898c7 and 0x7eaf40ad share the same 39 source indices; all earlier GPU readback/stencil/real sampler features retained, no device loss. Direct allocation/mapping validity of rejected types remains unchecked due early type gate.",
+      "negative_result_or_prohibition": "Do not treat 3D/Cube descriptors as invalid or hardcode title/shader indices. Do not force those images into statically typed SPIR-V OpTypeImage 2D array or coerce 3D->2D views: Vulkan descriptor types and sample coordinate semantics differ. Actual GPU sampling of these entries is not yet proved; historical early feedback saw zero samples for some captured draws.",
+      "next_test": "Use existing generic indexed-sample GPU feedback and Vulkan pipeline invocations against current menu to prove which indices execute; then correctly route 2D, 3D and cube images through type-aware shader bindings. Separately inspect true dirty GPU-produced guest descriptor tables (host memcpy vs buffer cache), avoiding eager readbacks and false write-tracker clearing."
     }
   ]
 }
