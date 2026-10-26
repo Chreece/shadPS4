@@ -692,19 +692,33 @@ File* HandleTable::GetFile(const std::filesystem::path& host_name) {
 }
 
 void HandleTable::CreateStdHandles() {
-    auto setup = [this](const char* path, auto* device) {
-        int fd = CreateHandle();
-        auto* file = GetFile(fd);
-        file->is_opened = true;
-        file->type = FileType::Device;
-        file->m_guest_name = path;
-        file->device =
-            std::shared_ptr<Devices::BaseDevice>{reinterpret_cast<Devices::BaseDevice*>(device)};
+    // Create and publish each handle while holding one lock. The old split
+    // CreateHandle()/GetFile() sequence allowed a concurrent deletion between
+    // allocation and initialization and dereferenced GetFile() unchecked.
+    // Constructing the File first also makes its atomic fields unambiguously
+    // live before publication, instead of generating stores through a
+    // possibly-null pointer.
+    std::scoped_lock lock{m_mutex};
+    auto setup = [this](const char* path, std::shared_ptr<Devices::BaseDevice> device) {
+        auto owned = std::make_unique<File>();
+        owned->is_opened = true;
+        owned->type = FileType::Device;
+        owned->m_guest_name = path;
+        owned->device = std::move(device);
+
+        const auto vacant = std::ranges::find(m_files, static_cast<File*>(nullptr));
+        if (vacant != m_files.end()) {
+            *vacant = owned.release();
+        } else {
+            // Push before release so allocation failure doesn't leak File.
+            m_files.push_back(owned.get());
+            owned.release();
+        }
     };
-    // order matters
-    setup("/dev/stdin", new Devices::Logger("stdin", false));   // stdin
-    setup("/dev/stdout", new Devices::Logger("stdout", false)); // stdout
-    setup("/dev/stderr", new Devices::Logger("stderr", true));  // stderr
+    // Guest ABI relies on stdin/stdout/stderr owning handles 0, 1 and 2.
+    setup("/dev/stdin", std::make_shared<Devices::Logger>("stdin", false));
+    setup("/dev/stdout", std::make_shared<Devices::Logger>("stdout", false));
+    setup("/dev/stderr", std::make_shared<Devices::Logger>("stderr", true));
 }
 
 int HandleTable::GetFileDescriptor(File* file) {
