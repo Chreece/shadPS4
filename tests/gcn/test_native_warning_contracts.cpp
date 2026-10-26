@@ -43,6 +43,22 @@ TEST(NativeWarningContracts, Sha1CanHashSymbolAndSaltIncrementally) {
     previous.getDigestBytes(original_digest);
     current.getDigestBytes(streamed_digest);
     EXPECT_EQ(std::memcmp(original_digest, streamed_digest, sizeof(original_digest)), 0);
+
+    // StringToNid also accepts an empty symbol. The incremental path must
+    // match hashing Salt alone without dereferencing an empty string_view.
+    sha1::SHA1 only_salt;
+    sha1::SHA1 empty_then_salt;
+    sha1::SHA1::digest8_t salt_digest{};
+    sha1::SHA1::digest8_t empty_digest{};
+    only_salt.processBytes(salt.data(), salt.size());
+    constexpr std::string_view empty_symbol{};
+    if (!empty_symbol.empty()) {
+        empty_then_salt.processBytes(empty_symbol.data(), empty_symbol.size());
+    }
+    empty_then_salt.processBytes(salt.data(), salt.size());
+    only_salt.getDigestBytes(salt_digest);
+    empty_then_salt.getDigestBytes(empty_digest);
+    EXPECT_EQ(std::memcmp(salt_digest, empty_digest, sizeof(salt_digest)), 0);
 }
 
 TEST(NativeWarningContracts, ZeroPrecisionSignedPlusDoesNotUnderflow) {
