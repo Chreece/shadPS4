@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+// SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #version 450
@@ -13,26 +13,46 @@ layout(std430, binding = 0) buffer input_buf {
     uint fault_buffer[];
 };
 
+// One descriptor with 32-bit words instead of two incompatible views of the
+// same binding. Host memory is a little-endian array of uint64_t entries;
+// word zero stores the bounded item count, entries begin at 64-bit index 1.
 layout(std430, binding = 1) buffer output_buf {
-    uint64_t download_buffer[];
-};
-layout(std430, binding = 1) buffer output_buf32 {
     uint download_buffer32[];
 };
 
 void main() {
     const uint id = gl_GlobalInvocationID.x;
-    uint word = fault_buffer[id];
-    fault_buffer[id] = 0u;
+    if (id >= fault_buffer.length()) {
+        return;
+    }
+
+    // Consume atomically so a later fault for this word is not overwritten.
+    uint word = atomicExchange(fault_buffer[id], 0u);
     const uint base_bit = id * 32u;
     while (word != 0u) {
-        const uint store_index = atomicAdd(download_buffer32[0], 1u) + 1u;
-        if (store_index >= MAX_PAGE_FAULTS) {
-            return;
+        // Reserve a slot using a saturating counter. The CPU output holds
+        // MAX_PAGE_FAULTS uint64s, of which the first is the count. Never let
+        // the counter exceed MAX_PAGE_FAULTS - 1, or the CPU would read OOB.
+        uint count;
+        for (;;) {
+            count = atomicAdd(download_buffer32[0], 0u);
+            if (count >= MAX_PAGE_FAULTS - 1u) {
+                // Preserve remaining faults in the GPU bitmap for the next
+                // readback. Dropping them here permanently loses guest data.
+                atomicOr(fault_buffer[id], word);
+                return;
+            }
+            if (atomicCompSwap(download_buffer32[0], count, count + 1u) == count) {
+                break;
+            }
         }
+
         const uint bit = findLSB(word);
-        word &= word - 1;
+        word &= word - 1u;
         const uint page = base_bit + bit;
-        download_buffer[store_index] = uint64_t(page) << CACHING_PAGEBITS;
+        const uint64_t address = uint64_t(page) << CACHING_PAGEBITS;
+        const uint slot = (count + 1u) * 2u;
+        download_buffer32[slot] = uint(address);
+        download_buffer32[slot + 1u] = uint(address >> 32u);
     }
 }
