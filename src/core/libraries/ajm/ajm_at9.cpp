@@ -13,6 +13,17 @@ extern "C" {
 
 namespace Libraries::Ajm {
 
+namespace {
+// RIFF fields are little-endian FourCC words. Multi-character character
+// literals have implementation-defined packing and emit GCC warnings.
+constexpr u32 RiffTag(const char (&text)[5]) noexcept {
+    return u32(u8(text[0])) | (u32(u8(text[1])) << 8u) |
+           (u32(u8(text[2])) << 16u) | (u32(u8(text[3])) << 24u);
+}
+static_assert(RiffTag("RIFF") == 0x46464952U);
+static_assert(RiffTag("WAVE") == 0x45564157U);
+} // namespace
+
 struct ChunkHeader {
     u32 tag;
     u32 length;
@@ -98,8 +109,11 @@ bool AjmAt9Decoder::ParseRIFFHeader(std::span<u8>& in_buf, AjmInstanceGapless& g
         return false;
     }
 
-    auto* header = reinterpret_cast<const RIFFHeader*>(in_buf.data());
-    if (header->riff != 'FFIR' || header->wave != 'EVAW') {
+    RIFFHeader header{};
+    // RIFF bytes may arrive at any alignment; a typed pointer cast would
+    // violate C++ object lifetime and alignment requirements.
+    std::memcpy(&header, in_buf.data(), sizeof(header));
+    if (header.riff != RiffTag("RIFF") || header.wave != RiffTag("WAVE")) {
         return false;
     }
     in_buf = in_buf.subspan(sizeof(RIFFHeader));
@@ -107,39 +121,42 @@ bool AjmAt9Decoder::ParseRIFFHeader(std::span<u8>& in_buf, AjmInstanceGapless& g
     bool result = false;
 
     while (in_buf.size() >= sizeof(ChunkHeader)) {
-        auto* chunk = reinterpret_cast<const ChunkHeader*>(in_buf.data());
+        ChunkHeader chunk{};
+        std::memcpy(&chunk, in_buf.data(), sizeof(chunk));
         in_buf = in_buf.subspan(sizeof(ChunkHeader));
 
-        if (chunk->tag == 'atad') {
+        if (chunk.tag == RiffTag("data")) {
             break;
         }
 
-        if (in_buf.size() < chunk->length) {
+        if (in_buf.size() < chunk.length) {
             return false;
         }
 
-        switch (chunk->tag) {
-        case ' tmf': {
-            if (chunk->length != sizeof(AudioFormat)) {
+        switch (chunk.tag) {
+        case RiffTag("fmt "): {
+            if (chunk.length != sizeof(AudioFormat)) {
                 return false;
             }
-            auto* fmt = reinterpret_cast<const AudioFormat*>(in_buf.data());
-            if (fmt->fmt_type != 0xFFFE || std::memcmp(fmt->guid, g_at9_guid, 16) != 0) {
+            AudioFormat fmt{};
+            std::memcpy(&fmt, in_buf.data(), sizeof(fmt));
+            if (fmt.fmt_type != 0xFFFE || std::memcmp(fmt.guid, g_at9_guid, 16) != 0) {
                 return false;
             }
             AjmDecAt9InitializeParameters init_params = {};
-            std::memcpy(init_params.config_data, fmt->config_data, ORBIS_AT9_CONFIG_DATA_SIZE);
+            std::memcpy(init_params.config_data, fmt.config_data, ORBIS_AT9_CONFIG_DATA_SIZE);
             Initialize(&init_params, sizeof(init_params));
             result = true;
             break;
         }
-        case 'tcaf': {
-            if (chunk->length != sizeof(SampleData)) {
+        case RiffTag("fact"): {
+            if (chunk.length != sizeof(SampleData)) {
                 return false;
             }
-            auto* samples = reinterpret_cast<const SampleData*>(in_buf.data());
-            gapless.init.total_samples = samples->sample_length;
-            gapless.init.skip_samples = samples->encoder_delay;
+            SampleData samples{};
+            std::memcpy(&samples, in_buf.data(), sizeof(samples));
+            gapless.init.total_samples = samples.sample_length;
+            gapless.init.skip_samples = samples.encoder_delay;
             gapless.Reset();
             break;
         }
@@ -147,7 +164,8 @@ bool AjmAt9Decoder::ParseRIFFHeader(std::span<u8>& in_buf, AjmInstanceGapless& g
             break;
         }
 
-        const size_t advance_len = std::min(in_buf.size(), size_t((chunk->length + 1) & ~1));
+        const size_t padded_length = size_t(chunk.length) + (chunk.length & 1U);
+        const size_t advance_len = std::min(in_buf.size(), padded_length);
         in_buf = in_buf.subspan(advance_len);
     }
 
@@ -161,9 +179,13 @@ u32 AjmAt9Decoder::GetMinimumInputSize() const {
 DecoderResult AjmAt9Decoder::ProcessData(std::span<u8>& in_buf, SparseOutputBuffer& output,
                                          AjmInstanceGapless& gapless) {
     DecoderResult result{};
+    u32 riff_tag = 0;
+    if (in_buf.size() >= sizeof(riff_tag)) {
+        std::memcpy(&riff_tag, in_buf.data(), sizeof(riff_tag));
+    }
     const bool is_riff = True(m_flags & AjmAt9CodecFlags::ParseRiffHeader) &&
                          in_buf.size() >= sizeof(RIFFHeader) &&
-                         *reinterpret_cast<const u32*>(in_buf.data()) == 'FFIR';
+                         riff_tag == RiffTag("RIFF");
     if (is_riff) {
         if (!ParseRIFFHeader(in_buf, gapless)) {
             LOG_ERROR(Lib_Ajm, "Failed to parse ATRAC9 RIFF header");
