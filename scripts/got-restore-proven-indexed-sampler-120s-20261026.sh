@@ -314,7 +314,7 @@ root=Path(sys.argv[1])
 patterns={"types":"GuestIndexedImageDimensions:","coherence":"GpuDescriptorTableCpuCoherence:",
 "stencil":"StencilReferenceExactMerged:","sampler":"IndexedUniformSamplerBound:","binding_decision":"IndexedBindingDecision:",
 "strided":"IndexedStridedSource:","sharp":"Sharp source was not flatenned",
-"srt":"SRT dependency resolution stalled","device_loss":"DEVICE_LOST",
+"srt":"SRT dependency resolution stalled","device_loss":"DEVICE_LOST","radv_soft_recovery":"context is lost",
 "crash":"<Critical>"}
 counts=Counter();shown=Counter();last=deque(maxlen=80)
 with (root/"shader-events.txt").open("w") as out, gzip.open(
@@ -381,3 +381,12 @@ fi
 gzip -1 "$CAPTURE/full-build.log" || true
 echo "GAME_RUNTIME_LIMIT=118_TERM_2_KILL"
 echo "SAFE_WORKTREE_TEST=YES"
+if [[ -f "$CAPTURE/info/visual-acceptance.txt" ]]; then
+  echo "GAME_VISUAL_ACCEPTANCE=REJECTED_BLACK_LOADING"
+  exit 9
+fi
+if [[ "$code" != "124" && "$code" != "0" ]]; then
+  echo "GAME_RUNTIME_ACCEPTANCE=UNEXPECTED_EXIT_$code"
+  exit 10
+fi
+echo "GAME_VISUAL_ACCEPTANCE=NEEDS_USER_REVIEW"
