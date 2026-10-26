@@ -1066,9 +1066,15 @@ void EmitContext::DefineImagesAndSamplers() {
             // separate null sentinel for whichever type is selected.
             const Id map_array = TypeRuntimeArray(U32[1]);
             const Id map_struct = TypeStruct(map_array);
-            Decorate(map_array, spv::Decoration::ArrayStride, 4u);
-            Decorate(map_struct, spv::Decoration::Block);
-            MemberDecorate(map_struct, 0, spv::Decoration::Offset, 0u);
+            // The runtime u32 array can be shared with an ordinary buffer
+            // resource. Emit its layout decorations only on first use.
+            if (std::ranges::find(buf_type_ids, map_array.value, &Id::value) ==
+                buf_type_ids.end()) {
+                Decorate(map_array, spv::Decoration::ArrayStride, 4u);
+                Decorate(map_struct, spv::Decoration::Block);
+                MemberDecorate(map_struct, 0, spv::Decoration::Offset, 0u);
+                buf_type_ids.push_back(map_array);
+            }
             const Id map_struct_ptr =
                 TypePointer(spv::StorageClass::StorageBuffer, map_struct);
             const Id map_var =
