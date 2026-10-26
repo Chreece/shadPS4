@@ -8,6 +8,7 @@
 #include "shader_recompiler/ir/attribute.h"
 #include "shader_recompiler/ir/microinstruction.h"
 #include "shader_recompiler/runtime_info.h"
+#include "video_core/buffer_cache/bda_address_space.h"
 
 #include <boost/container/static_vector.hpp>
 #include <fmt/format.h>
@@ -1221,6 +1222,22 @@ Id EmitContext::DefineGetBdaPointer() {
     const auto fault_label{OpLabel()};
     const auto available_label{OpLabel()};
     const auto merge_label{OpLabel()};
+    const auto valid_range_label{OpLabel()};
+    const auto invalid_range_label{OpLabel()};
+    const auto return_label{OpLabel()};
+
+    // The sparse arena maps only the low 40 bits of guest GPU address space.
+    // Reject an out-of-range dword before truncating the page index to u32 or
+    // touching either the BDA table or the fault bitmap. Returning null makes
+    // the caller take its defined fallback path.
+    const auto valid_address_end{
+        Constant(U64, VideoCore::GuestGpuAddressLimit - sizeof(u32) + 1)};
+    const auto valid_address{OpULessThan(U1[1], address, valid_address_end)};
+    OpSelectionMerge(return_label, spv::SelectionControlMask::MaskNone);
+    OpBranchConditional(valid_address, valid_range_label, invalid_range_label);
+    AddLabel(invalid_range_label);
+    OpBranch(return_label);
+    AddLabel(valid_range_label);
 
     // Get page BDA
     const auto page{OpShiftRightLogical(U64, address, caching_pagebits)};
@@ -1244,9 +1261,12 @@ Id EmitContext::DefineGetBdaPointer() {
     const auto page_mask{OpShiftLeftLogical(U32[1], u32_one_value, page_mod32)};
     const auto fault_ptr{
         OpAccessChain(fault_pointer_type, fault_buffer_id, u32_zero_value, page_div32)};
-    const auto fault_value{OpLoad(U32[1], fault_ptr)};
-    const auto fault_value_masked{OpBitwiseOr(U32[1], fault_value, page_mask)};
-    OpStore(fault_ptr, fault_value_masked);
+    // Hundreds of shader lanes may fault different pages in the same 32-bit
+    // word. A load/OR/store sequence loses bits on concurrent invocations.
+    // Atomic OR preserves every requested page for the fault manager.
+    (void)OpAtomicOr(U32[1], fault_ptr,
+                     ConstU32(static_cast<u32>(spv::Scope::Device)),
+                     u32_zero_value, page_mask);
 
     // Return null pointer
     const auto fallback_result{u64_zero_value};
@@ -1260,7 +1280,12 @@ Id EmitContext::DefineGetBdaPointer() {
 
     // Merge
     AddLabel(merge_label);
-    const auto result{OpPhi(U64, addr, available_label, fallback_result, fault_label)};
+    const auto cached_or_null{OpPhi(U64, addr, available_label, fallback_result, fault_label)};
+    OpBranch(return_label);
+
+    AddLabel(return_label);
+    const auto result{
+        OpPhi(U64, cached_or_null, merge_label, u64_zero_value, invalid_range_label)};
     OpReturnValue(result);
     OpFunctionEnd();
     return func;
