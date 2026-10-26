@@ -302,8 +302,12 @@ public:
     struct TextureDefinition {
         const VectorIds* data_types;
         Id id;
+        Id image_id_3d{};
+        Id image_id_cube{};
         Id sampled_type;
         Id image_type;
+        Id image_type_3d{};
+        Id image_type_cube{};
         AmdGpu::ImageType view_type;
         bool is_integer = false;
         bool is_storage = false;
