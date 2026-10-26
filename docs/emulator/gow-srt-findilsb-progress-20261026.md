@@ -58,3 +58,18 @@ Count `FindILsb32`/dynamic `Phi`/flatbuf warnings after game exit and inspect th
 - Decision: **KEEP** proven `FindILsb32` host-walker implementation and standard-handle compile correction; do not mark Ragnarök playable. Preserve this now-120s-running binary SHA as a comparison candidate. Continue with GPU-controlled image/sampler resource selection, not speculative host X11 investigations.
 - Next isolated experiment: handle **finite, proven immediate-offset Phi selections inside `ReadConstBuffer` descriptor words**; materialize separate texture/sampler sharp alternatives but retain the original GPU `Phi` to select the actual sampled result. Reject loop-carried/unbounded Phi sources, avoid title/shader IDs and record exact visual results.
 
+
+## Experiment: 20261026-173859-1718732 — rejected zero-activation Phi matcher
+
+- Exact source `6551cd3476bd606d44f1d6d3fd49af6abc413bc7`, binary SHA-256 `07f52d8c9f666b2b7dffcf6edba0a4e3a375684da706b4982a3e196fd0e01e01`.
+- Evidence: `shadps4-srt-gpu-phi-20261026-173859-1718732-build.tar.gz` and `shadps4-srt-gpu-phi-20261026-173859-1718732.tar.gz`.
+- Build and 30/30 regression tests passed. **Zero** `GPU-indexed Phi sharp selection lowered` events, so the proposed finite descriptor-branch transform **did not match the actual loaded shaders**.
+- Exit `-11` at **32.856 seconds**; RADV reports a guilty context soft recovery and a Vulkan `ErrorDeviceLost` semaphore assertion. Kernel journal readable, zero matching AMD reset messages (not proof the GPU was healthy).
+- Counter comparison against immediately preceding complete 120-second FindILsb trial: `FindILsb32` unsupported 0 → 0, dynamic Phi 3,906 → 3,906, failed SRT offsets 5,591 → 5,592, invalid sharp sources 19 → 20, GPU-paged shaders 36 → 36. The old run completed 120s and this run only 33s; raw counts reflect different observation windows, and remain diagnostic rather than visual acceptance.
+- Frame-011s.png and frame-021s.png are **byte-identical**; both display `Loading game / Waiting for game video / 0:08 elapsed`. No game image, menu, terrain or playback observed. Audio not observed.
+- Incremental native compilation emitted zero warnings, which is **not equivalent** to a clean full rebuild and cannot be compared directly to earlier full-build counts.
+- Stable 120-second candidate SHA `8316d6cb2243f0d4ffd8f838a02046738d67bff426e6f344698b25b6f421cf28` was copied to an immutable test snapshot before rebuilding. Original production binary, ES-DE, game saves and SSH remained unchanged. Ollama original model/context 16,384 was restored.
+- **REJECT / REVERT** the finite-branch indexed-Phi source implementation, because no source path was exercised and the game did not progress. Reverted to exact previously tested version of `image_phi_selection.inc` (`88a267c53c8458d6bd5ace7d22240fb301d4a953`). Keep the five experimental tests in history, no longer counted in the active test gate.
+- Fresh diagnostic grouping from 1.5 MB retained console excerpt: **1,111** unsupported `ReadFirstLane` offset operations, **30** unsupported `GetAttributeU32`, **1,777** `Phi` complaints and **2,920** failed offsets in that *excerpt* (full output only available on host). Neither `GetAttributeU32` nor a lane-dependent `ReadFirstLane` may be evaluated on CPU. This is a concrete opcode omission with a safe subset: `ReadFirstLane` can be unwrapped iff its operand is proved scalar-uniform. New uniformity analysis rejects GPU-dependent inputs and has nine tests.
+- **Next:** only compile host-uniform `ReadFirstLane` expressions, preserve all runtime-dependent GPU values; measure accepted/rejected counts and first real game video. Native build and runtime pending; no fabricated graphics claim.
+
