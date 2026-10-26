@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <format>
 #include <memory>
 #include <mutex>
@@ -110,7 +111,11 @@ std::unique_ptr<Runner> g_runner;
 
 Runner::~Runner() {
     if (device_) {
-        device_.waitIdle();
+        const vk::Result idle_status = device_.waitIdle();
+        if (idle_status != vk::Result::eSuccess) {
+            std::fprintf(stderr, "GCN test runner: waitIdle failed: %s\n",
+                         vk::to_string(idle_status).c_str());
+        }
         if (fence_)
             device_.destroyFence(fence_);
         if (pipeline_layout_)
@@ -366,8 +371,16 @@ std::expected<void, ErrorInfo> Runner::run_raw(std::span<const std::uint32_t> sp
     } sg{device_, shader};
 
     // Reset cached command buffer + fence --------------------------------
-    device_.resetFences(fence_);
-    command_buffer_.reset();
+    if (const vk::Result result = device_.resetFences(fence_);
+        result != vk::Result::eSuccess) {
+        return make_error(Error::CommandSubmissionFailed,
+                          std::format("resetFences: {}", vk::to_string(result)));
+    }
+    if (const vk::Result result = command_buffer_.reset();
+        result != vk::Result::eSuccess) {
+        return make_error(Error::CommandSubmissionFailed,
+                          std::format("resetCommandBuffer: {}", vk::to_string(result)));
+    }
 
     if (command_buffer_.begin({
             .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
