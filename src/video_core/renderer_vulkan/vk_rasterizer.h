@@ -163,7 +163,10 @@ private:
     ImageBinding db_desc;
 
     std::vector<vk::DescriptorImageInfo> image_infos;
-    boost::container::static_vector<vk::DescriptorBufferInfo, Shader::NUM_BUFFERS> buffer_infos;
+    // Per-stage ordinary buffers plus compact-image remap SSBOs need stable
+    // storage across *all* shader stages. The old fixed-size vector only
+    // reserved NUM_BUFFERS entries and could overflow with extra SSBO maps.
+    std::vector<vk::DescriptorBufferInfo> buffer_infos;
 
     struct BoundBuffer {
         const VideoCore::Buffer* buffer;
