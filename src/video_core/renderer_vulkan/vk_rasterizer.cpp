@@ -929,6 +929,21 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 represented_entries == count - 1u &&
                 guest_size == required_bytes &&
                 memory->IsValidMapping(source.base_address, guest_size);
+            // The guest can construct texture tables with GPU buffer writes.
+            // Before reading any T# record from host memory, consume only the
+            // GPU-dirty guest range through the existing buffer cache coherency
+            // path. Nothing is copied when the table is already CPU-coherent.
+            if (complete && buffer_cache.IsRegionGpuModified(source.base_address, guest_size)) {
+                buffer_cache.ReadMemory(source.base_address, guest_size, false, false, true);
+                static std::atomic<u32> table_sync_reports{0};
+                if (table_sync_reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
+                    LOG_INFO(Render_Vulkan,
+                             "GpuDescriptorTableCpuCoherence: kind=image stage={:#x} "
+                             "addr={:#x} bytes={} entries={} stride={}",
+                             stage.pgm_hash, source.base_address, guest_size,
+                             count - 1u, record_stride);
+                }
+            }
 
             u64 estimated_resident_bytes = 0;
             constexpr u64 MaxEstimatedIndexedImageBytes = 4ull << 30;
@@ -1159,6 +1174,19 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     Shader::MaxGuestIndexedImageEntries) == count - 1u &&
                 bytes == u64(count - 1u) * record_stride &&
                 memory->IsValidMapping(source.base_address, bytes);
+            // Use exactly the same demand-driven GPU-to-CPU synchronization for
+            // sampler tables; T# and S# must observe the same guest GPU writes.
+            if (complete && buffer_cache.IsRegionGpuModified(source.base_address, bytes)) {
+                buffer_cache.ReadMemory(source.base_address, bytes, false, false, true);
+                static std::atomic<u32> sampler_sync_reports{0};
+                if (sampler_sync_reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
+                    LOG_INFO(Render_Vulkan,
+                             "GpuDescriptorTableCpuCoherence: kind=sampler stage={:#x} "
+                             "addr={:#x} bytes={} entries={} stride={}",
+                             stage.pgm_hash, source.base_address, bytes,
+                             count - 1u, record_stride);
+                }
+            }
 
             const u32 first_sampler = static_cast<u32>(image_infos.size());
             u32 valid_samplers = 0u;
