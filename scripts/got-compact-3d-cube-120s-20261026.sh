@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 export GIT_TERMINAL_PROMPT=0
 BASE="$HOME/projects/shadps4/GhostOfTsushima/fresh-source/got-indexed-capacity-20261024-213908"
-PIN="96ea8fe1a8fea765a6f268828f025ccdf0db4430"
+PIN="fe219195516f1232981c32d8933c31b7568eda81"
 PREVIOUS_PIN="82cc0cdd2e996cc747106b0a0bb9a6ebc5f4a104"
 LAST_TESTED_PIN="ecbbdfebd394e17c33cfebf7b07c4bb89ab5e146"
 EARLIER_PIN="73f1ee423fa7daecdfdb1fc62e52c6291e2a4f41"
@@ -133,6 +133,10 @@ grep -Fq 'image_index_maps.emplace_back'  "$SOURCE/src/video_core/renderer_vulka
  fail "Renderer per-draw remap upload missing"
 grep -Fq 'buffer_infos.reserve(required_buffer_infos)'  "$SOURCE/src/video_core/renderer_vulkan/vk_rasterizer.cpp" ||
  fail "Stable descriptor buffer pointers not reserved"
+grep -Fq "std::vector<vk::DescriptorBufferInfo> buffer_infos" "$SOURCE/src/video_core/renderer_vulkan/vk_rasterizer.h" ||
+ fail "Vulkan buffer descriptors still use fixed-size static_vector"
+grep -Fq "compact_index_map" "$SOURCE/src/shader_recompiler/backend/spirv/spirv_emit_context.h" ||
+ fail "Shader remap storage-buffer member missing"
 
 grep -Fq 'IsSplashVisible()' \
  "$SOURCE/src/video_core/renderer_vulkan/vk_presenter.cpp" ||
