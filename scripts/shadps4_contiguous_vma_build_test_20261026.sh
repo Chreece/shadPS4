@@ -200,6 +200,13 @@ assert "DURATION=118" in src
 assert "GPU_HEADROOM_AB_FREE_GIB_TARGET=" in src
 assert "OBSERVER_SHA=188deeb0a25e671e2308ac0acfe8ad81bc0adfc1" in src
 assert "RECORDER_SHA=1593a0f720d1e7ab0d2392746693839b67162959" in src
+# For this bounded GoW regression we need the *entire* short native console,
+# not only the first and last segments: the missing flip/frame and SRT error
+# context may lie in the omitted middle. Compress it in the same .tar.gz.
+# This changes test evidence only, never emulator or guest behavior.
+old_exclusion='--exclude="$(basename "$REPORT")/full-console.log" '
+assert src.count(old_exclusion)==1
+src=src.replace(old_exclusion,"")
 Path(sys.argv[2]).write_text(src)
 print("NATIVE_GAME_TEST_BINARY_SOURCE_PIN=PASS",flush=True)
 PYRUN
