@@ -94,13 +94,13 @@ finish() {
         echo "UPLOAD_THIS=$ARCHIVE"
         if [[ -f "$RECORDER" ]] && [[ "$(git hash-object "$RECORDER")" == "$RECORDER_SHA" ]]; then
             python3 -B "$RECORDER" --archive "$ARCHIVE" --game "$GAME" \
-              --source "$SOURCE_REV" --upstream "30f4170896ce974353a6f6486d0ecec179aec54b" \
+              --source "$SOURCE_REV" --upstream "2cdefaa1298c6e4ece6c74bd84e90f3906282d51" \
               --candidate-sha256 "$EXPECTED" \
               --fix-id gpu-device-lost-after-first-frame --change "Same exact native emulator binary, host Ollama VRAM headroom A/B only; 11/21/26s frames and read-only kernel faults" \
               --emulator-effect "PENDING_REVIEW_OF_BOUNDED_CONSOLE_AND_NATIVE_RESULT" \
               --game-effect "NOT_OBSERVED" --decision PENDING_REVIEW \
               --next "Compare whether GPU context lost persists with additional free VRAM; inspect first-frame screenshots, amdgpu kernel events and real resource lifetime before general renderer changes" \
-              --pr 63 || echo "DIARY_WRITER_ERROR_REVIEW_ARCHIVE=$ARCHIVE"
+              --pr 73 --pr 71 || echo "DIARY_WRITER_ERROR_REVIEW_ARCHIVE=$ARCHIVE"
         else
             echo "RECORDER_UNAVAILABLE_ARCHIVE_REMAINS=$ARCHIVE"
         fi
@@ -235,6 +235,8 @@ fi
 # only after the actual game process exits (not merely after observation).
 echo "GPU_VRAM_POLICY=HEADROOM_AB_ONLY_IF_OLLAMA_LOADED; GUARDED_8_GIB_MINIMUM"
 echo "OLLAMA_RESTORE_POLICY=AFTER_ACTUAL_GAME_PROCESS_EXIT"
+echo "SOURCE_ENGINE_UPSTREAM=2cdefaa1298c6e4ece6c74bd84e90f3906282d51"
+echo "GPU_CONFIG=UNCHANGED_GLOBAL_READBACKS_AND_NATIVE_MEMORY"
 # The sole controlled variable is resources already occupied by local Ollama,
 # not a shadPS4 CPU/GPU/texture/readback flag. This works for every title.
 # When a live model occupies VRAM and free space is below 16GiB, free it through
