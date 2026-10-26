@@ -448,10 +448,12 @@ bool Instance::CreateDevice() {
                 .vertexPipelineStoresAndAtomics = features.vertexPipelineStoresAndAtomics,
                 .fragmentStoresAndAtomics = features.fragmentStoresAndAtomics,
                 .shaderImageGatherExtended = features.shaderImageGatherExtended,
-                .shaderSampledImageArrayDynamicIndexing =
-                    features.shaderSampledImageArrayDynamicIndexing,
                 .shaderStorageImageExtendedFormats = features.shaderStorageImageExtendedFormats,
                 .shaderStorageImageMultisample = features.shaderStorageImageMultisample,
+                // vk::PhysicalDeviceFeatures members are C++20 designated initializers:
+                // their source order must follow the Vulkan struct declaration.
+                .shaderSampledImageArrayDynamicIndexing =
+                    features.shaderSampledImageArrayDynamicIndexing,
                 .shaderClipDistance = features.shaderClipDistance,
                 .shaderFloat64 = features.shaderFloat64,
                 .shaderInt64 = features.shaderInt64,

@@ -196,32 +196,98 @@ Id EmitImageSampleImplicitLodIndexed(
     ASSERT(ctx.profile.supports_sampled_image_nonuniform_indexing);
 
     const Id valid = ctx.OpULessThan(ctx.U1[1], gpu_texture_id,
-                                     ctx.ConstU32(texture.image_array_size - 1));
+                                     ctx.ConstU32(texture.image_array_size - 1u));
     const Id bounded = ctx.OpSelect(ctx.U32[1], valid, gpu_texture_id,
-                                    ctx.ConstU32(texture.image_array_size - 1));
+                                    ctx.ConstU32(texture.image_array_size - 1u));
     ctx.Decorate(bounded, spv::Decoration::NonUniform);
-
-    const Id pointer_type =
-        ctx.TypePointer(spv::StorageClass::UniformConstant, texture.image_type);
-    const Id pointer = ctx.OpAccessChain(pointer_type, texture.id, std::array{bounded});
-    ctx.Decorate(pointer, spv::Decoration::NonUniform);
-    const Id image = ctx.OpLoad(texture.image_type, pointer);
-    ctx.Decorate(image, spv::Decoration::NonUniform);
-
     const Id sampler = LoadIndexedGuestSampler(
         ctx, handle, bounded, texture.image_array_size);
-    const Id sampled_image = ctx.OpSampledImage(texture.sampled_type, image, sampler);
-    ctx.Decorate(sampled_image, spv::Decoration::NonUniform);
 
-    const Id fixed_coords = FixImageCoords<true>(ctx, coords, texture.view_type);
-    ImageOperands operands;
-    operands.Add(spv::ImageOperandsMask::Bias, bias);
-    operands.AddOffset(ctx, texture.view_type, offset,
-                       ctx.profile.supports_shader_image_gather_extended);
-    const Id sample =
-        ctx.OpImageSampleImplicitLod(texture.data_types->Get(4), sampled_image,
-                                     fixed_coords, operands.mask, operands.operands);
-    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
+    const auto emit_sample = [&](Id image_variable, Id image_type, Id typed_coords,
+                                 AmdGpu::ImageType view_type) {
+        const Id pointer_type =
+            ctx.TypePointer(spv::StorageClass::UniformConstant, image_type);
+        const Id pointer = ctx.OpAccessChain(
+            pointer_type, image_variable, std::array{bounded});
+        ctx.Decorate(pointer, spv::Decoration::NonUniform);
+        const Id image = ctx.OpLoad(image_type, pointer);
+        ctx.Decorate(image, spv::Decoration::NonUniform);
+        const Id sampled_image = ctx.OpSampledImage(
+            ctx.TypeSampledImage(image_type), image, sampler);
+        ctx.Decorate(sampled_image, spv::Decoration::NonUniform);
+        const Id fixed_coords = FixImageCoords<true>(ctx, typed_coords, view_type);
+        ImageOperands operands;
+        operands.Add(spv::ImageOperandsMask::Bias, bias);
+        operands.AddOffset(ctx, view_type, offset,
+                           ctx.profile.supports_shader_image_gather_extended);
+        return ctx.OpImageSampleImplicitLod(texture.data_types->Get(4),
+                                            sampled_image, fixed_coords,
+                                            operands.mask, operands.operands);
+    };
+
+    // The raw guest T# dword 3 is carried (bitcast) in coords.w by
+    // PatchImageSampleArgs. Its high nibble is the genuine per-invocation
+    // texture type, read by the guest shader from its own GPU material table.
+    // Only implicit LOD with no offset currently uses the dimension dispatch;
+    // unsupported variants keep their historical 2D/null path, never a fake
+    // 2D reinterpretation of a 3D/cube Vulkan image view.
+    if (!texture.is_guest_mixed_indexed ||
+        inst->Flags<IR::TextureInstInfo>().has_offset) {
+        const Id sample = emit_sample(texture.id, texture.image_type, coords,
+                                      texture.view_type);
+        return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
+    }
+    const Id word3 = ctx.OpBitcast(
+        ctx.U32[1], ctx.OpCompositeExtract(ctx.F32[1], coords, 3u));
+    const Id guest_type = ctx.OpShiftRightLogical(ctx.U32[1], word3, ctx.ConstU32(28u));
+    const Id is_3d = ctx.OpIEqual(ctx.U1[1], guest_type,
+                                  ctx.ConstU32(u32(AmdGpu::ImageType::Color3D)));
+    const Id is_cube = ctx.OpIEqual(ctx.U1[1], guest_type,
+                                    ctx.ConstU32(u32(AmdGpu::ImageType::Cube)));
+
+    const Id x = ctx.OpCompositeExtract(ctx.F32[1], coords, 0u);
+    const Id y = ctx.OpCompositeExtract(ctx.F32[1], coords, 1u);
+    const Id z = ctx.OpCompositeExtract(ctx.F32[1], coords, 2u);
+    const Id coords2d = ctx.OpCompositeConstruct(ctx.F32[2], x, y);
+    const Id coords3d = ctx.OpCompositeConstruct(ctx.F32[3], x, y, z);
+
+    const Id volume = ctx.OpLabel();
+    const Id other = ctx.OpLabel();
+    const Id cubemap = ctx.OpLabel();
+    const Id ordinary = ctx.OpLabel();
+    const Id other_end = ctx.OpLabel();
+    const Id merge = ctx.OpLabel();
+
+    ctx.OpSelectionMerge(merge, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(is_3d, volume, other);
+
+    ctx.AddLabel(volume);
+    const Id sample3d = emit_sample(texture.image_id_3d, texture.image_type_3d,
+                                    coords3d, AmdGpu::ImageType::Color3D);
+    ctx.OpBranch(merge);
+
+    ctx.AddLabel(other);
+    ctx.OpSelectionMerge(other_end, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(is_cube, cubemap, ordinary);
+
+    ctx.AddLabel(cubemap);
+    const Id sample_cube = emit_sample(texture.image_id_cube, texture.image_type_cube,
+                                       coords3d, AmdGpu::ImageType::Cube);
+    ctx.OpBranch(other_end);
+
+    ctx.AddLabel(ordinary);
+    const Id sample2d = emit_sample(texture.id, texture.image_type,
+                                    coords2d, AmdGpu::ImageType::Color2D);
+    ctx.OpBranch(other_end);
+
+    ctx.AddLabel(other_end);
+    const Id other_result = ctx.OpPhi(texture.data_types->Get(4),
+                                      sample_cube, cubemap, sample2d, ordinary);
+    ctx.OpBranch(merge);
+    ctx.AddLabel(merge);
+    const Id result = ctx.OpPhi(texture.data_types->Get(4),
+                                sample3d, volume, other_result, other_end);
+    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], result) : result;
 }
 
 Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,

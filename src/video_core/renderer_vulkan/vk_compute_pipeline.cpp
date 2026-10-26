@@ -48,14 +48,17 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
     }
     for (const auto& image : info->images) {
         const u32 num_bindings = image.NumBindings(*info);
-        bindings.push_back({
-            .binding = binding,
-            .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
-                                               : vk::DescriptorType::eSampledImage,
-            .descriptorCount = num_bindings,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        });
-        binding += num_bindings;
+        const u32 dimensions = image.is_guest_mixed_indexed ? 3u : 1u;
+        for (u32 type = 0; type < dimensions; ++type) {
+            bindings.push_back({
+                .binding = binding,
+                .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
+                                                   : vk::DescriptorType::eSampledImage,
+                .descriptorCount = num_bindings,
+                .stageFlags = vk::ShaderStageFlagBits::eCompute,
+            });
+            binding += num_bindings;
+        }
     }
     for (const auto& sampler : info->samplers) {
         const u32 count = sampler.NumBindings(*info);

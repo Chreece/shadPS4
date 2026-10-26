@@ -14,6 +14,7 @@
 #include <spirv/unified1/spirv.hpp11>
 
 #include <numbers>
+#include <utility>
 #include <string_view>
 
 namespace Shader::Backend::SPIRV {
@@ -1029,8 +1030,38 @@ void EmitContext::DefineImagesAndSamplers() {
             .mip_fallback_mode = mip_fallback_mode,
             .image_array_size = num_bindings,
             .is_guest_indexed = image_desc.is_guest_indexed,
+            .is_guest_mixed_indexed = image_desc.is_guest_mixed_indexed,
         });
         interfaces.push_back(id);
+
+        // Guest-indexed descriptor tables may contain 2D, 3D, and Cube
+        // records at unrelated GPU-selected indices. Vulkan requires each
+        // OpTypeImage array to have one static dimensionality. Preserve the
+        // original guest index in all three arrays instead of coercing the
+        // image view into an incompatible Vulkan type.
+        if (image_desc.is_guest_mixed_indexed) {
+            const auto define_dimension_array = [&](spv::Dim dim, bool arrayed,
+                                                     std::string_view suffix) {
+                const Id typed_image = TypeImage(sampled_type, dim, false, arrayed, false,
+                                                 1u, spv::ImageFormat::Unknown);
+                const Id array = TypeArray(typed_image, ConstU32(num_bindings));
+                const Id pointer = TypePointer(spv::StorageClass::UniformConstant, array);
+                const Id var = AddGlobalVariable(pointer, spv::StorageClass::UniformConstant);
+                Decorate(var, spv::Decoration::Binding, binding.unified);
+                binding.unified += num_bindings;
+                Decorate(var, spv::Decoration::DescriptorSet, 0U);
+                Name(var, fmt::format("{}_img{}_{}", hw_stage, images.size() - 1, suffix));
+                interfaces.push_back(var);
+                return std::pair{var, typed_image};
+            };
+            auto [image3d, type3d] = define_dimension_array(spv::Dim::Dim3D, false, "3d");
+            auto [imageCube, typeCube] = define_dimension_array(spv::Dim::Dim2D, true, "cube");
+            auto& typed = images.back();
+            typed.image_id_3d = image3d;
+            typed.image_type_3d = type3d;
+            typed.image_id_cube = imageCube;
+            typed.image_type_cube = typeCube;
+        }
     }
     if (std::ranges::any_of(info.images,
                             [](const ImageResource& image) { return image.is_atomic; })) {

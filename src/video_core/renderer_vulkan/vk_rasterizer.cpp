@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <atomic>
 #include <unordered_map>
 #include <bit>
@@ -432,7 +433,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         if (!stage) continue;
         std::size_t stage_images = 0;
         for (const auto& image : stage->images) {
-            stage_images += image.NumBindings(*stage);
+            stage_images += image.NumBindings(*stage) * (image.is_guest_mixed_indexed ? 3u : 1u);
         }
         max_stage_images = std::max(max_stage_images, stage_images);
         required_infos += stage_images;
@@ -440,7 +441,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             required_infos += sampler.NumBindings(*stage);
         }
     }
-    if (max_stage_images > Shader::MaxGuestIndexedImageEntries +
+    if (max_stage_images > 3ull * (Shader::MaxGuestIndexedImageEntries + 1u) +
                             Shader::NUM_IMAGES * 64u) {
         LOG_ERROR(Render_Vulkan, "Rejecting excessive guest image descriptor count {}",
                   max_stage_images);
@@ -459,8 +460,12 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         if (!stage) {
             continue;
         }
+        const auto typed_image_bindings = std::ranges::count_if(
+            stage->images, [](const Shader::ImageResource& image) {
+                return image.is_guest_mixed_indexed;
+            });
         set_writes.resize(set_writes.size() + stage->buffers.size() + stage->images.size() +
-                          stage->samplers.size());
+                          2u * typed_image_bindings + stage->samplers.size());
         BindBuffers(*stage, binding, push_data);
         BindTextures(*stage, binding);
         uses_dma |= stage->uses_dma;
@@ -892,13 +897,15 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     const u32 first_image_idx = image_infos.size();
     // To emulate storing to explicit mip levels, build a descriptor array with each mip level.
     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
+    boost::container::small_vector<bool, 8> image_descriptor_is_storage;
 
     u32 num_images{};
     for (const auto& image_desc : stage.images) {
         if (image_desc.is_guest_indexed) {
             const u32 count = image_desc.NumBindings(stage);
             ASSERT(count >= 2 && count <= Shader::MaxGuestIndexedImageEntries + 1);
-            ASSERT(num_images + count <= image_bindings.size());
+            const u32 dimension_arrays = image_desc.is_guest_mixed_indexed ? 3u : 1u;
+            ASSERT(num_images + u64(dimension_arrays) * count <= image_bindings.size());
 
             AmdGpu::Buffer source{};
             const bool fetched =
@@ -945,16 +952,22 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 }
             }
 
+            // Keep one Vulkan sampled-image array per SPIR-V dimensionality.
+            // Each array uses the *original* GPU guest record index, including
+            // the same last out-of-range null slot. This avoids CPU guessing
+            // which image the dynamically selected guest instruction wants.
+            const u32 image_base = num_images;
+            num_images += dimension_arrays * count;
+            for (u32 i = image_base; i < num_images; ++i) {
+                image_bindings[i].image_id = {};
+            }
+
             u64 estimated_resident_bytes = 0;
             constexpr u64 MaxEstimatedIndexedImageBytes = 4ull << 30;
-            const u32 max_dimension =
-                instance.GetPhysicalDevice().getProperties().limits.maxImageDimension2D;
-            for (u32 i = 0; i < count; ++i) {
-                auto& slot = image_bindings[num_images++];
-                slot.image_id = {};
-                // The final entry is an intentional null descriptor for
-                // out-of-range GPU indices. Invalid entries also remain null.
-                if (!complete || i + 1 == count) {
+            const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+            u32 bound_2d = 0, bound_3d = 0, bound_cube = 0;
+            for (u32 i = 0; i + 1u < count; ++i) {
+                if (!complete) {
                     continue;
                 }
 
@@ -968,8 +981,43 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 AmdGpu::Image raw{};
                 std::memcpy(&raw, reinterpret_cast<const void*>(entry_addr),
                             sizeof(AmdGpu::Image));
-                if (!raw.Valid() || raw.GetType() != AmdGpu::ImageType::Color2D ||
-                    raw.Address() == 0 || !memory->IsValidGpuMapping(raw.Address(), 0)) {
+                if (!raw.Valid() || raw.Address() == 0 ||
+                    !memory->IsValidGpuMapping(raw.Address(), 0)) {
+                    continue;
+                }
+
+                const auto type = raw.GetType();
+                u32 type_array{};
+                u32 dimension_limit = limits.maxImageDimension2D;
+                u64 volume_layers = 1;
+                switch (type) {
+                case AmdGpu::ImageType::Color2D:
+                    break;
+                case AmdGpu::ImageType::Color3D:
+                    if (!image_desc.is_guest_mixed_indexed) {
+                        continue;
+                    }
+                    type_array = 1;
+                    dimension_limit = limits.maxImageDimension3D;
+                    volume_layers = u64(raw.depth) + 1u;
+                    if (volume_layers > dimension_limit) {
+                        continue;
+                    }
+                    break;
+                case AmdGpu::ImageType::Cube:
+                    if (!image_desc.is_guest_mixed_indexed) {
+                        continue;
+                    }
+                    type_array = 2;
+                    dimension_limit = limits.maxImageDimensionCube;
+                    volume_layers = (u64(raw.depth) + 1u) * 6u;
+                    if (volume_layers > limits.maxImageArrayLayers) {
+                        continue;
+                    }
+                    break;
+                default:
+                    // Unsupported image classes stay null, never misbound as
+                    // a 2D view just to suppress a diagnostic.
                     continue;
                 }
 
@@ -978,37 +1026,60 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 if (!magic_enum::enum_contains(data_fmt) ||
                     !magic_enum::enum_contains(num_fmt) ||
                     data_fmt == AmdGpu::DataFormat::FormatInvalid ||
-                    AmdGpu::IsInteger(num_fmt) || raw.width >= max_dimension ||
-                    raw.height >= max_dimension || raw.base_level > raw.last_level ||
+                    AmdGpu::IsInteger(num_fmt) || raw.width >= dimension_limit ||
+                    raw.height >= dimension_limit || raw.base_level > raw.last_level ||
                     raw.pitch < raw.width) {
                     continue;
                 }
 
-                // Refuse malformed tables that would manufacture unreasonable
-                // host allocations. Rejected entries remain the null slot.
+                // Bound the *total* typed image footprint, including 3D depth
+                // and cube faces, before asking the texture cache to allocate.
                 const u64 estimated_bytes =
-                    (static_cast<u64>(raw.width) + 1u) *
-                    (static_cast<u64>(raw.height) + 1u) * 4u;
+                    (u64(raw.width) + 1u) * (u64(raw.height) + 1u) *
+                    volume_layers * 4u;
                 if (estimated_bytes >
                     MaxEstimatedIndexedImageBytes - estimated_resident_bytes) {
                     continue;
                 }
                 estimated_resident_bytes += estimated_bytes;
 
+                auto& slot = image_bindings[image_base + type_array * count + i];
                 auto& desc = slot.desc;
                 std::construct_at(&desc, raw, image_desc);
                 slot.image_id = texture_cache.FindImage(desc);
                 auto* image = &texture_cache.GetImage(slot.image_id);
-                if (desc.type == VideoCore::TextureCache::BindingType::Texture) {
+                if (type == AmdGpu::ImageType::Color2D &&
+                    desc.type == VideoCore::TextureCache::BindingType::Texture) {
                     if (auto depth_image_id = texture_cache.GetAssociatedDepth(*image)) {
                         slot.image_id = depth_image_id;
                         image = &texture_cache.GetImage(slot.image_id);
                     }
                 }
                 image->binding.is_bound = 1u;
+                if (type_array == 0u) {
+                    ++bound_2d;
+                } else if (type_array == 1u) {
+                    ++bound_3d;
+                } else {
+                    ++bound_cube;
+                }
             }
 
-            image_descriptor_array_sizes.push_back(count);
+            static std::atomic<u32> mixed_bind_reports{0};
+            if (mixed_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 32u) {
+                LOG_INFO(Render_Vulkan,
+                         "GuestIndexedImageDimensions: stage={:#x} entries={} "
+                         "bound_2d={} bound_3d={} bound_cube={} "
+                         "complete={} mixed={} record_stride={}",
+                         stage.pgm_hash, count - 1u,
+                         bound_2d, bound_3d, bound_cube, complete,
+                         image_desc.is_guest_mixed_indexed, record_stride);
+            }
+
+            for (u32 type = 0; type < dimension_arrays; ++type) {
+                image_descriptor_array_sizes.push_back(count);
+                image_descriptor_is_storage.push_back(false);
+            }
             continue;
         }
 
@@ -1071,6 +1142,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         }
 
         image_descriptor_array_sizes.push_back(num_bindings);
+        image_descriptor_is_storage.push_back(image_desc.is_written);
     }
 
     // Second pass to re-bind images that were updated after binding
@@ -1137,7 +1209,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         // TextureCache binding types can differ after depth/stencil association,
         // fallback selection, or invalid texture handles. A descriptor write
         // must use the exact type declared by its pipeline layout.
-        const bool is_storage = stage.images[image_index].is_written;
+        const bool is_storage = image_descriptor_is_storage[image_index];
         auto& set_write = set_writes[set_write_index++];
         set_write.dstSet = VK_NULL_HANDLE;
         set_write.dstBinding = binding.unified;

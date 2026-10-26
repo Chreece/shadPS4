@@ -7,6 +7,35 @@
 #include "video_core/texture_cache/sampler.h"
 
 namespace VideoCore {
+namespace {
+
+// Integer-format images cannot use linear filtering or anisotropy in Vulkan.
+// Keep normal/float sampler behavior completely unchanged.
+constexpr bool SamplerAnisotropyAllowed(bool requested, bool is_integer) noexcept {
+    return requested && !is_integer;
+}
+
+constexpr vk::Filter ImageSamplerFilter(vk::Filter filter, bool is_integer) noexcept {
+    return is_integer ? vk::Filter::eNearest : filter;
+}
+
+constexpr vk::SamplerMipmapMode ImageSamplerMipmapMode(vk::SamplerMipmapMode mode,
+                                                       bool is_integer) noexcept {
+    return is_integer ? vk::SamplerMipmapMode::eNearest : mode;
+}
+
+static_assert(SamplerAnisotropyAllowed(true, false));
+static_assert(!SamplerAnisotropyAllowed(true, true));
+static_assert(!SamplerAnisotropyAllowed(false, false));
+static_assert(ImageSamplerFilter(vk::Filter::eLinear, false) == vk::Filter::eLinear);
+static_assert(ImageSamplerFilter(vk::Filter::eLinear, true) == vk::Filter::eNearest);
+static_assert(ImageSamplerFilter(vk::Filter::eNearest, true) == vk::Filter::eNearest);
+static_assert(ImageSamplerMipmapMode(vk::SamplerMipmapMode::eLinear, false) ==
+              vk::SamplerMipmapMode::eLinear);
+static_assert(ImageSamplerMipmapMode(vk::SamplerMipmapMode::eLinear, true) ==
+              vk::SamplerMipmapMode::eNearest);
+
+} // namespace
 
 Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sampler,
                  const AmdGpu::BorderColorBuffer border_color_base, const bool is_depth,

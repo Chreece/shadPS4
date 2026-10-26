@@ -223,6 +223,10 @@ public:
         return IsSampledImageNonUniformIndexingSupported();
     }
 
+    bool IsShaderImageGatherExtendedSupported() const {
+        return bool(features.shaderImageGatherExtended);
+    }
+
     /// Returns true when VK_AMD_gcn_shader is supported.
     bool IsAmdGcnShaderSupported() const {
         return amd_gcn_shader;
