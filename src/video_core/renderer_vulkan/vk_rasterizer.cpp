@@ -1104,11 +1104,17 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 if (type_array == 0u) {
                     ++bound_2d;
                 } else if (type_array == 1u) {
-                    ASSERT(Shader::CompactImageIndices::Assign(
-                        compact_map, i, Shader::CompactIndexed3DImageEntries, bound_3d));
+                    // Assign must execute in Release builds: it writes the
+                    // actual guest-ID remap as well as advancing the ordinal.
+                    const bool mapped = Shader::CompactImageIndices::Assign(
+                        compact_map, i, Shader::CompactIndexed3DImageEntries, bound_3d);
+                    ASSERT(mapped);
+                    (void)mapped;
                 } else {
-                    ASSERT(Shader::CompactImageIndices::Assign(
-                        compact_map, i, Shader::CompactIndexedCubeImageEntries, bound_cube));
+                    const bool mapped = Shader::CompactImageIndices::Assign(
+                        compact_map, i, Shader::CompactIndexedCubeImageEntries, bound_cube);
+                    ASSERT(mapped);
+                    (void)mapped;
                 }
             }
 
