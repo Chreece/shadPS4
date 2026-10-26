@@ -12,6 +12,7 @@
 #include "core/memory.h"
 #include <cstring>
 #include "shader_recompiler/guest_tsharp_array.h"
+#include "shader_recompiler/compact_image_indices.h"
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/liverpool.h"
@@ -1091,9 +1092,11 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 if (type_array == 0u) {
                     ++bound_2d;
                 } else if (type_array == 1u) {
-                    compact_map[i] = bound_3d++;
+                    ASSERT(Shader::CompactImageIndices::Assign(
+                        compact_map, i, Shader::CompactIndexed3DImageEntries, bound_3d));
                 } else {
-                    compact_map[i] = bound_cube++;
+                    ASSERT(Shader::CompactImageIndices::Assign(
+                        compact_map, i, Shader::CompactIndexedCubeImageEntries, bound_cube));
                 }
             }
 
