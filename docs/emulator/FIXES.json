@@ -253,7 +253,7 @@
     {
       "id": "native-startup-null-fault",
       "subsystem": "core/host-formatting",
-      "status": "HISTORICAL_GENERIC_ALIGNMENT_RESTORED_RUNTIME_PENDING",
+      "status": "GOW_NATIVE_STARTUP_ADVANCED_CROSS_GAME_PENDING",
       "related_prs": [
         60,
         63,
@@ -261,9 +261,9 @@
         73
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "08:48 Oct26 native GDB captured sceKernelLoadStartModule -> Common::Log::VLog -> fmt v12 aligned-load fault ELF 0x10095c6 (raw archived sha256 46f8fb9...). Previously implemented universal guest/HLE ABI realignment from October 15 branch reinstated in PR #71 and latest-upstream source PR #73. New candidate runtime NOT TESTED.",
+      "observed_game_effects": "GoW native latest-upstream integration 803bb428/ELF 7604bae with recovered generic HLE stack alignment passed previous 4.8-second fmt crash, loaded Audio3D and emitted first_game_frame at 18.005s before a distinct RADV soft GPU reset at 28.841s. This is strong runtime progress consistent with the HLE alignment fix, but three upstream commits and other shared fixes also changed, so exclusive causality and GoT cross-game compatibility remain unproven.",
       "negative_result_or_prohibition": "Do not assert SI_ADDR 0 proves NULL versus x86 alignment #GP without original signal-time RAX/si_code. Do not suppress logger errors, alter fmt library or use title/shader exceptions. Native gameplay cross-title must verify candidate, negative results preserved.",
-      "next_test": "Build upstream integration commit 803bb428 via protected script, run real guest-style misaligned stack regression, sanitizer/atexit CTests, then same universal 118+2s GoW and GoT runtime. If fault persists, original fault-time GDB registers before another code hypothesis."
+      "next_test": "Keep generic stack-align correction in reviewed draft PR #71/#73; verify with identical source vs one-file alignment A/B or focused invariant plus GoT native runtime. Continue separately with GPU-device-lost-after-first-frame VRAM headroom/kernel fault A/B; no formatter hacks or false claim of confirmed gameplay graphics."
     },
     {
       "id": "gpu-indexed-table-invalid-slots",
