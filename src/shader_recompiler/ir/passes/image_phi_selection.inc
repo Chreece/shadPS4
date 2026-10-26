@@ -100,6 +100,14 @@ static bool SplitImageSampleBySharpPhi(IR::Block& block, IR::Inst& inst,
     const std::array<const IR::Inst*, 3> pieces{low, high, sampler};
     std::array<IR::Value, 12> words{};
     std::array<bool, 12> comes_from_phi{};
+    // A material can select an eight-dword T# or four-dword S# through a
+    // control-flow Phi in the *ReadConstBuffer dword offset*, rather than a
+    // Phi directly in the descriptor word. Such Phis cannot be evaluated by
+    // the host SRT walker. Finite constant-index alternatives can instead
+    // be bound separately and selected on the GPU after each image sample.
+    std::array<bool, 12> indexed_read_phi{};
+    std::array<const IR::Inst*, 12> indexed_phi_producers{};
+    std::array<u32, 12> indexed_read_addends{};
     const IR::Inst* first_phi{};
     for (std::size_t k = 0; k < words.size(); ++k) {
         const IR::Value value = pieces[k / 4]->Arg(k % 4);
@@ -110,12 +118,27 @@ static bool SplitImageSampleBySharpPhi(IR::Block& block, IR::Inst& inst,
         }
         const IR::Inst* const producer = value.TryInst();
         if (!producer) return false;
-        if (IsSharpSource(producer)) continue;
-        if (producer->GetOpcode() != IR::Opcode::Phi) return false;
+        const IR::Inst* phi = producer;
+        if (producer->GetOpcode() == IR::Opcode::ReadConstBuffer) {
+            const auto index = AnalyzeIndexedSharpWord(producer->Arg(1));
+            if (index.valid && index.selector) {
+                const auto* candidate = static_cast<const IR::Inst*>(index.selector);
+                if (candidate->GetOpcode() == IR::Opcode::Phi) {
+                    phi = candidate;
+                    indexed_read_phi[k] = true;
+                    indexed_phi_producers[k] = candidate;
+                    indexed_read_addends[k] = index.addend;
+                }
+            }
+        }
+        if (!indexed_read_phi[k]) {
+            if (IsSharpSource(producer)) continue;
+            if (producer->GetOpcode() != IR::Opcode::Phi) return false;
+        }
         if (!first_phi) {
-            first_phi = producer;
-        } else if (producer->GetParent() != first_phi->GetParent() ||
-                   producer->NumArgs() != first_phi->NumArgs()) {
+            first_phi = phi;
+        } else if (phi->GetParent() != first_phi->GetParent() ||
+                   phi->NumArgs() != first_phi->NumArgs()) {
             return false;
         }
         comes_from_phi[k] = true;
@@ -141,21 +164,30 @@ static bool SplitImageSampleBySharpPhi(IR::Block& block, IR::Inst& inst,
                 selected[side][word] = words[word];
                 continue;
             }
-            const IR::Inst* const phi = words[word].TryInst();
+            const IR::Inst* const phi = indexed_read_phi[word]
+                ? indexed_phi_producers[word] : words[word].TryInst();
             std::size_t arg = 0;
             while (arg < phi->NumArgs() && phi->PhiBlock(arg) != predecessors[side]) ++arg;
             if (arg == phi->NumArgs()) return false;
             const IR::Value value = phi->Arg(arg);
-            if (value.IsImmediate()) {
-                if (value.Type() != IR::Type::U32) return false;
+            if (indexed_read_phi[word]) {
+                // Only genuine finite, immediate dword offsets are safely
+                // representable by distinct static SRT sharp bindings.
+                // Loops/attributes/indirect GPU selectors remain dynamic.
+                if (!value.IsImmediate() || value.Type() != IR::Type::U32) return false;
+                selected[side][word] = IR::Value{value.U32() + indexed_read_addends[word]};
             } else {
-                const IR::Inst* const incoming = value.TryInst();
-                if (!incoming || !IsSharpSource(incoming) ||
-                    !CanRebuildImageSharpValue(value, 4)) {
-                    return false;
+                if (value.IsImmediate()) {
+                    if (value.Type() != IR::Type::U32) return false;
+                } else {
+                    const IR::Inst* const incoming = value.TryInst();
+                    if (!incoming || !IsSharpSource(incoming) ||
+                        !CanRebuildImageSharpValue(value, 4)) {
+                        return false;
+                    }
                 }
+                selected[side][word] = value;
             }
-            selected[side][word] = value;
         }
     }
 
@@ -176,9 +208,18 @@ static bool SplitImageSampleBySharpPhi(IR::Block& block, IR::Inst& inst,
             IR::Inst* const clone = &*block.PrependNewInst(insert_point, *pieces[group]);
             for (std::size_t word = 0; word < 4; ++word) {
                 const std::size_t idx = group * 4 + word;
-                const IR::Value value = comes_from_phi[idx]
-                    ? RebuildImageSharpValue(block, insert_point, selected[side][idx], rebuilt)
-                    : selected[side][idx];
+                IR::Value value = selected[side][idx];
+                if (indexed_read_phi[idx]) {
+                    // Rebuild only the constant-buffer load with its exact
+                    // branch-selected offset. The GPU still controls which
+                    // sampled texel contributes to the final result.
+                    IR::Inst* const read = &*block.PrependNewInst(
+                        insert_point, *words[idx].TryInst());
+                    read->SetArg(1, value);
+                    value = IR::Value{read};
+                } else if (comes_from_phi[idx]) {
+                    value = RebuildImageSharpValue(block, insert_point, value, rebuilt);
+                }
                 clone->SetArg(word, value);
             }
             copies[group] = clone;
@@ -201,5 +242,11 @@ static bool SplitImageSampleBySharpPhi(IR::Block& block, IR::Inst& inst,
     }
     inst.ReplaceUsesWithAndRemove(output);
     remaining_budget -= branches - 1;
+    const size_t indexed_words = std::ranges::count(indexed_read_phi, true);
+    if (indexed_words != 0) {
+        LOG_INFO(Render_Recompiler,
+                 "GPU-indexed Phi sharp selection lowered to {} static branches for {} descriptor words",
+                 branches, indexed_words);
+    }
     return true;
 }
