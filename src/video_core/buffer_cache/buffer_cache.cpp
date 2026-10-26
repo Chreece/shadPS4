@@ -287,38 +287,31 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
         return;
     }
 
-    // Each guest V# may legitimately span gigabytes, but a single huge
-    // device-memory allocation is not required to back a sparse VkBuffer.
-    // Only partition PHYSICAL allocations: retain the full guest range,
-    // the original Vulkan buffer device address and every sparse block.
+    // Split PHYSICAL sparse backing, not the GCN guest descriptor, address,
+    // or logical Vulkan VkBuffer. Pack disjoint guest-VA gaps into the same
+    // allocation so thousands of tiny ranges do not exhaust VkDeviceMemory
+    // allocation count. All new pages remain fully resident as before.
     constexpr u64 PreferredSparseAllocationBytes = 128ull * 1024 * 1024;
     const u64 sparse_block_bytes = u64{1} << block_shift;
+    const u64 blocks_per_allocation =
+        SparseBlocksPerAllocation(sparse_block_bytes, PreferredSparseAllocationBytes);
     const vk::MemoryAllocateFlagsInfo alloc_flags = {
         .flags = vk::MemoryAllocateFlagBits::eDeviceAddress,
     };
 
-    struct PlannedBacking {
-        u64 start;
-        u64 end;
-        vk::UniqueDeviceMemory memory;
-    };
-    std::vector<PlannedBacking> planned;
-    // Allocate the entire plan FIRST, before changing resident_ranges or
-    // pending sparse binds. RAII frees partially allocated memory on failure.
-    for (const auto& range : bind_ranges) {
-        ForEachSparseAllocationSegment(
-            range.start, range.end, sparse_block_bytes, PreferredSparseAllocationBytes,
-            [&](u64 start, u64 end) {
-                const vk::MemoryAllocateInfo alloc_info = {
-                    .pNext = &alloc_flags,
-                    .allocationSize = (end - start) << block_shift,
-                    .memoryTypeIndex = arena_memory_type_index,
-                };
-                planned.push_back({
-                    start, end,
-                    Vulkan::Check(instance.GetDevice().allocateMemoryUnique(alloc_info)),
-                });
-            });
+    // Allocate all required memory before modifying resident_ranges or
+    // pending binds. vk::UniqueDeviceMemory releases partial plans on failure.
+    std::vector<vk::UniqueDeviceMemory> allocations;
+    for (u64 remaining = resident_blocks; remaining != 0;) {
+        const u64 blocks = std::min(remaining, blocks_per_allocation);
+        const vk::MemoryAllocateInfo alloc_info = {
+            .pNext = &alloc_flags,
+            .allocationSize = blocks << block_shift,
+            .memoryTypeIndex = arena_memory_type_index,
+        };
+        allocations.emplace_back(
+            Vulkan::Check(instance.GetDevice().allocateMemoryUnique(alloc_info)));
+        remaining -= blocks;
     }
 
     boost::container::small_vector<vk::BufferCopy, 8> copies;
@@ -327,32 +320,47 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
 
     ArenaBinds* binds = BindsForArena(arena);
     auto* bda_addrs = reinterpret_cast<vk::DeviceAddress*>(staging.mapped);
+    u64 packed_blocks = 0;
     u64 offset = staging.offset;
-    for (auto& segment : planned) {
-        Backing backing;
-        backing.start = segment.start;
-        backing.end = segment.end;
-        backing.memory = segment.memory.release();
-        backing.offset = 0;
-        resident_ranges.Add(backing);
+    for (const auto& range : bind_ranges) {
+        ForEachSparseAllocationSegment(
+            range.start, range.end, packed_blocks, blocks_per_allocation,
+            [&](u64 start, u64 end, u64 allocation_index, u64 memory_block_offset) {
+                ASSERT(allocation_index < allocations.size());
+                Backing backing;
+                backing.start = start;
+                backing.end = end;
+                backing.memory = allocations[allocation_index].get();
+                backing.offset = memory_block_offset;
+                resident_ranges.Add(backing);
 
-        LOG_INFO(Render, "Making range start={}, end={} resident", backing.start, backing.end);
+                LOG_INFO(Render, "Making range start={}, end={} resident", start, end);
 
-        const auto& bind = binds->binds.emplace_back(vk::SparseMemoryBind{
-            .resourceOffset = (segment.start << block_shift) - arena->cpu_addr,
-            .size = (segment.end - segment.start) << block_shift,
-            .memory = backing.memory,
-            .memoryOffset = 0,
-        });
+                const auto& bind = binds->binds.emplace_back(vk::SparseMemoryBind{
+                    .resourceOffset = (start << block_shift) - arena->cpu_addr,
+                    .size = (end - start) << block_shift,
+                    .memory = backing.memory,
+                    .memoryOffset = memory_block_offset << block_shift,
+                });
 
-        // Shader BDA page-table entries must retain their exact original VA.
-        // u64 avoids overflow for large (>4GiB) sparse segments/addresses.
-        for (u64 block = 0; block < bind.size; block += sparse_block_bytes) {
-            *(bda_addrs++) = arena->BufferDeviceAddress() + bind.resourceOffset + block;
-        }
-        const u64 copy_size = (backing.end - backing.start) * sizeof(vk::DeviceAddress);
-        copies.emplace_back(offset, backing.start * sizeof(vk::DeviceAddress), copy_size);
-        offset += copy_size;
+                // The BDA translation table always contains the same original
+                // sparse VkBuffer GPU virtual address, independent of the
+                // backing allocation index or its local memory offset.
+                for (u64 block = 0; block < bind.size; block += sparse_block_bytes) {
+                    *(bda_addrs++) =
+                        arena->BufferDeviceAddress() + bind.resourceOffset + block;
+                }
+                const u64 copy_size = (end - start) * sizeof(vk::DeviceAddress);
+                copies.emplace_back(offset, start * sizeof(vk::DeviceAddress), copy_size);
+                offset += copy_size;
+            });
+    }
+    ASSERT(packed_blocks == resident_blocks);
+
+    // As in the original resident_ranges implementation, physical backing
+    // remains owned for the lifetime of the sparse Vulkan arena/device.
+    for (auto& allocation : allocations) {
+        (void)allocation.release();
     }
 
     staging.Flush();
