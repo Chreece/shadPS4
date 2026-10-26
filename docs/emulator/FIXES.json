@@ -253,15 +253,17 @@
     {
       "id": "native-startup-null-fault",
       "subsystem": "core/host-formatting",
-      "status": "REPRODUCED_NATIVE_CALLER_UNRESOLVED",
+      "status": "HISTORICAL_GENERIC_ALIGNMENT_RESTORED_RUNTIME_PENDING",
       "related_prs": [
         60,
-        63
+        63,
+        71,
+        73
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "CUSA34384 native-only shadPS4 3e5c8c3f... launched, SIGSEGV -11 after 4.804s following libSceMsgDialog module-load log. Exact RIP 0x55bf345a65c6 within main executable at PIE ELF 0x10095c6; previous translated combined executable faulted similarly at 0x100f5c6 in {fmt} v12 parse format machinery. Actual native caller not yet proven. No gameplay or audio.",
-      "negative_result_or_prohibition": "DynamoRIO is not required for this crash. No game ID/shader special casing, no suppressing SIGSEGV or patching fmt to tolerate null until true caller and lifetime are identified; sysmodule last log does not establish it as cause.",
-      "next_test": "Use SHA-pinned native GDB observer tools/development/shadps4_gdb_native_fault_trace_20261026.py and dedicated universal runner from gow/proven-progress-20261026. Capture real C++ caller/registers and map under 118s+2s; identify generic source defect; then cross-test GoW/GoT."
+      "observed_game_effects": "08:48 Oct26 native GDB captured sceKernelLoadStartModule -> Common::Log::VLog -> fmt v12 aligned-load fault ELF 0x10095c6 (raw archived sha256 46f8fb9...). Previously implemented universal guest/HLE ABI realignment from October 15 branch reinstated in PR #71 and latest-upstream source PR #73. New candidate runtime NOT TESTED.",
+      "negative_result_or_prohibition": "Do not assert SI_ADDR 0 proves NULL versus x86 alignment #GP without original signal-time RAX/si_code. Do not suppress logger errors, alter fmt library or use title/shader exceptions. Native gameplay cross-title must verify candidate, negative results preserved.",
+      "next_test": "Build upstream integration commit 803bb428 via protected script, run real guest-style misaligned stack regression, sanitizer/atexit CTests, then same universal 118+2s GoW and GoT runtime. If fault persists, original fault-time GDB registers before another code hypothesis."
     },
     {
       "id": "gpu-indexed-table-invalid-slots",
