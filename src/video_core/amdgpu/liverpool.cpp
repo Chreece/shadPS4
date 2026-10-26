@@ -16,6 +16,7 @@
 #include "core/platform.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/pm4_cmds.h"
+#include "video_core/amdgpu/pm4_register_write.h"
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
@@ -414,17 +415,18 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb) {
             }
             case PM4ItOpcode::SetShReg: {
                 const auto* set_data = reinterpret_cast<const PM4CmdSetData*>(header);
-                const auto set_size = (count - 1) * sizeof(u32);
-
-                if (set_data->reg_offset >= 0x200 &&
-                    set_data->reg_offset <= (0x200 + sizeof(ComputeProgram) / 4)) {
-                    ASSERT(set_size <= sizeof(ComputeProgram));
-                    auto* addr = reinterpret_cast<u32*>(&mapped_queues[GfxQueueId].cs_state) +
-                                 (set_data->reg_offset - 0x200);
-                    std::memcpy(addr, header + 2, set_size);
-                } else {
-                    std::memcpy(&regs.reg_array[Regs::ShRegWordOffset + set_data->reg_offset],
-                                header + 2, set_size);
+                static_assert(sizeof(ComputeProgram) % sizeof(u32) == 0);
+                auto* queue_words = reinterpret_cast<u32*>(&mapped_queues[GfxQueueId].cs_state);
+                const auto* payload = reinterpret_cast<const u32*>(header + 2);
+                const u32 words = count - 1;
+                const bool valid = PM4::WriteShaderRegisters(
+                    std::span<u32>{regs.reg_array},
+                    std::span<u32>{queue_words, sizeof(ComputeProgram) / sizeof(u32)},
+                    Regs::ShRegWordOffset, 0x200, set_data->reg_offset.Value(),
+                    std::span<const u32>{payload, words});
+                if (!valid) {
+                    LOG_ERROR(Render, "Ignoring out-of-range graphics SET_SH_REG offset={:#x} words={}",
+                              set_data->reg_offset.Value(), words);
                 }
                 break;
             }
@@ -1047,17 +1049,18 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
         case PM4ItOpcode::SetShReg: {
             const auto* set_data = reinterpret_cast<const PM4CmdSetData*>(header);
-            const auto set_size = (header->type3.NumWords() - 1) * sizeof(u32);
-
-            if (set_data->reg_offset >= 0x200 &&
-                set_data->reg_offset <= (0x200 + sizeof(ComputeProgram) / 4)) {
-                ASSERT(set_size <= sizeof(ComputeProgram));
-                auto* addr = reinterpret_cast<u32*>(&mapped_queues[vqid + 1].cs_state) +
-                             (set_data->reg_offset - 0x200);
-                std::memcpy(addr, header + 2, set_size);
-            } else {
-                std::memcpy(&regs.reg_array[Regs::ShRegWordOffset + set_data->reg_offset],
-                            header + 2, set_size);
+            static_assert(sizeof(ComputeProgram) % sizeof(u32) == 0);
+            auto* queue_words = reinterpret_cast<u32*>(&mapped_queues[vqid + 1].cs_state);
+            const auto* payload = reinterpret_cast<const u32*>(header + 2);
+            const u32 words = header->type3.NumWords() - 1;
+            const bool valid = PM4::WriteShaderRegisters(
+                std::span<u32>{regs.reg_array},
+                std::span<u32>{queue_words, sizeof(ComputeProgram) / sizeof(u32)},
+                Regs::ShRegWordOffset, 0x200, set_data->reg_offset.Value(),
+                std::span<const u32>{payload, words});
+            if (!valid) {
+                LOG_ERROR(Render, "Ignoring out-of-range compute SET_SH_REG offset={:#x} words={}",
+                          set_data->reg_offset.Value(), words);
             }
             break;
         }

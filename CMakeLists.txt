@@ -359,6 +359,10 @@ set(KERNEL_LIB src/core/libraries/kernel/coredump/coredump.cpp
                src/core/libraries/kernel/kernel.h
                src/core/libraries/kernel/memory.cpp
                src/core/libraries/kernel/memory.h
+               src/core/libraries/kernel/sanitizer.cpp
+               src/core/libraries/kernel/sanitizer.h
+               src/core/libraries/kernel/thread_atexit.cpp
+               src/core/libraries/kernel/thread_atexit.h
                src/core/libraries/kernel/threads.cpp
                src/core/libraries/kernel/threads.h
                src/core/libraries/kernel/time.cpp
@@ -904,7 +908,8 @@ set(NET_LIB   src/core/libraries/net/net.cpp
               src/core/libraries/net/net_upnp.h
 )
 
-set(CORE src/core/aerolib/stubs.cpp
+set(CORE src/core/startup_progress.h
+         src/core/aerolib/stubs.cpp
          src/core/aerolib/stubs.h
          src/core/aerolib/aerolib.cpp
          src/core/aerolib/aerolib.h
@@ -997,6 +1002,8 @@ set(CORE src/core/aerolib/stubs.cpp
          src/core/debugger.h
          src/core/linker.cpp
          src/core/linker.h
+         src/core/linker_thread_atexit.cpp
+         src/core/module_thread_atexit.h
          src/core/memory.cpp
          src/core/memory.h
          src/core/module.cpp
@@ -1004,6 +1011,8 @@ set(CORE src/core/aerolib/stubs.cpp
          src/core/platform.h
          src/core/signals.cpp
          src/core/signals.h
+         src/core/cpu_affinity.cpp
+         src/core/cpu_affinity.h
          src/core/thread.cpp
          src/core/thread.h
          src/core/tls.cpp
@@ -1025,6 +1034,9 @@ if (ARCHITECTURE STREQUAL "x86_64")
              src/core/cpu_patches.cpp
              src/core/cpu_patches.h
              ${FIBER_LIB})
+    if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        list(APPEND CORE src/core/cpu_id.cpp src/core/cpu_id.h)
+    endif()
 endif()
 
 set(SHADER_RECOMPILER src/shader_recompiler/profile.h
@@ -1244,6 +1256,8 @@ set(IMGUI src/imgui/imgui_config.h
           src/imgui/imgui_layer.h
           src/imgui/imgui_std.h
           src/imgui/imgui_texture.h
+          src/imgui/startup_loading.cpp
+          src/imgui/startup_loading.h
           src/imgui/imgui_translations.cpp
           src/imgui/imgui_translations.h
           src/imgui/friends_layer.cpp

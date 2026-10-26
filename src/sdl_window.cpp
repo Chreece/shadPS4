@@ -403,6 +403,16 @@ void WindowSDL::OnKeyboardMouseInput(const SDL_Event* event) {
 }
 
 void WindowSDL::OnGamepadEvent(const SDL_Event* event) {
+    // Host Home/PS quit handling: consume both edges, and open only on press.
+    // Leave all other controller buttons routed to the guest unchanged.
+    if ((event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ||
+         event->type == SDL_EVENT_GAMEPAD_BUTTON_UP) &&
+        event->gbutton.button == SDL_GAMEPAD_BUTTON_GUIDE) {
+        if (event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+            Overlay::ToggleQuitWindow();
+        }
+        return;
+    }
     bool input_down = event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION ||
                       event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN;
     Input::InputEvent input_event = Input::InputBinding::GetInputEventFromSDLEvent(*event);

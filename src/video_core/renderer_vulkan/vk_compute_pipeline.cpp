@@ -58,12 +58,14 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
         binding += num_bindings;
     }
     for (const auto& sampler : info->samplers) {
+        const u32 count = sampler.NumBindings(*info);
         bindings.push_back({
-            .binding = binding++,
+            .binding = binding,
             .descriptorType = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
+            .descriptorCount = count,
             .stageFlags = vk::ShaderStageFlagBits::eCompute,
         });
+        binding += count;
     }
 
     const vk::PushConstantRange push_constants = {
@@ -72,6 +74,12 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
         .size = sizeof(Shader::PushData),
     };
 
+    sampled_image_descriptors = 0;
+    for (const auto& desc : bindings) {
+        if (desc.descriptorType == vk::DescriptorType::eSampledImage) {
+            sampled_image_descriptors += desc.descriptorCount;
+        }
+    }
     uses_push_descriptors = binding < instance.MaxPushDescriptors();
     const auto flags = uses_push_descriptors
                            ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR

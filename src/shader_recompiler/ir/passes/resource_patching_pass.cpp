@@ -12,6 +12,7 @@
 #include "shader_recompiler/ir/reinterpret.h"
 #include "shader_recompiler/profile.h"
 #include "shader_recompiler/resource.h"
+#include "shader_recompiler/guest_tsharp_array.h"
 #include "video_core/amdgpu/resource.h"
 
 namespace Shader::Optimization {
@@ -102,6 +103,7 @@ public:
         const u32 index{Add(buffer_resources, desc, [&desc](const auto& existing) {
             return desc.sharp_fetch == existing.sharp_fetch && desc.post_op == existing.post_op &&
                    desc.post_op_dw1_mask == existing.post_op_dw1_mask &&
+                   desc.post_op_dw2_shift == existing.post_op_dw2_shift &&
                    desc.buffer_type == existing.buffer_type;
         })};
         auto& buffer = buffer_resources[index];
@@ -114,9 +116,15 @@ public:
     u32 Add(const ImageResource& desc) {
         const u32 index{Add(image_resources, desc, [&desc](const auto& existing) {
             return desc.sharp_fetch == existing.sharp_fetch && desc.is_array == existing.is_array &&
+                   desc.is_depth == existing.is_depth && desc.is_r128 == existing.is_r128 &&
                    desc.mip_fallback_mode == existing.mip_fallback_mode &&
                    desc.constant_mip_index == existing.constant_mip_index &&
-                   desc.post_op == existing.post_op;
+                   desc.post_op == existing.post_op &&
+                   desc.is_guest_indexed == existing.is_guest_indexed &&
+                   desc.indexed_guest_entries == existing.indexed_guest_entries &&
+                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
+                   desc.indexed_descriptor_offset_bytes == existing.indexed_descriptor_offset_bytes &&
+                   desc.indexed_table_fetch == existing.indexed_table_fetch;
         })};
         auto& image = image_resources[index];
         image.is_atomic |= desc.is_atomic;
@@ -128,7 +136,13 @@ public:
         const u32 index{Add(sampler_resources, desc, [this, &desc](const auto& existing) {
             return desc.sharp_fetch == existing.sharp_fetch && desc.post_op == existing.post_op &&
                    desc.post_op_tsharp_dw3_off == existing.post_op_tsharp_dw3_off &&
-                   desc.is_depth == existing.is_depth;
+                   desc.is_depth == existing.is_depth &&
+                   desc.is_integer == existing.is_integer &&
+                   desc.is_guest_indexed == existing.is_guest_indexed &&
+                   desc.indexed_guest_entries == existing.indexed_guest_entries &&
+                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
+                   desc.indexed_sampler_offset_bytes == existing.indexed_sampler_offset_bytes &&
+                   desc.indexed_table_fetch == existing.indexed_table_fetch;
         })};
         return index;
     }
@@ -184,6 +198,7 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
     SharpFetch<T> sharp_fetch{};
     for (u32 i = 0; i < sharp.num_dwords; i++) {
         auto dword = sharp.dwords[i];
+        sharp_fetch.clear_masks[i] = sharp.clear_masks[i];
         if (dword.IsImmediate()) {
             sharp_fetch.immediates[i] = dword.U32();
         } else {
@@ -195,6 +210,9 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
         }
     }
     if (sharp_fetch.summary != Summary::Invalid) {
+        if (!SharpMasksAreZero(sharp_fetch.clear_masks, sharp.num_dwords)) {
+            return sharp_fetch;
+        }
         const u32 base = sharp_fetch.offsets[0];
         for (u32 i = 1; i < sharp.num_dwords; ++i) {
             if (sharp_fetch.offsets[i] - base != i) {
@@ -248,6 +266,41 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         .is_r128 = bool(inst_info.is_r128),
         .post_op = resource.sharps[0].post_op,
     };
+
+    // Preserve a complete guest T# table and its real GPU selector. Packed
+    // and strided array-of-structs forms are accepted only when the complete
+    // table is representable; never truncate a prefix or CPU-evaluate the ID.
+    if (resource.has_indexed_table && profile.supports_sampled_image_nonuniform_indexing &&
+        (resource.indexed_record_stride_bytes == 0u ||
+         (resource.has_indexed_sampler_table &&
+          profile.supports_sampler_array_nonuniform_indexing &&
+          resource.sharps[1].post_op == SharpFetchPostOp::None)) &&
+        !is_written && !inst_info.is_depth && !inst_info.is_array &&
+        !inst_info.is_gather && !inst_info.has_lod && !inst_info.force_level0 &&
+        !inst_info.has_lod_clamp && !inst_info.is_r128 && !inst_info.is_unnormalized) {
+        const auto table_fetch =
+            ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp);
+        AmdGpu::Buffer table{};
+        if (table_fetch.Fetch(info.flattened_ud_buf.data(), &table) &&
+            table.Valid() && table.base_address != 0) {
+            const u32 record_stride = resource.indexed_record_stride_bytes;
+            const u32 record_offset = resource.indexed_descriptor_offset_bytes;
+            const u32 entries = record_stride != 0u
+                ? CompleteGuestTsharpRecordEntries(
+                      static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
+                      record_stride, record_offset, profile.max_guest_indexed_image_entries)
+                : CompleteGuestTsharpTableEntries(
+                      static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
+                      profile.max_guest_indexed_image_entries);
+            if (entries != 0u) {
+                image_res.indexed_table_fetch = table_fetch;
+                image_res.indexed_guest_entries = entries;
+                image_res.indexed_record_stride_bytes = record_stride;
+                image_res.indexed_descriptor_offset_bytes = record_offset;
+                image_res.is_guest_indexed = true;
+            }
+        }
+    }
 
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
@@ -324,14 +377,28 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
 
     if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
         auto& lod_prod = resource.sharps[1].post_op_data.lod_prod;
-        const u32 sampler_binding = descriptors.Add(SamplerResource{
+        SamplerResource sampler_res{
             .sharp_fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1]),
             .post_op = resource.sharps[1].post_op,
             .post_op_tsharp_dw3_off =
                 lod_prod.IsEmpty() ? UNKNOWN_LOCATION : SharpLocationFromSource(lod_prod.Inst()),
-            .is_depth = bool(inst_info.is_depth), // true for the _C (compare) opcodes
-        });
+            .is_depth = bool(inst_info.is_depth),
+            .is_integer = AmdGpu::IsInteger(image.GetNumberFmt()),
+        };
+        if (image_res.is_guest_indexed &&
+            image_res.indexed_record_stride_bytes != 0u) {
+            ASSERT(resource.has_indexed_sampler_table);
+            sampler_res.is_guest_indexed = true;
+            sampler_res.indexed_table_fetch = image_res.indexed_table_fetch;
+            sampler_res.indexed_guest_entries = image_res.indexed_guest_entries;
+            sampler_res.indexed_record_stride_bytes = image_res.indexed_record_stride_bytes;
+            sampler_res.indexed_sampler_offset_bytes = resource.indexed_sampler_offset_bytes;
+        }
+        const u32 sampler_binding = descriptors.Add(sampler_res);
         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
+        if (image_res.is_guest_indexed) {
+            inst.SetArg(1, resource.indexed_texture_id);
+        }
     } else {
         inst.SetArg(0, ir.Imm32(image_binding));
     }
@@ -807,6 +874,13 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
             return ir.ImageGather(handle, coords, offset, inst_info);
         }
         if (inst_info.has_derivatives) {
+            if (image_res.is_guest_indexed) {
+                // Explicit gradient is required for the compute shaders:
+                // implicit LOD would not preserve the original PS4 opcode.
+                return ir.ImageGradientIndexed(
+                    handle, coords, derivatives_dx, derivatives_dy, offset,
+                    IR::U32{inst.Arg(1)}, inst_info);
+            }
             return ir.ImageGradient(handle, coords, derivatives_dx, derivatives_dy, offset,
                                     lod_clamp, inst_info);
         }
@@ -818,6 +892,10 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
         }
         if (explicit_lod) {
             return ir.ImageSampleExplicitLod(handle, coords, lod, offset, inst_info);
+        }
+        if (image_res.is_guest_indexed) {
+            return ir.ImageSampleImplicitLodIndexed(
+                handle, coords, bias, offset, IR::U32{inst.Arg(1)}, inst_info);
         }
         return ir.ImageSampleImplicitLod(handle, coords, bias, offset, inst_info);
     }();
