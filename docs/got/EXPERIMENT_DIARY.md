@@ -1,0 +1,54 @@
+# shadPS4 / GoT Experiment Diary
+
+Version: 2026-10-26. Canonical append-only record. Do **not** erase rejected experiments: failures are evidence. A later correction should append a new entry and link the original. Logs are **sample-limited** unless explicitly described as exhaustive, and FPS comparisons between different gameplay scenes are not normalized.
+
+## Proven baseline and important negative results
+
+| Date / source | Exact change introduced to emulator | Native evidence | Effect in GoT / performance | Decision and follow-up |
+|---|---|---|---|---|
+| 2026-10-24, indexed capacity archive `got-indexed-capacity-20261024-213908-resumed.tar.gz` | General shader image/resource-array capacity plus descriptor-binding work on detached local revision `c925523b49ef39434024b16b2b014d120471ee1a` | Verified user-local source hashes; native render test. | Some menu and silhouette rendering returned but missing terrain/world; still not playable. | **KEEP as dependency** for the accepted strided matcher. Do not substitute a GitHub branch version for exact local tested source. |
+| 2026-10-25, PR #52, `got-strided-materials-120s-20261025-140547.tar.gz` | Support both equivalent GCN index layouts for full strided GPU material T# records; try the strict matcher before the loose packed matcher. Preserve real per-invocation GPU record ID and matching S#. | Native 118s test; **39 strided recognition events**, including 536-byte material records. | Correct resource recognition confirmed; still large missing geometry/materials. No demonstrated regression. | **KEEP - proven generic capability**. Parent/source history must be forward-ported selectively to main. |
+| 2026-10-25, PR #57, `got-precise-linear-images-120s-20261025-153355.tar.gz` | Enable existing eligible *linear* GPU image readback queue when effective GPU readback mode is Precise, irrespective of saved `readbackLinearImages=false`. Real GPU image -> staging -> CPU-backing writes; no saved setting change. | Native 118s test, 32 sample-limited image queues and 32 copy attempts; 39 strided events; no logged GPU device loss. Proven candidate binary SHA256 `260ed43abbe538127ab82b3580a48c5f67be19ac4bbdd32ebefd78c73cdaf50d`. | **Silhouettes stopped blinking**. World stays very dark/incomplete. 153 SHARP warnings and 13 SRT stalls remain; copy counts not total transfer count. | **KEEP - visual and generic coherence**, protect source and binary. |
+| 2026-10-25, PR #56, `got-strided-autoreadback-120s-20261025-145146.tar.gz` | Extra writable-page dirty marking for buffer readbacks. | 48 sampled buffer GPU/CPU copies; sampled GPU-write pages already flagged dirty. | No visible recovery of missing geometry. | **REJECT** duplicated an already operational dirty-page mechanism. |
+| 2026-10-25, PR #58, `got-precise-tiled-images-120s-20261025-165422.tar.gz` | Eagerly download previously excluded tiled render targets/storage images after binding. Tile and copy back to guest with GPU scheduling sync. | Native 118s; 48 sampled queue events, 32 successful tiled CPU-backing writes, many 512 KiB/1 MiB repeated transfers; no device loss. Candidate SHA256 `94ecd021328a5cc3076cd7a5bb5b347b298896e68a21d8b96d589df5785e5ba2`. | **Severe FPS regression already in menu** and no convincing world recovery. | **REJECT / closed unmerged**. Do not retry eager per-bind full-image tiled readbacks; use demand-triggered coherency only with actual consumer evidence. |
+| 2026-10-25, PR #61, `got-proven-indexed-sharp-120s-20261025-180430.tar.gz` | Extend indexed T#/S# source comparison using side-effect-free SSA global-value-numbering equivalence rather than raw instruction identity. | Native build passed; game timed out normally (124), **zero extra accepted alias cases**; 39 existing strided events. SHA256 `a0febb48ed3cd1a1b3ae4a0ff97cb691a945e567f0456f3035684bbf83773ace`. | Missing world unchanged. SHARP warnings 134 vs 153, SRT stalls 9 vs 13, but different shader counts/coverage so cannot claim improvement. | **REJECT / closed unmerged**. Do not repeat the matcher-equivalence hypothesis without direct unmatched evidence. |
+| 2026-10-25, PR #62, `got-indexed-source-evidence-120s-20261025-184750.tar.gz` | Diagnostic-only tracing of rejected GPU T# source expression trees and binding eligibility; no rendering change. | Native test found **58 rejected source events over 40 shaders**. Every sampled event had `sample=true`, `nonuniform=true`, `match=true` with 8 GPU-dynamic descriptor reads. 39 existing strided matches; no GPU loss. SHA256 `26ed794fae5b07f72a1916b969f45deeef975ac5493a3857f30ea95f61f7c199`. | Still dark world, ~5 FPS in 112s frame; 148 SHARP warnings and 9 SRT stalls. | **KEEP DIAGNOSTICS**. Image pattern recognition was not the bottleneck in these cases; investigate resource/sampler gates and SRT. |
+| 2026-10-26, PR #64, `got-guarded-uniform-sampler-120s-20261026-065033.tar.gz` | Permit full genuine GPU-selected strided image tables with **one real, host-provably uniform and valid S#**; reject dynamic/invalid samplers. Preserve PR #52+#57 and add `IndexedBindingDecision` and `IndexedUniformSamplerBound` diagnostics. Shader cache version advanced solely to recompile candidate shaders, no user cache delete. | Native build passed; **13 uniform-binding events across 7 shader hashes** (24- and 49-entry records), **105 binding decisions**, **41 strided events**, 136 SHARP warnings and 10 SRT stalls; game exit 137 at timed stop; zero device-loss logs. Candidate SHA256 `dfac0e6e226aee1c873d8bb30d2ad76cf502faca8ede051f5e67fb78e64cdb39`. | Frame at 112s approximately **6 FPS**; terrain remains near-black with missing materials and incomplete characters. No verified overall graphics recovery. | **KEEP in GoT development tree as proven binding capability; main forward-port pending regression checks.** Do not claim fixed gameplay. |
+| 2026-10-25, PR #59 | Added strict runner: `timeout -s TERM -k 2s 118s`, optional cleanup only of the exact previous GoT binary+game. | Merged into main as commit `3b49eed54c9dee97b649b8d7ac8b9a1f5dbc33c4`; 118s native tests end automatically. | Prevents indefinite tests and preserves SSH, no graphics effect. | **MERGED main**. Mandatory for every subsequent run. |
+| 2026-10-26, front-end audit | Game splash: `src/emulator.cpp` loads `/app0/sce_sys/pic1.png`; `vk_presenter.cpp` draws during `IsSplashVisible()`. Gamepad exit: `quit_dialog.h` handles GUIDE plus Cross/A confirm, Circle/B cancel; `sdl_window.cpp` intercepts events before forwarding to guest. | Existing implementations reviewed in main; verified GoT branch had quit confirmation but lacked the GUIDE opening handler, therefore the main variant was ported as a **one-file** change into GoT branch. | Loading/quit runtime interaction still needs explicit manual/controller acceptance in GoT build. | **KEEP generic front-end code**; no game-specific hacks. Must be present in every build. |
+
+## Additional attempts with limited evidence
+
+| Archive / PR | Emulator-side hypothesis and outcome | GoT outcome / diary decision |
+|---|---|---|
+| `got-dynamic-readconst-120s-20261025-133815-failure.tar.gz` / #51 | Attempted to add GPU-address-backed ReadConst fallback; exact local shader sources **already implement** it. Test failed in source preflight before Ninja. | **REJECT** duplicate/incorrect patch. No native graphics change. |
+| `got-precise-linear-images-120s-20261025-151853-failure.tar.gz` | Initial readback patch failed preflight/compile checks; subsequently repaired, successfully tested in PR #57. | **SUPERSEDED** by PR #57. Preserve prior failure details. |
+| `got-precise-tiled-images-120s-20261025-162547-failure.tar.gz` | Test-runner stale immutable URL downloaded old patcher while pin expected new. No build/game ran. | **REJECT runner revision**; not a GPU regression. Corrected runner later demonstrated actual severe FPS regression. |
+| `got-srt-sharp-evidence-120s-20261025-131047.tar.gz` | Diagnostic capture: 428 missing SHARP descriptor-word events (404 images, 24 buffers), mostly dynamic `ReadConstBuffer` sources; recurring parent SRT stalls. | **KEEP DIAGNOSTIC EVIDENCE** for subsequent generic IR lowering. |
+| `got-native-gpu-phi-20261024-180739-xf_3efqf.tar.gz`, `got-sharp-masks-20261024-172320-hoj_coyg.tar.gz` | Previous graphics/IR experiments; detailed acceptance against final baseline not established in this diary. | **UNVERIFIED/ARCHIVE**; no silent promotion. Re-read original evidence before retrying. |
+| GoT DynamoRIO experiments (earlier October) | Instrumentation approach explicitly rejected during earlier GoT work. | **REJECT**; no new DynamoRIO test without new independent justification and user consent. |
+
+## Open root causes and next experimental order
+
+1. **SRT dependency chains**: three recurring compute hashes `0xb5500bd4`, `0x735cf693`, `0xbdfc491f` have four unresolved parent reads and GPU-dynamic child offsets in earlier detailed capture. Test the *actual flattened source and GPU-address-backed data-flow*, not source-pointer equalities already rejected by PR #61.
+2. **World image/buffer residency**: tie missing pixel/geometry symptoms to specific descriptor-binding and actual GPU memory addresses. The 13 newly bound uniform samplers in PR #64 are real, but textures still not displayed correctly.
+3. **Stencil/buffer warnings**: recurring `Stencil test requires test_val...` and buffer-size clamps need per-shader/descriptor evidence before changing semantics.
+4. **Performance**: screenshot at 112s ~6 FPS is not an adequate normalized benchmark; compare the same scene, same config, shader warm-up and GPU VRAM availability before diagnosing regression.
+5. **UI/launch**: loading splash and controller quit must remain in all builds; guide button code was absent in old GoT branch and ported from main. Manual gamepad testing remains required.
+
+## Append-only entry template
+
+```text
+Date & local run ID:
+PR / commit / original host source hashes / candidate SHA:
+Hypothesis and why prior attempts did not resolve it:
+Exactly which generic files/algorithms changed:
+Validation: source hashes, compile result, game exit (TERM/KILL), kernel GPU/device errors:
+Emulator effect: descriptor counts, memory transfers, binding changes, shader errors:
+Game effect: same-scene screenshots, terrain, character details, FPS and regressions:
+Decision: KEEP - capability / KEEP - visual / DIAGNOSTIC / REJECT / BLOCKED
+Merge: GoT development branch commit / main-targeted PR / verified main commit:
+Next falsifiable hypothesis:
+```
+
+Archived failed versions should be deleted from **active build candidates only after** provenance, exact hash, and diary entry survive; keep the diary and upload evidence. Never delete shader caches, saves, ES-DE, or the known-good binary to make a test pass.
