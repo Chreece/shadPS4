@@ -1,6 +1,28 @@
 # Combined shadPS4 test diary — append only
 
-Created 2026-10-26. Read the [structured trial ledger](TRIALS.jsonl) for full hashes and auditable metadata; files and negative results must never be removed merely because a later attempt passed.
+Created 2026-10-26. **This is the universal emulator diary for ALL games**, not a separate GoW log. The [canonical chronological ledger](TRIALS.jsonl) contains GoW/combined, GoT, PES/TLG and future-title events; the derived [universal fix registry](FIXES.json) answers whether an algorithm was kept, rejected, merged or still awaits hardware tests. Original game-specific notebooks retain screenshots and provenance but do not independently promote fixes. Never erase failed, superseded or rejected attempts.
+
+## Cross-game engineering evidence
+
+| Emulator-wide hypothesis / trial | Observed game(s) and effect | Recorded decision |
+|---|---|---|
+| Native CPUID/RDTSCP/RDPID, no DynamoRIO | Oct26 combined native GoW **build/link PASS**; gameplay and cross-title runtime pending | **BUILD VERIFIED — RUNTIME PENDING**; #63 is not merged to main |
+| Full-process DynamoRIO | Earlier GoT performance rejected; combined GoW startup crash and GDB executable-restart complications | **REJECT**; never auto-select external CPU runtime |
+| GPU-indexed strided T#/S# material tables | GoT #52 native test: 39 strided recognition events; incomplete world | **KEEP generic implementation on GoT progress tree**; selective main port pending |
+| Real Precise linear-image GPU readback | GoT #57 hardware: 32 sampled image transfer events, silhouettes stopped blinking. Main #68 port fixture PASS, main native test pending | **MERGED main** `b8db275e...`, **hardware revalidation pending** |
+| Real uniform-sampler indexed tables | GoT #64 native test: 13 new guarded bindings, terrain still incomplete | **KEEP GoT capability**; not yet in shared main |
+| Incomplete host SRT walker code rollback | Existing GoT local source already guarded; main #66 reviewed source-port parity | **MERGED main** `8869651a...`, **native main build pending** |
+| Tiled eager GPU image readbacks | GoT #58 ran native and severely reduced menu FPS without world recovery | **REJECT**; preserve negative evidence |
+| SSA GVN alias-based descriptor acceptance | GoT #61 native: no newly accepted alias cases | **REJECT**, do not repeat on counts alone |
+| Extra GPU page dirty marking | GoT #56: pages already dirty, no visual improvement | **REJECT duplicate** |
+| Shader SRT parent-source diagnosis | GoT #62 hardware: 58 rejected events, #67 parent-read diagnostics proposed | **KEEP diagnostics**, #67 native test pending |
+| Kernel sanitizer/thread-atexit imports | GoW: two focused regression suites PASS, duplicate linker fixed, translated runtime still crashed | **KEEP generic tested HLE**, native cross-title pending |
+| PM4 WAIT ZPASS and base-instance handling | PES 2025 and TLG historical PRs describe unresolved rendering hypotheses | **OPEN PR / UNVERIFIED in current native baseline** |
+| SDL/OpenAL port readiness and UFFD circular-wait safety | Prior GoW PRs include native error/deadlock evidence; not yet replayed on latest common main | **MAIN-PORT REGRESSION PENDING** |
+
+Game names above identify **test evidence only**. They never enable a special emulator fix or runtime switch for a title. For any new change, consult the global ledger for previous positives, negatives, exact source hashes, affected engine subsystem and next falsifiable check **before building**.
+
+## Original GoW/combined chronological archive (retained)
 
 ## Baseline currently observed
 
