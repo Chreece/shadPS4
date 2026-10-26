@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-26",
+  "repository": "Chreece/shadPS4",
+  "gpu": "AMD RX 7900 XTX",
+  "game": "CUSA11456",
+  "main_commit_at_audit": "3b49eed54c9dee97b649b8d7ac8b9a1f5dbc33c4",
+  "dedicated_branch": "got/proven-progress-20261026",
+  "tested_local_source_ref": "c925523b49ef39434024b16b2b014d120471ee1a",
+  "runtime_limit": {
+    "soft_seconds": 118,
+    "kill_after_seconds": 2
+  },
+  "accepted": [
+    {
+      "id": "PR-52",
+      "kind": "generic-shader-resources",
+      "status": "keep-goT",
+      "strided_events_sample": 39,
+      "pr": "https://github.com/Chreece/shadPS4/pull/52",
+      "evidence": "got-strided-materials-120s-20261025-140547.tar.gz"
+    },
+    {
+      "id": "PR-57",
+      "kind": "image-coherence",
+      "status": "keep-goT",
+      "sha256": "260ed43abbe538127ab82b3580a48c5f67be19ac4bbdd32ebefd78c73cdaf50d",
+      "pr": "https://github.com/Chreece/shadPS4/pull/57",
+      "evidence": "got-precise-linear-images-120s-20261025-153355.tar.gz"
+    },
+    {
+      "id": "PR-62",
+      "kind": "diagnostics",
+      "status": "keep-diagnostics",
+      "pr": "https://github.com/Chreece/shadPS4/pull/62",
+      "evidence": "got-indexed-source-evidence-120s-20261025-184750.tar.gz"
+    },
+    {
+      "id": "PR-64",
+      "kind": "real-uniform-sampler-gpu-indexed-tsharp",
+      "status": "keep-goT-main-port-needs-regression",
+      "pr": "https://github.com/Chreece/shadPS4/pull/64",
+      "sha256": "dfac0e6e226aee1c873d8bb30d2ad76cf502faca8ede051f5e67fb78e64cdb39",
+      "uniform_binding_events": 13,
+      "unique_shaders": 7,
+      "game_exit": 137,
+      "device_loss_events": 0,
+      "evidence": "got-guarded-uniform-sampler-120s-20261026-065033.tar.gz"
+    },
+    {
+      "id": "PR-59",
+      "kind": "hard-test-timeout",
+      "status": "merged-main",
+      "sha": "3b49eed54c9dee97b649b8d7ac8b9a1f5dbc33c4"
+    }
+  ],
+  "rejected": [
+    {
+      "id": "PR-56",
+      "reason": "buffer write-page already dirty",
+      "evidence": "got-strided-autoreadback-120s-20261025-145146.tar.gz"
+    },
+    {
+      "id": "PR-58",
+      "reason": "eager tiled copies severe menu FPS regression",
+      "sha256": "94ecd021328a5cc3076cd7a5bb5b347b298896e68a21d8b96d589df5785e5ba2",
+      "evidence": "got-precise-tiled-images-120s-20261025-165422.tar.gz"
+    },
+    {
+      "id": "PR-61",
+      "reason": "zero newly accepted equivalent SSA index source",
+      "sha256": "a0febb48ed3cd1a1b3ae4a0ff97cb691a945e567f0456f3035684bbf83773ace",
+      "evidence": "got-proven-indexed-sharp-120s-20261025-180430.tar.gz"
+    }
+  ],
+  "mandatory_features": [
+    "loading_splash_pic1.png",
+    "SDL_GAMEPAD_BUTTON_GUIDE_exit_dialog",
+    "SDL_GAMEPAD_BUTTON_SOUTH_confirm",
+    "SDL_GAMEPAD_BUTTON_EAST_cancel",
+    "timeout_118_TERM_2_KILL",
+    "preserve_SSH"
+  ],
+  "next_root_cause": "SRT dependency resolution / GPU-dynamic resource addresses; no proven terrain fix yet"
+}
