@@ -463,6 +463,35 @@ fi
 gzip -1 -f "${CAPTURE}/full-build.log"
 stage PACKAGE_COMPACT_EVIDENCE
 ARCHIVE="${LOGROOT}/got-stencil-mask-menu-120s-${STAMP}.tar.gz"
+cp -p -- "${CAPTURE}/info/game-exit-code.txt" "${CAPTURE}/info/game-exit-code.exit"
 tar -C "${CAPTURE}" -czf "${ARCHIVE}" .
+
+stage APPEND_TO_SHARED_EMULATOR_DIARY
+# One canonical trials ledger for all games. Preserve the evidence archive
+# regardless of network or recorder errors; the chat review can curate it too.
+DIARY_RECORDER="${CAPTURE}/info/record_emulator_trial.py"
+if curl -4fsSL --retry 2 --connect-timeout 5 --max-time 18 \
+ "https://raw.githubusercontent.com/Chreece/shadPS4/86ebcf6249fae2a709b98790760de639e6978bef/tools/development/record_emulator_trial.py" \
+ -o "${DIARY_RECORDER}"; then
+  if [[ "$(git hash-object "${DIARY_RECORDER}")" == "c8e7faf100a9988da1952dbbcf999cd1b62e79b7" ]]; then
+    if python3 "${DIARY_RECORDER}" \
+      --archive "${ARCHIVE}" --game CUSA11456 --tested-game CUSA11456 \
+      --fix-id stencil-reference-mask-coherence \
+      --source "${REV}" --candidate-sha256 "${HASH}" \
+      --change "Restore native-proven mask-compatible stencil compare/replace references; unchanged GPU indexed tables and precise linear image readbacks" \
+      --emulator-effect "Exact GPU stencil reference algorithm reintroduced; see archive for bind/warning event counts" \
+      --game-effect "MENU_ONLY_VISUAL_REVIEW_PENDING" \
+      --decision PENDING_REVIEW --pr 69 --pr 70 \
+      --next "Compare menu 40/55/85/112s to prior baseline and historical stencil trial; inspect exact vs unrepresentable stencil events"; then
+      echo "SHARED_EMULATOR_DIARY=RECORDED"
+    else
+      echo "SHARED_EMULATOR_DIARY=RECORD_FAILED_KEEP_ARCHIVE"
+    fi
+  else
+    echo "SHARED_EMULATOR_DIARY=RECORDER_SHA_MISMATCH_KEEP_ARCHIVE"
+  fi
+else
+  echo "SHARED_EMULATOR_DIARY=RECORDER_UNAVAILABLE_KEEP_ARCHIVE"
+fi
 echo "UPLOAD_THIS=${ARCHIVE}"
 echo "All eight original sources restored; good binaries, ES-DE, saves, GPU settings and SSH unchanged."
