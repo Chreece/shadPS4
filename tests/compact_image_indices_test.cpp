@@ -38,5 +38,30 @@ int main() {
     if (Assign(map, 0u, VolumeCap, over)) return 10;
     if (Assign(map, GuestEntries + 1u, VolumeCap, over)) return 11;
     if (over != VolumeCap || map[0] != Invalid) return 12;
+    // Check that the three Vulkan descriptor array regions are disjoint,
+    // that ordinary 2D uses its unchanged full guest index, and that the
+    // compact typed arrays consume only the genuine selected source slot.
+    constexpr std::uint32_t Image2DBindings = GuestEntries + 1u;
+    constexpr std::uint32_t Image3DBindings = VolumeCap + 1u;
+    constexpr std::uint32_t ImageCubeBindings = CubeCap + 1u;
+    constexpr std::uint32_t Offset3D = Image2DBindings;
+    constexpr std::uint32_t OffsetCube = Offset3D + Image3DBindings;
+    constexpr std::uint32_t TotalImageBindings = OffsetCube + ImageCubeBindings;
+    if (Image2DBindings != 27652u || TotalImageBindings != 28038u) return 13;
+    for (std::uint32_t i = 0; i < 35u; ++i) {
+        const std::uint32_t guest_id = 1u + 13u * i;
+        const std::uint32_t remapped_slot = Offset3D + Bounded(map[guest_id], VolumeCap);
+        if (remapped_slot != Offset3D + i || remapped_slot < Image2DBindings ||
+            remapped_slot >= OffsetCube) return 14;
+    }
+    for (std::uint32_t i = 0; i < 4u; ++i) {
+        const std::uint32_t guest_id = 10001u + 11u * i;
+        const std::uint32_t remapped_slot = OffsetCube + Bounded(map[guest_id], CubeCap);
+        if (remapped_slot != OffsetCube + i || remapped_slot < OffsetCube ||
+            remapped_slot >= TotalImageBindings) return 15;
+    }
+    // Invalid type entries can only name each type's final null descriptor.
+    if (Offset3D + Bounded(Invalid, VolumeCap) != Offset3D + VolumeCap) return 16;
+    if (OffsetCube + Bounded(Invalid, CubeCap) != OffsetCube + CubeCap) return 17;
     return 0;
 }
