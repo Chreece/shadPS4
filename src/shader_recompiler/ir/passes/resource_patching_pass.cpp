@@ -705,7 +705,7 @@ void PatchBufferArgs(IR::Inst& inst, Info& info) {
 }
 
 void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image_res,
-                          const AmdGpu::Image& image) {
+                          const AmdGpu::Image& image, const IR::Value& gpu_tsharp_word3) {
     const auto handle = inst.Arg(0);
     const auto& sampler_res = info.samplers[(handle.U32() >> 16) & 0xFFFF];
     const auto sampler = sampler_res.GetSharp(info);
@@ -834,6 +834,10 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
         return coord;
     };
 
+    // Preserve the original coordinate-register position before parsing the
+    // usual 2D sample. The third coordinate is only used on a guest-selected
+    // 3D/Cube path; ordinary 2D sampling retains its original coordinates.
+    const u32 coords_start = addr_reg;
     // Now we can load body components as noted in Table 8.9 Image Opcodes with Sampler
     const IR::Value coords = [&] -> IR::Value {
         switch (view_type) {
@@ -894,8 +898,20 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
             return ir.ImageSampleExplicitLod(handle, coords, lod, offset, inst_info);
         }
         if (image_res.is_guest_indexed) {
+            IR::Value sampled_coords = coords;
+            if (!inst_info.has_offset) {
+                // T# dword 3 carries bits [31:28] = genuine guest image type.
+                // Retain its GPU-selected value in coords.w. The unused z
+                // coordinate has no effect on Color2D samples, but is
+                // consumed for correctly typed Color3D/Cube samples.
+                sampled_coords = ir.CompositeConstruct(
+                    ir.CompositeExtract(coords, 0u),
+                    ir.CompositeExtract(coords, 1u),
+                    get_coord(coords_start + 2u, 2u),
+                    ir.BitCast<IR::F32>(IR::U32{gpu_tsharp_word3}));
+            }
             return ir.ImageSampleImplicitLodIndexed(
-                handle, coords, bias, offset, IR::U32{inst.Arg(1)}, inst_info);
+                handle, sampled_coords, bias, offset, IR::U32{inst.Arg(1)}, inst_info);
         }
         return ir.ImageSampleImplicitLod(handle, coords, bias, offset, inst_info);
     }();
@@ -907,7 +923,7 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
     inst.ReplaceUsesWith(converted);
 }
 
-void PatchImageArgs(IR::Inst& inst, Info& info) {
+void PatchImageArgs(IR::Inst& inst, Info& info, const ResourceDiscovery& resource) {
     // Nothing to patch for dimension query.
     if (inst.GetOpcode() == IR::Opcode::ImageQueryDimensions) {
         return;
@@ -920,7 +936,7 @@ void PatchImageArgs(IR::Inst& inst, Info& info) {
 
     // Sample instructions must be handled separately using address register data.
     if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
-        return PatchImageSampleArgs(inst, info, image_res, image);
+        return PatchImageSampleArgs(inst, info, image_res, image, resource.sharps[0].dwords[3]);
     }
 
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
@@ -1024,7 +1040,7 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         if (IsBufferInstruction(inst)) {
             PatchBufferArgs(inst, info);
         } else if (IsImageInstruction(inst)) {
-            PatchImageArgs(inst, info);
+            PatchImageArgs(inst, info, usage);
         } else if (IsDataRingInstruction(inst)) {
             PatchGlobalDataShareAccess(inst, info, descriptors, profile);
         }
