@@ -17,6 +17,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
+#include "video_core/renderer_vulkan/vk_pm4_acquire_memory.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -398,6 +399,27 @@ u64 Rasterizer::Flush() {
 
 void Rasterizer::Finish() {
     scheduler.Finish();
+}
+
+void Rasterizer::AcquireGuestMemory(u32 coher_cntl) {
+    // Guest ACQUIRE_MEM is an execution/visibility dependency between GPU
+    // memory accesses. Unlike Finish(), recording an in-queue barrier never
+    // blocks the guest CPU or waits for completion of a GPU timeline tick.
+    // End rendering first; a global memory barrier cannot be recorded
+    // inside a dynamic-rendering instance without additional extensions.
+    scheduler.EndRendering();
+    const vk::MemoryBarrier2 barrier = MakePm4AcquireMemoryBarrier();
+    scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier,
+    });
+    ++pm4_acquire_memory_barrier_count;
+    if (pm4_acquire_memory_barrier_count == 1 ||
+        (pm4_acquire_memory_barrier_count % 1024) == 0) {
+        LOG_INFO(Render_Vulkan,
+                 "PM4 AcquireMem Vulkan barriers={} cp_coher_cntl={:#x}",
+                 pm4_acquire_memory_barrier_count, coher_cntl);
+    }
 }
 
 void Rasterizer::OnSubmit() {
