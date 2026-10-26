@@ -5,6 +5,7 @@
 
 #include <bit>
 
+#include "common/arch.h"
 #include "common/types.h"
 
 #ifdef ARCH_X86_64
