@@ -233,6 +233,14 @@ struct SamplerResource {
         }
         return sampler;
     }
+
+    // One real S# for a uniform sampler, or the complete GPU-indexed
+    // guest sampler table plus one out-of-range null sentinel. This is
+    // the same count used by Vulkan descriptor layout, SPIR-V declarations,
+    // and actual T#/S# table binding; never synthesize sampler values.
+    u32 NumBindings(const auto& info) const noexcept {
+        return is_guest_indexed ? indexed_guest_entries + 1u : 1u;
+    }
 };
 using SamplerResourceList = boost::container::static_vector<SamplerResource, NUM_SAMPLERS>;
 
