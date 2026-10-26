@@ -39,13 +39,15 @@ constexpr static std::array DescriptorHeapSizes = {
 
 static u32 GuestIndexedImageLimit(const Instance& instance) {
     const auto limits = instance.GetPhysicalDevice().getProperties().limits;
-    const u32 hard = std::min({Shader::MaxGuestIndexedImageEntries + 1u,
-                               limits.maxDescriptorSetSampledImages,
+    const u32 hard = std::min({limits.maxDescriptorSetSampledImages,
                                limits.maxPerStageDescriptorSampledImages,
                                limits.maxPerStageResources});
+    // Each dynamically typed guest image table has separate 2D, 3D and
+    // cube sampled descriptor arrays. Respect the real Vulkan per-stage
+    // descriptor budget rather than assuming all three fit automatically.
     constexpr u32 reserve = Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
-    return hard > reserve + 1u
-        ? std::min(Shader::MaxGuestIndexedImageEntries, hard - reserve - 1u)
+    return hard > reserve + 3u
+        ? std::min(Shader::MaxGuestIndexedImageEntries, (hard - reserve) / 3u - 1u)
         : 0u;
 }
 
@@ -66,7 +68,8 @@ static const auto& RuntimeDescriptorHeapSizes(const Instance& instance) {
         auto result = DescriptorHeapSizes;
         result[2].descriptorCount =
             std::max(result[2].descriptorCount,
-                     GuestIndexedImageLimit(instance) + Shader::NUM_IMAGES + 1024u);
+                     3u * (GuestIndexedImageLimit(instance) + 1u) +
+                         Shader::NUM_IMAGES + 1024u);
         result[4].descriptorCount =
             std::max(result[4].descriptorCount,
                      GuestIndexedSamplerLimit(instance) + Shader::NUM_SAMPLERS + 1024u);
