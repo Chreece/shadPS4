@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 export GIT_TERMINAL_PROMPT=0
 BASE="$HOME/projects/shadps4/GhostOfTsushima/fresh-source/got-indexed-capacity-20261024-213908"
-PIN="a117299a6b42bd8f02bc577e33329a6ddb91fa7d"
+PIN="82cc0cdd2e996cc747106b0a0bb9a6ebc5f4a104"
 ROOT="$HOME/projects/shadps4/GhostOfTsushima/experiments/mixed-types-$PIN"
 SOURCE="$ROOT/source"
 BUILD="$ROOT/build"
@@ -88,6 +88,12 @@ grep -Fq 'GpuDescriptorTableCpuCoherence:' \
 grep -Fq 'image_id_3d' \
  "$SOURCE/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp" ||
  fail "Typed SPIR-V sampling path absent"
+grep -Fq 'max_guest_mixed_indexed_image_entries' \
+ "$SOURCE/src/shader_recompiler/profile.h" ||
+ fail "Capacity-safe fallback profile fields absent"
+grep -Fq 'is_guest_mixed_indexed' \
+ "$SOURCE/src/video_core/renderer_vulkan/vk_rasterizer.cpp" ||
+ fail "Capacity-safe typed binding routing absent"
 grep -Fq 'IsSplashVisible()' \
  "$SOURCE/src/video_core/renderer_vulkan/vk_presenter.cpp" ||
  fail "Loading screen missing"
