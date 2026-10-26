@@ -314,6 +314,7 @@ public:
         MipStorageFallbackMode mip_fallback_mode{};
         u32 image_array_size{1};
         bool is_guest_indexed{};
+        bool is_guest_mixed_indexed{};
     };
 
     enum class PointerType : u32 {
