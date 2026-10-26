@@ -100,18 +100,44 @@ void FaultManager::ProcessFaultBuffer() {
 
     const vk::BufferMemoryBarrier2 pre_barrier = {
         .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-        .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+        .srcAccessMask = vk::AccessFlagBits2::eShaderWrite |
+                         vk::AccessFlagBits2::eTransferWrite,
         .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-        .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead |
+                         vk::AccessFlagBits2::eShaderWrite,
         .buffer = fault_buffer.Handle(),
         .offset = 0,
         .size = fault_buffer_size,
+    };
+    // The fault-list counter is reset by the CPU. For non-coherent memory,
+    // flush + HOST_WRITE -> COMPUTE_SHADER orders the counter before the
+    // shader's atomic reservations. The reverse dependency prepares a
+    // completed GPU result for CPU invalidation after the scheduler tick.
+    const vk::BufferMemoryBarrier2 host_to_gpu_fault_list = {
+        .srcStageMask = vk::PipelineStageFlagBits2::eHost,
+        .srcAccessMask = vk::AccessFlagBits2::eHostWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead |
+                         vk::AccessFlagBits2::eShaderWrite,
+        .buffer = download_buffer.Handle(),
+        .offset = offset,
+        .size = PageFaultAreaSize,
+    };
+    const vk::BufferMemoryBarrier2 gpu_to_host_fault_list = {
+        .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+        .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eHost,
+        .dstAccessMask = vk::AccessFlagBits2::eHostRead,
+        .buffer = download_buffer.Handle(),
+        .offset = offset,
+        .size = PageFaultAreaSize,
     };
     const vk::BufferMemoryBarrier2 post_barrier = {
         .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
         .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
         .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-        .dstAccessMask = vk::AccessFlagBits2::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead |
+                         vk::AccessFlagBits2::eShaderWrite,
         .buffer = fault_buffer.Handle(),
         .offset = 0,
         .size = fault_buffer_size,
@@ -146,10 +172,11 @@ void FaultManager::ProcessFaultBuffer() {
     }};
     scheduler.EndRendering();
     const auto cmdbuf = scheduler.CommandBuffer();
+    const std::array pre_barriers{pre_barrier, host_to_gpu_fault_list};
     cmdbuf.pipelineBarrier2(vk::DependencyInfo{
         .dependencyFlags = vk::DependencyFlagBits::eByRegion,
-        .bufferMemoryBarrierCount = 1,
-        .pBufferMemoryBarriers = &pre_barrier,
+        .bufferMemoryBarrierCount = static_cast<u32>(pre_barriers.size()),
+        .pBufferMemoryBarriers = pre_barriers.data(),
     });
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, *fault_process_pipeline);
     cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, *fault_process_pipeline_layout, 0,
@@ -159,10 +186,11 @@ void FaultManager::ProcessFaultBuffer() {
     const u32 num_workgroups = Common::DivCeil(num_threads, 64u);
     cmdbuf.dispatch(num_workgroups, 1, 1);
 
+    const std::array post_barriers{post_barrier, gpu_to_host_fault_list};
     cmdbuf.pipelineBarrier2(vk::DependencyInfo{
         .dependencyFlags = vk::DependencyFlagBits::eByRegion,
-        .bufferMemoryBarrierCount = 1,
-        .pBufferMemoryBarriers = &post_barrier,
+        .bufferMemoryBarrierCount = static_cast<u32>(post_barriers.size()),
+        .pBufferMemoryBarriers = post_barriers.data(),
     });
 
     scheduler.DeferOperation([this, mapped, offset, area = current_area] {
