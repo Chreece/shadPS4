@@ -20,6 +20,7 @@
 #include "shader_recompiler/ir/passes/srt.h"
 #include "shader_recompiler/ir/passes/srt_find_lsb.h"
 #include "shader_recompiler/ir/passes/srt_phi.h"
+#include "shader_recompiler/ir/passes/srt_uniform_lane.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/ir/srt_gvn_table.h"
@@ -171,6 +172,8 @@ struct PassInfo {
 
     // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
+    size_t proven_uniform_lane_reads{};
+    size_t rejected_gpu_lane_reads{};
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
         auto it = pointer_uses.find(inst);
@@ -533,6 +536,7 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     case IR::Opcode::UMax32:
     case IR::Opcode::BitFieldUExtract:
     case IR::Opcode::FindILsb32:
+    case IR::Opcode::ReadFirstLane:
     case IR::Opcode::Phi:
         return true;
     default:
@@ -598,6 +602,19 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
     case IR::Opcode::FindILsb32:
         ABORT_ON_FAILURE(EmitComputeOffsetFindILsb32(c, reg, pass_info, inst));
         return true;
+    case IR::Opcode::ReadFirstLane: {
+        // Reading the first ACTIVE lane is GPU state, not a host SRT input.
+        // Erasing it is correct ONLY after proving its source uniform in
+        // every lane. Reject dynamic attributes/Phis, keeping those GPU-side.
+        const IR::Value input = inst->Arg(0);
+        if (!IsHostUniformSrtValue(input, pass_info.gvn_table)) {
+            ++pass_info.rejected_gpu_lane_reads;
+            return false;
+        }
+        ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, input));
+        ++pass_info.proven_uniform_lane_reads;
+        return true;
+    }
     case IR::Opcode::Phi: {
         const IR::Value invariant = ResolveInvariantSrtPhi(off_dw, pass_info.gvn_table);
         if (invariant.IsEmpty()) {
@@ -727,6 +744,13 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
     }
 
     info.srt_info.flattened_bufsize_dw = pass_info.dst_off_dw;
+    if (pass_info.proven_uniform_lane_reads != 0 ||
+        pass_info.rejected_gpu_lane_reads != 0) {
+        LOG_INFO(Render_Recompiler,
+                 "SRT ReadFirstLane uniform host offsets={} GPU-dependent rejected={} (shader {:#x})",
+                 pass_info.proven_uniform_lane_reads,
+                 pass_info.rejected_gpu_lane_reads, info.pgm_hash);
+    }
 }
 
 static bool IsReadConstSource(const IR::Value base) {
