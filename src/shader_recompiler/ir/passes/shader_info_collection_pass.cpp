@@ -3,6 +3,7 @@
 
 #include "core/emulator_settings.h"
 #include "shader_recompiler/ir/program.h"
+#include "shader_recompiler/ir/passes/srt_dma_policy.h"
 #include "shader_recompiler/profile.h"
 
 namespace Shader::Optimization {
@@ -233,9 +234,25 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
         }
     }
 
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled() || !profile.support_bda) {
-        info.uses_dma = false;
+    // The host SRT walker cannot evaluate shader control-flow-dependent offsets.
+    // An unflattened ReadConst must therefore use GPU-side guest memory reads.
+    // This is a correctness requirement, not a title-specific compatibility flag:
+    // without it, EmitReadConst silently loads flattened buffer word zero.
+    const SrtDmaPolicy dma_policy{
+        .has_unflattened_readconst = True(info.readconst_types & Info::ReadConstType::Dynamic),
+        .supports_bda = profile.support_bda,
+    };
+    info.uses_dma = dma_policy.NeedsGpuRead();
+    if (dma_policy.IsUnsupported()) {
+        LOG_ERROR(Render_Recompiler,
+                  "Shader {:#x} needs dynamic SRT reads, but Vulkan BDA is unavailable",
+                  info.pgm_hash);
         info.readconst_types = Info::ReadConstType::None;
+    }
+    if (info.uses_dma) {
+        LOG_INFO(Render_Recompiler,
+                 "Shader {:#x} uses demand-paged GPU reads for unflattened SRT offsets",
+                 info.pgm_hash);
     }
 
     if (info.uses_dma) {
