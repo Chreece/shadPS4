@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <unordered_set>
+#include <type_traits>
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "common/string_util.h"
@@ -14,6 +15,10 @@
 #include "core/file_sys/fs.h"
 
 namespace Core::FileSys {
+
+static_assert(std::is_convertible_v<Devices::Logger*, Devices::BaseDevice*>,
+              "Logger must publicly derive BaseDevice for type-safe standard handles");
+
 
 // Iterates a pre-collected entry list produced by merging the backend stack.
 class MergedDirectory final : public IDirectory {
