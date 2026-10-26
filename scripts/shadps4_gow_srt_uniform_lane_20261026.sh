@@ -447,6 +447,8 @@ if [[ -f "$SRT_FULL_CONSOLE" && ! -L "$SRT_FULL_CONSOLE" ]]; then
         echo "CURRENT_FULL_CONSOLE_BYTES=$(stat -c %s "$SRT_FULL_CONSOLE")"
         echo "CURRENT_FINDILSB32_UNSUPPORTED=$(grep -Fc 'Unexpected instruction for offset computation, FindILsb32' "$SRT_FULL_CONSOLE" || :)"
         echo "CURRENT_LANE_UNIFORMITY_SUMMARY_EVENTS=$(grep -Fc 'SRT ReadFirstLane uniform host offsets=' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_UNSUPPORTED_READFIRSTLANE=$(grep -Fc 'Unexpected instruction for offset computation, ReadFirstLane' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_UNSUPPORTED_GETATTRIBUTE_U32=$(grep -Fc 'Unexpected instruction for offset computation, GetAttributeU32' "$SRT_FULL_CONSOLE" || :)"
         echo "CURRENT_DYNAMIC_PHI=$(grep -Fc 'SRT offset Phi depends on execution flow' "$SRT_FULL_CONSOLE" || :)"
         echo "CURRENT_FAILED_SRT_OFFSETS=$(grep -Fc 'Failed to compute offset for SRT walker' "$SRT_FULL_CONSOLE" || :)"
         echo "CURRENT_INVALID_SHARP_SOURCES=$(grep -Fc 'Sharp source was not flatenned' "$SRT_FULL_CONSOLE" || :)"
@@ -456,6 +458,22 @@ if [[ -f "$SRT_FULL_CONSOLE" && ! -L "$SRT_FULL_CONSOLE" ]]; then
         echo "DURATION_AND_SHADER_COVERAGE_MUST_MATCH_FOR_FAIR_AB=YES"
         echo "REAL_VISUAL_ACCEPTANCE_PENDING=YES"
     } | tee "$REPORT/srt-resource-progress.txt"
+    # The shader logger reports aggregate metrics per compile. Parse the
+    # actual FULL console (the observer excerpt deliberately drops its middle).
+    python3 -B - "$SRT_FULL_CONSOLE" <<'PYLANE' | tee -a "$REPORT/srt-resource-progress.txt"
+from pathlib import Path
+import re
+import sys
+data = Path(sys.argv[1]).read_text(errors="replace")
+pattern = re.compile(
+    r"SRT ReadFirstLane uniform host offsets=(\d+) GPU-dependent rejected=(\d+)")
+matches = pattern.findall(data)
+print("CURRENT_PROVEN_UNIFORM_FIRSTLANE_OFFSETS=" +
+      str(sum(int(a) for a, _ in matches)))
+print("CURRENT_REJECTED_GPU_LANE_FIRSTLANE_OFFSETS=" +
+      str(sum(int(b) for _, b in matches)))
+print("CURRENT_FIRSTLANE_COUNTS_ARE_COMPILE_EVENTS_NOT_UNIQUE_SHADERS=YES")
+PYLANE
 else
     echo "SRT_FULL_CONSOLE_UNAVAILABLE_NO_COUNTERS" | tee "$REPORT/srt-resource-progress.txt"
 fi
