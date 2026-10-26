@@ -1,5 +1,7 @@
 # shadPS4 / GoT Experiment Diary
 
+> **UNIVERSAL_EMULATOR_DIARY_AUTHORITY (2026-10-26):** This is a **game evidence view**, not a separate emulator fix ledger. One canonical append-only history for **all games** is [docs/emulator/TRIALS.jsonl](https://github.com/Chreece/shadPS4/blob/main/docs/emulator/TRIALS.jsonl); current accepted/rejected/merged state is [docs/emulator/FIXES.json](https://github.com/Chreece/shadPS4/blob/main/docs/emulator/FIXES.json). GoT renderer results, failures, FPS, and local source-provenance; universal fix decisions live on fork main. Source-level fixes remain emulator-wide, with no title or shader-hash overrides. Never erase failed attempts.
+
 Version: 2026-10-26. Canonical append-only record. Do **not** erase rejected experiments: failures are evidence. A later correction should append a new entry and link the original. Logs are **sample-limited** unless explicitly described as exhaustive, and FPS comparisons between different gameplay scenes are not normalized.
 
 ## Proven baseline and important negative results
