@@ -207,6 +207,7 @@ target_link_libraries(shadps4_gcn_test PRIVATE
     magic_enum::magic_enum
     toml11::toml11
     Boost::headers
+    xbyak::xbyak
     Vulkan::Headers
     sirit
     SDL3::SDL3
