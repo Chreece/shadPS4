@@ -370,8 +370,8 @@ s32 PS4_SYSV_ABI sceNpIntIsValidOnlineId(const OrbisNpOnlineId* id) {
         return 0;
     }
 
-    const size_t len = strnlen(id->data, ORBIS_NP_ONLINEID_MAX_LENGTH + 1);
-    if (len < 3 || len > ORBIS_NP_ONLINEID_MAX_LENGTH) {
+    const size_t len = GetNpOnlineIdLength(*id);
+    if (len < 3) {
         return 0;
     }
 
