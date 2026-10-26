@@ -48,7 +48,7 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
     }
     for (const auto& image : info->images) {
         const u32 num_bindings = image.NumBindings(*info);
-        const u32 dimensions = image.is_guest_indexed ? 3u : 1u;
+        const u32 dimensions = image.is_guest_mixed_indexed ? 3u : 1u;
         for (u32 type = 0; type < dimensions; ++type) {
             bindings.push_back({
                 .binding = binding,
