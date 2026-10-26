@@ -304,6 +304,10 @@ public:
         Id id;
         Id image_id_3d{};
         Id image_id_cube{};
+        Id compact_index_map{};
+        Id compact_index_pointer_type{};
+        u32 compact_3d_array_size{};
+        u32 compact_cube_array_size{};
         Id sampled_type;
         Id image_type;
         Id image_type_3d{};

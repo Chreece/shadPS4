@@ -204,11 +204,12 @@ Id EmitImageSampleImplicitLodIndexed(
         ctx, handle, bounded, texture.image_array_size);
 
     const auto emit_sample = [&](Id image_variable, Id image_type, Id typed_coords,
-                                 AmdGpu::ImageType view_type) {
+                                 Id selected_index, AmdGpu::ImageType view_type,
+                                 Id gradient_dx, Id gradient_dy) {
         const Id pointer_type =
             ctx.TypePointer(spv::StorageClass::UniformConstant, image_type);
         const Id pointer = ctx.OpAccessChain(
-            pointer_type, image_variable, std::array{bounded});
+            pointer_type, image_variable, std::array{selected_index});
         ctx.Decorate(pointer, spv::Decoration::NonUniform);
         const Id image = ctx.OpLoad(image_type, pointer);
         ctx.Decorate(image, spv::Decoration::NonUniform);
@@ -217,6 +218,16 @@ Id EmitImageSampleImplicitLodIndexed(
         ctx.Decorate(sampled_image, spv::Decoration::NonUniform);
         const Id fixed_coords = FixImageCoords<true>(ctx, typed_coords, view_type);
         ImageOperands operands;
+        if (Sirit::ValidId(gradient_dx) && Sirit::ValidId(gradient_dy)) {
+            // GPU type selection can diverge across fragment quads.
+            // Evaluate gradients before selecting the image dimension, then
+            // sample each typed image with explicit Grad operands. Implicit
+            // LOD inside a nonuniform branch would have undefined derivatives.
+            operands.AddDerivatives(ctx, view_type, gradient_dx, gradient_dy);
+            return ctx.OpImageSampleExplicitLod(texture.data_types->Get(4),
+                                                 sampled_image, fixed_coords,
+                                                 operands.mask, operands.operands);
+        }
         operands.Add(spv::ImageOperandsMask::Bias, bias);
         operands.AddOffset(ctx, view_type, offset,
                            ctx.profile.supports_shader_image_gather_extended);
@@ -234,9 +245,29 @@ Id EmitImageSampleImplicitLodIndexed(
     if (!texture.is_guest_mixed_indexed ||
         inst->Flags<IR::TextureInstInfo>().has_offset) {
         const Id sample = emit_sample(texture.id, texture.image_type, coords,
-                                      texture.view_type);
+                                      bounded, texture.view_type, Id{}, Id{});
         return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
     }
+    // Read a compact typed descriptor ordinal through the original
+    // GPU-selected guest ID. Unmapped records use 0xFFFFFFFF and are
+    // redirected to the type-specific last null descriptor, never a real
+    // 3D/Cube slot or a fabricated 2D view.
+    const auto compact_index = [&](u32 array_size) -> Id {
+        // Only read the remap SSBO inside the selected non-2D branch.
+        // Ordinary 2D fragments keep their original direct guest index and
+        // do not incur a per-pixel remap lookup.
+        const Id map_pointer = ctx.OpAccessChain(
+            texture.compact_index_pointer_type, texture.compact_index_map,
+            std::array{ctx.ConstU32(0u), bounded});
+        const Id mapped_ordinal = ctx.OpLoad(ctx.U32[1], map_pointer);
+        const Id in_bounds = ctx.OpULessThan(ctx.U1[1], mapped_ordinal,
+                                              ctx.ConstU32(array_size - 1u));
+        const Id ordinal = ctx.OpSelect(ctx.U32[1], in_bounds, mapped_ordinal,
+                                        ctx.ConstU32(array_size - 1u));
+        ctx.Decorate(ordinal, spv::Decoration::NonUniform);
+        return ordinal;
+    };
+
     const Id word3 = ctx.OpBitcast(
         ctx.U32[1], ctx.OpCompositeExtract(ctx.F32[1], coords, 3u));
     const Id guest_type = ctx.OpShiftRightLogical(ctx.U32[1], word3, ctx.ConstU32(28u));
@@ -251,6 +282,19 @@ Id EmitImageSampleImplicitLodIndexed(
     const Id coords2d = ctx.OpCompositeConstruct(ctx.F32[2], x, y);
     const Id coords3d = ctx.OpCompositeConstruct(ctx.F32[3], x, y, z);
 
+    // Compute fragment-quad derivatives *before* divergent selection of the
+    // true 2D/3D/Cube descriptor. Convert the original implicit bias to an
+    // equivalent scaling of the gradients by 2^bias (the original GCN LOD
+    // bias must not silently disappear from the explicit-Grad samples).
+    const Id scale = Sirit::ValidId(bias) ? ctx.OpExp2(ctx.F32[1], bias)
+                                          : ctx.ConstF32(1.0f);
+    const Id scale2 = ctx.OpCompositeConstruct(ctx.F32[2], scale, scale);
+    const Id scale3 = ctx.OpCompositeConstruct(ctx.F32[3], scale, scale, scale);
+    const Id grad2_dx = ctx.OpFMul(ctx.F32[2], ctx.OpDPdx(ctx.F32[2], coords2d), scale2);
+    const Id grad2_dy = ctx.OpFMul(ctx.F32[2], ctx.OpDPdy(ctx.F32[2], coords2d), scale2);
+    const Id grad3_dx = ctx.OpFMul(ctx.F32[3], ctx.OpDPdx(ctx.F32[3], coords3d), scale3);
+    const Id grad3_dy = ctx.OpFMul(ctx.F32[3], ctx.OpDPdy(ctx.F32[3], coords3d), scale3);
+
     const Id volume = ctx.OpLabel();
     const Id other = ctx.OpLabel();
     const Id cubemap = ctx.OpLabel();
@@ -262,8 +306,10 @@ Id EmitImageSampleImplicitLodIndexed(
     ctx.OpBranchConditional(is_3d, volume, other);
 
     ctx.AddLabel(volume);
+    const Id index_3d = compact_index(texture.compact_3d_array_size);
     const Id sample3d = emit_sample(texture.image_id_3d, texture.image_type_3d,
-                                    coords3d, AmdGpu::ImageType::Color3D);
+                                    coords3d, index_3d, AmdGpu::ImageType::Color3D,
+                                    grad3_dx, grad3_dy);
     ctx.OpBranch(merge);
 
     ctx.AddLabel(other);
@@ -271,13 +317,16 @@ Id EmitImageSampleImplicitLodIndexed(
     ctx.OpBranchConditional(is_cube, cubemap, ordinary);
 
     ctx.AddLabel(cubemap);
+    const Id index_cube = compact_index(texture.compact_cube_array_size);
     const Id sample_cube = emit_sample(texture.image_id_cube, texture.image_type_cube,
-                                       coords3d, AmdGpu::ImageType::Cube);
+                                       coords3d, index_cube, AmdGpu::ImageType::Cube,
+                                       grad2_dx, grad2_dy);
     ctx.OpBranch(other_end);
 
     ctx.AddLabel(ordinary);
     const Id sample2d = emit_sample(texture.id, texture.image_type,
-                                    coords2d, AmdGpu::ImageType::Color2D);
+                                    coords2d, bounded, AmdGpu::ImageType::Color2D,
+                                    grad2_dx, grad2_dy);
     ctx.OpBranch(other_end);
 
     ctx.AddLabel(other_end);

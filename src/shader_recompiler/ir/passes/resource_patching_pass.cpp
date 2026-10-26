@@ -324,7 +324,12 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                 image_res.indexed_record_stride_bytes = record_stride;
                 image_res.indexed_descriptor_offset_bytes = record_offset;
                 image_res.is_guest_indexed = true;
+                // Typed implicit-LOD dispatch uses fragment quad
+                // derivatives computed before GPU-dependent type branching.
+                // Keep the existing conservative image binding outside the
+                // fragment stage until its coordinate semantics are supported.
                 image_res.is_guest_mixed_indexed =
+                    info.hw_stage == HwStage::Fragment &&
                     entries <= profile.max_guest_mixed_indexed_image_entries;
             }
         }

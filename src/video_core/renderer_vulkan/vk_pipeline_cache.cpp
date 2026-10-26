@@ -55,10 +55,16 @@ static u32 GuestMixedIndexedImageLimit(const Instance& instance) {
                                limits.maxPerStageDescriptorSampledImages,
                                limits.maxPerStageResources});
     constexpr u32 reserve = Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
-    // A typed array needs three descriptor bindings. Retain the existing
-    // single 2D image array on hardware that cannot accommodate all three.
-    return hard > reserve + 3u
-        ? std::min(Shader::MaxGuestIndexedImageEntries, (hard - reserve) / 3u - 1u)
+    // Keep the complete ordinary 2D guest array, but allocate only small
+    // compact 3D/Cube arrays and one u32 guest-index remap SSBO. A full
+    // 3*N descriptor allocation would disable 27K-entry guest image tables
+    // on GPUs whose per-stage sampled-image limit is 32K.
+    constexpr u32 compact_extra =
+        Shader::CompactIndexed3DImageBindings +
+        Shader::CompactIndexedCubeImageBindings + 1u;
+    return hard > reserve + compact_extra + 1u
+        ? std::min(Shader::MaxGuestIndexedImageEntries,
+                   hard - reserve - compact_extra - 1u)
         : 0u;
 }
 
@@ -80,7 +86,9 @@ static const auto& RuntimeDescriptorHeapSizes(const Instance& instance) {
         result[2].descriptorCount = std::max({
             result[2].descriptorCount,
             GuestIndexedImageLimit(instance) + Shader::NUM_IMAGES + 1024u,
-            3u * (GuestMixedIndexedImageLimit(instance) + 1u) +
+            GuestMixedIndexedImageLimit(instance) + 1u +
+                Shader::CompactIndexed3DImageBindings +
+                Shader::CompactIndexedCubeImageBindings +
                 Shader::NUM_IMAGES + 1024u,
         });
         result[4].descriptorCount =
@@ -769,8 +777,11 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
         binding.buffer += info.buffers.size();
         binding.unified += info.buffers.size();
         for (const auto& image : info.images) {
-            binding.unified += image.NumBindings(info) *
-                (image.is_guest_mixed_indexed ? 3u : 1u);
+            binding.unified += image.NumBindings(info);
+            if (image.is_guest_mixed_indexed) {
+                binding.unified += Shader::CompactIndexed3DImageBindings +
+                                   Shader::CompactIndexedCubeImageBindings + 1u;
+            }
         }
         for (const auto& sampler : info.samplers) {
             binding.unified += sampler.NumBindings(info);

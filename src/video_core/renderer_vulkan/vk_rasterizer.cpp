@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <vector>
+#include <utility>
 #include <unordered_map>
 #include <bit>
 #include "common/debug.h"
@@ -11,6 +13,7 @@
 #include "core/memory.h"
 #include <cstring>
 #include "shader_recompiler/guest_tsharp_array.h"
+#include "shader_recompiler/compact_image_indices.h"
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/liverpool.h"
@@ -428,12 +431,19 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     // pointers into image_infos. Later vector reallocations would otherwise
     // leave descriptor writes pointing into freed memory.
     std::size_t required_infos = 0;
+    std::size_t required_buffer_infos = 0;
     std::size_t max_stage_images = 0;
     for (const auto* stage : pipeline->GetStages()) {
         if (!stage) continue;
         std::size_t stage_images = 0;
+        required_buffer_infos += stage->buffers.size();
         for (const auto& image : stage->images) {
-            stage_images += image.NumBindings(*stage) * (image.is_guest_mixed_indexed ? 3u : 1u);
+            stage_images += image.NumBindings(*stage);
+            if (image.is_guest_mixed_indexed) {
+                stage_images += Shader::CompactIndexed3DImageBindings +
+                                Shader::CompactIndexedCubeImageBindings;
+                ++required_buffer_infos; // read-only guest-index -> compact-slot SSBO
+            }
         }
         max_stage_images = std::max(max_stage_images, stage_images);
         required_infos += stage_images;
@@ -448,6 +458,9 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         return false;
     }
     image_infos.reserve(required_infos);
+    // All VkWriteDescriptorSet::pBufferInfo pointers must stay stable even
+    // when subsequent shader stages append ordinary buffers or remap tables.
+    buffer_infos.reserve(required_buffer_infos);
     image_bindings.resize(std::max(max_stage_images,
                                    std::size_t{Shader::NUM_IMAGES}));
 
@@ -465,7 +478,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
                 return image.is_guest_mixed_indexed;
             });
         set_writes.resize(set_writes.size() + stage->buffers.size() + stage->images.size() +
-                          2u * typed_image_bindings + stage->samplers.size());
+                          3u * typed_image_bindings + stage->samplers.size());
         BindBuffers(*stage, binding, push_data);
         BindTextures(*stage, binding);
         uses_dma |= stage->uses_dma;
@@ -898,14 +911,20 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     // To emulate storing to explicit mip levels, build a descriptor array with each mip level.
     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
     boost::container::small_vector<bool, 8> image_descriptor_is_storage;
+    // Each zero-sized image binding marker corresponds to one uploaded
+    // u32[guest_count] remap SSBO, in the exact shader declaration order.
+    boost::container::small_vector<std::vector<u32>, 4> image_index_maps;
 
     u32 num_images{};
     for (const auto& image_desc : stage.images) {
         if (image_desc.is_guest_indexed) {
             const u32 count = image_desc.NumBindings(stage);
             ASSERT(count >= 2 && count <= Shader::MaxGuestIndexedImageEntries + 1);
-            const u32 dimension_arrays = image_desc.is_guest_mixed_indexed ? 3u : 1u;
-            ASSERT(num_images + u64(dimension_arrays) * count <= image_bindings.size());
+            const u32 extra_images = image_desc.is_guest_mixed_indexed
+                ? Shader::CompactIndexed3DImageBindings +
+                  Shader::CompactIndexedCubeImageBindings
+                : 0u;
+            ASSERT(u64(num_images) + count + extra_images <= image_bindings.size());
 
             AmdGpu::Buffer source{};
             const bool fetched =
@@ -952,12 +971,15 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 }
             }
 
-            // Keep one Vulkan sampled-image array per SPIR-V dimensionality.
-            // Each array uses the *original* GPU guest record index, including
-            // the same last out-of-range null slot. This avoids CPU guessing
-            // which image the dynamically selected guest instruction wants.
+            // 2D retains the complete guest index; 3D and cube use compact
+            // typed descriptor arrays. Shader reads the exact per-draw
+            // GPU-visible remap using its genuine GPU-selected guest index.
             const u32 image_base = num_images;
-            num_images += dimension_arrays * count;
+            num_images += count + extra_images;
+            std::vector<u32> compact_map;
+            if (image_desc.is_guest_mixed_indexed) {
+                compact_map.assign(count, 0xFFFFFFFFu);
+            }
             for (u32 i = image_base; i < num_images; ++i) {
                 image_bindings[i].image_id = {};
             }
@@ -966,6 +988,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             constexpr u64 MaxEstimatedIndexedImageBytes = 4ull << 30;
             const auto limits = instance.GetPhysicalDevice().getProperties().limits;
             u32 bound_2d = 0, bound_3d = 0, bound_cube = 0;
+            u32 unbound_3d_capacity = 0, unbound_cube_capacity = 0;
             for (u32 i = 0; i + 1u < count; ++i) {
                 if (!complete) {
                     continue;
@@ -997,6 +1020,10 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     if (!image_desc.is_guest_mixed_indexed) {
                         continue;
                     }
+                    if (bound_3d >= Shader::CompactIndexed3DImageEntries) {
+                        ++unbound_3d_capacity;
+                        continue;
+                    }
                     type_array = 1;
                     dimension_limit = limits.maxImageDimension3D;
                     volume_layers = u64(raw.depth) + 1u;
@@ -1006,6 +1033,10 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     break;
                 case AmdGpu::ImageType::Cube:
                     if (!image_desc.is_guest_mixed_indexed) {
+                        continue;
+                    }
+                    if (bound_cube >= Shader::CompactIndexedCubeImageEntries) {
+                        ++unbound_cube_capacity;
                         continue;
                     }
                     type_array = 2;
@@ -1043,9 +1074,27 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 }
                 estimated_resident_bytes += estimated_bytes;
 
-                auto& slot = image_bindings[image_base + type_array * count + i];
+                const u32 slot_index = type_array == 0u
+                    ? image_base + i
+                    : type_array == 1u
+                        ? image_base + count + bound_3d
+                        : image_base + count +
+                          Shader::CompactIndexed3DImageBindings + bound_cube;
+                auto& slot = image_bindings[slot_index];
                 auto& desc = slot.desc;
                 std::construct_at(&desc, raw, image_desc);
+                if (type == AmdGpu::ImageType::Cube) {
+                    // The shader lowers Cube sampling to a 2D-array view
+                    // with an explicit face coordinate. A plain Cube T#
+                    // must expose its complete six-face group, even when
+                    // last_array was zero in the original guest descriptor.
+                    const u32 layers = raw.NumLayers();
+                    const u32 base_layer = desc.view_info.range.base.layer;
+                    if (layers <= base_layer) {
+                        continue;
+                    }
+                    desc.view_info.range.extent.layers = layers - base_layer;
+                }
                 slot.image_id = texture_cache.FindImage(desc);
                 auto* image = &texture_cache.GetImage(slot.image_id);
                 if (type == AmdGpu::ImageType::Color2D &&
@@ -1059,26 +1108,53 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 if (type_array == 0u) {
                     ++bound_2d;
                 } else if (type_array == 1u) {
-                    ++bound_3d;
+                    // Assign must execute in Release builds: it writes the
+                    // actual guest-ID remap as well as advancing the ordinal.
+                    const bool mapped = Shader::CompactImageIndices::Assign(
+                        compact_map, i, Shader::CompactIndexed3DImageEntries, bound_3d);
+                    ASSERT(mapped);
+                    (void)mapped;
                 } else {
-                    ++bound_cube;
+                    const bool mapped = Shader::CompactImageIndices::Assign(
+                        compact_map, i, Shader::CompactIndexedCubeImageEntries, bound_cube);
+                    ASSERT(mapped);
+                    (void)mapped;
                 }
             }
 
-            static std::atomic<u32> mixed_bind_reports{0};
-            if (mixed_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 32u) {
+            // Keep a separate bounded evidence window for large guest
+            // material tables, so the many early 24-entry shader draws do not
+            // hide whether compact 3D/Cube resources were really bound.
+            static std::atomic<u32> small_bind_reports{0};
+            static std::atomic<u32> large_bind_reports{0};
+            const bool large = count > 1024u;
+            const bool should_report = large
+                ? large_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 24u
+                : small_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 32u;
+            if (should_report) {
                 LOG_INFO(Render_Vulkan,
                          "GuestIndexedImageDimensions: stage={:#x} entries={} "
                          "bound_2d={} bound_3d={} bound_cube={} "
+                         "overflow_3d={} overflow_cube={} "
                          "complete={} mixed={} record_stride={}",
                          stage.pgm_hash, count - 1u,
-                         bound_2d, bound_3d, bound_cube, complete,
+                         bound_2d, bound_3d, bound_cube,
+                         unbound_3d_capacity, unbound_cube_capacity, complete,
                          image_desc.is_guest_mixed_indexed, record_stride);
             }
 
-            for (u32 type = 0; type < dimension_arrays; ++type) {
-                image_descriptor_array_sizes.push_back(count);
+            image_descriptor_array_sizes.push_back(count);
+            image_descriptor_is_storage.push_back(false);
+            if (image_desc.is_guest_mixed_indexed) {
+                image_descriptor_array_sizes.push_back(Shader::CompactIndexed3DImageBindings);
                 image_descriptor_is_storage.push_back(false);
+                image_descriptor_array_sizes.push_back(Shader::CompactIndexedCubeImageBindings);
+                image_descriptor_is_storage.push_back(false);
+                // A zero-sized entry in the binding sequence means one
+                // storage-buffer descriptor, not an image descriptor.
+                image_descriptor_array_sizes.push_back(0u);
+                image_descriptor_is_storage.push_back(false);
+                image_index_maps.emplace_back(std::move(compact_map));
             }
             continue;
         }
@@ -1203,8 +1279,30 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
     u32 image_info_idx = first_image_idx;
     u32 image_binding_idx = 0;
+    u32 remap_cursor = 0;
     for (u32 image_index = 0; image_index < image_descriptor_array_sizes.size(); ++image_index) {
         const u32 array_size = image_descriptor_array_sizes[image_index];
+        if (array_size == 0u) {
+            // Upload original guest-ID -> compact 3D/Cube ordinal as a
+            // read-only Vulkan storage buffer. Each draw receives the
+            // currently GPU-coherent guest T# table contents.
+            ASSERT(remap_cursor < image_index_maps.size());
+            const auto& remap = image_index_maps[remap_cursor++];
+            ASSERT(!remap.empty());
+            auto& stream = buffer_cache.GetStreamBuffer();
+            const u64 bytes = u64(remap.size()) * sizeof(u32);
+            const u64 offset =
+                stream.Copy(remap.data(), bytes, instance.StorageMinAlignment());
+            buffer_infos.emplace_back(stream.Handle(), offset, bytes);
+            auto& write = set_writes[set_write_index++];
+            write.dstSet = VK_NULL_HANDLE;
+            write.dstBinding = binding.unified++;
+            write.dstArrayElement = 0u;
+            write.descriptorCount = 1u;
+            write.descriptorType = vk::DescriptorType::eStorageBuffer;
+            write.pBufferInfo = &buffer_infos.back();
+            continue;
+        }
         // The descriptor set layout is derived from Shader::ImageResource::is_written.
         // TextureCache binding types can differ after depth/stencil association,
         // fallback selection, or invalid texture handles. A descriptor write

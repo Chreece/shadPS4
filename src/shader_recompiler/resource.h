@@ -131,6 +131,13 @@ enum class MipStorageFallbackMode : u16 {
 
 inline constexpr u32 LegacyGuestIndexedImageEntries = 15;
 inline constexpr u32 MaxGuestIndexedImageEntries = 32768;
+// General-purpose dimension-typed image capacities per GPU-selected T# table.
+// Entries beyond these optional capacities are left null rather than being
+// unsafely reinterpreted. The original 2D table remains full-length.
+inline constexpr u32 CompactIndexed3DImageEntries = 256;
+inline constexpr u32 CompactIndexedCubeImageEntries = 128;
+inline constexpr u32 CompactIndexed3DImageBindings = CompactIndexed3DImageEntries + 1u;
+inline constexpr u32 CompactIndexedCubeImageBindings = CompactIndexedCubeImageEntries + 1u;
 
 struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
