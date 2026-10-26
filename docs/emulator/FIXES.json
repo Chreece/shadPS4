@@ -276,6 +276,25 @@
       "observed_game_effects": "GoT native 2026-10-26 09:12 menu: particles/thunder observed but filled scene materials missing. In each 27651-entry guest T# table, 27612 Color2D descriptors bound and 39 omitted solely by strict 2D type gate: 35 Color3D and 4 Cube. Shader 0xb5c898c7 and 0x7eaf40ad share the same 39 source indices; all earlier GPU readback/stencil/real sampler features retained, no device loss. Direct allocation/mapping validity of rejected types remains unchecked due early type gate.",
       "negative_result_or_prohibition": "Do not treat 3D/Cube descriptors as invalid or hardcode title/shader indices. Do not force those images into statically typed SPIR-V OpTypeImage 2D array or coerce 3D->2D views: Vulkan descriptor types and sample coordinate semantics differ. Actual GPU sampling of these entries is not yet proved; historical early feedback saw zero samples for some captured draws.",
       "next_test": "Use existing generic indexed-sample GPU feedback and Vulkan pipeline invocations against current menu to prove which indices execute; then correctly route 2D, 3D and cube images through type-aware shader bindings. Separately inspect true dirty GPU-produced guest descriptor tables (host memcpy vs buffer cache), avoiding eager readbacks and false write-tracker clearing."
+    },
+    {
+      "id": "gpu-device-lost-after-first-frame",
+      "subsystem": "vulkan-gpu-memory-and-srt",
+      "status": "RUNTIME_GPU_CONTEXT_LOST_CAUSE_UNRESOLVED",
+      "related_prs": [
+        52,
+        57,
+        62,
+        64,
+        66,
+        68,
+        71,
+        73
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW Oct26 native latest-upstream 803bb428; libSceAudio3d loaded and first game frame callback at 18.005s; RADV/NAVI31 guilty soft recovery, VK_ERROR_DEVICE_LOST and host SIGSEGV -11 at 28.841s; no screenshot or sound proof. Native-only HLE 4.8s formatter fault not reproduced. Excerpt: 635 SRT Phi unsupported, 3026 SRT offset fails, 179 buffer-range clamps 0xffffffff to ~774-783MB, *not confirmed triggers*.",
+      "negative_result_or_prohibition": "Do not infer driver reset caused by SRT warnings, memory pressure, or huge guest mappings without GPU fault/context evidence. Do not arbitrarily cap descriptor lengths, fabricate shader values, skip draws, change GPU mode or enable game-specific workarounds. RADV 25.0.7 / RX 7900 XTX; crash diagnostics and GPU-assisted Vulkan validation disabled by normal global config.",
+      "next_test": "Run same exact ELF 7604bae0 with host Ollama unloaded only for generic GPU-headroom A/B (if model loaded), using same native CPU/game flags/settings, capture first game frame before 40s and read-only AMD kernel reset details. Then sample genuine resource bases/descriptor flags and identify faulty GPU producer/dispatch before any renderer semantics change."
     }
   ]
 }
