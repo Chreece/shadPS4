@@ -1034,33 +1034,62 @@ void EmitContext::DefineImagesAndSamplers() {
         });
         interfaces.push_back(id);
 
-        // Guest-indexed descriptor tables may contain 2D, 3D, and Cube
-        // records at unrelated GPU-selected indices. Vulkan requires each
-        // OpTypeImage array to have one static dimensionality. Preserve the
-        // original guest index in all three arrays instead of coercing the
-        // image view into an incompatible Vulkan type.
+        // A guest T# table contains heterogeneous 2D / 3D / cube records.
+        // Preserve the complete original GPU-selected guest index for 2D.
+        // The rare 3D and cube images use compact typed arrays, with a
+        // per-draw GPU-visible remap to their real guest ordinal. This avoids
+        // tripling 27K-entry tables past Vulkan per-stage limits.
         if (image_desc.is_guest_mixed_indexed) {
             const auto define_dimension_array = [&](spv::Dim dim, bool arrayed,
+                                                     u32 compact_count,
                                                      std::string_view suffix) {
                 const Id typed_image = TypeImage(sampled_type, dim, false, arrayed, false,
                                                  1u, spv::ImageFormat::Unknown);
-                const Id array = TypeArray(typed_image, ConstU32(num_bindings));
+                const Id array = TypeArray(typed_image, ConstU32(compact_count));
                 const Id pointer = TypePointer(spv::StorageClass::UniformConstant, array);
                 const Id var = AddGlobalVariable(pointer, spv::StorageClass::UniformConstant);
                 Decorate(var, spv::Decoration::Binding, binding.unified);
-                binding.unified += num_bindings;
+                binding.unified += compact_count;
                 Decorate(var, spv::Decoration::DescriptorSet, 0U);
                 Name(var, fmt::format("{}_img{}_{}", hw_stage, images.size() - 1, suffix));
                 interfaces.push_back(var);
                 return std::pair{var, typed_image};
             };
-            auto [image3d, type3d] = define_dimension_array(spv::Dim::Dim3D, false, "3d");
-            auto [imageCube, typeCube] = define_dimension_array(spv::Dim::Dim2D, true, "cube");
+            auto [image3d, type3d] = define_dimension_array(
+                spv::Dim::Dim3D, false, CompactIndexed3DImageBindings, "3d");
+            auto [imageCube, typeCube] = define_dimension_array(
+                spv::Dim::Dim2D, true, CompactIndexedCubeImageBindings, "cube");
+
+            // Read-only storage buffer of u32 compact indices, indexed by the
+            // genuine per-invocation GPU material index. 0xFFFFFFFF means an
+            // absent/invalid typed descriptor; shader bounds it to the
+            // separate null sentinel for whichever type is selected.
+            const Id map_array = TypeRuntimeArray(U32[1]);
+            const Id map_struct = TypeStruct(map_array);
+            Decorate(map_array, spv::Decoration::ArrayStride, 4u);
+            Decorate(map_struct, spv::Decoration::Block);
+            MemberDecorate(map_struct, 0, spv::Decoration::Offset, 0u);
+            const Id map_struct_ptr =
+                TypePointer(spv::StorageClass::StorageBuffer, map_struct);
+            const Id map_var =
+                AddGlobalVariable(map_struct_ptr, spv::StorageClass::StorageBuffer);
+            Decorate(map_var, spv::Decoration::Binding, binding.unified++);
+            Decorate(map_var, spv::Decoration::DescriptorSet, 0u);
+            Decorate(map_var, spv::Decoration::NonWritable);
+            Name(map_var, fmt::format("{}_img{}_compact_map",
+                                      hw_stage, images.size() - 1));
+            interfaces.push_back(map_var);
+
             auto& typed = images.back();
             typed.image_id_3d = image3d;
             typed.image_type_3d = type3d;
             typed.image_id_cube = imageCube;
             typed.image_type_cube = typeCube;
+            typed.compact_index_map = map_var;
+            typed.compact_index_pointer_type =
+                TypePointer(spv::StorageClass::StorageBuffer, U32[1]);
+            typed.compact_3d_array_size = CompactIndexed3DImageBindings;
+            typed.compact_cube_array_size = CompactIndexedCubeImageBindings;
         }
     }
     if (std::ranges::any_of(info.images,
