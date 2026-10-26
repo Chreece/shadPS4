@@ -752,7 +752,8 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
         binding.buffer += info.buffers.size();
         binding.unified += info.buffers.size();
         for (const auto& image : info.images) {
-            binding.unified += image.NumBindings(info);
+            binding.unified += image.NumBindings(info) *
+                (image.is_guest_indexed ? 3u : 1u);
         }
         for (const auto& sampler : info.samplers) {
             binding.unified += sampler.NumBindings(info);
