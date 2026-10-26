@@ -15,6 +15,17 @@ namespace VideoCore {
     return pending_tick == 0;
 }
 
+// The deferred scan must survive backpressure on the readback ring.
+// Clearing the flag before a successful scan silently drops fault requests.
+[[nodiscard]] constexpr bool RetainPendingGpuFaultScan(bool was_pending,
+                                                        bool scan_enqueued) noexcept {
+    return was_pending && !scan_enqueued;
+}
+
+static_assert(RetainPendingGpuFaultScan(true, false));
+static_assert(!RetainPendingGpuFaultScan(true, true));
+static_assert(!RetainPendingGpuFaultScan(false, false));
+
 static_assert(CanReuseGpuFaultReadbackSlot(0));
 static_assert(!CanReuseGpuFaultReadbackSlot(1));
 static_assert(!CanReuseGpuFaultReadbackSlot(~u64{0}));
