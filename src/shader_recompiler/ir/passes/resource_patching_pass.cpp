@@ -305,10 +305,12 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             table.Valid() && table.base_address != 0) {
             const u32 record_stride = resource.indexed_record_stride_bytes;
             const u32 record_offset = resource.indexed_descriptor_offset_bytes;
-            const u32 indexed_limit = verified_uniform_sampler
-                ? profile.max_guest_indexed_image_entries
-                : std::min(profile.max_guest_indexed_image_entries,
-                           profile.max_guest_indexed_sampler_entries);
+            const bool needs_indexed_sampler = record_stride != 0u &&
+                                               !verified_uniform_sampler;
+            const u32 indexed_limit = needs_indexed_sampler
+                ? std::min(profile.max_guest_indexed_image_entries,
+                           profile.max_guest_indexed_sampler_entries)
+                : profile.max_guest_indexed_image_entries;
             const u32 entries = record_stride != 0u
                 ? CompleteGuestTsharpRecordEntries(
                       static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
