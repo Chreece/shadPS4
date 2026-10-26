@@ -17,7 +17,7 @@ DURATION=118
 PROTECTED="$ROOT/GodOfWarRagnarok/build/shadps4"
 PROTECTED_SHA=8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e
 SOURCE_REV="a82db5964bd8a48305213171862d23268602a50c"
-OBSERVER_SHA=e9d436bae75452ca2c59bc6a07d4d5701f6cc934
+OBSERVER_SHA=8a7a329675db1704bf39c5c3aa26de859cf094df
 RECORDER_SHA=1593a0f720d1e7ab0d2392746693839b67162959
 OLLAMA_HELPER_SHA=9623031ffc736c270ccce0cad247b52d5b3dd30a
 
@@ -148,7 +148,7 @@ echo "GAME_LOADING_SPLASH_AND_GUIDE_QUIT_SOURCE=PASS"
 echo "CONTROLLER_CONFIRM_CANCEL_RUNTIME=NOT_YET_VERIFIED"
 echo "STAGE=PINNED_UNIVERSAL_118_PLUS_2_OBSERVER"
 curl -4fsSL --retry 3 \
-  "https://raw.githubusercontent.com/Chreece/shadPS4/034ad4e194d2bf2b08c97e5bd4fb20dd6fa42b15/tools/development/shadps4_native_120_observer_20261026.py" \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/479864803572bc32127943786a39bd781a26911b/tools/development/shadps4_native_120_observer_20261026.py" \
   -o "$OBSERVER"
 [[ "$(git hash-object "$OBSERVER")" == "$OBSERVER_SHA" ]] || {
     echo "NATIVE_OBSERVER_SHA_MISMATCH"; exit 2;
@@ -178,6 +178,8 @@ assert [ast.literal_eval(t) for t in args[2:]]==["--fullscreen","true","--show-f
 assert "args.seconds!=118" in observer
 assert "os.killpg(child.pid,signal.SIGTERM)" in observer
 assert "os.killpg(child.pid,signal.SIGKILL)" in observer
+assert "native-fault-mapping.json" in observer
+assert "capture_native_mappings(child.pid,report)" in observer
 assert "DIARY_APPENDED=" in recorder
 assert "--cpu-id-mode" not in observer and "--userfaultfd" not in observer
 print("UNIVERSAL_NATIVE_RUNTIME_AND_IMMUTABLE_DIARY_CHECKS=PASS",flush=True)
