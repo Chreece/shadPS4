@@ -499,16 +499,26 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
         }
         for (const auto& image : stage->images) {
             const u32 num_bindings = image.NumBindings(*stage);
-            const u32 dimensions = image.is_guest_mixed_indexed ? 3u : 1u;
-            for (u32 type = 0; type < dimensions; ++type) {
+            const auto add_images = [&](u32 count) {
                 bindings.push_back({
                     .binding = binding,
                     .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
                                                        : vk::DescriptorType::eSampledImage,
-                    .descriptorCount = num_bindings,
+                    .descriptorCount = count,
                     .stageFlags = stage_bit,
                 });
-                binding += num_bindings;
+                binding += count;
+            };
+            add_images(num_bindings);
+            if (image.is_guest_mixed_indexed) {
+                add_images(Shader::CompactIndexed3DImageBindings);
+                add_images(Shader::CompactIndexedCubeImageBindings);
+                bindings.push_back({
+                    .binding = binding++,
+                    .descriptorType = vk::DescriptorType::eStorageBuffer,
+                    .descriptorCount = 1,
+                    .stageFlags = stage_bit,
+                });
             }
         }
         for (const auto& sampler : stage->samplers) {
