@@ -1244,8 +1244,30 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
     u32 image_info_idx = first_image_idx;
     u32 image_binding_idx = 0;
+    u32 remap_cursor = 0;
     for (u32 image_index = 0; image_index < image_descriptor_array_sizes.size(); ++image_index) {
         const u32 array_size = image_descriptor_array_sizes[image_index];
+        if (array_size == 0u) {
+            // Upload original guest-ID -> compact 3D/Cube ordinal as a
+            // read-only Vulkan storage buffer. Each draw receives the
+            // currently GPU-coherent guest T# table contents.
+            ASSERT(remap_cursor < image_index_maps.size());
+            const auto& remap = image_index_maps[remap_cursor++];
+            ASSERT(!remap.empty());
+            auto& stream = buffer_cache.GetStreamBuffer();
+            const u64 bytes = u64(remap.size()) * sizeof(u32);
+            const u64 offset =
+                stream.Copy(remap.data(), bytes, instance.StorageMinAlignment());
+            buffer_infos.emplace_back(stream.Handle(), offset, bytes);
+            auto& write = set_writes[set_write_index++];
+            write.dstSet = VK_NULL_HANDLE;
+            write.dstBinding = binding.unified++;
+            write.dstArrayElement = 0u;
+            write.descriptorCount = 1u;
+            write.descriptorType = vk::DescriptorType::eStorageBuffer;
+            write.pBufferInfo = &buffer_infos.back();
+            continue;
+        }
         // The descriptor set layout is derived from Shader::ImageResource::is_written.
         // TextureCache binding types can differ after depth/stencil association,
         // fallback selection, or invalid texture handles. A descriptor write
