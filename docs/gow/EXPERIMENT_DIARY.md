@@ -1,5 +1,7 @@
 # Ragnarök development notebook — append only
 
+> **UNIVERSAL_EMULATOR_DIARY_AUTHORITY (2026-10-26):** This is a **game evidence view**, not a separate emulator fix ledger. One canonical append-only history for **all games** is [docs/emulator/TRIALS.jsonl](https://github.com/Chreece/shadPS4/blob/main/docs/emulator/TRIALS.jsonl); current accepted/rejected/merged state is [docs/emulator/FIXES.json](https://github.com/Chreece/shadPS4/blob/main/docs/emulator/FIXES.json). GoW compile, crash, audio, and visual observations; universal fix decisions live on fork main. Source-level fixes remain emulator-wide, with no title or shader-hash overrides. Never erase failed attempts.
+
 Canonical GoW branch `gow/proven-progress-20261026`; started **2026-10-26**. This tree is the native-only combined candidate source with **build proof, not gameplay proof**. Keep every accepted, rejected, blocked and superseded experiment. No title-dependent source fix or launch configuration.
 
 ## Protected proof
