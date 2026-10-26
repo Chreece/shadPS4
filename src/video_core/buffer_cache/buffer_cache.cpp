@@ -10,6 +10,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/buffer_cache/sparse_allocation_ranges.h"
 #include "video_core/buffer_cache/memory_tracker.h"
 #include "video_core/buffer_cache/region_definitions.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
@@ -274,7 +275,7 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
 }
 
 void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_block) {
-    u32 resident_blocks{};
+    u64 resident_blocks{};
     IntervalList bind_ranges;
     resident_ranges.ForEachGap(first_block, last_block + 1, [&](u64 start, u64 end) {
         resident_blocks += end - start;
@@ -285,45 +286,67 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
         return;
     }
 
-    // Sparse arena buffers use shader device addresses, so their backing allocations must
-    // explicitly allow device-address use as well.
+    // Each guest V# may legitimately span gigabytes, but a single huge
+    // device-memory allocation is not required to back a sparse VkBuffer.
+    // Only partition PHYSICAL allocations: retain the full guest range,
+    // the original Vulkan buffer device address and every sparse block.
+    constexpr u64 PreferredSparseAllocationBytes = 128ull * 1024 * 1024;
+    const u64 sparse_block_bytes = u64{1} << block_shift;
     const vk::MemoryAllocateFlagsInfo alloc_flags = {
         .flags = vk::MemoryAllocateFlagBits::eDeviceAddress,
     };
-    const vk::MemoryAllocateInfo alloc_info = {
-        .pNext = &alloc_flags,
-        .allocationSize = resident_blocks << block_shift,
-        .memoryTypeIndex = arena_memory_type_index,
+
+    struct PlannedBacking {
+        u64 start;
+        u64 end;
+        vk::UniqueDeviceMemory memory;
     };
-    const auto device_memory = Vulkan::Check(instance.GetDevice().allocateMemory(alloc_info));
+    std::vector<PlannedBacking> planned;
+    // Allocate the entire plan FIRST, before changing resident_ranges or
+    // pending sparse binds. RAII frees partially allocated memory on failure.
+    for (const auto& range : bind_ranges) {
+        ForEachSparseAllocationSegment(
+            range.start, range.end, sparse_block_bytes, PreferredSparseAllocationBytes,
+            [&](u64 start, u64 end) {
+                const vk::MemoryAllocateInfo alloc_info = {
+                    .pNext = &alloc_flags,
+                    .allocationSize = (end - start) << block_shift,
+                    .memoryTypeIndex = arena_memory_type_index,
+                };
+                planned.push_back({
+                    start, end,
+                    Vulkan::Check(instance.GetDevice().allocateMemoryUnique(alloc_info)),
+                });
+            });
+    }
 
     boost::container::small_vector<vk::BufferCopy, 8> copies;
     const auto staging =
         staging_pool.Request(resident_blocks * sizeof(vk::DeviceAddress), MemoryType::HostUncached);
 
-    u64 memory_offset{};
     ArenaBinds* binds = BindsForArena(arena);
     auto* bda_addrs = reinterpret_cast<vk::DeviceAddress*>(staging.mapped);
     u64 offset = staging.offset;
-    for (const auto& range : bind_ranges) {
+    for (auto& segment : planned) {
         Backing backing;
-        backing.start = range.start;
-        backing.end = range.end;
-        backing.memory = device_memory;
-        backing.offset = memory_offset >> block_shift;
+        backing.start = segment.start;
+        backing.end = segment.end;
+        backing.memory = segment.memory.release();
+        backing.offset = 0;
         resident_ranges.Add(backing);
 
         LOG_INFO(Render, "Making range start={}, end={} resident", backing.start, backing.end);
 
         const auto& bind = binds->binds.emplace_back(vk::SparseMemoryBind{
-            .resourceOffset = (range.start << block_shift) - arena->cpu_addr,
-            .size = (range.end - range.start) << block_shift,
-            .memory = device_memory,
-            .memoryOffset = memory_offset,
+            .resourceOffset = (segment.start << block_shift) - arena->cpu_addr,
+            .size = (segment.end - segment.start) << block_shift,
+            .memory = backing.memory,
+            .memoryOffset = 0,
         });
-        memory_offset += bind.size;
 
-        for (u32 block = 0; block < bind.size; block += block_size) {
+        // Shader BDA page-table entries must retain their exact original VA.
+        // u64 avoids overflow for large (>4GiB) sparse segments/addresses.
+        for (u64 block = 0; block < bind.size; block += sparse_block_bytes) {
             *(bda_addrs++) = arena->BufferDeviceAddress() + bind.resourceOffset + block;
         }
         const u64 copy_size = (backing.end - backing.start) * sizeof(vk::DeviceAddress);
