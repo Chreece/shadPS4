@@ -103,6 +103,66 @@ grep -Fq 'SDL_GAMEPAD_BUTTON_GUIDE' \
 grep -Fq 'HOST_QUIT action=confirmed' \
  "$SOURCE/src/core/devtools/layer.cpp" ||
  fail "Host quit confirmation missing"
+stage PREFETCH_VERIFIED_FFMPEG
+# The exact FFmpeg-core submodule commit has a published Linux x64 asset.
+# CMake's file(DOWNLOAD) may fail on IPv4/proxy systems even when the
+# artifact exists. Prepopulate the isolated build cache; do not modify
+# system dependencies or use a binary from any other commit.
+FFMPEG_COMMIT="94dde08c8a9e4271a93a2a7e4159e9fb05d30c0a"
+FFMPEG_TAG="94dde08"
+FFMPEG_ASSET_SHA256="aacbbfb8e622b684bc5d3b4cd6c9f9f77f5def64ae8d83c0c5b3ebe657aa33dd"
+[[ "$(git -C "$SOURCE/externals/ffmpeg-core" rev-parse HEAD)" == "$FFMPEG_COMMIT" ]] ||
+ fail "Unknown FFmpeg-core revision; refusing a mismatched binary"
+mkdir -p "$BUILD/externals"
+FFMPEG_ZIP="$BUILD/externals/ffmpeg-$FFMPEG_TAG.zip"
+valid_zip() {
+  [[ -s "$1" ]] || return 1
+  [[ "$(sha256sum "$1" | awk '{print $1}')" == "$FFMPEG_ASSET_SHA256" ]] || return 1
+  cmake -E tar tf "$1" > "$CAPTURE/info/ffmpeg-archive-contents.txt" 2>&1 || return 1
+  grep -q 'libavcodec\.a' "$CAPTURE/info/ffmpeg-archive-contents.txt" &&
+  grep -q 'libavformat\.a' "$CAPTURE/info/ffmpeg-archive-contents.txt"
+}
+if [[ -e "$FFMPEG_ZIP" ]] && ! valid_zip "$FFMPEG_ZIP"; then
+ fail "Existing FFmpeg cache has wrong SHA256; preserving it for review"
+fi
+if [[ ! -f "$FFMPEG_ZIP" ]]; then
+  stage CHECK_VERIFIED_LOCAL_FFMPEG_CACHE
+  while IFS= read -r candidate; do
+    [[ "$candidate" == "$FFMPEG_ZIP" ]] && continue
+    if valid_zip "$candidate"; then
+      cp -p -- "$candidate" "$FFMPEG_ZIP"
+      echo "FFMPEG_CACHE_REUSED_FROM=$candidate" >> "$CAPTURE/info/ffmpeg-source.txt"
+      break
+    fi
+  done < <(find "$HOME/projects/shadps4" -type f -name "ffmpeg-$FFMPEG_TAG.zip" -print 2>/dev/null)
+fi
+if [[ ! -f "$FFMPEG_ZIP" ]]; then
+  stage DOWNLOAD_PINNED_FFMPEG_ASSET
+  command -v curl >/dev/null || fail "curl needed for verified FFmpeg release asset"
+  TMP_FFMPEG="$(mktemp "$BUILD/externals/ffmpeg-download-XXXXXXXX.zip")"
+  rm -f -- "$TMP_FFMPEG"
+  for url in \
+    "https://github.com/shadps4-emu/ext-ffmpeg-core/releases/download/94dde08/ffmpeg-linux-x64.zip" \
+    "https://api.github.com/repos/shadps4-emu/ext-ffmpeg-core/releases/assets/327924109"; do
+    echo "FFMPEG_ATTEMPT=$url" >> "$CAPTURE/info/ffmpeg-source.txt"
+    if curl -4 --http1.1 -fLsS --retry 3 --retry-all-errors \
+       --connect-timeout 15 --max-time 240 \
+       -H "Accept: application/octet-stream" \
+       -H "User-Agent: shadps4-generic-build" \
+       "$url" -o "$TMP_FFMPEG" \
+       2>> "$CAPTURE/info/ffmpeg-download-errors.txt" &&
+       valid_zip "$TMP_FFMPEG"; then
+      mv -- "$TMP_FFMPEG" "$FFMPEG_ZIP"
+      break
+    fi
+    rm -f -- "$TMP_FFMPEG"
+  done
+  [[ -e "$FFMPEG_ZIP" ]] ||
+    fail "Official FFmpeg asset unavailable from both endpoints; no unverified ZIP installed"
+fi
+valid_zip "$FFMPEG_ZIP" || fail "FFmpeg archive checksum/contents failed"
+echo "FFMPEG_RELEASE_ASSET_SHA256=$FFMPEG_ASSET_SHA256" | tee -a "$CAPTURE/info/progress.log"
+
 stage CONFIGURE_CMAKE
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
  > "$CAPTURE/info/configure.log" 2>&1 || {
