@@ -433,7 +433,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         if (!stage) continue;
         std::size_t stage_images = 0;
         for (const auto& image : stage->images) {
-            stage_images += image.NumBindings(*stage) * (image.is_guest_indexed ? 3u : 1u);
+            stage_images += image.NumBindings(*stage) * (image.is_guest_mixed_indexed ? 3u : 1u);
         }
         max_stage_images = std::max(max_stage_images, stage_images);
         required_infos += stage_images;
@@ -462,7 +462,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         }
         const auto typed_image_bindings = std::ranges::count_if(
             stage->images, [](const Shader::ImageResource& image) {
-                return image.is_guest_indexed;
+                return image.is_guest_mixed_indexed;
             });
         set_writes.resize(set_writes.size() + stage->buffers.size() + stage->images.size() +
                           2u * typed_image_bindings + stage->samplers.size());
@@ -904,7 +904,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         if (image_desc.is_guest_indexed) {
             const u32 count = image_desc.NumBindings(stage);
             ASSERT(count >= 2 && count <= Shader::MaxGuestIndexedImageEntries + 1);
-            ASSERT(num_images + 3ull * count <= image_bindings.size());
+            const u32 dimension_arrays = image_desc.is_guest_mixed_indexed ? 3u : 1u;
+            ASSERT(num_images + u64(dimension_arrays) * count <= image_bindings.size());
 
             AmdGpu::Buffer source{};
             const bool fetched =
@@ -956,7 +957,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             // the same last out-of-range null slot. This avoids CPU guessing
             // which image the dynamically selected guest instruction wants.
             const u32 image_base = num_images;
-            num_images += 3u * count;
+            num_images += dimension_arrays * count;
             for (u32 i = image_base; i < num_images; ++i) {
                 image_bindings[i].image_id = {};
             }
@@ -993,6 +994,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 case AmdGpu::ImageType::Color2D:
                     break;
                 case AmdGpu::ImageType::Color3D:
+                    if (!image_desc.is_guest_mixed_indexed) {
+                        continue;
+                    }
                     type_array = 1;
                     dimension_limit = limits.maxImageDimension3D;
                     volume_layers = u64(raw.depth) + 1u;
@@ -1001,6 +1005,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     }
                     break;
                 case AmdGpu::ImageType::Cube:
+                    if (!image_desc.is_guest_mixed_indexed) {
+                        continue;
+                    }
                     type_array = 2;
                     dimension_limit = limits.maxImageDimensionCube;
                     volume_layers = (u64(raw.depth) + 1u) * 6u;
@@ -1063,12 +1070,13 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 LOG_INFO(Render_Vulkan,
                          "GuestIndexedImageDimensions: stage={:#x} entries={} "
                          "bound_2d={} bound_3d={} bound_cube={} "
-                         "complete={} record_stride={}",
+                         "complete={} mixed={} record_stride={}",
                          stage.pgm_hash, count - 1u,
-                         bound_2d, bound_3d, bound_cube, complete, record_stride);
+                         bound_2d, bound_3d, bound_cube, complete,
+                         image_desc.is_guest_mixed_indexed, record_stride);
             }
 
-            for (u32 type = 0; type < 3u; ++type) {
+            for (u32 type = 0; type < dimension_arrays; ++type) {
                 image_descriptor_array_sizes.push_back(count);
                 image_descriptor_is_storage.push_back(false);
             }
