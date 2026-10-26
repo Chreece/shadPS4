@@ -105,6 +105,10 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
         Shader::Optimization::DomainShaderTransform(program, runtime_info);
     }
     Shader::Optimization::RingAccessElimination(program, runtime_info);
+    // Simplify control-flow merges before discovering and flattening SRT offsets.
+    // A second pass after resource patching still handles later transformations.
+    Shader::Optimization::PhiSimplificationPass(program);
+    Shader::Optimization::ConstantPropagationPass(program.post_order_blocks);
     Shader::IR::DumpProgram(program, info, "pre-res-discover.");
     auto resources = Shader::Optimization::ResourceDiscoverPass(program, profile);
     Shader::Optimization::FlattenExtendedUserdataPass(program);
