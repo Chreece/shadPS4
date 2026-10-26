@@ -14,4 +14,4 @@ Effective 2026-10-26. The shared engine must work for all games without title, s
 
 **Current caveat (2026-10-26).** Fork main `01beb8e0fbbea4462bbc661f0019624e959c53dd` and upstream latest `2cdefaa1298c6e4ece6c74bd84e90f3906282d51` are diverged; fork ahead 84/behind 159. Current native-only candidate `a82db5964bd8a48305213171862d23268602a50c` is 3 upstream commits behind. Do not claim the new upstream rebase is completed until separate git integration, tests, PR and safe ref movement occur.
 
-Canonical notebooks: [GoW](../gow/EXPERIMENT_DIARY.md), [GoT](../got/EXPERIMENT_DIARY.md).
+Canonical notebooks: [GoW](https://github.com/Chreece/shadPS4/blob/gow/proven-progress-20261026/docs/gow/EXPERIMENT_DIARY.md), [GoT](../got/EXPERIMENT_DIARY.md).
