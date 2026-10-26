@@ -167,3 +167,33 @@ TEST(SrtFindILsb32, ControlFlowDependentPhiMustRemainOnGpu) {
     Optimization::SrtGvnTable gvn;
     EXPECT_TRUE(Optimization::ResolveInvariantSrtPhi(IR::Value{&phi}, gvn).IsEmpty());
 }
+
+#ifdef ARCH_X86_64
+TEST(SrtFindILsb32, ExecutableJitMatchesScalarReference) {
+    // Exercise the EXACT emitter used by FlattenExtendedUserdataPass.
+    // The input register and return register follow the native host ABI.
+    Xbyak::CodeGenerator host(256);
+#ifdef _WIN32
+    host.mov(Xbyak::util::r10d, Xbyak::util::ecx);
+#else
+    host.mov(Xbyak::util::r10d, Xbyak::util::edi);
+#endif
+    Optimization::EmitSrtFindLeastSignificantBit(host, Xbyak::util::r10d);
+    host.mov(Xbyak::util::eax, Xbyak::util::r10d);
+    host.ret();
+    host.ready();
+    const auto compute = host.getCode<u32(*)(u32)>();
+
+    EXPECT_EQ(compute(0u), 0xffffffffu);
+    for (u32 bit = 0; bit < 32; ++bit) {
+        EXPECT_EQ(compute(1u << bit), bit);
+    }
+    u32 value = 0x4d595df4u;
+    for (u32 i = 0; i < 2048; ++i) {
+        value ^= value << 13u;
+        value ^= value >> 17u;
+        value ^= value << 5u;
+        EXPECT_EQ(compute(value), Optimization::FindSrtLeastSignificantBit(value));
+    }
+}
+#endif
