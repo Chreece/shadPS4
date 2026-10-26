@@ -68,7 +68,11 @@ static std::string StringToNid(std::string_view symbol) {
     // without copying untrusted symbol data into a temporary vector.
     sha1::SHA1::digest8_t hash;
     sha1::SHA1 sha;
-    sha.processBytes(symbol.data(), symbol.size());
+    if (!symbol.empty()) {
+        // An empty string_view may have a null data() pointer; SHA1's
+        // processBytes performs pointer arithmetic even for a zero length.
+        sha.processBytes(symbol.data(), symbol.size());
+    }
     sha.processBytes(Salt.data(), Salt.size());
     sha.getDigestBytes(hash);
 
