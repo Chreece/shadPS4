@@ -511,9 +511,7 @@ static bool EmitComputeOffsetFindILsb32(Xbyak::CodeGenerator& c, Xbyak::Reg32 re
     ASSERT(inst->NumArgs() == 1);
     ASSERT(reg != ecx && reg != edx);
     ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
-    c.mov(ecx, 0xffffffffu);
-    c.bsf(reg, reg);
-    c.cmovz(reg, ecx);
+    EmitSrtFindLeastSignificantBit(c, reg);
     return true;
 }
 
