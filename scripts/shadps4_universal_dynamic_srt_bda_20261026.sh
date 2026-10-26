@@ -27,7 +27,12 @@ if (( $# == 0 )) || [[ "$1" != "--worker" ]]; then
     if (( $# == 1 )); then GAME="$1"; fi
     [[ -n "$GAME" && "$GAME" != -* && "$GAME" != *$'\n'* ]] || exit 2
     command -v nohup >/dev/null && command -v setsid >/dev/null || exit 2
-    TAG="shadps4-srt-bda-$(date +%Y%m%d-%H%M%S)-$"
+    TAG="shadps4-srt-bda-$(date +%Y%m%d-%H%M%S)-${BASHPID}"
+    # Validate before creating an empty file or claiming the worker started.
+    # Keep this identical to the worker-side tag contract.
+    [[ "$TAG" =~ ^shadps4-srt-bda-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || {
+        echo "ERROR_INVALID_RUN_TAG=$TAG" >&2; exit 2;
+    }
     LOG="$LOGS/$TAG.log"
     (set -C; : > "$LOG") || { echo "LOG_ALREADY_EXISTS=$LOG" >&2; exit 2; }
     nohup setsid -w bash "$0" --worker "$TAG" "$GAME" </dev/null >"$LOG" 2>&1 &
