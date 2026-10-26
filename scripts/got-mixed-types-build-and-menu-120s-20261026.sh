@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 export GIT_TERMINAL_PROMPT=0
 BASE="$HOME/projects/shadps4/GhostOfTsushima/fresh-source/got-indexed-capacity-20261024-213908"
-PIN="06e54ce793e7cc483980c8424ec2674c43486e80"
+PIN="52350d53f6613fbfe3b70378a35174f02525b8d4"
 PREVIOUS_PIN="82cc0cdd2e996cc747106b0a0bb9a6ebc5f4a104"
 # Reuse the previous isolated worktree and ~2535 Ninja objects / FFmpeg cache.
 # Original game source, installed game binaries, saves and SSH are untouched.
@@ -102,7 +102,7 @@ grep -Fq 'GpuDescriptorTableCpuCoherence:' \
 grep -Fq 'image_id_3d' \
  "$SOURCE/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp" ||
  fail "Typed SPIR-V sampling path absent"
-grep -Fq 'u32 NumBindings(const auto& info) const noexcept' \
+grep -Fq 'u32 NumBindings(const auto&) const noexcept' \
  "$SOURCE/src/shader_recompiler/resource.h" ||
  fail "SamplerResource::NumBindings native compiler repair missing"
 grep -Fq 'max_guest_mixed_indexed_image_entries' \
