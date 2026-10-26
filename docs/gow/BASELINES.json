@@ -12,10 +12,10 @@
   "current_native_binary_sha256": "7604bae00c78b72e163138327f61a2f92bf549ac66446487d1ab7370a2f9b4d1",
   "status": {
     "build": "PASS_FULL_LINK",
-    "runtime": "FIRST_FRAME_LOGGED_GPU_CONTEXT_LOST_AT_28_841S",
-    "visual": "FIRST_FRAME_EVENT_ONLY_NO_SCREENSHOT",
-    "audio": "AUDIO3D_HLE_LOADED_AUDIBILITY_UNVERIFIED",
-    "cross_game": "NOT_TESTED",
+    "runtime": "SURVIVED_120S_UNDER_HIGH_VRAM_OWNED_TEST_TIMEOUT",
+    "visual": "LOADING_UI_AT_26S_BLACK_GAME_OUTPUT_AT_58S_AND_104S",
+    "audio": "NOT_OBSERVED",
+    "cross_game": "PENDING",
     "dynamorio": "REMOVED"
   },
   "mandatory": {
@@ -37,6 +37,30 @@
   "source_archive": "shadps4-native-rebuild-20261026-070115-2184798.tar.gz",
   "archive_sha256": "9bc75a05116ab093d9184ae5bfd464a533d6ba869e81a0451b8530609efbf5e4",
   "latest_gameplay_test": {
+    "date": "2026-10-26T10:01:12+01:00",
+    "run_archive": "shadps4-gpu-headroom-ab-20261026-100112-637278.tar.gz",
+    "archive_sha256": "c002cc83be50c1c3a4c20f41a8b74797bd5f5837879787adb454346f576ad444",
+    "source_commit": "803bb428731be794bdc44e38b56313d030a7403a",
+    "candidate_sha256": "7604bae00c78b72e163138327f61a2f92bf549ac66446487d1ab7370a2f9b4d1",
+    "elapsed_seconds": 120.314,
+    "exit_code": -9,
+    "exit_reason": "TEST_TIMEOUT_118S_TERM_PLUS_2S_KILL",
+    "gpu": "NO_SPONTANEOUS_DEVICE_LOST; kernel journal 0 matching GPU reset messages; RADV cancelled CS after forced kill, not independently a new in-game fault",
+    "screenshots": {
+      "026s": "loading spinner overlay; 60 FPS is UI rate, not gameplay",
+      "058s": "fully black",
+      "104s": "fully black"
+    },
+    "vr_gib_before": 7.837,
+    "vr_gib_after_ollama_unload": 19.558,
+    "vr_gib_after_ollama_restore": 8.616,
+    "ollama_restored": true,
+    "ctx": 8192,
+    "native_shader_compiler": "635 unsupported Phi source errors plus 3045 failed SRT offsets in uploaded excerpt, many repeated 0xffffffff buffer descriptor clamps",
+    "gameplay_world_rendering_verified": false,
+    "next": "Test general mapped guest VMAs correctness in native full build with source da528b (PR76), then exact same VRAM headroom/screenshots. Capture full console to analyze all flip events; verify cross-title GoT before main promotion. No game/shader IDs or overrides."
+  },
+  "previous_gameplay_trial": {
     "date": "2026-10-26T09:20:52+01:00",
     "run_archive": "shadps4-native-universal-20261026-092052-45048.tar.gz",
     "archive_sha256": "cb6ade893b1459889b6f104048f8f097e781b08e09f76aed997d131c1a0dc971",
@@ -51,5 +75,7 @@
     "original_gameplay_binary_unchanged": true,
     "gpu": "RADV/NAVI31 guilty soft recovery / Vulkan ErrorDeviceLost",
     "next": "Same exact native ELF, GPU headroom + early screenshot and kernel GPU fault evidence. No shader/title hacks."
-  }
+  },
+  "candidate_next_source": "da528b540fdbe09e3642570f8d953077adaba691",
+  "candidate_next_build": "NOT_BUILT_OR_TESTED"
 }
