@@ -139,6 +139,7 @@ struct ImageResource {
     u32 indexed_descriptor_offset_bytes{};
     u32 indexed_guest_entries{};
     bool is_guest_indexed{};
+    bool is_guest_mixed_indexed{};
     bool is_depth{};
     bool is_atomic{};
     bool is_array{};
