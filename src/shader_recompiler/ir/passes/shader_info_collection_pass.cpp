@@ -266,7 +266,8 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
             .buffer_type = BufferType::FaultBuffer,
             .is_written = true,
         });
-        LOG_ERROR(Render, "Enabling DMA for shader {:#x}", info.pgm_hash);
+        // The selection is expected for shaders with unresolved SRT reads.
+        // The informative message above is sufficient; it is not an error.
     }
 }
 
