@@ -61,7 +61,7 @@ GAME="$3"
 [[ "$TAG" =~ ^shadps4-native-fatal-gdb-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || {
     echo "INVALID_RUN_ID" >&2; exit 2;
 }
-exec 9>"$LOGS/shadps4-native-fatal-gdb.lock"
+exec 9>"$LOGS/shadps4-native-universal.lock"
 flock -n 9 || { echo "ANOTHER_GOW_PLAYTEST_RUNNING" >&2; exit 2; }
 STAMP="$TAG"
 WORK="$ESDE/playtest-$STAMP"
