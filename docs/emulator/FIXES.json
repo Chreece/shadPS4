@@ -325,7 +325,7 @@
     {
       "id": "gpu-indexed-heterogeneous-compact-images",
       "subsystem": "shader-vulkan-texture-binding",
-      "status": "EMULATOR_WIDE_SOURCE_AND_FIXTURE_PRESENT_NO_GPU_3D_CUBE_BINDING",
+      "status": "STATIC_TYPED_MAP_PASS_ZERO_NATIVE_3D_CUBE_BINDINGS_RUNTIME_BLOCKED",
       "related_prs": [
         64,
         75,
@@ -335,12 +335,12 @@
       "main_merge_sha": null,
       "observed_game_effects": "PR78 17:03:36 source bfe756fa native full build PASS, compact NDEBUG mapping fixture PASS, two 24-entry 2D-only mixed bindings (0 3D, 0 Cube); RADV context lost and SIGSEGV 139. PR77 control without compact map also context lost at identical 103rd compute shader 0x17c90240 and same extreme stage 0x5e89a8b4 buffer range signatures. No menu screenshot for PR78 and no actual typed texture bindings. PR remains unmerged experimental.",
       "negative_result_or_prohibition": "No evidence of 27,651 image table exercised or actual 3D/Cube binding. Do not blame compact mapping uniquely or promote; 0xFFFFFFEC SRD range is not automatically invalid. Avoid title/shader filters or arbitrary size caps.",
-      "next_test": "After isolating shared Vulkan GPU context loss, exercise large 27651-entry table with real 35 Color3D and 4 Cube descriptors; confirm bound_3d>0/bound_cube>0, actual GPU selected IDs and valid SPIR-V type derivatives, menu/cinematic visuals and GoW. Keep PR78 draft/unmerged until then."
+      "next_test": "After GFX fault and wide-range issues have proven safe generic correction, ensure actual GPU 27651-entry material table with 35 Color3D and 4 Cube types is recognized/exercised. Verify real bound_3d>0 and bound_cube>0, GPU-selected guest ID unchanged, correct 3D gradients and cube layer faces, Vulkan SPIR-V validity and GoT/GoW visuals. PR78 stays draft unmerged."
     },
     {
       "id": "gpu-huge-guest-raw-buffer-residency",
       "subsystem": "gpu-buffer-cache-and-vulkan",
-      "status": "ROOT_CAUSE_NOT_YET_ISOLATED_SOURCE_DIAGNOSIS_ACTIVE",
+      "status": "CONFIRMED_EAGER_2_43_GIB_MIN_RESIDENCY_GFX_HANG_CAUSAL_LINK_UNPROVEN",
       "related_prs": [
         52,
         57,
@@ -349,9 +349,25 @@
         78
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "Native visually capable old GoT SHA 260ed43... reaches menu and animated 55s cinematic but same 85s and 112s image; audio/CPU AJM continue after RADV GPU soft context loss. Old baseline has 1047 huge raw V# requests 0xFFFFFFEC tied to stage 0x5e89a8b4 and 5514 sparse residency events; PR77 and PR78 also clamp this descriptor and GPU-context fail before menu. Huge raw descriptor present in all three, not a unique new PR78 regression.",
-      "negative_result_or_prohibition": "GCN V# STRIDE=0 means NUM_RECORDS is byte count; 0xFFFFFFEC not automatically corruption. Never replace with arbitrary size, hardcode shader/game ID, null resource, skip GPU dispatch, or conflate last compiled compute hash with executed faulting command. Vulkan robustBufferAccess2 and nullDescriptor are already enabled.",
-      "next_test": "Run pinned no-build known-good 118s RADV_DEBUG=hang capture (script scripts/got-radv-hang-fault-20261026.sh, commit 72a4872b) to expose actual in-flight pipeline, BO allocation/VA and SPIR-V. Preserve original shaders/binaries, then develop generic evidence-based buffer cache residency/range fix; compare GoT visuals/FPS/audio, then GoW."
+      "observed_game_effects": "17:43 RADV_DEBUG=hang exact prior ELF SHA 260ed43a... showed 975 legal 0xFFFFFFEC zero-stride V# range clamps to ~1.4GB tied to compute resource 0x5e89a8b4, 4630 new GPU resident gap records summing 159032 sparse blocks (>=2.427GiB backing) before fatal RADV hang. In the actual reported GFX pipeline b3faae8b49d2270e associated with last completed 726-index draw, all bound buffer ranges were <=117024B, so the wide compute V# was NOT present as a direct descriptor in that last graphics pipeline. Indirect residency/VRAM/synchronization effect remains possible, not proven.",
+      "negative_result_or_prohibition": "Do not cap 0xFFFFFFEC, which is a legal GCN V# stride=0 NUM_RECORDS byte count; do not substitute title/shader IDs, drop draws, null descriptors or assume 2.43GiB cumulative backing equals peak VRAM. BDA FaultManager already implements page-fault-triggered buffer residency for some address paths, but standard raw SSBO BindBuffers/ObtainBuffer eagerly EnsuresResident for full mapped range; safe unification needs access/address semantics proof.",
+      "next_test": "Design generic lossless on-demand residency for raw/SSBO buffers, drawing on existing shader BDA fault tracking only when semantics support it. Preserve full virtual guest SRD and writes; test on large resident capacity and small exact accesses, then host GoT/GoW. Independently associate actual GFX 726-index pipeline and guest shaders with Vulkan resource lifecycle; PR78 3D/Cube still pending."
+    },
+    {
+      "id": "gpu-graphics-hang-indexed-draw-sync",
+      "subsystem": "gpu-graphics-queue-and-vulkan-synchronization",
+      "status": "RADV_HANG_LOCATED_GFX_CP_BOUNDARY_NO_CAUSAL_SOURCE_FIX_YET",
+      "related_prs": [
+        52,
+        57,
+        72,
+        77,
+        78
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "2026-10-26 17:43 exact prior GoT graphics-positive ELF with RADV_DEBUG=hang renders white loading logo at 55s, dark cinematic at 85s then crashes under RADV trap exit133. RADV GFX command trace marks 1..864 reached and 865..1243 unreached after indexed draw with 726 indices; PS_PARTIAL_FLUSH and PFP_SYNC_ME follow draw. Reported GFX pipeline b3faae8b49d2270e has vertex+fragment SPIR-V modules and ordinary 192..117024-byte buffers; index GPU VA mapped to 128MB VkBuffer. GRBM GFX/PA/SPI/SX/CP busy. No VM fault address or wave PC (UMR unavailable).",
+      "negative_result_or_prohibition": "Do not equate last compiled compute shader or 0xFFFFFFEC V# descriptor with directly executed faulting GPU instruction. Driver syncshaders changes timing; do not claim any of PR77/78 fixes executed Color3D or Cube; don't hide a crashing draw.",
+      "next_test": "Use exact captured SPIR-V and GFX report to map generic Vulkan pipeline/shader IDs and memory bindings, then correct a demonstrated resource lifetime/barrier/shader-execution bug emulator-wide, run native GoT+GoW tests; keep 118s cap, no SSH interruption, preserve existing success baseline."
     }
   ]
 }
