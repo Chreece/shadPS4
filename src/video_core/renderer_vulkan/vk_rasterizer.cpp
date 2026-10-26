@@ -432,7 +432,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         if (!stage) continue;
         std::size_t stage_images = 0;
         for (const auto& image : stage->images) {
-            stage_images += image.NumBindings(*stage);
+            stage_images += image.NumBindings(*stage) * (image.is_guest_indexed ? 3u : 1u);
         }
         max_stage_images = std::max(max_stage_images, stage_images);
         required_infos += stage_images;
@@ -440,7 +440,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             required_infos += sampler.NumBindings(*stage);
         }
     }
-    if (max_stage_images > Shader::MaxGuestIndexedImageEntries +
+    if (max_stage_images > 3ull * (Shader::MaxGuestIndexedImageEntries + 1u) +
                             Shader::NUM_IMAGES * 64u) {
         LOG_ERROR(Render_Vulkan, "Rejecting excessive guest image descriptor count {}",
                   max_stage_images);
@@ -459,8 +459,12 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         if (!stage) {
             continue;
         }
+        const auto typed_image_bindings = std::ranges::count_if(
+            stage->images, [](const Shader::ImageResource& image) {
+                return image.is_guest_indexed;
+            });
         set_writes.resize(set_writes.size() + stage->buffers.size() + stage->images.size() +
-                          stage->samplers.size());
+                          2u * typed_image_bindings + stage->samplers.size());
         BindBuffers(*stage, binding, push_data);
         BindTextures(*stage, binding);
         uses_dma |= stage->uses_dma;
@@ -892,13 +896,14 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     const u32 first_image_idx = image_infos.size();
     // To emulate storing to explicit mip levels, build a descriptor array with each mip level.
     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
+    boost::container::small_vector<bool, 8> image_descriptor_is_storage;
 
     u32 num_images{};
     for (const auto& image_desc : stage.images) {
         if (image_desc.is_guest_indexed) {
             const u32 count = image_desc.NumBindings(stage);
             ASSERT(count >= 2 && count <= Shader::MaxGuestIndexedImageEntries + 1);
-            ASSERT(num_images + count <= image_bindings.size());
+            ASSERT(num_images + 3ull * count <= image_bindings.size());
 
             AmdGpu::Buffer source{};
             const bool fetched =
@@ -1008,7 +1013,10 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 image->binding.is_bound = 1u;
             }
 
-            image_descriptor_array_sizes.push_back(count);
+            for (u32 type = 0; type < 3u; ++type) {
+                image_descriptor_array_sizes.push_back(count);
+                image_descriptor_is_storage.push_back(false);
+            }
             continue;
         }
 
@@ -1071,6 +1079,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         }
 
         image_descriptor_array_sizes.push_back(num_bindings);
+        image_descriptor_is_storage.push_back(image_desc.is_written);
     }
 
     // Second pass to re-bind images that were updated after binding
@@ -1137,7 +1146,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         // TextureCache binding types can differ after depth/stencil association,
         // fallback selection, or invalid texture handles. A descriptor write
         // must use the exact type declared by its pipeline layout.
-        const bool is_storage = stage.images[image_index].is_written;
+        const bool is_storage = image_descriptor_is_storage[image_index];
         auto& set_write = set_writes[set_write_index++];
         set_write.dstSet = VK_NULL_HANDLE;
         set_write.dstBinding = binding.unified;
