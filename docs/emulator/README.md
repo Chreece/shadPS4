@@ -59,6 +59,6 @@ To record more than one game in one run, add repeated `--game`, `--tested-game` 
 
 ## Canonical game progress worktrees
 
-[GoT progress](../got/EXPERIMENT_DIARY.md) — `got/proven-progress-20261026`. [Ragnarök progress](../gow/EXPERIMENT_DIARY.md) — `gow/proven-progress-20261026`. Both retain their exact tested source/binary checkpoints and game-specific *observations* while sharing this **one** emulator code/fix history.
+[GoT progress](../got/EXPERIMENT_DIARY.md) — `got/proven-progress-20261026`. [Ragnarök progress](https://github.com/Chreece/shadPS4/blob/gow/proven-progress-20261026/docs/gow/EXPERIMENT_DIARY.md) — `gow/proven-progress-20261026`. Both retain their exact tested source/binary checkpoints and game-specific *observations* while sharing this **one** emulator code/fix history.
 
 Native game tests must use the same emulator semantics (no compatibility overrides), standard fullscreen and FPS, and the strict 118s SIGTERM + 2s SIGKILL limit. Conditionally unload/reload Ollama if GPU VRAM is under 8 GiB; restore the exact previous models/contexts after the actual game exits. Preserve SSH, Sunshine, ES-DE, all saves and known-good binaries.
