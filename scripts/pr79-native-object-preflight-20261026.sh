@@ -10,7 +10,7 @@ BLOB_PATCH=ae6a448f80d3d116b4e10a38983c7bbdfa77615c
 BLOB_HELPER=5825150bb9f10dad0679fc59210edc2adbcb59fb
 BLOB_TEST=49a38eee89635024e3b7d6d7bdf3d287233b54cf
 SRC="$HOME/projects/shadps4/GhostOfTsushima/experiments/mixed-types-82cc0cdd2e996cc747106b0a0bb9a6ebc5f4a104/source"
-BUILD="\${SRC%/source}/build"
+BUILD="${SRC%/source}/build"
 LOGS="$HOME/projects/shadps4/logs"
 OUT="$LOGS/pr79-native-object-preflight-$(date +%Y%m%d-%H%M%S)"
 OBJ_REL=CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer_cache.cpp.o
@@ -72,7 +72,7 @@ for spec in \
   "src/video_core/buffer_cache/buffer_cache.cpp:$BLOB_PATCH" \
   "src/video_core/buffer_cache/sparse_allocation_ranges.h:$BLOB_HELPER" \
   "tests/sparse_allocation_ranges_test.cpp:$BLOB_TEST"; do
-  path="\${spec%%:*}"; expected="\${spec##*:}"
+  path="${spec%%:*}"; expected="${spec##*:}"
   target="$OUT/input/$(basename "$path")"
   curl -4 --http1.1 -fLsS --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$PIN_PATCH/$path" -o "$target" ||
