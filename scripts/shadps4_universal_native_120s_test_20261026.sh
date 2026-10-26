@@ -185,6 +185,37 @@ assert "--cpu-id-mode" not in observer and "--userfaultfd" not in observer
 print("UNIVERSAL_NATIVE_RUNTIME_AND_IMMUTABLE_DIARY_CHECKS=PASS",flush=True)
 PYOB
 
+# The prior native run 20261026-081502 reached this stage but the Ollama
+# helper was absent. Do not launch the emulator or change Ollama until all
+# runner dependencies are downloaded, SHA-pinned and syntactically checked.
+echo "STAGE=PINNED_UNIVERSAL_OLLAMA_VRAM_SESSION"
+curl -4fsSL --retry 3 \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/764d90aab5cf658fbabc23921632b0d2cda4cd1a/tools/development/shadps4_ollama_vram_session_20261025.py" \
+  -o "$OLLAMA_HELPER"
+[[ -f "$OLLAMA_HELPER" && ! -L "$OLLAMA_HELPER" ]] || {
+    echo "OLLAMA_HELPER_MISSING_NO_GAME"; exit 2;
+}
+[[ "$(git hash-object "$OLLAMA_HELPER")" == "$OLLAMA_HELPER_SHA" ]] || {
+    echo "OLLAMA_HELPER_SHA_MISMATCH_NO_GAME"; exit 2;
+}
+python3 -B - "$OLLAMA_HELPER" <<'PYOLLAMA'
+import ast
+from pathlib import Path
+import sys
+source=Path(sys.argv[1]).read_text()
+ast.parse(source)
+for required in ("http://127.0.0.1:7869", "active_candidate_processes",
+                 "VRAM_BELOW_TARGET_TRY_OLLAMA_API_UNLOAD=YES",
+                 "OLLAMA_MODELS_RESTORED=", "keep_alive", "models_loaded"):
+    assert required in source, "Unverified Ollama lifecycle: "+required
+assert "docker stop" not in source and "docker restart" not in source
+print("OLLAMA_API_UNLOAD_IF_LOW_AND_RESTORE_AFTER_GAME_EXIT=VERIFIED",flush=True)
+PYOLLAMA
+[[ -s "$OBSERVER" && -s "$RECORDER" && -s "$OLLAMA_HELPER" ]] || {
+    echo "MISSING_UNIVERSAL_RUNNER_DEPENDENCY_NO_GAME"; exit 2;
+}
+echo "ALL_PINNED_UNIVERSAL_RUNNER_COMPONENTS=READY"
+
 # ES-DE/Sunshine may remain running; never stop or alter them.
 # Refuse only a second PS4 emulator process. The observer repeats this guard.
 if pgrep -u "$(id -u)" -x shadps4 >/dev/null 2>&1; then
