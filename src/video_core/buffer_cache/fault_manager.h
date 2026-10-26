@@ -21,7 +21,9 @@ public:
         return &fault_buffer;
     }
 
-    void ProcessFaultBuffer();
+    // Called under the Vulkan scheduler's submission mutex. Return false
+    // instead of blocking if the rotating GPU readback area is still in use.
+    [[nodiscard]] bool ProcessFaultBuffer();
 
 private:
     Vulkan::Scheduler& scheduler;
@@ -34,6 +36,7 @@ private:
     Buffer download_buffer;
     std::array<u64, MaxPendingFaults> fault_areas{};
     u32 current_area{};
+    u64 deferred_slot_submissions{};
     vk::UniqueDescriptorSetLayout fault_process_desc_layout;
     vk::UniquePipeline fault_process_pipeline;
     vk::UniquePipelineLayout fault_process_pipeline_layout;
