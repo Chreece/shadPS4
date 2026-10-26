@@ -126,6 +126,50 @@ def summarize(console,out):
             'full_console_bytes':size}
 
 
+def capture_native_mappings(pid, out):
+    # Read-only /proc evidence. Single overwritten snapshot, never a huge trace.
+    try:
+        content=Path(f'/proc/{pid}/maps').read_text(errors='replace')
+        if len(content)<1024*1024:
+            (out/'last-process-mappings.txt').write_text(content)
+    except (OSError, UnicodeError):
+        pass
+
+
+def classify_native_fault(console, out, binary):
+    # A fault RIP in a PIE binary must be corrected by the mapping file
+    # offset; don't mistake a generic SIGABRT for the true preceding SIGSEGV.
+    maps=out/'last-process-mappings.txt'
+    if not maps.is_file():
+        return {"fault_mapping":"NOT_OBSERVED"}
+    fault=None
+    with console.open('rb') as stream:
+        for raw in stream:
+            line=raw.decode('utf-8','replace')
+            match=re.search(
+                r'Unhandled access violation at code address (0x[0-9a-fA-F]+)',line)
+            if match:
+                fault=int(match.group(1),16)
+    if fault is None:
+        return {"fault_mapping":"NO_UNHANDLED_ACCESS_REPORTED"}
+    for row in maps.read_text(errors='replace').splitlines():
+        parts=row.split(maxsplit=5)
+        if len(parts)<5 or '-' not in parts[0]:
+            continue
+        try:
+            begin,end=(int(x,16) for x in parts[0].split('-',1))
+            offset=int(parts[2],16)
+        except ValueError:
+            continue
+        if begin<=fault<end:
+            result={"fault_rip":hex(fault),"fault_mapping":row,
+                    "elf_address":hex(fault-begin+offset)}
+            if len(parts)>5 and Path(parts[5]).name==binary.name:
+                result["emulator_executable_rip"]=True
+            return result
+    return {"fault_rip":hex(fault),"fault_mapping":"NOT_IN_LAST_SNAPSHOT"}
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--binary',required=True,type=Path)
@@ -176,6 +220,7 @@ def main():
     child=None
     began=time.monotonic()
     failure=None
+    previous_map_capture=0.0
     try:
         with console.open('wb',buffering=0) as output:
             child=subprocess.Popen(argv,cwd=args.cwd,env=env,
@@ -186,6 +231,9 @@ def main():
             taken=set()
             while child.poll() is None and time.monotonic()-began<118:
                 elapsed=time.monotonic()-began
+                if elapsed-previous_map_capture>=1.0:
+                    capture_native_mappings(child.pid,report)
+                    previous_map_capture=elapsed
                 for second in due:
                     if elapsed>=second and second not in taken:
                         taken.add(second)
@@ -210,6 +258,9 @@ def main():
         result['elapsed_seconds']=round(time.monotonic()-began,3)
         if console.is_file():
             result.update(summarize(console,report))
+            result["native_fault"]=classify_native_fault(console,report,binary)
+            if result["native_fault"].get("fault_rip"):
+                save(report/'native-fault-mapping.json',result["native_fault"])
         if failure:
             result['failure']=failure
         save(report/'native-result.json',result)
