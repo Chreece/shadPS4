@@ -241,11 +241,14 @@ Id EmitImageSampleImplicitLodIndexed(
     // GPU-selected guest ID. Unmapped records use 0xFFFFFFFF and are
     // redirected to the type-specific last null descriptor, never a real
     // 3D/Cube slot or a fabricated 2D view.
-    const Id map_pointer = ctx.OpAccessChain(
-        texture.compact_index_pointer_type, texture.compact_index_map,
-        std::array{ctx.ConstU32(0u), bounded});
-    const Id mapped_ordinal = ctx.OpLoad(ctx.U32[1], map_pointer);
     const auto compact_index = [&](u32 array_size) -> Id {
+        // Only read the remap SSBO inside the selected non-2D branch.
+        // Ordinary 2D fragments keep their original direct guest index and
+        // do not incur a per-pixel remap lookup.
+        const Id map_pointer = ctx.OpAccessChain(
+            texture.compact_index_pointer_type, texture.compact_index_map,
+            std::array{ctx.ConstU32(0u), bounded});
+        const Id mapped_ordinal = ctx.OpLoad(ctx.U32[1], map_pointer);
         const Id in_bounds = ctx.OpULessThan(ctx.U1[1], mapped_ordinal,
                                               ctx.ConstU32(array_size - 1u));
         const Id ordinal = ctx.OpSelect(ctx.U32[1], in_bounds, mapped_ordinal,
@@ -253,8 +256,6 @@ Id EmitImageSampleImplicitLodIndexed(
         ctx.Decorate(ordinal, spv::Decoration::NonUniform);
         return ordinal;
     };
-    const Id index_3d = compact_index(texture.compact_3d_array_size);
-    const Id index_cube = compact_index(texture.compact_cube_array_size);
 
     const Id word3 = ctx.OpBitcast(
         ctx.U32[1], ctx.OpCompositeExtract(ctx.F32[1], coords, 3u));
@@ -281,6 +282,7 @@ Id EmitImageSampleImplicitLodIndexed(
     ctx.OpBranchConditional(is_3d, volume, other);
 
     ctx.AddLabel(volume);
+    const Id index_3d = compact_index(texture.compact_3d_array_size);
     const Id sample3d = emit_sample(texture.image_id_3d, texture.image_type_3d,
                                     coords3d, index_3d, AmdGpu::ImageType::Color3D);
     ctx.OpBranch(merge);
@@ -290,6 +292,7 @@ Id EmitImageSampleImplicitLodIndexed(
     ctx.OpBranchConditional(is_cube, cubemap, ordinary);
 
     ctx.AddLabel(cubemap);
+    const Id index_cube = compact_index(texture.compact_cube_array_size);
     const Id sample_cube = emit_sample(texture.image_id_cube, texture.image_type_cube,
                                        coords3d, index_cube, AmdGpu::ImageType::Cube);
     ctx.OpBranch(other_end);
