@@ -32,6 +32,17 @@ struct OrbisNpOnlineId {
     s8 dummy[3];
 };
 
+// Guest OnlineId has 16 data bytes plus a separate terminator field.
+// A full-length valid ID has no NUL within data; examining 17 bytes crosses
+// the array boundary and lets unrelated terminator metadata determine length.
+inline constexpr size_t GetNpOnlineIdLength(const OrbisNpOnlineId& id) noexcept {
+    size_t len = 0;
+    while (len < sizeof(id.data) && id.data[len] != '\0') {
+        ++len;
+    }
+    return len;
+}
+
 struct OrbisNpId {
     OrbisNpOnlineId handle;
     u8 opt[8];
