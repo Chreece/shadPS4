@@ -57,6 +57,7 @@ private:
         case IR::Opcode::UMin32:
         case IR::Opcode::UMax32:
         case IR::Opcode::BitFieldUExtract:
+        case IR::Opcode::FindILsb32:
             ASSERT(!inst->MayHaveSideEffects());
             return true;
         default:
