@@ -154,9 +154,11 @@ def main() -> int:
                    decision(x).upper().startswith("SUPERSEDED") or
                    "REJECT" in decision(x).upper()]
     if args.next:
-        entries = [x for x in entries if
-                   not (decision(x).upper() in ("MERGED_MAIN", "PROVEN_GENERIC", "REJECT")
-                        and not (x.get("next_test") or x.get("next_check")))]
+        # A rejection stays searchable under --rejected, but it is not active
+        # work merely because its historical next step says "do not retry".
+        entries = [x for x in entries
+                   if not decision(x).upper().startswith(("REJECT", "SUPERSEDED"))
+                   and decision(x).upper() not in ("MERGED_MAIN", "PROVEN_GENERIC")]
     if args.find:
         needle = args.find.casefold()
         entries = [x for x in entries if needle in text_blob(x)]
