@@ -584,14 +584,20 @@ u64 ShadNetClient::ReportClientVersion() {
     req.set_version(BuildVersionString());
     const std::string blob = req.SerializeAsString();
 
-    std::vector<u8> payload;
-    payload.reserve(4 + blob.size());
+    // Frame length occupies four bytes. Build in one allocation rather than
+    // growing through tiny temporary vector sizes (also removes a GCC 14
+    // allocator false-positive from repeated push_back).
+    if (blob.size() > SHAD_MAX_PACKET_SIZE - 4) {
+        LOG_ERROR(ShadNet, "Serialized client version exceeds ShadNet packet limit");
+        return 0;
+    }
+    std::vector<u8> payload(4 + blob.size());
     const u32 sz = static_cast<u32>(blob.size());
-    payload.push_back(static_cast<u8>(sz));
-    payload.push_back(static_cast<u8>(sz >> 8));
-    payload.push_back(static_cast<u8>(sz >> 16));
-    payload.push_back(static_cast<u8>(sz >> 24));
-    payload.insert(payload.end(), blob.begin(), blob.end());
+    payload[0] = static_cast<u8>(sz);
+    payload[1] = static_cast<u8>(sz >> 8);
+    payload[2] = static_cast<u8>(sz >> 16);
+    payload[3] = static_cast<u8>(sz >> 24);
+    std::memcpy(payload.data() + 4, blob.data(), blob.size());
 
     return SubmitRequest(CommandType::SetClientVersion, payload);
 }
