@@ -12,6 +12,7 @@
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/memory_tracker.h"
+#include "video_core/buffer_cache/fault_ring_reuse.h"
 #include "video_core/buffer_cache/region_definitions.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -123,8 +124,9 @@ void BufferCache::TickFrame() {
     // OnSubmit runs under the scheduler's global submission lock. If every
     // GPU readback slot is still in flight, keep the pending fault scan for
     // a future submission rather than waiting (and potentially deadlocking).
-    if (fault_process_pending && fault_manager->ProcessFaultBuffer()) {
-        fault_process_pending = false;
+    if (fault_process_pending) {
+        const bool scanned = fault_manager->ProcessFaultBuffer();
+        fault_process_pending = RetainPendingGpuFaultScan(true, scanned);
     }
 }
 
