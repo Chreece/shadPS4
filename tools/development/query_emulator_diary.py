@@ -62,6 +62,12 @@ def game_keys(item: dict) -> set[str]:
 
 
 def record_key(item: dict) -> str:
+    # One physical archive may legitimately have many separately audited
+    # correction rows. Their explicit linked revisions must survive dedup.
+    if item.get("record_type") == "CORRECTION" or item.get("revision_of_sha256"):
+        stable = item.get("record_id")
+        if stable:
+            return "correction:" + str(stable)
     sha = item.get("artifact_sha256")
     if isinstance(sha, str) and len(sha) == 64:
         return "sha256:" + sha
