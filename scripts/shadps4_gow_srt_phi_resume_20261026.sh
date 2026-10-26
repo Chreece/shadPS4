@@ -57,6 +57,9 @@ REPORT="$WORK/verification"
 BINARY="$BUILD/shadps4"
 ARCHIVE="$LOGS/$TAG-build.tar.gz"
 mkdir -p "$REPORT"
+RECORDER="$REPORT/record-emulator-trial.py"
+RECORDER_SHA="1593a0f720d1e7ab0d2392746693839b67162959"
+UPSTREAM_SHA="2cdefaa1298c6e4ece6c74bd84e90f3906282d51"
 
 finish() {
     local rc=$?
@@ -87,6 +90,18 @@ finish() {
         -C "$REPORT" exit-code summary.txt \
         > /dev/null 2>&1
     echo "BUILD_UPLOAD_THIS=$ARCHIVE"
+    if [[ -f "$RECORDER" && -s "$ARCHIVE" ]]; then
+        local decision="BLOCKED"
+        [[ "$rc" -ne 0 ]] || decision="BUILD_PASS_RUNTIME_PENDING"
+        python3 -B "$RECORDER" --archive "$ARCHIVE" --game "$GAME" \
+          --source "$SOURCE_REV" --upstream "$UPSTREAM_SHA" \
+          --fix-id "invariant-srt-phi" \
+          --change "Resume failed initial Phi worktree; recover exact-version FFmpeg, build separate regression and native targets" \
+          --emulator-effect "BUILD_OR_OBSERVER_EXIT_$rc" --game-effect NOT_OBSERVED \
+          --decision "$decision" \
+          --next "Review six SRT Phi tests, native build and captured 118+2-second GoW screenshots" \
+          || echo "BUILD_DIARY_RECORDER_FAILED_INSPECT_ARCHIVE"
+    fi
     if [[ -f "$LOGS/$TAG.tar.gz" ]]; then
         echo "GAMEPLAY_UPLOAD_THIS=$LOGS/$TAG.tar.gz"
     fi
@@ -114,7 +129,24 @@ done
 }
 [[ -f "$SRC/.git" && -f "$SRC/tests/gcn/test_srt_phi.cpp" ]] || { echo "PREVIOUS_PHI_WORKTREE_NOT_FOUND"; exit 3; }
 echo "BASELINE_120_SECOND_ELF_UNTOUCHED=PASS"
-echo "STAGE=FETCH_IMMUTABLE_GENERIC_PHI_SOURCE"
+echo "STAGE=UNIVERSAL_EMULATOR_DIARY_PRECHECK"
+curl -4fsSL --retry 3 --retry-delay 2 \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/178376d393051d8026319bc0154d3b36d0fcc087/tools/development/record_emulator_trial.py" \
+  -o "$RECORDER"
+[[ "$(git hash-object "$RECORDER")" == "$RECORDER_SHA" ]] || {
+    echo "UNIVERSAL_DIARY_WRITER_HASH_MISMATCH"; exit 3;
+}
+FAILED_ARCHIVE="$LOGS/shadps4-gow-srt-phi-20261026-114629-2064584-build.tar.gz"
+if [[ -s "$FAILED_ARCHIVE" ]]; then
+    python3 -B "$RECORDER" --archive "$FAILED_ARCHIVE" --game CUSA34384 \
+      --source "$SOURCE_REV" --upstream "$UPSTREAM_SHA" \
+      --fix-id "invariant-srt-phi" \
+      --change "First Phi build stopped in CMake because matching FFmpeg prebuilt was not obtained; no compile or game run" \
+      --emulator-effect "CMAKE_FFMPEG_PREBUILT_LOOKUP_FAILED" \
+      --game-effect "NOT_OBSERVED" --decision BLOCKED \
+      --next "Reuse the exact prebuilt matching previous successful source, split test-only and emulator-only builds"
+fi
+echo "STAGE=VERIFY_EXISTING_PHI_WORKTREE"
 if ! git -C "$BASE_SOURCE" cat-file -e "$SOURCE_REV^{commit}" 2>/dev/null; then
     git -c http.version=HTTP/1.1 -C "$BASE_SOURCE" fetch -q --no-tags --no-recurse-submodules \
         https://github.com/Chreece/shadPS4.git "$SOURCE_REV"
