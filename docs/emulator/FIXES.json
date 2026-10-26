@@ -81,14 +81,15 @@
     {
       "id": "gpu-indexed-uniform-sampler",
       "subsystem": "shader-resources",
-      "status": "KEEP_GAME_NATIVE_MAIN_PORT_PENDING",
+      "status": "KEEP_PROVEN_GOT_PR77_NATIVE_RETEST_PENDING",
       "related_prs": [
-        64
+        64,
+        77
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "GoT PR64: 13 valid uniform S# bindings in seven shaders, missing terrain persists",
-      "negative_result_or_prohibition": "No fabricated sampler or dynamic-to-static S# coercion",
-      "next_test": "Native generic source port and cross-game tests"
+      "observed_game_effects": "Earlier GoT native PR64: 13 valid uniform S# binds over 7 shader hashes, 12 in later menu-visible native A/B. PR75 native full build passed but public source omitted this known-good uniform sampler path; its 12:50 test had zero uniform binding events and regressed to four identical almost-black loading screens. PR77 restores the exact generic four-word source proof and actual Valid() sampler gate, preserving GPU texture index; PR77 combined native/visual result still pending.",
+      "negative_result_or_prohibition": "Do not merge the full divergent GoT ancestry or accept a 3D/Cube claim without positive GPU typed binds. Never fabricate an S#, CPU-select a GPU texture ID, bind 3D/Cube as 2D, or call the PR75 12:50 black-screen candidate graphics-good.",
+      "next_test": "Native test PR77 on isolated incremental build; require IndexedUniformSamplerBound positive plus restored visible GoT menu/particles without context loss; keep all negative results in universal diary and run GoW cross-title regression before main promotion. 35 Color3D and four Cube slots in 27,651-record table still require capacity-safe heterogeneous image remapping if triple-full arrays exceed device descriptor budget."
     },
     {
       "id": "tiled-eager-readbacks",
