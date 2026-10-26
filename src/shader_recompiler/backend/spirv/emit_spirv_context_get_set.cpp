@@ -54,14 +54,14 @@ Id EmitGetUserData(EmitContext& ctx, IR::ScalarReg reg) {
 
 Id EmitReadConst(EmitContext& ctx, IR::Inst* inst, Id addr, Id offset) {
     const u32 flatbuf_off_dw = inst->Flags<u32>();
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled() || !ctx.profile.support_bda) {
-        return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
-    }
-    if (flatbuf_off_dw == 0) {
+    // The resource collector provisions BDA and a fault bitmap for shaders
+    // with unflattened dynamic ReadConst. Always honor that shader-local
+    // decision; the global experimental preference cannot turn valid guest
+    // memory reads into unrelated loads of user-data slot zero.
+    if (flatbuf_off_dw == 0 && ctx.info.uses_dma && ctx.profile.support_bda) {
         return ctx.OpFunctionCall(ctx.U32[1], ctx.read_const_dynamic, addr, offset);
-    } else {
-        return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
     }
+    return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
 }
 
 Id EmitReadConstBuffer(EmitContext& ctx, u32 handle, Id index) {
