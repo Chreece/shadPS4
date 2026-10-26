@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 export GIT_TERMINAL_PROMPT=0
 BASE="$HOME/projects/shadps4/GhostOfTsushima/fresh-source/got-indexed-capacity-20261024-213908"
-PIN="b5a720fec016532f323e478f3e798410c060414d"
+PIN="a117299a6b42bd8f02bc577e33329a6ddb91fa7d"
 ROOT="$HOME/projects/shadps4/GhostOfTsushima/experiments/mixed-types-$PIN"
 SOURCE="$ROOT/source"
 BUILD="$ROOT/build"
@@ -153,7 +153,7 @@ if [[ -z "$(printenv DISPLAY || true)" && -d /tmp/.X11-unix ]]; then
  [[ -z "$display" ]] || export DISPLAY=":$display"
 fi
 cat > "$CAPTURE/info/filter.py" <<'PY'
-import sys,json
+import sys,json,gzip
 from collections import Counter,deque
 from pathlib import Path
 root=Path(sys.argv[1])
@@ -163,8 +163,10 @@ patterns={"types":"GuestIndexedImageDimensions:","coherence":"GpuDescriptorTable
 "srt":"SRT dependency resolution stalled","device_loss":"DEVICE_LOST",
 "crash":"<Critical>"}
 counts=Counter();shown=Counter();last=deque(maxlen=80)
-with (root/"shader-events.txt").open("w") as out:
+with (root/"shader-events.txt").open("w") as out, gzip.open(
+        root/"game-console.log.gz","wt",compresslevel=1,encoding="utf-8") as full:
  for line in sys.stdin:
+  full.write(line)
   last.append(line[-350:])
   for label,needle in patterns.items():
    if needle in line:
