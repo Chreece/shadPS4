@@ -238,7 +238,7 @@ struct SamplerResource {
     // guest sampler table plus one out-of-range null sentinel. This is
     // the same count used by Vulkan descriptor layout, SPIR-V declarations,
     // and actual T#/S# table binding; never synthesize sampler values.
-    u32 NumBindings(const auto& info) const noexcept {
+    u32 NumBindings(const auto&) const noexcept {
         return is_guest_indexed ? indexed_guest_entries + 1u : 1u;
     }
 };
