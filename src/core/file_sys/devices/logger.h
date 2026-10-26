@@ -11,7 +11,9 @@
 
 namespace Core::Devices {
 
-class Logger final : BaseDevice {
+// Logger is a real filesystem device. Public inheritance is required for
+// type-safe shared_ptr<Logger> to shared_ptr<BaseDevice> ownership conversion.
+class Logger final : public BaseDevice {
     std::string prefix;
     bool is_err;
 
