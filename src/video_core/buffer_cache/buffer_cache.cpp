@@ -120,8 +120,11 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
 BufferCache::~BufferCache() = default;
 
 void BufferCache::TickFrame() {
-    if (std::exchange(fault_process_pending, false)) {
-        fault_manager->ProcessFaultBuffer();
+    // OnSubmit runs under the scheduler's global submission lock. If every
+    // GPU readback slot is still in flight, keep the pending fault scan for
+    // a future submission rather than waiting (and potentially deadlocking).
+    if (fault_process_pending && fault_manager->ProcessFaultBuffer()) {
+        fault_process_pending = false;
     }
 }
 
