@@ -231,7 +231,8 @@ Id EmitImageSampleImplicitLodIndexed(
     // Only implicit LOD with no offset currently uses the dimension dispatch;
     // unsupported variants keep their historical 2D/null path, never a fake
     // 2D reinterpretation of a 3D/cube Vulkan image view.
-    if (inst->Flags<IR::TextureInstInfo>().has_offset) {
+    if (!texture.is_guest_mixed_indexed ||
+        inst->Flags<IR::TextureInstInfo>().has_offset) {
         const Id sample = emit_sample(texture.id, texture.image_type, coords,
                                       texture.view_type);
         return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
