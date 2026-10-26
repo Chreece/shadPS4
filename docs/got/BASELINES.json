@@ -68,6 +68,16 @@
       "pr": "https://github.com/Chreece/shadPS4/pull/67",
       "parent_source_sha": "1447a450ca062fa98595ceda766604758a155fe9",
       "expected_diagnostic_source_sha": "718188fa69808844ae674638244b4292b8889ced"
+    },
+    {
+      "id": "PR-68",
+      "kind": "Precise GPU linear-image downloads forward-port to main",
+      "status": "merged-main-native-main-test-pending",
+      "pr": "https://github.com/Chreece/shadPS4/pull/68",
+      "sha": "b8db275e6605b4183aa27c445bb39661d991cdd1",
+      "source_blob_main_preimage": "4d4f92b37859fa98b1018162ab2860ca827e7e70",
+      "evidence": "got-precise-linear-images-120s-20261025-153355.tar.gz",
+      "note": "Behavior native GoT proven; different public main engine copy path still awaits host validation"
     }
   ],
   "rejected": [
@@ -98,5 +108,5 @@
     "preserve_SSH"
   ],
   "next_root_cause": "SRT dependency resolution / GPU-dynamic resource addresses; no proven terrain fix yet",
-  "latest_merged_generic_main_fix": "8869651a2b3b1943fc7ab077074bdfbe5875a141"
+  "latest_merged_generic_main_fix": "b8db275e6605b4183aa27c445bb39661d991cdd1"
 }
