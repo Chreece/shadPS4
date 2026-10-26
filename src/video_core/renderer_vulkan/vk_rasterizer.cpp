@@ -940,7 +940,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     LOG_INFO(Render_Vulkan,
                              "GpuDescriptorTableCpuCoherence: kind=image stage={:#x} "
                              "addr={:#x} bytes={} entries={} stride={}",
-                             stage.pgm_hash, source.base_address, guest_size,
+                             stage.pgm_hash, static_cast<u64>(source.base_address), guest_size,
                              count - 1u, record_stride);
                 }
             }
@@ -1183,7 +1183,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     LOG_INFO(Render_Vulkan,
                              "GpuDescriptorTableCpuCoherence: kind=sampler stage={:#x} "
                              "addr={:#x} bytes={} entries={} stride={}",
-                             stage.pgm_hash, source.base_address, bytes,
+                             stage.pgm_hash, static_cast<u64>(source.base_address), bytes,
                              count - 1u, record_stride);
                 }
             }
