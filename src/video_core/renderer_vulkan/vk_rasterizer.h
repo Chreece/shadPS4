@@ -84,6 +84,9 @@ public:
 
     u64 Flush();
     void Finish();
+    // Honor the guest PM4 ACQUIRE_MEM GPU memory-ordering command without
+    // waiting for a host semaphore or the GPU to finish.
+    void AcquireGuestMemory(u32 coher_cntl);
     void OnSubmit();
     void OnFence();
 
@@ -150,6 +153,7 @@ private:
     Common::SharedFirstMutex mapped_ranges_mutex;
     PipelineCache pipeline_cache;
     const bool host_markers_enabled;
+    u64 pm4_acquire_memory_barrier_count{};
     const bool guest_markers_enabled;
 
     struct ImageBinding {
