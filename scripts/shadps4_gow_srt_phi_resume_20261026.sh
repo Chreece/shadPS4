@@ -1,0 +1,286 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Build/test invariant SRT Phi in an isolated worktree, then run the universal
+# native GoW observer; never overwrite the 120-second baseline or live profile.
+set -Eeuo pipefail
+umask 077
+export GIT_TERMINAL_PROMPT=0
+
+ROOT="$HOME/projects/shadps4"
+TESTS="$ROOT/GodOfWarRagnarok/tests"
+LOGS="$ROOT/logs"
+OLD="$TESTS/gow-upstream-got-20261025-145442-451241"
+BASE_SOURCE="$OLD/source"
+BASE_ELF="$OLD/build/shadps4"
+BASE_SHA="7604bae00c78b72e163138327f61a2f92bf549ac66446487d1ab7370a2f9b4d1"
+PROTECTED="$ROOT/GodOfWarRagnarok/build/shadps4"
+PROTECTED_SHA="8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e"
+SOURCE_REV="5bde94974bdf59973568ece89b308982b9aafebe"
+RUNNER_REV="448c20c756accf1b9148acde0622bf7db4a48b63"
+RUNNER_BLOB="223a8e6ef7916e06bfd4f0ccefc90c92d5b097a0"
+mkdir -p "$LOGS" "$TESTS"
+
+if (( $# == 0 )) || [[ "$1" != "--worker" ]]; then
+    [[ $# -le 1 ]] || { echo "USAGE: bash $0 [game-id-or-path]" >&2; exit 2; }
+    GAME="CUSA34384"
+    if (( $# == 1 )); then GAME="$1"; fi
+    [[ -n "$GAME" && "$GAME" != -* && "$GAME" != *$'\n'* ]] || exit 2
+    command -v nohup >/dev/null && command -v setsid >/dev/null || exit 2
+    TAG="shadps4-gow-srt-phi-$(date +%Y%m%d-%H%M%S)-$$"
+    LOG="$LOGS/$TAG.log"
+    (set -C; : > "$LOG") || { echo "LOG_ALREADY_EXISTS=$LOG" >&2; exit 2; }
+    nohup setsid -w bash "$0" --worker "$TAG" "$GAME" </dev/null >"$LOG" 2>&1 &
+    PID=$!
+    disown "$PID" 2>/dev/null || true
+    echo "TEST=GENERIC_SRT_INVARIANT_PHI"
+    echo "SOURCE=$SOURCE_REV"
+    echo "WORKER_PID=$PID"
+    echo "MONITOR=tail -f '$LOG'"
+    echo "BUILD_ARCHIVE=$LOGS/$TAG-build.tar.gz"
+    echo "RUNTIME_ARCHIVE=$LOGS/$TAG.tar.gz"
+    echo "GAME=$GAME"
+    echo "SSH_AND_PROTECTED_BINARIES=UNCHANGED"
+    exit 0
+fi
+
+[[ $# -eq 3 ]] || exit 2
+TAG="$2"
+GAME="$3"
+[[ "$TAG" =~ ^shadps4-gow-srt-phi-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || exit 2
+[[ -n "$GAME" && "$GAME" != -* && "$GAME" != *$'\n'* ]] || exit 2
+WORK="$TESTS/$TAG"
+SRC="$TESTS/shadps4-gow-srt-phi-20261026-114629-2064584/source"
+TEST_BUILD="$WORK/build-tests"
+BUILD="$WORK/build"
+REPORT="$WORK/verification"
+BINARY="$BUILD/shadps4"
+ARCHIVE="$LOGS/$TAG-build.tar.gz"
+mkdir -p "$REPORT"
+
+finish() {
+    local rc=$?
+    trap - EXIT
+    set +e
+    echo "WORKER_EXIT=$rc"
+    if [[ -f "$BASE_ELF" ]]; then
+        local sha
+        sha="$(sha256sum "$BASE_ELF" | cut -d' ' -f1)"
+        echo "STABLE_BASELINE_AFTER=$sha"
+        if [[ "$sha" != "$BASE_SHA" ]]; then rc=86; echo "ERROR_STABLE_BASELINE_MODIFIED"; fi
+    fi
+    if [[ -f "$PROTECTED" ]]; then
+        local sha
+        sha="$(sha256sum "$PROTECTED" | cut -d' ' -f1)"
+        echo "PROTECTED_BINARY_AFTER=$sha"
+        if [[ "$sha" != "$PROTECTED_SHA" ]]; then rc=87; echo "ERROR_PROTECTED_BINARY_MODIFIED"; fi
+    fi
+    printf '%s\n' "$rc" > "$REPORT/exit-code"
+    {
+        echo "SOURCE_PIN=$SOURCE_REV"
+        echo "STABLE_BASE_SHA=$BASE_SHA"
+        echo "RUNTIME_ARCHIVE=$LOGS/$TAG.tar.gz"
+        [[ ! -f "$BINARY" ]] || sha256sum "$BINARY"
+        [[ ! -f "$REPORT/ctest.txt" ]] || cat "$REPORT/ctest.txt"
+    } > "$REPORT/summary.txt"
+    tar -czf "$ARCHIVE" -C "$LOGS" "$TAG.log" \
+        -C "$REPORT" exit-code summary.txt \
+        > /dev/null 2>&1
+    echo "BUILD_UPLOAD_THIS=$ARCHIVE"
+    if [[ -f "$LOGS/$TAG.tar.gz" ]]; then
+        echo "GAMEPLAY_UPLOAD_THIS=$LOGS/$TAG.tar.gz"
+    fi
+    echo "SSH_SESSION=OPEN"
+    exit "$rc"
+}
+trap finish EXIT
+
+exec 9>"$LOGS/gow-upstream-got-build.lock"
+flock -n 9 || { echo "ANOTHER_GOW_GOT_BUILD_ACTIVE"; exit 3; }
+exec 8>"$LOGS/shadps4-gow-srt-phi.lock"
+flock -n 8 || { echo "ANOTHER_SRT_PHI_BUILD_ACTIVE"; exit 3; }
+
+for command in git cmake ninja ctest python3 curl flock tar sha256sum nice timeout ldd; do
+    command -v "$command" >/dev/null || { echo "MISSING_COMMAND=$command"; exit 3; }
+done
+[[ -d "$BASE_SOURCE" && -x "$BASE_ELF" ]] || {
+    echo "MISSING_RETAINED_120_SECOND_SOURCE_OR_ELF"; exit 3;
+}
+[[ "$(sha256sum "$BASE_ELF" | cut -d' ' -f1)" == "$BASE_SHA" ]] || {
+    echo "STABLE_120_SECOND_CANDIDATE_HASH_MISMATCH_NO_CHANGE"; exit 3;
+}
+[[ ! -f "$PROTECTED" || "$(sha256sum "$PROTECTED" | cut -d' ' -f1)" == "$PROTECTED_SHA" ]] || {
+    echo "PROTECTED_ORIGINAL_HASH_MISMATCH_NO_CHANGE"; exit 3;
+}
+[[ -f "$SRC/.git" && -f "$SRC/tests/gcn/test_srt_phi.cpp" ]] || { echo "PREVIOUS_PHI_WORKTREE_NOT_FOUND"; exit 3; }
+echo "BASELINE_120_SECOND_ELF_UNTOUCHED=PASS"
+echo "STAGE=FETCH_IMMUTABLE_GENERIC_PHI_SOURCE"
+if ! git -C "$BASE_SOURCE" cat-file -e "$SOURCE_REV^{commit}" 2>/dev/null; then
+    git -c http.version=HTTP/1.1 -C "$BASE_SOURCE" fetch -q --no-tags --no-recurse-submodules \
+        https://github.com/Chreece/shadPS4.git "$SOURCE_REV"
+fi
+git -C "$BASE_SOURCE" cat-file -e "$SOURCE_REV^{commit}"
+[[ -z "$(git -C "$SRC" status --porcelain --untracked-files=no)" ]] || { echo "SOURCE_WORKTREE_HAS_TRACKED_CHANGES"; exit 4; }
+[[ "$(git -C "$SRC" rev-parse HEAD)" == "$SOURCE_REV" ]] || exit 4
+echo "SOURCE_COMMIT_VERIFIED=$SOURCE_REV"
+
+echo "STAGE=REUSE_FFMPEG_FROM_PROVEN_BASELINE"
+[[ -f "$SRC/externals/ffmpeg-core/CMakeLists.txt" ]] || {
+    echo "CHECKPOINT_FFMPEG_SUBMODULE_MISSING"; exit 4;
+}
+FFMPEG_COMMIT="$(git -C "$SRC/externals/ffmpeg-core" rev-parse HEAD)"
+FFMPEG_SHORT="$(git -C "$SRC/externals/ffmpeg-core" rev-parse --short HEAD)"
+BASE_FFMPEG_COMMIT="$(git -C "$BASE_SOURCE/externals/ffmpeg-core" rev-parse HEAD)"
+[[ "$FFMPEG_COMMIT" == "$BASE_FFMPEG_COMMIT" ]] || {
+    echo "BASELINE_FFMPEG_COMMIT_DIFFERS_NO_CACHE_REUSE"; exit 4;
+}
+FFMPEG_ASSET="$WORK/ffmpeg-$FFMPEG_SHORT.zip"
+BASE_ASSET="$OLD/build/externals/ffmpeg-$FFMPEG_SHORT.zip"
+BASE_LIBS="$OLD/build/externals/ffmpeg-$FFMPEG_SHORT/lib"
+python3 - "$BASE_ASSET" "$BASE_LIBS" "$FFMPEG_ASSET" <<'PYFF'
+from pathlib import Path, PurePosixPath
+import hashlib, sys, zipfile
+old_zip, libs, target = map(Path, sys.argv[1:])
+names = ["lib"+n+".a" for n in ("avformat","avcodec","swscale","avutil","avfilter","swresample")]
+def verify(archive):
+    with zipfile.ZipFile(archive) as z:
+        listing = set(z.namelist())
+        assert all(n in listing and z.getinfo(n).file_size > 4096 for n in names)
+        assert all(not n.startswith("/") and ".." not in PurePosixPath(n).parts for n in listing)
+        assert z.testzip() is None
+if old_zip.is_file():
+    verify(old_zip)
+    target.write_bytes(old_zip.read_bytes())
+    origin="original_matching_ffmpeg_prebuilt_zip"
+elif all((libs/n).is_file() and not (libs/n).is_symlink() for n in names):
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_STORED) as z:
+        for n in names:
+            with (libs/n).open("rb") as fd:
+                assert fd.read(8) in (b"!<arch>\n",b"!<thin>\n"),n
+            z.write(libs/n,n)
+    verify(target)
+    origin="original_matching_ffmpeg_static_archives"
+else:
+    origin="cache_missing"
+if target.exists():
+    print("FFMPEG_REUSED_FROM="+origin)
+    print("FFMPEG_PREBUILT_SHA256="+hashlib.sha256(target.read_bytes()).hexdigest())
+else:
+    print("FFMPEG_CACHE_MISSING_WILL_FETCH_OFFICIAL_RELEASE")
+PYFF
+if [[ ! -s "$FFMPEG_ASSET" ]]; then
+    echo "STAGE=FETCH_OFFICIAL_FFMPEG_RELEASE_IPV4"
+    curl -4fsSL --retry 3 --retry-delay 2 \
+        "https://github.com/shadps4-emu/ext-ffmpeg-core/releases/download/$FFMPEG_SHORT/ffmpeg-linux-x64.zip" \
+        -o "$FFMPEG_ASSET" || {
+        echo "NO_CACHED_EXACT_FFMPEG_ARCHIVES_AND_OFFICIAL_RELEASE_UNAVAILABLE"; exit 4;
+    }
+fi
+python3 - "$FFMPEG_ASSET" <<'PYZIP'
+import sys,zipfile
+names={"lib"+x+".a" for x in ("avformat","avcodec","swscale","avutil","avfilter","swresample")}
+with zipfile.ZipFile(sys.argv[1]) as z:
+    assert names.issubset(z.namelist()) and z.testzip() is None
+print("FFMPEG_ASSET_VALIDATED",flush=True)
+PYZIP
+for build in "$BUILD" "$TEST_BUILD"; do
+    mkdir -p "$build/externals"
+    cp "$FFMPEG_ASSET" "$build/externals/ffmpeg-$FFMPEG_SHORT.zip"
+done
+echo "STAGE=PREPARE_EXACT_GOOGLETEST_TAG"
+GTEST_SRC="$WORK/googletest-v1.17.0"
+if [[ ! -f "$GTEST_SRC/CMakeLists.txt" ]]; then
+    git -c http.version=HTTP/1.1 clone --quiet --depth 1 --branch v1.17.0 \
+        https://github.com/google/googletest.git "$GTEST_SRC"
+fi
+git -C "$GTEST_SRC" describe --tags --exact-match | grep -Fxq v1.17.0 || {
+    echo "GOOGLETEST_NOT_TAG_V1_17_0"; exit 5;
+}
+echo "STAGE=CONFIGURE_TEST_ONLY"
+cmake -S "$SRC" -B "$TEST_BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    -DENABLE_TESTS=ON -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="$GTEST_SRC"
+echo "STAGE=BUILD_TEST_ONLY"
+nice -n 10 cmake --build "$TEST_BUILD" --target shadps4_gcn_test --parallel 2
+[[ -x "$TEST_BUILD/tests/shadps4_gcn_test" ]] || {
+    echo "GCN_TEST_BINARY_NOT_BUILT"; exit 6;
+}
+echo "STAGE=RUN_SIX_PHI_REGRESSIONS"
+ctest --test-dir "$TEST_BUILD" -N -R '^SrtInvariantPhi\.' > "$REPORT/ctest-list.txt"
+grep -Eq 'Total Tests: 6([[:space:]]|$)' "$REPORT/ctest-list.txt" || {
+    cat "$REPORT/ctest-list.txt"; echo "SIX_EXPECTED_PHI_TESTS_NOT_FOUND"; exit 6;
+}
+ctest --test-dir "$TEST_BUILD" --output-on-failure --no-tests=error \
+    -R '^SrtInvariantPhi\.' | tee "$REPORT/ctest.txt"
+echo "PHI_REGRESSION_TESTS=PASS"
+echo "STAGE=CONFIGURE_EMULATOR_ONLY"
+cmake -S "$SRC" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF
+echo "STAGE=BUILD_UNIVERSAL_NATIVE_EMULATOR"
+nice -n 10 cmake --build "$BUILD" --target shadps4 --parallel 2
+[[ -x "$BINARY" ]] || { echo "NATIVE_BINARY_NOT_LINKED"; exit 7; }
+"$BINARY" --help > "$REPORT/native-help.txt" 2>&1 || exit 5
+! grep -Fq -- '--cpu-id-mode' "$REPORT/native-help.txt" || {
+    echo "DYNAMORIO_COMPATIBILITY_FLAG_PRESENT"; exit 5;
+}
+ldd "$BINARY" > "$REPORT/ldd.txt"
+! grep -q 'not found' "$REPORT/ldd.txt" || {
+    echo "MISSING_NATIVE_LIBRARY"; exit 5;
+}
+CANDIDATE_SHA="$(sha256sum "$BINARY" | cut -d' ' -f1)"
+echo "NEW_NATIVE_CANDIDATE_SHA=$CANDIDATE_SHA"
+echo "STAGE=INSTALL_PINNED_EXISTING_UNIVERSAL_118_PLUS_2_OBSERVER"
+RUNNER_ORIG="$WORK/pinned-gpu-headroom-observer.sh"
+RUNNER="$WORK/phi-observer.sh"
+curl -4fsSL --retry 3 --retry-delay 2 \
+    "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_REV/scripts/shadps4_gpu_headroom_ab_20261026.sh" \
+    -o "$RUNNER_ORIG"
+[[ "$(git hash-object "$RUNNER_ORIG")" == "$RUNNER_BLOB" ]] || {
+    echo "OBSERVER_TEMPLATE_HASH_MISMATCH_NO_GAME"; exit 6;
+}
+python3 - "$RUNNER_ORIG" "$RUNNER" "$BINARY" "$CANDIDATE_SHA" "$SOURCE_REV" "$SRC" <<'PY'
+from pathlib import Path
+import sys
+template, dest, binary, checksum, source_rev, source_dir = sys.argv[1:]
+data = Path(template).read_text()
+def exactly_once(old, new):
+    global data
+    assert data.count(old) == 1, f"Expected exactly one launcher field: {old[:75]}"
+    data = data.replace(old, new)
+exactly_once(
+    'BIN="$ROOT/GodOfWarRagnarok/tests/gow-upstream-got-20261025-145442-451241/build/shadps4"',
+    'BIN="' + binary + '"')
+exactly_once(
+    'EXPECTED=7604bae00c78b72e163138327f61a2f92bf549ac66446487d1ab7370a2f9b4d1',
+    'EXPECTED=' + checksum)
+exactly_once(
+    'SOURCE_REV="803bb428731be794bdc44e38b56313d030a7403a"',
+    'SOURCE_REV="' + source_rev + '"')
+exactly_once(
+    'SRC="$ROOT/GodOfWarRagnarok/tests/gow-upstream-got-20261025-145442-451241/source"',
+    'SRC="' + source_dir + '"')
+assert 'shadps4-gpu-headroom-ab-' in data
+data = data.replace('shadps4-gpu-headroom-ab-', 'shadps4-gow-srt-phi-')
+exactly_once('--fix-id gpu-device-lost-after-first-frame',
+             '--fix-id generic-invariant-srt-phi-and-pre-discovery-folding')
+exactly_once(
+    'Same exact native emulator binary, host Ollama VRAM headroom A/B only; 11/21/26s frames and read-only kernel faults',
+    'New isolated native build; invariant SRT Phi codegen plus early Phi simplification; pinned VRAM-headroom observer')
+exactly_once(
+    'Compare whether GPU context lost persists with additional free VRAM; inspect first-frame screenshots, amdgpu kernel events and real resource lifetime before general renderer changes',
+    'Compare GoW screenshots, dynamic SRT offset diagnostics and black-screen behavior against the previous stable 120-second run')
+exactly_once('--pr 73 --pr 71', '--pr 73')
+Path(dest).write_text(data)
+PY
+bash -n "$RUNNER"
+echo "NATIVE_FLAGS=FULLSCREEN_AND_FPS_ONLY"
+echo "VRAM=UNLOAD_OLLAMA_IF_REQUIRED_AND_RESTORE_AFTER_GAME"
+echo "EXISTING_SAVES_ESDE_SSH=UNCHANGED"
+echo "STAGE=118_PLUS_2_SECOND_NATIVE_RAGNAROK_GAMEPLAY"
+# Call the original verified observer worker directly: its source audits,
+# isolated user profile, screenshot schedule and diary append all remain active.
+# It owns only the game process group; the outer SSH session stays open.
+set +e
+bash "$RUNNER" --worker "$TAG" "$GAME"
+rc=$?
+set -e
+echo "NATIVE_GAMEPLAY_OBSERVER_EXIT=$rc"
+exit "$rc"
