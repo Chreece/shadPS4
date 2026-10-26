@@ -5,6 +5,8 @@
 
 #include "shader_recompiler/ir/microinstruction.h"
 #include "shader_recompiler/ir/passes/srt_phi.h"
+#include "shader_recompiler/ir/passes/srt_dma_policy.h"
+#include "video_core/buffer_cache/bda_address_space.h"
 
 using namespace Shader;
 
@@ -77,4 +79,48 @@ TEST(SrtInvariantPhi, NestedPhiCycleCannotBeFlattenedOnHost) {
     EXPECT_TRUE(Optimization::ResolveInvariantSrtPhi(IR::Value{&first}, gvn).IsEmpty());
     first.ClearArgs();
     second.ClearArgs();
+}
+
+TEST(SrtDynamicDma, OnDemandGpuReadForUnflattenedResource) {
+    constexpr Optimization::SrtDmaPolicy policy{true, true};
+    static_assert(policy.NeedsGpuRead());
+    EXPECT_TRUE(policy.NeedsGpuRead());
+    EXPECT_FALSE(policy.IsUnsupported());
+}
+
+TEST(SrtDynamicDma, FlattenedReadNeverRequiresGpuAddress) {
+    constexpr Optimization::SrtDmaPolicy policy{false, true};
+    static_assert(!policy.NeedsGpuRead());
+    EXPECT_FALSE(policy.NeedsGpuRead());
+    EXPECT_FALSE(policy.IsUnsupported());
+}
+
+TEST(SrtDynamicDma, MissingBdaIsDiagnosableNotSilentlyEnabled) {
+    constexpr Optimization::SrtDmaPolicy policy{true, false};
+    static_assert(policy.IsUnsupported());
+    EXPECT_FALSE(policy.NeedsGpuRead());
+    EXPECT_TRUE(policy.IsUnsupported());
+}
+
+TEST(SrtDynamicDma, DisabledBdaWithoutDynamicLoadsNeedsNoResources) {
+    constexpr Optimization::SrtDmaPolicy policy{false, false};
+    static_assert(!policy.IsUnsupported());
+    EXPECT_FALSE(policy.NeedsGpuRead());
+    EXPECT_FALSE(policy.IsUnsupported());
+}
+
+TEST(SrtDynamicDma, GuestPageTableBoundsIncludeLastValidDword) {
+    using VideoCore::GuestGpuAddressLimit;
+    EXPECT_TRUE(VideoCore::IsGuestGpuDwordInRange(0));
+    EXPECT_TRUE(VideoCore::IsGuestGpuDwordInRange(GuestGpuAddressLimit - 4));
+    EXPECT_FALSE(VideoCore::IsGuestGpuDwordInRange(GuestGpuAddressLimit - 3));
+    EXPECT_FALSE(VideoCore::IsGuestGpuDwordInRange(GuestGpuAddressLimit));
+}
+
+TEST(SrtDynamicDma, LargeGuestAddressNeverWrapsIntoValidPage) {
+    using VideoCore::GuestGpuAddressLimit;
+    static_assert(!VideoCore::IsGuestGpuDwordInRange(1ULL << 48));
+    EXPECT_FALSE(VideoCore::IsGuestGpuDwordInRange(1ULL << 48));
+    EXPECT_FALSE(VideoCore::IsGuestGpuDwordInRange(0xFFFFFFFFFFFFULL));
+    EXPECT_FALSE(VideoCore::IsGuestGpuDwordInRange(GuestGpuAddressLimit + 1));
 }
