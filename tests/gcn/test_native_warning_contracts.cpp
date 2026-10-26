@@ -13,6 +13,7 @@
 #include "core/libraries/np/np_types.h"
 #include "video_core/buffer_cache/fault_list_limits.h"
 #include "video_core/buffer_cache/fault_ring_reuse.h"
+#include "video_core/renderer_vulkan/vk_pm4_acquire_memory.h"
 
 TEST(NativeWarningContracts, FullLengthNpIdNeedsNoInlineNull) {
     Libraries::Np::OrbisNpOnlineId id{};
@@ -119,4 +120,38 @@ TEST(GpuFaultRingReuse, CompletedGpuCallbackReleasesAndRetriesScan) {
     ASSERT_TRUE(VideoCore::CanReuseGpuFaultReadbackSlot(slot_gpu_tick));
     has_pending_fault_scan = VideoCore::RetainPendingGpuFaultScan(true, true);
     EXPECT_FALSE(has_pending_fault_scan);
+}
+
+TEST(Pm4AcquireMemBarrier, PreviousGpuCommandsMustFinishTheirWrites) {
+    const auto barrier = Vulkan::MakePm4AcquireMemoryBarrier();
+    EXPECT_EQ(barrier.srcStageMask,
+              vk::PipelineStageFlags2{vk::PipelineStageFlagBits2::eAllCommands});
+    EXPECT_EQ(barrier.srcAccessMask,
+              vk::AccessFlags2{vk::AccessFlagBits2::eMemoryWrite});
+}
+
+TEST(Pm4AcquireMemBarrier, SubsequentGpuReadsObservePreviousWrites) {
+    const auto barrier = Vulkan::MakePm4AcquireMemoryBarrier();
+    EXPECT_EQ(barrier.dstStageMask,
+              vk::PipelineStageFlags2{vk::PipelineStageFlagBits2::eAllCommands});
+    EXPECT_TRUE(static_cast<bool>(
+        barrier.dstAccessMask & vk::AccessFlagBits2::eMemoryRead));
+}
+
+TEST(Pm4AcquireMemBarrier, SubsequentGpuWritesCannotPassAcquire) {
+    const auto barrier = Vulkan::MakePm4AcquireMemoryBarrier();
+    EXPECT_TRUE(static_cast<bool>(
+        barrier.dstAccessMask & vk::AccessFlagBits2::eMemoryWrite));
+}
+
+TEST(Pm4AcquireMemBarrier, DependencyNeedsNoHostSideWaitOrPerTitleOverrides) {
+    const auto barrier = Vulkan::MakePm4AcquireMemoryBarrier();
+    EXPECT_EQ(barrier.srcStageMask,
+              vk::PipelineStageFlags2{vk::PipelineStageFlagBits2::eAllCommands});
+    EXPECT_EQ(barrier.dstStageMask,
+              vk::PipelineStageFlags2{vk::PipelineStageFlagBits2::eAllCommands});
+    EXPECT_FALSE(static_cast<bool>(
+        barrier.srcStageMask & vk::PipelineStageFlagBits2::eHost));
+    EXPECT_FALSE(static_cast<bool>(
+        barrier.dstStageMask & vk::PipelineStageFlagBits2::eHost));
 }
