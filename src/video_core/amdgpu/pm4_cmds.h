@@ -1215,6 +1215,36 @@ struct PM4CmdMemSemaphore {
     }
 };
 
+enum class PredicationOp : u32 {
+    Clear = 0,
+    Zpass = 1,
+    PrimCount = 2,
+    Bool64 = 3,
+    Bool32 = 4,
+};
+
+enum class PredicationHint : u32 {
+    Wait = 0,
+    NowaitDraw = 1,
+};
+
+struct PM4CmdSetPredication {
+    PM4Type3Header header;
+    u32 start_addr_lo;
+    union {
+        u32 pred_properties;
+        BitField<0, 8, u32> start_addr_hi;
+        BitField<8, 1, u32> draw_visible;
+        BitField<12, 2, PredicationHint> hint;
+        BitField<16, 3, PredicationOp> pred_op;
+        BitField<31, 1, u32> continue_predication;
+    };
+
+    VAddr Address() const {
+        return (u64(start_addr_hi.Value()) << 32) | (u64(start_addr_lo) & 0xfffffff0ULL);
+    }
+};
+
 struct PM4CmdCondExec {
     PM4Type3Header header;
     union {

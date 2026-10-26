@@ -118,6 +118,39 @@ void OcclusionQuery::Dump(VAddr address, u32 pipes) {
     Queue(address, pipes, false);
 }
 
+std::optional<bool> OcclusionQuery::EvaluateZpass(VAddr address, u32 pipes, bool wait) {
+    if (address == 0 || pipes == 0 || pipes > 16) {
+        return std::nullopt;
+    }
+
+    if (wait) {
+        Drain();
+    } else {
+        std::scoped_lock lock{state->pending_mutex};
+        if (state->pending != 0) {
+            return std::nullopt;
+        }
+    }
+
+    auto* memory = Core::Memory::Instance();
+    const u64 result_size = u64(pipes) * sizeof(u64) * 2;
+    if (!memory->IsValidMapping(address, result_size)) {
+        return std::nullopt;
+    }
+
+    const auto* results = reinterpret_cast<const u64*>(address);
+    bool visible = false;
+    for (u32 pipe = 0; pipe < pipes; ++pipe) {
+        const u64 begin = results[pipe * 2];
+        const u64 end = results[pipe * 2 + 1];
+        if ((begin & end & Counter::Valid) == 0) {
+            return std::nullopt;
+        }
+        visible |= (begin & Counter::Mask) != (end & Counter::Mask);
+    }
+    return visible;
+}
+
 void OcclusionQuery::Queue(VAddr address, u32 pipes, bool reset) {
     auto slots = std::move(active_queries);
     active_queries.clear();
