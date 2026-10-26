@@ -96,7 +96,16 @@ finish() {
         -C "$REPORT" . \
         > /dev/null 2>&1
     echo "BUILD_UPLOAD_THIS=$ARCHIVE"
-    if [[ -f "$RECORDER" && -s "$ARCHIVE" ]]; then
+    # Pre-build lock contention is a real failed trial too. The normal
+    # recorder is downloaded only after source prechecks, so recover its
+    # exact SHA-pinned copy here when an earlier stage exits.
+    if [[ ! -s "$RECORDER" ]]; then
+        curl -4fsSL --retry 2 --retry-delay 1 \
+          "https://raw.githubusercontent.com/Chreece/shadPS4/178376d393051d8026319bc0154d3b36d0fcc087/tools/development/record_emulator_trial.py" \
+          -o "$RECORDER" || echo "PINNED_DIARY_RECORDER_UNAVAILABLE"
+    fi
+    if [[ -f "$RECORDER" && -s "$ARCHIVE" &&
+          "$(git hash-object "$RECORDER")" == "$RECORDER_SHA" ]]; then
         local decision="BLOCKED"
         [[ "$rc" -ne 0 ]] || decision="BUILD_PASS_RUNTIME_PENDING"
         python3 -B "$RECORDER" --archive "$ARCHIVE" --game "$GAME" \
@@ -116,10 +125,43 @@ finish() {
 }
 trap finish EXIT
 
+# Two global build locks serialize native GoW/GoT revisions; never bypass
+# them, delete their files or signal competing build/game processes.
+# Acquire BOTH only if immediately available. If one is busy, release any
+# partial acquisition before retrying: this prevents opposite-order deadlocks.
 exec 9>"$LOGS/gow-upstream-got-build.lock"
-flock -n 9 || { echo "ANOTHER_GOW_GOT_BUILD_ACTIVE"; exit 3; }
 exec 8>"$LOGS/shadps4-gow-srt-phi.lock"
-flock -n 8 || { echo "ANOTHER_SRT_PHI_BUILD_ACTIVE"; exit 3; }
+# Prevent duplicate queued uniform-lane workers from compiling the same ELF.
+exec 7>"$LOGS/shadps4-srt-uniformlane-queue.lock"
+flock -n 7 || {
+    echo "ANOTHER_UNIFORMLANE_RUN_ALREADY_QUEUED_OR_RUNNING"; exit 3;
+}
+echo "BUILD_LOCK_POLICY=SERIALIZED_NO_KILLS_NO_BYPASS"
+LOCK_ACQUIRED=NO
+LOCK_WAIT_ATTEMPTS=240
+for (( attempt=1; attempt<=LOCK_WAIT_ATTEMPTS; ++attempt )); do
+    if flock -n 9; then
+        if flock -n 8; then
+            LOCK_ACQUIRED=YES
+            break
+        fi
+        # Never hold lock 9 while waiting on lock 8.
+        flock -u 9
+        busy_lock="shadps4-gow-srt-phi.lock"
+    else
+        busy_lock="gow-upstream-got-build.lock"
+    fi
+    if (( attempt == 1 || attempt % 6 == 0 )); then
+        echo "BUILD_LOCK_WAITING_FOR=$busy_lock RETRY=$attempt/$LOCK_WAIT_ATTEMPTS"
+        echo "OTHER_BUILD_PRESERVED=YES; NOTHING_KILLED=YES"
+    fi
+    sleep 10
+done
+[[ "$LOCK_ACQUIRED" == YES ]] || {
+    echo "BUILD_LOCK_TIMEOUT_NO_COMPILATION_OR_GAME"; exit 3;
+}
+echo "BOTH_BUILD_LOCKS_ACQUIRED=YES"
+echo "STAGE=RESUME_CACHED_UNIFORM_LANE_BUILD"
 
 for command in git cmake ninja ctest python3 curl flock tar sha256sum nice timeout ldd cmp; do
     command -v "$command" >/dev/null || { echo "MISSING_COMMAND=$command"; exit 3; }
@@ -172,6 +214,22 @@ curl -4fsSL --retry 3 --retry-delay 2 \
 [[ "$(git hash-object "$RECORDER")" == "$RECORDER_SHA" ]] || {
     echo "UNIVERSAL_DIARY_WRITER_HASH_MISMATCH"; exit 3;
 }
+# The 17:55 uniform-lane attempt ended before compilation because another
+# GoW/GoT worker held the shared build lock. The old launcher did not
+# download the diary recorder before the lock check. Append that real
+# failed trial now; the recorder deduplicates the immutable archive.
+PRIOR_LOCK_BLOCKED_ARCHIVE="$LOGS/shadps4-srt-uniformlane-20261026-175504-1867515-build.tar.gz"
+if [[ -s "$PRIOR_LOCK_BLOCKED_ARCHIVE" ]]; then
+    python3 -B "$RECORDER" --archive "$PRIOR_LOCK_BLOCKED_ARCHIVE" \
+      --game "$GAME" --source "$SOURCE_REV" --upstream "$UPSTREAM_SHA" \
+      --fix-id "uniform-srt-readfirstlane-host-offsets" \
+      --change "Prior attempt rejected by active shared GoW/GoT build lock before test compilation" \
+      --emulator-effect "ANOTHER_GOW_GOT_BUILD_ACTIVE_NO_COMPILATION" \
+      --game-effect "NOT_OBSERVED" --decision BLOCKED \
+      --next "Acquire both shared build locks without interrupting competing work" \
+      || echo "PREVIOUS_LOCK_BLOCKED_DIARY_ENTRY_FAILED"
+fi
+echo "PRIOR_FAILED_LOCK_TRIAL_DIARY_CHECKED=YES"
 # Prior failures already recorded with their original SHA; avoid duplicate entries.
 echo "STAGE=FETCH_PINNED_UNIFORM_SRT_LANE_FIX"
 if ! git -C "$BASE_SOURCE" cat-file -e "$SOURCE_REV^{commit}" 2>/dev/null; then
