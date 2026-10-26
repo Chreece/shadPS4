@@ -59,6 +59,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -192,7 +193,10 @@ static inline size_t _ntoa_format(out_fct_type out, char* buffer, size_t idx, si
     }
 
     // handle sign
-    if ((len == width) && (negative || (flags & FLAGS_PLUS) || (flags & FLAGS_SPACE))) {
+    // An empty digit buffer (value zero, precision zero) must not underflow.
+    // Otherwise reverse output accesses outside the local formatting buffer.
+    if (len != 0U && (len == width) &&
+        (negative || (flags & FLAGS_PLUS) || (flags & FLAGS_SPACE))) {
         len--;
     }
     if (len < PRINTF_NTOA_BUFFER_SIZE) {
@@ -293,6 +297,12 @@ static inline size_t _ftoa(out_fct_type out, char* buffer, size_t idx, size_t ma
         value = 0 - value;
     }
 
+    // Avoid undefined float-to-int conversion for NaN, infinity and values
+    // outside the old implementation's supported signed-integer range.
+    if (!std::isfinite(value) || value > thres_max) {
+        return 0U;
+    }
+
     // set default precision to 6, if not set explicitly
     if (!(flags & FLAGS_PRECISION)) {
         prec = 6U;
@@ -301,6 +311,12 @@ static inline size_t _ftoa(out_fct_type out, char* buffer, size_t idx, size_t ma
     while ((len < PRINTF_FTOA_BUFFER_SIZE) && (prec > 9U)) {
         buf[len++] = '0';
         prec--;
+    }
+
+    // The scratch buffer may be exhausted by an excessively long precision.
+    // Never index past the fixed ten-entry powers-of-ten table.
+    if (prec > 9U) {
+        return 0U;
     }
 
     int whole = (int)value;
@@ -318,13 +334,6 @@ static inline size_t _ftoa(out_fct_type out, char* buffer, size_t idx, size_t ma
     } else if ((diff == 0.5) && ((frac == 0U) || (frac & 1U))) {
         // if halfway, round up if odd, OR if last digit is 0
         ++frac;
-    }
-
-    // TBD: for very large numbers switch back to native sprintf for exponentials. Anyone want to
-    // write code to replace this? Normal printf behavior is to print EVERY whole number digit which
-    // can be 100s of characters overflowing your buffers == bad
-    if (value > thres_max) {
-        return 0U;
     }
 
     if (prec == 0U) {
@@ -372,7 +381,10 @@ static inline size_t _ftoa(out_fct_type out, char* buffer, size_t idx, size_t ma
     }
 
     // handle sign
-    if ((len == width) && (negative || (flags & FLAGS_PLUS) || (flags & FLAGS_SPACE))) {
+    // An empty digit buffer (value zero, precision zero) must not underflow.
+    // Otherwise reverse output accesses outside the local formatting buffer.
+    if (len != 0U && (len == width) &&
+        (negative || (flags & FLAGS_PLUS) || (flags & FLAGS_SPACE))) {
         len--;
     }
     if (len < PRINTF_FTOA_BUFFER_SIZE) {
@@ -476,7 +488,7 @@ static inline int _vsnprintf(out_fct_type out, char* buffer, const char* format,
 
             if (w < 0) {
                 flags |= FLAGS_LEFT; // reverse padding
-                width = (unsigned int)-w;
+                width = static_cast<unsigned int>(-static_cast<int64_t>(w));
             } else {
                 width = (unsigned int)w;
             }
@@ -572,14 +584,17 @@ static inline int _vsnprintf(out_fct_type out, char* buffer, const char* format,
 #if defined(PRINTF_SUPPORT_LONG_LONG)
                     auto value = vaArgLongLong(
                         va_list); // const long long value = va.next<long long>(cpu, mem);
-                    idx = _ntoa_long_long(out, buffer, idx, maxlen,
-                                          (unsigned long long)(value > 0 ? value : 0 - value),
-                                          value < 0, base, precision, width, flags);
+                    const auto magnitude = value < 0
+                                               ? 0ULL - static_cast<unsigned long long>(value)
+                                               : static_cast<unsigned long long>(value);
+                    idx = _ntoa_long_long(out, buffer, idx, maxlen, magnitude, value < 0, base,
+                                          precision, width, flags);
 #endif
                 } else if (flags & FLAGS_LONG) {
                     auto value = vaArgLong(va_list); // const long value = va.next<long>(cpu, mem);
-                    idx = _ntoa_long(out, buffer, idx, maxlen,
-                                     (unsigned long)(value > 0 ? value : 0 - value), value < 0,
+                    const auto magnitude = value < 0 ? 0UL - static_cast<unsigned long>(value)
+                                                     : static_cast<unsigned long>(value);
+                    idx = _ntoa_long(out, buffer, idx, maxlen, magnitude, value < 0,
                                      base, precision, width, flags);
                 } else {
                     // const int value = (flags & FLAGS_CHAR) ? (char)va.next<int>(cpu, mem) :
@@ -589,8 +604,9 @@ static inline int _vsnprintf(out_fct_type out, char* buffer, const char* format,
                         (flags & FLAGS_CHAR)    ? static_cast<char>(vaArgInteger(va_list))
                         : (flags & FLAGS_SHORT) ? static_cast<int16_t>(vaArgInteger(va_list))
                                                 : vaArgInteger(va_list);
-                    idx = _ntoa_long(out, buffer, idx, maxlen,
-                                     (unsigned int)(value > 0 ? value : 0 - value), value < 0, base,
+                    const auto magnitude = value < 0 ? 0U - static_cast<unsigned int>(value)
+                                                     : static_cast<unsigned int>(value);
+                    idx = _ntoa_long(out, buffer, idx, maxlen, magnitude, value < 0, base,
                                      precision, width, flags);
                 }
             } else {
