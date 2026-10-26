@@ -80,14 +80,17 @@ template <typename T>
 std::vector<u8> MakeProtoPayload(const T& msg) {
     std::string bytes;
     (void)msg.SerializeToString(&bytes);
+    if (bytes.size() > ShadNet::SHAD_MAX_PACKET_SIZE - 4) {
+        LOG_ERROR(Lib_NpMatching2, "Serialized Matching2 payload exceeds network packet limit");
+        return {};
+    }
     const u32 len = static_cast<u32>(bytes.size());
-    std::vector<u8> out;
-    out.reserve(4 + bytes.size());
-    out.push_back(static_cast<u8>(len));
-    out.push_back(static_cast<u8>(len >> 8));
-    out.push_back(static_cast<u8>(len >> 16));
-    out.push_back(static_cast<u8>(len >> 24));
-    out.insert(out.end(), bytes.begin(), bytes.end());
+    std::vector<u8> out(4 + bytes.size());
+    out[0] = static_cast<u8>(len);
+    out[1] = static_cast<u8>(len >> 8);
+    out[2] = static_cast<u8>(len >> 16);
+    out[3] = static_cast<u8>(len >> 24);
+    std::memcpy(out.data() + 4, bytes.data(), bytes.size());
     return out;
 }
 
