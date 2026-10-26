@@ -12,8 +12,10 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 0x43520004u;
-static constexpr u32 ShaderMetaVersion = 0x43520004u;
+// The real uniform S# path changes image/sampler descriptor specialization
+// and requires fresh metadata. Old shader caches are preserved on disk.
+static constexpr u32 ShaderBinaryVersion = 0x43520005u;
+static constexpr u32 ShaderMetaVersion = 0x43520005u;
 static constexpr u32 PipelineKeyVersion = 3u;
 } // namespace Serialization
 

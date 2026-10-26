@@ -562,6 +562,58 @@ static IndexedSamplerTableSource AnalyzeIndexedSamplerTable(
     return {words[0].offset_dwords * 4u, true};
 }
 
+// A GPU-selected strided T# array may use one real, host-evaluable S# for
+// every image. This is never a CPU reconstruction of the GPU's texture ID:
+// only the sampler is uniform, and all four genuine descriptor words must
+// have provably scalar sources.
+static bool IsProvenUniformSamplerWord(IR::Value value) {
+    if (value.IsImmediate()) {
+        return true;
+    }
+    const IR::Inst* inst = value.TryInst();
+    if (!inst) {
+        return false;
+    }
+    if (inst->GetOpcode() == IR::Opcode::GetUserData ||
+        inst->GetOpcode() == IR::Opcode::ReadConst) {
+        return true;
+    }
+    if (inst->GetOpcode() != IR::Opcode::ReadConstBuffer ||
+        !inst->Arg(1).IsImmediate()) {
+        return false;
+    }
+    const IR::Inst* descriptor = inst->Arg(0).TryInst();
+    if (!descriptor || descriptor->GetOpcode() != IR::Opcode::CompositeConstructU32x4 ||
+        descriptor->NumArgs() != 4u) {
+        return false;
+    }
+    for (u32 i = 0; i < 4u; ++i) {
+        const IR::Value word = descriptor->Arg(i);
+        if (word.IsImmediate()) {
+            continue;
+        }
+        const IR::Inst* producer = word.TryInst();
+        if (!producer ||
+            (producer->GetOpcode() != IR::Opcode::GetUserData &&
+             producer->GetOpcode() != IR::Opcode::ReadConst)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool IsProvenUniformSampler(const SharpReference& sharp) {
+    if (sharp.num_dwords != 4u || sharp.post_op != SharpFetchPostOp::None) {
+        return false;
+    }
+    for (u32 i = 0; i < 4u; ++i) {
+        if (!IsProvenUniformSamplerWord(sharp.dwords[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {
     // Finite control-flow descriptor choices are lowered to exact static
     // alternatives while the original GPU Phi selects the sampled result.
@@ -608,13 +660,38 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                         const auto indexed_sampler = table.record_stride_bytes != 0u
                             ? AnalyzeIndexedSamplerTable(inst, table)
                             : IndexedSamplerTableSource{};
-                        const bool sampler_supported =
-                            table.record_stride_bytes == 0u ||
-                            (profile.supports_sampler_array_nonuniform_indexing &&
-                             indexed_sampler.valid);
-                        if (bindable && sampler_supported) {
+                        const bool indexed_sampler_supported =
+                            indexed_sampler.valid &&
+                            profile.supports_sampler_array_nonuniform_indexing;
+                        const bool uniform_sampler =
+                            table.record_stride_bytes != 0u &&
+                            !indexed_sampler_supported &&
+                            IsProvenUniformSampler(usage.sharps[1]);
+                        const bool accepted =
+                            bindable && (table.record_stride_bytes == 0u ||
+                                         indexed_sampler_supported || uniform_sampler);
+                        if (table.record_stride_bytes != 0u) {
+                            static thread_local std::unordered_map<u64, u32> reports;
+                            const u64 shader = program.info.pgm_hash;
+                            if (reports.size() < 96u || reports.contains(shader)) {
+                                u32& count = reports[shader];
+                                if (count++ < 2u) {
+                                    LOG_INFO(Render_Recompiler,
+                                             "IndexedBindingDecision: shader={:#x} "
+                                             "stride={} tsharp_offset={} table_bindable={} "
+                                             "indexed_sampler={} uniform_sampler={} "
+                                             "sampler_array_supported={} accepted={}",
+                                             shader, table.record_stride_bytes,
+                                             table.tsharp_offset_bytes, bindable,
+                                             indexed_sampler_supported, uniform_sampler,
+                                             profile.supports_sampler_array_nonuniform_indexing,
+                                             accepted);
+                                }
+                            }
+                        }
+                        if (accepted) {
                             usage.indexed_sampler_offset_bytes = indexed_sampler.offset_bytes;
-                            usage.has_indexed_sampler_table = indexed_sampler.valid;
+                            usage.has_indexed_sampler_table = indexed_sampler_supported;
                             usage.indexed_table_sharp.num_dwords = 4;
                             MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
                             usage.indexed_texture_id =
