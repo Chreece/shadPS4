@@ -987,6 +987,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             constexpr u64 MaxEstimatedIndexedImageBytes = 4ull << 30;
             const auto limits = instance.GetPhysicalDevice().getProperties().limits;
             u32 bound_2d = 0, bound_3d = 0, bound_cube = 0;
+            u32 unbound_3d_capacity = 0, unbound_cube_capacity = 0;
             for (u32 i = 0; i + 1u < count; ++i) {
                 if (!complete) {
                     continue;
@@ -1019,6 +1020,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                         continue;
                     }
                     if (bound_3d >= Shader::CompactIndexed3DImageEntries) {
+                        ++unbound_3d_capacity;
                         continue;
                     }
                     type_array = 1;
@@ -1033,6 +1035,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                         continue;
                     }
                     if (bound_cube >= Shader::CompactIndexedCubeImageEntries) {
+                        ++unbound_cube_capacity;
                         continue;
                     }
                     type_array = 2;
@@ -1131,9 +1134,11 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 LOG_INFO(Render_Vulkan,
                          "GuestIndexedImageDimensions: stage={:#x} entries={} "
                          "bound_2d={} bound_3d={} bound_cube={} "
+                         "overflow_3d={} overflow_cube={} "
                          "complete={} mixed={} record_stride={}",
                          stage.pgm_hash, count - 1u,
-                         bound_2d, bound_3d, bound_cube, complete,
+                         bound_2d, bound_3d, bound_cube,
+                         unbound_3d_capacity, unbound_cube_capacity, complete,
                          image_desc.is_guest_mixed_indexed, record_stride);
             }
 
