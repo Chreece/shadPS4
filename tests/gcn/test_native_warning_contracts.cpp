@@ -12,6 +12,7 @@
 #include "core/libraries/libc_internal/printf.h"
 #include "core/libraries/np/np_types.h"
 #include "video_core/buffer_cache/fault_list_limits.h"
+#include "video_core/buffer_cache/fault_ring_reuse.h"
 
 TEST(NativeWarningContracts, FullLengthNpIdNeedsNoInlineNull) {
     Libraries::Np::OrbisNpOnlineId id{};
@@ -83,4 +84,39 @@ TEST(NativeWarningContracts, GpuFaultCapacityMatchesShaderBytes) {
     EXPECT_EQ(VideoCore::MaxGpuFaultListWords, 1024U);
     EXPECT_EQ(VideoCore::MaxGpuFaultAddresses, 1023U);
     EXPECT_EQ(VideoCore::GpuFaultListBytes, 8192U);
+}
+
+TEST(GpuFaultRingReuse, EmptyRingSlotMayBeScheduled) {
+    EXPECT_TRUE(VideoCore::CanReuseGpuFaultReadbackSlot(0));
+    EXPECT_FALSE(VideoCore::RetainPendingGpuFaultScan(true, true));
+}
+
+TEST(GpuFaultRingReuse, PendingGpuTickCannotBeOverwritten) {
+    EXPECT_FALSE(VideoCore::CanReuseGpuFaultReadbackSlot(1));
+    EXPECT_FALSE(VideoCore::CanReuseGpuFaultReadbackSlot(100));
+    EXPECT_FALSE(VideoCore::CanReuseGpuFaultReadbackSlot(~u64{0}));
+}
+
+TEST(GpuFaultRingReuse, FullEightAreaRingDefersWithoutDroppingScan) {
+    std::array<u64, 8> pending{1,2,3,4,5,6,7,8};
+    for (const u64 tick : pending) {
+        EXPECT_FALSE(VideoCore::CanReuseGpuFaultReadbackSlot(tick));
+        EXPECT_TRUE(VideoCore::RetainPendingGpuFaultScan(true, false));
+    }
+    EXPECT_EQ(pending[0], 1u); // Never overwrite an in-flight readback slot.
+}
+
+TEST(GpuFaultRingReuse, CompletedGpuCallbackReleasesAndRetriesScan) {
+    u64 slot_gpu_tick = 5;
+    bool has_pending_fault_scan = true;
+    if (!VideoCore::CanReuseGpuFaultReadbackSlot(slot_gpu_tick)) {
+        has_pending_fault_scan = VideoCore::RetainPendingGpuFaultScan(true, false);
+    }
+    ASSERT_TRUE(has_pending_fault_scan);
+    ASSERT_EQ(slot_gpu_tick, 5u);
+    // Simulate the scheduler's genuine GPU-completion callback.
+    slot_gpu_tick = 0;
+    ASSERT_TRUE(VideoCore::CanReuseGpuFaultReadbackSlot(slot_gpu_tick));
+    has_pending_fault_scan = VideoCore::RetainPendingGpuFaultScan(true, true);
+    EXPECT_FALSE(has_pending_fault_scan);
 }
