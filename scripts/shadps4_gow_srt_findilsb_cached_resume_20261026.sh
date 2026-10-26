@@ -121,7 +121,7 @@ flock -n 9 || { echo "ANOTHER_GOW_GOT_BUILD_ACTIVE"; exit 3; }
 exec 8>"$LOGS/shadps4-gow-srt-phi.lock"
 flock -n 8 || { echo "ANOTHER_SRT_PHI_BUILD_ACTIVE"; exit 3; }
 
-for command in git cmake ninja ctest python3 curl flock tar sha256sum nice timeout ldd; do
+for command in git cmake ninja ctest python3 curl flock tar sha256sum nice timeout ldd cmp; do
     command -v "$command" >/dev/null || { echo "MISSING_COMMAND=$command"; exit 3; }
 done
 [[ -d "$BASE_SOURCE" && -x "$BASE_ELF" ]] || {
@@ -139,8 +139,10 @@ done
 [[ -f "$BUILD/build.ninja" && -x "$TEST_BUILD/tests/shadps4_gcn_test" ]] || {
     echo "CACHED_BUILD_MISSING_NO_REBUILD"; exit 3;
 }
-[[ "$(git -C "$SRC" rev-parse HEAD)" == "$EXPECTED_OLD_SOURCE" ]] || {
-    echo "CACHED_SOURCE_NOT_AT_RECORDED_FAILED_REVISION"; exit 3;
+CURRENT_CACHED_SOURCE="$(git -C "$SRC" rev-parse HEAD)"
+[[ "$CURRENT_CACHED_SOURCE" == "$EXPECTED_OLD_SOURCE" ||
+   "$CURRENT_CACHED_SOURCE" == "$SOURCE_REV" ]] || {
+    echo "CACHED_SOURCE_NOT_AN_ALLOWED_PINNED_REVISION=$CURRENT_CACHED_SOURCE"; exit 3;
 }
 [[ -z "$(git -C "$SRC" status --porcelain --untracked-files=no)" ]] || {
     echo "CACHED_SOURCE_HAS_TRACKED_CHANGES"; exit 3;
@@ -163,7 +165,9 @@ if ! git -C "$BASE_SOURCE" cat-file -e "$SOURCE_REV^{commit}" 2>/dev/null; then
         https://github.com/Chreece/shadPS4.git "$SOURCE_REV"
 fi
 git -C "$BASE_SOURCE" cat-file -e "$SOURCE_REV^{commit}"
-git -C "$SRC" switch --detach "$SOURCE_REV"
+if [[ "$CURRENT_CACHED_SOURCE" != "$SOURCE_REV" ]]; then
+    git -C "$SRC" switch --detach "$SOURCE_REV"
+fi
 [[ "$(git -C "$SRC" rev-parse HEAD)" == "$SOURCE_REV" ]] || {
     echo "RESUME_GIT_SOURCE_PIN_MISMATCH"; exit 4;
 }
@@ -258,7 +262,12 @@ print("FFMPEG_ASSET_VALIDATED",flush=True)
 PYZIP
 for build in "$BUILD" "$TEST_BUILD"; do
     mkdir -p "$build/externals"
-    cp "$FFMPEG_ASSET" "$build/externals/ffmpeg-$FFMPEG_SHORT.zip"
+    target="$build/externals/ffmpeg-$FFMPEG_SHORT.zip"
+    # Do not rewrite identical cached archives: keep Ninja/CMake download
+    # timestamps stable and reuse objects from the previously failed run.
+    if [[ ! -s "$target" ]] || ! cmp -s "$FFMPEG_ASSET" "$target"; then
+        cp "$FFMPEG_ASSET" "$target"
+    fi
 done
 echo "STAGE=REUSE_EXISTING_GOOGLETEST"
 GTEST_SRC="$WORK/googletest-v1.17.0"
