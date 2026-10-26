@@ -1079,6 +1079,18 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 auto& slot = image_bindings[slot_index];
                 auto& desc = slot.desc;
                 std::construct_at(&desc, raw, image_desc);
+                if (type == AmdGpu::ImageType::Cube) {
+                    // The shader lowers Cube sampling to a 2D-array view
+                    // with an explicit face coordinate. A plain Cube T#
+                    // must expose its complete six-face group, even when
+                    // last_array was zero in the original guest descriptor.
+                    const u32 layers = raw.NumLayers();
+                    const u32 base_layer = desc.view_info.range.base.layer;
+                    if (layers <= base_layer) {
+                        continue;
+                    }
+                    desc.view_info.range.extent.layers = layers - base_layer;
+                }
                 slot.image_id = texture_cache.FindImage(desc);
                 auto* image = &texture_cache.GetImage(slot.image_id);
                 if (type == AmdGpu::ImageType::Color2D &&
