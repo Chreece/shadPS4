@@ -5,6 +5,7 @@
 
 #include "shader_recompiler/ir/microinstruction.h"
 #include "shader_recompiler/ir/passes/srt_phi.h"
+#include "shader_recompiler/ir/passes/srt_find_lsb.h"
 #include "shader_recompiler/ir/passes/srt_dma_policy.h"
 #include "video_core/buffer_cache/bda_address_space.h"
 
@@ -123,4 +124,46 @@ TEST(SrtDynamicDma, LargeGuestAddressNeverWrapsIntoValidPage) {
     EXPECT_FALSE(VideoCore::IsGuestGpuDwordInRange(1ULL << 48));
     EXPECT_FALSE(VideoCore::IsGuestGpuDwordInRange(0xFFFFFFFFFFFFULL));
     EXPECT_FALSE(VideoCore::IsGuestGpuDwordInRange(GuestGpuAddressLimit + 1));
+}
+
+TEST(SrtFindILsb32, ZeroMatchesSpirvUndefinedBitIndexSentinel) {
+    EXPECT_EQ(Optimization::FindSrtLeastSignificantBit(0u), 0xffffffffu);
+}
+
+TEST(SrtFindILsb32, AllOneHotInputsReturnExactlyBitIndex) {
+    for (u32 bit = 0; bit < 32; ++bit) {
+        EXPECT_EQ(Optimization::FindSrtLeastSignificantBit(1u << bit), bit);
+    }
+}
+
+TEST(SrtFindILsb32, MixedBitsChooseLeastSignificantSetBit) {
+    EXPECT_EQ(Optimization::FindSrtLeastSignificantBit(0x80008000u), 15u);
+    EXPECT_EQ(Optimization::FindSrtLeastSignificantBit(0xffffffffu), 0u);
+    EXPECT_EQ(Optimization::FindSrtLeastSignificantBit(0x80000001u), 0u);
+}
+
+TEST(SrtFindILsb32, IdenticalHostExpressionsShareValueNumber) {
+    IR::Inst first{IR::Opcode::FindILsb32, 0};
+    IR::Inst second{IR::Opcode::FindILsb32, 0};
+    first.SetArg(0, IR::Value{0x80000000u});
+    second.SetArg(0, IR::Value{0x80000000u});
+    Optimization::SrtGvnTable gvn;
+    EXPECT_EQ(gvn.GetValueNumber(&first), gvn.GetValueNumber(&second));
+}
+
+TEST(SrtFindILsb32, DifferentSourcesDoNotAliasAtValueNumbering) {
+    IR::Inst first{IR::Opcode::FindILsb32, 0};
+    IR::Inst second{IR::Opcode::FindILsb32, 0};
+    first.SetArg(0, IR::Value{0x4u});
+    second.SetArg(0, IR::Value{0x8u});
+    Optimization::SrtGvnTable gvn;
+    EXPECT_NE(gvn.GetValueNumber(&first), gvn.GetValueNumber(&second));
+}
+
+TEST(SrtFindILsb32, ControlFlowDependentPhiMustRemainOnGpu) {
+    IR::Inst phi{IR::Opcode::Phi, 0};
+    phi.AddPhiOperand(nullptr, IR::Value{0x1u});
+    phi.AddPhiOperand(nullptr, IR::Value{0x2u});
+    Optimization::SrtGvnTable gvn;
+    EXPECT_TRUE(Optimization::ResolveInvariantSrtPhi(IR::Value{&phi}, gvn).IsEmpty());
 }
