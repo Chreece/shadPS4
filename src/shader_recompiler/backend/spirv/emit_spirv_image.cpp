@@ -204,11 +204,11 @@ Id EmitImageSampleImplicitLodIndexed(
         ctx, handle, bounded, texture.image_array_size);
 
     const auto emit_sample = [&](Id image_variable, Id image_type, Id typed_coords,
-                                 AmdGpu::ImageType view_type) {
+                                 Id selected_index, AmdGpu::ImageType view_type) {
         const Id pointer_type =
             ctx.TypePointer(spv::StorageClass::UniformConstant, image_type);
         const Id pointer = ctx.OpAccessChain(
-            pointer_type, image_variable, std::array{bounded});
+            pointer_type, image_variable, std::array{selected_index});
         ctx.Decorate(pointer, spv::Decoration::NonUniform);
         const Id image = ctx.OpLoad(image_type, pointer);
         ctx.Decorate(image, spv::Decoration::NonUniform);
@@ -234,9 +234,28 @@ Id EmitImageSampleImplicitLodIndexed(
     if (!texture.is_guest_mixed_indexed ||
         inst->Flags<IR::TextureInstInfo>().has_offset) {
         const Id sample = emit_sample(texture.id, texture.image_type, coords,
-                                      texture.view_type);
+                                      bounded, texture.view_type);
         return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
     }
+    // Read a compact typed descriptor ordinal through the original
+    // GPU-selected guest ID. Unmapped records use 0xFFFFFFFF and are
+    // redirected to the type-specific last null descriptor, never a real
+    // 3D/Cube slot or a fabricated 2D view.
+    const Id map_pointer = ctx.OpAccessChain(
+        texture.compact_index_pointer_type, texture.compact_index_map,
+        std::array{ctx.ConstU32(0u), bounded});
+    const Id mapped_ordinal = ctx.OpLoad(ctx.U32[1], map_pointer);
+    const auto compact_index = [&](u32 array_size) -> Id {
+        const Id in_bounds = ctx.OpULessThan(ctx.U1[1], mapped_ordinal,
+                                              ctx.ConstU32(array_size - 1u));
+        const Id ordinal = ctx.OpSelect(ctx.U32[1], in_bounds, mapped_ordinal,
+                                        ctx.ConstU32(array_size - 1u));
+        ctx.Decorate(ordinal, spv::Decoration::NonUniform);
+        return ordinal;
+    };
+    const Id index_3d = compact_index(texture.compact_3d_array_size);
+    const Id index_cube = compact_index(texture.compact_cube_array_size);
+
     const Id word3 = ctx.OpBitcast(
         ctx.U32[1], ctx.OpCompositeExtract(ctx.F32[1], coords, 3u));
     const Id guest_type = ctx.OpShiftRightLogical(ctx.U32[1], word3, ctx.ConstU32(28u));
@@ -263,7 +282,7 @@ Id EmitImageSampleImplicitLodIndexed(
 
     ctx.AddLabel(volume);
     const Id sample3d = emit_sample(texture.image_id_3d, texture.image_type_3d,
-                                    coords3d, AmdGpu::ImageType::Color3D);
+                                    coords3d, index_3d, AmdGpu::ImageType::Color3D);
     ctx.OpBranch(merge);
 
     ctx.AddLabel(other);
@@ -272,12 +291,12 @@ Id EmitImageSampleImplicitLodIndexed(
 
     ctx.AddLabel(cubemap);
     const Id sample_cube = emit_sample(texture.image_id_cube, texture.image_type_cube,
-                                       coords3d, AmdGpu::ImageType::Cube);
+                                       coords3d, index_cube, AmdGpu::ImageType::Cube);
     ctx.OpBranch(other_end);
 
     ctx.AddLabel(ordinary);
     const Id sample2d = emit_sample(texture.id, texture.image_type,
-                                    coords2d, AmdGpu::ImageType::Color2D);
+                                    coords2d, bounded, AmdGpu::ImageType::Color2D);
     ctx.OpBranch(other_end);
 
     ctx.AddLabel(other_end);
