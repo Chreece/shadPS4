@@ -1030,6 +1030,7 @@ void EmitContext::DefineImagesAndSamplers() {
             .mip_fallback_mode = mip_fallback_mode,
             .image_array_size = num_bindings,
             .is_guest_indexed = image_desc.is_guest_indexed,
+            .is_guest_mixed_indexed = image_desc.is_guest_mixed_indexed,
         });
         interfaces.push_back(id);
 
@@ -1038,7 +1039,7 @@ void EmitContext::DefineImagesAndSamplers() {
         // OpTypeImage array to have one static dimensionality. Preserve the
         // original guest index in all three arrays instead of coercing the
         // image view into an incompatible Vulkan type.
-        if (image_desc.is_guest_indexed) {
+        if (image_desc.is_guest_mixed_indexed) {
             const auto define_dimension_array = [&](spv::Dim dim, bool arrayed,
                                                      std::string_view suffix) {
                 const Id typed_image = TypeImage(sampled_type, dim, false, arrayed, false,
