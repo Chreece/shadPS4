@@ -150,6 +150,27 @@ CURRENT_CACHED_SOURCE="$(git -C "$SRC" rev-parse HEAD)"
 [[ -s "$LOGS/shadps4-srt-findilsb-20261026-160302-916073-build.tar.gz" ]] || {
     echo "OLD_FAILED_RUN_EVIDENCE_MISSING"; exit 3;
 }
+# Retain the known 120-second successful FindILsb executable before this
+# incremental build overwrites its prior path. This is an isolated test copy,
+# never a production or ES-DE executable update.
+PRIOR_FINDILSB_SHA="8316d6cb2243f0d4ffd8f838a02046738d67bff426e6f344698b25b6f421cf28"
+PRIOR_SNAPSHOT="$TESTS/preserved-native-candidates/findilsb-14975c44/shadps4"
+if [[ "$CURRENT_CACHED_SOURCE" == "$EXPECTED_OLD_SOURCE" ]]; then
+    [[ -x "$BINARY" ]] || { echo "PREVIOUS_120S_CANDIDATE_MISSING"; exit 3; }
+    [[ "$(sha256sum "$BINARY" | cut -d' ' -f1)" == "$PRIOR_FINDILSB_SHA" ]] || {
+        echo "PREVIOUS_120S_CANDIDATE_CHANGED_REFUSE_OVERWRITE"; exit 3;
+    }
+    mkdir -p "$(dirname "$PRIOR_SNAPSHOT")"
+    if [[ ! -f "$PRIOR_SNAPSHOT" ]]; then
+        cp --reflink=auto -- "$BINARY" "$PRIOR_SNAPSHOT"
+    fi
+fi
+[[ -f "$PRIOR_SNAPSHOT" &&
+   "$(sha256sum "$PRIOR_SNAPSHOT" | cut -d' ' -f1)" == "$PRIOR_FINDILSB_SHA" ]] || {
+    echo "PREVIOUS_GOOD_CANDIDATE_SNAPSHOT_INVALID"; exit 3;
+}
+echo "PRESERVED_FINDILSB_120_SECOND_CANDIDATE=$PRIOR_SNAPSHOT"
+echo "PRESERVED_FINDILSB_SHA256=$PRIOR_FINDILSB_SHA"
 echo "BASELINE_120_SECOND_ELF_UNTOUCHED=PASS"
 echo "STAGE=UNIVERSAL_EMULATOR_DIARY_PRECHECK"
 curl -4fsSL --retry 3 --retry-delay 2 \
