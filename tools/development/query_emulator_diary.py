@@ -163,12 +163,6 @@ def main() -> int:
         needle = args.find.casefold()
         entries = [x for x in entries if needle in text_blob(x)]
 
-    entries.sort(key=lambda x: (normalize_date(x), str(x.get("record_id") or
-                        x.get("artifact") or x.get("archive") or "")), reverse=True)
-    total = len(entries)
-    if not args.all and args.limit:
-        entries = entries[:args.limit]
-
     fixes = []
     if args.registry.is_file():
         registry = json.loads(args.registry.read_text(encoding="utf-8"))
@@ -185,6 +179,25 @@ def main() -> int:
             fixes = []
     elif args.fix:
         raise ValueError("Registry unavailable: " + str(args.registry))
+
+    if args.fix:
+        # A fix lookup must not display fifteen unrelated recent trials.
+        # Connect historical entries by generic capability ID, PRs, or exact
+        # text. Legacy GoW rows can lack fix_id but still name the algorithm.
+        needle = args.fix.casefold()
+        wanted_ids = {str(f.get("id", "")).casefold() for f in fixes}
+        wanted_prs = {pr for f in fixes for pr in (f.get("related_prs") or [])}
+        entries = [entry for entry in entries
+                   if str(entry.get("fix_id") or "").casefold() in wanted_ids
+                   or entry.get("pr") in wanted_prs
+                   or bool(set(entry.get("related_prs") or []).intersection(wanted_prs))
+                   or needle in text_blob(entry)]
+
+    entries.sort(key=lambda x: (normalize_date(x), str(x.get("record_id") or
+                        x.get("artifact") or x.get("archive") or "")), reverse=True)
+    total = len(entries)
+    if not args.all and args.limit:
+        entries = entries[:args.limit]
 
     if args.json:
         print(json.dumps({"matching_trial_count":total,"trials":entries,"fixes":fixes},
