@@ -249,6 +249,19 @@
       "observed_game_effects": "GoT 2026-10-25 native stencil-mask trial linked/runs and showed 12 sampled exact mask merges; some menu particles visible at 40s. Latest 2026-10-26 menu-only trial without it logged 1735 stencil reference warnings and missing particles; not a same-scene controlled visual A/B.",
       "negative_result_or_prohibition": "Do not falsely override genuinely conflicting comparison/REPLACE masked bits or skip draws. Rejected GPU-eager tiled downloads remain excluded. New combined game build still unverified.",
       "next_test": "PR70 exact-source A/B of historical native stencil algorithm on proven PR52/57/64 renderer; menu at 40/55/85/112s; compare stencil exact/conflicting counts and graphics at same scene/time."
+    },
+    {
+      "id": "native-startup-null-fault",
+      "subsystem": "core/host-formatting",
+      "status": "REPRODUCED_NATIVE_CALLER_UNRESOLVED",
+      "related_prs": [
+        60,
+        63
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "CUSA34384 native-only shadPS4 3e5c8c3f... launched, SIGSEGV -11 after 4.804s following libSceMsgDialog module-load log. Exact RIP 0x55bf345a65c6 within main executable at PIE ELF 0x10095c6; previous translated combined executable faulted similarly at 0x100f5c6 in {fmt} v12 parse format machinery. Actual native caller not yet proven. No gameplay or audio.",
+      "negative_result_or_prohibition": "DynamoRIO is not required for this crash. No game ID/shader special casing, no suppressing SIGSEGV or patching fmt to tolerate null until true caller and lifetime are identified; sysmodule last log does not establish it as cause.",
+      "next_test": "Use SHA-pinned native GDB observer tools/development/shadps4_gdb_native_fault_trace_20261026.py and dedicated universal runner from gow/proven-progress-20261026. Capture real C++ caller/registers and map under 118s+2s; identify generic source defect; then cross-test GoW/GoT."
     }
   ]
 }
