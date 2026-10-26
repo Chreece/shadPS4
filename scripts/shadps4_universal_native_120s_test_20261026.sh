@@ -18,7 +18,7 @@ PROTECTED="$ROOT/GodOfWarRagnarok/build/shadps4"
 PROTECTED_SHA=8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e
 SOURCE_REV="a82db5964bd8a48305213171862d23268602a50c"
 OBSERVER_SHA=e9d436bae75452ca2c59bc6a07d4d5701f6cc934
-RECORDER_SHA=deb345b714e590167b13972e8b280a20f8489ee1
+RECORDER_SHA=c8e7faf100a9988da1952dbbcf999cd1b62e79b7
 OLLAMA_HELPER_SHA=9623031ffc736c270ccce0cad247b52d5b3dd30a
 
 mkdir -p "$ESDE" "$LOGS" "$SCRIPTS"
@@ -93,7 +93,7 @@ finish() {
             python3 -B "$RECORDER" --archive "$ARCHIVE" --game "$GAME" \
               --source "$SOURCE_REV" --upstream "30f4170896ce974353a6f6486d0ecec179aec54b" \
               --candidate-sha256 "$EXPECTED" \
-              --change "Universal native-CPU engine runtime regression after no-DynamoRIO build" \
+              --fix-id native-cpu-id --change "Universal native-CPU engine runtime regression after no-DynamoRIO build" \
               --emulator-effect "PENDING_REVIEW_OF_BOUNDED_CONSOLE_AND_NATIVE_RESULT" \
               --game-effect "NOT_OBSERVED" --decision PENDING_REVIEW \
               --next "Assess startup, real GPU graphics, audio, splash, GUIDE quit, and cross-game regression" \
@@ -154,10 +154,13 @@ curl -4fsSL --retry 3 \
     echo "NATIVE_OBSERVER_SHA_MISMATCH"; exit 2;
 }
 curl -4fsSL --retry 3 \
-  "https://raw.githubusercontent.com/Chreece/shadPS4/196503f7f57a5416d00f706cc519e78fe59a81d5/tools/development/record_emulator_trial.py" \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/c2818c58c0de5ddbb60328aeecbcb0931da34ae7/tools/development/record_emulator_trial.py" \
   -o "$RECORDER"
 [[ "$(git hash-object "$RECORDER")" == "$RECORDER_SHA" ]] || {
     echo "NATIVE_DIARY_RECORDER_SHA_MISMATCH"; exit 2;
+}
+python3 -B -m py_compile "$RECORDER" || {
+    echo "UNIVERSAL_DIARY_PYTHON_SYNTAX_ERROR_NO_GAME"; exit 2;
 }
 python3 -B - "$OBSERVER" "$RECORDER" <<'PYOB'
 from pathlib import Path
