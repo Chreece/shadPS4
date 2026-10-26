@@ -1,0 +1,241 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-10-26",
+  "notice": "Derived status index only; canonical historical facts are append-only docs/emulator/TRIALS.jsonl. Main merge SHA does not imply hardware verification.",
+  "engine_policy": "Generic emulator changes for all games; tested games are evidence, never source/runtime switches.",
+  "fixes": [
+    {
+      "id": "native-cpu-id",
+      "subsystem": "cpu",
+      "status": "BUILD_PASS_RUNTIME_PENDING",
+      "related_prs": [
+        16,
+        63
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "CUSA34384: native combined build PASS, gameplay pending; CUSA11456: independent current combined test pending",
+      "negative_result_or_prohibition": "DynamoRIO relaunch caused regressions; rejected",
+      "next_test": "Native GoW and GoT 118+2s regression, same compiled executable"
+    },
+    {
+      "id": "dynamorio-translation",
+      "subsystem": "cpu",
+      "status": "REJECT",
+      "related_prs": [
+        63
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT: rejected performance; GoW: translator was active during fatal startup",
+      "negative_result_or_prohibition": "Never re-enable external runtime or --cpu-id-mode workarounds",
+      "next_test": "Keep native CPUID/RDTSCP/RDPID only"
+    },
+    {
+      "id": "kernel-sanitizer-atexit",
+      "subsystem": "kernel",
+      "status": "NATIVE_REGRESSIONS_PASS_RUNTIME_PENDING",
+      "related_prs": [
+        60
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW: sanitizer/atexit focused tests PASS, translated runtime still crashed",
+      "negative_result_or_prohibition": "Duplicate Linker::FindByAddress fixed after failed link",
+      "next_test": "Test current native source and forward-port clean kernel patches to main"
+    },
+    {
+      "id": "shader-srt-rollback",
+      "subsystem": "shader-recompiler",
+      "status": "MERGED_MAIN_NATIVE_MAIN_PENDING",
+      "related_prs": [
+        66
+      ],
+      "main_merge_sha": "8869651a2b3b1943fc7ab077074bdfbe5875a141",
+      "observed_game_effects": "GoT local codegen already rolled back partial machine code; main port source verified",
+      "negative_result_or_prohibition": "Do not leave partial host x86 SRT code on unsupported offsets",
+      "next_test": "Native main compile and unsupported-offset regression"
+    },
+    {
+      "id": "gpu-linear-readback",
+      "subsystem": "gpu-coherence",
+      "status": "MERGED_MAIN_NATIVE_MAIN_PENDING",
+      "related_prs": [
+        57,
+        68
+      ],
+      "main_merge_sha": "b8db275e6605b4183aa27c445bb39661d991cdd1",
+      "observed_game_effects": "GoT 118s PR57: 32 bounded real queues/copies and stable silhouettes; other titles pending",
+      "negative_result_or_prohibition": "Avoid eager tiled readbacks or forced per-title settings",
+      "next_test": "Compile current main, replay GoT/GoW and verify real GPU-to-CPU flow"
+    },
+    {
+      "id": "gpu-indexed-strided-material",
+      "subsystem": "shader-resources",
+      "status": "KEEP_GAME_NATIVE_MAIN_PORT_PENDING",
+      "related_prs": [
+        52
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT PR52: 39 native strided recognitions, world incomplete",
+      "negative_result_or_prohibition": "Don't invent texture indexes or assume public patcher branch equals tested detached C++",
+      "next_test": "Selective main port; GoT+GoW descriptor tests"
+    },
+    {
+      "id": "gpu-indexed-uniform-sampler",
+      "subsystem": "shader-resources",
+      "status": "KEEP_GAME_NATIVE_MAIN_PORT_PENDING",
+      "related_prs": [
+        64
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT PR64: 13 valid uniform S# bindings in seven shaders, missing terrain persists",
+      "negative_result_or_prohibition": "No fabricated sampler or dynamic-to-static S# coercion",
+      "next_test": "Native generic source port and cross-game tests"
+    },
+    {
+      "id": "tiled-eager-readbacks",
+      "subsystem": "gpu-coherence",
+      "status": "REJECT",
+      "related_prs": [
+        58
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT: many real tiled copies but severe menu FPS loss; no world recovery",
+      "negative_result_or_prohibition": "Per-bind bulk tiled CPU downloads are costly",
+      "next_test": "Only retry demand-based coherence with consumer evidence"
+    },
+    {
+      "id": "duplicate-page-dirty",
+      "subsystem": "gpu-coherence",
+      "status": "REJECT",
+      "related_prs": [
+        56
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT: buffer pages already dirty, no improvement",
+      "negative_result_or_prohibition": "Redundant dirty marking",
+      "next_test": "Investigate missing producer->consumer chain instead"
+    },
+    {
+      "id": "ssa-gvn-index-alias",
+      "subsystem": "shader-resources",
+      "status": "REJECT",
+      "related_prs": [
+        61
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT: zero new accepted alias cases, visuals unchanged",
+      "negative_result_or_prohibition": "Counts across different shader workloads do not prove improvement",
+      "next_test": "Revisit only with concrete unmatched source evidence"
+    },
+    {
+      "id": "srt-pending-parent-trace",
+      "subsystem": "shader-recompiler",
+      "status": "DIAGNOSTIC_PENDING_NATIVE",
+      "related_prs": [
+        62,
+        67
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT: 10 recurring SRT stalls, source tracing native, #67 new diagnostic run pending",
+      "negative_result_or_prohibition": "No source-pointer equivalence guesses",
+      "next_test": "Capture actual four pending parent opcodes/addresses"
+    },
+    {
+      "id": "vulkan-profile-sampler-binding",
+      "subsystem": "vulkan-shader",
+      "status": "BUILD_PASS_RUNTIME_PENDING",
+      "related_prs": [
+        36,
+        42
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW combined build PASS after profile, Vulkan designator and sampler include fixes",
+      "negative_result_or_prohibition": "Earlier failed compilers, preserve them in diary",
+      "next_test": "Cross-game Vulkan resource checks with real shader input"
+    },
+    {
+      "id": "startup-splash-guide-quit",
+      "subsystem": "frontend",
+      "status": "SOURCE_PRESENT_RUNTIME_PENDING",
+      "related_prs": [
+        6
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT: GUIDE restored from main; GoW: source path present, controller acceptance pending",
+      "negative_result_or_prohibition": "Don't simulate automatic game input",
+      "next_test": "Verify real splash, GUIDE/A/B quit in both titles"
+    },
+    {
+      "id": "hard-120-second-tests",
+      "subsystem": "testing",
+      "status": "MERGED_MAIN",
+      "related_prs": [
+        59
+      ],
+      "main_merge_sha": "3b49eed54c9dee97b649b8d7ac8b9a1f5dbc33c4",
+      "observed_game_effects": "GoT hard 118s TERM +2 KILL; universal GoW runner source, host validation pending",
+      "negative_result_or_prohibition": "Unbounded game tests previously required manual cleanup",
+      "next_test": "Verify each new runner terminates only owned game process"
+    },
+    {
+      "id": "ollama-gpu-vram-lifecycle",
+      "subsystem": "host-resources",
+      "status": "HOST_VERIFIED_CUSA34384",
+      "related_prs": [],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW: 7.811->19.529 GiB free; original Qwen/context restored",
+      "negative_result_or_prohibition": "Never stop Ollama service or reload before game exit",
+      "next_test": "Repeat on any game with same 8GiB threshold and post-exit state restoration"
+    },
+    {
+      "id": "pes-wait-zpass",
+      "subsystem": "pm4-video",
+      "status": "OPEN_PR_NATIVE_UNVERIFIED",
+      "related_prs": [
+        1,
+        3,
+        4
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PES 2025 missing face/stadium details, PR hypotheses; no latest native acceptance",
+      "negative_result_or_prohibition": "No title-specific predication switch",
+      "next_test": "Verify real ZPASS/WAIT counter sequencing in native engine"
+    },
+    {
+      "id": "base-instance-step-rate",
+      "subsystem": "shader-recompiler",
+      "status": "OPEN_PR_NATIVE_UNVERIFIED",
+      "related_prs": [
+        5
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "TLG CUSA03745 cited in PR, current tests not imported",
+      "negative_result_or_prohibition": "Per-title GPU Precise override in historical PR4 violates contract",
+      "next_test": "Test instance step-rate semantics generally"
+    },
+    {
+      "id": "linux-uffd-gpu-deferred",
+      "subsystem": "memory",
+      "status": "PR_NATIVE_EVIDENCE_MAIN_PORT_PENDING",
+      "related_prs": [
+        10,
+        14
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW: prior GDB traces and stopped CPU ticks indicate UFFD/GPU circular wait",
+      "negative_result_or_prohibition": "Never discard proven deferred invalidation as a side effect of merge",
+      "next_test": "Port original fix with native Linux fault lifecycle tests"
+    },
+    {
+      "id": "audio-output-backend-health",
+      "subsystem": "audio",
+      "status": "OPEN_PR_RUNTIME_PENDING",
+      "related_prs": [
+        17
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW prior audio backend PR; no current cross-game audio acceptance",
+      "negative_result_or_prohibition": "Don't infer audible sound from HLE initialization",
+      "next_test": "Test real PCM, output failures, Audio3D, scene pacing"
+    }
+  ]
+}
