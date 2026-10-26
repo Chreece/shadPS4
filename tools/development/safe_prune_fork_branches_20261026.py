@@ -102,7 +102,17 @@ def main():
     parser.add_argument("--output",type=Path,
                         default=Path.home()/"projects/shadps4/logs")
     args=parser.parse_args()
-    manifest=json.loads(args.manifest.read_text())
+    if args.manifest.is_file():
+        manifest=json.loads(args.manifest.read_text())
+    else:
+        # A standalone one-paste script may live under ~/projects/shadps4/scripts,
+        # not inside a git checkout. Fetch the same immutable audit snapshot.
+        pinned_url=("https://raw.githubusercontent.com/Chreece/shadPS4/"
+                    "3a1cfba433b9486145760b04d3bf155b19922318/"
+                    "docs/emulator/BRANCH_SNAPSHOT_2026-10-26.json")
+        req=Request(pinned_url,headers={"User-Agent":"shadPS4-safe-pruner-20261026"})
+        with urlopen(req,timeout=30) as response:
+            manifest=json.load(response)
     if manifest.get("repo")!=REPO or not isinstance(manifest.get("branches"),list):
         raise RuntimeError("Invalid immutable branch inventory")
     pinned={r["ref"]:r["commit"] for r in manifest["branches"]}
@@ -178,7 +188,9 @@ def main():
                 audit["operations"].append({"name":name,"result":"SKIPPED_SHA_CHANGED_AFTER_ARCHIVE",
                                             "backup":tag})
                 continue
-            deleted=command("git","push","origin",f":refs/heads/{name}",cwd=bare,check=False)
+            deleted=command("git","push",
+                            f"--force-with-lease=refs/heads/{name}:{sha}",
+                            "origin",f":refs/heads/{name}",cwd=bare,check=False)
             audit["operations"].append({"name":name,"result":"DELETED" if deleted.returncode==0
                                         else "FAILED_TO_DELETE","backup":tag,"sha":sha})
             report.write_text(json.dumps(audit,indent=2,sort_keys=True)+"\n")
