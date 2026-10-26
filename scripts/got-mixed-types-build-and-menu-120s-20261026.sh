@@ -4,9 +4,10 @@
 set -Eeuo pipefail
 export GIT_TERMINAL_PROMPT=0
 BASE="$HOME/projects/shadps4/GhostOfTsushima/fresh-source/got-indexed-capacity-20261024-213908"
-PIN="404dc672286deb016c1438fbe9e822790ba983db"
+PIN="73f1ee423fa7daecdfdb1fc62e52c6291e2a4f41"
 PREVIOUS_PIN="82cc0cdd2e996cc747106b0a0bb9a6ebc5f4a104"
-LAST_TESTED_PIN="52350d53f6613fbfe3b70378a35174f02525b8d4"
+LAST_TESTED_PIN="404dc672286deb016c1438fbe9e822790ba983db"
+EARLIER_PIN="52350d53f6613fbfe3b70378a35174f02525b8d4"
 # Reuse the previous isolated worktree and ~2535 Ninja objects / FFmpeg cache.
 # Original game source, installed game binaries, saves and SSH are untouched.
 ROOT="$HOME/projects/shadps4/GhostOfTsushima/experiments/mixed-types-$PREVIOUS_PIN"
@@ -69,7 +70,7 @@ if [[ -e "$SOURCE" ]]; then
   fail "Experiment path in use by another project"
  CURRENT_PIN="$(git -C "$SOURCE" rev-parse HEAD)"
  [[ "$CURRENT_PIN" == "$PIN" || "$CURRENT_PIN" == "$PREVIOUS_PIN" ||
-    "$CURRENT_PIN" == "$LAST_TESTED_PIN" ]] ||
+    "$CURRENT_PIN" == "$LAST_TESTED_PIN" || "$CURRENT_PIN" == "$EARLIER_PIN" ]] ||
   fail "Unexpected experiment HEAD $CURRENT_PIN; preserving this separate worktree"
  [[ -z "$(git -C "$SOURCE" status --porcelain --untracked-files=no)" ]] ||
   fail "Existing experiment has uncommitted changes - preserving"
@@ -221,6 +222,27 @@ cmake -S "$SOURCE" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
  > "$CAPTURE/info/configure.log" 2>&1 || {
  tail -n 100 "$CAPTURE/info/configure.log" >&2;exit 5;
  }
+stage VERIFY_INTEGER_SAMPLER_POLICY_COMPILE
+# The last native -k0 run built every independent source except sampler.cpp,
+# so compile that exact object *first* and preserve its complete diagnostics.
+# Only then run the full build/link sweep; never replace the known-good ELF.
+SAMPLER_OBJECT="CMakeFiles/shadps4.dir/src/video_core/texture_cache/sampler.cpp.o"
+grep -Fq 'constexpr bool SamplerAnisotropyAllowed(' \
+ "$SOURCE/src/video_core/texture_cache/sampler.cpp" ||
+ fail "Missing sampler anisotropy implementation, refusing an avoidable build failure"
+grep -Fq 'constexpr vk::Filter ImageSamplerFilter(' \
+ "$SOURCE/src/video_core/texture_cache/sampler.cpp" ||
+ fail "Missing integer sampler filter implementation"
+grep -Fq 'constexpr vk::SamplerMipmapMode ImageSamplerMipmapMode(' \
+ "$SOURCE/src/video_core/texture_cache/sampler.cpp" ||
+ fail "Missing integer mip sampler filter implementation"
+cmake --build "$BUILD" --parallel 1 --target "$SAMPLER_OBJECT" \
+  > "$CAPTURE/info/sampler-object-build.log" 2>&1 || {
+  tail -n 140 "$CAPTURE/info/sampler-object-build.log" >&2
+  exit 7
+}
+echo "SAMPLER_POLICY_NATIVE_OBJECT=PASS" | tee -a "$CAPTURE/info/progress.log"
+
 stage BUILD_NATIVE_EMULATOR_COMPLETE_ERROR_SWEEP
 # Ninja -k 0 compiles all independent translation units even if one fails,
 # collecting the remaining compiler errors in ONE archive instead of
