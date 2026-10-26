@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 export GIT_TERMINAL_PROMPT=0
 BASE="$HOME/projects/shadps4/GhostOfTsushima/fresh-source/got-indexed-capacity-20261024-213908"
-PIN="fe219195516f1232981c32d8933c31b7568eda81"
+PIN="d014d268c016f24e61b046f1129ffe422b41e076"
 PREVIOUS_PIN="82cc0cdd2e996cc747106b0a0bb9a6ebc5f4a104"
 LAST_TESTED_PIN="ecbbdfebd394e17c33cfebf7b07c4bb89ab5e146"
 EARLIER_PIN="73f1ee423fa7daecdfdb1fc62e52c6291e2a4f41"
@@ -334,7 +334,7 @@ if [[ -z "$(printenv DISPLAY || true)" && -d /tmp/.X11-unix ]]; then
  [[ -z "$display" ]] || export DISPLAY=":$display"
 fi
 cat > "$CAPTURE/info/filter.py" <<'PY'
-import sys,json,gzip
+import sys,json,gzip,re
 from collections import Counter,deque
 from pathlib import Path
 root=Path(sys.argv[1])
@@ -349,6 +349,14 @@ with (root/"shader-events.txt").open("w") as out, gzip.open(
  for line in sys.stdin:
   full.write(line)
   last.append(line[-350:])
+  if "GuestIndexedImageDimensions:" in line:
+   match=re.search(r"entries=(\\d+).*?bound_2d=(\\d+).*?bound_3d=(\\d+).*?bound_cube=(\\d+).*?mixed=(true|false)",line)
+   if match:
+    entries,n2,n3,nc=[int(x) for x in match.groups()[:4]]
+    counts["bound_3d_logged"]+=n3
+    counts["bound_cube_logged"]+=nc
+    if entries>=1024 and match.group(5)=="true":
+     counts["large_guest_table_reports"]+=1
   for label,needle in patterns.items():
    if needle in line:
     counts[label]+=1
