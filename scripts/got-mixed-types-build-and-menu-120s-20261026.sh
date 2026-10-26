@@ -217,10 +217,15 @@ cmake -S "$SOURCE" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
  > "$CAPTURE/info/configure.log" 2>&1 || {
  tail -n 100 "$CAPTURE/info/configure.log" >&2;exit 5;
  }
-stage BUILD_NATIVE_EMULATOR
-cmake --build "$BUILD" --parallel 8 > "$CAPTURE/full-build.log" 2>&1 || {
-  grep -nE 'error:|FAILED:|undefined reference|ninja: build stopped' \
-  "$CAPTURE/full-build.log" | tail -n 80 >&2 || true
+stage BUILD_NATIVE_EMULATOR_COMPLETE_ERROR_SWEEP
+# Ninja -k 0 compiles all independent translation units even if one fails,
+# collecting the remaining compiler errors in ONE archive instead of
+# repeating costly incremental runs for each newly exposed source file.
+# A failed build still prevents game launch.
+cmake --build "$BUILD" --parallel 8 -- -k 0 \
+  > "$CAPTURE/full-build.log" 2>&1 || {
+  grep -nE 'error:|fatal error:|FAILED:|undefined reference|ninja: build stopped|ninja: cannot make progress' \
+    "$CAPTURE/full-build.log" | tail -n 160 >&2 || true
   exit 7
 }
 BIN="$BUILD/shadps4"
