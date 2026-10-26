@@ -811,7 +811,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb) {
                 break;
             }
             case PM4ItOpcode::AcquireMem: {
-                // const auto* acquire_mem = reinterpret_cast<PM4CmdAcquireMem*>(header);
+                const auto* acquire_mem = reinterpret_cast<const PM4CmdAcquireMem*>(header);
+                if (rasterizer) {
+                    rasterizer->AcquireGuestMemory(acquire_mem->cp_coher_cntl);
+                }
                 break;
             }
             case PM4ItOpcode::Rewind: {
@@ -1035,6 +1038,10 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             break;
         }
         case PM4ItOpcode::AcquireMem: {
+            const auto* acquire_mem = reinterpret_cast<const PM4CmdAcquireMem*>(header);
+            if (rasterizer) {
+                rasterizer->AcquireGuestMemory(acquire_mem->cp_coher_cntl);
+            }
             break;
         }
         case PM4ItOpcode::Rewind: {
