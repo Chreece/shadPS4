@@ -1,6 +1,6 @@
 # Ghost of Tsushima - shadPS4 engineering checkpoint
 
-This directory is the **canonical experiment diary** for the general shadPS4 emulator and the dedicated GoT development worktree. The goal is generic correctness across games - never title-ID cases, shader-hash branches, fake descriptors, skipped draws, synthetic texels, forced input, or unsafe CPU substitutions for live GPU values.
+This directory is the **GoT game-specific evidence appendix**, not a second emulator-wide diary. The single authoritative combined GoW/GoT/all-games history is [the universal emulator trial diary](../emulator/EXPERIMENT_DIARY.md), with an append-only [structured trial ledger](../emulator/TRIALS.jsonl) and [generic fix registry](../emulator/FIXES.json). The goal is generic correctness across games - never title-ID cases, shader-hash branches, fake descriptors, skipped draws, synthetic texels, forced input, or unsafe CPU substitutions for live GPU values.
 
 - [EXPERIMENT_DIARY.md](EXPERIMENT_DIARY.md): successful and failed experiments with emulator effect, native proof, game appearance, performance, retained code and exact evidence.
 - [BASELINES.json](BASELINES.json): machine-readable hashes and promotion status.
