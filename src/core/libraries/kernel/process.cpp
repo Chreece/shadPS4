@@ -106,6 +106,15 @@ void* PS4_SYSV_ABI sceKernelGetProcParam() {
     return linker->GetProcParam();
 }
 
+// Guest code may call host HLE functions without the stack alignment
+// expected by the native x86-64 ABI. A nested fmt/spdlog SIMD operation then
+// faults on an otherwise valid unaligned stack (Linux SIGSEGV, si_addr=0).
+// Restore the existing universal kernel ABI correction from c76e11c0:
+// realign this HLE entry before *any* C++ logging, STL or module operations.
+// This applies to all titles, without game IDs, runtime flags or fake returns.
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+__attribute__((force_align_arg_pointer))
+#endif
 s32 PS4_SYSV_ABI sceKernelLoadStartModule(const char* moduleFileName, u64 args, const void* argp,
                                           u32 flags, const void* pOpt, s32* pRes) {
     LOG_INFO(Lib_Kernel, "called filename = {}, args = {}", moduleFileName, args);
