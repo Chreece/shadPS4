@@ -350,7 +350,7 @@ with (root/"shader-events.txt").open("w") as out, gzip.open(
   full.write(line)
   last.append(line[-350:])
   if "GuestIndexedImageDimensions:" in line:
-   match=re.search(r"entries=(\\d+).*?bound_2d=(\\d+).*?bound_3d=(\\d+).*?bound_cube=(\\d+).*?mixed=(true|false)",line)
+   match=re.search(r"entries=(\d+).*?bound_2d=(\d+).*?bound_3d=(\d+).*?bound_cube=(\d+).*?mixed=(true|false)",line)
    if match:
     entries,n2,n3,nc=[int(x) for x in match.groups()[:4]]
     counts["bound_3d_logged"]+=n3
