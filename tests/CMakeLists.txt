@@ -168,6 +168,7 @@ set(GCN_TEST_SOURCES
     # Tests
     gcn/test_gcn_instructions.cpp
     gcn/test_srt_phi.cpp
+    gcn/test_srt_indexed_phi.cpp
     gcn/test_native_warning_contracts.cpp
 )
 
