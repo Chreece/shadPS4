@@ -168,7 +168,9 @@ set(GCN_TEST_SOURCES
     # Tests
     gcn/test_gcn_instructions.cpp
     gcn/test_srt_phi.cpp
-    gcn/test_srt_indexed_phi.cpp
+    # The experimental finite indexed-Phi matcher did not activate in
+    # the real runtime and was reverted. Keep its test source in Git history.
+    gcn/test_srt_uniform_lane.cpp
     gcn/test_native_warning_contracts.cpp
 )
 
