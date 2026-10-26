@@ -133,6 +133,19 @@ if grep -Fq -- "--cpu-id-mode" "$WORK/native-help.txt"; then
     echo "REJECTED_DYNAMORIO_CPU_ID_OPTION_STILL_IN_NATIVE_BINARY"; exit 2;
 fi
 echo "NATIVE_EMULATOR_CPU_ID_NO_DYNAMORIO=PASS"
+echo "STAGE=REQUIRED_UNIVERSAL_LOADING_SPLASH_AND_CONTROLLER_EXIT_SOURCE_AUDIT"
+grep -Fq '/app0/sce_sys/pic1.png' "$SRC/src/emulator.cpp" || {
+    echo "LOADING_SPLASH_CODE_MISSING"; exit 2;
+}
+grep -Fq 'IsSplashVisible()' "$SRC/src/video_core/renderer_vulkan/vk_presenter.cpp" || {
+    echo "VULKAN_SPLASH_PRESENTATION_MISSING"; exit 2;
+}
+grep -Fq 'SDL_GAMEPAD_BUTTON_GUIDE' "$SRC/src/sdl_window.cpp" &&
+grep -Fq 'Overlay::ToggleQuitWindow()' "$SRC/src/sdl_window.cpp" || {
+    echo "GAMEPAD_HOME_QUIT_HANDLER_MISSING"; exit 2;
+}
+echo "GAME_LOADING_SPLASH_AND_GUIDE_QUIT_SOURCE=PASS"
+echo "CONTROLLER_CONFIRM_CANCEL_RUNTIME=NOT_YET_VERIFIED"
 echo "STAGE=PINNED_UNIVERSAL_118_PLUS_2_OBSERVER"
 curl -4fsSL --retry 3 \
   "https://raw.githubusercontent.com/Chreece/shadPS4/034ad4e194d2bf2b08c97e5bd4fb20dd6fa42b15/tools/development/shadps4_native_120_observer_20261026.py" \
