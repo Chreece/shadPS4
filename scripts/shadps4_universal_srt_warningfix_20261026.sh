@@ -289,98 +289,32 @@ echo "STAGE=CLASSIFY_NATIVE_AND_GCN_COMPILER_WARNINGS"
 python3 - "$REPORT/build-native.log" "$REPORT/build-tests.log" "$REPORT/warnings-audit.txt" <<'PYWARN'
 from pathlib import Path
 from collections import Counter
-import re, sys
-result=[]
-warning=re.compile(r'^(.+?):(\d+):(\d+): warning: (.*)
-"$BINARY" --help > "$REPORT/native-help.txt" 2>&1 || exit 5
-! grep -Fq -- '--cpu-id-mode' "$REPORT/native-help.txt" || {
-    echo "DYNAMORIO_COMPATIBILITY_FLAG_PRESENT"; exit 5;
-}
-ldd "$BINARY" > "$REPORT/ldd.txt"
-! grep -q 'not found' "$REPORT/ldd.txt" || {
-    echo "MISSING_NATIVE_LIBRARY"; exit 5;
-}
-CANDIDATE_SHA="$(sha256sum "$BINARY" | cut -d' ' -f1)"
-echo "NEW_NATIVE_CANDIDATE_SHA=$CANDIDATE_SHA"
-echo "STAGE=INSTALL_PINNED_EXISTING_UNIVERSAL_118_PLUS_2_OBSERVER"
-RUNNER_ORIG="$WORK/pinned-gpu-headroom-observer.sh"
-RUNNER="$WORK/warningfix-observer.sh"
-curl -4fsSL --retry 3 --retry-delay 2 \
-    "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_REV/scripts/shadps4_gpu_headroom_ab_20261026.sh" \
-    -o "$RUNNER_ORIG"
-[[ "$(git hash-object "$RUNNER_ORIG")" == "$RUNNER_BLOB" ]] || {
-    echo "OBSERVER_TEMPLATE_HASH_MISMATCH_NO_GAME"; exit 6;
-}
-python3 - "$RUNNER_ORIG" "$RUNNER" "$BINARY" "$CANDIDATE_SHA" "$SOURCE_REV" "$SRC" <<'PY'
-from pathlib import Path
+import re
 import sys
-template, dest, binary, checksum, source_rev, source_dir = sys.argv[1:]
-data = Path(template).read_text()
-def exactly_once(old, new):
-    global data
-    assert data.count(old) == 1, f"Expected exactly one launcher field: {old[:75]}"
-    data = data.replace(old, new)
-exactly_once(
-    'BIN="$ROOT/GodOfWarRagnarok/tests/gow-upstream-got-20261025-145442-451241/build/shadps4"',
-    'BIN="' + binary + '"')
-exactly_once(
-    'EXPECTED=7604bae00c78b72e163138327f61a2f92bf549ac66446487d1ab7370a2f9b4d1',
-    'EXPECTED=' + checksum)
-exactly_once(
-    'SOURCE_REV="803bb428731be794bdc44e38b56313d030a7403a"',
-    'SOURCE_REV="' + source_rev + '"')
-exactly_once(
-    'SRC="$ROOT/GodOfWarRagnarok/tests/gow-upstream-got-20261025-145442-451241/source"',
-    'SRC="' + source_dir + '"')
-assert 'shadps4-gpu-headroom-ab-' in data
-data = data.replace('shadps4-gpu-headroom-ab-', 'shadps4-srt-warnfix-')
-exactly_once('--fix-id gpu-device-lost-after-first-frame',
-             '--fix-id dynamic-srt-bda-atomic-faults')
-exactly_once(
-    'Same exact native emulator binary, host Ollama VRAM headroom A/B only; 11/21/26s frames and read-only kernel faults',
-    'New generic on-demand shader SRT BDA and atomic page faults; VRAM-headroom observer; no compatibility overrides')
-exactly_once(
-    'Compare whether GPU context lost persists with additional free VRAM; inspect first-frame screenshots, amdgpu kernel events and real resource lifetime before general renderer changes',
-    'Compare presentable GoW frames, AMD device-loss and dynamic SRT page-fault evidence against 120-second baseline')
-exactly_once('--pr 73 --pr 71', '--pr 73')
-Path(dest).write_text(data)
-PY
-bash -n "$RUNNER"
-echo "NATIVE_FLAGS=FULLSCREEN_AND_FPS_ONLY"
-echo "VRAM=UNLOAD_OLLAMA_IF_REQUIRED_AND_RESTORE_AFTER_GAME"
-echo "EXISTING_SAVES_ESDE_SSH=UNCHANGED"
-echo "STAGE=118_PLUS_2_SECOND_NATIVE_RAGNAROK_GAMEPLAY"
-# Call the original verified observer worker directly: its source audits,
-# isolated user profile, screenshot schedule and diary append all remain active.
-# It owns only the game process group; the outer SSH session stays open.
-set +e
-bash "$RUNNER" --worker "$TAG" "$GAME"
-rc=$?
-set -e
-echo "NATIVE_GAMEPLAY_OBSERVER_EXIT=$rc"
-exit "$rc"
-)
-for label,file in (("native",Path(sys.argv[1])),("tests",Path(sys.argv[2]))):
-    counts=Counter()
-    detail=[]
-    for line in file.read_text(errors="replace").splitlines():
-        match=warning.match(line)
+
+result = []
+warning = re.compile(r'^(.+?):(\d+):(\d+): warning: (.*)$')
+for label, path in (("native", Path(sys.argv[1])), ("tests", Path(sys.argv[2]))):
+    counts = Counter()
+    detail = []
+    for line in path.read_text(errors="replace").splitlines():
+        match = warning.match(line)
         if not match:
             continue
-        path,lineno,col,message=match.groups()
-        kind=("third_party" if "/externals/" in path else
-              "first_party" if "/source/src/" in path else
-              "test_code" if "/source/tests/" in path else
-              "system_or_generated")
-        counts[kind]+=1
-        detail.append(f"{kind}: {path}:{lineno}:{col}: {message}")
+        file_path, lineno, column, message = match.groups()
+        kind = ("third_party" if "/externals/" in file_path else
+                "first_party" if "/source/src/" in file_path else
+                "test_code" if "/source/tests/" in file_path else
+                "system_or_generated")
+        counts[kind] += 1
+        detail.append(f"{kind}: {file_path}:{lineno}:{column}: {message}")
     result.append(f"{label.upper()} WARNINGS={sum(counts.values())}")
     result.extend(f"{key}={counts[key]}" for key in
-                  ("first_party","third_party","test_code","system_or_generated"))
+                  ("first_party", "third_party", "test_code", "system_or_generated"))
     result.extend(detail)
     print(f"{label.upper()}_WARNING_COUNT={sum(counts.values())}")
     print(f"{label.upper()}_FIRST_PARTY_WARNING_COUNT={counts['first_party']}")
-Path(sys.argv[3]).write_text("\n".join(result)+"\n")
+Path(sys.argv[3]).write_text("\n".join(result) + "\n")
 PYWARN
 echo "WARNING_AUDIT_REPORT=$REPORT/warnings-audit.txt"
 "$BINARY" --help > "$REPORT/native-help.txt" 2>&1 || exit 5
