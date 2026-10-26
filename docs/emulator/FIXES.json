@@ -295,6 +295,18 @@
       "observed_game_effects": "GoW Oct26 native latest-upstream 803bb428; libSceAudio3d loaded and first game frame callback at 18.005s; RADV/NAVI31 guilty soft recovery, VK_ERROR_DEVICE_LOST and host SIGSEGV -11 at 28.841s; no screenshot or sound proof. Native-only HLE 4.8s formatter fault not reproduced. Excerpt: 635 SRT Phi unsupported, 3026 SRT offset fails, 179 buffer-range clamps 0xffffffff to ~774-783MB, *not confirmed triggers*.",
       "negative_result_or_prohibition": "Do not infer driver reset caused by SRT warnings, memory pressure, or huge guest mappings without GPU fault/context evidence. Do not arbitrarily cap descriptor lengths, fabricate shader values, skip draws, change GPU mode or enable game-specific workarounds. RADV 25.0.7 / RX 7900 XTX; crash diagnostics and GPU-assisted Vulkan validation disabled by normal global config.",
       "next_test": "Run same exact ELF 7604bae0 with host Ollama unloaded only for generic GPU-headroom A/B (if model loaded), using same native CPU/game flags/settings, capture first game frame before 40s and read-only AMD kernel reset details. Then sample genuine resource bases/descriptor flags and identify faulty GPU producer/dispatch before any renderer semantics change."
+    },
+    {
+      "id": "gpu-descriptor-table-demand-coherence",
+      "subsystem": "gpu-resource-coherence",
+      "status": "CXX_PATCH_PREPARED_NATIVE_RUNTIME_PENDING",
+      "related_prs": [
+        74
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No native GoT run of new coherency patch yet. Prior menu captures with completed Precise linear-image readbacks still have missing solid graphics. New code prevents CPU reading stale guest image/sampler descriptor table buffer bytes after tracked GPU buffer writes, only when actual range GPU-dirty.",
+      "negative_result_or_prohibition": "Does not fix heterogeneous Vulkan Dim2D/Dim3D/Cube type mismatch by coercion, does not synchronize untiled images eagerly, does not make up CPU texture indexes, does not change saved GPU settings or assume the 39 non-2D entries are executed.",
+      "next_test": "Run exact SHA-verified PR74 native A/B GoT menu for 118s+2s cap, count GpuDescriptorTableCpuCoherence events and compare same-scene materials/FPS; if zero events, mark this specific explanation disproven for menu, retain general correctness mechanism subject to regressions. Only promote after GoW cross-title native regression."
     }
   ]
 }
