@@ -168,6 +168,7 @@ set(GCN_TEST_SOURCES
     # Tests
     gcn/test_gcn_instructions.cpp
     gcn/test_srt_phi.cpp
+    gcn/test_exec_scope_scalar_split.cpp
     # Zero-activation GPU Phi and ReadFirstLane experiments were reverted.
     # They remain documented with tests in Git history and the universal diary.
     gcn/test_native_warning_contracts.cpp
