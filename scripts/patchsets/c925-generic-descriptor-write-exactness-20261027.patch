@@ -1,0 +1,163 @@
+diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+@@ -432,7 +432,6 @@
+         return false;
+     }
+ 
+-    set_write_index = 0;
+     set_writes.clear();
+     buffer_infos.clear();
+     image_infos.clear();
+@@ -441,6 +440,7 @@
+     // into image_infos. Later vector growth must not invalidate those pointers.
+     std::size_t required_infos = 0;
+     std::size_t required_buffer_infos = 0;
++    std::size_t required_writes = 0;
+     std::size_t max_stage_images = 0;
+     for (const auto* stage : pipeline->GetStages()) {
+         if (!stage) {
+@@ -448,6 +448,12 @@
+         }
+         std::size_t stage_images = 0;
+         required_buffer_infos += stage->buffers.size();
++        const auto typed_image_bindings = std::ranges::count_if(
++            stage->images, [](const Shader::ImageResource& image) {
++                return image.is_guest_mixed_indexed;
++            });
++        required_writes += stage->buffers.size() + stage->images.size() +
++                           3u * typed_image_bindings + stage->samplers.size();
+         for (const auto& image : stage->images) {
+             stage_images += image.NumBindings(*stage);
+             if (image.is_guest_mixed_indexed) {
+@@ -472,6 +478,10 @@
+         return false;
+     }
+     image_infos.reserve(required_infos);
++    // Reserve capacity only. Resizing creates default-initialized descriptor
++    // writes which must never reach vkCmdPushDescriptorSetKHR if a producer
++    // supplies fewer records than its estimate.
++    set_writes.reserve(required_writes);
+     // VkWriteDescriptorSet::pBufferInfo pointers remain valid while adding
+     // the compact typed remap SSBO alongside regular shader buffer bindings.
+     buffer_infos.reserve(required_buffer_infos);
+@@ -487,12 +497,6 @@
+         if (!stage) {
+             continue;
+         }
+-        const auto typed_image_bindings = std::ranges::count_if(
+-            stage->images, [](const Shader::ImageResource& image) {
+-                return image.is_guest_mixed_indexed;
+-            });
+-        set_writes.resize(set_writes.size() + stage->buffers.size() + stage->images.size() +
+-                          3u * typed_image_bindings + stage->samplers.size());
+         BindBuffers(*stage, binding, push_data);
+         BindTextures(*stage, binding);
+         uses_dma |= stage->uses_dma;
+@@ -500,6 +504,34 @@
+ 
+     uses_dma_resources = uses_dma;
+ 
++    // The dynamic write list must agree with the declared shader resources,
++    // and each Vulkan write must provide its type-appropriate descriptor
++    // data. Reject inconsistent producer metadata before it reaches RADV.
++    if (set_writes.size() != required_writes) {
++        LOG_ERROR(Render_Vulkan, "Descriptor write count mismatch: expected={} created={}",
++                  required_writes, set_writes.size());
++        return false;
++    }
++    for (std::size_t i = 0; i < set_writes.size(); ++i) {
++        const auto& write = set_writes[i];
++        const auto type = write.descriptorType;
++        const bool is_buffer = type == vk::DescriptorType::eStorageBuffer;
++        const bool is_image = type == vk::DescriptorType::eSampledImage ||
++                              type == vk::DescriptorType::eStorageImage ||
++                              type == vk::DescriptorType::eSampler;
++        if (write.descriptorCount == 0 ||
++            (is_buffer && write.pBufferInfo == nullptr) ||
++            (is_image && write.pImageInfo == nullptr) ||
++            (!is_buffer && !is_image)) {
++            LOG_ERROR(Render_Vulkan,
++                      "Invalid Vulkan descriptor write: ordinal={} binding={} type={} count={} "
++                      "buffer_info={} image_info={}",
++                      i, write.dstBinding, static_cast<u32>(type), write.descriptorCount,
++                      static_cast<const void*>(write.pBufferInfo),
++                      static_cast<const void*>(write.pImageInfo));
++            return false;
++        }
++    }
+     return true;
+ }
+ 
+@@ -931,7 +963,7 @@
+             }
+         }
+ 
+-        auto& set_write = set_writes[set_write_index++];
++        auto& set_write = set_writes.emplace_back();
+         set_write.dstSet = VK_NULL_HANDLE;
+         set_write.dstBinding = binding.unified++;
+         set_write.dstArrayElement = 0;
+@@ -1191,6 +1223,7 @@
+         if (tsharp.Address() == 0 || data_fmt == AmdGpu::DataFormat::FormatInvalid) {
+             image_bindings[num_images++].image_id = {};
+             image_descriptor_array_sizes.push_back(1);
++            image_descriptor_is_storage.push_back(image_desc.is_written);
+             continue;
+         }
+ 
+@@ -1203,6 +1236,7 @@
+                         static_cast<u32>(num_fmt));
+             image_bindings[num_images++].image_id = {};
+             image_descriptor_array_sizes.push_back(1);
++            image_descriptor_is_storage.push_back(image_desc.is_written);
+             continue;
+         }
+ 
+@@ -1320,7 +1354,7 @@
+             const u64 offset =
+                 stream.Copy(remap.data(), bytes, instance.StorageMinAlignment());
+             buffer_infos.emplace_back(stream.Handle(), offset, bytes);
+-            auto& write = set_writes[set_write_index++];
++            auto& write = set_writes.emplace_back();
+             write.dstSet = VK_NULL_HANDLE;
+             write.dstBinding = binding.unified++;
+             write.dstArrayElement = 0u;
+@@ -1334,7 +1368,7 @@
+         // fallback selection, or invalid texture handles. A descriptor write
+         // must use the exact type declared by its pipeline layout.
+         const bool is_storage = image_descriptor_is_storage[image_index];
+-        auto& set_write = set_writes[set_write_index++];
++        auto& set_write = set_writes.emplace_back();
+         set_write.dstSet = VK_NULL_HANDLE;
+         set_write.dstBinding = binding.unified;
+         set_write.dstArrayElement = 0;
+@@ -1495,7 +1529,7 @@
+                                 valid_indexed_samplers, bytes, record_stride);
+                 }
+             }
+-            auto& write = set_writes[set_write_index++];
++            auto& write = set_writes.emplace_back();
+             write.dstSet = VK_NULL_HANDLE;
+             write.dstBinding = binding.unified;
+             write.dstArrayElement = 0;
+@@ -1521,7 +1555,7 @@
+         const auto vk_sampler =
+             texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base, sampler.is_depth, sampler.is_integer);
+         image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
+-        auto& set_write = set_writes[set_write_index++];
++        auto& set_write = set_writes.emplace_back();
+         set_write.dstSet = VK_NULL_HANDLE;
+         set_write.dstBinding = binding.unified++;
+         set_write.dstArrayElement = 0;
+diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.h b/src/video_core/renderer_vulkan/vk_rasterizer.h
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.h
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.h
+@@ -175,7 +175,6 @@
+     std::vector<BoundBuffer> bound_buffers;
+     std::vector<VideoCore::ImageId> bound_images;
+ 
+-    u32 set_write_index{};
+     Pipeline::DescriptorWrites set_writes;
+     Shader::PushData push_data;
+ 
