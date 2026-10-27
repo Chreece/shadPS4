@@ -121,6 +121,14 @@ echo "STAGE=$STATE"
     echo "PR88_BASE_ELF_CHECKSUM_MISMATCH"; exit 4;
 }
 sha256sum "$OLD" > "$EVIDENCE/pr88-base-binary.sha256"
+# Symbolize the exact earlier pre-GPU null-read before replacing any ABI code.
+# On stripped Release builds addr2line can legitimately show unknown source.
+if command -v addr2line >/dev/null; then
+    addr2line -a -C -f -i -e "$OLD" 0xff6386         > "$EVIDENCE/pr88-crash-elf-0xff6386-symbolized.txt" 2>&1 || true
+fi
+if command -v objdump >/dev/null; then
+    objdump -d -C -M intel --start-address=0xff6340 --stop-address=0xff63c0 "$OLD"         > "$EVIDENCE/pr88-crash-instructions.txt" 2>&1 || true
+fi
 STATE="FETCH_PINNED_MINIMAL_ABI_FIX"
 echo "STAGE=$STATE"
 git -c http.version=HTTP/1.1 clone -q --filter=blob:none --no-tags \
