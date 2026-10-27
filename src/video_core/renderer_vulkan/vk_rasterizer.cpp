@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -852,13 +854,27 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             }
         } else {
             const auto vsharp = desc.GetSharp(stage);
-            if (vsharp.base_address == 0 || vsharp.GetSize() == 0) {
+            // PR80 (native-tested in GoT): GCN NUM_RECORDS is a 32-bit count,
+            // but STRIDE * NUM_RECORDS must be evaluated in 64 bits first.
+            // Only actual accessible guest mappings bound the Vulkan range.
+            const u64 declared_bytes = vsharp.GetSize64();
+            if (vsharp.base_address == 0 || declared_bytes == 0) {
                 buffer_infos.emplace_back(VK_NULL_HANDLE, 0, VK_WHOLE_SIZE);
             } else {
-                const u64 size = memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize());
-                if (size != vsharp.GetSize()) {
-                    LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
-                              vsharp.GetSize(), size, stage.pgm_hash);
+                const u64 size = memory->ClampRangeSize(vsharp.base_address, declared_bytes);
+                ASSERT_MSG(size > 0 && AmdGpu::BufferSize::FitsU32(size),
+                           "Guest V# mapped extent {} cannot be represented in current "
+                           "32-bit BufferCache API (declared {})",
+                           size, declared_bytes);
+                if (size != declared_bytes) {
+                    static std::atomic<u32> reported_clamps{};
+                    if (reported_clamps.fetch_add(1, std::memory_order_relaxed) < 32u) {
+                        LOG_INFO(Render_Vulkan,
+                                 "GuestBufferMappedRange: shader={:#x} base={:#x} "
+                                 "declared_bytes64={} mapped_bytes={}",
+                                 stage.pgm_hash, static_cast<u64>(vsharp.base_address),
+                                 declared_bytes, size);
+                    }
                 }
                 VideoCore::ObtainBufferFlags flags = {};
                 if (desc.is_written) {
@@ -868,7 +884,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                     flags |= VideoCore::ObtainBufferFlags::IsTexelBuffer;
                 }
                 const auto [buffer, offset] =
-                    buffer_cache.ObtainBuffer(vsharp.base_address, size, flags);
+                    buffer_cache.ObtainBuffer(vsharp.base_address, static_cast<u32>(size), flags);
                 const u64 offset_aligned = Common::AlignDown(offset, alignment);
                 const u64 adjust = offset - offset_aligned;
                 if (adjust % 4 != 0) {
