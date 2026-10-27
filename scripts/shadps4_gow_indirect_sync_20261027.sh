@@ -824,7 +824,7 @@ else
     if (( rc == 0 )); then rc=22; fi
 fi
 if [[ -f "$REPORT/session-identity-summary.txt" ]] &&
-   grep -Eq '^(SUNSHINE_IDENTICAL|XORG_IDENTICAL)=False "$REPORT/session-identity-summary.txt"; then
+   grep -Eq '^(SUNSHINE_IDENTICAL|XORG_IDENTICAL)=False$' "$REPORT/session-identity-summary.txt"; then
     echo "GRAPHICS_SESSION_PRESERVATION=FAILED" | tee -a "$VERDICT"
     if (( rc == 0 )); then rc=23; fi
 else
