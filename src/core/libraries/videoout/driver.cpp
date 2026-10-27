@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -8,6 +10,7 @@
 #include "core/emulator_settings.h"
 #include "core/libraries/kernel/time.h"
 #include "core/libraries/videoout/driver.h"
+#include "core/libraries/videoout/video_flip_trace.h"
 #include "core/libraries/videoout/videoout_error.h"
 #include "core/startup_progress.h"
 #include "imgui/renderer/imgui_core.h"
@@ -235,11 +238,23 @@ int VideoOutDriver::ChangeBufferAttribute(VideoOutPort* port, s32 attributeIndex
 }
 
 void VideoOutDriver::Flip(const Request& req) {
+    static std::atomic<u64> presented_flips{};
+    const u64 seq = presented_flips.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (ShouldTraceVideoFlip(seq)) {
+        LOG_INFO(Lib_VideoOut,
+                 "VIDEO_FLIP_STAGE stage=present_begin count={} buffer={} eop={}",
+                 seq, req.index, req.eop);
+    }
     // Update HDR status before presenting.
     presenter->SetHDR(req.port->is_hdr);
 
     // Present the frame.
     presenter->Present(req.frame);
+    if (ShouldTraceVideoFlip(seq)) {
+        LOG_INFO(Lib_VideoOut,
+                 "VIDEO_FLIP_STAGE stage=present_returned count={} buffer={} eop={}",
+                 seq, req.index, req.eop);
+    }
 
     // Update flip status.
     auto* port = req.port;
@@ -294,6 +309,13 @@ void VideoOutDriver::DrawLastFrame() {
 
 bool VideoOutDriver::SubmitFlip(VideoOutPort* port, s32 index, s64 flip_arg,
                                 bool is_eop /*= false*/) {
+    static std::atomic<u64> requested_flips{};
+    const u64 seq = requested_flips.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (ShouldTraceVideoFlip(seq)) {
+        LOG_INFO(Lib_VideoOut,
+                 "VIDEO_FLIP_STAGE stage=guest_requested count={} buffer={} eop={}",
+                 seq, index, is_eop);
+    }
     {
         std::unique_lock lock{port->port_mutex};
         if (index != -1 && port->flip_status.flip_pending_num > 16) {
@@ -319,6 +341,13 @@ bool VideoOutDriver::SubmitFlip(VideoOutPort* port, s32 index, s64 flip_arg,
 }
 
 void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_arg, bool is_eop) {
+    static std::atomic<u64> prepared_flips{};
+    const u64 seq = prepared_flips.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (ShouldTraceVideoFlip(seq)) {
+        LOG_INFO(Lib_VideoOut,
+                 "VIDEO_FLIP_STAGE stage=prepare_requested count={} buffer={} eop={}",
+                 seq, index, is_eop);
+    }
     Vulkan::Frame* frame;
     if (index == -1) {
         frame = presenter->PrepareBlankFrame(false);
@@ -329,6 +358,11 @@ void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_
         frame = presenter->PrepareFrame(group, buffer.address_left);
     }
 
+    if (ShouldTraceVideoFlip(seq)) {
+        LOG_INFO(Lib_VideoOut,
+                 "VIDEO_FLIP_STAGE stage=prepared count={} buffer={} eop={}",
+                 seq, index, is_eop);
+    }
     std::scoped_lock lock{mutex};
     requests.push({
         .frame = frame,
