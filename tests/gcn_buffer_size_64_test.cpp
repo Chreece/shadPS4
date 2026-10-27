@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Real production-header regression: test unsigned GCN STRIDE * NUM_RECORDS,
 // specifically the previously observed 0xFFFFFFEC wrapped case.
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <limits>
