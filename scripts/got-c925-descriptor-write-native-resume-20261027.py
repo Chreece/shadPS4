@@ -38,6 +38,24 @@ HEADER_BEFORE = "f003fa81204d9d766f4ea8bc7de88bbaf15286dbc27dfccaf4d3077b1eb0dd9
 RASTERIZER_AFTER = "c599ad215ee9ffc233b4c3ee0d0bec5615d2acb7bb0681b3291e119179880e15"
 HEADER_AFTER = "5a99989156ae9310a1812fd5400a0cff0d12f2ed6d618efe98199b6fb5d122ed"
 INSTANCE_HEADER_SHA = "fd5e730ab62b37062d7abdcd52f6c897e65f9f33893ea480490008f1875e8a33"
+OTHER_PINNED_FILES = {
+    "src/shader_recompiler/backend/spirv/emit_spirv_image.cpp": "7895466b9021f48aad7cc8ab4475decda14b7f1a3c213e7bd3ddb2562a3facab",
+    "src/shader_recompiler/backend/spirv/spirv_emit_context.cpp": "3f7548e5d8eb995122779b4f45661c8cf2f27865db46016a32b80c5f3de358bc",
+    "src/shader_recompiler/backend/spirv/spirv_emit_context.h": "981d5aef1dfff48468aee76e4d58af8055a386dab0be684b4712b2784a4a5404",
+    "src/shader_recompiler/compact_image_indices.h": "1f8288c4e4d548b4a0d842862a2d3c3c10abc8fa9c2c26ecf31dffefe44457f0",
+    "src/shader_recompiler/guest_descriptor_coherence.h": "7c7ccc5e5095ecb0fbca33bd5505be1a58122c08286b22837b345b601a1ac521",
+    "src/shader_recompiler/ir/passes/resource_discover_pass.cpp": "b1db2e1fe70c402301fe6ab23c7ab52fbe51185f0eac4ea15752b45783f8f1bb",
+    "src/shader_recompiler/ir/passes/resource_patching_pass.cpp": "3db63031e40a759c8e597bdb9482b72cbcb3e0417eac73ce5968de4411b70eb1",
+    "src/shader_recompiler/profile.h": "71dba84eb64bc6cee8b09f256fda251524c57b2cf3a0d5798365715ee8359b23",
+    "src/shader_recompiler/resource.h": "cbc0e4b0ce9f067c9972d11893c2109a158cfbfc9f8fe31c93f85e460f49f3ee",
+    "src/video_core/renderer_vulkan/vk_compute_pipeline.cpp": "963d04ce367bf9e7a7c403264b7fa8b70f6727b72bf1a41a3ca2f4737d22e936",
+    "src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp": "14621783c47220fb0e052a59d3e94434213eaca4987456052970aef9a9135ae2",
+    "src/video_core/renderer_vulkan/vk_instance.cpp": "b26369863680ab25b8df235271d6fe3da613c32ecb8e41e0bb7850f61a3071c9",
+    "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp": "7c40b40f0b1389f1fee78746ee6cc0f9e44a9c542fe3d69c9aa99a9225e6b6b4",
+    "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp": "2c7ccefc0bb57226ef9f48a9435c2b050db028b42c057a073f4b91e38e6ba93d",
+    "tests/compact_image_indices_test.cpp": "0d0c5230064b5114909f830755596ae97e67caa4188c4a092204e7ae2fa7cd61",
+    "tests/guest_descriptor_coherence_test.cpp": "a5350f0d411ba1ead1caf1affa2d0e5d44a8f3e5d942e8e3ed0638bed1f3ebb9",
+}
 
 
 def import_runner():
@@ -91,6 +109,11 @@ def preflight(m):
         raise m.Abort("PROTECTED_MENU_POSITIVE_ELF_MISSING_OR_CHANGED", 2)
     if not m.GAME.is_file():
         raise m.Abort("GAME_EBOOT_MISSING", 2)
+    for rel, expected_sha in OTHER_PINNED_FILES.items():
+        source_file = m.SRC / rel
+        if (not source_file.is_file() or source_file.is_symlink() or
+                m.sha256(source_file) != expected_sha):
+            raise m.Abort("UNEXPECTED_OTHER_SOURCE_" + rel.replace("/", "_"), 2)
     if m.sha256(m.SRC / "src/video_core/renderer_vulkan/vk_instance.h") != INSTANCE_HEADER_SHA:
         raise m.Abort("PREVIOUS_FIXED_VULKAN_INSTANCE_HEADER_CHANGED", 2)
     raster = m.SRC / "src/video_core/renderer_vulkan/vk_rasterizer.cpp"
