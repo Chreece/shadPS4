@@ -987,6 +987,15 @@ void Presenter::CopyStartupReadback(const Frame* frame, vk::CommandBuffer cmdbuf
 }
 
 void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {
+    static std::atomic<u64> host_present_calls{};
+    const u64 host_seq =
+        is_game_frame ? 0 : host_present_calls.fetch_add(1, std::memory_order_relaxed) + 1;
+    const bool trace_host =
+        host_seq != 0 && (host_seq <= 64 || Libraries::VideoOut::ShouldTraceVideoFlip(host_seq));
+    if (trace_host) {
+        LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=enter count={}", host_seq);
+    }
+
     // Host loading-splash frames must not be mistaken for guest video.
     static std::atomic<u64> guest_present_calls{};
     const bool actual_guest_flip =
@@ -1018,7 +1027,18 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
     }
 
-    if (!swapchain.AcquireNextImage()) {
+    if (trace_host) {
+        LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=acquire_begin count={}", host_seq);
+    }
+    if (!swapchain.AcquireNextImage(is_game_frame)) {
+        if (!is_game_frame) {
+            if (trace_host) {
+                LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=acquire_skipped count={}",
+                         host_seq);
+            }
+            free_frame();
+            return;
+        }
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
         if (!swapchain.AcquireNextImage()) {
             // User resizes the window too fast and GPU can't keep up. Skip this frame.
@@ -1028,6 +1048,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         }
     }
 
+    if (trace_host) {
+        LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=acquire_ready count={}", host_seq);
+    }
+
     // Reset fence for queue submission. Do it here instead of GetRenderFrame() because we may
     // skip frame because of slow swapchain recreation. If a frame skip occurs, we skip signal
     // the frame's present fence and future GetRenderFrame() call will hang waiting for this frame.
@@ -1035,6 +1059,9 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     ASSERT_MSG(reset_result == vk::Result::eSuccess,
                "Unexpected error resetting present done fence: {}", vk::to_string(reset_result));
 
+    if (trace_host) {
+        LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=imgui_begin count={}", host_seq);
+    }
     ImGuiID dockId = ImGui::Core::NewFrame(is_reusing_frame);
 
     const vk::Image swapchain_image = swapchain.Image();
@@ -1256,12 +1283,26 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     info.AddWait(frame->ready_semaphore, frame->ready_tick);
     info.AddSignal(swapchain.GetPresentReadySemaphore());
     info.AddSignal(frame->present_done);
+    if (trace_host) {
+        LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=flush_begin count={}", host_seq);
+    }
     scheduler.Flush(info);
+    if (trace_host) {
+        LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=flush_returned count={}", host_seq);
+    }
 
     // Present to swapchain.
     {
         std::scoped_lock submit_lock{Scheduler::submit_mutex};
+        if (trace_host) {
+            LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=queue_present_begin count={}",
+                     host_seq);
+        }
         const bool presented = swapchain.Present();
+        if (trace_host) {
+            LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=queue_present_returned count={}",
+                     host_seq);
+        }
         if (guest_seq != 0 && Libraries::VideoOut::ShouldTraceVideoFlip(guest_seq)) {
             LOG_INFO(Frontend,
                      "VIDEO_FLIP_STAGE stage=guest_swapchain_result count={} presented={}",
