@@ -49,10 +49,10 @@ namespace Shader::Gcn {
     }
 
     bool earlier_scalar_state_may_have_changed = false;
-    // Skip the first masked instruction. A split at its index would create
-    // an empty conditional block; the last masked instruction must also stay
-    // in the following scope.
-    for (s32 i = first_masked + 1; i < last_masked; ++i) {
+    // The first masked instruction may write VCC or another scalar result.
+    // Account for its dependencies before deciding whether to hoist SALU.
+    // The last masked instruction stays in the following conditional scope.
+    for (s32 i = first_masked; i < last_masked; ++i) {
         const GcnInst& inst = instructions[i];
         if (inst.category == InstCategory::ScalarALU) {
             if (earlier_scalar_state_may_have_changed) {
