@@ -366,9 +366,10 @@ cmake -S "$SRC" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=O
     > "$REPORT/configure-native.log" 2>&1 || {
     tail -120 "$REPORT/configure-native.log"; exit 7;
 }
-grep -Fq 'FindSafeScalarExecScopeSplit(inst_list, curr_begin, curr_end)' "$SRC/src/shader_recompiler/frontend/control_flow_graph.cpp" &&
-grep -Fq 'Whole-wave SALU EXEC scope splits=' "$SRC/src/shader_recompiler/frontend/control_flow_graph.cpp" &&
-grep -Fq 'earlier_scalar_state_may_have_changed' "$SRC/src/shader_recompiler/frontend/safe_scalar_exec_scope_split.h" || {
+grep -Fq 'VIDEO_FLIP_STAGE stage=guest_requested' "$SRC/src/core/libraries/videoout/driver.cpp" &&
+grep -Fq 'VIDEO_FLIP_STAGE stage=guest_swapchain_result' "$SRC/src/video_core/renderer_vulkan/vk_presenter.cpp" &&
+grep -Fq 'VIDEO_FLIP_STAGE stage=eop_flip_irq_registered' "$SRC/src/core/libraries/videoout/video_out.cpp" &&
+grep -Fq 'ShouldTraceVideoFlip' "$SRC/src/core/libraries/videoout/video_flip_trace.h" || {
     echo "VIDEO_FLIP_SOURCE_NOT_PINNED"; exit 7;
 }
 echo "STAGE=COMPILE_NATIVE_VIDEO_FLIP_AND_PRESENTER_FIRST"
@@ -495,6 +496,17 @@ if [[ -f "$SRT_FULL_CONSOLE" && ! -L "$SRT_FULL_CONSOLE" ]]; then
         echo "PRIOR_EXCERPT_FAILED_SRT_OFFSETS=2993"
         echo "CURRENT_FULL_CONSOLE_BYTES=$(stat -c %s "$SRT_FULL_CONSOLE")"
         echo "CURRENT_FINDILSB32_UNSUPPORTED=$(grep -Fc 'Unexpected instruction for offset computation, FindILsb32' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_REQUESTED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_requested' \"$SRT_FULL_CONSOLE\" || :)"
+        echo "VIDEO_FLIP_STAGE_EOP_FLIP_IRQ_REGISTERED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=eop_flip_irq_registered' \"$SRT_FULL_CONSOLE\" || :)"
+        echo "VIDEO_FLIP_STAGE_EOP_FLIP_IRQ_DELIVERED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=eop_flip_irq_delivered' \"$SRT_FULL_CONSOLE\" || :)"
+        echo "VIDEO_FLIP_STAGE_PREPARE_REQUESTED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=prepare_requested' \"$SRT_FULL_CONSOLE\" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_FRAME_PREPARE_BEGIN_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_frame_prepare_begin' \"$SRT_FULL_CONSOLE\" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_FRAME_PREPARE_READY_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_frame_prepare_ready' \"$SRT_FULL_CONSOLE\" || :)"
+        echo "VIDEO_FLIP_STAGE_PREPARED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=prepared' \"$SRT_FULL_CONSOLE\" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_PRESENT_ENTER_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_present_enter' \"$SRT_FULL_CONSOLE\" || :)"
+        echo "VIDEO_FLIP_STAGE_PRESENT_BEGIN_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=present_begin' \"$SRT_FULL_CONSOLE\" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_SWAPCHAIN_RESULT_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_swapchain_result' \"$SRT_FULL_CONSOLE\" || :)"
+        echo "VIDEO_FLIP_STAGE_PRESENT_RETURNED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=present_returned' \"$SRT_FULL_CONSOLE\" || :)"
         echo "CURRENT_SCALAR_EXEC_SCOPE_SPLIT_EVENTS=$(grep -Fc 'Whole-wave SALU EXEC scope splits=' "$SRT_FULL_CONSOLE" || :)"
         echo "CURRENT_PM4_ACQUIRE_MARKER_EVENTS=$(grep -Fc 'PM4 AcquireMem Vulkan barriers=' "$SRT_FULL_CONSOLE" || :)"
         echo "CURRENT_FIRST_GAME_FRAME_EVENTS=$(grep -Fc 'STARTUP_UI event=first_game_frame' "$SRT_FULL_CONSOLE" || :)"
@@ -521,6 +533,16 @@ from pathlib import Path
 import re
 import sys
 data = Path(sys.argv[1]).read_text(errors="replace")
+# Log counts are sampled at powers of two; maximum is the proved lower bound.
+stages = ("guest_requested", "eop_flip_irq_registered", "eop_flip_irq_delivered",
+          "prepare_requested", "guest_frame_prepare_begin", "guest_frame_prepare_ready",
+          "prepared", "guest_present_enter", "present_begin",
+          "guest_swapchain_result", "present_returned")
+for stage in stages:
+    found = [int(x) for x in re.findall(
+        r"VIDEO_FLIP_STAGE stage=" + stage + r" count=(\\d+)", data)]
+    print("VIDEO_FLIP_STAGE_"+stage.upper()+"_OBSERVED_MINIMUM="+str(max(found, default=0)))
+print("VIDEO_FLIP_STAGE_COUNT_SAMPLES_ARE_POWERS_OF_TWO=YES")
 salu = [int(v) for v in re.findall(r"Whole-wave SALU EXEC scope splits=(\d+)",data)]
 print("CURRENT_REAL_WHOLE_WAVE_SALU_SPLITS=" + str(sum(salu)))
 print("CURRENT_SHADERS_WITH_WHOLE_WAVE_SALU_SPLITS=" + str(len(salu)))
