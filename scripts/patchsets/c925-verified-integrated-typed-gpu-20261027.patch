@@ -740,21 +740,6 @@ index 4d70af7..63eb109 100644
                  .shaderSampledImageArrayDynamicIndexing =
                      features.shaderSampledImageArrayDynamicIndexing,
                  .shaderClipDistance = features.shaderClipDistance,
-diff --git a/src/video_core/renderer_vulkan/vk_instance.h b/src/video_core/renderer_vulkan/vk_instance.h
-index 445a4ae..18ce7c0 100644
---- a/src/video_core/renderer_vulkan/vk_instance.h
-+++ b/src/video_core/renderer_vulkan/vk_instance.h
-@@ -225,6 +225,10 @@ public:
-         return IsSampledImageNonUniformIndexingSupported();
-     }
- 
-+    bool IsShaderImageGatherExtendedSupported() const {
-+        return bool(features.shaderImageGatherExtended);
-+    }
-+
-     /// Returns true when VK_AMD_gcn_shader is supported.
-     bool IsAmdGcnShaderSupported() const {
-         return amd_gcn_shader;
 diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
 index 504a6ec..5aa5a00 100644
 --- a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
