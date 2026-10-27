@@ -28,12 +28,12 @@ import zipfile
 REPO = "Chreece/shadPS4"
 C925 = "c925523b49ef39434024b16b2b014d120471ee1a"
 MENU_ELF = "260ed43abbe538127ab82b3580a48c5f67be19ac4bbdd32ebefd78c73cdaf50d"
-PATCH_REV = "99cba4b8b17c07b4326208e6ecd0b26d03902ac1"
+PATCH_REV = "978fd068e8c7b9d57edbcae5e1a21b28700b91da"
 PATCHES = [
     ("PR74-coherence.patch", "scripts/patchsets/c925-pr74-adapted-source.patch",
      "91f4857007e579933cf88fd27a51418a9b63c312"),
     ("c925-integrated-typed.patch", "scripts/patchsets/c925-verified-integrated-typed-gpu-20261027.patch",
-     "f4a2677222256fbc6e0ca10361729e73ea2abe88"),
+     "94b9152c5cb7db8d687082d91cba506e027064bc"),
 ]
 ROOT = Path.home() / "projects/shadps4/GhostOfTsushima"
 CLEAN = ROOT / "worktrees/got-proven-20261026"
@@ -175,6 +175,9 @@ def tests() -> None:
             raise Abort("REQUIRED_RENDERER_CODE_MISSING_" + required)
     if "compact_index_map" not in sh or "OpDPdx" not in sh:
         raise Abort("SHADER_GPU_TYPED_REMAP_OR_SAFE_DERIVATIVES_MISSING")
+    instance_source = (SRC / "src/video_core/renderer_vulkan/vk_instance.h").read_text()
+    if instance_source.count("bool IsShaderImageGatherExtendedSupported() const") != 1:
+        raise Abort("VULKAN_DUPLICATE_GATHER_QUERY_SOURCE_ERROR")
     (OUT / "source-sha256.json").write_text(json.dumps({
         "vulkan_rasterizer": sha256(source), "spirv_image_emitter": sha256(shader)}, indent=2) + "\n")
 
