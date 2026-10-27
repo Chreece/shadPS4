@@ -1,0 +1,143 @@
+diff --git a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+--- a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+@@ -1,10 +1,13 @@
+ // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include <algorithm>
+ #include <atomic>
++#include <array>
++#include <string>
++#include <string_view>
+ #include <limits>
+ #include <unordered_map>
+ #include "common/logging/log.h"
+ #include "shader_recompiler/info.h"
+ #include "shader_recompiler/ir/basic_block.h"
+@@ -16,10 +19,11 @@
+ #include "shader_recompiler/ir/reinterpret.h"
+ #include "shader_recompiler/profile.h"
+ #include "shader_recompiler/resource.h"
+ #include "shader_recompiler/guest_tsharp_array.h"
+ #include "video_core/amdgpu/resource.h"
++#include <magic_enum/magic_enum.hpp>
+ 
+ namespace Shader::Optimization {
+ namespace {
+ 
+ IR::Type BufferDataType(const IR::Inst& inst, const Profile& profile) {
+@@ -236,10 +240,55 @@
+         sharp_fetch.summary = Summary::SingleLoad;
+     }
+     return sharp_fetch;
+ }
+ 
++// Bounded read-only provenance for SHARP descriptors which could not be
++// resolved into the host flat buffer. A GPU-dependent source cannot be
++// recovered by substituting a zero or copying another material's descriptor.
++static void LogUnflattenedSharpSource(const Info& info, const SharpReference& sharp,
++                                      const char* role, bool indexed) {
++    static thread_local std::unordered_map<u64, std::array<u32, 2>> reports;
++    const bool image = std::string_view(role) == "image";
++    if (reports.size() >= 128 && !reports.contains(info.pgm_hash)) {
++        return;
++    }
++    auto& counts = reports[info.pgm_hash];
++    auto& count = counts[image ? 0u : 1u];
++    if (count++ >= 3u) {
++        return;
++    }
++    std::string sources;
++    for (u32 i = 0; i < sharp.num_dwords && i < sharp.dwords.size(); ++i) {
++        const auto value = sharp.dwords[i];
++        if (!sources.empty()) {
++            sources += ",";
++        }
++        if (value.IsEmpty()) {
++            sources += fmt::format("{}:empty", i);
++        } else if (value.IsImmediate()) {
++            sources += fmt::format("{}:imm", i);
++        } else if (const IR::Inst* producer = value.TryInst()) {
++            u32 flattened_slot = 0;
++            if (producer->GetOpcode() == IR::Opcode::ReadConstBuffer) {
++                flattened_slot = producer->Flags<IR::BufferInstInfo>().flatbuf_off_dw;
++            } else if (producer->GetOpcode() == IR::Opcode::ReadConst) {
++                flattened_slot = producer->Flags<SharpLocation>();
++            }
++            sources += fmt::format("{}:{}@{}", i,
++                magic_enum::enum_name(producer->GetOpcode()), flattened_slot);
++        } else {
++            sources += fmt::format("{}:noninst", i);
++        }
++    }
++    LOG_INFO(Render_Recompiler,
++             "SHARP_RESOURCE_PROVENANCE shader={:#x} stage={} role={} indexed={} "
++             "dwords={} post_op={} sources={}",
++             info.pgm_hash, static_cast<u32>(info.hw_stage), role, indexed,
++             sharp.num_dwords, static_cast<u32>(sharp.post_op), sources);
++}
++
+ void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors& descriptors,
+                       const Profile& profile) {
+     IR::Inst& inst = *resource.user;
+ 
+     const auto sharp_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.sharps[0]);
+@@ -251,15 +300,19 @@
+     if (inst.GetOpcode() == IR::Opcode::ReadConstBuffer &&
+         sharp_fetch.summary == SharpFetch<AmdGpu::Buffer>::Summary::Invalid &&
+         resource.sharps[0].post_op == SharpFetchPostOp::None &&
+         original_handle &&
+         original_handle->GetOpcode() == IR::Opcode::CompositeConstructU32x4) {
+-        static std::atomic<u32> reports{0};
+-        if (reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
+-            LOG_INFO(Render_Recompiler,
+-                     "GPU_DYNAMIC_BUFFER_SHARP shader={:#x} stage={}",
+-                     info.pgm_hash, static_cast<u32>(info.hw_stage));
++        // Cap logs per shader rather than globally: the previous cap of 32
++        // was exhausted by one shader and hid the other three stalled families.
++        static thread_local std::unordered_map<u64, u32> reports;
++        if (reports.size() < 128 || reports.contains(info.pgm_hash)) {
++            if (reports[info.pgm_hash]++ < 3u) {
++                LOG_INFO(Render_Recompiler,
++                         "GPU_DYNAMIC_BUFFER_SHARP shader={:#x} stage={}",
++                         info.pgm_hash, static_cast<u32>(info.hw_stage));
++            }
+         }
+         return;
+     }
+     const u32 buffer_binding = descriptors.Add(BufferResource{
+         .sharp_fetch = sharp_fetch,
+@@ -355,10 +408,16 @@
+ 
+             }
+         }
+     }
+ 
++    // An unresolved image SHARP is distinct from an *accepted* GPU indexed
++    // texture table. Log the real source words without forcing any binding.
++    if (image_res.sharp_fetch.summary == SharpFetch<AmdGpu::Image>::Summary::Invalid) {
++        LogUnflattenedSharpSource(info, resource.sharps[0], "image",
++                                   image_res.is_guest_indexed);
++    }
+     auto image = image_res.GetSharp(info);
+     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
+ 
+     if (needs_mip_storage_fallback) {
+         // If the mip level to IMAGE_(LOAD/STORE)_MIP is a constant, set up ImageResource
+@@ -465,10 +524,15 @@
+                              "record_stride={} entries={}",
+                              shader, image_res.indexed_record_stride_bytes,
+                              image_res.indexed_guest_entries);
+                 }
+             }
++        }
++        if (sampler_res.sharp_fetch.summary ==
++            SharpFetch<AmdGpu::Sampler>::Summary::Invalid) {
++            LogUnflattenedSharpSource(info, resource.sharps[1], "sampler",
++                                       sampler_res.is_guest_indexed);
+         }
+         const u32 sampler_binding = descriptors.Add(sampler_res);
+         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
+         if (image_res.is_guest_indexed) {
+             inst.SetArg(1, resource.indexed_texture_id);
