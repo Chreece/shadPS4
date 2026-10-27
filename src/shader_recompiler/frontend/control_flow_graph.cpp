@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <unordered_map>
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "shader_recompiler/frontend/control_flow_graph.h"
+#include "shader_recompiler/frontend/safe_scalar_exec_scope_split.h"
 #include "shader_recompiler/ir/condition.h"
 
 namespace Shader::Gcn {
@@ -44,28 +46,6 @@ static IR::Condition MakeCondition(const GcnInst& inst) {
     default:
         return IR::Condition::True;
     }
-}
-
-static bool IgnoresExecMask(const GcnInst& inst) {
-    // EXEC mask does not affect scalar instructions or branches.
-    switch (inst.category) {
-    case InstCategory::ScalarALU:
-    case InstCategory::ScalarMemory:
-    case InstCategory::FlowControl:
-        return true;
-    default:
-        break;
-    }
-    // Read/Write Lane instructions are not affected either.
-    switch (inst.opcode) {
-    case Opcode::V_READLANE_B32:
-    case Opcode::V_WRITELANE_B32:
-    case Opcode::V_READFIRSTLANE_B32:
-        return true;
-    default:
-        break;
-    }
-    return false;
 }
 
 static std::optional<u32> ResolveSetPcTarget(std::span<const GcnInst> list, u32 setpc_index,
@@ -183,9 +163,17 @@ void CFG::SplitDivergenceScopes() {
                (inst.opcode == Opcode::S_ANDN2_B64 && inst.dst[0].field == OperandField::ExecLo);
     };
 
+    // The synthetic epilogue starts after the previous masked region and
+    // contains the split-off scalar op. Continue the same EXEC scope there;
+    // never drop the mask or choose a wave lane.
+    std::unordered_map<const Block*, s32> continued_scopes;
+    u32 whole_wave_scalar_splits{};
     for (auto blk = blocks.begin(); blk != blocks.end(); blk++) {
         auto next_blk = std::next(blk);
         s32 curr_begin = -1;
+        if (auto it = continued_scopes.find(&*blk); it != continued_scopes.end()) {
+            curr_begin = it->second;
+        }
         for (size_t index = blk->begin_index; index <= blk->end_index; index++) {
             const auto& inst = inst_list[index];
             const bool is_close = is_close_scope(inst);
@@ -209,6 +197,20 @@ void CFG::SplitDivergenceScopes() {
                     s32 curr_end = index;
                     while (IgnoresExecMask(inst_list[curr_end])) {
                         --curr_end;
+                    }
+
+                    // GCN SALU executes once per whole wave even inside a
+                    // region with masked vector lanes. A safe intervening
+                    // SALU must be executed in the epilogue, without the
+                    // enclosing EXEC condition. Restart masking afterwards.
+                    const s32 split_at =
+                        FindSafeScalarExecScopeSplit(inst_list, curr_begin, curr_end);
+                    if (split_at != -1) {
+                        curr_end = split_at - 1;
+                        while (IgnoresExecMask(inst_list[curr_end])) {
+                            --curr_end;
+                        }
+                        ++whole_wave_scalar_splits;
                     }
 
                     // Create a new block for the divergence scope.
@@ -235,6 +237,9 @@ void CFG::SplitDivergenceScopes() {
                         epi_block->branch_false = blk->branch_false;
                         epi_block->num_predecessors = 2;
                         blocks.insert_before(next_blk, *epi_block);
+                        if (split_at != -1) {
+                            continued_scopes.emplace(epi_block, curr_end);
+                        }
 
                         // Have divergence block always jump to epilogue block.
                         block->cond = IR::Condition::True;
@@ -277,6 +282,11 @@ void CFG::SplitDivergenceScopes() {
                 curr_begin = index;
             }
         }
+    }
+    if (whole_wave_scalar_splits != 0) {
+        LOG_INFO(Render_Recompiler,
+                 "Whole-wave SALU EXEC scope splits={} (scalar waterfall dependencies preserved)",
+                 whole_wave_scalar_splits);
     }
 }
 
