@@ -834,7 +834,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 // ObtainBuffer currently accepts a u32 extent. Fail explicitly
                 // rather than implicitly wrapping a valid mapped range. This
                 // is a backend capability check, not a guest-descriptor cap.
-                ASSERT_MSG(size > 0 && BufferSize::FitsU32(size),
+                ASSERT_MSG(size > 0 && AmdGpu::BufferSize::FitsU32(size),
                            "Guest V# mapped extent {} cannot be represented "
                            "in the existing 32-bit BufferCache API (declared {})",
                            size, raw_declared_bytes);
