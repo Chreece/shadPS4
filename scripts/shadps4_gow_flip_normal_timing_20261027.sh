@@ -243,7 +243,7 @@ curl -4fsSL --retry 3 --retry-delay 2 \
 # Prior failed lock trial is already immutably recorded from the 18:01 run.
 # Prior failures already recorded with their original SHA; avoid duplicate entries.
 echo "STAGE=RECOVER_PRIOR_RADV_TRACE_BOUNDED_READ_ONLY"
-python3 - "$REPORT" <<'PYOLDTRACE'
+python3 - "$REPORT" <<'PYOLDTRACE' || echo "PREVIOUS_GPU_TRACE_COLLECTION_FAILED_NO_GAME_BLOCK"
 from pathlib import Path
 import hashlib,json,sys
 report=Path(sys.argv[1])
@@ -267,7 +267,7 @@ if src.is_file() and not src.is_symlink():
     print('PREVIOUS_RADV_TRACE_LAST_BYTES='+str(len(last)))
 else:
     print('PREVIOUS_RADV_TRACE_MISSING_OR_UNSAFE=YES')
-(report/'previous-radv-trace-manifest.json').write_text(json.dumps(info,indent=2)+'\\n')
+(report/'previous-radv-trace-manifest.json').write_text(json.dumps(info,indent=2)+'\n')
 PYOLDTRACE
 echo "STAGE=PIN_SUNSHINE_X11_MONITOR_NO_SESSION_RESTART"
 if ! DISPLAY=:0 timeout 4 xdpyinfo -display :0 >/dev/null 2>&1; then
