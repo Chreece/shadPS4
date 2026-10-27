@@ -25,8 +25,10 @@
 #include "video_core/renderer_vulkan/vk_presenter.h"
 
 extern Frontend::WindowSDL* g_window;
-std::unique_ptr<Vulkan::Presenter> presenter;
+// GPU command processor must outlive the presenter/rasterizer while deferred
+// fault callbacks drain during resource teardown (reverse static destruction).
 std::unique_ptr<AmdGpu::Liverpool> liverpool;
+std::unique_ptr<Vulkan::Presenter> presenter;
 
 namespace Libraries::GnmDriver {
 
