@@ -76,7 +76,7 @@ if ! flock -n 8; then
     flock -u 9
     echo "OTHER_SRT_BUILD_HOLDS_PROTECTED_BINARY_LOCK"; exit 3
 fi
-echo "GLOBAL_GO_W_GOT_BUILD_LOCKS_ACQUIRED=YES
+echo "GLOBAL_GO_W_GOT_BUILD_LOCKS_ACQUIRED=YES"
 STAMP="$TAG"
 WORK="$ESDE/playtest-$STAMP"
 REPORT="$LOGS/$TAG-report"
