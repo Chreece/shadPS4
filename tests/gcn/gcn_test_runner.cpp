@@ -277,20 +277,23 @@ std::expected<void, ErrorInfo> Runner::initialize() {
         return make_error(Error::DeviceCreationFailed, "createFence");
     fence_ = fence;
 
-    // ---- Descriptor set layout with push-descriptor flag --------------
-    // Single storage buffer at binding 0. No descriptor sets are ever
-    // allocated from this layout — the layout is just used to tell the
-    // pipeline layout and shader what the push-descriptor shape is.
-    vk::DescriptorSetLayoutBinding dsl_binding{
-        .binding = 0,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .descriptorCount = 1,
-        .stageFlags = vk::ShaderStageFlagBits::eCompute,
-    };
+    // The translated GCN shader writes test output at binding 0, while
+    // EmitGetUserData reads SGPR inputs from the SRT flatbuffer at binding 1.
+    // Neither descriptor can be replaced with Vulkan push constants.
+    const std::array<vk::DescriptorSetLayoutBinding, 2> dsl_bindings{{
+        {.binding = 0,
+         .descriptorType = vk::DescriptorType::eStorageBuffer,
+         .descriptorCount = 1,
+         .stageFlags = vk::ShaderStageFlagBits::eCompute},
+        {.binding = 1,
+         .descriptorType = vk::DescriptorType::eStorageBuffer,
+         .descriptorCount = 1,
+         .stageFlags = vk::ShaderStageFlagBits::eCompute},
+    }};
     auto [dslr, dsl] = device_.createDescriptorSetLayout({
         .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
-        .bindingCount = 1,
-        .pBindings = &dsl_binding,
+        .bindingCount = static_cast<std::uint32_t>(dsl_bindings.size()),
+        .pBindings = dsl_bindings.data(),
     });
     if (dslr != vk::Result::eSuccess)
         return make_error(Error::DeviceCreationFailed, "createDescriptorSetLayout");
@@ -318,10 +321,11 @@ std::expected<void, ErrorInfo> Runner::initialize() {
 std::expected<void, ErrorInfo> Runner::run_raw(std::span<const std::uint32_t> spirv,
                                                std::span<const std::byte> push_constants,
                                                std::span<std::byte> output, DispatchSize dispatch) {
-    if (push_constants.size() > max_push_constant_size_)
+    constexpr std::size_t kUserDataBytes = 4 * sizeof(std::uint32_t);
+    if (push_constants.size() > kUserDataBytes)
         return make_error(Error::PushConstantTooLarge,
-                          std::format("push constants {} exceed device max {}",
-                                      push_constants.size(), max_push_constant_size_));
+                          std::format("GCN test user data {} exceed {} bytes",
+                                      push_constants.size(), kUserDataBytes));
     if (output.empty())
         return make_error(Error::OutputTooLarge, "output buffer is empty");
 
@@ -332,6 +336,18 @@ std::expected<void, ErrorInfo> Runner::run_raw(std::span<const std::uint32_t> sp
         return std::unexpected(buf_r.error());
     auto& output_buffer = *buf_r;
     std::memset(output_buffer->mapped, 0, output.size());
+
+    // The shader reads initial SGPRs from its flatbuffer, not push constants.
+    // The original harness never supplied this buffer, producing zero data on
+    // LLVMpipe and an unbound-descriptor GPUVM fault on RADV.
+    auto input_r = create_host_buffer(device_, physical_device_, kUserDataBytes,
+                                      vk::BufferUsageFlagBits::eStorageBuffer);
+    if (!input_r)
+        return std::unexpected(input_r.error());
+    auto& input_buffer = *input_r;
+    std::memset(input_buffer->mapped, 0, kUserDataBytes);
+    if (!push_constants.empty())
+        std::memcpy(input_buffer->mapped, push_constants.data(), push_constants.size());
 
     // Per-call: shader object --------------------------------------------
     vk::PushConstantRange shader_pc{
@@ -348,8 +364,8 @@ std::expected<void, ErrorInfo> Runner::run_raw(std::span<const std::uint32_t> sp
         .pName = "main",
         .setLayoutCount = 1,
         .pSetLayouts = &descriptor_set_layout_,
-        .pushConstantRangeCount = push_constants.empty() ? 0u : 1u,
-        .pPushConstantRanges = push_constants.empty() ? nullptr : &shader_pc,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &shader_pc,
     };
     auto [sr, shaders] = device_.createShadersEXT(sci);
     if (sr != vk::Result::eSuccess)
@@ -378,38 +394,41 @@ std::expected<void, ErrorInfo> Runner::run_raw(std::span<const std::uint32_t> sp
     vk::ShaderStageFlagBits stage = vk::ShaderStageFlagBits::eCompute;
     command_buffer_.bindShadersEXT(1, &stage, &shader);
 
-    // Push descriptor: binding 0 = output SSBO ---------------------------
-    vk::DescriptorBufferInfo dbi{
-        .buffer = output_buffer->buffer,
-        .offset = 0,
-        .range = VK_WHOLE_SIZE,
-    };
-    vk::WriteDescriptorSet write{
-        .dstBinding = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pBufferInfo = &dbi,
-    };
+    // Actual SPIR-V storage bindings: 0 = guest output, 1 = user-data flatbuf.
+    const std::array<vk::DescriptorBufferInfo, 2> dbi{{
+        {.buffer = output_buffer->buffer, .offset = 0, .range = VK_WHOLE_SIZE},
+        {.buffer = input_buffer->buffer, .offset = 0, .range = kUserDataBytes},
+    }};
+    const std::array<vk::WriteDescriptorSet, 2> writes{{
+        {.dstBinding = 0,
+         .descriptorCount = 1,
+         .descriptorType = vk::DescriptorType::eStorageBuffer,
+         .pBufferInfo = &dbi[0]},
+        {.dstBinding = 1,
+         .descriptorCount = 1,
+         .descriptorType = vk::DescriptorType::eStorageBuffer,
+         .pBufferInfo = &dbi[1]},
+    }};
     vk::PushDescriptorSetInfoKHR push_desc{
         .stageFlags = vk::ShaderStageFlagBits::eCompute,
         .layout = pipeline_layout_,
         .set = 0,
-        .descriptorWriteCount = 1,
-        .pDescriptorWrites = &write,
+        .descriptorWriteCount = static_cast<std::uint32_t>(writes.size()),
+        .pDescriptorWrites = writes.data(),
     };
     command_buffer_.pushDescriptorSet2KHR(push_desc);
 
-    // Push constants -----------------------------------------------------
-    if (!push_constants.empty()) {
-        vk::PushConstantsInfoKHR pci{
-            .layout = pipeline_layout_,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-            .offset = 16, // fall onto ud_regs in PushData
-            .size = static_cast<std::uint32_t>(push_constants.size()),
-            .pValues = push_constants.data(),
-        };
-        command_buffer_.pushConstants2KHR(pci);
-    }
+    // PushData contains renderer adjustments, not GCN SGPR inputs. Zero
+    // these adjustments so tests use the same layout as production shaders.
+    const Shader::PushData aux{};
+    vk::PushConstantsInfoKHR pci{
+        .layout = pipeline_layout_,
+        .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        .offset = 0,
+        .size = static_cast<std::uint32_t>(sizeof(aux)),
+        .pValues = &aux,
+    };
+    command_buffer_.pushConstants2KHR(pci);
 
     command_buffer_.dispatch(dispatch.x, dispatch.y, dispatch.z);
 
