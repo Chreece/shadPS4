@@ -110,6 +110,14 @@ trap finish EXIT
 for c in git cmake ninja sha256sum flock python3 curl timeout nice tar ldd; do
     command -v "$c" >/dev/null || { echo "MISSING_COMMAND=$c"; exit 3; }
 done
+# A separate lock spans the ENTIRE recovery, including the actual game.
+# A second paste cannot duplicate the final game while one recovery runs.
+exec 6>"$LOGS/gow-pr90-recovery-exclusive.lock"
+if ! flock -n 6; then
+    echo "OTHER_PR90_RECOVERY_ALREADY_ACTIVE_NO_DUPLICATE_RUN"
+    exit 3
+fi
+echo "EXCLUSIVE_RECOVERY_LOCK=ACQUIRED"
 
 # Never interfere with the older PR90 worker. It may already be building
 # or running a real game. Wait for its own conclusion before touching a tree.
