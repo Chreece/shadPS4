@@ -32,6 +32,8 @@ PROVEN_ELF_SHA = "be3e8c12cf91117917d355d41a03e227a45cd338981d672de4f0ca2c57b68f
 PROVEN_ELF = ROOT / "candidates/c925-20261027-154043-descriptor-typed-proven-progress/shadps4"
 PREVIOUS_ELF_SHA = "c8a745c602f382a92c5ae4d41f5923b5077a09624a7efc9082c39b053cc6fdbd"
 PREVIOUS_ELF = ROOT / "candidates/c925-20261027-180510-gpu-selected-vsharp/shadps4"
+FAST_ELF_SHA = "355613cdd5e83500bc9efd032f1f55e1207f27528b328ee0e5344c9c8296ba0f"
+FAST_ELF = ROOT / "candidates/c925-20261027-184324-sharp-provenance-vram-verified/shadps4"
 OLD_ELF_SAVE = ROOT / "candidates/c925-20261027-190621-new-strided-384-variant/shadps4"
 HELPER = PROJECT / "scripts/got-c925-ollama-vram-headroom-20261027.py"
 HELPER_GIT_BLOB = "59e2386ac713c1d388a5b97372061cbf981acc0c"
@@ -112,7 +114,8 @@ def preflight(m) -> Path:
     if not GAME.is_file() or not m.PROVEN.is_file() or m.sha256(m.PROVEN) != m.MENU_ELF:
         raise m.Abort("PROTECTED_OLD_MENU_OR_GAME_NOT_FOUND", 2)
     for path, digest in ((PROVEN_ELF, PROVEN_ELF_SHA),
-                         (PREVIOUS_ELF, PREVIOUS_ELF_SHA)):
+                         (PREVIOUS_ELF, PREVIOUS_ELF_SHA),
+                         (FAST_ELF, FAST_ELF_SHA)):
         if not path.is_file() or path.is_symlink() or m.sha256(path) != digest:
             raise m.Abort("PRIOR_GO_T_GAMEPLAY_POSITIVE_ELF_MISSING_OR_CHANGED", 2)
     for rel, (original, _) in FILES.items():
