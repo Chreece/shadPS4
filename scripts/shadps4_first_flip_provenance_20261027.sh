@@ -496,17 +496,17 @@ if [[ -f "$SRT_FULL_CONSOLE" && ! -L "$SRT_FULL_CONSOLE" ]]; then
         echo "PRIOR_EXCERPT_FAILED_SRT_OFFSETS=2993"
         echo "CURRENT_FULL_CONSOLE_BYTES=$(stat -c %s "$SRT_FULL_CONSOLE")"
         echo "CURRENT_FINDILSB32_UNSUPPORTED=$(grep -Fc 'Unexpected instruction for offset computation, FindILsb32' "$SRT_FULL_CONSOLE" || :)"
-        echo "VIDEO_FLIP_STAGE_GUEST_REQUESTED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_requested' \"$SRT_FULL_CONSOLE\" || :)"
-        echo "VIDEO_FLIP_STAGE_EOP_FLIP_IRQ_REGISTERED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=eop_flip_irq_registered' \"$SRT_FULL_CONSOLE\" || :)"
-        echo "VIDEO_FLIP_STAGE_EOP_FLIP_IRQ_DELIVERED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=eop_flip_irq_delivered' \"$SRT_FULL_CONSOLE\" || :)"
-        echo "VIDEO_FLIP_STAGE_PREPARE_REQUESTED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=prepare_requested' \"$SRT_FULL_CONSOLE\" || :)"
-        echo "VIDEO_FLIP_STAGE_GUEST_FRAME_PREPARE_BEGIN_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_frame_prepare_begin' \"$SRT_FULL_CONSOLE\" || :)"
-        echo "VIDEO_FLIP_STAGE_GUEST_FRAME_PREPARE_READY_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_frame_prepare_ready' \"$SRT_FULL_CONSOLE\" || :)"
-        echo "VIDEO_FLIP_STAGE_PREPARED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=prepared' \"$SRT_FULL_CONSOLE\" || :)"
-        echo "VIDEO_FLIP_STAGE_GUEST_PRESENT_ENTER_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_present_enter' \"$SRT_FULL_CONSOLE\" || :)"
-        echo "VIDEO_FLIP_STAGE_PRESENT_BEGIN_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=present_begin' \"$SRT_FULL_CONSOLE\" || :)"
-        echo "VIDEO_FLIP_STAGE_GUEST_SWAPCHAIN_RESULT_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_swapchain_result' \"$SRT_FULL_CONSOLE\" || :)"
-        echo "VIDEO_FLIP_STAGE_PRESENT_RETURNED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=present_returned' \"$SRT_FULL_CONSOLE\" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_REQUESTED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_requested' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_EOP_FLIP_IRQ_REGISTERED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=eop_flip_irq_registered' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_EOP_FLIP_IRQ_DELIVERED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=eop_flip_irq_delivered' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_PREPARE_REQUESTED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=prepare_requested' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_FRAME_PREPARE_BEGIN_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_frame_prepare_begin' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_FRAME_PREPARE_READY_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_frame_prepare_ready' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_PREPARED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=prepared' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_PRESENT_ENTER_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_present_enter' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_PRESENT_BEGIN_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=present_begin' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_SWAPCHAIN_RESULT_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_swapchain_result' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_PRESENT_RETURNED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=present_returned' "$SRT_FULL_CONSOLE" || :)"
         echo "CURRENT_SCALAR_EXEC_SCOPE_SPLIT_EVENTS=$(grep -Fc 'Whole-wave SALU EXEC scope splits=' "$SRT_FULL_CONSOLE" || :)"
         echo "CURRENT_PM4_ACQUIRE_MARKER_EVENTS=$(grep -Fc 'PM4 AcquireMem Vulkan barriers=' "$SRT_FULL_CONSOLE" || :)"
         echo "CURRENT_FIRST_GAME_FRAME_EVENTS=$(grep -Fc 'STARTUP_UI event=first_game_frame' "$SRT_FULL_CONSOLE" || :)"
@@ -540,7 +540,7 @@ stages = ("guest_requested", "eop_flip_irq_registered", "eop_flip_irq_delivered"
           "guest_swapchain_result", "present_returned")
 for stage in stages:
     found = [int(x) for x in re.findall(
-        r"VIDEO_FLIP_STAGE stage=" + stage + r" count=(\\d+)", data)]
+        r"VIDEO_FLIP_STAGE stage=" + stage + r" count=(\d+)", data)]
     print("VIDEO_FLIP_STAGE_"+stage.upper()+"_OBSERVED_MINIMUM="+str(max(found, default=0)))
 print("VIDEO_FLIP_STAGE_COUNT_SAMPLES_ARE_POWERS_OF_TWO=YES")
 salu = [int(v) for v in re.findall(r"Whole-wave SALU EXEC scope splits=(\d+)",data)]
