@@ -94,10 +94,10 @@ report DOWNLOAD_PINNED_GENERIC_SOURCE_PATCHES
 for pr in 74 75 77 78; do
   patch="$OUT/patches/PR$pr.patch"
   curl -4 --http1.1 -fLsS --retry 3 \
-   "https://raw.githubusercontent.com/Chreece/shadPS4/$PATCH_COMMIT/scripts/patchsets/c925-pr$pr-generic-source.patch" \
+   "https://raw.githubusercontent.com/Chreece/shadPS4/$PATCH_COMMIT/scripts/patchsets/c925-pr$(if [[ "$pr" == 74 ]]; then printf adapted; else printf generic; fi)-source.patch" \
    -o "$patch" || { STATUS=PATCH_DOWNLOAD_FAILED; exit 7; }
   case "$pr" in
-   74) expected=c21326c3218c4d232f2a3a084c70e14d6e928d8e ;;
+   74) expected=91f4857007e579933cf88fd27a51418a9b63c312 ;;
    75) expected=26f6e58b238ccccbed011558c47acb18af6f8178 ;;
    77) expected=89d866b761857e5f47e3998db07af52a61463ab1 ;;
    78) expected=011f50c42471c79a2187fa26a784b114c676c3ff ;;
@@ -148,6 +148,15 @@ PY
      echo "PR$step requires source-level conflict resolution; do NOT overwrite proven c925 modules" >&2
      exit 8
    fi
+ fi
+ if [[ "$step" == 74 ]]; then
+   report VERIFY_C925_ADAPTED_DESCRIPTOR_COHERENCE_FIXTURE
+   c++ -std=c++20 -O2 -DNDEBUG -Wall -Wextra -Werror -pedantic \
+       -I "$SRC/src" "$SRC/tests/guest_descriptor_coherence_test.cpp" \
+       -o "$OUT/c925-coherence-fixture" > "$OUT/coherence-build.log" 2>&1 || \
+       { STATUS=C925_COHERENCE_FIXTURE_COMPILE_FAILED; exit 7; }
+   "$OUT/c925-coherence-fixture" > "$OUT/coherence-result.log" 2>&1 || \
+       { STATUS=C925_COHERENCE_FIXTURE_FAILED; exit 7; }
  fi
  git -C "$SRC" diff --check > "$OUT/diffcheck-$step.log" 2>&1 || \
   { STATUS="WHITESPACE_PR${step}_FAILED"; exit 8; }
