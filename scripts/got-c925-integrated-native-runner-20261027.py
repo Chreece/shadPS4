@@ -23,6 +23,7 @@ import tarfile
 import time
 import traceback
 import urllib.request
+import zipfile
 
 REPO = "Chreece/shadPS4"
 C925 = "c925523b49ef39434024b16b2b014d120471ee1a"
@@ -178,10 +179,96 @@ def tests() -> None:
         "vulkan_rasterizer": sha256(source), "spirv_image_emitter": sha256(shader)}, indent=2) + "\n")
 
 
+FFMPEG_CORE_COMMIT = "94dde08c8a9e4271a93a2a7e4159e9fb05d30c0a"
+FFMPEG_ASSET_SHA256 = "aacbbfb8e622b684bc5d3b4cd6c9f9f77f5def64ae8d83c0c5b3ebe657aa33dd"
+
+
+def prefetch_verified_ffmpeg() -> None:
+    """Prepopulate only a SHA-pinned FFmpeg asset in the isolated build.
+
+    c925 uses the same ext-ffmpeg-core gitlink proven in the 26-Oct native
+    build. Never substitute a different release or touch a system package.
+    """
+    stage("PREFETCH_VERIFIED_FFMPEG")
+    submodule = SRC / "externals/ffmpeg-core"
+    if output("ffmpeg_core_commit", ["git", "-C", str(submodule), "rev-parse", "HEAD"]) != FFMPEG_CORE_COMMIT:
+        raise Abort("UNKNOWN_FFMPEG_CORE_REVISION", 4)
+    target = BUILD / "externals/ffmpeg-94dde08.zip"
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    def valid(path: Path) -> bool:
+        try:
+            if not path.is_file() or sha256(path) != FFMPEG_ASSET_SHA256:
+                return False
+            with zipfile.ZipFile(path) as archive:
+                names = {Path(name).name for name in archive.namelist()}
+            return {"libavcodec.a", "libavformat.a"} <= names
+        except (OSError, ValueError, zipfile.BadZipFile):
+            return False
+
+    if target.exists() and not valid(target):
+        raise Abort("EXISTING_ISOLATED_FFMPEG_CACHE_INCORRECT", 4)
+
+    if not target.exists():
+        search_dir = Path.home() / "projects/shadps4"
+        known = [ROOT / "experiments/mixed-types-82cc0cdd2e996cc747106b0a0bb9a6ebc5f4a104"
+                 / "build/externals/ffmpeg-94dde08.zip"]
+        try:
+            found = subprocess.run(
+                ["find", str(search_dir), "-type", "f", "-name", "ffmpeg-94dde08.zip"],
+                capture_output=True, text=True, timeout=90, check=False)
+            if found.returncode == 0:
+                known += [Path(line) for line in found.stdout.splitlines()]
+            else:
+                (OUT / "ffmpeg-cache-search.log").write_text(found.stderr)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            (OUT / "ffmpeg-cache-search.log").write_text(str(error) + "\n")
+        for candidate in known:
+            if candidate == target or not valid(candidate):
+                continue
+            shutil.copyfile(candidate, target)
+            STATE["ffmpeg_verified_source"] = str(candidate)
+            break
+
+    if not target.exists():
+        stage("DOWNLOAD_PINNED_FFMPEG_RELEASE_ASSET")
+        urls = [
+            "https://github.com/shadps4-emu/ext-ffmpeg-core/releases/download/94dde08/ffmpeg-linux-x64.zip",
+            "https://api.github.com/repos/shadps4-emu/ext-ffmpeg-core/releases/assets/327924109",
+        ]
+        for index, url in enumerate(urls):
+            temp = target.with_name(f"ffmpeg-94dde08-attempt-{index}.zip")
+            with (OUT / f"ffmpeg-download-{index}.log").open("w") as log:
+                try:
+                    attempt = subprocess.run(
+                        ["curl", "-4", "--http1.1", "-fLsS", "--retry", "3",
+                         "--retry-all-errors", "--connect-timeout", "15",
+                         "--max-time", "240", "-H", "Accept: application/octet-stream",
+                         "-H", "User-Agent: shadps4-native-test", url, "-o", str(temp)],
+                        stdout=log, stderr=subprocess.STDOUT, timeout=255, check=False)
+                    log.write("curl_exit=" + str(attempt.returncode) + "\n")
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    log.write("download_error=" + str(error) + "\n")
+            if valid(temp):
+                temp.replace(target)
+                STATE["ffmpeg_verified_source"] = url
+                break
+            temp.unlink(missing_ok=True)
+
+    if not valid(target):
+        raise Abort("PINNED_FFMPEG_ASSET_UNAVAILABLE_OR_INVALID", 4)
+    STATE["ffmpeg_sha256"] = FFMPEG_ASSET_SHA256
+    (OUT / "ffmpeg-verified.txt").write_text(
+        "gitlink=" + FFMPEG_CORE_COMMIT + "\nasset_sha256=" + FFMPEG_ASSET_SHA256 + "\n"
+        + "source=" + STATE.get("ffmpeg_verified_source", "existing-verified-cache") + "\n")
+    print("VERIFIED_FFMPEG_ASSET=" + FFMPEG_ASSET_SHA256, flush=True)
+
+
 def build() -> Path:
     stage("INIT_DEPENDENCIES_IN_NEW_WORKTREE_ONLY")
     command("submodules", ["git", "-C", str(SRC), "-c", "http.version=HTTP/1.1",
                            "submodule", "update", "--init", "--recursive", "--jobs", "8"], timeout=1200)
+    prefetch_verified_ffmpeg()
     stage("CONFIGURE_NATIVE_RELEASE")
     command("cmake-configure", ["cmake", "-S", str(SRC), "-B", str(BUILD), "-G", "Ninja",
                                 "-DCMAKE_BUILD_TYPE=Release", "-DENABLE_TESTS=OFF",
