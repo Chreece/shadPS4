@@ -1022,8 +1022,27 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         }
     };
 
-    // Recreate the swapchain if the window was resized.
+    const auto release_skipped_host_frame = [&] {
+        const auto reset_result = instance.GetDevice().resetFences(frame->present_done);
+        ASSERT_MSG(reset_result == vk::Result::eSuccess,
+                   "Cannot reset skipped host frame fence: {}", vk::to_string(reset_result));
+        SubmitInfo info{};
+        info.AddWait(frame->ready_semaphore, frame->ready_tick);
+        info.AddSignal(frame->present_done);
+        present_scheduler.Flush(info);
+        free_frame();
+    };
+
+    // Guest flips handle any surface recreation; host idle redraws never wait for it.
     if (window.GetWidth() != swapchain.GetWidth() || window.GetHeight() != swapchain.GetHeight()) {
+        if (!is_game_frame) {
+            if (trace_host) {
+                LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=resize_deferred count={}",
+                         host_seq);
+            }
+            release_skipped_host_frame();
+            return;
+        }
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
     }
 
@@ -1036,7 +1055,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=acquire_skipped count={}",
                          host_seq);
             }
-            free_frame();
+            release_skipped_host_frame();
             return;
         }
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
