@@ -136,8 +136,11 @@ def preflight(m):
     srt = check_source(m, SRT_CPP, (SRT_BEFORE, SRT_AFTER))
     inc = check_source(m, SRT_INC, (INC_BEFORE, INC_AFTER))
     memory = check_source(m, VMA_CPP, (VMA_BEFORE, VMA_AFTER))
+    # Require exactly the source version from the preserved graphics-positive
+    # candidate, not an unrelated already-mutated worktree. The pinned patch
+    # plus these exact preimages uniquely determine the post-patch bytes.
     original_dynamic_hashes = {
-        rel: check_source(m, rel, (DYNAMIC_PREIMAGES[rel], DYNAMIC_POSTIMAGES[rel]))
+        rel: check_source(m, rel, (DYNAMIC_PREIMAGES[rel],))
         for rel in DYNAMIC_PREIMAGES
     }
     header = m.SRC / VMA_HEADER
@@ -291,10 +294,26 @@ def run(m):
     m.stage("PRESERVE_GPU_VARYING_SRT_PARENT_AS_SHADER_SIDE_READ")
     apply_pinned(m, srt_patch, ((SRT_CPP, SRT_AFTER), (SRT_INC, INC_AFTER)))
     m.stage("GENERATE_REAL_GPU_SELECTED_SCALAR_BUFFER_DESCRIPTOR_SHADER_FALLBACK")
-    apply_pinned(m, dynamic_patch, tuple(DYNAMIC_POSTIMAGES.items()))
+    # Verify both Git object identity and all preimage hashes before the
+    # single source mutation. A non-applying patch is a stop, never a force.
+    m.command("gpu-dynamic-patch-check", ["git", "-C", str(m.SRC),
+                                          "apply", "--check", str(dynamic_patch)])
+    m.command("gpu-dynamic-patch-apply", ["git", "-C", str(m.SRC),
+                                          "apply", str(dynamic_patch)])
+    m.output("gpu-dynamic-patch-diffcheck", ["git", "-C", str(m.SRC),
+                                            "diff", "--check"])
     m.STATE["shader_fix_sha256"] = {
-        rel: m.sha256(m.SRC / rel) for rel in DYNAMIC_POSTIMAGES
+        rel: m.sha256(m.SRC / rel) for rel in DYNAMIC_PREIMAGES
     }
+    if any(m.STATE["shader_fix_sha256"][rel] == old
+           for rel, old in DYNAMIC_PREIMAGES.items()):
+        raise m.Abort("GENERIC_DYNAMIC_SHARP_PATCH_LEFT_A_SOURCE_UNCHANGED", 2)
+    resource = (m.SRC / "src/shader_recompiler/ir/passes/resource_patching_pass.cpp").read_text()
+    backend = (m.SRC / "src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp").read_text()
+    if ("GPU_DYNAMIC_BUFFER_SHARP" not in resource or
+            "ctx.Def(handle)" not in backend or
+            "ctx.EmitDwordMemoryRead(address" not in backend):
+        raise m.Abort("GENERIC_GPU_DYNAMIC_RESOURCE_CODE_NOT_PRESENT", 2)
     fixture_tests(m, vma_fixture)
     m.stage("GCC_CLANG_NATIVE_RELEASE_GPU_SELECTED_VSHARP_100000_TESTS")
     for compiler in ("g++", "clang++"):
