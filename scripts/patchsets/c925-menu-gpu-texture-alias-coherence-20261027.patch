@@ -1,0 +1,106 @@
+--- a/src/video_core/texture_cache/texture_cache.cpp
++++ b/src/video_core/texture_cache/texture_cache.cpp
+@@ -1,9 +1,10 @@
+ // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include <algorithm>
++#include <atomic>
+ #include <limits>
+ #include <xxhash.h>
+ 
+ #include "common/assert.h"
+ #include "common/debug.h"
+@@ -217,25 +218,49 @@
+         }
+     }
+ }
+ 
+ void TextureCache::InvalidateMemoryFromGPU(VAddr address, size_t max_size) {
++    if (max_size == 0) {
++        return;
++    }
+     ForEachImageInRegion(address, max_size, [&](ImageId image_id, Image& image) {
+-        // Only consider images that match base address.
+-        // TODO: Maybe also consider subresources
+-        if (image.info.guest_address != address) {
++        // A GPU buffer may rewrite the mip/slice of an already cached image.
++        // If that cache image has no independent GPU-owned contents, its view
++        // must be refreshed from the buffer even when the write starts after
++        // the image's base address. Retain independently GPU-written images:
++        // refreshing a partial range would otherwise erase untouched pixels.
++        const bool partial = image.info.guest_address != address;
++        if (partial && True(image.flags & ImageFlagBits::GpuModified)) {
+             return;
+         }
+-        // Ensure image is reuploaded when accessed again.
++        if (partial && False(image.flags & ImageFlagBits::GpuDirty)) {
++            static std::atomic<u32> partial_image_reloads{0};
++            const u32 event = partial_image_reloads.fetch_add(1, std::memory_order_relaxed) + 1u;
++            if (event <= 16u || (event & (event - 1u)) == 0u) {
++                LOG_INFO(Render_Vulkan,
++                         "GPU_SUBRESOURCE_IMAGE_INVALIDATED event={} write={:#x} bytes={} "
++                         "image={:#x} image_bytes={}",
++                         event, address, max_size, image.info.guest_address,
++                         image.info.guest_size);
++            }
++        }
+         image.flags |= ImageFlagBits::GpuDirty;
+     });
+ }
+ 
+ void TextureCache::MarkAsMaybeGpuDirty(VAddr addr, size_t size) {
+     ForEachImageInRegion(addr, size, [&](ImageId image_id, Image& image) {
++        // GPU-dirty/CPU-dirty images have no trustworthy baseline on the host.
++        // Only preserve a baseline for an image whose GPU contents are valid.
++        // This prevents the subsequent image refresh/GC from accidentally
++        // keeping stale textures after raw storage-buffer writes.
++        if (!image.HasGpuValidData()) {
++            return;
++        }
+         if (image.gpu_hash == 0) {
+-            // Read backing pages directly, without faulting through the guest readback path.
++            // Read backing pages directly without recursively faulting.
+             image.gpu_hash = HashBackingMemory(image.info.guest_address, image.info.guest_size);
+         }
+     });
+ }
+ 
+@@ -661,10 +686,20 @@
+ 
+     Image& image = slot_images[image_id];
+     image.tick_accessed_last = scheduler.CurrentTick();
+     TouchImage(image);
+ 
++    // Resolving multiple overlapping images can replace the earlier parent.
++    // A view_mip/view_slice from an intermediate image is not valid for the
++    // final chosen backing. Recompute from the guest request and final image.
++    if (auto mip = info.MipOf(image.info); mip >= 0) {
++        if (auto slice = info.SliceOf(image.info, mip); slice >= 0) {
++            view_mip = mip;
++            view_slice = slice;
++        }
++    }
++
+     // If the image requested is a subresource of the image from cache record its location.
+     if (view_mip > 0) {
+         desc.view_info.range.base.level = view_mip;
+     }
+     if (view_slice > 0) {
+@@ -675,10 +710,16 @@
+ }
+ 
+ ImageId TextureCache::FindImageFromRange(VAddr address, size_t size, bool ensure_valid) {
+     SmallVector<ImageId, 4> image_ids;
+     ForEachImageWithAddress(address, [&](ImageId image_id, Image& image) {
++        // Guard against an aliased page-table entry that points outside the
++        // image's actual guest address range (not just the same cache bucket).
++        if (address < image.info.guest_address ||
++            address - image.info.guest_address >= image.info.guest_size) {
++            return;
++        }
+         if (ensure_valid && !image.HasGpuValidData()) {
+             return;
+         }
+         image_ids.push_back(image_id);
+     });

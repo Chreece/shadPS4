@@ -1,0 +1,184 @@
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+@@ -7,10 +7,11 @@
+ #include <vector>
+ #include <limits>
+ #include <memory>
+ #include <algorithm>
+ #include "common/debug.h"
++#include "common/log_occurrence_gate.h"
+ #include "core/debug_state.h"
+ #include "core/emulator_settings.h"
+ #include "core/memory.h"
+ #include <cstring>
+ #include "shader_recompiler/guest_tsharp_array.h"
+@@ -932,12 +933,21 @@
+             if (vsharp.base_address == 0 || vsharp.GetSize() == 0) {
+                 buffer_infos.emplace_back(VK_NULL_HANDLE, 0, VK_WHOLE_SIZE);
+             } else {
+                 const u64 size = memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize());
+                 if (size != vsharp.GetSize()) {
+-                    LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
+-                              vsharp.GetSize(), size, stage.pgm_hash);
++                    // An intentionally unbounded guest V# can clamp on many
++                    // dispatches. Keep the original size/decision intact and
++                    // retain first and logarithmically spaced diagnostics.
++                    static std::atomic<u64> clamped_buffer_reports{0};
++                    u64 event{};
++                    if (Common::ShouldReportRepeatedEvent(
++                            clamped_buffer_reports, event)) {
++                        LOG_ERROR(Render,
++                                  "Clamped size from {} to {} for stage {:#x} (occurrence={})",
++                                  vsharp.GetSize(), size, stage.pgm_hash, event);
++                    }
+                 }
+                 VideoCore::ObtainBufferFlags flags = {};
+                 if (desc.is_written) {
+                     flags |= VideoCore::ObtainBufferFlags::IsWritten;
+                 }
+@@ -2080,12 +2090,20 @@
+                    ref.stencil_test_val != ref.stencil_op_val;
+         };
+         if ((front_op && ref_conflict(regs.depth_control.stencil_ref_func, front)) ||
+             (back_op && regs.depth_control.backface_enable &&
+              ref_conflict(regs.depth_control.stencil_bf_func, back))) {
+-            LOG_WARNING(Render_Vulkan, "Stencil test requires test_val while ReplaceOp requires "
+-                                       "op_val; the stencil test will use op_val");
++            // This is a GCN/Vulkan representational conflict. Do not change
++            // the real chosen reference; reduce repeated identical warnings.
++            static std::atomic<u64> stencil_reference_reports{0};
++            u64 event{};
++            if (Common::ShouldReportRepeatedEvent(
++                    stencil_reference_reports, event)) {
++                LOG_WARNING(Render_Vulkan,
++                            "Stencil test requires test_val while ReplaceOp requires op_val; "
++                            "the stencil test will use op_val (occurrence={})", event);
++            }
+         }
+         dynamic_state.SetStencilReferences(front_op ? front.stencil_op_val : front.stencil_test_val,
+                                            back_op ? back.stencil_op_val : back.stencil_test_val);
+         dynamic_state.SetStencilWriteMasks(!stencil_clear ? front.stencil_write_mask : 0U,
+                                            !stencil_clear ? back.stencil_write_mask : 0U);
+--- a/src/core/libraries/gnmdriver/gnmdriver.cpp
++++ b/src/core/libraries/gnmdriver/gnmdriver.cpp
+@@ -1,7 +1,9 @@
+ // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
++
++#include "common/log_occurrence_gate.h"
+ 
+ #include "gnm_error.h"
+ #include "gnmdriver.h"
+ 
+ #include "common/assert.h"
+@@ -2060,11 +2062,19 @@
+     LOG_ERROR(Lib_GnmDriver, "(STUBBED) called");
+     return ORBIS_OK;
+ }
+ 
+ int PS4_SYSV_ABI sceGnmSetWaveLimitMultipliers() {
+-    LOG_ERROR(Lib_GnmDriver, "(STUBBED) called");
++    // Keep the original stub return/behavior. Logging every call floods the
++    // synchronous logger while the game is rendering. First and exponential
++    // occurrences remain visible with a cumulative exact count.
++    static std::atomic<u64> wave_limit_reports{0};
++    u64 event{};
++    if (Common::ShouldReportRepeatedEvent(wave_limit_reports, event)) {
++        LOG_ERROR(Lib_GnmDriver,
++                  "sceGnmSetWaveLimitMultipliers remains stubbed (occurrence={})", event);
++    }
+     return ORBIS_OK;
+ }
+ 
+ int PS4_SYSV_ABI sceGnmSpmEndSpm() {
+     LOG_TRACE(Lib_GnmDriver, "called");
+--- a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+@@ -408,10 +408,61 @@
+ 
+             }
+         }
+     }
+ 
++    // Discovery can recognize a valid GPU-selected source while the host
++    // cannot bind a real texture table. Report the actual rejection gate,
++    // not just the source opcode. This never changes the shader or bindings.
++    if (resource.has_indexed_table && !image_res.is_guest_indexed) {
++        static thread_local std::unordered_map<u64, u32> reports;
++        if (reports.size() < 128u || reports.contains(info.pgm_hash)) {
++            if (reports[info.pgm_hash]++ < 2u) {
++                const bool sampled_eligible = !is_written &&
++                    !inst_info.is_depth && !inst_info.is_array &&
++                    !inst_info.is_gather && !inst_info.has_lod &&
++                    !inst_info.force_level0 && !inst_info.has_lod_clamp &&
++                    !inst_info.is_r128 && !inst_info.is_unnormalized;
++                const bool sampler_eligible =
++                    resource.indexed_record_stride_bytes == 0u ||
++                    (resource.has_indexed_sampler_table &&
++                     profile.supports_sampler_array_nonuniform_indexing &&
++                     resource.sharps[1].post_op == SharpFetchPostOp::None) ||
++                    verified_uniform_sampler;
++                const bool format_eligible =
++                    sampled_eligible &&
++                    profile.supports_sampled_image_nonuniform_indexing &&
++                    sampler_eligible;
++                const auto indexed_fetch =
++                    ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp);
++                AmdGpu::Buffer indexed_header{};
++                const bool fetched = format_eligible &&
++                    indexed_fetch.Fetch(info.flattened_ud_buf.data(), &indexed_header);
++                const bool valid = fetched && indexed_header.Valid() &&
++                    indexed_header.base_address != 0;
++                const u64 bytes = valid ?
++                    (indexed_header.stride == 0
++                        ? static_cast<u64>(indexed_header.num_records)
++                        : static_cast<u64>(indexed_header.stride) *
++                          indexed_header.num_records) : 0u;
++                LOG_INFO(Render_Recompiler,
++                         "INDEXED_MATERIAL_BIND_REJECT shader={:#x} stage={} "
++                         "stride={} offset={} sample_mode_ok={} sampler_mode_ok={} "
++                         "table_fetch_kind={} table_fetched={} table_valid={} "
++                         "guest_base={:#x} guest_bytes={} guest_stride={} guest_records={}",
++                         info.pgm_hash, static_cast<u32>(info.hw_stage),
++                         resource.indexed_record_stride_bytes,
++                         resource.indexed_descriptor_offset_bytes,
++                         sampled_eligible, sampler_eligible,
++                         static_cast<u32>(indexed_fetch.summary), fetched, valid,
++                         valid ? static_cast<u64>(indexed_header.base_address) : 0u,
++                         bytes, valid ? static_cast<u32>(indexed_header.stride) : 0u,
++                         valid ? static_cast<u32>(indexed_header.num_records) : 0u);
++            }
++        }
++    }
++
+     // An unresolved image SHARP is distinct from an *accepted* GPU indexed
+     // texture table. Log the real source words without forcing any binding.
+     if (image_res.sharp_fetch.summary == SharpFetch<AmdGpu::Image>::Summary::Invalid) {
+         LogUnflattenedSharpSource(info, resource.sharps[0], "image",
+                                    image_res.is_guest_indexed);
+--- /dev/null
++++ b/src/common/log_occurrence_gate.h
+@@ -0,0 +1,23 @@
++// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++#include <atomic>
++#include <cstdint>
++#include <type_traits>
++
++namespace Common {
++
++// Preserve first occurrences and logarithmically spaced cumulative reports.
++// Only the decision to log changes; callers' emulated behavior is untouched.
++// The caller may record the precise count for the retained diagnostic.
++template <typename Counter>
++[[nodiscard]] inline bool ShouldReportRepeatedEvent(
++    std::atomic<Counter>& total, Counter& occurrence) noexcept {
++    static_assert(std::is_unsigned_v<Counter>);
++    occurrence = total.fetch_add(Counter{1}, std::memory_order_relaxed) + Counter{1};
++    return occurrence <= Counter{4} ||
++           (occurrence & (occurrence - Counter{1})) == Counter{0};
++}
++
++} // namespace Common

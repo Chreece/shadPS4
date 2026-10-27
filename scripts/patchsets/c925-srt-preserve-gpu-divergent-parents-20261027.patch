@@ -1,0 +1,28 @@
+diff --git a/src/shader_recompiler/ir/passes/srt_dependency_codegen.inc b/src/shader_recompiler/ir/passes/srt_dependency_codegen.inc
+--- a/src/shader_recompiler/ir/passes/srt_dependency_codegen.inc
++++ b/src/shader_recompiler/ir/passes/srt_dependency_codegen.inc
+@@ -6,6 +6,13 @@
+                          Xbyak::CodeGenerator& c) {
+     // A value-number-equivalent pointer may already have been emitted at another
+     // root. Propagate only a real allocated slot, never slot zero or a guessed value.
++    // A GPU-selected address may differ per lane and has no single host
++    // flat-buffer slot. Preserve the existing shader-side dynamic ReadConst
++    // and never treat that unschedulable child as a missing host parent.
++    if (!IsHostUniformSrtOffset(off_dw)) {
++        ++pass_info.dynamic_srt_reads;
++        return;
++    }
+     if (subtree->GetOpcode() == IR::Opcode::ReadConst ||
+         subtree->GetOpcode() == IR::Opcode::ReadConstBuffer) {
+         if (GetFlatbufOffset(subtree) == 0) {
+@@ -18,10 +25,6 @@
+             }
+             SetFlatbufOffset(subtree, offset);
+         }
+-    }
+-    if (!IsHostUniformSrtOffset(off_dw)) {
+-        ++pass_info.dynamic_srt_reads;
+-        return;
+     }
+     // A cyclic pointer graph must not recurse indefinitely or fabricate a read.
+     if (!pass_info.active_srt_pointers.insert(subtree).second) {

@@ -1,0 +1,130 @@
+diff --git a/src/shader_recompiler/ir/passes/indexed_image_selector.h b/src/shader_recompiler/ir/passes/indexed_image_selector.h
+index 008af08..ae00b85 100644
+--- a/src/shader_recompiler/ir/passes/indexed_image_selector.h
++++ b/src/shader_recompiler/ir/passes/indexed_image_selector.h
+@@ -85,17 +85,24 @@ template <typename Value>
+         shift->Arg(1).Type() != IR::Type::U32 ||
+         shift->Arg(1).U32() != 2u) return {};
+ 
+-    const auto* const add = shift->Arg(0).TryInst();
+-    if (!add || add->GetOpcode() != IR::Opcode::IAdd32) return {};
+-    const auto a = add->Arg(0);
+-    const auto b = add->Arg(1);
+-    if (a.IsImmediate() == b.IsImmediate()) return {};
+-    const auto literal = a.IsImmediate() ? a : b;
+-    const auto expression = a.IsImmediate() ? b : a;
+-    if (literal.Type() != IR::Type::U32) return {};
+-    const std::uint32_t prefix = literal.U32();
+-    if (prefix % 4u != 0u) return {};
+-    const auto* const mul = expression.TryInst();
++    // GCN accepts both equivalent layouts:
++    // ((gpu_record_id * stride + byte_prefix) >> 2) + word
++    // ((gpu_record_id * stride) >> 2) + base_word + word
++    // Keep the guest's actual GPU-selected record ID; never CPU-evaluate it.
++    auto scaled = shift->Arg(0);
++    std::uint32_t prefix_bytes = 0;
++    if (const auto* add = scaled.TryInst();
++        add && add->GetOpcode() == IR::Opcode::IAdd32) {
++        const auto a = add->Arg(0);
++        const auto b = add->Arg(1);
++        if (a.IsImmediate() == b.IsImmediate()) return {};
++        const auto literal = a.IsImmediate() ? a : b;
++        scaled = a.IsImmediate() ? b : a;
++        if (literal.Type() != IR::Type::U32) return {};
++        prefix_bytes = literal.U32();
++    }
++    if (prefix_bytes % 4u != 0u) return {};
++    const auto* const mul = scaled.TryInst();
+     if (!mul || mul->GetOpcode() != IR::Opcode::IMul32) return {};
+     const auto lhs = mul->Arg(0);
+     const auto rhs = mul->Arg(1);
+@@ -106,7 +113,7 @@ template <typename Value>
+         stride.U32() < 32u || stride.U32() % 4u ||
+         stride.U32() > 65536u) return {};
+     const std::uint64_t offset =
+-        std::uint64_t(prefix / 4u) + normalized.addend;
++        std::uint64_t(prefix_bytes / 4u) + normalized.addend;
+     // The complete 32-byte T# must lie inside exactly one guest record.
+     if (offset > std::uint64_t(stride.U32() / 4u)) return {};
+     return {gpu_id.TryInst(),stride.U32(),
+diff --git a/src/shader_recompiler/ir/passes/resource_discover_pass.cpp b/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
+index a33457a..0e3b12d 100644
+--- a/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
+@@ -833,6 +833,22 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample)
+         if(!norm[i].valid) return out;
+         out.addends[i]=norm[i].addend;
+     }
++    // A complete strided material match is stronger than the general
++    // contiguous eight-word pattern. Try it before the loose matcher or
++    // an otherwise valid GPU table is incorrectly classified non-indexed.
++    std::array<StridedIndexedSharpWord,8> strided{};
++    for(std::size_t i=0;i<strided.size();++i) {
++        strided[i]=AnalyzeStridedIndexedSharpWord(out.words[i]->Arg(1));
++    }
++    if(AreContiguousStridedSharpWords(strided)) {
++        out.selector=static_cast<const IR::Inst*>(strided[0].gpu_record_id);
++        out.record_stride_bytes=strided[0].record_stride_bytes;
++        out.tsharp_offset_bytes=strided[0].offset_dwords*4u;
++        out.descriptor_stride_words=out.record_stride_bytes/4u;
++        out.gpu_texture_id_indexed=true;
++        out.contiguous=true;
++        return out;
++    }
+     if(AreContiguousIndexedSharpWords(norm)) {
+         const auto* selector=static_cast<const IR::Inst*>(norm[0].selector);
+         const auto id=IdentifyTsharpSelector(selector);
+@@ -843,17 +859,6 @@ static IndexedImageTableSource AnalyzeIndexedImageTable(const IR::Inst& sample)
+         out.contiguous=true;
+         return out;
+     }
+-    std::array<StridedIndexedSharpWord,8> strided{};
+-    for(std::size_t i=0;i<strided.size();++i) {
+-        strided[i]=AnalyzeStridedIndexedSharpWord(out.words[i]->Arg(1));
+-    }
+-    if(!AreContiguousStridedSharpWords(strided)) return out;
+-    out.selector=static_cast<const IR::Inst*>(strided[0].gpu_record_id);
+-    out.record_stride_bytes=strided[0].record_stride_bytes;
+-    out.tsharp_offset_bytes=strided[0].offset_dwords*4u;
+-    out.descriptor_stride_words=out.record_stride_bytes/4u;
+-    out.gpu_texture_id_indexed=true;
+-    out.contiguous=true;
+     return out;
+ }
+ 
+@@ -980,6 +985,22 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile&
+                         const bool accepted = bindable &&
+                             (table.record_stride_bytes == 0u ||
+                              indexed_sampler_supported || real_uniform_sampler);
++                        if (table.record_stride_bytes != 0u) {
++                            static thread_local std::unordered_map<u64, u32> counts;
++                            const u64 shader = program.info.pgm_hash;
++                            if (counts.size() < 128u || counts.contains(shader)) {
++                                if (counts[shader]++ < 2u) {
++                                    LOG_INFO(Render_Recompiler,
++                                             "IndexedStridedSource: shader={:#x} "
++                                             "record_stride={} offset={} table_bindable={} "
++                                             "indexed_sampler={} uniform_sampler={} accepted={}",
++                                             shader, table.record_stride_bytes,
++                                             table.tsharp_offset_bytes, bindable,
++                                             indexed_sampler_supported,
++                                             real_uniform_sampler, accepted);
++                                }
++                            }
++                        }
+                         if (table.record_stride_bytes != 0u) {
+                             static thread_local std::unordered_map<u64, u32> reports;
+                             const u64 shader = program.info.pgm_hash;
+diff --git a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+index c2618b0..04d24be 100644
+--- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+@@ -12,7 +12,7 @@
+ 
+ namespace Serialization {
+ /* You should increment versions below once corresponding serialization scheme is changed. */
+-static constexpr u32 ShaderBinaryVersion = 0x43520007u;
++static constexpr u32 ShaderBinaryVersion = 0x43520008u;
+ static constexpr u32 ShaderMetaVersion = 0x43520006u;
+ 
+ static constexpr u32 PipelineKeyVersion = 3u;

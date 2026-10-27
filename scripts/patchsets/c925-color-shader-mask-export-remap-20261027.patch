@@ -1,0 +1,130 @@
+--- a/src/video_core/amdgpu/regs_color.h
++++ b/src/video_core/amdgpu/regs_color.h
+@@ -104,13 +104,29 @@
+ 
+     u32 raw;
+ 
+-    u32 GetMask(u32 buf_id) const {
++    [[nodiscard]] constexpr u32 GetMask(u32 buf_id) const {
+         return (raw >> (buf_id * 4)) & 0xfu;
+     }
+ 
+-    void SetMask(u32 buf_id, u32 mask) {
++    constexpr void SetMask(u32 buf_id, u32 mask) {
+         raw &= ~(0xf << (buf_id * 4));
+         raw |= (mask << (buf_id * 4));
++    }
++
++    // PS4 exports are packed into the consecutively enabled CB_SHADER_MASK
++    // targets. Translate logical MRT output ordinals into physical CB slots.
++    // An all-zero mask is treated as legacy identity until shader/host state
++    // establishes a live CB export (avoids a broad zero-mask regression).
++    [[nodiscard]] constexpr u32 GetTarget(u32 export_index) const noexcept {
++        if (raw == 0) {
++            return export_index < NUM_COLOR_BUFFERS ? export_index : NUM_COLOR_BUFFERS;
++        }
++        for (u32 target = 0; target < NUM_COLOR_BUFFERS; ++target) {
++            if (GetMask(target) != 0 && export_index-- == 0) {
++                return target;
++            }
++        }
++        return NUM_COLOR_BUFFERS;
+     }
+ };
+ 
+--- a/src/shader_recompiler/runtime_info.h
++++ b/src/shader_recompiler/runtime_info.h
+@@ -8,6 +8,7 @@
+ #include "common/types.h"
+ #include "shader_recompiler/frontend/tessellation.h"
+ #include "video_core/amdgpu/pixel_format.h"
++#include "video_core/amdgpu/regs_color.h"
+ #include "video_core/amdgpu/regs_shader.h"
+ #include "video_core/amdgpu/regs_vertex.h"
+ 
+@@ -203,6 +204,7 @@
+     u32 num_inputs;
+     std::array<PsInput, 32> inputs;
+     std::array<PsColorBuffer, MaxColorBuffers> color_buffers;
++    AmdGpu::ColorBufferMask color_shader_mask{};
+     AmdGpu::ShaderExportFormat z_export_format : 4;
+     u32 num_samples : 8;
+     u32 mrtz_mask : 4;
+@@ -214,6 +216,7 @@
+ 
+     bool operator==(const HwFragmentRuntimeInfo& other) const noexcept {
+         return std::ranges::equal(color_buffers, other.color_buffers) &&
++               color_shader_mask.raw == other.color_shader_mask.raw &&
+                en_flags == other.en_flags && addr_flags == other.addr_flags &&
+                num_inputs == other.num_inputs && z_export_format == other.z_export_format &&
+                num_samples == other.num_samples && mrtz_mask == other.mrtz_mask &&
+--- a/src/shader_recompiler/frontend/translate/export.cpp
++++ b/src/shader_recompiler/frontend/translate/export.cpp
+@@ -1,6 +1,7 @@
+ // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include "common/logging/log.h"
+ #include "shader_recompiler/frontend/translate/translate.h"
+ #include "shader_recompiler/ir/position.h"
+ #include "shader_recompiler/ir/reinterpret.h"
+@@ -49,13 +50,31 @@
+ 
+ void Translator::ExportRenderTarget(const GcnInst& inst) {
+     const auto& exp = inst.control.exp;
+-    const IR::Attribute mrt{exp.target};
+-    info.mrt_mask |= 1u << static_cast<u8>(mrt);
+-
+-    // Dual source blending uses MRT1 for exporting src1
+-    u32 color_buffer_idx = static_cast<u32>(mrt) - static_cast<u32>(IR::Attribute::RenderTarget0);
+-    if (runtime_info.hw.fs.dual_source_blending && mrt == IR::Attribute::RenderTarget1) {
+-        color_buffer_idx = 0;
++    const u32 export_idx = exp.target - static_cast<u32>(IR::Attribute::RenderTarget0);
++    if (export_idx >= AmdGpu::NUM_COLOR_BUFFERS || exp.en == 0) {
++        return;
++    }
++    const bool dual_source = runtime_info.hw.fs.dual_source_blending && export_idx <= 1u;
++    // PS4 color exports can be compacted: logical MRT1 might really be CB2.
++    // Preserve MRT0/MRT1 dual-source blending's special attribute pair.
++    const u32 physical_idx = dual_source ? 0u :
++        runtime_info.hw.fs.color_shader_mask.GetTarget(export_idx);
++    if (physical_idx >= AmdGpu::NUM_COLOR_BUFFERS) {
++        return;
++    }
++    const IR::Attribute mrt = static_cast<IR::Attribute>(
++        static_cast<u32>(IR::Attribute::RenderTarget0) +
++        (dual_source ? export_idx : physical_idx));
++    info.mrt_mask |= 1u << (dual_source ? export_idx : physical_idx);
++    const u32 color_buffer_idx = physical_idx;
++    if (!dual_source && color_buffer_idx != export_idx) {
++        static thread_local u32 remap_events = 0;
++        if (remap_events++ < 48) {
++            LOG_INFO(Render_Recompiler,
++                     "CB_SHADER_MASK_EXPORT_REMAP shader={:#x} logical={} physical={} mask={:#x}",
++                     info.pgm_hash, export_idx, color_buffer_idx,
++                     runtime_info.hw.fs.color_shader_mask.raw);
++        }
+     }
+ 
+     const auto color_buffer = runtime_info.hw.fs.color_buffers[color_buffer_idx];
+--- a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+@@ -259,6 +259,7 @@
+         BuildCommon(regs.ps_program);
+         info.hw.fs.en_flags = regs.ps_input_ena;
+         info.hw.fs.addr_flags = regs.ps_input_addr;
++        info.hw.fs.color_shader_mask = graphics_key.cb_shader_mask;
+         info.hw.fs.num_inputs = regs.num_interp;
+         info.hw.fs.front_face_all_bits = regs.barycentric_control.front_face_all_bits;
+         info.hw.fs.depth_before_shader = regs.depth_shader_control.depth_before_shader;
+--- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+@@ -12,7 +12,7 @@
+ 
+ namespace Serialization {
+ /* You should increment versions below once corresponding serialization scheme is changed. */
+-static constexpr u32 ShaderBinaryVersion = 0x43520009u;
++static constexpr u32 ShaderBinaryVersion = 0x4352000au;
+ static constexpr u32 ShaderMetaVersion = 0x43520006u;
+ 
+ static constexpr u32 PipelineKeyVersion = 3u;

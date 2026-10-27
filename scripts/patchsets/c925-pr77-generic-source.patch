@@ -1,0 +1,224 @@
+diff --git a/src/shader_recompiler/ir/passes/resource_discover_pass.cpp b/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
+index 35b160397c8684e28cc001e5786d8c4b87e819a1..af3f84a06939d05d15b533e7a5264bdaaabc8f33 100644
+--- a/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
+@@ -562,6 +562,58 @@ static IndexedSamplerTableSource AnalyzeIndexedSamplerTable(
+     return {words[0].offset_dwords * 4u, true};
+ }
+ 
++// A GPU-selected strided T# array may use one real, host-evaluable S# for
++// every image. This is never a CPU reconstruction of the GPU's texture ID:
++// only the sampler is uniform, and all four genuine descriptor words must
++// have provably scalar sources.
++static bool IsProvenUniformSamplerWord(IR::Value value) {
++    if (value.IsImmediate()) {
++        return true;
++    }
++    const IR::Inst* inst = value.TryInst();
++    if (!inst) {
++        return false;
++    }
++    if (inst->GetOpcode() == IR::Opcode::GetUserData ||
++        inst->GetOpcode() == IR::Opcode::ReadConst) {
++        return true;
++    }
++    if (inst->GetOpcode() != IR::Opcode::ReadConstBuffer ||
++        !inst->Arg(1).IsImmediate()) {
++        return false;
++    }
++    const IR::Inst* descriptor = inst->Arg(0).TryInst();
++    if (!descriptor || descriptor->GetOpcode() != IR::Opcode::CompositeConstructU32x4 ||
++        descriptor->NumArgs() != 4u) {
++        return false;
++    }
++    for (u32 i = 0; i < 4u; ++i) {
++        const IR::Value word = descriptor->Arg(i);
++        if (word.IsImmediate()) {
++            continue;
++        }
++        const IR::Inst* producer = word.TryInst();
++        if (!producer ||
++            (producer->GetOpcode() != IR::Opcode::GetUserData &&
++             producer->GetOpcode() != IR::Opcode::ReadConst)) {
++            return false;
++        }
++    }
++    return true;
++}
++
++static bool IsProvenUniformSampler(const SharpReference& sharp) {
++    if (sharp.num_dwords != 4u || sharp.post_op != SharpFetchPostOp::None) {
++        return false;
++    }
++    for (u32 i = 0; i < 4u; ++i) {
++        if (!IsProvenUniformSamplerWord(sharp.dwords[i])) {
++            return false;
++        }
++    }
++    return true;
++}
++
+ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {
+     // Finite control-flow descriptor choices are lowered to exact static
+     // alternatives while the original GPU Phi selects the sampled result.
+@@ -608,13 +660,38 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile&
+                         const auto indexed_sampler = table.record_stride_bytes != 0u
+                             ? AnalyzeIndexedSamplerTable(inst, table)
+                             : IndexedSamplerTableSource{};
+-                        const bool sampler_supported =
+-                            table.record_stride_bytes == 0u ||
+-                            (profile.supports_sampler_array_nonuniform_indexing &&
+-                             indexed_sampler.valid);
+-                        if (bindable && sampler_supported) {
++                        const bool indexed_sampler_supported =
++                            indexed_sampler.valid &&
++                            profile.supports_sampler_array_nonuniform_indexing;
++                        const bool uniform_sampler =
++                            table.record_stride_bytes != 0u &&
++                            !indexed_sampler_supported &&
++                            IsProvenUniformSampler(usage.sharps[1]);
++                        const bool accepted =
++                            bindable && (table.record_stride_bytes == 0u ||
++                                         indexed_sampler_supported || uniform_sampler);
++                        if (table.record_stride_bytes != 0u) {
++                            static thread_local std::unordered_map<u64, u32> reports;
++                            const u64 shader = program.info.pgm_hash;
++                            if (reports.size() < 96u || reports.contains(shader)) {
++                                u32& count = reports[shader];
++                                if (count++ < 2u) {
++                                    LOG_INFO(Render_Recompiler,
++                                             "IndexedBindingDecision: shader={:#x} "
++                                             "stride={} tsharp_offset={} table_bindable={} "
++                                             "indexed_sampler={} uniform_sampler={} "
++                                             "sampler_array_supported={} accepted={}",
++                                             shader, table.record_stride_bytes,
++                                             table.tsharp_offset_bytes, bindable,
++                                             indexed_sampler_supported, uniform_sampler,
++                                             profile.supports_sampler_array_nonuniform_indexing,
++                                             accepted);
++                                }
++                            }
++                        }
++                        if (accepted) {
+                             usage.indexed_sampler_offset_bytes = indexed_sampler.offset_bytes;
+-                            usage.has_indexed_sampler_table = indexed_sampler.valid;
++                            usage.has_indexed_sampler_table = indexed_sampler_supported;
+                             usage.indexed_table_sharp.num_dwords = 4;
+                             MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
+                             usage.indexed_texture_id =
+diff --git a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+index 85276fe467aa0e7aec96e0d59d6c4341ea393381..9623da6ee5e6049bdd4bbdb766c8fda7bbb31141 100644
+--- a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+@@ -1,7 +1,10 @@
+ // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <algorithm>
+ #include <limits>
++#include <unordered_map>
++#include "common/logging/log.h"
+ #include "shader_recompiler/info.h"
+ #include "shader_recompiler/ir/basic_block.h"
+ #include "shader_recompiler/ir/ir_emitter.h"
+@@ -268,14 +271,30 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
+         .post_op = resource.sharps[0].post_op,
+     };
+ 
++    // A strided guest material T# can use a single real, unmodified S#.
++    // All four sampler descriptor words must be host-evaluable, and the
++    // resulting actual guest sampler must validate before allowing the path.
++    bool verified_uniform_sampler = false;
++    if (resource.has_indexed_table && resource.indexed_record_stride_bytes != 0u &&
++        !resource.has_indexed_sampler_table &&
++        resource.sharps[1].post_op == SharpFetchPostOp::None &&
++        resource.sharps[1].num_dwords == 4u) {
++        const auto sampler_fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1]);
++        AmdGpu::Sampler real_sampler{};
++        verified_uniform_sampler =
++            sampler_fetch.Fetch(info.flattened_ud_buf.data(), &real_sampler) &&
++            real_sampler.Valid();
++    }
++
+     // Preserve a complete guest T# table and its real GPU selector. Packed
+     // and strided array-of-structs forms are accepted only when the complete
+     // table is representable; never truncate a prefix or CPU-evaluate the ID.
+     if (resource.has_indexed_table && profile.supports_sampled_image_nonuniform_indexing &&
+         (resource.indexed_record_stride_bytes == 0u ||
+          (resource.has_indexed_sampler_table &&
+           profile.supports_sampler_array_nonuniform_indexing &&
+-          resource.sharps[1].post_op == SharpFetchPostOp::None)) &&
++          resource.sharps[1].post_op == SharpFetchPostOp::None) ||
++         verified_uniform_sampler) &&
+         !is_written && !inst_info.is_depth && !inst_info.is_array &&
+         !inst_info.is_gather && !inst_info.has_lod && !inst_info.force_level0 &&
+         !inst_info.has_lod_clamp && !inst_info.is_r128 && !inst_info.is_unnormalized) {
+@@ -286,13 +305,19 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
+             table.Valid() && table.base_address != 0) {
+             const u32 record_stride = resource.indexed_record_stride_bytes;
+             const u32 record_offset = resource.indexed_descriptor_offset_bytes;
++            const bool needs_indexed_sampler = record_stride != 0u &&
++                                               !verified_uniform_sampler;
++            const u32 indexed_limit = needs_indexed_sampler
++                ? std::min(profile.max_guest_indexed_image_entries,
++                           profile.max_guest_indexed_sampler_entries)
++                : profile.max_guest_indexed_image_entries;
+             const u32 entries = record_stride != 0u
+                 ? CompleteGuestTsharpRecordEntries(
+                       static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
+-                      record_stride, record_offset, profile.max_guest_indexed_image_entries)
++                      record_stride, record_offset, indexed_limit)
+                 : CompleteGuestTsharpTableEntries(
+                       static_cast<u32>(table.stride), static_cast<u32>(table.num_records),
+-                      profile.max_guest_indexed_image_entries);
++                      indexed_limit);
+             if (entries != 0u) {
+                 image_res.indexed_table_fetch = table_fetch;
+                 image_res.indexed_guest_entries = entries;
+@@ -388,7 +413,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
+             .is_depth = bool(inst_info.is_depth),
+             .is_integer = AmdGpu::IsInteger(image.GetNumberFmt()),
+         };
+-        if (image_res.is_guest_indexed &&
++        if (image_res.is_guest_indexed && !verified_uniform_sampler &&
+             image_res.indexed_record_stride_bytes != 0u) {
+             ASSERT(resource.has_indexed_sampler_table);
+             sampler_res.is_guest_indexed = true;
+@@ -397,6 +422,20 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
+             sampler_res.indexed_record_stride_bytes = image_res.indexed_record_stride_bytes;
+             sampler_res.indexed_sampler_offset_bytes = resource.indexed_sampler_offset_bytes;
+         }
++        if (image_res.is_guest_indexed && verified_uniform_sampler) {
++            static thread_local std::unordered_map<u64, u32> reports;
++            const u64 shader = info.pgm_hash;
++            if (reports.size() < 96u || reports.contains(shader)) {
++                u32& count = reports[shader];
++                if (count++ < 2u) {
++                    LOG_INFO(Render_Recompiler,
++                             "IndexedUniformSamplerBound: shader={:#x} "
++                             "record_stride={} entries={}",
++                             shader, image_res.indexed_record_stride_bytes,
++                             image_res.indexed_guest_entries);
++                }
++            }
++        }
+         const u32 sampler_binding = descriptors.Add(sampler_res);
+         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
+         if (image_res.is_guest_indexed) {
+diff --git a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+index 06fcf57cee7956c9caceccf252478980a302187f..1485581d10bca6137475d0c20e3f0028f2ce1673 100644
+--- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+@@ -12,8 +12,10 @@
+ 
+ namespace Serialization {
+ /* You should increment versions below once corresponding serialization scheme is changed. */
+-static constexpr u32 ShaderBinaryVersion = 0x43520004u;
+-static constexpr u32 ShaderMetaVersion = 0x43520004u;
++// The real uniform S# path changes image/sampler descriptor specialization
++// and requires fresh metadata. Old shader caches are preserved on disk.
++static constexpr u32 ShaderBinaryVersion = 0x43520005u;
++static constexpr u32 ShaderMetaVersion = 0x43520005u;
+ static constexpr u32 PipelineKeyVersion = 3u;
+ } // namespace Serialization
+ 

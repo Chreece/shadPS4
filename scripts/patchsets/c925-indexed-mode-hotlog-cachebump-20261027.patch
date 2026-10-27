@@ -1,0 +1,218 @@
+--- a/src/core/libraries/ajm/ajm.cpp
++++ b/src/core/libraries/ajm/ajm.cpp
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include "common/logging/log.h"
++#include "common/log_occurrence_gate.h"
+ #include "core/libraries/ajm/ajm.h"
+ #include "core/libraries/ajm/ajm_context.h"
+ #include "core/libraries/ajm/ajm_error.h"
+@@ -150,8 +151,12 @@
+ 
+ int PS4_SYSV_ABI sceAjmInstanceCreate(u32 context_id, AjmCodecType codec_type,
+                                       AjmInstanceFlags flags, u32* out_instance) {
+-    LOG_INFO(Lib_Ajm, "called context = {}, codec_type = {}, flags = {:#x}", context_id,
+-             magic_enum::enum_name(codec_type), flags.raw);
++    static std::atomic<u64> create_reports{0};
++    u64 event{};
++    if (Common::ShouldReportRepeatedEvent(create_reports, event)) {
++        LOG_INFO(Lib_Ajm, "called context = {}, codec_type = {}, flags = {:#x} (occurrence={})",
++                 context_id, magic_enum::enum_name(codec_type), flags.raw, event);
++    }
+ 
+     auto it = contexts.find(context_id);
+     if (it == contexts.end()) {
+@@ -162,7 +167,12 @@
+ }
+ 
+ int PS4_SYSV_ABI sceAjmInstanceDestroy(u32 context_id, u32 instance_id) {
+-    LOG_INFO(Lib_Ajm, "called context = {}, instance = {}", context_id, instance_id);
++    static std::atomic<u64> destroy_reports{0};
++    u64 event{};
++    if (Common::ShouldReportRepeatedEvent(destroy_reports, event)) {
++        LOG_INFO(Lib_Ajm, "called context = {}, instance = {} (occurrence={})",
++                 context_id, instance_id, event);
++    }
+ 
+     auto it = contexts.find(context_id);
+     if (it == contexts.end()) {
+--- a/src/core/libraries/ajm/ajm_context.cpp
++++ b/src/core/libraries/ajm/ajm_context.cpp
+@@ -3,6 +3,7 @@
+ 
+ #include "common/assert.h"
+ #include "common/logging/log.h"
++#include "common/log_occurrence_gate.h"
+ #include "common/thread.h"
+ #include "core/libraries/ajm/ajm.h"
+ #include "core/libraries/ajm/ajm_at9.h"
+@@ -179,7 +180,11 @@
+     }
+     *out_instance = opt_index.value() | (static_cast<u32>(codec_type) << 14);
+ 
+-    LOG_INFO(Lib_Ajm, "instance = {}", *out_instance);
++    static std::atomic<u64> instance_reports{0};
++    u64 event{};
++    if (Common::ShouldReportRepeatedEvent(instance_reports, event)) {
++        LOG_INFO(Lib_Ajm, "instance = {} (occurrence={})", *out_instance, event);
++    }
+     return ORBIS_OK;
+ }
+ 
+--- a/src/core/libraries/kernel/memory.cpp
++++ b/src/core/libraries/kernel/memory.cpp
+@@ -14,6 +14,7 @@
+ #include "common/elf_info.h"
+ #include "common/error.h"
+ #include "common/logging/log.h"
++#include "common/log_occurrence_gate.h"
+ #include "common/scope_exit.h"
+ #include "common/singleton.h"
+ #include "core/libraries/kernel/kernel.h"
+@@ -197,10 +198,15 @@
+ 
+ s32 PS4_SYSV_ABI sceKernelMapNamedDirectMemory(void** addr, u64 len, s32 prot, s32 flags,
+                                                s64 phys_addr, u64 alignment, const char* name) {
+-    LOG_INFO(Kernel_Vmm,
+-             "in_addr = {}, len = {:#x}, prot = {:#x}, flags = {:#x}, "
+-             "phys_addr = {:#x}, alignment = {:#x}, name = '{}'",
+-             fmt::ptr(*addr), len, prot, flags, phys_addr, alignment, name);
++    static std::atomic<u64> named_map_reports{0};
++    u64 event{};
++    const bool report_map = Common::ShouldReportRepeatedEvent(named_map_reports, event);
++    if (report_map) {
++        LOG_INFO(Kernel_Vmm,
++                 "in_addr = {}, len = {:#x}, prot = {:#x}, flags = {:#x}, "
++                 "phys_addr = {:#x}, alignment = {:#x}, name = '{}' (occurrence={})",
++                 fmt::ptr(*addr), len, prot, flags, phys_addr, alignment, name, event);
++    }
+ 
+     if (len == 0 || !Common::Is16KBAligned(len)) {
+         LOG_ERROR(Kernel_Vmm, "Map size is either zero or not 16KB aligned!");
+@@ -252,7 +258,9 @@
+         memory->MapMemory(addr, in_addr, len, mem_prot, map_flags, Core::VMAType::Direct, name,
+                           should_check, phys_addr, alignment);
+ 
+-    LOG_INFO(Kernel_Vmm, "out_addr = {}", fmt::ptr(*addr));
++    if (report_map) {
++        LOG_INFO(Kernel_Vmm, "out_addr = {} (occurrence={})", fmt::ptr(*addr), event);
++    }
+     return ret;
+ }
+ 
+--- /dev/null
++++ b/src/shader_recompiler/ir/passes/indexed_sample_eligibility.h
+@@ -0,0 +1,17 @@
++// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++namespace Shader::Optimization {
++// Exactly the image-sampling subset implemented by PatchImageSharp's indexed
++// Vulkan sampled-image path. Call at discovery AND binding to avoid accepting
++// dynamically indexed descriptors that cannot be bound by that later path.
++// No shader hash, title-specific condition, or fabricated guest value.
++template <typename TextureFlags>
++[[nodiscard]] constexpr bool IsBindableGuestIndexedSampleMode(
++    const TextureFlags& flags) noexcept {
++    return !flags.is_depth && !flags.is_array && !flags.is_gather &&
++           !flags.has_lod && !flags.force_level0 &&
++           !flags.has_lod_clamp && !flags.is_r128 && !flags.is_unnormalized;
++}
++} // namespace Shader::Optimization
+--- a/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
+@@ -11,6 +11,7 @@
+ #include "shader_recompiler/ir/passes/image_phi_preflight.h"
+ #include "shader_recompiler/ir/passes/ir_passes.h"
+ #include "shader_recompiler/ir/passes/indexed_image_selector.h"
++#include "shader_recompiler/ir/passes/indexed_sample_eligibility.h"
+ #include "shader_recompiler/ir/passes/resource_pass.h"
+ #include "shader_recompiler/ir/program.h"
+ #include "shader_recompiler/profile.h"
+@@ -959,8 +960,15 @@
+                 DiscoverBufferSharp(*block, inst, sharp_usages);
+             } else if (IsImageInstruction(inst)) {
+                 DiscoverImageSharp(*block, inst, sharp_usages);
++                // Resource discovery must agree with PatchImageSharp: the
++                // earlier broad 384-byte matcher accepted 108 unsupported
++                // sample modes in the 19:33 trial. Those paths could not bind
++                // guest material images and only caused extra compilation.
++                // Image operations themselves still use the existing path.
+                 if (inst.GetOpcode()==IR::Opcode::ImageSampleRaw &&
+-                    profile.supports_sampled_image_nonuniform_indexing) {
++                    profile.supports_sampled_image_nonuniform_indexing &&
++                    IsBindableGuestIndexedSampleMode(
++                        inst.Flags<IR::TextureInstInfo>())) {
+                     const auto table=AnalyzeIndexedImageTable(inst);
+                     if(table.contiguous && table.gpu_texture_id_indexed &&
+                        (table.descriptor_stride_words==8u ||
+--- a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+@@ -20,6 +20,7 @@
+ #include "shader_recompiler/profile.h"
+ #include "shader_recompiler/resource.h"
+ #include "shader_recompiler/guest_tsharp_array.h"
++#include "shader_recompiler/ir/passes/indexed_sample_eligibility.h"
+ #include "video_core/amdgpu/resource.h"
+ #include <magic_enum/magic_enum.hpp>
+ 
+@@ -373,9 +374,7 @@
+           profile.supports_sampler_array_nonuniform_indexing &&
+           resource.sharps[1].post_op == SharpFetchPostOp::None) ||
+          verified_uniform_sampler) &&
+-        !is_written && !inst_info.is_depth && !inst_info.is_array && !inst_info.is_gather &&
+-        !inst_info.has_lod && !inst_info.force_level0 &&
+-        !inst_info.has_lod_clamp && !inst_info.is_r128 && !inst_info.is_unnormalized) {
++        !is_written && IsBindableGuestIndexedSampleMode(inst_info)) {
+         const auto table_fetch=ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp);
+         AmdGpu::Buffer table{};
+         if(table_fetch.Fetch(info.flattened_ud_buf.data(),&table) && table.Valid() && table.base_address!=0) {
+@@ -418,10 +417,7 @@
+         if (reports.size() < 128u || reports.contains(info.pgm_hash)) {
+             if (reports[info.pgm_hash]++ < 2u) {
+                 const bool sampled_eligible = !is_written &&
+-                    !inst_info.is_depth && !inst_info.is_array &&
+-                    !inst_info.is_gather && !inst_info.has_lod &&
+-                    !inst_info.force_level0 && !inst_info.has_lod_clamp &&
+-                    !inst_info.is_r128 && !inst_info.is_unnormalized;
++                    IsBindableGuestIndexedSampleMode(inst_info);
+                 const bool sampler_eligible =
+                     resource.indexed_record_stride_bytes == 0u ||
+                     (resource.has_indexed_sampler_table &&
+--- a/src/video_core/buffer_cache/buffer_cache.cpp
++++ b/src/video_core/buffer_cache/buffer_cache.cpp
+@@ -6,6 +6,7 @@
+ #include <xxhash.h>
+ 
+ #include "common/alignment.h"
++#include "common/log_occurrence_gate.h"
+ #include "core/debug_state.h"
+ #include "core/memory.h"
+ #include "video_core/amdgpu/liverpool.h"
+@@ -431,7 +432,12 @@
+         backing.offset = memory_offset >> block_shift;
+         resident_ranges.Add(backing);
+ 
+-        LOG_INFO(Render, "Making range start={}, end={} resident", backing.start, backing.end);
++        static std::atomic<u64> residency_reports{0};
++        u64 event{};
++        if (Common::ShouldReportRepeatedEvent(residency_reports, event)) {
++            LOG_INFO(Render, "Making range start={}, end={} resident (occurrence={})",
++                     backing.start, backing.end, event);
++        }
+ 
+         const auto& bind = binds->binds.emplace_back(vk::SparseMemoryBind{
+             .resourceOffset = (range.start << block_shift) - arena->cpu_addr,
+--- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+@@ -12,7 +12,7 @@
+ 
+ namespace Serialization {
+ /* You should increment versions below once corresponding serialization scheme is changed. */
+-static constexpr u32 ShaderBinaryVersion = 0x43520008u;
++static constexpr u32 ShaderBinaryVersion = 0x43520009u;
+ static constexpr u32 ShaderMetaVersion = 0x43520006u;
+ 
+ static constexpr u32 PipelineKeyVersion = 3u;
