@@ -255,6 +255,42 @@ echo "GPU_CONFIG=UNCHANGED_GLOBAL_READBACKS_AND_NATIVE_MEMORY"
 # the existing API wrapper and restore exactly after game exit. Otherwise
 # retain the standard 8GiB minimum, without changing server or game config.
 VRAM_TARGET=8
+# A valid A/B comparison requires the original model to be resident AND at
+# least 8 GiB free before launch. Do not cause low-VRAM instability to force
+# a positive result. If these conditions changed, exit without a game launch.
+python3 - <<'PYAB'
+from pathlib import Path
+import json
+from urllib.request import urlopen
+GIB = 1024 ** 3
+try:
+    with urlopen("http://127.0.0.1:7869/api/ps", timeout=5) as response:
+        loaded = [x for x in json.load(response).get("models", [])
+                  if isinstance(x, dict)]
+except Exception as e:
+    raise SystemExit("A_B_NO_MODEL_STATE=" + type(e).__name__ + "_NO_GAME")
+if not loaded:
+    raise SystemExit("A_B_MODEL_NOT_RESIDENT_NO_GAME")
+cards = []
+for d in Path("/sys/class/drm").glob("card[0-9]*/device"):
+    try:
+        if (d / "vendor").read_text().strip().lower() != "0x1002":
+            continue
+        total = int((d / "mem_info_vram_total").read_text())
+        used = int((d / "mem_info_vram_used").read_text())
+        if total > 0 and 0 <= used <= total:
+            cards.append((total, total - used))
+    except (OSError, ValueError):
+        pass
+if not cards:
+    raise SystemExit("A_B_NO_AMD_VRAM_TELEMETRY_NO_GAME")
+free = max(cards)[1]
+print("CONTROLLED_A_B_MODELS_RESIDENT=" + str(len(loaded)))
+print("CONTROLLED_A_B_ORIGINAL_FREE_GIB=%.3f" % (free / GIB))
+if free < 8 * GIB:
+    raise SystemExit("A_B_BELOW_8_GIB_HEADROOM_NO_GAME")
+print("CONTROLLED_A_B_ELIGIBLE=YES")
+PYAB
 echo "GPU_VRAM_POLICY=MIN_8_GIB_NO_FORCED_UNLOAD_ABOVE_MIN"
 
 [[ "$VRAM_TARGET" == "8" || "$VRAM_TARGET" == "16" ]] || {
@@ -368,6 +404,20 @@ RESULT=$?
 set -e
 
 echo "OBSERVER_EXIT=$RESULT"
+# The model snapshot is authoritative for the A/B variable. If free VRAM
+# changed and the helper unloaded the model, this was NOT a valid low-headroom
+# comparison even if the emulator completed normally.
+if [[ -f "$OLLAMA_STATE" && ! -L "$OLLAMA_STATE" ]]; then
+    python3 -B - "$OLLAMA_STATE" <<'PYSTATE'
+import json,sys
+from pathlib import Path
+state=json.loads(Path(sys.argv[1]).read_text())
+print("A_B_OLLAMA_UNLOADED="+str(bool(state.get("unloaded"))).upper())
+print("A_B_MODEL_RESTORED="+str(bool(state.get("restored"))).upper())
+print("A_B_CLEAN_RESIDENT_MODEL_COMPARISON="+
+      ("YES" if state.get("unloaded") is False else "NO"))
+PYSTATE
+fi
 # The observer retains its complete console only on the host. Print the exact
 # startup/presentation events so black OS screenshots are not mistaken for
 # absence or presence of a real guest frame.
