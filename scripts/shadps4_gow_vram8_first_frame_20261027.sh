@@ -38,8 +38,10 @@ if (( $# <= 1 )) && [[ "${1-}" != "--worker" ]]; then
     disown "$PID" 2>/dev/null || true
     echo "SHADPS4_GENERIC_GPU_HEADROOM_AB=$TAG"
     echo "EMULATOR_UNCHANGED_BINARY_SHA256=$EXPECTED"
+    echo "CPU_GPU_IMAGE_READBACK_CONFIG=UNCHANGED"
+    echo "COMPARE_TO_20261026_184642_IDENTICAL_PM4_BINARY=YES"
     echo "TEST_VARIABLE=KEEP_OLLAMA_LOADED_IF_8_GIB_FREE_FOR_IDENTICAL_BINARY"
-    echo "FRAME_CAPTURE=11_21_26_SECONDS_FOR_ALL_TITLES"
+    echo "FRAME_CAPTURE=11_21_26_58_104_SECONDS_FOR_ALL_TITLES"
     echo "GAME_SELECTOR=$GAME"
     echo "CPU_ID=EMULATOR_NATIVE_NO_EXTERNAL_TRANSLATION"
     echo "DISPLAY_FLAGS=fullscreen,show-fps"
@@ -63,8 +65,18 @@ GAME="$3"
 [[ "$TAG" =~ ^shadps4-pm4-vram8-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || {
     echo "INVALID_RUN_ID" >&2; exit 2;
 }
-exec 9>"$LOGS/shadps4-gpu-headroom-ab.lock"
-flock -n 9 || { echo "ANOTHER_GOW_PLAYTEST_RUNNING" >&2; exit 2; }
+# Do not race an active GoW/GoT build that might overwrite the very binary
+# whose hash is the only controlled variable. Never signal or stop others.
+exec 9>"$LOGS/gow-upstream-got-build.lock"
+exec 8>"$LOGS/shadps4-gow-srt-phi.lock"
+exec 7>"$LOGS/shadps4-gpu-headroom-ab.lock"
+flock -n 7 || { echo "ANOTHER_GOW_PLAYTEST_RUNNING"; exit 3; }
+flock -n 9 || { echo "OTHER_BUILD_HOLDS_PROTECTED_BINARY_LOCK"; exit 3; }
+if ! flock -n 8; then
+    flock -u 9
+    echo "OTHER_SRT_BUILD_HOLDS_PROTECTED_BINARY_LOCK"; exit 3
+fi
+echo "GLOBAL_GO_W_GOT_BUILD_LOCKS_ACQUIRED=YES
 STAMP="$TAG"
 WORK="$ESDE/playtest-$STAMP"
 REPORT="$LOGS/$TAG-report"
@@ -233,7 +245,7 @@ fi
 # unloads previously loaded Ollama models through its local API. The Ollama
 # server/container remains running. The exact models and contexts are restored
 # only after the actual game process exits (not merely after observation).
-echo "GPU_VRAM_POLICY=HEADROOM_AB_ONLY_IF_OLLAMA_LOADED; GUARDED_8_GIB_MINIMUM"
+echo "GPU_VRAM_POLICY=NO_FORCED_16_GIB_UNLOAD; UNLOAD_ONLY_WHEN_FREE_BELOW_8_GIB"
 echo "OLLAMA_RESTORE_POLICY=AFTER_ACTUAL_GAME_PROCESS_EXIT"
 echo "SOURCE_ENGINE_UPSTREAM=2cdefaa1298c6e4ece6c74bd84e90f3906282d51"
 echo "GPU_CONFIG=UNCHANGED_GLOBAL_READBACKS_AND_NATIVE_MEMORY"
@@ -356,6 +368,24 @@ RESULT=$?
 set -e
 
 echo "OBSERVER_EXIT=$RESULT"
+# The observer retains its complete console only on the host. Print the exact
+# startup/presentation events so black OS screenshots are not mistaken for
+# absence or presence of a real guest frame.
+if [[ -f "$REPORT/full-console.log" && ! -L "$REPORT/full-console.log" ]]; then
+    {
+        echo "CURRENT_FIRST_GAME_FRAME_EVENTS=$(grep -Fc 'STARTUP_UI event=first_game_frame' "$REPORT/full-console.log" || :)"
+        echo "CURRENT_VISIBLE_GAME_FRAME_EVENTS=$(grep -Fc 'STARTUP_UI event=visible_game_frame' "$REPORT/full-console.log" || :)"
+        echo "CURRENT_BLACK_GAME_FRAME_EVENTS=$(grep -Fc 'STARTUP_UI event=black_game_frame' "$REPORT/full-console.log" || :)"
+        echo "CURRENT_STARTUP_SPLASH_EVENTS=$(grep -Fc 'STARTUP_UI event=shown' "$REPORT/full-console.log" || :)"
+        echo "CURRENT_GPU_CONTEXT_LOST_MESSAGES=$(grep -Fci 'context is lost' "$REPORT/full-console.log" || :)"
+        echo "CURRENT_PM4_ACQUIRE_MARKERS=$(grep -Fc 'PM4 AcquireMem Vulkan barriers=' "$REPORT/full-console.log" || :)"
+        echo "CURRENT_DYNAMIC_SRT_PHI=$(grep -Fc 'SRT offset Phi depends on execution flow' "$REPORT/full-console.log" || :)"
+        echo "ARCHIVED_IDENTICAL_ELF_HIGH_HEADROOM_RUN=shadps4-pm4-acquire-20261026-184642-2262741.tar.gz"
+        echo "VISIBLE_GAMEPLAY_MUST_BE_CONFIRMED_FROM_FRAMES=YES"
+    } | tee "$REPORT/same-elf-vram8-comparison.txt"
+else
+    echo "NO_FULL_GAME_CONSOLE_FOR_A_B_COMPARISON" | tee "$REPORT/same-elf-vram8-comparison.txt"
+fi
 echo "ISOLATED_PROFILE=$WORK"
 echo "PROTECTED_GAME_SOURCE_AND_INSTALLATION=UNCHANGED"
 [[ "$(sha256sum "$BIN" | awk '{print $1}')" == "$EXPECTED" ]] || {
