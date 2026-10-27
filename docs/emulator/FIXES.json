@@ -375,16 +375,16 @@
     {
       "id": "gpu-contiguous-guest-vma-clamp",
       "subsystem": "gpu-virtual-memory-manager",
-      "status": "DRAFT_PR81_GCC_CLANG_VMA_ADJACENCY_TEST_PASS_NATIVE_PENDING",
+      "status": "PR81_NATIVE_CORE_MEMORY_CPP_OBJECT_AND_FIXTURE_PASS_GPU_NOT_RUN",
       "related_prs": [
         81,
         80,
         79
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "Source audit proves existing MemoryManager::ClampRangeSize on huge guest resources adds the size of a later mapped VMA even if its base is NOT adjacent to the prior VMA. Independent main-derived PR81 corrects the adjacency/mapped check without changing legacy <1GiB fast path, artificial caps or guest V# address semantics. Strict real-header standalone GCC and Clang C++20 Release tests PASS with gap/free/adjacent/actual GoT 85.9GB and 1.402GB mapping scenarios. Native GPU not tested.",
-      "negative_result_or_prohibition": "No user archive proves an actual VMA gap at the offending guest address; do not assert this bug caused the GPU hang. Test fixture initially returned exit2 due wrong 0x3800 expected contiguous length; corrected to 0x3000 and both executables pass. Both trial outcomes preserved in universal ledger.",
-      "next_test": "Run pinned compiler-only script scripts/pr81-native-memory-preflight-20261027.sh at commit ac434f7fe2ba9495adeb2175cb1e4da5a5287d0e against isolated clean PR78 source; no game. Preserve original objects/source/ELF. Then instrument true current VMA span if relevant, and test on proven menu-visible source before any main merge."
+      "observed_game_effects": "Source audit proves existing MemoryManager::ClampRangeSize on huge guest resources adds the size of a later mapped VMA even if its base is NOT adjacent to the prior VMA. Independent main-derived PR81 corrects the adjacency/mapped check without changing legacy <1GiB fast path, artificial caps or guest V# address semantics. Strict real-header standalone GCC and Clang C++20 Release tests PASS with gap/free/adjacent/actual GoT 85.9GB and 1.402GB mapping scenarios. Native GPU not tested. 2026-10-27 06:54 uploaded native PR81 compiler archive SHA256 60630d92982f28590f04ad6d8784085d42e531c268adf91a590647bac5741b4b verifies C++ Ninja memory.cpp.o compiled with zero warnings and exact contiguous VMA fixture PASS; object SHA256 b2021a756738bd9367cb19684417ea6ec2c3154428464826c9de267589ad3e8e. Source/object/ELF restored, no game/GPU test.",
+      "negative_result_or_prohibition": "No user archive proves an actual VMA gap at the offending guest address; do not assert this bug caused the GPU hang. Test fixture initially returned exit2 due wrong 0x3800 expected contiguous length; corrected to 0x3000 and both executables pass. Both trial outcomes preserved in universal ledger. Do not claim PR81 fixes GoT: no observed actual mapped VMA boundary exists in uploaded archive, and synthetic gap fixture alone does not demonstrate driver fault causality.",
+      "next_test": "Stop repeating PR78+PR79+PR80 runtime device loss without new evidence. Locate exact local source/build matching protected old GoT menu-positive executable SHA256 260ed43abbe538127ab82b3580a48c5f67be19ac4bbdd32ebefd78c73cdaf50d; only then investigate real VMA adjacency, the last RADV GFX draw 726 indices, and GPU-selected 3D/Cube 27651-entry table. Run a controlled native GoT/GoW cross-title regression on a stable source when an evidence-supported patch is ready."
     }
   ]
 }
