@@ -28,4 +28,21 @@ template <typename FramePtr, typename IsReady>
     return frame;
 }
 
+// Re-presenting a previous frame may race with GPU-thread allocation from
+// the SAME free-frame FIFO. Reuse it only when it is still at the front,
+// then take exclusive ownership by removing it from the FIFO. A mismatch
+// means the frame is either in use or behind a different (older) free frame.
+// Both cases must fail closed, never submit a frame owned by guest graphics.
+template <typename FramePtr, typename IsReady>
+    requires std::is_pointer_v<FramePtr>
+[[nodiscard]] FramePtr TryPopMatchingReadyIdleFrame(std::queue<FramePtr>& free_frames,
+                                                    FramePtr expected_frame,
+                                                    IsReady&& fence_ready) {
+    if (expected_frame == nullptr || free_frames.empty() ||
+        free_frames.front() != expected_frame) {
+        return nullptr;
+    }
+    return TryPopReadyIdleFrame(free_frames, std::forward<IsReady>(fence_ready));
+}
+
 } // namespace Vulkan
