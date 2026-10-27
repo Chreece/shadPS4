@@ -192,10 +192,9 @@ if cmake -S "$SRC" -B "$TESTBUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
           >"$EVIDENCE/configure-tests.log" 2>&1 &&
    nice -n 10 cmake --build "$TESTBUILD" --target shadps4_gcn_test --parallel 2 \
           >"$EVIDENCE/build-tests.log" 2>&1; then
-    # Only the six indirect access/stage assertions. These never create a
-    # Vulkan GCN Runner and must not submit GPU work. The previous full
-    # GcnTest.* run faulted RADV GPUVM and lost the device context; do not
-    # repeat those hardware tests automatically.
+    # Run only the six CPU-only native assertions. Full GcnTest.*
+    # previously caused a RADV GPUVM fault and lost the GPU context.
+    # Do not submit GCN instruction GPU work in this build validation.
     GCN_BIN="$TESTBUILD/tests/shadps4_gcn_test"
     [[ -x "$GCN_BIN" ]] || {
         echo "GCN_TEST_BINARY_MISSING"; exit 9;
@@ -203,24 +202,7 @@ if cmake -S "$SRC" -B "$TESTBUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     GCN_FILTER="IndirectCommandSynchronization.*"
     "$GCN_BIN" --gtest_list_tests --gtest_filter="$GCN_FILTER" \
         >"$EVIDENCE/gcn-selected-tests.txt" 2>&1
-    TEST_COUNT="$(grep -Ec '^  [A-Za-z][A-Za-z0-9_]+
-else
-    echo "GCN_TESTS_CONFIGURE_OR_BUILD_FAIL" \
-        | tee "$EVIDENCE/gcn-tests-status.txt"
-    if [[ -f "$EVIDENCE/build-tests.log" ]]; then
-        tail -100 "$EVIDENCE/build-tests.log"
-    else
-        tail -100 "$EVIDENCE/configure-tests.log"
-    fi
-    exit 9
-fi
-
-STATE="BUILD_AND_SELECTED_REGRESSIONS_PASS_NO_GAME_RUN"
-echo "RESULT=$STATE"
-echo "CANDIDATE_BINARY=$BUILD/shadps4"
-echo "ACTUAL_GPU_INDIRECT_DISPATCH_TEST=NOT_YET_RUN"
-echo "UNCHANGED=SUNSHINE_XORG_MOONLIGHT_ESDE_SAVES_SSH"
- "$EVIDENCE/gcn-selected-tests.txt" || true)"
+    TEST_COUNT="$(grep -Ec '^  [A-Za-z][A-Za-z0-9_]+$' "$EVIDENCE/gcn-selected-tests.txt" || true)"
     [[ "$TEST_COUNT" == 6 ]] || {
         echo "EXPECTED_SIX_INDIRECT_TESTS_FOUND=$TEST_COUNT"; exit 9;
     }
@@ -230,7 +212,7 @@ echo "UNCHANGED=SUNSHINE_XORG_MOONLIGHT_ESDE_SAVES_SSH"
             echo "NATIVE_BUILD_PASS_INDIRECT_SYNC_TESTS_FAIL"
             exit 9
         }
-    grep -Eq '^\\[  PASSED  \\] 6 tests\\.' "$EVIDENCE/gcn-tests.txt" || {
+    grep -Fq '[  PASSED  ] 6 tests.' "$EVIDENCE/gcn-tests.txt" || {
         tail -120 "$EVIDENCE/gcn-tests.txt"
         echo "INDIRECT_SYNC_TEST_PASS_COUNT_UNVERIFIED"; exit 9;
     }
