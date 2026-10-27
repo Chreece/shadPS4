@@ -1,0 +1,74 @@
+diff --git a/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp b/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
+--- a/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
++++ b/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
+@@ -3,6 +3,7 @@
+ 
+ #include <unordered_map>
+ #include <unordered_set>
++#include <string_view>
+ #include <functional>
+ #include <limits>
+ #include <vector>
+@@ -727,6 +728,62 @@
+         LOG_ERROR(Render_Recompiler,
+                   "SRT dependency resolution stalled after {} rounds: {} unresolved reads",
+                   schedule.rounds, schedule.pending);
++        // Read-only provenance for the exact unresolved generic shader sources.
++        // Do not substitute values for GPU-divergent or cyclic descriptors.
++        // This reports actual IR operands and allocated slots, without touching
++        // any of the host walker code, shader IR, or descriptor data.
++        std::size_t recorded = 0;
++        for (const auto& [root, uses] : pass_info.pointer_uses) {
++            for (const auto& [offset, read] : uses) {
++                if (recorded >= 16) {
++                    break;
++                }
++                if (GetFlatbufOffset(read) != 0) {
++                    continue;
++                }
++                const IR::Inst* const source = offset.TryInst();
++                const bool immediate = offset.IsImmediate();
++                const auto offset_op = source ? magic_enum::enum_name(source->GetOpcode())
++                                              : std::string_view{"ImmediateOrUnknown"};
++                const auto pointer_op = magic_enum::enum_name(root->GetOpcode());
++                const auto read_op = magic_enum::enum_name(read->GetOpcode());
++                const u16 dependency_slot =
++                    source && (source->GetOpcode() == IR::Opcode::ReadConst ||
++                               source->GetOpcode() == IR::Opcode::ReadConstBuffer)
++                        ? GetFlatbufOffset(source)
++                        : 0u;
++                const u32 immediate_dw = immediate && offset.Type() == IR::Type::U32
++                                             ? offset.U32()
++                                             : 0u;
++                const auto arg_opcode = [&](std::size_t n) -> std::string_view {
++                    if (!source || n >= source->NumArgs()) {
++                        return "none";
++                    }
++                    const IR::Inst* const operand = source->Arg(n).TryInst();
++                    return operand ? magic_enum::enum_name(operand->GetOpcode())
++                                   : "immediate";
++                };
++                LOG_WARNING(Render_Recompiler,
++                            "SRT_UNRESOLVED_PROVENANCE shader={:#x} stage={} "
++                            "pointer_op={} read_op={} offset_op={} "
++                            "offset_uniform={} offset_immediate={} offset_dw={} "
++                            "dependency_slot={} child0={} child1={}",
++                            info.pgm_hash, static_cast<u32>(info.hw_stage), pointer_op,
++                            read_op, offset_op, IsHostUniformSrtOffset(offset),
++                            immediate, immediate_dw, dependency_slot,
++                            arg_opcode(0), arg_opcode(1));
++                ++recorded;
++            }
++            if (recorded >= 16) {
++                break;
++            }
++        }
++        LOG_INFO(Render_Recompiler,
++                 "SRT_UNRESOLVED_SUMMARY shader={:#x} stage={} "
++                 "pending={} root_count={} reported={} new_words={}",
++                 info.pgm_hash, static_cast<u32>(info.hw_stage),
++                 schedule.pending, pass_info.srt_roots.size(), recorded,
++                 schedule.new_words);
+     }
+     LOG_DEBUG(Render_Recompiler,
+               "SRT dependency schedule: rounds={} words={} dynamic_reads={}",
