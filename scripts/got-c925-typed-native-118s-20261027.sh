@@ -5,7 +5,7 @@ set -Eeuo pipefail
 export GIT_TERMINAL_PROMPT=0 GIT_OPTIONAL_LOCKS=0
 C925=c925523b49ef39434024b16b2b014d120471ee1a
 ELF_SHA=260ed43abbe538127ab82b3580a48c5f67be19ac4bbdd32ebefd78c73cdaf50d
-PATCH_COMMIT=89980c1ac06250252efa25e2998d488843f73099
+PATCH_COMMIT=cab3e896b9565d58f75650a500876e5251a88f57
 ROOT="$HOME/projects/shadps4/GhostOfTsushima"
 CLEAN="$ROOT/worktrees/got-proven-20261026"
 GOOD="$ROOT/candidates/$C925-strided-precise-image-readbacks-$ELF_SHA/shadps4"
