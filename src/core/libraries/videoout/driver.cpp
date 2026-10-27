@@ -294,8 +294,12 @@ void VideoOutDriver::Flip(const Request& req) {
 }
 
 void VideoOutDriver::DrawBlankFrame() {
+    // The host loading/idle UI must not wait for an in-flight GPU frame and
+    // starve a guest flip that has already been queued for presentation.
     const auto empty_frame = presenter->PrepareBlankFrame(true);
-    presenter->Present(empty_frame, false, false);
+    if (empty_frame != nullptr) {
+        presenter->Present(empty_frame, false, false);
+    }
 }
 
 void VideoOutDriver::DrawLastFrame() {
