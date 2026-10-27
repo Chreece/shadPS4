@@ -16,7 +16,7 @@ BASE_ELF="$OLD/build/shadps4"
 BASE_SHA="7604bae00c78b72e163138327f61a2f92bf549ac66446487d1ab7370a2f9b4d1"
 PROTECTED="$ROOT/GodOfWarRagnarok/build/shadps4"
 PROTECTED_SHA="8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e"
-SOURCE_REV="808ad8b6e2c10237d522d89c0391e09455854613"
+SOURCE_REV="ea37150522af3052bbe685f39976b36d80bc20f9"
 RUNNER_REV="448c20c756accf1b9148acde0622bf7db4a48b63"
 RUNNER_BLOB="223a8e6ef7916e06bfd4f0ccefc90c92d5b097a0"
 mkdir -p "$LOGS" "$TESTS"
@@ -408,6 +408,7 @@ grep -Fq 'presenter->Present(frame, false, false);' "$SRC/src/core/libraries/vid
 grep -Fq 'TryPopMatchingReadyIdleFrame' "$SRC/src/video_core/renderer_vulkan/idle_frame_reuse.h" &&
 grep -Fq 'HostIdleFrameReuse, EmptyPoolNeverQueriesGpuOrBlocks' "$SRC/tests/gcn/test_idle_frame_reuse.cpp" &&
 grep -Fq 'AcquireNextImage(bool wait_for_image)' "$SRC/src/video_core/renderer_vulkan/vk_swapchain.cpp" &&
+grep -Fq 'if (needs_recreation)' "$SRC/src/video_core/renderer_vulkan/vk_swapchain.cpp" &&
 grep -Fq 'swapchain.AcquireNextImage(is_game_frame)' "$SRC/src/video_core/renderer_vulkan/vk_presenter.cpp" &&
 grep -Fq 'release_skipped_host_frame();' "$SRC/src/video_core/renderer_vulkan/vk_presenter.cpp" &&
 grep -Fq 'VIDEOOUT_PRESENT_LOOP tick=' "$SRC/src/core/libraries/videoout/driver.cpp" || {
