@@ -214,8 +214,8 @@ index 2add3b031d53a8d12d425348d37d3117adab2fc9..baf3c6c9bb18c00cd350e9aa6d65720f
          Id image_type;
          Id image_type_3d{};
 diff --git a/src/shader_recompiler/compact_image_indices.h b/src/shader_recompiler/compact_image_indices.h
-index 0000000000000000000000000000000000000000..70bdd2de9fa3da065d89600ca98a6c85618ede70 100644
 new file mode 100644
+index 0000000000000000000000000000000000000000..70bdd2de9fa3da065d89600ca98a6c85618ede70 100644
 --- /dev/null
 +++ b/src/shader_recompiler/compact_image_indices.h
 @@ -0,0 +1,34 @@
@@ -696,8 +696,8 @@ index caba62525485731afc673964337fdb6704a3f9df..1b1cb5f206d06945f7b46be0a81c41fc
      struct BoundBuffer {
          const VideoCore::Buffer* buffer;
 diff --git a/tests/compact_image_indices_test.cpp b/tests/compact_image_indices_test.cpp
-index 0000000000000000000000000000000000000000..1e2b6c0d9f57120ed039a0b95d0d6b9ff7ced1a1 100644
 new file mode 100644
+index 0000000000000000000000000000000000000000..1e2b6c0d9f57120ed039a0b95d0d6b9ff7ced1a1 100644
 --- /dev/null
 +++ b/tests/compact_image_indices_test.cpp
 @@ -0,0 +1,67 @@
