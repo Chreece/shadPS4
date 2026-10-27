@@ -30,7 +30,7 @@ if (( $# == 0 )) || [[ "$1" != "--worker" ]]; then
     TAG="shadps4-gpu-ready-$(date +%Y%m%d-%H%M%S)-${BASHPID}"
     # Validate before creating an empty file or claiming the worker started.
     # Keep this identical to the worker-side tag contract.
-    [[ "$TAG" =~ ^shadps4-flip-normal-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || {
+    [[ "$TAG" =~ ^shadps4-gpu-ready-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || {
         echo "ERROR_INVALID_RUN_TAG=$TAG" >&2; exit 2;
     }
     LOG="$LOGS/$TAG.log"
@@ -52,7 +52,7 @@ fi
 [[ $# -eq 3 ]] || exit 2
 TAG="$2"
 GAME="$3"
-[[ "$TAG" =~ ^shadps4-flip-normal-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || exit 2
+[[ "$TAG" =~ ^shadps4-gpu-ready-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || exit 2
 [[ -n "$GAME" && "$GAME" != -* && "$GAME" != *$'\n'* ]] || exit 2
 WORK="$TESTS/shadps4-srt-findilsb-20261026-160302-916073"
 EXPECTED_OLD_SOURCE="77287fc18f5bb06137927be4863bdd66d584336e"
@@ -132,7 +132,7 @@ trap finish EXIT
 exec 9>"$LOGS/gow-upstream-got-build.lock"
 exec 8>"$LOGS/shadps4-gow-srt-phi.lock"
 # Prevent duplicate queued uniform-lane workers from compiling the same ELF.
-exec 7>"$LOGS/shadps4-flip-normal-queue.lock"
+exec 7>"$LOGS/shadps4-gpu-ready-queue.lock"
 flock -n 7 || {
     echo "ANOTHER_IDLE_FRAME_RUN_ALREADY_QUEUED_OR_RUNNING"; exit 3;
 }
@@ -559,7 +559,7 @@ exactly_once(
     'SRC="$ROOT/GodOfWarRagnarok/tests/gow-upstream-got-20261025-145442-451241/source"',
     'SRC="' + source_dir + '"')
 assert 'shadps4-gpu-headroom-ab-' in data
-data = data.replace('shadps4-gpu-headroom-ab-', 'shadps4-flip-normal-')
+data = data.replace('shadps4-gpu-headroom-ab-', 'shadps4-gpu-ready-')
 exactly_once('--fix-id gpu-device-lost-after-first-frame',
              '--fix-id guest-gpu-frame-timeline-readiness')
 exactly_once(
