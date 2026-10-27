@@ -204,6 +204,28 @@ PRIOR_SNAPSHOT="$TESTS/preserved-native-candidates/findilsb-14975c44/shadps4"
    "$(sha256sum "$PRIOR_SNAPSHOT" | cut -d' ' -f1)" == "$PRIOR_FINDILSB_SHA" ]] || {
     echo "PREVIOUS_GOOD_CANDIDATE_SNAPSHOT_INVALID"; exit 3;
 }
+# Preserve the immediately preceding first-flip video candidate as a
+# binary-identical comparator BEFORE recompiling the shared cached ELF.
+PREVIOUS_FLIP_SHA="edbc5ebb941ad08d2282c764d2a8638cb182ebe9502c1bc98e1d7006bcc512c7"
+PREVIOUS_FLIP_SNAPSHOT="$TESTS/preserved-native-candidates/first-flip-77287fc/shadps4"
+if [[ "$CURRENT_CACHED_SOURCE" == "$EXPECTED_OLD_SOURCE" ]]; then
+    [[ -f "$BINARY" && ! -L "$BINARY" ]] || {
+        echo "PREVIOUS_VIDEO_FLIP_CANDIDATE_MISSING"; exit 3;
+    }
+    [[ "$(sha256sum "$BINARY" | cut -d' ' -f1)" == "$PREVIOUS_FLIP_SHA" ]] || {
+        echo "PREVIOUS_VIDEO_FLIP_CANDIDATE_CHANGED_REFUSE_OVERWRITE"; exit 3;
+    }
+    mkdir -p "$(dirname "$PREVIOUS_FLIP_SNAPSHOT")"
+    if [[ ! -e "$PREVIOUS_FLIP_SNAPSHOT" ]]; then
+        cp --reflink=auto -- "$BINARY" "$PREVIOUS_FLIP_SNAPSHOT"
+    fi
+fi
+[[ -f "$PREVIOUS_FLIP_SNAPSHOT" && ! -L "$PREVIOUS_FLIP_SNAPSHOT" &&
+   "$(sha256sum "$PREVIOUS_FLIP_SNAPSHOT" | cut -d' ' -f1)" == "$PREVIOUS_FLIP_SHA" ]] || {
+    echo "PREVIOUS_VIDEO_FLIP_SNAPSHOT_MISSING_OR_CHANGED"; exit 3;
+}
+echo "PREVIOUS_FLIP_120S_CANDIDATE_PROTECTED=$PREVIOUS_FLIP_SNAPSHOT"
+echo "PREVIOUS_FLIP_SHA256=$PREVIOUS_FLIP_SHA"
 echo "PRESERVED_FINDILSB_120_SECOND_CANDIDATE=$PRIOR_SNAPSHOT"
 echo "PRESERVED_FINDILSB_SHA256=$PRIOR_FINDILSB_SHA"
 echo "BASELINE_120_SECOND_ELF_UNTOUCHED=PASS"
