@@ -338,8 +338,8 @@ std::expected<void, ErrorInfo> Runner::run_raw(std::span<const std::uint32_t> sp
     std::memset(output_buffer->mapped, 0, output.size());
 
     // The shader reads initial SGPRs from its flatbuffer, not push constants.
-    // The original harness never supplied this buffer, producing zero data on
-    // LLVMpipe and an unbound-descriptor GPUVM fault on RADV.
+    // The missing binding is consistent with the zero results on LLVMpipe
+    // and RADV; it does not yet prove the cause of RADV's GPUVM fault.
     auto input_r = create_host_buffer(device_, physical_device_, kUserDataBytes,
                                       vk::BufferUsageFlagBits::eStorageBuffer);
     if (!input_r)
