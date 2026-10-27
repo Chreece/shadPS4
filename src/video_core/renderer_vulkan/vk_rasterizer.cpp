@@ -807,20 +807,18 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             }
         } else {
             const auto vsharp = desc.GetSharp(stage);
-            // GCN V# has a 32-bit NUM_RECORDS field: zero STRIDE means byte
-            // count, otherwise widen multiplication BEFORE the 32-bit return
-            // of GetSize(). Record even a wrapped-to-zero descriptor that the
-            // renderer would otherwise treat as null. Diagnostic only.
-            const u64 raw_declared_bytes = vsharp.stride == 0
-                ? static_cast<u64>(vsharp.num_records)
-                : static_cast<u64>(vsharp.stride) * vsharp.num_records;
+            // The complete GCN buffer extent is u64. For example a legal
+            // 20-byte stride with NUM_RECORDS=0xffffffff has an ~80 GiB
+            // declared extent, NOT its wrapped 0xFFFFFFEC low 32 bits.
+            // Only actual accessible guest mappings determine GPU backing.
+            const u64 raw_declared_bytes = vsharp.GetSize64();
             if (raw_declared_bytes >= (1ull << 30) ||
                 raw_declared_bytes != vsharp.GetSize()) {
                 static std::atomic<u32> wide_buffer_reports{0};
                 if (wide_buffer_reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
                     LOG_INFO(Render_Vulkan,
                              "GuestBufferRange: shader={:#x} base={:#x} stride={} "
-                             "num_records={} decoded_bytes64={} existing_bytes32={} "
+                             "num_records={} decoded_bytes64={} legacy_bytes32={} "
                              "written={} formatted={}",
                              stage.pgm_hash, static_cast<u64>(vsharp.base_address),
                              static_cast<u32>(vsharp.stride), vsharp.num_records,
@@ -828,16 +826,31 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                              desc.is_written, desc.is_formatted);
                 }
             }
-            if (vsharp.base_address == 0 || vsharp.GetSize() == 0) {
+            if (vsharp.base_address == 0 || raw_declared_bytes == 0) {
                 buffer_infos.emplace_back(VK_NULL_HANDLE, 0, VK_WHOLE_SIZE);
             } else {
-                const u64 size = memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize());
-                if (size != vsharp.GetSize()) {
-                    LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
-                              vsharp.GetSize(), size, stage.pgm_hash);
+                const u64 size = memory->ClampRangeSize(vsharp.base_address,
+                                                        raw_declared_bytes);
+                // ObtainBuffer currently accepts a u32 extent. Fail explicitly
+                // rather than implicitly wrapping a valid mapped range. This
+                // is a backend capability check, not a guest-descriptor cap.
+                ASSERT_MSG(size > 0 && BufferSize::FitsU32(size),
+                           "Guest V# mapped extent {} cannot be represented "
+                           "in the existing 32-bit BufferCache API (declared {})",
+                           size, raw_declared_bytes);
+                if (size != raw_declared_bytes) {
+                    static std::atomic<u32> mapped_range_reports{0};
+                    if (mapped_range_reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
+                        LOG_INFO(Render_Vulkan,
+                                 "GuestBufferMappedRange: shader={:#x} base={:#x} "
+                                 "declared_bytes64={} mapped_bytes={}",
+                                 stage.pgm_hash, static_cast<u64>(vsharp.base_address),
+                                 raw_declared_bytes, size);
+                    }
                 }
                 const auto [buffer, offset] = buffer_cache.ObtainBuffer(
-                    vsharp.base_address, size, desc.is_written, desc.is_formatted);
+                    vsharp.base_address, static_cast<u32>(size),
+                    desc.is_written, desc.is_formatted);
                 const u64 offset_aligned = Common::AlignDown(offset, alignment);
                 const u64 adjust = offset - offset_aligned;
                 if (adjust % 4 != 0) {
