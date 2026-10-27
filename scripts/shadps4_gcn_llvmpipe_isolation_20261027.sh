@@ -114,4 +114,3 @@ fi
 cat "$OUT/gcn-add-f32-software.log"
 echo "RESULT=$STATE exit=$EXIT_STATUS"
 if [[ "$EXIT_STATUS" != 0 ]]; then exit "$EXIT_STATUS"; fi
-
