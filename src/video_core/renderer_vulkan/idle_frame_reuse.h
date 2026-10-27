@@ -45,4 +45,17 @@ template <typename FramePtr, typename IsReady>
     return TryPopReadyIdleFrame(free_frames, std::forward<IsReady>(fence_ready));
 }
 
+// A previously presented guest frame can be redrawn by the host while
+// displaying the loading overlay. That is NOT a new game flip and must not
+// advance first-game-frame or visible-frame statistics.
+[[nodiscard]] constexpr bool IsRealGuestFrameSubmission(
+    bool has_game_content, bool is_reusing_frame, bool is_game_flip) noexcept {
+    return has_game_content && !is_reusing_frame && is_game_flip;
+}
+
+static_assert(IsRealGuestFrameSubmission(true, false, true));
+static_assert(!IsRealGuestFrameSubmission(true, true, true));
+static_assert(!IsRealGuestFrameSubmission(true, false, false));
+static_assert(!IsRealGuestFrameSubmission(false, false, true));
+
 } // namespace Vulkan
