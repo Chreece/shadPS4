@@ -4,6 +4,7 @@
 #include <atomic>
 #include <unordered_map>
 #include <unordered_set>
+#include <string>
 #include <boost/container/flat_map.hpp>
 #include <queue>
 #include <xbyak/xbyak.h>
