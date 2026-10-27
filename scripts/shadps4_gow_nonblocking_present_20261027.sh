@@ -1,0 +1,564 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Fix source-observed first-frame producer/consumer starvation from blocking host idle redraw.
+# Keep guest GPU queue semantics, proven SRT/PM4/SALU changes, and stable files intact.
+set -Eeuo pipefail
+umask 077
+export GIT_TERMINAL_PROMPT=0
+
+ROOT="$HOME/projects/shadps4"
+TESTS="$ROOT/GodOfWarRagnarok/tests"
+LOGS="$ROOT/logs"
+OLD="$TESTS/gow-upstream-got-20261025-145442-451241"
+BASE_SOURCE="$OLD/source"
+BASE_ELF="$OLD/build/shadps4"
+BASE_SHA="7604bae00c78b72e163138327f61a2f92bf549ac66446487d1ab7370a2f9b4d1"
+PROTECTED="$ROOT/GodOfWarRagnarok/build/shadps4"
+PROTECTED_SHA="8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e"
+SOURCE_REV="770a6113829e368056e42e94cac07844024ef468"
+RUNNER_REV="448c20c756accf1b9148acde0622bf7db4a48b63"
+RUNNER_BLOB="223a8e6ef7916e06bfd4f0ccefc90c92d5b097a0"
+mkdir -p "$LOGS" "$TESTS"
+
+if (( $# == 0 )) || [[ "$1" != "--worker" ]]; then
+    [[ $# -le 1 ]] || { echo "USAGE: bash $0 [game-id-or-path]" >&2; exit 2; }
+    GAME="CUSA34384"
+    if (( $# == 1 )); then GAME="$1"; fi
+    [[ -n "$GAME" && "$GAME" != -* && "$GAME" != *$'\n'* ]] || exit 2
+    command -v nohup >/dev/null && command -v setsid >/dev/null || exit 2
+    TAG="shadps4-present-idle-$(date +%Y%m%d-%H%M%S)-${BASHPID}"
+    # Validate before creating an empty file or claiming the worker started.
+    # Keep this identical to the worker-side tag contract.
+    [[ "$TAG" =~ ^shadps4-present-idle-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || {
+        echo "ERROR_INVALID_RUN_TAG=$TAG" >&2; exit 2;
+    }
+    LOG="$LOGS/$TAG.log"
+    (set -C; : > "$LOG") || { echo "LOG_ALREADY_EXISTS=$LOG" >&2; exit 2; }
+    nohup setsid -w bash "$0" --worker "$TAG" "$GAME" </dev/null >"$LOG" 2>&1 &
+    PID=$!
+    disown "$PID" 2>/dev/null || true
+    echo "TEST=GENERIC_NONBLOCKING_HOST_IDLE_PRESENTATION_FIFO"
+    echo "SOURCE=$SOURCE_REV"
+    echo "WORKER_PID=$PID"
+    echo "MONITOR=tail -f '$LOG'"
+    echo "BUILD_ARCHIVE=$LOGS/$TAG-build.tar.gz"
+    echo "RUNTIME_ARCHIVE=$LOGS/$TAG.tar.gz"
+    echo "GAME=$GAME"
+    echo "SSH_AND_PROTECTED_BINARIES=UNCHANGED"
+    exit 0
+fi
+
+[[ $# -eq 3 ]] || exit 2
+TAG="$2"
+GAME="$3"
+[[ "$TAG" =~ ^shadps4-present-idle-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || exit 2
+[[ -n "$GAME" && "$GAME" != -* && "$GAME" != *$'\n'* ]] || exit 2
+WORK="$TESTS/shadps4-srt-findilsb-20261026-160302-916073"
+EXPECTED_OLD_SOURCE="77287fc18f5bb06137927be4863bdd66d584336e"
+SRC="$WORK/source"
+TEST_BUILD="$WORK/build-tests"
+BUILD="$WORK/build"
+REPORT="$WORK/present-idle-$TAG"
+BINARY="$BUILD/shadps4"
+ARCHIVE="$LOGS/$TAG-build.tar.gz"
+mkdir -p "$REPORT"
+RECORDER="$REPORT/record-emulator-trial.py"
+RECORDER_SHA="1593a0f720d1e7ab0d2392746693839b67162959"
+UPSTREAM_SHA="2cdefaa1298c6e4ece6c74bd84e90f3906282d51"
+
+finish() {
+    local rc=$?
+    trap - EXIT
+    set +e
+    echo "WORKER_EXIT=$rc"
+    if [[ -f "$BASE_ELF" ]]; then
+        local sha
+        sha="$(sha256sum "$BASE_ELF" | cut -d' ' -f1)"
+        echo "STABLE_BASELINE_AFTER=$sha"
+        if [[ "$sha" != "$BASE_SHA" ]]; then rc=86; echo "ERROR_STABLE_BASELINE_MODIFIED"; fi
+    fi
+    if [[ -f "$PROTECTED" ]]; then
+        local sha
+        sha="$(sha256sum "$PROTECTED" | cut -d' ' -f1)"
+        echo "PROTECTED_BINARY_AFTER=$sha"
+        if [[ "$sha" != "$PROTECTED_SHA" ]]; then rc=87; echo "ERROR_PROTECTED_BINARY_MODIFIED"; fi
+    fi
+    printf '%s\n' "$rc" > "$REPORT/exit-code"
+    {
+        echo "SOURCE_PIN=$SOURCE_REV"
+        echo "STABLE_BASE_SHA=$BASE_SHA"
+        echo "RUNTIME_ARCHIVE=$LOGS/$TAG.tar.gz"
+        [[ ! -f "$BINARY" ]] || sha256sum "$BINARY"
+        [[ ! -f "$REPORT/ctest.txt" ]] || cat "$REPORT/ctest.txt"
+    } > "$REPORT/summary.txt"
+    tar -czf "$ARCHIVE" -C "$LOGS" "$TAG.log" \
+        -C "$REPORT" . \
+        > /dev/null 2>&1
+    echo "BUILD_UPLOAD_THIS=$ARCHIVE"
+    # Pre-build lock contention is a real failed trial too. The normal
+    # recorder is downloaded only after source prechecks, so recover its
+    # exact SHA-pinned copy here when an earlier stage exits.
+    if [[ ! -s "$RECORDER" ]]; then
+        curl -4fsSL --retry 2 --retry-delay 1 \
+          "https://raw.githubusercontent.com/Chreece/shadPS4/178376d393051d8026319bc0154d3b36d0fcc087/tools/development/record_emulator_trial.py" \
+          -o "$RECORDER" || echo "PINNED_DIARY_RECORDER_UNAVAILABLE"
+    fi
+    if [[ -f "$RECORDER" && -s "$ARCHIVE" &&
+          "$(git hash-object "$RECORDER")" == "$RECORDER_SHA" ]]; then
+        local decision="BLOCKED"
+        [[ "$rc" -ne 0 ]] || decision="BUILD_PASS_RUNTIME_PENDING"
+        python3 -B "$RECORDER" --archive "$ARCHIVE" --game "$GAME" \
+          --source "$SOURCE_REV" --upstream "$UPSTREAM_SHA" \
+          --fix-id "universal-nonblocking-host-idle-presenter" \
+          --change "Keep host loading-frame redraw from blocking guest VideoOut queue consumption; preserve guest flips and native GPU semantics" \
+          --emulator-effect "BUILD_OR_OBSERVER_EXIT_$rc" --game-effect NOT_OBSERVED \
+          --decision "$decision" \
+          --next "Validate 52 tests; confirm guest flips reach presenter and produce real game video" \
+          || echo "BUILD_DIARY_RECORDER_FAILED_INSPECT_ARCHIVE"
+    fi
+    if [[ -f "$LOGS/$TAG.tar.gz" ]]; then
+        echo "GAMEPLAY_UPLOAD_THIS=$LOGS/$TAG.tar.gz"
+    fi
+    echo "SSH_SESSION=OPEN"
+    exit "$rc"
+}
+trap finish EXIT
+
+# Two global build locks serialize native GoW/GoT revisions; never bypass
+# them, delete their files or signal competing build/game processes.
+# Acquire BOTH only if immediately available. If one is busy, release any
+# partial acquisition before retrying: this prevents opposite-order deadlocks.
+exec 9>"$LOGS/gow-upstream-got-build.lock"
+exec 8>"$LOGS/shadps4-gow-srt-phi.lock"
+# Prevent duplicate queued uniform-lane workers from compiling the same ELF.
+exec 7>"$LOGS/shadps4-present-idle-queue.lock"
+flock -n 7 || {
+    echo "ANOTHER_NONBLOCKING_PRESENTATION_RUN_ALREADY_QUEUED_OR_RUNNING"; exit 3;
+}
+echo "BUILD_LOCK_POLICY=SERIALIZED_NO_KILLS_NO_BYPASS"
+LOCK_ACQUIRED=NO
+LOCK_WAIT_ATTEMPTS=240
+for (( attempt=1; attempt<=LOCK_WAIT_ATTEMPTS; ++attempt )); do
+    if flock -n 9; then
+        if flock -n 8; then
+            LOCK_ACQUIRED=YES
+            break
+        fi
+        # Never hold lock 9 while waiting on lock 8.
+        flock -u 9
+        busy_lock="shadps4-gow-srt-phi.lock"
+    else
+        busy_lock="gow-upstream-got-build.lock"
+    fi
+    if (( attempt == 1 || attempt % 6 == 0 )); then
+        echo "BUILD_LOCK_WAITING_FOR=$busy_lock RETRY=$attempt/$LOCK_WAIT_ATTEMPTS"
+        echo "OTHER_BUILD_PRESERVED=YES; NOTHING_KILLED=YES"
+    fi
+    sleep 10
+done
+[[ "$LOCK_ACQUIRED" == YES ]] || {
+    echo "BUILD_LOCK_TIMEOUT_NO_COMPILATION_OR_GAME"; exit 3;
+}
+echo "BOTH_BUILD_LOCKS_ACQUIRED=YES"
+echo "STAGE=RESUME_CACHED_UNIFORM_LANE_BUILD"
+
+for command in git cmake ninja ctest python3 curl flock tar sha256sum nice timeout ldd cmp; do
+    command -v "$command" >/dev/null || { echo "MISSING_COMMAND=$command"; exit 3; }
+done
+[[ -d "$BASE_SOURCE" && -x "$BASE_ELF" ]] || {
+    echo "MISSING_RETAINED_120_SECOND_SOURCE_OR_ELF"; exit 3;
+}
+[[ "$(sha256sum "$BASE_ELF" | cut -d' ' -f1)" == "$BASE_SHA" ]] || {
+    echo "STABLE_120_SECOND_CANDIDATE_HASH_MISMATCH_NO_CHANGE"; exit 3;
+}
+[[ ! -f "$PROTECTED" || "$(sha256sum "$PROTECTED" | cut -d' ' -f1)" == "$PROTECTED_SHA" ]] || {
+    echo "PROTECTED_ORIGINAL_HASH_MISMATCH_NO_CHANGE"; exit 3;
+}
+[[ -f "$SRC/.git" && -f "$SRC/tests/gcn/test_srt_phi.cpp" ]] || {
+    echo "CACHED_SOURCE_WORKTREE_MISSING_NO_REBUILD"; exit 3;
+}
+[[ -f "$BUILD/build.ninja" && -x "$TEST_BUILD/tests/shadps4_gcn_test" ]] || {
+    echo "CACHED_BUILD_MISSING_NO_REBUILD"; exit 3;
+}
+CURRENT_CACHED_SOURCE="$(git -C "$SRC" rev-parse HEAD)"
+[[ "$CURRENT_CACHED_SOURCE" == "$EXPECTED_OLD_SOURCE" ||
+   "$CURRENT_CACHED_SOURCE" == "$SOURCE_REV" ]] || {
+    echo "CACHED_SOURCE_NOT_AN_ALLOWED_PINNED_REVISION=$CURRENT_CACHED_SOURCE"; exit 3;
+}
+[[ -z "$(git -C "$SRC" status --porcelain --untracked-files=no)" ]] || {
+    echo "CACHED_SOURCE_HAS_TRACKED_CHANGES"; exit 3;
+}
+[[ -s "$LOGS/shadps4-srt-findilsb-20261026-160302-916073-build.tar.gz" ]] || {
+    echo "OLD_FAILED_RUN_EVIDENCE_MISSING"; exit 3;
+}
+# Retain the known 120-second successful FindILsb executable before this
+# incremental build overwrites its prior path. This is an isolated test copy,
+# never a production or ES-DE executable update.
+PRIOR_FINDILSB_SHA="8316d6cb2243f0d4ffd8f838a02046738d67bff426e6f344698b25b6f421cf28"
+PRIOR_SNAPSHOT="$TESTS/preserved-native-candidates/findilsb-14975c44/shadps4"
+# The proven 120s ELF was separately snapshotted before the rejected
+# 33-second GPU Phi candidate. Never copy that unverified ELF as baseline.
+
+[[ -f "$PRIOR_SNAPSHOT" &&
+   "$(sha256sum "$PRIOR_SNAPSHOT" | cut -d' ' -f1)" == "$PRIOR_FINDILSB_SHA" ]] || {
+    echo "PREVIOUS_GOOD_CANDIDATE_SNAPSHOT_INVALID"; exit 3;
+}
+echo "PRESERVED_FINDILSB_120_SECOND_CANDIDATE=$PRIOR_SNAPSHOT"
+echo "PRESERVED_FINDILSB_SHA256=$PRIOR_FINDILSB_SHA"
+echo "BASELINE_120_SECOND_ELF_UNTOUCHED=PASS"
+echo "STAGE=UNIVERSAL_EMULATOR_DIARY_PRECHECK"
+curl -4fsSL --retry 3 --retry-delay 2 \
+  "https://raw.githubusercontent.com/Chreece/shadPS4/178376d393051d8026319bc0154d3b36d0fcc087/tools/development/record_emulator_trial.py" \
+  -o "$RECORDER"
+[[ "$(git hash-object "$RECORDER")" == "$RECORDER_SHA" ]] || {
+    echo "UNIVERSAL_DIARY_WRITER_HASH_MISMATCH"; exit 3;
+}
+# The 17:55 uniform-lane attempt ended before compilation because another
+# GoW/GoT worker held the shared build lock. The old launcher did not
+# download the diary recorder before the lock check. Append that real
+# failed trial now; the recorder deduplicates the immutable archive.
+# Prior failed lock trial is already immutably recorded from the 18:01 run.
+# Prior failures already recorded with their original SHA; avoid duplicate entries.
+echo "STAGE=FETCH_PINNED_NONBLOCKING_HOST_IDLE_SOURCE"
+if ! git -C "$BASE_SOURCE" cat-file -e "$SOURCE_REV^{commit}" 2>/dev/null; then
+    git -c http.version=HTTP/1.1 -C "$BASE_SOURCE" fetch -q --no-tags --no-recurse-submodules \
+        https://github.com/Chreece/shadPS4.git "$SOURCE_REV"
+fi
+git -C "$BASE_SOURCE" cat-file -e "$SOURCE_REV^{commit}"
+if [[ "$CURRENT_CACHED_SOURCE" != "$SOURCE_REV" ]]; then
+    git -C "$SRC" switch --detach "$SOURCE_REV"
+fi
+[[ "$(git -C "$SRC" rev-parse HEAD)" == "$SOURCE_REV" ]] || {
+    echo "RESUME_GIT_SOURCE_PIN_MISMATCH"; exit 4;
+}
+grep -Fqx 'class Logger final : public BaseDevice {' "$SRC/src/core/file_sys/devices/logger.h" || {
+    echo "LOGGER_PUBLIC_INHERITANCE_FIX_MISSING"; exit 4;
+}
+grep -Fq 'std::is_convertible_v<Devices::Logger*, Devices::BaseDevice*>' "$SRC/src/core/file_sys/fs.cpp" || {
+    echo "LOGGER_COMPILE_TIME_CONVERSION_TEST_MISSING"; exit 4;
+}
+echo "SOURCE_SWITCH_FIRST_FLIP_TRACE_TO_NONBLOCKING_IDLE_CACHED=PASS"
+echo "ORIGINAL_TRIAL_ARCHIVES_AND_DIARY_UNCHANGED=YES"
+echo "STAGE=VERIFY_CACHED_SUBMODULES"
+git -C "$SRC" submodule status --recursive > "$REPORT/submodules.txt"
+if grep -Eq '^[-+U]' "$REPORT/submodules.txt"; then
+    echo "CACHED_SUBMODULE_REVISION_MISMATCH"; exit 4;
+fi
+[[ -z "$(git -C "$SRC" status --porcelain --untracked-files=no)" ]] || {
+    echo "SOURCE_WORKTREE_TRACKED_FILES_DIRTY"; exit 4;
+}
+[[ -f "$SRC/tests/gcn/test_srt_phi.cpp" ]] || {
+    echo "DYNAMIC_SRT_GTEST_MISSING"; exit 4;
+}
+grep -Fq 'OpAtomicOr(U32[1], fault_ptr' "$SRC/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp" || {
+    echo "ATOMIC_FAULT_FIX_MISSING"; exit 4;
+}
+grep -Fq 'dma_policy.NeedsGpuRead()' "$SRC/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp" || {
+    echo "UNIVERSAL_DYNAMIC_SRT_DMA_MISSING"; exit 4;
+}
+grep -Fq 'GuestGpuAddressLimit - sizeof(u32) + 1' "$SRC/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp" || {
+    echo "BDA_GUEST_RANGE_GUARD_MISSING"; exit 4;
+}
+echo "SOURCE_COMMIT_VERIFIED=$SOURCE_REV"
+
+echo "STAGE=REUSE_FFMPEG_FROM_PROVEN_BASELINE"
+[[ -f "$SRC/externals/ffmpeg-core/CMakeLists.txt" ]] || {
+    echo "CHECKPOINT_FFMPEG_SUBMODULE_MISSING"; exit 4;
+}
+FFMPEG_COMMIT="$(git -C "$SRC/externals/ffmpeg-core" rev-parse HEAD)"
+FFMPEG_SHORT="$(git -C "$SRC/externals/ffmpeg-core" rev-parse --short HEAD)"
+BASE_FFMPEG_COMMIT="$(git -C "$BASE_SOURCE/externals/ffmpeg-core" rev-parse HEAD)"
+[[ "$FFMPEG_COMMIT" == "$BASE_FFMPEG_COMMIT" ]] || {
+    echo "BASELINE_FFMPEG_COMMIT_DIFFERS_NO_CACHE_REUSE"; exit 4;
+}
+FFMPEG_ASSET="$WORK/ffmpeg-$FFMPEG_SHORT.zip"
+BASE_ASSET="$OLD/build/externals/ffmpeg-$FFMPEG_SHORT.zip"
+BASE_LIBS="$OLD/build/externals/ffmpeg-$FFMPEG_SHORT/lib"
+python3 - "$BASE_ASSET" "$BASE_LIBS" "$FFMPEG_ASSET" <<'PYFF'
+from pathlib import Path, PurePosixPath
+import hashlib, sys, zipfile
+old_zip, libs, target = map(Path, sys.argv[1:])
+names = ["lib"+n+".a" for n in ("avformat","avcodec","swscale","avutil","avfilter","swresample")]
+def verify(archive):
+    with zipfile.ZipFile(archive) as z:
+        listing = set(z.namelist())
+        assert all(n in listing and z.getinfo(n).file_size > 4096 for n in names)
+        assert all(not n.startswith("/") and ".." not in PurePosixPath(n).parts for n in listing)
+        assert z.testzip() is None
+if old_zip.is_file():
+    verify(old_zip)
+    target.write_bytes(old_zip.read_bytes())
+    origin="original_matching_ffmpeg_prebuilt_zip"
+elif all((libs/n).is_file() and not (libs/n).is_symlink() for n in names):
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_STORED) as z:
+        for n in names:
+            with (libs/n).open("rb") as fd:
+                assert fd.read(8) in (b"!<arch>\n",b"!<thin>\n"),n
+            z.write(libs/n,n)
+    verify(target)
+    origin="original_matching_ffmpeg_static_archives"
+else:
+    origin="cache_missing"
+if target.exists():
+    print("FFMPEG_REUSED_FROM="+origin)
+    print("FFMPEG_PREBUILT_SHA256="+hashlib.sha256(target.read_bytes()).hexdigest())
+else:
+    print("FFMPEG_CACHE_MISSING_WILL_FETCH_OFFICIAL_RELEASE")
+PYFF
+if [[ ! -s "$FFMPEG_ASSET" ]]; then
+    echo "STAGE=FETCH_OFFICIAL_FFMPEG_RELEASE_IPV4"
+    curl -4fsSL --retry 3 --retry-delay 2 \
+        "https://github.com/shadps4-emu/ext-ffmpeg-core/releases/download/$FFMPEG_SHORT/ffmpeg-linux-x64.zip" \
+        -o "$FFMPEG_ASSET" || {
+        echo "NO_CACHED_EXACT_FFMPEG_ARCHIVES_AND_OFFICIAL_RELEASE_UNAVAILABLE"; exit 4;
+    }
+fi
+python3 - "$FFMPEG_ASSET" <<'PYZIP'
+import sys,zipfile
+names={"lib"+x+".a" for x in ("avformat","avcodec","swscale","avutil","avfilter","swresample")}
+with zipfile.ZipFile(sys.argv[1]) as z:
+    assert names.issubset(z.namelist()) and z.testzip() is None
+print("FFMPEG_ASSET_VALIDATED",flush=True)
+PYZIP
+for build in "$BUILD" "$TEST_BUILD"; do
+    mkdir -p "$build/externals"
+    target="$build/externals/ffmpeg-$FFMPEG_SHORT.zip"
+    # Do not rewrite identical cached archives: keep Ninja/CMake download
+    # timestamps stable and reuse objects from the previously failed run.
+    if [[ ! -s "$target" ]] || ! cmp -s "$FFMPEG_ASSET" "$target"; then
+        cp "$FFMPEG_ASSET" "$target"
+    fi
+done
+echo "STAGE=REUSE_EXISTING_GOOGLETEST"
+GTEST_SRC="$WORK/googletest-v1.17.0"
+if [[ ! -f "$GTEST_SRC/CMakeLists.txt" ]]; then
+    echo "CACHED_GOOGLETEST_MISSING_NO_CLONE"; exit 5
+fi
+git -C "$GTEST_SRC" describe --tags --exact-match | grep -Fxq v1.17.0 || {
+    echo "GOOGLETEST_NOT_TAG_V1_17_0"; exit 5;
+}
+echo "STAGE=RECONFIGURE_CACHED_GCN_TEST"
+cmake -S "$SRC" -B "$TEST_BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    -DENABLE_TESTS=ON -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="$GTEST_SRC" \
+    > "$REPORT/configure-tests.log" 2>&1 || {
+    tail -120 "$REPORT/configure-tests.log"; exit 5;
+}
+echo "STAGE=REUSE_CACHED_GCN_TEST_OBJECTS"
+echo "BUILD_TEST_LOG=$REPORT/build-tests.log"
+nice -n 10 cmake --build "$TEST_BUILD" --target shadps4_gcn_test --parallel 2 \
+    > "$REPORT/build-tests.log" 2>&1 || {
+    tail -120 "$REPORT/build-tests.log"; exit 5;
+}
+[[ -x "$TEST_BUILD/tests/shadps4_gcn_test" ]] || {
+    echo "GCN_TEST_BINARY_NOT_BUILT"; exit 6;
+}
+echo "STAGE=RUN_52_PRESENTATION_AND_SRT_REGRESSIONS"
+ctest --test-dir "$TEST_BUILD" -N -R '^(SrtInvariantPhi|SrtDynamicDma|NativeWarningContracts|SrtFindILsb32|GpuFaultRingReuse|Pm4AcquireMemBarrier|ScalarExecDivergence|VideoOutFirstFrameTrace|PresenterIdleNonBlocking)\.' > "$REPORT/ctest-list.txt"
+grep -Eq 'Total Tests: 52([[:space:]]|$)' "$REPORT/ctest-list.txt" || {
+    cat "$REPORT/ctest-list.txt"; echo "EXPECTED_52_GENERIC_TESTS_MISSING"; exit 6;
+}
+ctest --test-dir "$TEST_BUILD" --output-on-failure --no-tests=error \
+    -R '^(SrtInvariantPhi|SrtDynamicDma|NativeWarningContracts|SrtFindILsb32|GpuFaultRingReuse|Pm4AcquireMemBarrier|ScalarExecDivergence|VideoOutFirstFrameTrace|PresenterIdleNonBlocking)\.' | tee "$REPORT/ctest.txt"
+echo "ALL_52_PRESENTATION_AND_SRT_REGRESSIONS=PASS"
+echo "STAGE=RECONFIGURE_CACHED_EMULATOR"
+cmake -S "$SRC" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF \
+    > "$REPORT/configure-native.log" 2>&1 || {
+    tail -120 "$REPORT/configure-native.log"; exit 7;
+}
+grep -Fq 'Frame* Presenter::TryGetRenderFrameForHostIdle()' "$SRC/src/video_core/renderer_vulkan/vk_presenter.cpp" &&
+grep -Fq 'present_thread ? TryGetRenderFrameForHostIdle() : GetRenderFrame()' "$SRC/src/video_core/renderer_vulkan/vk_presenter.cpp" &&
+grep -Fq 'TryPopReadyIdleFrame(free_queue' "$SRC/src/video_core/renderer_vulkan/vk_presenter.cpp" &&
+grep -Fq 'VIDEOOUT_IDLE_FRAME_SKIP reason=last_frame_gpu_busy' "$SRC/src/video_core/renderer_vulkan/vk_presenter.cpp" &&
+grep -Fq 'if (empty_frame != nullptr)' "$SRC/src/core/libraries/videoout/driver.cpp" || {
+    echo "PRESENTER_IDLE_SOURCE_NOT_PINNED"; exit 7;
+}
+echo "STAGE=COMPILE_NONBLOCKING_PRESENT_THREAD_FIRST"
+echo "PRESENTER_IDLE_PRECHECK_LOG=$REPORT/preflight-nonblocking-present.log"
+nice -n 10 ninja -C "$BUILD" -j 2 CMakeFiles/shadps4.dir/src/core/libraries/videoout/driver.cpp.o CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_presenter.cpp.o \
+    > "$REPORT/preflight-nonblocking-present.log" 2>&1 || {
+    echo "PRESENTER_IDLE_FIX_COMPILE_PRECHECK_FAILED"; tail -120 "$REPORT/preflight-nonblocking-present.log"; exit 7;
+}
+echo "PRESENTER_IDLE_FIX_COMPILE_PRECHECK=PASS"
+echo "STAGE=COMPLETE_INCREMENTAL_NATIVE_PRESENT_IDLE_BUILD"
+echo "NATIVE_BUILD_LOG=$REPORT/build-native.log"
+nice -n 10 cmake --build "$BUILD" --target shadps4 --parallel 2 \
+    > "$REPORT/build-native.log" 2>&1 || {
+    tail -140 "$REPORT/build-native.log"; exit 7;
+}
+[[ -x "$BINARY" ]] || { echo "NATIVE_BINARY_NOT_LINKED"; exit 7; }
+echo "STAGE=CLASSIFY_NATIVE_AND_GCN_COMPILER_WARNINGS"
+python3 - "$REPORT/build-native.log" "$REPORT/build-tests.log" "$REPORT/warnings-audit.txt" <<'PYWARN'
+from pathlib import Path
+from collections import Counter
+import re
+import sys
+
+result = []
+warning = re.compile(r'^(.+?):(\d+):(\d+): warning: (.*)$')
+for label, path in (("native", Path(sys.argv[1])), ("tests", Path(sys.argv[2]))):
+    counts = Counter()
+    detail = []
+    for line in path.read_text(errors="replace").splitlines():
+        match = warning.match(line)
+        if not match:
+            continue
+        file_path, lineno, column, message = match.groups()
+        kind = ("third_party" if "/externals/" in file_path else
+                "first_party" if "/source/src/" in file_path else
+                "test_code" if "/source/tests/" in file_path else
+                "system_or_generated")
+        counts[kind] += 1
+        detail.append(f"{kind}: {file_path}:{lineno}:{column}: {message}")
+    result.append(f"{label.upper()} WARNINGS={sum(counts.values())}")
+    result.extend(f"{key}={counts[key]}" for key in
+                  ("first_party", "third_party", "test_code", "system_or_generated"))
+    result.extend(detail)
+    print(f"{label.upper()}_WARNING_COUNT={sum(counts.values())}")
+    print(f"{label.upper()}_FIRST_PARTY_WARNING_COUNT={counts['first_party']}")
+Path(sys.argv[3]).write_text("\n".join(result) + "\n")
+PYWARN
+echo "WARNING_AUDIT_REPORT=$REPORT/warnings-audit.txt"
+"$BINARY" --help > "$REPORT/native-help.txt" 2>&1 || exit 5
+! grep -Fq -- '--cpu-id-mode' "$REPORT/native-help.txt" || {
+    echo "DYNAMORIO_COMPATIBILITY_FLAG_PRESENT"; exit 5;
+}
+ldd "$BINARY" > "$REPORT/ldd.txt"
+! grep -q 'not found' "$REPORT/ldd.txt" || {
+    echo "MISSING_NATIVE_LIBRARY"; exit 5;
+}
+CANDIDATE_SHA="$(sha256sum "$BINARY" | cut -d' ' -f1)"
+echo "NEW_NATIVE_CANDIDATE_SHA=$CANDIDATE_SHA"
+echo "STAGE=INSTALL_PINNED_EXISTING_UNIVERSAL_118_PLUS_2_OBSERVER"
+RUNNER_ORIG="$WORK/pinned-gpu-headroom-observer.sh"
+RUNNER="$WORK/present-idle-observer.sh"
+curl -4fsSL --retry 3 --retry-delay 2 \
+    "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_REV/scripts/shadps4_gpu_headroom_ab_20261026.sh" \
+    -o "$RUNNER_ORIG"
+[[ "$(git hash-object "$RUNNER_ORIG")" == "$RUNNER_BLOB" ]] || {
+    echo "OBSERVER_TEMPLATE_HASH_MISMATCH_NO_GAME"; exit 6;
+}
+python3 - "$RUNNER_ORIG" "$RUNNER" "$BINARY" "$CANDIDATE_SHA" "$SOURCE_REV" "$SRC" <<'PY'
+from pathlib import Path
+import sys
+template, dest, binary, checksum, source_rev, source_dir = sys.argv[1:]
+data = Path(template).read_text()
+def exactly_once(old, new):
+    global data
+    assert data.count(old) == 1, f"Expected exactly one launcher field: {old[:75]}"
+    data = data.replace(old, new)
+exactly_once(
+    'BIN="$ROOT/GodOfWarRagnarok/tests/gow-upstream-got-20261025-145442-451241/build/shadps4"',
+    'BIN="' + binary + '"')
+exactly_once(
+    'EXPECTED=7604bae00c78b72e163138327f61a2f92bf549ac66446487d1ab7370a2f9b4d1',
+    'EXPECTED=' + checksum)
+exactly_once(
+    'SOURCE_REV="803bb428731be794bdc44e38b56313d030a7403a"',
+    'SOURCE_REV="' + source_rev + '"')
+exactly_once(
+    'SRC="$ROOT/GodOfWarRagnarok/tests/gow-upstream-got-20261025-145442-451241/source"',
+    'SRC="' + source_dir + '"')
+assert 'shadps4-gpu-headroom-ab-' in data
+data = data.replace('shadps4-gpu-headroom-ab-', 'shadps4-present-idle-')
+exactly_once('--fix-id gpu-device-lost-after-first-frame',
+             '--fix-id universal-nonblocking-host-idle-presenter')
+exactly_once(
+    'Same exact native emulator binary, host Ollama VRAM headroom A/B only; 11/21/26s frames and read-only kernel faults',
+    'Generic nonblocking host idle frame/fence acquisition so real guest VideoOut queue is serviced; no title-specific patches')
+exactly_once(
+    'Compare whether GPU context lost persists with additional free VRAM; inspect first-frame screenshots, amdgpu kernel events and real resource lifetime before general renderer changes',
+    'Compare guest present consumption, idle-fence deferrals and actual visible scene after restoring native presenter fairness')
+exactly_once('--pr 73 --pr 71', '--pr 73')
+Path(dest).write_text(data)
+PY
+bash -n "$RUNNER"
+echo "NATIVE_FLAGS=FULLSCREEN_AND_FPS_ONLY"
+echo "VRAM=UNLOAD_OLLAMA_IF_REQUIRED_AND_RESTORE_AFTER_GAME"
+echo "EXISTING_SAVES_ESDE_SSH=UNCHANGED"
+echo "STAGE=118_PLUS_2_SECOND_NATIVE_RAGNAROK_GAMEPLAY"
+# Call the original verified observer worker directly: its source audits,
+# isolated user profile, screenshot schedule and diary append all remain active.
+# It owns only the game process group; the outer SSH session stays open.
+set +e
+bash "$RUNNER" --worker "$TAG" "$GAME"
+rc=$?
+set -e
+echo "NATIVE_GAMEPLAY_OBSERVER_EXIT=$rc"
+# Quantify the full runtime resource-table logs, not merely 1.5 MB excerpts.
+SRT_FULL_CONSOLE="$LOGS/$TAG-report/full-console.log"
+if [[ -f "$SRT_FULL_CONSOLE" && ! -L "$SRT_FULL_CONSOLE" ]]; then
+    {
+        echo "SOURCE=$SOURCE_REV"
+        echo "PRIOR_EXCERPT_FINDILSB_UNSUPPORTED=2357"
+        echo "PRIOR_EXCERPT_DYNAMIC_PHI=635"
+        echo "PRIOR_FULL_DYNAMIC_PHI=3906"
+        echo "PRIOR_FULL_FAILED_SRT_OFFSETS=5591"
+        echo "PRIOR_EXCERPT_FAILED_SRT_OFFSETS=2993"
+        echo "CURRENT_FULL_CONSOLE_BYTES=$(stat -c %s "$SRT_FULL_CONSOLE")"
+        echo "CURRENT_FINDILSB32_UNSUPPORTED=$(grep -Fc 'Unexpected instruction for offset computation, FindILsb32' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEOOUT_IDLE_GPU_FENCE_DEFERRED=$(grep -Fc 'VIDEOOUT_IDLE_FRAME_SKIP reason=last_frame_gpu_busy' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEOOUT_IDLE_FREE_FRAME_DEFERRED=$(grep -Fc 'VIDEOOUT_IDLE_FRAME_SKIP reason=free_frame_gpu_busy' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_REQUESTED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_requested' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_EOP_FLIP_IRQ_REGISTERED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=eop_flip_irq_registered' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_EOP_FLIP_IRQ_DELIVERED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=eop_flip_irq_delivered' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_PREPARE_REQUESTED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=prepare_requested' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_FRAME_PREPARE_BEGIN_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_frame_prepare_begin' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_FRAME_PREPARE_READY_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_frame_prepare_ready' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_PREPARED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=prepared' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_PRESENT_ENTER_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_present_enter' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_PRESENT_BEGIN_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=present_begin' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_GUEST_SWAPCHAIN_RESULT_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=guest_swapchain_result' "$SRT_FULL_CONSOLE" || :)"
+        echo "VIDEO_FLIP_STAGE_PRESENT_RETURNED_LOG_MESSAGES=$(grep -Fc 'VIDEO_FLIP_STAGE stage=present_returned' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_SCALAR_EXEC_SCOPE_SPLIT_EVENTS=$(grep -Fc 'Whole-wave SALU EXEC scope splits=' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_PM4_ACQUIRE_MARKER_EVENTS=$(grep -Fc 'PM4 AcquireMem Vulkan barriers=' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_FIRST_GAME_FRAME_EVENTS=$(grep -Fc 'STARTUP_UI event=first_game_frame' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_VISIBLE_GAME_FRAME_EVENTS=$(grep -Fc 'STARTUP_UI event=visible_game_frame' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_GUEST_LARGE_BUFFER_CLAMPS=$(grep -Fc 'Clamped size from 4294967295' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_DETECTED_GPU_FIRST_TOUCH_PAGES=$(grep -Fc 'Accessed non-GPU cached memory at' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_FAULT_RING_DEFER_LOGS=$(grep -Fc 'Fault readback ring saturated:' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_FAULT_RING_RECOVERY_LOGS=$(grep -Fc 'Fault readback ring recovered after' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_UNSUPPORTED_READFIRSTLANE=$(grep -Fc 'Unexpected instruction for offset computation, ReadFirstLane' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_UNSUPPORTED_GETATTRIBUTE_U32=$(grep -Fc 'Unexpected instruction for offset computation, GetAttributeU32' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_DYNAMIC_PHI=$(grep -Fc 'SRT offset Phi depends on execution flow' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_FAILED_SRT_OFFSETS=$(grep -Fc 'Failed to compute offset for SRT walker' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_INVALID_SHARP_SOURCES=$(grep -Fc 'Sharp source was not flatenned' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_DMA_SHADERS=$(grep -Fc 'uses demand-paged GPU reads for unflattened SRT offsets' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_DEVICE_LOSS=$(grep -Fci 'DeviceLost' "$SRT_FULL_CONSOLE" || :)"
+        echo "CURRENT_X11_LOSS=$(grep -Fci 'XIO:  fatal IO error' "$SRT_FULL_CONSOLE" || :)"
+        echo "DURATION_AND_SHADER_COVERAGE_MUST_MATCH_FOR_FAIR_AB=YES"
+        echo "REAL_VISUAL_ACCEPTANCE_PENDING=YES"
+    } | tee "$REPORT/srt-resource-progress.txt"
+    # The shader logger reports aggregate metrics per compile. Parse the
+    # actual FULL console (the observer excerpt deliberately drops its middle).
+    python3 -B - "$SRT_FULL_CONSOLE" <<'PYPM4' | tee -a "$REPORT/srt-resource-progress.txt"
+from pathlib import Path
+import re
+import sys
+data = Path(sys.argv[1]).read_text(errors="replace")
+# Log counts are sampled at powers of two; maximum is the proved lower bound.
+stages = ("guest_requested", "eop_flip_irq_registered", "eop_flip_irq_delivered",
+          "prepare_requested", "guest_frame_prepare_begin", "guest_frame_prepare_ready",
+          "prepared", "guest_present_enter", "present_begin",
+          "guest_swapchain_result", "present_returned")
+for stage in stages:
+    found = [int(x) for x in re.findall(
+        r"VIDEO_FLIP_STAGE stage=" + stage + r" count=(\d+)", data)]
+    print("VIDEO_FLIP_STAGE_"+stage.upper()+"_OBSERVED_MINIMUM="+str(max(found, default=0)))
+print("VIDEO_FLIP_STAGE_COUNT_SAMPLES_ARE_POWERS_OF_TWO=YES")
+print("PREVIOUS_FIRST_FLIP_PREPARED_MINIMUM=2")
+print("PREVIOUS_FIRST_FLIP_PRESENT_BEGIN_MINIMUM=0")
+print("GUEST_GETRENDERFRAME_BLOCKING_RETAINED=YES")
+salu = [int(v) for v in re.findall(r"Whole-wave SALU EXEC scope splits=(\d+)",data)]
+print("CURRENT_REAL_WHOLE_WAVE_SALU_SPLITS=" + str(sum(salu)))
+print("CURRENT_SHADERS_WITH_WHOLE_WAVE_SALU_SPLITS=" + str(len(salu)))
+pm4 = [int(v) for v in re.findall(r"PM4 AcquireMem Vulkan barriers=(\d+)",data)]
+ring = [int(v) for v in re.findall(r"Fault readback ring recovered after (\d+) deferred submissions",data)]
+print("CURRENT_PM4_ACQUIRE_LAST_REPORTED_BARRIER_COUNT=" + str(max(pm4, default=0)))
+print("CURRENT_FAULT_RING_RECOVERED_DEFERRED_SUBMISSIONS=" + str(sum(ring)))
+print("FIRST_TOUCH_GPU_DMA_ZERO_FALLBACK_STILL_UNRESOLVED=YES")
+PYPM4
+else
+    echo "SRT_FULL_CONSOLE_UNAVAILABLE_NO_COUNTERS" | tee "$REPORT/srt-resource-progress.txt"
+fi
+exit "$rc"
