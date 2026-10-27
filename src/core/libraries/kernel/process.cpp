@@ -99,6 +99,12 @@ void* PS4_SYSV_ABI sceKernelGetProcParam() {
     return linker->GetProcParam();
 }
 
+// A guest may enter HLE with a stack alignment that is not valid for native
+// SysV C++ functions. Re-align at this exported boundary before logging,
+// allocating or calling host code. This is an ABI correction for all guests.
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+__attribute__((force_align_arg_pointer))
+#endif
 s32 PS4_SYSV_ABI sceKernelLoadStartModule(const char* moduleFileName, u64 args, const void* argp,
                                           u32 flags, const void* pOpt, s32* pRes) {
     LOG_INFO(Lib_Kernel, "called filename = {}, args = {}", moduleFileName, args);
