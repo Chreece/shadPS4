@@ -167,6 +167,7 @@ set(GCN_TEST_SOURCES
 
     # Tests
     gcn/test_gcn_instructions.cpp
+    gcn/test_formatted_stream_route.cpp
     gcn/test_srt_phi.cpp
     gcn/test_exec_scope_scalar_split.cpp
     gcn/test_idle_frame_reuse.cpp
