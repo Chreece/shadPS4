@@ -111,9 +111,22 @@ done
 exec 9>"$LOGS/gow-upstream-got-build.lock"
 exec 8>"$LOGS/shadps4-gow-srt-phi.lock"
 exec 7>"$LOGS/gow-hle-stack-build.lock"
-flock -n 9 && flock -n 8 && flock -n 7 || {
-    echo "CONCURRENT_GOW_GOT_NATIVE_BUILD_LOCKED_NO_ACTION"; exit 3
-}
+STATE="WAIT_FOR_SHARED_BUILD_LOCKS"
+echo "STAGE=$STATE"
+START_WAIT=$SECONDS
+until flock -n 9 && flock -n 8 && flock -n 7; do
+    flock -u 7 || true
+    flock -u 8 || true
+    flock -u 9 || true
+    WAITED=$((SECONDS - START_WAIT))
+    if (( WAITED >= 2700 )); then
+        echo "BUILD_LOCK_WAIT_LIMIT_REACHED=$WAITED"
+        exit 3
+    fi
+    echo "BUILD_QUEUED_SHARED_LOCKS_WAIT_SECONDS=$WAITED"
+    sleep 15
+done
+echo "THREE_SHARED_BUILD_LOCKS_ACQUIRED=YES QUEUE_SECONDS=$((SECONDS - START_WAIT))"
 STATE="VERIFY_EXISTING_OFFICIAL_MAIN_BASELINE"
 echo "STAGE=$STATE"
 [[ -x "$OLD" && ! -L "$OLD" ]] || { echo "PR88_BASE_ELF_MISSING"; exit 4; }
