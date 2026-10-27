@@ -1035,6 +1035,26 @@ bool Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         free_frame();
     };
 
+    // A queued guest frame must finish its draw submission before acquiring a
+    // swapchain image. This query does not wait or submit any additional GPU work.
+    if (actual_guest_flip) {
+        const auto [status, completed_tick] =
+            instance.GetDevice().getSemaphoreCounterValue(frame->ready_semaphore);
+        if (trace_guest) {
+            LOG_INFO(Frontend,
+                     "VIDEO_FLIP_STAGE stage=guest_gpu_timeline count={} ready_tick={} completed_tick={} status={}",
+                     guest_seq, frame->ready_tick, completed_tick, vk::to_string(status));
+        }
+        if (status != vk::Result::eSuccess || completed_tick < frame->ready_tick) {
+            if (trace_guest) {
+                LOG_INFO(Frontend,
+                         "VIDEO_FLIP_STAGE stage=guest_gpu_pending count={} ready_tick={}",
+                         guest_seq, frame->ready_tick);
+            }
+            return false;
+        }
+    }
+
     // Guest flips handle any surface recreation; host idle redraws never wait for it.
     if (window.GetWidth() != swapchain.GetWidth() || window.GetHeight() != swapchain.GetHeight()) {
         if (!is_game_frame) {
