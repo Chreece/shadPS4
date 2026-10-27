@@ -30,7 +30,7 @@ int main() {
                        {0x2000, {0x2000, 0x1800, true}},
                        {0x3800, {0x3800, 0x1000, true}}};
     if (Clamp(adjacent, 0x1800, 0x3000) != 0x3000) return 1;
-    if (Clamp(adjacent, 0x1800, 0x5000) != 0x3800) return 2;
+    if (Clamp(adjacent, 0x1800, 0x5000) != 0x3000) return 2;
     if (Clamp(adjacent, 0x1800, 0x100) != 0x100) return 3;
 
     // A mapped VMA after an unmapped gap must NOT extend the first range.
