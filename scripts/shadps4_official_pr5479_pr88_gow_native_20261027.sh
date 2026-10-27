@@ -95,7 +95,6 @@ PYDIARY
     fi
     # Full console and copied private profile stay on the user's host.
     # Archive bounded diagnostics, results and screenshots only.
-    rm -f "$REPORT/full-console.log.tar-stub" 2>/dev/null || true
     tar -czf "$ARCHIVE" --exclude='full-console.log' \
         -C "$WORK" evidence \
         -C "$LOGS" "$TAG.log" 2>/dev/null ||
