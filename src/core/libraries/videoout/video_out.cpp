@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+
 #include "common/assert.h"
 #include "common/elf_info.h"
 #include "common/logging/log.h"
@@ -8,6 +10,7 @@
 #include "core/libraries/libs.h"
 #include "core/libraries/system/userservice.h"
 #include "core/libraries/videoout/driver.h"
+#include "core/libraries/videoout/video_flip_trace.h"
 #include "core/libraries/videoout/video_out.h"
 #include "core/libraries/videoout/videoout_error.h"
 #include "core/platform.h"
@@ -343,6 +346,13 @@ s32 PS4_SYSV_ABI sceVideoOutGetBufferLabelAddress(s32 handle, uintptr_t* label_a
 }
 
 s32 sceVideoOutSubmitEopFlip(s32 handle, u32 buf_id, u32 mode, s64 flip_arg, void** unk) {
+    static std::atomic<u64> registered_eops{};
+    const u64 seq = registered_eops.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (ShouldTraceVideoFlip(seq)) {
+        LOG_INFO(Lib_VideoOut,
+                 "VIDEO_FLIP_STAGE stage=eop_flip_irq_registered count={} buffer={} mode={}",
+                 seq, buf_id, mode);
+    }
     auto* port = driver->GetPort(handle);
     if (!port) {
         return ORBIS_VIDEO_OUT_ERROR_INVALID_HANDLE;
@@ -352,6 +362,11 @@ s32 sceVideoOutSubmitEopFlip(s32 handle, u32 buf_id, u32 mode, s64 flip_arg, voi
         Platform::InterruptId::GfxFlip, [=](Platform::InterruptId irq) {
             ASSERT_MSG(irq == Platform::InterruptId::GfxFlip, "An unexpected IRQ occured");
             ASSERT_MSG(port->buffer_labels[buf_id] == 1, "Out of order flip IRQ");
+            if (ShouldTraceVideoFlip(seq)) {
+                LOG_INFO(Lib_VideoOut,
+                         "VIDEO_FLIP_STAGE stage=eop_flip_irq_delivered count={} buffer={}",
+                         seq, buf_id);
+            }
             const auto result = driver->SubmitFlip(port, buf_id, flip_arg, true);
             ASSERT_MSG(result, "EOP flip submission failed");
         });
