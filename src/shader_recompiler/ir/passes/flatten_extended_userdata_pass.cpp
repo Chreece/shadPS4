@@ -18,6 +18,8 @@
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/passes/srt.h"
+#include "shader_recompiler/ir/passes/srt_find_lsb.h"
+#include "shader_recompiler/ir/passes/srt_phi.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/ir/srt_gvn_table.h"
@@ -294,8 +296,9 @@ static bool EmitComputeOffsetShiftLeftLogical32(Xbyak::CodeGenerator& c, Xbyak::
                                                 PassInfo& pass_info, IR::Inst* inst) {
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
+        // The left operand is a constant; the right operand is the runtime
+        // shift count. Preserve that count before loading the constant.
         ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
-        c.shl(reg, inst->Arg(0).U32());
         c.mov(ecx, reg);
         c.mov(reg, inst->Arg(0).U32());
         c.shl(reg, cl);
@@ -448,7 +451,8 @@ static bool EmitComputeOffsetUMax32(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, P
 
 static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
                                               PassInfo& pass_info, IR::Inst* inst) {
-    // We asume that the count is always less than 32, Is this correct?
+    // SPIR-V-style bitfield extraction: extract bits [offset, offset+width).
+    // In particular width=32 denotes the full shifted word, not width=0.
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
         c.mov(reg, inst->Arg(0).U32());
@@ -467,21 +471,47 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
     }
     if (inst->Arg(2).IsImmediate()) {
         if (in_stack) {
+            // The dynamic shift updated the low word on the stack. Pop the
+            // shifted value, not the original pre-shift register value.
             c.pop(reg.cvt64());
         }
-        c.and_(reg, (1U << inst->Arg(2).U32()) - 1);
+        const u32 width = inst->Arg(2).U32();
+        if (width < 32) {
+            c.and_(reg, (1U << width) - 1);
+        }
     } else {
         if (!in_stack) {
             c.push(reg.cvt64());
         }
         POP_ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(2)));
         c.mov(ecx, reg);
+        // x86 shifts mask CL to five bits. Width 32 would otherwise build
+        // a zero mask, so keep all bits when width is at least 32.
+        Xbyak::Label full_width;
+        c.mov(edx, 0xffffffffu);
+        c.cmp(ecx, 32);
+        c.jae(full_width);
         c.mov(edx, 1);
         c.shl(edx, cl);
         c.dec(edx);
+        c.L(full_width);
         c.and_(dword[rsp], edx);
         c.pop(reg.cvt64());
     }
+    return true;
+}
+
+// The SRT CPU walker executes this operation using x86 BSF with a conditional
+// assignment of 0xFFFFFFFF for zero input. That is the defined SPIR-V
+// OpFindILsb result, unlike BSF's unspecified destination when its source is 0.
+// Only its operand is evaluated on the host: a GPU-dependent Phi still fails
+// ComputeOffset rather than being replaced with an arbitrary selected value.
+static bool EmitComputeOffsetFindILsb32(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
+                                        PassInfo& pass_info, IR::Inst* inst) {
+    ASSERT(inst->NumArgs() == 1);
+    ASSERT(reg != ecx && reg != edx);
+    ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(0)));
+    EmitSrtFindLeastSignificantBit(c, reg);
     return true;
 }
 
@@ -502,6 +532,8 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     case IR::Opcode::UMin32:
     case IR::Opcode::UMax32:
     case IR::Opcode::BitFieldUExtract:
+    case IR::Opcode::FindILsb32:
+    case IR::Opcode::Phi:
         return true;
     default:
         return false;
@@ -511,6 +543,10 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
 static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
                           const IR::Value& off_dw) {
     ASSERT(reg != ecx && reg != edx);
+    if (off_dw.IsImmediate()) {
+        c.mov(reg, off_dw.U32());
+        return true;
+    }
     auto inst = off_dw.Inst();
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
@@ -559,6 +595,18 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
     case IR::Opcode::BitFieldUExtract:
         ABORT_ON_FAILURE(EmitComputeOffsetBitFieldUExtract(c, reg, pass_info, inst));
         return true;
+    case IR::Opcode::FindILsb32:
+        ABORT_ON_FAILURE(EmitComputeOffsetFindILsb32(c, reg, pass_info, inst));
+        return true;
+    case IR::Opcode::Phi: {
+        const IR::Value invariant = ResolveInvariantSrtPhi(off_dw, pass_info.gvn_table);
+        if (invariant.IsEmpty()) {
+            LOG_ERROR(Render_Recompiler,
+                      "SRT offset Phi depends on execution flow; host walker cannot flatten it");
+            return false;
+        }
+        return ComputeOffset(c, reg, pass_info, invariant);
+    }
     default:
         LOG_ERROR(Render_Recompiler, "Unexpected instruction for offset computation, {}",
                   magic_enum::enum_name(inst->GetOpcode()));
@@ -567,11 +615,17 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
 }
 
 static inline bool PushPtr(Xbyak::CodeGenerator& c, PassInfo& pass_info, const IR::Value& off_dw) {
+    // A rejected GPU-dynamic offset must not leave an unmatched push in the
+    // generated host walker. Roll back emitted bytes, not the guest index.
+    const size_t checkpoint = c.getSize();
     c.push(rdi);
     if (off_dw.IsImmediate()) {
         c.mov(rdi, ptr[rdi + (off_dw.U32() << 2)]);
     } else {
-        ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));
+        if (!ComputeOffset(c, r10d, pass_info, off_dw)) {
+            c.setSize(checkpoint);
+            return false;
+        }
         c.shl(r10d, 2);
         c.mov(r10d, r10d);
         c.mov(rdi, ptr[rdi + r10]);
@@ -609,7 +663,11 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         if (src_off_dw.IsImmediate()) {
             c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
         } else {
+            // ComputeOffset may emit partial expressions before discovering
+            // an unsupported GPU-dependent opcode. Do not execute that code.
+            const size_t checkpoint = c.getSize();
             if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
+                c.setSize(checkpoint);
                 LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
                 continue;
             }

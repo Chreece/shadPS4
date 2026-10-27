@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#pragma once
+
 #include <unordered_map>
 #include <boost/container/small_vector.hpp>
 #include "common/assert.h"
@@ -55,6 +57,7 @@ private:
         case IR::Opcode::UMin32:
         case IR::Opcode::UMax32:
         case IR::Opcode::BitFieldUExtract:
+        case IR::Opcode::FindILsb32:
             ASSERT(!inst->MayHaveSideEffects());
             return true;
         default:
