@@ -73,7 +73,7 @@ if pgrep -x shadps4 > "$OUT/active-shadps4-pids.txt"; then
     echo "GAME_OR_EMULATOR_ALREADY_RUNNING_REFUSE_SHARED_GPU_TEST"; exit 4;
 fi
 STATE="VERIFY_RADV_ONLY_VULKAN"
-for candidate in /usr/share/vulkan/icd.d/radeon_icd*.json /etc/vulkan/icd.d/radeon_icd*.json; do
+for candidate in /usr/share/vulkan/icd.d/radeon_icd.x86_64.json /etc/vulkan/icd.d/radeon_icd.x86_64.json; do
     [[ -r "$candidate" ]] || continue
     if python3 - "$candidate" <<'PY'
 import json,sys
