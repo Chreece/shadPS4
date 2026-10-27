@@ -1,0 +1,213 @@
+diff --git a/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp b/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
+--- a/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
++++ b/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp
+@@ -7,6 +7,8 @@
+ #include <functional>
+ #include <limits>
+ #include <vector>
++#include <string>
++#include <string_view>
+ #include <boost/container/flat_map.hpp>
+ #include <queue>
+ #include <xbyak/xbyak.h>
+@@ -178,6 +180,13 @@
+ 
+     // Bumped during codegen to assign offsets to readconsts
+     u16 dst_off_dw;
++    struct BlockedRead {
++        const char* reason;
++        const IR::Inst* pointer;
++        const IR::Inst* read;
++        IR::Value source_offset;
++    };
++    std::vector<BlockedRead> blocked_reads;
+     size_t pending_srt_reads{};
+     size_t dynamic_srt_reads{};
+     std::unordered_set<const IR::Inst*> active_srt_pointers;
+@@ -686,6 +695,49 @@
+     return check(check, off_dw);
+ }
+ 
++// Preserve the exact reads rejected by scheduling. The earlier diagnostic
++// scanned all unflattened reads, most of which were *not* the four stalled
++// operands. No read, canonical map, or code-generation state is changed.
++static void RecordBlockedSrtRead(PassInfo& pass, const char* why,
++                                 const IR::Inst* ptr, const IR::Inst* read,
++                                 const IR::Value& offset) {
++    for (const auto& event : pass.blocked_reads) {
++        if (event.read == read && event.pointer == ptr &&
++            std::string_view(event.reason) == why) {
++            return;
++        }
++    }
++    if (pass.blocked_reads.size() < 64) {
++        pass.blocked_reads.push_back({why, ptr, read, offset});
++    }
++}
++
++static std::string DescribeSrtOffset(const IR::Value& value, int depth,
++                                     std::unordered_set<const IR::Inst*>& seen) {
++    if (value.IsEmpty()) return "empty";
++    if (value.IsImmediate()) {
++        return value.Type() == IR::Type::U32
++                   ? fmt::format("imm({:#x})", value.U32()) : "imm(other)";
++    }
++    const auto* inst = value.TryInst();
++    if (!inst) return "unknown_value";
++    std::string desc = fmt::format("{}", magic_enum::enum_name(inst->GetOpcode()));
++    if (inst->GetOpcode() == IR::Opcode::ReadConst ||
++        inst->GetOpcode() == IR::Opcode::ReadConstBuffer) {
++        desc += fmt::format("[flat={}]", GetFlatbufOffset(inst));
++    }
++    if (depth >= 4 || !seen.insert(inst).second) return desc;
++    desc += "(";
++    for (size_t i = 0; i < inst->NumArgs() && i < 3; ++i) {
++        if (i) desc += ",";
++        desc += DescribeSrtOffset(inst->Arg(i), depth + 1, seen);
++        if (desc.size() >= 400) break;
++    }
++    desc += ")";
++    seen.erase(inst);
++    return desc;
++}
++
+ #include "shader_recompiler/ir/passes/srt_dependency_codegen.inc"
+ 
+ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
+@@ -713,6 +765,7 @@
+             const size_t checkpoint = c.getSize();
+             const u16 before = pass_info.dst_off_dw;
+             pass_info.pending_srt_reads = 0;
++            pass_info.blocked_reads.clear();
+             pass_info.dynamic_srt_reads = 0;
+             for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
+                 VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
+@@ -728,62 +781,32 @@
+         LOG_ERROR(Render_Recompiler,
+                   "SRT dependency resolution stalled after {} rounds: {} unresolved reads",
+                   schedule.rounds, schedule.pending);
+-        // Read-only provenance for the exact unresolved generic shader sources.
+-        // Do not substitute values for GPU-divergent or cyclic descriptors.
+-        // This reports actual IR operands and allocated slots, without touching
+-        // any of the host walker code, shader IR, or descriptor data.
+         std::size_t recorded = 0;
+-        for (const auto& [root, uses] : pass_info.pointer_uses) {
+-            for (const auto& [offset, read] : uses) {
+-                if (recorded >= 16) {
+-                    break;
+-                }
+-                if (GetFlatbufOffset(read) != 0) {
+-                    continue;
+-                }
+-                const IR::Inst* const source = offset.TryInst();
+-                const bool immediate = offset.IsImmediate();
+-                const auto offset_op = source ? magic_enum::enum_name(source->GetOpcode())
+-                                              : std::string_view{"ImmediateOrUnknown"};
+-                const auto pointer_op = magic_enum::enum_name(root->GetOpcode());
+-                const auto read_op = magic_enum::enum_name(read->GetOpcode());
+-                const u16 dependency_slot =
+-                    source && (source->GetOpcode() == IR::Opcode::ReadConst ||
+-                               source->GetOpcode() == IR::Opcode::ReadConstBuffer)
+-                        ? GetFlatbufOffset(source)
+-                        : 0u;
+-                const u32 immediate_dw = immediate && offset.Type() == IR::Type::U32
+-                                             ? offset.U32()
+-                                             : 0u;
+-                const auto arg_opcode = [&](std::size_t n) -> std::string_view {
+-                    if (!source || n >= source->NumArgs()) {
+-                        return "none";
+-                    }
+-                    const IR::Inst* const operand = source->Arg(n).TryInst();
+-                    return operand ? magic_enum::enum_name(operand->GetOpcode())
+-                                   : "immediate";
+-                };
+-                LOG_WARNING(Render_Recompiler,
+-                            "SRT_UNRESOLVED_PROVENANCE shader={:#x} stage={} "
+-                            "pointer_op={} read_op={} offset_op={} "
+-                            "offset_uniform={} offset_immediate={} offset_dw={} "
+-                            "dependency_slot={} child0={} child1={}",
+-                            info.pgm_hash, static_cast<u32>(info.hw_stage), pointer_op,
+-                            read_op, offset_op, IsHostUniformSrtOffset(offset),
+-                            immediate, immediate_dw, dependency_slot,
+-                            arg_opcode(0), arg_opcode(1));
+-                ++recorded;
+-            }
+-            if (recorded >= 16) {
+-                break;
+-            }
++        for (const auto& event : pass_info.blocked_reads) {
++            if (recorded >= 64) break;
++            std::unordered_set<const IR::Inst*> seen;
++            const auto opcode = [](const IR::Inst* inst) -> std::string_view {
++                return inst ? magic_enum::enum_name(inst->GetOpcode()) : "none";
++            };
++            const auto chain = DescribeSrtOffset(event.source_offset, 0, seen);
++            const bool uniform = IsHostUniformSrtOffset(event.source_offset);
++            LOG_WARNING(Render_Recompiler,
++                        "SRT_ACTUAL_BLOCKER shader={:#x} stage={} reason={} "
++                        "ptr_op={} read_op={} read_flat={} uniform={} chain={}",
++                        info.pgm_hash, static_cast<u32>(info.hw_stage), event.reason,
++                        opcode(event.pointer), opcode(event.read),
++                        event.read && (event.read->GetOpcode() == IR::Opcode::ReadConst ||
++                                       event.read->GetOpcode() == IR::Opcode::ReadConstBuffer)
++                            ? GetFlatbufOffset(event.read) : 0,
++                        uniform, chain);
++            ++recorded;
+         }
+         LOG_INFO(Render_Recompiler,
+-                 "SRT_UNRESOLVED_SUMMARY shader={:#x} stage={} "
+-                 "pending={} root_count={} reported={} new_words={}",
+-                 info.pgm_hash, static_cast<u32>(info.hw_stage),
+-                 schedule.pending, pass_info.srt_roots.size(), recorded,
+-                 schedule.new_words);
++                 "SRT_ACTUAL_BLOCKERS_SUMMARY shader={:#x} roots={} pending={} "
++                 "blocked={} emitted={} dynamic={} rounds={}",
++                 info.pgm_hash, pass_info.srt_roots.size(), schedule.pending,
++                 recorded, schedule.new_words, pass_info.dynamic_srt_reads,
++                 schedule.rounds);
+     }
+     LOG_DEBUG(Render_Recompiler,
+               "SRT dependency schedule: rounds={} words={} dynamic_reads={}",
+diff --git a/src/shader_recompiler/ir/passes/srt_dependency_codegen.inc b/src/shader_recompiler/ir/passes/srt_dependency_codegen.inc
+--- a/src/shader_recompiler/ir/passes/srt_dependency_codegen.inc
++++ b/src/shader_recompiler/ir/passes/srt_dependency_codegen.inc
+@@ -12,6 +12,7 @@
+             const auto* canonical = pass_info.DeduplicateInstruction(subtree);
+             const u16 offset = GetFlatbufOffset(canonical);
+             if (offset == 0) {
++                RecordBlockedSrtRead(pass_info, "PARENT_FLATBUF_UNASSIGNED", subtree, subtree, off_dw);
+                 ++pass_info.pending_srt_reads;
+                 return;
+             }
+@@ -24,6 +25,7 @@
+     }
+     // A cyclic pointer graph must not recurse indefinitely or fabricate a read.
+     if (!pass_info.active_srt_pointers.insert(subtree).second) {
++        RecordBlockedSrtRead(pass_info, "CYCLIC_POINTER_CHAIN", subtree, subtree, off_dw);
+         ++pass_info.pending_srt_reads;
+         return;
+     }
+@@ -31,6 +33,7 @@
+     if (!PushPtr(c, pass_info, off_dw)) {
+         c.setSize(pointer_checkpoint);
+         pass_info.active_srt_pointers.erase(subtree);
++        RecordBlockedSrtRead(pass_info, "POINTER_OFFSET_CODEGEN_FAILED", subtree, subtree, off_dw);
+         ++pass_info.pending_srt_reads;
+         return;
+     }
+@@ -51,6 +54,7 @@
+             return SrtReadAttempt::Unsupported;
+         }
+         if (pass_info.dst_off_dw == std::numeric_limits<u16>::max()) {
++            RecordBlockedSrtRead(pass_info, "FLATBUF_CAPACITY_EXCEEDED", subtree, use, src_off_dw);
+             return SrtReadAttempt::Deferred;
+         }
+         const size_t checkpoint = c.getSize();
+@@ -59,6 +63,7 @@
+         } else {
+             if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
+                 c.setSize(checkpoint);
++                RecordBlockedSrtRead(pass_info, "READ_OFFSET_PARENT_UNRESOLVED", subtree, use, src_off_dw);
+                 return SrtReadAttempt::Deferred;
+             }
+             c.shl(r10d, 2);
