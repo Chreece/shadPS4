@@ -13,6 +13,31 @@
 #include "instructions.hpp"
 #include "translator.hpp"
 
+// No Vulkan device is created by this test. Assert the translated shader's
+// descriptor contract before any hardware test attempts a dispatch.
+TEST(GcnHarnessLayout, AddF32ExposesSeparateOutputAndFlatbufBindings) {
+    const auto spirv = TranslateToSpirv(
+        VOP2(OpcodeVOP2::V_ADD_F32, VOperand8::V0, SOperand9::V0, VOperand8::V1).Get());
+    ASSERT_GE(spirv.size(), 5U);
+    bool output_binding{};
+    bool flatbuf_binding{};
+    for (size_t i = 5; i < spirv.size();) {
+        const u32 opcode_word = spirv[i];
+        const u32 words = opcode_word >> 16;
+        ASSERT_GE(words, 1U);
+        ASSERT_LE(i + words, spirv.size());
+        if (static_cast<spv::Op>(opcode_word & 0xffffU) == spv::Op::OpDecorate &&
+            words >= 4U &&
+            spirv[i + 2] == static_cast<u32>(spv::Decoration::Binding)) {
+            output_binding |= spirv[i + 3] == 0U;
+            flatbuf_binding |= spirv[i + 3] == 1U;
+        }
+        i += words;
+    }
+    EXPECT_TRUE(output_binding);
+    EXPECT_TRUE(flatbuf_binding);
+}
+
 class GcnTest : public ::testing::Test {
 protected:
     void SetUp() override {}
