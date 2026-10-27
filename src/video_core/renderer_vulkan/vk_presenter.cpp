@@ -986,7 +986,7 @@ void Presenter::CopyStartupReadback(const Frame* frame, vk::CommandBuffer cmdbuf
                            {}, {}, host_barrier, image_barrier);
 }
 
-void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {
+bool Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {
     static std::atomic<u64> host_present_calls{};
     const u64 host_seq =
         is_game_frame ? 0 : host_present_calls.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -1043,7 +1043,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                          host_seq);
             }
             release_skipped_frame();
-            return;
+            return false;
         }
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
     }
@@ -1061,15 +1061,16 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                          host_seq);
             }
             release_skipped_frame();
-            return;
+            return false;
         }
         if (!swapchain.NeedsRecreation()) {
             if (trace_guest) {
                 LOG_INFO(Frontend, "VIDEO_FLIP_STAGE stage=guest_acquire_timeout count={}",
                          guest_seq);
             }
-            release_skipped_frame();
-            return;
+            // No swapchain image was obtained. Keep the guest-owned frame
+            // out of the free pool and retry its original flip next vblank.
+            return false;
         }
         if (trace_guest) {
             LOG_INFO(Frontend, "VIDEO_FLIP_STAGE stage=guest_recreate_begin count={}", guest_seq);
@@ -1080,9 +1081,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                      guest_seq);
         }
         if (!swapchain.AcquireNextImage()) {
-            LOG_WARNING(Render_Vulkan, "Skipping frame after swapchain recreation");
-            release_skipped_frame();
-            return;
+            LOG_WARNING(Render_Vulkan, "Deferring flip after swapchain recreation");
+            return false;
         }
     }
 
@@ -1382,6 +1382,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     if (actual_guest_flip) {
         DebugState.IncFlipFrameNum();
     }
+    return true;
 }
 
 Frame* Presenter::TryGetRenderFrameForHostIdle() {
