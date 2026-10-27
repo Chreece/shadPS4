@@ -1009,6 +1009,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                      guest_seq, is_reusing_frame, is_game_frame);
         }
     }
+    const bool trace_guest =
+        guest_seq != 0 && Libraries::VideoOut::ShouldTraceVideoFlip(guest_seq);
     // Free the frame for reuse
     const auto free_frame = [&] {
         if (!is_reusing_frame) {
@@ -1022,7 +1024,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         }
     };
 
-    const auto release_skipped_host_frame = [&] {
+    const auto release_skipped_frame = [&] {
         const auto reset_result = instance.GetDevice().resetFences(frame->present_done);
         ASSERT_MSG(reset_result == vk::Result::eSuccess,
                    "Cannot reset skipped host frame fence: {}", vk::to_string(reset_result));
@@ -1040,7 +1042,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                 LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=resize_deferred count={}",
                          host_seq);
             }
-            release_skipped_host_frame();
+            release_skipped_frame();
             return;
         }
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
@@ -1049,26 +1051,46 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     if (trace_host) {
         LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=acquire_begin count={}", host_seq);
     }
+    if (trace_guest) {
+        LOG_INFO(Frontend, "VIDEO_FLIP_STAGE stage=guest_acquire_begin count={}", guest_seq);
+    }
     if (!swapchain.AcquireNextImage(is_game_frame)) {
         if (!is_game_frame) {
             if (trace_host) {
                 LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=acquire_skipped count={}",
                          host_seq);
             }
-            release_skipped_host_frame();
+            release_skipped_frame();
             return;
         }
+        if (!swapchain.NeedsRecreation()) {
+            if (trace_guest) {
+                LOG_INFO(Frontend, "VIDEO_FLIP_STAGE stage=guest_acquire_timeout count={}",
+                         guest_seq);
+            }
+            release_skipped_frame();
+            return;
+        }
+        if (trace_guest) {
+            LOG_INFO(Frontend, "VIDEO_FLIP_STAGE stage=guest_recreate_begin count={}", guest_seq);
+        }
         swapchain.Recreate(window.GetWidth(), window.GetHeight());
+        if (trace_guest) {
+            LOG_INFO(Frontend, "VIDEO_FLIP_STAGE stage=guest_recreate_returned count={}",
+                     guest_seq);
+        }
         if (!swapchain.AcquireNextImage()) {
-            // User resizes the window too fast and GPU can't keep up. Skip this frame.
-            LOG_WARNING(Render_Vulkan, "Skipping frame!");
-            free_frame();
+            LOG_WARNING(Render_Vulkan, "Skipping frame after swapchain recreation");
+            release_skipped_frame();
             return;
         }
     }
 
     if (trace_host) {
         LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=acquire_ready count={}", host_seq);
+    }
+    if (trace_guest) {
+        LOG_INFO(Frontend, "VIDEO_FLIP_STAGE stage=guest_acquire_ready count={}", guest_seq);
     }
 
     // Reset fence for queue submission. Do it here instead of GetRenderFrame() because we may
@@ -1080,6 +1102,9 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 
     if (trace_host) {
         LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=imgui_begin count={}", host_seq);
+    }
+    if (trace_guest) {
+        LOG_INFO(Frontend, "VIDEO_FLIP_STAGE stage=guest_imgui_begin count={}", guest_seq);
     }
     ImGuiID dockId = ImGui::Core::NewFrame(is_reusing_frame);
 
@@ -1305,7 +1330,13 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     if (trace_host) {
         LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=flush_begin count={}", host_seq);
     }
+    if (trace_guest) {
+        LOG_INFO(Frontend, "VIDEO_FLIP_STAGE stage=guest_flush_begin count={}", guest_seq);
+    }
     scheduler.Flush(info);
+    if (trace_guest) {
+        LOG_INFO(Frontend, "VIDEO_FLIP_STAGE stage=guest_flush_returned count={}", guest_seq);
+    }
     if (trace_host) {
         LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=flush_returned count={}", host_seq);
     }
@@ -1316,6 +1347,10 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         if (trace_host) {
             LOG_INFO(Frontend, "VIDEOOUT_HOST_PRESENT stage=queue_present_begin count={}",
                      host_seq);
+        }
+        if (trace_guest) {
+            LOG_INFO(Frontend, "VIDEO_FLIP_STAGE stage=guest_queue_present_begin count={}",
+                     guest_seq);
         }
         const bool presented = swapchain.Present();
         if (trace_host) {
@@ -1341,6 +1376,9 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     }
 
     free_frame();
+    if (trace_guest) {
+        LOG_INFO(Frontend, "VIDEO_FLIP_STAGE stage=guest_released count={}", guest_seq);
+    }
     if (actual_guest_flip) {
         DebugState.IncFlipFrameNum();
     }
