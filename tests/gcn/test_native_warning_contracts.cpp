@@ -13,6 +13,7 @@
 #include "core/libraries/np/np_types.h"
 #include "video_core/buffer_cache/fault_list_limits.h"
 #include "video_core/buffer_cache/fault_ring_reuse.h"
+#include "core/libraries/videoout/video_flip_trace.h"
 #include "video_core/renderer_vulkan/vk_pm4_acquire_memory.h"
 
 TEST(NativeWarningContracts, FullLengthNpIdNeedsNoInlineNull) {
@@ -154,4 +155,26 @@ TEST(Pm4AcquireMemBarrier, DependencyNeedsNoHostSideWaitOrPerTitleOverrides) {
         barrier.srcStageMask & vk::PipelineStageFlagBits2::eHost));
     EXPECT_FALSE(static_cast<bool>(
         barrier.dstStageMask & vk::PipelineStageFlagBits2::eHost));
+}
+
+TEST(VideoOutFirstFrameTrace, NeverLogBeforeFirstActualEvent) {
+    EXPECT_FALSE(Libraries::VideoOut::ShouldTraceVideoFlip(0));
+}
+
+TEST(VideoOutFirstFrameTrace, FirstFourPowerOfTwoEventsAreObserved) {
+    for (const u64 n : {1ULL, 2ULL, 4ULL, 8ULL}) {
+        EXPECT_TRUE(Libraries::VideoOut::ShouldTraceVideoFlip(n));
+    }
+}
+
+TEST(VideoOutFirstFrameTrace, NoExtraEventsInBetween) {
+    for (const u64 n : {3ULL, 5ULL, 6ULL, 7ULL, 9ULL, 15ULL, 127ULL}) {
+        EXPECT_FALSE(Libraries::VideoOut::ShouldTraceVideoFlip(n));
+    }
+}
+
+TEST(VideoOutFirstFrameTrace, LargePowerOfTwoStaysObservableWithoutUnboundedLogging) {
+    EXPECT_TRUE(Libraries::VideoOut::ShouldTraceVideoFlip(1ULL << 31));
+    EXPECT_TRUE(Libraries::VideoOut::ShouldTraceVideoFlip(1ULL << 63));
+    EXPECT_FALSE(Libraries::VideoOut::ShouldTraceVideoFlip(~u64{0}));
 }
