@@ -444,10 +444,20 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         return false;
     }
 
-    set_write_index = 0;
     set_writes.clear();
     buffer_infos.clear();
     image_infos.clear();
+
+    // GoT-proven descriptor exactness: reserve only, never pre-fill Vulkan
+    // VkWriteDescriptorSet records whose pBufferInfo/pImageInfo is null.
+    size_t required_writes{};
+    for (const auto* stage : pipeline->GetStages()) {
+        if (stage) {
+            required_writes += stage->buffers.size() + stage->images.size() +
+                               stage->samplers.size();
+        }
+    }
+    set_writes.reserve(required_writes);
 
     bool uses_dma = false;
 
@@ -458,8 +468,6 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         if (!stage) {
             continue;
         }
-        set_writes.resize(set_writes.size() + stage->buffers.size() + stage->images.size() +
-                          stage->samplers.size());
         BindBuffers(*stage, binding, push_data);
         BindTextures(*stage, binding);
         uses_dma |= stage->uses_dma;
@@ -469,6 +477,36 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         buffer_cache.SynchronizeDmaBuffers();
     }
 
+    // Every descriptor declared in the pipeline layout must have exactly
+    // one fully emitted Vulkan write. GoT originally faulted inside RADV's
+    // vkCmdPushDescriptorSetKHR on a null pBufferInfo; do not send holes to
+    // the Vulkan driver.
+    if (set_writes.size() != required_writes) {
+        LOG_ERROR(Render_Vulkan,
+                  "Descriptor write count mismatch: expected={} emitted={}",
+                  required_writes, set_writes.size());
+        return false;
+    }
+    for (size_t i = 0; i < set_writes.size(); ++i) {
+        const auto& write = set_writes[i];
+        const auto type = write.descriptorType;
+        const bool is_buffer = type == vk::DescriptorType::eStorageBuffer;
+        const bool is_image = type == vk::DescriptorType::eSampledImage ||
+                              type == vk::DescriptorType::eStorageImage ||
+                              type == vk::DescriptorType::eSampler;
+        if (write.descriptorCount == 0 ||
+            (is_buffer && write.pBufferInfo == nullptr) ||
+            (is_image && write.pImageInfo == nullptr) ||
+            (!is_buffer && !is_image)) {
+            LOG_ERROR(Render_Vulkan,
+                      "Invalid Vulkan descriptor write: ordinal={} binding={} type={} count={} "
+                      "buffer_info={} image_info={}",
+                      i, write.dstBinding, static_cast<u32>(type), write.descriptorCount,
+                      static_cast<const void*>(write.pBufferInfo),
+                      static_cast<const void*>(write.pImageInfo));
+            return false;
+        }
+    }
     return true;
 }
 
@@ -902,7 +940,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             }
         }
 
-        auto& set_write = set_writes[set_write_index++];
+        auto& set_write = set_writes.emplace_back();
         set_write.dstSet = VK_NULL_HANDLE;
         set_write.dstBinding = binding.unified++;
         set_write.dstArrayElement = 0;
@@ -917,6 +955,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     const u32 first_image_idx = image_infos.size();
     // To emulate storing to explicit mip levels, build a descriptor array with each mip level.
     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
+    boost::container::small_vector<u8, 8> image_descriptor_is_storage;
 
     u32 num_images{};
     for (const auto& image_desc : stage.images) {
@@ -926,6 +965,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         if (tsharp.Address() == 0 || data_fmt == AmdGpu::DataFormat::FormatInvalid) {
             image_bindings[num_images++].image_id = {};
             image_descriptor_array_sizes.push_back(1);
+            image_descriptor_is_storage.push_back(image_desc.is_written);
             continue;
         }
 
@@ -938,6 +978,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                         static_cast<u32>(num_fmt));
             image_bindings[num_images++].image_id = {};
             image_descriptor_array_sizes.push_back(1);
+            image_descriptor_is_storage.push_back(image_desc.is_written);
             continue;
         }
 
@@ -974,6 +1015,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         }
 
         image_descriptor_array_sizes.push_back(num_bindings);
+        image_descriptor_is_storage.push_back(image_desc.is_written);
     }
 
     // Second pass to re-bind images that were updated after binding
@@ -1033,11 +1075,13 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     }
 
     u32 image_info_idx = first_image_idx;
-    u32 image_binding_idx = 0;
+    u32 image_index = 0;
     for (u32 array_size : image_descriptor_array_sizes) {
-        const auto& [_, desc] = image_bindings[image_binding_idx];
-        const bool is_storage = desc.type == VideoCore::TextureCache::BindingType::Storage;
-        auto& set_write = set_writes[set_write_index++];
+        // Even invalid image descriptors must keep their requested storage
+        // versus sampled mode: the old path reused an uninitialized/stale
+        // ImageDesc after rejecting an invalid T#.
+        const bool is_storage = image_descriptor_is_storage[image_index++] != 0;
+        auto& set_write = set_writes.emplace_back();
         set_write.dstSet = VK_NULL_HANDLE;
         set_write.dstBinding = binding.unified;
         set_write.dstArrayElement = 0;
@@ -1047,7 +1091,6 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         set_write.pImageInfo = &image_infos[image_info_idx];
 
         image_info_idx += array_size;
-        image_binding_idx += array_size;
         binding.unified += array_size;
     }
 
@@ -1068,7 +1111,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         const auto vk_sampler =
             texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base, sampler.is_depth);
         image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
-        auto& set_write = set_writes[set_write_index++];
+        auto& set_write = set_writes.emplace_back();
         set_write.dstSet = VK_NULL_HANDLE;
         set_write.dstBinding = binding.unified++;
         set_write.dstArrayElement = 0;
