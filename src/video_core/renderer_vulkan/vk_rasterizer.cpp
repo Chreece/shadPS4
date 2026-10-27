@@ -807,6 +807,27 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             }
         } else {
             const auto vsharp = desc.GetSharp(stage);
+            // GCN V# has a 32-bit NUM_RECORDS field: zero STRIDE means byte
+            // count, otherwise widen multiplication BEFORE the 32-bit return
+            // of GetSize(). Record even a wrapped-to-zero descriptor that the
+            // renderer would otherwise treat as null. Diagnostic only.
+            const u64 raw_declared_bytes = vsharp.stride == 0
+                ? static_cast<u64>(vsharp.num_records)
+                : static_cast<u64>(vsharp.stride) * vsharp.num_records;
+            if (raw_declared_bytes >= (1ull << 30) ||
+                raw_declared_bytes != vsharp.GetSize()) {
+                static std::atomic<u32> wide_buffer_reports{0};
+                if (wide_buffer_reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
+                    LOG_INFO(Render_Vulkan,
+                             "GuestBufferRange: shader={:#x} base={:#x} stride={} "
+                             "num_records={} decoded_bytes64={} existing_bytes32={} "
+                             "written={} formatted={}",
+                             stage.pgm_hash, static_cast<u64>(vsharp.base_address),
+                             static_cast<u32>(vsharp.stride), vsharp.num_records,
+                             raw_declared_bytes, vsharp.GetSize(),
+                             desc.is_written, desc.is_formatted);
+                }
+            }
             if (vsharp.base_address == 0 || vsharp.GetSize() == 0) {
                 buffer_infos.emplace_back(VK_NULL_HANDLE, 0, VK_WHOLE_SIZE);
             } else {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <vector>
 #include <magic_enum/magic_enum.hpp>
 
 #include "common/alignment.h"
@@ -10,6 +11,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/buffer_cache/sparse_allocation_ranges.h"
 #include "video_core/buffer_cache/memory_tracker.h"
 #include "video_core/buffer_cache/region_definitions.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
@@ -274,7 +276,7 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
 }
 
 void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_block) {
-    u32 resident_blocks{};
+    u64 resident_blocks{};
     IntervalList bind_ranges;
     resident_ranges.ForEachGap(first_block, last_block + 1, [&](u64 start, u64 end) {
         resident_blocks += end - start;
@@ -285,50 +287,80 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
         return;
     }
 
-    // Sparse arena buffers use shader device addresses, so their backing allocations must
-    // explicitly allow device-address use as well.
+    // Split PHYSICAL sparse backing, not the GCN guest descriptor, address,
+    // or logical Vulkan VkBuffer. Pack disjoint guest-VA gaps into the same
+    // allocation so thousands of tiny ranges do not exhaust VkDeviceMemory
+    // allocation count. All new pages remain fully resident as before.
+    constexpr u64 PreferredSparseAllocationBytes = 128ull * 1024 * 1024;
+    const u64 sparse_block_bytes = u64{1} << block_shift;
+    const u64 blocks_per_allocation =
+        SparseBlocksPerAllocation(sparse_block_bytes, PreferredSparseAllocationBytes);
     const vk::MemoryAllocateFlagsInfo alloc_flags = {
         .flags = vk::MemoryAllocateFlagBits::eDeviceAddress,
     };
-    const vk::MemoryAllocateInfo alloc_info = {
-        .pNext = &alloc_flags,
-        .allocationSize = resident_blocks << block_shift,
-        .memoryTypeIndex = arena_memory_type_index,
-    };
-    const auto device_memory = Vulkan::Check(instance.GetDevice().allocateMemory(alloc_info));
+
+    // Allocate all required memory before modifying resident_ranges or
+    // pending binds. vk::UniqueDeviceMemory releases partial plans on failure.
+    std::vector<vk::UniqueDeviceMemory> allocations;
+    for (u64 remaining = resident_blocks; remaining != 0;) {
+        const u64 blocks = std::min(remaining, blocks_per_allocation);
+        const vk::MemoryAllocateInfo alloc_info = {
+            .pNext = &alloc_flags,
+            .allocationSize = blocks << block_shift,
+            .memoryTypeIndex = arena_memory_type_index,
+        };
+        allocations.emplace_back(
+            Vulkan::Check(instance.GetDevice().allocateMemoryUnique(alloc_info)));
+        remaining -= blocks;
+    }
 
     boost::container::small_vector<vk::BufferCopy, 8> copies;
     const auto staging =
         staging_pool.Request(resident_blocks * sizeof(vk::DeviceAddress), MemoryType::HostUncached);
 
-    u64 memory_offset{};
     ArenaBinds* binds = BindsForArena(arena);
     auto* bda_addrs = reinterpret_cast<vk::DeviceAddress*>(staging.mapped);
+    u64 packed_blocks = 0;
     u64 offset = staging.offset;
     for (const auto& range : bind_ranges) {
-        Backing backing;
-        backing.start = range.start;
-        backing.end = range.end;
-        backing.memory = device_memory;
-        backing.offset = memory_offset >> block_shift;
-        resident_ranges.Add(backing);
+        ForEachSparseAllocationSegment(
+            range.start, range.end, packed_blocks, blocks_per_allocation,
+            [&](u64 start, u64 end, u64 allocation_index, u64 memory_block_offset) {
+                ASSERT(allocation_index < allocations.size());
+                Backing backing;
+                backing.start = start;
+                backing.end = end;
+                backing.memory = allocations[allocation_index].get();
+                backing.offset = memory_block_offset;
+                resident_ranges.Add(backing);
 
-        LOG_INFO(Render, "Making range start={}, end={} resident", backing.start, backing.end);
+                LOG_INFO(Render, "Making range start={}, end={} resident", start, end);
 
-        const auto& bind = binds->binds.emplace_back(vk::SparseMemoryBind{
-            .resourceOffset = (range.start << block_shift) - arena->cpu_addr,
-            .size = (range.end - range.start) << block_shift,
-            .memory = device_memory,
-            .memoryOffset = memory_offset,
-        });
-        memory_offset += bind.size;
+                const auto& bind = binds->binds.emplace_back(vk::SparseMemoryBind{
+                    .resourceOffset = (start << block_shift) - arena->cpu_addr,
+                    .size = (end - start) << block_shift,
+                    .memory = backing.memory,
+                    .memoryOffset = memory_block_offset << block_shift,
+                });
 
-        for (u32 block = 0; block < bind.size; block += block_size) {
-            *(bda_addrs++) = arena->BufferDeviceAddress() + bind.resourceOffset + block;
-        }
-        const u64 copy_size = (backing.end - backing.start) * sizeof(vk::DeviceAddress);
-        copies.emplace_back(offset, backing.start * sizeof(vk::DeviceAddress), copy_size);
-        offset += copy_size;
+                // The BDA translation table always contains the same original
+                // sparse VkBuffer GPU virtual address, independent of the
+                // backing allocation index or its local memory offset.
+                for (u64 block = 0; block < bind.size; block += sparse_block_bytes) {
+                    *(bda_addrs++) =
+                        arena->BufferDeviceAddress() + bind.resourceOffset + block;
+                }
+                const u64 copy_size = (end - start) * sizeof(vk::DeviceAddress);
+                copies.emplace_back(offset, start * sizeof(vk::DeviceAddress), copy_size);
+                offset += copy_size;
+            });
+    }
+    ASSERT(packed_blocks == resident_blocks);
+
+    // As in the original resident_ranges implementation, physical backing
+    // remains owned for the lifetime of the sparse Vulkan arena/device.
+    for (auto& allocation : allocations) {
+        (void)allocation.release();
     }
 
     staging.Flush();
