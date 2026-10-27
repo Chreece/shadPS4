@@ -93,16 +93,29 @@ git -C "$CLEAN" worktree add --detach "$SRC" "$C925" > "$OUT/new-worktree.log" 2
 report DOWNLOAD_PINNED_GENERIC_SOURCE_PATCHES
 for pr in 74 75 77 78; do
   patch="$OUT/patches/PR$pr.patch"
-  curl -4 --http1.1 -fLsS --retry 3 \
-   "https://raw.githubusercontent.com/Chreece/shadPS4/$PATCH_COMMIT/scripts/patchsets/c925-pr$(if [[ "$pr" == 74 ]]; then printf adapted; else printf generic; fi)-source.patch" \
-   -o "$patch" || { STATUS=PATCH_DOWNLOAD_FAILED; exit 7; }
+  # A prior runner accidentally used c925-pradapted-source.patch or
+  # c925-prgeneric-source.patch, omitting the actual PR number. Use the
+  # exact separately verified files and full Git blob IDs.
   case "$pr" in
-   74) expected=91f4857007e579933cf88fd27a51418a9b63c312 ;;
-   75) expected=26f6e58b238ccccbed011558c47acb18af6f8178 ;;
-   77) expected=89d866b761857e5f47e3998db07af52a61463ab1 ;;
-   78) expected=011f50c42471c79a2187fa26a784b114c676c3ff ;;
+   74) file=c925-pr74-adapted-source.patch; expected=91f4857007e579933cf88fd27a51418a9b63c312 ;;
+   75) file=c925-pr75-generic-source.patch; expected=26f6e58b238ccccbed011558c47acb18af6f8178 ;;
+   77) file=c925-pr77-generic-source.patch; expected=89d866b761857e5f47e3998db07af52a61463ab1 ;;
+   78) file=c925-pr78-generic-source.patch; expected=011f50c42471c79a2187fa26a784b114c676c3ff ;;
   esac
-  [[ "$(git hash-object "$patch")" == "$expected" ]] || { STATUS=PATCH_HASH_MISMATCH; exit 7; }
+  url="https://raw.githubusercontent.com/Chreece/shadPS4/$PATCH_COMMIT/scripts/patchsets/$file"
+  printf 'PATCH=%s URL=%s EXPECTED_BLOB=%s\n' "$pr" "$url" "$expected" >> "$OUT/patch-download-manifest.txt"
+  curl -4 --http1.1 -fLsS --retry 3 "$url" -o "$patch" > "$OUT/patch-fetch-$pr.log" 2>&1 || {
+    STATUS=PATCH_DOWNLOAD_FAILED
+    cat "$OUT/patch-fetch-$pr.log" >&2
+    exit 7
+  }
+  actual="$(git hash-object "$patch")"
+  if [[ "$actual" != "$expected" ]]; then
+    STATUS=PATCH_HASH_MISMATCH
+    printf 'PATCH=%s EXPECTED_BLOB=%s ACTUAL_BLOB=%s\n' "$pr" "$expected" "$actual" |
+      tee "$OUT/patch-hash-mismatch-$pr.txt" >&2
+    exit 7
+  fi
 done
 # Patches were taken from exactly these public source ancestry points.
 for step in 74 75 77 78; do
