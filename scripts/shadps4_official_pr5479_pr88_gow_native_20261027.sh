@@ -38,13 +38,14 @@ fi
 TAG="$2"
 [[ "$TAG" =~ ^gow-official-indirect-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || exit 3
 WORK="$TESTS/playtest-$TAG"
-REPORT="$WORK/evidence"
+EVIDENCE="$WORK/evidence"
+REPORT="$EVIDENCE/game"
 ARCHIVE="$LOGS/$TAG.tar.gz"
 STATE="PREFLIGHT"
 RUN_EXIT=0
 PROTECTED="$ROOT/GodOfWarRagnarok/build/shadps4"
 PROTECTED_BEFORE=""
-mkdir -p "$REPORT"
+mkdir -p "$EVIDENCE"
 finish() {
     local rc=$?
     trap - EXIT
@@ -59,13 +60,13 @@ finish() {
       echo "SCREENSHOTS_AND_REAL_GUEST_FRAME_NOT_INFERRED_FROM_HOST_FPS=YES"
       echo "DISPLAY_SUNSHINE_XORG_ESDE_NETWORK=NOT_MODIFIED_BY_RUNNER"
       echo "SSH_SESSION=OPEN"
-    } > "$REPORT/result.txt"
+    } > "$EVIDENCE/result.txt"
     if [[ -n "$PROTECTED_BEFORE" && -f "$PROTECTED" ]]; then
         PROTECTED_AFTER="$(sha256sum "$PROTECTED" | awk '{print $1}')"
-        echo "PROTECTED_BEFORE=$PROTECTED_BEFORE" >> "$REPORT/result.txt"
-        echo "PROTECTED_AFTER=$PROTECTED_AFTER" >> "$REPORT/result.txt"
+        echo "PROTECTED_BEFORE=$PROTECTED_BEFORE" >> "$EVIDENCE/result.txt"
+        echo "PROTECTED_AFTER=$PROTECTED_AFTER" >> "$EVIDENCE/result.txt"
         if [[ "$PROTECTED_BEFORE" != "$PROTECTED_AFTER" ]]; then
-            echo "WARNING_PROTECTED_ELF_CHANGED_EXTERNALLY" >> "$REPORT/result.txt"
+            echo "WARNING_PROTECTED_ELF_CHANGED_EXTERNALLY" >> "$EVIDENCE/result.txt"
         fi
     fi
     # Preserve the central append-only diary even if preflight or gameplay fails.
@@ -134,14 +135,14 @@ grep -Fq 'eIndirectCommandRead' \
     "$SRC/src/video_core/renderer_vulkan/vk_indirect_read_sync.h" || exit 4
 grep -Fq 'DispatchHelper' \
     "$SRC/src/video_core/renderer_vulkan/vk_dispatch_helper.cpp" || exit 4
-ldd "$BIN" > "$REPORT/ldd.txt"
-if grep -q 'not found' "$REPORT/ldd.txt"; then
-    echo "NATIVE_DEPENDENCY_MISSING"; grep 'not found' "$REPORT/ldd.txt"; exit 4
+ldd "$BIN" > "$EVIDENCE/ldd.txt"
+if grep -q 'not found' "$EVIDENCE/ldd.txt"; then
+    echo "NATIVE_DEPENDENCY_MISSING"; grep 'not found' "$EVIDENCE/ldd.txt"; exit 4
 fi
-sha256sum "$BIN" > "$REPORT/candidate-elf.sha256"
-git -C "$SRC" log -1 --format='%H %s' > "$REPORT/source.txt"
+sha256sum "$BIN" > "$EVIDENCE/candidate-elf.sha256"
+git -C "$SRC" log -1 --format='%H %s' > "$EVIDENCE/source.txt"
 [[ ! -e "$PROTECTED" ]] || PROTECTED_BEFORE="$(sha256sum "$PROTECTED" | awk '{print $1}')"
-if command -v pgrep >/dev/null && pgrep -x shadps4 > "$REPORT/other-shadps4-pids.txt"; then
+if command -v pgrep >/dev/null && pgrep -x shadps4 > "$EVIDENCE/other-shadps4-pids.txt"; then
     echo "ANOTHER_SHADPS4_ALREADY_RUNNING_NO_GAME"; exit 4
 fi
 STATE="VERIFY_EXISTING_X11_DISPLAY_NO_MUTATION"
@@ -149,7 +150,7 @@ DISPLAY_OK=""
 for candidate in "$(printenv DISPLAY || true)" :0 :1 :2; do
     [[ -n "$candidate" ]] || continue
     if DISPLAY="$candidate" timeout 4 xdpyinfo -display "$candidate" \
-         > "$REPORT/xdpyinfo.txt" 2>&1; then
+         > "$EVIDENCE/xdpyinfo.txt" 2>&1; then
         DISPLAY_OK="$candidate"; break
     fi
 done
@@ -160,7 +161,7 @@ echo "DISPLAY_REUSED=$DISPLAY_OK"
   echo "DISPLAY=$DISPLAY_OK"
   pgrep -ax sunshine || true
   pgrep -ax Xorg || true
-} > "$REPORT/display-processes-before.txt"
+} > "$EVIDENCE/display-processes-before.txt"
 STATE="STAGE_TWO_VERIFIED_GAME_OBSERVER_AND_VRAM_GUARD"
 OBSERVER="$WORK/native-observer.py"
 OLLAMA="$WORK/ollama-vram-session.py"
@@ -242,7 +243,7 @@ set +e
 python3 -B "$OLLAMA" --observer "$OBSERVER" \
   --binary "$BIN" --sha256 "$BINARY_SHA" --game "$GAME" \
   --cwd "$WORK" --report "$REPORT" --seconds 118 \
-  --state "$REPORT/ollama-session.json" --minimum-gib 8
+  --state "$EVIDENCE/ollama-session.json" --minimum-gib 8
 RUN_EXIT=$?
 set -e
 echo "NATIVE_OBSERVER_EXIT=$RUN_EXIT"
@@ -250,7 +251,7 @@ echo "NATIVE_OBSERVER_EXIT=$RUN_EXIT"
   echo "DISPLAY=$DISPLAY"
   pgrep -ax sunshine || true
   pgrep -ax Xorg || true
-} > "$REPORT/display-processes-after.txt"
+} > "$EVIDENCE/display-processes-after.txt"
 if [[ -f "$REPORT/console-excerpt.log" ]]; then
     grep -Ei 'DispatchIndirect|indirect|device.lost|radv|gpuvm|VkResult|Compute shader|shader.*0x23e7d715|vulkan|semaphore|flip|present' \
       "$REPORT/console-excerpt.log" | head -n 220 \
