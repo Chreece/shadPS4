@@ -1,4 +1,5 @@
 diff --git a/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp b/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp
+index 6e37fea4d258708b0061371b7fd2341cae6cd85b..bec5e7eb1d38758f472f824ab71080e57975a501 100644
 --- a/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp
 +++ b/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp
 @@ -196,32 +196,98 @@ Id EmitImageSampleImplicitLodIndexed(
@@ -122,6 +123,7 @@ diff --git a/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp b/src/shad
  
  Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
 diff --git a/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp b/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
+index d065f8b786f73fadadaff10c8f7d30460e1082a2..867687723c1374892ceb6ac771caeed0ef2bd290 100644
 --- a/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
 +++ b/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
 @@ -14,6 +14,7 @@
@@ -172,6 +174,7 @@ diff --git a/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp b/src/sh
      if (std::ranges::any_of(info.images,
                              [](const ImageResource& image) { return image.is_atomic; })) {
 diff --git a/src/shader_recompiler/backend/spirv/spirv_emit_context.h b/src/shader_recompiler/backend/spirv/spirv_emit_context.h
+index 13de0f90e29a632d50c254f1be6f07fc5acfe0fd..2add3b031d53a8d12d425348d37d3117adab2fc9 100644
 --- a/src/shader_recompiler/backend/spirv/spirv_emit_context.h
 +++ b/src/shader_recompiler/backend/spirv/spirv_emit_context.h
 @@ -302,14 +302,19 @@ class EmitContext final : public Sirit::Module {
@@ -195,6 +198,7 @@ diff --git a/src/shader_recompiler/backend/spirv/spirv_emit_context.h b/src/shad
  
      enum class PointerType : u32 {
 diff --git a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+index 2613e849dc5948814611c993f4e763961b209ded..85276fe467aa0e7aec96e0d59d6c4341ea393381 100644
 --- a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
 +++ b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
 @@ -121,6 +121,7 @@ class Descriptors {
@@ -284,6 +288,7 @@ diff --git a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp b/src/sh
              PatchGlobalDataShareAccess(inst, info, descriptors, profile);
          }
 diff --git a/src/shader_recompiler/profile.h b/src/shader_recompiler/profile.h
+index 1aab092e903cad56bcd7089f0375b66325845384..ebd307525a04411e41d97704c74f0ecedf6f8d60 100644
 --- a/src/shader_recompiler/profile.h
 +++ b/src/shader_recompiler/profile.h
 @@ -14,6 +14,9 @@ struct Profile {
@@ -307,6 +312,7 @@ diff --git a/src/shader_recompiler/profile.h b/src/shader_recompiler/profile.h
      bool supports_native_cube_calc{};
      bool supports_trinary_minmax{};
 diff --git a/src/shader_recompiler/resource.h b/src/shader_recompiler/resource.h
+index 4962c32c266e2c0c4cec8694174ebb630d485e76..b953c39bf69b0a74b1464113aa29e6aaca65ccd8 100644
 --- a/src/shader_recompiler/resource.h
 +++ b/src/shader_recompiler/resource.h
 @@ -139,6 +139,7 @@ struct ImageResource {
@@ -333,6 +339,7 @@ diff --git a/src/shader_recompiler/resource.h b/src/shader_recompiler/resource.h
  using SamplerResourceList = boost::container::static_vector<SamplerResource, NUM_SAMPLERS>;
  
 diff --git a/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp b/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
+index 27566189e5fa0ace05a1a9500f00134215abc223..5a53c8736ccce110f35e28ad07e609ff336d1553 100644
 --- a/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
 +++ b/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
 @@ -48,14 +48,17 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
@@ -362,6 +369,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp b/src/video_
      for (const auto& sampler : info->samplers) {
          const u32 count = sampler.NumBindings(*info);
 diff --git a/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp b/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
+index ef4a17f98aa9accc43f0cee7f24070f58d4496bd..cb097bc33077339e539f78c82b850d4901adfa9a 100644
 --- a/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
 +++ b/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
 @@ -499,14 +499,17 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
@@ -391,6 +399,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp b/src/video
          for (const auto& sampler : stage->samplers) {
              const u32 count = sampler.NumBindings(*stage);
 diff --git a/src/video_core/renderer_vulkan/vk_instance.cpp b/src/video_core/renderer_vulkan/vk_instance.cpp
+index cf57345e25bb83c6ae609ee309fe3a7df95cc9fe..b5ce31329bd7dddf3775aac62d30beab24fa0925 100644
 --- a/src/video_core/renderer_vulkan/vk_instance.cpp
 +++ b/src/video_core/renderer_vulkan/vk_instance.cpp
 @@ -448,10 +448,12 @@ bool Instance::CreateDevice() {
@@ -409,6 +418,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_instance.cpp b/src/video_core/ren
                  .shaderFloat64 = features.shaderFloat64,
                  .shaderInt64 = features.shaderInt64,
 diff --git a/src/video_core/renderer_vulkan/vk_instance.h b/src/video_core/renderer_vulkan/vk_instance.h
+index 0297d2aefc0f84cc4360018c3fb4c8046a88fffb..6e809cd5931d750fecb1991e7ee9b157c0d51ef2 100644
 --- a/src/video_core/renderer_vulkan/vk_instance.h
 +++ b/src/video_core/renderer_vulkan/vk_instance.h
 @@ -223,6 +223,10 @@ class Instance {
@@ -423,6 +433,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_instance.h b/src/video_core/rende
      bool IsAmdGcnShaderSupported() const {
          return amd_gcn_shader;
 diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+index 525d37e8f8a0eff474268c7bd47c157d5438f539..9d7c4b4f415980330480f9daeb2ae61bfddc364e 100644
 --- a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
 +++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
 @@ -49,6 +49,19 @@ static u32 GuestIndexedImageLimit(const Instance& instance) {
@@ -480,6 +491,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp b/src/video_co
          for (const auto& sampler : info.samplers) {
              binding.unified += sampler.NumBindings(info);
 diff --git a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+index e35990de9868414dac8b122e4a5ce25edd0e3171..06fcf57cee7956c9caceccf252478980a302187f 100644
 --- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
 +++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
 @@ -12,8 +12,8 @@
@@ -494,6 +506,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp b/src/
  } // namespace Serialization
  
 diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+index 5ec64b168a7c944b420ddf75833385144fcce6bf..4862b6d5d7230d7595e7caf868b527c29999db85 100644
 --- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
 +++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
 @@ -1,6 +1,7 @@
@@ -717,6 +730,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/r
          set_write.dstSet = VK_NULL_HANDLE;
          set_write.dstBinding = binding.unified;
 diff --git a/src/video_core/texture_cache/sampler.cpp b/src/video_core/texture_cache/sampler.cpp
+index f3c7beac997fa2b32428081114cd75f0a1ee40a5..779e9f324daee762887cc50e8caff89384281413 100644
 --- a/src/video_core/texture_cache/sampler.cpp
 +++ b/src/video_core/texture_cache/sampler.cpp
 @@ -7,6 +7,35 @@
