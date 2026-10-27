@@ -161,14 +161,18 @@ if cmake -S "$SRC" -B "$TESTBUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
           >"$EVIDENCE/configure-tests.log" 2>&1 &&
    nice -n 10 cmake --build "$TESTBUILD" --target shadps4_gcn_test --parallel 2 \
           >"$EVIDENCE/build-tests.log" 2>&1; then
-    ctest --test-dir "$TESTBUILD" --output-on-failure --no-tests=error \
-        -R 'Srt|Shader|Buffer|Compute|Dispatch|Gcn|GCN' \
-        >"$EVIDENCE/ctest.txt" 2>&1 || {
-            tail -120 "$EVIDENCE/ctest.txt"
+    # Run the built GCN executable itself: CTest also lists settings/NGS2
+    # targets that are intentionally not built in this isolated check.
+    [[ -x "$TESTBUILD/tests/shadps4_gcn_test" ]] || {
+        echo "GCN_TEST_BINARY_MISSING"; exit 9;
+    }
+    "$TESTBUILD/tests/shadps4_gcn_test" --gtest_brief=1 \
+        >"$EVIDENCE/gcn-tests.txt" 2>&1 || {
+            tail -120 "$EVIDENCE/gcn-tests.txt"
             echo "NATIVE_BUILD_PASS_GCN_TESTS_FAIL"
             exit 9
         }
-    echo "GCN_SELECTED_TESTS=PASS"
+    echo "GCN_ALL_TESTS=PASS"
 else
     echo "GCN_TESTS_CONFIGURE_OR_BUILD_FAIL" \
         | tee "$EVIDENCE/gcn-tests-status.txt"
