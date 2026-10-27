@@ -111,12 +111,45 @@ for c in git cmake ninja sha256sum flock python3 curl timeout nice tar ldd; do
     command -v "$c" >/dev/null || { echo "MISSING_COMMAND=$c"; exit 3; }
 done
 
-# Avoid a third duplicate if the older queued PR90 worker has started.
-if ps -eo pid,args | grep -E '[s]hadps4_gow_hle_stack_align_native_20261027.sh --worker' \
-    > "$EVIDENCE/other-pr90-workers.txt"; then
-    echo "ANOTHER_PR90_BUILD_WORKER_ACTIVE; REFUSE_DUPLICATE_RECOVERY"
-    cat "$EVIDENCE/other-pr90-workers.txt"
-    exit 3
+# Never interfere with the older PR90 worker. It may already be building
+# or running a real game. Wait for its own conclusion before touching a tree.
+# The check is process-specific, rather than blindly treating open lock files
+# as lock ownership. This script runs from a unique local pathname.
+STATE="AWAIT_EXISTING_PR90_WORKER_RESULT"
+echo "STAGE=$STATE"
+WAIT_STARTED=$SECONDS
+WAIT_LIMIT=3600
+while ps -eo pid,args | grep -E '[s]hadps4_gow_hle_stack_align_native_20261027.sh --worker' \
+    > "$EVIDENCE/other-pr90-workers.txt"; do
+    ELAPSED=$((SECONDS - WAIT_STARTED))
+    echo "PR90_PREEXISTING_WORKER_ACTIVE_QUEUE_SECONDS=$ELAPSED"
+    if (( ELAPSED >= WAIT_LIMIT )); then
+        echo "PR90_WORKER_STILL_PRESENT_AFTER_WAIT_LIMIT_NO_ACTION"
+        exit 3
+    fi
+    sleep 20
+done
+echo "PR90_PREEXISTING_WORKER_ENDED_WAIT_SECONDS=$((SECONDS - WAIT_STARTED))"
+SECOND_TAG="gow-hle-abi-20261027-195733-1008076"
+SECOND_ARCHIVE="$LOGS/$SECOND_TAG.tar.gz"
+if [[ -f "$LOGS/$SECOND_TAG.log" ]]; then
+    tail -n 100 "$LOGS/$SECOND_TAG.log" \
+        > "$EVIDENCE/second-worker-last-100-lines.txt" || true
+fi
+if [[ -s "$SECOND_ARCHIVE" ]]; then
+    tar -xOf "$SECOND_ARCHIVE" evidence/exit.txt \
+        > "$EVIDENCE/second-worker-exit.txt" 2>/dev/null || true
+    if grep -Eq '^GAME_OBSERVER_EXIT=[0-9]+$' \
+         "$EVIDENCE/second-worker-exit.txt" ||
+       tar -tzf "$SECOND_ARCHIVE" 2>/dev/null |
+         grep -Fq 'evidence/game-runtime.tar.gz'; then
+        STATE="SECOND_PR90_WORKER_ALREADY_COMPLETED_A_GAME_OBSERVATION"
+        echo "NO_DUPLICATE_GAME_OR_REBUILD=YES"
+        echo "UPLOAD_THE_ALREADY_GENERATED_ARCHIVE=$SECOND_ARCHIVE"
+        exit 0
+    fi
+    echo "SECOND_WORKER_ARCHIVE=$SECOND_ARCHIVE"
+    echo "SECOND_WORKER_DID_NOT_COMPLETE_GAME_RECOVERY_MAY_PROCEED"
 fi
 
 exec 9>"$LOGS/gow-upstream-got-build.lock"
