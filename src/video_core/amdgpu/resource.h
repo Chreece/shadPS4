@@ -6,6 +6,7 @@
 #include "common/alignment.h"
 #include "common/assert.h"
 #include "common/bit_field.h"
+#include "video_core/amdgpu/buffer_size.h"
 #include "video_core/amdgpu/pixel_format.h"
 #include "video_core/amdgpu/tiling.h"
 
@@ -87,8 +88,18 @@ struct Buffer {
         return Common::AlignUp(GetSize(), sizeof(u32)) >> 2;
     }
 
+    // Full GCN V# byte extent. Nonzero-stride descriptors may exceed 4 GiB
+    // (for example STRIDE=20, NUM_RECORDS=UINT32_MAX -> 85,899,345,900 B).
+    // Do not multiply records in a 32-bit byte-count return type.
+    u64 GetSize64() const noexcept {
+        return BufferSize::DeclaredBytes(stride, num_records);
+    }
+
+    // Legacy u32 callers are retained until the backend-wide buffer range
+    // migration is complete. New GPU binding paths MUST use GetSize64()
+    // before clamping to mapped memory; this return can otherwise wrap.
     u32 GetSize() const noexcept {
-        return stride == 0 ? num_records : (stride * num_records);
+        return static_cast<u32>(GetSize64());
     }
 
     u32 GetIndexStride() const noexcept {
