@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <unordered_map>
+#include <unordered_set>
 #include <boost/container/flat_map.hpp>
 #include <queue>
 #include <xbyak/xbyak.h>
@@ -18,6 +20,7 @@
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/passes/srt.h"
+#include "shader_recompiler/ir/passes/srt_root_order.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/ir/srt_gvn_table.h"
@@ -643,6 +646,112 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
     PopPtr(c);
 }
 
+
+// The current SRT walker emits roots in ascending SGPR order, but a dynamic
+// offset in one root can read a flattened word produced by a different root.
+// Discover that relationship from the actual IR, not shader hashes or a game
+// setting. Unknown producers and unsupported offsets retain their normal
+// non-speculative lowering.
+static SrtRootOrder DeriveSrtRootOrder(PassInfo& pass_info) {
+    const std::size_t count = pass_info.srt_roots.size();
+    std::vector<IR::Inst*> roots;
+    roots.reserve(count);
+    for (const auto& entry : pass_info.srt_roots) {
+        roots.push_back(entry.second);
+    }
+
+    std::unordered_map<IR::Inst*, std::size_t> producer_root;
+    bool ambiguous = false;
+
+    const auto assign_producers = [&](auto&& self, IR::Inst* ptr, std::size_t root_index,
+                                     std::unordered_set<IR::Inst*>& seen) -> void {
+        if (!seen.insert(ptr).second) {
+            return;
+        }
+        auto* uses = pass_info.GetUsesAsPointer(ptr);
+        if (!uses) {
+            return;
+        }
+        for (const auto& entry : *uses) {
+            IR::Inst* use = entry.second;
+            IR::Inst* canonical = pass_info.DeduplicateInstruction(use);
+            const auto [it, inserted] = producer_root.try_emplace(canonical, root_index);
+            if (!inserted && it->second != root_index) {
+                ambiguous = true;
+            }
+            self(self, use, root_index, seen);
+        }
+    };
+    for (std::size_t i = 0; i < count; ++i) {
+        std::unordered_set<IR::Inst*> seen;
+        assign_producers(assign_producers, roots[i], i, seen);
+    }
+
+    std::vector<std::vector<unsigned char>> dependencies(
+        count, std::vector<unsigned char>(count, 0));
+
+    const auto scan_offset = [&](auto&& self, const IR::Value& value,
+                                 std::size_t consumer,
+                                 std::unordered_set<IR::Inst*>& seen) -> void {
+        if (value.IsEmpty() || value.IsImmediate()) {
+            return;
+        }
+        IR::Inst* inst = value.TryInst();
+        if (!inst || !seen.insert(inst).second) {
+            return;
+        }
+        switch (inst->GetOpcode()) {
+        case IR::Opcode::ReadConst:
+        case IR::Opcode::ReadConstBuffer: {
+            IR::Inst* canonical = pass_info.DeduplicateInstruction(inst);
+            if (auto it = producer_root.find(canonical); it != producer_root.end()) {
+                dependencies[consumer][it->second] = 1;
+            }
+            return;
+        }
+        case IR::Opcode::GetUserData:
+            // The original SGPR is available before the flattened SRT.
+            return;
+        default:
+            if (!IsAllowedOffsetInstruction(inst)) {
+                return;
+            }
+            for (std::size_t arg = 0; arg < inst->NumArgs(); ++arg) {
+                self(self, inst->Arg(arg), consumer, seen);
+            }
+        }
+    };
+
+    const auto scan_root = [&](auto&& self, IR::Inst* ptr, std::size_t root_index,
+                               std::unordered_set<IR::Inst*>& seen) -> void {
+        if (!seen.insert(ptr).second) {
+            return;
+        }
+        auto* uses = pass_info.GetUsesAsPointer(ptr);
+        if (!uses) {
+            return;
+        }
+        for (const auto& entry : *uses) {
+            std::unordered_set<IR::Inst*> offset_seen;
+            scan_offset(scan_offset, entry.first, root_index, offset_seen);
+            self(self, entry.second, root_index, seen);
+        }
+    };
+    if (!ambiguous) {
+        for (std::size_t i = 0; i < count; ++i) {
+            std::unordered_set<IR::Inst*> seen;
+            scan_root(scan_root, roots[i], i, seen);
+        }
+    }
+
+    return PlanStableSrtRootOrder(
+        count,
+        [&](std::size_t consumer, std::size_t producer) {
+            return dependencies[consumer][producer] != 0;
+        },
+        ambiguous);
+}
+
 static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
     Xbyak::CodeGenerator& c = g_srt_codegen;
 
@@ -663,7 +772,27 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
     pass_info.dst_off_dw = NUM_USER_DATA_REGS;
     ASSERT(pass_info.dst_off_dw == info.srt_info.flattened_bufsize_dw);
 
-    for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
+    const SrtRootOrder order = DeriveSrtRootOrder(pass_info);
+    if (order.reordered) {
+        static std::atomic<u64> reordered_roots{};
+        const u64 event = reordered_roots.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (event <= 16 || (event & (event - 1)) == 0) {
+            std::string registers;
+            for (const auto index : order.indices) {
+                if (!registers.empty()) {
+                    registers += ",";
+                }
+                registers += fmt::format(
+                    "{}", static_cast<u32>((pass_info.srt_roots.begin() + index)->first));
+            }
+            LOG_INFO(Render_Recompiler,
+                     "SRT_ROOT_ORDER event={} shader={:#x} root_count={} ordered_sgpr={}",
+                     event, info.pgm_hash, order.indices.size(), registers);
+        }
+    }
+
+    for (const auto index : order.indices) {
+        const auto& [sgpr_base, root] = *(pass_info.srt_roots.begin() + index);
         VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
     }
 
