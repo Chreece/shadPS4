@@ -37,6 +37,9 @@ FILES = {
     "src/video_core/buffer_cache/buffer_cache.cpp":
         ("c18e7ab282c2a6b8d40a152f3df421924fc59b502980dfa73c4b88ec90b34aaa",
          "4c9d2593da604e32ebc22451fe5a33f1d5afed07eb4a7f50827aa0125365667e"),
+    "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp":
+        ("a46aee5980e343fcf37c1962df22a3dced13d193a349e07715e3433154908fba",
+         "08fed917f01d6a9143563405a0f31a62f76ea1dfe632965745e70501e3a1f840"),
     "src/shader_recompiler/ir/passes/indexed_sample_eligibility.h":
         (None, "40b27dab45cf2fd4d3b5d000bfd811c6e6bcfe0cda3a60770981b20f4e8fb90d"),
 }
@@ -49,8 +52,7 @@ OTHER_PROVEN = {
         "53a897224ec1890b78680994f9f7fedab06ac9b7a04cfc407f0ac77165aa353f",
     "src/shader_recompiler/ir/passes/indexed_image_selector.h":
         "5368cf29fcdac40c9273e06e82682c406835dbed234eee7daa5956acd1e0f35c",
-    "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp":
-        "a46aee5980e343fcf37c1962df22a3dced13d193a349e07715e3433154908fba",
+
     "src/video_core/renderer_vulkan/vk_rasterizer.h":
         "5a99989156ae9310a1812fd5400a0cff0d12f2ed6d618efe98199b6fb5d122ed",
 }
@@ -74,9 +76,9 @@ def install_compatibility_guards(old):
     old.CURRENT_ELF_SHA = "2681b63b89bf808fa7307d633e9264eb80b7f102c640cbdad8b883dd88dcc7cc"
     old.OLD_ELF_SAVE = (old.ROOT /
         "candidates/c925-20261027-193333-hotlog-bindreject/shadps4")
-    old.PATCH_REV = "b1989ff34605b60adefb40ee6737bf84cd5ac3a9"
-    old.PATCH_PATH = "scripts/patchsets/c925-indexed-mode-hotlog-clean-20261027.patch"
-    old.PATCH_BLOB = "aa57c341c9375cea53e87e66981c21290c0bcd4c"
+    old.PATCH_REV = "7c709d2a90222aa0a32ca9237eae420c669e597e"
+    old.PATCH_PATH = "scripts/patchsets/c925-indexed-mode-hotlog-cachebump-20261027.patch"
+    old.PATCH_BLOB = "46b259e4f51b28e2bfefaf42bf8399aee7d9f817"
     old.TEST_REV = "dc4ce0f72d5a83d18df973e5647ae7d22a32d30d"
     old.TEST_PATH = "tests/c925_indexed_sample/test_mode_and_perf.cpp"
     old.TEST_BLOB = "032b1e4563657283a7e2da49399e086de0a0829d"
@@ -90,6 +92,7 @@ def install_compatibility_guards(old):
         m.STATE["source_semantics"] = ("Unsupported sampled-image modes are excluded from "
             "indexed resource discovery only, matching existing Vulkan binding restrictions")
         m.STATE["source_patch_git_blob"] = old.PATCH_BLOB
+        m.STATE["shader_binary_cache_version"] = "0x43520009"
         return binary
     old.preflight = checked_preflight
 
