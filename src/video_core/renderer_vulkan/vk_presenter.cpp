@@ -22,6 +22,7 @@
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
+#include "video_core/renderer_vulkan/idle_frame_reuse.h"
 #include "core/libraries/videoout/video_flip_trace.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/texture_cache/image.h"
@@ -610,17 +611,23 @@ Frame* Presenter::PrepareLastFrame() {
 
     Frame* frame = last_submit_frame;
 
-    while (true) {
-        vk::Result result = instance.GetDevice().waitForFences(frame->present_done, false,
-                                                               std::numeric_limits<u64>::max());
-        if (result == vk::Result::eSuccess) {
-            break;
+    // PresentThread calls this from the IDLE branch while game flips may be
+    // arriving on another thread. A synchronous UINT64_MAX fence wait here
+    // can indefinitely prevent the consumer from popping those guest flips.
+    const vk::Result result = instance.GetDevice().getFenceStatus(frame->present_done);
+    if (result == vk::Result::eNotReady) {
+        static std::atomic<u64> pending_idle_fences{};
+        const u64 count = pending_idle_fences.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (Libraries::VideoOut::ShouldTraceVideoFlip(count)) {
+            LOG_INFO(Frontend,
+                     "VIDEOOUT_IDLE_FRAME_SKIP reason=last_frame_gpu_busy count={}", count);
         }
-        if (result == vk::Result::eTimeout) {
-            continue;
-        }
-        ASSERT_MSG(result != vk::Result::eErrorDeviceLost,
-                   "Device lost during waiting for a frame");
+        return nullptr;
+    }
+    ASSERT_MSG(result == vk::Result::eSuccess,
+               "Cannot query idle frame completion: {}", vk::to_string(result));
+    if (result != vk::Result::eSuccess) {
+        return nullptr;
     }
 
     auto& scheduler = flip_scheduler;
@@ -793,8 +800,13 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 }
 
 Frame* Presenter::PrepareBlankFrame(bool present_thread) {
-    // Request a free presentation frame.
-    Frame* frame = GetRenderFrame();
+    // The host presentation thread must NEVER block while drawing only its
+    // idle/loading overlay. Guest-driven frame preparation retains the
+    // original synchronous GetRenderFrame() ownership and Vulkan ordering.
+    Frame* frame = present_thread ? TryGetRenderFrameForHostIdle() : GetRenderFrame();
+    if (frame == nullptr) {
+        return nullptr;
+    }
     frame->has_game_content = false;
 
     auto& scheduler = present_thread ? present_scheduler : draw_scheduler;
@@ -1249,6 +1261,45 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     if (!is_reusing_frame && is_game_frame) {
         DebugState.IncFlipFrameNum();
     }
+}
+
+Frame* Presenter::TryGetRenderFrameForHostIdle() {
+    const vk::Device device = instance.GetDevice();
+    Frame* frame = nullptr;
+    {
+        // Guest preparations share the same frame FIFO. Try-lock and
+        // nonblocking fence status avoid holding up PresentThread while a
+        // guest video request waits for its turn.
+        std::unique_lock lock{free_mutex, std::try_to_lock};
+        if (!lock.owns_lock()) {
+            return nullptr;
+        }
+        frame = TryPopReadyIdleFrame(free_queue, [&](Frame* candidate) {
+            const vk::Result status = device.getFenceStatus(candidate->present_done);
+            if (status == vk::Result::eNotReady) {
+                static std::atomic<u64> pending_free_frame_fences{};
+                const u64 count =
+                    pending_free_frame_fences.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (Libraries::VideoOut::ShouldTraceVideoFlip(count)) {
+                    LOG_INFO(Frontend,
+                             "VIDEOOUT_IDLE_FRAME_SKIP reason=free_frame_gpu_busy count={}",
+                             count);
+                }
+                return false;
+            }
+            ASSERT_MSG(status == vk::Result::eSuccess,
+                       "Cannot query host idle frame fence: {}", vk::to_string(status));
+            return status == vk::Result::eSuccess;
+        });
+    }
+    if (frame == nullptr) {
+        return nullptr;
+    }
+    if (frame->width != expected_frame_width || frame->height != expected_frame_height ||
+        frame->is_hdr != swapchain.GetHDR()) {
+        RecreateFrame(frame, expected_frame_width, expected_frame_height);
+    }
+    return frame;
 }
 
 Frame* Presenter::GetRenderFrame() {
