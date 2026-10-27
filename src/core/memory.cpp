@@ -13,6 +13,7 @@
 #include "core/libraries/kernel/orbis_error.h"
 #include "core/libraries/kernel/process.h"
 #include "core/memory.h"
+#include "core/contiguous_mapped_range.h"
 #include "core/memory_access.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
@@ -109,7 +110,7 @@ bool MemoryManager::IsAccessibleRange(VAddr address, u64 size, MemoryProt requir
 
 u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
     static constexpr u64 MinSizeToClamp = 1_GB;
-    // Dont bother with clamping if the size is small so we dont pay a map lookup on every buffer.
+    // Keep the cheap path for small buffer ranges unchanged.
     if (size < MinSizeToClamp) {
         return size;
     }
@@ -118,17 +119,15 @@ u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
     ASSERT_MSG(IsValidMapping(virtual_addr), "Attempted to access invalid address {:#x}",
                virtual_addr);
 
-    // Clamp size to the remaining size of the current VMA.
-    auto vma = FindVMA(virtual_addr);
-    u64 clamped_size = vma->second.base + vma->second.size - virtual_addr;
-    ++vma;
-
-    // Keep adding to the size while there is contigious virtual address space.
-    while (vma != vma_map.end() && vma->second.IsMapped() && clamped_size < size) {
-        clamped_size += vma->second.size;
-        ++vma;
-    }
-    clamped_size = std::min(clamped_size, size);
+    // A VMA map is ordered, but adjacent entries can have different bases
+    // separated by an unmapped hole. Skip neither that hole nor a Free/
+    // Reserved VMA when clipping a huge guest resource. The prior loop
+    // added the size of any later mapped VMA without checking its base.
+    const auto vma = FindVMA(virtual_addr);
+    ASSERT_MSG(vma->second.IsMapped() && vma->second.Contains(virtual_addr, 1),
+               "Attempted to bind an unmapped guest buffer at {:#x}", virtual_addr);
+    const u64 clamped_size = MemoryRange::ClampContiguousMappedBytes(
+        virtual_addr, size, vma, vma_map.end());
 
     if (size != clamped_size) {
         LOG_DEBUG(Kernel_Vmm, "Clamped requested buffer range addr={:#x}, size={:#x} to {:#x}",
