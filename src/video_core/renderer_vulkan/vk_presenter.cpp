@@ -609,27 +609,42 @@ Frame* Presenter::PrepareLastFrame() {
         return nullptr;
     }
 
-    Frame* frame = last_submit_frame;
-
-    // PresentThread calls this from the IDLE branch while game flips may be
-    // arriving on another thread. A synchronous UINT64_MAX fence wait here
-    // can indefinitely prevent the consumer from popping those guest flips.
-    const vk::Result result = instance.GetDevice().getFenceStatus(frame->present_done);
-    if (result == vk::Result::eNotReady) {
-        static std::atomic<u64> pending_idle_fences{};
-        const u64 count = pending_idle_fences.fetch_add(1, std::memory_order_relaxed) + 1;
+    // A frame must be taken OUT of the shared free FIFO before a host idle
+    // redraw. Checking only its fence is insufficient: the guest GPU thread
+    // can otherwise obtain the same free frame concurrently and start a
+    // genuine flip while the presentation thread is still reusing it.
+    // Neither the FIFO mutex nor its GPU fence is waited on here.
+    Frame* frame{};
+    {
+        std::unique_lock lock{free_mutex, std::try_to_lock};
+        if (!lock.owns_lock()) {
+            return nullptr;
+        }
+        frame = TryPopMatchingReadyIdleFrame(
+            free_queue, last_submit_frame, [&](Frame* candidate) {
+                const vk::Result status =
+                    instance.GetDevice().getFenceStatus(candidate->present_done);
+                if (status == vk::Result::eNotReady) {
+                    return false;
+                }
+                ASSERT_MSG(status == vk::Result::eSuccess,
+                           "Cannot query idle frame completion: {}",
+                           vk::to_string(status));
+                return status == vk::Result::eSuccess;
+            });
+    }
+    if (frame == nullptr) {
+        static std::atomic<u64> skipped_idle_frame_reuses{};
+        const u64 count = skipped_idle_frame_reuses.fetch_add(1, std::memory_order_relaxed) + 1;
         if (Libraries::VideoOut::ShouldTraceVideoFlip(count)) {
             LOG_INFO(Frontend,
-                     "VIDEOOUT_IDLE_FRAME_SKIP reason=last_frame_gpu_busy count={}", count);
+                     "VIDEOOUT_IDLE_FRAME_SKIP reason=not_free_or_gpu_busy count={}", count);
         }
         return nullptr;
     }
-    ASSERT_MSG(result == vk::Result::eSuccess,
-               "Cannot query idle frame completion: {}", vk::to_string(result));
-    if (result != vk::Result::eSuccess) {
-        return nullptr;
-    }
 
+    // The caller must now PRESENT WITH is_reusing_frame=false so that the
+    // frame is returned to the free FIFO after its GPU submission completes.
     auto& scheduler = flip_scheduler;
     scheduler.EndRendering();
     const auto cmdbuf = scheduler.CommandBuffer();
@@ -1021,7 +1036,11 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 
     auto& scheduler = present_scheduler;
     const auto cmdbuf = scheduler.CommandBuffer();
-    const bool startup_probe = PrepareStartupReadback(frame);
+    // Host idle/overlay re-presents are not new guest game frames.
+    // Do not let their readback masquerade as a newly submitted game image.
+    const bool startup_probe =
+        !is_reusing_frame && is_game_frame && frame->has_game_content &&
+        PrepareStartupReadback(frame);
     const u32 capture_with_overlays_count = VideoCore::ConsumeWithOverlaysScreenshotRequests();
     std::optional<ScreenshotReadback> pending_screenshot;
 
@@ -1247,7 +1266,8 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         if (startup_probe) {
             startup_readback->presented = presented;
         }
-        if (frame->has_game_content && presented && !startup_first_frame_logged) {
+        if (!is_reusing_frame && is_game_frame && frame->has_game_content && presented &&
+            !startup_first_frame_logged) {
             LOG_INFO(Frontend, "STARTUP_UI event=first_game_frame elapsed_ms={}",
                      Core::Startup::progress.ElapsedMs());
             startup_first_frame_logged = true;
