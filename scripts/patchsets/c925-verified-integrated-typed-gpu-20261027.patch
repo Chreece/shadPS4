@@ -1,0 +1,1323 @@
+diff --git a/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp b/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp
+index 31602bc..0b0370b 100644
+--- a/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp
++++ b/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp
+@@ -211,31 +211,148 @@ Id EmitImageSampleImplicitLodIndexed(
+     ASSERT(ctx.profile.supports_sampled_image_nonuniform_indexing);
+ 
+     const Id valid = ctx.OpULessThan(ctx.U1[1], gpu_texture_id,
+-                                     ctx.ConstU32(texture.image_array_size - 1));
++                                     ctx.ConstU32(texture.image_array_size - 1u));
+     const Id bounded = ctx.OpSelect(ctx.U32[1], valid, gpu_texture_id,
+-                                    ctx.ConstU32(texture.image_array_size - 1));
++                                    ctx.ConstU32(texture.image_array_size - 1u));
+     ctx.Decorate(bounded, spv::Decoration::NonUniform);
+-
+-    const Id pointer_type =
+-        ctx.TypePointer(spv::StorageClass::UniformConstant, texture.image_type);
+-    const Id pointer = ctx.OpAccessChain(pointer_type, texture.id, std::array{bounded});
+-    ctx.Decorate(pointer, spv::Decoration::NonUniform);
+-    const Id image = ctx.OpLoad(texture.image_type, pointer);
+-    ctx.Decorate(image, spv::Decoration::NonUniform);
+-
+     const Id sampler = LoadIndexedGuestSampler(
+         ctx, handle, bounded, texture.image_array_size);
+-    const Id sampled_image = ctx.OpSampledImage(texture.sampled_type, image, sampler);
+-    ctx.Decorate(sampled_image, spv::Decoration::NonUniform);
+ 
+-    const Id fixed_coords = FixImageCoords<true>(ctx, coords, texture.view_type);
+-    ImageOperands operands;
+-    operands.Add(spv::ImageOperandsMask::Bias, bias);
+-    operands.AddOffset(ctx, texture.view_type, offset);
+-    const Id sample =
+-        ctx.OpImageSampleImplicitLod(texture.data_types->Get(4), sampled_image,
+-                                     fixed_coords, operands.mask, operands.operands);
+-    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
++    const auto emit_sample = [&](Id image_variable, Id image_type, Id typed_coords,
++                                 Id selected_index, AmdGpu::ImageType view_type,
++                                 Id gradient_dx, Id gradient_dy) {
++        const Id pointer_type =
++            ctx.TypePointer(spv::StorageClass::UniformConstant, image_type);
++        const Id pointer = ctx.OpAccessChain(
++            pointer_type, image_variable, std::array{selected_index});
++        ctx.Decorate(pointer, spv::Decoration::NonUniform);
++        const Id image = ctx.OpLoad(image_type, pointer);
++        ctx.Decorate(image, spv::Decoration::NonUniform);
++        const Id sampled_image = ctx.OpSampledImage(
++            ctx.TypeSampledImage(image_type), image, sampler);
++        ctx.Decorate(sampled_image, spv::Decoration::NonUniform);
++        const Id fixed_coords = FixImageCoords<true>(ctx, typed_coords, view_type);
++        ImageOperands operands;
++        if (Sirit::ValidId(gradient_dx) && Sirit::ValidId(gradient_dy)) {
++            // GPU type selection can diverge across fragment quads.
++            // Evaluate gradients before selecting the image dimension, then
++            // sample each typed image with explicit Grad operands. Implicit
++            // LOD inside a nonuniform branch would have undefined derivatives.
++            operands.AddDerivatives(ctx, view_type, gradient_dx, gradient_dy);
++            return ctx.OpImageSampleExplicitLod(texture.data_types->Get(4),
++                                                 sampled_image, fixed_coords,
++                                                 operands.mask, operands.operands);
++        }
++        operands.Add(spv::ImageOperandsMask::Bias, bias);
++        operands.AddOffset(ctx, view_type, offset,
++                           ctx.profile.supports_shader_image_gather_extended);
++        return ctx.OpImageSampleImplicitLod(texture.data_types->Get(4),
++                                            sampled_image, fixed_coords,
++                                            operands.mask, operands.operands);
++    };
++
++    // The raw guest T# dword 3 is carried (bitcast) in coords.w by
++    // PatchImageSampleArgs. Its high nibble is the genuine per-invocation
++    // texture type, read by the guest shader from its own GPU material table.
++    // Only implicit LOD with no offset currently uses the dimension dispatch;
++    // unsupported variants keep their historical 2D/null path, never a fake
++    // 2D reinterpretation of a 3D/cube Vulkan image view.
++    if (!texture.is_guest_mixed_indexed ||
++        inst->Flags<IR::TextureInstInfo>().has_offset) {
++        const Id sample = emit_sample(texture.id, texture.image_type, coords,
++                                      bounded, texture.view_type, Id{}, Id{});
++        return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
++    }
++    // Read a compact typed descriptor ordinal through the original
++    // GPU-selected guest ID. Unmapped records use 0xFFFFFFFF and are
++    // redirected to the type-specific last null descriptor, never a real
++    // 3D/Cube slot or a fabricated 2D view.
++    const auto compact_index = [&](u32 array_size) -> Id {
++        // Only read the remap SSBO inside the selected non-2D branch.
++        // Ordinary 2D fragments keep their original direct guest index and
++        // do not incur a per-pixel remap lookup.
++        const Id map_pointer = ctx.OpAccessChain(
++            texture.compact_index_pointer_type, texture.compact_index_map,
++            std::array{ctx.ConstU32(0u), bounded});
++        const Id mapped_ordinal = ctx.OpLoad(ctx.U32[1], map_pointer);
++        const Id in_bounds = ctx.OpULessThan(ctx.U1[1], mapped_ordinal,
++                                              ctx.ConstU32(array_size - 1u));
++        const Id ordinal = ctx.OpSelect(ctx.U32[1], in_bounds, mapped_ordinal,
++                                        ctx.ConstU32(array_size - 1u));
++        ctx.Decorate(ordinal, spv::Decoration::NonUniform);
++        return ordinal;
++    };
++
++    const Id word3 = ctx.OpBitcast(
++        ctx.U32[1], ctx.OpCompositeExtract(ctx.F32[1], coords, 3u));
++    const Id guest_type = ctx.OpShiftRightLogical(ctx.U32[1], word3, ctx.ConstU32(28u));
++    const Id is_3d = ctx.OpIEqual(ctx.U1[1], guest_type,
++                                  ctx.ConstU32(u32(AmdGpu::ImageType::Color3D)));
++    const Id is_cube = ctx.OpIEqual(ctx.U1[1], guest_type,
++                                    ctx.ConstU32(u32(AmdGpu::ImageType::Cube)));
++
++    const Id x = ctx.OpCompositeExtract(ctx.F32[1], coords, 0u);
++    const Id y = ctx.OpCompositeExtract(ctx.F32[1], coords, 1u);
++    const Id z = ctx.OpCompositeExtract(ctx.F32[1], coords, 2u);
++    const Id coords2d = ctx.OpCompositeConstruct(ctx.F32[2], x, y);
++    const Id coords3d = ctx.OpCompositeConstruct(ctx.F32[3], x, y, z);
++
++    // Compute fragment-quad derivatives *before* divergent selection of the
++    // true 2D/3D/Cube descriptor. Convert the original implicit bias to an
++    // equivalent scaling of the gradients by 2^bias (the original GCN LOD
++    // bias must not silently disappear from the explicit-Grad samples).
++    const Id scale = Sirit::ValidId(bias) ? ctx.OpExp2(ctx.F32[1], bias)
++                                          : ctx.ConstF32(1.0f);
++    const Id scale2 = ctx.OpCompositeConstruct(ctx.F32[2], scale, scale);
++    const Id scale3 = ctx.OpCompositeConstruct(ctx.F32[3], scale, scale, scale);
++    const Id grad2_dx = ctx.OpFMul(ctx.F32[2], ctx.OpDPdx(ctx.F32[2], coords2d), scale2);
++    const Id grad2_dy = ctx.OpFMul(ctx.F32[2], ctx.OpDPdy(ctx.F32[2], coords2d), scale2);
++    const Id grad3_dx = ctx.OpFMul(ctx.F32[3], ctx.OpDPdx(ctx.F32[3], coords3d), scale3);
++    const Id grad3_dy = ctx.OpFMul(ctx.F32[3], ctx.OpDPdy(ctx.F32[3], coords3d), scale3);
++
++    const Id volume = ctx.OpLabel();
++    const Id other = ctx.OpLabel();
++    const Id cubemap = ctx.OpLabel();
++    const Id ordinary = ctx.OpLabel();
++    const Id other_end = ctx.OpLabel();
++    const Id merge = ctx.OpLabel();
++
++    ctx.OpSelectionMerge(merge, spv::SelectionControlMask::MaskNone);
++    ctx.OpBranchConditional(is_3d, volume, other);
++
++    ctx.AddLabel(volume);
++    const Id index_3d = compact_index(texture.compact_3d_array_size);
++    const Id sample3d = emit_sample(texture.image_id_3d, texture.image_type_3d,
++                                    coords3d, index_3d, AmdGpu::ImageType::Color3D,
++                                    grad3_dx, grad3_dy);
++    ctx.OpBranch(merge);
++
++    ctx.AddLabel(other);
++    ctx.OpSelectionMerge(other_end, spv::SelectionControlMask::MaskNone);
++    ctx.OpBranchConditional(is_cube, cubemap, ordinary);
++
++    ctx.AddLabel(cubemap);
++    const Id index_cube = compact_index(texture.compact_cube_array_size);
++    const Id sample_cube = emit_sample(texture.image_id_cube, texture.image_type_cube,
++                                       coords3d, index_cube, AmdGpu::ImageType::Cube,
++                                       grad2_dx, grad2_dy);
++    ctx.OpBranch(other_end);
++
++    ctx.AddLabel(ordinary);
++    const Id sample2d = emit_sample(texture.id, texture.image_type,
++                                    coords2d, bounded, AmdGpu::ImageType::Color2D,
++                                    grad2_dx, grad2_dy);
++    ctx.OpBranch(other_end);
++
++    ctx.AddLabel(other_end);
++    const Id other_result = ctx.OpPhi(texture.data_types->Get(4),
++                                      sample_cube, cubemap, sample2d, ordinary);
++    ctx.OpBranch(merge);
++    ctx.AddLabel(merge);
++    const Id result = ctx.OpPhi(texture.data_types->Get(4),
++                                sample3d, volume, other_result, other_end);
++    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], result) : result;
++
+ }
+ 
+ Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
+diff --git a/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp b/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
+index a8f83e8..6fa6d3c 100644
+--- a/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
++++ b/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
+@@ -14,6 +14,7 @@
+ #include <spirv/unified1/spirv.hpp11>
+ 
+ #include <numbers>
++#include <utility>
+ #include <string_view>
+ 
+ namespace Shader::Backend::SPIRV {
+@@ -1029,8 +1030,73 @@ void EmitContext::DefineImagesAndSamplers() {
+             .mip_fallback_mode = mip_fallback_mode,
+             .image_array_size = num_bindings,
+             .is_guest_indexed = image_desc.is_guest_indexed,
++            .is_guest_mixed_indexed = image_desc.is_guest_mixed_indexed,
+         });
+         interfaces.push_back(id);
++
++        // A guest T# table contains heterogeneous 2D / 3D / cube records.
++        // Preserve the complete original GPU-selected guest index for 2D.
++        // The rare 3D and cube images use compact typed arrays, with a
++        // per-draw GPU-visible remap to their real guest ordinal. This avoids
++        // tripling 27K-entry tables past Vulkan per-stage limits.
++        if (image_desc.is_guest_mixed_indexed) {
++            const auto define_dimension_array = [&](spv::Dim dim, bool arrayed,
++                                                     u32 compact_count,
++                                                     std::string_view suffix) {
++                const Id typed_image = TypeImage(sampled_type, dim, false, arrayed, false,
++                                                 1u, spv::ImageFormat::Unknown);
++                const Id array = TypeArray(typed_image, ConstU32(compact_count));
++                const Id pointer = TypePointer(spv::StorageClass::UniformConstant, array);
++                const Id var = AddGlobalVariable(pointer, spv::StorageClass::UniformConstant);
++                Decorate(var, spv::Decoration::Binding, binding.unified);
++                binding.unified += compact_count;
++                Decorate(var, spv::Decoration::DescriptorSet, 0U);
++                Name(var, fmt::format("{}_img{}_{}", hw_stage, images.size() - 1, suffix));
++                interfaces.push_back(var);
++                return std::pair{var, typed_image};
++            };
++            auto [image3d, type3d] = define_dimension_array(
++                spv::Dim::Dim3D, false, CompactIndexed3DImageBindings, "3d");
++            auto [imageCube, typeCube] = define_dimension_array(
++                spv::Dim::Dim2D, true, CompactIndexedCubeImageBindings, "cube");
++
++            // Read-only storage buffer of u32 compact indices, indexed by the
++            // genuine per-invocation GPU material index. 0xFFFFFFFF means an
++            // absent/invalid typed descriptor; shader bounds it to the
++            // separate null sentinel for whichever type is selected.
++            const Id map_array = TypeRuntimeArray(U32[1]);
++            const Id map_struct = TypeStruct(map_array);
++            // The runtime u32 array can be shared with an ordinary buffer
++            // resource. Emit its layout decorations only on first use.
++            if (std::ranges::find(buf_type_ids, map_array.value, &Id::value) ==
++                buf_type_ids.end()) {
++                Decorate(map_array, spv::Decoration::ArrayStride, 4u);
++                Decorate(map_struct, spv::Decoration::Block);
++                MemberDecorate(map_struct, 0, spv::Decoration::Offset, 0u);
++                buf_type_ids.push_back(map_array);
++            }
++            const Id map_struct_ptr =
++                TypePointer(spv::StorageClass::StorageBuffer, map_struct);
++            const Id map_var =
++                AddGlobalVariable(map_struct_ptr, spv::StorageClass::StorageBuffer);
++            Decorate(map_var, spv::Decoration::Binding, binding.unified++);
++            Decorate(map_var, spv::Decoration::DescriptorSet, 0u);
++            Decorate(map_var, spv::Decoration::NonWritable);
++            Name(map_var, fmt::format("{}_img{}_compact_map",
++                                      hw_stage, images.size() - 1));
++            interfaces.push_back(map_var);
++
++            auto& typed = images.back();
++            typed.image_id_3d = image3d;
++            typed.image_type_3d = type3d;
++            typed.image_id_cube = imageCube;
++            typed.image_type_cube = typeCube;
++            typed.compact_index_map = map_var;
++            typed.compact_index_pointer_type =
++                TypePointer(spv::StorageClass::StorageBuffer, U32[1]);
++            typed.compact_3d_array_size = CompactIndexed3DImageBindings;
++            typed.compact_cube_array_size = CompactIndexedCubeImageBindings;
++        }
+     }
+     if (std::ranges::any_of(info.images,
+                             [](const ImageResource& image) { return image.is_atomic; })) {
+diff --git a/src/shader_recompiler/backend/spirv/spirv_emit_context.h b/src/shader_recompiler/backend/spirv/spirv_emit_context.h
+index 13de0f9..baf3c6c 100644
+--- a/src/shader_recompiler/backend/spirv/spirv_emit_context.h
++++ b/src/shader_recompiler/backend/spirv/spirv_emit_context.h
+@@ -302,14 +302,23 @@ public:
+     struct TextureDefinition {
+         const VectorIds* data_types;
+         Id id;
++        Id image_id_3d{};
++        Id image_id_cube{};
++        Id compact_index_map{};
++        Id compact_index_pointer_type{};
++        u32 compact_3d_array_size{};
++        u32 compact_cube_array_size{};
+         Id sampled_type;
+         Id image_type;
++        Id image_type_3d{};
++        Id image_type_cube{};
+         AmdGpu::ImageType view_type;
+         bool is_integer = false;
+         bool is_storage = false;
+         MipStorageFallbackMode mip_fallback_mode{};
+         u32 image_array_size{1};
+         bool is_guest_indexed{};
++        bool is_guest_mixed_indexed{};
+     };
+ 
+     enum class PointerType : u32 {
+diff --git a/src/shader_recompiler/compact_image_indices.h b/src/shader_recompiler/compact_image_indices.h
+new file mode 100644
+index 0000000..70bdd2d
+--- /dev/null
++++ b/src/shader_recompiler/compact_image_indices.h
+@@ -0,0 +1,34 @@
++// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#pragma once
++
++#include <cstdint>
++#include <span>
++
++namespace Shader::CompactImageIndices {
++
++// A sparse guest T# record ID is never replaced by a CPU-selected value.
++// Only a GPU-readable table maps the real selected ID to its typed ordinal.
++// The last descriptor of each typed array is reserved as its null sentinel.
++inline constexpr std::uint32_t Invalid = 0xFFFFFFFFu;
++
++constexpr bool Assign(std::span<std::uint32_t> guest_to_slot, std::uint32_t guest_id,
++                      std::uint32_t capacity, std::uint32_t& next_slot) noexcept {
++    if (guest_id >= guest_to_slot.size() || next_slot >= capacity) {
++        return false;
++    }
++    guest_to_slot[guest_id] = next_slot++;
++    return true;
++}
++
++constexpr std::uint32_t Bounded(std::uint32_t mapped, std::uint32_t capacity) noexcept {
++    return mapped < capacity ? mapped : capacity;
++}
++
++static_assert(Bounded(Invalid, 256u) == 256u);
++static_assert(Bounded(Invalid, 128u) == 128u);
++static_assert(Bounded(33u, 256u) == 33u);
++static_assert(Bounded(257u, 256u) == 256u);
++
++} // namespace Shader::CompactImageIndices
+diff --git a/src/shader_recompiler/ir/passes/resource_discover_pass.cpp b/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
+index 4272dd6..a33457a 100644
+--- a/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
+@@ -891,6 +891,38 @@ static IndexedSamplerTableSource AnalyzeIndexedSamplerTable(
+     return {words[0].offset_dwords*4u,true};
+ }
+ 
++// Verify that the four real sampler dwords are scalar resource inputs;
++// the actual texture ID is still selected by the guest GPU shader.
++static bool IsProvenUniformSamplerWord(IR::Value value) {
++    if (value.IsImmediate()) return true;
++    const IR::Inst* inst = value.TryInst();
++    if (!inst) return false;
++    if (inst->GetOpcode() == IR::Opcode::GetUserData ||
++        inst->GetOpcode() == IR::Opcode::ReadConst) return true;
++    if (inst->GetOpcode() != IR::Opcode::ReadConstBuffer ||
++        !inst->Arg(1).IsImmediate()) return false;
++    const IR::Inst* descriptor = inst->Arg(0).TryInst();
++    if (!descriptor || descriptor->GetOpcode() != IR::Opcode::CompositeConstructU32x4 ||
++        descriptor->NumArgs() != 4u) return false;
++    for (u32 i = 0; i < 4u; ++i) {
++        const IR::Value word = descriptor->Arg(i);
++        if (word.IsImmediate()) continue;
++        const IR::Inst* producer = word.TryInst();
++        if (!producer ||
++            (producer->GetOpcode() != IR::Opcode::GetUserData &&
++             producer->GetOpcode() != IR::Opcode::ReadConst)) return false;
++    }
++    return true;
++}
++
++static bool IsProvenUniformSampler(const SharpReference& sharp) {
++    if (sharp.num_dwords != 4u || sharp.post_op != SharpFetchPostOp::None) return false;
++    for (u32 i = 0; i < 4u; ++i) {
++        if (!IsProvenUniformSamplerWord(sharp.dwords[i])) return false;
++    }
++    return true;
++}
++
+ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {
+     // Preserve the incoming GPU Phi selections as shader control flow.
+     // Perform read-only resource splits before discovery; the transforms
+@@ -936,12 +968,37 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile&
+                             }
+                             usage.indexed_table_sharp.dwords[dw]=v;
+                         }
+-                        const auto sampler=table.record_stride_bytes
+-                            ? AnalyzeIndexedSamplerTable(inst,table)
++                        const auto sampler = table.record_stride_bytes
++                            ? AnalyzeIndexedSamplerTable(inst, table)
+                             : IndexedSamplerTableSource{};
+-                        if(bindable && (table.record_stride_bytes==0u || sampler.valid)) {
+-                            usage.indexed_sampler_offset_bytes=sampler.offset_bytes;
+-                            usage.has_indexed_sampler_table=sampler.valid;
++                        const bool indexed_sampler_supported = sampler.valid &&
++                            profile.supports_sampler_array_nonuniform_indexing;
++                        const bool real_uniform_sampler =
++                            table.record_stride_bytes != 0u &&
++                            !indexed_sampler_supported &&
++                            IsProvenUniformSampler(usage.sharps[1]);
++                        const bool accepted = bindable &&
++                            (table.record_stride_bytes == 0u ||
++                             indexed_sampler_supported || real_uniform_sampler);
++                        if (table.record_stride_bytes != 0u) {
++                            static thread_local std::unordered_map<u64, u32> reports;
++                            const u64 shader = program.info.pgm_hash;
++                            if (reports.size() < 96u || reports.contains(shader)) {
++                                u32& count = reports[shader];
++                                if (count++ < 2u) {
++                                    LOG_INFO(Render_Recompiler,
++                                             "IndexedBindingDecision: shader={:#x} "
++                                             "stride={} table_bindable={} indexed_sampler={} "
++                                             "uniform_sampler={} accepted={}",
++                                             shader, table.record_stride_bytes,
++                                             bindable, indexed_sampler_supported,
++                                             real_uniform_sampler, accepted);
++                                }
++                            }
++                        }
++                        if (accepted) {
++                            usage.indexed_sampler_offset_bytes = sampler.offset_bytes;
++                            usage.has_indexed_sampler_table = indexed_sampler_supported;
+                             usage.indexed_table_sharp.num_dwords=4;
+                             PeelSharpDwordMasks(usage.indexed_table_sharp);
+                             MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
+diff --git a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+index 7ce802d..f0d93d2 100644
+--- a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+@@ -3,6 +3,8 @@
+ 
+ #include <algorithm>
+ #include <limits>
++#include <unordered_map>
++#include "common/logging/log.h"
+ #include "shader_recompiler/info.h"
+ #include "shader_recompiler/ir/basic_block.h"
+ #include "shader_recompiler/ir/ir_emitter.h"
+@@ -122,6 +124,7 @@ public:
+                    desc.constant_mip_index == existing.constant_mip_index &&
+                    desc.post_op == existing.post_op &&
+                    desc.is_guest_indexed == existing.is_guest_indexed &&
++                   desc.is_guest_mixed_indexed == existing.is_guest_mixed_indexed &&
+                    desc.indexed_guest_entries == existing.indexed_guest_entries &&
+                    desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
+                    desc.indexed_descriptor_offset_bytes == existing.indexed_descriptor_offset_bytes &&
+@@ -277,12 +280,26 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
+         .post_op = resource.sharps[0].post_op,
+     };
+ 
++    // Strided guest T# may have a single real, provably scalar S#.
++    // It must contain four evaluable descriptor dwords and be valid.
++    bool verified_uniform_sampler = false;
++    if (resource.has_indexed_table && resource.indexed_record_stride_bytes != 0u &&
++        !resource.has_indexed_sampler_table &&
++        resource.sharps[1].post_op == SharpFetchPostOp::None &&
++        resource.sharps[1].num_dwords == 4u) {
++        const auto fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1]);
++        AmdGpu::Sampler real{};
++        verified_uniform_sampler =
++            fetch.Fetch(info.flattened_ud_buf.data(), &real) && real.Valid();
++    }
++
+     if (resource.has_indexed_table &&
+         profile.supports_sampled_image_nonuniform_indexing &&
+-        profile.supports_sampler_array_nonuniform_indexing &&
+-        (resource.indexed_record_stride_bytes==0u ||
++        (resource.indexed_record_stride_bytes == 0u ||
+          (resource.has_indexed_sampler_table &&
+-          resource.sharps[1].post_op==SharpFetchPostOp::None)) &&
++          profile.supports_sampler_array_nonuniform_indexing &&
++          resource.sharps[1].post_op == SharpFetchPostOp::None) ||
++         verified_uniform_sampler) &&
+         !is_written && !inst_info.is_depth && !inst_info.is_array && !inst_info.is_gather &&
+         !inst_info.has_lod && !inst_info.force_level0 &&
+         !inst_info.has_lod_clamp && !inst_info.is_r128 && !inst_info.is_unnormalized) {
+@@ -291,9 +308,12 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
+         if(table_fetch.Fetch(info.flattened_ud_buf.data(),&table) && table.Valid() && table.base_address!=0) {
+             const u32 record_stride=resource.indexed_record_stride_bytes;
+             const u32 record_offset=resource.indexed_descriptor_offset_bytes;
+-            const u32 indexed_limit=
+-                std::min(profile.max_guest_indexed_image_entries,
+-                         profile.max_guest_indexed_sampler_entries);
++            const bool needs_indexed_sampler = record_stride != 0u &&
++                                               !verified_uniform_sampler;
++            const u32 indexed_limit = needs_indexed_sampler
++                ? std::min(profile.max_guest_indexed_image_entries,
++                           profile.max_guest_indexed_sampler_entries)
++                : profile.max_guest_indexed_image_entries;
+             const u32 entries=record_stride!=0u
+                 ? CompleteGuestTsharpRecordEntries(
+                     static_cast<u32>(table.stride),static_cast<u32>(table.num_records),
+@@ -307,6 +327,12 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
+                 image_res.indexed_record_stride_bytes=record_stride;
+                 image_res.indexed_descriptor_offset_bytes=record_offset;
+                 image_res.is_guest_indexed=true;
++                // Only use dimension-typed GPU image sampling when the whole
++                // guest table fits real Vulkan descriptor resource limits.
++                image_res.is_guest_mixed_indexed =
++                    info.hw_stage == HwStage::Fragment &&
++                    entries <= profile.max_guest_mixed_indexed_image_entries;
++
+             }
+         }
+     }
+@@ -394,7 +420,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
+             .is_depth = bool(inst_info.is_depth), // true for the _C (compare) opcodes
+             .is_integer = AmdGpu::IsInteger(image.GetNumberFmt()),
+         };
+-        if (image_res.is_guest_indexed) {
++        if (image_res.is_guest_indexed && !verified_uniform_sampler) {
+             if (image_res.indexed_record_stride_bytes != 0u) {
+                 ASSERT(resource.has_indexed_sampler_table);
+             }
+@@ -408,6 +434,20 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
+             sampler_res.indexed_sampler_offset_bytes =
+                 resource.indexed_sampler_offset_bytes;
+         }
++        if (image_res.is_guest_indexed && verified_uniform_sampler) {
++            static thread_local std::unordered_map<u64, u32> reports;
++            const u64 shader = info.pgm_hash;
++            if (reports.size() < 96u || reports.contains(shader)) {
++                u32& count = reports[shader];
++                if (count++ < 2u) {
++                    LOG_INFO(Render_Recompiler,
++                             "IndexedUniformSamplerBound: shader={:#x} "
++                             "record_stride={} entries={}",
++                             shader, image_res.indexed_record_stride_bytes,
++                             image_res.indexed_guest_entries);
++                }
++            }
++        }
+         const u32 sampler_binding = descriptors.Add(sampler_res);
+         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
+         if (image_res.is_guest_indexed) {
+@@ -719,7 +759,7 @@ void PatchBufferArgs(IR::Inst& inst, Info& info) {
+ }
+ 
+ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image_res,
+-                          const AmdGpu::Image& image) {
++                          const AmdGpu::Image& image, const IR::Value& gpu_tsharp_word3) {
+     const auto handle = inst.Arg(0);
+     const auto& sampler_res = info.samplers[(handle.U32() >> 16) & 0xFFFF];
+     const auto sampler = sampler_res.GetSharp(info);
+@@ -848,6 +888,10 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
+         return coord;
+     };
+ 
++    // Preserve the original coordinate-register position before parsing the
++    // usual 2D sample. The third coordinate is only used on a guest-selected
++    // 3D/Cube path; ordinary 2D sampling retains its original coordinates.
++    const u32 coords_start = addr_reg;
+     // Now we can load body components as noted in Table 8.9 Image Opcodes with Sampler
+     const IR::Value coords = [&] -> IR::Value {
+         switch (view_type) {
+@@ -906,7 +950,21 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
+             return ir.ImageSampleExplicitLod(handle, coords, lod, offset, inst_info);
+         }
+         if (image_res.is_guest_indexed) {
+-            return ir.ImageSampleImplicitLodIndexed(handle, coords, bias, offset, IR::U32{inst.Arg(1)}, inst_info);
++            IR::Value sampled_coords = coords;
++            if (image_res.is_guest_mixed_indexed && !inst_info.has_offset) {
++                // T# dword 3 carries bits [31:28] = genuine guest image type.
++                // Retain its GPU-selected value in coords.w. The unused z
++                // coordinate has no effect on Color2D samples, but is
++                // consumed for correctly typed Color3D/Cube samples.
++                sampled_coords = ir.CompositeConstruct(
++                    ir.CompositeExtract(coords, 0u),
++                    ir.CompositeExtract(coords, 1u),
++                    get_coord(coords_start + 2u, 2u),
++                    ir.BitCast<IR::F32>(IR::U32{gpu_tsharp_word3}));
++            }
++            return ir.ImageSampleImplicitLodIndexed(
++                handle, sampled_coords, bias, offset, IR::U32{inst.Arg(1)}, inst_info);
++
+         }
+         return ir.ImageSampleImplicitLod(handle, coords, bias, offset, inst_info);
+     }();
+@@ -918,7 +976,7 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
+     inst.ReplaceUsesWith(converted);
+ }
+ 
+-void PatchImageArgs(IR::Inst& inst, Info& info) {
++void PatchImageArgs(IR::Inst& inst, Info& info, const ResourceDiscovery& resource) {
+     // Nothing to patch for dimension query.
+     if (inst.GetOpcode() == IR::Opcode::ImageQueryDimensions) {
+         return;
+@@ -931,7 +989,7 @@ void PatchImageArgs(IR::Inst& inst, Info& info) {
+ 
+     // Sample instructions must be handled separately using address register data.
+     if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
+-        return PatchImageSampleArgs(inst, info, image_res, image);
++        return PatchImageSampleArgs(inst, info, image_res, image, resource.sharps[0].dwords[3]);
+     }
+ 
+     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
+@@ -1035,7 +1093,7 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
+         if (IsBufferInstruction(inst)) {
+             PatchBufferArgs(inst, info);
+         } else if (IsImageInstruction(inst)) {
+-            PatchImageArgs(inst, info);
++            PatchImageArgs(inst, info, usage);
+         } else if (IsDataRingInstruction(inst)) {
+             PatchGlobalDataShareAccess(inst, info, descriptors, profile);
+         }
+diff --git a/src/shader_recompiler/profile.h b/src/shader_recompiler/profile.h
+index faf5aa0..40cf0f5 100644
+--- a/src/shader_recompiler/profile.h
++++ b/src/shader_recompiler/profile.h
+@@ -15,7 +15,9 @@ struct Profile {
+     u32 subgroup_size{};
+     u32 sparse_page_shift{};
+     u32 max_guest_indexed_image_entries{15};
++    u32 max_guest_mixed_indexed_image_entries{};
+     u32 max_guest_indexed_sampler_entries{15};
++
+     bool support_int8{};
+     bool support_int16{};
+     bool support_int64{};
+diff --git a/src/shader_recompiler/resource.h b/src/shader_recompiler/resource.h
+index 313b474..144a76c 100644
+--- a/src/shader_recompiler/resource.h
++++ b/src/shader_recompiler/resource.h
+@@ -131,6 +131,13 @@ enum class MipStorageFallbackMode : u16 {
+ 
+ inline constexpr u32 LegacyGuestIndexedImageEntries = 15;
+ inline constexpr u32 MaxGuestIndexedImageEntries = 32768;
++// General-purpose dimension-typed image capacities per GPU-selected T# table.
++// Entries beyond these optional capacities are left null rather than being
++// unsafely reinterpreted. The original 2D table remains full-length.
++inline constexpr u32 CompactIndexed3DImageEntries = 256;
++inline constexpr u32 CompactIndexedCubeImageEntries = 128;
++inline constexpr u32 CompactIndexed3DImageBindings = CompactIndexed3DImageEntries + 1u;
++inline constexpr u32 CompactIndexedCubeImageBindings = CompactIndexedCubeImageEntries + 1u;
+ 
+ struct ImageResource {
+     SharpFetch<AmdGpu::Image> sharp_fetch{};
+@@ -139,6 +146,7 @@ struct ImageResource {
+     u32 indexed_record_stride_bytes{};
+     u32 indexed_descriptor_offset_bytes{};
+     bool is_guest_indexed{};
++    bool is_guest_mixed_indexed{};
+     bool is_depth{};
+     bool is_atomic{};
+     bool is_array{};
+@@ -236,7 +244,13 @@ struct SamplerResource {
+         }
+         return sampler;
+     }
+-    u32 NumBindings(const auto& info) const {
++
++    // One real S# for a uniform sampler, or the complete GPU-indexed
++    // guest sampler table plus one out-of-range null sentinel. This is
++    // the same count used by Vulkan descriptor layout, SPIR-V declarations,
++    // and actual T#/S# table binding; never synthesize sampler values.
++    u32 NumBindings(const auto&) const noexcept {
++
+         return is_guest_indexed ? indexed_guest_entries + 1u : 1u;
+     }
+ };
+diff --git a/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp b/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
+index 0db3ffc..a4e3897 100644
+--- a/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
++++ b/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
+@@ -48,14 +48,27 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
+     }
+     for (const auto& image : info->images) {
+         const u32 num_bindings = image.NumBindings(*info);
+-        bindings.push_back({
+-            .binding = binding,
+-            .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
+-                                               : vk::DescriptorType::eSampledImage,
+-            .descriptorCount = num_bindings,
+-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+-        });
+-        binding += num_bindings;
++        const auto add_images = [&](u32 count) {
++            bindings.push_back({
++                .binding = binding,
++                .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
++                                                   : vk::DescriptorType::eSampledImage,
++                .descriptorCount = count,
++                .stageFlags = vk::ShaderStageFlagBits::eCompute,
++            });
++            binding += count;
++        };
++        add_images(num_bindings);
++        if (image.is_guest_mixed_indexed) {
++            add_images(Shader::CompactIndexed3DImageBindings);
++            add_images(Shader::CompactIndexedCubeImageBindings);
++            bindings.push_back({
++                .binding = binding++,
++                .descriptorType = vk::DescriptorType::eStorageBuffer,
++                .descriptorCount = 1,
++                .stageFlags = vk::ShaderStageFlagBits::eCompute,
++            });
++        }
+     }
+     for (const auto& sampler : info->samplers) {
+         const u32 count = sampler.NumBindings(*info);
+diff --git a/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp b/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
+index ac43fa0..2c4eabd 100644
+--- a/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
++++ b/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
+@@ -499,14 +499,27 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
+         }
+         for (const auto& image : stage->images) {
+             const u32 num_bindings = image.NumBindings(*stage);
+-            bindings.push_back({
+-                .binding = binding,
+-                .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
+-                                                   : vk::DescriptorType::eSampledImage,
+-                .descriptorCount = num_bindings,
+-                .stageFlags = stage_bit,
+-            });
+-            binding += num_bindings;
++            const auto add_images = [&](u32 count) {
++                bindings.push_back({
++                    .binding = binding,
++                    .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
++                                                       : vk::DescriptorType::eSampledImage,
++                    .descriptorCount = count,
++                    .stageFlags = stage_bit,
++                });
++                binding += count;
++            };
++            add_images(num_bindings);
++            if (image.is_guest_mixed_indexed) {
++                add_images(Shader::CompactIndexed3DImageBindings);
++                add_images(Shader::CompactIndexedCubeImageBindings);
++                bindings.push_back({
++                    .binding = binding++,
++                    .descriptorType = vk::DescriptorType::eStorageBuffer,
++                    .descriptorCount = 1,
++                    .stageFlags = stage_bit,
++                });
++            }
+         }
+         for (const auto& sampler : stage->samplers) {
+             const u32 count = sampler.NumBindings(*stage);
+diff --git a/src/video_core/renderer_vulkan/vk_instance.cpp b/src/video_core/renderer_vulkan/vk_instance.cpp
+index 4d70af7..63eb109 100644
+--- a/src/video_core/renderer_vulkan/vk_instance.cpp
++++ b/src/video_core/renderer_vulkan/vk_instance.cpp
+@@ -450,6 +450,9 @@ bool Instance::CreateDevice() {
+                 .shaderImageGatherExtended = features.shaderImageGatherExtended,
+                 .shaderStorageImageExtendedFormats = features.shaderStorageImageExtendedFormats,
+                 .shaderStorageImageMultisample = features.shaderStorageImageMultisample,
++                // vk::PhysicalDeviceFeatures members are C++20 designated initializers:
++                // their source order must follow the Vulkan struct declaration.
++
+                 .shaderSampledImageArrayDynamicIndexing =
+                     features.shaderSampledImageArrayDynamicIndexing,
+                 .shaderClipDistance = features.shaderClipDistance,
+diff --git a/src/video_core/renderer_vulkan/vk_instance.h b/src/video_core/renderer_vulkan/vk_instance.h
+index 445a4ae..18ce7c0 100644
+--- a/src/video_core/renderer_vulkan/vk_instance.h
++++ b/src/video_core/renderer_vulkan/vk_instance.h
+@@ -225,6 +225,10 @@ public:
+         return IsSampledImageNonUniformIndexingSupported();
+     }
+ 
++    bool IsShaderImageGatherExtendedSupported() const {
++        return bool(features.shaderImageGatherExtended);
++    }
++
+     /// Returns true when VK_AMD_gcn_shader is supported.
+     bool IsAmdGcnShaderSupported() const {
+         return amd_gcn_shader;
+diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+index 504a6ec..5aa5a00 100644
+--- a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+@@ -54,6 +54,37 @@ static u32 GuestIndexedImageLimit(const Instance& instance) {
+         : 0u;
+     return std::min(type_real,total_real);
+ }
++
++static u32 GuestIndexedSamplerLimit(const Instance& instance);
++
++static u32 GuestMixedIndexedImageLimit(const Instance& instance) {
++    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
++    constexpr u32 image_reserve = Shader::NUM_IMAGES + 32u;
++    constexpr u32 resource_reserve =
++        Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
++    constexpr u32 compact_extra = Shader::CompactIndexed3DImageBindings +
++                                  Shader::CompactIndexedCubeImageBindings + 1u;
++    // Full original 2D guest-ID array + small packed 3D/Cube arrays and one
++    // remap SSBO. Do NOT require 3*27651 images or truncate any guest IDs.
++    const u32 sampled_limit = std::min(limits.maxDescriptorSetSampledImages,
++                                       limits.maxPerStageDescriptorSampledImages);
++    if (sampled_limit <= image_reserve + compact_extra ||
++        limits.maxPerStageResources <= resource_reserve + compact_extra + 1u) {
++        return 0u;
++    }
++    const u32 image_limit = sampled_limit - image_reserve - compact_extra;
++    // Allow either a real uniform S# or a complete indexed S# table without
++    // overcommitting maxPerStageResources. The optional typed buffers do
++    // not reduce the already-supported ordinary 2D-only image capacity.
++    const u32 total_limit =
++        (limits.maxPerStageResources - resource_reserve - compact_extra - 1u) / 2u;
++    // Sampler limits are checked by their own resource binder. A shader with
++    // one genuine uniform S# must not lose a valid 27K-element mixed T# table
++    // merely because unrelated indexed sampler arrays have a smaller cap.
++    return std::min({Shader::MaxGuestIndexedImageEntries,
++                     image_limit, total_limit, GuestIndexedImageLimit(instance)});
++}
++
+ static u32 GuestIndexedSamplerLimit(const Instance& instance) {
+     const auto limits=instance.GetPhysicalDevice().getProperties().limits;
+     constexpr u32 type_reserve=Shader::NUM_SAMPLERS+32u;
+@@ -76,13 +107,24 @@ static u32 GuestIndexedSamplerLimit(const Instance& instance) {
+         : 0u;
+     return std::min(type_real,pair_real);
+ }
+-static auto RuntimeDescriptorHeapSizes(const Instance& instance) {
+-    auto result=DescriptorHeapSizes;
+-    result[2].descriptorCount=std::max(result[2].descriptorCount,
+-        GuestIndexedImageLimit(instance)+Shader::NUM_IMAGES+1024u);
+-    result[4].descriptorCount=std::max(result[4].descriptorCount,
+-        GuestIndexedSamplerLimit(instance)+Shader::NUM_SAMPLERS+1024u);
+-    return result;
++static const auto& RuntimeDescriptorHeapSizes(const Instance& instance) {
++    static const auto sizes = [&instance] {
++        auto result = DescriptorHeapSizes;
++        result[2].descriptorCount = std::max({
++            result[2].descriptorCount,
++            GuestIndexedImageLimit(instance) + Shader::NUM_IMAGES + 1024u,
++            GuestMixedIndexedImageLimit(instance) + 1u +
++                Shader::CompactIndexed3DImageBindings +
++                Shader::CompactIndexedCubeImageBindings +
++                Shader::NUM_IMAGES + 1024u,
++        });
++        result[4].descriptorCount =
++            std::max(result[4].descriptorCount,
++                     GuestIndexedSamplerLimit(instance) + Shader::NUM_SAMPLERS + 1024u);
++        return result;
++    }();
++    return sizes;
++
+ }
+ 
+ static u32 MapOutputs(std::span<Shader::OutputMap, 3> outputs, const AmdGpu::VsOutputControl& ctl) {
+@@ -331,6 +373,7 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
+         .subgroup_size = instance.SubgroupSize(),
+         .sparse_page_shift = sparse_page_shift,
+         .max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),
++        .max_guest_mixed_indexed_image_entries = GuestMixedIndexedImageLimit(instance),
+         .max_guest_indexed_sampler_entries = GuestIndexedSamplerLimit(instance),
+         .support_int8 = instance.IsShaderInt8Supported(),
+         .support_int16 = instance.IsShaderInt16Supported(),
+@@ -764,6 +807,10 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
+         binding.unified += info.buffers.size();
+         for (const auto& image : info.images) {
+             binding.unified += image.NumBindings(info);
++            if (image.is_guest_mixed_indexed) {
++                binding.unified += Shader::CompactIndexed3DImageBindings +
++                                   Shader::CompactIndexedCubeImageBindings + 1u;
++            }
+         }
+         for (const auto& sampler : info.samplers) {
+             binding.unified += sampler.NumBindings(info);
+diff --git a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+index 4910cb0..a094934 100644
+--- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+@@ -12,8 +12,9 @@
+ 
+ namespace Serialization {
+ /* You should increment versions below once corresponding serialization scheme is changed. */
+-static constexpr u32 ShaderBinaryVersion = 0xfu;
+-static constexpr u32 ShaderMetaVersion = 0xau;
++static constexpr u32 ShaderBinaryVersion = 0x43520006u;
++static constexpr u32 ShaderMetaVersion = 0x43520006u;
++
+ static constexpr u32 PipelineKeyVersion = 3u;
+ } // namespace Serialization
+ 
+diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+index 36759eb..a3755ab 100644
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+@@ -1,7 +1,10 @@
+ // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <algorithm>
+ #include <atomic>
++#include <utility>
++#include <vector>
+ #include <limits>
+ #include <memory>
+ #include <algorithm>
+@@ -11,6 +14,7 @@
+ #include "core/memory.h"
+ #include <cstring>
+ #include "shader_recompiler/guest_tsharp_array.h"
++#include "shader_recompiler/compact_image_indices.h"
+ #include "shader_recompiler/guest_descriptor_coherence.h"
+ #include "shader_recompiler/resource.h"
+ #include "shader_recompiler/runtime_info.h"
+@@ -436,14 +440,21 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
+     // Reserve across all shader stages before any VkWriteDescriptorSet points
+     // into image_infos. Later vector growth must not invalidate those pointers.
+     std::size_t required_infos = 0;
++    std::size_t required_buffer_infos = 0;
+     std::size_t max_stage_images = 0;
+     for (const auto* stage : pipeline->GetStages()) {
+         if (!stage) {
+             continue;
+         }
+         std::size_t stage_images = 0;
++        required_buffer_infos += stage->buffers.size();
+         for (const auto& image : stage->images) {
+             stage_images += image.NumBindings(*stage);
++            if (image.is_guest_mixed_indexed) {
++                stage_images += Shader::CompactIndexed3DImageBindings +
++                                Shader::CompactIndexedCubeImageBindings;
++                ++required_buffer_infos;
++            }
+         }
+         max_stage_images = std::max(max_stage_images, stage_images);
+         required_infos += stage_images;
+@@ -451,13 +462,19 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
+             required_infos += sampler.NumBindings(*stage);
+         }
+     }
+-    if (max_stage_images >
+-        Shader::MaxGuestIndexedImageEntries + Shader::NUM_IMAGES * 64u) {
++    if (max_stage_images > Shader::MaxGuestIndexedImageEntries + 1ull +
++                           Shader::CompactIndexed3DImageBindings +
++                           Shader::CompactIndexedCubeImageBindings +
++                           Shader::NUM_IMAGES * 64ull) {
++
+         LOG_ERROR(Render_Vulkan, "Rejecting excessive guest image descriptor count {}",
+                   max_stage_images);
+         return false;
+     }
+     image_infos.reserve(required_infos);
++    // VkWriteDescriptorSet::pBufferInfo pointers remain valid while adding
++    // the compact typed remap SSBO alongside regular shader buffer bindings.
++    buffer_infos.reserve(required_buffer_infos);
+     image_bindings.resize(
+         std::max(max_stage_images, std::size_t{Shader::NUM_IMAGES}));
+ 
+@@ -470,8 +487,12 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
+         if (!stage) {
+             continue;
+         }
++        const auto typed_image_bindings = std::ranges::count_if(
++            stage->images, [](const Shader::ImageResource& image) {
++                return image.is_guest_mixed_indexed;
++            });
+         set_writes.resize(set_writes.size() + stage->buffers.size() + stage->images.size() +
+-                          stage->samplers.size());
++                          3u * typed_image_bindings + stage->samplers.size());
+         BindBuffers(*stage, binding, push_data);
+         BindTextures(*stage, binding);
+         uses_dma |= stage->uses_dma;
+@@ -925,13 +946,21 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
+     const u32 first_image_idx = image_infos.size();
+     // To emulate storing to explicit mip levels, build a descriptor array with each mip level.
+     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
++    boost::container::small_vector<bool, 8> image_descriptor_is_storage;
++    boost::container::small_vector<std::vector<u32>, 4> image_index_maps;
+ 
+     u32 num_images{};
+     for (const auto& image_desc : stage.images) {
+         if (image_desc.is_guest_indexed) {
+-            const u32 count=image_desc.NumBindings(stage);
+-            ASSERT(count>=2 && count<=Shader::MaxGuestIndexedImageEntries+1);
+-            ASSERT(num_images+count<=image_bindings.size());
++            const u32 count = image_desc.NumBindings(stage);
++            ASSERT(count >= 2 && count <= Shader::MaxGuestIndexedImageEntries + 1);
++            const u32 extra_images = image_desc.is_guest_mixed_indexed
++                ? Shader::CompactIndexed3DImageBindings +
++                  Shader::CompactIndexedCubeImageBindings
++                : 0u;
++            ASSERT(u64(num_images) + count + extra_images <= image_bindings.size());
++
++
+             AmdGpu::Buffer source{};
+             const bool fetched=image_desc.indexed_table_fetch.Fetch(stage.flattened_ud_buf.data(),&source);
+             const u64 bytes=fetched?(source.stride==0?static_cast<u64>(source.num_records):static_cast<u64>(source.stride)*source.num_records):0u;
+@@ -982,50 +1011,178 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
+                              *image_prefix, image_entries, record_stride);
+                 }
+             }
+-            u32 valid_indexed_images = 0;
+-            u64 estimated=0; constexpr u64 MaxEstimatedIndexedImageBytes=4ull<<30;
+-            const u32 max_dim=instance.GetPhysicalDevice().getProperties().limits.maxImageDimension2D;
+-            for(u32 i=0;i<count;++i) {
+-                auto& slot=image_bindings[num_images++]; slot.image_id={};
+-                if (!table_available || i + 1 == count || i >= represented_entries) continue;
++            // The complete 2D guest table keeps every original record index.
++            // 3D and Cube use compact typed regions and an explicit GPU-side
++            // map from the real guest-selected ID to its typed descriptor.
++            const u32 image_base = num_images;
++            num_images += count + extra_images;
++            std::vector<u32> compact_map;
++            if (image_desc.is_guest_mixed_indexed) {
++                compact_map.assign(count, Shader::CompactImageIndices::Invalid);
++            }
++            for (u32 idx = image_base; idx < num_images; ++idx) {
++                image_bindings[idx].image_id = {};
++            }
++
++            constexpr u64 MaxEstimatedIndexedImageBytes = 4ull << 30;
++            u64 estimated_resident_bytes = 0;
++            const auto limits = instance.GetPhysicalDevice().getProperties().limits;
++            u32 bound_2d = 0, bound_3d = 0, bound_cube = 0;
++            u32 unbound_3d_capacity = 0, unbound_cube_capacity = 0;
++            for (u32 i = 0; i + 1u < count; ++i) {
++                // c925 uses independent runtime records: never discard an
++                // otherwise valid 2D guest image because a later table entry
++                // is missing or has a different image dimension.
++                if (!table_available || i >= represented_entries) {
++                    continue;
++                }
+                 const u64 record_offset_bytes = u64(i) * record_bytes + descriptor_offset;
+                 if (record_offset_bytes > bytes ||
+-                    sizeof(AmdGpu::Image) > bytes - record_offset_bytes) continue;
+-                const u64 addr = source.base_address + record_offset_bytes;
+-                if (addr < source.base_address ||
+-                    addr > std::numeric_limits<u64>::max() - (sizeof(AmdGpu::Image) - 1) ||
+-                    !memory->IsValidMapping(addr, sizeof(AmdGpu::Image))) continue;
+-                AmdGpu::Image raw{}; std::memcpy(&raw,reinterpret_cast<const void*>(addr),sizeof(raw));
+-                if(!raw.Valid() || raw.GetType()!=AmdGpu::ImageType::Color2D || raw.Address()==0 ||
+-                   !memory->IsValidGpuMapping(raw.Address(),0)) continue;
+-                const auto fmt=raw.GetDataFmt(); const auto nfmt=raw.GetNumberFmt();
+-                if(!magic_enum::enum_contains(fmt) || !magic_enum::enum_contains(nfmt) ||
+-                   fmt==AmdGpu::DataFormat::FormatInvalid ||
+-                   raw.width>=max_dim || raw.height>=max_dim || raw.base_level>raw.last_level ||
+-                   raw.pitch<raw.width) continue;
+-                const u64 est=(u64(raw.width)+1u)*(u64(raw.height)+1u)*4u;
+-                if(est>MaxEstimatedIndexedImageBytes-estimated) continue; estimated+=est;
+-                auto& desc=slot.desc; std::construct_at(&desc,raw,image_desc);
+-                slot.image_id=texture_cache.FindImage(desc); auto* image=&texture_cache.GetImage(slot.image_id);
+-                if(desc.type==VideoCore::TextureCache::BindingType::Texture) {
+-                    if(auto depth=texture_cache.GetAssociatedDepth(*image)) {
+-                        slot.image_id=depth; image=&texture_cache.GetImage(slot.image_id);
++                    sizeof(AmdGpu::Image) > bytes - record_offset_bytes ||
++                    source.base_address > std::numeric_limits<u64>::max() - record_offset_bytes) {
++                    continue;
++                }
++                const u64 entry_addr = source.base_address + record_offset_bytes;
++                if (entry_addr > std::numeric_limits<u64>::max() -
++                                     (sizeof(AmdGpu::Image) - 1u) ||
++                    !memory->IsValidMapping(entry_addr, sizeof(AmdGpu::Image))) {
++                    continue;
++                }
++                AmdGpu::Image raw{};
++                std::memcpy(&raw, reinterpret_cast<const void*>(entry_addr), sizeof(raw));
++                if (!raw.Valid() || raw.Address() == 0 ||
++                    !memory->IsValidGpuMapping(raw.Address(), 0)) {
++                    continue;
++                }
++
++                const auto type = raw.GetType();
++                u32 typed_slot = 0;
++                u32 max_dimension = limits.maxImageDimension2D;
++                u64 layers = 1;
++                switch (type) {
++                case AmdGpu::ImageType::Color2D:
++                    break;
++                case AmdGpu::ImageType::Color3D:
++                    if (!image_desc.is_guest_mixed_indexed) {
++                        continue;
++                    }
++                    if (bound_3d >= Shader::CompactIndexed3DImageEntries) {
++                        ++unbound_3d_capacity;
++                        continue;
+                     }
++                    typed_slot = 1;
++                    max_dimension = limits.maxImageDimension3D;
++                    layers = u64(raw.depth) + 1u;
++                    if (layers > max_dimension) {
++                        continue;
++                    }
++                    break;
++                case AmdGpu::ImageType::Cube:
++                    if (!image_desc.is_guest_mixed_indexed) {
++                        continue;
++                    }
++                    if (bound_cube >= Shader::CompactIndexedCubeImageEntries) {
++                        ++unbound_cube_capacity;
++                        continue;
++                    }
++                    typed_slot = 2;
++                    max_dimension = limits.maxImageDimensionCube;
++                    layers = (u64(raw.depth) + 1u) * 6u;
++                    if (layers > limits.maxImageArrayLayers) {
++                        continue;
++                    }
++                    break;
++                default:
++                    continue;
+                 }
+-                image->binding.is_bound=1u;
+-                ++valid_indexed_images;
+-            }
+-            if (valid_indexed_images != count - 1 || represented_entries != count - 1) {
+-                static std::atomic<u32> reports{0};
+-                if (reports.fetch_add(1, std::memory_order_relaxed) < 24) {
+-                    LOG_WARNING(Render_Vulkan,
+-                                "Indexed image table: shader={:#x} slots={} available={} "
+-                                "bound={} bytes={} record_stride={} descriptor_offset={}",
+-                                stage.pgm_hash, count - 1, represented_entries,
+-                                valid_indexed_images, bytes, record_stride, descriptor_offset);
++
++                const auto fmt = raw.GetDataFmt();
++                const auto nfmt = raw.GetNumberFmt();
++                if (!magic_enum::enum_contains(fmt) || !magic_enum::enum_contains(nfmt) ||
++                    fmt == AmdGpu::DataFormat::FormatInvalid ||
++                    (typed_slot != 0 && AmdGpu::IsInteger(nfmt)) ||
++                    raw.width >= max_dimension || raw.height >= max_dimension ||
++                    raw.base_level > raw.last_level || raw.pitch < raw.width) {
++                    continue;
++                }
++                // Bound total GPU allocation demand without truncating guest
++                // indices or inventing a fake 2D image for a 3D/Cube T#.
++                const u64 est = (u64(raw.width) + 1u) * (u64(raw.height) + 1u) *
++                                layers * 4u;
++                if (est > MaxEstimatedIndexedImageBytes - estimated_resident_bytes) {
++                    continue;
++                }
++                estimated_resident_bytes += est;
++                const u32 slot_index = typed_slot == 0u ? image_base + i
++                    : typed_slot == 1u ? image_base + count + bound_3d
++                    : image_base + count + Shader::CompactIndexed3DImageBindings + bound_cube;
++                auto& slot = image_bindings[slot_index];
++                auto& desc = slot.desc;
++                std::construct_at(&desc, raw, image_desc);
++                if (type == AmdGpu::ImageType::Cube) {
++                    const u32 layers = raw.NumLayers();
++                    const u32 base_layer = desc.view_info.range.base.layer;
++                    if (layers <= base_layer) {
++                        continue;
++                    }
++                    desc.view_info.range.extent.layers = layers - base_layer;
++                }
++                slot.image_id = texture_cache.FindImage(desc);
++                auto* image = &texture_cache.GetImage(slot.image_id);
++                if (type == AmdGpu::ImageType::Color2D &&
++                    desc.type == VideoCore::TextureCache::BindingType::Texture) {
++                    if (auto depth_id = texture_cache.GetAssociatedDepth(*image)) {
++                        slot.image_id = depth_id;
++                        image = &texture_cache.GetImage(slot.image_id);
++                    }
+                 }
++                image->binding.is_bound = 1u;
++                if (typed_slot == 0u) {
++                    ++bound_2d;
++                } else if (typed_slot == 1u) {
++                    // Assign has a mandatory side effect in NDEBUG: write
++                    // the actual GPU-selected guest ordinal into the map.
++                    const bool mapped = Shader::CompactImageIndices::Assign(
++                        compact_map, i, Shader::CompactIndexed3DImageEntries, bound_3d);
++                    ASSERT(mapped);
++                    (void)mapped;
++                } else {
++                    const bool mapped = Shader::CompactImageIndices::Assign(
++                        compact_map, i, Shader::CompactIndexedCubeImageEntries, bound_cube);
++                    ASSERT(mapped);
++                    (void)mapped;
++                }
++            }
++            static std::atomic<u32> small_bind_reports{0};
++            static std::atomic<u32> large_bind_reports{0};
++            const bool large = count > 1024u;
++            const bool log = large
++                ? large_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 24u
++                : small_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 32u;
++            if (log) {
++                LOG_INFO(Render_Vulkan,
++                         "GuestIndexedImageDimensions: stage={:#x} entries={} "
++                         "bound_2d={} bound_3d={} bound_cube={} "
++                         "overflow_3d={} overflow_cube={} "
++                         "available={} mixed={} record_stride={}",
++                         stage.pgm_hash, count - 1u,
++                         bound_2d, bound_3d, bound_cube,
++                         unbound_3d_capacity, unbound_cube_capacity,
++                         represented_entries, image_desc.is_guest_mixed_indexed, record_stride);
+             }
+-            image_descriptor_array_sizes.push_back(count); continue;
++            image_descriptor_array_sizes.push_back(count);
++            image_descriptor_is_storage.push_back(false);
++            if (image_desc.is_guest_mixed_indexed) {
++                image_descriptor_array_sizes.push_back(Shader::CompactIndexed3DImageBindings);
++                image_descriptor_is_storage.push_back(false);
++                image_descriptor_array_sizes.push_back(Shader::CompactIndexedCubeImageBindings);
++                image_descriptor_is_storage.push_back(false);
++                image_descriptor_array_sizes.push_back(0u);
++                image_descriptor_is_storage.push_back(false);
++                image_index_maps.emplace_back(std::move(compact_map));
++            }
++            continue;
++
+         }
+ 
+         const auto tsharp = image_desc.GetSharp(stage);
+@@ -1087,6 +1244,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
+         }
+ 
+         image_descriptor_array_sizes.push_back(num_bindings);
++        image_descriptor_is_storage.push_back(image_desc.is_written);
+     }
+ 
+     // Second pass to re-bind images that were updated after binding
+@@ -1147,13 +1305,35 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
+ 
+     u32 image_info_idx = first_image_idx;
+     u32 image_binding_idx = 0;
++    u32 remap_cursor = 0;
+     for (u32 image_index = 0; image_index < image_descriptor_array_sizes.size(); ++image_index) {
+         const u32 array_size = image_descriptor_array_sizes[image_index];
++        if (array_size == 0u) {
++            // Upload original guest-ID -> compact 3D/Cube ordinal as a
++            // read-only Vulkan storage buffer. Each draw receives the
++            // currently GPU-coherent guest T# table contents.
++            ASSERT(remap_cursor < image_index_maps.size());
++            const auto& remap = image_index_maps[remap_cursor++];
++            ASSERT(!remap.empty());
++            auto& stream = buffer_cache.GetStreamBuffer();
++            const u64 bytes = u64(remap.size()) * sizeof(u32);
++            const u64 offset =
++                stream.Copy(remap.data(), bytes, instance.StorageMinAlignment());
++            buffer_infos.emplace_back(stream.Handle(), offset, bytes);
++            auto& write = set_writes[set_write_index++];
++            write.dstSet = VK_NULL_HANDLE;
++            write.dstBinding = binding.unified++;
++            write.dstArrayElement = 0u;
++            write.descriptorCount = 1u;
++            write.descriptorType = vk::DescriptorType::eStorageBuffer;
++            write.pBufferInfo = &buffer_infos.back();
++            continue;
++        }
+         // The descriptor set layout is derived from Shader::ImageResource::is_written.
+         // TextureCache binding types can differ after depth/stencil association,
+         // fallback selection, or invalid texture handles. A descriptor write
+         // must use the exact type declared by its pipeline layout.
+-        const bool is_storage = stage.images[image_index].is_written;
++        const bool is_storage = image_descriptor_is_storage[image_index];
+         auto& set_write = set_writes[set_write_index++];
+         set_write.dstSet = VK_NULL_HANDLE;
+         set_write.dstBinding = binding.unified;
+diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.h b/src/video_core/renderer_vulkan/vk_rasterizer.h
+index dc078eb..ed8d058 100644
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.h
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.h
+@@ -161,7 +161,10 @@ private:
+     ImageBinding db_desc;
+ 
+     std::vector<vk::DescriptorImageInfo> image_infos;
+-    boost::container::static_vector<vk::DescriptorBufferInfo, Shader::NUM_BUFFERS> buffer_infos;
++    // Per-stage ordinary buffers plus compact-image remap SSBOs need stable
++    // storage across *all* shader stages. The old fixed-size vector only
++    // reserved NUM_BUFFERS entries and could overflow with extra SSBO maps.
++    std::vector<vk::DescriptorBufferInfo> buffer_infos;
+ 
+     struct BoundBuffer {
+         const VideoCore::Buffer* buffer;
+diff --git a/tests/compact_image_indices_test.cpp b/tests/compact_image_indices_test.cpp
+new file mode 100644
+index 0000000..1e2b6c0
+--- /dev/null
++++ b/tests/compact_image_indices_test.cpp
+@@ -0,0 +1,67 @@
++// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++// Standalone test for real GPU guest image-index mapping. Deliberately builds
++// without Vulkan, GPU, display, user saves, shaders or a game installation.
++// Run in Release/-DNDEBUG as well: mapping must never rely on ASSERT side effects.
++#include <cstdint>
++#include <vector>
++#include "shader_recompiler/compact_image_indices.h"
++
++int main() {
++    using Shader::CompactImageIndices::Assign;
++    using Shader::CompactImageIndices::Bounded;
++    using Shader::CompactImageIndices::Invalid;
++    constexpr std::uint32_t GuestEntries = 27651u;
++    constexpr std::uint32_t VolumeCap = 256u;
++    constexpr std::uint32_t CubeCap = 128u;
++    std::vector<std::uint32_t> map(GuestEntries + 1u, Invalid);
++    std::uint32_t volume = 0, cube = 0;
++    for (std::uint32_t n = 0; n < 35u; ++n) {
++        if (!Assign(map, n * 13u + 1u, VolumeCap, volume)) return 1;
++    }
++    for (std::uint32_t n = 0; n < 4u; ++n) {
++        if (!Assign(map, 10001u + 11u * n, CubeCap, cube)) return 2;
++    }
++    if (volume != 35u || cube != 4u) return 3;
++    for (std::uint32_t n = 0; n < 35u; ++n) {
++        if (map[n * 13u + 1u] != n) return 4;
++    }
++    for (std::uint32_t n = 0; n < 4u; ++n) {
++        if (map[10001u + 11u * n] != n) return 5;
++    }
++    if (Bounded(map[GuestEntries], VolumeCap) != VolumeCap) return 6;
++    if (Bounded(map[12345u], CubeCap) != CubeCap) return 7;
++    if (Bounded(map[1u + 13u * 34u], VolumeCap) != 34u) return 8;
++    if (Bounded(map[10001u + 11u * 3u], CubeCap) != 3u) return 9;
++    std::uint32_t over = VolumeCap;
++    if (Assign(map, 0u, VolumeCap, over)) return 10;
++    if (Assign(map, GuestEntries + 1u, VolumeCap, over)) return 11;
++    if (over != VolumeCap || map[0] != Invalid) return 12;
++    // Check that the three Vulkan descriptor array regions are disjoint,
++    // that ordinary 2D uses its unchanged full guest index, and that the
++    // compact typed arrays consume only the genuine selected source slot.
++    constexpr std::uint32_t Image2DBindings = GuestEntries + 1u;
++    constexpr std::uint32_t Image3DBindings = VolumeCap + 1u;
++    constexpr std::uint32_t ImageCubeBindings = CubeCap + 1u;
++    constexpr std::uint32_t Offset3D = Image2DBindings;
++    constexpr std::uint32_t OffsetCube = Offset3D + Image3DBindings;
++    constexpr std::uint32_t TotalImageBindings = OffsetCube + ImageCubeBindings;
++    if (Image2DBindings != 27652u || TotalImageBindings != 28038u) return 13;
++    for (std::uint32_t i = 0; i < 35u; ++i) {
++        const std::uint32_t guest_id = 1u + 13u * i;
++        const std::uint32_t remapped_slot = Offset3D + Bounded(map[guest_id], VolumeCap);
++        if (remapped_slot != Offset3D + i || remapped_slot < Image2DBindings ||
++            remapped_slot >= OffsetCube) return 14;
++    }
++    for (std::uint32_t i = 0; i < 4u; ++i) {
++        const std::uint32_t guest_id = 10001u + 11u * i;
++        const std::uint32_t remapped_slot = OffsetCube + Bounded(map[guest_id], CubeCap);
++        if (remapped_slot != OffsetCube + i || remapped_slot < OffsetCube ||
++            remapped_slot >= TotalImageBindings) return 15;
++    }
++    // Invalid type entries can only name each type's final null descriptor.
++    if (Offset3D + Bounded(Invalid, VolumeCap) != Offset3D + VolumeCap) return 16;
++    if (OffsetCube + Bounded(Invalid, CubeCap) != OffsetCube + CubeCap) return 17;
++    return 0;
++}
