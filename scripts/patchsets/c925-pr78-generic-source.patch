@@ -1,4 +1,5 @@
 diff --git a/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp b/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp
+index bec5e7eb1d38758f472f824ab71080e57975a501..2ac62a75e19b4296436030a6337c4b2b8527c535 100644
 --- a/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp
 +++ b/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp
 @@ -204,11 +204,12 @@ Id EmitImageSampleImplicitLodIndexed(
@@ -116,6 +117,7 @@ diff --git a/src/shader_recompiler/backend/spirv/emit_spirv_image.cpp b/src/shad
  
      ctx.AddLabel(other_end);
 diff --git a/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp b/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
+index 867687723c1374892ceb6ac771caeed0ef2bd290..3a60c04f883f19dac68c4090c3baaedb544208ab 100644
 --- a/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
 +++ b/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
 @@ -1034,33 +1034,68 @@ void EmitContext::DefineImagesAndSamplers() {
@@ -197,6 +199,7 @@ diff --git a/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp b/src/sh
      }
      if (std::ranges::any_of(info.images,
 diff --git a/src/shader_recompiler/backend/spirv/spirv_emit_context.h b/src/shader_recompiler/backend/spirv/spirv_emit_context.h
+index 2add3b031d53a8d12d425348d37d3117adab2fc9..baf3c6c9bb18c00cd350e9aa6d65720fdbd03e86 100644
 --- a/src/shader_recompiler/backend/spirv/spirv_emit_context.h
 +++ b/src/shader_recompiler/backend/spirv/spirv_emit_context.h
 @@ -304,6 +304,10 @@ class EmitContext final : public Sirit::Module {
@@ -211,6 +214,7 @@ diff --git a/src/shader_recompiler/backend/spirv/spirv_emit_context.h b/src/shad
          Id image_type;
          Id image_type_3d{};
 diff --git a/src/shader_recompiler/compact_image_indices.h b/src/shader_recompiler/compact_image_indices.h
+index 0000000000000000000000000000000000000000..70bdd2de9fa3da065d89600ca98a6c85618ede70 100644
 new file mode 100644
 --- /dev/null
 +++ b/src/shader_recompiler/compact_image_indices.h
@@ -250,6 +254,7 @@ new file mode 100644
 +
 +} // namespace Shader::CompactImageIndices
 diff --git a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+index 9623da6ee5e6049bdd4bbdb766c8fda7bbb31141..464479d9868f8de3b0d451ed45ed9384df9f35d8 100644
 --- a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
 +++ b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
 @@ -324,7 +324,12 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
@@ -266,6 +271,7 @@ diff --git a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp b/src/sh
              }
          }
 diff --git a/src/shader_recompiler/resource.h b/src/shader_recompiler/resource.h
+index b953c39bf69b0a74b1464113aa29e6aaca65ccd8..87c0ae196a1c879982ec2e2d79f966a762409e9e 100644
 --- a/src/shader_recompiler/resource.h
 +++ b/src/shader_recompiler/resource.h
 @@ -131,6 +131,13 @@ enum class MipStorageFallbackMode : u16 {
@@ -283,6 +289,7 @@ diff --git a/src/shader_recompiler/resource.h b/src/shader_recompiler/resource.h
  struct ImageResource {
      SharpFetch<AmdGpu::Image> sharp_fetch{};
 diff --git a/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp b/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
+index 5a53c8736ccce110f35e28ad07e609ff336d1553..01970db754a316b8a0158d7bbda2a1d6ee34926a 100644
 --- a/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
 +++ b/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp
 @@ -48,16 +48,26 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
@@ -317,6 +324,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_compute_pipeline.cpp b/src/video_
      }
      for (const auto& sampler : info->samplers) {
 diff --git a/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp b/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
+index cb097bc33077339e539f78c82b850d4901adfa9a..428186e15da635d192fbe6eb3bb4fa4149f99907 100644
 --- a/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
 +++ b/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp
 @@ -499,16 +499,26 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
@@ -351,6 +359,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp b/src/video
          }
          for (const auto& sampler : stage->samplers) {
 diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
+index 9d7c4b4f415980330480f9daeb2ae61bfddc364e..6a00fe31c21fa224eefc22f2004079cd37e3bcde 100644
 --- a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
 +++ b/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp
 @@ -55,10 +55,16 @@ static u32 GuestMixedIndexedImageLimit(const Instance& instance) {
@@ -400,6 +409,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp b/src/video_co
          for (const auto& sampler : info.samplers) {
              binding.unified += sampler.NumBindings(info);
 diff --git a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+index 1485581d10bca6137475d0c20e3f0028f2ce1673..e9ecd6fe631287c764971ced8eb582f228b99f1c 100644
 --- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
 +++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
 @@ -14,8 +14,8 @@ namespace Serialization {
@@ -414,6 +424,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp b/src/
  } // namespace Serialization
  
 diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+index 4862b6d5d7230d7595e7caf868b527c29999db85..6b5f5d1ab67f73760b509b42ecdaa6c50be247a9 100644
 --- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
 +++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
 @@ -3,6 +3,8 @@
@@ -669,6 +680,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/r
          // TextureCache binding types can differ after depth/stencil association,
          // fallback selection, or invalid texture handles. A descriptor write
 diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.h b/src/video_core/renderer_vulkan/vk_rasterizer.h
+index caba62525485731afc673964337fdb6704a3f9df..1b1cb5f206d06945f7b46be0a81c41fcd2ecce23 100644
 --- a/src/video_core/renderer_vulkan/vk_rasterizer.h
 +++ b/src/video_core/renderer_vulkan/vk_rasterizer.h
 @@ -163,7 +163,10 @@ class Rasterizer {
@@ -684,6 +696,7 @@ diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.h b/src/video_core/ren
      struct BoundBuffer {
          const VideoCore::Buffer* buffer;
 diff --git a/tests/compact_image_indices_test.cpp b/tests/compact_image_indices_test.cpp
+index 0000000000000000000000000000000000000000..1e2b6c0d9f57120ed039a0b95d0d6b9ff7ced1a1 100644
 new file mode 100644
 --- /dev/null
 +++ b/tests/compact_image_indices_test.cpp
