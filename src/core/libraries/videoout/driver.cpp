@@ -305,8 +305,14 @@ void VideoOutDriver::DrawBlankFrame() {
 void VideoOutDriver::DrawLastFrame() {
     const auto frame = presenter->PrepareLastFrame();
     if (frame != nullptr) {
-        presenter->Present(frame, true);
+        // PrepareLastFrame now ACQUIRES the previous frame from the shared
+        // free FIFO. Always return it to the pool after presenting; treating
+        // it as still "reused" would leak an owned frame and stall guest flips.
+        // This is an idle/overlay redraw, not a new guest frame.
+        presenter->Present(frame, false, false);
     } else if (Core::Startup::progress.IsActive()) {
+        // PrepareBlankFrame(true) is also nonblocking and skips when the GPU
+        // is busy; never wait in the presentation thread's no-request path.
         DrawBlankFrame();
     }
 }
