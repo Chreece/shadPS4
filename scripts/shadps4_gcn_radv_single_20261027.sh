@@ -73,33 +73,97 @@ if pgrep -x shadps4 > "$OUT/active-shadps4-pids.txt"; then
     echo "GAME_OR_EMULATOR_ALREADY_RUNNING_REFUSE_SHARED_GPU_TEST"; exit 4;
 fi
 STATE="VERIFY_RADV_ONLY_VULKAN"
-for candidate in /usr/share/vulkan/icd.d/radeon_icd.x86_64.json /etc/vulkan/icd.d/radeon_icd.x86_64.json; do
-    [[ -r "$candidate" ]] || continue
-    if python3 - "$candidate" <<'PY'
-import json,sys
-try:
-    with open(sys.argv[1],encoding="utf8") as f: data=json.load(f)
-    assert "radeon" in data["ICD"]["library_path"].lower()
-except (ValueError,KeyError,OSError,AssertionError): sys.exit(1)
-PY
-    then ICD="$candidate"; break; fi
-done
-[[ -n "$ICD" ]] || { echo "RADV_ICD_NOT_FOUND"; exit 5; }
-timeout -s TERM -k 2s 20s env -u DISPLAY -u WAYLAND_DISPLAY \
-    VK_DRIVER_FILES="$ICD" VK_ICD_FILENAMES="$ICD" \
-    vulkaninfo --summary > "$OUT/vulkaninfo-radv.txt" 2>&1 || {
-        echo "VULKANINFO_RADV_FAILED"; exit 5;
-    }
-python3 - "$OUT/vulkaninfo-radv.txt" <<'PY' || {
-import pathlib,re,sys
-s=pathlib.Path(sys.argv[1]).read_text(errors="replace")
-names=re.findall(r'^\s*deviceName\s*=\s*(.*?)\s*$',s,re.M)
-drivers=re.findall(r'^\s*driverID\s*=\s*(.*?)\s*$',s,re.M)
-assert len(names)==1 and "RX 7900 XTX" in names[0],names
-assert len(drivers)==1 and "MESA_RADV" in drivers[0],drivers
-assert "llvmpipe" not in s.lower()
-PY
-    echo "RADV_DEVICE_ISOLATION_UNVERIFIED"; exit 5;
+# Discover RADV ICD manifests from standard Vulkan directories and inherited
+# loader paths. Distribution versions use different manifest filenames;
+# never assume radeon_icd.x86_64.json exists.
+python3 - "$OUT/radv-icd-candidates.txt" "$OUT/radv-icd-discovery.txt" <<'PYDISC'
+import json, os, pathlib, sys
+list_file, audit_file = map(pathlib.Path, sys.argv[1:])
+roots = [
+    '/usr/share/vulkan/icd.d', '/etc/vulkan/icd.d',
+    '/usr/local/share/vulkan/icd.d', '/usr/local/etc/vulkan/icd.d',
+    '/usr/lib/x86_64-linux-gnu/vulkan/icd.d',
+    os.path.expanduser('~/.local/share/vulkan/icd.d'),
+    os.path.expanduser('~/.config/vulkan/icd.d'),
+]
+for d in os.environ.get('XDG_DATA_DIRS', '').split(':'):
+    if d:
+        roots.append(os.path.join(d, 'vulkan/icd.d'))
+paths = []
+for key in ('VK_DRIVER_FILES', 'VK_ICD_FILENAMES'):
+    for entry in os.environ.get(key, '').split(':'):
+        if entry:
+            paths.append(pathlib.Path(entry))
+for root in roots:
+    directory = pathlib.Path(root)
+    if directory.is_dir():
+        paths.extend(sorted(directory.glob('*.json')))
+seen, found, audit = set(), [], []
+for path in paths:
+    path = path.expanduser()
+    if str(path) in seen:
+        continue
+    seen.add(str(path))
+    try:
+        with path.open(encoding='utf-8') as f:
+            manifest = json.load(f)
+        library = manifest['ICD']['library_path']
+        if not isinstance(library, str):
+            raise ValueError('Invalid library path type')
+        liblower = library.lower()
+        excluded_32 = any(marker in path.name.lower()
+                          for marker in ('i686', 'i386', 'x86_32'))
+        if ('radeon' in liblower or 'radv' in liblower) and not excluded_32:
+            found.append(path)
+            audit.append(f'CANDIDATE {path} {library}')
+        else:
+            audit.append(f'SKIP {path} {library}')
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        audit.append(f'UNREADABLE {path} {type(exc).__name__}')
+found.sort(key=lambda p: ('x86_64' not in p.name.lower(), str(p)))
+list_file.write_text(''.join(str(p) + '\n' for p in found), encoding='utf-8')
+audit_file.write_text('\n'.join(audit) + '\n' if audit else
+                      'NO_READABLE_VULKAN_ICD_MANIFESTS\n', encoding='utf-8')
+PYDISC
+if [[ ! -s "$OUT/radv-icd-candidates.txt" ]]; then
+    echo "RADV_ICD_NOT_FOUND_EVIDENCE=$OUT/radv-icd-discovery.txt"
+    tail -n 40 "$OUT/radv-icd-discovery.txt"
+    exit 5
+fi
+
+# Manifest names and shared-library paths do not prove the Vulkan device.
+# For each candidate, restrict the loader to that ICD and demand EXACTLY one
+# Vulkan device: AMD RX 7900 XTX with Mesa RADV driver ID, never LLVMpipe.
+CANDIDATE_INDEX=0
+while IFS= read -r candidate; do
+    (( CANDIDATE_INDEX += 1 ))
+    echo "CHECKING_RADV_MANIFEST=$candidate"
+    if ! timeout -s TERM -k 2s 20s env -u DISPLAY -u WAYLAND_DISPLAY \
+       VK_DRIVER_FILES="$candidate" VK_ICD_FILENAMES="$candidate" \
+       vulkaninfo --summary > "$OUT/radv-candidate-$CANDIDATE_INDEX.txt" 2>&1; then
+        echo "RADV_CANDIDATE_VULKANINFO_FAILED=$candidate"
+        continue
+    fi
+    if python3 - "$OUT/radv-candidate-$CANDIDATE_INDEX.txt" <<'PYVERIFY'
+import pathlib, re, sys
+s = pathlib.Path(sys.argv[1]).read_text(errors='replace')
+names = re.findall(r'^\s*deviceName\s*=\s*(.*?)\s*$', s, re.M)
+ids = re.findall(r'^\s*driverID\s*=\s*(.*?)\s*$', s, re.M)
+assert len(names) == 1 and 'RX 7900 XTX' in names[0], names
+assert len(ids) == 1 and ids[0] == 'DRIVER_ID_MESA_RADV', ids
+assert 'llvmpipe' not in s.lower()
+PYVERIFY
+    then
+        ICD="$candidate"
+        cp "$OUT/radv-candidate-$CANDIDATE_INDEX.txt" "$OUT/vulkaninfo-radv.txt"
+        break
+    fi
+    echo "RADV_CANDIDATE_DEVICE_CHECK_FAILED=$candidate"
+done < "$OUT/radv-icd-candidates.txt"
+[[ -n "$ICD" ]] || {
+    echo "RADV_ONLY_DEVICE_NOT_VERIFIED"
+    tail -n 40 "$OUT/radv-icd-discovery.txt"
+    exit 5
 }
 echo "RADV_ONLY=VERIFIED icd=$ICD"
 STATE="RUN_ONE_GCN_ADD_F32_RADV"
