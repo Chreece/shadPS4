@@ -14,6 +14,7 @@
 #include "video_core/buffer_cache/fault_list_limits.h"
 #include "video_core/buffer_cache/fault_ring_reuse.h"
 #include "core/libraries/videoout/video_flip_trace.h"
+#include "video_core/renderer_vulkan/idle_frame_reuse.h"
 #include "video_core/renderer_vulkan/vk_pm4_acquire_memory.h"
 
 TEST(NativeWarningContracts, FullLengthNpIdNeedsNoInlineNull) {
@@ -177,4 +178,58 @@ TEST(VideoOutFirstFrameTrace, LargePowerOfTwoStaysObservableWithoutUnboundedLogg
     EXPECT_TRUE(Libraries::VideoOut::ShouldTraceVideoFlip(1ULL << 31));
     EXPECT_TRUE(Libraries::VideoOut::ShouldTraceVideoFlip(1ULL << 63));
     EXPECT_FALSE(Libraries::VideoOut::ShouldTraceVideoFlip(~u64{0}));
+}
+
+TEST(PresenterIdleNonBlocking, EmptyFreeFrameQueueNeverWaits) {
+    std::queue<u32*> frames;
+    bool checked = false;
+    EXPECT_EQ(Vulkan::TryPopReadyIdleFrame(frames, [&](u32*) {
+                  checked = true;
+                  return true;
+              }), nullptr);
+    EXPECT_FALSE(checked);
+}
+
+TEST(PresenterIdleNonBlocking, BusyGpuFenceKeepsOriginalFrameQueued) {
+    u32 frame = 12;
+    std::queue<u32*> frames;
+    frames.push(&frame);
+    EXPECT_EQ(Vulkan::TryPopReadyIdleFrame(frames, [](u32*) { return false; }), nullptr);
+    ASSERT_EQ(frames.size(), 1u);
+    EXPECT_EQ(frames.front(), &frame);
+}
+
+TEST(PresenterIdleNonBlocking, ReadyGpuFenceReleasesExactlyOneFrame) {
+    u32 first = 10, second = 20;
+    std::queue<u32*> frames;
+    frames.push(&first);
+    frames.push(&second);
+    EXPECT_EQ(Vulkan::TryPopReadyIdleFrame(frames, [](u32*) { return true; }), &first);
+    ASSERT_EQ(frames.size(), 1u);
+    EXPECT_EQ(frames.front(), &second);
+}
+
+TEST(PresenterIdleNonBlocking, DoNotSkipBusyHeadToReuseAnotherFrame) {
+    u32 busy = 10, ready = 20;
+    std::queue<u32*> frames;
+    frames.push(&busy);
+    frames.push(&ready);
+    EXPECT_EQ(Vulkan::TryPopReadyIdleFrame(frames, [&](u32* frame) {
+                  return frame == &ready;
+              }), nullptr);
+    ASSERT_EQ(frames.size(), 2u);
+    EXPECT_EQ(frames.front(), &busy);
+}
+
+TEST(PresenterIdleNonBlocking, GPUCompletionAfterSkipAllowsNextIteration) {
+    u32 frame = 17;
+    std::queue<u32*> frames;
+    frames.push(&frame);
+    bool signaled = false;
+    const auto probe = [&](u32*) { return signaled; };
+    EXPECT_EQ(Vulkan::TryPopReadyIdleFrame(frames, probe), nullptr);
+    ASSERT_EQ(frames.size(), 1u);
+    signaled = true;
+    EXPECT_EQ(Vulkan::TryPopReadyIdleFrame(frames, probe), &frame);
+    EXPECT_TRUE(frames.empty());
 }
