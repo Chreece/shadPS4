@@ -664,8 +664,11 @@ void Rasterizer::ResetBindings(bool is_compute) {
         texture_cache.GetImage(image_id).binding = {};
     }
     for (const auto [buffer, offset, size, src_access] : bound_buffers) {
-        const auto dst_stage = is_compute ? vk::PipelineStageFlagBits2::eComputeShader
-                                          : vk::PipelineStageFlagBits2::eAllGraphics;
+        const vk::PipelineStageFlags2 dst_stage =
+            (src_access & vk::AccessFlagBits2::eIndirectCommandRead)
+                ? vk::PipelineStageFlagBits2::eDrawIndirect
+                : is_compute ? vk::PipelineStageFlagBits2::eComputeShader
+                             : vk::PipelineStageFlagBits2::eAllGraphics;
         runtime.AccessBuffer(buffer, offset, size, dst_stage, src_access);
     }
     bound_images.clear();
