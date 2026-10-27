@@ -14,6 +14,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_dispatch_helper.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/vk_indirect_read_sync.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -616,8 +617,7 @@ void Rasterizer::ResetBindings(bool is_compute) {
         texture_cache.GetImage(image_id).binding = {};
     }
     for (const auto [buffer, offset, size, src_access] : bound_buffers) {
-        const auto dst_stage = is_compute ? vk::PipelineStageFlagBits2::eComputeShader
-                                          : vk::PipelineStageFlagBits2::eAllGraphics;
+        const auto dst_stage = BufferAccessStage(src_access, is_compute);
         runtime.AccessBuffer(buffer, offset, size, dst_stage, src_access);
     }
     bound_images.clear();
