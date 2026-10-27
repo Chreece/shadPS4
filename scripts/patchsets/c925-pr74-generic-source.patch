@@ -1,4 +1,5 @@
 diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+index 3dcb5699030f4e8f79b1ac6f305edaabe510a4e6..5ec64b168a7c944b420ddf75833385144fcce6bf 100644
 --- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
 +++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
 @@ -929,6 +929,21 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
