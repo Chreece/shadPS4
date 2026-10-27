@@ -1,0 +1,162 @@
+diff --git a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+--- a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
++++ b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include <algorithm>
++#include <atomic>
+ #include <limits>
+ #include <unordered_map>
+ #include "common/logging/log.h"
+@@ -238,8 +238,27 @@
+                       const Profile& profile) {
+     IR::Inst& inst = *resource.user;
+ 
++    const auto sharp_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.sharps[0]);
++    // A shader can select V# descriptor dwords using a GPU-dependent SRT
++    // address. A failed host SHARP fetch is not a valid zero/null descriptor.
++    // Preserve the real guest vector and lower the scalar buffer read via
++    // guest GPU address translation, rather than choosing a host value.
++    const IR::Inst* const original_handle = inst.Arg(0).TryInst();
++    if (inst.GetOpcode() == IR::Opcode::ReadConstBuffer &&
++        sharp_fetch.summary == SharpFetch<AmdGpu::Buffer>::Summary::Invalid &&
++        resource.sharps[0].post_op == SharpFetchPostOp::None &&
++        original_handle &&
++        original_handle->GetOpcode() == IR::Opcode::CompositeConstructU32x4) {
++        static std::atomic<u32> reports{0};
++        if (reports.fetch_add(1, std::memory_order_relaxed) < 32u) {
++            LOG_INFO(Render_Recompiler,
++                     "GPU_DYNAMIC_BUFFER_SHARP shader={:#x} stage={}",
++                     info.pgm_hash, static_cast<u32>(info.hw_stage));
++        }
++        return;
++    }
+     const u32 buffer_binding = descriptors.Add(BufferResource{
+-        .sharp_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.sharps[0]),
++        .sharp_fetch = sharp_fetch,
+         .used_types = BufferDataType(inst, profile),
+         .buffer_type = BufferType::Guest,
+         .is_written = IsBufferStore(inst),
+@@ -705,6 +723,11 @@
+ 
+ void PatchBufferArgs(IR::Inst& inst, Info& info) {
+     const auto handle = inst.Arg(0);
++    // A GPU-dynamic scalar read retained its original non-immediate V#
++    // handle. The SPIR-V emitter uses its true, lane-selected descriptor.
++    if (inst.GetOpcode() == IR::Opcode::ReadConstBuffer && !handle.IsImmediate()) {
++        return;
++    }
+     const auto buffer_res = info.buffers[handle.U32()];
+     const auto buffer = buffer_res.GetSharp(info);
+ 
+diff --git a/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp b/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp
+--- a/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp
++++ b/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp
+@@ -209,6 +209,13 @@
+     case IR::Opcode::Memtime:
+         info.uses_shader_clock = true;
+         break;
++    case IR::Opcode::ReadConstBuffer:
++        // Dynamic V# descriptors require the same guest-BDA page table and
++        // fault feedback that native GPU-dynamic ReadConst already uses.
++        if (!inst.Arg(0).IsImmediate()) {
++            info.uses_dma = true;
++        }
++        break;
+     case IR::Opcode::ReadConst:
+         AddFlatbuf(info);
+         if (inst.Flags<u32>() == 0) {
+diff --git a/src/shader_recompiler/backend/spirv/emit_spirv_instructions.h b/src/shader_recompiler/backend/spirv/emit_spirv_instructions.h
+--- a/src/shader_recompiler/backend/spirv/emit_spirv_instructions.h
++++ b/src/shader_recompiler/backend/spirv/emit_spirv_instructions.h
+@@ -62,7 +62,7 @@
+ void EmitGetMaskLaneVariable(EmitContext& ctx);
+ void EmitSetScc(EmitContext& ctx);
+ Id EmitReadConst(EmitContext& ctx, IR::Inst* inst, Id addr, Id offset);
+-Id EmitReadConstBuffer(EmitContext& ctx, u32 handle, Id index);
++Id EmitReadConstBuffer(EmitContext& ctx, const IR::Value& handle, Id index);
+ Id EmitLoadBufferU8(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address);
+ Id EmitLoadBufferU16(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address);
+ Id EmitLoadBufferU32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address);
+diff --git a/src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp b/src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp
+--- a/src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp
++++ b/src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp
+@@ -64,8 +64,64 @@
+     return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
+ }
+ 
+-Id EmitReadConstBuffer(EmitContext& ctx, u32 handle, Id index) {
+-    const auto& buffer = ctx.buffers[handle];
++Id EmitReadConstBuffer(EmitContext& ctx, const IR::Value& handle, Id index) {
++    if (!handle.IsImmediate()) {
++        // Raw guest V# selected by the running GPU shader. Preserve the
++        // complete 40-bit address, original stride/record count and type.
++        // No host-selected buffer or fabricated descriptor is substituted.
++        ASSERT(ctx.info.uses_dma && Sirit::ValidId(ctx.get_bda_pointer));
++        const Id raw = ctx.Def(handle);
++        const Id dw0 = ctx.OpCompositeExtract(ctx.U32[1], raw, 0u);
++        const Id dw1 = ctx.OpCompositeExtract(ctx.U32[1], raw, 1u);
++        const Id dw2 = ctx.OpCompositeExtract(ctx.U32[1], raw, 2u);
++        const Id dw3 = ctx.OpCompositeExtract(ctx.U32[1], raw, 3u);
++        const Id base_hi = ctx.OpBitwiseAnd(ctx.U32[1], dw1, ctx.ConstU32(0xffu));
++        const Id base = ctx.OpBitwiseOr(
++            ctx.U64, ctx.OpUConvert(ctx.U64, dw0),
++            ctx.OpShiftLeftLogical(ctx.U64, ctx.OpUConvert(ctx.U64, base_hi),
++                                   ctx.ConstU32(32u)));
++        const Id stride = ctx.OpBitFieldUExtract(
++            ctx.U32[1], dw1, ctx.ConstU32(16u), ctx.ConstU32(14u));
++        const Id length = ctx.OpSelect(
++            ctx.U32[1], ctx.OpIEqual(ctx.U1[1], stride, ctx.u32_zero_value),
++            dw2, ctx.OpIMul(ctx.U32[1], dw2, stride));
++        // Bounds are checked in dwords before the multiplication by four,
++        // avoiding 32-bit overflow from a guest-controlled index.
++        const Id valid_length = ctx.OpUGreaterThanEqual(
++            ctx.U1[1], length, ctx.ConstU32(4u));
++        const Id last_index = ctx.OpShiftRightLogical(
++            ctx.U32[1], ctx.OpISub(ctx.U32[1], length, ctx.ConstU32(4u)),
++            ctx.ConstU32(2u));
++        const Id valid_index = ctx.OpULessThanEqual(ctx.U1[1], index, last_index);
++        const Id valid_type = ctx.OpIEqual(
++            ctx.U1[1], ctx.OpShiftRightLogical(ctx.U32[1], dw3, ctx.ConstU32(30u)),
++            ctx.u32_zero_value);
++        const Id valid = ctx.OpLogicalAnd(
++            ctx.U1[1], valid_type, ctx.OpLogicalAnd(
++                ctx.U1[1], valid_length, ctx.OpLogicalAnd(
++                    ctx.U1[1], valid_index,
++                    ctx.OpINotEqual(ctx.U1[1], base, ctx.u64_zero_value))));
++        const Id read_label = ctx.OpLabel();
++        const Id null_label = ctx.OpLabel();
++        const Id merge_label = ctx.OpLabel();
++        ctx.OpSelectionMerge(merge_label, spv::SelectionControlMask::MaskNone);
++        ctx.OpBranchConditional(valid, read_label, null_label);
++        ctx.AddLabel(read_label);
++        const Id address = ctx.OpIAdd(
++            ctx.U64, base, ctx.OpUConvert(
++                ctx.U64, ctx.OpShiftLeftLogical(ctx.U32[1], index, ctx.ConstU32(2u))));
++        const Id value = ctx.EmitDwordMemoryRead(address, [&] {
++            return ctx.u32_zero_value;
++        });
++        ctx.OpBranch(merge_label);
++        const Id actual_read_label = ctx.last_label;
++        ctx.AddLabel(null_label);
++        ctx.OpBranch(merge_label);
++        ctx.AddLabel(merge_label);
++        return ctx.OpPhi(ctx.U32[1], value, actual_read_label,
++                         ctx.u32_zero_value, null_label);
++    }
++    const auto& buffer = ctx.buffers[handle.U32()];
+     if (const Id offset = buffer.Offset(PointerSize::B32); Sirit::ValidId(offset)) {
+         index = ctx.OpIAdd(ctx.U32[1], index, offset);
+     }
+diff --git a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+--- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+@@ -13,6 +13,6 @@
+ namespace Serialization {
+ /* You should increment versions below once corresponding serialization scheme is changed. */
+-static constexpr u32 ShaderBinaryVersion = 0x43520006u;
++static constexpr u32 ShaderBinaryVersion = 0x43520007u;
+ static constexpr u32 ShaderMetaVersion = 0x43520006u;
+ 
+ static constexpr u32 PipelineKeyVersion = 3u;
