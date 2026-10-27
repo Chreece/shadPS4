@@ -10,6 +10,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/buffer_cache/formatted_stream_route.h"
 #include "video_core/buffer_cache/memory_tracker.h"
 #include "video_core/buffer_cache/region_definitions.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
@@ -169,8 +170,12 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
 
 std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
                                                         bool is_written, bool is_texel_buffer) {
-    // For read-only buffers use device local stream buffer to reduce renderpass breaks.
-    if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size)) {
+    // GPU-written images can alias a small formatted buffer whose CPU-side
+    // buffer dirty tracker still reports it as clean. Never stream stale CPU
+    // bytes for a nonempty formatted read; let SynchronizeMemoryFromImage run.
+    if (!is_written && size <= STREAM_THRESHOLD &&
+        MayBypassImageSyncForStream(is_texel_buffer, size) &&
+        !IsRegionGpuModified(device_addr, size)) {
         const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
         memory->CopySparseMemory(device_addr, data, size);
         stream_buffer.Commit();
@@ -180,10 +185,9 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     const u64 last_block = (device_addr + size - 1) >> block_shift;
     const auto* arena = GetArena(first_block, last_block);
     EnsureResident(arena, first_block, last_block);
+    // SynchronizeMemory already calls SynchronizeMemoryFromImage for a
+    // nonempty formatted read. Do not schedule the GPU tile/download twice.
     SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);
-    if (is_texel_buffer && !is_written) {
-        SynchronizeMemoryFromImage(arena, device_addr, size);
-    }
     if (is_written) {
         gpu_modified_ranges.Add(device_addr, size);
     }
