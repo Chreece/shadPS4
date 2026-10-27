@@ -2,7 +2,7 @@
 # Reuse the previously created clean detached c925 source and all 4 previously
 # hash-verified patch files. Only tests source portability; no builds or games.
 # Never changes the proven ELF, other game binaries, saves, ES-DE or SSH.
-set -Eeuo pipefail
+set -uo pipefail
 export GIT_TERMINAL_PROMPT=0 GIT_OPTIONAL_LOCKS=0
 C925=c925523b49ef39434024b16b2b014d120471ee1a
 ELF_SHA=260ed43abbe538127ab82b3580a48c5f67be19ac4bbdd32ebefd78c73cdaf50d
@@ -117,6 +117,7 @@ for pr in 74 75 77 78; do
 done
 STATUS=PATCHES_VERIFIED
 report ALL_FOUR_PATCHES_VERIFIED
+report ENTER_PR74_SOURCE_MERGE_LOOP
 # Patches were taken from exactly these public source ancestry points.
 for step in 74 75 77 78; do
  case "$step" in
