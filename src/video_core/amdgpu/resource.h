@@ -7,6 +7,7 @@
 #include "common/alignment.h"
 #include "common/assert.h"
 #include "common/bit_field.h"
+#include "video_core/amdgpu/buffer_size.h"
 #include "video_core/amdgpu/pixel_format.h"
 #include "video_core/amdgpu/tiling.h"
 
@@ -88,8 +89,17 @@ struct Buffer {
         return Common::AlignUp(GetSize(), sizeof(u32)) >> 2;
     }
 
+    // GPU V# byte count is 64-bit even though NUM_RECORDS itself is u32.
+    // PR80: 20-byte stride with UINT32_MAX records is 85,899,345,900 bytes,
+    // not its wrapped 0xFFFFFFEC 32-bit value.
+    u64 GetSize64() const noexcept {
+        return BufferSize::DeclaredBytes(stride, num_records);
+    }
+
+    // Retain the old API for callers yet to migrate; Vulkan bindings now use
+    // the full declared width before clamping to accessible mapped memory.
     u32 GetSize() const noexcept {
-        return stride == 0 ? num_records : (stride * num_records);
+        return static_cast<u32>(GetSize64());
     }
 
     u32 GetIndexStride() const noexcept {
