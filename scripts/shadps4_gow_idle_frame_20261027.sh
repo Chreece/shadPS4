@@ -16,7 +16,7 @@ BASE_ELF="$OLD/build/shadps4"
 BASE_SHA="7604bae00c78b72e163138327f61a2f92bf549ac66446487d1ab7370a2f9b4d1"
 PROTECTED="$ROOT/GodOfWarRagnarok/build/shadps4"
 PROTECTED_SHA="8de2106a3e0d410904d9c8d6a2903ba6f1f65986af3c848b0bf274a4f4b45c8e"
-SOURCE_REV="26b7b29c21b9eb97404d58812fb13b2411b1fbef"
+SOURCE_REV="8984f89b748ee1f11de2e8caac2af7819e22484e"
 RUNNER_REV="448c20c756accf1b9148acde0622bf7db4a48b63"
 RUNNER_BLOB="223a8e6ef7916e06bfd4f0ccefc90c92d5b097a0"
 mkdir -p "$LOGS" "$TESTS"
@@ -161,7 +161,7 @@ done
     echo "BUILD_LOCK_TIMEOUT_NO_COMPILATION_OR_GAME"; exit 3;
 }
 echo "BOTH_BUILD_LOCKS_ACQUIRED=YES"
-echo "STAGE=RESUME_CACHED_UNIFORM_LANE_BUILD"
+echo "STAGE=RESUME_CACHED_NONBLOCKING_IDLE_FRAME_BUILD"
 
 for command in git cmake ninja ctest python3 curl flock tar sha256sum nice timeout ldd cmp; do
     command -v "$command" >/dev/null || { echo "MISSING_COMMAND=$command"; exit 3; }
