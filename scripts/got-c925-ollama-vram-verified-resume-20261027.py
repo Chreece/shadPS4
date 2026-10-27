@@ -531,7 +531,7 @@ def offload_if_needed() -> None:
 def restore_ollama() -> None:
     if not STATE.get("ollama_unload_attempted") or not MODEL_SNAPSHOT.exists():
         return
-    stage("RESTORE_PREVIOUS_OLLAMA_MODELS_AFTER_GAME_PROCESS_EXIT")
+    print("STAGE=RESTORE_PREVIOUS_OLLAMA_MODELS_AFTER_GAME_PROCESS_EXIT", flush=True)
     try:
         models = json.loads(MODEL_SNAPSHOT.read_text())
         loaded = set(_ollama_names(_ollama_ps()))
