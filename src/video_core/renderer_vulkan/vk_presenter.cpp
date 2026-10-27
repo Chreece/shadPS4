@@ -22,6 +22,7 @@
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
+#include "core/libraries/videoout/video_flip_trace.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/texture_cache/image.h"
 
@@ -676,6 +677,13 @@ static vk::Format GetFrameViewFormat(const Libraries::VideoOut::PixelFormat form
 
 Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& attribute,
                                VAddr cpu_address) {
+    static std::atomic<u64> guest_prepares{};
+    const u64 seq = guest_prepares.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (Libraries::VideoOut::ShouldTraceVideoFlip(seq)) {
+        LOG_INFO(Frontend,
+                 "VIDEO_FLIP_STAGE stage=guest_frame_prepare_begin count={} address={:#x}",
+                 seq, cpu_address);
+    }
     auto desc = VideoCore::TextureCache::ImageDesc{attribute, cpu_address};
     const auto image_id = texture_cache.FindImage(desc);
     texture_cache.UpdateImage(image_id);
@@ -776,6 +784,11 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     frame->ready_tick = draw_scheduler.CurrentTick();
     SubmitInfo info{};
     draw_scheduler.Flush(info);
+    if (Libraries::VideoOut::ShouldTraceVideoFlip(seq)) {
+        LOG_INFO(Frontend,
+                 "VIDEO_FLIP_STAGE stage=guest_frame_prepare_ready count={} tick={}",
+                 seq, frame->ready_tick);
+    }
     return frame;
 }
 
@@ -946,6 +959,17 @@ void Presenter::CopyStartupReadback(const Frame* frame, vk::CommandBuffer cmdbuf
 }
 
 void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {
+    // Host loading-splash frames must not be mistaken for guest video.
+    static std::atomic<u64> guest_present_calls{};
+    u64 guest_seq = 0;
+    if (frame->has_game_content) {
+        guest_seq = guest_present_calls.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (Libraries::VideoOut::ShouldTraceVideoFlip(guest_seq)) {
+            LOG_INFO(Frontend,
+                     "VIDEO_FLIP_STAGE stage=guest_present_enter count={} reusing={} is_game_frame={}",
+                     guest_seq, is_reusing_frame, is_game_frame);
+        }
+    }
     // Free the frame for reuse
     const auto free_frame = [&] {
         if (!is_reusing_frame) {
@@ -1203,6 +1227,11 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     {
         std::scoped_lock submit_lock{Scheduler::submit_mutex};
         const bool presented = swapchain.Present();
+        if (guest_seq != 0 && Libraries::VideoOut::ShouldTraceVideoFlip(guest_seq)) {
+            LOG_INFO(Frontend,
+                     "VIDEO_FLIP_STAGE stage=guest_swapchain_result count={} presented={}",
+                     guest_seq, presented);
+        }
         if (startup_probe) {
             startup_readback->presented = presented;
         }
