@@ -988,8 +988,10 @@ void Presenter::CopyStartupReadback(const Frame* frame, vk::CommandBuffer cmdbuf
 void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {
     // Host loading-splash frames must not be mistaken for guest video.
     static std::atomic<u64> guest_present_calls{};
+    const bool actual_guest_flip =
+        IsRealGuestFrameSubmission(frame->has_game_content, is_reusing_frame, is_game_frame);
     u64 guest_seq = 0;
-    if (frame->has_game_content) {
+    if (actual_guest_flip) {
         guest_seq = guest_present_calls.fetch_add(1, std::memory_order_relaxed) + 1;
         if (Libraries::VideoOut::ShouldTraceVideoFlip(guest_seq)) {
             LOG_INFO(Frontend,
@@ -1038,9 +1040,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     const auto cmdbuf = scheduler.CommandBuffer();
     // Host idle/overlay re-presents are not new guest game frames.
     // Do not let their readback masquerade as a newly submitted game image.
-    const bool startup_probe =
-        !is_reusing_frame && is_game_frame && frame->has_game_content &&
-        PrepareStartupReadback(frame);
+    const bool startup_probe = actual_guest_flip && PrepareStartupReadback(frame);
     const u32 capture_with_overlays_count = VideoCore::ConsumeWithOverlaysScreenshotRequests();
     std::optional<ScreenshotReadback> pending_screenshot;
 
@@ -1266,8 +1266,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         if (startup_probe) {
             startup_readback->presented = presented;
         }
-        if (!is_reusing_frame && is_game_frame && frame->has_game_content && presented &&
-            !startup_first_frame_logged) {
+        if (actual_guest_flip && presented && !startup_first_frame_logged) {
             LOG_INFO(Frontend, "STARTUP_UI event=first_game_frame elapsed_ms={}",
                      Core::Startup::progress.ElapsedMs());
             startup_first_frame_logged = true;
@@ -1278,7 +1277,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     }
 
     free_frame();
-    if (!is_reusing_frame && is_game_frame) {
+    if (actual_guest_flip) {
         DebugState.IncFlipFrameNum();
     }
 }
