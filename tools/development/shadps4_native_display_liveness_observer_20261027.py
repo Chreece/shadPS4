@@ -96,7 +96,7 @@ def session_processes():
             probe=subprocess.run(
                 ['pgrep','-x',name],stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,check=False,timeout=2)
-            found[name]=sorted(int(x) for x in probe.stdout.split() if x.isdecimal())
+            found[name]=sorted(int(x) for x in probe.stdout.split() if x.isdigit())
         except (OSError,ValueError,subprocess.TimeoutExpired):
             found[name]=[]
     return found
