@@ -567,7 +567,7 @@ rc=$?
 set -e
 echo "NATIVE_GAMEPLAY_OBSERVER_EXIT=$rc"
 echo "STAGE=READ_ONLY_RADV_GPU_FAULT_CAPTURE"
-python3 - "$REPORT" "$REPORT/radv-capture-start.stamp" <<'PYRADV'
+python3 - "$REPORT" "$REPORT/radv-capture-start.stamp" <<'PYRADV' || echo 'RADV_REPORT_COLLECTION_UNAVAILABLE'
 import json
 import shutil
 import sys
@@ -631,7 +631,7 @@ fi
     if command -v xrandr >/dev/null; then timeout 4 xrandr --query || :; fi
 } > "$REPORT/sunshine-monitor-after.txt" 2>&1
 echo "SUNSHINE_MONITOR_SNAPSHOT_AFTER=$REPORT/sunshine-monitor-after.txt"
-python3 - "$REPORT/sunshine-monitor-before.txt" "$REPORT/sunshine-monitor-after.txt" "$REPORT/session-identity-summary.txt" <<'PYSESSION'
+python3 - "$REPORT/sunshine-monitor-before.txt" "$REPORT/sunshine-monitor-after.txt" "$REPORT/session-identity-summary.txt" <<'PYSESSION' || echo 'SUNSHINE_SESSION_COMPARISON_UNAVAILABLE'
 from pathlib import Path
 import re,sys
 before,after,out=map(Path,sys.argv[1:])
