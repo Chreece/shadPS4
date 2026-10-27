@@ -11,6 +11,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/buffer_cache/formatted_stream_route.h"
 #include "video_core/buffer_cache/memory_tracker.h"
 #include "video_core/buffer_cache/fault_ring_reuse.h"
 #include "video_core/buffer_cache/region_definitions.h"
@@ -227,8 +228,11 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     const bool is_written = True(flags & ObtainBufferFlags::IsWritten);
     const bool is_texel_buffer = True(flags & ObtainBufferFlags::IsTexelBuffer);
     const bool skip_stream_buffer = True(flags & ObtainBufferFlags::IgnoreStreamBuffer);
-    // For read-only buffers use device local stream buffer to reduce renderpass breaks.
+    // Nonempty formatted reads may alias a GPU-written image even if this
+    // CPU-side buffer dirty tracker reports no modification. Do not bypass
+    // SynchronizeMemoryFromImage through the ordinary CPU stream fast path.
     if (!is_written && !skip_stream_buffer && size <= STREAM_THRESHOLD &&
+        MayBypassImageSyncForStream(is_texel_buffer, size) &&
         !IsRegionGpuModified(device_addr, size)) {
         const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
         memory->CopySparseMemory(device_addr, data, size);
