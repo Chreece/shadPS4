@@ -151,6 +151,9 @@ private:
 
     bool SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_addr, u32 size);
 
+    // Prevent stale stream-buffer texel reads from GPU-generated images.
+    bool AliasesGpuImage(VAddr device_addr, u32 size);
+
     const Vulkan::Instance& instance;
     Vulkan::Scheduler& scheduler;
     Vulkan::Runtime& runtime;

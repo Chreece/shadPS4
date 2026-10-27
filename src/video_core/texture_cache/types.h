@@ -65,6 +65,12 @@ struct SubresourceExtent {
     u16 layers = 1;
 
     auto operator<=>(const SubresourceExtent&) const = default;
+
+    // An image must contain BOTH the requested mip levels and array slices.
+    // A lexicographic <=> compares only the first differing axis.
+    constexpr bool Contains(const SubresourceExtent& other) const noexcept {
+        return levels >= other.levels && layers >= other.layers;
+    }
 };
 
 struct SubresourceRange {
