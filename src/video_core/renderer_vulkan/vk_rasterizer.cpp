@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <unordered_map>
+#include <atomic>
 #include <bit>
 #include "common/debug.h"
 #include "core/debug_state.h"
@@ -26,6 +27,12 @@
 #include "video_core/texture_cache/texture_cache.h"
 
 namespace Vulkan {
+
+static std::atomic<u64> observed_compute_dispatches{};
+
+static bool TraceComputeDispatch(u64 count) {
+    return count <= 1024 || (count % 32) == 0;
+}
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
@@ -349,6 +356,14 @@ void Rasterizer::DispatchDirect() {
     pipeline->BindResources(set_writes, push_data);
 
     const auto cmdbuf = scheduler.CommandBuffer();
+    const u64 dispatch_count =
+        observed_compute_dispatches.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (TraceComputeDispatch(dispatch_count)) {
+        LOG_INFO(Render_Vulkan,
+                 "GPU_DISPATCH_SUBMIT type=direct count={} shader={:#x} x={} y={} z={} tick={}",
+                 dispatch_count, cs.pgm_hash, cs_program.dim_x, cs_program.dim_y, cs_program.dim_z,
+                 scheduler.CurrentTick());
+    }
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     DebugState.IncDispatch();
@@ -383,6 +398,14 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     pipeline->BindResources(set_writes, push_data);
 
     const auto cmdbuf = scheduler.CommandBuffer();
+    const u64 dispatch_count =
+        observed_compute_dispatches.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (TraceComputeDispatch(dispatch_count)) {
+        const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
+        LOG_INFO(Render_Vulkan,
+                 "GPU_DISPATCH_SUBMIT type=indirect count={} shader={:#x} address={:#x} offset={} size={} tick={}",
+                 dispatch_count, cs.pgm_hash, address, offset, size, scheduler.CurrentTick());
+    }
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatchIndirect(buffer->Handle(), base);
     DebugState.IncDispatch();
