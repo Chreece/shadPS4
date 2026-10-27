@@ -47,9 +47,6 @@ VMA_PATCH_REV = "a81fda1823ae72069d38c2375517709ba4107e65"
 VMA_PATCH_BLOB = "2f117c1c274046e78aa77ab8da324bc07776b6bf"
 RASTER_CPP = "c599ad215ee9ffc233b4c3ee0d0bec5615d2acb7bb0681b3291e119179880e15"
 RASTER_HEADER = "5a99989156ae9310a1812fd5400a0cff0d12f2ed6d618efe98199b6fb5d122ed"
-ACTIVE_SHADER_IDS = {"0xb5500bd4", "0xbdfc491f", "0x735cf693", "0x8d22a728"}
-
-
 def pinned_helper():
     if ORIGINAL_RUNNER.is_symlink() or not ORIGINAL_RUNNER.is_file():
         raise RuntimeError("Pinned earlier c925 runner is absent")
@@ -133,6 +130,8 @@ def preflight(m):
         "source_hashes_before": {SRT_CPP: srt, SRT_INC: inc, VMA_CPP: memory},
         "source_changes": "one generic VMA span guard and read-only SRT failed-read provenance",
         "automated_game_input": False, "tested_games": [], "proven_binary_overwritten": False,
+        "source_rollback": "ONLY_ISOLATED_WORKTREE_MODIFIED; TWO_PINNED_POSITIVE_ELFS_SEPARATE",
+        "source_patches": ["generic VMA mapped range", "SRT real deferred-read trace"],
     })
 
 
@@ -307,6 +306,15 @@ def main():
         print("TRIAL_STOP=" + str(error), file=sys.stderr, flush=True)
     finally:
         if mod is not None:
+            # Retain every tested or rejected experiment in the single
+            # emulator-wide diary, including native compile failures.
+            try:
+                diary = HOME / "projects/shadps4/diary/trials.jsonl"
+                diary.parent.mkdir(parents=True, exist_ok=True)
+                with diary.open("a") as file:
+                    file.write(json.dumps(mod.STATE, separators=(",", ":")) + "\n")
+            except OSError as error:
+                mod.STATE["universal_diary_append_error"] = str(error)
             mod.finish(rc)
     return rc
 
