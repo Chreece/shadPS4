@@ -9,7 +9,7 @@ ROOT="$HOME/projects/shadps4"
 LOGS="$ROOT/logs"
 TESTROOT="$ROOT/Upstream/tests"
 BRANCH="fix/gcn-harness-real-flatbuf-20261027"
-SOURCE_PIN="a8670fc250fc27945ec93f3c15db1035df4535ea"
+SOURCE_PIN="8d5a17a17caf6c18272812d6a706ce2a61fc099b"
 PR88_BASE="3462895837dcecab9207ce63e39727f01c5a99b0"
 mkdir -p "$LOGS" "$TESTROOT"
 
