@@ -147,9 +147,16 @@ def apply_one(p: int) -> None:
         get_base(p, patch)
         stage(f"PR{p}_THREE_WAY_CONFLICT_CHECK")
         trial = git(f"pr{p}-3way-check", "apply", "--3way", "--check", str(patch), check=False)
-        if trial.returncode:
+        # Git may return zero for --check even when it prints that the
+        # attempted three-way merge has conflicts. Never treat this as a
+        # clean merge or call the mutating apply in that case.
+        has_conflicts = "with conflicts" in trial.stdout.lower() or "mit konflikten" in trial.stdout.lower()
+        if trial.returncode or has_conflicts:
             raise Stop(f"PR{p}_GENUINE_THREE_WAY_CONFLICT", 8)
         git(f"pr{p}-3way-apply", "apply", "--3way", str(patch))
+        unresolved = git(f"pr{p}-post-apply-unmerged", "ls-files", "-u").stdout
+        if unresolved.strip():
+            raise Stop(f"PR{p}_UNEXPECTED_POST_APPLY_UNMERGED", 8)
     git(f"pr{p}-whitespace", "diff", "--check")
     if p == 74:
         stage("PR74_NATIVE_INDEPENDENT_CPP_COHERENCE_FIXTURE")
