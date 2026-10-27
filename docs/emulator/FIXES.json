@@ -386,6 +386,19 @@
       "observed_game_effects": "Source audit proves existing MemoryManager::ClampRangeSize on huge guest resources adds the size of a later mapped VMA even if its base is NOT adjacent to the prior VMA. Independent main-derived PR81 corrects the adjacency/mapped check without changing legacy <1GiB fast path, artificial caps or guest V# address semantics. Strict real-header standalone GCC and Clang C++20 Release tests PASS with gap/free/adjacent/actual GoT 85.9GB and 1.402GB mapping scenarios. Native GPU not tested. 2026-10-27 06:54 uploaded native PR81 compiler archive SHA256 60630d92982f28590f04ad6d8784085d42e531c268adf91a590647bac5741b4b verifies C++ Ninja memory.cpp.o compiled with zero warnings and exact contiguous VMA fixture PASS; object SHA256 b2021a756738bd9367cb19684417ea6ec2c3154428464826c9de267589ad3e8e. Source/object/ELF restored, no game/GPU test.",
       "negative_result_or_prohibition": "No user archive proves an actual VMA gap at the offending guest address; do not assert this bug caused the GPU hang. Test fixture initially returned exit2 due wrong 0x3800 expected contiguous length; corrected to 0x3000 and both executables pass. Both trial outcomes preserved in universal ledger. Do not claim PR81 fixes GoT: no observed actual mapped VMA boundary exists in uploaded archive, and synthetic gap fixture alone does not demonstrate driver fault causality.",
       "next_test": "Stop repeating PR78+PR79+PR80 runtime device loss without new evidence. Locate exact local source/build matching protected old GoT menu-positive executable SHA256 260ed43abbe538127ab82b3580a48c5f67be19ac4bbdd32ebefd78c73cdaf50d; only then investigate real VMA adjacency, the last RADV GFX draw 726 indices, and GPU-selected 3D/Cube 27651-entry table. Run a controlled native GoT/GoW cross-title regression on a stable source when an evidence-supported patch is ready."
+    },
+    {
+      "id": "gcn-test-userdata-flatbuffer-binding",
+      "subsystem": "gcn-native-regression-harness-vulkan-descriptors",
+      "status": "PR89_NATIVE_GCN_BUILD_AND_CPU_LLVMPIPE_RADV_SINGLE_TEST_PASS_DRAFT_UNMERGED",
+      "related_prs": [
+        89,
+        88
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No games executed. Native Linux shadps4_gcn_test compiled and linked; 7/7 CPU-only tests passed including SPIR-V dual-buffer descriptor test and 6/6 PR88 indirect-command synchronization checks; old GcnTest.add_f32 returned 0 instead of 7.5 on RADV/LLVMpipe, corrected exact test binary 1d55c516340c9be0bfae871a6e4a9e7d67a57ab9f85ccdd1dbca9dd3811f6cc0 returned 7.5 on LLVMpipe (22ms) and RX 7900 XTX RADV (20ms). Exact code source 8d5a17a17caf6c18272812d6a706ce2a61fc099b. Native RADV archive gcn-radv-single-20261027-190517-581449.tar.gz SHA256 828b65060b725da959b168fbf19d893fdc31b727ce55f86fea0d23fb7b639b98.",
+      "negative_result_or_prohibition": "Previous GCN test harness erroneously placed SGPR inputs in Vulkan PushData at offset 16 and bound only output descriptor set binding0 while SPIR-V reads srt_flatbuf at binding1. Avoid interpreting previous wrong GCN arithmetic output or GPUVM fault as proven emulator production graphics problem. Corrected single RADV smoke PASS does not prove old GPUVM loss root cause or Ragnarok gameplay fix. Kernel journal not readable from user account; no recorded kernel events is not proof none occurred. No separate production emulator fix in PR89; don't replace AMD with LLVMpipe.",
+      "next_test": "Preserve separately reviewable native-verified PR89 harness. Stop repeating add_f32 and return to actual upstream-main-based PR5479+PR88 indirect dispatch GPU path under guarded GoW capture. Validate real host dispatch metadata, resource barriers and game state before any promotion."
     }
   ]
 }
