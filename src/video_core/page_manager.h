@@ -32,6 +32,8 @@ public:
     explicit PageManager(Vulkan::Rasterizer* rasterizer);
     ~PageManager();
 
+    void DrainPendingInvalidations();
+
     /// Register a range of mapped gpu memory.
     void OnGpuMap(VAddr address, size_t size);
 
