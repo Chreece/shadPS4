@@ -325,7 +325,7 @@
     {
       "id": "gpu-indexed-heterogeneous-compact-images",
       "subsystem": "shader-vulkan-texture-binding",
-      "status": "PR78_FULL_LINK_PR79_COMBINED_GPU_DEVICE_LOST_NO_REAL_3D_CUBE_BINDINGS",
+      "status": "C925_MENU_LINEAGE_GIT_OBJECT_RECOVERED_10_LOCAL_TREES_TYPED_GPU_3D_CUBE_UNTESTED",
       "related_prs": [
         64,
         75,
@@ -333,9 +333,9 @@
         78
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "PR78 17:03:36 source bfe756fa native full build PASS, compact NDEBUG mapping fixture PASS, two 24-entry 2D-only mixed bindings (0 3D, 0 Cube); RADV context lost and SIGSEGV 139. PR77 control without compact map also context lost at identical 103rd compute shader 0x17c90240 and same extreme stage 0x5e89a8b4 buffer range signatures. No menu screenshot for PR78 and no actual typed texture bindings. PR remains unmerged experimental. Combined PR78+PR79 27 Oct native build PASS but game lost GPU context, only 24 all-2D records in two tables; 3D=0, Cube=0 and no valid menu.",
+      "observed_game_effects": "PR78 17:03:36 source bfe756fa native full build PASS, compact NDEBUG mapping fixture PASS, two 24-entry 2D-only mixed bindings (0 3D, 0 Cube); RADV context lost and SIGSEGV 139. PR77 control without compact map also context lost at identical 103rd compute shader 0x17c90240 and same extreme stage 0x5e89a8b4 buffer range signatures. No menu screenshot for PR78 and no actual typed texture bindings. PR remains unmerged experimental. Combined PR78+PR79 27 Oct native build PASS but game lost GPU context, only 24 all-2D records in two tables; 3D=0, Cube=0 and no valid menu. The user-host 2026-10-27 source inventory found 10 worktrees containing historically menu-capable local commit c925523b49ef39434024b16b2b014d120471ee1a, including one detached HEAD at exact c925 but DIRTY, and a separate clean worktree holding exact committed Git object. Protected menu-rendering ELF SHA256 260ed43abbe538127ab82b3580a48c5f67be19ac4bbdd32ebefd78c73cdaf50d verified. Exact source tree capture script committed 3b58e142.., not yet executed. The DIRTY c925 working files may differ from the ELF's build snapshot, so cannot yet assert exact source-to-binary reproducibility.",
       "negative_result_or_prohibition": "No evidence of 27,651 image table exercised or actual 3D/Cube binding. Do not blame compact mapping uniquely or promote; 0xFFFFFFEC SRD range is not automatically invalid. Avoid title/shader filters or arbitrary size caps.",
-      "next_test": "Do not recompile unchanged PR78 expecting 3D/Cube; after GPU/overflow and renderer stability corrections validate large heterogeneous 27651 record table and real type-correct shader sampling; positive bound_3d and bound_cube mandatory."
+      "next_test": "Run pinned read-only c925 Git archive + tracked dirty source patch capture and compare actual shader/Vulkan/rasterizer blobs with historical menu-positive ELF. Then create isolated clean worktree, port proven generic PR74 GPU descriptor coherence and PR75/78 dimension-typed array shader subset ONLY with source-level/graphics evidence; require actual 27,651-entry mixed table (27,612 2D/35 Color3D/4 Cube), positive bound and executed GPU sample IDs, stable real menu/cinematic, GoW cross-title. Never replace menu-positive ELF."
     },
     {
       "id": "gpu-huge-guest-raw-buffer-residency",
@@ -368,9 +368,9 @@
         78
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "2026-10-26 17:43 exact prior GoT graphics-positive ELF with RADV_DEBUG=hang renders white loading logo at 55s, dark cinematic at 85s then crashes under RADV trap exit133. RADV GFX command trace marks 1..864 reached and 865..1243 unreached after indexed draw with 726 indices; PS_PARTIAL_FLUSH and PFP_SYNC_ME follow draw. Reported GFX pipeline b3faae8b49d2270e has vertex+fragment SPIR-V modules and ordinary 192..117024-byte buffers; index GPU VA mapped to 128MB VkBuffer. GRBM GFX/PA/SPI/SX/CP busy. No VM fault address or wave PC (UMR unavailable).",
+      "observed_game_effects": "2026-10-26 17:43 exact prior GoT graphics-positive ELF with RADV_DEBUG=hang renders white loading logo at 55s, dark cinematic at 85s then crashes under RADV trap exit133. RADV GFX command trace marks 1..864 reached and 865..1243 unreached after indexed draw with 726 indices; PS_PARTIAL_FLUSH and PFP_SYNC_ME follow draw. Reported GFX pipeline b3faae8b49d2270e has vertex+fragment SPIR-V modules and ordinary 192..117024-byte buffers; index GPU VA mapped to 128MB VkBuffer. GRBM GFX/PA/SPI/SX/CP busy. No VM fault address or wave PC (UMR unavailable). c925 2026-10-27 source inventory definitively recovers Git object in 10 local worktrees, but one exact HEAD is dirty and candidate ELF provenance must be checked. RADV final graphics CP 864->865 after 726-index draw remains unfixed.",
       "negative_result_or_prohibition": "Do not equate last compiled compute shader or 0xFFFFFFEC V# descriptor with directly executed faulting GPU instruction. Driver syncshaders changes timing; do not claim any of PR77/78 fixes executed Color3D or Cube; don't hide a crashing draw.",
-      "next_test": "Use exact captured SPIR-V and GFX report to map generic Vulkan pipeline/shader IDs and memory bindings, then correct a demonstrated resource lifetime/barrier/shader-execution bug emulator-wide, run native GoT+GoW tests; keep 118s cap, no SSH interruption, preserve existing success baseline."
+      "next_test": "First capture c925 committed source and dirty delta with read-only script, then compare recovered source to real RADV VS/FS disassembly at 726-index draw. Fix only proven generic resource lifetime/barrier/shader bugs. Test on an isolated c925 menu-capable source before revisiting PR78. Avoid further unchanged PR78+PR79+PR80 crash repeat."
     },
     {
       "id": "gpu-contiguous-guest-vma-clamp",
