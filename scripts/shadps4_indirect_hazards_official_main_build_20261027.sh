@@ -184,7 +184,7 @@ grep -Ein '(^|[ :])warning:' "$EVIDENCE/build-native.log" \
     >"$EVIDENCE/native-warnings.txt" || true
 echo "NATIVE_COMPILER_WARNINGS=$(wc -l < "$EVIDENCE/native-warnings.txt")"
 
-STATE="BUILD_AND_RUN_IN_TREE_GCN_REGRESSIONS"
+STATE="BUILD_AND_RUN_SIX_GPU_FREE_INDIRECT_SYNC_REGRESSIONS"
 echo "STAGE=$STATE"
 # Preserve the native binary even if optional GTest acquisition is unavailable.
 if cmake -S "$SRC" -B "$TESTBUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -192,18 +192,50 @@ if cmake -S "$SRC" -B "$TESTBUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
           >"$EVIDENCE/configure-tests.log" 2>&1 &&
    nice -n 10 cmake --build "$TESTBUILD" --target shadps4_gcn_test --parallel 2 \
           >"$EVIDENCE/build-tests.log" 2>&1; then
-    # Run the built GCN executable itself: CTest also lists settings/NGS2
-    # targets that are intentionally not built in this isolated check.
-    [[ -x "$TESTBUILD/tests/shadps4_gcn_test" ]] || {
+    # Only the six indirect access/stage assertions. These never create a
+    # Vulkan GCN Runner and must not submit GPU work. The previous full
+    # GcnTest.* run faulted RADV GPUVM and lost the device context; do not
+    # repeat those hardware tests automatically.
+    GCN_BIN="$TESTBUILD/tests/shadps4_gcn_test"
+    [[ -x "$GCN_BIN" ]] || {
         echo "GCN_TEST_BINARY_MISSING"; exit 9;
     }
-    "$TESTBUILD/tests/shadps4_gcn_test" --gtest_brief=1 \
+    GCN_FILTER="IndirectCommandSynchronization.*"
+    "$GCN_BIN" --gtest_list_tests --gtest_filter="$GCN_FILTER" \
+        >"$EVIDENCE/gcn-selected-tests.txt" 2>&1
+    TEST_COUNT="$(grep -Ec '^  [A-Za-z][A-Za-z0-9_]+
+else
+    echo "GCN_TESTS_CONFIGURE_OR_BUILD_FAIL" \
+        | tee "$EVIDENCE/gcn-tests-status.txt"
+    if [[ -f "$EVIDENCE/build-tests.log" ]]; then
+        tail -100 "$EVIDENCE/build-tests.log"
+    else
+        tail -100 "$EVIDENCE/configure-tests.log"
+    fi
+    exit 9
+fi
+
+STATE="BUILD_AND_SELECTED_REGRESSIONS_PASS_NO_GAME_RUN"
+echo "RESULT=$STATE"
+echo "CANDIDATE_BINARY=$BUILD/shadps4"
+echo "ACTUAL_GPU_INDIRECT_DISPATCH_TEST=NOT_YET_RUN"
+echo "UNCHANGED=SUNSHINE_XORG_MOONLIGHT_ESDE_SAVES_SSH"
+ "$EVIDENCE/gcn-selected-tests.txt" || true)"
+    [[ "$TEST_COUNT" == 6 ]] || {
+        echo "EXPECTED_SIX_INDIRECT_TESTS_FOUND=$TEST_COUNT"; exit 9;
+    }
+    timeout 30 "$GCN_BIN" --gtest_filter="$GCN_FILTER" --gtest_color=no \
         >"$EVIDENCE/gcn-tests.txt" 2>&1 || {
             tail -120 "$EVIDENCE/gcn-tests.txt"
-            echo "NATIVE_BUILD_PASS_GCN_TESTS_FAIL"
+            echo "NATIVE_BUILD_PASS_INDIRECT_SYNC_TESTS_FAIL"
             exit 9
         }
-    echo "GCN_ALL_TESTS=PASS"
+    grep -Eq '^\\[  PASSED  \\] 6 tests\\.' "$EVIDENCE/gcn-tests.txt" || {
+        tail -120 "$EVIDENCE/gcn-tests.txt"
+        echo "INDIRECT_SYNC_TEST_PASS_COUNT_UNVERIFIED"; exit 9;
+    }
+    echo "INDIRECT_SYNC_NATIVE_TESTS=PASS_COUNT_6"
+    echo "GCN_GPU_INSTRUCTION_TESTS=NOT_RUN_PREVIOUS_RADV_GPUVM_FAULT"
 else
     echo "GCN_TESTS_CONFIGURE_OR_BUILD_FAIL" \
         | tee "$EVIDENCE/gcn-tests-status.txt"
