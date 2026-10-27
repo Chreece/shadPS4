@@ -29,7 +29,7 @@ public:
     void Recreate(u32 width, u32 height);
 
     /// Acquires the next image in the swapchain.
-    bool AcquireNextImage();
+    bool AcquireNextImage(bool wait_for_image = true);
 
     /// Presents the current image and move to the next one
     bool Present();
