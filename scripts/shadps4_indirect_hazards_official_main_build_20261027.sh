@@ -103,14 +103,14 @@ git -C "$SRC" cat-file -e "$UPSTREAM_MAIN^{commit}" || {
 git -C "$SRC" merge-base --is-ancestor "$UPSTREAM_MAIN" "$SOURCE_PIN" || {
     echo "OFFICIAL_MAIN_NOT_ANCESTOR_OF_EXPERIMENT"; exit 4
 }
-ANCESTOR="$(git -C "$SRC" rev-parse --verify 'HEAD~10^{commit}')" || {
-    echo "PINNED_10_COMMIT_ANCESTRY_UNAVAILABLE"; exit 4
+ANCESTOR="$(git -C "$SRC" rev-parse --verify 'HEAD~11^{commit}')" || {
+    echo "PINNED_11_COMMIT_ANCESTRY_UNAVAILABLE"; exit 4
 }
 [[ "$ANCESTOR" == "$UPSTREAM_MAIN" ]] || {
     echo "UPSTREAM_MAIN_ANCESTRY_MISMATCH=$ANCESTOR"; exit 4;
 }
 PORT_COMMITS="$(git -C "$SRC" rev-list --count "$UPSTREAM_MAIN..$SOURCE_PIN")"
-[[ "$PORT_COMMITS" == 10 ]] || {
+[[ "$PORT_COMMITS" == 11 ]] || {
     echo "INDIRECT_SYNC_UNEXPECTED_PORT_COMMIT_COUNT=$PORT_COMMITS"; exit 4
 }
 PORT_FILES="$(git -C "$SRC" diff --name-only "$UPSTREAM_MAIN" "$SOURCE_PIN" | wc -l)"
