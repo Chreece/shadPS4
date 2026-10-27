@@ -105,6 +105,9 @@ public:
 
 private:
     Frame* GetRenderFrame();
+    // Only used for host idle/overlay redraws. Unlike GetRenderFrame(), never
+    // waits for a free guest presentation image or an unfinished GPU fence.
+    Frame* TryGetRenderFrameForHostIdle();
 
     void RecreateFrame(Frame* frame, u32 width, u32 height);
 
