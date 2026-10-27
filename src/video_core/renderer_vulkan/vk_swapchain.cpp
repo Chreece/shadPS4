@@ -107,9 +107,11 @@ bool Swapchain::AcquireNextImage(bool wait_for_image) {
         return false;
     }
     vk::Device device = instance.GetDevice();
+    constexpr u64 guest_acquire_timeout_ns = 32'000'000;
+    const u64 timeout_ns = wait_for_image ? guest_acquire_timeout_ns : 0;
     vk::Result result =
-        device.acquireNextImageKHR(swapchain, wait_for_image ? std::numeric_limits<u64>::max() : 0,
-                                   image_acquired[frame_index], VK_NULL_HANDLE, &image_index);
+        device.acquireNextImageKHR(swapchain, timeout_ns, image_acquired[frame_index],
+                                   VK_NULL_HANDLE, &image_index);
 
     switch (result) {
     case vk::Result::eSuccess:
