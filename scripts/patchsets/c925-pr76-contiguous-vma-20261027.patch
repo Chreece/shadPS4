@@ -1,0 +1,36 @@
+diff --git a/src/core/memory.cpp b/src/core/memory.cpp
+--- a/src/core/memory.cpp
++++ b/src/core/memory.cpp
+@@ -10,6 +10,7 @@
+ #include "core/libraries/kernel/memory.h"
+ #include "core/libraries/kernel/orbis_error.h"
+ #include "core/libraries/kernel/process.h"
++#include "core/mapped_guest_range.h"
+ #include "core/memory.h"
+ #include "video_core/renderer_vulkan/vk_rasterizer.h"
+ 
+@@ -110,17 +111,14 @@
+     ASSERT_MSG(IsValidMapping(virtual_addr), "Attempted to access invalid address {:#x}",
+                virtual_addr);
+ 
+-    // Clamp size to the remaining size of the current VMA.
++    // Adjacent VMA entries in the map are not necessarily adjacent addresses.
++    // A guest 0xFFFFFFEC buffer extent must not cross an unmapped gap.
+     auto vma = FindVMA(virtual_addr);
+-    u64 clamped_size = vma->second.base + vma->second.size - virtual_addr;
+-    ++vma;
+-
+-    // Keep adding to the size while there is contigious virtual address space.
+-    while (vma != vma_map.end() && vma->second.IsMapped() && clamped_size < size) {
+-        clamped_size += vma->second.size;
+-        ++vma;
+-    }
+-    clamped_size = std::min(clamped_size, size);
++    const u64 clamped_size =
++        ClampContiguousMappedRange(virtual_addr, size, vma, vma_map.end());
++    ASSERT_MSG(clamped_size != 0,
++               "GPU guest buffer descriptor starts at an unmapped VMA {:#x}",
++               virtual_addr);
+ 
+     if (size != clamped_size) {
+         LOG_DEBUG(Kernel_Vmm, "Clamped requested buffer range addr={:#x}, size={:#x} to {:#x}",
