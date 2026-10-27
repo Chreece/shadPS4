@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <atomic>
+#include <optional>
 
 #include "common/assert.h"
 #include "common/debug.h"
@@ -237,7 +238,7 @@ int VideoOutDriver::ChangeBufferAttribute(VideoOutPort* port, s32 attributeIndex
     return 0;
 }
 
-void VideoOutDriver::Flip(const Request& req) {
+bool VideoOutDriver::Flip(const Request& req) {
     static std::atomic<u64> presented_flips{};
     const u64 seq = presented_flips.fetch_add(1, std::memory_order_relaxed) + 1;
     if (ShouldTraceVideoFlip(seq)) {
@@ -248,8 +249,11 @@ void VideoOutDriver::Flip(const Request& req) {
     // Update HDR status before presenting.
     presenter->SetHDR(req.port->is_hdr);
 
-    // Present the frame.
-    presenter->Present(req.frame);
+    // A swapchain acquisition timeout is not a completed guest flip.
+    // The caller retains this frame and retries it before later requests.
+    if (!presenter->Present(req.frame)) {
+        return false;
+    }
     if (ShouldTraceVideoFlip(seq)) {
         LOG_INFO(Lib_VideoOut,
                  "VIDEO_FLIP_STAGE stage=present_returned count={} buffer={} eop={}",
@@ -291,6 +295,7 @@ void VideoOutDriver::Flip(const Request& req) {
     }
     // save to prev buf index
     port->prev_index = req.index;
+    return true;
 }
 
 void VideoOutDriver::DrawBlankFrame() {
@@ -401,6 +406,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         }
         return {};
     };
+    std::optional<Request> deferred_request;
 
     while (!token.stop_requested()) {
         timer.Start();
@@ -419,10 +425,11 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
             std::scoped_lock lock{mutex};
             LOG_INFO(Lib_VideoOut,
                      "VIDEOOUT_PRESENT_LOOP tick={} pending={} vblank={} flip_rate={}",
-                     loop_tick, requests.size(), vblank_status.count, main_port.flip_rate);
+                     loop_tick, requests.size() + (deferred_request ? 1 : 0),
+                     vblank_status.count, main_port.flip_rate);
         }
         if (vblank_status.count % (main_port.flip_rate + 1) == 0) {
-            const auto request = receive_request();
+            const auto request = deferred_request ? *deferred_request : receive_request();
             if (!request) {
                 if (timer.GetTotalWait().count() < 0) { // Dont draw too fast
                     if (!main_port.is_open) {
@@ -432,9 +439,18 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
                         DrawLastFrame();
                     }
                 }
-            } else {
-                Flip(request);
+            } else if (Flip(request)) {
+                deferred_request.reset();
                 FRAME_END;
+            } else {
+                deferred_request = request;
+                static std::atomic<u64> deferred_flips{};
+                const u64 attempts = deferred_flips.fetch_add(1, std::memory_order_relaxed) + 1;
+                if (ShouldTraceVideoFlip(attempts)) {
+                    LOG_INFO(Lib_VideoOut,
+                             "VIDEO_FLIP_STAGE stage=guest_waiting_for_swapchain attempts={} buffer={} eop={}",
+                             attempts, request.index, request.eop);
+                }
             }
         }
 
