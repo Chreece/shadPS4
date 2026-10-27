@@ -434,10 +434,10 @@ nice -n 10 cmake --build "$TEST_BUILD" --target shadps4_gcn_test --parallel 2 \
 [[ -x "$TEST_BUILD/tests/shadps4_gcn_test" ]] || {
     echo "GCN_TEST_BINARY_NOT_BUILT"; exit 6;
 }
-echo "STAGE=RUN_56_IDLE_FRAME_AND_SRT_REGRESSIONS"
+echo "STAGE=RUN_67_IDLE_FRAME_AND_SRT_ROOT_REGRESSIONS"
 ctest --test-dir "$TEST_BUILD" -N -R '^(SrtInvariantPhi|SrtDynamicDma|NativeWarningContracts|SrtFindILsb32|GpuFaultRingReuse|Pm4AcquireMemBarrier|ScalarExecDivergence|VideoOutFirstFrameTrace|HostIdleFrameReuse|FormattedStreamRoute|SrtRootDependencyOrder)\.' > "$REPORT/ctest-list.txt"
 grep -Eq 'Total Tests: 67([[:space:]]|$)' "$REPORT/ctest-list.txt" || {
-    cat "$REPORT/ctest-list.txt"; echo "EXPECTED_56_GENERIC_TESTS_MISSING"; exit 6;
+    cat "$REPORT/ctest-list.txt"; echo "EXPECTED_67_GENERIC_TESTS_MISSING"; exit 6;
 }
 ctest --test-dir "$TEST_BUILD" --output-on-failure --no-tests=error \
     -R '^(SrtInvariantPhi|SrtDynamicDma|NativeWarningContracts|SrtFindILsb32|GpuFaultRingReuse|Pm4AcquireMemBarrier|ScalarExecDivergence|VideoOutFirstFrameTrace|HostIdleFrameReuse|FormattedStreamRoute|SrtRootDependencyOrder)\.' | tee "$REPORT/ctest.txt"
@@ -484,9 +484,9 @@ grep -Fq 'gcn/test_srt_root_order.cpp' "$SRC/tests/CMakeLists.txt" &&
 grep -Fq 'swapchain.AcquireNextImage(is_game_frame)' "$SRC/src/video_core/renderer_vulkan/vk_presenter.cpp" &&
 grep -Fq 'release_skipped_frame();' "$SRC/src/video_core/renderer_vulkan/vk_presenter.cpp" &&
 grep -Fq 'VIDEOOUT_PRESENT_LOOP tick=' "$SRC/src/core/libraries/videoout/driver.cpp" || {
-    echo "HOST_IDLE_FRAME_SOURCE_NOT_PINNED"; exit 7;
+    echo "GENERIC_SRT_ROOT_SOURCE_NOT_PINNED"; exit 7;
 }
-echo "STAGE=PRECOMPILE_VIDEOOUT_IDLE_AND_PRESENTER"
+echo "STAGE=PRECOMPILE_SHADER_ROOT_IR_AND_PRESENTER"
 echo "HOST_IDLE_PRECHECK_LOG=$REPORT/preflight-idle-flip.log"
 nice -n 10 ninja -C "$BUILD" -j 2 CMakeFiles/shadps4.dir/src/core/libraries/videoout/driver.cpp.o CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_presenter.cpp.o CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_swapchain.cpp.o CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_runtime.cpp.o CMakeFiles/shadps4.dir/src/video_core/buffer_cache/buffer_cache.cpp.o CMakeFiles/shadps4.dir/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp.o \
     > "$REPORT/preflight-idle-flip.log" 2>&1 || {
