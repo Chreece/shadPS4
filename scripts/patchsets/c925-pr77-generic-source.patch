@@ -1,4 +1,5 @@
 diff --git a/src/shader_recompiler/ir/passes/resource_discover_pass.cpp b/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
+index 35b160397c8684e28cc001e5786d8c4b87e819a1..af3f84a06939d05d15b533e7a5264bdaaabc8f33 100644
 --- a/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
 +++ b/src/shader_recompiler/ir/passes/resource_discover_pass.cpp
 @@ -562,6 +562,58 @@ static IndexedSamplerTableSource AnalyzeIndexedSamplerTable(
@@ -106,6 +107,7 @@ diff --git a/src/shader_recompiler/ir/passes/resource_discover_pass.cpp b/src/sh
                              MarkReadConstBufferSharpSources(usage.indexed_table_sharp);
                              usage.indexed_texture_id =
 diff --git a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
+index 85276fe467aa0e7aec96e0d59d6c4341ea393381..9623da6ee5e6049bdd4bbdb766c8fda7bbb31141 100644
 --- a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
 +++ b/src/shader_recompiler/ir/passes/resource_patching_pass.cpp
 @@ -1,7 +1,10 @@
@@ -204,6 +206,7 @@ diff --git a/src/shader_recompiler/ir/passes/resource_patching_pass.cpp b/src/sh
          inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
          if (image_res.is_guest_indexed) {
 diff --git a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+index 06fcf57cee7956c9caceccf252478980a302187f..1485581d10bca6137475d0c20e3f0028f2ce1673 100644
 --- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
 +++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
 @@ -12,8 +12,10 @@
