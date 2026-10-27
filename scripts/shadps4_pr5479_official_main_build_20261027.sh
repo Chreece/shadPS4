@@ -80,19 +80,44 @@ for cmd in git cmake ninja sha256sum tar timeout nice flock; do
 done
 STATE="FETCH_PINNED_OFFICIAL_UPSTREAM_DERIVATIVE"
 echo "STAGE=$STATE"
-git -c http.version=HTTP/1.1 clone -q --filter=blob:none --depth 5 \
+# Fetch the branch's complete commit graph while keeping blobs on demand.
+# A shallow checkout of the *branch tip* can hide SOURCE_PIN's third parent,
+# even if SOURCE_PIN itself is present. This previously exited 128 at HEAD~3.
+git -c http.version=HTTP/1.1 clone -q --filter=blob:none --no-tags \
     --single-branch --branch "$BRANCH" \
     https://github.com/Chreece/shadPS4.git "$SRC" \
     >"$EVIDENCE/clone.log" 2>&1 || {
         tail -80 "$EVIDENCE/clone.log"; exit 4;
     }
-git -C "$SRC" checkout -q --detach "$SOURCE_PIN"
-ACTUAL="$(git -C "$SRC" rev-parse HEAD)"
+git -C "$SRC" checkout -q --detach "$SOURCE_PIN" || {
+    echo "PINNED_SOURCE_CHECKOUT_FAILED"; exit 4;
+}
+ACTUAL="$(git -C "$SRC" rev-parse --verify HEAD^{commit})"
 [[ "$ACTUAL" == "$SOURCE_PIN" ]] || { echo "PIN_MISMATCH=$ACTUAL"; exit 4; }
-ANCESTOR="$(git -C "$SRC" rev-parse HEAD~3)"
+if [[ "$(git -C "$SRC" rev-parse --is-shallow-repository)" != false ]]; then
+    echo "INCOMPLETE_GIT_HISTORY_REFUSE_BUILD"; exit 4
+fi
+git -C "$SRC" cat-file -e "$UPSTREAM_MAIN^{commit}" || {
+    echo "OFFICIAL_UPSTREAM_MAIN_OBJECT_MISSING"; exit 4
+}
+git -C "$SRC" merge-base --is-ancestor "$UPSTREAM_MAIN" "$SOURCE_PIN" || {
+    echo "OFFICIAL_MAIN_NOT_ANCESTOR_OF_EXPERIMENT"; exit 4
+}
+ANCESTOR="$(git -C "$SRC" rev-parse --verify 'HEAD~3^{commit}')" || {
+    echo "PINNED_3_COMMIT_ANCESTRY_UNAVAILABLE"; exit 4
+}
 [[ "$ANCESTOR" == "$UPSTREAM_MAIN" ]] || {
     echo "UPSTREAM_MAIN_ANCESTRY_MISMATCH=$ANCESTOR"; exit 4;
 }
+PORT_COMMITS="$(git -C "$SRC" rev-list --count "$UPSTREAM_MAIN..$SOURCE_PIN")"
+[[ "$PORT_COMMITS" == 3 ]] || {
+    echo "PR5479_UNEXPECTED_PORT_COMMIT_COUNT=$PORT_COMMITS"; exit 4
+}
+PORT_FILES="$(git -C "$SRC" diff --name-only "$UPSTREAM_MAIN" "$SOURCE_PIN" | wc -l)"
+[[ "$PORT_FILES" == 23 ]] || {
+    echo "PR5479_UNEXPECTED_MODIFIED_FILE_COUNT=$PORT_FILES"; exit 4
+}
+echo "OFFICIAL_MAIN_ANCESTRY=PASS base=$UPSTREAM_MAIN port_commits=$PORT_COMMITS files=$PORT_FILES"
 echo "$SOURCE_PIN" >"$EVIDENCE/source-sha.txt"
 echo "$UPSTREAM_MAIN" >"$EVIDENCE/upstream-main-sha.txt"
 echo "SOURCE_PROVENANCE=OFFICIAL_MAIN_PLUS_THREE_PR5479_PORT_COMMITS"
