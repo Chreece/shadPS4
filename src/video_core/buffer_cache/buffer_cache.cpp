@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <vector>
 #include <magic_enum/magic_enum.hpp>
 #include <xxhash.h>
 
@@ -11,6 +12,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/buffer_cache/bda_arena_remap.h"
 #include "video_core/buffer_cache/formatted_stream_route.h"
 #include "video_core/buffer_cache/memory_tracker.h"
 #include "video_core/buffer_cache/fault_ring_reuse.h"
@@ -373,16 +375,62 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
     const u64 end_block = (first_addr + total_size) >> block_shift;
     auto* new_arena = &arenas.emplace_back(instance, first_addr, total_size, MemoryType::Sparse);
     auto* bind = BindsForArena(new_arena);
+
+    // Rebinding existing memory to a new VkBuffer changes its virtual
+    // device-address base. Shader DMA uses a *global* BDA page table indexed
+    // by guest sparse block; without updating that table, already-resident
+    // pages keep pointing at old arenas after a merge.
+    struct ReboundRange {
+        u64 first_block;
+        u64 end_block;
+    };
+    std::vector<ReboundRange> bda_rebind_ranges;
+    u64 bda_rebind_blocks = 0;
+    const bool has_bda = instance.IsBufferDeviceAddressSupported();
     resident_ranges.ForEachInRange(base_block, end_block, [&](const Backing& backing) {
         const u64 start = std::max(base_block, backing.start);
         const u64 end = std::min(end_block, backing.end);
+        if (start >= end) {
+            return;
+        }
         bind->binds.push_back(vk::SparseMemoryBind{
             .resourceOffset = (start - base_block) << block_shift,
             .size = (end - start) << block_shift,
             .memory = backing.memory,
             .memoryOffset = (backing.offset + start - backing.start) << block_shift,
         });
+        if (has_bda) {
+            bda_rebind_ranges.push_back({start, end});
+            bda_rebind_blocks += end - start;
+        }
     });
+
+    if (has_bda && bda_rebind_blocks != 0) {
+        const auto staging = staging_pool.Request(
+            bda_rebind_blocks * sizeof(vk::DeviceAddress), MemoryType::HostUncached);
+        auto* table_entries = reinterpret_cast<vk::DeviceAddress*>(staging.mapped);
+        const vk::DeviceAddress new_base_address = new_arena->BufferDeviceAddress();
+        boost::container::small_vector<vk::BufferCopy, 8> copies;
+        u64 src_offset = staging.offset;
+        for (const auto& range : bda_rebind_ranges) {
+            ForEachReboundBdaBlock(
+                first_addr, new_base_address, block_size, range.first_block, range.end_block,
+                [&](u64 /*global_block*/, u64 new_address) {
+                    *(table_entries++) = new_address;
+                });
+            const u64 bytes = (range.end_block - range.first_block) *
+                              sizeof(vk::DeviceAddress);
+            copies.emplace_back(src_offset, BdaTableByteOffset(range.first_block), bytes);
+            src_offset += bytes;
+        }
+        staging.Flush();
+        // The pending sparse binds are submitted before the graphics queue
+        // commands. This copy makes the updated BDA table visible on the same
+        // queue before any shader reads from the merged arena.
+        runtime.CopyBuffer(staging.buffer, bda_pagetable_buffer.get(), copies);
+        LOG_INFO(Render, "Rebound {} resident GPU BDA pages to merged arena at {:#x}",
+                 bda_rebind_blocks, first_addr);
+    }
 
     u64 base_page = first_addr >> ARENA_PAGE_BITS;
     for (u32 page = 0; page < (first_size >> ARENA_PAGE_BITS); ++page) {
