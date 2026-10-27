@@ -413,6 +413,14 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
         // Check if it's time to take a request.
         auto& vblank_status = main_port.vblank_status;
+        static std::atomic<u64> present_loop_ticks{};
+        const u64 loop_tick = present_loop_ticks.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (ShouldTraceVideoFlip(loop_tick)) {
+            std::scoped_lock lock{mutex};
+            LOG_INFO(Lib_VideoOut,
+                     "VIDEOOUT_PRESENT_LOOP tick={} pending={} vblank={} flip_rate={}",
+                     loop_tick, requests.size(), vblank_status.count, main_port.flip_rate);
+        }
         if (vblank_status.count % (main_port.flip_rate + 1) == 0) {
             const auto request = receive_request();
             if (!request) {
