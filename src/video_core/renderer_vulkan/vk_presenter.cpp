@@ -605,10 +605,6 @@ void Presenter::RecreateFrame(Frame* frame, u32 width, u32 height) {
 }
 
 Frame* Presenter::PrepareLastFrame() {
-    if (last_submit_frame == nullptr) {
-        return nullptr;
-    }
-
     // A frame must be taken OUT of the shared free FIFO before a host idle
     // redraw. Checking only its fence is insufficient: the guest GPU thread
     // can otherwise obtain the same free frame concurrently and start a
@@ -618,6 +614,11 @@ Frame* Presenter::PrepareLastFrame() {
     {
         std::unique_lock lock{free_mutex, std::try_to_lock};
         if (!lock.owns_lock()) {
+            return nullptr;
+        }
+        // Protect last_submit_frame and the pool by the same mutex.
+        // The publisher updates both together when the frame is released.
+        if (last_submit_frame == nullptr) {
             return nullptr;
         }
         frame = TryPopMatchingReadyIdleFrame(
@@ -1002,8 +1003,11 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     // Free the frame for reuse
     const auto free_frame = [&] {
         if (!is_reusing_frame) {
-            last_submit_frame = frame;
             std::scoped_lock fl{free_mutex};
+            // Publish the last frame atomically with its free FIFO entry.
+            // Otherwise the host idle consumer may read a newer pointer
+            // against an older pool snapshot during guest flip completion.
+            last_submit_frame = frame;
             free_queue.push(frame);
             free_cv.notify_one();
         }
