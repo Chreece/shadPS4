@@ -103,6 +103,9 @@ void Swapchain::SetHDR(bool hdr) {
 }
 
 bool Swapchain::AcquireNextImage(bool wait_for_image) {
+    if (needs_recreation) {
+        return false;
+    }
     vk::Device device = instance.GetDevice();
     vk::Result result =
         device.acquireNextImageKHR(swapchain, wait_for_image ? std::numeric_limits<u64>::max() : 0,
