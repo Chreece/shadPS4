@@ -54,6 +54,7 @@ struct Profile {
     bool supports_shader_stencil_export{};
     bool fast_shader_math{};
     bool support_bda{};
+    bool supports_dispatch_metadata{};
 
     bool operator==(const Profile&) const = default;
 };
