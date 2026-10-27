@@ -111,12 +111,16 @@ git -C "$SRC" merge-base --is-ancestor "$PR88_BASE" "$SOURCE_PIN" || {
     echo "PR88_BASE_IS_NOT_ANCESTOR"; exit 4;
 }
 CHANGED="$(git -C "$SRC" diff --name-only "$PR88_BASE" "$SOURCE_PIN")"
+# The experiment includes its own isolated build-only runner. Allow that
+# one script plus the two GCN tests, but no production source changes.
 EXPECTED_CHANGED=$(printf '%s\n' \
-    tests/gcn/gcn_test_runner.cpp tests/gcn/test_gcn_instructions.cpp)
+    scripts/shadps4_gcn_flatbuf_llvmpipe_build_20261027.sh \
+    tests/gcn/gcn_test_runner.cpp \
+    tests/gcn/test_gcn_instructions.cpp)
 [[ "$CHANGED" == "$EXPECTED_CHANGED" ]] || {
-    echo "UNEXPECTED_PRODUCTION_SOURCE_CHANGE=$CHANGED"; exit 4;
+    echo "UNEXPECTED_SOURCE_DELTA=$CHANGED"; exit 4;
 }
-echo "CHANGES_ONLY_TWO_GCN_TEST_FILES=PASS"
+echo "ONLY_TWO_GCN_TEST_FILES_AND_ONE_BUILD_RUNNER=PASS"
 printf '%s\n' "$SOURCE_PIN" > "$EVIDENCE/source-commit.txt"
 git -C "$SRC" diff --stat "$PR88_BASE" "$SOURCE_PIN" > "$EVIDENCE/test-source-diffstat.txt"
 
