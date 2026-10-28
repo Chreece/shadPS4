@@ -1,0 +1,267 @@
+--- /dev/null
++++ b/src/video_core/renderer_vulkan/vk_device_fault_report.h
+@@ -0,0 +1,136 @@
++// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++#include <algorithm>
++#include <array>
++#include <cstdint>
++#include <mutex>
++#include <optional>
++#include <string_view>
++#include <vulkan/vulkan_core.h>
++
++namespace Vulkan::DeviceFault {
++
++constexpr std::uint32_t AddressCapacity = 64;
++constexpr std::uint32_t VendorCapacity = 16;
++
++struct Report {
++    VkResult counts_result{VK_ERROR_UNKNOWN};
++    VkResult details_result{VK_ERROR_UNKNOWN};
++    std::uint32_t available_addresses{};
++    std::uint32_t available_vendors{};
++    std::uint64_t available_binary_bytes{};
++    std::uint32_t address_count{};
++    std::uint32_t vendor_count{};
++    bool queried_details{};
++    bool truncated{};
++    std::array<char, VK_MAX_DESCRIPTION_SIZE> description{};
++    std::array<VkDeviceFaultAddressInfoEXT, AddressCapacity> addresses{};
++    std::array<VkDeviceFaultVendorInfoEXT, VendorCapacity> vendors{};
++};
++
++inline std::string_view BoundedText(const char* text, std::size_t capacity) {
++    return {text, static_cast<std::size_t>(std::find(text, text + capacity, '\0') - text)};
++}
++
++// Called only after VK_ERROR_DEVICE_LOST. No normal-frame polling or GPU wait.
++// Two bounded calls, no binary dumps, and no allocations based on driver counts.
++template <class Query>
++Report Capture(Query&& query) {
++    Report out{};
++    VkDeviceFaultCountsEXT counts{};
++    counts.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT;
++    out.counts_result = query(&counts, nullptr);
++    if (out.counts_result != VK_SUCCESS && out.counts_result != VK_INCOMPLETE) {
++        return out;
++    }
++    out.available_addresses = counts.addressInfoCount;
++    out.available_vendors = counts.vendorInfoCount;
++    out.available_binary_bytes = counts.vendorBinarySize;
++    counts.addressInfoCount = std::min(counts.addressInfoCount, AddressCapacity);
++    counts.vendorInfoCount = std::min(counts.vendorInfoCount, VendorCapacity);
++    counts.vendorBinarySize = 0;
++    const auto supplied_addresses = counts.addressInfoCount;
++    const auto supplied_vendors = counts.vendorInfoCount;
++    VkDeviceFaultInfoEXT info{};
++    info.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT;
++    info.pAddressInfos = supplied_addresses ? out.addresses.data() : nullptr;
++    info.pVendorInfos = supplied_vendors ? out.vendors.data() : nullptr;
++    info.pVendorBinaryData = nullptr;
++    out.queried_details = true;
++    out.details_result = query(&counts, &info);
++    if (out.details_result != VK_SUCCESS && out.details_result != VK_INCOMPLETE) {
++        return out;
++    }
++    out.address_count = std::min(counts.addressInfoCount, supplied_addresses);
++    out.vendor_count = std::min(counts.vendorInfoCount, supplied_vendors);
++    std::copy_n(info.description, out.description.size(), out.description.begin());
++    out.truncated = out.details_result == VK_INCOMPLETE ||
++                    out.available_addresses > supplied_addresses ||
++                    out.available_vendors > supplied_vendors ||
++                    out.available_binary_bytes != 0;
++    return out;
++}
++
++struct Entry {
++    VkDevice device{VK_NULL_HANDLE};
++    PFN_vkGetDeviceFaultInfoEXT query{};
++    bool reported{};
++};
++inline std::array<Entry, 4> devices{};
++inline std::mutex devices_mutex;
++
++inline bool Register(VkDevice device, PFN_vkGetDeviceFaultInfoEXT query) {
++    if (device == VK_NULL_HANDLE || query == nullptr) {
++        return false;
++    }
++    std::scoped_lock lock{devices_mutex};
++    for (auto& entry : devices) {
++        if (entry.device == device) {
++            entry = {device, query, false};
++            return true;
++        }
++    }
++    for (auto& entry : devices) {
++        if (entry.device == VK_NULL_HANDLE) {
++            entry = {device, query, false};
++            return true;
++        }
++    }
++    return false;
++}
++
++inline void Forget(VkDevice device) {
++    std::scoped_lock lock{devices_mutex};
++    for (auto& entry : devices) {
++        if (entry.device == device) {
++            entry = {};
++        }
++    }
++}
++
++inline std::optional<Report> OnResult(VkDevice device, VkResult result) {
++    if (result != VK_ERROR_DEVICE_LOST) {
++        return std::nullopt;
++    }
++    PFN_vkGetDeviceFaultInfoEXT query{};
++    {
++        std::scoped_lock lock{devices_mutex};
++        for (auto& entry : devices) {
++            if (entry.device == device && entry.query && !entry.reported) {
++                entry.reported = true;
++                query = entry.query;
++                break;
++            }
++        }
++    }
++    if (!query) {
++        return std::nullopt;
++    }
++    return Capture([&](VkDeviceFaultCountsEXT* counts, VkDeviceFaultInfoEXT* info) {
++        return query(device, counts, info);
++    });
++}
++
++} // namespace Vulkan::DeviceFault
+--- a/src/video_core/renderer_vulkan/vk_instance.cpp
++++ b/src/video_core/renderer_vulkan/vk_instance.cpp
+@@ -13,6 +13,7 @@
+ #include "video_core/renderdoc.h"
+ #include "video_core/renderer_vulkan/liverpool_to_vk.h"
+ #include "video_core/renderer_vulkan/vk_instance.h"
++#include "video_core/renderer_vulkan/vk_device_fault_report.h"
+ #include "video_core/renderer_vulkan/vk_platform.h"
+ 
+ #include <vk_mem_alloc.h>
+@@ -188,6 +189,7 @@
+ }
+ 
+ Instance::~Instance() {
++    DeviceFault::Forget(static_cast<VkDevice>(GetDevice()));
+     ImGui::Core::Shutdown(GetDevice());
+     vmaDestroyAllocator(allocator);
+ }
+@@ -238,7 +240,7 @@
+         return false;
+     }
+ 
+-    boost::container::static_vector<const char*, 32> enabled_extensions;
++    boost::container::static_vector<const char*, 33> enabled_extensions;
+     const auto add_extension = [&](std::string_view extension) -> bool {
+         const auto result =
+             std::find_if(available_extensions.begin(), available_extensions.end(),
+@@ -253,6 +255,26 @@
+         LOG_WARNING(Render_Vulkan, "Extension {} unavailable.", extension);
+         return false;
+     };
++
++    // Capability-gated driver fault evidence, never a title-specific workaround.
++    // Query this feature only when its extension is advertised. Binary crash
++    // dumps stay disabled; the reporter uses bounded address/vendor arrays.
++    VkPhysicalDeviceFaultFeaturesEXT fault_features{};
++    fault_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT;
++    bool fault_capture = false;
++    if (std::find(available_extensions.begin(), available_extensions.end(),
++                  VK_EXT_DEVICE_FAULT_EXTENSION_NAME) != available_extensions.end()) {
++        VkPhysicalDeviceFeatures2 fault_query{};
++        fault_query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
++        fault_query.pNext = &fault_features;
++        VULKAN_HPP_DEFAULT_DISPATCHER.vkGetPhysicalDeviceFeatures2(
++            static_cast<VkPhysicalDevice>(physical_device), &fault_query);
++        fault_capture = fault_features.deviceFault == VK_TRUE &&
++                        enabled_extensions.size() < enabled_extensions.capacity() &&
++                        add_extension(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
++    }
++    fault_features.deviceFault = fault_capture ? VK_TRUE : VK_FALSE;
++    fault_features.deviceFaultVendorBinary = VK_FALSE;
+ 
+     // Required
+     ASSERT_MSG(add_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
+@@ -599,7 +621,12 @@
+         device_chain.unlink<vk::PhysicalDeviceShaderClockFeaturesKHR>();
+     }
+ 
+-    auto [device_result, dev] = physical_device.createDeviceUnique(device_chain.get());
++    auto fault_create_info = device_chain.get();
++    if (fault_capture) {
++        fault_features.pNext = const_cast<void*>(fault_create_info.pNext);
++        fault_create_info.pNext = &fault_features;
++    }
++    auto [device_result, dev] = physical_device.createDeviceUnique(fault_create_info);
+     if (device_result != vk::Result::eSuccess) {
+         LOG_CRITICAL(Render_Vulkan, "Failed to create device: {}", vk::to_string(device_result));
+         return false;
+@@ -607,6 +634,12 @@
+     device = std::move(dev);
+ 
+     VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
++    const bool registered_fault_capture =
++        fault_capture && DeviceFault::Register(
++            static_cast<VkDevice>(*device),
++            VULKAN_HPP_DEFAULT_DISPATCHER.vkGetDeviceFaultInfoEXT);
++    LOG_INFO(Render_Vulkan, "DEVICE_FAULT_CAPTURE enabled={} vendor_binary=false",
++             registered_fault_capture);
+ 
+     graphics_queue = device->getQueue(queue_family_index, 0);
+     present_queue = device->getQueue(queue_family_index, 0);
+--- a/src/video_core/renderer_vulkan/vk_scheduler.cpp
++++ b/src/video_core/renderer_vulkan/vk_scheduler.cpp
+@@ -8,6 +8,7 @@
+ #include "common/thread.h"
+ #include "imgui/renderer/texture_manager.h"
+ #include "video_core/renderer_vulkan/vk_instance.h"
++#include "video_core/renderer_vulkan/vk_device_fault_report.h"
+ #include "video_core/renderer_vulkan/vk_scheduler.h"
+ 
+ namespace Vulkan {
+@@ -247,6 +248,36 @@
+     ImGui::Core::TextureManager::Submit();
+     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
+     if (submit_result == vk::Result::eErrorDeviceLost) {
++        const auto fault = DeviceFault::OnResult(static_cast<VkDevice>(instance.GetDevice()),
++                                                  static_cast<VkResult>(submit_result));
++        if (fault) {
++            LOG_ERROR(Render_Vulkan,
++                      "DEVICE_FAULT_REPORT counts_result={} details_result={} "
++                      "details_queried={} addresses={}/{} vendors={}/{} truncated={} "
++                      "description={}",
++                      static_cast<int>(fault->counts_result),
++                      static_cast<int>(fault->details_result), fault->queried_details,
++                      fault->address_count, fault->available_addresses,
++                      fault->vendor_count, fault->available_vendors, fault->truncated,
++                      DeviceFault::BoundedText(fault->description.data(),
++                                               fault->description.size()));
++            for (u32 i = 0; i < fault->address_count; ++i) {
++                const auto& a = fault->addresses[i];
++                LOG_ERROR(Render_Vulkan,
++                          "DEVICE_FAULT_ADDRESS index={} type={} address={:#x} precision={:#x}",
++                          i, static_cast<int>(a.addressType), a.reportedAddress,
++                          a.addressPrecision);
++            }
++            for (u32 i = 0; i < fault->vendor_count; ++i) {
++                const auto& v = fault->vendors[i];
++                LOG_ERROR(Render_Vulkan,
++                          "DEVICE_FAULT_VENDOR index={} code={:#x} data={:#x} description={}",
++                          i, v.vendorFaultCode, v.vendorFaultData,
++                          DeviceFault::BoundedText(v.description, sizeof(v.description)));
++            }
++        } else {
++            LOG_ERROR(Render_Vulkan, "DEVICE_FAULT_REPORT unavailable_or_already_reported");
++        }
+         const auto s = GpuTrace::recorder.Capture(scheduler_id);
+         LOG_ERROR(Render_Vulkan,
+                   "GPU_QUEUE_FAILURE scheduler={:#x} failed_tick={} cached_completion={}"
