@@ -281,7 +281,7 @@
     {
       "id": "gpu-device-lost-after-first-frame",
       "subsystem": "vulkan-gpu-memory-and-srt",
-      "status": "GPU_LOSS_AT_LOW_VRAM_120S_WITH_HEADROOM_BLACK_RENDER_UNRESOLVED",
+      "status": "GOW_PR90_PR91_PR94_RADV_DEVICE_LOST_AT_22S; V1_QUEUE_TRACE_MIXED_TIMELINES_UNRESOLVED",
       "related_prs": [
         52,
         57,
@@ -291,12 +291,18 @@
         68,
         71,
         73,
-        76
+        76,
+        88,
+        90,
+        91,
+        92,
+        93,
+        94
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "Exact same native ELF 7604bae under loaded Qwen (~8.595GiB free) previously faulted with RADV device loss at 28.841s. Subsequent 10:01 A/B unloaded Qwen (7.837->19.558GiB free) and remained alive 120.314s until mandatory 118s TERM/2s KILL; no in-game VK_ERROR_DEVICE_LOST and readable kernel journal 0 reset events. Final 'context lost' STDERR appeared following forced kill. At 26s loading UI, frames 58s+104s entirely black, no playable content. Repeated missing SRT Phi offsets and huge 0xffffffff guest descriptor clamps persist. One run per condition, no proof VRAM is sole root cause.",
-      "negative_result_or_prohibition": "Do not equate SIGKILL(-9) at the test limit with spontaneous emulator failure, treat teardown-associated RADV context cancellation as separate. Do not claim FPS overlay=game FPS or first_game_frame=rendered world. Keep all game source/GPU flags identical. Unbounded descriptor clamp may traverse address gaps; do not invent a shorter buffer size, shader handle or force an alternate readbacks mode.",
-      "next_test": "Generic mapped VMA adjacency correction PR #76 source da528b has 10 locally passing native C++ cases; protected incremental full native build + same 16GiB host VRAM target GoW/GoT source A/B. Capture the entire ~2.66MB compressed console to resolve presenter first-visible/black flips and SRT Phi parent. Cross-title effects must be measured before shared main promotion."
+      "observed_game_effects": "Exact same native ELF 7604bae under loaded Qwen (~8.595GiB free) previously faulted with RADV device loss at 28.841s. Subsequent 10:01 A/B unloaded Qwen (7.837->19.558GiB free) and remained alive 120.314s until mandatory 118s TERM/2s KILL; no in-game VK_ERROR_DEVICE_LOST and readable kernel journal 0 reset events. Final 'context lost' STDERR appeared following forced kill. At 26s loading UI, frames 58s+104s entirely black, no playable content. Repeated missing SRT Phi offsets and huge 0xffffffff guest descriptor clamps persist. One run per condition, no proof VRAM is sole root cause. 2026-10-28 scoped queue investigation: native PR94 source bbe1a728/ELF 65fafc43 loses RADV at 22.236s despite improved buffer ranges; v1 two-file diagnostic ELF d3e44ab2 links natively but loses RADV at 22.285s, after unloading Qwen to 19.172GiB free. 1923 global trace events, first 64 queue submissions tick1..64, most recent 128 events tick13, final report tick13 with cached completion1. Original protected gameplay, PR91, and PR94 binaries verified and PR94 source restored. No rendered game frame proven.",
+      "negative_result_or_prohibition": "Do not equate SIGKILL(-9) at the test limit with spontaneous emulator failure, treat teardown-associated RADV context cancellation as separate. Do not claim FPS overlay=game FPS or first_game_frame=rendered world. Keep all game source/GPU flags identical. Unbounded descriptor clamp may traverse address gaps; do not invent a shorter buffer size, shader handle or force an alternate readbacks mode. V1 global submission trace cannot be used to identify first unfinished guest GPU work: scheduler timelines were mixed and cached completion=1 was not a live GPU wait. RADV 'innocent' cancelled CS cannot identify guilty shader. Do not rerun unchanged v1 or work around shader hashes, block GPU dispatches, change driver flags or reset X11/Sunshine.",
+      "next_test": "Isolated source 0fcd2676e34001be59f450ec3570786d28165f1b records per-scheduler first64 real compute, first32 draws, first32 submissions and last128; standalone C++23 pthread -Werror ring-fixture PASS. Host runner c57a3009 pin compiles exact source and CPU fixture, runs one native GoW with normal flags/118s cap if native build succeeds, archives attributed GPU fault and restores exact PR94 ELF; multi-title release only after actual causality/graphics proof."
     },
     {
       "id": "gpu-descriptor-table-demand-coherence",
