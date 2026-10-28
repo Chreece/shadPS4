@@ -242,7 +242,7 @@ class MainTests(unittest.TestCase):
     def test_renderer_modified_after_gate_blocks_launch(self):
         def gate(*a): (self.source/'checked.cpp').write_text('changed')
         with patch.object(r,'verified_headroom',gate):self.assertEqual(r.main(self.u,self.project),1)
-        self.assertFalse(self.game_calls())
+        self.assertFalse(self.game_calls)
     def test_restoration_failure_affects_exit(self):
         def gate(u,api,evid,pending,result):pending.append(dict(MODEL))
         self.u.restore_models=lambda *a:[{'result':'RESTORE_FAILED'}]
