@@ -1,0 +1,58 @@
+{
+  "schema_version": 2,
+  "record_id": "gow-auto-cpu-write-20261028T143924Z-2333610-reviewed",
+  "recorded_at": "2026-10-28",
+  "record_type": "UNIVERSAL_CPU_WRITE_COHERENCE_NATIVE_BUILD_FAILURE_AND_API_REPAIR",
+  "scope": "Universal emulator memory correctness; GoW is the validation title, not an implementation condition",
+  "game_id": "CUSA34384",
+  "tested_games": [],
+  "archive": "gow-auto-cpu-write-20261028T143924Z-2333610.tar.gz",
+  "archive_sha256": "b498d568a4e81204f0fee8c16d0a27578a3f8dd0051ecd9f6a7edc0d36495e4c",
+  "tested_local_source_commit": "09548ae86e6e6ce30eea75e4f6e1f96bc3678551",
+  "restored_source_commit": "bbe1a72840733afccba5f48fb4b5eb29a1c96128",
+  "retained_metadata_source": "d6eebb26bf0c1a739869a46adcacd74e72f917c5",
+  "reviewed_upstream_snapshot": "caaa5419726c912013ffd5154dd4a9bac461cd94",
+  "host_cpu_regressions": {
+    "baseline": "BASELINE_DISABLED_GPU_DATA_LOSS=REPRODUCED",
+    "corrected": "CPU_WRITE_COHERENCE=PASS modes=3 mixed_regions=PASS range_cases=28672 boundary_cases=11"
+  },
+  "native_build_result": "FAILED compiling buffer_cache.cpp; no final link and no game launched",
+  "compiler_error": "buffer_cache.cpp:150:30: PageManager::PM_PAGE_SIZE is private within this context",
+  "cause": "Patch incorrectly accessed a private class constant. The earlier extracted-method fixture did not compile this production call with the real PageManager declaration.",
+  "game_rc": null,
+  "visual": "NOT_RUN",
+  "audio": "NOT_RUN",
+  "gpu_test": "NOT_RUN",
+  "restoration": ["SOURCE_RESTORED", "PR94_ELF_RESTORED"],
+  "protected_hashes_unchanged": {
+    "original_gameplay": true,
+    "pr91": true,
+    "pr94": true,
+    "metadata_candidate": true
+  },
+  "repair": {
+    "production_delta_from_failed_candidate": "One call-site argument: PageManager::PM_PAGE_SIZE -> PageManager::GetPageSize()",
+    "semantics": "Unchanged CPU-write coherence and page-span algorithm. No private member exposed, numeric page size hardcoded, extra flags enabled, driver altered or game-specific code added.",
+    "real_page_manager_header_blob": "f24c601bfef2494b99eb087235f8ce00af1e95f2",
+    "patch_commit": "51251675f7b515219c37834cb47160c1ae662933",
+    "patch_path": "scripts/patchsets/automatic-cpu-write-coherence-20261028.patch",
+    "patch_blob": "9f36ee0dbd68e616588e502b7e88445db8b6d3eb",
+    "runner_commit": "0e45b47b67aa28542a453aae18dba96958ef7a90",
+    "runner_path": "scripts/shadps4_auto_cpu_write_api_resume_20261028.py",
+    "runner_blob": "f31f3ede77d237227fa738557084308f37cb4a27",
+    "runner_sha256": "a11480faba860be383844b1e99116d8f69c87f29c6b5a063ec362ca72e2821e5"
+  },
+  "local_tests_actually_executed": {
+    "header_provenance": "Actual PageManager, alignment, types and region_definitions headers copied byte-exactly from reviewed source; all four Git blob hashes checked. Actual uploaded cpu_write_coherence.h used unchanged. No PageManager mock.",
+    "old_call_negative_regression": "GCC 14.2 and Clang 17 both rejected the exact original private-member expression against the real header, as expected",
+    "corrected_api_test": "Exact corrected production helper expression compiled and ran with real headers, including tracking-page-size equality and boundary assertions",
+    "matrix": "12/12 successful compile-and-run combinations: GCC/Clang x release/ASan+UBSan x actual API/baseline-data-loss/corrected-coherence fixtures; -Wall -Wextra -Werror -pedantic",
+    "range_cases": "28,672 plus 11 boundary cases, all three readback modes, unchanged extracted-method fixtures",
+    "patch_application": "Original uploaded patch reversed to verified preimages; corrected patch git apply --check/--index and output-source parity PASS",
+    "runner": "Python syntax PASS; corrected package/blob propagation PASS; wrapper invokes real API gate and existing CPU fixtures PASS; detached worker reentry preserves corrected wrapper PASS; absent-source preflight fails without mutation and writes evidence PASS",
+    "published_byte_parity": "Published patch and wrapper Git blob hashes equal locally tested bytes",
+    "limit": "These are CPU/header/patch/runner tests, not full emulator production compilation or any Vulkan/GoW runtime result. Full native build and gameplay recovery remain pending."
+  },
+  "next_test": "Use the corrected immutable short-download runner. Reuse existing build cache and original worker's locks, source/binary protection, reviewed upstream snapshot, metadata candidate, isolated profile, 118+2 second runtime and restoration. Require real-header API gate, CPU fixtures, native buffer-cache object and link before one game launch. No unchanged failed compile rerun and no new graphics hypothesis in this retry.",
+  "decision": "REJECT_PRIVATE_MEMBER_CALL;_KEEP_COHERENCE_CANDIDATE_ISOLATED;_NATIVE_BUILD_AND_VISIBLE_GAMEPLAY_PENDING"
+}
