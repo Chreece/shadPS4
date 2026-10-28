@@ -6,7 +6,7 @@
      const Id fixed_coords{FixImageAtomicCoords(ctx, coords, texture.view_type)};
 +    // Integer image atomics must use the image's scalar signedness, not the
 +    // unsigned bit-pattern type used by the IR. Bitcasts keep every guest bit.
-+    const bool is_signed = texture.data_types->Get(1) == ctx.S32[1];
++    const bool is_signed = texture.data_types->Get(1).value == ctx.S32[1].value;
 +    const Id scalar_type = is_signed ? ctx.S32[1] : ctx.U32[1];
 +    const Id pointer_type =
 +        is_signed ? ctx.TypePointer(spv::StorageClass::Image, scalar_type) : ctx.image_u32;
@@ -26,7 +26,7 @@
                           Id (Sirit::Module::*atomic_func)(Id, Id, Id, Id, Id, Id, Id)) {
      const auto& texture = ctx.images[handle & 0xFFFF];
      const Id fixed_coords{FixImageAtomicCoords(ctx, coords, texture.view_type)};
-+    const bool is_signed = texture.data_types->Get(1) == ctx.S32[1];
++    const bool is_signed = texture.data_types->Get(1).value == ctx.S32[1].value;
 +    const Id scalar_type = is_signed ? ctx.S32[1] : ctx.U32[1];
 +    const Id pointer_type =
 +        is_signed ? ctx.TypePointer(spv::StorageClass::Image, scalar_type) : ctx.image_u32;
