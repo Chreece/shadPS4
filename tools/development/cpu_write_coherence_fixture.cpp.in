@@ -1,0 +1,113 @@
+// Extracted production InvalidateRegion plus CPU-only collaborators.
+// This models completion ordering; it does not execute Vulkan commands.
+#include <algorithm>
+#include <array>
+#include <bitset>
+#include <cstdint>
+#include <cstdlib>
+#include <cstdio>
+#include <string_view>
+#include <vector>
+#include "cpu_write_coherence.h"
+using u64=std::uint64_t;
+using VAddr=u64;
+constexpr u64 PAGE=4096, REGION=4*PAGE;
+enum class Type {CPU,GPU};
+enum class StateOp {None,Set,Clear};
+enum GpuReadbacksMode : unsigned {Disabled=0, Relaxed=1, Precise=2};
+static void check(bool ok,const char* msg){if(!ok){std::fprintf(stderr,"COHERENCE_FAIL=%s\n",msg);std::exit(2);}}
+struct RegionManager {
+ std::bitset<4> cpu{},gpu{};
+ bool locked{};
+ using Bounds=std::pair<u64,u64>;
+ static Bounds GetBounds(u64 off,u64 size){return {off/PAGE,(off+size-1)/PAGE};}
+ void Lock(Bounds){check(!locked,"recursive model lock");locked=true;}
+ void Unlock(Bounds){check(locked,"model unlock");locked=false;}
+ template<Type type> bool IsRegionModified(u64 off,u64 size){
+  auto [a,b]=GetBounds(off,size);for(auto p=a;p<=b;++p)if((type==Type::GPU?gpu:cpu)[p])return true;return false;
+ }
+ template<StateOp c,StateOp g,bool locked_here=true> void ChangeRegionState(u64 off,u64 size){
+  if constexpr(!locked_here)check(locked,"unlocked state transition");
+  auto [a,b]=GetBounds(off,size);
+  for(auto p=a;p<=b;++p){if constexpr(c!=StateOp::None)cpu[p]=(c==StateOp::Set);if constexpr(g!=StateOp::None)gpu[p]=(g==StateOp::Set);}
+ }
+};
+class Tracker {
+public:
+ unsigned readbacks_mode{};
+ std::array<RegionManager,4> regions{};
+ explicit Tracker(unsigned mode):readbacks_mode(mode){}
+ void IteratePages(VAddr addr,u64 size,auto&& f){
+  while(size){const u64 n=std::min(size,REGION-addr%REGION);f(&regions.at(addr/REGION),addr%REGION,n);addr+=n;size-=n;}
+ }
+ void MarkRegionAsCpuModified(VAddr addr,u64 size){IteratePages(addr,size,[](auto* m,u64 o,u64 n){m->template ChangeRegionState<StateOp::Set,StateOp::None>(o,n);});}
+ void MarkGpu(VAddr addr,u64 size){IteratePages(addr,size,[](auto* m,u64 o,u64 n){m->template ChangeRegionState<StateOp::None,StateOp::Set>(o,n);});}
+ void Complete(VAddr addr,u64 size){IteratePages(addr,size,[](auto* m,u64 o,u64 n){m->template ChangeRegionState<StateOp::Set,StateOp::Clear>(o,n);});}
+ bool Unlocked()const{for(const auto& m:regions)if(m.locked)return false;return true;}
+// EXACT_INVALIDATE_REGION
+};
+int main(int argc,char**argv){
+ using namespace VideoCore::Coherence;
+ const bool baseline=argc>1&&std::string_view(argv[1])=="--baseline";
+ for(unsigned mode=0;mode<3;++mode){
+  Tracker t(mode);t.MarkGpu(128,64);t.MarkGpu(PAGE+128,64);
+  std::vector<unsigned char> cpu(2*PAGE,17),gpu=cpu;
+  std::fill(gpu.begin()+128,gpu.begin()+192,71);
+  std::fill(gpu.begin()+PAGE+128,gpu.begin()+PAGE+192,82);
+  unsigned flushes=0;
+  t.InvalidateRegion(131,1,[&]{
+   ++flushes;check(t.Unlocked(),"flush outside region locks");
+   check(!t.regions[0].cpu[0],"dirty page not exposed before copy");
+   const auto s=RequiredCpuWriteSpan(131,1,0,cpu.size(),PAGE);
+   check(s&&s->address==0&&s->size==PAGE,"fault expands to exactly one page");
+   std::copy(gpu.begin()+128,gpu.begin()+192,cpu.begin()+128);
+   t.Complete(s->address,s->size);
+  });
+  cpu[131]=99; // The faulting guest store runs only after preservation.
+  if(baseline&&mode==0){
+   check(flushes==0&&cpu[128]==17&&cpu[131]==99,"baseline disabled loses GPU sibling bytes");
+  }else{
+   check(flushes==1&&cpu[128]==71&&cpu[131]==99&&cpu[191]==71,"GPU sibling bytes survive CPU partial write");
+   check(!t.regions[0].gpu[0]&&t.regions[0].cpu[0],"ownership transferred after copy");
+   check(t.regions[0].gpu[1]&&cpu[PAGE+128]==17,"neighbor remains GPU owned");
+   t.InvalidateRegion(132,1,[&]{++flushes;});check(flushes==1,"no redundant clean readback");
+  }
+ }
+ if(baseline){std::puts("BASELINE_DISABLED_GPU_DATA_LOSS=REPRODUCED");return 0;}
+ for(unsigned mode=0;mode<3;++mode){
+  Tracker t(mode);unsigned flushes=0;t.InvalidateRegion(31,1,[&]{++flushes;});
+  check(flushes==0&&t.regions[0].cpu[0],"CPU-only page takes fast path");
+  t.InvalidateRegion(0,0,[&]{++flushes;});check(flushes==0,"empty operation ignored");
+  t.MarkGpu(REGION+10,1);
+  t.InvalidateRegion(REGION-8,16,[&]{
+   ++flushes;check(t.Unlocked(),"cross-region locks released before wait");
+   check(t.regions[0].cpu[3]&&!t.regions[1].cpu[0],"only clean region exposed early");
+   t.Complete(REGION-8,16);
+  });
+  check(flushes==1&&t.regions[1].cpu[0]&&!t.regions[1].gpu[0],"cross-region copy once");
+ }
+ std::uint64_t cases=0;
+ for(u64 off=0;off<PAGE;++off){
+  for(u64 bytes:std::array<u64,7>{1,2,4,8,64,PAGE,2*PAGE}){
+   const auto s=RequiredCpuWriteSpan(PAGE+off,bytes,0,8*PAGE,PAGE);
+   const auto expected_end=((PAGE+off+bytes+PAGE-1)/PAGE)*PAGE;
+   check(s&&s->address==PAGE&&s->size==expected_end-PAGE,"range exhaustive minimal tracking-page coverage");++cases;
+  }
+ }
+ constexpr auto max=std::numeric_limits<u64>::max();
+ check(!RequiredCpuWriteSpan(0,0,0,PAGE,PAGE),"empty rejected");
+ check(!RequiredCpuWriteSpan(0,1,0,PAGE,0),"zero page rejected");
+ check(!RequiredCpuWriteSpan(0,1,0,PAGE,3),"non-power page rejected");
+ check(!RequiredCpuWriteSpan(0,1,PAGE,PAGE,PAGE),"below arena rejected");
+ check(!RequiredCpuWriteSpan(PAGE,1,0,PAGE,PAGE),"past arena rejected");
+ check(!RequiredCpuWriteSpan(PAGE-1,2,0,PAGE,PAGE),"cross arena rejected");
+ check(!RequiredCpuWriteSpan(max-1,2,max-100,100,PAGE),"request overflow rejected");
+ check(!RequiredCpuWriteSpan(max-1,1,max-100,101,PAGE),"arena overflow rejected");
+ const auto top=RequiredCpuWriteSpan(max-2,1,max-100,100,PAGE);
+ check(top&&top->address==max-100&&top->size==100,"top address rounding does not wrap");
+ const auto clipped=RequiredCpuWriteSpan(110,1,100,100,PAGE);
+ check(clipped&&clipped->address==100&&clipped->size==100,"clipped arena bounds");
+ const auto boundary=RequiredCpuWriteSpan(PAGE-1,2,0,3*PAGE,PAGE);
+ check(boundary&&boundary->address==0&&boundary->size==2*PAGE,"cross-page fault includes both pages");
+ std::printf("CPU_WRITE_COHERENCE=PASS modes=3 mixed_regions=PASS range_cases=%llu boundary_cases=11\n",static_cast<unsigned long long>(cases));
+}
