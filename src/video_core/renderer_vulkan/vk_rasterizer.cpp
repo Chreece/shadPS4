@@ -351,6 +351,8 @@ void Rasterizer::DispatchDirect() {
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+    scheduler.RecordGpuCommand(Scheduler::GpuTraceKind::DirectCompute, cs.pgm_hash,
+                               cs_program.dim_z, cs_program.dim_x, cs_program.dim_y);
     DebugState.IncDispatch();
 
     ResetBindings(true);
@@ -411,6 +413,8 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     } else {
         cmdbuf.dispatchIndirect(buffer->Handle(), base);
     }
+    scheduler.RecordGpuCommand(Scheduler::GpuTraceKind::IndirectCompute, cs.pgm_hash,
+                               address + offset, static_cast<u32>(prepare), size);
     DebugState.IncDispatch();
 
     ResetBindings(true);
