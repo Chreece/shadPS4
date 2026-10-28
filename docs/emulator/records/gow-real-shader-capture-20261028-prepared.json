@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "record_id": "gow-real-shader-capture-20261028-prepared",
+  "recorded_at": "2026-10-28",
+  "scope": "Diagnostic evidence capture, not a new emulator correctness or gameplay fix",
+  "tested_games": [],
+  "native_gpu_capture": "PENDING",
+  "source_commit": "60f87071d0c19c968253c9c25e3e5c318e756994",
+  "binary_sha256": "730b87e677e0b0c99947a78947c62904e6b7aa292455efa9e69b69f0f60afff4",
+  "upstream_snapshot": "0cd6e4f2cb6617af12eb8267cca848cc41ad20d7",
+  "reason": "Automatic ReadConst activated for six shaders in the actual native test, but the same 22.949s failure and black frames persist. Both shader dumping and pipeline caching were disabled. Existing logs identify hashes but cannot establish the exact emitted instruction stream or input/output translation correctness. Avoid a cache-only collector for disabled caching and avoid another speculative semantic patch.",
+  "runtime_difference": "Only GPU.dump_shaders becomes true inside a freshly copied isolated profile. Pipeline cache remains off and shader patching is required to remain off. No renderer semantic changes, no recompile, no rebase, no changes to live saves or settings, no automatic game input or service/network restarts.",
+  "source_preservation": "Verify the restored PR94 HEAD and clean state plus protected gameplay/PR91/PR94/current candidate hashes. Add a separate detached worktree at the exact tested candidate, copy the identical executable there, and never switch/reset/patch the original worktree. Retain the separate worktree and copied binary for provenance. Shared locks serialize other GoW/GoT runs.",
+  "capture": "Reuse the exact last host-generated runtime script and bounded 118+2-second observer/conditional 8GiB Ollama policy. Collect only allowlisted regular guest .bin and emitted .spv shader files from private user/shader/dumps; preserve contents and SHA256, reject symlinks/oversize outputs, explicit size/count limits. Include actual compiler/renderer source snapshot and runtime evidence, not user saves or profile contents. Report coverage of activated automatic-ReadConst shader hashes.",
+  "validation": "Run an already-installed spirv-val with Vulkan1.3/scalar-layout settings if available; never install software or change drivers. Preserve raw shaders even if validator missing, rejects a module, or times out. Validator diagnostics and version need interpretation; structural validity does not establish correct runtime resources, shader semantics, or the GPU fault cause.",
+  "runner_commit": "7e6f8c8935db1f42a8fd638670f2b4ac7ac254b5",
+  "runner_path": "scripts/shadps4_real_shader_capture_20261028.py",
+  "runner_blob": "684705381f0a766d07eb1d584e9bd83cf0ff00d8",
+  "runner_sha256": "8244dcdb827c6e292a327a8d1c89dde8de107a7f6fb386c7c06c2a04a2c8fb6c",
+  "runtime_template_sha256": "3b6c7f946bdcfae9730fc2a43d9b02232b34baed9e6b0e247ffa921c33665856",
+  "local_tests": {
+    "unit_tests": "9 PASS: exact config-only diagnostic change, symlink config refusal, unsafe option refusal without mutation, missing dump-key handling, bad-group refusal, exact actual runtime substitutions/bash -n, allowlisted shader copy and SPIR-V header checks, explicit missing-directory status, bounded size refusal",
+    "worker_tests": "4 PASS with real temporary Git histories/worktrees/source archives and shader-copy/diary code: simulated crashing game retains evidence, simulated successful game does not claim gameplay, dirty original source refused unchanged, mismatched binary refused. Native game launch and process checks were simulated; no actual GPU execution was performed locally.",
+    "publication": "GitHub blob exactly matches tested local bytes",
+    "actual_shader_validation": "NOT_RUN: the user's generated modules are not yet available; the local container has no installed spirv-val",
+    "gameplay": "NOT_RUN"
+  },
+  "decision": "CAPTURE_ACTUAL_COMPILER_INPUT_OUTPUT_BEFORE_NEXT_SEMANTIC_CHANGE; KEEP_PRIOR_CANDIDATES_AND_REAL_GAMEPLAY_BASELINE_PROTECTED"
+}
