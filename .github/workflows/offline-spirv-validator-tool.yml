@@ -1,0 +1,38 @@
+name: Offline SPIR-V validator tool
+on:
+  push:
+    branches: [diagnostic/local-spirv-validator-tool-20261028]
+    paths: [.github/workflows/offline-spirv-validator-tool.yml]
+permissions:
+  contents: read
+jobs:
+  validator-tool-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Obtain distribution-signed SPIRV-Tools package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir package
+          cd package
+          sudo apt-get update -qq
+          apt-get download spirv-tools
+          test "$(find . -maxdepth 1 -name '*.deb' | wc -l)" -eq 1
+          dpkg-deb -x ./*.deb root
+          mkdir -p artifact/bin artifact/provenance
+          cp root/usr/bin/spirv-val root/usr/bin/spirv-dis artifact/bin/
+          cp root/usr/share/doc/spirv-tools/copyright artifact/provenance/
+          dpkg-deb -f ./*.deb Package Version Architecture > artifact/provenance/package.txt
+          sha256sum ./*.deb > artifact/provenance/package.sha256
+          ./artifact/bin/spirv-val --version > artifact/provenance/validator-version.txt
+          ./artifact/bin/spirv-dis --version > artifact/provenance/disassembler-version.txt
+          ldd ./artifact/bin/spirv-val > artifact/provenance/ldd.txt
+          (cd artifact && sha256sum bin/* > provenance/tools.sha256)
+      - name: Upload validator only, never guest data
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: standalone-spirv-validator-linux-x86-64
+          path: package/artifact/
+          retention-days: 1
+          if-no-files-found: error
