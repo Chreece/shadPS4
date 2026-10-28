@@ -1,0 +1,165 @@
+// Exact production readback methods, with CPU-only transport collaborators.
+// READBACK_REAL_VULKAN uses the emulator's real Vulkan-Hpp types; neither mode
+// submits GPU work. Model mode checks ordering and ranges, not driver behaviour.
+#include <algorithm>
+#include <bit>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <functional>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+#ifdef READBACK_REAL_VULKAN
+#define VK_NO_PROTOTYPES
+#define VULKAN_HPP_NO_CONSTRUCTORS
+#include <vulkan/vulkan.hpp>
+#else
+#define VK_QUEUE_FAMILY_IGNORED (~std::uint32_t{0})
+namespace vk {
+using Buffer=std::uintptr_t;
+enum class PipelineStageFlagBits2 {eCopy,eHost};
+enum class AccessFlagBits2 {eTransferWrite,eHostRead};
+struct BufferMemoryBarrier2 {
+ PipelineStageFlagBits2 srcStageMask{};AccessFlagBits2 srcAccessMask{};
+ PipelineStageFlagBits2 dstStageMask{};AccessFlagBits2 dstAccessMask{};
+ std::uint32_t srcQueueFamilyIndex{},dstQueueFamilyIndex{};
+ Buffer buffer{};std::uint64_t offset{},size{};
+};
+struct DependencyInfo {
+ std::uint32_t bufferMemoryBarrierCount{};const BufferMemoryBarrier2* pBufferMemoryBarriers{};
+};
+struct BufferCopy {std::uint64_t srcOffset{},dstOffset{},size{};};
+}
+#endif
+using u8=std::uint8_t;using u64=std::uint64_t;using VAddr=std::uintptr_t;
+namespace boost::container {template<class T,std::size_t>using small_vector=std::vector<T>;}
+static void check(bool ok,const char* s){if(!ok){std::fprintf(stderr,"READBACK_FAIL=%s\n",s);std::exit(2);}}
+struct State {
+ std::vector<std::string> events;bool barrier{},complete{},violation{};
+ std::uint64_t offset{256},size{},seen_offset{},seen_size{};
+ std::vector<u8> staging=std::vector<u8>(8192,0),guest=std::vector<u8>(8192,0);
+ std::function<void()> deferred;
+} state;
+static auto handle(){
+#ifdef READBACK_REAL_VULKAN
+ return vk::Buffer{reinterpret_cast<VkBuffer>(std::uintptr_t{0x1000})};
+#else
+ return vk::Buffer{0x1000};
+#endif
+}
+namespace VideoCore {
+enum class MemoryType {HostCached};
+struct Buffer {VAddr cpu_addr{0x100000}; auto Handle()const{return handle();} VAddr CpuAddr()const{return cpu_addr;}};
+}
+namespace Vulkan {
+struct StagingBufferRef {
+ VideoCore::Buffer* buffer{};u64 offset{},size{};u8* mapped{};
+ void Invalidate()const{
+  state.events.push_back("invalidate");check(state.complete,"host invalidation before completion");
+  state.violation|=!state.barrier;
+ }
+};
+struct Command {
+ void pipelineBarrier2(const vk::DependencyInfo& d)const{
+  check(d.bufferMemoryBarrierCount==1&&d.pBufferMemoryBarriers,"exact one buffer barrier");
+  const auto& b=*d.pBufferMemoryBarriers;
+  check(b.srcStageMask==vk::PipelineStageFlagBits2::eCopy,"copy producer stage");
+  check(b.srcAccessMask==vk::AccessFlagBits2::eTransferWrite,"transfer writer");
+  check(b.dstStageMask==vk::PipelineStageFlagBits2::eHost,"host consumer stage");
+  check(b.dstAccessMask==vk::AccessFlagBits2::eHostRead,"host read access");
+  check(b.srcQueueFamilyIndex==VK_QUEUE_FAMILY_IGNORED&&b.dstQueueFamilyIndex==VK_QUEUE_FAMILY_IGNORED,"no ownership transfer");
+  check(b.buffer==handle()&&b.offset==state.offset&&b.size==state.size,"allocation-bounded barrier");
+  check(!state.events.empty()&&state.events.back()=="copy","barrier follows transfer");
+  state.events.push_back("barrier");state.barrier=true;state.seen_offset=b.offset;state.seen_size=b.size;
+ }
+};
+struct Scheduler {
+ Command CommandBuffer()const{return {};}
+ void EndRendering(){state.events.push_back("end-rendering");}
+ void Finish(){state.events.push_back("finish");state.complete=true;if(state.deferred){auto f=std::move(state.deferred);f();}}
+ void DeferOperation(std::function<void()> f){state.events.push_back("defer");state.deferred=std::move(f);}
+};
+}
+struct Tracker {
+ template<bool>void ForEachDownloadRange(VAddr a,u64 n,auto f){f(a,n);}
+ void UnmarkRegionAsGpuModified(VAddr,u64,bool){check(state.complete,"ownership before completion");state.events.push_back("unmark");}
+};
+struct Ranges {
+ std::vector<std::pair<VAddr,VAddr>> ranges;
+ void ForEachInRange(VAddr a,u64 n,auto f){for(auto [x,y]:ranges){auto l=std::max(x,a),h=std::min(y,a+n);if(l<h)f(l,h);}}
+ void Subtract(VAddr,u64){} // irrelevant interval bookkeeping is deliberately not modeled
+};
+struct Pool {
+ VideoCore::Buffer buffer;
+ Vulkan::StagingBufferRef Request(u64 n,VideoCore::MemoryType,u64,bool){
+  state.events.push_back("allocate");state.size=n;
+  return {&buffer,state.offset,n,state.staging.data()+state.offset};
+ }
+ void FreeDeferred(const Vulkan::StagingBufferRef&){check(state.complete,"premature allocation reuse");state.events.push_back("free");}
+};
+struct Transport {
+ void CopyBuffer(const VideoCore::Buffer*,const VideoCore::Buffer*,const std::vector<vk::BufferCopy>& copies){
+  state.events.push_back("copy");
+  for(const auto& c:copies){check(c.dstOffset+c.size<=state.staging.size(),"staging bound");for(u64 i=0;i<c.size;++i)state.staging[c.dstOffset+i]=u8((c.srcOffset+i)%251);}
+ }
+};
+struct Memory {
+ static Memory* Instance(){static Memory m;return &m;}
+ bool TryWriteBacking(u8* dest,const u8* source,u64 n){
+  check(state.complete,"CPU copy before completion");state.events.push_back("cpu-copy");
+  const auto off=reinterpret_cast<VAddr>(dest)-0x100000;
+  check(off+n<=state.guest.size(),"guest bound");std::memcpy(state.guest.data()+off,source,n);return true;
+ }
+};
+namespace Core {using Memory=::Memory;}
+namespace VideoCore {
+struct Image {struct {VAddr guest_address;u64 guest_size;}info;};
+struct PageManager {static VAddr GetPageAddr(VAddr a){return a&~VAddr{4095};}static VAddr GetNextPageAddr(VAddr a){return (a+4096)&~VAddr{4095};}};
+/* EXACT_HELPER */
+class BufferCache {
+public:
+ Tracker backing;Tracker* memory_tracker=&backing;Ranges gpu_modified_ranges;Pool staging_pool;
+ Transport runtime;Vulkan::Scheduler scheduler;Memory* memory=Memory::Instance();Buffer arena;
+ std::pair<const Buffer*,u64> ObtainBuffer(VAddr,u64){return {&arena,0};}
+ void DownloadMemory(const Buffer*,VAddr,u64,bool);
+ void ReadEdgeImagePages(const Image&);
+};
+/* EXACT_DOWNLOAD */
+/* EXACT_EDGE */
+}
+int main(int argc,char**argv){
+ const bool baseline=argc>1&&std::string_view(argv[1])=="--baseline";
+ unsigned cases=0;
+ for(bool async:{false,true})for(u64 offset:{0ULL,16ULL,256ULL,1024ULL}){
+  state=State{};state.offset=offset;VideoCore::BufferCache cache;
+  cache.gpu_modified_ranges.ranges={{0x100010,0x100030},{0x100090,0x1000d0}};
+  cache.DownloadMemory(&cache.arena,0x100000,4096,async);
+  if(async){check(!state.complete&&std::find(state.events.begin(),state.events.end(),"invalidate")==state.events.end(),"async host does not read early");cache.scheduler.Finish();}
+  check(state.violation==baseline,"missing dependency reproduced only on baseline");
+  check(state.guest[16]==16&&state.guest[47]==47&&state.guest[144]==144&&state.guest[207]==207,"all dirty bytes copied");
+  check(state.guest[48]==0&&state.guest[143]==0,"clean gaps unchanged");
+  if(!baseline)check(state.seen_offset==offset&&state.seen_size==128,"padding inside exact allocation span");
+  ++cases;
+ }
+ for(u64 offset:{0ULL,256ULL}){
+  state=State{};state.offset=offset;VideoCore::BufferCache cache;
+  cache.gpu_modified_ranges.ranges={{0x100010,0x100030},{0x100100,0x100120}};
+  cache.ReadEdgeImagePages({{0x100080,64}});
+  check(!state.complete,"edge readback remains deferred");cache.scheduler.Finish();
+  check(state.violation==baseline,"edge host dependency enforced");
+  check(state.guest[16]==16&&state.guest[256]==5,"edge data copied");++cases;
+ }
+ state=State{};VideoCore::BufferCache empty;
+ empty.DownloadMemory(&empty.arena,0x100000,4096,false);
+ check(state.events.empty(),"empty downloads do not create a barrier or wait");++cases;
+ std::printf("%s cases=%u backend=%s\n",baseline?"BASELINE_MISSING_HOST_DEPENDENCY=REPRODUCED":"HOST_READBACK_PUBLICATION=PASS",cases,
+#ifdef READBACK_REAL_VULKAN
+ "REAL_VULKAN_HEADERS_CPU_ONLY"
+#else
+ "CPU_MODEL_NO_DRIVER"
+#endif
+ );
+}
