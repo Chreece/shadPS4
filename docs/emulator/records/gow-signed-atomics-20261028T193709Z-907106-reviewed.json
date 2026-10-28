@@ -1,0 +1,63 @@
+{
+  "schema_version": 2,
+  "record_id": "gow-signed-atomics-20261028T193709Z-907106-reviewed",
+  "recorded_at": "2026-10-28",
+  "scope": "Universal image-atomic compiler correction; CUSA34384 identifies captured workload only",
+  "related_pr": 104,
+  "archive": "gow-signed-atomics-20261028T193709Z-907106.tar.gz",
+  "archive_sha256": "92a74eed0c5cd4730d03a62488d7c19de99fd8815c68db69caf0089e32128bc3",
+  "source_commit": "5a6246983d3c3d8e2b37c03363aed08d18f527dd",
+  "retained_candidate": "60f87071d0c19c968253c9c25e3e5c318e756994",
+  "upstream_snapshot": "0cd6e4f2cb6617af12eb8267cca848cc41ad20d7",
+  "game_launched": false,
+  "tested_games": [],
+  "gameplay": "NOT_RUN",
+  "stage": "NATIVE_ATOMIC_EMITTER_AND_SERIALIZATION",
+  "official_validation": {
+    "tool": "Khronos SPIRV-Tools v2025.1 from the previously checksum-pinned Debian package",
+    "flags": ["--target-env", "vulkan1.3", "--scalar-block-layout", "--uniform-buffer-standard-layout"],
+    "original_modules": {"accepted":58,"rejected":2,"tool_errors":0},
+    "corrected_offline_copies": {"accepted":60,"rejected":0,"tool_errors":0},
+    "changed_modules": ["cs_0x0000000007934c8c_0.spv", "cs_0x00000000657297e6_0.spv"],
+    "corrected_atomic_sites": 17,
+    "limit": "Actual host validator execution on independent regression copies, not fresh native compiler output. Regression copies were not loaded into the emulator. Native code failed to compile, so no GPU execution or gameplay result exists for this change."
+  },
+  "native_failure": {
+    "file":"src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp",
+    "lines":[148,175],
+    "diagnostic":"no match for operator== (const Sirit::Id and Sirit::Id)",
+    "cause":"The new comparison used Id == Id. Sirit::Id is a struct with a uint32_t value field and no equality operator. Previous fixture incorrectly aliased Id to uint32_t and concealed this production API error.",
+    "compiler_warning_lines_in_native_object_log":0,
+    "responsibility":"Assistant patch/test integration error; not a game failure or user configuration problem"
+  },
+  "restoration": ["SOURCE_RESTORED","PR94_ELF_RESTORED"],
+  "protected_hashes_unchanged": ["gameplay","PR91","PR94","ReadConst candidate"],
+  "repair": {
+    "branch":"fix/signed-image-atomic-types-20261028",
+    "production_delta_from_failed_candidate":"Only two comparisons: texture.data_types->Get(1).value == ctx.S32[1].value. No signedness algorithm, opcode, cache version, renderer, runtime settings or upstream change.",
+    "sirit_commit":"fc2b42d5e57ee2f638676c0c02f7fd71934b596a",
+    "sirit_header_blob":"0df7d4cc0069092b4201fa5b695005e2c5f2733e",
+    "package_commit":"eb7e2d52959bb25c78fd0dc98c5e3b38c658b261",
+    "patch_blob":"ef0273bc4fe6f6c03d982009af88eb79657bf5b3",
+    "fixture_blob":"c79cb41892313bb8e9aabf9a8660fd07a4550a92",
+    "runner_commit":"b47b4027d4e77e61f183c941a45f2a0bd051d5c6",
+    "runner_path":"scripts/shadps4_signed_image_atomics_20261028.py",
+    "runner_blob":"2a05791e5230e7507bd2564636637cab5350ce5d",
+    "runner_sha256":"96a86a452d6fc12338adabcf8e02c10536de334a12b915bf68c77adc2c078c93",
+    "host_type_gate":"Require exact actual Sirit header blob, include full Sirit and its SPIR-V headers in both CPU helper fixtures, and verify the old direct comparison is rejected. No artificial Id equality or integer conversion. Operation recording class remains a collaborator; only its class name is adapted in the extracted helper signatures."
+  },
+  "local_tests": {
+    "id_type":"Verbatim Sirit::Id declaration from pinned header, not an integer alias. Full external Sirit/SPIR-V headers were unavailable locally, so complete-header host compilation remains pending.",
+    "negative_compilation":"GCC14.2 and Clang17 both reject the original two comparisons with the real Id declaration as expected",
+    "positive_regressions":"All 4312 cases pass on corrected helpers; baseline reproduces 2156 invalid signed cases. GCC14.2 and Clang17 strict C++23 release and ASan+UBSan runs for baseline and corrected sources passed: eight executions.",
+    "scope":"Typed emitted-operation recording, not SPIR-V driver execution or a full emulator build",
+    "runner_checks":"Nine tests passed: wrong parent refused; package/fixture pins; exact fixture generation; real-header flags inserted; native commands unchanged; missing/corrupt header refused; only two expressions changed; actual temporary Git apply/diff/reverse restores clean source.",
+    "wrapper":"Published patch/fixture/runner Git blobs match locally tested bytes. Short shell bootstrap passes bash -n.",
+    "complete_native_build":"PENDING after API correction",
+    "fresh_production_shader_validation":"PENDING",
+    "GPU_gameplay":"NOT_RUN"
+  },
+  "next":"Resume the same evidence-linked signed-atomic correction. Preserve immutable prior candidates and runtime safeguards; rerun full-header helper and offline 60-module gates, then compile/link before one bounded isolated game test and validate fresh compiler shader output. Restore PR94 and append shared local diary regardless of failure. No unrelated rebase, binary search or game-specific override.",
+  "decision":"KEEP_OBSERVED_60_OF_60_OFFLINE_VALIDATION; FIX_CPP_API_INTEGRATION; NO_GAMEPLAY_RECOVERY_CLAIM",
+  "privacy":"No guest shader contents were uploaded to the repository; this record contains diagnostics, counts, hashes and general source details only."
+}
