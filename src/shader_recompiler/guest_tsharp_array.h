@@ -4,9 +4,12 @@
 #include <cstdint>
 
 namespace Shader::Optimization {
+// Scalar V# stride determines the bounded byte extent, while shader-provided
+// addresses determine spacing between 32-byte T# entries or material records.
+// Keep exact complete-table, alignment and capacity checks; never infer bytes
+// when the fetched guest descriptor has zero num_records.
 [[nodiscard]] constexpr std::uint32_t CompleteGuestTsharpTableEntries(
     std::uint32_t stride, std::uint32_t records, std::uint32_t max_entries) noexcept {
-    if (stride != 0 && stride != 32) return 0;
     const std::uint64_t bytes =
         stride == 0 ? std::uint64_t(records) : std::uint64_t(stride) * records;
     if (bytes < 32 || bytes % 32 || bytes / 32 > max_entries) return 0;
@@ -19,8 +22,7 @@ namespace Shader::Optimization {
     std::uint32_t max_entries) noexcept {
     if (record_stride_bytes < 32u || record_stride_bytes % 4u ||
         descriptor_offset_bytes % 4u ||
-        std::uint64_t(descriptor_offset_bytes) + 32u > record_stride_bytes ||
-        (vsharp_stride != 0 && vsharp_stride != record_stride_bytes)) return 0;
+        std::uint64_t(descriptor_offset_bytes) + 32u > record_stride_bytes) return 0;
     const std::uint64_t full_bytes = vsharp_stride == 0
         ? std::uint64_t(records)
         : std::uint64_t(vsharp_stride) * records;
