@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <array>
 #include <atomic>
+#include <mutex>
 
 #include "common/debug.h"
 #include "core/debug_state.h"
@@ -26,6 +28,58 @@
 #include "video_core/texture_cache/texture_cache.h"
 
 namespace Vulkan {
+
+// Bounded, title-independent GPU work provenance. Only queried on device loss.
+// Normal dispatches perform no logging, Vulkan queries, allocations or waits.
+namespace GpuTrace {
+struct Event {
+    u64 sequence{};
+    u64 tick{};
+    u64 shader{};
+    u64 address{};
+    u32 arg0{};
+    u32 arg1{};
+    u32 kind{};
+};
+std::mutex trace_mutex;
+std::array<Event, 64> first{};
+std::array<Event, 128> recent{};
+u64 count{};
+
+void Record(u64 tick, u32 kind, u64 shader, u64 address, u32 arg0, u32 arg1) {
+    std::scoped_lock lock{trace_mutex};
+    const u64 index = count++;
+    const Event event{index, tick, shader, address, arg0, arg1, kind};
+    if (index < first.size()) {
+        first[index] = event;
+    }
+    recent[index % recent.size()] = event;
+}
+
+void Dump(u64 failed_tick, u64 completed_before) {
+    std::scoped_lock lock{trace_mutex};
+    LOG_ERROR(Render_Vulkan,
+              "GPU_SUBMIT_TRACE_BEGIN failed_tick={} last_known_completed={} events={}",
+              failed_tick, completed_before, count);
+    const auto emit = [](const char* phase, const Event& e) {
+        LOG_ERROR(Render_Vulkan,
+                  "GPU_SUBMIT_TRACE {} seq={} tick={} kind={} shader={:#x} source_or_signal={:#x}"
+                  " arg0={} arg1={}",
+                  phase, e.sequence, e.tick, e.kind, e.shader, e.address, e.arg0, e.arg1);
+    };
+    const u64 first_count = std::min<u64>(count, first.size());
+    for (u64 i = 0; i < first_count; ++i) {
+        emit("EARLIEST", first[i]);
+    }
+    const u64 start = count > recent.size() ? count - recent.size() : 0;
+    for (u64 i = start; i < count; ++i) {
+        if (i >= first_count) {
+            emit("LATEST", recent[i % recent.size()]);
+        }
+    }
+    LOG_ERROR(Render_Vulkan, "GPU_SUBMIT_TRACE_END failed_tick={}", failed_tick);
+}
+} // namespace GpuTrace
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
@@ -351,8 +405,8 @@ void Rasterizer::DispatchDirect() {
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
-    scheduler.RecordGpuCommand(Scheduler::GpuTraceKind::DirectCompute, cs.pgm_hash,
-                               cs_program.dim_z, cs_program.dim_x, cs_program.dim_y);
+    GpuTrace::Record(scheduler.CurrentTick(), 0, cs.pgm_hash, cs_program.dim_z,
+                     cs_program.dim_x, cs_program.dim_y);
     DebugState.IncDispatch();
 
     ResetBindings(true);
@@ -413,8 +467,8 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     } else {
         cmdbuf.dispatchIndirect(buffer->Handle(), base);
     }
-    scheduler.RecordGpuCommand(Scheduler::GpuTraceKind::IndirectCompute, cs.pgm_hash,
-                               address + offset, static_cast<u32>(prepare), size);
+    GpuTrace::Record(scheduler.CurrentTick(), 1, cs.pgm_hash, address + offset,
+                     static_cast<u32>(prepare), size);
     DebugState.IncDispatch();
 
     ResetBindings(true);
