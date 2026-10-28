@@ -46,7 +46,7 @@ python3 tools/development/record_emulator_trial.py \
 
 The GoW universal native test in `gow/proven-progress-20261026` invokes this recorder automatically on exit. Other game-specific experimental scripts should be invoked with the shared recorder or have their generated `UPLOAD_THIS` archives ingested immediately, **including rejected runs**. Artifacts stay private on the host; the permanent git diary stores SHA/evidence metadata and reviewed observations, not raw game files.
 
-To record more than one game in one run, add repeated `--game`, `--tested-game` (only actually launched), `--game-result GAME "what was observed"`, and `--visual GAME "what appeared"`, `--audio GAME "what was heard"`, `--fps GAME "same-scene measurement"`. Never infer missing visuals from a build pass.
+To record more than one game in one run, add repeated `--game`, `--tested-game` (only actually launched), `--game-result GAME "what was observed"`, `--visual GAME "what appeared"`, `--audio GAME "what was heard"`, `--fps GAME "same-scene measurement"`. Never infer missing visuals from a build pass.
 
 ## Important distinctions
 
@@ -62,3 +62,9 @@ To record more than one game in one run, add repeated `--game`, `--tested-game` 
 [GoT progress](../got/EXPERIMENT_DIARY.md) — `got/proven-progress-20261026`. [Ragnarök progress](https://github.com/Chreece/shadPS4/blob/gow/proven-progress-20261026/docs/gow/EXPERIMENT_DIARY.md) — `gow/proven-progress-20261026`. Both retain their exact tested source/binary checkpoints and game-specific *observations* while sharing this **one** emulator code/fix history.
 
 Native game tests must use the same emulator semantics (no compatibility overrides), standard fullscreen and FPS, and the strict 118s SIGTERM + 2s SIGKILL limit. Conditionally unload/reload Ollama if GPU VRAM is under 8 GiB; restore the exact previous models/contexts after the actual game exits. Preserve SSH, Sunshine, ES-DE, all saves and known-good binaries.
+
+## Reviewed evidence addenda
+
+These are reviewed records in this same shared journal, linked to their historical ledger record; they do not replace or rewrite earlier GoW/GoT trials.
+
+* [2026-10-28 PR95 native build and silent-runner review](reviews/20261028T112756671630889Z-pr95-native.json): native compile/link and GCC bounds test **PASS**, protected ELF unchanged, **117 build warnings**, **no game run and no verified graphics improvement**. The prior command hid its progress in log files. Preserve this isolated build for incremental work. This adds native evidence to `got-gpu-scalar-vsharp-stride-bounds-pr95-draft-20261028`; no zero-record bypass or main promotion.
