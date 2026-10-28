@@ -1,0 +1,79 @@
+{
+  "schema_version": 2,
+  "record_id": "got-c925-accepted-renderer-20261028T144320763760Z-reviewed",
+  "recorded_on": "2026-10-28",
+  "record_type": "REVIEWED_NATIVE_RESTORATION_KEEP_GENERIC_FIXES_VISUAL_INCOMPLETE",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "context_games": ["CUSA11456", "CUSA34384"],
+  "tested_games": ["CUSA11456"],
+  "related_prs": [68, 69, 95, 96],
+  "archive": "got-c925-accepted-renderer-20261028T144320763760Z.tar.gz",
+  "archive_sha256": "1a4bd0b03f530fa3a8b24346a0bd6799fb0ba07b84401398909c3acef8afe356",
+  "source_base_commit": "c925523b49ef39434024b16b2b014d120471ee1a",
+  "candidate_sha256_before_and_after_game": "18ed1b6f18a4cc9b466d4bc2a56e9a35dfd04bd0cafe54fa2d9714112d57d2e4",
+  "previous_pr96_checkpoint": "GhostOfTsushima/experiments/c925-pr95-scalar-bounds-20261028T112756671630889Z/checkpoints/pr96-before-kept-renderer-20261028T144320763760Z/shadps4",
+  "source_provenance": "Existing isolated C925+PR95+PR96 candidate; two renderer files restored to accepted PR69/68 semantics. All six PR95/PR96 source hashes retained. Not a pristine fork-main binary and not a latest-upstream rebase.",
+  "emulator_effect": "The restored masked stencil algorithm is actually exercised: eight StencilReferenceExactMerged events all preserve test=0x20 with op=0, compare_mask=0x20 and write_mask=0. Old stencil warnings and unrepresentable cases both zero. PR68 Precise-mode fallback restored in the exact captured source; this run has no standalone image-download/copy events proving new transfers. Retain historical PR57/68 copy evidence separately.",
+  "game_effect": "User confirms sword silhouette returned. All four actual frames show menu text, solid black sword/ground and largely empty gray scene. Sword material and complete scenery remain missing. Do not equate restored silhouette or correct stencil logs with a fully repaired renderer, or attribute every changed pixel to one restored fix.",
+  "build": "PASS_INCREMENTAL_TWO_CPP_OBJECTS_AND_LINK",
+  "full_build_log_bytes": 276,
+  "warning_lines": 0,
+  "error_lines": 0,
+  "unit_test": "GCC_CPP20_PASS_556283_CHECKS",
+  "unit_scope": "Only gpp logs present; no new host Clang test claimed.",
+  "game": {
+    "seconds": 118.404,
+    "exit_code": 0,
+    "time_limit_reached": true,
+    "termination": "Runner reached its 118-second limit and the game exited cleanly after owned-process termination; not unbounded gameplay or a spontaneous crash.",
+    "input_injected": false,
+    "logged_gpu_device_loss": 0,
+    "screenshots": ["menu-40.png", "menu-55.png", "menu-85.png", "menu-112.png"],
+    "capture_completion_seconds": [42.57158218201948, 57.59553135599708, 87.54350474203238, 114.53499965503579],
+    "all_captures_completed_while_game_alive": true
+  },
+  "sample_limited_events": {
+    "StencilReferenceExactMerged": 8,
+    "StencilReferenceUnrepresentable": 0,
+    "legacy_stencil_warning": 0,
+    "INDEXED_TABLE_REVALIDATE": 0,
+    "INDEXED_MATERIAL_BIND_REJECT": 7,
+    "Sharp_source_was_not_flatenned": 265,
+    "SHARP_RESOURCE_PROVENANCE": 234,
+    "GuestIndexedImageDimensions": 26,
+    "GpuDescriptorTableCpuCoherence": 24,
+    "IndexedUniformSamplerBound": 12,
+    "GPU_DYNAMIC_BUFFER_SHARP": 0,
+    "SRT_dependency_stalls": 0
+  },
+  "remaining_material_rejects": "The same four compute shaders and seven records: fetched valid buffer header, base 0x1500000000, buffer stride 8, num_records 0, declared bytes 0; shader material stride 536, offsets 144/228/400. No observed runtime capacity change. Do not invent counts or infer a producer corruption from an empty header alone.",
+  "retained_typed_arrays": "27612 2D + 35 3D + 4 Cube entries in each of the two large indexed fragment tables, zero typed overflow. Successful bindings are not proof of executed samples or correct final materials.",
+  "restored_source_hashes": {
+    "src/video_core/renderer_vulkan/vk_rasterizer.cpp": "ebed2441ceda3d6b3e6a6ebe1afe7469ec35f9d8a99c3b7f0feb1a3fb533b4a0",
+    "src/video_core/texture_cache/texture_cache.cpp": "3273c68d3c8a9932867603bb6cb12e6b546b228cfa32c7c4267a4d0de4207ed0"
+  },
+  "main_merge_commits": {
+    "68": "b8db275e6605b4183aa27c445bb39661d991cdd1",
+    "69": "86ebcf6249fae2a709b98790760de639e6978bef"
+  },
+  "main_source_verified": {
+    "src/video_core/renderer_vulkan/vk_rasterizer.cpp": "be1888940535b1d62dc701953f4478ecd7d92dd8",
+    "src/video_core/texture_cache/texture_cache.cpp": "b374ff352b5b75a3de84073dcbf7472300276a89",
+    "qualification": "Both already-merged generic algorithms are still in current fork main. No duplicate PR or false new merge is required. The native candidate uses a different local renderer lineage; source parity must be checked before every subsequent build."
+  },
+  "fix_decisions": {
+    "PR69": "KEEP_MERGED_MAIN_NATIVE_BEHAVIOR_RECONFIRMED",
+    "PR68": "KEEP_MERGED_MAIN_SOURCE_RESTORED_PRIOR_NATIVE_COPY_EVIDENCE_RETAINED",
+    "PR95": "RETAIN_ISOLATED_NATIVE_BUILD_AND_UNIT_PROOF_NOT_CLAIMED_MAIN_MERGED",
+    "PR96": "RETAIN_ISOLATED_CORRECTNESS_CANDIDATE_NO_OBSERVED_REVALIDATION_NO_GRAPHICS_PROMOTION"
+  },
+  "vram_before_bytes": 8462364672,
+  "vram_at_launch_bytes": 20587802624,
+  "ollama_restoration": "qwen3.8-greek:latest restored and verified with context_length=16384",
+  "original_files_changed": [],
+  "runner_exit_code": 0,
+  "decision": "KEEP_RESTORED_GENERIC_FIXES_ALREADY_MERGED; REJECT_FULL_SCENERY_RECOVERY_CLAIM; PRESERVE_BASELINE",
+  "next_test": "Before any new renderer trial search the combined shared ledger and reviewed addenda. Preserve exact accepted algorithm/source manifest. Do not repeat Linear8 expansion, the readback toggle, old SRT-parent tracing with zero stalls, or an unchanged PR96 menu run. New work must distinguish actual compute/fragment execution and consumption from compilation-time descriptor warnings, using a new falsifiable hypothesis rather than another workaround or invented resource count.",
+  "historical_ledger": "../TRIALS.jsonl",
+  "raw_game_data_published": false
+}
