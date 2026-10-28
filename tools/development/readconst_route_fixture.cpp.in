@@ -1,0 +1,103 @@
+// Actual ReadConst visitor case, shader-info pass and emitter are inserted below.
+// The IR containers, SPIR-V API and device memory are CPU-only collaborators.
+// This verifies routing and descriptor metadata, not GPU residency or execution.
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <ranges>
+#include <stdexcept>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+#include "video_core/buffer_cache/bda_address_space.h"
+using Id = std::uint64_t;
+static void Check(bool yes, const char* why) {
+    if (!yes) { std::fprintf(stderr, "READCONST_ROUTE_FAIL=%s\n", why); std::exit(2); }
+}
+#define ASSERT_MSG(condition, ...) do { if (!(condition)) throw std::runtime_error("unsupported dynamic read"); } while (false)
+template <class... Args> void IgnoreLog(Args&&...) {}
+#define LOG_INFO(category, ...) IgnoreLog(__VA_ARGS__)
+#define LOG_ERROR(category, ...) IgnoreLog(__VA_ARGS__)
+struct Settings { bool enabled{}; bool IsDirectMemoryAccessEnabled() const { return enabled; } } EmulatorSettings;
+namespace IR {
+enum class Opcode {ReadConst, Other};
+enum class Type {U32,U64};
+struct Inst { Opcode opcode; u32 flags; Opcode GetOpcode() const{return opcode;} template<class T>T Flags()const{return static_cast<T>(flags);} };
+struct Block {std::vector<Inst> instructions; auto& Instructions(){return instructions;}};
+}
+enum class BufferType {Flatbuf,BdaPagetable,FaultBuffer,SharedMemory,DispatchMetadata};
+struct BufferResource { IR::Type used_types{}; BufferType buffer_type{}; bool is_written{}; };
+struct Info {
+ enum class ReadConstType : unsigned {None=0, Immediate=1, Dynamic=2};
+ ReadConstType readconst_types{};bool uses_dma{},has_flatbuf{},is_indirect_compute{};
+ u64 pgm_hash{0x12345678};std::vector<BufferResource> buffers;
+};
+static Info::ReadConstType& operator|=(Info::ReadConstType& a,Info::ReadConstType b){a=static_cast<Info::ReadConstType>(static_cast<unsigned>(a)|static_cast<unsigned>(b));return a;}
+struct Profile {bool support_bda{}, support_int64{}, supports_dispatch_metadata{};};
+namespace IR {struct Program {Info info;std::vector<Block*> post_order_blocks;};}
+static void AddFlatbuf(Info& info){if(!info.has_flatbuf){info.buffers.push_back({.used_types=IR::Type::U32,.buffer_type=BufferType::Flatbuf});info.has_flatbuf=true;}}
+static void Visit(Info& info,const IR::Inst& inst){switch(inst.GetOpcode()){
+/* EXACT_VISITOR_CASE */
+default:break;
+}}
+/* EXACT_COLLECT */
+struct EmitContext {
+ Info& info;const Profile& profile;std::array<Id,2> U32{0,32};Id read_const_dynamic{0x1234};
+ Id seen_address{},seen_offset{};unsigned dynamic_calls{},flat_calls{};u32 flat_index{};
+ std::unordered_map<Id,Id> memory;
+ Id ConstU32(u32 x){return x;}
+ Id EmitFlatbufferLoad(Id index){++flat_calls;flat_index=static_cast<u32>(index);return index==0?0xDEADBEEFu:0xCA000000u+index;}
+ Id OpFunctionCall(Id type,Id function,Id address,Id offset){
+  Check(type==32&&function==read_const_dynamic,"GPU function identity");++dynamic_calls;
+  seen_address=address;seen_offset=offset;return memory.at(address+4*offset);
+ }
+};
+/* EXACT_EMIT */
+static unsigned count_type(const Info& info,BufferType type){return static_cast<unsigned>(std::ranges::count(info.buffers,type,&BufferResource::buffer_type));}
+int main(int argc,char**argv){
+ const bool baseline=argc==2&&std::string_view(argv[1])=="--baseline";
+ unsigned cases=0,wrong_zero=0;
+ for(bool legacy:{false,true})for(bool dynamic:{false,true})for(bool indirect:{false,true})for(bool shared:{false,true}){
+  EmulatorSettings.enabled=legacy;
+  IR::Block block{{{IR::Opcode::ReadConst,dynamic?0u:16u},{IR::Opcode::ReadConst,17u}}};
+  IR::Program program;program.post_order_blocks={&block};program.info.is_indirect_compute=indirect;
+  if(shared)program.info.buffers.push_back({.used_types=IR::Type::U32,.buffer_type=BufferType::SharedMemory});
+  Profile profile{true,true,true};CollectShaderInfoPass(program,profile);
+  const bool needed=dynamic&&(!baseline||legacy);
+  Check(program.info.uses_dma==needed,"per-shader memory requirement");
+  Check(count_type(program.info,BufferType::BdaPagetable)==unsigned(needed),"BDA descriptor exactly once iff needed");
+  Check(count_type(program.info,BufferType::FaultBuffer)==unsigned(needed),"fault descriptor exactly once iff needed");
+  Check(count_type(program.info,BufferType::DispatchMetadata)==unsigned(indirect&&!shared),"indirect metadata policy unchanged");
+  if(indirect&&!shared)Check(program.info.buffers.back().buffer_type==BufferType::DispatchMetadata,"dispatch metadata remains last");
+  EmitContext ctx{.info=program.info,.profile=profile,.memory={}};
+  constexpr Id address=0x123450000ULL,offset=7,sentinel=0xACCE5511u;
+  ctx.memory[address+4*offset]=sentinel;
+  const auto value=EmitReadConst(ctx,&block.instructions[0],address,offset);
+  if(baseline&&dynamic&&!legacy){
+   Check(value==0xDEADBEEFu&&ctx.flat_index==0&&ctx.dynamic_calls==0,"old unflattened load reads userdata0");++wrong_zero;
+  }else if(dynamic){
+   Check(value==sentinel&&ctx.dynamic_calls==1&&ctx.flat_calls==0,"unflattened load reads requested memory");
+   Check(ctx.seen_address==address&&ctx.seen_offset==offset,"address and dynamic offset preserved");
+  }else Check(value==0xCA000010u&&ctx.dynamic_calls==0,"flattened load stays fast path");
+  Check(EmitReadConst(ctx,&block.instructions[1],address,offset)==0xCA000011u,"mixed static load unchanged");
+  ++cases;
+ }
+ if(baseline){
+  Check(wrong_zero==4,"all old toggle-off dynamic cases reproduced");
+  std::printf("BASELINE_READCONST_WORD_ZERO=REPRODUCED cases=%u wrong_dynamic=%u NO_GPU_WORK\n",cases,wrong_zero);return 0;
+ }
+ for(bool bda:{false,true})for(bool int64:{false,true})for(bool dynamic:{false,true}){
+  if(bda&&int64)continue;
+  IR::Block block{{{IR::Opcode::ReadConst,dynamic?0u:16u}}};IR::Program program;program.post_order_blocks={&block};
+  Profile profile{bda,int64,false};bool refused=false;
+  try{CollectShaderInfoPass(program,profile);}catch(const std::runtime_error&){refused=true;}
+  Check(refused==dynamic,"unsupported host rejects required load, not unrelated shaders");++cases;
+ }
+ using namespace VideoCore;
+ Check(IsGuestGpuDwordInRange(0)&&IsGuestGpuDwordInRange(GuestGpuAddressLimit-4),"last valid dword");
+ Check(!IsGuestGpuDwordInRange(GuestGpuAddressLimit-3)&&!IsGuestGpuDwordInRange(GuestGpuAddressLimit),"crossing dword rejected");
+ Check(!IsGuestGpuDwordInRange(1ULL<<48)&&!IsGuestGpuDwordInRange(~u64{0}),"large addresses do not wrap");
+ std::printf("AUTOMATIC_READCONST_ROUTING=PASS cases=%u boundaries=6 NO_GPU_WORK\n",cases);
+}
