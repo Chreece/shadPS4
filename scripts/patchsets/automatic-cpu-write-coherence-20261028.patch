@@ -1,0 +1,145 @@
+--- a/src/video_core/buffer_cache/memory_tracker.h
++++ b/src/video_core/buffer_cache/memory_tracker.h
+@@ -20,7 +20,7 @@
+ 
+ public:
+     explicit MemoryTracker(PageManager& tracker_)
+-        : tracker{&tracker_}, readbacks_mode{EmulatorSettings.GetReadbacksMode()} {}
++        : tracker{&tracker_} {}
+     ~MemoryTracker() = default;
+ 
+     /// Returns true if a region has been modified from the GPU
+@@ -62,11 +62,11 @@
+         });
+     }
+ 
+-    /// Removes all protection from a page and ensures GPU data has been flushed if requested
++    /// Transfers ownership to a CPU writer, preserving GPU-modified bytes first
+     void InvalidateRegion(VAddr cpu_addr, u64 size, auto&& on_flush) noexcept {
+-        if (readbacks_mode == GpuReadbacksMode::Disabled) {
+-            return MarkRegionAsCpuModified(cpu_addr, size);
+-        }
++        // CPU stores must preserve GPU-owned bytes even when optional eager
++        // readbacks are disabled. Keep protection until the owner has copied
++        // the dirty data back; clean pages still take the no-readback path.
+         bool should_flush = false;
+         IteratePages(cpu_addr, size, [&should_flush](RegionManager* manager, u64 offset, u64 size) {
+             const auto bounds = manager->GetBounds(offset, size);
+@@ -162,7 +162,6 @@
+     }
+ 
+     PageManager* tracker;
+-    const u32 readbacks_mode;
+     std::deque<std::array<RegionManager, MANAGER_POOL_SIZE>> manager_pool;
+     std::vector<RegionManager*> free_managers;
+     std::array<RegionManager*, NUM_HIGH_PAGES> top_tier{};
+--- a/src/video_core/buffer_cache/buffer_cache.cpp
++++ b/src/video_core/buffer_cache/buffer_cache.cpp
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include <algorithm>
++#include <atomic>
+ #include <magic_enum/magic_enum.hpp>
+ #include <xxhash.h>
+ 
+@@ -12,6 +13,7 @@
+ #include "video_core/buffer_cache/buffer.h"
+ #include "video_core/buffer_cache/buffer_cache.h"
+ #include "video_core/buffer_cache/memory_tracker.h"
++#include "video_core/buffer_cache/cpu_write_coherence.h"
+ #include "video_core/buffer_cache/region_definitions.h"
+ #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
+ #include "video_core/renderer_vulkan/vk_instance.h"
+@@ -138,15 +140,34 @@
+         const u32 last_block = (device_addr + size - 1) >> block_shift;
+         const auto* arena = GetArena(first_block, last_block);
+ 
+-        // GPU-modified ranges come as many small scattered islands,
+-        // so the download is widened to a window around the request
+-        constexpr u64 WindowSize = 512_KB;
+-        const VAddr arena_end = arena->cpu_addr + arena->size_bytes;
+-        const VAddr window_start =
+-            std::max<VAddr>(Common::AlignDown(device_addr, WindowSize), arena->cpu_addr);
+-        const VAddr window_end = std::min<VAddr>(
+-            std::max<VAddr>(window_start + WindowSize, device_addr + size), arena_end);
+-        DownloadMemory(arena, window_start, window_end - window_start, async);
++        VAddr window_start{};
++        u64 window_size{};
++        if (is_write) {
++            // A CPU fault transfers ownership only for the affected tracking
++            // pages. DownloadMemory still copies only recorded GPU-dirty bytes.
++            const auto span = Coherence::RequiredCpuWriteSpan(
++                device_addr, size, arena->cpu_addr, arena->size_bytes,
++                PageManager::PM_PAGE_SIZE);
++            ASSERT_MSG(span.has_value(), "Invalid CPU write preservation range");
++            window_start = span->address;
++            window_size = span->size;
++            static std::atomic<u32> reported{};
++            if (reported.fetch_add(1, std::memory_order_relaxed) < 16u) {
++                LOG_INFO(Render, "CpuWriteCoherence: fault={:#x} bytes={} page_start={:#x} "
++                                 "preserve_bytes={}",
++                         device_addr, size, window_start, window_size);
++            }
++        } else {
++            // Retain the existing read-side prefetch policy unchanged.
++            constexpr u64 WindowSize = 512_KB;
++            const VAddr arena_end = arena->cpu_addr + arena->size_bytes;
++            window_start =
++                std::max<VAddr>(Common::AlignDown(device_addr, WindowSize), arena->cpu_addr);
++            const VAddr window_end = std::min<VAddr>(
++                std::max<VAddr>(window_start + WindowSize, device_addr + size), arena_end);
++            window_size = window_end - window_start;
++        }
++        DownloadMemory(arena, window_start, window_size, async);
+         if (is_write) {
+             memory_tracker->MarkRegionAsCpuModified(device_addr, size);
+         }
+--- /dev/null
++++ b/src/video_core/buffer_cache/cpu_write_coherence.h
+@@ -0,0 +1,45 @@
++// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++#pragma once
++
++#include <cstdint>
++#include <limits>
++#include <optional>
++
++namespace VideoCore::Coherence {
++
++struct CpuWriteSpan {
++    std::uint64_t address;
++    std::uint64_t size;
++    constexpr bool operator==(const CpuWriteSpan&) const = default;
++};
++
++// A CPU store faults before execution. Preserve GPU-owned bytes in all tracking
++// pages touched by that store before removing protection. Adjacent pages are
++// unrelated ownership transfers, not an opportunistic prefetch opportunity.
++[[nodiscard]] constexpr std::optional<CpuWriteSpan> RequiredCpuWriteSpan(
++    std::uint64_t address, std::uint64_t size, std::uint64_t arena_address,
++    std::uint64_t arena_size, std::uint64_t page_size) noexcept {
++    constexpr auto max = std::numeric_limits<std::uint64_t>::max();
++    if (size == 0 || page_size == 0 || (page_size & (page_size - 1)) != 0 ||
++        arena_size == 0 || arena_address > max - arena_size) {
++        return std::nullopt;
++    }
++    const auto arena_end = arena_address + arena_size;
++    if (address < arena_address || address >= arena_end || size > arena_end - address) {
++        return std::nullopt;
++    }
++    auto begin = address & ~(page_size - 1);
++    if (begin < arena_address) {
++        begin = arena_address;
++    }
++    auto end = address + size;
++    const auto remainder = end & (page_size - 1);
++    if (remainder != 0) {
++        const auto padding = page_size - remainder;
++        end += padding <= arena_end - end ? padding : arena_end - end;
++    }
++    return CpuWriteSpan{begin, end - begin};
++}
++
++} // namespace VideoCore::Coherence
