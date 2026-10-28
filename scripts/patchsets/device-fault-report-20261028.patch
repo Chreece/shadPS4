@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/src/video_core/renderer_vulkan/vk_device_fault_report.h
-@@ -0,0 +1,136 @@
+@@ -0,0 +1,142 @@
 +// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 +// SPDX-License-Identifier: GPL-2.0-or-later
 +#pragma once
@@ -51,6 +51,12 @@
 +    out.available_addresses = counts.addressInfoCount;
 +    out.available_vendors = counts.vendorInfoCount;
 +    out.available_binary_bytes = counts.vendorBinarySize;
++    // Some drivers copy a generated binary without honoring a zero-capacity
++    // destination. Never make that second call with a null binary pointer.
++    if (out.available_binary_bytes != 0) {
++        out.truncated = true;
++        return out;
++    }
 +    counts.addressInfoCount = std::min(counts.addressInfoCount, AddressCapacity);
 +    counts.vendorInfoCount = std::min(counts.vendorInfoCount, VendorCapacity);
 +    counts.vendorBinarySize = 0;
