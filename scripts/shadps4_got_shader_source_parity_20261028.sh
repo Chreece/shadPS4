@@ -25,7 +25,8 @@ finish() {
 }
 trap finish EXIT
 for c in git python3 tar; do command -v "$c" >/dev/null || { echo "MISSING=$c"; exit 3; }; done
-[[ -d "$SRC/.git" && ! -L "$SRC" ]] || {
+[[ -d "$SRC" && ! -L "$SRC" ]] &&
+    [[ "$(git -C "$SRC" rev-parse --is-inside-work-tree 2>/dev/null)" == "true" ]] || {
     echo "LOCAL_C925_SOURCE_NOT_PRESENT=$SRC"; STATUS="SOURCE_NOT_PRESENT"; exit 4;
 }
 STATUS="COLLECT_SOURCE_ONLY_NO_BINARY_UPLOAD"
