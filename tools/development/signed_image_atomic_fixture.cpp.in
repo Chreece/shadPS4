@@ -1,40 +1,51 @@
-// CPU tests of the exact production helpers with a typed recording collaborator.
-// This checks emitted operation types and guest bit preservation, not Vulkan execution.
+// Exact production helpers; the opcode transport is a CPU recording collaborator.
+// The Id type has NO synthetic equality or integer conversion operators.
+// Host tests include the full pinned Sirit header; local tests use its verbatim Id declaration.
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <concepts>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
 #include <string_view>
 #include <vector>
-using u32=std::uint32_t;using Id=u32;
-namespace spv {enum class Scope:u32{Device=1};enum class StorageClass:u32{Image=11};}
+#ifdef SIGNED_ATOMIC_FULL_SIRIT
+#include <sirit/sirit.h>
+#else
+#include "sirit_id_declaration.h"
+namespace spv {enum class Scope:std::uint32_t{Device=1};enum class StorageClass:std::uint32_t{Image=11};}
+#endif
+using u32=std::uint32_t;
+using Id=Sirit::Id;
+template<class T> concept DirectEquality = requires(T a,T b) { {a==b}->std::convertible_to<bool>; };
+static_assert(!DirectEquality<Id>, "Do not replace opaque Sirit::Id with an integer surrogate");
+static_assert(!std::is_convertible_v<Id,u32>);
 namespace AmdGpu {enum class ImageType {Color1D,Color1DArray,Color2D,Color3D};}
 namespace IR {struct Inst{};}
 static void check(bool yes,const char* msg){if(!yes){std::fprintf(stderr,"SIGNED_ATOMIC_FAIL=%s\n",msg);std::exit(2);}}
 struct Vectors {std::array<Id,4> ids;Id operator[](u32 i)const{return ids.at(i-1);}Id Get(u32 i)const{return (*this)[i];}};
-namespace Sirit {
+namespace Recording {
 struct Value {Id type;u32 bits;std::vector<Id> parts;};
 struct Module {
- std::map<Id,Value> values;
- std::map<Id,Id> pointers,image_scalars;
- Id next=1000;u32 cell{},atomic_calls{},mismatches{},bitcasts{};
- Id make(Id t,u32 v){Id i=next++;values.emplace(i,Value{t,v,{}});return i;}
- Id TypePointer(spv::StorageClass sc,Id t){check(sc==spv::StorageClass::Image,"storage class");for(auto [p,x]:pointers)if(x==t)return p;Id p=next++;pointers[p]=t;return p;}
- Id OpBitcast(Id t,Id x){++bitcasts;check((t==1||t==2)&&(values.at(x).type==1||values.at(x).type==2),"integer bitcast");return make(t,values.at(x).bits);}
- Id OpImageTexelPointer(Id t,Id image,Id,Id sample){check(values.at(sample).bits==0,"sample unchanged");mismatches+=pointers.at(t)!=image_scalars.at(image);return make(t,image);}
- Id OpCompositeConstruct(Id t,Id a,Id b){auto x=make(t,0);values[x].parts={a,b};return x;}
- Id OpCompositeConstruct(Id t,Id a,Id b,Id c){auto x=make(t,0);values[x].parts={a,b,c};return x;}
- Id OpCompositeExtract(Id t,Id c,u32 i){auto x=values.at(c).parts.at(i);check(values.at(x).type==t,"coordinate element type");return x;}
+ std::map<u32,Value> values;
+ std::map<u32,Id> pointers,image_scalars;
+ u32 next=1000,cell{},atomic_calls{},mismatches{},bitcasts{};
+ Id make(Id t,u32 v){Id i{next++};values.emplace(i.value,Value{t,v,{}});return i;}
+ Id TypePointer(spv::StorageClass sc,Id t){check(sc==spv::StorageClass::Image,"storage class");for(auto [p,x]:pointers)if(x.value==t.value)return Id{p};Id p{next++};pointers[p.value]=t;return p;}
+ Id OpBitcast(Id t,Id x){++bitcasts;const auto xtype=values.at(x.value).type.value;check((t.value==1||t.value==2)&&(xtype==1||xtype==2),"integer bitcast");return make(t,values.at(x.value).bits);}
+ Id OpImageTexelPointer(Id t,Id image,Id,Id sample){check(values.at(sample.value).bits==0,"sample unchanged");mismatches+=pointers.at(t.value).value!=image_scalars.at(image.value).value;return make(t,image.value);}
+ Id OpCompositeConstruct(Id t,Id a,Id b){auto x=make(t,0);values[x.value].parts={a,b};return x;}
+ Id OpCompositeConstruct(Id t,Id a,Id b,Id c){auto x=make(t,0);values[x.value].parts={a,b,c};return x;}
+ Id OpCompositeExtract(Id t,Id c,u32 i){auto x=values.at(c.value).parts.at(i);check(values.at(x.value).type.value==t.value,"coordinate element type");return x;}
  void args(Id t,Id p,Id scope,Id sem,Id v){
-  ++atomic_calls;check(values.at(scope).bits==1&&values.at(sem).bits==0,"scope/order unchanged");
-  mismatches+=pointers.at(values.at(p).type)!=t;
-  mismatches+=values.at(v).type!=t;
+  ++atomic_calls;check(values.at(scope.value).bits==1&&values.at(sem.value).bits==0,"scope/order unchanged");
+  mismatches+=pointers.at(values.at(p.value).type.value).value!=t.value;
+  mismatches+=values.at(v.value).type.value!=t.value;
  }
  Id atom(Id t,Id p,Id scope,Id sem,Id v,unsigned op){
-  args(t,p,scope,sem,v);u32 old=cell,x=values.at(v).bits;
+  args(t,p,scope,sem,v);u32 old=cell,x=values.at(v.value).bits;
   auto si=[](u32 b){return std::bit_cast<std::int32_t>(b);};
   switch(op){case 0:cell+=x;break;case 1:cell=si(old)<si(x)?old:x;break;case 2:cell=std::min(old,x);break;
    case 3:cell=si(old)>si(x)?old:x;break;case 4:cell=std::max(old,x);break;case 5:cell&=x;break;
@@ -47,20 +58,20 @@ struct Module {
  ATOMIC(OpAtomicOr,6) ATOMIC(OpAtomicXor,7) ATOMIC(OpAtomicExchange,8)
  #undef ATOMIC
  Id OpAtomicCompareExchange(Id t,Id p,Id scope,Id sem,Id unequal,Id v,Id cmp){
-  args(t,p,scope,sem,v);check(values.at(unequal).bits==0,"unequal order unchanged");
-  mismatches+=values.at(cmp).type!=t;u32 old=cell;if(old==values.at(cmp).bits)cell=values.at(v).bits;return make(t,old);
+  args(t,p,scope,sem,v);check(values.at(unequal.value).bits==0,"unequal order unchanged");
+  mismatches+=values.at(cmp.value).type.value!=t.value;u32 old=cell;if(old==values.at(cmp.value).bits)cell=values.at(v.value).bits;return make(t,old);
  }
 };}
-struct EmitContext: Sirit::Module {
- Vectors U32{{1,11,12,13}},S32{{2,21,22,23}};
+struct EmitContext: Recording::Module {
+ Vectors U32{{Id{1},Id{11},Id{12},Id{13}}},S32{{Id{2},Id{21},Id{22},Id{23}}};
  struct Texture{const Vectors* data_types;Id id;AmdGpu::ImageType view_type;};
  std::array<Texture,1> images;
  Id image_u32{},u32_zero_value{};
  EmitContext(bool is_signed,AmdGpu::ImageType dim){
-  image_u32=TypePointer(spv::StorageClass::Image,U32[1]);u32_zero_value=make(1,0);
-  images[0]={is_signed?&S32:&U32,77,dim};image_scalars[77]=is_signed?2:1;
+  image_u32=TypePointer(spv::StorageClass::Image,U32[1]);u32_zero_value=make(Id{1},0);
+  images[0]={is_signed?&S32:&U32,Id{77},dim};image_scalars[77]=is_signed?Id{2}:Id{1};
  }
- Id ConstU32(u32 v){return make(1,v);}
+ Id ConstU32(u32 v){return make(Id{1},v);}
 };
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -68,10 +79,10 @@ struct EmitContext: Sirit::Module {
 #pragma GCC diagnostic pop
 int main(int argc,char**argv){
  const bool baseline=argc==2&&std::string_view(argv[1])=="--baseline";
- using Atomic=Id(Sirit::Module::*)(Id,Id,Id,Id,Id);
- constexpr std::array<Atomic,9> ops{&Sirit::Module::OpAtomicIAdd,&Sirit::Module::OpAtomicSMin,&Sirit::Module::OpAtomicUMin,
- &Sirit::Module::OpAtomicSMax,&Sirit::Module::OpAtomicUMax,&Sirit::Module::OpAtomicAnd,&Sirit::Module::OpAtomicOr,
- &Sirit::Module::OpAtomicXor,&Sirit::Module::OpAtomicExchange};
+ using Atomic=Id(Recording::Module::*)(Id,Id,Id,Id,Id);
+ constexpr std::array<Atomic,9> ops{&Recording::Module::OpAtomicIAdd,&Recording::Module::OpAtomicSMin,&Recording::Module::OpAtomicUMin,
+ &Recording::Module::OpAtomicSMax,&Recording::Module::OpAtomicUMax,&Recording::Module::OpAtomicAnd,&Recording::Module::OpAtomicOr,
+ &Recording::Module::OpAtomicXor,&Recording::Module::OpAtomicExchange};
  constexpr std::array<u32,7> bits{0,1,0xffffffffu,0x80000000u,0x7fffffffu,0x12345678u,0x8000ffffu};
  constexpr std::array dims{AmdGpu::ImageType::Color1D,AmdGpu::ImageType::Color1DArray,AmdGpu::ImageType::Color2D,AmdGpu::ImageType::Color3D};
  unsigned cases=0,invalid=0;
@@ -83,9 +94,9 @@ int main(int argc,char**argv){
   for(auto op:ops){
    EmitContext c(signed_image,dim),reference(false,dim);c.cell=reference.cell=old;
    auto v=c.ConstU32(val);auto got=ImageAtomicU32(c,nullptr,0xabcd0000,coords(c),v,op);
-   auto p=reference.OpImageTexelPointer(reference.image_u32,77,coords(reference),reference.u32_zero_value);
+   auto p=reference.OpImageTexelPointer(reference.image_u32,Id{77},coords(reference),reference.u32_zero_value);
    (reference.*op)(reference.U32[1],p,reference.ConstU32(1),reference.u32_zero_value,reference.ConstU32(val));
-   check(c.values.at(got).type==c.U32[1]&&c.values.at(got).bits==old,"IR result type/old value preserved");
+   check(c.values.at(got.value).type.value==c.U32[1].value&&c.values.at(got.value).bits==old,"IR result type/old value preserved");
    check(c.cell==reference.cell&&c.atomic_calls==1,"opcode and single side effect preserved");
    check((c.mismatches!=0)==(baseline&&signed_image),"pointer and all atomic operands have matching type");
    check(c.bitcasts==unsigned(!baseline&&signed_image)*2,"unsigned path unchanged; signed bitcasts only");
@@ -93,13 +104,13 @@ int main(int argc,char**argv){
   }
   for(bool hit:{false,true}){
    EmitContext c(signed_image,dim);c.cell=old;
-   auto got=ImageAtomicU32CmpSwap(c,nullptr,0xabcd0000,coords(c),c.ConstU32(val),c.ConstU32(hit?old:old^1),&Sirit::Module::OpAtomicCompareExchange);
-   check(c.cell==(hit?val:old)&&c.values.at(got).bits==old&&c.values.at(got).type==c.U32[1],"compare exchange bits and return");
+   auto got=ImageAtomicU32CmpSwap(c,nullptr,0xabcd0000,coords(c),c.ConstU32(val),c.ConstU32(hit?old:old^1),&Recording::Module::OpAtomicCompareExchange);
+   check(c.cell==(hit?val:old)&&c.values.at(got.value).bits==old&&c.values.at(got.value).type.value==c.U32[1].value,"compare exchange bits and return");
    check(c.atomic_calls==1&&(c.mismatches!=0)==(baseline&&signed_image),"compare exchange types");
    check(c.bitcasts==unsigned(!baseline&&signed_image)*3,"comparator bitcast and unsigned path");
    invalid+=c.mismatches!=0;++cases;
   }
  }
  check(invalid==(baseline?cases/2:0),"expected old mismatch count");
- std::printf("%s cases=%u invalid=%u NO_GPU_WORK\n",baseline?"BASELINE_SIGNED_IMAGE_POINTER=REPRODUCED":"SIGNED_IMAGE_ATOMIC_TYPES=PASS",cases,invalid);
+ std::printf("%s cases=%u invalid=%u OPAQUE_SIRIT_ID NO_GPU_WORK\n",baseline?"BASELINE_SIGNED_IMAGE_POINTER=REPRODUCED":"SIGNED_IMAGE_ATOMIC_TYPES=PASS",cases,invalid);
 }
