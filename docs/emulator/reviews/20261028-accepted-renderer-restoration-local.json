@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "record_id": "c925-accepted-renderer-restoration-local-20261028",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "context_games": ["CUSA11456", "CUSA34384"],
+  "tested_games": [],
+  "reason": "Latest actual PR96 runtime still uses the old whole-op_val stencil reference path despite the merged native-exercised generic PR69 algorithm. Archived C925 texture constructor also omits accepted PR68 Precise linear-image fallback. This is a preservation/integration defect, not a new stencil hypothesis or proof of full-scene root cause.",
+  "runtime_review": "20261028T135245496700Z-pr96-runtime.json",
+  "existing_accepted_prs": {
+    "69": "86ebcf6249fae2a709b98790760de639e6978bef",
+    "68": "b8db275e6605b4183aa27c445bb39661d991cdd1"
+  },
+  "adapter_branch": "fix/c925-restore-accepted-renderer-20261028",
+  "adapter_commit": "d27857c7e1f2196b4a5cadaf4a724e4a47e82b6f",
+  "adapter_path": "tools/development/c925_restore_kept_renderer/restore_kept_renderer.py",
+  "adapter_sha256": "8d1f4892c3e1923168de33ef2d0a016f70332c2a2134d0a740aa199a5b30d6fa",
+  "runner_sha256": "aa4ad0b58874a8700d797b13701a5c8eca7b457ac0cb2c6a80415a2e70d66d4e",
+  "source_changes": {
+    "src/video_core/renderer_vulkan/vk_rasterizer.cpp": {
+      "before_sha256": "52a3f71010dc69fd9bee56f8aa4d425d93beb646ebeb4af23f71e5260ea523e4",
+      "after_sha256": "ebed2441ceda3d6b3e6a6ebe1afe7469ec35f9d8a99c3b7f0feb1a3fb533b4a0",
+      "change": "Restore the exact merged PR69 stencil-reference selection lambda and front/back delegation; preserve every other rasterizer path."
+    },
+    "src/video_core/texture_cache/texture_cache.cpp": {
+      "before_sha256": "237950c841ee99dcfdc3a49d80657a4e53cc374c97ff48ba1d3ef83449f7f4f3",
+      "after_sha256": "3273c68d3c8a9932867603bb6cb12e6b546b228cfa32c7c4267a4d0de4207ed0",
+      "change": "Restore only the accepted PR68 OR-Precise constructor predicate; no saved GPU option changes or expanded tiled-image eligibility."
+    }
+  },
+  "local_validation": {
+    "gcc_cpp20_werror": "PASS 556283 checks",
+    "clang_cpp20_werror": "PASS 556283 checks",
+    "clang_asan_ubsan": "PASS 556283 checks",
+    "fixture_scope": "Extracts actual restored lambda and constructor expression; historical read-only stencil case, clear/no-Replace/Always/Never, 500000 random mask cases, all six mode/option combinations.",
+    "python_source_and_mock_runner_tests": "8 PASS; exact two-file change, changed-source before-write rejection, repeat refusal, mocked success/archive, mocked build-failure source+ELF rollback, changed-ELF refusal, changed-source refusal, external-save-root refusal.",
+    "initial_failure": "Generated local C++ fixture initially omitted <initializer_list> and failed to compile in GCC/Clang. Fixed test scaffolding and reran all compiler/sanitizer fixtures successfully. No host build or native GPU trial occurred in this local failure.",
+    "committed_bytes": "Both GitHub file blobs were checked against locally tested byte hashes."
+  },
+  "native_build_new_combination": "NOT_RUN",
+  "gpu_test_new_combination": "NOT_RUN",
+  "visual_recovery": "UNVERIFIED",
+  "upstream_main_checked_not_integrated": "caaa5419726c912013ffd5154dd4a9bac461cd94",
+  "not_an_upstream_rebase": true,
+  "runner": "One paste downloads pinned restoration scripts and the previously tested resume helper. Check current PR96 ELF and six retained shader hashes plus both renderer preimages; checkpoint ELF; unit tests then incremental native build with live output/heartbeat; restore original candidate source+ELF on build failure. On success one private-profile menu-only run with 8GiB VRAM gate, conditional Ollama restore, absolute capture times, 118+2s owned-process limit. Protected binaries, original saves/config, SSH, Sunshine/X11 and ES-DE not rewritten.",
+  "decision": "RESTORE_PREVIOUSLY_ACCEPTED_GENERIC_INVARIANTS_AND_ENFORCE_SOURCE_PARITY; NO_NEW_FULL_GRAPHICS_CLAIM",
+  "historical_negative_limits": "PR70 previously exercised correct stencil merges without complete menu recovery. Recent linear-readback true toggle also did not recover scenery. Do not sell these restorations as a new single-cause cure or repeat unmodified PR96.",
+  "next": "Inspect actual restored combined native result, preserve manifest, then target actual GPU compute producer and draw/fragment consumer behavior behind remaining missing surfaces. Bound resource counts and compile-time source warnings alone do not prove executed samples."
+}
