@@ -3,6 +3,8 @@
 
 #include "common/assert.h"
 #include "common/debug.h"
+#include "common/logging/log.h"
+#include "video_core/renderer_vulkan/vk_gpu_submit_trace.h"
 #include "common/thread.h"
 #include "imgui/renderer/texture_manager.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -236,8 +238,45 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         .pSignalSemaphores = info.signal_semas.data(),
     };
 
+    const auto scheduler_id = reinterpret_cast<std::uintptr_t>(this);
+    const u64 known_completed_before = work_semaphore.KnownGpuTick();
+    GpuTrace::recorder.Record(scheduler_id, signal_value, GpuTrace::Kind::QueueSubmit, 0,
+                              signal_value, static_cast<u32>(cmd_buffers.size()),
+                              info.num_wait_semas, info.num_signal_semas,
+                              known_completed_before);
     ImGui::Core::TextureManager::Submit();
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
+    if (submit_result == vk::Result::eErrorDeviceLost) {
+        const auto s = GpuTrace::recorder.Capture(scheduler_id);
+        LOG_ERROR(Render_Vulkan,
+                  "GPU_QUEUE_FAILURE scheduler={:#x} failed_tick={} cached_completion={}"
+                  " events={} compute={} draws={} submits={} overflow_events={}",
+                  scheduler_id, signal_value, known_completed_before, s.events,
+                  s.compute_events, s.draw_events, s.submit_events,
+                  GpuTrace::recorder.OverflowEvents());
+        const auto emit = [](const char* group, const GpuTrace::Event& e) {
+            LOG_ERROR(Render_Vulkan,
+                      "GPU_QUEUE_TRACE {} seq={} tick={} kind={} shader={:#x} source={:#x}"
+                      " a={} b={} c={} cached_completion={}",
+                      group, e.sequence, e.tick, static_cast<u32>(e.kind), e.shader, e.source,
+                      e.arg0, e.arg1, e.arg2, e.completed_cached);
+        };
+        for (u64 i = 0; i < s.first_submit_count; ++i) {
+            emit("FIRST_SUBMIT", s.first_submit[i]);
+        }
+        for (u64 i = 0; i < s.first_compute_count; ++i) {
+            emit("FIRST_COMPUTE", s.first_compute[i]);
+        }
+        for (u64 i = 0; i < s.first_draw_count; ++i) {
+            emit("FIRST_DRAW", s.first_draw[i]);
+        }
+        const u64 start =
+            s.events > GpuTrace::RecentSize ? s.events - GpuTrace::RecentSize : 0;
+        for (u64 i = start; i < s.events; ++i) {
+            emit("LATEST", s.recent[i % GpuTrace::RecentSize]);
+        }
+        LOG_ERROR(Render_Vulkan, "GPU_QUEUE_TRACE_END failed_tick={}", signal_value);
+    }
     ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
 
     work_semaphore.Refresh();
