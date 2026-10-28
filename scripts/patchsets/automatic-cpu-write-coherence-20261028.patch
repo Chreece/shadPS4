@@ -71,7 +71,7 @@
 +            // pages. DownloadMemory still copies only recorded GPU-dirty bytes.
 +            const auto span = Coherence::RequiredCpuWriteSpan(
 +                device_addr, size, arena->cpu_addr, arena->size_bytes,
-+                PageManager::PM_PAGE_SIZE);
++                PageManager::GetPageSize());
 +            ASSERT_MSG(span.has_value(), "Invalid CPU write preservation range");
 +            window_start = span->address;
 +            window_size = span->size;
