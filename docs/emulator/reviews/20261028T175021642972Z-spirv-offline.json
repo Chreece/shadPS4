@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "record_id": "got-c925-spirv-offline-20261028T175021642972Z-reviewed",
+  "recorded_on": "2026-10-28",
+  "record_type": "OFFLINE_REAL_SPIRV_VALIDATION_CONFIRMED_ATOMIC_TYPE_ERROR",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "context_games": ["CUSA11456", "CUSA34384"],
+  "tested_games": [],
+  "related_prs": [99, 100],
+  "archive": "got-c925-spirv-offline-20261028T175021642972Z.tar.gz",
+  "archive_sha256": "df4edf1949d60c976a9adba7a0dffb12ffb67cacc300fe4e3120e22cb7173c0d",
+  "native_binary_sha256_unchanged": "9f0f6c9fe83f15aec6dea1dcf3f23226d944472daa0bdb6258cff13a95f219d3",
+  "build": "NOT_RUN",
+  "game_result": "NOT_RUN_OFFLINE_ONLY",
+  "emulator_source_changed": false,
+  "validator": "SPIRV-Tools v2025.1, 2025-03-18, privately extracted verified Debian package",
+  "validator_sha256": "f386e67676bc134802b6bfec6d96fff0f9437d0f60e4c97ee0afa59ab4f1c4ea",
+  "modules": 298,
+  "validation_runs": 894,
+  "universal_spirv16": {"pass": 297, "fail": 1},
+  "vulkan13_strict": {"pass": 294, "fail": 4},
+  "vulkan13_scalar_layout": {"pass": 294, "fail": 4},
+  "pr100_actual_module": {
+    "guest_hash": "0xee963aae",
+    "module_sha256": "8fb990b3f6c89867b3a4c54e5ffea348a3d0bc704ca7abe72d9d2103d7856cbf",
+    "result": "PASS all three actual validator modes, including guarded fetches and structured control flow",
+    "qualification": "Validation does not prove correct GPU execution, complete scenery or absence of intermittent freeze."
+  },
+  "structural_failure": {
+    "guest_hash": "0x79ab8f30",
+    "module_sha256": "694f56399556d5fcf0baedc0e05b9870964fbef6165a98b719b5946ad4e07fb5",
+    "diagnostic": "OpImageTexelPointer result is pointer-to-u32 while cs_img0 is an OpTypeImage with sampled type float32 and R32f format. All three modes reject it.",
+    "source_evidence": "Captured emit_spirv_atomic.cpp uses the integer fallback for ImageAtomicFMax32 when supports_image_fp32_atomic_min_max=false, but ImageResource.GetSharp retains the float image format. The actual prior game log reports shaderImageFloat32AtomicMinMax:0. The same fallback emits both integer atomics before OpSelect; selecting the result cannot select which side effect executed. Corresponding buffer fallback has the same eager-two-atomics defect.",
+    "source_sha256": "a10561ad30084f072cbdf9ffcc27a49fc018ffc68adf0b1a253f5da707c9f072",
+    "scope": "Actual generated module proves invalid type pairing. It does not isolate the cause of the frozen frame or identify the visible object. Profile-origin module source revision remains individually unverified beyond timestamp and recorded SHA."
+  },
+  "feature_conditioned_failures": {
+    "guest_hashes": ["0xcfd30fa8", "0x18c40c0e", "0x7901b9d8"],
+    "rule": "VUID-RuntimeSpirv-Offset-10213, dynamic Offset on sampling",
+    "modes": "Pass universal; fail Vulkan strict and scalar-layout modes",
+    "qualification": "Khronos maintenance8 explicitly permits Offset on sampling/fetch operations. The prior native game.log records Enabling extension:VK_KHR_maintenance8. The original audit omitted --allow-offset-texture-operand, so these three diagnostics must not automatically be called invalid for the actual device. Extension name alone is not the complete enabled-feature pNext proof; collect/review the native vk_instance.cpp feature chain and revalidate in a separately labelled maintenance8 mode. Do not drop offsets or change texture coordinates merely to silence the validator."
+  },
+  "decision": "KEEP_REAL_OFFLINE_AUDIT_AND_VALID_PR100_MODULE; FIX_CONFIRMED_FLOAT_ATOMIC_VIEW_AND_EAGER_SIDE_EFFECTS; QUALIFY_OFFSET_DIAGNOSTICS_BY_ACTUAL_FEATURES",
+  "next_test": "Implement separate integer alias metadata for emulated float image atomics so emitted image type and bound image view agree, and emit exactly one sign-selected atomic behind real branches for image/buffer fallback. Preserve normal floating image descriptors, guest bit patterns and accepted renderer/resource fixes. Bump shader metadata/binary versions. Run extracted-code and actual-module validation fixtures, then isolated native compile and bounded runtime. No new unrelated image modes or fake resource lengths.",
+  "history_reviewed": "Previous PR100/99 native and validator-preparation records, shared query integration, exact current source and fork-main atomic fallback checked. This is distinct from prior explicit-LOD/finite-descriptor work and is not a previously rejected Linear8/readback/SRT experiment.",
+  "graphics": "NO_NEW_FRAME_CAPTURE_NO_GRAPHICS_RECOVERY_CLAIM",
+  "raw_game_data_published": false
+}
