@@ -1,0 +1,153 @@
+--- a/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp
++++ b/src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp
+@@ -211,16 +211,22 @@
+ 
+ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
+     Info& info = program.info;
++    u32 dynamic_loads = 0;
+     for (IR::Block* const block : program.post_order_blocks) {
+         for (IR::Inst& inst : block->Instructions()) {
+             Visit(info, inst);
++            if (inst.GetOpcode() == IR::Opcode::ReadConst && inst.Flags<u32>() == 0) {
++                ++dynamic_loads;
++            }
+         }
+     }
+ 
+-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled() || !profile.support_bda) {
+-        info.uses_dma = false;
+-        info.readconst_types = Info::ReadConstType::None;
+-    }
++    // Restore the generic on-demand rule previously tested on 2026-10-26.
++    // Dynamic shader loads are required by the program, not by a game option.
++    // Never compile an unsupported load as flattened user-data word zero.
++    ASSERT_MSG(!info.uses_dma || (profile.support_bda && profile.support_int64),
++               "Shader {:#x} needs GPU constant-memory reads but BDA/int64 is unavailable",
++               info.pgm_hash);
+ 
+     if (info.uses_dma) {
+         info.buffers.push_back({
+@@ -233,7 +239,9 @@
+             .buffer_type = BufferType::FaultBuffer,
+             .is_written = true,
+         });
+-        LOG_ERROR(Render, "Enabling DMA for shader {:#x}", info.pgm_hash);
++        LOG_INFO(Render_Recompiler,
++                 "AutoReadConst: shader={:#x} dynamic_loads={} legacy_dma_setting={}",
++                 info.pgm_hash, dynamic_loads, EmulatorSettings.IsDirectMemoryAccessEnabled());
+     }
+ 
+     // Keep metadata last so that guest buffer indices do not change. The profile only allows it
+--- a/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
++++ b/src/shader_recompiler/backend/spirv/spirv_emit_context.cpp
+@@ -8,6 +8,7 @@
+ #include "shader_recompiler/ir/attribute.h"
+ #include "shader_recompiler/ir/microinstruction.h"
+ #include "shader_recompiler/runtime_info.h"
++#include "video_core/buffer_cache/bda_address_space.h"
+ 
+ #include <boost/container/static_vector.hpp>
+ #include <fmt/format.h>
+@@ -1225,6 +1226,22 @@
+     const auto fault_label{OpLabel()};
+     const auto available_label{OpLabel()};
+     const auto merge_label{OpLabel()};
++    const auto valid_range_label{OpLabel()};
++    const auto invalid_range_label{OpLabel()};
++    const auto return_label{OpLabel()};
++
++    // The sparse arena maps only the low 40 bits of guest GPU address space.
++    // Reject an out-of-range dword before truncating the page index to u32 or
++    // touching either the BDA table or the fault bitmap. Returning null makes
++    // the caller take its defined fallback path.
++    const auto valid_address_end{
++        Constant(U64, VideoCore::GuestGpuAddressLimit - sizeof(u32) + 1)};
++    const auto valid_address{OpULessThan(U1[1], address, valid_address_end)};
++    OpSelectionMerge(return_label, spv::SelectionControlMask::MaskNone);
++    OpBranchConditional(valid_address, valid_range_label, invalid_range_label);
++    AddLabel(invalid_range_label);
++    OpBranch(return_label);
++    AddLabel(valid_range_label);
+ 
+     // Get page BDA
+     const auto page{OpShiftRightLogical(U64, address, caching_pagebits)};
+@@ -1248,9 +1265,12 @@
+     const auto page_mask{OpShiftLeftLogical(U32[1], u32_one_value, page_mod32)};
+     const auto fault_ptr{
+         OpAccessChain(fault_pointer_type, fault_buffer_id, u32_zero_value, page_div32)};
+-    const auto fault_value{OpLoad(U32[1], fault_ptr)};
+-    const auto fault_value_masked{OpBitwiseOr(U32[1], fault_value, page_mask)};
+-    OpStore(fault_ptr, fault_value_masked);
++    // Hundreds of shader lanes may fault different pages in the same 32-bit
++    // word. A load/OR/store sequence loses bits on concurrent invocations.
++    // Atomic OR preserves every requested page for the fault manager.
++    (void)OpAtomicOr(U32[1], fault_ptr,
++                     ConstU32(static_cast<u32>(spv::Scope::Device)),
++                     u32_zero_value, page_mask);
+ 
+     // Return null pointer
+     const auto fallback_result{u64_zero_value};
+@@ -1264,7 +1284,12 @@
+ 
+     // Merge
+     AddLabel(merge_label);
+-    const auto result{OpPhi(U64, addr, available_label, fallback_result, fault_label)};
++    const auto cached_or_null{OpPhi(U64, addr, available_label, fallback_result, fault_label)};
++    OpBranch(return_label);
++
++    AddLabel(return_label);
++    const auto result{
++        OpPhi(U64, cached_or_null, merge_label, u64_zero_value, invalid_range_label)};
+     OpReturnValue(result);
+     OpFunctionEnd();
+     return func;
+--- a/src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp
++++ b/src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp
+@@ -60,11 +60,11 @@
+ Id EmitReadConst(EmitContext& ctx, IR::Inst* inst, Id addr, Id offset) {
+     const u32 flatbuf_off_dw = inst->Flags<u32>();
+-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled() || !ctx.profile.support_bda) {
++    if (flatbuf_off_dw != 0) {
+         return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
+     }
+-    if (flatbuf_off_dw == 0) {
+-        return ctx.OpFunctionCall(ctx.U32[1], ctx.read_const_dynamic, addr, offset);
+-    } else {
+-        return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
+-    }
++    // Zero is the unflattened sentinel, not a valid flattened guest load.
++    // Its address and index must remain GPU values regardless of the old toggle.
++    ASSERT_MSG(ctx.info.uses_dma && ctx.profile.support_bda && ctx.profile.support_int64,
++               "Unflattened ReadConst has no supported GPU memory implementation");
++    return ctx.OpFunctionCall(ctx.U32[1], ctx.read_const_dynamic, addr, offset);
+ }
+--- a/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
++++ b/src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp
+@@ -16,3 +16,3 @@
+-static constexpr u32 ShaderBinaryVersion = 16u;
+-static constexpr u32 ShaderMetaVersion = 9u;
++static constexpr u32 ShaderBinaryVersion = 17u;
++static constexpr u32 ShaderMetaVersion = 10u;
+ static constexpr u32 PipelineKeyVersion = 3u;
+--- /dev/null
++++ b/src/video_core/buffer_cache/bda_address_space.h
+@@ -0,0 +1,19 @@
++// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#pragma once
++
++#include "common/types.h"
++
++namespace VideoCore {
++
++// This bound is shared by the CPU sparse arena and GPU BDA address resolver.
++// Checking the address before truncating the page to u32 is essential.
++inline constexpr u64 GuestGpuAddressSpaceBits = 40;
++inline constexpr u64 GuestGpuAddressLimit = 1ULL << GuestGpuAddressSpaceBits;
++
++constexpr bool IsGuestGpuDwordInRange(u64 address) noexcept {
++    return address < GuestGpuAddressLimit - (sizeof(u32) - 1);
++}
++
++} // namespace VideoCore
