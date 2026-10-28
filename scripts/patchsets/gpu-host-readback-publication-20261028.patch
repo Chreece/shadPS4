@@ -1,0 +1,53 @@
+--- a/src/video_core/buffer_cache/buffer_cache.cpp
++++ b/src/video_core/buffer_cache/buffer_cache.cpp
+@@ -19,11 +19,34 @@
+ #include "video_core/renderer_vulkan/vk_instance.h"
+ #include "video_core/renderer_vulkan/vk_runtime.h"
+ #include "video_core/renderer_vulkan/vk_scheduler.h"
++#include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
+ #include "video_core/texture_cache/texture_cache.h"
+ 
+ #include <vk_mem_alloc.h>
+ 
+ namespace VideoCore {
++
++// Publish the transfer destination to the host memory domain before the
++// existing timeline wait and cache invalidation. Completion alone is not
++// a device-to-host memory dependency, even for HOST_COHERENT allocations.
++static void PublishReadbackForHost(Vulkan::Scheduler& scheduler,
++                                   const Vulkan::StagingBufferRef& download) {
++    const vk::BufferMemoryBarrier2 host_read{
++        .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
++        .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
++        .dstStageMask = vk::PipelineStageFlagBits2::eHost,
++        .dstAccessMask = vk::AccessFlagBits2::eHostRead,
++        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
++        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
++        .buffer = download.buffer->Handle(),
++        .offset = download.offset,
++        .size = download.size,
++    };
++    scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
++        .bufferMemoryBarrierCount = 1,
++        .pBufferMemoryBarriers = &host_read,
++    });
++}
+ 
+ static constexpr size_t GDS_BUFFER_SIZE = 64_KB;
+ static constexpr size_t NULL_INDEX_BUFFER_SIZE = 16;
+@@ -209,6 +232,7 @@
+         copy.dstOffset += download.offset;
+     }
+     runtime.CopyBuffer(arena, download.buffer, copies);
++    PublishReadbackForHost(scheduler, download);
+ 
+     const auto write_data = [this, arena_base, device_addr, size, download, async,
+                              copies = std::move(copies)] {
+@@ -328,6 +352,7 @@
+     }
+     scheduler.EndRendering();
+     runtime.CopyBuffer(buffer, download.buffer, copies);
++    PublishReadbackForHost(scheduler, download);
+     scheduler.DeferOperation(
+         [this, base = buffer->CpuAddr(), download, copies = std::move(copies)]() {
+             download.Invalidate();
