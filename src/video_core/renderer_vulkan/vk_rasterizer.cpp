@@ -21,6 +21,7 @@
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
+#include "video_core/renderer_vulkan/vk_gpu_submit_trace.h"
 #include "video_core/renderer_vulkan/vk_shader_hle.h"
 #include "video_core/texture_cache/image_view.h"
 #include "video_core/texture_cache/texture_cache.h"
@@ -234,6 +235,13 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         cmdbuf.draw(regs.num_indices, regs.num_instances.NumInstances(), vertex_offset,
                     instance_offset);
     }
+    GpuTrace::recorder.Record(
+        reinterpret_cast<std::uintptr_t>(&scheduler), scheduler.CurrentTick(),
+        GpuTrace::Kind::Draw, vs_info.pgm_hash,
+        pipeline->GetStages()[u32(Shader::SwStage::Fragment)]
+            ? pipeline->GetStages()[u32(Shader::SwStage::Fragment)]->pgm_hash
+            : 0,
+        regs.num_indices, regs.num_instances.NumInstances(), static_cast<u32>(is_indexed));
     DebugState.IncDrawCall();
 
     ResetBindings(false);
@@ -318,6 +326,11 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         DebugState.IncDrawCall();
     }
 
+    GpuTrace::recorder.Record(
+        reinterpret_cast<std::uintptr_t>(&scheduler), scheduler.CurrentTick(),
+        GpuTrace::Kind::DrawIndirect,
+        pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash, arg_address + offset,
+        max_count, stride, static_cast<u32>(is_indexed));
     ResetBindings(false);
 }
 
@@ -351,6 +364,10 @@ void Rasterizer::DispatchDirect() {
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
+    GpuTrace::recorder.Record(
+        reinterpret_cast<std::uintptr_t>(&scheduler), scheduler.CurrentTick(),
+        GpuTrace::Kind::ComputeDirect, cs.pgm_hash, 0, cs_program.dim_x,
+        cs_program.dim_y, cs_program.dim_z);
     DebugState.IncDispatch();
 
     ResetBindings(true);
@@ -411,6 +428,10 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     } else {
         cmdbuf.dispatchIndirect(buffer->Handle(), base);
     }
+    GpuTrace::recorder.Record(
+        reinterpret_cast<std::uintptr_t>(&scheduler), scheduler.CurrentTick(),
+        GpuTrace::Kind::ComputeIndirect, cs.pgm_hash, address + offset,
+        static_cast<u32>(prepare), size, 0);
     DebugState.IncDispatch();
 
     ResetBindings(true);
