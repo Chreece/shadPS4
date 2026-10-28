@@ -11,6 +11,13 @@
 
 namespace Vulkan {
 
+// Generic GPU-work diagnostic ring is defined in vk_rasterizer.cpp.
+// Keeping scheduler.h byte-identical avoids rebuilding dependent modules.
+namespace GpuTrace {
+void Record(u64 tick, u32 kind, u64 shader, u64 address, u32 arg0, u32 arg1);
+void Dump(u64 failed_tick, u64 completed_before);
+} // namespace GpuTrace
+
 std::mutex Scheduler::submit_mutex;
 
 Scheduler::Scheduler(const Instance& instance)
@@ -27,46 +34,6 @@ Scheduler::~Scheduler() {
 #if TRACY_GPU_ENABLED
     std::free(profiler_scope);
 #endif
-}
-
-void Scheduler::RecordGpuCommand(GpuTraceKind kind, u64 shader, u64 address, u32 arg0,
-                                 u32 arg1) {
-    // No driver calls, no allocation, no logging in the normal GPU hot path.
-    std::scoped_lock lock{gpu_trace_mutex};
-    const u64 index = gpu_trace_count++;
-    const u64 tick = kind == GpuTraceKind::Submit ? address : CurrentTick();
-    const GpuTraceRecord record{index, tick, shader, address, arg0, arg1, kind};
-    if (index < gpu_trace_first.size()) {
-        gpu_trace_first[index] = record;
-    }
-    gpu_trace_recent[index % gpu_trace_recent.size()] = record;
-}
-
-void Scheduler::DumpGpuCommands(u64 failed_tick, u64 completed_before) {
-    std::scoped_lock lock{gpu_trace_mutex};
-    LOG_ERROR(Render_Vulkan,
-              "GPU_SUBMIT_TRACE_BEGIN failed_tick={} last_known_completed={} events={}",
-              failed_tick, completed_before, gpu_trace_count);
-    const auto emit = [](const char* phase, const GpuTraceRecord& r) {
-        LOG_ERROR(Render_Vulkan,
-                  "GPU_SUBMIT_TRACE {} seq={} tick={} kind={} shader={:#x} source_or_signal={:#x}"
-                  " arg0={} arg1={}",
-                  phase, r.sequence, r.tick, static_cast<u32>(r.kind), r.shader, r.address,
-                  r.arg0, r.arg1);
-    };
-    const u64 first_count = std::min<u64>(gpu_trace_count, gpu_trace_first.size());
-    for (u64 i = 0; i < first_count; ++i) {
-        emit("EARLIEST", gpu_trace_first[i]);
-    }
-    const u64 start = gpu_trace_count > gpu_trace_recent.size()
-                          ? gpu_trace_count - gpu_trace_recent.size()
-                          : 0;
-    for (u64 i = start; i < gpu_trace_count; ++i) {
-        if (i >= first_count) {
-            emit("LATEST", gpu_trace_recent[i % gpu_trace_recent.size()]);
-        }
-    }
-    LOG_ERROR(Render_Vulkan, "GPU_SUBMIT_TRACE_END failed_tick={}", failed_tick);
 }
 
 void Scheduler::BeginRendering(const RenderState& new_state) {
@@ -280,7 +247,7 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     // Capture the queue sequence and pre-submit timeline without waiting for or
     // altering the submitted work. Only print the bounded ring on device loss.
     const u64 completed_before = work_semaphore.KnownGpuTick();
-    RecordGpuCommand(GpuTraceKind::Submit, 0, signal_value,
+    GpuTrace::Record(signal_value, 2, 0, signal_value,
                      static_cast<u32>(cmd_buffers.size()), static_cast<u32>(info.num_wait_semas));
     ImGui::Core::TextureManager::Submit();
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
@@ -290,7 +257,7 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
                   " wait_semaphores={} signal_semaphores={}",
                   signal_value, completed_before, cmd_buffers.size(), info.num_wait_semas,
                   info.num_signal_semas);
-        DumpGpuCommands(signal_value, completed_before);
+        GpuTrace::Dump(signal_value, completed_before);
     }
     ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
 
