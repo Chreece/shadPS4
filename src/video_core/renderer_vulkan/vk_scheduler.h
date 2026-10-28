@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <array>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -356,11 +355,6 @@ public:
     explicit Scheduler(const Instance& instance);
     ~Scheduler();
 
-    // Generic, bounded diagnostics of guest GPU work and host queue submissions.
-    // They never change the command stream or wait for the GPU.
-    enum class GpuTraceKind : u8 { DirectCompute, IndirectCompute, Submit };
-    void RecordGpuCommand(GpuTraceKind kind, u64 shader, u64 address, u32 arg0, u32 arg1);
-
     /// Sends the current execution context to the GPU
     /// and increments the scheduler timeline semaphore.
     void Flush(SubmitInfo& info);
@@ -454,7 +448,6 @@ public:
     static std::mutex submit_mutex;
 
 private:
-    void DumpGpuCommands(u64 failed_tick, u64 completed_before);
     void EndSession();
 
     void SubmitExecution(SubmitInfo& info);
@@ -487,20 +480,6 @@ private:
     RenderState render_state;
     bool is_rendering = false;
     tracy::VkCtxScope* profiler_scope{};
-
-    struct GpuTraceRecord {
-        u64 sequence{};
-        u64 tick{};
-        u64 shader{};
-        u64 address{};
-        u32 arg0{};
-        u32 arg1{};
-        GpuTraceKind kind{};
-    };
-    std::mutex gpu_trace_mutex;
-    std::array<GpuTraceRecord, 64> gpu_trace_first{};
-    std::array<GpuTraceRecord, 128> gpu_trace_recent{};
-    u64 gpu_trace_count{};
 };
 
 } // namespace Vulkan
