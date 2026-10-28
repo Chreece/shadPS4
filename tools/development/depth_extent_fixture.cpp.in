@@ -1,0 +1,60 @@
+// The extent struct and allocation assignment are extracted from production.
+// Only the surrounding ImageInfo/Image wrappers are modeled; no Vulkan calls.
+#include <algorithm>
+#include <array>
+#include <compare>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <string_view>
+using u16 = std::uint16_t;
+/* EXACT_EXTENT */
+struct ImageInfo { SubresourceExtent resources; };
+struct Image { ImageInfo info; };
+static void check(bool okay, const char* detail) {
+    if (!okay) { std::fprintf(stderr, "DEPTH_EXTENT_FAIL=%s\n", detail); std::exit(2); }
+}
+static SubresourceExtent merge(SubresourceExtent requested, SubresourceExtent cached) {
+    const ImageInfo requested_info{requested};
+    const Image cache_image{{cached}};
+    auto new_info = requested_info;
+    /* EXACT_ALLOCATION_ASSIGNMENT */
+    return new_info.resources;
+}
+int main(int argc, char** argv) {
+    const bool baseline = argc == 2 && std::string_view(argv[1]) == "--baseline";
+    std::uint64_t cases{}, failures{};
+    const auto test = [&](u16 rl, u16 ra, u16 cl, u16 ca) {
+        const SubresourceExtent request{rl, ra}, cache{cl, ca};
+        const auto actual = merge(request, cache);
+        const SubresourceExtent expected{std::max(rl, cl), std::max(ra, ca)};
+        const bool correct = actual == expected && actual.Contains(request) && actual.Contains(cache);
+        ++cases;
+        failures += !correct;
+        if (!baseline) {
+            check(correct, "allocation must cover both mips and layers of both images");
+            check(merge(cache, request) == actual, "argument order independence");
+            check(merge(actual, request) == actual && merge(actual, cache) == actual,
+                  "repeated bindings cannot shrink the allocation");
+        }
+    };
+    for (unsigned rl = 1; rl <= 16; ++rl)
+        for (unsigned ra = 1; ra <= 64; ++ra)
+            for (unsigned cl = 1; cl <= 16; ++cl)
+                for (unsigned ca = 1; ca <= 64; ++ca)
+                    test(static_cast<u16>(rl), static_cast<u16>(ra),
+                         static_cast<u16>(cl), static_cast<u16>(ca));
+    constexpr std::array<u16, 8> edge{0, 1, 2, 6, 16, 255, 32768, 65535};
+    for (const auto rl : edge) for (const auto ra : edge)
+        for (const auto cl : edge) for (const auto ca : edge) test(rl, ra, cl, ca);
+    const auto example = merge({1, 6}, {8, 1});
+    if (baseline) {
+        check(failures > 0 && example == SubresourceExtent{8, 1}, "old allocation defect reproduced");
+    } else {
+        check(failures == 0 && example == SubresourceExtent{8, 6}, "crossed counts retained");
+    }
+    std::printf("%s cases=%llu insufficient=%llu example=%ux%u NO_GPU_WORK\n",
+        baseline ? "BASELINE_DEPTH_EXTENT_LOSS=REPRODUCED" : "DEPTH_EXTENT_COMPONENTWISE=PASS",
+        static_cast<unsigned long long>(cases), static_cast<unsigned long long>(failures),
+        static_cast<unsigned>(example.levels), static_cast<unsigned>(example.layers));
+}
