@@ -19,7 +19,7 @@ static VkResult VKAPI_CALL Fake(VkDevice, VkDeviceFaultCountsEXT* c, VkDeviceFau
         if (mode == 1) return VK_ERROR_UNKNOWN;
         c->addressInfoCount = mode == 3 ? std::numeric_limits<std::uint32_t>::max() : (mode == 2 ? 0 : 2);
         c->vendorInfoCount = mode == 3 ? 1000000 : (mode == 2 ? 0 : 1);
-        c->vendorBinarySize = mode == 3 ? 0xffffffffULL : 0;
+        c->vendorBinarySize = mode == 6 ? 0xffffffffULL : 0;
         return VK_SUCCESS;
     }
     Check(i->sType == VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT && i->pNext == nullptr,
@@ -51,11 +51,12 @@ static VkResult VKAPI_CALL Fake(VkDevice, VkDeviceFaultCountsEXT* c, VkDeviceFau
 int main() {
     const auto device = reinterpret_cast<VkDevice>(std::uintptr_t{0x1000});
     unsigned cases = 0;
-    for (mode = 0; mode <= 5; ++mode) {
+    for (mode = 0; mode <= 6; ++mode) {
         calls = 0;
         const auto r = Capture([&](VkDeviceFaultCountsEXT* c, VkDeviceFaultInfoEXT* i) { return Fake(device, c, i); });
-        if (mode == 1) {
-            Check(calls == 1 && !r.queried_details && r.address_count == 0, "count failure stops");
+        if (mode == 1 || mode == 6) {
+            Check(calls == 1 && !r.queried_details && r.address_count == 0, "count failure or unexpected binary stops safely");
+            Check(mode != 6 || r.truncated, "unexpected binary explicitly flagged");
         } else {
             Check(calls == 2 && r.queried_details, "exact two calls");
             if (mode == 2 || mode == 4 || mode == 5) {
