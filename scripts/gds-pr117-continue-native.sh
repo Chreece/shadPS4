@@ -6,7 +6,7 @@ BASE="$PROJECT/tests/gds-pr117-native-20261029T164137Z-3996104"
 SRC="$BASE/source"
 BUILD="$BASE/build"
 BRANCH='feature/ordered-gds-wave-executor-20261029'
-MINIMUM_COMMIT='11e9b9c44c994e5fa2b3d819850695f66e32ba54'
+MINIMUM_COMMIT='fe40a99c45416b389133052463f333bee02aa177'
 TAG="gds-pr117-preflight-native-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 LOG="$PROJECT/logs/$TAG"
 STAGE='PREFLIGHT'
@@ -84,6 +84,7 @@ for compiler in g++ clang++-17; do
     grep -Fq 'ORDERED_GDS_LOGICAL_CAPTURE_SLOTS=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_MIXED_STATIC_SITES=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_GPU_PACKET_ROUNDTRIP=PASS' "$LOG/cpu-$name.log"
+    grep -Fq 'ORDERED_GDS_STATIC_FLOW=PASS' "$LOG/cpu-$name.log"
 done
 
 STAGE='VERIFY_BACKEND_REMAINS_GATED'
@@ -96,6 +97,9 @@ grep -Fq 'logical capture slots NOT' \
 grep -Fq 'Ordered GDS GPU packet ABI' \
     "$SRC/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp" ||
     { echo 'ORDERED_GDS_CAPTURE_ABI_NOT_LINKED_TO_COMPILER'; exit 12; }
+grep -Fq 'Ordered GDS decoded-ISA CFG:' \
+    "$SRC/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp" ||
+    { echo 'ORDERED_GDS_REAL_GCN_CONTROL_FLOW_NOT_LINKED'; exit 12; }
 
 STAGE='BUILD_INCREMENTAL_NATIVE'
 if ! cmake --build "$BUILD" --parallel 6 > "$LOG/build.log" 2>&1; then
