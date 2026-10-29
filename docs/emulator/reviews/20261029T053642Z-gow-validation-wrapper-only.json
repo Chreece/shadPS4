@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "record_id": "gow-vulkan-validation-20261029T053642Z-2451872-wrapper-only-reviewed",
+  "recorded_on": "2026-10-29",
+  "record_type": "USER_WRAPPER_LOG_ONLY_ACTUAL_VALIDATION_MESSAGE_NOT_SUPPLIED",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "game_id": "CUSA34384",
+  "context_games": ["CUSA34384"],
+  "tested_games": ["CUSA34384"],
+  "wrapper_log": "gow-vulkan-validation-20261029T053642Z-2451872.log",
+  "wrapper_sha256": "b3528033bfa918343c83bd33cde8b34fc2c93fe6e5a3f2b52bc24878780f11d1",
+  "build": "NO_REBUILD_REQUESTED_BY_WRAPPER",
+  "observed": "Validation-layer preflight reports PASS without device creation. GPU-assisted validation is OFF. Wrapper reports VULKAN_VALIDATION_ERROR_CAPTURED_STOPPING_OWNED_GAME and SSH_SESSION=OPEN.",
+  "missing": "Actual Vulkan validation message/VUID, game monitor contents, source/ELF provenance, precise runtime duration and termination result are absent from the uploaded wrapper. Do not infer the error or attribute it to GoT's indirect-material change.",
+  "actual_game_log_named_by_wrapper": "~/projects/shadps4/logs/gow-vulkan-validation-game-20261029-053642-2451873.log",
+  "evidence_archive_named_by_wrapper": "~/projects/shadps4/logs/gow-vulkan-validation-20261029T053642Z-2451872.tar.gz",
+  "evidence_archive_received": false,
+  "decision": "KEEP_STOP_NOTICE_AS_INCOMPLETE_EVIDENCE; NO_CAUSAL_RENDERER_OR_SHADER_CONCLUSION",
+  "next_test": "Collect the exact already-existing monitor log and bounded textual archive contents with the next offline collector. Do not rerun GoW or substitute an older validation log. Keep GoW and GoT outcomes separate in the shared journal.",
+  "raw_game_data_published": false
+}
