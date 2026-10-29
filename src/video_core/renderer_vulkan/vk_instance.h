@@ -451,6 +451,15 @@ public:
                image_2d_view_of_3d_features.sampler2DViewOf3D;
     }
 
+    // Creating a 3D image which permits 2D views requires either the storage
+    // feature or the sampled feature. Do not grant sampling when only storage
+    // is supported; descriptor usage is checked separately.
+    bool CanCreate2dViewOf3dImage() const {
+        return image_2d_view_of_3d &&
+               (image_2d_view_of_3d_features.image2DViewOf3D ||
+                image_2d_view_of_3d_features.sampler2DViewOf3D);
+    }
+
     /// Returns whether VK_EXT_image_view_min_lod is supported.
     bool IsImageViewMinLodSupported() const {
         return image_view_min_lod;

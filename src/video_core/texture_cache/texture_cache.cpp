@@ -555,8 +555,10 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         if (cache_image.info.size != info.size) {
             continue;
         }
+        // Even a 1x1x1 3D resource is not interchangeable with a 2D backing.
+        // Let overlap resolution preserve live GPU data when the type changes.
         if (!IsVulkanFormatCompatible(cache_image.info.pixel_format, info.pixel_format) ||
-            (cache_image.info.type != info.type && info.size != Extent3D{1, 1, 1})) {
+            cache_image.info.type != info.type) {
             continue;
         }
         if (exact_fmt && info.pixel_format != cache_image.info.pixel_format) {
