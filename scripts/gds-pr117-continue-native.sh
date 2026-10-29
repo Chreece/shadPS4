@@ -6,7 +6,7 @@ BASE="$PROJECT/tests/gds-pr117-native-20261029T164137Z-3996104"
 SRC="$BASE/source"
 BUILD="$BASE/build"
 BRANCH='feature/ordered-gds-wave-executor-20261029'
-MINIMUM_COMMIT='a709d8d7cbfd52c1a51f58baf8798dcea5be6531'
+MINIMUM_COMMIT='f97cdfb5e0cbdbc9195f977792674aa377ad1358'
 TAG="gds-pr117-preflight-native-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 LOG="$PROJECT/logs/$TAG"
 STAGE='PREFLIGHT'
@@ -83,6 +83,7 @@ for compiler in g++ clang++-17; do
     grep -Fq 'ORDERED_GDS_OFFLINE_REGRESSION=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_LOGICAL_CAPTURE_SLOTS=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_PHYSICAL_STORAGE_BOUNDS=PASS' "$LOG/cpu-$name.log"
+    grep -Fq 'ORDERED_GDS_CIK_PACKER_SEPARATION=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_MIXED_STATIC_SITES=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_GPU_PACKET_ROUNDTRIP=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_STATIC_FLOW=PASS' "$LOG/cpu-$name.log"
@@ -106,9 +107,19 @@ grep -Fq 'Ordered GDS decoded-ISA CFG:' \
 grep -Fq 'CaptureBypassFlags' \
     "$SRC/src/shader_recompiler/frontend/ordered_gds_capture_packet.h" ||
     { echo 'ORDERED_GDS_BYPASS_PACKETS_MISSING'; exit 12; }
-grep -Fq 'case IR::Opcode::OrderedGdsCount:' \
-    "$SRC/src/shader_recompiler/ir/passes/resource_pass.h" ||
-    { echo 'ORDERED_GDS_REAL_GDS_BUFFER_RESOURCE_NOT_DISCOVERED'; exit 12; }
+# CIK DS_ORDERED_COUNT has dedicated packer counters. The raw GDS SSBO
+# must remain available to ordinary GDS instructions, but must not
+# automatically stand in for this separate ordered counter state.
+if grep -Fq 'case IR::Opcode::OrderedGdsCount:' \
+    "$SRC/src/shader_recompiler/ir/passes/resource_pass.h"; then
+    echo 'CIK_PACKER_ILLEGALLY_ALIASED_TO_RAW_64K_GDS_RAM'
+    exit 12
+fi
+grep -Fq 'CikOrderedCountIncrement' \
+    "$SRC/src/shader_recompiler/frontend/ordered_gds_legacy_packer.h" || {
+    echo 'MISSING_LEGACY_GCN_EXEC_COUNT_SEMANTICS'
+    exit 12
+}
 grep -Fq 'ValidatePhysicalGdsWrites(updates)' \
     "$SRC/src/video_core/renderer_vulkan/vk_ordered_gds_transfer.h" ||
     { echo 'ORDERED_GDS_PHYSICAL_WRITE_RANGE_GUARD_MISSING'; exit 12; }
