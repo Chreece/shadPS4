@@ -149,11 +149,14 @@ def patch_memory(src):
     return copied;
 }'''
  result=src[:a]+new+src[b:]
- for header in ('#include <algorithm>','#include <atomic>','#include <cstring>'):
-  if header not in result:
-   pos=result.find('#include <')
-   require(pos>=0,'MEMORY_INCLUDE_ANCHOR_MISSING')
-   result=result[:pos]+header+'\n'+result[pos:]
+ # Match the real C925 source: its include block may contain only quoted
+ # project headers. Do not require an angle-bracket include to exist.
+ missing=[header for header in ('#include <algorithm>','#include <atomic>','#include <cstring>')
+          if header not in result]
+ if missing:
+  hit=re.search(r'(?m)^#\\s*include\\s*[<"]',result)
+  require(hit is not None,'MEMORY_HAS_NO_INCLUDE_BLOCK')
+  result=result[:hit.start()]+''.join(header+'\\n' for header in missing)+result[hit.start():]
  require(result.count(MARK)==1 and result.count('BackingWriteIncomplete')==1,
          'MEMORY_PATCH_RESULT_INVALID')
  return result
@@ -253,6 +256,20 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
 }
 '''
  m=patch_memory(fixture_mem);b=patch_buffer(fixture_buffer)
+ # Reproduce the user's actual pre-build failure: C925 has only quoted headers.
+ quoted=fixture_mem.replace('#include <shared_mutex>','#include "common/alignment.h"')
+ quoted_out=patch_memory(quoted)
+ require(quoted_out.count('#include <atomic>')==1 and
+         quoted_out.count('#include <cstring>')==1 and
+         quoted_out.count('#include "common/alignment.h"')==1,
+         'QUOTED_INCLUDE_REGRESSION')
+ try:
+  patch_memory(quoted_out)
+ except RuntimeError as exc:
+  require(str(exc)=='COMPLETE_BACKING_WRITE_ALREADY_PRESENT',
+          'DOUBLE_PATCH_WRONG_REFUSAL')
+ else:raise RuntimeError('DOUBLE_PATCH_ACCEPTED')
+ print('C925_QUOTED_ONLY_INCLUDES=PASS',flush=True)
  require('source + source_offset' in m and 'visit([&](u8*' in m,'OFFSET_FIX')
  require('memory_tracker->MarkRegionAsGpuModified(address, bytes)' in b,'RETAIN_DIRTY_FIX')
  require('memory->TryWriteBacking' in b,'WRITEBACK_NOT_LOST')
@@ -311,10 +328,14 @@ def main(work):
   display=os.environ.get('DISPLAY') or ':0'
   u.command(['env','DISPLAY='+display,'xdpyinfo'],timeout=8)
   tests()
+  for key in ('memory_src','buffer_src'):
+   p=PATHS[key]
+   (evidence/(key+'-source-head.txt')).write_text(p.read_text()[:4096])
   changed={
    'memory_src':patch_memory(PATHS['memory_src'].read_text()),
    'buffer_src':patch_buffer(PATHS['buffer_src'].read_text()),
   }
+  print('ACTUAL_C925_SOURCE_PREFLIGHT=PASS',flush=True)
   for key,source in changed.items():
    filename=str(PATHS[key].relative_to(ROOT))
    original=PATHS[key].read_text()
