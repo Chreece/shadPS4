@@ -1,0 +1,220 @@
+// Exact production arena/binding methods with a CPU-only sparse-memory recorder.
+// REAL_VULKAN_TYPES compiles the same calls against the project's real Vulkan headers.
+// No VkDevice is created and no GPU execution or driver behaviour is simulated as proof.
+#include <algorithm>
+#include <array>
+#include <bit>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <deque>
+#include <limits>
+#include <map>
+#include <optional>
+#include <ranges>
+#include <stdexcept>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+#include <vector>
+#include "video_core/buffer_cache/sparse_arena_window.h"
+#ifdef REAL_VULKAN_TYPES
+#define VK_NO_PROTOTYPES
+#define VULKAN_HPP_NO_CONSTRUCTORS
+#include <vulkan/vulkan.hpp>
+#else
+namespace vk {
+using DeviceAddress=std::uint64_t; using DeviceMemory=std::uint64_t;
+namespace MemoryAllocateFlagBits {constexpr unsigned eDeviceAddress=1;}
+namespace PipelineStageFlagBits2 {constexpr unsigned eAllCommands=1;}
+namespace AccessFlagBits2 {constexpr unsigned eMemoryRead=1,eMemoryWrite=2;}
+struct MemoryAllocateFlagsInfo {unsigned flags{};};
+struct MemoryAllocateInfo {const void* pNext{};std::uint64_t allocationSize{};unsigned memoryTypeIndex{};};
+struct SparseMemoryBind {std::uint64_t resourceOffset{},size{},memory{},memoryOffset{};};
+struct BufferCopy {std::uint64_t srcOffset{},dstOffset{},size{};};
+struct MemoryBarrier2 {unsigned srcStageMask{},srcAccessMask{},dstStageMask{},dstAccessMask{};};
+struct DependencyInfo {unsigned memoryBarrierCount{};const MemoryBarrier2* pMemoryBarriers{};};
+}
+#endif
+using u64=std::uint64_t;using u32=std::uint32_t;using u8=std::uint8_t;using VAddr=u64;
+static void Check(bool yes,const char* message){if(!yes){std::fprintf(stderr,"SPARSE_ARENA_TEST_FAIL=%s\n",message);std::exit(2);}}
+#define ASSERT_MSG(test,...) do{if(!(test))throw std::runtime_error("assertion: " #test);}while(false)
+#define ASSERT(test) ASSERT_MSG(test)
+template<class...T>void NoLog(T&&...){}
+#define LOG_INFO(category,...) NoLog(__VA_ARGS__)
+#define LOG_WARNING(category,...) NoLog(__VA_ARGS__)
+namespace Common {template<class T>T AlignDownPow2(T a,T n){return a&~(n-1);}}
+namespace boost::container {template<class T,std::size_t N>using small_vector=std::vector<T>;}
+namespace VideoCore {enum class MemoryType{Sparse,HostUncached};struct Buffer;}
+static vk::DeviceMemory MakeMemory(u64 n){
+#ifdef REAL_VULKAN_TYPES
+    return vk::DeviceMemory{reinterpret_cast<VkDeviceMemory>(static_cast<std::uintptr_t>(n))};
+#else
+    return n;
+#endif
+}
+namespace Vulkan {
+template<class T>T Check(T value){return value;}
+struct Device {
+ mutable u64 next{1};mutable std::vector<u64> allocations;
+ vk::DeviceMemory allocateMemory(const vk::MemoryAllocateInfo& info)const{
+  ::Check(info.allocationSize>0,"nonzero physical allocation");allocations.push_back(info.allocationSize);return MakeMemory(next++);
+ }
+};
+struct Instance {
+ u64 limit{0xfffffffcULL};bool aliased{true};bool bda{true};mutable Device device;
+ bool IsBufferDeviceAddressSupported()const{return bda;}
+ bool IsSparseResidencyAliasedSupported()const{return aliased;}
+ const Device& GetDevice()const{return device;}
+};
+struct Scheduler {
+ unsigned barriers{},end_rendering{};
+ void EndRendering(){++end_rendering;}
+ Scheduler& CommandBuffer(){return *this;}
+ void pipelineBarrier2(const vk::DependencyInfo& info){
+  ::Check(info.memoryBarrierCount==1&&info.pMemoryBarriers,"one alias memory barrier");
+  const auto& b=*info.pMemoryBarriers;
+  ::Check(b.srcStageMask==vk::PipelineStageFlagBits2::eAllCommands&&b.dstStageMask==b.srcStageMask,"all prior/next alias operations covered");
+  ::Check(b.srcAccessMask==(vk::AccessFlagBits2::eMemoryRead|vk::AccessFlagBits2::eMemoryWrite)&&b.dstAccessMask==b.srcAccessMask,"alias memory visibility");++barriers;
+ }
+};
+}
+namespace VideoCore {
+struct Buffer {
+ u64 cpu_addr{},size_bytes{},bda{};
+ Buffer(const Vulkan::Instance& instance,u64 address,u64 bytes,MemoryType)
+  :cpu_addr(address),size_bytes(bytes),bda(0x100000000000ULL+address*2){
+   if(bytes>instance.limit)throw std::runtime_error("VUID-VkBufferCreateInfo-size-06409");
+  }
+ u64 BufferDeviceAddress()const{return bda;}
+};
+struct Interval {u64 start{},end{};};
+template<class T=Interval>struct IntervalList {
+ std::vector<T> entries;
+ auto begin(){return entries.begin();}auto end(){return entries.end();}
+ auto begin()const{return entries.begin();}auto end()const{return entries.end();}
+ bool Empty()const{return entries.empty();}
+ void Add(T item){entries.push_back(item);std::ranges::sort(entries,{},&T::start);}
+ void ForEachGap(u64 start,u64 end,auto callback)const{
+  for(const auto& r:entries){if(r.end<=start)continue;if(r.start>=end)break;if(r.start>start)callback(start,std::min(r.start,end));start=std::max(start,r.end);if(start>=end)return;}if(start<end)callback(start,end);
+ }
+ void ForEachInRange(u64 start,u64 end,auto callback)const{for(const auto& r:entries)if(r.start<end&&start<r.end)callback(r);}
+};
+struct Staging {
+ std::vector<u64>* words{};Buffer* buffer{};u8* mapped{};u64 offset{};
+ void Flush()const{}
+};
+struct Pool {
+ Buffer buffer;std::vector<u64> words;
+ explicit Pool(const Vulkan::Instance& instance):buffer(instance,0,1,MemoryType::HostUncached){}
+ Staging Request(u64 bytes,MemoryType){words.assign(bytes/8,0);return{&words,&buffer,reinterpret_cast<u8*>(words.data()),0};}
+};
+struct Runtime {
+ Pool& pool;std::map<u64,u64> pagetable;
+ void CopyBuffer(Buffer*,Buffer*,const std::vector<vk::BufferCopy>& copies){for(auto c:copies)for(u64 i=0;i<c.size/8;++i)pagetable[c.dstOffset/8+i]=pool.words.at(c.srcOffset/8+i);}
+};
+struct BufferCache {
+ static constexpr u64 ADDRESS_SPACE_BITS=40,ARENA_PAGE_BITS=32,ARENA_PAGE_SIZE=u64{1}<<32,NUM_ARENA_PAGES=u64{1}<<8;
+ Vulkan::Instance instance;Vulkan::Scheduler scheduler;Pool staging_pool;Runtime runtime;
+ std::optional<Buffer> table;struct Ptr {Buffer* p{};Buffer* get()const{return p;}Ptr& operator=(Buffer* b){p=b;return *this;}} bda_pagetable_buffer;
+ struct ArenaBinds {const Buffer* arena;std::vector<vk::SparseMemoryBind> binds;};
+ /* EXACT_BACKING */
+ IntervalList<Backing> resident_ranges;
+ std::array<const Buffer*,NUM_ARENA_PAGES> address_space{};std::deque<Buffer> arenas;std::vector<ArenaBinds> pending_binds;
+ bool has_sparse_aliases{},fault_process_pending{};u64 max_buffer_size{};u32 arena_memory_type_index{},block_size{},block_shift{},blocks_per_arena_page{},blocks_per_arena_page_shift{};
+ struct Sync {const Buffer* arena;u64 address;u32 size;};std::vector<Sync> syncs;
+ explicit BufferCache(u64 limit=0xfffffffcULL,u32 shift=16,bool aliases=true)
+  :instance{.limit=limit,.aliased=aliases,.bda=true,.device={}},staging_pool(instance),runtime{staging_pool,{}},max_buffer_size(limit),block_size(u32{1}<<shift),block_shift(shift),blocks_per_arena_page(u32{1}<<(32-shift)),blocks_per_arena_page_shift(32-shift){table.emplace(instance,0,1,MemoryType::HostUncached);bda_pagetable_buffer=&*table;}
+ ArenaBinds* BindsForArena(const Buffer* b){for(auto& p:pending_binds)if(p.arena==b)return &p;pending_binds.push_back({b,{}});return &pending_binds.back();}
+ const Buffer* GetArena(u64 first,u64 last);
+ void BindBackingToArena(const Buffer*,const Backing&);
+ void SynchronizeSparseAliases();
+ void EnsureResident(const Buffer*,u64,u64);
+ void SynchronizeDmaBuffers();
+ bool SynchronizeMemory(const Buffer* b,u64 address,u32 size,bool,bool){::Check(b&&address>=b->cpu_addr&&address-b->cpu_addr+size<=b->size_bytes,"DMA upload uses containing original owner");syncs.push_back({b,address,size});return false;}
+};
+/* EXACT_METHODS */
+static std::pair<vk::DeviceMemory,u64> PhysicalAt(const BufferCache& c,const Buffer* arena,u64 address){
+ for(auto list=c.pending_binds.rbegin();list!=c.pending_binds.rend();++list)if(list->arena==arena)
+  for(auto b=list->binds.rbegin();b!=list->binds.rend();++b){const auto offset=address-arena->cpu_addr;if(offset>=b->resourceOffset&&offset-b->resourceOffset<b->size)return{b->memory,b->memoryOffset+offset-b->resourceOffset};}
+ throw std::runtime_error("unbound model address");
+}
+static void Audit(const BufferCache& c){
+ for(const auto& a:c.arenas)::Check(a.size_bytes<=c.max_buffer_size&&a.size_bytes%c.block_size==0&&a.cpu_addr%c.block_size==0,"every host view obeys limit/alignment");
+ for(const auto& list:c.pending_binds)for(const auto& b:list.binds){::Check(b.size&&b.resourceOffset<=list.arena->size_bytes&&b.size<=list.arena->size_bytes-b.resourceOffset,"binding fits view");::Check(b.resourceOffset%c.block_size==0&&b.size%c.block_size==0&&b.memoryOffset%c.block_size==0,"sparse bind alignment");}
+ for(const auto& r:c.resident_ranges.entries)for(u64 block=r.start;block<r.end;++block){
+  const u64 address=block<<c.block_shift;
+  const auto expected=std::pair{r.memory,(r.offset+block-r.start)<<c.block_shift};
+  for(const auto& a:c.arenas)if(SparseArena::Window{a.cpu_addr,a.size_bytes}.Contains(address,c.block_size))::Check(PhysicalAt(c,&a,address)==expected,"all aliases map identical existing and newly resident bytes");
+  ::Check(c.runtime.pagetable.at(block)==r.owner->BufferDeviceAddress()+address-r.owner->cpu_addr,"BDA pointer remains tied to stable original view");
+ }
+}
+}
+int main(int argc,char** argv){
+ using namespace VideoCore;constexpr u64 GiB=u64{1}<<30,space=u64{1}<<40;
+ const bool baseline=argc>1&&std::string_view(argv[1])=="--baseline";
+ if(baseline){
+  BufferCache c;bool reproduced=false;try{(void)c.GetArena(552964,553219);}catch(const std::runtime_error& e){reproduced=std::string_view(e.what())=="VUID-VkBufferCreateInfo-size-06409";}
+  Check(reproduced&&c.arenas.empty(),"old exact GetArena attempts illegal 4-GiB buffer");std::puts("BASELINE_SPARSE_06409=REPRODUCED requested=4294967296 limit=4294967292 NO_GPU_WORK");return 0;
+ }
+ unsigned scenarios=0;u64 range_cases=0;
+ for(u32 shift:{12u,14u,16u})for(u64 limit:{GiB-4,2*GiB,4*GiB-4,4*GiB,8*GiB,~u64{0}}){
+  const u64 block=u64{1}<<shift;
+  for(u64 address:{u64{0},block,4*GiB-block,4*GiB,4*GiB+block,space-block})
+   for(u64 bytes:{block,3*block,GiB}){
+    if(bytes>space-address)continue;
+    const auto p=SparseArena::Plan(address>>shift,(address+bytes-1)>>shift,shift,limit,space,4*GiB);
+    if(bytes>(std::min(limit,space)&~(block-1))){Check(!p,"unrepresentable request refused, not truncated");}
+    else{Check(p&&p->Contains(address,bytes)&&p->size<=limit&&p->address%block==0&&p->size%block==0&&p->address+p->size<=space,"range fully covered within host cap");}
+    ++range_cases;
+   }
+ }
+ for(u32 shift:{14u,16u}){
+  BufferCache c(4*GiB-4,shift);const u64 block=c.block_size;
+  const auto* a=c.GetArena(16,17);c.EnsureResident(a,16,17);Audit(c);
+  Check(c.scheduler.barriers==0,"no alias barrier before any alias");
+  const u64 boundary=4*GiB>>shift;
+  const auto* b=c.GetArena(boundary-2,boundary);Check(a!=b,"boundary gets another legal covering view");
+  c.EnsureResident(b,boundary-2,boundary);Audit(c);
+  Check(c.instance.device.allocations.size()==2,"existing backing not reallocated");
+  const auto* new_owner=c.GetArena(32,33);c.EnsureResident(new_owner,32,33);Audit(c);
+  Check(c.instance.device.allocations.size()==3,"only new holes allocated");
+  const auto* old=c.GetArena(0,0);Check(old==a,"hint that does not cover prefix is not trusted");c.EnsureResident(old,0,0);Audit(c);
+  c.SynchronizeDmaBuffers();Check(c.fault_process_pending&&c.syncs.size()==4,"all resident ownership ranges uploaded");
+  Check(c.scheduler.barriers>0,"overlapping memory identities synchronized");
+  const auto allocations=c.instance.device.allocations.size();c.EnsureResident(b,16,17);Check(c.instance.device.allocations.size()==allocations,"resident aliases reuse physical memory");
+  Check(block&&(a->size_bytes==4*GiB-block),"reported limit aligned down, guest span retained");++scenarios;
+ }
+ {
+  BufferCache c;const auto* a=c.GetArena(1,1);c.EnsureResident(a,1,1);
+  bool refused=false;try{(void)c.GetArena(0,(4*GiB>>16)-1);}catch(const std::runtime_error&){refused=true;}
+  Check(refused&&c.arenas.size()==1,"oversized aligned request rejected before VkBuffer creation");Audit(c);++scenarios;
+ }
+ {
+  BufferCache c(4*GiB-4,16,false);const auto* a=c.GetArena(1,1);c.EnsureResident(a,1,1);
+  bool refused=false;try{(void)c.GetArena((4*GiB>>16)-2,4*GiB>>16);}catch(const std::runtime_error&){refused=true;}
+  Check(refused&&c.arenas.size()==1,"unsupported alias capability rejected without replacing original mapping");Audit(c);++scenarios;
+ }
+ {
+  BufferCache c(8*GiB,16);const auto* a=c.GetArena(0,(5*GiB>>16)-1);
+  BufferCache::Backing r{{0,5*GiB>>16},MakeMemory(77),0,a};c.resident_ranges.Add(r);c.SynchronizeDmaBuffers();
+  Check(c.syncs.size()==2&&u64{c.syncs[0].size}+c.syncs[1].size==5*GiB,"DMA spans beyond u32 are split without truncating");++scenarios;
+ }
+ {
+  BufferCache c(8*GiB,16);const u64 last=4*GiB>>16;
+  const auto* a=c.GetArena(0,last);c.EnsureResident(a,0,last);
+  Check(c.instance.device.allocations.size()==1&&c.instance.device.allocations[0]==4*GiB+c.block_size,"physical allocation size cannot wrap at u32");
+  Check(c.runtime.pagetable.at(last)==a->BufferDeviceAddress()+4*GiB,"BDA upload covers block past four GiB without looping");
+  c.SynchronizeDmaBuffers();Check(c.syncs.size()==2,"large backing is uploaded in representable chunks");++scenarios;
+ }
+ {
+  BufferCache c;const auto* a=c.GetArena(1,1);const auto* b=c.GetArena((4*GiB>>16)-1,4*GiB>>16);
+  BufferCache::Backing one{{1,2},MakeMemory(1),4,a},two{{2,3},MakeMemory(1),5,b};
+  Check(!one.CanMergeWith(two),"different BDA owners cannot merge");auto split=one.SubRange(1,2);Check(split.owner==a&&split.offset==4,"split retains BDA owner");++scenarios;
+ }
+ Check(!SparseArena::Plan(2,1,16,4*GiB,space,4*GiB),"reversed range refused");
+ Check(!SparseArena::Plan(0,0,64,4*GiB,space,4*GiB),"overflowing shift refused");
+ Check(!SparseArena::Plan(space>>16,space>>16,16,4*GiB,space,4*GiB),"guest address overflow refused");
+ Check(!SparseArena::Plan(0,0,16,1,space,4*GiB),"limit below sparse block refused");
+ std::printf("SPARSE_HOST_LIMIT_AND_ALIAS_BACKING=PASS ranges=%llu scenarios=%u NO_GPU_WORK\n",static_cast<unsigned long long>(range_cases),scenarios);
+}
