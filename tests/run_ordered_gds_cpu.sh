@@ -22,6 +22,9 @@ FLAGS=(-std=c++23 -Wall -Wextra -Werror -pedantic -O2 -pthread -Isrc)
 
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_concurrency.cpp -o "$TMP/concurrency"
     "$TMP/concurrency"
+
+    "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_dispatch.cpp -o "$TMP/layout"
+    "$TMP/layout"
 )
 
 if [[ "${RUN_SANITIZERS:-0}" == "1" ]]; then
@@ -35,6 +38,8 @@ if [[ "${RUN_SANITIZERS:-0}" == "1" ]]; then
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-continuations"
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_concurrency.cpp -o "$TMP/san-concurrency"
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-concurrency"
+        "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_dispatch.cpp -o "$TMP/san-layout"
+        UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-layout"
     )
 fi
 echo "ORDERED_GDS_OFFLINE_REGRESSION=PASS GPU_EXECUTION=NOT_TESTED"
