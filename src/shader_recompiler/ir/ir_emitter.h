@@ -170,6 +170,10 @@ public:
 
     [[nodiscard]] U32 DataAppend(const U32& gds_dw_offset);
     [[nodiscard]] U32 DataConsume(const U32& gds_dw_offset);
+    // Explicitly preserve live M0, address data and EXEC for ordered GDS.
+    // No atomic fallback is legal without a verified guest wave scheduler.
+    [[nodiscard]] U32 OrderedGdsCount(const U32& m0, const U32& address,
+                                      const U32& encoded_control);
     [[nodiscard]] U32 LaneId();
     [[nodiscard]] U32 WarpId();
     [[nodiscard]] U32 QuadBroadcast(const U32& value, const U32& index);
