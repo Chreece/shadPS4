@@ -6,7 +6,7 @@ BASE="$PROJECT/tests/gds-pr117-native-20261029T164137Z-3996104"
 SRC="$BASE/source"
 BUILD="$BASE/build"
 BRANCH='feature/ordered-gds-wave-executor-20261029'
-MINIMUM_COMMIT='0a38e169ac97e401ccad13a1ef02ab2916313973'
+MINIMUM_COMMIT='a709d8d7cbfd52c1a51f58baf8798dcea5be6531'
 TAG="gds-pr117-preflight-native-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 LOG="$PROJECT/logs/$TAG"
 STAGE='PREFLIGHT'
@@ -82,6 +82,7 @@ for compiler in g++ clang++-17; do
     fi
     grep -Fq 'ORDERED_GDS_OFFLINE_REGRESSION=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_LOGICAL_CAPTURE_SLOTS=PASS' "$LOG/cpu-$name.log"
+    grep -Fq 'ORDERED_GDS_PHYSICAL_STORAGE_BOUNDS=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_MIXED_STATIC_SITES=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_GPU_PACKET_ROUNDTRIP=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_STATIC_FLOW=PASS' "$LOG/cpu-$name.log"
@@ -105,6 +106,12 @@ grep -Fq 'Ordered GDS decoded-ISA CFG:' \
 grep -Fq 'CaptureBypassFlags' \
     "$SRC/src/shader_recompiler/frontend/ordered_gds_capture_packet.h" ||
     { echo 'ORDERED_GDS_BYPASS_PACKETS_MISSING'; exit 12; }
+grep -Fq 'case IR::Opcode::OrderedGdsCount:' \
+    "$SRC/src/shader_recompiler/ir/passes/resource_pass.h" ||
+    { echo 'ORDERED_GDS_REAL_GDS_BUFFER_RESOURCE_NOT_DISCOVERED'; exit 12; }
+grep -Fq 'ValidatePhysicalGdsWrites(updates)' \
+    "$SRC/src/video_core/renderer_vulkan/vk_ordered_gds_transfer.h" ||
+    { echo 'ORDERED_GDS_PHYSICAL_WRITE_RANGE_GUARD_MISSING'; exit 12; }
 
 STAGE='BUILD_INCREMENTAL_NATIVE'
 if ! cmake --build "$BUILD" --parallel 6 > "$LOG/build.log" 2>&1; then
