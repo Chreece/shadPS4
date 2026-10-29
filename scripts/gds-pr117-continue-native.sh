@@ -87,6 +87,7 @@ for compiler in g++ clang++-17; do
     grep -Fq 'ORDERED_GDS_MIXED_STATIC_SITES=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_GPU_PACKET_ROUNDTRIP=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_CIK_CAPTURE_PAYLOAD=PASS' "$LOG/cpu-$name.log"
+    grep -Fq 'ORDERED_GDS_CIK_M0_GUEST_ORDER=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_STATIC_FLOW=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_SPARSE_WAVE_COVERAGE=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_GPU_SPARSE_PACKET=PASS' "$LOG/cpu-$name.log"
@@ -153,6 +154,10 @@ grep -Fq 'Vulkan::Rasterizer::SnapshotOrderedGdsDwords(' \
 grep -Fq 'Vulkan::Rasterizer::CommitOrderedGdsDwords(' \
     "$LOG/ordered-gds-transfer-symbols.txt" || {
     echo 'ORDERED_GDS_SELECTIVE_DEVICE_COUNTER_COMMIT_NOT_COMPILED'; exit 15;
+}
+grep -Fq 'Vulkan::Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(' \
+    "$LOG/ordered-gds-transfer-symbols.txt" || {
+    echo 'ORDERED_GDS_CIK_M0_PRODUCTION_BRIDGE_NOT_LINKED'; exit 15;
 }
 grep -Fq 'Vulkan::Rasterizer::ResolveVerifiedOrderedGdsEpoch(' \
     "$LOG/ordered-gds-transfer-symbols.txt" || {
