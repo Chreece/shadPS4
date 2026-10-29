@@ -576,3 +576,7 @@ GCC C++23 frontend, typed IR and source checks PASS: 99 complete-batch sequences
 
 PR branch gains an isolated GCC/Clang plus ASan/UBSan GitHub Actions validation workflow at commit 43796a969465ebd83e2e7a0610eca7ddabf75a6f (result not yet verified). No GPU execution, native game launch, or graphics recovery. Keep SPIR-V ordered-count backend gated; two-site guest-wave GPU capture and continuation are still absent. Decision: KEEP CPU reference; do NOT merge PR #117 as a gameplay fix.
 
+## 2026-10-29 — Correction: existing PR #117 CI workflow consolidated (gds-pr117-ci-consolidation-20261029)
+
+The previous trial record correctly described the missing local Clang executable, but incompletely described CI history: the PR branch already had a pull-request-only GCC/Clang test matrix. Consolidated validation into that original ordered-gds-cpu.yml (commit fd3252445b766c6f79d7941456dc4a50d77cb40d), adding branch-push coverage and an explicit C++23 compiler check; removed the temporary duplicate workflow in commit 2d9b1a01c6309ae8350b48bd902a5f44a20fbbb1. No CI success or emulator graphics change claimed. GPU backend remains gated.
+
