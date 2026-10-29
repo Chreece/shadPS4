@@ -23,7 +23,10 @@ int main(){
    assert(ex.gds&&ex.wave_done&&ex.wave_release&&ex.addr_register==9&&ex.destination_register==11);
    // Never confuse ordinary GDS APPEND/CONSUME EXEC count with ordered
    // ADD/EXCHANGE. The value must be resolved from the target guest ISA.
-   assert(RequireGuestOrderedPayload({0, std::nullopt})==0);
+   bool inactive_wave_rejected=false;
+   try { (void)RequireGuestOrderedPayload({0, std::nullopt}); }
+   catch (const std::invalid_argument&) { inactive_wave_rejected=true; }
+   assert(inactive_wave_rejected);
    assert(RequireGuestOrderedPayload({0x81, 17u})==17);
    assert(RequireGuestOrderedPayload({~u64{0}, 777u})==777);
    bool missing_guest_payload_rejected=false;
