@@ -197,8 +197,16 @@ grep -Fq 'GPU_TRANSFER_SMOKE=PASS' "$LOG/gpu-smoke-run.log" || {
     cat "$LOG/gpu-smoke-run.log"
     exit 17
 }
+grep -Fq 'gpu_popcount=2' "$LOG/gpu-writer-assemble.log" || {
+    echo 'GPU_SHADER_EXEC_POPCOUNT_OPCODE_MISSING'
+    exit 18
+}
 grep -Fq 'GPU_CAPTURE_COMPUTE_WRITER=PASS' "$LOG/gpu-smoke-run.log" || {
     cat "$LOG/gpu-smoke-run.log"
+    exit 18
+}
+grep -Fq 'gpu_cik_popcount=PASS forged_host_payload_ignored=PASS' "$LOG/gpu-smoke-run.log" || {
+    echo 'GPU_CIK_POPCOUNT_OR_PAYLOAD_INDEPENDENCE_NOT_VERIFIED'
     exit 18
 }
 grep -Fq 'cik_exec_popcount=PASS' "$LOG/gpu-smoke-run.log" || {
