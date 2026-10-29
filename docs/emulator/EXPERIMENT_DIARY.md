@@ -580,3 +580,6 @@ PR branch gains an isolated GCC/Clang plus ASan/UBSan GitHub Actions validation 
 
 The previous trial record correctly described the missing local Clang executable, but incompletely described CI history: the PR branch already had a pull-request-only GCC/Clang test matrix. Consolidated validation into that original ordered-gds-cpu.yml (commit fd3252445b766c6f79d7941456dc4a50d77cb40d), adding branch-push coverage and an explicit C++23 compiler check; removed the temporary duplicate workflow in commit 2d9b1a01c6309ae8350b48bd902a5f44a20fbbb1. No CI success or emulator graphics change claimed. GPU backend remains gated.
 
+## 2026-10-29 — gds-pr117-host-toolchain-runner-20261029
+
+Committed reproducible isolated one-paste local Clang bootstrap and dual-compiler GCC/Clang ASan/UBSan CPU regression runner at e8bfe7815bd7cea0d1da857f41073571d29b1657. Exact script SHA256 3032621fabcdbbe7ee9b690103e0072cab1331e3fb76c470d49; bash -n syntax PASS locally. Existing CI updated to check script syntax (343bee9b27663e7371078784a196037a4a588ccb); no workflow run or user's host run verified. No GPU or game execution. The required cross-wave two-site Vulkan continuation remains absent. Decision: KEEP tool only, do not merge as graphics fix.
