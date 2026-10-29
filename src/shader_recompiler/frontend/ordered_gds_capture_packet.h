@@ -199,10 +199,28 @@ inline void StageGpuCaptures(ContinuationHandoff& host, u32 epoch,
     }
     std::vector<CapturedWave> decoded;
     decoded.reserve(packets.size());
+    std::vector<bool> seen_slots(creation.Size(), false);
+    std::vector<u64> tokens;
+    tokens.reserve(packets.size());
     for (const auto& packet : packets) {
-        decoded.push_back(DecodeGpuCapture(packet, epoch, creation));
+        // Validate the entire GPU-produced set before touching the host
+        // collector: a repeated slot would otherwise conceal a missing wave.
+        const auto wave = DecodeGpuCapture(packet, epoch, creation);
+        if (seen_slots[packet.logical_slot]) {
+            throw std::invalid_argument("duplicate ordered GDS GPU capture slot");
+        }
+        seen_slots[packet.logical_slot] = true;
+        tokens.push_back(wave.continuation_token);
+        decoded.push_back(wave);
     }
-    for (auto& wave : decoded) {
+    if (std::find(seen_slots.begin(), seen_slots.end(), false) != seen_slots.end()) {
+        throw std::invalid_argument("incomplete ordered GDS GPU slot coverage");
+    }
+    std::sort(tokens.begin(), tokens.end());
+    if (std::adjacent_find(tokens.begin(), tokens.end()) != tokens.end()) {
+        throw std::invalid_argument("duplicate ordered GDS GPU continuation token");
+    }
+    for (const auto& wave : decoded) {
         host.Capture(epoch, wave);
     }
 }
