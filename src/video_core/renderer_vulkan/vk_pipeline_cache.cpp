@@ -10,6 +10,7 @@
 #include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
+#include "shader_recompiler/frontend/ordered_gds_control_flow.h"
 #include "shader_recompiler/frontend/ordered_gds_dispatch.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/recompiler.h"
@@ -631,10 +632,54 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     if (info.uses_ordered_gds) {
         // Capture *static* guest instruction identities before the intentional
         // SPIR-V backend gate. These PC offsets are not dynamic wave ordering.
-        u64 guest_pc{};
+        using Shader::Gcn::OrderedGds::FlowKind;
+        using Shader::Gcn::OrderedGds::FlowStep;
+        using Shader::Gcn::OrderedGds::SiteTopology;
+        std::vector<FlowStep> steps;
+        steps.reserve(ir_program.ins_list.size());
+        u32 guest_pc{};
         u32 sites{};
         for (const auto& inst : ir_program.ins_list) {
-            if (inst.opcode == Shader::Gcn::Opcode::DS_ORDERED_COUNT) {
+            FlowKind kind = FlowKind::Next;
+            switch (inst.opcode) {
+            case Shader::Gcn::Opcode::S_BRANCH:
+                kind = FlowKind::DirectBranch;
+                break;
+            case Shader::Gcn::Opcode::S_CBRANCH_SCC0:
+            case Shader::Gcn::Opcode::S_CBRANCH_SCC1:
+            case Shader::Gcn::Opcode::S_CBRANCH_VCCZ:
+            case Shader::Gcn::Opcode::S_CBRANCH_VCCNZ:
+            case Shader::Gcn::Opcode::S_CBRANCH_EXECZ:
+            case Shader::Gcn::Opcode::S_CBRANCH_EXECNZ:
+                kind = FlowKind::ConditionalBranch;
+                break;
+            case Shader::Gcn::Opcode::S_ENDPGM:
+                kind = FlowKind::EndProgram;
+                break;
+            case Shader::Gcn::Opcode::S_SETPC_B64:
+            case Shader::Gcn::Opcode::S_SWAPPC_B64:
+            case Shader::Gcn::Opcode::S_RFE_B64:
+            case Shader::Gcn::Opcode::S_CBRANCH_I_FORK:
+            case Shader::Gcn::Opcode::S_CBRANCH_G_FORK:
+            case Shader::Gcn::Opcode::S_CBRANCH_JOIN:
+            case Shader::Gcn::Opcode::S_CBRANCH_CDBGSYS:
+            case Shader::Gcn::Opcode::S_CBRANCH_CDBGUSER:
+            case Shader::Gcn::Opcode::S_CBRANCH_CDBGSYS_OR_USER:
+            case Shader::Gcn::Opcode::S_CBRANCH_CDBGSYS_AND_USER:
+            case Shader::Gcn::Opcode::S_SETHALT:
+            case Shader::Gcn::Opcode::S_SENDMSGHALT:
+            case Shader::Gcn::Opcode::S_TRAP:
+                kind = FlowKind::UnknownControlFlow;
+                break;
+            default:
+                break;
+            }
+            const bool ordered = inst.opcode == Shader::Gcn::Opcode::DS_ORDERED_COUNT;
+            const bool branches = kind == FlowKind::ConditionalBranch ||
+                                  kind == FlowKind::DirectBranch;
+            steps.push_back({guest_pc, inst.length, kind,
+                             branches ? inst.BranchTarget(guest_pc) : 0u, ordered});
+            if (ordered) {
                 ++sites;
                 const u32 control =
                     u32(inst.control.ds.offset0) | (u32(inst.control.ds.offset1) << 8u);
@@ -645,6 +690,28 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
             }
             guest_pc += inst.length;
         }
+        const auto flow = Shader::Gcn::OrderedGds::AnalyzeOrderedGdsFlow(steps);
+        const auto topology = [&]() -> const char* {
+            switch (flow.topology) {
+            case SiteTopology::NoSites: return "none";
+            case SiteTopology::OneSite: return "single-site";
+            case SiteTopology::MutuallyExclusivePaths: return "exclusive-paths";
+            case SiteTopology::BothSitesMayRun: return "potentially-sequential";
+            case SiteTopology::CyclicOrRepeatedSites: return "potentially-cyclic";
+            case SiteTopology::Indeterminate: return "unknown";
+            }
+            return "unknown";
+        }();
+        LOG_WARNING(Render_Recompiler,
+                    "Ordered GDS decoded-ISA CFG: topology={}, sites={}, "
+                    "site0-to-site1={}, site1-to-site0={}, may_bypass_all={}, "
+                    "unknown_control={}; this does not reveal runtime wave "
+                    "paths or actual guest wave creation order",
+                    topology, flow.ordered_site_pcs.size(),
+                    flow.branch_path_from_first_to_second,
+                    flow.branch_path_from_second_to_first,
+                    flow.may_bypass_all_sites,
+                    flow.has_unknown_or_invalid_control_flow);
         LOG_WARNING(Render_Recompiler,
                     "Ordered GDS static guest sites={} (per-wave site selection "
                     "requires capture; not one full wave batch per site)",
