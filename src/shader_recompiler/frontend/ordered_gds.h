@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -232,4 +233,84 @@ private:
     CompleteBatch executor_;
     bool resolved_{};
 };
+
+// Models multiple statically distinct ordered-count instruction sites in the
+// same guest shader. A wave can execute both an Exchange site and a later Add
+// site; treating the whole shader as *one* ordered update per created wave
+// would discard the second instruction. Each site is a full collect/resolve
+// phase, with the counter map carried into the next phase.
+//
+// This is a host reference scheduler only. A GPU backend must actually pause
+// and resume *all* waves at each ordered site, without a spinlock on unordered
+// Vulkan workgroups. Different dynamic executions of a site need separate phase
+// identities and must not be confused with static instruction addresses.
+class OrderedGdsPhases {
+public:
+    OrderedGdsPhases(u64 created_waves, std::vector<u32> site_sequence,
+                     std::map<CounterKey, u32> initialized_counters)
+        : created_waves_{created_waves}, sites_{std::move(site_sequence)},
+          counters_{std::move(initialized_counters)} {
+        if (created_waves_ == 0 || created_waves_ > 1'000'000ULL ||
+            sites_.empty() || sites_.size() > 4'096) {
+            throw std::invalid_argument("invalid guest ordered GDS dispatch dimensions");
+        }
+        current_collector_ =
+            std::make_unique<CompleteWaveCollector>(created_waves_, counters_);
+    }
+
+    // Phase and site must both match exactly. The dynamic phase index
+    // distinguishes repeated execution of one static DS_ORDERED_COUNT site.
+    void Submit(u32 phase_index, u32 site_id, Request request) {
+        if (phase_index != phase_ || phase_ >= sites_.size() ||
+            site_id != sites_[phase_]) {
+            throw std::invalid_argument("wrong ordered-count phase or guest instruction site");
+        }
+        current_collector_->Submit(request);
+    }
+
+    [[nodiscard]] bool CurrentPhaseComplete() const {
+        return phase_ < sites_.size() && current_collector_->Complete();
+    }
+
+    [[nodiscard]] bool AllPhasesComplete() const noexcept {
+        return phase_ == sites_.size();
+    }
+
+    [[nodiscard]] u32 PhaseIndex() const noexcept { return phase_; }
+    [[nodiscard]] u32 CurrentSiteId() const {
+        if (AllPhasesComplete()) {
+            throw std::invalid_argument("ordered GDS dispatch already finished");
+        }
+        return sites_[phase_];
+    }
+
+    // No state mutation if a wave is missing or a supplied counter is invalid.
+    // Once all waves reach this site, resolve and advance. A backend must
+    // synchronize wave continuation to the completed results of this phase.
+    std::vector<Result> ResolvePhase() {
+        if (AllPhasesComplete() || !current_collector_->Complete()) {
+            throw std::invalid_argument("ordered GDS phase not complete");
+        }
+        std::vector<Result> results = current_collector_->Resolve();
+        counters_ = current_collector_->Counters();
+        ++phase_;
+        if (!AllPhasesComplete()) {
+            current_collector_ =
+                std::make_unique<CompleteWaveCollector>(created_waves_, counters_);
+        } else {
+            current_collector_.reset();
+        }
+        return results;
+    }
+
+    const std::map<CounterKey, u32>& Counters() const noexcept { return counters_; }
+
+private:
+    u64 created_waves_;
+    std::vector<u32> sites_;
+    std::map<CounterKey, u32> counters_;
+    std::unique_ptr<CompleteWaveCollector> current_collector_;
+    u32 phase_{};
+};
+
 } // namespace Shader::Gcn::OrderedGds
