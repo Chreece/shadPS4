@@ -125,6 +125,7 @@ private:
     std::vector<vk::Image> images;
     std::vector<vk::ImageView> images_view;
     std::vector<vk::Semaphore> image_acquired;
+    std::vector<vk::Fence> image_acquired_fences;
     std::vector<vk::Semaphore> present_ready;
     u32 width = 0;
     u32 height = 0;
