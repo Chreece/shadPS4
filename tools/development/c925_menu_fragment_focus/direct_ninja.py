@@ -71,7 +71,7 @@ def parse(build: pathlib.Path, source: pathlib.Path, obj: pathlib.Path,
     for line in _commands(build, binary.resolve().relative_to(build.resolve()).as_posix()):
         # Ignore unrelated CMake codegen/custom commands in the executable DAG.
         # Only the final link may write this output; never execute those others.
-        if ' -o ' not in line or 'shadps4' not in line:
+        if not re.search(r'(?<!\S)-o\s+[\"\']?shadps4[\"\']?(?=\s|$)', line):
             continue
         args, cwd = _unwrap(line, build)
         if not _matches_output(args,cwd,binary):
