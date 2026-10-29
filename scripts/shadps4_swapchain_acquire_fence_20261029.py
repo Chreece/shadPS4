@@ -7,11 +7,16 @@ It is tested against exact extracted source methods and a modeled present engine
 Native Vulkan build and a validation-enabled gameplay trial are still required.
 """
 from __future__ import annotations
+import argparse
 import ast
+import datetime as dt
+import json
+import os
 import hashlib
 import importlib.util
 from pathlib import Path
 import re
+import sys
 import shlex
 import subprocess
 import types
@@ -77,6 +82,10 @@ def configured_worker(typed, validation, previous_raw):
     parent_script,parent_bytes=typed.pinned_helper('gow-auto-write-*.py',typed.PARENT_REF,
                                                   typed.PARENT_PATH,typed.PARENT_SHA)
     m=typed.load_worker(parent_bytes,validation)
+    # CRITICAL: the original typed-image worker identifies its __file__ as the
+    # *pinned typed-image script*. Re-entering it silently re-runs the previous
+    # experiment instead of this swapchain patch. Always preserve THIS launcher.
+    m.__file__=str(Path(__file__).resolve())
     m.LAST,m.LAST_ELF=LAST,LAST_ELF
     m.LAST_BIN=m.ROOT/'GodOfWarRagnarok/tests/gow-typed-image-20261029T094518Z-3015905/candidate/shadps4'
     m.PACKAGE,m.PATCH_PATH,m.TEST_PATH=PKG,PATCH_PATH,TEST_PATH
@@ -122,6 +131,17 @@ def configured_worker(typed, validation, previous_raw):
         env,layer=validation.prepare_layer(work,evidence)
         session['env']=env
         results['validation_layer']=layer
+        # Archive a canonical proof of which source was actually changed.
+        proof={'schema_version':2,
+               'experiment':'SWAPCHAIN_REACQUIRE_FENCE_NATIVE',
+               'runner_commit':PKG,
+               'source_parent':LAST,
+               'source_preimages':PREIMAGES,
+               'patch':PATCH_PATH,
+               'changed_production_paths':sorted(m.CHANGED),
+               'unchanged_cache_patch':'typed image correction retained in parent',
+               'Vulkan_validation':'core+sync enabled; GPU-assisted disabled'}
+        (evidence/'swapchain-runner-identity.json').write_text(json.dumps(proof,indent=2)+'\n')
         print('SWAPCHAIN_ACQUIRE_CPU_FIXTURE=PASS VALIDATION_LAYER_LOAD=PASS',flush=True)
     m.cpu_tests=cpu_tests
 
@@ -173,6 +193,15 @@ def configured_worker(typed, validation, previous_raw):
              'Vulkan vkValidationCore: true','Vulkan vkValidationSync: true'))
         return rc
     m.run_game=run_game
+    previous_append=m.append_diary
+    def append_diary(row):
+        row['record_type']='SWAPCHAIN_REACQUIRE_FENCE_NATIVE'
+        row['scope']='Per-reacquisition swapchain presentation-completion fence, no renderer shader changes'
+        row['source_parent']=LAST
+        row['tested_patch']=PATCH_PATH
+        row['patched_production_paths']=sorted(m.CHANGED)
+        previous_append(row)
+    m.append_diary=append_diary
     return m
 
 
@@ -190,7 +219,34 @@ def main():
         raise RuntimeError('VALIDATION_HELPER_IMPORT_FAILED')
     validation=importlib.util.module_from_spec(validation_spec)
     validation_spec.loader.exec_module(validation)
-    return configured_worker(typed,validation,raw).main()
+    return dispatch(configured_worker(typed,validation,raw))
+
+
+def dispatch(m):
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--worker')
+    args=parser.parse_args()
+    m.LOGS.mkdir(parents=True,exist_ok=True)
+    if args.worker:
+        m.require(re.fullmatch(r'gow-swapchain-fence-\d{8}T\d{6}Z-\d+',args.worker),
+                  'INVALID_SWAPCHAIN_WORKER_TAG')
+        print('SWAPCHAIN_WORKER_REENTRY=VERIFIED; PATCH='+PATCH_PATH,flush=True)
+        # Run the actual new source-pinned worker, not the older typed-image main.
+        return m.worker(args.worker)
+    tag=('gow-swapchain-fence-'+dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+         +'-'+str(os.getpid()))
+    log=m.LOGS/(tag+'.log')
+    with log.open('xb') as output:
+        child=subprocess.Popen([sys.executable,'-u',str(Path(__file__).resolve()),'--worker',tag],
+             stdin=subprocess.DEVNULL,stdout=output,stderr=subprocess.STDOUT,
+             start_new_session=True)
+    print('WORKER_PID='+str(child.pid))
+    print('ACTUAL_EXPERIMENT=SWAPCHAIN_REACQUIRE_FENCE_NATIVE')
+    print('EXPECTED_PATCH_PATHS='+','.join(sorted(m.CHANGED)))
+    print('MONITOR=tail -F '+shlex.quote(str(log)))
+    print('UPLOAD_THIS='+str(m.LOGS/(tag+'.tar.gz')))
+    print('SSH_SESSION=OPEN')
+    return 0
 
 
 if __name__=='__main__':
