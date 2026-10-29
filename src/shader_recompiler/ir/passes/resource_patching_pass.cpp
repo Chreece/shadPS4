@@ -448,15 +448,9 @@ void PatchGlobalDataShareAccess(IR::Inst& inst, Info& info, Descriptors& descrip
         .is_written = true,
     });
 
-    if (inst.GetOpcode() == IR::Opcode::OrderedGdsCount) {
-        // Bind the real 64 KiB guest GDS storage even when this compute
-        // shader uses only ordered-count operations. The host must preserve
-        // initialized counters across dispatches, not invent zeros.
-        // The opcode is deliberately NOT transformed to BufferAtomic:
-        // Vulkan workgroup scheduling cannot supply guest wave order.
-        // Its SPIR-V emission remains gated until capture/resume is proven.
-        return;
-    }
+    // Only ordinary GDS accesses are patched to the 64 KiB memory buffer.
+    // CIK's DS_ORDERED_COUNT uses dedicated ordered-count packer state.
+    // It stays separate in IR and is not an instruction patched here.
 
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
 
