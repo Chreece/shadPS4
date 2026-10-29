@@ -108,7 +108,7 @@ def patch(src):
             ImageId source{};
             ForEachImageInRegion(view.info.guest_address, 1,
                                  [&](ImageId cid, Image& cached) {
-                if (source || cid == image_id || cached.backing == view.backing ||
+                if (cid == image_id || cached.backing == view.backing ||
                     cached.info.guest_address != view.info.guest_address ||
                     cached.info.guest_size <= view.info.guest_size ||
                     cached.info.type != view.info.type ||
@@ -125,7 +125,10 @@ def patch(src):
                     True(cached.flags & ImageFlagBits::Dirty)) {
                     return;
                 }
-                source = cid;
+                if (!source || cached.tick_accessed_last >
+                    slot_images[source].tick_accessed_last) {
+                    source = cid;
+                }
             });
             if (source) {
                 auto& container = slot_images[source];
