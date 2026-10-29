@@ -638,10 +638,12 @@ U32 IREmitter::DataConsume(const U32& gds_dw_offset) {
 }
 
 U32 IREmitter::OrderedGdsCount(const U32& m0, const U32& address,
-                              const U32& encoded_control, const U32& site_pc) {
+                              const U64& guest_exec_mask, const U32& encoded_control,
+                              const U32& site_pc) {
     // A GDS ordered operation observes wave creation order. Do not silently
     // lower to a regular buffer atomic that has no such ordering guarantee.
-    return Inst<U32>(Opcode::OrderedGdsCount, m0, address, GetExec(), encoded_control, site_pc);
+    return Inst<U32>(Opcode::OrderedGdsCount, m0, address, guest_exec_mask, encoded_control,
+                     site_pc);
 }
 
 

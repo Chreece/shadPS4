@@ -487,7 +487,7 @@ Id EmitGroupAny(EmitContext& ctx, Id bit);
 Id EmitDataAppend(EmitContext& ctx, Id gds_dw_offset, Id exec);
 Id EmitDataConsume(EmitContext& ctx, Id gds_dw_offset, Id exec);
 // Runtime wave creation ordering must be implemented before this can execute.
-Id EmitOrderedGdsCount(EmitContext& ctx, Id runtime_m0, Id address, Id exec,
+Id EmitOrderedGdsCount(EmitContext& ctx, Id runtime_m0, Id address, Id guest_exec_mask,
                        u32 encoded_control, u32 site_pc);
 
 void EmitEmitVertex(EmitContext& ctx);

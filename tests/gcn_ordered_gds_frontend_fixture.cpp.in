@@ -11,23 +11,27 @@ using u32 = std::uint32_t;
 namespace IR {
 struct U32 { u32 value; };
 struct U1 { bool value; };
+struct U64 { std::uint64_t value; };
 enum class Opcode { OrderedGdsCount };
 struct IREmitter {
     u32 current_m0{};
     bool exec{};
-    struct Call { Opcode opcode; u32 m0; u32 address; bool active; u32 control; u32 site_pc; };
+    std::uint64_t wave_mask{};
+    struct Call { Opcode opcode; u32 m0; u32 address; std::uint64_t exec_mask; u32 control; u32 site_pc; };
     Call recorded{};
     unsigned count{};
     U32 GetM0() const { return {current_m0}; }
     U1 GetExec() const { return {exec}; }
+    U64 Ballot(const U1& predicate) const { return {predicate.value ? wave_mask : 0ULL}; }
     U32 Imm32(u32 v) const { return {v}; }
     template<class R> R Inst(Opcode opcode,const U32& m0,const U32& addr,
-                              const U1& active,const U32& control,const U32& site_pc) {
-        recorded={opcode,m0.value,addr.value,active.value,control.value,site_pc.value};
+                              const U64& guest_exec_mask,const U32& control,const U32& site_pc) {
+        recorded={opcode,m0.value,addr.value,guest_exec_mask.value,control.value,site_pc.value};
         count++;
         return R{0x1234abcd}; // Only a test sentinel, NOT a guest counter.
     }
-    U32 OrderedGdsCount(const U32& m0, const U32& address, const U32& encoded_control, const U32& site_pc);
+    U32 OrderedGdsCount(const U32& m0, const U32& address, const U64& guest_exec_mask, const U32& encoded_control,
+                        const U32& site_pc);
 };
 }
 struct Operand { u32 code; };
@@ -56,24 +60,26 @@ int main() {
     Translator t;
     t.ir.current_m0=0x12340567u;
     t.ir.exec=true;
+    t.ir.wave_mask=0x8000000000000080ULL;
     t.source_value=0x87654321u;
     GcnInst inst{{{4u,0x13u,true}},{{9},{0},{0}},{{11}},8u};
     t.DS_ORDERED_COUNT(inst);
     assert(t.info.uses_ordered_gds && t.ir.count==1);
     assert(t.ir.recorded.opcode==IR::Opcode::OrderedGdsCount);
     assert(t.ir.recorded.m0==0x12340567u && t.ir.recorded.address==0x87654321u);
-    assert(t.ir.recorded.active && t.ir.recorded.control==0x1304u);
+    assert(t.ir.recorded.exec_mask==0x8000000000000080ULL && t.ir.recorded.control==0x1304u);
     assert(t.ir.recorded.site_pc==0x4158u);
     assert(t.written_reg==11 && t.written_value==0x1234abcdu);
     // The second ordered instruction must preserve distinct Add and new M0/EXEC.
     t.pc=0x41dcu;
     t.ir.current_m0=0x88aa0812u;
     t.ir.exec=false;
+    t.ir.wave_mask=0;
     inst.control.ds.offset1=0x03u;
     t.DS_ORDERED_COUNT(inst);
     assert(t.ir.count==2 && t.ir.recorded.control==0x0304u);
     assert(t.ir.recorded.site_pc==0x41d4u);
-    assert(!t.ir.recorded.active && t.ir.recorded.m0==0x88aa0812u);
+    assert(t.ir.recorded.exec_mask==0 && t.ir.recorded.m0==0x88aa0812u);
     bool rejected=false;
     inst.control.ds.gds=false;
     try {t.DS_ORDERED_COUNT(inst);} catch(const std::invalid_argument&) {rejected=true;}

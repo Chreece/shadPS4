@@ -359,8 +359,11 @@ void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
     // pc already advanced by inst.length: preserve the static guest site
     // separately from the dynamic execution epoch (e.g. repeated loops).
     const IR::U32 site_pc = ir.Imm32(pc - inst.length);
+    // The full 64-bit guest EXEC mask is needed to select the first valid
+    // lane for the GDS payload; a U1 cannot identify that lane.
+    const IR::U64 exec_mask = ir.Ballot(ir.GetExec());
     const IR::U32 old_value =
-        ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), control, site_pc);
+        ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), exec_mask, control, site_pc);
     SetDst(inst.dst[0], old_value);
 }
 

@@ -171,7 +171,8 @@ public:
     [[nodiscard]] U32 DataAppend(const U32& gds_dw_offset);
     [[nodiscard]] U32 DataConsume(const U32& gds_dw_offset);
     [[nodiscard]] U32 OrderedGdsCount(const U32& m0, const U32& address,
-                                      const U32& encoded_control, const U32& site_pc);
+                                      const U64& guest_exec_mask, const U32& encoded_control,
+                                      const U32& site_pc);
     [[nodiscard]] U32 LaneId();
     [[nodiscard]] U32 WarpId();
     [[nodiscard]] U32 QuadBroadcast(const U32& value, const U32& index);
