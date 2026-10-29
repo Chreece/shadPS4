@@ -84,7 +84,6 @@ bool Inst::MayHaveSideEffects() const noexcept {
     case Opcode::WriteSharedU16:
     case Opcode::WriteSharedU32:
     case Opcode::WriteSharedU64:
-    case Opcode::OrderedGdsCount: // Counter changes even if the returned value is unused.
     case Opcode::SharedAtomicIAdd32:
     case Opcode::SharedAtomicISub32:
     case Opcode::SharedAtomicSMin32:
