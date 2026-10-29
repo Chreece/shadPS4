@@ -48,10 +48,10 @@ int main() {
     const auto order = VerifiedGuestCreationOrder::FromScheduler(ranks);
     assert(order);
 
-    const auto w0 = Ordered(1, sites[0], 0x1300, 7, u64{1} << 63, 1000);
-    const auto w1 = Ordered(3, sites[1], 0x0300, 3, 1, 1001);
+    const auto w0 = Ordered(1, sites[0], 0x1300, 1, u64{1} << 63, 1000);
+    const auto w1 = Ordered(3, sites[1], 0x0300, 1, 1, 1001);
     const auto w2 = Completed(0);
-    const auto w3 = Ordered(2, sites[1], 0x0300, 5, u64{1} << 7, 1003);
+    const auto w3 = Ordered(2, sites[1], 0x0300, 2, (u64{1} << 7) | (u64{1} << 63), 1003);
 
     auto bad = w2;
     bad.payload = 2;
@@ -75,6 +75,10 @@ int main() {
     assert(Reject([&]{ StageGpuCaptures(host,0,duplicates,*order); }));
     assert(host.Empty());
     duplicates = packets;
+    duplicates[0].payload = 5; // A forged ADDR value cannot drive a CIK packer.
+    assert(Reject([&]{ StageGpuCaptures(host,0,duplicates,*order); }));
+    assert(host.Empty());
+    duplicates = packets;
     duplicates[3].site_pc = 0xdead;
     assert(Reject([&]{ StageGpuCaptures(host,0,duplicates,*order); }));
     assert(host.Empty());
@@ -85,17 +89,17 @@ int main() {
     assert(host.CounterSnapshot().at({0x20,0}) == 100);
     const auto resumes = ResolveGpuCaptures(host,0,*order);
     assert(resumes.size()==4);
-    assert(host.CounterSnapshot().at({0x20,0}) == 15);
+    assert(host.CounterSnapshot().at({0x20,0}) == 4);
     assert(resumes[0].tag == ResumePacketTag &&
            resumes[0].flags == 0 &&
            resumes[0].site_pc == NoActiveLane &&
            resumes[0].token_lo == 0 && resumes[0].token_hi == 0);
     assert(resumes[1].flags == ResumeFlags && resumes[1].previous == 100 &&
-           resumes[1].current == 7 && resumes[1].site_pc == sites[0]);
-    assert(resumes[3].flags == ResumeFlags && resumes[3].previous == 7 &&
-           resumes[3].current == 10 && resumes[3].site_pc == sites[1]);
-    assert(resumes[2].flags == ResumeFlags && resumes[2].previous == 10 &&
-           resumes[2].current == 15 && resumes[2].site_pc == sites[1]);
+           resumes[1].current == 1 && resumes[1].site_pc == sites[0]);
+    assert(resumes[3].flags == ResumeFlags && resumes[3].previous == 1 &&
+           resumes[3].current == 2 && resumes[3].site_pc == sites[1]);
+    assert(resumes[2].flags == ResumeFlags && resumes[2].previous == 2 &&
+           resumes[2].current == 4 && resumes[2].site_pc == sites[1]);
     assert(Reject([&]{ (void)host.Resolve(); }));
 
     const std::array<u64,2> all_ranks{1,0};
@@ -111,5 +115,5 @@ int main() {
     std::cout << "ORDERED_GDS_GPU_SPARSE_PACKET=PASS waves=4 "
                  "ordered=3 completed_without_gds=1 no_fake_exchange=1 "
                  "duplicate_slot_and_token_reject=1 no_resume_for_completed=1 "
-                 "all_completed_without_counter=1 NO_GPU_WORK\n";
+                 "all_completed_without_counter=1 cik_exec_popcount=PASS NO_GPU_WORK\n";
 }
