@@ -1,0 +1,31 @@
+{
+  "record_id": "got-gbuffer-handoff-20261029T210654Z-preflight",
+  "schema_version": 2,
+  "timestamp_utc": "2026-10-29T21:06:54Z",
+  "game": "Ghost of Tsushima CUSA11456",
+  "scope": "UNIVERSAL_SHADPS4",
+  "experiment": "G-buffer producer-to-fragment sampled-image provenance diagnostic",
+  "result": "FAILED_BEFORE_BUILD",
+  "error": "EXISTING_UNORDERED_MAP_INCLUDE_CHANGED",
+  "root_cause": "Preflight incorrectly demanded exact #include <unordered_map> in the user C925 rasterizer; source captured in prior fragment-draw archive has #include <algorithm>, <atomic>, <utility>, <vector>, <limits>, no unordered_map. The diagnostic only needs unordered_set and bit, which should be included independently.",
+  "build": "NOT_RUN",
+  "test": "NOT_RUN",
+  "graphics": "UNTESTED",
+  "source_modified": false,
+  "object_modified": false,
+  "elf_modified": false,
+  "ssh_session": "OPEN",
+  "corrected_candidate": {
+    "commit": "14848341780cab81c147337b8c9f2674c5359a1b",
+    "git_blob_sha1": "7818891e2e8009f05c3b0efcd2d4b7b524c27e11",
+    "path": "tools/development/c925_gbuffer_handoff/run.py",
+    "changes": "Inject <unordered_set> and <bit> before namespace if absent; protect fragment stage from null dereference; test fixture without unordered_map."
+  },
+  "static_validation": {
+    "public_retain_C925_anchors": "unique producer section and indexed/unindexed descriptor bind anchors in got/proven-progress-20261026",
+    "user_captured_header": "no unordered_map",
+    "include_fixture": "PASS",
+    "native_compile": "NOT_RUN"
+  },
+  "disposition": "KEEP_ALL_PREVIOUS_CORRECTNESS_FIXES_AND_PROVEN_BASELINE; RETRY_TARGETED_PROVENANCE_DIAGNOSTIC_ONLY; NEVER_CLAIM_VISUAL_IMPROVEMENT"
+}
