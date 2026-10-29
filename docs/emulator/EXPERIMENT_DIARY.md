@@ -583,3 +583,7 @@ The previous trial record correctly described the missing local Clang executable
 ## 2026-10-29 — gds-pr117-host-toolchain-runner-20261029
 
 Committed reproducible isolated one-paste local Clang bootstrap and dual-compiler GCC/Clang ASan/UBSan CPU regression runner at e8bfe7815bd7cea0d1da857f41073571d29b1657. Exact script SHA256 3032621fabcdbbe7ee9b690103e0072cab1331e3fb76c470d49; bash -n syntax PASS locally. Existing CI updated to check script syntax (343bee9b27663e7371078784a196037a4a588ccb); no workflow run or user's host run verified. No GPU or game execution. The required cross-wave two-site Vulkan continuation remains absent. Decision: KEEP tool only, do not merge as graphics fix.
+
+## 2026-10-29 — PR #117 bootstrap checksum correction (gds-pr117-bootstrap-checksum-correction-20261029)
+
+A checksum emitted in an earlier assistant-provided Bash wrapper was malformed (52 hex digits) and `sha256sum -c` refused to parse it. No CPU test, GPU or game launched, and no emulator source mutated by that command. Verified the exact pinned script blob `3d05bd94d18bcee747ea98cecfe071df85aa363d` and recalculated its SHA256: `3032621fabcdbbe7ee9b690103e0072cab3fb9d9162eeab1331e3fb76c470d49` (64 digits; independent known-vector check for hashing implementation). Issued corrected one-paste to run the same isolated runner, with syntax check before execution. This corrects the earlier record's wrong script_sha256; previous record remains intact for audit. **Decision: fix the verification wrapper only, keep GPU execution gated.**
