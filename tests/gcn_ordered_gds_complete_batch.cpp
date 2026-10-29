@@ -43,6 +43,8 @@ int main(){
       assert(Bad(c,noGds,n)&&c.Counters().at({0x1234,0})==expected);
       auto badDone=requests;badDone[0].instruction.wave_release=false;
       assert(Bad(c,badDone,n)&&c.Counters().at({0x1234,0})==expected);
+      auto incomplete=requests;incomplete[0].instruction.wave_done=false;
+      assert(Bad(c,incomplete,n)&&c.Counters().at({0x1234,0})==expected);
    }
    CompleteBatch distinct({{{0x10,0},5},{{0x20,0},50}});
    auto result=distinct.Apply(std::array<Request,2>{{{1,0x20u<<16,17,ex},{0,0x10u<<16,9,add}}},2);
