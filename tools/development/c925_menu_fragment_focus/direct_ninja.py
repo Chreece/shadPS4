@@ -51,6 +51,11 @@ def parse(build: pathlib.Path, source: pathlib.Path, obj: pathlib.Path,
     rel_obj = obj.resolve().relative_to(build.resolve()).as_posix()
     compiles=[]
     for line in _commands(build, rel_obj):
+        # ``-t commands`` emits every prerequisite command, including generated
+        # header steps with complex shell syntax that are not to be executed.
+        # Inspect only commands referring to our exact output object.
+        if ' -o ' not in line or rel_obj not in line:
+            continue
         args, cwd = _unwrap(line, build)
         if not _matches_output(args, cwd, obj) or args.count('-c') != 1:
             continue
@@ -64,6 +69,10 @@ def parse(build: pathlib.Path, source: pathlib.Path, obj: pathlib.Path,
         raise RuntimeError('EXACT_OBJECT_COMPILE_COMMAND_NOT_UNIQUE_'+str(len(compiles)))
     links=[]
     for line in _commands(build, binary.resolve().relative_to(build.resolve()).as_posix()):
+        # Ignore unrelated CMake codegen/custom commands in the executable DAG.
+        # Only the final link may write this output; never execute those others.
+        if ' -o ' not in line or 'shadps4' not in line:
+            continue
         args, cwd = _unwrap(line, build)
         if not _matches_output(args,cwd,binary):
             continue
