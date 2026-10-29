@@ -35,7 +35,7 @@ finish() {
 }
 trap finish EXIT
 
-for tool in git cmake ninja python3 g++ clang++-17 tar sha256sum timeout; do
+for tool in git cmake ninja python3 g++ clang++-17 tar sha256sum timeout nm; do
     command -v "$tool" >/dev/null 2>&1 ||
         { printf 'MISSING_TOOL=%s\n' "$tool"; exit 2; }
 done
@@ -115,6 +115,19 @@ fi
     { echo 'ISOLATED_NATIVE_ELF_MISSING'; exit 14; }
 printf 'BUILD_WARNING_LINES=%s\n' "$(grep -c 'warning:' "$LOG/build.log" || true)" \
     > "$LOG/build-warning-count.txt"
+STAGE='VERIFY_NATIVE_TRANSFER_METHODS_LINKED'
+RASTER_OBJECT="$BUILD/CMakeFiles/shadps4.dir/src/video_core/renderer_vulkan/vk_rasterizer.cpp.o"
+[[ -s "$RASTER_OBJECT" ]] || { echo 'NATIVE_RASTERIZER_OBJECT_MISSING'; exit 15; }
+nm -C "$RASTER_OBJECT" > "$LOG/ordered-gds-transfer-symbols.txt"
+grep -Fq 'Vulkan::Rasterizer::DownloadOrderedGdsPackets(' \
+    "$LOG/ordered-gds-transfer-symbols.txt" || {
+    echo 'ORDERED_GDS_GPU_DOWNLOAD_NOT_COMPILED'; exit 15;
+}
+grep -Fq 'Vulkan::Rasterizer::UploadOrderedGdsPackets(' \
+    "$LOG/ordered-gds-transfer-symbols.txt" || {
+    echo 'ORDERED_GDS_GPU_UPLOAD_NOT_COMPILED'; exit 15;
+}
+
 STAGE='HEADLESS_GPU_TRANSFER_SMOKE_COMPILE'
 # Compile a separate tiny Vulkan C-API test, not the game/emulator runtime.
 # No surface, X11/Wayland changes, host display, game saves or GPU spinlocks.
