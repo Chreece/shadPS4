@@ -222,7 +222,11 @@ public:
         return results;
     }
 
-    const std::map<CounterKey, u32>& Counters() const noexcept {
+    // A reference would escape the collector lock: Resolve() can replace
+    // this map concurrently, invalidating iterators and racing with readers.
+    // Export a stable snapshot under the same mutex as Submit()/Resolve().
+    [[nodiscard]] std::map<CounterKey, u32> Counters() const {
+        std::scoped_lock lock{mutex_};
         return executor_.Counters();
     }
 
