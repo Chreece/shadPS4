@@ -133,6 +133,9 @@ struct Info : InfoPersistent {
     bool uses_shared_int64_atomics{};
     // Ordered GDS requires guest wave creation order, not an ordinary Vulkan atomic.
     bool uses_ordered_gds{};
+    // Static guest byte PCs discovered by real translation. An individual
+    // wave may execute only one of these sites; do not infer phase coverage.
+    std::vector<u32> ordered_gds_site_pcs;
     bool stores_tess_level_outer{};
     bool stores_tess_level_inner{};
     bool translation_failed{};
