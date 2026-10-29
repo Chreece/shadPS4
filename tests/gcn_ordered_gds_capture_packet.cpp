@@ -29,15 +29,19 @@ int main(){
     assert(Reject([&]{(void)verified->RankForSlot(4);}));
 
     auto w2=Make(0,sites[0],0x1300,0,0,0x100000003ULL); // rank2 inactive exchange
-    auto w0=Make(1,sites[0],0x1300,7,u64(1)<<63,0x100000001ULL); // rank0 exchange
-    auto w3=Make(2,sites[1],0x0300,5,u64(1)<<7,0x100000004ULL); // rank3 add
-    auto w1=Make(3,sites[1],0x0300,3,1,0x100000002ULL); // rank1 add
+    auto w0=Make(1,sites[0],0x1300,1,u64(1)<<63,0x100000001ULL); // rank0 CIK exchange
+    auto w3=Make(2,sites[1],0x0300,2,(u64(1)<<7)|(u64(1)<<63),0x100000004ULL); // rank3 CIK add: 2 active lanes
+    auto w1=Make(3,sites[1],0x0300,1,1,0x100000002ULL); // rank1 CIK add
     const auto decoded=DecodeGpuCapture(w0,0,*verified);
     assert(decoded.request.creation_sequence==0);
     assert(decoded.request.instruction.operation==Operation::Exchange);
-    assert(decoded.request.has_valid_lane);
+    assert(decoded.request.has_valid_lane && decoded.request.payload==1);
     assert(decoded.site_pc==sites[0]);
     auto bad=w0; bad.source_lane=0;
+    assert(Reject([&]{(void)DecodeGpuCapture(bad,0,*verified);}));
+    bad=w0;bad.payload=7; // RDNA-style ADDR must not be accepted as CIK increment.
+    assert(Reject([&]{(void)DecodeGpuCapture(bad,0,*verified);}));
+    bad=w3;bad.payload=1; // Two guest EXEC lanes require increment 2.
     assert(Reject([&]{(void)DecodeGpuCapture(bad,0,*verified);}));
     bad=w2;bad.payload=1;
     assert(Reject([&]{(void)DecodeGpuCapture(bad,0,*verified);}));
@@ -70,11 +74,11 @@ int main(){
     assert(host.CapturedAll(0));
     auto resume=ResolveGpuCaptures(host,0,*verified);
     assert(resume.size()==4);
-    assert(host.CounterSnapshot().at({0x20,0})==15);
-    assert(resume[1].previous==100 && resume[1].current==7); // rank0
-    assert(resume[3].previous==7 && resume[3].current==10); // rank1
-    assert(resume[0].previous==10 && resume[0].current==10); // inactive rank2
-    assert(resume[2].previous==10 && resume[2].current==15); // rank3
+    assert(host.CounterSnapshot().at({0x20,0})==4);
+    assert(resume[1].previous==100 && resume[1].current==1); // rank0
+    assert(resume[3].previous==1 && resume[3].current==2); // rank1
+    assert(resume[0].previous==2 && resume[0].current==2); // inactive rank2
+    assert(resume[2].previous==2 && resume[2].current==4); // rank3
     for(const auto& p:resume){
         assert(p.tag==ResumePacketTag && p.flags==ResumeFlags);
         assert(p.site_pc==sites[p.logical_slot==0||p.logical_slot==1?0:1]);
@@ -87,12 +91,13 @@ int main(){
     auto single=VerifiedGuestCreationOrder::FromScheduler(single_rank);
     assert(single);
     host.BeginEpoch(1,1,sites);
-    auto repeated=Make(0,sites[1],0x0300,2,1,5);
+    auto repeated=Make(0,sites[1],0x0300,1,1,5);
     repeated.epoch=1;
     host.Capture(1,DecodeGpuCapture(repeated,1,*single));
     auto second=ResolveGpuCaptures(host,1,*single);
-    assert(second.size()==1 && second[0].previous==15 && second[0].current==17);
+    assert(second.size()==1 && second[0].previous==4 && second[0].current==5);
     (void)host.ResumeCaptured(1,5);
+    std::cout<<"ORDERED_GDS_CIK_CAPTURE_PAYLOAD=PASS exec_popcount_0_1_2=PASS spoofed_first_lane_addr_rejected=1 epoch_repeat=1\n";
     std::cout<<"ORDERED_GDS_GPU_PACKET_ROUNDTRIP=PASS mixed_sites=2 waves=4 "
                "capture_order=permuted return_slots=correct inactive_exchange=preserved "
                "epoch_repeat=1 no_vulkan_execution=1\n";
