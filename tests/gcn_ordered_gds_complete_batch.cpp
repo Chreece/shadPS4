@@ -71,6 +71,37 @@ int main(){
    auto aliased=base_alias.Apply(std::array<Request,1>{{{0,0x1013u<<16,5,add}}},1);
    assert(aliased[0].previous==8 && aliased[0].current==13);
    assert(base_alias.Counters().size()==1 && base_alias.Counters().at({0x1010,0})==13);
+   // A collector takes out-of-order wave events without a busy-wait, then
+   // performs exactly one complete resolution. Missing waves never mutate GDS.
+   for(unsigned wave_total=1;wave_total<=99;wave_total++){
+      CompleteWaveCollector collector(wave_total,{{{0x20,0},7}});
+      assert(!collector.Complete());
+      unsigned expected_value=7;
+      for(unsigned i=0;i<wave_total;i++){
+          auto payload=i+2;
+          auto instruction=i%4==0?ex:add;
+          expected_value=instruction.operation==Operation::Exchange?payload:expected_value+payload;
+      }
+      for(unsigned i=wave_total;i-- >0;){
+          collector.Submit({i,0x20u<<16,i+2,i%4==0?ex:add});
+      }
+      assert(collector.Complete());
+      const auto result=collector.Resolve();
+      assert(result.size()==wave_total && result.back().current==expected_value);
+      assert(collector.Counters().at({0x20,0})==expected_value);
+      bool second_rejected=false;
+      try { (void)collector.Resolve(); } catch(const std::invalid_argument&) {second_rejected=true;}
+      assert(second_rejected);
+   }
+   CompleteWaveCollector incomplete_collector(2,{{{0x10,0},9}});
+   incomplete_collector.Submit({1,0x10u<<16,100,ex});
+   assert(!incomplete_collector.Complete());
+   bool premature_rejected=false;
+   try{(void)incomplete_collector.Resolve();}catch(const std::invalid_argument&){premature_rejected=true;}
+   assert(premature_rejected && incomplete_collector.Counters().at({0x10,0})==9);
+   bool duplicate_rejected=false;
+   try{incomplete_collector.Submit({1,0x10u<<16,100,ex});}catch(const std::invalid_argument&){duplicate_rejected=true;}
+   assert(duplicate_rejected);
    CompleteBatch missing({{{0,0},99}});
    assert(Bad(missing,{{0,0x00100000u,12,ex}},1));
    assert(missing.Counters().at({0,0})==99);
