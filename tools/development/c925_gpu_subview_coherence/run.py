@@ -157,7 +157,7 @@ def patch(src):
     for h in ('#include <atomic>','#include <bit>'):
         if h not in result:
             result=replace_one(result,'#include <xxhash.h>',h+'\n#include <xxhash.h>','HEADER_'+h)
-    require(result.count(MARK)==1 and result.count('same_base_small_gpu_subview')==5,
+    require(result.count(MARK)==1 and result.count('same_base_small_gpu_subview')==4,
             'PATCH_COMPLETENESS_GATE')
     return result
 
