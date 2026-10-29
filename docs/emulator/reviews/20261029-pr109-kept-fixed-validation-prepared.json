@@ -1,0 +1,54 @@
+{
+  "schema_version": 2,
+  "record_id": "pr109-kept-and-upstream-fixed-validation-prepared-20261029",
+  "recorded_on": "2026-10-29",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "record_type": "PROVEN_BUFFER_CORRECTION_PRESERVED_CHECKER_ONLY_RETEST_LOCAL_TESTED",
+  "context_games": ["CUSA11456", "CUSA34384"],
+  "tested_games": [],
+  "related_prs": [109,112],
+  "native_result": "20261029T075648223982Z-sparse-host-limit-native.json",
+  "pr109": {
+    "kept": true,
+    "merged": true,
+    "merged_head": "9bd1a3e4931ab60a320aeb10b797d170d520c32b",
+    "merge_commit": "e881315363c00671edd4be14f06b7dddbf719279",
+    "scope": "Preserve native-tested source adapters, patch, fixtures and runners on fork main. Native C925 size correction and three legal views are established; overlapping-alias GPU lifecycle and cross-game graphics are not. This is not production-main C++ integration or an upstream rebase. Retain the current native candidate unchanged."
+  },
+  "new_error_interpretation": "Actual layer1.4.309 reports present-to-present WRITE_AFTER_PRESENT before menu captures. The archived WSI source has an acquisition binary wait, source-frame timeline wait, AllCommands scopes and acquired-image present-ready binary signal/wait. That static audit is not exhaustive live proof; no missing renderer edge is established. Equal menu images are not considered a freeze.",
+  "outside_primary_research": {
+    "issue": "KhronosGroup/Vulkan-ValidationLayers#13117",
+    "fix": "KhronosGroup/Vulkan-ValidationLayers#13248",
+    "exact_merge": "da7669ad94110c7e7e89ab36defabff4baa507c0",
+    "implementation": "Propagate last_synchronized_present through resolved semaphore dependencies.",
+    "published_sdk_limit": "Maintainer states fix is not in1.4.363.0 SDK. Current release endpoint supplies Android binaries, not an appropriate fixed Linux layer.",
+    "qualification": "Their reproducer is multi-swapchain; it is not this GoT execution. The user's message is not yet proved false. Neither a matching string nor new library version is permission to suppress a validation error or add speculative emulator synchronization."
+  },
+  "next_runner": {
+    "pr":112,
+    "state":"DRAFT_DIAGNOSTIC_NOT_RENDERER_FIX",
+    "package_commit":"870c0aced93522c0633d6852be1b0a1ed5d63c18",
+    "path":"tools/development/c925_fixed_validation/recheck_present_validation.py",
+    "sha256":"1956a00d4b6df07ffcd39c98b6af6adb20c0d73a7ea4cc31510cc194f3ccf6e8",
+    "git_blob":"6096f515fc197a0e045928bd9883320354fb832d",
+    "test_blob":"44d24c658b686ca1c90e86390cbee6c50c8c1cfa",
+    "expected_emulator_elf":"89ffa07ab49d0df36b3a4c4295e0cff8f42bb7e167cbced3d5879b1e5c2f5aec",
+    "operation":"Build only isolated Khronos validation layer at the exact fixed commit and dependencies from its pinned official known_good.json. No emulator rebuild/source edits or system/driver/package replacement. Private location projects/shadps4/scripts/validation-tools; actual CMake target vvl,3 parallel workers,6GiB disk preflight, full logs and15second heartbeat.",
+    "tool_provenance":"Check clean pinned Git source, known_good blob51edbe55..., fix statement, resolved dependency revisions and built library/manifest hashes. Actual loader path and version must be confirmed in instance probe and game log; a version alone cannot distinguish fixed source from the prior SDK.",
+    "runtime":"Retain all native shader/renderer hashes and recheck the audited WSI hashes. Copy existing private profile/saves; enable core and sync diagnostics only there, GPU-assisted off. First actual validation error still stops only the owned process. Same no-input118+2s game bound, timestamps/screenshots,8GiB free-VRAM and exact-context/expiry conditional Ollama restoration. Original files, SSH, Sunshine/X11, launchers and services unchanged. No message filters, empty submits or forced GPU completion."
+  },
+  "local_validation": {
+    "syntax":"PASS",
+    "tests":"24/24 PASS; final rerun5.064seconds with ResourceWarning as error",
+    "actual_tests":"Real subprocess success/failure/timeout cleanup, Git object/hash and temporary tracked-source/origin checks, file/symlink/provenance guards, environment isolation and restoration, manifest parsing and old-version refusal, library cache tamper rejection.",
+    "mocked_scope":"Native tool build/layer loading/game/profile orchestration mocked for success, changed ELF, build failure, old layer, headroom failure restoration, unchanged first-error policy, failed runtime-layer confirmation and final VRAM drop. These are not native Vulkan/GPU tests.",
+    "initial_local_failure":"The first timeout-test fixture used0.3seconds for a Python child to print its PID and parsed an empty log. Replaced test scaffolding with a shell-owned sleep and1second timeout; verified actual child termination and parent survival. Runner code unaffected by fixture adjustment.",
+    "prepublication_source_review":"Pinned upstream layers/CMakeLists confirmed actual target vvl, not the library output name. Corrected the initial command before publication, then reran24 tests successfully. JSON probe parsing also handles trailing loader stderr. No host build was attempted with the initial target.",
+    "remote_byte_parity":"Fetched runner and test Git blobs match final locally tested source bytes.",
+    "not_run":"No complete native fixed VVL build, real new-layer instance load or GoT run in the model environment; no new visible-material acceptance."
+  },
+  "decision":"KEEP_NATIVE_PR109_AND_PREVIOUS_GRAPHICS_CAPABILITIES; VERIFY_CHECKER_BEFORE_INVENTING_A_PRESENTATION_FIX",
+  "next_falsifiable_test":"Run unchanged89ffa07a... with the private source-fixed validation layer. If the same hazard remains, retain exact diagnostics and audit live dependencies; if cleared, continue to the next actual resource/graphics finding. Never infer a clean menu or recovered sword material from tool success alone.",
+  "no_identical_menu_freeze_inference":true,
+  "raw_game_data_published":false
+}
