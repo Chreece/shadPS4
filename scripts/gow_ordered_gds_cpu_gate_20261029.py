@@ -16,7 +16,7 @@ import tarfile
 import tempfile
 import time
 
-COMMIT = "574fd7fe0f69bcd8d416fae5bc51a4c7cfdea476"
+COMMIT = "c68d76dec8be08245ad67ba0bdbfcc1999bed85d"
 PINS = [
   [
     "src/shader_recompiler/frontend/ordered_gds.h",
@@ -72,7 +72,7 @@ PINS = [
   ],
   [
     "tests/gcn_ordered_gds_continuation.cpp",
-    "49ecc3b388e1fa6880009c255d7dfb36f2ba0ae9"
+    "893b0a8173f1fafbf76409db6ab363c46c8afaef"
   ],
   [
     "tests/gcn_ordered_gds_frontend_fixture.cpp.in",
