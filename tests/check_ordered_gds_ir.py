@@ -123,8 +123,7 @@ def main():
     emitter = patch.find("IR::IREmitter ir{")
     require(bind >= 0 and retain > bind and emitter > retain and
             "return;" in patch[retain:emitter] and
-            "BufferAtomic" not in patch[retain:emitter].replace(
-                "not transformed to BufferAtomic", "") and
+            "ir.BufferAtomic" not in patch[retain:emitter] and
             patch.count(marker) == 1,
             "ORDERED_GDS_BINDS_REAL_64KB_WITHOUT_ATOMIC_LOWERING")
 
