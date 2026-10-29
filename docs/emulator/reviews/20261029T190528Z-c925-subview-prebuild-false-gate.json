@@ -1,0 +1,37 @@
+{
+  "record_type": "universal_shadps4_trial",
+  "timestamp_local": "2026-10-29T19:05:28+01:00",
+  "game": "Ghost of Tsushima CUSA11456",
+  "experiment": "GPU-rendered smaller subview coherence candidate (upstream PRs 4770, 4771)",
+  "failure_artifact": "got-gpu-subview-20261029T190528Z.log",
+  "stage": "PREBUILD_REUSABLE_RUNNER_GATE",
+  "status": "FAILED_BEFORE_NATIVE_BUILD",
+  "error": "RUNNER_VERSION_CHANGED:def helper(directory,name):",
+  "root_cause": "Unnecessary exact-text check on private reusable helper function signature. Signature spacing does not affect Python function availability; the existing runner passed earlier source fixture check and all preceding metadata gates.",
+  "source_changed": false,
+  "object_changed": false,
+  "binary_changed": false,
+  "game_run": "NOT_RUN",
+  "visual_change": "NOT_TESTED",
+  "correction": {
+    "branch": "tools/c925-source-aware-gpu-invalidation-20261029",
+    "commit": "fc377856b9a0fe67610253dcc91faa8726173012",
+    "runner_blob": "2cd051b9552d5d93e03dbd2901b5aee7ea569092",
+    "method": "Remove exact helper signature comparison; import and require callable run/helper; tolerate optional log counter formatting; retain exact source, ELF, VRAM and rollback checks."
+  },
+  "tests": [
+    {
+      "scope": "isolated Python base runner with three helper declaration-spacing variants",
+      "result": "PASS"
+    },
+    {
+      "scope": "existing source transformation fixture",
+      "result": "PASS_ON_USER_HOST"
+    },
+    {
+      "scope": "native build and GPU graphics",
+      "result": "NOT_TESTED"
+    }
+  ],
+  "disposition": "NO_CHANGE_TO_EMULATOR; RETRY_CORRECTED_PREBUILD; PRESERVE_ALL_KEPT_FIXES_AND_PRIOR_CANDIDATES"
+}
