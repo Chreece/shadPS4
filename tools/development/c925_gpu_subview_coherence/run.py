@@ -224,6 +224,9 @@ def main():
     ):
         require(old in s,'RUNNER_METADATA_CHANGED:'+old)
         s=s.replace(old,new)
+    stats="for needle in ('INDEXED_MATERIAL_BIND_REJECT','Sharp source was not flatenned'"
+    require(s.count(stats)==1,'REUSABLE_RUNNER_LOG_COUNTER_CHANGED')
+    s=s.replace(stats,"for needle in ('GpuRenderedSubviewRefresh','INDEXED_MATERIAL_BIND_REJECT','Sharp source was not flatenned'",1)
     ns={'__name__':'got_c925_gpu_subview','__file__':str(selected)}
     exec(compile(s,str(selected),'exec'),ns)
     require(ns['SRC'].resolve()==SRC.resolve() and ns['BASE_SHA']==PROVEN,
@@ -243,7 +246,12 @@ def main():
     print('VRAM=MINIMUM_8_GIB_CONDITIONAL_OLLAMA_RESTORE',flush=True)
     print('GAME=GOT_MENU_118_PLUS_2_SECONDS_NO_INPUT',flush=True)
     print('RESTORE=ORIGINAL_SOURCE_OBJECT_ELF',flush=True)
-    result=ns['run'](selected.parent)
+    lock=(ROOT/'logs/.got-gpu-image-resize.lock').open('a+')
+    try:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        result=ns['run'](selected.parent)
+    finally:
+        lock.close()
     require(sha(protected)==verified,'PROTECTED_PR5303_CANDIDATE_MODIFIED')
     return result
 
