@@ -31,6 +31,12 @@ FLAGS=(-std=c++23 -Wall -Wextra -Werror -pedantic -O2 -pthread -Isrc)
 
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_control_flow.cpp -o "$TMP/control-flow"
     "$TMP/control-flow"
+
+    "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_sparse_epoch.cpp -o "$TMP/sparse-epoch"
+    "$TMP/sparse-epoch"
+
+    "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_sparse_packet.cpp -o "$TMP/sparse-packet"
+    "$TMP/sparse-packet"
 )
 
 if [[ "${RUN_SANITIZERS:-0}" == "1" ]]; then
@@ -50,6 +56,10 @@ if [[ "${RUN_SANITIZERS:-0}" == "1" ]]; then
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-gpu-packets"
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_control_flow.cpp -o "$TMP/san-control-flow"
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-control-flow"
+        "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_sparse_epoch.cpp -o "$TMP/san-sparse-epoch"
+        UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-sparse-epoch"
+        "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_sparse_packet.cpp -o "$TMP/san-sparse-packet"
+        UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-sparse-packet"
     )
 fi
 echo "ORDERED_GDS_OFFLINE_REGRESSION=PASS GPU_EXECUTION=NOT_TESTED"
