@@ -1,0 +1,74 @@
+{
+  "schema_version": 2,
+  "record_id": "gcn-ordered-gds-wave-executor-20261029",
+  "recorded_at": "2026-10-29",
+  "scope": "Global emulator shader backend, unit-based GDS ordering reference and main promotion",
+  "pr_renderer_integration": {
+    "number": 116,
+    "url": "https://github.com/Chreece/shadPS4/pull/116",
+    "state": "MERGED",
+    "commit": "2313c8102520191f7998bd93d42e6043f8ece138",
+    "actual_production_paths": [
+      "src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp",
+      "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp",
+      "src/imgui/renderer/imgui_impl_vulkan.cpp",
+      "src/video_core/renderer_vulkan/vk_swapchain.cpp",
+      "src/video_core/renderer_vulkan/vk_swapchain.h",
+      "src/video_core/renderer_vulkan/vk_instance.h",
+      "src/video_core/texture_cache/image.cpp",
+      "src/video_core/texture_cache/texture_cache.cpp"
+    ],
+    "tests": "19 exact source contracts PASS against PR head; full new fork-main native build NOT_RUN",
+    "native_evidence": "Previously isolated native builds validated independent fixes; this combined fork-main source not yet validated",
+    "note": "Version adapt main ShaderBinaryVersion 6->7, not native 17->18. No shader hash/game condition."
+  },
+  "pr_gds_reference": {
+    "number": 117,
+    "url": "https://github.com/Chreece/shadPS4/pull/117",
+    "state": "DRAFT_UNMERGED",
+    "branch": "feature/ordered-gds-wave-executor-20261029",
+    "head_commit": "17bc97283809bc16e87750eee7bf821cb5061785",
+    "source_paths": [
+      "src/shader_recompiler/frontend/ordered_gds.h",
+      "tests/gcn_ordered_gds_complete_batch.cpp"
+    ],
+    "header_git_blob": "66ec866bb70f28c87e7a7da889f1ec8b90d6c607",
+    "header_sha256": "52c6a7467e1c2277e0a7bdf7e5c5f161686b010127e7d37aca074dcae9be0cb9",
+    "test_sha256": "0bf4fe77c6c4489a921ff457dc47db7e2f07a123902e91b8e12909a9324d0c19",
+    "test": "99 complete-wave batch scenarios, both g++/clang++ -std=c++23 -Wall -Wextra -Werror -pedantic PASS, ASan+UBSan PASS",
+    "semantics": "decode GDS DS_ORDERED_COUNT 64-bit word including index and operation, release/done flags; transactional host batch uses explicit, complete creation sequence and fully evaluated runtime M0, preexisting counter initial values and caller resolved payload. Add/Exchange distinct, previous values, wrap U32. Reject missing/repeated waves, missing counter, invalid flags and reserved/wrap operations.",
+    "limitations": "Does NOT execute GPU work, does not yet attach to shadPS4 translator/IR/SPIR-V. No real guest wave creation sequence, M0 values or GDS source payload from runtime. Vulkan workgroups have undefined execution order: no safe global spin waiting.",
+    "decision": "KEEP_DRAFT_UNMERGED_UNTIL_REAL_BACKEND_AND_NATIVE_VALIDATION"
+  },
+  "guest_captured_evidence": {
+    "archive": "gow-ordered-count-input-20261029T122701Z-3399542.tar.gz",
+    "shader": "cs_0xdbaa6ae4",
+    "shader_sha256": "97d6b31e16cc6c7660b78792faa15df49f49d10dad9ed97faa98fd3e137f999e",
+    "ds_ordered_count_sites": [
+      {
+        "offset": "0x4158",
+        "op": "Exchange",
+        "offset1": "0x13",
+        "m0_source": "s46"
+      },
+      {
+        "offset": "0x41d4",
+        "op": "Add",
+        "offset1": "0x03",
+        "m0_source": "s16"
+      }
+    ],
+    "private_shader_published": false
+  },
+  "sources": [
+    "https://gpuopen.com/download/AMD_GCN3_Instruction_Set_Architecture_rev1.1.pdf",
+    "https://docs.amd.com/api/khub/documents/UkT_UPQL21KfKAMUBFnZTw/content",
+    "https://docs.vulkan.org/spec/latest/chapters/shaders.html"
+  ],
+  "isa_caveat": "Legacy GCN and modern RDNA differ in how ordered count inputs are described (EXEC count vs first valid lane, indexed stream out). CPU executor accepts a value evaluated by the *actual target-specific guest frontend*; never infers from static shader SGPR/M0. Need validate pre-GCN3/GCN2 target explicitly.",
+  "other_unmerged": "Sparse 4GiB arena host-limit production patch already observed in isolated native GoW and its PR109 artifact merged, but its six-file production integration into current fork main is not yet verified. Do not assume fork main runs full GoW solely because #116 merged.",
+  "runtime_gpu_test": "NOT_RUN",
+  "gameplay": "NOT_RECOVERED",
+  "services_changed": false,
+  "next": "Implement proven, full guest-wave ordered GDS dispatch integration (separate collection/resume phases or safe CPU backend) preserving M0/order/initial GDS state, then native compile, Khronos validation and gameplay. Avoid spinlocks across unordered Vulkan workgroups, app-specific opcode bypasses and bare atomic increment."
+}
