@@ -424,6 +424,37 @@ void Rasterizer::UploadOrderedGdsPackets(
                                      destination_offset, packets);
 }
 
+std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+Rasterizer::ResolveVerifiedOrderedGdsEpoch(
+    const VideoCore::Buffer& device_capture, u64 capture_offset,
+    VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
+    const Shader::Gcn::OrderedGds::VerifiedGuestCreationOrder& creation,
+    std::span<const u32> verified_sites,
+    std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
+    Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin) {
+    using namespace Shader::Gcn::OrderedGds;
+
+    // Validate the dedicated CIK counter provenance and site dimensions
+    // BEFORE reading any GPU packets or mutating the resume device buffer.
+    // Passing a raw ordinary-GDS RAM snapshot must always fail closed.
+    auto counters = MakeExplicitOrderedCounterSeed(seed, seed_origin);
+    SparseOrderedGdsEpoch host{creation.Size(), std::move(counters), verified_sites};
+
+    // A genuine shader checkpoint must already have written exactly one
+    // capture/bypass packet per guest-created wave. Neither the staging
+    // arrival order nor the packet logical slot establishes wave rank.
+    const auto packets = DownloadOrderedGdsPackets(device_capture, capture_offset,
+                                                   creation.Size());
+    StageGpuCaptures(host, epoch, packets, creation);
+    const auto resume = ResolveGpuCaptures(host, epoch, creation);
+    UploadOrderedGdsPackets(device_resume, resume_offset,
+                            std::span<const GpuResumePacket>{resume.data(), resume.size()});
+
+    // Return the updated dedicated packer state only after upload succeeds.
+    // The caller must retain this across epochs and dispatch boundaries.
+    return host.CounterSnapshot();
+}
+
 std::vector<u32> Rasterizer::SnapshotOrderedGdsDwords() {
     return OrderedGdsStorageTransfer::Snapshot(runtime, scheduler,
                                                *buffer_cache.GetGdsBuffer());
