@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "record_id": "gds-pr117-dual-cpu-pass-concurrent-snapshot-20261029",
+  "recorded_at": "2026-10-29",
+  "scope": "universal shadPS4 ordered GDS host executor / GPU staging",
+  "game_id": "CUSA34384",
+  "tested_games": [],
+  "source_at_uploaded_test": "7d6e9e3fab4d3dd44cda6c9e46c003298afe89b4",
+  "evidence": "gds-pr117-dual-cpu-20261029T160823Z-3920387.tar.gz",
+  "evidence_sha256": "2cf686befe56007ecf51cc2316d9bf49e1afd61fce1b7e087995af4afe093b37",
+  "observed_result": {
+    "exit_code": 0,
+    "gcc_version": "14.2.0",
+    "clang_version": "17.0.6",
+    "compiler_runs": "GCC and Clang each complete C++23 frontend, typed IR, 99 ordered batches, 198 continuation epochs, then ASan+UBSan repeat PASS",
+    "gpu": "GATED_NOT_TESTED",
+    "game": "NOT_LAUNCHED",
+    "visual": "NOT_TESTED"
+  },
+  "new_issue": "CompleteWaveCollector::Counters() returned unsynchronized const reference to mutable std::map while Resolve() acquires lock and mutates map. Callers can race with Resolve and dereference invalid or changing data. Prior CPU tests did not exercise concurrent snapshot reads.",
+  "fix": "Return std::map by value while holding collector mutex. Caller snapshots are stable. Add adversarial four-producer + snapshot observer test for 32 iterations x 256 waves, static_assert non-reference API, and include test in GCC/Clang normal and sanitizer runs.",
+  "fix_commits": [
+    "a11e035155c7f4ad92ad8df5cbd2a905dca1e775",
+    "69ee3a8755d64ccd5280f6186e383cac33d2f441",
+    "38efde5c69abcdc3578dac571bf1ac4aaf274283"
+  ],
+  "new_fix_validation": "NOT_YET_EXECUTED_ON_USER_SERVER. GitHub source patch and runner registration verified; no native build or GPU run.",
+  "decision": "KEEP_PENDING_NEW_CPU_TEST; DO_NOT_MERGE_AS_GOW_RENDERING_FIX; GPU_WAVE_SCHEDULER_STILL_BLOCKED",
+  "next": "Run updated original CPU regression with GCC+Clang+sanitizers on isolated checkout; then native emulator build and correct multi-dispatch GPU wave-capture and continuation implementation; do not substitute unordered atomics."
+}
