@@ -56,16 +56,16 @@ inline std::optional<Descriptor> DecodeInstruction(u64 word) {
 }
 
 struct CounterKey {
-    u32 ordered_base;  // Runtime M0[31:16], not an instruction offset.
-    u32 index;         // Decoded OFFSET0[7:2].
+    u32 ordered_base; // Logical M0 ordered counter base, NOT proven raw GDS RAM offset.
+    u32 index;        // Decoded OFFSET0[7:2]; packer selection is ISA-dependent.
     auto operator<=>(const CounterKey&) const = default;
 };
 
-// DS_ORDERED_COUNT receives an evaluated guest-ISA payload. Unlike DS_APPEND
-// and DS_CONSUME, it is NOT valid to assume this value is popcount(EXEC).
-// Legacy GCN LLVM lowering has an explicit value-to-add-or-swap operand;
-// newer RDNA documentation describes first-valid-lane ADDR. A target-specific
-// frontend must resolve that distinction from live execution state.
+// DS_ORDERED_COUNT payload semantics are GUEST-ISA-dependent. AMD CIK
+// documents the legacy packer increment as count_bits(EXEC), whereas
+// later GCN LLVM intrinsics supply an explicit ADDR operand and RDNA
+// documents the first active lane. Do not use the host GPU's ISA to
+// choose semantics; retain live operands until guest hardware is known.
 struct ActiveWavePayload {
     u64 exec_mask;
     std::optional<u32> evaluated_guest_isa_payload;
