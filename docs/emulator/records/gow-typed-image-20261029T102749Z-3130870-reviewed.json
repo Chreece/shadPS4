@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "record_id": "gow-typed-image-20261029T102749Z-3130870-reviewed",
+  "recorded_at": "2026-10-29",
+  "game_id": "CUSA34384",
+  "tested_games": [
+    "CUSA34384"
+  ],
+  "outer_archive": "gow-typed-image-20261029T102749Z-3130870.tar.gz",
+  "outer_sha256": "98aefec7768afe82182f9c9d971a3564924c21b39adf03501578e01a6e8e83a4",
+  "game_archive": "gow-vulkan-validation-game-20261029-103129-3130871.tar.gz",
+  "game_sha256": "6c24ad2ca11c74ba2bb23adf3c82f64c0a869371438adfbe34246641d76f9493",
+  "actual_record_type": "TYPED_IMAGE_CACHE_IDENTITY",
+  "actual_source_commit": "8cc14626048295f3d28a9e2b6c2021b179078509",
+  "actual_elf_sha256": "b246e59c2c30cf1c1b5d486b27f6487f990a2fb08566b6961bbb460ffb9c2c84",
+  "parent_source": "8f3d85fcd878eb979f142d8fc615dd48643933c0",
+  "previous_swapchain_patch_applied": false,
+  "evidence": "full-source-delta.patch and recorded candidate source only contain previous typed-image identity change, no vk_swapchain source delta; native-game-runner has record_type=TYPED_IMAGE_CACHE_VALIDATION_GOW",
+  "native_build": "PASS 106-object full native build/link",
+  "cpu_fixture": "PASS typed-cache path",
+  "validation_layer": "PASS core/sync enabled; GPU-assisted off",
+  "first_validation_error": "SYNC-HAZARD-WRITE-AFTER-PRESENT",
+  "error_context": "vkQueuePresentKHR attempted presentation of swapchain image 0 after previous presentation without sufficient synchronization",
+  "run_seconds": 14.077,
+  "exit_signal": "SIGSEGV -11 after first-validation monitor stop request; not a clean exit",
+  "gpu_device_loss_reported": false,
+  "screenshot": "frame-011s.png black with FPS overlay, SHA256 616ac12478b4f94a084456ad236fee82fbc42900649c58800e8eb8a651e2ec23",
+  "typed_image_recreate_count": 0,
+  "gameplay": "NOT_RECOVERED",
+  "srt_errors": {
+    "phi_flow_offset": 3906,
+    "failed_offset_walker": 5592
+  },
+  "restoration": [
+    "SOURCE_RESTORED",
+    "PR94_ELF_RESTORED"
+  ],
+  "protected_hashes_unchanged": true,
+  "ollama_context_restored": 8192,
+  "workflow_bug": {
+    "type": "assistant-authored runner child reentry",
+    "diagnosis": "Earlier `shadps4_swapchain_acquire_fence_20261029.py` called inherited `m.main()`, whose __file__ pointed to the pinned typed-image script. Parent process spawned that old script as child. Thus the uploaded test did not exercise the proposed swapchain patch.",
+    "fix": "New wrapper has its own dispatch() for parent and --worker child; verifies gow-swapchain-fence-* tag, re-enters exact same script, never delegates main() to pinned typed-image runner. Adds swapchain-runner-identity.json including changed CPP/HPP and annotates local universal diary.",
+    "runner_commit": "2ef8917cafd43f06e84f6e26644ba52b63e4aaf5",
+    "runner_blob": "58a0bf859e09c99e6509a107a86d3d54a72da61b",
+    "runner_sha256": "59f913a7b7309a286e9faf84121c0ab5ee4352121e7b1bd680419ff26a32e94a",
+    "expected_tag_prefix": "gow-swapchain-fence-",
+    "local_gate": "Exact source-patch replay, real typed worker composition, parent self-spawn vs inherited worker, valid/invalid worker tags, 5 image order sequences + 4 return scenarios on GCC14/Clang17 PASS. The CPU fixture is not Vulkan GPU validation."
+  },
+  "limits": "Same first WAW present error is a repeat of the previous build, not evidence swapchain fence failed. Presence of thousands of SRT flatten errors is a separate, unresolved renderer issue. No exact causal link to black output established.",
+  "decision": "DO_NOT_COUNT_THIS_RUN_AS_SWAPCHAIN_PATCH_TEST; FIX_WORKER_REENTRY_AND_VALIDATE_FRESH_ACTUAL_SOURCE; KEEP_PREVIOUS_CORRECTIONS; NO_GAMEPLAY_CLAIM"
+}
