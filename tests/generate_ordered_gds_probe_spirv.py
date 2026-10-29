@@ -2,10 +2,11 @@
 """Assemble a small, deterministic SPIR-V 1.3 compute *test* shader.
 
 This shader DOES NOT interpret guest GCN, order workgroups, or resume guest
-state. Its single GPU invocation per logical slot copies fixture fields from
-input SSBO into a GpuCapturePacket, while setting the tag, dispatch epoch,
-actual global invocation slot and reserved words itself. It proves that a
-real Vulkan shader can write the ABI consumed by the ordered-GDS host bridge.
+state. Its single GPU invocation per logical slot copies synthetic fixture
+fields from an input SSBO, but derives the CIK count_bits(EXEC) payload using
+two genuine SPIR-V OpBitCount instructions, independent of the input payload.
+The shader also writes the tag, epoch, real invocation slot and reserved
+words. The EXEC masks are fixtures, NOT real guest shader wave state.
 
 No external shader compiler or GPU libraries are needed to create the module.
 """
@@ -102,6 +103,23 @@ def build() -> bytes:
             val = tag if index == 0 else epoch if index == 1 else zero
         elif index == 4:
             val = slot                                  # Real GPU invocation
+        elif index == 9:
+            # Legacy CIK ordered-count packers increment by count_bits(EXEC).
+            # Deliberately ignore input.payload (dword 9): the GPU itself
+            # evaluates the full 64 guest EXEC bits from fixture dwords 6/7.
+            parts = []
+            for source_index in (6, 7):
+                input_flat = m.ident()
+                m.emit(128, u32, input_flat, base, fields[source_index])
+                input_ptr = m.ident()
+                m.emit(65, ptr_uint, input_ptr, inbuf, zero, input_flat)
+                exec_part = m.ident()
+                m.emit(61, u32, exec_part, input_ptr)
+                count = m.ident()
+                m.emit(205, u32, count, exec_part)      # OpBitCount
+                parts.append(count)
+            val = m.ident()
+            m.emit(128, u32, val, *parts)               # 32-bit sum 0..64
         else:
             input_ptr = m.ident()
             m.emit(65, ptr_uint, input_ptr, inbuf, zero, flat)
@@ -124,6 +142,7 @@ def build() -> bytes:
         offset += length
     assert offset == len(words) and words[0] == 0x07230203
     assert counts[54] == counts[56] == 1 and counts[62] == 16
+    assert counts.get(205) == 2
     return binary
 
 
@@ -133,4 +152,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     blob = build()
     args.output.write_bytes(blob)
-    print(f"GPU_CAPTURE_WRITER_SPIRV_BUILD=PASS bytes={len(blob)} stores=16")
+    print(f"GPU_CAPTURE_WRITER_SPIRV_BUILD=PASS bytes={len(blob)} stores=16 gpu_popcount=2")
