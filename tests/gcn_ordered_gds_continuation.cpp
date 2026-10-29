@@ -86,6 +86,19 @@ int main(){
     assert(ready.size()==2);
     assert(missing.CounterSnapshot().at({0x20,0})==6);
     for(auto& wave:ready)(void)missing.Resume(0,wave.continuation_token);
+    // No-active-lane waves must still deliver a continuation token and
+    // advance order. Inactive Exchange must leave the live counter intact.
+    ContinuationHandoff empty_exec({{{0x20,0},9}});
+    empty_exec.BeginEpoch(0,2);
+    empty_exec.Capture(0,{{1,0x20u<<16,0,Ex(),false},9991});
+    empty_exec.Capture(0,{{0,0x20u<<16,6,Add()},9990});
+    const auto inactive_ready=empty_exec.Resolve(0);
+    assert(inactive_ready.size()==2 && inactive_ready[1].value.previous==15);
+    assert(inactive_ready[1].value.current==15);
+    assert(empty_exec.CounterSnapshot().at({0x20,0})==15);
+    for (const auto& continuation : inactive_ready) {
+        (void)empty_exec.Resume(0, continuation.continuation_token);
+    }
     std::cout << "ORDERED_GDS_HOST_CONTINUATION=PASS epochs=198 full_second_wave_batches=99 cases=99"
                  " missing_reject=1 stale_reject=1 no_gpu_spinlock=1 NO_GPU_WORK\n";
 }

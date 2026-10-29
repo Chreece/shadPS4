@@ -73,9 +73,11 @@ struct ActiveWavePayload {
 
 inline u32 RequireGuestOrderedPayload(ActiveWavePayload wave) {
     if (wave.exec_mask == 0) {
-        // Do not synthesize a zero-valued Exchange for a wave without lanes.
-        // The caller must skip or model the inactive instruction explicitly.
-        throw std::invalid_argument("no active guest lanes for ordered GDS request");
+        // The ordered GDS walker must receive even an EXEC=0 wave. No
+        // valid ADDR lane exists, so the data increment is zero; it still
+        // releases its position in guest wave-creation order. Inactive
+        // Exchange must not synthesize a write of zero to the counter.
+        return 0;
     }
     if (!wave.evaluated_guest_isa_payload) {
         throw std::invalid_argument("live ISA-resolved ordered GDS payload required");
@@ -88,6 +90,7 @@ struct Request {
     u32 runtime_m0;        // Fully evaluated, never guessed from static s_mov.
     u32 payload;           // Already resolved from guest ISA and active EXEC.
     Descriptor instruction;
+    bool has_valid_lane{true}; // From actual guest EXEC; false still releases the wave.
 };
 
 struct Result {
@@ -125,6 +128,10 @@ public:
                 inst.raw_offset1 & 0xC0u) {
                 throw std::invalid_argument("unsupported ordered GDS instruction encoding");
             }
+            if (!req.has_valid_lane && req.payload != 0) {
+                throw std::invalid_argument(
+                    "inactive ordered GDS request must not synthesize a payload");
+            }
             if (inst.operation != Operation::Add && inst.operation != Operation::Exchange) {
                 throw std::invalid_argument("reserved/wrap ordered opcode requires real ISA model");
             }
@@ -149,11 +156,15 @@ public:
                 throw std::invalid_argument("GDS counter absent: no implicit zero initialization");
             }
             const u32 previous = it->second;
-            if (req.instruction.operation == Operation::Add) {
-                it->second += req.payload; // GCN 32-bit counter wrap is deliberate.
-            } else {
-                it->second = req.payload;
+            if (req.has_valid_lane) {
+                if (req.instruction.operation == Operation::Add) {
+                    it->second += req.payload; // GCN 32-bit wrap is deliberate.
+                } else {
+                    it->second = req.payload;
+                }
             }
+            // With no valid lane, keep the counter unchanged, but consume
+            // this wave's ordered slot and return the previous value.
             out.push_back({
                 .creation_sequence = req.creation_sequence,
                 .key = key,

@@ -23,10 +23,10 @@ int main(){
    assert(ex.gds&&ex.wave_done&&ex.wave_release&&ex.addr_register==9&&ex.destination_register==11);
    // Never confuse ordinary GDS APPEND/CONSUME EXEC count with ordered
    // ADD/EXCHANGE. The value must be resolved from the target guest ISA.
-   bool inactive_wave_rejected=false;
-   try { (void)RequireGuestOrderedPayload({0, std::nullopt}); }
-   catch (const std::invalid_argument&) { inactive_wave_rejected=true; }
-   assert(inactive_wave_rejected);
+   // A wave with EXEC=0 still must advance the ordered request walker,
+   // even if no register lane is valid for the result.
+   assert(RequireGuestOrderedPayload({0, std::nullopt})==0);
+   assert(RequireGuestOrderedPayload({0, 777u})==0);
    assert(RequireGuestOrderedPayload({0x81, 17u})==17);
    assert(RequireGuestOrderedPayload({~u64{0}, 777u})==777);
    bool missing_guest_payload_rejected=false;
@@ -59,6 +59,24 @@ int main(){
       auto incomplete=requests;incomplete[0].instruction.wave_done=false;
       assert(Bad(c,incomplete,n)&&c.Counters().at({0x1234,0})==expected);
    }
+   // Inactive Exchange must NOT overwrite the counter with zero. It
+   // participates in the ordered wave sequence with no arithmetic effect.
+   CompleteBatch inactive({{{0x20,0},100}});
+   const std::array<Request,3> inactive_waves{{
+       {0, 0x20u << 16, 8, add},
+       {1, 0x20u << 16, 0, ex, false},
+       {2, 0x20u << 16, 5, add},
+   }};
+   auto invalid_inactive=inactive_waves;
+   invalid_inactive[1].payload=2;
+   assert(Bad(inactive, std::vector<Request>(invalid_inactive.begin(),invalid_inactive.end()),3));
+   assert(inactive.Counters().at({0x20,0})==100);
+   const auto inactive_results=inactive.Apply(inactive_waves,3);
+   assert(inactive_results.size()==3);
+   assert(inactive_results[0].previous==100 && inactive_results[0].current==108);
+   assert(inactive_results[1].previous==108 && inactive_results[1].current==108);
+   assert(inactive_results[2].previous==108 && inactive_results[2].current==113);
+   assert(inactive.Counters().at({0x20,0})==113);
    CompleteBatch distinct({{{0x10,0},5},{{0x20,0},50}});
    auto result=distinct.Apply(std::array<Request,2>{{{1,0x20u<<16,17,ex},{0,0x10u<<16,9,add}}},2);
    assert(result[0].previous==5&&result[0].current==14);
@@ -151,5 +169,5 @@ int main(){
    repeated.Submit(1, 17, {0, 0x20u << 16, 3, add});
    assert(repeated.ResolvePhase()[0].current == 12);
    assert(repeated.AllPhasesComplete());
-   std::cout << "ORDERED_GDS_COMPLETE_BATCH_CPU=PASS sequences=99 two_site_phases=99 repeated_site=PASS invariants=no_fake_counter,no_missing_wave,no_unordered_exchange,transactional,wrap32 NO_GPU_WORK\n";
+   std::cout << "ORDERED_GDS_COMPLETE_BATCH_CPU=PASS sequences=99 two_site_phases=99 repeated_site=PASS invariants=no_fake_counter,no_missing_wave,no_unordered_exchange,no_exec_zero_exchange,transactional,wrap32 NO_GPU_WORK\n";
 }
