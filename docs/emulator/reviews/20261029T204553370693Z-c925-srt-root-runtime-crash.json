@@ -1,0 +1,49 @@
+{
+  "schema_version": 2,
+  "scope": "UNIVERSAL_SHADPS4",
+  "experiment": "C925 compute SRT root/pointee GPU synchronization layered onto backing-complete and metadata corrections",
+  "evidence_archive": "got-c925-srt-root-coherence-20261029T204553370693Z.tar.gz",
+  "run_date_utc": "2026-10-29T20:45:53.370693Z",
+  "game": {
+    "seconds": 35.011,
+    "exit_code": -11,
+    "time_limit_reached": false,
+    "screenshots": 0
+  },
+  "result": "RUNTIME_REGRESSION_CRASH",
+  "candidate_elf_sha256": "30392ce476b4a0cb23acc600993c0091951d8c265b549232e2c0a8e18d093e31",
+  "build": "PASS",
+  "crash": {
+    "thread": "shadPS4:GpuComm",
+    "message": "Unhandled access violation at code address 0x5649409ba9a3: Read from address 0x564979316490",
+    "backtrace": "NOT_CAPTURED",
+    "causal_confidence": "SRT extension is new difference from previously stable test; precise crashing instruction not established"
+  },
+  "observed_events": {
+    "ComputeSrtRootGpuSync": 18,
+    "kind_srt_pointee": 18,
+    "kind_root_pointer": 0,
+    "INDEXED_MATERIAL_BIND_REJECT": 7,
+    "BackingWriteCompleteVerified": 20,
+    "MetaClearMultiOutputPreserved": 20,
+    "GpuDescriptorTableCpuCoherence": 14,
+    "BackingWriteIncomplete": 0,
+    "ComputeImageClearSourceGpuSync": 0,
+    "device_lost": 0,
+    "sync_hazards": 0
+  },
+  "provenance": "Candidate assumes first eight bytes at SGPR0 root form a pointer, and follows it after a mapped-address check; source has not proven this is a pointer field. Several 4096-byte SRT-pointee syncs took place.",
+  "visual": "UNDETERMINED: crashed before first 40s screenshot; no direct proof of black-menu regression; prior stable menu ran 118s",
+  "restoration": {
+    "memory_src": "RESTORED_VERIFIED",
+    "buffer_src": "RESTORED_VERIFIED",
+    "raster_src": "RESTORED_VERIFIED",
+    "memory_obj": "RESTORED_VERIFIED",
+    "buffer_obj": "RESTORED_VERIFIED",
+    "raster_obj": "RESTORED_VERIFIED",
+    "elf": "RESTORED_VERIFIED"
+  },
+  "disposition": "REJECT_UNSAFE_SRT_POINTEE_TRAVERSAL_AND_DO_NOT_RETRY_UNMODIFIED; RETAIN CODE/LOG/DIARY FOR ANALYSIS; DO_NOT_PROMOTE_CRASHING_ELF; PRESERVE_PREVIOUS_CORRECTNESS_CANDIDATES_AND_PROVEN_ELF",
+  "next_direction": "Prioritize fragment G-buffer color outputs and descriptor residency/actual selected sampled images; only follow captured SRT pointer structure, no speculative guest-pointer reads.",
+  "note": "Build and warning count reductions do not constitute visual graphics recovery. Do not infer freeze from static menu captures."
+}
