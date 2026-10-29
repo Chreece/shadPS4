@@ -37,7 +37,7 @@
   "comparison": {
     "b5c898c7": {
       "spv_bytes": 22708,
-      "spv_sha256": "09ea62f3ef45ab1936cbf81c75d65e7240a096d15860bd174c7b3c0ea47dd2df",
+      "spv_sha256": "09ea62f3ef45ab19363e72eb1e5928925c093fa044b16d5ad8f30799b6247a65",
       "identical_to_oct28_spv": true,
       "normalized_final_ir_identical_to_oct28": true,
       "final_ir_fragment_samples": 4,
@@ -47,7 +47,7 @@
     },
     "_7eaf40ad": {
       "spv_bytes": 55128,
-      "spv_sha256": "cb142312afe7050ce6b48575bde8813e4a0d048a826ae75ae4a3e398a3c5b7f0",
+      "spv_sha256": "cb142312afe7050ce6c97874dcc198e616dd0b757119882734ae7a5c19a0009c",
       "identical_to_oct28_spv": true,
       "normalized_final_ir_identical_to_oct28": true,
       "final_ir_indexed_samples": 4,
@@ -64,5 +64,6 @@
   "older_game_log": "Previous 118.808s run used menu at40/55 and manually entered gameplay thereafter; nearest warnings and all 21 MIN/MAX blend-factor warnings span different shaders/scenes, cannot attribute to menu sword. 27,612 2D + 35 3D + 4 Cube entries were reported bound for b5 and 7e, which also does not prove fragment invocation/sample value.",
   "separate_other_findings": "21 unsupported scaled min/max blend-factor warnings from prior run, 9 partial overlap CopyMip warnings and 11 coerced image-copy layer mismatches. Distinct generic renderer behavior leads; don't merge fixes without causal evidence and previous trial check.",
   "decision": "KEEP_ALL_ACCEPTED_RENDERER_CORRECTIONS; NO_NEW_GRAPHICS_FIX; CONFIRMED_UNDEF_ALPHA_DATAFLOW_RISK; NEXT_TEST_ACTUAL_FRAGMENT_DRAWS",
-  "next_test": "Instrument the current exact C925 Rasterizer::Draw/DrawIndirect in a temporary single-source, automatically reversible build, logging fragment program hash, draw and MRT write state with rate limiting. One menu-only private-profile no-input 118+2s run; restore source, original object and original ELF byte-identically. This discriminates compiled-but-never-drawn fragments before attempting any alpha or texture change. No game/shader hash conditions in production renderer logic."
+  "next_test": "Instrument the current exact C925 Rasterizer::Draw/DrawIndirect in a temporary single-source, automatically reversible build, logging fragment program hash, draw and MRT write state with rate limiting. One menu-only private-profile no-input 118+2s run; restore source, original object and original ELF byte-identically. This discriminates compiled-but-never-drawn fragments before attempting any alpha or texture change. No game/shader hash conditions in production renderer logic.",
+  "hash_correction": "Correct complete SHA256 values were obtained from the mounted binaries; no source/visual findings changed."
 }
