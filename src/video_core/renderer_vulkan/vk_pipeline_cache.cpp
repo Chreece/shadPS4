@@ -9,6 +9,7 @@
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
+#include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
 #include "shader_recompiler/frontend/ordered_gds_dispatch.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/recompiler.h"
@@ -644,6 +645,10 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
             }
             guest_pc += inst.length;
         }
+        LOG_WARNING(Render_Recompiler,
+                    "Ordered GDS static guest sites={} (per-wave site selection "
+                    "requires capture; not one full wave batch per site)",
+                    info.ordered_gds_site_pcs.size());
         if (info.hw_stage == HwStage::Compute) {
             const auto& regs = liverpool->GetCsRegs();
             const auto& local = runtime_info.hw.cs.workgroup_size;
@@ -651,6 +656,18 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
                 {regs.dim_x, regs.dim_y, regs.dim_z},
                 {local[0], local[1], local[2]}, 64);
             if (layout) {
+                const u64 capture_bytes =
+                    layout->TotalSlots() *
+                    sizeof(Shader::Gcn::OrderedGds::GpuCapturePacket);
+                const u64 resume_bytes =
+                    layout->TotalSlots() *
+                    sizeof(Shader::Gcn::OrderedGds::GpuResumePacket);
+                LOG_WARNING(Render_Recompiler,
+                            "Ordered GDS GPU packet ABI: guest_wave_slots={}, "
+                            "capture_bytes={}, resume_bytes={}; no device buffers "
+                            "allocated until guest scheduler order and shader "
+                            "continuation are implemented",
+                            layout->TotalSlots(), capture_bytes, resume_bytes);
                 LOG_WARNING(Render_Recompiler,
                             "Ordered GDS compute preflight (CS-register snapshot): "
                             "groups=({},{},{}), local=({},{},{}), guest_wave64_slots={}, "
