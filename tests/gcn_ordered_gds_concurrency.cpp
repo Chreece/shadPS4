@@ -1,5 +1,6 @@
 #include "shader_recompiler/frontend/ordered_gds.h"
 
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <cstdint>
@@ -17,6 +18,48 @@ using namespace Shader::Gcn::OrderedGds;
 static_assert(!std::is_reference_v<
               decltype(std::declval<const CompleteWaveCollector&>().Counters())>);
 
+
+struct ObserverArgs {
+    CompleteWaveCollector* collector;
+    const std::atomic<bool>* observing;
+    std::atomic<bool>* started;
+    std::atomic<u32>* samples;
+    CounterKey key;
+    u32 initial;
+    u32 waves;
+};
+
+static void ObserveCounters(const ObserverArgs* args) {
+    args->started->store(true, std::memory_order_release);
+    while (args->observing->load(std::memory_order_acquire)) {
+        const auto snapshot = args->collector->Counters();
+        const auto it = snapshot.find(args->key);
+        assert(it != snapshot.end());
+        assert(it->second == args->initial || it->second == args->initial + args->waves);
+        args->samples->fetch_add(1, std::memory_order_relaxed);
+        std::this_thread::yield();
+    }
+}
+
+struct ProducerArgs {
+    CompleteWaveCollector* collector;
+    Descriptor instruction;
+    u32 slot;
+    u32 waves;
+};
+
+static void SubmitWaves(const ProducerArgs* args) {
+    // Do not equate host arrival order with guest creation order.
+    for (u32 wave = args->slot; wave < args->waves; wave += 4) {
+        args->collector->Submit({
+            .creation_sequence = wave,
+            .runtime_m0 = u32{0x20} << 16,
+            .payload = 1,
+            .instruction = args->instruction,
+        });
+    }
+}
+
 int main() {
     const u64 encoded = (u64{11} << 56) | (u64{9} << 32) |
                         (u64{0x36} << 26) | (u64{63} << 18) |
@@ -33,39 +76,20 @@ int main() {
         std::atomic<bool> started{false};
         std::atomic<u32> samples{0};
 
-        std::thread observer([&] {
-            started.store(true, std::memory_order_release);
-            while (observing.load(std::memory_order_acquire)) {
-                const auto snapshot = collector.Counters();
-                const auto it = snapshot.find(kCounter);
-                assert(it != snapshot.end());
-                // All-or-nothing commit: no intermediate wave update leaks.
-                assert(it->second == kInitial ||
-                       it->second == kInitial + kWaves);
-                samples.fetch_add(1, std::memory_order_relaxed);
-                std::this_thread::yield();
-            }
-        });
+        ObserverArgs observer_args{&collector, &observing, &started, &samples,
+                                   kCounter, kInitial, kWaves};
+        std::thread observer(&ObserveCounters, &observer_args);
 
         while (!started.load(std::memory_order_acquire)) {
             std::this_thread::yield();
         }
         const auto initial_snapshot = collector.Counters();
         assert(initial_snapshot.at(kCounter) == kInitial);
+        std::array<ProducerArgs, 4> producer_args{};
         std::vector<std::thread> submitters;
-        for (u32 slot = 0; slot < 4; ++slot) {
-            submitters.emplace_back([&, slot] {
-                // Deliberately interleaved guest creation IDs; arrival order
-                // must not determine counter execution order.
-                for (u32 wave = slot; wave < kWaves; wave += 4) {
-                    collector.Submit({
-                        .creation_sequence = wave,
-                        .runtime_m0 = u32{0x20} << 16,
-                        .payload = 1,
-                        .instruction = *decoded,
-                    });
-                }
-            });
+        for (u32 slot = 0; slot < producer_args.size(); ++slot) {
+            producer_args[slot] = ProducerArgs{&collector, *decoded, slot, kWaves};
+            submitters.emplace_back(&SubmitWaves, &producer_args[slot]);
         }
         for (auto& submitter : submitters) {
             submitter.join();
