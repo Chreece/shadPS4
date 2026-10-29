@@ -471,9 +471,6 @@ OPCODE(DataConsume,                                         U32,            U32,
 // Wave-ordered GDS counter: live M0, ADDR lane value, EXEC predicate, raw OFFSET0/OFFSET1.
 // Distinct from SharedAtomicIAdd/Exchange: Vulkan does not order workgroups by creation.
 OPCODE(OrderedGdsCount,                                    U32,            U32,            U32,            U1,             U32                                             )
-// Keep ordered GDS separate from shared/buffer atomics. Arguments:
-// runtime M0, ADDR per lane, EXEC per lane, packed OFFSET1:OFFSET0.
-OPCODE(OrderedGdsCount,                                     U32,            U32,            U32,            U1,             U32                       )
 OPCODE(GroupAny,                                            U1,             U1,                                                                             )
 
 // Time operations
