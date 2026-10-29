@@ -52,14 +52,29 @@ int main(){
             assert(Reject([&]{(void)q.Resume(0,event.continuation_token);}));
         }
         assert(Reject([&]{q.BeginEpoch(0,n);}));
-        // A second stage uses the output from the first stage as its input.
-        q.BeginEpoch(1,1);
+        // The actual shader contains TWO ordered sites. Both epochs must
+        // capture ALL n waves; a one-wave second stage misses real requests.
+        q.BeginEpoch(1,n);
         assert(Reject([&]{q.Capture(0,{{0,0x1234u<<16,10,Add()},999});}));
-        q.Capture(1,{{0,0x1234u<<16,10,Add()},999});
-        auto second=q.Resolve(1);
-        assert(second.size()==1&&second[0].value.previous==expected);
-        assert(second[0].value.current==expected+10);
-        assert(q.Resume(1,999).current==expected+10);
+        assert(Reject([&]{(void)q.Resolve(1);}));
+        std::uint32_t second_sum{};
+        for(unsigned wave=n;wave-- >0;){
+            const auto token=20000+wave*13;
+            q.Capture(1,{{wave,0x1234u<<16,wave+2,Add()},token});
+            second_sum+=wave+2;
+        }
+        assert(q.CapturedAll(1));
+        const auto second=q.Resolve(1);
+        assert(second.size()==n && second.front().value.previous==expected);
+        assert(second.back().value.current==expected+second_sum);
+        assert(q.CounterSnapshot().at({0x1234,0})==expected+second_sum);
+        for (const auto& wave: second) {
+            auto resumed=q.Resume(1,wave.continuation_token);
+            assert(resumed.current==wave.value.current);
+            assert(resumed.previous==wave.value.previous);
+        }
+        assert(Reject([&]{(void)q.Resume(1,20000);}));
+        assert(Reject([&]{(void)q.Resolve(1);}));
     }
     ContinuationHandoff missing({{{0x20,0},3}});
     missing.BeginEpoch(0,2);
@@ -71,6 +86,6 @@ int main(){
     assert(ready.size()==2);
     assert(missing.CounterSnapshot().at({0x20,0})==6);
     for(auto& wave:ready)(void)missing.Resume(0,wave.continuation_token);
-    std::cout << "ORDERED_GDS_HOST_CONTINUATION=PASS epochs=198 cases=99"
+    std::cout << "ORDERED_GDS_HOST_CONTINUATION=PASS epochs=198 full_second_wave_batches=99 cases=99"
                  " missing_reject=1 stale_reject=1 no_gpu_spinlock=1 NO_GPU_WORK\n";
 }
