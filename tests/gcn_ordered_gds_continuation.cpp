@@ -1,4 +1,5 @@
 #include "shader_recompiler/frontend/ordered_gds_continuation.h"
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <iostream>
@@ -52,8 +53,9 @@ int main(){
             assert(Reject([&]{(void)q.Resume(0,event.continuation_token);}));
         }
         assert(Reject([&]{q.BeginEpoch(0,n);}));
-        // The actual shader contains TWO ordered sites. Both epochs must
-        // capture ALL n waves; a one-wave second stage misses real requests.
+        // Synthetic two-epoch continuation test. A shader with different
+        // static sites does not necessarily execute both sites in every wave;
+        // mixed-site dispatch coverage is tested below.
         q.BeginEpoch(1,n);
         assert(Reject([&]{q.Capture(0,{{0,0x1234u<<16,10,Add()},999});}));
         assert(Reject([&]{(void)q.Resolve(1);}));
@@ -99,6 +101,47 @@ int main(){
     for (const auto& continuation : inactive_ready) {
         (void)empty_exec.Resume(0, continuation.continuation_token);
     }
+    // Each wave may reach a DIFFERENT static site of a shader. Two sites
+    // with wave_done may be mutually exclusive, not two full-wave epochs.
+    // A single epoch must collect exactly one request per created wave,
+    // then return a continuation to that wave's actual instruction PC.
+    ContinuationHandoff mixed({{{0x20,0},100}});
+    const std::array<u32,2> valid_sites{17,19};
+    mixed.BeginEpoch(0,4,valid_sites);
+    assert(Reject([&]{mixed.BeginEpoch(0,4,valid_sites);}));
+    assert(Reject([&]{mixed.Capture(0,{{0,0x20u<<16,9,Ex()},911,23});}));
+    assert(Reject([&]{mixed.Capture(0,{{0,0x20u<<16,9,Ex()},911});}));
+    assert(!mixed.CapturedAll(0));
+    assert(mixed.CounterSnapshot().at({0x20,0}) == 100);
+    // Supply out of sequence to prove host arrival != creation order.
+    mixed.Capture(0,{{3,0x20u<<16,5,Add()},3103,19});
+    mixed.Capture(0,{{1,0x20u<<16,3,Add()},3101,19});
+    mixed.Capture(0,{{0,0x20u<<16,7,Ex()},3100,17});
+    mixed.Capture(0,{{2,0x20u<<16,4,Add()},3102,17});
+    assert(mixed.CapturedAll(0));
+    const auto mixed_ready=mixed.Resolve(0);
+    assert(mixed_ready.size()==4 && mixed.CounterSnapshot().at({0x20,0})==19);
+    assert(Reject([&]{mixed.BeginEpoch(1,1,valid_sites);}));
+    for (const auto& wave : mixed_ready) {
+        const auto expected_pc=wave.value.creation_sequence%2==0?17u:19u;
+        assert(wave.site_pc && *wave.site_pc == expected_pc);
+        const auto resumed=mixed.ResumeCaptured(0,wave.continuation_token);
+        assert(resumed.site_pc==wave.site_pc &&
+               resumed.value.previous==wave.value.previous &&
+               resumed.value.current==wave.value.current);
+        assert(Reject([&]{(void)mixed.ResumeCaptured(0,wave.continuation_token);}));
+    }
+    mixed.BeginEpoch(1,1,valid_sites);
+    mixed.Capture(1,{{0,0x20u<<16,2,Add()},4100,19});
+    const auto repeated_site=mixed.Resolve(1);
+    assert(repeated_site.size()==1 && repeated_site[0].site_pc==19);
+    assert(repeated_site[0].value.previous==19 && repeated_site[0].value.current==21);
+    const auto resumed_repeat=mixed.ResumeCaptured(1,4100);
+    assert(resumed_repeat.value.current==21 && resumed_repeat.site_pc==19);
+    assert(Reject([&]{mixed.BeginEpoch(1,1,valid_sites);}));
+    assert(mixed.CounterSnapshot().at({0x20,0})==21);
+    std::cout << "ORDERED_GDS_MIXED_STATIC_SITES=PASS creation_order=4 divergent_sites=2"
+                 " dynamic_epoch=2 stale_token_reject=1 NO_GPU_WORK\n";
     std::cout << "ORDERED_GDS_HOST_CONTINUATION=PASS epochs=198 full_second_wave_batches=99 cases=99"
                  " missing_reject=1 stale_reject=1 no_gpu_spinlock=1 NO_GPU_WORK\n";
 }
