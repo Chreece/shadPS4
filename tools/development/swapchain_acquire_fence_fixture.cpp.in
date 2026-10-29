@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <limits>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 using u32 = std::uint32_t;
 using u64 = std::uint64_t;
@@ -74,7 +75,7 @@ struct Swapchain {
 namespace Render_Vulkan {}
 /* EXACT_ACQUIRE */
 int main(int argc,char**argv){
- const bool baseline=argc==2&&argv[1][0]=='b';
+ const bool baseline=argc==2&&std::string_view(argv[1])=="--baseline";
  const std::vector<std::vector<u32>> sequences={
   {0,1,2,0,1,2,0,1,2},
   {0,0,0,0,0,0,0},
