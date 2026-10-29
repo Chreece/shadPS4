@@ -36,10 +36,14 @@ static thread_local std::unordered_set<u64> g_gbuffer_sample_reports;
 static thread_local std::unordered_set<u64> g_gbuffer_producer_reports;
 '''
  s=s.replace(namespace,namespace+inject,1)
- if "#include <unordered_set>" not in s:
-  find="#include <unordered_map>"
-  verify(s.count(find)==1,"EXISTING_UNORDERED_MAP_INCLUDE_CHANGED")
-  s=s.replace(find,find+"\n#include <unordered_set>",1)
+ # The actual C925 source has no unordered_map include. Insert required
+ # standard headers directly before the verified namespace, after all
+ # existing includes, without assuming any specific include spelling.
+ headers="".join(header+"\n" for header in ("#include <unordered_set>",
+                                           "#include <bit>")
+                 if header not in s)
+ if headers:
+  s=s.replace(namespace,headers+"\n"+namespace,1)
 
  begin="void Rasterizer::PrepareRenderState("
  finish="static std::pair<u32, u32> GetDrawOffsets("
@@ -55,7 +59,8 @@ static thread_local std::unordered_set<u64> g_gbuffer_producer_reports;
  producer=r'''
         // A genuine multi-render-target fragment pass is a potential G-buffer
         // producer. Retain its guest address until a later texture bind.
-        if (std::popcount(static_cast<u32>(key.mrt_mask)) > 1u) {
+        if (std::popcount(static_cast<u32>(key.mrt_mask)) > 1u &&
+            key.stage_hashes[static_cast<u32>(Shader::SwStage::Fragment)] != 0) {
             const u64 guest = image.info.guest_address;
             if (guest && g_gbuffer_targets.size() < 16384u) {
                 g_gbuffer_targets.insert(guest);
@@ -161,6 +166,17 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) { retur
  result=patch(mini)
  verify(result.count(PRODUCER_MARK)==1 and result.count(CONSUMER_MARK)==1 and
         result.count(INDEXED_MARK)==1,"TRACE_SOURCE_UNIT_FAILED")
+ verify(result.count("#include <unordered_set>")==1 and
+        result.count("#include <bit>")==1,"STANDARD_HEADERS_MISSING")
+ # Reproduce the user's actual preflight failure: C925 has ordinary
+ # includes but does NOT contain an unordered_map header.
+ no_map=mini.replace("#include <unordered_map>","#include <algorithm>")
+ no_map_out=patch(no_map)
+ verify(no_map_out.count("#include <unordered_set>")==1 and
+        no_map_out.count("#include <bit>")==1 and
+        "#include <algorithm>" in no_map_out,
+        "C925_NO_UNORDERED_MAP_INCLUDE_REGRESSION")
+ print("C925_NO_UNORDERED_MAP_INCLUDE_FIXTURE=PASS",flush=True)
  try:patch(result)
  except RuntimeError as exc:
   verify(str(exc)=="GBUFFER_TRACE_ALREADY_PATCHED","DOUBLE_PATCH_WRONG_ERROR")
