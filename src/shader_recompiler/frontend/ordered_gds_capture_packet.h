@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "shader_recompiler/frontend/ordered_gds_continuation.h"
+#include "shader_recompiler/frontend/ordered_gds_legacy_packer.h"
 #include "shader_recompiler/frontend/ordered_gds_sparse_epoch.h"
 
 // ABI for a future GPU capture -> synchronized host GDS resolve -> GPU resume.
@@ -140,7 +141,14 @@ inline CapturedWave DecodeGpuCapture(const GpuCapturePacket& packet, u32 expecte
             throw std::invalid_argument("inactive GDS wave must not fabricate lane/payload");
         }
     } else if (packet.source_lane != static_cast<u32>(std::countr_zero(guest_exec_mask))) {
-        throw std::invalid_argument("GDS payload not from first active guest lane");
+        throw std::invalid_argument("invalid first active guest lane metadata");
+    }
+    // Legacy CIK uses count_bits(EXEC) for its dedicated ordered-count packer.
+    // Source-lane metadata cannot determine the counter payload. In particular,
+    // do not apply the later RDNA first-active-lane ADDR semantics on PS4 GCN.
+    const u32 guest_cik_payload = CikOrderedCountIncrement(guest_exec_mask);
+    if (packet.payload != guest_cik_payload) {
+        throw std::invalid_argument("GPU CIK ordered-count payload disagrees with guest EXEC");
     }
     const u32 offset0 = packet.encoded_control & 0xffu;
     const u32 offset1 = (packet.encoded_control >> 8) & 0xffu;
@@ -162,7 +170,7 @@ inline CapturedWave DecodeGpuCapture(const GpuCapturePacket& packet, u32 expecte
     const Request request{
         .creation_sequence = creation.RankForSlot(packet.logical_slot),
         .runtime_m0 = packet.runtime_m0,
-        .payload = packet.payload,
+        .payload = guest_cik_payload,
         .instruction = instruction,
         .has_valid_lane = guest_exec_mask != 0,
     };
