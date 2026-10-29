@@ -103,6 +103,47 @@ public:
             std::move(reverse));
     }
 
+    // Legacy CIK compute DS_ORDERED_COUNT carries an *explicit* logicalWaveID
+    // in live guest M0[12:0]. Unlike a Vulkan invocation/arrival index, this
+    // value is the guest's ordered-walker identity. This strictly bounded
+    // fast path works only when ALL created waves reach ordered count, the
+    // 13-bit identities form the complete [0,N) permutation and the wave
+    // crawler increment is zero. It MUST NOT manufacture positions for
+    // completed/bypassed waves, graphics packer IDs, nonzero crawler strides,
+    // or an epoch with missing or duplicate GPU capture packets.
+    //
+    // Only use for a compute shader whose live guest M0 bits come from the
+    // translated shader. This does not prove the Vulkan shader can yet
+    // checkpoint/re-enter or that counter initialization is known.
+    static std::optional<VerifiedGuestCreationOrder> FromCompleteCikComputeM0(
+        std::span<const GpuCapturePacket> captures, u32 expected_epoch) {
+        constexpr std::size_t CikLogicalWaveLimit = 1u << 13;
+        if (captures.empty() || captures.size() > CikLogicalWaveLimit) {
+            return std::nullopt;
+        }
+        const std::size_t total = captures.size();
+        std::vector<u64> rank_by_slot(total, InvalidCreationRank);
+        std::vector<bool> seen_rank(total, false);
+        for (const auto& packet : captures) {
+            if (packet.tag != CapturePacketTag || packet.epoch != expected_epoch ||
+                packet.flags != CaptureFlags || !packet.site_pc ||
+                packet.logical_slot >= total ||
+                rank_by_slot[packet.logical_slot] != InvalidCreationRank) {
+                return std::nullopt;
+            }
+            const u32 wave_crawler_increment = (packet.runtime_m0 >> 13) & 7u;
+            const u32 logical_wave_id = packet.runtime_m0 & 0x1FFFu;
+            if (wave_crawler_increment != 0 || logical_wave_id >= total ||
+                seen_rank[logical_wave_id]) {
+                return std::nullopt;
+            }
+            seen_rank[logical_wave_id] = true;
+            rank_by_slot[packet.logical_slot] = logical_wave_id;
+        }
+        // FromScheduler validates a complete permutation independently.
+        return FromScheduler(rank_by_slot);
+    }
+
     [[nodiscard]] u64 RankForSlot(u32 logical_slot) const {
         if (logical_slot >= ranks_.size()) {
             throw std::invalid_argument("ordered GDS capture slot outside guest creation map");
