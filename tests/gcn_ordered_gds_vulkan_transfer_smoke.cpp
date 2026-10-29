@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
         }
         std::ifstream shader_file{argv[1], std::ios::binary | std::ios::ate};
         if (!shader_file) throw std::runtime_error("GPU_PACKET_WRITER_SPIRV_MISSING");
-        const auto code_size = shader_file.tellg();
+        const std::streamoff code_size = shader_file.tellg();
         if (code_size <= 0 || code_size > 65536 ||
             (static_cast<std::size_t>(code_size) & 3u) != 0) {
             throw std::runtime_error("GPU_PACKET_WRITER_SPIRV_LENGTH_INVALID");
