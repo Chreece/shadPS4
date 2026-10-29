@@ -12,7 +12,7 @@ PRIOR='got-c925-menu-fills-20261029T115940254129Z'
 ELF='89ffa07ab49d0df36b3a4c4295e0cff8f42bb7e167cbced3d5879b1e5c2f5aec'
 ORIG_RASTER='ebed2441ceda3d6b3e6a6ebe1afe7469ec35f9d8a99c3b7f0feb1a3fb533b4a0'
 SCRIPTS={
- 'apply_draw_probe.py':'21b1c5167892928750fc0468df15f0f13cc4e9bb5eb5f4059633fdf50424f05e',
+ 'apply_draw_probe.py':'0b2865e43b9eddf7d80e8656cf1c49362215ac7f722392ab5e4b6c22784ee4ce',
  'direct_ninja.py':'cba0f46505d188c422297f49ad1d03aacad0442dbacca64b2651531b73f77d09',
  'resume_c925_revalidation.py':'df7617549006c8733049a684f22f6ac2bf6b96701bf2fe1da5ee9265df568250',
  'resume_finite_raw.py':'c6017d0d96e83341315e6a05dafb3fb5478239b384b41e510c475b6d89884a0b',
