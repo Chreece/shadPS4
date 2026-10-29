@@ -1,0 +1,33 @@
+{
+  "schema_version": 2,
+  "record_id": "c925-menu-fragment-focus-prepared-20261029",
+  "recorded_on": "2026-10-29",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "record_type": "NO_EMULATOR_CHANGE_DIAGNOSTIC_FOCUSED_ON_MISSING_MENU_FILLS",
+  "game_id": "CUSA11456",
+  "context_games": [
+    "CUSA11456",
+    "CUSA34384"
+  ],
+  "tested_games": [],
+  "prior_fixed_validator": "20261029T091008659858Z-fixed-layer-runtime.json",
+  "prior_accepted_native_elf": "89ffa07ab49d0df36b3a4c4295e0cff8f42bb7e167cbced3d5879b1e5c2f5aec",
+  "shader_evidence": {
+    "historical_menu_fragment_shader_count": "Eight indexed fragment shader provenance families, including two with large 2D+3D+Cube tables. Individual pixels, alpha coverage and execution are unproven.",
+    "zero_length_table_context": "Seven zero-record material-table rejects belong to compute shaders; do not claim these cause the missing grass/sword fills.",
+    "graphics": "Cloud/background, menu text, particles and black sword silhouettes; grass/missing overlays still unresolved."
+  },
+  "differentiation": "Previous fixed VVL source failed at present-to-present hazard within 5.10s and never reached menu; this experiment runs the SAME preserved ELF under an isolated private profile with Vulkan core/sync validation disabled, preserving all render settings otherwise. No equivalence test between frames, no inferred freeze, no new shader emission or GPU settings workaround.",
+  "source_branch": "diagnostics/c925-menu-fragment-focus-20261029",
+  "source_paths": [
+    "tools/development/c925_menu_fragment_focus/menu_only_capture.py",
+    "tools/development/c925_menu_fragment_focus/test_menu_only_capture.py"
+  ],
+  "source_commit": "169a73a190f51303321cc350aa49b8c8a6d8be58",
+  "source_file_git_blob": "3b46ea855e6078883a5ea87e5c188cc7925d8f14",
+  "test_file_git_blob": "0a69ac5ebea9697ac289bcad3b603a4b10b29593",
+  "scope": "No emulator build or code edit, full SHA guards for current ELF, rasterizer, PR109 changed source files; 118+2-second menu capture at 40/55/85/112s, no input. Shader dump enabled ONLY in copied private profile with validation disabled; old original profile/saves/config and protected binaries unchanged. Real source outputs tagged as compiled versus resource-log candidate, never assumed to have executed as fragments. Source dumps may include copied prior content and are explicitly marked as such.",
+  "local_review": "Static source/manual logic review. Host Python tests and actual GPU run NOT_RUN. Original added third test contained escaped fixture newlines; corrected before release in 169a73a. No source/runtime behavior was affected.",
+  "decision": "PENDING_EVIDENCE_NOT_A_RENDERER_FIX; DO_NOT_MERGE_AS_GRAPHICS_REPAIR",
+  "next_test": "Run pinned host test script then one bounded normal-menu run; inspect actual FS compile and resource source details plus captured screenshots to separate missing VS/GS/PS draw from absent texture/color/alpha output. Preserve freeze-history as separate WSI issue and don't attribute identical frames to stall."
+}
