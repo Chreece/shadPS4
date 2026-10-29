@@ -69,14 +69,14 @@ std::vector<Result> cpu_reference(std::vector<Request> entries) {
 
 int main() {
     // Synthetic DS encodings only. Guest instruction words are NOT published.
-    const auto x=decode(build(0x13,0,5,7));
-    const auto a=decode(build(0x03,0,5,7));
+    const auto x=decode(build(0x13,0,9,11));
+    const auto a=decode(build(0x03,0,9,11));
     require(x.gds && x.op==OrderedOpcode::Exchange && x.wave_release && x.wave_done,
             "exchange flags and GDS");
     require(a.gds && a.op==OrderedOpcode::Add && a.wave_release && a.wave_done,
             "add flags and GDS");
     require(x.counter_index==0 && a.counter_index==0 &&
-            x.addr_vgpr==5 && a.dest_vgpr==7, "counter and registers");
+            x.addr_vgpr==9 && a.dest_vgpr==11, "counter and registers");
     require((0x13&0x10)!=0 && (0x03&0x10)==0, "do not equate exchange and add");
 
     unsigned tests=0;
