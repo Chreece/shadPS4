@@ -26,5 +26,17 @@ def test_empty():
   assert m.focus(e,d)['fragment_files']==0
   assert (e/'fragment-events.json').is_file()
 
+def test_resource_only_fragment_hint():
+ with tempfile.TemporaryDirectory() as tmp:
+  p=Path(tmp);e=p/'evidence';e.mkdir();d=p/'user/shader/dumps';d.mkdir(parents=True)
+  (e/'game.log').write_text('GuestIndexedImageDimensions: stage=0xb5c898c7 entries=9 bound_2d=9\\nSHARP_RESOURCE_PROVENANCE shader=0xb5c898c7 stage=0 role=image indexed=true\\nSHARP_RESOURCE_PROVENANCE shader=0x04950cf6 stage=6 role=image\\n')
+  (d/'fs_0xb5c898c7_0.irprogram.txt').write_text('OpImageSample')
+  x=m.focus(e,p/'user')
+  assert x['compiled_fragment_shaders']==0,x
+  assert x['fragment_shader_hashes']==['b5c898c7'],x
+  assert x['fragment_files']==1,x
+  assert x['fragment_resource_event_count']==2,x
+  assert 'execution not inferred' in (e/'fragment-files.json').read_text()
+
 if __name__=='__main__':
- test_fragment_selection();test_empty();print('MENU_ONLY_FRAGMENT_TESTS=PASS (2)')
+ test_fragment_selection();test_resource_only_fragment_hint();test_empty();print('MENU_ONLY_FRAGMENT_TESTS=PASS (3)')
