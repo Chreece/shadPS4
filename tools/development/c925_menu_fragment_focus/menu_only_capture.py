@@ -27,13 +27,29 @@ def helper(n):
 def focus(evid,profile):
  text=(evid/'game.log').read_text(errors='replace') if (evid/'game.log').is_file() else ''
  text=re.sub(r'\x1b\[[0-9;]*m','',text)
- fs=sorted(set(re.findall(r'Compiling fs shader 0x([0-9a-fA-F]+)',text)))
- events=[line for line in text.splitlines() if ('SHARP_RESOURCE_PROVENANCE' in line and 'stage=0' in line)
-    or ('GuestIndexedImageDimensions:' in line and any('0x'+x in line.lower() for x in fs))
-    or ('IndexedUniformSamplerBound:' in line and any('0x'+x in line.lower() for x in fs))]
- save(evid/'fragment-events.json',{'fs_shaders_compiled':fs,'fragment_events':events[:256],
+ # Compilation and resource binding are distinct observations; neither proves
+ # that a fragment invocation executed or wrote visible pixels.
+ compiled=sorted(set(x.lower() for x in re.findall(r'Compiling fs shader 0x([0-9a-fA-F]+)',text,re.I)))
+ stage_lines=[line for line in text.splitlines() if
+     ('SHARP_RESOURCE_PROVENANCE' in line and 'stage=0' in line) or
+     ('GuestIndexedImageDimensions:' in line) or
+     ('IndexedUniformSamplerBound:' in line)]
+ bound=sorted(set(x.lower() for line in stage_lines
+     for x in re.findall(r'(?:stage|shader)=0x([0-9a-fA-F]+)',line)
+     if 'GuestIndexedImageDimensions:' in line or
+        ('SHARP_RESOURCE_PROVENANCE' in line and 'stage=0' in line) or
+        'IndexedUniformSamplerBound:' in line))
+ fs=sorted(set(compiled)|set(bound))
+ event_lines=[line for line in stage_lines if
+     ('SHARP_RESOURCE_PROVENANCE' in line and 'stage=0' in line) or
+     any('0x'+x in line.lower() for x in fs)]
+ save(evid/'fragment-events.json',{'fs_shaders_compiled':compiled,
+     'shader_hashes_seen_in_resource_logs':bound,'fs_shader_candidates':fs,
+     'fragment_events':event_lines[:512],
+     'event_total':len(event_lines),'events_truncated':len(event_lines)>512,
      'counts':{x:text.count(x) for x in ('SparseArenaWindow:','INDEXED_MATERIAL_BIND_REJECT',
-                'SHARP_RESOURCE_PROVENANCE','GuestIndexedImageDimensions:','Device lost during submit')}})
+                'SHARP_RESOURCE_PROVENANCE','GuestIndexedImageDimensions:',
+                'StencilReferenceExactMerged','Device lost during submit')}})
  dumps=profile/'shader/dumps';copied=[];nbytes=0
  for f in sorted(dumps.glob('fs_*')) if dumps.is_dir() else []:
   if f.is_symlink() or not f.is_file() or f.suffix not in ('.spv','.txt','.bin'):continue
@@ -41,9 +57,12 @@ def focus(evid,profile):
   if f.stat().st_size>8*1024**2 or nbytes+f.stat().st_size>64*1024**2 or len(copied)>=128:continue
   nbytes+=f.stat().st_size
   dst=evid/'fragment-shaders'/f.name;dst.parent.mkdir(parents=True,exist_ok=True)
-  shutil.copy2(f,dst);copied.append({'name':f.name,'sha256':sha(f)})
+  shutil.copy2(f,dst);copied.append({'name':f.name,'sha256':sha(f),
+    'last_modified_unix':f.stat().st_mtime,'origin':'copied private shader profile; execution not inferred'})
  save(evid/'fragment-files.json',copied)
- return {'fragment_shader_hashes':fs,'fragment_resource_event_count':len(events),'fragment_files':len(copied)}
+ return {'fragment_shader_hashes':fs,'compiled_fragment_shaders':len(compiled),
+         'resource_log_fragment_candidates':len(bound),
+         'fragment_resource_event_count':len(event_lines),'fragment_files':len(copied)}
 
 def run():
  os.umask(0o077)
