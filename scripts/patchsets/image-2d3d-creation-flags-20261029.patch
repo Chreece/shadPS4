@@ -1,0 +1,29 @@
+--- a/src/video_core/renderer_vulkan/vk_instance.h
++++ b/src/video_core/renderer_vulkan/vk_instance.h
+@@ -473,6 +473,15 @@
+     /// images.
+     bool IsBlockTexelViewSupported() const {
+         return supports_block_texel_view;
++    }
++
++    /// Creation compatibility is needed for either descriptor capability. Do not
++    /// require sampled-view support to enable a supported storage-image view.
++    /// This does not grant permission to use an unsupported descriptor type.
++    bool CanCreate2dViewOf3dImage() const {
++        return image_2d_view_of_3d &&
++               (image_2d_view_of_3d_features.image2DViewOf3D ||
++                image_2d_view_of_3d_features.sampler2DViewOf3D);
+     }
+ 
+     /// Returns whether VK_IMAGE_CREATE_2D_VIEW_COMPATIBLE_BIT_EXT is supported on 3D images
+--- a/src/video_core/texture_cache/image.cpp
++++ b/src/video_core/texture_cache/image.cpp
+@@ -3,7 +3,7 @@
+                                vk::ImageCreateFlagBits::eExtendedUsage};
+     if (info.props.is_volume) {
+         flags |= vk::ImageCreateFlagBits::e2DArrayCompatible;
+-        if (instance.Is2dViewOf3dSupported()) {
++        if (instance.CanCreate2dViewOf3dImage()) {
+             flags |= vk::ImageCreateFlagBits::e2DViewCompatibleEXT;
+         }
+     }

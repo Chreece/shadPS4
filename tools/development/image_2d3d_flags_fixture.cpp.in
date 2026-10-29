@@ -1,0 +1,79 @@
+// Exact production capability methods and image-creation flag block are inserted.
+// CPU-only policy regression. REAL_VULKAN_TYPES uses actual project Vulkan-Hpp.
+// No VkDevice is created; this does not validate live image formats/descriptors.
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <initializer_list>
+#include <string_view>
+#ifdef REAL_VULKAN_TYPES
+#define VK_NO_PROTOTYPES
+#define VULKAN_HPP_NO_CONSTRUCTORS
+#include <vulkan/vulkan.hpp>
+#else
+namespace vk {
+enum class ImageCreateFlagBits : std::uint32_t {
+    eMutableFormat=0x8, eExtendedUsage=0x100, e2DArrayCompatible=0x20,
+    e2DViewCompatibleEXT=0x20000, eBlockTexelViewCompatible=0x80
+};
+struct ImageCreateFlags {
+    std::uint32_t value{};
+    ImageCreateFlags()=default;
+    ImageCreateFlags(ImageCreateFlagBits bit):value(static_cast<std::uint32_t>(bit)){}
+    ImageCreateFlags& operator|=(ImageCreateFlagBits bit){value|=static_cast<std::uint32_t>(bit);return *this;}
+    explicit operator std::uint32_t()const{return value;}
+};
+ImageCreateFlags operator|(ImageCreateFlagBits a,ImageCreateFlagBits b){ImageCreateFlags f{a};f|=b;return f;}
+struct PhysicalDeviceImage2DViewOf3DFeaturesEXT {std::uint32_t image2DViewOf3D{},sampler2DViewOf3D{};};
+}
+#endif
+struct Instance {
+    bool image_2d_view_of_3d{};
+    vk::PhysicalDeviceImage2DViewOf3DFeaturesEXT image_2d_view_of_3d_features{};
+    bool supports_block_texel_view{};
+    bool IsBlockTexelViewSupported()const{return supports_block_texel_view;}
+    /* EXACT_CAPABILITIES */
+};
+struct Info {struct {bool is_volume{},is_block{};}props;};
+static vk::ImageCreateFlags MakeFlags(const Instance& instance,const Info& info){
+    /* EXACT_IMAGE_FLAGS */
+    return flags;
+}
+static void Check(bool ok,const char* reason){
+    if(!ok){std::fprintf(stderr,"IMAGE_2D3D_FLAGS_FAIL=%s\n",reason);std::exit(2);}
+}
+int main(int argc,char** argv){
+    const bool baseline=argc==2&&std::string_view(argv[1])=="--baseline";
+    unsigned cases=0,missing=0;
+    for(bool ext:{false,true})for(bool storage:{false,true})for(bool sampled:{false,true})
+    for(bool volume:{false,true})for(bool compressed:{false,true})for(bool block:{false,true}){
+        Instance instance;
+        instance.image_2d_view_of_3d=ext;
+        instance.image_2d_view_of_3d_features.image2DViewOf3D=storage;
+        instance.image_2d_view_of_3d_features.sampler2DViewOf3D=sampled;
+        instance.supports_block_texel_view=block;
+        const auto flags=MakeFlags(instance,Info{{volume,compressed}});
+        const auto bits=static_cast<std::uint32_t>(flags);
+        const bool has_2d=(bits&0x20000u)!=0;
+        const bool needed=volume&&ext&&(storage||sampled);
+        missing+=needed&&!has_2d;
+        Check(!has_2d||needed,"unsupported/nonvolume image gains no new flag");
+        Check(instance.Is2dViewOf3dSupported()==(ext&&storage&&sampled),
+              "old full-capability query must not grant unsupported sampling");
+        const std::uint32_t unchanged=0x108u|(volume?0x20u:0u)|(compressed&&block?0x80u:0u);
+        Check((bits&~0x20000u)==unchanged,"mutable/extended/array/block flags unchanged");
+        if(!baseline)Check(has_2d==needed,"either independent descriptor capability needs creation flag");
+        ++cases;
+    }
+    Instance observed;
+    observed.image_2d_view_of_3d=true;
+    observed.image_2d_view_of_3d_features.image2DViewOf3D=1;
+    observed.image_2d_view_of_3d_features.sampler2DViewOf3D=0;
+    const auto observed_bits=static_cast<std::uint32_t>(MakeFlags(observed,Info{{true,false}}));
+    Check(!observed.Is2dViewOf3dSupported(),"sampled capability not fabricated");
+    Check(observed_bits==(baseline?0x128u:0x20128u),"exact reported storage-only combination");
+    Check(missing==(baseline?8u:0u),"expected omitted-flag cases");
+    std::printf("%s cases=%u omitted=%u observed_flags=%#x NO_GPU_WORK\n",
+        baseline?"BASELINE_IMAGE_VIEW_07796=REPRODUCED":"IMAGE_2D3D_CREATION_FLAGS=PASS",
+        cases,missing,observed_bits);
+}
