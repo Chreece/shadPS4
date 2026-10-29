@@ -1,0 +1,60 @@
+{
+  "schema_version": 2,
+  "record_id": "got-c925-corrected-layer-20261029T091008659858Z-reviewed",
+  "recorded_on": "2026-10-29",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "record_type": "REAL_FIXED_VVL_RECHECK_PRESENT_HAZARD_PERSISTS; MENU_NOT_REACHED",
+  "context_games": [
+    "CUSA11456",
+    "CUSA34384"
+  ],
+  "tested_games": [
+    "CUSA11456"
+  ],
+  "related_prs": [
+    109,
+    112
+  ],
+  "archive": "got-c925-corrected-layer-20261029T091008659858Z.tar.gz",
+  "archive_sha256": "cd965298f2aac78be0df307c5c4b5a8a3707e15dcc0b646da50cb375c4b7e8b2",
+  "test_source": "User-provided GoT native evidence archive; immutable review",
+  "emulator_build": "NOT_RUN",
+  "emulator_source_changed": false,
+  "emulator_elf_sha256": "89ffa07ab49d0df36b3a4c4295e0cff8f42bb7e167cbced3d5879b1e5c2f5aec",
+  "validation_layer": {
+    "commit": "da7669ad94110c7e7e89ab36defabff4baa507c0",
+    "library_sha256": "d9c90c8625683f3ca465c908c361bed904176902307691be105e6f2132a1db45",
+    "source_fix": "KhronosGroup/Vulkan-ValidationLayers#13248 last_synchronized_present Merge",
+    "native_build": "PASS isolated VVL source with 254 compile/link tasks; layer instance/provenance verified",
+    "configuration_warning": "syncval_submit_time_validation deprecated; use syncval_full_validation; not itself a device-loss or graphics finding"
+  },
+  "game": {
+    "actual_duration_seconds": 5.095,
+    "exit_code": 0,
+    "intentionally_stopped": true,
+    "first_validation_error_at_seconds": 4.931253088987432,
+    "error": "SYNC-HAZARD-WRITE-AFTER-PRESENT",
+    "resource": "swapchain image 2",
+    "message": "vkQueuePresentKHR reports prior vkQueuePresentKHR write to same swapchain image without sufficient synchronization",
+    "prior_host_layer_same_error": true,
+    "no_menu_images": true,
+    "no_device_loss_log": true
+  },
+  "log_counters": {
+    "SparseArenaLimits:": 1,
+    "SparseArenaWindow:": 3,
+    "INDEXED_MATERIAL_BIND_REJECT": 0,
+    "UniformRawSampleBound": 0,
+    "IndirectRawSample:": 0
+  },
+  "protected_executable_unchanged": true,
+  "original_files_changed": [],
+  "retained_source_changed": [],
+  "ollama": "RESTORED_VERIFIED qwen3.8-greek latest num_ctx8192; conditional unload when below 8GiB",
+  "vram_at_launch_bytes": 20577325056,
+  "interpretation": "Identical present-to-present hazard persists under source-fixed VVL. This disproves that the single Khronos #13248 fix suffices here, not proof that all sync validation is correct, that a real WSI synchronization defect is present, or that shader/material graphics fail. No screenshot/menu, so no graphics comparison.",
+  "supporting_prior_menu_evidence": "20261029T053938612839Z-indirect-materials-native.json; 3 indirect SPV modules validated 3/3 per mode, sword black, grass missing, clouds/particles/text present",
+  "additional_forensics": "Offline inspection of previously captured FS b5c898c7 and 7eaf40ad shows 4 GPU indexed texture samples each and Discard/DiscardCond. In prior native menu run, large arrays were bound for these fragment shaders (27,651 entries; 27,612 2D,35 3D,4 Cube), but executed sample/alpha/fragment coverage remains unverified. No assertion that these shaders are definitely grass or sword. Reference official title-screen imagery includes grass and textured katana, absent in previous screenshots.",
+  "decision": "KEEP_NATIVE_PR109_AND_SHADER_CORRECTIONS; PR112_CHECKER_RETEST_NEGATIVE_FOR_CLEARING_HAZARD; DO_NOT_SUPPRESS_VALIDATION_OR_ASSUME_FROZEN_MENU; RETURN_FOCUS_TO_FRAGMENT_TEXTURES_AND_DRAW_OUTPUT",
+  "next_test": "Use verified existing ELF in a new isolated private profile under normal non-diagnostic renderer settings, no Vulkan core/sync validation override, and record bounded actual menu-time fragment draw outcomes (fragment stage hash, color target/alpha-write/geometry and shader-resource binding decisions). Preserve exact normal graphics semantics; no guest inputs, fabricated descriptors, repeat full compile or Vulkan-layer rebuild. Source-guard/rollback any diagnostic-only hooks. WSI hazard remains a separate task, not a reason to call the menu frozen."
+}
