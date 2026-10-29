@@ -15,9 +15,9 @@
   "visual_change": "NOT_TESTED",
   "correction": {
     "branch": "tools/c925-source-aware-gpu-invalidation-20261029",
-    "commit": "fc377856b9a0fe67610253dcc91faa8726173012",
-    "runner_blob": "2cd051b9552d5d93e03dbd2901b5aee7ea569092",
-    "method": "Remove exact helper signature comparison; import and require callable run/helper; tolerate optional log counter formatting; retain exact source, ELF, VRAM and rollback checks."
+    "commit": "0b3ed095dcd05639cc5152a1253153fbbf89e9ce",
+    "runner_blob": "60c9ed981c26195f0d15f5feb42cc5e9aebea0b7",
+    "method": "Remove brittle function declaration gate and metadata prose matching; require callable run at import; optionally inject event log counter regardless of quote/spacing; retain exact source, SHA-verified proven executable, VRAM and rollback checks."
   },
   "tests": [
     {
@@ -31,6 +31,10 @@
     {
       "scope": "native build and GPU graphics",
       "result": "NOT_TESTED"
+    },
+    {
+      "scope": "import verified local rollback runner after transformed metadata and spacing variants; test source-pinned SHA, candidate prefix, optional event counter",
+      "result": "PASS"
     }
   ],
   "disposition": "NO_CHANGE_TO_EMULATOR; RETRY_CORRECTED_PREBUILD; PRESERVE_ALL_KEPT_FIXES_AND_PRIOR_CANDIDATES"
