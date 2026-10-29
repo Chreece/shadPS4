@@ -9,6 +9,7 @@
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
+#include "shader_recompiler/frontend/ordered_gds_dispatch.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/recompiler.h"
 #include "shader_recompiler/runtime_info.h"
@@ -625,6 +626,46 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
 
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
+
+    if (info.uses_ordered_gds) {
+        // Capture *static* guest instruction identities before the intentional
+        // SPIR-V backend gate. These PC offsets are not dynamic wave ordering.
+        u64 guest_pc{};
+        u32 sites{};
+        for (const auto& inst : ir_program.ins_list) {
+            if (inst.opcode == Shader::Gcn::Opcode::DS_ORDERED_COUNT) {
+                ++sites;
+                const u32 control =
+                    u32(inst.control.ds.offset0) | (u32(inst.control.ds.offset1) << 8u);
+                LOG_WARNING(Render_Recompiler,
+                            "Ordered GDS preflight: static site={:#x}, control={:#x}, "
+                            "count={} (execution remains gated)",
+                            guest_pc, control, sites);
+            }
+            guest_pc += inst.length;
+        }
+        if (info.hw_stage == HwStage::Compute) {
+            const auto& regs = liverpool->GetCsRegs();
+            const auto& local = runtime_info.hw.cs.workgroup_size;
+            const auto layout = Shader::Gcn::OrderedGds::DispatchLayout::Create(
+                {regs.dim_x, regs.dim_y, regs.dim_z},
+                {local[0], local[1], local[2]}, 64);
+            if (layout) {
+                LOG_WARNING(Render_Recompiler,
+                            "Ordered GDS compute preflight (CS-register snapshot): "
+                            "groups=({},{},{}), local=({},{},{}), guest_wave64_slots={}, "
+                            "waves_per_group={}; these are logical capture slots NOT "
+                            "guest creation order, indirect dispatch may differ",
+                            regs.dim_x, regs.dim_y, regs.dim_z, local[0], local[1],
+                            local[2], layout->TotalSlots(), layout->WavesPerGroup());
+            } else {
+                LOG_WARNING(Render_Recompiler,
+                            "Ordered GDS compute preflight: CS-register layout invalid "
+                            "or exceeds bounded capture limit; indirect dispatch group "
+                            "counts cannot be inferred here");
+            }
+        }
+    }
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
     DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx, "spv");
 
