@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <mutex>
@@ -72,6 +73,12 @@ public:
     [[nodiscard]] bool AllowsSite(u32 pc) const {
         std::scoped_lock lock{mutex_};
         return std::binary_search(sites_.begin(), sites_.end(), pc);
+    }
+
+    // GPU packet staging is a single transaction against a new host epoch.
+    [[nodiscard]] bool Empty() const {
+        std::scoped_lock lock{mutex_};
+        return !resolved_ && records_.empty();
     }
 
     [[nodiscard]] std::vector<ReadyContinuation> Resolve() {
