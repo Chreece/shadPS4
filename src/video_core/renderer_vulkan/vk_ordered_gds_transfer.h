@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
+#include <utility>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -155,6 +157,146 @@ public:
             .bufferMemoryBarrierCount = 1,
             .pBufferMemoryBarriers = &copy_to_compute,
         });
+    }
+};
+
+
+// Authoritative guest GDS state transport. The game may initialize counters
+// with PM4 fills and other GDS operations before DS_ORDERED_COUNT. Snapshot
+// those *actual device bytes* after the GPU finishes them: never initialize
+// a new host counter map to zero. Byte offset interpretation remains the
+// responsibility of the verified guest ISA/PM4 address translator.
+class OrderedGdsStorageTransfer {
+public:
+    static constexpr u64 GdsBytes = 64u * 1024u;
+    static constexpr u32 DwordBytes = sizeof(u32);
+    static constexpr u32 GdsDwords = GdsBytes / DwordBytes;
+    using DwordWrite = std::pair<u32, u32>; // Explicit guest GDS BYTE offset, new value.
+
+    [[nodiscard]] static std::vector<u32> Snapshot(Runtime& runtime, Scheduler& scheduler,
+                                                    const VideoCore::Buffer& gds) {
+        RequireGdsSize(gds);
+        const auto staging = runtime.GetStagingPool().Request(
+            GdsBytes, VideoCore::MemoryType::HostCached, alignof(u32));
+        if (!staging.buffer || !staging.mapped || staging.size < GdsBytes) {
+            throw std::runtime_error("guest GDS snapshot staging unavailable");
+        }
+        const vk::BufferCopy copy{
+            .srcOffset = 0,
+            .dstOffset = staging.offset,
+            .size = GdsBytes,
+        };
+        runtime.CopyBuffer(&gds, staging.buffer, std::span{&copy, 1});
+        const vk::BufferMemoryBarrier2 to_host{
+            .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eHost,
+            .dstAccessMask = vk::AccessFlagBits2::eHostRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = staging.buffer->Handle(),
+            .offset = staging.offset,
+            .size = GdsBytes,
+        };
+        scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &to_host,
+        });
+        scheduler.Finish();
+        staging.Invalidate();
+
+        std::vector<u32> dwords(GdsDwords);
+        std::memcpy(dwords.data(), staging.mapped, GdsBytes);
+        return dwords;
+    }
+
+    // Stage ONLY changed dwords, never write an entire stale 64 KiB copy
+    // back over independent guest counters or other PM4 GDS updates.
+    // Caller must ensure exclusive ownership of this ordered dispatch phase
+    // and independently verify CounterKey -> physical GDS byte offsets.
+    static void Apply(Runtime& runtime, Scheduler& scheduler,
+                      const VideoCore::Buffer& gds, std::span<const DwordWrite> updates) {
+        RequireGdsSize(gds);
+        if (updates.size() > GdsDwords) {
+            throw std::invalid_argument("too many guest GDS counter updates");
+        }
+        if (updates.empty()) {
+            return;
+        }
+        std::vector<u32> seen_offsets;
+        seen_offsets.reserve(updates.size());
+        for (const auto& [byte_offset, value] : updates) {
+            (void)value;
+            if (byte_offset % DwordBytes || byte_offset > GdsBytes - DwordBytes) {
+                throw std::invalid_argument("unaligned or out-of-range GDS counter byte offset");
+            }
+            seen_offsets.push_back(byte_offset);
+        }
+        std::sort(seen_offsets.begin(), seen_offsets.end());
+        if (std::adjacent_find(seen_offsets.begin(), seen_offsets.end()) != seen_offsets.end()) {
+            throw std::invalid_argument("duplicate guest GDS physical counter offset");
+        }
+
+        const u64 data_bytes = updates.size() * DwordBytes;
+        const auto staging = runtime.GetStagingPool().Request(
+            data_bytes, VideoCore::MemoryType::HostUncached, alignof(u32));
+        if (!staging.buffer || !staging.mapped || staging.size < data_bytes) {
+            throw std::runtime_error("guest GDS counter update staging unavailable");
+        }
+        std::vector<vk::BufferCopy> copies;
+        copies.reserve(updates.size());
+        for (std::size_t i = 0; i < updates.size(); ++i) {
+            const auto [byte_offset, value] = updates[i];
+            std::memcpy(staging.mapped + i * DwordBytes, &value, DwordBytes);
+            copies.push_back({
+                .srcOffset = staging.offset + i * DwordBytes,
+                .dstOffset = byte_offset,
+                .size = DwordBytes,
+            });
+        }
+        staging.Flush();
+        scheduler.EndRendering();
+        const vk::BufferMemoryBarrier2 host_to_copy{
+            .srcStageMask = vk::PipelineStageFlagBits2::eHost,
+            .srcAccessMask = vk::AccessFlagBits2::eHostWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = staging.buffer->Handle(),
+            .offset = staging.offset,
+            .size = data_bytes,
+        };
+        scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &host_to_copy,
+        });
+        runtime.CopyBuffer(staging.buffer, &gds, copies);
+        // A later compute shader observes the resolved GDS writes on the
+        // same Vulkan queue. This does not resume its other guest registers.
+        const vk::BufferMemoryBarrier2 copy_to_compute{
+            .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead |
+                             vk::AccessFlagBits2::eShaderStorageWrite,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = gds.Handle(),
+            .offset = 0,
+            .size = GdsBytes,
+        };
+        scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &copy_to_compute,
+        });
+    }
+
+private:
+    static void RequireGdsSize(const VideoCore::Buffer& gds) {
+        if (gds.SizeBytes() != GdsBytes) {
+            throw std::invalid_argument("expected exact 64 KiB guest GDS backing storage");
+        }
     }
 };
 
