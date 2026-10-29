@@ -23,6 +23,7 @@ FILES = {
     "reference": "src/shader_recompiler/frontend/ordered_gds.h",
     "resources": "src/shader_recompiler/ir/passes/resource_pass.h",
     "patching": "src/shader_recompiler/ir/passes/resource_patching_pass.cpp",
+    "packer": "src/shader_recompiler/frontend/ordered_gds_legacy_packer.h",
     "tests": "tests/gcn_ordered_gds_complete_batch.cpp",
 }
 
@@ -65,6 +66,7 @@ def main():
     reference = source("reference")
     resources = source("resources")
     patching = source("patching")
+    packer = source("packer")
     tests = source("tests")
 
     require(info.count("bool uses_ordered_gds{};") == 1 and
@@ -109,23 +111,25 @@ def main():
     side = function(inst, "bool Inst::MayHaveSideEffects() const noexcept")
     require("case Opcode::OrderedGdsCount:" in side,
             "ATOMIC_SIDE_EFFECT_PRESERVED_FROM_DCE")
-    # Ordered count must reserve the *real guest GDS binding*, not merely
-    # write synthetic counters to an unrelated packet buffer. Do not
-    # accidentally turn the ordered IR into an unordered Vulkan atomic.
+    # AMD CIK documents DS_ORDERED_COUNT as using dedicated ordered-count
+    # packer registers, which are NOT verified as aliases of ordinary 64 KiB
+    # GDS RAM. Only ordinary append/consume and other GDS operations may
+    # demand BufferType::GdsBuffer automatically. Ordered IR is retained.
     resource_kind = function(resources, "inline bool IsDataRingInstruction(")
-    require("case IR::Opcode::OrderedGdsCount:" in resource_kind and
-            "return true;" in resource_kind,
-            "ORDERED_GDS_DISCOVERED_AS_REAL_GDS_RESOURCE")
+    require("case IR::Opcode::OrderedGdsCount:" not in resource_kind and
+            "case IR::Opcode::DataAppend:" in resource_kind and
+            "case IR::Opcode::DataConsume:" in resource_kind,
+            "CIK_ORDERED_PACKERS_NOT_ALIASED_TO_RAW_GDS_RAM")
     patch = function(patching, "void PatchGlobalDataShareAccess(")
-    marker = "if (inst.GetOpcode() == IR::Opcode::OrderedGdsCount)"
-    bind = patch.find(".buffer_type = BufferType::GdsBuffer")
-    retain = patch.find(marker)
-    emitter = patch.find("IR::IREmitter ir{")
-    require(bind >= 0 and retain > bind and emitter > retain and
-            "return;" in patch[retain:emitter] and
-            "ir.BufferAtomic" not in patch[retain:emitter] and
-            patch.count(marker) == 1,
-            "ORDERED_GDS_BINDS_REAL_64KB_WITHOUT_ATOMIC_LOWERING")
+    require("if (inst.GetOpcode() == IR::Opcode::OrderedGdsCount)" not in patch and
+            ".buffer_type = BufferType::GdsBuffer" in patch and
+            "ir.BufferAtomicIAdd" in patch,
+            "NORMAL_GDS_STILL_BINDS_WITHOUT_ORDERED_ALIAS")
+    require("CikOrderedCountIncrement" in packer and
+            "std::popcount" in packer and
+            "OrderedCounterSeedOrigin::DedicatedPackerState" in packer and
+            "OrderedCounterSeedOrigin::UnverifiedRawGdsMemory" in packer,
+            "LEGACY_PACKER_PAYLOAD_AND_SEED_PROVENANCE")
 
     require("class OrderedGdsPhases" in reference and
             "CompleteWaveCollector" in reference and
