@@ -508,5 +508,15 @@ Id EmitDataConsume(EmitContext& ctx, Id gds_dw_offset, Id exec) {
     UNREACHABLE_MSG("SPIR-V Instruction");
 }
 
+Id EmitOrderedGdsCount(EmitContext&, Id, Id, Id, u32) {
+    // The IR retains the original M0, ADDR, EXEC and control bits. Emitting
+    // OpAtomicIAdd or OpAtomicExchange here would violate DS_ORDERED_COUNT's
+    // cross-wave creation ordering (and the captured shader uses BOTH ops).
+    // A dispatch collection and continuation backend is required. Fail before
+    // shipping incorrect GPU counter values.
+    UNREACHABLE_MSG("Ordered GDS backend requires guest wave creation-order "
+                    "collection and continuation; unordered Vulkan atomics are not equivalent");
+}
+
 
 } // namespace Shader::Backend::SPIRV
