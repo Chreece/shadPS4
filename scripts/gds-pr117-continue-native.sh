@@ -6,7 +6,7 @@ BASE="$PROJECT/tests/gds-pr117-native-20261029T164137Z-3996104"
 SRC="$BASE/source"
 BUILD="$BASE/build"
 BRANCH='feature/ordered-gds-wave-executor-20261029'
-MINIMUM_COMMIT='16ac89a197220ea523163a584c31c990fa3127e2'
+MINIMUM_COMMIT='589d9412be871b1679cc5069afedbab000af3c15'
 TAG="gds-pr117-preflight-native-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 LOG="$PROJECT/logs/$TAG"
 STAGE='PREFLIGHT'
@@ -35,7 +35,7 @@ finish() {
 }
 trap finish EXIT
 
-for tool in git cmake ninja python3 g++ clang++-17 tar sha256sum; do
+for tool in git cmake ninja python3 g++ clang++-17 tar sha256sum timeout; do
     command -v "$tool" >/dev/null 2>&1 ||
         { printf 'MISSING_TOOL=%s\n' "$tool"; exit 2; }
 done
@@ -115,6 +115,29 @@ fi
     { echo 'ISOLATED_NATIVE_ELF_MISSING'; exit 14; }
 printf 'BUILD_WARNING_LINES=%s\n' "$(grep -c 'warning:' "$LOG/build.log" || true)" \
     > "$LOG/build-warning-count.txt"
-STAGE='NATIVE_PREFLIGHT_COMPILE_ONLY'
-STATUS='PASS_GCC_CLANG_ASAN_UBSAN_AND_NATIVE_BUILD'
-printf 'PR117_NATIVE_PREFLIGHT=PASS GPU_DISPATCH=NOT_RUN GOW_VISUAL=NOT_TESTED\n'
+STAGE='HEADLESS_GPU_TRANSFER_SMOKE_COMPILE'
+# Compile a separate tiny Vulkan C-API test, not the game/emulator runtime.
+# No surface, X11/Wayland changes, host display, game saves or GPU spinlocks.
+if ! g++ -std=c++23 -O2 -Wall -Wextra -Werror \
+    -I "$SRC/src" -I "$SRC/externals/vulkan-headers/include" \
+    "$SRC/tests/gcn_ordered_gds_vulkan_transfer_smoke.cpp" \
+    -l:libvulkan.so.1 -o "$LOG/vulkan-transfer-smoke" \
+    > "$LOG/gpu-smoke-build.log" 2>&1; then
+    tail -90 "$LOG/gpu-smoke-build.log"
+    exit 15
+fi
+
+STAGE='HEADLESS_GPU_TRANSFER_SMOKE_RUN'
+# Only 256 bytes, AMD discrete, no guest shader, no display or service restarts.
+if ! timeout --signal=TERM --kill-after=2s 20s \
+    "$LOG/vulkan-transfer-smoke" > "$LOG/gpu-smoke-run.log" 2>&1; then
+    tail -90 "$LOG/gpu-smoke-run.log"
+    exit 16
+fi
+grep -Fq 'GPU_TRANSFER_SMOKE=PASS' "$LOG/gpu-smoke-run.log" || {
+    cat "$LOG/gpu-smoke-run.log"
+    exit 17
+}
+STAGE='NATIVE_GPU_TRANSFER_SMOKE_VERIFIED_NO_GUEST_SHADER'
+STATUS='PASS_CPU_NATIVE_AND_AMD_GPU_TRANSFER'
+printf 'PR117_NATIVE_PREFLIGHT=PASS AMD_GPU_TRANSFER=PASS GUEST_SHADER=NOT_RUN GO_W_VISUAL=NOT_TESTED\n'
