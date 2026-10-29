@@ -21,18 +21,15 @@ int main(){
    auto ex=D(0x13), add=D(0x03);
    assert(ex.operation==Operation::Exchange&&add.operation==Operation::Add);
    assert(ex.gds&&ex.wave_done&&ex.wave_release&&ex.addr_register==9&&ex.destination_register==11);
-   // PS4/legacy-GCN payload is active-lane count, not a hardcoded increment.
-   assert(ResolveGuestPayload(GuestPayloadMode::LegacyGcnExecCount, {0, std::nullopt})==0);
-   assert(ResolveGuestPayload(GuestPayloadMode::LegacyGcnExecCount, {0xfffffULL, std::nullopt})==20);
-   assert(ResolveGuestPayload(GuestPayloadMode::LegacyGcnExecCount, {~u64{0}, 777u})==64);
-   // Modern RDNA3 payload comes from the first active lane's ADDR VGPR.
-   assert(ResolveGuestPayload(GuestPayloadMode::RdnaFirstValidLaneValue, {0, std::nullopt})==0);
-   assert(ResolveGuestPayload(GuestPayloadMode::RdnaFirstValidLaneValue, {0x81, 17u})==17);
-   bool missing_rdna_input_rejected=false;
-   try { (void)ResolveGuestPayload(GuestPayloadMode::RdnaFirstValidLaneValue,
-                                  {0x80, std::nullopt}); }
-   catch (const std::invalid_argument&) { missing_rdna_input_rejected=true; }
-   assert(missing_rdna_input_rejected);
+   // Never confuse ordinary GDS APPEND/CONSUME EXEC count with ordered
+   // ADD/EXCHANGE. The value must be resolved from the target guest ISA.
+   assert(RequireGuestOrderedPayload({0, std::nullopt})==0);
+   assert(RequireGuestOrderedPayload({0x81, 17u})==17);
+   assert(RequireGuestOrderedPayload({~u64{0}, 777u})==777);
+   bool missing_guest_payload_rejected=false;
+   try { (void)RequireGuestOrderedPayload({0xfffffULL, std::nullopt}); }
+   catch (const std::invalid_argument&) { missing_guest_payload_rejected=true; }
+   assert(missing_guest_payload_rejected);
 
    for(unsigned n=1;n<100;n++){
       CompleteBatch c({{{0x1234,0},0}});
