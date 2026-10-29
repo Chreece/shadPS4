@@ -3,12 +3,14 @@
 
 #pragma once
 
+#include <map>
 #include <span>
 #include <utility>
 #include <vector>
 
 #include "common/recursive_lock.h"
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
+#include "shader_recompiler/frontend/ordered_gds_legacy_packer.h"
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/page_manager.h"
@@ -67,6 +69,22 @@ public:
     void UploadOrderedGdsPackets(VideoCore::Buffer& device_resume,
                                  u64 destination_offset,
                                  std::span<const Shader::Gcn::OrderedGds::GpuResumePacket> packets);
+
+    // Production GPU-buffer bridge for an ALREADY checkpointed complete guest
+    // wave epoch. This cannot create wave ranks, packer seeds or shader state.
+    // Callers must supply ranks from the real guest scheduler and CIK packer
+    // values from verified dedicated-state initialization (never raw GDS RAM).
+    // If capture/resolve/upload fails, no new host packer state is returned.
+    // No guest dispatch currently calls this until real shader checkpoint and
+    // continuation are implemented; the ordered-GDS SPIR-V guard stays active.
+    [[nodiscard]] std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+    ResolveVerifiedOrderedGdsEpoch(
+        const VideoCore::Buffer& device_capture, u64 capture_offset,
+        VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
+        const Shader::Gcn::OrderedGds::VerifiedGuestCreationOrder& creation,
+        std::span<const u32> verified_sites,
+        std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
+        Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin);
 
     // Read the true GPU-visible 64 KiB GDS contents after prior writes,
     // then apply only specifically verified physical dword counter changes.
