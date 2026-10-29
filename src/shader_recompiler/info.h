@@ -133,9 +133,6 @@ struct Info : InfoPersistent {
     bool uses_shared_int64_atomics{};
     // Ordered GDS requires guest wave creation order, not an ordinary Vulkan atomic.
     bool uses_ordered_gds{};
-    // The guest shader uses wave-creation-ordered GDS counters. This is not
-    // equivalent to a Vulkan atomic; backend scheduling must be proven.
-    bool uses_ordered_gds{};
     bool stores_tess_level_outer{};
     bool stores_tess_level_inner{};
     bool translation_failed{};
