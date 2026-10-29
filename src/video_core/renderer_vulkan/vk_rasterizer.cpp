@@ -13,6 +13,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_occlusion_query.h"
+#include "video_core/renderer_vulkan/vk_ordered_gds_transfer.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -407,6 +408,20 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     DebugState.IncDispatch();
 
     ResetBindings(true);
+}
+
+std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+Rasterizer::DownloadOrderedGdsPackets(const VideoCore::Buffer& device_capture,
+                                      u64 source_offset, std::size_t packet_count) {
+    return OrderedGdsPacketTransfer::Download(runtime, scheduler, device_capture,
+                                              source_offset, packet_count);
+}
+
+void Rasterizer::UploadOrderedGdsPackets(
+    VideoCore::Buffer& device_resume, u64 destination_offset,
+    std::span<const Shader::Gcn::OrderedGds::GpuResumePacket> packets) {
+    OrderedGdsPacketTransfer::Upload(runtime, scheduler, device_resume,
+                                     destination_offset, packets);
 }
 
 u64 Rasterizer::Flush() {
