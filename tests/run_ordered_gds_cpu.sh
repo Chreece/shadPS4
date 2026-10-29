@@ -35,6 +35,9 @@ FLAGS=(-std=c++23 -Wall -Wextra -Werror -pedantic -O2 -pthread -Isrc)
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_capture_packet.cpp -o "$TMP/gpu-packets"
     "$TMP/gpu-packets"
 
+    "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_cik_m0_rank.cpp -o "$TMP/cik-m0-rank"
+    "$TMP/cik-m0-rank"
+
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_control_flow.cpp -o "$TMP/control-flow"
     "$TMP/control-flow"
 
@@ -64,6 +67,8 @@ if [[ "${RUN_SANITIZERS:-0}" == "1" ]]; then
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-cik-packers"
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_capture_packet.cpp -o "$TMP/san-gpu-packets"
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-gpu-packets"
+        "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_cik_m0_rank.cpp -o "$TMP/san-cik-m0-rank"
+        UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-cik-m0-rank"
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_control_flow.cpp -o "$TMP/san-control-flow"
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-control-flow"
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_sparse_epoch.cpp -o "$TMP/san-sparse-epoch"
