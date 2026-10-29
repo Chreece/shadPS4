@@ -644,12 +644,6 @@ U32 IREmitter::OrderedGdsCount(const U32& m0, const U32& address,
     return Inst<U32>(Opcode::OrderedGdsCount, m0, address, GetExec(), encoded_control);
 }
 
-U32 IREmitter::OrderedGdsCount(const U32& m0, const U32& address,
-                              const U32& encoded_control) {
-    // Do not replace this with an ordinary GDS atomic: cross-wave creation
-    // order is part of the hardware instruction's observable semantics.
-    return Inst<U32>(Opcode::OrderedGdsCount, m0, address, GetExec(), encoded_control);
-}
 
 U32 IREmitter::LaneId() {
     return Inst<U32>(Opcode::LaneId);
