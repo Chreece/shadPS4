@@ -29,7 +29,7 @@ def test_empty():
 def test_resource_only_fragment_hint():
  with tempfile.TemporaryDirectory() as tmp:
   p=Path(tmp);e=p/'evidence';e.mkdir();d=p/'user/shader/dumps';d.mkdir(parents=True)
-  (e/'game.log').write_text('GuestIndexedImageDimensions: stage=0xb5c898c7 entries=9 bound_2d=9\\nSHARP_RESOURCE_PROVENANCE shader=0xb5c898c7 stage=0 role=image indexed=true\\nSHARP_RESOURCE_PROVENANCE shader=0x04950cf6 stage=6 role=image\\n')
+  (e/'game.log').write_text('GuestIndexedImageDimensions: stage=0xb5c898c7 entries=9 bound_2d=9\nSHARP_RESOURCE_PROVENANCE shader=0xb5c898c7 stage=0 role=image indexed=true\nSHARP_RESOURCE_PROVENANCE shader=0x04950cf6 stage=6 role=image\n')
   (d/'fs_0xb5c898c7_0.irprogram.txt').write_text('OpImageSample')
   x=m.focus(e,p/'user')
   assert x['compiled_fragment_shaders']==0,x
