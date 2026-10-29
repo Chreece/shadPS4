@@ -366,8 +366,9 @@ void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
         sites.push_back(guest_site_pc);
     }
     const IR::U32 site_pc = ir.Imm32(guest_site_pc);
-    // The full 64-bit guest EXEC mask is needed to select the first valid
-    // lane for the GDS payload; a U1 cannot identify that lane.
+    // Preserve all 64 guest EXEC bits for the legacy CIK count_bits(EXEC)
+    // ordered-packer update. The ADDR operand is retained separately in IR;
+    // unlike later RDNA instructions, it is not the legacy counter increment.
     const IR::U64 exec_mask = ir.Ballot(ir.GetExec());
     const IR::U32 old_value =
         ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), exec_mask, control, site_pc);
