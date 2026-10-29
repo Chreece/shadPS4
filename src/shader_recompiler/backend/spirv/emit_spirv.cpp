@@ -657,6 +657,12 @@ void PatchPhiNodes(const IR::Program& program, EmitContext& ctx) {
 
 std::vector<u32> EmitSPIRV(const Profile& profile, const RuntimeInfo& runtime_info,
                            const IR::Program& program, Bindings& binding) {
+    // Refuse unsupported ordered GDS *before* constructing a shader module.
+    // The frontend retains its full live M0/ADDR/EXEC/control operands; the
+    // Vulkan backend still needs a proven multi-wave collection/resume path.
+    ASSERT_MSG(!program.info.uses_ordered_gds,
+               "DS_ORDERED_COUNT needs guest wave creation ordering; refusing unordered "
+               "SPIR-V atomic lowering");
     EmitContext ctx{profile, runtime_info, program.info, binding};
     const Id main{DefineMain(ctx, program)};
     DefineEntryPoint(program.info, ctx, main);
