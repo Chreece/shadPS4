@@ -154,6 +154,10 @@ grep -Fq 'Vulkan::Rasterizer::CommitOrderedGdsDwords(' \
     "$LOG/ordered-gds-transfer-symbols.txt" || {
     echo 'ORDERED_GDS_SELECTIVE_DEVICE_COUNTER_COMMIT_NOT_COMPILED'; exit 15;
 }
+grep -Fq 'Vulkan::Rasterizer::ResolveVerifiedOrderedGdsEpoch(' \
+    "$LOG/ordered-gds-transfer-symbols.txt" || {
+    echo 'ORDERED_GDS_PRODUCTION_CAPTURE_RESOLVE_UPLOAD_NOT_LINKED'; exit 15;
+}
 printf 'GDS_STORAGE_BINDING_AND_VULKAN_TRANSFER=PASS GPU_EXECUTION_NOT_ENABLED\n' \
     > "$LOG/gds-storage-symbol-check.txt"
 
