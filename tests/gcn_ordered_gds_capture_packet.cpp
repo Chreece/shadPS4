@@ -57,6 +57,15 @@ int main(){
     // Deliberately unordered GPU arrivals. The separately supplied guest
     // creation mapping, not physical arrival order, drives Exchange/Add.
     const std::array<GpuCapturePacket,4> incoming{w3,w2,w1,w0};
+    auto duplicated_slot=incoming;
+    duplicated_slot[3]=duplicated_slot[2];
+    assert(Reject([&]{StageGpuCaptures(host,0,duplicated_slot,*verified);}));
+    assert(!host.CapturedAll(0) && host.CounterSnapshot().at({0x20,0})==100);
+    auto duplicated_token=incoming;
+    duplicated_token[3].token_lo=duplicated_token[2].token_lo;
+    duplicated_token[3].token_hi=duplicated_token[2].token_hi;
+    assert(Reject([&]{StageGpuCaptures(host,0,duplicated_token,*verified);}));
+    assert(!host.CapturedAll(0) && host.CounterSnapshot().at({0x20,0})==100);
     StageGpuCaptures(host,0,incoming,*verified);
     assert(host.CapturedAll(0));
     auto resume=ResolveGpuCaptures(host,0,*verified);
