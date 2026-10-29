@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+
 #include "shader_recompiler/frontend/translate/translate.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/runtime_info.h"
@@ -358,7 +360,12 @@ void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
     const IR::U32 control = ir.Imm32(offset0 | (offset1 << 8u));
     // pc already advanced by inst.length: preserve the static guest site
     // separately from the dynamic execution epoch (e.g. repeated loops).
-    const IR::U32 site_pc = ir.Imm32(pc - inst.length);
+    const u32 guest_site_pc = pc - inst.length;
+    auto& sites = info.ordered_gds_site_pcs;
+    if (std::find(sites.begin(), sites.end(), guest_site_pc) == sites.end()) {
+        sites.push_back(guest_site_pc);
+    }
+    const IR::U32 site_pc = ir.Imm32(guest_site_pc);
     // The full 64-bit guest EXEC mask is needed to select the first valid
     // lane for the GDS payload; a U1 cannot identify that lane.
     const IR::U64 exec_mask = ir.Ballot(ir.GetExec());
