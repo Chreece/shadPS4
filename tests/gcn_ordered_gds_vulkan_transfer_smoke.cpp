@@ -313,11 +313,10 @@ int main(int argc, char** argv) {
 
         std::memcpy(buffers[2].mapping, fixtures.data(), bytes);
         flush(buffers[2]);
-        const VkShaderModuleCreateInfo sci{
-            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            .codeSize = static_cast<std::size_t>(code_size),
-            .pCode = code.data(),
-        };
+        VkShaderModuleCreateInfo sci{};
+        sci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        sci.codeSize = static_cast<std::size_t>(code_size);
+        sci.pCode = code.data();
         Check(vkCreateShaderModule(device, &sci, nullptr, &compute_shader),
               "vkCreateShaderModule");
         std::array<VkDescriptorSetLayoutBinding,2> bindings{};
@@ -327,18 +326,16 @@ int main(int argc, char** argv) {
             bindings[binding].descriptorCount = 1;
             bindings[binding].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
         }
-        const VkDescriptorSetLayoutCreateInfo dsci{
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            .bindingCount = static_cast<std::uint32_t>(bindings.size()),
-            .pBindings = bindings.data(),
-        };
+        VkDescriptorSetLayoutCreateInfo dsci{};
+        dsci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        dsci.bindingCount = static_cast<std::uint32_t>(bindings.size());
+        dsci.pBindings = bindings.data();
         Check(vkCreateDescriptorSetLayout(device, &dsci, nullptr, &compute_set_layout),
               "vkCreateDescriptorSetLayout");
-        const VkPipelineLayoutCreateInfo plci{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .setLayoutCount = 1,
-            .pSetLayouts = &compute_set_layout,
-        };
+        VkPipelineLayoutCreateInfo plci{};
+        plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        plci.setLayoutCount = 1;
+        plci.pSetLayouts = &compute_set_layout;
         Check(vkCreatePipelineLayout(device, &plci, nullptr, &compute_pipeline_layout),
               "vkCreatePipelineLayout");
         VkComputePipelineCreateInfo cpci{};
@@ -352,20 +349,18 @@ int main(int argc, char** argv) {
                                        &compute_pipeline), "vkCreateComputePipelines");
 
         const VkDescriptorPoolSize pool_size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,2};
-        const VkDescriptorPoolCreateInfo dpci{
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-            .maxSets = 1,
-            .poolSizeCount = 1,
-            .pPoolSizes = &pool_size,
-        };
+        VkDescriptorPoolCreateInfo dpci{};
+        dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        dpci.maxSets = 1;
+        dpci.poolSizeCount = 1;
+        dpci.pPoolSizes = &pool_size;
         Check(vkCreateDescriptorPool(device, &dpci, nullptr, &compute_descriptor_pool),
               "vkCreateDescriptorPool");
-        const VkDescriptorSetAllocateInfo dsai{
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-            .descriptorPool = compute_descriptor_pool,
-            .descriptorSetCount = 1,
-            .pSetLayouts = &compute_set_layout,
-        };
+        VkDescriptorSetAllocateInfo dsai{};
+        dsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        dsai.descriptorPool = compute_descriptor_pool;
+        dsai.descriptorSetCount = 1;
+        dsai.pSetLayouts = &compute_set_layout;
         VkDescriptorSet compute_descriptor{};
         Check(vkAllocateDescriptorSets(device, &dsai, &compute_descriptor),
               "vkAllocateDescriptorSets");
