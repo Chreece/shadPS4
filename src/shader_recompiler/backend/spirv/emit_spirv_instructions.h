@@ -486,6 +486,9 @@ Id EmitInverseBallot(EmitContext& ctx, Id mask);
 Id EmitGroupAny(EmitContext& ctx, Id bit);
 Id EmitDataAppend(EmitContext& ctx, Id gds_dw_offset, Id exec);
 Id EmitDataConsume(EmitContext& ctx, Id gds_dw_offset, Id exec);
+// Runtime wave creation ordering must be implemented before this can execute.
+Id EmitOrderedGdsCount(EmitContext& ctx, Id runtime_m0, Id address, Id exec,
+                       u32 encoded_control);
 
 void EmitEmitVertex(EmitContext& ctx);
 void EmitEmitPrimitive(EmitContext& ctx);

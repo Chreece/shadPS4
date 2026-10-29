@@ -657,6 +657,12 @@ void PatchPhiNodes(const IR::Program& program, EmitContext& ctx) {
 
 std::vector<u32> EmitSPIRV(const Profile& profile, const RuntimeInfo& runtime_info,
                            const IR::Program& program, Bindings& binding) {
+    // Refuse unsupported ordered GDS *before* constructing a shader module.
+    // The frontend retains its full live M0/ADDR/EXEC/control operands; the
+    // Vulkan backend still needs a proven multi-wave collection/resume path.
+    ASSERT_MSG(!program.info.uses_ordered_gds,
+               "DS_ORDERED_COUNT needs guest wave creation ordering; refusing unordered "
+               "SPIR-V atomic lowering");
     EmitContext ctx{profile, runtime_info, program.info, binding};
     const Id main{DefineMain(ctx, program)};
     DefineEntryPoint(program.info, ctx, main);
@@ -714,6 +720,15 @@ void EmitGetVccHi(EmitContext& ctx) {
 
 void EmitGetM0(EmitContext& ctx) {
     UNREACHABLE_MSG("Unreachable instruction");
+}
+
+Id EmitOrderedGdsCount(EmitContext&, Id, Id, Id, u32 encoded_control) {
+    // A separate wave scheduler is required to execute this instruction in
+    // *guest wave-creation order*. An unordered host atomic would produce
+    // incorrect results for GDS Exchange/Add and is intentionally forbidden.
+    UNREACHABLE_MSG(
+        "Cannot emit ordered GDS count (control={:#x}) without a verified "
+        "wave-creation-order GDS scheduler", encoded_control);
 }
 
 void EmitSetScc(EmitContext& ctx) {

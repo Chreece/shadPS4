@@ -131,6 +131,8 @@ struct Info : InfoPersistent {
     bool uses_unpack_10_11_11{};
     bool uses_buffer_int64_atomics{};
     bool uses_shared_int64_atomics{};
+    // Ordered GDS requires guest wave creation order, not an ordinary Vulkan atomic.
+    bool uses_ordered_gds{};
     bool stores_tess_level_outer{};
     bool stores_tess_level_inner{};
     bool translation_failed{};

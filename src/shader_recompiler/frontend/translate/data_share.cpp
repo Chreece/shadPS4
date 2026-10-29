@@ -76,6 +76,8 @@ void Translator::EmitDataShare(const GcnInst& inst) {
         return DS_CONSUME(inst);
     case Opcode::DS_APPEND:
         return DS_APPEND(inst);
+    case Opcode::DS_ORDERED_COUNT:
+        return DS_ORDERED_COUNT(inst);
     case Opcode::DS_WRITE_B16:
         return DS_WRITE(16, false, false, false, inst);
     case Opcode::DS_WRITE_B64:
@@ -342,6 +344,22 @@ void Translator::DS_APPEND(const GcnInst& inst) {
     SetDst(inst.dst[0], prev);
 }
 
+void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
+    const u32 offset0 = u32(inst.control.ds.offset0);
+    const u32 offset1 = u32(inst.control.ds.offset1);
+    ASSERT_MSG(inst.control.ds.gds && (offset0 & 3u) == 0u,
+               "Ordered GDS requires GDS bit and aligned counter index");
+    ASSERT_MSG((offset1 & 2u) == 0u || (offset1 & 1u) != 0u,
+               "Ordered GDS wave_done requires wave_release");
+    // Preserve the live M0 register, the per-lane ADDR value and EXEC. Neither
+    // an unsequenced atomic nor a placeholder result can implement the
+    // required wave creation order. The IR opcode is deliberately distinct.
+    info.uses_ordered_gds = true;
+    const IR::U32 control = ir.Imm32(offset0 | (offset1 << 8u));
+    const IR::U32 old_value = ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), control);
+    SetDst(inst.dst[0], old_value);
+}
+
 void Translator::DS_CONSUME(const GcnInst& inst) {
     const u32 inst_offset = (u32(inst.control.ds.offset1) << 8u) + inst.control.ds.offset0;
     const IR::U32 base = ir.BitFieldExtract(ir.GetM0(), ir.Imm32(16), ir.Imm32(16));
@@ -349,5 +367,7 @@ void Translator::DS_CONSUME(const GcnInst& inst) {
     const IR::U32 prev = ir.DataConsume(ir.ShiftRightLogical(gds_offset, ir.Imm32(2u)));
     SetDst(inst.dst[0], prev);
 }
+
+
 
 } // namespace Shader::Gcn
