@@ -39,14 +39,16 @@ int main(int argc, char** argv) {
     VkCommandPool pool = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
     VkShaderModule compute_shader = VK_NULL_HANDLE;
+    VkShaderModule resume_shader = VK_NULL_HANDLE;
+    VkPipeline resume_pipeline = VK_NULL_HANDLE;
     VkDescriptorSetLayout compute_set_layout = VK_NULL_HANDLE;
     VkDescriptorPool compute_descriptor_pool = VK_NULL_HANDLE;
     VkPipelineLayout compute_pipeline_layout = VK_NULL_HANDLE;
     VkPipeline compute_pipeline = VK_NULL_HANDLE;
     std::array<Buffer, 5> buffers{};
     try {
-        if (argc != 2) {
-            throw std::runtime_error("COMPUTE_PACKET_WRITER_SPIRV_PATH_REQUIRED");
+        if (argc != 3) {
+            throw std::runtime_error("COMPUTE_WRITER_AND_RESUME_READER_SPIRV_PATHS_REQUIRED");
         }
         std::ifstream shader_file{argv[1], std::ios::binary | std::ios::ate};
         if (!shader_file) throw std::runtime_error("GPU_PACKET_WRITER_SPIRV_MISSING");
@@ -60,6 +62,19 @@ int main(int argc, char** argv) {
         if (!shader_file.read(reinterpret_cast<char*>(code.data()), code_size) ||
             code.front() != 0x07230203u) {
             throw std::runtime_error("GPU_PACKET_WRITER_SPIRV_HEADER_INVALID");
+        }
+        std::ifstream resume_file{argv[2], std::ios::binary | std::ios::ate};
+        if (!resume_file) throw std::runtime_error("GPU_RESUME_READER_SPIRV_MISSING");
+        const std::streamoff resume_code_size = resume_file.tellg();
+        if (resume_code_size <= 0 || resume_code_size > 65536 ||
+            (static_cast<std::size_t>(resume_code_size) & 3u) != 0) {
+            throw std::runtime_error("GPU_RESUME_READER_SPIRV_LENGTH_INVALID");
+        }
+        std::vector<std::uint32_t> resume_code(static_cast<std::size_t>(resume_code_size) / 4);
+        resume_file.seekg(0);
+        if (!resume_file.read(reinterpret_cast<char*>(resume_code.data()),
+                              resume_code_size) || resume_code.front() != 0x07230203u) {
+            throw std::runtime_error("GPU_RESUME_READER_SPIRV_HEADER_INVALID");
         }
         VkApplicationInfo app{};
         app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -463,6 +478,98 @@ int main(int argc, char** argv) {
             ready[2].previous!=2 || ready[2].current!=4) {
             throw std::runtime_error("GPU_COMPUTE_WRITER_HOST_RESOLVE_MISMATCH");
         }
+        // Second independent GPU dispatch: consume genuine host-resolved
+        // continuation packets. This is only a test of the packet handoff
+        // and old-value selection, NOT a guest SGPR/VGPR/PC restoration.
+        std::memcpy(buffers[2].mapping, ready.data(), bytes);
+        flush(buffers[2]);
+        VkShaderModuleCreateInfo resume_sci{};
+        resume_sci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        resume_sci.codeSize = static_cast<std::size_t>(resume_code_size);
+        resume_sci.pCode = resume_code.data();
+        Check(vkCreateShaderModule(device, &resume_sci, nullptr, &resume_shader),
+              "vkCreateShaderModule(resume)");
+        VkComputePipelineCreateInfo resume_cpci = cpci;
+        resume_cpci.stage.module = resume_shader;
+        Check(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &resume_cpci,
+                                       nullptr, &resume_pipeline),
+              "vkCreateComputePipelines(resume)");
+
+        const VkDescriptorBufferInfo resume_input{buffers[3].handle, 0, bytes};
+        VkWriteDescriptorSet resume_write{};
+        resume_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        resume_write.dstSet = compute_descriptor;
+        resume_write.dstBinding = 1;
+        resume_write.descriptorCount = 1;
+        resume_write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        resume_write.pBufferInfo = &resume_input;
+        vkUpdateDescriptorSets(device, 1, &resume_write, 0, nullptr);
+
+        VkCommandBuffer resume_cmd{};
+        Check(vkAllocateCommandBuffers(device, &cbi, &resume_cmd),
+              "vkAllocateCommandBuffers(resume)");
+        Check(vkBeginCommandBuffer(resume_cmd, &begin),
+              "vkBeginCommandBuffer(resume)");
+        const auto resume_barrier = [&](VkBuffer handle, VkAccessFlags src, VkAccessFlags dst,
+                                        VkPipelineStageFlags before,
+                                        VkPipelineStageFlags after) {
+            VkBufferMemoryBarrier mb{};
+            mb.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            mb.srcAccessMask = src;
+            mb.dstAccessMask = dst;
+            mb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            mb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            mb.buffer = handle;
+            mb.size = bytes;
+            vkCmdPipelineBarrier(resume_cmd, before, after, 0,
+                                 0, nullptr, 1, &mb, 0, nullptr);
+        };
+        resume_barrier(buffers[2].handle, VK_ACCESS_HOST_WRITE_BIT,
+                       VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                       VK_PIPELINE_STAGE_TRANSFER_BIT);
+        vkCmdCopyBuffer(resume_cmd, buffers[2].handle, buffers[3].handle, 1, &region);
+        resume_barrier(buffers[3].handle, VK_ACCESS_TRANSFER_WRITE_BIT,
+                       VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        vkCmdBindPipeline(resume_cmd, VK_PIPELINE_BIND_POINT_COMPUTE, resume_pipeline);
+        vkCmdBindDescriptorSets(resume_cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                compute_pipeline_layout, 0, 1, &compute_descriptor,
+                                0, nullptr);
+        vkCmdDispatch(resume_cmd, 4, 1, 1);
+        resume_barrier(buffers[0].handle, VK_ACCESS_SHADER_WRITE_BIT,
+                       VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                       VK_PIPELINE_STAGE_TRANSFER_BIT);
+        vkCmdCopyBuffer(resume_cmd, buffers[0].handle, buffers[1].handle, 1, &region);
+        resume_barrier(buffers[1].handle, VK_ACCESS_TRANSFER_WRITE_BIT,
+                       VK_ACCESS_HOST_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                       VK_PIPELINE_STAGE_HOST_BIT);
+        Check(vkEndCommandBuffer(resume_cmd), "vkEndCommandBuffer(resume)");
+        Check(vkResetFences(device, 1, &fence), "vkResetFences(resume)");
+        VkSubmitInfo resume_submit = submit;
+        resume_submit.pCommandBuffers = &resume_cmd;
+        Check(vkQueueSubmit(queue, 1, &resume_submit, fence),
+              "vkQueueSubmit(resume)");
+        Check(vkWaitForFences(device, 1, &fence, VK_TRUE, 10'000'000'000ULL),
+              "vkWaitForFences(resume)");
+        invalidate(buffers[1]);
+        std::array<GpuResumePacket,4> resumed_gpu{};
+        std::memcpy(resumed_gpu.data(), buffers[1].mapping, bytes);
+        for (std::size_t slot = 0; slot < resumed_gpu.size(); ++slot) {
+            GpuResumePacket expected = ready[slot];
+            if (expected.flags == 0) {
+                expected.previous = NoActiveLane;
+            } else if (expected.flags != ResumeFlags) {
+                throw std::runtime_error("UNSUPPORTED_HOST_RESUME_FLAGS");
+            }
+            if (std::memcmp(&resumed_gpu[slot], &expected, sizeof(expected)) != 0) {
+                throw std::runtime_error("GPU_RESUME_READER_RETURN_VALUE_OR_METADATA_MISMATCH");
+            }
+        }
+        std::cout << "GPU_RESUME_COMPUTE_READER=PASS gpu_dispatches=1"
+                     " host_resolved_packets=4 active_previous_value=PASS"
+                     " bypass_no_guest_return=PASS preserved_token_rank_site=PASS"
+                     " guest_shader_state_restore=NOT_IMPLEMENTED\n";
+
         std::cout << "GPU_CAPTURE_COMPUTE_WRITER=PASS gpu_dispatches=1"
                      " packets_written=4 real_vk_compute=1"
                      " guest_rank_source=TEST_FIXTURE host_sparse_resolve=PASS"
@@ -475,6 +582,8 @@ int main(int argc, char** argv) {
                   << " gpu_to_host=PASS host_to_gpu=PASS"
                   << " fence=PASS barrier=PASS noncoherent_handled=PASS"
                   << " guest_shader=NOT_RUN framebuffer=NOT_TOUCHED\n";
+        if (resume_pipeline) vkDestroyPipeline(device, resume_pipeline, nullptr);
+        if (resume_shader) vkDestroyShaderModule(device, resume_shader, nullptr);
         if (compute_pipeline) vkDestroyPipeline(device, compute_pipeline, nullptr);
         if (compute_pipeline_layout) vkDestroyPipelineLayout(device, compute_pipeline_layout, nullptr);
         if (compute_descriptor_pool) vkDestroyDescriptorPool(device, compute_descriptor_pool, nullptr);
@@ -494,6 +603,8 @@ int main(int argc, char** argv) {
     } catch (const std::exception& e) {
         std::cerr << "GPU_TRANSFER_SMOKE=FAIL reason=" << e.what() << '\n';
         if (device) {
+        if (resume_pipeline) vkDestroyPipeline(device, resume_pipeline, nullptr);
+        if (resume_shader) vkDestroyShaderModule(device, resume_shader, nullptr);
         if (compute_pipeline) vkDestroyPipeline(device, compute_pipeline, nullptr);
         if (compute_pipeline_layout) vkDestroyPipelineLayout(device, compute_pipeline_layout, nullptr);
         if (compute_descriptor_pool) vkDestroyDescriptorPool(device, compute_descriptor_pool, nullptr);
