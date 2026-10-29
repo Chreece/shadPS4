@@ -105,7 +105,7 @@ def main() -> int:
     LOGS.mkdir(parents=True, exist_ok=True)
     TESTS.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    tag = f'gds-pr117-cpu-{{stamp}}-{{os.getpid()}}'
+    tag = f'gds-pr117-cpu-{stamp}-{os.getpid()}'
     outdir = LOGS / tag
     outdir.mkdir(mode=0o700)
     archive = LOGS / (tag + '.tar.gz')
@@ -132,7 +132,7 @@ def main() -> int:
             with (outdir / 'download.log').open('ab') as log:
                 p = subprocess.run(command, stdout=log, stderr=log, timeout=120)
             if p.returncode:
-                raise RuntimeError(f'FETCH_FAILED rc={{p.returncode}} {{filename}}')
+                raise RuntimeError(f'FETCH_FAILED rc={p.returncode} {filename}')
             data = dest.read_bytes()
             if len(data) > MAX_SOURCE_BYTES or sha1git(data) != expected_blob:
                 raise RuntimeError('SOURCE_GIT_BLOB_MISMATCH: ' + filename)
@@ -147,6 +147,7 @@ def main() -> int:
             env = os.environ.copy()
             env['CXX'] = compiler
             env['RUN_SANITIZERS'] = '1'
+            env['TMPDIR'] = str(work)
             env['UBSAN_OPTIONS'] = 'halt_on_error=1'
             testlog = outdir / (compiler.replace('+','p')+'-cpu.log')
             with testlog.open('wb') as log:
