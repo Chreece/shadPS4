@@ -249,11 +249,13 @@ private:
     bool resolved_{};
 };
 
-// Models multiple statically distinct ordered-count instruction sites in the
-// same guest shader. A wave can execute both an Exchange site and a later Add
-// site; treating the whole shader as *one* ordered update per created wave
-// would discard the second instruction. Each site is a full collect/resolve
-// phase, with the counter map carried into the next phase.
+// Synthetic reference for a specifically verified FULL-WAVE sequential epoch:
+// every guest-created wave must reach every stage. This is NOT implied by
+// seeing two static DS_ORDERED_COUNT instructions in one shader. Different
+// waves may select different sites (e.g. Exchange or Add) in the same epoch,
+// so blindly requiring a full batch at each static site would deadlock.
+// Use ContinuationHandoff with wave-specific site_pc for such mixed sites.
+// Here, a verified full-wave stage is collect/resolve, carrying counters on.
 //
 // This is a host reference scheduler only. A GPU backend must actually pause
 // and resume *all* waves at each ordered site, without a spinlock on unordered
