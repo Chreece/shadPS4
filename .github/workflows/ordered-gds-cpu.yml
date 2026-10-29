@@ -13,6 +13,7 @@ on:
       - 'tests/gcn_ordered_gds_frontend_fixture.cpp.in'
       - 'tests/run_ordered_gds_cpu.sh'
       - 'scripts/gds-pr117-cpu-recover.sh'
+      - 'scripts/gds-pr117-continue-native.sh'
       - '.github/workflows/ordered-gds-cpu.yml'
   push:
     branches:
@@ -28,6 +29,7 @@ on:
       - 'tests/gcn_ordered_gds_frontend_fixture.cpp.in'
       - 'tests/run_ordered_gds_cpu.sh'
       - 'scripts/gds-pr117-cpu-recover.sh'
+      - 'scripts/gds-pr117-continue-native.sh'
       - '.github/workflows/ordered-gds-cpu.yml'
   workflow_dispatch:
 
@@ -56,6 +58,8 @@ jobs:
           printf 'int main() { return 0; }\n' | "$CXX" -std=c++23 -x c++ -fsyntax-only -
       - name: Syntax-check the one-paste Clang bootstrap
         run: bash -n scripts/gds-pr117-cpu-recover.sh
+      - name: Syntax-check incremental native GDS preflight runner
+        run: bash -n scripts/gds-pr117-continue-native.sh
       - name: Verify standalone GDS frontend, ordered batches and continuations
         env:
           CXX: ${{ matrix.compiler }}
