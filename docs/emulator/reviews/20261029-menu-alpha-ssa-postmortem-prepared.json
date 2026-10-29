@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "record_id": "got-c925-menu-alpha-ssa-prepared-20261029",
+  "recorded_on": "2026-10-29",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "record_type": "HISTORICAL_FRAGMENT_SSA_REVIEW_AND_READ_ONLY_RECAPTURE_FIXTURE",
+  "tested_games": [],
+  "related_prs": [
+    106,
+    107,
+    109,
+    114
+  ],
+  "primary_review": "20261029T115940254129Z-menu-fills-native.json",
+  "game_shader_archive": "got-c925-remaining-shaders-20261028T155744943557Z.tar.gz",
+  "historical_fragment_hashes": [
+    "b5c898c7",
+    "7eaf40ad"
+  ],
+  "reason": "The latest user run drew clouds, text, particles, but katana was untextured and foreground grass missing. It bound large 27651-entry typed image tables for both fragment shaders. Source shader IR outputs were omitted from the latest 128-file alphabetically capped evidence collector, although previous archival dumps contain them.",
+  "static_slicing": {
+    "method": "Trace every SSA definition dependency backwards from DiscardCond source, without executing the shader or inferring pixel output.",
+    "historical_b5c898c7": {
+      "discard_nodes": 1,
+      "reachable_ssa_nodes": 291,
+      "image_sample_nodes": 4,
+      "unflattened_dynamic_sharp_buffer_reads": 3,
+      "undefined_nodes": 0
+    },
+    "historical_7eaf40ad": {
+      "discard_nodes": 1,
+      "reachable_ssa_nodes": 576,
+      "image_sample_nodes": 8,
+      "unflattened_dynamic_sharp_buffer_reads": 3,
+      "undefined_nodes": 8
+    }
+  },
+  "scope_limits": "These are OCT28 historical shaders, not guaranteed equal to OCT29 native executable; static dependency does not prove discard executed or alpha/texture values were wrong. Undef nodes may be legitimate unused path values; do not promote a zero-valued material/disable discard workaround. Focus on actual shader resource and output invariants after recapturing current sources.",
+  "program": "tools/development/c925_menu_fragment_focus/capture_existing_menu_fragment_shaders.sh",
+  "branch": "diagnostics/c925-menu-fragment-focus-20261029",
+  "program_commit": "0eab6df936733dbeb526a2be3c1d78c5de8b5572",
+  "program_git_blob": "90e0c235db248ff7c503db936146dfb50e04728b",
+  "program_sha256": "e4639f774c42f6a8ebc7ab5385576277ab11335826240edeee933ad40678b687",
+  "program_test": "Bash syntax PASS. Existing user replay simulation with private profile containing 11 files per b5/7e hash PASS; 22 files captured,1,524,064 bytes, archive and SHA manifest generated, original bytes unchanged, SSH session left open. No game, emulator build, driver/GPU call or service restart in test.",
+  "next": "Run pinned read-only collector against existing GoT private shader dumps. Compare current source/sampler/alpha discard SSA with historical fragment shaders to determine if null image, wrong sampler, texture buffer visibility or color attachment rules are still absent before changing production C++.",
+  "decision": "NO_EMULATOR_CHANGE; JOURNALED_CAPTURE_BUG_AND_STATIC_LEAD; PRESERVE_ACCEPTED_ALL_GAME_FIXES"
+}
