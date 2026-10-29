@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -20,11 +22,13 @@ namespace Shader::Gcn::OrderedGds {
 struct CapturedWave {
     Request request;
     u64 continuation_token; // Opaque host-owned state, zero is not a token.
+    std::optional<u32> site_pc{}; // Exact guest instruction site, never a shader hash.
 };
 
 struct ReadyContinuation {
     u64 continuation_token;
     Result value;
+    std::optional<u32> site_pc{}; // Resume from the site this wave actually reached.
 };
 
 // Complete guest-wave epoch: capture -> ordered resolve -> resume each wave.
@@ -35,12 +39,24 @@ public:
     explicit ContinuationHandoff(std::map<CounterKey, u32> initialized_counters)
         : counters_(std::move(initialized_counters)) {}
 
-    void BeginEpoch(u64 epoch, u64 expected_waves) {
+    // An epoch covers all guest-created waves, potentially reaching different
+    // static DS_ORDERED_COUNT sites. Never wait for every wave at EACH site:
+    // mutually exclusive Exchange/Add branches would then never complete.
+    // Omit site validation only for legacy callers without site metadata.
+    void BeginEpoch(u64 epoch, u64 expected_waves,
+                    std::span<const u32> valid_sites = {}) {
         std::scoped_lock lock{mutex_};
-        if (active_ || epoch != next_epoch_ || expected_waves == 0) {
-            throw std::invalid_argument("ordered GDS epoch active or out of order");
+        if (active_ || epoch != next_epoch_ || expected_waves == 0 ||
+            valid_sites.size() > 4'096) {
+            throw std::invalid_argument("ordered GDS epoch active, out of order or too large");
+        }
+        std::vector<u32> sites(valid_sites.begin(), valid_sites.end());
+        std::sort(sites.begin(), sites.end());
+        if (std::adjacent_find(sites.begin(), sites.end()) != sites.end()) {
+            throw std::invalid_argument("duplicate GDS instruction site in epoch allow-list");
         }
         collector_.emplace(expected_waves, counters_);
+        valid_sites_ = std::move(sites);
         tokens_.clear();
         pending_results_.clear();
         active_ = true;
@@ -53,10 +69,16 @@ public:
         if (!captured.continuation_token || tokens_.contains(captured.continuation_token)) {
             throw std::invalid_argument("invalid or duplicate guest continuation token");
         }
-        // An out-of-range or duplicate wave fails before its token is attached.
-        // Capturing does not mutate the initialized GDS counters.
+        if (!valid_sites_.empty() &&
+            (!captured.site_pc || !std::binary_search(valid_sites_.begin(),
+                                                     valid_sites_.end(), *captured.site_pc))) {
+            throw std::invalid_argument("unknown or missing ordered GDS guest site PC");
+        }
+        // Arrival order does not imply guest creation order. The caller must
+        // supply the latter and all waves before Resolve() mutates GDS.
         collector_->Submit(captured.request);
-        tokens_.emplace(captured.continuation_token, captured.request.creation_sequence);
+        tokens_.emplace(captured.continuation_token,
+                        TokenState{captured.request.creation_sequence, captured.site_pc});
     }
 
     [[nodiscard]] bool CapturedAll(u64 epoch) const {
@@ -73,19 +95,20 @@ public:
         if (resolved.size() != tokens_.size()) {
             throw std::logic_error("wave/continuation coverage mismatch");
         }
-        std::map<u64, Result> staged;
+        std::map<u64, ReadyContinuation> staged;
         std::vector<ReadyContinuation> output;
         output.reserve(resolved.size());
-        for (const auto& [token, sequence] : tokens_) {
-            if (sequence >= resolved.size() ||
-                resolved[sequence].creation_sequence != sequence) {
+        for (const auto& [token, state] : tokens_) {
+            if (state.creation_sequence >= resolved.size() ||
+                resolved[state.creation_sequence].creation_sequence != state.creation_sequence) {
                 throw std::logic_error("ordered wave/continuation identity changed");
             }
-            auto [it, inserted] = staged.emplace(token, resolved[sequence]);
+            const ReadyContinuation ready{token, resolved[state.creation_sequence], state.site_pc};
+            auto [it, inserted] = staged.emplace(token, ready);
             if (!inserted) {
                 throw std::logic_error("duplicate continuation after resolution");
             }
-            output.push_back({token, it->second});
+            output.push_back(it->second);
         }
         pending_results_ = std::move(staged);
         counters_ = collector_->Counters();
@@ -93,23 +116,28 @@ public:
         return output;
     }
 
-    [[nodiscard]] Result Resume(u64 epoch, u64 continuation_token) {
+    [[nodiscard]] ReadyContinuation ResumeCaptured(u64 epoch, u64 continuation_token) {
         std::scoped_lock lock{mutex_};
         RequireEpoch(epoch, true);
         const auto it = pending_results_.find(continuation_token);
         if (it == pending_results_.end()) {
             throw std::invalid_argument("absent, consumed, or stale continuation");
         }
-        Result result = it->second;
+        ReadyContinuation result = it->second;
         pending_results_.erase(it);
         if (pending_results_.empty()) {
             // No next epoch until every previous wave's result was consumed.
             active_ = false;
             collector_.reset();
             tokens_.clear();
+            valid_sites_.clear();
             ++next_epoch_;
         }
         return result;
+    }
+
+    [[nodiscard]] Result Resume(u64 epoch, u64 continuation_token) {
+        return ResumeCaptured(epoch, continuation_token).value;
     }
 
     [[nodiscard]] std::map<CounterKey, u32> CounterSnapshot() const {
@@ -124,11 +152,17 @@ private:
         }
     }
 
+    struct TokenState {
+        u64 creation_sequence;
+        std::optional<u32> site_pc;
+    };
+
     mutable std::mutex mutex_;
     std::map<CounterKey, u32> counters_;
     std::optional<CompleteWaveCollector> collector_;
-    std::map<u64, u64> tokens_;
-    std::map<u64, Result> pending_results_;
+    std::vector<u32> valid_sites_;
+    std::map<u64, TokenState> tokens_;
+    std::map<u64, ReadyContinuation> pending_results_;
     u64 next_epoch_{};
     bool active_{};
     bool resolved_{};
