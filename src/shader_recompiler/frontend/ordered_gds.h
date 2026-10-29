@@ -59,6 +59,32 @@ struct CounterKey {
     auto operator<=>(const CounterKey&) const = default;
 };
 
+// A request's payload must come from the *guest* ISA and live wave state.
+// Legacy GCN ordered counters use count_bits(EXEC); RDNA3 uses ADDR from
+// the first valid lane. The host GPU's generation is irrelevant to the guest.
+enum class GuestPayloadMode : u32 { LegacyGcnExecCount, RdnaFirstValidLaneValue };
+
+struct ActiveWavePayload {
+    u64 exec_mask;
+    std::optional<u32> first_valid_lane_addr_value;
+};
+
+inline u32 ResolveGuestPayload(GuestPayloadMode mode, ActiveWavePayload wave) {
+    switch (mode) {
+    case GuestPayloadMode::LegacyGcnExecCount:
+        return static_cast<u32>(std::popcount(wave.exec_mask));
+    case GuestPayloadMode::RdnaFirstValidLaneValue:
+        if (wave.exec_mask == 0) {
+            return 0;
+        }
+        if (!wave.first_valid_lane_addr_value) {
+            throw std::invalid_argument("live first-valid lane value required for RDNA");
+        }
+        return *wave.first_valid_lane_addr_value;
+    }
+    throw std::invalid_argument("unknown guest ordered GDS payload mode");
+}
+
 struct Request {
     u64 creation_sequence; // Supplied by a real guest-wave scheduler.
     u32 runtime_m0;        // Fully evaluated, never guessed from static s_mov.
@@ -119,7 +145,7 @@ public:
         std::vector<Result> out;
         out.reserve(ordered.size());
         for (const auto& req : ordered) {
-            const CounterKey key{req.runtime_m0 >> 16u, req.instruction.counter_index};
+            const CounterKey key = KeyFromM0(req.runtime_m0, req.instruction.counter_index);
             const auto it = next_counters.find(key);
             if (it == next_counters.end()) {
                 throw std::invalid_argument("GDS counter absent: no implicit zero initialization");
@@ -141,6 +167,13 @@ public:
         }
         counters_.swap(next_counters);
         return out;
+    }
+
+    // A genuine scheduler must produce these two numbers, never static SGPR
+    // source-register names. The ordered counter base ignores the bottom 2
+    // bits as prescribed by the GDS ISA. This is *not* a guest-memory address.
+    [[nodiscard]] static CounterKey KeyFromM0(u32 runtime_m0, u32 counter_index) {
+        return CounterKey{(runtime_m0 >> 16u) & ~u32{3}, counter_index};
     }
 
     const std::map<CounterKey, u32>& Counters() const noexcept { return counters_; }
