@@ -1,0 +1,86 @@
+// Exact production methods are inserted by check_ordered_gds_frontend.py.
+// These test doubles record IR values; no GPU, Vulkan, guest shader, or fake
+// counter results are sent to any emulator runtime.
+#include <cassert>
+#include <cstdint>
+#include <stdexcept>
+#include <iostream>
+using u32 = std::uint32_t;
+#define ASSERT_MSG(cond, ...) do { if (!(cond)) throw std::invalid_argument("invalid DS_ORDERED_COUNT"); } while (false)
+
+namespace IR {
+struct U32 { u32 value; };
+struct U1 { bool value; };
+enum class Opcode { OrderedGdsCount };
+struct IREmitter {
+    u32 current_m0{};
+    bool exec{};
+    struct Call { Opcode opcode; u32 m0; u32 address; bool active; u32 control; };
+    Call recorded{};
+    unsigned count{};
+    U32 GetM0() const { return {current_m0}; }
+    U1 GetExec() const { return {exec}; }
+    U32 Imm32(u32 v) const { return {v}; }
+    template<class R> R Inst(Opcode opcode,const U32& m0,const U32& addr,
+                              const U1& active,const U32& control) {
+        recorded={opcode,m0.value,addr.value,active.value,control.value};
+        count++;
+        return R{0x1234abcd}; // Only a test sentinel, NOT a guest counter.
+    }
+    U32 OrderedGdsCount(const U32& m0, const U32& address, const U32& encoded_control);
+};
+}
+struct Operand { u32 code; };
+struct InstControlDS { u32 offset0; u32 offset1; bool gds; };
+struct InstControl { InstControlDS ds; };
+struct GcnInst { InstControl control; Operand src[3]; Operand dst[1]; };
+struct MockInfo { bool uses_ordered_gds{}; };
+struct Translator {
+    IR::IREmitter ir;
+    MockInfo info;
+    u32 source_value{};
+    u32 written_value{};
+    u32 written_reg{};
+    IR::U32 GetSrc(const Operand& op) { assert(op.code==9); return {source_value}; }
+    void SetDst(const Operand& dst, IR::U32 v) {written_reg=dst.code; written_value=v.value;}
+    void DS_ORDERED_COUNT(const GcnInst& inst);
+};
+
+namespace IR {
+/* EXACT_EMITTER */
+}
+/* EXACT_TRANSLATOR */
+
+int main() {
+    Translator t;
+    t.ir.current_m0=0x12340567u;
+    t.ir.exec=true;
+    t.source_value=0x87654321u;
+    GcnInst inst{{{4u,0x13u,true}},{{9},{0},{0}},{{11}}};
+    t.DS_ORDERED_COUNT(inst);
+    assert(t.info.uses_ordered_gds && t.ir.count==1);
+    assert(t.ir.recorded.opcode==IR::Opcode::OrderedGdsCount);
+    assert(t.ir.recorded.m0==0x12340567u && t.ir.recorded.address==0x87654321u);
+    assert(t.ir.recorded.active && t.ir.recorded.control==0x1304u);
+    assert(t.written_reg==11 && t.written_value==0x1234abcdu);
+    // The second ordered instruction must preserve distinct Add and new M0/EXEC.
+    t.ir.current_m0=0x88aa0812u;
+    t.ir.exec=false;
+    inst.control.ds.offset1=0x03u;
+    t.DS_ORDERED_COUNT(inst);
+    assert(t.ir.count==2 && t.ir.recorded.control==0x0304u);
+    assert(!t.ir.recorded.active && t.ir.recorded.m0==0x88aa0812u);
+    bool rejected=false;
+    inst.control.ds.gds=false;
+    try {t.DS_ORDERED_COUNT(inst);} catch(const std::invalid_argument&) {rejected=true;}
+    assert(rejected && t.ir.count==2);
+    inst.control.ds.gds=true;inst.control.ds.offset0=5u;
+    rejected=false;
+    try {t.DS_ORDERED_COUNT(inst);} catch(const std::invalid_argument&) {rejected=true;}
+    assert(rejected && t.ir.count==2);
+    inst.control.ds.offset0=4u;inst.control.ds.offset1=0x02u;
+    rejected=false;
+    try {t.DS_ORDERED_COUNT(inst);} catch(const std::invalid_argument&) {rejected=true;}
+    assert(rejected && t.ir.count==2);
+    std::cout<<"GDS_ORDERED_FRONTEND_EXTRACTED=PASS ops=2 cases=5 NO_GPU_WORK\n";
+}
