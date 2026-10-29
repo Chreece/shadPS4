@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -180,5 +181,59 @@ public:
 
 private:
     std::map<CounterKey, u32> counters_;
+};
+// Collection is asynchronous with respect to the guest-wave producer: no GPU or
+// host worker is parked waiting for an earlier wave to become resident. Once a
+// *complete* set is present, execute in guest-creation order and return results
+// for a separate, explicitly synchronized continuation phase.
+// This host-side class is not, by itself, a Vulkan continuation mechanism.
+class CompleteWaveCollector {
+public:
+    CompleteWaveCollector(u64 expected_waves, std::map<CounterKey, u32> initialized_counters)
+        : expected_(expected_waves), executor_(std::move(initialized_counters)) {
+        // An untrusted guest must not make the host allocate unbounded metadata.
+        if (expected_ > 1'000'000ULL) {
+            throw std::invalid_argument("ordered GDS batch exceeds safe wave limit");
+        }
+    }
+
+    void Submit(Request request) {
+        std::scoped_lock lock{mutex_};
+        if (resolved_ || request.creation_sequence >= expected_ ||
+            !pending_.emplace(request.creation_sequence, request).second) {
+            throw std::invalid_argument("duplicate, out-of-range or completed ordered GDS wave");
+        }
+    }
+
+    bool Complete() const {
+        std::scoped_lock lock{mutex_};
+        return pending_.size() == expected_;
+    }
+
+    std::vector<Result> Resolve() {
+        std::scoped_lock lock{mutex_};
+        if (resolved_ || pending_.size() != expected_) {
+            throw std::invalid_argument("ordered GDS requires full wave batch and single resolve");
+        }
+        std::vector<Request> requests;
+        requests.reserve(pending_.size());
+        for (const auto& [sequence, request] : pending_) {
+            requests.push_back(request);
+        }
+        auto results = executor_.Apply(requests, expected_);
+        resolved_ = true;
+        return results;
+    }
+
+    const std::map<CounterKey, u32>& Counters() const noexcept {
+        return executor_.Counters();
+    }
+
+private:
+    u64 expected_;
+    mutable std::mutex mutex_;
+    std::map<u64, Request> pending_;
+    CompleteBatch executor_;
+    bool resolved_{};
 };
 } // namespace Shader::Gcn::OrderedGds
