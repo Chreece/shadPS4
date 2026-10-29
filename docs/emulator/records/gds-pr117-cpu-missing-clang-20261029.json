@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "record_id": "gds-pr117-cpu-20261029T154935Z-3878615-reviewed",
+  "recorded_at": "2026-10-29",
+  "scope": "universal shadPS4 GCN DS_ORDERED_COUNT PR #117 CPU verification",
+  "game_id": "CUSA34384",
+  "tested_games": [],
+  "archive": "gds-pr117-cpu-20261029T154935Z-3878615.tar.gz",
+  "archive_sha256": "c06882c690800fa4c5ad2d63e95548cf1ed39afbf1025dc7b6b34c64060540f2",
+  "source_commit": "c68d76dec8be08245ad67ba0bdbfcc1999bed85d",
+  "fork_pr": 117,
+  "cpu_evidence": "GCC C++23 tests PASS: real frontend extraction, typed IR/source checks, 99 sequences, 198 host continuation epochs; Clang not run.",
+  "failure": "RuntimeError('MISSING_COMPILER=clang++')",
+  "toolchain_change": "Added branch-scoped GCC/Clang sanitizers GitHub Actions workflow commit 43796a969465ebd83e2e7a0610eca7ddabf75a6f",
+  "workflow_result": "PENDING_NOT_VERIFIED",
+  "gpu_used": false,
+  "game_launched": false,
+  "visual_result": "NOT_TESTED",
+  "decision": "KEEP CPU reference and backend guard; do not merge as game fix",
+  "next": "Verify dual-compiler CI and native build. Implement real per-wave GPU capture, guest-creation order and two-site continuation; no unordered atomic substitution."
+}
