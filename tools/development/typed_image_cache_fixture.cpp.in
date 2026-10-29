@@ -1,0 +1,131 @@
+// Actual FindImage, ResolveOverlap and ExpandImage are inserted unchanged.
+// Cache registration, deferred lifetime and texel transport are CPU recorders.
+// This tests the selected path/data ownership, not Vulkan GPU implementation.
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <compare>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <deque>
+#include <limits>
+#include <stdexcept>
+#include <string_view>
+#include <string>
+#include <tuple>
+#include <vector>
+using u32=std::uint32_t;using u64=std::uint64_t;using u16=std::uint16_t;using s32=std::int32_t;using s64=std::int64_t;using VAddr=u64;
+static void Check(bool ok,const char* why){if(!ok){std::fprintf(stderr,"TYPED_IMAGE_FAIL=%s\n",why);std::exit(2);}}
+#define ASSERT(x) Check(bool(x),#x)
+#define ASSERT_MSG(x,...) Check(bool(x),#x)
+#define UNREACHABLE_MSG(...) throw std::runtime_error("unexpected overlap path")
+#define LOG_ERROR(category,...) RecordInfo(__VA_ARGS__)
+#define LOG_WARNING(...) ((void)0)
+template<class... T> void RecordInfo(T&&...){}
+namespace vk {static std::string to_string(int x){return std::to_string(x);}}
+#define LOG_INFO(category,...) RecordInfo(__VA_ARGS__)
+template<class T,std::size_t N>using SmallVector=std::vector<T>;
+namespace AmdGpu {enum class ImageType:u32 {Color1D=8,Color2D=9,Color3D=10};}
+struct Extent3D {u32 width=1,height=1,depth=1;auto operator<=>(const Extent3D&)const=default;};
+struct Resources {u16 levels=1,layers=1;auto operator<=>(const Resources&)const=default;bool Contains(const Resources& other)const{return levels>=other.levels&&layers>=other.layers;}};
+struct ImageInfo {
+ VAddr guest_address{0x100000};u64 guest_size{256};int pixel_format=1;AmdGpu::ImageType type{AmdGpu::ImageType::Color2D};
+ Extent3D size{};u32 pitch=1,num_bits=8,num_samples=1,tile_mode=1;bool alt_tile{};Resources resources{};
+ struct {bool is_block{},is_pow2{},is_depth{};}props;
+ u32 BlockDim()const{return 1;}
+ int MipOf(const ImageInfo&)const{return -1;}int SliceOf(const ImageInfo&,int)const{return -1;}
+};
+struct ImageId {u32 index{};explicit operator bool()const{return index!=0;}bool operator==(const ImageId&)const=default;};
+namespace ImageFlagBits {constexpr u32 Dirty=1,GpuModified=2,Registered=4;}
+struct Image {
+ ImageInfo info;u32 flags=ImageFlagBits::Dirty;u64 tick_accessed_last{};
+ struct {bool is_bound{},is_target{},needs_rebind{};}binding;
+ std::array<std::uint32_t,4> pixels{};
+ bool HasGpuValidData()const{return (flags&ImageFlagBits::GpuModified)&&!(flags&ImageFlagBits::Dirty);}
+};
+struct Transport {
+ unsigned copies{};std::vector<std::pair<AmdGpu::ImageType,AmdGpu::ImageType>> directions;
+ void CopyImage(Image*src,Image*dst){
+  Check(src->info.guest_address==dst->info.guest_address,"same guest bytes");
+  Check(src->info.size==dst->info.size,"fixture uses equal logical extents");
+  ++copies;directions.emplace_back(src->info.type,dst->info.type);
+  dst->pixels=src->pixels;dst->flags|=src->flags&ImageFlagBits::GpuModified;dst->flags&=~ImageFlagBits::Dirty;
+ }
+ void CopyMip(Image*,Image*,int,int){throw std::runtime_error("unexpected unrelated mip path");}
+};
+struct Slots {
+ std::deque<Image> entries{Image{}};
+ ImageId Insert(int,Transport&,int,const ImageInfo& info){Image x{};x.info=info;entries.push_back(x);return {u32(entries.size()-1)};}
+ Image&operator[](ImageId id){return entries.at(id.index);}const Image&operator[](ImageId id)const{return entries.at(id.index);}
+};
+struct Scheduler {u64 CurrentTick()const{return 100;}};
+static bool IsVulkanFormatCompatible(int a,int b){return a==b;}
+class TextureCache {
+public:
+ enum class BindingType {Texture,Storage,RenderTarget,DepthTarget,VideoOut};
+ struct ImageDesc {ImageInfo info;struct {struct {struct {int level{},layer{};}base;}range;}view_info;BindingType type{BindingType::Texture};};
+ int instance{},slot_image_views{};Transport runtime;Slots slot_images;Scheduler scheduler;
+ std::vector<ImageId> registered,retired;std::array<std::uint32_t,4> guest{0x11223344,0x55667788,0xaabbccdd,0x01020304};
+ unsigned uploads{},tracks{},touches{};
+ void RegisterImage(ImageId id){registered.push_back(id);slot_images[id].flags|=ImageFlagBits::Registered;}
+ void FreeImage(ImageId id){std::erase(registered,id);slot_images[id].flags&=~ImageFlagBits::Registered;retired.push_back(id);}
+ void TrackImage(ImageId){++tracks;}void TouchImage(Image&){++touches;}
+ void RefreshImage(Image& img){++uploads;img.pixels=guest;img.flags&=~ImageFlagBits::Dirty;}
+ Image&GetImage(ImageId id){return slot_images[id];}
+ void ForEachImageInRegion(VAddr addr,u64 n,auto f){for(auto id:registered){auto&i=slot_images[id];if(i.info.guest_address<addr+n&&addr<i.info.guest_address+i.info.guest_size)f(id,i);}}
+ ImageId ResolveDepthOverlap(const ImageInfo&,BindingType,ImageId){return {};}
+ ImageId FindImage(ImageDesc&,bool=false);
+ std::tuple<ImageId,int,int>ResolveOverlap(const ImageInfo&,BindingType,ImageId,ImageId);
+ ImageId ExpandImage(const ImageInfo&,ImageId);
+};
+/* EXACT_METHODS */
+int main(int argc,char**argv){
+ const bool baseline=argc==2&&std::string_view(argv[1])=="--baseline";
+ using Type=AmdGpu::ImageType;
+ constexpr std::array<std::uint32_t,4> gpu{0x80000000,0xffffffff,0x76543210,0xdeadbeef};
+ unsigned cases{},invalid{},preserved{},rebound{};
+ for(const auto from:{Type::Color2D,Type::Color3D})for(const auto to:{Type::Color2D,Type::Color3D})
+ for(const bool gpu_valid:{false,true})for(const bool cpu_dirty:{false,true})
+ for(const bool bound:{false,true})for(const auto binding:{TextureCache::BindingType::Texture,TextureCache::BindingType::Storage}){
+  TextureCache cache;TextureCache::ImageDesc desc;desc.info.type=to;desc.type=binding;
+  ImageInfo old=desc.info;old.type=from;
+  const auto before=cache.slot_images.Insert(cache.instance,cache.runtime,cache.slot_image_views,old);
+  cache.RegisterImage(before);auto& old_image=cache.GetImage(before);
+  old_image.flags=(old_image.flags&~ImageFlagBits::Dirty)|(gpu_valid?ImageFlagBits::GpuModified:0)|(cpu_dirty?ImageFlagBits::Dirty:0);
+  old_image.pixels=gpu;old_image.binding.is_bound=bound;
+  const auto selected=cache.FindImage(desc);auto& image=cache.GetImage(selected);
+  const bool mismatch=image.info.type!=to;invalid+=mismatch;++cases;
+  if(from==to){Check(selected==before&&cache.runtime.copies==0&&cache.uploads==0,"same-type fast path unchanged");}
+  else if(baseline){Check(selected==before&&mismatch&&cache.retired.empty(),"old one-texel type confusion reproduced");}
+  else{
+   Check(!mismatch&&selected!=before,"requested image type selected");
+   Check(cache.registered.size()==1&&cache.registered[0]==selected,"new backing registered");
+   Check(cache.retired.size()==1&&cache.retired[0]==before,"old backing retired, not overwritten");
+   Check(old_image.pixels==gpu,"old in-flight data remains intact");
+   const bool preserve=gpu_valid&&!cpu_dirty;
+   Check(cache.runtime.copies==unsigned(preserve),"GPU copy only for authoritative GPU data");
+   Check(image.pixels==(preserve?gpu:cache.guest),"GPU data or newer CPU upload preserved");
+   Check(old_image.binding.needs_rebind==bound,"bound descriptor notified of replacement");
+   if(preserve){++preserved;}
+   if(bound){++rebound;}
+   auto again=cache.FindImage(desc);Check(again==selected,"same-type reuse after recreation");
+  }
+ }
+ if(baseline){Check(invalid==32,"expected actual old mismatches");std::printf("BASELINE_ONE_TEXEL_TYPE_CONFUSION=REPRODUCED cases=%u wrong_type=%u NO_GPU_WORK\n",cases,invalid);return 0;}
+ Check(invalid==0,"all selected backings have requested dimensions");
+ // Exercise an alternating sequence of read-only descriptors as the real binder
+ // does in its first pass and its one-time needs_rebind pass. Retired records
+ // remain alive; the transport is recorded rather than driver-executed.
+ TextureCache cache;ImageInfo initial;initial.type=Type::Color3D;
+ auto start=cache.slot_images.Insert(0,cache.runtime,0,initial);cache.RegisterImage(start);
+ cache.GetImage(start).flags=ImageFlagBits::GpuModified|ImageFlagBits::Registered;cache.GetImage(start).pixels=gpu;
+ std::vector<std::pair<ImageId,TextureCache::ImageDesc>> bindings;
+ for(const auto type:{Type::Color3D,Type::Color2D,Type::Color3D,Type::Color2D}){
+  TextureCache::ImageDesc d;d.info.type=type;auto id=cache.FindImage(d);cache.GetImage(id).binding.is_bound=true;bindings.emplace_back(id,d);
+ }
+ std::vector<ImageId> emitted;
+ for(auto&[id,d]:bindings){if(cache.GetImage(id).binding.needs_rebind){cache.GetImage(id).binding={};id=cache.FindImage(d);}Check(cache.GetImage(id).info.type==d.info.type,"two-pass native view type");Check(cache.GetImage(id).pixels==gpu,"two-pass retained actual texels");emitted.push_back(id);}
+ for(auto id:emitted)Check(cache.GetImage(id).pixels==gpu,"later rebindings do not destroy issued data");
+ std::printf("TYPED_IMAGE_CACHE=PASS cases=%u wrong_type=%u gpu_preserved=%u rebound=%u two_pass=4 NO_GPU_WORK\n",cases,invalid,preserved,rebound);
+}
