@@ -136,7 +136,7 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
                                vk::ImageCreateFlagBits::eExtendedUsage};
     if (info.props.is_volume) {
         flags |= vk::ImageCreateFlagBits::e2DArrayCompatible;
-        if (instance.Is2dViewOf3dSupported()) {
+        if (instance.CanCreate2dViewOf3dImage()) {
             flags |= vk::ImageCreateFlagBits::e2DViewCompatibleEXT;
         }
     }
