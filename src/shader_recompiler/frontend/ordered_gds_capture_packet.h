@@ -266,8 +266,9 @@ inline u64 DecodeCompletedGpuWave(const GpuCapturePacket& packet, u32 expected_e
 inline void StageGpuCaptures(SparseOrderedGdsEpoch& host, u32 epoch,
                              std::span<const GpuCapturePacket> packets,
                              const VerifiedGuestCreationOrder& creation) {
-    if (packets.size() != creation.Size()) {
-        throw std::invalid_argument("sparse ordered GDS requires full wave coverage");
+    if (!host.Empty() || packets.size() != creation.Size()) {
+        throw std::invalid_argument(
+            "sparse ordered GDS requires an empty epoch and full wave coverage");
     }
     struct Prepared {
         u64 rank;
