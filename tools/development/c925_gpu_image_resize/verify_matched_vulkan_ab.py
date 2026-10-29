@@ -153,10 +153,16 @@ def main(helper):
   state['proven_elf_sha256']=GOOD_ELF_SHA
   # Verify both arms use the same source profile, graphics flags and VRAM rules.
   for label,binary in (('proven',good),('resize_candidate',candidate)):
-   if label=='resize_candidate' and state['runs'].get('proven',{}).get('all_captures_tiny'):
-    state['status']='PROVEN_BASELINE_ALSO_BLANK_NO_CANDIDATE_RERUN'
-    print('STOP=BASELINE_BLANK_WITH_ORIGINAL_SETTINGS',flush=True)
-    break
+   if label=='resize_candidate':
+    proven=state['runs'].get('proven',{})
+    if len(proven.get('captures',{}))!=4:
+     state['status']='BASELINE_CAPTURES_INCOMPLETE_NO_CANDIDATE_RERUN'
+     print('STOP=BASELINE_SCREENSHOTS_MISSING',flush=True)
+     break
+    if proven.get('all_captures_tiny'):
+     state['status']='PROVEN_BASELINE_ALSO_BLANK_NO_CANDIDATE_RERUN'
+     print('STOP=BASELINE_BLANK_WITH_ORIGINAL_SETTINGS',flush=True)
+     break
    require(not u.emulator_pids(),'OTHER_EMULATOR_STARTED')
    folder=evidence/label
    folder.mkdir(parents=True,exist_ok=False)
@@ -175,8 +181,8 @@ def main(helper):
          ' TINY_CAPTURES='+str(review['all_captures_tiny'])+
          ' RESIZE_EVENTS='+str(review['gpu_image_resize_preserved_events'])+
          ' PRESENT_HAZARDS='+str(review['present_hazards']),flush=True)
-   if not result.get('time_limit_reached'):
-    state['status']='GAME_EXITED_EARLY:'+label
+   if not result.get('time_limit_reached') or len(review['captures'])!=4:
+    state['status']='GAME_OR_SCREENSHOT_CAPTURE_INCOMPLETE:'+label
     break
   else:
    baseline=state['runs']['proven'];candidate_result=state['runs']['resize_candidate']
@@ -201,7 +207,7 @@ def main(helper):
     state['ollama_restore']=u.restore_models(api,pending,evidence)
     if any(x.get('result') in ('RESTORE_FAILED','RESTORE_NOT_VERIFIED') for x in state['ollama_restore']):rc=1
    except Exception as exc:state['ollama_restore_error']=str(exc);rc=1
-  if state.get('status','PENDING').startswith('PROVEN_BASELINE_ALSO_BLANK'):rc=3
+  if state.get('status','PENDING').startswith(('PROVEN_BASELINE_ALSO_BLANK','BASELINE_CAPTURES_INCOMPLETE')):rc=3
   state['exit_code']=rc;save(evidence/'trial.json',state)
   diary=PROJECT/'diary/trials.jsonl';diary.parent.mkdir(parents=True,exist_ok=True)
   with diary.open('a') as f:
