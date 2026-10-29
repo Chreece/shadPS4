@@ -60,30 +60,24 @@ struct CounterKey {
     auto operator<=>(const CounterKey&) const = default;
 };
 
-// A request's payload must come from the *guest* ISA and live wave state.
-// Legacy GCN ordered counters use count_bits(EXEC); RDNA3 uses ADDR from
-// the first valid lane. The host GPU's generation is irrelevant to the guest.
-enum class GuestPayloadMode : u32 { LegacyGcnExecCount, RdnaFirstValidLaneValue };
-
+// DS_ORDERED_COUNT receives an evaluated guest-ISA payload. Unlike DS_APPEND
+// and DS_CONSUME, it is NOT valid to assume this value is popcount(EXEC).
+// Legacy GCN LLVM lowering has an explicit value-to-add-or-swap operand;
+// newer RDNA documentation describes first-valid-lane ADDR. A target-specific
+// frontend must resolve that distinction from live execution state.
 struct ActiveWavePayload {
     u64 exec_mask;
-    std::optional<u32> first_valid_lane_addr_value;
+    std::optional<u32> evaluated_guest_isa_payload;
 };
 
-inline u32 ResolveGuestPayload(GuestPayloadMode mode, ActiveWavePayload wave) {
-    switch (mode) {
-    case GuestPayloadMode::LegacyGcnExecCount:
-        return static_cast<u32>(std::popcount(wave.exec_mask));
-    case GuestPayloadMode::RdnaFirstValidLaneValue:
-        if (wave.exec_mask == 0) {
-            return 0;
-        }
-        if (!wave.first_valid_lane_addr_value) {
-            throw std::invalid_argument("live first-valid lane value required for RDNA");
-        }
-        return *wave.first_valid_lane_addr_value;
+inline u32 RequireGuestOrderedPayload(ActiveWavePayload wave) {
+    if (wave.exec_mask == 0) {
+        return 0; // No active lane presents an increment to the GDS unit.
     }
-    throw std::invalid_argument("unknown guest ordered GDS payload mode");
+    if (!wave.evaluated_guest_isa_payload) {
+        throw std::invalid_argument("live ISA-resolved ordered GDS payload required");
+    }
+    return *wave.evaluated_guest_isa_payload;
 }
 
 struct Request {
