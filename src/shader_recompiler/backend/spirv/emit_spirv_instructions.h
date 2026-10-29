@@ -486,6 +486,9 @@ Id EmitInverseBallot(EmitContext& ctx, Id mask);
 Id EmitGroupAny(EmitContext& ctx, Id bit);
 Id EmitDataAppend(EmitContext& ctx, Id gds_dw_offset, Id exec);
 Id EmitDataConsume(EmitContext& ctx, Id gds_dw_offset, Id exec);
+// Requires a scheduling backend that preserves ordered-wave GDS semantics;
+// do not lower this to unordered OpAtomic*.
+Id EmitOrderedGdsCount(EmitContext& ctx, Id m0, Id address, Id exec, u32 encoded_control);
 
 void EmitEmitVertex(EmitContext& ctx);
 void EmitEmitPrimitive(EmitContext& ctx);
