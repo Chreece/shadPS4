@@ -105,5 +105,51 @@ int main(){
    CompleteBatch missing({{{0,0},99}});
    assert(Bad(missing,{{0,0x00100000u,12,ex}},1));
    assert(missing.Counters().at({0,0})==99);
-   std::cout << "ORDERED_GDS_COMPLETE_BATCH_CPU=PASS sequences=99 invariants=no_fake_counter,no_missing_wave,no_unordered_exchange,transactional,wrap32 NO_GPU_WORK\n";
+   // One guest-created wave may execute two ordered-count sites (Exchange
+   // followed by Add), as observed in a real shader. The two site results
+   // must share actual counter state, never start with a newly zeroed map.
+   for (u32 n = 1; n <= 99; ++n) {
+      OrderedGdsPhases phases(n, {17, 19}, {{{0x20, 0}, 7}});
+      assert(phases.PhaseIndex() == 0 && phases.CurrentSiteId() == 17);
+      assert(!phases.CurrentPhaseComplete());
+      bool next_phase_early = false;
+      try { phases.Submit(1, 19, {0, 0x20u << 16, 999, add}); }
+      catch (const std::invalid_argument&) { next_phase_early = true; }
+      assert(next_phase_early && phases.Counters().at({0x20, 0}) == 7);
+      for (u32 wave = n; wave-- > 0;) {
+          phases.Submit(0, 17, {wave, 0x20u << 16, wave + 3, ex});
+      }
+      assert(phases.CurrentPhaseComplete());
+      const auto exchange_results = phases.ResolvePhase();
+      assert(exchange_results.size() == n && exchange_results.back().previous ==
+             (n == 1 ? 7 : n + 1));
+      assert(phases.Counters().at({0x20, 0}) == n + 2);
+      assert(phases.CurrentSiteId() == 19 && !phases.CurrentPhaseComplete());
+
+      bool missing_phase_wave = false;
+      try { (void)phases.ResolvePhase(); }
+      catch (const std::invalid_argument&) { missing_phase_wave = true; }
+      assert(missing_phase_wave && phases.Counters().at({0x20, 0}) == n + 2);
+      u32 expected_sum = 0;
+      for (u32 wave = 0; wave < n; ++wave) {
+          phases.Submit(1, 19, {wave, 0x20u << 16, wave + 1, add});
+          expected_sum += wave + 1;
+      }
+      const auto add_results = phases.ResolvePhase();
+      assert(phases.AllPhasesComplete() && add_results.size() == n);
+      assert(add_results.front().previous == n + 2);
+      assert(phases.Counters().at({0x20, 0}) == n + 2 + expected_sum);
+      bool third_phase_rejected = false;
+      try { phases.Submit(2, 19, {0, 0x20u << 16, 1, add}); }
+      catch (const std::invalid_argument&) { third_phase_rejected = true; }
+      assert(third_phase_rejected);
+   }
+   // The dynamic phase index disambiguates a repeated static site.
+   OrderedGdsPhases repeated(1, {17, 17}, {{{0x20, 0}, 4}});
+   repeated.Submit(0, 17, {0, 0x20u << 16, 9, ex});
+   assert(repeated.ResolvePhase()[0].current == 9);
+   repeated.Submit(1, 17, {0, 0x20u << 16, 3, add});
+   assert(repeated.ResolvePhase()[0].current == 12);
+   assert(repeated.AllPhasesComplete());
+   std::cout << "ORDERED_GDS_COMPLETE_BATCH_CPU=PASS sequences=99 two_site_phases=99 repeated_site=PASS invariants=no_fake_counter,no_missing_wave,no_unordered_exchange,transactional,wrap32 NO_GPU_WORK\n";
 }
