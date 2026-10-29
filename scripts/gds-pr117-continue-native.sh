@@ -86,6 +86,7 @@ for compiler in g++ clang++-17; do
     grep -Fq 'ORDERED_GDS_CIK_PACKER_SEPARATION=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_MIXED_STATIC_SITES=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_GPU_PACKET_ROUNDTRIP=PASS' "$LOG/cpu-$name.log"
+    grep -Fq 'ORDERED_GDS_CIK_CAPTURE_PAYLOAD=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_STATIC_FLOW=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_SPARSE_WAVE_COVERAGE=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_GPU_SPARSE_PACKET=PASS' "$LOG/cpu-$name.log"
@@ -198,6 +199,10 @@ grep -Fq 'GPU_TRANSFER_SMOKE=PASS' "$LOG/gpu-smoke-run.log" || {
 }
 grep -Fq 'GPU_CAPTURE_COMPUTE_WRITER=PASS' "$LOG/gpu-smoke-run.log" || {
     cat "$LOG/gpu-smoke-run.log"
+    exit 18
+}
+grep -Fq 'cik_exec_popcount=PASS' "$LOG/gpu-smoke-run.log" || {
+    echo 'AMD_COMPUTE_PACKET_CIK_EXEC_PAYLOAD_MISSING'
     exit 18
 }
 STAGE='NATIVE_GPU_TRANSFER_SMOKE_VERIFIED_NO_GUEST_SHADER'
