@@ -86,6 +86,19 @@ public:
         std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
         Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin);
 
+    // Restricted CIK compute path: derive creation positions from live
+    // guest M0 logicalWaveID rather than Vulkan workgroup scheduling. Only
+    // complete ordered-count epochs with contiguous wave IDs and zero
+    // crawler increment are accepted; bypasses must use a verified external
+    // scheduler and the general ResolveVerifiedOrderedGdsEpoch instead.
+    [[nodiscard]] std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+    ResolveCompleteCikComputeOrderedGdsEpoch(
+        const VideoCore::Buffer& device_capture, u64 capture_offset,
+        VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
+        std::size_t guest_created_waves, std::span<const u32> verified_sites,
+        std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
+        Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin);
+
     // Read the true GPU-visible 64 KiB GDS contents after prior writes,
     // then apply only specifically verified physical dword counter changes.
     // The caller must NOT invent CounterKey -> byte-offset mappings.
