@@ -370,4 +370,21 @@ void Translator::DS_CONSUME(const GcnInst& inst) {
     SetDst(inst.dst[0], prev);
 }
 
+
+void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
+    const u32 offset0 = u32(inst.control.ds.offset0);
+    const u32 offset1 = u32(inst.control.ds.offset1);
+    ASSERT_MSG(inst.control.ds.gds && (offset0 & 3u) == 0u,
+               "Ordered GDS requires GDS bit and aligned counter index");
+    ASSERT_MSG((offset1 & 2u) == 0u || (offset1 & 1u) != 0u,
+               "Ordered GDS wave_done requires wave_release");
+
+    // Preserve the live M0 register, per-lane ADDR and EXEC predicate.
+    // A normal atomic cannot preserve hardware wave-creation order.
+    info.uses_ordered_gds = true;
+    const IR::U32 control = ir.Imm32(offset0 | (offset1 << 8u));
+    const IR::U32 old_value = ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), control);
+    SetDst(inst.dst[0], old_value);
+}
+
 } // namespace Shader::Gcn
