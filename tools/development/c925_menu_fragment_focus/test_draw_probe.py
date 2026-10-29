@@ -46,6 +46,7 @@ int main(){
  return 0;
 }
 '''
+
 with tempfile.TemporaryDirectory() as tmp:
  p=pathlib.Path(tmp);(p/'fixture.cpp').write_text(fixture)
  for cxx in ('g++','clang++'):
