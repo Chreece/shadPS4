@@ -74,6 +74,10 @@ def interpret(code, fixture, slot):
             pointers[a[1]] = (buffers[a[2]], ids[a[4]])
         elif op == 205:  # OpBitCount
             ids[a[1]] = ids[a[2]].bit_count()
+        elif op == 170:  # OpIEqual (GPU resume probe only)
+            ids[a[1]] = ids[a[2]] == ids[a[3]]
+        elif op == 169:  # OpSelect (GPU resume probe only)
+            ids[a[1]] = ids[a[3]] if ids[a[2]] else ids[a[4]]
         elif op == 62:  # OpStore
             memory, index = pointers[a[0]]
             if memory is not output:
