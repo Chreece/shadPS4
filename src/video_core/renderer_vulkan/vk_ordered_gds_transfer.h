@@ -162,11 +162,12 @@ public:
 };
 
 
-// Authoritative guest GDS state transport. The game may initialize counters
-// with PM4 fills and other GDS operations before DS_ORDERED_COUNT. Snapshot
-// those *actual device bytes* after the GPU finishes them: never initialize
-// a new host counter map to zero. Byte offset interpretation remains the
-// responsibility of the verified guest ISA/PM4 address translator.
+// Transport for ordinary 64 KiB guest GDS memory used by data-share and
+// PM4 operations. These bytes are authoritative for *RAM* after prior GPU
+// writes, but are NOT proven to alias legacy CIK's dedicated ordered-count
+// packer registers. Do not seed an OrderedGds::CompleteBatch from this
+// snapshot without an independently verified hardware mapping. In
+// particular, physical GDS byte addresses are not CounterKey identities.
 class OrderedGdsStorageTransfer {
 public:
     static constexpr u64 GdsBytes = Shader::Gcn::OrderedGds::GdsPhysicalBytes;
