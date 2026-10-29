@@ -1,0 +1,36 @@
+{
+  "schema_version": 2,
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "timestamp_utc": "2026-10-29T19:39:58.622015Z",
+  "game": "Ghost of Tsushima CUSA11456",
+  "experiment": "Full-coverage physical GPU readback writebacks and GPU-dirty preservation",
+  "source_archive": "got-c925-backing-complete-20261029T193958622015Z.tar.gz",
+  "result": "PREBUILD_FAILURE",
+  "error": "MEMORY_INCLUDE_ANCHOR_MISSING",
+  "root_cause": "Runner required an angle-bracket #include <...> preexisting in src/core/memory.cpp; C925-derived memory.cpp has only quoted project includes. C++ source transformation body passed its prior source tests but this include injection did not. No source edit was reached.",
+  "native_build": "NOT_RUN",
+  "game_test": "NOT_RUN",
+  "visual_result": "NOT_TESTED",
+  "gpu_and_ollama": "NOT_USED",
+  "source_object_elf_checkpoint": {
+    "memory_src_restored": true,
+    "buffer_src_restored": true,
+    "memory_obj_restored": true,
+    "buffer_obj_restored": true,
+    "elf_restored": true
+  },
+  "corrected_runner": {
+    "commit": "0025ba51ec179441975812b7914b6c2aa9069d23",
+    "blob": "9b570fcf5fc95df57566b275f3dc6b1e884a3cb7",
+    "path": "tools/development/c925_backing_write_complete/run.py",
+    "what_changed": "Inject needed std includes ahead of either quoted or angle includes; add quoted-only and duplicate-patch regression; store source-head evidence on preflight failure"
+  },
+  "verification": {
+    "python_regex_fixture": "QUOTED_ONLY_AND_MIXED_INCLUDE_INJECTION_PASS",
+    "native_cpp20_fixture": "GCC_AND_CLANG_WERROR_PASS",
+    "actual_public_source_anchors": "memory.cpp has 11 quoted includes and no angle includes; buffer.cpp exact writeback patch context unique",
+    "host_emulator_build": "PENDING"
+  },
+  "disposition": "KEEP_ISOLATED_CORRECTNESS_CANDIDATE; NO_GRAPHICS_CLAIM; PROVEN_BASELINE_UNCHANGED",
+  "safety": "Do not promote untested ELF. Keep 8 GiB VRAM check, conditional Ollama unload/restore, private profile, one-paste incremental two-object build and rollback."
+}
