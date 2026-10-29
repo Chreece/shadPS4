@@ -17,7 +17,8 @@ FILES = {
     "translator_h": "src/shader_recompiler/frontend/translate/translate.h",
     "translator_cpp": "src/shader_recompiler/frontend/translate/data_share.cpp",
     "spirv_h": "src/shader_recompiler/backend/spirv/emit_spirv_instructions.h",
-    "spirv_cpp": "src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp",
+    "spirv_cpp": "src/shader_recompiler/backend/spirv/emit_spirv.cpp",
+    "atomic_cpp": "src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp",
     "inst": "src/shader_recompiler/ir/microinstruction.cpp",
     "reference": "src/shader_recompiler/frontend/ordered_gds.h",
     "tests": "tests/gcn_ordered_gds_complete_batch.cpp",
@@ -57,6 +58,7 @@ def main():
     translate_cpp = source("translator_cpp")
     backend_h = source("spirv_h")
     backend_cpp = source("spirv_cpp")
+    atomic_cpp = source("atomic_cpp")
     inst = source("inst")
     reference = source("reference")
     tests = source("tests")
@@ -86,9 +88,11 @@ def main():
             "GUEST_CONTROL_AND_RETURN_REGISTER")
     require("Id EmitOrderedGdsCount(" in backend_h,
             "SPIRV_OPCODE_LINKAGE_DECLARATION")
+    require("Id EmitOrderedGdsCount(" not in atomic_cpp,
+            "NO_DUPLICATE_SPIRV_ORDERED_GDS_SYMBOL")
     body = function(backend_cpp, "Id EmitOrderedGdsCount(")
     require("UNREACHABLE_MSG(" in body and
-            "wave creation-order" in body and
+            "wave-creation-order" in body and
             not any(bad in body for bad in ("OpAtomicIAdd", "OpAtomicExchange",
                                             "SharedAtomicIAdd", "ctx.OpStore")),
             "UNORDERED_GPU_ATOMICS_REJECTED")
