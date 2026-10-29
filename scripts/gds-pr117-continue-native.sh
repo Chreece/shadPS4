@@ -6,7 +6,7 @@ BASE="$PROJECT/tests/gds-pr117-native-20261029T164137Z-3996104"
 SRC="$BASE/source"
 BUILD="$BASE/build"
 BRANCH='feature/ordered-gds-wave-executor-20261029'
-MINIMUM_COMMIT='6b3b5aaf1f986cfc98ff87c312994200db805b09'
+MINIMUM_COMMIT='0a38e169ac97e401ccad13a1ef02ab2916313973'
 TAG="gds-pr117-preflight-native-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 LOG="$PROJECT/logs/$TAG"
 STAGE='PREFLIGHT'
@@ -127,6 +127,16 @@ grep -Fq 'Vulkan::Rasterizer::UploadOrderedGdsPackets(' \
     "$LOG/ordered-gds-transfer-symbols.txt" || {
     echo 'ORDERED_GDS_GPU_UPLOAD_NOT_COMPILED'; exit 15;
 }
+grep -Fq 'Vulkan::Rasterizer::SnapshotOrderedGdsDwords(' \
+    "$LOG/ordered-gds-transfer-symbols.txt" || {
+    echo 'ORDERED_GDS_DEVICE_SNAPSHOT_NOT_COMPILED'; exit 15;
+}
+grep -Fq 'Vulkan::Rasterizer::CommitOrderedGdsDwords(' \
+    "$LOG/ordered-gds-transfer-symbols.txt" || {
+    echo 'ORDERED_GDS_SELECTIVE_DEVICE_COUNTER_COMMIT_NOT_COMPILED'; exit 15;
+}
+printf 'GDS_STORAGE_BINDING_AND_VULKAN_TRANSFER=PASS GPU_EXECUTION_NOT_ENABLED\n' \
+    > "$LOG/gds-storage-symbol-check.txt"
 
 STAGE='GENERATE_GPU_COMPUTE_PACKET_WRITER'
 if ! python3 "$SRC/tests/generate_ordered_gds_probe_spirv.py" \
