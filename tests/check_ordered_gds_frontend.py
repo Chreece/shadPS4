@@ -18,10 +18,57 @@ def method(text: str, marker: str) -> str:
             return text[at:pos+1]
     raise RuntimeError('Unterminated method')
 
+def source_contracts() -> None:
+    def read(path):
+        return (ROOT / path).read_text()
+
+    checks = {
+        'src/shader_recompiler/ir/opcodes.inc':
+            ('OPCODE(OrderedGdsCount,', 1),
+        'src/shader_recompiler/ir/ir_emitter.h':
+            ('[[nodiscard]] U32 OrderedGdsCount(', 1),
+        'src/shader_recompiler/ir/ir_emitter.cpp':
+            ('U32 IREmitter::OrderedGdsCount(', 1),
+        'src/shader_recompiler/frontend/translate/translate.h':
+            ('void DS_ORDERED_COUNT(', 1),
+        'src/shader_recompiler/frontend/translate/data_share.cpp':
+            ('void Translator::DS_ORDERED_COUNT(', 1),
+        'src/shader_recompiler/info.h':
+            ('bool uses_ordered_gds{};', 1),
+        'src/shader_recompiler/ir/microinstruction.cpp':
+            ('case Opcode::OrderedGdsCount:', 1),
+        'src/shader_recompiler/backend/spirv/emit_spirv_instructions.h':
+            ('Id EmitOrderedGdsCount(', 1),
+        'src/shader_recompiler/backend/spirv/emit_spirv.cpp':
+            ('Id EmitOrderedGdsCount(', 1),
+        'src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp':
+            ('Id EmitOrderedGdsCount(', 0),
+    }
+    for path, (token, required) in checks.items():
+        count = read(path).count(token)
+        if count != required:
+            raise RuntimeError(f'DUPLICATE_OR_MISSING_GDS_SYMBOL: {path}: {token}: {count}')
+    translator = read('src/shader_recompiler/frontend/translate/data_share.cpp')
+    if translator.count('case Opcode::DS_ORDERED_COUNT:') != 1:
+        raise RuntimeError('DUPLICATE_OR_MISSING_DS_ORDERED_CASE')
+    inst = read('src/shader_recompiler/ir/microinstruction.cpp')
+    if 'case Opcode::OrderedGdsCount:' not in inst.split('bool Inst::MayHaveSideEffects()',1)[1].split('bool Inst::AreAllArgsImmediates()',1)[0]:
+        raise RuntimeError('GDS_SIDE_EFFECT_CAN_BE_ELIMINATED')
+    emit = read('src/shader_recompiler/backend/spirv/emit_spirv.cpp')
+    if 'ASSERT_MSG(!program.info.uses_ordered_gds' not in emit:
+        raise RuntimeError('UNSAFE_GPU_FALLBACK_POSSIBLE')
+    body = method(translator, 'void Translator::DS_ORDERED_COUNT(')
+    if any(atom in body for atom in ('SharedAtomicIAdd', 'SharedAtomicCmpSwap', 'SharedAtomicInc', 'DataAppend')):
+        raise RuntimeError('UNORDERED_ATOMIC_SUBSTITUTION')
+    if 'ir.GetM0()' not in body or 'GetSrc(inst.src[0])' not in body:
+        raise RuntimeError('RUNTIME_GDS_INPUT_LOST')
+    print('ORDERED_GDS_SOURCE_CONTRACTS=PASS no_duplicates=1 side_effect=1 backend_gate=1')
+
 def main():
     args=argparse.ArgumentParser()
     args.add_argument('--compiler', default='g++')
     ns=args.parse_args()
+    source_contracts()
     em=(ROOT/'src/shader_recompiler/ir/ir_emitter.cpp').read_text()
     trans=(ROOT/'src/shader_recompiler/frontend/translate/data_share.cpp').read_text()
     code=FIXTURE.read_text()
