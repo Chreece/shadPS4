@@ -1,0 +1,33 @@
+name: Ordered GDS CPU regression (no GPU)
+
+on:
+  pull_request:
+    paths:
+      - 'src/shader_recompiler/frontend/ordered_gds*.h'
+      - 'src/shader_recompiler/frontend/translate/data_share.cpp'
+      - 'src/shader_recompiler/ir/**'
+      - 'src/shader_recompiler/backend/spirv/emit_spirv*'
+      - 'tests/check_ordered_gds_frontend.py'
+      - 'tests/gcn_ordered_gds*.cpp'
+      - 'tests/gcn_ordered_gds_frontend_fixture.cpp.in'
+      - 'tests/run_ordered_gds_cpu.sh'
+      - '.github/workflows/ordered-gds-cpu.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-only:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify standalone GDS frontend, wave model, and continuation
+        env:
+          CXX: ${{ matrix.compiler }}
+          RUN_SANITIZERS: '1'
+        run: bash tests/run_ordered_gds_cpu.sh
