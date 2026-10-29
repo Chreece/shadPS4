@@ -354,6 +354,7 @@ void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
     // Preserve the live M0 register, the per-lane ADDR value and EXEC. Neither
     // an unsequenced atomic nor a placeholder result can implement the
     // required wave creation order. The IR opcode is deliberately distinct.
+    info.uses_ordered_gds = true;
     const IR::U32 control = ir.Imm32(offset0 | (offset1 << 8u));
     const IR::U32 old_value = ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), control);
     SetDst(inst.dst[0], old_value);
