@@ -1,0 +1,43 @@
+--- a/src/imgui/renderer/imgui_impl_vulkan.cpp
++++ b/src/imgui/renderer/imgui_impl_vulkan.cpp
+@@ -396,11 +396,14 @@
+ 
+     // Upload to Buffer
+     {
+-        char* map = (char*)CheckVkResult(v.device.mapMemory(info.upload_buffer_memory, 0, size));
++        // These upload buffers each own their allocation. Map and flush through
++        // its end so arbitrary payload lengths obey nonCoherentAtomSize.
++        char* map =
++            (char*)CheckVkResult(v.device.mapMemory(info.upload_buffer_memory, 0, VK_WHOLE_SIZE));
+         memcpy(map, data, size);
+         vk::MappedMemoryRange range[1]{
+             {
+                 .memory = info.upload_buffer_memory,
+-                .size = size,
++                .size = VK_WHOLE_SIZE,
+             },
+         };
+@@ -605,7 +608,9 @@
+         ImDrawVert* vtx_dst = nullptr;
+         ImDrawIdx* idx_dst = nullptr;
++        // Match the whole-allocation flush below; buffer alignment alone does
++        // not guarantee a non-coherent atom-aligned partial mapping.
+         vtx_dst = (ImDrawVert*)CheckVkResult(
+-            v.device.mapMemory(frb.vertex.buffer_memory, 0, vertex_size, vk::MemoryMapFlags{}));
++            v.device.mapMemory(frb.vertex.buffer_memory, 0, VK_WHOLE_SIZE, vk::MemoryMapFlags{}));
+         idx_dst = (ImDrawIdx*)CheckVkResult(
+-            v.device.mapMemory(frb.index.buffer_memory, 0, index_size, vk::MemoryMapFlags{}));
++            v.device.mapMemory(frb.index.buffer_memory, 0, VK_WHOLE_SIZE, vk::MemoryMapFlags{}));
+         for (int n = 0; n < draw_data.CmdListsCount; n++) {
+@@ -823,7 +828,10 @@
+         staging.memory = CheckVkResult(v.device.allocateMemory(alloc_info, v.allocator));
+         CheckVkErr(v.device.bindBufferMemory(staging.buffer, staging.memory, 0));
+ 
+-        char* map = (char*)CheckVkResult(v.device.mapMemory(staging.memory, 0, upload_size));
++        // VK_WHOLE_SIZE in the flush refers to the mapping, not the allocation.
++        // Map the dedicated allocation to its end before flushing it.
++        char* map =
++            (char*)CheckVkResult(v.device.mapMemory(staging.memory, 0, VK_WHOLE_SIZE));
+         for (int y = 0; y < upload_h; y++) {
+             memcpy(map + upload_pitch * y, tex->GetPixelsAt(upload_x, upload_y + y), upload_pitch);
+         }
