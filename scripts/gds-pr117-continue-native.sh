@@ -165,6 +165,18 @@ if ! python3 "$SRC/tests/generate_ordered_gds_probe_spirv.py" \
 fi
 grep -Fq 'GPU_CAPTURE_WRITER_SPIRV_BUILD=PASS' \
     "$LOG/gpu-writer-assemble.log" || exit 15
+
+STAGE='VALIDATE_GPU_COMPUTE_WRITER_SPIRV_SEMANTICS'
+if ! python3 "$SRC/tests/check_ordered_gds_probe_spirv.py" \
+    "$LOG/gpu-capture-writer.spv" > "$LOG/gpu-writer-semantics.log" 2>&1; then
+    cat "$LOG/gpu-writer-semantics.log"
+    exit 15
+fi
+grep -Fq 'GPU_CAPTURE_WRITER_SPIRV_SEMANTICS=PASS' \
+    "$LOG/gpu-writer-semantics.log" || {
+    echo 'GPU_WRITER_SEMANTIC_CHECK_MISSING'
+    exit 15
+}
 if command -v spirv-val >/dev/null 2>&1; then
     spirv-val "$LOG/gpu-capture-writer.spv" \
         > "$LOG/gpu-writer-spirv-val.log" 2>&1 || {
