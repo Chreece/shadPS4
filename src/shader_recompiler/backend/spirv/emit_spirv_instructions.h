@@ -489,9 +489,6 @@ Id EmitDataConsume(EmitContext& ctx, Id gds_dw_offset, Id exec);
 // Runtime wave creation ordering must be implemented before this can execute.
 Id EmitOrderedGdsCount(EmitContext& ctx, Id runtime_m0, Id address, Id exec,
                        u32 encoded_control);
-// Requires a scheduling backend that preserves ordered-wave GDS semantics;
-// do not lower this to unordered OpAtomic*.
-Id EmitOrderedGdsCount(EmitContext& ctx, Id m0, Id address, Id exec, u32 encoded_control);
 
 void EmitEmitVertex(EmitContext& ctx);
 void EmitEmitPrimitive(EmitContext& ctx);
