@@ -69,6 +69,11 @@ public:
         return records_.size() == expected_;
     }
 
+    [[nodiscard]] bool AllowsSite(u32 pc) const {
+        std::scoped_lock lock{mutex_};
+        return std::binary_search(sites_.begin(), sites_.end(), pc);
+    }
+
     [[nodiscard]] std::vector<ReadyContinuation> Resolve() {
         std::scoped_lock lock{mutex_};
         if (resolved_ || records_.size() != expected_) {
