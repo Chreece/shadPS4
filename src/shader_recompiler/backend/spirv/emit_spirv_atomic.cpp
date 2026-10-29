@@ -508,4 +508,13 @@ Id EmitDataConsume(EmitContext& ctx, Id gds_dw_offset, Id exec) {
     UNREACHABLE_MSG("SPIR-V Instruction");
 }
 
+Id EmitOrderedGdsCount(EmitContext& ctx, Id runtime_m0, Id address, Id exec,
+                       u32 encoded_control) {
+    // No native SPIR-V atomic operation provides PS4 GDS wave-creation ordering.
+    // Deliberately refuse execution rather than generating unordered results.
+    UNREACHABLE_MSG(
+        "DS_ORDERED_COUNT requires ordered GDS wave scheduler; "
+        "Vulkan atomics do not preserve guest wave creation order");
+}
+
 } // namespace Shader::Backend::SPIRV
