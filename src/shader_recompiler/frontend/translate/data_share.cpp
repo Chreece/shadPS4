@@ -78,6 +78,8 @@ void Translator::EmitDataShare(const GcnInst& inst) {
         return DS_APPEND(inst);
     case Opcode::DS_ORDERED_COUNT:
         return DS_ORDERED_COUNT(inst);
+    case Opcode::DS_ORDERED_COUNT:
+        return DS_ORDERED_COUNT(inst);
     case Opcode::DS_WRITE_B16:
         return DS_WRITE(16, false, false, false, inst);
     case Opcode::DS_WRITE_B64:
