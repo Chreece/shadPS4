@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "shader_recompiler/frontend/ordered_gds_continuation.h"
+#include "shader_recompiler/frontend/ordered_gds_sparse_epoch.h"
 
 // ABI for a future GPU capture -> synchronized host GDS resolve -> GPU resume.
 // This file does NOT dispatch Vulkan work or persist the guest shader state.
@@ -22,7 +23,8 @@ namespace Shader::Gcn::OrderedGds {
 
 inline constexpr u32 CapturePacketTag = 0x43534447u;  // GDSC
 inline constexpr u32 ResumePacketTag = 0x52534447u;   // GDSR
-inline constexpr u32 CaptureFlags = 0x3u;  // valid, GDS
+inline constexpr u32 CaptureFlags = 0x3u;        // valid, ordered GDS
+inline constexpr u32 CaptureBypassFlags = 0x1u;  // valid, wave completed without GDS
 inline constexpr u32 ResumeFlags = 0x1u;   // value ready
 inline constexpr u32 NoActiveLane = std::numeric_limits<u32>::max();
 inline constexpr u64 InvalidCreationRank = std::numeric_limits<u64>::max();
@@ -234,6 +236,96 @@ inline std::vector<GpuResumePacket> ResolveGpuCaptures(
         throw std::logic_error("ordered GDS capture/resume wave-count mismatch");
     }
     std::vector<GpuResumePacket> output(creation.Size());
+    for (const auto& item : ready) {
+        const auto packet = EncodeGpuContinuation(item, epoch, creation);
+        output[packet.logical_slot] = packet;
+    }
+    return output;
+}
+
+
+// A completed wave that never executes DS_ORDERED_COUNT is NOT an inactive
+// GDS operation. A real GPU terminal-path capture must explicitly mark it;
+// static CFG may show a possible bypass but cannot invent a completed wave.
+inline u64 DecodeCompletedGpuWave(const GpuCapturePacket& packet, u32 expected_epoch,
+                                  const VerifiedGuestCreationOrder& creation) {
+    if (packet.tag != CapturePacketTag || packet.epoch != expected_epoch ||
+        packet.flags != CaptureBypassFlags || packet.site_pc != NoActiveLane ||
+        packet.encoded_control || packet.runtime_m0 || packet.exec_lo ||
+        packet.exec_hi || packet.payload || packet.source_lane != NoActiveLane ||
+        packet.token_lo || packet.token_hi || packet.reserved0 ||
+        packet.reserved1 || packet.reserved2) {
+        throw std::invalid_argument("invalid GDS bypass completion packet");
+    }
+    return creation.RankForSlot(packet.logical_slot);
+}
+
+// Overload for verified guest waves that may EXIT without ordered-GDS. The
+// older ContinuationHandoff overload remains available for proven full-wave
+// ordered epochs; neither version guesses guest wave rank from Vulkan arrival.
+inline void StageGpuCaptures(SparseOrderedGdsEpoch& host, u32 epoch,
+                             std::span<const GpuCapturePacket> packets,
+                             const VerifiedGuestCreationOrder& creation) {
+    if (packets.size() != creation.Size()) {
+        throw std::invalid_argument("sparse ordered GDS requires full wave coverage");
+    }
+    struct Prepared {
+        u64 rank;
+        std::optional<CapturedWave> captured;
+    };
+    std::vector<Prepared> staged;
+    staged.reserve(packets.size());
+    std::vector<bool> seen_slots(creation.Size(), false);
+    std::vector<u64> active_tokens;
+    for (const auto& packet : packets) {
+        if (packet.logical_slot >= creation.Size() || seen_slots[packet.logical_slot]) {
+            throw std::invalid_argument("invalid or duplicate sparse GPU wave slot");
+        }
+        seen_slots[packet.logical_slot] = true;
+        if (packet.flags == CaptureBypassFlags) {
+            staged.push_back({DecodeCompletedGpuWave(packet, epoch, creation), std::nullopt});
+        } else {
+            auto captured = DecodeGpuCapture(packet, epoch, creation);
+            if (!host.AllowsSite(*captured.site_pc)) {
+                throw std::invalid_argument("sparse GPU capture at unknown guest site PC");
+            }
+            active_tokens.push_back(captured.continuation_token);
+            staged.push_back({captured.request.creation_sequence, std::move(captured)});
+        }
+    }
+    if (std::find(seen_slots.begin(), seen_slots.end(), false) != seen_slots.end()) {
+        throw std::invalid_argument("missing sparse ordered GDS GPU wave coverage");
+    }
+    std::sort(active_tokens.begin(), active_tokens.end());
+    if (std::adjacent_find(active_tokens.begin(), active_tokens.end()) != active_tokens.end()) {
+        throw std::invalid_argument("duplicate sparse GPU continuation token");
+    }
+    // All packet and site validation completed before host state is mutated.
+    for (auto& item : staged) {
+        if (item.captured) {
+            host.Capture(std::move(*item.captured));
+        } else {
+            host.CompleteWithoutOrdered(item.rank);
+        }
+    }
+}
+
+inline std::vector<GpuResumePacket> ResolveGpuCaptures(
+    SparseOrderedGdsEpoch& host, u32 epoch,
+    const VerifiedGuestCreationOrder& creation) {
+    const auto ready = host.Resolve();
+    // Every logical wave slot receives a deterministic record, but a
+    // completed-without-GDS slot has ResumeFlags=0 and no continuation.
+    std::vector<GpuResumePacket> output(creation.Size());
+    for (std::size_t i = 0; i < output.size(); ++i) {
+        output[i] = GpuResumePacket{
+            .tag = ResumePacketTag,
+            .epoch = epoch,
+            .site_pc = NoActiveLane,
+            .flags = 0,
+            .logical_slot = static_cast<u32>(i),
+        };
+    }
     for (const auto& item : ready) {
         const auto packet = EncodeGpuContinuation(item, epoch, creation);
         output[packet.logical_slot] = packet;
