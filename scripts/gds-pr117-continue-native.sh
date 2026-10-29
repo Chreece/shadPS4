@@ -6,7 +6,7 @@ BASE="$PROJECT/tests/gds-pr117-native-20261029T164137Z-3996104"
 SRC="$BASE/source"
 BUILD="$BASE/build"
 BRANCH='feature/ordered-gds-wave-executor-20261029'
-MINIMUM_COMMIT='589d9412be871b1679cc5069afedbab000af3c15'
+MINIMUM_COMMIT='6b3b5aaf1f986cfc98ff87c312994200db805b09'
 TAG="gds-pr117-preflight-native-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 LOG="$PROJECT/logs/$TAG"
 STAGE='PREFLIGHT'
@@ -128,6 +128,22 @@ grep -Fq 'Vulkan::Rasterizer::UploadOrderedGdsPackets(' \
     echo 'ORDERED_GDS_GPU_UPLOAD_NOT_COMPILED'; exit 15;
 }
 
+STAGE='GENERATE_GPU_COMPUTE_PACKET_WRITER'
+if ! python3 "$SRC/tests/generate_ordered_gds_probe_spirv.py" \
+    "$LOG/gpu-capture-writer.spv" > "$LOG/gpu-writer-assemble.log" 2>&1; then
+    cat "$LOG/gpu-writer-assemble.log"
+    exit 15
+fi
+grep -Fq 'GPU_CAPTURE_WRITER_SPIRV_BUILD=PASS' \
+    "$LOG/gpu-writer-assemble.log" || exit 15
+if command -v spirv-val >/dev/null 2>&1; then
+    spirv-val "$LOG/gpu-capture-writer.spv" \
+        > "$LOG/gpu-writer-spirv-val.log" 2>&1 || {
+        cat "$LOG/gpu-writer-spirv-val.log"
+        exit 15
+    }
+fi
+
 STAGE='HEADLESS_GPU_TRANSFER_SMOKE_COMPILE'
 # Compile a separate tiny Vulkan C-API test, not the game/emulator runtime.
 # No surface, X11/Wayland changes, host display, game saves or GPU spinlocks.
@@ -143,7 +159,8 @@ fi
 STAGE='HEADLESS_GPU_TRANSFER_SMOKE_RUN'
 # Only 256 bytes, AMD discrete, no guest shader, no display or service restarts.
 if ! timeout --signal=TERM --kill-after=2s 20s \
-    "$LOG/vulkan-transfer-smoke" > "$LOG/gpu-smoke-run.log" 2>&1; then
+    "$LOG/vulkan-transfer-smoke" "$LOG/gpu-capture-writer.spv" \
+    > "$LOG/gpu-smoke-run.log" 2>&1; then
     tail -90 "$LOG/gpu-smoke-run.log"
     exit 16
 fi
@@ -151,6 +168,10 @@ grep -Fq 'GPU_TRANSFER_SMOKE=PASS' "$LOG/gpu-smoke-run.log" || {
     cat "$LOG/gpu-smoke-run.log"
     exit 17
 }
+grep -Fq 'GPU_CAPTURE_COMPUTE_WRITER=PASS' "$LOG/gpu-smoke-run.log" || {
+    cat "$LOG/gpu-smoke-run.log"
+    exit 18
+}
 STAGE='NATIVE_GPU_TRANSFER_SMOKE_VERIFIED_NO_GUEST_SHADER'
-STATUS='PASS_CPU_NATIVE_AND_AMD_GPU_TRANSFER'
-printf 'PR117_NATIVE_PREFLIGHT=PASS AMD_GPU_TRANSFER=PASS GUEST_SHADER=NOT_RUN GO_W_VISUAL=NOT_TESTED\n'
+STATUS='PASS_CPU_NATIVE_AMD_TRANSFER_AND_COMPUTE_PACKET_WRITER'
+printf 'PR117_NATIVE_PREFLIGHT=PASS AMD_GPU_TRANSFER=PASS GPU_CAPTURE_COMPUTE_WRITER=PASS GUEST_SHADER=NOT_RUN GO_W_VISUAL=NOT_TESTED\n'
