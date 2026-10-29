@@ -34,7 +34,7 @@
     ],
     "header_git_blob": "66ec866bb70f28c87e7a7da889f1ec8b90d6c607",
     "header_sha256": "52c6a7467e1c2277e0a7bdf7e5c5f161686b010127e7d37aca074dcae9be0cb9",
-    "test_sha256": "0bf4fe77c6c4489a921ff457dc47db7e2f07a123902e91b8e12909a9324d0c19",
+    "test_sha256": "698b2f274c9465e67151afc6735b703b171d16543ff272d58f17586ff60896aa",
     "test": "99 complete-wave batch scenarios, both g++/clang++ -std=c++23 -Wall -Wextra -Werror -pedantic PASS, ASan+UBSan PASS",
     "semantics": "decode GDS DS_ORDERED_COUNT 64-bit word including index and operation, release/done flags; transactional host batch uses explicit, complete creation sequence and fully evaluated runtime M0, preexisting counter initial values and caller resolved payload. Add/Exchange distinct, previous values, wrap U32. Reject missing/repeated waves, missing counter, invalid flags and reserved/wrap operations.",
     "limitations": "Does NOT execute GPU work, does not yet attach to shadPS4 translator/IR/SPIR-V. No real guest wave creation sequence, M0 values or GDS source payload from runtime. Vulkan workgroups have undefined execution order: no safe global spin waiting.",
