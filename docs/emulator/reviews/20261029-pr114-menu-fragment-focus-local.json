@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "record_id": "c925-menu-fragment-focus-pr114-preparation-20261029",
+  "recorded_on": "2026-10-29",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "record_type": "MENU_FRAGMENT_EVIDENCE_RUNNER_SOURCE_REVIEW_LOCAL_ONLY",
+  "context_games": [
+    "CUSA11456",
+    "CUSA34384"
+  ],
+  "tested_games": [],
+  "previous_runtime": "20261029T091008659858Z-fixed-layer-runtime.json",
+  "pr": 114,
+  "draft": true,
+  "source_pin": "c1bb8c6a6a04cc349b4101ca62d6bbb5bf7879c3",
+  "script_sha256": "5842448938d27883f4cf63ecad4c7b0657d4003a17b4bf9c6523d39ab2ccf688",
+  "script_git_blob": "5d936d069caa225c9731dd33d4e355f481ab2365",
+  "test_git_blob": "178b9cbae7838b31cf4359b8d0210d50167377ad",
+  "local_tests": "PASS 2 small isolated tests: fragment shader log filtering/dump copying without modifying original and empty source; Python syntax PASS. GitHub published script/test blobs checked against locally tested exact bytes.",
+  "native_run": "NOT_RUN",
+  "emulator_build": "NOT_RUN",
+  "emulator_source_edit": false,
+  "expected_elf_sha256": "89ffa07ab49d0df36b3a4c4295e0cff8f42bb7e167cbced3d5879b1e5c2f5aec",
+  "reason": "The source-fixed VVL still stops on present hazard before menu; preserve that as a separate WSI question. Full menu must be observed under unchanged renderer with validation disabled only in a private profile. Existing FS shaders feature indexed samples and conditional discard; some actual bindings are positive, but actual draw/fragment/material coverage not established. Seven zero-record binding rejects are in compute, not proven missing grass cause.",
+  "safety": "Reuse verified PR109 ELF and source hashes, copy rather than mutate private profile/saves, no injected guest input, 8GiB headroom/Ollama restored, 118+2s bounded own-process, no system service/display changes, timestamped screenshots and bounded fragment source/dump inventory. Protected files verified.",
+  "decision": "KEEP_PRIOR_PROVEN_NATIVE_FIXES; DIAGNOSTIC_ONLY_NOT_GRAPHICS_FIX; NO_AUTO_PROMOTION",
+  "next": "Review same-run menu screenshots and actual FS hash/texture/alpha-discard evidence. If still black sword/grass, instrument draw/fragment-output or correct only confirmed production shader defect. Do not infer frozen menu from equal captures."
+}
