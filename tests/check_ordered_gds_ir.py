@@ -63,8 +63,9 @@ def main():
     reference = source("reference")
     tests = source("tests")
 
-    require(info.count("bool uses_ordered_gds{};") == 1,
-            "PRESERVE_SHADER_ORDERED_GDS_CAPABILITY")
+    require(info.count("bool uses_ordered_gds{};") == 1 and
+            "std::vector<u32> ordered_gds_site_pcs;" in info,
+            "PRESERVE_SHADER_ORDERED_GDS_CAPABILITY_AND_SITE_TABLE")
     match = re.search(r"^OPCODE\(OrderedGdsCount,\s+U32,\s+U32,\s+U32,\s+U64,\s+U32,\s+U32\s*\)$",
                       codes, re.M)
     require(match is not None and codes.count("OPCODE(OrderedGdsCount") == 1,
@@ -88,7 +89,8 @@ def main():
             "GUEST_CONTROL_AND_RETURN_REGISTER")
     require("ir.Ballot(ir.GetExec())" in body,
             "FULL_64_BIT_EXEC_CAPTURE_FOR_FIRST_VALID_LANE")
-    require("ir.Imm32(pc - inst.length)" in body,
+    require("pc - inst.length" in body and "sites.push_back(guest_site_pc)" in body and
+            "ir.Imm32(guest_site_pc)" in body,
             "UNIQUE_GUEST_ORDERED_GDS_SITE_PC")
     require("Id EmitOrderedGdsCount(" in backend_h,
             "SPIRV_OPCODE_LINKAGE_DECLARATION")
