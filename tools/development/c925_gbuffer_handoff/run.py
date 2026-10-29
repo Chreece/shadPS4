@@ -46,7 +46,12 @@ static thread_local std::unordered_set<u64> g_gbuffer_producer_reports;
  verify(begin in s and finish in s,"PRODUCER_FUNCTION_BOUNDARY_CHANGED")
  a=s.index(begin);b=s.index(finish,a);body=s[a:b]
  anchor="        image.binding.is_target = 1u;"
- verify(body.count(anchor)==1,"PRODUCER_BINDING_ANCHOR_CHANGED")
+ # The source also marks a depth target as is_target later. Instrument
+ # only the first (color-target loop) occurrence, never the depth target.
+ verify(body.count(anchor)>=1,"PRODUCER_BINDING_ANCHOR_CHANGED")
+ depth_start=body.find("if ((regs.depth_control.depth_enable")
+ if depth_start>=0:
+  verify(body.index(anchor)<depth_start,"COLOR_PRODUCER_NOT_BEFORE_DEPTH_TARGET")
  producer=r'''
         // A genuine multi-render-target fragment pass is a potential G-buffer
         // producer. Retain its guest address until a later texture bind.
