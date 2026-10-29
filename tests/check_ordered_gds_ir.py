@@ -143,6 +143,13 @@ def main():
             "ordered_gds_legacy_packer.h" in packet,
             "CIK_GPU_PACKET_EXEC_POPCOUNT_NOT_FIRST_LANE_ADDR")
 
+    require("FromCompleteCikComputeM0" in packet and
+            "packet.runtime_m0 & 0x1FFFu" in packet and
+            "wave_crawler_increment != 0" in packet and
+            "packet.flags != CaptureFlags" in packet and
+            "rank_by_slot[packet.logical_slot] != InvalidCreationRank" in packet,
+            "CIK_COMPUTE_WAVE_ORDER_FROM_LIVE_GUEST_M0_ONLY")
+
     require("class OrderedGdsPhases" in reference and
             "CompleteWaveCollector" in reference and
             "wrong ordered-count phase" in reference and
