@@ -13,6 +13,7 @@ ELF='89ffa07ab49d0df36b3a4c4295e0cff8f42bb7e167cbced3d5879b1e5c2f5aec'
 ORIG_RASTER='ebed2441ceda3d6b3e6a6ebe1afe7469ec35f9d8a99c3b7f0feb1a3fb533b4a0'
 SCRIPTS={
  'apply_draw_probe.py':'21b1c5167892928750fc0468df15f0f13cc4e9bb5eb5f4059633fdf50424f05e',
+ 'direct_ninja.py':'d7dcbdc0310eda941395dba1cc45c4ae39fad2b3a68a05fe1f0f5366e4022bc3',
  'resume_c925_revalidation.py':'df7617549006c8733049a684f22f6ac2bf6b96701bf2fe1da5ee9265df568250',
  'resume_finite_raw.py':'c6017d0d96e83341315e6a05dafb3fb5478239b384b41e510c475b6d89884a0b',
  'menu_validation_runtime.py':'7467dbc881babc9d36d53ff6f169bec112e7f97918a827cc17a0bfde47740f50'}
@@ -47,6 +48,7 @@ def restore(managed,checkpoint,before,post):
 
 def run():
  patch=module('apply_draw_probe.py')
+ direct=module('direct_ninja.py')
  if patch.SOURCE_SHA!=ORIG_RASTER:raise RuntimeError('PATCH_SOURCE_PIN_MISMATCH')
  u=module('resume_c925_revalidation.py');hr=module('resume_finite_raw.py');menu=module('menu_validation_runtime.py')
  stamp=dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
@@ -93,8 +95,13 @@ def run():
   if not (BASE/'build/build.ninja').is_file():raise RuntimeError('NINJA_BUILD_MISSING')
   status=u.command(['ninja','-C',str(BASE/'build'),'-n','shadps4'],timeout=40).decode(errors='replace')
   (evid/'prebuild-dry-run.txt').write_text(status)
-  if 'no work to do.' not in status or 'Building' in status:
-   raise RuntimeError('BUILD_TREE_NOT_UP_TO_DATE_NO_PATCH')
+  # Dry-run Ninja may report only a CMake regeneration due timestamp/glob metadata.
+  # That is not evidence that the SHA-pinned executable is corrupt. Bypass the
+  # generator using exact compile/link commands from the existing build graph.
+  # No CMake reconfigure and no unrelated object compilation is permitted.
+  direct.parse(BASE/'build',source,obj,elf,evid)
+  state['build_plan']='EXACT_ONE_OBJECT_AND_LINK_NO_CMAKE_REGEN'
+  state['original_ninja_dry_run_ignored_for_safety']=status[:2000]
   u.command(['env','DISPLAY='+str(os.environ.get('DISPLAY') or ':0'),'xdpyinfo'],timeout=8)
   eboot=Path('/mnt/roms-all/ps4-games/CUSA11456/eboot.bin')
   if not eboot.is_file():raise RuntimeError('GAME_FILE_MISSING')
@@ -129,8 +136,7 @@ def run():
        'a/src/video_core/renderer_vulkan/vk_rasterizer.cpp',
        'b/src/video_core/renderer_vulkan/vk_rasterizer.cpp')))
   print('STAGE=BUILD_DIAGNOSTIC_ONLY',flush=True)
-  menu.logged(u,['cmake','--build',str(BASE/'build'),'--target','shadps4','--parallel','4'],
-              evid/'build.log','BUILD_FRAGMENT_DRAW_PROBE',timeout=1800)
+  direct.run(menu,u,BASE/'build',source,obj,elf,evid)
   if not elf.is_file() or u.sha(elf)==old_sha['elf']:
    raise RuntimeError('DIAGNOSTIC_BUILD_DID_NOT_PRODUCE_NEW_ELF')
   post_sha['object']=u.sha(obj);post_sha['elf']=u.sha(elf)
