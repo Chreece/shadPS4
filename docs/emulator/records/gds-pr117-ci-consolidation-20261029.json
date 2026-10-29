@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "record_id": "gds-pr117-ci-consolidation-20261029",
+  "recorded_at": "2026-10-29",
+  "scope": "universal GDS PR #117 testing infrastructure",
+  "corrects_record": "gds-pr117-cpu-20261029T154935Z-3878615-reviewed",
+  "previous_statement": "The CPU validation workflow was newly added; this is imprecise: a PR-only GCC/Clang matrix already existed.",
+  "actual_fix": "Extended existing .github/workflows/ordered-gds-cpu.yml to run on source pushes to feature branch and to check C++23 compiler availability explicitly; removed temporary duplicate .github/workflows/ordered-gds-pr117-cpu.yml.",
+  "updated_workflow_commit": "fd3252445b766c6f79d7941456dc4a50d77cb40d",
+  "duplicate_removal_commit": "2d9b1a01c6309ae8350b48bd902a5f44a20fbbb1",
+  "status": "CI_RESULT_UNVERIFIED",
+  "game_launched": false,
+  "gpu_used": false,
+  "decision": "KEEP_SINGLE_DUAL_COMPILER_CPU_REGRESSION; BACKEND_UNIMPLEMENTED"
+}
