@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "record_id": "got-c925-fragment-draw-trace-20261029T131431333376Z-reviewed",
+  "recorded_on": "2026-10-29",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "record_type": "DIAGNOSTIC_PREFLIGHT_STOP_BEFORE_SOURCE_OR_GAME",
+  "context_games": [
+    "CUSA11456",
+    "CUSA34384"
+  ],
+  "tested_games": [],
+  "archive": "got-c925-fragment-draw-trace-20261029T131431333376Z.tar.gz",
+  "archive_sha256": "f0be22faf189ead06559b808df1b2cfb76b9bc1b6be0b643255bc45fe6e0b065",
+  "tested_source_commit": "c925523b49ef39434024b16b2b014d120471ee1a",
+  "intended_pr": 114,
+  "game": "NOT_RUN",
+  "native_build": "NOT_RUN",
+  "new_graphics": "NONE",
+  "compiler_errors": "NOT_APPLICABLE_NO_COMPILE",
+  "failure": "BUILD_TREE_NOT_UP_TO_DATE_NO_PATCH",
+  "ninja_dry_run": "ninja: Entering directory [C925 build]; [0/2] Re-checking globbed directories...; [1/2] Re-running CMake...",
+  "cause": "Runner incorrectly required Ninja -n to say 'no work to do' even when only the build generator's CMake/glob metadata needs regeneration. The dry run alone is not evidence of source/ELF corruption.",
+  "protected_state": {
+    "source_sha256_after": "ebed2441ceda3d6b3e6a6ebe1afe7469ec35f9d8a99c3b7f0feb1a3fb533b4a0",
+    "rasterizer_object_sha256_after": "201ca853815ceda82dea3e33857158167d2f9438dd658723cc3f90f83ea18cd0",
+    "elf_sha256_after": "89ffa07ab49d0df36b3a4c4295e0cff8f42bb7e167cbced3d5879b1e5c2f5aec",
+    "source_modified": false,
+    "elf_modified": false,
+    "protected_good_elf_unchanged": true
+  },
+  "explanation": "This is a script build-state false refusal. No observed fragment draw, no menu screenshot, no reproduced texture failure, no loss of accepted PR106/107/108/109 native behavior.",
+  "correction": {
+    "branch": "diagnostics/c925-menu-fragment-focus-20261029",
+    "pr": 114,
+    "new_helper": "tools/development/c925_menu_fragment_focus/direct_ninja.py",
+    "helper_commit": "fc2a8b42c4d98275a131deac458213043b277451",
+    "helper_git_blob": "ff148411c555c86257e2302273b3ebd5c1e02d9f",
+    "helper_sha256": "d7dcbdc0310eda941395dba1cc45c4ae39fad2b3a68a05fe1f0f5366e4022bc3",
+    "updated_runner_commit": "5839e6cf694da2bad6ee8f4f471e00bf5747057a",
+    "updated_runner_git_blob": "eee298ed8baf04fc04b77fb5f1571384396ce011",
+    "updated_runner_sha256": "4fb53d905c0d620f9b7e79f42a1f890e4ac9099fb03f737307add97eb8beacf7",
+    "design": "Get exact original compiler and linker argv with ninja -t commands; inspect output target, input source, one-object linkage and refuse response/unknown commands. Redirect compiler/linker dependency files into evidence. Compile only original vk_rasterizer.cpp object and link only shadps4 under existing build directory. Do not run CMake or rebuild unrelated targets. Keep original source/object/ELF checkpoint and byte-exact restore on both success and failure.",
+    "local_validation": {
+      "test": "Genuine CMake 3.x Ninja toy shadps4 target; initial native build then touch CMakeLists so ninja -n demands regeneration",
+      "result": "PASS direct parse, targeted new compiler command, link, test executable exits 3, previous generator remains stale (not run), no compile depfile left in build folder",
+      "negative": "PASS source path mismatch refuses before writing; unsupported mixed shell commands and response files fail closed",
+      "python_syntax": "PASS run_draw_probe.py, direct_ninja.py, test_direct_ninja.py",
+      "scope": "Toy project not user's actual C925 build; actual compile/link command forms and GPU test remain pending; preserve no-fix verdict until runtime."
+    }
+  },
+  "decision": "REJECT_PREVIOUS_PREFLIGHT_AS_TOO_STRICT; KEEP_ALL_ACCEPTED_RENDERER_FIXES; RETRY_DIAGNOSTIC_WITH_NO_CMAKE_REGEN; NO_GRAPHICS_RESULT_OR_PR_PROMOTION",
+  "next": "Use pinned updated runner + direct Ninja helper to produce one real menu-only draw trace. If command format unsupported stop before source mutation and archive evidence. Then examine 7eaf40ad/b5c898c7 draw use and color masks before changing shader/discard."
+}
