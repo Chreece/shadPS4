@@ -438,6 +438,14 @@ def main(helper):
         if touched:
             try:
                 print("STAGE=RESTORE_SOURCE_OBJECT_ELF", flush=True)
+                # Refuse to overwrite an independent change to ANY of the
+                # three source files, not only files literally named "source".
+                unexpected = [
+                    name for name in ("memory_src", "buffer_src", "raster_src")
+                    if sha(FILES[name]) not in (before[name], after.get(name))
+                ]
+                if unexpected:
+                    raise RuntimeError("EXTERNAL_SOURCE_CHANGE_REFUSED:" + ",".join(unexpected))
                 state["restoration"] = draw.restore(tuple(FILES.items()), checkpoint, before, after)
                 if any(v != "RESTORED_VERIFIED" for v in state["restoration"].values()):
                     rc = 1
