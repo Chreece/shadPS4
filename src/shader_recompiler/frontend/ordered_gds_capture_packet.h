@@ -10,6 +10,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "shader_recompiler/frontend/ordered_gds_continuation.h"
