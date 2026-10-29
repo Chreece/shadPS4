@@ -46,9 +46,11 @@ def transform(original:bytes)->bytes:
     s=s.replace('#include <atomic>', '#include <atomic>\n#include <bit>\n#include <unordered_map>',1)
     s=s.replace('namespace Vulkan {', 'namespace Vulkan {\n\n'+PROBE,1)
     first='    pipeline->BindResources(set_writes, push_data);\n    RecordFragmentDraw(pipeline, regs, false, is_indexed, regs.num_indices);\n    UpdateDynamicState(pipeline, is_indexed);'
-    second='    pipeline->BindResources(set_writes, push_data);\n    RecordFragmentDraw(pipeline, regs, true, is_indexed, max_count);\n    UpdateDynamicState(pipeline, is_indexed);'
+    second='    pipeline->BindResources(set_writes, push_data);\n    RecordFragmentDraw(pipeline, liverpool->regs, true, is_indexed, max_count);\n    UpdateDynamicState(pipeline, is_indexed);'
     s=s.replace(ANCHOR,first,1).replace(ANCHOR,second,1)
-    if s.count(MARK)!=1 or s.count('    RecordFragmentDraw(pipeline, regs,')!=2:
+    if (s.count(MARK)!=1 or
+        s.count('    RecordFragmentDraw(pipeline, regs, false, is_indexed, regs.num_indices);')!=1 or
+        s.count('    RecordFragmentDraw(pipeline, liverpool->regs, true, is_indexed, max_count);')!=1):
         raise RuntimeError('PROBE_INJECTION_FAILED')
     return s.encode()
 
