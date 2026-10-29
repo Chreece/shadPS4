@@ -104,8 +104,11 @@ public:
             if (inst.operation != Operation::Add && inst.operation != Operation::Exchange) {
                 throw std::invalid_argument("reserved/wrap ordered opcode requires real ISA model");
             }
-            if (inst.wave_done && !inst.wave_release) {
-                throw std::invalid_argument("wave_done without wave_release");
+            if (!inst.wave_release || !inst.wave_done) {
+                // This executor consumes one *complete* request per wave. A wave
+                // with pending ordered operations needs a different streaming
+                // scheduler; silently treating it as complete is incorrect.
+                throw std::invalid_argument("incomplete ordered GDS wave request");
             }
             if (inst.raw_offset1 & 0x0Cu) {
                 // Old ISA versions assign stage-specific meanings. Do not guess.
