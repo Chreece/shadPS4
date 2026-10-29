@@ -455,6 +455,40 @@ Rasterizer::ResolveVerifiedOrderedGdsEpoch(
     return host.CounterSnapshot();
 }
 
+std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
+    const VideoCore::Buffer& device_capture, u64 capture_offset,
+    VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
+    std::size_t guest_created_waves, std::span<const u32> verified_sites,
+    std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
+    Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin) {
+    using namespace Shader::Gcn::OrderedGds;
+
+    // A real GPU checkpoint writer must have captured complete live guest
+    // M0/EXEC/site values. A test-fixture wave rank or Vulkan slot is NOT an
+    // acceptable substitute. No packer value may be synthesized from GDS RAM.
+    auto counters = MakeExplicitOrderedCounterSeed(seed, seed_origin);
+    // Guard before allocating, reading or creating an unbounded epoch.
+    constexpr std::size_t CikMaximumLogicalWaves = 1u << 13;
+    if (guest_created_waves == 0 || guest_created_waves > CikMaximumLogicalWaves) {
+        throw std::invalid_argument("unsupported CIK complete ordered-count wave count");
+    }
+    const auto captures =
+        DownloadOrderedGdsPackets(device_capture, capture_offset, guest_created_waves);
+    const auto order = VerifiedGuestCreationOrder::FromCompleteCikComputeM0(captures, epoch);
+    if (!order) {
+        // Includes mixed bypasses and nonzero crawler increments: never
+        // pretend physical GPU arrival order is guest wave creation order.
+        throw std::invalid_argument("unverified CIK M0 logical wave order");
+    }
+    SparseOrderedGdsEpoch host{guest_created_waves, std::move(counters), verified_sites};
+    StageGpuCaptures(host, epoch, captures, *order);
+    const auto resume = ResolveGpuCaptures(host, epoch, *order);
+    UploadOrderedGdsPackets(device_resume, resume_offset,
+                            std::span<const GpuResumePacket>{resume.data(), resume.size()});
+    return host.CounterSnapshot();
+}
+
 std::vector<u32> Rasterizer::SnapshotOrderedGdsDwords() {
     return OrderedGdsStorageTransfer::Snapshot(runtime, scheduler,
                                                *buffer_cache.GetGdsBuffer());
