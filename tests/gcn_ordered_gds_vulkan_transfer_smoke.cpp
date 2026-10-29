@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -32,13 +33,34 @@ struct Buffer {
     void* mapping{};
 };
 
-int main() {
+int main(int argc, char** argv) {
     VkInstance instance = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
     VkCommandPool pool = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
+    VkShaderModule compute_shader = VK_NULL_HANDLE;
+    VkDescriptorSetLayout compute_set_layout = VK_NULL_HANDLE;
+    VkDescriptorPool compute_descriptor_pool = VK_NULL_HANDLE;
+    VkPipelineLayout compute_pipeline_layout = VK_NULL_HANDLE;
+    VkPipeline compute_pipeline = VK_NULL_HANDLE;
     std::array<Buffer, 5> buffers{};
     try {
+        if (argc != 2) {
+            throw std::runtime_error("COMPUTE_PACKET_WRITER_SPIRV_PATH_REQUIRED");
+        }
+        std::ifstream shader_file{argv[1], std::ios::binary | std::ios::ate};
+        if (!shader_file) throw std::runtime_error("GPU_PACKET_WRITER_SPIRV_MISSING");
+        const auto code_size = shader_file.tellg();
+        if (code_size <= 0 || code_size > 65536 ||
+            (static_cast<std::size_t>(code_size) & 3u) != 0) {
+            throw std::runtime_error("GPU_PACKET_WRITER_SPIRV_LENGTH_INVALID");
+        }
+        std::vector<std::uint32_t> code(static_cast<std::size_t>(code_size) / 4);
+        shader_file.seekg(0);
+        if (!shader_file.read(reinterpret_cast<char*>(code.data()), code_size) ||
+            code.front() != 0x07230203u) {
+            throw std::runtime_error("GPU_PACKET_WRITER_SPIRV_HEADER_INVALID");
+        }
         VkApplicationInfo app{};
         app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         app.pApplicationName = "shadPS4 ordered GDS transfer probe";
@@ -247,11 +269,217 @@ int main() {
         if (std::memcmp(resume.data(), buffers[4].mapping, bytes) != 0)
             throw std::runtime_error("GPU_RESUME_HOST_TO_DEVICE_ROUNDTRIP_MISMATCH");
 
+        // Second phase: real GPU *compute* shader writes packet fields into
+        // the same device capture buffer. These are synthetic input fixtures,
+        // NOT guest GCN state, guest ordering, or emulator shader replay.
+        using namespace Shader::Gcn::OrderedGds;
+        std::array<GpuCapturePacket,4> fixtures{};
+        for (std::uint32_t slot = 0; slot < fixtures.size(); ++slot) {
+            fixtures[slot].tag = 0xbad1deafu;           // overwritten on GPU
+            fixtures[slot].epoch = 99;                   // overwritten on GPU
+            fixtures[slot].logical_slot = NoActiveLane;  // GPU builtin replaces
+            fixtures[slot].reserved0 = 99;               // GPU clears
+        }
+        fixtures[0].flags = CaptureBypassFlags;
+        fixtures[0].site_pc = NoActiveLane;
+        fixtures[0].source_lane = NoActiveLane;
+
+        fixtures[1].flags = CaptureFlags;
+        fixtures[1].site_pc = 0x4158;
+        fixtures[1].encoded_control = 0x1300;
+        fixtures[1].runtime_m0 = 0x20u << 16;
+        fixtures[1].exec_hi = 0x80000000u;
+        fixtures[1].source_lane = 63;
+        fixtures[1].payload = 7;
+        fixtures[1].token_lo = 1000;
+
+        fixtures[2].flags = CaptureFlags;
+        fixtures[2].site_pc = 0x41d4;
+        fixtures[2].encoded_control = 0x0300;
+        fixtures[2].runtime_m0 = 0x20u << 16;
+        fixtures[2].exec_lo = 1u << 7;
+        fixtures[2].source_lane = 7;
+        fixtures[2].payload = 5;
+        fixtures[2].token_lo = 1003;
+
+        fixtures[3].flags = CaptureFlags;
+        fixtures[3].site_pc = 0x41d4;
+        fixtures[3].encoded_control = 0x0300;
+        fixtures[3].runtime_m0 = 0x20u << 16;
+        fixtures[3].exec_lo = 1;
+        fixtures[3].source_lane = 0;
+        fixtures[3].payload = 3;
+        fixtures[3].token_lo = 1001;
+
+        std::memcpy(buffers[2].mapping, fixtures.data(), bytes);
+        flush(buffers[2]);
+        const VkShaderModuleCreateInfo sci{
+            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .codeSize = static_cast<std::size_t>(code_size),
+            .pCode = code.data(),
+        };
+        Check(vkCreateShaderModule(device, &sci, nullptr, &compute_shader),
+              "vkCreateShaderModule");
+        std::array<VkDescriptorSetLayoutBinding,2> bindings{};
+        for (std::uint32_t binding = 0; binding < bindings.size(); ++binding) {
+            bindings[binding].binding = binding;
+            bindings[binding].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            bindings[binding].descriptorCount = 1;
+            bindings[binding].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        }
+        const VkDescriptorSetLayoutCreateInfo dsci{
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .bindingCount = static_cast<std::uint32_t>(bindings.size()),
+            .pBindings = bindings.data(),
+        };
+        Check(vkCreateDescriptorSetLayout(device, &dsci, nullptr, &compute_set_layout),
+              "vkCreateDescriptorSetLayout");
+        const VkPipelineLayoutCreateInfo plci{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .setLayoutCount = 1,
+            .pSetLayouts = &compute_set_layout,
+        };
+        Check(vkCreatePipelineLayout(device, &plci, nullptr, &compute_pipeline_layout),
+              "vkCreatePipelineLayout");
+        VkComputePipelineCreateInfo cpci{};
+        cpci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        cpci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        cpci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        cpci.stage.module = compute_shader;
+        cpci.stage.pName = "main";
+        cpci.layout = compute_pipeline_layout;
+        Check(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &cpci, nullptr,
+                                       &compute_pipeline), "vkCreateComputePipelines");
+
+        const VkDescriptorPoolSize pool_size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,2};
+        const VkDescriptorPoolCreateInfo dpci{
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .maxSets = 1,
+            .poolSizeCount = 1,
+            .pPoolSizes = &pool_size,
+        };
+        Check(vkCreateDescriptorPool(device, &dpci, nullptr, &compute_descriptor_pool),
+              "vkCreateDescriptorPool");
+        const VkDescriptorSetAllocateInfo dsai{
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool = compute_descriptor_pool,
+            .descriptorSetCount = 1,
+            .pSetLayouts = &compute_set_layout,
+        };
+        VkDescriptorSet compute_descriptor{};
+        Check(vkAllocateDescriptorSets(device, &dsai, &compute_descriptor),
+              "vkAllocateDescriptorSets");
+        const std::array<VkDescriptorBufferInfo,2> descriptor_buffers{{
+            {buffers[0].handle, 0, bytes},
+            {buffers[2].handle, 0, bytes},
+        }};
+        std::array<VkWriteDescriptorSet,2> writes{};
+        for (std::uint32_t binding = 0; binding < writes.size(); ++binding) {
+            writes[binding].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[binding].dstSet = compute_descriptor;
+            writes[binding].dstBinding = binding;
+            writes[binding].descriptorCount = 1;
+            writes[binding].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writes[binding].pBufferInfo = &descriptor_buffers[binding];
+        }
+        vkUpdateDescriptorSets(device, static_cast<std::uint32_t>(writes.size()),
+                               writes.data(), 0, nullptr);
+
+        VkCommandBuffer writer_cmd{};
+        Check(vkAllocateCommandBuffers(device, &cbi, &writer_cmd),
+              "vkAllocateCommandBuffers(writer)");
+        Check(vkBeginCommandBuffer(writer_cmd, &begin),
+              "vkBeginCommandBuffer(writer)");
+        VkBufferMemoryBarrier host_to_compute{};
+        host_to_compute.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        host_to_compute.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+        host_to_compute.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        host_to_compute.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        host_to_compute.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        host_to_compute.buffer = buffers[2].handle;
+        host_to_compute.size = bytes;
+        vkCmdPipelineBarrier(writer_cmd, VK_PIPELINE_STAGE_HOST_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             0, 0, nullptr, 1, &host_to_compute, 0, nullptr);
+        vkCmdBindPipeline(writer_cmd, VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline);
+        vkCmdBindDescriptorSets(writer_cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                compute_pipeline_layout, 0, 1, &compute_descriptor,
+                                0, nullptr);
+        vkCmdDispatch(writer_cmd, 4, 1, 1);
+        VkBufferMemoryBarrier shader_to_copy{};
+        shader_to_copy.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        shader_to_copy.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        shader_to_copy.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        shader_to_copy.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        shader_to_copy.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        shader_to_copy.buffer = buffers[0].handle;
+        shader_to_copy.size = bytes;
+        vkCmdPipelineBarrier(writer_cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             0, 0, nullptr, 1, &shader_to_copy, 0, nullptr);
+        vkCmdCopyBuffer(writer_cmd, buffers[0].handle, buffers[1].handle, 1, &region);
+        VkBufferMemoryBarrier copy_to_host{};
+        copy_to_host.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        copy_to_host.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        copy_to_host.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+        copy_to_host.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        copy_to_host.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        copy_to_host.buffer = buffers[1].handle;
+        copy_to_host.size = bytes;
+        vkCmdPipelineBarrier(writer_cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_HOST_BIT,
+                             0, 0, nullptr, 1, &copy_to_host, 0, nullptr);
+        Check(vkEndCommandBuffer(writer_cmd), "vkEndCommandBuffer(writer)");
+        Check(vkResetFences(device, 1, &fence), "vkResetFences(writer)");
+        VkSubmitInfo writer_submit = submit;
+        writer_submit.pCommandBuffers = &writer_cmd;
+        Check(vkQueueSubmit(queue, 1, &writer_submit, fence),
+              "vkQueueSubmit(writer)");
+        Check(vkWaitForFences(device, 1, &fence, VK_TRUE, 10'000'000'000ULL),
+              "vkWaitForFences(writer)");
+        invalidate(buffers[1]);
+
+        std::array<GpuCapturePacket,4> received{};
+        std::memcpy(received.data(), buffers[1].mapping, bytes);
+        for (std::uint32_t slot = 0; slot < received.size(); ++slot) {
+            if (received[slot].tag != CapturePacketTag ||
+                received[slot].epoch != 3 ||
+                received[slot].logical_slot != slot ||
+                received[slot].reserved0 || received[slot].reserved1 ||
+                received[slot].reserved2 ||
+                received[slot].site_pc != fixtures[slot].site_pc) {
+                throw std::runtime_error("GPU_COMPUTE_WRITER_PACKET_CORRUPTION");
+            }
+        }
+        const std::array<u64,4> ranks{2,0,3,1};
+        const std::array<u32,2> sites{0x4158,0x41d4};
+        const auto verified = VerifiedGuestCreationOrder::FromScheduler(ranks);
+        if (!verified) throw std::runtime_error("INVALID_TEST_GUEST_RANK_MAPPING");
+        SparseOrderedGdsEpoch host(4, {{{0x20,0},100}}, sites);
+        StageGpuCaptures(host,3,received,*verified);
+        const auto ready = ResolveGpuCaptures(host,3,*verified);
+        if (ready.size()!=4 || ready[0].flags!=0 ||
+            ready[1].previous!=100 || ready[1].current!=7 ||
+            ready[3].previous!=7 || ready[3].current!=10 ||
+            ready[2].previous!=10 || ready[2].current!=15) {
+            throw std::runtime_error("GPU_COMPUTE_WRITER_HOST_RESOLVE_MISMATCH");
+        }
+        std::cout << "GPU_CAPTURE_COMPUTE_WRITER=PASS gpu_dispatches=1"
+                     " packets_written=4 real_vk_compute=1"
+                     " guest_rank_source=TEST_FIXTURE host_sparse_resolve=PASS"
+                     " ordered_exchange_add=PASS skipped_wave=PASS"
+                     " guest_shader=NOT_RUN framebuffer=NOT_TOUCHED\n";
+
         std::cout << "GPU_TRANSFER_SMOKE=PASS device=" << selected.deviceName
                   << " vendor=AMD direct_capture_bytes=" << bytes
                   << " gpu_to_host=PASS host_to_gpu=PASS"
                   << " fence=PASS barrier=PASS noncoherent_handled=PASS"
                   << " guest_shader=NOT_RUN framebuffer=NOT_TOUCHED\n";
+        if (compute_pipeline) vkDestroyPipeline(device, compute_pipeline, nullptr);
+        if (compute_pipeline_layout) vkDestroyPipelineLayout(device, compute_pipeline_layout, nullptr);
+        if (compute_descriptor_pool) vkDestroyDescriptorPool(device, compute_descriptor_pool, nullptr);
+        if (compute_set_layout) vkDestroyDescriptorSetLayout(device, compute_set_layout, nullptr);
+        if (compute_shader) vkDestroyShaderModule(device, compute_shader, nullptr);
         vkDestroyFence(device, fence, nullptr); fence = VK_NULL_HANDLE;
         vkDestroyCommandPool(device, pool, nullptr); pool = VK_NULL_HANDLE;
         for (auto& b : buffers) {
@@ -266,6 +494,11 @@ int main() {
     } catch (const std::exception& e) {
         std::cerr << "GPU_TRANSFER_SMOKE=FAIL reason=" << e.what() << '\n';
         if (device) {
+        if (compute_pipeline) vkDestroyPipeline(device, compute_pipeline, nullptr);
+        if (compute_pipeline_layout) vkDestroyPipelineLayout(device, compute_pipeline_layout, nullptr);
+        if (compute_descriptor_pool) vkDestroyDescriptorPool(device, compute_descriptor_pool, nullptr);
+        if (compute_set_layout) vkDestroyDescriptorSetLayout(device, compute_set_layout, nullptr);
+        if (compute_shader) vkDestroyShaderModule(device, compute_shader, nullptr);
             if (fence) vkDestroyFence(device, fence, nullptr);
             if (pool) vkDestroyCommandPool(device, pool, nullptr);
             for (auto& b : buffers) {
