@@ -468,6 +468,9 @@ OPCODE(BallotFindLsb,                                       U32,            U64,
 OPCODE(InverseBallot,                                       U1,             U64,                                                                            )
 OPCODE(DataAppend,                                          U32,            U32,            U1                                                              )
 OPCODE(DataConsume,                                         U32,            U32,            U1                                                              )
+// Keep ordered GDS separate from shared/buffer atomics. Arguments:
+// runtime M0, ADDR per lane, EXEC per lane, packed OFFSET1:OFFSET0.
+OPCODE(OrderedGdsCount,                                     U32,            U32,            U32,            U1,             U32                       )
 OPCODE(GroupAny,                                            U1,             U1,                                                                             )
 
 // Time operations
