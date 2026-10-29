@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "record_id": "gds-pr117-20261029T161746Z-clang-tuple-guest-site-reviewed",
+  "recorded_at": "2026-10-29",
+  "scope": "Universal shadPS4 ordered-GDS host executor, IR and GPU continuation prerequisites",
+  "game_id": "CUSA34384",
+  "tested_games": [],
+  "archive": "gds-pr117-dual-cpu-20261029T161746Z-3941638.tar.gz",
+  "archive_sha256": "05ec38e6573ba297e78809f072be213656d2987728e710e74986c5b59ad33187",
+  "tested_source_commit": "e5d7c5e242309f5b77890aa824f798d4bba4f205",
+  "original_test_exit": 1,
+  "original_test_result": {
+    "gcc": "PASS full strict C++23 batches, continuations, concurrency 32x256 waves; ASan and UBSan PASS",
+    "clang": "PASS frontend/IR, 99 ordered batches and 198 epochs; FAIL during compilation of gcn_ordered_gds_concurrency.cpp lines 36 and 57",
+    "clang_error": "libstdc++14 tuple:958:36 no matching function for std::get when clang++-17 constructs std::thread with capturing lambda",
+    "gpu": "NOT_TESTED",
+    "game": "NOT_LAUNCHED",
+    "visual": "NOT_TESTED"
+  },
+  "fix_1": "Replaced std::thread captured lambda constructors with callable functions and typed argument-pointer contexts; retains four producer threads, stable observer snapshot and 32 x 256 cases; locally tested Clang 17 and GCC 14 thread function-pointer instantiation",
+  "fix_1_commit": "f768beeef60d2acb7946623933facea06225b436",
+  "fix_2": "IR now preserves static guest instruction-site byte address separately from raw control M0 per-lane ADDR EXEC; site is pc-inst.length; backend remains explicitly gated; first and second site fixture use independent PCs; supports future dynamic phases",
+  "fix_2_commit": "2058def2328984010240af331616844452be041e",
+  "new_tests_status": "PENDING_USER_HOST_VALIDATION; no complete native emulator build or Vulkan execution performed",
+  "decision": "KEEP_CONCURRENCY_SNAPSHOT_REPAIR_AND_PORTABLE_THREAD_TEST; KEEP_STATIC_SITE_IR_FOR_FUTURE_GPU_CONTINUATION; NOT_A_GAME_FIX",
+  "next": "Run updated GCC+Clang sanitizer suite, then isolated native build; real GPU capture and synchronized phase replay remain unimplemented. No unordered atomic, GPU spin, title hash or game-specific hack."
+}
