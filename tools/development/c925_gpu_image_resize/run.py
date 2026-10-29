@@ -162,8 +162,10 @@ def run(work):
  stamp=dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
  evidence=P/'logs'/('got-c925-gpu-image-resize-'+stamp);evidence.mkdir(parents=True,exist_ok=False)
  checkpoint=BASE/'checkpoints'/('gpu-image-resize-'+stamp)
- objects=[(key,BUILD/target) for key,(_,target) in FILES.items() if target]
+ objects=[(key+'_obj',BUILD/target) for key,(_,target) in FILES.items() if target]
  managed=[(key,SRCROOT/name) for key,(name,_) in FILES.items()]+objects+[('elf',ELF)]
+ if len({name for name,_ in managed}) != len(managed):
+  raise RuntimeError('CHECKPOINT_NAME_COLLISION')
  state=dict(record_id=evidence.name,journal_scope='UNIVERSAL_SHADPS4',
             game='CUSA11456',change='Preserve GPU-written same-layout images across dimension changes',
             upstream_reference='https://github.com/shadps4-emu/shadPS4/pull/5303',
@@ -214,7 +216,7 @@ def run(work):
    (evidence/(key+'.diff')).write_text(''.join(difflib.unified_diff(before.splitlines(True),after.splitlines(True),'a/'+filename,'b/'+filename)))
   plans=[]
   for key,src in [('runtime_cpp',SRCROOT/FILES['runtime_cpp'][0]),('texture_cpp',SRCROOT/FILES['texture_cpp'][0])]:
-   obj=dict(objects)[key]
+   obj=dict(objects)[key+'_obj']
    plans.append(direct.parse(BUILD,src,obj,ELF,evidence))
   if plans[0][1]!=plans[1][1]:raise RuntimeError('INCONSISTENT_LINK_COMMANDS')
   checkpoint.mkdir(parents=True,exist_ok=False)
@@ -231,7 +233,7 @@ def run(work):
    print('STAGE=COMPILE_'+key.upper(),flush=True)
    menu.logged(u,['bash','-c',direct.command_string(cmd)],evidence/(key+'-compile.log'),
                'COMPILE_ONE_GPU_IMAGE_OBJECT_'+key,timeout=900)
-   updated[key+'_obj']=digest(dict(objects)[key])
+   updated[key+'_obj']=digest(dict(objects)[key+'_obj'])
   print('STAGE=RELINK_TEST_EXECUTABLE',flush=True)
   menu.logged(u,['bash','-c',direct.command_string(plans[0][1])],evidence/'link.log','RELINK_TEST_EXECUTABLE',timeout=900)
   updated['elf']=digest(ELF)
