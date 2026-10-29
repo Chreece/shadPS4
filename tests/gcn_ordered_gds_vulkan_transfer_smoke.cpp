@@ -290,7 +290,7 @@ int main(int argc, char** argv) {
         fixtures[1].runtime_m0 = 0x20u << 16;
         fixtures[1].exec_hi = 0x80000000u;
         fixtures[1].source_lane = 63;
-        fixtures[1].payload = 7;
+        fixtures[1].payload = 1;
         fixtures[1].token_lo = 1000;
 
         fixtures[2].flags = CaptureFlags;
@@ -298,8 +298,9 @@ int main(int argc, char** argv) {
         fixtures[2].encoded_control = 0x0300;
         fixtures[2].runtime_m0 = 0x20u << 16;
         fixtures[2].exec_lo = 1u << 7;
+        fixtures[2].exec_hi = 0x80000000u; // CIK count_bits(EXEC) = 2
         fixtures[2].source_lane = 7;
-        fixtures[2].payload = 5;
+        fixtures[2].payload = 2;
         fixtures[2].token_lo = 1003;
 
         fixtures[3].flags = CaptureFlags;
@@ -308,7 +309,7 @@ int main(int argc, char** argv) {
         fixtures[3].runtime_m0 = 0x20u << 16;
         fixtures[3].exec_lo = 1;
         fixtures[3].source_lane = 0;
-        fixtures[3].payload = 3;
+        fixtures[3].payload = 1;
         fixtures[3].token_lo = 1001;
 
         std::memcpy(buffers[2].mapping, fixtures.data(), bytes);
@@ -454,15 +455,15 @@ int main(int argc, char** argv) {
         StageGpuCaptures(host,3,received,*verified);
         const auto ready = ResolveGpuCaptures(host,3,*verified);
         if (ready.size()!=4 || ready[0].flags!=0 ||
-            ready[1].previous!=100 || ready[1].current!=7 ||
-            ready[3].previous!=7 || ready[3].current!=10 ||
-            ready[2].previous!=10 || ready[2].current!=15) {
+            ready[1].previous!=100 || ready[1].current!=1 ||
+            ready[3].previous!=1 || ready[3].current!=2 ||
+            ready[2].previous!=2 || ready[2].current!=4) {
             throw std::runtime_error("GPU_COMPUTE_WRITER_HOST_RESOLVE_MISMATCH");
         }
         std::cout << "GPU_CAPTURE_COMPUTE_WRITER=PASS gpu_dispatches=1"
                      " packets_written=4 real_vk_compute=1"
                      " guest_rank_source=TEST_FIXTURE host_sparse_resolve=PASS"
-                     " ordered_exchange_add=PASS skipped_wave=PASS"
+                     " ordered_exchange_add=PASS cik_exec_popcount=PASS skipped_wave=PASS"
                      " guest_shader=NOT_RUN framebuffer=NOT_TOUCHED\n";
 
         std::cout << "GPU_TRANSFER_SMOKE=PASS device=" << selected.deviceName
