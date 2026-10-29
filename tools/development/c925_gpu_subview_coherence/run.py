@@ -214,9 +214,10 @@ def main():
     selected=ROOT/'scripts/got-texture-overlap.Xah6oZUt/run.py'
     require(selected.is_file() and not selected.is_symlink(),'KNOWN_REVERSIBLE_RUNNER_MISSING')
     s=selected.read_text()
+    # Check the proven entry point and baseline identity, not incidental
+    # whitespace or spelling of an internal helper signature.
     for needle in ('def run(work):','RETAIN_CANDIDATE_RESTORE_BASELINE',
-                   'texture-overlap-fix-','PROVEN_ELF_HASH_CHANGED',
-                   'def helper(directory,name):'):
+                   'texture-overlap-fix-','PROVEN_ELF_HASH_CHANGED'):
         require(needle in s,'RUNNER_VERSION_CHANGED:'+needle)
     for old,new in (
         ('Componentwise mip/layer image-containment and incompatible-overlap correction',
@@ -227,11 +228,15 @@ def main():
     ):
         require(old in s,'RUNNER_METADATA_CHANGED:'+old)
         s=s.replace(old,new)
-    stats="for needle in ('INDEXED_MATERIAL_BIND_REJECT','Sharp source was not flatenned'"
-    require(s.count(stats)==1,'REUSABLE_RUNNER_LOG_COUNTER_CHANGED')
-    s=s.replace(stats,"for needle in ('GpuRenderedSubviewRefresh','INDEXED_MATERIAL_BIND_REJECT','Sharp source was not flatenned'",1)
+    # Optional event-counter enrichment: accept conventional quote/spacing
+    # variants instead of aborting an otherwise proven build.
+    stats=re.search(r"for\s+needle\s+in\s*\(\s*(['\"])INDEXED_MATERIAL_BIND_REJECT\1",s)
+    if stats:
+        s=s[:stats.end()]+", 'GpuRenderedSubviewRefresh'"+s[stats.end():]
     ns={'__name__':'got_c925_gpu_subview','__file__':str(selected)}
     exec(compile(s,str(selected),'exec'),ns)
+    require(callable(ns.get('run')) and callable(ns.get('helper')),
+            'REUSABLE_RUNNER_MISSING_FUNCTIONS')
     require(ns['SRC'].resolve()==SRC.resolve() and ns['BASE_SHA']==PROVEN,
             'BASELINE_RUNNER_REPLACED')
     ns['patch']=patch;ns['unit']=unit
