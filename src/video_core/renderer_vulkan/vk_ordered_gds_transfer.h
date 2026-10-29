@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
+#include "shader_recompiler/frontend/ordered_gds_storage_layout.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -168,10 +169,10 @@ public:
 // responsibility of the verified guest ISA/PM4 address translator.
 class OrderedGdsStorageTransfer {
 public:
-    static constexpr u64 GdsBytes = 64u * 1024u;
-    static constexpr u32 DwordBytes = sizeof(u32);
-    static constexpr u32 GdsDwords = GdsBytes / DwordBytes;
-    using DwordWrite = std::pair<u32, u32>; // Explicit guest GDS BYTE offset, new value.
+    static constexpr u64 GdsBytes = Shader::Gcn::OrderedGds::GdsPhysicalBytes;
+    static constexpr u32 DwordBytes = Shader::Gcn::OrderedGds::GdsDwordBytes;
+    static constexpr u32 GdsDwords = Shader::Gcn::OrderedGds::GdsPhysicalDwords;
+    using DwordWrite = Shader::Gcn::OrderedGds::PhysicalGdsDwordWrite;
 
     [[nodiscard]] static std::vector<u32> Snapshot(Runtime& runtime, Scheduler& scheduler,
                                                     const VideoCore::Buffer& gds) {
@@ -217,26 +218,10 @@ public:
     static void Apply(Runtime& runtime, Scheduler& scheduler,
                       const VideoCore::Buffer& gds, std::span<const DwordWrite> updates) {
         RequireGdsSize(gds);
-        if (updates.size() > GdsDwords) {
-            throw std::invalid_argument("too many guest GDS counter updates");
-        }
+        Shader::Gcn::OrderedGds::ValidatePhysicalGdsWrites(updates);
         if (updates.empty()) {
             return;
         }
-        std::vector<u32> seen_offsets;
-        seen_offsets.reserve(updates.size());
-        for (const auto& [byte_offset, value] : updates) {
-            (void)value;
-            if (byte_offset % DwordBytes || byte_offset > GdsBytes - DwordBytes) {
-                throw std::invalid_argument("unaligned or out-of-range GDS counter byte offset");
-            }
-            seen_offsets.push_back(byte_offset);
-        }
-        std::sort(seen_offsets.begin(), seen_offsets.end());
-        if (std::adjacent_find(seen_offsets.begin(), seen_offsets.end()) != seen_offsets.end()) {
-            throw std::invalid_argument("duplicate guest GDS physical counter offset");
-        }
-
         const u64 data_bytes = updates.size() * DwordBytes;
         const auto staging = runtime.GetStagingPool().Request(
             data_bytes, VideoCore::MemoryType::HostUncached, alignof(u32));
