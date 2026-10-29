@@ -125,10 +125,15 @@ def main():
             ".buffer_type = BufferType::GdsBuffer" in patch and
             "ir.BufferAtomicIAdd" in patch,
             "NORMAL_GDS_STILL_BINDS_WITHOUT_ORDERED_ALIAS")
+    # The unverified origin is an enum declaration, not necessarily a
+    # fully-qualified expression. Check the real fail-closed seed guard.
+    seed_guard = function(packer, "MakeExplicitOrderedCounterSeed(")
     require("CikOrderedCountIncrement" in packer and
             "std::popcount" in packer and
-            "OrderedCounterSeedOrigin::DedicatedPackerState" in packer and
-            "OrderedCounterSeedOrigin::UnverifiedRawGdsMemory" in packer,
+            re.search(r"enum class OrderedCounterSeedOrigin\s*\{[^}]*\bUnverifiedRawGdsMemory\b",
+                      packer, re.S) is not None and
+            "origin != OrderedCounterSeedOrigin::DedicatedPackerState" in seed_guard and
+            "throw std::invalid_argument" in seed_guard,
             "LEGACY_PACKER_PAYLOAD_AND_SEED_PROVENANCE")
 
     require("class OrderedGdsPhases" in reference and
