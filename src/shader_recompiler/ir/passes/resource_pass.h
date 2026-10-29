@@ -85,9 +85,6 @@ inline bool IsDataRingInstruction(const IR::Inst& inst) {
     switch (inst.GetOpcode()) {
     case IR::Opcode::DataAppend:
     case IR::Opcode::DataConsume:
-    case IR::Opcode::OrderedGdsCount:
-        // Ordered count also addresses the guest's actual GDS storage.
-        // Retain its distinct typed IR for ordered host execution.
         return true;
     case IR::Opcode::LoadSharedU16:
     case IR::Opcode::LoadSharedU32:
