@@ -72,7 +72,9 @@ struct ActiveWavePayload {
 
 inline u32 RequireGuestOrderedPayload(ActiveWavePayload wave) {
     if (wave.exec_mask == 0) {
-        return 0; // No active lane presents an increment to the GDS unit.
+        // Do not synthesize a zero-valued Exchange for a wave without lanes.
+        // The caller must skip or model the inactive instruction explicitly.
+        throw std::invalid_argument("no active guest lanes for ordered GDS request");
     }
     if (!wave.evaluated_guest_isa_payload) {
         throw std::invalid_argument("live ISA-resolved ordered GDS payload required");
