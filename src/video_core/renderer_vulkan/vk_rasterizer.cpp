@@ -424,6 +424,16 @@ void Rasterizer::UploadOrderedGdsPackets(
                                      destination_offset, packets);
 }
 
+std::vector<u32> Rasterizer::SnapshotOrderedGdsDwords() {
+    return OrderedGdsStorageTransfer::Snapshot(runtime, scheduler,
+                                               *buffer_cache.GetGdsBuffer());
+}
+
+void Rasterizer::CommitOrderedGdsDwords(std::span<const std::pair<u32, u32>> updates) {
+    OrderedGdsStorageTransfer::Apply(runtime, scheduler,
+                                    *buffer_cache.GetGdsBuffer(), updates);
+}
+
 u64 Rasterizer::Flush() {
     const u64 current_tick = scheduler.CurrentTick();
     SubmitInfo info{};
