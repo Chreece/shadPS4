@@ -6,7 +6,7 @@ BASE="$PROJECT/tests/gds-pr117-native-20261029T164137Z-3996104"
 SRC="$BASE/source"
 BUILD="$BASE/build"
 BRANCH='feature/ordered-gds-wave-executor-20261029'
-MINIMUM_COMMIT='fe40a99c45416b389133052463f333bee02aa177'
+MINIMUM_COMMIT='16ac89a197220ea523163a584c31c990fa3127e2'
 TAG="gds-pr117-preflight-native-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 LOG="$PROJECT/logs/$TAG"
 STAGE='PREFLIGHT'
@@ -85,6 +85,8 @@ for compiler in g++ clang++-17; do
     grep -Fq 'ORDERED_GDS_MIXED_STATIC_SITES=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_GPU_PACKET_ROUNDTRIP=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_STATIC_FLOW=PASS' "$LOG/cpu-$name.log"
+    grep -Fq 'ORDERED_GDS_SPARSE_WAVE_COVERAGE=PASS' "$LOG/cpu-$name.log"
+    grep -Fq 'ORDERED_GDS_GPU_SPARSE_PACKET=PASS' "$LOG/cpu-$name.log"
 done
 
 STAGE='VERIFY_BACKEND_REMAINS_GATED'
@@ -100,6 +102,9 @@ grep -Fq 'Ordered GDS GPU packet ABI' \
 grep -Fq 'Ordered GDS decoded-ISA CFG:' \
     "$SRC/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp" ||
     { echo 'ORDERED_GDS_REAL_GCN_CONTROL_FLOW_NOT_LINKED'; exit 12; }
+grep -Fq 'CaptureBypassFlags' \
+    "$SRC/src/shader_recompiler/frontend/ordered_gds_capture_packet.h" ||
+    { echo 'ORDERED_GDS_BYPASS_PACKETS_MISSING'; exit 12; }
 
 STAGE='BUILD_INCREMENTAL_NATIVE'
 if ! cmake --build "$BUILD" --parallel 6 > "$LOG/build.log" 2>&1; then
