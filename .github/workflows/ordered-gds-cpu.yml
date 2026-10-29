@@ -8,6 +8,21 @@ on:
       - 'src/shader_recompiler/ir/**'
       - 'src/shader_recompiler/backend/spirv/emit_spirv*'
       - 'tests/check_ordered_gds_frontend.py'
+      - 'tests/check_ordered_gds_ir.py'
+      - 'tests/gcn_ordered_gds*.cpp'
+      - 'tests/gcn_ordered_gds_frontend_fixture.cpp.in'
+      - 'tests/run_ordered_gds_cpu.sh'
+      - '.github/workflows/ordered-gds-cpu.yml'
+  push:
+    branches:
+      - feature/ordered-gds-wave-executor-20261029
+    paths:
+      - 'src/shader_recompiler/frontend/ordered_gds*.h'
+      - 'src/shader_recompiler/frontend/translate/data_share.cpp'
+      - 'src/shader_recompiler/ir/**'
+      - 'src/shader_recompiler/backend/spirv/emit_spirv*'
+      - 'tests/check_ordered_gds_frontend.py'
+      - 'tests/check_ordered_gds_ir.py'
       - 'tests/gcn_ordered_gds*.cpp'
       - 'tests/gcn_ordered_gds_frontend_fixture.cpp.in'
       - 'tests/run_ordered_gds_cpu.sh'
@@ -20,14 +35,30 @@ permissions:
 jobs:
   cpu-only:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         compiler: [g++, clang++]
     steps:
       - uses: actions/checkout@v4
-      - name: Verify standalone GDS frontend, wave model, and continuation
+        with:
+          persist-credentials: false
+      - name: Verify selected compiler supports C++23
+        env:
+          CXX: ${{ matrix.compiler }}
+        run: |
+          set -euo pipefail
+          command -v "$CXX"
+          "$CXX" --version
+          printf 'int main() { return 0; }\n' | "$CXX" -std=c++23 -x c++ -fsyntax-only -
+      - name: Verify standalone GDS frontend, ordered batches and continuations
         env:
           CXX: ${{ matrix.compiler }}
           RUN_SANITIZERS: '1'
         run: bash tests/run_ordered_gds_cpu.sh
+      - name: Assert unordered GPU execution is still blocked
+        run: |
+          set -euo pipefail
+          grep -Fq 'ASSERT_MSG(!program.info.uses_ordered_gds' src/shader_recompiler/backend/spirv/emit_spirv.cpp
+          echo 'GPU_EXECUTION=NOT_TESTED'
