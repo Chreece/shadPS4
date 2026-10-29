@@ -4,6 +4,7 @@
 #pragma once
 
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "common/recursive_lock.h"
@@ -66,6 +67,12 @@ public:
     void UploadOrderedGdsPackets(VideoCore::Buffer& device_resume,
                                  u64 destination_offset,
                                  std::span<const Shader::Gcn::OrderedGds::GpuResumePacket> packets);
+
+    // Read the true GPU-visible 64 KiB GDS contents after prior writes,
+    // then apply only specifically verified physical dword counter changes.
+    // The caller must NOT invent CounterKey -> byte-offset mappings.
+    [[nodiscard]] std::vector<u32> SnapshotOrderedGdsDwords();
+    void CommitOrderedGdsDwords(std::span<const std::pair<u32, u32>> updates);
 
     void ScopeMarker(fmt::string_view fmt, fmt::format_args args, auto&& func) {
         if (host_markers_enabled) {
