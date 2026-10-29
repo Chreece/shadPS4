@@ -154,9 +154,9 @@ def patch_memory(src):
  missing=[header for header in ('#include <algorithm>','#include <atomic>','#include <cstring>')
           if header not in result]
  if missing:
-  hit=re.search(r'(?m)^#\\s*include\\s*[<"]',result)
+  hit=re.search(r'(?m)^#\s*include\s*[<"]',result)
   require(hit is not None,'MEMORY_HAS_NO_INCLUDE_BLOCK')
-  result=result[:hit.start()]+''.join(header+'\\n' for header in missing)+result[hit.start():]
+  result=result[:hit.start()]+''.join(header+'\n' for header in missing)+result[hit.start():]
  require(result.count(MARK)==1 and result.count('BackingWriteIncomplete')==1,
          'MEMORY_PATCH_RESULT_INVALID')
  return result
