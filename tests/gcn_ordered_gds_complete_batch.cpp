@@ -21,6 +21,19 @@ int main(){
    auto ex=D(0x13), add=D(0x03);
    assert(ex.operation==Operation::Exchange&&add.operation==Operation::Add);
    assert(ex.gds&&ex.wave_done&&ex.wave_release&&ex.addr_register==9&&ex.destination_register==11);
+   // PS4/legacy-GCN payload is active-lane count, not a hardcoded increment.
+   assert(ResolveGuestPayload(GuestPayloadMode::LegacyGcnExecCount, {0, std::nullopt})==0);
+   assert(ResolveGuestPayload(GuestPayloadMode::LegacyGcnExecCount, {0xfffffULL, std::nullopt})==20);
+   assert(ResolveGuestPayload(GuestPayloadMode::LegacyGcnExecCount, {~u64{0}, 777u})==64);
+   // Modern RDNA3 payload comes from the first active lane's ADDR VGPR.
+   assert(ResolveGuestPayload(GuestPayloadMode::RdnaFirstValidLaneValue, {0, std::nullopt})==0);
+   assert(ResolveGuestPayload(GuestPayloadMode::RdnaFirstValidLaneValue, {0x81, 17u})==17);
+   bool missing_rdna_input_rejected=false;
+   try { (void)ResolveGuestPayload(GuestPayloadMode::RdnaFirstValidLaneValue,
+                                  {0x80, std::nullopt}); }
+   catch (const std::invalid_argument&) { missing_rdna_input_rejected=true; }
+   assert(missing_rdna_input_rejected);
+
    for(unsigned n=1;n<100;n++){
       CompleteBatch c({{{0x1234,0},0}});
       std::vector<Request> requests;
@@ -53,6 +66,11 @@ int main(){
    CompleteBatch wraps({{{0,0},std::numeric_limits<u32>::max()}});
    const auto wrapped=wraps.Apply(std::array<Request,1>{{{0,0,2,add}}},1);
    assert(wrapped[0].current==1);
+   // Counter base is DWORD-aligned; the low two M0 base bits are ignored.
+   CompleteBatch base_alias({{{0x1010,0},8}});
+   auto aliased=base_alias.Apply(std::array<Request,1>{{{0,0x1013u<<16,5,add}}},1);
+   assert(aliased[0].previous==8 && aliased[0].current==13);
+   assert(base_alias.Counters().size()==1 && base_alias.Counters().at({0x1010,0})==13);
    CompleteBatch missing({{{0,0},99}});
    assert(Bad(missing,{{0,0x00100000u,12,ex}},1));
    assert(missing.Counters().at({0,0})==99);
