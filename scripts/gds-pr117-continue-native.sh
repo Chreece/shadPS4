@@ -177,7 +177,30 @@ grep -Fq 'GPU_CAPTURE_WRITER_SPIRV_SEMANTICS=PASS' \
     echo 'GPU_WRITER_SEMANTIC_CHECK_MISSING'
     exit 15
 }
+STAGE='GENERATE_AND_VALIDATE_GPU_RESUME_READER'
+if ! python3 "$SRC/tests/generate_ordered_gds_resume_spirv.py" \
+    "$LOG/gpu-resume-reader.spv" > "$LOG/gpu-resume-assemble.log" 2>&1; then
+    cat "$LOG/gpu-resume-assemble.log"
+    exit 15
+fi
+grep -Fq 'GPU_RESUME_READER_SPIRV_BUILD=PASS' \
+    "$LOG/gpu-resume-assemble.log" || exit 15
+if ! python3 "$SRC/tests/check_ordered_gds_resume_spirv.py" \
+    "$LOG/gpu-resume-reader.spv" > "$LOG/gpu-resume-semantics.log" 2>&1; then
+    cat "$LOG/gpu-resume-semantics.log"
+    exit 15
+fi
+grep -Fq 'GPU_RESUME_READER_SPIRV_SEMANTICS=PASS' \
+    "$LOG/gpu-resume-semantics.log" || {
+    echo 'GPU_RESUME_SPIRV_SEMANTIC_GATE_MISSING'
+    exit 15
+}
 if command -v spirv-val >/dev/null 2>&1; then
+    spirv-val "$LOG/gpu-resume-reader.spv" \
+        > "$LOG/gpu-resume-spirv-val.log" 2>&1 || {
+        cat "$LOG/gpu-resume-spirv-val.log"
+        exit 15
+    }
     spirv-val "$LOG/gpu-capture-writer.spv" \
         > "$LOG/gpu-writer-spirv-val.log" 2>&1 || {
         cat "$LOG/gpu-writer-spirv-val.log"
@@ -201,6 +224,7 @@ STAGE='HEADLESS_GPU_TRANSFER_SMOKE_RUN'
 # Only 256 bytes, AMD discrete, no guest shader, no display or service restarts.
 if ! timeout --signal=TERM --kill-after=2s 20s \
     "$LOG/vulkan-transfer-smoke" "$LOG/gpu-capture-writer.spv" \
+    "$LOG/gpu-resume-reader.spv" \
     > "$LOG/gpu-smoke-run.log" 2>&1; then
     tail -90 "$LOG/gpu-smoke-run.log"
     exit 16
@@ -217,6 +241,16 @@ grep -Fq 'GPU_CAPTURE_COMPUTE_WRITER=PASS' "$LOG/gpu-smoke-run.log" || {
     cat "$LOG/gpu-smoke-run.log"
     exit 18
 }
+grep -Fq 'GPU_RESUME_COMPUTE_READER=PASS' "$LOG/gpu-smoke-run.log" || {
+    echo 'GPU_RESUME_READER_COMPUTE_DISPATCH_NOT_VERIFIED'
+    cat "$LOG/gpu-smoke-run.log"
+    exit 18
+}
+grep -Fq 'bypass_no_guest_return=PASS preserved_token_rank_site=PASS' \
+    "$LOG/gpu-smoke-run.log" || {
+    echo 'GPU_RESUME_PACKET_METADATA_OR_BYPASS_FAILURE'
+    exit 18
+}
 grep -Fq 'gpu_cik_popcount=PASS forged_host_payload_ignored=PASS' "$LOG/gpu-smoke-run.log" || {
     echo 'GPU_CIK_POPCOUNT_OR_PAYLOAD_INDEPENDENCE_NOT_VERIFIED'
     exit 18
@@ -226,5 +260,5 @@ grep -Fq 'cik_exec_popcount=PASS' "$LOG/gpu-smoke-run.log" || {
     exit 18
 }
 STAGE='NATIVE_GPU_TRANSFER_SMOKE_VERIFIED_NO_GUEST_SHADER'
-STATUS='PASS_CPU_NATIVE_AMD_TRANSFER_AND_COMPUTE_PACKET_WRITER'
-printf 'PR117_NATIVE_PREFLIGHT=PASS AMD_GPU_TRANSFER=PASS GPU_CAPTURE_COMPUTE_WRITER=PASS GUEST_SHADER=NOT_RUN GO_W_VISUAL=NOT_TESTED\n'
+STATUS='PASS_CPU_NATIVE_AMD_CAPTURE_AND_RESUME_PACKET_CONSUMER'
+printf 'PR117_NATIVE_PREFLIGHT=PASS AMD_GPU_TRANSFER=PASS GPU_CAPTURE_COMPUTE_WRITER=PASS GPU_RESUME_COMPUTE_READER=PASS GUEST_SHADER=NOT_RUN GO_W_VISUAL=NOT_TESTED\n'
