@@ -279,6 +279,7 @@ int main(int argc, char** argv) {
             fixtures[slot].epoch = 99;                   // overwritten on GPU
             fixtures[slot].logical_slot = NoActiveLane;  // GPU builtin replaces
             fixtures[slot].reserved0 = 99;               // GPU clears
+            fixtures[slot].payload = 0xf00df00du;        // GPU must ignore
         }
         fixtures[0].flags = CaptureBypassFlags;
         fixtures[0].site_pc = NoActiveLane;
@@ -290,7 +291,6 @@ int main(int argc, char** argv) {
         fixtures[1].runtime_m0 = 0x20u << 16;
         fixtures[1].exec_hi = 0x80000000u;
         fixtures[1].source_lane = 63;
-        fixtures[1].payload = 1;
         fixtures[1].token_lo = 1000;
 
         fixtures[2].flags = CaptureFlags;
@@ -300,7 +300,6 @@ int main(int argc, char** argv) {
         fixtures[2].exec_lo = 1u << 7;
         fixtures[2].exec_hi = 0x80000000u; // CIK count_bits(EXEC) = 2
         fixtures[2].source_lane = 7;
-        fixtures[2].payload = 2;
         fixtures[2].token_lo = 1003;
 
         fixtures[3].flags = CaptureFlags;
@@ -309,7 +308,6 @@ int main(int argc, char** argv) {
         fixtures[3].runtime_m0 = 0x20u << 16;
         fixtures[3].exec_lo = 1;
         fixtures[3].source_lane = 0;
-        fixtures[3].payload = 1;
         fixtures[3].token_lo = 1001;
 
         std::memcpy(buffers[2].mapping, fixtures.data(), bytes);
@@ -438,13 +436,18 @@ int main(int argc, char** argv) {
         std::array<GpuCapturePacket,4> received{};
         std::memcpy(received.data(), buffers[1].mapping, bytes);
         for (std::uint32_t slot = 0; slot < received.size(); ++slot) {
+            const auto guest_exec = (std::uint64_t(received[slot].exec_hi) << 32) |
+                                    received[slot].exec_lo;
+            const auto expected_payload = CikOrderedCountIncrement(guest_exec);
             if (received[slot].tag != CapturePacketTag ||
                 received[slot].epoch != 3 ||
                 received[slot].logical_slot != slot ||
                 received[slot].reserved0 || received[slot].reserved1 ||
                 received[slot].reserved2 ||
-                received[slot].site_pc != fixtures[slot].site_pc) {
-                throw std::runtime_error("GPU_COMPUTE_WRITER_PACKET_CORRUPTION");
+                received[slot].site_pc != fixtures[slot].site_pc ||
+                received[slot].payload != expected_payload ||
+                received[slot].payload == fixtures[slot].payload) {
+                throw std::runtime_error("GPU_COMPUTE_WRITER_CIK_EXEC_POPCOUNT_MISMATCH");
             }
         }
         const std::array<u64,4> ranks{2,0,3,1};
@@ -463,7 +466,8 @@ int main(int argc, char** argv) {
         std::cout << "GPU_CAPTURE_COMPUTE_WRITER=PASS gpu_dispatches=1"
                      " packets_written=4 real_vk_compute=1"
                      " guest_rank_source=TEST_FIXTURE host_sparse_resolve=PASS"
-                     " ordered_exchange_add=PASS cik_exec_popcount=PASS skipped_wave=PASS"
+                     " ordered_exchange_add=PASS cik_exec_popcount=PASS"
+                     " gpu_cik_popcount=PASS forged_host_payload_ignored=PASS skipped_wave=PASS"
                      " guest_shader=NOT_RUN framebuffer=NOT_TOUCHED\n";
 
         std::cout << "GPU_TRANSFER_SMOKE=PASS device=" << selected.deviceName
