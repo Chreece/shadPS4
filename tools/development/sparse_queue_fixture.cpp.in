@@ -1,0 +1,168 @@
+// Exact production queue-selection and sparse-submit code; CPU recording only.
+// REAL_VULKAN_TYPES uses the project's complete Vulkan-Hpp declarations.
+// Neither configuration creates a VkDevice or executes GPU work.
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <limits>
+#include <optional>
+#include <span>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+#ifdef REAL_VULKAN_TYPES
+#define VK_NO_PROTOTYPES
+#define VULKAN_HPP_NO_CONSTRUCTORS
+#include <vulkan/vulkan.hpp>
+#else
+namespace vk {
+enum class QueueFlagBits : std::uint32_t {eGraphics=1,eCompute=2,eTransfer=4,eSparseBinding=8};
+using QueueFlags=std::uint32_t;
+constexpr auto operator&(QueueFlags f,QueueFlagBits b){return f&static_cast<QueueFlags>(b);}
+struct QueueFamilyProperties {QueueFlags queueFlags{};std::uint32_t queueCount{};};
+struct DeviceQueueCreateInfo {std::uint32_t queueFamilyIndex{},queueCount{};const float* pQueuePriorities{};};
+using Buffer=std::uintptr_t;using Semaphore=std::uintptr_t;using DeviceMemory=std::uintptr_t;
+struct SparseMemoryBind {std::uint64_t resourceOffset{},size{};DeviceMemory memory{};std::uint64_t memoryOffset{};};
+struct SparseBufferMemoryBindInfo {Buffer buffer{};std::uint32_t bindCount{};const SparseMemoryBind* pBinds{};};
+struct TimelineSemaphoreSubmitInfo {std::uint32_t waitSemaphoreValueCount{};const std::uint64_t* pWaitSemaphoreValues{};std::uint32_t signalSemaphoreValueCount{};const std::uint64_t* pSignalSemaphoreValues{};};
+struct BindSparseInfo {const void* pNext{};std::uint32_t waitSemaphoreCount{};const Semaphore* pWaitSemaphores{};std::uint32_t bufferBindCount{};const SparseBufferMemoryBindInfo* pBufferBinds{};std::uint32_t signalSemaphoreCount{};const Semaphore* pSignalSemaphores{};};
+enum class Result {eSuccess=0,eErrorDeviceLost=-4,eErrorOutOfDeviceMemory=-2};
+inline std::string to_string(Result r){return std::to_string(static_cast<int>(r));}
+}
+#endif
+using u32=std::uint32_t;using u64=std::uint64_t;
+static void Check(bool ok,const char* message){if(!ok){std::fprintf(stderr,"SPARSE_QUEUE_TEST_FAIL=%s\n",message);std::exit(2);}}
+#define ASSERT_MSG(x,...) do{if(!(x))throw std::runtime_error("submit failed");}while(false)
+template<class...T>static void Log(T&&...){}
+#define LOG_INFO(category,...) Log(__VA_ARGS__)
+#define LOG_CRITICAL(category,...) Log(__VA_ARGS__)
+static vk::QueueFamilyProperties Family(u32 flags,u32 count){
+ vk::QueueFamilyProperties p{};p.queueFlags=vk::QueueFlags(flags);p.queueCount=count;return p;
+}
+/* EXACT_SELECT_HELPER */
+struct PhysicalDevice {std::vector<vk::QueueFamilyProperties> families;auto getQueueFamilyProperties()const{return families;}};
+struct Selection {
+ PhysicalDevice physical_device;
+ struct {bool sparseBinding=true,sparseResidencyBuffer=true;} features;
+ u32 queue_family_index{},sparse_queue_family_index{};
+ std::vector<vk::DeviceQueueCreateInfo> requests;
+ bool Run(){
+/* EXACT_SELECTION_BLOCK */
+/* CAPTURE_REQUESTS */
+ return true;
+ }
+};
+#ifdef REAL_VULKAN_TYPES
+template<class T,class Native>static T Handle(std::uintptr_t v){return T{reinterpret_cast<Native>(v)};}
+static vk::Buffer BufferHandle(){return Handle<vk::Buffer,VkBuffer>(0x2000);}
+static vk::DeviceMemory MemoryHandle(){return Handle<vk::DeviceMemory,VkDeviceMemory>(0x3000);}
+static vk::Semaphore SemaphoreHandle(){return Handle<vk::Semaphore,VkSemaphore>(0x4000);}
+#else
+static vk::Buffer BufferHandle(){return 0x2000;}
+static vk::DeviceMemory MemoryHandle(){return 0x3000;}
+static vk::Semaphore SemaphoreHandle(){return 0x4000;}
+#endif
+struct Event {u32 family{},wait_count{};u64 wait{},signal{};vk::Semaphore sema{};std::vector<vk::SparseMemoryBind> bindings;};
+struct State {
+ std::vector<vk::QueueFamilyProperties> families;
+ std::vector<Event> events;
+ bool wrong_queue=false;
+ vk::Result result=vk::Result::eSuccess;
+} state;
+struct Queue {
+ u32 family;
+ vk::Result bindSparse(const vk::BindSparseInfo& b)const {
+  state.wrong_queue|=!(static_cast<u32>(state.families.at(family).queueFlags)&8u);
+  auto* t=static_cast<const vk::TimelineSemaphoreSubmitInfo*>(b.pNext);
+  Check(t!=nullptr,"timeline info supplied");
+  Check(t->signalSemaphoreValueCount==1&&b.signalSemaphoreCount==1,"one signal");
+  Check(t->waitSemaphoreValueCount==b.waitSemaphoreCount,"timeline wait count matches");
+  Event e{};e.family=family;e.wait_count=b.waitSemaphoreCount;e.signal=*t->pSignalSemaphoreValues;e.sema=*b.pSignalSemaphores;
+  if(e.wait_count){Check(e.wait_count==1&&b.pWaitSemaphores&&t->pWaitSemaphoreValues,"one previous bind wait");Check(*b.pWaitSemaphores==e.sema,"same timeline chained");e.wait=*t->pWaitSemaphoreValues;}
+  else Check(!b.pWaitSemaphores&&!t->pWaitSemaphoreValues,"first bind no dangling wait pointer");
+  for(u32 i=0;i<b.bufferBindCount;++i){const auto& v=b.pBufferBinds[i];Check(v.buffer==BufferHandle(),"resource handle preserved");e.bindings.insert(e.bindings.end(),v.pBinds,v.pBinds+v.bindCount);}
+  state.events.push_back(e);return state.result;
+ }
+};
+struct Instance {
+ u32 graphics{},sparse{};
+ Queue GetGraphicsQueue()const{return {graphics};}
+ Queue GetSparseQueue()const{return {sparse};}
+ u32 GetSparseQueueFamilyIndex()const{return sparse;}
+};
+namespace Vulkan {struct SubmitInfo {std::vector<std::pair<vk::Semaphore,u64>> waits;void AddWait(vk::Semaphore s,u64 n){waits.emplace_back(s,n);}};}
+struct Timeline {u64 tick=1;u64 NextTick(){return tick++;}vk::Semaphore Handle()const{return SemaphoreHandle();}};
+struct Buffer {vk::Buffer Handle()const{return BufferHandle();}};
+struct BufferCache {
+ struct ArenaBinds {const Buffer* arena;std::vector<vk::SparseMemoryBind> binds;};
+ Instance instance;
+ Timeline memory_semaphore;
+ std::vector<ArenaBinds> pending_binds;
+ void SubmitPendingArenaBinds(Vulkan::SubmitInfo&);
+};
+/* EXACT_SUBMIT */
+static auto Pending(const Buffer& buffer){
+ std::vector<BufferCache::ArenaBinds> p;
+ p.push_back({&buffer,{{.resourceOffset=16384,.size=32768,.memory=MemoryHandle(),.memoryOffset=65536},
+                      {.resourceOffset=131072,.size=16384,.memory=MemoryHandle(),.memoryOffset=98304}}});
+ return p;
+}
+int main(int argc,char** argv){
+ const bool baseline=argc>1&&std::string_view(argv[1])=="--baseline";
+ const std::vector reported{Family(7,1),Family(4,1),Family(8,1)};
+ Selection sample;sample.physical_device.families=reported;
+ Check(sample.Run(),"graphics queue selectable");
+ if(baseline){
+  Check(sample.requests.size()==1&&sample.requests[0].queueFamilyIndex==0,"old device requests graphics only");
+  state={};state.families=reported;Buffer buffer;BufferCache c;c.instance={0,2};c.pending_binds=Pending(buffer);Vulkan::SubmitInfo info;c.SubmitPendingArenaBinds(info);
+  Check(state.wrong_queue&&state.events.size()==1&&state.events[0].family==0,"actual old bind call reproduces unsupported queue");
+  std::puts("BASELINE_SPARSE_QUEUE_TYPE=REPRODUCED graphics_flags=7 sparse_family=2 NO_GPU_WORK");return 0;
+ }
+ Check(sample.requests.size()==2&&sample.sparse_queue_family_index==2,"dedicated sparse family requested");
+ u64 cases=0;
+ for(u32 encoded=0;encoded<32768;++encoded){
+  Selection s;u32 n=encoded;
+  for(u32 i=0;i<3;++i){const u32 f=n%32;n/=32;s.physical_device.families.push_back(Family(f&15,f>>4));}
+  std::optional<u32> g,sp;
+  for(u32 i=0;i<3;++i){auto f=s.physical_device.families[i];if(f.queueCount&&(static_cast<u32>(f.queueFlags)&1))g=i;}
+  if(g){if(static_cast<u32>(s.physical_device.families[*g].queueFlags)&8)sp=*g;else for(u32 i=0;i<3;++i)if(s.physical_device.families[i].queueCount&&(static_cast<u32>(s.physical_device.families[i].queueFlags)&8)){sp=i;break;}}
+  const bool okay=s.Run();Check(okay==(g.has_value()&&sp.has_value()),"capability and nonempty-family decision");
+  if(okay){Check(s.queue_family_index==*g&&s.sparse_queue_family_index==*sp,"rendering family unchanged, sparse preference correct");
+   Check(s.requests.size()==(*g==*sp?1u:2u),"queue family create infos deduplicated");
+   for(const auto& q:s.requests)Check(q.queueCount==1&&q.pQueuePriorities&&q.pQueuePriorities[0]==1.0f&&s.physical_device.families[q.queueFamilyIndex].queueCount,"actual device queue fields valid");
+   Check(s.requests[0].queueFamilyIndex==*g,"graphics created first");
+   if(s.requests.size()==2)Check(s.requests[1].queueFamilyIndex==*sp,"sparse queue explicitly created");
+  }
+  ++cases;
+ }
+ Selection empty;Check(!empty.Run(),"no families rejected");
+ for(bool a:{false,true})for(bool b:{false,true}){Selection s;s.physical_device.families=reported;s.features={a,b};Check(s.Run()==(a&&b),"required sparse features not bypassed");}
+ Check(!FindSparseQueueFamily({},0),"empty family helper");
+ Check(FindSparseQueueFamily(reported,99)==2,"out of range preference does not dereference");
+ unsigned submissions=0;
+ for(bool shared:{false,true}){
+  state={};state.families=shared?std::vector{Family(15,1)}:reported;
+  Buffer buffer;BufferCache cache;cache.instance={0,shared?0u:2u};
+  Vulkan::SubmitInfo empty_info;cache.SubmitPendingArenaBinds(empty_info);
+  Check(state.events.empty()&&empty_info.waits.empty()&&cache.memory_semaphore.tick==1,"empty bind batch does not submit");
+  for(u64 tick=1;tick<=8;++tick){cache.pending_binds=Pending(buffer);Vulkan::SubmitInfo info;cache.SubmitPendingArenaBinds(info);
+   const auto& e=state.events.back();Check(!state.wrong_queue&&e.family==(shared?0u:2u),"only sparse-capable queue used");
+   Check(e.signal==tick&&e.wait_count==(tick>1?1u:0u)&&e.wait==tick-1,"sparse signals ordered without host waits");
+   Check(info.waits.size()==1&&info.waits[0].first==e.sema&&info.waits[0].second==tick,"graphics waits on this binding");
+   Check(cache.pending_binds.empty()&&e.bindings.size()==2,"all pending bindings retained until accepted");
+   Check(e.bindings[0].resourceOffset==16384&&e.bindings[0].size==32768&&e.bindings[0].memoryOffset==65536&&e.bindings[0].memory==MemoryHandle(),"physical memory and ranges unchanged");
+   ++submissions;
+  }
+  cache.memory_semaphore.tick=(u64{1}<<33)+1;cache.pending_binds=Pending(buffer);Vulkan::SubmitInfo wide;cache.SubmitPendingArenaBinds(wide);
+  Check(state.events.back().signal==(u64{1}<<33)+1&&state.events.back().wait==(u64{1}<<33),"64-bit timeline values preserved");++submissions;
+  for(auto failure:{vk::Result::eErrorDeviceLost,vk::Result::eErrorOutOfDeviceMemory}){
+   state.result=failure;cache.pending_binds=Pending(buffer);Vulkan::SubmitInfo no_orphan;bool threw=false;
+   try{cache.SubmitPendingArenaBinds(no_orphan);}catch(const std::runtime_error&){threw=true;}
+   Check(threw&&!cache.pending_binds.empty()&&no_orphan.waits.empty(),"failed bind not cleared or waited as successful");
+  }
+ }
+ std::printf("SPARSE_QUEUE_CAPABILITY=PASS family_cases=%llu submitted_batches=%u NO_GPU_WORK\n",static_cast<unsigned long long>(cases),submissions);
+}

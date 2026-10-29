@@ -1,0 +1,186 @@
+--- a/src/video_core/renderer_vulkan/vk_instance.cpp
++++ b/src/video_core/renderer_vulkan/vk_instance.cpp
+@@ -1,6 +1,9 @@
+ // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <array>
++#include <optional>
++#include <span>
+ #include <boost/container/static_vector.hpp>
+ #include <fmt/format.h>
+ #include <fmt/ranges.h>
+@@ -213,6 +216,25 @@
+     return GetReadableVersion(version);
+ }
+ 
++// A graphics/compute family need not support sparse memory operations. Keep
++// rendering on its existing family and request a second queue only when needed.
++static std::optional<u32> FindSparseQueueFamily(
++    std::span<const vk::QueueFamilyProperties> families, u32 graphics_family) {
++    const auto supports_sparse = [&](u32 index) {
++        return index < families.size() && families[index].queueCount != 0 &&
++               bool(families[index].queueFlags & vk::QueueFlagBits::eSparseBinding);
++    };
++    if (supports_sparse(graphics_family)) {
++        return graphics_family;
++    }
++    for (u32 index = 0; index < families.size(); ++index) {
++        if (supports_sparse(index)) {
++            return index;
++        }
++    }
++    return std::nullopt;
++}
++
+ bool Instance::CreateDevice() {
+     const vk::StructureChain feature_chain = physical_device.getFeatures2<
+         vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
+@@ -398,7 +420,8 @@
+     bool graphics_queue_found = false;
+     for (std::size_t i = 0; i < family_properties.size(); i++) {
+         const u32 index = static_cast<u32>(i);
+-        if (family_properties[i].queueFlags & vk::QueueFlagBits::eGraphics) {
++        if (family_properties[i].queueCount != 0 &&
++            (family_properties[i].queueFlags & vk::QueueFlagBits::eGraphics)) {
+             queue_family_index = index;
+             graphics_queue_found = true;
+         }
+@@ -409,12 +432,29 @@
+         return false;
+     }
+ 
++    const auto sparse_family = FindSparseQueueFamily(family_properties, queue_family_index);
++    if (!features.sparseBinding || !features.sparseResidencyBuffer || !sparse_family) {
++        LOG_CRITICAL(Render_Vulkan,
++                     "Sparse buffer memory requires sparseBinding, sparseResidencyBuffer "
++                     "and a queue with VK_QUEUE_SPARSE_BINDING_BIT.");
++        return false;
++    }
++    sparse_queue_family_index = *sparse_family;
++
+     static constexpr std::array queue_priorities = {1.0f};
+-    const vk::DeviceQueueCreateInfo queue_info = {
+-        .queueFamilyIndex = queue_family_index,
+-        .queueCount = static_cast<u32>(queue_priorities.size()),
+-        .pQueuePriorities = queue_priorities.data(),
+-    };
++    const std::array<vk::DeviceQueueCreateInfo, 2> queue_infos{{
++        {
++            .queueFamilyIndex = queue_family_index,
++            .queueCount = static_cast<u32>(queue_priorities.size()),
++            .pQueuePriorities = queue_priorities.data(),
++        },
++        {
++            .queueFamilyIndex = sparse_queue_family_index,
++            .queueCount = static_cast<u32>(queue_priorities.size()),
++            .pQueuePriorities = queue_priorities.data(),
++        },
++    }};
++    const u32 queue_info_count = sparse_queue_family_index == queue_family_index ? 1u : 2u;
+ 
+     const auto vk11_features = feature_chain.get<vk::PhysicalDeviceVulkan11Features>();
+     vk12_features = feature_chain.get<vk::PhysicalDeviceVulkan12Features>();
+@@ -425,8 +465,8 @@
+     }
+     vk::StructureChain device_chain = {
+         vk::DeviceCreateInfo{
+-            .queueCreateInfoCount = 1u,
+-            .pQueueCreateInfos = &queue_info,
++            .queueCreateInfoCount = queue_info_count,
++            .pQueueCreateInfos = queue_infos.data(),
+             .enabledExtensionCount = static_cast<u32>(enabled_extensions.size()),
+             .ppEnabledExtensionNames = enabled_extensions.data(),
+         },
+@@ -644,6 +684,14 @@
+ 
+     graphics_queue = device->getQueue(queue_family_index, 0);
+     present_queue = device->getQueue(queue_family_index, 0);
++    sparse_queue = sparse_queue_family_index == queue_family_index
++                       ? graphics_queue
++                       : device->getQueue(sparse_queue_family_index, 0);
++    LOG_INFO(Render_Vulkan,
++             "SparseQueueSelection: graphics_family={} sparse_family={} shared={} flags={:#x}",
++             queue_family_index, sparse_queue_family_index,
++             sparse_queue_family_index == queue_family_index,
++             static_cast<u32>(family_properties[sparse_queue_family_index].queueFlags));
+ 
+     if (calibrated_timestamps) {
+         const auto [time_domains_result, time_domains] =
+--- a/src/video_core/renderer_vulkan/vk_instance.h
++++ b/src/video_core/renderer_vulkan/vk_instance.h
+@@ -73,6 +73,14 @@
+ 
+     vk::Queue GetPresentQueue() const {
+         return present_queue;
++    }
++
++    u32 GetSparseQueueFamilyIndex() const {
++        return sparse_queue_family_index;
++    }
++
++    vk::Queue GetSparseQueue() const {
++        return sparse_queue;
+     }
+ 
+     TracyVkCtx GetProfilerContext() const {
+@@ -541,11 +549,13 @@
+     VmaAllocator allocator{};
+     vk::Queue present_queue;
+     vk::Queue graphics_queue;
++    vk::Queue sparse_queue;
+     std::vector<vk::PhysicalDevice> physical_devices;
+     std::vector<std::string> available_extensions;
+     std::unordered_map<vk::Format, vk::FormatProperties3> format_properties;
+     TracyVkCtx profiler_context{};
+     u32 queue_family_index{0};
++    u32 sparse_queue_family_index{0};
+     bool custom_border_color{};
+     bool fragment_shader_barycentric{};
+     bool amd_shader_explicit_vertex_parameter{};
+--- a/src/video_core/buffer_cache/buffer_cache.cpp
++++ b/src/video_core/buffer_cache/buffer_cache.cpp
+@@ -656,25 +656,41 @@
+         });
+     }
+ 
++    // Scheduler::SubmitExecution holds its shared submit_mutex across this
++    // callback, synchronizing host access even when both roles share a queue.
+     const u64 signal_tick = memory_semaphore.NextTick();
++    const u64 previous_tick = signal_tick - 1;
+     const auto signal_sema = memory_semaphore.Handle();
+ 
++    // Sparse batches may complete out of order. Chain their timeline signals
++    // explicitly; graphics waits for this batch's signal through SubmitInfo.
+     const vk::TimelineSemaphoreSubmitInfo timeline_si = {
++        .waitSemaphoreValueCount = previous_tick != 0 ? 1u : 0u,
++        .pWaitSemaphoreValues = previous_tick != 0 ? &previous_tick : nullptr,
+         .signalSemaphoreValueCount = 1u,
+         .pSignalSemaphoreValues = &signal_tick,
+     };
+ 
+     const vk::BindSparseInfo sparse_info = {
+         .pNext = &timeline_si,
++        .waitSemaphoreCount = previous_tick != 0 ? 1u : 0u,
++        .pWaitSemaphores = previous_tick != 0 ? &signal_sema : nullptr,
+         .bufferBindCount = static_cast<u32>(buffer_binds.size()),
+         .pBufferBinds = buffer_binds.data(),
+         .signalSemaphoreCount = 1u,
+         .pSignalSemaphores = &signal_sema,
+     };
+ 
++    const auto submit_result = instance.GetSparseQueue().bindSparse(sparse_info);
++    ASSERT_MSG(submit_result == vk::Result::eSuccess, "Sparse binding submit failed: {}",
++               vk::to_string(submit_result));
+     info.AddWait(signal_sema, signal_tick);
+-    auto submit_result = instance.GetGraphicsQueue().bindSparse(sparse_info);
+-    ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
++    if (signal_tick <= 4) {
++        LOG_INFO(Render_Vulkan,
++                 "SparseQueueSubmit: family={} wait_tick={} signal_tick={} buffers={}",
++                 instance.GetSparseQueueFamilyIndex(), previous_tick, signal_tick,
++                 buffer_binds.size());
++    }
+ 
+     pending_binds.clear();
+ }
