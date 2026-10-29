@@ -356,7 +356,11 @@ void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
     // required wave creation order. The IR opcode is deliberately distinct.
     info.uses_ordered_gds = true;
     const IR::U32 control = ir.Imm32(offset0 | (offset1 << 8u));
-    const IR::U32 old_value = ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), control);
+    // pc already advanced by inst.length: preserve the static guest site
+    // separately from the dynamic execution epoch (e.g. repeated loops).
+    const IR::U32 site_pc = ir.Imm32(pc - inst.length);
+    const IR::U32 old_value =
+        ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), control, site_pc);
     SetDst(inst.dst[0], old_value);
 }
 

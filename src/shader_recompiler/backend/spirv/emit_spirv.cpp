@@ -722,13 +722,14 @@ void EmitGetM0(EmitContext& ctx) {
     UNREACHABLE_MSG("Unreachable instruction");
 }
 
-Id EmitOrderedGdsCount(EmitContext&, Id, Id, Id, u32 encoded_control) {
+Id EmitOrderedGdsCount(EmitContext&, Id, Id, Id, u32 encoded_control, u32 site_pc) {
     // A separate wave scheduler is required to execute this instruction in
     // *guest wave-creation order*. An unordered host atomic would produce
     // incorrect results for GDS Exchange/Add and is intentionally forbidden.
     UNREACHABLE_MSG(
-        "Cannot emit ordered GDS count (control={:#x}) without a verified "
-        "wave-creation-order GDS scheduler", encoded_control);
+        "Cannot emit ordered GDS count (guest site PC={:#x}, control={:#x}) "
+        "without a verified wave-creation-order GDS scheduler",
+        site_pc, encoded_control);
 }
 
 void EmitSetScc(EmitContext& ctx) {

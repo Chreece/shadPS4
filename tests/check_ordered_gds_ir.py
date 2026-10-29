@@ -65,14 +65,14 @@ def main():
 
     require(info.count("bool uses_ordered_gds{};") == 1,
             "PRESERVE_SHADER_ORDERED_GDS_CAPABILITY")
-    match = re.search(r"^OPCODE\(OrderedGdsCount,\s+U32,\s+U32,\s+U32,\s+U1,\s+U32\s*\)$",
+    match = re.search(r"^OPCODE\(OrderedGdsCount,\s+U32,\s+U32,\s+U32,\s+U1,\s+U32,\s+U32\s*\)$",
                       codes, re.M)
     require(match is not None and codes.count("OPCODE(OrderedGdsCount") == 1,
             "TYPED_IR_M0_ADDR_EXEC_CONTROL")
     require("U32 OrderedGdsCount(const U32& m0, const U32& address," in emit_h,
             "IR_EMITTER_API")
     body = function(emit_cpp, "U32 IREmitter::OrderedGdsCount(")
-    require("Inst<U32>(Opcode::OrderedGdsCount, m0, address, GetExec(), encoded_control)" in body,
+    require("Inst<U32>(Opcode::OrderedGdsCount, m0, address, GetExec(), encoded_control, site_pc)" in body,
             "LIVE_M0_ADDR_EXEC_AND_IMMEDIATE")
     require("void DS_ORDERED_COUNT(const GcnInst& inst);" in translate_h,
             "FRONTEND_DECLARATION")
@@ -81,11 +81,13 @@ def main():
             "GCN_DATA_SHARE_CASE")
     body = function(translate_cpp, "void Translator::DS_ORDERED_COUNT(")
     require("info.uses_ordered_gds = true" in body and
-            "ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), control)" in body,
+            "ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), control, site_pc)" in body,
             "GCN_TRANSLATOR_HANDS_LIVE_OPERANDS_TO_IR")
     require("offset0 | (offset1 << 8u)" in body and
             "SetDst(inst.dst[0], old_value)" in body,
             "GUEST_CONTROL_AND_RETURN_REGISTER")
+    require("ir.Imm32(pc - inst.length)" in body,
+            "UNIQUE_GUEST_ORDERED_GDS_SITE_PC")
     require("Id EmitOrderedGdsCount(" in backend_h,
             "SPIRV_OPCODE_LINKAGE_DECLARATION")
     require("Id EmitOrderedGdsCount(" not in atomic_cpp,

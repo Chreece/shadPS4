@@ -15,29 +15,30 @@ enum class Opcode { OrderedGdsCount };
 struct IREmitter {
     u32 current_m0{};
     bool exec{};
-    struct Call { Opcode opcode; u32 m0; u32 address; bool active; u32 control; };
+    struct Call { Opcode opcode; u32 m0; u32 address; bool active; u32 control; u32 site_pc; };
     Call recorded{};
     unsigned count{};
     U32 GetM0() const { return {current_m0}; }
     U1 GetExec() const { return {exec}; }
     U32 Imm32(u32 v) const { return {v}; }
     template<class R> R Inst(Opcode opcode,const U32& m0,const U32& addr,
-                              const U1& active,const U32& control) {
-        recorded={opcode,m0.value,addr.value,active.value,control.value};
+                              const U1& active,const U32& control,const U32& site_pc) {
+        recorded={opcode,m0.value,addr.value,active.value,control.value,site_pc.value};
         count++;
         return R{0x1234abcd}; // Only a test sentinel, NOT a guest counter.
     }
-    U32 OrderedGdsCount(const U32& m0, const U32& address, const U32& encoded_control);
+    U32 OrderedGdsCount(const U32& m0, const U32& address, const U32& encoded_control, const U32& site_pc);
 };
 }
 struct Operand { u32 code; };
 struct InstControlDS { u32 offset0; u32 offset1; bool gds; };
 struct InstControl { InstControlDS ds; };
-struct GcnInst { InstControl control; Operand src[3]; Operand dst[1]; };
+struct GcnInst { InstControl control; Operand src[3]; Operand dst[1]; u32 length; };
 struct MockInfo { bool uses_ordered_gds{}; };
 struct Translator {
     IR::IREmitter ir;
     MockInfo info;
+    u32 pc{0x4160u};
     u32 source_value{};
     u32 written_value{};
     u32 written_reg{};
@@ -56,19 +57,22 @@ int main() {
     t.ir.current_m0=0x12340567u;
     t.ir.exec=true;
     t.source_value=0x87654321u;
-    GcnInst inst{{{4u,0x13u,true}},{{9},{0},{0}},{{11}}};
+    GcnInst inst{{{4u,0x13u,true}},{{9},{0},{0}},{{11}},8u};
     t.DS_ORDERED_COUNT(inst);
     assert(t.info.uses_ordered_gds && t.ir.count==1);
     assert(t.ir.recorded.opcode==IR::Opcode::OrderedGdsCount);
     assert(t.ir.recorded.m0==0x12340567u && t.ir.recorded.address==0x87654321u);
     assert(t.ir.recorded.active && t.ir.recorded.control==0x1304u);
+    assert(t.ir.recorded.site_pc==0x4158u);
     assert(t.written_reg==11 && t.written_value==0x1234abcdu);
     // The second ordered instruction must preserve distinct Add and new M0/EXEC.
+    t.pc=0x41dcu;
     t.ir.current_m0=0x88aa0812u;
     t.ir.exec=false;
     inst.control.ds.offset1=0x03u;
     t.DS_ORDERED_COUNT(inst);
     assert(t.ir.count==2 && t.ir.recorded.control==0x0304u);
+    assert(t.ir.recorded.site_pc==0x41d4u);
     assert(!t.ir.recorded.active && t.ir.recorded.m0==0x88aa0812u);
     bool rejected=false;
     inst.control.ds.gds=false;
