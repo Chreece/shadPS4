@@ -26,6 +26,9 @@ FLAGS=(-std=c++23 -Wall -Wextra -Werror -pedantic -O2 -pthread -Isrc)
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_dispatch.cpp -o "$TMP/layout"
     "$TMP/layout"
 
+    "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_storage_layout.cpp -o "$TMP/physical-gds"
+    "$TMP/physical-gds"
+
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_capture_packet.cpp -o "$TMP/gpu-packets"
     "$TMP/gpu-packets"
 
@@ -52,6 +55,8 @@ if [[ "${RUN_SANITIZERS:-0}" == "1" ]]; then
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-concurrency"
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_dispatch.cpp -o "$TMP/san-layout"
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-layout"
+        "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_storage_layout.cpp -o "$TMP/san-physical-gds"
+        UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-physical-gds"
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_capture_packet.cpp -o "$TMP/san-gpu-packets"
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-gpu-packets"
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_control_flow.cpp -o "$TMP/san-control-flow"
