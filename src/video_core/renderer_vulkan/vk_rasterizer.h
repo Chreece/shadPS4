@@ -3,7 +3,11 @@
 
 #pragma once
 
+#include <span>
+#include <vector>
+
 #include "common/recursive_lock.h"
+#include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/page_manager.h"
@@ -53,6 +57,15 @@ public:
 
     void DispatchDirect();
     void DispatchIndirect(VAddr address, u32 offset, u32 size);
+
+    // Staged Vulkan capture/readback and result upload API. GPU packet-writing,
+    // guest-wave ordering and shader continuation are intentionally not enabled.
+    [[nodiscard]] std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+    DownloadOrderedGdsPackets(const VideoCore::Buffer& device_capture,
+                              u64 source_offset, std::size_t packet_count);
+    void UploadOrderedGdsPackets(VideoCore::Buffer& device_resume,
+                                 u64 destination_offset,
+                                 std::span<const Shader::Gcn::OrderedGds::GpuResumePacket> packets);
 
     void ScopeMarker(fmt::string_view fmt, fmt::format_args args, auto&& func) {
         if (host_markers_enabled) {
