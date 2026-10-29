@@ -245,7 +245,8 @@ def run(work):
   for config in (profile/'config.json',profile/'custom_configs/CUSA11456.json'):
    if config.is_file():
     data=json.loads(config.read_text());vk=data.setdefault('Vulkan',{})
-    for k in ('vkvalidation_enabled','vkvalidation_core_enabled','vkvalidation_sync_enabled','vkvalidation_gpu_enabled'):vk[k]=False
+    for k in ('vkvalidation_enabled','vkvalidation_core_enabled','vkvalidation_sync_enabled'):vk[k]=True
+    vk['vkvalidation_gpu_enabled']=False
     save(config,data)
   state['free_vram_before']=u.free_vram();print('STAGE=CHECK_8_GIB_VRAM_OLLAMA_IF_NEEDED',flush=True)
   hr.verified_headroom(u,api,evidence,pending,state)
