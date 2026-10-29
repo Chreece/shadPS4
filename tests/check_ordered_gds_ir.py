@@ -24,6 +24,7 @@ FILES = {
     "resources": "src/shader_recompiler/ir/passes/resource_pass.h",
     "patching": "src/shader_recompiler/ir/passes/resource_patching_pass.cpp",
     "packer": "src/shader_recompiler/frontend/ordered_gds_legacy_packer.h",
+    "packet": "src/shader_recompiler/frontend/ordered_gds_capture_packet.h",
     "tests": "tests/gcn_ordered_gds_complete_batch.cpp",
 }
 
@@ -67,6 +68,7 @@ def main():
     resources = source("resources")
     patching = source("patching")
     packer = source("packer")
+    packet = source("packet")
     tests = source("tests")
 
     require(info.count("bool uses_ordered_gds{};") == 1 and
@@ -94,7 +96,7 @@ def main():
             "SetDst(inst.dst[0], old_value)" in body,
             "GUEST_CONTROL_AND_RETURN_REGISTER")
     require("ir.Ballot(ir.GetExec())" in body,
-            "FULL_64_BIT_EXEC_CAPTURE_FOR_FIRST_VALID_LANE")
+            "FULL_64_BIT_GUEST_EXEC_FOR_CIK_POPCOUNT")
     require("pc - inst.length" in body and "sites.push_back(guest_site_pc)" in body and
             "ir.Imm32(guest_site_pc)" in body,
             "UNIQUE_GUEST_ORDERED_GDS_SITE_PC")
@@ -135,6 +137,11 @@ def main():
             "origin != OrderedCounterSeedOrigin::DedicatedPackerState" in seed_guard and
             "throw std::invalid_argument" in seed_guard,
             "LEGACY_PACKER_PAYLOAD_AND_SEED_PROVENANCE")
+    require("CikOrderedCountIncrement(guest_exec_mask)" in packet and
+            "packet.payload != guest_cik_payload" in packet and
+            ".payload = guest_cik_payload" in packet and
+            "ordered_gds_legacy_packer.h" in packet,
+            "CIK_GPU_PACKET_EXEC_POPCOUNT_NOT_FIRST_LANE_ADDR")
 
     require("class OrderedGdsPhases" in reference and
             "CompleteWaveCollector" in reference and
