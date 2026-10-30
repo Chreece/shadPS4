@@ -98,11 +98,13 @@ public:
         return checkpoint;
     }
 
-    // Upload the ORIGINAL validated GPU checkpoint bytes to an independent
-    // device buffer for a future actual GCN continuation shader. No host code
-    // writes an inferred VGPR result into this blob: the shader must consume
-    // GpuResumePacket.previous and apply the guest-ISA return semantics.
-    // The source snapshot and resume destination must never alias.
+    // Upload independently validated POST-DS guest register bytes to a
+    // separate device buffer for the eventual GCN continuation pass.
+    // The host resolver patches only decoded VDST/EXEC-active lanes using
+    // the actual verified ordered-count previous value; it never infers a
+    // result from raw GDS memory or Vulkan scheduling order. Remaining GCN
+    // registers, PC and inactive lanes stay identical to GPU capture.
+    // The pre-DS source snapshot and resume destination MUST NOT alias.
     static void UploadCheckpoint(
         Runtime& runtime, Scheduler& scheduler, VideoCore::Buffer& destination,
         u64 destination_offset, std::span<const std::byte> state_bytes,
