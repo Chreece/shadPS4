@@ -174,12 +174,29 @@ def main():
             "RequireResolvedGcnResumeHandoff(" in checkpoint and
             "guest_rank != order.RankForSlot(capture.logical_slot)" in checkpoint,
             "GCN_VCC_SCC_AND_RESUME_WAVE_IDENTITY_VERIFIED")
+    # Source changed from five individual pair checks to a single complete
+    # pairwise check covering all six source/result buffers. Validate the
+    # real invariant, not the obsolete spelling of one comparison.
+    bridge = function(rasterizer, "Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(")
+    handle_set = re.search(r"const std::array handles\s*\{([^}]+)\};", bridge, re.S)
+    required_handles = (
+        "device_capture.Handle()", "device_checkpoints.Handle()",
+        "device_lds.Handle()", "device_resume.Handle()",
+        "device_resume_checkpoints.Handle()", "device_resume_lds.Handle()",
+    )
+    unique_handles = handle_set is not None and all(
+        handle_set.group(1).count(name) == 1 for name in required_handles
+    ) and handle_set.group(1).count(".Handle()") == len(required_handles)
     require("static void UploadCheckpoint(" in transfer and
             "copy_to_compute" in transfer and
             "guest checkpoint resume upload range invalid" in transfer and
-            "RequireResolvedGcnResumeHandoff(resume, captures, *order, epoch)" in rasterizer and
-            "OrderedGdsPacketTransfer::UploadCheckpoint(" in rasterizer and
-            "device_resume_checkpoints.Handle() == device_checkpoints.Handle()" in rasterizer,
+            "RequireResolvedGcnResumeHandoff(resume, captures, *order, epoch)" in bridge and
+            "OrderedGdsPacketTransfer::UploadCheckpoint(" in bridge and
+            unique_handles and
+            "for (std::size_t i = 0; i < handles.size(); ++i)" in bridge and
+            "for (std::size_t j = i + 1; j < handles.size(); ++j)" in bridge and
+            "if (handles[i] == handles[j])" in bridge and
+            "throw std::invalid_argument(" in bridge,
             "PRODUCTION_GPU_REGISTER_STATE_RESUME_UPLOAD_GUARDED")
     require("GcnLdsCheckpointLayout" in lds and
             "RequireCompleteGcnLdsCheckpoints(" in lds and
