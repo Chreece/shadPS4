@@ -58,6 +58,7 @@ if ! (cd "${SRC}" && python3 tests/check_ordered_gds_ir.py) \
 fi
 grep -Fq 'GCN_VCC_SCC_AND_RESUME_WAVE_IDENTITY_VERIFIED' "${LOG}/source-contracts.log"
 grep -Fq 'PRODUCTION_GPU_REGISTER_STATE_RESUME_UPLOAD_GUARDED' "${LOG}/source-contracts.log"
+grep -Fq 'PRODUCTION_GCN_LDS_STATE_TRANSFER_AND_GUARD' "${LOG}/source-contracts.log"
 grep -Fq 'ORDERED_GDS_TYPED_IR_CONTRACT=PASS' "${LOG}/source-contracts.log"
 
 STAGE="EXTRACTED_PRODUCTION_FRONTEND_GCC_CLANG"
@@ -90,6 +91,7 @@ for compiler in g++ clang++-17; do
     fi
     for required in \
         ORDERED_GDS_CHECKPOINT_CONTRACT=PASS \
+        ORDERED_GDS_GUEST_LDS_CHECKPOINT=PASS \
         ORDERED_GDS_CIK_M0_GUEST_ORDER=PASS \
         ORDERED_GDS_CIK_CAPTURE_PAYLOAD=PASS \
         ORDERED_GDS_GPU_PACKET_ROUNDTRIP=PASS \
