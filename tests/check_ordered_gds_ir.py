@@ -105,6 +105,28 @@ def main():
             "GUEST_CONTROL_AND_RETURN_REGISTER")
     require("ir.Ballot(ir.GetExec())" in body,
             "FULL_64_BIT_GUEST_EXEC_FOR_CIK_POPCOUNT")
+    require("OPCODE(OrderedGdsCheckpointRegister, Void, U32, U32, U32, U32)" in codes and
+            "void OrderedGdsCheckpointRegister(" in emit_h and
+            "void IREmitter::OrderedGdsCheckpointRegister(" in emit_cpp and
+            "void EmitOrderedGdsCheckpointRegister(" in backend_h and
+            "void EmitOrderedGdsCheckpointRegister(" in backend_cpp and
+            "RecordOrderedGdsCheckpoint(site_pc, exec_mask)" in body and
+            "case Opcode::OrderedGdsCheckpointRegister:" in
+            function(inst, "bool Inst::MayHaveSideEffects() const noexcept"),
+            "GCN_CAPTURE_IR_SIDE_EFFECTS_SURVIVE_DCE")
+    live_body = function(translate_cpp, "void Translator::RecordOrderedGdsCheckpoint(")
+    require("IR::NumScalarRegs" in live_body and
+            "runtime_info.props.num_allocated_vgprs" in live_body and
+            "ir.GetScalarReg<IR::U32>" in live_body and
+            "ir.GetVectorReg<IR::U32>" in live_body and
+            "ir.GetM0()" in live_body and
+            "ir.GetVccLo()" in live_body and
+            "ir.GetVccHi()" in live_body and
+            "ir.GetScc()" in live_body and
+            "ir.UnpackUint2x32(exec_mask)" in live_body and
+            "ir.OrderedGdsCheckpointRegister(" in live_body and
+            "runtime_info.hw_stage == HwStage::Compute" in live_body,
+            "REAL_PRE_DS_GUEST_SGPR_VGPR_M0_VCC_SCC_EXEC_SNAPSHOT")
     require("pc - inst.length" in body and "sites.push_back(guest_site_pc)" in body and
             "ir.Imm32(guest_site_pc)" in body,
             "UNIQUE_GUEST_ORDERED_GDS_SITE_PC")
