@@ -821,6 +821,9 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
     case BufferType::GdsBuffer:
         Name(id, "gds_buffer");
         break;
+    case BufferType::OrderedGdsCheckpoint:
+        Name(id, "ordered_gds_guest_register_checkpoint");
+        break;
     case BufferType::Flatbuf:
         Name(id, "srt_flatbuf");
         break;
@@ -846,11 +849,11 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
 
 void EmitContext::DefineBuffers() {
     for (const auto& desc : info.buffers) {
-        const auto buf_sharp = desc.GetSharp(info);
-        // MTYPE class 3 marks guest buffers shared between invocations; shared
-        // memory lowered to a storage buffer needs the same guarantee.
+        // An internal checkpoint buffer has no guest SHARP address at all.
+        // Do not dereference uninitialized SharpFetch information for it.
         const bool is_coherent =
-            desc.buffer_type == BufferType::SharedMemory || buf_sharp.mtype == 3;
+            desc.buffer_type == BufferType::SharedMemory ||
+            (desc.buffer_type == BufferType::Guest && desc.GetSharp(info).mtype == 3);
 
         // Set indexes for special buffers.
         if (desc.buffer_type == BufferType::Flatbuf) {
@@ -859,6 +862,13 @@ void EmitContext::DefineBuffers() {
             bda_pagetable_index = buffers.size();
         } else if (desc.buffer_type == BufferType::FaultBuffer) {
             fault_buffer_index = buffers.size();
+        } else if (desc.buffer_type == BufferType::OrderedGdsCheckpoint) {
+            ASSERT_MSG(!has_ordered_gds_checkpoint_binding,
+                       "duplicate GCN checkpoint SSBO descriptor");
+            ordered_gds_checkpoint_index = buffers.size();
+            has_ordered_gds_checkpoint_binding = true;
+            ASSERT_MSG(desc.is_written && True(desc.used_types & IR::Type::U32),
+                       "invalid GCN checkpoint SSBO declaration");
         }
 
         // Define aliases depending on the shader usage.
