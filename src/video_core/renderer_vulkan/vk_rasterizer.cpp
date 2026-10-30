@@ -1204,13 +1204,46 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 const auto* fault_buffer = buffer_cache.GetFaultBuffer();
                 buffer_infos.emplace_back(fault_buffer->Handle(), 0, fault_buffer->SizeBytes());
             } else if (desc.buffer_type == Shader::BufferType::SharedMemory) {
-                auto& lds_buffer = buffer_cache.GetStreamBuffer();
-                const auto& cs_program = liverpool->GetCsRegs();
-                const auto lds_size = cs_program.SharedMemSize() * cs_program.NumWorkgroups();
-                const auto [data, offset] = lds_buffer.Map(lds_size, alignment);
-                std::memset(data, 0, lds_size);
-                lds_buffer.Commit();
-                buffer_infos.emplace_back(lds_buffer.Handle(), offset, lds_size);
+                if (stage.uses_ordered_gds) {
+                    // All guest LDS ops for ordered GDS are lowered to a
+                    // per-workgroup SSBO that persists across GPU passes.
+                    // Do not reinitialize a temporary streaming LDS buffer
+                    // when the capture or continuation binds this resource.
+                    ASSERT_MSG(stage.hw_stage == Shader::HwStage::Compute &&
+                               stage.ordered_gds_persistent_lds &&
+                               desc.is_written && active_ordered_gds_capture_ &&
+                               active_ordered_gds_capture_->AuthorizedEpoch() != 0,
+                               "ordered GDS persistent LDS requires authenticated capture");
+                    const auto& owner = *active_ordered_gds_capture_;
+                    ASSERT_MSG(owner.persistent_lds && owner.PersistentLdsInitialized() &&
+                               owner.plan.lds_layout &&
+                               owner.plan.persistent_lds_bytes ==
+                                   u64(owner.plan.workgroups) * owner.plan.lds_layout->lds_bytes,
+                               "ordered GDS persistent LDS extent invalid");
+                    const auto& lds_buffer = *owner.persistent_lds;
+                    const u64 bytes = owner.plan.persistent_lds_bytes;
+                    ASSERT_MSG(bytes && bytes == lds_buffer.SizeBytes() &&
+                               lds_buffer.Handle() != VK_NULL_HANDLE &&
+                               lds_buffer.Handle() != buffer_cache.GetGdsBuffer()->Handle() &&
+                               lds_buffer.Handle() != owner.capture_packets.Handle() &&
+                               lds_buffer.Handle() != owner.resume_packets.Handle() &&
+                               lds_buffer.Handle() != owner.capture_registers.Handle() &&
+                               lds_buffer.Handle() != owner.resume_registers.Handle() &&
+                               lds_buffer.Handle() != owner.capture_lds->Handle() &&
+                               lds_buffer.Handle() != owner.resume_lds->Handle(),
+                               "ordered GDS persistent LDS must not alias other GPU buffers");
+                    buffer_infos.emplace_back(lds_buffer.Handle(), 0, bytes);
+                    needs_barrier |= runtime.IsBufferAccessed(&lds_buffer, 0, bytes, true);
+                    bound_buffers.emplace_back(&lds_buffer, 0, static_cast<u32>(bytes), true);
+                } else {
+                    auto& lds_buffer = buffer_cache.GetStreamBuffer();
+                    const auto& cs_program = liverpool->GetCsRegs();
+                    const auto lds_size = cs_program.SharedMemSize() * cs_program.NumWorkgroups();
+                    const auto [data, offset] = lds_buffer.Map(lds_size, alignment);
+                    std::memset(data, 0, lds_size);
+                    lds_buffer.Commit();
+                    buffer_infos.emplace_back(lds_buffer.Handle(), offset, lds_size);
+                }
             } else {
                 UNREACHABLE_MSG("Unexpected buffer type {}", u32(desc.buffer_type));
             }

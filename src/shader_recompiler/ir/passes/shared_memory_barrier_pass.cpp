@@ -4,18 +4,36 @@
 #include <unordered_set>
 #include "shader_recompiler/ir/breadth_first_search.h"
 #include "shader_recompiler/ir/ir_emitter.h"
+#include "shader_recompiler/ir/passes/resource_pass.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
 
 namespace Shader::Optimization {
 
-static bool IsLoadShared(const IR::Inst& inst) {
-    return inst.GetOpcode() == IR::Opcode::LoadSharedU16 ||
-           inst.GetOpcode() == IR::Opcode::LoadSharedU32 ||
-           inst.GetOpcode() == IR::Opcode::LoadSharedU64;
+// The ordered-GDS shared-to-storage pass runs before this barrier pass.
+    // Its generated buffer loads/stores must still receive the same guest
+    // workgroup ordering rules as original shared-memory operations.
+static bool IsOrderedGdsPersistentLdsAccess(const IR::Inst& inst,
+                                            const Info& info) {
+    if (!info.ordered_gds_persistent_lds || !IsBufferInstruction(inst)) {
+        return false;
+    }
+    const IR::Value resource = inst.Arg(0);
+    return resource.IsImmediate() && resource.U32() < info.buffers.size() &&
+           info.buffers[resource.U32()].buffer_type == BufferType::SharedMemory;
 }
 
-static bool IsWriteShared(const IR::Inst& inst) {
+static bool IsLoadShared(const IR::Inst& inst, const Info& info) {
+    return inst.GetOpcode() == IR::Opcode::LoadSharedU16 ||
+           inst.GetOpcode() == IR::Opcode::LoadSharedU32 ||
+           inst.GetOpcode() == IR::Opcode::LoadSharedU64 ||
+           (IsOrderedGdsPersistentLdsAccess(inst, info) && !IsBufferStore(inst));
+}
+
+static bool IsWriteShared(const IR::Inst& inst, const Info& info) {
+    if (IsOrderedGdsPersistentLdsAccess(inst, info) && IsBufferStore(inst)) {
+        return true;
+    }
     const IR::Opcode opcode = inst.GetOpcode();
     if (opcode >= IR::Opcode::SharedAtomicIAdd32 && opcode <= IR::Opcode::SharedAtomicCmpSwap64) {
         return !inst.Flags<bool>();
@@ -25,7 +43,7 @@ static bool IsWriteShared(const IR::Inst& inst) {
 }
 
 // Inserts barriers when a shared memory write and read occur in the same basic block.
-static void EmitBarrierInBlock(IR::Block* block) {
+static void EmitBarrierInBlock(IR::Block* block, const Info& info) {
     enum class BarrierAction : u32 {
         None,
         BarrierOnWrite,
@@ -33,7 +51,7 @@ static void EmitBarrierInBlock(IR::Block* block) {
     };
     BarrierAction action{};
     for (IR::Inst& inst : block->Instructions()) {
-        if (IsLoadShared(inst)) {
+        if (IsLoadShared(inst, info)) {
             if (action == BarrierAction::BarrierOnRead) {
                 IR::IREmitter ir{*block, IR::Block::InstructionList::s_iterator_to(inst)};
                 ir.Barrier();
@@ -41,7 +59,7 @@ static void EmitBarrierInBlock(IR::Block* block) {
             action = BarrierAction::BarrierOnWrite;
             continue;
         }
-        if (IsWriteShared(inst)) {
+        if (IsWriteShared(inst, info)) {
             if (action == BarrierAction::BarrierOnWrite) {
                 IR::IREmitter ir{*block, IR::Block::InstructionList::s_iterator_to(inst)};
                 ir.Barrier();
@@ -157,7 +175,7 @@ void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_in
             continue;
         }
         if (node.type == Type::Block && divergence_depth == 0) {
-            EmitBarrierInBlock(node.data.block);
+            EmitBarrierInBlock(node.data.block, program.info);
         }
     }
 }

@@ -133,6 +133,10 @@ struct Info : InfoPersistent {
     bool uses_shared_int64_atomics{};
     // Ordered GDS requires guest wave creation order, not an ordinary Vulkan atomic.
     bool uses_ordered_gds{};
+    // All real guest LDS IR accesses have been lowered to one owned SSBO
+    // per workgroup so those bytes can survive the first-pass GDS return.
+    // Does NOT enable ordinary DS_ORDERED_COUNT shader execution.
+    bool ordered_gds_persistent_lds{};
     // Static guest byte PCs discovered by real translation. An individual
     // wave may execute only one of these sites; do not infer phase coverage.
     std::vector<u32> ordered_gds_site_pcs;

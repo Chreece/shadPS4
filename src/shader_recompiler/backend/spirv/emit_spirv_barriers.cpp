@@ -28,6 +28,13 @@ void EmitBarrier(EmitContext& ctx) {
         memory_semantics =
             spv::MemorySemanticsMask::AcquireRelease | spv::MemorySemanticsMask::WorkgroupMemory;
     }
+    // When original guest LDS lives in the persistent SSBO, S_BARRIER must
+    // also make storage-buffer accesses visible to the other guest lanes.
+    // WorkgroupMemory alone applies to ephemeral Workgroup storage, not SSBO.
+    if (ctx.info.ordered_gds_persistent_lds) {
+        memory_semantics =
+            memory_semantics | spv::MemorySemanticsMask::UniformMemory;
+    }
     ctx.OpControlBarrier(ctx.ConstU32(static_cast<u32>(execution)),
                          ctx.ConstU32(static_cast<u32>(memory)),
                          ctx.ConstU32(static_cast<u32>(memory_semantics)));
