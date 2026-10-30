@@ -15,6 +15,7 @@
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
 #include "shader_recompiler/frontend/ordered_gds_checkpoint.h"
 #include "shader_recompiler/frontend/ordered_gds_device_plan.h"
+#include "shader_recompiler/frontend/ordered_gds_epoch_auth.h"
 #include "shader_recompiler/frontend/ordered_gds_lds_checkpoint.h"
 #include "shader_recompiler/frontend/ordered_gds_storage_layout.h"
 #include "video_core/buffer_cache/buffer.h"
@@ -310,6 +311,9 @@ public:
         u32 allocated_vgprs, u32 guest_shared_lds_bytes)
         : plan{Plan::Require(groups, local_threads, allocated_vgprs,
                              guest_shared_lds_bytes)},
+          capture_auth{instance, 0, plan.epoch_auth_bytes,
+                       VideoCore::MemoryType::DeviceLocal,
+                       "CIK GDS Trusted Dispatch Wave Tokens"},
           capture_packets{instance, 0, plan.packet_bytes,
                           VideoCore::MemoryType::DeviceLocal,
                           "CIK GDS Capture Packets"},
@@ -338,13 +342,81 @@ public:
     OrderedGdsEpochDeviceBuffers(OrderedGdsEpochDeviceBuffers&&) = delete;
     OrderedGdsEpochDeviceBuffers& operator=(OrderedGdsEpochDeviceBuffers&&) = delete;
 
+    // Source of authority is the host scheduler, not M0 or Vulkan arrival.
+    // Upload once per epoch with UNIQUE, real per-wave continuation tokens.
+    // The shader may copy these but still cannot assert a valid checkpoint
+    // until all register/LDS state and true second-pass resume are proven.
+    void PrepareEpochAuthority(Runtime& runtime, Scheduler& scheduler,
+                               u32 epoch, std::span<const u64> tokens_by_slot) {
+        using Shader::Gcn::OrderedGds::RequireGcnEpochAuth;
+        auto checked = RequireGcnEpochAuth(plan.waves, epoch, tokens_by_slot);
+        const u64 bytes = u64(checked.size()) *
+                          sizeof(Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth);
+        ASSERT_MSG(bytes == plan.epoch_auth_bytes && bytes == capture_auth.SizeBytes(),
+                   "CIK trusted dispatch wave authentication size mismatch");
+        const auto staging = runtime.GetStagingPool().Request(
+            bytes, VideoCore::MemoryType::HostUncached,
+            alignof(Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth));
+        if (!staging.buffer || !staging.mapped || staging.size < bytes) {
+            throw std::runtime_error("CIK guest epoch authority upload unavailable");
+        }
+        std::memcpy(staging.mapped, checked.data(), bytes);
+        staging.Flush();
+        scheduler.EndRendering();
+        const vk::BufferMemoryBarrier2 host_to_copy{
+            .srcStageMask = vk::PipelineStageFlagBits2::eHost,
+            .srcAccessMask = vk::AccessFlagBits2::eHostWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = staging.buffer->Handle(),
+            .offset = staging.offset,
+            .size = bytes,
+        };
+        scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &host_to_copy,
+        });
+        const vk::BufferCopy copy{
+            .srcOffset = staging.offset, .dstOffset = 0, .size = bytes,
+        };
+        runtime.CopyBuffer(staging.buffer, &capture_auth, std::span{&copy, 1});
+        const vk::BufferMemoryBarrier2 copy_to_compute{
+            .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = capture_auth.Handle(),
+            .offset = 0,
+            .size = bytes,
+        };
+        scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &copy_to_compute,
+        });
+        authenticated_epoch_ = 0;
+        authority_ = std::move(checked);
+        authenticated_epoch_ = epoch;
+    }
+    [[nodiscard]] std::span<const Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth>
+    CaptureAuthority() const noexcept { return authority_; }
+    [[nodiscard]] u32 AuthorizedEpoch() const noexcept { return authenticated_epoch_; }
+
     const Plan plan;
+    VideoCore::Buffer capture_auth;
     VideoCore::Buffer capture_packets;
     VideoCore::Buffer resume_packets;
     VideoCore::Buffer capture_registers;
     VideoCore::Buffer resume_registers;
     std::optional<VideoCore::Buffer> capture_lds;
     std::optional<VideoCore::Buffer> resume_lds;
+
+private:
+    std::vector<Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority_;
+    u32 authenticated_epoch_{};
 };
 
 
