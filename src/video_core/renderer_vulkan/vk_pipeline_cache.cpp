@@ -657,7 +657,8 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
             LOG_WARNING(Render_Recompiler,
                         "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: "
                         "site={:#x}, copies={}, register_records={}; "
-                        "GPU checkpoint writer and guest shader re-entry still gated",
+                        "live register + decoded metadata writers staged; authentic epoch/token, "
+                        "GPU owner and guest shader re-entry still gated",
                         result.site_pc, result.complete_copies,
                         result.register_records);
         }
@@ -760,7 +761,8 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
         if (info.hw_stage == HwStage::Compute) {
             LOG_WARNING(Render_Recompiler,
                         "Ordered GDS guest checkpoint prerequisites: allocated_vgprs={}, "
-                        "shared_lds_bytes={}, SGPR/VGPR checkpoint writer=NOT_IMPLEMENTED; "
+                        "shared_lds_bytes={}, live IR/SSBO register and site metadata writers="
+                        "STAGED_ONLY; epoch/token and LDS quiescence unimplemented; "
                         "nonzero LDS must not be silently discarded",
                         runtime_info.props.num_allocated_vgprs,
                         runtime_info.hw.cs.shared_memory_size);
