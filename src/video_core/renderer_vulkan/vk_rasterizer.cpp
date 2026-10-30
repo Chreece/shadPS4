@@ -493,6 +493,108 @@ u32 Rasterizer::AuthorizeNewOrderedGdsCaptureEpoch(
 }
 
 std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+Rasterizer::DispatchOriginalGcnOrderedCaptureDirect(
+    OrderedGdsEpochDeviceBuffers& owner, u32 expected_epoch) {
+    using namespace Shader::Gcn::OrderedGds;
+
+    // This API deliberately does NOT replace DispatchDirect(). The original
+    // guest shader executes its pre-DS memory writes here; replaying the
+    // shader from PC=0 would double those side effects. The epoch owner must
+    // survive until an authentic post-DS continuation finishes.
+    if (!expected_epoch || owner.AuthorizedEpoch() != expected_epoch ||
+        owner.CaptureAuthority().size() != owner.plan.waves ||
+        active_ordered_gds_capture_) {
+        throw std::invalid_argument("unowned or overlapping original-GCN capture dispatch");
+    }
+    const auto& cs_program = liverpool->GetCsRegs();
+    const DispatchExtent groups{cs_program.dim_x, cs_program.dim_y, cs_program.dim_z};
+    const DispatchExtent local{cs_program.num_thread_x.full,
+                               cs_program.num_thread_y.full,
+                               cs_program.num_thread_z.full};
+    if (owner.groups.x != groups.x || owner.groups.y != groups.y ||
+        owner.groups.z != groups.z ||
+        owner.local_threads.x != local.x ||
+        owner.local_threads.y != local.y ||
+        owner.local_threads.z != local.z) {
+        throw std::invalid_argument(
+            "CIK capture owner does not match original guest 3D dispatch dimensions");
+    }
+    // The full plan must be recomputed from LIVE guest registers before
+    // touching GPU memory, not inferred from a stale shader hash or an old
+    // indirect command. The constructor already enforces the VRAM bound.
+    const auto required = GcnOrderedGdsDevicePlan::Require(
+        groups, local, cs_program.settings.num_vgprs * 4,
+        cs_program.SharedMemSize());
+    if (owner.plan.waves != required.waves ||
+        owner.plan.epoch_auth_bytes != required.epoch_auth_bytes ||
+        owner.plan.packet_bytes != required.packet_bytes ||
+        owner.plan.register_layout.total_bytes !=
+            required.register_layout.total_bytes ||
+        owner.plan.combined_device_bytes != required.combined_device_bytes) {
+        throw std::invalid_argument("stale original GCN capture buffer plan");
+    }
+
+    scheduler.PopPendingOperations();
+    const ComputePipeline* pipeline = pipeline_cache.GetOrderedGdsCapturePipeline();
+    if (!pipeline) {
+        throw std::runtime_error("original-GCN capture pipeline not compiled");
+    }
+    const auto& stage = pipeline->GetStage(Shader::SwStage::Compute);
+    if (!stage.uses_ordered_gds || stage.hw_stage != Shader::HwStage::Compute ||
+        stage.ordered_gds_sites.empty()) {
+        throw std::invalid_argument("capture pipeline has no decoded original GCN DS site");
+    }
+    std::vector<VerifiedGcnOrderedSite> sites;
+    sites.reserve(stage.ordered_gds_sites.size());
+    for (const auto& site : stage.ordered_gds_sites) {
+        sites.push_back({site.pc, site.destination_vgpr, site.encoded_control});
+    }
+
+    // A missing GPU writer must remain invalid after readback. Clear only
+    // epoch-local packet and register buffers; NEVER clear persistent guest
+    // LDS after its initial allocation or a post-DS attempt.
+    runtime.FillBuffer(&owner.capture_packets, 0, owner.plan.packet_bytes, 0);
+    runtime.FillBuffer(&owner.capture_registers, 0,
+                       owner.plan.register_layout.total_bytes, 0);
+    {
+        OrderedGdsCaptureBinding live_scope{*this, owner};
+        if (!BindResources(pipeline)) {
+            throw std::runtime_error("original guest GCN capture resources unavailable");
+        }
+        if (needs_barrier) {
+            runtime.FlushBarriers();
+        }
+        scheduler.EndRendering();
+        pipeline->BindResources(set_writes, push_data);
+        const auto command = scheduler.CommandBuffer();
+        command.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+        command.dispatch(groups.x, groups.y, groups.z);
+        DebugState.IncDispatch();
+        ResetBindings(true);
+    }
+    // These synchronized copies are from real GPU-written device buffers.
+    // They do not derive guest ranks from Vulkan physical invocation order.
+    const auto captured = DownloadOrderedGdsPackets(
+        owner.capture_packets, 0, owner.plan.waves);
+    RequireCaptureTokenAuthority(captured, owner.CaptureAuthority(), expected_epoch);
+    const auto state = OrderedGdsPacketTransfer::DownloadCheckpoint(
+        runtime, scheduler, owner.capture_registers, 0,
+        owner.plan.register_layout);
+    RequireCompleteGcnWaveCheckpoints(
+        state, captured, owner.plan.register_layout, expected_epoch, sites);
+    if (owner.plan.lds_layout && !owner.HasPersistentLdsBinding(expected_epoch)) {
+        throw std::invalid_argument(
+            "original GCN guest LDS capture did not bind persistent SSBO");
+    }
+    LOG_WARNING(Render_Vulkan,
+                "PR117 original guest GCN GPU first pass completed: epoch={}, "
+                "waves={}, sites={}; authentic guest creation order, dedicated "
+                "CIK packer seed and guest shader re-entry NOT yet supplied",
+                expected_epoch, captured.size(), sites.size());
+    return captured;
+}
+
+std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
 Rasterizer::DownloadOrderedGdsPackets(const VideoCore::Buffer& device_capture,
                                       u64 source_offset, std::size_t packet_count) {
     return OrderedGdsPacketTransfer::Download(runtime, scheduler, device_capture,
