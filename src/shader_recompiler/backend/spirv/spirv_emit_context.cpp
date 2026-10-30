@@ -827,6 +827,9 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
     case BufferType::OrderedGdsCapture:
         Name(id, "ordered_gds_live_gpu_capture_packet");
         break;
+    case BufferType::OrderedGdsEpochAuth:
+        Name(id, "ordered_gds_verified_guest_epoch_and_wave_token");
+        break;
     case BufferType::Flatbuf:
         Name(id, "srt_flatbuf");
         break;
@@ -879,6 +882,13 @@ void EmitContext::DefineBuffers() {
             has_ordered_gds_capture_binding = true;
             ASSERT_MSG(desc.is_written && True(desc.used_types & IR::Type::U32),
                        "invalid GCN capture packet SSBO declaration");
+        } else if (desc.buffer_type == BufferType::OrderedGdsEpochAuth) {
+            ASSERT_MSG(!has_ordered_gds_auth_binding,
+                       "duplicate GCN epoch authorization SSBO descriptor");
+            ordered_gds_auth_index = buffers.size();
+            has_ordered_gds_auth_binding = true;
+            ASSERT_MSG(!desc.is_written && True(desc.used_types & IR::Type::U32),
+                       "invalid read-only GCN epoch authorization SSBO");
         }
 
         // Define aliases depending on the shader usage.
