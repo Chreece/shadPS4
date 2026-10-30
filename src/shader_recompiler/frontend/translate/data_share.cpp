@@ -349,7 +349,8 @@ void Translator::DS_APPEND(const GcnInst& inst) {
 
 void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
                                              const IR::U64& exec_mask,
-                                             u32 next_guest_pc, u32 destination_vgpr) {
+                                             u32 next_guest_pc, u32 destination_vgpr,
+                                             u32 encoded_control) {
     // Preserve every GCN SGPR (not only user data) and every allocated
     // VGPR at the real instruction site. Register readers here enter the
     // existing SSA rewrite while the per-register capture op is a required
@@ -411,6 +412,31 @@ void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
     capture(3, 8, ir.Imm32(0u)); // Never claim valid without epoch/token.
     capture(3, 9, ir.Imm32(0u)); // Reserved field.
     capture(3, 10, ir.Imm32(Shader::Gcn::OrderedGds::GcnCheckpointAbiVersion));
+
+    // Produce the ACTUAL GPU packet DWORDs from this decoded guest DS site,
+    // live pre-DS M0/EXEC and real physical wave slot. The dedicated packet
+    // SSBO is distinct from the SGPR/VGPR checkpoint SSBO and ordinary GDS.
+    // Host epoch/continuation token are NOT invented by the guest shader.
+    // tag, epoch, token and valid flags remain zero until an authenticated
+    // capture descriptor and synchronized two-pass scheduler exist.
+    const IR::U32 source_lane = ir.FindILsb(exec_mask);
+    const IR::U32 cik_payload = ir.BitCount(exec_mask);
+    capture(4, 0, ir.Imm32(0u)); // Invalid capture until runtime auth.
+    capture(4, 1, ir.Imm32(0u)); // No synthetic epoch.
+    capture(4, 2, site_pc);
+    capture(4, 3, ir.Imm32(encoded_control));
+    capture(4, 4, logical_slot);
+    capture(4, 5, ir.GetM0());
+    capture(4, 6, IR::U32{ir.CompositeExtract(exec_halves, 0)});
+    capture(4, 7, IR::U32{ir.CompositeExtract(exec_halves, 1)});
+    capture(4, 8, source_lane);
+    capture(4, 9, cik_payload); // Legacy CIK count_bits(EXEC), not ADDR.
+    capture(4, 10, ir.Imm32(0u)); // No synthetic continuation token.
+    capture(4, 11, ir.Imm32(0u));
+    capture(4, 12, ir.Imm32(0u)); // Explicitly NOT a valid capture.
+    capture(4, 13, ir.Imm32(0u));
+    capture(4, 14, ir.Imm32(0u));
+    capture(4, 15, ir.Imm32(0u));
 }
 
 void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
@@ -450,7 +476,8 @@ void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
     // true old counter value must arrive from an ordered host resolution,
     // followed by shader re-entry at site_pc + inst.length without replaying
     // pre-DS guest writes.
-    RecordOrderedGdsCheckpoint(site_pc, exec_mask, pc, inst.dst[0].code);
+    RecordOrderedGdsCheckpoint(site_pc, exec_mask, pc, inst.dst[0].code,
+                               offset0 | (offset1 << 8u));
     const IR::U32 old_value =
         ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), exec_mask, control, site_pc);
     SetDst(inst.dst[0], old_value);
