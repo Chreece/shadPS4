@@ -106,7 +106,8 @@ inline void RequireCompleteGcnWaveCheckpoints(
     }
     std::vector<bool> seen(layout.waves, false);
     for (const auto& capture : captures) {
-        if (capture.flags != CaptureFlags || capture.logical_slot >= layout.waves ||
+        if ((capture.flags != CaptureFlags && capture.flags != CaptureBypassFlags) ||
+            capture.logical_slot >= layout.waves ||
             seen[capture.logical_slot] || capture.tag != CapturePacketTag ||
             capture.epoch != expected_epoch || !capture.site_pc) {
             throw std::invalid_argument("invalid or duplicate guest checkpoint capture slot");
@@ -123,6 +124,18 @@ inline void RequireCompleteGcnWaveCheckpoints(
             throw std::invalid_argument("guest checkpoint site is not uniquely decoded");
         }
         seen[capture.logical_slot] = true;
+        if (capture.flags == CaptureBypassFlags) {
+            // A real S_ENDPGM wave has ALREADY completed, without touching
+            // DS_ORDERED_COUNT. It cannot possess a pre-DS register image,
+            // decoded VDST, checkpoint PC or continuation token. Authenticate
+            // the canonical packet and do NOT read its unwritten SSBO slot.
+            // Full host-issued slot/token authority is checked separately
+            // by RequireCaptureTokenAuthority before host resolution.
+            if (!IsCanonicalGcnTerminalBypass(capture, expected_epoch)) {
+                throw std::invalid_argument("forged GCN terminal-bypass checkpoint slot");
+            }
+            continue;
+        }
         const std::size_t offset = std::size_t(capture.logical_slot) * layout.stride_bytes;
         GpuGcnWaveCheckpoint checkpoint{};
         std::memcpy(&checkpoint, state_bytes.data() + offset, sizeof(checkpoint));
@@ -162,12 +175,31 @@ inline void RequireResolvedGcnResumeHandoff(
     std::vector<bool> seen(captures.size(), false);
     for (const auto& capture : captures) {
         if (capture.logical_slot >= captures.size() ||
-            capture.tag != CapturePacketTag || capture.flags != CaptureFlags ||
+            capture.tag != CapturePacketTag ||
+            (capture.flags != CaptureFlags && capture.flags != CaptureBypassFlags) ||
             capture.epoch != expected_epoch || seen[capture.logical_slot]) {
             throw std::invalid_argument("invalid guest capture for resumption");
         }
         seen[capture.logical_slot] = true;
         const auto& resume = resumes[capture.logical_slot];
+        if (capture.flags == CaptureBypassFlags) {
+            // Sparse resolution supplies a NON-runnable marker for an S_ENDPGM
+            // wave. Reject any attempt to turn it into a guest continuation.
+            if (!IsCanonicalGcnTerminalBypass(capture, expected_epoch) ||
+                resume.tag != ResumePacketTag ||
+                resume.epoch != expected_epoch ||
+                resume.site_pc != NoActiveLane ||
+                resume.flags != 0 ||
+                resume.logical_slot != capture.logical_slot ||
+                resume.previous || resume.current || resume.counter_index ||
+                resume.token_lo || resume.token_hi ||
+                resume.creation_lo || resume.creation_hi ||
+                resume.reserved0 || resume.reserved1 ||
+                resume.reserved2 || resume.reserved3) {
+                throw std::invalid_argument("forged GCN terminal-bypass resume marker");
+            }
+            continue;
+        }
         const u64 guest_rank = (u64(resume.creation_hi) << 32) | resume.creation_lo;
         if (resume.tag != ResumePacketTag || resume.epoch != expected_epoch ||
             resume.flags != ResumeFlags || resume.logical_slot != capture.logical_slot ||
