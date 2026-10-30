@@ -10,6 +10,7 @@ CXX="${CXX:-g++}"
 echo "ORDERED_GDS_CPU_COMPILER=$CXX"
 python3 "$ROOT/tests/check_ordered_gds_frontend.py" --compiler "$CXX"
 python3 "$ROOT/tests/check_ordered_gds_live_capture.py" --compiler "$CXX"
+python3 "$ROOT/tests/check_ordered_gds_capture_cut.py" --compiler "$CXX"
 python3 "$ROOT/tests/check_ordered_gds_ir.py"
 
 # The native project vendors fmt as a submodule. The standalone test driver
@@ -90,6 +91,8 @@ FLAGS=(-std=c++23 -Wall -Wextra -Werror -pedantic -O2 -pthread -Isrc "-I${FMT_IN
 )
 
 if [[ "${RUN_SANITIZERS:-0}" == "1" ]]; then
+    python3 "$ROOT/tests/check_ordered_gds_capture_cut.py" \
+        --compiler "$CXX" --sanitize
     SAN=(-std=c++23 -Wall -Wextra -Werror -pedantic -O1 -g
          -fno-omit-frame-pointer -fsanitize=address,undefined -pthread -Isrc "-I${FMT_INCLUDE}" -DFMT_HEADER_ONLY)
     (
