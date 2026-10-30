@@ -12,7 +12,23 @@ python3 "$ROOT/tests/check_ordered_gds_frontend.py" --compiler "$CXX"
 python3 "$ROOT/tests/check_ordered_gds_live_capture.py" --compiler "$CXX"
 python3 "$ROOT/tests/check_ordered_gds_ir.py"
 
-FLAGS=(-std=c++23 -Wall -Wextra -Werror -pedantic -O2 -pthread -Isrc)
+# The native project vendors fmt as a submodule. The standalone test driver
+# also includes actual shader IR headers, which transitively include fmt/base.h.
+# Prefer that exact dependency; no apt installs or network checkout here.
+FMT_INCLUDE=""
+for candidate in "$ROOT/externals/fmt/include" "$ROOT/build/_deps/fmt-src/include" /usr/include; do
+    if [[ -f "$candidate/fmt/base.h" ]]; then
+        FMT_INCLUDE="$candidate"
+        break
+    fi
+done
+if [[ -z "$FMT_INCLUDE" ]]; then
+    echo "ORDERED_GDS_FMT_HEADER_MISSING: initialize the project's fmt dependency"
+    exit 2
+fi
+echo "ORDERED_GDS_FMT_INCLUDE=$FMT_INCLUDE"
+
+FLAGS=(-std=c++23 -Wall -Wextra -Werror -pedantic -O2 -pthread -Isrc "-I${FMT_INCLUDE}" -DFMT_HEADER_ONLY)
 (
     cd "$ROOT"
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_complete_batch.cpp -o "$TMP/batch"
@@ -63,7 +79,7 @@ FLAGS=(-std=c++23 -Wall -Wextra -Werror -pedantic -O2 -pthread -Isrc)
 
 if [[ "${RUN_SANITIZERS:-0}" == "1" ]]; then
     SAN=(-std=c++23 -Wall -Wextra -Werror -pedantic -O1 -g
-         -fno-omit-frame-pointer -fsanitize=address,undefined -pthread -Isrc)
+         -fno-omit-frame-pointer -fsanitize=address,undefined -pthread -Isrc "-I${FMT_INCLUDE}" -DFMT_HEADER_ONLY)
     (
         cd "$ROOT"
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_complete_batch.cpp -o "$TMP/san-batch"
