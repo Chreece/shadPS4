@@ -392,6 +392,34 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
     return it->second.get();
 }
 
+const ComputePipeline* PipelineCache::GetOrderedGdsCapturePipeline() {
+    // A distinct compile/cache operation: this cannot substitute the
+    // original shader module in a normal game dispatch. The calling
+    // Rasterizer must explicitly own and authenticate every wave first.
+    Shader::Backend::Bindings binding{};
+    const auto& cs_program = liverpool->GetCsRegs();
+    const auto params = AmdGpu::GetParams(cs_program);
+    const auto [info, module, permutation_hash] =
+        GetProgram(HwStage::Compute, SwStage::Compute, params, binding, true);
+    ASSERT_MSG(info && info->uses_ordered_gds &&
+                   info->hw_stage == HwStage::Compute &&
+                   !info->ordered_gds_sites.empty(),
+               "original GCN capture pipeline requires decoded compute ordered-count sites");
+    const ComputePipelineKey key{permutation_hash};
+    const auto [it, is_new] = ordered_capture_compute_pipelines.try_emplace(key);
+    if (is_new) {
+        ComputePipeline::SerializationSupport sdata{};
+        it.value() = std::make_unique<ComputePipeline>(
+            instance, scheduler, desc_heap, profile, *pipeline_cache,
+            key, *info, module, sdata, false);
+        LOG_INFO(Render_Vulkan, "Compiled original-GCN first-pass capture pipeline {:#x}",
+                 permutation_hash);
+        // The incomplete capture pipeline must never enter the normal
+        // serialized-pipeline registry or substitute a game compute module.
+    }
+    return it->second.get();
+}
+
 bool PipelineCache::RefreshGraphicsKey() {
     std::memset(&graphics_key, 0, sizeof(GraphicsPipelineKey));
     const auto& regs = liverpool->regs;
@@ -623,7 +651,8 @@ bool PipelineCache::RefreshComputeKey() {
 
 vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::RuntimeInfo& runtime_info,
                                               const std::span<const u32>& code, size_t perm_idx,
-                                              Shader::Backend::Bindings& binding) {
+                                              Shader::Backend::Bindings& binding,
+                                              bool ordered_capture_only) {
     LOG_INFO(Render_Vulkan, "Compiling {} shader {:#x} {}", info.hw_stage, info.pgm_hash,
              perm_idx != 0 ? "(permutation)" : "");
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
@@ -805,7 +834,8 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     // genuine state and packet records; the normal compile below still
     // rejects the opcode. This is universal diagnosis, never a title/hash
     // exception, and does not dispatch any GPU shader or fake a counter.
-    if (info.uses_ordered_gds && info.hw_stage == HwStage::Compute &&
+    if (!ordered_capture_only &&
+        info.uses_ordered_gds && info.hw_stage == HwStage::Compute &&
         EmulatorSettings.IsDumpShaders()) {
         auto capture_binding = binding; // Diagnostic must not mutate real bindings.
         const auto capture_spv = Shader::Backend::SPIRV::EmitSPIRVOrderedGdsCapturePass(
@@ -819,13 +849,25 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
                     info.pgm_hash, capture_spv.size(), info.ordered_gds_sites.size());
     }
 
-    auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
-    DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx, "spv");
+    if (ordered_capture_only) {
+        ASSERT_MSG(info.uses_ordered_gds && info.hw_stage == HwStage::Compute,
+                   "capture-only module must be original ordered-GDS compute guest");
+    }
+    auto spv = ordered_capture_only
+        ? Shader::Backend::SPIRV::EmitSPIRVOrderedGdsCapturePass(
+              profile, runtime_info, ir_program, binding)
+        : Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
+    DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx,
+               ordered_capture_only ? "pr117-live-capture.spv" : "spv");
 
     vk::ShaderModule module;
 
-    auto patch = GetShaderPatch(info.pgm_hash, info.hw_stage, perm_idx, "spv");
-    const bool is_patched = patch && EmulatorSettings.IsPatchShaders();
+    // Never replace first-pass GPU capture instrumentation with an
+    // unrelated user-patched normal guest compute module.
+    auto patch = ordered_capture_only
+        ? std::optional<std::vector<u32>>{}
+        : GetShaderPatch(info.pgm_hash, info.hw_stage, perm_idx, "spv");
+    const bool is_patched = !ordered_capture_only && patch && EmulatorSettings.IsPatchShaders();
     if (is_patched) {
         LOG_INFO(Loader, "Loaded patch for {} shader {:#x}", info.hw_stage, info.pgm_hash);
         module = CompileSPV(*patch, instance.GetDevice());
@@ -833,9 +875,11 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
         module = CompileSPV(spv, instance.GetDevice());
     }
 
-    RegisterShaderBinary(std::move(spv), info.pgm_hash, perm_idx);
-
-    const auto name = GetShaderName(info.hw_stage, info.pgm_hash, perm_idx);
+    if (!ordered_capture_only) {
+        RegisterShaderBinary(std::move(spv), info.pgm_hash, perm_idx);
+    }
+    const auto name = GetShaderName(info.hw_stage, info.pgm_hash, perm_idx) +
+                      (ordered_capture_only ? ".gds_capture" : "");
     Vulkan::SetObjectName(instance.GetDevice(), module, name);
     if (EmulatorSettings.IsShaderCollect()) {
         DebugState.CollectShader(name, info.sw_stage, module, spv, code,
@@ -846,14 +890,19 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
 
 PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_stage,
                                                 const Shader::ShaderParams& params,
-                                                Shader::Backend::Bindings& binding) {
+                                                Shader::Backend::Bindings& binding,
+                                                bool ordered_capture_only) {
     auto runtime_info = BuildRuntimeInfo(hw_stage, sw_stage);
-    auto [it_pgm, new_program] = program_cache.try_emplace(params.hash);
+    // A capture variant has different CFG exits and resource bindings.
+    auto& shader_cache =
+        ordered_capture_only ? ordered_capture_program_cache : program_cache;
+    auto [it_pgm, new_program] = shader_cache.try_emplace(params.hash);
     if (new_program) {
         it_pgm.value() = std::make_unique<Program>(hw_stage, sw_stage, params);
         auto& program = it_pgm.value();
         auto start = binding;
-        const auto module = CompileModule(program->info, runtime_info, params.code, 0, binding);
+        const auto module = CompileModule(program->info, runtime_info, params.code, 0, binding,
+                                          ordered_capture_only);
         auto spec = Shader::StageSpecialization(program->info, runtime_info, profile, start);
         const auto perm_hash = HashCombine(params.hash, 0);
 
@@ -880,7 +929,8 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
     const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
     if (it == program->modules.end()) {
         auto new_info = Shader::Info(hw_stage, sw_stage, params);
-        module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
+        module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding,
+                               ordered_capture_only);
 
         RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
         program->AddPermut(module, std::move(spec));
