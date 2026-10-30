@@ -108,6 +108,7 @@ bool Inst::MayHaveSideEffects() const noexcept {
     case Opcode::SharedAtomicXor64:
     case Opcode::SharedAtomicCmpSwap32:
     case Opcode::SharedAtomicCmpSwap64:
+    case Opcode::OrderedGdsCheckpointRegister:
     case Opcode::OrderedGdsCount:
     case Opcode::ImageWrite:
     case Opcode::ImageAtomicIAdd32:
