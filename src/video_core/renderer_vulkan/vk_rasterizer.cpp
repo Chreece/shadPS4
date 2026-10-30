@@ -928,7 +928,14 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
     const u64 alignment = instance.StorageMinAlignment();
     for (const auto& desc : stage.buffers) {
         if (desc.IsSpecial()) {
-            if (desc.buffer_type == Shader::BufferType::GdsBuffer) {
+            if (desc.buffer_type == Shader::BufferType::OrderedGdsCheckpoint) {
+                // The producer needs independently allocated device-local
+                // capture/state buffers whose lifetime spans both passes.
+                // Binding an arbitrary stream or the guest 64KiB GDS here
+                // would silently corrupt the checkpoint; do not do that.
+                UNREACHABLE_MSG(
+                    "Ordered GCN checkpoint needs genuine dispatch-owned GPU storage");
+            } else if (desc.buffer_type == Shader::BufferType::GdsBuffer) {
                 const auto* gds_buf = buffer_cache.GetGdsBuffer();
                 buffer_infos.emplace_back(gds_buf->Handle(), 0, gds_buf->SizeBytes());
                 needs_barrier |=
