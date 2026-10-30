@@ -1,0 +1,34 @@
+--- a/src/video_core/texture_cache/texture_cache.cpp
++++ b/src/video_core/texture_cache/texture_cache.cpp
+@@ -598,6 +598,17 @@
+     // A CPU-dirty source is stale (e.g. a streamed texture rewritten in a reused pool slot);
+     // copying it would overwrite the fresh upload with old data.
+     const bool src_has_gpu_data = src_image.HasGpuValidData();
++    if (src_image.info.type != new_image.info.type) {
++        static std::atomic<u32> reported{};
++        if (reported.fetch_add(1, std::memory_order_relaxed) < 16u) {
++            LOG_INFO(Render_Vulkan,
++                     "TypedImageRecreate: address={:#x} source_type={} requested_type={} "
++                     "source_bytes={} requested_bytes={} preserve_gpu={}",
++                     info.guest_address, static_cast<u32>(src_image.info.type),
++                     static_cast<u32>(new_image.info.type), src_image.info.guest_size,
++                     new_image.info.guest_size, src_has_gpu_data);
++        }
++    }
+ 
+     RefreshImage(new_image);
+ 
+@@ -638,8 +649,12 @@
+         if (cache_image.info.size != info.size) {
+             continue;
+         }
++        // Equal dimensions do not make different image types interchangeable,
++        // even for one texel. In particular a 2D sampled descriptor cannot use
++        // a 3D backing on hosts without sampler2DViewOf3D. Let overlap resolution
++        // recreate the requested type and preserve the old contents instead.
+         if (!IsVulkanFormatCompatible(cache_image.info.pixel_format, info.pixel_format) ||
+-            (cache_image.info.type != info.type && info.size != Extent3D{1, 1, 1})) {
++            cache_image.info.type != info.type) {
+             continue;
+         }
+         if (exact_fmt && info.pixel_format != cache_image.info.pixel_format) {
