@@ -56,13 +56,18 @@ int main() {
         std::memcpy(storage.data() + header.logical_slot * layout.stride_bytes,
                     &header, sizeof(header));
     }
-    RequireCompleteGcnWaveCheckpoints(storage, captures, layout, Epoch);
+    constexpr std::array<VerifiedGcnOrderedSite,2> sites_metadata{{
+        {0x4158,7,0x1300}, {0x41d4,7,0x0300}}};
+    captures[0].encoded_control = 0x1300;
+    captures[1].encoded_control = 0x0300;
+    captures[2].encoded_control = 0x1300;
+    RequireCompleteGcnWaveCheckpoints(storage, captures, layout, Epoch, sites_metadata);
     const auto require_bad = [&](auto&& mutation) {
         auto wrong_captures = captures;
         auto wrong_storage = storage;
         mutation(wrong_captures, wrong_storage);
         assert(Reject([&] { RequireCompleteGcnWaveCheckpoints(
-            wrong_storage, wrong_captures, layout, Epoch); }));
+            wrong_storage, wrong_captures, layout, Epoch, sites_metadata); }));
     };
     require_bad([](auto& caps, auto&) { caps[0].logical_slot = caps[1].logical_slot; });
     require_bad([](auto& caps, auto&) { caps[0].flags = 1; }); // bypass cannot resume
@@ -72,6 +77,7 @@ int main() {
     require_bad([](auto& caps, auto&) { caps[0].epoch++; });
     require_bad([](auto& caps, auto&) { caps[0].tag = 0; });
     require_bad([](auto& caps, auto&) { caps[0].site_pc = 0; });
+    require_bad([](auto& caps, auto&) { caps[0].encoded_control ^= 1u; });
     const auto bad_header = [&](auto&& modify) {
         require_bad([&](auto&, auto& mem) {
             GpuGcnWaveCheckpoint header{};
@@ -91,14 +97,15 @@ int main() {
     bad_header([](auto& h) { h.token_lo ^= 1u; });
     bad_header([](auto& h) { h.token_hi ^= 1u; });
     bad_header([](auto& h) { h.destination_vgpr = 16; });
+    bad_header([](auto& h) { h.destination_vgpr = 6; });
     bad_header([](auto& h) { h.scalar_words++; });
     bad_header([](auto& h) { h.vector_registers++; });
     bad_header([](auto& h) { h.lane_count = 32; });
     bad_header([](auto& h) { h.flags = 0; });
     bad_header([](auto& h) { h.reserved = 1; });
     assert(Reject([&] { RequireCompleteGcnWaveCheckpoints(
-        std::span<const std::byte>{storage}.subspan(1), captures, layout, Epoch); }));
-    assert(Reject([&] { RequireCompleteGcnWaveCheckpoints(storage, captures, layout, Epoch + 1); }));
+        std::span<const std::byte>{storage}.subspan(1), captures, layout, Epoch, sites_metadata); }));
+    assert(Reject([&] { RequireCompleteGcnWaveCheckpoints(storage, captures, layout, Epoch + 1, sites_metadata); }));
     assert(Reject([&] { (void)GcnCheckpointLayout::Require(0,84,16,0); }));
     assert(Reject([&] { (void)GcnCheckpointLayout::Require(3,129,16,0); }));
     assert(Reject([&] { (void)GcnCheckpointLayout::Require(3,84,0,0); }));
