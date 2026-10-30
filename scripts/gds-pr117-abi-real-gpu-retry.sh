@@ -12,7 +12,7 @@ PIN="7490a113ce79e4da84071fc808443162a5b8ec3b"
 SHA="f7a50311e5fda44f9aeb107b261f1ae2c718e5b276fb9a05387ed41dbf626f8b"
 OLD_SHA="$SHA"
 LOGS="$PROJECT/logs"
-TAG="gds-pr117-abi-real-gpu-$(date -u +%Y%m%dT%H%M%SZ)-$"
+TAG="gds-pr117-abi-real-gpu-$(date -u +%Y%m%dT%H%M%SZ)-$BASHPID"
 OUT="$LOGS/$TAG"
 REPORT="$OUT/evidence"
 WORK="$ROOT/playtests/$TAG"
@@ -316,7 +316,13 @@ tail -n 65 "$REPORT/observer-and-vram.log"
 if [[ -f "$REPORT/guest/full-console.log" ]] &&
    grep -Fq 'PR117_REAL_GCN_CAPTURE_DONE' "$REPORT/guest/full-console.log"; then
    STATE=REAL_GUEST_GPU_FIRST_PASS_COMPLETE_STOP_BEFORE_REENTRY
+   echo "REAL_GUEST_FIRST_PASS_CAPTURE=CONFIRMED"
+   # The capture-only probe intentionally aborts before guest continuation;
+   # a nonzero native observer result alone does NOT invalidate verified GPU
+   # checkpoints. Normal gameplay is still gated.
 else
    STATE=EARLY_HOST_CRASH_OR_INCOMPLETE_GUEST_CAPTURE
+   echo "REAL_GUEST_FIRST_PASS_CAPTURE=NOT_CONFIRMED"
+   exit 7
 fi
 echo "GUEST_CAPTURE_LOG_AND_SCREENSHOTS_ARCHIVED=YES"
