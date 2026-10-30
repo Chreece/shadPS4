@@ -128,6 +128,15 @@ public:
     DispatchOriginalGcnOrderedCaptureDirect(
         OrderedGdsEpochDeviceBuffers& owner, u32 expected_epoch);
 
+    // Same original GCN capture, but the grid is sourced from the actual
+    // synchronized GPU indirect-command buffer, never the stale CS register
+    // dimensions. The epoch owner must have been allocated from that GPU
+    // command and the address must still resolve to the same dimensions.
+    [[nodiscard]] std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+    DispatchOriginalGcnOrderedCaptureIndirect(
+        OrderedGdsEpochDeviceBuffers& owner, u32 expected_epoch,
+        VAddr address, u32 offset, u32 available_bytes);
+
     // Staged Vulkan capture/readback and result upload API. GPU packet-writing,
     // guest-wave ordering and shader continuation are intentionally not enabled.
     [[nodiscard]] std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
@@ -283,6 +292,11 @@ private:
                      Shader::PushData& push_data);
     void BindTextures(const Shader::Info& stage, Shader::Backend::Bindings& binding);
     bool BindResources(const Pipeline* pipeline);
+
+    [[nodiscard]] std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+    DispatchOriginalGcnOrderedCaptureImpl(
+        OrderedGdsEpochDeviceBuffers& owner, u32 expected_epoch,
+        bool indirect, VAddr address, u32 offset, u32 available_bytes);
 
     void BindVertexBuffers(const GraphicsPipeline* pipeline);
     void BindIndexBuffer(u32 index_offset = 0);
