@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "date": "2026-10-30",
+  "scope": "universal shadPS4 PR117 ordered GDS",
+  "archive": "gds-pr117-persistent-lds-20261030T200410Z-3907532.tar.gz",
+  "archive_sha256": "0cd29d109fd5feee4899e919bfa850d195a7dd9129ef4c96519c91ecc36e2258",
+  "source_commit": "a796d833a8adea493f911c3e3d23b78064337ada",
+  "status": "PASS_PERSISTENT_GCN_LDS_SOURCE_NATIVE",
+  "native_exit_code": 0,
+  "elf_sha256": "8673670825460b3a50614702489656848fd18b461f1caaa937bdcd729b089f2d",
+  "gcc_clang_lds_plan": "PASS",
+  "asan_ubsan": "PASS",
+  "source_contracts": 45,
+  "compiler_warnings": 0,
+  "gameplay": "NOT_RUN",
+  "gpu_guest_shader": "NOT_DISPATCHED",
+  "game_test_ready": false,
+  "next_test": "scripts/gds-pr117-terminal-bypass-native.sh"
+}
