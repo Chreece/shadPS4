@@ -41,6 +41,7 @@ FILES = {
     "rasterizer": "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
     "rasterizer_h": "src/video_core/renderer_vulkan/vk_rasterizer.h",
     "pipeline": "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp",
+    "pipeline_h": "src/video_core/renderer_vulkan/vk_pipeline_cache.h",
     "coverage": "src/shader_recompiler/frontend/ordered_gds_capture_coverage.h",
     "packet": "src/shader_recompiler/frontend/ordered_gds_capture_packet.h",
     "tests": "tests/gcn_ordered_gds_complete_batch.cpp",
