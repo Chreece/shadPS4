@@ -21,6 +21,7 @@ namespace Shader::Gcn::OrderedGds {
 // named by the shader's declared allocation, including inactive lanes.
 inline constexpr u32 GcnCheckpointTag = 0x50434447u; // GDCP
 inline constexpr u32 GcnCheckpointFlags = 1u;
+inline constexpr u32 GcnCheckpointAbiVersion = 2u;
 inline constexpr u32 GcnWaveLanes = 64u;
 inline constexpr u64 MaxCheckpointBytes = 256ull * 1024 * 1024;
 
@@ -41,8 +42,14 @@ struct alignas(16) GpuGcnWaveCheckpoint {
     u32 lane_count{};
     u32 flags{};
     u32 reserved{};
+    // VCC and SCC are independent architectural wave state. Saving only
+    // SGPR/VGPR and EXEC is NOT enough to resume guest branch conditions.
+    u32 vcc_lo{};
+    u32 vcc_hi{};
+    u32 scc{};
+    u32 abi_version{};
 };
-static_assert(sizeof(GpuGcnWaveCheckpoint) == 64);
+static_assert(sizeof(GpuGcnWaveCheckpoint) == 80);
 static_assert(alignof(GpuGcnWaveCheckpoint) == 16);
 
 // SGPR payload: scalar_words DWORDs. VGPR payload: vector_registers * 64
@@ -129,11 +136,49 @@ inline void RequireCompleteGcnWaveCheckpoints(
             checkpoint.exec_lo != capture.exec_lo || checkpoint.exec_hi != capture.exec_hi ||
             checkpoint.token_lo != capture.token_lo ||
             checkpoint.token_hi != capture.token_hi ||
+            checkpoint.scc > 1 ||
+            checkpoint.abi_version != GcnCheckpointAbiVersion ||
             checkpoint.scalar_words != layout.scalar_words ||
             checkpoint.vector_registers != layout.vector_registers ||
             checkpoint.lane_count != GcnWaveLanes ||
             checkpoint.destination_vgpr != match->destination_vgpr) {
             throw std::invalid_argument("guest GCN wave checkpoint is stale or incomplete");
+        }
+    }
+}
+
+// After a genuine GPU capture and host-ordered resolution, verify that
+// every resume record still identifies the SAME checkpointed wave. Never
+// infer physical invocation order from the resume-packet array position.
+// This is a transport/identity guard, not execution of guest instructions.
+inline void RequireResolvedGcnResumeHandoff(
+    std::span<const GpuResumePacket> resumes,
+    std::span<const GpuCapturePacket> captures,
+    const VerifiedGuestCreationOrder& order, u32 expected_epoch) {
+    if (resumes.empty() || resumes.size() != captures.size() ||
+        resumes.size() != order.Size()) {
+        throw std::invalid_argument("GCN resume/capture wave count mismatch");
+    }
+    std::vector<bool> seen(captures.size(), false);
+    for (const auto& capture : captures) {
+        if (capture.logical_slot >= captures.size() ||
+            capture.tag != CapturePacketTag || capture.flags != CaptureFlags ||
+            capture.epoch != expected_epoch || seen[capture.logical_slot]) {
+            throw std::invalid_argument("invalid guest capture for resumption");
+        }
+        seen[capture.logical_slot] = true;
+        const auto& resume = resumes[capture.logical_slot];
+        const u64 guest_rank = (u64(resume.creation_hi) << 32) | resume.creation_lo;
+        if (resume.tag != ResumePacketTag || resume.epoch != expected_epoch ||
+            resume.flags != ResumeFlags || resume.logical_slot != capture.logical_slot ||
+            resume.site_pc != capture.site_pc ||
+            resume.counter_index != ((capture.encoded_control & 0xffu) >> 2u) ||
+            resume.token_lo != capture.token_lo ||
+            resume.token_hi != capture.token_hi ||
+            guest_rank != order.RankForSlot(capture.logical_slot) ||
+            resume.reserved0 || resume.reserved1 || resume.reserved2 ||
+            resume.reserved3) {
+            throw std::invalid_argument("resolved guest resume does not match captured wave");
         }
     }
 }
