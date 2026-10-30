@@ -87,6 +87,9 @@ enum class BufferType : u8 {
     // Dedicated GPU-written 64-byte live ordered-GDS wave capture packet.
     // Neither the guest's 64 KiB GDS RAM nor the host CIK packer counters.
     OrderedGdsCapture,
+    // Independent read-only, host-verified per-wave epoch/token transport.
+    // This carries no guest wave ordering or CIK counter seed.
+    OrderedGdsEpochAuth,
 };
 
 struct BufferResource {
