@@ -421,6 +421,21 @@ public:
         return persistent_lds_initialized_;
     }
 
+    // Only Rasterizer::BindBuffers may call this for a genuinely compiled
+    // ordered-GDS shader with a persistent shared-memory SSBO descriptor.
+    // A matching GPU packet from the same epoch is still independently
+    // required; calling this does not create guest capture state.
+    void MarkPersistentLdsBound() const {
+        ASSERT_MSG(persistent_lds_initialized_ && persistent_lds &&
+                   plan.lds_layout && authenticated_epoch_ != 0,
+                   "unauthenticated CIK LDS shader descriptor binding");
+        persistent_lds_bound_epoch_ = authenticated_epoch_;
+    }
+    [[nodiscard]] bool HasPersistentLdsBinding(u32 epoch) const noexcept {
+        return epoch != 0 && epoch == persistent_lds_bound_epoch_ &&
+               authenticated_epoch_ == epoch && persistent_lds_initialized_;
+    }
+
     // Source of authority is the host scheduler, not M0 or Vulkan arrival.
     // Upload once per epoch with UNIQUE, real per-wave continuation tokens.
     // The shader may copy these but still cannot assert a valid checkpoint
@@ -431,6 +446,7 @@ public:
         // staging or Vulkan copy can fail. Never rebind old tokens after an
         // unsuccessful epoch replacement (even if device RAM is unchanged).
         authenticated_epoch_ = 0;
+        persistent_lds_bound_epoch_ = 0;
         authority_.clear();
         using Shader::Gcn::OrderedGds::RequireGcnEpochAuth;
         auto checked = RequireGcnEpochAuth(plan.waves, epoch, tokens_by_slot);
@@ -502,6 +518,7 @@ private:
     std::vector<Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority_;
     u32 authenticated_epoch_{};
     bool persistent_lds_initialized_{};
+    mutable u32 persistent_lds_bound_epoch_{};
 };
 
 

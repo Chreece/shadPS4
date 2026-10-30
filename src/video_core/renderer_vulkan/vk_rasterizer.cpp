@@ -607,7 +607,9 @@ Rasterizer::ResolveOwnedCikComputeOrderedGdsEpoch(
         plan.lds_layout ? plan.lds_layout->lds_bytes : 0,
         lds_destination, 0, owned.resume_registers, 0,
         owned.resume_packets, 0, epoch, plan.waves,
-        verified_sites, seed, seed_origin, owned.CaptureAuthority());
+        verified_sites, seed, seed_origin, owned.CaptureAuthority(),
+        owned.HasPersistentLdsBinding(epoch) && owned.persistent_lds
+            ? &*owned.persistent_lds : nullptr);
 }
 
 std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
@@ -625,7 +627,8 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
     std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
     Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin,
-    std::span<const Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority) {
+    std::span<const Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority,
+    const VideoCore::Buffer* persistent_guest_lds) {
     using namespace Shader::Gcn::OrderedGds;
 
     // A real GPU checkpoint writer must have captured complete live guest
@@ -648,6 +651,19 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
         lds_layout, verified_shared_lds_bytes, guest_created_waves);
     if (!checked_lds && (lds_capture_offset || resume_lds_offset)) {
         throw std::invalid_argument("zero-LDS guest cannot provide LDS offsets");
+    }
+    if (persistent_guest_lds) {
+        // The first pass executes ALL original guest LDS loads/stores on a
+        // dedicated SSBO that outlives the workgroup and is reused by the
+        // post-DS shader. No quiescence snapshot or invented LDS header is
+        // needed: complete GPU dispatch completion is established by the
+        // subsequent packet + register readbacks.
+        if (!checked_lds ||
+            persistent_guest_lds->Handle() == VK_NULL_HANDLE ||
+            persistent_guest_lds->SizeBytes() !=
+                u64(checked_lds->workgroups) * checked_lds->lds_bytes) {
+            throw std::invalid_argument("GDS persistent LDS backing size invalid");
+        }
     }
 
     // All *active* device buffers must remain disjoint until the resumed
@@ -672,7 +688,14 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
             }
         }
     }
-    if (checked_lds &&
+    if (persistent_guest_lds) {
+        for (const auto handle : handles) {
+            if (handle == persistent_guest_lds->Handle()) {
+                throw std::invalid_argument("persistent LDS aliases GDS checkpoint buffers");
+            }
+        }
+    }
+    if (checked_lds && !persistent_guest_lds &&
         ((lds_capture_offset & 3u) || (resume_lds_offset & 3u) ||
          lds_capture_offset > device_lds.SizeBytes() ||
          checked_lds->total_bytes > device_lds.SizeBytes() - lds_capture_offset ||
@@ -711,7 +734,7 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     // A workgroup with actual shared LDS requires a compiler-proven
     // quiescent barrier. Zero-LDS workgroups have no state to transfer.
     std::vector<std::byte> lds_state;
-    if (checked_lds) {
+    if (checked_lds && !persistent_guest_lds) {
         lds_state = OrderedGdsLdsStateTransfer::Download(
             runtime, scheduler, device_lds, lds_capture_offset, *checked_lds, epoch);
     }
@@ -739,12 +762,15 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
         runtime, scheduler, device_resume_checkpoints, resume_checkpoint_offset,
         std::span<const std::byte>{post_ds_state.data(), post_ds_state.size()},
         checkpoint_layout);
-    if (checked_lds) {
+    if (checked_lds && !persistent_guest_lds) {
         OrderedGdsLdsStateTransfer::Upload(
             runtime, scheduler, device_resume_lds, resume_lds_offset,
             std::span<const std::byte>{lds_state.data(), lds_state.size()},
             *checked_lds, epoch);
     }
+    // When guest LDS was lowered to persistent storage, its authoritative
+    // original GPU bytes remain in the very same device buffer; never
+    // overwrite them with an unverified CPU snapshot or reset on resume.
     UploadOrderedGdsPackets(device_resume, resume_offset,
                             std::span<const GpuResumePacket>{resume.data(), resume.size()});
     return host.CounterSnapshot();
@@ -1235,6 +1261,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                     buffer_infos.emplace_back(lds_buffer.Handle(), 0, bytes);
                     needs_barrier |= runtime.IsBufferAccessed(&lds_buffer, 0, bytes, true);
                     bound_buffers.emplace_back(&lds_buffer, 0, static_cast<u32>(bytes), true);
+                    owner.MarkPersistentLdsBound();
                 } else {
                     auto& lds_buffer = buffer_cache.GetStreamBuffer();
                     const auto& cs_program = liverpool->GetCsRegs();

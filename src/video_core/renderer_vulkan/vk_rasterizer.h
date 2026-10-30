@@ -185,7 +185,11 @@ public:
         std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
         std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
         Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin,
-        std::span<const Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority);
+        std::span<const Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority,
+        // Non-null only when the compiler lowered ALL guest LDS accesses
+        // into the same bounded GPU SSBO and Rasterizer observed its live
+        // descriptor binding for this exact authenticated epoch.
+        const VideoCore::Buffer* persistent_guest_lds = nullptr);
 
     // Read the true GPU-visible 64 KiB GDS contents after prior writes,
     // then apply only specifically verified physical dword counter changes.

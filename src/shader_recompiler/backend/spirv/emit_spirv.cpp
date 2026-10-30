@@ -841,15 +841,20 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank,
             ctx.U1[1], ctx.OpLogicalAnd(ctx.U1[1], valid0, valid1),
             ctx.OpLogicalAnd(ctx.U1[1], valid2, valid3));
         if (packet_stamp || checkpoint_stamp) {
-            // Full wave64 is necessary for complete VGPR lane images.
-            // Shared LDS requires a separately proven quiescent checkpoint;
-            // until then no capture can claim validity for a nonzero-LDS
-            // shader, even if its authority token is otherwise valid.
+            // Original guest LDS must either be absent or be lowered in
+            // its entirety into the separately bound, persistent per-group
+            // GPU SSBO. A transient Vulkan Workgroup allocation can NOT
+            // survive the first-pass return and is never stamped valid.
             const auto& local = ctx.runtime_info.hw.cs.workgroup_size;
             const u64 threads = u64(local[0]) * local[1] * local[2];
-            const bool complete_wave64_zero_lds =
+            const bool zero_guest_lds =
+                ctx.runtime_info.hw.cs.shared_memory_size == 0;
+            const bool persistent_guest_lds =
+                ctx.info.ordered_gds_persistent_lds &&
+                ctx.runtime_info.hw.cs.shared_memory_size != 0;
+            const bool complete_wave64_lds_ready =
                 ctx.ordered_gds_capture_pass &&
-                ctx.runtime_info.hw.cs.shared_memory_size == 0 &&
+                (zero_guest_lds || persistent_guest_lds) &&
                 ctx.info.shared_memory_scratch_size == 0 &&
                 threads >= Gds::GcnWaveLanes && threads <= 1024u &&
                 threads % Gds::GcnWaveLanes == 0;
@@ -857,9 +862,10 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank,
                 packet_stamp
                     ? (index == 0u ? Gds::CapturePacketTag : Gds::CaptureFlags)
                     : (index == 0u ? Gds::GcnCheckpointTag : Gds::GcnCheckpointFlags);
-            // Never issue a nonzero tag/flags for unproven LDS or partial
-            // guest wave state. Final ordered-count execution remains gated.
-            real_value = complete_wave64_zero_lds
+            // No valid stamp for unpreserved LDS or partial guest waves.
+            // Actual counter resolution and guest shader re-entry remain
+            // separate, fail-closed operations.
+            real_value = complete_wave64_lds_ready
                              ? ctx.OpSelect(ctx.U32[1], valid, ctx.ConstU32(valid_stamp),
                                             ctx.u32_zero_value)
                              : ctx.u32_zero_value;

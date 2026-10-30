@@ -309,6 +309,11 @@ def main():
             "lds_buffer.Handle() != buffer_cache.GetGdsBuffer()->Handle()" in rasterizer and
             "bound_buffers.emplace_back(&lds_buffer, 0, static_cast<u32>(bytes), true)" in rasterizer and
             "IsOrderedGdsPersistentLdsAccess(" in local_barriers and
+            "owner.MarkPersistentLdsBound();" in rasterizer and
+            "owned.HasPersistentLdsBinding(epoch)" in rasterizer and
+            "persistent_guest_lds->SizeBytes()" in rasterizer and
+            "if (checked_lds && !persistent_guest_lds)" in rasterizer and
+            "MarkPersistentLdsBound() const" in transfer and
             "IsBufferInstruction(inst)" in local_barriers and
             "IsBufferStore(inst)" in local_barriers and
             "ctx.info.ordered_gds_persistent_lds" in gpu_barriers and
@@ -326,7 +331,10 @@ def main():
             "Gds::GcnCheckpointTag" in stamp_body and
             "Gds::GcnCheckpointFlags" in stamp_body and
             "ctx.ordered_gds_capture_pass" in stamp_body and
-            "ctx.runtime_info.hw.cs.shared_memory_size == 0" in stamp_body and
+            "const bool zero_guest_lds =" in stamp_body and
+            "const bool persistent_guest_lds =" in stamp_body and
+            "ctx.info.ordered_gds_persistent_lds" in stamp_body and
+            "(zero_guest_lds || persistent_guest_lds)" in stamp_body and
             "ctx.info.shared_memory_scratch_size == 0" in stamp_body and
             "threads % Gds::GcnWaveLanes == 0" in stamp_body and
             "ctx.OpULessThan(ctx.U1[1], logical_slot, wave_slots)" in stamp_body and
