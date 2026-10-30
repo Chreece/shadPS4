@@ -421,7 +421,7 @@ def main():
             "NORMAL_GDS_STILL_BINDS_WITHOUT_ORDERED_ALIAS")
     # The unverified origin is an enum declaration, not necessarily a
     # fully-qualified expression. Check the real fail-closed seed guard.
-    seed_guard = function(packer, "MakeExplicitOrderedCounterSeed(")
+    seed_guard = function(packer, "[[nodiscard]] inline std::map<CounterKey, u32> MakeExplicitOrderedCounterSeed(")
     require("CikOrderedCountIncrement" in packer and
             "std::popcount" in packer and
             re.search(r"enum class OrderedCounterSeedOrigin\s*\{[^}]*\bUnverifiedRawGdsMemory\b",
