@@ -248,6 +248,29 @@ def main():
             "owned.CaptureAuthority()" in rasterizer and
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
             "TRUSTED_DISPATCH_EPOCH_TOKEN_GPU_TRANSPORT_STILL_FAIL_CLOSED")
+    # A separate FIRST-PASS shader compiler may stop precisely at a decoded
+    # guest ordered-count site, AFTER emitting original live checkpoint stores
+    # and BEFORE any downstream guest side effect or return-register use.
+    # The ordinary normal-gameplay compiler remains strictly fail-closed.
+    capture_cut = function(backend_cpp, "Id EmitOrderedGdsCount(")
+    require("EmitSPIRVOrderedGdsCapturePass(" in backend_cpp and
+            "EmitSPIRVWithCaptureMode(" in backend_cpp and
+            "ctx.ordered_gds_capture_pass = capture_only" in backend_cpp and
+            "return EmitSPIRVWithCaptureMode(profile, runtime_info, program, binding, false)" in backend_cpp and
+            "if (ctx.ordered_gds_capture_pass)" in capture_cut and
+            "ctx.OpUndef(ctx.U32[1])" in capture_cut and
+            "ctx.OpReturn();" in capture_cut and
+            "ctx.AddLabel();" in capture_cut and
+            "ctx.has_ordered_gds_checkpoint_binding" in capture_cut and
+            "ctx.has_ordered_gds_capture_binding" in capture_cut and
+            "ctx.has_ordered_gds_auth_binding" in capture_cut and
+            "site.encoded_control == encoded_control" in capture_cut and
+            "UNREACHABLE_MSG(" in capture_cut and
+            not any(bad in capture_cut for bad in
+                    ("OpAtomicIAdd", "SharedAtomicIAdd", "OpAtomicExchange",
+                     "ctx.OpStore(", "return ctx.ConstU32(0)")) and
+            "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
+            "EXPLICIT_GUEST_CAPTURE_ONLY_SHADER_CUT_NORMAL_EXECUTION_GATED")
     require("enum class CheckpointRegisterBank : u32" in word_layout and
             "case 0: return 5;" in word_layout and
             "case 1: return 16;" in word_layout and
