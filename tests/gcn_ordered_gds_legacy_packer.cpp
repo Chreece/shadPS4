@@ -105,10 +105,10 @@ int main() {
     assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 7);}));
     const auto second_seed = ledger.BeginEpoch(context_id, 8);
     assert(second_seed[0].value == 17 && second_seed[1].value == 1234);
-    const std::map<CounterKey,u32> resolved{{{0x20,0},21},{{0x20,1},1234}};
-    ledger.CommitEpoch(context_id, 8, resolved);
-    assert(ledger.LastCommittedEpoch() == 8 && ledger.Counters() == resolved);
-    assert(Reject([&] {ledger.CommitEpoch(context_id, 8, resolved);}));
+    const std::map<CounterKey,u32> ledger_resolved{{{0x20,0},21},{{0x20,1},1234}};
+    ledger.CommitEpoch(context_id, 8, ledger_resolved);
+    assert(ledger.LastCommittedEpoch() == 8 && ledger.Counters() == ledger_resolved);
+    assert(Reject([&] {ledger.CommitEpoch(context_id, 8, ledger_resolved);}));
     for (u32 epoch = 9; epoch <= 107; ++epoch) {
         const auto before = ledger.BeginEpoch(context_id, epoch);
         assert(before[0].value == epoch - 8 + 20);
