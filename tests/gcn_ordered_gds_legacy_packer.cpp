@@ -101,8 +101,18 @@ int main() {
     assert(ledger.Counters() == counters && ledger.LastCommittedEpoch() == 0);
     ledger.CancelEpoch(context_id ^ 1, 7);
     assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 8);}));
+    // Reject invalid keys before staging; discard a valid but unresumed
+    // resolution without ever publishing its counter updates.
+    assert(Reject([&] {ledger.StageResolvedEpoch(context_id, 7, missing_counter);}));
+    assert(Reject([&] {ledger.StageResolvedEpoch(context_id, 7, wrong_counter);}));
+    const std::map<CounterKey, u32> abandoned{
+        {{0x20, 0}, 19}, {{0x20, 1}, 1234},
+    };
+    ledger.StageResolvedEpoch(context_id, 7, abandoned);
+    assert(ledger.HasStagedResolution() && ledger.Counters() == counters);
+    assert(Reject([&] {ledger.CommitEpoch(context_id, 7, counters);}));
     ledger.CancelEpoch(context_id, 7);
-    assert(!ledger.HasStagedResolution());
+    assert(ledger.Counters() == counters && !ledger.HasStagedResolution());
     assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 7);}));
     const auto second_seed = ledger.BeginEpoch(context_id, 8);
     assert(second_seed[0].value == 17 && second_seed[1].value == 1234);

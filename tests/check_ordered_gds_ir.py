@@ -311,7 +311,7 @@ def main():
             "void CommitEpoch(" in packer and
             "void CancelEpoch(" in packer and
             "latest_attempted_epoch_ = epoch" in packer and
-            "counters_.swap(prepared)" in packer and
+            "counters_.swap(*staged_resolution_)" in packer and
             "ResolveOwnedCikComputeOrderedGdsFromLedger(" in rasterizer and
             "cik_ordered_packer_ledger_.BeginEpoch(" in rasterizer and
             "cik_ordered_packer_ledger_.StageResolvedEpoch(" in rasterizer and
