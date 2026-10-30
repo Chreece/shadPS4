@@ -956,6 +956,8 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
     }
 
     if (info.uses_ordered_gds) {
+        ASSERT_MSG(info.buffers.size() < NUM_BUFFERS,
+                   "ordered GDS checkpoint descriptor exceeds shader buffer limit");
         // The live guest checkpoint is its own GPU storage buffer. It must
         // not be discovered from a guest SHARP or silently share raw GDS RAM.
         // Keep this descriptor in the ordinary binding-count pipeline so a
