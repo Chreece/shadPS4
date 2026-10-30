@@ -60,6 +60,23 @@ grep -Fq 'GCN_VCC_SCC_AND_RESUME_WAVE_IDENTITY_VERIFIED' "${LOG}/source-contract
 grep -Fq 'PRODUCTION_GPU_REGISTER_STATE_RESUME_UPLOAD_GUARDED' "${LOG}/source-contracts.log"
 grep -Fq 'ORDERED_GDS_TYPED_IR_CONTRACT=PASS' "${LOG}/source-contracts.log"
 
+STAGE="EXTRACTED_PRODUCTION_FRONTEND_GCC_CLANG"
+for compiler in g++ clang++-17; do
+    case "${compiler}" in
+        g++) name=gcc ;;
+        clang++-17) name=clang ;;
+    esac
+    if ! (cd "${SRC}" &&
+          python3 tests/check_ordered_gds_frontend.py --compiler "${compiler}") \
+        > "${LOG}/frontend-${name}.log" 2>&1; then
+        tail -100 "${LOG}/frontend-${name}.log"
+        exit 6
+    fi
+    grep -Fq 'GDS_ORDERED_FRONTEND_EXTRACTED=PASS' \
+        "${LOG}/frontend-${name}.log"
+    grep -Fq 'invalid_vdst_rejected=2' "${LOG}/frontend-${name}.log"
+done
+
 STAGE="GCC_AND_CLANG_SANITIZERS"
 for compiler in g++ clang++-17; do
     case "${compiler}" in
