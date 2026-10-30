@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <mutex>
 #include <span>
 #include <type_traits>
@@ -13,6 +14,7 @@
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
+#include "shader_recompiler/frontend/ordered_gds_word_layout.h"
 #include "shader_recompiler/frontend/translate/translate.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/program.h"
@@ -722,12 +724,54 @@ void EmitGetM0(EmitContext& ctx) {
     UNREACHABLE_MSG("Unreachable instruction");
 }
 
-void EmitOrderedGdsCheckpointRegister(EmitContext&, u32 site_pc, u32 bank,
-                                      u32 index, Id /*guest_value*/) {
-    UNREACHABLE_MSG(
-        "Live ordered GDS capture has no GPU checkpoint writer "
-        "(site={:#x}, bank={}, register={})",
-        site_pc, bank, index);
+void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank,
+                                      u32 index, Id guest_value, Id logical_slot, Id lane) {
+    // Actual live GCN register values, forwarded through SSA as an IR side
+    // effect. The guest shader must still checkpoint the COMPLETE header,
+    // LDS and PC and be resumed by a proven dispatcher before we may remove
+    // EmitSPIRV's ordered-GDS gate.
+    namespace Gds = Shader::Gcn::OrderedGds;
+    ASSERT_MSG(ctx.hw_stage == HwStage::Compute && ctx.has_ordered_gds_checkpoint_binding,
+               "GCN checkpoint register store requires compute capture SSBO");
+    ASSERT_MSG(std::ranges::any_of(ctx.info.ordered_gds_sites,
+                                  [site_pc](const auto& site) { return site.pc == site_pc; }),
+               "GCN checkpoint instruction site must come from decoded guest ISA");
+    const u32 vgprs = ctx.runtime_info.props.num_allocated_vgprs;
+    const auto relative = Gds::CheckpointRelativeDword(vgprs, bank, index, 0);
+    ASSERT_MSG(relative.has_value(), "Invalid GCN checkpoint register bank or index");
+    const u32 stride = Gds::CheckpointStrideDwords(vgprs);
+    const auto& buffer = ctx.buffers.at(ctx.ordered_gds_checkpoint_index);
+    ASSERT_MSG(buffer.buffer_type == BufferType::OrderedGdsCheckpoint,
+               "GCN register checkpoint cannot alias ordinary GDS or guest memory");
+    const auto [storage, pointer_type] = buffer.Alias(EmitContext::PointerType::U32);
+    ASSERT_MSG(Sirit::ValidId(storage) && Sirit::ValidId(guest_value),
+               "Missing SPIR-V checkpoint SSBO or register value");
+
+    const Id wave_offset = ctx.OpIMul(ctx.U32[1], logical_slot, ctx.ConstU32(stride));
+    Id dword_offset = ctx.OpIAdd(ctx.U32[1], wave_offset, ctx.ConstU32(*relative));
+    if (bank == u32(Gds::CheckpointRegisterBank::Vector)) {
+        // Every invocation stores only its own lane of this VGPR. Wave64
+        // logical lanes are not inferred from hardware subgroup scheduling.
+        dword_offset = ctx.OpIAdd(ctx.U32[1], dword_offset, lane);
+    }
+    const Id pointer{ctx.OpAccessChain(pointer_type, storage, ctx.u32_zero_value, dword_offset)};
+
+    if (bank == u32(Gds::CheckpointRegisterBank::Vector)) {
+        ctx.OpStore(pointer, guest_value);
+        return;
+    }
+    // SGPR and architectural register values are wave-wide. Exactly the
+    // first *logical GCN lane* emits them; all other invocations branch past.
+    // This avoids a data race between 64 GPU invocations writing one dword.
+    const Id first_lane = ctx.OpIEqual(ctx.U1[1], lane, ctx.u32_zero_value);
+    const Id write_label = ctx.OpLabel();
+    const Id merge_label = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge_label, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(first_lane, write_label, merge_label);
+    ctx.AddLabel(write_label);
+    ctx.OpStore(pointer, guest_value);
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(merge_label);
 }
 
 Id EmitOrderedGdsCount(EmitContext&, Id, Id, Id /*guest_exec_mask*/,
