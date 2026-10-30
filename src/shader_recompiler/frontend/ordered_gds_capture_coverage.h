@@ -10,6 +10,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
+
 namespace Shader::Gcn::OrderedGds {
 
 // Validate actual *post-SSA/DCE IR* live-register checkpoint instrumentation.
@@ -22,6 +24,7 @@ public:
     static constexpr u32 ScalarCount = 104;
     static constexpr u32 SpecialCount = 6;
     static constexpr u32 SiteMetadataCount = 11;
+    static constexpr u32 PacketWordCount = GpuCapturePacketDwords;
 
     struct SiteSummary {
         u32 site_pc{};
@@ -45,6 +48,7 @@ public:
     // bank0=SGPR S0..S103, bank1=allocated VGPR V0..V(N-1),
     // bank2=M0,VCCLO,VCCHI,SCC,EXECLO,EXECHI (indexes 0..5).
     // bank3=11 decoded-site/physical-slot/incomplete-auth header fields.
+    // bank4=16 actual GPU capture packet words, including zeroed auth.
     void Record(u32 pc, u32 bank, u32 index) {
         auto found = sites_.find(pc);
         if (found == sites_.end()) {
@@ -64,6 +68,9 @@ public:
             break;
         case 3:
             if (index < SiteMetadataCount) count = &c.site_metadata[index];
+            break;
+        case 4:
+            if (index < PacketWordCount) count = &c.packet[index];
             break;
         default:
             break;
@@ -103,9 +110,16 @@ public:
                         "incomplete decoded-site checkpoint header after IR passes");
                 }
             }
+            for (const u32 count : c.packet) {
+                if (count != copies) {
+                    throw std::invalid_argument(
+                        "incomplete live GPU GDS capture packet after IR passes");
+                }
+            }
             const std::uint64_t total =
                 std::uint64_t(copies) *
-                (ScalarCount + vgpr_count_ + SpecialCount + SiteMetadataCount);
+                (ScalarCount + vgpr_count_ + SpecialCount + SiteMetadataCount +
+                 PacketWordCount);
             if (total > std::numeric_limits<u32>::max()) {
                 throw std::invalid_argument("GCN checkpoint record count overflow");
             }
@@ -121,6 +135,7 @@ private:
         std::vector<u32> vector;
         std::array<u32, SpecialCount> special{};
         std::array<u32, SiteMetadataCount> site_metadata{};
+        std::array<u32, PacketWordCount> packet{};
     };
     std::map<u32, Counters> sites_;
     u32 vgpr_count_{};
