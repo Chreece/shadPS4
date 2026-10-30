@@ -1,11 +1,17 @@
+set -Eeuo pipefail
 bash <<'FPS_MRU'
 set -Eeuo pipefail
 ROOT="$HOME/projects/shadps4"
 mkdir -p "$ROOT/logs" "$ROOT/scripts"
 exec 9>"$ROOT/logs/.got-pr95-scalar-bounds-build.lock"
 exec 8>"$ROOT/logs/.got-indexed-revalidation.lock"
-exec 7>"$ROOT/logs/.got-gpu-alias-correctness.lock"
-for fd in 9 8 7; do flock -n "$fd" || { echo "STOP=BUILD_LOCK_BUSY:$fd"; exit 1; }; done
+exec 7>"$ROOT/logs/.got-finite-raw-image.lock"
+exec 6>"$ROOT/logs/.got-uniform-samples.lock"
+exec 5>"$ROOT/logs/.got-indirect-materials.lock"
+exec 4>"$ROOT/logs/.got-gbuffer-build.lock"
+exec 3>"$ROOT/logs/.got-srt-invariant-repair.lock"
+exec 11>"$ROOT/logs/.got-gpu-alias-correctness.lock"
+for fd in 9 8 7 6 5 4 3 11; do flock -n "$fd" || { echo "STOP=BUILD_LOCK_BUSY:$fd"; exit 1; }; done
 python3 -u <<'PY'
 from pathlib import Path
 import os,subprocess as sp,hashlib,shutil,json,datetime as dt,tarfile,fcntl,time,signal,difflib,sys
