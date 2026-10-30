@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <limits>
 #include <utility>
@@ -11,6 +12,7 @@
 #include <vector>
 
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
+#include "shader_recompiler/frontend/ordered_gds_checkpoint.h"
 #include "shader_recompiler/frontend/ordered_gds_storage_layout.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -37,6 +39,59 @@ public:
             throw std::invalid_argument("ordered GDS packet count exceeds bounded limit");
         }
         return static_cast<u64>(packet_count) * sizeof(Capture);
+    }
+
+    // Read checkpoint register files from actual GPU memory, with the same
+    // finite timeline synchronization as the 64-byte capture packets.
+    // Requires an independently validated layout and an authoritative GPU
+    // writer: a host-synthesized zeroed buffer is NOT a guest checkpoint.
+    [[nodiscard]] static std::vector<std::byte> DownloadCheckpoint(
+        Runtime& runtime, Scheduler& scheduler, const VideoCore::Buffer& source,
+        u64 source_offset, const Shader::Gcn::OrderedGds::GcnCheckpointLayout& layout) {
+        using Shader::Gcn::OrderedGds::GcnCheckpointLayout;
+        using Shader::Gcn::OrderedGds::GpuGcnWaveCheckpoint;
+        const auto verified = GcnCheckpointLayout::Require(
+            layout.waves, layout.scalar_words, layout.vector_registers, 0);
+        if (verified.total_bytes != layout.total_bytes ||
+            verified.stride_bytes != layout.stride_bytes) {
+            throw std::invalid_argument("inconsistent guest checkpoint buffer layout");
+        }
+        const u64 bytes = verified.total_bytes;
+        if (source_offset > source.SizeBytes() ||
+            bytes > source.SizeBytes() - source_offset) {
+            throw std::invalid_argument("guest checkpoint readback range invalid");
+        }
+        const auto staging = runtime.GetStagingPool().Request(
+            bytes, VideoCore::MemoryType::HostCached, alignof(GpuGcnWaveCheckpoint));
+        if (!staging.buffer || !staging.mapped || staging.size < bytes) {
+            throw std::runtime_error("guest checkpoint GPU readback unavailable");
+        }
+        const vk::BufferCopy copy{
+            .srcOffset = source_offset,
+            .dstOffset = staging.offset,
+            .size = bytes,
+        };
+        runtime.CopyBuffer(&source, staging.buffer, std::span{&copy, 1});
+        const vk::BufferMemoryBarrier2 to_host{
+            .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eHost,
+            .dstAccessMask = vk::AccessFlagBits2::eHostRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = staging.buffer->Handle(),
+            .offset = staging.offset,
+            .size = bytes,
+        };
+        scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &to_host,
+        });
+        scheduler.Finish();
+        staging.Invalidate();
+        std::vector<std::byte> checkpoint(bytes);
+        std::memcpy(checkpoint.data(), staging.mapped, bytes);
+        return checkpoint;
     }
 
     // Lifetime is owned by the dispatch orchestrator, until both transfers
