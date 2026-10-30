@@ -363,7 +363,16 @@ void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
     const u32 guest_site_pc = pc - inst.length;
     auto& sites = info.ordered_gds_site_pcs;
     if (std::find(sites.begin(), sites.end(), guest_site_pc) == sites.end()) {
+        // Record the destination from the actual decoded GCN instruction,
+        // not an unverified GPU packet or a title-specific shader offset.
+        ASSERT_MSG(inst.dst[0].field == OperandField::VectorGPR &&
+                   inst.dst[0].code < 256, "invalid guest ordered-count VDST");
         sites.push_back(guest_site_pc);
+        info.ordered_gds_sites.push_back({
+            .pc = guest_site_pc,
+            .destination_vgpr = inst.dst[0].code,
+            .encoded_control = offset0 | (offset1 << 8u),
+        });
     }
     const IR::U32 site_pc = ir.Imm32(guest_site_pc);
     // Preserve all 64 guest EXEC bits for the legacy CIK count_bits(EXEC)
