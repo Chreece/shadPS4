@@ -94,6 +94,74 @@ public:
         return checkpoint;
     }
 
+    // Upload the ORIGINAL validated GPU checkpoint bytes to an independent
+    // device buffer for a future actual GCN continuation shader. No host code
+    // writes an inferred VGPR result into this blob: the shader must consume
+    // GpuResumePacket.previous and apply the guest-ISA return semantics.
+    // The source snapshot and resume destination must never alias.
+    static void UploadCheckpoint(
+        Runtime& runtime, Scheduler& scheduler, VideoCore::Buffer& destination,
+        u64 destination_offset, std::span<const std::byte> state_bytes,
+        const Shader::Gcn::OrderedGds::GcnCheckpointLayout& layout) {
+        using Shader::Gcn::OrderedGds::GcnCheckpointLayout;
+        using Shader::Gcn::OrderedGds::GpuGcnWaveCheckpoint;
+        const auto verified = GcnCheckpointLayout::Require(
+            layout.waves, layout.scalar_words, layout.vector_registers, 0);
+        if (verified.stride_bytes != layout.stride_bytes ||
+            verified.total_bytes != layout.total_bytes ||
+            state_bytes.size() != layout.total_bytes ||
+            (destination_offset & 3u) != 0 ||
+            destination_offset > destination.SizeBytes() ||
+            verified.total_bytes > destination.SizeBytes() - destination_offset) {
+            throw std::invalid_argument("guest checkpoint resume upload range invalid");
+        }
+        const u64 bytes = verified.total_bytes;
+        const auto staging = runtime.GetStagingPool().Request(
+            bytes, VideoCore::MemoryType::HostUncached, alignof(GpuGcnWaveCheckpoint));
+        if (!staging.buffer || !staging.mapped || staging.size < bytes) {
+            throw std::runtime_error("guest register-state resume upload unavailable");
+        }
+        std::memcpy(staging.mapped, state_bytes.data(), bytes);
+        staging.Flush();
+        scheduler.EndRendering();
+        const vk::BufferMemoryBarrier2 host_to_copy{
+            .srcStageMask = vk::PipelineStageFlagBits2::eHost,
+            .srcAccessMask = vk::AccessFlagBits2::eHostWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = staging.buffer->Handle(),
+            .offset = staging.offset,
+            .size = bytes,
+        };
+        scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &host_to_copy,
+        });
+        const vk::BufferCopy copy{
+            .srcOffset = staging.offset,
+            .dstOffset = destination_offset,
+            .size = bytes,
+        };
+        runtime.CopyBuffer(staging.buffer, &destination, std::span{&copy, 1});
+        const vk::BufferMemoryBarrier2 copy_to_compute{
+            .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = destination.Handle(),
+            .offset = destination_offset,
+            .size = bytes,
+        };
+        scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &copy_to_compute,
+        });
+    }
+
     // Lifetime is owned by the dispatch orchestrator, until both transfers
     // and the resumed compute pass are complete. No resources are created
     // unless the caller explicitly constructs a pair.
