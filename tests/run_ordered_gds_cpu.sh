@@ -55,6 +55,9 @@ FLAGS=(-std=c++23 -Wall -Wextra -Werror -pedantic -O2 -pthread -Isrc "-I${FMT_IN
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_epoch_auth.cpp -o "$TMP/epoch-auth"
     "$TMP/epoch-auth"
 
+    "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_resume_state.cpp -o "$TMP/verified-post-ds"
+    "$TMP/verified-post-ds"
+
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_cik_m0_rank.cpp -o "$TMP/cik-m0-rank"
     "$TMP/cik-m0-rank"
 
@@ -107,6 +110,8 @@ if [[ "${RUN_SANITIZERS:-0}" == "1" ]]; then
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-gpu-packets"
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_epoch_auth.cpp -o "$TMP/san-epoch-auth"
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-epoch-auth"
+        "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_resume_state.cpp -o "$TMP/san-verified-post-ds"
+        UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-verified-post-ds"
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_cik_m0_rank.cpp -o "$TMP/san-cik-m0-rank"
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-cik-m0-rank"
 
