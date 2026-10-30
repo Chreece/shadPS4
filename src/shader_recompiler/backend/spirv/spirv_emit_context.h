@@ -361,6 +361,8 @@ public:
     bool has_ordered_gds_checkpoint_binding{};
     size_t ordered_gds_capture_index{};
     bool has_ordered_gds_capture_binding{};
+    size_t ordered_gds_auth_index{};
+    bool has_ordered_gds_auth_binding{};
     size_t bda_pagetable_index{};
     size_t fault_buffer_index{};
     Id physical_pointer_type_u32;
