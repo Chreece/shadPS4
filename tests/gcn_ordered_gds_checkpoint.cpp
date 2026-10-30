@@ -53,6 +53,10 @@ int main() {
         header.scalar_words = layout.scalar_words;
         header.vector_registers = layout.vector_registers;
         header.lane_count = GcnWaveLanes;
+        header.vcc_lo = 0x13579bdfu ^ u32(i);
+        header.vcc_hi = 0x2468ace0u ^ u32(i);
+        header.scc = u32(i & 1u);
+        header.abi_version = GcnCheckpointAbiVersion;
         std::memcpy(storage.data() + header.logical_slot * layout.stride_bytes,
                     &header, sizeof(header));
     }
@@ -103,6 +107,8 @@ int main() {
     bad_header([](auto& h) { h.lane_count = 32; });
     bad_header([](auto& h) { h.flags = 0; });
     bad_header([](auto& h) { h.reserved = 1; });
+    bad_header([](auto& h) { h.scc = 2; });
+    bad_header([](auto& h) { h.abi_version = 0; });
     assert(Reject([&] { RequireCompleteGcnWaveCheckpoints(
         std::span<const std::byte>{storage}.subspan(1), captures, layout, Epoch, sites_metadata); }));
     assert(Reject([&] { RequireCompleteGcnWaveCheckpoints(storage, captures, layout, Epoch + 1, sites_metadata); }));
@@ -113,8 +119,51 @@ int main() {
     assert(Reject([&] { (void)GcnCheckpointLayout::Require(8193,84,16,0); }));
     assert(Reject([&] { (void)GcnCheckpointLayout::Require(3,84,16,1024); }));
     assert(Reject([&] { (void)GcnCheckpointLayout::Require(8192,128,256,0); }));
+
+    // Once the host resolves the real guest-ordered counter, its resume
+    // packets must still agree with every captured wave, not just the
+    // logical-slot array length or a synthetic Vulkan execution sequence.
+    constexpr std::array<u64,3> ranks_by_slot{1, 2, 0};
+    const auto guest_order = VerifiedGuestCreationOrder::FromScheduler(ranks_by_slot);
+    assert(guest_order);
+    std::array<GpuResumePacket,3> resumes{};
+    for (const auto& capture : captures) {
+        auto& out = resumes[capture.logical_slot];
+        out.tag = ResumePacketTag;
+        out.epoch = Epoch;
+        out.flags = ResumeFlags;
+        out.logical_slot = capture.logical_slot;
+        out.site_pc = capture.site_pc;
+        out.counter_index = (capture.encoded_control & 0xffu) >> 2u;
+        out.token_lo = capture.token_lo;
+        out.token_hi = capture.token_hi;
+        out.creation_lo = u32(guest_order->RankForSlot(capture.logical_slot));
+    }
+    RequireResolvedGcnResumeHandoff(resumes, captures, *guest_order, Epoch);
+    const auto reject_resume = [&](auto&& mutate) {
+        auto bad = resumes;
+        mutate(bad);
+        assert(Reject([&] { RequireResolvedGcnResumeHandoff(
+            bad, captures, *guest_order, Epoch); }));
+    };
+    reject_resume([](auto& r) { r[0].tag = 0; });
+    reject_resume([](auto& r) { r[0].flags = 0; });
+    reject_resume([](auto& r) { r[0].epoch++; });
+    reject_resume([](auto& r) { r[0].site_pc ^= 8u; });
+    reject_resume([](auto& r) { r[0].token_lo++; });
+    reject_resume([](auto& r) { r[0].token_hi++; });
+    reject_resume([](auto& r) { r[0].counter_index++; });
+    reject_resume([](auto& r) { r[0].logical_slot = 1; });
+    reject_resume([](auto& r) { r[0].creation_lo++; });
+    reject_resume([](auto& r) { r[0].creation_hi = 1; });
+    reject_resume([](auto& r) { r[0].reserved2 = 1; });
+    assert(Reject([&] { RequireResolvedGcnResumeHandoff(
+        std::span<const GpuResumePacket>{resumes}.subspan(1), captures,
+        *guest_order, Epoch); }));
     std::cout << "ORDERED_GDS_CHECKPOINT_CONTRACT=PASS "
                  "sgpr_vgpr_layout=PASS epoch_site_m0_exec_token=PASS "
                  "shader_next_pc=PASS no_lds_or_unbounded_alloc=PASS "
-                 "duplicate_missing_stale_rejected=PASS GPU_GUEST_STATE_NOT_WRITTEN\n";
+                 "duplicate_missing_stale_rejected=PASS "
+                 "vcc_scc_checkpoint=PASS resume_wave_identity=PASS "
+                 "GPU_GUEST_STATE_NOT_WRITTEN\n";
 }
