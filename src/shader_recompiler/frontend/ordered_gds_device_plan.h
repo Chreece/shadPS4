@@ -37,6 +37,17 @@ struct GcnOrderedGdsDevicePlan {
     u64 persistent_lds_bytes{};
     u64 combined_device_bytes{};
 
+    // Must match the existing SharedMemoryToStoragePass calculation:
+    // flat WorkgroupIndex * per-workgroup guest LDS bytes. This is a GPU
+    // buffer offset, not a CIK wave rank, and never includes a fake header.
+    [[nodiscard]] u64 PersistentLdsOffset(u32 group_index) const {
+        if (!lds_layout || group_index >= workgroups ||
+            persistent_lds_bytes != u64(workgroups) * lds_layout->lds_bytes) {
+            throw std::invalid_argument("invalid GDS persistent LDS workgroup slot");
+        }
+        return u64(group_index) * lds_layout->lds_bytes;
+    }
+
     [[nodiscard]] static GcnOrderedGdsDevicePlan Require(
         DispatchExtent groups, DispatchExtent local_threads,
         u32 allocated_vgprs, u32 guest_shared_lds_bytes) {

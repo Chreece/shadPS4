@@ -11,6 +11,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 FILES = {
     "info": "src/shader_recompiler/info.h",
+    "shared_to_storage": "src/shader_recompiler/ir/passes/shared_memory_to_storage_pass.cpp",
+    "shared_barriers": "src/shader_recompiler/ir/passes/shared_memory_barrier_pass.cpp",
+    "spv_barriers": "src/shader_recompiler/backend/spirv/emit_spirv_barriers.cpp",
     "opcodes": "src/shader_recompiler/ir/opcodes.inc",
     "emitter_h": "src/shader_recompiler/ir/ir_emitter.h",
     "emitter_cpp": "src/shader_recompiler/ir/ir_emitter.cpp",
@@ -283,6 +286,35 @@ def main():
             transfer.index("class OrderedGdsIndirectDispatchTransfer") <
             transfer.index("class OrderedGdsPacketTransfer"),
             "INDIRECT_GPU_TRANSFER_RUNTIME_SCHEDULER_NAMESPACE_MATCH")
+    # GDS split dispatch must preserve nonzero guest LDS across the first
+    # GPU return, without replaying guest pre-DS writes or fabricating a
+    # workgroup-wide barrier inside divergent guest shader branches.
+    lower = source("shared_to_storage")
+    local_barriers = source("shared_barriers")
+    gpu_barriers = source("spv_barriers")
+    require("const bool persistent_ordered_lds =" in lower and
+            "program.info.uses_ordered_gds && shared_memory_size != 0" in lower and
+            "program.info.ordered_gds_persistent_lds = true" in lower and
+            "program.info.shared_memory_scratch_size == 0" in lower and
+            "BufferType::SharedMemory" in lower and
+            "ordered_gds_persistent_lds{};" in info and
+            "u64 persistent_lds_bytes{};" in device_plan and
+            "PersistentLdsOffset(u32 group_index)" in device_plan and
+            "epoch_auth_bytes + persistent_lds_bytes" in device_plan and
+            "persistent_lds.emplace(instance, 0, plan.persistent_lds_bytes" in transfer and
+            "runtime.FillBuffer(&*persistent_lds, 0, bytes, 0)" in transfer and
+            "if (persistent_lds_initialized_)" in transfer and
+            "owner.PreparePersistentLds(runtime)" in rasterizer and
+            "stage.ordered_gds_persistent_lds" in rasterizer and
+            "lds_buffer.Handle() != buffer_cache.GetGdsBuffer()->Handle()" in rasterizer and
+            "bound_buffers.emplace_back(&lds_buffer, 0, static_cast<u32>(bytes), true)" in rasterizer and
+            "IsOrderedGdsPersistentLdsAccess(" in local_barriers and
+            "IsBufferInstruction(inst)" in local_barriers and
+            "IsBufferStore(inst)" in local_barriers and
+            "ctx.info.ordered_gds_persistent_lds" in gpu_barriers and
+            "spv::MemorySemanticsMask::UniformMemory" in gpu_barriers and
+            "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
+            "REAL_ORDERED_GDS_LDS_PERSISTENT_GPU_BUFFER_AND_BARRIER_SEMANTICS")
     # Prevent valid packet/checkpoint tags without a real host authority,
     # full wave64 lane storage, and zero-LDS capture. The normal game shader
     # must still refuse ordered GDS until actual re-entry is implemented.

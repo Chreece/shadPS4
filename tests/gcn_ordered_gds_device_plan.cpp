@@ -47,6 +47,16 @@ int main() {
            2 * shared.lds_layout->total_bytes + shared.persistent_lds_bytes);
     assert(shared.persistent_lds_bytes ==
            u64(shared.workgroups) * shared.lds_layout->lds_bytes);
+    assert(shared.PersistentLdsOffset(0) == 0);
+    assert(shared.PersistentLdsOffset(1) == 4096);
+    assert(Reject([&] { (void)shared.PersistentLdsOffset(2); }));
+    assert(Reject([&] { (void)zero.PersistentLdsOffset(0); }));
+    const auto shared_3d = Plan::Require({2,3,2}, {64,1,1}, 4, 4096);
+    assert(shared_3d.workgroups == 12 &&
+           shared_3d.persistent_lds_bytes == 12ull * 4096);
+    for (u32 group = 0; group < 12; ++group) {
+        assert(shared_3d.PersistentLdsOffset(group) == u64(group) * 4096);
+    }
 
     // Same total logical slots in a true 3D dispatch; the x-fastest
     // physical slot is NEVER a guest-created wave rank.
@@ -83,6 +93,7 @@ int main() {
     std::cout << "GDS_DEVICE_DISPATCH_PLAN=PASS "
                  "real_wave64_only=PASS validated_gcn_registers=PASS "
                  "zero_lds_no_dummy=PASS nonzero_lds_bounded=PASS "
+                 "persistent_lds_workgroup_offsets=PASS "
                  "combined_vram_budget=PASS 3d_slots=PASS "
                  "GPU_DISPATCH=NOT_ENABLED\n";
 }
