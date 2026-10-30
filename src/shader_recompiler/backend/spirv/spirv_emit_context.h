@@ -357,6 +357,8 @@ public:
     std::unordered_map<u32, Id> first_to_last_label_map;
 
     size_t flatbuf_index{};
+    size_t ordered_gds_checkpoint_index{};
+    bool has_ordered_gds_checkpoint_binding{};
     size_t bda_pagetable_index{};
     size_t fault_buffer_index{};
     Id physical_pointer_type_u32;
