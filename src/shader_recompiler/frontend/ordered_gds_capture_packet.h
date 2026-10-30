@@ -56,6 +56,23 @@ static_assert(offsetof(GpuCapturePacket, logical_slot) == 16);
 static_assert(offsetof(GpuCapturePacket, source_lane) == 32);
 static_assert(offsetof(GpuCapturePacket, flags) == 48);
 
+// GPU packet stores use the logical *storage slot*, never guest creation rank.
+// Keep packet addressing separate from register/LDS checkpoint addressing.
+inline constexpr u32 GpuCapturePacketDwords = sizeof(GpuCapturePacket) / sizeof(u32);
+static_assert(GpuCapturePacketDwords == 16);
+[[nodiscard]] inline std::optional<u32> GpuCapturePacketDwordOffset(
+    u32 physical_wave_slot, u32 packet_word) {
+    if (packet_word >= GpuCapturePacketDwords) {
+        return std::nullopt;
+    }
+    const u64 offset = u64(physical_wave_slot) * GpuCapturePacketDwords + packet_word;
+    if (offset > std::numeric_limits<u32>::max()) {
+        return std::nullopt;
+    }
+    return static_cast<u32>(offset);
+}
+
+
 struct alignas(16) GpuResumePacket {
     u32 tag{};
     u32 epoch{};
