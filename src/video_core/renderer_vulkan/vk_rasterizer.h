@@ -11,6 +11,7 @@
 #include "common/recursive_lock.h"
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
 #include "shader_recompiler/frontend/ordered_gds_checkpoint.h"
+#include "shader_recompiler/frontend/ordered_gds_lds_checkpoint.h"
 #include "shader_recompiler/frontend/ordered_gds_legacy_packer.h"
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
@@ -100,6 +101,10 @@ public:
         const VideoCore::Buffer& device_capture, u64 capture_offset,
         const VideoCore::Buffer& device_checkpoints, u64 checkpoint_offset,
         const Shader::Gcn::OrderedGds::GcnCheckpointLayout& checkpoint_layout,
+        const VideoCore::Buffer& device_lds, u64 lds_capture_offset,
+        const Shader::Gcn::OrderedGds::GcnLdsCheckpointLayout& lds_layout,
+        u32 verified_shared_lds_bytes,
+        VideoCore::Buffer& device_resume_lds, u64 resume_lds_offset,
         VideoCore::Buffer& device_resume_checkpoints, u64 resume_checkpoint_offset,
         VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
         std::size_t guest_created_waves,
