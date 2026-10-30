@@ -69,7 +69,20 @@ for tool in git sha256sum python3 timeout xdpyinfo curl flock tar df awk ldd; do
   command -v "$tool" >/dev/null || { echo "MISSING=$tool"; exit 2; }
 done
 exec 9>"$LOGS/gds-pr117-real-guest-gpu-exclusive.lock"
-flock -n 9 || { echo "PR117_GPU_PROBE_ALREADY_RUNNING"; exit 2; }
+exec 8>"$LOGS/gow-upstream-got-build.lock"
+exec 7>"$LOGS/shadps4-gow-srt-phi.lock"
+exec 6>"$LOGS/shadps4-official-indirect-game.lock"
+if ! (flock -n 9 && flock -n 8 && flock -n 7 && flock -n 6); then
+  echo "ANOTHER_GAME_OR_SHARED_BUILD_LOCK_ACTIVE_NO_LAUNCH"
+  exit 2
+fi
+# Subshell flock locks are not retained by the parent. Acquire each in
+# this shell so its open file descriptor stays held through the whole run.
+for fd in 9 8 7 6; do
+  flock -n "$fd" || {
+    echo "OTHER_GPU_OR_BUILD_OWNER_ACTIVE_NO_LAUNCH"; exit 2;
+  }
+done
 [[ -d "$SRC/.git" && -f "$BIN" && -x "$BIN" && ! -L "$BIN" ]] || {
   echo "ISOLATED_NATIVE_ELF_OR_SOURCE_MISSING"; exit 3;
 }
