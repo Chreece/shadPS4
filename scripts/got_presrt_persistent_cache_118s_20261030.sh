@@ -81,13 +81,18 @@ try:
  if not eboot.is_file():raise RuntimeError('EBOOT_MISSING')
  if not shutil.which('pactl') or not shutil.which('xdpyinfo') or not (shutil.which('import') or shutil.which('maim')):raise RuntimeError('AUDIO_OR_DISPLAY_NOT_AVAILABLE')
  u.command(['env','DISPLAY='+screen,'xdpyinfo'],timeout=10)
- profiles=sorted((B/'runs').glob('*/user'),key=lambda p:p.stat().st_mtime,reverse=True)
- origin=None
- for p in profiles:
-  if not (p/'config.json').is_file() or p.is_symlink():continue
-  home=(json.loads((p/'config.json').read_text()).get('General') or {}).get('home_dir','')
-  if not home or P(home).expanduser().resolve().is_relative_to(p.resolve()):origin=p;break
- if origin is None:raise RuntimeError('SAFE_PRIVATE_PROFILE_NOT_FOUND')
+ # On later launches always choose our own private profile, not a newer unrelated run.
+ persistent=B/'runs'/'got-presrt-cache-89ffa07a'
+ if persistent.exists():
+  origin=persistent/'user'
+ else:
+  profiles=sorted((B/'runs').glob('*/user'),key=lambda p:p.stat().st_mtime,reverse=True)
+  origin=None
+  for p in profiles:
+   if not (p/'config.json').is_file() or p.is_symlink():continue
+   home=(json.loads((p/'config.json').read_text()).get('General') or {}).get('home_dir','')
+   if not home or P(home).expanduser().resolve().is_relative_to(p.resolve()):origin=p;break
+ if origin is None or not (origin/'config.json').is_file():raise RuntimeError('SAFE_PRIVATE_PROFILE_NOT_FOUND')
  if any(p.is_symlink() for p in origin.rglob('*')):raise RuntimeError('PROFILE_SYMLINK')
  if sum(p.stat().st_size for p in origin.rglob('*') if p.is_file())>2*1024**3:raise RuntimeError('PROFILE_SIZE_LIMIT')
  # Keep this private game's cache between runs; never touch a real user profile.
@@ -168,6 +173,9 @@ finally:
  if (out/'game.log').is_file():
   game=(out/'game.log').read_text(errors='replace')
   result['pipeline_cache_enabled_observed']='Vulkan PipelineCacheEnabled: true' in game
+  if 'Run: Vulkan PipelineCacheEnabled:' in game and not result['pipeline_cache_enabled_observed']:
+   rc=1
+   result['status']='FAILED_PIPELINE_CACHE_NOT_ENABLED_IN_RUNTIME'
   result['shader_compile_counts']={name:game.count('Compiling '+name+' shader') for name in ('cs','fs','vs')}
   result['gpu_material_binding_rejects']=game.count('INDEXED_MATERIAL_BIND_REJECT')
  (out/'trial.json').write_text(json.dumps(result,indent=2))
