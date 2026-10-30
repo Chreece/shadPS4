@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--compiler", default="g++")
+    parser.add_argument("--sanitize", action="store_true")
     args = parser.parse_args()
     original = (ROOT / "src/shader_recompiler/backend/spirv/emit_spirv.cpp").read_text()
     emitter = method(original, "Id EmitOrderedGdsCount(")
@@ -28,9 +29,11 @@ def main():
         src = Path(directory) / "actual.cpp"
         binary = Path(directory) / "actual"
         src.write_text(template.replace(injection, emitter))
-        subprocess.run([args.compiler, "-std=c++23", "-Wall", "-Wextra",
-                        "-Werror", "-pedantic", "-O2",
-                        str(src), "-o", str(binary)], check=True)
+        flags = [args.compiler, "-std=c++23", "-Wall", "-Wextra",
+                 "-Werror", "-pedantic"]
+        flags += (["-O1", "-g", "-fsanitize=address,undefined",
+                    "-fno-omit-frame-pointer"] if args.sanitize else ["-O2"])
+        subprocess.run([*flags, str(src), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
     print("REAL_FIRST_PASS_PRODUCTION_CAPTURE_CUT=PASS")
 
