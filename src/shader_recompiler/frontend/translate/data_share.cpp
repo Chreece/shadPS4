@@ -358,8 +358,22 @@ void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
     ASSERT_MSG(vgpr_count > 0 && vgpr_count <= IR::NumVectorRegs,
                "Invalid allocated GCN VGPR checkpoint count");
 
+    // Vulkan arrival order cannot establish guest creation order. Capture
+    // physical wave slot and wave64-relative lane from actual compute
+    // builtins. The host separately derives guest ordering from live M0.
+    const auto& local = runtime_info.hw.cs.workgroup_size;
+    const u64 threads = u64(local[0]) * local[1] * local[2];
+    ASSERT_MSG(threads > 0 && threads <= 1024u,
+               "Invalid GCN checkpoint compute workgroup dimensions");
+    const u32 waves_per_group = u32((threads + 63u) / 64u);
+    const IR::U32 local_index = ir.GetAttributeU32(IR::Attribute::LocalInvocationIndex);
+    const IR::U32 lane = ir.IMod(local_index, ir.Imm32(64u));
+    const IR::U32 wave = ir.IDiv(local_index, ir.Imm32(64u));
+    const IR::U32 group_index = ir.GetAttributeU32(IR::Attribute::WorkgroupIndex);
+    const IR::U32 logical_slot{ir.IAdd(ir.IMul(group_index, ir.Imm32(waves_per_group)), wave)};
     const auto capture = [&](u32 bank, u32 index, const IR::U32& value) {
-        ir.OrderedGdsCheckpointRegister(site_pc, ir.Imm32(bank), ir.Imm32(index), value);
+        ir.OrderedGdsCheckpointRegister(site_pc, ir.Imm32(bank), ir.Imm32(index),
+                                        value, logical_slot, lane);
     };
     for (u32 reg = 0; reg < IR::NumScalarRegs; ++reg) {
         capture(0, reg, ir.GetScalarReg<IR::U32>(IR::ScalarReg(reg)));
