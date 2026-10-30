@@ -659,21 +659,46 @@ void PatchPhiNodes(const IR::Program& program, EmitContext& ctx) {
 }
 } // Anonymous namespace
 
-std::vector<u32> EmitSPIRV(const Profile& profile, const RuntimeInfo& runtime_info,
-                           const IR::Program& program, Bindings& binding) {
-    // Refuse unsupported ordered GDS *before* constructing a shader module.
-    // The frontend retains its full live M0/ADDR/EXEC/control operands; the
-    // Vulkan backend still needs a proven multi-wave collection/resume path.
-    ASSERT_MSG(!program.info.uses_ordered_gds,
-               "DS_ORDERED_COUNT needs guest wave creation ordering; refusing unordered "
-               "SPIR-V atomic lowering");
+// Both shader compilation modes share the identical REAL GCN translation,
+// resource bindings, structurized CFG, SSA and SPIR-V capabilities. The
+// mode switch affects ONLY how an actual DS_ORDERED_COUNT terminates a
+// capture dispatch. Normal guest execution is never allowed to use it.
+static std::vector<u32> EmitSPIRVWithCaptureMode(
+    const Profile& profile, const RuntimeInfo& runtime_info,
+    const IR::Program& program, Bindings& binding, bool capture_only) {
     EmitContext ctx{profile, runtime_info, program.info, binding};
+    ctx.ordered_gds_capture_pass = capture_only;
     const Id main{DefineMain(ctx, program)};
     DefineEntryPoint(program.info, ctx, main);
     SetupCapabilities(program.info, profile, runtime_info, ctx);
     SetupFloatMode(ctx, profile, runtime_info, main);
     PatchPhiNodes(program, ctx);
     return ctx.Assemble();
+}
+
+std::vector<u32> EmitSPIRV(const Profile& profile, const RuntimeInfo& runtime_info,
+                           const IR::Program& program, Bindings& binding) {
+    // Normal guest execution MUST remain blocked until the dedicated CIK
+    // packer seed, complete-wave handling and true GPU continuation exist.
+    ASSERT_MSG(!program.info.uses_ordered_gds,
+               "DS_ORDERED_COUNT needs guest wave creation ordering; refusing unordered "
+               "SPIR-V atomic lowering");
+    return EmitSPIRVWithCaptureMode(profile, runtime_info, program, binding, false);
+}
+
+std::vector<u32> EmitSPIRVOrderedGdsCapturePass(
+    const Profile& profile, const RuntimeInfo& runtime_info,
+    const IR::Program& program, Bindings& binding) {
+    // Explicit FIRST PASS only: continue ORIGINAL guest shader until the
+    // ordered site, write the real live GPU checkpoint and immediately
+    // terminate the wave BEFORE any instruction that consumes the returned
+    // counter. This helper is intentionally not called by the gameplay
+    // pipeline or the normal EmitSPIRV path.
+    ASSERT_MSG(program.info.uses_ordered_gds &&
+               program.info.hw_stage == HwStage::Compute &&
+               !program.info.ordered_gds_sites.empty(),
+               "GCN ordered capture pass requires decoded compute ordered sites");
+    return EmitSPIRVWithCaptureMode(profile, runtime_info, program, binding, true);
 }
 
 Id EmitPhi(EmitContext& ctx, IR::Inst* inst) {
@@ -836,11 +861,40 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank,
     ctx.AddLabel(merge_label);
 }
 
-Id EmitOrderedGdsCount(EmitContext&, Id, Id, Id /*guest_exec_mask*/,
+Id EmitOrderedGdsCount(EmitContext& ctx, Id, Id, Id /*guest_exec_mask*/,
                        u32 encoded_control, u32 site_pc) {
-    // A separate wave scheduler is required to execute this instruction in
-    // *guest wave-creation order*. An unordered host atomic would produce
-    // incorrect results for GDS Exchange/Add and is intentionally forbidden.
+    if (ctx.ordered_gds_capture_pass) {
+        // The REAL guest GCN checkpoint and 16-DWORD packet were emitted
+        // immediately BEFORE this IR operation at the original decoded
+        // DS_ORDERED_COUNT site. The first pass must not execute this guest
+        // instruction with a guessed host counter or proceed to any
+        // instruction that depends on its old value.
+        ASSERT_MSG(ctx.hw_stage == HwStage::Compute &&
+                   ctx.has_ordered_gds_checkpoint_binding &&
+                   ctx.has_ordered_gds_capture_binding &&
+                   ctx.has_ordered_gds_auth_binding &&
+                   std::ranges::any_of(ctx.info.ordered_gds_sites,
+                       [site_pc, encoded_control](const auto& site) {
+                           return site.pc == site_pc &&
+                                  site.encoded_control == encoded_control;
+                       }),
+                   "capture-pass stop requires original decoded guest GCN site");
+        // An undefined SSA ID exists ONLY for code in the UNREACHABLE
+        // continuation of the compiler's original structured CFG. It is
+        // never an executed counter result, cannot reach guest memory and
+        // must NEVER be reused in a resumed dispatch. The real old result
+        // is materialized into decoded VDST by the authenticated host
+        // resolver, then requires a separate second-pass guest shader.
+        const Id never_executed_guest_result = ctx.OpUndef(ctx.U32[1]);
+        ctx.OpReturn();
+        // Sirit still needs an open block to emit later syntactic IR and
+        // preserve the original structurized labels/phi bookkeeping. This
+        // block has NO predecessor: the capture wave already returned.
+        ctx.AddLabel();
+        return never_executed_guest_result;
+    }
+    // The normal shader compiler MUST NEVER replace the ordered operation
+    // with a host atomic, an arbitrary value or a partial capture result.
     UNREACHABLE_MSG(
         "Cannot emit ordered GDS count (guest site PC={:#x}, control={:#x}) "
         "without a verified wave-creation-order GDS scheduler",
