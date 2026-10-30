@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -24,7 +26,29 @@ enum class CheckpointRegisterBank : u32 {
     Scalar = 0,
     Vector = 1,
     Architectural = 2,
+    SiteMetadata = 3,
 };
+
+// Header DWORDs that can be written from the actual decoded GCN site and
+// current physical wave slot. Tag and flags remain deliberately zero: epoch,
+// continuation token, verified counter seed and a resumable second pass are
+// not available. An incomplete record must NEVER pass checkpoint validation.
+// Epoch and token offsets 1/8/9 are reserved for authenticated dispatch state.
+inline constexpr std::array<u32, 11> CheckpointSiteMetadataDwords{
+    offsetof(GpuGcnWaveCheckpoint, tag) / sizeof(u32),
+    offsetof(GpuGcnWaveCheckpoint, site_pc) / sizeof(u32),
+    offsetof(GpuGcnWaveCheckpoint, next_guest_pc) / sizeof(u32),
+    offsetof(GpuGcnWaveCheckpoint, logical_slot) / sizeof(u32),
+    offsetof(GpuGcnWaveCheckpoint, destination_vgpr) / sizeof(u32),
+    offsetof(GpuGcnWaveCheckpoint, scalar_words) / sizeof(u32),
+    offsetof(GpuGcnWaveCheckpoint, vector_registers) / sizeof(u32),
+    offsetof(GpuGcnWaveCheckpoint, lane_count) / sizeof(u32),
+    offsetof(GpuGcnWaveCheckpoint, flags) / sizeof(u32),
+    offsetof(GpuGcnWaveCheckpoint, reserved) / sizeof(u32),
+    offsetof(GpuGcnWaveCheckpoint, abi_version) / sizeof(u32),
+};
+static_assert(CheckpointSiteMetadataDwords ==
+              std::array<u32, 11>{0, 2, 3, 4, 10, 11, 12, 13, 14, 15, 19});
 
 [[nodiscard]] inline std::optional<u32> CheckpointRelativeDword(
     u32 allocated_vgprs, u32 bank, u32 index, u32 lane) {
@@ -55,6 +79,11 @@ enum class CheckpointRegisterBank : u32 {
         case 4: return 6;
         case 5: return 7;
         default: break;
+        }
+        break;
+    case CheckpointRegisterBank::SiteMetadata:
+        if (index < CheckpointSiteMetadataDwords.size()) {
+            return CheckpointSiteMetadataDwords[index];
         }
         break;
     }
