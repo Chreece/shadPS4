@@ -24,6 +24,7 @@ FILES = {
     "resources": "src/shader_recompiler/ir/passes/resource_pass.h",
     "patching": "src/shader_recompiler/ir/passes/resource_patching_pass.cpp",
     "packer": "src/shader_recompiler/frontend/ordered_gds_legacy_packer.h",
+    "checkpoint": "src/shader_recompiler/frontend/ordered_gds_checkpoint.h",
     "packet": "src/shader_recompiler/frontend/ordered_gds_capture_packet.h",
     "tests": "tests/gcn_ordered_gds_complete_batch.cpp",
 }
@@ -68,6 +69,7 @@ def main():
     resources = source("resources")
     patching = source("patching")
     packer = source("packer")
+    checkpoint = source("checkpoint")
     packet = source("packet")
     tests = source("tests")
 
@@ -149,6 +151,16 @@ def main():
             "packet.flags != CaptureFlags" in packet and
             "rank_by_slot[packet.logical_slot] != InvalidCreationRank" in packet,
             "CIK_COMPUTE_WAVE_ORDER_FROM_LIVE_GUEST_M0_ONLY")
+
+    require("info.ordered_gds_sites.push_back({" in translate_cpp and
+            "inst.dst[0].field == OperandField::VectorGPR" in translate_cpp and
+            "std::vector<OrderedGdsSite> ordered_gds_sites;" in info,
+            "INDEPENDENT_GCN_VDST_AND_CONTROL_CAPTURE_METADATA")
+    require("RequireCompleteGcnWaveCheckpoints(" in checkpoint and
+            "checkpoint.destination_vgpr != match->destination_vgpr" in checkpoint and
+            "checkpoint.next_guest_pc != checkpoint.site_pc + 8" in checkpoint and
+            "shared_lds_bytes" in checkpoint,
+            "GUEST_REGISTERS_CHECKPOINT_GATED_BY_DECODED_GCN_SITE")
 
     require("class OrderedGdsPhases" in reference and
             "CompleteWaveCollector" in reference and
