@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify NEW real host-authored guest continuation-token GPU transport.
+# Verify NEW real host-authored guest token transport and post-DS state.
 # Tests changed production GCN IR, ABI, host token/packet validation and
 # incremental native SPIR-V/Vulkan compile/link. No actual game dispatch.
 # Never modify the running emulator, X11, Sunshine, network or SSH session.
@@ -100,6 +100,7 @@ for compiler in g++ clang++-17; do
         fi
         for test in \
             gcn_ordered_gds_epoch_auth \
+            gcn_ordered_gds_resume_state \
             gcn_ordered_gds_word_layout \
             gcn_ordered_gds_live_capture_coverage \
             gcn_ordered_gds_device_plan; do
@@ -120,6 +121,8 @@ for compiler in g++ clang++-17; do
         done
         grep -Fq 'GDS_VERIFIED_HOST_EPOCH_TOKENS=PASS' \
             "${LOG}/gcn_ordered_gds_epoch_auth-${label}-${mode}.log" || exit 12
+        grep -Fq 'GDS_POST_DS_RESOLVED_ACTIVE_VDST=PASS' \
+            "${LOG}/gcn_ordered_gds_resume_state-${label}-${mode}.log" || exit 20
         grep -Fq 'host_epoch_token_header_no_alias=PASS' \
             "${LOG}/gcn_ordered_gds_word_layout-${label}-${mode}.log" || exit 13
         grep -Fq 'missing_auth_identity_rejected=PASS' \
@@ -148,6 +151,6 @@ sha256sum "${BUILD}/shadps4" > "${LOG}/isolated-elf.sha256"
 printf 'NATIVE_WARNING_LINES=%s\n' \
     "$(grep -c 'warning:' "${LOG}/native-build.log" || true)" \
     > "${LOG}/warning-count.txt"
-STATUS="PASS_GCN_HOST_AUTH_TOKEN_TRANSPORT_NATIVE"
+STATUS="PASS_GCN_HOST_AUTH_AND_POST_DS_VDST_NATIVE"
 STAGE="COMPLETE_GUEST_SHADER_CONTINUATION_STILL_GATED"
-echo "GCN_AUTH_GPU_TRANSFER_NATIVE=PASS GAME_TEST_READY=NO"
+echo "GCN_AUTH_TOKEN_AND_POST_DS_ACTIVE_VDST_NATIVE=PASS GAME_TEST_READY=NO"
