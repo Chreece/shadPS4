@@ -63,6 +63,7 @@ STAGE=MIXED_TERMINAL_GCC_AND_CLANG
 for compiler in g++ clang++-17; do
     case "$compiler" in g++) label=gcc;; *) label=clang;; esac
     if ! (
+        set -Eeuo pipefail
         cd "$SRC"
         for test in resume_state checkpoint epoch_auth; do
             "$compiler" -std=c++23 -O2 -UNDEBUG -Wall -Wextra -Werror -pedantic \
@@ -83,6 +84,7 @@ done
 
 STAGE=MIXED_TERMINAL_CLANG_ASAN_UBSAN
 if ! (
+    set -Eeuo pipefail
     cd "$SRC"
     clang++-17 -std=c++23 -O1 -g -UNDEBUG -Wall -Wextra -Werror -pedantic \
         -pthread -fsanitize=address,undefined -fno-omit-frame-pointer \
