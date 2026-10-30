@@ -27,6 +27,10 @@ enum class CheckpointRegisterBank : u32 {
     Vector = 1,
     Architectural = 2,
     SiteMetadata = 3,
+    // Three fields copied from a trusted host scheduler's GPU transport:
+    // epoch, continuation-token lower and upper DWORDs.
+    // Tag/flags stay zero until actual wave/LDS state is authenticated.
+    AuthenticatedIdentity = 5,
 };
 
 // Header DWORDs that can be written from the actual decoded GCN site and
@@ -49,6 +53,13 @@ inline constexpr std::array<u32, 11> CheckpointSiteMetadataDwords{
 };
 static_assert(CheckpointSiteMetadataDwords ==
               std::array<u32, 11>{0, 2, 3, 4, 10, 11, 12, 13, 14, 15, 19});
+
+inline constexpr std::array<u32, 3> CheckpointIdentityDwords{
+    offsetof(GpuGcnWaveCheckpoint, epoch) / sizeof(u32),
+    offsetof(GpuGcnWaveCheckpoint, token_lo) / sizeof(u32),
+    offsetof(GpuGcnWaveCheckpoint, token_hi) / sizeof(u32),
+};
+static_assert(CheckpointIdentityDwords == std::array<u32, 3>{1, 8, 9});
 
 [[nodiscard]] inline std::optional<u32> CheckpointRelativeDword(
     u32 allocated_vgprs, u32 bank, u32 index, u32 lane) {
@@ -84,6 +95,11 @@ static_assert(CheckpointSiteMetadataDwords ==
     case CheckpointRegisterBank::SiteMetadata:
         if (index < CheckpointSiteMetadataDwords.size()) {
             return CheckpointSiteMetadataDwords[index];
+        }
+        break;
+    case CheckpointRegisterBank::AuthenticatedIdentity:
+        if (index < CheckpointIdentityDwords.size()) {
+            return CheckpointIdentityDwords[index];
         }
         break;
     }
