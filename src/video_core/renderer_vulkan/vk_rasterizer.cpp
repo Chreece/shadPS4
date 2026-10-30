@@ -460,6 +460,10 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     const VideoCore::Buffer& device_capture, u64 capture_offset,
     const VideoCore::Buffer& device_checkpoints, u64 checkpoint_offset,
     const Shader::Gcn::OrderedGds::GcnCheckpointLayout& checkpoint_layout,
+    const VideoCore::Buffer& device_lds, u64 lds_capture_offset,
+    const Shader::Gcn::OrderedGds::GcnLdsCheckpointLayout& lds_layout,
+    u32 verified_shared_lds_bytes,
+    VideoCore::Buffer& device_resume_lds, u64 resume_lds_offset,
     VideoCore::Buffer& device_resume_checkpoints, u64 resume_checkpoint_offset,
     VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
     std::size_t guest_created_waves,
@@ -478,16 +482,37 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
         checkpoint_layout.waves != guest_created_waves) {
         throw std::invalid_argument("unsupported CIK checkpoint/wave count");
     }
-    // Explicitly separate each source and destination buffer: no in-place
-    // replay that could overwrite the only genuine guest checkpoint.
-    if (device_resume.Handle() == device_capture.Handle() ||
-        device_resume.Handle() == device_checkpoints.Handle() ||
-        device_resume.Handle() == device_resume_checkpoints.Handle() ||
-        device_resume_checkpoints.Handle() == device_capture.Handle() ||
-        device_resume_checkpoints.Handle() == device_checkpoints.Handle()) {
-        throw std::invalid_argument("ordered GDS capture/resume GPU buffer aliases");
+    // Every real guest packet, register and LDS source/destination must
+    // remain independent until the resumed dispatch has consumed it.
+    // No producer is currently enabled by this code: the backend stays gated.
+    const std::array handles{
+        device_capture.Handle(), device_checkpoints.Handle(), device_lds.Handle(),
+        device_resume.Handle(), device_resume_checkpoints.Handle(),
+        device_resume_lds.Handle(),
+    };
+    for (std::size_t i = 0; i < handles.size(); ++i) {
+        for (std::size_t j = i + 1; j < handles.size(); ++j) {
+            if (handles[i] == handles[j]) {
+                throw std::invalid_argument("ordered GDS GPU checkpoint buffers alias");
+            }
+        }
     }
-    // Check both destination capacities BEFORE resolving or recording writes.
+    const auto checked_lds = GcnLdsCheckpointLayout::Require(
+        lds_layout.workgroups, lds_layout.waves_per_group, lds_layout.lds_bytes);
+    if (lds_layout.lds_bytes != verified_shared_lds_bytes ||
+        checked_lds.stride_bytes != lds_layout.stride_bytes ||
+        checked_lds.total_bytes != lds_layout.total_bytes ||
+        u64(lds_layout.workgroups) * lds_layout.waves_per_group != guest_created_waves) {
+        throw std::invalid_argument("ordered GDS LDS layout is not guest dispatch layout");
+    }
+    if ((lds_capture_offset & 3u) || (resume_lds_offset & 3u) ||
+        lds_capture_offset > device_lds.SizeBytes() ||
+        lds_layout.total_bytes > device_lds.SizeBytes() - lds_capture_offset ||
+        resume_lds_offset > device_resume_lds.SizeBytes() ||
+        lds_layout.total_bytes > device_resume_lds.SizeBytes() - resume_lds_offset) {
+        throw std::invalid_argument("ordered GDS LDS source/resume ranges invalid");
+    }
+    // Check every destination capacity BEFORE resolving or recording writes.
     const u64 resume_bytes = OrderedGdsPacketTransfer::CheckedPacketBytes(
         guest_created_waves);
     if (resume_offset > device_resume.SizeBytes() ||
@@ -512,6 +537,11 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
         runtime, scheduler, device_checkpoints, checkpoint_offset, checkpoint_layout);
     RequireCompleteGcnWaveCheckpoints(state, captures, checkpoint_layout, epoch,
                                       verified_sites);
+    // A *workgroup barrier* is distinct from CIK's ordered-count wave
+    // completion. This readback requires a compiler-generated safe LDS
+    // quiescent point before any shader continuation or host counter update.
+    const auto lds_state = OrderedGdsLdsStateTransfer::Download(
+        runtime, scheduler, device_lds, lds_capture_offset, checked_lds, epoch);
     std::vector<u32> site_pcs;
     site_pcs.reserve(verified_sites.size());
     for (const auto& site : verified_sites) {
@@ -527,6 +557,10 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     OrderedGdsPacketTransfer::UploadCheckpoint(
         runtime, scheduler, device_resume_checkpoints, resume_checkpoint_offset,
         std::span<const std::byte>{state.data(), state.size()}, checkpoint_layout);
+    OrderedGdsLdsStateTransfer::Upload(
+        runtime, scheduler, device_resume_lds, resume_lds_offset,
+        std::span<const std::byte>{lds_state.data(), lds_state.size()},
+        checked_lds, epoch);
     UploadOrderedGdsPackets(device_resume, resume_offset,
                             std::span<const GpuResumePacket>{resume.data(), resume.size()});
     return host.CounterSnapshot();
