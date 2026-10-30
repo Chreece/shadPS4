@@ -192,7 +192,9 @@ def main():
             "has_ordered_gds_checkpoint_binding = true" in backend_context and
             "BufferType::OrderedGdsCheckpoint" in patching and
             "OrderedGdsCheckpoint" in rasterizer and
-            "genuine dispatch-owned GPU storage" in rasterizer,
+            "active_ordered_gds_capture_" in rasterizer and
+            "checkpoint.Handle() != buffer_cache.GetGdsBuffer()->Handle()" in rasterizer and
+            "bound_buffers.emplace_back(&checkpoint, 0" in rasterizer,
             "GUEST_CHECKPOINT_DESCRIPTOR_SEPARATE_AND_RUNTIME_GATED")
     require("ir.GetAttributeU32(IR::Attribute::LocalInvocationIndex)" in live_body and
             "ir.GetAttributeU32(IR::Attribute::WorkgroupIndex)" in live_body and
@@ -349,6 +351,10 @@ def main():
             "owned.capture_packets" in rasterizer and
             "owned.resume_packets" in rasterizer and
             "plan.lds_layout.value_or(" in rasterizer and
+            "OrderedGdsCaptureBinding::OrderedGdsCaptureBinding(" in rasterizer and
+            "OrderedGdsCaptureBinding::~OrderedGdsCaptureBinding()" in rasterizer and
+            "active_ordered_gds_capture_ = &epoch" in rasterizer and
+            "active_ordered_gds_capture_ = nullptr" in rasterizer and
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
             "REAL_GPU_DISPATCH_OWNED_GDS_RESOURCES_BOUNDED_AND_RUNTIME_GATED")
 
