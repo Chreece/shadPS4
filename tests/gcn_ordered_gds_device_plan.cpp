@@ -27,8 +27,11 @@ int main() {
     assert(zero.register_layout.scalar_words == 104 &&
            zero.register_layout.vector_registers == 9);
     assert(zero.register_layout.waves == 4);
+    assert(zero.epoch_auth_bytes ==
+           zero.waves * sizeof(GpuGcnOrderedEpochAuth));
     assert(zero.combined_device_bytes ==
-           2 * (zero.packet_bytes + zero.register_layout.total_bytes));
+           2 * (zero.packet_bytes + zero.register_layout.total_bytes) +
+               zero.epoch_auth_bytes);
     assert(zero.combined_device_bytes <= Plan::MaxEpochDeviceBytes);
 
     const auto shared = Plan::Require({2, 1, 1}, {128, 1, 1}, 9, 4096);
@@ -36,6 +39,7 @@ int main() {
     assert(shared.lds_layout->workgroups == 2 &&
            shared.lds_layout->waves_per_group == 2 &&
            shared.lds_layout->lds_bytes == 4096);
+    assert(shared.epoch_auth_bytes == zero.epoch_auth_bytes);
     assert(shared.combined_device_bytes ==
            zero.combined_device_bytes + 2 * shared.lds_layout->total_bytes);
 
