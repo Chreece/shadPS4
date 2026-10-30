@@ -712,11 +712,27 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
                     flow.branch_path_from_second_to_first,
                     flow.may_bypass_all_sites,
                     flow.has_unknown_or_invalid_control_flow);
+        // The actual decoded per-site destination is required for
+        // checkpoint restoration; a GPU packet must not invent VDST.
+        ASSERT_MSG(info.ordered_gds_sites.size() == info.ordered_gds_site_pcs.size(),
+                   "Missing independently decoded ordered-GDS guest VDST metadata");
+        for (const auto& site : info.ordered_gds_sites) {
+            LOG_WARNING(Render_Recompiler,
+                        "Ordered GDS guest ISA: site={:#x} VDST=v{} control={:#x} "
+                        "(register checkpoint and replay still gated)",
+                        site.pc, site.destination_vgpr, site.encoded_control);
+        }
         LOG_WARNING(Render_Recompiler,
                     "Ordered GDS static guest sites={} (per-wave site selection "
                     "requires capture; not one full wave batch per site)",
                     info.ordered_gds_site_pcs.size());
         if (info.hw_stage == HwStage::Compute) {
+            LOG_WARNING(Render_Recompiler,
+                        "Ordered GDS guest checkpoint prerequisites: allocated_vgprs={}, "
+                        "shared_lds_bytes={}, SGPR/VGPR checkpoint writer=NOT_IMPLEMENTED; "
+                        "nonzero LDS must not be silently discarded",
+                        runtime_info.props.num_allocated_vgprs,
+                        runtime_info.hw.cs.shared_memory_size);
             const auto& regs = liverpool->GetCsRegs();
             const auto& local = runtime_info.hw.cs.workgroup_size;
             const auto layout = Shader::Gcn::OrderedGds::DispatchLayout::Create(
