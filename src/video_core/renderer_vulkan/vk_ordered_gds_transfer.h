@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <utility>
 #include <span>
 #include <stdexcept>
@@ -13,6 +14,7 @@
 
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
 #include "shader_recompiler/frontend/ordered_gds_checkpoint.h"
+#include "shader_recompiler/frontend/ordered_gds_device_plan.h"
 #include "shader_recompiler/frontend/ordered_gds_lds_checkpoint.h"
 #include "shader_recompiler/frontend/ordered_gds_storage_layout.h"
 #include "video_core/buffer_cache/buffer.h"
@@ -284,6 +286,65 @@ public:
             .pBufferMemoryBarriers = &copy_to_compute,
         });
     }
+};
+
+
+// Real, independent VMA/Vulkan storage owned by a *future* guest compute
+// dispatch orchestrator. The constructor validates every guest-controlled
+// extent and the TOTAL budget BEFORE any device allocation. A complete
+// resource owner must outlive capture submission, host readback/resolution,
+// and the final resumed GPU pass; destroying it early is a caller error.
+// These buffers are not guest GDS RAM, not the 4 CIK packer counters, and
+// never borrow a streaming ring that can wrap between passes.
+//
+// This class provides safe storage, NOT an authenticated GPU packet writer,
+// wave ordering, LDS quiescence, or shader continuation. The ordered GDS
+// SPIR-V execution gate stays active until all those are implemented.
+class OrderedGdsEpochDeviceBuffers {
+public:
+    using Plan = Shader::Gcn::OrderedGds::GcnOrderedGdsDevicePlan;
+    using Extent = Shader::Gcn::OrderedGds::DispatchExtent;
+
+    explicit OrderedGdsEpochDeviceBuffers(
+        const Instance& instance, Extent groups, Extent local_threads,
+        u32 allocated_vgprs, u32 guest_shared_lds_bytes)
+        : plan{Plan::Require(groups, local_threads, allocated_vgprs,
+                             guest_shared_lds_bytes)},
+          capture_packets{instance, 0, plan.packet_bytes,
+                          VideoCore::MemoryType::DeviceLocal,
+                          "CIK GDS Capture Packets"},
+          resume_packets{instance, 0, plan.packet_bytes,
+                         VideoCore::MemoryType::DeviceLocal,
+                         "CIK GDS Resume Packets"},
+          capture_registers{instance, 0, plan.register_layout.total_bytes,
+                            VideoCore::MemoryType::DeviceLocal,
+                            "CIK GDS Live Guest Register Checkpoint"},
+          resume_registers{instance, 0, plan.register_layout.total_bytes,
+                           VideoCore::MemoryType::DeviceLocal,
+                           "CIK GDS Resumed Guest Register State"} {
+        if (plan.lds_layout) {
+            // Truly zero-LDS shaders do not allocate dummy buffers.
+            capture_lds.emplace(instance, 0, plan.lds_layout->total_bytes,
+                                VideoCore::MemoryType::DeviceLocal,
+                                "CIK GDS Workgroup LDS Checkpoint");
+            resume_lds.emplace(instance, 0, plan.lds_layout->total_bytes,
+                               VideoCore::MemoryType::DeviceLocal,
+                               "CIK GDS Resumed Workgroup LDS");
+        }
+    }
+
+    OrderedGdsEpochDeviceBuffers(const OrderedGdsEpochDeviceBuffers&) = delete;
+    OrderedGdsEpochDeviceBuffers& operator=(const OrderedGdsEpochDeviceBuffers&) = delete;
+    OrderedGdsEpochDeviceBuffers(OrderedGdsEpochDeviceBuffers&&) = delete;
+    OrderedGdsEpochDeviceBuffers& operator=(OrderedGdsEpochDeviceBuffers&&) = delete;
+
+    const Plan plan;
+    VideoCore::Buffer capture_packets;
+    VideoCore::Buffer resume_packets;
+    VideoCore::Buffer capture_registers;
+    VideoCore::Buffer resume_registers;
+    std::optional<VideoCore::Buffer> capture_lds;
+    std::optional<VideoCore::Buffer> resume_lds;
 };
 
 
