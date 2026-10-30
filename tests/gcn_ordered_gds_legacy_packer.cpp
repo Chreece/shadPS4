@@ -90,8 +90,8 @@ int main() {
     assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 0);}));
     const auto first_seed = ledger.BeginEpoch(context_id, 7);
     assert(first_seed.size() == 2);
-    assert(first_seed[0].key == CounterKey{0x20, 0} && first_seed[0].value == 17);
-    assert(first_seed[1].key == CounterKey{0x20, 1} && first_seed[1].value == 1234);
+    assert((first_seed[0].key == CounterKey{0x20, 0}) && first_seed[0].value == 17);
+    assert((first_seed[1].key == CounterKey{0x20, 1}) && first_seed[1].value == 1234);
     assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 8);}));
     assert(Reject([&] {ledger.CommitEpoch(context_id, 8, counters);}));
     const std::map<CounterKey,u32> missing_counter{{{0x20,0},19}};
