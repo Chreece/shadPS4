@@ -7,6 +7,7 @@
 #include "shader_recompiler/frontend/ordered_gds_device_plan.h"
 #include <array>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <cstdint>
 #include <iostream>
