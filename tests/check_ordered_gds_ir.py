@@ -124,7 +124,7 @@ def main():
             "void IREmitter::OrderedGdsCheckpointRegister(" in emit_cpp and
             "void EmitOrderedGdsCheckpointRegister(" in backend_h and
             "void EmitOrderedGdsCheckpointRegister(" in backend_cpp and
-            "RecordOrderedGdsCheckpoint(site_pc, exec_mask, pc, inst.dst[0].code)" in body and
+            "RecordOrderedGdsCheckpoint(site_pc, exec_mask, pc, inst.dst[0].code," in body and
             "case Opcode::OrderedGdsCheckpointRegister:" in
             function(inst, "bool Inst::MayHaveSideEffects() const noexcept"),
             "GCN_CAPTURE_IR_SIDE_EFFECTS_SURVIVE_DCE")
@@ -176,6 +176,39 @@ def main():
             "std::array<u32, 11>" in word_layout and
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
             "REAL_GCN_SITE_CHECKPOINT_METADATA_UNAUTHENTICATED_AND_FAIL_CLOSED")
+    # The 16-dword packet is written on the real GPU from pre-DS guest
+    # SSA registers and decoded ISA, not a synthetic host counter value.
+    # Tag/epoch/token/flags stay zero: no authentication claim without
+    # a synchronized dispatch and genuine resumable shader.
+    capture_fields = (
+        "capture(4, 0, ir.Imm32(0u))", "capture(4, 1, ir.Imm32(0u))",
+        "capture(4, 2, site_pc)", "capture(4, 3, ir.Imm32(encoded_control))",
+        "capture(4, 4, logical_slot)", "capture(4, 5, ir.GetM0())",
+        "capture(4, 6, IR::U32{ir.CompositeExtract(exec_halves, 0)})",
+        "capture(4, 7, IR::U32{ir.CompositeExtract(exec_halves, 1)})",
+        "capture(4, 8, source_lane)", "capture(4, 9, cik_payload)",
+        "capture(4, 10, ir.Imm32(0u))", "capture(4, 11, ir.Imm32(0u))",
+        "capture(4, 12, ir.Imm32(0u))", "capture(4, 13, ir.Imm32(0u))",
+        "capture(4, 14, ir.Imm32(0u))", "capture(4, 15, ir.Imm32(0u))",
+    )
+    require(all(field in live_body for field in capture_fields) and
+            live_body.count("capture(4, ") == 16 and
+            "ir.FindILsb(exec_mask)" in live_body and
+            "ir.BitCount(exec_mask)" in live_body and
+            "OrderedGdsCapture," in resource_h and
+            "BufferType::OrderedGdsCapture" in patching and
+            "NUM_BUFFERS - 2" in patching and
+            "BufferType::OrderedGdsCapture" in backend_context and
+            "has_ordered_gds_capture_binding" in backend_context and
+            "GpuCapturePacketDwordOffset(0, index)" in gpu_write and
+            "Gds::GpuCapturePacketDwords" in gpu_write and
+            "ctx.ordered_gds_capture_index" in gpu_write and
+            "BufferType::OrderedGdsCapture" in gpu_write and
+            "desc.buffer_type == Shader::BufferType::OrderedGdsCapture" in rasterizer and
+            "packets.Handle() != buffer_cache.GetGdsBuffer()->Handle()" in rasterizer and
+            "runtime.IsBufferAccessed(&packets, 0, bytes, true)" in rasterizer and
+            "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
+            "REAL_GCN_GPU_CAPTURE_PACKET_BODY_FROM_LIVE_ISA_FAIL_CLOSED")
     require("enum class CheckpointRegisterBank : u32" in word_layout and
             "case 0: return 5;" in word_layout and
             "case 1: return 16;" in word_layout and
