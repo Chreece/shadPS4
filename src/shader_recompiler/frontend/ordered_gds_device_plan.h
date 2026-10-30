@@ -9,6 +9,7 @@
 #include "shader_recompiler/frontend/ordered_gds_capture_coverage.h"
 #include "shader_recompiler/frontend/ordered_gds_checkpoint.h"
 #include "shader_recompiler/frontend/ordered_gds_dispatch.h"
+#include "shader_recompiler/frontend/ordered_gds_epoch_auth.h"
 #include "shader_recompiler/frontend/ordered_gds_lds_checkpoint.h"
 
 namespace Shader::Gcn::OrderedGds {
@@ -28,6 +29,7 @@ struct GcnOrderedGdsDevicePlan {
     u32 waves_per_group{};
     u32 waves{};
     u64 packet_bytes{};
+    u64 epoch_auth_bytes{};
     GcnCheckpointLayout register_layout{};
     std::optional<GcnLdsCheckpointLayout> lds_layout{};
     u64 combined_device_bytes{};
@@ -66,6 +68,7 @@ struct GcnOrderedGdsDevicePlan {
             waves, LiveCheckpointCoverage::ScalarCount, allocated_vgprs, 0);
         static_assert(sizeof(GpuCapturePacket) == sizeof(GpuResumePacket));
         const u64 packet_bytes = u64(waves) * sizeof(GpuCapturePacket);
+        const u64 epoch_auth_bytes = u64(waves) * sizeof(GpuGcnOrderedEpochAuth);
 
         std::optional<GcnLdsCheckpointLayout> lds;
         if (guest_shared_lds_bytes != 0) {
@@ -75,12 +78,14 @@ struct GcnOrderedGdsDevicePlan {
         const u64 lds_bytes = lds ? lds->total_bytes : 0;
         // Two independent GPU packet buffers, two register-state buffers,
         // and two LDS buffers only if the real guest uses LDS.
-        const u64 combined = 2 * (packet_bytes + registers.total_bytes + lds_bytes);
+        const u64 combined =
+            2 * (packet_bytes + registers.total_bytes + lds_bytes) + epoch_auth_bytes;
         if (combined > MaxEpochDeviceBytes) {
             throw std::invalid_argument(
                 "ordered GDS full capture/resume exceeds combined VRAM budget");
         }
-        return {workgroups, per_group, waves, packet_bytes, registers, lds, combined};
+        return {workgroups, per_group, waves, packet_bytes, epoch_auth_bytes,
+                registers, lds, combined};
     }
 };
 
