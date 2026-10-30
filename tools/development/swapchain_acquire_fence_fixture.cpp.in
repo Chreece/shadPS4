@@ -1,0 +1,115 @@
+// Check the exact production acquire method using typed CPU-only Vulkan collaborators.
+// The simulated present engine records a missing explicit host-acquire dependency.
+// This does NOT emulate Vulkan execution or prove the original GPU reset's cause.
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <limits>
+#include <stdexcept>
+#include <string_view>
+#include <vector>
+using u32 = std::uint32_t;
+using u64 = std::uint64_t;
+[[maybe_unused]] constexpr bool VK_TRUE = true;
+[[maybe_unused]] constexpr int VK_NULL_HANDLE = 0;
+static void check(bool okay,const char* name) {
+ if(!okay){std::fprintf(stderr,"PRESENT_SYNC_TEST_FAIL=%s\n",name);std::exit(2);}
+}
+#define ASSERT_MSG(condition, ...) do { if (!(condition)) throw std::runtime_error("Vulkan assertion"); } while(false)
+#define LOG_CRITICAL(category,...) do{}while(false)
+#define UNREACHABLE() do { throw std::runtime_error("unreachable"); } while(false)
+namespace vk {
+enum class Result {eSuccess,eSuboptimalKHR,eErrorSurfaceLostKHR,eErrorOutOfDateKHR,eErrorUnknown,eErrorDeviceLost};
+const char* to_string(Result){return "vulkan result";}
+struct PresentState {
+ std::vector<u32> schedule;
+ std::array<bool,3> seen_present{};
+ std::array<bool,3> host_completed_present{};
+ std::array<bool,3> fence_pending{};
+ unsigned calls{},fence_waits{},fence_resets{},explicit_host_sync_missing{},gpu_work{};
+ Result next_result{Result::eSuccess};
+};
+struct Device {
+ PresentState* s;
+ Result acquireNextImageKHR(int,u64,u32 semaphore,u32 fence,u32* index) const {
+  check(semaphore!=0,"acquire semaphore must remain used");
+  check(s->calls<s->schedule.size(),"acquire schedule has items");
+  const auto idx=s->schedule[s->calls++];*index=idx;
+  if(fence){check(!s->fence_pending[fence-1],"reuse pending acquire fence");s->fence_pending[fence-1]=true;}
+  if((s->next_result==Result::eSuccess || s->next_result==Result::eSuboptimalKHR) && s->seen_present[idx])s->host_completed_present[idx]=false;
+  return s->next_result;
+ }
+ Result waitForFences(u32 fence,bool wait_all,u64 timeout) const {
+  check(wait_all&&timeout==std::numeric_limits<u64>::max(),"bounded fence wait policy");
+  check(fence>=1&&fence<=3&&s->fence_pending[fence-1],"wait on submitted acquire fence");
+  ++s->fence_waits;
+  for(u32 i=0;i<3;++i)if(s->schedule[s->calls-1]==i)s->host_completed_present[i]=true;
+  return Result::eSuccess;
+ }
+ Result resetFences(u32 fence) const {
+  check(fence>=1&&fence<=3&&s->fence_pending[fence-1],"reset completed acquire fence");
+  check(s->host_completed_present[s->schedule[s->calls-1]],"wait before reset");
+  s->fence_pending[fence-1]=false;++s->fence_resets;return Result::eSuccess;
+ }
+};
+}
+struct Instance {vk::PresentState* s; vk::Device GetDevice() const {return {s};}};
+struct Swapchain {
+ Instance instance;
+ int swapchain{1};
+ std::vector<u32> image_acquired{11,12,13};
+ std::vector<u32> image_acquired_fences{1,2,3};
+ u32 frame_index{},image_index{};
+ bool needs_recreation{};
+ bool AcquireNextImage();
+ void SimulatedPresent(){
+   auto& s=*instance.s;
+   check(image_index<3,"valid acquired image index");
+   if(s.seen_present[image_index]&&!s.host_completed_present[image_index])++s.explicit_host_sync_missing;
+   s.seen_present[image_index]=true;
+   frame_index=(frame_index+1)%3;
+   ++s.gpu_work;
+ }
+};
+namespace Render_Vulkan {}
+/* EXACT_ACQUIRE */
+int main(int argc,char**argv){
+ const bool baseline=argc==2&&std::string_view(argv[1])=="--baseline";
+ const std::vector<std::vector<u32>> sequences={
+  {0,1,2,0,1,2,0,1,2},
+  {0,0,0,0,0,0,0},
+  {0,2,0,1,0,2,1,2,0},
+  {2,1,0,2,0,1,0,2,1},
+  {1,0,1,2,2,0,1,2,1},
+ };
+ unsigned trials=0,all_missing=0;
+ for(const auto& seq:sequences){
+  vk::PresentState state;state.schedule=seq;
+  Swapchain swap{.instance={&state}};
+  for(u32 i=0;i<seq.size();++i){
+   check(swap.AcquireNextImage(),"successful image acquired");
+   check(swap.image_index==seq[i],"acquire index forwarded");
+   swap.SimulatedPresent();
+  }
+  if(baseline){
+   check(state.fence_waits==0&&state.fence_resets==0,"baseline used no host fence");
+   all_missing+=state.explicit_host_sync_missing;
+  }else{
+   check(state.explicit_host_sync_missing==0,"reacquired present explicitly synchronized");
+   check(state.fence_waits==seq.size()&&state.fence_resets==seq.size(),"acquisition fence wait/reset balanced");
+   check(state.gpu_work==seq.size(),"no rendering dropped");
+  }
+  ++trials;
+ }
+ if(baseline)check(all_missing>0,"baseline lacks per-image host acquire completion");
+ for(auto err:{vk::Result::eSuboptimalKHR,vk::Result::eErrorSurfaceLostKHR,vk::Result::eErrorOutOfDateKHR,vk::Result::eErrorUnknown}){
+  vk::PresentState state;state.schedule={1};state.next_result=err;
+  Swapchain swap{.instance={&state}};
+  check(!swap.AcquireNextImage()&&swap.needs_recreation,"recreate triggers on non-success");
+  check(state.fence_waits==unsigned(!baseline && err==vk::Result::eSuboptimalKHR),"suboptimal acquisition waits only with correction");
+  ++trials;
+ }
+ std::printf("%s sequences=5 cases=%u NO_GPU_WORK\n",
+  baseline?"BASELINE_HOST_ACQUIRE_FENCE_ABSENT=REPRODUCED":"SWAPCHAIN_ACQUIRE_FENCE=PASS",trials);
+}

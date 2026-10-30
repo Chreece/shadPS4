@@ -1,0 +1,80 @@
+diff --git a/src/video_core/renderer_vulkan/vk_swapchain.cpp b/src/video_core/renderer_vulkan/vk_swapchain.cpp
+--- a/src/video_core/renderer_vulkan/vk_swapchain.cpp
++++ b/src/video_core/renderer_vulkan/vk_swapchain.cpp
+@@ -106,12 +106,27 @@
+     vk::Device device = instance.GetDevice();
+     vk::Result result =
+         device.acquireNextImageKHR(swapchain, std::numeric_limits<u64>::max(),
+-                                   image_acquired[frame_index], VK_NULL_HANDLE, &image_index);
++                                   image_acquired[frame_index], image_acquired_fences[frame_index],
++                                   &image_index);
+ 
+     switch (result) {
+     case vk::Result::eSuccess:
++    case vk::Result::eSuboptimalKHR: {
++        // A completed acquire fence establishes that the presentation engine
++        // finished using the re-acquired swapchain image. Merely waiting for
++        // frame-rendering completion does not establish presentation completion.
++        // This is a per-acquire wait, never a device-wide idle or queue idle.
++        const auto wait_result =
++            device.waitForFences(image_acquired_fences[frame_index], VK_TRUE,
++                                 std::numeric_limits<u64>::max());
++        ASSERT_MSG(wait_result == vk::Result::eSuccess,
++                   "Swapchain acquire fence wait failed: {}", vk::to_string(wait_result));
++        const auto reset_result = device.resetFences(image_acquired_fences[frame_index]);
++        ASSERT_MSG(reset_result == vk::Result::eSuccess,
++                   "Swapchain acquire fence reset failed: {}", vk::to_string(reset_result));
++        needs_recreation = result == vk::Result::eSuboptimalKHR;
+         break;
+-    case vk::Result::eSuboptimalKHR:
++    }
+     case vk::Result::eErrorSurfaceLostKHR:
+     case vk::Result::eErrorOutOfDateKHR:
+     case vk::Result::eErrorUnknown:
+@@ -273,17 +288,22 @@
+     for (const auto& sem : image_acquired) {
+         device.destroySemaphore(sem);
+     }
++    for (const auto& fence : image_acquired_fences) {
++        device.destroyFence(fence);
++    }
+     for (const auto& sem : present_ready) {
+         device.destroySemaphore(sem);
+     }
+ 
+     image_acquired.clear();
++    image_acquired_fences.clear();
+     present_ready.clear();
+ }
+ 
+ void Swapchain::RefreshSemaphores() {
+     const vk::Device device = instance.GetDevice();
+     image_acquired.resize(image_count);
++    image_acquired_fences.resize(image_count);
+     present_ready.resize(image_count);
+ 
+     for (vk::Semaphore& semaphore : image_acquired) {
+@@ -293,6 +313,12 @@
+                    vk::to_string(semaphore_result));
+         semaphore = sem;
+     }
++    for (vk::Fence& fence : image_acquired_fences) {
++        auto [fence_result, acquire_fence] = device.createFence({});
++        ASSERT_MSG(fence_result == vk::Result::eSuccess,
++                   "Failed to create swapchain acquisition fence: {}", vk::to_string(fence_result));
++        fence = acquire_fence;
++    }
+     for (vk::Semaphore& semaphore : present_ready) {
+         auto [semaphore_result, sem] = device.createSemaphore({});
+         ASSERT_MSG(semaphore_result == vk::Result::eSuccess,
+diff --git a/src/video_core/renderer_vulkan/vk_swapchain.h b/src/video_core/renderer_vulkan/vk_swapchain.h
+--- a/src/video_core/renderer_vulkan/vk_swapchain.h
++++ b/src/video_core/renderer_vulkan/vk_swapchain.h
+@@ -125,6 +125,7 @@
+     std::vector<vk::Image> images;
+     std::vector<vk::ImageView> images_view;
+     std::vector<vk::Semaphore> image_acquired;
++    std::vector<vk::Fence> image_acquired_fences;
+     std::vector<vk::Semaphore> present_ready;
+     u32 width = 0;
+     u32 height = 0;
