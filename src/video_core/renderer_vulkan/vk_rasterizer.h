@@ -90,14 +90,17 @@ public:
     // Restricted CIK compute path: derive creation positions from live
     // guest M0 logicalWaveID rather than Vulkan workgroup scheduling. Only
     // complete ordered-count epochs with contiguous wave IDs and zero
-    // crawler increment are accepted. The complete SGPR/VGPR checkpoint
-    // layout and packet identity must match the same GPU epoch. Bypasses
+    // crawler increment are accepted. The full SGPR/VGPR/VCC/SCC checkpoint
+    // layout and packet identity must match the same GPU epoch, and the
+    // original bytes are uploaded into separate GPU-resume state memory.
+    // The guest still needs a compiled state-restoring continuation. Bypasses
     // need a verified external scheduler and independent replay solution.
     [[nodiscard]] std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
     ResolveCompleteCikComputeOrderedGdsEpoch(
         const VideoCore::Buffer& device_capture, u64 capture_offset,
         const VideoCore::Buffer& device_checkpoints, u64 checkpoint_offset,
         const Shader::Gcn::OrderedGds::GcnCheckpointLayout& checkpoint_layout,
+        VideoCore::Buffer& device_resume_checkpoints, u64 resume_checkpoint_offset,
         VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
         std::size_t guest_created_waves,
         std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
