@@ -38,6 +38,23 @@ static_assert(alignof(GpuGcnOrderedEpochAuth) == 16);
 static_assert(offsetof(GpuGcnOrderedEpochAuth, token_lo) == 16);
 static_assert(offsetof(GpuGcnOrderedEpochAuth, flags) == 24);
 
+// This matches the GPU SPIR-V capture-stamp predicate. A valid stamp means
+// only that a full-wave, zero-LDS snapshot is associated with an explicitly
+// supplied host epoch/token record; it does NOT establish true guest creation
+// order, CIK packer initialization or resumability. The shader compiler must
+// reproduce ALL these checks before writing GcnCheckpointTag/CapturePacketTag.
+[[nodiscard]] constexpr bool IsAuthorizedGcnCaptureStamp(
+    const GpuGcnOrderedEpochAuth& auth, u32 physical_slot,
+    bool complete_wave64, bool zero_shared_lds) noexcept {
+    return complete_wave64 && zero_shared_lds &&
+           auth.tag == GcnEpochAuthTag && auth.epoch != 0 &&
+           auth.physical_slot == physical_slot &&
+           auth.wave_slots != 0 && auth.wave_slots <= GcnEpochAuthMaximumWaves &&
+           physical_slot < auth.wave_slots &&
+           (auth.token_lo != 0 || auth.token_hi != 0) &&
+           auth.flags == GcnEpochAuthFlags && auth.reserved == 0;
+}
+
 // This checks an explicitly PROVIDED complete token assignment. It does not
 // choose continuation identities, initialize CIK packers, validate LDS, or
 // make a guest shader resumable. A caller must establish cross-epoch token

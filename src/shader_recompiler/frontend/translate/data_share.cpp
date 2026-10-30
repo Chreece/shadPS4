@@ -400,7 +400,10 @@ void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
     // wave. These DWORDs share the ABI offsets used by the GPU SSBO writer.
     // The genuine epoch and continuation token must be supplied by a future
     // verified dispatch orchestrator, never inferred from physical GPU
-    // arrival. Tag=0 and flags=0 make this capture deliberately NON-RESUMABLE.
+    // arrival. Translator tags/flags are invalid placeholders. Only the
+    // capture-only GPU backend can stamp validity after verifying the exact
+    // host epoch/token plus full-wave64, zero-LDS checkpoint prerequisites;
+    // this still does NOT enable shader continuation.
     capture(3, 0, ir.Imm32(0u)); // Invalid until authenticated continuation.
     capture(3, 1, site_pc);
     capture(3, 2, ir.Imm32(next_guest_pc));
@@ -424,8 +427,9 @@ void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
     // live pre-DS M0/EXEC and real physical wave slot. The dedicated packet
     // SSBO is distinct from the SGPR/VGPR checkpoint SSBO and ordinary GDS.
     // Host epoch/continuation token are NOT invented by the guest shader.
-    // tag, epoch, token and valid flags remain zero until an authenticated
-    // capture descriptor and synchronized two-pass scheduler exist.
+    // The translator leaves tag/epoch/token/flags at zero. The independent
+    // GPU authority descriptor supplies epoch/token and allows capture-only
+    // stamp validation, but a synchronized two-pass scheduler is still absent.
     const IR::U32 source_lane = ir.FindILsb(exec_mask);
     const IR::U32 cik_payload = ir.BitCount(exec_mask);
     capture(4, 0, ir.Imm32(0u)); // Invalid capture until runtime auth.

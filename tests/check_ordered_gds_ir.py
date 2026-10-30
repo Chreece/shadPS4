@@ -248,6 +248,27 @@ def main():
             "owned.CaptureAuthority()" in rasterizer and
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
             "TRUSTED_DISPATCH_EPOCH_TOKEN_GPU_TRANSPORT_STILL_FAIL_CLOSED")
+    # Prevent valid packet/checkpoint tags without a real host authority,
+    # full wave64 lane storage, and zero-LDS capture. The normal game shader
+    # must still refuse ordered GDS until actual re-entry is implemented.
+    stamp_body = function(backend_cpp, "void EmitOrderedGdsCheckpointRegister(")
+    require("const bool packet_stamp =" in stamp_body and
+            "const bool checkpoint_stamp =" in stamp_body and
+            "Gds::CapturePacketTag" in stamp_body and
+            "Gds::CaptureFlags" in stamp_body and
+            "Gds::GcnCheckpointTag" in stamp_body and
+            "Gds::GcnCheckpointFlags" in stamp_body and
+            "ctx.ordered_gds_capture_pass" in stamp_body and
+            "ctx.runtime_info.hw.cs.shared_memory_size == 0" in stamp_body and
+            "threads % Gds::GcnWaveLanes == 0" in stamp_body and
+            "ctx.OpULessThan(ctx.U1[1], logical_slot, wave_slots)" in stamp_body and
+            "Gds::GcnEpochAuthMaximumWaves" in stamp_body and
+            "const Id reserved = load_auth(7)" in stamp_body and
+            "const Id valid = ctx.OpLogicalAnd(" in stamp_body and
+            "ctx.OpSelect(ctx.U32[1], valid, ctx.ConstU32(valid_stamp)" in stamp_body and
+            "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp and
+            "IsAuthorizedGcnCaptureStamp(" in auth,
+            "REAL_FIRST_PASS_VALIDITY_STAMPS_REQUIRE_VERIFIED_ZERO_LDS_WAVE64_AUTH")
     # A separate FIRST-PASS shader compiler may stop precisely at a decoded
     # guest ordered-count site, AFTER emitting original live checkpoint stores
     # and BEFORE any downstream guest side effect or return-register use.

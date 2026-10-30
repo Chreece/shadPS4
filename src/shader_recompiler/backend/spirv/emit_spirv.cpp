@@ -785,15 +785,18 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank,
                "Missing live GCN packet/checkpoint SPIR-V SSBO or register value");
 
     Id real_value = guest_value;
+    // A capture-only module may stamp packet/register validity ONLY when a
+    // trusted host-owned epoch record matches this exact physical wave slot.
+    // Invalid/missing authority must leave tags and flags at zero; normal
+    // guest shaders never reach this path while ordered GDS is unsupported.
     const bool identity_dword =
-        (packet && (index == 1 || index == 10 || index == 11)) ||
+        (packet && (index == 1u || index == 10u || index == 11u)) ||
         bank == u32(Gds::CheckpointRegisterBank::AuthenticatedIdentity);
-    if (identity_dword) {
-        // The epoch/token values MUST be read from the host-supplied wave
-        // authority, never guessed from Vulkan storage slot or guest M0.
-        // If the independent descriptor was stale or mismatched, record
-        // zero. The checkpoint tag/valid flags remain zero until the actual
-        // second-pass guest continuation is implemented and validated.
+    const bool packet_stamp = packet && (index == 0u || index == 12u);
+    const bool checkpoint_stamp =
+        bank == u32(Gds::CheckpointRegisterBank::SiteMetadata) &&
+        (index == 0u || index == 8u);
+    if (identity_dword || packet_stamp || checkpoint_stamp) {
         const auto& auth = ctx.buffers.at(ctx.ordered_gds_auth_index);
         ASSERT_MSG(auth.buffer_type == BufferType::OrderedGdsEpochAuth,
                    "GCN wave token source is not the host authority SSBO");
@@ -802,7 +805,7 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank,
         ASSERT_MSG(Sirit::ValidId(auth_storage),
                    "missing verified GPU epoch/token binding");
         const Id auth_base = ctx.OpIMul(ctx.U32[1], logical_slot,
-                                        ctx.ConstU32(Gds::GcnEpochAuthDwords));
+                                       ctx.ConstU32(Gds::GcnEpochAuthDwords));
         const auto load_auth = [&](u32 word) {
             const Id offset = ctx.OpIAdd(ctx.U32[1], auth_base, ctx.ConstU32(word));
             const Id pointer = ctx.OpAccessChain(
@@ -812,28 +815,61 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank,
         const Id tag = load_auth(0);
         const Id epoch = load_auth(1);
         const Id actual_slot = load_auth(2);
+        const Id wave_slots = load_auth(3);
         const Id lo = load_auth(4);
         const Id hi = load_auth(5);
         const Id flags = load_auth(6);
-        const Id expected_tag = ctx.OpIEqual(
+        const Id reserved = load_auth(7);
+        const Id correct_tag = ctx.OpIEqual(
             ctx.U1[1], tag, ctx.ConstU32(Gds::GcnEpochAuthTag));
-        const Id expected_slot = ctx.OpIEqual(ctx.U1[1], actual_slot, logical_slot);
-        const Id expected_flags = ctx.OpIEqual(
+        const Id correct_slot = ctx.OpIEqual(ctx.U1[1], actual_slot, logical_slot);
+        const Id correct_flags = ctx.OpIEqual(
             ctx.U1[1], flags, ctx.ConstU32(Gds::GcnEpochAuthFlags));
-        const Id nonzero_epoch = ctx.OpINotEqual(ctx.U1[1], epoch, ctx.u32_zero_value);
+        const Id epoch_nonzero = ctx.OpINotEqual(ctx.U1[1], epoch, ctx.u32_zero_value);
         const Id token_nonzero = ctx.OpLogicalOr(
             ctx.U1[1], ctx.OpINotEqual(ctx.U1[1], lo, ctx.u32_zero_value),
             ctx.OpINotEqual(ctx.U1[1], hi, ctx.u32_zero_value));
-        const Id valid0 = ctx.OpLogicalAnd(ctx.U1[1], expected_tag, expected_slot);
-        const Id valid1 = ctx.OpLogicalAnd(ctx.U1[1], expected_flags, nonzero_epoch);
+        const Id slot_in_range = ctx.OpULessThan(ctx.U1[1], logical_slot, wave_slots);
+        const Id bounded_waves = ctx.OpULessThanEqual(
+            ctx.U1[1], wave_slots, ctx.ConstU32(Gds::GcnEpochAuthMaximumWaves));
+        const Id reserved_zero = ctx.OpIEqual(ctx.U1[1], reserved, ctx.u32_zero_value);
+        const Id valid0 = ctx.OpLogicalAnd(ctx.U1[1], correct_tag, correct_slot);
+        const Id valid1 = ctx.OpLogicalAnd(ctx.U1[1], correct_flags, epoch_nonzero);
+        const Id valid2 = ctx.OpLogicalAnd(ctx.U1[1], slot_in_range, bounded_waves);
+        const Id valid3 = ctx.OpLogicalAnd(ctx.U1[1], token_nonzero, reserved_zero);
         const Id valid = ctx.OpLogicalAnd(
-            ctx.U1[1], ctx.OpLogicalAnd(ctx.U1[1], valid0, valid1), token_nonzero);
-        const u32 authority_word =
-            packet ? (index == 1 ? 1u : index == 10 ? 4u : 5u)
-                   : (index == 0 ? 1u : index == 1 ? 4u : 5u);
-        // Reuse the loaded IDs instead of performing a second noncoherent read.
-        const Id value = authority_word == 1 ? epoch : authority_word == 4 ? lo : hi;
-        real_value = ctx.OpSelect(ctx.U32[1], valid, value, ctx.u32_zero_value);
+            ctx.U1[1], ctx.OpLogicalAnd(ctx.U1[1], valid0, valid1),
+            ctx.OpLogicalAnd(ctx.U1[1], valid2, valid3));
+        if (packet_stamp || checkpoint_stamp) {
+            // Full wave64 is necessary for complete VGPR lane images.
+            // Shared LDS requires a separately proven quiescent checkpoint;
+            // until then no capture can claim validity for a nonzero-LDS
+            // shader, even if its authority token is otherwise valid.
+            const auto& local = ctx.runtime_info.hw.cs.workgroup_size;
+            const u64 threads = u64(local[0]) * local[1] * local[2];
+            const bool complete_wave64_zero_lds =
+                ctx.ordered_gds_capture_pass &&
+                ctx.runtime_info.hw.cs.shared_memory_size == 0 &&
+                threads >= Gds::GcnWaveLanes && threads <= 1024u &&
+                threads % Gds::GcnWaveLanes == 0;
+            const u32 valid_stamp =
+                packet_stamp
+                    ? (index == 0u ? Gds::CapturePacketTag : Gds::CaptureFlags)
+                    : (index == 0u ? Gds::GcnCheckpointTag : Gds::GcnCheckpointFlags);
+            // Never issue a nonzero tag/flags for unproven LDS or partial
+            // guest wave state. Final ordered-count execution remains gated.
+            real_value = complete_wave64_zero_lds
+                             ? ctx.OpSelect(ctx.U32[1], valid, ctx.ConstU32(valid_stamp),
+                                            ctx.u32_zero_value)
+                             : ctx.u32_zero_value;
+        } else {
+            const u32 authority_word =
+                packet ? (index == 1u ? 1u : index == 10u ? 4u : 5u)
+                       : (index == 0u ? 1u : index == 1u ? 4u : 5u);
+            const Id value = authority_word == 1u ? epoch :
+                             authority_word == 4u ? lo : hi;
+            real_value = ctx.OpSelect(ctx.U32[1], valid, value, ctx.u32_zero_value);
+        }
     }
 
     const Id wave_offset = ctx.OpIMul(ctx.U32[1], logical_slot, ctx.ConstU32(stride));

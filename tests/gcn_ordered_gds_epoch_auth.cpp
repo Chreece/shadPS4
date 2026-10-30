@@ -33,6 +33,40 @@ int main() {
                ((u64(r.token_hi) << 32) | r.token_lo) == scheduler_tokens[i]);
     }
 
+    // Production GPU stamp predicate: no valid header from stale tokens,
+    // forged slots, partial wave64 capture, or non-quiescent shared LDS.
+    for (u32 i = 0; i < 4; ++i) {
+        assert(IsAuthorizedGcnCaptureStamp(auth[i], i, true, true));
+        assert(!IsAuthorizedGcnCaptureStamp(auth[i], i, false, true));
+        assert(!IsAuthorizedGcnCaptureStamp(auth[i], i, true, false));
+        auto invalid = auth[i];
+        invalid.tag = 0;
+        assert(!IsAuthorizedGcnCaptureStamp(invalid, i, true, true));
+        invalid = auth[i];
+        invalid.epoch = 0;
+        assert(!IsAuthorizedGcnCaptureStamp(invalid, i, true, true));
+        invalid = auth[i];
+        invalid.physical_slot ^= 1;
+        assert(!IsAuthorizedGcnCaptureStamp(invalid, i, true, true));
+        invalid = auth[i];
+        invalid.wave_slots = 0;
+        assert(!IsAuthorizedGcnCaptureStamp(invalid, i, true, true));
+        invalid = auth[i];
+        invalid.wave_slots = GcnEpochAuthMaximumWaves + 1;
+        assert(!IsAuthorizedGcnCaptureStamp(invalid, i, true, true));
+        invalid = auth[i];
+        invalid.wave_slots = i;
+        assert(!IsAuthorizedGcnCaptureStamp(invalid, i, true, true));
+        invalid = auth[i];
+        invalid.token_lo = invalid.token_hi = 0;
+        assert(!IsAuthorizedGcnCaptureStamp(invalid, i, true, true));
+        invalid = auth[i];
+        invalid.flags = 0;
+        assert(!IsAuthorizedGcnCaptureStamp(invalid, i, true, true));
+        invalid = auth[i];
+        invalid.reserved = 1;
+        assert(!IsAuthorizedGcnCaptureStamp(invalid, i, true, true));
+    }
     std::array<GpuCapturePacket,4> captures{};
     for (u32 i = 0; i < 4; ++i) {
         captures[i].tag = CapturePacketTag;
@@ -50,7 +84,7 @@ int main() {
             RequireCaptureTokenAuthority(modified, auth, Epoch);
         }));
     };
-    wrong_packet([](auto& p) { p[0].tag = 0; }); // current GPU body is NOT valid
+    wrong_packet([](auto& p) { p[0].tag = 0; }); // reject unauthorized GPU capture
     wrong_packet([](auto& p) { p[0].flags = 0; });
     wrong_packet([](auto& p) { p[1].token_lo ^= 1; });
     wrong_packet([](auto& p) { p[2].token_hi ^= 1; });
@@ -83,5 +117,6 @@ int main() {
                  "full_wave_coverage=PASS distinct_nonzero_tokens=PASS "
                  "no_fabricated_token=PASS forged_packet_rejected=PASS "
                  "stale_epoch_rejected=PASS duplicate_slot_rejected=PASS "
+                 "authenticated_stamp_predicate=PASS incomplete_wave_lds_forgery_rejected=PASS "
                  "GPU_GUEST_CONTINUATION=NOT_ENABLED\n";
 }
