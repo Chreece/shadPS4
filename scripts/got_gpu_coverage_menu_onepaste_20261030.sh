@@ -80,6 +80,7 @@ try:
     g['home_dir']=str(work/'user'/home.relative_to(origin.resolve()));data['General']=g;p.write_text(json.dumps(data))
  api=u.Ollama(out);u.ensure_headroom(api,out,unloaded,result)
  if u.emulator_pids() or sha(E)!=before or u.free_vram()<u.MIN_VRAM:raise RuntimeError('PRELAUNCH_CHANGED')
+ since=time.time()
  with silent():result['game_result']=u.run_game(E,eboot,work,out,screen)
  result['status']='NEW_GPU_COVERAGE_TEST_COMPLETE'
  outcome=result['game_result'];rc=0 if outcome.get('time_limit_reached') or outcome.get('exit_code')==0 else 1
@@ -97,7 +98,7 @@ finally:
   for directory in (work/'user/log',P.home()/'.local/share/shadPS4/log'):
    if directory.is_dir():
     for p in directory.glob('*.log'):
-     if p.is_file() and not p.is_symlink() and p.name in ('CUSA11456.log','shadps4.log'):
+     if 'since' in locals() and p.is_file() and not p.is_symlink() and p.stat().st_mtime>=since-3 and p.name in ('CUSA11456.log','shadps4.log'):
       with p.open('rb') as fd:
        fd.seek(max(0,p.stat().st_size-16*1024**2))
        (out/('runtime-'+p.name)).write_bytes(fd.read())
