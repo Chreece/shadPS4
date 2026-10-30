@@ -76,6 +76,14 @@ for compiler in g++ clang++-17; do
     grep -Fq 'GDS_ORDERED_FRONTEND_EXTRACTED=PASS' \
         "${LOG}/frontend-${name}.log"
     grep -Fq 'invalid_vdst_rejected=2' "${LOG}/frontend-${name}.log"
+    if ! (cd "${SRC}" &&
+          python3 tests/check_ordered_gds_live_capture.py --compiler "${compiler}") \
+        > "${LOG}/live-registers-${name}.log" 2>&1; then
+        tail -100 "${LOG}/live-registers-${name}.log"
+        exit 6
+    fi
+    grep -Fq 'GDS_ORDERED_LIVE_REGISTER_CAPTURE=PASS' \
+        "${LOG}/live-registers-${name}.log"
 done
 
 STAGE="GCC_AND_CLANG_SANITIZERS"
