@@ -427,17 +427,21 @@ def main():
             "auto capture_binding = binding" in pipeline and
             "Shader::Backend::SPIRV::EmitSPIRVOrderedGdsCapturePass(" in pipeline and
             '"pr117-capture.spv"' in pipeline and
-            "auto spv = ordered_capture_only" in pipeline and
+            "auto spv = capture_variant" in pipeline and
             ": Shader::Backend::SPIRV::EmitSPIRV(" in pipeline and
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
             "REAL_GUEST_CAPTURE_SPIRV_DUMP_DIAGNOSTIC_ONLY")
     # Actual Vulkan capture pipeline + host-owned authenticated dispatch,
     # not only a dumped .spv module or an unused host packet fixture.
-    capture_vulkan = function(rasterizer, "Rasterizer::DispatchOriginalGcnOrderedCaptureDirect(")
+    capture_vulkan = function(rasterizer, "Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(")
     require("GetOrderedGdsCapturePipeline()" in pipeline and
             "ordered_capture_compute_pipelines.try_emplace(" in pipeline and
             "ordered_capture_program_cache" in source("pipeline_h") and
             "DispatchOriginalGcnOrderedCaptureDirect(" in rasterizer and
+            "DispatchOriginalGcnOrderedCaptureIndirect(" in rasterizer and
+            "SHADPS4_PR117_CAPTURE_ONCE" in rasterizer and
+            "SHADPS4_PR117_CAPTURE_ONCE" in pipeline and
+            "command.dispatchIndirect(indirect_command_buffer->Handle()" in capture_vulkan and
             "runtime.FillBuffer(&owner.capture_packets" in capture_vulkan and
             "runtime.FillBuffer(&owner.capture_registers" in capture_vulkan and
             "OrderedGdsCaptureBinding live_scope{*this, owner}" in capture_vulkan and
