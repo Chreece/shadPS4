@@ -26,6 +26,7 @@ FILES = {
     "packer": "src/shader_recompiler/frontend/ordered_gds_legacy_packer.h",
     "checkpoint": "src/shader_recompiler/frontend/ordered_gds_checkpoint.h",
     "word_layout": "src/shader_recompiler/frontend/ordered_gds_word_layout.h",
+    "device_plan": "src/shader_recompiler/frontend/ordered_gds_device_plan.h",
     "backend_context": "src/shader_recompiler/backend/spirv/spirv_emit_context.cpp",
     "backend_context_h": "src/shader_recompiler/backend/spirv/spirv_emit_context.h",
     "resource_h": "src/shader_recompiler/resource.h",
@@ -80,6 +81,7 @@ def main():
     packer = source("packer")
     checkpoint = source("checkpoint")
     word_layout = source("word_layout")
+    device_plan = source("device_plan")
     backend_context = source("backend_context")
     backend_context_h = source("backend_context_h")
     resource_h = source("resource_h")
@@ -322,6 +324,33 @@ def main():
             "class OrderedGdsLdsStateTransfer" in transfer and
             "dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead" in transfer,
             "PRODUCTION_GCN_LDS_STATE_TRANSFER_AND_GUARD")
+
+    # A real GPU epoch owner must validate every guest-controlled size
+    # BEFORE allocating independent packet, SGPR/VGPR and optional LDS buffers.
+    # The native adapter must never infer a guest creation rank from slots,
+    # use guest GDS RAM as a checkpoint, or make zero LDS allocate fake storage.
+    require("struct GcnOrderedGdsDevicePlan" in device_plan and
+            "GcnCheckpointLayout::Require(" in device_plan and
+            "DispatchLayout::Create(" in device_plan and
+            "GcnLdsCheckpointLayout::Require(" in device_plan and
+            "(threads % GcnWaveLanes) != 0" in device_plan and
+            "combined > MaxEpochDeviceBytes" in device_plan and
+            "class OrderedGdsEpochDeviceBuffers" in transfer and
+            "plan{Plan::Require(" in transfer and
+            "capture_packets{instance, 0, plan.packet_bytes" in transfer and
+            "resume_packets{instance, 0, plan.packet_bytes" in transfer and
+            "capture_registers{instance, 0, plan.register_layout.total_bytes" in transfer and
+            "resume_registers{instance, 0, plan.register_layout.total_bytes" in transfer and
+            "if (plan.lds_layout)" in transfer and
+            "Rasterizer::AllocateOrderedGdsEpochBuffers(" in rasterizer and
+            "Rasterizer::ResolveOwnedCikComputeOrderedGdsEpoch(" in rasterizer and
+            "owned.capture_registers" in rasterizer and
+            "owned.resume_registers" in rasterizer and
+            "owned.capture_packets" in rasterizer and
+            "owned.resume_packets" in rasterizer and
+            "plan.lds_layout.value_or(" in rasterizer and
+            "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
+            "REAL_GPU_DISPATCH_OWNED_GDS_RESOURCES_BOUNDED_AND_RUNTIME_GATED")
 
     require("class OrderedGdsPhases" in reference and
             "CompleteWaveCollector" in reference and
