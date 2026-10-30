@@ -145,7 +145,8 @@ inline void RequireCaptureTokenAuthority(
     std::vector<bool> observed(auth.size(), false);
     for (const auto& p : packets) {
         if (p.logical_slot >= auth.size() || observed[p.logical_slot] ||
-            p.tag != CapturePacketTag || p.flags != CaptureFlags ||
+            p.tag != CapturePacketTag ||
+            (p.flags != CaptureFlags && p.flags != CaptureBypassFlags) ||
             p.epoch != epoch) {
             throw std::invalid_argument("unverified or duplicate GPU capture wave packet");
         }
@@ -155,8 +156,18 @@ inline void RequireCaptureTokenAuthority(
             record.physical_slot != p.logical_slot ||
             record.wave_slots != auth.size() ||
             record.flags != GcnEpochAuthFlags || record.reserved ||
-            (record.token_lo == 0 && record.token_hi == 0) ||
-            p.token_lo != record.token_lo || p.token_hi != record.token_hi) {
+            (record.token_lo == 0 && record.token_hi == 0)) {
+            throw std::invalid_argument("GPU continuation token or dispatch epoch disagrees");
+        }
+        if (p.flags == CaptureBypassFlags) {
+            // S_ENDPGM consumes no ordered counter, so NO packet continuation
+            // token exists. The independently trusted host token still owns
+            // this physical wave slot and proves that it belongs to this
+            // epoch. Preserve exact bypass fields, not fake M0/EXEC/VDST.
+            if (!IsCanonicalGcnTerminalBypass(p, epoch)) {
+                throw std::invalid_argument("forged GDS terminal bypass packet");
+            }
+        } else if (p.token_lo != record.token_lo || p.token_hi != record.token_hi) {
             throw std::invalid_argument("GPU continuation token or dispatch epoch disagrees");
         }
     }

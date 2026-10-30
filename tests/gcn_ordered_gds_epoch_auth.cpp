@@ -99,6 +99,37 @@ int main() {
         captures[i].token_hi = auth[i].token_hi;
     }
     RequireCaptureTokenAuthority(captures, auth, Epoch);
+    // A genuine terminal S_ENDPGM wave is accounted for without a fake
+    // ordered-count operation or continuation token. Its HOST authority
+    // remains unique and nonzero, but the BYPASS packet token is zero.
+    auto with_terminal = captures;
+    auto& terminal = with_terminal[2];
+    terminal.flags = CaptureBypassFlags;
+    terminal.site_pc = NoActiveLane;
+    terminal.source_lane = NoActiveLane;
+    terminal.token_lo = 0;
+    terminal.token_hi = 0;
+    assert(IsCanonicalGcnTerminalBypass(terminal, Epoch));
+    RequireCaptureTokenAuthority(with_terminal, auth, Epoch);
+    const auto forged_terminal = [&](auto change) {
+        auto wrong = with_terminal;
+        change(wrong[2]);
+        assert(!IsCanonicalGcnTerminalBypass(wrong[2], Epoch));
+        assert(Reject([&] {RequireCaptureTokenAuthority(wrong, auth, Epoch);}));
+    };
+    forged_terminal([](auto& p) {p.token_lo = 99;});
+    forged_terminal([](auto& p) {p.site_pc = 0x4158;});
+    forged_terminal([](auto& p) {p.source_lane = 0;});
+    forged_terminal([](auto& p) {p.payload = 1;});
+    forged_terminal([](auto& p) {p.runtime_m0 = 1;});
+    forged_terminal([](auto& p) {p.exec_lo = 1;});
+    forged_terminal([](auto& p) {p.encoded_control = 0x0300;});
+    forged_terminal([](auto& p) {p.reserved0 = 1;});
+    forged_terminal([](auto& p) {p.flags = CaptureFlags; p.token_lo = 0;});
+    // Without a separate genuine guest creation-order assignment a bypass
+    // cannot be used to invent CIK M0 ranks for an entire resolved epoch.
+    assert(!VerifiedGuestCreationOrder::FromCompleteCikComputeM0(
+        with_terminal, Epoch));
     const auto wrong_packet = [&](auto change) {
         auto modified = captures;
         change(modified);
@@ -141,5 +172,6 @@ int main() {
                  "stale_epoch_rejected=PASS duplicate_slot_rejected=PASS "
                  "authenticated_stamp_predicate=PASS incomplete_wave_lds_forgery_rejected=PASS "
                  "monotonic_host_dispatch_tickets=PASS rejected_wave_counts_no_ticket_loss=PASS "
+                 "real_terminal_bypass_epoch_authority=PASS no_fabricated_M0_ranks=PASS "
                  "GPU_GUEST_CONTINUATION=NOT_ENABLED\n";
 }

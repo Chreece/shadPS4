@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <array>
 #include <mutex>
 #include <span>
 #include <type_traits>
@@ -156,6 +157,141 @@ Id TypeId(const EmitContext& ctx, IR::Type type) {
     }
 }
 
+// The original guest shader may terminate at S_ENDPGM without ever
+// executing DS_ORDERED_COUNT. Each *completed wave* must contribute a
+// canonical bypass record; otherwise host readback mistakes a legitimate
+// terminal wave for a lost or stale checkpoint.
+//
+// Called only from original structured GCN Return paths. Ordered sites
+// terminate earlier in EmitOrderedGdsCount and NEVER reach this writer.
+// No guest order, counter seed, synthetic resumed register, or replay is
+// generated. This source path is still diagnostic until a real producer/
+// consumer dispatch scheduler is implemented.
+void EmitOrderedGdsTerminalBypass(EmitContext& ctx) {
+    namespace Gds = Shader::Gcn::OrderedGds;
+    ASSERT_MSG(ctx.ordered_gds_capture_pass &&
+                   ctx.hw_stage == HwStage::Compute &&
+                   ctx.has_ordered_gds_capture_binding &&
+                   ctx.has_ordered_gds_auth_binding &&
+                   ctx.info.loads.Get(IR::Attribute::WorkgroupIndex) &&
+                   ctx.info.loads.Get(IR::Attribute::LocalInvocationIndex) &&
+                   Sirit::ValidId(ctx.workgroup_index_id) &&
+                   Sirit::ValidId(ctx.local_invocation_index),
+               "GDS terminal bypass needs the original GCN capture identities");
+    const auto& local = ctx.runtime_info.hw.cs.workgroup_size;
+    const u64 threads = u64(local[0]) * local[1] * local[2];
+    ASSERT_MSG(threads >= Gds::GcnWaveLanes && threads <= 1024 &&
+                   threads % Gds::GcnWaveLanes == 0 &&
+                   ctx.info.shared_memory_scratch_size == 0 &&
+                   (ctx.runtime_info.hw.cs.shared_memory_size == 0 ||
+                    ctx.info.ordered_gds_persistent_lds),
+               "GDS terminal bypass requires complete and preserved guest waves");
+
+    const auto& packet = ctx.buffers.at(ctx.ordered_gds_capture_index);
+    const auto& auth = ctx.buffers.at(ctx.ordered_gds_auth_index);
+    ASSERT_MSG(packet.buffer_type == BufferType::OrderedGdsCapture &&
+                   auth.buffer_type == BufferType::OrderedGdsEpochAuth,
+               "GDS terminal packet and host authorization buffers swapped");
+    const auto [packet_storage, packet_pointer_type] =
+        packet.Alias(EmitContext::PointerType::U32);
+    const auto [auth_storage, auth_pointer_type] =
+        auth.Alias(EmitContext::PointerType::U32);
+    ASSERT_MSG(Sirit::ValidId(packet_storage) && Sirit::ValidId(auth_storage),
+               "GDS terminal capture missing GPU descriptor storage");
+
+    const Id local_index = ctx.OpLoad(ctx.U32[1], ctx.local_invocation_index);
+    const Id lane = ctx.OpUMod(ctx.U32[1], local_index,
+                              ctx.ConstU32(Gds::GcnWaveLanes));
+    const Id wave_in_group = ctx.OpUDiv(ctx.U32[1], local_index,
+                                       ctx.ConstU32(Gds::GcnWaveLanes));
+    const Id physical_slot = ctx.OpIAdd(
+        ctx.U32[1], ctx.OpIMul(ctx.U32[1], ctx.workgroup_index_id,
+                              ctx.ConstU32(u32(threads / Gds::GcnWaveLanes))),
+        wave_in_group);
+    // Exactly one physical invocation owns the 16-byte aligned packet header.
+    // Never permit 64 lanes to race over the same 16-DWORD packet.
+    const Id lane_zero = ctx.OpIEqual(ctx.U1[1], lane, ctx.u32_zero_value);
+    const Id write_label = ctx.OpLabel();
+    const Id merge_label = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge_label, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(lane_zero, write_label, merge_label);
+    ctx.AddLabel(write_label);
+
+    const Id auth_base = ctx.OpIMul(ctx.U32[1], physical_slot,
+                                    ctx.ConstU32(Gds::GcnEpochAuthDwords));
+    const auto load_auth = [&](u32 word) {
+        const Id index = ctx.OpIAdd(ctx.U32[1], auth_base, ctx.ConstU32(word));
+        return ctx.OpLoad(ctx.U32[1], ctx.OpAccessChain(
+            auth_pointer_type, auth_storage, ctx.u32_zero_value, index));
+    };
+    const Id tag = load_auth(0);
+    const Id epoch = load_auth(1);
+    const Id source_slot = load_auth(2);
+    const Id wave_slots = load_auth(3);
+    const Id token_lo = load_auth(4);
+    const Id token_hi = load_auth(5);
+    const Id flags = load_auth(6);
+    const Id reserved = load_auth(7);
+
+    const Id declared_slots_valid = ctx.OpLogicalAnd(
+        ctx.U1[1],
+        ctx.OpINotEqual(ctx.U1[1], wave_slots, ctx.u32_zero_value),
+        ctx.OpULessThanEqual(ctx.U1[1], wave_slots,
+                            ctx.ConstU32(Gds::GcnEpochAuthMaximumWaves)));
+    const Id slot_valid = ctx.OpLogicalAnd(
+        ctx.U1[1],
+        ctx.OpIEqual(ctx.U1[1], physical_slot, source_slot),
+        ctx.OpULessThan(ctx.U1[1], physical_slot, wave_slots));
+    const Id source_valid = ctx.OpLogicalAnd(
+        ctx.U1[1],
+        ctx.OpIEqual(ctx.U1[1], tag, ctx.ConstU32(Gds::GcnEpochAuthTag)),
+        ctx.OpIEqual(ctx.U1[1], flags, ctx.ConstU32(Gds::GcnEpochAuthFlags)));
+    const Id epoch_valid = ctx.OpLogicalAnd(
+        ctx.U1[1],
+        ctx.OpINotEqual(ctx.U1[1], epoch, ctx.u32_zero_value),
+        ctx.OpIEqual(ctx.U1[1], reserved, ctx.u32_zero_value));
+    const Id token_valid = ctx.OpLogicalOr(
+        ctx.U1[1], ctx.OpINotEqual(ctx.U1[1], token_lo, ctx.u32_zero_value),
+        ctx.OpINotEqual(ctx.U1[1], token_hi, ctx.u32_zero_value));
+    const Id valid = ctx.OpLogicalAnd(
+        ctx.U1[1],
+        ctx.OpLogicalAnd(ctx.U1[1], declared_slots_valid, slot_valid),
+        ctx.OpLogicalAnd(
+            ctx.U1[1],
+            ctx.OpLogicalAnd(ctx.U1[1], source_valid, epoch_valid),
+            token_valid));
+
+    // Bypass does not consume DS, return a VDST, or need a GPU continuation
+    // token. The host validates this exact canonical packet and separately
+    // authenticates the original per-slot epoch record. All other fields
+    // are zero; 0xffffffff marks the absence of any site and active lane.
+    const Id valid_tag = ctx.OpSelect(
+        ctx.U32[1], valid, ctx.ConstU32(Gds::CapturePacketTag), ctx.u32_zero_value);
+    const Id valid_epoch = ctx.OpSelect(
+        ctx.U32[1], valid, epoch, ctx.u32_zero_value);
+    const Id valid_flags = ctx.OpSelect(
+        ctx.U32[1], valid, ctx.ConstU32(Gds::CaptureBypassFlags),
+        ctx.u32_zero_value);
+    const std::array<Id, Gds::GpuCapturePacketDwords> words{
+        valid_tag, valid_epoch, ctx.ConstU32(Gds::NoActiveLane),
+        ctx.u32_zero_value, physical_slot, ctx.u32_zero_value,
+        ctx.u32_zero_value, ctx.u32_zero_value,
+        ctx.ConstU32(Gds::NoActiveLane), ctx.u32_zero_value,
+        ctx.u32_zero_value, ctx.u32_zero_value, valid_flags,
+        ctx.u32_zero_value, ctx.u32_zero_value, ctx.u32_zero_value,
+    };
+    const Id packet_base = ctx.OpIMul(
+        ctx.U32[1], physical_slot, ctx.ConstU32(Gds::GpuCapturePacketDwords));
+    for (u32 word = 0; word < words.size(); ++word) {
+        const Id index = ctx.OpIAdd(ctx.U32[1], packet_base, ctx.ConstU32(word));
+        const Id ptr = ctx.OpAccessChain(
+            packet_pointer_type, packet_storage, ctx.u32_zero_value, index);
+        ctx.OpStore(ptr, words[word]);
+    }
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(merge_label);
+}
+
 void Traverse(EmitContext& ctx, const IR::Program& program) {
     IR::Block* current_block{};
     for (const IR::AbstractSyntaxNode& node : program.syntax_list) {
@@ -208,6 +344,11 @@ void Traverse(EmitContext& ctx, const IR::Program& program) {
             break;
         }
         case IR::AbstractSyntaxNode::Type::Return:
+            if (ctx.ordered_gds_capture_pass) {
+                // Only the ORIGINAL decoded GCN terminal path reaches this.
+                // An ordered wave has already returned at the DS opcode.
+                EmitOrderedGdsTerminalBypass(ctx);
+            }
             ctx.OpReturn();
             break;
         case IR::AbstractSyntaxNode::Type::Unreachable:

@@ -310,17 +310,27 @@ inline std::vector<GpuResumePacket> ResolveGpuCaptures(
 }
 
 
+// Canonical terminal bypass covers a REAL wave that left the original GCN
+// shader without executing DS_ORDERED_COUNT. It is not an EXEC=0 ordered
+// operation, an invented wave rank or a fake return-register value.
+[[nodiscard]] constexpr bool IsCanonicalGcnTerminalBypass(
+    const GpuCapturePacket& packet, u32 expected_epoch) noexcept {
+    return packet.tag == CapturePacketTag && packet.epoch == expected_epoch &&
+           packet.flags == CaptureBypassFlags && packet.site_pc == NoActiveLane &&
+           packet.encoded_control == 0 && packet.runtime_m0 == 0 &&
+           packet.exec_lo == 0 && packet.exec_hi == 0 &&
+           packet.source_lane == NoActiveLane && packet.payload == 0 &&
+           packet.token_lo == 0 && packet.token_hi == 0 &&
+           packet.reserved0 == 0 && packet.reserved1 == 0 &&
+           packet.reserved2 == 0;
+}
+
 // A completed wave that never executes DS_ORDERED_COUNT is NOT an inactive
 // GDS operation. A real GPU terminal-path capture must explicitly mark it;
 // static CFG may show a possible bypass but cannot invent a completed wave.
 inline u64 DecodeCompletedGpuWave(const GpuCapturePacket& packet, u32 expected_epoch,
                                   const VerifiedGuestCreationOrder& creation) {
-    if (packet.tag != CapturePacketTag || packet.epoch != expected_epoch ||
-        packet.flags != CaptureBypassFlags || packet.site_pc != NoActiveLane ||
-        packet.encoded_control || packet.runtime_m0 || packet.exec_lo ||
-        packet.exec_hi || packet.payload || packet.source_lane != NoActiveLane ||
-        packet.token_lo || packet.token_hi || packet.reserved0 ||
-        packet.reserved1 || packet.reserved2) {
+    if (!IsCanonicalGcnTerminalBypass(packet, expected_epoch)) {
         throw std::invalid_argument("invalid GDS bypass completion packet");
     }
     return creation.RankForSlot(packet.logical_slot);
