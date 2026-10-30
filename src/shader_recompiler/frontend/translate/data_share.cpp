@@ -412,6 +412,13 @@ void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
     capture(3, 8, ir.Imm32(0u)); // Never claim valid without epoch/token.
     capture(3, 9, ir.Imm32(0u)); // Reserved field.
     capture(3, 10, ir.Imm32(Shader::Gcn::OrderedGds::GcnCheckpointAbiVersion));
+    // Authenticated epoch and token are transported separately from the
+    // REAL scheduler-owned GPU buffer. These live IR op operands are only
+    // placeholders; the SPIR-V backend loads the corresponding authority
+    // DWORDs rather than inventing a guest creation identity or token.
+    capture(5, 0, ir.Imm32(0u));
+    capture(5, 1, ir.Imm32(0u));
+    capture(5, 2, ir.Imm32(0u));
 
     // Produce the ACTUAL GPU packet DWORDs from this decoded guest DS site,
     // live pre-DS M0/EXEC and real physical wave slot. The dedicated packet
