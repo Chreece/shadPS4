@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <atomic>
+#include <cstdlib>
+#include <string_view>
 #include "common/debug.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -25,6 +27,13 @@
 #include "video_core/texture_cache/texture_cache.h"
 
 namespace Vulkan {
+
+// An explicitly opted-in, one-shot GPU capture probe; absolutely not a
+// per-game shader override, and never active during normal gameplay.
+static bool IsPr117OneShotCaptureProbe() {
+    const char* const value = std::getenv("SHADPS4_PR117_CAPTURE_ONCE");
+    return value && std::string_view{value} == "1";
+}
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
@@ -382,6 +391,35 @@ void Rasterizer::DispatchDirect() {
     }
 
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
+    if (cs.uses_ordered_gds) {
+        if (!IsPr117OneShotCaptureProbe()) {
+            throw std::runtime_error("ordered GDS capture pipeline outside explicit probe");
+        }
+        // The original pre-DS GCN executes on the GPU. Stop this process
+        // after its authenticated readback: returning from DispatchDirect
+        // here would falsely signal completion without guest re-entry.
+        auto owner = AllocateOrderedGdsEpochBuffers(
+            {cs_program.dim_x, cs_program.dim_y, cs_program.dim_z},
+            {cs_program.num_thread_x.full, cs_program.num_thread_y.full,
+             cs_program.num_thread_z.full},
+            cs_program.settings.num_vgprs * 4, cs_program.SharedMemSize());
+        const u32 epoch = AuthorizeNewOrderedGdsCaptureEpoch(*owner);
+        const auto packets = DispatchOriginalGcnOrderedCaptureDirect(*owner, epoch);
+        for (std::size_t index = 0; index < std::min(packets.size(), size_t{32}); ++index) {
+            const auto& p = packets[index];
+            LOG_WARNING(Render_Vulkan,
+                        "PR117_REAL_GCN_GPU_CAPTURE_SLOT={} FLAGS={:#x} "
+                        "PC={:#x} M0={:#x} EXEC={:#x}:{:#x} CONTROL={:#x}",
+                        p.logical_slot, p.flags, p.site_pc, p.runtime_m0,
+                        p.exec_hi, p.exec_lo, p.encoded_control);
+        }
+        LOG_WARNING(Render_Vulkan,
+                    "PR117_REAL_GCN_CAPTURE_DONE epoch={} waves={} "
+                    "source=vkCmdDispatch; stopping before unimplemented re-entry",
+                    epoch, packets.size());
+        throw std::runtime_error(
+            "PR117_REAL_GCN_CAPTURE_COMPLETED_STOP_BEFORE_GUEST_CONTINUATION");
+    }
     if (ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this)) {
         return;
     }
@@ -414,6 +452,35 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
     if (!pipeline) {
         return;
+    }
+
+    const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
+    if (cs.uses_ordered_gds) {
+        if (!IsPr117OneShotCaptureProbe()) {
+            throw std::runtime_error("ordered GDS capture pipeline outside explicit probe");
+        }
+        auto owner = AllocateOrderedGdsEpochBuffersFromGpuIndirect(
+            address, offset, size,
+            {cs_program.num_thread_x.full, cs_program.num_thread_y.full,
+             cs_program.num_thread_z.full},
+            cs_program.settings.num_vgprs * 4, cs_program.SharedMemSize());
+        const u32 epoch = AuthorizeNewOrderedGdsCaptureEpoch(*owner);
+        const auto packets = DispatchOriginalGcnOrderedCaptureIndirect(
+            *owner, epoch, address, offset, size);
+        for (std::size_t index = 0; index < std::min(packets.size(), size_t{32}); ++index) {
+            const auto& p = packets[index];
+            LOG_WARNING(Render_Vulkan,
+                        "PR117_REAL_GCN_GPU_CAPTURE_SLOT={} FLAGS={:#x} "
+                        "PC={:#x} M0={:#x} EXEC={:#x}:{:#x} CONTROL={:#x}",
+                        p.logical_slot, p.flags, p.site_pc, p.runtime_m0,
+                        p.exec_hi, p.exec_lo, p.encoded_control);
+        }
+        LOG_WARNING(Render_Vulkan,
+                    "PR117_REAL_GCN_CAPTURE_DONE epoch={} waves={} "
+                    "source=vkCmdDispatchIndirect; stopping before unimplemented re-entry",
+                    epoch, packets.size());
+        throw std::runtime_error(
+            "PR117_REAL_GCN_CAPTURE_COMPLETED_STOP_BEFORE_GUEST_CONTINUATION");
     }
 
     if (!BindResources(pipeline)) {
