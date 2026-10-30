@@ -122,7 +122,7 @@ def main():
             "void IREmitter::OrderedGdsCheckpointRegister(" in emit_cpp and
             "void EmitOrderedGdsCheckpointRegister(" in backend_h and
             "void EmitOrderedGdsCheckpointRegister(" in backend_cpp and
-            "RecordOrderedGdsCheckpoint(site_pc, exec_mask)" in body and
+            "RecordOrderedGdsCheckpoint(site_pc, exec_mask, pc, inst.dst[0].code)" in body and
             "case Opcode::OrderedGdsCheckpointRegister:" in
             function(inst, "bool Inst::MayHaveSideEffects() const noexcept"),
             "GCN_CAPTURE_IR_SIDE_EFFECTS_SURVIVE_DCE")
@@ -154,6 +154,26 @@ def main():
             "ctx.AddLabel(merge_label)" in gpu_write and
             "std::vector" not in gpu_write,
             "REAL_SSA_GUEST_REGISTER_GPU_SSBO_WRITER")
+    # Stage genuine decoded-site header fields through the same typed IR and
+    # SPIR-V SSBO writer, but deliberately do not claim authenticated epoch,
+    # continuation token or a resumed guest shader.
+    require("CheckpointRegisterBank::SiteMetadata" in word_layout and
+            "offsetof(GpuGcnWaveCheckpoint, next_guest_pc)" in word_layout and
+            "offsetof(GpuGcnWaveCheckpoint, destination_vgpr)" in word_layout and
+            "offsetof(GpuGcnWaveCheckpoint, logical_slot)" in word_layout and
+            "offsetof(GpuGcnWaveCheckpoint, tag)" in word_layout and
+            "offsetof(GpuGcnWaveCheckpoint, flags)" in word_layout and
+            "capture(3, 1, site_pc)" in live_body and
+            "capture(3, 2, ir.Imm32(next_guest_pc))" in live_body and
+            "capture(3, 3, logical_slot)" in live_body and
+            "capture(3, 4, ir.Imm32(destination_vgpr))" in live_body and
+            "capture(3, 0, ir.Imm32(0u))" in live_body and
+            "capture(3, 8, ir.Imm32(0u))" in live_body and
+            "SiteMetadataCount" in coverage and
+            "incomplete decoded-site checkpoint header after IR passes" in coverage and
+            "std::array<u32, 11>" in word_layout and
+            "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
+            "REAL_GCN_SITE_CHECKPOINT_METADATA_UNAUTHENTICATED_AND_FAIL_CLOSED")
     require("enum class CheckpointRegisterBank : u32" in word_layout and
             "case 0: return 5;" in word_layout and
             "case 1: return 16;" in word_layout and
@@ -183,6 +203,7 @@ def main():
             "incomplete live SGPR snapshot after IR passes" in coverage and
             "incomplete live VGPR snapshot after IR passes" in coverage and
             "incomplete EXEC/M0/VCC/SCC snapshot after IR passes" in coverage and
+            "incomplete decoded-site checkpoint header after IR passes" in coverage and
             "LiveCheckpointCoverage coverage(" in pipeline and
             "ir_inst.GetOpcode() != Shader::IR::Opcode::OrderedGdsCheckpointRegister" in pipeline and
             "coverage.Record(site.U32(), bank.U32(), index.U32())" in pipeline and
