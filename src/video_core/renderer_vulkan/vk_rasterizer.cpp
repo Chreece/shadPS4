@@ -450,6 +450,34 @@ Rasterizer::AllocateOrderedGdsEpochBuffers(
         instance, groups, local_threads, allocated_vgprs, guest_shared_lds_bytes);
 }
 
+std::unique_ptr<OrderedGdsEpochDeviceBuffers>
+Rasterizer::AllocateOrderedGdsEpochBuffersFromGpuIndirect(
+    VAddr address, u32 offset, u32 available_bytes,
+    Shader::Gcn::OrderedGds::DispatchExtent local_threads,
+    u32 allocated_vgprs, u32 guest_shared_lds_bytes) {
+    using Shader::Gcn::OrderedGds::GpuIndirectDispatchCommand;
+    constexpr u32 bytes = sizeof(GpuIndirectDispatchCommand);
+    if (active_ordered_gds_capture_ || available_bytes < bytes ||
+        ((address | VAddr(offset)) & 3u) != 0 ||
+        address > std::numeric_limits<VAddr>::max() - offset) {
+        throw std::invalid_argument("indirect ordered GDS capture source invalid");
+    }
+    // ObtainBuffer returns the actual backing GPU buffer+offset. The source
+    // can have been written by a prior GPU dispatch: only synchronized GPU
+    // readback may establish the required guest wave-slot count.
+    auto [buffer, base] = buffer_cache.ObtainBuffer(address + offset, bytes, false);
+    needs_barrier |= runtime.IsBufferAccessed(buffer, base, bytes, false);
+    if (needs_barrier) {
+        runtime.FlushBarriers();
+    }
+    const auto actual = OrderedGdsIndirectDispatchTransfer::Download(
+        runtime, scheduler, *buffer, base);
+    // Plan::Require checks full-wave64 topology, total wave/LDS storage and
+    // aggregate VRAM budget before any capture GPU allocation is created.
+    return AllocateOrderedGdsEpochBuffers(
+        actual, local_threads, allocated_vgprs, guest_shared_lds_bytes);
+}
+
 u32 Rasterizer::AuthorizeNewOrderedGdsCaptureEpoch(
     OrderedGdsEpochDeviceBuffers& owner) {
     // Host *identity* tickets are owned by this Rasterizer instance, not by

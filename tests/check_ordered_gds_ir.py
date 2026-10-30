@@ -21,6 +21,7 @@ FILES = {
     "atomic_cpp": "src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp",
     "inst": "src/shader_recompiler/ir/microinstruction.cpp",
     "reference": "src/shader_recompiler/frontend/ordered_gds.h",
+    "dispatch": "src/shader_recompiler/frontend/ordered_gds_dispatch.h",
     "resources": "src/shader_recompiler/ir/passes/resource_pass.h",
     "patching": "src/shader_recompiler/ir/passes/resource_patching_pass.cpp",
     "packer": "src/shader_recompiler/frontend/ordered_gds_legacy_packer.h",
@@ -259,6 +260,21 @@ def main():
             "authority_.clear();" in transfer and
             "Shader::Gcn::OrderedGds::GcnOrderedGdsEpochIssuer ordered_gds_epoch_issuer_" in source("rasterizer_h"),
             "HOST_GPU_DISPATCH_TOKEN_ISSUER_AND_FAILED_EPOCH_INVALIDATION")
+    dispatch = source("dispatch")
+    require("struct GpuIndirectDispatchCommand" in dispatch and
+            "sizeof(GpuIndirectDispatchCommand) == 12" in dispatch and
+            "DecodeGpuIndirectDispatchCommand(" in dispatch and
+            "class OrderedGdsIndirectDispatchTransfer" in transfer and
+            "runtime.CopyBuffer(&source, staging.buffer" in transfer and
+            "scheduler.Finish();" in transfer and
+            "staging.Invalidate();" in transfer and
+            "DecodeGpuIndirectDispatchCommand(command)" in transfer and
+            "AllocateOrderedGdsEpochBuffersFromGpuIndirect(" in rasterizer and
+            "buffer_cache.ObtainBuffer(address + offset, bytes, false)" in rasterizer and
+            "OrderedGdsIndirectDispatchTransfer::Download(" in rasterizer and
+            "return AllocateOrderedGdsEpochBuffers(" in rasterizer and
+            "AllocateOrderedGdsEpochBuffersFromGpuIndirect(" in source("rasterizer_h"),
+            "REAL_GPU_INDIRECT_DISPATCH_EXTENT_BEFORE_GDS_EPOCH_ALLOCATION")
     # Prevent valid packet/checkpoint tags without a real host authority,
     # full wave64 lane storage, and zero-LDS capture. The normal game shader
     # must still refuse ordered GDS until actual re-entry is implemented.

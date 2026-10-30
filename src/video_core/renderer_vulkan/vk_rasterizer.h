@@ -96,6 +96,16 @@ public:
         Shader::Gcn::OrderedGds::DispatchExtent local_threads,
         u32 allocated_vgprs, u32 guest_shared_lds_bytes);
 
+    // The indirect grid is read from the real GPU dispatch-command source,
+    // AFTER earlier GPU writers finish and BEFORE capture buffer allocation.
+    // This explicit API is not invoked by normal game dispatch. It never
+    // substitutes Liverpool dim_x/y/z for unknown indirect command values.
+    [[nodiscard]] std::unique_ptr<OrderedGdsEpochDeviceBuffers>
+    AllocateOrderedGdsEpochBuffersFromGpuIndirect(
+        VAddr address, u32 offset, u32 available_bytes,
+        Shader::Gcn::OrderedGds::DispatchExtent local_threads,
+        u32 allocated_vgprs, u32 guest_shared_lds_bytes);
+
     // Issues a fresh monotonic host epoch and distinct per-physical-wave
     // continuation identities only for an ALREADY size-verified GPU buffer
     // owner. No guest creation order, packer seed, or shader dispatch is

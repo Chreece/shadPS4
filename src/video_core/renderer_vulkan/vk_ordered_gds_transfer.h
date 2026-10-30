@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstring>
 #include <limits>
@@ -23,6 +24,55 @@
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
+
+// Actual GPU indirect argument snapshot for an explicitly requested
+// ordered-GDS capture. Must be called on the GPU submit thread; it waits
+// only for this scheduler's queued work. Never use CPU Liverpool group
+// register values to size an indirect dispatch's guest wave packet owner.
+class OrderedGdsIndirectDispatchTransfer {
+public:
+    [[nodiscard]] static Shader::Gcn::OrderedGds::DispatchExtent Download(
+        Runtime& runtime, Scheduler& scheduler, const VideoCore::Buffer& source,
+        u64 source_offset) {
+        using Shader::Gcn::OrderedGds::GpuIndirectDispatchCommand;
+        constexpr u64 bytes = sizeof(GpuIndirectDispatchCommand);
+        if ((source_offset & 3u) || source_offset > source.SizeBytes() ||
+            bytes > source.SizeBytes() - source_offset) {
+            throw std::invalid_argument("GDS indirect command GPU source range invalid");
+        }
+        // Transfer bytes must reflect earlier GPU-written dispatch arguments,
+        // not a speculative CPU register snapshot or an untracked host read.
+        const auto staging = runtime.GetStagingPool().Request(
+            bytes, VideoCore::MemoryType::HostCached, alignof(GpuIndirectDispatchCommand));
+        if (!staging.buffer || !staging.mapped || staging.size < bytes) {
+            throw std::runtime_error("GDS indirect GPU command readback unavailable");
+        }
+        scheduler.EndRendering();
+        const vk::BufferCopy copy{
+            .srcOffset = source_offset, .dstOffset = staging.offset, .size = bytes,
+        };
+        runtime.CopyBuffer(&source, staging.buffer, std::span{&copy, 1});
+        const vk::BufferMemoryBarrier2 to_host{
+            .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eHost,
+            .dstAccessMask = vk::AccessFlagBits2::eHostRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = staging.buffer->Handle(),
+            .offset = staging.offset,
+            .size = bytes,
+        };
+        scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1, .pBufferMemoryBarriers = &to_host,
+        });
+        scheduler.Finish();
+        staging.Invalidate();
+        std::array<std::byte, sizeof(GpuIndirectDispatchCommand)> command{};
+        std::memcpy(command.data(), staging.mapped, bytes);
+        return Shader::Gcn::OrderedGds::DecodeGpuIndirectDispatchCommand(command);
+    }
+};
 
 // Device-buffer transfer for ordered-GDS capture and resume packets.
 // Does NOT write a shader packet, establish guest wave creation order or

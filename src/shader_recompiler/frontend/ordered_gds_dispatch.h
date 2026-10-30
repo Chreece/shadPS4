@@ -3,6 +3,11 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
+#include <cstring>
+#include <span>
+#include <stdexcept>
+#include <type_traits>
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
@@ -19,6 +24,30 @@ struct DispatchExtent {
     std::uint32_t y{};
     std::uint32_t z{};
 };
+
+// Vulkan's actual vkCmdDispatchIndirect input layout, copied from the GPU
+// command parameter buffer after producer completion. This is NOT the
+// Liverpool CS-register snapshot and NOT a wave creation rank.
+struct GpuIndirectDispatchCommand {
+    std::uint32_t group_count_x{};
+    std::uint32_t group_count_y{};
+    std::uint32_t group_count_z{};
+};
+static_assert(sizeof(GpuIndirectDispatchCommand) == 12);
+static_assert(std::is_trivially_copyable_v<GpuIndirectDispatchCommand>);
+
+[[nodiscard]] inline DispatchExtent DecodeGpuIndirectDispatchCommand(
+    std::span<const std::byte> gpu_bytes) {
+    if (gpu_bytes.size() != sizeof(GpuIndirectDispatchCommand)) {
+        throw std::invalid_argument("CIK indirect dispatch GPU command must be 12 bytes");
+    }
+    GpuIndirectDispatchCommand cmd{};
+    std::memcpy(&cmd, gpu_bytes.data(), sizeof(cmd));
+    if (!cmd.group_count_x || !cmd.group_count_y || !cmd.group_count_z) {
+        throw std::invalid_argument("ordered GDS cannot create zero-workgroup capture");
+    }
+    return {cmd.group_count_x, cmd.group_count_y, cmd.group_count_z};
+}
 
 struct LogicalWaveSlot {
     DispatchExtent group;
