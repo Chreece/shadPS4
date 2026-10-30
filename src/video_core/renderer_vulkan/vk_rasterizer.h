@@ -70,6 +70,25 @@ public:
     // guest ordered-GDS capture and future resumption. The returned owner
     // must be held until the resumed dispatch completes. It creates no
     // shader, never guesses wave rank, and never enables the guest opcode.
+    // Scope the dedicated checkpoint SSBO binding to exactly one caller-
+    // authorized capture phase. No scope exists during ordinary game draws.
+    // The epoch owner must remain alive until GPU timeline completion.
+    class OrderedGdsCaptureBinding {
+    public:
+        OrderedGdsCaptureBinding(Rasterizer& rasterizer,
+                                 const OrderedGdsEpochDeviceBuffers& epoch);
+        ~OrderedGdsCaptureBinding();
+
+        OrderedGdsCaptureBinding(const OrderedGdsCaptureBinding&) = delete;
+        OrderedGdsCaptureBinding& operator=(const OrderedGdsCaptureBinding&) = delete;
+        OrderedGdsCaptureBinding(OrderedGdsCaptureBinding&&) = delete;
+        OrderedGdsCaptureBinding& operator=(OrderedGdsCaptureBinding&&) = delete;
+
+    private:
+        Rasterizer& rasterizer;
+        const OrderedGdsEpochDeviceBuffers& epoch;
+    };
+
     [[nodiscard]] std::unique_ptr<OrderedGdsEpochDeviceBuffers>
     AllocateOrderedGdsEpochBuffers(
         Shader::Gcn::OrderedGds::DispatchExtent groups,
@@ -263,6 +282,9 @@ private:
     boost::container::static_vector<ImageBindingInfo, Shader::NUM_IMAGES> image_bindings;
     bool attachment_feedback_loop{};
     bool needs_barrier{};
+    // Explicitly scoped to a future authenticated guest capture pass; never
+    // inferred from compute pipeline existence or a shader hash.
+    const OrderedGdsEpochDeviceBuffers* active_ordered_gds_capture_{};
 };
 
 } // namespace Vulkan
