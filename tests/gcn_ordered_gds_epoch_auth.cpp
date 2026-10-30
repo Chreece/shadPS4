@@ -99,16 +99,34 @@ int main() {
         captures[i].token_hi = auth[i].token_hi;
     }
     RequireCaptureTokenAuthority(captures, auth, Epoch);
+    // A complete CIK ordered-count-only capture CAN establish a genuine
+    // M0 creation permutation without consulting Vulkan workgroup arrival
+    // order; a later terminal bypass must invalidate that inference.
+    auto rank_ready = captures;
+    for (u32 i = 0; i < rank_ready.size(); ++i) {
+        rank_ready[i].site_pc = 0x4158;
+        rank_ready[i].encoded_control = 0x0300;
+        rank_ready[i].runtime_m0 = (0x20u << 16) | i;
+        rank_ready[i].exec_lo = 1;
+        rank_ready[i].source_lane = 0;
+        rank_ready[i].payload = 1;
+    }
+    assert(VerifiedGuestCreationOrder::FromCompleteCikComputeM0(rank_ready, Epoch));
     // A genuine terminal S_ENDPGM wave is accounted for without a fake
     // ordered-count operation or continuation token. Its HOST authority
     // remains unique and nonzero, but the BYPASS packet token is zero.
-    auto with_terminal = captures;
+    auto with_terminal = rank_ready;
     auto& terminal = with_terminal[2];
+    // No ordered site/EXECount is present for this completed terminal wave.
+    terminal.encoded_control = 0;
+    terminal.runtime_m0 = 0;
+    terminal.exec_lo = 0;
     terminal.flags = CaptureBypassFlags;
     terminal.site_pc = NoActiveLane;
     terminal.source_lane = NoActiveLane;
     terminal.token_lo = 0;
     terminal.token_hi = 0;
+    terminal.payload = 0;
     assert(IsCanonicalGcnTerminalBypass(terminal, Epoch));
     RequireCaptureTokenAuthority(with_terminal, auth, Epoch);
     const auto forged_terminal = [&](auto change) {

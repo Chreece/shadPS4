@@ -38,15 +38,15 @@ static_assert(alignof(GpuGcnOrderedEpochAuth) == 16);
 static_assert(offsetof(GpuGcnOrderedEpochAuth, token_lo) == 16);
 static_assert(offsetof(GpuGcnOrderedEpochAuth, flags) == 24);
 
-// This matches the GPU SPIR-V capture-stamp predicate. A valid stamp means
-// only that a full-wave, zero-LDS snapshot is associated with an explicitly
-// supplied host epoch/token record; it does NOT establish true guest creation
-// order, CIK packer initialization or resumability. The shader compiler must
-// reproduce ALL these checks before writing GcnCheckpointTag/CapturePacketTag.
+// This matches the GPU SPIR-V capture-stamp identity predicate. A valid
+// stamp requires full-wave64 state AND preserved shared memory: either zero
+// guest LDS or compiler-lowered persistent LDS surviving the split pass.
+// It establishes only the host epoch/token identity, NEVER guest creation
+// order, CIK packer initialization, or executable guest continuation.
 [[nodiscard]] constexpr bool IsAuthorizedGcnCaptureStamp(
     const GpuGcnOrderedEpochAuth& auth, u32 physical_slot,
-    bool complete_wave64, bool zero_shared_lds) noexcept {
-    return complete_wave64 && zero_shared_lds &&
+    bool complete_wave64, bool verified_preserved_lds) noexcept {
+    return complete_wave64 && verified_preserved_lds &&
            auth.tag == GcnEpochAuthTag && auth.epoch != 0 &&
            auth.physical_slot == physical_slot &&
            auth.wave_slots != 0 && auth.wave_slots <= GcnEpochAuthMaximumWaves &&

@@ -365,16 +365,17 @@ def main():
     # A wave that returns from the actual GCN terminal path BEFORE an
     # ordered opcode must write a full canonical S_ENDPGM bypass packet
     # (not EXEC=0, a synthetic ordered result or an invented creation rank).
+    bypass_writer = function(backend_cpp, "void EmitOrderedGdsTerminalBypass(")
     require("void EmitOrderedGdsTerminalBypass(EmitContext& ctx)" in backend_cpp and
             "EmitOrderedGdsTerminalBypass(ctx);" in backend_cpp and
             "if (ctx.ordered_gds_capture_pass)" in backend_cpp and
-            "ctx.OpLoad(ctx.U32[1], ctx.local_invocation_index)" in backend_cpp and
-            "Gds::GcnEpochAuthDwords" in backend_cpp and
-            "Gds::GpuCapturePacketDwords" in backend_cpp and
-            "ctx.OpIEqual(ctx.U1[1], lane, ctx.u32_zero_value)" in backend_cpp and
-            "Gds::CaptureBypassFlags" in backend_cpp and
-            "Gds::NoActiveLane" in backend_cpp and
-            "ctx.OpStore(ptr, words[word])" in backend_cpp and
+            "ctx.OpLoad(ctx.U32[1], ctx.local_invocation_index)" in bypass_writer and
+            "Gds::GcnEpochAuthDwords" in bypass_writer and
+            "Gds::GpuCapturePacketDwords" in bypass_writer and
+            "ctx.OpIEqual(ctx.U1[1], lane, ctx.u32_zero_value)" in bypass_writer and
+            "Gds::CaptureBypassFlags" in bypass_writer and
+            "Gds::NoActiveLane" in bypass_writer and
+            "ctx.OpStore(ptr, words[word])" in bypass_writer and
             "IsCanonicalGcnTerminalBypass(" in packet and
             "IsCanonicalGcnTerminalBypass(p, epoch)" in auth and
             "p.flags != CaptureFlags && p.flags != CaptureBypassFlags" in auth and
