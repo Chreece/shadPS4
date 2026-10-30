@@ -86,9 +86,15 @@ public:
 
     const ComputePipeline* GetComputePipeline();
 
+    // Compile a SECOND, independently cached Vulkan compute pipeline from the
+    // actual guest GCN, stopping at DS_ORDERED_COUNT after GPU checkpoint.
+    // This is not the normal game pipeline and never authorizes replay.
+    const ComputePipeline* GetOrderedGdsCapturePipeline();
+
     using Result = std::tuple<const Shader::Info*, vk::ShaderModule, u64>;
     Result GetProgram(Shader::HwStage hw_stage, Shader::SwStage sw_stage,
-                      const Shader::ShaderParams& params, Shader::Backend::Bindings& binding);
+                      const Shader::ShaderParams& params, Shader::Backend::Bindings& binding,
+                      bool ordered_capture_only = false);
 
     std::optional<vk::ShaderModule> ReplaceShader(vk::ShaderModule module,
                                                   std::span<const u32> spv_code);
@@ -111,7 +117,8 @@ private:
                                                    std::string_view ext);
     vk::ShaderModule CompileModule(Shader::Info& info, Shader::RuntimeInfo& runtime_info,
                                    const std::span<const u32>& code, size_t perm_idx,
-                                   Shader::Backend::Bindings& binding);
+                                   Shader::Backend::Bindings& binding,
+                                   bool ordered_capture_only = false);
     const Shader::RuntimeInfo& BuildRuntimeInfo(Shader::HwStage stage, Shader::SwStage l_stage);
 
     [[nodiscard]] bool IsPipelineCacheDirty() const {
@@ -129,7 +136,12 @@ private:
     Shader::Pools pools;
     DrawIndirectParams draw_indirect_params{};
     tsl::robin_map<size_t, std::unique_ptr<Program>> program_cache;
+    // A capture-only program MUST NOT collide with or replace the normal
+    // gameplay shader/module cache, even for the same guest shader hash.
+    tsl::robin_map<size_t, std::unique_ptr<Program>> ordered_capture_program_cache;
     tsl::robin_map<ComputePipelineKey, std::unique_ptr<ComputePipeline>> compute_pipelines;
+    tsl::robin_map<ComputePipelineKey, std::unique_ptr<ComputePipeline>>
+        ordered_capture_compute_pipelines;
     tsl::robin_map<GraphicsPipelineKey, std::unique_ptr<GraphicsPipeline>> graphics_pipelines;
     std::array<Shader::RuntimeInfo, MaxShaderStages> runtime_infos{};
     std::array<const Shader::Info*, MaxShaderStages> infos{};
