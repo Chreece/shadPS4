@@ -458,6 +458,8 @@ Rasterizer::ResolveVerifiedOrderedGdsEpoch(
 std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
 Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     const VideoCore::Buffer& device_capture, u64 capture_offset,
+    const VideoCore::Buffer& device_checkpoints, u64 checkpoint_offset,
+    const Shader::Gcn::OrderedGds::GcnCheckpointLayout& checkpoint_layout,
     VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
     std::size_t guest_created_waves, std::span<const u32> verified_sites,
     std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
@@ -470,8 +472,9 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     auto counters = MakeExplicitOrderedCounterSeed(seed, seed_origin);
     // Guard before allocating, reading or creating an unbounded epoch.
     constexpr std::size_t CikMaximumLogicalWaves = 1u << 13;
-    if (guest_created_waves == 0 || guest_created_waves > CikMaximumLogicalWaves) {
-        throw std::invalid_argument("unsupported CIK complete ordered-count wave count");
+    if (guest_created_waves == 0 || guest_created_waves > CikMaximumLogicalWaves ||
+        checkpoint_layout.waves != guest_created_waves) {
+        throw std::invalid_argument("unsupported CIK checkpoint/wave count");
     }
     const auto captures =
         DownloadOrderedGdsPackets(device_capture, capture_offset, guest_created_waves);
@@ -481,6 +484,12 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
         // pretend physical GPU arrival order is guest wave creation order.
         throw std::invalid_argument("unverified CIK M0 logical wave order");
     }
+    // The independent GPU state-buffer readback must agree with EVERY live
+    // capture's epoch, M0, EXEC, site, token and source logical slot. Reject
+    // a missing/stale SGPR/VGPR checkpoint BEFORE resolving any counter.
+    const auto state = OrderedGdsPacketTransfer::DownloadCheckpoint(
+        runtime, scheduler, device_checkpoints, checkpoint_offset, checkpoint_layout);
+    RequireCompleteGcnWaveCheckpoints(state, captures, checkpoint_layout, epoch);
     SparseOrderedGdsEpoch host{guest_created_waves, std::move(counters), verified_sites};
     StageGpuCaptures(host, epoch, captures, *order);
     const auto resume = ResolveGpuCaptures(host, epoch, *order);
