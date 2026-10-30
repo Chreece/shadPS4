@@ -69,23 +69,43 @@ STAGE=REAL_AMD_GPU_INDIRECT_TRANSFER
 if command -v pkg-config >/dev/null && pkg-config --exists vulkan && \
    ! pgrep -u "$(id -u)" -x shadps4 >/dev/null; then
     cat >"$OUT/vram.py" <<'PY'
-import glob,pathlib,sys
+import glob,json,pathlib,sys,time,urllib.request
 cards=[]
 for p in glob.glob('/sys/class/drm/card*/device/mem_info_vram_total'):
     f=pathlib.Path(p)
     try:
         total=int(f.read_text());used=int(f.with_name('mem_info_vram_used').read_text())
-        if total>=10*1024**3:cards.append((total-used)/1024**3)
+        if total>=10*1024**3:cards.append((total-used,f,total))
     except (ValueError,OSError):pass
 if not cards:print('GPU_VRAM_NOT_MEASURABLE');sys.exit(1)
-free=max(cards);print(f'GPU_VRAM_FREE_GIB={free:.3f}')
-sys.exit(0 if free>=8 else 1)
+free,path,total=max(cards)
+print(f'GPU_VRAM_FREE_BEFORE_GIB={free/1024**3:.3f}',flush=True)
+if free<8*1024**3:
+    # Conditional unload only, no Ollama restart, no network changes.
+    try:
+        response=urllib.request.urlopen('http://127.0.0.1:11434/api/ps',timeout=3)
+        loaded=json.load(response).get('models',[])
+        for model in loaded:
+            name=model.get('name') or model.get('model')
+            if not name: continue
+            payload=json.dumps({'model':name,'keep_alive':0,'stream':False}).encode()
+            req=urllib.request.Request('http://127.0.0.1:11434/api/generate',
+                data=payload,headers={'Content-Type':'application/json'})
+            urllib.request.urlopen(req,timeout=30).close()
+            print(f'OLLAMA_CONDITIONALLY_UNLOADED={name}',flush=True)
+    except Exception as exc:
+        print(f'OLLAMA_CONDITIONAL_UNLOAD_UNAVAILABLE={type(exc).__name__}',flush=True)
+    time.sleep(2)
+    free=total-int(path.with_name('mem_info_vram_used').read_text())
+print(f'GPU_VRAM_FREE_AFTER_GIB={free/1024**3:.3f}',flush=True)
+sys.exit(0 if free>=8*1024**3 else 1)
 PY
     if python3 "$OUT/vram.py" >"$OUT/vram.log" 2>&1; then
         (
           cd "$SRC"
           g++ -std=c++23 -O2 -Wall -Wextra -Werror -pedantic -pthread \
              -DFMT_HEADER_ONLY -Isrc "-I$FMT" \
+             "-I$SRC/externals/vulkan-headers/include" \
              tests/gcn_ordered_gds_indirect_gpu_smoke.cpp \
              -lvulkan -o "$OUT/gpu-indirect"
         ) >"$OUT/gpu-build.log" 2>&1 || { tail -80 "$OUT/gpu-build.log"; exit 13; }
