@@ -12,6 +12,7 @@
 #include "common/recursive_lock.h"
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
 #include "shader_recompiler/frontend/ordered_gds_checkpoint.h"
+#include "shader_recompiler/frontend/ordered_gds_epoch_auth.h"
 #include "shader_recompiler/frontend/ordered_gds_dispatch.h"
 #include "shader_recompiler/frontend/ordered_gds_lds_checkpoint.h"
 #include "shader_recompiler/frontend/ordered_gds_legacy_packer.h"
@@ -153,7 +154,8 @@ public:
         std::size_t guest_created_waves,
         std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
         std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
-        Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin);
+        Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin,
+        std::span<const Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority);
 
     // Read the true GPU-visible 64 KiB GDS contents after prior writes,
     // then apply only specifically verified physical dword counter changes.
