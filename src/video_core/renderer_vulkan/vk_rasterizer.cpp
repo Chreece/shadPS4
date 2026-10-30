@@ -460,6 +460,7 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     const VideoCore::Buffer& device_capture, u64 capture_offset,
     const VideoCore::Buffer& device_checkpoints, u64 checkpoint_offset,
     const Shader::Gcn::OrderedGds::GcnCheckpointLayout& checkpoint_layout,
+    VideoCore::Buffer& device_resume_checkpoints, u64 resume_checkpoint_offset,
     VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
     std::size_t guest_created_waves,
     std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
@@ -476,6 +477,25 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     if (guest_created_waves == 0 || guest_created_waves > CikMaximumLogicalWaves ||
         checkpoint_layout.waves != guest_created_waves) {
         throw std::invalid_argument("unsupported CIK checkpoint/wave count");
+    }
+    // Explicitly separate each source and destination buffer: no in-place
+    // replay that could overwrite the only genuine guest checkpoint.
+    if (device_resume.Handle() == device_capture.Handle() ||
+        device_resume.Handle() == device_checkpoints.Handle() ||
+        device_resume.Handle() == device_resume_checkpoints.Handle() ||
+        device_resume_checkpoints.Handle() == device_capture.Handle() ||
+        device_resume_checkpoints.Handle() == device_checkpoints.Handle()) {
+        throw std::invalid_argument("ordered GDS capture/resume GPU buffer aliases");
+    }
+    // Check both destination capacities BEFORE resolving or recording writes.
+    const u64 resume_bytes = OrderedGdsPacketTransfer::CheckedPacketBytes(
+        guest_created_waves);
+    if (resume_offset > device_resume.SizeBytes() ||
+        resume_bytes > device_resume.SizeBytes() - resume_offset ||
+        resume_checkpoint_offset > device_resume_checkpoints.SizeBytes() ||
+        checkpoint_layout.total_bytes >
+            device_resume_checkpoints.SizeBytes() - resume_checkpoint_offset) {
+        throw std::invalid_argument("ordered GDS resume device buffer too small");
     }
     const auto captures =
         DownloadOrderedGdsPackets(device_capture, capture_offset, guest_created_waves);
@@ -500,6 +520,13 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     SparseOrderedGdsEpoch host{guest_created_waves, std::move(counters), site_pcs};
     StageGpuCaptures(host, epoch, captures, *order);
     const auto resume = ResolveGpuCaptures(host, epoch, *order);
+    // The CPU-resolved result must still refer to the same GPU wave and
+    // independently decoded counter index; never feed a stale token/PC/rank
+    // into an eventual guest shader continuation.
+    RequireResolvedGcnResumeHandoff(resume, captures, *order, epoch);
+    OrderedGdsPacketTransfer::UploadCheckpoint(
+        runtime, scheduler, device_resume_checkpoints, resume_checkpoint_offset,
+        std::span<const std::byte>{state.data(), state.size()}, checkpoint_layout);
     UploadOrderedGdsPackets(device_resume, resume_offset,
                             std::span<const GpuResumePacket>{resume.data(), resume.size()});
     return host.CounterSnapshot();
