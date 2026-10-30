@@ -80,6 +80,7 @@ public:
         latest_attempted_epoch_ = 0;
         latest_committed_epoch_ = 0;
         pending_epoch_.reset();
+        staged_resolution_.reset();
         initialized_ = true;
     }
 
@@ -98,28 +99,40 @@ public:
         // Only commit the epoch identity once the snapshot exists.
         latest_attempted_epoch_ = epoch;
         pending_epoch_ = epoch;
+        staged_resolution_.reset();
         return seed;
     }
 
+    // GPU capture and host ordered resolution only PREPARE a new value.
+    // Uploading resume buffers is NOT equivalent to running the continuation.
+    // Keep the prior counters authoritative and block the next epoch until
+    // an actual resumed guest dispatch has completed.
+    void StageResolvedEpoch(u64 context_identity, u32 epoch,
+                            const std::map<CounterKey, u32>& resolved) {
+        RequirePending(context_identity, epoch);
+        if (staged_resolution_) {
+            throw std::invalid_argument("duplicate staged ordered GDS resolution");
+        }
+        RequireSameCounterKeys(resolved);
+        // Allocation failures leave the pending epoch but never change state.
+        staged_resolution_.emplace(resolved);
+    }
+
+    // This operation is NOT called by the current Rasterizer bridge.
+    // A future real GCN continuation orchestrator must invoke it only
+    // AFTER the associated resumed GPU dispatch has finished successfully
+    // with a proven same-epoch state/continuation identity. It deliberately
+    // cannot be reached merely by a successful Vulkan SSBO upload.
     void CommitEpoch(u64 context_identity, u32 epoch,
                      const std::map<CounterKey, u32>& resolved) {
         RequirePending(context_identity, epoch);
-        // A resumed dispatch must never silently create a new CIK packer
-        // register or drop one that belonged to the verified context.
-        if (resolved.size() != counters_.size()) {
-            throw std::invalid_argument("CIK resolved packer key set changed");
+        if (!staged_resolution_ || *staged_resolution_ != resolved) {
+            throw std::invalid_argument(
+                "CIK epoch cannot commit before matching staged GPU resume state");
         }
-        auto current = counters_.begin();
-        auto next = resolved.begin();
-        for (; current != counters_.end(); ++current, ++next) {
-            if (current->first != next->first) {
-                throw std::invalid_argument("CIK resolved packer identity changed");
-            }
-        }
-        // Copy and swap: allocation failure cannot partially mutate the
-        // prior verified packer state or advance committed epoch.
-        auto prepared = resolved;
-        counters_.swap(prepared);
+        RequireSameCounterKeys(resolved);
+        counters_.swap(*staged_resolution_);
+        staged_resolution_.reset();
         latest_committed_epoch_ = epoch;
         pending_epoch_.reset();
     }
@@ -128,6 +141,7 @@ public:
         if (initialized_ && context_identity_ == context_identity &&
             pending_epoch_ == epoch) {
             pending_epoch_.reset();
+            staged_resolution_.reset();
         }
     }
 
@@ -137,11 +151,15 @@ public:
         latest_attempted_epoch_ = 0;
         latest_committed_epoch_ = 0;
         pending_epoch_.reset();
+        staged_resolution_.reset();
         counters_.clear();
     }
 
     [[nodiscard]] const std::map<CounterKey, u32>& Counters() const noexcept {
         return counters_;
+    }
+    [[nodiscard]] bool HasStagedResolution() const noexcept {
+        return staged_resolution_.has_value();
     }
     [[nodiscard]] u32 LastCommittedEpoch() const noexcept {
         return latest_committed_epoch_;
@@ -157,6 +175,20 @@ private:
             throw std::invalid_argument("CIK ordered packer context not authenticated");
         }
     }
+    void RequireSameCounterKeys(
+        const std::map<CounterKey, u32>& resolved) const {
+        if (resolved.size() != counters_.size()) {
+            throw std::invalid_argument("CIK resolved packer key set changed");
+        }
+        auto previous = counters_.begin();
+        auto next = resolved.begin();
+        for (; previous != counters_.end(); ++previous, ++next) {
+            if (previous->first != next->first) {
+                throw std::invalid_argument("CIK resolved packer identity changed");
+            }
+        }
+    }
+
     void RequirePending(u64 context_identity, u32 epoch) const {
         RequireContext(context_identity);
         if (epoch == 0 || pending_epoch_ != epoch) {
@@ -169,6 +201,7 @@ private:
     u32 latest_attempted_epoch_{};
     u32 latest_committed_epoch_{};
     std::optional<u32> pending_epoch_;
+    std::optional<std::map<CounterKey, u32>> staged_resolution_;
     bool initialized_{};
 };
 

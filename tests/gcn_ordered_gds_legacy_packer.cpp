@@ -102,11 +102,20 @@ int main() {
     ledger.CancelEpoch(context_id ^ 1, 7);
     assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 8);}));
     ledger.CancelEpoch(context_id, 7);
+    assert(!ledger.HasStagedResolution());
     assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 7);}));
     const auto second_seed = ledger.BeginEpoch(context_id, 8);
     assert(second_seed[0].value == 17 && second_seed[1].value == 1234);
     const std::map<CounterKey,u32> ledger_resolved{{{0x20,0},21},{{0x20,1},1234}};
+    // Host post-DS upload alone must NOT advance packer state.
+    assert(Reject([&] {ledger.CommitEpoch(context_id, 8, ledger_resolved);}));
+    ledger.StageResolvedEpoch(context_id, 8, ledger_resolved);
+    assert(ledger.HasStagedResolution());
+    assert(ledger.Counters() == counters && ledger.LastCommittedEpoch() == 0);
+    assert(Reject([&] {ledger.StageResolvedEpoch(context_id, 8, ledger_resolved);}));
+    assert(Reject([&] {ledger.CommitEpoch(context_id ^ 1, 8, ledger_resolved);}));
     ledger.CommitEpoch(context_id, 8, ledger_resolved);
+    assert(!ledger.HasStagedResolution());
     assert(ledger.LastCommittedEpoch() == 8 && ledger.Counters() == ledger_resolved);
     assert(Reject([&] {ledger.CommitEpoch(context_id, 8, ledger_resolved);}));
     for (u32 epoch = 9; epoch <= 107; ++epoch) {
@@ -114,11 +123,15 @@ int main() {
         assert(before[0].value == epoch - 8 + 20);
         const std::map<CounterKey,u32> next{{{0x20,0},epoch - 7 + 20},
                                             {{0x20,1},1234}};
+        ledger.StageResolvedEpoch(context_id, epoch, next);
+        assert(ledger.HasStagedResolution());
+        assert(before[0].value == ledger.Counters().begin()->second);
         ledger.CommitEpoch(context_id, epoch, next);
-        assert(ledger.Counters() == next);
+        assert(!ledger.HasStagedResolution() && ledger.Counters() == next);
     }
     ledger.Reset();
-    assert(!ledger.HasVerifiedState() && ledger.Counters().empty());
+    assert(!ledger.HasVerifiedState() && ledger.Counters().empty() &&
+           !ledger.HasStagedResolution());
     assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 108);}));
     ledger.Establish(context_id + 1, seeds,
         OrderedCounterSeedOrigin::DedicatedPackerState);
@@ -126,7 +139,8 @@ int main() {
 
     std::cout << "GDS_CIK_VERIFIED_PACKER_LEDGER=PASS "
                  "epoch_reuse_rejected=PASS failed_epoch_not_committed=PASS "
-                 "context_change_explicit=PASS real_gpu_seed_still_required=YES\n";
+                 "context_change_explicit=PASS staged_until_gpu_resume=PASS "
+                 "real_gpu_seed_still_required=YES\n";
     std::cout << "ORDERED_GDS_CIK_PACKER_SEPARATION=PASS "
                  "four_dedicated_legacy_packers_documented=1 "
                  "exec_popcount_0_1_2_64=PASS "

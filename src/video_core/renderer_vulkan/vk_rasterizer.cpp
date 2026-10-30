@@ -562,7 +562,12 @@ Rasterizer::ResolveOwnedCikComputeOrderedGdsFromLedger(
         auto result = ResolveOwnedCikComputeOrderedGdsEpoch(
             owned, epoch, verified_sites, seed,
             OrderedCounterSeedOrigin::DedicatedPackerState);
-        cik_ordered_packer_ledger_.CommitEpoch(context_identity, epoch, result);
+        // Actual shaders have NOT re-entered and consumed these buffers.
+        // Staging is safe, but publishing counters here would let a later
+        // dispatch observe changes before the GCN continuation completes.
+        // This epoch stays pending until an authenticated resumed GPU pass
+        // invokes CommitEpoch. No such pass is currently enabled.
+        cik_ordered_packer_ledger_.StageResolvedEpoch(context_identity, epoch, result);
         return result;
     } catch (...) {
         cik_ordered_packer_ledger_.CancelEpoch(context_identity, epoch);

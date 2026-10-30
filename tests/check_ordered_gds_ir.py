@@ -314,7 +314,10 @@ def main():
             "counters_.swap(prepared)" in packer and
             "ResolveOwnedCikComputeOrderedGdsFromLedger(" in rasterizer and
             "cik_ordered_packer_ledger_.BeginEpoch(" in rasterizer and
-            "cik_ordered_packer_ledger_.CommitEpoch(" in rasterizer and
+            "cik_ordered_packer_ledger_.StageResolvedEpoch(" in rasterizer and
+            "cik_ordered_packer_ledger_.CommitEpoch(" not in rasterizer and
+            "std::optional<std::map<CounterKey, u32>> staged_resolution_" in packer and
+            "void StageResolvedEpoch(" in packer and
             "cik_ordered_packer_ledger_.CancelEpoch(" in rasterizer and
             "VerifiedCikOrderedPackerLedger cik_ordered_packer_ledger_" in source("rasterizer_h") and
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
