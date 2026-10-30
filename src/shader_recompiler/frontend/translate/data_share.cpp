@@ -3,6 +3,7 @@
 
 #include <algorithm>
 
+#include "shader_recompiler/frontend/ordered_gds_checkpoint.h"
 #include "shader_recompiler/frontend/translate/translate.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/runtime_info.h"
@@ -347,7 +348,8 @@ void Translator::DS_APPEND(const GcnInst& inst) {
 }
 
 void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
-                                             const IR::U64& exec_mask) {
+                                             const IR::U64& exec_mask,
+                                             u32 next_guest_pc, u32 destination_vgpr) {
     // Preserve every GCN SGPR (not only user data) and every allocated
     // VGPR at the real instruction site. Register readers here enter the
     // existing SSA rewrite while the per-register capture op is a required
@@ -357,6 +359,8 @@ void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
     const u32 vgpr_count = runtime_info.props.num_allocated_vgprs;
     ASSERT_MSG(vgpr_count > 0 && vgpr_count <= IR::NumVectorRegs,
                "Invalid allocated GCN VGPR checkpoint count");
+    ASSERT_MSG(next_guest_pc >= 8u && destination_vgpr < vgpr_count,
+               "Invalid decoded GCN checkpoint next PC or VDST");
 
     // Vulkan arrival order cannot establish guest creation order. Capture
     // physical wave slot and wave64-relative lane from actual compute
@@ -390,6 +394,23 @@ void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
     const IR::Value exec_halves{ir.UnpackUint2x32(exec_mask)};
     capture(2, 4, IR::U32{ir.CompositeExtract(exec_halves, 0)});
     capture(2, 5, IR::U32{ir.CompositeExtract(exec_halves, 1)});
+
+    // Write only fields justified by the actual GCN instruction and current
+    // wave. These DWORDs share the ABI offsets used by the GPU SSBO writer.
+    // The genuine epoch and continuation token must be supplied by a future
+    // verified dispatch orchestrator, never inferred from physical GPU
+    // arrival. Tag=0 and flags=0 make this capture deliberately NON-RESUMABLE.
+    capture(3, 0, ir.Imm32(0u)); // Invalid until authenticated continuation.
+    capture(3, 1, site_pc);
+    capture(3, 2, ir.Imm32(next_guest_pc));
+    capture(3, 3, logical_slot);
+    capture(3, 4, ir.Imm32(destination_vgpr));
+    capture(3, 5, ir.Imm32(IR::NumScalarRegs));
+    capture(3, 6, ir.Imm32(vgpr_count));
+    capture(3, 7, ir.Imm32(Shader::Gcn::OrderedGds::GcnWaveLanes));
+    capture(3, 8, ir.Imm32(0u)); // Never claim valid without epoch/token.
+    capture(3, 9, ir.Imm32(0u)); // Reserved field.
+    capture(3, 10, ir.Imm32(Shader::Gcn::OrderedGds::GcnCheckpointAbiVersion));
 }
 
 void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
@@ -429,7 +450,7 @@ void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
     // true old counter value must arrive from an ordered host resolution,
     // followed by shader re-entry at site_pc + inst.length without replaying
     // pre-DS guest writes.
-    RecordOrderedGdsCheckpoint(site_pc, exec_mask);
+    RecordOrderedGdsCheckpoint(site_pc, exec_mask, pc, inst.dst[0].code);
     const IR::U32 old_value =
         ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), exec_mask, control, site_pc);
     SetDst(inst.dst[0], old_value);
