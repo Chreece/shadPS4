@@ -60,6 +60,9 @@ grep -Fq 'GCN_VCC_SCC_AND_RESUME_WAVE_IDENTITY_VERIFIED' "${LOG}/source-contract
 grep -Fq 'PRODUCTION_GPU_REGISTER_STATE_RESUME_UPLOAD_GUARDED' "${LOG}/source-contracts.log"
 grep -Fq 'PRODUCTION_GCN_LDS_STATE_TRANSFER_AND_GUARD' "${LOG}/source-contracts.log"
 grep -Fq 'ORDERED_GDS_TYPED_IR_CONTRACT=PASS' "${LOG}/source-contracts.log"
+grep -Fq 'GCN_CAPTURE_IR_SIDE_EFFECTS_SURVIVE_DCE' "${LOG}/source-contracts.log"
+grep -Fq 'REAL_PRE_DS_GUEST_SGPR_VGPR_M0_VCC_SCC_EXEC_SNAPSHOT' "${LOG}/source-contracts.log"
+grep -Fq 'POST_SSA_GCN_REGISTER_COVERAGE_AUDITED' "${LOG}/source-contracts.log"
 
 STAGE="EXTRACTED_PRODUCTION_FRONTEND_GCC_CLANG"
 for compiler in g++ clang++-17; do
@@ -99,6 +102,7 @@ for compiler in g++ clang++-17; do
     fi
     for required in \
         ORDERED_GDS_CHECKPOINT_CONTRACT=PASS \
+        GDS_ORDERED_LIVE_IR_COVERAGE=PASS \
         ORDERED_GDS_GUEST_LDS_CHECKPOINT=PASS \
         ORDERED_GDS_CIK_M0_GUEST_ORDER=PASS \
         ORDERED_GDS_CIK_CAPTURE_PAYLOAD=PASS \
