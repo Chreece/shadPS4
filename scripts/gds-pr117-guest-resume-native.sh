@@ -63,6 +63,10 @@ grep -Fq 'ORDERED_GDS_TYPED_IR_CONTRACT=PASS' "${LOG}/source-contracts.log"
 grep -Fq 'GCN_CAPTURE_IR_SIDE_EFFECTS_SURVIVE_DCE' "${LOG}/source-contracts.log"
 grep -Fq 'REAL_PRE_DS_GUEST_SGPR_VGPR_M0_VCC_SCC_EXEC_SNAPSHOT' "${LOG}/source-contracts.log"
 grep -Fq 'POST_SSA_GCN_REGISTER_COVERAGE_AUDITED' "${LOG}/source-contracts.log"
+grep -Fq 'REAL_SSA_GUEST_REGISTER_GPU_SSBO_WRITER' "${LOG}/source-contracts.log"
+grep -Fq 'GUEST_CHECKPOINT_GPU_HOST_DWORD_LAYOUT_MATCHES' "${LOG}/source-contracts.log"
+grep -Fq 'GUEST_CHECKPOINT_DESCRIPTOR_SEPARATE_AND_RUNTIME_GATED' "${LOG}/source-contracts.log"
+grep -Fq 'REAL_GUEST_WAVE64_LOGICAL_ADDRESS_PASSED_IN_IR' "${LOG}/source-contracts.log"
 
 STAGE="EXTRACTED_PRODUCTION_FRONTEND_GCC_CLANG"
 for compiler in g++ clang++-17; do
@@ -87,6 +91,8 @@ for compiler in g++ clang++-17; do
     fi
     grep -Fq 'GDS_ORDERED_LIVE_REGISTER_CAPTURE=PASS' \
         "${LOG}/live-registers-${name}.log"
+    grep -Fq 'physical_wave_slot_lane=PASS' \
+        "${LOG}/live-registers-${name}.log"
 done
 
 STAGE="GCC_AND_CLANG_SANITIZERS"
@@ -103,6 +109,7 @@ for compiler in g++ clang++-17; do
     for required in \
         ORDERED_GDS_CHECKPOINT_CONTRACT=PASS \
         GDS_ORDERED_LIVE_IR_COVERAGE=PASS \
+        ORDERED_GDS_LIVE_WORD_ADDRESSING=PASS \
         ORDERED_GDS_GUEST_LDS_CHECKPOINT=PASS \
         ORDERED_GDS_CIK_M0_GUEST_ORDER=PASS \
         ORDERED_GDS_CIK_CAPTURE_PAYLOAD=PASS \
