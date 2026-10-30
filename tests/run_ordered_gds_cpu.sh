@@ -58,7 +58,10 @@ FLAGS=(-std=c++23 -Wall -Wextra -Werror -pedantic -O2 -pthread -Isrc "-I${FMT_IN
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_checkpoint.cpp -o "$TMP/checkpoint"
     "$TMP/checkpoint"
 
-    "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_word_layout.cpp -o "$TMP/word-layout"
+        # Production pixel_format.h uses a pre-existing GNU anonymous struct.
+    # Only this new test transitively imports it through IR::reg.h. Keep
+    # -Werror/-Wall/-Wextra and -pedantic elsewhere; do not edit emulator ABI.
+    "$CXX" "${FLAGS[@]}" -Wno-pedantic tests/gcn_ordered_gds_word_layout.cpp -o "$TMP/word-layout"
     "$TMP/word-layout"
 
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_live_capture_coverage.cpp -o "$TMP/live-coverage"
@@ -102,7 +105,7 @@ if [[ "${RUN_SANITIZERS:-0}" == "1" ]]; then
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_checkpoint.cpp -o "$TMP/san-checkpoint"
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-checkpoint"
 
-        "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_word_layout.cpp -o "$TMP/san-word-layout"
+        "$CXX" "${SAN[@]}" -Wno-pedantic tests/gcn_ordered_gds_word_layout.cpp -o "$TMP/san-word-layout"
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-word-layout"
 
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_live_capture_coverage.cpp -o "$TMP/san-live-coverage"
