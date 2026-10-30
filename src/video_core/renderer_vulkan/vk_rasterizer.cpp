@@ -534,6 +534,42 @@ Rasterizer::ResolveVerifiedOrderedGdsEpoch(
     return host.CounterSnapshot();
 }
 
+void Rasterizer::EstablishVerifiedCikPackerState(
+    u64 context_identity,
+    std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> state,
+    Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin origin) {
+    cik_ordered_packer_ledger_.Establish(context_identity, state, origin);
+}
+
+void Rasterizer::ResetVerifiedCikPackerState() noexcept {
+    cik_ordered_packer_ledger_.Reset();
+}
+
+std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+Rasterizer::ResolveOwnedCikComputeOrderedGdsFromLedger(
+    OrderedGdsEpochDeviceBuffers& owned, u32 epoch, u64 context_identity,
+    std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites) {
+    using namespace Shader::Gcn::OrderedGds;
+    if (owned.AuthorizedEpoch() != epoch) {
+        throw std::invalid_argument("CIK ledger resolution has no authenticated GPU epoch");
+    }
+    // Every dispatch carries the UPDATED dedicated packer state from the
+    // preceding successful GPU handoff. Source is verified externally.
+    // GPU readback, packet validation and upload are performed by the real
+    // Rasterizer bridge. Failure leaves ledger values intact and burns epoch.
+    const auto seed = cik_ordered_packer_ledger_.BeginEpoch(context_identity, epoch);
+    try {
+        auto result = ResolveOwnedCikComputeOrderedGdsEpoch(
+            owned, epoch, verified_sites, seed,
+            OrderedCounterSeedOrigin::DedicatedPackerState);
+        cik_ordered_packer_ledger_.CommitEpoch(context_identity, epoch, result);
+        return result;
+    } catch (...) {
+        cik_ordered_packer_ledger_.CancelEpoch(context_identity, epoch);
+        throw;
+    }
+}
+
 std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
 Rasterizer::ResolveOwnedCikComputeOrderedGdsEpoch(
     OrderedGdsEpochDeviceBuffers& owned, u32 epoch,

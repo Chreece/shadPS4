@@ -149,6 +149,19 @@ public:
         std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
         Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin);
 
+    // Explicit host-side dedicated CIK packer lifetime; no implicit seed.
+    // The verified initial state must be established by an independent real
+    // packer source before this can ever be invoked by guest dispatch.
+    void EstablishVerifiedCikPackerState(
+        u64 context_identity,
+        std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> state,
+        Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin origin);
+    void ResetVerifiedCikPackerState() noexcept;
+    [[nodiscard]] std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+    ResolveOwnedCikComputeOrderedGdsFromLedger(
+        OrderedGdsEpochDeviceBuffers& owned, u32 epoch, u64 context_identity,
+        std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites);
+
     // Restricted CIK compute path: derive creation positions from live
     // guest M0 logicalWaveID rather than Vulkan workgroup scheduling. Only
     // complete ordered-count epochs with contiguous wave IDs and zero
@@ -304,6 +317,7 @@ private:
     // Explicitly scoped to a future authenticated guest capture pass; never
     // inferred from compute pipeline existence or a shader hash.
     Shader::Gcn::OrderedGds::GcnOrderedGdsEpochIssuer ordered_gds_epoch_issuer_{};
+    Shader::Gcn::OrderedGds::VerifiedCikOrderedPackerLedger cik_ordered_packer_ledger_{};
     const OrderedGdsEpochDeviceBuffers* active_ordered_gds_capture_{};
 };
 

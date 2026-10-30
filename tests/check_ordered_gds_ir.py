@@ -305,6 +305,20 @@ def main():
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp and
             "IsAuthorizedGcnCaptureStamp(" in auth,
             "REAL_FIRST_PASS_VALIDITY_STAMPS_REQUIRE_VERIFIED_ZERO_LDS_WAVE64_AUTH")
+    require("class VerifiedCikOrderedPackerLedger" in packer and
+            "MakeExplicitOrderedCounterSeed(verified, origin)" in packer and
+            "std::optional<u32> pending_epoch_" in packer and
+            "void CommitEpoch(" in packer and
+            "void CancelEpoch(" in packer and
+            "latest_attempted_epoch_ = epoch" in packer and
+            "counters_.swap(prepared)" in packer and
+            "ResolveOwnedCikComputeOrderedGdsFromLedger(" in rasterizer and
+            "cik_ordered_packer_ledger_.BeginEpoch(" in rasterizer and
+            "cik_ordered_packer_ledger_.CommitEpoch(" in rasterizer and
+            "cik_ordered_packer_ledger_.CancelEpoch(" in rasterizer and
+            "VerifiedCikOrderedPackerLedger cik_ordered_packer_ledger_" in source("rasterizer_h") and
+            "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
+            "REAL_CIK_PACKER_STATE_PERSISTS_ONLY_AFTER_AUTHENTIC_EPOCH_RESOLVE")
     # A separate FIRST-PASS shader compiler may stop precisely at a decoded
     # guest ordered-count site, AFTER emitting original live checkpoint stores
     # and BEFORE any downstream guest side effect or return-register use.

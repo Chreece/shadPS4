@@ -4,6 +4,9 @@
 
 #include <bit>
 #include <map>
+#include <limits>
+#include <optional>
+#include <vector>
 #include <span>
 #include <stdexcept>
 #include <utility>
@@ -50,5 +53,123 @@ struct OrderedCounterSeed {
     // In particular, do not synthesize a default counter at value zero.
     return counters;
 }
+
+// Typed lifetime of the *actual* CIK ordered packer state across complete
+// GPU capture -> host ordered resolution -> GPU continuation handoffs.
+// This ledger does NOT initialize hardware counters and must not be constructed
+// from raw 64 KiB GDS RAM, a presumed zero or Vulkan invocation arrival order.
+// Only a verified dedicated-packer source can establish the first context.
+// A failed guest epoch burns that epoch number without modifying counters.
+class VerifiedCikOrderedPackerLedger {
+public:
+    void Establish(u64 context_identity,
+                   std::span<const OrderedCounterSeed> verified,
+                   OrderedCounterSeedOrigin origin) {
+        if (context_identity == 0 || initialized_) {
+            throw std::invalid_argument(
+                "CIK packer state requires new nonzero context identity");
+        }
+        auto proven = MakeExplicitOrderedCounterSeed(verified, origin);
+        // Do not infer even one dedicated register from a missing seed.
+        if (proven.empty() || proven.size() > 4096) {
+            throw std::invalid_argument(
+                "CIK packer state has no verified or bounded counters");
+        }
+        counters_ = std::move(proven);
+        context_identity_ = context_identity;
+        latest_attempted_epoch_ = 0;
+        latest_committed_epoch_ = 0;
+        pending_epoch_.reset();
+        initialized_ = true;
+    }
+
+    [[nodiscard]] std::vector<OrderedCounterSeed> BeginEpoch(
+        u64 context_identity, u32 epoch) {
+        RequireContext(context_identity);
+        if (epoch == 0 || epoch <= latest_attempted_epoch_ ||
+            pending_epoch_.has_value()) {
+            throw std::invalid_argument("stale or overlapping ordered GDS epoch");
+        }
+        std::vector<OrderedCounterSeed> seed;
+        seed.reserve(counters_.size());
+        for (const auto& [key, value] : counters_) {
+            seed.push_back({key, value});
+        }
+        // Only commit the epoch identity once the snapshot exists.
+        latest_attempted_epoch_ = epoch;
+        pending_epoch_ = epoch;
+        return seed;
+    }
+
+    void CommitEpoch(u64 context_identity, u32 epoch,
+                     const std::map<CounterKey, u32>& resolved) {
+        RequirePending(context_identity, epoch);
+        // A resumed dispatch must never silently create a new CIK packer
+        // register or drop one that belonged to the verified context.
+        if (resolved.size() != counters_.size()) {
+            throw std::invalid_argument("CIK resolved packer key set changed");
+        }
+        auto current = counters_.begin();
+        auto next = resolved.begin();
+        for (; current != counters_.end(); ++current, ++next) {
+            if (current->first != next->first) {
+                throw std::invalid_argument("CIK resolved packer identity changed");
+            }
+        }
+        // Copy and swap: allocation failure cannot partially mutate the
+        // prior verified packer state or advance committed epoch.
+        auto prepared = resolved;
+        counters_.swap(prepared);
+        latest_committed_epoch_ = epoch;
+        pending_epoch_.reset();
+    }
+
+    void CancelEpoch(u64 context_identity, u32 epoch) noexcept {
+        if (initialized_ && context_identity_ == context_identity &&
+            pending_epoch_ == epoch) {
+            pending_epoch_.reset();
+        }
+    }
+
+    void Reset() noexcept {
+        initialized_ = false;
+        context_identity_ = 0;
+        latest_attempted_epoch_ = 0;
+        latest_committed_epoch_ = 0;
+        pending_epoch_.reset();
+        counters_.clear();
+    }
+
+    [[nodiscard]] const std::map<CounterKey, u32>& Counters() const noexcept {
+        return counters_;
+    }
+    [[nodiscard]] u32 LastCommittedEpoch() const noexcept {
+        return latest_committed_epoch_;
+    }
+    [[nodiscard]] bool HasVerifiedState() const noexcept {
+        return initialized_;
+    }
+
+private:
+    void RequireContext(u64 context_identity) const {
+        if (!initialized_ || context_identity_ == 0 ||
+            context_identity_ != context_identity) {
+            throw std::invalid_argument("CIK ordered packer context not authenticated");
+        }
+    }
+    void RequirePending(u64 context_identity, u32 epoch) const {
+        RequireContext(context_identity);
+        if (epoch == 0 || pending_epoch_ != epoch) {
+            throw std::invalid_argument("CIK ordered packer result not from pending epoch");
+        }
+    }
+
+    std::map<CounterKey, u32> counters_;
+    u64 context_identity_{};
+    u32 latest_attempted_epoch_{};
+    u32 latest_committed_epoch_{};
+    std::optional<u32> pending_epoch_;
+    bool initialized_{};
+};
 
 } // namespace Shader::Gcn::OrderedGds

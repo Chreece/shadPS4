@@ -70,6 +70,63 @@ int main() {
     assert(resolved[2].previous == 20 && resolved[2].current == 20);
     assert(executor.Counters().at({0x20, 0}) == 20);
     assert(executor.Counters().at({0x20, 1}) == 1234);
+    // The real CIK counter state must survive sequential guest epochs.
+    // Every entry here is an explicitly supplied verified packer seed,
+    // never an invented zero or an alias of raw 64KiB GDS memory.
+    VerifiedCikOrderedPackerLedger ledger;
+    constexpr u64 context_id = 0x1234'5678u;
+    assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 1);}));
+    assert(Reject([&] {ledger.Establish(0, seeds,
+        OrderedCounterSeedOrigin::DedicatedPackerState);}));
+    assert(Reject([&] {ledger.Establish(context_id, seeds,
+        OrderedCounterSeedOrigin::UnverifiedRawGdsMemory);}));
+    assert(Reject([&] {ledger.Establish(context_id, empty,
+        OrderedCounterSeedOrigin::DedicatedPackerState);}));
+    ledger.Establish(context_id, seeds, OrderedCounterSeedOrigin::DedicatedPackerState);
+    assert(ledger.HasVerifiedState() && ledger.Counters() == counters);
+    assert(Reject([&] {ledger.Establish(context_id, seeds,
+        OrderedCounterSeedOrigin::DedicatedPackerState);}));
+    assert(Reject([&] {(void)ledger.BeginEpoch(context_id ^ 1, 3);}));
+    assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 0);}));
+    const auto first_seed = ledger.BeginEpoch(context_id, 7);
+    assert(first_seed.size() == 2);
+    assert(first_seed[0].key == CounterKey{0x20, 0} && first_seed[0].value == 17);
+    assert(first_seed[1].key == CounterKey{0x20, 1} && first_seed[1].value == 1234);
+    assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 8);}));
+    assert(Reject([&] {ledger.CommitEpoch(context_id, 8, counters);}));
+    const std::map<CounterKey,u32> missing_counter{{{0x20,0},19}};
+    assert(Reject([&] {ledger.CommitEpoch(context_id, 7, missing_counter);}));
+    const std::map<CounterKey,u32> wrong_counter{{{0x20,0},19},{{0x20,2},1234}};
+    assert(Reject([&] {ledger.CommitEpoch(context_id, 7, wrong_counter);}));
+    assert(ledger.Counters() == counters && ledger.LastCommittedEpoch() == 0);
+    ledger.CancelEpoch(context_id ^ 1, 7);
+    assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 8);}));
+    ledger.CancelEpoch(context_id, 7);
+    assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 7);}));
+    const auto second_seed = ledger.BeginEpoch(context_id, 8);
+    assert(second_seed[0].value == 17 && second_seed[1].value == 1234);
+    const std::map<CounterKey,u32> resolved{{{0x20,0},21},{{0x20,1},1234}};
+    ledger.CommitEpoch(context_id, 8, resolved);
+    assert(ledger.LastCommittedEpoch() == 8 && ledger.Counters() == resolved);
+    assert(Reject([&] {ledger.CommitEpoch(context_id, 8, resolved);}));
+    for (u32 epoch = 9; epoch <= 107; ++epoch) {
+        const auto before = ledger.BeginEpoch(context_id, epoch);
+        assert(before[0].value == epoch - 8 + 20);
+        const std::map<CounterKey,u32> next{{{0x20,0},epoch - 7 + 20},
+                                            {{0x20,1},1234}};
+        ledger.CommitEpoch(context_id, epoch, next);
+        assert(ledger.Counters() == next);
+    }
+    ledger.Reset();
+    assert(!ledger.HasVerifiedState() && ledger.Counters().empty());
+    assert(Reject([&] {(void)ledger.BeginEpoch(context_id, 108);}));
+    ledger.Establish(context_id + 1, seeds,
+        OrderedCounterSeedOrigin::DedicatedPackerState);
+    assert(ledger.Counters() == counters && ledger.LastCommittedEpoch() == 0);
+
+    std::cout << "GDS_CIK_VERIFIED_PACKER_LEDGER=PASS "
+                 "epoch_reuse_rejected=PASS failed_epoch_not_committed=PASS "
+                 "context_change_explicit=PASS real_gpu_seed_still_required=YES\n";
     std::cout << "ORDERED_GDS_CIK_PACKER_SEPARATION=PASS "
                  "four_dedicated_legacy_packers_documented=1 "
                  "exec_popcount_0_1_2_64=PASS "
