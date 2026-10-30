@@ -197,7 +197,7 @@ def main():
         frames_file=out/'capture-times.json'
         if frames_file.is_file():
             frames=json.loads(frames_file.read_text())
-            result['captures_from_owned_game_window']=sum(bool(x.get('capture_verified')) for x in frames)
+            result['captures_from_owned_game_window']=sum(bool(x.get('capture_verified')) and x.get('exit_code')==0 and (out/x['file']).is_file() for x in frames)
             result['captures_from_unverified_root']=sum(not x.get('capture_verified') for x in frames)
             images=[sha256(out/x['file']) for x in frames if (out/x['file']).is_file()]
             result['captured_frames_all_identical']=(len(images)>1 and len(set(images))==1)
