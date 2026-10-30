@@ -44,7 +44,7 @@ template <typename... Args>
     do {                                                                                           \
         if (!(_a_)) [[unlikely]] {                                                                 \
             [&, shad_func_ = __func__]() SHAD_NO_INLINE {                                          \
-                Common::Detail::AssertFail(__FILE__, __LINE__, __func__, "Assertion Failed!\n");   \
+                Common::Detail::AssertFail(__FILE__, __LINE__, shad_func_, "Assertion Failed!\n");   \
             }();                                                                                   \
         }                                                                                          \
     } while (false)
