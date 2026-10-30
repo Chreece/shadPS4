@@ -637,6 +637,11 @@ U32 IREmitter::DataConsume(const U32& gds_dw_offset) {
     return Inst<U32>(Opcode::DataConsume, gds_dw_offset, GetExec());
 }
 
+void IREmitter::OrderedGdsCheckpointRegister(const U32& site_pc, const U32& bank,
+                                               const U32& index, const U32& value) {
+    Inst(Opcode::OrderedGdsCheckpointRegister, site_pc, bank, index, value);
+}
+
 U32 IREmitter::OrderedGdsCount(const U32& m0, const U32& address,
                               const U64& guest_exec_mask, const U32& encoded_control,
                               const U32& site_pc) {
