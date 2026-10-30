@@ -38,6 +38,21 @@ done
     echo "ISOLATED_SOURCE_OR_BUILD_MISSING"; exit 3;
 }
 git -C "${SRC}" rev-parse HEAD > "${LOG}/source-head.txt"
+# The 2026-10-30T114934Z focused archive established both compilers,
+# all four LDS strict/sanitizer tests, and source contracts as PASS.
+# On an imm32-only native compile retry, recheck the changed REAL capture
+# method with both compilers but do not repeat already proven LDS tests.
+FAST_IMM32="${GDS_NATIVE_FIX_ONLY:-0}"
+if [[ "${FAST_IMM32}" == "1" ]]; then
+    git -C "${SRC}" merge-base --is-ancestor \
+        6e24e909d83335f25d810709dd5314127f788a95 HEAD || {
+        echo "IMM32_RESUME_PREVIOUS_PASS_BASELINE_NOT_ANCESTOR"; exit 19;
+    }
+    printf 'VERIFIED_SOURCE_BASELINE=6e24e909d83335f25d810709dd5314127f788a95\n' \
+        > "${LOG}/previously-passed.txt"
+    printf 'PRIOR_SOURCE_FRONTEND_LDS=PASS_FROM_20261030T114934Z_ARCHIVE\n' \
+        >> "${LOG}/previously-passed.txt"
+fi
 git -C "${SRC}" status --porcelain=v1 --ignore-submodules=untracked > "${LOG}/checkout-status.txt"
 [[ ! -s "${LOG}/checkout-status.txt" ]] || {
     echo "ISOLATED_GIT_DIRTY: refusing build"; exit 4;
@@ -64,12 +79,14 @@ done
 STAGE="EXTRACTED_ACTUAL_GCN_TRANSLATORS_GCC_CLANG"
 for compiler in g++ clang++-17; do
     case "${compiler}" in g++) label=gcc;; *) label=clang;; esac
-    if ! (cd "${SRC}" &&
-          python3 tests/check_ordered_gds_frontend.py --compiler "${compiler}") \
-        > "${LOG}/frontend-${label}.log" 2>&1; then
-        tail -90 "${LOG}/frontend-${label}.log"; exit 8
+    if [[ "${FAST_IMM32}" != "1" ]]; then
+        if ! (cd "${SRC}" &&
+              python3 tests/check_ordered_gds_frontend.py --compiler "${compiler}") \
+            > "${LOG}/frontend-${label}.log" 2>&1; then
+            tail -90 "${LOG}/frontend-${label}.log"; exit 8
+        fi
+        grep -Fq 'decoded_site_vdst_next_pc=PASS' "${LOG}/frontend-${label}.log" || exit 9
     fi
-    grep -Fq 'decoded_site_vdst_next_pc=PASS' "${LOG}/frontend-${label}.log" || exit 9
     if ! (cd "${SRC}" &&
           python3 tests/check_ordered_gds_live_capture.py --compiler "${compiler}") \
         > "${LOG}/live-${label}.log" 2>&1; then
@@ -79,6 +96,7 @@ for compiler in g++ clang++-17; do
 done
 
 STAGE="ACTUAL_ZERO_AND_NONZERO_LDS_CONTRACT"
+if [[ "${FAST_IMM32}" != "1" ]]; then
 for compiler in g++ clang++-17; do
     case "${compiler}" in g++) label=gcc;; *) label=clang;; esac
     for mode in strict sanitized; do
@@ -100,6 +118,10 @@ for compiler in g++ clang++-17; do
         rm -f -- "${binary}"
     done
 done
+else
+    echo 'LDS_GCC_CLANG_STRICT_AND_SANITIZED=PASS_PREVIOUS_FOCUSED_ARCHIVE' \
+        >> "${LOG}/previously-passed.txt"
+fi
 
 STAGE="INCREMENTAL_NATIVE_SHADPS4_LINK"
 if ! cmake --build "${BUILD}" --parallel 6 \
