@@ -474,7 +474,7 @@ OPCODE(DataConsume,                                         U32,            U32,
 // Bank: 0=SGPR, 1=VGPR, 2=architectural status; index selects the register.
 // Writes must survive SSA/DCE; the Vulkan backend still rejects execution
 // until a genuine wave-aware capture/resume pipeline is wired.
-OPCODE(OrderedGdsCheckpointRegister, Void, U32, U32, U32, U32)
+OPCODE(OrderedGdsCheckpointRegister, Void, U32, U32, U32, U32, U32, U32)
 OPCODE(OrderedGdsCount, U32, U32, U32, U64, U32, U32)
 OPCODE(GroupAny,                                            U1,             U1,                                                                             )
 
