@@ -28,6 +28,7 @@ FILES = {
     "word_layout": "src/shader_recompiler/frontend/ordered_gds_word_layout.h",
     "device_plan": "src/shader_recompiler/frontend/ordered_gds_device_plan.h",
     "auth": "src/shader_recompiler/frontend/ordered_gds_epoch_auth.h",
+    "post_ds_state": "src/shader_recompiler/frontend/ordered_gds_resume_state.h",
     "backend_context": "src/shader_recompiler/backend/spirv/spirv_emit_context.cpp",
     "backend_context_h": "src/shader_recompiler/backend/spirv/spirv_emit_context.h",
     "resource_h": "src/shader_recompiler/resource.h",
@@ -84,6 +85,7 @@ def main():
     word_layout = source("word_layout")
     device_plan = source("device_plan")
     auth = source("auth")
+    post_ds_state = source("post_ds_state")
     backend_context = source("backend_context")
     backend_context_h = source("backend_context_h")
     resource_h = source("resource_h")
@@ -379,6 +381,23 @@ def main():
             "throw std::invalid_argument(\"ordered GDS GPU checkpoint buffers alias\")"
             in function(bridge, "if (handles[i] == handles[j])"),
             "PRODUCTION_GPU_REGISTER_STATE_RESUME_UPLOAD_GUARDED")
+    # After validated host counter ordering, the real second-pass guest
+    # register image must have its old counter result in the actual DECODED
+    # VDST for EXEC-active lanes; never replay the original DS instruction.
+    # The original GPU checkpoint and all inactive/other registers stay
+    # byte-identical, with neither a fabricated seed nor shader reentry.
+    require("MaterializeGcnPostOrderedCountState(" in post_ds_state and
+            "RequireCompleteGcnWaveCheckpoints(" in post_ds_state and
+            "RequireResolvedGcnResumeHandoff(" in post_ds_state and
+            "match->destination_vgpr" in post_ds_state and
+            "result.previous" in post_ds_state and
+            "if (((exec >> lane) & 1u) == 0)" in post_ds_state and
+            "std::memcpy(post.data() + byte_offset" in post_ds_state and
+            "const auto post_ds_state = MaterializeGcnPostOrderedCountState(" in bridge and
+            "post_ds_state.data(), post_ds_state.size()" in bridge and
+            "RequireCaptureTokenAuthority(captures, authority, epoch)" in bridge and
+            "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
+            "REAL_POST_DS_GCN_RESOLVED_VDST_STATE_PREPARED_NO_GUEST_REENTRY")
     require("GcnLdsCheckpointLayout" in lds and
             "RequireCompleteGcnLdsCheckpoints(" in lds and
             "waves_at_barrier != layout.waves_per_group" in lds and
