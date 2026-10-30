@@ -19,6 +19,30 @@ int main() {
     constexpr std::uint32_t Epoch = 17;
     const auto layout = GcnLdsCheckpointLayout::Require(3, 4, 8192);
     assert(layout.workgroups == 3 && layout.waves_per_group == 4);
+
+    // Zero-LDS guest compute waves must reach the host ordered-GDS handoff
+    // without a fabricated LDS buffer or false workgroup checkpoint.
+    const GcnLdsCheckpointLayout no_lds{};
+    assert(!RequireOptionalGcnLdsCheckpoint(no_lds, 0, 3));
+    assert(Reject([&] { (void)RequireOptionalGcnLdsCheckpoint(no_lds, 0, 0); }));
+    assert(Reject([&] { (void)RequireOptionalGcnLdsCheckpoint(no_lds, 0, 1'000'001); }));
+    assert(Reject([&] { (void)RequireOptionalGcnLdsCheckpoint(layout, 0, 12); }));
+    assert(Reject([&] { (void)RequireOptionalGcnLdsCheckpoint(no_lds, 8192, 12); }));
+    auto false_absence = no_lds;
+    false_absence.workgroups = 3;
+    assert(Reject([&] { (void)RequireOptionalGcnLdsCheckpoint(false_absence, 0, 3); }));
+    false_absence = no_lds;
+    false_absence.stride_bytes = 48;
+    assert(Reject([&] { (void)RequireOptionalGcnLdsCheckpoint(false_absence, 0, 3); }));
+    const auto present_lds = RequireOptionalGcnLdsCheckpoint(layout, 8192, 12);
+    assert(present_lds && present_lds->total_bytes == layout.total_bytes);
+    assert(Reject([&] { (void)RequireOptionalGcnLdsCheckpoint(layout, 8192, 11); }));
+    assert(Reject([&] { (void)RequireOptionalGcnLdsCheckpoint(layout, 4096, 12); }));
+    auto inconsistent_lds = layout;
+    inconsistent_lds.total_bytes += 16;
+    assert(Reject([&] {
+        (void)RequireOptionalGcnLdsCheckpoint(inconsistent_lds, 8192, 12);
+    }));
     assert(layout.stride_bytes % 16 == 0 &&
            layout.stride_bytes > sizeof(GpuGcnWorkgroupLdsCheckpoint));
     assert(layout.total_bytes == 3 * layout.stride_bytes);
@@ -81,5 +105,6 @@ int main() {
                  "shared_state_independent=PASS "
                  "quiescent_wave_coverage=PASS "
                  "truncated_stale_wrong_group_rejected=PASS "
+                 "zero_lds_has_no_fake_state=PASS required_lds_fail_closed=PASS "
                  "no_unverified_lds_state_restore=PASS NO_GPU_WORK\n";
 }
