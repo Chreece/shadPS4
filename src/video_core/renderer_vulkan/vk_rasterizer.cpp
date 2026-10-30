@@ -486,34 +486,43 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
         // instruction site, not a guessed SGPR allocation subset.
         throw std::invalid_argument("unsupported CIK checkpoint/wave/SGPR layout");
     }
-    // Every real guest packet, register and LDS source/destination must
-    // remain independent until the resumed dispatch has consumed it.
-    // No producer is currently enabled by this code: the backend stays gated.
+    // Zero-LDS compute shaders must not require a fictitious shared-memory
+    // buffer or barrier. Nonzero-LDS shaders STILL require a complete,
+    // authenticated workgroup snapshot before the host resolves counters.
+    const auto checked_lds = RequireOptionalGcnLdsCheckpoint(
+        lds_layout, verified_shared_lds_bytes, guest_created_waves);
+    if (!checked_lds && (lds_capture_offset || resume_lds_offset)) {
+        throw std::invalid_argument("zero-LDS guest cannot provide LDS offsets");
+    }
+
+    // All *active* device buffers must remain disjoint until the resumed
+    // dispatch consumes their contents. Zero-LDS paths don't consume the
+    // nominal LDS arguments and must not require dummy resource allocation.
+    // No shader capture producer is enabled yet; the backend stays gated.
     const std::array handles{
         device_capture.Handle(), device_checkpoints.Handle(), device_lds.Handle(),
         device_resume.Handle(), device_resume_checkpoints.Handle(),
         device_resume_lds.Handle(),
     };
     for (std::size_t i = 0; i < handles.size(); ++i) {
+        if (!checked_lds && (i == 2 || i == 5)) {
+            continue;
+        }
         for (std::size_t j = i + 1; j < handles.size(); ++j) {
+            if (!checked_lds && (j == 2 || j == 5)) {
+                continue;
+            }
             if (handles[i] == handles[j]) {
                 throw std::invalid_argument("ordered GDS GPU checkpoint buffers alias");
             }
         }
     }
-    const auto checked_lds = GcnLdsCheckpointLayout::Require(
-        lds_layout.workgroups, lds_layout.waves_per_group, lds_layout.lds_bytes);
-    if (lds_layout.lds_bytes != verified_shared_lds_bytes ||
-        checked_lds.stride_bytes != lds_layout.stride_bytes ||
-        checked_lds.total_bytes != lds_layout.total_bytes ||
-        u64(lds_layout.workgroups) * lds_layout.waves_per_group != guest_created_waves) {
-        throw std::invalid_argument("ordered GDS LDS layout is not guest dispatch layout");
-    }
-    if ((lds_capture_offset & 3u) || (resume_lds_offset & 3u) ||
-        lds_capture_offset > device_lds.SizeBytes() ||
-        lds_layout.total_bytes > device_lds.SizeBytes() - lds_capture_offset ||
-        resume_lds_offset > device_resume_lds.SizeBytes() ||
-        lds_layout.total_bytes > device_resume_lds.SizeBytes() - resume_lds_offset) {
+    if (checked_lds &&
+        ((lds_capture_offset & 3u) || (resume_lds_offset & 3u) ||
+         lds_capture_offset > device_lds.SizeBytes() ||
+         checked_lds->total_bytes > device_lds.SizeBytes() - lds_capture_offset ||
+         resume_lds_offset > device_resume_lds.SizeBytes() ||
+         checked_lds->total_bytes > device_resume_lds.SizeBytes() - resume_lds_offset)) {
         throw std::invalid_argument("ordered GDS LDS source/resume ranges invalid");
     }
     // Check every destination capacity BEFORE resolving or recording writes.
@@ -541,11 +550,13 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
         runtime, scheduler, device_checkpoints, checkpoint_offset, checkpoint_layout);
     RequireCompleteGcnWaveCheckpoints(state, captures, checkpoint_layout, epoch,
                                       verified_sites);
-    // A *workgroup barrier* is distinct from CIK's ordered-count wave
-    // completion. This readback requires a compiler-generated safe LDS
-    // quiescent point before any shader continuation or host counter update.
-    const auto lds_state = OrderedGdsLdsStateTransfer::Download(
-        runtime, scheduler, device_lds, lds_capture_offset, checked_lds, epoch);
+    // A workgroup with actual shared LDS requires a compiler-proven
+    // quiescent barrier. Zero-LDS workgroups have no state to transfer.
+    std::vector<std::byte> lds_state;
+    if (checked_lds) {
+        lds_state = OrderedGdsLdsStateTransfer::Download(
+            runtime, scheduler, device_lds, lds_capture_offset, *checked_lds, epoch);
+    }
     std::vector<u32> site_pcs;
     site_pcs.reserve(verified_sites.size());
     for (const auto& site : verified_sites) {
@@ -561,10 +572,12 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     OrderedGdsPacketTransfer::UploadCheckpoint(
         runtime, scheduler, device_resume_checkpoints, resume_checkpoint_offset,
         std::span<const std::byte>{state.data(), state.size()}, checkpoint_layout);
-    OrderedGdsLdsStateTransfer::Upload(
-        runtime, scheduler, device_resume_lds, resume_lds_offset,
-        std::span<const std::byte>{lds_state.data(), lds_state.size()},
-        checked_lds, epoch);
+    if (checked_lds) {
+        OrderedGdsLdsStateTransfer::Upload(
+            runtime, scheduler, device_resume_lds, resume_lds_offset,
+            std::span<const std::byte>{lds_state.data(), lds_state.size()},
+            *checked_lds, epoch);
+    }
     UploadOrderedGdsPackets(device_resume, resume_offset,
                             std::span<const GpuResumePacket>{resume.data(), resume.size()});
     return host.CounterSnapshot();
