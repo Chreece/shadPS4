@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "shader_recompiler/frontend/ordered_gds_resume_state.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstring>
@@ -155,9 +156,82 @@ int main() {
         (void)MaterializeGcnPostOrderedCountState(
             pristine, captures, resumes, layout, epoch + 1, sites, *order);
     }));
+
+    // Genuine mixed terminal/ordered epochs: physical slot 1 returned from
+    // original S_ENDPGM without reaching DS_ORDERED_COUNT. Its checkpoint
+    // slot can contain arbitrary unwritten bytes; never manufacture a guest
+    // register image, decoded VDST, token, PC, rank, or runnable resume.
+    auto mixed_captures = captures;
+    auto terminal = std::find_if(
+        mixed_captures.begin(), mixed_captures.end(),
+        [](const auto& c) { return c.logical_slot == 1; });
+    assert(terminal != mixed_captures.end());
+    *terminal = GpuCapturePacket{
+        .tag = CapturePacketTag,
+        .epoch = epoch,
+        .site_pc = NoActiveLane,
+        .logical_slot = 1,
+        .source_lane = NoActiveLane,
+        .flags = CaptureBypassFlags,
+    };
+    auto mixed_resumes = resumes;
+    mixed_resumes[1] = GpuResumePacket{
+        .tag = ResumePacketTag,
+        .epoch = epoch,
+        .site_pc = NoActiveLane,
+        .flags = 0,
+        .logical_slot = 1,
+    };
+    auto mixed_pre = pristine;
+    const auto bypass_start = layout.stride_bytes;
+    std::fill(mixed_pre.begin() + bypass_start,
+              mixed_pre.begin() + bypass_start + layout.stride_bytes,
+              std::byte{0xa5});
+    auto mixed_expected = expected;
+    std::fill(mixed_expected.begin() + bypass_start,
+              mixed_expected.begin() + bypass_start + layout.stride_bytes,
+              std::byte{0xa5});
+    const auto mixed_post = MaterializeGcnPostOrderedCountState(
+        mixed_pre, mixed_captures, mixed_resumes, layout, epoch, sites, *order);
+    assert(mixed_post == mixed_expected);
+    assert(mixed_pre != mixed_post); // active ordered slots STILL get VDST.
+    const auto reject_bad_terminal_capture = [&](auto mutate) {
+        auto bad = mixed_captures;
+        for (auto& c : bad) {
+            if (c.logical_slot == 1) mutate(c);
+        }
+        assert(Reject([&] {
+            (void)MaterializeGcnPostOrderedCountState(
+                mixed_pre, bad, mixed_resumes, layout, epoch, sites, *order);
+        }));
+    };
+    reject_bad_terminal_capture([](auto& c) { c.site_pc = 0x4158; });
+    reject_bad_terminal_capture([](auto& c) { c.token_lo = 17; });
+    reject_bad_terminal_capture([](auto& c) { c.source_lane = 0; });
+    reject_bad_terminal_capture([](auto& c) { c.runtime_m0 = 1; });
+    reject_bad_terminal_capture([](auto& c) { c.exec_lo = 1; });
+    reject_bad_terminal_capture([](auto& c) { c.flags = CaptureFlags; });
+    const auto reject_bad_terminal_resume = [&](auto mutate) {
+        auto bad = mixed_resumes;
+        mutate(bad[1]);
+        assert(Reject([&] {
+            (void)MaterializeGcnPostOrderedCountState(
+                mixed_pre, mixed_captures, bad, layout, epoch, sites, *order);
+        }));
+    };
+    reject_bad_terminal_resume([](auto& r) { r.flags = ResumeFlags; });
+    reject_bad_terminal_resume([](auto& r) { r.site_pc = 0x4158; });
+    reject_bad_terminal_resume([](auto& r) { r.token_lo = 123; });
+    reject_bad_terminal_resume([](auto& r) { r.creation_lo = 1; });
+    reject_bad_terminal_resume([](auto& r) { r.previous = 1; });
+    reject_bad_terminal_resume([](auto& r) { r.reserved0 = 1; });
+    // The current compute M0 fast path must NOT invent guest creation rank
+    // for a bypass wave; this test has a separate verified scheduler order.
+    assert(!VerifiedGuestCreationOrder::FromCompleteCikComputeM0(
+        mixed_captures, epoch));
     std::cout << "GDS_POST_DS_RESOLVED_ACTIVE_VDST=PASS "
                  "verified_old_value=PASS preserve_all_other_registers=PASS "
                  "inactive_exec_vdst_unchanged=PASS "
-                 "permuted_wave_slots=PASS wrong_site_token_epoch_rejected=PASS "
+                 "permuted_wave_slots=PASS wrong_site_token_epoch_rejected=PASS "\n                 "real_terminal_mixed_state_resume_guard=PASS "
                  "REAL_GUEST_SHADER_REENTRY=NOT_IMPLEMENTED\n";
 }
