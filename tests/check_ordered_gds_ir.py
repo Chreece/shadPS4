@@ -271,6 +271,7 @@ def main():
             "Gds::GcnCheckpointFlags" in stamp_body and
             "ctx.ordered_gds_capture_pass" in stamp_body and
             "ctx.runtime_info.hw.cs.shared_memory_size == 0" in stamp_body and
+            "ctx.info.shared_memory_scratch_size == 0" in stamp_body and
             "threads % Gds::GcnWaveLanes == 0" in stamp_body and
             "ctx.OpULessThan(ctx.U1[1], logical_slot, wave_slots)" in stamp_body and
             "Gds::GcnEpochAuthMaximumWaves" in stamp_body and

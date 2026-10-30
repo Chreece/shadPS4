@@ -850,6 +850,7 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank,
             const bool complete_wave64_zero_lds =
                 ctx.ordered_gds_capture_pass &&
                 ctx.runtime_info.hw.cs.shared_memory_size == 0 &&
+                ctx.info.shared_memory_scratch_size == 0 &&
                 threads >= Gds::GcnWaveLanes && threads <= 1024u &&
                 threads % Gds::GcnWaveLanes == 0;
             const u32 valid_stamp =
