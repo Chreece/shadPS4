@@ -60,6 +60,8 @@ def source_contracts() -> None:
     body = method(translator, 'void Translator::DS_ORDERED_COUNT(')
     if any(atom in body for atom in ('SharedAtomicIAdd', 'SharedAtomicCmpSwap', 'SharedAtomicInc', 'DataAppend')):
         raise RuntimeError('UNORDERED_ATOMIC_SUBSTITUTION')
+    if 'RecordOrderedGdsCheckpoint(site_pc, exec_mask)' not in body:
+        raise RuntimeError('LIVE_REGISTER_CHECKPOINT_NOT_CALLED_AT_GUEST_DS')
     if 'ir.GetM0()' not in body or 'GetSrc(inst.src[0])' not in body:
         raise RuntimeError('RUNTIME_GDS_INPUT_LOST')
     print('ORDERED_GDS_SOURCE_CONTRACTS=PASS no_duplicates=1 side_effect=1 backend_gate=1')
