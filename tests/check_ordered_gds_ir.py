@@ -27,6 +27,7 @@ FILES = {
     "checkpoint": "src/shader_recompiler/frontend/ordered_gds_checkpoint.h",
     "word_layout": "src/shader_recompiler/frontend/ordered_gds_word_layout.h",
     "device_plan": "src/shader_recompiler/frontend/ordered_gds_device_plan.h",
+    "auth": "src/shader_recompiler/frontend/ordered_gds_epoch_auth.h",
     "backend_context": "src/shader_recompiler/backend/spirv/spirv_emit_context.cpp",
     "backend_context_h": "src/shader_recompiler/backend/spirv/spirv_emit_context.h",
     "resource_h": "src/shader_recompiler/resource.h",
@@ -82,6 +83,7 @@ def main():
     checkpoint = source("checkpoint")
     word_layout = source("word_layout")
     device_plan = source("device_plan")
+    auth = source("auth")
     backend_context = source("backend_context")
     backend_context_h = source("backend_context_h")
     resource_h = source("resource_h")
@@ -145,7 +147,7 @@ def main():
     # live SSA values at the real guest DS instruction, using physical
     # wave slots and logical lane IDs, never assigning guest creation rank.
     gpu_write = function(backend_cpp, "void EmitOrderedGdsCheckpointRegister(")
-    require("ctx.OpStore(pointer, guest_value);" in gpu_write and
+    require("ctx.OpStore(pointer, real_value);" in gpu_write and
             "Gds::CheckpointRelativeDword(vgprs, bank, index, 0)" in gpu_write and
             "Gds::CheckpointStrideDwords(vgprs)" in gpu_write and
             "ctx.has_ordered_gds_checkpoint_binding" in gpu_write and
@@ -197,7 +199,7 @@ def main():
             "ir.BitCount(exec_mask)" in live_body and
             "OrderedGdsCapture," in resource_h and
             "BufferType::OrderedGdsCapture" in patching and
-            "NUM_BUFFERS - 2" in patching and
+            "NUM_BUFFERS - 3" in patching and
             "BufferType::OrderedGdsCapture" in backend_context and
             "has_ordered_gds_capture_binding" in backend_context and
             "GpuCapturePacketDwordOffset(0, index)" in gpu_write and
@@ -209,6 +211,41 @@ def main():
             "runtime.IsBufferAccessed(&packets, 0, bytes, true)" in rasterizer and
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
             "REAL_GCN_GPU_CAPTURE_PACKET_BODY_FROM_LIVE_ISA_FAIL_CLOSED")
+    # The host alone supplies a unique, nonzero token for each physical
+    # storage slot in a specific epoch. SPIR-V loads these from a third,
+    # read-only device buffer, and the CPU checks the GPU packet against
+    # the exact host token table BEFORE any ordered-counter calculation.
+    # This is authorization TRANSPORT, not guest execution or packer seed.
+    require("struct alignas(16) GpuGcnOrderedEpochAuth" in auth and
+            "RequireGcnEpochAuth(" in auth and
+            "RequireCaptureTokenAuthority(" in auth and
+            "missing or duplicate guest continuation token" in auth and
+            "GPU continuation token or dispatch epoch disagrees" in auth and
+            "epoch_auth_bytes" in device_plan and
+            "capture_auth{instance, 0, plan.epoch_auth_bytes" in transfer and
+            "PrepareEpochAuthority(Runtime& runtime, Scheduler& scheduler" in transfer and
+            "RequireGcnEpochAuth(plan.waves, epoch, tokens_by_slot)" in transfer and
+            "auth_storage" in gpu_write and
+            "ctx.ordered_gds_auth_index" in gpu_write and
+            "GcnEpochAuthTag" in gpu_write and
+            "GcnEpochAuthFlags" in gpu_write and
+            "ctx.OpSelect(ctx.U32[1], valid, value, ctx.u32_zero_value)" in gpu_write and
+            "CheckpointRegisterBank::AuthenticatedIdentity" in word_layout and
+            "CheckpointIdentityDwords == std::array<u32, 3>{1, 8, 9}" in word_layout and
+            "capture(5, 0, ir.Imm32(0u))" in live_body and
+            "capture(5, 1, ir.Imm32(0u))" in live_body and
+            "capture(5, 2, ir.Imm32(0u))" in live_body and
+            "AuthIdentityCount = 3" in coverage and
+            "incomplete host epoch/token identity after GCN SSA passes" in coverage and
+            "BufferType::OrderedGdsEpochAuth" in patching and
+            "has_ordered_gds_auth_binding" in backend_context and
+            "OrderedGdsEpochAuth" in resource_h and
+            "desc.buffer_type == Shader::BufferType::OrderedGdsEpochAuth" in rasterizer and
+            "active_ordered_gds_capture_->AuthorizedEpoch() != 0" in rasterizer and
+            "RequireCaptureTokenAuthority(captures, authority, epoch)" in rasterizer and
+            "owned.CaptureAuthority()" in rasterizer and
+            "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
+            "TRUSTED_DISPATCH_EPOCH_TOKEN_GPU_TRANSPORT_STILL_FAIL_CLOSED")
     require("enum class CheckpointRegisterBank : u32" in word_layout and
             "case 0: return 5;" in word_layout and
             "case 1: return 16;" in word_layout and
@@ -241,6 +278,7 @@ def main():
             "incomplete live VGPR snapshot after IR passes" in coverage and
             "incomplete EXEC/M0/VCC/SCC snapshot after IR passes" in coverage and
             "incomplete decoded-site checkpoint header after IR passes" in coverage and
+            "incomplete host epoch/token identity after GCN SSA passes" in coverage and
             "LiveCheckpointCoverage coverage(" in pipeline and
             "ir_inst.GetOpcode() != Shader::IR::Opcode::OrderedGdsCheckpointRegister" in pipeline and
             "coverage.Record(site.U32(), bank.U32(), index.U32())" in pipeline and
