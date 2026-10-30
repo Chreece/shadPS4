@@ -495,6 +495,22 @@ u32 Rasterizer::AuthorizeNewOrderedGdsCaptureEpoch(
 std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
 Rasterizer::DispatchOriginalGcnOrderedCaptureDirect(
     OrderedGdsEpochDeviceBuffers& owner, u32 expected_epoch) {
+    return DispatchOriginalGcnOrderedCaptureImpl(
+        owner, expected_epoch, false, 0, 0, 0);
+}
+
+std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+Rasterizer::DispatchOriginalGcnOrderedCaptureIndirect(
+    OrderedGdsEpochDeviceBuffers& owner, u32 expected_epoch,
+    VAddr address, u32 offset, u32 available_bytes) {
+    return DispatchOriginalGcnOrderedCaptureImpl(
+        owner, expected_epoch, true, address, offset, available_bytes);
+}
+
+std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(
+    OrderedGdsEpochDeviceBuffers& owner, u32 expected_epoch,
+    bool indirect, VAddr address, u32 offset, u32 available_bytes) {
     using namespace Shader::Gcn::OrderedGds;
 
     // This API deliberately does NOT replace DispatchDirect(). The original
@@ -506,11 +522,32 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureDirect(
         active_ordered_gds_capture_) {
         throw std::invalid_argument("unowned or overlapping original-GCN capture dispatch");
     }
+    scheduler.PopPendingOperations();
     const auto& cs_program = liverpool->GetCsRegs();
-    const DispatchExtent groups{cs_program.dim_x, cs_program.dim_y, cs_program.dim_z};
+    DispatchExtent groups{cs_program.dim_x, cs_program.dim_y, cs_program.dim_z};
     const DispatchExtent local{cs_program.num_thread_x.full,
                                cs_program.num_thread_y.full,
                                cs_program.num_thread_z.full};
+    const VideoCore::Buffer* indirect_command_buffer{};
+    u64 indirect_command_offset{};
+    if (indirect) {
+        constexpr u32 CommandBytes = sizeof(GpuIndirectDispatchCommand);
+        if (available_bytes < CommandBytes ||
+            ((address | VAddr(offset)) & 3u) != 0 ||
+            address > std::numeric_limits<VAddr>::max() - offset) {
+            throw std::invalid_argument("original GCN GPU indirect command invalid");
+        }
+        auto [buffer, base] = buffer_cache.ObtainBuffer(
+            address + offset, CommandBytes, false);
+        needs_barrier |= runtime.IsBufferAccessed(buffer, base, CommandBytes, false);
+        if (needs_barrier) {
+            runtime.FlushBarriers();
+        }
+        groups = OrderedGdsIndirectDispatchTransfer::Download(
+            runtime, scheduler, *buffer, base);
+        indirect_command_buffer = buffer;
+        indirect_command_offset = base;
+    }
     if (owner.groups.x != groups.x || owner.groups.y != groups.y ||
         owner.groups.z != groups.z ||
         owner.local_threads.x != local.x ||
@@ -534,7 +571,6 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureDirect(
         throw std::invalid_argument("stale original GCN capture buffer plan");
     }
 
-    scheduler.PopPendingOperations();
     const ComputePipeline* pipeline = pipeline_cache.GetOrderedGdsCapturePipeline();
     if (!pipeline) {
         throw std::runtime_error("original-GCN capture pipeline not compiled");
@@ -568,7 +604,14 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureDirect(
         pipeline->BindResources(set_writes, push_data);
         const auto command = scheduler.CommandBuffer();
         command.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
-        command.dispatch(groups.x, groups.y, groups.z);
+        if (indirect) {
+            ASSERT_MSG(indirect_command_buffer,
+                       "missing real GPU indirect GCN command");
+            command.dispatchIndirect(indirect_command_buffer->Handle(),
+                                     indirect_command_offset);
+        } else {
+            command.dispatch(groups.x, groups.y, groups.z);
+        }
         DebugState.IncDispatch();
         ResetBindings(true);
     }
