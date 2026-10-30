@@ -55,6 +55,8 @@ if ! (cd "${SRC}" && python3 tests/check_ordered_gds_ir.py) \
 fi
 grep -Fq 'EXPLICIT_GUEST_CAPTURE_ONLY_SHADER_CUT_NORMAL_EXECUTION_GATED' \
     "${LOG}/source-contracts.log" || exit 7
+grep -Fq 'REAL_GUEST_CAPTURE_SPIRV_DUMP_DIAGNOSTIC_ONLY' \
+    "${LOG}/source-contracts.log" || exit 15
 
 STAGE="EXACT_PRODUCTION_FIRST_PASS_GCC_AND_CLANG"
 for compiler in g++ clang++-17; do
