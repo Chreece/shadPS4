@@ -58,6 +58,25 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
 
 Rasterizer::~Rasterizer() = default;
 
+Rasterizer::OrderedGdsCaptureBinding::OrderedGdsCaptureBinding(
+    Rasterizer& rasterizer_, const OrderedGdsEpochDeviceBuffers& epoch_)
+    : rasterizer{rasterizer_}, epoch{epoch_} {
+    ASSERT_MSG(!rasterizer.active_ordered_gds_capture_,
+               "nested or stale GCN ordered GDS capture binding");
+    ASSERT_MSG(epoch.capture_registers.Handle() != VK_NULL_HANDLE &&
+               epoch.capture_registers.Handle() != epoch.resume_registers.Handle() &&
+               epoch.capture_registers.SizeBytes() ==
+                   epoch.plan.register_layout.total_bytes,
+               "invalid independent GCN guest register checkpoint owner");
+    rasterizer.active_ordered_gds_capture_ = &epoch;
+}
+
+Rasterizer::OrderedGdsCaptureBinding::~OrderedGdsCaptureBinding() {
+    ASSERT_MSG(rasterizer.active_ordered_gds_capture_ == &epoch,
+               "GCN ordered GDS capture scope identity changed");
+    rasterizer.active_ordered_gds_capture_ = nullptr;
+}
+
 OcclusionQuery& Rasterizer::GetOcclusionQuery() {
     if (!occlusion) {
         occlusion = std::make_unique<OcclusionQuery>(instance, scheduler);
@@ -981,12 +1000,25 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
     for (const auto& desc : stage.buffers) {
         if (desc.IsSpecial()) {
             if (desc.buffer_type == Shader::BufferType::OrderedGdsCheckpoint) {
-                // The producer needs independently allocated device-local
-                // capture/state buffers whose lifetime spans both passes.
-                // Binding an arbitrary stream or the guest 64KiB GDS here
-                // would silently corrupt the checkpoint; do not do that.
-                UNREACHABLE_MSG(
-                    "Ordered GCN checkpoint needs genuine dispatch-owned GPU storage");
+                // Only a caller-authenticated, explicitly scoped capture pass
+                // may bind the actual live register snapshot SSBO. No capture
+                // scope exists on the normal game path, so a compiler bug
+                // cannot accidentally alias GDS RAM or a wrapping stream.
+                ASSERT_MSG(stage.hw_stage == Shader::HwStage::Compute &&
+                           stage.uses_ordered_gds && desc.is_written &&
+                           active_ordered_gds_capture_,
+                           "ordered GDS checkpoint requires explicit live capture epoch");
+                const auto& epoch = *active_ordered_gds_capture_;
+                const auto& checkpoint = epoch.capture_registers;
+                const u64 bytes = epoch.plan.register_layout.total_bytes;
+                ASSERT_MSG(checkpoint.Handle() != VK_NULL_HANDLE &&
+                           checkpoint.Handle() != buffer_cache.GetGdsBuffer()->Handle() &&
+                           checkpoint.Handle() != epoch.resume_registers.Handle() &&
+                           bytes > 0 && bytes == checkpoint.SizeBytes(),
+                           "GCN checkpoint SSBO must be independent bounded device storage");
+                buffer_infos.emplace_back(checkpoint.Handle(), 0, bytes);
+                needs_barrier |= runtime.IsBufferAccessed(&checkpoint, 0, bytes, true);
+                bound_buffers.emplace_back(&checkpoint, 0, static_cast<u32>(bytes), true);
             } else if (desc.buffer_type == Shader::BufferType::GdsBuffer) {
                 const auto* gds_buf = buffer_cache.GetGdsBuffer();
                 buffer_infos.emplace_back(gds_buf->Handle(), 0, gds_buf->SizeBytes());
