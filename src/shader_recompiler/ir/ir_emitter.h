@@ -170,6 +170,10 @@ public:
 
     [[nodiscard]] U32 DataAppend(const U32& gds_dw_offset);
     [[nodiscard]] U32 DataConsume(const U32& gds_dw_offset);
+    // Preserve the actual pre-DS guest register value through SSA and
+    // optimization; the backend must emit a real packet store or fail closed.
+    void OrderedGdsCheckpointRegister(const U32& site_pc, const U32& bank,
+                                      const U32& index, const U32& value);
     [[nodiscard]] U32 OrderedGdsCount(const U32& m0, const U32& address,
                                       const U64& guest_exec_mask, const U32& encoded_control,
                                       const U32& site_pc);
