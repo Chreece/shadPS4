@@ -101,6 +101,17 @@ public:
         std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
         Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin);
 
+    // Typed, dispatch-owned host resolution handoff. The buffers, wave
+    // count and layouts MUST come from one bounded epoch owner rather than
+    // separate arbitrary Vulkan handles. No guest execution is enabled by
+    // calling this; missing authentic GPU capture data fails closed.
+    [[nodiscard]] std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+    ResolveOwnedCikComputeOrderedGdsEpoch(
+        OrderedGdsEpochDeviceBuffers& owned, u32 epoch,
+        std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
+        std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
+        Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin);
+
     // Restricted CIK compute path: derive creation positions from live
     // guest M0 logicalWaveID rather than Vulkan workgroup scheduling. Only
     // complete ordered-count epochs with contiguous wave IDs and zero
