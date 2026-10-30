@@ -113,6 +113,21 @@ public:
     [[nodiscard]] u32 AuthorizeNewOrderedGdsCaptureEpoch(
         OrderedGdsEpochDeviceBuffers& owner);
 
+    // Execute the ORIGINAL translated GCN compute shader on the actual GPU,
+    // stopping each wave at its first DS_ORDERED_COUNT or genuine S_ENDPGM.
+    // Requires a separately owned, bounded buffer set and the exact fresh
+    // per-slot auth epoch. This calls vkCmdDispatch and synchronously reads
+    // GPU-written packets and SGPR/VGPR checkpoints.
+    //
+    // This is intentionally an explicit capture-only API; it MUST NOT be
+    // called by normal gameplay without the completed guest re-entry pass.
+    // Earlier guest side effects execute ONCE in this first pass, so replay
+    // from shader entry is prohibited. A caller must keep the device owner
+    // alive and must not signal the guest dispatch complete from capture.
+    [[nodiscard]] std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+    DispatchOriginalGcnOrderedCaptureDirect(
+        OrderedGdsEpochDeviceBuffers& owner, u32 expected_epoch);
+
     // Staged Vulkan capture/readback and result upload API. GPU packet-writing,
     // guest-wave ordering and shader continuation are intentionally not enabled.
     [[nodiscard]] std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
