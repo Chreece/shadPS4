@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -70,6 +71,40 @@ struct GcnLdsCheckpointLayout {
                 stride, stride * workgroups};
     }
 };
+
+// A guest workgroup with NO LDS has nothing to checkpoint or restore.
+// Requiring a 48-byte LDS header for zero-byte shared memory is impossible
+// under GcnLdsCheckpointLayout::Require() and wrongly blocks a valid
+// compute dispatch. An absent LDS source must be represented by an ALL-ZERO
+// layout, not by a fabricated 48-byte checkpoint or a guessed workgroup.
+// Nonzero LDS is never optional: all waves must reach a verified barrier.
+[[nodiscard]] inline std::optional<GcnLdsCheckpointLayout>
+RequireOptionalGcnLdsCheckpoint(const GcnLdsCheckpointLayout& candidate,
+                                std::uint32_t guest_shared_lds_bytes,
+                                std::uint64_t guest_created_waves) {
+    if (guest_created_waves == 0 || guest_created_waves > 1'000'000ull) {
+        throw std::invalid_argument("unsupported guest LDS wave count");
+    }
+    if (guest_shared_lds_bytes == 0) {
+        if (candidate.workgroups || candidate.waves_per_group ||
+            candidate.lds_bytes || candidate.stride_bytes || candidate.total_bytes) {
+            throw std::invalid_argument(
+                "zero-LDS guest cannot claim an LDS checkpoint buffer");
+        }
+        return std::nullopt;
+    }
+    const auto verified = GcnLdsCheckpointLayout::Require(
+        candidate.workgroups, candidate.waves_per_group, candidate.lds_bytes);
+    if (verified.lds_bytes != guest_shared_lds_bytes ||
+        verified.stride_bytes != candidate.stride_bytes ||
+        verified.total_bytes != candidate.total_bytes ||
+        std::uint64_t(verified.workgroups) * verified.waves_per_group !=
+            guest_created_waves) {
+        throw std::invalid_argument(
+            "ordered GDS LDS layout is not guest dispatch layout");
+    }
+    return verified;
+}
 
 inline void RequireCompleteGcnLdsCheckpoints(
     std::span<const std::byte> snapshot, const GcnLdsCheckpointLayout& layout,
