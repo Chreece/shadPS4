@@ -346,6 +346,38 @@ void Translator::DS_APPEND(const GcnInst& inst) {
     SetDst(inst.dst[0], prev);
 }
 
+void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
+                                             const IR::U64& exec_mask) {
+    // Preserve every GCN SGPR (not only user data) and every allocated
+    // VGPR at the real instruction site. Register readers here enter the
+    // existing SSA rewrite while the per-register capture op is a required
+    // side effect. A backend checkpoint writer is still mandatory.
+    ASSERT_MSG(runtime_info.hw_stage == HwStage::Compute,
+               "Ordered GDS wave checkpoint requires a compute shader");
+    const u32 vgpr_count = runtime_info.props.num_allocated_vgprs;
+    ASSERT_MSG(vgpr_count > 0 && vgpr_count <= IR::NumVectorRegs,
+               "Invalid allocated GCN VGPR checkpoint count");
+
+    const auto capture = [&](u32 bank, u32 index, const IR::U32& value) {
+        ir.OrderedGdsCheckpointRegister(site_pc, ir.Imm32(bank), ir.Imm32(index), value);
+    };
+    for (u32 reg = 0; reg < IR::NumScalarRegs; ++reg) {
+        capture(0, reg, ir.GetScalarReg<IR::U32>(IR::ScalarReg(reg)));
+    }
+    for (u32 reg = 0; reg < vgpr_count; ++reg) {
+        capture(1, reg, ir.GetVectorReg<IR::U32>(IR::VectorReg(reg)));
+    }
+    // M0 / VCC / SCC and EXEC are independent architectural state. Never
+    // replace them with placeholders or a derived logical wave slot.
+    capture(2, 0, ir.GetM0());
+    capture(2, 1, ir.GetVccLo());
+    capture(2, 2, ir.GetVccHi());
+    capture(2, 3, IR::U32{ir.Select(ir.GetScc(), ir.Imm32(1u), ir.Imm32(0u))});
+    const IR::Value exec_halves{ir.UnpackUint2x32(exec_mask)};
+    capture(2, 4, IR::U32{ir.CompositeExtract(exec_halves, 0)});
+    capture(2, 5, IR::U32{ir.CompositeExtract(exec_halves, 1)});
+}
+
 void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
     const u32 offset0 = u32(inst.control.ds.offset0);
     const u32 offset1 = u32(inst.control.ds.offset1);
@@ -379,6 +411,11 @@ void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
     // ordered-packer update. The ADDR operand is retained separately in IR;
     // unlike later RDNA instructions, it is not the legacy counter increment.
     const IR::U64 exec_mask = ir.Ballot(ir.GetExec());
+    // Capture values BEFORE the guest ordered operation mutates VDST. The
+    // true old counter value must arrive from an ordered host resolution,
+    // followed by shader re-entry at site_pc + inst.length without replaying
+    // pre-DS guest writes.
+    RecordOrderedGdsCheckpoint(site_pc, exec_mask);
     const IR::U32 old_value =
         ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), exec_mask, control, site_pc);
     SetDst(inst.dst[0], old_value);
