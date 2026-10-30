@@ -506,6 +506,11 @@ Rasterizer::ResolveOwnedCikComputeOrderedGdsEpoch(
     // touches nor compares them. Use existing packet resources here WITHOUT
     // allocating any fake LDS storage. Live LDS uses independent buffers.
     const auto& plan = owned.plan;
+    if (owned.AuthorizedEpoch() != epoch ||
+        owned.CaptureAuthority().size() != plan.waves) {
+        throw std::invalid_argument(
+            "CIK resolved epoch missing externally supplied wave continuation identities");
+    }
     const auto& lds_source =
         owned.capture_lds ? *owned.capture_lds : owned.capture_packets;
     auto& lds_destination =
@@ -518,7 +523,7 @@ Rasterizer::ResolveOwnedCikComputeOrderedGdsEpoch(
         plan.lds_layout ? plan.lds_layout->lds_bytes : 0,
         lds_destination, 0, owned.resume_registers, 0,
         owned.resume_packets, 0, epoch, plan.waves,
-        verified_sites, seed, seed_origin);
+        verified_sites, seed, seed_origin, owned.CaptureAuthority());
 }
 
 std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
@@ -535,7 +540,8 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     std::size_t guest_created_waves,
     std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
     std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
-    Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin) {
+    Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin,
+    std::span<const Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority) {
     using namespace Shader::Gcn::OrderedGds;
 
     // A real GPU checkpoint writer must have captured complete live guest
@@ -602,6 +608,9 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     }
     const auto captures =
         DownloadOrderedGdsPackets(device_capture, capture_offset, guest_created_waves);
+    // Never accept a plausible packet until its token matches the actual
+    // per-wave scheduler assignment for this specific epoch.
+    RequireCaptureTokenAuthority(captures, authority, epoch);
     const auto order = VerifiedGuestCreationOrder::FromCompleteCikComputeM0(captures, epoch);
     if (!order) {
         // Includes mixed bypasses and nonzero crawler increments: never
