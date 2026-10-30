@@ -60,9 +60,9 @@ def source_contracts() -> None:
     body = method(translator, 'void Translator::DS_ORDERED_COUNT(')
     if any(atom in body for atom in ('SharedAtomicIAdd', 'SharedAtomicCmpSwap', 'SharedAtomicInc', 'DataAppend')):
         raise RuntimeError('UNORDERED_ATOMIC_SUBSTITUTION')
-    if 'RecordOrderedGdsCheckpoint(site_pc, exec_mask, pc, inst.dst[0].code)' not in body:
-        raise RuntimeError('LIVE_REGISTER_CHECKPOINT_NOT_CALLED_AT_GUEST_DS')
-    if body.index('RecordOrderedGdsCheckpoint(site_pc, exec_mask, pc, inst.dst[0].code)') > body.index('ir.OrderedGdsCount('):
+    if 'RecordOrderedGdsCheckpoint(site_pc, exec_mask, pc, inst.dst[0].code,' not in body or 'offset0 | (offset1 << 8u));' not in body:
+        raise RuntimeError('LIVE_GUEST_SITE_CONTROL_CHECKPOINT_NOT_CALLED_AT_DS')
+    if body.index('RecordOrderedGdsCheckpoint(site_pc, exec_mask, pc, inst.dst[0].code,') > body.index('ir.OrderedGdsCount('):
         raise RuntimeError('CHECKPOINT_NOT_BEFORE_ORDERED_GDS')
     if 'const u32 guest_site_pc = pc - inst.length;' not in body or 'site_pc = ir.Imm32(guest_site_pc)' not in body:
         raise RuntimeError('GUEST_SITE_PC_NOT_FROM_DECODED_INSTRUCTION')
