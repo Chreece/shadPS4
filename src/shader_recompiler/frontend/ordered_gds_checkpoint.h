@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -48,6 +49,15 @@ static_assert(alignof(GpuGcnWaveCheckpoint) == 16);
 // DWORDs, laid out VGPR-major and lane-minor, beginning directly after SGPRs.
 // LDS is workgroup-shared and needs separate checkpointing: refuse nonzero
 // LDS for now rather than resuming with stale shared memory.
+// Independently decoded from GCN instruction bytes, not supplied by a GPU
+// capture packet. The VDST and encoded control are part of the immutable
+// shader program at that instruction PC.
+struct VerifiedGcnOrderedSite {
+    u32 site_pc{};
+    u32 destination_vgpr{};
+    u32 encoded_control{};
+};
+
 struct GcnCheckpointLayout {
     u32 waves{};
     u32 scalar_words{};
@@ -81,9 +91,10 @@ struct GcnCheckpointLayout {
 inline void RequireCompleteGcnWaveCheckpoints(
     std::span<const std::byte> state_bytes,
     std::span<const GpuCapturePacket> captures,
-    const GcnCheckpointLayout& layout, u32 expected_epoch) {
+    const GcnCheckpointLayout& layout, u32 expected_epoch,
+    std::span<const VerifiedGcnOrderedSite> verified_sites) {
     if (!layout.waves || captures.size() != layout.waves ||
-        state_bytes.size() != layout.total_bytes) {
+        state_bytes.size() != layout.total_bytes || verified_sites.empty()) {
         throw std::invalid_argument("guest wave checkpoint/capture coverage mismatch");
     }
     std::vector<bool> seen(layout.waves, false);
@@ -92,6 +103,17 @@ inline void RequireCompleteGcnWaveCheckpoints(
             seen[capture.logical_slot] || capture.tag != CapturePacketTag ||
             capture.epoch != expected_epoch || !capture.site_pc) {
             throw std::invalid_argument("invalid or duplicate guest checkpoint capture slot");
+        }
+        const auto match = std::find_if(verified_sites.begin(), verified_sites.end(),
+                                        [&](const auto& site) {
+                                            return site.site_pc == capture.site_pc;
+                                        });
+        if (match == verified_sites.end() ||
+            match->encoded_control != capture.encoded_control ||
+            match->destination_vgpr >= layout.vector_registers ||
+            std::count_if(verified_sites.begin(), verified_sites.end(),
+                          [&](const auto& site) { return site.site_pc == capture.site_pc; }) != 1) {
+            throw std::invalid_argument("guest checkpoint site is not uniquely decoded");
         }
         seen[capture.logical_slot] = true;
         const std::size_t offset = std::size_t(capture.logical_slot) * layout.stride_bytes;
@@ -110,7 +132,7 @@ inline void RequireCompleteGcnWaveCheckpoints(
             checkpoint.scalar_words != layout.scalar_words ||
             checkpoint.vector_registers != layout.vector_registers ||
             checkpoint.lane_count != GcnWaveLanes ||
-            checkpoint.destination_vgpr >= layout.vector_registers) {
+            checkpoint.destination_vgpr != match->destination_vgpr) {
             throw std::invalid_argument("guest GCN wave checkpoint is stale or incomplete");
         }
     }
