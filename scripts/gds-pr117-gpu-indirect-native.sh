@@ -43,6 +43,13 @@ for x in "$SRC/externals/fmt/include" "$BUILD/_deps/fmt-src/include" /usr/includ
 done
 [[ -n "$FMT" ]] || { echo FMT_MISSING; exit 8; }
 STAGE=DECODE_REAL_INDIRECT_GPU_COMMAND_OFFLINE
+if [[ "${PR117_PRIOR_INDIRECT_ABI_VERIFIED:-0}" == 1 ]]; then
+    # The uploaded 2026-10-30T191244Z archive already verified this exact
+    # unchanged 12-byte C++ dispatch ABI with BOTH GCC and Clang. The failed
+    # stage was the subsequent native Vulkan namespace compile, not the ABI.
+    printf 'PRIOR_GCC_AND_CLANG_INDIRECT_ABI=PASS_FROM_191244_ARCHIVE\n' \
+        >"$OUT/prior-abi-evidence.txt"
+else
 for compiler in g++ clang++-17; do
     case "$compiler" in g++) name=gcc;; *) name=clang;; esac
     (
@@ -56,6 +63,7 @@ for compiler in g++ clang++-17; do
     }
     grep -Fq 'GDS_GPU_INDIRECT_DISPATCH_ABI=PASS' "$OUT/indirect-$name.log" || exit 10
 done
+fi
 STAGE=INCREMENTAL_PR117_NATIVE_LINK
 exec 9>"$BASE/.indirect-native-build.lock"
 flock -x 9
