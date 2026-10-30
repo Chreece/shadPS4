@@ -64,10 +64,14 @@ Rasterizer::OrderedGdsCaptureBinding::OrderedGdsCaptureBinding(
     ASSERT_MSG(!rasterizer.active_ordered_gds_capture_,
                "nested or stale GCN ordered GDS capture binding");
     ASSERT_MSG(epoch.capture_registers.Handle() != VK_NULL_HANDLE &&
+               epoch.capture_packets.Handle() != VK_NULL_HANDLE &&
                epoch.capture_registers.Handle() != epoch.resume_registers.Handle() &&
+               epoch.capture_registers.Handle() != epoch.capture_packets.Handle() &&
+               epoch.capture_packets.Handle() != epoch.resume_packets.Handle() &&
                epoch.capture_registers.SizeBytes() ==
-                   epoch.plan.register_layout.total_bytes,
-               "invalid independent GCN guest register checkpoint owner");
+                   epoch.plan.register_layout.total_bytes &&
+               epoch.capture_packets.SizeBytes() == epoch.plan.packet_bytes,
+               "invalid independent GCN packet/register checkpoint owner");
     rasterizer.active_ordered_gds_capture_ = &epoch;
 }
 
@@ -999,7 +1003,27 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
     const u64 alignment = instance.StorageMinAlignment();
     for (const auto& desc : stage.buffers) {
         if (desc.IsSpecial()) {
-            if (desc.buffer_type == Shader::BufferType::OrderedGdsCheckpoint) {
+            if (desc.buffer_type == Shader::BufferType::OrderedGdsCapture) {
+                // Only an explicit, owned guest capture phase may bind a
+                // dedicated GPU packet buffer. No guest GDS or wraparound
+                // stream alias, and no ordinary shader can opt into this.
+                ASSERT_MSG(stage.hw_stage == Shader::HwStage::Compute &&
+                           stage.uses_ordered_gds && desc.is_written &&
+                           active_ordered_gds_capture_,
+                           "ordered GDS capture packets require explicit live epoch");
+                const auto& epoch = *active_ordered_gds_capture_;
+                const auto& packets = epoch.capture_packets;
+                const u64 bytes = epoch.plan.packet_bytes;
+                ASSERT_MSG(packets.Handle() != VK_NULL_HANDLE &&
+                           packets.Handle() != buffer_cache.GetGdsBuffer()->Handle() &&
+                           packets.Handle() != epoch.capture_registers.Handle() &&
+                           packets.Handle() != epoch.resume_packets.Handle() &&
+                           bytes > 0 && bytes == packets.SizeBytes(),
+                           "GCN GPU packet SSBO must be independent bounded device storage");
+                buffer_infos.emplace_back(packets.Handle(), 0, bytes);
+                needs_barrier |= runtime.IsBufferAccessed(&packets, 0, bytes, true);
+                bound_buffers.emplace_back(&packets, 0, static_cast<u32>(bytes), true);
+            } else if (desc.buffer_type == Shader::BufferType::OrderedGdsCheckpoint) {
                 // Only a caller-authenticated, explicitly scoped capture pass
                 // may bind the actual live register snapshot SSBO. No capture
                 // scope exists on the normal game path, so a compiler bug
