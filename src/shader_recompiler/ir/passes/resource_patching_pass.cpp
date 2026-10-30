@@ -954,6 +954,18 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
             PatchGlobalDataShareAccess(inst, info, descriptors, profile);
         }
     }
+
+    if (info.uses_ordered_gds) {
+        // The live guest checkpoint is its own GPU storage buffer. It must
+        // not be discovered from a guest SHARP or silently share raw GDS RAM.
+        // Keep this descriptor in the ordinary binding-count pipeline so a
+        // future checkpoint orchestrator can bind an authoritative buffer.
+        (void)descriptors.Add(BufferResource{
+            .used_types = IR::Type::U32,
+            .buffer_type = BufferType::OrderedGdsCheckpoint,
+            .is_written = true,
+        });
+    }
 }
 
 } // namespace Shader::Optimization
