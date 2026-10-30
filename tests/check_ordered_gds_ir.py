@@ -310,7 +310,15 @@ def main():
             "LdsCheckpointQuiescentFlag" in lds and
             "OrderedGdsLdsStateTransfer::Download(" in rasterizer and
             "OrderedGdsLdsStateTransfer::Upload(" in rasterizer and
-            "u64(lds_layout.workgroups) * lds_layout.waves_per_group != guest_created_waves" in rasterizer and
+            "RequireOptionalGcnLdsCheckpoint(" in lds and
+            "guest_shared_lds_bytes == 0" in lds and
+            "candidate.workgroups || candidate.waves_per_group ||" in lds and
+            "std::uint64_t(verified.workgroups) * verified.waves_per_group !=" in lds and
+            "const auto checked_lds = RequireOptionalGcnLdsCheckpoint(" in rasterizer and
+            "if (!checked_lds && (lds_capture_offset || resume_lds_offset))" in rasterizer and
+            "if (checked_lds)" in rasterizer and
+            "lds_state = OrderedGdsLdsStateTransfer::Download(" in rasterizer and
+            "*checked_lds, epoch" in rasterizer and
             "class OrderedGdsLdsStateTransfer" in transfer and
             "dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead" in transfer,
             "PRODUCTION_GCN_LDS_STATE_TRANSFER_AND_GUARD")
