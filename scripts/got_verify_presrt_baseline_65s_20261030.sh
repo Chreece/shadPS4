@@ -64,7 +64,18 @@ try:
  before=sha(E)
  if before!=old:raise RuntimeError('BASELINE_ELF_NOT_RESTORED')
  prior=L/'got-restore-0544-20261030T185446Z-3576540/trial.json'
- if json.loads(prior.read_text()).get('result')!='PASS_PRE_SRT_0544_BASELINE_RESTORED':raise RuntimeError('ROLLBACK_NOT_VERIFIED')
+ restored=json.loads(prior.read_text())
+ if restored.get('result')!='PASS_PRE_SRT_0544_BASELINE_RESTORED' or not restored.get('baseline_sha_verified'):raise RuntimeError('ROLLBACK_NOT_VERIFIED')
+ original_paths={
+   'flatten':B/'source/src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp',
+   'srt_gvn':B/'source/src/shader_recompiler/ir/srt_gvn_table.h',
+   'vsharp':B/'source/src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp',
+   'gpu_coverage':S,
+   'mru':B/'source/src/video_core/renderer_vulkan/vk_pipeline_cache.cpp',
+   'emulator':E,
+ }
+ for k,p in original_paths.items():
+  if not p.is_file() or sha(p)!=(restored.get('new_hashes') or {}).get(k):raise RuntimeError('RESTORED_SOURCE_CHANGED:'+k)
  if u.emulator_pids():raise RuntimeError('GAME_ALREADY_RUNNING')
  eboot=P('/mnt/roms-all/ps4-games/CUSA11456/eboot.bin');screen=os.getenv('DISPLAY') or ':0'
  if not eboot.is_file():raise RuntimeError('EBOOT_MISSING')
