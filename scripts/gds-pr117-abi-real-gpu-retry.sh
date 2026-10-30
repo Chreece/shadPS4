@@ -139,117 +139,7 @@ import re,sys
 src,dst=map(Path,sys.argv[1:])
 closest=[]
 for l in src.read_text(errors='replace').splitlines():
-    m=re.match(r'^([0-9a-fA-F]+)\s+\S\s+(.+)
-! grep -q 'not found' "$REPORT/ldd.txt" || {
-  echo "RUNTIME_LIBRARY_MISSING"; exit 3;
-}
-if command -v pgrep >/dev/null && pgrep -x shadps4 > "$REPORT/existing-pids.txt"; then
-  echo "EXISTING_GAME_PROCESS_REFUSE_PARALLEL"; exit 3;
-fi
-STATE=REUSE_X11_NO_CHANGES
-DISPLAY_OK=""
-for candidate in "$(printenv DISPLAY || true)" :0 :1 :2; do
-  [[ -n "$candidate" ]] || continue
-  if DISPLAY="$candidate" timeout 4 xdpyinfo -display "$candidate" \
-       >"$REPORT/display-check.log" 2>&1; then
-    DISPLAY_OK="$candidate"
-    break
-  fi
-done
-[[ -n "$DISPLAY_OK" ]] || { echo "NO_ACCESSIBLE_X11_DISPLAY"; exit 4; }
-export DISPLAY="$DISPLAY_OK"
-{
-  echo "DISPLAY=$DISPLAY"
-  pgrep -ax sunshine || true
-  pgrep -ax Xorg || true
-} > "$REPORT/display-before.txt"
-STATE=PIN_PROVEN_OBSERVER_AND_OLLAMA_POLICY
-OBSERVER="$WORK/native-observer.py"
-VRAM="$WORK/ollama-vram-session.py"
-curl -4fsSL --retry 3 --retry-delay 2 \
-  "https://raw.githubusercontent.com/Chreece/shadPS4/d9c87b7224bb8c20ac72282f6cf16a49565223c5/tools/development/shadps4_gpu_loss_early_observer_20261026.py" \
-  -o "$OBSERVER"
-curl -4fsSL --retry 3 --retry-delay 2 \
-  "https://raw.githubusercontent.com/Chreece/shadPS4/764d90aab5cf658fbabc23921632b0d2cda4cd1a/tools/development/shadps4_ollama_vram_session_20261025.py" \
-  -o "$VRAM"
-[[ "$(git hash-object "$OBSERVER")" == "188deeb0a25e671e2308ac0acfe8ad81bc0adfc1" ]] || exit 5
-[[ "$(git hash-object "$VRAM")" == "9623031ffc736c270ccce0cad247b52d5b3dd30a" ]] || exit 5
-STATE=ISOLATED_PORTABLE_PROFILE_NO_LIVE_SAVES
-PROFILE=""
-for d in "$HOME/user" "$HOME/.local/share/shadPS4" \
-  "$PROJECT/GodOfWarRagnarok/tests/native-rendered-gfx-20261016-152535-3014679/user"; do
-  [[ -d "$d" && ! -L "$d" && -f "$d/config.json" ]] || continue
-  PROFILE="$d"
-  break
-done
-[[ -n "$PROFILE" ]] || { echo "PORTABLE_PROFILE_NOT_FOUND"; exit 5; }
-KIB="$(df -Pk "$ROOT" | awk 'END{print $4}')"
-[[ "$KIB" =~ ^[0-9]+$ ]] && (( KIB >= 3145728 )) || {
-  echo "DISK_HEADROOM_BELOW_3_GIB"; exit 5;
-}
-mkdir -p "$WORK/user"
-python3 - "$PROFILE" "$WORK/user" <<'PY'
-import json,os,pathlib,shutil,sys
-src,dst=map(pathlib.Path,sys.argv[1:])
-src=src.resolve(strict=True)
-skip={"log","logs","shader","screenshots","captures","cache","tmp","temp","dumps","download"}
-files=[];total=0
-for root,dirs,names in os.walk(src,followlinks=False):
-    base=pathlib.Path(root)
-    dirs[:]=[d for d in dirs if not (base/d).is_symlink()
-             and not (base==src and d.lower() in skip)]
-    for name in names:
-        p=base/name
-        if p.is_symlink() or not p.is_file():continue
-        total+=p.stat().st_size
-        if total>2*1024**3 or len(files)>100000:
-            raise SystemExit("PROFILE_COPY_LIMIT_EXCEEDED")
-        files.append((p,p.relative_to(src)))
-for p,rel in files:
-    q=dst/rel;q.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,q)
-cfg=dst/"config.json"
-data=json.loads(cfg.read_text(encoding="utf-8"))
-if not isinstance(data,dict):raise SystemExit("INVALID_CONFIG")
-g=data.get("General")
-if g is not None:
-    if not isinstance(g,dict):raise SystemExit("INVALID_GENERAL")
-    for k in ("home_dir","sys_modules_dir","font_dir","addon_install_dir"):
-        if k in g:
-            if not isinstance(g[k],str):raise SystemExit("INVALID_CONFIG_PATH")
-            g[k]=""
-    cfg.write_text(json.dumps(data,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
-print(f"ISOLATED_PROFILE_COPIED_FILES={len(files)}",flush=True)
-PY
-STATE=ACTUAL_GUEST_GCN_GPU_CAPTURE_ONCE
-export SHADPS4_PR117_CAPTURE_ONCE=1
-if [[ -z "$(printenv XDG_RUNTIME_DIR || true)" ]]; then
-  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-fi
-echo "CAPTURE=REAL_GCN_FIRST_PASS_ONLY; NO_FAKE_REENTRY"
-echo "GAME=CUSA34384; VRAM_UNLOAD_OLLAMA_ONLY_IF_BELOW_8_GIB"
-echo "OBSERVE=118s + 2s terminate ONLY owned child process; no automated input"
-set +e
-python3 -B "$VRAM" --observer "$OBSERVER" --binary "$BIN" \
-  --sha256 "$SHA" --game CUSA34384 --cwd "$WORK" \
-  --report "$REPORT/guest" --seconds 118 \
-  --state "$REPORT/ollama-session.json" --minimum-gib 8 \
-  >"$REPORT/observer-and-vram.log" 2>&1
-OBS_EXIT=$?
-set -e
-tail -n 65 "$REPORT/observer-and-vram.log"
-{
-  echo "DISPLAY=$DISPLAY"
-  pgrep -ax sunshine || true
-  pgrep -ax Xorg || true
-} > "$REPORT/display-after.txt"
-if [[ -f "$REPORT/guest/full-console.log" ]] &&
-   grep -Fq 'PR117_REAL_GCN_CAPTURE_DONE' "$REPORT/guest/full-console.log"; then
-   STATE=REAL_GUEST_GPU_FIRST_PASS_COMPLETE_STOP_BEFORE_REENTRY
-else
-   STATE=EARLY_HOST_CRASH_OR_INCOMPLETE_GUEST_CAPTURE
-fi
-echo "GUEST_CAPTURE_LOG_AND_SCREENSHOTS_ARCHIVED=YES"
-,l)
+    m=re.match(r'^([0-9a-fA-F]+)\s+\S\s+(.+)$',l)
     if m:
         addr=int(m[1],16)
         if addr<=0xf4d206: closest.append((addr,m[2]))
@@ -423,5 +313,10 @@ tail -n 65 "$REPORT/observer-and-vram.log"
   pgrep -ax sunshine || true
   pgrep -ax Xorg || true
 } > "$REPORT/display-after.txt"
-STATE=REAL_GUEST_GPU_PROBE_COMPLETED
+if [[ -f "$REPORT/guest/full-console.log" ]] &&
+   grep -Fq 'PR117_REAL_GCN_CAPTURE_DONE' "$REPORT/guest/full-console.log"; then
+   STATE=REAL_GUEST_GPU_FIRST_PASS_COMPLETE_STOP_BEFORE_REENTRY
+else
+   STATE=EARLY_HOST_CRASH_OR_INCOMPLETE_GUEST_CAPTURE
+fi
 echo "GUEST_CAPTURE_LOG_AND_SCREENSHOTS_ARCHIVED=YES"
