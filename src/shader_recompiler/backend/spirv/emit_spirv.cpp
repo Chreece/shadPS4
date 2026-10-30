@@ -15,6 +15,7 @@
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
+#include "shader_recompiler/frontend/ordered_gds_epoch_auth.h"
 #include "shader_recompiler/frontend/ordered_gds_word_layout.h"
 #include "shader_recompiler/frontend/translate/translate.h"
 #include "shader_recompiler/ir/basic_block.h"
@@ -735,8 +736,9 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank,
     namespace Gds = Shader::Gcn::OrderedGds;
     ASSERT_MSG(ctx.hw_stage == HwStage::Compute &&
                    ctx.has_ordered_gds_checkpoint_binding &&
-                   ctx.has_ordered_gds_capture_binding,
-               "GCN ordered-GDS capture requires both independent compute SSBOs");
+                   ctx.has_ordered_gds_capture_binding &&
+                   ctx.has_ordered_gds_auth_binding,
+               "GCN capture requires independent checkpoint, packet and host-authority SSBOs");
     ASSERT_MSG(std::ranges::any_of(ctx.info.ordered_gds_sites,
                                   [site_pc](const auto& site) { return site.pc == site_pc; }),
                "GCN checkpoint instruction site must come from decoded guest ISA");
@@ -757,6 +759,58 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank,
     ASSERT_MSG(Sirit::ValidId(storage) && Sirit::ValidId(guest_value),
                "Missing live GCN packet/checkpoint SPIR-V SSBO or register value");
 
+    Id real_value = guest_value;
+    const bool identity_dword =
+        (packet && (index == 1 || index == 10 || index == 11)) ||
+        bank == u32(Gds::CheckpointRegisterBank::AuthenticatedIdentity);
+    if (identity_dword) {
+        // The epoch/token values MUST be read from the host-supplied wave
+        // authority, never guessed from Vulkan storage slot or guest M0.
+        // If the independent descriptor was stale or mismatched, record
+        // zero. The checkpoint tag/valid flags remain zero until the actual
+        // second-pass guest continuation is implemented and validated.
+        const auto& auth = ctx.buffers.at(ctx.ordered_gds_auth_index);
+        ASSERT_MSG(auth.buffer_type == BufferType::OrderedGdsEpochAuth,
+                   "GCN wave token source is not the host authority SSBO");
+        const auto [auth_storage, auth_pointer_type] =
+            auth.Alias(EmitContext::PointerType::U32);
+        ASSERT_MSG(Sirit::ValidId(auth_storage),
+                   "missing verified GPU epoch/token binding");
+        const Id auth_base = ctx.OpIMul(ctx.U32[1], logical_slot,
+                                        ctx.ConstU32(Gds::GcnEpochAuthDwords));
+        const auto load_auth = [&](u32 word) {
+            const Id offset = ctx.OpIAdd(ctx.U32[1], auth_base, ctx.ConstU32(word));
+            const Id pointer = ctx.OpAccessChain(
+                auth_pointer_type, auth_storage, ctx.u32_zero_value, offset);
+            return ctx.OpLoad(ctx.U32[1], pointer);
+        };
+        const Id tag = load_auth(0);
+        const Id epoch = load_auth(1);
+        const Id actual_slot = load_auth(2);
+        const Id lo = load_auth(4);
+        const Id hi = load_auth(5);
+        const Id flags = load_auth(6);
+        const Id expected_tag = ctx.OpIEqual(
+            ctx.U1[1], tag, ctx.ConstU32(Gds::GcnEpochAuthTag));
+        const Id expected_slot = ctx.OpIEqual(ctx.U1[1], actual_slot, logical_slot);
+        const Id expected_flags = ctx.OpIEqual(
+            ctx.U1[1], flags, ctx.ConstU32(Gds::GcnEpochAuthFlags));
+        const Id nonzero_epoch = ctx.OpINotEqual(ctx.U1[1], epoch, ctx.u32_zero_value);
+        const Id token_nonzero = ctx.OpLogicalOr(
+            ctx.U1[1], ctx.OpINotEqual(ctx.U1[1], lo, ctx.u32_zero_value),
+            ctx.OpINotEqual(ctx.U1[1], hi, ctx.u32_zero_value));
+        const Id valid0 = ctx.OpLogicalAnd(ctx.U1[1], expected_tag, expected_slot);
+        const Id valid1 = ctx.OpLogicalAnd(ctx.U1[1], expected_flags, nonzero_epoch);
+        const Id valid = ctx.OpLogicalAnd(
+            ctx.U1[1], ctx.OpLogicalAnd(ctx.U1[1], valid0, valid1), token_nonzero);
+        const u32 authority_word =
+            packet ? (index == 1 ? 1u : index == 10 ? 4u : 5u)
+                   : (index == 0 ? 1u : index == 1 ? 4u : 5u);
+        // Reuse the loaded IDs instead of performing a second noncoherent read.
+        const Id value = authority_word == 1 ? epoch : authority_word == 4 ? lo : hi;
+        real_value = ctx.OpSelect(ctx.U32[1], valid, value, ctx.u32_zero_value);
+    }
+
     const Id wave_offset = ctx.OpIMul(ctx.U32[1], logical_slot, ctx.ConstU32(stride));
     Id dword_offset = ctx.OpIAdd(ctx.U32[1], wave_offset, ctx.ConstU32(*relative));
     const bool vector_register = bank == u32(Gds::CheckpointRegisterBank::Vector);
@@ -766,7 +820,7 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank,
     }
     const Id pointer{ctx.OpAccessChain(pointer_type, storage, ctx.u32_zero_value, dword_offset)};
     if (vector_register) {
-        ctx.OpStore(pointer, guest_value);
+        ctx.OpStore(pointer, real_value);
         return;
     }
     // Packet/header/SGPR words are wave-wide: only guest lane zero writes.
@@ -777,7 +831,7 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank,
     ctx.OpSelectionMerge(merge_label, spv::SelectionControlMask::MaskNone);
     ctx.OpBranchConditional(first_lane, write_label, merge_label);
     ctx.AddLabel(write_label);
-    ctx.OpStore(pointer, guest_value);
+    ctx.OpStore(pointer, real_value);
     ctx.OpBranch(merge_label);
     ctx.AddLabel(merge_label);
 }
