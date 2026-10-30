@@ -722,6 +722,14 @@ void EmitGetM0(EmitContext& ctx) {
     UNREACHABLE_MSG("Unreachable instruction");
 }
 
+void EmitOrderedGdsCheckpointRegister(EmitContext&, u32 site_pc, u32 bank,
+                                      u32 index, Id /*guest_value*/) {
+    UNREACHABLE_MSG(
+        "Live ordered GDS capture has no GPU checkpoint writer "
+        "(site={:#x}, bank={}, register={})",
+        site_pc, bank, index);
+}
+
 Id EmitOrderedGdsCount(EmitContext&, Id, Id, Id /*guest_exec_mask*/,
                        u32 encoded_control, u32 site_pc) {
     // A separate wave scheduler is required to execute this instruction in
