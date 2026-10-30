@@ -470,6 +470,11 @@ OPCODE(DataAppend,                                          U32,            U32,
 OPCODE(DataConsume,                                         U32,            U32,            U1                                                              )
 // Wave-ordered GDS counter: live M0, per-lane ADDR, full guest EXEC mask, raw control and site PC.
 // Distinct from SharedAtomicIAdd/Exchange: Vulkan does not order workgroups by creation.
+// Register state at the live GCN ordered-count site, before its old-value return.
+// Bank: 0=SGPR, 1=VGPR, 2=architectural status; index selects the register.
+// Writes must survive SSA/DCE; the Vulkan backend still rejects execution
+// until a genuine wave-aware capture/resume pipeline is wired.
+OPCODE(OrderedGdsCheckpointRegister, Void, U32, U32, U32, U32)
 OPCODE(OrderedGdsCount, U32, U32, U32, U64, U32, U32)
 OPCODE(GroupAny,                                            U1,             U1,                                                                             )
 
