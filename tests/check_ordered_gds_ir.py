@@ -25,6 +25,7 @@ FILES = {
     "patching": "src/shader_recompiler/ir/passes/resource_patching_pass.cpp",
     "packer": "src/shader_recompiler/frontend/ordered_gds_legacy_packer.h",
     "checkpoint": "src/shader_recompiler/frontend/ordered_gds_checkpoint.h",
+    "lds": "src/shader_recompiler/frontend/ordered_gds_lds_checkpoint.h",
     "transfer": "src/video_core/renderer_vulkan/vk_ordered_gds_transfer.h",
     "rasterizer": "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
     "packet": "src/shader_recompiler/frontend/ordered_gds_capture_packet.h",
@@ -72,6 +73,7 @@ def main():
     patching = source("patching")
     packer = source("packer")
     checkpoint = source("checkpoint")
+    lds = source("lds")
     transfer = source("transfer")
     rasterizer = source("rasterizer")
     packet = source("packet")
@@ -179,6 +181,16 @@ def main():
             "OrderedGdsPacketTransfer::UploadCheckpoint(" in rasterizer and
             "device_resume_checkpoints.Handle() == device_checkpoints.Handle()" in rasterizer,
             "PRODUCTION_GPU_REGISTER_STATE_RESUME_UPLOAD_GUARDED")
+    require("GcnLdsCheckpointLayout" in lds and
+            "RequireCompleteGcnLdsCheckpoints(" in lds and
+            "waves_at_barrier != layout.waves_per_group" in lds and
+            "LdsCheckpointQuiescentFlag" in lds and
+            "OrderedGdsLdsStateTransfer::Download(" in rasterizer and
+            "OrderedGdsLdsStateTransfer::Upload(" in rasterizer and
+            "u64(lds_layout.workgroups) * lds_layout.waves_per_group != guest_created_waves" in rasterizer and
+            "class OrderedGdsLdsStateTransfer" in transfer and
+            "dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead" in transfer,
+            "PRODUCTION_GCN_LDS_STATE_TRANSFER_AND_GUARD")
 
     require("class OrderedGdsPhases" in reference and
             "CompleteWaveCollector" in reference and
