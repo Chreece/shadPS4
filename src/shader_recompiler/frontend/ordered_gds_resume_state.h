@@ -43,6 +43,12 @@ namespace Shader::Gcn::OrderedGds {
 
     std::vector<std::byte> post(pre_ds_state.begin(), pre_ds_state.end());
     for (const auto& capture : captures) {
+        // S_ENDPGM already completed in pass one. This physical slot has no
+        // valid register checkpoint and MUST NOT be restored or dispatched.
+        // The canonical non-runnable resume marker was verified above.
+        if (capture.flags == CaptureBypassFlags) {
+            continue;
+        }
         // The validator above already established unique site identity,
         // slot range and an exact match to decoded destination metadata.
         const auto match = std::find_if(
