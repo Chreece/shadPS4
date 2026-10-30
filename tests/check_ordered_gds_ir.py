@@ -426,9 +426,29 @@ def main():
             "auto capture_binding = binding" in pipeline and
             "Shader::Backend::SPIRV::EmitSPIRVOrderedGdsCapturePass(" in pipeline and
             '"pr117-capture.spv"' in pipeline and
-            "auto spv = Shader::Backend::SPIRV::EmitSPIRV(" in pipeline and
+            "auto spv = ordered_capture_only" in pipeline and
+            ": Shader::Backend::SPIRV::EmitSPIRV(" in pipeline and
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
             "REAL_GUEST_CAPTURE_SPIRV_DUMP_DIAGNOSTIC_ONLY")
+    # Actual Vulkan capture pipeline + host-owned authenticated dispatch,
+    # not only a dumped .spv module or an unused host packet fixture.
+    capture_vulkan = function(rasterizer, "Rasterizer::DispatchOriginalGcnOrderedCaptureDirect(")
+    require("GetOrderedGdsCapturePipeline()" in pipeline and
+            "ordered_capture_compute_pipelines.try_emplace(" in pipeline and
+            "ordered_capture_program_cache" in source("pipeline_h") and
+            "DispatchOriginalGcnOrderedCaptureDirect(" in rasterizer and
+            "runtime.FillBuffer(&owner.capture_packets" in capture_vulkan and
+            "runtime.FillBuffer(&owner.capture_registers" in capture_vulkan and
+            "OrderedGdsCaptureBinding live_scope{*this, owner}" in capture_vulkan and
+            "command.dispatch(groups.x, groups.y, groups.z)" in capture_vulkan and
+            "DownloadOrderedGdsPackets(" in capture_vulkan and
+            "RequireCaptureTokenAuthority(" in capture_vulkan and
+            "OrderedGdsPacketTransfer::DownloadCheckpoint(" in capture_vulkan and
+            "RequireCompleteGcnWaveCheckpoints(" in capture_vulkan and
+            "owner.groups.x != groups.x" in capture_vulkan and
+            "GetComputePipeline()" in rasterizer and
+            "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
+            "REAL_ORIGINAL_GCN_VULKAN_FIRST_PASS_COMPILED_AND_DISPATCH_API_GATED")
     require("enum class CheckpointRegisterBank : u32" in word_layout and
             "case 0: return 5;" in word_layout and
             "case 1: return 16;" in word_layout and
