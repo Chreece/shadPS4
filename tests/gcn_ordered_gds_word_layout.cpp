@@ -41,14 +41,26 @@ int main() {
             assert(offset && *offset == base + arch_dwords[i]);
             assert(offsets.insert(*offset).second);
         }
+        constexpr u32 meta_dwords[11] = {0,2,3,4,10,11,12,13,14,15,19};
+        for (u32 i = 0; i < 11; ++i) {
+            const auto offset = CheckpointDwordOffset(
+                slot, vgprs, u32(CheckpointRegisterBank::SiteMetadata), i, 0);
+            assert(offset && *offset == base + meta_dwords[i]);
+            assert(offsets.insert(*offset).second);
+        }
+        // Epoch and token are intentionally unowned until a real guest
+        // dispatch supplies authentication and a resumable second pass.
+        assert(!offsets.contains(base + 1) &&
+               !offsets.contains(base + 8) &&
+               !offsets.contains(base + 9));
     }
-    assert(offsets.size() == 3*(104 + 16*64 + 6));
+    assert(offsets.size() == 3*(104 + 16*64 + 6 + 11));
 
     const auto absent = [](u32 bank, u32 index, u32 lane) {
         return !CheckpointDwordOffset(0, vgprs, bank, index, lane).has_value();
     };
     assert(absent(0,104,0) && absent(1,16,0) && absent(2,6,0));
-    assert(absent(3,0,0) && absent(0,0,64) && absent(1,0,64));
+    assert(absent(3,11,0) && absent(4,0,0) && absent(0,0,64) && absent(1,0,64));
     assert(!CheckpointDwordOffset(0,0,1,0,0));
     assert(!CheckpointDwordOffset(0,257,1,0,0));
 
@@ -57,5 +69,6 @@ int main() {
     std::cout << "ORDERED_GDS_LIVE_WORD_ADDRESSING=PASS "
                  "real_sgpr=104 vgpr=16 lanes=64 "
                  "wave_slots=3 distinct_dwords=PASS "
-                 "VCC_SCC_M0_EXEC_no_alias=PASS invalid_layout_rejected=PASS\n";
+                 "VCC_SCC_M0_EXEC_no_alias=PASS invalid_layout_rejected=PASS "
+                 "site_metadata_no_epoch_token_alias=PASS\n";
 }
