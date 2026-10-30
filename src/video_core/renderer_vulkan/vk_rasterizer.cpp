@@ -14,6 +14,7 @@
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_occlusion_query.h"
 #include "shader_recompiler/frontend/ordered_gds_capture_coverage.h"
+#include "shader_recompiler/frontend/ordered_gds_resume_state.h"
 #include "video_core/renderer_vulkan/vk_ordered_gds_transfer.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -643,9 +644,18 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     // independently decoded counter index; never feed a stale token/PC/rank
     // into an eventual guest shader continuation.
     RequireResolvedGcnResumeHandoff(resume, captures, *order, epoch);
+    // This is a true POST-DS guest register snapshot. The old ordered CIK
+    // counter value comes exclusively from the host-resolved result and
+    // is written to the DECODED destination VGPR of EXEC-active lanes.
+    // The original GPU snapshot remains immutable; other registers/PC/LDS
+    // and inactive lanes are preserved. A future guest continuation shader
+    // must restore this state without re-running earlier GCN instructions.
+    const auto post_ds_state = MaterializeGcnPostOrderedCountState(
+        state, captures, resume, checkpoint_layout, epoch, verified_sites, *order);
     OrderedGdsPacketTransfer::UploadCheckpoint(
         runtime, scheduler, device_resume_checkpoints, resume_checkpoint_offset,
-        std::span<const std::byte>{state.data(), state.size()}, checkpoint_layout);
+        std::span<const std::byte>{post_ds_state.data(), post_ds_state.size()},
+        checkpoint_layout);
     if (checked_lds) {
         OrderedGdsLdsStateTransfer::Upload(
             runtime, scheduler, device_resume_lds, resume_lds_offset,
