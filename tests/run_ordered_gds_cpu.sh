@@ -67,6 +67,9 @@ FLAGS=(-std=c++23 -Wall -Wextra -Werror -pedantic -O2 -pthread -Isrc "-I${FMT_IN
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_live_capture_coverage.cpp -o "$TMP/live-coverage"
     "$TMP/live-coverage"
 
+    "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_packet_word_layout.cpp -o "$TMP/gpu-packet-words"
+    "$TMP/gpu-packet-words"
+
     "$CXX" "${FLAGS[@]}" tests/gcn_ordered_gds_lds_checkpoint.cpp -o "$TMP/lds-checkpoint"
     "$TMP/lds-checkpoint"
 
@@ -110,6 +113,9 @@ if [[ "${RUN_SANITIZERS:-0}" == "1" ]]; then
 
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_live_capture_coverage.cpp -o "$TMP/san-live-coverage"
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-live-coverage"
+
+        "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_packet_word_layout.cpp -o "$TMP/san-gpu-packet-words"
+        UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-gpu-packet-words"
 
         "$CXX" "${SAN[@]}" tests/gcn_ordered_gds_lds_checkpoint.cpp -o "$TMP/san-lds-checkpoint"
         UBSAN_OPTIONS=halt_on_error=1 ASAN_OPTIONS=detect_leaks=0 "$TMP/san-lds-checkpoint"
