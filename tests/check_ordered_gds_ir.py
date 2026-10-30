@@ -25,6 +25,10 @@ FILES = {
     "patching": "src/shader_recompiler/ir/passes/resource_patching_pass.cpp",
     "packer": "src/shader_recompiler/frontend/ordered_gds_legacy_packer.h",
     "checkpoint": "src/shader_recompiler/frontend/ordered_gds_checkpoint.h",
+    "word_layout": "src/shader_recompiler/frontend/ordered_gds_word_layout.h",
+    "backend_context": "src/shader_recompiler/backend/spirv/spirv_emit_context.cpp",
+    "backend_context_h": "src/shader_recompiler/backend/spirv/spirv_emit_context.h",
+    "resource_h": "src/shader_recompiler/resource.h",
     "lds": "src/shader_recompiler/frontend/ordered_gds_lds_checkpoint.h",
     "transfer": "src/video_core/renderer_vulkan/vk_ordered_gds_transfer.h",
     "rasterizer": "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
@@ -75,6 +79,10 @@ def main():
     patching = source("patching")
     packer = source("packer")
     checkpoint = source("checkpoint")
+    word_layout = source("word_layout")
+    backend_context = source("backend_context")
+    backend_context_h = source("backend_context_h")
+    resource_h = source("resource_h")
     lds = source("lds")
     transfer = source("transfer")
     rasterizer = source("rasterizer")
@@ -109,7 +117,7 @@ def main():
             "GUEST_CONTROL_AND_RETURN_REGISTER")
     require("ir.Ballot(ir.GetExec())" in body,
             "FULL_64_BIT_GUEST_EXEC_FOR_CIK_POPCOUNT")
-    require("OPCODE(OrderedGdsCheckpointRegister, Void, U32, U32, U32, U32)" in codes and
+    require("OPCODE(OrderedGdsCheckpointRegister, Void, U32, U32, U32, U32, U32, U32)" in codes and
             "void OrderedGdsCheckpointRegister(" in emit_h and
             "void IREmitter::OrderedGdsCheckpointRegister(" in emit_cpp and
             "void EmitOrderedGdsCheckpointRegister(" in backend_h and
@@ -131,6 +139,46 @@ def main():
             "ir.OrderedGdsCheckpointRegister(" in live_body and
             "runtime_info.hw_stage == HwStage::Compute" in live_body,
             "REAL_PRE_DS_GUEST_SGPR_VGPR_M0_VCC_SCC_EXEC_SNAPSHOT")
+    # The GPU writer is no longer the old UNREACHABLE stub. It consumes
+    # live SSA values at the real guest DS instruction, using physical
+    # wave slots and logical lane IDs, never assigning guest creation rank.
+    gpu_write = function(backend_cpp, "void EmitOrderedGdsCheckpointRegister(")
+    require("ctx.OpStore(pointer, guest_value);" in gpu_write and
+            "Gds::CheckpointRelativeDword(vgprs, bank, index, 0)" in gpu_write and
+            "Gds::CheckpointStrideDwords(vgprs)" in gpu_write and
+            "ctx.has_ordered_gds_checkpoint_binding" in gpu_write and
+            "ctx.OpIEqual(ctx.U1[1], lane, ctx.u32_zero_value)" in gpu_write and
+            "ctx.OpBranchConditional(first_lane, write_label, merge_label)" in gpu_write and
+            "ctx.OpIAdd(ctx.U32[1], dword_offset, lane)" in gpu_write and
+            "ctx.OpAccessChain(pointer_type, storage, ctx.u32_zero_value, dword_offset)" in gpu_write and
+            "ctx.AddLabel(merge_label)" in gpu_write and
+            "std::vector" not in gpu_write,
+            "REAL_SSA_GUEST_REGISTER_GPU_SSBO_WRITER")
+    require("enum class CheckpointRegisterBank : u32" in word_layout and
+            "case 0: return 5;" in word_layout and
+            "case 1: return 16;" in word_layout and
+            "case 2: return 17;" in word_layout and
+            "case 3: return 18;" in word_layout and
+            "case 4: return 6;" in word_layout and
+            "case 5: return 7;" in word_layout and
+            "CheckpointHeaderDwords + CheckpointScalarDwords +" in word_layout and
+            "IR::NumScalarRegs" in word_layout and
+            "GcnWaveLanes" in word_layout,
+            "GUEST_CHECKPOINT_GPU_HOST_DWORD_LAYOUT_MATCHES")
+    require("OrderedGdsCheckpoint," in resource_h and
+            "desc.buffer_type == BufferType::OrderedGdsCheckpoint" in backend_context and
+            "has_ordered_gds_checkpoint_binding = true" in backend_context and
+            "BufferType::OrderedGdsCheckpoint" in patching and
+            "OrderedGdsCheckpoint" in rasterizer and
+            "genuine dispatch-owned GPU storage" in rasterizer,
+            "GUEST_CHECKPOINT_DESCRIPTOR_SEPARATE_AND_RUNTIME_GATED")
+    require("ir.GetAttributeU32(IR::Attribute::LocalInvocationIndex)" in live_body and
+            "ir.GetAttributeU32(IR::Attribute::WorkgroupIndex)" in live_body and
+            "ir.IMod(local_index, ir.Imm32(64u))" in live_body and
+            "ir.IDiv(local_index, ir.Imm32(64u))" in live_body and
+            "value, logical_slot, lane" in live_body,
+            "REAL_GUEST_WAVE64_LOGICAL_ADDRESS_PASSED_IN_IR")
+
     require("class LiveCheckpointCoverage" in coverage and
             "incomplete live SGPR snapshot after IR passes" in coverage and
             "incomplete live VGPR snapshot after IR passes" in coverage and
