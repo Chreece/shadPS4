@@ -25,6 +25,8 @@
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
 
+namespace Vulkan {
+
 // Actual GPU indirect argument snapshot for an explicitly requested
 // ordered-GDS capture. Must be called on the GPU submit thread; it waits
 // only for this scheduler's queued work. Never use CPU Liverpool group
@@ -78,8 +80,6 @@ public:
 // Does NOT write a shader packet, establish guest wave creation order or
 // resume a shader. Call only from the GPU submission thread after the packet
 // writer records its ShaderWrite access in the Vulkan runtime resource tracker.
-namespace Vulkan {
-
 class OrderedGdsPacketTransfer {
 public:
     using Capture = Shader::Gcn::OrderedGds::GpuCapturePacket;

@@ -275,6 +275,14 @@ def main():
             "return AllocateOrderedGdsEpochBuffers(" in rasterizer and
             "AllocateOrderedGdsEpochBuffersFromGpuIndirect(" in source("rasterizer_h"),
             "REAL_GPU_INDIRECT_DISPATCH_EXTENT_BEFORE_GDS_EPOCH_ALLOCATION")
+    # Native Vulkan type lookup must precede both GPU transfer classes.
+    # A previous string-only source audit missed this and native GCC failed.
+    require(transfer.count("namespace Vulkan {") == 1 and
+            transfer.count("} // namespace Vulkan") == 1 and
+            transfer.index("namespace Vulkan {") <
+            transfer.index("class OrderedGdsIndirectDispatchTransfer") <
+            transfer.index("class OrderedGdsPacketTransfer"),
+            "INDIRECT_GPU_TRANSFER_RUNTIME_SCHEDULER_NAMESPACE_MATCH")
     # Prevent valid packet/checkpoint tags without a real host authority,
     # full wave64 lane storage, and zero-LDS capture. The normal game shader
     # must still refuse ordered GDS until actual re-entry is implemented.

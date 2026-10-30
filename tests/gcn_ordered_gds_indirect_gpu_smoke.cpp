@@ -46,10 +46,12 @@ int main() {
         if (instance) vkDestroyInstance(instance, nullptr);
     };
     try {
-        VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
+        VkApplicationInfo app{};
+        app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         app.pApplicationName = "shadPS4 ordered GDS 12-byte GPU indirect readback";
         app.apiVersion = VK_API_VERSION_1_2;
-        VkInstanceCreateInfo ic{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+        VkInstanceCreateInfo ic{};
+        ic.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         ic.pApplicationInfo = &app;
         Check(vkCreateInstance(&ic, nullptr, &instance), "instance");
         std::uint32_t count{};
@@ -81,11 +83,13 @@ int main() {
         }
         if (!physical) throw std::runtime_error("NO_DISCRETE_AMD_GPU_QUEUE");
         const float priority=1.f;
-        VkDeviceQueueCreateInfo qc{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+        VkDeviceQueueCreateInfo qc{};
+        qc.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         qc.queueFamilyIndex=queue_family;
         qc.queueCount=1;
         qc.pQueuePriorities=&priority;
-        VkDeviceCreateInfo dc{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+        VkDeviceCreateInfo dc{};
+        dc.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
         dc.queueCreateInfoCount=1;
         dc.pQueueCreateInfos=&qc;
         Check(vkCreateDevice(physical, &dc, nullptr, &device), "device");
@@ -95,7 +99,8 @@ int main() {
         vkGetPhysicalDeviceMemoryProperties(physical,&mem);
         constexpr VkDeviceSize bytes = sizeof(GpuIndirectDispatchCommand);
         const auto make = [&](Storage& s,VkBufferUsageFlags usage,bool host){
-            VkBufferCreateInfo bc{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+            VkBufferCreateInfo bc{};
+            bc.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             bc.size=bytes;
             bc.usage=usage;
             bc.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
@@ -116,7 +121,8 @@ int main() {
             }
             if(chosen<0) throw std::runtime_error("NO_GPU_MEMORY_TYPE");
             s.flags=mem.memoryTypes[chosen].propertyFlags;
-            VkMemoryAllocateInfo ma{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+            VkMemoryAllocateInfo ma{};
+            ma.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
             ma.allocationSize=req.size;
             ma.memoryTypeIndex=std::uint32_t(chosen);
             Check(vkAllocateMemory(device,&ma,nullptr,&s.memory),"allocate");
@@ -127,16 +133,19 @@ int main() {
                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
                  VK_BUFFER_USAGE_TRANSFER_DST_BIT,false);
         make(readback,VK_BUFFER_USAGE_TRANSFER_DST_BIT,true);
-        VkCommandPoolCreateInfo pc{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+        VkCommandPoolCreateInfo pc{};
+        pc.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         pc.queueFamilyIndex=queue_family;
         Check(vkCreateCommandPool(device,&pc,nullptr,&pool),"pool");
         VkCommandBuffer cmd{};
-        VkCommandBufferAllocateInfo ac{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        VkCommandBufferAllocateInfo ac{};
+        ac.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         ac.commandPool=pool;
         ac.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         ac.commandBufferCount=1;
         Check(vkAllocateCommandBuffers(device,&ac,&cmd),"command");
-        VkCommandBufferBeginInfo bc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        VkCommandBufferBeginInfo bc{};
+        bc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         bc.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         Check(vkBeginCommandBuffer(cmd,&bc),"begin");
         // Three distinct numbers written by GPU commands, not copied from CPU
@@ -144,7 +153,8 @@ int main() {
         vkCmdFillBuffer(cmd,gpu.buffer,0,4,2u);
         vkCmdFillBuffer(cmd,gpu.buffer,4,4,3u);
         vkCmdFillBuffer(cmd,gpu.buffer,8,4,2u);
-        VkBufferMemoryBarrier b{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+        VkBufferMemoryBarrier b{};
+        b.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
         b.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
         b.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT;
         b.srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;
@@ -162,9 +172,11 @@ int main() {
         vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,
                              VK_PIPELINE_STAGE_HOST_BIT,0,0,nullptr,1,&b,0,nullptr);
         Check(vkEndCommandBuffer(cmd),"end");
-        VkFenceCreateInfo fc{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        VkFenceCreateInfo fc{};
+        fc.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         Check(vkCreateFence(device,&fc,nullptr,&fence),"fence");
-        VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        VkSubmitInfo si{};
+        si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         si.commandBufferCount=1;
         si.pCommandBuffers=&cmd;
         Check(vkQueueSubmit(queue,1,&si,fence),"submit");
@@ -177,7 +189,8 @@ int main() {
         }
         Check(waited,"wait");
         if(!(readback.flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-            VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
+            VkMappedMemoryRange range{};
+            range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
             range.memory=readback.memory;
             range.offset=0;
             range.size=VK_WHOLE_SIZE;
