@@ -196,7 +196,8 @@ def main():
             "for (std::size_t i = 0; i < handles.size(); ++i)" in bridge and
             "for (std::size_t j = i + 1; j < handles.size(); ++j)" in bridge and
             "if (handles[i] == handles[j])" in bridge and
-            "throw std::invalid_argument(" in bridge,
+            "throw std::invalid_argument(\"ordered GDS GPU checkpoint buffers alias\")"
+            in function(bridge, "if (handles[i] == handles[j])"),
             "PRODUCTION_GPU_REGISTER_STATE_RESUME_UPLOAD_GUARDED")
     require("GcnLdsCheckpointLayout" in lds and
             "RequireCompleteGcnLdsCheckpoints(" in lds and
