@@ -232,6 +232,7 @@ int main() {
     std::cout << "GDS_POST_DS_RESOLVED_ACTIVE_VDST=PASS "
                  "verified_old_value=PASS preserve_all_other_registers=PASS "
                  "inactive_exec_vdst_unchanged=PASS "
-                 "permuted_wave_slots=PASS wrong_site_token_epoch_rejected=PASS "\n                 "real_terminal_mixed_state_resume_guard=PASS "
+                 "permuted_wave_slots=PASS wrong_site_token_epoch_rejected=PASS "
+                 "real_terminal_mixed_state_resume_guard=PASS "
                  "REAL_GUEST_SHADER_REENTRY=NOT_IMPLEMENTED\n";
 }
