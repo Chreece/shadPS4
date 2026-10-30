@@ -461,7 +461,8 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     const VideoCore::Buffer& device_checkpoints, u64 checkpoint_offset,
     const Shader::Gcn::OrderedGds::GcnCheckpointLayout& checkpoint_layout,
     VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
-    std::size_t guest_created_waves, std::span<const u32> verified_sites,
+    std::size_t guest_created_waves,
+    std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
     std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
     Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin) {
     using namespace Shader::Gcn::OrderedGds;
@@ -489,8 +490,14 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     // a missing/stale SGPR/VGPR checkpoint BEFORE resolving any counter.
     const auto state = OrderedGdsPacketTransfer::DownloadCheckpoint(
         runtime, scheduler, device_checkpoints, checkpoint_offset, checkpoint_layout);
-    RequireCompleteGcnWaveCheckpoints(state, captures, checkpoint_layout, epoch);
-    SparseOrderedGdsEpoch host{guest_created_waves, std::move(counters), verified_sites};
+    RequireCompleteGcnWaveCheckpoints(state, captures, checkpoint_layout, epoch,
+                                      verified_sites);
+    std::vector<u32> site_pcs;
+    site_pcs.reserve(verified_sites.size());
+    for (const auto& site : verified_sites) {
+        site_pcs.push_back(site.site_pc);
+    }
+    SparseOrderedGdsEpoch host{guest_created_waves, std::move(counters), site_pcs};
     StageGpuCaptures(host, epoch, captures, *order);
     const auto resume = ResolveGpuCaptures(host, epoch, *order);
     UploadOrderedGdsPackets(device_resume, resume_offset,
