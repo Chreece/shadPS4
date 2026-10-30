@@ -359,9 +359,10 @@ public:
     using Extent = Shader::Gcn::OrderedGds::DispatchExtent;
 
     explicit OrderedGdsEpochDeviceBuffers(
-        const Instance& instance, Extent groups, Extent local_threads,
+        const Instance& instance, Extent guest_groups, Extent guest_local_threads,
         u32 allocated_vgprs, u32 guest_shared_lds_bytes)
-        : plan{Plan::Require(groups, local_threads, allocated_vgprs,
+        : groups{guest_groups}, local_threads{guest_local_threads},
+          plan{Plan::Require(guest_groups, guest_local_threads, allocated_vgprs,
                              guest_shared_lds_bytes)},
           capture_auth{instance, 0, plan.epoch_auth_bytes,
                        VideoCore::MemoryType::DeviceLocal,
@@ -504,6 +505,10 @@ public:
     CaptureAuthority() const noexcept { return authority_; }
     [[nodiscard]] u32 AuthorizedEpoch() const noexcept { return authenticated_epoch_; }
 
+    // Immutable shape of the verified original dispatch. A different
+    // 3D grid with the same number of waves is NOT the same guest command.
+    const Extent groups;
+    const Extent local_threads;
     const Plan plan;
     VideoCore::Buffer capture_auth;
     VideoCore::Buffer capture_packets;
