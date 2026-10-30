@@ -956,13 +956,18 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
     }
 
     if (info.uses_ordered_gds) {
-        ASSERT_MSG(info.buffers.size() <= NUM_BUFFERS - 2,
-                   "ordered GDS capture/checkpoint descriptors exceed shader buffer limit");
+        ASSERT_MSG(info.buffers.size() <= NUM_BUFFERS - 3,
+                   "ordered GDS capture/checkpoint/auth descriptors exceed buffer limit");
         // These two independent GPU-written SSBOs are NOT guest V# SHARPs,
         // ordinary 64KiB GDS RAM or dedicated CIK packer-counter storage.
         // The capture packet stores actual live M0/EXEC/site/control/payload;
         // epoch/token and valid flags remain invalid until authenticated
         // dispatch inputs and a guest continuation pass are wired.
+        (void)descriptors.Add(BufferResource{
+            .used_types = IR::Type::U32,
+            .buffer_type = BufferType::OrderedGdsEpochAuth,
+            .is_written = false,
+        });
         (void)descriptors.Add(BufferResource{
             .used_types = IR::Type::U32,
             .buffer_type = BufferType::OrderedGdsCapture,
