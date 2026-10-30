@@ -555,7 +555,7 @@ def main():
             "std::uint64_t(verified.workgroups) * verified.waves_per_group !=" in lds and
             "const auto checked_lds = RequireOptionalGcnLdsCheckpoint(" in rasterizer and
             "if (!checked_lds && (lds_capture_offset || resume_lds_offset))" in rasterizer and
-            "if (checked_lds)" in rasterizer and
+            "if (checked_lds && !persistent_guest_lds)" in rasterizer and
             "lds_state = OrderedGdsLdsStateTransfer::Download(" in rasterizer and
             "*checked_lds, epoch" in rasterizer and
             "class OrderedGdsLdsStateTransfer" in transfer and
