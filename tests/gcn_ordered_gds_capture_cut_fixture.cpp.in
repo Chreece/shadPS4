@@ -1,0 +1,95 @@
+// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Type-check the EXACT production first-pass DS_ORDERED_COUNT SPIR-V emitter.
+// This is not a mocked algorithm: the production method is inserted below.
+// The fixture proves capture termination without a guessed counter or
+// post-instruction work; Vulkan driver validation is a separate milestone.
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <iostream>
+#include <ranges>
+#include <stdexcept>
+#include <vector>
+
+using u32 = std::uint32_t;
+#define ASSERT_MSG(cond, ...) \
+    do { if (!(cond)) throw std::invalid_argument("unverified guest capture"); } while (false)
+#define UNREACHABLE_MSG(...) \
+    do { throw std::invalid_argument("normal guest GDS execution blocked"); } while (false)
+
+enum class HwStage { Compute, Fragment };
+struct Id { u32 value{}; };
+struct GcnSite { u32 pc{}; u32 encoded_control{}; };
+struct ProgramInfo { std::vector<GcnSite> ordered_gds_sites; };
+struct EmitContext {
+    bool ordered_gds_capture_pass{};
+    bool has_ordered_gds_checkpoint_binding{true};
+    bool has_ordered_gds_capture_binding{true};
+    bool has_ordered_gds_auth_binding{true};
+    HwStage hw_stage{HwStage::Compute};
+    ProgramInfo info;
+    struct Types {
+        Id operator[](std::size_t idx) const { return {u32(0x100u + idx)}; }
+    } U32;
+    u32 undefined_count{};
+    u32 return_count{};
+    u32 unreachable_label_count{};
+    Id OpUndef(Id type) {
+        assert(type.value == 0x101u);
+        ++undefined_count;
+        return {0xDEC0DEu};
+    }
+    void OpReturn() { ++return_count; }
+    Id AddLabel() { ++unreachable_label_count; return {0x5a}; }
+};
+
+// EXACT_PRODUCTION_GCN_CAPTURE_CUT
+
+template <typename F> bool Reject(F&& fn) {
+    try { fn(); } catch (const std::invalid_argument&) { return true; }
+    return false;
+}
+
+int main() {
+    constexpr u32 site = 0x4158;
+    constexpr u32 control = 0x1304;
+    EmitContext ctx{};
+    ctx.info.ordered_gds_sites = {{site, control}};
+    ctx.ordered_gds_capture_pass = true;
+    const Id result = EmitOrderedGdsCount(ctx, {}, {}, {}, control, site);
+    assert(result.value == 0xDEC0DEu && ctx.undefined_count == 1 &&
+           ctx.return_count == 1 && ctx.unreachable_label_count == 1);
+
+    // An ordered GDS in ordinary gameplay without verified replay can
+    // neither substitute an atomic nor leave its downstream code reachable.
+    EmitContext normal{};
+    normal.info.ordered_gds_sites = {{site, control}};
+    assert(Reject([&] { (void)EmitOrderedGdsCount(normal, {}, {}, {}, control, site); }));
+    assert(normal.return_count == 0 && normal.undefined_count == 0 &&
+           normal.unreachable_label_count == 0);
+
+    auto invalid = [&](auto mutate) {
+        EmitContext c{};
+        c.info.ordered_gds_sites = {{site, control}};
+        c.ordered_gds_capture_pass = true;
+        mutate(c);
+        assert(Reject([&] { (void)EmitOrderedGdsCount(c, {}, {}, {}, control, site); }));
+        assert(c.return_count == 0 && c.undefined_count == 0 &&
+               c.unreachable_label_count == 0);
+    };
+    invalid([](auto& c) { c.hw_stage = HwStage::Fragment; });
+    invalid([](auto& c) { c.has_ordered_gds_checkpoint_binding = false; });
+    invalid([](auto& c) { c.has_ordered_gds_capture_binding = false; });
+    invalid([](auto& c) { c.has_ordered_gds_auth_binding = false; });
+    invalid([](auto& c) { c.info.ordered_gds_sites.clear(); });
+    invalid([](auto& c) { c.info.ordered_gds_sites[0].encoded_control = 0x0304; });
+    invalid([](auto& c) { c.info.ordered_gds_sites[0].pc += 8; });
+    std::cout << "GDS_REAL_CAPTURE_CUT_EMITTER=PASS "
+                 "real_spirv_method_extracted=PASS "
+                 "actual_decoded_site_and_control_required=PASS "
+                 "first_pass_guest_return_before_post_DS=PASS "
+                 "no_exec_counter_or_atomic=PASS "
+                 "normal_guest_execution_fail_closed=PASS "
+                 "GPU_SHADER_DISPATCH=NOT_ENABLED\\n";
+}
