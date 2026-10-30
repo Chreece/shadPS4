@@ -271,6 +271,14 @@ def main():
                      "ctx.OpStore(", "return ctx.ConstU32(0)")) and
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
             "EXPLICIT_GUEST_CAPTURE_ONLY_SHADER_CUT_NORMAL_EXECUTION_GATED")
+    require("info.uses_ordered_gds && info.hw_stage == HwStage::Compute &&" in pipeline and
+            "EmulatorSettings.IsDumpShaders()" in pipeline and
+            "auto capture_binding = binding" in pipeline and
+            "Shader::Backend::SPIRV::EmitSPIRVOrderedGdsCapturePass(" in pipeline and
+            '"pr117-capture.spv"' in pipeline and
+            "auto spv = Shader::Backend::SPIRV::EmitSPIRV(" in pipeline and
+            "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
+            "REAL_GUEST_CAPTURE_SPIRV_DUMP_DIAGNOSTIC_ONLY")
     require("enum class CheckpointRegisterBank : u32" in word_layout and
             "case 0: return 5;" in word_layout and
             "case 1: return 16;" in word_layout and
