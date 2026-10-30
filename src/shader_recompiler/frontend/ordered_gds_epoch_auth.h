@@ -87,6 +87,51 @@ static_assert(offsetof(GpuGcnOrderedEpochAuth, flags) == 24);
     return out;
 }
 
+// The actual Rasterizer owns ONE issuer for its lifetime. Tickets identify
+// physical guest wave *slots* of a specific, newly accepted dispatch; they
+// never encode or assume guest wave creation rank, guest M0, or GPU arrival
+// order. The host still has to prove a complete CIK creation permutation,
+// dedicated counter seed and executable guest continuation separately.
+//
+// Failed Vulkan uploads consume their issued tickets: they cannot be reused
+// as a stale authorization on another epoch or buffer owner. Saturation is
+// fail-closed rather than permitting 32-bit epoch or 64-bit token rollover.
+struct IssuedGcnOrderedEpoch {
+    u32 epoch{};
+    std::vector<u64> tokens_by_slot;
+};
+
+class GcnOrderedGdsEpochIssuer {
+public:
+    GcnOrderedGdsEpochIssuer() = default;
+    GcnOrderedGdsEpochIssuer(const GcnOrderedGdsEpochIssuer&) = delete;
+    GcnOrderedGdsEpochIssuer& operator=(const GcnOrderedGdsEpochIssuer&) = delete;
+    GcnOrderedGdsEpochIssuer(GcnOrderedGdsEpochIssuer&&) = delete;
+    GcnOrderedGdsEpochIssuer& operator=(GcnOrderedGdsEpochIssuer&&) = delete;
+
+    [[nodiscard]] IssuedGcnOrderedEpoch Issue(u32 actual_wave_slots) {
+        if (!actual_wave_slots || actual_wave_slots > GcnEpochAuthMaximumWaves ||
+            next_epoch_ == 0 || next_token_ == 0 ||
+            u64(actual_wave_slots) > std::numeric_limits<u64>::max() - next_token_) {
+            throw std::invalid_argument("ordered GDS host epoch/ticket space exhausted or invalid");
+        }
+        IssuedGcnOrderedEpoch issued;
+        issued.epoch = next_epoch_;
+        issued.tokens_by_slot.reserve(actual_wave_slots);
+        for (u32 slot = 0; slot < actual_wave_slots; ++slot) {
+            issued.tokens_by_slot.push_back(next_token_ + slot);
+        }
+        // Commit the issuer state only once all bounded allocations succeed.
+        ++next_epoch_;
+        next_token_ += actual_wave_slots;
+        return issued;
+    }
+
+private:
+    u32 next_epoch_{1};
+    u64 next_token_{1};
+};
+
 // Host-side cross-check AFTER a complete real GPU checkpoint: a packet cannot
 // assert an arbitrary token by merely writing a plausible tag. This is not a
 // replacement for the full register/LDS/epoch/guest-ISA validation.

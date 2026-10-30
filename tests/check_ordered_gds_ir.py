@@ -35,6 +35,7 @@ FILES = {
     "lds": "src/shader_recompiler/frontend/ordered_gds_lds_checkpoint.h",
     "transfer": "src/video_core/renderer_vulkan/vk_ordered_gds_transfer.h",
     "rasterizer": "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
+    "rasterizer_h": "src/video_core/renderer_vulkan/vk_rasterizer.h",
     "pipeline": "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp",
     "coverage": "src/shader_recompiler/frontend/ordered_gds_capture_coverage.h",
     "packet": "src/shader_recompiler/frontend/ordered_gds_capture_packet.h",
@@ -248,6 +249,16 @@ def main():
             "owned.CaptureAuthority()" in rasterizer and
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
             "TRUSTED_DISPATCH_EPOCH_TOKEN_GPU_TRANSPORT_STILL_FAIL_CLOSED")
+    require("class GcnOrderedGdsEpochIssuer" in auth and
+            "IssuedGcnOrderedEpoch Issue(u32 actual_wave_slots)" in auth and
+            "u64(actual_wave_slots) > std::numeric_limits<u64>::max() - next_token_" in auth and
+            "AuthorizeNewOrderedGdsCaptureEpoch(" in rasterizer and
+            "ordered_gds_epoch_issuer_.Issue(owner.plan.waves)" in rasterizer and
+            "owner.PrepareEpochAuthority(runtime, scheduler, issued.epoch," in rasterizer and
+            "authenticated_epoch_ = 0;" in transfer and
+            "authority_.clear();" in transfer and
+            "Shader::Gcn::OrderedGds::GcnOrderedGdsEpochIssuer ordered_gds_epoch_issuer_" in source("rasterizer_h"),
+            "HOST_GPU_DISPATCH_TOKEN_ISSUER_AND_FAILED_EPOCH_INVALIDATION")
     # Prevent valid packet/checkpoint tags without a real host authority,
     # full wave64 lane storage, and zero-LDS capture. The normal game shader
     # must still refuse ordered GDS until actual re-entry is implemented.

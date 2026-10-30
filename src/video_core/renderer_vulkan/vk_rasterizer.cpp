@@ -450,6 +450,17 @@ Rasterizer::AllocateOrderedGdsEpochBuffers(
         instance, groups, local_threads, allocated_vgprs, guest_shared_lds_bytes);
 }
 
+u32 Rasterizer::AuthorizeNewOrderedGdsCaptureEpoch(
+    OrderedGdsEpochDeviceBuffers& owner) {
+    // Host *identity* tickets are owned by this Rasterizer instance, not by
+    // per-dispatch temporary vectors or Vulkan invocation-arrival ordering.
+    // The validated owner carries exact wave count and independent SSBOs.
+    const auto issued = ordered_gds_epoch_issuer_.Issue(owner.plan.waves);
+    owner.PrepareEpochAuthority(runtime, scheduler, issued.epoch,
+                                issued.tokens_by_slot);
+    return issued.epoch;
+}
+
 std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
 Rasterizer::DownloadOrderedGdsPackets(const VideoCore::Buffer& device_capture,
                                       u64 source_offset, std::size_t packet_count) {

@@ -96,6 +96,13 @@ public:
         Shader::Gcn::OrderedGds::DispatchExtent local_threads,
         u32 allocated_vgprs, u32 guest_shared_lds_bytes);
 
+    // Issues a fresh monotonic host epoch and distinct per-physical-wave
+    // continuation identities only for an ALREADY size-verified GPU buffer
+    // owner. No guest creation order, packer seed, or shader dispatch is
+    // inferred; this does not enable normal ordered-GDS gameplay.
+    [[nodiscard]] u32 AuthorizeNewOrderedGdsCaptureEpoch(
+        OrderedGdsEpochDeviceBuffers& owner);
+
     // Staged Vulkan capture/readback and result upload API. GPU packet-writing,
     // guest-wave ordering and shader continuation are intentionally not enabled.
     [[nodiscard]] std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
@@ -286,6 +293,7 @@ private:
     bool needs_barrier{};
     // Explicitly scoped to a future authenticated guest capture pass; never
     // inferred from compute pipeline existence or a shader hash.
+    Shader::Gcn::OrderedGds::GcnOrderedGdsEpochIssuer ordered_gds_epoch_issuer_{};
     const OrderedGdsEpochDeviceBuffers* active_ordered_gds_capture_{};
 };
 

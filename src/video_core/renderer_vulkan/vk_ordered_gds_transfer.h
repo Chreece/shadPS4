@@ -350,6 +350,11 @@ public:
     // until all register/LDS state and true second-pass resume are proven.
     void PrepareEpochAuthority(Runtime& runtime, Scheduler& scheduler,
                                u32 epoch, std::span<const u64> tokens_by_slot) {
+        // Invalidate the PREVIOUS host authorization before any argument,
+        // staging or Vulkan copy can fail. Never rebind old tokens after an
+        // unsuccessful epoch replacement (even if device RAM is unchanged).
+        authenticated_epoch_ = 0;
+        authority_.clear();
         using Shader::Gcn::OrderedGds::RequireGcnEpochAuth;
         auto checked = RequireGcnEpochAuth(plan.waves, epoch, tokens_by_slot);
         const u64 bytes = u64(checked.size()) *
@@ -399,7 +404,6 @@ public:
             .bufferMemoryBarrierCount = 1,
             .pBufferMemoryBarriers = &copy_to_compute,
         });
-        authenticated_epoch_ = 0;
         authority_ = std::move(checked);
         authenticated_epoch_ = epoch;
     }

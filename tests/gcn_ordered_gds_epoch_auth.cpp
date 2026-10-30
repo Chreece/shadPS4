@@ -67,6 +67,28 @@ int main() {
         invalid.reserved = 1;
         assert(!IsAuthorizedGcnCaptureStamp(invalid, i, true, true));
     }
+    // Verify the actual production issuer used by Rasterizer. Tokens are
+    // unique monotonic physical-slot identities, not guest creation ranks.
+    GcnOrderedGdsEpochIssuer issuer;
+    assert(Reject([&] { (void)issuer.Issue(0); }));
+    assert(Reject([&] { (void)issuer.Issue(GcnEpochAuthMaximumWaves + 1); }));
+    const auto first = issuer.Issue(4);
+    assert(first.epoch == 1 && first.tokens_by_slot.size() == 4);
+    for (u32 i = 0; i < 4; ++i) assert(first.tokens_by_slot[i] == i + 1u);
+    const auto next = issuer.Issue(3);
+    assert(next.epoch == 2 && next.tokens_by_slot.size() == 3);
+    for (u32 i = 0; i < 3; ++i) assert(next.tokens_by_slot[i] == i + 5u);
+    const auto third = issuer.Issue(1);
+    assert(third.epoch == 3 && third.tokens_by_slot[0] == 8u);
+    const auto issued_auth = RequireGcnEpochAuth(
+        static_cast<u32>(first.tokens_by_slot.size()),
+        first.epoch, first.tokens_by_slot);
+    for (u32 i = 0; i < 4; ++i) {
+        assert(issued_auth[i].epoch == first.epoch);
+        assert(issued_auth[i].physical_slot == i);
+        assert(issued_auth[i].token_lo == first.tokens_by_slot[i]);
+        assert(IsAuthorizedGcnCaptureStamp(issued_auth[i], i, true, true));
+    }
     std::array<GpuCapturePacket,4> captures{};
     for (u32 i = 0; i < 4; ++i) {
         captures[i].tag = CapturePacketTag;
@@ -118,5 +140,6 @@ int main() {
                  "no_fabricated_token=PASS forged_packet_rejected=PASS "
                  "stale_epoch_rejected=PASS duplicate_slot_rejected=PASS "
                  "authenticated_stamp_predicate=PASS incomplete_wave_lds_forgery_rejected=PASS "
+                 "monotonic_host_dispatch_tickets=PASS rejected_wave_counts_no_ticket_loss=PASS "
                  "GPU_GUEST_CONTINUATION=NOT_ENABLED\n";
 }
