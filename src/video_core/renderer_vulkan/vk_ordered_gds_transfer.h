@@ -57,7 +57,7 @@ public:
             throw std::invalid_argument("inconsistent guest checkpoint buffer layout");
         }
         const u64 bytes = verified.total_bytes;
-        if (source_offset > source.SizeBytes() ||
+        if ((source_offset & 3u) != 0 || source_offset > source.SizeBytes() ||
             bytes > source.SizeBytes() - source_offset) {
             throw std::invalid_argument("guest checkpoint readback range invalid");
         }
@@ -183,7 +183,7 @@ public:
         Runtime& runtime, Scheduler& scheduler, const VideoCore::Buffer& source,
         u64 source_offset, std::size_t packet_count) {
         const u64 bytes = CheckedPacketBytes(packet_count);
-        if (source_offset > source.SizeBytes() ||
+        if ((source_offset & 3u) != 0 || source_offset > source.SizeBytes() ||
             bytes > source.SizeBytes() - source_offset) {
             throw std::invalid_argument("ordered GDS capture range outside device buffer");
         }
@@ -232,7 +232,8 @@ public:
                        VideoCore::Buffer& destination, u64 destination_offset,
                        std::span<const Resume> packets) {
         const u64 bytes = CheckedPacketBytes(packets.size());
-        if (destination_offset > destination.SizeBytes() ||
+        if ((destination_offset & 3u) != 0 ||
+            destination_offset > destination.SizeBytes() ||
             bytes > destination.SizeBytes() - destination_offset) {
             throw std::invalid_argument("ordered GDS resume range outside device buffer");
         }
