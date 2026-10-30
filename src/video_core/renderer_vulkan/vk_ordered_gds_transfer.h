@@ -386,6 +386,9 @@ public:
             resume_lds.emplace(instance, 0, plan.lds_layout->total_bytes,
                                VideoCore::MemoryType::DeviceLocal,
                                "CIK GDS Resumed Workgroup LDS");
+            persistent_lds.emplace(instance, 0, plan.persistent_lds_bytes,
+                                   VideoCore::MemoryType::DeviceLocal,
+                                   "CIK GDS Persistent Per-Workgroup LDS");
         }
     }
 
@@ -393,6 +396,30 @@ public:
     OrderedGdsEpochDeviceBuffers& operator=(const OrderedGdsEpochDeviceBuffers&) = delete;
     OrderedGdsEpochDeviceBuffers(OrderedGdsEpochDeviceBuffers&&) = delete;
     OrderedGdsEpochDeviceBuffers& operator=(OrderedGdsEpochDeviceBuffers&&) = delete;
+
+    // Initialize once before any guest LDS writes. Runtime::FillBuffer
+    // tracks transfer-write hazards; BindBuffers later inserts a compute
+    // dependency. This must NOT run again at the post-DS continuation,
+    // otherwise genuine guest LDS written before the ordered site is lost.
+    void PreparePersistentLds(Runtime& runtime) {
+        if (!persistent_lds) {
+            ASSERT_MSG(plan.persistent_lds_bytes == 0,
+                       "nonzero persistent LDS plan has no backing");
+            return;
+        }
+        if (persistent_lds_initialized_) {
+            return;
+        }
+        const u64 bytes = plan.persistent_lds_bytes;
+        if (!bytes || (bytes & 3u) || persistent_lds->SizeBytes() != bytes) {
+            throw std::invalid_argument("invalid persistent GDS LDS backing allocation");
+        }
+        runtime.FillBuffer(&*persistent_lds, 0, bytes, 0);
+        persistent_lds_initialized_ = true;
+    }
+    [[nodiscard]] bool PersistentLdsInitialized() const noexcept {
+        return persistent_lds_initialized_;
+    }
 
     // Source of authority is the host scheduler, not M0 or Vulkan arrival.
     // Upload once per epoch with UNIQUE, real per-wave continuation tokens.
@@ -469,10 +496,12 @@ public:
     VideoCore::Buffer resume_registers;
     std::optional<VideoCore::Buffer> capture_lds;
     std::optional<VideoCore::Buffer> resume_lds;
+    std::optional<VideoCore::Buffer> persistent_lds;
 
 private:
     std::vector<Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority_;
     u32 authenticated_epoch_{};
+    bool persistent_lds_initialized_{};
 };
 
 

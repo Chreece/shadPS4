@@ -32,6 +32,9 @@ struct GcnOrderedGdsDevicePlan {
     u64 epoch_auth_bytes{};
     GcnCheckpointLayout register_layout{};
     std::optional<GcnLdsCheckpointLayout> lds_layout{};
+    // Raw per-workgroup guest LDS SSBO survives the first-pass return,
+    // independent of temporary Vulkan workgroup-local memory and GDS RAM.
+    u64 persistent_lds_bytes{};
     u64 combined_device_bytes{};
 
     [[nodiscard]] static GcnOrderedGdsDevicePlan Require(
@@ -76,16 +79,18 @@ struct GcnOrderedGdsDevicePlan {
                 workgroups, per_group, guest_shared_lds_bytes);
         }
         const u64 lds_bytes = lds ? lds->total_bytes : 0;
-        // Two independent GPU packet buffers, two register-state buffers,
-        // and two LDS buffers only if the real guest uses LDS.
+        const u64 persistent_lds_bytes = u64(workgroups) * guest_shared_lds_bytes;
+        // The persistent raw LDS buffer is additional to the two existing
+        // copy/checkpoint buffers and must count against the full VRAM budget.
         const u64 combined =
-            2 * (packet_bytes + registers.total_bytes + lds_bytes) + epoch_auth_bytes;
+            2 * (packet_bytes + registers.total_bytes + lds_bytes) +
+            epoch_auth_bytes + persistent_lds_bytes;
         if (combined > MaxEpochDeviceBytes) {
             throw std::invalid_argument(
                 "ordered GDS full capture/resume exceeds combined VRAM budget");
         }
         return {workgroups, per_group, waves, packet_bytes, epoch_auth_bytes,
-                registers, lds, combined};
+                registers, lds, persistent_lds_bytes, combined};
     }
 };
 

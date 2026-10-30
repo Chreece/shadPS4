@@ -22,7 +22,8 @@ template<typename F> bool Reject(F&& f) {
 int main() {
     const auto zero = Plan::Require({2, 1, 1}, {128, 1, 1}, 9, 0);
     assert(zero.workgroups == 2 && zero.waves_per_group == 2 &&
-           zero.waves == 4 && !zero.lds_layout);
+           zero.waves == 4 && !zero.lds_layout &&
+           zero.persistent_lds_bytes == 0);
     assert(zero.packet_bytes == 4 * sizeof(GpuCapturePacket));
     assert(zero.register_layout.scalar_words == 104 &&
            zero.register_layout.vector_registers == 9);
@@ -40,8 +41,12 @@ int main() {
            shared.lds_layout->waves_per_group == 2 &&
            shared.lds_layout->lds_bytes == 4096);
     assert(shared.epoch_auth_bytes == zero.epoch_auth_bytes);
+    assert(shared.persistent_lds_bytes == 2ull * 4096);
     assert(shared.combined_device_bytes ==
-           zero.combined_device_bytes + 2 * shared.lds_layout->total_bytes);
+           zero.combined_device_bytes +
+           2 * shared.lds_layout->total_bytes + shared.persistent_lds_bytes);
+    assert(shared.persistent_lds_bytes ==
+           u64(shared.workgroups) * shared.lds_layout->lds_bytes);
 
     // Same total logical slots in a true 3D dispatch; the x-fastest
     // physical slot is NEVER a guest-created wave rank.

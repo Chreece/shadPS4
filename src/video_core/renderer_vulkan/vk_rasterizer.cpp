@@ -483,6 +483,9 @@ u32 Rasterizer::AuthorizeNewOrderedGdsCaptureEpoch(
     // Host *identity* tickets are owned by this Rasterizer instance, not by
     // per-dispatch temporary vectors or Vulkan invocation-arrival ordering.
     // The validated owner carries exact wave count and independent SSBOs.
+    // Actual guest LDS is device-local for the whole split-dispatch owner.
+    // Clear it only on first use, never on each GDS resolution epoch.
+    owner.PreparePersistentLds(runtime);
     const auto issued = ordered_gds_epoch_issuer_.Issue(owner.plan.waves);
     owner.PrepareEpochAuthority(runtime, scheduler, issued.epoch,
                                 issued.tokens_by_slot);
