@@ -1,6 +1,7 @@
 // This fixture compiles the EXACT production Translator::RecordOrderedGdsCheckpoint
 // method, inserted below. No emulator, GPU, guest shader or fake counter value.
 // We verify each live input at the original guest ordered-count site.
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -16,24 +17,37 @@ enum class HwStage { Compute, Fragment };
 struct RuntimeInfo {
     HwStage hw_stage{HwStage::Compute};
     struct Properties { u32 num_allocated_vgprs{9}; } props;
+    struct {
+        struct { std::array<u32,3> workgroup_size{128,1,1}; } cs;
+    } hw;
 };
 
 namespace IR {
 struct U32 { u32 value{}; };
 struct U1 { bool value{}; };
 struct U64 { u64 value{}; };
+enum class Attribute { WorkgroupIndex, LocalInvocationIndex };
 struct Value { u32 lo{}, hi{}; };
 enum class ScalarReg : u32 {};
 enum class VectorReg : u32 {};
 inline constexpr std::size_t NumScalarRegs = 104;
 inline constexpr std::size_t NumVectorRegs = 256;
 struct IREmitter {
-    struct Capture { u32 pc{}, bank{}, index{}, value{}; };
+    struct Capture { u32 pc{}, bank{}, index{}, value{}, slot{}, lane{}; };
     std::vector<Capture> records;
     u32 m0{0x12345566u};
     u32 vcc_lo{0x1234abcd};
     u32 vcc_hi{0xff223344u};
     bool scc{true};
+    u32 workgroup_index{2};
+    u32 local_invocation_index{71};
+    U32 GetAttributeU32(Attribute a) const {
+        return {a == Attribute::WorkgroupIndex ? workgroup_index : local_invocation_index};
+    }
+    U32 IDiv(U32 a, U32 b) const { return {a.value / b.value}; }
+    U32 IMod(U32 a, U32 b) const { return {a.value % b.value}; }
+    U32 IMul(U32 a, U32 b) const { return {a.value * b.value}; }
+    U32 IAdd(U32 a, U32 b) const { return {a.value + b.value}; }
     U32 Imm32(u32 v) const { return {v}; }
     template<typename T = U32> T GetScalarReg(ScalarReg r) const {
         return {0x51000000u + static_cast<u32>(r)};
@@ -55,8 +69,10 @@ struct IREmitter {
         assert(i < 2);
         return i ? v.hi : v.lo;
     }
-    void OrderedGdsCheckpointRegister(U32 site_pc, U32 bank, U32 index, U32 value) {
-        records.push_back({site_pc.value, bank.value, index.value, value.value});
+    void OrderedGdsCheckpointRegister(U32 site_pc, U32 bank, U32 index, U32 value,
+                                      U32 logical_slot, U32 lane) {
+        records.push_back({site_pc.value, bank.value, index.value, value.value,
+                           logical_slot.value, lane.value});
     }
 };
 }
@@ -74,6 +90,9 @@ int main() {
     constexpr u64 mask = 0x8000000000000081ULL;
     t.RecordOrderedGdsCheckpoint(t.ir.Imm32(pc), IR::U64{mask});
     assert(t.ir.records.size() == 104 + 9 + 6);
+    for (const auto& record : t.ir.records) {
+        assert(record.slot == 5u && record.lane == 7u);
+    }
     for (u32 i = 0; i < 104; ++i) {
         const auto& v = t.ir.records[i];
         assert(v.pc == pc && v.bank == 0 && v.index == i &&
@@ -102,8 +121,14 @@ int main() {
     t.ir.m0 = 0xfecd0012u;
     t.ir.scc = false;
     t.runtime_info.props.num_allocated_vgprs = 4;
+    t.runtime_info.hw.cs.workgroup_size = {64,1,1};
+    t.ir.workgroup_index = 9;
+    t.ir.local_invocation_index = 63;
     t.RecordOrderedGdsCheckpoint(t.ir.Imm32(0x41d4), IR::U64{0x0000000200000100ULL});
     assert(t.ir.records.size() - previous == 104 + 4 + 6);
+    for (std::size_t n = previous; n < t.ir.records.size(); ++n) {
+        assert(t.ir.records[n].slot == 9u && t.ir.records[n].lane == 63u);
+    }
     assert(t.ir.records[previous].pc == 0x41d4 &&
            t.ir.records[previous].bank == 0);
     const auto special = previous + 104 + 4;
@@ -124,9 +149,13 @@ int main() {
     t.runtime_info.hw_stage = HwStage::Compute;
     reject([&] { t.runtime_info.props.num_allocated_vgprs = 0; });
     reject([&] { t.runtime_info.props.num_allocated_vgprs = 257; });
+    t.runtime_info.props.num_allocated_vgprs = 4;
+    reject([&] { t.runtime_info.hw.cs.workgroup_size = {0,1,1}; });
+    reject([&] { t.runtime_info.hw.cs.workgroup_size = {1025,1,1}; });
     std::cout << "GDS_ORDERED_LIVE_REGISTER_CAPTURE=PASS "
                  "sgprs=104 vgprs=9/4 specials=6 "
                  "dynamic_m0_exec_vcc_scc=PASS two_sites=PASS "
+                 "physical_wave_slot_lane=PASS "
                  "invalid_dimensions_rejected=PASS "
                  "GUEST_SHADER_GPU_WRITER_NOT_ENABLED\n";
 }
