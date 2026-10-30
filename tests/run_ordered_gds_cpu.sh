@@ -9,6 +9,7 @@ CXX="${CXX:-g++}"
 
 echo "ORDERED_GDS_CPU_COMPILER=$CXX"
 python3 "$ROOT/tests/check_ordered_gds_frontend.py" --compiler "$CXX"
+python3 "$ROOT/tests/check_ordered_gds_live_capture.py" --compiler "$CXX"
 python3 "$ROOT/tests/check_ordered_gds_ir.py"
 
 FLAGS=(-std=c++23 -Wall -Wextra -Werror -pedantic -O2 -pthread -Isrc)
