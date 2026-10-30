@@ -28,6 +28,8 @@ FILES = {
     "lds": "src/shader_recompiler/frontend/ordered_gds_lds_checkpoint.h",
     "transfer": "src/video_core/renderer_vulkan/vk_ordered_gds_transfer.h",
     "rasterizer": "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
+    "pipeline": "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp",
+    "coverage": "src/shader_recompiler/frontend/ordered_gds_capture_coverage.h",
     "packet": "src/shader_recompiler/frontend/ordered_gds_capture_packet.h",
     "tests": "tests/gcn_ordered_gds_complete_batch.cpp",
 }
@@ -76,6 +78,8 @@ def main():
     lds = source("lds")
     transfer = source("transfer")
     rasterizer = source("rasterizer")
+    pipeline = source("pipeline")
+    coverage = source("coverage")
     packet = source("packet")
     tests = source("tests")
 
@@ -127,6 +131,16 @@ def main():
             "ir.OrderedGdsCheckpointRegister(" in live_body and
             "runtime_info.hw_stage == HwStage::Compute" in live_body,
             "REAL_PRE_DS_GUEST_SGPR_VGPR_M0_VCC_SCC_EXEC_SNAPSHOT")
+    require("class LiveCheckpointCoverage" in coverage and
+            "incomplete live SGPR snapshot after IR passes" in coverage and
+            "incomplete live VGPR snapshot after IR passes" in coverage and
+            "incomplete EXEC/M0/VCC/SCC snapshot after IR passes" in coverage and
+            "LiveCheckpointCoverage coverage(" in pipeline and
+            "ir_inst.GetOpcode() != Shader::IR::Opcode::OrderedGdsCheckpointRegister" in pipeline and
+            "coverage.Record(site.U32(), bank.U32(), index.U32())" in pipeline and
+            "coverage.RequireComplete()" in pipeline and
+            "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
+            "POST_SSA_GCN_REGISTER_COVERAGE_AUDITED")
     require("pc - inst.length" in body and "sites.push_back(guest_site_pc)" in body and
             "ir.Imm32(guest_site_pc)" in body,
             "UNIQUE_GUEST_ORDERED_GDS_SITE_PC")
