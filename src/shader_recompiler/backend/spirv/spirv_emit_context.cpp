@@ -824,6 +824,9 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
     case BufferType::OrderedGdsCheckpoint:
         Name(id, "ordered_gds_guest_register_checkpoint");
         break;
+    case BufferType::OrderedGdsCapture:
+        Name(id, "ordered_gds_live_gpu_capture_packet");
+        break;
     case BufferType::Flatbuf:
         Name(id, "srt_flatbuf");
         break;
@@ -869,6 +872,13 @@ void EmitContext::DefineBuffers() {
             has_ordered_gds_checkpoint_binding = true;
             ASSERT_MSG(desc.is_written && True(desc.used_types & IR::Type::U32),
                        "invalid GCN checkpoint SSBO declaration");
+        } else if (desc.buffer_type == BufferType::OrderedGdsCapture) {
+            ASSERT_MSG(!has_ordered_gds_capture_binding,
+                       "duplicate GCN capture packet SSBO descriptor");
+            ordered_gds_capture_index = buffers.size();
+            has_ordered_gds_capture_binding = true;
+            ASSERT_MSG(desc.is_written && True(desc.used_types & IR::Type::U32),
+                       "invalid GCN capture packet SSBO declaration");
         }
 
         // Define aliases depending on the shader usage.
