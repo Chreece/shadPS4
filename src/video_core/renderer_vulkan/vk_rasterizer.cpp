@@ -469,6 +469,33 @@ Rasterizer::ResolveVerifiedOrderedGdsEpoch(
 }
 
 std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+Rasterizer::ResolveOwnedCikComputeOrderedGdsEpoch(
+    OrderedGdsEpochDeviceBuffers& owned, u32 epoch,
+    std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
+    std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
+    Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin) {
+    // One immutable bounded plan determines all lengths and resources.
+    // For a genuinely zero-LDS shader the legacy bridge signature still
+    // requires buffer references; its checked_lds==null branch neither
+    // touches nor compares them. Use existing packet resources here WITHOUT
+    // allocating any fake LDS storage. Live LDS uses independent buffers.
+    const auto& plan = owned.plan;
+    const auto& lds_source =
+        owned.capture_lds ? *owned.capture_lds : owned.capture_packets;
+    auto& lds_destination =
+        owned.resume_lds ? *owned.resume_lds : owned.resume_packets;
+    const auto lds_layout = plan.lds_layout.value_or(
+        Shader::Gcn::OrderedGds::GcnLdsCheckpointLayout{});
+    return ResolveCompleteCikComputeOrderedGdsEpoch(
+        owned.capture_packets, 0, owned.capture_registers, 0,
+        plan.register_layout, lds_source, 0, lds_layout,
+        plan.lds_layout ? plan.lds_layout->lds_bytes : 0,
+        lds_destination, 0, owned.resume_registers, 0,
+        owned.resume_packets, 0, epoch, plan.waves,
+        verified_sites, seed, seed_origin);
+}
+
+std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
 Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     const VideoCore::Buffer& device_capture, u64 capture_offset,
     const VideoCore::Buffer& device_checkpoints, u64 checkpoint_offset,
