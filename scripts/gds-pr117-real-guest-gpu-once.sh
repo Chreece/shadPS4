@@ -72,12 +72,8 @@ exec 9>"$LOGS/gds-pr117-real-guest-gpu-exclusive.lock"
 exec 8>"$LOGS/gow-upstream-got-build.lock"
 exec 7>"$LOGS/shadps4-gow-srt-phi.lock"
 exec 6>"$LOGS/shadps4-official-indirect-game.lock"
-if ! (flock -n 9 && flock -n 8 && flock -n 7 && flock -n 6); then
-  echo "ANOTHER_GAME_OR_SHARED_BUILD_LOCK_ACTIVE_NO_LAUNCH"
-  exit 2
-fi
-# Subshell flock locks are not retained by the parent. Acquire each in
-# this shell so its open file descriptor stays held through the whole run.
+# Flock each inherited open descriptor in this shell, retaining ownership
+# through the observation and Ollama restoration; no unrelated process stopped.
 for fd in 9 8 7 6; do
   flock -n "$fd" || {
     echo "OTHER_GPU_OR_BUILD_OWNER_ACTIVE_NO_LAUNCH"; exit 2;
