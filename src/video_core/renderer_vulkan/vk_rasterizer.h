@@ -99,7 +99,8 @@ public:
         const VideoCore::Buffer& device_checkpoints, u64 checkpoint_offset,
         const Shader::Gcn::OrderedGds::GcnCheckpointLayout& checkpoint_layout,
         VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
-        std::size_t guest_created_waves, std::span<const u32> verified_sites,
+        std::size_t guest_created_waves,
+        std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
         std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
         Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin);
 
