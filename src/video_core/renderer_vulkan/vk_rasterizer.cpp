@@ -63,6 +63,9 @@ Rasterizer::OrderedGdsCaptureBinding::OrderedGdsCaptureBinding(
     : rasterizer{rasterizer_}, epoch{epoch_} {
     ASSERT_MSG(!rasterizer.active_ordered_gds_capture_,
                "nested or stale GCN ordered GDS capture binding");
+    ASSERT_MSG(epoch.AuthorizedEpoch() != 0 &&
+               epoch.CaptureAuthority().size() == epoch.plan.waves,
+               "real guest epoch tokens must be supplied before capture binding");
     ASSERT_MSG(epoch.capture_registers.Handle() != VK_NULL_HANDLE &&
                epoch.capture_packets.Handle() != VK_NULL_HANDLE &&
                epoch.capture_registers.Handle() != epoch.resume_registers.Handle() &&
@@ -1003,7 +1006,25 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
     const u64 alignment = instance.StorageMinAlignment();
     for (const auto& desc : stage.buffers) {
         if (desc.IsSpecial()) {
-            if (desc.buffer_type == Shader::BufferType::OrderedGdsCapture) {
+            if (desc.buffer_type == Shader::BufferType::OrderedGdsEpochAuth) {
+                ASSERT_MSG(stage.hw_stage == Shader::HwStage::Compute &&
+                           stage.uses_ordered_gds && !desc.is_written &&
+                           active_ordered_gds_capture_ &&
+                           active_ordered_gds_capture_->AuthorizedEpoch() != 0,
+                           "ordered GDS epoch requires host-authorized capture scope");
+                const auto& epoch = *active_ordered_gds_capture_;
+                const auto& authority = epoch.capture_auth;
+                const u64 bytes = epoch.plan.epoch_auth_bytes;
+                ASSERT_MSG(authority.Handle() != VK_NULL_HANDLE &&
+                           authority.Handle() != buffer_cache.GetGdsBuffer()->Handle() &&
+                           authority.Handle() != epoch.capture_packets.Handle() &&
+                           authority.Handle() != epoch.capture_registers.Handle() &&
+                           bytes > 0 && bytes == authority.SizeBytes(),
+                           "GCN trusted dispatch token SSBO must be independent");
+                buffer_infos.emplace_back(authority.Handle(), 0, bytes);
+                needs_barrier |= runtime.IsBufferAccessed(&authority, 0, bytes, false);
+                bound_buffers.emplace_back(&authority, 0, static_cast<u32>(bytes), false);
+            } else if (desc.buffer_type == Shader::BufferType::OrderedGdsCapture) {
                 // Only an explicit, owned guest capture phase may bind a
                 // dedicated GPU packet buffer. No guest GDS or wraparound
                 // stream alias, and no ordinary shader can opt into this.
