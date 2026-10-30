@@ -382,6 +382,22 @@ def main():
             "p.token_lo != record.token_lo" in auth and
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
             "REAL_GCN_TERMINAL_BYPASS_WRITES_AUTHENTIC_WAVE_COVERAGE")
+    # A real S_ENDPGM wave has no decoded DS site, register checkpoint
+    # or resumable guest state. Test that its canonical packet is classified
+    # BEFORE the normal ordered-site lookup and is never patched into VDST.
+    mixed_capture = function(checkpoint, "inline void RequireCompleteGcnWaveCheckpoints(")
+    mixed_resume = function(checkpoint, "inline void RequireResolvedGcnResumeHandoff(")
+    require("CaptureBypassFlags" in mixed_capture and
+            "IsCanonicalGcnTerminalBypass(capture, expected_epoch)" in mixed_capture and
+            mixed_capture.index("if (capture.flags == CaptureBypassFlags)") <
+                mixed_capture.index("const auto match = std::find_if") and
+            "resume.site_pc != NoActiveLane" in mixed_resume and
+            "resume.flags != 0" in mixed_resume and
+            "resume.previous || resume.current || resume.counter_index" in mixed_resume and
+            "resume.token_lo || resume.token_hi" in mixed_resume and
+            "resume.creation_lo || resume.creation_hi" in mixed_resume and
+            "if (capture.flags == CaptureBypassFlags)" in post_ds_state,
+            "REAL_GCN_MIXED_TERMINAL_CHECKPOINT_RESUME_GUARDED")
     # A separate FIRST-PASS shader compiler may stop precisely at a decoded
     # guest ordered-count site, AFTER emitting original live checkpoint stores
     # and BEFORE any downstream guest side effect or return-register use.
