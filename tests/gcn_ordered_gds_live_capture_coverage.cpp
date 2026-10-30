@@ -44,6 +44,13 @@ int main() {
     Full(no_scalar, sites[1], 9);
     assert(Reject([&] { (void)no_scalar.RequireComplete(); }));
 
+    auto no_vector = bad();
+    Full(no_vector, sites[0], 9);
+    for (u32 i = 0; i < 104; ++i) no_vector.Record(sites[1], 0, i);
+    for (u32 i = 0; i < 8; ++i) no_vector.Record(sites[1], 1, i);
+    for (u32 i = 0; i < 6; ++i) no_vector.Record(sites[1], 2, i);
+    assert(Reject([&] { (void)no_vector.RequireComplete(); }));
+
     auto partial_copy = bad();
     Full(partial_copy, sites[0], 9);
     Full(partial_copy, sites[1], 9);
