@@ -19,6 +19,7 @@ static void Full(LiveCheckpointCoverage& c, u32 pc, u32 vgprs) {
     for (u32 i = 0; i < vgprs; ++i) c.Record(pc, 1, i);
     for (u32 i = 0; i < 6; ++i) c.Record(pc, 2, i);
     for (u32 i = 0; i < LiveCheckpointCoverage::SiteMetadataCount; ++i) c.Record(pc, 3, i);
+    for (u32 i = 0; i < LiveCheckpointCoverage::PacketWordCount; ++i) c.Record(pc, 4, i);
 }
 
 int main() {
@@ -33,8 +34,8 @@ int main() {
     assert(done.size() == 2);
     assert(done[0].site_pc == sites[0] && done[0].complete_copies == 1);
     assert(done[1].site_pc == sites[1] && done[1].complete_copies == 2);
-    assert(done[0].register_records == 130 &&
-           done[1].register_records == 260);
+    assert(done[0].register_records == 146 &&
+           done[1].register_records == 292);
 
     // Prove incomplete fields and mismatched structurization copies fail.
     auto bad = [&] { return LiveCheckpointCoverage(sites, 9); };
@@ -43,6 +44,7 @@ int main() {
     for (u32 i = 0; i < 9; ++i) no_scalar.Record(sites[0], 1, i);
     for (u32 i = 0; i < 6; ++i) no_scalar.Record(sites[0], 2, i);
     for (u32 i = 0; i < 11; ++i) no_scalar.Record(sites[0], 3, i);
+    for (u32 i = 0; i < 16; ++i) no_scalar.Record(sites[0], 4, i);
     Full(no_scalar, sites[1], 9);
     assert(Reject([&] { (void)no_scalar.RequireComplete(); }));
 
@@ -52,6 +54,7 @@ int main() {
     for (u32 i = 0; i < 8; ++i) no_vector.Record(sites[1], 1, i);
     for (u32 i = 0; i < 6; ++i) no_vector.Record(sites[1], 2, i);
     for (u32 i = 0; i < 11; ++i) no_vector.Record(sites[1], 3, i);
+    for (u32 i = 0; i < 16; ++i) no_vector.Record(sites[1], 4, i);
     assert(Reject([&] { (void)no_vector.RequireComplete(); }));
 
     auto partial_copy = bad();
@@ -66,6 +69,7 @@ int main() {
     for (u32 i = 0; i < 9; ++i) no_special.Record(sites[1], 1, i);
     for (u32 i = 0; i < 5; ++i) no_special.Record(sites[1], 2, i);
     for (u32 i = 0; i < 11; ++i) no_special.Record(sites[1], 3, i);
+    for (u32 i = 0; i < 16; ++i) no_special.Record(sites[1], 4, i);
     assert(Reject([&] { (void)no_special.RequireComplete(); }));
 
     // A structurally cloned ordered site missing even one immutable header
@@ -76,7 +80,20 @@ int main() {
     for (u32 i = 0; i < 9; ++i) no_metadata.Record(sites[1], 1, i);
     for (u32 i = 0; i < 6; ++i) no_metadata.Record(sites[1], 2, i);
     for (u32 i = 0; i < 10; ++i) no_metadata.Record(sites[1], 3, i);
+    for (u32 i = 0; i < 16; ++i) no_metadata.Record(sites[1], 4, i);
     assert(Reject([&] { (void)no_metadata.RequireComplete(); }));
+
+    // One unwritten packet word (including INVALID auth fields) is enough
+    // to invalidate a structurally cloned guest capture, even when its
+    // full SGPR/VGPR checkpoint and header are complete.
+    auto no_packet = bad();
+    Full(no_packet, sites[0], 9);
+    for (u32 i = 0; i < 104; ++i) no_packet.Record(sites[1], 0, i);
+    for (u32 i = 0; i < 9; ++i) no_packet.Record(sites[1], 1, i);
+    for (u32 i = 0; i < 6; ++i) no_packet.Record(sites[1], 2, i);
+    for (u32 i = 0; i < 11; ++i) no_packet.Record(sites[1], 3, i);
+    for (u32 i = 0; i < 15; ++i) no_packet.Record(sites[1], 4, i);
+    assert(Reject([&] { (void)no_packet.RequireComplete(); }));
 
     auto missing_site = bad();
     Full(missing_site, sites[0], 9);
@@ -87,7 +104,8 @@ int main() {
     assert(Reject([&] { bounds.Record(sites[0], 1, 9); }));
     assert(Reject([&] { bounds.Record(sites[0], 2, 6); }));
     assert(Reject([&] { bounds.Record(sites[0], 3, 11); }));
-    assert(Reject([&] { bounds.Record(sites[0], 4, 0); }));
+    assert(Reject([&] { bounds.Record(sites[0], 4, 16); }));
+    assert(Reject([&] { bounds.Record(sites[0], 5, 0); }));
     assert(Reject([&] { bounds.Record(0x9999, 0, 0); }));
     assert(Reject([&] {
         (void)LiveCheckpointCoverage(std::array<u32,2>{sites[0],sites[0]},9);
@@ -101,6 +119,7 @@ int main() {
                  "two_guest_sites=PASS cloned_full_site=PASS "
                  "missing_sgpr_vgpr_special_rejected=PASS "
                  "incomplete_checkpoint_header_rejected=PASS "
+                 "incomplete_gpu_packet_rejected=PASS "
                  "register_and_site_bounds=PASS "
                  "GPU_EXECUTION=NOT_ENABLED\n";
 }
