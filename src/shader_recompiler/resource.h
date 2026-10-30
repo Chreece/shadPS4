@@ -81,6 +81,9 @@ enum class BufferType : u8 {
     GdsBuffer,
     SharedMemory,
     ClipPlanes,
+    // Separate GPU capture buffer for real GCN wave SGPR/VGPR snapshots.
+    // Never alias with dedicated CIK ordered packers or guest GDS RAM.
+    OrderedGdsCheckpoint,
 };
 
 struct BufferResource {
