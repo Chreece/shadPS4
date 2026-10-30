@@ -13,6 +13,7 @@
 
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
 #include "shader_recompiler/frontend/ordered_gds_checkpoint.h"
+#include "shader_recompiler/frontend/ordered_gds_lds_checkpoint.h"
 #include "shader_recompiler/frontend/ordered_gds_storage_layout.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -285,6 +286,125 @@ public:
     }
 };
 
+
+// GPU-side transport of per-workgroup LDS state. Both directions require
+// a compiler-proven quiescent checkpoint in the same guest epoch as the wave
+// register snapshots. This does NOT manufacture a workgroup barrier or
+// reconstruct LDS values from individual waves.
+class OrderedGdsLdsStateTransfer {
+public:
+    using Layout = Shader::Gcn::OrderedGds::GcnLdsCheckpointLayout;
+
+    [[nodiscard]] static std::vector<std::byte> Download(
+        Runtime& runtime, Scheduler& scheduler, const VideoCore::Buffer& source,
+        u64 source_offset, const Layout& layout, u32 epoch) {
+        const auto valid = Layout::Require(
+            layout.workgroups, layout.waves_per_group, layout.lds_bytes);
+        if (valid.total_bytes != layout.total_bytes ||
+            valid.stride_bytes != layout.stride_bytes ||
+            (source_offset & 3u) ||
+            source_offset > source.SizeBytes() ||
+            valid.total_bytes > source.SizeBytes() - source_offset) {
+            throw std::invalid_argument("ordered GDS LDS device capture range invalid");
+        }
+        const u64 bytes = valid.total_bytes;
+        const auto staging = runtime.GetStagingPool().Request(
+            bytes, VideoCore::MemoryType::HostCached,
+            alignof(Shader::Gcn::OrderedGds::GpuGcnWorkgroupLdsCheckpoint));
+        if (!staging.buffer || !staging.mapped || staging.size < bytes) {
+            throw std::runtime_error("ordered GDS LDS readback unavailable");
+        }
+        const vk::BufferCopy copy{
+            .srcOffset = source_offset,
+            .dstOffset = staging.offset,
+            .size = bytes,
+        };
+        runtime.CopyBuffer(&source, staging.buffer, std::span{&copy, 1});
+        const vk::BufferMemoryBarrier2 to_host{
+            .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eHost,
+            .dstAccessMask = vk::AccessFlagBits2::eHostRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = staging.buffer->Handle(),
+            .offset = staging.offset,
+            .size = bytes,
+        };
+        scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &to_host,
+        });
+        scheduler.Finish();
+        staging.Invalidate();
+        std::vector<std::byte> state(bytes);
+        std::memcpy(state.data(), staging.mapped, bytes);
+        Shader::Gcn::OrderedGds::RequireCompleteGcnLdsCheckpoints(state, valid, epoch);
+        return state;
+    }
+
+    static void Upload(
+        Runtime& runtime, Scheduler& scheduler, VideoCore::Buffer& destination,
+        u64 destination_offset, std::span<const std::byte> state,
+        const Layout& layout, u32 epoch) {
+        const auto valid = Layout::Require(
+            layout.workgroups, layout.waves_per_group, layout.lds_bytes);
+        Shader::Gcn::OrderedGds::RequireCompleteGcnLdsCheckpoints(state, valid, epoch);
+        if (valid.total_bytes != layout.total_bytes ||
+            valid.stride_bytes != layout.stride_bytes ||
+            (destination_offset & 3u) ||
+            destination_offset > destination.SizeBytes() ||
+            valid.total_bytes > destination.SizeBytes() - destination_offset) {
+            throw std::invalid_argument("ordered GDS LDS device resume range invalid");
+        }
+        const u64 bytes = valid.total_bytes;
+        const auto staging = runtime.GetStagingPool().Request(
+            bytes, VideoCore::MemoryType::HostUncached,
+            alignof(Shader::Gcn::OrderedGds::GpuGcnWorkgroupLdsCheckpoint));
+        if (!staging.buffer || !staging.mapped || staging.size < bytes) {
+            throw std::runtime_error("ordered GDS LDS upload unavailable");
+        }
+        std::memcpy(staging.mapped, state.data(), bytes);
+        staging.Flush();
+        scheduler.EndRendering();
+        const vk::BufferMemoryBarrier2 host_to_copy{
+            .srcStageMask = vk::PipelineStageFlagBits2::eHost,
+            .srcAccessMask = vk::AccessFlagBits2::eHostWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = staging.buffer->Handle(),
+            .offset = staging.offset,
+            .size = bytes,
+        };
+        scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &host_to_copy,
+        });
+        const vk::BufferCopy copy{
+            .srcOffset = staging.offset,
+            .dstOffset = destination_offset,
+            .size = bytes,
+        };
+        runtime.CopyBuffer(staging.buffer, &destination, std::span{&copy, 1});
+        const vk::BufferMemoryBarrier2 copy_to_compute{
+            .srcStageMask = vk::PipelineStageFlagBits2::eCopy,
+            .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .dstAccessMask = vk::AccessFlagBits2::eShaderStorageRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = destination.Handle(),
+            .offset = destination_offset,
+            .size = bytes,
+        };
+        scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+            .bufferMemoryBarrierCount = 1,
+            .pBufferMemoryBarriers = &copy_to_compute,
+        });
+    }
+};
 
 // Transport for ordinary 64 KiB guest GDS memory used by data-share and
 // PM4 operations. These bytes are authoritative for *RAM* after prior GPU
