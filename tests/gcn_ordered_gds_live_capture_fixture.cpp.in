@@ -1,0 +1,132 @@
+// This fixture compiles the EXACT production Translator::RecordOrderedGdsCheckpoint
+// method, inserted below. No emulator, GPU, guest shader or fake counter value.
+// We verify each live input at the original guest ordered-count site.
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <iostream>
+#include <stdexcept>
+#include <vector>
+
+using u32 = std::uint32_t;
+using u64 = std::uint64_t;
+#define ASSERT_MSG(cond, ...) do { if (!(cond)) throw std::invalid_argument("invalid live ordered GDS wave state"); } while (false)
+
+enum class HwStage { Compute, Fragment };
+struct RuntimeInfo {
+    HwStage hw_stage{HwStage::Compute};
+    struct Properties { u32 num_allocated_vgprs{9}; } props;
+};
+
+namespace IR {
+struct U32 { u32 value{}; };
+struct U1 { bool value{}; };
+struct U64 { u64 value{}; };
+struct Value { u32 lo{}, hi{}; };
+enum class ScalarReg : u32 {};
+enum class VectorReg : u32 {};
+inline constexpr std::size_t NumScalarRegs = 104;
+inline constexpr std::size_t NumVectorRegs = 256;
+struct IREmitter {
+    struct Capture { u32 pc{}, bank{}, index{}, value{}; };
+    std::vector<Capture> records;
+    u32 m0{0x12345566u};
+    u32 vcc_lo{0x1234abcd};
+    u32 vcc_hi{0xff223344u};
+    bool scc{true};
+    U32 Imm32(u32 v) const { return {v}; }
+    template<typename T = U32> T GetScalarReg(ScalarReg r) const {
+        return {0x51000000u + static_cast<u32>(r)};
+    }
+    template<typename T = U32> T GetVectorReg(VectorReg r) const {
+        return {0x62000000u + static_cast<u32>(r)};
+    }
+    U32 GetM0() const { return {m0}; }
+    U32 GetVccLo() const { return {vcc_lo}; }
+    U32 GetVccHi() const { return {vcc_hi}; }
+    U1 GetScc() const { return {scc}; }
+    u32 Select(U1 condition, U32 when_true, U32 when_false) const {
+        return condition.value ? when_true.value : when_false.value;
+    }
+    Value UnpackUint2x32(U64 mask) const {
+        return {u32(mask.value), u32(mask.value >> 32)};
+    }
+    u32 CompositeExtract(Value v, std::size_t i) const {
+        assert(i < 2);
+        return i ? v.hi : v.lo;
+    }
+    void OrderedGdsCheckpointRegister(U32 site_pc, U32 bank, U32 index, U32 value) {
+        records.push_back({site_pc.value, bank.value, index.value, value.value});
+    }
+};
+}
+struct Translator {
+    IR::IREmitter ir;
+    RuntimeInfo runtime_info;
+    void RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
+                                    const IR::U64& exec_mask);
+};
+/* EXACT_LIVE_GCN_CHECKPOINT_HELPER */
+
+int main() {
+    Translator t;
+    constexpr u32 pc = 0x4158;
+    constexpr u64 mask = 0x8000000000000081ULL;
+    t.RecordOrderedGdsCheckpoint(t.ir.Imm32(pc), IR::U64{mask});
+    assert(t.ir.records.size() == 104 + 9 + 6);
+    for (u32 i = 0; i < 104; ++i) {
+        const auto& v = t.ir.records[i];
+        assert(v.pc == pc && v.bank == 0 && v.index == i &&
+               v.value == 0x51000000u + i);
+    }
+    for (u32 i = 0; i < 9; ++i) {
+        const auto& v = t.ir.records[104 + i];
+        assert(v.pc == pc && v.bank == 1 && v.index == i &&
+               v.value == 0x62000000u + i);
+    }
+    const auto& r = t.ir.records;
+    for (u32 i = 0; i < 6; ++i) {
+        assert(r[113 + i].pc == pc && r[113 + i].bank == 2 &&
+               r[113 + i].index == i);
+    }
+    assert(r[113].value == 0x12345566u);
+    assert(r[114].value == 0x1234abcdu);
+    assert(r[115].value == 0xff223344u);
+    assert(r[116].value == 1u);
+    assert(r[117].value == 0x81u);
+    assert(r[118].value == 0x80000000u);
+
+    // Same instrumentation works at a second real static site with a
+    // different allocated-VGPR count, M0, SCC and guest EXEC mask.
+    const auto previous = t.ir.records.size();
+    t.ir.m0 = 0xfecd0012u;
+    t.ir.scc = false;
+    t.runtime_info.props.num_allocated_vgprs = 4;
+    t.RecordOrderedGdsCheckpoint(t.ir.Imm32(0x41d4), IR::U64{0x0000000200000100ULL});
+    assert(t.ir.records.size() - previous == 104 + 4 + 6);
+    assert(t.ir.records[previous].pc == 0x41d4 &&
+           t.ir.records[previous].bank == 0);
+    const auto special = previous + 104 + 4;
+    assert(t.ir.records[special].value == 0xfecd0012u);
+    assert(t.ir.records[special + 3].value == 0u);
+    assert(t.ir.records[special + 4].value == 0x100u);
+    assert(t.ir.records[special + 5].value == 2u);
+
+    const auto before_error = t.ir.records.size();
+    auto reject = [&](auto change) {
+        change();
+        bool threw = false;
+        try { t.RecordOrderedGdsCheckpoint(t.ir.Imm32(pc), IR::U64{mask}); }
+        catch (const std::invalid_argument&) { threw = true; }
+        assert(threw && t.ir.records.size() == before_error);
+    };
+    reject([&] { t.runtime_info.hw_stage = HwStage::Fragment; });
+    t.runtime_info.hw_stage = HwStage::Compute;
+    reject([&] { t.runtime_info.props.num_allocated_vgprs = 0; });
+    reject([&] { t.runtime_info.props.num_allocated_vgprs = 257; });
+    std::cout << "GDS_ORDERED_LIVE_REGISTER_CAPTURE=PASS "
+                 "sgprs=104 vgprs=9/4 specials=6 "
+                 "dynamic_m0_exec_vcc_scc=PASS two_sites=PASS "
+                 "invalid_dimensions_rejected=PASS "
+                 "GUEST_SHADER_GPU_WRITER_NOT_ENABLED\n";
+}
