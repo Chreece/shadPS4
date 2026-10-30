@@ -10,6 +10,8 @@
 #include <vector>
 
 using u32 = std::uint32_t;
+using s32 = std::int32_t;
+using f32 = float;
 using u64 = std::uint64_t;
 namespace Shader::Gcn::OrderedGds {
 inline constexpr u32 GcnWaveLanes = 64;
@@ -28,6 +30,7 @@ struct RuntimeInfo {
 
 namespace IR {
 struct U32 { u32 value{}; };
+struct F32 { f32 value{}; };
 struct U1 { bool value{}; };
 struct U64 { u64 value{}; };
 enum class Attribute { WorkgroupIndex, LocalInvocationIndex };
@@ -52,7 +55,13 @@ struct IREmitter {
     U32 IMod(U32 a, U32 b) const { return {a.value % b.value}; }
     U32 IMul(U32 a, U32 b) const { return {a.value * b.value}; }
     U32 IAdd(U32 a, U32 b) const { return {a.value + b.value}; }
+    // Match all three REAL production IREmitter overloads. A fixture with
+    // only the unsigned overload concealed the size_t ambiguity that broke
+    // the latest native compilation. Reverting the explicit u32 cast must
+    // now fail strict GCC and Clang fixture compilation as well.
     U32 Imm32(u32 v) const { return {v}; }
+    U32 Imm32(s32 v) const { return {u32(v)}; }
+    F32 Imm32(f32 v) const { return {v}; }
     template<typename T = U32> T GetScalarReg(ScalarReg r) const {
         return {0x51000000u + static_cast<u32>(r)};
     }
