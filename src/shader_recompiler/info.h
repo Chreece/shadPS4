@@ -136,6 +136,15 @@ struct Info : InfoPersistent {
     // Static guest byte PCs discovered by real translation. An individual
     // wave may execute only one of these sites; do not infer phase coverage.
     std::vector<u32> ordered_gds_site_pcs;
+    // Independent guest ISA decode metadata required for restoring the real
+    // VDST after host-ordered GDS resolution. This is static per instruction
+    // and must never be confused with a captured dynamic wave identity.
+    struct OrderedGdsSite {
+        u32 pc{};
+        u32 destination_vgpr{};
+        u32 encoded_control{};
+    };
+    std::vector<OrderedGdsSite> ordered_gds_sites;
     bool stores_tess_level_outer{};
     bool stores_tess_level_inner{};
     bool translation_failed{};
