@@ -405,7 +405,7 @@ void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
     capture(3, 2, ir.Imm32(next_guest_pc));
     capture(3, 3, logical_slot);
     capture(3, 4, ir.Imm32(destination_vgpr));
-    capture(3, 5, ir.Imm32(IR::NumScalarRegs));
+    capture(3, 5, ir.Imm32(u32(IR::NumScalarRegs)));
     capture(3, 6, ir.Imm32(vgpr_count));
     capture(3, 7, ir.Imm32(Shader::Gcn::OrderedGds::GcnWaveLanes));
     capture(3, 8, ir.Imm32(0u)); // Never claim valid without epoch/token.
