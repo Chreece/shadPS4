@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include <ranges>
+#include <string_view>
 
 #include "common/hash.h"
 #include "common/io_file.h"
@@ -659,6 +661,16 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
 
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
 
+    // Explicit one-shot, fail-closed GPU investigation of an ORIGINAL guest
+    // shader. It will stop the game after authenticated checkpoint readback
+    // rather than pretending that the absent second pass has finished.
+    const char* const probe_flag = std::getenv("SHADPS4_PR117_CAPTURE_ONCE");
+    const bool one_shot_probe =
+        !ordered_capture_only && info.uses_ordered_gds &&
+        info.hw_stage == HwStage::Compute && probe_flag &&
+        std::string_view{probe_flag} == "1";
+    const bool capture_variant = ordered_capture_only || one_shot_probe;
+
     if (info.uses_ordered_gds) {
         // Validate the REAL post-SSA/optimization IR, not merely that the
         // unstructured GCN translator attempted to capture register values.
@@ -834,7 +846,7 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     // genuine state and packet records; the normal compile below still
     // rejects the opcode. This is universal diagnosis, never a title/hash
     // exception, and does not dispatch any GPU shader or fake a counter.
-    if (!ordered_capture_only &&
+    if (!capture_variant &&
         info.uses_ordered_gds && info.hw_stage == HwStage::Compute &&
         EmulatorSettings.IsDumpShaders()) {
         auto capture_binding = binding; // Diagnostic must not mutate real bindings.
@@ -849,25 +861,25 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
                     info.pgm_hash, capture_spv.size(), info.ordered_gds_sites.size());
     }
 
-    if (ordered_capture_only) {
+    if (capture_variant) {
         ASSERT_MSG(info.uses_ordered_gds && info.hw_stage == HwStage::Compute,
                    "capture-only module must be original ordered-GDS compute guest");
     }
-    auto spv = ordered_capture_only
+    auto spv = capture_variant
         ? Shader::Backend::SPIRV::EmitSPIRVOrderedGdsCapturePass(
               profile, runtime_info, ir_program, binding)
         : Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
     DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx,
-               ordered_capture_only ? "pr117-live-capture.spv" : "spv");
+               capture_variant ? "pr117-live-capture.spv" : "spv");
 
     vk::ShaderModule module;
 
     // Never replace first-pass GPU capture instrumentation with an
     // unrelated user-patched normal guest compute module.
-    auto patch = ordered_capture_only
+    auto patch = capture_variant
         ? std::optional<std::vector<u32>>{}
         : GetShaderPatch(info.pgm_hash, info.hw_stage, perm_idx, "spv");
-    const bool is_patched = !ordered_capture_only && patch && EmulatorSettings.IsPatchShaders();
+    const bool is_patched = !capture_variant && patch && EmulatorSettings.IsPatchShaders();
     if (is_patched) {
         LOG_INFO(Loader, "Loaded patch for {} shader {:#x}", info.hw_stage, info.pgm_hash);
         module = CompileSPV(*patch, instance.GetDevice());
@@ -875,11 +887,11 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
         module = CompileSPV(spv, instance.GetDevice());
     }
 
-    if (!ordered_capture_only) {
+    if (!capture_variant) {
         RegisterShaderBinary(std::move(spv), info.pgm_hash, perm_idx);
     }
     const auto name = GetShaderName(info.hw_stage, info.pgm_hash, perm_idx) +
-                      (ordered_capture_only ? ".gds_capture" : "");
+                      (capture_variant ? ".gds_capture" : "");
     Vulkan::SetObjectName(instance.GetDevice(), module, name);
     if (EmulatorSettings.IsShaderCollect()) {
         DebugState.CollectShader(name, info.sw_stage, module, spv, code,
