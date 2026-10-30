@@ -36,11 +36,26 @@ struct IREmitter {
                         const U32& site_pc);
 };
 }
-struct Operand { u32 code; };
+// Mirror the production decoded Operand fields read by DS_ORDERED_COUNT.
+// Keep field before code so accidental mock-only aggregate assumptions fail.
+enum class OperandField { Undefined, ScalarGPR, VectorGPR };
+struct Operand {
+    OperandField field{OperandField::Undefined};
+    u32 code{0xffffffffu};
+};
 struct InstControlDS { u32 offset0; u32 offset1; bool gds; };
 struct InstControl { InstControlDS ds; };
 struct GcnInst { InstControl control; Operand src[3]; Operand dst[1]; u32 length; };
-struct MockInfo { bool uses_ordered_gds{}; std::vector<u32> ordered_gds_site_pcs; };
+struct MockInfo {
+    bool uses_ordered_gds{};
+    std::vector<u32> ordered_gds_site_pcs;
+    struct OrderedGdsSite {
+        u32 pc{};
+        u32 destination_vgpr{};
+        u32 encoded_control{};
+    };
+    std::vector<OrderedGdsSite> ordered_gds_sites;
+};
 struct Translator {
     IR::IREmitter ir;
     MockInfo info;
@@ -64,7 +79,11 @@ int main() {
     t.ir.exec=true;
     t.ir.wave_mask=0x8000000000000080ULL;
     t.source_value=0x87654321u;
-    GcnInst inst{{{4u,0x13u,true}},{{9},{0},{0}},{{11}},8u};
+    GcnInst inst{};
+    inst.control.ds = {4u, 0x13u, true};
+    inst.src[0] = {OperandField::VectorGPR, 9};
+    inst.dst[0] = {OperandField::VectorGPR, 11};
+    inst.length = 8u;
     t.DS_ORDERED_COUNT(inst);
     assert(t.info.uses_ordered_gds && t.ir.count==1);
     assert(t.ir.recorded.opcode==IR::Opcode::OrderedGdsCount);
@@ -72,6 +91,10 @@ int main() {
     assert(t.ir.recorded.exec_mask==0x8000000000000080ULL && t.ir.recorded.control==0x1304u);
     assert(t.ir.recorded.site_pc==0x4158u);
     assert(t.info.ordered_gds_site_pcs.size()==1 && t.info.ordered_gds_site_pcs[0]==0x4158u);
+    assert(t.info.ordered_gds_sites.size()==1);
+    assert(t.info.ordered_gds_sites[0].pc==0x4158u &&
+           t.info.ordered_gds_sites[0].destination_vgpr==11u &&
+           t.info.ordered_gds_sites[0].encoded_control==0x1304u);
     assert(t.written_reg==11 && t.written_value==0x1234abcdu);
     // The second ordered instruction must preserve distinct Add and new M0/EXEC.
     t.pc=0x41dcu;
@@ -83,6 +106,10 @@ int main() {
     assert(t.ir.count==2 && t.ir.recorded.control==0x0304u);
     assert(t.ir.recorded.site_pc==0x41d4u);
     assert(t.info.ordered_gds_site_pcs.size()==2 && t.info.ordered_gds_site_pcs[1]==0x41d4u);
+    assert(t.info.ordered_gds_sites.size()==2);
+    assert(t.info.ordered_gds_sites[1].pc==0x41d4u &&
+           t.info.ordered_gds_sites[1].destination_vgpr==11u &&
+           t.info.ordered_gds_sites[1].encoded_control==0x0304u);
     assert(t.ir.recorded.exec_mask==0 && t.ir.recorded.m0==0x88aa0812u);
     bool rejected=false;
     inst.control.ds.gds=false;
@@ -96,10 +123,25 @@ int main() {
     rejected=false;
     try {t.DS_ORDERED_COUNT(inst);} catch(const std::invalid_argument&) {rejected=true;}
     assert(rejected && t.ir.count==2);
+    // Use a NEW static site so an already-recorded site cannot hide an
+    // invalid destination. These test guards exercise the exact translator.
+    inst.control.ds.offset1=0x03u;
+    t.pc=0x4208u;
+    inst.dst[0].field=OperandField::ScalarGPR;
+    rejected=false;
+    try {t.DS_ORDERED_COUNT(inst);} catch(const std::invalid_argument&) {rejected=true;}
+    assert(rejected && t.ir.count==2 && t.info.ordered_gds_sites.size()==2);
+    inst.dst[0].field=OperandField::VectorGPR;
+    inst.dst[0].code=256u;
+    rejected=false;
+    try {t.DS_ORDERED_COUNT(inst);} catch(const std::invalid_argument&) {rejected=true;}
+    assert(rejected && t.ir.count==2 && t.info.ordered_gds_sites.size()==2);
+    inst.dst[0].code=11u;
     // A repeated translation of the same static instruction must not
     // fabricate a third site even when a dynamic epoch executes it again.
-    inst.control.ds.offset1=0x03u;
+    t.pc=0x41dcu;
     t.DS_ORDERED_COUNT(inst);
-    assert(t.ir.count==3 && t.info.ordered_gds_site_pcs.size()==2);
-    std::cout<<"GDS_ORDERED_FRONTEND_EXTRACTED=PASS ops=3 sites=2 cases=6 NO_GPU_WORK\n";
+    assert(t.ir.count==3 && t.info.ordered_gds_site_pcs.size()==2 &&
+           t.info.ordered_gds_sites.size()==2);
+    std::cout<<"GDS_ORDERED_FRONTEND_EXTRACTED=PASS ops=3 sites=2 invalid_vdst_rejected=2 NO_GPU_WORK\n";
 }
