@@ -21,6 +21,7 @@ public:
     using u32 = std::uint32_t;
     static constexpr u32 ScalarCount = 104;
     static constexpr u32 SpecialCount = 6;
+    static constexpr u32 SiteMetadataCount = 11;
 
     struct SiteSummary {
         u32 site_pc{};
@@ -43,6 +44,7 @@ public:
 
     // bank0=SGPR S0..S103, bank1=allocated VGPR V0..V(N-1),
     // bank2=M0,VCCLO,VCCHI,SCC,EXECLO,EXECHI (indexes 0..5).
+    // bank3=11 decoded-site/physical-slot/incomplete-auth header fields.
     void Record(u32 pc, u32 bank, u32 index) {
         auto found = sites_.find(pc);
         if (found == sites_.end()) {
@@ -59,6 +61,9 @@ public:
             break;
         case 2:
             if (index < SpecialCount) count = &c.special[index];
+            break;
+        case 3:
+            if (index < SiteMetadataCount) count = &c.site_metadata[index];
             break;
         default:
             break;
@@ -92,8 +97,15 @@ public:
                     throw std::invalid_argument("incomplete EXEC/M0/VCC/SCC snapshot after IR passes");
                 }
             }
+            for (const u32 count : c.site_metadata) {
+                if (count != copies) {
+                    throw std::invalid_argument(
+                        "incomplete decoded-site checkpoint header after IR passes");
+                }
+            }
             const std::uint64_t total =
-                std::uint64_t(copies) * (ScalarCount + vgpr_count_ + SpecialCount);
+                std::uint64_t(copies) *
+                (ScalarCount + vgpr_count_ + SpecialCount + SiteMetadataCount);
             if (total > std::numeric_limits<u32>::max()) {
                 throw std::invalid_argument("GCN checkpoint record count overflow");
             }
@@ -108,6 +120,7 @@ private:
         std::array<u32, ScalarCount> scalar{};
         std::vector<u32> vector;
         std::array<u32, SpecialCount> special{};
+        std::array<u32, SiteMetadataCount> site_metadata{};
     };
     std::map<u32, Counters> sites_;
     u32 vgpr_count_{};
