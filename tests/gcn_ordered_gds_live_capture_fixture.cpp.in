@@ -109,7 +109,7 @@ int main() {
     constexpr u32 pc = 0x4158;
     constexpr u64 mask = 0x8000000000000081ULL;
      t.RecordOrderedGdsCheckpoint(t.ir.Imm32(pc), IR::U64{mask}, 0x4160, 5, 0x1304);
-    assert(t.ir.records.size() == 104 + 9 + 6 + 11 + 16);
+    assert(t.ir.records.size() == 104 + 9 + 6 + 11 + 3 + 16);
     for (const auto& record : t.ir.records) {
         assert(record.slot == 5u && record.lane == 7u);
     }
@@ -142,6 +142,13 @@ int main() {
         const auto& h = r[119 + i];
         assert(h.bank == 3 && h.index == i && h.value == expected_header[i]);
     }
+    // Three more typed IR operations read verified identity from the GPU
+    // authority in the production SPIR-V emitter. Their mock operands stay
+    // zero; a helper fixture must not fabricate a host continuation token.
+    for (u32 i = 0; i < 3; ++i) {
+        const auto& h = r[130 + i];
+        assert(h.bank == 5 && h.index == i && h.value == 0);
+    }
     // A real GPU packet carries the decoded guest site and live M0/EXEC,
     // physical storage slot, CIK popcount(EXEC), and first active lane.
     // No synthetic valid tag, epoch, token or host-order rank is permitted.
@@ -149,7 +156,7 @@ int main() {
         0, 0, pc, 0x1304, 5, 0x12345566, 0x81, 0x80000000,
         0, 3, 0, 0, 0, 0, 0, 0};
     for (u32 i = 0; i < expected_capture.size(); ++i) {
-        const auto& p = r[130 + i];
+        const auto& p = r[133 + i];
         assert(p.bank == 4 && p.index == i && p.value == expected_capture[i]);
     }
 
@@ -164,7 +171,7 @@ int main() {
     t.ir.local_invocation_index = 63;
     t.RecordOrderedGdsCheckpoint(t.ir.Imm32(0x41d4), IR::U64{0x0000000200000100ULL},
                                  0x41dc, 3, 0x0304);
-    assert(t.ir.records.size() - previous == 104 + 4 + 6 + 11 + 16);
+    assert(t.ir.records.size() - previous == 104 + 4 + 6 + 11 + 3 + 16);
     for (std::size_t n = previous; n < t.ir.records.size(); ++n) {
         assert(t.ir.records[n].slot == 9u && t.ir.records[n].lane == 63u);
     }
@@ -181,11 +188,15 @@ int main() {
         const auto& h = t.ir.records[special + 6 + i];
         assert(h.bank == 3 && h.index == i && h.value == expected_second_header[i]);
     }
+    for (u32 i = 0; i < 3; ++i) {
+        const auto& h = t.ir.records[special + 6 + 11 + i];
+        assert(h.bank == 5 && h.index == i && h.value == 0);
+    }
     constexpr std::array<u32,16> second_capture{
         0, 0, 0x41d4, 0x0304, 9, 0xfecd0012, 0x100, 2,
         8, 2, 0, 0, 0, 0, 0, 0};
     for (u32 i = 0; i < second_capture.size(); ++i) {
-        const auto& p = t.ir.records[special + 6 + 11 + i];
+        const auto& p = t.ir.records[special + 6 + 11 + 3 + i];
         assert(p.bank == 4 && p.index == i && p.value == second_capture[i]);
     }
     // A zero-EXEC guest wave still emits a complete wave slot but must not
@@ -193,7 +204,7 @@ int main() {
     t.ir.records.clear();
     t.ir.m0 = 0xdead0011u;
     t.RecordOrderedGdsCheckpoint(t.ir.Imm32(pc), IR::U64{0u}, 0x4160, 2, 0x0304);
-    assert(t.ir.records.size() == 104 + 4 + 6 + 11 + 16);
+    assert(t.ir.records.size() == 104 + 4 + 6 + 11 + 3 + 16);
     const auto empty_packet = t.ir.records.size() - 16;
     assert(t.ir.records[empty_packet + 8].value == 0xffffffffu);
     assert(t.ir.records[empty_packet + 9].value == 0u);
@@ -232,6 +243,7 @@ int main() {
                  "dynamic_m0_exec_vcc_scc=PASS two_sites=PASS "
                  "physical_wave_slot_lane=PASS decoded_site_header_invalid_auth=PASS "
                  "live_gpu_packet_fields=PASS inactive_exec_no_fabrication=PASS "
+                 "host_auth_identity_ir_no_fabrication=PASS "
                  "invalid_dimensions_rejected=PASS "
                  "GUEST_SHADER_GPU_WRITER_NOT_ENABLED\n";
 }
