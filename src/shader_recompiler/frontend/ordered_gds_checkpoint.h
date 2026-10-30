@@ -112,17 +112,6 @@ inline void RequireCompleteGcnWaveCheckpoints(
             capture.epoch != expected_epoch || !capture.site_pc) {
             throw std::invalid_argument("invalid or duplicate guest checkpoint capture slot");
         }
-        const auto match = std::find_if(verified_sites.begin(), verified_sites.end(),
-                                        [&](const auto& site) {
-                                            return site.site_pc == capture.site_pc;
-                                        });
-        if (match == verified_sites.end() ||
-            match->encoded_control != capture.encoded_control ||
-            match->destination_vgpr >= layout.vector_registers ||
-            std::count_if(verified_sites.begin(), verified_sites.end(),
-                          [&](const auto& site) { return site.site_pc == capture.site_pc; }) != 1) {
-            throw std::invalid_argument("guest checkpoint site is not uniquely decoded");
-        }
         seen[capture.logical_slot] = true;
         if (capture.flags == CaptureBypassFlags) {
             // A real S_ENDPGM wave has ALREADY completed, without touching
@@ -135,6 +124,17 @@ inline void RequireCompleteGcnWaveCheckpoints(
                 throw std::invalid_argument("forged GCN terminal-bypass checkpoint slot");
             }
             continue;
+        }
+        const auto match = std::find_if(verified_sites.begin(), verified_sites.end(),
+                                        [&](const auto& site) {
+                                            return site.site_pc == capture.site_pc;
+                                        });
+        if (match == verified_sites.end() ||
+            match->encoded_control != capture.encoded_control ||
+            match->destination_vgpr >= layout.vector_registers ||
+            std::count_if(verified_sites.begin(), verified_sites.end(),
+                          [&](const auto& site) { return site.site_pc == capture.site_pc; }) != 1) {
+            throw std::invalid_argument("guest checkpoint site is not uniquely decoded");
         }
         const std::size_t offset = std::size_t(capture.logical_slot) * layout.stride_bytes;
         GpuGcnWaveCheckpoint checkpoint{};
