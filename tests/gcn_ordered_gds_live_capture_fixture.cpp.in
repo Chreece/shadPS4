@@ -11,6 +11,10 @@
 
 using u32 = std::uint32_t;
 using u64 = std::uint64_t;
+namespace Shader::Gcn::OrderedGds {
+inline constexpr u32 GcnWaveLanes = 64;
+inline constexpr u32 GcnCheckpointAbiVersion = 2;
+}
 #define ASSERT_MSG(cond, ...) do { if (!(cond)) throw std::invalid_argument("invalid live ordered GDS wave state"); } while (false)
 
 enum class HwStage { Compute, Fragment };
@@ -80,7 +84,8 @@ struct Translator {
     IR::IREmitter ir;
     RuntimeInfo runtime_info;
     void RecordOrderedGdsCheckpoint(const IR::U32& site_pc,
-                                    const IR::U64& exec_mask);
+                                    const IR::U64& exec_mask,
+                                    u32 next_guest_pc, u32 destination_vgpr);
 };
 /* EXACT_LIVE_GCN_CHECKPOINT_HELPER */
 
@@ -88,8 +93,8 @@ int main() {
     Translator t;
     constexpr u32 pc = 0x4158;
     constexpr u64 mask = 0x8000000000000081ULL;
-    t.RecordOrderedGdsCheckpoint(t.ir.Imm32(pc), IR::U64{mask});
-    assert(t.ir.records.size() == 104 + 9 + 6);
+    t.RecordOrderedGdsCheckpoint(t.ir.Imm32(pc), IR::U64{mask}, 0x4160, 5);
+    assert(t.ir.records.size() == 104 + 9 + 6 + 11);
     for (const auto& record : t.ir.records) {
         assert(record.slot == 5u && record.lane == 7u);
     }
@@ -114,6 +119,14 @@ int main() {
     assert(r[116].value == 1u);
     assert(r[117].value == 0x81u);
     assert(r[118].value == 0x80000000u);
+    // The 11 live site-metadata words must preserve actual decoded PC,
+    // return PC, VDST and physical GPU wave slot; tag/flags stay invalid.
+    constexpr std::array<u32,11> expected_header{
+        0, pc, 0x4160, 5, 5, 104, 9, 64, 0, 0, 2};
+    for (u32 i = 0; i < expected_header.size(); ++i) {
+        const auto& h = r[119 + i];
+        assert(h.bank == 3 && h.index == i && h.value == expected_header[i]);
+    }
 
     // Same instrumentation works at a second real static site with a
     // different allocated-VGPR count, M0, SCC and guest EXEC mask.
@@ -124,8 +137,9 @@ int main() {
     t.runtime_info.hw.cs.workgroup_size = {64,1,1};
     t.ir.workgroup_index = 9;
     t.ir.local_invocation_index = 63;
-    t.RecordOrderedGdsCheckpoint(t.ir.Imm32(0x41d4), IR::U64{0x0000000200000100ULL});
-    assert(t.ir.records.size() - previous == 104 + 4 + 6);
+    t.RecordOrderedGdsCheckpoint(t.ir.Imm32(0x41d4), IR::U64{0x0000000200000100ULL},
+                                 0x41dc, 3);
+    assert(t.ir.records.size() - previous == 104 + 4 + 6 + 11);
     for (std::size_t n = previous; n < t.ir.records.size(); ++n) {
         assert(t.ir.records[n].slot == 9u && t.ir.records[n].lane == 63u);
     }
@@ -136,12 +150,20 @@ int main() {
     assert(t.ir.records[special + 3].value == 0u);
     assert(t.ir.records[special + 4].value == 0x100u);
     assert(t.ir.records[special + 5].value == 2u);
+    constexpr std::array<u32,11> expected_second_header{
+        0, 0x41d4, 0x41dc, 9, 3, 104, 4, 64, 0, 0, 2};
+    for (u32 i = 0; i < expected_second_header.size(); ++i) {
+        const auto& h = t.ir.records[special + 6 + i];
+        assert(h.bank == 3 && h.index == i && h.value == expected_second_header[i]);
+    }
 
     const auto before_error = t.ir.records.size();
     auto reject = [&](auto change) {
         change();
         bool threw = false;
-        try { t.RecordOrderedGdsCheckpoint(t.ir.Imm32(pc), IR::U64{mask}); }
+        try {
+            t.RecordOrderedGdsCheckpoint(t.ir.Imm32(pc), IR::U64{mask}, 0x4160, 3);
+        }
         catch (const std::invalid_argument&) { threw = true; }
         assert(threw && t.ir.records.size() == before_error);
     };
@@ -152,10 +174,20 @@ int main() {
     t.runtime_info.props.num_allocated_vgprs = 4;
     reject([&] { t.runtime_info.hw.cs.workgroup_size = {0,1,1}; });
     reject([&] { t.runtime_info.hw.cs.workgroup_size = {1025,1,1}; });
+    t.runtime_info.hw.cs.workgroup_size = {64,1,1};
+    t.runtime_info.props.num_allocated_vgprs = 4;
+    bool bad_decoded = false;
+    try { t.RecordOrderedGdsCheckpoint(t.ir.Imm32(pc), IR::U64{mask}, 0x4160, 4); }
+    catch (const std::invalid_argument&) { bad_decoded = true; }
+    assert(bad_decoded && t.ir.records.size() == before_error);
+    bad_decoded = false;
+    try { t.RecordOrderedGdsCheckpoint(t.ir.Imm32(pc), IR::U64{mask}, 7, 3); }
+    catch (const std::invalid_argument&) { bad_decoded = true; }
+    assert(bad_decoded && t.ir.records.size() == before_error);
     std::cout << "GDS_ORDERED_LIVE_REGISTER_CAPTURE=PASS "
                  "sgprs=104 vgprs=9/4 specials=6 "
                  "dynamic_m0_exec_vcc_scc=PASS two_sites=PASS "
-                 "physical_wave_slot_lane=PASS "
+                 "physical_wave_slot_lane=PASS decoded_site_header_invalid_auth=PASS "
                  "invalid_dimensions_rejected=PASS "
                  "GUEST_SHADER_GPU_WRITER_NOT_ENABLED\n";
 }
