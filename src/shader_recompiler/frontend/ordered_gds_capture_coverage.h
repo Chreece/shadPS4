@@ -92,9 +92,12 @@ public:
                     throw std::invalid_argument("incomplete EXEC/M0/VCC/SCC snapshot after IR passes");
                 }
             }
-            output.push_back({
-                site_pc, copies, copies * (ScalarCount + vgpr_count_ + SpecialCount),
-            });
+            const std::uint64_t total =
+                std::uint64_t(copies) * (ScalarCount + vgpr_count_ + SpecialCount);
+            if (total > std::numeric_limits<u32>::max()) {
+                throw std::invalid_argument("GCN checkpoint record count overflow");
+            }
+            output.push_back({site_pc, copies, static_cast<u32>(total)});
         }
         return output;
     }
