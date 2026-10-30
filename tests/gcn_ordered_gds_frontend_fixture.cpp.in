@@ -63,6 +63,14 @@ struct Translator {
     u32 source_value{};
     u32 written_value{};
     u32 written_reg{};
+    unsigned checkpoint_calls{};
+    u32 last_checkpoint_site{};
+    std::uint64_t last_checkpoint_exec{};
+    void RecordOrderedGdsCheckpoint(const IR::U32& site, const IR::U64& mask) {
+        ++checkpoint_calls;
+        last_checkpoint_site = site.value;
+        last_checkpoint_exec = mask.value;
+    }
     IR::U32 GetSrc(const Operand& op) { assert(op.code==9); return {source_value}; }
     void SetDst(const Operand& dst, IR::U32 v) {written_reg=dst.code; written_value=v.value;}
     void DS_ORDERED_COUNT(const GcnInst& inst);
@@ -90,6 +98,8 @@ int main() {
     assert(t.ir.recorded.m0==0x12340567u && t.ir.recorded.address==0x87654321u);
     assert(t.ir.recorded.exec_mask==0x8000000000000080ULL && t.ir.recorded.control==0x1304u);
     assert(t.ir.recorded.site_pc==0x4158u);
+    assert(t.checkpoint_calls==1 && t.last_checkpoint_site==0x4158u &&
+           t.last_checkpoint_exec==0x8000000000000080ULL);
     assert(t.info.ordered_gds_site_pcs.size()==1 && t.info.ordered_gds_site_pcs[0]==0x4158u);
     assert(t.info.ordered_gds_sites.size()==1);
     assert(t.info.ordered_gds_sites[0].pc==0x4158u &&
@@ -105,6 +115,8 @@ int main() {
     t.DS_ORDERED_COUNT(inst);
     assert(t.ir.count==2 && t.ir.recorded.control==0x0304u);
     assert(t.ir.recorded.site_pc==0x41d4u);
+    assert(t.checkpoint_calls==2 && t.last_checkpoint_site==0x41d4u &&
+           t.last_checkpoint_exec==0);
     assert(t.info.ordered_gds_site_pcs.size()==2 && t.info.ordered_gds_site_pcs[1]==0x41d4u);
     assert(t.info.ordered_gds_sites.size()==2);
     assert(t.info.ordered_gds_sites[1].pc==0x41d4u &&
@@ -141,7 +153,8 @@ int main() {
     // fabricate a third site even when a dynamic epoch executes it again.
     t.pc=0x41dcu;
     t.DS_ORDERED_COUNT(inst);
-    assert(t.ir.count==3 && t.info.ordered_gds_site_pcs.size()==2 &&
+    assert(t.ir.count==3 && t.checkpoint_calls==3 &&
+           t.info.ordered_gds_site_pcs.size()==2 &&
            t.info.ordered_gds_sites.size()==2);
-    std::cout<<"GDS_ORDERED_FRONTEND_EXTRACTED=PASS ops=3 sites=2 invalid_vdst_rejected=2 NO_GPU_WORK\n";
+    std::cout<<"GDS_ORDERED_FRONTEND_EXTRACTED=PASS ops=3 sites=2 invalid_vdst_rejected=2 checkpoint_called=3 NO_GPU_WORK\n";
 }
