@@ -4,6 +4,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <span>
 #include <utility>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "common/recursive_lock.h"
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
 #include "shader_recompiler/frontend/ordered_gds_checkpoint.h"
+#include "shader_recompiler/frontend/ordered_gds_dispatch.h"
 #include "shader_recompiler/frontend/ordered_gds_lds_checkpoint.h"
 #include "shader_recompiler/frontend/ordered_gds_legacy_packer.h"
 #include "common/shared_first_mutex.h"
@@ -33,6 +35,7 @@ namespace Vulkan {
 class GraphicsPipeline;
 class Runtime;
 class OcclusionQuery;
+class OrderedGdsEpochDeviceBuffers;
 
 class Rasterizer {
 public:
@@ -62,6 +65,16 @@ public:
 
     void DispatchDirect();
     void DispatchIndirect(VAddr address, u32 offset, u32 size);
+
+    // Allocate an exact per-dispatch set of independent VMA/Vulkan buffers for
+    // guest ordered-GDS capture and future resumption. The returned owner
+    // must be held until the resumed dispatch completes. It creates no
+    // shader, never guesses wave rank, and never enables the guest opcode.
+    [[nodiscard]] std::unique_ptr<OrderedGdsEpochDeviceBuffers>
+    AllocateOrderedGdsEpochBuffers(
+        Shader::Gcn::OrderedGds::DispatchExtent groups,
+        Shader::Gcn::OrderedGds::DispatchExtent local_threads,
+        u32 allocated_vgprs, u32 guest_shared_lds_bytes);
 
     // Staged Vulkan capture/readback and result upload API. GPU packet-writing,
     // guest-wave ordering and shader continuation are intentionally not enabled.
