@@ -25,6 +25,7 @@ public:
     static constexpr u32 SpecialCount = 6;
     static constexpr u32 SiteMetadataCount = 11;
     static constexpr u32 PacketWordCount = GpuCapturePacketDwords;
+    static constexpr u32 AuthIdentityCount = 3;
 
     struct SiteSummary {
         u32 site_pc{};
@@ -49,6 +50,7 @@ public:
     // bank2=M0,VCCLO,VCCHI,SCC,EXECLO,EXECHI (indexes 0..5).
     // bank3=11 decoded-site/physical-slot/incomplete-auth header fields.
     // bank4=16 actual GPU capture packet words, including zeroed auth.
+    // bank5=3 host-supplied epoch/token header fields (tag stays invalid).
     void Record(u32 pc, u32 bank, u32 index) {
         auto found = sites_.find(pc);
         if (found == sites_.end()) {
@@ -71,6 +73,9 @@ public:
             break;
         case 4:
             if (index < PacketWordCount) count = &c.packet[index];
+            break;
+        case 5:
+            if (index < AuthIdentityCount) count = &c.authority[index];
             break;
         default:
             break;
@@ -116,10 +121,16 @@ public:
                         "incomplete live GPU GDS capture packet after IR passes");
                 }
             }
+            for (const u32 count : c.authority) {
+                if (count != copies) {
+                    throw std::invalid_argument(
+                        "incomplete host epoch/token identity after GCN SSA passes");
+                }
+            }
             const std::uint64_t total =
                 std::uint64_t(copies) *
                 (ScalarCount + vgpr_count_ + SpecialCount + SiteMetadataCount +
-                 PacketWordCount);
+                 PacketWordCount + AuthIdentityCount);
             if (total > std::numeric_limits<u32>::max()) {
                 throw std::invalid_argument("GCN checkpoint record count overflow");
             }
@@ -136,6 +147,7 @@ private:
         std::array<u32, SpecialCount> special{};
         std::array<u32, SiteMetadataCount> site_metadata{};
         std::array<u32, PacketWordCount> packet{};
+        std::array<u32, AuthIdentityCount> authority{};
     };
     std::map<u32, Counters> sites_;
     u32 vgpr_count_{};
