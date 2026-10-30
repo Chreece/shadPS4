@@ -383,8 +383,12 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
         it.value() = std::make_unique<ComputePipeline>(instance, scheduler, desc_heap, profile,
                                                        *pipeline_cache, compute_key, *infos[0],
                                                        modules[0], sdata, false);
-        RegisterPipelineData(compute_key, sdata);
-        ++num_new_pipelines;
+        // The opt-in original-GCN first-pass probe is NOT a completed
+        // guest compute pipeline and must never be serialized as one.
+        if (!infos[0]->uses_ordered_gds) {
+            RegisterPipelineData(compute_key, sdata);
+            ++num_new_pipelines;
+        }
 
         if (EmulatorSettings.IsShaderCollect()) {
             auto& m = modules[0];
