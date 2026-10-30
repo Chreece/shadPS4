@@ -411,6 +411,18 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     ResetBindings(true);
 }
 
+std::unique_ptr<OrderedGdsEpochDeviceBuffers>
+Rasterizer::AllocateOrderedGdsEpochBuffers(
+    Shader::Gcn::OrderedGds::DispatchExtent groups,
+    Shader::Gcn::OrderedGds::DispatchExtent local_threads,
+    u32 allocated_vgprs, u32 guest_shared_lds_bytes) {
+    // The constructor rejects unbounded, partial-wave or unsupported LDS
+    // dimensions before it creates any GPU buffers. The caller owns these
+    // resources through the eventual second pass; no implicit game dispatch.
+    return std::make_unique<OrderedGdsEpochDeviceBuffers>(
+        instance, groups, local_threads, allocated_vgprs, guest_shared_lds_bytes);
+}
+
 std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
 Rasterizer::DownloadOrderedGdsPackets(const VideoCore::Buffer& device_capture,
                                       u64 source_offset, std::size_t packet_count) {
