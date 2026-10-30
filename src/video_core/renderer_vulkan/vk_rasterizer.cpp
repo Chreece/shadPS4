@@ -13,6 +13,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_occlusion_query.h"
+#include "shader_recompiler/frontend/ordered_gds_capture_coverage.h"
 #include "video_core/renderer_vulkan/vk_ordered_gds_transfer.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -479,8 +480,11 @@ Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
     // Guard before allocating, reading or creating an unbounded epoch.
     constexpr std::size_t CikMaximumLogicalWaves = 1u << 13;
     if (guest_created_waves == 0 || guest_created_waves > CikMaximumLogicalWaves ||
-        checkpoint_layout.waves != guest_created_waves) {
-        throw std::invalid_argument("unsupported CIK checkpoint/wave count");
+        checkpoint_layout.waves != guest_created_waves ||
+        checkpoint_layout.scalar_words != LiveCheckpointCoverage::ScalarCount) {
+        // The real translator captures *all* GCN S0..S103 at the
+        // instruction site, not a guessed SGPR allocation subset.
+        throw std::invalid_argument("unsupported CIK checkpoint/wave/SGPR layout");
     }
     // Every real guest packet, register and LDS source/destination must
     // remain independent until the resumed dispatch has consumed it.
