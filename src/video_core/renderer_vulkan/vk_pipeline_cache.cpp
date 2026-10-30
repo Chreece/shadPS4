@@ -10,6 +10,7 @@
 #include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
+#include "shader_recompiler/frontend/ordered_gds_capture_coverage.h"
 #include "shader_recompiler/frontend/ordered_gds_control_flow.h"
 #include "shader_recompiler/frontend/ordered_gds_dispatch.h"
 #include "shader_recompiler/info.h"
@@ -630,6 +631,36 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
 
     if (info.uses_ordered_gds) {
+        // Validate the REAL post-SSA/optimization IR, not merely that the
+        // unstructured GCN translator attempted to capture register values.
+        // Structured cloning is allowed only with a complete set per clone.
+        // This is prerequisite evidence for a future shader checkpoint
+        // writer; no Vulkan guest shader dispatch is enabled by this audit.
+        Shader::Gcn::OrderedGds::LiveCheckpointCoverage coverage(
+            info.ordered_gds_site_pcs, runtime_info.props.num_allocated_vgprs);
+        for (const Shader::IR::Block* const block : ir_program.blocks) {
+            for (const Shader::IR::Inst& ir_inst : block->Instructions()) {
+                if (ir_inst.GetOpcode() != Shader::IR::Opcode::OrderedGdsCheckpointRegister) {
+                    continue;
+                }
+                const auto site = ir_inst.Arg(0);
+                const auto bank = ir_inst.Arg(1);
+                const auto index = ir_inst.Arg(2);
+                const auto value = ir_inst.Arg(3);
+                ASSERT_MSG(site.IsImmediate() && bank.IsImmediate() &&
+                           index.IsImmediate() && !value.IsEmpty(),
+                           "Guest ordered GDS IR capture has incomplete operands");
+                coverage.Record(site.U32(), bank.U32(), index.U32());
+            }
+        }
+        for (const auto& result : coverage.RequireComplete()) {
+            LOG_WARNING(Render_Recompiler,
+                        "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: "
+                        "site={:#x}, copies={}, register_records={}; "
+                        "GPU checkpoint writer and guest shader re-entry still gated",
+                        result.site_pc, result.complete_copies,
+                        result.register_records);
+        }
         // Capture *static* guest instruction identities before the intentional
         // SPIR-V backend gate. These PC offsets are not dynamic wave ordering.
         using Shader::Gcn::OrderedGds::FlowKind;
