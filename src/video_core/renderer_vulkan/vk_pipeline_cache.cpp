@@ -799,6 +799,26 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
             }
         }
     }
+    // For unsupported ordered-GDS COMPUTE shaders, shader dumping may
+    // collect the ORIGINAL guest GCN first-pass SPIR-V without allowing any
+    // gameplay execution. Capture stops at DS_ORDERED_COUNT after writing
+    // genuine state and packet records; the normal compile below still
+    // rejects the opcode. This is universal diagnosis, never a title/hash
+    // exception, and does not dispatch any GPU shader or fake a counter.
+    if (info.uses_ordered_gds && info.hw_stage == HwStage::Compute &&
+        EmulatorSettings.IsDumpShaders()) {
+        auto capture_binding = binding; // Diagnostic must not mutate real bindings.
+        const auto capture_spv = Shader::Backend::SPIRV::EmitSPIRVOrderedGdsCapturePass(
+            profile, runtime_info, ir_program, capture_binding);
+        DumpShader(capture_spv, info.pgm_hash, info.hw_stage, perm_idx,
+                   "pr117-capture.spv");
+        LOG_WARNING(Render_Recompiler,
+                    "PR117 real GCN capture-only candidate: hash={:#x}, words={}, "
+                    "decoded_sites={}; SPIR-V dump only, no GPU dispatch or "
+                    "guest continuation; normal ordered opcode still gated",
+                    info.pgm_hash, capture_spv.size(), info.ordered_gds_sites.size());
+    }
+
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
     DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx, "spv");
 
