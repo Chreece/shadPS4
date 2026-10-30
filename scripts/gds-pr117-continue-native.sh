@@ -88,6 +88,7 @@ for compiler in g++ clang++-17; do
     grep -Fq 'ORDERED_GDS_GPU_PACKET_ROUNDTRIP=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_CIK_CAPTURE_PAYLOAD=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_CIK_M0_GUEST_ORDER=PASS' "$LOG/cpu-$name.log"
+    grep -Fq 'ORDERED_GDS_CHECKPOINT_CONTRACT=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_STATIC_FLOW=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_SPARSE_WAVE_COVERAGE=PASS' "$LOG/cpu-$name.log"
     grep -Fq 'ORDERED_GDS_GPU_SPARSE_PACKET=PASS' "$LOG/cpu-$name.log"
@@ -120,6 +121,16 @@ fi
 grep -Fq 'CikOrderedCountIncrement' \
     "$SRC/src/shader_recompiler/frontend/ordered_gds_legacy_packer.h" || {
     echo 'MISSING_LEGACY_GCN_EXEC_COUNT_SEMANTICS'
+    exit 12
+}
+grep -Fq 'RequireCompleteGcnWaveCheckpoints(state, captures, checkpoint_layout, epoch,' \
+    "$SRC/src/video_core/renderer_vulkan/vk_rasterizer.cpp" || {
+    echo 'CIK_GUEST_REGISTERS_CHECKPOINT_VALIDATION_MISSING'
+    exit 12
+}
+grep -Fq 'DownloadCheckpoint(' \
+    "$SRC/src/video_core/renderer_vulkan/vk_ordered_gds_transfer.h" || {
+    echo 'CIK_GPU_REGISTER_STATE_READBACK_NOT_IMPLEMENTED'
     exit 12
 }
 grep -Fq 'ValidatePhysicalGdsWrites(updates)' \
