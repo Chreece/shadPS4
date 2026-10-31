@@ -18,6 +18,7 @@
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/texture_cache/host_compatibility.h"
+#include "video_core/texture_cache/compatible_layer_growth.h"
 #include "video_core/texture_cache/texture_cache.h"
 #include "video_core/texture_cache/tile_manager.h"
 
@@ -340,6 +341,23 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
         // Size and resources are greater, expand the image.
         if (image_info.type == cache_image.info.type &&
             image_info.resources > cache_image.info.resources) {
+            return {ExpandImage(image_info, cache_image_id), -1, -1};
+        }
+
+        // Guest 1D and layered 2D textures can be different views of the
+        // same padded 2D Vulkan backing. The original 1D layer remains live
+        // on the GPU; preserve it via ExpandImage's RefreshImage + CopyImage
+        // instead of invalidating that data or returning a null image.
+        // This is allowed only when every per-layer storage attribute matches.
+        if (TextureOverlap::CanExpandColor1DToColor2DLayers(
+                image_info, cache_image.info, AmdGpu::ImageType::Color1D,
+                AmdGpu::ImageType::Color2D)) {
+            LOG_INFO(Render_Vulkan,
+                     "TEXTURE_1D_TO_2D_SAME_STORAGE_EXPANSION address={:#x} "
+                     "old_layers={} new_layers={} slice_bytes={} source_gpu_modified={}",
+                     image_info.guest_address, cache_image.info.resources.layers,
+                     image_info.resources.layers, cache_image.info.guest_size,
+                     True(cache_image.flags & ImageFlagBits::GpuModified));
             return {ExpandImage(image_info, cache_image_id), -1, -1};
         }
 
