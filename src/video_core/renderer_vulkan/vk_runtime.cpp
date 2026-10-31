@@ -5,6 +5,7 @@
 #include "video_core/graphics_diagnostics.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_image_transfer.h"
+#include "video_core/renderer_vulkan/vk_indirect_read_sync.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -765,12 +766,10 @@ void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size
         .end = offset + size,
     };
 
-    constexpr static vk::AccessFlags2 READ_MASK =
-        vk::AccessFlagBits2::eIndexRead | vk::AccessFlagBits2::eVertexAttributeRead |
-        vk::AccessFlagBits2::eUniformRead | vk::AccessFlagBits2::eShaderRead |
-        vk::AccessFlagBits2::eColorAttachmentRead |
-        vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eTransferRead |
-        vk::AccessFlagBits2::eMemoryRead;
+    // Include VkDraw/DispatchIndirect argument consumption as a real GPU
+    // read. Otherwise a later GPU writer misses its write-after-read hazard.
+    // The same rule applies to ordinary graphics and ordered-GDS capture.
+    constexpr auto READ_MASK = TrackedBufferReadAccesses;
 
     constexpr static vk::AccessFlags2 WRITE_MASK =
         vk::AccessFlagBits2::eShaderWrite | vk::AccessFlagBits2::eColorAttachmentWrite |
