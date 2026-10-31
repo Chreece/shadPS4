@@ -19,7 +19,8 @@ assert "value ? std::countr_zero(value) : ~u32{0}" in s
 assert "case IR::Opcode::FindILsb32:" in gvn
 assert "HasUnconditionalPhiValue" in s
 assert "if (!HasUnconditionalPhiValue(inst))" in s
-assert 'inst->Arg(i) != first' in s
+assert 'for (std::size_t i = 1; i < current->NumArgs(); ++i)' in s
+assert 'if (current->Arg(i) != first)' in s
 assert "std::unordered_set<const IR::Inst*> visited;" in s
 assert "!visited.insert(current).second" in s
 assert "const IR::Inst* next = first.TryInst();" in s
