@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Universal GPU-backed descriptor-array experiment with original-GCN capture.
-# Isolated branch; original PR117 and native ELF preserved until test passes.
+# Universal GPU-backed mixed Color1D/Color2D visual-acceptance test.
+# Exact immutable native ELF; three older builds protected; no source changes.
 # No title-specific hacks, guessed GPU waterfall values, guest wave ranks,
 # packer counters, unverified replay or display/session modifications.
 # No game automation, SSH logout, pkill, display/network/Sunshine changes.
@@ -338,19 +338,11 @@ printf '%s  %s\n' "$BASE_ELF_SHA" "$BIN" > "$REPORT/native-elf-before.sha256"
 [[ -f "$ROOT/build/build.ninja" && -f "$ROOT/build/CMakeCache.txt" ]] || exit 4
 grep -Fq "CMAKE_HOME_DIRECTORY:INTERNAL=$SRC" "$ROOT/build/CMakeCache.txt" || exit 4
 STATE=VERIFY_ISOLATED_SOURCE_PIN_NO_CHECKOUT
-if [[ "$CURRENT" != "$PIN" ]]; then
-  GIT_TERMINAL_PROMPT=0 git -C "$SRC" fetch --no-tags \
-    https://github.com/Chreece/shadPS4.git "refs/heads/$BRANCH" \
-    > "$REPORT/fetch.log" 2>&1 || {
-       tail -70 "$REPORT/fetch.log"; exit 5
-  }
-  git -C "$SRC" cat-file -e "$PIN^{commit}" || exit 5
-  git -C "$SRC" merge-base --is-ancestor HEAD "$PIN" || {
-    echo "UNIVERSAL_SOURCE_DIVERGED"; exit 5;
-  }
-  git -C "$SRC" switch --quiet --detach "$PIN"
-fi
-[[ "$(git -C "$SRC" rev-parse HEAD)" == "$PIN" ]] || exit 5
+# The test never checks out or fetches code. The earlier preflight already
+# rejected any source revision other than the exact accepted build.
+[[ "$(git -C "$SRC" rev-parse HEAD)" == "$PIN" ]] || {
+  echo "SOURCE_PIN_CHANGED_DURING_PREFLIGHT_NO_GAME";exit 5;
+}
 [[ -z "$(git -C "$SRC" status --porcelain=v1 --untracked-files=no)" ]] || exit 5
 # Exact native ELF was fully linked in the previous build-only acceptance.
 # Refuse to continue if either the experimental or protected older ELF moved.
