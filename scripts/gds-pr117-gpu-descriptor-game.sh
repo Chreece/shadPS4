@@ -39,6 +39,7 @@ WORK="$ROOT/playtests/$TAG"
 ARCHIVE="$LOGS/$TAG.tar.gz"
 STATE=PRECHECK
 OBS_EXIT=NOT_RUN
+LIVE_GUARD_VERIFIED=NO
 mkdir -p "$REPORT" "$WORK"
 finish() {
   rc=$?
@@ -123,9 +124,11 @@ PYSUMMARY
   } > "$REPORT/result.txt"
   # Append outcomes to the shared shadPS4 trial diary, including captures
   # stopped before actual GPU re-entry. Never overwrite prior experiments.
-  python3 - "$PROJECT/diary/trials.jsonl" "$TAG" "$STATE" "$rc" "$OBS_EXIT" "$PIN" "$SHA" "$ARCHIVE" "$REPORT/capture.json" <<'PYDIARY' || true
-import datetime,fcntl,json,pathlib,sys
-target,tag,state,rc,observe,source,binary,archive,capture=sys.argv[1:]
+  python3 - "$PROJECT/diary/trials.jsonl" \
+    "$PROJECT/docs/emulator/TRIALS.jsonl" "$TAG" "$STATE" "$rc" "$OBS_EXIT" \
+    "$PIN" "$SHA" "$ARCHIVE" "$REPORT/capture.json" "$LIVE_GUARD_VERIFIED" "$REPORT" <<'PYDIARY' || true
+import datetime,fcntl,json,os,pathlib,sys
+primary,mirror,tag,state,rc,observe,source,binary,archive,capture,guard,report=sys.argv[1:]
 info={}
 try: info=json.loads(pathlib.Path(capture).read_text(encoding='utf-8'))
 except (OSError,ValueError): pass
@@ -134,16 +137,32 @@ row=dict(schema_version=2,record_id=tag,
  scope='universal_shadPS4',record_type='PR117_REAL_GPU_CAPTURE_AFTER_LIVE_XORG_GUARD',
  game_id='CUSA34384',source_commit=source,elf_sha256=binary,
  archive=pathlib.Path(archive).name,result=state,exit_code=int(rc),
- observer_code=str(observe),live_xorg_guard='INSTALLED_HASH_VERIFIED',
+ observer_code=str(observe),live_xorg_guard=('INSTALLED_HASH_VERIFIED' if guard=='YES' else 'NOT_VERIFIED'),
  gpu_capture=info.get('guest_capture_complete',False),
  captured_wave_log_lines=info.get('captured_wave_log_lines',0),
  shader_post_ds_reentry='NOT_IMPLEMENTED',
- decision='PENDING_REAL_GCN_GPU_EVIDENCE')
-p=pathlib.Path(target);p.parent.mkdir(parents=True,exist_ok=True)
-with p.open('a',encoding='utf8') as stream:
- fcntl.flock(stream,fcntl.LOCK_EX)
- stream.write(json.dumps(row,ensure_ascii=False,separators=(',',':'))+'\n')
- stream.flush();fcntl.flock(stream,fcntl.LOCK_UN)
+ decision=('REVIEW_NATIVE_GCN_GPU_EVIDENCE' if info.get('guest_capture_complete') else
+           'PENDING_REAL_GCN_GPU_EVIDENCE'))
+paths=[pathlib.Path(primary),pathlib.Path(mirror)]
+if paths[0]==paths[1]:raise SystemExit('UNIVERSAL_JOURNALS_NOT_DISTINCT')
+record=json.dumps(row,ensure_ascii=False,separators=(',',':'))+'\n'
+pathlib.Path(report,'universal-diary-entry.json').write_text(
+ json.dumps(row,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+streams=[]
+try:
+ for path in paths:
+  if path.is_symlink(): raise SystemExit('UNIVERSAL_JOURNAL_IS_SYMLINK: '+str(path))
+  path.parent.mkdir(parents=True,exist_ok=True)
+  stream=path.open('a+',encoding='utf-8')
+  streams.append(stream)
+ for stream in streams:fcntl.flock(stream.fileno(),fcntl.LOCK_EX)
+ for stream in streams:
+  stream.write(record);stream.flush();os.fsync(stream.fileno())
+ print('UNIVERSAL_JOURNALS_UPDATED=2')
+finally:
+ for stream in reversed(streams):
+  try:fcntl.flock(stream.fileno(),fcntl.LOCK_UN)
+  finally:stream.close()
 PYDIARY
   tar -C "$OUT" --exclude='full-console.log' \
       -czf "$ARCHIVE" evidence 2>"$REPORT/tar-errors.log"
@@ -440,13 +459,26 @@ grep -Fq 'Xorg :0 ' "$REPORT/xorg-pids-before.txt" || {
 pgrep -ax sunshine > "$REPORT/sunshine-pids-before.txt" || {
   echo "SUNSHINE_IS_NOT_RUNNING; NO_GAME"; exit 4;
 }
+LIVE_GUARD_VERIFIED=YES
 echo "LIVE_XORG_GUARD=VERIFIED_AND_RUNNING"
 ldd "$BIN" > "$REPORT/ldd.txt"
 ! grep -q 'not found' "$REPORT/ldd.txt" || {
   echo "RUNTIME_LIBRARY_MISSING"; exit 3;
 }
-if command -v pgrep >/dev/null && pgrep -x shadps4 > "$REPORT/existing-pids.txt"; then
-  echo "EXISTING_GAME_PROCESS_REFUSE_PARALLEL"; exit 3;
+# A stale zombie cannot submit GPU commands; use the same live-process
+# classification as the initial check, while refusing any active emulator.
+if pgrep -x shadps4 > "$REPORT/existing-pids.txt"; then
+  LIVE_GAME_PIDS=()
+  while IFS= read -r pid; do
+    [[ "$pid" =~ ^[0-9]+$ ]] || continue
+    state="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
+    [[ -z "$state" || "$state" == Z* || "$state" == X* ]] ||
+      LIVE_GAME_PIDS+=("$pid")
+  done < "$REPORT/existing-pids.txt"
+  if (( ${#LIVE_GAME_PIDS[@]} )); then
+    printf 'LIVE_EMULATOR_PID=%s\n' "${LIVE_GAME_PIDS[@]}" > "$REPORT/active-emulator-at-launch.txt"
+    echo "EXISTING_LIVE_GAME_PROCESS_REFUSE_PARALLEL"; exit 3
+  fi
 fi
 STATE=REUSE_X11_NO_CHANGES
 DISPLAY_OK=":0"
