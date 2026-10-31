@@ -95,7 +95,7 @@ PYDIARY
   echo "SSH_SESSION=OPEN"
 }
 trap finish EXIT
-for tool in git sha256sum python3 timeout xdpyinfo curl flock tar df awk ldd systemctl pgrep; do
+for tool in git sha256sum python3 timeout xdpyinfo curl flock tar df awk ldd systemctl pgrep cmp; do
   command -v "$tool" >/dev/null || { echo "MISSING=$tool"; exit 2; }
 done
 exec 9>"$LOGS/gds-pr117-real-guest-gpu-exclusive.lock"
@@ -134,6 +134,9 @@ systemctl is-active --quiet "$SUPERVISOR" || {
 systemctl is-active --quiet "$SUNSHINE" || {
   echo "SUNSHINE_NOT_ACTIVE; NO_GAME"; exit 4;
 }
+systemctl is-active --quiet sunshine-amdgpu-reset-watch.service || {
+  echo "AMDGPU_RESET_WATCHER_NOT_ACTIVE; NO_GAME"; exit 4;
+}
 systemctl show "$SUPERVISOR" -p ActiveState -p MainPID -p ExecStart \
     > "$REPORT/supervisor-before.txt"
 systemctl show "$SUNSHINE" -p ActiveState -p MainPID \
@@ -143,6 +146,9 @@ grep -Fq "$GUARD" "$REPORT/supervisor-before.txt" || {
 }
 pgrep -ax Xorg > "$REPORT/xorg-pids-before.txt" || {
   echo "XORG_IS_NOT_RUNNING; NO_GAME"; exit 4;
+}
+grep -Fq 'Xorg :0 ' "$REPORT/xorg-pids-before.txt" || {
+  echo "HEADLESS_XORG_DISPLAY_ZERO_NOT_RUNNING; NO_GAME"; exit 4;
 }
 pgrep -ax sunshine > "$REPORT/sunshine-pids-before.txt" || {
   echo "SUNSHINE_IS_NOT_RUNNING; NO_GAME"; exit 4;
@@ -156,16 +162,12 @@ if command -v pgrep >/dev/null && pgrep -x shadps4 > "$REPORT/existing-pids.txt"
   echo "EXISTING_GAME_PROCESS_REFUSE_PARALLEL"; exit 3;
 fi
 STATE=REUSE_X11_NO_CHANGES
-DISPLAY_OK=""
-for candidate in "$(printenv DISPLAY || true)" :0 :1 :2; do
-  [[ -n "$candidate" ]] || continue
-  if DISPLAY="$candidate" timeout 4 xdpyinfo -display "$candidate" \
+DISPLAY_OK=":0"
+if ! DISPLAY=:0 timeout 4 xdpyinfo -display :0 \
        >"$REPORT/display-check.log" 2>&1; then
-    DISPLAY_OK="$candidate"
-    break
-  fi
-done
-[[ -n "$DISPLAY_OK" ]] || { echo "NO_ACCESSIBLE_X11_DISPLAY"; exit 4; }
+  echo "VERIFIED_XORG_ZERO_IS_NOT_ACCESSIBLE; NO_GAME"
+  exit 4
+fi
 export DISPLAY="$DISPLAY_OK"
 {
   echo "DISPLAY=$DISPLAY"
