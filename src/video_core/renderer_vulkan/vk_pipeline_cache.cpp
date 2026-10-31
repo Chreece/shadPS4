@@ -670,7 +670,12 @@ void PipelineCache::InitializeDescriptorReader(Shader::Info& info) {
             return false;
         }
         if (buffer_cache.IsRegionGpuModified(address, size)) {
-            buffer_cache.ReadMemory(address, size, false, false, true);
+            // PR117 BufferCache::ReadMemory(device_addr, size, is_write,
+            // assume_locks) is synchronous. In newer upstream the fourth
+            // parameter is async and the fifth is assume_locks. Calling
+            // the four-argument API with assume_locks=true here preserves
+            // the intended GPU-thread readback without resubmitting work.
+            buffer_cache.ReadMemory(address, size, false, true);
         }
         memory->CopySparseMemory(address, static_cast<u8*>(destination), size);
         return true;
