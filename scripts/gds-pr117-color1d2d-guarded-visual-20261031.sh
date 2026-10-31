@@ -123,6 +123,37 @@ with src.open(encoding="utf-8",errors="replace") as stream:
                 if signature not in sample_keys[key] and len(samples[key])<32:
                     sample_keys[key].add(signature)
                     samples[key].append(line[:1200].rstrip())
+# Separate metrics from the normal GDS capture gate: a visual trial succeeds
+# only by actual sampled binding evidence and visible nonblack screenshots.
+images=collections.Counter()
+max_incompatible={}
+sample_regex=re.compile(
+ r"IMAGE_DESCRIPTOR_ARRAY_MISMATCH shader=0x([0-9a-fA-F]+) table_size=([0-9]+) incompatible=([0-9]+)")
+compatible=re.compile(
+ r"GUEST_COLOR1D_COLOR2D_SAMPLED_VK2D_COMPATIBLE shader=0x([0-9a-fA-F]+) table=([0-9]+) remaining_invalid=([0-9]+)")
+with src.open(encoding='utf-8',errors='replace') as stream:
+    for line in stream:
+        m=sample_regex.search(line)
+        if m:
+            k=m.group(1).lower()
+            count=int(m.group(3))
+            images[k]+=1
+            previous=max_incompatible.get(k)
+            max_incompatible[k]=count if previous is None else max(previous,count)
+        m=compatible.search(line)
+        if m:
+            k=m.group(1).lower()
+            key='mixed_compatible_'+k
+            images[key]+=1
+            max_incompatible[key]=int(m.group(3))
+(dst/'real-image-binding-evidence.json').write_text(json.dumps({
+ "mixed_1d_2d_binding_events":dict(images),
+ "max_incompatible_or_remaining_invalid":max_incompatible,
+ "prior_failure":"825/828 and 2308/2311 entries rejected, NOT this build",
+ "shader_bound_to_expected_type":"PENDING_REAL_RUN",
+ "visible_materials_and_input":"NOT_CLAIMED_FROM_LOGS"
+},indent=2)+'\n')
+
 (dst/"descriptor-array-gpu-summary.json").write_text(json.dumps({
     "source":"unabridged native game console on user's host",
     "counts":{k:counts[k] for k in checks},
@@ -194,6 +225,27 @@ PYDIARY
   echo "SSH_SESSION=OPEN"
 }
 trap finish EXIT
+# Syntax-check ALL embedded Python before any source/build/game action.
+# Bash -n checks heredocs as shell syntax but cannot compile their Python.
+STATE=ALL_PYTHON_HEREDOCS_SYNTAX
+python3 - "$0" <<'PYSELF'
+import ast,pathlib,re,sys
+script=pathlib.Path(sys.argv[1]).read_text(encoding='utf8')
+pattern=re.compile(r"<{2}'(PY[A-Z0-9_]*)'[ \t]*\n")
+checked=[]
+for match in pattern.finditer(script):
+    name=match.group(1)
+    end_marker='\n'+name+'\n'
+    end=script.find(end_marker,match.end())
+    if end<0:
+        raise SystemExit('UNCLOSED_PYTHON_HEREDOC='+name)
+    code=script[match.end():end]
+    ast.parse(code,filename=name)
+    checked.append(name)
+if len(checked)<6 or 'PYOBS' not in checked or 'PYWATCH' not in checked:
+    raise SystemExit('PYTHON_HEREDOC_VALIDATION_INCOMPLETE')
+print('EMBEDDED_PYTHON_SYNTAX=PASS COUNT='+str(len(checked)))
+PYSELF
 for tool in git sha256sum python3 timeout xdpyinfo curl flock tar df awk ldd systemctl pgrep cmp cmake ninja cp ps nice; do
   command -v "$tool" >/dev/null || { echo "MISSING=$tool"; exit 2; }
 done
