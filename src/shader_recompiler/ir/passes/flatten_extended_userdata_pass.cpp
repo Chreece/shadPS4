@@ -172,6 +172,8 @@ struct PassInfo {
 
     // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
+    u64 shader_hash{};
+    bool reported_gpu_dynamic_lane_srt{};
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
         auto it = pointer_uses.find(inst);
@@ -530,6 +532,62 @@ static bool HasUnconditionalPhiValue(const IR::Inst* inst) {
     return true;
 }
 
+// ReadFirstLane may be erased from a host SRT offset ONLY when its operand
+// is provably equal across every active guest lane. A GPU waterfall select,
+// divergent VGPR, ballot, arbitrary Phi, and resource-table read do NOT qualify.
+// The proof is deliberately narrower than the IR's general uniformity analysis:
+// only scalar host user-data and pure 32-bit operations over it are accepted.
+static bool IsHostUniformLaneValue(const IR::Value& value,
+                                   std::unordered_set<const IR::Inst*>& visiting, u32 depth) {
+    if (value.IsImmediate()) {
+        return value.Type() == IR::Type::U32;
+    }
+    const IR::Inst* inst = value.TryInst();
+    if (!inst || depth >= 64 || !visiting.insert(inst).second) {
+        return false;
+    }
+    bool uniform = false;
+    switch (inst->GetOpcode()) {
+    case IR::Opcode::GetUserData:
+        uniform = true;
+        break;
+    case IR::Opcode::Phi:
+        uniform = HasUnconditionalPhiValue(inst) &&
+                  IsHostUniformLaneValue(inst->Arg(0), visiting, depth + 1);
+        break;
+    case IR::Opcode::ReadFirstLane:
+        uniform = IsHostUniformLaneValue(inst->Arg(0), visiting, depth + 1);
+        break;
+    case IR::Opcode::IAdd32:
+    case IR::Opcode::ISub32:
+    case IR::Opcode::IMul32:
+    case IR::Opcode::ShiftLeftLogical32:
+    case IR::Opcode::ShiftRightLogical32:
+    case IR::Opcode::BitwiseAnd32:
+    case IR::Opcode::BitwiseOr32:
+    case IR::Opcode::BitwiseXor32:
+    case IR::Opcode::BitwiseNot32:
+    case IR::Opcode::UMin32:
+    case IR::Opcode::UMax32:
+    case IR::Opcode::BitFieldUExtract:
+    case IR::Opcode::FindILsb32:
+        uniform = inst->NumArgs() != 0;
+        for (u32 i = 0; uniform && i < inst->NumArgs(); ++i) {
+            uniform = IsHostUniformLaneValue(inst->Arg(i), visiting, depth + 1);
+        }
+        break;
+    default:
+        break;
+    }
+    visiting.erase(inst);
+    return uniform;
+}
+
+static bool IsHostUniformLaneValue(const IR::Value& value) {
+    std::unordered_set<const IR::Inst*> visiting;
+    return IsHostUniformLaneValue(value, visiting, 0);
+}
+
 static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
@@ -551,6 +609,8 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
         return true;
     case IR::Opcode::Phi:
         return HasUnconditionalPhiValue(inst);
+    case IR::Opcode::ReadFirstLane:
+        return IsHostUniformLaneValue(inst->Arg(0));
     default:
         return false;
     }
@@ -620,6 +680,30 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
             c.bsf(reg, reg);
             c.mov(ecx, ~u32{0}); // MOV does not alter BSF's ZF.
             c.cmovz(reg, ecx);
+        }
+        return true;
+    }
+    case IR::Opcode::ReadFirstLane: {
+        const IR::Value input = inst->Arg(0);
+        if (!IsHostUniformLaneValue(input)) {
+            if (!pass_info.reported_gpu_dynamic_lane_srt) {
+                pass_info.reported_gpu_dynamic_lane_srt = true;
+                const IR::Inst* producer = input.TryInst();
+                LOG_WARNING(Render_Recompiler,
+                            "GPU_DYNAMIC_SRT_REQUIRES_SHADER_RESOURCE_LOOKUP shader={:#x}, "
+                            "first_lane_operand={}",
+                            pass_info.shader_hash,
+                            producer ? magic_enum::enum_name(producer->GetOpcode())
+                                     : std::string_view("immediate"));
+            }
+            return false;
+        }
+        // The input is identical in all active lanes, so broadcast-first
+        // is exactly the scalar host-visible value, independent of EXEC.
+        if (input.IsImmediate()) {
+            c.mov(reg, input.U32());
+        } else {
+            ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, input));
         }
         return true;
     }
@@ -834,6 +918,7 @@ void SimplifyReadConstAddressAdd(IR::Inst& inst) {
 void FlattenExtendedUserdataPass(IR::Program& program) {
     auto& post_order = program.post_order_blocks;
     PassInfo pass_info;
+    pass_info.shader_hash = program.info.pgm_hash;
 
     // traverse at end and assign offsets to duplicate readconsts, using
     // vn_to_inst as the source
