@@ -117,6 +117,7 @@ public:
             return desc.sharp_fetch == existing.sharp_fetch &&
                    desc.descriptor_count == existing.descriptor_count &&
                    desc.is_array == existing.is_array &&
+                   desc.mixed_color1d_2d == existing.mixed_color1d_2d &&
                    desc.mip_fallback_mode == existing.mip_fallback_mode &&
                    desc.constant_mip_index == existing.constant_mip_index &&
                    desc.post_op == existing.post_op;
