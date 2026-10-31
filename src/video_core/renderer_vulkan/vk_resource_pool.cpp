@@ -153,7 +153,8 @@ vk::DescriptorSet DescriptorHeap::Commit(
         // A descriptor set can outlive its CPU-side cache entry while a GPU
         // command is in flight. Retain the full pool until its timeline tick.
         pending_pools.push_back({curr_pool, work_semaphore->CurrentTick(),
-                                 std::move(curr_pool_sizes)});
+                                 std::move(curr_pool_sizes), curr_pool_max_sets,
+                                 curr_pool_flags});
         auto reusable = std::find_if(pending_pools.begin(), pending_pools.end(),
                                     [&](const PendingPool& candidate) {
             return work_semaphore->IsFree(candidate.tick) && covers(candidate.sizes);
@@ -161,6 +162,8 @@ vk::DescriptorSet DescriptorHeap::Commit(
         if (reusable != pending_pools.end()) {
             curr_pool = reusable->pool;
             curr_pool_sizes = std::move(reusable->sizes);
+            curr_pool_max_sets = reusable->max_sets;
+            curr_pool_flags = reusable->flags;
             pending_pools.erase(reusable);
             const auto reset_result = device.resetDescriptorPool(curr_pool);
             ASSERT_MSG(reset_result == vk::Result::eSuccess,
@@ -227,17 +230,59 @@ vk::DescriptorSet DescriptorHeap::Commit(
     retire_pool();
     alloc_info.descriptorPool = curr_pool;
     if (try_batch() == 0) {
+        ASSERT_MSG(result == vk::Result::eErrorOutOfPoolMemory ||
+                       result == vk::Result::eErrorFragmentedPool,
+                   "Unexpected Vulkan error allocating fresh descriptor pool: {}",
+                   vk::to_string(result));
+        // The observed RADV failure persists even though the driver reports
+        // each requested descriptor type fitting within the fresh 8192-image
+        // pool. This is NOT proof the guest needs more descriptors. Compare
+        // one set allocated from a dedicated exact-layout pool, with maxSets=1
+        // and no UPDATE_AFTER_BIND flag (all normal pipeline layouts here use
+        // empty create flags; push descriptors never reach DescriptorHeap).
+        // Never guess a shader index or fabricate a descriptor set.
+        LOG_WARNING(Render_Vulkan,
+                    "PR117_DESCRIPTOR_EXACT_SET_PROBE layout={:#x} previous_maxSets={} "
+                    "previous_flags={} previous_error={}",
+                    set_key, curr_pool_max_sets,
+                    static_cast<u32>(static_cast<VkDescriptorPoolCreateFlags>(curr_pool_flags)),
+                    vk::to_string(result));
         for (const auto& need : required) {
             const auto it = std::find_if(curr_pool_sizes.begin(), curr_pool_sizes.end(),
                                          [&](const auto& p) { return p.type == need.type; });
-            LOG_ERROR(Render_Vulkan,
-                      "Descriptor allocation fresh-pool requirement type={} need={} capacity={}",
-                      vk::to_string(need.type), need.descriptorCount,
-                      it == curr_pool_sizes.end() ? 0u : it->descriptorCount);
+            LOG_WARNING(Render_Vulkan,
+                        "PR117_DESCRIPTOR_PREVIOUS_POOL type={} required={} capacity={}",
+                        vk::to_string(need.type), need.descriptorCount,
+                        it == curr_pool_sizes.end() ? 0u : it->descriptorCount);
         }
-        ASSERT_MSG(false,
-                   "Cannot allocate even one descriptor set from adequately sized fresh pool: {}",
-                   vk::to_string(result));
+
+        // Keep the old pool and any in-flight Vulkan sets until the GPU tick
+        // completes; do not recycle a possibly unsuitable pool here.
+        pending_pools.push_back({curr_pool, work_semaphore->CurrentTick(),
+                                 std::move(curr_pool_sizes), curr_pool_max_sets,
+                                 curr_pool_flags});
+        CreateDescriptorPool(required, true);
+        descriptor_sets.clear();
+        alloc_info.descriptorPool = curr_pool;
+        desc_sets.clear();
+        desc_sets.resize(1);
+        alloc_info.descriptorSetCount = 1;
+        result = device.allocateDescriptorSets(&alloc_info, desc_sets.data());
+        if (result != vk::Result::eSuccess) {
+            for (const auto& need : required) {
+                LOG_ERROR(Render_Vulkan,
+                          "PR117_DESCRIPTOR_DEDICATED_POOL type={} required={} "
+                          "maxSets={} flags={} result={}",
+                          vk::to_string(need.type), need.descriptorCount,
+                          curr_pool_max_sets,
+                          static_cast<u32>(static_cast<VkDescriptorPoolCreateFlags>(curr_pool_flags)),
+                          vk::to_string(result));
+            }
+            ASSERT_MSG(false,
+                       "Exact-layout one-set Vulkan descriptor allocation failed: {}",
+                       vk::to_string(result));
+        }
+        LOG_INFO(Render_Vulkan, "PR117_DESCRIPTOR_EXACT_SET_ALLOCATED layout={:#x}", set_key);
     }
     const auto desc_set = desc_sets.back();
     desc_sets.pop_back();
@@ -246,20 +291,32 @@ vk::DescriptorSet DescriptorHeap::Commit(
 }
 
 void DescriptorHeap::CreateDescriptorPool(
-    std::span<const vk::DescriptorPoolSize> minimum) {
-    const auto expanded = ExpandDescriptorPoolSizes<vk::DescriptorPoolSize>(
-        pool_sizes, minimum);
+    std::span<const vk::DescriptorPoolSize> minimum, bool dedicated_single_set) {
+    // Only the exact fall-back owner uses one set and no UPDATE_AFTER_BIND
+    // pool flag. Normal pipeline layouts have no update-after-bind bindings.
+    // Keep the existing general-purpose pool policy unchanged elsewhere.
+    const auto sizes = dedicated_single_set
+        ? ExactDescriptorPoolSizes<vk::DescriptorPoolSize>(minimum)
+        : ExpandDescriptorPoolSizes<vk::DescriptorPoolSize>(pool_sizes, minimum);
+    const u32 max_sets = dedicated_single_set ? 1u : descriptor_heap_count;
+    const vk::DescriptorPoolCreateFlags flags = dedicated_single_set
+        ? vk::DescriptorPoolCreateFlags{}
+        : vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind;
+    ASSERT_MSG(!dedicated_single_set || !sizes.empty(),
+               "A dedicated Vulkan descriptor pool needs actual layout resource counts");
     const vk::DescriptorPoolCreateInfo pool_info = {
-        .flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind,
-        .maxSets = descriptor_heap_count,
-        .poolSizeCount = static_cast<u32>(expanded.size()),
-        .pPoolSizes = expanded.data(),
+        .flags = flags,
+        .maxSets = max_sets,
+        .poolSizeCount = static_cast<u32>(sizes.size()),
+        .pPoolSizes = sizes.data(),
     };
     auto [pool_result, pool] = device.createDescriptorPool(pool_info);
     ASSERT_MSG(pool_result == vk::Result::eSuccess, "Failed to create descriptor pool: {}",
                vk::to_string(pool_result));
     curr_pool = pool;
-    curr_pool_sizes = expanded;
+    curr_pool_sizes = sizes;
+    curr_pool_max_sets = max_sets;
+    curr_pool_flags = flags;
 }
 
 } // namespace Vulkan

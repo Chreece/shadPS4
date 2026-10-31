@@ -68,6 +68,15 @@ int main() {
         expanded,std::vector<Size>{{1,827}}));
     assert(!Vulkan::PoolCoversDescriptorRequirements<Size>(
         expanded,std::vector<Size>{{4,1}}));
+    const std::vector<Size> observed{{1,828},{2,11},{3,3}};
+    const auto exact=Vulkan::ExactDescriptorPoolSizes<Size>(observed);
+    assert(exact.size()==observed.size());
+    assert(exact[0].descriptorCount==828 && exact[1].descriptorCount==11);
+    assert(Vulkan::PoolCoversDescriptorRequirements<Size>(exact,observed));
+    assert(exact[0].descriptorCount<baseline[0].descriptorCount);
+    assert(!Vulkan::PoolCoversDescriptorRequirements<Size>(
+        exact,std::vector<Size>{{1,829}}));
+    std::cout << "DESCRIPTOR_EXACT_LAYOUT_SINGLE_SET_POOL=PASS\n";
     std::cout << "DESCRIPTOR_SINGLE_SET_RUNTIME_LAYOUT_POOL_SIZING=PASS\n";
     std::cout << "DESCRIPTOR_BATCH_ADAPTIVE_GPU_ARRAY=PASS\n";
     std::cout << "DESCRIPTOR_POOL_ROLLOVER_AND_FRAGMENTATION=PASS\n";

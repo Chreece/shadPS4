@@ -51,6 +51,14 @@ std::vector<Size> ExpandDescriptorPoolSizes(std::span<const Size> baseline,
 }
 
 template <typename Size>
+std::vector<Size> ExactDescriptorPoolSizes(std::span<const Size> minimum) {
+    // The Vulkan layout's actual descriptor writes, one set, no baseline
+    // padding. Distinguish a driver/pool-configuration failure from a
+    // genuinely under-provisioned sampled-image allocation.
+    return std::vector<Size>(minimum.begin(), minimum.end());
+}
+
+template <typename Size>
 bool PoolCoversDescriptorRequirements(std::span<const Size> pool,
                                        std::span<const Size> required) {
     for (const auto& needed : required) {

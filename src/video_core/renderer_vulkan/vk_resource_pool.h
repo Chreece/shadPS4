@@ -78,7 +78,8 @@ public:
                              std::span<const vk::WriteDescriptorSet> writes);
 
 private:
-    void CreateDescriptorPool(std::span<const vk::DescriptorPoolSize> minimum = {});
+    void CreateDescriptorPool(std::span<const vk::DescriptorPoolSize> minimum = {},
+                              bool dedicated_single_set = false);
 
 private:
     vk::Device device;
@@ -87,10 +88,14 @@ private:
     std::span<const vk::DescriptorPoolSize> pool_sizes;
     vk::DescriptorPool curr_pool;
     std::vector<vk::DescriptorPoolSize> curr_pool_sizes;
+    u32 curr_pool_max_sets{};
+    vk::DescriptorPoolCreateFlags curr_pool_flags{};
     struct PendingPool {
         vk::DescriptorPool pool;
         u64 tick;
         std::vector<vk::DescriptorPoolSize> sizes;
+        u32 max_sets;
+        vk::DescriptorPoolCreateFlags flags;
     };
     std::deque<PendingPool> pending_pools;
     using DescSetBatch = boost::container::static_vector<vk::DescriptorSet, DescriptorSetBatch>;

@@ -155,6 +155,24 @@ assert "std::span<const vk::WriteDescriptorSet>{set_writes.data(), set_writes.si
 assert "ExpandDescriptorPoolSizes" in plan
 assert "PoolCoversDescriptorRequirements" in plan
 assert "DESCRIPTOR_SINGLE_SET_RUNTIME_LAYOUT_POOL_SIZING=PASS" in allocator_test
+# The driver returned OutOfPoolMemory despite 828 sampled images fitting
+# within the 8192 pool. Do not silently increase guessed resource counts.
+# Probe ONE exactly sized, non-update-after-bind pool as a separate attempt.
+assert "ExactDescriptorPoolSizes<vk::DescriptorPoolSize>(minimum)" in heap
+assert "dedicated_single_set ? 1u : descriptor_heap_count" in heap
+assert "vk::DescriptorPoolCreateFlags{}" in heap
+assert "CreateDescriptorPool(required, true)" in heap
+assert "PR117_DESCRIPTOR_EXACT_SET_PROBE" in heap
+assert "PR117_DESCRIPTOR_DEDICATED_POOL" in heap
+assert "PR117_DESCRIPTOR_EXACT_SET_ALLOCATED" in heap
+assert "ExactDescriptorPoolSizes" in plan
+assert "DESCRIPTOR_EXACT_LAYOUT_SINGLE_SET_POOL=PASS" in allocator_test
+graphics = source("src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp")
+compute = source("src/video_core/renderer_vulkan/vk_compute_pipeline.cpp")
+for normal_layout in (graphics, compute):
+    assert "vk::DescriptorSetLayoutCreateFlagBits{}" in normal_layout
+    assert "vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR" in normal_layout
+print("PR117_VULKAN_EXACT_LAYOUT_POOL_FALLBACK_FAIL_CLOSED=PASS")
 print("GPU_DESCRIPTOR_SINGLE_SET_MEASURED_REQUIREMENTS_AND_RECYCLING=PASS")
 
 print("GPU_DESCRIPTOR_BATCH_POOL_CAPACITY_AND_ADAPTIVE_RETRY=PASS")
