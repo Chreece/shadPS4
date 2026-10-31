@@ -13,7 +13,8 @@ OLD_PIN="7490a113ce79e4da84071fc808443162a5b8ec3b"
 INTERMEDIATE="c61b3b29d05990f3938190f9f1bd955a68d6be4e"
 PREVIOUS_PIN="763a37e8cbf604e52e85fb3bd62b6e769104ff4c"
 PREVIOUS_BRANCH_HEAD="d92ff10faaaa2441ab43df8c4f66821bc53b8afe"
-PIN="f90b3d008aaeb3322cebc057a0cc1ab91321d229"
+TESTED_PIN="f90b3d008aaeb3322cebc057a0cc1ab91321d229"
+PIN="23125557a5369d195f2c776784f097aef3745a44"
 BRANCH="feature/ordered-gds-wave-executor-20261029"
 SHA="9b4300c2666580fe9963eef8f74585e28cb5ad232d8a3c8aa05a732c32871674"
 OLD_SHA="$SHA"
@@ -122,8 +123,8 @@ done
 }
 CURRENT="$(git -C "$SRC" rev-parse HEAD)"
 [[ "$CURRENT" == "$OLD_PIN" || "$CURRENT" == "$INTERMEDIATE" ||
-   "$CURRENT" == "$PREVIOUS_PIN" ||
-    "$CURRENT" == "$PREVIOUS_BRANCH_HEAD" || "$CURRENT" == "$PIN" ]] || {
+   "$CURRENT" == "$PREVIOUS_PIN" || "$CURRENT" == "$PREVIOUS_BRANCH_HEAD" ||
+   "$CURRENT" == "$TESTED_PIN" || "$CURRENT" == "$PIN" ]] || {
   echo "UNKNOWN_ISOLATED_SOURCE_REVISION=$CURRENT; NO_CHANGES"; exit 3;
 }
 [[ -z "$(git -C "$SRC" status --porcelain=v1 --untracked-files=no)" ]] || {
@@ -138,8 +139,21 @@ fi
 # Refuse another GPU run or source/build mutation if that process remains.
 STATE=CHECK_UNREAPED_GAME_PROCESS
 if pgrep -x shadps4 > "$REPORT/prior-game-pids.txt"; then
-  ps -eo pid,ppid,stat,wchan:32,args > "$REPORT/processes-at-refusal.txt"
-  echo "PREVIOUS_OR_CONCURRENT_EMULATOR_STILL_ALIVE; NO_ACTION"; exit 4
+  # pgrep includes exited zombies (Z), which cannot execute GPU commands.
+  LIVE_GAME_PIDS=()
+  while IFS= read -r pid; do
+    [[ "$pid" =~ ^[0-9]+$ ]] || continue
+    state="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
+    [[ -z "$state" || "$state" == Z* || "$state" == X* ]] ||
+      LIVE_GAME_PIDS+=("$pid")
+  done < "$REPORT/prior-game-pids.txt"
+  if (( ${#LIVE_GAME_PIDS[@]} )); then
+    ps -eo pid,ppid,stat,wchan:32,args > "$REPORT/processes-at-refusal.txt"
+    printf 'LIVE_EMULATOR_PID=%s\n' "${LIVE_GAME_PIDS[@]}" > "$REPORT/live-game-pids.txt"
+    echo "PREVIOUS_OR_CONCURRENT_EMULATOR_STILL_ALIVE; NO_ACTION"
+    exit 4
+  fi
+  echo "PREVIOUS_EMULATOR_PIDS_ALREADY_EXITED=YES"
 fi
 STATE=PRESERVE_PREVIOUS_NATIVE_ELF
 BASE_ELF_SHA="$(sha256sum "$BIN" | awk '{print $1}')"
@@ -188,6 +202,12 @@ grep -Fq 'DYNAMIC_GPU_PHI_STAYS_ON_GPU=PASS' \
   "$REPORT/srt-source-tests.log" || exit 6
 grep -Fq 'ORDERED_GDS_GUEST_COUNTER_NOT_FABRICATED=PASS' \
   "$REPORT/srt-source-tests.log" || exit 6
+grep -Fq 'HOST_LANE_UNIFORM_ONLY_GPU_DEPENDENT_SRT_STAYS_GPU=PASS' \
+  "$REPORT/srt-source-tests.log" || exit 6
+grep -Fq 'ZOMBIE_NOT_MISCLASSIFIED_AS_LIVE=PASS' \
+  "$REPORT/gpu-observer-tests.log" || exit 6
+grep -Fq 'GENERIC_X11_SCREENSHOT_FALLBACK=PASS' \
+  "$REPORT/gpu-observer-tests.log" || exit 6
 SRT_XBYAK_INCLUDE=""
 for dir in "$SRC/externals/xbyak" "$SRC/externals/xbyak/include" \
            /usr/local/include /usr/include; do
