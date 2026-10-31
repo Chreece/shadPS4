@@ -30,10 +30,29 @@ assert "ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, common))" in s
 start=s.index("static bool IsAllowedOffsetInstruction(")
 end=s.index("static bool ComputeOffset(",start)
 allowed=s[start:end]
-for x in ("case IR::Opcode::ReadLane:", "case IR::Opcode::ReadFirstLane:",
-          "case IR::Opcode::Ballot:", "case IR::Opcode::SelectU32:"):
+for x in ("case IR::Opcode::ReadLane:", "case IR::Opcode::Ballot:",
+          "case IR::Opcode::SelectU32:"):
     assert x not in allowed
 assert "return HasUnconditionalPhiValue(inst)" in allowed
+# ReadFirstLane is safe on the host only when every active lane necessarily
+# holds the same scalar GetUserData-derived value. GPU-dependent index paths
+# stay GPU-only; no selected waterfall predecessor may be guessed.
+proof=s[s.index("static bool IsHostUniformLaneValue("):start]
+assert "case IR::Opcode::GetUserData:" in proof
+assert "case IR::Opcode::ReadFirstLane:" in proof
+assert "HasUnconditionalPhiValue(inst)" in proof
+assert "!visiting.insert(inst).second" in proof
+assert "depth >= 64" in proof
+for disallowed in ("case IR::Opcode::ReadConst:", "case IR::Opcode::ReadConstBuffer:",
+                   "case IR::Opcode::ReadLane:", "case IR::Opcode::Ballot:",
+                   "case IR::Opcode::GetVectorRegister:", "case IR::Opcode::GetExec:"):
+    assert disallowed not in proof
+assert "case IR::Opcode::ReadFirstLane:\\n        return IsHostUniformLaneValue(inst->Arg(0));" in allowed
+compute=s[s.index("static bool ComputeOffset(", end):s.index("static inline bool PushPtr(")]
+assert "if (!IsHostUniformLaneValue(input))" in compute
+assert "GPU_DYNAMIC_SRT_REQUIRES_SHADER_RESOURCE_LOOKUP" in compute
+assert "ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, input))" in compute
+assert "pass_info.shader_hash = program.info.pgm_hash;" in s
 f=s[s.index("static bool EmitComputeOffsetShiftLeftLogical32("):
     s.index("static bool EmitComputeOffsetShiftRightLogical32(")]
 assert "c.shl(reg, inst->Arg(0).U32());" not in f
@@ -42,6 +61,6 @@ assert "c.mov(reg, inst->Arg(0).U32());" in f
 assert "c.shl(reg, cl);" in f
 assert "ASSERT_MSG(!program.info.uses_ordered_gds" in (
     root/"src/shader_recompiler/backend/spirv/emit_spirv.cpp").read_text()
-print("UNIVERSAL_HOST_SRT_FINDILSB_AND_CONSTANT_SHIFT=PASS")
+print("UNIVERSAL_HOST_SRT_FINDILSB_AND_CONSTANT_SHIFT=PASS")\nprint("HOST_LANE_UNIFORM_ONLY_GPU_DEPENDENT_SRT_STAYS_GPU=PASS")
 print("DYNAMIC_GPU_PHI_STAYS_ON_GPU=PASS")
 print("ORDERED_GDS_GUEST_COUNTER_NOT_FABRICATED=PASS")
