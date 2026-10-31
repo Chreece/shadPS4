@@ -116,12 +116,18 @@ def pr117_live_xorg_pid():
                 continue
     except OSError:
         return -1  # Unknown state: fail closed and preserve session.
+    # Stale X11 socket files must not suppress legitimate recovery.
+    # A connectable X11 socket is evidence of a currently running server.
     try:
-        if Path("/tmp/.X11-unix/X0").exists():
-            return -1  # A still-live socket or lookup race is not proof of death.
+        import socket
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(0.4)
+            client.connect("/tmp/.X11-unix/X0")
+            return -1
+    except (FileNotFoundError, ConnectionRefusedError):
+        return 0
     except OSError:
-        return -1
-    return 0
+        return -1  # Timed-out/ambiguous socket: preserve possibly live Xorg.
 
 
 '''
