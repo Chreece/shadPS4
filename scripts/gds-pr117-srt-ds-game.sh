@@ -206,7 +206,14 @@ for compiler in g++ clang++-17; do
     }
     label=gcc
     [[ "$compiler" != clang++-17 ]] || label=clang
-    "$compiler" -std=c++23 -O2 -UNDEBUG -Wall -Wextra -Werror -pedantic \
+    # Clang 17 cannot instantiate GCC 14 libstdc++'s C++23 tuple-like
+    # constructor for Xbyak's unordered_map use (LLVM issue #97842).
+    # This standalone executable JIT fixture uses C++20 facilities only;
+    # keep GCC's C++23 coverage and run Clang's identical JIT checks in C++20.
+    jit_std=c++23
+    [[ "$compiler" != clang++-17 ]] || jit_std=c++20
+    echo "SRT_JIT_COMPILER=$compiler STANDARD=$jit_std"
+    "$compiler" -std="$jit_std" -O2 -UNDEBUG -Wall -Wextra -Werror -pedantic \
        -I"$SRT_XBYAK_INCLUDE" "$SRC/tests/srt_host_offset_jit.cpp" \
        -o "$REPORT/srt-jit-$label" >"$REPORT/jit-$label-build.log" 2>&1 || {
          tail -100 "$REPORT/jit-$label-build.log"; exit 6
