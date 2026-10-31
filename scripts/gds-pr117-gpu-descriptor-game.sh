@@ -19,7 +19,8 @@ PREVIOUS_SOURCE_PIN="23125557a5369d195f2c776784f097aef3745a44"
 PROVEN_NATIVE_SOURCE_PIN="e7614336c408e3ea7f95ad51e6f32392b0b4b5f9"
 LAST_FAILED_SOURCE_PIN="8497626cba5a5850b87c17abdb5106625788d03f"
 LAST_TESTED_SOURCE_PIN="11ca38bc8afcb0709d1f85f55919dfcb26dc2d03"
-PIN="d9a5c4ca3b1a4e4cfff3e02f91cde00baf8c19c0"
+PREVIOUS_ALLOCATOR_SOURCE_PIN="d9a5c4ca3b1a4e4cfff3e02f91cde00baf8c19c0"
+PIN="ff916b8dc0cb12ae552d84491db26ffbd15e7556"
 BRANCH="feature/pr117-gpu-descriptor-tables-20261031"
 SHA="9b4300c2666580fe9963eef8f74585e28cb5ad232d8a3c8aa05a732c32871674"
 OLD_SHA="$SHA"
@@ -169,7 +170,8 @@ CURRENT="$(git -C "$SRC" rev-parse HEAD)"
    "$CURRENT" == "$PREVIOUS_SOURCE_PIN" ||
    "$CURRENT" == "$PROVEN_NATIVE_SOURCE_PIN" ||
    "$CURRENT" == "$LAST_FAILED_SOURCE_PIN" ||
-   "$CURRENT" == "$LAST_TESTED_SOURCE_PIN" || "$CURRENT" == "$PIN" ]] || {
+   "$CURRENT" == "$LAST_TESTED_SOURCE_PIN" ||
+   "$CURRENT" == "$PREVIOUS_ALLOCATOR_SOURCE_PIN" || "$CURRENT" == "$PIN" ]] || {
   echo "UNKNOWN_ISOLATED_SOURCE_REVISION=$CURRENT; NO_CHANGES"; exit 3;
 }
 [[ -z "$(git -C "$SRC" status --porcelain=v1 --untracked-files=no)" ]] || {
@@ -267,6 +269,8 @@ grep -Fq 'PR117_BUFFER_CACHE_GPU_READBACK_ABI_AND_SYNCHRONIZATION=PASS' \
   "$REPORT/descriptor-array-source-tests.log" || exit 6
 grep -Fq 'GPU_DESCRIPTOR_BATCH_POOL_CAPACITY_AND_ADAPTIVE_RETRY=PASS' \
   "$REPORT/descriptor-array-source-tests.log" || exit 6
+grep -Fq 'GPU_DESCRIPTOR_SINGLE_SET_MEASURED_REQUIREMENTS_AND_RECYCLING=PASS' \
+  "$REPORT/descriptor-array-source-tests.log" || exit 6
 grep -Fq 'VULKAN_NONUNIFORM_IMAGE_DESCRIPTOR_AND_PERSISTENT_POINTERS=PASS' \
   "$REPORT/descriptor-array-source-tests.log" || exit 6
 grep -Fq 'PR117_ORDERED_GDS_NORMAL_EXECUTION_STILL_FAIL_CLOSED=PASS' \
@@ -292,7 +296,8 @@ for compiler in g++ clang++-17; do
   for expected in \
     'DESCRIPTOR_BATCH_ADAPTIVE_GPU_ARRAY=PASS' \
     'DESCRIPTOR_POOL_ROLLOVER_AND_FRAGMENTATION=PASS' \
-    'UNEXPECTED_VULKAN_ERROR_FAIL_CLOSED=PASS'; do
+    'UNEXPECTED_VULKAN_ERROR_FAIL_CLOSED=PASS' \
+    'DESCRIPTOR_SINGLE_SET_RUNTIME_LAYOUT_POOL_SIZING=PASS'; do
     grep -Fq "$expected" "$REPORT/descriptor-batch-$label-run.log" || exit 6
   done
   rm -f -- "$REPORT/descriptor-batch-$label"
