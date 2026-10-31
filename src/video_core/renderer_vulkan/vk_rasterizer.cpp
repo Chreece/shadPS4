@@ -1576,6 +1576,18 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     // entries or resolve a divergent guest lane index on the CPU.
     for (const auto& image_desc : stage.images) {
         const u32 num_bindings = image_desc.NumBindings(stage);
+        // The representative is the first valid T# in the current guest
+        // descriptor table. A table can contain hundreds of entries; do not
+        // rescan it for every element of every draw or dispatch.
+        const bool is_descriptor_table = image_desc.descriptor_count != 0;
+        const auto representative =
+            is_descriptor_table ? image_desc.GetSharp(stage) : AmdGpu::Image{};
+        u32 incompatible_count = 0;
+        u32 view_mismatch_count = 0;
+        u32 integer_mismatch_count = 0;
+        u32 conversion_mismatch_count = 0;
+        u32 first_incompatible_index = 0;
+        AmdGpu::ImageType first_incompatible_view = AmdGpu::ImageType::Invalid;
         for (u32 i = 0; i < num_bindings; ++i) {
             const auto tsharp =
                 image_desc.GetSharp(stage, image_desc.descriptor_count != 0 ? i : 0);
@@ -1585,16 +1597,26 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
             const auto data_fmt = tsharp.GetDataFmt();
             const auto num_fmt = tsharp.GetNumberFmt();
-            if (image_desc.descriptor_count != 0 && tsharp) {
-                const auto representative = image_desc.GetSharp(stage);
-                if (tsharp.GetViewType(image_desc.is_array) !=
-                        representative.GetViewType(image_desc.is_array) ||
+            if (is_descriptor_table && tsharp) {
+                const auto view = tsharp.GetViewType(image_desc.is_array);
+                const bool view_mismatch =
+                    view != representative.GetViewType(image_desc.is_array);
+                const bool integer_mismatch =
                     AmdGpu::IsInteger(num_fmt) !=
-                        AmdGpu::IsInteger(representative.GetNumberFmt()) ||
-                    tsharp.GetNumberConversion() != representative.GetNumberConversion()) {
-                    LOG_WARNING(Render_Vulkan,
-                                "Incompatible image descriptor array element {} in shader {:#x}",
-                                i, stage.pgm_hash);
+                    AmdGpu::IsInteger(representative.GetNumberFmt());
+                const bool conversion_mismatch =
+                    tsharp.GetNumberConversion() != representative.GetNumberConversion();
+                if (view_mismatch || integer_mismatch || conversion_mismatch) {
+                    if (incompatible_count == 0) {
+                        first_incompatible_index = i;
+                        first_incompatible_view = view;
+                    }
+                    ++incompatible_count;
+                    view_mismatch_count += view_mismatch;
+                    integer_mismatch_count += integer_mismatch;
+                    conversion_mismatch_count += conversion_mismatch;
+                    // Preserve the Vulkan typed-image invariant: neither
+                    // alias a different view type nor manufacture a T#.
                     image_bindings.emplace_back(std::piecewise_construct, std::tuple{},
                                                 std::tuple{});
                     continue;
@@ -1637,6 +1659,20 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 image->binding.force_general |= image_desc.is_written;
             }
             image->binding.is_bound = 1u;
+        }
+        if (incompatible_count != 0) {
+            // One diagnostic per table binding, not one log write per
+            // incompatible element. The result remains a null descriptor.
+            // Include the actual guest T# view types for follow-up fixes.
+            LOG_WARNING(Render_Vulkan,
+                        "IMAGE_DESCRIPTOR_ARRAY_MISMATCH shader={:#x} table_size={} "
+                        "incompatible={} first_index={} reference_view={} first_view={} "
+                        "view_mismatches={} integer_mismatches={} conversion_mismatches={}",
+                        stage.pgm_hash, num_bindings, incompatible_count,
+                        first_incompatible_index,
+                        static_cast<u32>(representative.GetViewType(image_desc.is_array)),
+                        static_cast<u32>(first_incompatible_view), view_mismatch_count,
+                        integer_mismatch_count, conversion_mismatch_count);
         }
     }
 
