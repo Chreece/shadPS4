@@ -140,8 +140,8 @@ print("GPU_DESCRIPTOR_ARRAY_SINGLE_REPRESENTATIVE_AND_BOUNDED_DIAGNOSTIC=PASS")
 # Preserve PR117's genuine ordered-GDS capture and fail-closed normal shader.
 assert "PR117_REAL_GCN_CAPTURE_DONE" in raster
 assert "ASSERT_MSG(!program.info.uses_ordered_gds" in shader
-assert "ShaderBinaryVersion = 14u;" in version
-assert "ShaderMetaVersion = 8u;" in version
+assert "ShaderBinaryVersion = 15u;" in version
+assert "ShaderMetaVersion = 9u;" in version
 # Pool capacity is for descriptors, not for sets. One 827-image
 # descriptor set fits within 8192 sampled images, but the default batch
 # of 32 sets cannot. Verify actual adaptive allocation in BOTH pool paths.
