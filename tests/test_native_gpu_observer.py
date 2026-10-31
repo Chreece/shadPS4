@@ -106,3 +106,50 @@ with tempfile.TemporaryDirectory() as directory:
 
 print("ZOMBIE_NOT_MISCLASSIFIED_AS_LIVE=PASS")
 print("GENERIC_X11_SCREENSHOT_FALLBACK=PASS")
+
+# The October 31 privileged kernel postmortem found a gfx_0.0.0 timeout
+# which the previous unprivileged observer incorrectly reported as zero.
+# Mock both journal permission modes and the >15,000 userptr log flood.
+from unittest.mock import patch
+with tempfile.TemporaryDirectory() as directory:
+    report=Path(directory)
+    empty=subprocess.CompletedProcess(['journalctl'],0,stdout=b'',stderr=b'')
+    with patch.object(module.os,'geteuid',return_value=1000), \
+         patch.object(module.shutil,'which',side_effect=lambda n:'/usr/bin/journalctl' if n=='journalctl' else None), \
+         patch.object(module.subprocess,'run',return_value=empty):
+        result=module.capture_gpu_kernel_evidence(report,'2026-10-31 13:42:40')
+    assert result['permission']=='UNVERIFIED_JOURNAL_VISIBILITY',result
+    assert result['kernel_evidence_complete'] is False,result
+    assert result['matched_lines']==0
+    assert result['verified_no_gpu_faults'] is False
+    assert 'GPU_KERNEL_VISIBILITY=UNVERIFIED_JOURNAL_VISIBILITY' in (
+        report/'amdgpu-kernel-evidence.txt').read_text()
+
+with tempfile.TemporaryDirectory() as directory:
+    report=Path(directory)
+    ring=(b'2026-10-31 homeserver kernel: amdgpu: '
+          b'ring gfx_0.0.0 timeout, signaled seq=4229015, emitted seq=4229018\n')
+    flood=b'2026-10-31 homeserver kernel: amdgpu: init_user_pages: Failed to get user pages: -1\n'
+    calls=[]
+    def fake_privileged_read(argv,**kwargs):
+        calls.append(argv)
+        if argv[:3]==['sudo','-n','-v']:
+            return subprocess.CompletedProcess(argv,0,stdout=b'',stderr=b'')
+        if argv[:3]==['sudo','-n','journalctl']:
+            return subprocess.CompletedProcess(argv,0,stdout=ring+flood*15024,stderr=b'')
+        raise AssertionError(argv)
+    with patch.object(module.os,'geteuid',return_value=1000), \
+         patch.object(module.shutil,'which',side_effect=lambda n:'/usr/bin/'+n if n in ('journalctl','sudo') else None), \
+         patch.object(module.subprocess,'run',side_effect=fake_privileged_read):
+        result=module.capture_gpu_kernel_evidence(report,'2026-10-31 13:42:40')
+    assert result['permission']=='PRIVILEGED_READABLE',result
+    assert result['kernel_evidence_complete'] is True
+    assert result['matched_lines']==15025,result
+    assert result['critical_lines']==1,result
+    assert result['user_pages_failures']==15024,result
+    content=(report/'amdgpu-kernel-evidence.txt').read_text()
+    assert 'ring gfx_0.0.0 timeout' in content
+    assert len(content)<20000
+    assert calls[0]==['sudo','-n','-v'],calls
+
+print('GPU_KERNEL_PRIVILEGE_FAIL_CLOSED_AND_RING_TIMEOUT_PRESERVED=PASS')
