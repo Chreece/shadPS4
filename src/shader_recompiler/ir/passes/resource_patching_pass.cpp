@@ -3,6 +3,7 @@
 
 #include <limits>
 #include <optional>
+#include "shader_recompiler/compatible_color1d_2d_image.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/ir_emitter.h"
@@ -311,7 +312,11 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     // guest IR form), never storage, gathers, MSAA, or shadow images.
     if (array && !image_res.is_depth && !image_res.is_atomic &&
         !image_res.is_written && !image_res.is_array && !image_res.is_r128 &&
-        !inst_info.has_lod && inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
+        !inst_info.has_lod && !inst_info.force_level0 &&
+        !inst_info.has_offset && !inst_info.has_derivatives &&
+        !inst_info.has_bias && !inst_info.has_lod_clamp &&
+        !inst_info.is_unnormalized && !inst_info.is_gather &&
+        inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
         bool seen_color1d = false;
         bool seen_color2d = false;
         for (u32 i = 0; i + 1 < image_res.descriptor_count; ++i) {
@@ -752,7 +757,15 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
 
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
     const auto inst_info = inst.Flags<IR::TextureInstInfo>();
-    const auto view_type = image.GetViewType(image_res.is_array);
+    // The original guest 1D representative previously truncated the
+    // coordinate to a scalar F32 BEFORE SPIR-V emission, discarding the y
+    // value needed by GPU-selected 2D entries of the same descriptor table.
+    // Decode both x/y exactly once for real mixed sampled Vk2D arrays.
+    // The backend then uses the original GPU-selected T# type to make y=0
+    // on 1D entries, or preserve the guest y on 2D entries.
+    const auto view_type = Shader::CompatibleColor1D2D::SampleCoordinateType(
+        image.GetViewType(image_res.is_array), image_res.mixed_color1d_2d,
+        AmdGpu::ImageType::Color1D, AmdGpu::ImageType::Color2D);
 
     IR::Inst* body1 = inst.Arg(2).Inst();
     IR::Inst* body2 = inst.Arg(3).Inst();
