@@ -11,7 +11,9 @@ SRC="$ROOT/source"
 BIN="$ROOT/build/shadps4"
 OLD_PIN="7490a113ce79e4da84071fc808443162a5b8ec3b"
 INTERMEDIATE="c61b3b29d05990f3938190f9f1bd955a68d6be4e"
-PIN="763a37e8cbf604e52e85fb3bd62b6e769104ff4c"
+PREVIOUS_PIN="763a37e8cbf604e52e85fb3bd62b6e769104ff4c"
+PREVIOUS_BRANCH_HEAD="d92ff10faaaa2441ab43df8c4f66821bc53b8afe"
+PIN="f90b3d008aaeb3322cebc057a0cc1ab91321d229"
 BRANCH="feature/ordered-gds-wave-executor-20261029"
 SHA="9b4300c2666580fe9963eef8f74585e28cb5ad232d8a3c8aa05a732c32871674"
 OLD_SHA="$SHA"
@@ -120,7 +122,8 @@ done
 }
 CURRENT="$(git -C "$SRC" rev-parse HEAD)"
 [[ "$CURRENT" == "$OLD_PIN" || "$CURRENT" == "$INTERMEDIATE" ||
-   "$CURRENT" == "$PIN" ]] || {
+   "$CURRENT" == "$PREVIOUS_PIN" ||
+    "$CURRENT" == "$PREVIOUS_BRANCH_HEAD" || "$CURRENT" == "$PIN" ]] || {
   echo "UNKNOWN_ISOLATED_SOURCE_REVISION=$CURRENT; NO_CHANGES"; exit 3;
 }
 [[ -z "$(git -C "$SRC" status --porcelain=v1 --untracked-files=no)" ]] || {
@@ -292,10 +295,8 @@ OBSERVER="$WORK/native-observer.py"
 VRAM="$WORK/ollama-vram-session.py"
 cp -- "$SRC/tools/development/shadps4_native_gpu_observer.py" "$OBSERVER"
 cp -- "$SRC/tools/development/shadps4_ollama_vram_session.py" "$VRAM"
-[[ "$(git hash-object "$OBSERVER")" ==
-    "$(git -C "$SRC" rev-parse HEAD:tools/development/shadps4_native_gpu_observer.py)" ]] || exit 8
-[[ "$(git hash-object "$VRAM")" ==
-    "$(git -C "$SRC" rev-parse HEAD:tools/development/shadps4_ollama_vram_session.py)" ]] || exit 8
+[[ "$(git hash-object "$OBSERVER")" == "$(git -C "$SRC" rev-parse HEAD:tools/development/shadps4_native_gpu_observer.py)" ]] || exit 8
+[[ "$(git hash-object "$VRAM")" == "$(git -C "$SRC" rev-parse HEAD:tools/development/shadps4_ollama_vram_session.py)" ]] || exit 8
 STATE=ISOLATED_PORTABLE_PROFILE_NO_LIVE_SAVES
 PROFILE=""
 for d in "$HOME/user" "$HOME/.local/share/shadPS4" \
