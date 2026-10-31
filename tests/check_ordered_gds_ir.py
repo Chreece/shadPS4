@@ -42,6 +42,8 @@ FILES = {
     "rasterizer_h": "src/video_core/renderer_vulkan/vk_rasterizer.h",
     "pipeline": "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp",
     "pipeline_h": "src/video_core/renderer_vulkan/vk_pipeline_cache.h",
+    "runtime_cpp": "src/video_core/renderer_vulkan/vk_runtime.cpp",
+    "indirect_sync_h": "src/video_core/renderer_vulkan/vk_indirect_read_sync.h",
     "coverage": "src/shader_recompiler/frontend/ordered_gds_capture_coverage.h",
     "packet": "src/shader_recompiler/frontend/ordered_gds_capture_packet.h",
     "tests": "tests/gcn_ordered_gds_complete_batch.cpp",
@@ -654,6 +656,28 @@ def main():
             "ASSERT_MSG(!program.info.uses_ordered_gds" in backend_cpp,
             "REAL_GPU_DISPATCH_OWNED_GDS_RESOURCES_BOUNDED_AND_RUNTIME_GATED")
 
+    # An authentic GPU-indirect command has a different Vulkan consumption
+    # stage from the shader that eventually processes that command. If its
+    # READ is not tracked, later guest GPU writes can race the command fetch.
+    # Apply this to graphics, ordinary compute and GDS's original guest pass.
+    indirect_sync = source("indirect_sync_h")
+    runtime_cpp = source("runtime_cpp")
+    indirect_graphics = function(rasterizer, "void Rasterizer::DrawIndirect(")
+    indirect_compute = function(rasterizer, "void Rasterizer::DispatchIndirect(")
+    indirect_gcn = function(rasterizer,
+                            "Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(")
+    require("TrackedBufferReadAccesses" in indirect_sync and
+            "eIndirectCommandRead" in indirect_sync and
+            "eDrawIndirect" in indirect_sync and
+            "BufferAccessStage(" in indirect_sync and
+            "constexpr auto READ_MASK = TrackedBufferReadAccesses" in runtime_cpp and
+            "runtime.AccessBuffer(buffer, base, stride * max_count" in indirect_graphics and
+            "runtime.AccessBuffer(count_buffer, count_offset, sizeof(u32)" in indirect_graphics and
+            "runtime.AccessBuffer(buffer, base, sizeof(VkDispatchIndirectCommand)" in indirect_compute and
+            "runtime.AccessBuffer(indirect_command_buffer, indirect_command_offset" in indirect_gcn and
+            "BufferAccessStage(indirect_read, true)" in indirect_gcn,
+            "UNIVERSAL_INDIRECT_COMMAND_WAR_HAZARDS_NORMAL_AND_GCN_FIXED")
+
     require("class OrderedGdsPhases" in reference and
             "CompleteWaveCollector" in reference and
             "wrong ordered-count phase" in reference and
@@ -666,7 +690,7 @@ def main():
     require(not any(x in combined for x in ("CUSA34384", "0xdbaa6ae4",
                                             "skip_gds", "DynamoRIO")),
             "NO_TITLE_HASH_OR_OPCODE_SKIP_HACK")
-    print("ORDERED_GDS_TYPED_IR_CONTRACT=PASS; GPU_RUNTIME_NOT_IMPLEMENTED")
+    print("ORDERED_GDS_TYPED_IR_CONTRACT=PASS; ORIGINAL_GCN_FIRST_PASS_IMPLEMENTED; GPU_RUNTIME_NOT_VERIFIED; POST_DS_SHADER_REENTRY_NOT_IMPLEMENTED")
 
 if __name__ == "__main__":
     try:
