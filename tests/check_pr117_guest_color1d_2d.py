@@ -25,6 +25,8 @@ assert "Dword3Offset = 3" in helper
 assert "DwordsPerImage = 8" in helper
 assert "IsCompatibleSampled2D" in helper
 assert "SampleY" in helper
+assert "SampleCoordinateType" in helper
+assert "GUEST_MIXED_SAMPLE_XY_NOT_TRUNCATED_BEFORE_SPIRV=PASS" in fixture
 for marker in (
     "GUEST_COLOR1D_COLOR2D_VULKAN_2D_VIEW_COMPATIBILITY=PASS",
     "GUEST_DYNAMIC_TSHARP_TYPE_AND_Y_COORDINATE=PASS",
@@ -38,6 +40,19 @@ assert "return vk::ImageViewType::e2D;" in view
 assert "return vk::ImageType::e2D;" in image
 assert "bool mixed_color1d_2d{};" in resource
 assert "seen_color1d && seen_color2d" in patch
+# The first real mixed table selected Color1D as a representative, which
+# lowered an otherwise valid 2D sample to scalar F32 (actual 16:31 crash).
+# Fix at the frontend, before EmitImageSampleImplicitLod. The backend MUST
+# never be asked to invent y from the already discarded scalar.
+assert "const auto view_type = Shader::CompatibleColor1D2D::SampleCoordinateType(" in patch
+assert "image.GetViewType(image_res.is_array), image_res.mixed_color1d_2d" in patch
+assert "AmdGpu::ImageType::Color1D, AmdGpu::ImageType::Color2D" in patch
+assert "const auto view_type = image.GetViewType(image_res.is_array);" in patch  # unrelated paths
+for gate in ("!inst_info.has_offset", "!inst_info.has_derivatives", "!inst_info.has_bias",
+             "!inst_info.has_lod_clamp", "!inst_info.force_level0",
+             "!inst_info.is_unnormalized", "!inst_info.is_gather"):
+    assert gate in patch,gate
+
 assert "desc.mixed_color1d_2d == existing.mixed_color1d_2d" in patch
 assert "inst.GetOpcode() == IR::Opcode::ImageSampleRaw" in patch
 for marker in (
@@ -100,6 +115,7 @@ source = helper + patch + emit
 for forbidden in ("CUSA", "0x7f710602", "0xc1a0dde8", "ShaderIdOverride",
                   "chooseRepresentativeOnCpu", "DynamoRIO"):
     assert forbidden not in source, forbidden
+print("GUEST_FIRST_1D_REPRESENTATIVE_PRESERVES_MIXED_2D_COORDS=PASS")
 print("GUEST_2_TO_4_COMPONENT_IMPLICIT_IMAGE_SAMPLE=PASS")
 print("GUEST_MIXED_1D_2D_STRICT_SOURCE_SEMANTICS=PASS")
 print("GUEST_TEXTURE_INDEX_AND_GPU_COORDINATE_PRESERVED=PASS")
