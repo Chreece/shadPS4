@@ -20,7 +20,7 @@ finish() {
     set +e
     printf 'STATE=%s\nEXIT_CODE=%s\nMODIFIED=%s\n' "$STATE" "$rc" "$MODIFIED" >"$OUT/result.txt"
     printf 'XORG_SUNSHINE_NETWORK_SSH_RESTARTS=NONE_BY_SCRIPT\nGPU_RESET_WATCH=UNMODIFIED\nGAME_LAUNCHED=NO\n' >>"$OUT/result.txt"
-    tar --exclude='*.patched.py' -C "$LOGS" -czf "$ARCHIVE" "$TAG" 2>"$OUT/tar-errors.txt"
+    tar --exclude='__pycache__' --exclude='*.patched.py' -C "$LOGS" -czf "$ARCHIVE" "$TAG" 2>"$OUT/tar-errors.txt"
     echo "STATUS=$STATE"
     echo "UPLOAD_THIS=$ARCHIVE"
     [[ ! -f "$OUT/rollback.txt" ]] || cat "$OUT/rollback.txt"
