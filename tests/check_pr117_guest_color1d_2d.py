@@ -38,6 +38,7 @@ assert "return vk::ImageViewType::e2D;" in view
 assert "return vk::ImageType::e2D;" in image
 assert "bool mixed_color1d_2d{};" in resource
 assert "seen_color1d && seen_color2d" in patch
+assert "desc.mixed_color1d_2d == existing.mixed_color1d_2d" in patch
 assert "inst.GetOpcode() == IR::Opcode::ImageSampleRaw" in patch
 for marker in (
     "!image_res.is_depth", "!image_res.is_atomic", "!image_res.is_written",
