@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <span>
 #include <boost/container/static_vector.hpp>
 
 #include "shader_recompiler/resource.h"
@@ -38,7 +39,9 @@ void Pipeline::BindResources(DescriptorWrites& set_writes,
         return;
     }
 
-    const auto desc_set = desc_heap.Commit(*desc_layout);
+    const auto desc_set = desc_heap.Commit(
+        *desc_layout,
+        std::span<const vk::WriteDescriptorSet>{set_writes.data(), set_writes.size()});
     for (auto& set_write : set_writes) {
         set_write.dstSet = desc_set;
     }

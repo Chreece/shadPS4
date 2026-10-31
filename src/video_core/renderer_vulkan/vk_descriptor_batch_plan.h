@@ -1,8 +1,11 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <span>
+#include <vector>
 
 namespace Vulkan {
 // Shrink the Vulkan allocation batch instead of repeating an impossible
@@ -24,5 +27,40 @@ std::uint32_t TryAllocateDescriptorBatch(Attempt&& attempt, Result& result,
         }
     }
     return 0;
+}
+// Actual VkWriteDescriptorSet counts determine pool demand. A shader may
+// reference the same GPU descriptor table through multiple independently
+// bound sampled-image resources; the table construction log is NOT a set
+// layout count. Preserve each descriptor type and use 64-bit accumulators
+// before converting the count to Vulkan's 32-bit poolSize type.
+template <typename Size>
+std::vector<Size> ExpandDescriptorPoolSizes(std::span<const Size> baseline,
+                                             std::span<const Size> minimum) {
+    std::vector<Size> sizes(baseline.begin(), baseline.end());
+    for (const auto& request : minimum) {
+        auto it = std::find_if(sizes.begin(), sizes.end(), [&](const Size& p) {
+            return p.type == request.type;
+        });
+        if (it == sizes.end()) {
+            sizes.push_back(request);
+        } else {
+            it->descriptorCount = std::max(it->descriptorCount, request.descriptorCount);
+        }
+    }
+    return sizes;
+}
+
+template <typename Size>
+bool PoolCoversDescriptorRequirements(std::span<const Size> pool,
+                                       std::span<const Size> required) {
+    for (const auto& needed : required) {
+        const auto it = std::find_if(pool.begin(), pool.end(), [&](const Size& size) {
+            return size.type == needed.type;
+        });
+        if (it == pool.end() || it->descriptorCount < needed.descriptorCount) {
+            return false;
+        }
+    }
+    return true;
 }
 } // namespace Vulkan

@@ -22,6 +22,7 @@ emit_context = source("src/shader_recompiler/backend/spirv/emit_spirv_context_ge
 raster = source("src/video_core/renderer_vulkan/vk_rasterizer.cpp")
 raster_h = source("src/video_core/renderer_vulkan/vk_rasterizer.h")
 pipeline = source("src/video_core/renderer_vulkan/vk_pipeline_cache.cpp")
+pipeline_common = source("src/video_core/renderer_vulkan/vk_pipeline_common.cpp")
 buffer_cache_h = source("src/video_core/buffer_cache/buffer_cache.h")
 buffer_cache_cpp = source("src/video_core/buffer_cache/buffer_cache.cpp")
 instance = source("src/video_core/renderer_vulkan/vk_instance.cpp")
@@ -128,12 +129,34 @@ assert "result = attempt(count)" in plan
 assert "result != out_of_pool && result != fragmented_pool" in plan
 assert "desc_sets.resize(count)" in heap
 assert "alloc_info.descriptorSetCount = count" in heap
-assert heap.count("try_batch() != 0") == 2
+assert "if (try_batch() != 0)" in heap
+assert "if (try_batch() == 0)" in heap
 assert "descriptor_sets.clear();" in heap
-assert "Cannot allocate even one descriptor set from fresh pool:" in heap
+assert "Cannot allocate even one descriptor set from adequately sized fresh pool:" in heap
 assert "FakePool new_pool{8192, 827, {}}" in allocator_test
 assert "FakePool oversized{8192,8193,{}}" in allocator_test
 assert "Result::DeviceLost" in allocator_test
+# Runtime descriptor-write counts determine pool demand, never one
+# "Bound dynamic image descriptor table" log per shader. A single set may
+# carry multiple resource bindings referring to that same table.
+assert "std::span<const vk::WriteDescriptorSet> writes" in heap
+assert "write.descriptorCount" in heap
+assert "write.descriptorType" in heap
+assert "PoolCoversDescriptorRequirements<vk::DescriptorPoolSize>" in heap
+assert "CreateDescriptorPool(required)" in heap
+assert "pending_pools.push_back({curr_pool, work_semaphore->CurrentTick()," in heap
+assert "curr_pool_sizes = expanded;" in heap
+assert "Descriptor pool underprovisioned:" in heap
+assert "Descriptor allocation fresh-pool requirement type=" in heap
+assert "std::vector<vk::DescriptorPoolSize> curr_pool_sizes;" in heap_h
+assert "std::span<const vk::WriteDescriptorSet> writes" in heap_h
+assert "desc_heap.Commit(" in pipeline_common
+assert "std::span<const vk::WriteDescriptorSet>{set_writes.data(), set_writes.size()}" in pipeline_common
+assert "ExpandDescriptorPoolSizes" in plan
+assert "PoolCoversDescriptorRequirements" in plan
+assert "DESCRIPTOR_SINGLE_SET_RUNTIME_LAYOUT_POOL_SIZING=PASS" in allocator_test
+print("GPU_DESCRIPTOR_SINGLE_SET_MEASURED_REQUIREMENTS_AND_RECYCLING=PASS")
+
 print("GPU_DESCRIPTOR_BATCH_POOL_CAPACITY_AND_ADAPTIVE_RETRY=PASS")
 
 print("GPU_BACKED_DYNAMIC_IMAGE_TABLE_PROVENANCE_AND_BOUNDS=PASS")

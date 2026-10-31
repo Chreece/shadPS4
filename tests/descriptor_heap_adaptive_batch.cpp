@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdint>
 #include <iostream>
+#include <span>
 #include <vector>
 #include "video_core/renderer_vulkan/vk_descriptor_batch_plan.h"
 
@@ -52,6 +53,22 @@ int main() {
     // Even one oversized set must fail rather than fabricate a descriptor.
     FakePool oversized{8192,8193,{}};
     assert(Try(oversized,r)==0 && oversized.remaining==8192);
+    // The same table may appear in multiple Vulkan bindings. A single set
+    // can require 11 * 827 sampled-image descriptors even though the shader
+    // reports only one guest descriptor-table construction.
+    struct Size { int type; std::uint32_t descriptorCount; };
+    const std::vector<Size> baseline{{1,8192},{2,1024},{3,8192}};
+    const std::vector<Size> required{{1,827*11},{2,3}};
+    assert(!Vulkan::PoolCoversDescriptorRequirements<Size>(baseline,required));
+    const auto expanded = Vulkan::ExpandDescriptorPoolSizes<Size>(baseline,required);
+    assert(Vulkan::PoolCoversDescriptorRequirements<Size>(expanded,required));
+    assert(expanded.size()==baseline.size());
+    assert(expanded[0].descriptorCount==9097 && expanded[1].descriptorCount==1024);
+    assert(Vulkan::PoolCoversDescriptorRequirements<Size>(
+        expanded,std::vector<Size>{{1,827}}));
+    assert(!Vulkan::PoolCoversDescriptorRequirements<Size>(
+        expanded,std::vector<Size>{{4,1}}));
+    std::cout << "DESCRIPTOR_SINGLE_SET_RUNTIME_LAYOUT_POOL_SIZING=PASS\n";
     std::cout << "DESCRIPTOR_BATCH_ADAPTIVE_GPU_ARRAY=PASS\n";
     std::cout << "DESCRIPTOR_POOL_ROLLOVER_AND_FRAGMENTATION=PASS\n";
     std::cout << "UNEXPECTED_VULKAN_ERROR_FAIL_CLOSED=PASS\n";

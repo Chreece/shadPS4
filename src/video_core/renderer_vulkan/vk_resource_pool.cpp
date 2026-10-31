@@ -1,10 +1,13 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <cstddef>
+#include <limits>
 #include <optional>
 
 #include "common/assert.h"
+#include "common/logging/log.h"
 #include "video_core/renderer_vulkan/vk_descriptor_batch_plan.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_resource_pool.h"
@@ -113,19 +116,82 @@ DescriptorHeap::DescriptorHeap(const Instance& instance, Semaphore* work_semapho
 
 DescriptorHeap::~DescriptorHeap() {
     device.destroyDescriptorPool(curr_pool);
-    for (const auto [pool, tick] : pending_pools) {
-        work_semaphore->Wait(tick);
-        device.destroyDescriptorPool(pool);
+    for (const auto& retired : pending_pools) {
+        work_semaphore->Wait(retired.tick);
+        device.destroyDescriptorPool(retired.pool);
     }
 }
 
-vk::DescriptorSet DescriptorHeap::Commit(vk::DescriptorSetLayout set_layout) {
-    const u64 set_key = std::bit_cast<u64>(set_layout);
-    const auto [it, _] = descriptor_sets.try_emplace(set_key);
+vk::DescriptorSet DescriptorHeap::Commit(
+    vk::DescriptorSetLayout set_layout,
+    std::span<const vk::WriteDescriptorSet> writes) {
+    // Read the EXACT resource demand of this set from the writes constructed
+    // for its Vulkan layout, not from the number of arrays or shader hashes.
+    std::vector<vk::DescriptorPoolSize> required;
+    for (const auto& write : writes) {
+        if (write.descriptorCount == 0) {
+            continue;
+        }
+        auto it = std::find_if(required.begin(), required.end(), [&](const auto& r) {
+            return r.type == write.descriptorType;
+        });
+        if (it == required.end()) {
+            required.push_back({write.descriptorType, write.descriptorCount});
+        } else {
+            const u64 total = u64(it->descriptorCount) + write.descriptorCount;
+            ASSERT_MSG(total <= std::numeric_limits<u32>::max(),
+                       "Descriptor set per-type requirement overflows Vulkan u32");
+            it->descriptorCount = static_cast<u32>(total);
+        }
+    }
 
-    if (!it->second.empty()) {
-        const auto desc_set = it->second.back();
-        it.value().pop_back();
+    const auto covers = [&](std::span<const vk::DescriptorPoolSize> capacity) {
+        return PoolCoversDescriptorRequirements<vk::DescriptorPoolSize>(capacity, required);
+    };
+    const u64 set_key = std::bit_cast<u64>(set_layout);
+    const auto retire_pool = [&] {
+        // A descriptor set can outlive its CPU-side cache entry while a GPU
+        // command is in flight. Retain the full pool until its timeline tick.
+        pending_pools.push_back({curr_pool, work_semaphore->CurrentTick(),
+                                 std::move(curr_pool_sizes)});
+        auto reusable = std::find_if(pending_pools.begin(), pending_pools.end(),
+                                    [&](const PendingPool& candidate) {
+            return work_semaphore->IsFree(candidate.tick) && covers(candidate.sizes);
+        });
+        if (reusable != pending_pools.end()) {
+            curr_pool = reusable->pool;
+            curr_pool_sizes = std::move(reusable->sizes);
+            pending_pools.erase(reusable);
+            const auto reset_result = device.resetDescriptorPool(curr_pool);
+            ASSERT_MSG(reset_result == vk::Result::eSuccess,
+                       "Unexpected error resetting descriptor pool: {}",
+                       vk::to_string(reset_result));
+        } else {
+            CreateDescriptorPool(required);
+        }
+        descriptor_sets.clear();
+    };
+
+    // The base pool may fit one 827-image resource but NOT several 827-image
+    // bindings in the same layout. Grow the pool only to measured requirements.
+    if (!covers(curr_pool_sizes)) {
+        for (const auto& need : required) {
+            const auto it = std::find_if(curr_pool_sizes.begin(), curr_pool_sizes.end(),
+                                         [&](const auto& p) { return p.type == need.type; });
+            const u32 available = it == curr_pool_sizes.end() ? 0 : it->descriptorCount;
+            if (need.descriptorCount > available) {
+                LOG_WARNING(Render_Vulkan,
+                            "Descriptor pool underprovisioned: type={} required={} pool={}",
+                            vk::to_string(need.type), need.descriptorCount, available);
+            }
+        }
+        retire_pool();
+    }
+
+    const auto cached = descriptor_sets.find(set_key);
+    if (cached != descriptor_sets.end() && !cached->second.empty()) {
+        const auto desc_set = cached->second.back();
+        cached.value().pop_back();
         return desc_set;
     }
 
@@ -137,73 +203,63 @@ vk::DescriptorSet DescriptorHeap::Commit(vk::DescriptorSetLayout set_layout) {
         .descriptorSetCount = DescriptorSetBatch,
         .pSetLayouts = layouts.data(),
     };
-    // Vulkan pool limits count DESCRIPTORS, not just descriptor SETS.
-    // A set with 827 images cannot be allocated 32 times from a pool of
-    // 8192 sampled-image descriptors. Retry smaller batches in the SAME
-    // pool before rotating it; never repeat the impossible 32-set request
-    // in every new pool. The 32->16->8->4->2->1 plan is title-independent.
     const auto allocate = [&](u32 count) {
         desc_sets.resize(count);
         alloc_info.descriptorSetCount = count;
         return device.allocateDescriptorSets(&alloc_info, desc_sets.data());
     };
     vk::Result result = vk::Result::eErrorOutOfPoolMemory;
-    const auto try_batch = [&]() {
+    const auto try_batch = [&] {
         return TryAllocateDescriptorBatch(
             allocate, result, vk::Result::eSuccess,
             vk::Result::eErrorOutOfPoolMemory, vk::Result::eErrorFragmentedPool);
     };
-
     if (try_batch() != 0) {
         const auto desc_set = desc_sets.back();
         desc_sets.pop_back();
-        it.value() = std::move(desc_sets);
+        descriptor_sets[set_key] = std::move(desc_sets);
         return desc_set;
     }
-
     ASSERT_MSG(result == vk::Result::eErrorOutOfPoolMemory ||
                    result == vk::Result::eErrorFragmentedPool,
                "Unexpected error during descriptor set allocation: {}", vk::to_string(result));
 
-    // No batch size fits the current pool. It may be depleted or fragmented;
-    // preserve it until its recorded GPU fence is complete, then recycle or
-    // create a fresh pool. Cached sets from the old pool must not be reused.
-    pending_pools.emplace_back(curr_pool, work_semaphore->CurrentTick());
-    if (const auto [pool, tick] = pending_pools.front(); work_semaphore->IsFree(tick)) {
-        curr_pool = pool;
-        pending_pools.pop_front();
-        const auto reset_result = device.resetDescriptorPool(curr_pool);
-        ASSERT_MSG(reset_result == vk::Result::eSuccess,
-                   "Unexpected error resetting descriptor pool: {}", vk::to_string(reset_result));
-    } else {
-        CreateDescriptorPool();
-    }
-    descriptor_sets.clear();
+    retire_pool();
     alloc_info.descriptorPool = curr_pool;
-    // Retry adaptively on the fresh pool too. An allocation needing even
-    // more descriptors than a whole pool remains an explicit failure rather
-    // than an invalid/null descriptor set or a fabricated shader resource.
-    ASSERT_MSG(try_batch() != 0,
-               "Cannot allocate even one descriptor set from fresh pool: {}",
-               vk::to_string(result));
-
+    if (try_batch() == 0) {
+        for (const auto& need : required) {
+            const auto it = std::find_if(curr_pool_sizes.begin(), curr_pool_sizes.end(),
+                                         [&](const auto& p) { return p.type == need.type; });
+            LOG_ERROR(Render_Vulkan,
+                      "Descriptor allocation fresh-pool requirement type={} need={} capacity={}",
+                      vk::to_string(need.type), need.descriptorCount,
+                      it == curr_pool_sizes.end() ? 0u : it->descriptorCount);
+        }
+        ASSERT_MSG(false,
+                   "Cannot allocate even one descriptor set from adequately sized fresh pool: {}",
+                   vk::to_string(result));
+    }
     const auto desc_set = desc_sets.back();
     desc_sets.pop_back();
     descriptor_sets[set_key] = std::move(desc_sets);
     return desc_set;
 }
 
-void DescriptorHeap::CreateDescriptorPool() {
+void DescriptorHeap::CreateDescriptorPool(
+    std::span<const vk::DescriptorPoolSize> minimum) {
+    const auto expanded = ExpandDescriptorPoolSizes<vk::DescriptorPoolSize>(
+        pool_sizes, minimum);
     const vk::DescriptorPoolCreateInfo pool_info = {
         .flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind,
         .maxSets = descriptor_heap_count,
-        .poolSizeCount = static_cast<u32>(pool_sizes.size()),
-        .pPoolSizes = pool_sizes.data(),
+        .poolSizeCount = static_cast<u32>(expanded.size()),
+        .pPoolSizes = expanded.data(),
     };
     auto [pool_result, pool] = device.createDescriptorPool(pool_info);
     ASSERT_MSG(pool_result == vk::Result::eSuccess, "Failed to create descriptor pool: {}",
                vk::to_string(pool_result));
     curr_pool = pool;
+    curr_pool_sizes = expanded;
 }
 
 } // namespace Vulkan
