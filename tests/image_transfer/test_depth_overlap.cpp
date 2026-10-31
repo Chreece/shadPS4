@@ -31,6 +31,9 @@ struct SubresourceExtent {
     u32 levels = 1;
     u32 layers = 1;
     auto operator<=>(const SubresourceExtent&) const = default;
+    bool Contains(const SubresourceExtent& other) const noexcept {
+        return levels >= other.levels && layers >= other.layers;
+    }
 };
 
 struct ImageInfo {
@@ -118,7 +121,7 @@ struct TextureCache {
 #include "depth_overlap_body.inc"
 
 void CheckGrowth(const std::string& name, SubresourceExtent old_extent,
-                 SubresourceExtent new_extent, bool source_depth) {
+                 SubresourceExtent new_extent, bool source_depth, SubresourceExtent expected_extent) {
     TextureCache cache;
     ImageInfo old_info;
     old_info.props.is_depth = source_depth;
@@ -140,8 +143,9 @@ void CheckGrowth(const std::string& name, SubresourceExtent old_extent,
     const auto id = cache.ResolveDepthOverlap(requested, BindingType::DepthTarget, old_id);
     ASSERT(id != old_id);
     const auto& result = cache.slot_images[id];
-    for (u32 mip = 0; mip < new_extent.levels; ++mip) {
-        for (u32 layer = 0; layer < new_extent.layers; ++layer) {
+    ASSERT(result.info.resources == expected_extent);
+    for (u32 mip = 0; mip < expected_extent.levels; ++mip) {
+        for (u32 layer = 0; layer < expected_extent.layers; ++layer) {
             const int expected =
                 (mip < old_extent.levels && layer < old_extent.layers ? 1000 : 100) + 10 * mip +
                 layer;
@@ -159,18 +163,20 @@ void CheckGrowth(const std::string& name, SubresourceExtent old_extent,
     ASSERT(result.info.meta_info.htile_clear_mask == 0);
     ASSERT(old.freed);
     ASSERT(cache.runtime.copies == 1);
-    ASSERT(cache.uploads == (new_extent == old_extent ? 0u : 1u));
+    ASSERT(cache.uploads == (expected_extent == old_extent ? 0u : 1u));
     std::cout << "PASS " << name << '\n';
 }
 
 int main() {
     try {
-        CheckGrowth("logged R32 five layers to D32 six layers", {1, 5}, {1, 6}, false);
-        CheckGrowth("depth layer expansion", {1, 2}, {1, 6}, true);
-        CheckGrowth("depth mip expansion", {1, 6}, {2, 6}, true);
-        CheckGrowth("depth mip and layer expansion", {1, 2}, {2, 6}, true);
+        CheckGrowth("logged R32 five layers to D32 six layers", {1, 5}, {1, 6}, false, {1, 6});
+        CheckGrowth("depth layer expansion", {1, 2}, {1, 6}, true, {1, 6});
+        CheckGrowth("depth mip expansion", {1, 6}, {2, 6}, true, {2, 6});
+        CheckGrowth("depth mip and layer expansion", {1, 2}, {2, 6}, true, {2, 6});
         CheckGrowth("same-size format conversion preserves GPU data without upload", {1, 6}, {1, 6},
-                    false);
+                    false, {1, 6});
+        CheckGrowth("more mips retains six cached layers", {1, 6}, {2, 1}, true, {2, 6});
+        CheckGrowth("more layers retains two cached mips", {2, 1}, {1, 6}, true, {2, 6});
         TextureCache cache;
         ImageInfo info;
         const auto id = cache.slot_images.Insert(0, cache.runtime, 0, info);

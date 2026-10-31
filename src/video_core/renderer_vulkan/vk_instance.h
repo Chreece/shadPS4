@@ -130,6 +130,14 @@ public:
         return vk12_features.shaderInt8;
     }
 
+    bool IsMaintenance5Supported() const {
+        return maintenance_5;
+    }
+
+    bool IsMaintenance6Supported() const {
+        return maintenance_6;
+    }
+
     /// Returns true if VK_KHR_maintenance8 is supported
     bool IsMaintenance8Supported() const {
         return maintenance_8;
@@ -242,6 +250,12 @@ public:
     /// Returns true if 64-bit integer atomic operations can be used on shared memory
     bool IsSharedInt64AtomicsSupported() const {
         return vk12_features.shaderSharedInt64Atomics;
+    }
+
+    /// Returns true when buffer device address can be used. RenderDoc hides it on drivers that
+    /// lack bufferDeviceAddressCaptureReplay.
+    bool IsBufferDeviceAddressSupported() const {
+        return vk12_features.bufferDeviceAddress;
     }
 
     /// Returns true if the subgroup size can be set to match guest subgroup size
@@ -375,6 +389,15 @@ public:
     /// Returns the maximum size of a single VkDeviceMemory
     vk::DeviceSize MaxMemoryAllocationSize() const {
         return vk11_props.maxMemoryAllocationSize;
+    }
+
+    /// Maximum legal VkBuffer size, including sparse virtual buffers.
+    vk::DeviceSize MaxBufferSize() const noexcept {
+        return vk13_props.maxBufferSize;
+    }
+
+    bool IsSparseResidencyAliasedSupported() const noexcept {
+        return features.sparseResidencyAliased;
     }
 
     /// Returns the vulkan 1.2 physical device properties.
@@ -555,6 +578,7 @@ private:
     bool shader_atomic_float2{};
     bool workgroup_memory_explicit_layout{};
     bool maintenance_5{};
+    bool maintenance_6{};
     bool maintenance_8{};
     bool attachment_feedback_loop{};
     bool image_2d_view_of_3d{};
