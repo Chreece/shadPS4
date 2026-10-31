@@ -15,6 +15,26 @@ finish() {
   trap - EXIT
   set +e
   printf 'STATE=%s\nEXIT=%s\nNO_GAME_OR_GPU_RUN=YES\nNO_SERVICE_OR_SSH_CHANGES=YES\n' "$STATE" "$rc" > "$OUT/result.txt"
+  python3 - "$P" "$TAG" "$STATE" "$rc" "$ARCHIVE" <<'PYDIARY' || true
+import datetime,fcntl,json,os,pathlib,sys
+project,tag,state,rc,archive=sys.argv[1:]
+row=dict(schema_version=2,record_id=tag,
+ recorded_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+ scope='universal_shadPS4',game_id='CUSA34384',
+ record_type='OFFLINE_GFX_RING_SHADER_PROVENANCE_AND_OBSERVER_REGRESSION',
+ archive=pathlib.Path(archive).name,execution='CPU_AND_DISK_ONLY',
+ outcome=state,exit_code=int(rc),gameplay='NOT_RUN',
+ decision='REVIEW_OFFLINE_SPIRV_AND_SHADER_HISTORY; NO_GAMEPLAY_CLAIM')
+for relative in ('diary/trials.jsonl','docs/emulator/TRIALS.jsonl'):
+ path=pathlib.Path(project)/relative
+ if path.is_symlink():continue
+ path.parent.mkdir(parents=True,exist_ok=True)
+ with path.open('a',encoding='utf8') as stream:
+  fcntl.flock(stream.fileno(),fcntl.LOCK_EX)
+  stream.write(json.dumps(row,separators=(',',':'))+'\n')
+  stream.flush();os.fsync(stream.fileno())
+  fcntl.flock(stream.fileno(),fcntl.LOCK_UN)
+PYDIARY
   tar -C "$LOGS" -czf "$ARCHIVE" "$TAG" 2>"$OUT/tar-error.txt"
   printf 'STATE=%s\nUPLOAD_THIS=%s\nSSH_SESSION=OPEN\n' "$STATE" "$ARCHIVE"
 }
