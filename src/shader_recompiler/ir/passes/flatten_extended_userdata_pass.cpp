@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <bit>
 #include <unordered_map>
 #include <boost/container/flat_map.hpp>
 #include <queue>
@@ -295,7 +297,10 @@ static bool EmitComputeOffsetShiftLeftLogical32(Xbyak::CodeGenerator& c, Xbyak::
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
         ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
-        c.shl(reg, inst->Arg(0).U32());
+        // The guest VALUE is the immediate first operand. The second
+        // operand is the shift count, resolved from authoritative host data.
+        // Do NOT shift the count by the value first: it may be > 31 and
+        // silently change the result or give the assembler an invalid imm8.
         c.mov(ecx, reg);
         c.mov(reg, inst->Arg(0).U32());
         c.shl(reg, cl);
@@ -485,6 +490,27 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
     return true;
 }
 
+// A Phi can be evaluated by the CPU SRT walker only when every incoming
+// value is literally identical. Distinct SSA paths, particularly waterfall
+// loops over live GPU lane masks, are NOT host constants and require a
+// GPU-side resource lookup. Never choose an arbitrary Phi predecessor.
+static bool HasUnconditionalPhiValue(const IR::Inst* inst) {
+    if (inst->GetOpcode() != IR::Opcode::Phi || inst->NumArgs() == 0) {
+        return false;
+    }
+    const IR::Value first = inst->Arg(0);
+    if (first.IsEmpty() || first.TryInst() == inst ||
+        (first.IsImmediate() && first.Type() != IR::Type::U32)) {
+        return false;
+    }
+    for (std::size_t i = 1; i < inst->NumArgs(); ++i) {
+        if (inst->Arg(i) != first) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
@@ -502,7 +528,10 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     case IR::Opcode::UMin32:
     case IR::Opcode::UMax32:
     case IR::Opcode::BitFieldUExtract:
+    case IR::Opcode::FindILsb32:
         return true;
+    case IR::Opcode::Phi:
+        return HasUnconditionalPhiValue(inst);
     default:
         return false;
     }
@@ -559,6 +588,36 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
     case IR::Opcode::BitFieldUExtract:
         ABORT_ON_FAILURE(EmitComputeOffsetBitFieldUExtract(c, reg, pass_info, inst));
         return true;
+    case IR::Opcode::FindILsb32: {
+        const IR::Value input = inst->Arg(0);
+        if (input.IsImmediate()) {
+            const u32 value = input.U32();
+            c.mov(reg, value ? std::countr_zero(value) : ~u32{0});
+        } else {
+            ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, input));
+            // x86 BSF returns the correct trailing-bit index for a nonzero
+            // input, but leaves its destination undefined for zero. SPIR-V
+            // OpFindILsb (and guest S_FF1) specify 0xffffffff for zero.
+            c.bsf(reg, reg);
+            c.mov(ecx, ~u32{0}); // MOV does not alter BSF's ZF.
+            c.cmovz(reg, ecx);
+        }
+        return true;
+    }
+    case IR::Opcode::Phi: {
+        // A dynamic Phi is a GPU control-flow dependency, not a safe host
+        // SRT address. Keep it unflattened instead of selecting any path.
+        if (!HasUnconditionalPhiValue(inst)) {
+            return false;
+        }
+        const IR::Value common = inst->Arg(0);
+        if (common.IsImmediate()) {
+            c.mov(reg, common.U32());
+        } else {
+            ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, common));
+        }
+        return true;
+    }
     default:
         LOG_ERROR(Render_Recompiler, "Unexpected instruction for offset computation, {}",
                   magic_enum::enum_name(inst->GetOpcode()));
