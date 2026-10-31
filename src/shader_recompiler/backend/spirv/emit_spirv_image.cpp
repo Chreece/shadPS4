@@ -182,8 +182,16 @@ static Id FixMixedGuestColor1D2DCoords(EmitContext& ctx, IR::Inst* inst,
                                       const EmitContext::TextureDefinition& texture, Id coords) {
     ASSERT_MSG(texture.mixed_color1d_2d && texture.is_descriptor_array,
                "Mixed sampled descriptor arrays require verified GPU type selection");
-    ASSERT_MSG(inst->Arg(1).Type() == IR::Type::F32x2,
-               "Mixed guest Color1D/Color2D requires two texture coordinates");
+    // IR::ImageSampleImplicitLod is declared with an F32x4 input, but its
+    // texture-coordinate producer can legitimately be F32x2 or F32x3 after
+    // frontend coordinate lowering. Vulkan Dim2D only consumes x and y.
+    // Preserve both actual components, rather than requiring one vector
+    // width and aborting on a valid guest shader.
+    const auto coord_type = inst->Arg(1).Type();
+    ASSERT_MSG(coord_type == IR::Type::F32x2 || coord_type == IR::Type::F32x3 ||
+                   coord_type == IR::Type::F32x4,
+               "Mixed guest Color1D/Color2D requires >=2 float coordinates; IR type={}",
+               coord_type);
     const auto* handle = inst->Arg(0).TryInst();
     ASSERT_MSG(handle && handle->GetOpcode() == IR::Opcode::ImageDescriptorHandle,
                "Mixed image sample must retain the original GPU descriptor index");
