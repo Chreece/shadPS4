@@ -32,6 +32,10 @@ namespace Shader {
 struct Info;
 }
 
+namespace VideoCore {
+class BufferCache;
+}
+
 namespace Vulkan {
 
 class Instance;
@@ -72,7 +76,8 @@ struct DrawIndirectParams {
 class PipelineCache {
 public:
     explicit PipelineCache(const Instance& instance, Scheduler& scheduler,
-                           AmdGpu::Liverpool* liverpool, u32 sparse_page_shift);
+                           AmdGpu::Liverpool* liverpool, VideoCore::BufferCache& buffer_cache,
+                           u32 sparse_page_shift);
     ~PipelineCache();
 
     void WarmUp();
@@ -107,6 +112,8 @@ public:
     }
 
 private:
+    void InitializeDescriptorReader(Shader::Info& info);
+
     bool RefreshGraphicsKey();
     bool RefreshGraphicsStages();
     bool RefreshComputeKey();
@@ -126,6 +133,7 @@ private:
     }
 
 private:
+    VideoCore::BufferCache& buffer_cache;
     const Instance& instance;
     Scheduler& scheduler;
     AmdGpu::Liverpool* liverpool;
