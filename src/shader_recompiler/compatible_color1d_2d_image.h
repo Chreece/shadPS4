@@ -20,6 +20,21 @@ template <typename ImageType>
     return supported(reference) && supported(candidate);
 }
 
+// Coordinate lowering happens BEFORE SPIR-V emission. Preserve both x and
+// y for every compatible mixed table, even when its representative T# is
+// Color1D. The final GPU-selected T# type still forces y=0 only on true 1D.
+template <typename ImageType>
+[[nodiscard]] constexpr ImageType SampleCoordinateType(ImageType representative,
+                                                       bool mixed_color1d_2d,
+                                                       ImageType color1d,
+                                                       ImageType color2d) noexcept {
+    if (mixed_color1d_2d &&
+        IsCompatibleSampled2D(representative, representative, color1d, color2d)) {
+        return color2d;
+    }
+    return representative;
+}
+
 [[nodiscard]] constexpr std::uint32_t GuestType(std::uint32_t tsharp_dword3) noexcept {
     return (tsharp_dword3 >> TypeShift) & TypeMask;
 }
