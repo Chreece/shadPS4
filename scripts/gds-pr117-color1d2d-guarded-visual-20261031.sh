@@ -772,8 +772,7 @@ for f in sorted((p/'guest').glob('frame-*.png')):
     frames.append(row)
 (p/'real-frame-evidence.json').write_text(json.dumps({
     'frames':frames,'gameplay_verified':False,
-    'fps_overlay_never_counts_as_rendering':True},indent=2)+'
-')
+    'fps_overlay_never_counts_as_rendering':True},indent=2)+'\n')
 print('CAPTURED_FRAME_COUNT='+str(len(frames)),flush=True)
 PYVISUAL
 
