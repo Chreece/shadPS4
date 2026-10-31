@@ -64,6 +64,15 @@ assert "phi_first_source" in compute
 assert "GPU_DYNAMIC_SRT_REQUIRES_SHADER_RESOURCE_LOOKUP" in compute
 assert "ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, input))" in compute
 assert "pass_info.shader_hash = program.info.pgm_hash;" in s
+# Rejected guest wave-dependent offsets must remain rejected, but log the
+# real shader ID and producer opcode for every host walker failure.
+visit = s[s.index("static void VisitPointer("):s.index("static void GenerateSrtProgram(")]
+assert visit.count("HOST_SRT_OFFSET_UNRESOLVED shader={:#x}") == 2
+assert "origin=pointer " in visit and "origin=resource " in visit
+assert visit.count("pass_info.shader_hash, magic_enum::enum_name(subtree->GetOpcode())") == 2
+assert "c.setSize(checkpoint);" in visit
+assert "Failed to compute offset for SRT walker" not in visit
+print("HOST_SRT_REJECTION_HAS_SHADER_OPCODE_PROVENANCE=PASS")
 f=s[s.index("static bool EmitComputeOffsetShiftLeftLogical32("):
     s.index("static bool EmitComputeOffsetShiftRightLogical32(")]
 assert "c.shl(reg, inst->Arg(0).U32());" not in f
