@@ -1053,10 +1053,13 @@ void EmitContext::DefineImagesAndSamplers() {
             .id = id,
             .sampled_type = is_storage ? sampled_type : TypeSampledImage(image_type),
             .image_type = image_type,
-            .view_type = sharp.GetViewType(image_desc.is_array),
+            .view_type = image_desc.mixed_color1d_2d
+                             ? AmdGpu::ImageType::Color2D
+                             : sharp.GetViewType(image_desc.is_array),
             .is_integer = is_integer,
             .is_storage = is_storage,
             .is_descriptor_array = image_desc.descriptor_count != 0,
+            .mixed_color1d_2d = image_desc.mixed_color1d_2d,
             .mip_fallback_mode = mip_fallback_mode,
         });
         interfaces.push_back(id);
