@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# PR117 real GPU probe after proven live-Xorg supervisor guard acceptance.
-# Use the already-passing generic PR90 HLE ABI+GCN native ELF; NO rebuild.
+# Universal shadPS4 Vulkan indirect-command hazards + genuine GCN capture.
+# Rebuild ONLY the isolated native test candidate; retain the proven prior ELF.
+# No game-specific shader or GPU options, no replay/forced counter values.
 # No game automation, SSH logout, pkill, display/network/Sunshine changes.
 set -Eeuo pipefail
 umask 077
@@ -183,6 +184,7 @@ grep -E 'warning:|error:|fatal error:' "$REPORT/build-native.log" \
     tail -90 "$REPORT/compiler-diagnostics.log"; exit 7
 }
 echo "UNIVERSAL_INDIRECT_GPU_HAZARD_NATIVE_LINK=PASS ELF=$SHA"
+echo "SECOND_PASS_GUEST_SHADER_REENTRY=NOT_IMPLEMENTED"
 
 STATE=VERIFY_INSTALLED_SUPERVISOR_LIVE_XORG_GUARD
 [[ -f "$GUARD" && ! -L "$GUARD" && -r "$GUARD" ]] || {
