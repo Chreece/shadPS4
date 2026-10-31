@@ -12,8 +12,10 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 14u;
-static constexpr u32 ShaderMetaVersion = 8u;
+// New persisted ImageResource::mixed_color1d_2d and GPU-derived texture
+// coordinate SPIR-V must never reuse pre-fix shader metadata or binaries.
+static constexpr u32 ShaderBinaryVersion = 15u;
+static constexpr u32 ShaderMetaVersion = 9u;
 static constexpr u32 PipelineKeyVersion = 3u;
 } // namespace Serialization
 
