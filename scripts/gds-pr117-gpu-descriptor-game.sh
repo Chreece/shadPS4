@@ -17,7 +17,8 @@ PREVIOUS_BRANCH_HEAD="d92ff10faaaa2441ab43df8c4f66821bc53b8afe"
 TESTED_PIN="f90b3d008aaeb3322cebc057a0cc1ab91321d229"
 PREVIOUS_SOURCE_PIN="23125557a5369d195f2c776784f097aef3745a44"
 PROVEN_NATIVE_SOURCE_PIN="e7614336c408e3ea7f95ad51e6f32392b0b4b5f9"
-PIN="8497626cba5a5850b87c17abdb5106625788d03f"
+LAST_FAILED_SOURCE_PIN="8497626cba5a5850b87c17abdb5106625788d03f"
+PIN="11ca38bc8afcb0709d1f85f55919dfcb26dc2d03"
 BRANCH="feature/pr117-gpu-descriptor-tables-20261031"
 SHA="9b4300c2666580fe9963eef8f74585e28cb5ad232d8a3c8aa05a732c32871674"
 OLD_SHA="$SHA"
@@ -165,7 +166,8 @@ CURRENT="$(git -C "$SRC" rev-parse HEAD)"
    "$CURRENT" == "$PREVIOUS_PIN" || "$CURRENT" == "$PREVIOUS_BRANCH_HEAD" ||
    "$CURRENT" == "$TESTED_PIN" ||
    "$CURRENT" == "$PREVIOUS_SOURCE_PIN" ||
-   "$CURRENT" == "$PROVEN_NATIVE_SOURCE_PIN" || "$CURRENT" == "$PIN" ]] || {
+   "$CURRENT" == "$PROVEN_NATIVE_SOURCE_PIN" ||
+   "$CURRENT" == "$LAST_FAILED_SOURCE_PIN" || "$CURRENT" == "$PIN" ]] || {
   echo "UNKNOWN_ISOLATED_SOURCE_REVISION=$CURRENT; NO_CHANGES"; exit 3;
 }
 [[ -z "$(git -C "$SRC" status --porcelain=v1 --untracked-files=no)" ]] || {
@@ -258,6 +260,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$SRC/tests/check_pr117_gpu_descriptor_tables.
     exit 6
 }
 grep -Fq 'GPU_BACKED_DYNAMIC_IMAGE_TABLE_PROVENANCE_AND_BOUNDS=PASS' \
+  "$REPORT/descriptor-array-source-tests.log" || exit 6
+grep -Fq 'PR117_BUFFER_CACHE_GPU_READBACK_ABI_AND_SYNCHRONIZATION=PASS' \
   "$REPORT/descriptor-array-source-tests.log" || exit 6
 grep -Fq 'VULKAN_NONUNIFORM_IMAGE_DESCRIPTOR_AND_PERSISTENT_POINTERS=PASS' \
   "$REPORT/descriptor-array-source-tests.log" || exit 6
