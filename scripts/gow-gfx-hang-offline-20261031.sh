@@ -77,7 +77,7 @@ PY
 STATE=OFFLINE_GUEST_SHADER_AND_DISPATCH_FORENSICS
 python3 -B - "$P" "$OUT" <<'PY'
 from pathlib import Path
-import collections,hashlib,json,os,re,shutil,struct,sys,time
+import collections,hashlib,json,os,re,shutil,struct,subprocess,sys,time
 p,out=map(Path,sys.argv[1:]); evidence=out/'shaders'
 ansi=re.compile(r'\x1b\[[0-9;]*m')
 # Candidates observed in the actual pre-crash compute/SRT and PR117 tables.
@@ -147,6 +147,17 @@ for root in roots:
                     'OpControlBarrier':op[224], 'OpMemoryBarrier':op[225],
                     'OpBranch':op[249]}
                 entry['spirv_parsed_fully']=at==len(words)
+                validator=shutil.which('spirv-val')
+                if validator:
+                    try:
+                        valid=subprocess.run([validator,'--target-env','vulkan1.3',str(file)],
+                            stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                            stdin=subprocess.DEVNULL,timeout=6,check=False)
+                        entry['spirv_val_exit_code']=valid.returncode
+                        entry['spirv_val_diagnostics']=(valid.stdout+valid.stderr).decode(
+                            'utf-8','replace')[:1400]
+                    except (OSError,subprocess.TimeoutExpired) as exc:
+                        entry['spirv_val_error']=type(exc).__name__
             extension=file.suffix.lower()
             if extension in ('.spv','.spvasm','.txt','.dump','.bin'):
                 target=evidence/(str(len(matched)).zfill(2)+'-'+name)
