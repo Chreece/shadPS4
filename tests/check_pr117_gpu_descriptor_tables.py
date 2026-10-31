@@ -132,7 +132,7 @@ assert "alloc_info.descriptorSetCount = count" in heap
 assert "if (try_batch() != 0)" in heap
 assert "if (try_batch() == 0)" in heap
 assert "descriptor_sets.clear();" in heap
-assert "Cannot allocate even one descriptor set from adequately sized fresh pool:" in heap
+assert "Exact-layout one-set Vulkan descriptor allocation failed:" in heap
 assert "FakePool new_pool{8192, 827, {}}" in allocator_test
 assert "FakePool oversized{8192,8193,{}}" in allocator_test
 assert "Result::DeviceLost" in allocator_test
@@ -145,9 +145,9 @@ assert "write.descriptorType" in heap
 assert "PoolCoversDescriptorRequirements<vk::DescriptorPoolSize>" in heap
 assert "CreateDescriptorPool(required)" in heap
 assert "pending_pools.push_back({curr_pool, work_semaphore->CurrentTick()," in heap
-assert "curr_pool_sizes = expanded;" in heap
+assert "curr_pool_sizes = sizes;" in heap
 assert "Descriptor pool underprovisioned:" in heap
-assert "Descriptor allocation fresh-pool requirement type=" in heap
+assert "PR117_DESCRIPTOR_PREVIOUS_POOL type=" in heap
 assert "std::vector<vk::DescriptorPoolSize> curr_pool_sizes;" in heap_h
 assert "std::span<const vk::WriteDescriptorSet> writes" in heap_h
 assert "desc_heap.Commit(" in pipeline_common
