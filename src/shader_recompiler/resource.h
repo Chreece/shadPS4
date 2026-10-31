@@ -138,6 +138,10 @@ struct ImageResource {
     bool is_array{};
     bool is_written{};
     bool is_r128{};
+    // Compile-time proof: both guest Color1D and Color2D occur in this
+    // sampled table and both lower to the same Vulkan 2D image view. Its
+    // GPU-side descriptor type must still select y=0 for genuine Color1D.
+    bool mixed_color1d_2d{};
     u8 constant_mip_index{};
     MipStorageFallbackMode mip_fallback_mode{};
     SharpFetchPostOp post_op{};
