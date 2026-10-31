@@ -14,7 +14,8 @@ INTERMEDIATE="c61b3b29d05990f3938190f9f1bd955a68d6be4e"
 PREVIOUS_PIN="763a37e8cbf604e52e85fb3bd62b6e769104ff4c"
 PREVIOUS_BRANCH_HEAD="d92ff10faaaa2441ab43df8c4f66821bc53b8afe"
 TESTED_PIN="f90b3d008aaeb3322cebc057a0cc1ab91321d229"
-PIN="23125557a5369d195f2c776784f097aef3745a44"
+PREVIOUS_SOURCE_PIN="23125557a5369d195f2c776784f097aef3745a44"
+PIN="e7614336c408e3ea7f95ad51e6f32392b0b4b5f9"
 BRANCH="feature/ordered-gds-wave-executor-20261029"
 SHA="9b4300c2666580fe9963eef8f74585e28cb5ad232d8a3c8aa05a732c32871674"
 OLD_SHA="$SHA"
@@ -124,7 +125,8 @@ done
 CURRENT="$(git -C "$SRC" rev-parse HEAD)"
 [[ "$CURRENT" == "$OLD_PIN" || "$CURRENT" == "$INTERMEDIATE" ||
    "$CURRENT" == "$PREVIOUS_PIN" || "$CURRENT" == "$PREVIOUS_BRANCH_HEAD" ||
-   "$CURRENT" == "$TESTED_PIN" || "$CURRENT" == "$PIN" ]] || {
+   "$CURRENT" == "$TESTED_PIN" ||
+   "$CURRENT" == "$PREVIOUS_SOURCE_PIN" || "$CURRENT" == "$PIN" ]] || {
   echo "UNKNOWN_ISOLATED_SOURCE_REVISION=$CURRENT; NO_CHANGES"; exit 3;
 }
 [[ -z "$(git -C "$SRC" status --porcelain=v1 --untracked-files=no)" ]] || {
@@ -203,6 +205,8 @@ grep -Fq 'DYNAMIC_GPU_PHI_STAYS_ON_GPU=PASS' \
 grep -Fq 'ORDERED_GDS_GUEST_COUNTER_NOT_FABRICATED=PASS' \
   "$REPORT/srt-source-tests.log" || exit 6
 grep -Fq 'HOST_LANE_UNIFORM_ONLY_GPU_DEPENDENT_SRT_STAYS_GPU=PASS' \
+  "$REPORT/srt-source-tests.log" || exit 6
+grep -Fq 'HOST_SCALAR_EQUIVALENT_PHI_NO_GPU_BRANCH_GUESS=PASS' \
   "$REPORT/srt-source-tests.log" || exit 6
 grep -Fq 'ZOMBIE_NOT_MISCLASSIFIED_AS_LIVE=PASS' \
   "$REPORT/gpu-observer-tests.log" || exit 6
