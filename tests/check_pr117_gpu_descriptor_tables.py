@@ -28,6 +28,10 @@ instance = source("src/video_core/renderer_vulkan/vk_instance.cpp")
 instance_h = source("src/video_core/renderer_vulkan/vk_instance.h")
 shader = source("src/shader_recompiler/backend/spirv/emit_spirv.cpp")
 version = source("src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp")
+heap = source("src/video_core/renderer_vulkan/vk_resource_pool.cpp")
+heap_h = source("src/video_core/renderer_vulkan/vk_resource_pool.h")
+plan = source("src/video_core/renderer_vulkan/vk_descriptor_batch_plan.h")
+allocator_test = source("tests/descriptor_heap_adaptive_batch.cpp")
 
 # Only contiguous 8-dword image descriptors with verified table provenance,
 # a bounded count and a Vulkan capability may use a GPU-selected index.
@@ -114,6 +118,24 @@ assert "PR117_REAL_GCN_CAPTURE_DONE" in raster
 assert "ASSERT_MSG(!program.info.uses_ordered_gds" in shader
 assert "ShaderBinaryVersion = 14u;" in version
 assert "ShaderMetaVersion = 8u;" in version
+# Pool capacity is for descriptors, not for sets. One 827-image
+# descriptor set fits within 8192 sampled images, but the default batch
+# of 32 sets cannot. Verify actual adaptive allocation in BOTH pool paths.
+assert "DescriptorSetBatch = 32" in heap_h
+assert "eSampledImage, 8192" in pipeline
+assert "DescriptorAllocationBatchSizes{32, 16, 8, 4, 2, 1}" in plan
+assert "result = attempt(count)" in plan
+assert "result != out_of_pool && result != fragmented_pool" in plan
+assert "desc_sets.resize(count)" in heap
+assert "alloc_info.descriptorSetCount = count" in heap
+assert heap.count("try_batch() != 0") == 2
+assert "descriptor_sets.clear();" in heap
+assert "Cannot allocate even one descriptor set from fresh pool:" in heap
+assert "FakePool new_pool{8192, 827, {}}" in allocator_test
+assert "FakePool oversized{8192,8193,{}}" in allocator_test
+assert "Result::DeviceLost" in allocator_test
+print("GPU_DESCRIPTOR_BATCH_POOL_CAPACITY_AND_ADAPTIVE_RETRY=PASS")
+
 print("GPU_BACKED_DYNAMIC_IMAGE_TABLE_PROVENANCE_AND_BOUNDS=PASS")
 print("VULKAN_NONUNIFORM_IMAGE_DESCRIPTOR_AND_PERSISTENT_POINTERS=PASS")
 print("PR117_ORDERED_GDS_NORMAL_EXECUTION_STILL_FAIL_CLOSED=PASS")

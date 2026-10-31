@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "common/assert.h"
+#include "video_core/renderer_vulkan/vk_descriptor_batch_plan.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_resource_pool.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
@@ -122,56 +123,70 @@ vk::DescriptorSet DescriptorHeap::Commit(vk::DescriptorSetLayout set_layout) {
     const u64 set_key = std::bit_cast<u64>(set_layout);
     const auto [it, _] = descriptor_sets.try_emplace(set_key);
 
-    // Check if allocated sets exist and pick one.
     if (!it->second.empty()) {
         const auto desc_set = it->second.back();
         it.value().pop_back();
         return desc_set;
     }
 
-    DescSetBatch desc_sets(DescriptorSetBatch);
+    DescSetBatch desc_sets;
     std::array<vk::DescriptorSetLayout, DescriptorSetBatch> layouts;
     layouts.fill(set_layout);
-
     vk::DescriptorSetAllocateInfo alloc_info = {
         .descriptorPool = curr_pool,
         .descriptorSetCount = DescriptorSetBatch,
         .pSetLayouts = layouts.data(),
     };
+    // Vulkan pool limits count DESCRIPTORS, not just descriptor SETS.
+    // A set with 827 images cannot be allocated 32 times from a pool of
+    // 8192 sampled-image descriptors. Retry smaller batches in the SAME
+    // pool before rotating it; never repeat the impossible 32-set request
+    // in every new pool. The 32->16->8->4->2->1 plan is title-independent.
+    const auto allocate = [&](u32 count) {
+        desc_sets.resize(count);
+        alloc_info.descriptorSetCount = count;
+        return device.allocateDescriptorSets(&alloc_info, desc_sets.data());
+    };
+    vk::Result result = vk::Result::eErrorOutOfPoolMemory;
+    const auto try_batch = [&]() {
+        return TryAllocateDescriptorBatch(
+            allocate, result, vk::Result::eSuccess,
+            vk::Result::eErrorOutOfPoolMemory, vk::Result::eErrorFragmentedPool);
+    };
 
-    // Attempt to allocate the descriptor set batch.
-    auto result = device.allocateDescriptorSets(&alloc_info, desc_sets.data());
-    if (result == vk::Result::eSuccess) {
+    if (try_batch() != 0) {
         const auto desc_set = desc_sets.back();
         desc_sets.pop_back();
         it.value() = std::move(desc_sets);
         return desc_set;
     }
 
-    // The pool has run out. Record current tick and place it in pending list.
     ASSERT_MSG(result == vk::Result::eErrorOutOfPoolMemory ||
                    result == vk::Result::eErrorFragmentedPool,
                "Unexpected error during descriptor set allocation: {}", vk::to_string(result));
+
+    // No batch size fits the current pool. It may be depleted or fragmented;
+    // preserve it until its recorded GPU fence is complete, then recycle or
+    // create a fresh pool. Cached sets from the old pool must not be reused.
     pending_pools.emplace_back(curr_pool, work_semaphore->CurrentTick());
     if (const auto [pool, tick] = pending_pools.front(); work_semaphore->IsFree(tick)) {
         curr_pool = pool;
         pending_pools.pop_front();
-
         const auto reset_result = device.resetDescriptorPool(curr_pool);
         ASSERT_MSG(reset_result == vk::Result::eSuccess,
                    "Unexpected error resetting descriptor pool: {}", vk::to_string(reset_result));
     } else {
         CreateDescriptorPool();
     }
-
-    // Attempt to allocate again with fresh pool.
-    alloc_info.descriptorPool = curr_pool;
-    result = device.allocateDescriptorSets(&alloc_info, desc_sets.data());
-    ASSERT_MSG(result == vk::Result::eSuccess,
-               "Unexpected error during descriptor set allocation {}", vk::to_string(result));
-
-    // We've changed pool so also reset descriptor batch cache.
     descriptor_sets.clear();
+    alloc_info.descriptorPool = curr_pool;
+    // Retry adaptively on the fresh pool too. An allocation needing even
+    // more descriptors than a whole pool remains an explicit failure rather
+    // than an invalid/null descriptor set or a fabricated shader resource.
+    ASSERT_MSG(try_batch() != 0,
+               "Cannot allocate even one descriptor set from fresh pool: {}",
+               vk::to_string(result));
+
     const auto desc_set = desc_sets.back();
     desc_sets.pop_back();
     descriptor_sets[set_key] = std::move(desc_sets);
