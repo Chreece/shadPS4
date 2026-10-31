@@ -11,7 +11,7 @@ SRC="$ROOT/source"
 BIN="$ROOT/build/shadps4"
 OLD_PIN="7490a113ce79e4da84071fc808443162a5b8ec3b"
 INTERMEDIATE="c61b3b29d05990f3938190f9f1bd955a68d6be4e"
-PIN="4feccdf056358746dd4f8e6ee2b41108317baa96"
+PIN="7bcfb9906edfa45a94a82579006d066e0ae0a0cf"
 BRANCH="feature/ordered-gds-wave-executor-20261029"
 SHA="9b4300c2666580fe9963eef8f74585e28cb5ad232d8a3c8aa05a732c32871674"
 OLD_SHA="$SHA"
@@ -182,6 +182,8 @@ python3 "$SRC/tests/check_srt_host_walker.py" \
     tail -110 "$REPORT/srt-source-tests.log"; exit 6
 }
 grep -Fq 'DYNAMIC_GPU_PHI_STAYS_ON_GPU=PASS' \
+  "$REPORT/srt-source-tests.log" || exit 6
+grep -Fq 'ORDERED_GDS_GUEST_COUNTER_NOT_FABRICATED=PASS' \
   "$REPORT/srt-source-tests.log" || exit 6
 SRT_XBYAK_INCLUDE=""
 for dir in "$SRC/externals/xbyak" "$SRC/externals/xbyak/include" \
