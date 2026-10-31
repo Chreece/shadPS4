@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <bit>
+#include <optional>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <boost/container/flat_map.hpp>
@@ -537,55 +539,109 @@ static bool HasUnconditionalPhiValue(const IR::Inst* inst) {
 // divergent VGPR, ballot, arbitrary Phi, and resource-table read do NOT qualify.
 // The proof is deliberately narrower than the IR's general uniformity analysis:
 // only scalar host user-data and pure 32-bit operations over it are accepted.
-static bool IsHostUniformLaneValue(const IR::Value& value,
-                                   std::unordered_set<const IR::Inst*>& visiting, u32 depth) {
+// Canonical expression identity, not matching SSA instruction addresses.
+// Only shader launch user-data and pure scalar u32 operations can be
+// evaluated on the host. ReadConst, lane/EXEC masks, memory fetches and
+// divergent waterfall indices remain GPU dependencies. Equal canonical
+// expression trees evaluate identically on all active guest lanes.
+static std::optional<std::string> HostUniformSrtExpression(
+    const IR::Value& value, std::unordered_set<const IR::Inst*>& visiting, u32 depth) {
     if (value.IsImmediate()) {
-        return value.Type() == IR::Type::U32;
+        if (value.Type() != IR::Type::U32) {
+            return std::nullopt;
+        }
+        return "#" + std::to_string(value.U32());
     }
     const IR::Inst* inst = value.TryInst();
     if (!inst || depth >= 64 || !visiting.insert(inst).second) {
-        return false;
+        return std::nullopt;
     }
-    bool uniform = false;
-    switch (inst->GetOpcode()) {
-    case IR::Opcode::GetUserData:
-        uniform = true;
-        break;
-    case IR::Opcode::Phi:
-        uniform = HasUnconditionalPhiValue(inst) &&
-                  IsHostUniformLaneValue(inst->Arg(0), visiting, depth + 1);
-        break;
-    case IR::Opcode::ReadFirstLane:
-        uniform = IsHostUniformLaneValue(inst->Arg(0), visiting, depth + 1);
-        break;
-    case IR::Opcode::IAdd32:
-    case IR::Opcode::ISub32:
-    case IR::Opcode::IMul32:
-    case IR::Opcode::ShiftLeftLogical32:
-    case IR::Opcode::ShiftRightLogical32:
-    case IR::Opcode::BitwiseAnd32:
-    case IR::Opcode::BitwiseOr32:
-    case IR::Opcode::BitwiseXor32:
-    case IR::Opcode::BitwiseNot32:
-    case IR::Opcode::UMin32:
-    case IR::Opcode::UMax32:
-    case IR::Opcode::BitFieldUExtract:
-    case IR::Opcode::FindILsb32:
-        uniform = inst->NumArgs() != 0;
-        for (u32 i = 0; uniform && i < inst->NumArgs(); ++i) {
-            uniform = IsHostUniformLaneValue(inst->Arg(i), visiting, depth + 1);
+    const auto result = [&]() -> std::optional<std::string> {
+        switch (inst->GetOpcode()) {
+        case IR::Opcode::GetUserData:
+            if (inst->NumArgs() != 1) {
+                return std::nullopt;
+            }
+            return "u" + std::to_string(static_cast<u32>(inst->Arg(0).ScalarReg()));
+        case IR::Opcode::Phi: {
+            if (inst->NumArgs() == 0) {
+                return std::nullopt;
+            }
+            auto first = HostUniformSrtExpression(inst->Arg(0), visiting, depth + 1);
+            if (!first) {
+                return std::nullopt;
+            }
+            for (u32 i = 1; i < inst->NumArgs(); ++i) {
+                auto candidate = HostUniformSrtExpression(inst->Arg(i), visiting, depth + 1);
+                if (!candidate || *candidate != *first) {
+                    return std::nullopt;
+                }
+            }
+            return first;
         }
-        break;
-    default:
-        break;
-    }
+        case IR::Opcode::ReadFirstLane:
+            if (inst->NumArgs() != 1) {
+                return std::nullopt;
+            }
+            return HostUniformSrtExpression(inst->Arg(0), visiting, depth + 1);
+        case IR::Opcode::IAdd32:
+        case IR::Opcode::ISub32:
+        case IR::Opcode::IMul32:
+        case IR::Opcode::ShiftLeftLogical32:
+        case IR::Opcode::ShiftRightLogical32:
+        case IR::Opcode::BitwiseAnd32:
+        case IR::Opcode::BitwiseOr32:
+        case IR::Opcode::BitwiseXor32:
+        case IR::Opcode::BitwiseNot32:
+        case IR::Opcode::UMin32:
+        case IR::Opcode::UMax32:
+        case IR::Opcode::BitFieldUExtract:
+        case IR::Opcode::FindILsb32: {
+            if (inst->NumArgs() == 0 || inst->NumArgs() > 3) {
+                return std::nullopt;
+            }
+            std::string key = "o" + std::to_string(static_cast<u32>(inst->GetOpcode())) +
+                              "f" + std::to_string(inst->Flags<u32>()) + "(";
+            for (u32 i = 0; i < inst->NumArgs(); ++i) {
+                auto part = HostUniformSrtExpression(inst->Arg(i), visiting, depth + 1);
+                if (!part || key.size() + part->size() >= 4096) {
+                    return std::nullopt;
+                }
+                key += std::to_string(part->size()) + ":" + *part + ";";
+            }
+            key += ")";
+            return key;
+        }
+        default:
+            return std::nullopt;
+        }
+    }();
     visiting.erase(inst);
-    return uniform;
+    return result;
 }
 
 static bool IsHostUniformLaneValue(const IR::Value& value) {
     std::unordered_set<const IR::Inst*> visiting;
-    return IsHostUniformLaneValue(value, visiting, 0);
+    return HostUniformSrtExpression(value, visiting, 0).has_value();
+}
+
+static bool HasHostEquivalentPhiInputs(const IR::Inst* inst) {
+    if (inst->GetOpcode() != IR::Opcode::Phi || inst->NumArgs() == 0) {
+        return false;
+    }
+    std::unordered_set<const IR::Inst*> visiting;
+    visiting.insert(inst);
+    auto first = HostUniformSrtExpression(inst->Arg(0), visiting, 1);
+    if (!first) {
+        return false;
+    }
+    for (u32 i = 1; i < inst->NumArgs(); ++i) {
+        auto candidate = HostUniformSrtExpression(inst->Arg(i), visiting, 1);
+        if (!candidate || *candidate != *first) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
@@ -608,7 +664,7 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     case IR::Opcode::FindILsb32:
         return true;
     case IR::Opcode::Phi:
-        return HasUnconditionalPhiValue(inst);
+        return HasUnconditionalPhiValue(inst) || HasHostEquivalentPhiInputs(inst);
     case IR::Opcode::ReadFirstLane:
         return IsHostUniformLaneValue(inst->Arg(0));
     default:
@@ -689,12 +745,21 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
             if (!pass_info.reported_gpu_dynamic_lane_srt) {
                 pass_info.reported_gpu_dynamic_lane_srt = true;
                 const IR::Inst* producer = input.TryInst();
+                const u32 phi_inputs =
+                    producer && producer->GetOpcode() == IR::Opcode::Phi
+                        ? producer->NumArgs() : 0u;
+                const IR::Inst* first_source =
+                    phi_inputs ? producer->Arg(0).TryInst() : nullptr;
                 LOG_WARNING(Render_Recompiler,
                             "GPU_DYNAMIC_SRT_REQUIRES_SHADER_RESOURCE_LOOKUP shader={:#x}, "
-                            "first_lane_operand={}",
+                            "first_lane_operand={} phi_inputs={} phi_first_source={}",
                             pass_info.shader_hash,
                             producer ? magic_enum::enum_name(producer->GetOpcode())
-                                     : std::string_view("immediate"));
+                                     : std::string_view("immediate"),
+                            phi_inputs,
+                            first_source
+                                ? magic_enum::enum_name(first_source->GetOpcode())
+                                : std::string_view("immediate_or_none"));
             }
             return false;
         }
@@ -710,9 +775,11 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
     case IR::Opcode::Phi: {
         // A dynamic Phi is a GPU control-flow dependency, not a safe host
         // SRT address. Keep it unflattened instead of selecting any path.
-        if (!HasUnconditionalPhiValue(inst)) {
+        if (!HasUnconditionalPhiValue(inst) && !HasHostEquivalentPhiInputs(inst)) {
             return false;
         }
+        // Only a literally shared SSA value or a proven equivalent
+        // host-data expression permits choosing an incoming Phi value.
         const IR::Value common = inst->Arg(0);
         if (common.IsImmediate()) {
             c.mov(reg, common.U32());
