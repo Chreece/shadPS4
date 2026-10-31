@@ -42,6 +42,18 @@ trap finish EXIT
 for tool in python3 tar; do
   command -v "$tool" >/dev/null || { echo "MISSING_TOOL=$tool"; exit 2; }
 done
+STATE=PRECHECK_TARGETED_PYTHON_SYNTAX_AND_PROVENANCE
+python3 - "$0" <<'PYCHECK'
+import ast,pathlib,sys
+text=pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+marker="python3 -B - \"$P\" \"$OUT\" <<'PY'\n"
+assert text.count(marker)==1
+program=text.split(marker,1)[1].split("\nPY\nSTATE=",1)[0]
+ast.parse(program)
+for term in ("5367baa7","0c605392","9a1583fb","targeted-shader-chain.json","NO_GPU_RUN_CPU_ONLY"):
+ assert term in program,term
+print("TARGETED_SHADER_PROGRAM_SYNTAX_AND_SCOPE=PASS")
+PYCHECK
 STATE=RECOVER_EXACT_GOW_SHADER_CHAIN_FROM_ALL_RETAINED_DUMPS
 python3 -B - "$P" "$OUT" <<'PY'
 from pathlib import Path
