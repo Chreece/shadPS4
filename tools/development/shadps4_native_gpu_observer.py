@@ -239,40 +239,88 @@ def classify_native_fault(console, out, binary):
 
 
 def capture_gpu_kernel_evidence(out, since):
-    """Read-only kernel messages; missing permission is not 'zero GPU faults'."""
-    path=out/'amdgpu-kernel-evidence.txt'
-    status={"source":"journalctl -k", "permission":"UNVERIFIED",
-            "matched_lines":0}
-    if shutil.which('journalctl') is None:
-        status["permission"]="JOURNALCTL_NOT_INSTALLED"
-        path.write_text("journalctl unavailable; do not infer absence of GPU errors\n")
-        return status
-    try:
-        proc=subprocess.run(
-            ['journalctl', '-k', '--since', since, '--no-pager', '--quiet',
-             '--output=short-iso'],
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, check=False, timeout=5)
-        if proc.returncode != 0:
-            status['permission']='JOURNAL_ACCESS_DENIED_OR_FAILED'
-            path.write_text(
-                "JOURNAL_STATUS="+str(proc.returncode)+"\n"+
-                proc.stderr.decode('utf-8','replace')[:1000]+"\n")
-            return status
-        status['permission']='READABLE'
-        lines=proc.stdout.decode('utf-8','replace').splitlines()
-        terms=('amdgpu', 'drm:', 'gfx ', 'gpu fault', 'gpu reset',
-               'ring timeout', 'gpu recover', 'vm fault', 'radv', 'navi31')
-        selected=[x[:1300] for x in lines if any(term in x.lower() for term in terms)]
-        status['matched_lines']=len(selected)
-        path.write_text(
-            "GPU_KERNEL_MESSAGES_WITHIN_TEST_WINDOW="+str(len(selected))+"\n"+
-            "\n".join(selected[-220:])+"\n")
-    except (subprocess.TimeoutExpired,OSError,UnicodeError) as error:
-        status['permission']='JOURNAL_QUERY_ERROR'
-        path.write_text(type(error).__name__+": "+str(error)[:700]+"\n")
-    return status
+    """Never equate an unprivileged, empty journal with zero AMDGPU faults.
 
+    Only root or a successful NON-INTERACTIVE sudo journalctl read can
+    establish a complete kernel journal view. Never prompt for a password
+    from the game process or alter the kernel, GPU, or Sunshine session.
+    """
+    from collections import Counter
+
+    path = out / 'amdgpu-kernel-evidence.txt'
+    status = {'source': 'journalctl -k', 'permission': 'UNVERIFIED',
+              'matched_lines': 0, 'kernel_evidence_complete': False}
+    if shutil.which('journalctl') is None:
+        status['permission'] = 'JOURNALCTL_NOT_INSTALLED'
+        path.write_text('journalctl unavailable; GPU kernel status unverified\n')
+        return status
+    args = ['journalctl', '-k', '--since', since, '--no-pager',
+            '--quiet', '--output=short-iso']
+    use_root = os.geteuid() == 0
+    try:
+        if not use_root and shutil.which('sudo') is not None:
+            # -n avoids the broken SSH/TTY sudo prompt observed in the
+            # historical GPU postmortem. Never retry interactively.
+            auth = subprocess.run(
+                ['sudo', '-n', '-v'],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, check=False, timeout=3)
+            use_root = auth.returncode == 0
+        command = ['sudo', '-n', *args] if use_root and os.geteuid() != 0 else args
+        proc = subprocess.run(
+            command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False, timeout=8)
+        if proc.returncode != 0:
+            status['permission'] = 'JOURNAL_ACCESS_DENIED_OR_FAILED'
+            path.write_text(
+                'JOURNAL_STATUS=' + str(proc.returncode) + '\n' +
+                proc.stderr.decode('utf-8', 'replace')[:1000] + '\n')
+            return status
+
+        status['permission'] = ('PRIVILEGED_READABLE' if use_root else
+                                'UNVERIFIED_JOURNAL_VISIBILITY')
+        status['kernel_evidence_complete'] = use_root
+        status['source'] = 'sudo -n journalctl -k' if command[0] == 'sudo' else 'journalctl -k'
+        terms = ('amdgpu', 'drm:', 'gfx ', 'gpu fault', 'gpu reset',
+                 'ring timeout', 'gpu recover', 'vm fault', 'radv', 'navi31')
+        critical = ('ring gfx', 'ring compute', 'timeout', 'gpu reset',
+                    'gpu fault', 'vm fault', 'device lost', 'gpu recovery')
+        interesting = []
+        important = []
+        counts = Counter()
+        for line in proc.stdout.decode('utf-8', 'replace').splitlines():
+            lowered = line.lower()
+            if not any(term in lowered for term in terms):
+                continue
+            counts['matching_kernel_lines'] += 1
+            if 'init_user_pages: failed to get user pages' in lowered:
+                counts['user_pages_failures'] += 1
+                continue
+            if any(term in lowered for term in critical):
+                counts['critical_lines'] += 1
+                if len(important) < 100:
+                    important.append(line[:1300])
+            elif len(interesting) < 80:
+                interesting.append(line[:1300])
+
+        status['matched_lines'] = counts['matching_kernel_lines']
+        status['critical_lines'] = counts['critical_lines']
+        status['user_pages_failures'] = counts['user_pages_failures']
+        status['verified_no_gpu_faults'] = bool(use_root and
+                                               counts['matching_kernel_lines'] == 0)
+        header = ('GPU_KERNEL_VISIBILITY=' + status['permission'] + '\n' +
+                  'GPU_KERNEL_COMPLETE=' + str(use_root) + '\n' +
+                  'GPU_KERNEL_MESSAGES_WITHIN_TEST_WINDOW=' +
+                  str(status['matched_lines']) + '\n' +
+                  'GPU_KERNEL_CRITICAL_LINES=' + str(status['critical_lines']) + '\n' +
+                  'GPU_KERNEL_USER_PAGES_FAILURES=' +
+                  str(status['user_pages_failures']) + '\n')
+        path.write_text(header + '\n'.join(important + interesting) + '\n')
+    except (subprocess.TimeoutExpired, OSError, UnicodeError) as error:
+        status['permission'] = 'JOURNAL_QUERY_ERROR'
+        status['kernel_evidence_complete'] = False
+        path.write_text(type(error).__name__ + ': ' + str(error)[:700] + '\n')
+    return status
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
