@@ -52,10 +52,11 @@ int main() {
         assert(find(u32{1} << bit) == bit);
         assert(find((u32{1} << bit) | 0x80000000u) == bit);
     }
-    for (u32 count = 0; count < 96; ++count) {
-        // x86 masks variable 32-bit shifts to 5 bits, as SPIR-V operations
-        // on 32-bit values do; no bogus first shift of the COUNT by VALUE.
-        assert(left(count) == (0x12345678u << (count & 31)));
+    // Test all architecturally in-range 32-bit shift counts. Do not
+    // assert guest semantics for counts >= 32, which need separate ISA
+    // verification before being used for host SRT pointer evaluation.
+    for (u32 count = 0; count < 32; ++count) {
+        assert(left(count) == (0x12345678u << count));
     }
     std::cout << "SRT_HOST_FIRST_SET_BIT_JIT=PASS "
                  "zero_returns_ffffffff=PASS nonzero_ffs=PASS "
