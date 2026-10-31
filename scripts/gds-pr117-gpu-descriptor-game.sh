@@ -22,7 +22,8 @@ LAST_TESTED_SOURCE_PIN="11ca38bc8afcb0709d1f85f55919dfcb26dc2d03"
 PREVIOUS_ALLOCATOR_SOURCE_PIN="d9a5c4ca3b1a4e4cfff3e02f91cde00baf8c19c0"
 PRIOR_MEASURED_POOL_PIN="ff916b8dc0cb12ae552d84491db26ffbd15e7556"
 INITIAL_EXACT_POOL_SOURCE_PIN="f3051fa0109fb44ee1f91b8f5e6bc929d8533f28"
-PIN="29b475ca1d278849516b6aa1b8487d73a02b25fb"
+LAST_TEXTURE_OVERLAP_SOURCE_PIN="29b475ca1d278849516b6aa1b8487d73a02b25fb"
+PIN="f8cc5e39e1522316a79d749f4186a55c00e950e8"
 BRANCH="feature/pr117-gpu-descriptor-tables-20261031"
 SHA="9b4300c2666580fe9963eef8f74585e28cb5ad232d8a3c8aa05a732c32871674"
 OLD_SHA="$SHA"
@@ -50,6 +51,8 @@ import json,sys
 from pathlib import Path
 src,dst=Path(sys.argv[1]),Path(sys.argv[2])
 marks=('PR117_', 'Ordered GDS', 'DS_ORDERED_COUNT',
+       'TEXTURE_1D_TO_2D_SAME_STORAGE_EXPANSION',
+       'Unresolvable image overlap with equal memory address',
        'VK_ERROR_DEVICE_LOST', 'SIGSEGV', 'SIGABRT')
 selected=[];slots=0;done=0;errors=0
 with src.open(encoding='utf-8',errors='replace') as f:
@@ -81,6 +84,9 @@ checks={
     "failed_srt_walker": "Failed to compute offset for SRT walker",
     "captured_gds_slots": "PR117_REAL_GCN_GPU_CAPTURE_SLOT=",
     "captured_gds_done": "PR117_REAL_GCN_CAPTURE_DONE",
+    "texture_layer_growth_with_gpu_copy": "TEXTURE_1D_TO_2D_SAME_STORAGE_EXPANSION",
+    "texture_unresolvable_overlap": "Unresolvable image overlap with equal memory address",
+    "descriptor_exact_layout_allocated": "PR117_DESCRIPTOR_EXACT_SET_ALLOCATED",
     "shader_buffer_size_clamps": "Clamped size from 4294967295"
 }
 counts=collections.Counter()
@@ -175,7 +181,8 @@ CURRENT="$(git -C "$SRC" rev-parse HEAD)"
    "$CURRENT" == "$LAST_TESTED_SOURCE_PIN" ||
    "$CURRENT" == "$PREVIOUS_ALLOCATOR_SOURCE_PIN" ||
    "$CURRENT" == "$PRIOR_MEASURED_POOL_PIN" ||
-   "$CURRENT" == "$INITIAL_EXACT_POOL_SOURCE_PIN" || "$CURRENT" == "$PIN" ]] || {
+   "$CURRENT" == "$INITIAL_EXACT_POOL_SOURCE_PIN" ||
+   "$CURRENT" == "$LAST_TEXTURE_OVERLAP_SOURCE_PIN" || "$CURRENT" == "$PIN" ]] || {
   echo "UNKNOWN_ISOLATED_SOURCE_REVISION=$CURRENT; NO_CHANGES"; exit 3;
 }
 [[ -z "$(git -C "$SRC" status --porcelain=v1 --untracked-files=no)" ]] || {
@@ -310,6 +317,41 @@ for compiler in g++ clang++-17; do
   rm -f -- "$REPORT/descriptor-batch-$label"
 done
 echo "GCC_AND_CLANG_DESCRIPTOR_BATCH_REGRESSIONS=PASS"
+STATE=STRICT_UNIVERSAL_TEXTURE_LAYER_GROWTH_SOURCE
+PYTHONDONTWRITEBYTECODE=1 python3 "$SRC/tests/check_pr117_texture_overlap.py" \
+  >"$REPORT/texture-layer-source-tests.log" 2>&1 || {
+    tail -100 "$REPORT/texture-layer-source-tests.log"
+    exit 6
+}
+grep -Fq 'TEXTURE_1D_TO_2D_OVERLAP_FAIL_CLOSED=PASS' \
+  "$REPORT/texture-layer-source-tests.log" || exit 6
+grep -Fq 'TEXTURE_EXISTING_GPU_DATA_PRESERVED_ON_LAYER_GROWTH=PASS' \
+  "$REPORT/texture-layer-source-tests.log" || exit 6
+STATE=EXECUTABLE_UNIVERSAL_TEXTURE_LAYER_GROWTH_REGRESSION
+for compiler in g++ clang++-17; do
+  command -v "$compiler" >/dev/null || {
+    echo "MISSING_TEXTURE_REGRESSION_COMPILER=$compiler"; exit 6
+  }
+  label=gcc
+  [[ "$compiler" != clang++-17 ]] || label=clang
+  "$compiler" -std=c++20 -O2 -UNDEBUG -Wall -Wextra -Werror -pedantic \
+    -I"$SRC/src" "$SRC/tests/texture_cache_1d_to_2d_layer_growth.cpp" \
+    -o "$REPORT/texture-layer-$label" \
+    >"$REPORT/texture-layer-$label-build.log" 2>&1 || {
+      tail -100 "$REPORT/texture-layer-$label-build.log"; exit 6
+    }
+  "$REPORT/texture-layer-$label" >"$REPORT/texture-layer-$label-run.log" 2>&1 || {
+    tail -100 "$REPORT/texture-layer-$label-run.log"; exit 6
+  }
+  for required in \
+    'TEXTURE_1D_TO_2D_SAME_STORAGE_LAYER_GROWTH=PASS' \
+    'TEXTURE_DIFFERENT_TILING_OR_FORMAT_REJECTED=PASS' \
+    'TEXTURE_GPU_DATA_PRESERVATION_PRECONDITIONS=PASS'; do
+    grep -Fq "$required" "$REPORT/texture-layer-$label-run.log" || exit 6
+  done
+  rm -f -- "$REPORT/texture-layer-$label"
+done
+echo "GCC_AND_CLANG_TEXTURE_LAYER_GROWTH_TESTS=PASS"
 SRT_XBYAK_INCLUDE=""
 for dir in "$SRC/externals/xbyak" "$SRC/externals/xbyak/include" \
            /usr/local/include /usr/include; do
