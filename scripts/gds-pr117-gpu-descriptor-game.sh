@@ -97,6 +97,8 @@ checks={
 }
 counts=collections.Counter()
 hashes={k:set() for k in checks}
+samples={k:[] for k in checks}
+sample_keys={k:set() for k in checks}
 pattern=re.compile(r'shader=0x([0-9a-fA-F]+)')
 with src.open(encoding="utf-8",errors="replace") as stream:
     for line in stream:
@@ -106,10 +108,17 @@ with src.open(encoding="utf-8",errors="replace") as stream:
                 match=pattern.search(line)
                 if match and len(hashes[key])<128:
                     hashes[key].add(match.group(1).lower())
+                # A bounded sample per unique shader survives even when
+                # pool allocations flood earlier portions of the log.
+                signature=match.group(1).lower() if match else line[:1200]
+                if signature not in sample_keys[key] and len(samples[key])<32:
+                    sample_keys[key].add(signature)
+                    samples[key].append(line[:1200].rstrip())
 (dst/"descriptor-array-gpu-summary.json").write_text(json.dumps({
     "source":"unabridged native game console on user's host",
     "counts":{k:counts[k] for k in checks},
     "shader_hashes":{k:sorted(v) for k,v in hashes.items()},
+    "first_per_shader_samples":{k:v for k,v in samples.items() if v},
     "guest_post_ds_shader_reentry":"NOT_IMPLEMENTED",
     "gameplay_acceptance":"NOT_ESTABLISHED"
 },indent=2)+"\n")
