@@ -174,7 +174,7 @@ PYSUMMARY
     echo "PREVIOUS_NATIVE_ELF_SHA256=$OLD_SHA"
     echo "GUEST_SHADER_REENTRY=NOT_IMPLEMENTED"
     echo "GAMEPLAY=NOT_CLAIMED"
-    echo "SUNSHINE_XORG_SSH_ESDE_NETWORK=UNCHANGED"
+    echo "SUNSHINE_XORG_SSH_ESDE_NETWORK=NOT_MODIFIED_BY_RUNNER"
   } > "$REPORT/result.txt"
   # Append outcomes to the shared shadPS4 trial diary, including captures
   # stopped before actual GPU re-entry. Never overwrite prior experiments.
