@@ -113,6 +113,29 @@ for needle in (
 ):
     assert needle in raster_h, needle
 assert "image_descriptor_array_sizes" not in raster
+# The 2026-10-31 native RADV run emitted 155394 warnings in 118s from
+# two real GPU-backed descriptor tables. Re-evaluate the guest table's
+# first valid representative exactly once per binding invocation and
+# report mismatch statistics once per table, never once per element.
+# Unsupported guest view types must remain explicit null Vulkan entries.
+bind_textures = raster[raster.index("void Rasterizer::BindTextures("):
+                       raster.index("RenderState Rasterizer::BeginRendering(")]
+assert bind_textures.count("image_desc.GetSharp(stage)") == 1
+assert bind_textures.index("const auto representative =") < bind_textures.index(
+    "for (u32 i = 0; i < num_bindings; ++i)")
+for needle in (
+    "const bool is_descriptor_table = image_desc.descriptor_count != 0;",
+    "if (is_descriptor_table && tsharp)",
+    "view_mismatch || integer_mismatch || conversion_mismatch",
+    "image_bindings.emplace_back(std::piecewise_construct, std::tuple{}",
+    "IMAGE_DESCRIPTOR_ARRAY_MISMATCH shader={:#x}",
+    "first_incompatible_index",
+    "view_mismatches={} integer_mismatches={} conversion_mismatches={}",
+):
+    assert needle in bind_textures, needle
+assert "Incompatible image descriptor array element {}" not in bind_textures
+assert bind_textures.count("IMAGE_DESCRIPTOR_ARRAY_MISMATCH shader={:#x}") == 1
+print("GPU_DESCRIPTOR_ARRAY_SINGLE_REPRESENTATIVE_AND_BOUNDED_DIAGNOSTIC=PASS")
 
 # Preserve PR117's genuine ordered-GDS capture and fail-closed normal shader.
 assert "PR117_REAL_GCN_CAPTURE_DONE" in raster
