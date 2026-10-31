@@ -11,6 +11,7 @@
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
+#include "shader_recompiler/compatible_color1d_2d_image.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
@@ -1599,8 +1600,16 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             const auto num_fmt = tsharp.GetNumberFmt();
             if (is_descriptor_table && tsharp) {
                 const auto view = tsharp.GetViewType(image_desc.is_array);
-                const bool view_mismatch =
-                    view != representative.GetViewType(image_desc.is_array);
+                const auto reference_view = representative.GetViewType(image_desc.is_array);
+                // Guest Color1D and Color2D are BOTH actual Vulkan 2D
+                // VkImageViews. Permit only an authenticated mixed sampled
+                // table whose compiler emits GPU-dependent y=0 for 1D and
+                // the original y for 2D. Every other type stays null.
+                const bool shared_vk2d_view = image_desc.mixed_color1d_2d &&
+                    Shader::CompatibleColor1D2D::IsCompatibleSampled2D(
+                        reference_view, view, AmdGpu::ImageType::Color1D,
+                        AmdGpu::ImageType::Color2D);
+                const bool view_mismatch = view != reference_view && !shared_vk2d_view;
                 const bool integer_mismatch =
                     AmdGpu::IsInteger(num_fmt) !=
                     AmdGpu::IsInteger(representative.GetNumberFmt());
@@ -1659,6 +1668,12 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 image->binding.force_general |= image_desc.is_written;
             }
             image->binding.is_bound = 1u;
+        }
+        if (image_desc.mixed_color1d_2d) {
+            LOG_INFO(Render_Vulkan,
+                     "GUEST_COLOR1D_COLOR2D_SAMPLED_VK2D_COMPATIBLE shader={:#x} "
+                     "table={} remaining_invalid={}",
+                     stage.pgm_hash, num_bindings, incompatible_count);
         }
         if (incompatible_count != 0) {
             // One diagnostic per table binding, not one log write per
