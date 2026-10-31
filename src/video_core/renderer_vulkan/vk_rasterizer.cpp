@@ -16,6 +16,7 @@
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
+#include "video_core/renderer_vulkan/vk_indirect_read_sync.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_occlusion_query.h"
 #include "shader_recompiler/frontend/ordered_gds_capture_coverage.h"
@@ -379,6 +380,15 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     if (occlusion) {
         occlusion->EndDraw(cmdbuf, query);
     }
+    // Vulkan consumes these at DRAW_INDIRECT, not in a fragment or
+    // compute shader. Preserve the producer read for a later GPU writer.
+    constexpr auto indirect_read = vk::AccessFlagBits2::eIndirectCommandRead;
+    runtime.AccessBuffer(buffer, base, stride * max_count,
+                         BufferAccessStage(indirect_read, false), indirect_read);
+    if (count_address != 0) {
+        runtime.AccessBuffer(count_buffer, count_offset, sizeof(u32),
+                             BufferAccessStage(indirect_read, false), indirect_read);
+    }
     ResetBindings(false);
 }
 
@@ -505,6 +515,11 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     cmdbuf.dispatchIndirect(buffer->Handle(), base);
     DebugState.IncDispatch();
 
+    // A future write must wait for the indirect command processor to
+    // FINISH reading these arguments, not merely for shader execution.
+    constexpr auto indirect_read = vk::AccessFlagBits2::eIndirectCommandRead;
+    runtime.AccessBuffer(buffer, base, sizeof(VkDispatchIndirectCommand),
+                         BufferAccessStage(indirect_read, true), indirect_read);
     ResetBindings(true);
 }
 
@@ -679,6 +694,12 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(
                        "missing real GPU indirect GCN command");
             command.dispatchIndirect(indirect_command_buffer->Handle(),
                                      indirect_command_offset);
+            // The GDS first-pass path must not bypass the same universal
+            // Vulkan indirect read/write hazard as ordinary compute.
+            constexpr auto indirect_read = vk::AccessFlagBits2::eIndirectCommandRead;
+            runtime.AccessBuffer(indirect_command_buffer, indirect_command_offset,
+                                 sizeof(VkDispatchIndirectCommand),
+                                 BufferAccessStage(indirect_read, true), indirect_read);
         } else {
             command.dispatch(groups.x, groups.y, groups.z);
         }
