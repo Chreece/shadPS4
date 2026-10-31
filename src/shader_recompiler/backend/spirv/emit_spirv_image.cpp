@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <boost/container/static_vector.hpp>
+#include "shader_recompiler/compatible_color1d_2d_image.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/ir/microinstruction.h"
@@ -174,6 +175,40 @@ Id EmitImageSampleRaw(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address1,
     UNREACHABLE_MSG("Unreachable instruction");
 }
 
+// The guest 1D and 2D image views are both Vulkan e2D, but a genuine guest
+// Color1D sample requires y=0. Read the real T# type on the GPU using the SAME
+// original guest index as LoadImage. No CPU lane selection or forged type.
+static Id FixMixedGuestColor1D2DCoords(EmitContext& ctx, IR::Inst* inst,
+                                      const EmitContext::TextureDefinition& texture, Id coords) {
+    ASSERT_MSG(texture.mixed_color1d_2d && texture.is_descriptor_array,
+               "Mixed sampled descriptor arrays require verified GPU type selection");
+    ASSERT_MSG(inst->Arg(1).Type() == IR::Type::F32x2,
+               "Mixed guest Color1D/Color2D requires two texture coordinates");
+    const auto* handle = inst->Arg(0).TryInst();
+    ASSERT_MSG(handle && handle->GetOpcode() == IR::Opcode::ImageDescriptorHandle,
+               "Mixed image sample must retain the original GPU descriptor index");
+    const auto& desc = ctx.info.images[handle->Arg(0).U32() & 0xFFFF];
+    ASSERT_MSG(desc.mixed_color1d_2d && desc.descriptor_count >= 2,
+               "Mixed shader and guest image table must agree");
+    const Id guest_index = ctx.OpUMin(ctx.U32[1], ctx.Def(inst->Arg(0)),
+                                      ctx.ConstU32(desc.descriptor_count - 1));
+    const Id raw_type_dw_index =
+        ctx.OpIAdd(ctx.U32[1],
+                   ctx.ConstU32(desc.sharp_fetch.offsets[0] +
+                       Shader::CompatibleColor1D2D::Dword3Offset),
+                   ctx.OpShiftLeftLogical(ctx.U32[1], guest_index, ctx.ConstU32(3u)));
+    const Id raw_type = ctx.EmitFlatbufferLoad(raw_type_dw_index);
+    const Id guest_type = ctx.OpShiftRightLogical(ctx.U32[1], raw_type,
+                     ctx.ConstU32(Shader::CompatibleColor1D2D::TypeShift));
+    const Id is_color1d = ctx.OpIEqual(ctx.U1[1], guest_type,
+                       ctx.ConstU32(static_cast<u32>(AmdGpu::ImageType::Color1D)));
+    const Id x = ctx.OpCompositeExtract(ctx.F32[1], coords, 0u);
+    const Id original_y = ctx.OpCompositeExtract(ctx.F32[1], coords, 1u);
+    const Id y = ctx.OpSelect(ctx.F32[1], is_color1d,
+                               ctx.f32_zero_value, original_y);
+    return ctx.OpCompositeConstruct(ctx.F32[2], x, y);
+}
+
 Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id bias,
                               const IR::Value& offset) {
     const auto& texture = ctx.images[handle & 0xFFFF];
@@ -181,7 +216,13 @@ Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id c
     const Id result_type = texture.data_types->Get(4);
     const Id sampler = ctx.OpLoad(ctx.sampler_type, ctx.samplers[handle >> 16]);
     const Id sampled_image = SampledImage(ctx, texture, image, sampler);
-    const Id fixed_coords = FixImageCoords<true>(ctx, coords, texture.view_type);
+    if (texture.mixed_color1d_2d) {
+        ASSERT_MSG(offset.IsEmpty(),
+                   "Mixed 1D/2D offset samples need dimension-correct lowering");
+    }
+    const Id fixed_coords = texture.mixed_color1d_2d
+        ? FixMixedGuestColor1D2DCoords(ctx, inst, texture, coords)
+        : FixImageCoords<true>(ctx, coords, texture.view_type);
     ImageOperands operands;
     operands.Add(spv::ImageOperandsMask::Bias, bias);
     operands.AddOffset(ctx, texture.view_type, offset);
