@@ -47,7 +47,7 @@ for disallowed in ("case IR::Opcode::ReadConst:", "case IR::Opcode::ReadConstBuf
                    "case IR::Opcode::ReadLane:", "case IR::Opcode::Ballot:",
                    "case IR::Opcode::GetVectorRegister:", "case IR::Opcode::GetExec:"):
     assert disallowed not in proof
-assert "case IR::Opcode::ReadFirstLane:\\n        return IsHostUniformLaneValue(inst->Arg(0));" in allowed
+assert "case IR::Opcode::ReadFirstLane:\n        return IsHostUniformLaneValue(inst->Arg(0));" in allowed
 compute=s[s.index("static bool ComputeOffset(", end):s.index("static inline bool PushPtr(")]
 assert "if (!IsHostUniformLaneValue(input))" in compute
 assert "GPU_DYNAMIC_SRT_REQUIRES_SHADER_RESOURCE_LOOKUP" in compute
@@ -61,6 +61,7 @@ assert "c.mov(reg, inst->Arg(0).U32());" in f
 assert "c.shl(reg, cl);" in f
 assert "ASSERT_MSG(!program.info.uses_ordered_gds" in (
     root/"src/shader_recompiler/backend/spirv/emit_spirv.cpp").read_text()
-print("UNIVERSAL_HOST_SRT_FINDILSB_AND_CONSTANT_SHIFT=PASS")\nprint("HOST_LANE_UNIFORM_ONLY_GPU_DEPENDENT_SRT_STAYS_GPU=PASS")
+print("UNIVERSAL_HOST_SRT_FINDILSB_AND_CONSTANT_SHIFT=PASS")
+print("HOST_LANE_UNIFORM_ONLY_GPU_DEPENDENT_SRT_STAYS_GPU=PASS")
 print("DYNAMIC_GPU_PHI_STAYS_ON_GPU=PASS")
 print("ORDERED_GDS_GUEST_COUNTER_NOT_FABRICATED=PASS")
