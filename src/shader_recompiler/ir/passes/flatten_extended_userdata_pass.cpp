@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <bit>
 #include <unordered_map>
+#include <unordered_set>
 #include <boost/container/flat_map.hpp>
 #include <queue>
 #include <xbyak/xbyak.h>
@@ -495,18 +496,36 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
 // loops over live GPU lane masks, are NOT host constants and require a
 // GPU-side resource lookup. Never choose an arbitrary Phi predecessor.
 static bool HasUnconditionalPhiValue(const IR::Inst* inst) {
-    if (inst->GetOpcode() != IR::Opcode::Phi || inst->NumArgs() == 0) {
+    if (inst->GetOpcode() != IR::Opcode::Phi) {
         return false;
     }
-    const IR::Value first = inst->Arg(0);
-    if (first.IsEmpty() || first.TryInst() == inst ||
-        (first.IsImmediate() && first.Type() != IR::Type::U32)) {
-        return false;
-    }
-    for (std::size_t i = 1; i < inst->NumArgs(); ++i) {
-        if (inst->Arg(i) != first) {
+    // Unconditional Phi chains can still be cyclic (A <- B <- A).
+    // Reject the entire chain rather than recursively generating an
+    // unbounded host evaluator or choosing an arbitrary predecessor.
+    std::unordered_set<const IR::Inst*> visited;
+    const IR::Inst* current = inst;
+    while (current->GetOpcode() == IR::Opcode::Phi) {
+        if (!visited.insert(current).second || current->NumArgs() == 0) {
             return false;
         }
+        const IR::Value first = current->Arg(0);
+        if (first.IsEmpty() ||
+            (first.IsImmediate() && first.Type() != IR::Type::U32)) {
+            return false;
+        }
+        for (std::size_t i = 1; i < current->NumArgs(); ++i) {
+            if (current->Arg(i) != first) {
+                return false;
+            }
+        }
+        if (first.IsImmediate()) {
+            return true;
+        }
+        const IR::Inst* next = first.TryInst();
+        if (!next) {
+            return false;
+        }
+        current = next;
     }
     return true;
 }
