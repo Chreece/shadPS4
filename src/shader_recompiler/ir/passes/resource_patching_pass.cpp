@@ -302,6 +302,37 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         .post_op = resource.sharps[0].post_op,
     };
 
+    // The GPU reads a genuine guest T# selector; only specialize a shared
+    // VkImageViewType::e2D array when the sampled, non-array, non-depth table
+    // actually contains BOTH guest 1D and 2D records. Unsupported types
+    // remain null rather than being reinterpreted as a different image.
+    // This path is restricted to implicit LOD sampling (the currently proven
+    // guest IR form), never storage, gathers, MSAA, or shadow images.
+    if (array && !image_res.is_depth && !image_res.is_atomic &&
+        !image_res.is_written && !image_res.is_array && !image_res.is_r128 &&
+        !inst_info.has_lod && inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
+        bool seen_color1d = false;
+        bool seen_color2d = false;
+        for (u32 i = 0; i + 1 < image_res.descriptor_count; ++i) {
+            const auto entry = image_res.GetSharp(info, i);
+            if (!entry) {
+                continue;
+            }
+            const auto type = entry.GetViewType(false);
+            seen_color1d |= type == AmdGpu::ImageType::Color1D;
+            seen_color2d |= type == AmdGpu::ImageType::Color2D;
+            if (seen_color1d && seen_color2d) {
+                image_res.mixed_color1d_2d = true;
+                break;
+            }
+        }
+        if (image_res.mixed_color1d_2d) {
+            LOG_INFO(Render_Recompiler,
+                     "GUEST_COLOR1D_COLOR2D_SHARED_VK2D_TABLE stage={} shader={:#x} count={}",
+                     info.hw_stage, info.pgm_hash, image_res.descriptor_count);
+        }
+    }
+
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
 
