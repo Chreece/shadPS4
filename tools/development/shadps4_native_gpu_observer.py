@@ -62,16 +62,51 @@ def save(path,obj):
 
 
 def take_picture(report,second,display):
-    if shutil.which('import') is None:
-        return False
+    """Capture the actual X11 desktop without changing it; retain failure evidence."""
     output=report/f'frame-{second:03d}s.png'
-    try:
-        result=subprocess.run(['import','-display',display,'-window','root',str(output)],
-                              stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL,timeout=3,check=False)
-        return result.returncode==0 and output.is_file()
-    except (OSError,subprocess.TimeoutExpired):
-        return False
+    reasons=[]
+    if shutil.which('import'):
+        try:
+            proc=subprocess.run(
+                ['import','-display',display,'-window','root',str(output)],
+                stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,timeout=3,check=False)
+            if proc.returncode==0 and output.is_file() and output.stat().st_size:
+                return True
+            reasons.append('ImageMagick exit='+str(proc.returncode)+
+                           ' stderr='+proc.stderr.decode('utf8','replace')[-180:])
+        except (OSError,subprocess.TimeoutExpired) as exc:
+            reasons.append('ImageMagick '+type(exc).__name__)
+    else:
+        reasons.append('ImageMagick import unavailable')
+    if shutil.which('ffmpeg'):
+        try:
+            size=[]
+            if shutil.which('xdpyinfo'):
+                dims=subprocess.run(['xdpyinfo','-display',display],
+                    stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,check=False,timeout=2)
+                if dims.returncode==0:
+                    match=re.search(rb'\bdimensions:\s*(\d+x\d+)',dims.stdout)
+                    if match:
+                        size=['-video_size',match.group(1).decode('ascii')]
+            proc=subprocess.run(
+                ['ffmpeg','-hide_banner','-nostdin','-loglevel','error','-y',
+                 '-f','x11grab',*size,'-i',display,
+                 '-frames:v','1','-update','1',str(output)],
+                stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,timeout=6,check=False)
+            if proc.returncode==0 and output.is_file() and output.stat().st_size:
+                return True
+            reasons.append('FFmpeg exit='+str(proc.returncode)+
+                           ' stderr='+proc.stderr.decode('utf8','replace')[-180:])
+        except (OSError,subprocess.TimeoutExpired) as exc:
+            reasons.append('FFmpeg '+type(exc).__name__)
+    else:
+        reasons.append('FFmpeg unavailable')
+    with (report/'screenshot-errors.log').open('a',encoding='utf8') as out:
+        out.write(f'second={second} '+('; '.join(reasons))[:850]+'\n')
+    return False
 
 
 def term_owned(child,phase):
@@ -98,8 +133,12 @@ def term_owned(child,phase):
         try:
             child.wait(timeout=3)
         except subprocess.TimeoutExpired:
-            print('OWNED_GAME_PROCESS_STILL_ALIVE_AFTER_SIGKILL='+
-                  str(child.pid)+'; preserving diagnostic evidence',flush=True)
+            state=pending_process_state(child.pid)
+            exited=state['status'].startswith(('Z ', 'X ')) or (
+                state['status']=='PROCESS_ALREADY_EXITED')
+            marker=('OWNED_GAME_EXITED_BUT_UNREAPED_AFTER_SIGKILL=' if exited else
+                    'OWNED_GAME_PROCESS_STILL_ALIVE_AFTER_SIGKILL=')
+            print(marker+str(child.pid)+'; preserving diagnostic evidence',flush=True)
             return False
     print('OWNED_GAME_PROCESS_TERMINATED='+phase,flush=True)
     return True
@@ -322,12 +361,21 @@ def main():
         if child is not None:
             if child.poll() is None:
                 term_owned(child,'TERM_THEN_OPTIONAL_KILL')
-            result['owned_child_terminated']=child.poll() is not None
-            result['exit_code']=child.poll()
-            if not result['owned_child_terminated']:
-                result['unreaped_owned_game']=pending_process_state(child.pid)
+            code=child.poll()
+            result['owned_child_reaped']=code is not None
+            result['exit_code']=code
+            if code is None:
+                pending=pending_process_state(child.pid)
+                result['unreaped_owned_game']=pending
                 (report/'unreaped-owned-game.txt').write_text(
-                    json.dumps(result['unreaped_owned_game'],indent=2)+'\n')
+                    json.dumps(pending,indent=2)+'\n')
+                # A Z or X state has stopped executing all GPU instructions;
+                # it is exited but not necessarily reaped by waitpid.
+                state=pending['status']
+                result['owned_child_terminated']=state.startswith(('Z ', 'X ')) or (
+                    state=='PROCESS_ALREADY_EXITED')
+            else:
+                result['owned_child_terminated']=True
         result['elapsed_seconds']=round(time.monotonic()-began,3)
         result['gpu_kernel_events']=capture_gpu_kernel_evidence(report,kernel_since)
         if console.is_file():
