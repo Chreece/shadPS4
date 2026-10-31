@@ -307,6 +307,7 @@ public:
         bool is_integer = false;
         bool is_storage = false;
         bool is_descriptor_array = false;
+        bool mixed_color1d_2d = false;
         MipStorageFallbackMode mip_fallback_mode{};
     };
 
