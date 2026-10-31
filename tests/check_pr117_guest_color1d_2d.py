@@ -59,7 +59,28 @@ assert "ctx.OpShiftLeftLogical(ctx.U32[1], guest_index, ctx.ConstU32(3u))" in em
 assert "ctx.EmitFlatbufferLoad(raw_type_dw_index)" in emit
 assert "ctx.OpSelect(ctx.F32[1], is_color1d," in emit
 assert "ctx.f32_zero_value, original_y" in emit
-assert "inst->Arg(1).Type() == IR::Type::F32x2" in emit
+# Regression from real GoW fragment 0x7f710602: the generic
+# ImageSampleImplicitLod opcode declares F32x4, while older final IR dumps
+# show a legitimate CompositeConstructF32x2 producer. The rejected
+# F32x4 precondition crashed before any binding or framebuffer.
+opcodes = load("src/shader_recompiler/ir/opcodes.inc")
+assert "OPCODE(ImageSampleImplicitLod," in opcodes
+assert "F32x4,          Opaque,         F32x4" in opcodes
+assert "const auto coord_type = inst->Arg(1).Type();" in emit
+for coordinate_type in ("F32x2", "F32x3", "F32x4"):
+    assert "coord_type == IR::Type::" + coordinate_type in emit
+assert ">=2 float coordinates" in emit
+assert "inst->Arg(1).Type() == IR::Type::F32x2" not in emit
+# All three vector widths have an x and y; the SPIR-V sample must extract
+# and preserve these components rather than assuming a fixed vector length.
+for width in (2,3,4):
+    coordinates = [0.25,0.75,1.0,1.0][:width]
+    x,original_y = coordinates[0],coordinates[1]
+    for type_code,expected_y in ((8,0.0),(9,0.75)):
+        actual_y = 0.0 if type_code == 8 else original_y
+        assert (x,actual_y) == (0.25,expected_y)
+assert "ctx.OpCompositeExtract(ctx.F32[1], coords, 0u)" in emit
+assert "ctx.OpCompositeExtract(ctx.F32[1], coords, 1u)" in emit
 assert "offset.IsEmpty()" in emit
 assert "FixMixedGuestColor1D2DCoords(ctx, inst, texture, coords)" in emit
 assert emit.count("Mixed guest 1D/2D currently supports only offset-free implicit LOD samples") >= 9
@@ -79,6 +100,7 @@ source = helper + patch + emit
 for forbidden in ("CUSA", "0x7f710602", "0xc1a0dde8", "ShaderIdOverride",
                   "chooseRepresentativeOnCpu", "DynamoRIO"):
     assert forbidden not in source, forbidden
+print("GUEST_2_TO_4_COMPONENT_IMPLICIT_IMAGE_SAMPLE=PASS")
 print("GUEST_MIXED_1D_2D_STRICT_SOURCE_SEMANTICS=PASS")
 print("GUEST_TEXTURE_INDEX_AND_GPU_COORDINATE_PRESERVED=PASS")
 print("UNSUPPORTED_SAMPLING_AND_IMAGE_TYPES_FAIL_CLOSED=PASS")
