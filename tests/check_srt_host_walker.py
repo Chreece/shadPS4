@@ -20,7 +20,9 @@ assert "case IR::Opcode::FindILsb32:" in gvn
 assert "HasUnconditionalPhiValue" in s
 assert "if (!HasUnconditionalPhiValue(inst))" in s
 assert 'inst->Arg(i) != first' in s
-assert "first.TryInst() == inst" in s
+assert "std::unordered_set<const IR::Inst*> visited;" in s
+assert "!visited.insert(current).second" in s
+assert "const IR::Inst* next = first.TryInst();" in s
 assert "ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, common))" in s
 # Never allow a non-trivial Phi, ReadLane, Ballot or arbitrary lane index
 # as a pre-dispatch CPU evaluator; they are GPU-only source values.
