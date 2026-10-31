@@ -19,7 +19,7 @@ finish() {
     set +e
     export PROJECT OUT SRC BUILD STAGE RESULT PIN TAG
     python3 - "$rc" <<'PY'
-import datetime, fcntl, hashlib, json, os, pathlib, subprocess, sys
+import datetime, fcntl, hashlib, json, os, pathlib, shutil, subprocess, sys
 out=pathlib.Path(os.environ['OUT']); project=pathlib.Path(os.environ['PROJECT'])
 def git(*args):
     try:
@@ -35,6 +35,12 @@ record={'schema_version':2,'record_id':os.environ['TAG'],
         'upstream_commit':git('rev-parse','refs/remotes/upstream/main'),
         'game_launched':False,'graphics_verified':False,'installed_binary_changed':False,
         'evidence':str(out)+'.tar.gz','decision':'RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION'}
+cpu_logs=pathlib.Path(os.environ['SRC']).parent/'cpu-tests'
+if cpu_logs.is_dir():
+    saved_logs=out/'cpu-suite-logs';saved_logs.mkdir(exist_ok=True)
+    for log in cpu_logs.glob('*.log'):
+        if log.is_file() and not log.is_symlink():
+            shutil.copyfile(log, saved_logs/log.name)
 binary=pathlib.Path(os.environ['BUILD'])/'shadps4'
 if binary.is_file():
     h=hashlib.sha256()
@@ -54,6 +60,12 @@ with diary.open('a') as f:
     f.write('No game launched and no installed executable changed. Evidence: `'+record['evidence']+'`.\n')
 print('UNIVERSAL_JOURNAL='+str(journal))
 PY
+    local journal_rc=$?
+    if (( journal_rc != 0 )); then
+        echo "JOURNAL_WRITE_FAILED=$journal_rc"
+        RESULT=FAILED_JOURNAL_WRITE
+        (( rc != 0 )) || rc=$journal_rc
+    fi
     tar -czf "$OUT.tar.gz" -C "$PROJECT/logs" "$TAG"
     printf '\nRESULT=%s STAGE=%s EXIT=%s\nEVIDENCE=%s.tar.gz\n' "$RESULT" "$STAGE" "$rc" "$OUT"
     exit "$rc"
@@ -115,8 +127,11 @@ main() {
         2>&1 | tee "$OUT/build.log"
     [[ -x "$BUILD/shadps4" ]]
     sha256sum "$BUILD/shadps4" | tee "$OUT/binary.sha256"
+    STAGE=NATIVE_STARTUP_REGRESSIONS
+    python3 "$SRC/tests/test_cli_user_directories.py" "$BUILD/shadps4" \
+        2>&1 | tee "$OUT/native-startup.log"
     STAGE=COMPLETE_BUILD_ONLY
-    RESULT=PASS_NATIVE_BUILD_AND_CPU_TESTS_GPU_NOT_RUN
+    RESULT=PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN
     printf 'CANDIDATE=%s\n' "$BUILD/shadps4"
 }
 main 9>"$PROJECT/tests/.universal-upstream-build.lock"

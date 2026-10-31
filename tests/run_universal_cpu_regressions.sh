@@ -9,8 +9,9 @@ for suite in image_transfer quit_dialog startup_loading graphics_diagnostics occ
     echo "CPU_SUITE=$suite"
     cmake -S "$ROOT/tests/$suite" -B "$OUT/$suite" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER="$CXX" \
-        > "$OUT/$suite-configure.log" 2>&1
-    cmake --build "$OUT/$suite" --parallel 4 -- -k 0 > "$OUT/$suite-build.log" 2>&1
+        > "$OUT/$suite-configure.log" 2>&1 || { cat "$OUT/$suite-configure.log"; exit 1; }
+    cmake --build "$OUT/$suite" --parallel 4 -- -k 0 > "$OUT/$suite-build.log" 2>&1 \
+        || { cat "$OUT/$suite-build.log"; exit 1; }
     ctest --test-dir "$OUT/$suite" --output-on-failure | tee "$OUT/$suite-test.log"
 done
 python3 "$ROOT/tests/renderer_native_proven_contracts.py" 2>&1 | tee "$OUT/renderer-contracts.log"

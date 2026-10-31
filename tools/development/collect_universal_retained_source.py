@@ -5,6 +5,7 @@ Only C/C++ files under src and the root CMakeLists are included. Game files,
 shader dumps, settings, executables, and dependency trees are excluded.
 """
 import hashlib
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -44,7 +45,6 @@ def main():
                 before = p.read_bytes()
                 manifest[rel] = hashlib.sha256(before).hexdigest()
                 # Archive the same bytes as the manifest, even if another session edits the tree.
-                import io
                 info = tarfile.TarInfo(rel)
                 info.size = len(before)
                 info.mode = 0o644

@@ -21,6 +21,7 @@ version selects any new behavior in this integration.
 | Contiguous guest mapping | PR81 `b447795e` | Only adjacent mapped VMAs may extend a buffer; fixture passes |
 | Sparse host-size correction | PR109 immutable shared patch | Port retains upstream cache changes; prior native legal-size result preserved; alias GPU lifecycle still unproven |
 | Depth image extent growth | New component-wise maximum | Mip count and layer count grow independently; old code fails crossed-extent regression |
+| User-data directory startup | New recursive directory creation | Actual native CLI aborted with missing parents; corrected binary passes fresh, existing, and conflicting path cases |
 
 Shader binary cache version is 12, newer than both source parents. Old compiled
 shader cache entries must not be treated as equivalent to these emitters.
@@ -34,10 +35,20 @@ checks. Sparse tests execute the extracted production allocation methods over
 288 ranges and seven scenarios, both with recorded operations and real Vulkan
 headers. These are CPU tests, not evidence of GPU execution.
 
-Both newly identified arithmetic/extent regressions were tested against the
+The arithmetic and extent regressions were tested against the
 old behavior: each fails before its fix and passes afterward. The full native
-build is tracked separately in `reviews/20261031-universal-upstream-integration.json`
-and `TRIALS.jsonl`; an interrupted or unsuccessful build is not a pass.
+compilation and link are now verified on Linux with GCC 14. All 442 emulator
+translation units compiled. The generated link command needed the isolated SDK
+library search path for UUID and udev; rerunning that command succeeded. The
+actual executable then exposed a missing-parent user-directory startup abort.
+After the one-line production correction, recompilation and linking, it passes
+three real CLI startup cases. No game or GPU was launched.
+
+Details, failed attempts, exact source-tree and executable hashes are in
+`reviews/20261031-universal-native-link-startup.json` and `TRIALS.jsonl`.
+The focused CPU runner also passes with GCC 14; its output is retained in
+`reviews/20261031-universal-cpu-tests.txt`. A clean CMake run on the user's host
+is still part of the pinned runner. No cross-platform or graphics pass is claimed.
 
 Retain the candidate until native build and cross-title GPU evidence support
 promotion. The prior host-tested fixes remain preserved in their existing PRs.
