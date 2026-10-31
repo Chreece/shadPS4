@@ -23,7 +23,8 @@ PREVIOUS_ALLOCATOR_SOURCE_PIN="d9a5c4ca3b1a4e4cfff3e02f91cde00baf8c19c0"
 PRIOR_MEASURED_POOL_PIN="ff916b8dc0cb12ae552d84491db26ffbd15e7556"
 INITIAL_EXACT_POOL_SOURCE_PIN="f3051fa0109fb44ee1f91b8f5e6bc929d8533f28"
 LAST_TEXTURE_OVERLAP_SOURCE_PIN="29b475ca1d278849516b6aa1b8487d73a02b25fb"
-PIN="f8cc5e39e1522316a79d749f4186a55c00e950e8"
+LAST_TEXTURE_VALIDATED_SOURCE_PIN="f8cc5e39e1522316a79d749f4186a55c00e950e8"
+PIN="a9789065435067494a6781c930ae060bb3556f9b"
 BRANCH="feature/pr117-gpu-descriptor-tables-20261031"
 SHA="9b4300c2666580fe9963eef8f74585e28cb5ad232d8a3c8aa05a732c32871674"
 OLD_SHA="$SHA"
@@ -54,6 +55,8 @@ src,dst=Path(sys.argv[1]),Path(sys.argv[2])
 marks=('PR117_', 'Ordered GDS', 'DS_ORDERED_COUNT',
        'TEXTURE_1D_TO_2D_SAME_STORAGE_EXPANSION',
        'Unresolvable image overlap with equal memory address',
+       'IMAGE_DESCRIPTOR_ARRAY_MISMATCH',
+       'HOST_SRT_OFFSET_UNRESOLVED',
        'VK_ERROR_DEVICE_LOST', 'SIGSEGV', 'SIGABRT')
 selected=[];slots=0;done=0;errors=0
 with src.open(encoding='utf-8',errors='replace') as f:
@@ -81,6 +84,8 @@ checks={
     "image_descriptor_tables_rejected": "Unsupported image descriptor table:",
     "descriptor_table_capacity_rejected": "Image descriptor table exceeds host or flat-buffer capacity:",
     "incompatible_descriptor_elements": "Incompatible image descriptor array element",
+    "incompatible_descriptor_table_summaries": "IMAGE_DESCRIPTOR_ARRAY_MISMATCH",
+    "host_srt_offset_unresolved": "HOST_SRT_OFFSET_UNRESOLVED",
     "gpu_dynamic_srt_pending": "GPU_DYNAMIC_SRT_REQUIRES_SHADER_RESOURCE_LOOKUP",
     "failed_srt_walker": "Failed to compute offset for SRT walker",
     "captured_gds_slots": "PR117_REAL_GCN_GPU_CAPTURE_SLOT=",
@@ -201,7 +206,8 @@ CURRENT="$(git -C "$SRC" rev-parse HEAD)"
    "$CURRENT" == "$PREVIOUS_ALLOCATOR_SOURCE_PIN" ||
    "$CURRENT" == "$PRIOR_MEASURED_POOL_PIN" ||
    "$CURRENT" == "$INITIAL_EXACT_POOL_SOURCE_PIN" ||
-   "$CURRENT" == "$LAST_TEXTURE_OVERLAP_SOURCE_PIN" || "$CURRENT" == "$PIN" ]] || {
+   "$CURRENT" == "$LAST_TEXTURE_OVERLAP_SOURCE_PIN" ||
+   "$CURRENT" == "$LAST_TEXTURE_VALIDATED_SOURCE_PIN" || "$CURRENT" == "$PIN" ]] || {
   echo "UNKNOWN_ISOLATED_SOURCE_REVISION=$CURRENT; NO_CHANGES"; exit 3;
 }
 [[ -z "$(git -C "$SRC" status --porcelain=v1 --untracked-files=no)" ]] || {
@@ -283,6 +289,8 @@ grep -Fq 'HOST_LANE_UNIFORM_ONLY_GPU_DEPENDENT_SRT_STAYS_GPU=PASS' \
   "$REPORT/srt-source-tests.log" || exit 6
 grep -Fq 'HOST_SCALAR_EQUIVALENT_PHI_NO_GPU_BRANCH_GUESS=PASS' \
   "$REPORT/srt-source-tests.log" || exit 6
+grep -Fq 'HOST_SRT_REJECTION_HAS_SHADER_OPCODE_PROVENANCE=PASS' \
+  "$REPORT/srt-source-tests.log" || exit 6
 grep -Fq 'ZOMBIE_NOT_MISCLASSIFIED_AS_LIVE=PASS' \
   "$REPORT/gpu-observer-tests.log" || exit 6
 grep -Fq 'GENERIC_X11_SCREENSHOT_FALLBACK=PASS' \
@@ -306,6 +314,8 @@ grep -Fq 'PR117_VULKAN_EXACT_LAYOUT_POOL_FALLBACK_FAIL_CLOSED=PASS' \
 grep -Fq 'VULKAN_NONUNIFORM_IMAGE_DESCRIPTOR_AND_PERSISTENT_POINTERS=PASS' \
   "$REPORT/descriptor-array-source-tests.log" || exit 6
 grep -Fq 'PR117_ORDERED_GDS_NORMAL_EXECUTION_STILL_FAIL_CLOSED=PASS' \
+  "$REPORT/descriptor-array-source-tests.log" || exit 6
+grep -Fq 'GPU_DESCRIPTOR_ARRAY_SINGLE_REPRESENTATIVE_AND_BOUNDED_DIAGNOSTIC=PASS' \
   "$REPORT/descriptor-array-source-tests.log" || exit 6
 echo "GPU_DESCRIPTOR_ARRAY_SOURCE_CONTRACTS=PASS"
 STATE=EXECUTABLE_GENERIC_DESCRIPTOR_BATCH_REGRESSION
