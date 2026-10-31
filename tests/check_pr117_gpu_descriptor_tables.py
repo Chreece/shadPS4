@@ -22,6 +22,8 @@ emit_context = source("src/shader_recompiler/backend/spirv/emit_spirv_context_ge
 raster = source("src/video_core/renderer_vulkan/vk_rasterizer.cpp")
 raster_h = source("src/video_core/renderer_vulkan/vk_rasterizer.h")
 pipeline = source("src/video_core/renderer_vulkan/vk_pipeline_cache.cpp")
+buffer_cache_h = source("src/video_core/buffer_cache/buffer_cache.h")
+buffer_cache_cpp = source("src/video_core/buffer_cache/buffer_cache.cpp")
 instance = source("src/video_core/renderer_vulkan/vk_instance.cpp")
 instance_h = source("src/video_core/renderer_vulkan/vk_instance.h")
 shader = source("src/shader_recompiler/backend/spirv/emit_spirv.cpp")
@@ -55,10 +57,23 @@ for needle in (
     "InitializeDescriptorReader(info);",
     "memory->IsValidGpuMapping(address, size)",
     "buffer_cache.IsRegionGpuModified(address, size)",
-    "buffer_cache.ReadMemory(address, size, false, false, true)",
+    "buffer_cache.ReadMemory(address, size, false, true)",
     "memory->CopySparseMemory(address, static_cast<u8*>(destination), size)",
 ):
     assert needle in pipeline, needle
+# PR117 uses the pre-async BufferCache contract. The newer upstream
+# five-argument call must never be copied verbatim: its fifth argument is
+# assume_locks, whereas here that argument occupies the fourth position.
+# A wrong call previously passed this very source audit, then broke Ninja
+# at vk_pipeline_cache.cpp:673 before any GPU game launch.
+assert "void ReadMemory(VAddr device_addr, u64 size, bool is_write = false, bool assume_locks = false);" in buffer_cache_h
+assert "void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool assume_locks)" in buffer_cache_cpp
+assert "if (assume_locks)" in buffer_cache_cpp
+assert "scheduler.Finish();" in buffer_cache_cpp
+assert "buffer_cache.ReadMemory(address, size, false, false, true)" not in pipeline
+assert "buffer_cache.ReadMemory(address, size, false, true);" in pipeline
+print("PR117_BUFFER_CACHE_GPU_READBACK_ABI_AND_SYNCHRONIZATION=PASS")
+
 assert "RefreshImageDescriptorTable(image)" in info
 assert "std::fill_n(destination, image.descriptor_count * 8, 0u)" in info
 assert "shaderSampledImageArrayNonUniformIndexing" in instance
