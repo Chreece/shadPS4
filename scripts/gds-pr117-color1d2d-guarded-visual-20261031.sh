@@ -231,7 +231,7 @@ STATE=ALL_PYTHON_HEREDOCS_SYNTAX
 python3 - "$0" <<'PYSELF'
 import ast,pathlib,re,sys
 script=pathlib.Path(sys.argv[1]).read_text(encoding='utf8')
-pattern=re.compile(r"<{2}'(PY[A-Z0-9_]*)'[ \t]*\n")
+pattern=re.compile(r"<{2}'(PY[A-Z0-9_]*)'[^\n]*\n")
 checked=[]
 for match in pattern.finditer(script):
     name=match.group(1)
