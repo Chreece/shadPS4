@@ -829,7 +829,13 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
     }
 
     if (!PushPtr(c, pass_info, off_dw)) {
-        LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
+        const IR::Inst* source = off_dw.TryInst();
+        LOG_ERROR(Render_Recompiler,
+                  "HOST_SRT_OFFSET_UNRESOLVED shader={:#x} origin=pointer "
+                  "subtree_opcode={} offset_opcode={}",
+                  pass_info.shader_hash, magic_enum::enum_name(subtree->GetOpcode()),
+                  source ? magic_enum::enum_name(source->GetOpcode())
+                         : std::string_view("immediate"));
         return;
     }
     PassInfo::PtrUserList* use_list = pass_info.GetUsesAsPointer(subtree);
@@ -849,7 +855,13 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
             const size_t checkpoint = c.getSize();
             if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
                 c.setSize(checkpoint);
-                LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
+                const IR::Inst* source = src_off_dw.TryInst();
+                LOG_ERROR(Render_Recompiler,
+                          "HOST_SRT_OFFSET_UNRESOLVED shader={:#x} origin=resource "
+                          "subtree_opcode={} offset_opcode={}",
+                          pass_info.shader_hash, magic_enum::enum_name(subtree->GetOpcode()),
+                          source ? magic_enum::enum_name(source->GetOpcode())
+                                 : std::string_view("immediate"));
                 continue;
             }
             c.shl(r10d, 2);
