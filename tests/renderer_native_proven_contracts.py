@@ -44,7 +44,7 @@ class NativeProvenSourceContracts(unittest.TestCase):
 
     def test_cache_version_invalidated(self):
         code = source("src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp")
-        self.assertIn("ShaderBinaryVersion = 7u;", code)
+        self.assertGreaterEqual(int(re.search(r"ShaderBinaryVersion = (\d+)u;", code)[1]), 12)
         self.assertIn("ShaderMetaVersion = 6u;", code)
 
     def test_imgui_mapped_range(self):

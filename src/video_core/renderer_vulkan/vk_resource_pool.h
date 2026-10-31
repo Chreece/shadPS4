@@ -4,6 +4,7 @@
 #pragma once
 
 #include <deque>
+#include <span>
 #include <vector>
 #include <boost/container/static_vector.hpp>
 #include <tsl/robin_map.h>
@@ -73,10 +74,12 @@ public:
                             u32 descriptor_heap_count = 1024);
     ~DescriptorHeap();
 
-    vk::DescriptorSet Commit(vk::DescriptorSetLayout set_layout);
+    vk::DescriptorSet Commit(vk::DescriptorSetLayout set_layout,
+                             std::span<const vk::WriteDescriptorSet> writes);
 
 private:
-    void CreateDescriptorPool();
+    void CreateDescriptorPool(std::span<const vk::DescriptorPoolSize> minimum = {},
+                              bool dedicated_single_set = false);
 
 private:
     vk::Device device;
@@ -84,7 +87,17 @@ private:
     u32 descriptor_heap_count;
     std::span<const vk::DescriptorPoolSize> pool_sizes;
     vk::DescriptorPool curr_pool;
-    std::deque<std::pair<vk::DescriptorPool, u64>> pending_pools;
+    std::vector<vk::DescriptorPoolSize> curr_pool_sizes;
+    u32 curr_pool_max_sets{};
+    vk::DescriptorPoolCreateFlags curr_pool_flags{};
+    struct PendingPool {
+        vk::DescriptorPool pool;
+        u64 tick;
+        std::vector<vk::DescriptorPoolSize> sizes;
+        u32 max_sets;
+        vk::DescriptorPoolCreateFlags flags;
+    };
+    std::deque<PendingPool> pending_pools;
     using DescSetBatch = boost::container::static_vector<vk::DescriptorSet, DescriptorSetBatch>;
     tsl::robin_map<u64, DescSetBatch> descriptor_sets;
 };

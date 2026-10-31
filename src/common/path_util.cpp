@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+// SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <fstream>
@@ -111,7 +111,7 @@ static auto UserPaths = [] {
     std::unordered_map<PathType, fs::path> paths;
 
     const auto create_path = [&](PathType shad_path, const fs::path& new_path) {
-        std::filesystem::create_directory(new_path);
+        std::filesystem::create_directories(new_path);
         paths.insert_or_assign(shad_path, new_path);
     };
 
@@ -200,10 +200,6 @@ void SetUserPath(PathType shad_path, const fs::path& new_path) {
 
 std::optional<fs::path> FindGameByID(const fs::path& dir, const std::string& game_id,
                                      int max_depth) {
-    if (max_depth < 0) {
-        return std::nullopt;
-    }
-
     const auto boot_path_for = [](const fs::path& root) -> std::optional<fs::path> {
         std::error_code ec;
         if (fs::is_directory(root, ec) && !ec) {
@@ -222,18 +218,30 @@ std::optional<fs::path> FindGameByID(const fs::path& dir, const std::string& gam
         return std::nullopt;
     };
 
-    // Check if this is the game we're looking for
-    if (dir.filename() == game_id) {
-        if (auto found = boot_path_for(dir)) {
+    bool is_different_game_root = false;
+
+    // Check if this is a valid game root
+    if (auto found = boot_path_for(dir)) {
+        if (dir.filename() == game_id) { // Check if this is the game we're looking for
+            return found;
+        } else { // if not, don't waste time looking through game data folders in a different game
+            is_different_game_root = true;
+        }
+    }
+
+    if (is_different_game_root) {
+        return std::nullopt;
+    } else {
+        if (auto found = boot_path_for(dir / game_id)) {
+            return found;
+        }
+        if (auto found = boot_path_for(dir / (game_id + ".zar"))) {
             return found;
         }
     }
 
-    if (auto found = boot_path_for(dir / game_id)) {
-        return found;
-    }
-    if (auto found = boot_path_for(dir / (game_id + ".zar"))) {
-        return found;
+    if (max_depth <= 0) {
+        return std::nullopt;
     }
 
     // Recursively search subdirectories

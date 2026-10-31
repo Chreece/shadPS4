@@ -1,0 +1,136 @@
+CPU_SUITE=image_transfer
+Test project /workspace/scratch/e77588f59ff3/validation/verified-gcc14/image_transfer
+    Start 1: image_transfer_depth_formats
+1/4 Test #1: image_transfer_depth_formats ......   Passed    0.00 sec
+    Start 2: image_transfer_depth_regions
+2/4 Test #2: image_transfer_depth_regions ......   Passed    0.00 sec
+    Start 3: image_transfer_transition_order
+3/4 Test #3: image_transfer_transition_order ...   Passed    0.00 sec
+    Start 4: image_transfer_depth_growth
+4/4 Test #4: image_transfer_depth_growth .......   Passed    0.00 sec
+
+100% tests passed out of 4
+
+Total Test time (real) =   0.01 sec
+CPU_SUITE=quit_dialog
+Test project /workspace/scratch/e77588f59ff3/validation/verified-gcc14/quit_dialog
+    Start 1: quit_dialog_second_controller
+1/6 Test #1: quit_dialog_second_controller ....   Passed    0.00 sec
+    Start 2: quit_dialog_unfocused_confirm
+2/6 Test #2: quit_dialog_unfocused_confirm ....   Passed    0.00 sec
+    Start 3: quit_dialog_cancel_resume
+3/6 Test #3: quit_dialog_cancel_resume ........   Passed    0.00 sec
+    Start 4: quit_dialog_held_confirm
+4/6 Test #4: quit_dialog_held_confirm .........   Passed    0.00 sec
+    Start 5: quit_dialog_keyboard
+5/6 Test #5: quit_dialog_keyboard .............   Passed    0.00 sec
+    Start 6: quit_dialog_hotplug
+6/6 Test #6: quit_dialog_hotplug ..............   Passed    0.00 sec
+
+100% tests passed out of 6
+
+Total Test time (real) =   0.01 sec
+CPU_SUITE=startup_loading
+Test project /workspace/scratch/e77588f59ff3/validation/verified-gcc14/startup_loading
+    Start 1: startup_loading_lifecycle
+1/3 Test #1: startup_loading_lifecycle ........   Passed    0.00 sec
+    Start 2: startup_loading_black_frames
+2/3 Test #2: startup_loading_black_frames .....   Passed    0.11 sec
+    Start 3: startup_loading_ui
+3/3 Test #3: startup_loading_ui ...............   Passed    0.00 sec
+
+100% tests passed out of 3
+
+Total Test time (real) =   0.12 sec
+CPU_SUITE=graphics_diagnostics
+Test project /workspace/scratch/e77588f59ff3/validation/verified-gcc14/graphics_diagnostics
+    Start 1: graphics_trace_enabled
+1/2 Test #1: graphics_trace_enabled ...........   Passed    0.00 sec
+    Start 2: graphics_trace_disabled
+2/2 Test #2: graphics_trace_disabled ..........   Passed    0.00 sec
+
+100% tests passed out of 2
+
+Total Test time (real) =   0.00 sec
+CPU_SUITE=occlusion_query
+Test project /workspace/scratch/e77588f59ff3/validation/verified-gcc14/occlusion_query
+    Start 1: occlusion_counter_layout
+1/2 Test #1: occlusion_counter_layout .........   Passed    0.00 sec
+    Start 2: occlusion_counter_control
+2/2 Test #2: occlusion_counter_control ........   Passed    0.00 sec
+
+100% tests passed out of 2
+
+Total Test time (real) =   0.00 sec
+CPU_SUITE=kernel_sanitizer
+Test project /workspace/scratch/e77588f59ff3/validation/verified-gcc14/kernel_sanitizer
+    Start 1: kernel_sanitizer_exports_test
+1/1 Test #1: kernel_sanitizer_exports_test ....   Passed    0.00 sec
+
+100% tests passed out of 1
+
+Total Test time (real) =   0.00 sec
+CPU_SUITE=kernel_thread_atexit
+Test project /workspace/scratch/e77588f59ff3/validation/verified-gcc14/kernel_thread_atexit
+    Start 1: kernel_thread_atexit_test
+1/1 Test #1: kernel_thread_atexit_test ........   Passed    0.01 sec
+
+100% tests passed out of 1
+
+Total Test time (real) =   0.01 sec
+CPU_SUITE=ngs2_hle
+Test project /workspace/scratch/e77588f59ff3/validation/verified-gcc14/ngs2_hle
+      Start  1: ngs2_waveform_test
+ 1/11 Test  #1: ngs2_waveform_test ....................   Passed    0.01 sec
+      Start  2: ngs2_handles_test
+ 2/11 Test  #2: ngs2_handles_test .....................   Passed    0.00 sec
+      Start  3: ngs2_runtime_test
+ 3/11 Test  #3: ngs2_runtime_test .....................   Passed    0.00 sec
+      Start  4: ngs2_memory_access_test
+ 4/11 Test  #4: ngs2_memory_access_test ...............   Passed    0.00 sec
+      Start  5: ngs2_decoder_test
+ 5/11 Test  #5: ngs2_decoder_test .....................   Passed    0.01 sec
+      Start  6: ngs2_playback_test
+ 6/11 Test  #6: ngs2_playback_test ....................   Passed    0.00 sec
+      Start  7: ngs2_audio_runtime_test
+ 7/11 Test  #7: ngs2_audio_runtime_test ...............   Passed    0.01 sec
+      Start  8: ngs2_diagnostics_test
+ 8/11 Test  #8: ngs2_diagnostics_test .................   Passed    0.00 sec
+      Start  9: ngs2_direct_filter_test
+ 9/11 Test  #9: ngs2_direct_filter_test ...............   Passed    0.00 sec
+      Start 10: ngs2_audio_runtime_diagnostics_test
+10/11 Test #10: ngs2_audio_runtime_diagnostics_test ...   Passed    0.02 sec
+      Start 11: ngs2_lfe_diagnostics_test
+11/11 Test #11: ngs2_lfe_diagnostics_test .............   Passed    0.04 sec
+
+100% tests passed out of 11
+
+Total Test time (real) =   0.12 sec
+CPU_SUITE=userservice
+Test project /workspace/scratch/e77588f59ff3/validation/verified-gcc14/userservice
+    Start 1: userservice_user_color_test
+1/1 Test #1: userservice_user_color_test ......   Passed    0.00 sec
+
+100% tests passed out of 1
+
+Total Test time (real) =   0.00 sec
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.003s
+
+OK
+PRODUCTION_SRT_JIT_PASS checks=10418
+SPARSE_HOST_LIMIT_AND_ALIAS_BACKING=PASS ranges=288 scenarios=7 NO_GPU_WORK
+SPARSE_PRODUCTION_MODE=recorder
+SPARSE_HOST_LIMIT_AND_ALIAS_BACKING=PASS ranges=288 scenarios=7 NO_GPU_WORK
+SPARSE_PRODUCTION_MODE=vulkan-headers
+DESCRIPTOR_EXACT_LAYOUT_SINGLE_SET_POOL=PASS
+DESCRIPTOR_SINGLE_SET_RUNTIME_LAYOUT_POOL_SIZING=PASS
+DESCRIPTOR_BATCH_ADAPTIVE_GPU_ARRAY=PASS
+DESCRIPTOR_POOL_ROLLOVER_AND_FRAGMENTATION=PASS
+UNEXPECTED_VULKAN_ERROR_FAIL_CLOSED=PASS
+CONTIGUOUS_GUEST_VMA_CLAMP=PASS
+GUEST_TO_HLE_ABI_REALIGN=PASS
+UNIVERSAL_CPU_REGRESSIONS=PASS
+
+BASELINE_SPARSE_06409=REPRODUCED requested=4294967296 limit=4294967292 NO_GPU_WORK

@@ -1,0 +1,19 @@
+NATIVE_CLI_USER_DIRECTORIES=PASS scenarios=3 GPU_NOT_RUN
+
+{
+  "native_link": "PASS",
+  "cli_startup": "PASS",
+  "cli_scenarios": 3,
+  "binary_bytes": 99586536,
+  "binary_sha256": "19d8165473b2b71efee5db1fd27dfd1544db45f66f57bde85b7096fe503c436b",
+  "game_launched": false
+}
+
+Old executable negative baseline:
+{
+  "result": "REPRODUCED_BASELINE_STARTUP_ABORT",
+  "exit_code": -6,
+  "stderr": "terminate called after throwing an instance of 'std::filesystem::__cxx11::filesystem_error'\n  what():  filesystem error: cannot create directory: No such file or directory [/tmp/userdir-baseline-wlcx0zpc/missing/parents/data/shadPS4]\n",
+  "binary_sha256": "6c4616969a878e487ece664116c46a5a738849496f8111d7a3bafd3b70dd2392",
+  "game_launched": false
+}
