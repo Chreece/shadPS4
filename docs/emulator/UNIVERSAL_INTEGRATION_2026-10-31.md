@@ -217,3 +217,44 @@ locally with GCC 13. No emulator production code changed in this correction;
 the native build and graphics tests remain pending on the host. The original
 failed record and archive hashes are retained in
 `reviews/20261101-sparse-dma-fixture-sync.json` and the universal journal.
+
+
+## November 1 fault residency and indirect-command synchronization
+
+The `db69c107` host build passed the full native build, existing CPU suites and
+startup checks. GoW then exited at 12.833 seconds: shader compilation reports
+unsupported `DS_ORDERED_COUNT` in `0xdbaa6ae4`, followed by translation failure.
+GoT lost its GPU context at 42.378 seconds. Neither capture has a screenshot or
+graphics acceptance. The old GoW console was recovered read-only; its loading
+screen and cleanup-failure record remain unchanged.
+
+The complete GoT console records 253 guest-memory faults, including 251 on one
+16 KiB page. Fault recovery used default `ObtainBuffer` flags, allowing a small
+clean read to return temporary streaming storage without making the guest page
+resident or populating its BDA mapping. Only a later larger request reached
+residency. Fault recovery now requests `IgnoreStreamBuffer`; ordinary small
+buffer reads retain their fast path. This fixes a confirmed residency defect,
+but its contribution to GPU context loss still needs a host retest.
+
+The prior PR88 indirect-read correction is also ported: indirect argument and
+count reads enter read-range tracking and use `DRAW_INDIRECT` for both draw and
+dispatch. The current renderer already queues these buffers, so the shared
+`ResetBindings` path applies the correction without duplicate access records.
+PR88 previously passed a full native build and six filtered CPU assertions;
+that evidence does not establish game acceptance of this new integration.
+
+Temporary checks execute the actual fault callback and buffer-selection method
+for 21 cases, and actual access tracking/reset methods for 26 cases with the
+pinned Vulkan headers. The old code fails; independent negative controls catch
+the missing stage and read mask. The existing sparse fixture still passes all
+288 ranges/seven scenarios in both modes, and seven renderer contracts pass.
+These checks use recorded host operations, not GPU execution. The changed full
+native build and both game retests remain pending. Shader emission is unchanged
+and cache version remains 14.
+
+Ordered-GDS continuation remains unimplemented in this branch; PR117 does not
+yet supply a proven complete backend. No title/hash/vendor condition or fake
+opcode result is added. Deferred fault replay, BDA-free dynamic reads and
+GPU-dependent descriptor discovery also remain open. Main is not promoted.
+See `reviews/20261101-fault-residency-indirect-sync.json` for original records,
+archive hashes, PR88 provenance, validation scope and the recovery review.
