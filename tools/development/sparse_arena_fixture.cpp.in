@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <functional>
 #include <limits>
 #include <map>
 #include <optional>
@@ -130,10 +131,20 @@ struct BufferCache {
  void BindBackingToArena(const Buffer*,const Backing&);
  void SynchronizeSparseAliases();
  void EnsureResident(const Buffer*,u64,u64);
- void SynchronizeDmaBuffers();
+ void SynchronizeDmaBuffers(const std::function<void(const Buffer*,u64,u64)>& on_read);
  bool SynchronizeMemory(const Buffer* b,u64 address,u32 size,bool,bool){::Check(b&&address>=b->cpu_addr&&address-b->cpu_addr+size<=b->size_bytes,"DMA upload uses containing original owner");syncs.push_back({b,address,size});return false;}
 };
 /* EXACT_METHODS */
+static void AuditDmaReads(BufferCache& c){
+ const auto first=c.syncs.size();std::size_t callbacks=0;
+ c.SynchronizeDmaBuffers([&](const Buffer* buffer,u64 offset,u64 size){
+  ::Check(c.syncs.size()==first+callbacks+1,"each DMA read follows its upload");
+  const auto& sync=c.syncs.back();
+  ::Check(buffer==sync.arena&&offset==sync.address-buffer->cpu_addr&&size==sync.size,"DMA read callback retains original owner and exact range");
+  ++callbacks;
+ });
+ ::Check(callbacks==c.syncs.size()-first,"every DMA upload is tracked as a shader read");
+}
 static std::pair<vk::DeviceMemory,u64> PhysicalAt(const BufferCache& c,const Buffer* arena,u64 address){
  for(auto list=c.pending_binds.rbegin();list!=c.pending_binds.rend();++list)if(list->arena==arena)
   for(auto b=list->binds.rbegin();b!=list->binds.rend();++b){const auto offset=address-arena->cpu_addr;if(offset>=b->resourceOffset&&offset-b->resourceOffset<b->size)return{b->memory,b->memoryOffset+offset-b->resourceOffset};}
@@ -180,7 +191,7 @@ int main(int argc,char** argv){
   const auto* new_owner=c.GetArena(32,33);c.EnsureResident(new_owner,32,33);Audit(c);
   Check(c.instance.device.allocations.size()==3,"only new holes allocated");
   const auto* old=c.GetArena(0,0);Check(old==a,"hint that does not cover prefix is not trusted");c.EnsureResident(old,0,0);Audit(c);
-  c.SynchronizeDmaBuffers();Check(c.fault_process_pending&&c.syncs.size()==4,"all resident ownership ranges uploaded");
+  AuditDmaReads(c);Check(c.fault_process_pending&&c.syncs.size()==4,"all resident ownership ranges uploaded");
   Check(c.scheduler.barriers>0,"overlapping memory identities synchronized");
   const auto allocations=c.instance.device.allocations.size();c.EnsureResident(b,16,17);Check(c.instance.device.allocations.size()==allocations,"resident aliases reuse physical memory");
   Check(block&&(a->size_bytes==4*GiB-block),"reported limit aligned down, guest span retained");++scenarios;
@@ -197,7 +208,7 @@ int main(int argc,char** argv){
  }
  {
   BufferCache c(8*GiB,16);const auto* a=c.GetArena(0,(5*GiB>>16)-1);
-  BufferCache::Backing r{{0,5*GiB>>16},MakeMemory(77),0,a};c.resident_ranges.Add(r);c.SynchronizeDmaBuffers();
+  BufferCache::Backing r{{0,5*GiB>>16},MakeMemory(77),0,a};c.resident_ranges.Add(r);AuditDmaReads(c);
   Check(c.syncs.size()==2&&u64{c.syncs[0].size}+c.syncs[1].size==5*GiB,"DMA spans beyond u32 are split without truncating");++scenarios;
  }
  {
@@ -205,7 +216,7 @@ int main(int argc,char** argv){
   const auto* a=c.GetArena(0,last);c.EnsureResident(a,0,last);
   Check(c.instance.device.allocations.size()==1&&c.instance.device.allocations[0]==4*GiB+c.block_size,"physical allocation size cannot wrap at u32");
   Check(c.runtime.pagetable.at(last)==a->BufferDeviceAddress()+4*GiB,"BDA upload covers block past four GiB without looping");
-  c.SynchronizeDmaBuffers();Check(c.syncs.size()==2,"large backing is uploaded in representable chunks");++scenarios;
+  AuditDmaReads(c);Check(c.syncs.size()==2,"large backing is uploaded in representable chunks");++scenarios;
  }
  {
   BufferCache c;const auto* a=c.GetArena(1,1);const auto* b=c.GetArena((4*GiB>>16)-1,4*GiB>>16);

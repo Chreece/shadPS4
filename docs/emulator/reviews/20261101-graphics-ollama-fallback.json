@@ -1,0 +1,57 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-graphics-ollama-fallback-20261101",
+  "timestamp_utc": "2026-11-01T11:56:19.880911+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "host_result": {
+    "schema_version": 2,
+    "record_id": "universal-graphics-20261101T115426Z-3053374",
+    "scope": "UNIVERSAL_SHADPS4",
+    "timestamp_utc": "2026-11-01T11:54:26.556389+00:00",
+    "source_commit": "ed0fe5be055ee712756351479ac5411366e5385b",
+    "binary_sha256": "2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548",
+    "game_launched": false,
+    "graphics_verified": false,
+    "installed_binary_changed": false,
+    "evidence": "/home/chreece/projects/shadps4/logs/universal-graphics-20261101T115426Z-3053374.tar.gz",
+    "result": "PREFLIGHT_FAILED",
+    "profile_source": "/home/chreece/.local/share/shadPS4",
+    "profile_files_copied": 205,
+    "profile_policy": "isolated saves; global config; no custom title configs, patches, cheats or old shader cache",
+    "vram_free_before": 200368128,
+    "ollama_unloaded": [],
+    "error": "[Errno 104] Connection reset by peer",
+    "exit_code": 1,
+    "uploaded_archive_sha256": "1586b41de93b2a37a569031106ffb800e5ebe9a9ce1659fe994309d49fad1b2f",
+    "pull_request": 118,
+    "reviewed_classification": "BLOCKED_VRAM_AND_OLLAMA_CONNECTION_RESET_BEFORE_GAME"
+  },
+  "fix": "Bypass HTTP proxies for the local API; on API error discover running Ollama Docker containers, query their CLI and stop only listed model instances. No service restart or sudo. Preserve 8 GiB launch threshold.",
+  "checks": [
+    {
+      "scenario": "API_RESET_success",
+      "result": "PASS_REAL_SUBPROCESS_FIXTURE_ONLY"
+    },
+    {
+      "scenario": "API_RESET_permission",
+      "result": "PASS_REAL_SUBPROCESS_FIXTURE_ONLY"
+    },
+    {
+      "scenario": "API_RESET_bad_output",
+      "result": "PASS_REAL_SUBPROCESS_FIXTURE_ONLY"
+    },
+    {
+      "scenario": "API_RESET_stop_failure",
+      "result": "PASS_REAL_SUBPROCESS_FIXTURE_ONLY"
+    },
+    {
+      "scenario": "local_HTTP_bypasses_broken_proxy",
+      "result": "PASS_REAL_LOOPBACK_HTTP"
+    }
+  ],
+  "existing_runner_checks": "PASS_4_ORCHESTRATION_SCENARIOS",
+  "production_source_changed": false,
+  "game_launched": false,
+  "graphics_verified": false,
+  "decision": "RETRY_VERIFIED_BINARY_GRAPHICS_CAPTURE"
+}

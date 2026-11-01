@@ -29,6 +29,8 @@ ERROR_TERMS = (
     "SRT", "AUDIO_", "Loading libSce",
 )
 GIB = 1024 ** 3
+GPU_FAILURE_TERMS = ("VK_ERROR_DEVICE_LOST", "ErrorDeviceLost", "context is lost",
+                     "guilty of a soft recovery", "GPU fault detected")
 
 
 def digest(path):
@@ -75,20 +77,24 @@ def take_picture(report,second,display):
 
 def term_owned(child,phase):
     if child.poll() is not None:
-        return
+        return None
     try:
-        os.killpg(child.pid,signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    try:
-        child.wait(timeout=2)
-    except subprocess.TimeoutExpired:
         try:
-            os.killpg(child.pid,signal.SIGKILL)
+            os.killpg(child.pid,signal.SIGTERM)
         except ProcessLookupError:
             pass
-        child.wait(timeout=3)
+        try:
+            child.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(child.pid,signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait(timeout=3)
+    except (OSError,subprocess.TimeoutExpired) as error:
+        return f'{type(error).__name__}: {error}'
     print('OWNED_GAME_PROCESS_TERMINATED='+phase,flush=True)
+    return None
 
 
 def summarize(console,out):
@@ -96,6 +102,8 @@ def summarize(console,out):
     important=[]
     warnings=0
     errors=0
+    gpu_failure=None
+    srt_rejections={}
     with console.open('rb') as stream:
         for raw in stream:
             total+=1
@@ -106,7 +114,13 @@ def summarize(console,out):
                 errors+=1
             if ' <Warning>' in text:
                 warnings+=1
-            if any(term in text for term in ERROR_TERMS):
+            if any(term in text for term in GPU_FAILURE_TERMS) and gpu_failure is None:
+                gpu_failure=text
+            match=re.search(r'Unexpected instruction for offset computation, (\w+)', text)
+            if match:
+                opcode=match.group(1)
+                srt_rejections[opcode]=srt_rejections.get(opcode, 0)+1
+            if any(term in text for term in ERROR_TERMS + GPU_FAILURE_TERMS):
                 if len(important)<420:
                     important.append(text)
     (out/'selected-console-diagnostics.txt').write_text(
@@ -121,7 +135,7 @@ def summarize(console,out):
         else:
             excerpt=stream.read()
     (out/'console-excerpt.log').write_bytes(excerpt)
-    return {'console_lines':total,'warning_lines':warnings,'error_lines':errors,
+    return {'gpu_failure':gpu_failure,'srt_rejections':srt_rejections,'console_lines':total,'warning_lines':warnings,'error_lines':errors,
             'selected_diagnostic_lines':len(important),
             'full_console_bytes':size}
 
@@ -205,11 +219,11 @@ def main():
     display=env.get('DISPLAY',':0')
     env['DISPLAY']=display
     argv=[str(binary),args.game,'--fullscreen','true','--show-fps']
-    save(report/'launch.json',{
+    launch={
         'command':argv,'sha256':args.sha256,'cpu':'emulator-native/no-DynamoRIO',
         'memory':'global emulator config','automated_game_inputs':False,
         'runtime_limit_seconds':120,'signal_at_seconds':118
-    })
+    }
     result={'binary_sha256':args.sha256,'game':args.game,
             'duration_limit':120,'time_to_sigterm':118,
             'graphics_visual_acceptance':'NOT_OBSERVED',
@@ -226,11 +240,23 @@ def main():
             child=subprocess.Popen(argv,cwd=args.cwd,env=env,
                 stdin=subprocess.DEVNULL,stdout=output,stderr=subprocess.STDOUT,
                 start_new_session=True)
+            result['owned_child_pid']=child.pid
+            save(report/'launch.json',dict(launch,pid=child.pid))
             print(f'NATIVE_GENERIC_GAME_LAUNCHED=YES PID={child.pid}',flush=True)
             due=(40,80,110)
             taken=set()
+            gpu_failure=None
             while child.poll() is None and time.monotonic()-began<118:
                 elapsed=time.monotonic()-began
+                with console.open('rb') as monitor:
+                    monitor.seek(max(0, console.stat().st_size - 256 * 1024))
+                    recent = monitor.read().decode('utf-8', 'replace')
+                gpu_failure = next((line for line in recent.splitlines()
+                                    if any(term in line for term in GPU_FAILURE_TERMS)), None)
+                if gpu_failure:
+                    result['gpu_failure'] = gpu_failure
+                    result['exit_reason'] = 'GPU_CONTEXT_LOST'
+                    break
                 if elapsed-previous_map_capture>=1.0:
                     capture_native_mappings(child.pid,report)
                     previous_map_capture=elapsed
@@ -240,7 +266,9 @@ def main():
                         if take_picture(report,second,display):
                             result['screenshots'].append(f'frame-{second:03d}s.png')
                 time.sleep(min(0.4,max(0.0,118-elapsed)))
-            if child.poll() is None:
+            if gpu_failure:
+                result['exit_reason']='GPU_CONTEXT_LOST'
+            elif child.poll() is None:
                 result['exit_reason']='TEST_118S_DURATION_LIMIT'
             else:
                 result['exit_reason']='GAME_EXITED_BEFORE_LIMIT'
@@ -252,15 +280,24 @@ def main():
     finally:
         if child is not None:
             if child.poll() is None:
-                term_owned(child,'TERM_THEN_OPTIONAL_KILL')
+                stop_error=term_owned(child,'TERM_THEN_OPTIONAL_KILL')
+                if stop_error:
+                    result['termination_error']=stop_error
             result['owned_child_terminated']=child.poll() is not None
             result['exit_code']=child.poll()
+            if not result['owned_child_terminated']:
+                result['exit_reason']='OWNED_PROCESS_STOP_UNCONFIRMED'
         result['elapsed_seconds']=round(time.monotonic()-began,3)
         if console.is_file():
-            result.update(summarize(console,report))
-            result["native_fault"]=classify_native_fault(console,report,binary)
-            if result["native_fault"].get("fault_rip"):
-                save(report/'native-fault-mapping.json',result["native_fault"])
+            try:
+                result.update(summarize(console,report))
+                if result.get('gpu_failure'):
+                    result['exit_reason']='GPU_CONTEXT_LOST'
+                result["native_fault"]=classify_native_fault(console,report,binary)
+                if result["native_fault"].get("fault_rip"):
+                    save(report/'native-fault-mapping.json',result["native_fault"])
+            except Exception as error:
+                failure=f'{type(error).__name__}: {error}'
         if failure:
             result['failure']=failure
         save(report/'native-result.json',result)
@@ -269,7 +306,7 @@ def main():
     print('TEST_RUNTIME_SECONDS='+str(result['elapsed_seconds']),flush=True)
     print('GAME_PROCESS_LEFT_RUNNING='+('NO' if result['owned_child_terminated'] else 'UNKNOWN'),flush=True)
     print('NO_AUTOMATIC_INPUT=YES; FULLSCREEN_AND_FPS=YES; NO_CPU_ID_OVERRIDES=YES',flush=True)
-    return 0 if result['owned_child_terminated'] and (
+    return 0 if not failure and not result.get('gpu_failure') and result['owned_child_terminated'] and (
         result['exit_reason']=='TEST_118S_DURATION_LIMIT' or result['exit_code']==0) else 1
 
 
