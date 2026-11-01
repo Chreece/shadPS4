@@ -77,20 +77,24 @@ def take_picture(report,second,display):
 
 def term_owned(child,phase):
     if child.poll() is not None:
-        return
+        return None
     try:
-        os.killpg(child.pid,signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    try:
-        child.wait(timeout=2)
-    except subprocess.TimeoutExpired:
         try:
-            os.killpg(child.pid,signal.SIGKILL)
+            os.killpg(child.pid,signal.SIGTERM)
         except ProcessLookupError:
             pass
-        child.wait(timeout=3)
+        try:
+            child.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(child.pid,signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait(timeout=3)
+    except (OSError,subprocess.TimeoutExpired) as error:
+        return f'{type(error).__name__}: {error}'
     print('OWNED_GAME_PROCESS_TERMINATED='+phase,flush=True)
+    return None
 
 
 def summarize(console,out):
@@ -215,11 +219,11 @@ def main():
     display=env.get('DISPLAY',':0')
     env['DISPLAY']=display
     argv=[str(binary),args.game,'--fullscreen','true','--show-fps']
-    save(report/'launch.json',{
+    launch={
         'command':argv,'sha256':args.sha256,'cpu':'emulator-native/no-DynamoRIO',
         'memory':'global emulator config','automated_game_inputs':False,
         'runtime_limit_seconds':120,'signal_at_seconds':118
-    })
+    }
     result={'binary_sha256':args.sha256,'game':args.game,
             'duration_limit':120,'time_to_sigterm':118,
             'graphics_visual_acceptance':'NOT_OBSERVED',
@@ -236,6 +240,8 @@ def main():
             child=subprocess.Popen(argv,cwd=args.cwd,env=env,
                 stdin=subprocess.DEVNULL,stdout=output,stderr=subprocess.STDOUT,
                 start_new_session=True)
+            result['owned_child_pid']=child.pid
+            save(report/'launch.json',dict(launch,pid=child.pid))
             print(f'NATIVE_GENERIC_GAME_LAUNCHED=YES PID={child.pid}',flush=True)
             due=(40,80,110)
             taken=set()
@@ -274,17 +280,24 @@ def main():
     finally:
         if child is not None:
             if child.poll() is None:
-                term_owned(child,'TERM_THEN_OPTIONAL_KILL')
+                stop_error=term_owned(child,'TERM_THEN_OPTIONAL_KILL')
+                if stop_error:
+                    result['termination_error']=stop_error
             result['owned_child_terminated']=child.poll() is not None
             result['exit_code']=child.poll()
+            if not result['owned_child_terminated']:
+                result['exit_reason']='OWNED_PROCESS_STOP_UNCONFIRMED'
         result['elapsed_seconds']=round(time.monotonic()-began,3)
         if console.is_file():
-            result.update(summarize(console,report))
-            if result.get('gpu_failure'):
-                result['exit_reason']='GPU_CONTEXT_LOST'
-            result["native_fault"]=classify_native_fault(console,report,binary)
-            if result["native_fault"].get("fault_rip"):
-                save(report/'native-fault-mapping.json',result["native_fault"])
+            try:
+                result.update(summarize(console,report))
+                if result.get('gpu_failure'):
+                    result['exit_reason']='GPU_CONTEXT_LOST'
+                result["native_fault"]=classify_native_fault(console,report,binary)
+                if result["native_fault"].get("fault_rip"):
+                    save(report/'native-fault-mapping.json',result["native_fault"])
+            except Exception as error:
+                failure=f'{type(error).__name__}: {error}'
         if failure:
             result['failure']=failure
         save(report/'native-result.json',result)
@@ -293,7 +306,7 @@ def main():
     print('TEST_RUNTIME_SECONDS='+str(result['elapsed_seconds']),flush=True)
     print('GAME_PROCESS_LEFT_RUNNING='+('NO' if result['owned_child_terminated'] else 'UNKNOWN'),flush=True)
     print('NO_AUTOMATIC_INPUT=YES; FULLSCREEN_AND_FPS=YES; NO_CPU_ID_OVERRIDES=YES',flush=True)
-    return 0 if not result.get('gpu_failure') and result['owned_child_terminated'] and (
+    return 0 if not failure and not result.get('gpu_failure') and result['owned_child_terminated'] and (
         result['exit_reason']=='TEST_118S_DURATION_LIMIT' or result['exit_code']==0) else 1
 
 

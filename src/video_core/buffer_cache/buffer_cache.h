@@ -4,6 +4,7 @@
 #pragma once
 
 #include <deque>
+#include <functional>
 #include <boost/container/small_vector.hpp>
 
 #include "common/enum.h"
@@ -121,7 +122,7 @@ public:
     void MarkRegionAsGpuModified(VAddr addr, size_t size);
 
     /// Synchronizes all buffers needed for DMA.
-    void SynchronizeDmaBuffers();
+    void SynchronizeDmaBuffers(const std::function<void(const Buffer*, u64, u64)>& on_read);
 
     /// Commits pending sparse buffer memory binds. Must be called before every scheduler submit.
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);

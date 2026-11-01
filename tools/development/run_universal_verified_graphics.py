@@ -172,6 +172,28 @@ def copy_profile(old, new):
     return len(files)
 
 
+def recover_incomplete_captures(project, out, observer):
+    recovered = []
+    for prior in sorted((project / 'logs').glob('universal-graphics-*/result.json'), reverse=True):
+        capture = prior.parent / 'capture'
+        console = capture / 'full-console.log'
+        if prior.parent == out or (capture / 'native-result.json').exists() or not console.is_file():
+            continue
+        if len(recovered) == 4:
+            break
+        target = out / 'recovered-captures' / prior.parent.name
+        target.mkdir(parents=True)
+        try:
+            summary = observer.summarize(console, target)
+            summary['original_result'] = json.loads(prior.read_text())
+            summary['recovered_from'] = str(console)
+            save(target / 'recovered-summary.json', summary)
+            recovered.append(prior.parent.name)
+        except (OSError, ValueError) as exc:
+            save(target / 'recovery-error.json', {'error': str(exc)})
+    return recovered
+
+
 def main():
     os.umask(0o077)
     project = Path.home() / 'projects/shadps4'
@@ -191,6 +213,7 @@ def main():
     game = Path(os.environ.get('SHADPS4_TEST_GAME', '/mnt/roms-all/ps4-games/CUSA11456/eboot.bin'))
     record['context_games'] = [game.parent.name]
     expected_elf = ELF
+    module = None
     lock = (project / 'tests/.universal-upstream-build.lock').open('a')
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -226,6 +249,7 @@ def main():
         spec = importlib.util.spec_from_file_location('observer', observer)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        record['recovered_captures'] = recover_incomplete_captures(project, out, module)
         if module.existing_games():
             raise RuntimeError('AN_EMULATOR_IS_ALREADY_RUNNING')
         game = Path(os.environ.get('SHADPS4_TEST_GAME', '/mnt/roms-all/ps4-games/CUSA11456/eboot.bin'))
@@ -270,6 +294,22 @@ def main():
         print('STOP=' + record['error'], flush=True)
     finally:
         record['game_launched'] = (out / 'capture/launch.json').is_file()
+        record['tested_games'] = [game.parent.name] if record['game_launched'] else []
+        if record['game_launched'] and record['result'] == 'PREFLIGHT_FAILED':
+            record['result'] = 'GAME_OR_OBSERVER_FAILED'
+        native_path = out / 'capture/native-result.json'
+        console = out / 'capture/full-console.log'
+        if record['game_launched'] and 'native' not in record:
+            try:
+                if native_path.is_file():
+                    record['native'] = json.loads(native_path.read_text())
+                elif module is not None and console.is_file():
+                    record['native'] = module.summarize(console, console.parent)
+            except (OSError, ValueError) as exc:
+                record['capture_error'] = str(exc)
+        record['stop_remaining_tests'] = bool(record['game_launched'] and (
+            record.get('native', {}).get('gpu_failure') or
+            not record.get('native', {}).get('owned_child_terminated', False)))
         logs = runtime / 'user/log'
         if logs.is_dir():
             for log in logs.glob('*.txt'):

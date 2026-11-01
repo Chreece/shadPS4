@@ -23,7 +23,7 @@ version selects any new behavior in this integration.
 | Depth image extent growth | New component-wise maximum | Mip count and layer count grow independently; old code fails crossed-extent regression |
 | User-data directory startup | New recursive directory creation | Actual native CLI aborted with missing parents; corrected binary passes fresh, existing, and conflicting path cases |
 
-Shader binary cache version is 13, newer than both source parents. Old compiled
+Shader binary cache version is 14, newer than both source parents. Old compiled
 shader cache entries must not be treated as equivalent to these emitters.
 
 ## Validation and promotion
@@ -156,3 +156,44 @@ isolated diagnostic profiles; this is not an FPS benchmark. The two-game runner
 builds first, tests GoW then GoT with no input, and stops the sequence on GPU loss.
 It packages build and game archives into one `UPLOAD_THIS` archive.
 See `reviews/20261101-uniform-lane-srt.json` for evidence and validation scope.
+
+
+## November 1 GPU-dependent constant reads and capture recovery
+
+The `ef5fd679` host build passed the complete native build, existing CPU suites
+and startup checks. The GoT retry eliminated the 408 ReadLane and four
+ReadFirstLane rejections, but still lost its GPU context at 52.612 seconds.
+Phi (72) and GetAttributeU32 (29) rejections remain. GoW reached a loading screen
+at 110 seconds; a post-SIGKILL wait timeout prevented its console summary and
+native result from being archived. Its original `PREFLIGHT_FAILED` classification
+is preserved in the journal and explicitly corrected in the review.
+
+Five final GoT IR dumps retain 39 live unflattened ReadConst operations. The old
+emitter substitutes flattened slot zero when global DMA is disabled. The candidate
+now uses guest-memory reads when required by shader semantics, with a capability
+check, full-width page-table bounds and atomic fault-bit updates. It also clears
+the fault bitmap, tracks the involved buffers through normal renderer barriers,
+bounds CPU fault readback, preserves overflowed fault bits and handles noncoherent
+host readback. Cache version 14 forces new shader compilation. No title, shader
+hash, GPU vendor or driver version controls these changes.
+
+Extracted production routing and metadata pass eight cases; the prior emitter
+fails the default-config dynamic-read case. Real Sirit-generated modules and the
+compiled fault-processing shader pass Vulkan 1.3 SPIR-V validation. A CPU
+interpreter executes 262 bounds/address/fault-bit checks on emitted instructions.
+The extracted fault shader drains 3,072 unique pages over four rounds under
+ASan/UBSan. These checks are not GPU execution. Full native compilation and
+hardware validation of this changed source remain pending.
+
+The observer now saves its result and console even if the owned process does not
+confirm exit after SIGKILL. The batch stops on that condition, GPU loss or missing
+evidence. A launched failure is classified correctly, and the next runner can
+recover old missing console summaries read-only. Two real child-process cases,
+one injected cleanup timeout, five orchestration cases, two build-record cases,
+four batch cases and one read-only recovery check pass.
+
+This still relies on deferred guest-memory fault handling, without exact shader
+replay. BDA-free dynamic reads, GPU-dependent descriptor discovery and ordered-GDS
+continuation remain open. Both game captures failed graphics acceptance; main is
+not promoted. See `reviews/20261101-dynamic-srt-and-capture-recovery.json` for
+immutable capture hashes, IR inventory, original records and validation limits.

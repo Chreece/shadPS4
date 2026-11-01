@@ -73,7 +73,7 @@ struct DrawIndirectParams {
 class PipelineCache {
 public:
     explicit PipelineCache(const Instance& instance, Scheduler& scheduler,
-                           AmdGpu::Liverpool* liverpool, u32 sparse_page_shift);
+                           AmdGpu::Liverpool* liverpool, u32 sparse_page_shift, u64 bda_page_count);
     ~PipelineCache();
 
     void WarmUp();

@@ -41,7 +41,8 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
       buffer_cache{instance, scheduler, runtime, liverpool_, texture_cache, page_manager},
       texture_cache{instance, scheduler, runtime, liverpool_, buffer_cache, page_manager},
       liverpool{liverpool_}, memory{Core::Memory::Instance()},
-      pipeline_cache{instance, scheduler, liverpool, buffer_cache.GetSparsePageShift()},
+      pipeline_cache{instance, scheduler, liverpool, buffer_cache.GetSparsePageShift(),
+                     buffer_cache.GetBdaPageTableBuffer()->SizeBytes() / sizeof(u64)},
       host_markers_enabled{EmulatorSettings.IsVkHostMarkersEnabled()},
       guest_markers_enabled{EmulatorSettings.IsVkGuestMarkersEnabled()} {
     if (!EmulatorSettings.IsNullGPU()) {
@@ -471,7 +472,11 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     }
 
     if (uses_dma) {
-        buffer_cache.SynchronizeDmaBuffers();
+        buffer_cache.SynchronizeDmaBuffers([this](const VideoCore::Buffer* buffer, u64 offset,
+                                                 u64 size) {
+            needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size);
+            bound_buffers.emplace_back(buffer, offset, size, vk::AccessFlagBits2::eShaderRead);
+        });
     }
 
     return true;
@@ -831,9 +836,15 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             } else if (desc.buffer_type == Shader::BufferType::BdaPagetable) {
                 const auto* bda_buffer = buffer_cache.GetBdaPageTableBuffer();
                 buffer_infos.emplace_back(bda_buffer->Handle(), 0, bda_buffer->SizeBytes());
+                needs_barrier |= runtime.IsBufferAccessed(bda_buffer, 0, bda_buffer->SizeBytes());
+                bound_buffers.emplace_back(bda_buffer, 0, bda_buffer->SizeBytes(),
+                                           vk::AccessFlagBits2::eShaderRead);
             } else if (desc.buffer_type == Shader::BufferType::FaultBuffer) {
                 const auto* fault_buffer = buffer_cache.GetFaultBuffer();
                 buffer_infos.emplace_back(fault_buffer->Handle(), 0, fault_buffer->SizeBytes());
+                needs_barrier |=
+                    runtime.IsBufferAccessed(fault_buffer, 0, fault_buffer->SizeBytes(), true);
+                bound_buffers.emplace_back(fault_buffer, 0, fault_buffer->SizeBytes(), src_access);
             } else if (desc.buffer_type == Shader::BufferType::SharedMemory) {
                 auto& lds_buffer = buffer_cache.GetStreamBuffer();
                 const auto& cs_program = liverpool->GetCsRegs();

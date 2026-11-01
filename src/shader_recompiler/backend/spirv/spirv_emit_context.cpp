@@ -1203,9 +1203,17 @@ Id EmitContext::DefineGetBdaPointer() {
 
     // Get page BDA
     const auto page{OpShiftRightLogical(U64, address, caching_pagebits)};
-    const auto page32{OpUConvert(U32[1], page)};
     const auto& bda_buffer{buffers[bda_pagetable_index]};
     const auto [bda_buffer_id, bda_pointer_type] = bda_buffer.Alias(PointerType::U64);
+    const auto in_bounds{OpULessThan(U1[1], page, Constant(U64, profile.bda_page_count))};
+    const auto valid_label{OpLabel()};
+    const auto invalid_label{OpLabel()};
+    OpSelectionMerge(valid_label, spv::SelectionControlMask::MaskNone);
+    OpBranchConditional(in_bounds, valid_label, invalid_label);
+    AddLabel(invalid_label);
+    OpReturnValue(u64_zero_value);
+    AddLabel(valid_label);
+    const auto page32{OpUConvert(U32[1], page)};
     const auto bda_ptr{OpAccessChain(bda_pointer_type, bda_buffer_id, u32_zero_value, page32)};
     const auto bda{OpLoad(U64, bda_ptr)};
 
@@ -1223,9 +1231,8 @@ Id EmitContext::DefineGetBdaPointer() {
     const auto page_mask{OpShiftLeftLogical(U32[1], u32_one_value, page_mod32)};
     const auto fault_ptr{
         OpAccessChain(fault_pointer_type, fault_buffer_id, u32_zero_value, page_div32)};
-    const auto fault_value{OpLoad(U32[1], fault_ptr)};
-    const auto fault_value_masked{OpBitwiseOr(U32[1], fault_value, page_mask)};
-    OpStore(fault_ptr, fault_value_masked);
+    OpAtomicOr(U32[1], fault_ptr, ConstU32(static_cast<u32>(spv::Scope::Device)), u32_zero_value,
+               page_mask);
 
     // Return null pointer
     const auto fallback_result{u64_zero_value};

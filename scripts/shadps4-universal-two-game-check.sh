@@ -50,12 +50,16 @@ import json,pathlib,sys
 for line in pathlib.Path(sys.argv[1]).read_text(errors='replace').splitlines():
     if line.startswith('EVIDENCE='):
         p=pathlib.Path(line.removeprefix('EVIDENCE=').removesuffix('.tar.gz'))/'result.json'
-        if p.is_file() and json.loads(p.read_text()).get('native',{}).get('gpu_failure'):
-            sys.exit(0)
-sys.exit(1)
+        if p.is_file():
+            result=json.loads(p.read_text())
+            native=result.get('native',{})
+            unsafe=result.get('stop_remaining_tests') or native.get('gpu_failure') or (
+                result.get('game_launched') and not native.get('owned_child_terminated',False))
+            sys.exit(0 if unsafe else 1)
+sys.exit(0)
 PY
     then
-        echo GPU_CONTEXT_LOST_STOPPING_REMAINING_TESTS
+        echo GPU_FAILURE_OR_UNCONFIRMED_STOP_ENDING_REMAINING_TESTS
         RESULT=1
         break
     fi
