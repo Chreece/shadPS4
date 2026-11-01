@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "record_id": "gpu-host-readback-publication-20261028-prepared",
+  "recorded_at": "2026-10-28",
+  "scope": "Universal Vulkan staged-buffer download correctness; no title or shader-hash conditions",
+  "tested_games": [],
+  "gameplay": "NOT_RUN",
+  "retained_host_source": "41bc8f70c1ad77ee2eaa91be3a118d18207b8268",
+  "retained_host_elf_sha256": "b6f55aa3bdf09e0247b58edcc2a3a38c58cc453f9a4898e2d17b265d7ff29e70",
+  "checked_upstream_snapshot": "ce74386283f559f2279a7c31416bcdc9359be0b3",
+  "upstream_change": "Revert np-auth token commit caaa5419; eight np-auth/shadnet paths only. This is upstream maintenance, not an asserted graphics fix.",
+  "production_path": "src/video_core/buffer_cache/buffer_cache.cpp",
+  "production_preimage_blob": "25be1771510021091c6116eacd6dd026455b09a3",
+  "change": "After actual copies into host staging, issue a buffer-scoped COPY/TRANSFER_WRITE -> HOST/HOST_READ barrier covering download.offset/download.size, with both queue families ignored. Apply to DownloadMemory and ReadEdgeImagePages before existing synchronous timeline wait or deferred completion callback. Retain cache invalidation, existing waits, dirty-range selection, write preservation, and metadata ownership.",
+  "not_changed": ["game settings", "userfaultfd/signals selection", "CPU read-protection policy", "shader semantics", "dispatch dimensions", "queue order", "driver flags", "Sunshine", "X11", "network", "live saves"],
+  "specification_basis": [
+    "https://docs.vulkan.org/guide/latest/synchronization_examples.html",
+    "https://docs.vulkan.org/spec/latest/appendices/memorymodel.html"
+  ],
+  "causality_limit": "A required GPU-to-host memory-domain dependency is absent in the inspected staged-copy paths. This does not prove that the omission caused GoW's RADV context loss, or that the new candidate restores gameplay.",
+  "package_commit": "34805aaf18c3b6ebdf2b4ef56627b97617fabee4",
+  "patch_path": "scripts/patchsets/gpu-host-readback-publication-20261028.patch",
+  "patch_blob": "65f4e375c451f7a903a1c6af008b28e928f1ca26",
+  "fixture_path": "tools/development/host_readback_fixture.cpp.in",
+  "fixture_blob": "bdab02cdcf9be9079605c568cc3d348e50103f64",
+  "runner_commit": "9801a44b9352e3b5d81422504d90858b1c66cc23",
+  "runner_path": "scripts/shadps4_host_readback_20261028.py",
+  "runner_sha256": "7913a58e2a8f327b645bf4c4e3c7d353a25fcb51d2270284d45cbe9d40f20671",
+  "validation": {
+    "exact_methods": "DownloadMemory and ReadEdgeImagePages extracted verbatim from old and patched production source; helper extracted from patched source",
+    "local_cpu_model": "GCC14 and Clang17 strict C++23 release builds passed baseline and corrected cases; corrected ASan+UBSan builds passed on both compilers. Eleven cases cover synchronous/deferred publication, allocation offsets, scattered copied spans, unchanged clean gaps, image edges, and empty fast path.",
+    "baseline_observation": "BASELINE_MISSING_HOST_DEPENDENCY=REPRODUCED in the CPU collaborator model; not a claim that stale GPU bytes were reproduced on hardware",
+    "corrected_observation": "HOST_READBACK_PUBLICATION=PASS in CPU collaborator model",
+    "actual_vulkan_header_validation": "PENDING on user host. Runner requires both baseline/corrected fixtures to compile against the project's actual Vulkan-Hpp headers before building the production object. Local Vulkan declaration collaborators are not presented as full native Vulkan validation.",
+    "patch": "Exact-preimage git apply --index, diff --check and reverse restore passed locally",
+    "runner_safety": "Real temporary Git repositories and patch/merge/ref operations passed compile-failure restore, successful-runtime restore, failed-runtime restore/nonzero exit, and dirty-source refusal. Native builds and game execution were stubbed in these four safety tests, not claimed run.",
+    "full_native_emulator_build": "PENDING",
+    "gpu_game_test": "PENDING"
+  },
+  "acceptance": "Preserve previous exact candidate, PR94, PR91 and protected gameplay ELF. Run one bounded isolated GoW only after real-header fixture, production compile and link pass; retain resulting candidate separately and restore PR94. Archive full console and append local universal trials on failure or success. Do not promote as gameplay recovery without actual visible game evidence."
+}

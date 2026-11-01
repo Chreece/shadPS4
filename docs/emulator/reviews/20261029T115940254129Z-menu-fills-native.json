@@ -1,0 +1,85 @@
+{
+  "schema_version": 2,
+  "record_id": "got-c925-menu-fills-20261029T115940254129Z-reviewed",
+  "recorded_on": "2026-10-29",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "record_type": "NATIVE_GAME_MENU_AND_MANUAL_GAMEPLAY_CAPTURE_NO_CODE_CHANGE",
+  "game_id": "CUSA11456",
+  "context_games": [
+    "CUSA11456",
+    "CUSA34384"
+  ],
+  "tested_games": [
+    "CUSA11456"
+  ],
+  "archive": "got-c925-menu-fills-20261029T115940254129Z.tar.gz",
+  "archive_sha256": "e1d06d2c06baa6c5f4b04ee2a093d30aa1913e534a04180154ac012c7e26a200",
+  "source_base": "c925523b49ef39434024b16b2b014d120471ee1a",
+  "native_elf_expected": "89ffa07ab49d0df36b3a4c4295e0cff8f42bb7e167cbced3d5879b1e5c2f5aec",
+  "emulator_build": "NOT_RUN_REUSED_PR109",
+  "emulator_source_edited": false,
+  "game_duration_seconds": 118.808,
+  "exit_code": 0,
+  "time_limit_reached": true,
+  "user_manual_input": "User entered gameplay during run. No automation or runner injected input; 85/112-second screenshots are GAMEPLAY, not comparable menu frames.",
+  "screenshots": [
+    {
+      "second": 40,
+      "phase": "MENU_BACKGROUND_BEFORE_TEXT_APPEARED_IN_CAPTURE",
+      "observed": "dark cloud/particles, katana solid black silhouette, displayed overlay 14 FPS"
+    },
+    {
+      "second": 55,
+      "phase": "MENU",
+      "observed": "Continue/New Game/Load Game/Options/Play Credits and selection highlight clear; cloud and particles visible; katana black silhouette; grass, material fills and some expected foreground missing; displayed overlay 11 FPS"
+    },
+    {
+      "second": 85,
+      "phase": "GAMEPLAY_USER_NAVIGATED",
+      "observed": "scene very dark, flame/sparks and dark geometry/characters; displayed overlay 9 FPS"
+    },
+    {
+      "second": 112,
+      "phase": "GAMEPLAY_USER_NAVIGATED",
+      "observed": "figures/horse or riders strongly silhouetted against fire, dark unfilled material/terrain, displayed overlay 4 FPS"
+    }
+  ],
+  "fps_qualification": "Different phases, scenes, shader compilation/asset streaming; not a controlled FPS regression or proof of a presentation freeze. No identical-frame inference.",
+  "original_protected_files_changed": [],
+  "vram_before_and_at_launch_bytes": 9267224576,
+  "ollama_action": "NONE_ALREADY_SUFFICIENT",
+  "shader_evidence": {
+    "fs_compiled_log_candidates": 332,
+    "fs_resource_log_candidates": 64,
+    "fs_fragment_resource_events": 237,
+    "shader_files_captured": 128,
+    "shader_capture_failure": "Collector sorted fs_* by path and stopped at128 files. This omitted relevant high-hash fragment shaders b5c898c7 and7eaf40ad even though earlier archive got-c925-remaining-shaders-20261028T155744943557Z includes their source; do not call them absent or uncompiled.",
+    "mixed_table": "Fragment stages b5c898c7 and7eaf40ad each report 12 bound mixed arrays with 27651 entries:27612 2D,35 3D,4 Cube; no dimension-overflow observed. Binding does not establish actual executed sample or color output.",
+    "compute_rejects": "Seven prior zero-record 536-byte material-table rejections in four COMPUTE shader families; menu visual causality not proven.",
+    "unflattened_warning_lines": 728,
+    "warning_scope": "Whole run, includes user-entered gameplay; do not attribute all warnings to menu.",
+    "pr107_indirect_events": "28 accepted shader5065ed7b indirect material selects. Later113 deferrals for tables of hundreds to 1853 records exceed16 compiler cap. Refusal is safe, cannot be treated as material recovery or cause of menu sword.",
+    "asset_open_evidence": [
+      "whr_foliage_jw_grass_001.msac.d.0.sps",
+      "metal_pj_katanablade_hero_rank_01_mtl.msac.d.0.sps",
+      "metal_pj_katanablade_hero_rank_01_mtl.msac.g.0.sps",
+      "metal_pj_katanablade_hero_rank_01_mtl.msac.n.0.sps"
+    ],
+    "asset_qualification": "Guest file-open log proves files requested/opened, not correct decoding/upload/sampling."
+  },
+  "older_shader_source_analysis": {
+    "source_archive": "got-c925-remaining-shaders-20261028T155744943557Z.tar.gz",
+    "source_is_historical": true,
+    "fragment_hashes": [
+      "b5c898c7",
+      "7eaf40ad"
+    ],
+    "for_b5": "Final IR includes DiscardCond whose SSA dependencies include 4 indexed image samples and 3 sharp_source=true dynamic ReadConstBuffer loads. Without live values this is a possible alpha/material invisibility path, not a demonstrated bug.",
+    "for_7e": "Final IR includes DiscardCond dependent on 8 image samples and 3 sharp_source=true reads, plus IR Undef nodes; provenance requires checking the latest cached shader to avoid stale-source conclusions.",
+    "validation": "Older IR dependency tracing only; do not assert shader execution/color write or a diagnosis from snapshots."
+  },
+  "decision": "KEEP_PR109_AND_PREVIOUS_RENDERER_CAPABILITIES_NO_NEW_GRAPHICS_FIX; MENU_VISUAL_FAILURE_REMAINS",
+  "next_test": "Read-only recover current b5c898c7 and7eaf40ad SPIR-V, pre/post resource IR, SRT/GCN and relevant menu fragment shader output from existing copied test profile; no new emulator build/game. The previous sorted128-file cap omitted precisely these shader dumps. Compare current alpha-discard dependencies to old shader snapshots before proposing any generic resource/fragment correction. Separate gameplay-only >16 indirect table budget from menu. Restore material fill first, then controlled same-scene FPS work.",
+  "shared_journal": "docs/emulator/TRIALS.jsonl + reviews/*.json",
+  "raw_game_data_uploaded_to_github": false
+}

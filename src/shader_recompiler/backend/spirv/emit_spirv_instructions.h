@@ -81,6 +81,14 @@ void EmitStoreBufferU32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address
 void EmitStoreBufferU32x2(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
 void EmitStoreBufferU32x3(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
 void EmitStoreBufferU32x4(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
+void EmitStoreBufferU32Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                               Id guard);
+void EmitStoreBufferU32x2Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard);
+void EmitStoreBufferU32x3Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard);
+void EmitStoreBufferU32x4Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard);
 void EmitStoreBufferU64(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
 void EmitStoreBufferF32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
 void EmitStoreBufferF32x2(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
@@ -487,6 +495,13 @@ Id EmitInverseBallot(EmitContext& ctx, Id mask);
 Id EmitGroupAny(EmitContext& ctx, Id bit);
 Id EmitDataAppend(EmitContext& ctx, Id gds_dw_offset, Id exec);
 Id EmitDataConsume(EmitContext& ctx, Id gds_dw_offset, Id exec);
+// Live guest register capture is emitted in frontend IR, but writing
+// actual GPU checkpoint storage and later restoring state are not enabled.
+void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank, u32 index,
+                                      Id guest_value, Id logical_slot, Id lane);
+// Runtime wave creation ordering must be implemented before this can execute.
+Id EmitOrderedGdsCount(EmitContext& ctx, Id runtime_m0, Id address, Id guest_exec_mask,
+                       u32 encoded_control, u32 site_pc);
 
 void EmitEmitVertex(EmitContext& ctx);
 void EmitEmitPrimitive(EmitContext& ctx);
