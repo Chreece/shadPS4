@@ -20,7 +20,7 @@
     "guest_hle_stack_alignment": "PASS",
     "contiguous_guest_vma": "PASS"
   },
-  "native_build": "IN_PROGRESS_NOT_A_PASS",
+  "native_build": "PASS_GCC14_COMPILE_GENERATED_LINK_AND_ACTUAL_CLI_STARTUP",
   "build_attempts": [
     "Initial submodule checkouts incomplete; restored private dependency checkouts",
     "SDK discovery lacked X11/Xcursor/pkgconf/udev; isolated headers/libraries supplied",
@@ -29,7 +29,7 @@
   ],
   "gpu_run": false,
   "cross_platform_builds": "NOT_RUN",
-  "decision": "RETAIN_INTEGRATION_BRANCH_PENDING_NATIVE_BUILD_AND_GPU_VALIDATION",
+  "decision": "RETAIN_PR118_DRAFT_PENDING_COMBINED_GAME_GPU_VALIDATION",
   "excluded": [
     "PR117 ordered-GDS executor and incomplete guest continuation",
     "Experimental mixed image descriptor tables with no graphics proof",
@@ -58,5 +58,15 @@
     "mixed_color": "Native build pass only; no game/GPU run.",
     "mixed_fs": "CPU shader evidence; mixed descriptor type incompatibility persists. Private shader data not published.",
     "source_rescue": "Three restored source files match saved hashes; no full source tree and no new game run."
-  }
+  },
+  "published_candidate": {
+    "pull_request": 118,
+    "commit": "b887fac9766449d8c625b5d383b0da199ed2fa93",
+    "tree": "7ee9666991c1c5df2998ab54d7bda0d564e01465",
+    "production_source_tree": "aafe1aca2eeba7f42cbb8bedb4f07d0672a58319",
+    "local_candidate_commit_is_prepublication_only": true
+  },
+  "additional_validation": "GCC14 full focused runner PASS; see 20261031-universal-gcc14-cpu.json",
+  "last_updated_utc": "2026-10-31T17:17:20.739946+00:00",
+  "native_result_detail": "20261031-universal-native-link-startup.json"
 }
