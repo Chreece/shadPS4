@@ -47,8 +47,73 @@ def ollama(path, body=None):
     data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request('http://127.0.0.1:11434/api/' + path, data=data,
                                  headers={'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=30) as response:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(req, timeout=15) as response:
         return json.load(response)
+
+
+def unload_models(out, record):
+    attempts = []
+    record['ollama_attempts'] = attempts
+    print('VRAM_LOW_TRYING_LOCAL_OLLAMA_API', flush=True)
+    try:
+        models = ollama('ps').get('models', [])
+        save(out / 'ollama-before.json', models)
+        for model in models:
+            name = model.get('name') or model.get('model')
+            if name:
+                ollama('generate', {'model': name, 'keep_alive': 0, 'stream': False})
+                record['ollama_unloaded'].append(name)
+        attempts.append({'transport': 'direct-local-http', 'result': 'SUCCESS'})
+        return
+    except Exception as exc:
+        attempts.append({'transport': 'direct-local-http', 'error': str(exc)})
+        print('LOCAL_API_FAILED_TRYING_CONTAINER_CLI', flush=True)
+
+    def command(argv, label):
+        try:
+            result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
+                                    text=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            attempts.append({'transport': label, 'error': str(exc)})
+            return None
+        (out / (label + '.txt')).write_text(result.stdout + result.stderr)
+        if result.returncode:
+            attempts.append({'transport': label, 'exit_code': result.returncode})
+            return None
+        return result.stdout
+
+    if not shutil.which('docker'):
+        attempts.append({'transport': 'docker', 'error': 'CLI_NOT_INSTALLED'})
+        return
+    listing = command(['docker', 'ps', '--format', '{{.ID}}\t{{.Image}}\t{{.Names}}'],
+                      'docker-running-containers')
+    if listing is None:
+        return
+    for row in listing.splitlines():
+        fields = row.split('\t')
+        if len(fields) != 3 or 'ollama' not in (fields[1] + ' ' + fields[2]).lower():
+            continue
+        container = fields[0]
+        if not container or any(c not in '0123456789abcdef' for c in container):
+            continue
+        prefix = ['docker', 'exec', container, 'ollama']
+        before = command(prefix + ['ps'], 'ollama-' + container + '-before')
+        if before is None:
+            continue
+        rows = [line.split() for line in before.splitlines() if line.strip()]
+        if not rows or rows[0][0] != 'NAME':
+            attempts.append({'transport': 'docker:' + container, 'error': 'UNRECOGNIZED_PS_OUTPUT'})
+            continue
+        names = [row[0] for row in rows[1:] if len(row) >= 2 and not row[0].startswith('-')]
+        for index, name in enumerate(names):
+            print('UNLOADING_CONTAINER_MODEL=' + name, flush=True)
+            stopped = command(prefix + ['stop', name], 'ollama-' + container + '-stop-' + str(index))
+            if stopped is not None:
+                record['ollama_unloaded'].append(name)
+        after = command(prefix + ['ps'], 'ollama-' + container + '-after')
+        attempts.append({'transport': 'docker:' + container, 'listed_models': names,
+                         'post_unload_query_succeeded': after is not None})
 
 
 def profile_source(project):
@@ -152,13 +217,7 @@ def main():
         record['vram_free_before'] = free_vram()
         record['ollama_unloaded'] = []
         if record['vram_free_before'] < MIN_FREE:
-            models = ollama('ps').get('models', [])
-            save(out / 'ollama-before.json', models)
-            for model in models:
-                name = model.get('name') or model.get('model')
-                if name:
-                    ollama('generate', {'model': name, 'keep_alive': 0, 'stream': False})
-                    record['ollama_unloaded'].append(name)
+            unload_models(out, record)
             until = time.monotonic() + 20
             while free_vram() < MIN_FREE and time.monotonic() < until:
                 time.sleep(.5)

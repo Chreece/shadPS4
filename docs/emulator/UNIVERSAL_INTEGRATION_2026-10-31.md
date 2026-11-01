@@ -118,3 +118,15 @@ local Ollama models; model files and configuration remain unchanged, and models
 stay unloaded until next use. Screenshots and process/log evidence are archived;
 both the universal and GoT journals receive a result even on preflight failure.
 Four orchestration fixtures pass locally. Real graphics acceptance remains pending.
+
+## Graphics launch preflight correction
+
+Run `universal-graphics-20261101T115426Z-3053374` never launched the emulator:
+free VRAM was 200,368,128 bytes and the local Ollama API reset the connection.
+The runner now bypasses proxy settings for loopback HTTP and falls back to
+`ollama ps` / `ollama stop` inside identified running Ollama Docker containers.
+It records command outcomes and retains the 8 GiB launch requirement. No sudo,
+container/service restart, or emulator production change is involved.
+Four Docker CLI subprocess fixtures and one actual loopback/proxy check pass;
+the four earlier orchestration checks still pass. Host retry and graphics
+acceptance remain pending. See `reviews/20261101-graphics-ollama-fallback.json`.
