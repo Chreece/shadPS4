@@ -30,6 +30,86 @@ def save(p, value):
     p.write_text(json.dumps(value, indent=2) + '\n')
 
 
+def diagnostic_command(argv, timeout):
+    started = time.monotonic()
+    result = {'command': argv, 'timed_out': False}
+    try:
+        completed = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
+                                   timeout=timeout)
+        result['exit_code'] = completed.returncode
+        stdout, stderr = completed.stdout, completed.stderr
+    except subprocess.TimeoutExpired as exc:
+        result.update(timed_out=True, exit_code=None)
+        stdout, stderr = exc.stdout or b'', exc.stderr or b''
+    except OSError as exc:
+        result.update(exit_code=None, error=str(exc))
+        stdout, stderr = b'', b''
+    result['elapsed_seconds'] = round(time.monotonic() - started, 3)
+    result['stdout'] = stdout[-128 * 1024:].decode('utf-8', 'replace')
+    result['stderr'] = stderr[-16 * 1024:].decode('utf-8', 'replace')
+    return result
+
+
+def collect_display_health(out, display):
+    authority = Path(os.environ.get('XAUTHORITY') or str(Path.home() / '.Xauthority'))
+    health = {'display': display, 'xauthority_path': str(authority),
+              'xauthority_exists': authority.is_file(),
+              'local_x_sockets': sorted(str(p) for p in Path('/tmp/.X11-unix').glob('X*')),
+              'processes': []}
+    for process in Path('/proc').iterdir():
+        if not process.name.isdecimal():
+            continue
+        try:
+            name = (process / 'comm').read_text().strip()
+            if name not in ('X', 'Xorg', 'Xwayland', 'sunshine') and not name.lower().startswith('shadps4'):
+                continue
+            state = {'pid': int(process.name), 'name': name}
+            for line in (process / 'status').read_text().splitlines():
+                key, _, value = line.partition(':')
+                if key in ('State', 'PPid', 'Uid', 'Threads', 'VmRSS'):
+                    state[key] = value.strip()
+            try:
+                state['wait_channel'] = (process / 'wchan').read_text().strip()
+            except OSError:
+                pass
+            health['processes'].append(state)
+        except OSError:
+            continue
+    save(out / 'display-host-state.json', health)
+    save(out / 'display-xset.json', diagnostic_command(['xset', '-display', display, 'q'], 3))
+    save(out / 'kernel-journal.json', diagnostic_command(
+        ['journalctl', '-k', '-b', '--no-pager', '-n', '600', '-o', 'short-monotonic'], 5))
+    match = re.fullmatch(r':(\d+)(?:\.\d+)?', display)
+    if match:
+        name = 'Xorg.' + match.group(1) + '.log'
+        for index, directory in enumerate((Path('/var/log'), Path.home() / '.local/share/xorg')):
+            path = directory / name
+            try:
+                with path.open('rb') as f:
+                    f.seek(max(0, path.stat().st_size - 128 * 1024))
+                    (out / ('display-xorg-' + str(index) + '.log')).write_bytes(f.read())
+            except OSError:
+                pass
+
+
+def verify_display(out, record, display):
+    probe = diagnostic_command(['xdpyinfo', '-display', display], 8)
+    save(out / 'display-preflight.json', probe)
+    record['display'] = display
+    record['display_preflight'] = {'exit_code': probe['exit_code'],
+                                   'timed_out': probe['timed_out']}
+    if probe['exit_code'] == 0:
+        return
+    record['preflight_failure'] = ('DISPLAY_UNRESPONSIVE' if probe['timed_out']
+                                   else 'DISPLAY_UNAVAILABLE')
+    record['stop_remaining_tests'] = True
+    try:
+        collect_display_health(out, display)
+    except Exception as exc:
+        record['display_diagnostic_error'] = str(exc)
+    raise RuntimeError(record['preflight_failure'] + ' display=' + display)
+
+
 def free_vram():
     cards = []
     for device in Path('/sys/class/drm').glob('card[0-9]*/device'):
@@ -209,6 +289,8 @@ def main():
               'source_commit': PIN, 'binary_sha256': ELF, 'game_launched': False,
               'graphics_verified': False, 'installed_binary_changed': False,
               'evidence': str(out) + '.tar.gz', 'result': 'PREFLIGHT_FAILED'}
+    record['runner_commit'] = os.environ.get('SHADPS4_TEST_RUNNER_COMMIT', PIN)
+    record['runner_sha256'] = digest(Path(__file__))
     rc = 1
     game = Path(os.environ.get('SHADPS4_TEST_GAME', '/mnt/roms-all/ps4-games/CUSA11456/eboot.bin'))
     record['context_games'] = [game.parent.name]
@@ -259,8 +341,7 @@ def main():
         os.environ['DISPLAY'] = display
         if not shutil.which('import'):
             raise RuntimeError('SCREENSHOT_TOOL_IMPORT_MISSING')
-        subprocess.run(['xdpyinfo', '-display', display], check=True, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.PIPE, timeout=8)
+        verify_display(out, record, display)
         old = profile_source(project)
         record['profile_source'] = str(old)
         record['profile_files_copied'] = copy_profile(old, runtime / 'user')
@@ -307,7 +388,8 @@ def main():
                     record['native'] = module.summarize(console, console.parent)
             except (OSError, ValueError) as exc:
                 record['capture_error'] = str(exc)
-        record['stop_remaining_tests'] = bool(record['game_launched'] and (
+        record['stop_remaining_tests'] = bool(record.get('stop_remaining_tests') or
+            record['game_launched'] and (
             record.get('native', {}).get('gpu_failure') or
             not record.get('native', {}).get('owned_child_terminated', False)))
         logs = runtime / 'user/log'

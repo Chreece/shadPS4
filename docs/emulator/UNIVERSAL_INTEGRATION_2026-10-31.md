@@ -258,3 +258,34 @@ opcode result is added. Deferred fault replay, BDA-free dynamic reads and
 GPU-dependent descriptor discovery also remain open. Main is not promoted.
 See `reviews/20261101-fault-residency-indirect-sync.json` for original records,
 archive hashes, PR88 provenance, validation scope and the recovery review.
+
+
+## November 1 native build verified; display preflight blocks both games
+
+Host source `dbf5c545` passed the full GCC14 native build, existing CPU suites and
+three native startup checks. The resulting ELF SHA256 is
+`b34a9a539b88c5fb0dab9dc1cd597ca98f88e9049dbba1ed030671a2cb51d32d`.
+Both subsequent game requests stopped before launch because `xdpyinfo -display
+:0` timed out after eight seconds. These runs contain no new evidence about GPU
+fault recurrence or graphics acceptance. They do not establish the cause of the
+display failure.
+
+Display preflight now saves its bounded output and classifies the failure. On
+failure it collects read-only process/display/kernel diagnostics with bounded
+commands and stops the remaining batch. It does not request sudo, restart the
+display or change services. The original two records, including their incorrect
+`stop_remaining_tests=false` flags, remain intact in the journal.
+
+The two-game batch now accepts `SOURCE_PIN existing RUNNER_PIN` to reuse a
+verified build with a separately pinned, checksum-verified capture harness.
+The source commit, successful native-build record, ELF hash and observer bytes
+are still checked. Harness commit and hash are recorded separately. A responsive
+display leads to the usual GoW then GoT observations; a failed display check
+returns diagnostics without launching either game or rebuilding the emulator.
+
+Ten helper cases, three complete preflight-failure paths, twelve batch cases,
+five existing runner cases and two build-record checks pass locally. These use
+owned helper processes and mocked X11/game execution; host display recovery and
+game acceptance are not claimed. No emulator production code changed. See
+`reviews/20261101-display-preflight-existing-build.json` for build evidence,
+archive hashes and the exact validation scope. Main remains unchanged.
