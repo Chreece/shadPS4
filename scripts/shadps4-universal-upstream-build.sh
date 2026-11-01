@@ -35,6 +35,8 @@ record={'schema_version':2,'record_id':os.environ['TAG'],
         'upstream_commit':git('rev-parse','refs/remotes/upstream/main'),
         'game_launched':False,'graphics_verified':False,'installed_binary_changed':False,
         'evidence':str(out)+'.tar.gz','decision':'RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION'}
+if record['result'] == 'BLOCKED_UPSTREAM_ADVANCED':
+    record['decision']='REINTEGRATE_LATEST_UPSTREAM_BEFORE_BUILD'
 cpu_logs=pathlib.Path(os.environ['SRC']).parent/'cpu-tests'
 if cpu_logs.is_dir():
     saved_logs=out/'cpu-suite-logs';saved_logs.mkdir(exist_ok=True)
@@ -97,6 +99,8 @@ main() {
     [[ $(git -C "$SRC" rev-parse HEAD) == "$PIN" ]] || { echo 'ISOLATED_CHECKOUT_HAS_OTHER_COMMITS'; return 2; }
     git -C "$SRC" diff --quiet --ignore-submodules --
     git -C "$SRC" diff --cached --quiet --ignore-submodules --
+    STAGE=CAPTURE_RETAINED_SOURCE
+    python3 "$SRC/tools/development/collect_universal_retained_source.py" "$PROJECT" "$OUT"
     STAGE=VERIFY_LATEST_UPSTREAM
     if ! git -C "$SRC" remote get-url upstream >/dev/null 2>&1; then
         git -C "$SRC" remote add upstream https://github.com/shadps4-emu/shadPS4.git
@@ -106,11 +110,10 @@ main() {
     git -C "$SRC" rev-parse HEAD upstream/main | tee "$OUT/source-commits.txt"
     git -C "$SRC" merge-base --is-ancestor upstream/main HEAD || {
         STAGE=NEW_UPSTREAM_REQUIRES_INTEGRATION
+        RESULT=BLOCKED_UPSTREAM_ADVANCED
         echo 'Upstream moved beyond this reviewed candidate; evidence captured before building.'
         return 3
     }
-    STAGE=CAPTURE_RETAINED_SOURCE
-    python3 "$SRC/tools/development/collect_universal_retained_source.py" "$PROJECT" "$OUT"
     STAGE=INITIALIZE_PINNED_DEPENDENCIES
     git -C "$SRC" submodule update --init --recursive --jobs 4 2>&1 | tee "$OUT/submodules.log"
     git -C "$SRC" submodule status --recursive > "$OUT/submodule-commits.txt"

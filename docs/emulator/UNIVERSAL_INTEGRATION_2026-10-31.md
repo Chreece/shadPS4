@@ -1,6 +1,6 @@
 # Universal source integration — 2026-10-31
 
-The candidate merges upstream `860d73b7e99559106a3ffa3d3d69f0f9237e115e`
+The candidate is rebased onto upstream `55a97e46955b2ece7c7ff8bddeb043ca57a506c6`
 with fork main `bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45`, retaining both
 histories and selectively integrating available generic fixes. It is not yet
 a verified universal release. No title ID, shader hash, GPU vendor, or driver
@@ -36,8 +36,8 @@ checks. Sparse tests execute the extracted production allocation methods over
 headers. These are CPU tests, not evidence of GPU execution.
 
 The arithmetic and extent regressions were tested against the
-old behavior: each fails before its fix and passes afterward. The full native
-compilation and link are now verified on Linux with GCC 14. All 442 emulator
+old behavior: each fails before its fix and passes afterward. For the October 31 source (before the November 1 upstream refresh), full native
+compilation and link were verified on Linux with GCC 14. All 442 emulator
 translation units compiled. The generated link command needed the isolated SDK
 library search path for UUID and udev; rerunning that command succeeded. The
 actual executable then exposed a missing-parent user-directory startup abort.
@@ -78,3 +78,24 @@ the toolchain and upstream ancestry, builds an isolated checkout, appends the
 journal even after failure, and packages its logs. It does not install or launch
 the candidate. Upstream `ENABLE_TESTS=ON` replaces the app target, so the runner
 uses separate focused test trees and `ENABLE_TESTS=OFF` for the app.
+
+## November 1 upstream refresh
+
+The host run `universal-upstream-20261101T111638Z-2463058` passed GCC 14
+preflight but stopped at upstream freshness (exit 3). Its original `FAILED`
+result is retained in the journal; classification is blocked by upstream
+advancement. It did not capture retained source, compile, or launch a game.
+
+Rebased the integration onto upstream PR5592 (`55a97e46`), retaining the previous
+integration resolutions and startup correction. The only production delta from
+`9d621138` is upstream's three-file filesystem change: read-only access errors,
+directory inodes, and host owner permissions for chmod/fchmod.
+
+Retained-source capture now precedes the upstream fetch and ancestry gate.
+An upstream advance reports `BLOCKED_UPSTREAM_ADVANCED` with exit 3 and a
+reintegration decision. Two temporary runner fixtures verify that source is
+archived and journaled before either an upstream advance or fetch failure,
+without starting a build. These are orchestration checks, not emulator tests.
+Bash syntax and whitespace checks pass. The refreshed source still needs the
+host native build, startup checks, and combined GPU validation before promotion.
+See `reviews/20261101-universal-upstream-refresh.json` for provenance and results.
