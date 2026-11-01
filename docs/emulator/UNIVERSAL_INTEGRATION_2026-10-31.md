@@ -322,3 +322,45 @@ cases also pass. These are local collector checks, not hardware recovery tests.
 The native emulator source and verified ELF remain unchanged. Host recovery is
 required before the existing-build game retry. Full evidence, attribution limits
 and hashes are in `reviews/20261101-kernel-gpu-recovery-failure.json`.
+
+## November 1 recovered display: black graphics and image binding corrections
+
+Both retry batches launch the verified `dbf5c545` native ELF after a successful
+display preflight. GoW still exits with `DS_ORDERED_COUNT` translation failure at
+10.423 and 9.617 seconds, without screenshots. Both GoT observations complete
+without reported GPU context loss. All six GoT frames were visually reviewed:
+they show black output, with a loading ring in the older batch and an FPS overlay
+in five frames. Capture completion is not graphics acceptance. Four unique
+trials are appended; duplicate nested archives are not counted again.
+
+The previously repeated `0x150260c000` page fault falls from 251 reports to two
+in each new GoT run. This is a runtime improvement, with host recovery and two
+production fixes changing together; it does not isolate causality. The new
+shader IR still contains genuine loop induction and workgroup-dependent offsets.
+None of the retained rejected expressions is a proven host-uniform value. GPU
+resource selection and first-fault replay remain open.
+
+The retained source review exposed a small independent Vulkan fix that can be
+ported without the unfinished indexed-texture implementation: null/rejected
+images now obtain their descriptor type from shader resource metadata. The old
+code read a reusable `ImageDesc` slot that was never constructed for a null
+binding, allowing the previous draw's sampled/storage type to leak into the
+next descriptor write. A second correction records every storage use in the
+first binding pass; sampled/storage aliases within one shader stage now use
+GENERAL in either descriptor order. Previously storage-first/sample-second
+could leave a storage descriptor pointing at an image transitioned to
+SHADER_READ_ONLY.
+
+Twenty-four temporary cases compile and execute the actual texture-binding
+body with pinned Vulkan headers and recorded cache operations. Both original
+bugs and two independently reverted fixes fail their negative controls. Seven
+existing renderer contracts also pass. Device/cache objects and the small-vector
+container are stand-ins; this is not GPU execution or a complete native build.
+Cross-stage rebinding, image growth and alias lifecycle are not established by
+these checks. No shader emission changed, so cache version remains 14.
+
+The changed renderer requires a fresh pinned native build and both game runs.
+Main remains unchanged and PR118 stays draft. GoW ordered-GDS and the captured
+GPU-indexed texture paths are not claimed fixed. Full original records, archive
+hashes, screenshot reviews, IR inventories and validation limits are retained in
+`reviews/20261101-post-recovery-image-bindings.json`.
