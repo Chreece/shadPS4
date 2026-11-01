@@ -24,7 +24,7 @@ namespace Shader::Gcn::OrderedGds {
 
 inline constexpr u32 CapturePacketTag = 0x43534447u; // GDSC
 inline constexpr u32 ResumePacketTag = 0x52534447u;  // GDSR
-inline constexpr u32 CaptureFlags = 0x3u;            // valid, ordered GDS
+inline constexpr u32 CaptureFlags = 0x7u;            // valid, ordered GDS, explicit ADDR payload
 inline constexpr u32 CaptureBypassFlags = 0x1u;      // valid, wave completed without GDS
 inline constexpr u32 ResumeFlags = 0x1u;             // value ready
 inline constexpr u32 NoActiveLane = std::numeric_limits<u32>::max();
@@ -200,13 +200,6 @@ inline CapturedWave DecodeGpuCapture(const GpuCapturePacket& packet, u32 expecte
     } else if (packet.source_lane != static_cast<u32>(std::countr_zero(guest_exec_mask))) {
         throw std::invalid_argument("invalid first active guest lane metadata");
     }
-    // Legacy CIK uses count_bits(EXEC) for its dedicated ordered-count packer.
-    // Source-lane metadata cannot determine the counter payload. In particular,
-    // do not apply the later RDNA first-active-lane ADDR semantics on PS4 GCN.
-    const u32 guest_cik_payload = CikOrderedCountIncrement(guest_exec_mask);
-    if (packet.payload != guest_cik_payload) {
-        throw std::invalid_argument("GPU CIK ordered-count payload disagrees with guest EXEC");
-    }
     const u32 offset0 = packet.encoded_control & 0xffu;
     const u32 offset1 = (packet.encoded_control >> 8) & 0xffu;
     if ((offset0 & 3u) || (offset1 & 0xc0u) || (offset1 & 3u) != 3u) {
@@ -226,7 +219,7 @@ inline CapturedWave DecodeGpuCapture(const GpuCapturePacket& packet, u32 expecte
     const Request request{
         .creation_sequence = creation.RankForSlot(packet.logical_slot),
         .runtime_m0 = packet.runtime_m0,
-        .payload = guest_cik_payload,
+        .payload = packet.payload,
         .instruction = instruction,
         .has_valid_lane = guest_exec_mask != 0,
     };
