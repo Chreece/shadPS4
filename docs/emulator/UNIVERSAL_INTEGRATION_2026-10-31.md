@@ -197,3 +197,23 @@ replay. BDA-free dynamic reads, GPU-dependent descriptor discovery and ordered-G
 continuation remain open. Both game captures failed graphics acceptance; main is
 not promoted. See `reviews/20261101-dynamic-srt-and-capture-recovery.json` for
 immutable capture hashes, IR inventory, original records and validation limits.
+
+
+## November 1 sparse fixture interface correction
+
+Host run `universal-upstream-20261101T125736Z-4032847` at `515a50dd`
+passed all 31 CTest cases, seven renderer contracts and 10,418 SRT JIT checks.
+It then stopped because the existing sparse extraction fixture still required
+`SynchronizeDmaBuffers()` after production gained a read callback. The previous
+validation missed this coupled fixture. Native configure/build and both game
+launches were not reached.
+
+The existing fixture now uses the callback interface and checks one callback
+per uploaded chunk, including its original owner, byte offset and size. All
+288 ranges and seven scenarios pass in both recorder and real Vulkan-header
+modes. Temporary negative controls reject missing callbacks and incorrect byte
+offsets. The remaining descriptor, contiguous-VMA and HLE ABI checks also pass
+locally with GCC 13. No emulator production code changed in this correction;
+the native build and graphics tests remain pending on the host. The original
+failed record and archive hashes are retained in
+`reviews/20261101-sparse-dma-fixture-sync.json` and the universal journal.

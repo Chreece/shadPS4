@@ -28,7 +28,7 @@ def main():
     header = (ROOT / 'src/video_core/buffer_cache/buffer_cache.h').read_text()
     fixture = (ROOT / 'tools/development/sparse_arena_fixture.cpp.in').read_text()
     methods = '\n\n'.join(function(source, signature) for signature in (
-        'void BufferCache::SynchronizeDmaBuffers()',
+        'void BufferCache::SynchronizeDmaBuffers(',
         'void BufferCache::BindBackingToArena(',
         'void BufferCache::SynchronizeSparseAliases()',
         'const Buffer* BufferCache::GetArena(',
