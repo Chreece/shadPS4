@@ -99,3 +99,22 @@ without starting a build. These are orchestration checks, not emulator tests.
 Bash syntax and whitespace checks pass. The refreshed source still needs the
 host native build, startup checks, and combined GPU validation before promotion.
 See `reviews/20261101-universal-upstream-refresh.json` for provenance and results.
+
+## November 1 host build accepted
+
+Host run `universal-upstream-20261101T112712Z-2616640` completed the stock
+CMake/Ninja native build, all nine CPU suites (31 CTest cases), the SRT and sparse
+checks, and all three real startup checks at source `ed0fe5be055ee712756351479ac5411366e5385b`.
+Verified ELF SHA256: `2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548`.
+No game was launched. All 2,863 retained-source file hashes match their manifests.
+Their differences are indexed in `reviews/20261101-host-native-pass.json`;
+experimental renderer code is not promoted solely because its source was captured.
+
+`tools/development/run_universal_verified_graphics.py` reuses this exact host ELF
+without a rebuild or installation, copies a private profile, omits title-specific
+configs/patches/cheats/caches, checks 8 GiB free VRAM, and runs the existing bounded
+native observer without automatic input. If necessary it unloads currently loaded
+local Ollama models; model files and configuration remain unchanged, and models
+stay unloaded until next use. Screenshots and process/log evidence are archived;
+both the universal and GoT journals receive a result even on preflight failure.
+Four orchestration fixtures pass locally. Real graphics acceptance remains pending.
