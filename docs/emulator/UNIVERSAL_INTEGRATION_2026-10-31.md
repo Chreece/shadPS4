@@ -23,7 +23,7 @@ version selects any new behavior in this integration.
 | Depth image extent growth | New component-wise maximum | Mip count and layer count grow independently; old code fails crossed-extent regression |
 | User-data directory startup | New recursive directory creation | Actual native CLI aborted with missing parents; corrected binary passes fresh, existing, and conflicting path cases |
 
-Shader binary cache version is 12, newer than both source parents. Old compiled
+Shader binary cache version is 13, newer than both source parents. Old compiled
 shader cache entries must not be treated as equivalent to these emitters.
 
 ## Validation and promotion
@@ -130,3 +130,29 @@ container/service restart, or emulator production change is involved.
 Four Docker CLI subprocess fixtures and one actual loopback/proxy check pass;
 the four earlier orchestration checks still pass. Host retry and graphics
 acceptance remain pending. See `reviews/20261101-graphics-ollama-fallback.json`.
+
+## November 1 graphics failure and guarded lane-read candidate
+
+Run `universal-graphics-20261101T115754Z-3103856` successfully unloaded the
+Ollama model and launched with 20,614,766,592 bytes free VRAM. The user reports
+black screen with audio; screenshots confirm missing graphics. The driver
+reported GPU context loss/soft recovery. Exit 0 is not graphics success.
+The host log rejected 408 ReadLane, 4 ReadFirstLane, 72 Phi and 29 GetAttributeU32
+offset expressions. The causal contribution of each rejected shader is not yet
+established.
+
+A narrow port from retained source now supports lane reads only when their
+source is proven host-uniform, with cycle/depth/work guards. GPU-varying input
+and unresolved Phi remain unsupported; no lane-zero substitution is introduced.
+Shader cache version advances to 13. The extracted production JIT passes 2,825
+checks; the old code fails the first case. Existing 10,418 SRT checks still pass.
+Full native compilation and visual acceptance of this new source remain pending.
+
+The observer now stops/reports GPU context loss even when the process exits 0.
+The graphics runner accepts only a matching successful native-build record and
+ELF hash for a new pin, records the actual title in its journal, and captures
+up to 48 rejected-shader IR text files / 20 MiB. Shader dumping is enabled in
+isolated diagnostic profiles; this is not an FPS benchmark. The two-game runner
+builds first, tests GoW then GoT with no input, and stops the sequence on GPU loss.
+It packages build and game archives into one `UPLOAD_THIS` archive.
+See `reviews/20261101-uniform-lane-srt.json` for evidence and validation scope.

@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import signal
@@ -15,7 +16,7 @@ import tarfile
 import time
 import urllib.request
 
-PIN = 'ed0fe5be055ee712756351479ac5411366e5385b'
+PIN = os.environ.get('SHADPS4_TEST_SOURCE_COMMIT', 'ed0fe5be055ee712756351479ac5411366e5385b')
 ELF = '2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548'
 MIN_FREE = 8 * 1024**3
 
@@ -164,7 +165,10 @@ def copy_profile(old, new):
             return value
         data = relocate(data)
         data.setdefault('General', {})['home_dir'] = str(new / 'home')
+        data.setdefault('GPU', {})['dump_shaders'] = True
         save(config, data)
+    if not config.is_file():
+        save(config, {'GPU': {'dump_shaders': True}})
     return len(files)
 
 
@@ -184,10 +188,33 @@ def main():
               'graphics_verified': False, 'installed_binary_changed': False,
               'evidence': str(out) + '.tar.gz', 'result': 'PREFLIGHT_FAILED'}
     rc = 1
+    game = Path(os.environ.get('SHADPS4_TEST_GAME', '/mnt/roms-all/ps4-games/CUSA11456/eboot.bin'))
+    record['context_games'] = [game.parent.name]
+    expected_elf = ELF
     lock = (project / 'tests/.universal-upstream-build.lock').open('a')
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        if digest(binary) != ELF:
+        if not re.fullmatch(r'[0-9a-f]{40}', PIN):
+            raise RuntimeError('INVALID_SOURCE_PIN')
+        if PIN != 'ed0fe5be055ee712756351479ac5411366e5385b':
+            matches = []
+            for result_path in (project / 'logs').glob('universal-upstream-*/result.json'):
+                try:
+                    build_record = json.loads(result_path.read_text())
+                except (OSError, ValueError):
+                    continue
+                if (build_record.get('source_commit') == PIN and
+                    build_record.get('result') == 'PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN' and
+                    build_record.get('candidate_binary') == str(binary) and
+                    re.fullmatch(r'[0-9a-f]{64}', build_record.get('binary_sha256', ''))):
+                    matches.append((result_path.stat().st_mtime, result_path, build_record))
+            if not matches:
+                raise RuntimeError('NO_SUCCESSFUL_BUILD_RECORD_FOR_SOURCE')
+            _, result_path, build_record = max(matches)
+            expected_elf = build_record['binary_sha256']
+            record['build_record'] = str(result_path)
+            record['binary_sha256'] = expected_elf
+        if digest(binary) != expected_elf:
             raise RuntimeError('VERIFIED_BINARY_CHANGED')
         head = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
         if head != PIN:
@@ -224,7 +251,7 @@ def main():
         record['vram_free_at_launch'] = free_vram()
         if record['vram_free_at_launch'] < MIN_FREE:
             raise RuntimeError('LESS_THAN_8_GIB_VRAM_FREE')
-        sys.argv = [str(observer), '--binary', str(binary.resolve()), '--sha256', ELF,
+        sys.argv = [str(observer), '--binary', str(binary.resolve()), '--sha256', expected_elf,
                     '--game', str(game), '--cwd', str(runtime), '--report', str(out / 'capture'),
                     '--seconds', '118']
         print('STARTING_VERIFIED_CANDIDATE NO_INPUT MAXIMUM_120_SECONDS', flush=True)
@@ -232,6 +259,7 @@ def main():
         native = json.loads((out / 'capture/native-result.json').read_text())
         record['game_launched'] = (out / 'capture/launch.json').is_file()
         record['native'] = native
+        record['tested_games'] = [game.parent.name] if record['game_launched'] else []
         if rc == 0 and len(native.get('screenshots', [])) < 2:
             rc = 1
             record['result'] = 'INSUFFICIENT_SCREENSHOTS'
@@ -249,9 +277,36 @@ def main():
                     with log.open('rb') as f:
                         f.seek(max(0, log.stat().st_size - 2 * 1024**2))
                         (out / ('emulator-' + log.name)).write_bytes(f.read())
+        console = out / 'capture/full-console.log'
+        blocked = set()
+        current_hash = None
+        if console.is_file():
+            with console.open(errors='replace') as f:
+                for line in f:
+                    match = re.search(r'Compiling \w+ shader (0x[0-9a-fA-F]+)', line)
+                    if match:
+                        current_hash = format(int(match.group(1), 16), '016x')
+                    if current_hash and 'Unexpected instruction for offset computation' in line:
+                        blocked.add(current_hash)
+        saved_ir = []
+        total_ir = 0
+        for path in sorted((runtime / 'user/shader/dumps').glob('*irprogram.txt')):
+            if path.is_symlink() or not any(h in path.name for h in blocked):
+                continue
+            size = path.stat().st_size
+            if len(saved_ir) >= 48 or total_ir + size > 20 * 1024**2:
+                continue
+            target = out / 'blocked-shader-ir' / path.name
+            target.parent.mkdir(exist_ok=True)
+            shutil.copyfile(path, target)
+            saved_ir.append(path.name)
+            total_ir += size
+        record['shader_diagnostics'] = {'dump_enabled': True, 'blocked_hashes': sorted(blocked),
+                                        'saved_ir': saved_ir, 'saved_bytes': total_ir,
+                                        'limit_bytes': 20 * 1024**2, 'limit_files': 48}
         record['exit_code'] = rc
         save(out / 'result.json', record)
-        for folder in [project / 'docs/emulator', project / 'GhostOfTsushima/docs/emulator']:
+        for folder in [project / 'docs/emulator', project / 'games' / game.parent.name / 'docs/emulator']:
             folder.mkdir(parents=True, exist_ok=True)
             with (folder / 'TRIALS.jsonl').open('a') as f:
                 fcntl.flock(f, fcntl.LOCK_EX)

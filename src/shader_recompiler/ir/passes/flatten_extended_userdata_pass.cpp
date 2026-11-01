@@ -3,6 +3,7 @@
 
 #include <bit>
 #include <unordered_map>
+#include <unordered_set>
 #include <boost/container/flat_map.hpp>
 #include <queue>
 #include <xbyak/xbyak.h>
@@ -488,6 +489,8 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
 
 static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     switch (inst->GetOpcode()) {
+    case IR::Opcode::ReadLane:
+    case IR::Opcode::ReadFirstLane:
     case IR::Opcode::GetUserData:
     case IR::Opcode::ReadConst:
     case IR::Opcode::ReadConstBuffer:
@@ -510,9 +513,69 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     }
 }
 
+static bool IsHostUniformSrtOffset(const IR::Value& off_dw) {
+    std::unordered_set<const IR::Inst*> active;
+    size_t remaining = 4096;
+    const auto check = [&active, &remaining](const auto& self, const IR::Value& value) -> bool {
+        if (remaining == 0 || active.size() >= 128) {
+            return false;
+        }
+        --remaining;
+        if (value.IsImmediate()) {
+            return true;
+        }
+        const IR::Inst* inst = value.TryInst();
+        if (inst == nullptr || !IsAllowedOffsetInstruction(inst) || !active.insert(inst).second) {
+            return false;
+        }
+        bool uniform = true;
+        switch (inst->GetOpcode()) {
+        case IR::Opcode::GetUserData:
+            break;
+        case IR::Opcode::ReadConst:
+        case IR::Opcode::ReadConstBuffer: {
+            const IR::Inst* const handle = inst->Arg(0).TryInst();
+            if (!handle ||
+                (handle->GetOpcode() != IR::Opcode::CompositeConstructU32x2 &&
+                 handle->GetOpcode() != IR::Opcode::CompositeConstructU32x4)) {
+                uniform = false;
+                break;
+            }
+            uniform = self(self, inst->Arg(1));
+            for (size_t word = 0; word < handle->NumArgs() && uniform; ++word) {
+                uniform = self(self, handle->Arg(word));
+            }
+            break;
+        }
+        case IR::Opcode::ReadLane:
+        case IR::Opcode::ReadFirstLane:
+            uniform = self(self, inst->Arg(0));
+            break;
+        default:
+            for (std::size_t i = 0; i < inst->NumArgs(); ++i) {
+                if (!self(self, inst->Arg(i))) {
+                    uniform = false;
+                    break;
+                }
+            }
+            break;
+        }
+        active.erase(inst);
+        return uniform;
+    };
+    return check(check, off_dw);
+}
+
 static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
                           const IR::Value& off_dw) {
     ASSERT(reg != ecx && reg != edx);
+    if (off_dw.IsImmediate()) {
+        if (off_dw.Type() != IR::Type::U32) {
+            return false;
+        }
+        c.mov(reg, off_dw.U32());
+        return true;
+    }
     auto inst = off_dw.Inst();
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
@@ -525,6 +588,12 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
             return true;
         }
         return false;
+    case IR::Opcode::ReadLane:
+    case IR::Opcode::ReadFirstLane:
+        if (!IsHostUniformSrtOffset(inst->Arg(0))) {
+            return false;
+        }
+        return ComputeOffset(c, reg, pass_info, inst->Arg(0));
     case IR::Opcode::IAdd32:
         ABORT_ON_FAILURE(EmitComputeOffsetIAdd32(c, reg, pass_info, inst));
         return true;
