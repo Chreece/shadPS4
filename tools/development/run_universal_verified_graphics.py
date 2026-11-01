@@ -19,6 +19,7 @@ import urllib.request
 PIN = os.environ.get('SHADPS4_TEST_SOURCE_COMMIT', 'ed0fe5be055ee712756351479ac5411366e5385b')
 ELF = '2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548'
 MIN_FREE = 8 * 1024**3
+GPU_JOURNAL_PATTERN = r'(?i)\b(amdgpu|i915|xe|nouveau|nvidia|drm|gpu|kfd|xorg)\b|blocked for more than|Workqueue:'
 
 
 def digest(p):
@@ -50,7 +51,7 @@ def diagnostic_command(argv, timeout):
     return result
 
 
-def collect_display_health(out, display):
+def collect_display_health(out, display, query_display=True):
     authority = Path(os.environ.get('XAUTHORITY') or str(Path.home() / '.Xauthority'))
     health = {'display': display, 'xauthority_path': str(authority),
               'xauthority_exists': authority.is_file(),
@@ -76,9 +77,13 @@ def collect_display_health(out, display):
         except OSError:
             continue
     save(out / 'display-host-state.json', health)
-    save(out / 'display-xset.json', diagnostic_command(['xset', '-display', display, 'q'], 3))
+    if query_display:
+        save(out / 'display-xset.json', diagnostic_command(['xset', '-display', display, 'q'], 3))
     save(out / 'kernel-journal.json', diagnostic_command(
         ['journalctl', '-k', '-b', '--no-pager', '-n', '600', '-o', 'short-monotonic'], 5))
+    save(out / 'kernel-gpu-journal.json', diagnostic_command(
+        ['journalctl', '-k', '-b', '--no-pager', '-n', '600', '-o', 'short-monotonic',
+         '--grep', GPU_JOURNAL_PATTERN], 5))
     match = re.fullmatch(r':(\d+)(?:\.\d+)?', display)
     if match:
         name = 'Xorg.' + match.group(1) + '.log'
@@ -92,7 +97,56 @@ def collect_display_health(out, display):
                 pass
 
 
+def blocked_display_tasks(proc=Path('/proc')):
+    blocked = []
+    for process in proc.iterdir():
+        if not process.name.isdecimal():
+            continue
+        try:
+            owner = (process / 'comm').read_text().strip()
+            if owner not in ('X', 'Xorg', 'Xwayland', 'sunshine'):
+                continue
+            for task in (process / 'task').iterdir():
+                try:
+                    stat = (task / 'stat').read_text()
+                    fields = stat.rsplit(') ', 1)[1].split()
+                    if fields[0] != 'D':
+                        continue
+                    blocked.append({'pid': int(process.name), 'tid': int(task.name),
+                                    'start_time': int(fields[19]), 'process': owner,
+                                    'thread': stat.split('(', 1)[1].rsplit(') ', 1)[0]})
+                except (OSError, IndexError, ValueError):
+                    continue
+        except OSError:
+            continue
+    return blocked
+
+
+def verify_display_tasks(out, record, display):
+    first = blocked_display_tasks()
+    if not first:
+        return
+    time.sleep(.25)
+    second = blocked_display_tasks()
+    identity = lambda task: (task['pid'], task['tid'], task['start_time'])
+    prior = {identity(task) for task in first}
+    persistent = [task for task in second if identity(task) in prior]
+    save(out / 'display-blocked-tasks.json', {'first': first, 'second': second,
+                                             'persistent': persistent})
+    if not persistent:
+        return
+    record['preflight_failure'] = 'DISPLAY_TASKS_BLOCKED_IN_KERNEL'
+    record['stop_remaining_tests'] = True
+    record['blocked_display_tasks'] = persistent
+    try:
+        collect_display_health(out, display, query_display=False)
+    except Exception as exc:
+        record['display_diagnostic_error'] = str(exc)
+    raise RuntimeError('DISPLAY_TASKS_BLOCKED_IN_KERNEL; host recovery required before GPU testing')
+
+
 def verify_display(out, record, display):
+    verify_display_tasks(out, record, display)
     probe = diagnostic_command(['xdpyinfo', '-display', display], 8)
     save(out / 'display-preflight.json', probe)
     record['display'] = display

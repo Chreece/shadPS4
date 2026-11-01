@@ -289,3 +289,36 @@ owned helper processes and mocked X11/game execution; host display recovery and
 game acceptance are not claimed. No emulator production code changed. See
 `reviews/20261101-display-preflight-existing-build.json` for build evidence,
 archive hashes and the exact validation scope. Main remains unchanged.
+
+
+## November 1 kernel crash explains the blocked display
+
+Archive `gpu-crash-20261101T145748Z` records a graphics-ring soft recovery at
+14:43:25 Europe/Berlin, close to the prior GoT observer's GPU-loss stop. That
+kernel message does not identify a process owner. At 14:50 the driver reports
+4,515 user-page failures and RLC faults, followed by MES/KFD queue failures and
+SDMA timeouts. GPU recovery fails with `-62` at 14:51:33. Another reset begins
+without a successful completion in the archive. The later fault PASID has no
+owner mapping here; do not attribute it to an application from timing alone.
+
+Xorg, Sunshine's capture/session threads and the reset worker are subsequently
+blocked in kernel display/DRM paths. Sunshine service logs show repeated stop
+attempts leaving its threads alive after SIGKILL. This explains the unresponsive
+display; the `dbf5c545` native build occurred afterward and neither of its game
+requests launched. No emulator command or shader defect can be isolated from
+this system archive, and no runtime recovery is claimed.
+
+The runner now checks for display tasks that remain in D state across two
+250 ms-separated reads, preserving process/thread/start-time identity. A match
+stops before X11 queries, VRAM telemetry or game work. It saves read-only
+diagnostics and performs no service, driver or host restart. A separate filtered
+GPU/DRM/kernel journal query retains reset evidence that the previous last-600
+unfiltered lines would lose behind audit messages. Permission failures remain
+recorded without a sudo prompt.
+
+Eight task/filter cases and one new complete runner case pass; the existing ten
+helper, three runner, twelve batch, five orchestration and two build-record
+cases also pass. These are local collector checks, not hardware recovery tests.
+The native emulator source and verified ELF remain unchanged. Host recovery is
+required before the existing-build game retry. Full evidence, attribution limits
+and hashes are in `reviews/20261101-kernel-gpu-recovery-failure.json`.
