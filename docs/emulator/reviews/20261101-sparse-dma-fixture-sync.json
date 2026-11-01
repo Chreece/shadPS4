@@ -1,0 +1,65 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-sparse-dma-fixture-sync-20261101",
+  "timestamp_utc": "2026-11-01T13:07:52.517605+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pull_request": 118,
+  "base_source_commit": "515a50dd03e46772aeadb476f03bfa9f89da5a1c",
+  "upstream_commit": "55a97e46955b2ece7c7ff8bddeb043ca57a506c6",
+  "host_result": {
+    "schema_version": 2,
+    "record_id": "universal-upstream-20261101T125736Z-4032847",
+    "timestamp_utc": "2026-11-01T13:03:15.909908+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "stage": "CPU_REGRESSIONS",
+    "result": "FAILED",
+    "exit_code": 1,
+    "requested_commit": "515a50dd03e46772aeadb476f03bfa9f89da5a1c",
+    "source_commit": "515a50dd03e46772aeadb476f03bfa9f89da5a1c",
+    "upstream_commit": "55a97e46955b2ece7c7ff8bddeb043ca57a506c6",
+    "game_launched": false,
+    "graphics_verified": false,
+    "installed_binary_changed": false,
+    "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261101T125736Z-4032847.tar.gz",
+    "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+    "pull_request": 118,
+    "reviewed_result": "BLOCKED_STALE_SPARSE_FIXTURE_SIGNATURE",
+    "uploaded_batch_sha256": "5d2c6fb238fef6e4e3560ed93711939639f1c171f2474379ca553b3038fa3ab3",
+    "nested_build_archive_sha256": "15c1e7d4ded2461af90f18e20b0f5d4e3dc396e93cd52f8d4a25d11715ad4786",
+    "review_note": "31 host CTest cases, seven renderer contracts and 10418 SRT JIT checks passed. The sparse production extractor still required SynchronizeDmaBuffers() after its callback was added. Native configure/build and both game launches were not reached."
+  },
+  "host_cpu_log_sha256": "1c4b384ad53789a0f77970bef8725cc3bdfb773e065a8baecb274b567b2aa925",
+  "root_cause": "The production DMA interface changed to take on_read, but its existing extraction test and C++ fixture still expected the no-argument interface. The prior validation did not run this existing coupled fixture.",
+  "correction": [
+    "Extract the unique SynchronizeDmaBuffers function independently of its parameter spelling.",
+    "Update the existing fixture declaration and callers to the actual callback interface.",
+    "Check that every synchronized chunk emits exactly one read callback after its upload, preserving the original buffer owner, byte offset and byte count. Existing sparse limits, aliases, BDA ownership and >4GiB chunk checks remain active."
+  ],
+  "production_code_changed": false,
+  "validation": {
+    "compiler": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+    "sparse_recorder_mode": "PASS 288 ranges / 7 scenarios",
+    "sparse_real_vulkan_headers_mode": "PASS 288 ranges / 7 scenarios; no VkDevice or GPU work",
+    "vulkan_headers_commit": "ee3b5caaa7e372715873c7b9c390ee1c3ca5db25",
+    "negative_controls": [
+      "Omitting the DMA read callback is rejected by the updated fixture.",
+      "Changing the DMA callback byte offset by one is rejected by the updated fixture."
+    ],
+    "remaining_runner_checks": [
+      "PASS descriptor exact layout pool",
+      "PASS descriptor runtime layout pool sizing",
+      "PASS adaptive GPU array batch",
+      "PASS descriptor rollover/fragmentation",
+      "PASS unexpected Vulkan error fails closed",
+      "PASS contiguous guest VMA clamp",
+      "PASS actual x86 guest-to-HLE stack alignment"
+    ],
+    "python_syntax": "PASS",
+    "git_diff_check": "PASS",
+    "native_build": "NOT_REACHED_ON_HOST; PENDING_RETRY",
+    "graphics": "NOT_RUN"
+  },
+  "decision": "RETRY_PINNED_NATIVE_BUILD_THEN_GOW_AND_GOT; KEEP_MAIN_UNCHANGED",
+  "graphics_verified": false,
+  "game_launched": false
+}

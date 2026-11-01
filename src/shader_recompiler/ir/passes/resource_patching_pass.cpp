@@ -945,6 +945,12 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         IR::Inst& inst = *usage.user;
         if (IsBufferInstruction(inst)) {
             PatchBufferArgs(inst, info);
+            if (!usage.buffer_store_guard.IsEmpty()) {
+                const auto components = u32(inst.GetOpcode()) - u32(IR::Opcode::StoreBufferU32);
+                ASSERT(components < 4);
+                inst.ReplaceOpcode(IR::Opcode(u32(IR::Opcode::StoreBufferU32Guarded) + components));
+                inst.SetArg(3, usage.buffer_store_guard);
+            }
         } else if (IsImageInstruction(inst)) {
             PatchImageArgs(inst, info);
         } else if (IsDataRingInstruction(inst)) {

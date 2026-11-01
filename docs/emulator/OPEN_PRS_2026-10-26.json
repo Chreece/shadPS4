@@ -1,0 +1,328 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-10-26",
+  "repo": "Chreece/shadPS4",
+  "count": 32,
+  "open_pull_requests": [
+    {
+      "number": 66,
+      "title": "shader: discard incomplete SRT walker machine code after unsupported offset evaluation",
+      "head": "fix/generic-srt-emission-checkpoint-20261026",
+      "head_sha": "c05501ef3af9008ff80b942256010edae493b4f8",
+      "base": "main",
+      "base_sha": "01beb8e0fbbea4462bbc661f0019624e959c53dd",
+      "draft": true,
+      "updated": "2026-10-26T06:14:15Z"
+    },
+    {
+      "number": 64,
+      "title": "A/B: preserve GPU-indexed texture tables with genuinely uniform sampler when provable",
+      "head": "test/generic-indexed-image-uniform-sampler-20261025",
+      "head_sha": "54a6c1e7488e13eb60e213605824562306050cdf",
+      "base": "diagnostics/gpu-indexed-sharp-rejections-20261025",
+      "base_sha": "2bccd2e56221f5f3bab3b5fc1e825751481d39ea",
+      "draft": true,
+      "updated": "2026-10-25T18:10:24Z"
+    },
+    {
+      "number": 63,
+      "title": "Remove DynamoRIO entirely; native CPU identity for every game",
+      "head": "fix/native-cpuid-no-dynamorio-20261025",
+      "head_sha": "935078d587d2b7a095d5c5d653a6b798a8f9bfcc",
+      "base": "fix/restore-generic-kernel-hooks-20261025",
+      "base_sha": "04588651b93bd71c9b82264eca8ac8e608a49236",
+      "draft": true,
+      "updated": "2026-10-25T17:34:19Z"
+    },
+    {
+      "number": 62,
+      "title": "diagnostics: capture exact GPU-indexed T# rejection expressions without changing rendering",
+      "head": "diagnostics/gpu-indexed-sharp-rejections-20261025",
+      "head_sha": "2bccd2e56221f5f3bab3b5fc1e825751481d39ea",
+      "base": "test/generic-precise-linear-image-coherence-20261025",
+      "base_sha": "9186264c71dbae224e5cc3b4a858e3f6381f0637",
+      "draft": true,
+      "updated": "2026-10-25T18:10:46Z"
+    },
+    {
+      "number": 60,
+      "title": "Restore proven universal kernel sanitizer and thread-atexit hooks into combined shadPS4",
+      "head": "fix/restore-generic-kernel-hooks-20261025",
+      "head_sha": "04588651b93bd71c9b82264eca8ac8e608a49236",
+      "base": "integration/gow-ragnarok-upstream-got-20261025",
+      "base_sha": "a4f6065bad9220467eb71933a229af94a7489375",
+      "draft": true,
+      "updated": "2026-10-25T16:51:14Z"
+    },
+    {
+      "number": 57,
+      "title": "A/B: restore Precise-mode linear GPU image readbacks alongside native buffer coherence",
+      "head": "test/generic-precise-linear-image-coherence-20261025",
+      "head_sha": "9186264c71dbae224e5cc3b4a858e3f6381f0637",
+      "base": "fix/generic-indexed-strided-record-index-20261025",
+      "base_sha": "08ec86588d402ad0c748fed9ffbe03643c7ac702",
+      "draft": true,
+      "updated": "2026-10-25T17:17:33Z"
+    },
+    {
+      "number": 52,
+      "title": "shader: preserve GPU-selected strided material tables in both GCN index layouts",
+      "head": "fix/generic-indexed-strided-record-index-20261025",
+      "head_sha": "08ec86588d402ad0c748fed9ffbe03643c7ac702",
+      "base": "fix/generic-indexed-table-runtime-capacity-20261024",
+      "base_sha": "7a3c0e0553a3faa9952d3894921304f981e70ad4",
+      "draft": true,
+      "updated": "2026-10-25T13:23:27Z"
+    },
+    {
+      "number": 48,
+      "title": "renderer: preserve stencil test and REPLACE values when bit masks are compatible",
+      "head": "fix/generic-stencil-reference-compatible-masks-20261025",
+      "head_sha": "fe8bcb7ce5cd9a2f9c10f6257e863fbf6016d428",
+      "base": "fix/generic-indexed-table-runtime-capacity-20261024",
+      "base_sha": "7a3c0e0553a3faa9952d3894921304f981e70ad4",
+      "draft": true,
+      "updated": "2026-10-24T23:44:13Z"
+    },
+    {
+      "number": 45,
+      "title": "Diagnostics: prove unresolved SRT operands and 4GiB V# metadata in 120 seconds",
+      "head": "diagnostics/generic-srt-buffer-range-120s-20261024",
+      "head_sha": "10be1878695a1d907a2645b9afe1c1e3333e3349",
+      "base": "fix/generic-indexed-table-runtime-capacity-20261024",
+      "base_sha": "7a3c0e0553a3faa9952d3894921304f981e70ad4",
+      "draft": true,
+      "updated": "2026-10-24T22:11:44Z"
+    },
+    {
+      "number": 42,
+      "title": "Vulkan: validate indexed guest texture and sampler table slots individually",
+      "head": "fix/generic-indexed-table-runtime-capacity-20261024",
+      "head_sha": "7a3c0e0553a3faa9952d3894921304f981e70ad4",
+      "base": "fix/generic-descriptor-identity-20261024",
+      "base_sha": "cf65927da12a1985e97a7c58cfd2a161a0d77270",
+      "draft": true,
+      "updated": "2026-10-24T20:32:22Z"
+    },
+    {
+      "number": 39,
+      "title": "Shader: preserve buffer shift and image format in resource deduplication",
+      "head": "fix/generic-descriptor-identity-20261024",
+      "head_sha": "cf65927da12a1985e97a7c58cfd2a161a0d77270",
+      "base": "fix/generic-uniform-lane-srt-20261024",
+      "base_sha": "9df149476c80490daef655f8da4138c6882b8247",
+      "draft": true,
+      "updated": "2026-10-24T17:42:27Z"
+    },
+    {
+      "number": 38,
+      "title": "Shader: recover proven wave-uniform descriptor reads in SRT flattening",
+      "head": "fix/generic-uniform-lane-srt-20261024",
+      "head_sha": "9df149476c80490daef655f8da4138c6882b8247",
+      "base": "fix/generic-copy-mip-overlap-20261024",
+      "base_sha": "d4018b5c1c24a18f624bf90cbe8c4fcaa79da2ec",
+      "draft": true,
+      "updated": "2026-10-24T17:15:55Z"
+    },
+    {
+      "number": 37,
+      "title": "Vulkan: copy partial mip overlaps without width assertion",
+      "head": "fix/generic-copy-mip-overlap-20261024",
+      "head_sha": "d4018b5c1c24a18f624bf90cbe8c4fcaa79da2ec",
+      "base": "ci/generic-large-indexed-final-20261023",
+      "base_sha": "b452e56733a4b5d9190586ed0f5a19ec065ba2cc",
+      "draft": true,
+      "updated": "2026-10-24T17:15:57Z"
+    },
+    {
+      "number": 36,
+      "title": "Integrate complete generic indexed image/sampler resource path",
+      "head": "integration/generic-large-indexed-final-20261023",
+      "head_sha": "9299c429cb72a2dadf9211d20c4c18769675338c",
+      "base": "fix/generic-large-indexed-images-20261023",
+      "base_sha": "a36fbf65c114a41b7129e03f7caff5cbc0567d7f",
+      "draft": true,
+      "updated": "2026-10-23T18:18:03Z"
+    },
+    {
+      "number": 35,
+      "title": "Sync latest main into all-proven generic fixes",
+      "head": "main",
+      "head_sha": "01beb8e0fbbea4462bbc661f0019624e959c53dd",
+      "base": "integration/all-proven-generic-fixes-20261023",
+      "base_sha": "0acec3b82dcfeb2f289342be80657b4fb8a028d6",
+      "draft": false,
+      "updated": "2026-10-26T06:07:41Z"
+    },
+    {
+      "number": 34,
+      "title": "WIP: integrate retained generic graphics correctness stack",
+      "head": "integration/all-generic-fixes-20261023",
+      "head_sha": "b04334a4446ac272721918336c45bde1c995679f",
+      "base": "main",
+      "base_sha": "aa5b281c0016d64844e784566ef9dd092655ba8b",
+      "draft": true,
+      "updated": "2026-10-23T16:41:23Z"
+    },
+    {
+      "number": 33,
+      "title": "CI: reconstruct verified generic graphics candidate",
+      "head": "fix/generic-recovery-ci-20261023",
+      "head_sha": "024d66b0e999ff5fde0e6782ead5030b1c28ab96",
+      "base": "main",
+      "base_sha": "aa5b281c0016d64844e784566ef9dd092655ba8b",
+      "draft": true,
+      "updated": "2026-10-23T15:17:10Z"
+    },
+    {
+      "number": 17,
+      "title": "fix(audio): propagate backend failures, preserve muted ports, and trace PCM to host sinks",
+      "head": "fix/general-audio-port-health-20261017",
+      "head_sha": "711c62a011b98f9259eb928162c3689a596e5363",
+      "base": "rebase/gow-native-cpu-upstream-32021e41-20261017",
+      "base_sha": "67cfefd05e9ee6429507dff271b5dd75c739068e",
+      "draft": true,
+      "updated": "2026-10-17T17:12:20Z"
+    },
+    {
+      "number": 16,
+      "title": "feat(cpu,linux): port native builtin guest CPU identity to latest upstream",
+      "head": "rebase/gow-native-cpu-upstream-32021e41-20261017",
+      "head_sha": "67cfefd05e9ee6429507dff271b5dd75c739068e",
+      "base": "rebase/gow-native-upstream-32021e41-20261017",
+      "base_sha": "d386df2498206fdcf3d66101600555d5a58a5905",
+      "draft": true,
+      "updated": "2026-10-17T12:19:18Z"
+    },
+    {
+      "number": 15,
+      "title": "fix(linux): rebase native UFFD, PM4 and shader correctness on upstream 32021e41",
+      "head": "rebase/gow-native-upstream-32021e41-20261017",
+      "head_sha": "d386df2498206fdcf3d66101600555d5a58a5905",
+      "base": "rebase/upstream-base-32021e41-20261017",
+      "base_sha": "32021e41bc52f744c80d122e732e24e97496c98d",
+      "draft": true,
+      "updated": "2026-10-17T07:48:09Z"
+    },
+    {
+      "number": 14,
+      "title": "test(gow): retain deferred UFFD in graphics/PM4 A/B builds and verify compiled provenance",
+      "head": "fix/gow-deferred-uffd-overlay-integrity-20261017",
+      "head_sha": "617c5231e8a811fe739247c0d834e3ae22bf8367",
+      "base": "fix/generic-pm4-shader-register-windows-20261017",
+      "base_sha": "3c7d96738e982755c2c53f48ccbe08c5949218a7",
+      "draft": true,
+      "updated": "2026-10-17T07:02:11Z"
+    },
+    {
+      "number": 13,
+      "title": "fix(pm4): bounds-check and split graphics/compute shader-register writes",
+      "head": "fix/generic-pm4-shader-register-windows-20261017",
+      "head_sha": "3c7d96738e982755c2c53f48ccbe08c5949218a7",
+      "base": "fix/general-shader-resource-observability-20261017",
+      "base_sha": "c3f99507413913c51c152c03676e7e7fc7c2cbe2",
+      "draft": true,
+      "updated": "2026-10-17T07:01:40Z"
+    },
+    {
+      "number": 12,
+      "title": "perf(renderer): coalesce GPU diagnostics and identify unflattened shader resources",
+      "head": "fix/general-shader-resource-observability-20261017",
+      "head_sha": "c3f99507413913c51c152c03676e7e7fc7c2cbe2",
+      "base": "fix/linux-userfaultfd-deferred-gpu-invalidation-20261016",
+      "base_sha": "4eba1484301fc1fcc60408c4b270c768b58c93bb",
+      "draft": true,
+      "updated": "2026-10-17T05:59:48Z"
+    },
+    {
+      "number": 11,
+      "title": "fix(recompiler): correct native SRT shift/bitfield offset emission; retain GPU diagnostics efficiently",
+      "head": "fix/general-srt-offset-arithmetic-20261017",
+      "head_sha": "6ca6de2a4be1992641c12edb7aa09996b6c254fe",
+      "base": "fix/linux-userfaultfd-deferred-gpu-invalidation-20261016",
+      "base_sha": "4eba1484301fc1fcc60408c4b270c768b58c93bb",
+      "draft": true,
+      "updated": "2026-10-17T06:01:11Z"
+    },
+    {
+      "number": 10,
+      "title": "fix(linux): prevent UFFD/GPU command circular wait during memory invalidation",
+      "head": "fix/linux-userfaultfd-deferred-gpu-invalidation-20261016",
+      "head_sha": "4eba1484301fc1fcc60408c4b270c768b58c93bb",
+      "base": "fix/linux-userfaultfd-registration-lifecycle-20261016",
+      "base_sha": "eabc3f127b58585811d4a7fbdb4308beac99894c",
+      "draft": true,
+      "updated": "2026-10-16T22:01:23Z"
+    },
+    {
+      "number": 8,
+      "title": "vulkan: enable advertised 16-bit uniform/storage buffer access",
+      "head": "fix/vulkan11-uniform-storage-16bit",
+      "head_sha": "047cc7cf992f8cf60fdc4f0adfdcfcfb27bbed7d",
+      "base": "main",
+      "base_sha": "aa5b281c0016d64844e784566ef9dd092655ba8b",
+      "draft": true,
+      "updated": "2026-10-08T19:06:22Z"
+    },
+    {
+      "number": 6,
+      "title": "frontend: restore startup loading screen through black frames",
+      "head": "fix/startup-loading-screen-20261005",
+      "head_sha": "0b7ff78483e831db2d424b2351f5d931a56a1555",
+      "base": "main",
+      "base_sha": "e6cf874a170c528068627bb43f2c6bc2e89e4375",
+      "draft": true,
+      "updated": "2026-10-05T11:32:54Z"
+    },
+    {
+      "number": 5,
+      "title": "shader_recompiler: handle base instance with instance step rates",
+      "head": "fix/base-instance-step-rate-20261005",
+      "head_sha": "d94199aafb470c49b620084dff9bb1e9c277d70d",
+      "base": "main",
+      "base_sha": "e6cf874a170c528068627bb43f2c6bc2e89e4375",
+      "draft": true,
+      "updated": "2026-10-05T10:30:15Z"
+    },
+    {
+      "number": 4,
+      "title": "playtest: PES ZPASS predication + TLG precise readbacks",
+      "head": "fix/pes-zpass-wait-predication-playtest-20261005",
+      "head_sha": "6dd93b4efda1eca0c118b36d669f904803fcf4d8",
+      "base": "diag/pes-predication-packets-20261005",
+      "base_sha": "46302d507ba016e7569f517143955bed2009208d",
+      "draft": true,
+      "updated": "2026-10-05T10:13:34Z"
+    },
+    {
+      "number": 3,
+      "title": "video_core: honor WAIT ZPASS PM4 predication",
+      "head": "fix/pes-zpass-wait-predication-20261005",
+      "head_sha": "d62628f2d6c3e4f24776f21c762a31138d5f1a24",
+      "base": "main",
+      "base_sha": "e6cf874a170c528068627bb43f2c6bc2e89e4375",
+      "draft": true,
+      "updated": "2026-10-05T10:06:59Z"
+    },
+    {
+      "number": 2,
+      "title": "playtest: PES predication + TLG precise readbacks",
+      "head": "playtest/pes-tlg-render-fixes-20261005",
+      "head_sha": "b342dadd45ece8367708cc233c239a9e6ff0b5bd",
+      "base": "fix/pes-static-zpass-predication-20261005",
+      "base_sha": "b2588f2722cfdbeaaa5b72cd90a275c36a809740",
+      "draft": true,
+      "updated": "2026-10-05T09:53:00Z"
+    },
+    {
+      "number": 1,
+      "title": "test: evaluate PES WAIT ZPASS predication",
+      "head": "fix/pes-static-zpass-predication-20261005",
+      "head_sha": "8d91919e296d210d185894140c0b2c885c7a871c",
+      "base": "diag/pes-predication-packets-20261005",
+      "base_sha": "46302d507ba016e7569f517143955bed2009208d",
+      "draft": true,
+      "updated": "2026-10-05T09:54:55Z"
+    }
+  ]
+}

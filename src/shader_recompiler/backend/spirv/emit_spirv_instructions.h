@@ -81,6 +81,14 @@ void EmitStoreBufferU32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address
 void EmitStoreBufferU32x2(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
 void EmitStoreBufferU32x3(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
 void EmitStoreBufferU32x4(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
+void EmitStoreBufferU32Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                               Id guard);
+void EmitStoreBufferU32x2Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard);
+void EmitStoreBufferU32x3Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard);
+void EmitStoreBufferU32x4Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard);
 void EmitStoreBufferU64(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
 void EmitStoreBufferF32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
 void EmitStoreBufferF32x2(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
