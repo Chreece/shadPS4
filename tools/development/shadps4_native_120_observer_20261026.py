@@ -271,7 +271,7 @@ def main():
             result['owned_child_pid']=child.pid
             save(report/'launch.json',dict(launch,pid=child.pid))
             print(f'NATIVE_GENERIC_GAME_LAUNCHED=YES PID={child.pid}',flush=True)
-            due=(40,80,110)
+            due=(8,25,80,110)
             taken=set()
             gpu_failure=None
             while child.poll() is None and time.monotonic()-began<118:

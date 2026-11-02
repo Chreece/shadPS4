@@ -348,8 +348,8 @@ void Translator::DS_APPEND(const GcnInst& inst) {
 }
 
 void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc, const IR::U64& exec_mask,
-                                            u32 next_guest_pc, u32 destination_vgpr,
-                                            u32 encoded_control) {
+                                            const IR::U32& source_value, u32 next_guest_pc,
+                                            u32 destination_vgpr, u32 encoded_control) {
     // Preserve every GCN SGPR (not only user data) and every allocated
     // VGPR at the real instruction site. Register readers here enter the
     // existing SSA rewrite while the per-register capture op is a required
@@ -429,8 +429,10 @@ void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc, const IR::U6
     // The translator leaves tag/epoch/token/flags at zero. The independent
     // GPU authority descriptor supplies epoch/token and allows capture-only
     // stamp validation, but a synchronized two-pass scheduler is still absent.
-    const IR::U32 source_lane = ir.FindILsb(exec_mask);
-    const IR::U32 cik_payload = ir.BitCount(exec_mask);
+    const IR::U1 active = ir.INotEqual(exec_mask, ir.Imm64(u64{0}));
+    const IR::U32 source_lane{ir.Select(active, ir.FindILsb(exec_mask), ir.Imm32(~u32{0}))};
+    const IR::U32 read_lane{ir.Select(active, source_lane, ir.Imm32(0u))};
+    const IR::U32 payload{ir.Select(active, ir.ReadLane(source_value, read_lane), ir.Imm32(0u))};
     capture(4, 0, ir.Imm32(0u)); // Invalid capture until runtime auth.
     capture(4, 1, ir.Imm32(0u)); // No synthetic epoch.
     capture(4, 2, site_pc);
@@ -440,7 +442,7 @@ void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc, const IR::U6
     capture(4, 6, IR::U32{ir.CompositeExtract(exec_halves, 0)});
     capture(4, 7, IR::U32{ir.CompositeExtract(exec_halves, 1)});
     capture(4, 8, source_lane);
-    capture(4, 9, cik_payload);   // Legacy CIK count_bits(EXEC), not ADDR.
+    capture(4, 9, payload);
     capture(4, 10, ir.Imm32(0u)); // No synthetic continuation token.
     capture(4, 11, ir.Imm32(0u));
     capture(4, 12, ir.Imm32(0u)); // Explicitly NOT a valid capture.
@@ -470,25 +472,27 @@ void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
         // not an unverified GPU packet or a title-specific shader offset.
         ASSERT_MSG(inst.dst[0].field == OperandField::VectorGPR && inst.dst[0].code < 256,
                    "invalid guest ordered-count VDST");
+        ASSERT_MSG(inst.src[0].field == OperandField::VectorGPR && inst.src[0].code < 256,
+                   "invalid guest ordered-count ADDR");
         sites.push_back(guest_site_pc);
         info.ordered_gds_sites.push_back({
             .pc = guest_site_pc,
             .destination_vgpr = inst.dst[0].code,
             .encoded_control = offset0 | (offset1 << 8u),
+            .source_vgpr = inst.src[0].code,
         });
     }
     const IR::U32 site_pc = ir.Imm32(guest_site_pc);
-    // Preserve all 64 guest EXEC bits for the legacy CIK count_bits(EXEC)
-    // ordered-packer update. The ADDR operand is retained separately in IR;
-    // unlike later RDNA instructions, it is not the legacy counter increment.
     const IR::U64 exec_mask = ir.Ballot(ir.GetExec());
+    const IR::U32 source_value{GetSrc(inst.src[0])};
     // Capture values BEFORE the guest ordered operation mutates VDST. The
     // true old counter value must arrive from an ordered host resolution,
     // followed by shader re-entry at site_pc + inst.length without replaying
     // pre-DS guest writes.
-    RecordOrderedGdsCheckpoint(site_pc, exec_mask, pc, inst.dst[0].code, offset0 | (offset1 << 8u));
+    RecordOrderedGdsCheckpoint(site_pc, exec_mask, source_value, pc, inst.dst[0].code,
+                               offset0 | (offset1 << 8u));
     const IR::U32 old_value =
-        ir.OrderedGdsCount(ir.GetM0(), GetSrc(inst.src[0]), exec_mask, control, site_pc);
+        ir.OrderedGdsCount(ir.GetM0(), source_value, exec_mask, control, site_pc);
     SetDst(inst.dst[0], old_value);
 }
 
