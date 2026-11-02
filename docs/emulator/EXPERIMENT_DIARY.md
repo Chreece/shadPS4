@@ -651,3 +651,33 @@ A second freshness check during the local build found upstream `16157ae6` (VFS c
 The first CPU run on `16157ae6` failed under the existing `-Werror=unused-parameter` policy: the new default `InvalidateCache` method names its unused argument. Remove only that argument name; the virtual signature and behavior remain unchanged. Keep warnings enabled and rerun the suite. This is an integration compile repair, not a rendering/gameplay claim.
 
 Final local validation passes: complete GCC 14 Release/X11 target, 31 CTest cases in nine suites plus renderer/SRT/sparse/descriptor/mapping/ABI checks, three actual startup scenarios, and 13 exact-production unlink host cases checking post-success cache invalidation. The final full target was rebuilt again after the one-line header repair. No new GPU/game run occurred. Native retest must rebuild the published immutable commit; GoW still stops at capture and GoT context loss remains unresolved.
+
+## 2026-11-02 — Native operand confirmation and SRT comparator repair
+
+Archive `universal-two-games-20261102T085801Z-3511758.tar(1).gz` tests `48d0a918`.
+Native build passed. All seven GoW packets now contain the actual decoded v5
+operand: six zeros and one 12, matching the saved registers. The deliberate
+capture stop remains; guest video and ordered-count continuation are not fixed.
+The decoded shader reads the returned v7 after both sites, so an assumed zero
+counter seed is not justified. The saved container lacks the persistent LDS
+bytes; it cannot establish an offline full-state continuation.
+
+GoT still shows black and loses its GPU context at 41.413 seconds. No GPU memory
+fault is reported. All 31 captured SPIR-V modules pass structural validation,
+which does not prove runtime behavior. Preserve this negative native evidence.
+
+The resource-walker audit reproduced a generic comparator defect:
+`PointerListCompare(a,a)` returned true for IR instructions. The exact production
+comparator with real IR objects stored 100 entries for 100 inserts of the same
+key and failed 1,632 of 8,076 ordering/map checks. Returning false for identical
+instruction pointers passes every check under ASan/UBSan. No Phi value or GPU
+index is replaced. Shader binary version 17 invalidates old cache artifacts.
+This compiler defect is not established as GoT's reset cause.
+
+Both retained commits rebased cleanly onto upstream `d4ea43b9`. Full GCC14 Release
+build, existing universal CPU checks and three actual startup scenarios pass.
+A separate OpenOrbis SRT-index probe assembles and passes host C syntax checks;
+OpenOrbis linking and PS4 execution remain untested. Keep PR118 draft and main
+unchanged pending native evidence. [Full review](reviews/20261102-native-capture-srt-order.json).
+
+Publication freshness check found upstream `e25f2d34` after the local validation above. It removes only CI CMake-configuration caching. All three retained commits rebased cleanly; emulator source, build definitions and runners are byte-identical to the validated candidate. The published candidate uses this newer upstream.

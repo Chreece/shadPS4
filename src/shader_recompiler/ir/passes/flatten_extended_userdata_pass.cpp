@@ -136,6 +136,9 @@ struct PassInfo {
             } else if (!a.IsImmediate() && !b.IsImmediate()) {
                 auto a_inst = a.Inst();
                 auto b_inst = b.Inst();
+                if (a_inst == b_inst) {
+                    return false;
+                }
                 auto a_block = a_inst->GetParent();
                 auto b_block = b_inst->GetParent();
                 if (a_block != b_block) {
