@@ -425,6 +425,16 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             return {ExpandImage(image_info, cache_image_id), -1, -1};
         }
 
+        if (image_info.CanExpandColor1DToColor2DLayers(cache_image.info)) {
+            LOG_INFO(Render_Vulkan,
+                     "TEXTURE_1D_TO_2D_SAME_STORAGE_EXPANSION address={:#x} "
+                     "old_layers={} new_layers={} slice_bytes={} source_gpu_modified={}",
+                     image_info.guest_address, cache_image.info.resources.layers,
+                     image_info.resources.layers, cache_image.info.guest_size,
+                     cache_image.HasGpuValidData());
+            return {ExpandImage(image_info, cache_image_id), -1, -1};
+        }
+
         // Size is greater but resources are not, because the tiling mode is different.
         // Likely the address is reused for a image with a different tiling mode.
         if (image_info.tile_mode != cache_image.info.tile_mode) {
