@@ -2,6 +2,8 @@
 
 **Canonical home:** this directory on fork `main`. Keep **one universal history of every attempted emulator change**; separate game notebooks are *views and original evidence*, not competing logs. A correct engine change applies across titles; game IDs only label where behavior was observed. **Do not implement title-specific source workarounds, shader-hash exceptions, readback overrides, or CPU options.**
 
+**Current rendering gap (2026-11-02):** [GoT preservation audit](reviews/20261102-got-preservation-gap.json) confirms earlier menu/partial-world progress was not preserved in the unified renderer. PR118 remains draft; native build passes do not supersede that visual baseline.
+
 ## Open these before trying any new idea
 
 | Question | Definitive file |

@@ -205,3 +205,11 @@ No graphics improvement or new safe host descriptor size is proven by this captu
 C925 GPU-indexed T#/S# helper was incorrectly requiring *scalar buffer descriptor stride* to equal the shader's 32-byte texture element stride or 536-byte material-record stride. The shader computes descriptor addresses independently; the scalar V# header supplies byte bounds (`stride * num_records`, or `num_records` bytes for stride=0). This independent-stride interpretation is also how the exact captured C925 runtime calculates GPU table byte spans. **Draft [PR95](https://github.com/Chreece/shadPS4/pull/95)** removes only these two invalid layout-equality conditions from `guest_tsharp_array.h`, preserving zero-record rejection, full nontruncated table, alignment and embedded T# offset constraints, 64-bit size arithmetic and actual host image capacity limits. This does **not** fake or grow the seven observed zero-length buffers.
 
 Regression fixture `tests/gcn/guest_tsharp_scalar_bounds.cpp` exercises 536-byte material records with descriptor stride=8 and valid 67/134 records, offset144/228/400, packed T#32, zero-record and truncation rejection, misalignment, cap and overflow. GCC and Clang standalone C++20 `-Wall -Wextra -Werror` both **PASS** on exact-equivalent source semantics. **No native shadPS4 emulator compile or actual menu improvement claimed yet.** PR is draft against `got/proven-progress-20261026` since the helper is not yet in fork main; do not main-port without native + GoW/GoT regression. Underlying CUSA11456 four compute shader sources still need producer/flattening correction because real guest `num_records=0` -> zero bytes. Canonical chronological record `got-gpu-scalar-vsharp-stride-bounds-pr95-draft-20261028` in [TRIALS.jsonl](TRIALS.jsonl).
+
+
+## 2026-11-02 — prior menu/world progress must be preserved
+
+October 27 native ELF `395682a4...` visibly reached menu and partial world.
+Current `92c1a01e` loses context at 41.901s and lacks the older GPU-indexed
+image/sampler table routing. The unchanged captured shaders show the latest
+SRT fix did not recover GoT. See the [shared preservation review](../emulator/reviews/20261102-got-preservation-gap.json) and append-only universal journal.
