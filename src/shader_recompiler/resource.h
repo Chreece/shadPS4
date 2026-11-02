@@ -144,6 +144,7 @@ struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
     SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};
     u32 indexed_guest_entries{};
+    u32 indexed_entry_limit{};
     u32 indexed_record_stride_bytes{};
     u32 indexed_descriptor_offset_bytes{};
     bool is_guest_indexed{};
