@@ -162,6 +162,7 @@ struct Info : InfoPersistent {
         u32 pc{};
         u32 destination_vgpr{};
         u32 encoded_control{};
+        u32 source_vgpr{~u32{0}};
     };
     std::vector<OrderedGdsSite> ordered_gds_sites;
     bool stores_tess_level_outer{};

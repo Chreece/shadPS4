@@ -15,13 +15,13 @@
 
 namespace Shader::Gcn::OrderedGds {
 
-// This records state of an ACTUAL guest wave immediately after DS_ORDERED_COUNT,
+// This records state of an ACTUAL guest wave immediately before DS_ORDERED_COUNT,
 // before any dependent instruction executes. A CPU fixture and a Vulkan packet
 // are NOT guest SGPR/VGPR state. The producer must materialize every register
 // named by the shader's declared allocation, including inactive lanes.
 inline constexpr u32 GcnCheckpointTag = 0x50434447u; // GDCP
 inline constexpr u32 GcnCheckpointFlags = 1u;
-inline constexpr u32 GcnCheckpointAbiVersion = 2u;
+inline constexpr u32 GcnCheckpointAbiVersion = 3u;
 inline constexpr u32 GcnWaveLanes = 64u;
 inline constexpr u64 MaxCheckpointBytes = 256ull * 1024 * 1024;
 
@@ -63,6 +63,7 @@ struct VerifiedGcnOrderedSite {
     u32 site_pc{};
     u32 destination_vgpr{};
     u32 encoded_control{};
+    u32 source_vgpr{NoActiveLane};
 };
 
 struct GcnCheckpointLayout {
@@ -127,6 +128,7 @@ inline void RequireCompleteGcnWaveCheckpoints(
                          [&](const auto& site) { return site.site_pc == capture.site_pc; });
         if (match == verified_sites.end() || match->encoded_control != capture.encoded_control ||
             match->destination_vgpr >= layout.vector_registers ||
+            match->source_vgpr >= layout.vector_registers ||
             std::count_if(verified_sites.begin(), verified_sites.end(),
                           [&](const auto& site) { return site.site_pc == capture.site_pc; }) != 1) {
             throw std::invalid_argument("guest checkpoint site is not uniquely decoded");
@@ -149,6 +151,24 @@ inline void RequireCompleteGcnWaveCheckpoints(
             checkpoint.lane_count != GcnWaveLanes ||
             checkpoint.destination_vgpr != match->destination_vgpr) {
             throw std::invalid_argument("guest GCN wave checkpoint is stale or incomplete");
+        }
+        const u64 exec = (u64(capture.exec_hi) << 32) | capture.exec_lo;
+        u32 payload = 0;
+        if (exec != 0) {
+            if (capture.source_lane != u32(std::countr_zero(exec))) {
+                throw std::invalid_argument("guest GCN checkpoint source lane disagrees with EXEC");
+            }
+            const u64 source_offset =
+                offset + sizeof(GpuGcnWaveCheckpoint) +
+                (u64(layout.scalar_words) + u64(match->source_vgpr) * GcnWaveLanes +
+                 capture.source_lane) *
+                    sizeof(u32);
+            std::memcpy(&payload, state_bytes.data() + source_offset, sizeof(payload));
+        } else if (capture.source_lane != NoActiveLane) {
+            throw std::invalid_argument("inactive guest GCN checkpoint has a source lane");
+        }
+        if (capture.payload != payload) {
+            throw std::invalid_argument("guest GCN capture payload disagrees with checkpoint ADDR");
         }
     }
 }

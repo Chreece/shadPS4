@@ -61,11 +61,8 @@ struct CounterKey {
     auto operator<=>(const CounterKey&) const = default;
 };
 
-// DS_ORDERED_COUNT payload semantics are GUEST-ISA-dependent. AMD CIK
-// documents the legacy packer increment as count_bits(EXEC), whereas
-// later GCN LLVM intrinsics supply an explicit ADDR operand and RDNA
-// documents the first active lane. Do not use the host GPU's ISA to
-// choose semantics; retain live operands until guest hardware is known.
+// The ordered operation consumes the captured ADDR operand, independently of
+// EXEC's population count. Counter storage and lifetime require separate proof.
 struct ActiveWavePayload {
     u64 exec_mask;
     std::optional<u32> evaluated_guest_isa_payload;

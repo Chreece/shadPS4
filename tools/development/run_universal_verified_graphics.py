@@ -31,6 +31,83 @@ def save(p, value):
     p.write_text(json.dumps(value, indent=2) + '\n')
 
 
+def collect_shader_diagnostics(runtime, out, console, captures):
+    blocked = []
+    recent = []
+    current_hash = None
+    capture_completed = False
+    if console.is_file():
+        with console.open(errors='replace') as f:
+            for line in f:
+                match = re.search(r'Compiling \w+ shader (0x[0-9a-fA-F]+)', line)
+                if match:
+                    current_hash = format(int(match.group(1), 16), '016x')
+                    if current_hash in recent:
+                        recent.remove(current_hash)
+                    recent.append(current_hash)
+                    recent = recent[-8:]
+                if current_hash and ('Unexpected instruction for offset computation' in line or
+                                     'Ordered GDS preflight:' in line):
+                    if current_hash in blocked:
+                        blocked.remove(current_hash)
+                    blocked.append(current_hash)
+                capture_completed |= 'PR117_REAL_GCN_CAPTURE_DONE epoch=' in line
+        with console.open('rb') as f:
+            start = max(0, console.stat().st_size - 16 * 1024**2)
+            f.seek(start)
+            (out / 'console-tail.log').write_bytes(f.read(16 * 1024**2))
+    priority = []
+    for capture in captures:
+        match = re.fullmatch(r'ordered-gds-([0-9a-f]{16})-\d+\.bin', capture['file'])
+        if match and match.group(1) not in priority:
+            priority.append(match.group(1))
+    priority.extend(h for h in reversed(blocked) if h not in priority)
+    priority.extend(h for h in reversed(recent) if h not in priority)
+    dumps = runtime / 'user/shader/dumps'
+    groups = []
+    binaries = []
+    for shader_hash in priority:
+        paths = [p for p in dumps.glob('*' + shader_hash + '*')
+                 if p.is_file() and not p.is_symlink()]
+        groups.append(sorted((p for p in paths if p.name.endswith('irprogram.txt')),
+                             key=lambda p: ('.pre-' in p.name, p.name)))
+        binaries.extend(sorted(p for p in paths if p.suffix in ('.bin', '.spv')))
+    saved_ir = []
+    total_ir = 0
+    for depth in range(max(map(len, groups), default=0)):
+        for group in groups:
+            if depth >= len(group):
+                continue
+            path = group[depth]
+            size = path.stat().st_size
+            if len(saved_ir) >= 48 or total_ir + size > 20 * 1024**2:
+                continue
+            target = out / 'blocked-shader-ir' / path.name
+            target.parent.mkdir(exist_ok=True)
+            shutil.copyfile(path, target)
+            saved_ir.append(path.name)
+            total_ir += size
+    saved_binary = []
+    total_binary = 0
+    for path in binaries:
+        size = path.stat().st_size
+        if len(saved_binary) >= 32 or total_binary + size > 8 * 1024**2:
+            continue
+        target = out / 'blocked-shader-binary' / path.name
+        target.parent.mkdir(exist_ok=True)
+        shutil.copyfile(path, target)
+        saved_binary.append({'file': path.name, 'bytes': size, 'sha256': digest(target)})
+        total_binary += size
+    return {'dump_enabled': True, 'blocked_hashes': sorted(set(blocked)),
+            'recent_compiled_hashes': list(reversed(recent)),
+            'priority_hashes': priority, 'saved_ir': saved_ir, 'saved_bytes': total_ir,
+            'limit_bytes': 20 * 1024**2, 'limit_files': 48,
+            'saved_binary': saved_binary, 'saved_binary_bytes': total_binary,
+            'binary_limit_bytes': 8 * 1024**2, 'binary_limit_files': 32,
+            'capture_completed_marker': capture_completed,
+            'console_tail_complete': console.is_file() and console.stat().st_size <= 16 * 1024**2}
+
+
 def diagnostic_command(argv, timeout):
     started = time.monotonic()
     result = {'command': argv, 'timed_out': False}
@@ -467,34 +544,12 @@ def main():
                 record['ordered_gds_evidence'].append({
                     'file': target.name, 'bytes': size, 'sha256': digest(target),
                     'guest_continuation_executed': False})
-        console = out / 'capture/full-console.log'
-        blocked = set()
-        current_hash = None
-        if console.is_file():
-            with console.open(errors='replace') as f:
-                for line in f:
-                    match = re.search(r'Compiling \w+ shader (0x[0-9a-fA-F]+)', line)
-                    if match:
-                        current_hash = format(int(match.group(1), 16), '016x')
-                    if current_hash and ('Unexpected instruction for offset computation' in line or
-                                         'Ordered GDS preflight:' in line):
-                        blocked.add(current_hash)
-        saved_ir = []
-        total_ir = 0
-        for path in sorted((runtime / 'user/shader/dumps').glob('*irprogram.txt')):
-            if path.is_symlink() or not any(h in path.name for h in blocked):
-                continue
-            size = path.stat().st_size
-            if len(saved_ir) >= 48 or total_ir + size > 20 * 1024**2:
-                continue
-            target = out / 'blocked-shader-ir' / path.name
-            target.parent.mkdir(exist_ok=True)
-            shutil.copyfile(path, target)
-            saved_ir.append(path.name)
-            total_ir += size
-        record['shader_diagnostics'] = {'dump_enabled': True, 'blocked_hashes': sorted(blocked),
-                                        'saved_ir': saved_ir, 'saved_bytes': total_ir,
-                                        'limit_bytes': 20 * 1024**2, 'limit_files': 48}
+        record['shader_diagnostics'] = collect_shader_diagnostics(
+            runtime, out, out / 'capture/full-console.log', record['ordered_gds_evidence'])
+        if (record['ordered_gds_capture_requested'] and record['ordered_gds_evidence'] and
+                record['shader_diagnostics']['capture_completed_marker'] and
+                not record['stop_remaining_tests']):
+            record['result'] = 'ORDERED_GDS_FIRST_PASS_CAPTURED_CONTINUATION_PENDING'
         record['exit_code'] = rc
         save(out / 'result.json', record)
         for folder in [project / 'docs/emulator', project / 'games' / game.parent.name / 'docs/emulator']:

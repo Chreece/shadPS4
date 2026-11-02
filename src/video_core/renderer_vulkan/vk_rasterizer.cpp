@@ -681,7 +681,7 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(OrderedGdsEpochDeviceBuffers& 
     std::vector<VerifiedGcnOrderedSite> sites;
     sites.reserve(stage.ordered_gds_sites.size());
     for (const auto& site : stage.ordered_gds_sites) {
-        sites.push_back({site.pc, site.destination_vgpr, site.encoded_control});
+        sites.push_back({site.pc, site.destination_vgpr, site.encoded_control, site.source_vgpr});
     }
 
     // A missing GPU writer must remain invalid after readback. Clear only
@@ -726,7 +726,7 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(OrderedGdsEpochDeviceBuffers& 
         const auto& layout = owner.plan.register_layout;
         const u32 saved_waves = std::min(owner.plan.waves, 32u);
         const std::array<u32, 12> header{0x32445347u,
-                                         1u,
+                                         2u,
                                          expected_epoch,
                                          owner.plan.waves,
                                          saved_waves,
