@@ -1,0 +1,453 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-fault-residency-indirect-sync-20261101",
+  "timestamp_utc": "2026-11-01T13:55:00.248168+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pull_request": 118,
+  "base_source_commit": "db69c107265f4b5cae6669cc1c139dd607c0fb89",
+  "upstream_commit": "55a97e46955b2ece7c7ff8bddeb043ca57a506c6",
+  "archives": [
+    {
+      "name": "universal-graphics-20261101T134224Z-566616.tar.gz",
+      "bytes": 3555441,
+      "sha256": "eccd5da72f652ba88716925c1efc83d473e24ecf3226ef2098ac8d3ead79ff3b"
+    },
+    {
+      "name": "universal-graphics-20261101T134245Z-572383.tar.gz",
+      "bytes": 1919802,
+      "sha256": "4e8dad81ee3854102262f45bd575ca2b1385ee515cbde32d0b946af87377c1a4"
+    },
+    {
+      "name": "universal-two-games-20261101T132613Z-297491.tar.gz",
+      "bytes": 18726053,
+      "sha256": "2abb3c9a7726d9f3a871ac538fad6151484efe0ac92026277fc421b445f70f6a"
+    },
+    {
+      "name": "universal-upstream-20261101T132614Z-297547.tar.gz",
+      "bytes": 13250025,
+      "sha256": "94bd09919e04724685184c6d411815f55bebd7baf7ccf04833a0d2797d169550"
+    }
+  ],
+  "nested_archive_deduplication": "All three individual archives are byte-identical to their copies in the batch; each run is journaled once.",
+  "host_records": [
+    {
+      "schema_version": 2,
+      "record_id": "universal-upstream-20261101T132614Z-297547",
+      "timestamp_utc": "2026-11-01T13:42:24.304962+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "stage": "COMPLETE_BUILD_ONLY",
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "exit_code": 0,
+      "requested_commit": "db69c107265f4b5cae6669cc1c139dd607c0fb89",
+      "source_commit": "db69c107265f4b5cae6669cc1c139dd607c0fb89",
+      "upstream_commit": "55a97e46955b2ece7c7ff8bddeb043ca57a506c6",
+      "game_launched": false,
+      "graphics_verified": false,
+      "installed_binary_changed": false,
+      "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261101T132614Z-297547.tar.gz",
+      "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+      "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-db69c107265f/build/shadps4",
+      "binary_sha256": "5b3bba9fe6e9ad41c7f71699fdfc6c925aa3d53e76c379eca1848c15f3812077",
+      "pull_request": 118,
+      "reviewed_result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "review_note": "Full native GCC14 build, all existing CPU suites and startup checks passed; subsequent game records are separate.",
+      "uploaded_archive_sha256": "94bd09919e04724685184c6d411815f55bebd7baf7ccf04833a0d2797d169550",
+      "review": "docs/emulator/reviews/20261101-fault-residency-indirect-sync.json"
+    },
+    {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261101T134224Z-566616",
+      "scope": "UNIVERSAL_SHADPS4",
+      "timestamp_utc": "2026-11-01T13:42:24.674433+00:00",
+      "source_commit": "db69c107265f4b5cae6669cc1c139dd607c0fb89",
+      "binary_sha256": "5b3bba9fe6e9ad41c7f71699fdfc6c925aa3d53e76c379eca1848c15f3812077",
+      "game_launched": true,
+      "graphics_verified": false,
+      "installed_binary_changed": false,
+      "evidence": "/home/chreece/projects/shadps4/logs/universal-graphics-20261101T134224Z-566616.tar.gz",
+      "result": "GAME_OR_OBSERVER_FAILED",
+      "context_games": [
+        "CUSA34384"
+      ],
+      "build_record": "/home/chreece/projects/shadps4/logs/universal-upstream-20261101T132614Z-297547/result.json",
+      "recovered_captures": [
+        "universal-graphics-20261101T122954Z-3617529"
+      ],
+      "profile_source": "/home/chreece/.local/share/shadPS4",
+      "profile_files_copied": 205,
+      "profile_policy": "isolated saves; global config; no custom title configs, patches, cheats or old shader cache",
+      "vram_free_before": 160980992,
+      "ollama_unloaded": [
+        "qwen3.8-greek:latest"
+      ],
+      "ollama_attempts": [
+        {
+          "transport": "direct-local-http",
+          "error": "[Errno 104] Connection reset by peer"
+        },
+        {
+          "transport": "docker:8f919e1ace79",
+          "listed_models": [
+            "qwen3.8-greek:latest"
+          ],
+          "post_unload_query_succeeded": true
+        },
+        {
+          "transport": "ollama-07c39de730dd-before",
+          "exit_code": 127
+        }
+      ],
+      "vram_free_at_launch": 20584091648,
+      "native": {
+        "binary_sha256": "5b3bba9fe6e9ad41c7f71699fdfc6c925aa3d53e76c379eca1848c15f3812077",
+        "game": "/mnt/roms-all/ps4-games/CUSA34384/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [],
+        "owned_child_terminated": true,
+        "exit_code": -11,
+        "owned_child_pid": 568916,
+        "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+        "elapsed_seconds": 12.833,
+        "gpu_failure": null,
+        "srt_rejections": {
+          "Phi": 3906
+        },
+        "console_lines": 18250,
+        "warning_lines": 300,
+        "error_lines": 9052,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 2721909,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "tested_games": [
+        "CUSA34384"
+      ],
+      "stop_remaining_tests": false,
+      "shader_diagnostics": {
+        "dump_enabled": true,
+        "blocked_hashes": [
+          "0000000001c6c52b",
+          "0000000001de75d6",
+          "0000000004691bd5",
+          "000000000aaeb7a6",
+          "000000000e1725f7",
+          "0000000018d2b4cb",
+          "000000001d3b11aa",
+          "000000001fe2828d",
+          "0000000021b6bae0",
+          "0000000023e7d715",
+          "0000000028025117",
+          "0000000030980d90",
+          "0000000031da72ce",
+          "00000000374cf74e",
+          "000000003a3df9d8",
+          "000000005c33d320",
+          "000000006648a34b",
+          "000000007cdb6347",
+          "00000000819c680e",
+          "000000008ecff4c1",
+          "0000000091025d13",
+          "00000000947c9577",
+          "000000009a2cd8fd",
+          "00000000a27fa0f2",
+          "00000000abf7f1ba",
+          "00000000b3ad8a9d",
+          "00000000b8b29263",
+          "00000000bb9536d4",
+          "00000000bc50dad3",
+          "00000000be08cfac",
+          "00000000be13fedc",
+          "00000000beb185af",
+          "00000000dfd7cccc",
+          "00000000f127445f",
+          "00000000f847edb3",
+          "00000000fb368fea"
+        ],
+        "saved_ir": [
+          "cs_0x0000000001c6c52b.irprogram.txt",
+          "cs_0x0000000001c6c52b.pre-lower-phi.irprogram.txt",
+          "cs_0x0000000001c6c52b.pre-res-discover.irprogram.txt",
+          "cs_0x0000000001c6c52b.pre-res-patch.irprogram.txt",
+          "cs_0x0000000001de75d6.irprogram.txt",
+          "cs_0x0000000001de75d6.pre-lower-phi.irprogram.txt",
+          "cs_0x0000000001de75d6.pre-res-discover.irprogram.txt",
+          "cs_0x0000000001de75d6.pre-res-patch.irprogram.txt",
+          "cs_0x0000000004691bd5.irprogram.txt",
+          "cs_0x0000000004691bd5.pre-lower-phi.irprogram.txt",
+          "cs_0x0000000004691bd5.pre-res-discover.irprogram.txt",
+          "cs_0x0000000004691bd5.pre-res-patch.irprogram.txt",
+          "cs_0x000000000aaeb7a6.irprogram.txt",
+          "cs_0x000000000aaeb7a6.pre-lower-phi.irprogram.txt",
+          "cs_0x000000000aaeb7a6.pre-res-discover.irprogram.txt",
+          "cs_0x000000000aaeb7a6.pre-res-patch.irprogram.txt",
+          "cs_0x000000000e1725f7.irprogram.txt",
+          "cs_0x000000000e1725f7.pre-lower-phi.irprogram.txt",
+          "cs_0x000000000e1725f7.pre-res-discover.irprogram.txt",
+          "cs_0x000000000e1725f7.pre-res-patch.irprogram.txt",
+          "cs_0x0000000018d2b4cb.irprogram.txt",
+          "cs_0x0000000018d2b4cb.pre-lower-phi.irprogram.txt",
+          "cs_0x0000000018d2b4cb.pre-res-discover.irprogram.txt",
+          "cs_0x0000000018d2b4cb.pre-res-patch.irprogram.txt",
+          "cs_0x000000001d3b11aa.irprogram.txt",
+          "cs_0x000000001d3b11aa.pre-lower-phi.irprogram.txt",
+          "cs_0x000000001d3b11aa.pre-res-discover.irprogram.txt",
+          "cs_0x000000001d3b11aa.pre-res-patch.irprogram.txt",
+          "cs_0x000000001fe2828d.irprogram.txt",
+          "cs_0x000000001fe2828d.pre-lower-phi.irprogram.txt"
+        ],
+        "saved_bytes": 20947636,
+        "limit_bytes": 20971520,
+        "limit_files": 48
+      },
+      "exit_code": 1,
+      "pull_request": 118,
+      "reviewed_result": "FAIL_SHADER_TRANSLATION_DS_ORDERED_COUNT",
+      "review_note": "GoW exits -11 at 12.833 seconds. The final log reports unsupported DS_ORDERED_COUNT while compiling cs 0xdbaa6ae4, followed by Shader translation has failed. No screenshot or graphics acceptance. This does not implement ordered-GDS continuation.",
+      "uploaded_archive_sha256": "eccd5da72f652ba88716925c1efc83d473e24ecf3226ef2098ac8d3ead79ff3b",
+      "review": "docs/emulator/reviews/20261101-fault-residency-indirect-sync.json"
+    },
+    {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261101T134245Z-572383",
+      "scope": "UNIVERSAL_SHADPS4",
+      "timestamp_utc": "2026-11-01T13:42:45.269541+00:00",
+      "source_commit": "db69c107265f4b5cae6669cc1c139dd607c0fb89",
+      "binary_sha256": "5b3bba9fe6e9ad41c7f71699fdfc6c925aa3d53e76c379eca1848c15f3812077",
+      "game_launched": true,
+      "graphics_verified": false,
+      "installed_binary_changed": false,
+      "evidence": "/home/chreece/projects/shadps4/logs/universal-graphics-20261101T134245Z-572383.tar.gz",
+      "result": "GAME_OR_OBSERVER_FAILED",
+      "context_games": [
+        "CUSA11456"
+      ],
+      "build_record": "/home/chreece/projects/shadps4/logs/universal-upstream-20261101T132614Z-297547/result.json",
+      "recovered_captures": [
+        "universal-graphics-20261101T122954Z-3617529"
+      ],
+      "profile_source": "/home/chreece/.local/share/shadPS4",
+      "profile_files_copied": 205,
+      "profile_policy": "isolated saves; global config; no custom title configs, patches, cheats or old shader cache",
+      "vram_free_before": 20586442752,
+      "ollama_unloaded": [],
+      "vram_free_at_launch": 20586442752,
+      "native": {
+        "binary_sha256": "5b3bba9fe6e9ad41c7f71699fdfc6c925aa3d53e76c379eca1848c15f3812077",
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [],
+        "owned_child_terminated": true,
+        "exit_code": -9,
+        "owned_child_pid": 572389,
+        "gpu_failure": "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty of a soft recovery.",
+        "exit_reason": "GPU_CONTEXT_LOST",
+        "elapsed_seconds": 42.378,
+        "srt_rejections": {
+          "Phi": 72,
+          "GetAttributeU32": 29
+        },
+        "console_lines": 6840,
+        "warning_lines": 366,
+        "error_lines": 1514,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 928472,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "tested_games": [
+        "CUSA11456"
+      ],
+      "stop_remaining_tests": true,
+      "shader_diagnostics": {
+        "dump_enabled": true,
+        "blocked_hashes": [
+          "0000000004950cf6",
+          "000000002ba74851",
+          "0000000052b6e003",
+          "0000000055d17c16",
+          "000000005c4c2b6f",
+          "000000008ced785b",
+          "00000000b961cd7a",
+          "00000000c0cac3b6",
+          "00000000ee963aae"
+        ],
+        "saved_ir": [
+          "cs_0x0000000004950cf6.irprogram.txt",
+          "cs_0x0000000004950cf6.pre-lower-phi.irprogram.txt",
+          "cs_0x0000000004950cf6.pre-res-discover.irprogram.txt",
+          "cs_0x0000000004950cf6.pre-res-patch.irprogram.txt",
+          "cs_0x000000002ba74851.irprogram.txt",
+          "cs_0x000000002ba74851.pre-lower-phi.irprogram.txt",
+          "cs_0x000000002ba74851.pre-res-discover.irprogram.txt",
+          "cs_0x000000002ba74851.pre-res-patch.irprogram.txt",
+          "cs_0x0000000052b6e003.irprogram.txt",
+          "cs_0x0000000052b6e003.pre-lower-phi.irprogram.txt",
+          "cs_0x0000000052b6e003.pre-res-discover.irprogram.txt",
+          "cs_0x0000000052b6e003.pre-res-patch.irprogram.txt",
+          "cs_0x0000000055d17c16.irprogram.txt",
+          "cs_0x0000000055d17c16.pre-lower-phi.irprogram.txt",
+          "cs_0x0000000055d17c16.pre-res-discover.irprogram.txt",
+          "cs_0x0000000055d17c16.pre-res-patch.irprogram.txt",
+          "cs_0x000000005c4c2b6f.irprogram.txt",
+          "cs_0x000000005c4c2b6f.pre-lower-phi.irprogram.txt",
+          "cs_0x000000005c4c2b6f.pre-res-discover.irprogram.txt",
+          "cs_0x000000005c4c2b6f.pre-res-patch.irprogram.txt",
+          "cs_0x000000008ced785b.irprogram.txt",
+          "cs_0x000000008ced785b.pre-lower-phi.irprogram.txt",
+          "cs_0x000000008ced785b.pre-res-discover.irprogram.txt",
+          "cs_0x000000008ced785b.pre-res-patch.irprogram.txt",
+          "cs_0x00000000b961cd7a.irprogram.txt",
+          "cs_0x00000000b961cd7a.pre-lower-phi.irprogram.txt",
+          "cs_0x00000000b961cd7a.pre-res-discover.irprogram.txt",
+          "cs_0x00000000b961cd7a.pre-res-patch.irprogram.txt",
+          "cs_0x00000000c0cac3b6.irprogram.txt",
+          "cs_0x00000000c0cac3b6.pre-lower-phi.irprogram.txt",
+          "cs_0x00000000c0cac3b6.pre-res-discover.irprogram.txt",
+          "cs_0x00000000c0cac3b6.pre-res-patch.irprogram.txt",
+          "cs_0x00000000ee963aae.irprogram.txt",
+          "cs_0x00000000ee963aae.pre-lower-phi.irprogram.txt",
+          "cs_0x00000000ee963aae.pre-res-discover.irprogram.txt",
+          "cs_0x00000000ee963aae.pre-res-patch.irprogram.txt"
+        ],
+        "saved_bytes": 11070152,
+        "limit_bytes": 20971520,
+        "limit_files": 48
+      },
+      "exit_code": 1,
+      "pull_request": 118,
+      "reviewed_result": "FAIL_GPU_CONTEXT_LOST",
+      "review_note": "GoT loses its GPU context at 42.378 seconds. The complete console records 253 faults, including 251 on one 16 KiB page before a larger residency request. Phi 72 and GetAttributeU32 29 remain; no lane-read rejection or screenshot.",
+      "uploaded_archive_sha256": "4e8dad81ee3854102262f45bd575ca2b1385ee515cbde32d0b946af87377c1a4",
+      "review": "docs/emulator/reviews/20261101-fault-residency-indirect-sync.json"
+    }
+  ],
+  "recovered_capture_review": {
+    "schema_version": 2,
+    "record_id": "universal-graphics-20261101T122954Z-3617529-recovered-review-20261101",
+    "timestamp_utc": "2026-11-01T13:55:00.248168+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "pull_request": 118,
+    "source_record_id": "universal-graphics-20261101T122954Z-3617529",
+    "source_commit": "ef5fd67988d2ac629d4ca02e9042a7b0f0d1053c",
+    "result": "RECOVERED_CONSOLE_SUMMARY_NO_GRAPHICS_ACCEPTANCE",
+    "recovered_console_summary": {
+      "gpu_failure": null,
+      "srt_rejections": {
+        "Phi": 3906
+      },
+      "console_lines": 17621,
+      "warning_lines": 280,
+      "error_lines": 8622,
+      "selected_diagnostic_lines": 420,
+      "full_console_bytes": 2633207,
+      "recovered_from": "/home/chreece/projects/shadps4/logs/universal-graphics-20261101T122954Z-3617529/capture/full-console.log"
+    },
+    "console_excerpt_sha256": "54fb3d3823c34fea235a367be6e33c6478a2f302bdd576ac6765d938ca94bb47",
+    "summary_sha256": "ff0882a7a0f11a19f68664690a8c29c08795562d8c27f2179012d7588a52e3be",
+    "original_result_preserved": true,
+    "review_note": "The new runner recovered the old GoW console read-only. It reports Phi 3906 and no detected GPU loss. The saved excerpt ends with accepted host quit and playtime update; it does not show DS_ORDERED_COUNT. The prior loading-screen observation and cleanup failure remain unchanged.",
+    "graphics_verified": false,
+    "game_launched": false,
+    "review": "docs/emulator/reviews/20261101-fault-residency-indirect-sync.json"
+  },
+  "confirmed_fault_residency_defect": {
+    "host_page_bytes": 16384,
+    "stream_threshold_bytes": 16384,
+    "complete_console_sha256": "2c098be67e3b9bcafcce6a40fc4fdbaeed015d101b61a740efd7c29b225076fe",
+    "fault_counts": {
+      "0x150260c000": 251,
+      "0x1502618000": 1,
+      "0x1502610000": 1
+    },
+    "first_fault_line": 1845,
+    "last_fault_line": 3679,
+    "eventual_residency_lines": [
+      3680
+    ],
+    "root_cause": "FaultManager discards ObtainBuffer return value, but default flags let clean reads up to 16 KiB use the temporary stream buffer. That branch bypasses GetArena, EnsureResident and the guest BDA mapping. The coalesced two-page request eventually reaches residency.",
+    "fix": "Request IgnoreStreamBuffer only when resolving guest-memory page faults. Preserve the existing u32 size bound and ordinary small-read streaming.",
+    "causal_limit": "This proves a residency-path defect and matches repeated faults. It does not prove that this defect alone caused GPU context loss; deferred faults still have no exact shader replay."
+  },
+  "retained_proven_fix": {
+    "pull_request": "https://github.com/Chreece/shadPS4/pull/88",
+    "pr_head": "3462895837dcecab9207ce63e39727f01c5a99b0",
+    "native_source": "43d7d22360dee7a545ef9e81557fb8ae9109f7a4",
+    "native_elf_sha256": "3a4ced9bb56440edbf4b273d2bc71564b0555c42191c14083ba7ee47d0782c75",
+    "native_build_archive_sha256": "f5109f581308a2fe7768fe6fc7183e1f23f966c87d77f3a88863089b1e9a0f04",
+    "six_native_tests_archive_sha256": "97c103b321c4db617a661ea88c742145ec0e6eb10f1b13b1595a5862f649e571",
+    "proven_scope": "Prior full native compilation and six filtered native IndirectCommandSynchronization CPU assertions; not GPU/game acceptance. Provenance rechecked against PR88 body. The unrelated GPU GCN harness previously faulted and is not rerun.",
+    "port": "Retain the access-mask/stage helper semantics, route the current central ResetBindings through it, and add indirect reads to Runtime read-range tracking. Current DrawIndirect argument/count and DispatchIndirect buffers already enter bound_buffers, so the older explicit AccessBuffer calls are not copied.",
+    "source_helper_commit": "46da1c75473eee3db5f2fe5a0aed885982a9fcad",
+    "whole_pr117_excluded": true
+  },
+  "gow_blocker": {
+    "opcode": "DS_ORDERED_COUNT",
+    "compiled_shader": "0xdbaa6ae4",
+    "production_special_case_added": false,
+    "status": "UNIMPLEMENTED_ORDERED_GDS_CONTINUATION; PR117 foundations are not a proven complete execution backend. No fake result or unordered atomic substitution."
+  },
+  "validation": {
+    "compiler": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
+    "fault_recovery": "PASS 21 extracted-production cases: 4/16/64 KiB pages, one/two/four pages, clean/modified regions; ordinary small reads retain streaming. Actual FaultManager callback body and BufferCache::ObtainBuffer are extracted without edits; recording lower-level collaborators, no GPU.",
+    "fault_negative_control": "Baseline callback fails on a clean 4 KiB page because residency and upload were never reached. The same defect applies to the host 16 KiB page.",
+    "indirect_tracking": "PASS 26 cases executing extracted Runtime::AccessBuffer, Runtime::IsBufferAccessed and Rasterizer::ResetBindings with actual helper and pinned Vulkan headers. Checks argument/count-buffer ownership and boundaries, all nine read flags, all six write flags, graphics/compute stages and reset state; recording resource ranges, no GPU.",
+    "indirect_negative_controls": [
+      "Baseline fails the DRAW_INDIRECT stage assertion.",
+      "Removing only INDIRECT_COMMAND_READ from the candidate read mask fails the subsequent-overwrite hazard assertion."
+    ],
+    "vulkan_headers_commit": "ee3b5caaa7e372715873c7b9c390ee1c3ca5db25",
+    "existing_sparse_fixture": "PASS 288 ranges / 7 scenarios in recorder and real Vulkan-header modes, including original-owner DMA callbacks.",
+    "existing_renderer_contracts": "PASS 7 checks",
+    "fixture_setup_failure": "First indirect fixture compilation stopped on existing Vulkan assert-macro unused-value and baseline structured-binding-copy warnings under -Werror. The temporary fixture now treats Vulkan includes as system headers and disables only range-loop-construct and unknown-pragmas; production source was not changed for these warnings.",
+    "git_diff_check": "PASS",
+    "new_full_native_build": "PENDING_HOST",
+    "new_gpu_validation": "PENDING_HOST; no graphics/gameplay fix claimed"
+  },
+  "shader_cache_version": 14,
+  "cache_version_note": "No shader emission change in this port; renderer resource/synchronization fixes do not require another shader-cache version.",
+  "source_files": [
+    {
+      "path": "src/video_core/buffer_cache/fault_manager.cpp",
+      "sha256": "a7e29b12811f70a4906ba2e0b1b2c492ffd450c1e420eb8ebfe2e39e8313708d"
+    },
+    {
+      "path": "src/video_core/renderer_vulkan/vk_indirect_read_sync.h",
+      "sha256": "0340b78f3c394d125a78c2a4980f10657b1527a64bfabe2488b4bad78aff30e6"
+    },
+    {
+      "path": "src/video_core/renderer_vulkan/vk_runtime.cpp",
+      "sha256": "8738daec1672fcce54a8ada05c954f9ce906decad027dd4f2fbb2cc86756e2e3"
+    },
+    {
+      "path": "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
+      "sha256": "10979ce0e947fce9e725e9671787b014672830fc4c45e896a07eb67666bb8936"
+    }
+  ],
+  "decision": "RETAIN_DRAFT_PR118; RETRY_NATIVE_BUILD_AND_BOTH_GAMES; DO_NOT_PROMOTE_MAIN",
+  "graphics_verified": false,
+  "ir_inventories": {
+    "universal-graphics-20261101T134224Z-566616": {
+      "files": 30,
+      "bytes": 20947636,
+      "sorted_inventory_sha256": "de35b4460a86687ccbd1f8c1ac971558ae255e3c247c9aebe67511c70052fd2e",
+      "raw_shader_data_committed": false
+    },
+    "universal-graphics-20261101T134245Z-572383": {
+      "files": 36,
+      "bytes": 11070152,
+      "sorted_inventory_sha256": "bac20f425a6f060f55cf17123053f2d0238ea626152a45251627c1391affd348",
+      "raw_shader_data_committed": false
+    }
+  }
+}
