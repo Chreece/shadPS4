@@ -681,3 +681,41 @@ OpenOrbis linking and PS4 execution remain untested. Keep PR118 draft and main
 unchanged pending native evidence. [Full review](reviews/20261102-native-capture-srt-order.json).
 
 Publication freshness check found upstream `e25f2d34` after the local validation above. It removes only CI CMake-configuration caching. All three retained commits rebased cleanly; emulator source, build definitions and runners are byte-identical to the validated candidate. The published candidate uses this newer upstream.
+
+
+## 2026-11-02 — GoT rendering preservation gap confirmed
+
+The uploaded 16:00 UTC batch tests source `92c1a01e` / native ELF
+`721e6c06d447dce4b3a23a57efc966b649013d00ef03fcd6070084b46e5d1599`.
+Build/CPU/startup pass; GoW again captures its first ordered-GDS pass and stops
+before continuation. GoT shows black output and loses RADV context at 41.901s,
+compared with 41.413s on `48d0a918`. All 32 saved GoT raw/SPIR-V files are
+byte-identical across these two runs; all 48 IR files match after removing only
+the leading host pointer. All 31 modules in the new two-game batch validate,
+which does not establish rendering correctness.
+
+Reopened and SHA-verified the October 27 19:59 archive. Its 40s screenshot
+shows the readable Continue menu (24 FPS); 85s shows smoke/fire/water in the
+partial game scene (6 FPS), with major geometry absent. The 118s run reports
+no device loss and 27,612 2D + 35 3D + 4 Cube descriptor entries. This is real
+earlier progress. October 31 integration explicitly excluded mixed indexed
+image tables and unpublished C925 changes. Current shader resource/emission
+code lacks the earlier GPU-indexed texture/sampler table routing. Thus the
+blanket claim that all prior fixes/capability were preserved was incorrect.
+The older review's no-graphics-proof exclusion must not erase the October 27
+visual-positive evidence; later mixed-type experiments remain unproven.
+
+The exact reset command and first bad commit remain unknown. Historical and
+current logs identify the same RX 7900 XTX / RADV 25.0.7; historical code logs
+automatic demand coherence (readbacksMode 2), current code logs mode 0.
+Both log readbackLinearImages false. These runs are not source/profile parity.
+Do not attribute the failure to upstream, the latest comparator fix or one
+setting without isolation. Main remains unchanged; PR118 stays draft.
+
+Expanded the existing read-only source collector to include all shader/video
+C++ sources and headers, including untracked and deleted historical headers,
+with HEAD/C925 versions, source stability checks and the canonical journal.
+It supports both retained worktree layouts and rejects incomplete captures.
+Ordinary/linked worktree and symlink-failure fixtures pass without source
+mutation. This is source recovery, not an emulator fix or a new game test.
+See [full review](reviews/20261102-got-preservation-gap.json).

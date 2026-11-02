@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Read-only collection of exactly the GoT c925 shader/renderer source used by local builds.
+"""Read-only collection of retained GoT shader/renderer source lineage.
 
-Only allow-listed C++/header content, tracked Git diffs and positive *binary hashes*
-are archived; never include a game, executable, save, profile or credentials.
+Capture source trees, tracked Git diffs and positive binary hashes, without
+assuming current files produced a historical binary. No game, executable,
+save, profile or credentials are archived.
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
-from datetime import datetime
+from datetime import datetime, timezone
 
 C925 = "c925523b49ef39434024b16b2b014d120471ee1a"
 EXPECTED_BINARIES = {
@@ -81,7 +82,9 @@ src/video_core/amdgpu/liverpool.h
 src/core/memory.cpp
 """.split()
 MAX_SINGLE = 1_500_000
-MAX_TOTAL = 28_000_000
+MAX_TOTAL = 96_000_000
+SOURCE_TREES = ("src/shader_recompiler", "src/video_core")
+SOURCE_SUFFIXES = {".cpp", ".h", ".hpp", ".inc", ".inl", ".c"}
 
 
 def digest_file(path: Path) -> str:
@@ -93,7 +96,8 @@ def digest_file(path: Path) -> str:
 
 
 def git(source: Path, *args: str, timeout: int = 35) -> subprocess.CompletedProcess[bytes]:
-    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0")
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0",
+               GIT_NO_LAZY_FETCH="1")
     return subprocess.run(
         ["git", "-C", str(source), *args], capture_output=True,
         env=env, timeout=timeout, check=False,
@@ -131,15 +135,30 @@ def capture(source: Path, got: Path, out: Path) -> dict:
     if c925_available:
         manifest["c925_is_ancestor"] = git(source, "merge-base", "--is-ancestor", C925, "HEAD").returncode == 0
 
+    source_files = set(SOURCE_FILES)
+    for tree in SOURCE_TREES:
+        for path in (source / tree).rglob("*"):
+            if path.is_file() and path.suffix in SOURCE_SUFFIXES:
+                source_files.add(path.relative_to(source).as_posix())
+    for ref in ("HEAD", C925) if c925_available else ("HEAD",):
+        listing = git(source, "ls-tree", "-r", "--name-only", ref, "--", *SOURCE_TREES)
+        if listing.returncode:
+            raise RuntimeError("SOURCE_TREE_ENUMERATION_FAILED: " + ref)
+        source_files.update(name for name in listing.stdout.decode().splitlines()
+                            if Path(name).suffix in SOURCE_SUFFIXES)
+    source_files = sorted(source_files)
+    manifest["source_file_count"] = len(source_files)
+    manifest["source_to_historical_binary_proven"] = False
+
     commands = {
         "tracked-status.txt": ["status", "--porcelain=v1", "--untracked-files=no"],
         "commit-history.txt": ["log", "--no-show-signature", "-20", "--format=%H %ad %s", "--date=iso"],
         "commit-reflog.txt": ["reflog", "-20", "--date=iso"],
-        "current-vs-head.patch": ["diff", "--no-ext-diff", "--binary", "HEAD", "--", *SOURCE_FILES],
-        "index-vs-head.patch": ["diff", "--cached", "--no-ext-diff", "--binary", "HEAD", "--", *SOURCE_FILES],
+        "current-vs-head.patch": ["diff", "--no-ext-diff", "--no-textconv", "HEAD", "--", *source_files],
+        "index-vs-head.patch": ["diff", "--cached", "--no-ext-diff", "--no-textconv", "HEAD", "--", *source_files],
     }
     if c925_available:
-        commands["head-vs-c925.patch"] = ["diff", "--no-ext-diff", "--binary", C925, "HEAD", "--", *SOURCE_FILES]
+        commands["head-vs-c925.patch"] = ["diff", "--no-ext-diff", "--no-textconv", C925, "HEAD", "--", *source_files]
     for name, command in commands.items():
         proc = git(source, *command, timeout=55)
         if proc.returncode:
@@ -150,9 +169,12 @@ def capture(source: Path, got: Path, out: Path) -> dict:
             (out / name).write_bytes(proc.stdout)
 
     budget = [0]
-    for rel in SOURCE_FILES:
+    for rel in source_files:
         path = source / rel
-        if path.is_symlink() or not path.is_file():
+        if any(p.is_symlink() for p in (path, *path.parents) if p != source):
+            manifest["excluded"].append({"path": rel, "reason": "SYMLINK_SOURCE"})
+            continue
+        if not path.is_file():
             manifest["missing"].append(rel)
         elif path.stat().st_size > MAX_SINGLE:
             manifest["excluded"].append({"path": rel, "reason": "LARGE_SOURCE_FILE"})
@@ -185,13 +207,20 @@ def capture(source: Path, got: Path, out: Path) -> dict:
     final = git(source, "rev-parse", "HEAD")
     manifest["head_after"] = final.stdout.decode().strip() if not final.returncode else "ERROR"
     manifest["head_unchanged"] = manifest["head_before"] == manifest["head_after"]
+    changed = []
+    for entry in manifest["captured_current"]:
+        path = source / entry["path"]
+        if not path.is_file() or path.is_symlink() or digest_file(path) != entry["sha256"]:
+            changed.append(entry["path"])
+    manifest["source_changed_during_capture"] = changed
+    manifest["capture_complete"] = not (changed or manifest["excluded"] or manifest["failures"])
     manifest["total_source_bytes"] = budget[0]
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf8")
     return manifest
 
 
 def append_diary(project: Path, record: dict) -> None:
-    file = project / "diary" / "trials.jsonl"
+    file = project / "docs" / "emulator" / "TRIALS.jsonl"
     file.parent.mkdir(parents=True, exist_ok=True)
     with file.open("a", encoding="utf8") as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
@@ -209,10 +238,14 @@ def main() -> int:
     args = parser.parse_args()
     project = args.project_root.expanduser().resolve()
     got = (args.got_root or project / "GhostOfTsushima").expanduser().resolve()
-    source = (args.source or got / "experiments/c925-integrated-gpu-20261027-122701/source").expanduser().resolve()
+    experiment = got / "experiments/c925-integrated-gpu-20261027-122701"
+    default_source = experiment / "source"
+    if not (default_source / "src/shader_recompiler").is_dir():
+        default_source = experiment
+    source = (args.source or default_source).expanduser().resolve()
     logs = project / "logs"
     logs.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     tag = "got-shader-parity-" + stamp
     out = logs / tag
     out.mkdir(mode=0o700)
@@ -227,6 +260,8 @@ def main() -> int:
         summary = capture(source, got, out)
         if not summary["head_unchanged"]:
             raise RuntimeError("SOURCE_HEAD_CHANGED_DURING_READ")
+        if not summary["capture_complete"]:
+            raise RuntimeError("SOURCE_CAPTURE_INCOMPLETE_SEE_MANIFEST")
         result = "EXACT_GOT_SHADER_SOURCE_CAPTURED"
         exit_code = 0
         print("GOT_SOURCE_HEAD=" + summary["head_before"], flush=True)
@@ -244,7 +279,8 @@ def main() -> int:
     finally:
         (out / "result.txt").write_text("RESULT=" + result + "\nEXIT_CODE=" + str(exit_code) + "\nGAME_LAUNCHED=NO\nSSH_SESSION=OPEN\n", encoding="utf8")
         record = {
-            "schema_version": 2, "record_id": tag, "recorded_at": "2026-10-28",
+            "schema_version": 2, "record_id": tag,
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
             "record_type": "GOT_NATIVE_SHADER_SOURCE_PARITY_READ_ONLY", "game_id": "CUSA11456",
             "tested_games": [], "game_effect": "NOT_RUN", "result": result,
             "exit_code": exit_code, "archive": archive.name,
