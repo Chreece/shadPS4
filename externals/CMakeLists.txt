@@ -42,9 +42,8 @@ if (NOT TARGET FFmpeg::ffmpeg)
 endif()
 
 # LibAtrac9
-file(GLOB LIBATRAC9_SOURCES LibAtrac9/C/src/*.c)
-add_library(LibAtrac9 STATIC ${LIBATRAC9_SOURCES})
-target_include_directories(LibAtrac9 INTERFACE LibAtrac9/C/src)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/LibAtrac9.cmake")
+shadps4_add_atrac9(LibAtrac9)
 
 # zlib
 if (NOT TARGET ZLIB::ZLIB)

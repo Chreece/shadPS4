@@ -1,0 +1,81 @@
+{
+  "schema_version": 2,
+  "record_id": "gcn-ordered-gds-typed-ir-phases-20261029",
+  "recorded_at": "2026-10-29",
+  "scope": "Universal shadPS4 GCN ordered-GDS semantics and host reference/continuation; no title-specific exceptions",
+  "fork_repo": "Chreece/shadPS4",
+  "pr": {
+    "number": 117,
+    "url": "https://github.com/Chreece/shadPS4/pull/117",
+    "head_commit": "f52b685ffc52df49fbce432c85b6cb28acfe20d2",
+    "status": "DRAFT_UNMERGED"
+  },
+  "main_status": {
+    "tested_native_fix_pr": 116,
+    "merged_sha": "2313c8102520191f7998bd93d42e6043f8ece138",
+    "main_unchanged_by_this_experiment": true
+  },
+  "checkpoint_reconciliation": {
+    "detected": [
+      "Two definitions of EmitOrderedGdsCount across emit_spirv.cpp and emit_spirv_atomic.cpp",
+      "Two cases of OrderedGdsCount in Inst::MayHaveSideEffects()"
+    ],
+    "resolution": [
+      "Keep single backend refusal in emit_spirv.cpp, remove second atomic-file definition",
+      "Keep single side-effect case so unused-return GDS updates survive DCE",
+      "Update source contracts to enforce uniqueness and correct backend location"
+    ],
+    "patches": [
+      "391c15ce74e63f8f5d55a4ecf87d20703e3037fd",
+      "4ac91305ebf43801d3040005bea4ca668138a9cb",
+      "553aba875f6c5c7fbde897c8d7f0817729b8a18b"
+    ]
+  },
+  "new_native_IR": {
+    "feature": "DS_ORDERED_COUNT preserved as separate opcode, not SharedAtomicIAdd or DataAppend",
+    "frontend": "Gcn translator captures live M0, live lane ADDR, GetExec and encoded OFFSET0/OFFSET1 into typed IR; destination register carries returned value.",
+    "side_effects": "MayHaveSideEffects includes OrderedGdsCount, preserving counter operations when prior result discarded",
+    "backend_gate": "EmitSPIRV rejects program.info.uses_ordered_gds prior to building Vulkan module; there is exactly one guarded EmitOrderedGdsCount symbol, no fake atomic fallback",
+    "production_files": [
+      "src/shader_recompiler/info.h",
+      "src/shader_recompiler/ir/opcodes.inc",
+      "src/shader_recompiler/ir/ir_emitter.h",
+      "src/shader_recompiler/ir/ir_emitter.cpp",
+      "src/shader_recompiler/ir/microinstruction.cpp",
+      "src/shader_recompiler/frontend/translate/translate.h",
+      "src/shader_recompiler/frontend/translate/data_share.cpp",
+      "src/shader_recompiler/backend/spirv/emit_spirv_instructions.h",
+      "src/shader_recompiler/backend/spirv/emit_spirv.cpp"
+    ]
+  },
+  "reference_scheduler": {
+    "implementation": "OrderedGdsPhases stage list carries shared initialized counter state across multiple complete wave-ordered sites, refuses missing/duplicate waves and cross-phase submissions, supports repeated static site with distinct dynamic phase index.",
+    "captured_need": "cs_0xdbaa6ae4 has both GDS Exchange (offset0x4158 offset1=0x13) and GDS Add (offset0x41d4 offset1=0x03); runtime M0 and wave order not derivable from static source.",
+    "continuation": "ContinuationHandoff captures opaque tokens; no next epoch before every prior continuation is resumed; second epoch test extended from 1 wave to full n=1..99 waves.",
+    "files": [
+      "src/shader_recompiler/frontend/ordered_gds.h",
+      "src/shader_recompiler/frontend/ordered_gds_continuation.h",
+      "tests/gcn_ordered_gds_complete_batch.cpp",
+      "tests/gcn_ordered_gds_continuation.cpp"
+    ],
+    "source_head_commit": "c68d76dec8be08245ad67ba0bdbfcc1999bed85d",
+    "caveat": "Host CPU model/continuation only. No GPU shader split, no wave preemption, no Vulkan continuation, no guest payload-resolving implementation. Vulkan workgroups cannot spin for creation order safely."
+  },
+  "tests": {
+    "static_source_contracts": "PASS manual exact source/blob audit for single EmitOrderedGdsCount, DCE side effect, IR operands, raw GCN offset, phase collector and no ordinary Vulkan atomic lowering",
+    "existing_previous_cpu_model": "Earlier complete-batch/continuation CPU tests PASS before new two-stage full-wave extension",
+    "new_extended_two_epoch_cpu_tests": "PENDING actual execution on host; 99 2-site full-wave stage sequences added",
+    "new_real_header_native_build": "PENDING; not claimed",
+    "github_actions_run_count_observed": 0
+  },
+  "host_gate": {
+    "source_commit": "c68d76dec8be08245ad67ba0bdbfcc1999bed85d",
+    "runner_commit": "f52b685ffc52df49fbce432c85b6cb28acfe20d2",
+    "runner_path": "scripts/gow_ordered_gds_cpu_gate_20261029.py",
+    "runner_blob": "9bd5a0459fa5a5fa4c9b5dde9487b497e861902d",
+    "runner_sha256": "0cd1a741bc49d8b385f16b5906b884ac8d71e5753863cd5c969cea448d1a8873",
+    "runner_behavior": "Download 18 exact source files with per-file pinned Git blob SHA-1; run actual frontend C++ extracted-method fixture, typed-IR contract, full two-site batch/continuation CPU tests with both GCC/Clang strict C++23 + ASan/UBSan. Save archive under ~/projects/shadps4/logs, append universal local diary. No emulator/GPU launch, no original source checkout change, no services/restarts/SSH exit.",
+    "external_runtime": "NOT_EXECUTED in analysis environment; user-host outcome not yet received"
+  },
+  "decision": "RETAIN_PR117_AS_DRAFT_UNMERGED. BLOCK_NATIVE_GPU_LOWERING_UNTIL_DISPATCH_COLLECTION_AND_WAVE_CONTINUATION_EXISTS; DO_NOT_CLAIM_GOW_RENDERING, NO_FAKE_COUNTERS_OR_SHADER_HASH_OVERRIDES"
+}

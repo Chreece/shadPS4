@@ -1,0 +1,51 @@
+{
+  "schema_version": 2,
+  "record_id": "got-c925-indirect-validation-20261029T060952815730Z-reviewed",
+  "recorded_on": "2026-10-29",
+  "record_type": "OFFLINE_PR107_VALIDATION_PASS_SEPARATE_GOW_MAPPED_MEMORY_ERROR",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "context_games": ["CUSA11456", "CUSA34384"],
+  "tested_games": [],
+  "pr": 107,
+  "archive": "got-c925-indirect-validation-20261029T060952815730Z.tar.gz",
+  "archive_sha256": "e558a82a011ba3a800d7701b78870108368ab5720f4a3ca39acbe9af2f410864",
+  "source_capture": "got-c925-indirect-materials-20261029T053938612839Z.tar.gz",
+  "source_capture_sha256": "3a3599725a7ba284ecc5e5b22bc9029ba31b6b3a39d17500f9822042de102569",
+  "current_binary_before_and_after": "3b0695880f0f2b34390236fa8e2f96dc821c204dfa362691a2eb0c866b5bbb6f",
+  "build": "NOT_RUN",
+  "game": "NOT_RUN_OFFLINE_ONLY",
+  "gpu_or_ollama_access": false,
+  "shader_files": 21,
+  "distinct_modules": 3,
+  "validator": "SPIRV-Tools v2025.1 privately extracted verified Debian package",
+  "validator_sha256": "f386e67676bc134802b6bfec6d96fff0f9437d0f60e4c97ee0afa59ab4f1c4ea",
+  "validation": {
+    "universal_spv16": "3/3 PASS exit0 empty diagnostics",
+    "vulkan13_strict": "3/3 PASS exit0 empty diagnostics",
+    "vulkan13_maintenance8_scalar": "3/3 PASS exit0 empty diagnostics",
+    "module_sha256": [
+      "39833109b44a47bb31852b88f26aa9eb333623c8752a162d6c66d193bb3a39bd",
+      "99f1b1d60c2268f6dc6561f4283916c65a04f8cf7b486134988610ae98c05953",
+      "c22ce9cefaa55d914a6d2e4bd07921c5f8000f74ad26d64bbd4a78eecaf9e53d"
+    ],
+    "scope": "Actual immutable modules from the native PR107 run, not mocked responses. Complete semantic module validation does not validate bound runtime resources, executed branch coverage or missing visible surfaces."
+  },
+  "prior_tooling_failure": "Corrected private-validator discovery; the42 formerly skipped rows are superseded by9 real successful invocations on the3 unique modules. Earlier skipped results remain recorded, not rewritten.",
+  "separate_gow_evidence": {
+    "run": "gow-vulkan-validation-20261029T053642Z-2451872",
+    "source_commit": "2d76a32c69bd9a7bc322c10c6f4821fb60e7f2a4",
+    "binary_sha256": "58a5dcbcdce10e63c34e2e8db502fbad33269c44e466eebd58a0b50bd5ecf852",
+    "retrieval": "Existing exact run archive and game log collected; GoW was not relaunched by this audit.",
+    "vuid": "VUID-VkMappedMemoryRange-size-01389",
+    "diagnostic": "vkFlushMappedMemoryRanges uses VK_WHOLE_SIZE for a mapping ending at4104 bytes; nonCoherentAtomSize64; allocation1048576 bytes. Mapping end is neither atom-aligned nor the allocation end.",
+    "thread": "shadPS4:Present",
+    "runtime": "Original validation observer stopped its owned process at first error after4.003seconds. No graphics/gameplay acceptance and no causal claim about missing GoT materials.",
+    "qualification": "This is a Vulkan host-memory API usage error, not invalid PR107 SPIR-V. Exact calling source must be checked before attributing it to a shared implementation. Do not combine GoW and GoT results or assume the same error has occurred in GoT."
+  },
+  "decision": "KEEP_PR107_NATIVE_TRANSLATION_PLUS_REAL_VALIDATION; ADAPTER_PACKAGE_ELIGIBLE_FOR_PRESERVATION_MERGE; MENU_FILLS_AND_OVERLAYS_STILL_UNRESOLVED",
+  "merge_scope": "PR107 contains source adapter/tests/runner, not a completed common-main production C++ forward-port or latest-upstream rebase. Record actual merge separately, never infer it from mergeability.",
+  "next": "Preserve all accepted shader changes. Investigate actual menu runtime resources/render-state rather than repeat module validation or infer a freeze from equal menu frames. Address the separately proven mapped-memory violation only against verified source; do not label it the cause of sword/material loss without evidence.",
+  "no_identical_menu_freeze_inference": true,
+  "historical_ledger": "../TRIALS.jsonl",
+  "raw_game_shader_data_published": false
+}

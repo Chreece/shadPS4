@@ -29,6 +29,7 @@ struct SharpReference {
 
 struct ResourceDiscovery {
     IR::Inst* user{};
+    IR::Value buffer_store_guard;
     std::array<SharpReference, 2> sharps;
 };
 using ResourceDiscoveryList = boost::container::small_vector<ResourceDiscovery, 32>;
@@ -70,6 +71,10 @@ inline bool IsBufferStore(const IR::Inst& inst) {
     case IR::Opcode::StoreBufferU32x2:
     case IR::Opcode::StoreBufferU32x3:
     case IR::Opcode::StoreBufferU32x4:
+    case IR::Opcode::StoreBufferU32Guarded:
+    case IR::Opcode::StoreBufferU32x2Guarded:
+    case IR::Opcode::StoreBufferU32x3Guarded:
+    case IR::Opcode::StoreBufferU32x4Guarded:
     case IR::Opcode::StoreBufferU64:
     case IR::Opcode::StoreBufferF32:
     case IR::Opcode::StoreBufferF32x2:
