@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "core/emulator_settings.h"
+#include "common/assert.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
 
@@ -190,6 +190,9 @@ void Visit(Info& info, const IR::Inst& inst) {
     case IR::Opcode::Memtime:
         info.uses_shader_clock = true;
         break;
+    case IR::Opcode::ReadConstBuffer:
+        info.uses_dma |= !inst.Arg(0).IsImmediate();
+        break;
     case IR::Opcode::ReadConst:
         AddFlatbuf(info);
         if (inst.Flags<u32>() == 0) {
@@ -217,12 +220,9 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
         }
     }
 
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled() || !profile.support_bda) {
-        info.uses_dma = false;
-        info.readconst_types = Info::ReadConstType::None;
-    }
-
     if (info.uses_dma) {
+        ASSERT_MSG(profile.support_bda,
+                   "Unflattened constant read requires buffer device address support");
         info.buffers.push_back({
             .used_types = IR::Type::U64,
             .buffer_type = BufferType::BdaPagetable,
@@ -233,7 +233,7 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
             .buffer_type = BufferType::FaultBuffer,
             .is_written = true,
         });
-        LOG_ERROR(Render, "Enabling DMA for shader {:#x}", info.pgm_hash);
+        LOG_INFO(Render, "Enabling GPU constant reads for shader {:#x}", info.pgm_hash);
     }
 }
 

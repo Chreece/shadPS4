@@ -22,6 +22,7 @@ union PostOpData {
 
 struct SharpReference {
     std::array<IR::Value, 8> dwords{};
+    std::array<u32, 8> clear_masks{};
     u32 num_dwords{};
     SharpFetchPostOp post_op{};
     PostOpData post_op_data;
@@ -29,7 +30,15 @@ struct SharpReference {
 
 struct ResourceDiscovery {
     IR::Inst* user{};
+    IR::Value buffer_store_guard;
     std::array<SharpReference, 2> sharps;
+    SharpReference indexed_table_sharp{};
+    IR::Value indexed_texture_id{};
+    u32 indexed_record_stride_bytes{};
+    u32 indexed_descriptor_offset_bytes{};
+    u32 indexed_sampler_offset_bytes{};
+    bool has_indexed_sampler_table{};
+    bool has_indexed_table{};
 };
 using ResourceDiscoveryList = boost::container::small_vector<ResourceDiscovery, 32>;
 
@@ -70,6 +79,10 @@ inline bool IsBufferStore(const IR::Inst& inst) {
     case IR::Opcode::StoreBufferU32x2:
     case IR::Opcode::StoreBufferU32x3:
     case IR::Opcode::StoreBufferU32x4:
+    case IR::Opcode::StoreBufferU32Guarded:
+    case IR::Opcode::StoreBufferU32x2Guarded:
+    case IR::Opcode::StoreBufferU32x3Guarded:
+    case IR::Opcode::StoreBufferU32x4Guarded:
     case IR::Opcode::StoreBufferU64:
     case IR::Opcode::StoreBufferF32:
     case IR::Opcode::StoreBufferF32x2:
