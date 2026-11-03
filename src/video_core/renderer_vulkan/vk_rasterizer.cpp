@@ -2173,8 +2173,9 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                 // sampler, as in the earlier generic native implementation.
                 const AmdGpu::Sampler resolved_guest_sampler =
                     sampler_valid ? ssharp : AmdGpu::Sampler{};
-                const vk::Sampler vk_sampler = texture_cache.GetSampler(
-                    resolved_guest_sampler, liverpool->regs.ta_bc_base, sampler.is_depth);
+                const vk::Sampler vk_sampler =
+                    texture_cache.GetSampler(resolved_guest_sampler, liverpool->regs.ta_bc_base,
+                                             sampler.is_depth, sampler.is_integer);
                 ASSERT_MSG(static_cast<VkSampler>(vk_sampler) != VK_NULL_HANDLE,
                            "Vulkan sampler descriptor requires a valid VkSampler");
                 image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
@@ -2212,8 +2213,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                         liverpool->regs.ta_bc_base.Address());
             ssharp = AmdGpu::Sampler{};
         }
-        const auto vk_sampler =
-            texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base, sampler.is_depth);
+        const auto vk_sampler = texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base,
+                                                         sampler.is_depth, sampler.is_integer);
         image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
         auto& set_write = set_writes.emplace_back();
         set_write.dstSet = VK_NULL_HANDLE;
