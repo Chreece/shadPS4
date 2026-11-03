@@ -409,7 +409,7 @@
     {
       "id": "generic-descriptor-scalar-contract-recovery",
       "subsystem": "shader-scalar-flags-srt-indexed-textures",
-      "status": "PR121_LOCAL_VERIFIED_NATIVE_GAME_RETEST_REQUIRED_DRAFT",
+      "status": "PR121_NATIVE_BOTH_GAMES_CRASHED_FOLLOWUP_PR122_DRAFT",
       "related_prs": [
         121,
         120,
@@ -417,10 +417,27 @@
         118
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "PR120 native: GoW 8.013s Color1D abort; GoT no menu at 120s. PR121 has build/CPU/SPIR-V proof only; no post-change native game run.",
+      "observed_game_effects": "Native f6c7b43e: GoW SIGSEGV after17.483s at same-storage 1D/2D overlap; GoT SIGSEGV after29.960s at BC5/UbnormNz mapping. No menu/world/video recovery.",
       "negative_result_or_prohibition": "Do not equate capture/build success with game recovery or guess DS counter seed. Preserve historical menu/world binaries.",
-      "next_test": "Run immutable PR121 on current upstream with 120s maximum per game; verify GoW passes Color1D binding and record the actual next blocker, and verify whether GoT reaches its historical menu.",
+      "next_test": "PR122 restores missing same-storage growth and biased format mapping; retain PR121 work and await new native evidence.",
       "review": "reviews/20261102-generic-contract-recovery.json"
+    },
+    {
+      "id": "generic-texture-contract-restoration",
+      "subsystem": "texture-cache-layer-growth-biased-number-format",
+      "status": "PR122_BUILD_CPU_VERIFIED_NATIVE_RETEST_REQUIRED_DRAFT",
+      "related_prs": [
+        122,
+        121,
+        120,
+        118,
+        117
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No post-change game run. Fixes address both distinct f6c7b43e assertion sites.",
+      "negative_result_or_prohibition": "Do not claim menu/gameplay recovered from build/CPU results. Retain historical binaries and all earlier evidence; no per-title branches or guessed DS data.",
+      "next_test": "GoW passes same-storage overlap and records the next real blocker/ordered capture. GoT passes BC5/11 binding and must show its previous menu or better before restoration is claimed. A successful process/build is insufficient.",
+      "review": "reviews/20261102-texture-contract-restoration.json"
     }
   ]
 }
