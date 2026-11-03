@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "record_id": "gow-swapchain-fence-20261029T114554Z-3306207-reviewed",
+  "recorded_at": "2026-10-29",
+  "game_id": "CUSA34384",
+  "test_type": "SWAPCHAIN_FENCE_NATIVE_AND_NEXT_FATAL_SHADER_OPCODE",
+  "outer_archive": "gow-swapchain-fence-20261029T114554Z-3306207.tar.gz",
+  "outer_sha256": "64d078c233b5525c06a6be178b3ad3b88ec28231bf559f96b7462c9f469392a8",
+  "game_archive": "gow-vulkan-validation-game-20261029-114941-3306208.tar.gz",
+  "source_commit": "3dc905be9124247fe439b2f0a58670a26bdb3f0d",
+  "binary_sha256": "45a5dfa6b9b524b1e23bcfdd8f18191e7d2c72de205b1c0d82478058dbf803a2",
+  "host_gates": "SWAPCHAIN_WORKER_REENTRY=VERIFIED, baseline/corrected CPU9 cases PASS, native full build/link PASS",
+  "source_delta": "Verified vk_swapchain.cpp and vk_swapchain.h per-frame acquire fence wait/reset source changes and retained prior fixes",
+  "native_duration_seconds": 10.008,
+  "exit_signal": "SIGSEGV (-11), process exited before 118-second limit",
+  "first_runtime_validation_error": null,
+  "VUID_count": 0,
+  "SYNC_HAZARD_count": 0,
+  "device_lost_reported": false,
+  "runtime_layer": "VK_LAYER_KHRONOS_validation core+sync enabled, GPU assisted disabled",
+  "actual_fatal": "Unknown opcode DS_ORDERED_COUNT (1681, category = DataShare), then recompiler.cpp:48 EmitControlFlowGraph: Assertion Failed! Shader translation has failed",
+  "shader_preceding_fatal": "vk_pipeline_cache.cpp Compiling cs shader 0xdbaa6ae4",
+  "mode": "General isNeo: false",
+  "srt_counts": {
+    "phi_flow_dependent": 3906,
+    "walker_failed": 5592,
+    "readfirstlane_unhandled": 1616,
+    "getattribute_unhandled": 68
+  },
+  "screenshot": "None succeeded before exit (first scheduled at 11s)",
+  "gameplay": "NOT_RECOVERED",
+  "vram": "7.889GiB free prior; Ollama unloaded conditional 8GiB policy to 19.166GiB; qwen3.8-greek restored with original context8192; 8.631GiB after",
+  "restoration": [
+    "SOURCE_RESTORED",
+    "PR94_ELF_RESTORED"
+  ],
+  "protected_candidates_unchanged": true,
+  "pr": "https://github.com/Chreece/shadPS4/pull/115",
+  "upstream_pr_review": "shadps4-emu/shadPS4#5511 implements DS_ORDERED_COUNT as plain SharedAtomicIAdd(1) and maps Neo DS opcodes. In this actual run Neo=false. AMD ISA requires GDS ordered count update in wave creation order with offset0/offset1 and M0 control; plain atomic is not equivalent. Do not adopt as fully correct or claim gameplay recovery.",
+  "next_gate": "Inspect exact failed guest shader input cs_0xdbaa6ae4 and instruction control fields in already saved private profile shader dump, read-only; then design proper general ordered-count IR/backend. No unverified counter substitution or hash-based exception. SRT flood remains separate.",
+  "decision": "RETAIN_PROVEN_SWAPCHAIN_SYNCHRONIZATION_PATCH_AS_NATIVE_TESTED_CANDIDATE; NO_VUID_REPORTED_IN_10S; IMMEDIATE_CRASH_FROM_MISSING_DS_ORDERED_COUNT; NO_NEXT_GAME_RUN_WITHOUT_OPCODE_SEMANTICS"
+}

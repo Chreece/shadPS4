@@ -4,6 +4,8 @@
 #pragma once
 
 #include <deque>
+#include <functional>
+#include <span>
 #include <boost/container/small_vector.hpp>
 
 #include "common/enum.h"
@@ -43,6 +45,7 @@ enum class ObtainBufferFlags {
     IsTexelBuffer = 1 << 1,
     IgnoreStreamBuffer = 1 << 2,
     InvalidateTextureCache = 1 << 3,
+    SkipImageReadback = 1 << 4,
 };
 DECLARE_ENUM_FLAG_OPERATORS(ObtainBufferFlags)
 
@@ -120,8 +123,10 @@ public:
     /// Mark region as modified from the GPU
     void MarkRegionAsGpuModified(VAddr addr, size_t size);
 
+    void PrepareDmaSources(std::span<const VAddr> addresses);
+
     /// Synchronizes all buffers needed for DMA.
-    void SynchronizeDmaBuffers();
+    void SynchronizeDmaBuffers(const std::function<void(const Buffer*, u64, u64)>& on_read);
 
     /// Commits pending sparse buffer memory binds. Must be called before every scheduler submit.
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);
@@ -169,6 +174,7 @@ private:
     std::unique_ptr<Buffer> bda_pagetable_buffer;
     bool fault_process_pending{};
 
+    // Fast lookup hints only: a host view need not cover a whole 4-GiB guest page.
     std::array<const Buffer*, NUM_ARENA_PAGES> address_space{};
     std::deque<Buffer> arenas;
     std::vector<ArenaBinds> pending_binds;
@@ -177,14 +183,21 @@ private:
     struct Backing : public Interval {
         vk::DeviceMemory memory;
         u64 offset;
+        const Buffer* owner{}; // Stable BDA/view used when these blocks became resident.
         constexpr bool CanMergeWith(const Backing& other) const noexcept {
-            return memory == other.memory && offset + (end - start) == other.offset;
+            return memory == other.memory && owner == other.owner &&
+                   offset + (end - start) == other.offset;
         }
         constexpr Backing SubRange(u64 a, u64 b) const noexcept {
-            return {{a, b}, memory, offset + (a - start)};
+            return {{a, b}, memory, offset + (a - start), owner};
         }
     };
     IntervalList<Backing> resident_ranges;
+
+    void BindBackingToArena(const Buffer* arena, const Backing& backing);
+    void SynchronizeSparseAliases();
+    bool has_sparse_aliases{};
+    u64 max_buffer_size{};
 
     u32 arena_memory_type_index{};
     u32 block_size{};

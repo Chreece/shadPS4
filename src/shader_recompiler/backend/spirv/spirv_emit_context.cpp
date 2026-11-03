@@ -15,6 +15,7 @@
 
 #include <numbers>
 #include <string_view>
+#include <utility>
 
 namespace Shader::Backend::SPIRV {
 namespace {
@@ -822,6 +823,15 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
     case BufferType::GdsBuffer:
         Name(id, "gds_buffer");
         break;
+    case BufferType::OrderedGdsCheckpoint:
+        Name(id, "ordered_gds_guest_register_checkpoint");
+        break;
+    case BufferType::OrderedGdsCapture:
+        Name(id, "ordered_gds_live_gpu_capture_packet");
+        break;
+    case BufferType::OrderedGdsEpochAuth:
+        Name(id, "ordered_gds_verified_guest_epoch_and_wave_token");
+        break;
     case BufferType::Flatbuf:
         Name(id, "srt_flatbuf");
         break;
@@ -847,11 +857,11 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
 
 void EmitContext::DefineBuffers() {
     for (const auto& desc : info.buffers) {
-        const auto buf_sharp = desc.GetSharp(info);
-        // MTYPE class 3 marks guest buffers shared between invocations; shared
-        // memory lowered to a storage buffer needs the same guarantee.
+        // An internal checkpoint buffer has no guest SHARP address at all.
+        // Do not dereference uninitialized SharpFetch information for it.
         const bool is_coherent =
-            desc.buffer_type == BufferType::SharedMemory || buf_sharp.mtype == 3;
+            desc.buffer_type == BufferType::SharedMemory ||
+            (desc.buffer_type == BufferType::Guest && desc.GetSharp(info).mtype == 3);
 
         // Set indexes for special buffers.
         if (desc.buffer_type == BufferType::Flatbuf) {
@@ -860,6 +870,27 @@ void EmitContext::DefineBuffers() {
             bda_pagetable_index = buffers.size();
         } else if (desc.buffer_type == BufferType::FaultBuffer) {
             fault_buffer_index = buffers.size();
+        } else if (desc.buffer_type == BufferType::OrderedGdsCheckpoint) {
+            ASSERT_MSG(!has_ordered_gds_checkpoint_binding,
+                       "duplicate GCN checkpoint SSBO descriptor");
+            ordered_gds_checkpoint_index = buffers.size();
+            has_ordered_gds_checkpoint_binding = true;
+            ASSERT_MSG(desc.is_written && True(desc.used_types & IR::Type::U32),
+                       "invalid GCN checkpoint SSBO declaration");
+        } else if (desc.buffer_type == BufferType::OrderedGdsCapture) {
+            ASSERT_MSG(!has_ordered_gds_capture_binding,
+                       "duplicate GCN capture packet SSBO descriptor");
+            ordered_gds_capture_index = buffers.size();
+            has_ordered_gds_capture_binding = true;
+            ASSERT_MSG(desc.is_written && True(desc.used_types & IR::Type::U32),
+                       "invalid GCN capture packet SSBO declaration");
+        } else if (desc.buffer_type == BufferType::OrderedGdsEpochAuth) {
+            ASSERT_MSG(!has_ordered_gds_auth_binding,
+                       "duplicate GCN epoch authorization SSBO descriptor");
+            ordered_gds_auth_index = buffers.size();
+            has_ordered_gds_auth_binding = true;
+            ASSERT_MSG(!desc.is_written && True(desc.used_types & IR::Type::U32),
+                       "invalid read-only GCN epoch authorization SSBO");
         }
 
         // Define aliases depending on the shader usage.
@@ -1001,8 +1032,15 @@ void EmitContext::DefineImagesAndSamplers() {
 
         const u32 num_bindings = image_desc.NumBindings(info);
         Id pointee_type = image_type;
-        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex) {
+        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex ||
+            image_desc.is_guest_indexed) {
             pointee_type = TypeArray(pointee_type, ConstU32(num_bindings));
+        }
+        if (image_desc.is_guest_indexed) {
+            ASSERT(profile.supports_sampled_image_nonuniform_indexing);
+            AddCapability(spv::Capability::ShaderNonUniform);
+            AddCapability(spv::Capability::SampledImageArrayDynamicIndexing);
+            AddCapability(spv::Capability::SampledImageArrayNonUniformIndexing);
         }
 
         const Id pointer_type{TypePointer(spv::StorageClass::UniformConstant, pointee_type)};
@@ -1020,8 +1058,59 @@ void EmitContext::DefineImagesAndSamplers() {
             .is_integer = is_integer,
             .is_storage = is_storage,
             .mip_fallback_mode = mip_fallback_mode,
+            .image_array_size = num_bindings,
+            .is_guest_indexed = image_desc.is_guest_indexed,
+            .is_guest_mixed_indexed = image_desc.is_guest_mixed_indexed,
         });
         interfaces.push_back(id);
+
+        if (image_desc.is_guest_indexed) {
+            auto& typed = images.back();
+            typed.indexed_ids[0] = id;
+            typed.indexed_types[0] = image_type;
+            const u32 dimensions = image_desc.is_guest_mixed_indexed ? 3u : 1u;
+            for (u32 i = 1; i < image_desc.NumImageArrays(); ++i) {
+                const u32 dimension = i % dimensions;
+                const u32 numeric = i / dimensions;
+                const Id scalar = numeric == 0 ? F32[1] : numeric == 1 ? S32[1] : U32[1];
+                const Id typed_image =
+                    TypeImage(scalar, dimension == 1 ? spv::Dim::Dim3D : spv::Dim::Dim2D, false,
+                              dimension == 2, false, 1u, spv::ImageFormat::Unknown);
+                const Id array = TypeArray(typed_image, ConstU32(num_bindings));
+                const Id pointer = TypePointer(spv::StorageClass::UniformConstant, array);
+                const Id var = AddGlobalVariable(pointer, spv::StorageClass::UniformConstant);
+                Decorate(var, spv::Decoration::Binding, binding.unified);
+                binding.unified += num_bindings;
+                Decorate(var, spv::Decoration::DescriptorSet, 0u);
+                Name(var, fmt::format("{}_img{}_type{}", hw_stage, images.size() - 1, i));
+                interfaces.push_back(var);
+                typed.indexed_ids[i] = var;
+                typed.indexed_types[i] = typed_image;
+            }
+
+            const Id map_array = TypeRuntimeArray(U32[1]);
+            const Id map_struct = TypeStruct(map_array);
+            // The runtime u32 array can be shared with an ordinary buffer
+            // resource. Emit its layout decorations only on first use.
+            if (std::ranges::find(buf_type_ids, map_array.value, &Id::value) ==
+                buf_type_ids.end()) {
+                Decorate(map_array, spv::Decoration::ArrayStride, 4u);
+                Decorate(map_struct, spv::Decoration::Block);
+                MemberDecorate(map_struct, 0, spv::Decoration::Offset, 0u);
+                buf_type_ids.push_back(map_array);
+            }
+            const Id map_struct_ptr = TypePointer(spv::StorageClass::StorageBuffer, map_struct);
+            const Id map_var = AddGlobalVariable(map_struct_ptr, spv::StorageClass::StorageBuffer);
+            Decorate(map_var, spv::Decoration::Binding, binding.unified++);
+            Decorate(map_var, spv::Decoration::DescriptorSet, 0u);
+            Decorate(map_var, spv::Decoration::NonWritable);
+            Name(map_var, fmt::format("{}_img{}_numeric_metadata", hw_stage, images.size() - 1));
+            interfaces.push_back(map_var);
+
+            typed.indexed_metadata = map_var;
+            typed.indexed_metadata_pointer_type =
+                TypePointer(spv::StorageClass::StorageBuffer, U32[1]);
+        }
     }
     if (std::ranges::any_of(info.images,
                             [](const ImageResource& image) { return image.is_atomic; })) {
@@ -1034,11 +1123,23 @@ void EmitContext::DefineImagesAndSamplers() {
     sampler_type = TypeSampler();
     sampler_pointer_type = TypePointer(spv::StorageClass::UniformConstant, sampler_type);
     for (const auto& samp_desc : info.samplers) {
-        const Id id{AddGlobalVariable(sampler_pointer_type, spv::StorageClass::UniformConstant)};
-        Decorate(id, spv::Decoration::Binding, binding.unified++);
+        const u32 count = samp_desc.NumBindings(info);
+        Id pointer_type = sampler_pointer_type;
+        if (samp_desc.is_guest_indexed) {
+            ASSERT(profile.supports_sampler_array_nonuniform_indexing);
+            ASSERT(count >= 2u);
+            AddCapability(spv::Capability::ShaderNonUniform);
+            AddCapability(spv::Capability::SampledImageArrayNonUniformIndexing);
+            const Id array_type = TypeArray(sampler_type, ConstU32(count));
+            pointer_type = TypePointer(spv::StorageClass::UniformConstant, array_type);
+        }
+        const Id id{AddGlobalVariable(pointer_type, spv::StorageClass::UniformConstant)};
+        Decorate(id, spv::Decoration::Binding, binding.unified);
+        binding.unified += count;
         Decorate(id, spv::Decoration::DescriptorSet, 0U);
         Name(id, fmt::format("{}_{}{}", hw_stage, "samp", samplers.size()));
         samplers.push_back(id);
+        sampler_array_sizes.push_back(count);
         interfaces.push_back(id);
     }
 }
@@ -1203,9 +1304,17 @@ Id EmitContext::DefineGetBdaPointer() {
 
     // Get page BDA
     const auto page{OpShiftRightLogical(U64, address, caching_pagebits)};
-    const auto page32{OpUConvert(U32[1], page)};
     const auto& bda_buffer{buffers[bda_pagetable_index]};
     const auto [bda_buffer_id, bda_pointer_type] = bda_buffer.Alias(PointerType::U64);
+    const auto in_bounds{OpULessThan(U1[1], page, Constant(U64, profile.bda_page_count))};
+    const auto valid_label{OpLabel()};
+    const auto invalid_label{OpLabel()};
+    OpSelectionMerge(valid_label, spv::SelectionControlMask::MaskNone);
+    OpBranchConditional(in_bounds, valid_label, invalid_label);
+    AddLabel(invalid_label);
+    OpReturnValue(u64_zero_value);
+    AddLabel(valid_label);
+    const auto page32{OpUConvert(U32[1], page)};
     const auto bda_ptr{OpAccessChain(bda_pointer_type, bda_buffer_id, u32_zero_value, page32)};
     const auto bda{OpLoad(U64, bda_ptr)};
 
@@ -1223,9 +1332,8 @@ Id EmitContext::DefineGetBdaPointer() {
     const auto page_mask{OpShiftLeftLogical(U32[1], u32_one_value, page_mod32)};
     const auto fault_ptr{
         OpAccessChain(fault_pointer_type, fault_buffer_id, u32_zero_value, page_div32)};
-    const auto fault_value{OpLoad(U32[1], fault_ptr)};
-    const auto fault_value_masked{OpBitwiseOr(U32[1], fault_value, page_mask)};
-    OpStore(fault_ptr, fault_value_masked);
+    OpAtomicOr(U32[1], fault_ptr, ConstU32(static_cast<u32>(spv::Scope::Device)), u32_zero_value,
+               page_mask);
 
     // Return null pointer
     const auto fallback_result{u64_zero_value};

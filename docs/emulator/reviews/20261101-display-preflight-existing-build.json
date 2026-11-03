@@ -1,0 +1,195 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-display-preflight-existing-build-20261101",
+  "timestamp_utc": "2026-11-01T14:23:05.940013+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pull_request": 118,
+  "base_source_commit": "dbf5c545138b5bd46af1b0fb174121d563c5f1a2",
+  "upstream_commit": "55a97e46955b2ece7c7ff8bddeb043ca57a506c6",
+  "archives": [
+    {
+      "name": "universal-upstream-20261101T135800Z-794754.tar.gz",
+      "bytes": 13249922,
+      "sha256": "dff29a673a6b8738b1432e654d02a8d5f8d2cb9bf4083d9417726ab3302974d7"
+    },
+    {
+      "name": "universal-graphics-20261101T141403Z-1024406.tar.gz",
+      "bytes": 53195,
+      "sha256": "56008168ae4bbecac994ebe119ad7aa1b17394be0b457abcf9f84998b62391e7"
+    },
+    {
+      "name": "universal-graphics-20261101T141413Z-1026434.tar.gz",
+      "bytes": 53204,
+      "sha256": "a60ef722bb2e6b289994ed95f1ad8c4288dccfe43271be3af0596996e1d091a9"
+    },
+    {
+      "name": "universal-two-games-20261101T135800Z-794747.tar.gz",
+      "bytes": 13398563,
+      "sha256": "08773a9cab2758a798b7473ffab022d5f297454f848cfa8bc3b209e820cbc52d"
+    }
+  ],
+  "nested_archive_deduplication": "All three individual uploaded archives match their nested batch copies byte-for-byte; each run is journaled once. Previously reviewed recovered GoW content is not a new game trial.",
+  "host_records": [
+    {
+      "schema_version": 2,
+      "record_id": "universal-upstream-20261101T135800Z-794754",
+      "timestamp_utc": "2026-11-01T14:14:02.756000+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "stage": "COMPLETE_BUILD_ONLY",
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "exit_code": 0,
+      "requested_commit": "dbf5c545138b5bd46af1b0fb174121d563c5f1a2",
+      "source_commit": "dbf5c545138b5bd46af1b0fb174121d563c5f1a2",
+      "upstream_commit": "55a97e46955b2ece7c7ff8bddeb043ca57a506c6",
+      "game_launched": false,
+      "graphics_verified": false,
+      "installed_binary_changed": false,
+      "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261101T135800Z-794754.tar.gz",
+      "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+      "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-dbf5c545138b/build/shadps4",
+      "binary_sha256": "b34a9a539b88c5fb0dab9dc1cd597ca98f88e9049dbba1ed030671a2cb51d32d",
+      "pull_request": 118,
+      "uploaded_archive_sha256": "dff29a673a6b8738b1432e654d02a8d5f8d2cb9bf4083d9417726ab3302974d7",
+      "review": "docs/emulator/reviews/20261101-display-preflight-existing-build.json",
+      "reviewed_result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "review_note": "GCC14 full native build, all existing CPU suites and native startup checks passed for the fault-residency and indirect-read fixes. Both later game requests stopped before launch on display preflight."
+    },
+    {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261101T141403Z-1024406",
+      "scope": "UNIVERSAL_SHADPS4",
+      "timestamp_utc": "2026-11-01T14:14:03.150591+00:00",
+      "source_commit": "dbf5c545138b5bd46af1b0fb174121d563c5f1a2",
+      "binary_sha256": "b34a9a539b88c5fb0dab9dc1cd597ca98f88e9049dbba1ed030671a2cb51d32d",
+      "game_launched": false,
+      "graphics_verified": false,
+      "installed_binary_changed": false,
+      "evidence": "/home/chreece/projects/shadps4/logs/universal-graphics-20261101T141403Z-1024406.tar.gz",
+      "result": "PREFLIGHT_FAILED",
+      "context_games": [
+        "CUSA34384"
+      ],
+      "build_record": "/home/chreece/projects/shadps4/logs/universal-upstream-20261101T135800Z-794754/result.json",
+      "recovered_captures": [
+        "universal-graphics-20261101T122954Z-3617529"
+      ],
+      "error": "Command '['xdpyinfo', '-display', ':0']' timed out after 8 seconds",
+      "tested_games": [],
+      "stop_remaining_tests": false,
+      "shader_diagnostics": {
+        "dump_enabled": true,
+        "blocked_hashes": [],
+        "saved_ir": [],
+        "saved_bytes": 0,
+        "limit_bytes": 20971520,
+        "limit_files": 48
+      },
+      "exit_code": 1,
+      "pull_request": 118,
+      "uploaded_archive_sha256": "56008168ae4bbecac994ebe119ad7aa1b17394be0b457abcf9f84998b62391e7",
+      "review": "docs/emulator/reviews/20261101-display-preflight-existing-build.json",
+      "reviewed_result": "BLOCKED_DISPLAY_PREFLIGHT_TIMEOUT_GAME_NOT_LAUNCHED",
+      "review_note": "Display :0 did not answer xdpyinfo within eight seconds. No game was launched and no new GPU/page-fault or graphics result exists. The original stop_remaining_tests=false field is retained; the runner now treats this as a shared preflight stop."
+    },
+    {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261101T141413Z-1026434",
+      "scope": "UNIVERSAL_SHADPS4",
+      "timestamp_utc": "2026-11-01T14:14:13.890221+00:00",
+      "source_commit": "dbf5c545138b5bd46af1b0fb174121d563c5f1a2",
+      "binary_sha256": "b34a9a539b88c5fb0dab9dc1cd597ca98f88e9049dbba1ed030671a2cb51d32d",
+      "game_launched": false,
+      "graphics_verified": false,
+      "installed_binary_changed": false,
+      "evidence": "/home/chreece/projects/shadps4/logs/universal-graphics-20261101T141413Z-1026434.tar.gz",
+      "result": "PREFLIGHT_FAILED",
+      "context_games": [
+        "CUSA11456"
+      ],
+      "build_record": "/home/chreece/projects/shadps4/logs/universal-upstream-20261101T135800Z-794754/result.json",
+      "recovered_captures": [
+        "universal-graphics-20261101T122954Z-3617529"
+      ],
+      "error": "Command '['xdpyinfo', '-display', ':0']' timed out after 8 seconds",
+      "tested_games": [],
+      "stop_remaining_tests": false,
+      "shader_diagnostics": {
+        "dump_enabled": true,
+        "blocked_hashes": [],
+        "saved_ir": [],
+        "saved_bytes": 0,
+        "limit_bytes": 20971520,
+        "limit_files": 48
+      },
+      "exit_code": 1,
+      "pull_request": 118,
+      "uploaded_archive_sha256": "a60ef722bb2e6b289994ed95f1ad8c4288dccfe43271be3af0596996e1d091a9",
+      "review": "docs/emulator/reviews/20261101-display-preflight-existing-build.json",
+      "reviewed_result": "BLOCKED_DISPLAY_PREFLIGHT_TIMEOUT_GAME_NOT_LAUNCHED",
+      "review_note": "Display :0 did not answer xdpyinfo within eight seconds. No game was launched and no new GPU/page-fault or graphics result exists. The original stop_remaining_tests=false field is retained; the runner now treats this as a shared preflight stop."
+    }
+  ],
+  "build_evidence": {
+    "compiler": "g++-14 (Debian 14.2.0-19) 14.2.0",
+    "source_commit": "dbf5c545138b5bd46af1b0fb174121d563c5f1a2",
+    "binary_sha256": "b34a9a539b88c5fb0dab9dc1cd597ca98f88e9049dbba1ed030671a2cb51d32d",
+    "logs": [
+      {
+        "path": "compiler.txt",
+        "sha256": "c064927ebf13f118600430b79a36d3f2a52cb8fe3c097eb4aa6e10e25cde5075"
+      },
+      {
+        "path": "build.log",
+        "sha256": "a2305a01333c9bc842be791f8b1b8312799a9e395175e0c51b1c0040598f769b"
+      },
+      {
+        "path": "cpu-tests.log",
+        "sha256": "422abb08163a4d91cbc81ed62e1f41263a7a498d3337c91f844e89ef6c6a1c17"
+      },
+      {
+        "path": "native-startup.log",
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9"
+      }
+    ],
+    "result": "PASS full native compilation/link; 31 CTest cases; seven renderer contracts; 10418 SRT JIT checks; sparse 288 ranges/seven scenarios in both modes; descriptor/VMA/HLE ABI checks; three native CLI/user-directory scenarios. GPU not run."
+  },
+  "diagnosis": {
+    "confirmed": "Both game requests failed the same eight-second xdpyinfo probe before game launch. The runner retained no probe output or current display/kernel diagnostics and did not stop the second game after a shared display failure.",
+    "unknown": "The archives do not establish whether Xorg, an extension query, authentication, or a stalled driver is responsible. The earlier GPU context loss is historical evidence, not proof of the current display cause.",
+    "new_emulator_behavior_evidence": false
+  },
+  "changes": [
+    "Capture bounded xdpyinfo stdout/stderr, exit status and timeout status.",
+    "Classify DISPLAY_UNRESPONSIVE or DISPLAY_UNAVAILABLE, preserve stop_remaining_tests through finalization, and stop the batch after this shared failure.",
+    "On failed display preflight only, collect selected Xorg/Xwayland/Sunshine/shadPS4 process status and wait channel, local X socket paths, authority-file path/existence without cookies, xset query (3 seconds), last 600 accessible kernel journal entries from the current boot (5 seconds), and bounded readable Xorg log tails. No sudo, driver probe or restart.",
+    "Add existing-build mode to the pinned batch; retain source/ELF/build-record/observer integrity checks. Download the separately pinned and checksum-verified harness and record its commit and SHA256.",
+    "Reuse the already verified dbf5c545 native binary. If display preflight passes, run the usual GoW then GoT observations without automatic input; otherwise return one diagnostic archive before any game launch."
+  ],
+  "validation": {
+    "display_helper_checks": "PASS 10 cases, including actual owned child success/nonzero/timeout/absent executable/output bounds, three X11 result branches, diagnostic failure preservation, and bounded read-only health-command selection.",
+    "complete_runner_checks": "PASS 3 cases (timeout, denied display, missing xdpyinfo): no game/profile/VRAM operation after failed display; stop_remaining_tests survives finalization; global and per-game journals and all diagnostic archive members preserved.",
+    "batch_checks": "PASS 12 cases across build and existing modes: normal two-game sequence, GPU loss, unconfirmed child stop, missing evidence, shared display failure, and invalid downloaded-runner checksum. Existing mode never invokes the build script. Native-source and harness-source pins are checked independently.",
+    "existing_runner_orchestration": "PASS 5 cases: complete capture, missing screenshots, changed binary, low-VRAM model unload, observer exception.",
+    "existing_build_record_checks": "PASS 2 cases: matching successful build record accepted; missing record rejected.",
+    "python_syntax_bash_syntax_git_diff_check": "PASS",
+    "fixture_setup_failures": [
+      "Initial helper fixture expected an incorrectly formatted display suffix; the error text and assertion were made explicit (display=:0).",
+      "Existing temporary mocks returned only a subprocess returncode; updated them to include byte stdout/stderr required by the new capture path. No emulator production code changed."
+    ],
+    "native_emulator_changed": false,
+    "new_host_display_diagnostics": "PENDING_HOST",
+    "new_game_graphics": "NOT_RUN; pending responsive display and existing-build retry"
+  },
+  "runner_files": [
+    {
+      "path": "scripts/shadps4-universal-two-game-check.sh",
+      "sha256": "65537c95cbfab54123f6d1b4444bc259a790299ff226e15b45f766f97868fa0e"
+    },
+    {
+      "path": "tools/development/run_universal_verified_graphics.py",
+      "sha256": "906fd75303c240560c9b78415b1fff0899455047227eab466f992dd949f1c32f"
+    }
+  ],
+  "decision": "REUSE_VERIFIED_NATIVE_BUILD; DIAGNOSE_DISPLAY_AND_RETRY_BOTH_GAMES_IF_RESPONSIVE; KEEP_MAIN_UNCHANGED",
+  "graphics_verified": false
+}

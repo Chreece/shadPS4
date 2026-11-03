@@ -143,10 +143,18 @@ Id ImageAtomicU32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id va
                   Id (Sirit::Module::*atomic_func)(Id, Id, Id, Id, Id)) {
     const auto& texture = ctx.images[handle & 0xFFFF];
     const Id fixed_coords{FixImageAtomicCoords(ctx, coords, texture.view_type)};
+    // Integer image atomics must use the image's scalar signedness, not the
+    // unsigned bit-pattern type used by the IR. Bitcasts keep every guest bit.
+    const bool is_signed = texture.data_types->Get(1).value == ctx.S32[1].value;
+    const Id scalar_type = is_signed ? ctx.S32[1] : ctx.U32[1];
+    const Id pointer_type =
+        is_signed ? ctx.TypePointer(spv::StorageClass::Image, scalar_type) : ctx.image_u32;
     const Id pointer{
-        ctx.OpImageTexelPointer(ctx.image_u32, texture.id, fixed_coords, ctx.ConstU32(0U))};
+        ctx.OpImageTexelPointer(pointer_type, texture.id, fixed_coords, ctx.ConstU32(0U))};
+    const Id operand = is_signed ? ctx.OpBitcast(scalar_type, value) : value;
     const auto [scope, semantics]{AtomicArgs(ctx)};
-    return (ctx.*atomic_func)(ctx.U32[1], pointer, scope, semantics, value);
+    const Id result = (ctx.*atomic_func)(scalar_type, pointer, scope, semantics, operand);
+    return is_signed ? ctx.OpBitcast(ctx.U32[1], result) : result;
 }
 
 Id ImageAtomicF32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value,
@@ -159,15 +167,49 @@ Id ImageAtomicF32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id va
     return (ctx.*atomic_func)(ctx.F32[1], pointer, scope, semantics, value);
 }
 
+Id ImageAtomicF32Emulated(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value,
+                          bool is_min) {
+    const Id bits = ctx.OpBitcast(ctx.U32[1], value);
+    const Id negative =
+        ctx.OpINotEqual(ctx.U1[1], ctx.OpBitwiseAnd(ctx.U32[1], bits, ctx.ConstU32(0x80000000u)),
+                        ctx.u32_zero_value);
+    const Id negative_label = ctx.OpLabel();
+    const Id positive_label = ctx.OpLabel();
+    const Id merge_label = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge_label, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(negative, negative_label, positive_label);
+    ctx.AddLabel(negative_label);
+    const Id negative_result =
+        ImageAtomicU32(ctx, inst, handle, coords, bits,
+                       is_min ? &Sirit::Module::OpAtomicUMax : &Sirit::Module::OpAtomicUMin);
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(positive_label);
+    const Id positive_result =
+        ImageAtomicU32(ctx, inst, handle, coords, bits,
+                       is_min ? &Sirit::Module::OpAtomicSMin : &Sirit::Module::OpAtomicSMax);
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(merge_label);
+    return ctx.OpBitcast(ctx.F32[1], ctx.OpPhi(ctx.U32[1], negative_result, negative_label,
+                                               positive_result, positive_label));
+}
+
 Id ImageAtomicU32CmpSwap(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value,
                          Id cmp_value,
                          Id (Sirit::Module::*atomic_func)(Id, Id, Id, Id, Id, Id, Id)) {
     const auto& texture = ctx.images[handle & 0xFFFF];
     const Id fixed_coords{FixImageAtomicCoords(ctx, coords, texture.view_type)};
+    const bool is_signed = texture.data_types->Get(1).value == ctx.S32[1].value;
+    const Id scalar_type = is_signed ? ctx.S32[1] : ctx.U32[1];
+    const Id pointer_type =
+        is_signed ? ctx.TypePointer(spv::StorageClass::Image, scalar_type) : ctx.image_u32;
     const Id pointer{
-        ctx.OpImageTexelPointer(ctx.image_u32, texture.id, fixed_coords, ctx.ConstU32(0U))};
+        ctx.OpImageTexelPointer(pointer_type, texture.id, fixed_coords, ctx.ConstU32(0U))};
+    const Id operand = is_signed ? ctx.OpBitcast(scalar_type, value) : value;
+    const Id comparator = is_signed ? ctx.OpBitcast(scalar_type, cmp_value) : cmp_value;
     const auto [scope, semantics]{AtomicArgs(ctx)};
-    return (ctx.*atomic_func)(ctx.U32[1], pointer, scope, semantics, semantics, value, cmp_value);
+    const Id result =
+        (ctx.*atomic_func)(scalar_type, pointer, scope, semantics, semantics, operand, comparator);
+    return is_signed ? ctx.OpBitcast(ctx.U32[1], result) : result;
 }
 } // Anonymous namespace
 
@@ -419,19 +461,7 @@ Id EmitImageAtomicFMax32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords
         return ImageAtomicF32(ctx, inst, handle, coords, value, &Sirit::Module::OpAtomicFMax);
     }
 
-    const auto u32_value = ctx.OpBitcast(ctx.U32[1], value);
-    // OpSelect requires a bool condition; produce one by comparing the sign bit to 0.
-    const auto sign_bit_set = ctx.OpINotEqual(
-        ctx.U1[1],
-        ctx.OpBitFieldUExtract(ctx.U32[1], u32_value, ctx.ConstU32(31u), ctx.ConstU32(1u)),
-        ctx.u32_zero_value);
-
-    const auto result = ctx.OpSelect(
-        ctx.F32[1], sign_bit_set,
-        EmitBitCastF32U32(ctx, EmitImageAtomicUMin32(ctx, inst, handle, coords, u32_value)),
-        EmitBitCastF32U32(ctx, EmitImageAtomicSMax32(ctx, inst, handle, coords, u32_value)));
-
-    return result;
+    return ImageAtomicF32Emulated(ctx, inst, handle, coords, value, false);
 }
 
 Id EmitImageAtomicFMin32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value) {
@@ -439,19 +469,7 @@ Id EmitImageAtomicFMin32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords
         return ImageAtomicF32(ctx, inst, handle, coords, value, &Sirit::Module::OpAtomicFMin);
     }
 
-    const auto u32_value = ctx.OpBitcast(ctx.U32[1], value);
-    // OpSelect requires a bool condition; produce one by comparing the sign bit to 0.
-    const auto sign_bit_set = ctx.OpINotEqual(
-        ctx.U1[1],
-        ctx.OpBitFieldUExtract(ctx.U32[1], u32_value, ctx.ConstU32(31u), ctx.ConstU32(1u)),
-        ctx.u32_zero_value);
-
-    const auto result = ctx.OpSelect(
-        ctx.F32[1], sign_bit_set,
-        EmitBitCastF32U32(ctx, EmitImageAtomicUMax32(ctx, inst, handle, coords, u32_value)),
-        EmitBitCastF32U32(ctx, EmitImageAtomicSMin32(ctx, inst, handle, coords, u32_value)));
-
-    return result;
+    return ImageAtomicF32Emulated(ctx, inst, handle, coords, value, true);
 }
 
 Id EmitImageAtomicInc32(EmitContext&, IR::Inst*, u32, Id, Id) {
