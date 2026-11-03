@@ -822,6 +822,15 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
     case BufferType::GdsBuffer:
         Name(id, "gds_buffer");
         break;
+    case BufferType::OrderedGdsCheckpoint:
+        Name(id, "ordered_gds_guest_register_checkpoint");
+        break;
+    case BufferType::OrderedGdsCapture:
+        Name(id, "ordered_gds_live_gpu_capture_packet");
+        break;
+    case BufferType::OrderedGdsEpochAuth:
+        Name(id, "ordered_gds_verified_guest_epoch_and_wave_token");
+        break;
     case BufferType::Flatbuf:
         Name(id, "srt_flatbuf");
         break;
@@ -847,11 +856,11 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
 
 void EmitContext::DefineBuffers() {
     for (const auto& desc : info.buffers) {
-        const auto buf_sharp = desc.GetSharp(info);
-        // MTYPE class 3 marks guest buffers shared between invocations; shared
-        // memory lowered to a storage buffer needs the same guarantee.
+        // An internal checkpoint buffer has no guest SHARP address at all.
+        // Do not dereference uninitialized SharpFetch information for it.
         const bool is_coherent =
-            desc.buffer_type == BufferType::SharedMemory || buf_sharp.mtype == 3;
+            desc.buffer_type == BufferType::SharedMemory ||
+            (desc.buffer_type == BufferType::Guest && desc.GetSharp(info).mtype == 3);
 
         // Set indexes for special buffers.
         if (desc.buffer_type == BufferType::Flatbuf) {
@@ -860,6 +869,27 @@ void EmitContext::DefineBuffers() {
             bda_pagetable_index = buffers.size();
         } else if (desc.buffer_type == BufferType::FaultBuffer) {
             fault_buffer_index = buffers.size();
+        } else if (desc.buffer_type == BufferType::OrderedGdsCheckpoint) {
+            ASSERT_MSG(!has_ordered_gds_checkpoint_binding,
+                       "duplicate GCN checkpoint SSBO descriptor");
+            ordered_gds_checkpoint_index = buffers.size();
+            has_ordered_gds_checkpoint_binding = true;
+            ASSERT_MSG(desc.is_written && True(desc.used_types & IR::Type::U32),
+                       "invalid GCN checkpoint SSBO declaration");
+        } else if (desc.buffer_type == BufferType::OrderedGdsCapture) {
+            ASSERT_MSG(!has_ordered_gds_capture_binding,
+                       "duplicate GCN capture packet SSBO descriptor");
+            ordered_gds_capture_index = buffers.size();
+            has_ordered_gds_capture_binding = true;
+            ASSERT_MSG(desc.is_written && True(desc.used_types & IR::Type::U32),
+                       "invalid GCN capture packet SSBO declaration");
+        } else if (desc.buffer_type == BufferType::OrderedGdsEpochAuth) {
+            ASSERT_MSG(!has_ordered_gds_auth_binding,
+                       "duplicate GCN epoch authorization SSBO descriptor");
+            ordered_gds_auth_index = buffers.size();
+            has_ordered_gds_auth_binding = true;
+            ASSERT_MSG(!desc.is_written && True(desc.used_types & IR::Type::U32),
+                       "invalid read-only GCN epoch authorization SSBO");
         }
 
         // Define aliases depending on the shader usage.
@@ -1203,9 +1233,17 @@ Id EmitContext::DefineGetBdaPointer() {
 
     // Get page BDA
     const auto page{OpShiftRightLogical(U64, address, caching_pagebits)};
-    const auto page32{OpUConvert(U32[1], page)};
     const auto& bda_buffer{buffers[bda_pagetable_index]};
     const auto [bda_buffer_id, bda_pointer_type] = bda_buffer.Alias(PointerType::U64);
+    const auto in_bounds{OpULessThan(U1[1], page, Constant(U64, profile.bda_page_count))};
+    const auto valid_label{OpLabel()};
+    const auto invalid_label{OpLabel()};
+    OpSelectionMerge(valid_label, spv::SelectionControlMask::MaskNone);
+    OpBranchConditional(in_bounds, valid_label, invalid_label);
+    AddLabel(invalid_label);
+    OpReturnValue(u64_zero_value);
+    AddLabel(valid_label);
+    const auto page32{OpUConvert(U32[1], page)};
     const auto bda_ptr{OpAccessChain(bda_pointer_type, bda_buffer_id, u32_zero_value, page32)};
     const auto bda{OpLoad(U64, bda_ptr)};
 
@@ -1223,9 +1261,8 @@ Id EmitContext::DefineGetBdaPointer() {
     const auto page_mask{OpShiftLeftLogical(U32[1], u32_one_value, page_mod32)};
     const auto fault_ptr{
         OpAccessChain(fault_pointer_type, fault_buffer_id, u32_zero_value, page_div32)};
-    const auto fault_value{OpLoad(U32[1], fault_ptr)};
-    const auto fault_value_masked{OpBitwiseOr(U32[1], fault_value, page_mask)};
-    OpStore(fault_ptr, fault_value_masked);
+    OpAtomicOr(U32[1], fault_ptr, ConstU32(static_cast<u32>(spv::Scope::Device)), u32_zero_value,
+               page_mask);
 
     // Return null pointer
     const auto fallback_result{u64_zero_value};
