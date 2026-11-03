@@ -69,6 +69,8 @@ protected:
     const Shader::Profile& profile;
     vk::UniquePipeline pipeline;
     vk::UniquePipelineLayout pipeline_layout;
+    void ValidateDescriptorLimits(std::span<const vk::DescriptorSetLayoutBinding> bindings) const;
+
     vk::UniqueDescriptorSetLayout desc_layout;
     std::array<const Shader::Info*, Shader::MaxStageTypes> stages{};
     bool uses_push_descriptors{};

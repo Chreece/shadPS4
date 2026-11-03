@@ -1,0 +1,224 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-indexed-renderer-restoration-20261102",
+  "recorded_at": "2026-11-02T17:24:54.493789+00:00",
+  "upstream_commit": "2183807e592b36d4440384878165b43d930c1dee",
+  "retained_base_commit": "6c5aef67f3eff13722bc53db9f2c367f0b05be47",
+  "runtime_commit": "2c019ccabe2245e37ec4e0488a6608e6634a0597",
+  "runtime_tree": "966ff989684d10b56054f0ac2c5d04f18cc51380",
+  "local_build_commit": "a73d564a113d512ce45a636225e07c880a9644b8",
+  "local_binary_sha256": "bf0b6495686d8ffb6eb055034f82ccd553fde89087cf8793434b28e39d6f2dbf",
+  "source_capture": {
+    "archive": "got-shader-parity-20261102T164131085649Z.tar.gz",
+    "archive_sha256": "01d849df10c8b49901ddb9b43a08ed1884c1726625597b435c08ab36398179d7",
+    "capture_complete": true,
+    "file_hashes_verified": 678,
+    "snapshots": {
+      "captured_current": 228,
+      "captured_head": 225,
+      "captured_c925": 225
+    },
+    "head_unchanged": true,
+    "source_changed_by_script": false,
+    "whole_source_to_historical_binary_proven": false,
+    "files_matching_195934_archive": [
+      {
+        "path": "src/shader_recompiler/ir/passes/resource_discover_pass.cpp",
+        "sha256": "afbce4084a993892a0cae1d48f994436eaf102f896f1c9970bf264559ff8ce34"
+      },
+      {
+        "path": "src/shader_recompiler/ir/passes/resource_patching_pass.cpp",
+        "sha256": "0d390169a2fbec0cc9117cf9a97a959a356756da9f8a80051a08f579b8134d24"
+      },
+      {
+        "path": "src/shader_recompiler/ir/passes/indexed_sample_eligibility.h",
+        "sha256": "40b27dab45cf2fd4d3b5d000bfd811c6e6bcfe0cda3a60770981b20f4e8fb90d"
+      },
+      {
+        "path": "src/video_core/buffer_cache/buffer_cache.cpp",
+        "sha256": "4c9d2593da604e32ebc22451fe5a33f1d5afed07eb4a7f50827aa0125365667e"
+      }
+    ],
+    "protected_binaries": {
+      "15h40_typed_positive": {
+        "expected": "be3e8c12cf91117917d355d41a03e227a45cd338981d672de4f0ca2c57b68f28",
+        "actual": "be3e8c12cf91117917d355d41a03e227a45cd338981d672de4f0ca2c57b68f28",
+        "match": true
+      },
+      "19h59_perf_positive": {
+        "expected": "395682a478f04e4f4a5a2da89488e90fe54ccf502dc23cbecf716a7adeac4e8b",
+        "actual": "395682a478f04e4f4a5a2da89488e90fe54ccf502dc23cbecf716a7adeac4e8b",
+        "match": true
+      },
+      "20h27_cbmask_experimental": {
+        "expected": "63fe630faed40faf2a7dddde87d1084e5dade151add8f4c0b206f86d9caa69b9",
+        "actual": "63fe630faed40faf2a7dddde87d1084e5dade151add8f4c0b206f86d9caa69b9",
+        "match": true
+      }
+    }
+  },
+  "changes": [
+    "Recovered exact constant descriptor masks and direct finite Phi alternatives; selectors remain GPU values.",
+    "Recovered dynamic scalar buffer reads with 64-bit address/length arithmetic and documented CIK scalar descriptor fields.",
+    "Recovered GPU-indexed image/sampler tables, typed 2D/3D/cube sampling, table coherence and dynamically sized Vulkan writes.",
+    "Replaced recovered fixed 256/128 dimension capacities with complete-table capacities; removed silent 4 GiB estimated-image cutoff.",
+    "Added exact aggregate descriptor-limit checks and recompilation for changed table sizes.",
+    "Retained bounded uniform stores, BDA page bounds/source residency, DMA synchronization, exact descriptor pools, occlusion, upstream fixes and ordered-GDS capture state.",
+    "Invalidated binary cache version 18 and metadata version 10; maintained existing contract check to accept newer metadata versions."
+  ],
+  "not_ported": [
+    "Legacy wave UMin fold: active/helper-lane equivalence not established.",
+    "Unwrapping ReadFirstLane around a Phi to select per-lane resources: equivalence not established.",
+    "Legacy integer sampler filter override or float binding of integer image formats."
+  ],
+  "explicit_current_limits": [
+    "Indexed integer numeric arrays and nontrivial number conversions are rejected.",
+    "Mixed dimensions currently require fragment implicit LOD without offset/explicit derivatives; other dimensions fail explicitly.",
+    "Per-entry sampler coordinate/gamma conversions are rejected.",
+    "A complete table must fit the implementation capacity (32768 entries) and actual Vulkan stage/set limits.",
+    "Native memory residency, pixel output and GPU reset cause remain unverified.",
+    "GoW DS_ORDERED_COUNT first-pass capture remains available; authentic counter seed, guest reentry and final continuation remain incomplete."
+  ],
+  "validation": {
+    "native_build": "PASS GCC14 CMake Ninja compilation and link",
+    "native_cli": "PASS 3 real executable user-directory scenarios",
+    "cpu_suites": "PASS 31 CTest cases in nine suites; seven source contracts; SRT, sparse, descriptor pool, contiguous-VMA and HLE ABI fixtures passed",
+    "resource_discovery": "PASS 12 checks using production ResourceDiscoverPass, SharpFetch and table compatibility",
+    "spirv": [
+      {
+        "path": "/tmp/nov2c-shader-0.spv",
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "path": "/tmp/nov2c-shader-1.spv",
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "path": "/tmp/nov2c-shader-2.spv",
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "path": "/tmp/nov2c-shader-3.spv",
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "path": "/tmp/nov2c-shader-4.spv",
+        "exit": 0,
+        "output": ""
+      }
+    ],
+    "spirv_scope": [
+      "mixed 2D/3D/cube with uniform sampler",
+      "27651-entry mixed table with indexed samplers",
+      "indexed 2D implicit LOD",
+      "indexed 2D explicit gradients",
+      "dynamic scalar descriptor GPU buffer read"
+    ],
+    "gpu_run": false,
+    "game_launched": false,
+    "graphics_verified": false
+  },
+  "attempts": [
+    {
+      "stage": "selective_source_preparation",
+      "result": "FAILED_THEN_FIXED",
+      "detail": "Hunk-index mismatch before source port completed."
+    },
+    {
+      "stage": "first_native_build",
+      "result": "FAILED_THEN_FIXED",
+      "detail": "Sirit has no ConstU64 method; used existing Constant API."
+    },
+    {
+      "stage": "first_cpu_run",
+      "result": "FAILED_THEN_FIXED",
+      "detail": "Existing source contract required metadata version exactly 9; changed existing minimum-version check to allow newer versions. Nine CTest suites passed before this failure."
+    },
+    {
+      "stage": "first_emitter_probe_link",
+      "result": "FAILED_THEN_FIXED",
+      "detail": "Attempted linking before the failed emitter object was rebuilt."
+    },
+    {
+      "stage": "resource_probe_compile",
+      "result": "FAILED_THEN_FIXED",
+      "detail": "Temporary fixture used wrong AppendNewInst signature."
+    },
+    {
+      "stage": "resource_probe_execution",
+      "result": "FAILED_THEN_FIXED",
+      "detail": "Temporary fixture omitted post_order_blocks; production dominance pass requires a nonempty CFG. Corrected valid CFG passes all 12 checks."
+    },
+    {
+      "stage": "publication_preparation",
+      "result": "FAILED_THEN_FIXED",
+      "detail": "Large tool read truncated JSON; switched to bounded chunks and verified every Git blob hash."
+    }
+  ],
+  "hardware_probe": {
+    "library_file_id": "libfile_4b06a89d71cc8191afc9a803880d4ea2",
+    "filename": "descriptor-read-openorbis.zip",
+    "sha256": "e2ed2f1e67607da1243f658caaa66af5c85017f215d8a7681605dfbee3dcdfaa",
+    "assembled": "PASS LLVM18 bonaire",
+    "c_syntax": "PASS -Wall -Wextra -Werror",
+    "sdk_linked": false,
+    "hardware_run": false,
+    "scope": "Six mapped in-bounds scalar descriptor selection/mask dispatches; not a graphics or ordered-GDS test."
+  },
+  "source_file_sha256": {
+    "src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp": "20f5043644cfc66aa2ddb3f45388c20719000977685dcd58253d1411c4d87bbb",
+    "src/shader_recompiler/backend/spirv/emit_spirv_image.cpp": "53b12ce57ef35917fbb9ff7f7d76a365c75f1c435637b4402d1cb3ea1285d901",
+    "src/shader_recompiler/backend/spirv/emit_spirv_instructions.h": "569eaa1789f035c4223a60b61ce80be8867c0aeccd281d0ca6404c3433fba3b2",
+    "src/shader_recompiler/backend/spirv/spirv_emit_context.cpp": "b722df2951cb990a355a4486ea5109c8d3e0ae8427a55b19ff3ab46a5a66a0a1",
+    "src/shader_recompiler/backend/spirv/spirv_emit_context.h": "bb2bb4bf0c695e9e1cbbde940f5f7eee9492d42e3a32e7f41133a280171d8b34",
+    "src/shader_recompiler/compact_image_indices.h": "0716d747675ace7d5631c09b5cb47b914fe77901f56ea429f723cf547f8a8525",
+    "src/shader_recompiler/guest_descriptor_coherence.h": "6f388aac47f0423c11415615d7c68a07bdd60da76a1c749a19a0d9f04c70a569",
+    "src/shader_recompiler/guest_tsharp_array.h": "082f721e1319a68e2353ba506bfe86be01edf690c4fa2784134739234d5db85b",
+    "src/shader_recompiler/info.h": "b9cc6b511efa17e6fab006c77242996f8bb711f45de084c915f56375e1ae5e97",
+    "src/shader_recompiler/ir/ir_emitter.cpp": "2691187a9a1b0b61a0318518891170835e9a4e267b81b0838ce97fab44f414f9",
+    "src/shader_recompiler/ir/ir_emitter.h": "c4147f1287806702a3bbce0fda063949de89bd0211313e1be089fa9274e1c364",
+    "src/shader_recompiler/ir/opcodes.inc": "ca0bec0c60ce66839198fda7b8c12e0ef9289f1c0ac907d7415bc6cf39533fec",
+    "src/shader_recompiler/ir/passes/image_phi_preflight.h": "afe9b182e35e8ec7c0c7b003216a0d0b1326cb42aed33ea83257a3433b541ce6",
+    "src/shader_recompiler/ir/passes/indexed_image_selector.h": "6ce99fae46a56f14d527af96e51e1a076424b10283a5eee2b46a492c8742afab",
+    "src/shader_recompiler/ir/passes/indexed_sample_eligibility.h": "aa96083f85f2a162cc5a39c873d8dc2b4683ca7466543f1cd5bafaff50875237",
+    "src/shader_recompiler/ir/passes/resource_discover_pass.cpp": "1a02b358829d49ab0c42a8eec55f472a35326682e2bc1818f8baf8a208c0db64",
+    "src/shader_recompiler/ir/passes/resource_pass.h": "bc7e9ff146a9db01ee4e4ede1303d380df0e22f7fbfeff9afd48d951a43d5ce4",
+    "src/shader_recompiler/ir/passes/resource_patching_pass.cpp": "1b1a2ba671fa10177af0b1f167704069f0993be4b06dfbb43ee4e6eafe70879c",
+    "src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp": "2d1e396a05fdc76173d96855b1f61f6231ad44827bcecd0d97c99a5cf9b5a176",
+    "src/shader_recompiler/profile.h": "d2a02bda096199a0209b7fb4dd723cc36aa396467ac5513aaa0a3d1e8a265f45",
+    "src/shader_recompiler/resource.h": "ac639957313bdd7c829ba39e19fc6c7252d4eb9b6f08abc498e9d6782d6c5d63",
+    "src/video_core/renderer_vulkan/vk_compute_pipeline.cpp": "dc500a74899f1592201726107548c5c4606a2657518f8ac8f43086fda9d6c9c7",
+    "src/video_core/renderer_vulkan/vk_graphics_pipeline.cpp": "7c35a581cee7d40048378e62eb6579743f9b3fe874497fd06b3822da7f133e28",
+    "src/video_core/renderer_vulkan/vk_instance.cpp": "bed1335b648afe5016db0fff11c55aa046d51132919e79c4206058758a73a673",
+    "src/video_core/renderer_vulkan/vk_instance.h": "7b2f1e5fdca41ac5a2e5e02ae339813277aefe265b1a539089c07d0b43956f33",
+    "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp": "b4450157b5155ac4855c22a6eefb854bf1860df4fd388642218352db5d499d22",
+    "src/video_core/renderer_vulkan/vk_pipeline_common.cpp": "e019a8a88cf426d1874d8a75d186fcd9cfe76b3119516a0ec880493a79951e69",
+    "src/video_core/renderer_vulkan/vk_pipeline_common.h": "9b0d3db3e2b590137d6c849d8f3069f27d0e72f09eae93a20459b0b79365a274",
+    "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp": "092e8e0897a39389ec1547b192aef69087efed3db32749d5c633eb766ad4f7a7",
+    "src/video_core/renderer_vulkan/vk_rasterizer.cpp": "3dba1ab4fbd6b250877a2179881d0bb861d4d4456766225aa5108fb08242a9b2",
+    "src/video_core/renderer_vulkan/vk_rasterizer.h": "418dc57e40e71bad3d8de738226b51ab5c3d3b56c54f8cd00c0cd8a256ae72b4",
+    "tests/renderer_native_proven_contracts.py": "cad373e77796681d4efd2fa89ae49d20cc0e559303d2bdc9021d3a41d98cc891"
+  },
+  "log_sha256": {
+    "nov2c-native-build.log": "cadabcb0b79cb9d5db4936a45e5d8f27fba12335fb4e1047d5be9ac1bc27be3f",
+    "nov2c-native-build-retry.log": "78d9297a80b6d6d2795c8edb56b15e0e90935b06d360d61bbe7802143db5d663",
+    "nov2c-native-final-build.log": "832d3afbd3893255d880fe8aa59ccd4f0c7e2f1bc72b94b79b6f068d00f63a00",
+    "nov2c-native-verified-build.log": "60832878e52e70934f2d53490f5565c420a8e22783a3594879d5ab3cea1ae8b4",
+    "nov2c-pinned-build.log": "e560e0ec8cf759d7a2bd6687a33cfbf293e786fc813b8b1218348b1200c623e8",
+    "nov2c-cpu.log": "1afea87ee3393fea6135e0f3b392b877e5a77598a812b4fd6c3142b349ac07d4",
+    "nov2c-cpu-remaining.log": "a89bdbd88d30d3a6cc04513726ad13b95a9f699b6e34db50e200e284e79318b2",
+    "nov2c-pinned-contracts.log": "670a39115e7523a8984e4842e16547cb2094b03fad392b037b4b9dc8b2656e62",
+    "nov2c-pinned-startup.log": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+    "nov2c-resource-final.log": "c4c358fdfa7f764d58c60fcd5891390299f1e19fe5f23d8c3b8abe1574127272",
+    "nov2c-spirv-validation.json": "db5cd6e0a08f3cf5990071121dbe0b970b6d9456df3ecaea097d2d085144e861"
+  },
+  "references": [
+    "https://docs.amd.com/v/u/en-US/sea-islands-instruction-set-architecture_0",
+    "https://docs.vulkan.org/spec/latest/chapters/limits.html"
+  ],
+  "decision": "DRAFT_NATIVE_RETEST_REQUIRED_NO_MAIN_PROMOTION"
+}

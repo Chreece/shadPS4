@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "record_id": "got-remaining-raw-shaders-and-presentation-capture-prepared-20261028",
+  "recorded_on": "2026-10-28",
+  "record_type": "DIAGNOSTIC_RUNNER_LOCAL_TESTS_HOST_PENDING",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "context_games": ["CUSA11456", "CUSA34384"],
+  "tested_games": [],
+  "pr": 99,
+  "preceding_native_review": "20261028T153318468127Z-indexed-lod-native.json",
+  "reason": "PR99 genuinely handles indexed LZ modes in 43 compute shaders and PR96 handles a real 24->19 capacity change, but presentation is pixel-identical at55/85/112s. Four remaining unindexed image/sampler chains use raw ReadConst rather than the seven empty V# tables. Their actual current IR/final SPIR-V and CPU/GPU activity during frozen presentation are absent from the preceding archive. Do not invent a new shader fix or attribute the freeze to the last compiled shader.",
+  "runner_commit": "4dba3280b66ae097cfde4e2ab387ea445dbc0126",
+  "runner_path": "tools/development/c925_indexed_explicit_lod/capture_remaining_shaders.py",
+  "runner_sha256": "4c5d43e8c97996870b0f0d67779e59be0a5c0827ed630be750424c3d88d4b467",
+  "runner_git_blob": "464edb7054ff8fea07bb0538801eaaaeea60042f",
+  "native_binary_reused": "a293a496f42f7e85ef5e76bf0e25e9f3dccd269adae332e646d2234b378c5216",
+  "source_changed": false,
+  "build_required": false,
+  "capture_scope": [
+    "Verify prior native trial, ELF and all eight source-manifest postimages, record current protected binary/original profile hashes.",
+    "Inventory existing targeted dumps with hashes/timestamps; do not misrepresent old files as compiled by the new source.",
+    "Copy the already isolated profile into another private directory, relocate internal save paths, reject symlinks/external save roots. Enable only diagnostic shader dumping in the new copy. Original configs, saves, sources, executables and old checkpoints are not modified.",
+    "One menu-only diagnostic launch of the verified existing ELF, no rebuild/input, 118s TERM plus2s owned-process KILL allowance, visible15s progress, existing8GiBVRAM and tested same-server Ollama context/expiry restoration.",
+    "Read only the owned game's /proc thread names/states/CPU counters/wait channels every5s plus GPU busy/VRAM sysfs counters. No debugger attach, root access, network or display/service restarts. Missing permissions are recorded, not inferred as a pass.",
+    "Capture absolute-timestamp screenshots at40/55/85/112 and ImageMagick pixel signatures independent of PNG metadata, so a live process cannot automatically count as advancing graphics.",
+    "Collect private shader binaries/stagedIR/SRT/finalSPIRV for raw-chain compute shaders5065ed7b,58f22286,c7542465,ee963aae; newly lowered c0cac3b6/33a001dc; and the two large indexed fragment shadersb5c898c7/7eaf40ad. These hashes filter evidence files ONLY and do not alter the emulator.",
+    "Run existing spirv-val if installed on fresh target modules; no package install. This is universal structural SPIR-V validation, not full Vulkan enabled-feature acceptance. Archive remains under ~/projects/shadps4/logs and excludes profiles/saves/ELF bodies."
+  ],
+  "local_tests": {
+    "python_syntax": "PASS",
+    "focused_unittests": "11/11 PASS in0.125s; profile isolation/only-dump-setting change, path-prefix boundaries, symlink/external-save rejection, existing-vs-fresh file provenance, size cap, missing proc permissions, sysfs read-only, no validator/no install, actual early owned child process exit/cleanup, decoded-pixel signature equivalence despite differing PNG metadata.",
+    "new_opcode_fixture_recheck": "Uploaded232386-check extracted-emitter fixture recompiled and executed locally against uploaded after-header under GCC and Clang C++20 Werror: bothPASS. Not full emulator/SPIR-V/GPU acceptance.",
+    "committed_bytes": "GitHub returned blob464edb7054ff8fea07bb0538801eaaaeea60042f matches locally tested15833-byte script.",
+    "scope_limits": "No full end-to-end real-home-server execution of this new capture runner yet. The previously tested pinned runtime helper provides local/Docker Ollama access and restoration. Diagnostic dumps and sampling can affect timing; do not use this run as a normalized FPS comparison."
+  },
+  "host_result": "NOT_RUN",
+  "game_effect": "NO_NEW_GRAPHICS_FIX_CLAIM",
+  "decision": "KEEP_TARGETED_DIAGNOSTIC_RUNNER; HOLD_FROZEN_CANDIDATE_RUNTIME_PROMOTION; PRESERVE_PROVEN_OPCODE_AND_CAPACITY_WORK",
+  "next_test": "Inspect fresh raw-pointer descriptor chains and final translated modules, correlate changing/nonchanging frames with actual owned-thread activity. Only then implement the demonstrated generic correction; do not repeat Linear8, readback toggles, zero-stall SRT-parent traces or unchanged screenshot-only acceptance.",
+  "raw_game_shader_data_published": false
+}
