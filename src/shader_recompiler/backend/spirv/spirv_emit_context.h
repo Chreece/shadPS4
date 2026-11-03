@@ -302,12 +302,19 @@ public:
     struct TextureDefinition {
         const VectorIds* data_types;
         Id id;
+        std::array<Id, 9> indexed_ids{};
+        std::array<Id, 9> indexed_types{};
+        Id indexed_metadata{};
+        Id indexed_metadata_pointer_type{};
         Id sampled_type;
         Id image_type;
         AmdGpu::ImageType view_type;
         bool is_integer = false;
         bool is_storage = false;
         MipStorageFallbackMode mip_fallback_mode{};
+        u32 image_array_size{1};
+        bool is_guest_indexed{};
+        bool is_guest_mixed_indexed{};
     };
 
     enum class PointerType : u32 {
@@ -355,6 +362,7 @@ public:
     boost::container::small_vector<BufferDefinition, 16> buffers;
     boost::container::small_vector<TextureDefinition, 8> images;
     boost::container::small_vector<Id, 4> samplers;
+    boost::container::small_vector<u32, 4> sampler_array_sizes;
     std::unordered_map<u32, Id> first_to_last_label_map;
 
     size_t flatbuf_index{};

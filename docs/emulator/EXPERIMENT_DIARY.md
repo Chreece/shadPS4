@@ -719,3 +719,47 @@ It supports both retained worktree layouts and rejects incomplete captures.
 Ordinary/linked worktree and symlink-failure fixtures pass without source
 mutation. This is source recovery, not an emulator fix or a new game test.
 See [full review](reviews/20261102-got-preservation-gap.json).
+
+## 2026-11-02 — recovered renderer paths restored for native validation
+
+The complete recovered archive verifies 678 file hashes. Four resource/buffer files exactly match the earlier 19:59 archive that showed the GoT menu and partial world. This confirms a source-preservation gap; it does not identify the precise GPU-reset command or prove the entire recovered tree built any historical binary.
+
+The candidate on upstream `2183807e` restores generic GPU-indexed descriptors and scalar reads while preserving the DS capture, SRT, synchronization and upstream work. It removes silent texture-budget/capacity truncation and rejects unsupported numeric/dimension conversions. Native compilation, 31 CTest cases, existing CPU checks, 12 production discovery checks and five Vulkan 1.3 SPIR-V cases pass. Initial build and temporary-fixture failures are retained in the [review record](reviews/20261102-indexed-renderer-restoration.json).
+
+No game was launched here. The next evidence is the bounded, isolated native GoW capture and GoT visual run. No main promotion, final DS continuation, menu restoration, full-world rendering or cross-platform pass is claimed. The separate OpenOrbis scalar descriptor probe was assembled and syntax-checked; PS4 execution remains outstanding.
+
+
+### 2026-11-02 — native regression and generic contract recovery (PR121)
+
+The 17:32 native archive built source `96c5742b` successfully, but GoW aborted after 8.013 seconds at our new indexed Color1D guard, before DS ordered capture. GoT ran for the bounded 120 seconds without a GPU reset: the 25-second image is black, and the 110-second image still shows the Sony opening screen, not the historical menu. This is not a graphics pass.
+
+PR121 adds typed 1D sampling, empty-to-populated texture-table revalidation and independent scalar-range/material-record strides. It also restores missing SRT dependency scheduling, uniform lane-pointer handling, whole-result SCC, 64-bit bit tests and portable 64-bit bit insertion. Previous production code fails four focused counterexamples; the corrected source builds and passes existing CPU/startup checks plus 203 SRT, 9600 scalar and 28 table checks and six SPIR-V validations. See [the full review](reviews/20261102-generic-contract-recovery.json) for exact source/binary/evidence identities, fixture corrections and hardware-probe status.
+
+The complete GoT native regression cause is not proven. No new game result is claimed, no historical binary is replaced, no DS seed is guessed, and main remains unchanged pending bounded native verification.
+
+
+### 2026-11-02 — both PR121 games crash; missing texture contracts restored (PR122)
+
+The 18:32 archive builds f6c7b43e successfully, then both games exit -11: GoW at 17.483s on equal-address Color1D/layered-Color2D R8 overlap; GoT at 29.960s on BC5/UbnormNz. The GoT 25-second screenshot is black with a 29 FPS overlay. Neither restores the prior state; no DS first-pass evidence is captured. The collector reports no GPU fault, which is not proof that no kernel event occurred.
+
+The GoW shape matches the missing strict guard from f8cc5e3 (originally 1-to-6 layers, now 1-to-2). PR122 ports it into ImageInfo and reuses GPU-data-preserving expansion. The recovered renderer source also maps UbnormNz to Unorm plus biased channel conversion; those two cases were absent. PR122 restores them and keeps constant/default channels unchanged in samples, reads and gathers. The existing indexed numeric guard remains; it is not silently bypassed.
+
+The complete GCC14 build and existing CPU/startup suites pass, as do 3,954 actual-production texture checks and six Vulkan 1.3 SPIR-V validations. Earlier production code fails both format and default-channel counterexamples. No tests are added to the repository. A separate OpenOrbis 40-dispatch probe is shared; assembly and syntax pass, while SDK linking and PS4 execution remain untested. See [the full review](reviews/20261102-texture-contract-restoration.json) for source identities, all failed attempts and validation limits. This is a draft candidate; main and the preserved binaries remain unchanged.
+
+
+## 2026-11-02 20:07 UTC — PR123 GPU loss; GoT skipped
+
+Native source `c6b126c32acad8b08ecf674176969ba994548c52`, binary `46ed0a99d18976bd626f8a860939f3b1909aceac8cafe80ef550eb14f1d3ac32`, builds and passes existing CPU/startup checks. GoW passes the integer-table binding guard but loses its GPU context at 29.354 seconds. The 25-second capture still shows the loading screen, not game video. No DS capture reached. GoT is **NOT RUN** after the shared GPU failure; its last actual late frames remain black on `df253cdc`. No main promotion.
+
+All 12 captured SPIR-V modules validate, but runtime Vulkan validation was disabled. [PR124](https://github.com/Chreece/shadPS4/pull/124) changes diagnostic tooling only: reuse the verified native binary, enable core/synchronization validation in the isolated profile, verify layer availability/activation, retain complete bounded messages and implicated shaders, and test GoT first. Local build/startup and runner checks pass. The GPU-loss cause and a safe causal emulator correction remain unestablished; dedicated DS seed/re-entry remains unfinished. See the [shared review](../emulator/reviews/20261102-pr123-gpu-loss-validation-capture.json) and append-only universal journal.
+
+
+## 2026-11-03 04:36 UTC — upstream gate stopped both games; PR125 refresh
+
+The uploaded `universal-two-games-20261103T043653Z-3202130.tar.gz` (SHA256 `d1881d073681d1d3d1d1b7dbced2c39eba186f88dcdd23a78faa3369290c55a9`) requested GoT first using source `c6b126c3` and runner `aef377d7`. Binary identity passed, but current upstream `87290181` was not an ancestor. Neither game launched; there was no layer preflight, runtime validation, screenshot, shader or DS capture, or new crash. The previous GoW GPU loss and GoT black-screen results remain the latest actual runs.
+
+[PR125](https://github.com/Chreece/shadPS4/pull/125) rebases all 11 retained commits onto upstream `87290181`, with every patch equivalent in range-diff. Compared with PR124, only `src/core/file_sys/fs.cpp` and `fs.h` change, exactly as upstream #5568: longest-prefix mount order and host path component boundaries. Renderer, shader, CPU, DS and runner contents are unchanged; old branches and protected binaries are retained.
+
+Full GCC14 Release build/link, the existing universal CPU suite (31 CTest cases plus existing production checks), three actual-binary CLI scenarios and 13 current-production unlink cases pass. A temporary probe linked against real production objects passes 114 mount checks over all six registration orders; replacing only the Mount implementation with the old object fails longest-prefix lookup. The unlink permission case was not run because this container cannot drop uid/gid. Local dependency/header failures and their corrections are preserved in the shared review; no tests or new emulation semantics were authored in the repository.
+
+Next is a fresh isolated **build**, then GoT first and GoW with core/synchronization Vulkan validation, screenshots and bounded DS capture, <=120 seconds per game. GPU loss or unconfirmed termination stops the remaining batch. There is no causal graphics fix established, no DS seed/re-entry completion, and no main promotion. See [full shared review](reviews/20261103-upstream-refresh.json) and the append-only universal journal; its prior 402 rows / 840114 bytes are preserved exactly.

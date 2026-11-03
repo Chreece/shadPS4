@@ -213,3 +213,28 @@ October 27 native ELF `395682a4...` visibly reached menu and partial world.
 Current `92c1a01e` loses context at 41.901s and lacks the older GPU-indexed
 image/sampler table routing. The unchanged captured shaders show the latest
 SRT fix did not recover GoT. See the [shared preservation review](../emulator/reviews/20261102-got-preservation-gap.json) and append-only universal journal.
+
+
+## 2026-11-02 19:26 native PR122: bounded black screen; PR123 candidate
+
+Source `df253cdc175dcf90f634ef4d90f47d1c386ee089` / binary `6014649debf24b4be4f289b00d96df9d32541987a5de689059cf64e12a36e7f6` completed 119.517 seconds, exit 0 after the bounded observer stop. Frames at 80 and 110 seconds are black; the latter shows a 29-FPS overlay. No menu/world recovery. Seven strided material discoveries had zero-record host V#; no indexed-image bind report establishes that BC5/11 was exercised. This is retained as a visual failure in the [shared review](../emulator/reviews/20261102-indexed-numeric-register-restoration.json) and append-only journal.
+
+[PR123](https://github.com/Chreece/shadPS4/pull/123) adds generic indexed numeric image arrays for the GoW blocker and restores an independently reproduced SH register range router. Its relationship to GoT black output remains unproven. Build/CPU/SPIR-V checks pass; native retest pending, main unchanged. DS seed/re-entry remains unfinished.
+
+
+## 2026-11-02 20:07 UTC — PR123 GPU loss; GoT skipped
+
+Native source `c6b126c32acad8b08ecf674176969ba994548c52`, binary `46ed0a99d18976bd626f8a860939f3b1909aceac8cafe80ef550eb14f1d3ac32`, builds and passes existing CPU/startup checks. GoW passes the integer-table binding guard but loses its GPU context at 29.354 seconds. The 25-second capture still shows the loading screen, not game video. No DS capture reached. GoT is **NOT RUN** after the shared GPU failure; its last actual late frames remain black on `df253cdc`. No main promotion.
+
+All 12 captured SPIR-V modules validate, but runtime Vulkan validation was disabled. [PR124](https://github.com/Chreece/shadPS4/pull/124) changes diagnostic tooling only: reuse the verified native binary, enable core/synchronization validation in the isolated profile, verify layer availability/activation, retain complete bounded messages and implicated shaders, and test GoT first. Local build/startup and runner checks pass. The GPU-loss cause and a safe causal emulator correction remain unestablished; dedicated DS seed/re-entry remains unfinished. See the [shared review](../emulator/reviews/20261102-pr123-gpu-loss-validation-capture.json) and append-only universal journal.
+
+
+## 2026-11-03 04:36 UTC — upstream gate stopped both games; PR125 refresh
+
+The uploaded `universal-two-games-20261103T043653Z-3202130.tar.gz` (SHA256 `d1881d073681d1d3d1d1b7dbced2c39eba186f88dcdd23a78faa3369290c55a9`) requested GoT first using source `c6b126c3` and runner `aef377d7`. Binary identity passed, but current upstream `87290181` was not an ancestor. Neither game launched; there was no layer preflight, runtime validation, screenshot, shader or DS capture, or new crash. The previous GoW GPU loss and GoT black-screen results remain the latest actual runs.
+
+[PR125](https://github.com/Chreece/shadPS4/pull/125) rebases all 11 retained commits onto upstream `87290181`, with every patch equivalent in range-diff. Compared with PR124, only `src/core/file_sys/fs.cpp` and `fs.h` change, exactly as upstream #5568: longest-prefix mount order and host path component boundaries. Renderer, shader, CPU, DS and runner contents are unchanged; old branches and protected binaries are retained.
+
+Full GCC14 Release build/link, the existing universal CPU suite (31 CTest cases plus existing production checks), three actual-binary CLI scenarios and 13 current-production unlink cases pass. A temporary probe linked against real production objects passes 114 mount checks over all six registration orders; replacing only the Mount implementation with the old object fails longest-prefix lookup. The unlink permission case was not run because this container cannot drop uid/gid. Local dependency/header failures and their corrections are preserved in the shared review; no tests or new emulation semantics were authored in the repository.
+
+Next is a fresh isolated **build**, then GoT first and GoW with core/synchronization Vulkan validation, screenshots and bounded DS capture, <=120 seconds per game. GPU loss or unconfirmed termination stops the remaining batch. There is no causal graphics fix established, no DS seed/re-entry completion, and no main promotion. See [full shared review](../emulator/reviews/20261103-upstream-refresh.json) and the append-only universal journal; its prior 402 rows / 840114 bytes are preserved exactly.

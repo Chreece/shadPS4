@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "recorded_on": "2026-10-26",
+  "recorded_on": "2026-11-03",
   "notice": "Derived status index only; canonical historical facts are append-only docs/emulator/TRIALS.jsonl. Main merge SHA does not imply hardware verification.",
   "engine_policy": "Generic emulator changes for all games; tested games are evidence, never source/runtime switches.",
   "fixes": [
@@ -405,6 +405,73 @@
       "observed_game_effects": "No games executed. Native Linux shadps4_gcn_test compiled and linked; 7/7 CPU-only tests passed including SPIR-V dual-buffer descriptor test and 6/6 PR88 indirect-command synchronization checks; old GcnTest.add_f32 returned 0 instead of 7.5 on RADV/LLVMpipe, corrected exact test binary 1d55c516340c9be0bfae871a6e4a9e7d67a57ab9f85ccdd1dbca9dd3811f6cc0 returned 7.5 on LLVMpipe (22ms) and RX 7900 XTX RADV (20ms). Exact code source 8d5a17a17caf6c18272812d6a706ce2a61fc099b. Native RADV archive gcn-radv-single-20261027-190517-581449.tar.gz SHA256 828b65060b725da959b168fbf19d893fdc31b727ce55f86fea0d23fb7b639b98.",
       "negative_result_or_prohibition": "Previous GCN test harness erroneously placed SGPR inputs in Vulkan PushData at offset 16 and bound only output descriptor set binding0 while SPIR-V reads srt_flatbuf at binding1. Avoid interpreting previous wrong GCN arithmetic output or GPUVM fault as proven emulator production graphics problem. Corrected single RADV smoke PASS does not prove old GPUVM loss root cause or Ragnarok gameplay fix. Kernel journal not readable from user account; no recorded kernel events is not proof none occurred. No separate production emulator fix in PR89; don't replace AMD with LLVMpipe.",
       "next_test": "Preserve separately reviewable native-verified PR89 harness. Stop repeating add_f32 and return to actual upstream-main-based PR5479+PR88 indirect dispatch GPU path under guarded GoW capture. Validate real host dispatch metadata, resource barriers and game state before any promotion."
+    },
+    {
+      "id": "generic-descriptor-scalar-contract-recovery",
+      "subsystem": "shader-scalar-flags-srt-indexed-textures",
+      "status": "PR121_NATIVE_BOTH_GAMES_CRASHED_FOLLOWUP_PR122_DRAFT",
+      "related_prs": [
+        121,
+        120,
+        119,
+        118
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "Native f6c7b43e: GoW SIGSEGV after17.483s at same-storage 1D/2D overlap; GoT SIGSEGV after29.960s at BC5/UbnormNz mapping. No menu/world/video recovery.",
+      "negative_result_or_prohibition": "Do not equate capture/build success with game recovery or guess DS counter seed. Preserve historical menu/world binaries.",
+      "next_test": "PR122 restores missing same-storage growth and biased format mapping; retain PR121 work and await new native evidence.",
+      "review": "reviews/20261102-generic-contract-recovery.json"
+    },
+    {
+      "id": "generic-texture-contract-restoration",
+      "subsystem": "texture-cache-layer-growth-biased-number-format",
+      "status": "PR122_NATIVE_OVERLAP_PASSED_GOW_NEXT_CRASH_GOT_BLACK_PR123_DRAFT",
+      "related_prs": [
+        122,
+        121,
+        120,
+        118,
+        117
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "df253cdc: GoW same-storage expansion logged, then integer indexed-image guard abort at17.876s. GoT completed119.517s but80/110s frames black. No observed BC5/11 binding; no menu/world/video recovery.",
+      "negative_result_or_prohibition": "Do not claim menu/gameplay recovered from build/CPU results. Retain historical binaries and all earlier evidence; no per-title branches or guessed DS data.",
+      "next_test": "PR123 adds typed numeric table sampling and restores separately reproduced SH register routing. Verify both games natively before promotion.",
+      "review": "reviews/20261102-texture-contract-restoration.json"
+    },
+    {
+      "id": "indexed-numeric-images-register-restoration",
+      "subsystem": "shader-indexed-numeric-types-pm4-register-routing",
+      "status": "PR123_NATIVE_INTEGER_BIND_PASSED_GPU_CONTEXT_LOST_GOT_NOT_RUN_DRAFT",
+      "related_prs": [
+        125,
+        124,
+        123,
+        122,
+        121,
+        120,
+        118,
+        117
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW mixed tables bind 826 float + 1 uint, then 2309 float + 1 uint; GPU context lost after 29.354s, loading screen only. GoT skipped. Integer sample correctness and register-router impact on GoT remain unproven.",
+      "negative_result_or_prohibition": "No numeric type punning, title/shader exceptions, zero-record bound bypass, guessed DS seed, or promotion from CPU/build-only evidence.",
+      "next_test": "PR124 native validation attempt blocked before either game launched because upstream advanced. PR125 preserves this source on upstream87290181: isolated build, GoT first then GoW with core/synchronization validation; capture first error and named shaders. Stop on GPU loss or unconfirmed child stop. Graphics remain unproven.",
+      "review": "reviews/20261102-pr123-gpu-loss-validation-capture.json"
+    },
+    {
+      "id": "upstream-mount-prefix-integration-20261103",
+      "subsystem": "vfs-upstream-integration",
+      "status": "PR125_REBASE_BUILD_CPU_PASS_NATIVE_GPU_RETEST_PENDING",
+      "related_prs": [
+        125,
+        124
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No games ran in latest archive; upstream ancestry gate blocked before launch. All 11 prior commits retained. New source delta is exactly upstream87290181 fs.cpp/fs.h.",
+      "negative_result_or_prohibition": "Do not label upstream refresh, mount correctness, or build success as graphics recovery. Preserve earlier menu/world evidence and binaries; no guessed DS seed.",
+      "next_test": "Build pinned PR125 source, then <=120s each GoT-first/GoW native validation with screenshots, first validation error and named shader captures. Keep main unchanged until recovery is demonstrated.",
+      "review": "reviews/20261103-upstream-refresh.json"
     }
   ]
 }

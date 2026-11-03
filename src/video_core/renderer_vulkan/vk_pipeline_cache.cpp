@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <cstdlib>
 #include <ranges>
 #include <string_view>
@@ -279,6 +280,49 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(HwStage stage, SwStag
     return info;
 }
 
+static u32 GuestNumericImageLimit(const Instance& instance, u32 arrays) {
+    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+    constexpr u32 reserve = Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
+    const u32 images =
+        std::min(limits.maxDescriptorSetSampledImages, limits.maxPerStageDescriptorSampledImages);
+    const u32 image_count = images > reserve ? (images - reserve) / arrays : 0u;
+    const u32 total_count = limits.maxPerStageResources > reserve + 1u
+                                ? (limits.maxPerStageResources - reserve - 1u) / (arrays + 1u)
+                                : 0u;
+    const u32 count = std::min(image_count, total_count);
+    return count > 1u ? std::min(Shader::MaxGuestIndexedImageEntries, count - 1u) : 0u;
+}
+
+static u32 GuestIndexedImageLimit(const Instance& instance) {
+    return GuestNumericImageLimit(instance, 3u);
+}
+
+static u32 GuestMixedIndexedImageLimit(const Instance& instance) {
+    return GuestNumericImageLimit(instance, 9u);
+}
+
+static u32 GuestIndexedSamplerLimit(const Instance& instance) {
+    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+    constexpr u32 type_reserve = Shader::NUM_SAMPLERS + 32u;
+    constexpr u32 total_reserve =
+        Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
+    const u32 type_hard =
+        std::min(limits.maxDescriptorSetSamplers, limits.maxPerStageDescriptorSamplers);
+    const u32 type_real =
+        type_hard > type_reserve + 1u
+            ? std::min(Shader::MaxGuestIndexedImageEntries, type_hard - type_reserve - 1u)
+            : 0u;
+
+    // Strided material records bind a sampled-image array and a sampler array
+    // of the same count (including one null/default slot each). Reserve total
+    // per-stage resources for BOTH arrays, not each one independently.
+    const u32 pair_real = limits.maxPerStageResources > total_reserve + 2u
+                              ? std::min(Shader::MaxGuestIndexedImageEntries,
+                                         (limits.maxPerStageResources - total_reserve) / 2u - 1u)
+                              : 0u;
+    return std::min(type_real, pair_real);
+}
+
 PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
                              AmdGpu::Liverpool* liverpool_, u32 sparse_page_shift, u64 bda_page_count)
     : instance{instance_}, scheduler{scheduler_}, liverpool{liverpool_},
@@ -292,6 +336,13 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .subgroup_size = instance.SubgroupSize(),
         .sparse_page_shift = sparse_page_shift,
         .bda_page_count = bda_page_count,
+        .max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),
+        .max_guest_mixed_indexed_image_entries = GuestMixedIndexedImageLimit(instance),
+        .max_guest_indexed_sampler_entries = GuestIndexedSamplerLimit(instance),
+        .supports_sampled_image_nonuniform_indexing =
+            instance.IsSampledImageNonUniformIndexingSupported(),
+        .supports_sampler_array_nonuniform_indexing =
+            instance.IsSamplerArrayNonUniformIndexingSupported(),
         .support_int8 = instance.IsShaderInt8Supported(),
         .support_int16 = instance.IsShaderInt16Supported(),
         .support_int64 = instance.IsShaderInt64Supported(),
@@ -951,6 +1002,9 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
             continue;
         }
         info.RefreshFlatBuf();
+        if (!info.IndexedResourcesCompatible()) {
+            continue;
+        }
         const auto current =
             Shader::StageSpecialization(info, runtime_info, profile, first_binding);
         if (!(saved.spec == current)) {

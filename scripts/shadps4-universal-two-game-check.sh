@@ -6,6 +6,12 @@ MODE=${2:-build}
 RUNNER_PIN=${3:-$PIN}
 [[ "$MODE" == build || "$MODE" == existing ]] || exit 2
 [[ "$RUNNER_PIN" =~ ^[0-9a-f]{40}$ ]] || exit 2
+FIRST_GAME=${SHADPS4_TEST_FIRST_GAME:-CUSA34384}
+case "$FIRST_GAME" in
+    CUSA34384) GAMES=(CUSA34384 CUSA11456) ;;
+    CUSA11456) GAMES=(CUSA11456 CUSA34384) ;;
+    *) echo INVALID_FIRST_GAME; exit 2 ;;
+esac
 PROJECT="$HOME/projects/shadps4"
 TAG="universal-two-games-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 OUT="$PROJECT/logs/$TAG"
@@ -14,7 +20,7 @@ finish() {
     local rc=$?
     trap - EXIT
     set +e
-    python3 - "$OUT" "$rc" "$PIN" "$RUNNER_PIN" "$MODE" <<'PY'
+    python3 - "$OUT" "$rc" "$PIN" "$RUNNER_PIN" "$MODE" "${GAMES[@]}" <<'PY'
 import json,pathlib,shutil,sys
 out=pathlib.Path(sys.argv[1]);records=[]
 for log in out.glob('*-runner.log'):
@@ -25,7 +31,7 @@ for log in out.glob('*-runner.log'):
             shutil.copyfile(archive,out/archive.name)
             result=archive.with_suffix('').with_suffix('')/'result.json'
             if result.is_file():records.append(json.loads(result.read_text()))
-(out/'batch-result.json').write_text(json.dumps({'exit_code':int(sys.argv[2]),'runs':records,'graphics_verified':False,'source_commit':sys.argv[3],'runner_commit':sys.argv[4],'build_mode':sys.argv[5]},indent=2)+'\n')
+(out/'batch-result.json').write_text(json.dumps({'exit_code':int(sys.argv[2]),'runs':records,'graphics_verified':False,'source_commit':sys.argv[3],'runner_commit':sys.argv[4],'build_mode':sys.argv[5],'requested_game_order':sys.argv[6:]},indent=2)+'\n')
 PY
     tar -czf "$OUT.tar.gz" -C "$PROJECT/logs" "$TAG"
     printf '\nUPLOAD_THIS=%s.tar.gz\n' "$OUT"
@@ -35,7 +41,7 @@ trap finish EXIT
 curl --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_verified_graphics.py" \
     -o "$OUT/graphics.py"
-printf '%s  %s\n' a6827de5a5044d3facd8c7a5103ff5bd2236ecf6f46978ce91ec849ebc764689 "$OUT/graphics.py" | sha256sum --check -
+printf '%s  %s\n' 9e550de4b1dc6a7ab4fa37d41269eec8d36aff24dac103221c966a7e3bd2fa4f "$OUT/graphics.py" | sha256sum --check -
 if [[ "$MODE" == build ]]; then
     curl --fail --location --retry 3 \
         "https://raw.githubusercontent.com/Chreece/shadPS4/$PIN/scripts/shadps4-universal-upstream-build.sh" \
@@ -46,7 +52,7 @@ else
     printf 'REUSING_VERIFIED_NATIVE_BUILD=%s\n' "$PIN"
 fi
 RESULT=0
-for GAME in CUSA34384 CUSA11456; do
+for GAME in "${GAMES[@]}"; do
     printf '\nTESTING=%s MAX_SECONDS=120 AUTOMATIC_INPUT=NO\n' "$GAME"
     set +e
     SHADPS4_TEST_SOURCE_COMMIT="$PIN" \

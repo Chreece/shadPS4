@@ -142,7 +142,7 @@ struct PassInfo {
                 auto a_block = a_inst->GetParent();
                 auto b_block = b_inst->GetParent();
                 if (a_block != b_block) {
-                    return a_block < b_block; // Sort by block address
+                    return std::less<IR::Block*>{}(a_block, b_block);
                 }
 
                 auto it = a_block->Instructions().iterator_to(*a_inst);
@@ -174,6 +174,8 @@ struct PassInfo {
 
     // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
+    std::unordered_set<const IR::Inst*> active_srt_pointers;
+    u32 deferred_reads{};
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
         auto it = pointer_uses.find(inst);
@@ -453,7 +455,6 @@ static bool EmitComputeOffsetUMax32(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, P
 
 static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
                                               PassInfo& pass_info, IR::Inst* inst) {
-    // We asume that the count is always less than 32, Is this correct?
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
         c.mov(reg, inst->Arg(0).U32());
@@ -474,16 +475,24 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
         if (in_stack) {
             c.pop(reg.cvt64());
         }
-        c.and_(reg, (1U << inst->Arg(2).U32()) - 1);
+        const u32 width = inst->Arg(2).U32();
+        if (width < 32) {
+            c.and_(reg, (1U << width) - 1);
+        }
     } else {
         if (!in_stack) {
             c.push(reg.cvt64());
         }
         POP_ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(2)));
         c.mov(ecx, reg);
+        Xbyak::Label full_width;
+        c.mov(edx, 0xffffffffu);
+        c.cmp(ecx, 32);
+        c.jae(full_width);
         c.mov(edx, 1);
         c.shl(edx, cl);
         c.dec(edx);
+        c.L(full_width);
         c.and_(dword[rsp], edx);
         c.pop(reg.cvt64());
     }
@@ -680,25 +689,44 @@ static inline void PopPtr(Xbyak::CodeGenerator& c) {
 
 static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& pass_info,
                          Xbyak::CodeGenerator& c) {
-    if (subtree->GetOpcode() == IR::Opcode::ReadConst && subtree->Flags<u16>() == 0 ||
-        subtree->GetOpcode() == IR::Opcode::ReadConstBuffer &&
-            subtree->Flags<IR::BufferInstInfo>().flatbuf_off_dw == 0) {
+    if (!IsHostUniformSrtOffset(off_dw)) {
         return;
     }
-
+    if (subtree->GetOpcode() == IR::Opcode::ReadConst ||
+        subtree->GetOpcode() == IR::Opcode::ReadConstBuffer) {
+        const auto* canonical = pass_info.DeduplicateInstruction(subtree);
+        const u16 slot = GetFlatbufOffset(canonical);
+        if (slot == 0) {
+            ++pass_info.deferred_reads;
+            return;
+        }
+        SetFlatbufOffset(subtree, slot);
+    }
+    if (!pass_info.active_srt_pointers.insert(subtree).second) {
+        ++pass_info.deferred_reads;
+        return;
+    }
     if (!PushPtr(c, pass_info, off_dw)) {
-        LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
+        pass_info.active_srt_pointers.erase(subtree);
+        ++pass_info.deferred_reads;
         return;
     }
     PassInfo::PtrUserList* use_list = pass_info.GetUsesAsPointer(subtree);
     ASSERT(use_list);
 
-    // First copy all the src data from this tree level
-    // That way, all data that was contiguous in the guest SRT is also contiguous in the
-    // flattened buffer.
-    // TODO src and dst are contiguous. Optimize with wider loads/stores
-    // TODO if this subtree is dynamically indexed, don't compact it (keep it sparse)
     for (auto [src_off_dw, use] : *use_list) {
+        IR::Inst* canonical = pass_info.DeduplicateInstruction(use);
+        if (const u16 slot = GetFlatbufOffset(canonical); slot != 0) {
+            SetFlatbufOffset(use, slot);
+            continue;
+        }
+        if (!IsHostUniformSrtOffset(src_off_dw)) {
+            continue;
+        }
+        if (pass_info.dst_off_dw == std::numeric_limits<u16>::max()) {
+            ++pass_info.deferred_reads;
+            continue;
+        }
         if (src_off_dw.IsImmediate()) {
             c.lea(r11, ptr[rdi + (src_off_dw.U32() << 2)]);
             c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
@@ -708,7 +736,7 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
             const size_t checkpoint = c.getSize();
             if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
                 c.setSize(checkpoint);
-                LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
+                ++pass_info.deferred_reads;
                 continue;
             }
             c.shl(r10d, 2);
@@ -720,6 +748,7 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
         c.mov(ptr[r8 + (pass_info.dst_off_dw * sizeof(VAddr))], r11);
 
         SetFlatbufOffset(use, pass_info.dst_off_dw);
+        SetFlatbufOffset(canonical, pass_info.dst_off_dw);
         pass_info.dst_off_dw++;
     }
 
@@ -731,6 +760,7 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
     }
 
     PopPtr(c);
+    pass_info.active_srt_pointers.erase(subtree);
 }
 
 static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
@@ -754,8 +784,24 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
     pass_info.dst_off_dw = NUM_USER_DATA_REGS;
     ASSERT(pass_info.dst_off_dw == info.srt_info.flattened_bufsize_dw);
 
-    for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
-        VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
+    for (;;) {
+        const size_t checkpoint = c.getSize();
+        const u16 before = pass_info.dst_off_dw;
+        pass_info.deferred_reads = 0;
+        for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
+            VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
+        }
+        if (pass_info.dst_off_dw == before) {
+            c.setSize(checkpoint);
+            break;
+        }
+        if (pass_info.deferred_reads == 0) {
+            break;
+        }
+    }
+    if (pass_info.deferred_reads != 0) {
+        LOG_WARNING(Render_Recompiler, "SRT dependencies unresolved: shader={:#x} reads={}",
+                    info.pgm_hash, pass_info.deferred_reads);
     }
 
     c.ret();
@@ -926,14 +972,23 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
         }
 
         IR::Inst* base = inst->Arg(0).Inst();
-        if (auto* inst = base->Arg(0).TryInst();
-            inst && inst->GetOpcode() == IR::Opcode::ReadFirstLane) {
+        const auto unwrap_uniform_lane_read = [](IR::Value value) {
+            while (const IR::Inst* lane = value.TryInst()) {
+                if (lane->GetOpcode() != IR::Opcode::ReadFirstLane ||
+                    !IsHostUniformSrtOffset(lane->Arg(0))) {
+                    break;
+                }
+                value = lane->Arg(0);
+            }
+            return value;
+        };
+        const IR::Value ptr_low = unwrap_uniform_lane_read(base->Arg(0));
+        const IR::Value ptr_high = unwrap_uniform_lane_read(base->Arg(1));
+        if (!IsReadConstSource(ptr_low) || !IsReadConstSource(ptr_high)) {
             continue;
         }
-        ASSERT_MSG(IsReadConstSource(base->Arg(0)), "ReadConst base low not from constant memory");
-        ASSERT_MSG(IsReadConstSource(base->Arg(1)), "ReadConst base high not from constant memory");
 
-        IR::Inst* ptr_lo = base->Arg(0).Inst();
+        IR::Inst* ptr_lo = ptr_low.Inst();
         ptr_lo = pass_info.DeduplicateInstruction(ptr_lo);
 
         auto ptr_uses_kv = pass_info.pointer_uses.try_emplace(ptr_lo, PassInfo::PtrUserList{});

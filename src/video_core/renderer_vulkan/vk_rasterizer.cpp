@@ -13,8 +13,11 @@
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
+#include "shader_recompiler/compact_image_indices.h"
 #include "shader_recompiler/frontend/ordered_gds_capture_coverage.h"
 #include "shader_recompiler/frontend/ordered_gds_resume_state.h"
+#include "shader_recompiler/guest_descriptor_coherence.h"
+#include "shader_recompiler/guest_tsharp_array.h"
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/liverpool.h"
@@ -1074,10 +1077,46 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         return false;
     }
 
-    set_write_index = 0;
     set_writes.clear();
     buffer_infos.clear();
     image_infos.clear();
+
+    // Reserve across all shader stages before any VkWriteDescriptorSet points
+    // into image_infos. Later vector growth must not invalidate those pointers.
+    std::size_t required_infos = 0;
+    std::size_t required_buffer_infos = 0;
+    std::size_t required_writes = 0;
+    std::size_t max_stage_images = 0;
+    for (const auto* stage : pipeline->GetStages()) {
+        if (!stage) {
+            continue;
+        }
+        std::size_t stage_images = 0;
+        required_buffer_infos += stage->buffers.size();
+        required_writes += stage->buffers.size() + stage->samplers.size();
+        for (const auto& image : stage->images) {
+            stage_images += image.NumBindings(*stage) * image.NumImageArrays();
+            required_writes += image.NumImageArrays();
+            if (image.is_guest_indexed) {
+                ++required_buffer_infos;
+                ++required_writes;
+            }
+        }
+        max_stage_images = std::max(max_stage_images, stage_images);
+        required_infos += stage_images;
+        for (const auto& sampler : stage->samplers) {
+            required_infos += sampler.NumBindings(*stage);
+        }
+    }
+    image_infos.reserve(required_infos);
+    // Reserve capacity only. Resizing creates default-initialized descriptor
+    // writes which must never reach vkCmdPushDescriptorSetKHR if a producer
+    // supplies fewer records than its estimate.
+    set_writes.reserve(required_writes);
+    // VkWriteDescriptorSet::pBufferInfo pointers remain valid while adding
+    // numeric metadata alongside regular shader buffer bindings.
+    buffer_infos.reserve(required_buffer_infos);
+    image_bindings.resize(std::max(max_stage_images, std::size_t{Shader::NUM_IMAGES}));
 
     bool uses_dma = false;
     for (const auto* stage : pipeline->GetStages()) {
@@ -1094,10 +1133,9 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         if (!stage) {
             continue;
         }
-        set_writes.resize(set_writes.size() + stage->buffers.size() + stage->images.size() +
-                          stage->samplers.size());
         BindBuffers(*stage, binding, push_data);
         BindTextures(*stage, binding);
+        uses_dma |= stage->uses_dma;
     }
 
     if (uses_dma) {
@@ -1108,6 +1146,32 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         });
     }
 
+    // The dynamic write list must agree with the declared shader resources,
+    // and each Vulkan write must provide its type-appropriate descriptor
+    // data. Reject inconsistent producer metadata before it reaches RADV.
+    if (set_writes.size() != required_writes) {
+        LOG_ERROR(Render_Vulkan, "Descriptor write count mismatch: expected={} created={}",
+                  required_writes, set_writes.size());
+        return false;
+    }
+    for (std::size_t i = 0; i < set_writes.size(); ++i) {
+        const auto& write = set_writes[i];
+        const auto type = write.descriptorType;
+        const bool is_buffer = type == vk::DescriptorType::eStorageBuffer;
+        const bool is_image = type == vk::DescriptorType::eSampledImage ||
+                              type == vk::DescriptorType::eStorageImage ||
+                              type == vk::DescriptorType::eSampler;
+        if (write.descriptorCount == 0 || (is_buffer && write.pBufferInfo == nullptr) ||
+            (is_image && write.pImageInfo == nullptr) || (!is_buffer && !is_image)) {
+            LOG_ERROR(Render_Vulkan,
+                      "Invalid Vulkan descriptor write: ordinal={} binding={} type={} count={} "
+                      "buffer_info={} image_info={}",
+                      i, write.dstBinding, static_cast<u32>(type), write.descriptorCount,
+                      static_cast<const void*>(write.pBufferInfo),
+                      static_cast<const void*>(write.pImageInfo));
+            return false;
+        }
+    }
     return true;
 }
 
@@ -1611,7 +1675,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             }
         }
 
-        auto& set_write = set_writes[set_write_index++];
+        auto& set_write = set_writes.emplace_back();
         set_write.dstSet = VK_NULL_HANDLE;
         set_write.dstBinding = binding.unified++;
         set_write.dstArrayElement = 0;
@@ -1626,15 +1690,219 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     const u32 first_image_idx = image_infos.size();
     // To emulate storing to explicit mip levels, build a descriptor array with each mip level.
     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
+    boost::container::small_vector<bool, 8> image_descriptor_is_storage;
+    boost::container::small_vector<std::vector<u32>, 4> image_index_maps;
 
     u32 num_images{};
     for (const auto& image_desc : stage.images) {
+        if (image_desc.is_guest_indexed) {
+            const u32 count = image_desc.NumBindings(stage);
+            ASSERT(count >= 2 && count <= Shader::MaxGuestIndexedImageEntries + 1);
+            const u32 extra_images = (image_desc.NumImageArrays() - 1u) * count;
+            ASSERT(u64(num_images) + count + extra_images <= image_bindings.size());
+
+            AmdGpu::Buffer source{};
+            const bool fetched =
+                image_desc.indexed_table_fetch.Fetch(stage.flattened_ud_buf.data(), &source);
+            const u64 bytes = fetched ? (source.stride == 0
+                                             ? static_cast<u64>(source.num_records)
+                                             : static_cast<u64>(source.stride) * source.num_records)
+                                      : 0u;
+            const u32 record_stride = image_desc.indexed_record_stride_bytes;
+            const u32 descriptor_offset = image_desc.indexed_descriptor_offset_bytes;
+            const u32 represented_entries =
+                fetched && source.Valid()
+                    ? (record_stride ? Shader::Optimization::CompleteGuestTsharpRecordEntries(
+                                           static_cast<u32>(source.stride),
+                                           static_cast<u32>(source.num_records), record_stride,
+                                           descriptor_offset, Shader::MaxGuestIndexedImageEntries)
+                                     : Shader::Optimization::CompleteGuestTsharpTableEntries(
+                                           static_cast<u32>(source.stride),
+                                           static_cast<u32>(source.num_records),
+                                           Shader::MaxGuestIndexedImageEntries))
+                    : 0u;
+            ASSERT_MSG(represented_entries == count - 1u,
+                       "Indexed image table changed after shader specialization");
+            const u64 record_bytes = record_stride ? record_stride : sizeof(AmdGpu::Image);
+            const bool table_layout_valid =
+                record_stride ? descriptor_offset <= record_stride &&
+                                    sizeof(AmdGpu::Image) <= record_stride - descriptor_offset
+                              : descriptor_offset == 0;
+            const bool table_available =
+                fetched && source.Valid() && source.base_address != 0 && table_layout_valid;
+            // A table may have been generated by earlier GPU buffer writes.
+            // Demand-reconcile only the *represented prefix* before host memcpy,
+            // preserving the historical 2D binding path and every valid T# ID.
+            const u32 image_entries = std::min(count - 1u, represented_entries);
+            const auto image_prefix = Shader::Optimization::GuestDescriptorPrefixBytes(
+                image_entries, record_bytes, descriptor_offset, sizeof(AmdGpu::Image));
+            if (table_available && image_prefix && *image_prefix != 0 && *image_prefix <= bytes &&
+                *image_prefix <= std::numeric_limits<u32>::max() &&
+                source.base_address <= std::numeric_limits<u64>::max() - *image_prefix &&
+                memory->IsValidMapping(source.base_address, *image_prefix) &&
+                buffer_cache.IsRegionGpuModified(source.base_address, *image_prefix)) {
+                buffer_cache.ReadMemory(source.base_address, *image_prefix, false, false, true);
+                static std::atomic<u32> coherence_reports{0};
+                if (coherence_reports.fetch_add(1, std::memory_order_relaxed) < 24u) {
+                    LOG_INFO(Render_Vulkan,
+                             "GpuDescriptorTableCpuCoherence: kind=image stage={:#x} "
+                             "addr={:#x} bytes={} entries={} stride={}",
+                             stage.pgm_hash, static_cast<u64>(source.base_address), *image_prefix,
+                             image_entries, record_stride);
+                }
+            }
+            const u32 image_base = num_images;
+            num_images += count + extra_images;
+            std::vector<u32> numeric_metadata(count, 0u);
+            for (u32 idx = image_base; idx < num_images; ++idx) {
+                image_bindings[idx].image_id = {};
+            }
+
+            const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+            u32 bound_2d = 0, bound_3d = 0, bound_cube = 0;
+            std::array<u32, 3> bound_numeric{};
+            for (u32 i = 0; i + 1u < count; ++i) {
+                // c925 uses independent runtime records: never discard an
+                // otherwise valid 2D guest image because a later table entry
+                // is missing or has a different image dimension.
+                if (!table_available || i >= represented_entries) {
+                    continue;
+                }
+                const u64 record_offset_bytes = u64(i) * record_bytes + descriptor_offset;
+                if (record_offset_bytes > bytes ||
+                    sizeof(AmdGpu::Image) > bytes - record_offset_bytes ||
+                    source.base_address > std::numeric_limits<u64>::max() - record_offset_bytes) {
+                    continue;
+                }
+                const u64 entry_addr = source.base_address + record_offset_bytes;
+                if (entry_addr > std::numeric_limits<u64>::max() - (sizeof(AmdGpu::Image) - 1u) ||
+                    !memory->IsValidMapping(entry_addr, sizeof(AmdGpu::Image))) {
+                    continue;
+                }
+                AmdGpu::Image raw{};
+                std::memcpy(&raw, reinterpret_cast<const void*>(entry_addr), sizeof(raw));
+                if (!raw.Valid() || raw.Address() == 0 ||
+                    !memory->IsValidGpuMapping(raw.Address(), 0)) {
+                    continue;
+                }
+
+                const auto type = raw.GetViewType(image_desc.is_array);
+                u32 typed_slot = 0;
+                u32 max_dimension = limits.maxImageDimension2D;
+                u64 layers = 1;
+                switch (type) {
+                case AmdGpu::ImageType::Color1D:
+                    ASSERT_MSG(image_desc.is_guest_mixed_indexed,
+                               "Indexed 1D image requires dimension-aware sample coordinates");
+                    raw.height = 0;
+                    break;
+                case AmdGpu::ImageType::Color2D:
+                    break;
+                case AmdGpu::ImageType::Color3D:
+                    ASSERT_MSG(image_desc.is_guest_mixed_indexed,
+                               "Indexed image dimension requires a typed sample variant");
+                    if (bound_3d >= (count - 1u)) {
+                        UNREACHABLE_MSG("Indexed 3D descriptor count exceeds complete table");
+                    }
+                    typed_slot = 1;
+                    max_dimension = limits.maxImageDimension3D;
+                    layers = u64(raw.depth) + 1u;
+                    if (layers > max_dimension) {
+                        continue;
+                    }
+                    break;
+                case AmdGpu::ImageType::Cube:
+                    ASSERT_MSG(image_desc.is_guest_mixed_indexed,
+                               "Indexed image dimension requires a typed sample variant");
+                    if (bound_cube >= (count - 1u)) {
+                        UNREACHABLE_MSG("Indexed cube descriptor count exceeds complete table");
+                    }
+                    typed_slot = 2;
+                    max_dimension = limits.maxImageDimensionCube;
+                    layers = (u64(raw.depth) + 1u) * 6u;
+                    if (layers > limits.maxImageArrayLayers) {
+                        continue;
+                    }
+                    break;
+                default:
+                    UNREACHABLE_MSG("Unsupported indexed guest image dimension {}", u32(type));
+                }
+
+                const auto fmt = raw.GetDataFmt();
+                const auto nfmt = raw.GetNumberFmt();
+                if (!magic_enum::enum_contains(fmt) || !magic_enum::enum_contains(nfmt) ||
+                    fmt == AmdGpu::DataFormat::FormatInvalid || raw.width >= max_dimension ||
+                    raw.height >= max_dimension || raw.base_level > raw.last_level ||
+                    raw.pitch < raw.width) {
+                    continue;
+                }
+                const u32 numeric = u32(AmdGpu::GetNumberClass(nfmt));
+                const u32 dimensions = image_desc.is_guest_mixed_indexed ? 3u : 1u;
+                const u32 slot_index = image_base + (numeric * dimensions + typed_slot) * count + i;
+                auto& slot = image_bindings[slot_index];
+                auto& desc = slot.desc;
+                std::construct_at(&desc, raw, image_desc);
+                if (type == AmdGpu::ImageType::Cube) {
+                    const u32 layers = raw.NumLayers();
+                    const u32 base_layer = desc.view_info.range.base.layer;
+                    if (layers <= base_layer) {
+                        continue;
+                    }
+                    desc.view_info.range.extent.layers = layers - base_layer;
+                }
+                slot.image_id = texture_cache.FindImage(desc);
+                auto* image = &texture_cache.GetImage(slot.image_id);
+                if (type == AmdGpu::ImageType::Color2D &&
+                    desc.type == VideoCore::TextureCache::BindingType::Texture) {
+                    if (auto depth_id = texture_cache.GetAssociatedDepth(*image)) {
+                        slot.image_id = depth_id;
+                        image = &texture_cache.GetImage(slot.image_id);
+                    }
+                }
+                image->binding.is_bound = 1u;
+                numeric_metadata[i] = Shader::IndexedImageMetadata::Encode(raw);
+                ++bound_numeric[numeric];
+                if (typed_slot == 0u) {
+                    ++bound_2d;
+                } else if (typed_slot == 1u) {
+                    ++bound_3d;
+                } else {
+                    ++bound_cube;
+                }
+            }
+            static std::atomic<u32> small_bind_reports{0};
+            static std::atomic<u32> large_bind_reports{0};
+            const bool large = count > 1024u;
+            const bool log =
+                large ? large_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 24u
+                      : small_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 32u;
+            if (log) {
+                LOG_INFO(Render_Vulkan,
+                         "GuestIndexedImageDimensions: stage={:#x} entries={} "
+                         "bound_2d={} bound_3d={} bound_cube={} "
+                         "bound_float={} bound_sint={} bound_uint={} "
+                         "available={} mixed={} record_stride={}",
+                         stage.pgm_hash, count - 1u, bound_2d, bound_3d, bound_cube,
+                         bound_numeric[0], bound_numeric[1], bound_numeric[2], represented_entries,
+                         image_desc.is_guest_mixed_indexed, record_stride);
+            }
+            for (u32 i = 0; i < image_desc.NumImageArrays(); ++i) {
+                image_descriptor_array_sizes.push_back(count);
+                image_descriptor_is_storage.push_back(false);
+            }
+            image_descriptor_array_sizes.push_back(0u);
+            image_descriptor_is_storage.push_back(false);
+            image_index_maps.emplace_back(std::move(numeric_metadata));
+            continue;
+        }
+
         const auto tsharp = image_desc.GetSharp(stage);
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
         if (tsharp.Address() == 0 || data_fmt == AmdGpu::DataFormat::FormatInvalid) {
             image_bindings[num_images++].image_id = {};
             image_descriptor_array_sizes.push_back(1);
+            image_descriptor_is_storage.push_back(image_desc.is_written);
             continue;
         }
 
@@ -1647,6 +1915,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                         static_cast<u32>(num_fmt));
             image_bindings[num_images++].image_id = {};
             image_descriptor_array_sizes.push_back(1);
+            image_descriptor_is_storage.push_back(image_desc.is_written);
             continue;
         }
 
@@ -1668,17 +1937,27 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
             image_id = texture_cache.FindImage(desc);
             auto* image = &texture_cache.GetImage(image_id);
-            if (auto depth_image_id = texture_cache.GetAssociatedDepth(*image)) {
-                // If this image has an associated depth image, it's a stencil attachment.
-                // Redirect the access to the actual depth-stencil buffer.
-                image_id = depth_image_id;
-                image = &texture_cache.GetImage(image_id);
+            // An associated depth/stencil image is suitable for sampled stencil
+            // access, but cannot provide a Vulkan storage-image view. Keep
+            // storage accesses on the format-compatible cache image selected
+            // by FindImage/ResolveDepthOverlap rather than redirecting them
+            // to a depth/stencil attachment without STORAGE usage/features.
+            if (desc.type == VideoCore::TextureCache::BindingType::Texture) {
+                if (auto depth_image_id = texture_cache.GetAssociatedDepth(*image)) {
+                    image_id = depth_image_id;
+                    image = &texture_cache.GetImage(image_id);
+                }
             }
-            image->binding.force_general |= image_desc.is_written;
+            if (image->binding.is_bound) {
+                // The image is already bound. In case if it is about to be used as storage we
+                // need to force general layout on it.
+                image->binding.force_general |= image_desc.is_written;
+            }
             image->binding.is_bound = 1u;
         }
 
         image_descriptor_array_sizes.push_back(num_bindings);
+        image_descriptor_is_storage.push_back(image_desc.is_written);
     }
 
     // Second pass to re-bind images that were updated after binding
@@ -1738,10 +2017,33 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     }
 
     u32 image_info_idx = first_image_idx;
-    u32 image_resource_idx = 0;
-    for (u32 array_size : image_descriptor_array_sizes) {
-        const bool is_storage = stage.images[image_resource_idx++].is_written;
-        auto& set_write = set_writes[set_write_index++];
+    u32 image_binding_idx = 0;
+    u32 remap_cursor = 0;
+    for (u32 image_index = 0; image_index < image_descriptor_array_sizes.size(); ++image_index) {
+        const u32 array_size = image_descriptor_array_sizes[image_index];
+        if (array_size == 0u) {
+            ASSERT(remap_cursor < image_index_maps.size());
+            const auto& remap = image_index_maps[remap_cursor++];
+            ASSERT(!remap.empty());
+            auto& stream = buffer_cache.GetStreamBuffer();
+            const u64 bytes = u64(remap.size()) * sizeof(u32);
+            const u64 offset = stream.Copy(remap.data(), bytes, instance.StorageMinAlignment());
+            buffer_infos.emplace_back(stream.Handle(), offset, bytes);
+            auto& write = set_writes.emplace_back();
+            write.dstSet = VK_NULL_HANDLE;
+            write.dstBinding = binding.unified++;
+            write.dstArrayElement = 0u;
+            write.descriptorCount = 1u;
+            write.descriptorType = vk::DescriptorType::eStorageBuffer;
+            write.pBufferInfo = &buffer_infos.back();
+            continue;
+        }
+        // The descriptor set layout is derived from Shader::ImageResource::is_written.
+        // TextureCache binding types can differ after depth/stencil association,
+        // fallback selection, or invalid texture handles. A descriptor write
+        // must use the exact type declared by its pipeline layout.
+        const bool is_storage = image_descriptor_is_storage[image_index];
+        auto& set_write = set_writes.emplace_back();
         set_write.dstSet = VK_NULL_HANDLE;
         set_write.dstBinding = binding.unified;
         set_write.dstArrayElement = 0;
@@ -1751,10 +2053,152 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         set_write.pImageInfo = &image_infos[image_info_idx];
 
         image_info_idx += array_size;
+        image_binding_idx += array_size;
         binding.unified += array_size;
     }
 
     for (const auto& sampler : stage.samplers) {
+        if (sampler.is_guest_indexed) {
+            const u32 count = sampler.NumBindings(stage);
+            AmdGpu::Buffer source{};
+            const bool fetched =
+                sampler.indexed_table_fetch.Fetch(stage.flattened_ud_buf.data(), &source);
+            const u32 record_stride = sampler.indexed_record_stride_bytes;
+            const u32 image_offset = sampler.indexed_image_offset_bytes;
+            const u32 sampler_offset = sampler.indexed_sampler_offset_bytes;
+            const u64 bytes = fetched ? (source.stride == 0
+                                             ? static_cast<u64>(source.num_records)
+                                             : static_cast<u64>(source.stride) * source.num_records)
+                                      : 0u;
+            const u32 represented_entries =
+                fetched && source.Valid()
+                    ? (record_stride ? Shader::Optimization::CompleteGuestTsharpRecordEntries(
+                                           static_cast<u32>(source.stride),
+                                           static_cast<u32>(source.num_records), record_stride,
+                                           image_offset, Shader::MaxGuestIndexedImageEntries)
+                                     : Shader::Optimization::CompleteGuestTsharpTableEntries(
+                                           static_cast<u32>(source.stride),
+                                           static_cast<u32>(source.num_records),
+                                           Shader::MaxGuestIndexedImageEntries))
+                    : 0u;
+            const u64 record_bytes = record_stride ? record_stride : sizeof(AmdGpu::Image);
+            const bool table_layout_valid =
+                record_stride ? image_offset <= record_stride &&
+                                    sizeof(AmdGpu::Image) <= record_stride - image_offset &&
+                                    sampler_offset <= record_stride &&
+                                    sizeof(AmdGpu::Sampler) <= record_stride - sampler_offset
+                              : image_offset == 0;
+            const bool table_available =
+                fetched && source.Valid() && source.base_address != 0 && table_layout_valid;
+            // A packed strided material record may contain BOTH T# and S#.
+            // Make GPU-written records visible to host before reading either.
+            // Uniform S# without a per-record sampler stays unchanged.
+            const u32 sampler_entries = std::min(count - 1u, represented_entries);
+            const auto image_span = Shader::Optimization::GuestDescriptorPrefixBytes(
+                sampler_entries, record_bytes, image_offset, sizeof(AmdGpu::Image));
+            const auto sampler_span =
+                record_stride
+                    ? Shader::Optimization::GuestDescriptorPrefixBytes(
+                          sampler_entries, record_bytes, sampler_offset, sizeof(AmdGpu::Sampler))
+                    : std::optional<u64>{0};
+            if (table_available && sampler_entries != 0 && image_span && sampler_span) {
+                const u64 prefix = std::max(*image_span, *sampler_span);
+                if (prefix <= bytes && prefix <= std::numeric_limits<u32>::max() &&
+                    source.base_address <= std::numeric_limits<u64>::max() - prefix &&
+                    memory->IsValidMapping(source.base_address, prefix) &&
+                    buffer_cache.IsRegionGpuModified(source.base_address, prefix)) {
+                    buffer_cache.ReadMemory(source.base_address, prefix, false, false, true);
+                    static std::atomic<u32> coherence_reports{0};
+                    if (coherence_reports.fetch_add(1, std::memory_order_relaxed) < 24u) {
+                        LOG_INFO(Render_Vulkan,
+                                 "GpuDescriptorTableCpuCoherence: kind=sampler stage={:#x} "
+                                 "addr={:#x} bytes={} entries={} stride={}",
+                                 stage.pgm_hash, static_cast<u64>(source.base_address), prefix,
+                                 sampler_entries, record_stride);
+                    }
+                }
+            }
+
+            AmdGpu::Sampler uniform_sampler{};
+            bool uniform_sampler_valid = false;
+            if (record_stride == 0u) {
+                uniform_sampler = sampler.GetSharp(stage);
+                uniform_sampler_valid =
+                    uniform_sampler.Valid() &&
+                    (uniform_sampler.border_color_type.Value() != AmdGpu::BorderColor::Custom ||
+                     liverpool->regs.ta_bc_base.Address() != 0);
+            }
+
+            const u32 first_sampler = static_cast<u32>(image_infos.size());
+            u32 valid_indexed_samplers = 0;
+            for (u32 i = 0; i < count; ++i) {
+                AmdGpu::Sampler ssharp = uniform_sampler;
+                bool sampler_valid = record_stride == 0u ? uniform_sampler_valid : false;
+                if (table_available && i + 1u < count && i < represented_entries &&
+                    u64(i) * record_bytes <= bytes) {
+                    const u64 record_offset_bytes = u64(i) * record_bytes;
+                    const u64 record_address = source.base_address + record_offset_bytes;
+                    if (record_stride != 0u) {
+                        const u64 sampler_address = record_address + sampler_offset;
+                        ssharp = AmdGpu::Sampler{};
+                        sampler_valid = false;
+                        if (sampler_offset <= bytes - record_offset_bytes &&
+                            sizeof(AmdGpu::Sampler) <=
+                                bytes - record_offset_bytes - sampler_offset &&
+                            sampler_address >= record_address &&
+                            sampler_address <=
+                                std::numeric_limits<u64>::max() - (sizeof(AmdGpu::Sampler) - 1) &&
+                            memory->IsValidMapping(sampler_address, sizeof(AmdGpu::Sampler))) {
+                            std::memcpy(&ssharp, reinterpret_cast<const void*>(sampler_address),
+                                        sizeof(AmdGpu::Sampler));
+                            sampler_valid =
+                                ssharp.Valid() &&
+                                (ssharp.border_color_type.Value() != AmdGpu::BorderColor::Custom ||
+                                 liverpool->regs.ta_bc_base.Address() != 0);
+                        }
+                    }
+                } else {
+                    // Missing and out-of-range guest entries remain null slots.
+                    sampler_valid = false;
+                }
+                if (sampler_valid) {
+                    ASSERT_MSG(record_stride == 0u ||
+                                   (!ssharp.force_unnormalized && !ssharp.force_degamma),
+                               "Indexed sampler requires per-entry coordinate or gamma conversion");
+                    ++valid_indexed_samplers;
+                }
+                // VK_DESCRIPTOR_TYPE_SAMPLER cannot bind VK_NULL_HANDLE.
+                // Use actual valid guest sampler data when present. Missing
+                // guest table slots use the renderer's real cached default
+                // sampler, as in the earlier generic native implementation.
+                const AmdGpu::Sampler resolved_guest_sampler =
+                    sampler_valid ? ssharp : AmdGpu::Sampler{};
+                const vk::Sampler vk_sampler = texture_cache.GetSampler(
+                    resolved_guest_sampler, liverpool->regs.ta_bc_base, sampler.is_depth);
+                ASSERT_MSG(static_cast<VkSampler>(vk_sampler) != VK_NULL_HANDLE,
+                           "Vulkan sampler descriptor requires a valid VkSampler");
+                image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
+            }
+            if (valid_indexed_samplers != count - 1 || represented_entries != count - 1) {
+                static std::atomic<u32> reports{0};
+                if (reports.fetch_add(1, std::memory_order_relaxed) < 24) {
+                    LOG_WARNING(Render_Vulkan,
+                                "Indexed sampler table: shader={:#x} slots={} available={} "
+                                "valid={} bytes={} record_stride={}",
+                                stage.pgm_hash, count - 1, represented_entries,
+                                valid_indexed_samplers, bytes, record_stride);
+                }
+            }
+            auto& write = set_writes.emplace_back();
+            write.dstSet = VK_NULL_HANDLE;
+            write.dstBinding = binding.unified;
+            write.dstArrayElement = 0;
+            write.descriptorCount = count;
+            write.descriptorType = vk::DescriptorType::eSampler;
+            write.pImageInfo = &image_infos[first_sampler];
+            binding.unified += count;
+            continue;
+        }
         auto ssharp = sampler.GetSharp(stage);
         if (!ssharp.Valid() || (ssharp.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
                                 liverpool->regs.ta_bc_base.Address() == 0)) {
@@ -1771,7 +2215,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         const auto vk_sampler =
             texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base, sampler.is_depth);
         image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
-        auto& set_write = set_writes[set_write_index++];
+        auto& set_write = set_writes.emplace_back();
         set_write.dstSet = VK_NULL_HANDLE;
         set_write.dstBinding = binding.unified++;
         set_write.dstArrayElement = 0;

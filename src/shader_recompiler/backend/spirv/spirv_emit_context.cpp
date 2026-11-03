@@ -15,6 +15,7 @@
 
 #include <numbers>
 #include <string_view>
+#include <utility>
 
 namespace Shader::Backend::SPIRV {
 namespace {
@@ -1031,8 +1032,15 @@ void EmitContext::DefineImagesAndSamplers() {
 
         const u32 num_bindings = image_desc.NumBindings(info);
         Id pointee_type = image_type;
-        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex) {
+        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex ||
+            image_desc.is_guest_indexed) {
             pointee_type = TypeArray(pointee_type, ConstU32(num_bindings));
+        }
+        if (image_desc.is_guest_indexed) {
+            ASSERT(profile.supports_sampled_image_nonuniform_indexing);
+            AddCapability(spv::Capability::ShaderNonUniform);
+            AddCapability(spv::Capability::SampledImageArrayDynamicIndexing);
+            AddCapability(spv::Capability::SampledImageArrayNonUniformIndexing);
         }
 
         const Id pointer_type{TypePointer(spv::StorageClass::UniformConstant, pointee_type)};
@@ -1050,8 +1058,59 @@ void EmitContext::DefineImagesAndSamplers() {
             .is_integer = is_integer,
             .is_storage = is_storage,
             .mip_fallback_mode = mip_fallback_mode,
+            .image_array_size = num_bindings,
+            .is_guest_indexed = image_desc.is_guest_indexed,
+            .is_guest_mixed_indexed = image_desc.is_guest_mixed_indexed,
         });
         interfaces.push_back(id);
+
+        if (image_desc.is_guest_indexed) {
+            auto& typed = images.back();
+            typed.indexed_ids[0] = id;
+            typed.indexed_types[0] = image_type;
+            const u32 dimensions = image_desc.is_guest_mixed_indexed ? 3u : 1u;
+            for (u32 i = 1; i < image_desc.NumImageArrays(); ++i) {
+                const u32 dimension = i % dimensions;
+                const u32 numeric = i / dimensions;
+                const Id scalar = numeric == 0 ? F32[1] : numeric == 1 ? S32[1] : U32[1];
+                const Id typed_image =
+                    TypeImage(scalar, dimension == 1 ? spv::Dim::Dim3D : spv::Dim::Dim2D, false,
+                              dimension == 2, false, 1u, spv::ImageFormat::Unknown);
+                const Id array = TypeArray(typed_image, ConstU32(num_bindings));
+                const Id pointer = TypePointer(spv::StorageClass::UniformConstant, array);
+                const Id var = AddGlobalVariable(pointer, spv::StorageClass::UniformConstant);
+                Decorate(var, spv::Decoration::Binding, binding.unified);
+                binding.unified += num_bindings;
+                Decorate(var, spv::Decoration::DescriptorSet, 0u);
+                Name(var, fmt::format("{}_img{}_type{}", hw_stage, images.size() - 1, i));
+                interfaces.push_back(var);
+                typed.indexed_ids[i] = var;
+                typed.indexed_types[i] = typed_image;
+            }
+
+            const Id map_array = TypeRuntimeArray(U32[1]);
+            const Id map_struct = TypeStruct(map_array);
+            // The runtime u32 array can be shared with an ordinary buffer
+            // resource. Emit its layout decorations only on first use.
+            if (std::ranges::find(buf_type_ids, map_array.value, &Id::value) ==
+                buf_type_ids.end()) {
+                Decorate(map_array, spv::Decoration::ArrayStride, 4u);
+                Decorate(map_struct, spv::Decoration::Block);
+                MemberDecorate(map_struct, 0, spv::Decoration::Offset, 0u);
+                buf_type_ids.push_back(map_array);
+            }
+            const Id map_struct_ptr = TypePointer(spv::StorageClass::StorageBuffer, map_struct);
+            const Id map_var = AddGlobalVariable(map_struct_ptr, spv::StorageClass::StorageBuffer);
+            Decorate(map_var, spv::Decoration::Binding, binding.unified++);
+            Decorate(map_var, spv::Decoration::DescriptorSet, 0u);
+            Decorate(map_var, spv::Decoration::NonWritable);
+            Name(map_var, fmt::format("{}_img{}_numeric_metadata", hw_stage, images.size() - 1));
+            interfaces.push_back(map_var);
+
+            typed.indexed_metadata = map_var;
+            typed.indexed_metadata_pointer_type =
+                TypePointer(spv::StorageClass::StorageBuffer, U32[1]);
+        }
     }
     if (std::ranges::any_of(info.images,
                             [](const ImageResource& image) { return image.is_atomic; })) {
@@ -1064,11 +1123,23 @@ void EmitContext::DefineImagesAndSamplers() {
     sampler_type = TypeSampler();
     sampler_pointer_type = TypePointer(spv::StorageClass::UniformConstant, sampler_type);
     for (const auto& samp_desc : info.samplers) {
-        const Id id{AddGlobalVariable(sampler_pointer_type, spv::StorageClass::UniformConstant)};
-        Decorate(id, spv::Decoration::Binding, binding.unified++);
+        const u32 count = samp_desc.NumBindings(info);
+        Id pointer_type = sampler_pointer_type;
+        if (samp_desc.is_guest_indexed) {
+            ASSERT(profile.supports_sampler_array_nonuniform_indexing);
+            ASSERT(count >= 2u);
+            AddCapability(spv::Capability::ShaderNonUniform);
+            AddCapability(spv::Capability::SampledImageArrayNonUniformIndexing);
+            const Id array_type = TypeArray(sampler_type, ConstU32(count));
+            pointer_type = TypePointer(spv::StorageClass::UniformConstant, array_type);
+        }
+        const Id id{AddGlobalVariable(pointer_type, spv::StorageClass::UniformConstant)};
+        Decorate(id, spv::Decoration::Binding, binding.unified);
+        binding.unified += count;
         Decorate(id, spv::Decoration::DescriptorSet, 0U);
         Name(id, fmt::format("{}_{}{}", hw_stage, "samp", samplers.size()));
         samplers.push_back(id);
+        sampler_array_sizes.push_back(count);
         interfaces.push_back(id);
     }
 }
