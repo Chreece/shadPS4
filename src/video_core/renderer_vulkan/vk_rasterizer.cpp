@@ -1057,13 +1057,11 @@ void Rasterizer::Finish() {
 
 void Rasterizer::OnSubmit() {
     buffer_cache.TickFrame();
-    texture_cache.ProcessDownloadImages();
     texture_cache.RunGarbageCollector();
     runtime.TickFrame();
 }
 
 void Rasterizer::OnFence() {
-    texture_cache.ProcessDownloadImages();
     if (occlusion) {
         // The caller signals a guest fence immediately after this method.
         // Complete preceding counter writes before that fence becomes visible.
@@ -2484,8 +2482,16 @@ bool Rasterizer::InvalidateMemory(VAddr addr, u64 size, bool assume_locks) {
         // Not GPU mapped memory, can skip invalidation logic entirely.
         return false;
     }
-    buffer_cache.InvalidateMemory(addr, size, assume_locks);
-    texture_cache.InvalidateMemory(addr, size);
+    const auto invalidate = [this, addr, size] {
+        texture_cache.ReadMemory(addr, size);
+        buffer_cache.InvalidateMemory(addr, size, true);
+        texture_cache.InvalidateMemory(addr, size);
+    };
+    if (assume_locks) {
+        invalidate();
+    } else {
+        liverpool->SendCommand<true>(invalidate);
+    }
     return true;
 }
 
@@ -2494,7 +2500,17 @@ bool Rasterizer::ReadMemory(VAddr addr, u64 size, bool assume_locks) {
         // Not GPU mapped memory, can skip invalidation logic entirely.
         return false;
     }
-    buffer_cache.ReadMemory(addr, size, false, false, assume_locks);
+    const auto read = [this, addr, size] {
+        texture_cache.ReadMemory(addr, size);
+        if (buffer_cache.IsRegionGpuModified(addr, size)) {
+            buffer_cache.ReadMemory(addr, size, false, false, true);
+        }
+    };
+    if (assume_locks) {
+        read();
+    } else {
+        liverpool->SendCommand<true>(read);
+    }
     return true;
 }
 
@@ -2525,8 +2541,16 @@ void Rasterizer::RegisterMemory(VAddr addr, u64 size) {
 }
 
 void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
-    buffer_cache.InvalidateMemory(addr, size);
-    texture_cache.UnmapMemory(addr, size);
+    const auto unmap = [this, addr, size] {
+        texture_cache.ReadMemory(addr, size);
+        buffer_cache.InvalidateMemory(addr, size, true);
+        texture_cache.UnmapMemory(addr, size);
+    };
+    if (std::this_thread::get_id() == GetGpuCommandProcessorThread()) {
+        unmap();
+    } else {
+        liverpool->SendCommand<true>(unmap);
+    }
     {
         std::scoped_lock lock{mapped_ranges_mutex};
         mapped_ranges -= decltype(mapped_ranges)::interval_type::right_open(addr, addr + size);
