@@ -19,6 +19,7 @@ import urllib.request
 PIN = os.environ.get('SHADPS4_TEST_SOURCE_COMMIT', 'ed0fe5be055ee712756351479ac5411366e5385b')
 ELF = '2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548'
 MIN_FREE = 8 * 1024**3
+OBSERVER_SHA256 = 'cfdb4de4cf4a74f18f26bc4a84410fb8eb1c7ba2751c39ec0e013875b4525545'
 GPU_JOURNAL_PATTERN = r'(?i)\b(amdgpu|i915|xe|nouveau|nvidia|drm|gpu|kfd|xorg)\b|blocked for more than|Workqueue:'
 
 
@@ -36,6 +37,16 @@ def collect_shader_diagnostics(runtime, out, console, captures):
     recent = []
     current_hash = None
     capture_completed = False
+    validation_hashes = []
+    validation_log = out / 'capture/vulkan-validation.log'
+    if validation_log.is_file():
+        for match in re.finditer(r'\b(?:cs|fs|vs|gs|hs|ls|es)_0x([0-9a-fA-F]{1,16})',
+                                 validation_log.read_text(errors='replace')):
+            shader_hash = format(int(match.group(1), 16), '016x')
+            if shader_hash not in validation_hashes:
+                validation_hashes.append(shader_hash)
+            if len(validation_hashes) == 16:
+                break
     if console.is_file():
         with console.open(errors='replace') as f:
             for line in f:
@@ -56,7 +67,7 @@ def collect_shader_diagnostics(runtime, out, console, captures):
             start = max(0, console.stat().st_size - 16 * 1024**2)
             f.seek(start)
             (out / 'console-tail.log').write_bytes(f.read(16 * 1024**2))
-    priority = []
+    priority = validation_hashes.copy()
     for capture in captures:
         match = re.fullmatch(r'ordered-gds-([0-9a-f]{16})-\d+\.bin', capture['file'])
         if match and match.group(1) not in priority:
@@ -99,6 +110,7 @@ def collect_shader_diagnostics(runtime, out, console, captures):
         saved_binary.append({'file': path.name, 'bytes': size, 'sha256': digest(target)})
         total_binary += size
     return {'dump_enabled': True, 'blocked_hashes': sorted(set(blocked)),
+            'validation_named_hashes': validation_hashes,
             'recent_compiled_hashes': list(reversed(recent)),
             'priority_hashes': priority, 'saved_ir': saved_ir, 'saved_bytes': total_ir,
             'limit_bytes': 20 * 1024**2, 'limit_files': 48,
@@ -342,7 +354,7 @@ def profile_source(project):
     raise RuntimeError('NO_EXISTING_PROFILE_WITH_SYSTEM_MODULES')
 
 
-def copy_profile(old, new):
+def copy_profile(old, new, diagnostics=False):
     allowed = {'sys_modules', 'custom_modules', 'fonts', 'licenses', 'home',
                'savedata', 'game_data', 'trophy', 'config.json'}
     files = []
@@ -377,10 +389,73 @@ def copy_profile(old, new):
         data = relocate(data)
         data.setdefault('General', {})['home_dir'] = str(new / 'home')
         data.setdefault('GPU', {})['dump_shaders'] = True
-        save(config, data)
-    if not config.is_file():
-        save(config, {'GPU': {'dump_shaders': True}})
+    else:
+        data = {'GPU': {'dump_shaders': True}}
+    if diagnostics:
+        data.setdefault('Vulkan', {}).update(
+            vkvalidation_enabled=True, vkvalidation_core_enabled=True,
+            vkvalidation_sync_enabled=True, vkvalidation_gpu_enabled=False,
+            vkhost_markers=True, vkcrash_diagnostic_enabled=False)
+        log = data.setdefault('Log', {})
+        log.update(enable=True, sync=True, flush_level='error')
+        log['filter'] = (log.get('filter', '').strip() + ' Render.Vulkan:info').strip()
+    save(config, data)
     return len(files)
+
+
+def verify_validation_layer(out, record):
+    import ctypes
+
+    class LayerProperties(ctypes.Structure):
+        _fields_ = [('name', ctypes.c_char * 256), ('spec_version', ctypes.c_uint32),
+                    ('implementation_version', ctypes.c_uint32),
+                    ('description', ctypes.c_char * 256)]
+
+    try:
+        loader = ctypes.CDLL('libvulkan.so.1')
+        enumerate_layers = loader.vkEnumerateInstanceLayerProperties
+        enumerate_layers.restype = ctypes.c_int32
+        enumerate_layers.argtypes = [ctypes.POINTER(ctypes.c_uint32),
+                                     ctypes.POINTER(LayerProperties)]
+        for _ in range(3):
+            count = ctypes.c_uint32()
+            if enumerate_layers(ctypes.byref(count), None) != 0 or count.value > 1024:
+                raise RuntimeError('VULKAN_LAYER_ENUMERATION_FAILED')
+            capacity = count.value
+            properties = (LayerProperties * capacity)()
+            result = enumerate_layers(ctypes.byref(count), properties)
+            if result == 5:
+                continue
+            if result != 0 or count.value > capacity:
+                raise RuntimeError('VULKAN_LAYER_ENUMERATION_FAILED')
+            layers = [{'name': p.name.decode('utf-8', 'replace'),
+                       'spec_version': p.spec_version,
+                       'implementation_version': p.implementation_version}
+                      for p in properties[:count.value]]
+            save(out / 'vulkan-layers.json', layers)
+            record['vulkan_layers'] = layers
+            if not any(p['name'] == 'VK_LAYER_KHRONOS_validation' for p in layers):
+                raise RuntimeError('VULKAN_VALIDATION_LAYER_MISSING')
+            return
+        raise RuntimeError('VULKAN_LAYER_ENUMERATION_UNSTABLE')
+    except (OSError, AttributeError, RuntimeError) as exc:
+        record['preflight_failure'] = str(exc)
+        record['stop_remaining_tests'] = True
+        raise
+
+
+def verify_upstream(source, record):
+    upstream = subprocess.check_output(
+        ['git', 'ls-remote', 'https://github.com/shadps4-emu/shadPS4.git', 'refs/heads/main'],
+        text=True, timeout=30).split()
+    if len(upstream) != 2 or not re.fullmatch(r'[0-9a-f]{40}', upstream[0]):
+        raise RuntimeError('UPSTREAM_MAIN_CHECK_FAILED')
+    record['upstream_main_checked'] = upstream[0]
+    result = subprocess.run(['git', '-C', str(source), 'merge-base', '--is-ancestor',
+                             upstream[0], PIN], capture_output=True, timeout=15)
+    if result.returncode:
+        record['stop_remaining_tests'] = True
+        raise RuntimeError('BLOCKED_UPSTREAM_ADVANCED: integrate latest upstream before testing')
 
 
 def recover_incomplete_captures(project, out, observer):
@@ -422,6 +497,8 @@ def main():
               'evidence': str(out) + '.tar.gz', 'result': 'PREFLIGHT_FAILED'}
     record['runner_commit'] = os.environ.get('SHADPS4_TEST_RUNNER_COMMIT', PIN)
     record['runner_sha256'] = digest(Path(__file__))
+    diagnostics = os.environ.get('SHADPS4_VULKAN_DIAGNOSTICS') == '1'
+    record['vulkan_diagnostics_requested'] = diagnostics
     rc = 1
     game = Path(os.environ.get('SHADPS4_TEST_GAME', '/mnt/roms-all/ps4-games/CUSA11456/eboot.bin'))
     record['context_games'] = [game.parent.name]
@@ -430,7 +507,8 @@ def main():
     lock = (project / 'tests/.universal-upstream-build.lock').open('a')
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        if not re.fullmatch(r'[0-9a-f]{40}', PIN):
+        if not all(re.fullmatch(r'[0-9a-f]{40}', value)
+                   for value in (PIN, record['runner_commit'])):
             raise RuntimeError('INVALID_SOURCE_PIN')
         if PIN != 'ed0fe5be055ee712756351479ac5411366e5385b':
             matches = []
@@ -455,10 +533,21 @@ def main():
         head = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
         if head != PIN:
             raise RuntimeError('VERIFIED_SOURCE_CHANGED')
+        verify_upstream(source, record)
         observer = source / 'tools/development/shadps4_native_120_observer_20261026.py'
         committed = subprocess.check_output(['git', '-C', str(source), 'show', PIN + ':' + str(observer.relative_to(source))])
         if observer.read_bytes() != committed:
             raise RuntimeError('OBSERVER_CHANGED')
+        if record['runner_commit'] != PIN:
+            url = ('https://raw.githubusercontent.com/Chreece/shadPS4/' + record['runner_commit'] +
+                   '/tools/development/shadps4_native_120_observer_20261026.py')
+            with urllib.request.urlopen(url, timeout=30) as response:
+                data = response.read(1024 * 1024)
+            observer = out / 'observer.py'
+            observer.write_bytes(data)
+        if digest(observer) != OBSERVER_SHA256:
+            raise RuntimeError('RUNNER_OBSERVER_HASH_MISMATCH')
+        record['observer_sha256'] = OBSERVER_SHA256
         spec = importlib.util.spec_from_file_location('observer', observer)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -473,9 +562,17 @@ def main():
         if not shutil.which('import'):
             raise RuntimeError('SCREENSHOT_TOOL_IMPORT_MISSING')
         verify_display(out, record, display)
+        if diagnostics:
+            verify_validation_layer(out, record)
         old = profile_source(project)
         record['profile_source'] = str(old)
-        record['profile_files_copied'] = copy_profile(old, runtime / 'user')
+        record['profile_files_copied'] = copy_profile(old, runtime / 'user', diagnostics)
+        profile_config = runtime / 'user/config.json'
+        record['profile_config_sha256'] = digest(profile_config)
+        if diagnostics:
+            settings = json.loads(profile_config.read_text())
+            save(out / 'vulkan-diagnostic-settings.json',
+                 {key: settings[key] for key in ('Vulkan', 'Log')})
         record['profile_policy'] = 'isolated saves; global config; no custom title configs, patches, cheats or old shader cache'
         record['vram_free_before'] = free_vram()
         record['ollama_unloaded'] = []
@@ -522,7 +619,13 @@ def main():
         record['stop_remaining_tests'] = bool(record.get('stop_remaining_tests') or
             record['game_launched'] and (
             record.get('native', {}).get('gpu_failure') or
+            diagnostics and not record.get('native', {}).get('validation_layer_active') or
             not record.get('native', {}).get('owned_child_terminated', False)))
+        if record.get('native', {}).get('gpu_failure'):
+            try:
+                collect_display_health(out, os.environ.get('DISPLAY') or ':0', query_display=False)
+            except Exception as exc:
+                record['display_diagnostic_error'] = str(exc)
         logs = runtime / 'user/log'
         if logs.is_dir():
             for log in logs.glob('*.txt'):
