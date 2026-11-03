@@ -302,16 +302,12 @@ public:
     struct TextureDefinition {
         const VectorIds* data_types;
         Id id;
-        Id image_id_3d{};
-        Id image_id_cube{};
-        Id compact_index_map{};
-        Id compact_index_pointer_type{};
-        u32 compact_3d_array_size{};
-        u32 compact_cube_array_size{};
+        std::array<Id, 9> indexed_ids{};
+        std::array<Id, 9> indexed_types{};
+        Id indexed_metadata{};
+        Id indexed_metadata_pointer_type{};
         Id sampled_type;
         Id image_type;
-        Id image_type_3d{};
-        Id image_type_cube{};
         AmdGpu::ImageType view_type;
         bool is_integer = false;
         bool is_storage = false;

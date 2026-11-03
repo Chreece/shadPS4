@@ -140,6 +140,28 @@ enum class MipStorageFallbackMode : u16 {
 
 inline constexpr u32 MaxGuestIndexedImageEntries = 32768;
 
+struct IndexedImageMetadata {
+    static constexpr u32 ClassMask = 3;
+    static constexpr u32 ConversionShift = 2;
+    static constexpr u32 ConversionMask = 7;
+    static constexpr u32 ComponentShift = 5;
+
+    static u32 Encode(const AmdGpu::Image& image) {
+        u32 value = u32(AmdGpu::GetNumberClass(image.GetNumberFmt())) |
+                    (u32(image.GetNumberConversion()) << ConversionShift);
+        const auto mapping = image.DstSelect();
+        const auto components = AmdGpu::NumComponents(image.GetDataFmt());
+        for (u32 i = 0; i < 4; ++i) {
+            const auto selector = u32(mapping.array[i]);
+            if (selector >= u32(AmdGpu::CompSwizzle::Red) &&
+                selector < u32(AmdGpu::CompSwizzle::Red) + components) {
+                value |= 1u << (ComponentShift + i);
+            }
+        }
+        return value;
+    }
+};
+
 struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
     SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};
@@ -193,6 +215,10 @@ struct ImageResource {
         }
         out->pitch = out->width;
         return true;
+    }
+
+    u32 NumImageArrays() const {
+        return is_guest_indexed ? (is_guest_mixed_indexed ? 9u : 3u) : 1u;
     }
 
     u32 NumBindings(const auto& info) const {
