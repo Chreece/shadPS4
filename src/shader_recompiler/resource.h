@@ -35,6 +35,9 @@ struct SharpFetch {
     Summary summary{Summary::MultiLoad};
     std::array<u32, N> immediates;
     std::array<SharpLocation, N> offsets;
+    // Preserve exact constant AND masks from guest descriptor IR after
+    // loading the scalar source; this applies to immediate and loaded words.
+    std::array<u32, N> clear_masks{};
     u8 load_mask;
 
     bool operator==(const SharpFetch&) const = default;
@@ -51,7 +54,8 @@ struct SharpFetch {
         u8 mask = load_mask;
         std::array<u32, num_dwords> out_dw;
         for (u32 i = 0; i < num_dwords; i++) {
-            out_dw[i] = (mask & 1) ? flatbuf[offsets[i]] : immediates[i];
+            const u32 raw = (mask & 1) ? flatbuf[offsets[i]] : immediates[i];
+            out_dw[i] = raw & ~clear_masks[i];
             mask >>= 1;
         }
         std::memcpy(out, out_dw.data(), sizeof(out_dw));
@@ -134,8 +138,16 @@ enum class MipStorageFallbackMode : u16 {
     ConstantIndex,
 };
 
+inline constexpr u32 MaxGuestIndexedImageEntries = 32768;
+
 struct ImageResource {
     SharpFetch<AmdGpu::Image> sharp_fetch{};
+    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};
+    u32 indexed_guest_entries{};
+    u32 indexed_record_stride_bytes{};
+    u32 indexed_descriptor_offset_bytes{};
+    bool is_guest_indexed{};
+    bool is_guest_mixed_indexed{};
     bool is_depth{};
     bool is_atomic{};
     bool is_array{};
@@ -146,6 +158,9 @@ struct ImageResource {
     SharpFetchPostOp post_op{};
 
     constexpr AmdGpu::Image GetSharp(const auto& info) const noexcept {
+        if (is_guest_indexed) {
+            return AmdGpu::Image::Null(false);
+        }
         AmdGpu::Image image{};
         if (!Fetch(info.flattened_ud_buf.data(), &image)) {
             return AmdGpu::Image::Null(is_depth);
@@ -180,6 +195,9 @@ struct ImageResource {
     }
 
     u32 NumBindings(const auto& info) const {
+        if (is_guest_indexed) {
+            return u32(indexed_guest_entries) + 1u;
+        }
         const AmdGpu::Image tsharp = GetSharp(info);
         return (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex)
                    ? (tsharp.last_level - tsharp.base_level + 1)
@@ -190,11 +208,20 @@ using ImageResourceList = boost::container::static_vector<ImageResource, NUM_IMA
 
 struct SamplerResource {
     SharpFetch<AmdGpu::Sampler> sharp_fetch{};
+    SharpFetch<AmdGpu::Buffer> indexed_table_fetch{};
+    u32 indexed_guest_entries{};
+    u32 indexed_record_stride_bytes{};
+    u32 indexed_image_offset_bytes{};
+    u32 indexed_sampler_offset_bytes{};
+    bool is_guest_indexed{};
     SharpFetchPostOp post_op{};
     SharpLocation post_op_tsharp_dw3_off{};
     bool is_depth{};
 
     constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {
+        if (is_guest_indexed && indexed_record_stride_bytes != 0u) {
+            return AmdGpu::Sampler{};
+        }
         AmdGpu::Sampler sampler{};
         sharp_fetch.Fetch(info.flattened_ud_buf.data(), &sampler);
         if (post_op == SharpFetchPostOp::DisableAnisoIfSingleLod) {
@@ -215,6 +242,15 @@ struct SamplerResource {
             sampler.aniso_threshold.Assign(0);
         }
         return sampler;
+    }
+
+    // One real S# for a uniform sampler, or the complete GPU-indexed
+    // guest sampler table plus one out-of-range null sentinel. This is
+    // the same count used by Vulkan descriptor layout, SPIR-V declarations,
+    // and actual T#/S# table binding; never synthesize sampler values.
+    u32 NumBindings(const auto&) const noexcept {
+
+        return is_guest_indexed ? indexed_guest_entries + 1u : 1u;
     }
 };
 using SamplerResourceList = boost::container::static_vector<SamplerResource, NUM_SAMPLERS>;
