@@ -200,21 +200,23 @@ struct Info : InfoPersistent {
 
     bool IndexedResourcesCompatible() const {
         for (const auto& image : images) {
-            if (!image.is_guest_indexed) {
+            if (!image.is_guest_indexed && image.indexed_entry_limit == 0) {
                 continue;
             }
             AmdGpu::Buffer table{};
-            if (!image.indexed_table_fetch.Fetch(flattened_ud_buf.data(), &table) ||
-                !table.Valid()) {
-                return false;
-            }
+            const bool available =
+                image.indexed_table_fetch.Fetch(flattened_ud_buf.data(), &table) && table.Valid() &&
+                table.base_address != 0;
+            const u32 limit =
+                image.indexed_entry_limit ? image.indexed_entry_limit : MaxGuestIndexedImageEntries;
             const u32 entries =
-                image.indexed_record_stride_bytes
+                !available ? 0u
+                : image.indexed_record_stride_bytes
                     ? Optimization::CompleteGuestTsharpRecordEntries(
                           table.stride, table.num_records, image.indexed_record_stride_bytes,
-                          image.indexed_descriptor_offset_bytes, MaxGuestIndexedImageEntries)
+                          image.indexed_descriptor_offset_bytes, limit)
                     : Optimization::CompleteGuestTsharpTableEntries(table.stride, table.num_records,
-                                                                    MaxGuestIndexedImageEntries);
+                                                                    limit);
             if (entries != image.indexed_guest_entries) {
                 return false;
             }

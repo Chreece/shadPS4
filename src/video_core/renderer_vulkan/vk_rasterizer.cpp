@@ -1796,11 +1796,16 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                     continue;
                 }
 
-                const auto type = raw.GetType();
+                const auto type = raw.GetViewType(image_desc.is_array);
                 u32 typed_slot = 0;
                 u32 max_dimension = limits.maxImageDimension2D;
                 u64 layers = 1;
                 switch (type) {
+                case AmdGpu::ImageType::Color1D:
+                    ASSERT_MSG(image_desc.is_guest_mixed_indexed,
+                               "Indexed 1D image requires dimension-aware sample coordinates");
+                    raw.height = 0;
+                    break;
                 case AmdGpu::ImageType::Color2D:
                     break;
                 case AmdGpu::ImageType::Color3D:
