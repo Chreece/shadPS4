@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "record_id": "readconst-restoration-20261028-prepared",
+  "recorded_at": "2026-10-28",
+  "scope": "Universal shader requirement routing; no game IDs or shader-hash exceptions in production",
+  "tested_games": [],
+  "gameplay": "NOT_RUN",
+  "historical_source": "11610d67064433179d7943d684b0632d470a3c7b",
+  "historical_result": "October 26 source already attempted automatic ReadConst/BDA and bounded atomic fault tracking. Native tests/build passed but GoW failed after 36.867s. This restoration is not a novel discovery and not a proven gameplay fix.",
+  "retained_source": "5afdbc64261cef5c50eca2abd29127d5ce6d8bb7",
+  "retained_binary_sha256": "fc678780c1b891b3c57757ce2afe834a12f003755d224bba20804ff79d458b16",
+  "checked_upstream_snapshot": "0cd6e4f2cb6617af12eb8267cca848cc41ad20d7",
+  "upstream_delta": "Official #5452 bounds attachmentless render areas by scissors; only regs.h and vk_rasterizer.cpp relative to ca36c7e3. Integrated separately with exact path guards; its contribution to a future changed result must not be conflated with the ReadConst restoration.",
+  "retained_improvements_since_old_trial": ["shader permutation metadata ownership", "CPU-write GPU-byte preservation", "transfer-to-host publication", "PM4 chain and reuse fixes", "depth allocation correction", "queue and device-fault diagnostics", "screenshot error handling"],
+  "defect_reproduced": "With the optional DMA setting off, the actual CollectShaderInfoPass removes required dynamic-read resources and actual EmitReadConst loads flatbuffer word zero instead of the requested GPU address/offset. The current game log has that setting off and unflattenable Phi offsets. Causality of RADV loss remains unproven.",
+  "restoration": "Derive DMA resources from actual unflattened ReadConst instructions rather than the legacy option. Keep already flattened loads unchanged. Require BDA and shaderInt64 for needed loads; refuse unsupported required semantics instead of silently substituting userdata. Restore the earlier 40-bit resolver bound and atomic fault bitmap update. Bump shader binary/meta cache versions from 16/9 to 17/10.",
+  "production_paths": [
+    "src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp",
+    "src/shader_recompiler/backend/spirv/emit_spirv_context_get_set.cpp",
+    "src/shader_recompiler/backend/spirv/spirv_emit_context.cpp",
+    "src/video_core/buffer_cache/bda_address_space.h",
+    "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp"
+  ],
+  "preimage_guards": {
+    "shader_info_collection_pass.cpp":"89b736e1810ba0aa90b248bf517c2c3df1b5fcc3",
+    "emit_spirv_context_get_set.cpp":"9dff2ea2ce0347ace0a132ea75619d219bfa7fdc",
+    "spirv_emit_context.cpp":"6ec69c348a3118165fc38adb6167a84793188859"
+  },
+  "package_commit": "e1fd09438b4cbe5a067f4ff70813800214afd920",
+  "patch_blob": "123effbc6af3e5144157844f0e638b6a7e426866",
+  "fixture_blob": "8321323f9feab4f0588a7826ec3097b55e1a6205",
+  "runner_commit": "2c8bb526362151ad478ad8e8bb27a2ca56ac6558",
+  "runner_path": "scripts/shadps4_readconst_restore_20261028.py",
+  "runner_blob": "98274d34b39acf8bcaf107f35d881887f1fdfb20",
+  "runner_sha256": "289d9e8498b4b6136d6038bbf506a269c4cf4bed5254f4e91a4510b51fa8e2f0",
+  "local_validation": {
+    "fixture_scope":"Actual ReadConst visitor case, full collector function and emitter function extracted into CPU-only IR/SPIR-V/memory collaborators. Native GPU residency, shader execution and complete SPIR-V validity are not established by this test.",
+    "baseline":"BASELINE_READCONST_WORD_ZERO=REPRODUCED cases=16 wrong_dynamic=4 NO_GPU_WORK",
+    "corrected":"AUTOMATIC_READCONST_ROUTING=PASS cases=22 boundaries=6 NO_GPU_WORK",
+    "coverage":"Legacy option on/off; flattened/unflattened and mixed loads; original address/offset retained; BDA/fault descriptors iff required; indirect metadata remains last; LDS policy unchanged; unsupported capabilities fail only for required dynamic loads; address bounds reject high-address wrapping.",
+    "compilers":"GCC and Clang strict C++23 baseline/corrected release and ASan+UBSan builds all passed: eight compiler/test combinations.",
+    "resolver_provenance":"DefineGetBdaPointer body restored byte-for-byte from uploaded candidate04 source 11610d67; bda_address_space.h matches the historical source. This does not turn its earlier failed game trial into success.",
+    "runner_safety":"Five real temporary Git/patch and actual C++ gate scenarios passed: compile failure restores; simulated runtime success restores; simulated runtime failure returns nonzero/restores; initial dirty source refused unchanged; external edit during simulated compile preserved and restoration refused. Only actual emulator build, ldd and game stages were simulated in these safety checks.",
+    "runtime_template":"Actual uploaded latest native-game-runner.sh blob 31a46cf27530c68a0afa2395fa3315025d2c0871 passed strict substitutions and bash -n.",
+    "published_bytes":"All three published blobs equal locally tested files.",
+    "complete_native_emulator":"PENDING",
+    "real_gpu_result":"PENDING"
+  },
+  "remaining_limitations":"The restored existing demand-paged BDA backend and its missing-page behavior are not a complete new coherence implementation. Correct GPU residency and useful rendering still require native evidence. No forced loop limits, fabricated replacement handles, shader skips, driver overrides or game-specific options were added.",
+  "host_run":"Verify PR94 and protected game/PR91/latest-candidate hashes, merge pinned upstream retaining prior corrections, apply exact five-file compiler patch, run source-route CPU gates, compile four real objects and full link, then one 118+2-second GoW trial. Preserve candidate, restore PR94, archive AutoReadConst/residency/fault markers plus actual frames, append shared local trials on success/failure.",
+  "decision":"KEEP_RESTORATION_CANDIDATE_DRAFT; REQUIRE_NATIVE_AND_VISIBLE_GAMEPLAY_EVIDENCE_BEFORE_RECOVERY_CLAIM"
+}

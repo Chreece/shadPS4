@@ -1,0 +1,154 @@
+{
+  "schema_version": 2,
+  "record_id": "image-demand-publication-20261103",
+  "reviewed_at": "2026-11-03T17:26:15.502405+00:00",
+  "source_commit": "a7f70cd8a35dcf6aa95cbbf7157533e8c98c02a6",
+  "source_tree": "0671ff2628140c3d2497a2ff7b7a0859dce7f989",
+  "parent_checkpoint": "995b22ecb13fa1606196fd2037d7c1da8571e5d1",
+  "upstream": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+  "pr": 131,
+  "pr_url": "https://github.com/Chreece/shadPS4/pull/131",
+  "main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "result": "BUILD_AND_HOST_CHECKS_PASS_NATIVE_PENDING",
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION",
+  "trigger": "PR130 eager eligible-image publication at every submission/fence, regardless of memory access. Actual PR130 GoT run lost GPU context after41.032s; the crash cause remains unidentified.",
+  "changes": [
+    "Replace submission/fence downloads with independent read watches on eligible GPU-written images. No title/shader/vendor exceptions or emulation settings.",
+    "CPU reads and partial writes, overlapping GPU-buffer accesses, and unmapping publish relevant page-sharing images before continuing. Guest writes occur after publication, preserving untouched bytes.",
+    "Order pending image publications by write sequence. Preserve neighbouring GPU-buffer ranges before image publication and mark the buffer-cache pages for re-upload before releasing read watches.",
+    "Existing image refresh occurs before tracking new writes. Transfer tracking to compatible copied/expanded images. Reject stale or non-downloadable images in the publication path.",
+    "Serialize fault-driven cache mutations and unmapping on the GPU command processor. Internal edge preservation bypasses recursive image publication.",
+    "Allow independent buffer/image read watches with a32-bit reader count; page protection remains no-access until all read owners release it.",
+    "Add bounded image-read-demand diagnostics. Retain the existing linear/tiny-image eligibility and supported image representations. No new claims for arbitrary large tiled/MSAA/stencil images.",
+    "Re-arm eligible-image read watches after optimized image copy, clear, resolve and depth-copy operations. Arm depth-target writes after refresh, matching texture/render-target ordering so publication during refresh cannot clear the new write."
+  ],
+  "validation": {
+    "release": "PASS GCC14 Release/X11, final source build and published-source rebuild/link. Existing compiler warnings remain.",
+    "universal_cpu_regressions": "PASS existing suite including31 CTest cases and production SRT/sparse/descriptor/ABI checks",
+    "actual_binary_startup": "PASS three CLI user-directory scenarios, GPU not run",
+    "image_publication_orchestration": {
+      "checks": 16006,
+      "result": "PASS",
+      "method": "Compile verbatim extracted production TrackGpuImage/ReadMemory functions against simulated PageManager, driver scheduling and cache-copy boundaries. Includes no-copy fence/unrelated access, first access, partial writes, repeated writes, page-sharing images, overlap ordering, stale rejection and1000 cross-page cases. Not real Vulkan execution."
+    },
+    "page_protection": {
+      "checks": 96500,
+      "result": "PASS",
+      "method": "Compile exact production PageState; exercise multiple readers and CPU-write watch combinations,10000 reader acquire/release operations and absence of write-only permissions."
+    },
+    "sanitizers": "PASS ASan/UBSan image-orchestration fixture, leak detection disabled for previously established container limitation",
+    "new_repository_tests": false,
+    "existing_fixture_adapter": "One method stub added to existing depth-overlap fake cache so it can compile the production tracking call. First compile failure is retained.",
+    "binary_sha256": "0553fb5ef9e3c9accf75a3e69b7fe1df598590124886950ec9985eb06b4845ff",
+    "logs": {
+      "nov3i-build.log": {
+        "sha256": "e466429e0821114b54f970c109e3f16b4d0d889f5cca61b921ab7b0dffc507e4",
+        "bytes": 19872
+      },
+      "nov3i-build-final.log": {
+        "sha256": "fd7b41ca0b455bcdecdfd2cbb55dbbef2b2401bd81ec8f28a7f6862aa0215d8c",
+        "bytes": 1702
+      },
+      "nov3i-build-formatted.log": {
+        "sha256": "d4bafe6f5d4b9daf9e8db32a9e6db49a2086291e3894a6c1f0df100b7b3602c8",
+        "bytes": 259
+      },
+      "nov3i-published-build.log": {
+        "sha256": "d786aab39457c2d63e39f46e65de4b69e244017e259ab292fa7fdf8355149bab",
+        "bytes": 14523
+      },
+      "nov3i-cpu.log": {
+        "sha256": "803b0d8e0c79e007d57784709c377c71119ef5c744c2c49a86368acccd010a38",
+        "bytes": 1176
+      },
+      "nov3i-cpu-retry.log": {
+        "sha256": "34384dc724511ea26d6c2106ced037c9d58e50ce52890be8d96397174c689f8e",
+        "bytes": 6219
+      },
+      "nov3i-cli.log": {
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "bytes": 57
+      },
+      "nov3i-published-cli.log": {
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "bytes": 57
+      },
+      "nov3i-image-demand-result.log": {
+        "sha256": "acd7bd5aa5321abb9e59284635c0f12e93ce57cae6a4f5cbc710daa1f30b82a2",
+        "bytes": 68
+      },
+      "nov3i-page-result.log": {
+        "sha256": "aa39c0260d0aa61e8137f7ed028840596140d1253b0079dc4de0312f29d982bd",
+        "bytes": 50
+      },
+      "nov3i-image-demand-san.log": {
+        "sha256": "acd7bd5aa5321abb9e59284635c0f12e93ce57cae6a4f5cbc710daa1f30b82a2",
+        "bytes": 68
+      },
+      "nov3i-hooks-build.log": {
+        "sha256": "a0ee43291028abe57c8ed9981d2c7b0bd6cdb46be5c6fae34e7887d29f5946a5",
+        "bytes": 19635
+      },
+      "nov3i-hooks-cli.log": {
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "bytes": 57
+      },
+      "nov3i-hooks-cpu.log": {
+        "sha256": "e5130ae218486db10fb6b9ff9dd78d8f676aa0cb12f9dcbaa8928a0f02c59c44",
+        "bytes": 6219
+      },
+      "nov3i-final-build.log": {
+        "sha256": "f156c9eec655ca28fbdc36c21cecf6c97253c01014f4bb28c36667a8ee433337",
+        "bytes": 176
+      },
+      "nov3i-final-cli.log": {
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "bytes": 57
+      },
+      "nov3i-final-cpu.log": {
+        "sha256": "b81a8581e29976490af01d135fbb703db2df2d0dc75c3af3c2a6e50c55d2ac47",
+        "bytes": 6219
+      },
+      "nov3i-published-final-build.log": {
+        "sha256": "f0026e1073520a8992bf8424bb903ca6165745e53d7daf2f8ecae08a1a1e59ac",
+        "bytes": 14523
+      },
+      "nov3i-published-final-cli.log": {
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "bytes": 57
+      }
+    },
+    "optimized_write_review": "All eight external Runtime image-copy/clear/resolve call sites reviewed: five rasterizer paths and three cache copy/expansion paths re-arm eligible destination tracking. Depth refresh ordering corrected. No native GPU execution."
+  },
+  "probe": {
+    "url": "https://chatgpt.com/library?file_id=libfile_f5935b2d11ec8191812778c64604c491&account_id=personal",
+    "version": 1,
+    "sha256": "7d1c72a818812648cba7e016af8ba7f076a28118980f3ed2311b41d9f58909eb",
+    "assembly": "PASS LLVM18 Bonaire, three kernels",
+    "c11_syntax": "PASS GCC14 O2 Wall Wextra Werror",
+    "expected_dispatches": 216,
+    "expected_word_observations": 12800,
+    "new_cases": [
+      "Two GPU-written images sharing one4KiB page; partial CPU write preserves the other image.",
+      "Repeated image writes then raw GPU-buffer alias copy without intervening CPU image access."
+    ],
+    "sdk_link": "NOT_RUN",
+    "ps4_hardware": "NOT_RUN",
+    "emulator_gpu": "NOT_RUN"
+  },
+  "preservation": {
+    "retained_code": "All prior committed work retained; PR130 and earlier branches left available. Upstream ancestor verified.",
+    "runner": "Byte-identical to tested PR130; no mode override or additional game option.",
+    "wrapper_sha256": "a548c7423b353fd562bc7ca12e3eccf9647d437f9a3c423e2b4d52e2ade95533",
+    "graphics_runner_sha256": "488c972b48a76575f26e2e58b7afe1d58e38f1ffdad5b085815fda706b6e6518"
+  },
+  "limits": [
+    "No native game/GPU execution of this candidate. Host checks and successful build do not establish GoT/GoW recovery.",
+    "Latest native GoT remains PR130 black screen then GPU context loss; latest GoW execution remains PR129 GPU context loss. No causal attribution of those failures to one patch.",
+    "Image tracking is conservative at binding and page granularity. Buffer aliases may require a host round trip. No zero-overhead or universal compatibility claim.",
+    "Existing eligibility limits remain. Unsupported image layouts/aspects, physical aliases across distinct guest mappings, asynchronous guest data races, Windows/macOS faults and native driver/performance behavior require further validation.",
+    "DS ordered work is preserved; dedicated seed and actual guest shader re-entry remain unfinished."
+  ],
+  "next_test": "Build final checkpoint SHA; GoT then GoW with unchanged bounded diagnostic runner and DS capture. <=120s each, no automated input, no readback setting changes. Require actual image-demand/publication evidence when accessed. Stop after GPU failure or unconfirmed child exit. Preserve existing >=8GiB VRAM/display/process preflights.",
+  "upstream_verified_at": "2026-11-03T17:26:15.502405+00:00"
+}

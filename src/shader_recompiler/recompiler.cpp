@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/logging/classes.h"
+#include "core/memory.h"
 #include "shader_recompiler/frontend/control_flow_graph.h"
 #include "shader_recompiler/frontend/decode.h"
 #include "shader_recompiler/frontend/structured_control_flow.h"
@@ -13,6 +14,43 @@
 #include "shader_recompiler/recompiler.h"
 
 namespace Shader {
+
+bool Info::CanReadUniformBufferRange(u32 root_sgpr, u32 first, u32 last) const {
+    if (root_sgpr >= user_data.size() || user_data.size() - root_sgpr < 2 || first > last) {
+        return false;
+    }
+    u64 base{};
+    std::memcpy(&base, user_data.data() + root_sgpr, sizeof(base));
+    base &= 0xFFFFFFFFFFFFULL;
+    constexpr u64 address_limit = 1ULL << 40;
+    const u64 begin = base + u64(first) * sizeof(u32);
+    const u64 end = base + (u64(last) + 1) * sizeof(u32);
+    return base != 0 && (base & 3) == 0 && end <= address_limit && begin < end &&
+           Core::Memory::Instance()->IsAccessibleRange(begin, end - begin,
+                                                       Core::MemoryProt::CpuRead);
+}
+
+std::optional<u32> Info::ReadUniformBufferBound(u32 root_sgpr, u32 word) const {
+    if (!CanReadUniformBufferRange(root_sgpr, word, word)) {
+        return std::nullopt;
+    }
+    return ReadUdReg<u32>(root_sgpr, word);
+}
+
+bool Info::UniformBufferBoundsCompatible() const {
+    for (const auto& bound : uniform_buffer_bounds) {
+        const auto current = ReadUniformBufferBound(bound.root_sgpr, bound.count_word);
+        if (current.has_value() != bound.available || (current && *current != bound.value)) {
+            return false;
+        }
+        if (bound.last_word > bound.first_word &&
+            CanReadUniformBufferRange(bound.root_sgpr, bound.first_word, bound.last_word) !=
+                bound.range_available) {
+            return false;
+        }
+    }
+    return true;
+}
 
 IR::BlockList GenerateBlocks(const IR::AbstractSyntaxList& syntax_list) {
     size_t num_syntax_blocks{};

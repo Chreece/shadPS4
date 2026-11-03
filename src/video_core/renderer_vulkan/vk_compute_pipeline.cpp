@@ -48,22 +48,37 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
     }
     for (const auto& image : info->images) {
         const u32 num_bindings = image.NumBindings(*info);
-        bindings.push_back({
-            .binding = binding,
-            .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
-                                               : vk::DescriptorType::eSampledImage,
-            .descriptorCount = num_bindings,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        });
-        binding += num_bindings;
+        const auto add_images = [&](u32 count) {
+            bindings.push_back({
+                .binding = binding,
+                .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
+                                                   : vk::DescriptorType::eSampledImage,
+                .descriptorCount = count,
+                .stageFlags = vk::ShaderStageFlagBits::eCompute,
+            });
+            binding += count;
+        };
+        for (u32 i = 0; i < image.NumImageArrays(); ++i) {
+            add_images(num_bindings);
+        }
+        if (image.is_guest_indexed) {
+            bindings.push_back({
+                .binding = binding++,
+                .descriptorType = vk::DescriptorType::eStorageBuffer,
+                .descriptorCount = 1,
+                .stageFlags = vk::ShaderStageFlagBits::eCompute,
+            });
+        }
     }
     for (const auto& sampler : info->samplers) {
+        const u32 count = sampler.NumBindings(*info);
         bindings.push_back({
-            .binding = binding++,
+            .binding = binding,
             .descriptorType = vk::DescriptorType::eSampler,
-            .descriptorCount = 1,
+            .descriptorCount = count,
             .stageFlags = vk::ShaderStageFlagBits::eCompute,
         });
+        binding += count;
     }
 
     const vk::PushConstantRange push_constants = {
@@ -72,6 +87,7 @@ ComputePipeline::ComputePipeline(const Instance& instance, Scheduler& scheduler,
         .size = sizeof(Shader::PushData),
     };
 
+    ValidateDescriptorLimits(bindings);
     uses_push_descriptors = binding < instance.MaxPushDescriptors();
     const auto flags = uses_push_descriptors
                            ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR

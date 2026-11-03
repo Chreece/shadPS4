@@ -1,0 +1,143 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-generic-contract-recovery-20261102",
+  "recorded_at": "2026-11-02T18:25:31.956223+00:00",
+  "scope": "universal",
+  "pr": 121,
+  "upstream_commit": "2183807e592b36d4440384878165b43d930c1dee",
+  "parent_commit": "96c5742b6d00685429f1564bafce9693d1ee939a",
+  "runtime_commit": "26f09e63d43780e2d5b90aee62842f9af58246ca",
+  "runtime_tree": "3b235825ba8600951240fbe1ab007d4e2bf21138",
+  "local_build_commit": "feffd829af8cc1516715c958da03a558845daccb",
+  "local_binary_sha256": "6c9d10c5fa71c836b1d993a1f8a1a43f00311773ad9aaf1275573f8fddd3ca7a",
+  "native_input": {
+    "archive": "universal-two-games-20261102T173239Z-2847652.tar.gz",
+    "sha256": "150349526c8b29b5dd5a6cb6851252192877f248d7d520b9bb932f51783f49b8",
+    "tested_source": "96c5742b6d00685429f1564bafce9693d1ee939a",
+    "tested_binary": "2f03c066f13562b0a3d0dd940c5bd4b36a129e29e7ffd956987d540b328e07df"
+  },
+  "observations": {
+    "CUSA34384": {
+      "elapsed_seconds": 8.013,
+      "native_exit": -11,
+      "gpu_failure": null,
+      "fatal": "Unsupported indexed guest image dimension 8",
+      "dimension": "Color1D",
+      "phase": "Before the prior DS ordered first-pass capture; no screenshots",
+      "shader": "0x7f710602",
+      "indexed_table_entries_from_spirv": 827,
+      "classification": "NEW_PR120_GUARD_REGRESSION"
+    },
+    "CUSA11456": {
+      "elapsed_seconds": 120.165,
+      "native_exit": -9,
+      "owned_duration_stop": true,
+      "gpu_failure": null,
+      "visual_25s": "black",
+      "visual_110s": "Sony Interactive Entertainment presents; 20 FPS overlay; no menu",
+      "user_report": "No menu; heavily regressed from prior menu/in-game baseline",
+      "indexed_binding_log_count": 0,
+      "rejected_headers": {
+        "base": "0x1500000000",
+        "stride": 8,
+        "records": 0,
+        "record_stride_bytes": 536
+      },
+      "classification": "MENU_REGRESSION_NOT_RECOVERED"
+    }
+  },
+  "changes": [
+    "1D and non-array 1D-array images bind through the mixed indexed fragment path with height one, centered Y=0.5 and zero Y gradients; non-array 2D-array views use their actual view type.",
+    "Track eligible empty indexed texture tables and their actual descriptor limit; a later populated table forces shader re-specialization instead of permanently reusing null sampling.",
+    "Separate scalar V# byte-range stride from shader texture/material record stride while requiring complete bounded table coverage.",
+    "Restore SRT dependency retries across roots, canonical flat slots and source addresses, cycle/capacity termination, full-width bit extraction, and only proven-uniform read-first-lane pointer unwrapping.",
+    "Restore whole-result SCC for 64-bit logical/save-exec operations, 64-bit bit tests and portable 64-bit SPIR-V insertion.",
+    "Shader binary cache version 19 and metadata version 11; no changes to ordered-GDS code or title-specific production conditions."
+  ],
+  "causality_limits": [
+    "The PR120 1D guard directly explains this GoW abort.",
+    "Lost scalar/SRT contracts and the empty-table cache transition are reproduced independently. The complete GoT native regression cause and menu recovery remain unproven.",
+    "The zero-record material header is observed at compilation; this archive does not prove when it later changes.",
+    "The retained historical source includes these scalar/SRT fixes, but the entire recovered source tree is not proven identical to any one historical menu binary."
+  ],
+  "validation": {
+    "native_build": "PASS GCC14 compile and link; final pinned source build",
+    "cli_startup": "PASS 3 actual executable cases, including final pinned binary; no GPU",
+    "existing_cpu": "PASS 31 CTest cases / nine suites, seven source contracts, 10418 production SRT primitive checks, sparse/VMA/descriptor/HLE checks",
+    "production_srt": "PASS 203 checks; cross-root index changes, source-address provenance, duplicate canonical slots, uniform lane reads, full-width extraction, GPU-dependent offset retention",
+    "production_scalar": "PASS 9600 translated-IR lane cases for AND/OR/XOR/NOT/SAVEEXEC/64-bit bit comparison",
+    "production_indexed_tables": "PASS 28 checks using actual ResourceDiscoverPass, FlattenExtendedUserdataPass, ResourcePatchingPass and Info compatibility",
+    "spirv": "PASS six production-emitted modules, including mixed dimensions, 27651-entry indexed sampler arrays and 64-bit insertion, spirv-val --target-env vulkan1.3",
+    "baseline_counterexamples": {
+      "srt": "Previous source leaves cross-root read unassigned",
+      "indexed_tables": "Previous source loses empty table dependency",
+      "scalar_scc": "Previous source yields SCC=0 on lane 1 for (1 & 1), expected uniform 1",
+      "bit_insert": "Previous source fails VUID-StandaloneSpirv-Base-04781 (64-bit OpBitFieldInsert)"
+    },
+    "native_games_after_change": "NOT_RUN_NO_NATIVE_GPU_IN_WORKSPACE"
+  },
+  "attempt_corrections": [
+    "Temporary SCC fixture initially used nonexistent SetScalarRegister API; corrected to SetScalarReg; production unaffected.",
+    "Temporary SCC fixture initially expected constant propagation to fold PackUint2x32. Replaced that fixture assumption with evaluation of actual translated SSA operations for all 64 lanes; production unaffected.",
+    "clang-format-diff wrapper first lacked PYTHONPATH; rerun with installed package path; first call made no edits."
+  ],
+  "hardware_probe": {
+    "file": "renderer-contracts-openorbis.zip",
+    "sha256": "9cbc6c651b9a9d66ba93e0e0f88898638711ddb5bb999c56eb52748c83a30c90",
+    "library_file_id": "libfile_7d1664c570b48191964ca6321cf0bef5",
+    "kernels": 3,
+    "dispatches": 57,
+    "validation": "bonaire assembly and strict host C syntax PASS",
+    "sdk_link": "NOT_RUN",
+    "ps4_hardware": "NOT_RUN"
+  },
+  "remaining_limits": [
+    "No native proof of GoT menu/world recovery or GoW videos.",
+    "DS ordered capture ABI 3 / flags 7 is retained; authentic dedicated counter seed, guest reentry and final continuation remain incomplete.",
+    "Typed indexed 1D/3D/cube dispatch remains limited to fragment implicit LOD without offsets/explicit derivatives; other unsupported typed/numeric/conversion paths still reject explicitly.",
+    "Other historical source differences, including the wave UMin fold, remain unproven and are not blindly imported."
+  ],
+  "protected_historical_binary_sha256": [
+    "be3e8c12cf91117917d355d41a03e227a45cd338981d672de4f0ca2c57b68f28",
+    "395682a478f04e4f4a5a2da89488e90fe54ccf502dc23cbecf716a7adeac4e8b",
+    "63fe630faed40faf2a7dddde87d1084e5dade151add8f4c0b206f86d9caa69b9"
+  ],
+  "journal_prefix": {
+    "size": 787654,
+    "sha256": "1e8c6c5e4b0726cb8c1947aa45f3a1972a257792be4b76ff7955bbc32cd3b839"
+  },
+  "references": [
+    "https://github.com/Chreece/shadPS4/pull/121",
+    "https://www.amd.com/content/dam/amd/en/documents/radeon-tech-docs/instruction-set-architectures/sea-islands-instruction-set-architecture_0.pdf"
+  ],
+  "decision": "DRAFT_NATIVE_RETEST_REQUIRED_NO_MAIN_PROMOTION",
+  "production_file_sha256": {
+    "src/shader_recompiler/backend/spirv/emit_spirv_image.cpp": "f73bda0d2cc2d5960789a2994f3d34cb03f6b9dc8fda6f0d383abb78fba0300b",
+    "src/shader_recompiler/backend/spirv/emit_spirv_integer.cpp": "b191e29161b728baacf5d4902c7b09fa9d4baa0de05c3c07c97b311e0bd6e608",
+    "src/shader_recompiler/frontend/translate/scalar_alu.cpp": "6892ec6e695831c3399928c4adb9972b7cec1e4c9a632530d683771eedb94e38",
+    "src/shader_recompiler/guest_tsharp_array.h": "a021d75df12d24b8ab3bc789c09a2fe7713b26584dc4369039e671dab4b42b04",
+    "src/shader_recompiler/info.h": "a1b17e74502459a0f86367620d87228653037f39f8f52f9d4033e5af04007c4f",
+    "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp": "f1ce37689ab42000f900f9137485ef9ca819d6c654d0a134939e4680e9893d9e",
+    "src/shader_recompiler/ir/passes/resource_patching_pass.cpp": "8850492e749cda0627e5ca3256ca62f525c5ddf10f638ca08e6ac625bb4d27de",
+    "src/shader_recompiler/resource.h": "0d874a177aa9b1797daf786b7619057d44286a9880bb1e01e0c1276e0893ba1e",
+    "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp": "229b7b20c1620882351879904076ddf195b28d3448df2a905a2aed65acd3e93e",
+    "src/video_core/renderer_vulkan/vk_rasterizer.cpp": "4776df67e30c56e523e6b4546809b40288a3e755cd31e870757bc004bb0bda6d"
+  },
+  "local_log_sha256": {
+    "nov2d-build.log": "e78678514b4a63ab105fe27f5d988a83104a72ce0c3ca724a899285365689aeb",
+    "nov2d-build-final.log": "fa26dc134c745e81491bfa5cbbe3f4029847f13747cd0e0d90de4e05e5959b30",
+    "nov2d-build-formatted.log": "02e713cc209c449e136f42ea9e9a24735f062d3d2b9b9c75b6a20ffa13a121e0",
+    "nov2d-build-pinned.log": "63154332dc8f090992967c84626a6c4d76e8dd35794371d51aa6afc7329bddf6",
+    "nov2d-cpu.log": "1b8eb9b38e7518da6742d07ea51e50e83cc61a3a819959fe20326b00c60c2c27",
+    "nov2d-startup.log": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+    "nov2d-srt-result.log": "14934473db982ab7934fa410b81a1d15d2a34c7333fcacf1cbb5733bd426f607",
+    "nov2d-srt-baseline-result.log": "3826e4146166a635fee097a752156bf942e2922eca9cc1be1c8606087a2102cb",
+    "nov2d-scc-result.log": "e91cd0b3f89154ce2ea80f91e83a3d7b357b443d4d4b914057a8780b5527d37c",
+    "nov2d-scc-baseline-result.log": "c573ab2ca6063dfae1c0efc8e8b2eaa8e43282b4858ed0fe952e317a772b5b4c",
+    "nov2d-table-result.log": "045d24e65bf21c75b5e708cc163fb8733f452b21cd15bd089ee8b9c79d5646a6",
+    "nov2d-table-baseline-result.log": "56fdf850e5840a212af1770c89fbc389d3e995a98ff5a277e6724a0241f111a8",
+    "nov2d-spv-result.log": "5aef5eb2849f22da9dbd4c346013d4c5c025da98727873fde7b923e63121d838",
+    "nov2d-spv-baseline-validation.log": "2da4011b004de5eb6eb13c4645abd4948af59929124602fba005386fb6c96751",
+    "nov2d-startup-pinned.log": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9"
+  }
+}

@@ -116,7 +116,6 @@ private:
     const std::vector<std::string> presentModeOptions = {"Mailbox", "Fifo", "Immediate"};
     const std::vector<std::string> hideCursorOptions = {"Never", "Idle", "Always"};
     const std::vector<std::string> trophySideOptions = {"left", "right", "top", "bottom"};
-    const std::vector<std::string> readbacksModeOptions = {"Disabled", "Relaxed", "Precise"};
 
     //////////////// Setting Variables
     //////////////// Note:: Use int for all comboboxes as needed by ImGui
@@ -154,8 +153,6 @@ private:
     bool logSyncSetting;
 
     // Experimental tab
-    int readbacksModeSetting;
-    bool readbackLinearImagesSetting;
     bool directMemoryAccessSetting;
     bool windowsGuestRedZoneProtectionModeSetting;
     bool devkitConsoleSetting;
