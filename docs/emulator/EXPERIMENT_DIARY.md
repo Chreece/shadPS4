@@ -719,3 +719,11 @@ It supports both retained worktree layouts and rejects incomplete captures.
 Ordinary/linked worktree and symlink-failure fixtures pass without source
 mutation. This is source recovery, not an emulator fix or a new game test.
 See [full review](reviews/20261102-got-preservation-gap.json).
+
+## 2026-11-02 — recovered renderer paths restored for native validation
+
+The complete recovered archive verifies 678 file hashes. Four resource/buffer files exactly match the earlier 19:59 archive that showed the GoT menu and partial world. This confirms a source-preservation gap; it does not identify the precise GPU-reset command or prove the entire recovered tree built any historical binary.
+
+The candidate on upstream `2183807e` restores generic GPU-indexed descriptors and scalar reads while preserving the DS capture, SRT, synchronization and upstream work. It removes silent texture-budget/capacity truncation and rejects unsupported numeric/dimension conversions. Native compilation, 31 CTest cases, existing CPU checks, 12 production discovery checks and five Vulkan 1.3 SPIR-V cases pass. Initial build and temporary-fixture failures are retained in the [review record](reviews/20261102-indexed-renderer-restoration.json).
+
+No game was launched here. The next evidence is the bounded, isolated native GoW capture and GoT visual run. No main promotion, final DS continuation, menu restoration, full-world rendering or cross-platform pass is claimed. The separate OpenOrbis scalar descriptor probe was assembled and syntax-checked; PS4 execution remains outstanding.
