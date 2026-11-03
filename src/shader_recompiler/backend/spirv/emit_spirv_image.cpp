@@ -160,8 +160,10 @@ Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id c
     return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
 }
 
-static Id LoadIndexedGuestSampler(EmitContext& ctx, u32 handle, Id bounded, u32 expected_count) {
-    const u32 sampler_index = handle >> 16;
+static Id LoadIndexedGuestSampler(EmitContext& ctx, u32 handle, Id bounded, u32 expected_count,
+                                  bool is_integer) {
+    const u32 sampler_index =
+        is_integer ? ctx.info.samplers[handle >> 16].integer_binding : handle >> 16;
     ASSERT(sampler_index < ctx.samplers.size());
     const u32 sampler_count = ctx.sampler_array_sizes[sampler_index];
     if (sampler_count == 1u) {
@@ -269,7 +271,6 @@ static Id SampleIndexedImage(EmitContext& ctx, u32 handle, Id gpu_texture_id, Id
     const Id bounded = ctx.OpSelect(ctx.U32[1], valid, gpu_texture_id,
                                     ctx.ConstU32(texture.image_array_size - 1u));
     ctx.Decorate(bounded, spv::Decoration::NonUniform);
-    const Id sampler = LoadIndexedGuestSampler(ctx, handle, bounded, texture.image_array_size);
     const Id metadata_pointer =
         ctx.OpAccessChain(texture.indexed_metadata_pointer_type, texture.indexed_metadata,
                           std::array{ctx.ConstU32(0u), bounded});
@@ -301,6 +302,8 @@ static Id SampleIndexedImage(EmitContext& ctx, u32 handle, Id gpu_texture_id, Id
         ctx.Decorate(pointer, spv::Decoration::NonUniform);
         const Id image = ctx.OpLoad(image_type, pointer);
         ctx.Decorate(image, spv::Decoration::NonUniform);
+        const Id sampler =
+            LoadIndexedGuestSampler(ctx, handle, bounded, texture.image_array_size, number != 0);
         const Id sampled = ctx.OpSampledImage(ctx.TypeSampledImage(image_type), image, sampler);
         ctx.Decorate(sampled, spv::Decoration::NonUniform);
         const auto view = dim == 0   ? AmdGpu::ImageType::Color2D
