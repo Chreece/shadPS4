@@ -1,0 +1,113 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-uniform-lane-srt-20261101",
+  "timestamp_utc": "2026-11-01T12:08:38.724357+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pull_request": 118,
+  "host_result": {
+    "schema_version": 2,
+    "record_id": "universal-graphics-20261101T115754Z-3103856",
+    "scope": "UNIVERSAL_SHADPS4",
+    "timestamp_utc": "2026-11-01T11:57:54.446679+00:00",
+    "source_commit": "ed0fe5be055ee712756351479ac5411366e5385b",
+    "binary_sha256": "2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548",
+    "game_launched": true,
+    "graphics_verified": false,
+    "installed_binary_changed": false,
+    "evidence": "/home/chreece/projects/shadps4/logs/universal-graphics-20261101T115754Z-3103856.tar.gz",
+    "result": "CAPTURE_COMPLETE_VISUAL_REVIEW_REQUIRED",
+    "profile_source": "/home/chreece/.local/share/shadPS4",
+    "profile_files_copied": 205,
+    "profile_policy": "isolated saves; global config; no custom title configs, patches, cheats or old shader cache",
+    "vram_free_before": 200368128,
+    "ollama_unloaded": [
+      "qwen3.8-greek:latest"
+    ],
+    "ollama_attempts": [
+      {
+        "transport": "direct-local-http",
+        "error": "[Errno 104] Connection reset by peer"
+      },
+      {
+        "transport": "docker:8f919e1ace79",
+        "listed_models": [
+          "qwen3.8-greek:latest"
+        ],
+        "post_unload_query_succeeded": true
+      },
+      {
+        "transport": "ollama-07c39de730dd-before",
+        "exit_code": 127
+      }
+    ],
+    "vram_free_at_launch": 20614766592,
+    "native": {
+      "binary_sha256": "2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548",
+      "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+      "duration_limit": 120,
+      "time_to_sigterm": 118,
+      "graphics_visual_acceptance": "NOT_OBSERVED",
+      "audio_audible_acceptance": "NOT_OBSERVED",
+      "gameplay_acceptance": "NOT_OBSERVED",
+      "screenshots": [
+        "frame-080s.png",
+        "frame-110s.png"
+      ],
+      "owned_child_terminated": true,
+      "exit_code": 0,
+      "exit_reason": "TEST_118S_DURATION_LIMIT",
+      "elapsed_seconds": 120.037,
+      "console_lines": 7410,
+      "warning_lines": 387,
+      "error_lines": 2261,
+      "selected_diagnostic_lines": 420,
+      "full_console_bytes": 1025170,
+      "native_fault": {
+        "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+      }
+    },
+    "exit_code": 0,
+    "uploaded_archive_sha256": "ce953310db29e9698aa0f876e2e323447f3898464f0a16651dc4fefbb9a050b8",
+    "user_visual_report": "BLACK_SCREEN_WITH_AUDIO",
+    "reviewed_result": "FAIL_GRAPHICS_GPU_CONTEXT_LOST",
+    "pull_request": 118
+  },
+  "srt_rejections": {
+    "Phi": 72,
+    "GetAttributeU32": 29,
+    "ReadFirstLane": 4,
+    "ReadLane": 408
+  },
+  "gpu_failure": "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty of a soft recovery.",
+  "production_fix": "Host-evaluate ReadLane/ReadFirstLane only after recursively proving the source host-uniform; permit immediate U32 leaf; retain rejection of divergent inputs and Phi; bound proof recursion and work. ShaderBinaryVersion 13.",
+  "source_provenance": {
+    "retained_archive": "retained-source-1.tar.gz from universal-upstream-20261101T112712Z-2616640",
+    "retained_file": "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
+    "retained_file_sha256": "de3b32848cbc2e4a8d0fab46e56c541babc62226c791b55461fd776960f6515a"
+  },
+  "validation": {
+    "baseline_production_extraction": "FAIL_EXPECTED_FIRST_UNIFORM_LANE_CASE",
+    "corrected_production_xbyak_checks": 2825,
+    "existing_production_srt_checks": 10418,
+    "rejected_inputs": [
+      "GPU attributes",
+      "Phi with divergent source",
+      "unassigned ReadConst",
+      "cyclic dependencies"
+    ],
+    "initial_fixture_attempt": "FAILED mock IR declaration used unqualified Inst type; corrected fixture qualification before running baseline/candidate",
+    "observer_real_process_cases": 2,
+    "observer_cases": [
+      "GPU loss followed by exit 0 classified failure",
+      "GPU loss in running owned process stops only that process"
+    ],
+    "runner_existing_scenarios": 4,
+    "ollama_fallback_checks": 5,
+    "build_record_scenarios": 2,
+    "batch_scenarios": 2,
+    "native_build": "PENDING_HOST_FOR_CHANGED_SOURCE",
+    "graphics": "NOT_FIXED_OR_VERIFIED_YET"
+  },
+  "next_test": "Build isolated candidate; GoW CUSA34384 first, GoT CUSA11456 second; bounded no-input captures; stop sequence on GPU context loss; bounded text IR capture for rejected SRT shaders",
+  "main_promoted": false
+}

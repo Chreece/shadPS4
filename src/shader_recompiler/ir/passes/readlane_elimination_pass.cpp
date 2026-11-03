@@ -7,15 +7,16 @@
 
 namespace Shader::Optimization {
 
-static IR::Inst* SearchChain(IR::Inst* inst, u32 lane) {
-    while (inst->GetOpcode() == IR::Opcode::WriteLane) {
+static IR::Value SearchChain(IR::Value value, u32 lane) {
+    for (auto* inst = value.TryInst(); inst && inst->GetOpcode() == IR::Opcode::WriteLane;
+         inst = value.TryInst()) {
         if (inst->Arg(2).U32() == lane) {
             // We found a possible write lane source, return it.
-            return inst;
+            return value;
         }
-        inst = inst->Arg(0).Inst();
+        value = inst->Arg(0);
     }
-    return inst;
+    return value;
 }
 
 static bool IsPossibleToEliminate(IR::Inst* inst, u32 lane) {
@@ -30,7 +31,12 @@ static bool IsPossibleToEliminate(IR::Inst* inst, u32 lane) {
         queue.pop();
 
         // If it's a WriteLane search for possible candidates
-        if (inst = SearchChain(inst, lane); inst->GetOpcode() == IR::Opcode::WriteLane) {
+        const auto source = SearchChain(IR::Value{inst}, lane);
+        if (source.IsImmediate()) {
+            continue;
+        }
+        inst = source.Inst();
+        if (inst->GetOpcode() == IR::Opcode::WriteLane) {
             // We found a possible write lane source, stop looking here.
             continue;
         }
@@ -58,8 +64,13 @@ static bool IsPossibleToEliminate(IR::Inst* inst, u32 lane) {
 using PhiMap = std::unordered_map<IR::Inst*, IR::Value>;
 
 static IR::Value GetRealValue(PhiMap& phi_map, IR::Inst* inst, u32 lane) {
+    const auto source = SearchChain(IR::Value{inst}, lane);
+    if (source.IsImmediate()) {
+        return source;
+    }
+    inst = source.Inst();
     // If this is a WriteLane op search the chain for a possible candidate.
-    if (inst = SearchChain(inst, lane); inst->GetOpcode() == IR::Opcode::WriteLane) {
+    if (inst->GetOpcode() == IR::Opcode::WriteLane) {
         return inst->Arg(1);
     }
 
@@ -111,11 +122,14 @@ void ReadLaneEliminationPass(IR::Program& program) {
             }
 
             const u32 lane = inst.Arg(1).U32();
-            IR::Inst* prod = inst.Arg(0).Inst();
+            const auto source = SearchChain(inst.Arg(0), lane);
+            IR::Inst* prod = source.TryInst();
             IR::Value replacement{};
 
             // Check simple case of no control flow and phis
-            if (prod = SearchChain(prod, lane); prod->GetOpcode() == IR::Opcode::WriteLane) {
+            if (source.IsImmediate()) {
+                replacement = source;
+            } else if (prod->GetOpcode() == IR::Opcode::WriteLane) {
                 replacement = prod->Arg(1);
             } else if (prod->GetOpcode() == IR::Opcode::Phi && IsPossibleToEliminate(prod, lane)) {
                 replacement = GetRealValue(phi_map, prod, lane);
