@@ -48,6 +48,58 @@ void Pipeline::BindResources(DescriptorWrites& set_writes,
     cmdbuf.bindDescriptorSets(bind_point, *pipeline_layout, 0, desc_set, {});
 }
 
+void Pipeline::ValidateDescriptorLimits(
+    std::span<const vk::DescriptorSetLayoutBinding> bindings) const {
+    struct Counts {
+        u64 sampled{}, storage_images{}, storage_buffers{}, samplers{};
+        void Add(const vk::DescriptorSetLayoutBinding& binding) {
+            switch (binding.descriptorType) {
+            case vk::DescriptorType::eSampledImage:
+                sampled += binding.descriptorCount;
+                break;
+            case vk::DescriptorType::eStorageImage:
+                storage_images += binding.descriptorCount;
+                break;
+            case vk::DescriptorType::eStorageBuffer:
+                storage_buffers += binding.descriptorCount;
+                break;
+            case vk::DescriptorType::eSampler:
+                samplers += binding.descriptorCount;
+                break;
+            default:
+                UNREACHABLE_MSG("Unexpected shader resource descriptor type");
+            }
+        }
+    };
+    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+    Counts total;
+    std::array<Counts, 6> per_stage{};
+    for (const auto& binding : bindings) {
+        ASSERT(binding.descriptorCount != 0);
+        total.Add(binding);
+        for (u32 stage = 0; stage < per_stage.size(); ++stage) {
+            if (static_cast<u32>(binding.stageFlags) & (1u << stage)) {
+                per_stage[stage].Add(binding);
+            }
+        }
+    }
+    ASSERT_MSG(total.sampled <= limits.maxDescriptorSetSampledImages &&
+                   total.storage_images <= limits.maxDescriptorSetStorageImages &&
+                   total.storage_buffers <= limits.maxDescriptorSetStorageBuffers &&
+                   total.samplers <= limits.maxDescriptorSetSamplers,
+               "Complete shader resources exceed Vulkan descriptor set limits: {}",
+               GetDebugString());
+    for (const auto& stage : per_stage) {
+        ASSERT_MSG(stage.sampled <= limits.maxPerStageDescriptorSampledImages &&
+                       stage.storage_images <= limits.maxPerStageDescriptorStorageImages &&
+                       stage.storage_buffers <= limits.maxPerStageDescriptorStorageBuffers &&
+                       stage.samplers <= limits.maxPerStageDescriptorSamplers &&
+                       stage.sampled + stage.storage_images + stage.storage_buffers <=
+                           limits.maxPerStageResources,
+                   "Complete shader resources exceed Vulkan stage limits: {}", GetDebugString());
+    }
+}
+
 std::string Pipeline::GetDebugString() const {
     std::string stage_desc;
     for (const auto& stage : stages) {

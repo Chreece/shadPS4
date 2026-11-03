@@ -15,6 +15,7 @@
 
 #include <numbers>
 #include <string_view>
+#include <utility>
 
 namespace Shader::Backend::SPIRV {
 namespace {
@@ -1031,8 +1032,15 @@ void EmitContext::DefineImagesAndSamplers() {
 
         const u32 num_bindings = image_desc.NumBindings(info);
         Id pointee_type = image_type;
-        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex) {
+        if (mip_fallback_mode == MipStorageFallbackMode::DynamicIndex ||
+            image_desc.is_guest_indexed) {
             pointee_type = TypeArray(pointee_type, ConstU32(num_bindings));
+        }
+        if (image_desc.is_guest_indexed) {
+            ASSERT(profile.supports_sampled_image_nonuniform_indexing);
+            AddCapability(spv::Capability::ShaderNonUniform);
+            AddCapability(spv::Capability::SampledImageArrayDynamicIndexing);
+            AddCapability(spv::Capability::SampledImageArrayNonUniformIndexing);
         }
 
         const Id pointer_type{TypePointer(spv::StorageClass::UniformConstant, pointee_type)};
@@ -1050,8 +1058,71 @@ void EmitContext::DefineImagesAndSamplers() {
             .is_integer = is_integer,
             .is_storage = is_storage,
             .mip_fallback_mode = mip_fallback_mode,
+            .image_array_size = num_bindings,
+            .is_guest_indexed = image_desc.is_guest_indexed,
+            .is_guest_mixed_indexed = image_desc.is_guest_mixed_indexed,
         });
         interfaces.push_back(id);
+
+        // A guest T# table contains heterogeneous 2D / 3D / cube records.
+        // Preserve the complete original GPU-selected guest index for 2D.
+        // The rare 3D and cube images use compact typed arrays, with a
+        // per-draw GPU-visible remap to their real guest ordinal. This avoids
+        // tripling 27K-entry tables past Vulkan per-stage limits.
+        if (image_desc.is_guest_mixed_indexed) {
+            const auto define_dimension_array = [&](spv::Dim dim, bool arrayed, u32 compact_count,
+                                                    std::string_view suffix) {
+                const Id typed_image = TypeImage(sampled_type, dim, false, arrayed, false, 1u,
+                                                 spv::ImageFormat::Unknown);
+                const Id array = TypeArray(typed_image, ConstU32(compact_count));
+                const Id pointer = TypePointer(spv::StorageClass::UniformConstant, array);
+                const Id var = AddGlobalVariable(pointer, spv::StorageClass::UniformConstant);
+                Decorate(var, spv::Decoration::Binding, binding.unified);
+                binding.unified += compact_count;
+                Decorate(var, spv::Decoration::DescriptorSet, 0U);
+                Name(var, fmt::format("{}_img{}_{}", hw_stage, images.size() - 1, suffix));
+                interfaces.push_back(var);
+                return std::pair{var, typed_image};
+            };
+            auto [image3d, type3d] =
+                define_dimension_array(spv::Dim::Dim3D, false, num_bindings, "3d");
+            auto [imageCube, typeCube] =
+                define_dimension_array(spv::Dim::Dim2D, true, num_bindings, "cube");
+
+            // Read-only storage buffer of u32 compact indices, indexed by the
+            // genuine per-invocation GPU material index. 0xFFFFFFFF means an
+            // absent/invalid typed descriptor; shader bounds it to the
+            // separate null sentinel for whichever type is selected.
+            const Id map_array = TypeRuntimeArray(U32[1]);
+            const Id map_struct = TypeStruct(map_array);
+            // The runtime u32 array can be shared with an ordinary buffer
+            // resource. Emit its layout decorations only on first use.
+            if (std::ranges::find(buf_type_ids, map_array.value, &Id::value) ==
+                buf_type_ids.end()) {
+                Decorate(map_array, spv::Decoration::ArrayStride, 4u);
+                Decorate(map_struct, spv::Decoration::Block);
+                MemberDecorate(map_struct, 0, spv::Decoration::Offset, 0u);
+                buf_type_ids.push_back(map_array);
+            }
+            const Id map_struct_ptr = TypePointer(spv::StorageClass::StorageBuffer, map_struct);
+            const Id map_var = AddGlobalVariable(map_struct_ptr, spv::StorageClass::StorageBuffer);
+            Decorate(map_var, spv::Decoration::Binding, binding.unified++);
+            Decorate(map_var, spv::Decoration::DescriptorSet, 0u);
+            Decorate(map_var, spv::Decoration::NonWritable);
+            Name(map_var, fmt::format("{}_img{}_compact_map", hw_stage, images.size() - 1));
+            interfaces.push_back(map_var);
+
+            auto& typed = images.back();
+            typed.image_id_3d = image3d;
+            typed.image_type_3d = type3d;
+            typed.image_id_cube = imageCube;
+            typed.image_type_cube = typeCube;
+            typed.compact_index_map = map_var;
+            typed.compact_index_pointer_type =
+                TypePointer(spv::StorageClass::StorageBuffer, U32[1]);
+            typed.compact_3d_array_size = num_bindings;
+            typed.compact_cube_array_size = num_bindings;
+        }
     }
     if (std::ranges::any_of(info.images,
                             [](const ImageResource& image) { return image.is_atomic; })) {
@@ -1064,11 +1135,23 @@ void EmitContext::DefineImagesAndSamplers() {
     sampler_type = TypeSampler();
     sampler_pointer_type = TypePointer(spv::StorageClass::UniformConstant, sampler_type);
     for (const auto& samp_desc : info.samplers) {
-        const Id id{AddGlobalVariable(sampler_pointer_type, spv::StorageClass::UniformConstant)};
-        Decorate(id, spv::Decoration::Binding, binding.unified++);
+        const u32 count = samp_desc.NumBindings(info);
+        Id pointer_type = sampler_pointer_type;
+        if (samp_desc.is_guest_indexed) {
+            ASSERT(profile.supports_sampler_array_nonuniform_indexing);
+            ASSERT(count >= 2u);
+            AddCapability(spv::Capability::ShaderNonUniform);
+            AddCapability(spv::Capability::SampledImageArrayNonUniformIndexing);
+            const Id array_type = TypeArray(sampler_type, ConstU32(count));
+            pointer_type = TypePointer(spv::StorageClass::UniformConstant, array_type);
+        }
+        const Id id{AddGlobalVariable(pointer_type, spv::StorageClass::UniformConstant)};
+        Decorate(id, spv::Decoration::Binding, binding.unified);
+        binding.unified += count;
         Decorate(id, spv::Decoration::DescriptorSet, 0U);
         Name(id, fmt::format("{}_{}{}", hw_stage, "samp", samplers.size()));
         samplers.push_back(id);
+        sampler_array_sizes.push_back(count);
         interfaces.push_back(id);
     }
 }
