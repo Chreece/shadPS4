@@ -553,28 +553,43 @@
     {
       "id": "vulkan-wait-pool-progress-and-live-worker-preflight",
       "subsystem": "renderer-vulkan-and-native-observer",
-      "status": "HOST_PASS_NATIVE_GOW_LOADING_STOP_UNCONFIRMED",
+      "status": "HOST_PASS_NATIVE_GOW_STALL_GOT_GPU_CONTEXT_LOST",
       "related_prs": [
         133
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "PR133 native7fb734fc: GoW loading at110s, no confirmed exit at120s; GoT skipped. No exact descriptor fallback logged. GPU wait/validation diagnostics were accidentally disabled by the supplied command; no recovery acceptance.",
+      "observed_game_effects": "Source7fb734fc: prior GoW stalls at loading/unconfirmed exit; latest GoT intro at25s then GPU loss62.175s. Waits now captured on ticks3752/3814. No gameplay recovery.",
       "negative_result_or_prohibition": "No forced GPU completion, total-wait watchdog, per-title/vendor switch, service reset or claimed game recovery.",
-      "next_test": "Reuse the verified7fb734fc binary with PR134 mandatory diagnostics; GoT first, then GoW if safe.",
-      "review_file": "docs/emulator/reviews/20261103-pr132-native-gpu-wait-and-pool.json"
+      "next_test": "PR135 independently reproduced draw binding repair; native GoT then GoW if safe.",
+      "review_file": "docs/emulator/reviews/20261103-pr132-native-gpu-wait-and-pool.json",
+      "latest_review_file": "docs/emulator/reviews/20261103-pr134-native-draw-binding-state.json"
     },
     {
       "id": "required-native-graphics-diagnostics",
       "subsystem": "native-observer",
-      "status": "HOST_VERIFIED_NATIVE_CAPTURE_PENDING",
+      "status": "NATIVE_CAPTURE_VERIFIED_GAME_RECOVERY_FAILED",
       "related_prs": [
         134
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "Collector-only fix. Parent native run omitted graphics/Vulkan diagnostics and stalled; no emulator correctness change.",
+      "observed_game_effects": "Runner711fd6d native: required startup marker and bounded event log active; validation active, no VUID captured. GoT intro then GPU loss62.175s; GoW skipped. Collector success only.",
       "negative_result_or_prohibition": "Do not claim graphics recovery or infer successful waits from missing diagnostic output.",
-      "next_test": "Reuse7fb734fc source/binary with the corrected runner; GoT first, then GoW only if safe.",
-      "review_file": "docs/emulator/reviews/20261103-pr133-native-required-diagnostics.json"
+      "next_test": "Retain collector for PR135 native build/test.",
+      "review_file": "docs/emulator/reviews/20261103-pr133-native-required-diagnostics.json",
+      "latest_review_file": "docs/emulator/reviews/20261103-pr134-native-draw-binding-state.json"
+    },
+    {
+      "id": "draw-bindings-after-resource-readbacks",
+      "subsystem": "Vulkan draw command state",
+      "status": "HOST_VERIFIED_NATIVE_PENDING",
+      "related_prs": [
+        135
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No native candidate run. Latest parent GoT fails GPU context; association to binding defect unproven.",
+      "negative_result_or_prohibition": "No per-title/shader exceptions or readback options; no claim of recovering menu/gameplay from mock/CPU checks.",
+      "next_test": "Build immutable candidate; GoT then GoW <=120s, mandatory diagnostics and stop policy.",
+      "review_file": "docs/emulator/reviews/20261103-pr134-native-draw-binding-state.json"
     }
   ]
 }
