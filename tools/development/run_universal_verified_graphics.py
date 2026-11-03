@@ -38,6 +38,8 @@ def collect_shader_diagnostics(runtime, out, console, captures):
     current_hash = None
     capture_completed = False
     validation_hashes = []
+    validation_compilation_hashes = []
+    compilation_by_thread = {}
     validation_log = out / 'capture/vulkan-validation.log'
     if validation_log.is_file():
         for match in re.finditer(r'\b(?:cs|fs|vs|gs|hs|ls|es)_0x([0-9a-fA-F]{1,16})',
@@ -50,13 +52,23 @@ def collect_shader_diagnostics(runtime, out, console, captures):
     if console.is_file():
         with console.open(errors='replace') as f:
             for line in f:
+                line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+                thread = re.search(r'<\w+> \(([^)]+)\)', line)
                 match = re.search(r'Compiling \w+ shader (0x[0-9a-fA-F]+)', line)
                 if match:
                     current_hash = format(int(match.group(1), 16), '016x')
+                    if thread:
+                        compilation_by_thread[thread.group(1)] = current_hash
                     if current_hash in recent:
                         recent.remove(current_hash)
                     recent.append(current_hash)
                     recent = recent[-8:]
+                if ('<Error>' in line and 'VUID-VkShaderModuleCreateInfo-pCode-' in line and
+                        thread and thread.group(1) in compilation_by_thread):
+                    shader_hash = compilation_by_thread[thread.group(1)]
+                    if (shader_hash not in validation_compilation_hashes and
+                            len(validation_compilation_hashes) < 16):
+                        validation_compilation_hashes.append(shader_hash)
                 if current_hash and ('Unexpected instruction for offset computation' in line or
                                      'Ordered GDS preflight:' in line):
                     if current_hash in blocked:
@@ -68,6 +80,7 @@ def collect_shader_diagnostics(runtime, out, console, captures):
             f.seek(start)
             (out / 'console-tail.log').write_bytes(f.read(16 * 1024**2))
     priority = validation_hashes.copy()
+    priority.extend(h for h in validation_compilation_hashes if h not in priority)
     for capture in captures:
         match = re.fullmatch(r'ordered-gds-([0-9a-f]{16})-\d+\.bin', capture['file'])
         if match and match.group(1) not in priority:
@@ -111,6 +124,7 @@ def collect_shader_diagnostics(runtime, out, console, captures):
         total_binary += size
     return {'dump_enabled': True, 'blocked_hashes': sorted(set(blocked)),
             'validation_named_hashes': validation_hashes,
+            'validation_compilation_hashes': validation_compilation_hashes,
             'recent_compiled_hashes': list(reversed(recent)),
             'priority_hashes': priority, 'saved_ir': saved_ir, 'saved_bytes': total_ir,
             'limit_bytes': 20 * 1024**2, 'limit_files': 48,
