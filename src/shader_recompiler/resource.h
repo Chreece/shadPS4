@@ -14,7 +14,7 @@ namespace Shader {
 static constexpr u32 NUM_USER_DATA_REGS = 16;
 static constexpr u32 NUM_IMAGES = 64;
 static constexpr u32 NUM_BUFFERS = 56;
-static constexpr u32 NUM_SAMPLERS = 16;
+static constexpr u32 NUM_SAMPLERS = 32;
 static constexpr u32 NUM_FMASKS = 8;
 
 using SharpLocation = u16;
@@ -248,6 +248,8 @@ struct SamplerResource {
     SharpFetchPostOp post_op{};
     SharpLocation post_op_tsharp_dw3_off{};
     bool is_depth{};
+    bool is_integer{};
+    u32 integer_binding{~0u};
 
     constexpr AmdGpu::Sampler GetSharp(const auto& info) const noexcept {
         if (is_guest_indexed && indexed_record_stride_bytes != 0u) {

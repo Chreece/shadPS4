@@ -287,7 +287,7 @@ static u32 GuestNumericImageLimit(const Instance& instance, u32 arrays) {
         std::min(limits.maxDescriptorSetSampledImages, limits.maxPerStageDescriptorSampledImages);
     const u32 image_count = images > reserve ? (images - reserve) / arrays : 0u;
     const u32 total_count = limits.maxPerStageResources > reserve + 1u
-                                ? (limits.maxPerStageResources - reserve - 1u) / (arrays + 1u)
+                                ? (limits.maxPerStageResources - reserve - 1u) / (arrays + 2u)
                                 : 0u;
     const u32 count = std::min(image_count, total_count);
     return count > 1u ? std::min(Shader::MaxGuestIndexedImageEntries, count - 1u) : 0u;
@@ -309,16 +309,14 @@ static u32 GuestIndexedSamplerLimit(const Instance& instance) {
     const u32 type_hard =
         std::min(limits.maxDescriptorSetSamplers, limits.maxPerStageDescriptorSamplers);
     const u32 type_real =
-        type_hard > type_reserve + 1u
-            ? std::min(Shader::MaxGuestIndexedImageEntries, type_hard - type_reserve - 1u)
+        type_hard > type_reserve + 3u
+            ? std::min(Shader::MaxGuestIndexedImageEntries, (type_hard - type_reserve) / 2u - 1u)
             : 0u;
 
-    // Strided material records bind a sampled-image array and a sampler array
-    // of the same count (including one null/default slot each). Reserve total
-    // per-stage resources for BOTH arrays, not each one independently.
-    const u32 pair_real = limits.maxPerStageResources > total_reserve + 2u
+    // Three numeric image arrays and two sampler variants share the stage resource limit.
+    const u32 pair_real = limits.maxPerStageResources > total_reserve + 9u
                               ? std::min(Shader::MaxGuestIndexedImageEntries,
-                                         (limits.maxPerStageResources - total_reserve) / 2u - 1u)
+                                         (limits.maxPerStageResources - total_reserve) / 5u - 1u)
                               : 0u;
     return std::min(type_real, pair_real);
 }
