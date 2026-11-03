@@ -28,6 +28,7 @@ enum class Event {
     ImageReadback,
     ImageReadDemand,
     ImageBufferWrite,
+    GpuWait,
     Count
 };
 inline std::array<std::atomic<unsigned long long>, static_cast<size_t>(Event::Count)> g_counts{};
@@ -70,7 +71,8 @@ void Emit(Event event, const char* format, Args... args) {
                                       "buffer-readback",
                                       "image-readback",
                                       "image-read-demand",
-                                      "image-buffer-write"};
+                                      "image-buffer-write",
+                                      "gpu-wait"};
     static_assert(names.size() == static_cast<size_t>(Event::Count));
     const auto index = static_cast<size_t>(event);
     const auto count = g_counts[index].fetch_add(1, std::memory_order_relaxed) + 1;
