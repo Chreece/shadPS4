@@ -641,6 +641,20 @@ U32 IREmitter::DataConsume(const U32& gds_dw_offset) {
     return Inst<U32>(Opcode::DataConsume, gds_dw_offset, GetExec());
 }
 
+void IREmitter::OrderedGdsCheckpointRegister(const U32& site_pc, const U32& bank, const U32& index,
+                                             const U32& value, const U32& logical_slot,
+                                             const U32& lane) {
+    Inst(Opcode::OrderedGdsCheckpointRegister, site_pc, bank, index, value, logical_slot, lane);
+}
+
+U32 IREmitter::OrderedGdsCount(const U32& m0, const U32& address, const U64& guest_exec_mask,
+                               const U32& encoded_control, const U32& site_pc) {
+    // A GDS ordered operation observes wave creation order. Do not silently
+    // lower to a regular buffer atomic that has no such ordering guarantee.
+    return Inst<U32>(Opcode::OrderedGdsCount, m0, address, guest_exec_mask, encoded_control,
+                     site_pc);
+}
+
 U32 IREmitter::LaneId() {
     return Inst<U32>(Opcode::LaneId);
 }

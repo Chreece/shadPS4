@@ -1,9 +1,12 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <unordered_map>
 #include "common/assert.h"
+#include "common/logging/log.h"
 #include "shader_recompiler/ir/passes/ir_passes.h"
 #include "shader_recompiler/ir/passes/resource_pass.h"
+#include "shader_recompiler/ir/passes/uniform_buffer_plan.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
 #include "shader_recompiler/resource.h"
@@ -389,13 +392,98 @@ void DiscoverImageSharp(IR::Block& block, IR::Inst& inst, ResourceDiscoveryList&
     MarkReadConstBufferSharpSources(ssharp);
 }
 
+std::unordered_map<IR::Inst*, IR::Value> ExpandUniformBufferStores(IR::Program& program) {
+    std::unordered_map<IR::Inst*, IR::Value> guards;
+    IR::ComputeDominators(program.post_order_blocks);
+    u32 buffer_uses =
+        static_cast<u32>(BufferType::ClipPlanes) + (program.info.uses_ordered_gds ? 3u : 0u);
+    for (auto* block : program.blocks) {
+        for (auto& inst : *block) {
+            buffer_uses += IsBufferInstruction(inst);
+        }
+    }
+    auto& info = program.info;
+    for (auto* block : program.blocks) {
+        for (auto& inst : *block) {
+            const auto plan = AnalyzeUniformBufferStore(inst);
+            if (!plan || info.uniform_buffer_bounds.size() == NUM_BUFFERS) {
+                continue;
+            }
+            auto& dependency = info.uniform_buffer_bounds.emplace_back();
+            dependency.root_sgpr = plan->root_sgpr;
+            dependency.count_word = plan->count_word;
+            const auto count = info.ReadUniformBufferBound(plan->root_sgpr, plan->count_word);
+            dependency.available = count.has_value();
+            dependency.value = count.value_or(0);
+            if (!count || *count >= 0x7fffffff || *count <= plan->first ||
+                buffer_uses > NUM_BUFFERS || *count - plan->first > NUM_BUFFERS - buffer_uses + 1) {
+                LOG_INFO(Render_Recompiler,
+                         "UniformBufferStore deferred root={} count_word={} available={} count={}",
+                         plan->root_sgpr, plan->count_word, count.has_value(), dependency.value);
+                continue;
+            }
+            std::vector<u32> offsets;
+            for (u32 selected = plan->first; selected < *count; ++selected) {
+                auto* selector = plan->selector;
+                const auto base = EvaluateUniformBufferOffset(plan->offsets[0], selector, selected);
+                bool adjacent = base && *base <= UINT32_MAX - 3;
+                for (u32 word = 1; adjacent && word < 4; ++word) {
+                    adjacent = EvaluateUniformBufferOffset(plan->offsets[word], selector,
+                                                           selected) == std::optional{*base + word};
+                }
+                if (!adjacent) {
+                    break;
+                }
+                offsets.push_back(*base);
+            }
+            if (offsets.size() != *count - plan->first) {
+                continue;
+            }
+            dependency.first_word = *std::ranges::min_element(offsets);
+            dependency.last_word = *std::ranges::max_element(offsets) + 3;
+            dependency.range_available = info.CanReadUniformBufferRange(
+                plan->root_sgpr, dependency.first_word, dependency.last_word);
+            if (!dependency.range_available) {
+                continue;
+            }
+            const auto at = block->Instructions().iterator_to(inst);
+            for (u32 i = 0; i < offsets.size(); ++i) {
+                std::array<IR::Value, 4> words;
+                for (u32 word = 0; word < 4; ++word) {
+                    words[word] = IR::Value{&*block->PrependNewInst(
+                        at, IR::Opcode::ReadConst, {plan->root, IR::Value{offsets[i] + word}})};
+                }
+                const IR::Value handle{
+                    &*block->PrependNewInst(at, IR::Opcode::CompositeConstructU32x4,
+                                            {words[0], words[1], words[2], words[3]})};
+                const IR::Value guard{&*block->PrependNewInst(
+                    at, IR::Opcode::IEqual32,
+                    {IR::Value{plan->selector}, IR::Value{plan->first + i}})};
+                auto clone = block->PrependNewInst(at, inst);
+                clone->SetArg(0, handle);
+                guards.emplace(&*clone, guard);
+            }
+            buffer_uses += offsets.size() - 1;
+            LOG_INFO(Render_Recompiler,
+                     "UniformBufferStore expanded root={} count_word={} first={} count={}",
+                     plan->root_sgpr, plan->count_word, plan->first, *count);
+            inst.Invalidate();
+        }
+    }
+    return guards;
+}
+
 ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {
+    const auto store_guards = ExpandUniformBufferStores(program);
     ResourceDiscoveryList sharp_usages;
 
     for (IR::Block* const block : program.blocks) {
         for (IR::Inst& inst : block->Instructions()) {
             if (IsBufferInstruction(inst)) {
                 DiscoverBufferSharp(*block, inst, sharp_usages);
+                if (const auto it = store_guards.find(&inst); it != store_guards.end()) {
+                    sharp_usages.back().buffer_store_guard = it->second;
+                }
             } else if (IsImageInstruction(inst)) {
                 DiscoverImageSharp(*block, inst, sharp_usages);
             } else if (IsDataRingInstruction(inst)) {

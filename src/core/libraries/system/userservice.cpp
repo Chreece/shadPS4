@@ -1069,25 +1069,6 @@ int PS4_SYSV_ABI sceUserServiceGetTraditionalChineseInputType() {
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceUserServiceGetUserColor(int user_id, OrbisUserServiceUserColor* color) {
-    LOG_DEBUG(Lib_UserService, "called user_id = {}", user_id);
-    if (color == nullptr) {
-        LOG_ERROR(Lib_UserService, "color is null");
-        return ORBIS_USER_SERVICE_ERROR_INVALID_ARGUMENT;
-    }
-    const auto* user = UserManagement.GetUserByID(user_id);
-    if (user == nullptr) {
-        LOG_ERROR(Lib_UserService, "No user found for user_id = {}", user_id);
-        return ORBIS_USER_SERVICE_ERROR_NOT_LOGGED_IN;
-    }
-    s32 color_idx = static_cast<s32>(user->user_color) - 1;
-    if (color_idx < 0 || color_idx > 3) {
-        color_idx = std::clamp(user->player_index - 1, 0, 3);
-    }
-    *color = static_cast<OrbisUserServiceUserColor>(color_idx);
-    return ORBIS_OK;
-}
-
 int PS4_SYSV_ABI sceUserServiceGetUserGroupName() {
     LOG_ERROR(Lib_UserService, "(STUBBED) called");
     return ORBIS_OK;

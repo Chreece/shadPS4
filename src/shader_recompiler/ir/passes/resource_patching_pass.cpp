@@ -449,6 +449,10 @@ void PatchGlobalDataShareAccess(IR::Inst& inst, Info& info, Descriptors& descrip
         .is_written = true,
     });
 
+    // Only ordinary GDS accesses are patched to the 64 KiB memory buffer.
+    // CIK's DS_ORDERED_COUNT uses dedicated ordered-count packer state.
+    // It stays separate in IR and is not an instruction patched here.
+
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
 
     if (inst.GetOpcode() == IR::Opcode::DataAppend || inst.GetOpcode() == IR::Opcode::DataConsume) {
@@ -945,11 +949,42 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         IR::Inst& inst = *usage.user;
         if (IsBufferInstruction(inst)) {
             PatchBufferArgs(inst, info);
+            if (!usage.buffer_store_guard.IsEmpty()) {
+                const auto components = u32(inst.GetOpcode()) - u32(IR::Opcode::StoreBufferU32);
+                ASSERT(components < 4);
+                inst.ReplaceOpcode(IR::Opcode(u32(IR::Opcode::StoreBufferU32Guarded) + components));
+                inst.SetArg(3, usage.buffer_store_guard);
+            }
         } else if (IsImageInstruction(inst)) {
             PatchImageArgs(inst, info);
         } else if (IsDataRingInstruction(inst)) {
             PatchGlobalDataShareAccess(inst, info, descriptors, profile);
         }
+    }
+
+    if (info.uses_ordered_gds) {
+        ASSERT_MSG(info.buffers.size() <= NUM_BUFFERS - 3,
+                   "ordered GDS capture/checkpoint/auth descriptors exceed buffer limit");
+        // These two independent GPU-written SSBOs are NOT guest V# SHARPs,
+        // ordinary 64KiB GDS RAM or dedicated CIK packer-counter storage.
+        // The capture packet stores actual live M0/EXEC/site/control/payload;
+        // epoch/token and valid flags remain invalid until authenticated
+        // dispatch inputs and a guest continuation pass are wired.
+        (void)descriptors.Add(BufferResource{
+            .used_types = IR::Type::U32,
+            .buffer_type = BufferType::OrderedGdsEpochAuth,
+            .is_written = false,
+        });
+        (void)descriptors.Add(BufferResource{
+            .used_types = IR::Type::U32,
+            .buffer_type = BufferType::OrderedGdsCapture,
+            .is_written = true,
+        });
+        (void)descriptors.Add(BufferResource{
+            .used_types = IR::Type::U32,
+            .buffer_type = BufferType::OrderedGdsCheckpoint,
+            .is_written = true,
+        });
     }
 }
 
