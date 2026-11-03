@@ -132,6 +132,7 @@ public:
                    desc.is_guest_indexed == existing.is_guest_indexed &&
                    desc.is_guest_mixed_indexed == existing.is_guest_mixed_indexed &&
                    desc.indexed_guest_entries == existing.indexed_guest_entries &&
+                   desc.indexed_entry_limit == existing.indexed_entry_limit &&
                    desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
                    desc.indexed_descriptor_offset_bytes ==
                        existing.indexed_descriptor_offset_bytes &&
@@ -370,16 +371,20 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
          verified_uniform_sampler) &&
         !is_written && IsBindableGuestIndexedSampleMode(inst_info)) {
         const auto table_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp);
+        const u32 record_stride = resource.indexed_record_stride_bytes;
+        const u32 record_offset = resource.indexed_descriptor_offset_bytes;
+        const bool needs_indexed_sampler = record_stride != 0u && !verified_uniform_sampler;
+        const u32 indexed_limit = needs_indexed_sampler
+                                      ? std::min(profile.max_guest_indexed_image_entries,
+                                                 profile.max_guest_indexed_sampler_entries)
+                                      : profile.max_guest_indexed_image_entries;
+        image_res.indexed_table_fetch = table_fetch;
+        image_res.indexed_entry_limit = indexed_limit;
+        image_res.indexed_record_stride_bytes = record_stride;
+        image_res.indexed_descriptor_offset_bytes = record_offset;
         AmdGpu::Buffer table{};
         if (table_fetch.Fetch(info.flattened_ud_buf.data(), &table) && table.Valid() &&
             table.base_address != 0) {
-            const u32 record_stride = resource.indexed_record_stride_bytes;
-            const u32 record_offset = resource.indexed_descriptor_offset_bytes;
-            const bool needs_indexed_sampler = record_stride != 0u && !verified_uniform_sampler;
-            const u32 indexed_limit = needs_indexed_sampler
-                                          ? std::min(profile.max_guest_indexed_image_entries,
-                                                     profile.max_guest_indexed_sampler_entries)
-                                          : profile.max_guest_indexed_image_entries;
             const u32 entries =
                 record_stride != 0u
                     ? CompleteGuestTsharpRecordEntries(static_cast<u32>(table.stride),
@@ -389,10 +394,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                                                       static_cast<u32>(table.num_records),
                                                       indexed_limit);
             if (entries != 0u) {
-                image_res.indexed_table_fetch = table_fetch;
                 image_res.indexed_guest_entries = entries;
-                image_res.indexed_record_stride_bytes = record_stride;
-                image_res.indexed_descriptor_offset_bytes = record_offset;
                 image_res.is_guest_indexed = true;
                 // Only use dimension-typed GPU image sampling when the whole
                 // guest table fits real Vulkan descriptor resource limits.
