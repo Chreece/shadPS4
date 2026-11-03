@@ -59,12 +59,13 @@
       "status": "MERGED_MAIN_NATIVE_MAIN_PENDING",
       "related_prs": [
         57,
-        68
+        68,
+        130
       ],
       "main_merge_sha": "b8db275e6605b4183aa27c445bb39661d991cdd1",
       "observed_game_effects": "GoT 118s PR57: 32 bounded real queues/copies and stable silhouettes; other titles pending",
       "negative_result_or_prohibition": "Avoid eager tiled readbacks or forced per-title settings",
-      "next_test": "Compile current main, replay GoT/GoW and verify real GPU-to-CPU flow"
+      "next_test": "PR130 enables existing eligible-image publication automatically; verify actual publication and native GoT/GoW progression without configuration changes."
     },
     {
       "id": "gpu-indexed-strided-material",
@@ -489,16 +490,17 @@
     {
       "id": "integer-texture-sampler-pairing",
       "subsystem": "renderer-and-shader-recompiler",
-      "status": "BUILD_AND_PRODUCTION_CHECKS_PASS_NATIVE_PENDING",
+      "status": "NATIVE_VUID_GATE_CLEARED_GRAPHICS_UNRESOLVED",
       "related_prs": [
         127,
         128,
-        129
+        129,
+        130
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "PR126 GoT integer-sampler validation failure; no menu/video, stop unconfirmed and GoW skipped. PR127 attempt blocked before build by advanced upstream; neither game launched. Rebased candidate has no native result.",
+      "observed_game_effects": "PR129: validation active in both games, prior integer-sampler VUID absent. GoT remains black; GoW GPU context loss27.726s. Both owned child exits confirmed. No native graphics recovery.",
       "negative_result_or_prohibition": "No title/hash/vendor cases. Do not equate legal integer filtering with solved interpolation of scaled/converted float formats. Do not claim an OS-uninterruptible process was killed.",
-      "next_test": "Build the exact PR129 pin; GoT then GoW, Vulkan diagnostics and DS capture, <=120s each and no input. Preserve >=8GiB VRAM/display/existing-process preflights. Stop remaining games after GPU failure or unconfirmed exit."
+      "next_test": "Build PR130 automatic-coherence candidate; GoT then GoW, <=120s each, diagnostics and DS capture, no readback-setting changes. Stop remaining tests after GPU failure/unconfirmed exit."
     },
     {
       "id": "upstream-943df2e3-user-color-contract",
@@ -511,6 +513,18 @@
       "observed_game_effects": "No native game run; this resolves the upstream-rebase conflict without reintroducing a null-user dereference.",
       "negative_result_or_prohibition": "Do not restore the old 1-based color result or claim this fixes graphics. Keep upstream JPEG behavior and all retained rendering patches.",
       "next_test": "Build exact published revision; GoT then GoW with Vulkan diagnostics and DS capture, <=120s each, no automatic input. Require upstream ancestry, display, no pre-existing game process and >=8GiB free VRAM. Stop remaining tests after GPU failure or unconfirmed owned-process exit."
+    },
+    {
+      "id": "automatic-gpu-cpu-coherence",
+      "subsystem": "gpu-coherence",
+      "status": "BUILD_AND_CPU_PASS_NATIVE_PENDING",
+      "related_prs": [
+        130
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No native run of automatic candidate. Prior PR129 remains black in GoT and GPU context loss in GoW.",
+      "negative_result_or_prohibition": "No per-game readback mode, shader/title/vendor exceptions, or recovery inference from build/host tests. Legacy readback settings cannot gate core correctness.",
+      "next_test": "Build exact final checkpoint SHA, GoT then GoW with diagnostics/DS capture, <=120s each and no input or readback-option changes. Require actual automatic marker and publication evidence; stop after GPU failure or unconfirmed child exit. Preserve >=8GiB VRAM and existing-session checks. No main promotion without native recovery."
     }
   ]
 }
