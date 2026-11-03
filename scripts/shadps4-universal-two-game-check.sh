@@ -41,7 +41,7 @@ trap finish EXIT
 curl --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_verified_graphics.py" \
     -o "$OUT/graphics.py"
-printf '%s  %s\n' 9e550de4b1dc6a7ab4fa37d41269eec8d36aff24dac103221c966a7e3bd2fa4f "$OUT/graphics.py" | sha256sum --check -
+printf '%s  %s\n' 1414e1fae9a941c0560316fcf2ec9fdedaa56503f357a392b20fd995a4c25ede "$OUT/graphics.py" | sha256sum --check -
 if [[ "$MODE" == build ]]; then
     curl --fail --location --retry 3 \
         "https://raw.githubusercontent.com/Chreece/shadPS4/$PIN/scripts/shadps4-universal-upstream-build.sh" \
