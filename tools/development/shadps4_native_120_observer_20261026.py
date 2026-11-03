@@ -196,10 +196,29 @@ def summarize(console,out):
     srt_source_preparations=0
     srt_source_blocks={}
     memory_histograms_truncated=False
+    graphics_diagnostics=[]
+    graphics_diagnostic_bytes=0
+    graphics_diagnostics_truncated=False
+    graphics_event_counts={}
+    graphics_diagnostics_active=False
     with console.open('rb') as stream:
         for raw in stream:
             total+=1
             text=raw.decode('utf-8','replace').strip()
+            diagnostic=re.search(r'GRAPHICS_DIAG ms=\d+ event=([a-z-]+) count=(\d+)\b',text)
+            if diagnostic:
+                event=diagnostic.group(1)
+                graphics_diagnostics_active=graphics_diagnostics_active or event=='enabled'
+                if event in graphics_event_counts or len(graphics_event_counts)<64:
+                    graphics_event_counts[event]=max(graphics_event_counts.get(event,0),
+                                                     int(diagnostic.group(2)))
+                line=text[:4096]+'\n'
+                size=len(line.encode('utf-8'))
+                if graphics_diagnostic_bytes+size<=4*1024**2:
+                    graphics_diagnostics.append(line)
+                    graphics_diagnostic_bytes+=size
+                else:
+                    graphics_diagnostics_truncated=True
             fault=re.search(r'Accessed non-GPU cached memory at (0x[0-9a-fA-F]+)',text)
             prepared=re.search(r'SrtDmaSource: .*first_block=(\d+) last_block=(\d+)',text)
             if fault:
@@ -233,6 +252,7 @@ def summarize(console,out):
                     important.append(text)
     (out/'selected-console-diagnostics.txt').write_text(
         '\n'.join(important)+'\n',encoding='utf-8')
+    (out/'graphics-diagnostics.log').write_text(''.join(graphics_diagnostics),encoding='utf-8')
     with console.open('rb') as stream:
         size=console.stat().st_size
         if size>2*1024*1024:
@@ -244,6 +264,10 @@ def summarize(console,out):
             excerpt=stream.read()
     (out/'console-excerpt.log').write_bytes(excerpt)
     return {'gpu_failure':gpu_failure,'srt_rejections':srt_rejections,'console_lines':total,'warning_lines':warnings,'error_lines':errors,
+            'graphics_diagnostics_active':graphics_diagnostics_active,
+            'graphics_event_sampled_max_counts':graphics_event_counts,
+            'graphics_diagnostics_bytes':graphics_diagnostic_bytes,
+            'graphics_diagnostics_truncated':graphics_diagnostics_truncated,
             'selected_diagnostic_lines':len(important),
             'full_console_bytes':size,
             'console_excerpt_complete':size<=2*1024*1024,
@@ -338,6 +362,7 @@ def main():
         'memory':'global emulator config','automated_game_inputs':False,
         'runtime_limit_seconds':120,'signal_at_seconds':118,
         'ordered_gds_capture_requested':env.get('SHADPS4_PR117_CAPTURE_ONCE')=='1',
+        'graphics_diagnostics_requested':env.get('SHADPS4_GRAPHICS_DIAGNOSTICS')=='1',
         'vulkan_diagnostics_requested':env.get('SHADPS4_VULKAN_DIAGNOSTICS')=='1'
     }
     result={'binary_sha256':args.sha256,'game':args.game,
@@ -431,6 +456,11 @@ def main():
                         result['exit_reason']='VULKAN_VALIDATION_FAILED'
                     elif not result.get('validation_layer_active'):
                         result['exit_reason']='VULKAN_VALIDATION_NOT_OBSERVED'
+                if (launch['graphics_diagnostics_requested'] and
+                        not result.get('graphics_diagnostics_active')):
+                    result['graphics_diagnostics_failure']='GRAPHICS_DIAGNOSTICS_NOT_OBSERVED'
+                    if result['exit_reason'] in ('TEST_118S_DURATION_LIMIT','GAME_EXITED_BEFORE_LIMIT'):
+                        result['exit_reason']='GRAPHICS_DIAGNOSTICS_NOT_OBSERVED'
                 result["native_fault"]=classify_native_fault(console,report,binary)
                 if result["native_fault"].get("fault_rip"):
                     save(report/'native-fault-mapping.json',result["native_fault"])
@@ -448,7 +478,7 @@ def main():
     print('TEST_RUNTIME_SECONDS='+str(result['elapsed_seconds']),flush=True)
     print('GAME_PROCESS_LEFT_RUNNING='+('NO' if result['owned_child_terminated'] else 'UNKNOWN'),flush=True)
     print('NO_AUTOMATIC_INPUT=YES; FULLSCREEN_AND_FPS=YES; NO_CPU_ID_OVERRIDES=YES',flush=True)
-    return 0 if not failure and not result.get('gpu_failure') and not (
+    return 0 if not failure and not result.get('gpu_failure') and not result.get('graphics_diagnostics_failure') and not (
         launch['vulkan_diagnostics_requested'] and (
             result.get('first_validation_failure') or not result.get('validation_layer_active'))
         ) and result['owned_child_terminated'] and (
