@@ -637,26 +637,38 @@
     {
       "id": "shader-full-wave-reduction",
       "subsystem": "shader-recompiler",
-      "status": "DRAFT_HOST_SEMANTICS_BUILD_PASS_NATIVE_PENDING",
+      "status": "DRAFT_NATIVE_BUILD_PASS_INTRO_VISIBLE_GPU_LOSS",
       "related_prs": [
         138
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "No new native game run. Recovered GoT shader contains two affected reductions; GPU-loss causality unproven.",
+      "observed_game_effects": "Native1d2db851: GoT intro footage at25s, GPU context lost63.272s, GoW skipped. Corrected shader present; neither progress nor crash causally attributed. No menu/gameplay/audio acceptance.",
       "negative_result_or_prohibition": "Automatic exact-pattern compute subgroup64 only; subgroup32 and general EXEC resurrection unresolved. No per-game/hash overrides. 64-shuffle performance untested.",
       "next_test": "Same pinned source/binary: native GoT first, then GoW only after confirmed safe exit; 118s TERM + 2s KILL, 8GiB free VRAM, reversible recorded model leases. Compare progress, pending submissions, shader evidence and GPU status. Stop on GPU loss/live or unconfirmed child; no main promotion before native/cross-title acceptance."
     },
     {
       "id": "font-runtime-layout-accessors",
       "subsystem": "portable-build",
-      "status": "CLANG18_RELEASE_LINK_PASS_DRAFT",
+      "status": "NATIVE_BUILD_PASS_DRAFT",
       "related_prs": [
         139
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "Compile-only repair; no runtime pointer or layout change.",
+      "observed_game_effects": "Native1d2db851 builds and passes retained CPU/startup checks. Compile-only repair; no pointer/layout behavior change.",
       "negative_result_or_prohibition": "Do not retain warning suppression as the final fix.",
       "next_test": "Build the exact combined native candidate and perform shared GoT/GoW acceptance."
+    },
+    {
+      "id": "compute-swizzle-inactive-source",
+      "subsystem": "shader-recompiler",
+      "status": "DRAFT_BUILD_COMPILER_SEMANTICS_PASS_NATIVE_PENDING",
+      "related_prs": [
+        140
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No native run of the new correction. Parent GoT intro progresses then GPU loss; GoW skipped.",
+      "negative_result_or_prohibition": "Compute-only inactive-source zero; graphics helper lanes/general EXEC resurrection unresolved. No title/hash/vendor/config selector. Host checks are not GPU proof.",
+      "next_test": "Build immutable source on checked latest upstream; GoT first, then GoW only after confirmed safe exit. Same binary/global behavior, 118s TERM+2s KILL,8GiB VRAM and exact model leases. Stop later games/restoration on GPU loss or unconfirmed exit. Compare screenshots,pending work and current shader output; do not promote main without native/cross-title acceptance."
     }
   ]
 }
