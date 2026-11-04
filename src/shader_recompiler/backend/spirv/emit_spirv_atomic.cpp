@@ -167,6 +167,32 @@ Id ImageAtomicF32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id va
     return (ctx.*atomic_func)(ctx.F32[1], pointer, scope, semantics, value);
 }
 
+Id ImageAtomicF32Emulated(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value,
+                          bool is_min) {
+    const Id bits = ctx.OpBitcast(ctx.U32[1], value);
+    const Id negative =
+        ctx.OpINotEqual(ctx.U1[1], ctx.OpBitwiseAnd(ctx.U32[1], bits, ctx.ConstU32(0x80000000u)),
+                        ctx.u32_zero_value);
+    const Id negative_label = ctx.OpLabel();
+    const Id positive_label = ctx.OpLabel();
+    const Id merge_label = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge_label, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(negative, negative_label, positive_label);
+    ctx.AddLabel(negative_label);
+    const Id negative_result =
+        ImageAtomicU32(ctx, inst, handle, coords, bits,
+                       is_min ? &Sirit::Module::OpAtomicUMax : &Sirit::Module::OpAtomicUMin);
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(positive_label);
+    const Id positive_result =
+        ImageAtomicU32(ctx, inst, handle, coords, bits,
+                       is_min ? &Sirit::Module::OpAtomicSMin : &Sirit::Module::OpAtomicSMax);
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(merge_label);
+    return ctx.OpBitcast(ctx.F32[1], ctx.OpPhi(ctx.U32[1], negative_result, negative_label,
+                                               positive_result, positive_label));
+}
+
 Id ImageAtomicU32CmpSwap(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value,
                          Id cmp_value,
                          Id (Sirit::Module::*atomic_func)(Id, Id, Id, Id, Id, Id, Id)) {
@@ -435,19 +461,7 @@ Id EmitImageAtomicFMax32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords
         return ImageAtomicF32(ctx, inst, handle, coords, value, &Sirit::Module::OpAtomicFMax);
     }
 
-    const auto u32_value = ctx.OpBitcast(ctx.U32[1], value);
-    // OpSelect requires a bool condition; produce one by comparing the sign bit to 0.
-    const auto sign_bit_set = ctx.OpINotEqual(
-        ctx.U1[1],
-        ctx.OpBitFieldUExtract(ctx.U32[1], u32_value, ctx.ConstU32(31u), ctx.ConstU32(1u)),
-        ctx.u32_zero_value);
-
-    const auto result = ctx.OpSelect(
-        ctx.F32[1], sign_bit_set,
-        EmitBitCastF32U32(ctx, EmitImageAtomicUMin32(ctx, inst, handle, coords, u32_value)),
-        EmitBitCastF32U32(ctx, EmitImageAtomicSMax32(ctx, inst, handle, coords, u32_value)));
-
-    return result;
+    return ImageAtomicF32Emulated(ctx, inst, handle, coords, value, false);
 }
 
 Id EmitImageAtomicFMin32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value) {
@@ -455,19 +469,7 @@ Id EmitImageAtomicFMin32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords
         return ImageAtomicF32(ctx, inst, handle, coords, value, &Sirit::Module::OpAtomicFMin);
     }
 
-    const auto u32_value = ctx.OpBitcast(ctx.U32[1], value);
-    // OpSelect requires a bool condition; produce one by comparing the sign bit to 0.
-    const auto sign_bit_set = ctx.OpINotEqual(
-        ctx.U1[1],
-        ctx.OpBitFieldUExtract(ctx.U32[1], u32_value, ctx.ConstU32(31u), ctx.ConstU32(1u)),
-        ctx.u32_zero_value);
-
-    const auto result = ctx.OpSelect(
-        ctx.F32[1], sign_bit_set,
-        EmitBitCastF32U32(ctx, EmitImageAtomicUMax32(ctx, inst, handle, coords, u32_value)),
-        EmitBitCastF32U32(ctx, EmitImageAtomicSMin32(ctx, inst, handle, coords, u32_value)));
-
-    return result;
+    return ImageAtomicF32Emulated(ctx, inst, handle, coords, value, true);
 }
 
 Id EmitImageAtomicInc32(EmitContext&, IR::Inst*, u32, Id, Id) {
