@@ -581,42 +581,58 @@
     {
       "id": "draw-bindings-after-resource-readbacks",
       "subsystem": "Vulkan draw command state",
-      "status": "HOST_PASS_NATIVE_GOT_BLACK_GOW_GPU_LOSS",
+      "status": "HOST_PASS_NATIVE_PREPARATION_FLUSH_OBSERVED_GOT_GPU_LOSS",
       "related_prs": [
         135
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "af408e93: GoT black at80/110s, safe bounded exit118.815s; GoW GPU loss18.257s. Zero draw-preparation-flush events in both complete consoles. Native cause and recovery not proved.",
+      "observed_game_effects": "PR136 native GoT records4 draw-preparation-flush events,then GPU loss61.484s. No recovered menu/gameplay; no causal attribution to this host repair.",
       "negative_result_or_prohibition": "No per-title/shader exceptions or readback options; no claim of recovering menu/gameplay from mock/CPU checks.",
-      "next_test": "PR136 bounded GPU-work capture, GoT then GoW if safe; preserve prior fixes and require native acceptance before promotion.",
+      "next_test": "Inspect first-wait retained shaders and command/resource provenance before another renderer change.",
       "review_file": "docs/emulator/reviews/20261103-pr134-native-draw-binding-state.json",
-      "latest_review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json"
+      "latest_review_file": "docs/emulator/reviews/20261103-pr136-native-first-stalled-shaders.json"
     },
     {
       "id": "bounded-gpu-work-submission-history",
       "subsystem": "Vulkan diagnostics and native observer",
-      "status": "HOST_PASS_NATIVE_PENDING",
+      "status": "NATIVE_TRACE_WORKS_FIRST_WAIT_SHADER_COLLECTION_FIXED_IN_PR137",
       "related_prs": [
         136
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "No candidate native run; parent has no command-to-submission provenance for GoW tick4 stall or GoT black screen.",
+      "observed_game_effects": "PR136 native GoT GPU loss61.484s;108 work records/16144 bytes,three wait windows,no output truncation,global overwritten150926. GoW skipped; trace success is not recovery.",
       "negative_result_or_prohibition": "Recorded commands and submit calls do not prove execution; no new GPU waits/barriers or title/hash exceptions.",
-      "next_test": "Pinned PR136 native capture; inspect gpu-work.log, overwrite/cap metadata and pending-window shaders.",
-      "review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json"
+      "next_test": "PR137 read-only recovery of existing first-wait shader dumps; no new GPU run.",
+      "review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json",
+      "latest_review_file": "docs/emulator/reviews/20261103-pr136-native-first-stalled-shaders.json"
     },
     {
       "id": "conditional-ollama-unload-restoration",
       "subsystem": "native test runner",
-      "status": "HOST_MOCK_PASS_NATIVE_PENDING",
+      "status": "NATIVE_SNAPSHOT_UNLOAD_AND_GPU_FAILURE_DEFERRAL_PASS_SAFE_RESTORE_PENDING",
       "related_prs": [
         136
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "Old runner unloaded model before GoT but never restored it. New API lease path passes33 mocks; no live model touched.",
+      "observed_game_effects": "PR136 captures digest,16384 context,absolute expiry through local container API; unload succeeds and GPU-failure restoration is deferred. Successful restoration remains host-mock-only.",
       "negative_result_or_prohibition": "No reload after GPU failure or live/unconfirmed emulator; no overwriting concurrent model changes or blind CLI unload.",
-      "next_test": "If conditional unload occurs, verify safe-exit restoration digest/context and expiry or explicitly record unsafe deferral.",
-      "review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json"
+      "next_test": "Retain leases; do not restore while GPU failure persists. Current next step is read-only shader recovery.",
+      "review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json",
+      "latest_review_file": "docs/emulator/reviews/20261103-pr136-native-first-stalled-shaders.json"
+    },
+    {
+      "id": "first-stalled-shader-evidence-recovery",
+      "subsystem": "native diagnostic collector",
+      "status": "HOST_PASS_USER_HOST_RECOVERY_PENDING",
+      "related_prs": [
+        137,
+        136
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PR136 drops both first-stalled compute hashes from latest16 list; fetch-only files falsely count as complete evidence. PR137 fixes both and adds read-only recovery. No new game executed.",
+      "negative_result_or_prohibition": "No shader/title/vendor execution exceptions; shader hashes only identify evidence. Collected permutation is not proof of execution or a graphics fix.",
+      "next_test": "One pinned Bash command recovers original record universal-graphics-20261103T202034Z-1291590; upload resulting archive.",
+      "review_file": "docs/emulator/reviews/20261103-pr136-native-first-stalled-shaders.json"
     }
   ]
 }
