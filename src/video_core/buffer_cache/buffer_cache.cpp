@@ -14,6 +14,7 @@
 #include "video_core/buffer_cache/memory_tracker.h"
 #include "video_core/buffer_cache/region_definitions.h"
 #include "video_core/buffer_cache/sparse_arena_window.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -200,7 +201,7 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
     }
     runtime.CopyBuffer(arena, download.buffer, copies);
 
-    const auto write_data = [this, arena_base, device_addr, size, download, async,
+    const auto write_data = [this, arena_base, device_addr, size, download, async, total_size_bytes,
                              copies = std::move(copies)] {
         download.Invalidate();
         for (const auto& copy : copies) {
@@ -209,6 +210,10 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
                                     copy.size);
         }
         memory_tracker->UnmarkRegionAsGpuModified(device_addr, size, false);
+        GraphicsDiagnostics::Emit(
+            GraphicsDiagnostics::Event::BufferReadback, "address=%#llx bytes=%llu async=%u",
+            static_cast<unsigned long long>(device_addr),
+            static_cast<unsigned long long>(total_size_bytes), static_cast<unsigned>(async));
 
         if (async) {
             staging_pool.FreeDeferred(download);
