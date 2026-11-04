@@ -425,7 +425,7 @@
     {
       "id": "generic-texture-contract-restoration",
       "subsystem": "texture-cache-layer-growth-biased-number-format",
-      "status": "PR122_BUILD_CPU_VERIFIED_NATIVE_RETEST_REQUIRED_DRAFT",
+      "status": "PR122_NATIVE_OVERLAP_PASSED_GOW_NEXT_CRASH_GOT_BLACK_PR123_DRAFT",
       "related_prs": [
         122,
         121,
@@ -434,10 +434,28 @@
         117
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "No post-change game run. Fixes address both distinct f6c7b43e assertion sites.",
+      "observed_game_effects": "df253cdc: GoW same-storage expansion logged, then integer indexed-image guard abort at17.876s. GoT completed119.517s but80/110s frames black. No observed BC5/11 binding; no menu/world/video recovery.",
       "negative_result_or_prohibition": "Do not claim menu/gameplay recovered from build/CPU results. Retain historical binaries and all earlier evidence; no per-title branches or guessed DS data.",
-      "next_test": "GoW passes same-storage overlap and records the next real blocker/ordered capture. GoT passes BC5/11 binding and must show its previous menu or better before restoration is claimed. A successful process/build is insufficient.",
+      "next_test": "PR123 adds typed numeric table sampling and restores separately reproduced SH register routing. Verify both games natively before promotion.",
       "review": "reviews/20261102-texture-contract-restoration.json"
+    },
+    {
+      "id": "indexed-numeric-images-register-restoration",
+      "subsystem": "shader-indexed-numeric-types-pm4-register-routing",
+      "status": "PR123_BUILD_CPU_SPIRV_VERIFIED_NATIVE_RETEST_REQUIRED_DRAFT",
+      "related_prs": [
+        123,
+        122,
+        121,
+        120,
+        118,
+        117
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No post-change game run. Addresses actual GoW integer-table guard and an independently reproduced restored register-write defect; GoT causality not established.",
+      "negative_result_or_prohibition": "No numeric type punning, title/shader exceptions, zero-record bound bypass, guessed DS seed, or promotion from CPU/build-only evidence.",
+      "next_test": "GoW passes integer table binding and records genuine next failure/ordered capture. GoT must display its previous menu/world before recovery is claimed; completing the bounded run on black remains a failure.",
+      "review": "reviews/20261102-indexed-numeric-register-restoration.json"
     }
   ]
 }
