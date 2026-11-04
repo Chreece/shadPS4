@@ -1,0 +1,61 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-upstream-refresh-20261101",
+  "timestamp_utc": "2026-11-01T11:23:59.473812+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pull_request": 118,
+  "previous_candidate": "9d62113893094d7c21a0cbf33c8d86450c9a44d8",
+  "upstream_main": "55a97e46955b2ece7c7ff8bddeb043ca57a506c6",
+  "upstream_change": "PR5592 POSIX access, stat and chmod semantics; three files applied cleanly to retained source",
+  "integration_method": "rebase-merges=no-rebase-cousins; replay prior integration resolution, apply exact upstream delta, replay startup fix",
+  "production_source_tree": "9f555f9d3fde6b98dea68e05d2cdca439b612ff9",
+  "host_run": {
+    "schema_version": 2,
+    "record_id": "universal-upstream-20261101T111638Z-2463058",
+    "timestamp_utc": "2026-11-01T11:16:43.958372+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "stage": "NEW_UPSTREAM_REQUIRES_INTEGRATION",
+    "result": "FAILED",
+    "exit_code": 3,
+    "requested_commit": "9d62113893094d7c21a0cbf33c8d86450c9a44d8",
+    "source_commit": "9d62113893094d7c21a0cbf33c8d86450c9a44d8",
+    "upstream_commit": "55a97e46955b2ece7c7ff8bddeb043ca57a506c6",
+    "game_launched": false,
+    "graphics_verified": false,
+    "installed_binary_changed": false,
+    "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261101T111638Z-2463058.tar.gz",
+    "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+    "uploaded_archive_sha256": "98062b7088bd98b3fd5f6faef5dac6749d068bafb36652b0c1bae8f2281d35e7",
+    "reviewed_classification": "BLOCKED_UPSTREAM_ADVANCED_BEFORE_SOURCE_CAPTURE_OR_BUILD",
+    "compiler_preflight": "PASS_GCC_14_2_0",
+    "native_build": "NOT_RUN",
+    "retained_source_capture": "NOT_REACHED",
+    "pull_request": 118
+  },
+  "runner_checks": [
+    {
+      "scenario": "upstream advanced",
+      "exit": 3,
+      "retained_source_archived": true,
+      "journal_matches_result": true,
+      "build_started": false,
+      "result": "PASS_RUNNER_CONTROL_FLOW_ONLY"
+    },
+    {
+      "scenario": "upstream fetch fails",
+      "exit": 7,
+      "retained_source_archived": true,
+      "journal_matches_result": true,
+      "build_started": false,
+      "result": "PASS_RUNNER_CONTROL_FLOW_ONLY"
+    }
+  ],
+  "bash_syntax": "PASS",
+  "diff_check": "PASS",
+  "native_build": "NOT_RUN_FOR_REFRESHED_SOURCE",
+  "game_launched": false,
+  "graphics_verified": false,
+  "main_merge": "NOT_PERFORMED",
+  "decision": "RETAIN_PR118_DRAFT_PENDING_NATIVE_GPU_AND_RETAINED_SOURCE_EVIDENCE",
+  "environment_note": "gh command unavailable; AGENTS.md contributor-check marker required. Actual validations are recorded here."
+}

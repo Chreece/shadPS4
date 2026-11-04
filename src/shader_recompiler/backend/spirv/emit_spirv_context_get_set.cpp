@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/assert.h"
-#include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/ir/attribute.h"
@@ -54,18 +53,60 @@ Id EmitGetUserData(EmitContext& ctx, IR::ScalarReg reg) {
 
 Id EmitReadConst(EmitContext& ctx, IR::Inst* inst, Id addr, Id offset) {
     const u32 flatbuf_off_dw = inst->Flags<u32>();
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled() || !ctx.profile.support_bda) {
-        return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
-    }
     if (flatbuf_off_dw == 0) {
+        ASSERT_MSG(ctx.profile.support_bda && ctx.info.uses_dma,
+                   "Unflattened constant read requires buffer device address support");
         return ctx.OpFunctionCall(ctx.U32[1], ctx.read_const_dynamic, addr, offset);
     } else {
         return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
     }
 }
 
-Id EmitReadConstBuffer(EmitContext& ctx, u32 handle, Id index) {
-    const auto& buffer = ctx.buffers[handle];
+Id EmitReadConstBuffer(EmitContext& ctx, const IR::Value& handle, Id index) {
+    if (!handle.IsImmediate()) {
+        // Raw guest V# selected by the running GPU shader. Preserve the
+        // complete 40-bit address and original stride/record count.
+        // No host-selected buffer or fabricated descriptor is substituted.
+        ASSERT(ctx.profile.support_bda && ctx.info.uses_dma && Sirit::ValidId(ctx.get_bda_pointer));
+        const Id raw = ctx.Def(handle);
+        const Id dw0 = ctx.OpCompositeExtract(ctx.U32[1], raw, 0u);
+        const Id dw1 = ctx.OpCompositeExtract(ctx.U32[1], raw, 1u);
+        const Id dw2 = ctx.OpCompositeExtract(ctx.U32[1], raw, 2u);
+        const Id base_hi = ctx.OpBitwiseAnd(ctx.U32[1], dw1, ctx.ConstU32(0xffu));
+        const Id base = ctx.OpBitwiseOr(
+            ctx.U64, ctx.OpUConvert(ctx.U64, dw0),
+            ctx.OpShiftLeftLogical(ctx.U64, ctx.OpUConvert(ctx.U64, base_hi), ctx.ConstU32(32u)));
+        const Id stride =
+            ctx.OpBitFieldUExtract(ctx.U32[1], dw1, ctx.ConstU32(16u), ctx.ConstU32(14u));
+        const Id records64 = ctx.OpUConvert(ctx.U64, dw2);
+        const Id length =
+            ctx.OpSelect(ctx.U64, ctx.OpIEqual(ctx.U1[1], stride, ctx.u32_zero_value), records64,
+                         ctx.OpIMul(ctx.U64, records64, ctx.OpUConvert(ctx.U64, stride)));
+        const Id offset =
+            ctx.OpShiftLeftLogical(ctx.U64, ctx.OpUConvert(ctx.U64, index), ctx.ConstU32(2u));
+        const Id valid_index =
+            ctx.OpSelect(ctx.U1[1], ctx.OpIEqual(ctx.U1[1], stride, ctx.u32_zero_value),
+                         ctx.OpULessThan(ctx.U1[1], offset, length),
+                         ctx.OpULessThanEqual(ctx.U1[1], offset, length));
+        const Id valid = ctx.OpLogicalAnd(ctx.U1[1], valid_index,
+                                          ctx.OpINotEqual(ctx.U1[1], base, ctx.u64_zero_value));
+        const Id read_label = ctx.OpLabel();
+        const Id null_label = ctx.OpLabel();
+        const Id merge_label = ctx.OpLabel();
+        ctx.OpSelectionMerge(merge_label, spv::SelectionControlMask::MaskNone);
+        ctx.OpBranchConditional(valid, read_label, null_label);
+        ctx.AddLabel(read_label);
+        const Id address = ctx.OpBitwiseAnd(ctx.U64, ctx.OpIAdd(ctx.U64, base, offset),
+                                            ctx.Constant(ctx.U64, ~u64{3}));
+        const Id value = ctx.EmitDwordMemoryRead(address, [&] { return ctx.u32_zero_value; });
+        ctx.OpBranch(merge_label);
+        const Id actual_read_label = ctx.last_label;
+        ctx.AddLabel(null_label);
+        ctx.OpBranch(merge_label);
+        ctx.AddLabel(merge_label);
+        return ctx.OpPhi(ctx.U32[1], value, actual_read_label, ctx.u32_zero_value, null_label);
+    }
+    const auto& buffer = ctx.buffers[handle.U32()];
     if (const Id offset = buffer.Offset(PointerSize::B32); Sirit::ValidId(offset)) {
         index = ctx.OpIAdd(ctx.U32[1], index, offset);
     }
@@ -523,6 +564,39 @@ void EmitStoreBufferU32x3(EmitContext& ctx, IR::Inst* inst, u32 handle, Id addre
 
 void EmitStoreBufferU32x4(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value) {
     EmitStoreBufferB32xN<4, PointerType::U32>(ctx, inst, handle, address, value);
+}
+
+template <u32 N>
+static void EmitGuardedBufferStore(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address,
+                                   Id value, Id guard) {
+    const Id store = ctx.OpLabel();
+    const Id merge = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(guard, store, merge);
+    ctx.AddLabel(store);
+    EmitStoreBufferB32xN<N, PointerType::U32>(ctx, inst, handle, address, value);
+    ctx.OpBranch(merge);
+    ctx.AddLabel(merge);
+}
+
+void EmitStoreBufferU32Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                               Id guard) {
+    EmitGuardedBufferStore<1>(ctx, inst, handle, address, value, guard);
+}
+
+void EmitStoreBufferU32x2Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard) {
+    EmitGuardedBufferStore<2>(ctx, inst, handle, address, value, guard);
+}
+
+void EmitStoreBufferU32x3Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard) {
+    EmitGuardedBufferStore<3>(ctx, inst, handle, address, value, guard);
+}
+
+void EmitStoreBufferU32x4Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard) {
+    EmitGuardedBufferStore<4>(ctx, inst, handle, address, value, guard);
 }
 
 void EmitStoreBufferU64(EmitContext& ctx, IR::Inst*, u32 handle, Id address, Id value) {
