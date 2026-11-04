@@ -2,7 +2,7 @@
 
 **Canonical home:** this directory on fork `main`. Keep **one universal history of every attempted emulator change**; separate game notebooks are *views and original evidence*, not competing logs. A correct engine change applies across titles; game IDs only label where behavior was observed. **Do not implement title-specific source workarounds, shader-hash exceptions, readback overrides, or CPU options.**
 
-**Current rendering candidate (2026-11-02):** the [preservation audit](reviews/20261102-got-preservation-gap.json) established missing historical renderer paths. The [indexed descriptor restoration](reviews/20261102-indexed-renderer-restoration.json) now ports verified recovered source onto upstream `2183807e`, retains ordered-GDS work, and passes native compilation, CPU checks and five production-emitted SPIR-V cases. GoT pixels and GoW continuation are not verified; main remains unchanged pending bounded native evidence.
+**Current rendering candidate (2026-11-02):** [PR121](https://github.com/Chreece/shadPS4/pull/121) follows the failed PR120 native run: GoW aborted on a 1D texture after 8 seconds, and GoT still had no menu at 120 seconds. The [contract recovery review](reviews/20261102-generic-contract-recovery.json) records fixes for typed 1D sampling, empty-table revalidation, scalar descriptor range stride, SRT dependencies and whole-result scalar flags. It includes failing previous-code counterexamples and passing build/CPU/SPIR-V checks. Current upstream is `2183807e`; historical binaries and ordered-GDS work are retained. GoT menu/world recovery and GoW videos/continuation remain unverified; main is unchanged.
 
 ## Open these before trying any new idea
 
