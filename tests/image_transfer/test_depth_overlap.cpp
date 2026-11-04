@@ -100,6 +100,7 @@ struct TextureCache {
     u32 uploads = 0;
 
     void RegisterImage(ImageId) {}
+    void TrackGpuImage(ImageId) {}
     void FreeImage(ImageId id) {
         slot_images[id].freed = true;
     }
