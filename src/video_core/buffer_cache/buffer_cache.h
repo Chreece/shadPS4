@@ -45,6 +45,7 @@ enum class ObtainBufferFlags {
     IsTexelBuffer = 1 << 1,
     IgnoreStreamBuffer = 1 << 2,
     InvalidateTextureCache = 1 << 3,
+    SkipImageReadback = 1 << 4,
 };
 DECLARE_ENUM_FLAG_OPERATORS(ObtainBufferFlags)
 
