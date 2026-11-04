@@ -129,8 +129,7 @@ public:
     /// Evicts any images that overlap the unmapped range.
     void UnmapMemory(VAddr cpu_addr, size_t size);
 
-    /// Schedules a copy of pending images for download back to CPU memory.
-    void ProcessDownloadImages();
+    void ReadMemory(VAddr addr, u64 size);
 
     /// Retrieves the image handle of the image with the provided attributes.
     [[nodiscard]] ImageId FindImage(ImageDesc& desc, bool exact_fmt = false);
@@ -352,6 +351,8 @@ private:
         }
     }
 
+    void TrackGpuImage(ImageId image_id);
+
     /// Copies image memory back to CPU.
     void DownloadImageMemory(ImageId image_id,
                              DownloadMemoryFlags flags = DownloadMemoryFlags::None);
@@ -411,7 +412,8 @@ private:
     BlitHelper blit_helper;
     TileManager tile_manager;
     absl::flat_hash_map<u64, SamplerId> samplers;
-    absl::flat_hash_set<ImageId> download_images;
+    absl::flat_hash_map<ImageId, u64> download_images;
+    u64 image_write_sequence = 0;
     u64 total_used_memory = 0;
     u64 trigger_gc_memory = 0;
     u64 pressure_gc_memory = 0;
