@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <chrono>
+#include "video_core/gpu_work_diagnostics.h"
 #include "video_core/graphics_diagnostics.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
@@ -68,6 +69,7 @@ void Semaphore::Wait(u64 tick) {
     for (;;) {
         const auto result = instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
         if (result != vk::Result::eSuccess && result != vk::Result::eTimeout) {
+            VideoCore::GpuWorkDiagnostics::Dump("wait-error", this, KnownGpuTick(), tick);
             UNREACHABLE_MSG("Failed to wait for master semaphore: {}", vk::to_string(result));
         }
         const auto elapsed =
@@ -76,6 +78,9 @@ void Semaphore::Wait(u64 tick) {
                                                 .count());
         if (result == vk::Result::eTimeout) {
             ++timeouts;
+            if (timeouts == 1) {
+                VideoCore::GpuWorkDiagnostics::Dump("wait-timeout", this, KnownGpuTick(), tick);
+            }
         }
         if (result == vk::Result::eTimeout || elapsed >= 1000) {
             VideoCore::GraphicsDiagnostics::Emit(
